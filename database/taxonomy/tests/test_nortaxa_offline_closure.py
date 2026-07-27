@@ -393,9 +393,16 @@ def test_manifest_records_consumed_and_structurally_failed_attempt_1() -> None:
     assert manifest["download_authorized"] is False
     assert manifest["download"] is None
     attempts = manifest["execution_attempts"]
-    assert len(attempts) == 1
-    a1 = attempts[0]
-    assert a1["attempt_number"] == 1
+    # Attempts are append-only. Any later real-acquisition attempts may follow
+    # the historical attempt 1, but attempt_number values must be unique and
+    # monotonically increasing.
+    numbers = [a["attempt_number"] for a in attempts]
+    assert numbers == sorted(numbers)
+    assert len(numbers) == len(set(numbers))
+    by_number = {a["attempt_number"]: a for a in attempts}
+    assert 1 in by_number, "historical attempt 1 must be present"
+    assert 2 in by_number, "attempt 2 (real-archive missing-genus failure) must be present"
+    a1 = by_number[1]
     assert a1["outcome"] == "failed"
     assert a1["phase"] == "structural_validation"
     assert a1["approval_created"] is True
@@ -413,6 +420,23 @@ def test_manifest_records_consumed_and_structurally_failed_attempt_1() -> None:
     # `validation` no longer null: the manifest now carries the state note.
     v = manifest["validation"]
     assert v["state"] == "structural_validation_failed_cleanup_pending_or_completed"
+    # Attempt 2 is the real-archive acquisition that exposed the strict
+    # missing-genus check. Its exact recorded fields are preserved verbatim.
+    # Additional append-only attempts numbered above 2 are permitted.
+    a2 = by_number[2]
+    assert a2["outcome"] == "failed"
+    assert a2["phase"] == "structural_validation"
+    assert a2["endpoint"] == \
+        "https://ipt.artsdatabanken.no/archive.do?r=artsnavnebase&v=1.284"
+    assert a2["archive_sha256"] == \
+        "29c11c54d955dc44e4e5a38944dd7932989a256d1b173777579b9f33abd2fe22"
+    assert a2["observed_bytes"] == 8399460
+    assert a2["error"] == {
+        "type": "AcquisitionError",
+        "message": "species Taxon row requires genus",
+    }
+    assert a2["started_at"] == "2026-07-27T19:46:55.791260Z"
+    assert a2["completed_at"] == "2026-07-27T19:46:57.213206Z"
 
 
 # ----- Cross-attempt composition (compose_supplemental_metadata_verification) -----

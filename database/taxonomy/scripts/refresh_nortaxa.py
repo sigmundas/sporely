@@ -61,7 +61,7 @@ COLUMN_REQUIRED = {
     "taxonRank", "taxonomicStatus", "kingdom", "family", "genus", "specificEpithet",
 }
 VERNACULAR_REQUIRED = {"vernacularName", "language"}
-ALWAYS_REQUIRED_VALUES = {"taxonID", "scientificName", "taxonRank", "taxonomicStatus", "kingdom"}
+ALWAYS_REQUIRED_VALUES = {"taxonID", "scientificName", "taxonRank", "taxonomicStatus"}
 
 
 def _local_name(term: str) -> str:
@@ -543,7 +543,23 @@ def _rows(archive: zipfile.ZipFile, table: Table):
         raise AcquisitionError("declared ignored header count exceeds table rows")
 
 
-def _taxon_semantics(row: list[str], table: Table) -> None:
+SPECIES_LIKE_RANKS = frozenset({"species", "subspecies", "variety", "form"})
+
+
+def _taxon_semantics(row: list[str], table: Table) -> dict[str, bool]:
+    """Enforce identifier and linkage rules on a single Taxon row.
+
+    Column-emptiness policy is deliberately narrow: real NorTaxa releases
+    legitimately publish species-rank rows without ``dwc:genus`` /
+    ``dwc:specificEpithet``, genus-rank rows without a filled ``dwc:genus``
+    column, and rows without ``dwc:kingdom``. Empty source values are
+    preserved verbatim and never inferred from ``scientificName``. Gaps are
+    surfaced deterministically via the returned dict so ``validate_fixture``
+    can accumulate counters.
+
+    Strict rules that remain: ALWAYS_REQUIRED_VALUES (taxonID, scientificName,
+    taxonRank, taxonomicStatus), synonym linkage, and self-reference.
+    """
     value = lambda term: row[table.terms[term]].strip()
     for term in ALWAYS_REQUIRED_VALUES:
         if not value(term):
@@ -553,12 +569,17 @@ def _taxon_semantics(row: list[str], table: Table) -> None:
     taxon_id = value("taxonID")
     accepted_id = value("acceptedNameUsageID")
     parent_id = value("parentNameUsageID")
-    if rank in {"species", "subspecies", "variety", "form"}:
-        for term in ("genus", "specificEpithet"):
-            if not value(term):
-                raise AcquisitionError(f"{rank} Taxon row requires {term}")
-    elif rank == "genus" and not value("genus"):
-        raise AcquisitionError("genus Taxon row requires genus")
+    gaps = {
+        "missing_genus": False,
+        "missing_specific_epithet": False,
+        "missing_genus_on_genus_rank": False,
+        "missing_kingdom": not value("kingdom"),
+    }
+    if rank in SPECIES_LIKE_RANKS:
+        gaps["missing_genus"] = not value("genus")
+        gaps["missing_specific_epithet"] = not value("specificEpithet")
+    elif rank == "genus":
+        gaps["missing_genus_on_genus_rank"] = not value("genus")
     is_synonym = "synonym" in status or status in {"misapplied", "misapplied name"}
     if is_synonym and not accepted_id:
         raise AcquisitionError("synonym Taxon row requires acceptedNameUsageID")
@@ -566,6 +587,7 @@ def _taxon_semantics(row: list[str], table: Table) -> None:
         raise AcquisitionError("synonym acceptedNameUsageID cannot equal its taxonID")
     if parent_id and parent_id == taxon_id:
         raise AcquisitionError("Taxon parentNameUsageID cannot equal its taxonID")
+    return gaps
 
 
 def validate_fixture(path: Path, request: NorTaxaRequest) -> dict[str, Any]:
@@ -618,13 +640,28 @@ def validate_fixture(path: Path, request: NorTaxaRequest) -> dict[str, Any]:
             usage_references: set[tuple[str, str]] = set()
             identifier_samples: list[dict[str, str]] = []
             core_count = 0
+            species_missing_genus = 0
+            species_missing_specific_epithet = 0
+            species_missing_both = 0
+            genus_rank_missing_genus = 0
+            rows_missing_kingdom = 0
             for row in _rows(archive, core):
                 core_count += 1
                 row_id = row[core.link_index].strip()
                 if not row_id or row_id in core_ids:
                     raise AcquisitionError("missing or duplicate core row ID")
                 core_ids.add(row_id)
-                _taxon_semantics(row, core)
+                gaps = _taxon_semantics(row, core)
+                if gaps["missing_genus"]:
+                    species_missing_genus += 1
+                if gaps["missing_specific_epithet"]:
+                    species_missing_specific_epithet += 1
+                if gaps["missing_genus"] and gaps["missing_specific_epithet"]:
+                    species_missing_both += 1
+                if gaps["missing_genus_on_genus_rank"]:
+                    genus_rank_missing_genus += 1
+                if gaps["missing_kingdom"]:
+                    rows_missing_kingdom += 1
                 taxon_id = row[core.terms["taxonID"]].strip()
                 if taxon_id in taxon_ids:
                     raise AcquisitionError("duplicate dwc:taxonID")
@@ -690,6 +727,13 @@ def validate_fixture(path: Path, request: NorTaxaRequest) -> dict[str, Any]:
             "original_term_uris": {"Taxon": core.term_uris, "VernacularName": vernacular.term_uris},
         },
         "record_counts": counts,
+        "taxon_column_gaps": {
+            "species_like_rows_missing_genus": species_missing_genus,
+            "species_like_rows_missing_specific_epithet": species_missing_specific_epithet,
+            "species_like_rows_missing_both": species_missing_both,
+            "genus_rank_rows_missing_genus": genus_rank_missing_genus,
+            "taxon_rows_missing_kingdom": rows_missing_kingdom,
+        },
         "linkage": {"distinct_core_row_ids": len(core_ids), "vernacular_rows_by_core_id": links},
         "identifier_contract": {
             "core_row_id": {"index": core.link_index, "role": "archive-local core row key"},

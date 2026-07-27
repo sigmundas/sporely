@@ -398,16 +398,344 @@ def test_higher_taxa_roots_and_synonym_semantics(tmp_path: Path) -> None:
     assert synonym["dwc:acceptedNameUsageID"] == "taxon:accepted"
 
 
-def test_rank_and_status_aware_required_values(tmp_path: Path) -> None:
+def _default_counter_shape() -> dict:
+    return {
+        "species_like_rows_missing_genus": 0,
+        "species_like_rows_missing_specific_epithet": 0,
+        "species_like_rows_missing_both": 0,
+        "genus_rank_rows_missing_genus": 0,
+        "taxon_rows_missing_kingdom": 0,
+    }
+
+
+def test_species_row_missing_genus_is_accepted_but_counted(tmp_path: Path) -> None:
+    """A species-rank row with a complete scientificName but empty
+    dwc:genus is preserved verbatim; validate_fixture does NOT raise.
+    The gap is recorded deterministically in taxon_column_gaps."""
+    species = archive_rows()[0]
+    species[10] = ""  # empty genus, scientificName intact
+    report = validate_fixture(
+        write_archive(tmp_path, meta=meta_xml(), core_rows=[species]), request(),
+    )
+    assert report["result"] == "passed"
+    expected = _default_counter_shape()
+    expected["species_like_rows_missing_genus"] = 1
+    assert report["taxon_column_gaps"] == expected
+
+
+def test_species_row_missing_specific_epithet_is_accepted_but_counted(tmp_path: Path) -> None:
+    species = archive_rows()[0]
+    species[11] = ""
+    report = validate_fixture(
+        write_archive(tmp_path, meta=meta_xml(), core_rows=[species]), request(),
+    )
+    assert report["result"] == "passed"
+    expected = _default_counter_shape()
+    expected["species_like_rows_missing_specific_epithet"] = 1
+    assert report["taxon_column_gaps"] == expected
+
+
+def test_species_row_missing_both_genus_and_specific_epithet_is_counted_in_both(tmp_path: Path) -> None:
     species = archive_rows()[0]
     species[10] = ""
-    with pytest.raises(AcquisitionError, match="species Taxon row requires genus"):
-        validate_fixture(write_archive(tmp_path, meta=meta_xml(), core_rows=[species]), request())
+    species[11] = ""
+    report = validate_fixture(
+        write_archive(tmp_path, meta=meta_xml(), core_rows=[species]), request(),
+    )
+    assert report["result"] == "passed"
+    expected = _default_counter_shape()
+    expected["species_like_rows_missing_genus"] = 1
+    expected["species_like_rows_missing_specific_epithet"] = 1
+    expected["species_like_rows_missing_both"] = 1
+    assert report["taxon_column_gaps"] == expected
+
+
+def test_genus_rank_row_missing_genus_is_accepted_and_counted(tmp_path: Path) -> None:
+    """The genus-rank-must-have-genus rule was deleted: an empty dwc:genus on
+    a genus-rank row is preserved verbatim and counted."""
+    row = archive_rows()[0]
+    row[6] = "genus"       # taxonRank
+    row[10] = ""           # empty genus column
+    row[11] = ""           # empty specificEpithet (irrelevant at genus rank)
+    report = validate_fixture(
+        write_archive(tmp_path, meta=meta_xml(), core_rows=[row]), request(),
+    )
+    assert report["result"] == "passed"
+    expected = _default_counter_shape()
+    expected["genus_rank_rows_missing_genus"] = 1
+    assert report["taxon_column_gaps"] == expected
+
+
+def test_row_missing_kingdom_is_accepted_and_counted(tmp_path: Path) -> None:
+    """kingdom is no longer in ALWAYS_REQUIRED_VALUES. A row missing kingdom
+    is preserved verbatim and counted; the row remains valid."""
+    row = archive_rows()[0]
+    row[8] = ""  # empty kingdom
+    report = validate_fixture(
+        write_archive(tmp_path, meta=meta_xml(), core_rows=[row]), request(),
+    )
+    assert report["result"] == "passed"
+    expected = _default_counter_shape()
+    expected["taxon_rows_missing_kingdom"] = 1
+    assert report["taxon_column_gaps"] == expected
+
+
+def test_species_missing_scientificname_still_fails(tmp_path: Path) -> None:
+    """scientificName remains in ALWAYS_REQUIRED_VALUES; empty is a hard failure."""
+    species = archive_rows()[0]
+    species[4] = ""  # empty scientificName
+    with pytest.raises(AcquisitionError, match="scientificName"):
+        validate_fixture(
+            write_archive(tmp_path, meta=meta_xml(), core_rows=[species]), request(),
+        )
+
+
+def test_synonym_still_requires_accepted_name_usage_id(tmp_path: Path) -> None:
     synonym = archive_rows()[0]
     synonym[1] = "taxon:synonym"
     synonym[7] = "synonym"
     with pytest.raises(AcquisitionError, match="requires acceptedNameUsageID"):
-        validate_fixture(write_archive(tmp_path, meta=meta_xml(), core_rows=[synonym]), request())
+        validate_fixture(
+            write_archive(tmp_path, meta=meta_xml(), core_rows=[synonym]), request(),
+        )
+
+
+def test_all_five_counters_are_exact_and_deterministic(tmp_path: Path) -> None:
+    """Deterministic per-run counters across a mixed archive: two runs of the
+    same archive produce identical taxon_column_gaps in every counter."""
+    row_missing_genus = archive_rows()[0][:]
+    row_missing_genus[0] = "row-B"
+    row_missing_genus[1] = "taxon:noGenus"
+    row_missing_genus[3] = ""
+    row_missing_genus[4] = "Species incognita"
+    row_missing_genus[10] = ""
+
+    row_missing_epithet = archive_rows()[0][:]
+    row_missing_epithet[0] = "row-C"
+    row_missing_epithet[1] = "taxon:noEpithet"
+    row_missing_epithet[3] = ""
+    row_missing_epithet[4] = "Genus sp"
+    row_missing_epithet[11] = ""
+
+    row_missing_both = archive_rows()[0][:]
+    row_missing_both[0] = "row-D"
+    row_missing_both[1] = "taxon:noEither"
+    row_missing_both[3] = ""
+    row_missing_both[4] = "Unnamed species-group A"
+    row_missing_both[10] = ""
+    row_missing_both[11] = ""
+
+    row_genus_rank_missing = archive_rows()[0][:]
+    row_genus_rank_missing[0] = "row-E"
+    row_genus_rank_missing[1] = "taxon:genusRankNoGenus"
+    row_genus_rank_missing[3] = ""
+    row_genus_rank_missing[4] = "SomeGenus"
+    row_genus_rank_missing[6] = "genus"
+    row_genus_rank_missing[10] = ""
+
+    row_missing_kingdom = archive_rows()[0][:]
+    row_missing_kingdom[0] = "row-F"
+    row_missing_kingdom[1] = "taxon:noKingdom"
+    row_missing_kingdom[3] = ""
+    row_missing_kingdom[4] = "Kingdomless taxon"
+    row_missing_kingdom[8] = ""
+
+    complete = archive_rows()[0]
+    core_rows = [
+        complete, row_missing_genus, row_missing_epithet, row_missing_both,
+        row_genus_rank_missing, row_missing_kingdom,
+    ]
+    archive = write_archive(tmp_path, meta=meta_xml(), core_rows=core_rows)
+    first = validate_fixture(archive, request())["taxon_column_gaps"]
+    second = validate_fixture(archive, request())["taxon_column_gaps"]
+    assert first == second == {
+        "species_like_rows_missing_genus":            2,  # row-B, row-D
+        "species_like_rows_missing_specific_epithet": 2,  # row-C, row-D
+        "species_like_rows_missing_both":             1,  # row-D
+        "genus_rank_rows_missing_genus":              1,  # row-E
+        "taxon_rows_missing_kingdom":                 1,  # row-F
+    }
+
+
+def test_orphan_parent_linkage_still_fails(tmp_path: Path) -> None:
+    orphan = archive_rows()[0]
+    orphan[3] = "taxon:no-such-parent"
+    with pytest.raises(AcquisitionError, match="references an unknown"):
+        validate_fixture(
+            write_archive(tmp_path, meta=meta_xml(), core_rows=[orphan]), request(),
+        )
+
+
+# ----- Cross-validator agreement: refresh_nortaxa and national_source -----
+
+
+def _build_national_source_archive(tmp_path: Path, meta: bytes, core_rows: list[list[str]]) -> Path:
+    """Build a bytewise-identical archive using the same writer as validate,
+    so the resulting file is consumable by both validators."""
+    return write_archive(tmp_path, meta=meta, core_rows=core_rows)
+
+
+def _load_pinned_national_source_profile():
+    import national_source
+    return national_source.load_profile(
+        Path(__file__).resolve().parents[1] / "tests" / "fixtures" / "nortaxa" / "valid-request.json"
+    )
+
+
+def test_national_source_and_refresh_nortaxa_agree_on_species_missing_genus(tmp_path: Path) -> None:
+    """The generic national-source adapter and refresh_nortaxa agree that a
+    species-rank row with an empty dwc:genus is accepted."""
+    import national_source
+    species = archive_rows()[0]
+    species[10] = ""
+    archive = _build_national_source_archive(tmp_path, meta_xml(), [species])
+
+    nr = validate_fixture(archive, request())
+    profile_dict = {
+        "profile_schema_version": 1, "source_code": "nortaxa",
+        "source_release": {"version": "1.284", "issued_date": "2026-07-17"},
+        "identifier_namespace": "NBIC:",
+        "core": {
+            "row_type": "http://rs.tdwg.org/dwc/terms/Taxon",
+            "location": "data/nonstandard-core.csv",
+            "term_mapping": {
+                "taxonID":                  "http://rs.tdwg.org/dwc/terms/taxonID",
+                "acceptedNameUsageID":      "http://rs.tdwg.org/dwc/terms/acceptedNameUsageID",
+                "parentNameUsageID":        "http://rs.tdwg.org/dwc/terms/parentNameUsageID",
+                "scientificName":           "http://rs.tdwg.org/dwc/terms/scientificName",
+                "scientificNameAuthorship": "http://rs.tdwg.org/dwc/terms/scientificNameAuthorship",
+                "taxonRank":                "http://rs.tdwg.org/dwc/terms/taxonRank",
+                "taxonomicStatus":          "http://rs.tdwg.org/dwc/terms/taxonomicStatus",
+            },
+        },
+        "vernacular": {
+            "row_type": "http://rs.gbif.org/terms/1.0/VernacularName",
+            "location": "names/localized.data",
+            "term_mapping": {
+                "vernacularName": "http://rs.gbif.org/terms/1.0/vernacularName",
+                "language":       "http://rs.tdwg.org/dwc/terms/language",
+                "isPreferredName":"http://rs.gbif.org/terms/1.0/isPreferredName",
+            },
+        },
+        "distribution": {
+            "row_type": "http://rs.tdwg.org/dwc/terms/Distribution",
+            "location": "extra/distribution.tsv",
+            "validation_only": True,
+        },
+        "optional_external_id_terms": [],
+    }
+    profile_path = tmp_path / "nortaxa-profile.json"
+    profile_path.write_text(json.dumps(profile_dict))
+    profile = national_source.load_profile(profile_path)
+    ns = national_source.validate_archive(profile, archive)
+
+    assert nr["result"] == "passed"
+    assert ns["result"] == "passed"
+    assert nr["record_counts"]["Taxon"] == ns["record_counts"]["Taxon"] == 1
+
+
+def test_national_source_and_refresh_nortaxa_agree_on_genus_rank_missing_genus(tmp_path: Path) -> None:
+    """Both validators accept a genus-rank row whose dwc:genus is empty."""
+    import national_source
+    row = archive_rows()[0]
+    row[6] = "genus"
+    row[10] = ""
+    row[11] = ""
+    archive = _build_national_source_archive(tmp_path, meta_xml(), [row])
+
+    nr = validate_fixture(archive, request())
+    profile_dict = {
+        "profile_schema_version": 1, "source_code": "nortaxa",
+        "source_release": {"version": "1.284", "issued_date": "2026-07-17"},
+        "identifier_namespace": "NBIC:",
+        "core": {
+            "row_type": "http://rs.tdwg.org/dwc/terms/Taxon",
+            "location": "data/nonstandard-core.csv",
+            "term_mapping": {
+                "taxonID":                  "http://rs.tdwg.org/dwc/terms/taxonID",
+                "acceptedNameUsageID":      "http://rs.tdwg.org/dwc/terms/acceptedNameUsageID",
+                "parentNameUsageID":        "http://rs.tdwg.org/dwc/terms/parentNameUsageID",
+                "scientificName":           "http://rs.tdwg.org/dwc/terms/scientificName",
+                "scientificNameAuthorship": "http://rs.tdwg.org/dwc/terms/scientificNameAuthorship",
+                "taxonRank":                "http://rs.tdwg.org/dwc/terms/taxonRank",
+                "taxonomicStatus":          "http://rs.tdwg.org/dwc/terms/taxonomicStatus",
+            },
+        },
+        "vernacular": {
+            "row_type": "http://rs.gbif.org/terms/1.0/VernacularName",
+            "location": "names/localized.data",
+            "term_mapping": {
+                "vernacularName": "http://rs.gbif.org/terms/1.0/vernacularName",
+                "language":       "http://rs.tdwg.org/dwc/terms/language",
+                "isPreferredName":"http://rs.gbif.org/terms/1.0/isPreferredName",
+            },
+        },
+        "distribution": {
+            "row_type": "http://rs.tdwg.org/dwc/terms/Distribution",
+            "location": "extra/distribution.tsv",
+            "validation_only": True,
+        },
+        "optional_external_id_terms": [],
+    }
+    profile_path = tmp_path / "nortaxa-profile.json"
+    profile_path.write_text(json.dumps(profile_dict))
+    profile = national_source.load_profile(profile_path)
+    ns = national_source.validate_archive(profile, archive)
+
+    assert nr["result"] == "passed"
+    assert ns["result"] == "passed"
+    assert nr["taxon_column_gaps"]["genus_rank_rows_missing_genus"] == 1
+
+
+def test_national_source_and_refresh_nortaxa_agree_on_row_missing_kingdom(tmp_path: Path) -> None:
+    """Both validators accept an otherwise-valid row whose dwc:kingdom is empty."""
+    import national_source
+    row = archive_rows()[0]
+    row[8] = ""  # empty kingdom
+    archive = _build_national_source_archive(tmp_path, meta_xml(), [row])
+
+    nr = validate_fixture(archive, request())
+    profile_dict = {
+        "profile_schema_version": 1, "source_code": "nortaxa",
+        "source_release": {"version": "1.284", "issued_date": "2026-07-17"},
+        "identifier_namespace": "NBIC:",
+        "core": {
+            "row_type": "http://rs.tdwg.org/dwc/terms/Taxon",
+            "location": "data/nonstandard-core.csv",
+            "term_mapping": {
+                "taxonID":                  "http://rs.tdwg.org/dwc/terms/taxonID",
+                "acceptedNameUsageID":      "http://rs.tdwg.org/dwc/terms/acceptedNameUsageID",
+                "parentNameUsageID":        "http://rs.tdwg.org/dwc/terms/parentNameUsageID",
+                "scientificName":           "http://rs.tdwg.org/dwc/terms/scientificName",
+                "scientificNameAuthorship": "http://rs.tdwg.org/dwc/terms/scientificNameAuthorship",
+                "taxonRank":                "http://rs.tdwg.org/dwc/terms/taxonRank",
+                "taxonomicStatus":          "http://rs.tdwg.org/dwc/terms/taxonomicStatus",
+            },
+        },
+        "vernacular": {
+            "row_type": "http://rs.gbif.org/terms/1.0/VernacularName",
+            "location": "names/localized.data",
+            "term_mapping": {
+                "vernacularName": "http://rs.gbif.org/terms/1.0/vernacularName",
+                "language":       "http://rs.tdwg.org/dwc/terms/language",
+                "isPreferredName":"http://rs.gbif.org/terms/1.0/isPreferredName",
+            },
+        },
+        "distribution": {
+            "row_type": "http://rs.tdwg.org/dwc/terms/Distribution",
+            "location": "extra/distribution.tsv",
+            "validation_only": True,
+        },
+        "optional_external_id_terms": [],
+    }
+    profile_path = tmp_path / "nortaxa-profile.json"
+    profile_path.write_text(json.dumps(profile_dict))
+    profile = national_source.load_profile(profile_path)
+    ns = national_source.validate_archive(profile, archive)
+
+    assert nr["result"] == "passed"
+    assert ns["result"] == "passed"
+    assert nr["taxon_column_gaps"]["taxon_rows_missing_kingdom"] == 1
 
 
 def test_streaming_parser_does_not_read_or_materialize_complete_tables() -> None:
