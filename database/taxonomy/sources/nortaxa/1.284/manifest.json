@@ -47,6 +47,20 @@
       "outcome": "failed",
       "phase": "structural_validation",
       "started_at": "2026-07-27T19:46:55.791260Z"
+    },
+    {
+      "archive_sha256": "29c11c54d955dc44e4e5a38944dd7932989a256d1b173777579b9f33abd2fe22",
+      "attempt_number": 3,
+      "completed_at": "2026-07-27T20:27:11.954725Z",
+      "endpoint": "https://ipt.artsdatabanken.no/archive.do?r=artsnavnebase&v=1.284",
+      "error": {
+        "message": "parentNameUsageID references an unknown dwc:taxonID",
+        "type": "AcquisitionError"
+      },
+      "observed_bytes": 8399460,
+      "outcome": "failed",
+      "phase": "structural_validation",
+      "started_at": "2026-07-27T20:27:10.489035Z"
     }
   ],
   "historical_executor_commit": "2ea3294d4269c043f98374f5bc2ad562971a53aa",

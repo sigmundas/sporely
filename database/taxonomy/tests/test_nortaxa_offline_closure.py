@@ -402,6 +402,7 @@ def test_manifest_records_consumed_and_structurally_failed_attempt_1() -> None:
     by_number = {a["attempt_number"]: a for a in attempts}
     assert 1 in by_number, "historical attempt 1 must be present"
     assert 2 in by_number, "attempt 2 (real-archive missing-genus failure) must be present"
+    assert 3 in by_number, "attempt 3 (real-archive orphan-reference failure) must be present"
     a1 = by_number[1]
     assert a1["outcome"] == "failed"
     assert a1["phase"] == "structural_validation"
@@ -422,7 +423,6 @@ def test_manifest_records_consumed_and_structurally_failed_attempt_1() -> None:
     assert v["state"] == "structural_validation_failed_cleanup_pending_or_completed"
     # Attempt 2 is the real-archive acquisition that exposed the strict
     # missing-genus check. Its exact recorded fields are preserved verbatim.
-    # Additional append-only attempts numbered above 2 are permitted.
     a2 = by_number[2]
     assert a2["outcome"] == "failed"
     assert a2["phase"] == "structural_validation"
@@ -437,6 +437,23 @@ def test_manifest_records_consumed_and_structurally_failed_attempt_1() -> None:
     }
     assert a2["started_at"] == "2026-07-27T19:46:55.791260Z"
     assert a2["completed_at"] == "2026-07-27T19:46:57.213206Z"
+    # Attempt 3 is the follow-up real-archive acquisition that exposed the
+    # orphan-reference check. Additional append-only attempts numbered above
+    # 3 are permitted; this test pins attempts 1-3 exactly.
+    a3 = by_number[3]
+    assert a3["outcome"] == "failed"
+    assert a3["phase"] == "structural_validation"
+    assert a3["endpoint"] == \
+        "https://ipt.artsdatabanken.no/archive.do?r=artsnavnebase&v=1.284"
+    assert a3["archive_sha256"] == \
+        "29c11c54d955dc44e4e5a38944dd7932989a256d1b173777579b9f33abd2fe22"
+    assert a3["observed_bytes"] == 8399460
+    assert a3["error"] == {
+        "type": "AcquisitionError",
+        "message": "parentNameUsageID references an unknown dwc:taxonID",
+    }
+    assert a3["started_at"] == "2026-07-27T20:27:10.489035Z"
+    assert a3["completed_at"] == "2026-07-27T20:27:11.954725Z"
 
 
 # ----- Cross-attempt composition (compose_supplemental_metadata_verification) -----

@@ -557,13 +557,202 @@ def test_all_five_counters_are_exact_and_deterministic(tmp_path: Path) -> None:
     }
 
 
-def test_orphan_parent_linkage_still_fails(tmp_path: Path) -> None:
+def _empty_reference_gaps(sample_bound: int = 25) -> dict:
+    return {
+        "orphan_parent_reference_count": 0,
+        "orphan_accepted_reference_count": 0,
+        "orphan_parent_reference_samples": [],
+        "orphan_accepted_reference_samples": [],
+        "sample_bound": sample_bound,
+    }
+
+
+def test_orphan_parent_reference_is_preserved_and_counted(tmp_path: Path) -> None:
+    """A non-empty parentNameUsageID that does not resolve to an archive-local
+    taxonID no longer fails acquisition. The raw value is preserved verbatim
+    and recorded in reference_gaps.orphan_parent_reference_samples."""
     orphan = archive_rows()[0]
     orphan[3] = "taxon:no-such-parent"
-    with pytest.raises(AcquisitionError, match="references an unknown"):
+    report = validate_fixture(
+        write_archive(tmp_path, meta=meta_xml(), core_rows=[orphan]), request(),
+    )
+    assert report["result"] == "passed"
+    gaps = report["reference_gaps"]
+    assert gaps["orphan_parent_reference_count"] == 1
+    assert gaps["orphan_accepted_reference_count"] == 0
+    assert gaps["orphan_parent_reference_samples"] == [
+        {"source_taxon_id": "taxon:accepted",
+         "raw_reference": "taxon:no-such-parent"},
+    ]
+    assert gaps["orphan_accepted_reference_samples"] == []
+    assert report["compiler_ready"] is False
+
+
+def test_orphan_accepted_reference_is_preserved_and_counted(tmp_path: Path) -> None:
+    """A non-empty acceptedNameUsageID that does not resolve is also preserved
+    and counted. Attach the orphan to a synonym row (empty acceptedNameUsageID
+    would still be a hard failure — see test_synonym_still_requires_...)."""
+    # Keep core row id "row-A" so the default vernacular links still resolve.
+    synonym = archive_rows()[0]
+    synonym[1] = "taxon:orphanSynonym"
+    synonym[2] = "taxon:no-such-accepted"
+    synonym[3] = ""
+    synonym[6] = "species"
+    synonym[7] = "synonym"
+    report = validate_fixture(
+        write_archive(tmp_path, meta=meta_xml(), core_rows=[synonym]),
+        request(),
+    )
+    assert report["result"] == "passed"
+    gaps = report["reference_gaps"]
+    assert gaps["orphan_parent_reference_count"] == 0
+    assert gaps["orphan_accepted_reference_count"] == 1
+    assert gaps["orphan_accepted_reference_samples"] == [
+        {"source_taxon_id": "taxon:orphanSynonym",
+         "raw_reference": "taxon:no-such-accepted"},
+    ]
+    assert report["compiler_ready"] is False
+
+
+def test_compiler_ready_true_when_all_references_resolve(tmp_path: Path) -> None:
+    """A fully-linked archive keeps compiler_ready True and reports empty
+    reference_gaps."""
+    report = validate_fixture(write_archive(tmp_path, meta=meta_xml()), request())
+    assert report["result"] == "passed"
+    assert report["reference_gaps"] == _empty_reference_gaps()
+    assert report["compiler_ready"] is True
+
+
+def test_orphan_reference_samples_are_deterministic_and_bounded(tmp_path: Path) -> None:
+    """Two validate_fixture calls on the same archive return byte-identical
+    reference_gaps blocks. Samples are sorted by (source_taxon_id,
+    raw_reference) and capped at sample_bound entries per category."""
+    # Build 30 species rows each with a distinct orphan parentNameUsageID so
+    # the sample_bound of 25 is exercised.
+    core_rows: list[list[str]] = []
+    # Retain a row-A so the default vernacular rows (which link to row-A) do
+    # not orphan. The genus row below is the linkage anchor for the 30 species
+    # rows; each of THOSE has a deliberately orphan parentNameUsageID value.
+    anchor_a = archive_rows()[0][:]
+    core_rows.append(anchor_a)  # row-A
+    genus = archive_rows()[0][:]
+    genus[0] = "row-G"
+    genus[1] = "taxon:realGenus"
+    genus[3] = ""
+    genus[4] = "RealGenus"
+    genus[6] = "genus"
+    genus[10] = "RealGenus"
+    genus[11] = ""
+    core_rows.append(genus)
+    for n in range(30):
+        row = archive_rows()[0][:]
+        row[0] = f"row-{n:02d}"
+        row[1] = f"taxon:sp{n:02d}"
+        row[3] = f"taxon:orphanParent{n:02d}"
+        row[4] = f"RealGenus species{n:02d}"
+        row[10] = "RealGenus"
+        row[11] = f"species{n:02d}"
+        core_rows.append(row)
+    archive = write_archive(tmp_path, meta=meta_xml(), core_rows=core_rows)
+    first = validate_fixture(archive, request())["reference_gaps"]
+    second = validate_fixture(archive, request())["reference_gaps"]
+    assert first == second
+    assert first["orphan_parent_reference_count"] == 30
+    samples = first["orphan_parent_reference_samples"]
+    assert len(samples) == 25  # bounded
+    # Deterministically sorted by (source_taxon_id, raw_reference).
+    for a, b in zip(samples, samples[1:]):
+        key_a = (a["source_taxon_id"], a["raw_reference"])
+        key_b = (b["source_taxon_id"], b["raw_reference"])
+        assert key_a < key_b
+
+
+def test_empty_synonym_accepted_reference_still_fails(tmp_path: Path) -> None:
+    """A synonym with an EMPTY acceptedNameUsageID remains a hard failure —
+    the relaxation applies only to non-empty but unresolved references."""
+    synonym = archive_rows()[0]
+    synonym[1] = "taxon:synonymEmpty"
+    synonym[2] = ""       # empty acceptedNameUsageID
+    synonym[6] = "species"
+    synonym[7] = "synonym"
+    with pytest.raises(AcquisitionError, match="requires acceptedNameUsageID"):
         validate_fixture(
-            write_archive(tmp_path, meta=meta_xml(), core_rows=[orphan]), request(),
+            write_archive(tmp_path, meta=meta_xml(), core_rows=[synonym]), request(),
         )
+
+
+def test_parent_self_reference_still_fails(tmp_path: Path) -> None:
+    row = archive_rows()[0]
+    row[3] = row[1]  # parentNameUsageID == taxonID
+    with pytest.raises(AcquisitionError, match="parentNameUsageID cannot equal"):
+        validate_fixture(
+            write_archive(tmp_path, meta=meta_xml(), core_rows=[row]), request(),
+        )
+
+
+def test_synonym_accepted_self_reference_still_fails(tmp_path: Path) -> None:
+    row = archive_rows()[0]
+    row[2] = row[1]  # acceptedNameUsageID == taxonID
+    row[6] = "species"
+    row[7] = "synonym"
+    with pytest.raises(AcquisitionError, match="acceptedNameUsageID cannot equal"):
+        validate_fixture(
+            write_archive(tmp_path, meta=meta_xml(), core_rows=[row]), request(),
+        )
+
+
+def test_national_source_normalizer_still_refuses_orphan_references(tmp_path: Path) -> None:
+    """The generic normalizer (national_source.normalize_archive) keeps its
+    strict reference-integrity check. Once the archive is retained the
+    failure can be diagnosed offline without a new download."""
+    import national_source
+    orphan = archive_rows()[0]
+    orphan[3] = "taxon:no-such-parent"
+    archive = write_archive(tmp_path, meta=meta_xml(), core_rows=[orphan])
+    profile_dict = {
+        "profile_schema_version": 1,
+        "source_code": "nortaxa",
+        "source_release": {"version": "1.284", "issued_date": "2026-07-17"},
+        "identifier_namespace": "NBIC:",
+        "core": {
+            "row_type": "http://rs.tdwg.org/dwc/terms/Taxon",
+            "location": "data/nonstandard-core.csv",
+            "term_mapping": {
+                "taxonID":                  "http://rs.tdwg.org/dwc/terms/taxonID",
+                "acceptedNameUsageID":      "http://rs.tdwg.org/dwc/terms/acceptedNameUsageID",
+                "parentNameUsageID":        "http://rs.tdwg.org/dwc/terms/parentNameUsageID",
+                "scientificName":           "http://rs.tdwg.org/dwc/terms/scientificName",
+                "scientificNameAuthorship": "http://rs.tdwg.org/dwc/terms/scientificNameAuthorship",
+                "taxonRank":                "http://rs.tdwg.org/dwc/terms/taxonRank",
+                "taxonomicStatus":          "http://rs.tdwg.org/dwc/terms/taxonomicStatus",
+            },
+        },
+        "vernacular": {
+            "row_type": "http://rs.gbif.org/terms/1.0/VernacularName",
+            "location": "names/localized.data",
+            "term_mapping": {
+                "vernacularName": "http://rs.gbif.org/terms/1.0/vernacularName",
+                "language":       "http://rs.tdwg.org/dwc/terms/language",
+                "isPreferredName":"http://rs.gbif.org/terms/1.0/isPreferredName",
+            },
+        },
+        "distribution": {
+            "row_type": "http://rs.tdwg.org/dwc/terms/Distribution",
+            "location": "extra/distribution.tsv",
+            "validation_only": True,
+        },
+        "optional_external_id_terms": [],
+    }
+    profile_path = tmp_path / "profile.json"
+    profile_path.write_text(json.dumps(profile_dict))
+    profile = national_source.load_profile(profile_path)
+    out = tmp_path / "normalized"
+    with pytest.raises(
+        national_source.NationalSourceError,
+        match="parentNameUsageID references unknown",
+    ):
+        national_source.normalize_archive(profile, archive, out)
+    assert not out.exists()
 
 
 # ----- Cross-validator agreement: refresh_nortaxa and national_source -----

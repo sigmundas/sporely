@@ -637,7 +637,10 @@ def validate_fixture(path: Path, request: NorTaxaRequest) -> dict[str, Any]:
                     raise AcquisitionError(f"declared DwC-A file is missing: {table.location}")
             core_ids: set[str] = set()
             taxon_ids: set[str] = set()
-            usage_references: set[tuple[str, str]] = set()
+            # (term, source_taxon_id, raw_reference) recorded per non-empty
+            # reference so orphan classification can happen after taxon_ids
+            # is complete without a second archive pass.
+            usage_references: list[tuple[str, str, str]] = []
             identifier_samples: list[dict[str, str]] = []
             core_count = 0
             species_missing_genus = 0
@@ -669,7 +672,7 @@ def validate_fixture(path: Path, request: NorTaxaRequest) -> dict[str, Any]:
                 for term in ("acceptedNameUsageID", "parentNameUsageID"):
                     reference = row[core.terms[term]].strip()
                     if reference:
-                        usage_references.add((term, reference))
+                        usage_references.append((term, taxon_id, reference))
                 if len(identifier_samples) < 10:
                     sample = {
                         "core_row_id": row_id,
@@ -682,9 +685,46 @@ def validate_fixture(path: Path, request: NorTaxaRequest) -> dict[str, Any]:
                     identifier_samples.append(sample)
             if not core_count:
                 raise AcquisitionError("Taxon core contains no data rows")
-            for term, reference in usage_references:
-                if reference not in taxon_ids:
-                    raise AcquisitionError(f"{term} references an unknown dwc:taxonID")
+            # Reference-integrity is an acquisition/compilation boundary:
+            # a non-empty `parentNameUsageID` or `acceptedNameUsageID` that
+            # does not resolve to an archive-local `dwc:taxonID` is preserved
+            # verbatim and counted here. It never causes acquisition to fail.
+            # A downstream compiler decides whether the resulting taxonomy is
+            # usable; see `compiler_ready` on the returned report.
+            orphan_parent_pairs: set[tuple[str, str]] = set()
+            orphan_accepted_pairs: set[tuple[str, str]] = set()
+            for term, source_taxon_id, reference in usage_references:
+                if reference in taxon_ids:
+                    continue
+                if term == "parentNameUsageID":
+                    orphan_parent_pairs.add((source_taxon_id, reference))
+                else:
+                    orphan_accepted_pairs.add((source_taxon_id, reference))
+            orphan_parent_reference_count = len(orphan_parent_pairs)
+            orphan_accepted_reference_count = len(orphan_accepted_pairs)
+            MAX_ORPHAN_SAMPLES = 25
+
+            def _bounded_samples(pairs: set[tuple[str, str]]) -> list[dict[str, str]]:
+                # Deterministic ordering: sort by (source_taxon_id, raw_reference).
+                return [
+                    {"source_taxon_id": s, "raw_reference": r}
+                    for s, r in sorted(pairs)[:MAX_ORPHAN_SAMPLES]
+                ]
+
+            reference_gaps = {
+                "orphan_parent_reference_count": orphan_parent_reference_count,
+                "orphan_accepted_reference_count": orphan_accepted_reference_count,
+                "orphan_parent_reference_samples": _bounded_samples(orphan_parent_pairs),
+                "orphan_accepted_reference_samples": _bounded_samples(orphan_accepted_pairs),
+                "sample_bound": MAX_ORPHAN_SAMPLES,
+            }
+            # `compiler_ready` is a downstream signal: it is False whenever the
+            # archive passed acquisition/structural validation but contains
+            # unresolved references that the compiler must reconcile or reject.
+            compiler_ready = (
+                orphan_parent_reference_count == 0
+                and orphan_accepted_reference_count == 0
+            )
             counts = {"Taxon": core_count}
             links: dict[str, int] = {}
             vernacular = next(table for table in extensions if table.row_type == VERNACULAR_ROW_TYPE)
@@ -734,6 +774,8 @@ def validate_fixture(path: Path, request: NorTaxaRequest) -> dict[str, Any]:
             "genus_rank_rows_missing_genus": genus_rank_missing_genus,
             "taxon_rows_missing_kingdom": rows_missing_kingdom,
         },
+        "reference_gaps": reference_gaps,
+        "compiler_ready": compiler_ready,
         "linkage": {"distinct_core_row_ids": len(core_ids), "vernacular_rows_by_core_id": links},
         "identifier_contract": {
             "core_row_id": {"index": core.link_index, "role": "archive-local core row key"},
