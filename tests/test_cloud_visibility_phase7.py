@@ -29,7 +29,8 @@ def _init_tombstone_sync_db(tmp_path):
             synced_at TEXT,
             folder_path TEXT,
             artsdata_id INTEGER,
-            publish_target TEXT
+            publish_target TEXT,
+            spore_data_visibility TEXT DEFAULT 'public'
         );
         CREATE TABLE images (
             id INTEGER PRIMARY KEY AUTOINCREMENT,
@@ -133,6 +134,7 @@ class _PushAllImageClient(cloud_sync.SporelyCloudClient):
         self.measurement_push_calls: list[tuple[int, str]] = []
         self.delete_calls: list[str] = []
         self.storage_remove_calls: list[list[str]] = []
+        self.patch_calls: list[tuple[str, dict]] = []
 
     def push_observation(self, obs, remote_obs=None, **kwargs):
         return "cloud-obs-1"
@@ -251,6 +253,17 @@ class _PushAllImageClient(cloud_sync.SporelyCloudClient):
 
     def _storage_remove(self, paths: list[str]) -> None:
         self.storage_remove_calls.append([str(path) for path in paths])
+
+    def _patch(self, path: str, payload: dict):
+        body = dict(payload or {})
+        self.patch_calls.append((str(path), body))
+        if str(path).startswith("observation_images?id=eq."):
+            cloud_id = str(path).split("observation_images?id=eq.", 1)[1].split("&", 1)[0]
+            for row in self.remote_images:
+                if str(row.get("id") or "") == cloud_id:
+                    row.update(body)
+                    return None
+        return None
 
 
 def _seed_existing_cloud_media_observation(db_path, image_path: Path) -> None:
@@ -625,6 +638,11 @@ def _setup_push_all_tombstone_cleanup_case(
             """,
             ("cloud-image-11", "2026-05-01 10:10:00", 1, 11),
         )
+        if include_deleted_measurement:
+            conn.execute(
+                "INSERT INTO settings (key, value) VALUES (?, ?)",
+                ("artsobs_publish_excluded_image_ids_1", "[11]"),
+            )
         conn.commit()
     finally:
         conn.close()
@@ -1021,6 +1039,7 @@ def test_push_pending_image_tombstones_marks_delete_synced_at(monkeypatch, tmp_p
         conn.close()
 
     monkeypatch.setattr(models, "get_connection", lambda: sqlite3.connect(db_path))
+    monkeypatch.setattr(cloud_sync, "get_connection", lambda: sqlite3.connect(db_path))
 
     calls = []
 
@@ -1061,6 +1080,7 @@ def test_push_pending_image_tombstones_leaves_delete_synced_at_null_on_failure(m
         conn.close()
 
     monkeypatch.setattr(models, "get_connection", lambda: sqlite3.connect(db_path))
+    monkeypatch.setattr(cloud_sync, "get_connection", lambda: sqlite3.connect(db_path))
 
     class DummyClient:
         def soft_delete_image(self, cloud_image_id, deleted_at):
@@ -2659,15 +2679,162 @@ def test_push_all_skips_image_prep_for_deleted_image_measurement_cleanup(
     assert result["pushed"] == 1
     assert result["errors"] == []
     assert ctx.client.upload_image_calls == []
-    assert ctx.client.measurement_push_calls == []
-    assert ctx.client.soft_delete_calls and ctx.client.soft_delete_calls[0][0] == "cloud-image-11"
-    assert tombstone_row is not None and tombstone_row[0] is not None
+    assert ctx.client.measurement_push_calls == [(21, "cloud-image-11")]
+    assert ctx.client.soft_delete_calls == []
+    assert tombstone_row is None
+    protected = next(
+        row for row in ctx.client.remote_images
+        if row["id"] == "cloud-image-11"
+    )
+    assert protected["storage_path"] is None
+    assert protected["original_storage_path"] is None
+    assert ctx.client.storage_remove_calls
     assert "image prep diagnostics" in output
-    assert "decision=metadata-only image sync" in output
-    assert "tombstone_aware_signature_matched=True" in output
-    assert any("reason=tombstone_only" in message for message in ctx.progress_messages)
-    assert "skipped cloud measurement 21 because cloud image cloud-image-11 has a local tombstone" in output
+    assert "Cancelled tombstone for microscope image 11" in output
     assert "measurements pushed" in output
+
+
+def test_metadata_anchor_repairs_stale_local_image_cloud_id(monkeypatch, tmp_path):
+    db_path = _init_push_all_sync_db(tmp_path)
+    with sqlite3.connect(db_path) as conn:
+        conn.execute(
+            "INSERT INTO observations (id, cloud_id, spore_data_visibility) VALUES (1, ?, 'public')",
+            ("cloud-obs-1",),
+        )
+        conn.execute(
+            """
+            INSERT INTO images (id, observation_id, cloud_id, filepath, image_type)
+            VALUES (11, 1, 'stale-image-id', ?, 'microscope')
+            """,
+            (str(tmp_path / "unchecked.jpg"),),
+        )
+        conn.execute(
+            """
+            INSERT INTO spore_measurements
+                (id, image_id, length_um, width_um, measurement_type)
+            VALUES (21, 11, 10.0, 5.0, 'spore')
+            """
+        )
+        conn.execute(
+            "INSERT INTO settings (key, value) VALUES (?, '[11]')",
+            ("artsobs_publish_excluded_image_ids_1",),
+        )
+    monkeypatch.setattr(cloud_sync, "get_connection", lambda: sqlite3.connect(db_path))
+    monkeypatch.setattr(models, "get_connection", lambda: sqlite3.connect(db_path))
+    client = _PushAllImageClient(
+        remote_images=[{
+            "id": "repaired-image-id",
+            "observation_id": "cloud-obs-1",
+            "desktop_id": 11,
+            "image_type": "microscope",
+            "storage_path": None,
+            "original_storage_path": None,
+            "deleted_at": None,
+        }],
+    )
+
+    result = cloud_sync._ensure_metadata_only_microscope_images_for_observation(
+        client, 1, "cloud-obs-1",
+    )
+
+    with sqlite3.connect(db_path) as conn:
+        local_cloud_id = conn.execute(
+            "SELECT cloud_id FROM images WHERE id = 11"
+        ).fetchone()[0]
+    assert result["cloud_ids"] == ["repaired-image-id"]
+    assert local_cloud_id == "repaired-image-id"
+    assert client.upload_image_calls == []
+
+
+def test_observation_435_fixture_repairs_47_unchecked_spores(monkeypatch, tmp_path):
+    """Database regression: stale ids on 47 spores across unchecked sources."""
+    db_path = _init_push_all_sync_db(tmp_path)
+    image_ids = (1276, 1283)
+    with sqlite3.connect(db_path) as conn:
+        conn.execute(
+            "INSERT INTO observations (id, cloud_id, spore_data_visibility) VALUES (435, '730', 'public')"
+        )
+        for image_id in image_ids:
+            conn.execute(
+                """
+                INSERT INTO images (id, observation_id, cloud_id, filepath, image_type, sort_order)
+                VALUES (?, 435, ?, ?, 'microscope', ?)
+                """,
+                (
+                    image_id,
+                    f"stale-image-{image_id}",
+                    str(tmp_path / f"unchecked-{image_id}.jpg"),
+                    image_id,
+                ),
+            )
+        for offset in range(47):
+            image_id = image_ids[offset % 2]
+            conn.execute(
+                """
+                INSERT INTO spore_measurements
+                    (id, image_id, cloud_id, length_um, width_um, measurement_type,
+                     p1_x, p1_y, p2_x, p2_y, p3_x, p3_y, p4_x, p4_y)
+                VALUES (?, ?, ?, 10.0, 5.0, 'spore', 1, 1, 11, 1, 1, 6, 11, 6)
+                """,
+                (1000 + offset, image_id, f"stale-measure-{offset}"),
+            )
+        conn.execute(
+            "INSERT INTO settings (key, value) VALUES (?, ?)",
+            ("artsobs_publish_excluded_image_ids_435", json.dumps(list(image_ids))),
+        )
+    monkeypatch.setattr(cloud_sync, "get_connection", lambda: sqlite3.connect(db_path))
+    monkeypatch.setattr(models, "get_connection", lambda: sqlite3.connect(db_path))
+
+    class RepairClient(_PushAllImageClient):
+        def _post(self, path, payload):
+            assert path == "observation_images"
+            row = dict(payload)
+            row["id"] = f"anchor-{payload['desktop_id']}"
+            self.remote_images.append(row)
+            return [row]
+
+        def _get(self, path):
+            return []
+
+        def push_measurement(self, meas, cloud_image_id, remote_measurement_cache=None):
+            existing = (remote_measurement_cache or {}).get(
+                f"desktop:{int(meas['id'])}"
+            )
+            if existing:
+                return str(existing.get("id"))
+            cloud_id = f"measure-{meas['id']}"
+            self.measurement_push_calls.append((int(meas["id"]), str(cloud_image_id)))
+            self.remote_measurements.append({
+                "id": cloud_id,
+                "desktop_id": int(meas["id"]),
+                "image_id": str(cloud_image_id),
+            })
+            return cloud_id
+
+    client = RepairClient()
+    cloud_sync._push_measurements_for_observation(client, 435)
+
+    with sqlite3.connect(db_path) as conn:
+        image_links = dict(conn.execute("SELECT id, cloud_id FROM images WHERE observation_id = 435"))
+        measurement_links = conn.execute(
+            "SELECT cloud_id FROM spore_measurements ORDER BY id"
+        ).fetchall()
+    remote_image_ids = {str(row["id"]) for row in client.remote_images}
+    assert len(client.remote_images) == 2
+    assert all(row["storage_path"] is None for row in client.remote_images)
+    assert client.upload_image_calls == []
+    assert len(client.remote_measurements) == 47
+    assert all(row["image_id"] in remote_image_ids for row in client.remote_measurements)
+    assert set(image_links.values()) == remote_image_ids
+    assert all(str(row[0]).startswith("measure-") for row in measurement_links)
+
+    # A repeated repair validates and reuses both anchors and measurements.
+    first_image_count = len(client.remote_images)
+    first_measurement_count = len(client.remote_measurements)
+    client.measurement_push_calls.clear()
+    cloud_sync._push_measurements_for_observation(client, 435)
+    assert len(client.remote_images) == first_image_count
+    assert len(client.remote_measurements) == first_measurement_count
 
 
 def test_get_conflict_detail_ignores_file_size_differences(monkeypatch):

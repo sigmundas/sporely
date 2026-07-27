@@ -4916,6 +4916,28 @@ def _push_pending_image_tombstones(client: "SporelyCloudClient") -> list[str]:
         cloud_image_id = str(tombstone.get('deleted_cloud_id') or '').strip()
         if not cloud_image_id:
             continue
+        local_image_id = _safe_int(tombstone.get('local_image_id'))
+        if (
+            local_image_id > 0
+            and microscope_image_requires_public_spore_anchor(local_image_id)
+        ):
+            try:
+                ImageDB.clear_image_tombstone_by_deleted_cloud_id(cloud_image_id)
+            except Exception as exc:
+                warning = (
+                    f"obs {int(tombstone.get('local_observation_id') or 0)}: "
+                    f"could not cancel protected microscope anchor tombstone "
+                    f"{cloud_image_id}: {exc}"
+                )
+                warnings.append(warning)
+                print(f'[cloud_sync] Warning: {warning}')
+            else:
+                print(
+                    f'[cloud_sync] Cancelled tombstone for microscope image '
+                    f'{local_image_id}: public spore metadata anchor required',
+                    flush=True,
+                )
+            continue
         deleted_at = str(tombstone.get('deleted_at') or '').strip() or datetime.now(timezone.utc).isoformat()
         try:
             client.soft_delete_image(cloud_image_id, deleted_at)
@@ -7337,6 +7359,47 @@ def _cloud_publish_excluded_image_ids(observation_id: int | None) -> set[int]:
     return set()
 
 
+def microscope_image_requires_public_spore_anchor(image_id: int | None) -> bool:
+    """Return whether one local image must retain a public metadata anchor.
+
+    This is the shared local eligibility predicate used by checkbox/tombstone
+    handling, normal sync, and the explicit mosaic backfill. It intentionally
+    mirrors the established public mosaic measurement gate: the observation's
+    spore data is public, the parent is a microscope image, both dimensions are
+    present, and the measurement category is a spore category.
+    """
+    local_image_id = _safe_int(image_id)
+    if local_image_id <= 0:
+        return False
+    conn = get_connection()
+    try:
+        cursor = conn.execute(
+            """
+            SELECT EXISTS (
+                SELECT 1
+                FROM images i
+                JOIN observations o ON o.id = i.observation_id
+                JOIN spore_measurements m ON m.image_id = i.id
+                WHERE i.id = ?
+                  AND i.image_type = 'microscope'
+                  AND lower(COALESCE(o.spore_data_visibility, 'public')) = 'public'
+                  AND m.length_um IS NOT NULL
+                  AND m.width_um IS NOT NULL
+                  AND (
+                    m.measurement_type IS NULL
+                    OR m.measurement_type = ''
+                    OR lower(m.measurement_type) IN ('manual', 'spore', 'spores')
+                  )
+            )
+            """,
+            (local_image_id,),
+        )
+        row = cursor.fetchone()
+        return bool(row and int(row[0] or 0))
+    finally:
+        conn.close()
+
+
 def _cloud_explicit_media_upload_selection(observation_id: int | None) -> set[int]:
     """Microscope image ids whose publish checkbox has an initialized checked state.
 
@@ -9670,12 +9733,6 @@ def resolve_conflict_keep_local(
             mark_observation_dirty(int(local_id))
             raise CloudSyncError(f'Could not fully upload images for observation {local_id}')
 
-    _ensure_metadata_anchors_for_public_spore_observation(
-        client,
-        local_obs,
-        int(local_id),
-        cloud_id,
-    )
     _push_measurements_for_observation(client, int(local_id))
     try:
         _push_spore_mosaic_for_observation(client, int(local_id), cloud_id)
@@ -12449,9 +12506,6 @@ def push_all(
                         ),
                         progress_state,
                     )
-                    _ensure_metadata_anchors_for_public_spore_observation(
-                        client, obs, local_obs_id, cloud_id,
-                    )
                     try:
                         _push_measurements_for_observation(client, local_obs_id)
                     except Exception as e:
@@ -13240,6 +13294,17 @@ def _push_images_for_observation(
 ) -> bool:
     """Push selected observation images for one observation."""
     warnings: list[str] = []
+    anchor_result = _ensure_metadata_anchors_for_public_spore_observation(
+        client,
+        obs,
+        _safe_int(obs.get('id')),
+        str(obs_cloud_id or '').strip(),
+    ) or {}
+    protected_anchor_cloud_ids = {
+        str(value or '').strip()
+        for value in (anchor_result.get('cloud_ids') or [])
+        if str(value or '').strip()
+    }
     warnings.extend(_push_pending_image_tombstones(client))
     prepared_items: list[dict] = []
     cleanup = None
@@ -13249,7 +13314,7 @@ def _push_images_for_observation(
     # before any temporary WebP candidate is encoded for them. Reused by the
     # main upload loop below to avoid a second metadata fetch.
     prepass_existing_rows: list[dict] | None = None
-    prepass_kept_cloud_ids: set[str] = set()
+    prepass_kept_cloud_ids: set[str] = set(protected_anchor_cloud_ids)
     skip_prepare_image_ids: set[int] = set()
     if callable(prepare_images_cb):
         try:
@@ -13262,8 +13327,12 @@ def _push_images_for_observation(
             )
             prepass_existing_rows = None
         if prepass_existing_rows is not None:
-            skip_prepare_image_ids, prepass_kept_cloud_ids = _associate_persisted_cloud_images(
+            associated_skip_ids, associated_kept_cloud_ids = _associate_persisted_cloud_images(
                 client, obs, prepass_existing_rows
+            )
+            skip_prepare_image_ids = skip_prepare_image_ids | associated_skip_ids
+            prepass_kept_cloud_ids = (
+                prepass_kept_cloud_ids | associated_kept_cloud_ids
             )
             # Also skip WebP prep for sibling images that are already linked
             # and whose local bytes haven't changed since last sync. Their
@@ -13294,7 +13363,14 @@ def _push_images_for_observation(
             preparation_failed = True
     else:
         images = ImageDB.get_images_for_observation(obs['id'])
+        excluded_image_ids = _cloud_publish_excluded_image_ids(obs['id'])
         for img in images:
+            local_image_id = _safe_int(img.get('id'))
+            if local_image_id in excluded_image_ids:
+                # An unchecked microscope image may still have a protected
+                # metadata-only row for its public measurements, but its
+                # source bytes must never enter the fallback upload path.
+                continue
             if img.get('image_type') == 'microscope' and not img.get('cloud_id'):
                 continue
             prepared_items.append({
@@ -13775,7 +13851,8 @@ _METADATA_ONLY_IMG_FIELDS = [
     'sort_order', 'image_type', 'micro_category', 'objective_name',
     'calibration_uuid',
     'scale_microns_per_pixel', 'resample_scale_factor',
-    'mount_medium', 'stain', 'sample_type', 'contrast', 'measure_color',
+    'mount_medium', 'stain', 'sample_type', 'sample_source',
+    'contrast', 'measure_color',
     'crop_mode', 'notes',
     'gps_source',
     'ai_crop_x1', 'ai_crop_y1', 'ai_crop_x2', 'ai_crop_y2',
@@ -13783,11 +13860,154 @@ _METADATA_ONLY_IMG_FIELDS = [
 ]
 
 
+def _metadata_only_microscope_image_payload(
+    client: 'SporelyCloudClient',
+    obs_cloud_id: str,
+    image_row: dict,
+) -> dict:
+    row = dict(image_row or {})
+    local_image_id = _safe_int(row.get('id'))
+    payload = {
+        field: row.get(field)
+        for field in _METADATA_ONLY_IMG_FIELDS
+        if field in row
+    }
+    calibration_uuid = _image_calibration_uuid(row)
+    if calibration_uuid:
+        payload['calibration_uuid'] = calibration_uuid
+    else:
+        payload.pop('calibration_uuid', None)
+    payload.update({
+        'image_type': 'microscope',
+        'storage_path': None,
+        'observation_id': obs_cloud_id,
+        'user_id': client.user_id,
+        'desktop_id': local_image_id,
+        'original_filename': (
+            str(row.get('original_filename') or '').strip()
+            or Path(str(row.get('filepath') or '')).name
+            or None
+        ),
+    })
+    if payload.get('gps_source') is not None:
+        payload['gps_source'] = bool(payload['gps_source'])
+    if hasattr(client, '_observation_images_support_ai_crop'):
+        try:
+            if not client._observation_images_support_ai_crop():
+                for key in (
+                    'ai_crop_x1', 'ai_crop_y1', 'ai_crop_x2', 'ai_crop_y2',
+                    'ai_crop_source_w', 'ai_crop_source_h',
+                ):
+                    payload.pop(key, None)
+        except Exception:
+            pass
+    if hasattr(client, '_observation_images_support_ai_crop_custom'):
+        try:
+            if not client._observation_images_support_ai_crop_custom():
+                payload.pop('ai_crop_is_custom', None)
+        except Exception:
+            pass
+    return payload
+
+
+def _cancel_microscope_anchor_tombstones(
+    local_image_id: int,
+    *cloud_image_ids: str,
+) -> None:
+    tombstones = get_image_tombstones_by_local_image_id([local_image_id])
+    ids = {
+        str(value or '').strip()
+        for value in cloud_image_ids
+        if str(value or '').strip()
+    }
+    local_tombstone = tombstones.get(int(local_image_id))
+    if local_tombstone:
+        local_cloud_id = str(local_tombstone.get('deleted_cloud_id') or '').strip()
+        if local_cloud_id:
+            ids.add(local_cloud_id)
+    for cloud_image_id in ids:
+        ImageDB.clear_image_tombstone_by_deleted_cloud_id(cloud_image_id)
+
+
+def _remote_image_row_matches_anchor_payload(
+    remote_row: dict,
+    payload: dict,
+    *,
+    metadata_only: bool,
+) -> bool:
+    remote = dict(remote_row or {})
+    for field in _METADATA_ONLY_IMG_FIELDS:
+        if field not in payload:
+            continue
+        remote_value = remote.get(field)
+        payload_value = payload.get(field)
+        if (
+            isinstance(remote_value, (int, float))
+            and not isinstance(remote_value, bool)
+            and isinstance(payload_value, (int, float))
+            and not isinstance(payload_value, bool)
+        ):
+            if math.isclose(
+                float(remote_value),
+                float(payload_value),
+                rel_tol=1e-9,
+                abs_tol=1e-12,
+            ):
+                continue
+        if _normalize_snapshot_value(remote_value) != _normalize_snapshot_value(payload_value):
+            return False
+    if str(remote.get('image_type') or '').strip().lower() != 'microscope':
+        return False
+    if _safe_int(remote.get('desktop_id')) != _safe_int(payload.get('desktop_id')):
+        return False
+    if str(remote.get('deleted_at') or '').strip():
+        return False
+    if metadata_only:
+        if _normalize_cloud_media_key(remote.get('storage_path')):
+            return False
+        if _normalize_cloud_media_key(remote.get('original_storage_path')):
+            return False
+    return True
+
+
+def _transition_remote_microscope_to_metadata_only(
+    client: 'SporelyCloudClient',
+    remote_row: dict,
+    payload: dict,
+) -> None:
+    remote = dict(remote_row or {})
+    cloud_image_id = str(remote.get('id') or '').strip()
+    if not cloud_image_id:
+        return
+    storage_paths = [
+        value
+        for value in (
+            _normalize_cloud_media_key(remote.get('storage_path')),
+            _normalize_cloud_media_key(remote.get('original_storage_path')),
+        )
+        if value
+    ]
+    if storage_paths:
+        client._storage_remove(storage_paths)
+    patch_payload = dict(payload)
+    patch_payload.pop('observation_id', None)
+    patch_payload.pop('user_id', None)
+    patch_payload['storage_path'] = None
+    patch_payload['original_storage_path'] = None
+    patch_payload['deleted_at'] = None
+    client._patch(
+        f'observation_images?id=eq.{cloud_image_id}&user_id=eq.{client.user_id}',
+        patch_payload,
+    )
+
+
 def _ensure_metadata_only_microscope_image_for_public_spores(
     client: 'SporelyCloudClient',
     obs_local_id: int,
     obs_cloud_id: str,
     image_row: dict,
+    *,
+    remote_images: list[dict] | None = None,
 ) -> str | None:
     """Create or reuse a metadata-only cloud row for a microscope image.
 
@@ -13807,9 +14027,9 @@ def _ensure_metadata_only_microscope_image_for_public_spores(
       the measurement_type is one of NULL/''/'manual'/'spore'/'spores')
       get an anchor. This avoids polluting the cloud with anchors that
       can never contribute to public sporePoints.
-    * Idempotent — if the local row already has a ``cloud_id``, it is
-      returned unchanged. If the remote has a row by ``desktop_id``, we
-      reconcile the local cloud_id and return the existing id.
+    * Idempotent — local ``cloud_id`` values are validated against the
+      current remote rows. A row matching ``desktop_id`` is reused; stale
+      local ids are cleared and replaced with a repaired anchor id.
     * Never uploads image bytes. Never calls ``upload_image_file`` or
       the R2 client — the caller can guarantee "no full microscope
       source uploads" simply by using this helper.
@@ -13845,36 +14065,7 @@ def _ensure_metadata_only_microscope_image_for_public_spores(
         )
         return None
 
-    existing_local_cloud_id = str(row.get('cloud_id') or '').strip()
-    if existing_local_cloud_id:
-        print(
-            f'[cloud_sync] Mosaic image metadata: linked '
-            f'local_image={local_image_id} cloud_image={existing_local_cloud_id}',
-            flush=True,
-        )
-        return existing_local_cloud_id
-
-    conn = get_connection()
-    try:
-        cursor = conn.execute(
-            """
-            SELECT COUNT(*) FROM spore_measurements
-            WHERE image_id = ?
-              AND length_um IS NOT NULL
-              AND width_um  IS NOT NULL
-              AND (
-                measurement_type IS NULL
-                OR measurement_type = ''
-                OR lower(measurement_type) IN ('manual', 'spore', 'spores')
-              )
-            """,
-            (local_image_id,),
-        )
-        public_spore_count = int(cursor.fetchone()[0] or 0)
-    finally:
-        conn.close()
-
-    if public_spore_count <= 0:
+    if not microscope_image_requires_public_spore_anchor(local_image_id):
         print(
             f'[cloud_sync] Mosaic image metadata: skip '
             f'local_image={local_image_id} reason=no_public_spore_measurements',
@@ -13893,66 +14084,123 @@ def _ensure_metadata_only_microscope_image_for_public_spores(
             flush=True,
         )
 
-    # Reuse a remote row by desktop_id so a lost local cloud_id doesn't
-    # produce a duplicate observation_images row.
-    try:
-        remote_cloud_id = client._find_cloud_image(local_image_id)
-    except Exception as exc:
-        if is_cloud_auth_error(exc) or is_cloud_temporary_unavailable_error(exc):
-            raise
-        print(
-            f'[cloud_sync] Mosaic image metadata: lookup failed '
-            f'local_image={local_image_id}: {exc}',
-            flush=True,
-        )
-        remote_cloud_id = None
+    existing_local_cloud_id = str(row.get('cloud_id') or '').strip()
+    remote_rows = [dict(remote or {}) for remote in (remote_images or [])]
+    if remote_images is None:
+        puller = getattr(client, 'pull_image_metadata', None)
+        if callable(puller):
+            try:
+                remote_rows = [
+                    dict(remote or {})
+                    for remote in (
+                        puller(obs_cloud_id, include_deleted_for_sync=True) or []
+                    )
+                ]
+            except TypeError:
+                remote_rows = [
+                    dict(remote or {})
+                    for remote in (puller(obs_cloud_id) or [])
+                ]
+        elif hasattr(client, '_find_cloud_image'):
+            try:
+                remote_cloud_id = client._find_cloud_image(local_image_id)
+            except Exception as exc:
+                if is_cloud_auth_error(exc) or is_cloud_temporary_unavailable_error(exc):
+                    raise
+                print(
+                    f'[cloud_sync] Mosaic image metadata: lookup failed '
+                    f'local_image={local_image_id}: {exc}',
+                    flush=True,
+                )
+            else:
+                if remote_cloud_id:
+                    remote_rows = [{
+                        'id': str(remote_cloud_id),
+                        'desktop_id': local_image_id,
+                        'observation_id': obs_cloud_id,
+                        'image_type': 'microscope',
+                        'storage_path': None,
+                        'deleted_at': None,
+                    }]
 
-    if remote_cloud_id:
-        _reconcile_local_image_cloud_id(local_image_id, remote_cloud_id, mark_synced=True)
+    remote_by_id = {
+        str(remote.get('id') or '').strip(): remote
+        for remote in remote_rows
+        if str(remote.get('id') or '').strip()
+    }
+    remote_by_desktop_id = {
+        _safe_int(remote.get('desktop_id')): remote
+        for remote in remote_rows
+        if _safe_int(remote.get('desktop_id')) > 0
+    }
+    remote_row = remote_by_desktop_id.get(local_image_id)
+    if remote_row is None and existing_local_cloud_id:
+        candidate = remote_by_id.get(existing_local_cloud_id)
+        if (
+            candidate
+            and str(candidate.get('observation_id') or '').strip() == str(obs_cloud_id)
+            and _safe_int(candidate.get('desktop_id')) in {0, local_image_id}
+        ):
+            remote_row = candidate
+
+    payload = _metadata_only_microscope_image_payload(
+        client, obs_cloud_id, row,
+    )
+    metadata_only = local_image_id in _cloud_publish_excluded_image_ids(obs_local_id)
+
+    if remote_row:
+        remote_cloud_id = str(remote_row.get('id') or '').strip()
+        _cancel_microscope_anchor_tombstones(
+            local_image_id, existing_local_cloud_id, remote_cloud_id,
+        )
+        _reconcile_local_image_cloud_id(
+            local_image_id, remote_cloud_id, mark_synced=True,
+        )
+        if metadata_only:
+            if not _remote_image_row_matches_anchor_payload(
+                remote_row, payload, metadata_only=True,
+            ):
+                _transition_remote_microscope_to_metadata_only(
+                    client, remote_row, payload,
+                )
+                print(
+                    f'[cloud_sync] Mosaic image metadata: converted '
+                    f'local_image={local_image_id} cloud_image={remote_cloud_id} '
+                    f'to storage_path=NULL',
+                    flush=True,
+                )
+        elif str(remote_row.get('deleted_at') or '').strip():
+            client._patch(
+                f'observation_images?id=eq.{remote_cloud_id}'
+                f'&user_id=eq.{client.user_id}',
+                {'deleted_at': None},
+            )
         print(
             f'[cloud_sync] Mosaic image metadata: linked '
-            f'local_image={local_image_id} cloud_image={remote_cloud_id} (reused)',
+            f'local_image={local_image_id} cloud_image={remote_cloud_id} (validated)',
             flush=True,
         )
-        return str(remote_cloud_id)
+        return remote_cloud_id
 
-    payload: dict = {}
-    for field in _METADATA_ONLY_IMG_FIELDS:
-        if field in row:
-            payload[field] = row.get(field)
-    calibration_uuid = _image_calibration_uuid(row)
-    if calibration_uuid:
-        payload['calibration_uuid'] = calibration_uuid
-    else:
-        payload.pop('calibration_uuid', None)
-    payload['image_type'] = 'microscope'
-    payload['storage_path'] = None
-    payload['observation_id'] = obs_cloud_id
-    payload['user_id'] = client.user_id
-    payload['desktop_id'] = local_image_id
-    payload['original_filename'] = (
-        str(row.get('original_filename') or '').strip()
-        or Path(str(row.get('filepath') or '')).name
-        or None
-    )
-    if payload.get('gps_source') is not None:
-        payload['gps_source'] = bool(payload['gps_source'])
-    if hasattr(client, '_observation_images_support_ai_crop'):
+    if existing_local_cloud_id:
+        conn = get_connection()
         try:
-            if not client._observation_images_support_ai_crop():
-                for key in (
-                    'ai_crop_x1', 'ai_crop_y1', 'ai_crop_x2', 'ai_crop_y2',
-                    'ai_crop_source_w', 'ai_crop_source_h',
-                ):
-                    payload.pop(key, None)
-        except Exception:
-            pass
-    if hasattr(client, '_observation_images_support_ai_crop_custom'):
-        try:
-            if not client._observation_images_support_ai_crop_custom():
-                payload.pop('ai_crop_is_custom', None)
-        except Exception:
-            pass
+            conn.execute(
+                'UPDATE images SET cloud_id = NULL, synced_at = NULL WHERE id = ?',
+                (local_image_id,),
+            )
+            conn.commit()
+        finally:
+            conn.close()
+        _clear_cloud_image_file_signature(obs_local_id, local_image_id)
+        _cancel_microscope_anchor_tombstones(
+            local_image_id, existing_local_cloud_id,
+        )
+        print(
+            f'[cloud_sync] Mosaic image metadata: stale local link '
+            f'local_image={local_image_id} cloud_image={existing_local_cloud_id}',
+            flush=True,
+        )
 
     print(
         f'[cloud_sync] Mosaic image metadata: create '
@@ -13976,6 +14224,9 @@ def _ensure_metadata_only_microscope_image_for_public_spores(
         )
         return None
 
+    _cancel_microscope_anchor_tombstones(
+        local_image_id, existing_local_cloud_id, cloud_image_id,
+    )
     _reconcile_local_image_cloud_id(local_image_id, cloud_image_id, mark_synced=True)
     print(
         f'[cloud_sync] Mosaic image metadata: linked '
@@ -13992,14 +14243,20 @@ def _ensure_metadata_only_microscope_images_for_observation(
 ) -> dict:
     """Loop wrapper around ``_ensure_metadata_only_microscope_image_for_public_spores``.
 
-    Walks every local microscope image on the observation that is missing
-    a ``cloud_id`` and tries to establish a metadata-only anchor for it.
+    Walks every local microscope image on the observation and validates or
+    establishes the cloud anchor required by its public measurements.
     Non-fatal per-image failures are logged and counted, but do not stop
     the loop. Auth / temporary errors propagate so the backfill aborts.
     Returns a counters dict with ``considered``, ``created``, ``linked``,
     ``skipped``, ``failed``.
     """
-    counters = {'considered': 0, 'ensured': 0, 'skipped': 0, 'failed': 0}
+    counters = {
+        'considered': 0,
+        'ensured': 0,
+        'skipped': 0,
+        'failed': 0,
+        'cloud_ids': [],
+    }
     if not obs_cloud_id:
         return counters
     conn = get_connection()
@@ -14007,17 +14264,10 @@ def _ensure_metadata_only_microscope_images_for_observation(
     try:
         cursor = conn.execute(
             """
-            SELECT id, observation_id, filepath, original_filepath,
-                   cloud_id, sort_order, image_type, micro_category,
-                   objective_name, scale_microns_per_pixel,
-                   resample_scale_factor, mount_medium, stain, sample_type,
-                   contrast, measure_color, crop_mode, notes, gps_source,
-                   ai_crop_x1, ai_crop_y1, ai_crop_x2, ai_crop_y2,
-                   ai_crop_source_w, ai_crop_source_h, ai_crop_is_custom
+            SELECT *
             FROM images
             WHERE observation_id = ?
               AND image_type = 'microscope'
-              AND (cloud_id IS NULL OR cloud_id = '')
             ORDER BY id
             """,
             (obs_local_id,),
@@ -14026,12 +14276,35 @@ def _ensure_metadata_only_microscope_images_for_observation(
     finally:
         conn.close()
 
+    if not rows:
+        return counters
+
+    puller = getattr(client, 'pull_image_metadata', None)
+    remote_images: list[dict] = []
+    if callable(puller):
+        try:
+            remote_images = [
+                dict(row or {})
+                for row in (
+                    puller(obs_cloud_id, include_deleted_for_sync=True) or []
+                )
+            ]
+        except TypeError:
+            remote_images = [
+                dict(row or {})
+                for row in (puller(obs_cloud_id) or [])
+            ]
+
     for image_row in rows:
         counters['considered'] += 1
         local_image_id = _safe_int(image_row.get('id'))
         try:
             result = _ensure_metadata_only_microscope_image_for_public_spores(
-                client, obs_local_id, obs_cloud_id, image_row,
+                client,
+                obs_local_id,
+                obs_cloud_id,
+                image_row,
+                remote_images=remote_images,
             )
         except Exception as exc:
             if is_cloud_auth_error(exc) or is_cloud_temporary_unavailable_error(exc):
@@ -14045,6 +14318,7 @@ def _ensure_metadata_only_microscope_images_for_observation(
             continue
         if result:
             counters['ensured'] += 1
+            counters['cloud_ids'].append(str(result))
         else:
             counters['skipped'] += 1
 
@@ -14056,7 +14330,7 @@ def _ensure_metadata_anchors_for_public_spore_observation(
     obs: dict,
     obs_local_id: int,
     obs_cloud_id: str,
-) -> None:
+) -> dict:
     """Public spore pre-step: create metadata-only microscope image anchors.
 
     Runs immediately before the normal-sync measurement push for any
@@ -14068,15 +14342,22 @@ def _ensure_metadata_anchors_for_public_spore_observation(
     per-image errors are logged (already inside the helper) and the
     per-observation wrapper's own catch keeps sync moving.
     """
+    empty = {
+        'considered': 0,
+        'ensured': 0,
+        'skipped': 0,
+        'failed': 0,
+        'cloud_ids': [],
+    }
     if obs_local_id <= 0 or not obs_cloud_id:
-        return
+        return empty
     visibility = str(
         (obs or {}).get('spore_data_visibility') or 'public'
     ).strip().lower()
     if visibility != 'public':
-        return
+        return empty
     try:
-        _ensure_metadata_only_microscope_images_for_observation(
+        return _ensure_metadata_only_microscope_images_for_observation(
             client, obs_local_id, obs_cloud_id,
         )
     except Exception as exc:
@@ -14087,6 +14368,7 @@ def _ensure_metadata_anchors_for_public_spore_observation(
             f'local={obs_local_id} cloud={obs_cloud_id}: {exc}',
             flush=True,
         )
+        return empty
 
 
 def _push_measurements_for_observation(
@@ -14100,6 +14382,24 @@ def _push_measurements_for_observation(
     still exist locally are cleaned up.
     """
     push_start = _cloud_sync_perf_counter()
+    conn = get_connection()
+    conn.row_factory = __import__('sqlite3').Row
+    try:
+        observation_row = conn.execute(
+            'SELECT * FROM observations WHERE id = ?',
+            (int(obs_local_id),),
+        ).fetchone()
+    finally:
+        conn.close()
+    if observation_row is not None:
+        observation = dict(observation_row)
+        _ensure_metadata_anchors_for_public_spore_observation(
+            client,
+            observation,
+            int(obs_local_id),
+            str(observation.get('cloud_id') or '').strip(),
+        )
+
     conn = get_connection()
     conn.row_factory = __import__('sqlite3').Row
     try:
@@ -14154,6 +14454,60 @@ def _push_measurements_for_observation(
             }
         ),
     )
+
+    stale_link_candidates = [
+        meas
+        for meas in measurements
+        if str(meas.get('cloud_id') or '').strip()
+        and f"cloud:{str(meas.get('cloud_id') or '').strip()}" not in remote_measurement_cache
+        and f"desktop:{_safe_int(meas.get('id'))}" not in remote_measurement_cache
+    ]
+    getter = getattr(client, '_get', None)
+    if stale_link_candidates and callable(getter):
+        desktop_ids = sorted({
+            _safe_int(meas.get('id'))
+            for meas in stale_link_candidates
+            if _safe_int(meas.get('id')) > 0
+        })
+        for start in range(0, len(desktop_ids), _CLOUD_SYNC_IN_BATCH_SIZE):
+            chunk = desktop_ids[start:start + _CLOUD_SYNC_IN_BATCH_SIZE]
+            rows = getter(
+                f'spore_measurements?desktop_id=in.({",".join(str(value) for value in chunk)})'
+                f'&user_id=eq.{client.user_id}'
+                f'&select={_SPORE_MEASUREMENT_SELECT_COLUMNS}'
+            )
+            remote_measurement_cache.update(
+                _build_remote_measurement_identity_cache(rows)
+            )
+
+    stale_local_measurement_ids = [
+        _safe_int(meas.get('id'))
+        for meas in stale_link_candidates
+        if f"cloud:{str(meas.get('cloud_id') or '').strip()}" not in remote_measurement_cache
+        and f"desktop:{_safe_int(meas.get('id'))}" not in remote_measurement_cache
+        and _safe_int(meas.get('id')) > 0
+    ]
+    if stale_local_measurement_ids:
+        conn = get_connection()
+        try:
+            placeholders = ','.join('?' for _ in stale_local_measurement_ids)
+            conn.execute(
+                f'UPDATE spore_measurements SET cloud_id = NULL '
+                f'WHERE id IN ({placeholders})',
+                stale_local_measurement_ids,
+            )
+            conn.commit()
+        finally:
+            conn.close()
+        stale_id_set = set(stale_local_measurement_ids)
+        for meas in measurements:
+            if _safe_int(meas.get('id')) in stale_id_set:
+                meas['cloud_id'] = None
+        print(
+            f'[cloud_sync] Observation {obs_local_id}: cleared '
+            f'{len(stale_local_measurement_ids)} stale local measurement cloud id(s)',
+            flush=True,
+        )
 
     pushed_cloud_ids: set[str] = set()
     local_id_stamp_failures: list[int] = []

@@ -689,16 +689,20 @@ def test_ensure_metadata_only_short_circuits_when_row_already_linked(db, monkeyp
         db, observation_id=obs_local, filepath='/tmp/x.jpg',
         image_type='microscope', cloud_id='pre-existing-uuid',
     )
+    _insert_measurement(
+        db, image_id=image_id, length_um=10.0, width_um=5.0,
+        measurement_type='manual',
+    )
     image_row = _select_image(db, image_id)
-    client = _RecordingClient()
+    client = _RecordingClient(existing_cloud_id='pre-existing-uuid')
 
     result = cloud_sync._ensure_metadata_only_microscope_image_for_public_spores(
         client, obs_local, '745', image_row,
     )
 
     assert result == 'pre-existing-uuid'
-    # No lookups, no writes.
-    assert client.calls == []
+    # The non-null local id is validated remotely; no duplicate is written.
+    assert client.calls == [('_find_cloud_image', image_id)]
     stdout, _stderr = capfd.readouterr()
     assert 'Mosaic image metadata: linked' in stdout
 
@@ -726,7 +730,7 @@ def test_ensure_metadata_only_reuses_remote_row_by_desktop_id(db, monkeypatch, c
     # Local cloud_id updated.
     assert _select_image(db, image_id).get('cloud_id') == 'remote-uuid-9'
     stdout, _stderr = capfd.readouterr()
-    assert 'reused' in stdout
+    assert '(validated)' in stdout
 
 
 def test_ensure_metadata_only_skips_non_microscope(db, capfd):
@@ -794,6 +798,26 @@ def test_ensure_metadata_only_missing_source_file_still_creates_row(db, capfd):
     assert len(posts) == 1
     stdout, _stderr = capfd.readouterr()
     assert 'reason=missing_source_file' in stdout
+
+
+def test_metadata_anchor_match_tolerates_cloud_float_rounding():
+    payload = {
+        'image_type': 'microscope',
+        'desktop_id': 1280,
+        'scale_microns_per_pixel': 0.05349373209020841,
+    }
+    remote = {
+        'image_type': 'microscope',
+        'desktop_id': 1280,
+        'scale_microns_per_pixel': 0.0534937320902084,
+        'storage_path': None,
+        'original_storage_path': None,
+        'deleted_at': None,
+    }
+
+    assert cloud_sync._remote_image_row_matches_anchor_payload(
+        remote, payload, metadata_only=True,
+    )
 
 
 # ── Backfill integration with the helper ───────────────────────────────────
@@ -888,7 +912,7 @@ def test_backfill_metadata_helper_non_auth_failure_does_not_stop_mosaic(db, monk
     assert 'meta boom' in stdout
 
 
-def test_ensure_wrapper_iterates_only_unlinked_microscope_images(db, monkeypatch, capfd):
+def test_ensure_wrapper_validates_linked_and_unlinked_microscope_images(db, monkeypatch, capfd):
     obs_local = _insert_obs(db, cloud_id='745')
     linked = _insert_image(
         db, observation_id=obs_local, filepath='/tmp/a.jpg',
@@ -906,7 +930,7 @@ def test_ensure_wrapper_iterates_only_unlinked_microscope_images(db, monkeypatch
 
     seen: list[int] = []
 
-    def fake_helper(client, local_id, cloud_id, image_row):
+    def fake_helper(client, local_id, cloud_id, image_row, *, remote_images=None):
         seen.append(image_row['id'])
         return 'x'
 
@@ -919,10 +943,9 @@ def test_ensure_wrapper_iterates_only_unlinked_microscope_images(db, monkeypatch
     counts = cloud_sync._ensure_metadata_only_microscope_images_for_observation(
         _FakeClient(), obs_local, '745',
     )
-    assert seen == [unlinked]  # only unlinked microscope image is considered
-    assert counts['considered'] == 1
-    assert counts['ensured'] == 1
-    assert linked not in seen
+    assert seen == [linked, unlinked]
+    assert counts['considered'] == 2
+    assert counts['ensured'] == 2
 
 
 # ── CLI smoke: --help parses ────────────────────────────────────────────────

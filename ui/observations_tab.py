@@ -168,6 +168,7 @@ from utils.cloud_sync import (
     is_image_too_large_for_plan_error,
     materialize_cloud_media_for_observation,
     load_saved_cloud_password,
+    microscope_image_requires_public_spore_anchor,
     format_cloud_sync_error_details,
     _format_cloud_sync_observation_status,
     _cloud_sync_current_summary,
@@ -7767,6 +7768,12 @@ class ObservationsTab(QWidget):
             img = image_by_id.get(image_id) or {}
             cloud_id = str(img.get("cloud_id") or "").strip()
             if not cloud_id:
+                continue
+            if microscope_image_requires_public_spore_anchor(image_id):
+                try:
+                    ImageDB.clear_image_tombstone_by_deleted_cloud_id(cloud_id)
+                except Exception:
+                    pass
                 continue
             try:
                 ImageDB.queue_image_tombstone_for_local_image(image_id)

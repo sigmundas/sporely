@@ -1408,6 +1408,16 @@ def test_push_measurements_for_observation_prefetches_identity_cache_once(monkey
             self.pull_calls.append(list(image_cloud_ids))
             return [dict(row) for row in remote_measurements_state]
 
+        def pull_image_metadata(self, obs_cloud_id, include_deleted_for_sync=False):
+            return [{
+                "id": "cloud-image-1",
+                "observation_id": str(obs_cloud_id),
+                "desktop_id": 11,
+                "image_type": "microscope",
+                "storage_path": "user-123/cloud-obs-1/micro.webp",
+                "deleted_at": None,
+            }]
+
     client = TrackingClient()
     client._measurement_supports_media_keys = lambda: False
     client._get = lambda path: pytest.fail(f"unexpected remote select: {path}")
@@ -1600,6 +1610,16 @@ def test_push_measurements_for_observation_aborts_on_transient_failure(monkeypat
         def pull_measurements_for_images(self, image_cloud_ids):
             self.pull_calls.append(list(image_cloud_ids))
             return [dict(row) for row in remote_measurements]
+
+        def pull_image_metadata(self, obs_cloud_id, include_deleted_for_sync=False):
+            return [{
+                "id": "cloud-image-1",
+                "observation_id": str(obs_cloud_id),
+                "desktop_id": 11,
+                "image_type": "microscope",
+                "storage_path": "user-123/cloud-obs-1/micro.webp",
+                "deleted_at": None,
+            }]
 
     client = TrackingClient()
     client._measurement_supports_media_keys = lambda: False

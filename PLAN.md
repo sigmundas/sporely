@@ -2,6 +2,8 @@
 
 This file tracks current implementation priorities. Detailed design decisions belong in `docs/supabase-sync-contract.md`; completed work belongs in `HISTORY.md`.
 
+
+
 ## Active project — Spore orientation
 
 Implement orientation-aware spore measurements in `sporely-py`.

@@ -841,6 +841,11 @@ def test_gallery_publish_uncheck_queues_cloud_tombstone(monkeypatch, image_type)
         lambda image_id: calls["cloud"].append(int(image_id)) or True,
     )
     monkeypatch.setattr(cloud_sync, "mark_observation_dirty", lambda obs_id: calls["dirty"].append(int(obs_id)))
+    monkeypatch.setattr(
+        observations_tab,
+        "microscope_image_requires_public_spore_anchor",
+        lambda image_id: False,
+    )
 
     tab = SimpleNamespace(
         selected_observation_id=7,
@@ -859,6 +864,61 @@ def test_gallery_publish_uncheck_queues_cloud_tombstone(monkeypatch, image_type)
     assert calls["queue"] == [1]
     assert calls["clear"] == []
     assert calls["cloud"] == []
+    assert calls["excluded"] == [(7, (1,))]
+    assert calls["dirty"] == [7]
+
+
+def test_gallery_publish_uncheck_preserves_public_spore_microscope_anchor(monkeypatch):
+    calls: dict[str, list] = {
+        "queue": [],
+        "clear": [],
+        "excluded": [],
+        "dirty": [],
+    }
+    monkeypatch.setattr(
+        observations_tab.ImageDB,
+        "get_images_for_observation",
+        lambda observation_id: [
+            {"id": 1, "cloud_id": "cloud-1", "image_type": "microscope"},
+            {"id": 2, "cloud_id": "cloud-2", "image_type": "microscope"},
+        ],
+    )
+    monkeypatch.setattr(
+        observations_tab.ImageDB,
+        "queue_image_tombstone_for_local_image",
+        lambda image_id: calls["queue"].append(int(image_id)),
+    )
+    monkeypatch.setattr(
+        observations_tab.ImageDB,
+        "clear_image_tombstone_by_deleted_cloud_id",
+        lambda cloud_id: calls["clear"].append(str(cloud_id)) or True,
+    )
+    monkeypatch.setattr(
+        observations_tab,
+        "microscope_image_requires_public_spore_anchor",
+        lambda image_id: int(image_id) == 1,
+    )
+    monkeypatch.setattr(
+        cloud_sync,
+        "mark_observation_dirty",
+        lambda obs_id: calls["dirty"].append(int(obs_id)),
+    )
+    tab = SimpleNamespace(
+        selected_observation_id=7,
+        _publish_excluded_image_ids=lambda observation_id: set(),
+        _set_publish_excluded_image_ids=lambda obs_id, excluded: calls["excluded"].append(
+            (int(obs_id), tuple(sorted(int(v) for v in excluded)))
+        ),
+        _publish_seeded_microscope_ids=lambda observation_id: set(),
+        _set_publish_seeded_microscope_ids=lambda observation_id, image_ids: None,
+        window=lambda: None,
+        parent=lambda: None,
+    )
+
+    observations_tab.ObservationsTab._on_gallery_publish_selection_changed(tab, {2})
+
+    assert calls["queue"] == []
+    assert calls["clear"] == ["cloud-1"]
     assert calls["excluded"] == [(7, (1,))]
     assert calls["dirty"] == [7]
 
