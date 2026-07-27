@@ -1,0 +1,37 @@
+{
+  "core": {
+    "location": "taxa.tsv",
+    "row_type": "http://rs.tdwg.org/dwc/terms/Taxon",
+    "term_mapping": {
+      "acceptedNameUsageID": "http://rs.tdwg.org/dwc/terms/acceptedNameUsageID",
+      "parentNameUsageID": "http://rs.tdwg.org/dwc/terms/parentNameUsageID",
+      "scientificName": "http://rs.tdwg.org/dwc/terms/scientificName",
+      "scientificNameAuthorship": "http://rs.tdwg.org/dwc/terms/scientificNameAuthorship",
+      "taxonID": "http://rs.tdwg.org/dwc/terms/taxonID",
+      "taxonRank": "http://rs.tdwg.org/dwc/terms/taxonRank",
+      "taxonomicStatus": "http://rs.tdwg.org/dwc/terms/taxonomicStatus"
+    }
+  },
+  "distribution": {
+    "location": "distribution.tsv",
+    "row_type": "http://rs.gbif.org/terms/1.0/Distribution",
+    "validation_only": true
+  },
+  "identifier_namespace": "XX:",
+  "optional_external_id_terms": [],
+  "profile_schema_version": 1,
+  "source_code": "example",
+  "source_release": {
+    "issued_date": "2026-07-27",
+    "version": "0.1.0"
+  },
+  "vernacular": {
+    "location": "vernacular.tsv",
+    "row_type": "http://rs.gbif.org/terms/1.0/VernacularName",
+    "term_mapping": {
+      "isPreferredName": "http://rs.gbif.org/terms/1.0/isPreferredName",
+      "language": "http://rs.tdwg.org/dwc/terms/language",
+      "vernacularName": "http://rs.gbif.org/terms/1.0/vernacularName"
+    }
+  }
+}
