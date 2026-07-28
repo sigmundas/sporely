@@ -553,6 +553,9 @@ class RawProcessingControls(QWidget):
         self.highlights_value_label.setText(_text(self.highlights_slider, self._signed_percent_value_text))
 
     def set_auto_level_settings(self, settings: RawRenderSettings | dict | None) -> None:
+        if settings is None:
+            self._auto_level_settings = None
+            return
         resolved = RawRenderSettings.from_dict(settings)
         self._auto_level_settings = resolved
         if self._loading or not self.auto_levels_checkbox.isChecked():

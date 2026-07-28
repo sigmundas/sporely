@@ -931,6 +931,68 @@ def test_live_lab_raw_sync_applies_auto_level_slider_values(monkeypatch):
     assert state.raw_controls._auto_level_settings.light_ev == pytest.approx(0.357)
     assert state.raw_controls._auto_level_settings.dark_ev == pytest.approx(-0.143)
 
+    # A later capture without completed analysis must use its own settings,
+    # never the previous capture's cached auto-level slider positions.
+    next_settings = replace(
+        visible_settings,
+        light_ev=0.071,
+        dark_ev=-0.019,
+    )
+    live_lab_tab.LiveLabTab._sync_raw_processing_controls_from_settings(
+        state,
+        next_settings,
+        auto_level_settings=None,
+    )
+    assert state.raw_controls.light_slider.value() == 71
+    assert state.raw_controls.dark_slider.value() == 19
+
+
+def test_live_lab_pending_preview_auto_level_sliders_freeze_the_rendered_image(monkeypatch, tmp_path):
+    _qapp()
+    source_path = tmp_path / "capture.ORF"
+    settings = RawRenderSettings(
+        white_balance_mode="camera",
+        auto_levels=True,
+        black_percentile=0.2,
+        white_percentile=0.8,
+        tone_curve_enabled=False,
+    )
+    capture = live_lab_tab.PendingRawCapture(
+        source_path=source_path,
+        companion_jpeg_path=None,
+        lab_metadata={},
+        raw_settings=settings,
+    )
+    request = live_lab_tab._PendingRawPreviewJobRequest(
+        job_id=1,
+        kind="selected",
+        capture=capture,
+        source_path=source_path,
+        raw_settings=settings,
+        source_signature=(str(source_path), 0, 0),
+        settings_signature=live_lab_tab._pending_raw_settings_signature(settings),
+    )
+    ramp = np.linspace(0.05, 0.95, 100, dtype=np.float32).reshape(10, 10)
+    raw_rgb = np.repeat(ramp[..., None], 3, axis=2)
+    monkeypatch.setattr(
+        live_lab_tab,
+        "render_raw_preview_proxy_rgb",
+        lambda *_args, **_kwargs: raw_rgb,
+    )
+
+    result = live_lab_tab._build_pending_raw_preview_job_result(request)
+
+    assert result.error is None
+    assert result.preview_rgb is not None
+    assert result.auto_level_settings is not None
+    manual_settings = replace(result.auto_level_settings, auto_levels=False)
+    manual_result = live_lab_tab.apply_post_decode_processing_fast(raw_rgb, manual_settings)
+    difference = np.abs(
+        result.preview_rgb.astype(np.float64) - manual_result.rgb.astype(np.float64)
+    )
+    assert float(difference.max()) < 4e-3
+    assert float(difference.mean()) < 5e-4
+
 
 def test_live_lab_raw_curve_preview_widget_uses_current_preview_histogram(tmp_path, monkeypatch):
     _qapp()

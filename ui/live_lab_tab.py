@@ -172,6 +172,10 @@ class PendingRawCapture:
     # rendered with. Used to detect staleness when multi-select applied new
     # settings to this capture without re-rendering it.
     rendered_settings: RawRenderSettings | None = None
+    # Manual Light/Dark equivalents of the exact auto-level bounds used for
+    # this capture's preview. Keeping these per capture prevents one image's
+    # slider positions leaking into another when navigating the review queue.
+    auto_level_settings: RawRenderSettings | None = None
 
 
 @dataclass(slots=True)
@@ -321,16 +325,14 @@ def _build_pending_raw_preview_job_result(
         )
         preview_rgb = np.ascontiguousarray(np.asarray(fast_result.rgb, dtype=np.float32))
         curve = fast_result.curve
-        luminance = preview_proxy_rgb @ np.asarray([0.2126, 0.7152, 0.0722], dtype=np.float32)
-        black_level, white_level = compute_auto_level_bounds_from_luminance(
-            luminance,
-            0.0,
-            1.0,
-        )
+        # Derive the manual slider equivalents from the exact bounds used by
+        # the render above. A second analysis (especially one done before
+        # custom WB or with different percentile cutoffs) makes the first
+        # manual slider movement jump visibly.
         auto_level_settings = apply_auto_level_bounds_to_settings(
             resolved_settings,
-            black_level,
-            white_level,
+            fast_result.debug.black_level,
+            fast_result.debug.white_level,
         )
         if request.capture.preview_path is not None:
             preview_path = str(request.capture.preview_path)
@@ -1626,8 +1628,7 @@ class LiveLabTab(QWidget):
             self._raw_render_settings = settings
         controls = getattr(self, "raw_controls", None)
         if controls is not None:
-            if auto_level_settings is not None:
-                controls.set_auto_level_settings(auto_level_settings)
+            controls.set_auto_level_settings(auto_level_settings)
             controls.set_settings(settings)
             if getattr(self, "_sidebar_binds_to_selection", False):
                 try:
@@ -2090,7 +2091,10 @@ class LiveLabTab(QWidget):
         settings_list = []
         for kind, _key, obj in targets:
             if kind == "pending" and isinstance(obj, PendingRawCapture):
-                settings_list.append(RawRenderSettings.from_dict(obj.raw_settings))
+                visible_settings = RawRenderSettings.from_dict(obj.raw_settings)
+                if bool(visible_settings.auto_levels) and obj.auto_level_settings is not None:
+                    visible_settings = RawRenderSettings.from_dict(obj.auto_level_settings)
+                settings_list.append(visible_settings)
             elif kind == "image" and isinstance(obj, dict):
                 helper = getattr(self, "_raw_editable_image_session", None)
                 edit_session = helper(obj) if callable(helper) else None
@@ -2514,6 +2518,7 @@ class LiveLabTab(QWidget):
             if merged == target.raw_settings:
                 continue
             target.raw_settings = merged
+            target.auto_level_settings = None
             target.preview_rgb = None
             target.rendered_settings = None
             target.status = "pending"
@@ -2543,6 +2548,7 @@ class LiveLabTab(QWidget):
             # sample-coord metadata stripped) along with the other settings.
             updated_settings = self._propagate_raw_wb_for_multi_select(resolved_settings)
         capture.raw_settings = updated_settings
+        capture.auto_level_settings = None
         if self._normalize_raw_capture_mode(self._selected_raw_capture_mode()) != self.RAW_CAPTURE_MODE_REVIEW:
             return True
 
@@ -4461,6 +4467,7 @@ class LiveLabTab(QWidget):
         auto_settings = None
         if source_path.exists():
             auto_settings = self._raw_auto_level_settings_for_source(source_path, updated_settings)
+        capture.auto_level_settings = auto_settings
         self._sync_raw_processing_controls_from_settings(
             updated_settings,
             update_session_settings=True,
@@ -5438,7 +5445,7 @@ class LiveLabTab(QWidget):
             apply_microscope_state(capture.lab_metadata)
         self._sync_raw_processing_controls_from_settings(
             capture.raw_settings,
-            auto_level_settings=None,
+            auto_level_settings=capture.auto_level_settings,
         )
         preview_rgb = getattr(capture, "preview_rgb", None)
         rendered_settings = getattr(capture, "rendered_settings", None)
@@ -5781,6 +5788,7 @@ class LiveLabTab(QWidget):
 
             capture.preview_rgb = result.preview_rgb
             capture.rendered_settings = capture.raw_settings
+            capture.auto_level_settings = result.auto_level_settings
             preview_path = result.preview_path or str(capture.preview_path or "")
             if not preview_path:
                 preview_dir = self._pending_raw_preview_dir()
@@ -6749,6 +6757,7 @@ class LiveLabTab(QWidget):
             wb_selection_space=target_settings.wb_selection_space,
         )
         capture.raw_settings = pasted
+        capture.auto_level_settings = None
         capture.rendered_settings = None
         capture.preview_rgb = None
         capture.status = "pending"
