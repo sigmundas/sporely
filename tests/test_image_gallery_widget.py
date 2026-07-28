@@ -387,6 +387,35 @@ def test_select_image_does_not_restyle_frames(monkeypatch, qapp):
     assert widget_style_calls == []
 
 
+def test_opt_in_plain_click_toggles_selection_and_background_click_clears(qapp, tmp_path):
+    widget = ImageGalleryWidget("Images")
+    widget.set_multi_select(True)
+    widget.set_toggle_selection_on_plain_click(True)
+    widget.set_clear_selection_on_background_click(True)
+    widget.set_items(_build_gallery_items(tmp_path, 2))
+    widget.resize(700, 180)
+    widget.show()
+    qapp.processEvents()
+
+    first_frame = widget._frames[0]
+    QTest.mouseClick(first_frame, Qt.LeftButton, pos=first_frame.rect().center())
+    qapp.processEvents()
+    assert widget.selected_keys() == {1}
+
+    QTest.mouseClick(first_frame, Qt.LeftButton, pos=first_frame.rect().center())
+    qapp.processEvents()
+    assert widget.selected_keys() == set()
+
+    QTest.mouseClick(first_frame, Qt.LeftButton, pos=first_frame.rect().center())
+    qapp.processEvents()
+    assert widget.selected_keys() == {1}
+
+    viewport = widget._scroll.viewport()
+    QTest.mouseClick(viewport, Qt.LeftButton, pos=viewport.rect().bottomRight())
+    qapp.processEvents()
+    assert widget.selected_keys() == set()
+
+
 def test_right_click_on_unselected_thumbnail_selects_only_that_item_before_menu_action(monkeypatch, qapp, tmp_path):
     widget = ImageGalleryWidget("Images")
     widget.set_multi_select(True)

@@ -760,6 +760,7 @@ class LiveLabTab(QWidget):
         self._pending_raw_commit_batch_skipped = 0
         self._pending_raw_commit_cancel_requested = False
         self._pending_raw_commit_defer_start = False
+        self._session_stop_processed_raw_capture_ids: set[int] = set()
         self._raw_curve_preview_analysis_signature: tuple[str, int, int, str] | None = None
         self._raw_curve_preview_analysis_rgb: np.ndarray | None = None
         self._raw_curve_preview_histogram: np.ndarray | None = None
@@ -874,11 +875,21 @@ class LiveLabTab(QWidget):
         current_text_layout.addStretch(1)
         current_row.addLayout(current_text_layout, 1)
 
-        self.start_stop_btn = QPushButton(self.tr("Start\nSession"))
-        self.start_stop_btn.setFixedSize(96, 96)
+        self.session_action_frame = QFrame()
+        self.session_action_frame.setFrameShape(QFrame.NoFrame)
+        self.session_action_frame.setObjectName("sectionCard")
+        self.session_action_frame.setSizePolicy(QSizePolicy.Fixed, QSizePolicy.Fixed)
+        session_action_layout = QHBoxLayout(self.session_action_frame)
+        session_action_layout.setContentsMargins(8, 6, 8, 6)
+        session_action_layout.setSpacing(6)
+        self.start_stop_btn = QPushButton(
+            self.tr("Start\nSession").replace("\n", " "),
+            self.session_action_frame,
+        )
+        self.start_stop_btn.setSizePolicy(QSizePolicy.Fixed, QSizePolicy.Fixed)
         self.start_stop_btn.setStyleSheet(self.SESSION_BUTTON_BASE_STYLE)
         self.start_stop_btn.clicked.connect(self._toggle_session)
-        current_row.addWidget(self.start_stop_btn, 0, Qt.AlignVCenter)
+        session_action_layout.addWidget(self.start_stop_btn)
         current_layout.addLayout(current_row)
         left_layout.addWidget(current_group)
 
@@ -1143,11 +1154,22 @@ class LiveLabTab(QWidget):
             "}"
         )
         self.calibration_action_frame.raise_()
+        self.session_action_frame.setParent(self.live_image_label)
+        self.session_action_frame.setAttribute(Qt.WA_StyledBackground, True)
+        self.session_action_frame.setStyleSheet(
+            "QFrame#sectionCard {"
+            " background-color: rgba(255, 255, 255, 215);"
+            " border: 1px solid rgba(0, 0, 0, 40);"
+            " border-radius: 8px;"
+            "}"
+        )
+        self.session_action_frame.raise_()
         # Forward wheel and native pinch-gesture events that land on either
         # floating action bar down to the image viewer beneath, so zooming
         # while the controls are visible still works.
         self._install_viewer_gesture_forwarding(self.pending_raw_frame)
         self._install_viewer_gesture_forwarding(self.calibration_action_frame)
+        self._install_viewer_gesture_forwarding(self.session_action_frame)
 
         self.session_gallery = ImageGalleryWidget(
             self.tr("Session Gallery"),
@@ -1161,6 +1183,8 @@ class LiveLabTab(QWidget):
         )
         self.session_gallery.set_center_reveal_mode("nudge")
         self.session_gallery.set_multi_select(True)
+        self.session_gallery.set_toggle_selection_on_plain_click(True)
+        self.session_gallery.set_clear_selection_on_background_click(True)
         self.session_gallery.set_reorderable(True)
         self.session_gallery.imageClicked.connect(self._on_session_gallery_clicked)
         self.session_gallery.selectionChanged.connect(self._on_session_gallery_selection_changed)
@@ -1605,6 +1629,17 @@ class LiveLabTab(QWidget):
             if auto_level_settings is not None:
                 controls.set_auto_level_settings(auto_level_settings)
             controls.set_settings(settings)
+            if getattr(self, "_sidebar_binds_to_selection", False):
+                try:
+                    selected_keys = LiveLabTab._session_gallery_selected_keys(self)
+                except Exception:
+                    selected_keys = []
+                if len(selected_keys) > 1:
+                    LiveLabTab._apply_raw_multi_state_to_controls(self)
+                else:
+                    controls.set_multi_selection_mode(False)
+            else:
+                controls.set_multi_selection_mode(False)
         self._set_raw_tone_controls_enabled(bool(settings.tone_curve_enabled))
         self._refresh_raw_processing_context_ui()
         self._update_raw_processing_section_label(bool(getattr(self, "raw_processing_toggle_btn", None) and self.raw_processing_toggle_btn.isChecked()))
@@ -1909,6 +1944,19 @@ class LiveLabTab(QWidget):
             capture.lab_metadata = meta
 
     def _apply_microscope_state_to_controls(self, metadata: dict | None) -> None:
+        if getattr(self, "_sidebar_binds_to_selection", False):
+            try:
+                selected_keys = LiveLabTab._session_gallery_selected_keys(self)
+            except Exception:
+                selected_keys = []
+            if len(selected_keys) > 1:
+                try:
+                    metadatas = LiveLabTab._collect_multi_select_metadatas(self)
+                except Exception:
+                    metadatas = []
+                if len(metadatas) > 1:
+                    LiveLabTab._apply_microscope_multi_state_to_controls(self, metadatas)
+                    return
         note_loader = getattr(self, "_load_image_note_from_metadata", None)
         if callable(note_loader):
             note_loader(metadata)
@@ -2050,6 +2098,13 @@ class LiveLabTab(QWidget):
                     settings_list.append(RawRenderSettings.from_dict(edit_session.working_settings))
                 else:
                     settings_list.append(RawRenderSettings.from_dict(obj.get("raw_settings")))
+        if len(settings_list) > 1:
+            cancel_wb_pick = getattr(self, "_cancel_active_raw_background_wb_selection", None)
+            if callable(cancel_wb_pick):
+                cancel_wb_pick()
+        set_multi_selection_mode = getattr(controls, "set_multi_selection_mode", None)
+        if callable(set_multi_selection_mode):
+            set_multi_selection_mode(len(settings_list) > 1)
         if len(settings_list) > 1:
             controls.set_mixed_settings(settings_list)
         elif settings_list:
@@ -4743,6 +4798,8 @@ class LiveLabTab(QWidget):
 
     def eventFilter(self, obj, event) -> bool:
         if obj is getattr(self, "live_image_label", None):
+            if event.type() == QEvent.MouseButtonPress:
+                self._clear_session_gallery_edit_selection()
             if event.type() == QEvent.Resize:
                 self._reposition_pending_raw_floating_tab()
             active_target = self._active_raw_background_target()
@@ -4784,6 +4841,7 @@ class LiveLabTab(QWidget):
         frames = [
             getattr(self, "pending_raw_frame", None),
             getattr(self, "calibration_action_frame", None),
+            getattr(self, "session_action_frame", None),
         ]
         for frame in frames:
             if frame is None:
@@ -4816,6 +4874,13 @@ class LiveLabTab(QWidget):
             y = 8
             calibration_frame.setGeometry(x, y, width, height)
             calibration_frame.raise_()
+        session_frame = getattr(self, "session_action_frame", None)
+        if session_frame is not None and session_frame.parentWidget() is image_label:
+            hint = session_frame.sizeHint()
+            width = max(hint.width(), session_frame.minimumSizeHint().width())
+            height = max(hint.height(), session_frame.minimumSizeHint().height())
+            session_frame.setGeometry(8, 8, width, height)
+            session_frame.raise_()
 
     def _finalize_pending_raw_background_wb_from_preview(self) -> None:
         self._finalize_raw_background_wb_from_preview(target="pending")
@@ -5358,7 +5423,12 @@ class LiveLabTab(QWidget):
                     selected_keys = []
             select_image = getattr(gallery, "select_image", None)
             pending_key = self._pending_raw_gallery_key(capture)
-            if callable(select_image) and pending_key is not None and (not is_multi_select or not selected_keys):
+            if (
+                getattr(self, "_sidebar_binds_to_selection", False)
+                and callable(select_image)
+                and pending_key is not None
+                and (not is_multi_select or not selected_keys)
+            ):
                 try:
                     select_image(pending_key, center=False)
                 except Exception:
@@ -5809,6 +5879,19 @@ class LiveLabTab(QWidget):
         captures.append(pending)
         self._pending_raw_captures = captures
         self._selected_pending_raw_index = len(captures) - 1
+        # Save all is a draining batch: if another RAW capture finishes
+        # arriving while earlier files render, include it in the same batch.
+        if (
+            getattr(self, "_pending_raw_commit_batch_mode", None) == "save_all"
+            and self._pending_raw_commit_is_busy()
+            and not bool(getattr(self, "_pending_raw_commit_cancel_requested", False))
+        ):
+            request = self._pending_raw_commit_request_for_capture(pending, kind="save_all")
+            if request is not None:
+                if bool(getattr(self, "_session_stop_pending", False)):
+                    self._session_stop_processed_raw_capture_ids.add(id(pending))
+                self._pending_raw_commit_batch_total = int(self._pending_raw_commit_batch_total or 0) + 1
+                self._enqueue_pending_raw_commit_job(request)
         # A fresh pending RAW arriving ends any "select to edit" multi-
         # selection so the user's next click targets the new capture, not
         # the batch they were reviewing.
@@ -5898,6 +5981,8 @@ class LiveLabTab(QWidget):
         self._pending_raw_commit_cancel_requested = False
 
     def _cancel_pending_raw_commit_jobs(self) -> None:
+        if bool(getattr(self, "_session_stop_pending", False)):
+            return
         if not self._pending_raw_commit_is_busy():
             return
         self._pending_raw_commit_cancel_requested = True
@@ -6198,6 +6283,8 @@ class LiveLabTab(QWidget):
         self._pending_raw_commit_batch_failed = 0
         self._pending_raw_commit_batch_skipped = 0
         self._pending_raw_commit_cancel_requested = False
+        if bool(getattr(self, "_session_stop_pending", False)):
+            self._continue_session_stop_after_raw_saves()
 
     def _sync_pending_raw_commit_batch_ui(self) -> None:
         start = time.perf_counter() if _RAW_DEBUG_TIMING else None
@@ -6425,11 +6512,13 @@ class LiveLabTab(QWidget):
 
     def _commit_all_pending_raw_captures(self) -> bool:
         captures = list(getattr(self, "_pending_raw_captures", []) or [])
+        return self._commit_pending_raw_capture_batch(captures)
+
+    def _commit_pending_raw_capture_batch(self, captures: list[PendingRawCapture]) -> bool:
         if not captures:
             return False
         if self._pending_raw_commit_is_busy():
             return False
-        total = len(captures)
         requests: list[_PendingRawCommitJobRequest] = []
         for pending in captures:
             request = self._pending_raw_commit_request_for_capture(pending, kind="save_all")
@@ -6437,7 +6526,7 @@ class LiveLabTab(QWidget):
                 requests.append(request)
         if not requests:
             return False
-        self._pending_raw_commit_begin_batch(kind="save_all", total=total)
+        self._pending_raw_commit_begin_batch(kind="save_all", total=len(requests))
         self._pending_raw_commit_defer_start = True
         try:
             for request in requests:
@@ -7531,7 +7620,7 @@ class LiveLabTab(QWidget):
 
     def _update_session_controls(self) -> None:
         running = self.is_session_running()
-        stopping = bool(self._session_stop_pending and self._watcher is not None)
+        stopping = bool(self._session_stop_pending)
         selected_mode = self._selected_session_mode()
         active_mode = self._normalize_session_mode(self._active_session_mode or selected_mode)
         mode_is_live = active_mode == self.SESSION_MODE_LIVE
@@ -7552,7 +7641,7 @@ class LiveLabTab(QWidget):
         self.watch_group.setVisible(mode_is_live if running else selected_mode == self.SESSION_MODE_LIVE)
         self.watch_dir_input.setReadOnly(running or stopping or selected_mode != self.SESSION_MODE_LIVE)
         self.browse_btn.setEnabled(not running and not stopping and selected_mode == self.SESSION_MODE_LIVE)
-        self.start_stop_btn.setEnabled(bool(running or can_start))
+        self.start_stop_btn.setEnabled(bool((running and not stopping) or can_start))
         self.session_note_input.setEnabled(bool(running and not stopping))
         self.add_note_btn.setEnabled(bool(running and not stopping))
 
@@ -7562,9 +7651,9 @@ class LiveLabTab(QWidget):
             self.start_stop_btn.setText(self.tr("Stop Session"))
         else:
             self.start_stop_btn.setText(
-                self.tr("Start Log\nSession")
+                self.tr("Start Log\nSession").replace("\n", " ")
                 if selected_mode == self.SESSION_MODE_OFFLINE
-                else self.tr("Start\nSession")
+                else self.tr("Start\nSession").replace("\n", " ")
             )
         if not running and not stopping:
             if selected_mode == self.SESSION_MODE_OFFLINE:
@@ -7579,6 +7668,7 @@ class LiveLabTab(QWidget):
 
         self._set_session_button_style(bool(running or stopping))
         self._update_tab_recording_indicator(bool(running or stopping))
+        self._reposition_pending_raw_floating_tab()
 
     def _toggle_session(self) -> None:
         if self.is_session_running():
@@ -7628,6 +7718,7 @@ class LiveLabTab(QWidget):
         self._session_id = uuid4().hex
         self._active_session_mode = selected_mode
         self._session_stop_pending = False
+        self._session_stop_processed_raw_capture_ids.clear()
         self._pending_stop_status = None
         self.session_gallery.clear()
         if selected_mode == self.SESSION_MODE_LIVE:
@@ -7670,12 +7761,24 @@ class LiveLabTab(QWidget):
     def stop_session(self) -> None:
         if not self.is_session_running():
             return
-        watcher = self._watcher
-        if watcher is None:
-            self._finalize_session_stop()
-            return
+        edit_session = getattr(self, "_raw_edit_session", None)
+        if edit_session is not None and bool(getattr(edit_session, "dirty", False)):
+            if not self._apply_raw_edit_session():
+                return
 
         self._session_stop_pending = True
+        cancel_btn = getattr(self, "pending_raw_commit_cancel_btn", None)
+        if cancel_btn is not None:
+            cancel_btn.setEnabled(False)
+        if self._pending_raw_commit_is_busy():
+            for capture in list(getattr(self, "_pending_raw_captures", []) or []):
+                if self._pending_raw_commit_has_request_for_capture(capture):
+                    self._session_stop_processed_raw_capture_ids.add(id(capture))
+        watcher = self._watcher
+        if watcher is None:
+            self._continue_session_stop_after_raw_saves()
+            return
+
         try:
             watcher.stop()
         except Exception:
@@ -7688,6 +7791,27 @@ class LiveLabTab(QWidget):
             return
 
         self._watcher = None
+        self._continue_session_stop_after_raw_saves()
+
+    def _continue_session_stop_after_raw_saves(self) -> None:
+        """Finish stopping only after every pending RAW capture has been processed."""
+        if not bool(getattr(self, "_session_stop_pending", False)):
+            return
+        if self._watcher is not None:
+            return
+        if self._pending_raw_commit_is_busy():
+            return
+        processed_ids = getattr(self, "_session_stop_processed_raw_capture_ids", set())
+        captures = [
+            capture
+            for capture in list(getattr(self, "_pending_raw_captures", []) or [])
+            if id(capture) not in processed_ids
+        ]
+        if captures:
+            processed_ids.update(id(capture) for capture in captures)
+            if self._commit_pending_raw_capture_batch(captures):
+                self._update_session_controls()
+                return
         self._finalize_session_stop()
 
     def _finalize_session_stop(self) -> None:
@@ -7704,6 +7828,7 @@ class LiveLabTab(QWidget):
         self._session_id = None
         self._active_session_mode = None
         self._session_stop_pending = False
+        self._session_stop_processed_raw_capture_ids.clear()
         self._cancel_raw_edit_session(restore_selection=False)
         self._reset_companion_dedupe_state()
         self._update_session_controls()
@@ -7737,7 +7862,7 @@ class LiveLabTab(QWidget):
             return
         self._watcher = None
         if self._session_stop_pending or self._session_observation_id:
-            self._finalize_session_stop()
+            self._continue_session_stop_after_raw_saves()
         else:
             self._update_session_controls()
 
@@ -8104,7 +8229,7 @@ class LiveLabTab(QWidget):
                             break
                     if fallback_paths:
                         select_paths(fallback_paths, center=False)
-        elif selected_key is not None:
+        elif selected_key is not None and getattr(self, "_sidebar_binds_to_selection", False):
             select_start = time.perf_counter() if _RAW_DEBUG_TIMING else None
             gallery.select_image(selected_key, center=False)
             _raw_timing_log("refresh session gallery select image", select_start, detail=str(selected_key))
@@ -8116,6 +8241,9 @@ class LiveLabTab(QWidget):
     def _on_session_gallery_clicked(self, image_id, _path: str) -> None:
         gallery = getattr(self, "session_gallery", None)
         is_multi_select = False
+        clicked_key = image_id if image_id is not None else _path
+        clicked_selected = True
+        selected_keys: set[object] = set()
         if gallery is not None:
             is_multi_select_fn = getattr(gallery, "is_multi_select", None)
             if callable(is_multi_select_fn):
@@ -8123,9 +8251,18 @@ class LiveLabTab(QWidget):
                     is_multi_select = bool(is_multi_select_fn())
                 except Exception:
                     is_multi_select = False
+            selected_keys_fn = getattr(gallery, "selected_keys", None)
+            if callable(selected_keys_fn):
+                try:
+                    selected_keys = set(selected_keys_fn())
+                    clicked_selected = clicked_key in selected_keys
+                except Exception:
+                    clicked_selected = True
         # A user click is an explicit selection; sidebar edits from now on
         # should apply to the clicked image(s) rather than the next capture.
-        self._sidebar_binds_to_selection = True
+        self._sidebar_binds_to_selection = (
+            bool(selected_keys) if is_multi_select else bool(clicked_selected)
+        )
         current_edit_session = getattr(self, "_raw_edit_session", None)
         try:
             clicked_image_id = int(image_id or 0)
@@ -8158,7 +8295,6 @@ class LiveLabTab(QWidget):
             # edge nudge before emitting imageClicked. Rebuilding the gallery
             # from _update_pending_raw_controls here would cancel that nudge
             # and restore a stale pixel offset after thumbnail geometry moves.
-            clicked_key = image_id if image_id is not None else _path
             selected_keys_fn = getattr(gallery, "selected_keys", None) if gallery is not None else None
             selected_keys: set[object] = set()
             if callable(selected_keys_fn):
@@ -8204,6 +8340,14 @@ class LiveLabTab(QWidget):
                     select_image(resolved_image_id)
         self._show_session_image(resolved_image_id)
 
+    def _clear_session_gallery_edit_selection(self) -> None:
+        gallery = getattr(self, "session_gallery", None)
+        if gallery is not None:
+            exit_edit = getattr(gallery, "exit_edit_selection", None)
+            if callable(exit_edit):
+                exit_edit()
+        self._sidebar_binds_to_selection = False
+
     def _on_session_gallery_edit_requested(self, _image_id, filepath: str) -> None:
         # Route to the Observations tab's Prepare Images dialog, same as the
         # Observations-panel "Edit photo" menu.
@@ -8248,6 +8392,9 @@ class LiveLabTab(QWidget):
                 clear_mixed_raw = getattr(controls, "_clear_mixed_state", None)
                 if callable(clear_mixed_raw):
                     clear_mixed_raw()
+                set_multi_selection_mode = getattr(controls, "set_multi_selection_mode", None)
+                if callable(set_multi_selection_mode):
+                    set_multi_selection_mode(False)
         self._update_raw_processing_visibility()
 
     def _update_edit_selection_hint(self, selected_count: int | None = None) -> None:

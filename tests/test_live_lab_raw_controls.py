@@ -264,6 +264,11 @@ def _build_raw_controls_state() -> SimpleNamespace:
         select_paths=_gallery_select_paths,
         set_multi_select=lambda enabled: setattr(state.session_gallery, "_multi_select", bool(enabled)),
         is_multi_select=lambda: bool(state.session_gallery._multi_select),
+        exit_edit_selection=lambda: (
+            setattr(state.session_gallery, "selected", None),
+            setattr(state.session_gallery, "_selected_keys", set()),
+            setattr(state.session_gallery, "_centered_on", None),
+        ),
         center_on_key=lambda key: setattr(state.session_gallery, "_centered_on", key),
         invalidate_pixmap_cache=lambda path=None: state.session_gallery.invalidated_paths.append(str(path) if path is not None else None),
     )
@@ -375,6 +380,7 @@ def _build_raw_controls_state() -> SimpleNamespace:
     state._pending_raw_commit_batch_failed = 0
     state._pending_raw_commit_batch_skipped = 0
     state._pending_raw_commit_cancel_requested = False
+    state._session_stop_processed_raw_capture_ids = set()
     state._pending_raw_commit_request_for_capture = lambda pending, *, kind="save_current": live_lab_tab.LiveLabTab._pending_raw_commit_request_for_capture(
         state,
         pending,
@@ -611,6 +617,9 @@ def _build_raw_controls_state() -> SimpleNamespace:
     )
     state._commit_selected_pending_raw_capture = lambda: live_lab_tab.LiveLabTab._commit_selected_pending_raw_capture(state)
     state._commit_all_pending_raw_captures = lambda: live_lab_tab.LiveLabTab._commit_all_pending_raw_captures(state)
+    state._commit_pending_raw_capture_batch = (
+        lambda captures: live_lab_tab.LiveLabTab._commit_pending_raw_capture_batch(state, captures)
+    )
     state._discard_selected_pending_raw_capture = lambda: live_lab_tab.LiveLabTab._discard_selected_pending_raw_capture(state)
     state._selected_committed_session_image_ids_for_delete = lambda: live_lab_tab.LiveLabTab._selected_committed_session_image_ids_for_delete(state)
     state._delete_committed_session_images = lambda image_ids: live_lab_tab.LiveLabTab._delete_committed_session_images(state, image_ids)
@@ -1246,6 +1255,48 @@ def test_live_lab_dirty_committed_raw_edit_switch_discards_with_status(tmp_path,
     assert any(text == "RAW preview changes discarded." and tone == "info" for text, tone, _ in statuses)
 
 
+def test_live_lab_stop_applies_dirty_raw_edit_and_drains_pending_raw_saves():
+    _qapp()
+    state = _build_raw_controls_state()
+    state._watcher = None
+    state._session_stop_pending = False
+    state._raw_edit_session = SimpleNamespace(dirty=True)
+    calls: list[str] = []
+
+    def apply_edit():
+        calls.append("apply")
+        state._raw_edit_session = None
+        return True
+
+    state._apply_raw_edit_session = apply_edit
+    state._pending_raw_captures = [object()]
+    state._pending_raw_commit_is_busy = lambda: False
+    state._commit_pending_raw_capture_batch = lambda captures: calls.append("save_all") or True
+    state._finalize_session_stop = lambda: calls.append("finalize")
+    state._continue_session_stop_after_raw_saves = (
+        lambda: live_lab_tab.LiveLabTab._continue_session_stop_after_raw_saves(state)
+    )
+
+    live_lab_tab.LiveLabTab.stop_session(state)
+
+    assert calls == ["apply", "save_all"]
+    assert state._session_stop_pending is True
+    assert len(state._session_stop_processed_raw_capture_ids) == 1
+
+    # A capture can finish arriving after the first batch but before the
+    # watcher has fully stopped; it must trigger one more draining batch.
+    state._pending_raw_captures.append(object())
+    state._continue_session_stop_after_raw_saves()
+
+    assert calls == ["apply", "save_all", "save_all"]
+    assert len(state._session_stop_processed_raw_capture_ids) == 2
+
+    state._pending_raw_captures = []
+    state._continue_session_stop_after_raw_saves()
+
+    assert calls == ["apply", "save_all", "save_all", "finalize"]
+
+
 def test_live_lab_objective_state_prefers_nested_lab_metadata(monkeypatch):
     _qapp()
     state = _build_raw_controls_state()
@@ -1521,6 +1572,7 @@ def test_live_lab_raw_controls_follow_visible_image_when_gallery_selection_is_st
     monkeypatch.setattr(live_lab_tab, "generate_all_sizes", lambda *args, **kwargs: None)
     monkeypatch.setattr(live_lab_tab, "cleanup_import_temp_file", lambda *args, **kwargs: None)
 
+    state._sidebar_binds_to_selection = True
     state._refresh_session_gallery()
     assert state.session_gallery.selected == 101
     assert [target[1] for target in state._selected_raw_processing_targets()] == [101]
@@ -1528,7 +1580,7 @@ def test_live_lab_raw_controls_follow_visible_image_when_gallery_selection_is_st
     assert live_lab_tab.LiveLabTab._ingest_detected_image(state, str(source_path))
     assert state._session_image_ids == [101, 102]
     assert state._selected_session_image_id == 102
-    assert state.session_gallery.selected == 101
+    assert state.session_gallery.selected is None
 
     selected_targets = state._selected_raw_processing_targets()
     assert len(selected_targets) == 1
@@ -2096,6 +2148,13 @@ def test_live_lab_review_queue_is_placed_in_the_main_viewer_area(monkeypatch, qa
     tab._update_pending_raw_controls()
     qapp.processEvents()
 
+    assert tab.session_action_frame.parentWidget() is tab.live_image_label
+    assert tab.session_action_frame.pos().x() == 8
+    assert tab.session_action_frame.pos().y() == 8
+    assert tab.session_action_frame.styleSheet() == tab.calibration_action_frame.styleSheet()
+    assert tab.start_stop_btn.text() == "Start Session"
+    assert tab.session_action_frame.size().width() >= tab.start_stop_btn.size().width() + 16
+    assert tab.session_action_frame.size().height() >= tab.start_stop_btn.size().height() + 12
     assert tab.pending_raw_frame.parentWidget() is tab.live_image_label
     assert tab.pending_raw_frame.isVisible() is True
     assert tab.pending_raw_frame.sizeHint().height() <= 96
@@ -2110,7 +2169,29 @@ def test_live_lab_review_queue_is_placed_in_the_main_viewer_area(monkeypatch, qa
     assert tab.session_gallery._items[0]["id"].startswith("pending:")
     assert tab.session_gallery._items[0]["badges"][0] == "UNSAVED RAW"
     assert tab.session_gallery._items[0]["frame_border_color"] == "#e67e22"
-    assert tab.session_gallery._selected_id == tab.session_gallery._items[0]["id"]
+    assert tab.session_gallery.selected_keys() == set()
+    assert tab._sidebar_binds_to_selection is False
+
+    pending_key = tab.session_gallery._items[0]["id"]
+    pending_frame = tab.session_gallery._frames[0]
+    QTest.mouseClick(pending_frame, Qt.LeftButton, pos=pending_frame.rect().center())
+    qapp.processEvents()
+    assert tab.session_gallery.selected_keys() == {pending_key}
+    assert tab._sidebar_binds_to_selection is True
+
+    QTest.mouseClick(pending_frame, Qt.LeftButton, pos=pending_frame.rect().center())
+    qapp.processEvents()
+    assert tab.session_gallery.selected_keys() == set()
+    assert tab._sidebar_binds_to_selection is False
+
+    pending_frame = tab.session_gallery._frames[0]
+    QTest.mouseClick(pending_frame, Qt.LeftButton, pos=pending_frame.rect().center())
+    qapp.processEvents()
+    assert tab.session_gallery.selected_keys() == {pending_key}
+    QTest.mouseClick(tab.live_image_label, Qt.LeftButton, pos=tab.live_image_label.rect().center())
+    qapp.processEvents()
+    assert tab.session_gallery.selected_keys() == set()
+    assert tab._sidebar_binds_to_selection is False
 
 
 def test_live_lab_refresh_selected_pending_raw_preview_enqueues_worker_without_sync_decode(
@@ -2543,6 +2624,43 @@ def test_live_lab_commit_all_pending_raw_captures_reports_determinate_progress(t
     assert progress_calls[0][3] == 2
 
 
+def test_live_lab_save_all_includes_raw_capture_arriving_during_batch(tmp_path):
+    _qapp()
+    state = _build_raw_controls_state()
+    source_one = tmp_path / "P070020_1.ORF"
+    source_two = tmp_path / "P070021_1.ORF"
+    source_one.write_bytes(b"raw-1")
+    source_two.write_bytes(b"raw-2")
+    pending_one = live_lab_tab.PendingRawCapture(
+        source_path=source_one,
+        companion_jpeg_path=None,
+        lab_metadata={"image_type": "microscope"},
+        raw_settings=RawRenderSettings.default(),
+        observation_id=1,
+    )
+    pending_two = live_lab_tab.PendingRawCapture(
+        source_path=source_two,
+        companion_jpeg_path=None,
+        lab_metadata={"image_type": "microscope"},
+        raw_settings=RawRenderSettings.default(),
+        observation_id=1,
+    )
+    active_request = state._pending_raw_commit_request_for_capture(pending_one, kind="save_all")
+    state._pending_raw_captures = [pending_one]
+    state._pending_raw_commit_batch_mode = "save_all"
+    state._pending_raw_commit_batch_total = 1
+    state._pending_raw_commit_active_request = active_request
+    state._pending_raw_commit_worker_thread = object()
+    state._show_pending_raw_capture = lambda *_args, **_kwargs: None
+    state._queue_background_pending_raw_renders = lambda: None
+
+    live_lab_tab.LiveLabTab._add_pending_raw_capture(state, pending_two)
+
+    assert state._pending_raw_commit_batch_total == 2
+    assert len(state._pending_raw_commit_job_queue) == 1
+    assert state._pending_raw_commit_job_queue[0].capture is pending_two
+
+
 def test_live_lab_commit_all_pending_raw_captures_advances_progress_after_each_file(tmp_path, monkeypatch):
     _qapp()
     state = _build_raw_controls_state()
@@ -2750,7 +2868,7 @@ def test_live_lab_save_all_defers_full_gallery_and_viewer_refresh_until_batch_en
     assert state._selected_session_image_id == 2
     assert shown_ids == [2]
     assert len(refresh_calls) == 2
-    assert state.session_gallery.selected == 2
+    assert state.session_gallery.selected is None
     assert full_observation_refresh_calls == []
     assert light_image_refresh_calls == [2]
     assert measurement_refresh_calls == [None]
@@ -3613,7 +3731,7 @@ def test_live_lab_review_mode_creates_pending_preview_and_defers_db_row(tmp_path
     assert state.session_gallery.items[0]["id"] == f"pending:{source_path}"
     assert state.session_gallery.items[0]["badges"][0] == "UNSAVED RAW"
     assert state.session_gallery.items[0]["frame_border_color"] == "#e67e22"
-    assert state.session_gallery.selected == f"pending:{source_path}"
+    assert state.session_gallery.selected is None
 
 
 def test_live_lab_review_mode_pending_gallery_selection_tracks_current_item(tmp_path, monkeypatch):
@@ -3711,7 +3829,7 @@ def test_live_lab_review_mode_pending_gallery_selection_tracks_current_item(tmp_
     _wait_for_pending_raw_preview(state)
 
     assert len(state.session_gallery.items) == 2
-    assert state.session_gallery.selected == f"pending:{source_two}"
+    assert state.session_gallery.selected is None
     assert state.viewer_title_label.text().startswith("Pending RAW 2 of 2")
     assert state.session_gallery.items[0]["microscope_tag_text"] == "10x BF"
     assert state.session_gallery.items[1]["microscope_tag_text"] == "63x DIC"
@@ -3722,6 +3840,7 @@ def test_live_lab_review_mode_pending_gallery_selection_tracks_current_item(tmp_
     assert state.sample_combo.currentData() == "Dried"
 
     first_item = state.session_gallery.items[0]
+    state.session_gallery.select_image(first_item["id"])
     live_lab_tab.LiveLabTab._on_session_gallery_clicked(state, first_item["id"], first_item["filepath"])
 
     assert state._selected_pending_raw_index == 0
@@ -3732,6 +3851,121 @@ def test_live_lab_review_mode_pending_gallery_selection_tracks_current_item(tmp_
     assert state.mount_combo.currentData() == "Water"
     assert state.stain_combo.currentData() == "Not_set"
     assert state.sample_combo.currentData() == "Not_set"
+
+
+def test_live_lab_multi_selection_marks_each_microscope_value_as_mixed():
+    _qapp()
+    state = SimpleNamespace(
+        _MICROSCOPE_SIDEBAR_FIELDS=live_lab_tab.LiveLabTab._MICROSCOPE_SIDEBAR_FIELDS,
+        _microscope_state_from_metadata=lambda metadata: dict(metadata or {}),
+    )
+    for name, values in (
+        ("objective_combo", [("4x", "4x"), ("40x", "40x")]),
+        ("contrast_combo", [("BF", "BF"), ("DIC", "DIC")]),
+        ("mount_combo", [("Water", "Water"), ("KOH", "KOH")]),
+        ("stain_combo", [("—", "Not_set"), ("Congo Red", "Congo_Red")]),
+        ("sample_combo", [("—", "Not_set"), ("Dried", "Dried")]),
+        ("sample_source_combo", [("—", "Not_set"), ("Spore print", "spore_print")]),
+    ):
+        selector = AdaptiveChoiceSelector()
+        for label, value in values:
+            selector.addItem(label, value)
+        setattr(state, name, selector)
+
+    live_lab_tab.LiveLabTab._apply_microscope_multi_state_to_controls(
+        state,
+        [
+            {
+                "objective_name": "4x",
+                "contrast": "BF",
+                "mount_medium": "Water",
+                "stain": "Not_set",
+                "sample_type": "Not_set",
+                "sample_source": "Not_set",
+            },
+            {
+                "objective_name": "40x",
+                "contrast": "BF",
+                "mount_medium": "KOH",
+                "stain": "Congo_Red",
+                "sample_type": "Dried",
+                "sample_source": "spore_print",
+            },
+        ],
+    )
+
+    assert state.objective_combo.is_mixed() is True
+    assert state.objective_combo.currentIndex() == -1
+    assert state.objective_combo.button_for_value("4x").isChecked() is False
+    assert "rgba(" in state.objective_combo.button_for_value("4x").styleSheet()
+    assert "rgba(" in state.objective_combo.button_for_value("40x").styleSheet()
+    assert state.contrast_combo.is_mixed() is False
+    assert state.contrast_combo.currentData() == "BF"
+    assert state.mount_combo.is_mixed() is True
+    assert state.stain_combo.is_mixed() is True
+    assert state.sample_combo.is_mixed() is True
+    assert state.sample_source_combo.is_mixed() is True
+
+
+def test_live_lab_camera_wb_applies_to_all_selected_pending_raws(tmp_path):
+    _qapp()
+    state = _build_raw_controls_state()
+    first_path = tmp_path / "first.ORF"
+    second_path = tmp_path / "second.ORF"
+    first = live_lab_tab.PendingRawCapture(
+        source_path=first_path,
+        companion_jpeg_path=None,
+        lab_metadata={},
+        raw_settings=RawRenderSettings(
+            white_balance_mode="custom",
+            wb_multipliers=(1.4, 1.0, 1.2),
+            light_ev=0.2,
+        ),
+        group_key="first",
+    )
+    second = live_lab_tab.PendingRawCapture(
+        source_path=second_path,
+        companion_jpeg_path=None,
+        lab_metadata={},
+        raw_settings=RawRenderSettings(
+            white_balance_mode="auto",
+            light_ev=0.8,
+        ),
+        group_key="second",
+    )
+    state._pending_raw_captures = [first, second]
+    state._selected_pending_raw_index = 0
+    state._sidebar_binds_to_selection = True
+    state.session_gallery.items = [
+        {"id": f"pending:{first_path}", "filepath": str(first_path)},
+        {"id": f"pending:{second_path}", "filepath": str(second_path)},
+    ]
+    state.session_gallery.set_multi_select(True)
+    state.session_gallery.select_paths([str(first_path), str(second_path)])
+    state._merge_raw_form_into_target = live_lab_tab.LiveLabTab._merge_raw_form_into_target
+    state._apply_raw_settings_to_pending_capture = (
+        lambda capture, settings, render_preview=True: (
+            setattr(capture, "raw_settings", RawRenderSettings.from_dict(settings)) or True
+        )
+    )
+    state._update_pending_raw_controls = lambda: None
+    state._update_raw_edit_controls = lambda: None
+    state._refresh_raw_processing_context_ui = lambda: None
+    state._update_raw_processing_section_label = lambda expanded: None
+
+    live_lab_tab.LiveLabTab._apply_raw_multi_state_to_controls(state)
+    assert state.raw_controls.light_slider.is_mixed() is True
+    assert state.raw_controls.white_balance_selector.button_group.checkedButton() is None
+
+    state.raw_controls.white_balance_selector.button_for_value("camera").click()
+    live_lab_tab.LiveLabTab._on_raw_processing_controls_changed(state)
+
+    assert first.raw_settings.white_balance_mode == "camera"
+    assert first.raw_settings.wb_multipliers is None
+    assert first.raw_settings.light_ev == pytest.approx(0.2)
+    assert second.raw_settings.white_balance_mode == "camera"
+    assert second.raw_settings.wb_multipliers is None
+    assert second.raw_settings.light_ev == pytest.approx(0.8)
 
 
 def test_live_lab_review_mode_multi_select_preserves_selection_and_applies_microscope_changes_to_selected_pending_captures(tmp_path, monkeypatch):
@@ -4019,7 +4253,7 @@ def test_live_lab_start_session_keeps_pending_raw_gallery_visible(tmp_path, monk
     assert len(state._pending_raw_captures) == 1
     assert state.session_gallery.visible is True
     assert state.session_gallery.items[0]["id"] == f"pending:{source_path}"
-    assert state.session_gallery.selected == f"pending:{source_path}"
+    assert state.session_gallery.selected is None
     assert state.viewer_title_label.text().startswith("Pending RAW")
     assert state._queue_companion_source(str(source_path)) is False
     assert len(state._pending_raw_captures) == 1
@@ -4031,6 +4265,7 @@ def test_live_lab_refresh_session_gallery_reveals_new_item_at_end(tmp_path):
     state._session_observation_id = 1
     state._session_image_ids = [101, 102]
     state._selected_session_image_id = 102
+    state._sidebar_binds_to_selection = True
     state._pending_reveal_new_at_end = True
 
     refresh_args: list[str] = []
@@ -4053,7 +4288,7 @@ def test_live_lab_refresh_session_gallery_reveals_new_item_at_end(tmp_path):
     assert state.session_gallery.selected == 102
 
 
-def test_live_lab_show_pending_raw_capture_selects_without_recentering(tmp_path):
+def test_live_lab_show_pending_raw_capture_only_selects_when_editing_is_bound(tmp_path):
     _qapp()
     source_path = tmp_path / "P070020_1.ORF"
     preview_path = tmp_path / "previews" / "P070020_1_preview.jpg"
@@ -4083,6 +4318,11 @@ def test_live_lab_show_pending_raw_capture_selects_without_recentering(tmp_path)
     state._refresh_session_gallery = lambda: None
     state._show_pending_raw_capture = live_lab_tab.LiveLabTab._show_pending_raw_capture.__get__(state, type(state))
 
+    live_lab_tab.LiveLabTab._show_pending_raw_capture(state, 0)
+
+    assert calls == []
+
+    state._sidebar_binds_to_selection = True
     live_lab_tab.LiveLabTab._show_pending_raw_capture(state, 0)
 
     assert calls == [(f"pending:{source_path}", False)]

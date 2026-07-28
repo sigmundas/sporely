@@ -612,6 +612,12 @@ class AdaptiveChoiceSelector(QWidget):
         for button in self._buttons:
             if button is not None:
                 blockers.append(button)
+        was_exclusive = self._button_group.exclusive()
+        if self._current_index < 0 and was_exclusive:
+            # An exclusive QButtonGroup otherwise refuses to uncheck its last
+            # checked button, which made a mixed selector look like one value
+            # was still selected instead of showing only the dimmed values.
+            self._button_group.setExclusive(False)
         for widget in blockers:
             widget.blockSignals(True)
         try:
@@ -623,6 +629,8 @@ class AdaptiveChoiceSelector(QWidget):
         finally:
             for widget in blockers:
                 widget.blockSignals(False)
+            if was_exclusive:
+                self._button_group.setExclusive(True)
 
     def _on_combo_index_changed(self, index: int) -> None:
         if self._syncing_from_user():

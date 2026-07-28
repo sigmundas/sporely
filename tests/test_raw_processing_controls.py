@@ -211,6 +211,51 @@ def test_raw_processing_controls_set_settings_does_not_emit_settings_changed(qap
     assert emissions == []
 
 
+def test_raw_processing_controls_multi_selection_shows_ranges_and_limits_wb_actions(qapp):
+    controls = RawProcessingControls()
+    controls.set_mixed_settings(
+        [
+            RawRenderSettings(
+                white_balance_mode="camera",
+                light_ev=0.2,
+                dark_ev=-0.1,
+                tone_contrast=-0.25,
+            ),
+            RawRenderSettings(
+                white_balance_mode="auto",
+                light_ev=0.8,
+                dark_ev=-0.6,
+                tone_contrast=0.4,
+            ),
+        ]
+    )
+    controls.set_multi_selection_mode(True)
+
+    assert controls.light_slider.is_mixed() is True
+    assert (controls.light_slider._mixed_min, controls.light_slider._mixed_max) == (200, 800)
+    assert controls.dark_slider.is_mixed() is True
+    assert (controls.dark_slider._mixed_min, controls.dark_slider._mixed_max) == (100, 600)
+    assert controls.contrast_slider.is_mixed() is True
+    assert (controls.contrast_slider._mixed_min, controls.contrast_slider._mixed_max) == (-25, 40)
+    assert controls.white_balance_selector.button_group.checkedButton() is None
+    assert controls.mixed_fields() >= {
+        "light_ev",
+        "dark_ev",
+        "tone_contrast",
+        "white_balance_mode",
+    }
+
+    assert controls.white_balance_selector.button_for_value("camera").isEnabled() is True
+    assert controls.white_balance_selector.button_for_value("auto").isEnabled() is False
+    assert controls.white_balance_selector.button_for_value("custom").isEnabled() is False
+    assert controls.pick_button.isEnabled() is False
+
+    controls.white_balance_selector.button_for_value("camera").click()
+
+    assert controls.white_balance_selector.selected_value() == "camera"
+    assert "white_balance_mode" not in controls.mixed_fields()
+
+
 # --- AutoLevelsToggle adapter tests ------------------------------------------------
 #
 # The toggle is the compatibility layer between the old checkable QPushButton

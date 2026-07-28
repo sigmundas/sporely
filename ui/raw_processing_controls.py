@@ -232,6 +232,8 @@ class RawProcessingControls(QWidget):
         self._loading = False
         self._slider_change_pending = False
         self._mixed_wb_mode = False
+        self._multi_selection_mode = False
+        self._pick_context_enabled = True
         self._show_shadow_lift = bool(show_shadow_lift)
         self._show_tone_controls_when_disabled = bool(show_tone_controls_when_disabled)
         # Percentile cutoffs pushed in from Preferences. Kept as fractions
@@ -456,9 +458,9 @@ class RawProcessingControls(QWidget):
             wb_modes = {str(s.white_balance_mode or "camera").strip().lower() or "camera" for s in resolved}
             with QSignalBlocker(self.white_balance_selector):
                 if len(wb_modes) == 1:
-                    self.white_balance_selector.set_selected_value(next(iter(wb_modes)))
+                    self._set_white_balance_visual_selection(next(iter(wb_modes)))
                 else:
-                    self.white_balance_selector.set_selected_value("camera")
+                    self._set_white_balance_visual_selection(None)
             self._mixed_wb_mode = len(wb_modes) > 1
             auto_levels_values = {bool(s.auto_levels) for s in resolved}
             with QSignalBlocker(self.auto_levels_checkbox):
@@ -499,9 +501,24 @@ class RawProcessingControls(QWidget):
     def _clear_mixed_state(self) -> None:
         for _, slider, _ in self._named_mixed_slider_specs():
             slider.clear_mixed_range()
+        if self._mixed_wb_mode:
+            mode = str(self._settings.white_balance_mode or "camera").strip().lower() or "camera"
+            with QSignalBlocker(self.white_balance_selector):
+                self._set_white_balance_visual_selection(mode)
         self._mixed_wb_mode = False
         self.auto_levels_checkbox.setProperty("mixed", False)
         self.tone_curve_checkbox.setProperty("mixed", False)
+
+    def _set_white_balance_visual_selection(self, value: str | None) -> None:
+        """Select one WB pill, or leave all pills unselected for mixed values."""
+        group = self.white_balance_selector.button_group
+        group.setExclusive(False)
+        for button in self.white_balance_selector.buttons():
+            button.setChecked(False)
+        group.setExclusive(True)
+        if value is not None:
+            if not self.white_balance_selector.set_selected_value(value):
+                self.white_balance_selector.set_selected_value("camera")
 
     def _mixed_slider_specs(self):
         for _, slider, extractor in self._named_mixed_slider_specs():
@@ -620,7 +637,23 @@ class RawProcessingControls(QWidget):
         self._refresh_pick_button_text()
 
     def set_pick_enabled(self, enabled: bool) -> None:
-        self.pick_button.setEnabled(bool(enabled))
+        self._pick_context_enabled = bool(enabled)
+        self.pick_button.setEnabled(
+            bool(self._pick_context_enabled and not self._multi_selection_mode)
+        )
+
+    def set_multi_selection_mode(self, enabled: bool) -> None:
+        """Limit WB actions that cannot be applied safely to several sources."""
+        self._multi_selection_mode = bool(enabled)
+        for value in ("auto", "custom"):
+            button = self.white_balance_selector.button_for_value(value)
+            if button is not None:
+                button.setEnabled(not self._multi_selection_mode)
+        if self._multi_selection_mode and self.pick_button.isChecked():
+            self.set_pick_checked(False)
+        self.pick_button.setEnabled(
+            bool(self._pick_context_enabled and not self._multi_selection_mode)
+        )
 
     def set_controls_enabled(self, enabled: bool) -> None:
         self.setEnabled(bool(enabled))
@@ -636,8 +669,7 @@ class RawProcessingControls(QWidget):
             if mode not in {"camera", "auto", "custom"}:
                 mode = "camera"
             with QSignalBlocker(self.white_balance_selector):
-                if not self.white_balance_selector.set_selected_value(mode):
-                    self.white_balance_selector.set_selected_value("camera")
+                self._set_white_balance_visual_selection(mode)
             with QSignalBlocker(self.auto_levels_checkbox):
                 self.auto_levels_checkbox.setChecked(bool(settings.auto_levels))
             with QSignalBlocker(self.light_slider):

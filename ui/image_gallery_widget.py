@@ -576,6 +576,8 @@ class ImageGalleryWidget(QGroupBox):
         self._show_delete = show_delete
         self._show_badges = show_badges
         self._multi_select = False
+        self._toggle_selection_on_plain_click = False
+        self._clear_selection_on_background_click = False
         self._thumbnail_tooltip = thumbnail_tooltip
         self._show_publish_checkbox = bool(show_publish_checkbox)
         self._show_move_to_observation = bool(show_move_to_observation)
@@ -1683,6 +1685,13 @@ class ImageGalleryWidget(QGroupBox):
         QTimer.singleShot(0, _apply)
 
     def eventFilter(self, obj, event):
+        if (
+            self._clear_selection_on_background_click
+            and obj in {self._container, self._scroll.viewport()}
+            and event.type() == QEvent.MouseButtonPress
+            and getattr(event, "button", lambda: None)() == Qt.LeftButton
+        ):
+            self.exit_edit_selection()
         if self._reorderable and event.type() in (QEvent.DragEnter, QEvent.DragMove, QEvent.Drop):
             source_key = self._decode_item_key(event.mimeData().data(_GALLERY_REORDER_MIME))
             if source_key is not None:
@@ -2142,6 +2151,12 @@ class ImageGalleryWidget(QGroupBox):
                 self._selected_keys.add(self._selected_id)
             self._apply_selection_styles()
 
+    def set_toggle_selection_on_plain_click(self, enabled: bool) -> None:
+        self._toggle_selection_on_plain_click = bool(enabled)
+
+    def set_clear_selection_on_background_click(self, enabled: bool) -> None:
+        self._clear_selection_on_background_click = bool(enabled)
+
     def is_multi_select(self) -> bool:
         return bool(self._multi_select)
 
@@ -2378,8 +2393,11 @@ class ImageGalleryWidget(QGroupBox):
                 else:
                     self._selected_keys.add(key)
             else:
-                self._selected_keys = {key}
-            self._selected_id = img_id
+                if self._toggle_selection_on_plain_click and self._selected_keys == {key}:
+                    self._selected_keys = set()
+                else:
+                    self._selected_keys = {key}
+            self._selected_id = img_id if key in self._selected_keys else None
             if index is not None:
                 self._last_clicked_index = index
             self._apply_selection_styles()
