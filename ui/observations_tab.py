@@ -8035,7 +8035,10 @@ class ObservationsTab(QWidget):
                         continue
                 except Exception:
                     pass
-            image_type = (image.get("image_type") or "").strip().lower()
+            # Legacy rows may have NULL image_type.  The galleries and import
+            # flow consistently treat those as field images, so external
+            # publishing must do the same.
+            image_type = (image.get("image_type") or "field").strip().lower()
             if image_type not in {"field", "microscope"}:
                 continue
             # Prefer the smallest local copy so both publish targets can reuse the
@@ -8091,7 +8094,7 @@ class ObservationsTab(QWidget):
                         continue
                 except Exception:
                     pass
-            image_type = (image.get("image_type") or "").strip().lower()
+            image_type = (image.get("image_type") or "field").strip().lower()
             if image_type not in {"field", "microscope"}:
                 continue
             filepath = image.get("filepath") or image.get("original_filepath")
@@ -9095,9 +9098,11 @@ class ObservationsTab(QWidget):
             source_key = self._publish_path_key(source_path)
             image_row = by_path_key.get(source_key)
             if not image_row:
+                generated.append(source_path)
                 continue
             pixmap = QPixmap(source_path)
             if pixmap.isNull():
+                generated.append(source_path)
                 continue
 
             widget = ZoomableImageLabel()
@@ -9146,6 +9151,10 @@ class ObservationsTab(QWidget):
                         scale_bar_unit = unit
 
             if not show_overlays and not has_scale_bar:
+                # Preserve checked images that do not need a baked derivative.
+                # The caller replaces its complete source list with this list,
+                # so omitting this entry would silently drop the field image.
+                generated.append(source_path)
                 continue
 
             def render_annotated(destination: Path) -> bool:
@@ -9158,6 +9167,8 @@ class ObservationsTab(QWidget):
                 out_path = temp_dir / f"annotated_{idx:03d}.jpg"
                 if render_annotated(out_path):
                     generated.append(str(out_path))
+                else:
+                    generated.append(source_path)
                 continue
 
             measurements = MeasurementDB.get_measurements_for_image(
@@ -9929,7 +9940,18 @@ class ObservationsTab(QWidget):
                 annotated_paths = []
             if annotated_paths:
                 upload_paths = annotated_paths
-                generated_any = True
+                generated_any = any(
+                    ObservationsTab._publish_path_key(prepared_path)
+                    != ObservationsTab._publish_path_key(source_path)
+                    for prepared_path, source_path in zip(
+                        annotated_paths,
+                        base_image_paths,
+                    )
+                ) or len(annotated_paths) != len(base_image_paths)
+                if not generated_any:
+                    warnings.append(
+                        self.tr("No annotated images were generated; original images were used.")
+                    )
             else:
                 warnings.append(
                     self.tr("No annotated images were generated; original images were used.")
