@@ -434,6 +434,7 @@ def test_collect_artsobs_image_paths_prefers_smallest_candidate(tmp_path, monkey
 
 def test_publish_selected_observations_both_triggers_web_and_inat(monkeypatch):
     calls: list[tuple[int, str, bool, bool]] = []
+    bundle_ids: list[int] = []
 
     fake_tab = SimpleNamespace(
         tr=lambda text: text,
@@ -449,7 +450,9 @@ def test_publish_selected_observations_both_triggers_web_and_inat(monkeypatch):
         _ensure_selection_publish_target=lambda uploader_key, observation_ids: True,
         refresh_observations=lambda *args, **kwargs: None,
         set_status_message=lambda *args, **kwargs: None,
-        upload_observation_to_artsobs=lambda observation_id, uploader_key, show_status, refresh_table: (
+        upload_observation_to_artsobs=lambda observation_id, uploader_key, show_status, refresh_table, publish_bundle=None: (
+            bundle_ids.append(id(publish_bundle))
+            or
             calls.append((observation_id, uploader_key, show_status, refresh_table))
             or (True, 123 if uploader_key == "web" else 456, None)
         ),
@@ -461,6 +464,77 @@ def test_publish_selected_observations_both_triggers_web_and_inat(monkeypatch):
         (7, "web", False, False),
         (7, "inat", False, False),
     ]
+    assert len(set(bundle_ids)) == 1
+
+
+def test_publish_both_attempts_inat_after_artsobservasjoner_failure(monkeypatch):
+    calls: list[tuple[str, bool]] = []
+    created_bundles = []
+    selection_calls = 0
+
+    class TrackingBundle:
+        def __init__(self, observation_id):
+            self.observation_id = observation_id
+            self.closed = False
+            created_bundles.append(self)
+
+        def close(self):
+            self.closed = True
+
+    monkeypatch.setattr(observations_tab, "PublishMediaBundle", TrackingBundle)
+
+    def upload(
+        observation_id,
+        uploader_key,
+        show_status,
+        refresh_table,
+        publish_bundle=None,
+    ):
+        assert observation_id == 7
+        assert publish_bundle is created_bundles[0]
+        calls.append((uploader_key, publish_bundle.closed))
+        if uploader_key == "web":
+            return False, None, "Artsobservasjoner failed"
+        return True, 456, None
+
+    def selected_observation_ids():
+        nonlocal selection_calls
+        selection_calls += 1
+        if selection_calls > 1:
+            raise AssertionError("Both must retain its original observation ids")
+        return [7]
+
+    fake_tab = SimpleNamespace(
+        tr=lambda text: text,
+        _selected_observation_ids=selected_observation_ids,
+        _publish_target_login_status=lambda force_refresh=False: {
+            "web": True,
+            "inat": True,
+        },
+        _publish_target_saved_login_status=lambda force_refresh=False: {
+            "web": True,
+            "inat": True,
+        },
+        _open_online_publishing_settings=lambda: False,
+        _invalidate_publish_login_status_cache=lambda: None,
+        _update_publish_controls=lambda: None,
+        _publish_actions={},
+        _selection_has_existing_upload_for_uploader=lambda key: False,
+        _selection_matches_uploader_target=lambda key: True,
+        _ensure_selection_publish_target=lambda uploader_key, observation_ids: True,
+        refresh_observations=lambda *args, **kwargs: None,
+        set_status_message=lambda *args, **kwargs: None,
+        upload_observation_to_artsobs=upload,
+    )
+
+    observations_tab.ObservationsTab._publish_selected_observations(
+        fake_tab,
+        "both",
+    )
+
+    assert calls == [("web", False), ("inat", False)]
+    assert selection_calls == 1
+    assert created_bundles[0].closed is True
 
 
 def test_publish_render_preferences_allows_scale_bar_without_annotations():
@@ -496,7 +570,10 @@ def test_prepare_publish_media_assets_generates_scale_bar_only_images(tmp_path, 
         _generate_publish_annotated_images=lambda **kwargs: generated_calls.append(dict(kwargs)) or [str(annotated_path)],
     )
 
-    monkeypatch.setattr(observations_tab.tempfile, "mkdtemp", lambda prefix: str(tmp_path / "publish_tmp"))
+    monkeypatch.setattr(
+        "utils.publish_media.tempfile.mkdtemp",
+        lambda prefix: str(tmp_path / "publish_tmp"),
+    )
 
     upload_paths, temp_dir, warnings = observations_tab.ObservationsTab._prepare_publish_media_assets(
         fake_tab,

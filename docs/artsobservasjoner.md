@@ -21,6 +21,22 @@ Available content options:
 
 For image uploads, only the images with checked boxes in the observation gallery are used.
 
+Thumbnail mosaics and baked scale-bar/measurement images are disposable
+publish derivatives. Sporely keeps reusable copies in the application cache,
+not in the observation image collection. An unchanged derivative can therefore
+be reused by a later publish, including after restarting the application.
+Clearing the application cache is safe and simply causes the derivative to be
+rendered again. Publishing to **Both** prepares one shared set of derivatives
+for the two target attempts. On the first publish-media operation in an
+application session, Sporely also removes expired cache assets and abandoned
+temporary writes; cleanup failure never blocks publishing.
+
+Source images currently have no persistent content checksum in the observation
+image table. Derived-media keys therefore identify source bytes using the local
+media id, file size, and nanosecond modification time. Normal edits and file
+replacement invalidate the cache. A file deliberately replaced while preserving
+both its size and modification time may require clearing the disposable cache.
+
 ![artsobs login](images/publisering.png)
 
 ### Artsobservasjoner

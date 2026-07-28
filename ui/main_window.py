@@ -163,6 +163,7 @@ from utils.thumbnail_generator import generate_all_sizes
 from utils.image_utils import cleanup_import_temp_file, load_oriented_pixmap
 from utils.local_image_ingest import RawRenderingUnavailableError, prepare_local_ingest_image
 from utils.cloud_sync import is_cloud_auth_error, is_cloud_reauth_required_error
+from utils.publish_media import prepare_ordered_mosaic_inputs
 from .delegates import SpeciesItemDelegate, AISuggestionItemDelegate
 from .taxon_input_controller import TaxonInputController
 from utils.vernacular_utils import (
@@ -15634,39 +15635,29 @@ class MainWindow(GeometryMixin, QMainWindow):
     def _sort_gallery_measurements(self, measurements):
         """Sort measurements by the selected gallery sort key (ascending)."""
         if not hasattr(self, "gallery_sort_combo"):
-            return measurements
+            return prepare_ordered_mosaic_inputs(
+                measurements,
+                category="all",
+                sort_key="",
+            )
         sort_key = self.gallery_sort_combo.currentData() or ""
-        if not sort_key:
-            return measurements
-        image_order_map = {}
+        image_order = []
         if sort_key == "images" and self.active_observation_id:
             try:
                 ordered_images = ImageDB.get_images_for_observation(self.active_observation_id)
-                image_order_map = {
-                    int(image.get("id")): idx
-                    for idx, image in enumerate(ordered_images)
+                image_order = [
+                    int(image.get("id"))
+                    for image in ordered_images
                     if image.get("id") is not None
-                }
+                ]
             except Exception:
-                image_order_map = {}
-        def _key(m):
-            l = m.get("length_um") or 0.0
-            w = m.get("width_um") or 0.0
-            if sort_key == "images":
-                image_id = int(m.get("image_id") or 0)
-                measurement_id = int(m.get("id") or 0)
-                return (
-                    image_order_map.get(image_id, 10**9),
-                    measurement_id,
-                )
-            if sort_key == "length":
-                return float(l)
-            if sort_key == "width":
-                return float(w)
-            if sort_key == "q":
-                return float(l) / float(w) if w else 0.0
-            return 0.0
-        return sorted(measurements, key=_key)
+                image_order = []
+        return prepare_ordered_mosaic_inputs(
+            measurements,
+            category="all",
+            sort_key=sort_key,
+            image_order=image_order,
+        )
 
     def _filter_gallery_measurements(self, measurements):
         """Apply gallery selection filter to measurements."""

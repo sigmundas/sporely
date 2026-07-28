@@ -146,6 +146,14 @@ from utils.publish_targets import (
     publish_target_label,
     uploader_key_for_publish_target,
 )
+from utils.publish_media import (
+    ANNOTATED_IMAGE_RENDERER_VERSION,
+    MOSAIC_RENDERER_VERSION,
+    PublishMediaBundle,
+    annotated_image_dependencies,
+    mosaic_dependencies,
+    prepare_ordered_mosaic_inputs,
+)
 from utils.taxon_text import (
     format_probability_percent,
     resolve_observation_taxon_fields,
@@ -5075,13 +5083,23 @@ class ObservationsTab(QWidget):
         dlg = SpeciesPlateDialog(obs, parent=self)
         dlg.exec()
 
-    def _publish_selected_observations(self, uploader_key: str) -> None:
+    def _publish_selected_observations(
+        self,
+        uploader_key: str,
+        *,
+        publish_bundles: dict[int, PublishMediaBundle] | None = None,
+        observation_ids: list[int] | None = None,
+    ) -> None:
         key = str(uploader_key or "").strip().lower()
         if key == "both":
             ObservationsTab._publish_selected_observations_both(self)
             return
         self._invalidate_publish_login_status_cache()
-        observation_ids = self._selected_observation_ids()
+        observation_ids = (
+            list(observation_ids)
+            if observation_ids is not None
+            else self._selected_observation_ids()
+        )
         if not observation_ids:
             self.set_status_message(
                 self.tr("Select one or more observations to publish."),
@@ -5138,6 +5156,11 @@ class ObservationsTab(QWidget):
                 uploader_key=uploader_key,
                 show_status=False,
                 refresh_table=False,
+                publish_bundle=(
+                    publish_bundles.get(observation_id)
+                    if publish_bundles is not None
+                    else None
+                ),
             )
             if ok:
                 success_count += 1
@@ -5201,8 +5224,26 @@ class ObservationsTab(QWidget):
                 self._update_publish_controls()
                 return
 
-        ObservationsTab._publish_selected_observations(self, "web")
-        ObservationsTab._publish_selected_observations(self, "inat")
+        bundles = {
+            observation_id: PublishMediaBundle(observation_id)
+            for observation_id in observation_ids
+        }
+        try:
+            ObservationsTab._publish_selected_observations(
+                self,
+                "web",
+                publish_bundles=bundles,
+                observation_ids=observation_ids,
+            )
+            ObservationsTab._publish_selected_observations(
+                self,
+                "inat",
+                publish_bundles=bundles,
+                observation_ids=observation_ids,
+            )
+        finally:
+            for bundle in bundles.values():
+                bundle.close()
 
     def _build_observation_table_rows_cache(self, observations: list[dict]) -> list[dict]:
         common_name_map = self._build_common_name_map(observations)
@@ -9020,6 +9061,8 @@ class ObservationsTab(QWidget):
         temp_dir: Path,
         progress_cb=None,
         cancel_cb=None,
+        *,
+        publish_bundle: PublishMediaBundle | None = None,
     ) -> list[str]:
         if not base_image_paths:
             return []
@@ -9082,6 +9125,8 @@ class ObservationsTab(QWidget):
             widget.set_measurement_labels(labels if show_labels else [])
 
             has_scale_bar = False
+            scale_bar_um = None
+            scale_bar_unit = None
             if preferences["show_scale_bar"]:
                 try:
                     mpp_value = float(image_row.get("scale_microns_per_pixel") or 0.0)
@@ -9098,16 +9143,49 @@ class ObservationsTab(QWidget):
                         widget.set_microns_per_pixel(mpp_value)
                         widget.set_scale_bar(True, float(scale_bar_um), unit=unit)
                         has_scale_bar = True
+                        scale_bar_unit = unit
 
             if not show_overlays and not has_scale_bar:
                 continue
 
-            exported = widget.export_annotated_pixmap()
-            if not exported or exported.isNull():
+            def render_annotated(destination: Path) -> bool:
+                exported = widget.export_annotated_pixmap()
+                if not exported or exported.isNull():
+                    return False
+                return bool(exported.save(str(destination), "JPEG", 92))
+
+            if publish_bundle is None:
+                out_path = temp_dir / f"annotated_{idx:03d}.jpg"
+                if render_annotated(out_path):
+                    generated.append(str(out_path))
                 continue
-            out_path = temp_dir / f"annotated_{idx:03d}.jpg"
-            if exported.save(str(out_path), "JPEG", 92):
-                generated.append(str(out_path))
+
+            measurements = MeasurementDB.get_measurements_for_image(
+                int(image_row["id"])
+            )
+            dependencies = annotated_image_dependencies(
+                image_row=image_row,
+                source_path=source_path,
+                measurements=measurements,
+                preferences=preferences,
+                render_options={
+                    "format": "jpeg",
+                    "quality": 92,
+                    "width": pixmap.width(),
+                    "height": pixmap.height(),
+                    "measure_label_scale": publish_measure_label_scale,
+                    "resolved_scale_bar_um": scale_bar_um,
+                    "resolved_scale_bar_unit": scale_bar_unit,
+                },
+            )
+            resolved = publish_bundle.resolve_cached_image(
+                asset_kind="annotated",
+                renderer_version=ANNOTATED_IMAGE_RENDERER_VERSION,
+                dependencies=dependencies,
+                extension="jpg",
+                render=render_annotated,
+            )
+            generated.append(str(resolved.path))
 
         return generated
 
@@ -9474,6 +9552,9 @@ class ObservationsTab(QWidget):
         temp_dir: Path,
         progress_cb=None,
         cancel_cb=None,
+        *,
+        output_path: Path | None = None,
+        prepared: tuple[dict, list[dict], dict[int, dict], dict] | None = None,
     ) -> str | None:
         parent = self.window()
         create_thumbnail = getattr(parent, "create_spore_thumbnail", None)
@@ -9487,22 +9568,15 @@ class ObservationsTab(QWidget):
             progress_cb(self.tr("Preparing thumbnail gallery image..."), 1, 3)
         self._yield_background_sync_ui()
 
-        settings = self._load_gallery_settings_for_observation(observation_id)
-        category = settings.get("measurement_type", "all")
+        if prepared is None:
+            prepared = self._prepare_publish_mosaic_inputs(observation_id)
+        settings, valid_measurements, image_rows, render_options = prepared
         orient = bool(settings.get("orient", True))
         uniform_scale = bool(settings.get("uniform_scale", False))
-        measurements = MeasurementDB.get_measurements_for_observation(observation_id)
-        measurements = self._filter_publish_measurements(measurements, category)
-        valid_measurements = [
-            m
-            for m in measurements
-            if all(m.get(f"p{i}_{axis}") is not None for i in range(1, 5) for axis in ("x", "y"))
-            and m.get("image_filepath")
-            and Path(m.get("image_filepath")).exists()
-        ]
         if not valid_measurements:
             return None
 
+        category = settings.get("measurement_type", "all")
         normalized_category = self._normalize_publish_measurement_category(category)
         if normalized_category == "all":
             gallery_item_label = self.tr("measurement thumbnails")
@@ -9511,22 +9585,10 @@ class ObservationsTab(QWidget):
         else:
             gallery_item_label = self.tr("thumbnails")
 
-        thumbnail_size = 220
-        size_fn = getattr(parent, "_gallery_thumbnail_size", None)
-        if callable(size_fn):
-            try:
-                thumbnail_size = max(120, int(size_fn()))
-            except Exception:
-                thumbnail_size = 220
-
-        image_rows = {int(row["id"]): row for row in ImageDB.get_images_for_observation(observation_id)}
+        thumbnail_size = int(render_options["thumbnail_size"])
         default_color = getattr(parent, "default_measure_color", QColor(52, 152, 219))
-        rectangle_style_fn = getattr(parent, "_current_measure_rectangle_style", None)
-        rectangle_thickness_fn = getattr(parent, "_current_measure_rectangle_thickness", None)
-        rectangle_style = rectangle_style_fn() if callable(rectangle_style_fn) else None
-        rectangle_thickness = (
-            rectangle_thickness_fn() if callable(rectangle_thickness_fn) else None
-        )
+        rectangle_style = render_options.get("rectangle_style")
+        rectangle_thickness = render_options.get("rectangle_thickness")
 
         uniform_length_um = None
         if uniform_scale:
@@ -9574,6 +9636,24 @@ class ObservationsTab(QWidget):
                     mpp_value = float(mpp or 0.0)
                 except Exception:
                     mpp_value = 0.0
+                if mpp_value <= 0:
+                    line1_px = (
+                        (points[1].x() - points[0].x()) ** 2
+                        + (points[1].y() - points[0].y()) ** 2
+                    ) ** 0.5
+                    line2_px = (
+                        (points[3].x() - points[2].x()) ** 2
+                        + (points[3].y() - points[2].y()) ** 2
+                    ) ** 0.5
+                    measured_length_px = max(line1_px, line2_px)
+                    try:
+                        measured_length_um = float(
+                            measurement.get("length_um") or 0.0
+                        )
+                    except (TypeError, ValueError):
+                        measured_length_um = 0.0
+                    if measured_length_px > 0 and measured_length_um > 0:
+                        mpp_value = measured_length_um / measured_length_px
                 if mpp_value > 0:
                     uniform_length_px = float(uniform_length_um) / mpp_value
 
@@ -9662,10 +9742,92 @@ class ObservationsTab(QWidget):
             painter.drawPixmap(x, y, thumb)
         painter.end()
 
-        out_path = temp_dir / "gallery_mosaic.png"
+        out_path = Path(output_path) if output_path is not None else temp_dir / "gallery_mosaic.png"
         if not canvas.save(str(out_path), "PNG"):
             return None
         return str(out_path)
+
+    def _prepare_publish_mosaic_inputs(
+        self,
+        observation_id: int,
+    ) -> tuple[dict, list[dict], dict[int, dict], dict]:
+        """Prepare the same ordered inputs used by Analysis gallery export."""
+        parent = self.window()
+        settings = self._load_gallery_settings_for_observation(observation_id)
+        category = settings.get("measurement_type", "all")
+        image_rows_list = ImageDB.get_images_for_observation(observation_id)
+        image_rows = {
+            int(row["id"]): row
+            for row in image_rows_list
+            if row.get("id") is not None
+        }
+        excluded_image_ids: set[int] = set()
+        exclusion_getter = getattr(self, "_publish_excluded_image_ids", None)
+        if callable(exclusion_getter):
+            try:
+                excluded_image_ids = {
+                    int(image_id)
+                    for image_id in exclusion_getter(observation_id)
+                }
+            except Exception:
+                excluded_image_ids = set()
+        source_measurements = []
+        for measurement in MeasurementDB.get_measurements_for_observation(
+            observation_id
+        ):
+            try:
+                measurement_image_id = int(measurement.get("image_id") or 0)
+            except (TypeError, ValueError):
+                measurement_image_id = 0
+            if measurement_image_id not in excluded_image_ids:
+                source_measurements.append(measurement)
+        measurements = prepare_ordered_mosaic_inputs(
+            source_measurements,
+            category=category,
+            sort_key=settings.get("gallery_sort", ""),
+            image_order=image_rows.keys(),
+        )
+        valid_measurements = [
+            measurement
+            for measurement in measurements
+            if all(
+                measurement.get(f"p{point}_{axis}") is not None
+                for point in range(1, 5)
+                for axis in ("x", "y")
+            )
+            and measurement.get("image_filepath")
+            and Path(measurement["image_filepath"]).is_file()
+        ]
+
+        thumbnail_size = 220
+        size_fn = getattr(parent, "_gallery_thumbnail_size", None)
+        if callable(size_fn):
+            try:
+                thumbnail_size = max(120, int(size_fn()))
+            except Exception:
+                thumbnail_size = 220
+        rectangle_style_fn = getattr(parent, "_current_measure_rectangle_style", None)
+        rectangle_thickness_fn = getattr(
+            parent,
+            "_current_measure_rectangle_thickness",
+            None,
+        )
+        render_options = {
+            "thumbnail_size": thumbnail_size,
+            "rectangle_style": (
+                rectangle_style_fn() if callable(rectangle_style_fn) else None
+            ),
+            "rectangle_thickness": (
+                rectangle_thickness_fn()
+                if callable(rectangle_thickness_fn)
+                else None
+            ),
+            "grid_target_ratio": 4.0 / 3.0,
+            "spacing": 0,
+            "background": "white",
+            "format": "png",
+        }
+        return settings, valid_measurements, image_rows, render_options
 
     def _generate_publish_plate_image(
         self,
@@ -9718,6 +9880,7 @@ class ObservationsTab(QWidget):
         copyright_text: str | None = None,
         progress_cb=None,
         cancel_cb=None,
+        publish_bundle: PublishMediaBundle | None = None,
     ) -> tuple[list[str], Path | None, list[str]]:
         upload_paths = list(base_image_paths)
         warnings: list[str] = []
@@ -9735,7 +9898,9 @@ class ObservationsTab(QWidget):
 
         if cancel_cb:
             cancel_cb()
-        temp_dir = Path(tempfile.mkdtemp(prefix=f"sporely_publish_{observation_id}_"))
+        owns_bundle = publish_bundle is None
+        bundle = publish_bundle or PublishMediaBundle(observation_id)
+        temp_dir = bundle.operation_dir
         generated_any = False
         if include_copyright and not copyright_text:
             warnings.append(
@@ -9756,6 +9921,7 @@ class ObservationsTab(QWidget):
                     temp_dir=temp_dir,
                     progress_cb=progress_cb,
                     cancel_cb=cancel_cb,
+                    publish_bundle=bundle,
                 )
             except UploadCancelledError:
                 raise
@@ -9814,12 +9980,32 @@ class ObservationsTab(QWidget):
             try:
                 if progress_cb:
                     progress_cb(self.tr("Preparing thumbnail gallery..."), 3, 3)
-                mosaic_path = self._generate_publish_gallery_mosaic_image(
-                    observation_id,
-                    temp_dir,
-                    progress_cb=progress_cb,
-                    cancel_cb=cancel_cb,
+                prepared_mosaic = self._prepare_publish_mosaic_inputs(observation_id)
+                mosaic_settings, mosaic_rows, mosaic_images, mosaic_render = prepared_mosaic
+                dependencies = mosaic_dependencies(
+                    observation_id=observation_id,
+                    measurements=mosaic_rows,
+                    image_rows=mosaic_images,
+                    settings=mosaic_settings,
+                    render_options=mosaic_render,
                 )
+                resolved_mosaic = bundle.resolve_cached_image(
+                    asset_kind="mosaic",
+                    renderer_version=MOSAIC_RENDERER_VERSION,
+                    dependencies=dependencies,
+                    extension="png",
+                    render=lambda destination: bool(
+                        self._generate_publish_gallery_mosaic_image(
+                            observation_id,
+                            temp_dir,
+                            progress_cb=progress_cb,
+                            cancel_cb=cancel_cb,
+                            output_path=destination,
+                            prepared=prepared_mosaic,
+                        )
+                    ),
+                )
+                mosaic_path = str(resolved_mosaic.path)
             except UploadCancelledError:
                 raise
             except Exception:
@@ -9851,12 +10037,15 @@ class ObservationsTab(QWidget):
                 warnings.append(self.tr("Could not generate plate image."))
 
         if not generated_any:
-            self._cleanup_publish_temp_dir(temp_dir)
+            if owns_bundle:
+                bundle.close()
             temp_dir = None
         elif progress_cb:
             progress_cb(self.tr("Media files prepared."), 1, 1)
 
-        return upload_paths, temp_dir, warnings
+        # A caller-supplied bundle owns its operation directory.  Individual
+        # target attempts must not remove it before later targets run.
+        return upload_paths, (temp_dir if owns_bundle else None), warnings
 
     def _lookup_artsobservasjoner_taxon_id(self, scientific_name: str | None) -> int | None:
         scientific_name = self._normalize_taxon_text(scientific_name)
@@ -10084,6 +10273,7 @@ class ObservationsTab(QWidget):
         uploader_key: str | None = None,
         show_status: bool = True,
         refresh_table: bool = True,
+        publish_bundle: PublishMediaBundle | None = None,
     ) -> tuple[bool, int | None, str | None]:
         def _fail(message: str, level: str = "error", auto_clear_ms: int = 12000):
             if show_status:
@@ -10468,6 +10658,7 @@ class ObservationsTab(QWidget):
                 copyright_text=copyright_text,
                 progress_cb=prepare_progress_cb,
                 cancel_cb=ensure_not_cancelled,
+                publish_bundle=publish_bundle,
             )
             if uploader.key == "mobile" and not upload_image_paths:
                 return _fail(
