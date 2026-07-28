@@ -444,7 +444,8 @@ def acquire(
             k: v for k, v in report.items()
             if k in {"profile_code", "record_counts", "identifier_contract",
                      "meta_xml", "linkage", "archive", "request_definition_sha256",
-                     "network_calls"}
+                     "network_calls", "taxon_column_gaps", "reference_gaps",
+                     "compiler_ready", "hierarchy_complete"}
         }
 
         # Exclusive promotion (non-overwriting) then release-dir fsync.

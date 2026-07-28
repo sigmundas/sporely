@@ -1,6 +1,6 @@
 {
   "core": {
-    "location": "data/nonstandard-core.csv",
+    "location": "taxon.txt",
     "row_type": "http://rs.tdwg.org/dwc/terms/Taxon",
     "term_mapping": {
       "acceptedNameUsageID": "http://rs.tdwg.org/dwc/terms/acceptedNameUsageID",
@@ -13,7 +13,7 @@
     }
   },
   "distribution": {
-    "location": "extra/distribution.tsv",
+    "location": "distribution.txt",
     "row_type": "http://rs.gbif.org/terms/1.0/Distribution",
     "validation_only": true
   },
@@ -28,12 +28,12 @@
     "version": "1.284"
   },
   "vernacular": {
-    "location": "names/localized.data",
+    "location": "vernacularname.txt",
     "row_type": "http://rs.gbif.org/terms/1.0/VernacularName",
     "term_mapping": {
       "isPreferredName": "http://rs.gbif.org/terms/1.0/isPreferredName",
-      "language": "http://rs.tdwg.org/dwc/terms/language",
-      "vernacularName": "http://rs.gbif.org/terms/1.0/vernacularName"
+      "language": "http://purl.org/dc/terms/language",
+      "vernacularName": "http://rs.tdwg.org/dwc/terms/vernacularName"
     }
   }
 }

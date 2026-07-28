@@ -718,14 +718,18 @@ def validate_fixture(path: Path, request: NorTaxaRequest) -> dict[str, Any]:
                 "orphan_accepted_reference_samples": _bounded_samples(orphan_accepted_pairs),
                 "sample_bound": MAX_ORPHAN_SAMPLES,
             }
-            # `compiler_ready` is a downstream signal: it is False whenever the
-            # archive passed acquisition/structural validation but contains
-            # unresolved references that the compiler must reconcile or reject.
-            compiler_ready = (
-                orphan_parent_reference_count == 0
-                and orphan_accepted_reference_count == 0
-            )
+            # `compiler_ready` is True when all COMPILATION-BLOCKING checks
+            # pass. An unresolved parent reference is a hierarchy warning,
+            # not a blocker — the compiler can consume the taxonomy without
+            # reconciling those edges. An unresolved acceptedNameUsageID
+            # remains a hard blocker because a synonym without a resolved
+            # accepted target cannot be placed. `hierarchy_complete` still
+            # reflects parent-edge completeness separately.
+            compiler_ready = orphan_accepted_reference_count == 0
             counts = {"Taxon": core_count}
+            # Per-core vernacular counts are held only in memory during
+            # validation. The emitted report carries compact aggregates only,
+            # so the report size does not scale with taxon count.
             links: dict[str, int] = {}
             vernacular = next(table for table in extensions if table.row_type == VERNACULAR_ROW_TYPE)
             vernacular_count = 0
@@ -739,6 +743,12 @@ def validate_fixture(path: Path, request: NorTaxaRequest) -> dict[str, Any]:
                         raise AcquisitionError(f"required VernacularName value is empty: {term}")
                 links[core_id] = links.get(core_id, 0) + 1
             counts["VernacularName"] = vernacular_count
+            vernacular_link_summary = {
+                "total_linked_vernacular_rows": sum(links.values()),
+                "distinct_referenced_core_ids": len(links),
+                "orphan_vernacular_rows": 0,  # any orphan would have raised above
+                "maximum_vernacular_rows_for_one_core": max(links.values()) if links else 0,
+            }
             for extension in extensions:
                 if extension.row_type in DISTRIBUTION_ROW_TYPES:
                     # Distribution rows are structurally checked (bounded stream,
@@ -776,7 +786,11 @@ def validate_fixture(path: Path, request: NorTaxaRequest) -> dict[str, Any]:
         },
         "reference_gaps": reference_gaps,
         "compiler_ready": compiler_ready,
-        "linkage": {"distinct_core_row_ids": len(core_ids), "vernacular_rows_by_core_id": links},
+        "hierarchy_complete": orphan_parent_reference_count == 0,
+        "linkage": {
+            "distinct_core_row_ids": len(core_ids),
+            "vernacular": vernacular_link_summary,
+        },
         "identifier_contract": {
             "core_row_id": {"index": core.link_index, "role": "archive-local core row key"},
             "dwc:taxonID": {"index": core.terms["taxonID"], "role": "source-defined taxon identifier"},

@@ -600,3 +600,165 @@ def test_normalize_output_is_byte_identical_across_runs(tmp_path: Path) -> None:
         "report.json contains nondeterministic content: "
         + ", ".join(hits) + f"\nreport:\n{report}"
     )
+
+
+# ----- Parent-reference resolution states + unresolved-parent counts -----
+
+
+def _example_profile(tmp_path: Path) -> Path:
+    """Copy the example profile into tmp_path so tests can share it."""
+    p = tmp_path / "source.json"
+    p.write_text(EXAMPLE_PROFILE.read_text())
+    return p
+
+
+def _fixture_with_core_rows(tmp_path: Path, core_rows: list[list[str]]) -> Path:
+    """Build a fresh DwC-A whose taxa.tsv contains exactly the given rows."""
+    with zipfile.ZipFile(EXAMPLE_FIXTURE, "r") as src:
+        infos = {i.filename: src.read(i.filename) for i in src.infolist()}
+    header = (
+        b"id\ttaxonID\tacceptedNameUsageID\tparentNameUsageID\tscientificName\t"
+        b"scientificNameAuthorship\ttaxonRank\ttaxonomicStatus\n"
+    )
+    body = "".join(
+        "\t".join(fields) + "\n" for fields in core_rows
+    ).encode("utf-8")
+    infos["taxa.tsv"] = header + body
+    # No vernacular rows so link-integrity checks stay narrow.
+    infos["vernacular.tsv"] = b"coreid\tvernacularName\tlanguage\tisPreferredName\n"
+    infos["distribution.tsv"] = b"coreid\tcountryCode\n"
+    path = tmp_path / "custom.zip"
+    with zipfile.ZipFile(path, "w") as dst:
+        for name, payload in infos.items():
+            dst.writestr(name, payload)
+    return path
+
+
+def test_normalize_resolved_absent_and_unresolved_parent_states(tmp_path: Path) -> None:
+    """Each of the three parent_reference_resolution states appears at least once,
+    and the raw parent_name_usage_id object is preserved unchanged."""
+    core_rows = [
+        ["root",  "XX:root",   "", "",              "Fungi",             "", "kingdom", "accepted"],
+        ["child", "XX:child",  "", "XX:root",       "Fungi child",       "", "species", "accepted"],
+        ["orph",  "XX:orph",   "", "XX:does-not-exist", "Fungi lost",   "", "species", "accepted"],
+    ]
+    archive = _fixture_with_core_rows(tmp_path, core_rows)
+    profile = subject.load_profile(_example_profile(tmp_path))
+    out = tmp_path / "normalized"
+    report = subject.normalize_archive(profile, archive, out)
+    taxa = [json.loads(line) for line in (out / "taxa.jsonl").read_text().splitlines()]
+    by_id = {t["core_row_id"]["value"]: t for t in taxa}
+    assert by_id["root"]["parent_reference_resolution"] == "absent"
+    assert by_id["root"]["parent_name_usage_id"] is None
+    assert by_id["child"]["parent_reference_resolution"] == "resolved"
+    assert by_id["child"]["parent_name_usage_id"] == {
+        "value": "XX:root", "namespace": "example_parent_name_usage_id",
+    }
+    # Unresolved: raw identifier preserved verbatim; no resolved edge created.
+    assert by_id["orph"]["parent_reference_resolution"] == "unresolved"
+    assert by_id["orph"]["parent_name_usage_id"] == {
+        "value": "XX:does-not-exist", "namespace": "example_parent_name_usage_id",
+    }
+    # Report signals: parent-only unresolved edges are hierarchy warnings,
+    # not compilation blockers. compiler_ready stays True.
+    assert report["hierarchy_complete"] is False
+    assert report["compiler_ready"] is True
+    assert report["reference_gaps"]["orphan_parent_reference_count"] == 1
+    assert report["reference_gaps"]["orphan_accepted_reference_count"] == 0
+    samples = report["reference_gaps"]["orphan_parent_reference_samples"]
+    assert samples == [{"source_taxon_id": "XX:orph", "raw_reference": "XX:does-not-exist"}]
+
+
+def test_normalize_hierarchy_complete_true_when_every_parent_resolves(tmp_path: Path) -> None:
+    core_rows = [
+        ["root",  "XX:root",  "", "",         "Fungi",       "", "kingdom", "accepted"],
+        ["child", "XX:child", "", "XX:root",  "Fungi child", "", "species", "accepted"],
+    ]
+    archive = _fixture_with_core_rows(tmp_path, core_rows)
+    profile = subject.load_profile(_example_profile(tmp_path))
+    out = tmp_path / "normalized"
+    report = subject.normalize_archive(profile, archive, out)
+    assert report["hierarchy_complete"] is True
+    assert report["compiler_ready"] is True
+    assert report["reference_gaps"]["orphan_parent_reference_count"] == 0
+    assert report["reference_gaps"]["orphan_parent_reference_samples"] == []
+
+
+def test_orphan_parent_identifier_is_byte_for_byte_preserved(tmp_path: Path) -> None:
+    """The exact raw string, including any prefix or whitespace tolerated by
+    the source, round-trips into parent_name_usage_id.value without
+    modification. No inference from names is permitted."""
+    raw = "NBIC:oddly-named-lineage-42"
+    core_rows = [
+        ["root", "XX:root",  "", "",  "Fungi",       "", "kingdom", "accepted"],
+        ["orph", "XX:orph",  "", raw, "Genus specie", "", "species", "accepted"],
+    ]
+    archive = _fixture_with_core_rows(tmp_path, core_rows)
+    profile = subject.load_profile(_example_profile(tmp_path))
+    out = tmp_path / "normalized"
+    subject.normalize_archive(profile, archive, out)
+    orph = next(
+        json.loads(line) for line in (out / "taxa.jsonl").read_text().splitlines()
+        if json.loads(line)["core_row_id"]["value"] == "orph"
+    )
+    assert orph["parent_name_usage_id"]["value"] == raw
+    assert orph["parent_reference_resolution"] == "unresolved"
+
+
+def test_normalize_creates_no_resolved_edge_for_orphan_parent(tmp_path: Path) -> None:
+    """A record's parent_reference_resolution stays 'unresolved' and no other
+    field mutates when the target doesn't exist. The compiler decides what
+    to do with the orphan; normalization never invents a substitute."""
+    core_rows = [
+        ["root", "XX:root", "", "",         "Fungi",           "", "kingdom", "accepted"],
+        ["gen",  "XX:gen",  "", "XX:root",  "SomeGenus",        "", "genus",   "accepted"],
+        ["orph", "XX:orph", "", "XX:not-a-real-parent", "Genus species", "", "species", "accepted"],
+    ]
+    archive = _fixture_with_core_rows(tmp_path, core_rows)
+    profile = subject.load_profile(_example_profile(tmp_path))
+    out = tmp_path / "normalized"
+    subject.normalize_archive(profile, archive, out)
+    orph = next(
+        json.loads(line) for line in (out / "taxa.jsonl").read_text().splitlines()
+        if json.loads(line)["core_row_id"]["value"] == "orph"
+    )
+    assert orph["parent_reference_resolution"] == "unresolved"
+    # Every other identifier field is unchanged; nothing was rewritten to
+    # match "gen" or "root" merely because they exist.
+    assert orph["parent_name_usage_id"]["value"] == "XX:not-a-real-parent"
+    assert orph["accepted_name_usage_id"] is None
+
+
+def test_orphan_accepted_reference_still_blocks_normalization(tmp_path: Path) -> None:
+    """Compilation-blocker unchanged: a NON-EMPTY acceptedNameUsageID whose
+    target is missing raises NationalSourceError."""
+    core_rows = [
+        ["root", "XX:root", "",             "",         "Fungi", "", "kingdom", "accepted"],
+        ["syn",  "XX:syn",  "XX:no-target", "",         "Fungi", "", "species", "synonym"],
+    ]
+    archive = _fixture_with_core_rows(tmp_path, core_rows)
+    profile = subject.load_profile(_example_profile(tmp_path))
+    with pytest.raises(NationalSourceError, match="acceptedNameUsageID references unknown"):
+        subject.normalize_archive(profile, archive, tmp_path / "normalized")
+    assert not (tmp_path / "normalized").exists()
+
+
+def test_normalize_output_with_orphan_parents_is_deterministic(tmp_path: Path) -> None:
+    """Two runs against the same archive with unresolved parents produce
+    byte-identical taxa.jsonl / vernacular.jsonl / report.json."""
+    core_rows = [
+        ["root", "XX:root", "", "",         "Fungi", "", "kingdom", "accepted"],
+        ["b",    "XX:b",    "", "XX:zzz",   "Genus b species", "", "species", "accepted"],
+        ["c",    "XX:c",    "", "XX:aaa",   "Genus c species", "", "species", "accepted"],
+    ]
+    archive = _fixture_with_core_rows(tmp_path, core_rows)
+    profile = subject.load_profile(_example_profile(tmp_path))
+    a = tmp_path / "a"
+    b = tmp_path / "b"
+    subject.normalize_archive(profile, archive, a)
+    subject.normalize_archive(profile, archive, b)
+    for name in ("taxa.jsonl", "vernacular.jsonl", "report.json"):
+        assert (a / name).read_bytes() == (b / name).read_bytes(), name
+    report = json.loads((a / "report.json").read_text())
+    # Sample ordering is by (source_taxon_id, raw_reference).
+    assert [s["source_taxon_id"] for s in report["reference_gaps"]["orphan_parent_reference_samples"]] == ["XX:b", "XX:c"]

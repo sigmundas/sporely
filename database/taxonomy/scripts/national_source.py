@@ -682,20 +682,30 @@ def _normalize_into(
                     )
             core_rows_cache.append((row_index, row))
 
+        orphan_parent_pairs: set[tuple[str, str]] = set()
         with taxa_out.open("w", encoding="utf-8") as tf:
             for row_index, row in core_rows_cache:
                 core_row_id = row[core_id_index]
                 taxon_id = _resolve("taxonID", profile.core_terms, core, row)
                 accepted = _resolve("acceptedNameUsageID", profile.core_terms, core, row)
                 parent = _resolve("parentNameUsageID", profile.core_terms, core, row)
+                # Compilation-blocker: a NON-EMPTY acceptedNameUsageID must
+                # resolve. Empty accepted on a synonym is caught downstream
+                # once synonym-rank semantics are checked (not this stage).
                 if accepted and accepted not in core_taxon_ids:
                     raise NationalSourceError(
                         f"acceptedNameUsageID references unknown taxonID: {accepted!r}"
                     )
-                if parent and parent not in core_taxon_ids:
-                    raise NationalSourceError(
-                        f"parentNameUsageID references unknown taxonID: {parent!r}"
-                    )
+                # Non-blocking: a NON-EMPTY parentNameUsageID that does not
+                # resolve is preserved verbatim as an unresolved hierarchy
+                # edge. No inferred parent relationship is created.
+                if not parent:
+                    parent_resolution = "absent"
+                elif parent in core_taxon_ids:
+                    parent_resolution = "resolved"
+                else:
+                    parent_resolution = "unresolved"
+                    orphan_parent_pairs.add((str(taxon_id), str(parent)))
                 # Optional external IDs are preserved as-is under their FULL
                 # term URI, so two terms with the same DwC local name never
                 # collide.
@@ -721,11 +731,16 @@ def _normalize_into(
                          "namespace": namespaces["accepted_name_usage_id"]}
                         if accepted else None
                     ),
+                    # `parent_name_usage_id` object is preserved unchanged:
+                    # the raw namespaced identifier lives there whether the
+                    # target resolves or not. The distinct resolution state
+                    # is exposed under `parent_reference_resolution`.
                     "parent_name_usage_id": (
                         {"value": str(parent),
                          "namespace": namespaces["parent_name_usage_id"]}
                         if parent else None
                     ),
+                    "parent_reference_resolution": parent_resolution,
                     "identifier_namespace": profile.identifier_namespace,
                     "scientific_name": _resolve("scientificName", profile.core_terms, core, row),
                     "authorship": _resolve("scientificNameAuthorship", profile.core_terms, core, row),
@@ -784,6 +799,11 @@ def _normalize_into(
                 if not link.strip() or link not in core_row_ids:
                     raise NationalSourceError(f"orphan distribution link: {link!r}")
                 distribution_count += 1
+        MAX_UNRESOLVED_PARENT_SAMPLES = 25
+        unresolved_parent_reference_samples = [
+            {"source_taxon_id": s, "raw_reference": r}
+            for s, r in sorted(orphan_parent_pairs)[:MAX_UNRESOLVED_PARENT_SAMPLES]
+        ]
         report = {
             "result": "passed",
             "profile_source_code": profile.source_code,
@@ -800,6 +820,21 @@ def _normalize_into(
             "distribution_imported": False,
             "identifier_namespaces": namespaces,
             "archive_sha256": _archive_sha256(archive_path),
+            "reference_gaps": {
+                "orphan_parent_reference_count": len(orphan_parent_pairs),
+                "orphan_accepted_reference_count": 0,
+                "orphan_parent_reference_samples": unresolved_parent_reference_samples,
+                "orphan_accepted_reference_samples": [],
+                "sample_bound": MAX_UNRESOLVED_PARENT_SAMPLES,
+            },
+            # Hierarchy is complete only when every non-empty parent resolves.
+            "hierarchy_complete": len(orphan_parent_pairs) == 0,
+            # compiler_ready is True when no COMPILATION-BLOCKING check fails.
+            # An unresolved accepted reference is a blocker (a synonym without
+            # a placed target cannot be compiled); it raises before reaching
+            # this point in normalize_archive. A parent-only unresolved
+            # hierarchy edge is a warning, not a blocker.
+            "compiler_ready": True,
         }
         report_out.write_text(json.dumps(report, ensure_ascii=False, indent=2, sort_keys=True) + "\n")
         return report

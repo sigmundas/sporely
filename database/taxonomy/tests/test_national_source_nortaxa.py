@@ -66,27 +66,24 @@ def test_profile_binds_pinned_nortaxa_release_and_identity_namespaces() -> None:
 def test_profile_maps_taxon_and_vernacular_from_meta_xml() -> None:
     profile = national_source.load_profile(PROFILE_PATH)
     assert profile.core_row_type == national_source.DWC_TAXON
-    assert profile.core_location == "data/nonstandard-core.csv"
+    # Profile paths match the retained real archive's meta.xml declarations.
+    assert profile.core_location == "taxon.txt"
     assert set(profile.core_terms) == {
         "taxonID", "acceptedNameUsageID", "parentNameUsageID",
         "scientificName", "scientificNameAuthorship",
         "taxonRank", "taxonomicStatus",
     }
     assert profile.vernacular_row_type == national_source.GBIF_VERNACULAR
-    assert profile.vernacular_location == "names/localized.data"
+    assert profile.vernacular_location == "vernacularname.txt"
     assert set(profile.vernacular_terms) == {"vernacularName", "language", "isPreferredName"}
 
 
 def test_profile_permits_zero_or_one_gbif_distribution_only() -> None:
     profile = national_source.load_profile(PROFILE_PATH)
-    # The real 1.284 archive uses the GBIF namespace; the adapter's allowlist
-    # accepts either DwC or GBIF, but this pinned profile targets the observed
-    # URI exactly. `validation_only` is mandatory: Distribution is validated
-    # but never imported.
     assert profile.distribution_row_type == national_source.GBIF_DISTRIBUTION
     assert profile.distribution_row_type in national_source.DISTRIBUTION_ROW_TYPES
     assert profile.distribution_validation_only is True
-    assert profile.distribution_location == "extra/distribution.tsv"
+    assert profile.distribution_location == "distribution.txt"
 
 
 # ----- adapter accepts the synthetic fixture -----
@@ -180,15 +177,23 @@ def test_nortaxa_normalize_does_not_extract_or_import_distribution(tmp_path: Pat
 # ----- historical + real-archive expectation -----
 
 
-def test_real_archive_path_absent_and_readme_documents_eventual_commands() -> None:
-    """The real archive.zip lives at sources/nortaxa/1.284/ after a manual
-    --execute acquisition; it is not present in the current tree, and the
-    profile directory documents the eventual commands."""
-    assert not (TAX / "sources" / "nortaxa" / "1.284" / "archive.zip").exists()
+def test_readme_documents_retained_archive_and_commands() -> None:
+    """The profile directory records that acquisition evidence and the
+    archive SHA-256 are tracked in the manifest, that the raw archive is
+    Git-ignored (and so a fresh checkout may not contain it), that on a
+    machine where the archive exists another --execute refuses, and
+    documents the validate/normalize commands."""
     readme = (PROFILE_DIR / "README.md").read_text(encoding="utf-8")
-    assert "acquire_nortaxa.py --execute" in readme
+    # Sentence may be line-wrapped in Markdown; check the load-bearing phrases.
+    normalized = " ".join(readme.split())
+    assert "Acquisition evidence and SHA-256 are tracked" in normalized
+    assert "raw archive is Git-ignored" in normalized
+    assert "fresh checkout may not contain" in normalized
+    assert "another `--execute` run **refuses**" in normalized
     assert "national_source.py validate" in readme
     assert "national_source.py normalize" in readme
+    assert "compiler_ready: true" in readme
+    assert "hierarchy_complete: false" in readme
 
 
 def test_synthetic_fixture_is_small_and_deterministic() -> None:

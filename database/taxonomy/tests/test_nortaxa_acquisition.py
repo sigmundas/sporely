@@ -585,7 +585,9 @@ def test_orphan_parent_reference_is_preserved_and_counted(tmp_path: Path) -> Non
          "raw_reference": "taxon:no-such-parent"},
     ]
     assert gaps["orphan_accepted_reference_samples"] == []
-    assert report["compiler_ready"] is False
+    # Parent-only unresolved edges are warnings, not compilation blockers.
+    assert report["compiler_ready"] is True
+    assert report["hierarchy_complete"] is False
 
 
 def test_orphan_accepted_reference_is_preserved_and_counted(tmp_path: Path) -> None:
@@ -611,7 +613,9 @@ def test_orphan_accepted_reference_is_preserved_and_counted(tmp_path: Path) -> N
         {"source_taxon_id": "taxon:orphanSynonym",
          "raw_reference": "taxon:no-such-accepted"},
     ]
+    # Unresolved accepted references remain compilation blockers.
     assert report["compiler_ready"] is False
+    assert report["hierarchy_complete"] is True
 
 
 def test_compiler_ready_true_when_all_references_resolve(tmp_path: Path) -> None:
@@ -701,13 +705,19 @@ def test_synonym_accepted_self_reference_still_fails(tmp_path: Path) -> None:
         )
 
 
-def test_national_source_normalizer_still_refuses_orphan_references(tmp_path: Path) -> None:
-    """The generic normalizer (national_source.normalize_archive) keeps its
-    strict reference-integrity check. Once the archive is retained the
-    failure can be diagnosed offline without a new download."""
+def test_national_source_normalizer_refuses_orphan_accepted_references(tmp_path: Path) -> None:
+    """The generic normalizer keeps its strict acceptedNameUsageID check.
+    A non-empty acceptedNameUsageID that does not resolve remains a
+    compilation blocker and raises. Orphan parent references are handled
+    separately (non-blocking) — see test_national_source.py."""
     import national_source
-    orphan = archive_rows()[0]
-    orphan[3] = "taxon:no-such-parent"
+    # Attach an unresolved acceptedNameUsageID to a synonym row.
+    orphan = archive_rows()[0][:]
+    orphan[1] = "taxon:orphanSyn"
+    orphan[2] = "taxon:no-such-accepted"
+    orphan[3] = ""
+    orphan[6] = "species"
+    orphan[7] = "synonym"
     archive = write_archive(tmp_path, meta=meta_xml(), core_rows=[orphan])
     profile_dict = {
         "profile_schema_version": 1,
@@ -749,7 +759,7 @@ def test_national_source_normalizer_still_refuses_orphan_references(tmp_path: Pa
     out = tmp_path / "normalized"
     with pytest.raises(
         national_source.NationalSourceError,
-        match="parentNameUsageID references unknown",
+        match="acceptedNameUsageID references unknown",
     ):
         national_source.normalize_archive(profile, archive, out)
     assert not out.exists()

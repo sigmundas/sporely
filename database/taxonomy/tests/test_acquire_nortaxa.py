@@ -551,7 +551,7 @@ def test_unrelated_staging_entry_is_not_removed_on_failure(release) -> None:
 
 def test_historical_attempt_1_recorded_in_committed_manifest() -> None:
     m = json.loads((TAXONOMY / "sources/nortaxa/1.284/manifest.json").read_text())
-    assert m["state"] == "consumed_and_structurally_failed"
+    assert m["state"] == "validated"
     a1 = m["execution_attempts"][0]
     assert a1["attempt_number"] == 1
     assert a1["outcome"] == "failed"

@@ -387,11 +387,10 @@ def test_manifest_records_consumed_and_structurally_failed_attempt_1() -> None:
     unavailable_due_to_not_persisted."""
     manifest = json.loads((RELEASE / "manifest.json").read_text())
     assert manifest["manifest_schema_version"] == 2
-    assert manifest["state"] == "consumed_and_structurally_failed"
-    assert manifest["approval_status"] == "consumed"
+    assert manifest["state"] == "validated"
+    assert manifest["approval_status"] in {"consumed", "consumed_and_promoted"}
     assert manifest["current_active_approval"] is False
     assert manifest["download_authorized"] is False
-    assert manifest["download"] is None
     attempts = manifest["execution_attempts"]
     # Attempts are append-only. Any later real-acquisition attempts may follow
     # the historical attempt 1, but attempt_number values must be unique and
@@ -418,9 +417,10 @@ def test_manifest_records_consumed_and_structurally_failed_attempt_1() -> None:
               "final_url", "http_status", "redirect_chain",
               "content_length_result", "content_encoding"):
         assert a1[f] == "unavailable_due_to_not_persisted", f
-    # `validation` no longer null: the manifest now carries the state note.
-    v = manifest["validation"]
-    assert v["state"] == "structural_validation_failed_cleanup_pending_or_completed"
+    # `validation` is either the failure-state note (pre-promotion) or the
+    # compact validation summary (post-promotion). Both keep `validation`
+    # non-null once the manifest has been touched at least once.
+    assert manifest["validation"] is not None
     # Attempt 2 is the real-archive acquisition that exposed the strict
     # missing-genus check. Its exact recorded fields are preserved verbatim.
     a2 = by_number[2]
@@ -454,6 +454,89 @@ def test_manifest_records_consumed_and_structurally_failed_attempt_1() -> None:
     }
     assert a3["started_at"] == "2026-07-27T20:27:10.489035Z"
     assert a3["completed_at"] == "2026-07-27T20:27:11.954725Z"
+
+
+# ----- Compact linkage + recomputed validation summary (attempt 4) -----
+
+
+def test_manifest_state_is_validated_and_download_evidence_present() -> None:
+    """After the successful attempt 4 the manifest reports state=validated and
+    the download / validation blocks are populated."""
+    m = json.loads((RELEASE / "manifest.json").read_text())
+    assert m["state"] == "validated"
+    assert m["download"] is not None
+    assert m["download"]["archive_sha256"] == \
+        "29c11c54d955dc44e4e5a38944dd7932989a256d1b173777579b9f33abd2fe22"
+    assert m["download"]["observed_bytes"] == 8399460
+    assert m["validation"] is not None
+
+
+def test_top_level_validation_block_matches_attempt_4_summary() -> None:
+    m = json.loads((RELEASE / "manifest.json").read_text())
+    by_num = {a["attempt_number"]: a for a in m["execution_attempts"]}
+    assert m["validation"] == by_num[4]["validation_summary"]
+
+
+def test_recomputed_summary_records_observed_reference_and_column_counts() -> None:
+    """The retained real NorTaxa 1.284 archive shows exactly:
+        orphan_parent_reference_count       = 72
+        orphan_accepted_reference_count     =  0
+        species_like_rows_missing_genus     =  2
+        every other column-gap counter      =  0
+    Any drift here means the manifest was rewritten with different data."""
+    m = json.loads((RELEASE / "manifest.json").read_text())
+    v = m["validation"]
+    rg = v["reference_gaps"]
+    assert rg["orphan_parent_reference_count"] == 72
+    assert rg["orphan_accepted_reference_count"] == 0
+    assert rg["sample_bound"] == 25
+    assert len(rg["orphan_parent_reference_samples"]) <= 25
+    assert rg["orphan_accepted_reference_samples"] == []
+    assert v["taxon_column_gaps"] == {
+        "species_like_rows_missing_genus": 2,
+        "species_like_rows_missing_specific_epithet": 0,
+        "species_like_rows_missing_both": 0,
+        "genus_rank_rows_missing_genus": 0,
+        "taxon_rows_missing_kingdom": 0,
+    }
+    # Compiler-ready is defined by compilation blockers only. Parent-only
+    # unresolved hierarchy edges are warnings; the real archive has 0
+    # unresolved accepted references so compiler_ready is True even though
+    # hierarchy_complete is False (72 unresolved parent edges).
+    assert v["compiler_ready"] is True
+    assert v["hierarchy_complete"] is False
+
+
+def test_manifest_linkage_uses_compact_aggregates_not_per_core_map() -> None:
+    """The persisted linkage block must contain only aggregate counts. The
+    per-core vernacular_rows_by_core_id map is kept only in memory."""
+    m = json.loads((RELEASE / "manifest.json").read_text())
+    linkage = m["validation"]["linkage"]
+    assert "vernacular_rows_by_core_id" not in linkage
+    assert linkage["distinct_core_row_ids"] == 229018
+    vern = linkage["vernacular"]
+    assert set(vern.keys()) == {
+        "total_linked_vernacular_rows",
+        "distinct_referenced_core_ids",
+        "orphan_vernacular_rows",
+        "maximum_vernacular_rows_for_one_core",
+    }
+    assert vern["orphan_vernacular_rows"] == 0
+    assert vern["total_linked_vernacular_rows"] == 58773
+
+
+def test_attempt_4_transport_fields_are_preserved_exactly() -> None:
+    """Recomputing the summary must not touch attempt 4's transport-related
+    fields, timestamps, archive size, or SHA-256."""
+    m = json.loads((RELEASE / "manifest.json").read_text())
+    a4 = next(a for a in m["execution_attempts"] if a["attempt_number"] == 4)
+    assert a4["outcome"] == "succeeded"
+    assert a4["phase"] == "validated_and_promoted"
+    assert a4["endpoint"] == "https://ipt.artsdatabanken.no/archive.do?r=artsnavnebase&v=1.284"
+    assert a4["observed_bytes"] == 8399460
+    assert a4["archive_sha256"] == "29c11c54d955dc44e4e5a38944dd7932989a256d1b173777579b9f33abd2fe22"
+    assert a4["started_at"] == "2026-07-27T20:41:51.913238Z"
+    assert a4["completed_at"] == "2026-07-27T20:41:53.845616Z"
 
 
 # ----- Cross-attempt composition (compose_supplemental_metadata_verification) -----
