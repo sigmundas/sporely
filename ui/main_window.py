@@ -7750,7 +7750,7 @@ class MainWindow(GeometryMixin, QMainWindow):
             min_height=GALLERY_MIN_HEIGHT,
             default_height=GALLERY_DEFAULT_HEIGHT,
             show_publish_checkbox=True,
-            publish_checkbox_hint=self.tr("Select image for publishing and cloud sync"),
+            publish_checkbox_hint=self.tr("Select image for external publishing"),
         )
         self.measure_gallery.set_multi_select(True)
         self.measure_gallery.set_reorderable(True)
@@ -12149,59 +12149,17 @@ class MainWindow(GeometryMixin, QMainWindow):
     def _on_measure_gallery_publish_selection_changed(self, selected_ids) -> None:
         if not self.active_observation_id:
             return
-        image_by_id = {
-            int(image.get("id")): dict(image)
-            for image in (self.observation_images or [])
-            if image.get("id") is not None
-        }
         all_image_ids = {
             int(image.get("id"))
             for image in (self.observation_images or [])
             if image.get("id") is not None
         }
-        previous_excluded = self._get_publish_excluded_image_ids_for_observation(self.active_observation_id)
-        previous_excluded = {img_id for img_id in previous_excluded if img_id in all_image_ids}
-        previous_selected = set(all_image_ids) - previous_excluded
         try:
             selected_set = {int(v) for v in (selected_ids or set())}
         except Exception:
             selected_set = set()
         excluded = set(all_image_ids) - set(selected_set)
-        unchecked_ids = previous_selected - selected_set
-        rechecked_ids = selected_set - previous_selected
-        for image_id in unchecked_ids:
-            img = image_by_id.get(image_id) or {}
-            cloud_id = str(img.get("cloud_id") or "").strip()
-            if not cloud_id:
-                continue
-            try:
-                ImageDB.queue_image_tombstone_for_local_image(image_id)
-            except Exception:
-                pass
-        for image_id in rechecked_ids:
-            img = image_by_id.get(image_id) or {}
-            cloud_id = str(img.get("cloud_id") or "").strip()
-            if not cloud_id:
-                continue
-            tombstone = ImageDB.get_image_tombstone_by_deleted_cloud_id(cloud_id)
-            if not tombstone:
-                continue
-            try:
-                ImageDB.clear_image_tombstone_by_deleted_cloud_id(cloud_id)
-            except Exception:
-                pass
-            if str(tombstone.get("delete_synced_at") or "").strip():
-                try:
-                    ImageDB.clear_image_cloud_sync_state(image_id)
-                except Exception:
-                    pass
         self._set_publish_excluded_image_ids_for_observation(self.active_observation_id, excluded)
-        try:
-            from utils.cloud_sync import mark_observation_dirty
-
-            mark_observation_dirty(int(self.active_observation_id))
-        except Exception:
-            pass
         if hasattr(self, "_sync_observations_tab_publish_state"):
             self._sync_observations_tab_publish_state(self.active_observation_id, excluded)
 

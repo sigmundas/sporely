@@ -1063,6 +1063,156 @@ def test_push_pending_image_tombstones_marks_delete_synced_at(monkeypatch, tmp_p
     assert delete_synced_at is not None
 
 
+def test_pending_legacy_publish_exclusion_tombstone_is_not_pushed(monkeypatch, tmp_path):
+    db_path = _init_tombstone_sync_db(tmp_path)
+    image_path = str(tmp_path / "active.jpg")
+    conn = sqlite3.connect(db_path)
+    try:
+        conn.execute(
+            "INSERT INTO observations (id, cloud_id, sync_status) VALUES (?, ?, ?)",
+            (1, "cloud-obs-1", "dirty"),
+        )
+        conn.execute(
+            """
+            INSERT INTO images (
+                id, observation_id, cloud_id, filepath, image_type, synced_at
+            ) VALUES (?, ?, ?, ?, ?, ?)
+            """,
+            (11, 1, "cloud-image-1", image_path, "microscope", "2026-05-01"),
+        )
+        conn.execute(
+            """
+            INSERT INTO image_tombstones (
+                deleted_cloud_id, deleted_at, deleted_storage_path,
+                local_observation_id, filepath
+            ) VALUES (?, ?, ?, ?, ?)
+            """,
+            ("cloud-image-1", "2026-05-02", image_path, 1, image_path),
+        )
+        conn.commit()
+    finally:
+        conn.close()
+
+    monkeypatch.setattr(models, "get_connection", lambda: sqlite3.connect(db_path))
+    monkeypatch.setattr(cloud_sync, "get_connection", lambda: sqlite3.connect(db_path))
+    calls = []
+
+    class DummyClient:
+        def soft_delete_image(self, cloud_image_id, deleted_at):
+            calls.append((cloud_image_id, deleted_at))
+
+    assert cloud_sync._push_pending_image_tombstones(DummyClient()) == []
+    assert calls == []
+
+    conn = sqlite3.connect(db_path)
+    try:
+        assert conn.execute("SELECT COUNT(*) FROM image_tombstones").fetchone()[0] == 0
+        image_row = conn.execute(
+            "SELECT cloud_id, synced_at FROM images WHERE id = 11"
+        ).fetchone()
+    finally:
+        conn.close()
+    assert image_row == ("cloud-image-1", "2026-05-01")
+
+
+def test_synced_legacy_publish_exclusion_tombstone_requeues_active_image(monkeypatch, tmp_path):
+    db_path = _init_tombstone_sync_db(tmp_path)
+    image_path = str(tmp_path / "active.jpg")
+    conn = sqlite3.connect(db_path)
+    try:
+        conn.execute(
+            "INSERT INTO observations (id, cloud_id, sync_status) VALUES (?, ?, ?)",
+            (1, "cloud-obs-1", "synced"),
+        )
+        conn.execute(
+            """
+            INSERT INTO images (
+                id, observation_id, cloud_id, filepath, image_type, synced_at
+            ) VALUES (?, ?, ?, ?, ?, ?)
+            """,
+            (11, 1, "cloud-image-1", image_path, "microscope", "2026-05-01"),
+        )
+        conn.execute(
+            """
+            INSERT INTO image_tombstones (
+                deleted_cloud_id, deleted_at, delete_synced_at,
+                deleted_storage_path, local_observation_id, filepath
+            ) VALUES (?, ?, ?, ?, ?, ?)
+            """,
+            (
+                "cloud-image-1",
+                "2026-05-02",
+                "2026-05-03",
+                image_path,
+                1,
+                image_path,
+            ),
+        )
+        conn.commit()
+    finally:
+        conn.close()
+
+    monkeypatch.setattr(models, "get_connection", lambda: sqlite3.connect(db_path))
+
+    class DummyClient:
+        def soft_delete_image(self, cloud_image_id, deleted_at):
+            raise AssertionError("a reconciled legacy tombstone must not be pushed")
+
+    assert cloud_sync._push_pending_image_tombstones(DummyClient()) == []
+
+    conn = sqlite3.connect(db_path)
+    try:
+        assert conn.execute("SELECT COUNT(*) FROM image_tombstones").fetchone()[0] == 0
+        image_row = conn.execute(
+            "SELECT cloud_id, synced_at FROM images WHERE id = 11"
+        ).fetchone()
+        observation_status = conn.execute(
+            "SELECT sync_status FROM observations WHERE id = 1"
+        ).fetchone()[0]
+    finally:
+        conn.close()
+    assert image_row == (None, None)
+    assert observation_status == "dirty"
+
+
+def test_remote_tombstone_with_local_image_id_is_not_reinterpreted(monkeypatch, tmp_path):
+    db_path = _init_tombstone_sync_db(tmp_path)
+    image_path = str(tmp_path / "active.jpg")
+    conn = sqlite3.connect(db_path)
+    try:
+        conn.execute(
+            "INSERT INTO observations (id, cloud_id, sync_status) VALUES (?, ?, ?)",
+            (1, "cloud-obs-1", "synced"),
+        )
+        conn.execute(
+            "INSERT INTO images (id, observation_id, cloud_id, filepath) VALUES (?, ?, ?, ?)",
+            (11, 1, "cloud-image-1", image_path),
+        )
+        conn.execute(
+            """
+            INSERT INTO image_tombstones (
+                deleted_cloud_id, deleted_at, deleted_storage_path,
+                local_observation_id, local_image_id, filepath
+            ) VALUES (?, ?, ?, ?, ?, ?)
+            """,
+            ("cloud-image-1", "2026-05-02", image_path, 1, 11, image_path),
+        )
+        conn.commit()
+    finally:
+        conn.close()
+
+    monkeypatch.setattr(models, "get_connection", lambda: sqlite3.connect(db_path))
+    monkeypatch.setattr(cloud_sync, "get_connection", lambda: sqlite3.connect(db_path))
+    calls = []
+
+    class DummyClient:
+        def soft_delete_image(self, cloud_image_id, deleted_at):
+            calls.append((cloud_image_id, deleted_at))
+
+    assert cloud_sync._push_pending_image_tombstones(DummyClient()) == []
+    assert calls == [("cloud-image-1", "2026-05-02")]
+
+
 def test_push_pending_image_tombstones_leaves_delete_synced_at_null_on_failure(monkeypatch, tmp_path):
     db_path = _init_tombstone_sync_db(tmp_path)
     conn = sqlite3.connect(db_path)
@@ -2289,21 +2439,14 @@ def test_push_measurements_for_observation_logs_finalization_timing(
     assert "pushed=1" in output
 
 
-@pytest.mark.parametrize("mutation_name", ["file", "render"])
-def test_push_all_prepares_images_for_image_render_changes(
+def test_push_all_prepares_images_for_source_file_changes(
     tmp_path,
     monkeypatch,
     capsys,
-    mutation_name,
 ):
     monkeypatch.setenv("SPORELY_DEBUG_CLOUD_SYNC", "1")
     ctx = _setup_push_all_existing_media_case(tmp_path, monkeypatch)
-    if mutation_name == "file":
-        ctx.image_path.write_bytes(b"changed-image-bytes")
-    elif mutation_name == "render":
-        cloud_sync.SettingsDB.set_setting(cloud_sync._SETTING_IMAGE_LICENSE, "61")
-    else:
-        raise AssertionError(mutation_name)
+    ctx.image_path.write_bytes(b"changed-image-bytes")
 
     image_prep_calls: list[tuple[int, str]] = []
     prepare_cb_calls: list[int] = []
@@ -2362,10 +2505,7 @@ def test_push_all_prepares_images_for_image_render_changes(
     assert "image prep diagnostics" in output
     assert "decision=full image prep" in output
     assert "changed_keys=[" in output
-    if mutation_name == "file":
-        assert "image_file_signature_changed=True" in output
-    elif mutation_name == "render":
-        assert "render_affecting_field_changed=True" in output
+    assert "image_file_signature_changed=True" in output
     assert not any("no prepared upload candidates" in message for message in ctx.progress_messages)
     assert "measurements pushed" in output
 
@@ -2628,7 +2768,7 @@ def test_push_all_skips_image_prep_for_tombstone_only_cleanup(
     assert "measurements pushed" in output
 
 
-def test_push_all_skips_image_prep_for_deleted_image_measurement_cleanup(
+def test_external_exclusion_does_not_strip_cloud_bytes_during_measurement_cleanup(
     tmp_path,
     monkeypatch,
     capsys,
@@ -2686,9 +2826,13 @@ def test_push_all_skips_image_prep_for_deleted_image_measurement_cleanup(
         row for row in ctx.client.remote_images
         if row["id"] == "cloud-image-11"
     )
-    assert protected["storage_path"] is None
-    assert protected["original_storage_path"] is None
-    assert ctx.client.storage_remove_calls
+    baseline = next(
+        row for row in ctx.remote_images
+        if row["id"] == "cloud-image-11"
+    )
+    assert protected["storage_path"] == baseline["storage_path"]
+    assert protected["original_storage_path"] == baseline["original_storage_path"]
+    assert ctx.client.storage_remove_calls == []
     assert "image prep diagnostics" in output
     assert "Cancelled tombstone for microscope image 11" in output
     assert "measurements pushed" in output

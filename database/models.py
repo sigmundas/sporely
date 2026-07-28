@@ -560,6 +560,83 @@ def mark_image_tombstone_synced(
         conn.close()
 
 
+def reconcile_legacy_publish_exclusion_tombstones() -> dict[str, int]:
+    """Remove tombstones created by the former publish-exclusion behavior.
+
+    Older desktop releases treated the external-publish checkbox as a cloud
+    deletion request. Those tombstones are identifiable because the queue
+    helper retained the active image row, omitted ``local_image_id``, and
+    stored the local source path as ``deleted_storage_path``. Real local
+    deletions retain ``local_image_id``; remote tombstones use a cloud storage
+    path. This deliberately narrow match avoids reinterpreting either.
+
+    If the obsolete tombstone was already synced, unlink the active local
+    image so normal cloud sync restores it as a new upload. Pending obsolete
+    tombstones can simply be removed before they reach the server.
+    """
+    conn = get_connection()
+    recovered_pending = 0
+    recovered_synced = 0
+    try:
+        conn.row_factory = sqlite3.Row
+        cursor = conn.cursor()
+        table_names = {
+            str(row[0])
+            for row in cursor.execute(
+                "SELECT name FROM sqlite_master WHERE type = 'table'"
+            ).fetchall()
+        }
+        if not {"image_tombstones", "images"}.issubset(table_names):
+            return {"pending": 0, "synced": 0}
+
+        rows = cursor.execute(
+            """
+            SELECT
+                t.id AS tombstone_id,
+                t.delete_synced_at,
+                i.id AS image_id,
+                i.observation_id
+            FROM image_tombstones AS t
+            JOIN images AS i
+              ON i.cloud_id = t.deleted_cloud_id
+            WHERE t.local_image_id IS NULL
+              AND (
+                    (t.deleted_storage_path IS NOT NULL AND t.deleted_storage_path = i.filepath)
+                 OR (t.deleted_storage_path IS NOT NULL AND t.deleted_storage_path = i.original_filepath)
+              )
+            """
+        ).fetchall()
+
+        image_columns = _table_columns(cursor, "images")
+        for row in rows:
+            was_synced = bool(str(row["delete_synced_at"] or "").strip())
+            cursor.execute(
+                "DELETE FROM image_tombstones WHERE id = ?",
+                (int(row["tombstone_id"]),),
+            )
+            if was_synced:
+                updates = ["cloud_id = NULL"]
+                if "synced_at" in image_columns:
+                    updates.append("synced_at = NULL")
+                cursor.execute(
+                    f"UPDATE images SET {', '.join(updates)} WHERE id = ?",
+                    (int(row["image_id"]),),
+                )
+                mark_observation_sync_dirty(cursor, row["observation_id"])
+                recovered_synced += 1
+            else:
+                recovered_pending += 1
+        conn.commit()
+    except sqlite3.OperationalError:
+        conn.rollback()
+    except Exception:
+        conn.rollback()
+        raise
+    finally:
+        conn.close()
+    return {"pending": recovered_pending, "synced": recovered_synced}
+
+
 def _normalize_taxon_key(genus: str | None, species: str | None) -> tuple[str, str] | None:
     if not genus or not species:
         return None

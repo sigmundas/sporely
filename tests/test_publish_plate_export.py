@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 import os
+from types import SimpleNamespace
 
 os.environ.setdefault("QT_QPA_PLATFORM", "offscreen")
 
@@ -70,6 +71,40 @@ def test_publish_plate_export_keeps_full_color_png(monkeypatch, tmp_path):
     with Image.open(out_path) as exported:
         assert exported.mode in {"RGB", "RGBA"}
         assert exported.mode != "P"
+
+
+def test_species_plate_publish_selection_does_not_mutate_cloud_state(monkeypatch):
+    def _unexpected_cloud_mutation(*_args, **_kwargs):
+        raise AssertionError("external selection must not mutate cloud state")
+
+    for method_name in (
+        "queue_image_tombstone_for_local_image",
+        "clear_image_tombstone_by_deleted_cloud_id",
+        "clear_image_cloud_sync_state",
+    ):
+        monkeypatch.setattr(
+            species_plate_dialog.ImageDB,
+            method_name,
+            _unexpected_cloud_mutation,
+        )
+
+    excluded_calls = []
+    dialog = SimpleNamespace(
+        _all_images=[
+            {"id": 1, "cloud_id": "cloud-1"},
+            {"id": 2, "cloud_id": "cloud-2"},
+        ],
+        _set_publish_excluded_image_ids=lambda excluded: excluded_calls.append(
+            set(excluded)
+        ),
+    )
+
+    species_plate_dialog.SpeciesPlateDialog._on_gallery_publish_selection_changed(
+        dialog,
+        {2},
+    )
+
+    assert excluded_calls == [{1}]
 
 
 def test_species_plate_saved_empty_slot_stays_empty_on_reopen(monkeypatch, tmp_path):

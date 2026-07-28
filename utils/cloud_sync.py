@@ -53,6 +53,7 @@ from database.models import (
     get_image_tombstones_by_local_image_id,
     list_pending_image_tombstones,
     mark_image_tombstone_synced,
+    reconcile_legacy_publish_exclusion_tombstones,
 )
 from database.reverse_location_lookup import normalize_country_code
 from utils.heic_converter import guess_local_image_mime_type
@@ -1520,21 +1521,13 @@ _MEAS_PUSH_COLS = [
     'measured_at',
 ]
 
-_SETTING_INCLUDE_ANNOTATIONS = "artsobs_publish_include_annotations"
-_SETTING_SHOW_SCALE_BAR = "artsobs_publish_show_scale_bar"
-_SETTING_INCLUDE_MEASURE_PLOTS = "artsobs_publish_include_measure_plots"
-_SETTING_INCLUDE_THUMBNAIL_GALLERY = "artsobs_publish_include_thumbnail_gallery"
-_SETTING_INCLUDE_PLATE = "artsobs_publish_include_plate"
-_SETTING_INCLUDE_COPYRIGHT = "artsobs_publish_include_copyright"
-_SETTING_IMAGE_LICENSE = "artsobs_publish_image_license"
-_SETTING_PROFILE_NAME = "profile_name"
-_SETTING_PROFILE_EMAIL = "profile_email"
 _SETTING_CLOUD_MEDIA_SIGNATURE = "sporely_cloud_media_signature_v1"
 _SETTING_CLOUD_OBS_SNAPSHOT_PREFIX = "sporely_cloud_snapshot_obs_"
 _SETTING_CLOUD_IMAGE_FILE_SIG_PREFIX = "sporely_cloud_image_file_sig_"
 _SETTING_CLOUD_LOCAL_MEDIA_SIG_PREFIX = "sporely_cloud_local_media_sig_obs_"
 _SETTING_LINKED_CLOUD_USER_ID = "linked_cloud_user_id"
 _CLOUD_LOCAL_MEDIA_RENDER_VERSION = "2"
+_CLEAN_CLOUD_IMAGE_CONVERTER_VERSION = "1"
 _REMOTE_SYNC_TIMESTAMP_GRACE_SECONDS = 5.0
 _CLOUD_THUMB_MAX_EDGE = 400
 _CALIBRATION_REFERENCE_MAX_EDGE = 2048
@@ -1590,9 +1583,7 @@ _IMAGE_METADATA_ONLY_FIELDS = frozenset({
 
 _LOCAL_MEDIA_PREP_RENDER_AFFECTING_TOP_LEVEL_FIELDS = frozenset({
     'render_version',
-    'cloud_media_signature',
     'cloud_image_size_mode',
-    'excluded_image_ids_raw',
 })
 
 _SNAPSHOT_OBS_FIELDS = [
@@ -4388,16 +4379,11 @@ def _observation_display_name(obs: dict | None) -> str:
 
 
 def _cloud_media_signature() -> str:
+    """Return clean cloud converter identity, excluding external publish state."""
     snapshot = {
-        'include_annotations': str(SettingsDB.get_setting(_SETTING_INCLUDE_ANNOTATIONS, '0') or '0').strip(),
-        'show_scale_bar': str(SettingsDB.get_setting(_SETTING_SHOW_SCALE_BAR, '0') or '0').strip(),
-        'include_measure_plots': str(SettingsDB.get_setting(_SETTING_INCLUDE_MEASURE_PLOTS, '0') or '0').strip(),
-        'include_thumbnail_gallery': str(SettingsDB.get_setting(_SETTING_INCLUDE_THUMBNAIL_GALLERY, '0') or '0').strip(),
-        'include_plate': str(SettingsDB.get_setting(_SETTING_INCLUDE_PLATE, '0') or '0').strip(),
-        'include_copyright': str(SettingsDB.get_setting(_SETTING_INCLUDE_COPYRIGHT, '0') or '0').strip(),
-        'image_license': str(SettingsDB.get_setting(_SETTING_IMAGE_LICENSE, '60') or '60').strip(),
-        'profile_name': str(SettingsDB.get_setting(_SETTING_PROFILE_NAME, '') or '').strip(),
-        'profile_email': str(SettingsDB.get_setting(_SETTING_PROFILE_EMAIL, '') or '').strip(),
+        'converter_version': _CLEAN_CLOUD_IMAGE_CONVERTER_VERSION,
+        'format': 'webp',
+        'upload_mode': 'full',
     }
     return json.dumps(snapshot, ensure_ascii=True, sort_keys=True, separators=(',', ':'))
 
@@ -4912,6 +4898,15 @@ def _remote_images_missing_locally(local_id: int, remote_images: list[dict] | No
 
 def _push_pending_image_tombstones(client: "SporelyCloudClient") -> list[str]:
     warnings: list[str] = []
+    # Compatibility repair: older versions may have queued a cloud deletion
+    # merely because an external-publish checkbox was unchecked.
+    repaired = reconcile_legacy_publish_exclusion_tombstones()
+    if repaired.get("pending") or repaired.get("synced"):
+        print(
+            "[cloud_sync] Reconciled legacy external-publish tombstones: "
+            f"{int(repaired.get('pending') or 0)} pending, "
+            f"{int(repaired.get('synced') or 0)} previously synced"
+        )
     for tombstone in list_pending_image_tombstones():
         cloud_image_id = str(tombstone.get('deleted_cloud_id') or '').strip()
         if not cloud_image_id:
@@ -5396,8 +5391,12 @@ def _normalized_local_media_signature_payload(
     include_measurements: bool = True,
 ) -> dict:
     normalized = dict(payload or {})
-    # Gallery layout state only affects desktop-local generated views.
-    normalized['gallery_settings_raw'] = ''
+    # These legacy fields affected external publishing or its selection UI,
+    # never the clean cloud bytes. Drop them so old stored signatures remain
+    # comparable without forcing a one-time WebP regeneration.
+    normalized.pop('cloud_media_signature', None)
+    normalized.pop('excluded_image_ids_raw', None)
+    normalized.pop('gallery_settings_raw', None)
     images = []
     for row in list(normalized.get('images') or []):
         if not isinstance(row, dict):
@@ -6623,14 +6622,9 @@ def _local_cloud_media_signature(
     finally:
         conn.close()
 
-    excluded_raw = str(SettingsDB.get_setting(f"artsobs_publish_excluded_image_ids_{obs_id}", '[]') or '[]')
-    gallery_settings_raw = str(SettingsDB.get_setting(f"gallery_settings_{obs_id}", '') or '').strip()
     payload = {
         'render_version': _CLOUD_LOCAL_MEDIA_RENDER_VERSION,
-        'cloud_media_signature': _cloud_media_signature(),
         'cloud_image_size_mode': 'full',
-        'excluded_image_ids_raw': excluded_raw,
-        'gallery_settings_raw': gallery_settings_raw,
         'images': [
             {
                 'id': _safe_int(row.get('id')),
@@ -7340,25 +7334,6 @@ def _mark_cloud_observations_dirty_for_media_changes() -> None:
     SettingsDB.set_setting(_SETTING_CLOUD_MEDIA_SIGNATURE, current_signature)
 
 
-def _cloud_publish_excluded_image_ids(observation_id: int | None) -> set[int]:
-    """Local image ids the user has unchecked from cloud/publish upload.
-
-    Mirrors ``ObservationsTab._publish_excluded_image_ids`` so the backend
-    dirty-scan agrees with what the upload path actually mirrors.
-    """
-    if not observation_id:
-        return set()
-    key = f"artsobs_publish_excluded_image_ids_{int(observation_id or 0)}"
-    raw = SettingsDB.get_setting(key, "[]")
-    try:
-        loaded = json.loads(raw or "[]")
-        if isinstance(loaded, list):
-            return {int(value) for value in loaded}
-    except Exception:
-        pass
-    return set()
-
-
 def microscope_image_requires_public_spore_anchor(image_id: int | None) -> bool:
     """Return whether one local image must retain a public metadata anchor.
 
@@ -7401,25 +7376,14 @@ def microscope_image_requires_public_spore_anchor(image_id: int | None) -> bool:
 
 
 def _cloud_explicit_media_upload_selection(observation_id: int | None) -> set[int]:
-    """Microscope image ids whose publish checkbox has an initialized checked state.
+    """Return persisted cloud-specific byte-upload choices, when available.
 
-    The seeded-id setting distinguishes an intentional/defaulted checkbox state
-    from an old microscope backlog whose publish controls have never been
-    initialized. Exclusions remain authoritative for both image types.
+    The current desktop UI has only an external-publish checkbox. Its seeded
+    and excluded settings must not be repurposed as Sporely Cloud controls, so
+    no persisted explicit cloud selection exists yet. Operation-scoped callers
+    may still pass an explicit selection directly.
     """
-    if not observation_id:
-        return set()
-    key = f"artsobs_publish_micro_seeded_ids_{int(observation_id or 0)}"
-    raw = SettingsDB.get_setting(key, "[]")
-    try:
-        loaded = json.loads(raw or "[]")
-        if isinstance(loaded, list):
-            seeded_ids = {int(value) for value in loaded}
-        else:
-            seeded_ids = set()
-    except Exception:
-        seeded_ids = set()
-    return seeded_ids - _cloud_publish_excluded_image_ids(observation_id)
+    return set()
 
 
 def _cloud_publish_path_key(path: str | None) -> str:
@@ -7463,8 +7427,7 @@ def explain_pending_cloud_image_decision(
 
     Policy (matches the ``sync_images=True`` explicit media-upload semantics):
 
-      * Field images: eligible unless the user unchecked them from publish or
-        their local file is missing.
+      * Field images: eligible unless their local file is missing.
       * Microscope images: eligible only when the user explicitly selected them
         for media upload, or they have at least one spore measurement (the
         "public spore points anchor" case). Bare microscope photos that were
@@ -7568,15 +7531,13 @@ def _pending_cloud_pushable_image_ids(
     """Image ids still missing a cloud_id that cloud sync would actually push.
 
     Uses :func:`explain_pending_cloud_image_decision` so this stays in lock-step
-    with the upload-collection predicate. Any row the upload path would skip
-    (excluded, duplicate, missing file, cache row, microscope-no-measurements)
-    is dropped here too, so the dirty-scan cannot perpetually re-dirty
-    observations over rows the sync intentionally leaves local.
+    with the upload-collection predicate. External-publish exclusions are
+    intentionally ignored. Any row the upload path would otherwise skip
+    (duplicate, missing file, cache row, microscope-no-measurements) is dropped
+    here too, so the dirty-scan cannot perpetually re-dirty observations over
+    rows the sync intentionally leaves local.
     """
-    try:
-        excluded_ids = _cloud_publish_excluded_image_ids(observation_id)
-    except Exception:
-        excluded_ids = set()
+    excluded_ids: set[int] = set()
 
     conn = get_connection()
     try:
@@ -13363,14 +13324,7 @@ def _push_images_for_observation(
             preparation_failed = True
     else:
         images = ImageDB.get_images_for_observation(obs['id'])
-        excluded_image_ids = _cloud_publish_excluded_image_ids(obs['id'])
         for img in images:
-            local_image_id = _safe_int(img.get('id'))
-            if local_image_id in excluded_image_ids:
-                # An unchecked microscope image may still have a protected
-                # metadata-only row for its public measurements, but its
-                # source bytes must never enter the fallback upload path.
-                continue
             if img.get('image_type') == 'microscope' and not img.get('cloud_id'):
                 continue
             prepared_items.append({
@@ -14146,7 +14100,10 @@ def _ensure_metadata_only_microscope_image_for_public_spores(
     payload = _metadata_only_microscope_image_payload(
         client, obs_cloud_id, row,
     )
-    metadata_only = local_image_id in _cloud_publish_excluded_image_ids(obs_local_id)
+    # External-publish exclusions never downgrade a clean Sporely Cloud image
+    # to a metadata-only anchor. Metadata-only rows remain supported for cases
+    # where no canonical source bytes are available.
+    metadata_only = False
 
     if remote_row:
         remote_cloud_id = str(remote_row.get('id') or '').strip()

@@ -168,7 +168,6 @@ from utils.cloud_sync import (
     is_image_too_large_for_plan_error,
     materialize_cloud_media_for_observation,
     load_saved_cloud_password,
-    microscope_image_requires_public_spore_anchor,
     format_cloud_sync_error_details,
     _format_cloud_sync_observation_status,
     _cloud_sync_current_summary,
@@ -2431,7 +2430,7 @@ class ObservationsTab(QWidget):
             show_move_to_observation=True,
             show_edit=True,
             show_publish_checkbox=True,
-            publish_checkbox_hint=self.tr("Select image for publishing and cloud sync"),
+            publish_checkbox_hint=self.tr("Select image for external publishing"),
         )
         self.gallery_widget.setSizePolicy(QSizePolicy.Expanding, QSizePolicy.Preferred)
         self.gallery_widget.set_multi_select(True)
@@ -7159,8 +7158,8 @@ class ObservationsTab(QWidget):
             current_ids.add(target_id)
         else:
             current_ids.discard(target_id)
-        # Route the change through the gallery so all existing publish
-        # persistence, tombstone bookkeeping, and cloud-dirty flags run.
+        # Route the change through the gallery so external-publish selection
+        # persistence and the other gallery view stay in sync.
         gallery.set_publish_selected_ids(current_ids, emit_signal=True)
 
     def _on_view_splitter_moved(self, _pos: int, _index: int) -> None:
@@ -7660,7 +7659,7 @@ class ObservationsTab(QWidget):
             return
         if not hasattr(self, "gallery_widget"):
             return
-        hint = self.tr("Select image for publishing and cloud sync")
+        hint = self.tr("Select image for external publishing")
         for checkbox in self.gallery_widget.publish_checkbox_widgets():
             self._status_hint_controller.register_widget(checkbox, hint)
 
@@ -7764,38 +7763,6 @@ class ObservationsTab(QWidget):
         obs_id = int(self.selected_observation_id)
         unchecked_ids = previous_selected - selected_set
         rechecked_ids = selected_set - previous_selected
-        for image_id in unchecked_ids:
-            img = image_by_id.get(image_id) or {}
-            cloud_id = str(img.get("cloud_id") or "").strip()
-            if not cloud_id:
-                continue
-            if microscope_image_requires_public_spore_anchor(image_id):
-                try:
-                    ImageDB.clear_image_tombstone_by_deleted_cloud_id(cloud_id)
-                except Exception:
-                    pass
-                continue
-            try:
-                ImageDB.queue_image_tombstone_for_local_image(image_id)
-            except Exception:
-                pass
-        for image_id in rechecked_ids:
-            img = image_by_id.get(image_id) or {}
-            cloud_id = str(img.get("cloud_id") or "").strip()
-            if not cloud_id:
-                continue
-            tombstone = ImageDB.get_image_tombstone_by_deleted_cloud_id(cloud_id)
-            if not tombstone:
-                continue
-            try:
-                ImageDB.clear_image_tombstone_by_deleted_cloud_id(cloud_id)
-            except Exception:
-                pass
-            if str(tombstone.get("delete_synced_at") or "").strip():
-                try:
-                    ImageDB.clear_image_cloud_sync_state(image_id)
-                except Exception:
-                    pass
         self._set_publish_excluded_image_ids(obs_id, excluded)
         # Once the user has interacted with a microscope image's publish state,
         # record it as "seeded" so the default (unchecked) is not re-applied
@@ -7811,12 +7778,6 @@ class ObservationsTab(QWidget):
             self._set_publish_seeded_microscope_ids(obs_id, seeded)
         if hasattr(self, "_sync_image_browser_publish_state"):
             self._sync_image_browser_publish_state()
-        try:
-            from utils.cloud_sync import mark_observation_dirty
-
-            mark_observation_dirty(obs_id)
-        except Exception:
-            pass
         host = self.window()
         if host is None:
             host = self.parent()
@@ -8111,11 +8072,12 @@ class ObservationsTab(QWidget):
         """Return canonical local images eligible for cloud sync (bytes OR metadata).
 
         Includes rows that already have ``cloud_id`` so the downstream code can
-        still emit metadata-only patches for them. Rows the shared predicate
-        would reject entirely (excluded, duplicate, missing file, wrong type,
-        generated cloud stub, cache row) are omitted; rows in that "ineligible
-        for byte upload but still already-synced" grey zone remain because they
-        still need metadata patches.
+        still emit metadata-only patches for them. External-publish exclusions
+        are intentionally ignored. Rows the shared predicate would otherwise
+        reject entirely (duplicate, missing file, wrong type, generated cloud
+        stub, cache row) are omitted; rows in that "ineligible for byte upload
+        but still already-synced" grey zone remain because they still need
+        metadata patches.
 
         The microscope-no-measurements filter applies only to rows that lack a
         cloud_id — the intent is to stop first-time byte upload of the backlog,
@@ -8130,7 +8092,7 @@ class ObservationsTab(QWidget):
         )
 
         images = ImageDB.get_images_for_observation(observation_id)
-        excluded_ids = self._publish_excluded_image_ids(observation_id)
+        excluded_ids: set[int] = set()
         if explicit_media_upload_selection is None:
             explicit_media_upload_selection = _cloud_explicit_media_upload_selection(observation_id)
         measurement_counts = _measurement_counts_for_observation_images(int(observation_id))

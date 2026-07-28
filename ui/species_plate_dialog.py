@@ -2482,7 +2482,7 @@ class SpeciesPlateDialog(QDialog):
             show_badges=True,
             show_edit=True,
             show_publish_checkbox=True,
-            publish_checkbox_hint=self.tr("Select image for publishing and cloud sync"),
+            publish_checkbox_hint=self.tr("Select image for external publishing"),
         )
         self._gallery.setMaximumHeight(190)
         self._gallery.imageClicked.connect(self._on_gallery_image_clicked)
@@ -2946,59 +2946,16 @@ class SpeciesPlateDialog(QDialog):
         return all_ids - self._publish_excluded_image_ids()
 
     def _on_gallery_publish_selection_changed(self, selected_ids) -> None:
-        image_by_id = {
-            int(img.get("id")): dict(img)
-            for img in self._all_images
-            if img.get("id") is not None
-        }
         all_ids = {
             int(img.get("id"))
             for img in self._all_images
             if img.get("id") is not None
         }
-        previous_selected = all_ids - self._publish_excluded_image_ids()
         try:
             selected = {int(value) for value in (selected_ids or set())}
         except Exception:
             selected = set()
-        unchecked_ids = previous_selected - selected
-        rechecked_ids = selected - previous_selected
-        for image_id in unchecked_ids:
-            img = image_by_id.get(image_id) or {}
-            cloud_id = str(img.get("cloud_id") or "").strip()
-            if not cloud_id:
-                continue
-            try:
-                ImageDB.queue_image_tombstone_for_local_image(image_id)
-            except Exception:
-                pass
-        for image_id in rechecked_ids:
-            img = image_by_id.get(image_id) or {}
-            cloud_id = str(img.get("cloud_id") or "").strip()
-            if not cloud_id:
-                continue
-            try:
-                tombstone = ImageDB.get_image_tombstone_by_deleted_cloud_id(cloud_id)
-            except Exception:
-                tombstone = None
-            if not tombstone:
-                continue
-            try:
-                ImageDB.clear_image_tombstone_by_deleted_cloud_id(cloud_id)
-            except Exception:
-                pass
-            if str(tombstone.get("delete_synced_at") or "").strip():
-                try:
-                    ImageDB.clear_image_cloud_sync_state(image_id)
-                except Exception:
-                    pass
         self._set_publish_excluded_image_ids(all_ids - selected)
-        try:
-            from utils.cloud_sync import mark_observation_dirty
-
-            mark_observation_dirty(int(self._obs_id))
-        except Exception:
-            pass
 
     # ── Rendering ─────────────────────────────────────────────────────────────
 

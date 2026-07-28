@@ -186,6 +186,173 @@ def _seed_observation_with_synced_image(db_path, image_path: Path):
         conn.close()
 
 
+def test_external_publish_settings_do_not_change_clean_cloud_image_signature(
+    tmp_path,
+    monkeypatch,
+):
+    db_path = _init_db(tmp_path)
+    image_path = tmp_path / "image.jpg"
+    image_path.write_bytes(b"stable-image")
+    _seed_observation_with_synced_image(db_path, image_path)
+    _patch_connections(monkeypatch, db_path)
+
+    before = cloud_sync._local_cloud_image_media_signature(1)
+    conn = sqlite3.connect(db_path)
+    try:
+        conn.executemany(
+            "INSERT INTO settings (key, value) VALUES (?, ?)",
+            [
+                ("artsobs_publish_show_scale_bar", "1"),
+                ("artsobs_publish_include_thumbnail_gallery", "1"),
+                ("artsobs_publish_include_copyright", "1"),
+                ("gallery_settings_1", '{"gallery_sort":"length"}'),
+                ("artsobs_publish_excluded_image_ids_1", "[11]"),
+            ],
+        )
+        conn.commit()
+    finally:
+        conn.close()
+
+    assert cloud_sync._local_cloud_image_media_signature(1) == before
+
+
+def test_source_file_change_changes_clean_cloud_image_signature(tmp_path, monkeypatch):
+    db_path = _init_db(tmp_path)
+    image_path = tmp_path / "image.jpg"
+    image_path.write_bytes(b"first")
+    _seed_observation_with_synced_image(db_path, image_path)
+    _patch_connections(monkeypatch, db_path)
+
+    before = cloud_sync._local_cloud_image_media_signature(1)
+    image_path.write_bytes(b"second-and-larger")
+    after = cloud_sync._local_cloud_image_media_signature(1)
+
+    assert after != before
+    assert not cloud_sync._local_media_signatures_match(
+        before,
+        after,
+        include_measurements=False,
+    )
+
+
+def test_measurement_change_affects_metadata_signature_not_clean_image_signature(
+    tmp_path,
+    monkeypatch,
+):
+    db_path = _init_db(tmp_path)
+    image_path = tmp_path / "image.jpg"
+    image_path.write_bytes(b"stable-image")
+    _seed_observation_with_synced_image(db_path, image_path)
+    _patch_connections(monkeypatch, db_path)
+
+    clean_before = cloud_sync._local_cloud_image_media_signature(1)
+    metadata_before = cloud_sync._local_cloud_media_signature(1)
+    conn = sqlite3.connect(db_path)
+    try:
+        conn.execute(
+            """
+            INSERT INTO spore_measurements (
+                image_id, length_um, width_um, measurement_type,
+                p1_x, p1_y, p2_x, p2_y, p3_x, p3_y, p4_x, p4_y
+            ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+            """,
+            (11, 10.5, 5.2, "spore", 1, 2, 3, 4, 5, 6, 7, 8),
+        )
+        conn.commit()
+    finally:
+        conn.close()
+
+    assert cloud_sync._local_cloud_image_media_signature(1) == clean_before
+    assert cloud_sync._local_cloud_media_signature(1) != metadata_before
+
+
+def test_legacy_external_publish_fields_do_not_invalidate_clean_cloud_signature():
+    stored = json.dumps(
+        {
+            "render_version": "2",
+            "cloud_image_size_mode": "full",
+            "cloud_media_signature": '{"include_thumbnail_gallery":"0"}',
+            "excluded_image_ids_raw": "[]",
+            "gallery_settings_raw": '{"gallery_sort":"length"}',
+            "images": [],
+        },
+        sort_keys=True,
+    )
+    current = json.dumps(
+        {
+            "render_version": "2",
+            "cloud_image_size_mode": "full",
+            "images": [],
+        },
+        sort_keys=True,
+    )
+
+    assert cloud_sync._local_media_signatures_match(
+        stored,
+        current,
+        include_measurements=False,
+    )
+
+
+def test_legacy_signature_normalization_preserves_unknown_meaningful_fields():
+    stored = json.dumps(
+        {
+            "render_version": "2",
+            "cloud_image_size_mode": "full",
+            "future_clean_converter_option": "preserve-alpha",
+            "images": [],
+        },
+        sort_keys=True,
+    )
+    current = json.dumps(
+        {
+            "render_version": "2",
+            "cloud_image_size_mode": "full",
+            "images": [],
+        },
+        sort_keys=True,
+    )
+
+    assert not cloud_sync._local_media_signatures_match(
+        stored,
+        current,
+        include_measurements=False,
+    )
+
+
+def test_equivalent_legacy_signature_stores_current_payload_not_normalized_legacy(
+    monkeypatch,
+):
+    stored = json.dumps(
+        {
+            "render_version": "2",
+            "cloud_image_size_mode": "full",
+            "cloud_media_signature": '{"include_thumbnail_gallery":"1"}',
+            "images": [],
+        },
+        sort_keys=True,
+    )
+    current = json.dumps(
+        {
+            "render_version": "2",
+            "cloud_image_size_mode": "full",
+            "images": [],
+        },
+        sort_keys=True,
+    )
+    writes = []
+    monkeypatch.setattr(
+        cloud_sync,
+        "_store_local_cloud_media_signature",
+        lambda observation_id, signature: writes.append((observation_id, signature)),
+    )
+
+    cloud_sync._store_local_media_signature_if_equivalent(7, stored, current)
+
+    assert writes == [(7, current)]
+    assert "cloud_media_signature" not in json.loads(writes[0][1])
+
+
 def _snapshot(remote_obs, remote_images, remote_measurements=None):
     return cloud_sync._cloud_observation_snapshot(
         remote_obs, remote_images, remote_measurements or []

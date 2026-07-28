@@ -375,8 +375,11 @@ def test_explicit_media_upload_leaves_measurement_less_microscope_alone(tmp_path
     assert status == "synced"
 
 
-def test_persisted_checked_microscope_without_measurements_is_dirtied(tmp_path, monkeypatch):
-    """A seeded, non-excluded checkbox is explicit upload intent."""
+def test_external_checked_microscope_without_measurements_is_not_cloud_intent(
+    tmp_path,
+    monkeypatch,
+):
+    """External publish state does not opt a bare microscope into cloud upload."""
     db_path = _init_db(tmp_path)
     conn = _connect(db_path)
     conn.execute("INSERT INTO observations (id, cloud_id, sync_status) VALUES (500, 'cloud-500', 'synced')")
@@ -405,11 +408,14 @@ def test_persisted_checked_microscope_without_measurements_is_dirtied(tmp_path, 
     status = _connect(db_path).execute(
         "SELECT sync_status FROM observations WHERE id = 500"
     ).fetchone()[0]
-    assert status == "dirty"
+    assert status == "synced"
 
 
-def test_persisted_unchecked_microscope_stays_excluded_even_with_measurements(tmp_path, monkeypatch):
-    """The exclusion checkbox wins over both seeded selection and measurements."""
+def test_external_publish_exclusion_does_not_hide_measured_microscope_from_cloud(
+    tmp_path,
+    monkeypatch,
+):
+    """External-publish selection is independent from cloud media eligibility."""
     db_path = _init_db(tmp_path)
     conn = _connect(db_path)
     conn.execute("INSERT INTO observations (id, cloud_id, sync_status) VALUES (500, 'cloud-500', 'synced')")
@@ -443,7 +449,7 @@ def test_persisted_unchecked_microscope_stays_excluded_even_with_measurements(tm
     status = _connect(db_path).execute(
         "SELECT sync_status FROM observations WHERE id = 500"
     ).fetchone()[0]
-    assert status == "synced"
+    assert status == "dirty"
 
 
 def test_explicit_media_upload_dirties_when_user_selected_the_microscope(tmp_path, monkeypatch):

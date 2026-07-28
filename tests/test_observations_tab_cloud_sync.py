@@ -577,7 +577,7 @@ def test_cloud_sync_helpers_include_microscope_media_and_allow_recovery_cache():
     ) is True
 
 
-def test_prepare_cloud_sync_image_uploads_uses_publish_checkbox_selection(tmp_path, monkeypatch):
+def test_prepare_cloud_sync_image_uploads_ignores_external_publish_selection(tmp_path, monkeypatch):
     field_path = tmp_path / "field.jpg"
     microscope_path = tmp_path / "microscope.jpg"
     field_path.write_bytes(b"field")
@@ -610,6 +610,11 @@ def test_prepare_cloud_sync_image_uploads_uses_publish_checkbox_selection(tmp_pa
         "get_images_for_observation",
         lambda observation_id: [field_row, microscope_row],
     )
+    monkeypatch.setattr(
+        cloud_sync,
+        "_measurement_counts_for_observation_images",
+        lambda observation_id: {2: 1},
+    )
 
     fake_tab = SimpleNamespace(
         tr=lambda text: text,
@@ -631,7 +636,7 @@ def test_prepare_cloud_sync_image_uploads_uses_publish_checkbox_selection(tmp_pa
         {"id": 631},
     )
 
-    assert [item["image_row"]["id"] for item in prepared] == [1]
+    assert [item["image_row"]["id"] for item in prepared] == [1, 2]
     assert warnings == []
     assert cleanup is not None
     cleanup()
@@ -808,7 +813,7 @@ def test_cloud_sync_finished_proven_noop_skips_observation_refresh():
 
 
 @pytest.mark.parametrize("image_type", ["field", "microscope"])
-def test_gallery_publish_uncheck_queues_cloud_tombstone(monkeypatch, image_type):
+def test_gallery_publish_uncheck_does_not_mutate_cloud_state(monkeypatch, image_type):
     calls: dict[str, list] = {
         "queue": [],
         "clear": [],
@@ -841,12 +846,6 @@ def test_gallery_publish_uncheck_queues_cloud_tombstone(monkeypatch, image_type)
         lambda image_id: calls["cloud"].append(int(image_id)) or True,
     )
     monkeypatch.setattr(cloud_sync, "mark_observation_dirty", lambda obs_id: calls["dirty"].append(int(obs_id)))
-    monkeypatch.setattr(
-        observations_tab,
-        "microscope_image_requires_public_spore_anchor",
-        lambda image_id: False,
-    )
-
     tab = SimpleNamespace(
         selected_observation_id=7,
         _publish_excluded_image_ids=lambda observation_id: set(),
@@ -861,14 +860,14 @@ def test_gallery_publish_uncheck_queues_cloud_tombstone(monkeypatch, image_type)
 
     observations_tab.ObservationsTab._on_gallery_publish_selection_changed(tab, {2})
 
-    assert calls["queue"] == [1]
+    assert calls["queue"] == []
     assert calls["clear"] == []
     assert calls["cloud"] == []
     assert calls["excluded"] == [(7, (1,))]
-    assert calls["dirty"] == [7]
+    assert calls["dirty"] == []
 
 
-def test_gallery_publish_uncheck_preserves_public_spore_microscope_anchor(monkeypatch):
+def test_gallery_publish_uncheck_does_not_touch_public_spore_anchor(monkeypatch):
     calls: dict[str, list] = {
         "queue": [],
         "clear": [],
@@ -894,11 +893,6 @@ def test_gallery_publish_uncheck_preserves_public_spore_microscope_anchor(monkey
         lambda cloud_id: calls["clear"].append(str(cloud_id)) or True,
     )
     monkeypatch.setattr(
-        observations_tab,
-        "microscope_image_requires_public_spore_anchor",
-        lambda image_id: int(image_id) == 1,
-    )
-    monkeypatch.setattr(
         cloud_sync,
         "mark_observation_dirty",
         lambda obs_id: calls["dirty"].append(int(obs_id)),
@@ -918,12 +912,12 @@ def test_gallery_publish_uncheck_preserves_public_spore_microscope_anchor(monkey
     observations_tab.ObservationsTab._on_gallery_publish_selection_changed(tab, {2})
 
     assert calls["queue"] == []
-    assert calls["clear"] == ["cloud-1"]
+    assert calls["clear"] == []
     assert calls["excluded"] == [(7, (1,))]
-    assert calls["dirty"] == [7]
+    assert calls["dirty"] == []
 
 
-def test_gallery_publish_recheck_clears_synced_tombstone(monkeypatch):
+def test_gallery_publish_recheck_does_not_mutate_cloud_state(monkeypatch):
     calls: dict[str, list] = {
         "queue": [],
         "clear": [],
@@ -980,10 +974,10 @@ def test_gallery_publish_recheck_clears_synced_tombstone(monkeypatch):
     observations_tab.ObservationsTab._on_gallery_publish_selection_changed(tab, {1, 2})
 
     assert calls["queue"] == []
-    assert calls["clear"] == ["cloud-1"]
-    assert calls["cloud"] == [1]
+    assert calls["clear"] == []
+    assert calls["cloud"] == []
     assert calls["excluded"] == [(7, ())]
-    assert calls["dirty"] == [7]
+    assert calls["dirty"] == []
 
 
 def test_default_publish_selection_selects_one_microscope_image_per_magnification():

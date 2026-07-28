@@ -172,8 +172,7 @@ class _MemorySyncClient(cloud_sync.SporelyCloudClient):
 
 
 def test_dirty_scan_ignores_rows_cloud_sync_never_pushes(tmp_path, monkeypatch):
-    """Publish-excluded / duplicate-path / missing-file NULL rows must not
-    re-dirty a synced observation forever."""
+    """Duplicate-path / missing-file rows are ignored; external exclusions are not."""
     db_path = _create_sync_db(tmp_path)
     shared = tmp_path / "shared.jpg"
     shared.write_bytes(b"shared")
@@ -193,7 +192,7 @@ def test_dirty_scan_ignores_rows_cloud_sync_never_pushes(tmp_path, monkeypatch):
         db_path, id=1, observation_id=10, cloud_id="cloud-img-1", filepath=str(shared),
         source_role="local_canonical", file_purpose="field", image_type="field", sort_order=0,
     )
-    # Publish-excluded NULL row.
+    # External-publish exclusions do not suppress clean cloud sync.
     excluded_file = tmp_path / "excluded.jpg"
     excluded_file.write_bytes(b"excluded")
     _insert_image(
@@ -229,7 +228,7 @@ def test_dirty_scan_ignores_rows_cloud_sync_never_pushes(tmp_path, monkeypatch):
         include_pending_local_media_uploads=True,
     )
 
-    assert _sync_status(db_path, 10) == "synced"
+    assert _sync_status(db_path, 10) == "dirty"
 
 
 def test_dirty_scan_redirties_genuinely_pending_image(tmp_path, monkeypatch):

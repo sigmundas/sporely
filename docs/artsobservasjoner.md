@@ -59,7 +59,7 @@ Cloud sync does not use the online-publishing overlay options. On desktop:
 
 If you change image order, image metadata, measurements/spore stats, or local image files, the affected observation is marked for cloud re-sync so cloud media stays up to date after the first upload.
 
-After the first clean cloud media sync for an observation, later startup syncs try a lightweight local signature check first. If the selected images, measurements, and relevant publish settings have not changed, Sporely skips gallery/plot/media preparation and does not re-upload unchanged cloud media.
+After the first clean cloud media sync for an observation, later startup syncs try a lightweight local signature check first. External-publish selections and render settings do not affect this signature. Measurement and calibration changes still synchronize as metadata without forcing unchanged clean images to be re-encoded.
 
 If an observation is dirty only because of tombstones or deleted-image measurement cleanup, Sporely can skip WebP/image prep and still run tombstone sync, measurement cleanup, and metadata-only image sync. Set `SPORELY_DEBUG_CLOUD_SYNC=1` to print a per-observation diagnostic line showing the signature checks, whether any local image still has `cloud_id IS NULL`, which keys changed, and whether the final decision was `skip prep`, `metadata-only image sync`, or `full image prep`.
 
