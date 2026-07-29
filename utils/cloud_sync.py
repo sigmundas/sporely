@@ -145,6 +145,16 @@ _OBS_PUSH_COLS = [
     'spore_data_visibility',
 ]
 # Never push: private_comment, ai_state_json, folder_path, cloud_id, sync_status, synced_at
+# Stage 3B.2/3B.3: local-only taxonomy-v2 fields — not pushed to Supabase
+# until a separate cloud-schema migration is authored. Regression test
+# `tests/test_stage_3b_3_cloud_isolation.py` asserts these stay out.
+_STAGE_3B_LOCAL_ONLY_OBS_FIELDS = frozenset(
+    {"sporely_taxon_id", "scientific_name_snapshot", "taxon_rank_snapshot"}
+)
+assert not (set(_OBS_PUSH_COLS) & _STAGE_3B_LOCAL_ONLY_OBS_FIELDS), (
+    "Stage 3B taxonomy fields must never appear in _OBS_PUSH_COLS. "
+    "Cloud schema change is a separate migration."
+)
 
 
 def _normalize_slug(value: object) -> str:

@@ -698,21 +698,34 @@ def _spore_count_from_value(value: object) -> str | None:
     return None
 
 
+class _NullSuspend:
+    """Context manager used when no taxonomy controller is available yet
+    (e.g. dialogs that haven't wired autocomplete). Mirrors the controller's
+    `_suspended` shape."""
+
+    def __enter__(self):
+        return self
+
+    def __exit__(self, *_):
+        return False
+
+
 def _format_observation_display_label(
     common_name: str | None,
     genus: str | None,
     species: str | None,
     *,
     species_guess_fallback: str | None = None,
+    scientific_name_snapshot: str | None = None,
 ) -> str:
     """Render the "common name (and scientific name)" cell text.
 
-    Stage 3B.2 contract: the scientific identification must ALWAYS remain
-    visible when it exists — the vernacular is a snapshot, not a
-    replacement. If both are present render them together (vernacular
-    capitalized for display, scientific italic-friendly on a second line).
-    Legacy dash placeholders are preserved for rows lacking any
-    identification.
+    Stage 3B.2 + 3B.3: the vernacular is a snapshot, not a replacement;
+    the scientific identification remains visible whenever it exists.
+    Prefer `scientific_name_snapshot` (the observer's actual selection —
+    variety, form, aggregate, etc.) over the bare `genus + species`
+    binomial. No permanent third line — Accepted/Linked hints live in the
+    editor.
     """
     from utils.vernacular_utils import display_vernacular_name
 
@@ -720,10 +733,14 @@ def _format_observation_display_label(
     genus_clean = (genus or "").strip()
     species_clean = (species or "").strip()
     guess_clean = (species_guess_fallback or "").strip()
+    snapshot_clean = (scientific_name_snapshot or "").strip()
 
-    scientific = ""
-    if genus_clean and species_clean:
+    if snapshot_clean:
+        scientific = snapshot_clean
+    elif genus_clean and species_clean:
         scientific = f"{genus_clean} {species_clean}"
+    else:
+        scientific = ""
 
     if common_clean and scientific:
         return f"{display_vernacular_name(common_clean)}\n{scientific}"
@@ -2631,6 +2648,7 @@ class ObservationsTab(QWidget):
             common_name = _format_observation_display_label(
                 (obs.get("common_name") or "").strip(),
                 genus_raw, species_raw, species_guess_fallback=species_guess,
+                scientific_name_snapshot=obs.get("scientific_name_snapshot"),
             )
 
             species_display = species_raw or species_guess or "sp."
@@ -4930,6 +4948,7 @@ class ObservationsTab(QWidget):
             common_name = self._lookup_common_name(obs, common_name_map)
             common_name_display = _format_observation_display_label(
                 common_name, genus_raw, species_raw,
+                scientific_name_snapshot=obs.get("scientific_name_snapshot"),
             )
 
             spore_short = _spore_count_for_observation_row(obs) or "-"
@@ -9815,6 +9834,8 @@ class ObservationsTab(QWidget):
                     ai_state_json=self._serialize_ai_state(ai_state),
                     gps_latitude=data.get('gps_latitude'),
                     gps_longitude=data.get('gps_longitude'),
+                    scientific_name_snapshot=data.get('scientific_name_snapshot'),
+                    taxon_rank_snapshot=data.get('taxon_rank_snapshot'),
                     allow_nulls=True
                 )
                 self.schedule_metadata_cloud_sync(obs_id)
@@ -12496,6 +12517,23 @@ class ObservationDetailsDialog(GeometryMixin, QDialog):
         species_row.addWidget(self.species_input, 1)
         identified_layout.addLayout(species_row)
 
+        scientific_row = QHBoxLayout()
+        scientific_label = QLabel(self.tr("Scientific:"))
+        scientific_label.setFixedWidth(taxonomy_label_width)
+        scientific_row.addWidget(scientific_label)
+        self.scientific_name_input = QLineEdit()
+        self.scientific_name_input.setSizePolicy(QSizePolicy.Expanding, QSizePolicy.Fixed)
+        self.scientific_name_input.setPlaceholderText(
+            self.tr("Optional: e.g., Hygrocybe conica var. pseudoconica")
+        )
+        scientific_row.addWidget(self.scientific_name_input, 1)
+        identified_layout.addLayout(scientific_row)
+
+        self.scientific_hint_label = QLabel("")
+        self.scientific_hint_label.setStyleSheet("color: #6b7280; font-size: 11px;")
+        self.scientific_hint_label.setVisible(False)
+        identified_layout.addWidget(self.scientific_hint_label)
+
         red_list_row = QHBoxLayout()
         red_list_label = QLabel(self.tr("Red list:"))
         red_list_label.setFixedWidth(taxonomy_label_width)
@@ -14859,6 +14897,19 @@ class ObservationDetailsDialog(GeometryMixin, QDialog):
         species = self.species_input.text().strip() or None
         common_name = self.vernacular_input.text().strip() or None
         species_guess = f"{genus} {species}".strip() if genus and species else None
+        # Stage 3B.3: scientific-name snapshot + rank come STRICTLY from
+        # the taxonomy controller's committed_snapshot. Any manual edit to
+        # genus / species / scientific-name field since the last picker
+        # selection has already invalidated the snapshot inside the
+        # controller. If invalidated → both columns save as NULL.
+        snapshot = None
+        try:
+            controller = getattr(self, "_taxon_controller", None)
+            snapshot = controller.committed_snapshot() if controller else None
+        except Exception:
+            snapshot = None
+        scientific_name_snapshot = (snapshot or {}).get("scientific_name") if snapshot else None
+        taxon_rank_snapshot = (snapshot or {}).get("taxon_rank_snapshot") if snapshot else None
         sharing_scope = self._selected_sharing_scope()
         location_precision = self._selected_location_precision()
 
@@ -14943,7 +14994,9 @@ class ObservationDetailsDialog(GeometryMixin, QDialog):
             ) or None,
             'habitat_grows_on_note': (self.grows_on_note_input.toPlainText().strip() if hasattr(self, "grows_on_note_input") else "") or None,
             'gps_latitude': lat,
-            'gps_longitude': lon
+            'gps_longitude': lon,
+            'scientific_name_snapshot': scientific_name_snapshot,
+            'taxon_rank_snapshot': taxon_rank_snapshot,
         }
 
     def on_taxonomy_tab_changed(self, index):
@@ -16165,6 +16218,9 @@ class ObservationDetailsDialog(GeometryMixin, QDialog):
             self.species_input,
             self.vernacular_input,
             self,
+            scientific_name_input=getattr(self, "scientific_name_input", None),
+            on_snapshot_invalidated=self._on_scientific_snapshot_invalidated,
+            on_snapshot_committed=self._on_scientific_snapshot_committed,
         )
         self._genus_model = self._taxon_controller.genus_model
         self._species_model = self._taxon_controller.species_model
@@ -16182,6 +16238,76 @@ class ObservationDetailsDialog(GeometryMixin, QDialog):
         species_popup = self._species_completer.popup() if self._species_completer else None
         if species_popup:
             self._style_dropdown_popup_readability(species_popup, self.species_input)
+
+        # Stage 3B.3 red-list invariant: manual taxonomic-identity edits
+        # (genus, species, or scientific-name) must clear the red-list
+        # snapshot even when NO taxonomy suggestion had been committed
+        # (Artsorakel-populated status attaches without a committed
+        # scientific snapshot). Vernacular text is deliberately excluded.
+        for widget in (self.genus_input, self.species_input,
+                       getattr(self, "scientific_name_input", None)):
+            if widget is not None:
+                widget.textChanged.connect(self._on_taxon_identity_field_edited)
+
+    def _on_taxon_identity_field_edited(self, _text: str) -> None:
+        controller = getattr(self, "_taxon_controller", None)
+        if controller is not None and controller._is_suspended():
+            return
+        # Skip if red-list is already empty — avoids badge repaint churn.
+        if not getattr(self, "_red_list_category", ""):
+            if not getattr(self, "_red_list_categories", None):
+                return
+        self._clear_red_list_for_identity_change()
+
+    def _on_scientific_snapshot_committed(self, snapshot: dict) -> None:
+        # Stage 3B.3 red-list invariant: an explicit new taxonomy
+        # selection clears the previous red-list snapshot BEFORE any
+        # subsequent Artsorakel resolve populates a new one. Never carry
+        # a status from the old identity into the new.
+        self._clear_red_list_for_identity_change()
+        label = getattr(self, "scientific_hint_label", None)
+        if label is None:
+            return
+        link_kind = (snapshot or {}).get("link_kind") or ""
+        canonical = (snapshot or {}).get("canonical_scientific_name") or ""
+        if link_kind == "synonym_of_accepted" and canonical:
+            label.setText(self.tr("Accepted concept: {name}").format(name=canonical))
+            label.setVisible(True)
+        elif link_kind == "linked" and canonical:
+            label.setText(self.tr("Linked concept: {name}").format(name=canonical))
+            label.setVisible(True)
+        else:
+            label.setText("")
+            label.setVisible(False)
+
+    def _on_scientific_snapshot_invalidated(self, reason: str | None = None) -> None:
+        # Stage 3B.3 red-list invariant: any manual genus/species/
+        # scientific-name edit that invalidates identity also clears the
+        # red-list snapshot. Category, categories map, and label all go
+        # to their empty state.
+        self._clear_red_list_for_identity_change()
+        label = getattr(self, "scientific_hint_label", None)
+        if label is not None:
+            label.setText("")
+            label.setVisible(False)
+
+    def _clear_red_list_for_identity_change(self) -> None:
+        """Reset every red-list snapshot field to its empty state.
+
+        Called on any event that would leave the observation's stored
+        red-list category inconsistent with the taxonomic identity
+        currently entered:
+
+        - taxonomy suggestion committed (new identity, old status stale);
+        - snapshot invalidation via manual genus/species/scientific edit;
+        - scientific-name field wiped while a snapshot was pending;
+        - Artsorakel-populated status when the source identity changed.
+
+        Common-name (vernacular) edits MUST NOT reach this method.
+        """
+        setter = getattr(self, "_set_red_list_category", None)
+        if setter is not None:
+            setter(None, None)
 
     def _setup_host_autocomplete(self):
         """Autocomplete for Habitat -> Grows on genus/species/vernacular fields."""
@@ -17460,11 +17586,45 @@ class ObservationDetailsDialog(GeometryMixin, QDialog):
                 if genus and species:
                     break
         self.taxonomy_tabs.setCurrentIndex(0)
-        self.genus_input.setText(genus)
-        self.species_input.setText(species)
-        self.uncertain_checkbox.setChecked(bool(obs.get("uncertain", 0)))
-        if hasattr(self, "vernacular_input"):
-            self.vernacular_input.setText(obs.get("common_name") or "")
+        # Stage 3B.3: suppress controller invalidation while we populate
+        # the widgets from persisted values. `textChanged` will fire on
+        # each `setText` but the controller's `_is_suspended()` gate
+        # short-circuits `_on_structured_text_changed` /
+        # `on_scientific_name_text_changed`, preserving any snapshot we
+        # subsequently install via `load_committed_snapshot`.
+        _controller = getattr(self, "_taxon_controller", None)
+        _load_ctx = _controller._suspended() if _controller is not None else _NullSuspend()
+        with _load_ctx:
+            self.genus_input.setText(genus)
+            self.species_input.setText(species)
+            self.uncertain_checkbox.setChecked(bool(obs.get("uncertain", 0)))
+            if hasattr(self, "vernacular_input"):
+                self.vernacular_input.setText(obs.get("common_name") or "")
+            if hasattr(self, "scientific_name_input"):
+                self.scientific_name_input.setText(
+                    (obs.get("scientific_name_snapshot") or "").strip()
+                )
+        # After widgets are settled, restore the committed snapshot when
+        # both columns are present. Absent columns → snapshot stays None
+        # (identity is unresolved for this observation).
+        snapshot_name = (obs.get("scientific_name_snapshot") or "").strip()
+        rank_snapshot = (obs.get("taxon_rank_snapshot") or "").strip()
+        sporely_id = obs.get("sporely_taxon_id")
+        if _controller is not None:
+            if snapshot_name and rank_snapshot and sporely_id is not None:
+                _controller.load_committed_snapshot({
+                    "genus": genus,
+                    "species": species,
+                    "scientific_name": snapshot_name,
+                    "taxon_rank_snapshot": rank_snapshot,
+                    "sporely_taxon_id": int(sporely_id),
+                    # Canonical fields left NULL — the load path does not
+                    # re-fetch them from the taxonomy DB. The Accepted /
+                    # Linked concept hint will refresh once the user opens
+                    # a completer or the dialog explicitly asks for it.
+                })
+            else:
+                _controller.load_committed_snapshot(None)
         self._set_inaturalist_taxon_id(obs.get("inaturalist_taxon_id"))
         red_categories = None
         raw_red_categories = obs.get("red_list_categories_json")

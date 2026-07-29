@@ -28,6 +28,35 @@ from utils.publish_targets import (
 )
 
 _UNSET = object()
+
+# Stage 3B.3: whitelist of taxon-rank values the observation editor may
+# persist. Anything outside this set (including empty string) is coerced to
+# NULL so the observation store never carries garbage ranks like "section"
+# or "genus of Fungi".
+_ALLOWED_TAXON_RANK_SNAPSHOTS = frozenset(
+    {"genus", "species", "subspecies", "variety", "form", "aggregate"}
+)
+
+
+def _sanitize_taxon_rank_snapshot(value):
+    """Coerce a rank_snapshot input into either ``None`` or a whitelisted
+    string. ``_UNSET`` passes through untouched — callers use it to skip the
+    column entirely."""
+    if value is _UNSET or value is None:
+        return value
+    text = str(value).strip().lower()
+    if text in _ALLOWED_TAXON_RANK_SNAPSHOTS:
+        return text
+    return None
+
+
+def _sanitize_scientific_name_snapshot(value):
+    """Store the observer's picked string verbatim (only whitespace-strip),
+    reject empty. ``_UNSET`` passes through untouched."""
+    if value is _UNSET or value is None:
+        return value
+    text = str(value).strip()
+    return text or None
 _CLOUD_APP_SETTING_KEYS = {
     "cloud_last_pull_at",
     "cloud_last_sync_at",
@@ -1058,10 +1087,15 @@ class ObservationDB:
                           ai_selected_taxon_id: str | None = None,
                           ai_selected_scientific_name: str | None = None,
                           ai_selected_probability: float | None = None,
-                          ai_selected_at: str | None = None) -> int:
+                          ai_selected_at: str | None = None,
+                          scientific_name_snapshot: str | None = None,
+                          taxon_rank_snapshot: str | None = None) -> int:
         """Create a new observation and return its ID"""
         conn = get_connection()
         cursor = conn.cursor()
+        # Stage 3B.3: whitelist the rank_snapshot at write time.
+        taxon_rank_snapshot = _sanitize_taxon_rank_snapshot(taxon_rank_snapshot)
+        scientific_name_snapshot = _sanitize_scientific_name_snapshot(scientific_name_snapshot)
 
         # Build species_guess from genus/species if not provided
         if not species_guess and (genus or species):
@@ -1112,8 +1146,9 @@ class ObservationDB:
                                      habitat_nin2_note, habitat_substrate_note, habitat_grows_on_note,
                                      open_comment, private_comment, interesting_comment, ai_state_json,
                                      ai_selected_service, ai_selected_taxon_id, ai_selected_scientific_name,
-                                     ai_selected_probability, ai_selected_at)
-            VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+                                     ai_selected_probability, ai_selected_at,
+                                     scientific_name_snapshot, taxon_rank_snapshot)
+            VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
         ''', (date, genus, species, common_name, location, habitat, artsdata_id,
               artportalen_id, resolved_publish_target, species_guess, notes, 1 if uncertain else 0, 1 if unspontaneous else 0,
               1 if resolved_is_draft else 0, resolved_sharing_scope, 1 if resolved_location_public else 0,
@@ -1128,7 +1163,8 @@ class ObservationDB:
               habitat_nin2_note, habitat_substrate_note, habitat_grows_on_note,
               open_comment, private_comment, 1 if interesting_comment else 0, ai_state_json,
               ai_selected_service, ai_selected_taxon_id, ai_selected_scientific_name,
-              ai_selected_probability, ai_selected_at))
+              ai_selected_probability, ai_selected_at,
+              scientific_name_snapshot, taxon_rank_snapshot))
 
         obs_id = cursor.lastrowid
         conn.commit()
@@ -1168,7 +1204,9 @@ class ObservationDB:
                            ai_selected_taxon_id: str | object = _UNSET,
                            ai_selected_scientific_name: str | object = _UNSET,
                            ai_selected_probability: float | object = _UNSET,
-                           ai_selected_at: str | object = _UNSET) -> Optional[str]:
+                           ai_selected_at: str | object = _UNSET,
+                           scientific_name_snapshot: str | None | object = _UNSET,
+                           taxon_rank_snapshot: str | None | object = _UNSET) -> Optional[str]:
         """Update an observation. Returns new folder path if genus/species changed."""
         conn = get_connection()
         conn.row_factory = sqlite3.Row
@@ -1350,6 +1388,18 @@ class ObservationDB:
             if ai_selected_at is not _UNSET and (allow_nulls or ai_selected_at is not None):
                 updates.append('ai_selected_at = ?')
                 values.append(ai_selected_at)
+            # Stage 3B.3 snapshots follow the same _UNSET / allow_nulls
+            # convention as the AI-selected fields above.
+            if scientific_name_snapshot is not _UNSET and (
+                allow_nulls or scientific_name_snapshot is not None
+            ):
+                updates.append('scientific_name_snapshot = ?')
+                values.append(_sanitize_scientific_name_snapshot(scientific_name_snapshot))
+            if taxon_rank_snapshot is not _UNSET and (
+                allow_nulls or taxon_rank_snapshot is not None
+            ):
+                updates.append('taxon_rank_snapshot = ?')
+                values.append(_sanitize_taxon_rank_snapshot(taxon_rank_snapshot))
             if new_folder_path:
                 updates.append('folder_path = ?')
                 values.append(new_folder_path)

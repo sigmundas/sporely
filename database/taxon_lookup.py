@@ -538,6 +538,23 @@ class TaxonLookupService:
         self._suggest_species_cache[cache_key] = tuple(choices)
         return choices
 
+    def suggest_scientific_names(
+        self, prefix: str = "", limit: int = TAXON_COMPLETER_LIMIT,
+    ) -> list[dict]:
+        """Stage 3B.3 scientific-name completer source. Delegates to
+        :meth:`VernacularDB.suggest_scientific_names`. Returns rows with
+        ``sporely_taxon_id``, ``scientific_name``, ``taxon_rank_snapshot``,
+        ``link_kind`` and disambiguation fields (`family`, `authorship`,
+        `canonical_source_system`). Empty list when no v2 DB is available.
+        """
+        prefix = (prefix or "").strip()
+        if not prefix or self.vernacular_db is None:
+            return []
+        try:
+            return self.vernacular_db.suggest_scientific_names(prefix, limit=limit)
+        except Exception:
+            return []
+
     def suggest_common_names(
         self,
         prefix: str = "",
