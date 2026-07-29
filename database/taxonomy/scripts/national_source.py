@@ -415,6 +415,37 @@ def _iter_rows(archive: zipfile.ZipFile, table: DwcaTable) -> Iterator[list[str]
             yield row
 
 
+_DWC_CLASSIFICATION_TERMS = (
+    ("kingdom", "http://rs.tdwg.org/dwc/terms/kingdom"),
+    ("phylum", "http://rs.tdwg.org/dwc/terms/phylum"),
+    ("class", "http://rs.tdwg.org/dwc/terms/class"),
+    ("order", "http://rs.tdwg.org/dwc/terms/order"),
+    ("family", "http://rs.tdwg.org/dwc/terms/family"),
+    ("genus", "http://rs.tdwg.org/dwc/terms/genus"),
+    ("specific_epithet", "http://rs.tdwg.org/dwc/terms/specificEpithet"),
+    ("infraspecific_epithet",
+     "http://rs.tdwg.org/dwc/terms/infraspecificEpithet"),
+)
+
+
+def _classification_from_row(core: "DwcaTable", row: list[str]) -> dict[str, str]:
+    """Return declared Darwin Core classification terms, if any.
+
+    Reads directly from the archive's ``meta.xml`` term index so that we
+    preserve exactly what the source publishes without depending on the
+    per-source profile enumerating each classification term. Unmapped terms
+    return an empty string; nothing is invented from display text.
+    """
+    out: dict[str, str] = {}
+    for key, term_uri in _DWC_CLASSIFICATION_TERMS:
+        idx = core.term_index.get(term_uri)
+        if idx is None or idx >= len(row):
+            out[key] = ""
+        else:
+            out[key] = row[idx]
+    return out
+
+
 _PREFERRED_TRUE = frozenset({"true", "1"})
 _PREFERRED_FALSE = frozenset({"false", "0", ""})
 
@@ -747,6 +778,12 @@ def _normalize_into(
                     "rank": _resolve("taxonRank", profile.core_terms, core, row),
                     "taxonomic_status": _resolve("taxonomicStatus", profile.core_terms, core, row),
                     "external_ids": external_ids,
+                    # Preserve Darwin Core higher-classification fields
+                    # declared by the archive so downstream scope, mapping,
+                    # and display logic can consult them without a source-
+                    # specific parser hack. Terms absent from the archive
+                    # remain empty strings; nothing is invented.
+                    "classification": _classification_from_row(core, row),
                     "provenance": {
                         **provenance_base,
                         "member": core.location,
