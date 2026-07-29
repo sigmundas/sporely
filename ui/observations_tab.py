@@ -139,11 +139,13 @@ from utils.vernacular_utils import (
 from utils.publish_targets import (
     PUBLISH_TARGET_ARTPORTALEN_SE,
     PUBLISH_TARGET_ARTSOBS_NO,
+    compose_publish_notes,
     infer_publish_target_from_coords,
     normalize_publish_target,
     nonregional_uploader_keys,
     publish_target_from_country_code,
     publish_target_label,
+    sporely_public_observation_url,
     uploader_key_for_publish_target,
 )
 from utils.publish_media import (
@@ -10698,10 +10700,12 @@ class ObservationsTab(QWidget):
             open_comment = (obs.get("open_comment") or "").strip()
             private_comment = (obs.get("private_comment") or "").strip()
             interesting_comment = bool(obs.get("interesting_comment", 0))
-            open_comment_parts = [part for part in [open_comment or legacy_notes] if part]
-            if include_spore_stats and spore_stats:
-                open_comment_parts.append(spore_stats)
-            open_comment_text = "\n".join(open_comment_parts) if open_comment_parts else None
+            open_comment_text = compose_publish_notes(
+                open_comment or legacy_notes,
+                spore_stats if include_spore_stats else None,
+                sporely_public_observation_url(obs),
+                uploader_key=uploader.key,
+            )
             observation_payload = {
                 "taxon_id": taxon_id,
                 "taxon_id_source": taxon_resolution.source_field if taxon_resolution else None,
