@@ -698,6 +698,44 @@ def _spore_count_from_value(value: object) -> str | None:
     return None
 
 
+def _format_observation_display_label(
+    common_name: str | None,
+    genus: str | None,
+    species: str | None,
+    *,
+    species_guess_fallback: str | None = None,
+) -> str:
+    """Render the "common name (and scientific name)" cell text.
+
+    Stage 3B.2 contract: the scientific identification must ALWAYS remain
+    visible when it exists — the vernacular is a snapshot, not a
+    replacement. If both are present render them together (vernacular
+    capitalized for display, scientific italic-friendly on a second line).
+    Legacy dash placeholders are preserved for rows lacking any
+    identification.
+    """
+    from utils.vernacular_utils import display_vernacular_name
+
+    common_clean = (common_name or "").strip()
+    genus_clean = (genus or "").strip()
+    species_clean = (species or "").strip()
+    guess_clean = (species_guess_fallback or "").strip()
+
+    scientific = ""
+    if genus_clean and species_clean:
+        scientific = f"{genus_clean} {species_clean}"
+
+    if common_clean and scientific:
+        return f"{display_vernacular_name(common_clean)}\n{scientific}"
+    if common_clean:
+        return display_vernacular_name(common_clean)
+    if scientific:
+        return scientific
+    if guess_clean:
+        return guess_clean
+    return "-"
+
+
 def _spore_count_for_observation_row(observation: dict | None) -> str | None:
     if not isinstance(observation, dict):
         return None
@@ -2590,14 +2628,10 @@ class ObservationsTab(QWidget):
             genus_raw = (obs.get("genus") or "").strip()
             species_raw = (obs.get("species") or "").strip()
             species_guess = (obs.get("species_guess") or "").strip()
-            common_name = (obs.get("common_name") or "").strip()
-            if not common_name:
-                if genus_raw and species_raw:
-                    common_name = f"- ({genus_raw} {species_raw})"
-                elif species_guess:
-                    common_name = species_guess
-                else:
-                    common_name = "-"
+            common_name = _format_observation_display_label(
+                (obs.get("common_name") or "").strip(),
+                genus_raw, species_raw, species_guess_fallback=species_guess,
+            )
 
             species_display = species_raw or species_guess or "sp."
             cloud_id = _normalize_external_publication_id(obs.get("id"))
@@ -4894,12 +4928,9 @@ class ObservationsTab(QWidget):
             species_display = (obs.get("species") or obs.get("species_guess") or "sp.")
 
             common_name = self._lookup_common_name(obs, common_name_map)
-            common_name_display = common_name
-            if not common_name_display:
-                if genus_raw and species_raw:
-                    common_name_display = f"- ({genus_raw} {species_raw})"
-                else:
-                    common_name_display = "-"
+            common_name_display = _format_observation_display_label(
+                common_name, genus_raw, species_raw,
+            )
 
             spore_short = _spore_count_for_observation_row(obs) or "-"
             date_text = _format_observation_datetime_for_table(obs.get("date") or obs.get("created_at"))

@@ -598,18 +598,14 @@ class TaxonInputController(QObject):
     def on_vernacular_text_changed(self, text: str) -> None:
         if self._is_suspended() or self._vernacular_model is None:
             return
-        clean_text = self._clean_species_text(text)
-        if not clean_text:
-            self._schedule_refresh(self._vernacular_timer)
-            return
-        lookup = self.lookup
-        if lookup and lookup.vernacular_db:
-            genus = self._current_genus()
-            species = self._current_species()
-            if genus and species:
-                matches = lookup.suggest_common_names(prefix=clean_text, genus=genus, species=species, limit=self.max_suggestions)
-                if not matches:
-                    self._clear_scientific_taxon_for_vernacular_search()
+        # Stage 3B.2 contract: typing/editing custom vernacular text must
+        # NEVER mutate taxonomy (`sporely_taxon_id`, genus, species,
+        # species_guess, AI selection, external IDs). The previous behavior
+        # silently cleared genus+species when the typed text had no matches
+        # under the current taxon — this violated the contract. Only an
+        # explicit completer selection (`on_vernacular_selected`) or Tab-
+        # confirmed unique-match resolution (`on_vernacular_editing_finished`)
+        # may change identity.
         self._schedule_refresh(self._vernacular_timer)
 
     def on_genus_editing_finished(self) -> None:
@@ -719,7 +715,8 @@ class TaxonInputController(QObject):
         self._notify_taxon_changed()
 
     def eventFilter(self, obj, event):
-        if event.type() == QEvent.FocusIn:
+        event_type = event.type()
+        if event_type == QEvent.FocusIn:
             if obj == self.genus_input:
                 self.refresh_genus_suggestions()
                 if self.auto_show_popup_on_focus and self._genus_model.stringList():
@@ -734,13 +731,35 @@ class TaxonInputController(QObject):
                 if _should_select_all_on_focus(event):
                     QTimer.singleShot(0, lambda widget=obj: widget.selectAll())
             elif obj == self.vernacular_input and self.vernacular_input is not None:
-                self.refresh_vernacular_suggestions()
-                if self.auto_show_popup_on_focus and self._vernacular_model is not None and self._vernacular_model.rowCount():
-                    self._vernacular_completer.setCompletionPrefix(self._current_vernacular())
-                    self._vernacular_completer.complete()
+                self._open_vernacular_chooser()
                 if _should_select_all_on_focus(event):
                     QTimer.singleShot(0, lambda widget=obj: widget.selectAll())
+        elif event_type == QEvent.MouseButtonPress:
+            # Clicking the field while it already has focus does not fire
+            # FocusIn again — but the user's intent is clearly "show me the
+            # alternatives now". Open the chooser explicitly on mouse press.
+            if obj == self.vernacular_input and self.vernacular_input is not None:
+                self._open_vernacular_chooser()
         return False
+
+    def _open_vernacular_chooser(self) -> None:
+        """Force the vernacular completer popup to display every alternative
+        for the currently resolved taxon, using an empty completion prefix
+        so the user sees the full list without having to guess a starting
+        letter. No-ops when the completer/model is unavailable."""
+        if self._vernacular_model is None or self._vernacular_completer is None:
+            return
+        # Rebuild suggestions (they may be empty if no taxon is resolved yet).
+        self.refresh_vernacular_suggestions()
+        if not self.auto_show_popup_on_focus:
+            return
+        if self._vernacular_model.rowCount() == 0:
+            return
+        # An empty completion prefix ensures QCompleter's default filter
+        # matches every row — a real "chooser" experience regardless of
+        # whether the user has typed anything.
+        self._vernacular_completer.setCompletionPrefix("")
+        self._vernacular_completer.complete()
 
 
 __all__ = [

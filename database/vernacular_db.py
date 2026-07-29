@@ -361,36 +361,69 @@ class VernacularDB:
                 return None
             return row[0], row[1], row[2]
 
+    def taxon_ids_from_scientific(self, genus: str, species: str) -> list[int]:
+        """Return every taxon_id that matches ``genus + species``.
+
+        Stage 3A conservative rule preserves distinct concepts that happen
+        to share a scientific name when authorship disagrees, so this can
+        legitimately return more than one Sporely id (e.g. two ``Laccaria
+        laccata`` concepts). The caller decides how to handle multiplicity;
+        callers holding a known ``sporely_taxon_id`` MUST NOT use this to
+        re-resolve identity.
+        """
+        genus = (genus or "").strip()
+        species = (species or "").strip()
+        if not genus or not species:
+            return []
+        with self._connect() as conn:
+            rows = list(conn.execute(
+                """
+                SELECT DISTINCT t.taxon_id FROM taxon_min t
+                WHERE (t.genus = ? COLLATE NOCASE
+                       AND t.specific_epithet = ? COLLATE NOCASE)
+                   OR t.canonical_scientific_name = ? COLLATE NOCASE
+                ORDER BY t.taxon_id
+                """,
+                (genus, species, f"{genus} {species}"),
+            ))
+        return [int(r[0]) for r in rows]
+
     def taxon_id_from_scientific(self, genus: str, species: str) -> int | None:
-        """Return the taxon_id (Sporely id on v2, NorTaxa DwC id on legacy)
-        for a scientific name. Prefers the row with a preferred alias when
-        multiple rows share the canonical name.
+        """Return a taxon_id for a scientific name ONLY if the match is
+        unique (or a preferred-alias uniquely breaks the tie).
+
+        Returns ``None`` when zero or multiple rows would qualify. This is
+        the safe API for post-selection lookups; callers with an ambiguous
+        (genus, species) pair must obtain identity through an explicit
+        suggestion selection, not this method.
         """
         genus = (genus or "").strip()
         species = (species or "").strip()
         if not genus or not species:
             return None
+        candidates = self.taxon_ids_from_scientific(genus, species)
+        if not candidates:
+            return None
+        if len(candidates) == 1:
+            return candidates[0]
+        # Multiple canonical rows share the (genus, species) — refuse to
+        # bind unless an explicit preferred-alias row uniquely identifies
+        # one of them.
         scientific_name = f"{genus} {species}"
         with self._connect() as conn:
-            row = conn.execute(
+            preferred = list(conn.execute(
                 """
-                SELECT t.taxon_id
-                FROM taxon_min t
-                LEFT JOIN scientific_name_min s
-                  ON s.taxon_id = t.taxon_id
-                 AND s.scientific_name = ? COLLATE NOCASE
-                WHERE (t.genus = ? COLLATE NOCASE
-                       AND t.specific_epithet = ? COLLATE NOCASE)
-                   OR t.canonical_scientific_name = ? COLLATE NOCASE
-                ORDER BY
-                  CASE WHEN s.is_preferred_name = 1 THEN 0 ELSE 1 END,
-                  CASE WHEN t.canonical_scientific_name = ? COLLATE NOCASE THEN 0 ELSE 1 END,
-                  t.taxon_id
-                LIMIT 1
-                """,
-                (scientific_name, genus, species, scientific_name, scientific_name),
-            ).fetchone()
-        return int(row[0]) if row else None
+                SELECT DISTINCT s.taxon_id
+                FROM scientific_name_min s
+                WHERE s.scientific_name = ? COLLATE NOCASE
+                  AND s.is_preferred_name = 1
+                  AND s.taxon_id IN (%s)
+                """ % ",".join("?" for _ in candidates),
+                (scientific_name, *candidates),
+            ))
+        if len(preferred) == 1:
+            return int(preferred[0][0])
+        return None
 
     def taxon_id_from_vernacular(self, name: str, language_code: str | None = None) -> int | None:
         """Resolve a vernacular query to a single taxon_id. Uses the
@@ -425,12 +458,17 @@ class VernacularDB:
         """
         if not self._has_language():
             return []
+        # `source` is a Stage-3B.1 addition; older schemas may not have it.
         with self._connect() as conn:
+            cols = {row[1] for row in conn.execute(
+                "PRAGMA table_info(vernacular_min)")}
+            has_source = "source" in cols
+            select_source = "source" if has_source else "NULL AS source"
             rows = list(conn.execute(
-                "SELECT vernacular_id, language_code, vernacular_name, "
-                "       is_preferred_name, source "
-                "FROM vernacular_min WHERE taxon_id = ? ORDER BY "
-                "vernacular_id",
+                f"SELECT vernacular_id, language_code, vernacular_name, "
+                f"       is_preferred_name, {select_source} "
+                f"FROM vernacular_min WHERE taxon_id = ? ORDER BY "
+                f"vernacular_id",
                 (int(taxon_id),),
             ))
         result = [
@@ -453,31 +491,49 @@ class VernacularDB:
         return result
 
     def vernacular_from_taxon(self, genus: str, species: str) -> str | None:
+        """Return one preferred vernacular for the given scientific taxon.
+
+        Two-step query: resolve ``taxon_id`` via ``idx_taxon_genus_species``
+        first, then look up vernaculars via ``idx_vern_taxon_lang``. Both
+        indexes are exact-match — placing ``COLLATE NOCASE`` in the WHERE
+        would defeat the covering index and force a full-table scan of
+        ``vernacular_min`` (~7 ms → ~15 µs per call on real data).
+
+        Skips the historical ``taxon_from_scientific`` normalization pass:
+        that helper itself runs a ``COLLATE NOCASE`` scan (~130 ms per call
+        on the real v2 database) which the hot per-observation-row path
+        cannot afford. Case robustness is handled inline: try plain
+        equality first, then a bounded ``COLLATE NOCASE`` fallback only
+        when the fast lookup misses.
+        """
         if not genus or not species:
             return None
-        resolved = self.taxon_from_scientific(genus, species)
-        if resolved:
-            genus, species, _family = resolved
         lang_clause, lang_params = self._language_clause(None)
         with self._connect() as conn:
-            cur = conn.cursor()
-            cur.execute(
-                """
-                SELECT v.vernacular_name
-                FROM vernacular_min v
-                JOIN taxon_min t ON t.taxon_id = v.taxon_id
-                WHERE t.genus = ? COLLATE NOCASE
-                  AND t.specific_epithet = ? COLLATE NOCASE
-                """
-                + lang_clause
-                + """
-                ORDER BY v.is_preferred_name DESC, v.vernacular_name
-                LIMIT 1
-                """,
-                (genus, species, *lang_params),
-            )
-            row = cur.fetchone()
-            return row[0] if row else None
+            row = conn.execute(
+                "SELECT taxon_id FROM taxon_min "
+                "WHERE genus = ? AND specific_epithet = ? LIMIT 1",
+                (genus, species),
+            ).fetchone()
+            if row is None:
+                # Safety net for legacy rows with mixed case.
+                row = conn.execute(
+                    "SELECT taxon_id FROM taxon_min "
+                    "WHERE genus = ? COLLATE NOCASE "
+                    "  AND specific_epithet = ? COLLATE NOCASE LIMIT 1",
+                    (genus, species),
+                ).fetchone()
+            if row is None:
+                return None
+            taxon_id = row[0]
+            vern = conn.execute(
+                "SELECT v.vernacular_name FROM vernacular_min v "
+                "WHERE v.taxon_id = ? "
+                + lang_clause +
+                " ORDER BY v.is_preferred_name DESC, v.vernacular_name LIMIT 1",
+                (int(taxon_id), *lang_params),
+            ).fetchone()
+        return vern[0] if vern else None
 
 
 __all__ = ["VernacularDB"]

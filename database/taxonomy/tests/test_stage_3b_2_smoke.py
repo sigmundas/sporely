@@ -119,25 +119,27 @@ def test_no_language_fanout_includes_nb_and_nn_distinctly(tmp_path: Path) -> Non
     assert codes == {"nb", "nn"}, rows
 
 
-def test_laccaria_laccata_resolves_to_row_with_vernaculars(tmp_path: Path) -> None:
-    """The fix: `taxon_id_from_scientific` picks the row whose scientific
-    name has a preferred/synonym alias entry, so Sporely 625355 wins over
-    the vernacular-less 103805 when both share the canonical name."""
+def test_laccaria_laccata_refuses_to_silently_bind_one_of_two_ids(tmp_path: Path) -> None:
+    """When two Sporely IDs deliberately share ``Laccaria laccata``, the
+    scientific-name resolver refuses to silently pick one. The caller must
+    obtain identity through an explicit suggestion selection."""
     from database.vernacular_db import VernacularDB
     src = tmp_path / "v2.sqlite3"
     _seed(src)
     db = VernacularDB(src)
-    # Give 625355 an *extra* preferred-alias to break the tie deterministically —
-    # in real data the priority is authorship + presence of vernaculars.
-    conn = sqlite3.connect(str(src))
-    conn.execute("INSERT INTO scientific_name_min (taxon_id, language_code, "
-                 "scientific_name, is_preferred_name) VALUES (625355, 'sci', "
-                 "'Laccaria laccata (Scop.) Cooke', 1)")
-    conn.commit(); conn.close()
-    resolved = db.taxon_id_from_scientific("Laccaria", "laccata")
-    # At least one of the two rows resolves; the caller then uses
-    # list_vernacular_alternatives to surface everything.
-    assert resolved in (103805, 625355)
+    # Both matching taxa are listed; the strict resolver returns None.
+    assert db.taxon_ids_from_scientific("Laccaria", "laccata") == [103805, 625355]
+    assert db.taxon_id_from_scientific("Laccaria", "laccata") is None
+
+
+def test_taxon_id_from_scientific_unique_case(tmp_path: Path) -> None:
+    """When the scientific name is unambiguous, the strict resolver returns
+    the taxon id."""
+    from database.vernacular_db import VernacularDB
+    src = tmp_path / "v2.sqlite3"
+    _seed(src)
+    db = VernacularDB(src)
+    assert db.taxon_id_from_scientific("Candolleomyces", "candolleanus") == 133345
 
 
 def test_vernacular_selection_preserves_taxon_and_snapshot(tmp_path: Path) -> None:
