@@ -1359,6 +1359,12 @@ def init_database():
     except sqlite3.OperationalError:
         pass  # Column already exists
     try:
+        # Stage 3B.2 taxonomy-v2 identity column. NULLable, additive; the
+        # backfill script populates it via database/migrate_observations_sporely_id.py.
+        cursor.execute('ALTER TABLE observations ADD COLUMN sporely_taxon_id INTEGER')
+    except sqlite3.OperationalError:
+        pass  # Column already exists
+    try:
         cursor.execute('ALTER TABLE observations ADD COLUMN inaturalist_id INTEGER')
     except sqlite3.OperationalError:
         pass  # Column already exists

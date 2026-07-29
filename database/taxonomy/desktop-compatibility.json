@@ -1,0 +1,20 @@
+{
+  "format": "sporely-taxonomy-desktop-compatibility-v1",
+  "consumer": "sporely-py",
+  "supported_taxonomy_schema_min": 2,
+  "supported_taxonomy_schema_max": 2,
+  "tested_taxonomy_release": "tax-2026.07.29-01",
+  "bundled_sqlite_sha256": "db3fc726850fa5a6212948122a0d2d969eda8eefa96a0b5307ebff02b583083a",
+  "bundled_gz_sha256": "ae0140392e68d34652fbca7af2c24195aaca84e3d70c04ce8c9fa6c17c9169cc",
+  "registry_concatenated_sha256": "21b5d39d257799fdd4ea758d857fec4d29758b83dd7ea91bf3ecd24e3d1d3077",
+  "state": "candidate",
+  "publication": "none",
+  "activation_flag": {
+    "settings_key": "taxonomy_v2_activation",
+    "environment_variable": "SPORELY_TAXONOMY_V2"
+  },
+  "notes": [
+    "Developer-only activation. The v2 SQLite is not bundled in normal releases yet.",
+    "Falls back to the current bundled vernacular_multilanguage.sqlite3 whenever activation or verification fails."
+  ]
+}

@@ -4,7 +4,10 @@ from __future__ import annotations
 import sqlite3
 from pathlib import Path
 
-from utils.vernacular_utils import normalize_vernacular_language
+from utils.vernacular_utils import (
+    normalize_vernacular_language,
+    resolve_query_language_codes,
+)
 
 
 class VernacularDB:
@@ -12,7 +15,11 @@ class VernacularDB:
 
     def __init__(self, db_path: Path, language_code: str | None = None):
         self.db_path = db_path
-        self.language_code = normalize_vernacular_language(language_code) if language_code else None
+        # Preserve `nb`/`nn`/Sámi codes verbatim — the taxonomy v2 identity
+        # contract keeps them distinct. `resolve_query_language_codes` in
+        # `_language_clause` handles the umbrella `no` → `('no','nb','nn')`
+        # fan-out.
+        self.language_code = language_code.strip() if language_code else None
         self._has_language_column = None
         self._tables: set[str] | None = None
 
@@ -29,6 +36,12 @@ class VernacularDB:
     def _has_scientific_name_table(self) -> bool:
         return "scientific_name_min" in self._table_names()
 
+    def _is_v2(self) -> bool:
+        """A v2 candidate carries a ``taxonomy_meta`` table. Legacy multi-
+        language DBs do not. When we detect legacy, the language clause
+        keeps the umbrella `nb`/`nn`→`no` behavior for backwards compat."""
+        return "taxonomy_meta" in self._table_names()
+
     def _has_language(self) -> bool:
         if self._has_language_column is None:
             with self._connect() as conn:
@@ -37,11 +50,26 @@ class VernacularDB:
         return bool(self._has_language_column)
 
     def _language_clause(self, language_code: str | None) -> tuple[str, list[str]]:
+        """Language filter.
+
+        For **v2** taxonomy candidates (``taxonomy_meta`` present) the codes
+        ``nb``, ``nn`` and Sámi variants are queried distinctly, and the
+        umbrella ``no`` fans out to ``('no','nb','nn')`` per the identity
+        contract. For **legacy** DBs the pre-existing umbrella behavior
+        (``normalize_vernacular_language`` collapse) is preserved to keep
+        old production callers unbroken.
+        """
         if not self._has_language():
             return "", []
         raw = language_code or self.language_code
         if not raw:
             return "", []
+        if self._is_v2():
+            codes = resolve_query_language_codes(raw)
+            if not codes:
+                return "", []
+            placeholders = ",".join("?" for _ in codes)
+            return f" AND v.language_code IN ({placeholders}) ", list(codes)
         lang = normalize_vernacular_language(raw)
         if not lang:
             return "", []

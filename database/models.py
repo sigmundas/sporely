@@ -821,6 +821,7 @@ def _lookup_external_taxon_id_from_db(genus: str, species: str, source_system: s
                     return int(row[0])
                 except (TypeError, ValueError):
                     return None
+
         return None
     finally:
         conn.close()
@@ -838,6 +839,66 @@ def _resolve_external_taxon_id(genus: str | None, species: str | None, source_sy
     if not key:
         return None
     return _lookup_external_taxon_id_from_db(*key, source_system=source_system)
+
+
+def _lookup_external_taxon_text_id_from_db(
+    genus: str, species: str, source_system: str,
+) -> str | None:
+    """Stage 3B.2 companion of :func:`_lookup_external_taxon_id_from_db` for
+    non-integer external identifiers (e.g. COL usage IDs like ``9Z2GC``).
+
+    Never coerces the value to ``int``. Callers that need text external
+    identifiers must consume the string directly.
+    """
+    try:
+        from utils.vernacular_utils import resolve_vernacular_db_path
+    except Exception:
+        return None
+    db_path = resolve_vernacular_db_path()
+    if not db_path or not db_path.exists():
+        return None
+    scientific_name = f"{genus} {species}".strip()
+    try:
+        conn = sqlite3.connect(db_path)
+    except Exception:
+        return None
+    try:
+        cur = conn.execute("SELECT name FROM sqlite_master WHERE type='table'")
+        tables = {str(row[0] or "") for row in cur.fetchall()}
+        if "taxon_external_id_text_min" not in tables:
+            return None
+        row = conn.execute(
+            """
+            SELECT e.external_id
+            FROM taxon_min t
+            JOIN taxon_external_id_text_min e
+              ON e.taxon_id = t.taxon_id
+             AND e.source_system = ?
+            LEFT JOIN scientific_name_min s
+              ON s.taxon_id = t.taxon_id
+            WHERE (t.genus = ? COLLATE NOCASE
+                   AND t.specific_epithet = ? COLLATE NOCASE)
+               OR (t.canonical_scientific_name = ? COLLATE NOCASE)
+               OR (s.scientific_name = ? COLLATE NOCASE)
+            ORDER BY e.is_preferred DESC, s.is_preferred_name DESC, e.external_id
+            LIMIT 1
+            """,
+            (source_system, genus, species, scientific_name, scientific_name),
+        ).fetchone()
+        if row and row[0] is not None:
+            return str(row[0])
+        return None
+    finally:
+        conn.close()
+
+
+def _resolve_external_taxon_text_id(
+    genus: str | None, species: str | None, source_system: str,
+) -> str | None:
+    key = _normalize_taxon_key(genus, species)
+    if not key:
+        return None
+    return _lookup_external_taxon_text_id_from_db(*key, source_system=source_system)
 
 
 def sanitize_folder_name(name: str) -> str:
@@ -905,6 +966,14 @@ class ObservationDB:
     @staticmethod
     def resolve_external_taxon_id(genus: str | None, species: str | None, source_system: str) -> int | None:
         return _resolve_external_taxon_id(genus, species, source_system)
+
+    @staticmethod
+    def resolve_external_taxon_text_id(
+        genus: str | None, species: str | None, source_system: str,
+    ) -> str | None:
+        """Stage 3B.2 companion resolver for text-form external identifiers
+        such as COL usage IDs. Returns ``None`` when no text row matches."""
+        return _resolve_external_taxon_text_id(genus, species, source_system)
 
     @staticmethod
     def _infer_image_folder(cursor, observation_id: int) -> Optional[str]:

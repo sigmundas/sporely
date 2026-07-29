@@ -1,0 +1,15 @@
+{
+  "manifest_schema_version": 1,
+  "taxonomy_schema_version": 2,
+  "content_release_id": "tax-2026.07.29-01",
+  "state": "candidate",
+  "publication": "none",
+  "gz_artifact": "tax-2026.07.29-01.sqlite3.gz",
+  "gz_sha256": "ae0140392e68d34652fbca7af2c24195aaca84e3d70c04ce8c9fa6c17c9169cc",
+  "gz_bytes": 65849313,
+  "sqlite_sha256": "db3fc726850fa5a6212948122a0d2d969eda8eefa96a0b5307ebff02b583083a",
+  "sqlite_bytes": 310194176,
+  "registry_concatenated_sha256": "21b5d39d257799fdd4ea758d857fec4d29758b83dd7ea91bf3ecd24e3d1d3077",
+  "compiler_manifest_sha256": "5f26da07dac259851fd1c68ea6641d76e370a80077bd0ac97827854af80eae81",
+  "install_target_name": "vernacular_multilanguage_v2.sqlite3"
+}

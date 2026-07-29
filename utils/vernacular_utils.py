@@ -37,16 +37,43 @@ VERNACULAR_LANGUAGE_ORDER = ["en", "de", "fr", "es", "da", "sv", "no", "fi", "pl
 
 
 def normalize_vernacular_language(code: str | None) -> str:
-    """Normalize language codes to the short, canonical form used by the DB."""
+    """Normalize language codes to the short, canonical form used by the DB.
+
+    LEGACY behavior: collapses Norwegian ``nb``/``nn`` into the umbrella
+    ``no`` code. Do NOT use for a v2-schema query — call
+    :func:`resolve_query_language_codes` instead.
+    """
     if not code:
         return "no"
     text = code.strip().lower().replace("-", "_")
-    # Collapse Norwegian variants to a single code.
     if text in ("nb", "nb_no", "nn", "nn_no", "no"):
         return "no"
     if "_" in text:
         text = text.split("_", 1)[0]
     return text or "no"
+
+
+def resolve_query_language_codes(code: str | None) -> tuple[str, ...]:
+    """Return the language codes to include in a vernacular query.
+
+    Rules:
+
+    * an explicit ``nb`` / ``nn`` / Sámi (``sma``, ``smj``, ``se``) request
+      returns exactly that code — v2 preserves them distinct;
+    * the umbrella ``no`` (or empty/None) fans out to ``('no', 'nb', 'nn')``
+      so consumers that persisted the umbrella tag still resolve;
+    * every other code is returned as a one-element tuple.
+    """
+    if not code:
+        return ("no", "nb", "nn")
+    text = code.strip().lower().replace("-", "_")
+    if "_" in text:
+        text = text.split("_", 1)[0]
+    if text in ("nb", "nn"):
+        return (text,)
+    if text == "no":
+        return ("no", "nb", "nn")
+    return (text or "no",)
 
 
 def vernacular_language_label(code: str | None) -> str:
@@ -127,8 +154,30 @@ def _cached_list_available_vernacular_languages(_resolver_id: int, _cwd: str) ->
     return tuple(_order_vernacular_languages(found))
 
 
+def _resolve_taxonomy_v2_path() -> Path | None:
+    """Return the activated taxonomy-v2 SQLite path, or None if not active.
+
+    Import is deferred so the app-data lookup only happens when this function
+    is actually called at runtime — keeps unit tests free of the settings
+    dependency.
+    """
+    try:
+        from utils.taxonomy_v2 import resolve_active_taxonomy_v2_path
+        from app_identity import app_data_dir
+    except Exception:
+        return None
+    try:
+        return resolve_active_taxonomy_v2_path(app_data_dir())
+    except Exception:
+        return None
+
+
 def resolve_vernacular_db_path(lang_code: str | None = None) -> Path | None:
-    """Locate the vernacular DB, preferring a multi-language DB."""
+    """Locate the vernacular DB, preferring the taxonomy-v2 candidate when
+    developer activation is enabled, else the currently bundled DB."""
+    v2 = _resolve_taxonomy_v2_path()
+    if v2 and v2.exists():
+        return v2
     multi = resolve_multilang_db_path()
     if multi:
         return multi

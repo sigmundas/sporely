@@ -1,0 +1,604 @@
+{
+  "format": "sporely-taxonomy-regression-corpus-v2",
+  "derived_from_corpus_v1_sha256": "87915e05086f1f712b9eda208d8704285f3148960c17e25f92935b60b5248543",
+  "tested_taxonomy_release": "tax-2026.07.29-01",
+  "tested_sqlite_sha256": "db3fc726850fa5a6212948122a0d2d969eda8eefa96a0b5307ebff02b583083a",
+  "case_count": 100,
+  "groups": {
+    "accepted_scientific": [
+      {
+        "query": "Aaosphaeria arxii",
+        "legacy_nortaxa_taxon_id": 214909,
+        "expected_sporely_taxon_id": 130941
+      },
+      {
+        "query": "Abortiporus biennis",
+        "legacy_nortaxa_taxon_id": 56931,
+        "expected_sporely_taxon_id": 626522
+      },
+      {
+        "query": "Abortiporus chocoensis",
+        "legacy_nortaxa_taxon_id": 145350,
+        "expected_sporely_taxon_id": 86888
+      },
+      {
+        "query": "Abortiporus fractipes",
+        "legacy_nortaxa_taxon_id": 142965,
+        "expected_sporely_taxon_id": 622085
+      },
+      {
+        "query": "Abortiporus roseus",
+        "legacy_nortaxa_taxon_id": 142966,
+        "expected_sporely_taxon_id": 86887
+      },
+      {
+        "query": "Abrothallus acetabuli",
+        "legacy_nortaxa_taxon_id": 76657,
+        "expected_sporely_taxon_id": 131092
+      },
+      {
+        "query": "Abrothallus bertianus",
+        "legacy_nortaxa_taxon_id": 76658,
+        "expected_sporely_taxon_id": 631858
+      },
+      {
+        "query": "Abrothallus bryoriarum",
+        "legacy_nortaxa_taxon_id": 76659,
+        "expected_sporely_taxon_id": 131094
+      },
+      {
+        "query": "Abrothallus cetrariae",
+        "legacy_nortaxa_taxon_id": 76660,
+        "expected_sporely_taxon_id": 631859
+      },
+      {
+        "query": "Abrothallus cladoniae",
+        "legacy_nortaxa_taxon_id": 76661,
+        "expected_sporely_taxon_id": 631860
+      },
+      {
+        "query": "Abrothallus diederichii",
+        "legacy_nortaxa_taxon_id": 298388,
+        "expected_sporely_taxon_id": 624373
+      },
+      {
+        "query": "Abrothallus granulatae",
+        "legacy_nortaxa_taxon_id": 76662,
+        "expected_sporely_taxon_id": 131103
+      },
+      {
+        "query": "Abrothallus lobariae",
+        "legacy_nortaxa_taxon_id": 223113,
+        "expected_sporely_taxon_id": 131107
+      },
+      {
+        "query": "Abrothallus microspermus",
+        "legacy_nortaxa_taxon_id": 76663,
+        "expected_sporely_taxon_id": 87342
+      },
+      {
+        "query": "Abrothallus nephromatis",
+        "legacy_nortaxa_taxon_id": 152462,
+        "expected_sporely_taxon_id": 622707
+      },
+      {
+        "query": "Abrothallus parmeliarum",
+        "legacy_nortaxa_taxon_id": 76664,
+        "expected_sporely_taxon_id": 87345
+      },
+      {
+        "query": "Abrothallus parmotrematis",
+        "legacy_nortaxa_taxon_id": 170758,
+        "expected_sporely_taxon_id": 87346
+      },
+      {
+        "query": "Abrothallus peyritschii",
+        "legacy_nortaxa_taxon_id": 76665,
+        "expected_sporely_taxon_id": 631861
+      },
+      {
+        "query": "Abrothallus pezizicola",
+        "legacy_nortaxa_taxon_id": 298389,
+        "expected_sporely_taxon_id": 87350
+      },
+      {
+        "query": "Abrothallus prodiens",
+        "legacy_nortaxa_taxon_id": 76666,
+        "expected_sporely_taxon_id": 87347
+      },
+      {
+        "query": "Abrothallus santessonii",
+        "legacy_nortaxa_taxon_id": 298387,
+        "expected_sporely_taxon_id": 624372
+      },
+      {
+        "query": "Abrothallus secedens",
+        "legacy_nortaxa_taxon_id": 76667,
+        "expected_sporely_taxon_id": 87329
+      },
+      {
+        "query": "Abrothallus suecicus",
+        "legacy_nortaxa_taxon_id": 76668,
+        "expected_sporely_taxon_id": 87335
+      },
+      {
+        "query": "Abrothallus usneae",
+        "legacy_nortaxa_taxon_id": 76669,
+        "expected_sporely_taxon_id": 87338
+      },
+      {
+        "query": "Candolleomyces candolleanus",
+        "legacy_nortaxa_taxon_id": null,
+        "expected_sporely_taxon_id": 133345,
+        "note": "moved out of v1 missing group — NorTaxa 1.284 + COL XR carry this concept"
+      }
+    ],
+    "scientific_synonym": [
+      {
+        "query": "Psathyrella candolleana",
+        "legacy_nortaxa_taxon_id": 54995,
+        "expected_sporely_taxon_id": 133345,
+        "note": "reclassified from accepted_scientific in v1 — NorTaxa 1.284 marks this a synonym of Candolleomyces candolleanus"
+      },
+      {
+        "query": "Abacina alboatra",
+        "legacy_nortaxa_taxon_id": 73577,
+        "expected_sporely_taxon_id": 5286
+      },
+      {
+        "query": "Abacina demissa",
+        "legacy_nortaxa_taxon_id": 73577,
+        "expected_sporely_taxon_id": 5286
+      },
+      {
+        "query": "Abortiporus borealis",
+        "legacy_nortaxa_taxon_id": 56820,
+        "expected_sporely_taxon_id": 626461
+      },
+      {
+        "query": "Abrothallus caerulescens",
+        "legacy_nortaxa_taxon_id": 76658,
+        "expected_sporely_taxon_id": 631858
+      },
+      {
+        "query": "Abrothallus glabratulae",
+        "legacy_nortaxa_taxon_id": 76658,
+        "expected_sporely_taxon_id": 631858
+      },
+      {
+        "query": "Abrothallus inquinans",
+        "legacy_nortaxa_taxon_id": 71032,
+        "expected_sporely_taxon_id": 31554
+      },
+      {
+        "query": "Abrothallus lepidophilus",
+        "legacy_nortaxa_taxon_id": 187239,
+        "expected_sporely_taxon_id": 623389
+      },
+      {
+        "query": "Abrothallus lobariellus",
+        "legacy_nortaxa_taxon_id": 186966,
+        "expected_sporely_taxon_id": 63376
+      },
+      {
+        "query": "Abrothallus oxysporus",
+        "legacy_nortaxa_taxon_id": 72061,
+        "expected_sporely_taxon_id": 630097
+      },
+      {
+        "query": "Abrothallus parmeliarum f. prodiens",
+        "legacy_nortaxa_taxon_id": 76666,
+        "expected_sporely_taxon_id": 87347
+      },
+      {
+        "query": "Abrothallus parmeliarum var. peyritschii",
+        "legacy_nortaxa_taxon_id": 76665,
+        "expected_sporely_taxon_id": 631861
+      },
+      {
+        "query": "Abrothallus placophyllus",
+        "legacy_nortaxa_taxon_id": 187281,
+        "expected_sporely_taxon_id": 623419
+      },
+      {
+        "query": "Abrothallus smithii",
+        "legacy_nortaxa_taxon_id": 76664,
+        "expected_sporely_taxon_id": 87345
+      },
+      {
+        "query": "Abrothallus viduus",
+        "legacy_nortaxa_taxon_id": 186966,
+        "expected_sporely_taxon_id": 63376
+      },
+      {
+        "query": "Absconditella modesta",
+        "legacy_nortaxa_taxon_id": 77671,
+        "expected_sporely_taxon_id": 632365
+      },
+      {
+        "query": "Absidia corymbifera",
+        "legacy_nortaxa_taxon_id": 127482,
+        "expected_sporely_taxon_id": 105557
+      },
+      {
+        "query": "Abundisporus subflexibilis",
+        "legacy_nortaxa_taxon_id": 142969,
+        "expected_sporely_taxon_id": 131156
+      },
+      {
+        "query": "Acanthobasidium penicillatum",
+        "legacy_nortaxa_taxon_id": 170889,
+        "expected_sporely_taxon_id": 622846
+      },
+      {
+        "query": "Acanthohelicospora scopula",
+        "legacy_nortaxa_taxon_id": 293955,
+        "expected_sporely_taxon_id": 624165
+      },
+      {
+        "query": "Acanthophiobolus chaetophorus",
+        "legacy_nortaxa_taxon_id": 80484,
+        "expected_sporely_taxon_id": 131221
+      }
+    ],
+    "vernacular": [
+      {
+        "query": "hvit sprøsopp",
+        "language": "no",
+        "legacy_nortaxa_taxon_id": 54995,
+        "expected_sporely_taxon_id": 133345
+      },
+      {
+        "query": "aaltohyytelöjäkälä",
+        "language": "fi",
+        "legacy_nortaxa_taxon_id": 145058,
+        "expected_sporely_taxon_id": 622479
+      },
+      {
+        "query": "aapahirvenjäkälä",
+        "language": "fi",
+        "legacy_nortaxa_taxon_id": 71637,
+        "expected_sporely_taxon_id": 629911
+      },
+      {
+        "query": "aarnijäkälä",
+        "language": "fi",
+        "legacy_nortaxa_taxon_id": 65457,
+        "expected_sporely_taxon_id": 95674
+      },
+      {
+        "query": "aarnikaihejäkälä",
+        "language": "fi",
+        "legacy_nortaxa_taxon_id": 69494,
+        "expected_sporely_taxon_id": 629009
+      },
+      {
+        "query": "aarnikääpä",
+        "language": "fi",
+        "legacy_nortaxa_taxon_id": 56618,
+        "expected_sporely_taxon_id": 626386
+      },
+      {
+        "query": "aarnineulajäkälä",
+        "language": "fi",
+        "legacy_nortaxa_taxon_id": 76326,
+        "expected_sporely_taxon_id": 605931
+      },
+      {
+        "query": "aarnityynyjäkälä",
+        "language": "fi",
+        "legacy_nortaxa_taxon_id": 71029,
+        "expected_sporely_taxon_id": 31548
+      },
+      {
+        "query": "Abblätternder Stäubling",
+        "language": "de",
+        "legacy_nortaxa_taxon_id": 131724,
+        "expected_sporely_taxon_id": 168367
+      },
+      {
+        "query": "Abrikos-køllesvamp",
+        "language": "da",
+        "legacy_nortaxa_taxon_id": 52422,
+        "expected_sporely_taxon_id": 614264
+      },
+      {
+        "query": "Abrikos-lavkølle",
+        "language": "da",
+        "legacy_nortaxa_taxon_id": 52440,
+        "expected_sporely_taxon_id": 33914
+      },
+      {
+        "query": "Abrikos-slørhat",
+        "language": "da",
+        "legacy_nortaxa_taxon_id": 52558,
+        "expected_sporely_taxon_id": 624798
+      },
+      {
+        "query": "abrotalus złotlinkowy",
+        "language": "pl",
+        "legacy_nortaxa_taxon_id": 76660,
+        "expected_sporely_taxon_id": 631859
+      },
+      {
+        "query": "Abtropfender Schleimfuß",
+        "language": "de",
+        "legacy_nortaxa_taxon_id": 52960,
+        "expected_sporely_taxon_id": 619524
+      },
+      {
+        "query": "acarospore à bordure",
+        "language": "fr",
+        "legacy_nortaxa_taxon_id": 65165,
+        "expected_sporely_taxon_id": 627195
+      },
+      {
+        "query": "Afblegende skørhat",
+        "language": "da",
+        "legacy_nortaxa_taxon_id": 57725,
+        "expected_sporely_taxon_id": 626832
+      },
+      {
+        "query": "Agardhs trævlhat",
+        "language": "da",
+        "legacy_nortaxa_taxon_id": 216584,
+        "expected_sporely_taxon_id": 26970
+      },
+      {
+        "query": "Agaric anisé des bois",
+        "language": "fr",
+        "legacy_nortaxa_taxon_id": 58360,
+        "expected_sporely_taxon_id": 78619
+      },
+      {
+        "query": "Agaric brun cuivré",
+        "language": "fr",
+        "legacy_nortaxa_taxon_id": 51934,
+        "expected_sporely_taxon_id": 624517
+      },
+      {
+        "query": "Agaric champêtre",
+        "language": "fr",
+        "legacy_nortaxa_taxon_id": 51928,
+        "expected_sporely_taxon_id": 624513
+      },
+      {
+        "query": "Agaric de Pilát",
+        "language": "fr",
+        "legacy_nortaxa_taxon_id": 51953,
+        "expected_sporely_taxon_id": 624527
+      },
+      {
+        "query": "Agaric des forêts",
+        "language": "fr",
+        "legacy_nortaxa_taxon_id": 58358,
+        "expected_sporely_taxon_id": 89295
+      },
+      {
+        "query": "Agaric fissuré",
+        "language": "fr",
+        "legacy_nortaxa_taxon_id": 58295,
+        "expected_sporely_taxon_id": 626991
+      },
+      {
+        "query": "Agaric guêtre",
+        "language": "fr",
+        "legacy_nortaxa_taxon_id": 51967,
+        "expected_sporely_taxon_id": 624530
+      },
+      {
+        "query": "Agaric géant des bois",
+        "language": "fr",
+        "legacy_nortaxa_taxon_id": 51948,
+        "expected_sporely_taxon_id": 624524
+      }
+    ],
+    "external_identifier": [
+      {
+        "source_system": "artportalen",
+        "namespace": "legacy_integer_external_id",
+        "external_id": "1",
+        "legacy_nortaxa_taxon_id": 56931,
+        "expected_sporely_taxon_id": 626522
+      },
+      {
+        "source_system": "artportalen",
+        "namespace": "legacy_integer_external_id",
+        "external_id": "3",
+        "legacy_nortaxa_taxon_id": 65108,
+        "expected_sporely_taxon_id": 627174
+      },
+      {
+        "source_system": "artportalen",
+        "namespace": "legacy_integer_external_id",
+        "external_id": "7",
+        "legacy_nortaxa_taxon_id": 80611,
+        "expected_sporely_taxon_id": 633567
+      },
+      {
+        "source_system": "artportalen",
+        "namespace": "legacy_integer_external_id",
+        "external_id": "13",
+        "legacy_nortaxa_taxon_id": 55201,
+        "expected_sporely_taxon_id": 146392
+      },
+      {
+        "source_system": "artportalen",
+        "namespace": "legacy_integer_external_id",
+        "external_id": "19",
+        "legacy_nortaxa_taxon_id": 57425,
+        "expected_sporely_taxon_id": 626723
+      },
+      {
+        "source_system": "artportalen",
+        "namespace": "legacy_integer_external_id",
+        "external_id": "25",
+        "legacy_nortaxa_taxon_id": 57892,
+        "expected_sporely_taxon_id": 626880
+      },
+      {
+        "source_system": "artportalen",
+        "namespace": "legacy_integer_external_id",
+        "external_id": "26",
+        "legacy_nortaxa_taxon_id": 57512,
+        "expected_sporely_taxon_id": 626756
+      },
+      {
+        "source_system": "artportalen",
+        "namespace": "legacy_integer_external_id",
+        "external_id": "37",
+        "legacy_nortaxa_taxon_id": 52125,
+        "expected_sporely_taxon_id": 79045
+      },
+      {
+        "source_system": "artportalen",
+        "namespace": "legacy_integer_external_id",
+        "external_id": "38",
+        "legacy_nortaxa_taxon_id": 52134,
+        "expected_sporely_taxon_id": 89205
+      },
+      {
+        "source_system": "artportalen",
+        "namespace": "legacy_integer_external_id",
+        "external_id": "39",
+        "legacy_nortaxa_taxon_id": 52135,
+        "expected_sporely_taxon_id": 79088
+      },
+      {
+        "source_system": "artportalen",
+        "namespace": "legacy_integer_external_id",
+        "external_id": "40",
+        "legacy_nortaxa_taxon_id": 52137,
+        "expected_sporely_taxon_id": 89217
+      },
+      {
+        "source_system": "artportalen",
+        "namespace": "legacy_integer_external_id",
+        "external_id": "41",
+        "legacy_nortaxa_taxon_id": 52169,
+        "expected_sporely_taxon_id": 624600
+      },
+      {
+        "source_system": "artportalen",
+        "namespace": "legacy_integer_external_id",
+        "external_id": "45",
+        "legacy_nortaxa_taxon_id": 58675,
+        "expected_sporely_taxon_id": 626997
+      },
+      {
+        "source_system": "artportalen",
+        "namespace": "legacy_integer_external_id",
+        "external_id": "46",
+        "legacy_nortaxa_taxon_id": 52199,
+        "expected_sporely_taxon_id": 89551
+      },
+      {
+        "source_system": "artportalen",
+        "namespace": "legacy_integer_external_id",
+        "external_id": "47",
+        "legacy_nortaxa_taxon_id": 52200,
+        "expected_sporely_taxon_id": 89552
+      }
+    ],
+    "missing": [
+      {
+        "query": "NBIC:54995",
+        "namespace_or_language": "nbic_scientific_name_id",
+        "reason": "namespaced Artsorakel identifier absent",
+        "expected_sporely_taxon_id": null,
+        "negative_control": true
+      },
+      {
+        "query": "Definitely missing taxon",
+        "namespace_or_language": null,
+        "reason": "negative control",
+        "expected_sporely_taxon_id": null,
+        "negative_control": true
+      },
+      {
+        "query": "Čáhppesguoppar",
+        "namespace_or_language": "se",
+        "reason": "Northern Sámi coverage control",
+        "expected_sporely_taxon_id": null,
+        "negative_control": true
+      },
+      {
+        "query": "Staareguopere",
+        "namespace_or_language": "sma",
+        "reason": "Southern Sámi coverage control",
+        "expected_sporely_taxon_id": null,
+        "negative_control": true
+      },
+      {
+        "query": "Guobbar",
+        "namespace_or_language": "smj",
+        "reason": "Lule Sámi coverage control",
+        "expected_sporely_taxon_id": null,
+        "negative_control": true
+      },
+      {
+        "query": "Ångströmomyces exemplaris",
+        "namespace_or_language": null,
+        "reason": "diacritic negative control",
+        "expected_sporely_taxon_id": null,
+        "negative_control": true
+      },
+      {
+        "query": "Ægirfungus absentis",
+        "namespace_or_language": null,
+        "reason": "diacritic negative control",
+        "expected_sporely_taxon_id": null,
+        "negative_control": true
+      },
+      {
+        "query": "Ødemarkssopp mangler",
+        "namespace_or_language": "no",
+        "reason": "diacritic negative control",
+        "expected_sporely_taxon_id": null,
+        "negative_control": true
+      },
+      {
+        "query": "Nieznany grzyb kontrolny",
+        "namespace_or_language": "pl",
+        "reason": "missing-name control",
+        "expected_sporely_taxon_id": null,
+        "negative_control": true
+      },
+      {
+        "query": "Hongo inexistente control",
+        "namespace_or_language": "es",
+        "reason": "missing-name control",
+        "expected_sporely_taxon_id": null,
+        "negative_control": true
+      },
+      {
+        "query": "Pilz nicht vorhanden",
+        "namespace_or_language": "de",
+        "reason": "missing-name control",
+        "expected_sporely_taxon_id": null,
+        "negative_control": true
+      },
+      {
+        "query": "Champignon témoin absent",
+        "namespace_or_language": "fr",
+        "reason": "diacritic missing-name control",
+        "expected_sporely_taxon_id": null,
+        "negative_control": true
+      },
+      {
+        "query": "Fungo di controllo assente",
+        "namespace_or_language": "it",
+        "reason": "missing-name control",
+        "expected_sporely_taxon_id": null,
+        "negative_control": true
+      },
+      {
+        "query": "Sieni puuttuu kontrolli",
+        "namespace_or_language": "fi",
+        "reason": "missing-name control",
+        "expected_sporely_taxon_id": null,
+        "negative_control": true
+      }
+    ]
+  }
+}
