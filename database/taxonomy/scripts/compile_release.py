@@ -221,6 +221,24 @@ def _iter_taxa(source_dir: Path) -> Iterator[NormalizedTaxonRecord]:
                 ) from exc
 
 
+def _iter_legacy_enrichment(path: Path) -> Iterator[dict]:
+    """Yield legacy-enrichment JSONL rows produced by
+    ``export_legacy_enrichment.py``. Malformed lines fail closed."""
+    if not path.exists():
+        raise CompilerError(f"legacy enrichment input not found: {path}")
+    with path.open("r", encoding="utf-8") as handle:
+        for line_number, raw in enumerate(handle, start=1):
+            stripped = raw.strip()
+            if not stripped:
+                continue
+            try:
+                yield json.loads(stripped)
+            except json.JSONDecodeError as exc:
+                raise CompilerError(
+                    f"{path}:{line_number}: malformed JSON: {exc}"
+                ) from exc
+
+
 def _iter_vernacular(source_dir: Path) -> Iterator[dict]:
     """Yield vernacular JSONL rows from a normalized source (if any).
 
@@ -374,6 +392,7 @@ def compile_release(
     output_dir: Path,
     release_id: str,
     source_release_manifests: dict[str, Path] | None = None,
+    legacy_enrichment_path: Path | None = None,
 ) -> dict:
     """Compile a deterministic candidate release into ``output_dir``.
 
@@ -919,6 +938,118 @@ def compile_release(
                     "is_preferred": bool(entry["is_preferred"]),
                     "provenance": entry.get("provenance", {}),
                 })
+        # ----- Legacy compatibility enrichment ------------------------------
+        # Consume the pre-Stage-3A bundled DB export (if provided) and route
+        # every legacy vernacular / Artportalen external identifier through
+        # its NorTaxa taxonID → Sporely ID mapping. Legacy rows never allocate
+        # a Sporely identity and never introduce a canonical taxon.
+        legacy_external_ids: list[dict] = []
+        legacy_skips: list[dict] = []
+        legacy_counts = {
+            "vernacular_added": 0,
+            "vernacular_duplicate_skipped": 0,
+            "external_id_added": 0,
+            "external_id_duplicate_skipped": 0,
+            "unresolved_nortaxa_taxonid": 0,
+            "ignored_reason_already_in_stage3a": 0,
+            "input_rows": 0,
+        }
+        if legacy_enrichment_path is not None:
+            existing_vern: set[tuple[int, str, str]] = {
+                (v["sporely_taxon_id"], v["language"], v["vernacular_name"])
+                for v in compiled_vernaculars
+            }
+            existing_external_ids: set[tuple[int, str, str]] = {
+                (u["sporely_taxon_id"], u["source_code"],
+                 u["source_usage"]["identifier"])
+                for u in source_usages
+            }
+            for entry in _iter_legacy_enrichment(legacy_enrichment_path):
+                legacy_counts["input_rows"] += 1
+                nortaxa_ref = str(entry.get("nortaxa_taxon_id", "")).strip()
+                if not nortaxa_ref:
+                    legacy_skips.append({**entry,
+                                         "reason": "missing_nortaxa_taxon_id"})
+                    legacy_counts["unresolved_nortaxa_taxonid"] += 1
+                    continue
+                alloc = registry.lookup(
+                    "nortaxa", "nortaxa_taxon_id", nortaxa_ref,
+                )
+                if alloc is None:
+                    legacy_skips.append({**entry, "reason":
+                        "nortaxa_taxon_id_not_in_registry"})
+                    legacy_counts["unresolved_nortaxa_taxonid"] += 1
+                    continue
+                sporely_id = alloc.sporely_taxon_id
+                kind = entry.get("kind")
+                if kind == "vernacular":
+                    provider = entry.get("provider") or "legacy_sporely"
+                    # Skip languages Stage 3A already fully covers under the
+                    # NorTaxa authoritative source.
+                    if provider == "artsdatabanken":
+                        legacy_counts["ignored_reason_already_in_stage3a"] += 1
+                        continue
+                    lang = str(entry.get("language", "")).strip()
+                    name = str(entry.get("vernacular_name", "")).strip()
+                    if not lang or not name:
+                        legacy_skips.append({**entry,
+                                             "reason": "empty_language_or_name"})
+                        continue
+                    key = (sporely_id, lang, name)
+                    if key in existing_vern:
+                        legacy_counts["vernacular_duplicate_skipped"] += 1
+                        continue
+                    existing_vern.add(key)
+                    compiled_vernaculars.append({
+                        "sporely_taxon_id": sporely_id,
+                        "source_code": provider,
+                        "source_release": {"version": "legacy_compat",
+                                           "issued_date": ""},
+                        "core_row_id": {
+                            "value": nortaxa_ref,
+                            "namespace": "nortaxa_taxon_id",
+                        },
+                        "language": lang,
+                        "vernacular_name": name,
+                        "is_preferred": bool(entry.get("is_preferred")),
+                        "provenance": {
+                            "source_code": "legacy_compat",
+                            "provider": provider,
+                            "provenance_note": entry.get("provenance", ""),
+                        },
+                    })
+                    legacy_counts["vernacular_added"] += 1
+                elif kind == "external_identifier":
+                    source_system = str(entry.get("source_system", "")).strip()
+                    external_id = str(entry.get("external_id", "")).strip()
+                    if not source_system or not external_id:
+                        legacy_skips.append({**entry,
+                                             "reason": "empty_source_or_id"})
+                        continue
+                    dedup_key = (sporely_id, source_system, external_id)
+                    if dedup_key in existing_external_ids:
+                        legacy_counts["external_id_duplicate_skipped"] += 1
+                        continue
+                    existing_external_ids.add(dedup_key)
+                    provider = entry.get("provider") or "legacy_sporely"
+                    legacy_external_ids.append({
+                        "sporely_taxon_id": sporely_id,
+                        "source_system": source_system,
+                        "external_id": external_id,
+                        "external_id_kind": entry.get("external_id_kind", "integer"),
+                        "namespace": entry.get("namespace",
+                                               f"{source_system}_taxon_id"),
+                        "id_role": entry.get("id_role") or "accepted",
+                        "is_preferred": bool(entry.get("is_preferred")),
+                        "external_name": entry.get("external_name"),
+                        "note": entry.get("note"),
+                        "provider": provider,
+                        "provenance": entry.get("provenance", ""),
+                        "resolved_via_nortaxa_taxon_id": nortaxa_ref,
+                    })
+                    legacy_counts["external_id_added"] += 1
+                else:
+                    legacy_skips.append({**entry, "reason": f"unknown_kind:{kind}"})
         compiled_vernaculars.sort(
             key=lambda r: (
                 r["sporely_taxon_id"],
@@ -931,6 +1062,24 @@ def compile_release(
         )
         with vernacular_out.open("w", encoding="utf-8") as handle:
             for row in compiled_vernaculars:
+                handle.write(_canonical_dumps(row) + "\n")
+
+        legacy_external_ids.sort(
+            key=lambda r: (
+                r["sporely_taxon_id"], r["source_system"],
+                r["external_id_kind"], r["external_id"],
+            ),
+        )
+        legacy_external_out = staging / "legacy_external_ids.jsonl"
+        with legacy_external_out.open("w", encoding="utf-8") as handle:
+            for row in legacy_external_ids:
+                handle.write(_canonical_dumps(row) + "\n")
+        legacy_skips.sort(
+            key=lambda r: (r.get("nortaxa_taxon_id") or "",
+                           r.get("kind") or "", r.get("reason") or ""))
+        legacy_skips_out = staging / "legacy_enrichment_skips.jsonl"
+        with legacy_skips_out.open("w", encoding="utf-8") as handle:
+            for row in legacy_skips:
                 handle.write(_canonical_dumps(row) + "\n")
 
         diagnostics = _build_diagnostics(
@@ -947,6 +1096,7 @@ def compile_release(
             synonym_diagnostics=synonym_diagnostics,
             synonym_alias_count=len(synonym_alias_applied),
             cross_source_proposals=cross_source_proposals,
+            legacy_enrichment_counts=legacy_counts,
         )
         diagnostics_out.write_text(
             json.dumps(diagnostics, ensure_ascii=False, indent=2, sort_keys=True) + "\n",
@@ -1007,6 +1157,16 @@ def compile_release(
                     "name": vernacular_out.name,
                     "sha256": _sha256_file(vernacular_out),
                     "bytes": vernacular_out.stat().st_size,
+                },
+                "legacy_external_ids": {
+                    "name": legacy_external_out.name,
+                    "sha256": _sha256_file(legacy_external_out),
+                    "bytes": legacy_external_out.stat().st_size,
+                },
+                "legacy_enrichment_skips": {
+                    "name": legacy_skips_out.name,
+                    "sha256": _sha256_file(legacy_skips_out),
+                    "bytes": legacy_skips_out.stat().st_size,
                 },
                 "diagnostics": {
                     "name": diagnostics_out.name,
@@ -1414,6 +1574,7 @@ def _build_diagnostics(
     synonym_diagnostics: dict,
     synonym_alias_count: int,
     cross_source_proposals: list,
+    legacy_enrichment_counts: dict | None = None,
 ) -> dict:
     per_source_usage_count: dict[str, int] = {}
     per_source_unresolved_parents: dict[str, int] = {}
@@ -1476,6 +1637,7 @@ def _build_diagnostics(
             "vernacular_rows_dropped_out_of_scope": vern_dropped_out_of_scope,
             "sporely_scope": scope_diagnostics,
             "synonym_resolution": synonym_diagnostics,
+            "legacy_enrichment": legacy_enrichment_counts or {},
         },
         "sources": {
             code: {
@@ -1505,6 +1667,12 @@ def build_parser() -> argparse.ArgumentParser:
     parser.add_argument("--source-release-manifest", action="append", default=[],
                         metavar="SOURCE_CODE=PATH",
                         help="bind a source_release manifest, repeatable")
+    parser.add_argument("--legacy-enrichment-input", type=Path, default=None,
+                        help="JSONL export of pre-Stage-3A compatibility "
+                             "enrichment (Artportalen IDs + non-Nordic "
+                             "vernaculars). Never allocates Sporely IDs; "
+                             "unresolvable rows go to "
+                             "legacy_enrichment_skips.jsonl.")
     return parser
 
 
@@ -1527,6 +1695,7 @@ def main(argv: Iterable[str] | None = None) -> int:
             output_dir=args.output,
             release_id=args.release_id,
             source_release_manifests=manifests,
+            legacy_enrichment_path=args.legacy_enrichment_input,
         )
     except CompilerError as exc:
         print(f"error: {exc}", file=sys.stderr)

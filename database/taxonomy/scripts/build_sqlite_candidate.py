@@ -331,6 +331,7 @@ def build_candidate(
             vernacular_path=vernacular_path,
             registry_path=registry_path,
             manifest_path=manifest_path,
+            release_dir=release_dir,
         )
         os.replace(tmp_db, output_db)
         committed = True
@@ -352,6 +353,7 @@ def _build_into(
     vernacular_path: Path,
     registry_path: Path,
     manifest_path: Path,
+    release_dir: Path,
 ) -> dict:
     conn = sqlite3.connect(str(tmp_db), isolation_level=None)
     conn.execute("PRAGMA locking_mode = EXCLUSIVE")
@@ -489,8 +491,65 @@ def _build_into(
             ],
         )
 
-        external_int_rows.sort(
-            key=lambda r: (r[0], r[1], r[2]))
+        # --- Legacy external identifiers (Stage 3B.1 compatibility) --------
+        legacy_external_path = release_dir / "legacy_external_ids.jsonl"
+        if legacy_external_path.exists():
+            int_seen: set[tuple[int, str, int]] = {
+                (r[0], r[1], r[2]) for r in external_int_rows
+            }
+            text_seen: set[tuple[int, str, str, str]] = {
+                (r[0], r[1], r[2], r[3]) for r in external_text_rows
+            }
+            for entry in _open_lines(legacy_external_path):
+                sporely_id = int(entry["sporely_taxon_id"])
+                source_system = str(entry["source_system"])
+                ext_id = str(entry["external_id"])
+                id_role = str(entry.get("id_role") or "accepted")
+                is_preferred = 1 if entry.get("is_preferred") else 0
+                external_name = entry.get("external_name")
+                note_bits = []
+                if entry.get("provider"):
+                    note_bits.append(f"legacy_compat:{entry['provider']}")
+                if entry.get("note"):
+                    note_bits.append(str(entry["note"]))
+                note = "; ".join(note_bits) or None
+                if str(entry.get("external_id_kind", "integer")) == "integer":
+                    try:
+                        numeric = int(ext_id)
+                    except ValueError:
+                        # Provider claimed integer but value isn't — store as text.
+                        namespace = entry.get("namespace") or \
+                            f"{source_system}_taxon_id"
+                        key_t = (sporely_id, source_system, namespace, ext_id)
+                        if key_t in text_seen:
+                            continue
+                        text_seen.add(key_t)
+                        external_text_rows.append((
+                            sporely_id, source_system, namespace, ext_id,
+                            id_role, is_preferred, external_name, note,
+                        ))
+                        continue
+                    key_i = (sporely_id, source_system, numeric)
+                    if key_i in int_seen:
+                        continue
+                    int_seen.add(key_i)
+                    external_int_rows.append((
+                        sporely_id, source_system, numeric, id_role,
+                        is_preferred, external_name, note,
+                    ))
+                else:
+                    namespace = entry.get("namespace") or \
+                        f"{source_system}_taxon_id"
+                    key_t = (sporely_id, source_system, namespace, ext_id)
+                    if key_t in text_seen:
+                        continue
+                    text_seen.add(key_t)
+                    external_text_rows.append((
+                        sporely_id, source_system, namespace, ext_id,
+                        id_role, is_preferred, external_name, note,
+                    ))
+
+        external_int_rows.sort(key=lambda r: (r[0], r[1], r[2]))
         conn.executemany(
             "INSERT INTO taxon_external_id_min "
             "(external_id_row_id, taxon_id, source_system, external_id, "
