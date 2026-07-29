@@ -19122,6 +19122,7 @@ class MainWindow(GeometryMixin, QMainWindow):
                 self._set_reference_panel_loaded_taxon(self.active_observation_id, obs_genus, obs_species)
 
         restored_series = []
+        has_saved_series = "reference_series" in settings
         saved_series = settings.get("reference_series")
         if isinstance(saved_series, list):
             for item in saved_series:
@@ -19142,6 +19143,15 @@ class MainWindow(GeometryMixin, QMainWindow):
             self.reference_values = dict(last_entry.get("data", {}))
             self._set_reference_series(restored_series)
             self._apply_reference_panel_values(self.reference_values)
+            self._update_reference_add_state()
+            return
+
+        if has_saved_series:
+            # An explicitly saved empty list is the observation's persisted
+            # choice, not a request to keep a species reference that may have
+            # been auto-loaded before gallery settings were applied.
+            self.reference_values = {}
+            self._set_reference_series([])
             self._update_reference_add_state()
             return
 
