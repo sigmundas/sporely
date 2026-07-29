@@ -3678,7 +3678,13 @@ def _summarize_image_changes(
             change_buckets[group].append(current_map[key])
 
     if added:
-        lines.append(f'Added {_pluralize_image_count(added)}.')
+        # This is a comparison with the stored sync snapshot, not evidence
+        # that a particular app or device originally added the photo. Older
+        # observation-only snapshots may contain no photo history at all.
+        lines.append(
+            f'Present now but not recorded in the previous sync: '
+            f'{_pluralize_image_count(added)}.'
+        )
     if removed:
         lines.append(f'Removed {_pluralize_image_count(removed)}.')
     for group in change_order:
@@ -9872,15 +9878,19 @@ def save_cloud_password(email: str, password: str) -> None:
     update_app_settings({'cloud_user_email': str(email or '').strip()})
 
 
-def clear_saved_cloud_password() -> None:
+def clear_saved_cloud_password() -> list[str]:
     keyring = _get_keyring_module()
     if keyring is None:
-        return
-    for service_name in (_CLOUD_KEYRING_SERVICE, _CLOUD_LEGACY_KEYRING_SERVICE):
-        try:
-            keyring.delete_password(service_name, _CLOUD_KEYRING_ACCOUNT)
-        except Exception:
-            continue
+        return []
+    from utils.keyring_cleanup import delete_password_entries
+
+    return delete_password_entries(
+        keyring,
+        (
+            (_CLOUD_KEYRING_SERVICE, _CLOUD_KEYRING_ACCOUNT),
+            (_CLOUD_LEGACY_KEYRING_SERVICE, _CLOUD_KEYRING_ACCOUNT),
+        ),
+    )
 
 
 def has_saved_cloud_password() -> bool:

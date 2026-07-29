@@ -3083,6 +3083,21 @@ def test_summarize_image_changes_ignores_upload_size_metadata_and_matches_cloud_
     assert cloud_sync._summarize_image_changes(current, baseline) == []
 
 
+def test_summarize_image_changes_does_not_claim_photo_provenance():
+    current = [
+        {
+            "id": "cloud-img-1",
+            "desktop_id": 10,
+            "sort_order": 0,
+            "image_type": "microscope",
+        }
+    ]
+
+    assert cloud_sync._summarize_image_changes(current, []) == [
+        "Present now but not recorded in the previous sync: 1 microscope photo."
+    ]
+
+
 def test_import_remote_images_preserves_original_filename(monkeypatch, tmp_path):
     temp_root = tmp_path / "sync"
     temp_root.mkdir()

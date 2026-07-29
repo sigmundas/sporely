@@ -3096,6 +3096,16 @@ class ArtsobservasjonerSettingsDialog(QDialog):
         self.logout_button = QPushButton(self.tr("Log out"))
         self.logout_button.clicked.connect(self._logout)
         button_layout.addWidget(self.logout_button)
+
+        self.remove_saved_passwords_button = QPushButton(self.tr("Remove saved passwords…"))
+        self.remove_saved_passwords_button.clicked.connect(self._remove_saved_passwords)
+        self.remove_saved_passwords_button.setToolTip(
+            self.tr(
+                "Remove Sporely passwords from the system credential store without "
+                "ending existing website sessions."
+            )
+        )
+        button_layout.addWidget(self.remove_saved_passwords_button)
         button_layout.addStretch()
         websites_layout.addLayout(button_layout)
         layout.addWidget(websites_group)
@@ -3658,8 +3668,13 @@ class ArtsobservasjonerSettingsDialog(QDialog):
                         status[uploader.key] = False
                 elif uploader.key == "artportalen":
                     try:
-                        from utils.artportalen_auth import has_saved_login
-                        status[uploader.key] = bool(has_saved_login())
+                        from utils.artportalen_auth import ArtportalenAuth
+
+                        # Opening Settings must not read a password merely to
+                        # paint a status cell. A cached session is sufficient
+                        # for the same non-validating status used by the other
+                        # website targets.
+                        status[uploader.key] = bool(ArtportalenAuth().load_cookies())
                     except Exception:
                         status[uploader.key] = False
                 elif uploader.key == "mo":
@@ -3677,8 +3692,9 @@ class ArtsobservasjonerSettingsDialog(QDialog):
                         status[uploader.key] = False
                 elif uploader.key == "artportalen":
                     try:
-                        from utils.artportalen_auth import has_saved_login
-                        status[uploader.key] = bool(has_saved_login())
+                        from utils.artportalen_auth import ArtportalenAuth
+
+                        status[uploader.key] = bool(ArtportalenAuth().load_cookies())
                     except Exception:
                         status[uploader.key] = False
                 elif uploader.key == "mo":
@@ -4305,6 +4321,56 @@ class ArtsobservasjonerSettingsDialog(QDialog):
             return
         self._update_status()
         self._update_controls()
+
+    def _remove_saved_passwords(self) -> None:
+        answer = QMessageBox.question(
+            self,
+            self.tr("Remove saved passwords?"),
+            self.tr(
+                "Remove saved passwords for Sporely Cloud, Artsobservasjoner, and "
+                "Artportalen from this device's secure credential store?\n\n"
+                "Existing session cookies and access tokens will be kept."
+            ),
+            QMessageBox.Yes | QMessageBox.No,
+            QMessageBox.No,
+        )
+        if answer != QMessageBox.Yes:
+            return
+
+        try:
+            from utils.artsobservasjoner_auto_login import clear_saved_web_credentials
+            from utils.artportalen_auth import clear_saved_credentials
+            from utils.cloud_sync import clear_saved_cloud_password
+
+            failures = [
+                *clear_saved_web_credentials(),
+                *clear_saved_credentials(),
+                *clear_saved_cloud_password(),
+            ]
+        except Exception as exc:
+            failures = [str(exc)]
+
+        self._update_status()
+        self._update_controls()
+        if failures:
+            QMessageBox.warning(
+                self,
+                self.tr("Password removal incomplete"),
+                self.tr(
+                    "Some saved passwords could not be removed from the system "
+                    "credential store. You can remove them using your operating "
+                    "system's password or credential manager.\n\n{error}"
+                ).format(error='\n'.join(failures)),
+            )
+            return
+        QMessageBox.information(
+            self,
+            self.tr("Saved passwords removed"),
+            self.tr(
+                "Saved passwords were removed. Existing session cookies and access "
+                "tokens were kept."
+            ),
+        )
 
     def _load_settings(self):
         self._loading_settings = True
