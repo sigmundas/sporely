@@ -17,8 +17,32 @@ def format_species_choice_display(choice: TaxonChoice) -> str:
     return str(choice.species or "").strip()
 
 
+_VERNACULAR_DISPLAY_ANNOTATED_LANGUAGES = frozenset({
+    # Norwegian and Sámi variants that Stage 3B.2 keeps distinct — annotate
+    # them in the completer popup so a user with multiple alternatives can
+    # tell `hvit sprøsopp (nb)` from `kvit sprøsopp (nn)`. Every other
+    # language renders bare, matching pre-existing test expectations.
+    "nb", "nn", "se", "sma", "smj",
+})
+
+
 def format_common_name_choice_display(choice: TaxonChoice) -> str:
-    return str(choice.common_name or "").strip()
+    """Render a vernacular suggestion for the completer popup.
+
+    Only ``nb`` / ``nn`` / Sámi rows are annotated with a language-code
+    suffix (so a user can distinguish alternatives for the same Sporely
+    taxon). English and other single-language contexts render bare. The
+    completer's completion role is ``Qt.UserRole`` which stores the raw
+    name, so selection always writes the un-annotated string into the
+    observation snapshot.
+    """
+    name = str(choice.common_name or "").strip()
+    if not name:
+        return ""
+    lang = str(getattr(choice, "language_code", "") or "").strip().lower()
+    if lang in _VERNACULAR_DISPLAY_ANNOTATED_LANGUAGES:
+        return f"{name} ({lang})"
+    return name
 
 
 def _should_select_all_on_focus(event) -> bool:

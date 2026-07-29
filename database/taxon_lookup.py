@@ -435,8 +435,20 @@ class TaxonLookupService:
 
         language_code = self.language_code
         if has_language and language_code:
-            filters.append("v.language_code = ?")
-            params.append(language_code)
+            # Fan out the umbrella `no` code to (`no`, `nb`, `nn`) so v2
+            # candidates (which store `nb` / `nn` distinct) still match
+            # Norwegian queries. Legacy DBs continue to work because they
+            # only carry the umbrella `no` code and IN (?, ?, ?) still hits
+            # it. `nb`, `nn` and Sámi codes remain distinct when named.
+            try:
+                from utils.vernacular_utils import resolve_query_language_codes
+                codes = resolve_query_language_codes(language_code)
+            except Exception:
+                codes = (language_code,)
+            if codes:
+                placeholders = ",".join("?" for _ in codes)
+                filters.append(f"v.language_code IN ({placeholders})")
+                params.extend(codes)
 
         query = f"""
             SELECT DISTINCT {", ".join(select_columns)}
@@ -617,8 +629,32 @@ class TaxonLookupService:
             choice = self._row_to_choice(preferred_rows[0], "taxonomy")
             self._best_common_name_cache[key] = choice
             return choice
-        self._best_common_name_cache[key] = None
-        return None
+
+        # Multiple preferred rows — pick deterministically by the language
+        # fan-out order derived from the caller's requested language. This
+        # preserves the Norwegian display for taxa like `Laccaria laccata`
+        # that carry both `nb` and `nn` preferred vernaculars (both should
+        # display; the field takes the first fan-out language, and the
+        # observation editor's chooser lists the rest as alternatives).
+        try:
+            from utils.vernacular_utils import resolve_query_language_codes
+            priority = resolve_query_language_codes(self.language_code)
+        except Exception:
+            priority = ()
+        candidates = preferred_rows or rows
+        priority_index = {code: idx for idx, code in enumerate(priority)}
+
+        def sort_key(row):
+            lang = (row["language_code"] or "").lower()
+            return (
+                priority_index.get(lang, len(priority_index) + 1),
+                lang,
+                str(row["common_name"] or "").casefold(),
+            )
+        candidates_sorted = sorted(candidates, key=sort_key)
+        choice = self._row_to_choice(candidates_sorted[0], "taxonomy")
+        self._best_common_name_cache[key] = choice
+        return choice
 
 
 __all__ = ["TAXON_COMPLETER_LIMIT", "TaxonChoice", "TaxonLookupService"]

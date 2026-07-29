@@ -53,6 +53,27 @@ def normalize_vernacular_language(code: str | None) -> str:
     return text or "no"
 
 
+def display_vernacular_name(name: str | None) -> str:
+    """Capitalize the FIRST character of a vernacular for display only.
+
+    Preserves the rest of the string exactly (does NOT title-case each word)
+    so multi-word Norwegian names like ``"hvit sprøsopp"`` render as ``"Hvit
+    sprøsopp"`` without turning into ``"Hvit Sprøsopp"``. Never mutates the
+    stored source string — call this only when rendering.
+    """
+    if not name:
+        return ""
+    text = str(name)
+    if not text:
+        return text
+    # Preserve leading whitespace / punctuation, capitalize the first
+    # alphabetic character encountered.
+    for index, char in enumerate(text):
+        if char.isalpha():
+            return text[:index] + char.upper() + text[index + 1:]
+    return text
+
+
 def resolve_query_language_codes(code: str | None) -> tuple[str, ...]:
     """Return the language codes to include in a vernacular query.
 

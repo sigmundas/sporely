@@ -361,6 +361,97 @@ class VernacularDB:
                 return None
             return row[0], row[1], row[2]
 
+    def taxon_id_from_scientific(self, genus: str, species: str) -> int | None:
+        """Return the taxon_id (Sporely id on v2, NorTaxa DwC id on legacy)
+        for a scientific name. Prefers the row with a preferred alias when
+        multiple rows share the canonical name.
+        """
+        genus = (genus or "").strip()
+        species = (species or "").strip()
+        if not genus or not species:
+            return None
+        scientific_name = f"{genus} {species}"
+        with self._connect() as conn:
+            row = conn.execute(
+                """
+                SELECT t.taxon_id
+                FROM taxon_min t
+                LEFT JOIN scientific_name_min s
+                  ON s.taxon_id = t.taxon_id
+                 AND s.scientific_name = ? COLLATE NOCASE
+                WHERE (t.genus = ? COLLATE NOCASE
+                       AND t.specific_epithet = ? COLLATE NOCASE)
+                   OR t.canonical_scientific_name = ? COLLATE NOCASE
+                ORDER BY
+                  CASE WHEN s.is_preferred_name = 1 THEN 0 ELSE 1 END,
+                  CASE WHEN t.canonical_scientific_name = ? COLLATE NOCASE THEN 0 ELSE 1 END,
+                  t.taxon_id
+                LIMIT 1
+                """,
+                (scientific_name, genus, species, scientific_name, scientific_name),
+            ).fetchone()
+        return int(row[0]) if row else None
+
+    def taxon_id_from_vernacular(self, name: str, language_code: str | None = None) -> int | None:
+        """Resolve a vernacular query to a single taxon_id. Uses the
+        language fan-out ``no → (no, nb, nn)`` when applicable."""
+        name = (name or "").strip()
+        if not name:
+            return None
+        lang_clause, lang_params = self._language_clause(language_code)
+        with self._connect() as conn:
+            row = conn.execute(
+                "SELECT v.taxon_id "
+                "FROM vernacular_min v "
+                "WHERE v.vernacular_name = ? COLLATE NOCASE "
+                + lang_clause +
+                " ORDER BY v.is_preferred_name DESC, v.language_code, v.vernacular_id "
+                "LIMIT 1",
+                (name, *lang_params),
+            ).fetchone()
+        return int(row[0]) if row else None
+
+    def list_vernacular_alternatives(
+        self, taxon_id: int, languages: tuple[str, ...] | None = None,
+    ) -> list[dict]:
+        """Return every vernacular row for ``taxon_id``, ordered so that the
+        preferred user-facing language block comes first and each language
+        keeps its own rows distinct.
+
+        Ordering is deterministic: (language-priority, is_preferred DESC,
+        vernacular_id). ``languages`` is a tuple of codes that should be
+        promoted to the top; every remaining language follows in
+        alphabetical order.
+        """
+        if not self._has_language():
+            return []
+        with self._connect() as conn:
+            rows = list(conn.execute(
+                "SELECT vernacular_id, language_code, vernacular_name, "
+                "       is_preferred_name, source "
+                "FROM vernacular_min WHERE taxon_id = ? ORDER BY "
+                "vernacular_id",
+                (int(taxon_id),),
+            ))
+        result = [
+            {"language_code": str(row[1]), "vernacular_name": str(row[2]),
+             "is_preferred": bool(row[3]), "source": row[4],
+             "vernacular_id": int(row[0])}
+            for row in rows
+        ]
+        promote = tuple(languages) if languages else ()
+
+        def sort_key(item):
+            lang = item["language_code"]
+            if lang in promote:
+                priority = promote.index(lang)
+            else:
+                priority = len(promote) + 1
+            return (priority, 0 if item["is_preferred"] else 1,
+                    item["language_code"], item["vernacular_id"])
+        result.sort(key=sort_key)
+        return result
+
     def vernacular_from_taxon(self, genus: str, species: str) -> str | None:
         if not genus or not species:
             return None
