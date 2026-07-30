@@ -927,20 +927,27 @@ def test_resolve_manual_scientific_without_vernacular_db_returns_none():
 
 
 # ---------------------------------------------------------------------------
-# Red-List presence tiebreak — Cantharellus cibarius regression pattern.
-# When a (genus, species) pair matches multiple canonical concepts and
-# exactly one carries a Red List assessment, the manual resolver picks
-# that assessed concept so the badge refreshes without Save+Reopen.
+# Source-system preference + NorTaxa Red List overlay.
+#
+# When a manually-typed (genus, species) pair matches multiple canonical
+# rows, identity is bound to the COL canonical (source-system authority
+# for species concepts). If the bound identity has no Red List
+# assessment but a unique exact-canonical-name NorTaxa counterpart
+# does, the overlay entrypoint surfaces that assessment WITHOUT
+# changing bound identity. Proper concept unification remains a
+# compile-pipeline concern; this runtime accommodates the shape until
+# unification lands.
 # ---------------------------------------------------------------------------
 
 
-def _seed_taxonomy_db_for_manual_with_redlist(db_path: Path) -> None:
+def _seed_taxonomy_db_col_plus_nortaxa(db_path: Path) -> None:
     """Mirror the real ``Cantharellus cibarius`` DB shape:
-    - two canonical species-rank rows for the same (genus, species);
-    - two variety rows that share the same (genus, specific_epithet)
-      but have a different canonical name (var. monstrosus);
-    - only ONE of the species-rank rows has a Red List assessment
-      (mirrors NorTaxa-owned assessed rows vs a COL duplicate).
+    - two variety rows sharing (genus, specific_epithet) with different
+      canonical names (must be filtered out by exact-canonical match);
+    - two species-rank rows sharing the exact canonical name — one
+      ``col_xr``, one ``nortaxa``;
+    - only the NorTaxa row carries a Red List assessment (this is the
+      exact real-DB layout for the taxon).
     """
     with sqlite3.connect(str(db_path)) as conn:
         conn.execute(
@@ -1001,9 +1008,6 @@ def _seed_taxonomy_db_for_manual_with_redlist(db_path: Path) -> None:
             )
             """
         )
-        # Two variety rows sharing (Cantharellus, cibarius) but with
-        # different canonical names — must be filtered out by the exact
-        # canonical_scientific_name match.
         conn.execute(
             "INSERT INTO taxon_min VALUES (150931, 'Cantharellus', 'cibarius', "
             "'Hydnaceae', 'Cantharellus cibarius var. monstrosus', 'variety', 'col_xr')"
@@ -1012,9 +1016,6 @@ def _seed_taxonomy_db_for_manual_with_redlist(db_path: Path) -> None:
             "INSERT INTO taxon_min VALUES (159987, 'Cantharellus', 'cibarius', "
             "'Hydnaceae', 'Cantharellus cibarius var. carneoalbus', 'variety', 'col_xr')"
         )
-        # Two species-rank rows sharing the canonical name — the ambiguous
-        # pair the strict resolver refuses to bind. Only the second has
-        # a Red List assessment (matches the real NorTaxa-owned row).
         conn.execute(
             "INSERT INTO taxon_min VALUES (168873, 'Cantharellus', 'cibarius', "
             "'Hydnaceae', 'Cantharellus cibarius', 'species', 'col_xr')"
@@ -1042,58 +1043,103 @@ def _seed_taxonomy_db_for_manual_with_redlist(db_path: Path) -> None:
         conn.commit()
 
 
-def test_manual_resolver_uses_redlist_presence_as_tiebreak(tmp_path: Path):
-    """Regression: manual entry of a (genus, species) pair that matches
-    multiple canonical rows must still bind identity when exactly one
-    of the surviving species-rank concepts carries a Red List row.
-
-    Mirrors the ``Cantharellus cibarius`` case that surfaced against the
-    installed ``tax-2026.07.30-02`` release: two ``col_xr``-owned
-    variety rows share the genus + specific_epithet, plus two species
-    rows share the canonical name — only the ``nortaxa``-owned row has
-    the LC-Norge assessment. The resolver must pick the assessed
-    ``taxon_id`` so the manual edit refreshes the badge without
-    requiring the user to open the picker.
-    """
+def _svc_for_db(db_path: Path) -> TaxonLookupService:
     from database.vernacular_db import VernacularDB
-    db_path = tmp_path / "manual_redlist.sqlite3"
-    _seed_taxonomy_db_for_manual_with_redlist(db_path)
-    svc = TaxonLookupService(
+    return TaxonLookupService(
         vernacular_db=VernacularDB(db_path, language_code="no"),
         include_reference_data=False,
         language_code="no",
     )
+
+
+def test_manual_resolver_prefers_col_canonical_over_nortaxa_when_ambiguous(tmp_path: Path):
+    """When multiple canonical rows share the exact ``Genus species``
+    canonical, identity binds to the COL row — COL is the source-system
+    authority for species concepts in this DB. Red List presence is
+    deliberately NOT considered here; the bound identity stays 168873
+    even though 626243 carries the LC assessment.
+
+    Regression pattern for the real ``Cantharellus cibarius`` case:
+    without this fix the strict resolver refused to bind and the badge
+    would not refresh; with the fix the badge refreshes (via the
+    separate NorTaxa Red List overlay) while identity stays on COL.
+    """
+    db_path = tmp_path / "col_pref.sqlite3"
+    _seed_taxonomy_db_col_plus_nortaxa(db_path)
+    svc = _svc_for_db(db_path)
     res = svc.resolve_manual_scientific("Cantharellus", "cibarius")
     assert res is not None
-    # The picked concept is the one carrying the Red List assessment.
-    assert res.sporely_taxon_id == 626243
+    # COL id, NOT the NorTaxa id with the assessment.
+    assert res.sporely_taxon_id == 168873
     assert res.scientific_name == "Cantharellus cibarius"
     assert res.taxon_rank_snapshot == "species"
     assert res.canonical_scientific_name == "Cantharellus cibarius"
-    # And the subsequent Red List lookup for the resolved id sees LC.
-    result = svc.get_redlist_lookup(
+    # Primary Red List lookup for the COL identity: no assessment.
+    primary = svc.get_redlist_lookup(
         res.sporely_taxon_id, area="Norge", source_release="2021",
     )
-    assert result.status == "unique"
-    assert result.assessment is not None
-    assert result.assessment.category_raw == "LC"
+    assert primary.status == "none"
 
 
-def test_manual_resolver_still_refuses_when_multiple_assessed_rows(tmp_path: Path):
-    """Guard: the Red-List tiebreak stays conservative — if MORE than
-    one candidate carries an assessment, the resolver still returns
-    None. The user must resolve via the picker."""
+def test_manual_resolver_binds_nortaxa_when_only_nortaxa_candidate_exists(tmp_path: Path):
+    """When zero COL canonicals but exactly one NorTaxa canonical
+    matches the pair, identity binds to the NorTaxa row — there is no
+    ambiguity to resolve."""
     from database.vernacular_db import VernacularDB
-    db_path = tmp_path / "both_assessed.sqlite3"
-    _seed_taxonomy_db_for_manual_with_redlist(db_path)
-    # Extend the seeded DB with an assessment for the OTHER species-rank
-    # row — now both 168873 and 626243 carry a Red List row.
+    db_path = tmp_path / "nortaxa_only.sqlite3"
     with sqlite3.connect(str(db_path)) as conn:
         conn.execute(
-            "INSERT INTO taxon_redlist_min VALUES (168873, 'artsdatabanken', "
-            "'2021', 'Norge', '168873-N', 'NT', 'NT', 0, NULL, NULL, NULL, "
-            "'Cantharellus cibarius', NULL, 'species', 'artsdatabanken', "
-            "'artsnavnebase', '168873-N')"
+            """
+            CREATE TABLE taxon_min (
+                taxon_id INTEGER PRIMARY KEY,
+                genus TEXT,
+                specific_epithet TEXT,
+                family TEXT,
+                canonical_scientific_name TEXT,
+                taxon_rank TEXT,
+                canonical_source_system TEXT
+            )
+            """
+        )
+        conn.execute(
+            """
+            CREATE TABLE scientific_name_min (
+                scientific_name_id INTEGER PRIMARY KEY AUTOINCREMENT,
+                taxon_id INTEGER,
+                language_code TEXT,
+                scientific_name TEXT,
+                is_preferred_name INTEGER,
+                source TEXT
+            )
+            """
+        )
+        conn.execute(
+            """
+            CREATE TABLE vernacular_min (
+                taxon_id INTEGER, vernacular_name TEXT,
+                is_preferred_name INTEGER, language_code TEXT
+            )
+            """
+        )
+        # Two rows share (genus, specific_epithet). Only one has an
+        # exact-canonical match, and it is NorTaxa-owned.
+        conn.execute(
+            "INSERT INTO taxon_min VALUES (7, 'Nordicus', 'specialis', "
+            "'Fam', 'Nordicus specialis', 'species', 'nortaxa')"
+        )
+        conn.execute(
+            "INSERT INTO taxon_min VALUES (8, 'Nordicus', 'specialis', "
+            "'Fam', 'Nordicus specialis var. redux', 'variety', 'col_xr')"
+        )
+        conn.execute(
+            "INSERT INTO scientific_name_min "
+            "(taxon_id, language_code, scientific_name, is_preferred_name, source) "
+            "VALUES (7, 'sci', 'Nordicus specialis', 1, 'nortaxa')"
+        )
+        conn.execute(
+            "INSERT INTO scientific_name_min "
+            "(taxon_id, language_code, scientific_name, is_preferred_name, source) "
+            "VALUES (8, 'sci', 'Nordicus specialis var. redux', 1, 'col_xr')"
         )
         conn.commit()
     svc = TaxonLookupService(
@@ -1101,22 +1147,83 @@ def test_manual_resolver_still_refuses_when_multiple_assessed_rows(tmp_path: Pat
         include_reference_data=False,
         language_code="no",
     )
-    assert svc.resolve_manual_scientific("Cantharellus", "cibarius") is None
+    res = svc.resolve_manual_scientific("Nordicus", "specialis")
+    assert res is not None
+    assert res.sporely_taxon_id == 7
 
 
-def test_manual_resolver_returns_none_when_no_candidate_is_assessed(tmp_path: Path):
-    """The existing ``Amanita muscaria`` ambiguous case keeps returning
-    None (neither seeded row has a Red List assessment), which proves
-    the tiebreak does not weaken the strict "picker only" rule for
-    genuinely ambiguous pairs without a data-driven differentiator."""
-    svc = _make_manual_service(tmp_path)
-    assert svc.resolve_manual_scientific("Amanita", "muscaria") is None
+def test_manual_resolver_returns_none_when_multiple_col_candidates_exist(tmp_path: Path):
+    """Guard: if two or more COL canonical rows share the same exact
+    ``Genus species`` name, the source-system preference cannot
+    disambiguate. Return None so the picker remains the only path."""
+    from database.vernacular_db import VernacularDB
+    db_path = tmp_path / "two_col.sqlite3"
+    with sqlite3.connect(str(db_path)) as conn:
+        conn.execute(
+            """
+            CREATE TABLE taxon_min (
+                taxon_id INTEGER PRIMARY KEY,
+                genus TEXT,
+                specific_epithet TEXT,
+                family TEXT,
+                canonical_scientific_name TEXT,
+                taxon_rank TEXT,
+                canonical_source_system TEXT
+            )
+            """
+        )
+        conn.execute(
+            """
+            CREATE TABLE scientific_name_min (
+                scientific_name_id INTEGER PRIMARY KEY AUTOINCREMENT,
+                taxon_id INTEGER,
+                language_code TEXT,
+                scientific_name TEXT,
+                is_preferred_name INTEGER,
+                source TEXT
+            )
+            """
+        )
+        conn.execute(
+            """
+            CREATE TABLE vernacular_min (
+                taxon_id INTEGER, vernacular_name TEXT,
+                is_preferred_name INTEGER, language_code TEXT
+            )
+            """
+        )
+        conn.execute(
+            "INSERT INTO taxon_min VALUES (1, 'Twofold', 'ambiguus', "
+            "'Fam', 'Twofold ambiguus', 'species', 'col_xr')"
+        )
+        conn.execute(
+            "INSERT INTO taxon_min VALUES (2, 'Twofold', 'ambiguus', "
+            "'OtherFam', 'Twofold ambiguus', 'species', 'col_xr')"
+        )
+        conn.execute(
+            "INSERT INTO scientific_name_min "
+            "(taxon_id, language_code, scientific_name, is_preferred_name, source) "
+            "VALUES (1, 'sci', 'Twofold ambiguus', 1, 'col_xr')"
+        )
+        conn.execute(
+            "INSERT INTO scientific_name_min "
+            "(taxon_id, language_code, scientific_name, is_preferred_name, source) "
+            "VALUES (2, 'sci', 'Twofold ambiguus', 1, 'col_xr')"
+        )
+        conn.commit()
+    svc = TaxonLookupService(
+        vernacular_db=VernacularDB(db_path, language_code="no"),
+        include_reference_data=False,
+        language_code="no",
+    )
+    assert svc.resolve_manual_scientific("Twofold", "ambiguus") is None
 
 
-def test_manual_resolver_filters_variety_rows_before_tiebreak(tmp_path: Path):
-    """Even when only variety-rank rows survive the exact-canonical
-    match, the resolver honours the picker whitelist and returns None
-    unless a single valid-rank row is left after filtering."""
+def test_manual_resolver_filters_variety_rows_before_source_preference(tmp_path: Path):
+    """When only variety-rank rows with non-exact canonical names
+    survive, the resolver returns None. Preserves the constraint that
+    ``Cantharellus cibarius var. monstrosus`` never binds identity for
+    the query ``Cantharellus cibarius``."""
     from database.vernacular_db import VernacularDB
     db_path = tmp_path / "only_varieties.sqlite3"
     with sqlite3.connect(str(db_path)) as conn:
@@ -1128,7 +1235,8 @@ def test_manual_resolver_filters_variety_rows_before_tiebreak(tmp_path: Path):
                 specific_epithet TEXT,
                 family TEXT,
                 canonical_scientific_name TEXT,
-                taxon_rank TEXT
+                taxon_rank TEXT,
+                canonical_source_system TEXT
             )
             """
         )
@@ -1152,15 +1260,13 @@ def test_manual_resolver_filters_variety_rows_before_tiebreak(tmp_path: Path):
             )
             """
         )
-        # Two variety rows share (genus, specific_epithet) but their
-        # canonical name doesn't match "genus species" exactly.
         conn.execute(
             "INSERT INTO taxon_min VALUES (1, 'Cantharellus', 'cibarius', "
-            "'Hydnaceae', 'Cantharellus cibarius var. monstrosus', 'variety')"
+            "'Hydnaceae', 'Cantharellus cibarius var. monstrosus', 'variety', 'col_xr')"
         )
         conn.execute(
             "INSERT INTO taxon_min VALUES (2, 'Cantharellus', 'cibarius', "
-            "'Hydnaceae', 'Cantharellus cibarius var. carneoalbus', 'variety')"
+            "'Hydnaceae', 'Cantharellus cibarius var. carneoalbus', 'variety', 'col_xr')"
         )
         conn.commit()
     svc = TaxonLookupService(
@@ -1171,76 +1277,153 @@ def test_manual_resolver_filters_variety_rows_before_tiebreak(tmp_path: Path):
     assert svc.resolve_manual_scientific("Cantharellus", "cibarius") is None
 
 
-def test_manual_resolver_binds_single_variety_row(tmp_path: Path):
-    """A pair whose only surviving candidate is a variety-rank canonical
-    that matches ``"genus species"`` exactly should still bind — the
-    rank whitelist accepts variety."""
-    from database.vernacular_db import VernacularDB
-    db_path = tmp_path / "single_variety.sqlite3"
+def test_manual_resolver_returns_none_for_amanita_muscaria_ambiguous(tmp_path: Path):
+    """The existing seeded ``Amanita muscaria`` ambiguous case (two
+    canonical rows, both preferred, no source_system column) still
+    returns None. Proves the source-system preference does not weaken
+    the strict "picker only" rule for pairs whose duplicates are not
+    disambiguable by source system."""
+    svc = _make_manual_service(tmp_path)
+    assert svc.resolve_manual_scientific("Amanita", "muscaria") is None
+
+
+# ---------------------------------------------------------------------------
+# Red List NorTaxa overlay tests.
+# ---------------------------------------------------------------------------
+
+
+def test_redlist_lookup_nortaxa_overlay_returns_assessment_when_primary_has_none(
+    tmp_path: Path,
+):
+    """The bound COL identity (168873) has no Red List assessment. The
+    overlay-aware entrypoint finds the unique NorTaxa counterpart
+    (626243) whose canonical_scientific_name matches exactly and
+    surfaces its LC-Norge assessment, tagged with ``overlay_source``
+    and ``overlay_taxon_id``. Identity itself is not changed."""
+    db_path = tmp_path / "overlay.sqlite3"
+    _seed_taxonomy_db_col_plus_nortaxa(db_path)
+    svc = _svc_for_db(db_path)
+    # Primary (strict) lookup for the COL id returns none.
+    primary = svc.get_redlist_lookup(168873, area="Norge", source_release="2021")
+    assert primary.status == "none"
+    assert primary.overlay_source == ""
+    assert primary.overlay_taxon_id is None
+    # Overlay-aware lookup surfaces the NorTaxa counterpart's assessment.
+    overlaid = svc.get_redlist_lookup_with_overlay(
+        168873, area="Norge", source_release="2021",
+    )
+    assert overlaid.status == "unique"
+    assert overlaid.assessment is not None
+    assert overlaid.assessment.category_raw == "LC"
+    assert overlaid.assessment.taxon_id == 626243
+    assert overlaid.overlay_source == "nortaxa_name"
+    assert overlaid.overlay_taxon_id == 626243
+
+
+def test_redlist_lookup_nortaxa_overlay_ignored_when_primary_has_assessment(
+    tmp_path: Path,
+):
+    """The overlay must NEVER fire when the primary bound identity
+    already has its own assessment — the identity's own row is
+    authoritative and the overlay is a fallback only."""
+    db_path = tmp_path / "primary_assessed.sqlite3"
+    _seed_taxonomy_db_col_plus_nortaxa(db_path)
+    # Add an assessment for the COL identity itself.
     with sqlite3.connect(str(db_path)) as conn:
         conn.execute(
-            """
-            CREATE TABLE taxon_min (
-                taxon_id INTEGER PRIMARY KEY,
-                genus TEXT,
-                specific_epithet TEXT,
-                family TEXT,
-                canonical_scientific_name TEXT,
-                taxon_rank TEXT
-            )
-            """
-        )
-        conn.execute(
-            """
-            CREATE TABLE scientific_name_min (
-                scientific_name_id INTEGER PRIMARY KEY AUTOINCREMENT,
-                taxon_id INTEGER,
-                language_code TEXT,
-                scientific_name TEXT,
-                is_preferred_name INTEGER,
-                source TEXT
-            )
-            """
-        )
-        conn.execute(
-            """
-            CREATE TABLE vernacular_min (
-                taxon_id INTEGER, vernacular_name TEXT,
-                is_preferred_name INTEGER, language_code TEXT
-            )
-            """
-        )
-        # Row 1: base species. Row 2: variety with an exact canonical
-        # name match. The two rows share the genus + specific_epithet
-        # so ``taxon_ids_from_scientific`` returns both, but only row 1
-        # survives the exact-canonical filter.
-        # (The alternative row 2 is present only to force ambiguity in
-        # the primary resolver.)
-        conn.execute(
-            "INSERT INTO taxon_min VALUES (1, 'Kingdom', 'species', "
-            "'Fam', 'Kingdom species', 'variety')"
-        )
-        conn.execute(
-            "INSERT INTO taxon_min VALUES (2, 'Kingdom', 'species', "
-            "'Fam', 'Kingdom species var. other', 'variety')"
-        )
-        conn.execute(
-            "INSERT INTO scientific_name_min "
-            "(taxon_id, language_code, scientific_name, is_preferred_name, source) "
-            "VALUES (1, 'sci', 'Kingdom species', 1, 'nortaxa')"
-        )
-        conn.execute(
-            "INSERT INTO scientific_name_min "
-            "(taxon_id, language_code, scientific_name, is_preferred_name, source) "
-            "VALUES (2, 'sci', 'Kingdom species var. other', 1, 'nortaxa')"
+            "INSERT INTO taxon_redlist_min VALUES (168873, 'artsdatabanken', "
+            "'2021', 'Norge', '168873-N', 'NT', 'NT', 0, NULL, NULL, NULL, "
+            "'Cantharellus cibarius', NULL, 'species', 'artsdatabanken', "
+            "'artsnavnebase', '168873-N')"
         )
         conn.commit()
-    svc = TaxonLookupService(
-        vernacular_db=VernacularDB(db_path, language_code="no"),
-        include_reference_data=False,
-        language_code="no",
+    svc = _svc_for_db(db_path)
+    overlaid = svc.get_redlist_lookup_with_overlay(
+        168873, area="Norge", source_release="2021",
     )
-    res = svc.resolve_manual_scientific("Kingdom", "species")
-    assert res is not None
-    assert res.sporely_taxon_id == 1
-    assert res.taxon_rank_snapshot == "variety"
+    # Primary's own assessment wins; overlay never runs.
+    assert overlaid.status == "unique"
+    assert overlaid.assessment is not None
+    assert overlaid.assessment.category_raw == "NT"
+    assert overlaid.assessment.taxon_id == 168873
+    assert overlaid.overlay_source == ""
+    assert overlaid.overlay_taxon_id is None
+
+
+def test_redlist_lookup_nortaxa_overlay_ignored_when_multiple_nortaxa_counterparts(
+    tmp_path: Path,
+):
+    """Safety: if more than one NorTaxa row shares the exact canonical
+    name, the overlay does NOT pick one — it returns the primary
+    ``none`` result unchanged. Prevents accidentally binding to an
+    unintended NorTaxa concept."""
+    db_path = tmp_path / "two_nortaxa.sqlite3"
+    _seed_taxonomy_db_col_plus_nortaxa(db_path)
+    # Add a second NorTaxa row with the exact same canonical name.
+    with sqlite3.connect(str(db_path)) as conn:
+        conn.execute(
+            "INSERT INTO taxon_min VALUES (626244, 'Cantharellus', 'cibarius', "
+            "'Cantharellaceae', 'Cantharellus cibarius', 'species', 'nortaxa')"
+        )
+        conn.execute(
+            "INSERT INTO taxon_redlist_min VALUES (626244, 'artsdatabanken', "
+            "'2021', 'Norge', '626244-N', 'EN', 'EN', 0, NULL, NULL, NULL, "
+            "'Cantharellus cibarius', NULL, 'species', 'artsdatabanken', "
+            "'artsnavnebase', '626244-N')"
+        )
+        conn.commit()
+    svc = _svc_for_db(db_path)
+    overlaid = svc.get_redlist_lookup_with_overlay(
+        168873, area="Norge", source_release="2021",
+    )
+    assert overlaid.status == "none"
+    assert overlaid.overlay_source == ""
+    assert overlaid.overlay_taxon_id is None
+
+
+def test_redlist_lookup_nortaxa_overlay_matches_by_exact_canonical_name_only(
+    tmp_path: Path,
+):
+    """The overlay compares canonical names with exact equality (as
+    stored). Case, whitespace or subspecies-suffix differences never
+    cross-populate — the NorTaxa row must be a genuine counterpart of
+    the primary concept."""
+    db_path = tmp_path / "exact_match.sqlite3"
+    _seed_taxonomy_db_col_plus_nortaxa(db_path)
+    # Replace the NorTaxa canonical name with a subspecies suffix so
+    # it no longer matches the primary's canonical name exactly.
+    with sqlite3.connect(str(db_path)) as conn:
+        conn.execute(
+            "UPDATE taxon_min SET canonical_scientific_name = "
+            "'Cantharellus cibarius subsp. cibarius' WHERE taxon_id = 626243"
+        )
+        conn.commit()
+    svc = _svc_for_db(db_path)
+    overlaid = svc.get_redlist_lookup_with_overlay(
+        168873, area="Norge", source_release="2021",
+    )
+    # No exact NorTaxa counterpart → no overlay.
+    assert overlaid.status == "none"
+    assert overlaid.overlay_source == ""
+
+
+def test_redlist_lookup_nortaxa_overlay_returns_primary_when_counterpart_unassessed(
+    tmp_path: Path,
+):
+    """If the unique NorTaxa counterpart exists but carries no
+    assessment for the requested (area, source_release), the overlay
+    returns the primary ``none`` result unchanged (no false-positive
+    surfacing of a non-existent assessment)."""
+    db_path = tmp_path / "counterpart_unassessed.sqlite3"
+    _seed_taxonomy_db_col_plus_nortaxa(db_path)
+    # Wipe the NorTaxa counterpart's assessment.
+    with sqlite3.connect(str(db_path)) as conn:
+        conn.execute("DELETE FROM taxon_redlist_min WHERE taxon_id = 626243")
+        conn.commit()
+    svc = _svc_for_db(db_path)
+    overlaid = svc.get_redlist_lookup_with_overlay(
+        168873, area="Norge", source_release="2021",
+    )
+    assert overlaid.status == "none"
+    assert overlaid.overlay_source == ""
+    assert overlaid.overlay_taxon_id is None

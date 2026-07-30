@@ -4,11 +4,35 @@ This module centralizes the current local taxonomy/common-name behavior while
 also merging in reference-data genus/species suggestions. It deliberately stays
 UI-free so a future autocomplete controller can reuse it without pulling in
 Qt/PySide6.
+
+Identity resolution vs national overlay
+---------------------------------------
+Taxonomic identity is bound from source-system canonical data
+(``taxon_min.canonical_source_system``). When a user manually enters an
+unambiguous ``(genus, species)`` pair, the resolver prefers the COL
+(``col_xr``) canonical concept — COL is the source-system authority for
+species concepts in this DB. NorTaxa (``nortaxa``) rows are bound only
+when NO COL canonical exists for the exact name.
+
+The Norwegian Red List is a **national overlay** on top of taxonomic
+identity. When the runtime looks up an assessment for a bound
+``sporely_taxon_id`` and finds none, it MAY (via
+``get_redlist_lookup_with_overlay``) fall back to the assessment on a
+unique NorTaxa row that shares the same canonical scientific name. That
+fallback never changes the observation's bound identity; it only
+surfaces the assessed category, tagged with ``overlay_source`` so the
+caller can debug where it came from.
+
+Proper COL↔NorTaxa concept unification (a single Sporely id per
+concept) is a **compile-pipeline** concern (the taxonomy compiler that
+produces ``taxon_min`` is where source-system rows should be de-duped
+into a single concept). This module keeps runtime conservative and
+observable while that compile-time work happens elsewhere.
 """
 from __future__ import annotations
 
 from contextlib import contextmanager
-from dataclasses import dataclass
+from dataclasses import dataclass, replace as _dc_replace
 import sqlite3
 from typing import Any
 
@@ -37,10 +61,19 @@ class RedlistLookupResult:
 
     The result never auto-picks a category for conflict groups. That is a
     curation decision, not a runtime one.
+
+    ``overlay_source`` / ``overlay_taxon_id`` are populated only by
+    :meth:`TaxonLookupService.get_redlist_lookup_with_overlay` when the
+    primary ``sporely_taxon_id`` had no assessment and the runtime
+    surfaced one via an exact-canonical-name NorTaxa counterpart. The
+    default entrypoint ``get_redlist_lookup`` never sets these fields —
+    callers pinning strict behaviour keep their existing semantics.
     """
     status: str
     assessment: "RedlistAssessment | None" = None
     conflicting_assessments: tuple["RedlistAssessment", ...] = ()
+    overlay_source: str = ""
+    overlay_taxon_id: int | None = None
 
 
 @dataclass(frozen=True)
@@ -679,7 +712,7 @@ class TaxonLookupService:
     ) -> ManualScientificResolution | None:
         """Resolve a manually-typed ``(genus, species)`` pair to a single
         canonical ``sporely_taxon_id``, or ``None`` when the pair is empty,
-        unknown, or ambiguous (multiple concepts share the pair).
+        unknown, or ambiguous.
 
         Used by the observation editor's genus/species ``editingFinished``
         path so a manual identity edit refreshes the Red List badge
@@ -690,17 +723,17 @@ class TaxonLookupService:
         that helper already returns ``None`` for zero-hit or multi-hit
         pairs and breaks preferred-alias ties conservatively.
 
-        Data-driven tiebreak: when the strict resolver returns ``None``
-        because several canonical rows share the pair (e.g. a
-        ``col_xr``-owned duplicate alongside the ``nortaxa``-owned row
-        that carries the Red List assessment for a common Norwegian
-        species), fall back to
-        :meth:`_resolve_manual_via_redlist_tiebreak`. That fallback keeps
-        the identity conservative — it never picks between two rows that
-        both carry a Red List row or two rows that both carry none — but
-        it does bind the single assessed concept when the DB shape makes
-        it unambiguous by construction (the runtime Red List lookup
-        would resolve identically for the picked row anyway).
+        Source-system preference fallback: when the strict resolver
+        returns ``None`` because multiple canonical rows share the pair
+        (e.g. a ``col_xr`` canonical alongside a ``nortaxa`` canonical
+        that carry the same exact scientific name), fall back to
+        :meth:`_resolve_manual_via_source_system_preference`. That
+        fallback prefers the COL row because COL is the source-system
+        authority for species concepts in the compiled DB. It never
+        binds identity based on Red List presence — the national Red
+        List is treated as a separate overlay by
+        :meth:`get_redlist_lookup_with_overlay`, and identity is
+        selected purely from source-system canonical evidence.
         """
         genus_display = _normalize_genus_display(genus)
         species_display = _normalize_species_display(species)
@@ -720,7 +753,7 @@ class TaxonLookupService:
         except Exception:
             sporely_id = None
         if sporely_id is None:
-            sporely_id = self._resolve_manual_via_redlist_tiebreak(
+            sporely_id = self._resolve_manual_via_source_system_preference(
                 genus_display, species_display,
             )
         if sporely_id is None:
@@ -760,40 +793,43 @@ class TaxonLookupService:
             link_kind="canonical",
         )
 
-    def _resolve_manual_via_redlist_tiebreak(
+    def _resolve_manual_via_source_system_preference(
         self, genus_display: str, species_display: str,
     ) -> int | None:
-        """Break the tie for a ``(genus, species)`` pair whose strict
+        """Prefer the COL canonical concept when a ``(genus, species)``
+        pair matches multiple canonical rows in ``taxon_min``.
+
+        Called only when the strict
         :meth:`~database.vernacular_db.VernacularDB.taxon_id_from_scientific`
-        refused to bind identity.
+        refused to bind identity. Two filter steps run first:
 
-        Two conservative filter steps run first:
+        1. Consider only rows whose ``canonical_scientific_name`` matches
+           the typed pair exactly (case-insensitive). Drops
+           variety/subspecies/form rows that happen to share genus +
+           specific_epithet with a base-rank canonical (e.g.
+           ``Cantharellus cibarius var. monstrosus`` when the user typed
+           ``Cantharellus cibarius``).
+        2. Consider only rows on the picker rank whitelist
+           (``species``, ``subspecies``, ``variety``, ``form``).
 
-        1. Consider only rows whose ``canonical_scientific_name`` is
-           exactly ``"genus species"`` (case-insensitive). This drops
-           variety / subspecies / form rows that happen to share
-           ``genus`` + ``specific_epithet`` with a base-rank canonical
-           (e.g. ``Cantharellus cibarius var. monstrosus`` when the user
-           typed ``Cantharellus cibarius``).
-        2. Consider only ranks on the picker whitelist (``species``,
-           ``subspecies``, ``variety``, ``form``) — same set the picker's
-           own suggestion source uses.
+        Then apply the source-system preference:
 
-        If exactly one row survives → return it. Otherwise the fallback
-        checks whether exactly ONE of the surviving candidates carries a
-        row in ``taxon_redlist_min`` (i.e. is the assessed concept). If
-        so it returns that ``taxon_id``. In every other case (zero
-        candidates, no assessed rows, multiple assessed rows), it
-        returns ``None`` so the picker remains the only path to explicit
-        identity for genuinely ambiguous pairs.
+        * If exactly one surviving candidate has
+          ``canonical_source_system = 'col_xr'`` → bind that
+          ``taxon_id`` (COL is the source-system authority for species
+          concepts in this DB).
+        * If zero COL candidates survive AND exactly one NorTaxa
+          candidate (``canonical_source_system = 'nortaxa'``)
+          survives → bind that ``taxon_id`` (no ambiguity to resolve).
+        * Otherwise → ``None``. The observer must use the picker.
 
-        The Red-List presence is a natural tiebreaker for this specific
-        code path (manual identity edit that is trying to compute a Red
-        List category anyway): if only one of the duplicate concepts is
-        the assessed one, the runtime lookup would resolve identically
-        for both otherwise. It is data-driven, not name-driven — no
-        source-system / release / language / country preference is
-        hardcoded here.
+        The Norwegian Red List is deliberately NOT used to influence
+        identity here — it is a national overlay handled separately by
+        :meth:`get_redlist_lookup_with_overlay`. Using an overlay signal
+        to select identity would silently bind observations to the
+        NorTaxa concept whenever it carries the assessment (which is
+        the common shape) even though the observer typed a name that
+        COL owns as its own concept.
         """
         vdb = self.vernacular_db
         if vdb is None:
@@ -814,30 +850,27 @@ class TaxonLookupService:
         allowed_ranks = {"species", "subspecies", "variety", "form"}
         placeholders = ",".join("?" for _ in candidates)
         rows = self._fetch_local_rows(
-            f"SELECT taxon_id, taxon_rank, canonical_scientific_name "
+            f"SELECT taxon_id, taxon_rank, canonical_scientific_name, "
+            f"canonical_source_system "
             f"FROM taxon_min WHERE taxon_id IN ({placeholders}) "
             f"AND canonical_scientific_name = ? COLLATE NOCASE",
             (*candidates, scientific_name),
         )
         filtered = [
-            int(r["taxon_id"]) for r in rows
+            (int(r["taxon_id"]),
+             str(r["canonical_source_system"] or "").strip().lower())
+            for r in rows
             if str(r["taxon_rank"] or "").strip().lower() in allowed_ranks
         ]
         if not filtered:
             return None
-        if len(filtered) == 1:
-            return filtered[0]
-        if not self._has_local_table("taxon_redlist_min"):
-            return None
-        placeholders = ",".join("?" for _ in filtered)
-        rl_rows = self._fetch_local_rows(
-            f"SELECT DISTINCT taxon_id FROM taxon_redlist_min "
-            f"WHERE taxon_id IN ({placeholders})",
-            tuple(filtered),
-        )
-        assessed_ids = {int(r["taxon_id"]) for r in rl_rows}
-        if len(assessed_ids) == 1:
-            return next(iter(assessed_ids))
+        col_ids = [tid for tid, source in filtered if source == "col_xr"]
+        if len(col_ids) == 1:
+            return col_ids[0]
+        if not col_ids:
+            nortaxa_ids = [tid for tid, source in filtered if source == "nortaxa"]
+            if len(nortaxa_ids) == 1:
+                return nortaxa_ids[0]
         return None
 
     def _fetch_redlist_rows(
@@ -947,6 +980,100 @@ class TaxonLookupService:
             status="conflict",
             assessment=None,
             conflicting_assessments=tuple(assessments),
+        )
+
+    def get_redlist_lookup_with_overlay(
+        self,
+        sporely_taxon_id: int,
+        *,
+        area: str = "Norge",
+        source_release: str = "2021",
+    ) -> RedlistLookupResult:
+        """Return the red-list lookup for ``sporely_taxon_id`` and,
+        when the primary lookup yields ``"none"``, transparently overlay
+        an assessment from an exact-canonical-name NorTaxa counterpart.
+
+        This is the entrypoint the observation editor uses: identity is
+        already bound (typically to a COL canonical) and the caller
+        wants to render the Norwegian Red List category. When the bound
+        id has no assessment for the ``(area, source_release)`` pair,
+        the overlay looks for NorTaxa rows in ``taxon_min`` whose
+        ``canonical_scientific_name`` exactly matches the primary id's
+        canonical name (case-sensitive, as stored) at picker-whitelist
+        ranks. If exactly one such NorTaxa counterpart exists AND it
+        carries an assessment, the returned :class:`RedlistLookupResult`
+        is populated from the counterpart with ``overlay_source`` set to
+        ``"nortaxa_name"`` and ``overlay_taxon_id`` set to that
+        counterpart's ``taxon_id``.
+
+        Safety limits:
+
+        * Fires only when the primary lookup's status is ``"none"``. A
+          primary ``"unique"``, ``"multiple_same_category"``, or
+          ``"conflict"`` result is never overridden or augmented — the
+          identity's own assessment is authoritative.
+        * Requires exactly one NorTaxa counterpart. Zero or more than
+          one → the overlay is skipped and the primary ``"none"``
+          result is returned unchanged.
+        * Excludes the primary ``sporely_taxon_id`` itself from the
+          counterpart candidates (avoids picking a NorTaxa row that
+          happens to already be the primary identity).
+        * Match is by exact canonical string, not fuzzy or case-folded.
+          Different concepts with distinct canonical names never
+          cross-populate.
+
+        The overlay never changes the observation's bound identity —
+        only the surfaced assessment. Downstream code that persists
+        identity fields (``sporely_taxon_id``, ``scientific_name_snapshot``,
+        ``taxon_rank_snapshot``) reads from
+        ``TaxonInputController.committed_snapshot`` and is unaffected.
+
+        Proper COL↔NorTaxa concept unification (a single Sporely id per
+        concept) belongs to the taxonomy compile pipeline; this overlay
+        is a runtime accommodation until that unification lands.
+        """
+        primary = self.get_redlist_lookup(
+            sporely_taxon_id, area=area, source_release=source_release,
+        )
+        if primary.status != "none":
+            return primary
+        try:
+            primary_id_int = int(sporely_taxon_id)
+        except (TypeError, ValueError):
+            return primary
+        rows = self._fetch_local_rows(
+            "SELECT canonical_scientific_name FROM taxon_min "
+            "WHERE taxon_id = ? LIMIT 1",
+            (primary_id_int,),
+        )
+        if not rows:
+            return primary
+        canonical_name = str(rows[0]["canonical_scientific_name"] or "").strip()
+        if not canonical_name:
+            return primary
+        allowed_ranks = ("species", "subspecies", "variety", "form")
+        rank_placeholders = ",".join("?" for _ in allowed_ranks)
+        counterpart_rows = self._fetch_local_rows(
+            f"SELECT taxon_id FROM taxon_min "
+            f"WHERE canonical_scientific_name = ? "
+            f"AND canonical_source_system = 'nortaxa' "
+            f"AND taxon_rank IN ({rank_placeholders}) "
+            f"AND taxon_id != ?",
+            (canonical_name, *allowed_ranks, primary_id_int),
+        )
+        counterpart_ids = [int(r["taxon_id"]) for r in counterpart_rows]
+        if len(counterpart_ids) != 1:
+            return primary
+        overlay_id = counterpart_ids[0]
+        overlay_result = self.get_redlist_lookup(
+            overlay_id, area=area, source_release=source_release,
+        )
+        if overlay_result.status == "none":
+            return primary
+        return _dc_replace(
+            overlay_result,
+            overlay_source="nortaxa_name",
+            overlay_taxon_id=overlay_id,
         )
 
     def get_redlist_assessment(

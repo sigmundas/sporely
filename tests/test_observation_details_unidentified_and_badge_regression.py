@@ -349,20 +349,28 @@ def _apply_artsorakel_source_snapshot(
         dialog.scientific_name_input.setText("Amanita muscaria")
 
 
-def test_manual_cantharellus_cibarius_refreshes_red_list_badge(
+def test_manual_cantharellus_cibarius_binds_col_and_surfaces_lc_via_overlay(
     monkeypatch, qapp, tmp_path: Path,
 ) -> None:
     """Bug 2 reproduction: with a location resolved to Norway, apply an
     Artsorakel-like source snapshot, then clear the taxonomy text and
-    manually type ``Cantharellus`` / ``cibarius``. On editingFinished
-    the manual resolver must bind ``sporely_taxon_id = 626243`` (the
-    NorTaxa-owned assessed row) and the deferred Red List apply must
-    populate the LC badge — no Save + Reopen required.
+    manually type ``Cantharellus`` / ``cibarius``. On editingFinished:
+
+    * Identity binds to the COL canonical (``sporely_taxon_id = 168873``).
+      The manual resolver's source-system preference selects COL because
+      it is the source-system authority for species concepts; Red List
+      presence is NOT allowed to influence identity.
+
+    * The Red List badge still shows ``LC`` — the dialog now calls the
+      overlay-aware entrypoint ``get_redlist_lookup_with_overlay``,
+      which sees the primary bound COL identity has no assessment and
+      surfaces the assessment from the unique NorTaxa counterpart
+      (``taxon_id = 626243``) with the same exact canonical name.
 
     The taxonomy DB seeded here mirrors the exact real-DB duplication:
     two variety rows share ``(Cantharellus, cibarius)``, two species
-    rows share the canonical name, and only the second species row
-    carries the Norwegian LC assessment.
+    rows share the canonical name, and only the NorTaxa row carries
+    the LC-Norge assessment.
     """
     tax_db = tmp_path / "taxonomy_v2.sqlite3"
     _seed_manual_taxonomy_db(tax_db)
@@ -380,8 +388,8 @@ def test_manual_cantharellus_cibarius_refreshes_red_list_badge(
 
         # Now clear taxonomy text and type Cantharellus cibarius.
         # ``setText`` triggers ``textChanged`` which invalidates the
-        # (non-existent) snapshot and clears the badge — that's the
-        # invariant behaviour we do NOT want to weaken.
+        # (non-existent) snapshot and clears the badge — the invariant
+        # behaviour is NOT weakened.
         dialog.genus_input.setText("")
         dialog.species_input.setText("")
         dialog.scientific_name_input.setText("")
@@ -395,14 +403,17 @@ def test_manual_cantharellus_cibarius_refreshes_red_list_badge(
         dialog.species_input.editingFinished.emit()
         qapp.processEvents()
 
-        # Snapshot bound to the NorTaxa-owned assessed row.
+        # Identity bound to the COL canonical, NOT the NorTaxa row that
+        # happens to carry the Red List assessment.
         snap = dialog._taxon_controller.committed_snapshot()
         assert snap is not None
-        assert snap["sporely_taxon_id"] == 626243
+        assert snap["sporely_taxon_id"] == 168873
         assert snap["scientific_name"] == "Cantharellus cibarius"
 
         # Deferred badge apply must have run. It is a 0-ms QTimer;
-        # ``processEvents`` on the app drains it.
+        # ``processEvents`` on the app drains it. The badge shows LC —
+        # surfaced by the NorTaxa Red List overlay while identity
+        # remains on the COL row.
         qapp.processEvents()
         qapp.processEvents()
         assert dialog._red_list_category == "LC"
@@ -419,7 +430,8 @@ def test_manual_editing_finished_preserves_prior_picker_snapshot(
     already committed via the picker (e.g. a ``synonym_of_accepted``
     choice). Bind a snapshot programmatically, then fire
     editingFinished on the species widget without changing text — the
-    identity must survive unchanged."""
+    identity must survive unchanged even if the new source-system
+    preference would have picked a different id."""
     tax_db = tmp_path / "taxonomy_v2.sqlite3"
     _seed_manual_taxonomy_db(tax_db)
     dialog = _build_dialog(
@@ -430,15 +442,16 @@ def test_manual_editing_finished_preserves_prior_picker_snapshot(
             dialog.genus_input.setText("Cantharellus")
             dialog.species_input.setText("cibarius")
             dialog.scientific_name_input.setText("Cantharellus cibarius")
-        # Simulate an explicit picker choice: 168873 (col_xr) — even
-        # though the tiebreak would prefer 626243, the prior explicit
-        # snapshot must win.
+        # Simulate an explicit picker choice: the NorTaxa row 626243 —
+        # even though the source-system preference would pick 168873
+        # (COL) on a fresh manual entry, the prior explicit snapshot
+        # must win.
         dialog._taxon_controller._committed_snapshot = {
             "genus": "Cantharellus",
             "species": "cibarius",
             "scientific_name": "Cantharellus cibarius",
             "taxon_rank_snapshot": "species",
-            "sporely_taxon_id": 168873,
+            "sporely_taxon_id": 626243,
             "link_kind": "canonical",
             "canonical_scientific_name": "Cantharellus cibarius",
             "canonical_rank": "species",
@@ -450,7 +463,7 @@ def test_manual_editing_finished_preserves_prior_picker_snapshot(
         assert snap is not None
         # Prior explicit choice preserved — the manual resolver's
         # snapshot-present guard skipped the overwrite.
-        assert snap["sporely_taxon_id"] == 168873
+        assert snap["sporely_taxon_id"] == 626243
     finally:
         dialog._cleanup_dialog_threads()
         dialog.deleteLater()

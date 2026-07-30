@@ -18411,9 +18411,22 @@ class ObservationDetailsDialog(GeometryMixin, QDialog):
         if lookup is None:
             return
         try:
-            result = lookup.get_redlist_lookup(
-                int(sporely_id), area=area, source_release="2021"
+            # Use the overlay-aware entrypoint so a bound COL identity
+            # can still surface its assessed Norwegian counterpart's
+            # Red List category. See
+            # ``TaxonLookupService.get_redlist_lookup_with_overlay``:
+            # identity is not modified — only the surfaced assessment.
+            overlay_getter = getattr(
+                lookup, "get_redlist_lookup_with_overlay", None,
             )
+            if callable(overlay_getter):
+                result = overlay_getter(
+                    int(sporely_id), area=area, source_release="2021"
+                )
+            else:
+                result = lookup.get_redlist_lookup(
+                    int(sporely_id), area=area, source_release="2021"
+                )
         except Exception:
             return
         raw_key = (
@@ -18422,6 +18435,7 @@ class ObservationDetailsDialog(GeometryMixin, QDialog):
             "2021",
             getattr(result, "status", None),
             getattr(getattr(result, "assessment", None), "category_raw", None),
+            getattr(result, "overlay_taxon_id", None),
         )
         if getattr(self, "_last_applied_redlist_key", None) == raw_key:
             return
