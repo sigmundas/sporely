@@ -78,6 +78,28 @@ class TaxonChoice:
     red_list_source: str | None = None
 
 
+@dataclass(frozen=True)
+class ManualScientificResolution:
+    """Result of an unambiguous ``(genus, species)`` -> ``sporely_taxon_id``
+    resolution done outside the completer picker.
+
+    Populated only when exactly one canonical concept matches the pair
+    (see :meth:`TaxonLookupService.resolve_manual_scientific`). Consumers
+    treat this as the same class of identity a picker selection would
+    produce: it carries enough state to fill a
+    :class:`ui.taxon_input_controller.TaxonInputController` committed
+    snapshot without additional queries.
+    """
+    sporely_taxon_id: int
+    genus: str
+    species: str
+    scientific_name: str
+    taxon_rank_snapshot: str
+    canonical_scientific_name: str | None
+    canonical_rank: str | None
+    link_kind: str = "canonical"
+
+
 TAXON_COMPLETER_LIMIT = 200
 
 
@@ -652,6 +674,76 @@ class TaxonLookupService:
         self._resolve_scientific_cache[key] = choice
         return choice
 
+    def resolve_manual_scientific(
+        self, genus: str, species: str,
+    ) -> ManualScientificResolution | None:
+        """Resolve a manually-typed ``(genus, species)`` pair to a single
+        canonical ``sporely_taxon_id``, or ``None`` when the pair is empty,
+        unknown, or ambiguous (multiple concepts share the pair).
+
+        Used by the observation editor's genus/species ``editingFinished``
+        path so a manual identity edit refreshes the Red List badge
+        without requiring the user to open the scientific-name completer.
+        Only fires when the taxonomy DB (``VernacularDB``) unambiguously
+        pins the pair via
+        :meth:`~database.vernacular_db.VernacularDB.taxon_id_from_scientific`;
+        that helper already returns ``None`` for zero-hit or multi-hit
+        pairs and breaks preferred-alias ties conservatively.
+        """
+        genus_display = _normalize_genus_display(genus)
+        species_display = _normalize_species_display(species)
+        if not genus_display or not species_display:
+            return None
+        vdb = self.vernacular_db
+        if vdb is None:
+            return None
+        try:
+            resolver = getattr(vdb, "taxon_id_from_scientific", None)
+        except Exception:
+            resolver = None
+        if not callable(resolver):
+            return None
+        try:
+            sporely_id = resolver(genus_display, species_display)
+        except Exception:
+            return None
+        if sporely_id is None:
+            return None
+        try:
+            sporely_id_int = int(sporely_id)
+        except (TypeError, ValueError):
+            return None
+        # Pull the canonical fields off ``taxon_min`` for the snapshot.
+        rows = self._fetch_local_rows(
+            "SELECT genus, specific_epithet, canonical_scientific_name, "
+            "taxon_rank FROM taxon_min WHERE taxon_id = ? LIMIT 1",
+            (sporely_id_int,),
+        )
+        if not rows:
+            return None
+        row = rows[0]
+        canonical_name = _normalize_text(row["canonical_scientific_name"]) or None
+        canonical_rank = _normalize_text(row["taxon_rank"]) or None
+        # Only species-level or lower ranks are valid picker-committable
+        # identities; a manual genus/species entry must resolve to one of
+        # those or we treat it as unresolved (matches the picker's own
+        # whitelist in ``_suggest_scientific_names``).
+        allowed_ranks = {"species", "subspecies", "variety", "form"}
+        if canonical_rank and canonical_rank.lower() not in allowed_ranks:
+            return None
+        scientific_name = canonical_name or f"{genus_display} {species_display}"
+        rank_snapshot = (canonical_rank or "species").lower()
+        return ManualScientificResolution(
+            sporely_taxon_id=sporely_id_int,
+            genus=genus_display,
+            species=species_display,
+            scientific_name=scientific_name,
+            taxon_rank_snapshot=rank_snapshot,
+            canonical_scientific_name=canonical_name,
+            canonical_rank=canonical_rank,
+            link_kind="canonical",
+        )
+
     def _fetch_redlist_rows(
         self,
         taxon_id: int,
@@ -888,6 +980,7 @@ def determine_redlist_area(country_code: str | None) -> str | None:
 
 __all__ = [
     "TAXON_COMPLETER_LIMIT",
+    "ManualScientificResolution",
     "TaxonChoice",
     "TaxonLookupService",
     "RedlistAssessment",

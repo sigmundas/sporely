@@ -18166,6 +18166,67 @@ class ObservationDetailsDialog(GeometryMixin, QDialog):
             if widget is not None:
                 widget.textChanged.connect(self._on_taxon_identity_field_edited)
 
+        # Stage 3B.5 follow-up: manual genus/species entry that
+        # unambiguously resolves to a single canonical concept should
+        # commit the taxonomy snapshot immediately (so the Red List
+        # badge refreshes without waiting for Save + Reopen). The
+        # controller's editingFinished handlers do their own
+        # "resolve-to-accepted" pass; wire an extra hook AFTER them so
+        # the manual resolution runs on the already-normalised pair.
+        for widget in (self.genus_input, self.species_input):
+            if widget is not None:
+                widget.editingFinished.connect(
+                    self._on_taxon_manual_editing_finished
+                )
+
+    def _on_taxon_manual_editing_finished(self) -> None:
+        """Trigger a manual (genus, species) -> sporely_taxon_id resolve
+        when the observer finishes editing either scientific-identity
+        field without going through the completer picker.
+
+        Only commits a snapshot when the taxonomy DB unambiguously pins
+        the pair to a single canonical concept — ambiguity, empty input
+        and unknown pairs stay unresolved (matches the picker's own
+        rule). Skips when a snapshot is already held so a prior explicit
+        picker choice (e.g. a ``synonym_of_accepted`` selection) is
+        never silently overwritten by the same-text canonical.
+        """
+        controller = getattr(self, "_taxon_controller", None)
+        if controller is None or controller._is_suspended():
+            return
+        if controller.committed_snapshot() is not None:
+            return
+        genus_widget = getattr(self, "genus_input", None)
+        species_widget = getattr(self, "species_input", None)
+        if genus_widget is None or species_widget is None:
+            return
+        genus = str(genus_widget.text() or "").strip()
+        species = str(species_widget.text() or "").strip()
+        if not genus or not species:
+            return
+        lookup = self._ensure_taxon_lookup()
+        if lookup is None:
+            return
+        resolver = getattr(lookup, "resolve_manual_scientific", None)
+        if not callable(resolver):
+            return
+        try:
+            resolution = resolver(genus, species)
+        except Exception:
+            return
+        if resolution is None:
+            return
+        controller.commit_manual_resolution(
+            sporely_taxon_id=resolution.sporely_taxon_id,
+            scientific_name=resolution.scientific_name,
+            taxon_rank_snapshot=resolution.taxon_rank_snapshot,
+            genus=resolution.genus,
+            species=resolution.species,
+            link_kind=resolution.link_kind,
+            canonical_scientific_name=resolution.canonical_scientific_name,
+            canonical_rank=resolution.canonical_rank,
+        )
+
     def _on_taxon_identity_field_edited(self, _text: str) -> None:
         controller = getattr(self, "_taxon_controller", None)
         if controller is not None and controller._is_suspended():

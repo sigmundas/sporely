@@ -774,3 +774,153 @@ def test_identity_token_reflects_all_signals():
     assert a._current_identity_token() != c._current_identity_token()
     d = _StubDialog(sporely_id=42, sci="Y", country="no")
     assert a._current_identity_token() != d._current_identity_token()
+
+
+# ---------------------------------------------------------------------------
+# Manual (genus, species) resolver used by the observation editor's
+# editing_finished path so a Red List badge refreshes without Save+Reopen.
+# ---------------------------------------------------------------------------
+
+
+def _seed_taxonomy_db_for_manual(db_path: Path) -> None:
+    """Seed a minimal taxon_min + scientific_name_min schema mirroring the
+    v2 layout, enough for :meth:`TaxonLookupService.resolve_manual_scientific`
+    to exercise its unique / ambiguous / unknown branches."""
+    with sqlite3.connect(str(db_path)) as conn:
+        conn.execute(
+            """
+            CREATE TABLE taxon_min (
+                taxon_id INTEGER PRIMARY KEY,
+                genus TEXT,
+                specific_epithet TEXT,
+                family TEXT,
+                canonical_scientific_name TEXT,
+                taxon_rank TEXT
+            )
+            """
+        )
+        conn.execute(
+            """
+            CREATE TABLE scientific_name_min (
+                scientific_name_id INTEGER PRIMARY KEY AUTOINCREMENT,
+                taxon_id INTEGER,
+                language_code TEXT,
+                scientific_name TEXT,
+                is_preferred_name INTEGER,
+                source TEXT,
+                note TEXT
+            )
+            """
+        )
+        conn.execute(
+            """
+            CREATE TABLE vernacular_min (
+                taxon_id INTEGER,
+                vernacular_name TEXT,
+                is_preferred_name INTEGER,
+                language_code TEXT
+            )
+            """
+        )
+        # Unique concept: only one canonical row.
+        conn.execute(
+            "INSERT INTO taxon_min VALUES (1, 'Cortinarius', 'limonius', "
+            "'Cortinariaceae', 'Cortinarius limonius', 'species')"
+        )
+        conn.execute(
+            "INSERT INTO scientific_name_min "
+            "(taxon_id, language_code, scientific_name, is_preferred_name, source, note) "
+            "VALUES (1, 'sci', 'Cortinarius limonius', 1, 'nortaxa', NULL)"
+        )
+        # Ambiguous concept: two canonical rows share (genus, species) and
+        # both have a preferred alias, so `taxon_id_from_scientific` refuses
+        # to pick a single one.
+        conn.execute(
+            "INSERT INTO taxon_min VALUES (10, 'Amanita', 'muscaria', "
+            "'Amanitaceae', 'Amanita muscaria', 'species')"
+        )
+        conn.execute(
+            "INSERT INTO taxon_min VALUES (11, 'Amanita', 'muscaria', "
+            "'Amanitaceae', 'Amanita muscaria', 'species')"
+        )
+        conn.execute(
+            "INSERT INTO scientific_name_min "
+            "(taxon_id, language_code, scientific_name, is_preferred_name, source, note) "
+            "VALUES (10, 'sci', 'Amanita muscaria', 1, 'col_xr', NULL)"
+        )
+        conn.execute(
+            "INSERT INTO scientific_name_min "
+            "(taxon_id, language_code, scientific_name, is_preferred_name, source, note) "
+            "VALUES (11, 'sci', 'Amanita muscaria', 1, 'nortaxa', NULL)"
+        )
+        # Non-species canonical (rank='class' — not on the picker whitelist);
+        # the manual resolver must reject it even when unique.
+        conn.execute(
+            "INSERT INTO taxon_min VALUES (20, 'Weirdum', 'genusrank', NULL, "
+            "'Weirdum genusrank', 'class')"
+        )
+        conn.execute(
+            "INSERT INTO scientific_name_min "
+            "(taxon_id, language_code, scientific_name, is_preferred_name, source, note) "
+            "VALUES (20, 'sci', 'Weirdum genusrank', 1, 'col_xr', NULL)"
+        )
+        conn.commit()
+
+
+def _make_manual_service(tmp_path: Path) -> TaxonLookupService:
+    from database.vernacular_db import VernacularDB
+    db_path = tmp_path / "manual.sqlite3"
+    _seed_taxonomy_db_for_manual(db_path)
+    return TaxonLookupService(
+        vernacular_db=VernacularDB(db_path, language_code="no"),
+        include_reference_data=False,
+        language_code="no",
+    )
+
+
+def test_resolve_manual_scientific_unique_returns_snapshot(tmp_path: Path):
+    svc = _make_manual_service(tmp_path)
+    res = svc.resolve_manual_scientific("Cortinarius", "limonius")
+    assert res is not None
+    assert res.sporely_taxon_id == 1
+    assert res.genus == "Cortinarius"
+    assert res.species == "limonius"
+    assert res.scientific_name == "Cortinarius limonius"
+    assert res.taxon_rank_snapshot == "species"
+    assert res.canonical_scientific_name == "Cortinarius limonius"
+    assert res.canonical_rank == "species"
+    assert res.link_kind == "canonical"
+
+
+def test_resolve_manual_scientific_ambiguous_returns_none(tmp_path: Path):
+    """Two canonical concepts share (Amanita, muscaria); each carries a
+    preferred alias → `taxon_id_from_scientific` refuses to pick one and
+    the manual resolver stays unbound."""
+    svc = _make_manual_service(tmp_path)
+    assert svc.resolve_manual_scientific("Amanita", "muscaria") is None
+
+
+def test_resolve_manual_scientific_unknown_returns_none(tmp_path: Path):
+    svc = _make_manual_service(tmp_path)
+    assert svc.resolve_manual_scientific("Xyz", "unknownia") is None
+
+
+def test_resolve_manual_scientific_empty_input_returns_none(tmp_path: Path):
+    svc = _make_manual_service(tmp_path)
+    assert svc.resolve_manual_scientific("", "muscaria") is None
+    assert svc.resolve_manual_scientific("Amanita", "") is None
+    assert svc.resolve_manual_scientific("  ", "  ") is None
+
+
+def test_resolve_manual_scientific_rejects_non_species_rank(tmp_path: Path):
+    """Only species/subspecies/variety/form ranks are committable identities —
+    same whitelist the scientific-name picker uses. A unique-but-higher-rank
+    row must NOT bind the manual snapshot."""
+    svc = _make_manual_service(tmp_path)
+    assert svc.resolve_manual_scientific("Weirdum", "genusrank") is None
+
+
+def test_resolve_manual_scientific_without_vernacular_db_returns_none():
+    """Guard: no DB available → no manual resolution (no exceptions)."""
+    svc = TaxonLookupService(vernacular_db=None, include_reference_data=False)
+    assert svc.resolve_manual_scientific("Amanita", "muscaria") is None

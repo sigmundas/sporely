@@ -924,6 +924,82 @@ class TaxonInputController(QObject):
             return ""
         return " ".join(str(self.scientific_name_input.text() or "").strip().split())
 
+    def commit_manual_resolution(
+        self,
+        *,
+        sporely_taxon_id: int,
+        scientific_name: str,
+        taxon_rank_snapshot: str,
+        genus: str | None = None,
+        species: str | None = None,
+        link_kind: str = "canonical",
+        canonical_scientific_name: str | None = None,
+        canonical_rank: str | None = None,
+    ) -> bool:
+        """Programmatically commit a snapshot for an identity resolved
+        outside the completer picker (e.g. manual genus/species entry
+        that the lookup service pins to a single canonical concept).
+
+        Preserves the strict "identity binds only via explicit action"
+        contract — the caller is responsible for having verified the
+        resolution is unambiguous (see
+        :meth:`TaxonLookupService.resolve_manual_scientific`). Returns
+        ``True`` when a new snapshot was committed; ``False`` when the
+        controller already holds the same identity, when the arguments
+        are incomplete, or when the current text no longer matches the
+        supplied genus/species (guarding against races between the
+        editing_finished trigger and later user edits).
+        """
+        try:
+            sporely_id_int = int(sporely_taxon_id)
+        except (TypeError, ValueError):
+            return False
+        cleaned_sci = " ".join(str(scientific_name or "").strip().split())
+        cleaned_rank = str(taxon_rank_snapshot or "").strip()
+        if not cleaned_sci or not cleaned_rank:
+            return False
+        genus_text = self._clean_genus_text(genus if genus is not None else self._current_genus())
+        species_text = self._clean_species_text(species if species is not None else self._current_species())
+        if not genus_text or not species_text:
+            return False
+        # Guard against a race: the widgets must still hold the pair the
+        # caller resolved. If the user has kept typing, the queued
+        # editingFinished-driven resolution is stale and MUST NOT bind.
+        current_genus = self._current_genus()
+        current_species = self._current_species()
+        if current_genus.casefold() != genus_text.casefold() \
+                or current_species.casefold() != species_text.casefold():
+            return False
+        # No-op when the existing snapshot already pins this identity.
+        existing = self._committed_snapshot
+        if existing is not None \
+                and int(existing.get("sporely_taxon_id") or 0) == sporely_id_int \
+                and (existing.get("scientific_name") or "").strip() == cleaned_sci:
+            return False
+        self._committed_snapshot = {
+            "genus": genus_text,
+            "species": species_text,
+            "scientific_name": cleaned_sci,
+            "taxon_rank_snapshot": cleaned_rank,
+            "sporely_taxon_id": sporely_id_int,
+            "link_kind": link_kind or "canonical",
+            "canonical_scientific_name": str(canonical_scientific_name or "").strip(),
+            "canonical_rank": str(canonical_rank or "").strip() or None,
+        }
+        # Keep the scientific-name text widget in sync when it exists —
+        # mirrors the on_scientific_name_selected code path. Wrapped in
+        # suspension so this does not itself trigger invalidation.
+        if self.scientific_name_input is not None \
+                and self._current_scientific_text() != cleaned_sci:
+            with self._suspended():
+                self._set_text(self.scientific_name_input, cleaned_sci)
+        if self._on_snapshot_committed is not None:
+            try:
+                self._on_snapshot_committed(dict(self._committed_snapshot))
+            except Exception:
+                pass
+        return True
+
     def on_scientific_name_selected(self, index: QModelIndex) -> None:
         if self._is_suspended() or not index.isValid():
             return
