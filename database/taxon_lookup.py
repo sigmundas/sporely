@@ -684,11 +684,23 @@ class TaxonLookupService:
         Used by the observation editor's genus/species ``editingFinished``
         path so a manual identity edit refreshes the Red List badge
         without requiring the user to open the scientific-name completer.
-        Only fires when the taxonomy DB (``VernacularDB``) unambiguously
-        pins the pair via
+        Fires primarily when the taxonomy DB (``VernacularDB``)
+        unambiguously pins the pair via
         :meth:`~database.vernacular_db.VernacularDB.taxon_id_from_scientific`;
         that helper already returns ``None`` for zero-hit or multi-hit
         pairs and breaks preferred-alias ties conservatively.
+
+        Data-driven tiebreak: when the strict resolver returns ``None``
+        because several canonical rows share the pair (e.g. a
+        ``col_xr``-owned duplicate alongside the ``nortaxa``-owned row
+        that carries the Red List assessment for a common Norwegian
+        species), fall back to
+        :meth:`_resolve_manual_via_redlist_tiebreak`. That fallback keeps
+        the identity conservative — it never picks between two rows that
+        both carry a Red List row or two rows that both carry none — but
+        it does bind the single assessed concept when the DB shape makes
+        it unambiguous by construction (the runtime Red List lookup
+        would resolve identically for the picked row anyway).
         """
         genus_display = _normalize_genus_display(genus)
         species_display = _normalize_species_display(species)
@@ -706,7 +718,11 @@ class TaxonLookupService:
         try:
             sporely_id = resolver(genus_display, species_display)
         except Exception:
-            return None
+            sporely_id = None
+        if sporely_id is None:
+            sporely_id = self._resolve_manual_via_redlist_tiebreak(
+                genus_display, species_display,
+            )
         if sporely_id is None:
             return None
         try:
@@ -743,6 +759,86 @@ class TaxonLookupService:
             canonical_rank=canonical_rank,
             link_kind="canonical",
         )
+
+    def _resolve_manual_via_redlist_tiebreak(
+        self, genus_display: str, species_display: str,
+    ) -> int | None:
+        """Break the tie for a ``(genus, species)`` pair whose strict
+        :meth:`~database.vernacular_db.VernacularDB.taxon_id_from_scientific`
+        refused to bind identity.
+
+        Two conservative filter steps run first:
+
+        1. Consider only rows whose ``canonical_scientific_name`` is
+           exactly ``"genus species"`` (case-insensitive). This drops
+           variety / subspecies / form rows that happen to share
+           ``genus`` + ``specific_epithet`` with a base-rank canonical
+           (e.g. ``Cantharellus cibarius var. monstrosus`` when the user
+           typed ``Cantharellus cibarius``).
+        2. Consider only ranks on the picker whitelist (``species``,
+           ``subspecies``, ``variety``, ``form``) — same set the picker's
+           own suggestion source uses.
+
+        If exactly one row survives → return it. Otherwise the fallback
+        checks whether exactly ONE of the surviving candidates carries a
+        row in ``taxon_redlist_min`` (i.e. is the assessed concept). If
+        so it returns that ``taxon_id``. In every other case (zero
+        candidates, no assessed rows, multiple assessed rows), it
+        returns ``None`` so the picker remains the only path to explicit
+        identity for genuinely ambiguous pairs.
+
+        The Red-List presence is a natural tiebreaker for this specific
+        code path (manual identity edit that is trying to compute a Red
+        List category anyway): if only one of the duplicate concepts is
+        the assessed one, the runtime lookup would resolve identically
+        for both otherwise. It is data-driven, not name-driven — no
+        source-system / release / language / country preference is
+        hardcoded here.
+        """
+        vdb = self.vernacular_db
+        if vdb is None:
+            return None
+        candidates_resolver = getattr(vdb, "taxon_ids_from_scientific", None)
+        if not callable(candidates_resolver):
+            return None
+        try:
+            candidates = [
+                int(c)
+                for c in (candidates_resolver(genus_display, species_display) or [])
+            ]
+        except Exception:
+            return None
+        if not candidates:
+            return None
+        scientific_name = f"{genus_display} {species_display}"
+        allowed_ranks = {"species", "subspecies", "variety", "form"}
+        placeholders = ",".join("?" for _ in candidates)
+        rows = self._fetch_local_rows(
+            f"SELECT taxon_id, taxon_rank, canonical_scientific_name "
+            f"FROM taxon_min WHERE taxon_id IN ({placeholders}) "
+            f"AND canonical_scientific_name = ? COLLATE NOCASE",
+            (*candidates, scientific_name),
+        )
+        filtered = [
+            int(r["taxon_id"]) for r in rows
+            if str(r["taxon_rank"] or "").strip().lower() in allowed_ranks
+        ]
+        if not filtered:
+            return None
+        if len(filtered) == 1:
+            return filtered[0]
+        if not self._has_local_table("taxon_redlist_min"):
+            return None
+        placeholders = ",".join("?" for _ in filtered)
+        rl_rows = self._fetch_local_rows(
+            f"SELECT DISTINCT taxon_id FROM taxon_redlist_min "
+            f"WHERE taxon_id IN ({placeholders})",
+            tuple(filtered),
+        )
+        assessed_ids = {int(r["taxon_id"]) for r in rl_rows}
+        if len(assessed_ids) == 1:
+            return next(iter(assessed_ids))
+        return None
 
     def _fetch_redlist_rows(
         self,
