@@ -219,6 +219,38 @@ remain unchanged:
 - Load-time restoration under `TaxonInputController._suspended()` cannot
   clear stored values.
 
+## Stage 3B.5 runtime NorTaxa name overlay (desktop only)
+
+The desktop editor calls `TaxonLookupService.get_redlist_lookup_with_overlay(...)`
+rather than the strict `get_redlist_lookup(...)`. The overlay wraps the
+strict call with one narrow, runtime-only fallback and does **not** change
+the compile-time invariants above (identity is never inferred at compile
+time; unresolved rows still stay unresolved in the artifact).
+
+Rule — fires **only** when the primary lookup returns `status="none"`:
+
+1. Query `taxon_min` for rows where `canonical_scientific_name` equals the
+   primary taxon's canonical name **verbatim** (case-sensitive, no
+   fuzzing, no fold), `canonical_source_system = 'nortaxa'`, `taxon_rank ∈
+   {species, subspecies, variety, form}`, `taxon_id != primary_id`.
+2. If exactly one counterpart survives AND it carries an assessment for
+   the requested `(area, source_release)` → return that assessment,
+   annotated with `overlay_source = "nortaxa_name"` and
+   `overlay_taxon_id = <counterpart>` on `RedlistLookupResult`.
+3. Zero or more than one counterpart, or an unassessed counterpart →
+   return the primary `"none"` unchanged.
+
+The overlay never affects primary identity binding. The observation's
+committed `sporely_taxon_id` stays on the COL canonical (per
+`_resolve_manual_via_source_system_preference`); the NorTaxa counterpart
+is consulted **only** to surface a national assessment that the COL id
+lacks. `RedlistLookupResult.overlay_source`/`overlay_taxon_id` make the
+provenance auditable in tests and logs.
+
+This is a runtime-only unification for Norwegian Red List surfacing.
+Proper COL↔NorTaxa concept unification belongs in the compile pipeline
+(cross-source mapping stage) and would obsolete the overlay.
+
 ## Versioning conclusion
 
 Adding the red-list overlay does **not** bump `TAXONOMY_SCHEMA_VERSION`.
