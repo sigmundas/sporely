@@ -3267,6 +3267,91 @@ def test_live_lab_review_keyboard_shortcut_discard_removes_selected_pending(tmp_
     assert add_image_calls == []
 
 
+def test_live_lab_review_shortcut_ignores_foreign_focus_widget(tmp_path, monkeypatch):
+    """Regression: a leaked focus widget from another dialog (e.g. a
+    QPushButton from an unrelated import dialog) must not silently gate the
+    review shortcuts off.
+
+    Prior to the fix, `_raw_review_shortcut_allowed` blindly asked
+    ``QApplication.focusWidget()`` whether it was a "text input"; a
+    ``QAbstractButton`` left focused by a previous test would trigger the
+    guard and the discard shortcut would no-op, leaking
+    ``state._pending_raw_captures`` past the test that expected them cleared.
+
+    This test reproduces the leak deterministically by installing a foreign
+    focused ``QPushButton`` before running the discard shortcut, and asserts
+    both the gate (``_raw_review_shortcut_allowed``) and the end-to-end
+    behaviour (``discard`` removes the pending capture).
+    """
+    qapp = _qapp()
+    source_path = tmp_path / "P070020_1.ORF"
+    source_path.write_bytes(b"raw-bytes")
+
+    state = _build_raw_controls_state()
+    state._session_observation_id = 1
+    state._session_image_ids = []
+    state._selected_session_image_id = None
+    state._session_import_count = 0
+    state._current_lab_metadata = lambda: {"image_type": "microscope", "contrast": "phase"}
+    state._raw_processing_preset_context = lambda: {}
+    state._show_status = lambda *args, **kwargs: None
+    state._clear_session_viewer = lambda *args, **kwargs: None
+    state._refresh_session_gallery = lambda: live_lab_tab.LiveLabTab._refresh_session_gallery(state)
+    state._show_session_image = lambda image_id: None
+    state._update_session_controls = lambda: None
+    state._refresh_main_window_after_import = lambda image_id: None
+    state._update_observation_thumbnail = lambda: None
+    state._log_session_event = lambda *args, **kwargs: None
+    state.raw_capture_mode_selector.set_selected_value(live_lab_tab.LiveLabTab.RAW_CAPTURE_MODE_REVIEW)
+    state._on_raw_capture_mode_changed(live_lab_tab.LiveLabTab.RAW_CAPTURE_MODE_REVIEW)
+
+    preview_pixmap = _make_test_pixmap(8, 8, rgb=(120, 120, 120))
+    state._load_viewer_pixmap = lambda path: (preview_pixmap, False)
+
+    add_image_calls: list[dict[str, object]] = []
+    _install_fake_local_ingest_pipeline(
+        monkeypatch,
+        working_path_factory=lambda source: tmp_path / "imports" / f"{source.stem}.jpg",
+        captured_calls=[],
+        add_image_calls=add_image_calls,
+    )
+    monkeypatch.setattr(live_lab_tab, "render_raw_preview", _fake_render_raw_preview)
+
+    # Simulate a leaked focus widget from a previous test / dialog: a
+    # top-level QPushButton (a QAbstractButton, so `_is_text_input_widget`
+    # returns True for it) that is *not* a child of the LiveLab hierarchy.
+    foreign_widget = QWidget()
+    foreign_layout = QHBoxLayout(foreign_widget)
+    foreign_layout.setContentsMargins(0, 0, 0, 0)
+    foreign_button = QPushButton("foreign", foreign_widget)
+    foreign_layout.addWidget(foreign_button)
+    foreign_widget.show()
+    foreign_button.setFocus()
+    qapp.processEvents()
+    try:
+        assert QApplication.focusWidget() is foreign_button
+        assert live_lab_tab.LiveLabTab._is_text_input_widget(foreign_button) is True
+
+        assert live_lab_tab.LiveLabTab._handle_raw_companion_source(
+            state, str(source_path), group_key="group-1", state={}
+        )
+        assert state._pending_raw_captures
+        # Focus is still on the foreign button; the gate must not block
+        # just because *some* text-input-like widget has focus, because
+        # that widget belongs to another window and Qt's
+        # WidgetWithChildrenShortcut context would never have routed the
+        # shortcut here in the first place.
+        assert QApplication.focusWidget() is foreign_button
+        assert live_lab_tab.LiveLabTab._raw_review_shortcut_allowed(state) is True
+        assert live_lab_tab.LiveLabTab._handle_raw_review_shortcut(state, "discard") is None
+        assert state._pending_raw_captures == []
+        assert add_image_calls == []
+    finally:
+        foreign_widget.close()
+        foreign_widget.deleteLater()
+        qapp.processEvents()
+
+
 def test_live_lab_current_lab_state_unset_combo_is_alert_styled():
     _qapp()
     state = _build_raw_controls_state()

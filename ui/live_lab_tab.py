@@ -4760,7 +4760,17 @@ class LiveLabTab(QWidget):
             return False
         focus_widget = QApplication.focusWidget()
         if focus_widget is not None and self._is_text_input_widget(focus_widget):
-            return False
+            # Only treat a focused text-input as blocking when it actually
+            # belongs to this tab. A foreign focus widget left behind by
+            # another dialog (for example a QPushButton from an unrelated
+            # window) must not silently swallow the review shortcut — Qt's
+            # WidgetWithChildrenShortcut context already scopes shortcut
+            # delivery in production; this mirrors that scoping in the
+            # Python-side gate so unit tests and stray focus don't gate the
+            # action off.
+            is_ancestor = getattr(self, "isAncestorOf", None)
+            if focus_widget is self or (callable(is_ancestor) and bool(is_ancestor(focus_widget))):
+                return False
         return True
 
     def _handle_raw_review_shortcut(self, action: str) -> None:
