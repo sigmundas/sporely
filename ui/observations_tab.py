@@ -19718,8 +19718,7 @@ class ObservationDetailsDialog(GeometryMixin, QDialog):
                 "ai_selected_scientific_name",
             )
         )
-        unidentified = not has_identification
-        if not genus and not species and not unidentified:
+        if not genus and not species and has_identification:
             for candidate in (obs.get("species_guess"), obs.get("ai_selected_scientific_name")):
                 fallback_genus, fallback_species = self._split_scientific_name_text(candidate)
                 if not genus and fallback_genus:
@@ -19741,7 +19740,16 @@ class ObservationDetailsDialog(GeometryMixin, QDialog):
             self.genus_input.setText(genus)
             self.species_input.setText(species)
             self.uncertain_checkbox.setChecked(bool(obs.get("uncertain", 0)))
-            self.unidentified_checkbox.setChecked(unidentified)
+            # UX: never auto-check "Unidentified" merely because the loaded
+            # observation lacks identification fields. That state is a
+            # UI-only convenience for the user to say "I don't want to
+            # identify this now"; it disables the taxonomy widgets. Empty
+            # identification on load is the normal state of a fresh
+            # import or of a previously-saved not-yet-identified
+            # observation — the user MUST be able to start typing without
+            # first discovering and unchecking the box. The identity
+            # fields themselves round-trip via ``get_data`` regardless.
+            self.unidentified_checkbox.setChecked(False)
             if hasattr(self, "vernacular_input"):
                 self.vernacular_input.setText(obs.get("common_name") or "")
             if hasattr(self, "scientific_name_input"):
