@@ -233,7 +233,7 @@ def test_background_activity_badge_hover_updates_observation_hint(monkeypatch, q
     window.deleteLater()
 
 
-def test_measure_gallery_publish_uncheck_queues_cloud_tombstone(monkeypatch, qapp):
+def test_measure_gallery_publish_uncheck_does_not_mutate_cloud_state(monkeypatch, qapp):
     window = _build_window(monkeypatch)
     window.active_observation_id = 7
     window.observation_images = [
@@ -278,15 +278,15 @@ def test_measure_gallery_publish_uncheck_queues_cloud_tombstone(monkeypatch, qap
 
     main_window.MainWindow._on_measure_gallery_publish_selection_changed(window, {2})
 
-    assert calls["queue"] == [1]
+    assert calls["queue"] == []
     assert calls["clear"] == []
     assert calls["cloud"] == []
     assert calls["excluded"] == [(7, (1,))]
-    assert calls["dirty"] == [7]
+    assert calls["dirty"] == []
     window.deleteLater()
 
 
-def test_measure_gallery_publish_recheck_clears_synced_tombstone(monkeypatch, qapp):
+def test_measure_gallery_publish_recheck_does_not_mutate_cloud_state(monkeypatch, qapp):
     window = _build_window(monkeypatch)
     window.active_observation_id = 7
     window.observation_images = [
@@ -337,10 +337,10 @@ def test_measure_gallery_publish_recheck_clears_synced_tombstone(monkeypatch, qa
     main_window.MainWindow._on_measure_gallery_publish_selection_changed(window, {1, 2})
 
     assert calls["queue"] == []
-    assert calls["clear"] == ["cloud-1"]
-    assert calls["cloud"] == [1]
+    assert calls["clear"] == []
+    assert calls["cloud"] == []
     assert calls["excluded"] == [(7, ())]
-    assert calls["dirty"] == [7]
+    assert calls["dirty"] == []
     window.deleteLater()
 
 

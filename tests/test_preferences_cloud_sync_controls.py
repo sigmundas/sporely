@@ -146,6 +146,85 @@ def _auth_refresh_failure():
             return error
 
 
+def test_online_settings_artportalen_status_uses_cached_session_without_keyring(
+    monkeypatch,
+    tmp_path,
+):
+    from utils import artportalen_auth
+
+    monkeypatch.setattr(
+        artportalen_auth,
+        "has_saved_login",
+        lambda: pytest.fail("opening settings must not read a saved password"),
+    )
+    monkeypatch.setattr(
+        artportalen_auth.ArtportalenAuth,
+        "load_cookies",
+        lambda self: {"session": "cached"},
+    )
+    dialog = SimpleNamespace(
+        _uploaders=[SimpleNamespace(key="artportalen")],
+        cookies_file=tmp_path / "artsobservasjoner_cookies.json",
+        _target_status={},
+    )
+
+    main_window.ArtsobservasjonerSettingsDialog._refresh_target_status(dialog)
+
+    assert dialog._target_status == {"artportalen": True}
+
+
+def test_remove_saved_passwords_clears_all_keyring_services_but_keeps_sessions(monkeypatch):
+    from utils import artportalen_auth, artsobservasjoner_auto_login
+
+    calls: list[str] = []
+    monkeypatch.setattr(
+        main_window.QMessageBox,
+        "question",
+        lambda *args, **kwargs: main_window.QMessageBox.Yes,
+    )
+    monkeypatch.setattr(
+        main_window.QMessageBox,
+        "information",
+        lambda *args, **kwargs: calls.append("information"),
+    )
+    monkeypatch.setattr(
+        main_window.QMessageBox,
+        "warning",
+        lambda *args, **kwargs: calls.append("warning"),
+    )
+    monkeypatch.setattr(
+        artsobservasjoner_auto_login,
+        "clear_saved_web_credentials",
+        lambda: calls.append("artsobservasjoner") or [],
+    )
+    monkeypatch.setattr(
+        artportalen_auth,
+        "clear_saved_credentials",
+        lambda: calls.append("artportalen") or [],
+    )
+    monkeypatch.setattr(
+        cloud_sync,
+        "clear_saved_cloud_password",
+        lambda: calls.append("cloud") or [],
+    )
+    dialog = SimpleNamespace(
+        tr=lambda text: text,
+        _update_status=lambda: calls.append("status"),
+        _update_controls=lambda: calls.append("controls"),
+    )
+
+    main_window.ArtsobservasjonerSettingsDialog._remove_saved_passwords(dialog)
+
+    assert calls == [
+        "artsobservasjoner",
+        "artportalen",
+        "cloud",
+        "status",
+        "controls",
+        "information",
+    ]
+
+
 def test_profile_cloud_controls_expose_sync_actions(monkeypatch, qapp):
     parent, dialog = _build_settings_hub_dialog(monkeypatch, qapp)
 

@@ -42,6 +42,10 @@ def _load_saved_web_credentials() -> tuple[str, Optional[str], bool]:
     keyring = _get_keyring_module()
     if keyring is None:
         return username, None, False
+    if not username:
+        # Avoid touching a locked credential store when there is no saved
+        # account hint and therefore no usable password to retrieve.
+        return username, None, True
     try:
         password = keyring.get_password(_ARTSOBS_WEB_KEYRING_SERVICE, _ARTSOBS_WEB_KEYRING_ACCOUNT)
         if password is None:
@@ -75,16 +79,25 @@ def _save_web_credentials(username: str, password: str) -> None:
         raise RuntimeError(f"Could not securely save password: {exc}") from exc
 
 
-def _clear_saved_web_credentials() -> None:
+def _clear_saved_web_credentials() -> list[str]:
     _set_saved_web_username("")
     keyring = _get_keyring_module()
     if keyring is None:
-        return
-    for service_name in (_ARTSOBS_WEB_KEYRING_SERVICE, _ARTSOBS_WEB_LEGACY_KEYRING_SERVICE):
-        try:
-            keyring.delete_password(service_name, _ARTSOBS_WEB_KEYRING_ACCOUNT)
-        except Exception:
-            continue
+        return []
+    from utils.keyring_cleanup import delete_password_entries
+
+    return delete_password_entries(
+        keyring,
+        (
+            (_ARTSOBS_WEB_KEYRING_SERVICE, _ARTSOBS_WEB_KEYRING_ACCOUNT),
+            (_ARTSOBS_WEB_LEGACY_KEYRING_SERVICE, _ARTSOBS_WEB_KEYRING_ACCOUNT),
+        ),
+    )
+
+
+def clear_saved_web_credentials() -> list[str]:
+    """Remove current and legacy Artsobservasjoner passwords from the system keyring."""
+    return _clear_saved_web_credentials()
 
 
 def _prompt_web_credentials(

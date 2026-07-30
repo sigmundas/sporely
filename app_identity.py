@@ -9,7 +9,7 @@ import sqlite3
 import shutil
 from pathlib import Path
 
-from platformdirs import user_data_dir
+from platformdirs import user_cache_dir, user_data_dir
 from PySide6.QtCore import QSettings
 
 APP_NAME = "Sporely"
@@ -75,6 +75,18 @@ def app_data_dir() -> Path:
     if override:
         return Path(override).expanduser().resolve()
     base_dir = Path(user_data_dir(APP_NAME, appauthor=False, roaming=True))
+    profile = current_profile_name()
+    if not profile:
+        return base_dir
+    return base_dir / "profiles" / profile
+
+
+def app_cache_dir() -> Path:
+    """Return disposable application cache storage for the active profile."""
+    override = str(os.environ.get(APP_DATA_DIR_ENV) or "").strip()
+    if override:
+        return Path(override).expanduser().resolve() / "cache"
+    base_dir = Path(user_cache_dir(APP_NAME, appauthor=False))
     profile = current_profile_name()
     if not profile:
         return base_dir

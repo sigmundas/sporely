@@ -163,6 +163,7 @@ from utils.thumbnail_generator import generate_all_sizes
 from utils.image_utils import cleanup_import_temp_file, load_oriented_pixmap
 from utils.local_image_ingest import RawRenderingUnavailableError, prepare_local_ingest_image
 from utils.cloud_sync import is_cloud_auth_error, is_cloud_reauth_required_error
+from utils.publish_media import prepare_ordered_mosaic_inputs
 from .delegates import SpeciesItemDelegate, AISuggestionItemDelegate
 from .taxon_input_controller import TaxonInputController
 from utils.vernacular_utils import (
@@ -3095,6 +3096,16 @@ class ArtsobservasjonerSettingsDialog(QDialog):
         self.logout_button = QPushButton(self.tr("Log out"))
         self.logout_button.clicked.connect(self._logout)
         button_layout.addWidget(self.logout_button)
+
+        self.remove_saved_passwords_button = QPushButton(self.tr("Remove saved passwords…"))
+        self.remove_saved_passwords_button.clicked.connect(self._remove_saved_passwords)
+        self.remove_saved_passwords_button.setToolTip(
+            self.tr(
+                "Remove Sporely passwords from the system credential store without "
+                "ending existing website sessions."
+            )
+        )
+        button_layout.addWidget(self.remove_saved_passwords_button)
         button_layout.addStretch()
         websites_layout.addLayout(button_layout)
         layout.addWidget(websites_group)
@@ -3657,8 +3668,13 @@ class ArtsobservasjonerSettingsDialog(QDialog):
                         status[uploader.key] = False
                 elif uploader.key == "artportalen":
                     try:
-                        from utils.artportalen_auth import has_saved_login
-                        status[uploader.key] = bool(has_saved_login())
+                        from utils.artportalen_auth import ArtportalenAuth
+
+                        # Opening Settings must not read a password merely to
+                        # paint a status cell. A cached session is sufficient
+                        # for the same non-validating status used by the other
+                        # website targets.
+                        status[uploader.key] = bool(ArtportalenAuth().load_cookies())
                     except Exception:
                         status[uploader.key] = False
                 elif uploader.key == "mo":
@@ -3676,8 +3692,9 @@ class ArtsobservasjonerSettingsDialog(QDialog):
                         status[uploader.key] = False
                 elif uploader.key == "artportalen":
                     try:
-                        from utils.artportalen_auth import has_saved_login
-                        status[uploader.key] = bool(has_saved_login())
+                        from utils.artportalen_auth import ArtportalenAuth
+
+                        status[uploader.key] = bool(ArtportalenAuth().load_cookies())
                     except Exception:
                         status[uploader.key] = False
                 elif uploader.key == "mo":
@@ -4304,6 +4321,56 @@ class ArtsobservasjonerSettingsDialog(QDialog):
             return
         self._update_status()
         self._update_controls()
+
+    def _remove_saved_passwords(self) -> None:
+        answer = QMessageBox.question(
+            self,
+            self.tr("Remove saved passwords?"),
+            self.tr(
+                "Remove saved passwords for Sporely Cloud, Artsobservasjoner, and "
+                "Artportalen from this device's secure credential store?\n\n"
+                "Existing session cookies and access tokens will be kept."
+            ),
+            QMessageBox.Yes | QMessageBox.No,
+            QMessageBox.No,
+        )
+        if answer != QMessageBox.Yes:
+            return
+
+        try:
+            from utils.artsobservasjoner_auto_login import clear_saved_web_credentials
+            from utils.artportalen_auth import clear_saved_credentials
+            from utils.cloud_sync import clear_saved_cloud_password
+
+            failures = [
+                *clear_saved_web_credentials(),
+                *clear_saved_credentials(),
+                *clear_saved_cloud_password(),
+            ]
+        except Exception as exc:
+            failures = [str(exc)]
+
+        self._update_status()
+        self._update_controls()
+        if failures:
+            QMessageBox.warning(
+                self,
+                self.tr("Password removal incomplete"),
+                self.tr(
+                    "Some saved passwords could not be removed from the system "
+                    "credential store. You can remove them using your operating "
+                    "system's password or credential manager.\n\n{error}"
+                ).format(error='\n'.join(failures)),
+            )
+            return
+        QMessageBox.information(
+            self,
+            self.tr("Saved passwords removed"),
+            self.tr(
+                "Saved passwords were removed. Existing session cookies and access "
+                "tokens were kept."
+            ),
+        )
 
     def _load_settings(self):
         self._loading_settings = True
@@ -7750,7 +7817,7 @@ class MainWindow(GeometryMixin, QMainWindow):
             min_height=GALLERY_MIN_HEIGHT,
             default_height=GALLERY_DEFAULT_HEIGHT,
             show_publish_checkbox=True,
-            publish_checkbox_hint=self.tr("Select image for publishing and cloud sync"),
+            publish_checkbox_hint=self.tr("Select image for external publishing"),
         )
         self.measure_gallery.set_multi_select(True)
         self.measure_gallery.set_reorderable(True)
@@ -12149,59 +12216,17 @@ class MainWindow(GeometryMixin, QMainWindow):
     def _on_measure_gallery_publish_selection_changed(self, selected_ids) -> None:
         if not self.active_observation_id:
             return
-        image_by_id = {
-            int(image.get("id")): dict(image)
-            for image in (self.observation_images or [])
-            if image.get("id") is not None
-        }
         all_image_ids = {
             int(image.get("id"))
             for image in (self.observation_images or [])
             if image.get("id") is not None
         }
-        previous_excluded = self._get_publish_excluded_image_ids_for_observation(self.active_observation_id)
-        previous_excluded = {img_id for img_id in previous_excluded if img_id in all_image_ids}
-        previous_selected = set(all_image_ids) - previous_excluded
         try:
             selected_set = {int(v) for v in (selected_ids or set())}
         except Exception:
             selected_set = set()
         excluded = set(all_image_ids) - set(selected_set)
-        unchecked_ids = previous_selected - selected_set
-        rechecked_ids = selected_set - previous_selected
-        for image_id in unchecked_ids:
-            img = image_by_id.get(image_id) or {}
-            cloud_id = str(img.get("cloud_id") or "").strip()
-            if not cloud_id:
-                continue
-            try:
-                ImageDB.queue_image_tombstone_for_local_image(image_id)
-            except Exception:
-                pass
-        for image_id in rechecked_ids:
-            img = image_by_id.get(image_id) or {}
-            cloud_id = str(img.get("cloud_id") or "").strip()
-            if not cloud_id:
-                continue
-            tombstone = ImageDB.get_image_tombstone_by_deleted_cloud_id(cloud_id)
-            if not tombstone:
-                continue
-            try:
-                ImageDB.clear_image_tombstone_by_deleted_cloud_id(cloud_id)
-            except Exception:
-                pass
-            if str(tombstone.get("delete_synced_at") or "").strip():
-                try:
-                    ImageDB.clear_image_cloud_sync_state(image_id)
-                except Exception:
-                    pass
         self._set_publish_excluded_image_ids_for_observation(self.active_observation_id, excluded)
-        try:
-            from utils.cloud_sync import mark_observation_dirty
-
-            mark_observation_dirty(int(self.active_observation_id))
-        except Exception:
-            pass
         if hasattr(self, "_sync_observations_tab_publish_state"):
             self._sync_observations_tab_publish_state(self.active_observation_id, excluded)
 
@@ -15676,39 +15701,29 @@ class MainWindow(GeometryMixin, QMainWindow):
     def _sort_gallery_measurements(self, measurements):
         """Sort measurements by the selected gallery sort key (ascending)."""
         if not hasattr(self, "gallery_sort_combo"):
-            return measurements
+            return prepare_ordered_mosaic_inputs(
+                measurements,
+                category="all",
+                sort_key="",
+            )
         sort_key = self.gallery_sort_combo.currentData() or ""
-        if not sort_key:
-            return measurements
-        image_order_map = {}
+        image_order = []
         if sort_key == "images" and self.active_observation_id:
             try:
                 ordered_images = ImageDB.get_images_for_observation(self.active_observation_id)
-                image_order_map = {
-                    int(image.get("id")): idx
-                    for idx, image in enumerate(ordered_images)
+                image_order = [
+                    int(image.get("id"))
+                    for image in ordered_images
                     if image.get("id") is not None
-                }
+                ]
             except Exception:
-                image_order_map = {}
-        def _key(m):
-            l = m.get("length_um") or 0.0
-            w = m.get("width_um") or 0.0
-            if sort_key == "images":
-                image_id = int(m.get("image_id") or 0)
-                measurement_id = int(m.get("id") or 0)
-                return (
-                    image_order_map.get(image_id, 10**9),
-                    measurement_id,
-                )
-            if sort_key == "length":
-                return float(l)
-            if sort_key == "width":
-                return float(w)
-            if sort_key == "q":
-                return float(l) / float(w) if w else 0.0
-            return 0.0
-        return sorted(measurements, key=_key)
+                image_order = []
+        return prepare_ordered_mosaic_inputs(
+            measurements,
+            category="all",
+            sort_key=sort_key,
+            image_order=image_order,
+        )
 
     def _filter_gallery_measurements(self, measurements):
         """Apply gallery selection filter to measurements."""
@@ -19107,6 +19122,7 @@ class MainWindow(GeometryMixin, QMainWindow):
                 self._set_reference_panel_loaded_taxon(self.active_observation_id, obs_genus, obs_species)
 
         restored_series = []
+        has_saved_series = "reference_series" in settings
         saved_series = settings.get("reference_series")
         if isinstance(saved_series, list):
             for item in saved_series:
@@ -19127,6 +19143,15 @@ class MainWindow(GeometryMixin, QMainWindow):
             self.reference_values = dict(last_entry.get("data", {}))
             self._set_reference_series(restored_series)
             self._apply_reference_panel_values(self.reference_values)
+            self._update_reference_add_state()
+            return
+
+        if has_saved_series:
+            # An explicitly saved empty list is the observation's persisted
+            # choice, not a request to keep a species reference that may have
+            # been auto-loaded before gallery settings were applied.
+            self.reference_values = {}
+            self._set_reference_series([])
             self._update_reference_add_state()
             return
 

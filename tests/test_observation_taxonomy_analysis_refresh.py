@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+import json
 import os
 
 os.environ.setdefault("QT_QPA_PLATFORM", "offscreen")
@@ -331,6 +332,53 @@ def test_load_reference_values_preserves_manual_taxon_for_same_observation(
     assert window.reference_values == {}
     assert window._reference_panel_loaded_observation_id == 1
     assert window._reference_panel_loaded_taxon == ("Entoloma", "sericeum")
+
+
+def test_removing_last_reference_persists_and_restores_empty_series(
+    monkeypatch,
+    qapp,
+) -> None:
+    window = _build_minimal_window(monkeypatch)
+    window.active_observation_id = 682
+    reference_data = {
+        "source_kind": "observation",
+        "observation_id": 443,
+        "date": "2026-06-23",
+        "author": "Sigmund Ås",
+        "genus": "Agrocybe",
+        "species": "praecox",
+        "length_min": 12.3,
+        "width_min": 7.9,
+    }
+    normalized = window._normalize_reference_series_entry(reference_data)
+    assert normalized is not None
+    window.reference_values = dict(reference_data)
+    window.reference_series = [normalized]
+
+    saved: dict[str, str] = {}
+    monkeypatch.setattr(
+        main_window.SettingsDB,
+        "set_setting",
+        lambda key, value: saved.update({key: value}),
+    )
+
+    window._remove_reference_series_key(normalized["key"])
+
+    assert window.reference_values == {}
+    assert window.reference_series == []
+    assert "gallery_settings_682" in saved
+    persisted = json.loads(saved["gallery_settings_682"])
+    assert persisted["reference_values"] == {}
+    assert persisted["reference_series"] == []
+
+    # Simulate load_reference_values() auto-loading a species reference before
+    # the per-observation Analysis settings are reapplied.
+    window.reference_values = dict(reference_data)
+    window.reference_series = [normalized]
+    window._apply_saved_reference_state(persisted)
+
+    assert window.reference_values == {}
+    assert window.reference_series == []
 
 
 def test_update_graph_plots_hides_spore_reference_overlay_for_pleurocystidia(

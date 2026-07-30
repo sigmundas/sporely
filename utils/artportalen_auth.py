@@ -48,6 +48,10 @@ def _load_saved_credentials() -> tuple[str, Optional[str], bool]:
     keyring = _get_keyring_module()
     if keyring is None:
         return username, None, False
+    if not username:
+        # Do not unlock or prompt the system credential store when there is no
+        # local account hint with which a saved password could be used.
+        return username, None, True
     try:
         password = keyring.get_password(_ARTPORTALEN_KEYRING_SERVICE, _ARTPORTALEN_KEYRING_ACCOUNT)
         if password is None:
@@ -81,16 +85,25 @@ def _save_credentials(username: str, password: str) -> None:
         raise RuntimeError(f"Could not securely save password: {exc}") from exc
 
 
-def _clear_saved_credentials() -> None:
+def _clear_saved_credentials() -> list[str]:
     _set_saved_username("")
     keyring = _get_keyring_module()
     if keyring is None:
-        return
-    for service_name in (_ARTPORTALEN_KEYRING_SERVICE, _ARTPORTALEN_LEGACY_KEYRING_SERVICE):
-        try:
-            keyring.delete_password(service_name, _ARTPORTALEN_KEYRING_ACCOUNT)
-        except Exception:
-            continue
+        return []
+    from utils.keyring_cleanup import delete_password_entries
+
+    return delete_password_entries(
+        keyring,
+        (
+            (_ARTPORTALEN_KEYRING_SERVICE, _ARTPORTALEN_KEYRING_ACCOUNT),
+            (_ARTPORTALEN_LEGACY_KEYRING_SERVICE, _ARTPORTALEN_KEYRING_ACCOUNT),
+        ),
+    )
+
+
+def clear_saved_credentials() -> list[str]:
+    """Remove current and legacy Artportalen passwords from the system keyring."""
+    return _clear_saved_credentials()
 
 
 def _prompt_credentials(parent=None, title: str = "Log in to Artportalen") -> tuple[Optional[str], Optional[str], bool]:
