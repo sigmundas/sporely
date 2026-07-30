@@ -718,6 +718,18 @@ class TaxonLookupService:
 
         Statuses (see :class:`RedlistLookupResult`): ``"none"``,
         ``"unique"``, ``"multiple_same_category"``, ``"conflict"``.
+
+        Stage 3B.5: the same-category collapse keys on the pair
+        ``(category_code, category_is_downgraded)``. Rows that share a
+        base category but differ by the degree marker (e.g. ``VU`` vs
+        ``VU°``) are treated as ``conflict``, not
+        ``multiple_same_category``. Differences in rank, criteria,
+        expert group, or assessed name do NOT turn agreement on the
+        category into a conflict — they only mean the representative's
+        metadata for those fields is not authoritative for the whole
+        group (which the caller already knows for
+        ``multiple_same_category`` and can inspect via
+        ``conflicting_assessments``).
         """
         if sporely_taxon_id is None:
             return RedlistLookupResult(status="none")
@@ -733,9 +745,11 @@ class TaxonLookupService:
         if len(assessments) == 1:
             return RedlistLookupResult(status="unique",
                                        assessment=assessments[0])
-        distinct_categories = {a.category_code for a in assessments}
-        distinct_ranks = {(a.taxon_rank_snapshot or "") for a in assessments}
-        if len(distinct_categories) == 1 and len(distinct_ranks) == 1:
+        distinct_keys = {
+            (a.category_code, bool(a.category_is_downgraded))
+            for a in assessments
+        }
+        if len(distinct_keys) == 1:
             return RedlistLookupResult(
                 status="multiple_same_category",
                 assessment=assessments[0],
@@ -847,10 +861,36 @@ class TaxonLookupService:
         return choice
 
 
+def determine_redlist_area(country_code: str | None) -> str | None:
+    """Return ``"Norge"``, ``"Svalbard"``, or ``None`` from an ISO-3166-1 code.
+
+    Companion to :meth:`TaxonLookupService.get_redlist_lookup`: picks the
+    assessment area to query for a given observation's resolved country
+    code. Uses Nominatim's convention where Svalbard is ``sj`` (Svalbard
+    and Jan Mayen) and mainland Norway is ``no``. Anything else, and any
+    missing/ambiguous code, yields ``None`` — callers must not silently
+    fall back to a mainland assessment.
+
+    Nominatim's ``sj`` ISO-3166-1 code covers both Svalbard and Jan
+    Mayen. Stage 3B.5 maps ``sj`` to the Red List's ``Svalbard``
+    assessment area because no finer persisted geographic field
+    currently exists on observations, and Jan Mayen falls outside the
+    compiled Norwegian Red List areas. A finer geographic classifier is
+    a follow-up, not a Stage 3B.5 concern.
+    """
+    code = (country_code or "").strip().lower()
+    if code == "sj":
+        return "Svalbard"
+    if code == "no":
+        return "Norge"
+    return None
+
+
 __all__ = [
     "TAXON_COMPLETER_LIMIT",
     "TaxonChoice",
     "TaxonLookupService",
     "RedlistAssessment",
     "RedlistLookupResult",
+    "determine_redlist_area",
 ]

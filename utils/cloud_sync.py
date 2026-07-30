@@ -53,6 +53,7 @@ from database.models import (
     list_pending_image_tombstones,
     mark_image_tombstone_synced,
 )
+from utils.artsdatabanken_link import concept_link_from_name_id
 from utils.heic_converter import guess_local_image_mime_type
 from utils.cloud_media_policy import (
     IMAGE_TOO_LARGE_FOR_PLAN_MESSAGE,
@@ -6806,7 +6807,13 @@ def _cloud_identification_prediction_species_url(prediction: dict, service: str 
         or ''
     ).strip()
     if taxon_id and taxon_id.isdigit():
-        return f'https://artsdatabanken.no/arter/takson/{taxon_id}'
+        # Stage 3B.5: this helper runs on the GUI thread inside a
+        # per-prediction loop when the observation-detail dialog opens.
+        # A 5 s network resolve × ~10 predictions would freeze the
+        # editor for tens of seconds on a bad link. Use cache-only mode:
+        # cache hits return the true concept URL, misses fall to the
+        # NorTaxa fallback with no network I/O.
+        return concept_link_from_name_id(taxon_id, network=False)
     return None
 
 

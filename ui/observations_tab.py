@@ -53,7 +53,12 @@ from database.models import (
     update_observation_sync_state,
 )
 from database.vernacular_db import VernacularDB
-from database.taxon_lookup import TAXON_COMPLETER_LIMIT, TaxonChoice, TaxonLookupService
+from database.taxon_lookup import (
+    TAXON_COMPLETER_LIMIT,
+    TaxonChoice,
+    TaxonLookupService,
+    determine_redlist_area,
+)
 from .taxon_input_controller import TaxonInputController
 from database.reverse_location_lookup import LocationLookupResult, lookup_location_suggestions
 from database.database_tags import DatabaseTerms
@@ -76,6 +81,7 @@ import utils.ai_image_prep as ai_image_prep
 from utils.image_metadata_merge import merge_image_lab_metadata
 from utils.ml_export import export_coco_format, get_export_summary
 from utils.local_image_ingest import RawRenderingUnavailableError, prepare_local_ingest_image
+from utils.artsdatabanken_link import concept_link_from_name_id
 from utils.artsobservasjoner_taxon import (
     ArtsobservasjonerTaxonIdError,
     log_artsobservasjoner_taxon_diagnostic,
@@ -9836,6 +9842,7 @@ class ObservationsTab(QWidget):
                     gps_longitude=data.get('gps_longitude'),
                     scientific_name_snapshot=data.get('scientific_name_snapshot'),
                     taxon_rank_snapshot=data.get('taxon_rank_snapshot'),
+                    sporely_taxon_id=data.get('sporely_taxon_id'),
                     allow_nulls=True
                 )
                 self.schedule_metadata_cloud_sync(obs_id)
@@ -11976,6 +11983,15 @@ class ObservationDetailsDialog(GeometryMixin, QDialog):
         self._inaturalist_taxon_id: int | None = None
         self._red_list_category = ""
         self._red_list_categories: dict | None = None
+        # Stage 3B.5: deferred red-list resolution guards.
+        # ``_redlist_generation`` is the primary invalidation nonce — every
+        # schedule increments it, and any observation load / identity
+        # clear / dialog close also bumps it so in-flight callbacks whose
+        # captured generation no longer matches are dropped. The identity
+        # token remains as a defensive second check.
+        self._pending_redlist_token: tuple | None = None
+        self._last_applied_redlist_key: tuple | None = None
+        self._redlist_generation: int = 0
         self._last_applied_location_lookup_name = ""
         self._force_apply_next_location_lookup_name = False
         self._sharing_scope_value = self._default_sharing_scope()
@@ -13440,20 +13456,60 @@ class ObservationDetailsDialog(GeometryMixin, QDialog):
             return clean
         return f"{clean} - {label}" if include_code else label
 
-    def _set_red_list_category(self, code: str | None, categories: dict | None = None) -> None:
-        self._red_list_category = str(code or "").strip().upper()
+    def _set_red_list_category_raw(
+        self,
+        raw_code: str | None,
+        categories: dict | None = None,
+        *,
+        hint: str | None = None,
+    ) -> None:
+        """Store the display value verbatim (preserving degree marks) and
+        refresh the badge + label.
+
+        Stage 3B.5: ``raw_code`` may include a trailing ``"°"`` (degree
+        marker). The badge text renders it as-is. Colour and label lookups
+        use the base code (``raw_code`` with any trailing ``"°"`` removed),
+        because ``RED_LIST_BADGE_COLORS`` and ``_red_list_label`` are keyed
+        on the plain IUCN code.
+        """
+        text = str(raw_code or "").strip()
+        # Keep the degree marker verbatim; uppercase only the leading
+        # alphabetic part so "vu°" still renders as "VU°".
+        if text.endswith("°"):
+            base_alpha = text[:-1].upper()
+            display = f"{base_alpha}°"
+            base_code = base_alpha
+        else:
+            display = text.upper()
+            base_code = display
+        self._red_list_category = display
         self._red_list_categories = dict(categories) if isinstance(categories, dict) else None
         badge = getattr(self, "red_list_badge_widget", None)
         if badge is not None:
-            if self._red_list_category:
-                hex_color = RED_LIST_BADGE_COLORS.get(self._red_list_category, "#63666A")
-                badge.set_color_and_text(hex_color, self._red_list_category)
+            if display:
+                hex_color = RED_LIST_BADGE_COLORS.get(base_code, "#63666A")
+                badge.set_color_and_text(hex_color, display)
                 badge.setVisible(True)
             else:
                 badge.setVisible(False)
         label = getattr(self, "red_list_status_label", None)
         if label is not None:
-            label.setText(self._red_list_label(self._red_list_category, include_code=False) or self.tr("Not set"))
+            if hint:
+                label.setText(hint)
+            else:
+                label.setText(
+                    self._red_list_label(base_code, include_code=False) or self.tr("Not set")
+                )
+
+    def _set_red_list_category(self, code: str | None, categories: dict | None = None) -> None:
+        """Backwards-compatible wrapper over :meth:`_set_red_list_category_raw`.
+
+        Existing call sites use this signature. The raw variant accepts a
+        hint string; callers that need to display a non-standard status
+        message (e.g. "Multiple assessments") should call the raw form
+        directly.
+        """
+        self._set_red_list_category_raw(code, categories, hint=None)
 
     def _set_inaturalist_taxon_id(self, value) -> None:
         try:
@@ -13532,7 +13588,7 @@ class ObservationDetailsDialog(GeometryMixin, QDialog):
             or ""
         ).strip()
         if taxon_id and taxon_id.isdigit():
-            return f"https://artsdatabanken.no/arter/takson/{taxon_id}"
+            return concept_link_from_name_id(taxon_id)
         return None
 
     def _ai_prediction_links(self, pred: dict, taxon: dict, source: str = "arts") -> list[tuple[str, str]]:
@@ -13857,6 +13913,12 @@ class ObservationDetailsDialog(GeometryMixin, QDialog):
                     taxon.get("redListCategory") or (selected_pred or {}).get("redListCategory"),
                     self._red_list_categories_from_prediction(selected_pred or {}, taxon),
                 )
+                # Stage 3B.5: after applying the Artsorakel source snapshot,
+                # schedule a single deferred local-lookup resolve so a
+                # matching taxonomy pick refines the category into its
+                # final display form (respects degree marker, area, and
+                # conflict semantics).
+                self._schedule_final_redlist_resolution()
             self._suppress_taxon_autofill = False
             if self.vernacular_db:
                 self._update_vernacular_suggestions_for_taxon()
@@ -14070,6 +14132,11 @@ class ObservationDetailsDialog(GeometryMixin, QDialog):
         if getattr(self, "_close_cleanup_done", False):
             return
         self._close_cleanup_done = True
+        # Stage 3B.5: invalidate any deferred red-list resolve queued for
+        # this dialog. The `_close_cleanup_done` check in the callback is
+        # already sufficient; bumping the generation makes the invariant
+        # symmetric with the load / clear paths.
+        self._redlist_generation = getattr(self, "_redlist_generation", 0) + 1
         self._cleanup_location_lookup()
         for preview_path in list(self._dialog_temp_preview_paths):
             try:
@@ -14796,6 +14863,11 @@ class ObservationDetailsDialog(GeometryMixin, QDialog):
             self.location_input.setText(resolved_name)
             self._last_applied_location_lookup_name = resolved_name
         self._apply_publish_target_from_lookup_country()
+        # Stage 3B.5: recompute the red-list category for the new area
+        # (e.g. NO → SJ or vice versa). If the country goes to something
+        # else (or unknown), the deferred resolver clears the derived
+        # category and preserves the Artsorakel snapshot JSON.
+        self._schedule_final_redlist_resolution()
         self._location_lookup_worker = None
 
     def _location_lookup_result_matches_current_coords(self, result: LocationLookupResult) -> bool:
@@ -14910,6 +14982,14 @@ class ObservationDetailsDialog(GeometryMixin, QDialog):
             snapshot = None
         scientific_name_snapshot = (snapshot or {}).get("scientific_name") if snapshot else None
         taxon_rank_snapshot = (snapshot or {}).get("taxon_rank_snapshot") if snapshot else None
+        # Stage 3B.5: identity column travels with the pair of snapshot
+        # fields so a saved observation restores the exact concept the
+        # observer picked.
+        raw_sporely_id = (snapshot or {}).get("sporely_taxon_id") if snapshot else None
+        try:
+            sporely_taxon_id = int(raw_sporely_id) if raw_sporely_id is not None else None
+        except (TypeError, ValueError):
+            sporely_taxon_id = None
         sharing_scope = self._selected_sharing_scope()
         location_precision = self._selected_location_precision()
 
@@ -14997,6 +15077,7 @@ class ObservationDetailsDialog(GeometryMixin, QDialog):
             'gps_longitude': lon,
             'scientific_name_snapshot': scientific_name_snapshot,
             'taxon_rank_snapshot': taxon_rank_snapshot,
+            'sporely_taxon_id': sporely_taxon_id,
         }
 
     def on_taxonomy_tab_changed(self, index):
@@ -16265,6 +16346,9 @@ class ObservationDetailsDialog(GeometryMixin, QDialog):
         # subsequent Artsorakel resolve populates a new one. Never carry
         # a status from the old identity into the new.
         self._clear_red_list_for_identity_change()
+        # Stage 3B.5: an explicit taxonomy pick (without an Artsorakel
+        # prior) should still resolve the local red-list lookup.
+        self._schedule_final_redlist_resolution()
         label = getattr(self, "scientific_hint_label", None)
         if label is None:
             return
@@ -16308,6 +16392,148 @@ class ObservationDetailsDialog(GeometryMixin, QDialog):
         setter = getattr(self, "_set_red_list_category", None)
         if setter is not None:
             setter(None, None)
+        # Stage 3B.5: also drop the idempotence guard so a return to the
+        # same identity later still triggers a fresh apply. Bump the
+        # generation nonce so any in-flight deferred resolve tied to the
+        # previous identity is invalidated even if the four identity
+        # signals happen to coincide with the new one.
+        self._last_applied_redlist_key = None
+        self._redlist_generation = getattr(self, "_redlist_generation", 0) + 1
+
+    # ------------------------------------------------------------------
+    # Stage 3B.5 — deferred post-Artsorakel red-list resolution.
+    # ------------------------------------------------------------------
+
+    def _current_identity_token(self) -> tuple:
+        """Snapshot of identity signals used to reject stale deferred callbacks."""
+        controller = getattr(self, "_taxon_controller", None)
+        snap = None
+        try:
+            snap = controller.committed_snapshot() if controller else None
+        except Exception:
+            snap = None
+        sporely_id = (snap or {}).get("sporely_taxon_id") if snap else None
+        try:
+            sporely_int = int(sporely_id) if sporely_id else 0
+        except (TypeError, ValueError):
+            sporely_int = 0
+        return (
+            id(self),
+            sporely_int,
+            (snap or {}).get("scientific_name") if snap else None,
+            self._location_country_code,
+        )
+
+    def _schedule_final_redlist_resolution(self) -> None:
+        """Enqueue a single deferred red-list resolve on the next tick.
+
+        The 0-ms QTimer defers execution until the current call stack
+        finishes (e.g. an Artsorakel apply that just wrote a source
+        snapshot). Only the most recent scheduling wins — an earlier
+        deferred callback whose captured ``_redlist_generation`` no
+        longer matches, or whose identity token no longer matches, is
+        dropped silently.
+        """
+        self._redlist_generation += 1
+        gen = self._redlist_generation
+        token = self._current_identity_token()
+        self._pending_redlist_token = token
+        QTimer.singleShot(
+            0,
+            lambda g=gen, t=token: self._resolve_and_apply_redlist(g, t),
+        )
+
+    @staticmethod
+    def _derive_redlist_apply(result, current_categories):
+        """Return the pure ``(raw_code, categories, hint)`` triple for a
+        :class:`RedlistLookupResult` and the currently held categories map.
+
+        Pure decision logic — no widget access. Extracted so tests can
+        exercise every branch without spinning up Qt.
+
+        Rules:
+          - ``unique`` / ``multiple_same_category``: expose the raw
+            category (with degree mark) and preserve ``current_categories``.
+            No hint.
+          - ``conflict``: clear derived category; preserve
+            ``current_categories`` (Artsorakel snapshot); set a hint.
+          - ``none``: clear derived category; preserve
+            ``current_categories``; no hint.
+        """
+        status = getattr(result, "status", None)
+        if status in ("unique", "multiple_same_category"):
+            assessment = getattr(result, "assessment", None)
+            raw = str(getattr(assessment, "category_raw", "") or "").strip()
+            return (raw or None, current_categories, None)
+        if status == "conflict":
+            return (None, current_categories, "Multiple assessments")
+        # "none" or anything unexpected
+        return (None, current_categories, None)
+
+    def _resolve_and_apply_redlist(
+        self,
+        expected_gen: int,
+        expected_token: tuple,
+    ) -> None:
+        # Reject stale execution. The generation nonce is the primary
+        # guard — every reload / clear / close bumps it, so a deferred
+        # callback from a previous observation (or a previous identity
+        # in the same dialog) is dropped even if the coincident identity
+        # signals happen to match. The identity-token check is a
+        # defensive second guard for the case where the counter alone
+        # would still allow a stale write (e.g. a signal handler that
+        # forgot to bump the generation).
+        if getattr(self, "_close_cleanup_done", False):
+            return
+        if getattr(self, "_redlist_generation", 0) != expected_gen:
+            return
+        if self._current_identity_token() != expected_token:
+            return
+        if getattr(self, "_pending_redlist_token", None) != expected_token:
+            return
+        controller = getattr(self, "_taxon_controller", None)
+        try:
+            snap = controller.committed_snapshot() if controller else None
+        except Exception:
+            snap = None
+        sporely_id = (snap or {}).get("sporely_taxon_id") if snap else None
+        if not sporely_id:
+            return
+        area = determine_redlist_area(self._location_country_code)
+        if area is None:
+            # No reliable assessment area → clear any locally derived
+            # category but preserve _red_list_categories (Artsorakel
+            # source snapshot).
+            if self._red_list_category:
+                self._set_red_list_category_raw(
+                    None, self._red_list_categories, hint=None
+                )
+            self._last_applied_redlist_key = None
+            return
+        lookup = self._ensure_taxon_lookup()
+        if lookup is None:
+            return
+        try:
+            result = lookup.get_redlist_lookup(
+                int(sporely_id), area=area, source_release="2021"
+            )
+        except Exception:
+            return
+        raw_key = (
+            int(sporely_id),
+            area,
+            "2021",
+            getattr(result, "status", None),
+            getattr(getattr(result, "assessment", None), "category_raw", None),
+        )
+        if getattr(self, "_last_applied_redlist_key", None) == raw_key:
+            return
+        self._last_applied_redlist_key = raw_key
+        raw, categories, hint = self._derive_redlist_apply(
+            result, self._red_list_categories
+        )
+        hint_text = self.tr("Multiple assessments") if hint == "Multiple assessments" else hint
+        self._set_red_list_category_raw(raw, categories, hint=hint_text)
 
     def _setup_host_autocomplete(self):
         """Autocomplete for Habitat -> Grows on genus/species/vernacular fields."""
@@ -17567,6 +17793,13 @@ class ObservationDetailsDialog(GeometryMixin, QDialog):
 
     def _load_observation_values(self, obs: dict | None) -> None:
         """Preload observation details from an existing observation or in-memory draft."""
+        # Stage 3B.5: loading a fresh observation into an already-live
+        # editor must invalidate any in-flight deferred red-list resolve
+        # scheduled for the previous observation. The generation nonce
+        # is the reliable guard; the identity token cannot distinguish
+        # two observations whose (sporely_taxon_id, scientific_name,
+        # country_code) coincide.
+        self._redlist_generation = getattr(self, "_redlist_generation", 0) + 1
         obs = obs or {}
         date_str = obs.get("date")
         if date_str:
@@ -17635,7 +17868,11 @@ class ObservationDetailsDialog(GeometryMixin, QDialog):
                     red_categories = parsed_red_categories
             except Exception:
                 red_categories = None
-        self._set_red_list_category(obs.get("red_list_category"), red_categories)
+        # Stage 3B.5: the stored value may include a degree marker; use
+        # the raw setter to preserve it.
+        self._set_red_list_category_raw(
+            obs.get("red_list_category"), red_categories, hint=None
+        )
 
         self.unspontaneous_checkbox.setChecked(bool(obs.get("unspontaneous", 0)))
         self._set_sharing_scope(
