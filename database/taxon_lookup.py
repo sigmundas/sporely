@@ -17,6 +17,55 @@ from utils.vernacular_utils import normalize_vernacular_language
 
 
 @dataclass(frozen=True)
+class RedlistLookupResult:
+    """Explicit outcome of a red-list lookup for
+    ``(sporely_taxon_id, area, source_release)``.
+
+    Exactly one of four statuses:
+      - ``"none"``: no assessment row (or the ``taxon_redlist_min`` table is
+        absent, e.g. legacy DB). ``assessment`` and ``conflicting_assessments``
+        are both empty.
+      - ``"unique"``: exactly one assessment row. ``assessment`` is set.
+      - ``"multiple_same_category"``: several rows for the same Sporely id
+        via distinct Artsnavnebase name-ids that all agree on the category
+        code. ``assessment`` is the deterministic representative (smallest
+        numeric ``assessment_id``). Callers that want the full set can read
+        ``conflicting_assessments``.
+      - ``"conflict"``: several rows disagree on category or rank. No
+        representative is chosen. ``conflicting_assessments`` lists them in
+        deterministic order (smallest numeric ``assessment_id`` first).
+
+    The result never auto-picks a category for conflict groups. That is a
+    curation decision, not a runtime one.
+    """
+    status: str
+    assessment: "RedlistAssessment | None" = None
+    conflicting_assessments: tuple["RedlistAssessment", ...] = ()
+
+
+@dataclass(frozen=True)
+class RedlistAssessment:
+    """A single Norwegian Red List assessment for a resolved Sporely taxon."""
+    taxon_id: int
+    source_system: str
+    source_release: str
+    assessment_area: str
+    assessment_id: str
+    category_raw: str
+    category_code: str
+    category_is_downgraded: bool
+    criteria: str | None
+    expert_group: str | None
+    assessment_url: str | None
+    scientific_name_snapshot: str
+    authorship_snapshot: str | None
+    taxon_rank_snapshot: str | None
+    assessed_name_source: str
+    assessed_name_namespace: str
+    assessed_name_id: str
+
+
+@dataclass(frozen=True)
 class TaxonChoice:
     genus: str
     species: str | None = None
@@ -435,8 +484,20 @@ class TaxonLookupService:
 
         language_code = self.language_code
         if has_language and language_code:
-            filters.append("v.language_code = ?")
-            params.append(language_code)
+            # Fan out the umbrella `no` code to (`no`, `nb`, `nn`) so v2
+            # candidates (which store `nb` / `nn` distinct) still match
+            # Norwegian queries. Legacy DBs continue to work because they
+            # only carry the umbrella `no` code and IN (?, ?, ?) still hits
+            # it. `nb`, `nn` and Sámi codes remain distinct when named.
+            try:
+                from utils.vernacular_utils import resolve_query_language_codes
+                codes = resolve_query_language_codes(language_code)
+            except Exception:
+                codes = (language_code,)
+            if codes:
+                placeholders = ",".join("?" for _ in codes)
+                filters.append(f"v.language_code IN ({placeholders})")
+                params.extend(codes)
 
         query = f"""
             SELECT DISTINCT {", ".join(select_columns)}
@@ -526,6 +587,23 @@ class TaxonLookupService:
         self._suggest_species_cache[cache_key] = tuple(choices)
         return choices
 
+    def suggest_scientific_names(
+        self, prefix: str = "", limit: int = TAXON_COMPLETER_LIMIT,
+    ) -> list[dict]:
+        """Stage 3B.3 scientific-name completer source. Delegates to
+        :meth:`VernacularDB.suggest_scientific_names`. Returns rows with
+        ``sporely_taxon_id``, ``scientific_name``, ``taxon_rank_snapshot``,
+        ``link_kind`` and disambiguation fields (`family`, `authorship`,
+        `canonical_source_system`). Empty list when no v2 DB is available.
+        """
+        prefix = (prefix or "").strip()
+        if not prefix or self.vernacular_db is None:
+            return []
+        try:
+            return self.vernacular_db.suggest_scientific_names(prefix, limit=limit)
+        except Exception:
+            return []
+
     def suggest_common_names(
         self,
         prefix: str = "",
@@ -574,6 +652,144 @@ class TaxonLookupService:
         self._resolve_scientific_cache[key] = choice
         return choice
 
+    def _fetch_redlist_rows(
+        self,
+        taxon_id: int,
+        area: str,
+        source_release: str,
+    ) -> list[RedlistAssessment]:
+        if not self._has_local_table("taxon_redlist_min"):
+            return []
+        rows = self._fetch_local_rows(
+            "SELECT taxon_id, source_system, source_release, assessment_area, "
+            "assessment_id, category_raw, category_code, category_is_downgraded, "
+            "criteria, expert_group, assessment_url, scientific_name_snapshot, "
+            "authorship_snapshot, taxon_rank_snapshot, assessed_name_source, "
+            "assessed_name_namespace, assessed_name_id "
+            "FROM taxon_redlist_min "
+            "WHERE taxon_id = ? AND assessment_area = ? AND source_release = ?",
+            (taxon_id, area, source_release),
+        )
+        assessments = [
+            RedlistAssessment(
+                taxon_id=int(r["taxon_id"]),
+                source_system=str(r["source_system"]),
+                source_release=str(r["source_release"]),
+                assessment_area=str(r["assessment_area"]),
+                assessment_id=str(r["assessment_id"]),
+                category_raw=str(r["category_raw"]),
+                category_code=str(r["category_code"]),
+                category_is_downgraded=bool(r["category_is_downgraded"]),
+                criteria=r["criteria"],
+                expert_group=r["expert_group"],
+                assessment_url=r["assessment_url"],
+                scientific_name_snapshot=str(r["scientific_name_snapshot"]),
+                authorship_snapshot=r["authorship_snapshot"],
+                taxon_rank_snapshot=r["taxon_rank_snapshot"],
+                assessed_name_source=str(r["assessed_name_source"]),
+                assessed_name_namespace=str(r["assessed_name_namespace"]),
+                assessed_name_id=str(r["assessed_name_id"]),
+            )
+            for r in rows
+        ]
+
+        # Deterministic ordering: numeric assessment_id ascending, then
+        # lexicographic fallback so tie behavior is fully specified.
+        def sort_key(a: RedlistAssessment):
+            try:
+                return (0, int(a.assessment_id), a.assessment_id)
+            except ValueError:
+                return (1, 0, a.assessment_id)
+        assessments.sort(key=sort_key)
+        return assessments
+
+    def get_redlist_lookup(
+        self,
+        sporely_taxon_id: int,
+        *,
+        area: str = "Norge",
+        source_release: str = "2021",
+    ) -> RedlistLookupResult:
+        """Return the explicit red-list lookup result for a Sporely taxon.
+
+        Never merges Norway and Svalbard: pass ``area="Svalbard"`` explicitly.
+        Never returns a category automatically for a conflict group — the
+        result explicitly tags conflicts and lists all conflicting rows.
+
+        Statuses (see :class:`RedlistLookupResult`): ``"none"``,
+        ``"unique"``, ``"multiple_same_category"``, ``"conflict"``.
+
+        Stage 3B.5: the same-category collapse keys on the pair
+        ``(category_code, category_is_downgraded)``. Rows that share a
+        base category but differ by the degree marker (e.g. ``VU`` vs
+        ``VU°``) are treated as ``conflict``, not
+        ``multiple_same_category``. Differences in rank, criteria,
+        expert group, or assessed name do NOT turn agreement on the
+        category into a conflict — they only mean the representative's
+        metadata for those fields is not authoritative for the whole
+        group (which the caller already knows for
+        ``multiple_same_category`` and can inspect via
+        ``conflicting_assessments``).
+        """
+        if sporely_taxon_id is None:
+            return RedlistLookupResult(status="none")
+        try:
+            taxon_id_int = int(sporely_taxon_id)
+        except (TypeError, ValueError):
+            return RedlistLookupResult(status="none")
+        assessments = self._fetch_redlist_rows(
+            taxon_id_int, str(area), str(source_release)
+        )
+        if not assessments:
+            return RedlistLookupResult(status="none")
+        if len(assessments) == 1:
+            return RedlistLookupResult(status="unique",
+                                       assessment=assessments[0])
+        distinct_keys = {
+            (a.category_code, bool(a.category_is_downgraded))
+            for a in assessments
+        }
+        if len(distinct_keys) == 1:
+            return RedlistLookupResult(
+                status="multiple_same_category",
+                assessment=assessments[0],
+                conflicting_assessments=tuple(assessments),
+            )
+        return RedlistLookupResult(
+            status="conflict",
+            assessment=None,
+            conflicting_assessments=tuple(assessments),
+        )
+
+    def get_redlist_assessment(
+        self,
+        sporely_taxon_id: int,
+        *,
+        area: str = "Norge",
+        source_release: str = "2021",
+    ) -> RedlistAssessment | None:
+        """Return the Norwegian Red List assessment for a Sporely taxon, or
+        ``None`` when there is nothing safely automatable to return.
+
+        Returns ``None`` when:
+          - the ``taxon_redlist_min`` table is absent (legacy DB);
+          - no assessment row exists for ``(taxon, area, release)``;
+          - the assessment group is in **conflict** (multiple rows disagree
+            on category or rank). Callers that need to render a
+            conflict-aware UI must go through :meth:`get_redlist_lookup`
+            and handle ``status == "conflict"`` explicitly.
+
+        Returns the deterministic representative (smallest numeric
+        ``assessment_id``) on ``"unique"`` and ``"multiple_same_category"``.
+        Never auto-picks a category for conflict groups.
+        """
+        result = self.get_redlist_lookup(
+            sporely_taxon_id, area=area, source_release=source_release,
+        )
+        if result.status in ("unique", "multiple_same_category"):
+            return result.assessment
+        return None
+
     def resolve_common_name(
         self,
         name: str,
@@ -617,8 +833,64 @@ class TaxonLookupService:
             choice = self._row_to_choice(preferred_rows[0], "taxonomy")
             self._best_common_name_cache[key] = choice
             return choice
-        self._best_common_name_cache[key] = None
-        return None
+
+        # Multiple preferred rows — pick deterministically by the language
+        # fan-out order derived from the caller's requested language. This
+        # preserves the Norwegian display for taxa like `Laccaria laccata`
+        # that carry both `nb` and `nn` preferred vernaculars (both should
+        # display; the field takes the first fan-out language, and the
+        # observation editor's chooser lists the rest as alternatives).
+        try:
+            from utils.vernacular_utils import resolve_query_language_codes
+            priority = resolve_query_language_codes(self.language_code)
+        except Exception:
+            priority = ()
+        candidates = preferred_rows or rows
+        priority_index = {code: idx for idx, code in enumerate(priority)}
+
+        def sort_key(row):
+            lang = (row["language_code"] or "").lower()
+            return (
+                priority_index.get(lang, len(priority_index) + 1),
+                lang,
+                str(row["common_name"] or "").casefold(),
+            )
+        candidates_sorted = sorted(candidates, key=sort_key)
+        choice = self._row_to_choice(candidates_sorted[0], "taxonomy")
+        self._best_common_name_cache[key] = choice
+        return choice
 
 
-__all__ = ["TAXON_COMPLETER_LIMIT", "TaxonChoice", "TaxonLookupService"]
+def determine_redlist_area(country_code: str | None) -> str | None:
+    """Return ``"Norge"``, ``"Svalbard"``, or ``None`` from an ISO-3166-1 code.
+
+    Companion to :meth:`TaxonLookupService.get_redlist_lookup`: picks the
+    assessment area to query for a given observation's resolved country
+    code. Uses Nominatim's convention where Svalbard is ``sj`` (Svalbard
+    and Jan Mayen) and mainland Norway is ``no``. Anything else, and any
+    missing/ambiguous code, yields ``None`` — callers must not silently
+    fall back to a mainland assessment.
+
+    Nominatim's ``sj`` ISO-3166-1 code covers both Svalbard and Jan
+    Mayen. Stage 3B.5 maps ``sj`` to the Red List's ``Svalbard``
+    assessment area because no finer persisted geographic field
+    currently exists on observations, and Jan Mayen falls outside the
+    compiled Norwegian Red List areas. A finer geographic classifier is
+    a follow-up, not a Stage 3B.5 concern.
+    """
+    code = (country_code or "").strip().lower()
+    if code == "sj":
+        return "Svalbard"
+    if code == "no":
+        return "Norge"
+    return None
+
+
+__all__ = [
+    "TAXON_COMPLETER_LIMIT",
+    "TaxonChoice",
+    "TaxonLookupService",
+    "RedlistAssessment",
+    "RedlistLookupResult",
+    "determine_redlist_area",
+]

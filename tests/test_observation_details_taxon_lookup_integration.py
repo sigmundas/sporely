@@ -581,7 +581,12 @@ def test_host_common_name_autofill_is_safe_when_multiple_names(
 
     ObservationDetailsDialog._refresh_host_vernacular_for_current_taxon(dialog)
 
-    assert dialog.host_vernacular_input.text() == ""
+    # Stage 3B.2: when multiple preferred vernaculars exist for the same
+    # taxon the resolver returns a deterministic first pick (sorted by
+    # fan-out language priority then case-folded name) so the observation
+    # editor's field is populated instead of silently blank. Alternatives
+    # are surfaced via the completer model — see `list_vernacular_alternatives`.
+    assert dialog.host_vernacular_input.text() == "Lawyer's wig"
     assert dialog._host_vernacular_model.stringList() == [
         "Lawyer's wig",
         "Shaggy mane",

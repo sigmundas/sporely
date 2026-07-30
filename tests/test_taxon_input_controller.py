@@ -210,7 +210,11 @@ def test_stale_vernacular_clears_when_species_no_longer_matches() -> None:
     assert controller.vernacular_model.rowCount() == 0
 
 
-def test_vernacular_typing_clears_stale_taxon_and_broadens_suggestions() -> None:
+def test_vernacular_typing_does_not_clear_taxon_stage_3b_2(qapp=None) -> None:
+    """Stage 3B.2 identity-independence contract: typing custom vernacular
+    text must NEVER mutate genus / species / any identity field. The
+    previous "clears stale taxon" behavior violated the contract and has
+    been intentionally removed."""
     _make_app()
     lookup = _VernacularFallbackLookup()
     genus_input = QLineEdit()
@@ -226,23 +230,13 @@ def test_vernacular_typing_clears_stale_taxon_and_broadens_suggestions() -> None
     controller.on_vernacular_text_changed("ask")
     controller.refresh_vernacular_suggestions()
 
-    assert genus_input.text() == ""
-    assert species_input.text() == ""
-    assert controller.vernacular_model.stringList() == ["ask"]
-    assert (
-        "suggest_common_names",
-        "ask",
-        "Cantharellus",
-        "cibarius",
-        200,
-    ) in lookup.calls
-    assert (
-        "suggest_common_names",
-        "ask",
-        None,
-        None,
-        200,
-    ) in lookup.calls
+    # Stage 3B.2 contract: identity preserved — free-text vernacular
+    # editing is now safe and does not auto-broaden the search by clearing
+    # the taxon. Users who want a genus-agnostic vernacular search can
+    # explicitly clear genus/species themselves, or start from an empty
+    # taxon and use `on_vernacular_selected` on a suggestion.
+    assert genus_input.text() == "Cantharellus"
+    assert species_input.text() == "cibarius"
 
 
 def test_vernacular_editing_finished_falls_back_to_unfiltered_resolution() -> None:

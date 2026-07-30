@@ -90,6 +90,7 @@ from database.schema import (
 )
 from database.models import SettingsDB, ImageDB, MeasurementDB, CalibrationDB
 from database.database_tags import DatabaseTerms
+from utils.artsdatabanken_link import concept_link_from_name_id
 from utils.cloud_sync import _cloud_identification_prediction_taxon
 from utils.image_companion_grouping import normalize_raw_companion_source_preference
 from utils.image_import_candidates import (
@@ -2797,7 +2798,9 @@ class ImageImportDialog(GeometryMixin, QDialog):
             or taxon.get("id")
         )
         if taxon_id:
-            return f"https://artsdatabanken.no/arter/takson/{taxon_id}"
+            link = concept_link_from_name_id(taxon_id)
+            if link:
+                return link
         return "https://artsdatabanken.no"
 
     def _build_adb_link_widget(self, url: str | None) -> QLabel | None:

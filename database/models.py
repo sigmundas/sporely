@@ -31,6 +31,53 @@ from utils.publish_targets import (
 from database.reverse_location_lookup import normalize_country_code
 
 _UNSET = object()
+
+# Stage 3B.3: whitelist of taxon-rank values the observation editor may
+# persist. Anything outside this set (including empty string) is coerced to
+# NULL so the observation store never carries garbage ranks like "section"
+# or "genus of Fungi".
+_ALLOWED_TAXON_RANK_SNAPSHOTS = frozenset(
+    {"genus", "species", "subspecies", "variety", "form", "aggregate"}
+)
+
+
+def _sanitize_taxon_rank_snapshot(value):
+    """Coerce a rank_snapshot input into either ``None`` or a whitelisted
+    string. ``_UNSET`` passes through untouched — callers use it to skip the
+    column entirely."""
+    if value is _UNSET or value is None:
+        return value
+    text = str(value).strip().lower()
+    if text in _ALLOWED_TAXON_RANK_SNAPSHOTS:
+        return text
+    return None
+
+
+def _sanitize_scientific_name_snapshot(value):
+    """Store the observer's picked string verbatim (only whitespace-strip),
+    reject empty. ``_UNSET`` passes through untouched."""
+    if value is _UNSET or value is None:
+        return value
+    text = str(value).strip()
+    return text or None
+
+
+def _sanitize_sporely_taxon_id(value):
+    """Coerce a ``sporely_taxon_id`` input into ``None`` or a positive int.
+
+    ``_UNSET`` passes through untouched — callers use it to skip the column
+    entirely. Empty strings and non-numeric values become ``None`` so bad
+    payloads never poison the identity column.
+    """
+    if value is _UNSET:
+        return value
+    if value is None or value == "":
+        return None
+    try:
+        v = int(value)
+    except (TypeError, ValueError):
+        return None
+    return v if v > 0 else None
 _CLOUD_APP_SETTING_KEYS = {
     "cloud_last_pull_at",
     "cloud_last_sync_at",
@@ -912,6 +959,7 @@ def _lookup_external_taxon_id_from_db(genus: str, species: str, source_system: s
                     return int(row[0])
                 except (TypeError, ValueError):
                     return None
+
         return None
     finally:
         conn.close()
@@ -929,6 +977,66 @@ def _resolve_external_taxon_id(genus: str | None, species: str | None, source_sy
     if not key:
         return None
     return _lookup_external_taxon_id_from_db(*key, source_system=source_system)
+
+
+def _lookup_external_taxon_text_id_from_db(
+    genus: str, species: str, source_system: str,
+) -> str | None:
+    """Stage 3B.2 companion of :func:`_lookup_external_taxon_id_from_db` for
+    non-integer external identifiers (e.g. COL usage IDs like ``9Z2GC``).
+
+    Never coerces the value to ``int``. Callers that need text external
+    identifiers must consume the string directly.
+    """
+    try:
+        from utils.vernacular_utils import resolve_vernacular_db_path
+    except Exception:
+        return None
+    db_path = resolve_vernacular_db_path()
+    if not db_path or not db_path.exists():
+        return None
+    scientific_name = f"{genus} {species}".strip()
+    try:
+        conn = sqlite3.connect(db_path)
+    except Exception:
+        return None
+    try:
+        cur = conn.execute("SELECT name FROM sqlite_master WHERE type='table'")
+        tables = {str(row[0] or "") for row in cur.fetchall()}
+        if "taxon_external_id_text_min" not in tables:
+            return None
+        row = conn.execute(
+            """
+            SELECT e.external_id
+            FROM taxon_min t
+            JOIN taxon_external_id_text_min e
+              ON e.taxon_id = t.taxon_id
+             AND e.source_system = ?
+            LEFT JOIN scientific_name_min s
+              ON s.taxon_id = t.taxon_id
+            WHERE (t.genus = ? COLLATE NOCASE
+                   AND t.specific_epithet = ? COLLATE NOCASE)
+               OR (t.canonical_scientific_name = ? COLLATE NOCASE)
+               OR (s.scientific_name = ? COLLATE NOCASE)
+            ORDER BY e.is_preferred DESC, s.is_preferred_name DESC, e.external_id
+            LIMIT 1
+            """,
+            (source_system, genus, species, scientific_name, scientific_name),
+        ).fetchone()
+        if row and row[0] is not None:
+            return str(row[0])
+        return None
+    finally:
+        conn.close()
+
+
+def _resolve_external_taxon_text_id(
+    genus: str | None, species: str | None, source_system: str,
+) -> str | None:
+    key = _normalize_taxon_key(genus, species)
+    if not key:
+        return None
+    return _lookup_external_taxon_text_id_from_db(*key, source_system=source_system)
 
 
 def sanitize_folder_name(name: str) -> str:
@@ -996,6 +1104,14 @@ class ObservationDB:
     @staticmethod
     def resolve_external_taxon_id(genus: str | None, species: str | None, source_system: str) -> int | None:
         return _resolve_external_taxon_id(genus, species, source_system)
+
+    @staticmethod
+    def resolve_external_taxon_text_id(
+        genus: str | None, species: str | None, source_system: str,
+    ) -> str | None:
+        """Stage 3B.2 companion resolver for text-form external identifiers
+        such as COL usage IDs. Returns ``None`` when no text row matches."""
+        return _resolve_external_taxon_text_id(genus, species, source_system)
 
     @staticmethod
     def _infer_image_folder(cursor, observation_id: int) -> Optional[str]:
@@ -1082,10 +1198,18 @@ class ObservationDB:
                           ai_selected_probability: float | None = None,
                           ai_selected_at: str | None = None,
                           country_code: str | None = None,
-                          region_id: str | None = None) -> int:
+                          region_id: str | None = None,
+                          scientific_name_snapshot: str | None = None,
+                          taxon_rank_snapshot: str | None = None,
+                          sporely_taxon_id: int | None = None) -> int:
         """Create a new observation and return its ID"""
         conn = get_connection()
         cursor = conn.cursor()
+        # Stage 3B.3: whitelist the rank_snapshot at write time.
+        taxon_rank_snapshot = _sanitize_taxon_rank_snapshot(taxon_rank_snapshot)
+        scientific_name_snapshot = _sanitize_scientific_name_snapshot(scientific_name_snapshot)
+        # Stage 3B.5: sanitize the taxonomy v2 identity column at write time.
+        sporely_taxon_id = _sanitize_sporely_taxon_id(sporely_taxon_id)
 
         # Build species_guess from genus/species if not provided
         if not species_guess and (genus or species):
@@ -1139,8 +1263,9 @@ class ObservationDB:
                                      open_comment, private_comment, interesting_comment, ai_state_json,
                                      ai_selected_service, ai_selected_taxon_id, ai_selected_scientific_name,
                                      ai_selected_probability, ai_selected_at,
-                                     country_code, region_id)
-            VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+                                     country_code, region_id,
+                                     scientific_name_snapshot, taxon_rank_snapshot, sporely_taxon_id)
+            VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
         ''', (date, genus, species, common_name, location, habitat, artsdata_id,
               artportalen_id, resolved_publish_target, species_guess, notes, 1 if uncertain else 0, 1 if unspontaneous else 0,
               1 if resolved_is_draft else 0, resolved_sharing_scope, 1 if resolved_location_public else 0,
@@ -1156,7 +1281,8 @@ class ObservationDB:
               open_comment, private_comment, 1 if interesting_comment else 0, ai_state_json,
               ai_selected_service, ai_selected_taxon_id, ai_selected_scientific_name,
               ai_selected_probability, ai_selected_at,
-              resolved_country_code, resolved_region_id))
+              resolved_country_code, resolved_region_id,
+              scientific_name_snapshot, taxon_rank_snapshot, sporely_taxon_id))
 
         obs_id = cursor.lastrowid
         conn.commit()
@@ -1198,7 +1324,10 @@ class ObservationDB:
                            ai_selected_probability: float | object = _UNSET,
                            ai_selected_at: str | object = _UNSET,
                            country_code: str | None | object = _UNSET,
-                           region_id: str | None | object = _UNSET) -> Optional[str]:
+                           region_id: str | None | object = _UNSET,
+                           scientific_name_snapshot: str | None | object = _UNSET,
+                           taxon_rank_snapshot: str | None | object = _UNSET,
+                           sporely_taxon_id: int | None | object = _UNSET) -> Optional[str]:
         """Update an observation. Returns new folder path if genus/species changed."""
         conn = get_connection()
         conn.row_factory = sqlite3.Row
@@ -1394,6 +1523,28 @@ class ObservationDB:
                     values.append(text or None)
                 else:
                     values.append(str(region_id).strip() or None)
+
+            # Stage 3B.3 snapshots follow the same _UNSET / allow_nulls
+            # convention as the AI-selected fields above.
+            if scientific_name_snapshot is not _UNSET and (
+                allow_nulls or scientific_name_snapshot is not None
+            ):
+                updates.append('scientific_name_snapshot = ?')
+                values.append(
+                    _sanitize_scientific_name_snapshot(scientific_name_snapshot)
+                )
+            if taxon_rank_snapshot is not _UNSET and (
+                allow_nulls or taxon_rank_snapshot is not None
+            ):
+                updates.append('taxon_rank_snapshot = ?')
+                values.append(_sanitize_taxon_rank_snapshot(taxon_rank_snapshot))
+
+            # Stage 3B.5: persist the taxonomy-v2 identity alongside snapshots.
+            if sporely_taxon_id is not _UNSET and (
+                allow_nulls or sporely_taxon_id is not None
+            ):
+                updates.append('sporely_taxon_id = ?')
+                values.append(_sanitize_sporely_taxon_id(sporely_taxon_id))
             if new_folder_path:
                 updates.append('folder_path = ?')
                 values.append(new_folder_path)

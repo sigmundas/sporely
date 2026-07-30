@@ -85,7 +85,12 @@ from database.models import (
     update_observation_sync_state,
 )
 from database.vernacular_db import VernacularDB
-from database.taxon_lookup import TAXON_COMPLETER_LIMIT, TaxonChoice, TaxonLookupService
+from database.taxon_lookup import (
+    TAXON_COMPLETER_LIMIT,
+    TaxonChoice,
+    TaxonLookupService,
+    determine_redlist_area,
+)
 from .taxon_input_controller import TaxonInputController
 from database.reverse_location_lookup import (
     LocationLookupResult,
@@ -112,6 +117,7 @@ import utils.ai_image_prep as ai_image_prep
 from utils.image_metadata_merge import merge_image_lab_metadata
 from utils.ml_export import export_coco_format, get_export_summary
 from utils.local_image_ingest import RawRenderingUnavailableError, prepare_local_ingest_image
+from utils.artsdatabanken_link import concept_link_from_name_id
 from utils.artsobservasjoner_taxon import (
     ArtsobservasjonerTaxonIdError,
     log_artsobservasjoner_taxon_diagnostic,
@@ -829,6 +835,61 @@ def _spore_count_from_value(value: object) -> str | None:
         return count_match.group(1)
 
     return None
+
+
+class _NullSuspend:
+    """Context manager used when no taxonomy controller is available yet
+    (e.g. dialogs that haven't wired autocomplete). Mirrors the controller's
+    `_suspended` shape."""
+
+    def __enter__(self):
+        return self
+
+    def __exit__(self, *_):
+        return False
+
+
+def _format_observation_display_label(
+    common_name: str | None,
+    genus: str | None,
+    species: str | None,
+    *,
+    species_guess_fallback: str | None = None,
+    scientific_name_snapshot: str | None = None,
+) -> str:
+    """Render the "common name (and scientific name)" cell text.
+
+    Stage 3B.2 + 3B.3: the vernacular is a snapshot, not a replacement;
+    the scientific identification remains visible whenever it exists.
+    Prefer `scientific_name_snapshot` (the observer's actual selection —
+    variety, form, aggregate, etc.) over the bare `genus + species`
+    binomial. No permanent third line — Accepted/Linked hints live in the
+    editor.
+    """
+    from utils.vernacular_utils import display_vernacular_name
+
+    common_clean = (common_name or "").strip()
+    genus_clean = (genus or "").strip()
+    species_clean = (species or "").strip()
+    guess_clean = (species_guess_fallback or "").strip()
+    snapshot_clean = (scientific_name_snapshot or "").strip()
+
+    if snapshot_clean:
+        scientific = snapshot_clean
+    elif genus_clean and species_clean:
+        scientific = f"{genus_clean} {species_clean}"
+    else:
+        scientific = ""
+
+    if common_clean and scientific:
+        return f"{display_vernacular_name(common_clean)}\n{scientific}"
+    if common_clean:
+        return display_vernacular_name(common_clean)
+    if scientific:
+        return scientific
+    if guess_clean:
+        return guess_clean
+    return "-"
 
 
 def _spore_count_for_observation_row(observation: dict | None) -> str | None:
@@ -2848,13 +2909,25 @@ class ObservationsTab(QWidget):
             genus_raw = genus_raw or ""
             species_raw = species_raw or ""
             species_guess = species_guess or ""
-            common_name = (obs.get("common_name") or "").strip()
-            if not common_name:
-                species_name = f"{genus_raw} {species_raw}".strip() or species_guess
-                if species_name:
-                    common_name = f"- ({species_name})"
-                else:
-                    common_name = "-"
+            common_name_value = (obs.get("common_name") or "").strip()
+            common_name = _format_observation_display_label(
+                common_name_value,
+                genus_raw,
+                species_raw,
+                species_guess_fallback=species_guess,
+                scientific_name_snapshot=obs.get("scientific_name_snapshot"),
+            )
+            if not common_name_value:
+                fallback_scientific = (
+                    (obs.get("scientific_name_snapshot") or "").strip()
+                    or f"{genus_raw} {species_raw}".strip()
+                    or species_guess
+                )
+                common_name = (
+                    f"- ({fallback_scientific})"
+                    if fallback_scientific
+                    else "-"
+                )
 
             species_display = species_raw or species_guess or "sp."
             cloud_id = _normalize_external_publication_id(obs.get("id"))
@@ -5285,13 +5358,24 @@ class ObservationsTab(QWidget):
             species_display = species_raw or species_guess or "sp."
 
             common_name = self._lookup_common_name(obs, common_name_map)
-            common_name_display = common_name
-            if not common_name_display:
-                species_name = self._build_species_name(obs)
-                if species_name:
-                    common_name_display = f"- ({species_name})"
-                else:
-                    common_name_display = "-"
+            common_name_display = _format_observation_display_label(
+                common_name,
+                genus_raw,
+                species_raw,
+                species_guess_fallback=species_guess,
+                scientific_name_snapshot=obs.get("scientific_name_snapshot"),
+            )
+            if not common_name:
+                fallback_scientific = (
+                    (obs.get("scientific_name_snapshot") or "").strip()
+                    or f"{genus_raw} {species_raw}".strip()
+                    or species_guess
+                )
+                common_name_display = (
+                    f"- ({fallback_scientific})"
+                    if fallback_scientific
+                    else "-"
+                )
 
             spore_short = _spore_count_from_value(obs.get("spore_statistics"))
             if spore_short is None:
@@ -11045,6 +11129,9 @@ class ObservationsTab(QWidget):
                     gps_longitude=data.get('gps_longitude'),
                     country_code=data.get('country_code'),
                     region_id=data.get('region_id'),
+                    scientific_name_snapshot=data.get('scientific_name_snapshot'),
+                    taxon_rank_snapshot=data.get('taxon_rank_snapshot'),
+                    sporely_taxon_id=data.get('sporely_taxon_id'),
                     allow_nulls=True
                 )
                 if dialog.is_unidentified():
@@ -13517,6 +13604,15 @@ class ObservationDetailsDialog(GeometryMixin, QDialog):
         self._inaturalist_taxon_id: int | None = None
         self._red_list_category = ""
         self._red_list_categories: dict | None = None
+        # Stage 3B.5: deferred red-list resolution guards.
+        # ``_redlist_generation`` is the primary invalidation nonce — every
+        # schedule increments it, and any observation load / identity
+        # clear / dialog close also bumps it so in-flight callbacks whose
+        # captured generation no longer matches are dropped. The identity
+        # token remains as a defensive second check.
+        self._pending_redlist_token: tuple | None = None
+        self._last_applied_redlist_key: tuple | None = None
+        self._redlist_generation: int = 0
         self._last_applied_location_lookup_name = ""
         self._force_apply_next_location_lookup_name = False
         self._sharing_scope_value = self._default_sharing_scope()
@@ -14057,6 +14153,23 @@ class ObservationDetailsDialog(GeometryMixin, QDialog):
         self.species_input.textChanged.connect(self._update_taxonomy_tab_indicators)
         species_row.addWidget(self.species_input, 1)
         identified_layout.addLayout(species_row)
+
+        scientific_row = QHBoxLayout()
+        scientific_label = QLabel(self.tr("Scientific:"))
+        scientific_label.setFixedWidth(taxonomy_label_width)
+        scientific_row.addWidget(scientific_label)
+        self.scientific_name_input = QLineEdit()
+        self.scientific_name_input.setSizePolicy(QSizePolicy.Expanding, QSizePolicy.Fixed)
+        self.scientific_name_input.setPlaceholderText(
+            self.tr("Optional: e.g., Hygrocybe conica var. pseudoconica")
+        )
+        scientific_row.addWidget(self.scientific_name_input, 1)
+        identified_layout.addLayout(scientific_row)
+
+        self.scientific_hint_label = QLabel("")
+        self.scientific_hint_label.setStyleSheet("color: #6b7280; font-size: 11px;")
+        self.scientific_hint_label.setVisible(False)
+        identified_layout.addWidget(self.scientific_hint_label)
 
         red_list_row = QHBoxLayout()
         red_list_label = QLabel(self.tr("Red list:"))
@@ -14992,20 +15105,60 @@ class ObservationDetailsDialog(GeometryMixin, QDialog):
             return clean
         return f"{clean} - {label}" if include_code else label
 
-    def _set_red_list_category(self, code: str | None, categories: dict | None = None) -> None:
-        self._red_list_category = str(code or "").strip().upper()
+    def _set_red_list_category_raw(
+        self,
+        raw_code: str | None,
+        categories: dict | None = None,
+        *,
+        hint: str | None = None,
+    ) -> None:
+        """Store the display value verbatim (preserving degree marks) and
+        refresh the badge + label.
+
+        Stage 3B.5: ``raw_code`` may include a trailing ``"°"`` (degree
+        marker). The badge text renders it as-is. Colour and label lookups
+        use the base code (``raw_code`` with any trailing ``"°"`` removed),
+        because ``RED_LIST_BADGE_COLORS`` and ``_red_list_label`` are keyed
+        on the plain IUCN code.
+        """
+        text = str(raw_code or "").strip()
+        # Keep the degree marker verbatim; uppercase only the leading
+        # alphabetic part so "vu°" still renders as "VU°".
+        if text.endswith("°"):
+            base_alpha = text[:-1].upper()
+            display = f"{base_alpha}°"
+            base_code = base_alpha
+        else:
+            display = text.upper()
+            base_code = display
+        self._red_list_category = display
         self._red_list_categories = dict(categories) if isinstance(categories, dict) else None
         badge = getattr(self, "red_list_badge_widget", None)
         if badge is not None:
-            if self._red_list_category:
-                hex_color = RED_LIST_BADGE_COLORS.get(self._red_list_category, "#63666A")
-                badge.set_color_and_text(hex_color, self._red_list_category)
+            if display:
+                hex_color = RED_LIST_BADGE_COLORS.get(base_code, "#63666A")
+                badge.set_color_and_text(hex_color, display)
                 badge.setVisible(True)
             else:
                 badge.setVisible(False)
         label = getattr(self, "red_list_status_label", None)
         if label is not None:
-            label.setText(self._red_list_label(self._red_list_category, include_code=False) or self.tr("Not set"))
+            if hint:
+                label.setText(hint)
+            else:
+                label.setText(
+                    self._red_list_label(base_code, include_code=False) or self.tr("Not set")
+                )
+
+    def _set_red_list_category(self, code: str | None, categories: dict | None = None) -> None:
+        """Backwards-compatible wrapper over :meth:`_set_red_list_category_raw`.
+
+        Existing call sites use this signature. The raw variant accepts a
+        hint string; callers that need to display a non-standard status
+        message (e.g. "Multiple assessments") should call the raw form
+        directly.
+        """
+        self._set_red_list_category_raw(code, categories, hint=None)
 
     def _set_inaturalist_taxon_id(self, value) -> None:
         try:
@@ -15106,7 +15259,7 @@ class ObservationDetailsDialog(GeometryMixin, QDialog):
             or ""
         ).strip()
         if taxon_id and taxon_id.isdigit():
-            return f"https://artsdatabanken.no/arter/takson/{taxon_id}"
+            return concept_link_from_name_id(taxon_id)
         return None
 
     def _ai_prediction_links(self, pred: dict, taxon: dict, source: str = "arts") -> list[tuple[str, str]]:
@@ -15417,6 +15570,12 @@ class ObservationDetailsDialog(GeometryMixin, QDialog):
                     self._read_red_list_code(taxon) or self._read_red_list_code(selected_pred),
                     self._red_list_categories_from_prediction(selected_pred or {}, taxon),
                 )
+                # Stage 3B.5: after applying the Artsorakel source snapshot,
+                # schedule a single deferred local-lookup resolve so a
+                # matching taxonomy pick refines the category into its
+                # final display form (respects degree marker, area, and
+                # conflict semantics).
+                self._schedule_final_redlist_resolution()
             self._suppress_taxon_autofill = False
             if self.vernacular_db:
                 self._update_vernacular_suggestions_for_taxon()
@@ -15630,6 +15789,11 @@ class ObservationDetailsDialog(GeometryMixin, QDialog):
         if getattr(self, "_close_cleanup_done", False):
             return
         self._close_cleanup_done = True
+        # Stage 3B.5: invalidate any deferred red-list resolve queued for
+        # this dialog. The `_close_cleanup_done` check in the callback is
+        # already sufficient; bumping the generation makes the invariant
+        # symmetric with the load / clear paths.
+        self._redlist_generation = getattr(self, "_redlist_generation", 0) + 1
         self._cleanup_location_lookup()
         for preview_path in list(self._dialog_temp_preview_paths):
             try:
@@ -16388,6 +16552,11 @@ class ObservationDetailsDialog(GeometryMixin, QDialog):
             self.location_input.setText(resolved_name)
             self._last_applied_location_lookup_name = resolved_name
         self._apply_publish_target_from_lookup_country()
+        # Stage 3B.5: recompute the red-list category for the new area
+        # (e.g. NO → SJ or vice versa). If the country goes to something
+        # else (or unknown), the deferred resolver clears the derived
+        # category and preserves the Artsorakel snapshot JSON.
+        self._schedule_final_redlist_resolution()
         self._location_lookup_worker = None
 
     def _location_lookup_result_matches_current_coords(self, result: LocationLookupResult) -> bool:
@@ -16516,6 +16685,37 @@ class ObservationDetailsDialog(GeometryMixin, QDialog):
         common_name = self.vernacular_input.text().strip() or None
         species_guess = f"{genus} {species}".strip() if genus and species else None
         unidentified = self.is_unidentified()
+
+        # Stage 3B.3: scientific-name snapshot + rank come STRICTLY from
+        # the taxonomy controller's committed_snapshot. Any manual edit to
+        # genus / species / scientific-name field since the last picker
+        # selection has already invalidated the snapshot inside the
+        # controller. If invalidated, all identity snapshot fields save NULL.
+        snapshot = None
+        try:
+            controller = getattr(self, "_taxon_controller", None)
+            snapshot = controller.committed_snapshot() if controller else None
+        except Exception:
+            snapshot = None
+
+        scientific_name_snapshot = (
+            (snapshot or {}).get("scientific_name") if snapshot else None
+        )
+        taxon_rank_snapshot = (
+            (snapshot or {}).get("taxon_rank_snapshot") if snapshot else None
+        )
+
+        # Stage 3B.5: persist the exact taxonomy-v2 concept alongside
+        # the scientific-name and rank snapshots.
+        raw_sporely_id = (
+            (snapshot or {}).get("sporely_taxon_id") if snapshot else None
+        )
+        try:
+            sporely_taxon_id = (
+                int(raw_sporely_id) if raw_sporely_id is not None else None
+            )
+        except (TypeError, ValueError):
+            sporely_taxon_id = None
         sharing_scope = self._selected_sharing_scope()
         location_precision = self._selected_location_precision()
 
@@ -16622,6 +16822,9 @@ class ObservationDetailsDialog(GeometryMixin, QDialog):
             'gps_longitude': lon,
             'country_code': country_code,
             'region_id': region_id,
+            'scientific_name_snapshot': scientific_name_snapshot,
+            'taxon_rank_snapshot': taxon_rank_snapshot,
+            'sporely_taxon_id': sporely_taxon_id,
         }
 
     def on_taxonomy_tab_changed(self, index):
@@ -17932,6 +18135,9 @@ class ObservationDetailsDialog(GeometryMixin, QDialog):
             self.species_input,
             self.vernacular_input,
             self,
+            scientific_name_input=getattr(self, "scientific_name_input", None),
+            on_snapshot_invalidated=self._on_scientific_snapshot_invalidated,
+            on_snapshot_committed=self._on_scientific_snapshot_committed,
         )
         self._genus_model = self._taxon_controller.genus_model
         self._species_model = self._taxon_controller.species_model
@@ -17949,6 +18155,221 @@ class ObservationDetailsDialog(GeometryMixin, QDialog):
         species_popup = self._species_completer.popup() if self._species_completer else None
         if species_popup:
             self._style_dropdown_popup_readability(species_popup, self.species_input)
+
+        # Stage 3B.3 red-list invariant: manual taxonomic-identity edits
+        # (genus, species, or scientific-name) must clear the red-list
+        # snapshot even when NO taxonomy suggestion had been committed
+        # (Artsorakel-populated status attaches without a committed
+        # scientific snapshot). Vernacular text is deliberately excluded.
+        for widget in (self.genus_input, self.species_input,
+                       getattr(self, "scientific_name_input", None)):
+            if widget is not None:
+                widget.textChanged.connect(self._on_taxon_identity_field_edited)
+
+    def _on_taxon_identity_field_edited(self, _text: str) -> None:
+        controller = getattr(self, "_taxon_controller", None)
+        if controller is not None and controller._is_suspended():
+            return
+        # Skip if red-list is already empty — avoids badge repaint churn.
+        if not getattr(self, "_red_list_category", ""):
+            if not getattr(self, "_red_list_categories", None):
+                return
+        self._clear_red_list_for_identity_change()
+
+    def _on_scientific_snapshot_committed(self, snapshot: dict) -> None:
+        # Stage 3B.3 red-list invariant: an explicit new taxonomy
+        # selection clears the previous red-list snapshot BEFORE any
+        # subsequent Artsorakel resolve populates a new one. Never carry
+        # a status from the old identity into the new.
+        self._clear_red_list_for_identity_change()
+        # Stage 3B.5: an explicit taxonomy pick (without an Artsorakel
+        # prior) should still resolve the local red-list lookup.
+        self._schedule_final_redlist_resolution()
+        label = getattr(self, "scientific_hint_label", None)
+        if label is None:
+            return
+        link_kind = (snapshot or {}).get("link_kind") or ""
+        canonical = (snapshot or {}).get("canonical_scientific_name") or ""
+        if link_kind == "synonym_of_accepted" and canonical:
+            label.setText(self.tr("Accepted concept: {name}").format(name=canonical))
+            label.setVisible(True)
+        elif link_kind == "linked" and canonical:
+            label.setText(self.tr("Linked concept: {name}").format(name=canonical))
+            label.setVisible(True)
+        else:
+            label.setText("")
+            label.setVisible(False)
+
+    def _on_scientific_snapshot_invalidated(self, reason: str | None = None) -> None:
+        # Stage 3B.3 red-list invariant: any manual genus/species/
+        # scientific-name edit that invalidates identity also clears the
+        # red-list snapshot. Category, categories map, and label all go
+        # to their empty state.
+        self._clear_red_list_for_identity_change()
+        label = getattr(self, "scientific_hint_label", None)
+        if label is not None:
+            label.setText("")
+            label.setVisible(False)
+
+    def _clear_red_list_for_identity_change(self) -> None:
+        """Reset every red-list snapshot field to its empty state.
+
+        Called on any event that would leave the observation's stored
+        red-list category inconsistent with the taxonomic identity
+        currently entered:
+
+        - taxonomy suggestion committed (new identity, old status stale);
+        - snapshot invalidation via manual genus/species/scientific edit;
+        - scientific-name field wiped while a snapshot was pending;
+        - Artsorakel-populated status when the source identity changed.
+
+        Common-name (vernacular) edits MUST NOT reach this method.
+        """
+        setter = getattr(self, "_set_red_list_category", None)
+        if setter is not None:
+            setter(None, None)
+        # Stage 3B.5: also drop the idempotence guard so a return to the
+        # same identity later still triggers a fresh apply. Bump the
+        # generation nonce so any in-flight deferred resolve tied to the
+        # previous identity is invalidated even if the four identity
+        # signals happen to coincide with the new one.
+        self._last_applied_redlist_key = None
+        self._redlist_generation = getattr(self, "_redlist_generation", 0) + 1
+
+    # ------------------------------------------------------------------
+    # Stage 3B.5 — deferred post-Artsorakel red-list resolution.
+    # ------------------------------------------------------------------
+
+    def _current_identity_token(self) -> tuple:
+        """Snapshot of identity signals used to reject stale deferred callbacks."""
+        controller = getattr(self, "_taxon_controller", None)
+        snap = None
+        try:
+            snap = controller.committed_snapshot() if controller else None
+        except Exception:
+            snap = None
+        sporely_id = (snap or {}).get("sporely_taxon_id") if snap else None
+        try:
+            sporely_int = int(sporely_id) if sporely_id else 0
+        except (TypeError, ValueError):
+            sporely_int = 0
+        return (
+            id(self),
+            sporely_int,
+            (snap or {}).get("scientific_name") if snap else None,
+            self._location_country_code,
+        )
+
+    def _schedule_final_redlist_resolution(self) -> None:
+        """Enqueue a single deferred red-list resolve on the next tick.
+
+        The 0-ms QTimer defers execution until the current call stack
+        finishes (e.g. an Artsorakel apply that just wrote a source
+        snapshot). Only the most recent scheduling wins — an earlier
+        deferred callback whose captured ``_redlist_generation`` no
+        longer matches, or whose identity token no longer matches, is
+        dropped silently.
+        """
+        self._redlist_generation += 1
+        gen = self._redlist_generation
+        token = self._current_identity_token()
+        self._pending_redlist_token = token
+        QTimer.singleShot(
+            0,
+            lambda g=gen, t=token: self._resolve_and_apply_redlist(g, t),
+        )
+
+    @staticmethod
+    def _derive_redlist_apply(result, current_categories):
+        """Return the pure ``(raw_code, categories, hint)`` triple for a
+        :class:`RedlistLookupResult` and the currently held categories map.
+
+        Pure decision logic — no widget access. Extracted so tests can
+        exercise every branch without spinning up Qt.
+
+        Rules:
+          - ``unique`` / ``multiple_same_category``: expose the raw
+            category (with degree mark) and preserve ``current_categories``.
+            No hint.
+          - ``conflict``: clear derived category; preserve
+            ``current_categories`` (Artsorakel snapshot); set a hint.
+          - ``none``: clear derived category; preserve
+            ``current_categories``; no hint.
+        """
+        status = getattr(result, "status", None)
+        if status in ("unique", "multiple_same_category"):
+            assessment = getattr(result, "assessment", None)
+            raw = str(getattr(assessment, "category_raw", "") or "").strip()
+            return (raw or None, current_categories, None)
+        if status == "conflict":
+            return (None, current_categories, "Multiple assessments")
+        # "none" or anything unexpected
+        return (None, current_categories, None)
+
+    def _resolve_and_apply_redlist(
+        self,
+        expected_gen: int,
+        expected_token: tuple,
+    ) -> None:
+        # Reject stale execution. The generation nonce is the primary
+        # guard — every reload / clear / close bumps it, so a deferred
+        # callback from a previous observation (or a previous identity
+        # in the same dialog) is dropped even if the coincident identity
+        # signals happen to match. The identity-token check is a
+        # defensive second guard for the case where the counter alone
+        # would still allow a stale write (e.g. a signal handler that
+        # forgot to bump the generation).
+        if getattr(self, "_close_cleanup_done", False):
+            return
+        if getattr(self, "_redlist_generation", 0) != expected_gen:
+            return
+        if self._current_identity_token() != expected_token:
+            return
+        if getattr(self, "_pending_redlist_token", None) != expected_token:
+            return
+        controller = getattr(self, "_taxon_controller", None)
+        try:
+            snap = controller.committed_snapshot() if controller else None
+        except Exception:
+            snap = None
+        sporely_id = (snap or {}).get("sporely_taxon_id") if snap else None
+        if not sporely_id:
+            return
+        area = determine_redlist_area(self._location_country_code)
+        if area is None:
+            # No reliable assessment area → clear any locally derived
+            # category but preserve _red_list_categories (Artsorakel
+            # source snapshot).
+            if self._red_list_category:
+                self._set_red_list_category_raw(
+                    None, self._red_list_categories, hint=None
+                )
+            self._last_applied_redlist_key = None
+            return
+        lookup = self._ensure_taxon_lookup()
+        if lookup is None:
+            return
+        try:
+            result = lookup.get_redlist_lookup(
+                int(sporely_id), area=area, source_release="2021"
+            )
+        except Exception:
+            return
+        raw_key = (
+            int(sporely_id),
+            area,
+            "2021",
+            getattr(result, "status", None),
+            getattr(getattr(result, "assessment", None), "category_raw", None),
+        )
+        if getattr(self, "_last_applied_redlist_key", None) == raw_key:
+            return
+        self._last_applied_redlist_key = raw_key
+        raw, categories, hint = self._derive_redlist_apply(
+            result, self._red_list_categories
+        )
+        hint_text = self.tr("Multiple assessments") if hint == "Multiple assessments" else hint
+        self._set_red_list_category_raw(raw, categories, hint=hint_text)
 
     def _setup_host_autocomplete(self):
         """Autocomplete for Habitat -> Grows on genus/species/vernacular fields."""
@@ -19210,6 +19631,13 @@ class ObservationDetailsDialog(GeometryMixin, QDialog):
 
     def _load_observation_values(self, obs: dict | None) -> None:
         """Preload observation details from an existing observation or in-memory draft."""
+        # Stage 3B.5: loading a fresh observation into an already-live
+        # editor must invalidate any in-flight deferred red-list resolve
+        # scheduled for the previous observation. The generation nonce
+        # is the reliable guard; the identity token cannot distinguish
+        # two observations whose (sporely_taxon_id, scientific_name,
+        # country_code) coincide.
+        self._redlist_generation = getattr(self, "_redlist_generation", 0) + 1
         obs = obs or {}
         date_str = obs.get("date")
         if date_str:
@@ -19240,12 +19668,48 @@ class ObservationDetailsDialog(GeometryMixin, QDialog):
                 if genus and species:
                     break
         self.taxonomy_tabs.setCurrentIndex(0)
-        self.genus_input.setText(genus)
-        self.species_input.setText(species)
-        self.uncertain_checkbox.setChecked(bool(obs.get("uncertain", 0)))
-        self.unidentified_checkbox.setChecked(unidentified)
-        if hasattr(self, "vernacular_input"):
-            self.vernacular_input.setText(obs.get("common_name") or "")
+        # Stage 3B.3: suppress controller invalidation while persisted
+        # identity values are copied into the editor widgets.
+        _controller = getattr(self, "_taxon_controller", None)
+        _load_ctx = (
+            _controller._suspended()
+            if _controller is not None
+            else _NullSuspend()
+        )
+        with _load_ctx:
+            self.genus_input.setText(genus)
+            self.species_input.setText(species)
+            self.uncertain_checkbox.setChecked(bool(obs.get("uncertain", 0)))
+            self.unidentified_checkbox.setChecked(unidentified)
+            if hasattr(self, "vernacular_input"):
+                self.vernacular_input.setText(obs.get("common_name") or "")
+            if hasattr(self, "scientific_name_input"):
+                self.scientific_name_input.setText(
+                    (obs.get("scientific_name_snapshot") or "").strip()
+                )
+
+        # Restore the committed snapshot after all text widgets have settled.
+        # Missing identity fields mean the observation remains unresolved.
+        snapshot_name = (
+            obs.get("scientific_name_snapshot") or ""
+        ).strip()
+        rank_snapshot = (
+            obs.get("taxon_rank_snapshot") or ""
+        ).strip()
+        sporely_id = obs.get("sporely_taxon_id")
+
+        if _controller is not None:
+            if snapshot_name and rank_snapshot and sporely_id is not None:
+                _controller.load_committed_snapshot({
+                    "genus": genus,
+                    "species": species,
+                    "scientific_name": snapshot_name,
+                    "taxon_rank_snapshot": rank_snapshot,
+                    "sporely_taxon_id": int(sporely_id),
+                    # Canonical fields are not re-fetched on load.
+                })
+            else:
+                _controller.load_committed_snapshot(None)
         self._set_inaturalist_taxon_id(obs.get("inaturalist_taxon_id"))
         red_categories = None
         raw_red_categories = obs.get("red_list_categories_json")
@@ -19258,25 +19722,36 @@ class ObservationDetailsDialog(GeometryMixin, QDialog):
                 red_categories = None
         red_code = obs.get("red_list_category")
 
-        # Fallback: cloud-synced observations whose `observations.red_list_category`
-        # column was never populated by sporely-web (the web write path is
-        # conditional) still carry the red-list code inside each AI prediction.
-        # If the observation has a persisted Artsorakel selection but no
-        # column-level red-list, derive it from the selected prediction so the
-        # left-side Taxonomy badge matches what the AI table already shows.
+        # Cloud-synced observations may carry the selected Artsorakel
+        # Red List value only inside the selected prediction.
         if not red_code:
             for selected_pred in (self._ai_selected_by_index or {}).values():
                 if not isinstance(selected_pred, dict):
                     continue
-                taxon = selected_pred.get("taxon") if isinstance(selected_pred.get("taxon"), dict) else {}
-                fallback_code = self._read_red_list_code(taxon) or self._read_red_list_code(selected_pred)
+                taxon = (
+                    selected_pred.get("taxon")
+                    if isinstance(selected_pred.get("taxon"), dict)
+                    else {}
+                )
+                fallback_code = (
+                    self._read_red_list_code(taxon)
+                    or self._read_red_list_code(selected_pred)
+                )
                 if fallback_code:
                     red_code = fallback_code
                     if red_categories is None:
-                        red_categories = self._read_red_list_categories(taxon) or self._read_red_list_categories(selected_pred)
+                        red_categories = (
+                            self._read_red_list_categories(taxon)
+                            or self._read_red_list_categories(selected_pred)
+                        )
                     break
 
-        self._set_red_list_category(red_code, red_categories)
+        # Preserve raw degree-marked values such as VU°.
+        self._set_red_list_category_raw(
+            red_code,
+            red_categories,
+            hint=None,
+        )
 
         self.unspontaneous_checkbox.setChecked(bool(obs.get("unspontaneous", 0)))
         self._set_sharing_scope(

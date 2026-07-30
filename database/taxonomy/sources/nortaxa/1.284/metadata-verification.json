@@ -1,0 +1,324 @@
+{
+  "archive_acquisition_authorization_status": "not_authorized",
+  "archive_acquisition_note": "Metadata verification is final and archive acquisition remains unauthorized. A separately generated approval artifact is required; see nortaxa-acquisition.proposal.json for its prerequisites.",
+  "authorization": {
+    "acquisition_approval_created": false,
+    "archive_get_authorized": false,
+    "metadata_only": true
+  },
+  "bound_evidence": {
+    "attempt_1_sha256": "9665bb1ed16958830304e753dfdb73829bc9383b45d67ee9bc4dc332c66e067a",
+    "attempt_2_sha256": "92ab2958c151eab417da4d29084682293002950bdc5a72b1c0caaf8a48c66ad9",
+    "attempt_3_sha256": "3c4e4c50815953af2feb1bf0f4f7346bfc0bd217c09b09efb65989b2f03fbcc0",
+    "attempt_4_sha256": "36b1aa2504d4b6eec998d734916e56ce9ab759e45020b2917ff3bb7c8d715938",
+    "policy_resolution_sha256": "771d02ca3c656e43eeb9c448838b25faab443947c20a93dc8451dc5f656918fc",
+    "request_sha256": "38091edd85d40172539d3086732de2569a00102ff5564c66c55efb59360e7392",
+    "source_selection_proposal_sha256": "e025d53350422d1590836ddc6383f5ed93665ba82ec48db1b3708f2e337a67e3"
+  },
+  "canonical_sha256": "46dc942b3d2724dfc50848427063ba64eb6919031fe8f73d4585c150b1c9b8fa",
+  "composer": "nortaxa_metadata.compose_supplemental_metadata_verification",
+  "metadata_verification_schema_version": 3,
+  "mismatches": [],
+  "network_activity": {
+    "dns": false,
+    "download": false,
+    "extraction": false,
+    "get": false,
+    "head": false,
+    "note": "This composition is an offline review; no network operation was performed during composition.",
+    "range": false
+  },
+  "not_exposed_fields": [
+    "taxon_count",
+    "edition",
+    "content_length",
+    "etag",
+    "accept_ranges"
+  ],
+  "observed": {
+    "archive_head": {
+      "allowlisted_headers": {
+        "Accept-Ranges": {
+          "count": 0,
+          "present": false,
+          "raw_values": null
+        },
+        "Content-Disposition": {
+          "count": 1,
+          "present": true,
+          "raw_values": [
+            "filename=\"dwca-artsnavnebase-v1.284.zip\""
+          ]
+        },
+        "Content-Length": {
+          "count": 0,
+          "present": false,
+          "raw_values": null
+        },
+        "Content-Type": {
+          "count": 1,
+          "present": true,
+          "raw_values": [
+            "application/zip;charset=UTF-8"
+          ]
+        },
+        "ETag": {
+          "count": 0,
+          "present": false,
+          "raw_values": null
+        },
+        "Last-Modified": {
+          "count": 1,
+          "present": true,
+          "raw_values": [
+            "Fri, 17 Jul 2026 12:08:23 GMT"
+          ]
+        }
+      },
+      "body_bytes": 0,
+      "body_sha256": null,
+      "content_type_primary": "application/zip",
+      "content_type_raw": "application/zip;charset=UTF-8",
+      "final_url": "https://ipt.artsdatabanken.no/archive.do?r=artsnavnebase&v=1.284",
+      "redirect_chain": [],
+      "requested_url": "https://ipt.artsdatabanken.no/archive.do?r=artsnavnebase&v=1.284",
+      "status_code": 200
+    },
+    "eml": {
+      "alternate_identifiers": [
+        "a6c6cead-b5ce-4a4e-8cf5-1542ba708dec",
+        "https://ipt.artsdatabanken.no/resource?r=artsnavnebase"
+      ],
+      "edition": null,
+      "package_id": "a6c6cead-b5ce-4a4e-8cf5-1542ba708dec/v1.284",
+      "prolog": {
+        "accepted_comments": 0,
+        "doctype_root": null,
+        "expected_root": "eml:eml",
+        "has_doctype": false,
+        "has_xml_declaration": false,
+        "prolog_bytes_scanned": 0,
+        "root_element": "eml:eml",
+        "utf8_bom": false,
+        "xml_declaration_encoding": null,
+        "xml_declaration_version": null
+      },
+      "publication_dates": [
+        "2026-07-17"
+      ],
+      "publishers": [
+        "Artsdatabanken",
+        "Artsdatabanken",
+        "Artdatabanken"
+      ],
+      "rights": [
+        "This work is licensed under a Creative Commons Attribution (CC-BY) 4.0 License."
+      ],
+      "title": "Nortaxa (Artsnavnebasen)",
+      "uuid_present": true
+    },
+    "resource_page": {
+      "counts": {
+        "VernacularName": 58773
+      },
+      "dataset_uuid_present": true,
+      "issued_date_present": false,
+      "license_present": true,
+      "observed_dataset_uuid": "a6c6cead-b5ce-4a4e-8cf5-1542ba708dec",
+      "observed_license": "CC-BY 4.0",
+      "publisher": "and",
+      "resource_key_present": true,
+      "text_sha256": "7868ab1c0fe7d1cbcbb859c3d50aae34bf22c9225952a3dad94144016d306713",
+      "title_present": true,
+      "version_present": true,
+      "weekly_present": true
+    }
+  },
+  "per_operation_provenance": {
+    "archive_head": {
+      "attempt_number": 4,
+      "attempt_record_sha256": "36b1aa2504d4b6eec998d734916e56ce9ab759e45020b2917ff3bb7c8d715938",
+      "body_bytes": 0,
+      "body_sha256": null,
+      "content_type": "application/zip",
+      "final_url": "https://ipt.artsdatabanken.no/archive.do?r=artsnavnebase&v=1.284",
+      "method": "HEAD",
+      "operation_status": "parse_succeeded",
+      "redirect_chain": [],
+      "status_code": 200,
+      "supersedes": [
+        {
+          "superseded_attempt_number": 3,
+          "superseded_attempt_status": "parse_failed",
+          "superseded_error": {
+            "message": "archive HEAD lacks a positive Content-Length",
+            "phase": "parse",
+            "type": "AcquisitionError"
+          }
+        }
+      ],
+      "tool_git_commit": "ab767c1e41399a697f930c23776a2520421b1fac"
+    },
+    "eml": {
+      "attempt_number": 3,
+      "attempt_record_sha256": "3c4e4c50815953af2feb1bf0f4f7346bfc0bd217c09b09efb65989b2f03fbcc0",
+      "body_bytes": 5755,
+      "body_sha256": "98dab203fdd38e13b8ec81a0d4d37129a56b90dc99ed69824d18851a53a0e6e9",
+      "content_type": "text/xml",
+      "final_url": "https://ipt.artsdatabanken.no/eml.do?r=artsnavnebase&v=1.284",
+      "method": "GET",
+      "operation_status": "parse_succeeded",
+      "redirect_chain": [],
+      "status_code": 200
+    },
+    "resource_page": {
+      "attempt_number": 3,
+      "attempt_record_sha256": "3c4e4c50815953af2feb1bf0f4f7346bfc0bd217c09b09efb65989b2f03fbcc0",
+      "body_bytes": 198118,
+      "body_sha256": "dc67f8470e1603dda06041e8e8e9601561eb7bb7520a0024b6eb7dd7f18d92c5",
+      "content_type": "text/html",
+      "final_url": "https://ipt.artsdatabanken.no/resource?r=artsnavnebase&v=1.284",
+      "method": "GET",
+      "operation_status": "parse_succeeded",
+      "redirect_chain": [],
+      "status_code": 200
+    }
+  },
+  "policy_identifier": "nortaxa-archive-head-content-length-absent-v1",
+  "profile_code": "nortaxa_dwca",
+  "references": {
+    "attempt_1_path": "metadata-verification-attempt-1.json",
+    "attempt_2_path": "metadata-verification-attempt-2.json",
+    "attempt_3_path": "metadata-verification-attempt-3.json",
+    "attempt_4_path": "metadata-verification-attempt-4.json",
+    "policy_resolution_path": "policy-resolution.json"
+  },
+  "release": {
+    "issued_date": "2026-07-17",
+    "version": "1.284"
+  },
+  "source_code": "nortaxa",
+  "streaming_ceiling_compensating_controls": {
+    "abort_before_next_chunk_would_exceed_ceiling": true,
+    "absent_length_requires_clean_eof_within_ceiling": true,
+    "ceiling_bytes": 67108864,
+    "ceiling_source": "source_selection_proposal.archive_policy.proposed_maximum_bytes",
+    "declared_length_when_present_must_equal_completed_bytes_and_reach_eof": true,
+    "never_promote_partial_file_as_final_archive": true,
+    "partial_file_quarantine_or_delete_mandatory": true,
+    "policy_helper": "nortaxa_metadata.evaluate_archive_get"
+  },
+  "tool": {
+    "name": "nortaxa_metadata.compose_supplemental_metadata_verification",
+    "version": 1
+  },
+  "unavailable_fields": [
+    "declared_archive_size_bytes"
+  ],
+  "verdict": "passed",
+  "verified_at": "2026-07-26T00:00:00Z",
+  "verified_metadata": {
+    "accept_ranges": {
+      "source": "attempt_4",
+      "status": "not_exposed",
+      "value": null
+    },
+    "archive_content_type": {
+      "source": "attempt_4",
+      "status": "verified",
+      "value": "application/zip;charset=UTF-8"
+    },
+    "archive_status_code": {
+      "source": "attempt_4.archive_head",
+      "status": "verified",
+      "value": 200
+    },
+    "content_disposition": {
+      "source": "attempt_4",
+      "status": "verified",
+      "value": "filename=\"dwca-artsnavnebase-v1.284.zip\""
+    },
+    "content_length": {
+      "source": "attempt_4",
+      "status": "not_exposed",
+      "value": null
+    },
+    "dataset_uuid": {
+      "source": "attempt_3.resource_page_and_eml",
+      "status": "verified",
+      "value": "a6c6cead-b5ce-4a4e-8cf5-1542ba708dec"
+    },
+    "declared_archive_size_bytes": {
+      "note": "Content-Length not exposed by HEAD; declared archive size is unavailable, not zero.",
+      "source": "attempt_4.archive_head",
+      "status": "unavailable",
+      "value": null
+    },
+    "edition": {
+      "source": "attempt_3.eml",
+      "status": "not_exposed",
+      "value": null
+    },
+    "etag": {
+      "source": "attempt_4",
+      "status": "not_exposed",
+      "value": null
+    },
+    "issued_date": {
+      "source": "attempt_3.eml",
+      "status": "verified",
+      "value": "2026-07-17"
+    },
+    "last_modified": {
+      "source": "attempt_4",
+      "status": "verified",
+      "value": "Fri, 17 Jul 2026 12:08:23 GMT"
+    },
+    "license": {
+      "source": "attempt_3.resource_page_and_eml",
+      "status": "verified",
+      "value": "CC-BY 4.0"
+    },
+    "package_id": {
+      "source": "attempt_3.eml",
+      "status": "verified",
+      "value": "a6c6cead-b5ce-4a4e-8cf5-1542ba708dec/v1.284"
+    },
+    "publisher": {
+      "source": "attempt_3.eml",
+      "status": "verified",
+      "value": "Artsdatabanken"
+    },
+    "resource_key": {
+      "source": "attempt_3.resource_page",
+      "status": "verified",
+      "value": "artsnavnebase"
+    },
+    "taxon_count": {
+      "source": "attempt_3.resource_page",
+      "status": "not_exposed",
+      "value": null
+    },
+    "title": {
+      "source": "attempt_3.eml",
+      "status": "verified",
+      "value": "Nortaxa (Artsnavnebasen)"
+    },
+    "update_frequency": {
+      "source": "attempt_3.resource_page",
+      "status": "verified",
+      "value": "weekly"
+    },
+    "vernacular_name_count": {
+      "source": "attempt_3.resource_page",
+      "status": "verified",
+      "value": 58773
+    },
+    "version": {
+      "source": "attempt_3.resource_page",
+      "status": "verified",
+      "value": "1.284"
+    }
+  },
+  "verified_offline": true
+}

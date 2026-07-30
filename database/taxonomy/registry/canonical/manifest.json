@@ -1,0 +1,46 @@
+{
+  "concatenated_sha256": "21b5d39d257799fdd4ea758d857fec4d29758b83dd7ea91bf3ecd24e3d1d3077",
+  "manifest_schema_version": 1,
+  "registry_schema_version": 1,
+  "shard_bytes_target": 26214400,
+  "shards": [
+    {
+      "bytes": 26214187,
+      "line_count": 119149,
+      "name": "part-0001.jsonl",
+      "sha256": "652127209b6638c492693f8c320ed4b6977816e0859196e66fd83bd854805ee3"
+    },
+    {
+      "bytes": 26214229,
+      "line_count": 116149,
+      "name": "part-0002.jsonl",
+      "sha256": "5a06be78b06de3e5c5b5750b748c8a5af7f21cd0e6bc9dc8a1a3caa145c50498"
+    },
+    {
+      "bytes": 26214250,
+      "line_count": 113975,
+      "name": "part-0003.jsonl",
+      "sha256": "0ebb60d31c0f99339d98aaaf379d84588d20ceb89776acf7790aa0d64ab0350c"
+    },
+    {
+      "bytes": 26214250,
+      "line_count": 113975,
+      "name": "part-0004.jsonl",
+      "sha256": "d68496ec3996bebdaa4dca9677f6d5137f393010cb057fcd63c9f11b1cc44ae1"
+    },
+    {
+      "bytes": 26214250,
+      "line_count": 113975,
+      "name": "part-0005.jsonl",
+      "sha256": "a950696aecfbef80f29924de2e9a646af25abd14aaa9aa4e69c737096f1c997e"
+    },
+    {
+      "bytes": 23271880,
+      "line_count": 105337,
+      "name": "part-0006.jsonl",
+      "sha256": "c7050da4619eeb4169035e78f97909f42fb21a7d1e27ef5162a6e3e78a6e2de7"
+    }
+  ],
+  "total_bytes": 154343046,
+  "total_line_count": 682560
+}

@@ -1,0 +1,35 @@
+{
+  "correction_policy_schema_version": 1,
+  "corrections": [
+    {
+      "approval_status": "approved",
+      "archive_sha256": "397d701c8eb269bf78d6ac7b03149915b0d9e2a2c18694be2c91445b807814f9",
+      "canonical_field": "namePublishedInPage",
+      "correction_id": "col-xr-2026-07-17-nameusage-5BK77-page-double-bom-v1",
+      "dataset_key": 315834,
+      "evidence_path": "nameusage-bom-inspection.json",
+      "expected_bom_byte_offsets_in_record_body": [
+        224,
+        227
+      ],
+      "expected_bom_count": 2,
+      "expected_columns": 73,
+      "field_index_zero_based": 31,
+      "line_number": 1853650,
+      "member_name": "NameUsage.tsv",
+      "member_sha256": "5b7d7ec383ad69b7dc9c959dadd866a2769ea2433cbcbe1ae30f4b7d9359bdd0",
+      "normalization_reason": "duplicated embedded BOM in a non-identity page citation",
+      "normalized_field_sha256": "b3fcc6029626887bb6c28a5fb074f1f42416a9541b0d67c2ddca1b82c776bcee",
+      "normalized_field_value": "58, figs 6–7",
+      "operation": "remove exactly two consecutive U+FEFF characters from the semantic field value only",
+      "raw_field_sha256": "6ba3b50d10472e4b0f3c66573664b8176726ddefea0d836873659d93396c79c1",
+      "raw_row_bytes": 511,
+      "raw_row_sha256": "156d19f3c53506a4f145799ff6ab1a5664c92b62e19e59bf20bd9573a907f9b5",
+      "release_label": "2026-07-17 XR",
+      "review_status": "maintainer_authorized",
+      "row_scientific_name": "Virpazaria stojaspali",
+      "row_taxon_id": "5BK77",
+      "source_profile": "checklistbank-col-xr-2026-07-17"
+    }
+  ]
+}

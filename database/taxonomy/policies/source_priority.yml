@@ -1,0 +1,55 @@
+{
+  "format": "sporely-taxonomy-source-priority-v1",
+  "sources": [
+    {"code": "sporely", "role": "internal_identity"},
+    {"code": "col_xr", "role": "global_backbone"},
+    {"code": "nortaxa", "role": "bridge_and_local_authority"},
+    {"code": "artsorakel", "role": "identification_service"},
+    {"code": "artportalen", "role": "bridge_and_swedish_authority"},
+    {"code": "inaturalist", "role": "enrichment"},
+    {"code": "gbif", "role": "legacy_bridge"},
+    {"code": "mycobank", "role": "future_bridge"},
+    {"code": "index_fungorum", "role": "future_bridge"},
+    {"code": "legacy_compiled", "role": "migration_only"},
+    {"code": "compiled_sqlite", "role": "complete_artifact"}
+  ],
+  "identifier_namespaces": [
+    {"source": "sporely", "code": "sporely_taxon_id", "storage": "positive_integer", "object_kind": "concept", "automatic_identity": "authoritative_internal"},
+    {"source": "col_xr", "code": "col_usage_id", "storage": "text", "object_kind": "usage", "automatic_identity": "same_pinned_source_lineage"},
+    {"source": "nortaxa", "code": "nortaxa_dwc_id", "storage": "text", "object_kind": "source_row", "automatic_identity": "no"},
+    {"source": "nortaxa", "code": "nortaxa_taxon_id", "storage": "text", "object_kind": "source_defined_taxon", "automatic_identity": "no"},
+    {"source": "nortaxa", "code": "nortaxa_accepted_name_usage_id", "storage": "text", "object_kind": "accepted_usage_reference", "automatic_identity": "no"},
+    {"source": "nortaxa", "code": "nortaxa_parent_name_usage_id", "storage": "text", "object_kind": "parent_usage_reference", "automatic_identity": "no"},
+    {"source": "artsorakel", "code": "nbic_scientific_name_id", "storage": "text", "object_kind": "scientific_name", "automatic_identity": "no"},
+    {"source": "artportalen", "code": "artportalen_taxon_id", "storage": "text", "object_kind": "source_taxon_unknown_precision", "automatic_identity": "no"},
+    {"source": "inaturalist", "code": "inaturalist_taxon_id", "storage": "text", "object_kind": "source_taxon", "automatic_identity": "no"},
+    {"source": "gbif", "code": "gbif_taxon_key", "storage": "text", "object_kind": "source_usage_or_concept", "automatic_identity": "no"},
+    {"source": "mycobank", "code": "mycobank_name_id", "storage": "text", "object_kind": "scientific_name", "automatic_identity": "no"},
+    {"source": "index_fungorum", "code": "index_fungorum_name_id", "storage": "text", "object_kind": "scientific_name", "automatic_identity": "no"}
+  ],
+  "scientific_presentation": {
+    "canonical_source": "col_xr",
+    "pinned_release_required": true,
+    "aliases": ["nortaxa", "artportalen"],
+    "enrichment_only": ["inaturalist"],
+    "manual_exceptions": "explicit_reviewed_and_audited",
+    "country_selects_authority": false
+  },
+  "vernacular_priority": {
+    "nb": ["nortaxa", "inaturalist"],
+    "nn": ["nortaxa", "inaturalist"],
+    "no": ["nortaxa", "legacy_compiled", "inaturalist"],
+    "se": ["nortaxa", "inaturalist"],
+    "sma": ["nortaxa", "inaturalist"],
+    "smj": ["nortaxa", "inaturalist"],
+    "sv": ["artportalen", "nortaxa", "inaturalist"],
+    "default": ["nortaxa", "artportalen", "inaturalist"]
+  },
+  "name_deduplication": {
+    "key": "unicode_normalized_casefolded_spelling_within_taxon_language",
+    "emit_one_search_result": true,
+    "retain_all_provenance_in_sqlite": true,
+    "preserve_original_display_spelling": true,
+    "ascii_transliteration": "pending_policy_do_not_apply"
+  }
+}

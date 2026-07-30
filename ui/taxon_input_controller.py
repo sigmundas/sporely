@@ -17,8 +17,64 @@ def format_species_choice_display(choice: TaxonChoice) -> str:
     return str(choice.species or "").strip()
 
 
+_VERNACULAR_DISPLAY_ANNOTATED_LANGUAGES = frozenset({
+    # Norwegian and Sámi variants that Stage 3B.2 keeps distinct — annotate
+    # them in the completer popup so a user with multiple alternatives can
+    # tell `hvit sprøsopp (nb)` from `kvit sprøsopp (nn)`. Every other
+    # language renders bare, matching pre-existing test expectations.
+    "nb", "nn", "se", "sma", "smj",
+})
+
+
+def _format_scientific_choice_display(suggestion: dict) -> str:
+    """Stage 3B.3 disambiguation ladder — deterministic label for the
+    scientific-name completer popup. Uses whatever fields the suggestion
+    dict carries; never fabricates disambiguation from a rank heuristic.
+    """
+    name = str(suggestion.get("scientific_name") or "").strip()
+    if not name:
+        return ""
+    parts: list[str] = [name]
+    # 1. Authorship (rare in this DB but supported).
+    authorship = str(suggestion.get("authorship") or "").strip()
+    if authorship:
+        parts.append(authorship)
+    link_kind = suggestion.get("link_kind")
+    canonical = str(suggestion.get("canonical_scientific_name") or "").strip()
+    # 2. Alias / linked relation: show the canonical concept.
+    if link_kind == "synonym_of_accepted" and canonical and canonical != name:
+        parts.append(f"→ {canonical}")
+    elif link_kind == "linked" and canonical and canonical != name:
+        parts.append(f"↦ {canonical}")
+    # 3. Source system when neither authorship nor alias disambiguates.
+    source = str(suggestion.get("canonical_source_system") or "").strip()
+    if len(parts) == 1 and source and source != "col_xr":
+        # COL is the backbone default; annotate only non-default sources.
+        parts.append(f"({source})")
+    # 4. Family lineage, when still ambiguous.
+    family = str(suggestion.get("family") or "").strip()
+    if len(parts) == 1 and family:
+        parts.append(f"family {family}")
+    return "  ·  ".join(parts)
+
+
 def format_common_name_choice_display(choice: TaxonChoice) -> str:
-    return str(choice.common_name or "").strip()
+    """Render a vernacular suggestion for the completer popup.
+
+    Only ``nb`` / ``nn`` / Sámi rows are annotated with a language-code
+    suffix (so a user can distinguish alternatives for the same Sporely
+    taxon). English and other single-language contexts render bare. The
+    completer's completion role is ``Qt.UserRole`` which stores the raw
+    name, so selection always writes the un-annotated string into the
+    observation snapshot.
+    """
+    name = str(choice.common_name or "").strip()
+    if not name:
+        return ""
+    lang = str(getattr(choice, "language_code", "") or "").strip().lower()
+    if lang in _VERNACULAR_DISPLAY_ANNOTATED_LANGUAGES:
+        return f"{name} ({lang})"
+    return name
 
 
 def _should_select_all_on_focus(event) -> bool:
@@ -87,6 +143,9 @@ class TaxonInputController(QObject):
         vernacular_item_customizer: Callable[[QStandardItem, TaxonChoice], None] | None = None,
         on_taxon_changed: Callable[[], None] | None = None,
         auto_show_popup_on_focus: bool = True,
+        scientific_name_input: QLineEdit | None = None,
+        on_snapshot_invalidated: Callable[[], None] | None = None,
+        on_snapshot_committed: Callable[[dict], None] | None = None,
     ) -> None:
         super().__init__(parent)
         self.lookup = lookup
@@ -101,6 +160,21 @@ class TaxonInputController(QObject):
         self._species_item_customizer = species_item_customizer
         self._vernacular_item_customizer = vernacular_item_customizer
         self._on_taxon_changed = on_taxon_changed
+        self._on_snapshot_invalidated = on_snapshot_invalidated
+        self._on_snapshot_committed = on_snapshot_committed
+        self.scientific_name_input = scientific_name_input
+        # Stage 3B.3 selection-controlled snapshot.
+        # None → no snapshot has been committed. Otherwise a tuple of
+        # (genus, species, scientific_name, taxon_rank_snapshot,
+        #  sporely_taxon_id, link_kind, canonical_scientific_name,
+        #  canonical_rank).
+        # Any manual divergence in `genus_input`, `species_input` or
+        # `scientific_name_input` from THIS baseline invalidates the
+        # snapshot: sporely_taxon_id / taxon_rank_snapshot / snapshot text
+        # are all cleared. Retyping the identical string does NOT restore
+        # identity — only another explicit suggestion selection can.
+        self._committed_snapshot: dict | None = None
+        # Suspend depth handles reentry AND load-time programmatic writes.
         self._suspend_depth = 0
         self._last_genus_signature: tuple[str, ...] = ()
         self._last_species_signature: tuple[tuple[str, str, str], ...] = ()
@@ -160,6 +234,38 @@ class TaxonInputController(QObject):
             self.vernacular_input.textChanged.connect(self.on_vernacular_text_changed)
             self.vernacular_input.editingFinished.connect(self.on_vernacular_editing_finished)
             self.vernacular_input.installEventFilter(self)
+
+        # Stage 3B.3 scientific-name completer (optional widget). Its
+        # dedicated model is a text-first popup that always shows the raw
+        # scientific-name string (no language annotation), because the
+        # observer picks the identification here, not a common name.
+        self._scientific_model: _SuggestionModel | None = None
+        self._scientific_completer: QCompleter | None = None
+        if self.scientific_name_input is not None:
+            self._scientific_model = _SuggestionModel(
+                self, string_list_from_display=True,
+            )
+            self._scientific_completer = QCompleter(self._scientific_model, self)
+            self._scientific_completer.setCaseSensitivity(Qt.CaseInsensitive)
+            self._scientific_completer.setCompletionMode(QCompleter.PopupCompletion)
+            self._scientific_completer.setCompletionRole(Qt.UserRole)
+            self.scientific_name_input.setCompleter(self._scientific_completer)
+            self._scientific_completer.activated[QModelIndex].connect(
+                self.on_scientific_name_selected,
+            )
+            self._scientific_timer = QTimer(self)
+            self._scientific_timer.setSingleShot(True)
+            self._scientific_timer.timeout.connect(self.refresh_scientific_suggestions)
+            self.scientific_name_input.textChanged.connect(
+                self.on_scientific_name_text_changed,
+            )
+            self.scientific_name_input.installEventFilter(self)
+        # Track invalidation on manual genus/species divergence (Stage 3B.3
+        # rule 1). textChanged fires on every keystroke; when a suspend is
+        # active (load-time programmatic writes) we treat the write as not
+        # user-originated and skip invalidation.
+        self.genus_input.textChanged.connect(self._on_structured_text_changed)
+        self.species_input.textChanged.connect(self._on_structured_text_changed)
 
     @property
     def genus_model(self) -> QStringListModel:
@@ -574,18 +680,14 @@ class TaxonInputController(QObject):
     def on_vernacular_text_changed(self, text: str) -> None:
         if self._is_suspended() or self._vernacular_model is None:
             return
-        clean_text = self._clean_species_text(text)
-        if not clean_text:
-            self._schedule_refresh(self._vernacular_timer)
-            return
-        lookup = self.lookup
-        if lookup and lookup.vernacular_db:
-            genus = self._current_genus()
-            species = self._current_species()
-            if genus and species:
-                matches = lookup.suggest_common_names(prefix=clean_text, genus=genus, species=species, limit=self.max_suggestions)
-                if not matches:
-                    self._clear_scientific_taxon_for_vernacular_search()
+        # Stage 3B.2 contract: typing/editing custom vernacular text must
+        # NEVER mutate taxonomy (`sporely_taxon_id`, genus, species,
+        # species_guess, AI selection, external IDs). The previous behavior
+        # silently cleared genus+species when the typed text had no matches
+        # under the current taxon — this violated the contract. Only an
+        # explicit completer selection (`on_vernacular_selected`) or Tab-
+        # confirmed unique-match resolution (`on_vernacular_editing_finished`)
+        # may change identity.
         self._schedule_refresh(self._vernacular_timer)
 
     def on_genus_editing_finished(self) -> None:
@@ -694,8 +796,180 @@ class TaxonInputController(QObject):
             self._sync_vernacular_after_taxon_change()
         self._notify_taxon_changed()
 
+    # ------------------------------------------------------------------
+    # Stage 3B.3 scientific-name snapshot API
+    # ------------------------------------------------------------------
+
+    def committed_snapshot(self) -> dict | None:
+        """The last selection-committed snapshot, or None when the
+        identification is unresolved. The dialog's save path reads this.
+        """
+        return dict(self._committed_snapshot) if self._committed_snapshot else None
+
+    def load_committed_snapshot(self, snapshot: dict | None) -> None:
+        """Programmatically restore a snapshot when loading an observation.
+
+        Callers MUST also set genus/species/scientific inputs to matching
+        values while inside :meth:`_suspended` so `_on_structured_text_changed`
+        does not fire invalidation. This method itself does not touch the
+        widgets — the dialog owns their state.
+        """
+        if not snapshot:
+            self._committed_snapshot = None
+            return
+        # Coerce into a plain dict with the exact keys the controller uses.
+        canon = str(snapshot.get("canonical_scientific_name") or "").strip()
+        self._committed_snapshot = {
+            "genus": str(snapshot.get("genus") or "").strip(),
+            "species": str(snapshot.get("species") or "").strip(),
+            "scientific_name": str(snapshot.get("scientific_name") or "").strip(),
+            "taxon_rank_snapshot": snapshot.get("taxon_rank_snapshot"),
+            "sporely_taxon_id": snapshot.get("sporely_taxon_id"),
+            "link_kind": snapshot.get("link_kind"),
+            "canonical_scientific_name": canon,
+            "canonical_rank": str(snapshot.get("canonical_rank") or "").strip() or None,
+        }
+
+    def _invalidate_snapshot(self, *, reason: str) -> None:
+        """Clear the committed snapshot and blank the scientific-name input
+        + rank + Sporely id. Preserves genus, species, common_name, and
+        every ai_selected_* field.
+
+        Fired by manual divergence of any of the three editable scientific
+        surfaces (`genus_input`, `species_input`, `scientific_name_input`).
+        Called from `_on_structured_text_changed` and
+        `on_scientific_name_text_changed` — both guarded by
+        :meth:`_is_suspended` so load-time programmatic writes never
+        invalidate.
+        """
+        if self._committed_snapshot is None:
+            return
+        self._committed_snapshot = None
+        # Clear the scientific-name field only when the invalidation came
+        # from a genus/species divergence — the scientific-name field
+        # itself already reflects what the user is typing. Leaving it as
+        # the user's typed text respects rule 4 (custom text remains, ID
+        # doesn't).
+        if reason == "structured_diverged" and self.scientific_name_input is not None:
+            with self._suspended():
+                self._set_text(self.scientific_name_input, "")
+        if self._on_snapshot_invalidated is not None:
+            try:
+                self._on_snapshot_invalidated()
+            except Exception:
+                pass
+
+    def _on_structured_text_changed(self, _text: str) -> None:
+        if self._is_suspended():
+            return
+        if self._committed_snapshot is None:
+            return
+        current_genus = self._current_genus()
+        current_species = self._current_species()
+        if current_genus == self._committed_snapshot["genus"] \
+                and current_species == self._committed_snapshot["species"]:
+            return
+        # A genus or species divergence invalidates identity — rule 1.
+        self._invalidate_snapshot(reason="structured_diverged")
+
+    def on_scientific_name_text_changed(self, text: str) -> None:
+        if self._is_suspended():
+            return
+        if self.scientific_name_input is None:
+            return
+        cleaned = " ".join(str(text or "").strip().split())
+        if self._committed_snapshot is not None \
+                and cleaned == self._committed_snapshot["scientific_name"]:
+            return
+        # Every character divergence from the committed snapshot triggers
+        # invalidation (rule 4 — no text-based rebinding). We do NOT try
+        # to match against arbitrary DB rows here; only an explicit
+        # completer selection may bind identity.
+        if self._committed_snapshot is not None:
+            self._invalidate_snapshot(reason="scientific_diverged")
+        # Refresh the completer suggestions from the fresh prefix.
+        if hasattr(self, "_scientific_timer"):
+            self._schedule_refresh(self._scientific_timer)
+
+    def refresh_scientific_suggestions(self) -> list[dict]:
+        """Populate the scientific-name completer model with suggestions
+        for the current input text. Returns the raw dicts."""
+        if self._scientific_model is None or self.scientific_name_input is None:
+            return []
+        lookup = self.lookup
+        prefix = self._current_scientific_text()
+        if not prefix or not lookup:
+            self._scientific_model.clear()
+            return []
+        suggestions = lookup.suggest_scientific_names(
+            prefix=prefix, limit=self.max_suggestions,
+        )
+        # Rebuild the model.
+        self._scientific_model.clear()
+        for suggestion in suggestions:
+            display = _format_scientific_choice_display(suggestion)
+            item = QStandardItem(display)
+            item.setData(str(suggestion["scientific_name"]), Qt.UserRole)
+            item.setData(suggestion, ROLE_TAXON_CHOICE)
+            self._scientific_model.appendRow(item)
+        if self.auto_show_popup_on_focus and self._scientific_model.rowCount() \
+                and self.scientific_name_input.hasFocus() \
+                and self._scientific_completer is not None:
+            self._scientific_completer.setCompletionPrefix("")
+            self._scientific_completer.complete()
+        return suggestions
+
+    def _current_scientific_text(self) -> str:
+        if self.scientific_name_input is None:
+            return ""
+        return " ".join(str(self.scientific_name_input.text() or "").strip().split())
+
+    def on_scientific_name_selected(self, index: QModelIndex) -> None:
+        if self._is_suspended() or not index.isValid():
+            return
+        if self.scientific_name_input is None:
+            return
+        suggestion = index.data(ROLE_TAXON_CHOICE)
+        if not isinstance(suggestion, dict):
+            return
+        scientific_name = str(suggestion.get("scientific_name") or "").strip()
+        rank_snapshot = suggestion.get("taxon_rank_snapshot")
+        sporely_id = suggestion.get("sporely_taxon_id")
+        if not scientific_name or not rank_snapshot or sporely_id is None:
+            return
+        # Parse (genus, species) from the picked string using the same
+        # bounded parser the suggestion source used — safe because the
+        # picker only emits rows the parser accepted.
+        from database.vernacular_db import parse_scientific_name_snapshot
+        parsed = parse_scientific_name_snapshot(scientific_name)
+        if parsed is None:
+            return
+        genus, species, _rank = parsed
+        with self._suspended():
+            self._set_text(self.genus_input, genus)
+            self._set_text(self.species_input, species or "")
+            self._set_text(self.scientific_name_input, scientific_name)
+        self._committed_snapshot = {
+            "genus": genus,
+            "species": species or "",
+            "scientific_name": scientific_name,
+            "taxon_rank_snapshot": rank_snapshot,
+            "sporely_taxon_id": int(sporely_id),
+            "link_kind": suggestion.get("link_kind"),
+            "canonical_scientific_name": str(suggestion.get("canonical_scientific_name") or "").strip(),
+            "canonical_rank": str(suggestion.get("canonical_rank") or "").strip() or None,
+        }
+        if self._on_snapshot_committed is not None:
+            try:
+                self._on_snapshot_committed(dict(self._committed_snapshot))
+            except Exception:
+                pass
+        self._sync_vernacular_after_taxon_change()
+        self._notify_taxon_changed()
+
     def eventFilter(self, obj, event):
-        if event.type() == QEvent.FocusIn:
+        event_type = event.type()
+        if event_type == QEvent.FocusIn:
             if obj == self.genus_input:
                 self.refresh_genus_suggestions()
                 if self.auto_show_popup_on_focus and self._genus_model.stringList():
@@ -710,13 +984,40 @@ class TaxonInputController(QObject):
                 if _should_select_all_on_focus(event):
                     QTimer.singleShot(0, lambda widget=obj: widget.selectAll())
             elif obj == self.vernacular_input and self.vernacular_input is not None:
-                self.refresh_vernacular_suggestions()
-                if self.auto_show_popup_on_focus and self._vernacular_model is not None and self._vernacular_model.rowCount():
-                    self._vernacular_completer.setCompletionPrefix(self._current_vernacular())
-                    self._vernacular_completer.complete()
+                self._open_vernacular_chooser()
                 if _should_select_all_on_focus(event):
                     QTimer.singleShot(0, lambda widget=obj: widget.selectAll())
+            elif obj is self.scientific_name_input \
+                    and self.scientific_name_input is not None:
+                self.refresh_scientific_suggestions()
+                if _should_select_all_on_focus(event):
+                    QTimer.singleShot(0, lambda widget=obj: widget.selectAll())
+        elif event_type == QEvent.MouseButtonPress:
+            if obj == self.vernacular_input and self.vernacular_input is not None:
+                self._open_vernacular_chooser()
+            elif obj is self.scientific_name_input \
+                    and self.scientific_name_input is not None:
+                self.refresh_scientific_suggestions()
         return False
+
+    def _open_vernacular_chooser(self) -> None:
+        """Force the vernacular completer popup to display every alternative
+        for the currently resolved taxon, using an empty completion prefix
+        so the user sees the full list without having to guess a starting
+        letter. No-ops when the completer/model is unavailable."""
+        if self._vernacular_model is None or self._vernacular_completer is None:
+            return
+        # Rebuild suggestions (they may be empty if no taxon is resolved yet).
+        self.refresh_vernacular_suggestions()
+        if not self.auto_show_popup_on_focus:
+            return
+        if self._vernacular_model.rowCount() == 0:
+            return
+        # An empty completion prefix ensures QCompleter's default filter
+        # matches every row — a real "chooser" experience regardless of
+        # whether the user has typed anything.
+        self._vernacular_completer.setCompletionPrefix("")
+        self._vernacular_completer.complete()
 
 
 __all__ = [
@@ -724,4 +1025,5 @@ __all__ = [
     "TaxonInputController",
     "format_common_name_choice_display",
     "format_species_choice_display",
+    "_format_scientific_choice_display",
 ]

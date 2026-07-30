@@ -1361,6 +1361,32 @@ def init_database():
     except sqlite3.OperationalError:
         pass  # Column already exists
     try:
+        # Stage 3B.2 taxonomy-v2 identity column. NULLable, additive; the
+        # backfill script populates it via database/migrate_observations_sporely_id.py.
+        cursor.execute('ALTER TABLE observations ADD COLUMN sporely_taxon_id INTEGER')
+    except sqlite3.OperationalError:
+        pass  # Column already exists
+    try:
+        # Stage 3B.3: exact scientific-name string the observer selected
+        # (e.g. "Hygrocybe conica var. pseudoconica"). Verbatim, no
+        # reformatting. NULL when the observer never made an explicit
+        # taxonomy-suggestion selection.
+        cursor.execute(
+            'ALTER TABLE observations ADD COLUMN scientific_name_snapshot TEXT'
+        )
+    except sqlite3.OperationalError:
+        pass  # Column already exists
+    try:
+        # Stage 3B.3: rank of the selection above. Whitelisted at write time
+        # to NULL or one of {genus, species, subspecies, variety, form,
+        # aggregate}. Enforced in Python; no CHECK constraint so legacy
+        # databases upgrade cleanly.
+        cursor.execute(
+            'ALTER TABLE observations ADD COLUMN taxon_rank_snapshot TEXT'
+        )
+    except sqlite3.OperationalError:
+        pass  # Column already exists
+    try:
         cursor.execute('ALTER TABLE observations ADD COLUMN inaturalist_id INTEGER')
     except sqlite3.OperationalError:
         pass  # Column already exists

@@ -1,0 +1,12 @@
+{
+  "fixture_kind": "sanitized_official_response",
+  "source_fields": {
+    "doi": "10.48580/dgykv",
+    "issued": "2026-07-17",
+    "key": 315834,
+    "origin": "xrelease",
+    "title": "Catalogue of Life",
+    "type": "taxonomic",
+    "version": "2026-07-17 XR"
+  }
+}

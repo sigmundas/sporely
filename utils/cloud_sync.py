@@ -56,6 +56,7 @@ from database.models import (
     reconcile_legacy_publish_exclusion_tombstones,
 )
 from database.reverse_location_lookup import normalize_country_code
+from utils.artsdatabanken_link import concept_link_from_name_id
 from utils.heic_converter import guess_local_image_mime_type
 from utils.cloud_media_policy import (
     IMAGE_TOO_LARGE_FOR_PLAN_MESSAGE,
@@ -219,6 +220,16 @@ _OBS_PUSH_COLS = [
     'region_id',
 ]
 # Never push: private_comment, ai_state_json, folder_path, cloud_id, sync_status, synced_at
+# Stage 3B.2/3B.3: local-only taxonomy-v2 fields — not pushed to Supabase
+# until a separate cloud-schema migration is authored. Regression test
+# `tests/test_stage_3b_3_cloud_isolation.py` asserts these stay out.
+_STAGE_3B_LOCAL_ONLY_OBS_FIELDS = frozenset(
+    {"sporely_taxon_id", "scientific_name_snapshot", "taxon_rank_snapshot"}
+)
+assert not (set(_OBS_PUSH_COLS) & _STAGE_3B_LOCAL_ONLY_OBS_FIELDS), (
+    "Stage 3B taxonomy fields must never appear in _OBS_PUSH_COLS. "
+    "Cloud schema change is a separate migration."
+)
 
 
 def _normalize_slug(value: object) -> str:
@@ -8252,7 +8263,13 @@ def _cloud_identification_prediction_species_url(prediction: dict, service: str 
         or ''
     ).strip()
     if taxon_id and taxon_id.isdigit():
-        return f'https://artsdatabanken.no/arter/takson/{taxon_id}'
+        # Stage 3B.5: this helper runs on the GUI thread inside a
+        # per-prediction loop when the observation-detail dialog opens.
+        # A 5 s network resolve × ~10 predictions would freeze the
+        # editor for tens of seconds on a bad link. Use cache-only mode:
+        # cache hits return the true concept URL, misses fall to the
+        # NorTaxa fallback with no network I/O.
+        return concept_link_from_name_id(taxon_id, network=False)
     return None
 
 

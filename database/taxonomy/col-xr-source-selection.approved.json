@@ -1,0 +1,57 @@
+{
+  "approval_schema_version": 1,
+  "approval_status": "approved",
+  "download_authorized": true,
+  "approved_at": "2026-07-23T08:30:00Z",
+  "approval_source": "maintainer_explicit_approval",
+  "proposal_sha256": "1f0bc14ca41a0870a99eb581edea7227af449a5dba920edc253778dc0bd2c632",
+  "request_sha256": "d700581e3ac1df895fb4639daa1b7aa842660df3257794ed924abce3f0c92c0a",
+  "release_identity": {
+    "release_label": "2026-07-17 XR",
+    "release_type": "Extended Release",
+    "dataset_key": 315834,
+    "issued_date": "2026-07-17",
+    "doi": "10.48580/dgykv",
+    "archive_format": "ColDP"
+  },
+  "approved_http_method": "GET",
+  "approved_canonical_endpoint": "https://api.checklistbank.org/dataset/315834/export.zip?extended=true&format=ColDP",
+  "declared_content_length": 1383646570,
+  "approved_maximum_bytes": 1610612736,
+  "minimum_free_disk_bytes": 4294967296,
+  "approved_redirect_hosts": [
+    "api.checklistbank.org",
+    "download.checklistbank.org"
+  ],
+  "custom_export_jobs_prohibited": true,
+  "authorization_scope": "one full transfer attempt",
+  "compiler_consumption_is_not_an_export_filter": true,
+  "compiler_consumption": {
+    "compiler_required_fields": [
+      "NameUsage.ID",
+      "NameUsage.acceptedNameUsageID",
+      "NameUsage.authorship",
+      "NameUsage.parentID",
+      "NameUsage.rank",
+      "NameUsage.scientificName",
+      "NameUsage.status"
+    ],
+    "compiler_audit_fields": [
+      "NameUsage.code",
+      "NameUsage.extinct",
+      "NameUsage.origin",
+      "NameUsage.referenceID",
+      "NameUsage.sectorID",
+      "NameUsage.sourceID"
+    ],
+    "compiler_ignored_entities": [
+      "Distribution",
+      "Media",
+      "SpeciesInteraction",
+      "Treatment",
+      "TypeMaterial",
+      "VernacularName"
+    ],
+    "archive_preservation": "preserve complete immutable bytes"
+  }
+}

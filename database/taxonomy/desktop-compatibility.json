@@ -1,0 +1,53 @@
+{
+  "format": "sporely-taxonomy-desktop-compatibility-v1",
+  "consumer": "sporely-py",
+  "supported_taxonomy_schema_min": 2,
+  "supported_taxonomy_schema_max": 2,
+  "tested_taxonomy_release": "tax-2026.07.30-02",
+  "bundled_sqlite_sha256": "993d1608df1cb0ae93aab7b35a889b29858f0add720b933f3c58ed1e8485b94f",
+  "bundled_gz_sha256": "fb7660c613d0909c22591abe90768a9ae3c0ea88a8b8d5b2ee2bdf6c69cb8938",
+  "registry_concatenated_sha256": "21b5d39d257799fdd4ea758d857fec4d29758b83dd7ea91bf3ecd24e3d1d3077",
+  "state": "candidate",
+  "publication": "none",
+  "activation_flag": {
+    "settings_key": "taxonomy_v2_activation",
+    "environment_variable": "SPORELY_TAXONOMY_V2"
+  },
+  "redlist_no": {
+    "source_system": "artsdatabanken_redlist",
+    "assessment_edition": "Norsk rødliste for arter 2021",
+    "source_release": "2021",
+    "publisher": "Artsdatabanken",
+    "publication_date": "2021-11-24",
+    "source_url": "https://lister.artsdatabanken.no/rodlisteforarter/2021/",
+    "citation": "Artsdatabanken (2021, 24. november). Norsk rødliste for arter 2021. Utvalg https://lister.artsdatabanken.no:443/rodlisteforarter/2021?Export=true. https://lister.artsdatabanken.no/rodlisteforarter/2021",
+    "citation_evidence": "Verbatim from the workbook's 'Siteres som' sheet.",
+    "workbook_sha256": "c2fb6a5f4828defe371b1cb9978974bfd64a23101ad37bb715f260bd658bef04",
+    "row_count": 34171,
+    "resolved_count": 7866,
+    "unresolved_count": 26305,
+    "unresolved_reason_counts": {
+      "name_id_not_found_in_nortaxa": 26245,
+      "name_id_name_mismatch": 60,
+      "name_id_ambiguous": 0
+    },
+    "collision_summary": {
+      "unique": 7797,
+      "multiple_rows_same_category": 12,
+      "conflicting_categories": 22,
+      "conflicting_ranks": 0
+    },
+    "license_status": "pending_external_verification (not declared in workbook; see generated/taxonomy_v2/manifest.json.redlist_no.license for the full evidence trail)",
+    "notes": [
+      "Norway and Svalbard are kept as separate rows and never merged.",
+      "60 rows are held unresolved by the source-row coherence check (46 NorTaxa species-aggregate 'coll.' vs strict-species workbook, 14 spelling variants or nom. dub. flags); 22 conflict groups with disagreeing categories are recorded verbatim in redlist_no_diagnostics.json.collisions.conflicts for later curation.",
+      "Runtime API: get_redlist_lookup(...) returns an explicit RedlistLookupResult (status: none / unique / multiple_same_category / conflict). The legacy get_redlist_assessment(...) returns None for conflict groups — never auto-picks.",
+      "The bridge namespace is artsnavnebase_scientific_name_id (Artsdatabanken's name registry), NOT artsdatabanken_taxon_concept_id."
+    ]
+  },
+  "notes": [
+    "Developer-only activation. The v2 SQLite is not bundled in normal releases yet.",
+    "Falls back to the current bundled vernacular_multilanguage.sqlite3 whenever activation or verification fails.",
+    "tax-2026.07.30-02 is the only Red-List-bearing candidate packaged in this checkout."
+  ]
+}

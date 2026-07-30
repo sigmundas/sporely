@@ -1,0 +1,48 @@
+{
+  "attempt_number": 1,
+  "authorization_scope": {
+    "archive_get_authorized": false,
+    "maximum_cumulative_response_body_bytes": 4194304,
+    "metadata_only": true,
+    "retry_authorized": false
+  },
+  "failure": {
+    "evidence_gap": "The verifier retained response bytes, hashes, byte counts, redirects and HEAD headers only in process memory and attempted to persist them after all parsing. The parser exception terminated the process before evidence persistence. Those values are unavailable and are not reconstructed.",
+    "message": "resource endpoint returned an HTML login page",
+    "stage": "offline_resource_page_parsing",
+    "type": "AcquisitionError"
+  },
+  "finished_at": "2026-07-23T20:47:36Z",
+  "manifest_changed": false,
+  "operations": [
+    {
+      "body_requested": true,
+      "evidence_persisted": false,
+      "method": "GET",
+      "requested_url": "https://ipt.artsdatabanken.no/resource?r=artsnavnebase&v=1.284",
+      "transport_and_response_policy_completed": true
+    },
+    {
+      "body_requested": true,
+      "evidence_persisted": false,
+      "method": "GET",
+      "requested_url": "https://ipt.artsdatabanken.no/eml.do?r=artsnavnebase&v=1.284",
+      "transport_and_response_policy_completed": true
+    },
+    {
+      "body_requested": false,
+      "evidence_persisted": false,
+      "method": "HEAD",
+      "requested_url": "https://ipt.artsdatabanken.no/archive.do?r=artsnavnebase&v=1.284",
+      "transport_and_response_policy_completed": true
+    }
+  ],
+  "outcome": "failed_incomplete_evidence",
+  "proposal_sha256": "e025d53350422d1590836ddc6383f5ed93665ba82ec48db1b3708f2e337a67e3",
+  "request_sha256": "38091edd85d40172539d3086732de2569a00102ff5564c66c55efb59360e7392",
+  "retry_performed": false,
+  "tool": {
+    "name": "nortaxa_metadata.py",
+    "version": 1
+  }
+}

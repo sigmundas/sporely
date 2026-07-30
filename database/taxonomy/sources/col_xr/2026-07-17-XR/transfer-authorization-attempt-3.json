@@ -1,0 +1,33 @@
+{
+  "approved_redirect_hosts": [
+    "api.checklistbank.org",
+    "download.checklistbank.org"
+  ],
+  "attempt_2_authorization_sha256": "db7cc9d2a7ef603ceaea912415b536b239c80dc84be18d3ef33387a395cbb9c2",
+  "authorization_reason": "member count 20,000 is now a warning; 250,000 is the versioned emergency ceiling",
+  "authorization_status": "approved",
+  "authorized_at": "2026-07-23T18:00:37Z",
+  "authorized_attempt_number": 3,
+  "canonical_authorization_sha256": "817935c03ad3e484011ca7f5bf5502d44d9e9d1b08ea24d57ec27927551fee99",
+  "canonical_endpoint": "https://api.checklistbank.org/dataset/315834/export.zip?extended=true&format=ColDP",
+  "expected_archive_sha256": "397d701c8eb269bf78d6ac7b03149915b0d9e2a2c18694be2c91445b807814f9",
+  "expected_content_length": 1383646570,
+  "maximum_archive_bytes": 1610612736,
+  "maximum_full_transfer_attempts": 3,
+  "member_emergency_ceiling": 250000,
+  "member_warning_threshold": 20000,
+  "original_approval_sha256": "060adb247a5033d937037aab1472583ba63e9e5b637b6bd7a09a3e1119ce531d",
+  "previous_attempt_number": 2,
+  "proposal_sha256": "1f0bc14ca41a0870a99eb581edea7227af449a5dba920edc253778dc0bd2c632",
+  "release_identity": {
+    "archive_format": "ColDP",
+    "dataset_key": 315834,
+    "doi": "10.48580/dgykv",
+    "issued_date": "2026-07-17",
+    "release_label": "2026-07-17 XR",
+    "release_type": "Extended Release"
+  },
+  "request_sha256": "d700581e3ac1df895fb4639daa1b7aa842660df3257794ed924abce3f0c92c0a",
+  "transfer_authorization_schema_version": 1,
+  "transfer_authorized": true
+}

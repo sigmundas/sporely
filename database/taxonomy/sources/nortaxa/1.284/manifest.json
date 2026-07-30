@@ -1,0 +1,672 @@
+{
+  "approval_status": "consumed",
+  "authorization_model": "Manual invocation of database/taxonomy/scripts/acquire_nortaxa.py --execute is the acquisition authorization. Each invocation opens at most one HTTP GET; there is no automatic retry, no approval artifact, no readiness artifact, and no acquisition proposal at runtime.",
+  "current_active_approval": false,
+  "download": {
+    "archive_sha256": "29c11c54d955dc44e4e5a38944dd7932989a256d1b173777579b9f33abd2fe22",
+    "content_type": "application/zip",
+    "endpoint": "https://ipt.artsdatabanken.no/archive.do?r=artsnavnebase&v=1.284",
+    "observed_bytes": 8399460,
+    "response_headers": {
+      "accept-ranges": {
+        "present": false,
+        "value": null
+      },
+      "content-disposition": {
+        "present": true,
+        "value": "filename=\"dwca-artsnavnebase-v1.284.zip\""
+      },
+      "content-encoding": {
+        "present": false,
+        "value": null
+      },
+      "content-length": {
+        "present": false,
+        "value": null
+      },
+      "content-type": {
+        "present": true,
+        "value": "application/zip;charset=UTF-8"
+      },
+      "etag": {
+        "present": false,
+        "value": null
+      },
+      "last-modified": {
+        "present": true,
+        "value": "Fri, 17 Jul 2026 12:08:23 GMT"
+      }
+    },
+    "retrieved_at": "2026-07-27T20:41:53.845616Z",
+    "stream_policy": {
+      "ceiling": 67108864,
+      "completed_bytes": 8399460,
+      "declared_length": null,
+      "reached_eof": true,
+      "size_declaration_status": "unavailable"
+    }
+  },
+  "download_authorized": false,
+  "execution_attempts": [
+    {
+      "approval_created": true,
+      "approval_path": "acquisition-attempt-1-approval.json",
+      "approval_sha256": "6de49d43812cbc6fe87bb89d329e72f3d24379d30f08b71b1c12d353124eb9e1",
+      "archive_body_retrieved_once": true,
+      "archive_promoted": false,
+      "archive_retained": false,
+      "attempt_journal_path": "acquisition-attempt-1-journal.json",
+      "attempt_journal_sha256": "026f3f4060d672deb307e17763ba02f41c8c7d3c22cb958709a3f511913b3d7a",
+      "attempt_number": 1,
+      "body_reached_structural_validation": true,
+      "consumed_at": "2026-07-26T22:07:55.918862Z",
+      "content_encoding": "unavailable_due_to_not_persisted",
+      "content_length_result": "unavailable_due_to_not_persisted",
+      "final_url": "unavailable_due_to_not_persisted",
+      "get_authority_consumed": true,
+      "http_status": "unavailable_due_to_not_persisted",
+      "observed_bytes": "unavailable_due_to_not_persisted",
+      "outcome": "failed",
+      "phase": "structural_validation",
+      "redirect_chain": "unavailable_due_to_not_persisted",
+      "response_headers": "unavailable_due_to_not_persisted",
+      "streamed_sha256": "unavailable_due_to_not_persisted",
+      "structural_validation_error": {
+        "cause": "The pinned committed validator recognized only DwC-namespace Distribution rows; the pinned NorTaxa 1.284 archive declares Distribution under the GBIF 1.0 namespace.",
+        "message": "unsupported extension row type: http://rs.gbif.org/terms/1.0/Distribution",
+        "type": "AcquisitionError"
+      }
+    },
+    {
+      "archive_sha256": "29c11c54d955dc44e4e5a38944dd7932989a256d1b173777579b9f33abd2fe22",
+      "attempt_number": 2,
+      "completed_at": "2026-07-27T19:46:57.213206Z",
+      "endpoint": "https://ipt.artsdatabanken.no/archive.do?r=artsnavnebase&v=1.284",
+      "error": {
+        "message": "species Taxon row requires genus",
+        "type": "AcquisitionError"
+      },
+      "observed_bytes": 8399460,
+      "outcome": "failed",
+      "phase": "structural_validation",
+      "started_at": "2026-07-27T19:46:55.791260Z"
+    },
+    {
+      "archive_sha256": "29c11c54d955dc44e4e5a38944dd7932989a256d1b173777579b9f33abd2fe22",
+      "attempt_number": 3,
+      "completed_at": "2026-07-27T20:27:11.954725Z",
+      "endpoint": "https://ipt.artsdatabanken.no/archive.do?r=artsnavnebase&v=1.284",
+      "error": {
+        "message": "parentNameUsageID references an unknown dwc:taxonID",
+        "type": "AcquisitionError"
+      },
+      "observed_bytes": 8399460,
+      "outcome": "failed",
+      "phase": "structural_validation",
+      "started_at": "2026-07-27T20:27:10.489035Z"
+    },
+    {
+      "archive_sha256": "29c11c54d955dc44e4e5a38944dd7932989a256d1b173777579b9f33abd2fe22",
+      "attempt_number": 4,
+      "completed_at": "2026-07-27T20:41:53.845616Z",
+      "endpoint": "https://ipt.artsdatabanken.no/archive.do?r=artsnavnebase&v=1.284",
+      "observed_bytes": 8399460,
+      "outcome": "succeeded",
+      "phase": "validated_and_promoted",
+      "started_at": "2026-07-27T20:41:51.913238Z",
+      "validation_summary": {
+        "archive": {
+          "bytes": 8399460,
+          "member_count": 5,
+          "sha256": "29c11c54d955dc44e4e5a38944dd7932989a256d1b173777579b9f33abd2fe22"
+        },
+        "compiler_ready": true,
+        "hierarchy_complete": false,
+        "identifier_contract": {
+          "NBIC_scientific_name_id": {
+            "role": "namespaced scientific-name identifier; never numerically collapsed"
+          },
+          "core_row_id": {
+            "index": 0,
+            "role": "archive-local core row key"
+          },
+          "dwc:acceptedNameUsageID": {
+            "index": 2,
+            "role": "accepted usage reference"
+          },
+          "dwc:parentNameUsageID": {
+            "index": 3,
+            "role": "parent usage reference"
+          },
+          "dwc:taxonID": {
+            "index": 1,
+            "role": "source-defined taxon identifier"
+          },
+          "extension_coreid": {
+            "index": 0,
+            "role": "archive-local link to core row ID"
+          },
+          "raw_samples": [
+            {
+              "core_row_id": "1",
+              "dwc:acceptedNameUsageID": "1",
+              "dwc:parentNameUsageID": "",
+              "dwc:taxonID": "1"
+            },
+            {
+              "core_row_id": "2",
+              "dwc:acceptedNameUsageID": "2",
+              "dwc:parentNameUsageID": "1",
+              "dwc:taxonID": "2"
+            },
+            {
+              "core_row_id": "3",
+              "dwc:acceptedNameUsageID": "3",
+              "dwc:parentNameUsageID": "2",
+              "dwc:taxonID": "3"
+            },
+            {
+              "core_row_id": "4",
+              "dwc:acceptedNameUsageID": "4",
+              "dwc:parentNameUsageID": "3",
+              "dwc:taxonID": "4"
+            },
+            {
+              "core_row_id": "5",
+              "dwc:acceptedNameUsageID": "5",
+              "dwc:parentNameUsageID": "3",
+              "dwc:taxonID": "5"
+            },
+            {
+              "core_row_id": "6",
+              "dwc:acceptedNameUsageID": "6",
+              "dwc:parentNameUsageID": "3",
+              "dwc:taxonID": "6"
+            },
+            {
+              "core_row_id": "7",
+              "dwc:acceptedNameUsageID": "7",
+              "dwc:parentNameUsageID": "3",
+              "dwc:taxonID": "7"
+            },
+            {
+              "core_row_id": "8",
+              "dwc:acceptedNameUsageID": "8",
+              "dwc:parentNameUsageID": "2",
+              "dwc:taxonID": "8"
+            },
+            {
+              "core_row_id": "9",
+              "dwc:acceptedNameUsageID": "9",
+              "dwc:parentNameUsageID": "8",
+              "dwc:taxonID": "9"
+            },
+            {
+              "core_row_id": "10",
+              "dwc:acceptedNameUsageID": "10",
+              "dwc:parentNameUsageID": "8",
+              "dwc:taxonID": "10"
+            }
+          ]
+        },
+        "linkage": {
+          "distinct_core_row_ids": 229018,
+          "vernacular": {
+            "distinct_referenced_core_ids": 33027,
+            "maximum_vernacular_rows_for_one_core": 32,
+            "orphan_vernacular_rows": 0,
+            "total_linked_vernacular_rows": 58773
+          }
+        },
+        "meta_xml": {
+          "core_lines_terminated_by": "\\n",
+          "core_location": "taxon.txt",
+          "extensions": [
+            {
+              "location": "vernacularname.txt",
+              "row_type": "http://rs.gbif.org/terms/1.0/VernacularName"
+            },
+            {
+              "location": "distribution.txt",
+              "row_type": "http://rs.gbif.org/terms/1.0/Distribution"
+            }
+          ],
+          "original_term_uris": {
+            "Taxon": {
+              "acceptedNameUsageID": "http://rs.tdwg.org/dwc/terms/acceptedNameUsageID",
+              "class": "http://rs.tdwg.org/dwc/terms/class",
+              "family": "http://rs.tdwg.org/dwc/terms/family",
+              "genus": "http://rs.tdwg.org/dwc/terms/genus",
+              "infraspecificEpithet": "http://rs.tdwg.org/dwc/terms/infraspecificEpithet",
+              "kingdom": "http://rs.tdwg.org/dwc/terms/kingdom",
+              "modified": "http://purl.org/dc/terms/modified",
+              "namePublishedIn": "http://rs.tdwg.org/dwc/terms/namePublishedIn",
+              "nomenclaturalStatus": "http://rs.tdwg.org/dwc/terms/nomenclaturalStatus",
+              "order": "http://rs.tdwg.org/dwc/terms/order",
+              "parentNameUsageID": "http://rs.tdwg.org/dwc/terms/parentNameUsageID",
+              "phylum": "http://rs.tdwg.org/dwc/terms/phylum",
+              "scientificName": "http://rs.tdwg.org/dwc/terms/scientificName",
+              "scientificNameAuthorship": "http://rs.tdwg.org/dwc/terms/scientificNameAuthorship",
+              "specificEpithet": "http://rs.tdwg.org/dwc/terms/specificEpithet",
+              "taxonID": "http://rs.tdwg.org/dwc/terms/taxonID",
+              "taxonRank": "http://rs.tdwg.org/dwc/terms/taxonRank",
+              "taxonomicStatus": "http://rs.tdwg.org/dwc/terms/taxonomicStatus"
+            },
+            "VernacularName": {
+              "countryCode": "http://rs.tdwg.org/dwc/terms/countryCode",
+              "isPreferredName": "http://rs.gbif.org/terms/1.0/isPreferredName",
+              "language": "http://purl.org/dc/terms/language",
+              "source": "http://purl.org/dc/terms/source",
+              "vernacularName": "http://rs.tdwg.org/dwc/terms/vernacularName"
+            }
+          }
+        },
+        "network_calls": 0,
+        "profile_code": "nortaxa_dwca",
+        "record_counts": {
+          "Distribution": 229018,
+          "Taxon": 229018,
+          "VernacularName": 58773
+        },
+        "reference_gaps": {
+          "orphan_accepted_reference_count": 0,
+          "orphan_accepted_reference_samples": [],
+          "orphan_parent_reference_count": 72,
+          "orphan_parent_reference_samples": [
+            {
+              "raw_reference": "119998",
+              "source_taxon_id": "119999"
+            },
+            {
+              "raw_reference": "120996",
+              "source_taxon_id": "120997"
+            },
+            {
+              "raw_reference": "120996",
+              "source_taxon_id": "120998"
+            },
+            {
+              "raw_reference": "120996",
+              "source_taxon_id": "120999"
+            },
+            {
+              "raw_reference": "129871",
+              "source_taxon_id": "129872"
+            },
+            {
+              "raw_reference": "139082",
+              "source_taxon_id": "139101"
+            },
+            {
+              "raw_reference": "142634",
+              "source_taxon_id": "142710"
+            },
+            {
+              "raw_reference": "142634",
+              "source_taxon_id": "142785"
+            },
+            {
+              "raw_reference": "142634",
+              "source_taxon_id": "142795"
+            },
+            {
+              "raw_reference": "190684",
+              "source_taxon_id": "199834"
+            },
+            {
+              "raw_reference": "190684",
+              "source_taxon_id": "199835"
+            },
+            {
+              "raw_reference": "190684",
+              "source_taxon_id": "199837"
+            },
+            {
+              "raw_reference": "190684",
+              "source_taxon_id": "199838"
+            },
+            {
+              "raw_reference": "190684",
+              "source_taxon_id": "199839"
+            },
+            {
+              "raw_reference": "190684",
+              "source_taxon_id": "199840"
+            },
+            {
+              "raw_reference": "190684",
+              "source_taxon_id": "199841"
+            },
+            {
+              "raw_reference": "190684",
+              "source_taxon_id": "199842"
+            },
+            {
+              "raw_reference": "190684",
+              "source_taxon_id": "199843"
+            },
+            {
+              "raw_reference": "190684",
+              "source_taxon_id": "199844"
+            },
+            {
+              "raw_reference": "190684",
+              "source_taxon_id": "199845"
+            },
+            {
+              "raw_reference": "203498",
+              "source_taxon_id": "203499"
+            },
+            {
+              "raw_reference": "299999",
+              "source_taxon_id": "206103"
+            },
+            {
+              "raw_reference": "299998",
+              "source_taxon_id": "206106"
+            },
+            {
+              "raw_reference": "206888",
+              "source_taxon_id": "210175"
+            },
+            {
+              "raw_reference": "29555",
+              "source_taxon_id": "29556"
+            }
+          ],
+          "sample_bound": 25
+        },
+        "request_definition_sha256": "38091edd85d40172539d3086732de2569a00102ff5564c66c55efb59360e7392",
+        "taxon_column_gaps": {
+          "genus_rank_rows_missing_genus": 0,
+          "species_like_rows_missing_both": 0,
+          "species_like_rows_missing_genus": 2,
+          "species_like_rows_missing_specific_epithet": 0,
+          "taxon_rows_missing_kingdom": 0
+        }
+      }
+    }
+  ],
+  "historical_executor_commit": "2ea3294d4269c043f98374f5bc2ad562971a53aa",
+  "manifest_schema_version": 2,
+  "profile_code": "nortaxa_dwca",
+  "release": {
+    "issued_date": "2026-07-17",
+    "version": "1.284"
+  },
+  "request_definition_sha256": "38091edd85d40172539d3086732de2569a00102ff5564c66c55efb59360e7392",
+  "source_code": "nortaxa",
+  "source_selection_proposal_sha256": "e025d53350422d1590836ddc6383f5ed93665ba82ec48db1b3708f2e337a67e3",
+  "state": "validated",
+  "validation": {
+    "archive": {
+      "bytes": 8399460,
+      "member_count": 5,
+      "sha256": "29c11c54d955dc44e4e5a38944dd7932989a256d1b173777579b9f33abd2fe22"
+    },
+    "compiler_ready": true,
+    "hierarchy_complete": false,
+    "identifier_contract": {
+      "NBIC_scientific_name_id": {
+        "role": "namespaced scientific-name identifier; never numerically collapsed"
+      },
+      "core_row_id": {
+        "index": 0,
+        "role": "archive-local core row key"
+      },
+      "dwc:acceptedNameUsageID": {
+        "index": 2,
+        "role": "accepted usage reference"
+      },
+      "dwc:parentNameUsageID": {
+        "index": 3,
+        "role": "parent usage reference"
+      },
+      "dwc:taxonID": {
+        "index": 1,
+        "role": "source-defined taxon identifier"
+      },
+      "extension_coreid": {
+        "index": 0,
+        "role": "archive-local link to core row ID"
+      },
+      "raw_samples": [
+        {
+          "core_row_id": "1",
+          "dwc:acceptedNameUsageID": "1",
+          "dwc:parentNameUsageID": "",
+          "dwc:taxonID": "1"
+        },
+        {
+          "core_row_id": "2",
+          "dwc:acceptedNameUsageID": "2",
+          "dwc:parentNameUsageID": "1",
+          "dwc:taxonID": "2"
+        },
+        {
+          "core_row_id": "3",
+          "dwc:acceptedNameUsageID": "3",
+          "dwc:parentNameUsageID": "2",
+          "dwc:taxonID": "3"
+        },
+        {
+          "core_row_id": "4",
+          "dwc:acceptedNameUsageID": "4",
+          "dwc:parentNameUsageID": "3",
+          "dwc:taxonID": "4"
+        },
+        {
+          "core_row_id": "5",
+          "dwc:acceptedNameUsageID": "5",
+          "dwc:parentNameUsageID": "3",
+          "dwc:taxonID": "5"
+        },
+        {
+          "core_row_id": "6",
+          "dwc:acceptedNameUsageID": "6",
+          "dwc:parentNameUsageID": "3",
+          "dwc:taxonID": "6"
+        },
+        {
+          "core_row_id": "7",
+          "dwc:acceptedNameUsageID": "7",
+          "dwc:parentNameUsageID": "3",
+          "dwc:taxonID": "7"
+        },
+        {
+          "core_row_id": "8",
+          "dwc:acceptedNameUsageID": "8",
+          "dwc:parentNameUsageID": "2",
+          "dwc:taxonID": "8"
+        },
+        {
+          "core_row_id": "9",
+          "dwc:acceptedNameUsageID": "9",
+          "dwc:parentNameUsageID": "8",
+          "dwc:taxonID": "9"
+        },
+        {
+          "core_row_id": "10",
+          "dwc:acceptedNameUsageID": "10",
+          "dwc:parentNameUsageID": "8",
+          "dwc:taxonID": "10"
+        }
+      ]
+    },
+    "linkage": {
+      "distinct_core_row_ids": 229018,
+      "vernacular": {
+        "distinct_referenced_core_ids": 33027,
+        "maximum_vernacular_rows_for_one_core": 32,
+        "orphan_vernacular_rows": 0,
+        "total_linked_vernacular_rows": 58773
+      }
+    },
+    "meta_xml": {
+      "core_lines_terminated_by": "\\n",
+      "core_location": "taxon.txt",
+      "extensions": [
+        {
+          "location": "vernacularname.txt",
+          "row_type": "http://rs.gbif.org/terms/1.0/VernacularName"
+        },
+        {
+          "location": "distribution.txt",
+          "row_type": "http://rs.gbif.org/terms/1.0/Distribution"
+        }
+      ],
+      "original_term_uris": {
+        "Taxon": {
+          "acceptedNameUsageID": "http://rs.tdwg.org/dwc/terms/acceptedNameUsageID",
+          "class": "http://rs.tdwg.org/dwc/terms/class",
+          "family": "http://rs.tdwg.org/dwc/terms/family",
+          "genus": "http://rs.tdwg.org/dwc/terms/genus",
+          "infraspecificEpithet": "http://rs.tdwg.org/dwc/terms/infraspecificEpithet",
+          "kingdom": "http://rs.tdwg.org/dwc/terms/kingdom",
+          "modified": "http://purl.org/dc/terms/modified",
+          "namePublishedIn": "http://rs.tdwg.org/dwc/terms/namePublishedIn",
+          "nomenclaturalStatus": "http://rs.tdwg.org/dwc/terms/nomenclaturalStatus",
+          "order": "http://rs.tdwg.org/dwc/terms/order",
+          "parentNameUsageID": "http://rs.tdwg.org/dwc/terms/parentNameUsageID",
+          "phylum": "http://rs.tdwg.org/dwc/terms/phylum",
+          "scientificName": "http://rs.tdwg.org/dwc/terms/scientificName",
+          "scientificNameAuthorship": "http://rs.tdwg.org/dwc/terms/scientificNameAuthorship",
+          "specificEpithet": "http://rs.tdwg.org/dwc/terms/specificEpithet",
+          "taxonID": "http://rs.tdwg.org/dwc/terms/taxonID",
+          "taxonRank": "http://rs.tdwg.org/dwc/terms/taxonRank",
+          "taxonomicStatus": "http://rs.tdwg.org/dwc/terms/taxonomicStatus"
+        },
+        "VernacularName": {
+          "countryCode": "http://rs.tdwg.org/dwc/terms/countryCode",
+          "isPreferredName": "http://rs.gbif.org/terms/1.0/isPreferredName",
+          "language": "http://purl.org/dc/terms/language",
+          "source": "http://purl.org/dc/terms/source",
+          "vernacularName": "http://rs.tdwg.org/dwc/terms/vernacularName"
+        }
+      }
+    },
+    "network_calls": 0,
+    "profile_code": "nortaxa_dwca",
+    "record_counts": {
+      "Distribution": 229018,
+      "Taxon": 229018,
+      "VernacularName": 58773
+    },
+    "reference_gaps": {
+      "orphan_accepted_reference_count": 0,
+      "orphan_accepted_reference_samples": [],
+      "orphan_parent_reference_count": 72,
+      "orphan_parent_reference_samples": [
+        {
+          "raw_reference": "119998",
+          "source_taxon_id": "119999"
+        },
+        {
+          "raw_reference": "120996",
+          "source_taxon_id": "120997"
+        },
+        {
+          "raw_reference": "120996",
+          "source_taxon_id": "120998"
+        },
+        {
+          "raw_reference": "120996",
+          "source_taxon_id": "120999"
+        },
+        {
+          "raw_reference": "129871",
+          "source_taxon_id": "129872"
+        },
+        {
+          "raw_reference": "139082",
+          "source_taxon_id": "139101"
+        },
+        {
+          "raw_reference": "142634",
+          "source_taxon_id": "142710"
+        },
+        {
+          "raw_reference": "142634",
+          "source_taxon_id": "142785"
+        },
+        {
+          "raw_reference": "142634",
+          "source_taxon_id": "142795"
+        },
+        {
+          "raw_reference": "190684",
+          "source_taxon_id": "199834"
+        },
+        {
+          "raw_reference": "190684",
+          "source_taxon_id": "199835"
+        },
+        {
+          "raw_reference": "190684",
+          "source_taxon_id": "199837"
+        },
+        {
+          "raw_reference": "190684",
+          "source_taxon_id": "199838"
+        },
+        {
+          "raw_reference": "190684",
+          "source_taxon_id": "199839"
+        },
+        {
+          "raw_reference": "190684",
+          "source_taxon_id": "199840"
+        },
+        {
+          "raw_reference": "190684",
+          "source_taxon_id": "199841"
+        },
+        {
+          "raw_reference": "190684",
+          "source_taxon_id": "199842"
+        },
+        {
+          "raw_reference": "190684",
+          "source_taxon_id": "199843"
+        },
+        {
+          "raw_reference": "190684",
+          "source_taxon_id": "199844"
+        },
+        {
+          "raw_reference": "190684",
+          "source_taxon_id": "199845"
+        },
+        {
+          "raw_reference": "203498",
+          "source_taxon_id": "203499"
+        },
+        {
+          "raw_reference": "299999",
+          "source_taxon_id": "206103"
+        },
+        {
+          "raw_reference": "299998",
+          "source_taxon_id": "206106"
+        },
+        {
+          "raw_reference": "206888",
+          "source_taxon_id": "210175"
+        },
+        {
+          "raw_reference": "29555",
+          "source_taxon_id": "29556"
+        }
+      ],
+      "sample_bound": 25
+    },
+    "request_definition_sha256": "38091edd85d40172539d3086732de2569a00102ff5564c66c55efb59360e7392",
+    "taxon_column_gaps": {
+      "genus_rank_rows_missing_genus": 0,
+      "species_like_rows_missing_both": 0,
+      "species_like_rows_missing_genus": 2,
+      "species_like_rows_missing_specific_epithet": 0,
+      "taxon_rows_missing_kingdom": 0
+    }
+  }
+}

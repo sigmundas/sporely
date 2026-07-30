@@ -1,0 +1,45 @@
+{
+  "approval_status": "proposed",
+  "archive_endpoint": "https://ipt.artsdatabanken.no/archive.do?r=artsnavnebase&v=1.284",
+  "archive_format": "Darwin Core Archive",
+  "canonical_request_sha256": "38091edd85d40172539d3086732de2569a00102ff5564c66c55efb59360e7392",
+  "compiler_consumed_terms": [
+    "acceptedNameUsageID",
+    "countryCode",
+    "family",
+    "genus",
+    "isPreferredName",
+    "kingdom",
+    "language",
+    "parentNameUsageID",
+    "scientificName",
+    "scientificNameAuthorship",
+    "specificEpithet",
+    "taxonID",
+    "taxonRank",
+    "taxonomicStatus",
+    "vernacularName"
+  ],
+  "dataset_uuid": "a6c6cead-b5ce-4a4e-8cf5-1542ba708dec",
+  "download_authorized": false,
+  "eml_endpoint": "https://ipt.artsdatabanken.no/eml.do?r=artsnavnebase&v=1.284",
+  "execution": {
+    "tool_git_commit": "b63e398e291b67b52b046c586bac610e746a85a0"
+  },
+  "expected_license": "CC-BY 4.0",
+  "issued_date": "2026-07-17",
+  "profile_code": "nortaxa_dwca",
+  "proposed_maximum_bytes": 67108864,
+  "release_type": "versioned IPT publication",
+  "request_schema_version": 1,
+  "required_row_types": [
+    "Taxon",
+    "VernacularName"
+  ],
+  "resource_key": "artsnavnebase",
+  "resource_page": "https://ipt.artsdatabanken.no/resource?r=artsnavnebase&v=1.284",
+  "source_code": "nortaxa",
+  "source_selection_proposal_sha256": "e025d53350422d1590836ddc6383f5ed93665ba82ec48db1b3708f2e337a67e3",
+  "title": "Nortaxa (Artsnavnebasen)",
+  "version": "1.284"
+}

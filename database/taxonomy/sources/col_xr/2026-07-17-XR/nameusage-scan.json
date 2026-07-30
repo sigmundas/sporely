@@ -1,0 +1,809 @@
+{
+  "accepted_count": 4639747,
+  "applied_correction_count": 1,
+  "applied_corrections": [
+    {
+      "canonical_field": "namePublishedInPage",
+      "correction_id": "col-xr-2026-07-17-nameusage-5BK77-page-double-bom-v1",
+      "field_index_zero_based": 31,
+      "line": 1853650,
+      "raw_bytes_preserved": true,
+      "raw_field_sha256": "6ba3b50d10472e4b0f3c66573664b8176726ddefea0d836873659d93396c79c1",
+      "raw_field_value": "58, f﻿﻿igs 6–7",
+      "raw_row_sha256": "156d19f3c53506a4f145799ff6ab1a5664c92b62e19e59bf20bd9573a907f9b5",
+      "removed_code_point_count": 2,
+      "semantic_field_sha256": "b3fcc6029626887bb6c28a5fb074f1f42416a9541b0d67c2ddca1b82c776bcee",
+      "semantic_field_value": "58, figs 6–7"
+    }
+  ],
+  "audit_fields_present": {
+    "code": true,
+    "extinct": true,
+    "origin": false,
+    "reference_id": true,
+    "sector_id": false,
+    "source_id": true
+  },
+  "blank_row_count": 0,
+  "completion_status": "complete",
+  "crc_verified_by_zip_stream": true,
+  "delimiter": "literal physical tab",
+  "duplicate_primary_id_count": 0,
+  "encoding": "strict UTF-8",
+  "filename": "NameUsage.tsv",
+  "final_eof_reached": true,
+  "former_strict_csv_rejection_count": 111,
+  "former_strict_csv_rejection_samples": [
+    {
+      "context": "VB84N\\t\\t\\t298191\\tS\\t\\taccepted\\tEubrontes veillonensis\\t\" Lapparent & Montenat, 1967\\tspecies\\t\\t\\t\\tEubrontes\\t\\tveillonensis\\t\\t\\t\" Lapparent & ",
+      "line": 101007,
+      "literal_tsv_column_count": 73,
+      "raw_row_sha256": "772ba2be2477e6fad255655d752ad329c0dacce4eeaa457a98fe14d2a3315756",
+      "reason": "'\t' expected after '\"'",
+      "row_bytes": 310
+    },
+    {
+      "context": "VB84Q\\t\\t\\t298191\\tS\\t\\taccepted\\tBatrachopus gilberti\\t\" Lapparent & Montenat, 1967\\tspecies\\t\\t\\t\\tBatrachopus\\t\\tgilberti\\t\\t\\t\" Lapparent & Mo",
+      "line": 101008,
+      "literal_tsv_column_count": 73,
+      "raw_row_sha256": "c6053d4d85aa6f5e961dc7870e66517d39dfd3e6a29bb8ad7a90c5dfec29ee6e",
+      "reason": "'\t' expected after '\"'",
+      "row_bytes": 306
+    },
+    {
+      "context": "V8TWQ\\t\\t\\t312491\\tV64HX\\t\\tsynonym\\tNautilus concavus\\t\" Sowerby, 1840\\tspecies\\t\\t\\t\\tNautilus\\t\\tconcavus\\t\\t\\t\" Sowerby\\t\\t\\t\\t1840\\t\\t\\t\\t\\t\\t\\t04338d65",
+      "line": 111918,
+      "literal_tsv_column_count": 73,
+      "raw_row_sha256": "56216805107aa33b500d53dcf89727b6d7690004f7de1dc8f00f792f1827018b",
+      "reason": "'\t' expected after '\"'",
+      "row_bytes": 279
+    },
+    {
+      "context": "Myriapoda\\tArthropoda\\tAnimalia\\t\\t\\thttp://chilobase.bio.unipd.it/sp2000.php?sp778\\t\\t\"The spelling \"impulses\" in Lewis (1989 - J. nat. Hist., 23: 1004) is clearly a ",
+      "line": 369659,
+      "literal_tsv_column_count": 73,
+      "raw_row_sha256": "022478c49e5ec1ed584be3b9365343b8f3dd037ace8ae231cd0fc301be21803d",
+      "reason": "'\t' expected after '\"'",
+      "row_bytes": 539
+    },
+    {
+      "context": "\\t\\t\\t\\t\\t\\t\\t\\t\\t\\t\\t\\t\\t\\t\\t\\thttps://www.marinespecies.org/aphia.php?p=taxdetails&id=729402\\t\\t\"Taxonomy: Re-named O. jamilahmadi by Pozdnyakov (1981)\\t\\t\\tfalse\\n",
+      "line": 375272,
+      "literal_tsv_column_count": 73,
+      "raw_row_sha256": "42a3ea111d4593fede315524cc5730c10fc6f0dc8b394914904892049187bd48",
+      "reason": "unexpected end of data",
+      "row_bytes": 402
+    },
+    {
+      "context": "KV6SK\\t\\t\\t1130\\t325Y7\\t\\tsynonym\\tCtenoides barnardi\\t\"Stuardo, 1968\" Huber, 2010\\tspecies\\t\\t\\t\\tCtenoides\\t\\tbarnardi\\t\\t\\t\"Stuardo, 1968\" Hub",
+      "line": 377319,
+      "literal_tsv_column_count": 73,
+      "raw_row_sha256": "1e0e72359e98313d2021947a867df7ded54921ebd4080cbd823ff47d0584bcaa",
+      "reason": "'\t' expected after '\"'",
+      "row_bytes": 303
+    },
+    {
+      "context": "\\t\\t\\t\\t\\t\\t\\t\\t\\t\\t\\t\\t\\t\\t\\t\\thttps://www.marinespecies.org/aphia.php?p=taxdetails&id=419056\\t\\t\"Spelling: The suffix -cola (inhabitor) is masculine and forms masculine nouns, ",
+      "line": 436424,
+      "literal_tsv_column_count": 73,
+      "raw_row_sha256": "2f62b64143a6608b9a43164830c92aa4d5d90c53df79a1b06119b3b533807940",
+      "reason": "unexpected end of data",
+      "row_bytes": 473
+    },
+    {
+      "context": "yriapoda\\tArthropoda\\tAnimalia\\t\\t\\thttp://chilobase.bio.unipd.it/sp2000.php?sp1530\\t\\t\"this species has been originally quoted as \"Lithobius sp. ?\", the name barbipes",
+      "line": 554305,
+      "literal_tsv_column_count": 73,
+      "raw_row_sha256": "6b5e8be91459f531998a2743c24b284cfff6d94ca3f87a5e00173087f2870316",
+      "reason": "'\t' expected after '\"'",
+      "row_bytes": 568
+    },
+    {
+      "context": "\\t\\t\\t\\t\\t\\t\\t\\t\\t\\t\\t\\t\\t\\t\\thttps://www.marinespecies.org/aphia.php?p=taxdetails&id=1349209\\t\\t\"Spelling: Suffix malformed; the gender of the generic name is not neuter. DIG\\t\\t",
+      "line": 559999,
+      "literal_tsv_column_count": 73,
+      "raw_row_sha256": "3c932bcfa9d09aaf01632541610b4b7d1ace75a710b4a373407be88a541d2b96",
+      "reason": "unexpected end of data",
+      "row_bytes": 412
+    },
+    {
+      "context": "mng.org:taxname:11909297,wikidata:Q55344471\\t\\t1130\\tBDZ22\\t\\tsynonym\\tChilodontaidae\\t\"Wenz, 1938\" [proposed to address assumed homonymy]\\tfamily\\t\\t\\tChilodontaidae\\t\\t\\t\\t\\t",
+      "line": 563583,
+      "literal_tsv_column_count": 73,
+      "raw_row_sha256": "f00a6cd4a49f54efb8458dcd8eb433f362c8c4d15a75e4b4041a8f4d85f3e65c",
+      "reason": "'\t' expected after '\"'",
+      "row_bytes": 661
+    },
+    {
+      "context": "\\t\\t\\t\\t\\t\\t\\t\\t\\t\\t\\t\\t\\t\\t\\thttps://www.marinespecies.org/aphia.php?p=taxdetails&id=1349380\\t\\t\"Taxonomic remark: Haematoloechus vitelloconfluentum was described as Tremiorchi",
+      "line": 621318,
+      "literal_tsv_column_count": 73,
+      "raw_row_sha256": "1db41c0a0e503e45eac9b4f021467012655b4fdc1a520695e9f88033c4d1e627",
+      "reason": "unexpected end of data",
+      "row_bytes": 749
+    },
+    {
+      "context": "yriapoda\\tArthropoda\\tAnimalia\\t\\t\\thttp://chilobase.bio.unipd.it/sp2000.php?sp1921\\t\\t\"described as n. sp. aslo in Verhoeff (1901 - Nova Acta, Abh. der Kaiserl. Leop.",
+      "line": 676995,
+      "literal_tsv_column_count": 73,
+      "raw_row_sha256": "648fbfdc7c3c030e397801e584ff3029bef439d1e463483a54c3081f0a6d0263",
+      "reason": "'\t' expected after '\"'",
+      "row_bytes": 754
+    },
+    {
+      "context": "VB84L\\t\\t\\t298191\\tS\\t\\taccepted\\tGrallator maximus\\t\" Lapparent & Montenat, 1967\\tspecies\\t\\t\\t\\tGrallator\\t\\tmaximus\\t\\t\\t\" Lapparent & Monte",
+      "line": 715077,
+      "literal_tsv_column_count": 73,
+      "raw_row_sha256": "53e2c333d94cb986648e88685e03cc5e3ccf20d150998f06904982e8460c6457",
+      "reason": "'\t' expected after '\"'",
+      "row_bytes": 300
+    },
+    {
+      "context": "\\t\\t\\t\\t\\t\\t\\t\\t\\t\\t\\t\\t\\t\\t\\t\\thttps://www.marinespecies.org/aphia.php?p=taxdetails&id=727977\\t\\t\"Taxonomic remark: Yamaguti (1939), on the basis of Price's description, propose",
+      "line": 743963,
+      "literal_tsv_column_count": 73,
+      "raw_row_sha256": "8010dfcc5d3713aa24949fff50abcdad8798a379a1b5c9e225b68dbbad243f8a",
+      "reason": "unexpected end of data",
+      "row_bytes": 449
+    },
+    {
+      "context": "KVHGL\\t\\t\\t1130\\t6QBD9\\t\\tsynonym\\tLimatula arafurensis\\t\"Stuardo, 1968\" Huber, 2010\\tspecies\\t\\t\\t\\tLimatula\\t\\tarafurensis\\t\\t\\t\"Stuardo, 1968\" H",
+      "line": 868858,
+      "literal_tsv_column_count": 73,
+      "raw_row_sha256": "65e12c13413801b12608ebdb62d1c3a527b2207be3c3611439e272f281e57f7f",
+      "reason": "'\t' expected after '\"'",
+      "row_bytes": 306
+    },
+    {
+      "context": "NCSFV\\t\\t\\t29425\\tCRBPG\\t\\tsynonym\\tCuthona pustulata\\t\" sensu Gosliner & Millen, 1984\\tspecies\\t\\t\\t\\tCuthona\\t\\tpustulata\\t\\t\\t\" sensu Gosliner",
+      "line": 898778,
+      "literal_tsv_column_count": 73,
+      "raw_row_sha256": "eb917385b2f36e8d85dc63908ef24f9ab1f29cd9dc087d75b12b06b5f373c7b6",
+      "reason": "'\t' expected after '\"'",
+      "row_bytes": 311
+    },
+    {
+      "context": "PDBV5\\t\\t\\t289371\\t6MT3P\\t\\tsynonym\\tHomalopsis plumbea\\t\" Schlegel, 1826\\tspecies\\t\\t\\t\\tHomalopsis\\t\\tplumbea\\t\\t\\t\" Schlegel\\t\\t\\t\\t1826\\t\\t\\t\\t\\t\\t\\td0cae",
+      "line": 899182,
+      "literal_tsv_column_count": 73,
+      "raw_row_sha256": "32c264236cd8081e472e6163e88b66edfc93eaa959482a5eeff758cca3127e65",
+      "reason": "'\t' expected after '\"'",
+      "row_bytes": 284
+    },
+    {
+      "context": "S8R2H\\t\\t\\t20740\\t78B6G\\t\\tsynonym\\tPsechrus argentatus\\t\" (Levi, 1982\\tspecies\\t\\t\\t\\tPsechrus\\t\\targentatus\\t\\t\\t\" (Levi\\t\\t\\t\\t1982\\t\\t\\t\\t\\t\\t\\t870cd947-b",
+      "line": 1021797,
+      "literal_tsv_column_count": 73,
+      "raw_row_sha256": "83267f7a12b689696e1bae9ef86bad6ca927f45bc752b884657f385ec3173548",
+      "reason": "'\t' expected after '\"'",
+      "row_bytes": 279
+    },
+    {
+      "context": "VB84P\\t\\t\\t298191\\tS\\t\\taccepted\\tTalmontopus tersi\\t\" Lapparent & Montenat, 1967\\tspecies\\t\\t\\t\\tTalmontopus\\t\\ttersi\\t\\t\\t\" Lapparent & Monte",
+      "line": 1083702,
+      "literal_tsv_column_count": 73,
+      "raw_row_sha256": "38c372c4b27cf348462af4e7125f281c0807f97555e2a2fc5bd8e4f391925af4",
+      "reason": "'\t' expected after '\"'",
+      "row_bytes": 300
+    },
+    {
+      "context": "V8TX2\\t\\t\\t312491\\tV64KJ\\t\\tsynonym\\tNautilus parallelus\\t\" Abich, 1878\\tspecies\\t\\t\\t\\tNautilus\\t\\tparallelus\\t\\t\\t\" Abich\\t\\t\\t\\t1878\\t\\t\\t\\t\\t\\t\\tc97a9970-f",
+      "line": 1094555,
+      "literal_tsv_column_count": 73,
+      "raw_row_sha256": "8abe0109560dfe2f3492774087c72e00ec125334f93ca341830564335796813e",
+      "reason": "'\t' expected after '\"'",
+      "row_bytes": 280
+    }
+  ],
+  "fungi_root_rows": 1,
+  "header_profile": "checklistbank-col-xr-2026-07-17",
+  "identifier_shape_counts": {
+    "ascii_token": 1573613,
+    "decimal": 26640,
+    "uppercase_alphanumeric": 6270812
+  },
+  "malformed_row_count": 0,
+  "malformed_row_samples": [],
+  "missing_required_value_counts": {
+    "authorship": 1735425,
+    "id": 0,
+    "parent_id": 5,
+    "rank": 0,
+    "scientific_name": 0,
+    "status": 0
+  },
+  "normalized_header": [
+    "ID",
+    "alternativeID",
+    "nameAlternativeID",
+    "sourceID",
+    "parentID",
+    "basionymID",
+    "status",
+    "scientificName",
+    "authorship",
+    "rank",
+    "notho",
+    "originalSpelling",
+    "uninomial",
+    "genericName",
+    "infragenericEpithet",
+    "specificEpithet",
+    "infraspecificEpithet",
+    "cultivarEpithet",
+    "combinationAuthorship",
+    "combinationAuthorshipID",
+    "combinationExAuthorship",
+    "combinationExAuthorshipID",
+    "combinationAuthorshipYear",
+    "basionymAuthorship",
+    "basionymAuthorshipID",
+    "basionymExAuthorship",
+    "basionymExAuthorshipID",
+    "basionymAuthorshipYear",
+    "namePhrase",
+    "nameReferenceID",
+    "namePublishedInYear",
+    "namePublishedInPage",
+    "namePublishedInPageLink",
+    "gender",
+    "genderAgreement",
+    "etymology",
+    "code",
+    "nameStatus",
+    "accordingToID",
+    "accordingToPage",
+    "accordingToPageLink",
+    "referenceID",
+    "scrutinizer",
+    "scrutinizerID",
+    "scrutinizerDate",
+    "extinct",
+    "temporalRangeStart",
+    "temporalRangeEnd",
+    "environment",
+    "species",
+    "section",
+    "subgenus",
+    "genus",
+    "subtribe",
+    "tribe",
+    "subfamily",
+    "family",
+    "superfamily",
+    "suborder",
+    "order",
+    "subclass",
+    "class",
+    "subphylum",
+    "phylum",
+    "kingdom",
+    "ordinal",
+    "branchLength",
+    "link",
+    "nameRemarks",
+    "remarks",
+    "modified",
+    "modifiedBy",
+    "clb:merged"
+  ],
+  "original_header": [
+    "col:ID",
+    "col:alternativeID",
+    "col:nameAlternativeID",
+    "col:sourceID",
+    "col:parentID",
+    "col:basionymID",
+    "col:status",
+    "col:scientificName",
+    "col:authorship",
+    "col:rank",
+    "col:notho",
+    "col:originalSpelling",
+    "col:uninomial",
+    "col:genericName",
+    "col:infragenericEpithet",
+    "col:specificEpithet",
+    "col:infraspecificEpithet",
+    "col:cultivarEpithet",
+    "col:combinationAuthorship",
+    "col:combinationAuthorshipID",
+    "col:combinationExAuthorship",
+    "col:combinationExAuthorshipID",
+    "col:combinationAuthorshipYear",
+    "col:basionymAuthorship",
+    "col:basionymAuthorshipID",
+    "col:basionymExAuthorship",
+    "col:basionymExAuthorshipID",
+    "col:basionymAuthorshipYear",
+    "col:namePhrase",
+    "col:nameReferenceID",
+    "col:namePublishedInYear",
+    "col:namePublishedInPage",
+    "col:namePublishedInPageLink",
+    "col:gender",
+    "col:genderAgreement",
+    "col:etymology",
+    "col:code",
+    "col:nameStatus",
+    "col:accordingToID",
+    "col:accordingToPage",
+    "col:accordingToPageLink",
+    "col:referenceID",
+    "col:scrutinizer",
+    "col:scrutinizerID",
+    "col:scrutinizerDate",
+    "col:extinct",
+    "col:temporalRangeStart",
+    "col:temporalRangeEnd",
+    "col:environment",
+    "col:species",
+    "col:section",
+    "col:subgenus",
+    "col:genus",
+    "col:subtribe",
+    "col:tribe",
+    "col:subfamily",
+    "col:family",
+    "col:superfamily",
+    "col:suborder",
+    "col:order",
+    "col:subclass",
+    "col:class",
+    "col:subphylum",
+    "col:phylum",
+    "col:kingdom",
+    "col:ordinal",
+    "col:branchLength",
+    "col:link",
+    "col:nameRemarks",
+    "col:remarks",
+    "col:modified",
+    "col:modifiedBy",
+    "clb:merged"
+  ],
+  "original_to_normalized": [
+    [
+      "col:ID",
+      "ID"
+    ],
+    [
+      "col:alternativeID",
+      "alternativeID"
+    ],
+    [
+      "col:nameAlternativeID",
+      "nameAlternativeID"
+    ],
+    [
+      "col:sourceID",
+      "sourceID"
+    ],
+    [
+      "col:parentID",
+      "parentID"
+    ],
+    [
+      "col:basionymID",
+      "basionymID"
+    ],
+    [
+      "col:status",
+      "status"
+    ],
+    [
+      "col:scientificName",
+      "scientificName"
+    ],
+    [
+      "col:authorship",
+      "authorship"
+    ],
+    [
+      "col:rank",
+      "rank"
+    ],
+    [
+      "col:notho",
+      "notho"
+    ],
+    [
+      "col:originalSpelling",
+      "originalSpelling"
+    ],
+    [
+      "col:uninomial",
+      "uninomial"
+    ],
+    [
+      "col:genericName",
+      "genericName"
+    ],
+    [
+      "col:infragenericEpithet",
+      "infragenericEpithet"
+    ],
+    [
+      "col:specificEpithet",
+      "specificEpithet"
+    ],
+    [
+      "col:infraspecificEpithet",
+      "infraspecificEpithet"
+    ],
+    [
+      "col:cultivarEpithet",
+      "cultivarEpithet"
+    ],
+    [
+      "col:combinationAuthorship",
+      "combinationAuthorship"
+    ],
+    [
+      "col:combinationAuthorshipID",
+      "combinationAuthorshipID"
+    ],
+    [
+      "col:combinationExAuthorship",
+      "combinationExAuthorship"
+    ],
+    [
+      "col:combinationExAuthorshipID",
+      "combinationExAuthorshipID"
+    ],
+    [
+      "col:combinationAuthorshipYear",
+      "combinationAuthorshipYear"
+    ],
+    [
+      "col:basionymAuthorship",
+      "basionymAuthorship"
+    ],
+    [
+      "col:basionymAuthorshipID",
+      "basionymAuthorshipID"
+    ],
+    [
+      "col:basionymExAuthorship",
+      "basionymExAuthorship"
+    ],
+    [
+      "col:basionymExAuthorshipID",
+      "basionymExAuthorshipID"
+    ],
+    [
+      "col:basionymAuthorshipYear",
+      "basionymAuthorshipYear"
+    ],
+    [
+      "col:namePhrase",
+      "namePhrase"
+    ],
+    [
+      "col:nameReferenceID",
+      "nameReferenceID"
+    ],
+    [
+      "col:namePublishedInYear",
+      "namePublishedInYear"
+    ],
+    [
+      "col:namePublishedInPage",
+      "namePublishedInPage"
+    ],
+    [
+      "col:namePublishedInPageLink",
+      "namePublishedInPageLink"
+    ],
+    [
+      "col:gender",
+      "gender"
+    ],
+    [
+      "col:genderAgreement",
+      "genderAgreement"
+    ],
+    [
+      "col:etymology",
+      "etymology"
+    ],
+    [
+      "col:code",
+      "code"
+    ],
+    [
+      "col:nameStatus",
+      "nameStatus"
+    ],
+    [
+      "col:accordingToID",
+      "accordingToID"
+    ],
+    [
+      "col:accordingToPage",
+      "accordingToPage"
+    ],
+    [
+      "col:accordingToPageLink",
+      "accordingToPageLink"
+    ],
+    [
+      "col:referenceID",
+      "referenceID"
+    ],
+    [
+      "col:scrutinizer",
+      "scrutinizer"
+    ],
+    [
+      "col:scrutinizerID",
+      "scrutinizerID"
+    ],
+    [
+      "col:scrutinizerDate",
+      "scrutinizerDate"
+    ],
+    [
+      "col:extinct",
+      "extinct"
+    ],
+    [
+      "col:temporalRangeStart",
+      "temporalRangeStart"
+    ],
+    [
+      "col:temporalRangeEnd",
+      "temporalRangeEnd"
+    ],
+    [
+      "col:environment",
+      "environment"
+    ],
+    [
+      "col:species",
+      "species"
+    ],
+    [
+      "col:section",
+      "section"
+    ],
+    [
+      "col:subgenus",
+      "subgenus"
+    ],
+    [
+      "col:genus",
+      "genus"
+    ],
+    [
+      "col:subtribe",
+      "subtribe"
+    ],
+    [
+      "col:tribe",
+      "tribe"
+    ],
+    [
+      "col:subfamily",
+      "subfamily"
+    ],
+    [
+      "col:family",
+      "family"
+    ],
+    [
+      "col:superfamily",
+      "superfamily"
+    ],
+    [
+      "col:suborder",
+      "suborder"
+    ],
+    [
+      "col:order",
+      "order"
+    ],
+    [
+      "col:subclass",
+      "subclass"
+    ],
+    [
+      "col:class",
+      "class"
+    ],
+    [
+      "col:subphylum",
+      "subphylum"
+    ],
+    [
+      "col:phylum",
+      "phylum"
+    ],
+    [
+      "col:kingdom",
+      "kingdom"
+    ],
+    [
+      "col:ordinal",
+      "ordinal"
+    ],
+    [
+      "col:branchLength",
+      "branchLength"
+    ],
+    [
+      "col:link",
+      "link"
+    ],
+    [
+      "col:nameRemarks",
+      "nameRemarks"
+    ],
+    [
+      "col:remarks",
+      "remarks"
+    ],
+    [
+      "col:modified",
+      "modified"
+    ],
+    [
+      "col:modifiedBy",
+      "modifiedBy"
+    ],
+    [
+      "clb:merged",
+      "clb:merged"
+    ]
+  ],
+  "quotes_structural": false,
+  "rank_distribution": {
+    "aberration": 509,
+    "class": 757,
+    "domain": 3,
+    "epifamily": 8,
+    "family": 30483,
+    "form": 75902,
+    "forma specialis": 61,
+    "genus": 460669,
+    "gigaclass": 2,
+    "infraclass": 28,
+    "infrafamily": 1,
+    "infrageneric name": 28,
+    "infrakingdom": 3,
+    "infraorder": 226,
+    "infraphylum": 12,
+    "infraspecific name": 13361,
+    "infrasubspecific name": 69,
+    "infratribe": 98,
+    "kingdom": 24,
+    "lusus": 321,
+    "megaclass": 1,
+    "morph": 155,
+    "mutatio": 73,
+    "nanorder": 5,
+    "natio": 119,
+    "order": 2985,
+    "other": 1133,
+    "parvorder": 41,
+    "parvphylum": 2,
+    "phylum": 195,
+    "proles": 1363,
+    "realm": 7,
+    "section botany": 273,
+    "section zoology": 26,
+    "series zoology": 8,
+    "species": 4884557,
+    "species aggregate": 233,
+    "subclass": 213,
+    "subfamily": 12169,
+    "subform": 876,
+    "subgenus": 44685,
+    "subkingdom": 3,
+    "suborder": 1012,
+    "subphylum": 58,
+    "subsection botany": 17,
+    "subsection zoology": 6,
+    "subspecies": 358314,
+    "subterclass": 13,
+    "subtribe": 3665,
+    "subvariety": 4025,
+    "superclass": 18,
+    "superfamily": 1872,
+    "superorder": 174,
+    "supertribe": 31,
+    "tribe": 11028,
+    "unranked": 1573734,
+    "variety": 385411
+  },
+  "removed_semantic_bom_code_points": 2,
+  "representative_nonempty_rows": 100,
+  "required_column_mapping": {
+    "authorship": 8,
+    "id": 0,
+    "parent_id": 4,
+    "rank": 9,
+    "scientific_name": 7,
+    "status": 6
+  },
+  "row_count": 7871065,
+  "scan_schema_version": 1,
+  "self_parent_reference_count": 0,
+  "semantic_probes": {
+    "Candolleomyces candolleanus": {
+      "raw": {
+        "accepted_id": "9YLPB",
+        "authorship": "(Fr.) D. Wächt. & A. Melzer",
+        "id": "9Z2GC",
+        "parent_id": "9YLPB",
+        "rank": "species",
+        "scientific_name": "Candolleomyces candolleanus",
+        "status": "accepted"
+      },
+      "semantic": {
+        "accepted_id": "9YLPB",
+        "authorship": "(Fr.) D. Wächt. & A. Melzer",
+        "id": "9Z2GC",
+        "parent_id": "9YLPB",
+        "rank": "species",
+        "scientific_name": "Candolleomyces candolleanus",
+        "status": "accepted"
+      }
+    },
+    "Psathyrella candolleana": {
+      "raw": {
+        "accepted_id": "9Z2GC",
+        "authorship": "(Fr.) Maire",
+        "id": "4NDVN",
+        "parent_id": "9Z2GC",
+        "rank": "species",
+        "scientific_name": "Psathyrella candolleana",
+        "status": "synonym"
+      },
+      "semantic": {
+        "accepted_id": "9Z2GC",
+        "authorship": "(Fr.) Maire",
+        "id": "4NDVN",
+        "parent_id": "9Z2GC",
+        "rank": "species",
+        "scientific_name": "Psathyrella candolleana",
+        "status": "synonym"
+      }
+    },
+    "fungi_root": {
+      "raw": {
+        "accepted_id": "CS5HF",
+        "authorship": "",
+        "id": "F",
+        "parent_id": "CS5HF",
+        "rank": "kingdom",
+        "scientific_name": "Fungi",
+        "status": "accepted"
+      },
+      "semantic": {
+        "accepted_id": "CS5HF",
+        "authorship": "",
+        "id": "F",
+        "parent_id": "CS5HF",
+        "rank": "kingdom",
+        "scientific_name": "Fungi",
+        "status": "accepted"
+      }
+    }
+  },
+  "sha256": "5b7d7ec383ad69b7dc9c959dadd866a2769ea2433cbcbe1ae30f4b7d9359bdd0",
+  "status_distribution": {
+    "accepted": 4477328,
+    "ambiguous synonym": 138747,
+    "misapplied": 6660,
+    "provisionally accepted": 162419,
+    "synonym": 3085911
+  },
+  "synonym_or_related_count": 3231318,
+  "terminal_validation_findings": [],
+  "unapproved_bom_occurrence_count": 0,
+  "uncompressed_bytes_read": 2929163002,
+  "unknown_columns": [
+    "clb:merged"
+  ]
+}

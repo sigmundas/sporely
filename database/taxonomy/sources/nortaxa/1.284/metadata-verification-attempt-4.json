@@ -1,0 +1,116 @@
+{
+  "acquisition_approval_created": false,
+  "acquisition_proposal_sha256": "8cdc0bd6e8f5701d3f58bcbad062d47baf81c456a5f3174fa094f1552171f226",
+  "attempt_1_sha256": "9665bb1ed16958830304e753dfdb73829bc9383b45d67ee9bc4dc332c66e067a",
+  "attempt_2_sha256": "92ab2958c151eab417da4d29084682293002950bdc5a72b1c0caaf8a48c66ad9",
+  "attempt_3_sha256": "3c4e4c50815953af2feb1bf0f4f7346bfc0bd217c09b09efb65989b2f03fbcc0",
+  "attempt_number": 4,
+  "authorization_scope": {
+    "archive_get_authorized": false,
+    "authentication_authorized": false,
+    "cookies_persisted": false,
+    "maximum_cumulative_response_body_bytes": 0,
+    "metadata_only": true,
+    "range_authorized": false,
+    "redirect_following_disabled": true,
+    "retry_authorized": false,
+    "single_head_only": true
+  },
+  "cumulative_body_bytes": 0,
+  "failure": null,
+  "finished_at": "2026-07-24T21:45:22.332953Z",
+  "manifest_changed": false,
+  "network_operations": [
+    {
+      "followed_redirect": false,
+      "method": "HEAD",
+      "url": "https://ipt.artsdatabanken.no/archive.do?r=artsnavnebase&v=1.284"
+    }
+  ],
+  "operations": [
+    {
+      "body_bytes": 0,
+      "body_sha256": null,
+      "content_type": "application/zip",
+      "error": null,
+      "final_url": "https://ipt.artsdatabanken.no/archive.do?r=artsnavnebase&v=1.284",
+      "method": "HEAD",
+      "operation": "archive_head",
+      "parse_status": "parse_succeeded",
+      "parsed": {
+        "content_length": null,
+        "content_length_declared": false,
+        "content_type_primary": "application/zip",
+        "size_declaration_reason": "header_absent",
+        "size_declaration_status": "unavailable"
+      },
+      "redirect_chain": [],
+      "requested_url": "https://ipt.artsdatabanken.no/archive.do?r=artsnavnebase&v=1.284",
+      "status": "parse_succeeded",
+      "status_code": 200,
+      "transport": {
+        "allowlisted_headers": {
+          "Accept-Ranges": {
+            "count": 0,
+            "present": false,
+            "raw_values": null
+          },
+          "Content-Disposition": {
+            "count": 1,
+            "present": true,
+            "raw_values": [
+              "filename=\"dwca-artsnavnebase-v1.284.zip\""
+            ]
+          },
+          "Content-Length": {
+            "count": 0,
+            "present": false,
+            "raw_values": null
+          },
+          "Content-Type": {
+            "count": 1,
+            "present": true,
+            "raw_values": [
+              "application/zip;charset=UTF-8"
+            ]
+          },
+          "ETag": {
+            "count": 0,
+            "present": false,
+            "raw_values": null
+          },
+          "Last-Modified": {
+            "count": 1,
+            "present": true,
+            "raw_values": [
+              "Fri, 17 Jul 2026 12:08:23 GMT"
+            ]
+          }
+        },
+        "body_bytes": 0,
+        "body_sha256": null,
+        "final_url": "https://ipt.artsdatabanken.no/archive.do?r=artsnavnebase&v=1.284",
+        "header_evidence_bound_bytes": 4096,
+        "method": "HEAD",
+        "redirect_chain": [],
+        "redirect_following_disabled": true,
+        "requested_url": "https://ipt.artsdatabanken.no/archive.do?r=artsnavnebase&v=1.284",
+        "status_code": 200,
+        "status_reason": "OK",
+        "unrelated_headers_persisted": false
+      },
+      "transport_status": "transport_succeeded"
+    }
+  ],
+  "outcome": "succeeded",
+  "policy_resolution_sha256": "771d02ca3c656e43eeb9c448838b25faab443947c20a93dc8451dc5f656918fc",
+  "proposal_sha256": "e025d53350422d1590836ddc6383f5ed93665ba82ec48db1b3708f2e337a67e3",
+  "request_sha256": "38091edd85d40172539d3086732de2569a00102ff5564c66c55efb59360e7392",
+  "retry_performed": false,
+  "started_at": "2026-07-24T21:45:22.044584Z",
+  "tool": {
+    "name": "nortaxa_metadata.py",
+    "tool_git_commit": "ab767c1e41399a697f930c23776a2520421b1fac",
+    "version": 1
+  }
+}

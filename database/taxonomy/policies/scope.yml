@@ -1,0 +1,78 @@
+{
+  "format": "sporely-taxonomy-scope-v1",
+  "rules": [
+    {
+      "code": "global_fungi",
+      "action": "include",
+      "artifact": "sqlite",
+      "source": "col_xr",
+      "criteria": {"kingdom": ["Fungi"]},
+      "include_descendants": true,
+      "reason": "Global accepted fungal backbone"
+    },
+    {
+      "code": "fungal_navigation_ancestors",
+      "action": "include_ancestors",
+      "artifact": "sqlite",
+      "source": "col_xr",
+      "criteria": {"for_rule": "global_fungi"},
+      "reason": "Classification required for navigation, matching, and homonym handling"
+    },
+    {
+      "code": "supported_nortaxa_continuity",
+      "action": "include",
+      "artifact": "sqlite",
+      "source": "nortaxa",
+      "criteria": {"present_in_current_supported_artifact": true},
+      "reason": "Preserve Norwegian and Sami names, Artsorakel resolution, aliases, and assessments"
+    },
+    {
+      "code": "unmapped_supported_source_records",
+      "action": "include_as_provisional",
+      "artifact": "sqlite",
+      "source": "nortaxa",
+      "criteria": {"supported": true, "exact_col_mapping": false},
+      "reason": "Supported source records must not be silently discarded or forced"
+    },
+    {
+      "code": "associated_organisms_pending",
+      "action": "pending_review",
+      "artifact": "sqlite",
+      "source": "nortaxa",
+      "criteria": {"kingdom_not": ["Fungi"]},
+      "evidence_required": [
+        "Inventory observation host/substrate fields and published records",
+        "Identify product workflows requiring plant or other organism lookup",
+        "Approve explicit taxonomic groups before compiler implementation"
+      ],
+      "temporary_continuity": "Retain records already present in the current supported artifact; do not expand to all plants or animals"
+    },
+    {
+      "code": "cloud_current_fungi",
+      "action": "include",
+      "artifact": "cloud",
+      "source": "compiled_sqlite",
+      "criteria": {"current": true, "scope_rule": "global_fungi"},
+      "fields": ["current_taxon", "required_ancestors", "search_names", "required_external_ids"]
+    },
+    {
+      "code": "cloud_supported_associated",
+      "action": "include",
+      "artifact": "cloud",
+      "source": "compiled_sqlite",
+      "criteria": {"supported_by_approved_scope": true, "searchable": true}
+    },
+    {
+      "code": "cloud_exclusions",
+      "action": "exclude",
+      "artifact": "cloud",
+      "source": "compiled_sqlite",
+      "criteria": {"data_kinds": ["raw_source_rows", "full_reconciliation_evidence", "historical_notes", "unused_external_ids"]}
+    }
+  ],
+  "current_effective_scope_audit": {
+    "update_inat_common_names": "Animalia excluded; Basidiomycota species included; Ascomycota and other fungal phyla require Norwegian/Sami vernacular evidence; configured land-plant phyla include genus/species only when Norwegian/Sami vernacular evidence exists; excluded plant phyla and all other kingdoms are omitted; optional generic CLI filters can further restrict selection",
+    "current_builder": "NorTaxa accepted species backbone plus Artportalen-only rows and iNaturalist enrichment; resulting artifact also contains non-fungal taxa",
+    "decision": "Do not carry these Norway-centred filters into the global COL policy"
+  }
+}

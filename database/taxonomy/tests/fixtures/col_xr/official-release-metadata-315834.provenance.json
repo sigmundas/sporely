@@ -1,0 +1,9 @@
+{
+  "fixture_kind": "sanitized_official_response_provenance",
+  "captured_at": "2026-07-23T07:59:10Z",
+  "endpoint": "https://api.checklistbank.org/dataset/315834",
+  "http_method": "GET",
+  "official_response_bytes": 197367,
+  "official_response_sha256": "4a02b0e1b1686a8859ec1f367cdc0374ae0a663134dde17de091490d5e53175d",
+  "sanitization": "Retained only release identity fields required by offline verification; no authentication or headers persisted."
+}

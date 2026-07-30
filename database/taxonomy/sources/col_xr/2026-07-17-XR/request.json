@@ -1,0 +1,32 @@
+{
+  "delivery": {
+    "accepted_final_content_types": [
+      "application/octet-stream",
+      "application/x-zip-compressed",
+      "application/zip",
+      "application/zip-compressed"
+    ],
+    "authentication_required": false,
+    "canonical_entry_endpoint": "https://api.checklistbank.org/dataset/315834/export.zip?extended=true&format=ColDP",
+    "dataset_key": 315834,
+    "delivery_mode": "public prebuilt full release",
+    "export_job_submission_required": false,
+    "extended": true,
+    "format": "ColDP",
+    "http_method": "GET",
+    "max_redirects": 3,
+    "permitted_redirect_hosts": [
+      "download.checklistbank.org"
+    ]
+  },
+  "proposal_sha256": "1f0bc14ca41a0870a99eb581edea7227af449a5dba920edc253778dc0bd2c632",
+  "release": {
+    "archive_format": "ColDP",
+    "dataset_key": 315834,
+    "doi": "10.48580/dgykv",
+    "issued_date": "2026-07-17",
+    "release_label": "2026-07-17 XR",
+    "release_type": "Extended Release"
+  },
+  "request_sha256": "d700581e3ac1df895fb4639daa1b7aa842660df3257794ed924abce3f0c92c0a"
+}

@@ -307,8 +307,14 @@ def test_cloud_reference_dialog_handles_choice_without_species(tmp_path: Path, m
 
     dialog._on_species_selected(index)
 
-    assert dialog.genus_input.text() == ""
-    assert dialog.species_input.text() == ""
+    # Stage 3B.2 identity-independence: writing "Button mushroom" into the
+    # vernacular field must NOT clear the currently displayed taxon. The
+    # previous test asserted the buggy clearing side effect of
+    # `_clear_scientific_taxon_for_vernacular_search` — that side effect
+    # has been removed. Genus and species preserve whatever they held
+    # before the vernacular auto-population.
+    assert dialog.genus_input.text() == "Agaricus"
+    assert dialog.species_input.text() == "preserve me"
     assert dialog.vernacular_input.text() == "Button mushroom"
 
     dialog.vernacular_input.setText("Button mushroom")

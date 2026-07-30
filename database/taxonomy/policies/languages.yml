@@ -1,0 +1,34 @@
+{
+  "format": "sporely-taxonomy-languages-v1",
+  "normalization": {
+    "trim": true,
+    "case": "lower",
+    "separator": "-",
+    "country_filtering": false,
+    "unicode": "preserve_display_spelling",
+    "fallback": "none_unless_explicitly_requested"
+  },
+  "languages": [
+    {"code": "nb", "display_name": "Norwegian Bokmal", "aliases": ["nb-no", "nob"], "enabled_by_default": true, "order": 10, "sources": ["nortaxa", "inaturalist"]},
+    {"code": "nn", "display_name": "Norwegian Nynorsk", "aliases": ["nn-no", "nno"], "enabled_by_default": true, "order": 20, "sources": ["nortaxa", "inaturalist"]},
+    {"code": "no", "display_name": "Norwegian legacy or undetermined", "aliases": ["no-no", "nor"], "enabled_by_default": false, "order": 30, "sources": ["legacy_compiled"], "policy": "Retain as legacy/undetermined; do not silently normalize to nb or nn"},
+    {"code": "se", "display_name": "Northern Sami", "aliases": ["se-no", "sme"], "enabled_by_default": true, "order": 40, "sources": ["nortaxa", "inaturalist"]},
+    {"code": "sma", "display_name": "Southern Sami", "aliases": ["sma-no"], "enabled_by_default": true, "order": 50, "sources": ["nortaxa", "inaturalist"]},
+    {"code": "smj", "display_name": "Lule Sami", "aliases": ["smj-no"], "enabled_by_default": true, "order": 60, "sources": ["nortaxa", "inaturalist"]},
+    {"code": "sv", "display_name": "Swedish", "aliases": ["sv-se", "swe"], "enabled_by_default": true, "order": 70, "sources": ["artportalen", "nortaxa", "inaturalist"]},
+    {"code": "en", "display_name": "English", "aliases": ["en-gb", "en-us", "eng"], "enabled_by_default": true, "order": 80, "sources": ["inaturalist"]},
+    {"code": "de", "display_name": "German", "aliases": ["de-de", "deu", "ger"], "enabled_by_default": true, "order": 90, "sources": ["inaturalist"]},
+    {"code": "fr", "display_name": "French", "aliases": ["fr-fr", "fra", "fre"], "enabled_by_default": true, "order": 100, "sources": ["inaturalist"]},
+    {"code": "es", "display_name": "Spanish", "aliases": ["es-es", "spa"], "enabled_by_default": true, "order": 110, "sources": ["inaturalist"]},
+    {"code": "da", "display_name": "Danish", "aliases": ["da-dk", "dan"], "enabled_by_default": true, "order": 120, "sources": ["inaturalist"]},
+    {"code": "fi", "display_name": "Finnish", "aliases": ["fi-fi", "fin"], "enabled_by_default": true, "order": 130, "sources": ["inaturalist"]},
+    {"code": "pl", "display_name": "Polish", "aliases": ["pl-pl", "pol"], "enabled_by_default": true, "order": 140, "sources": ["inaturalist"]},
+    {"code": "pt", "display_name": "Portuguese", "aliases": ["pt-br", "pt-pt", "por"], "enabled_by_default": true, "order": 150, "sources": ["inaturalist"]},
+    {"code": "it", "display_name": "Italian", "aliases": ["it-it", "ita"], "enabled_by_default": true, "order": 160, "sources": ["inaturalist"]}
+  ],
+  "vernacular_rules": {
+    "multiple_names_per_language": true,
+    "preferred_controls": "ordering_only",
+    "sami_is_not_norwegian": true
+  }
+}

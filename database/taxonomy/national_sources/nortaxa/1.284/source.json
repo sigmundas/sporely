@@ -1,0 +1,47 @@
+{
+  "core": {
+    "location": "taxon.txt",
+    "row_type": "http://rs.tdwg.org/dwc/terms/Taxon",
+    "term_mapping": {
+      "acceptedNameUsageID": "http://rs.tdwg.org/dwc/terms/acceptedNameUsageID",
+      "parentNameUsageID": "http://rs.tdwg.org/dwc/terms/parentNameUsageID",
+      "scientificName": "http://rs.tdwg.org/dwc/terms/scientificName",
+      "scientificNameAuthorship": "http://rs.tdwg.org/dwc/terms/scientificNameAuthorship",
+      "taxonID": "http://rs.tdwg.org/dwc/terms/taxonID",
+      "taxonRank": "http://rs.tdwg.org/dwc/terms/taxonRank",
+      "taxonomicStatus": "http://rs.tdwg.org/dwc/terms/taxonomicStatus"
+    }
+  },
+  "distribution": {
+    "location": "distribution.txt",
+    "row_type": "http://rs.gbif.org/terms/1.0/Distribution",
+    "validation_only": true
+  },
+  "identifier_namespace": "NBIC:",
+  "identifier_namespace_semantics": {
+    "nortaxa_taxon_id": {
+      "authoritative_registry": "artsdatabanken/artsnavnebase",
+      "registry_source": "artsdatabanken",
+      "registry_namespace": "artsnavnebase_scientific_name_id",
+      "description": "NorTaxa (dataset 'artsnavnebase') publishes the Artsnavnebase scientific-name registry. Its DwC:taxonID column values are Artsnavnebase scientific-name identifiers, not Artsdatabanken taxon-concept identifiers. Numeric collisions with the separate 'artsdatabanken_taxon_concept_id' namespace are coincidence, not identity."
+    }
+  },
+  "optional_external_id_terms": [
+    "http://rs.tdwg.org/dwc/terms/scientificNameID"
+  ],
+  "profile_schema_version": 1,
+  "source_code": "nortaxa",
+  "source_release": {
+    "issued_date": "2026-07-17",
+    "version": "1.284"
+  },
+  "vernacular": {
+    "location": "vernacularname.txt",
+    "row_type": "http://rs.gbif.org/terms/1.0/VernacularName",
+    "term_mapping": {
+      "isPreferredName": "http://rs.gbif.org/terms/1.0/isPreferredName",
+      "language": "http://purl.org/dc/terms/language",
+      "vernacularName": "http://rs.tdwg.org/dwc/terms/vernacularName"
+    }
+  }
+}

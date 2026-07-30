@@ -1,0 +1,39 @@
+{
+  "format": "sporely-taxonomy-mapping-policy-v1",
+  "relationships": ["exact", "likely_exact", "broader", "narrower", "overlapping", "synonym", "unresolved"],
+  "review_states": ["unreviewed", "needs_review", "approved", "rejected", "superseded"],
+  "confidence": {"type": "decimal", "minimum": 0.0, "maximum": 1.0, "meaning": "evidence strength, never identity by itself"},
+  "automatic_identity": {
+    "allowed_relationships": ["exact"],
+    "requirements": [
+      "same persistent source identifier across pinned releases with continuous lineage",
+      "or an authoritative explicit cross-reference with compatible rank and classification",
+      "mapping is not rejected or superseded",
+      "no homonym, split, merge, or contradictory evidence"
+    ],
+    "forbidden_evidence_alone": ["canonical_name_equality", "fuzzy_name_similarity", "vernacular_name_equality", "shared_parent_only"]
+  },
+  "continuity_rules": [
+    {"event": "same_col_usage_id", "action": "retain_sporely_taxon_id", "review": "not_required_unless_conflict"},
+    {"event": "accepted_name_change_same_id", "action": "retain_sporely_taxon_id_and_record_former_name", "review": "not_required_unless_conflict"},
+    {"event": "parent_or_rank_change_same_id", "action": "retain_sporely_taxon_id_and_record_change", "review": "required_if_scope_or_rank_semantics_change"},
+    {"event": "accepted_becomes_synonym", "action": "retain_historical_usage_and_map_to_current_concept", "review": "required"},
+    {"event": "synonym_becomes_accepted", "action": "allocate_or_continue_only_with_lineage_evidence", "review": "required"},
+    {"event": "split", "action": "retain_old_historical_concept_allocate_children_no_observation_reassignment", "review": "required"},
+    {"event": "merge", "action": "retain_all_historical_usages_select_or_allocate_current_concept", "review": "required"},
+    {"event": "source_record_disappears", "action": "retain_historical_usage_mark_inactive", "review": "required_if_no_replacement"},
+    {"event": "source_identifier_replacement", "action": "retain_old_identifier_as_superseded_link_new_only_with_evidence", "review": "required"},
+    {"event": "exact_external_cross_reference", "action": "propose_exact_mapping", "review": "not_required_only_if_automatic_identity_requirements_pass"},
+    {"event": "canonical_name_only", "action": "propose_likely_exact_or_unresolved_never_merge", "review": "required"},
+    {"event": "fuzzy_match", "action": "propose_unresolved_never_merge", "review": "required"},
+    {"event": "homonym", "action": "keep_separate", "review": "required"},
+    {"event": "unresolved_supported_source_taxon", "action": "create_provisional_sporely_concept", "review": "required"},
+    {"event": "manual_override", "action": "apply_reviewed_mapping_before_automation", "review": "approved_required"}
+  ],
+  "manual_precedence": {
+    "approved_overrides_automation": true,
+    "rejected_is_retained": true,
+    "rejected_suppresses_same_proposal": true,
+    "changes_require_new_review": true
+  }
+}

@@ -1,0 +1,9 @@
+{
+  "acquisition_attempt_schema_version": 1,
+  "acquisition_proposal_sha256": "6d0ebe86caf982468f2d478a352a6030710d56e0f7222d0b34d34a1cb7184ca0",
+  "approval_sha256": "6de49d43812cbc6fe87bb89d329e72f3d24379d30f08b71b1c12d353124eb9e1",
+  "consumed_at": "2026-07-26T22:07:55.918862Z",
+  "endpoint": "https://ipt.artsdatabanken.no/archive.do?r=artsnavnebase&v=1.284",
+  "maximum_bytes": 67108864,
+  "state": "network_attempt_consumed"
+}

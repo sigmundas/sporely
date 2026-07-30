@@ -370,7 +370,7 @@ def test_best_common_name_for_taxon_returns_single_name_when_unambiguous(tmp_pat
     _assert_no_redlist(choice)
 
 
-def test_best_common_name_for_taxon_returns_none_when_choice_is_ambiguous(tmp_path: Path, monkeypatch) -> None:
+def test_best_common_name_for_taxon_returns_deterministic_pick_when_multiple_preferred(tmp_path: Path, monkeypatch) -> None:
     db_path = tmp_path / "ambiguous-taxonomy.sqlite"
     with sqlite3.connect(db_path) as conn:
         conn.execute(
@@ -430,7 +430,17 @@ def test_best_common_name_for_taxon_returns_none_when_choice_is_ambiguous(tmp_pa
     vernacular_db = VernacularDB(db_path, language_code="en")
     service = TaxonLookupService(vernacular_db=vernacular_db, language_code="en")
 
-    assert service.best_common_name_for_taxon("Agaricus", "bisporus") is None
+    # Under Stage 3B.2 the resolver returns a deterministic first pick when
+    # multiple preferred rows exist (sorted by fan-out language priority then
+    # case-folded name), so the observation editor's common-name field gets
+    # populated instead of being left blank. The chooser exposes the rest of
+    # the alternatives — see `VernacularDB.list_vernacular_alternatives`.
+    choice = service.best_common_name_for_taxon("Agaricus", "bisporus")
+    assert choice is not None
+    assert choice.common_name in {"Button mushroom", "Cultivated mushroom"}
+    # Deterministic across runs — first by language priority (only `en` here),
+    # then case-folded name: `Button mushroom` sorts before `Cultivated mushroom`.
+    assert choice.common_name == "Button mushroom"
 
 
 def test_service_is_safe_without_vernacular_db(tmp_path: Path, monkeypatch) -> None:

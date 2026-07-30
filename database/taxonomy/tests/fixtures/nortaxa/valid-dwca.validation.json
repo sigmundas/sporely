@@ -1,0 +1,134 @@
+{
+  "archive": {
+    "bytes": 1622,
+    "member_count": 5,
+    "sha256": "9f24ff5308fe5aa4870496b6132d5b7c88e25be3d8cb8659c4c69dde45289c3e"
+  },
+  "compiler_ready": true,
+  "hierarchy_complete": true,
+  "identifier_contract": {
+    "NBIC_scientific_name_id": {
+      "role": "namespaced scientific-name identifier; never numerically collapsed"
+    },
+    "core_row_id": {
+      "index": 0,
+      "role": "archive-local core row key"
+    },
+    "dwc:acceptedNameUsageID": {
+      "index": 2,
+      "role": "accepted usage reference"
+    },
+    "dwc:parentNameUsageID": {
+      "index": 3,
+      "role": "parent usage reference"
+    },
+    "dwc:taxonID": {
+      "index": 1,
+      "role": "source-defined taxon identifier"
+    },
+    "extension_coreid": {
+      "index": 0,
+      "role": "archive-local link to core row ID"
+    },
+    "raw_samples": [
+      {
+        "core_row_id": "row-R",
+        "dwc:acceptedNameUsageID": "",
+        "dwc:parentNameUsageID": "",
+        "dwc:scientificNameID": "NBIC:root",
+        "dwc:taxonID": "taxon:root"
+      },
+      {
+        "core_row_id": "row-G",
+        "dwc:acceptedNameUsageID": "",
+        "dwc:parentNameUsageID": "taxon:root",
+        "dwc:scientificNameID": "NBIC:genus",
+        "dwc:taxonID": "taxon:genus"
+      },
+      {
+        "core_row_id": "row-A",
+        "dwc:acceptedNameUsageID": "",
+        "dwc:parentNameUsageID": "taxon:genus",
+        "dwc:scientificNameID": "NBIC:54995",
+        "dwc:taxonID": "taxon:accepted"
+      },
+      {
+        "core_row_id": "row-S",
+        "dwc:acceptedNameUsageID": "taxon:accepted",
+        "dwc:parentNameUsageID": "taxon:genus",
+        "dwc:scientificNameID": "NBIC:old-54995",
+        "dwc:taxonID": "taxon:synonym"
+      }
+    ]
+  },
+  "linkage": {
+    "distinct_core_row_ids": 4,
+    "vernacular": {
+      "distinct_referenced_core_ids": 1,
+      "maximum_vernacular_rows_for_one_core": 3,
+      "orphan_vernacular_rows": 0,
+      "total_linked_vernacular_rows": 3
+    }
+  },
+  "meta_xml": {
+    "core_lines_terminated_by": "\\n",
+    "core_location": "data/nonstandard-core.csv",
+    "extensions": [
+      {
+        "location": "names/localized.data",
+        "row_type": "http://rs.gbif.org/terms/1.0/VernacularName"
+      },
+      {
+        "location": "extra/distribution.tsv",
+        "row_type": "http://rs.tdwg.org/dwc/terms/Distribution"
+      }
+    ],
+    "original_term_uris": {
+      "Taxon": {
+        "acceptedNameUsageID": "http://rs.tdwg.org/dwc/terms/acceptedNameUsageID",
+        "family": "http://rs.tdwg.org/dwc/terms/family",
+        "genus": "http://rs.tdwg.org/dwc/terms/genus",
+        "kingdom": "http://rs.tdwg.org/dwc/terms/kingdom",
+        "parentNameUsageID": "http://rs.tdwg.org/dwc/terms/parentNameUsageID",
+        "scientificName": "http://rs.tdwg.org/dwc/terms/scientificName",
+        "scientificNameAuthorship": "http://rs.tdwg.org/dwc/terms/scientificNameAuthorship",
+        "scientificNameID": "http://rs.tdwg.org/dwc/terms/scientificNameID",
+        "specificEpithet": "http://rs.tdwg.org/dwc/terms/specificEpithet",
+        "taxonID": "http://rs.tdwg.org/dwc/terms/taxonID",
+        "taxonRank": "http://rs.tdwg.org/dwc/terms/taxonRank",
+        "taxonomicStatus": "http://rs.tdwg.org/dwc/terms/taxonomicStatus"
+      },
+      "VernacularName": {
+        "countryCode": "http://rs.tdwg.org/dwc/terms/countryCode",
+        "isPreferredName": "http://rs.gbif.org/terms/1.0/isPreferredName",
+        "language": "http://rs.tdwg.org/dwc/terms/language",
+        "source": "http://rs.tdwg.org/dwc/terms/source",
+        "vernacularName": "http://rs.gbif.org/terms/1.0/vernacularName"
+      }
+    }
+  },
+  "network_calls": 0,
+  "profile_code": "nortaxa_dwca",
+  "record_counts": {
+    "Distribution": 1,
+    "Taxon": 4,
+    "VernacularName": 3
+  },
+  "reference_gaps": {
+    "orphan_accepted_reference_count": 0,
+    "orphan_accepted_reference_samples": [],
+    "orphan_parent_reference_count": 0,
+    "orphan_parent_reference_samples": [],
+    "sample_bound": 25
+  },
+  "report_schema_version": 1,
+  "request_definition_sha256": "38091edd85d40172539d3086732de2569a00102ff5564c66c55efb59360e7392",
+  "result": "passed",
+  "taxon_column_gaps": {
+    "genus_rank_rows_missing_genus": 0,
+    "species_like_rows_missing_both": 0,
+    "species_like_rows_missing_genus": 0,
+    "species_like_rows_missing_specific_epithet": 0,
+    "taxon_rows_missing_kingdom": 0
+  }
+}
