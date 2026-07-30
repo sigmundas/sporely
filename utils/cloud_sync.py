@@ -11609,8 +11609,7 @@ class SporelyCloudClient:
             storage_start = _cloud_sync_perf_counter() if _CLOUD_DEBUG_TIMING else None
             def _remove_storage_worker() -> None:
                 try:
-                    client = SporelyCloudClient.from_stored_credentials() or self
-                    client._storage_remove(storage_paths)
+                    self._storage_remove(storage_paths)
                 except Exception as exc:
                     storage_error.append(exc)
 
