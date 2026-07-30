@@ -127,6 +127,11 @@ sopp.jpg
 # Local raw reference source dumps
 /database/reference_data/sources/
 
+# Norwegian Red List workbook (Stage 3B.4): 10 MB binary, manually downloaded
+# from https://lister.artsdatabanken.no/rodlisteforarter/2021/ — kept out of
+# Git, provenance recorded in redlist normalizer report.json.
+/database/taxonomy/national_sources/artsdatabanken_redlist/*/redlist-*.xlsx
+
 # COL source archives: retain manifests/reports, ignore only large/transient bytes
 /database/taxonomy/sources/col_xr/*/archive.zip
 /database/taxonomy/sources/col_xr/*/.staging/

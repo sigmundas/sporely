@@ -1,15 +1,57 @@
 {
   "manifest_schema_version": 1,
   "taxonomy_schema_version": 2,
-  "content_release_id": "tax-2026.07.29-01",
+  "content_release_id": "tax-2026.07.30-02",
   "state": "candidate",
   "publication": "none",
-  "gz_artifact": "tax-2026.07.29-01.sqlite3.gz",
-  "gz_sha256": "ae0140392e68d34652fbca7af2c24195aaca84e3d70c04ce8c9fa6c17c9169cc",
-  "gz_bytes": 65849313,
-  "sqlite_sha256": "db3fc726850fa5a6212948122a0d2d969eda8eefa96a0b5307ebff02b583083a",
-  "sqlite_bytes": 310194176,
+  "gz_artifact": "tax-2026.07.30-02.sqlite3.gz",
+  "gz_sha256": "fb7660c613d0909c22591abe90768a9ae3c0ea88a8b8d5b2ee2bdf6c69cb8938",
+  "gz_bytes": 65481446,
+  "sqlite_sha256": "993d1608df1cb0ae93aab7b35a889b29858f0add720b933f3c58ed1e8485b94f",
+  "sqlite_bytes": 319709184,
   "registry_concatenated_sha256": "21b5d39d257799fdd4ea758d857fec4d29758b83dd7ea91bf3ecd24e3d1d3077",
-  "compiler_manifest_sha256": "5f26da07dac259851fd1c68ea6641d76e370a80077bd0ac97827854af80eae81",
-  "install_target_name": "vernacular_multilanguage_v2.sqlite3"
+  "compiler_manifest_sha256": "5be1cd0971934a13ae12bf12c59392fe3eb55c72df8e99666f93c3232d6a9094",
+  "install_target_name": "vernacular_multilanguage_v2.sqlite3",
+  "redlist_no": {
+    "source_system": "artsdatabanken_redlist",
+    "assessment_edition": "Norsk rødliste for arter 2021",
+    "source_release": "2021",
+    "publisher": "Artsdatabanken",
+    "publication_date": "2021-11-24",
+    "source_url": "https://lister.artsdatabanken.no/rodlisteforarter/2021/",
+    "export_url": "https://lister.artsdatabanken.no:443/rodlisteforarter/2021?Export=true",
+    "citation": "Artsdatabanken (2021, 24. november). Norsk rødliste for arter 2021. Utvalg https://lister.artsdatabanken.no:443/rodlisteforarter/2021?Export=true. https://lister.artsdatabanken.no/rodlisteforarter/2021",
+    "citation_evidence": "Verbatim from the workbook's 'Siteres som' sheet (row 0, single-cell entry).",
+    "workbook_filename": "redlist-2021.xlsx",
+    "workbook_sha256": "c2fb6a5f4828defe371b1cb9978974bfd64a23101ad37bb715f260bd658bef04",
+    "workbook_bytes": 10890135,
+    "sheet_name": "Vurderinger",
+    "assessed_name_registry_evidence": "Workbook 'Feltnavn og beskrivelser' sheet defines 'Vitenskapelig navn id' as 'Gyldig vitenskapelig navn id ved vurderingstidspunkt, i henhold til Artsnavnebase' — an authoritative statement that the id belongs to the Artsnavnebase name registry.",
+    "row_count": 34171,
+    "resolved_count": 7866,
+    "unresolved_count": 26305,
+    "unresolved_reason_counts": {
+      "name_id_not_found_in_nortaxa": 26245,
+      "name_id_name_mismatch": 60,
+      "name_id_ambiguous": 0
+    },
+    "collision_summary": {
+      "unique": 7797,
+      "multiple_rows_same_category": 12,
+      "conflicting_categories": 22,
+      "conflicting_ranks": 0
+    },
+    "resolution_rule": "Two-step exact bridge — (1) match the workbook's Vitenskapelig navn id against the artsnavnebase_scientific_name_id namespace (populated from NorTaxa's DwC taxonID under the declared identifier_namespace_semantics); (2) require the source row's scientificName to canonically agree with the workbook's scientific_name_snapshot. Failing either step leaves the row unresolved with taxon_id NULL and an explicit unresolved_reason. Name matching is never used as a fallback for identity.",
+    "license": {
+      "declared_in_workbook": false,
+      "declared_in_manifest": false,
+      "status": "pending_external_verification",
+      "notes": [
+        "The XLSX file itself carries no license notice. Sheets present: 'Vurderinger', 'Feltnavn og beskrivelser', 'Ekspertkomitéer', 'Siteres som' — only the last carries provenance text (the citation, above).",
+        "The Artsdatabanken portal at https://artsdatabanken.no/ (parent of https://lister.artsdatabanken.no/) publishes its data-terms page separately; that page has not been fetched or archived as part of this build.",
+        "For reference: the NorTaxa 1.284 acquisition record in database/taxonomy/sources/nortaxa/1.284/request.json declares expected_license = 'CC-BY 4.0'. This is a related-dataset expectation, NOT a confirmed license for the 2021 red-list workbook."
+      ],
+      "required_before_publication": "Fetch the Artsdatabanken terms page (e.g. https://artsdatabanken.no/dataandconditions or the equivalent Norwegian URL), record the license identifier + retrieval SHA-256, and set state='published' + publication metadata."
+    }
+  }
 }

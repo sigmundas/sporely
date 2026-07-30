@@ -180,6 +180,28 @@ CREATE TABLE taxon_external_id_text_min (
     FOREIGN KEY (taxon_id) REFERENCES taxon_min(taxon_id)
 );
 
+CREATE TABLE taxon_redlist_min (
+    redlist_row_id            INTEGER PRIMARY KEY,
+    taxon_id                  INTEGER,
+    source_system             TEXT NOT NULL,
+    source_release            TEXT NOT NULL,
+    assessment_id             TEXT NOT NULL,
+    assessment_area           TEXT NOT NULL,
+    assessed_name_source      TEXT NOT NULL,
+    assessed_name_namespace   TEXT NOT NULL,
+    assessed_name_id          TEXT NOT NULL,
+    scientific_name_snapshot  TEXT NOT NULL,
+    authorship_snapshot       TEXT,
+    taxon_rank_snapshot       TEXT,
+    category_raw              TEXT NOT NULL,
+    category_code             TEXT NOT NULL,
+    category_is_downgraded    INTEGER NOT NULL DEFAULT 0,
+    criteria                  TEXT,
+    expert_group              TEXT,
+    assessment_url            TEXT,
+    FOREIGN KEY (taxon_id) REFERENCES taxon_min(taxon_id)
+);
+
 CREATE TABLE taxonomy_meta (
     key   TEXT PRIMARY KEY,
     value TEXT
@@ -220,6 +242,16 @@ CREATE INDEX idx_external_text_taxon_source
 -- caller to name the namespace up front.
 CREATE INDEX idx_external_text_source_value
     ON taxon_external_id_text_min(source_system, external_id);
+
+CREATE UNIQUE INDEX idx_redlist_assessment_id
+    ON taxon_redlist_min(source_system, source_release, assessment_id);
+CREATE UNIQUE INDEX idx_redlist_name_area
+    ON taxon_redlist_min(
+        source_system, source_release,
+        assessed_name_namespace, assessed_name_id, assessment_area
+    );
+CREATE INDEX idx_redlist_taxon_area_release
+    ON taxon_redlist_min(taxon_id, assessment_area, source_release);
 """
 
 
@@ -605,6 +637,51 @@ def _build_into(
             [(i + 1, *row) for i, row in enumerate(deduped)],
         )
 
+        # --- Pass 5: red-list assessments (Stage 3B.4) ---------------------
+        redlist_rows: list[tuple] = []
+        redlist_path = release_dir / "redlist_no.jsonl"
+        if redlist_path.exists():
+            for entry in _open_lines(redlist_path):
+                taxon_id_value = entry.get("taxon_id")
+                if taxon_id_value is not None:
+                    taxon_id_value = int(taxon_id_value)
+                redlist_rows.append((
+                    taxon_id_value,
+                    str(entry["source_system"]),
+                    str(entry["source_release"]),
+                    str(entry["assessment_id"]),
+                    str(entry["assessment_area"]),
+                    str(entry["assessed_name_source"]),
+                    str(entry["assessed_name_namespace"]),
+                    str(entry["assessed_name_id"]),
+                    str(entry["scientific_name_snapshot"]),
+                    entry.get("authorship_snapshot"),
+                    entry.get("taxon_rank_snapshot"),
+                    str(entry["category_raw"]),
+                    str(entry["category_code"]),
+                    1 if entry.get("category_is_downgraded") else 0,
+                    entry.get("criteria"),
+                    entry.get("expert_group"),
+                    entry.get("assessment_url"),
+                ))
+            redlist_rows.sort(key=lambda r: (
+                r[1], r[2], r[4],
+                (0, int(r[3])) if r[3].isdigit() else (1, r[3]),
+                r[3],
+            ))
+            conn.executemany(
+                "INSERT INTO taxon_redlist_min "
+                "(redlist_row_id, taxon_id, source_system, source_release, "
+                "assessment_id, assessment_area, assessed_name_source, "
+                "assessed_name_namespace, assessed_name_id, "
+                "scientific_name_snapshot, authorship_snapshot, "
+                "taxon_rank_snapshot, category_raw, category_code, "
+                "category_is_downgraded, criteria, expert_group, "
+                "assessment_url) "
+                "VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)",
+                [(i + 1, *row) for i, row in enumerate(redlist_rows)],
+            )
+
         # --- Metadata --------------------------------------------------------
         meta = [
             ("taxonomy_schema_version", str(TAXONOMY_SCHEMA_VERSION)),
@@ -623,6 +700,17 @@ def _build_into(
             meta.append((
                 f"source_release[{code}].archive_sha256",
                 binding.get("archive_sha256", ""),
+            ))
+        redlist_meta = (manifest.get("redlist_no") or {}).get("source_binding")
+        if redlist_meta:
+            code = redlist_meta.get("source_system", "artsdatabanken_redlist")
+            meta.append((
+                f"source_release[{code}].id",
+                redlist_meta.get("source_release", ""),
+            ))
+            meta.append((
+                f"source_release[{code}].archive_sha256",
+                redlist_meta.get("input_sha256", ""),
             ))
         conn.executemany(
             "INSERT INTO taxonomy_meta (key, value) VALUES (?, ?)", meta,
@@ -676,13 +764,22 @@ def _build_into(
     ))
     if orphans[0][0]:
         raise BuildError(f"taxon_external_id_text_min orphans: {orphans[0][0]}")
+    # Red-list rows may hold taxon_id IS NULL (unresolved assessments); only
+    # rows with a NON-NULL taxon_id must reference a real Sporely identity.
+    orphans = list(conn.execute(
+        "SELECT COUNT(*) FROM taxon_redlist_min r "
+        "WHERE r.taxon_id IS NOT NULL AND NOT EXISTS "
+        "(SELECT 1 FROM taxon_min t WHERE t.taxon_id = r.taxon_id)"
+    ))
+    if orphans[0][0]:
+        raise BuildError(f"taxon_redlist_min orphans: {orphans[0][0]}")
 
     counts = {
         table: conn.execute(f"SELECT COUNT(*) FROM {table}").fetchone()[0]
         for table in (
             "taxon_min", "scientific_name_min", "vernacular_min",
             "taxon_external_id_min", "taxon_external_id_text_min",
-            "taxonomy_meta",
+            "taxon_redlist_min", "taxonomy_meta",
         )
     }
 

@@ -17,6 +17,55 @@ from utils.vernacular_utils import normalize_vernacular_language
 
 
 @dataclass(frozen=True)
+class RedlistLookupResult:
+    """Explicit outcome of a red-list lookup for
+    ``(sporely_taxon_id, area, source_release)``.
+
+    Exactly one of four statuses:
+      - ``"none"``: no assessment row (or the ``taxon_redlist_min`` table is
+        absent, e.g. legacy DB). ``assessment`` and ``conflicting_assessments``
+        are both empty.
+      - ``"unique"``: exactly one assessment row. ``assessment`` is set.
+      - ``"multiple_same_category"``: several rows for the same Sporely id
+        via distinct Artsnavnebase name-ids that all agree on the category
+        code. ``assessment`` is the deterministic representative (smallest
+        numeric ``assessment_id``). Callers that want the full set can read
+        ``conflicting_assessments``.
+      - ``"conflict"``: several rows disagree on category or rank. No
+        representative is chosen. ``conflicting_assessments`` lists them in
+        deterministic order (smallest numeric ``assessment_id`` first).
+
+    The result never auto-picks a category for conflict groups. That is a
+    curation decision, not a runtime one.
+    """
+    status: str
+    assessment: "RedlistAssessment | None" = None
+    conflicting_assessments: tuple["RedlistAssessment", ...] = ()
+
+
+@dataclass(frozen=True)
+class RedlistAssessment:
+    """A single Norwegian Red List assessment for a resolved Sporely taxon."""
+    taxon_id: int
+    source_system: str
+    source_release: str
+    assessment_area: str
+    assessment_id: str
+    category_raw: str
+    category_code: str
+    category_is_downgraded: bool
+    criteria: str | None
+    expert_group: str | None
+    assessment_url: str | None
+    scientific_name_snapshot: str
+    authorship_snapshot: str | None
+    taxon_rank_snapshot: str | None
+    assessed_name_source: str
+    assessed_name_namespace: str
+    assessed_name_id: str
+
+
+@dataclass(frozen=True)
 class TaxonChoice:
     genus: str
     species: str | None = None
@@ -603,6 +652,130 @@ class TaxonLookupService:
         self._resolve_scientific_cache[key] = choice
         return choice
 
+    def _fetch_redlist_rows(
+        self,
+        taxon_id: int,
+        area: str,
+        source_release: str,
+    ) -> list[RedlistAssessment]:
+        if not self._has_local_table("taxon_redlist_min"):
+            return []
+        rows = self._fetch_local_rows(
+            "SELECT taxon_id, source_system, source_release, assessment_area, "
+            "assessment_id, category_raw, category_code, category_is_downgraded, "
+            "criteria, expert_group, assessment_url, scientific_name_snapshot, "
+            "authorship_snapshot, taxon_rank_snapshot, assessed_name_source, "
+            "assessed_name_namespace, assessed_name_id "
+            "FROM taxon_redlist_min "
+            "WHERE taxon_id = ? AND assessment_area = ? AND source_release = ?",
+            (taxon_id, area, source_release),
+        )
+        assessments = [
+            RedlistAssessment(
+                taxon_id=int(r["taxon_id"]),
+                source_system=str(r["source_system"]),
+                source_release=str(r["source_release"]),
+                assessment_area=str(r["assessment_area"]),
+                assessment_id=str(r["assessment_id"]),
+                category_raw=str(r["category_raw"]),
+                category_code=str(r["category_code"]),
+                category_is_downgraded=bool(r["category_is_downgraded"]),
+                criteria=r["criteria"],
+                expert_group=r["expert_group"],
+                assessment_url=r["assessment_url"],
+                scientific_name_snapshot=str(r["scientific_name_snapshot"]),
+                authorship_snapshot=r["authorship_snapshot"],
+                taxon_rank_snapshot=r["taxon_rank_snapshot"],
+                assessed_name_source=str(r["assessed_name_source"]),
+                assessed_name_namespace=str(r["assessed_name_namespace"]),
+                assessed_name_id=str(r["assessed_name_id"]),
+            )
+            for r in rows
+        ]
+
+        # Deterministic ordering: numeric assessment_id ascending, then
+        # lexicographic fallback so tie behavior is fully specified.
+        def sort_key(a: RedlistAssessment):
+            try:
+                return (0, int(a.assessment_id), a.assessment_id)
+            except ValueError:
+                return (1, 0, a.assessment_id)
+        assessments.sort(key=sort_key)
+        return assessments
+
+    def get_redlist_lookup(
+        self,
+        sporely_taxon_id: int,
+        *,
+        area: str = "Norge",
+        source_release: str = "2021",
+    ) -> RedlistLookupResult:
+        """Return the explicit red-list lookup result for a Sporely taxon.
+
+        Never merges Norway and Svalbard: pass ``area="Svalbard"`` explicitly.
+        Never returns a category automatically for a conflict group — the
+        result explicitly tags conflicts and lists all conflicting rows.
+
+        Statuses (see :class:`RedlistLookupResult`): ``"none"``,
+        ``"unique"``, ``"multiple_same_category"``, ``"conflict"``.
+        """
+        if sporely_taxon_id is None:
+            return RedlistLookupResult(status="none")
+        try:
+            taxon_id_int = int(sporely_taxon_id)
+        except (TypeError, ValueError):
+            return RedlistLookupResult(status="none")
+        assessments = self._fetch_redlist_rows(
+            taxon_id_int, str(area), str(source_release)
+        )
+        if not assessments:
+            return RedlistLookupResult(status="none")
+        if len(assessments) == 1:
+            return RedlistLookupResult(status="unique",
+                                       assessment=assessments[0])
+        distinct_categories = {a.category_code for a in assessments}
+        distinct_ranks = {(a.taxon_rank_snapshot or "") for a in assessments}
+        if len(distinct_categories) == 1 and len(distinct_ranks) == 1:
+            return RedlistLookupResult(
+                status="multiple_same_category",
+                assessment=assessments[0],
+                conflicting_assessments=tuple(assessments),
+            )
+        return RedlistLookupResult(
+            status="conflict",
+            assessment=None,
+            conflicting_assessments=tuple(assessments),
+        )
+
+    def get_redlist_assessment(
+        self,
+        sporely_taxon_id: int,
+        *,
+        area: str = "Norge",
+        source_release: str = "2021",
+    ) -> RedlistAssessment | None:
+        """Return the Norwegian Red List assessment for a Sporely taxon, or
+        ``None`` when there is nothing safely automatable to return.
+
+        Returns ``None`` when:
+          - the ``taxon_redlist_min`` table is absent (legacy DB);
+          - no assessment row exists for ``(taxon, area, release)``;
+          - the assessment group is in **conflict** (multiple rows disagree
+            on category or rank). Callers that need to render a
+            conflict-aware UI must go through :meth:`get_redlist_lookup`
+            and handle ``status == "conflict"`` explicitly.
+
+        Returns the deterministic representative (smallest numeric
+        ``assessment_id``) on ``"unique"`` and ``"multiple_same_category"``.
+        Never auto-picks a category for conflict groups.
+        """
+        result = self.get_redlist_lookup(
+            sporely_taxon_id, area=area, source_release=source_release,
+        )
+        if result.status in ("unique", "multiple_same_category"):
+            return result.assessment
+        return None
+
     def resolve_common_name(
         self,
         name: str,
@@ -674,4 +847,10 @@ class TaxonLookupService:
         return choice
 
 
-__all__ = ["TAXON_COMPLETER_LIMIT", "TaxonChoice", "TaxonLookupService"]
+__all__ = [
+    "TAXON_COMPLETER_LIMIT",
+    "TaxonChoice",
+    "TaxonLookupService",
+    "RedlistAssessment",
+    "RedlistLookupResult",
+]

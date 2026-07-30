@@ -18,6 +18,14 @@
     "validation_only": true
   },
   "identifier_namespace": "NBIC:",
+  "identifier_namespace_semantics": {
+    "nortaxa_taxon_id": {
+      "authoritative_registry": "artsdatabanken/artsnavnebase",
+      "registry_source": "artsdatabanken",
+      "registry_namespace": "artsnavnebase_scientific_name_id",
+      "description": "NorTaxa (dataset 'artsnavnebase') publishes the Artsnavnebase scientific-name registry. Its DwC:taxonID column values are Artsnavnebase scientific-name identifiers, not Artsdatabanken taxon-concept identifiers. Numeric collisions with the separate 'artsdatabanken_taxon_concept_id' namespace are coincidence, not identity."
+    }
+  },
   "optional_external_id_terms": [
     "http://rs.tdwg.org/dwc/terms/scientificNameID"
   ],

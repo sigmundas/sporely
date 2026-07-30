@@ -22,6 +22,8 @@ unresolved. Historical usages remain traceable.
 | `acceptedNameUsageID` | `nortaxa` | `nortaxa_accepted_name_usage_id` | accepted-usage reference | no |
 | `parentNameUsageID` | `nortaxa` | `nortaxa_parent_name_usage_id` | parent-usage reference | no |
 | Artsorakel `NBIC:` ID | `artsorakel` | `nbic_scientific_name_id` | scientific name | no |
+| Artsnavnebase scientific-name ID | `artsdatabanken` | `artsnavnebase_scientific_name_id` | scientific name | no |
+| Artsdatabanken taxon-concept ID | `artsdatabanken` | `artsdatabanken_taxon_concept_id` | taxon concept | no |
 | Artportalen ID | `artportalen` | `artportalen_taxon_id` | source taxon; concept precision not yet assumed | no |
 | iNaturalist ID | `inaturalist` | `inaturalist_taxon_id` | source taxon | no |
 | legacy GBIF ID | `gbif` | `gbif_taxon_key` | source usage/concept | no |
@@ -33,6 +35,31 @@ digits. Stripping `NBIC:` does not convert its scientific-name identifier into
 a NorTaxa row ID, NorTaxa `taxonID`, or Sporely ID. `NBIC:54995` must be retained
 as the raw external value; any match on its numeric component is valid only
 under an explicit, evidenced namespace bridge.
+
+### Artsnavnebase name-ID vs Artsdatabanken taxon-concept-ID
+
+Artsdatabanken maintains two independent identifier registries and Sporely
+must never conflate them:
+
+* `artsnavnebase_scientific_name_id` — the Artsnavnebase name registry.
+  Every distinct scientific name (with its authorship) has one. This is what
+  the Norwegian Red List workbook publishes under the column
+  `Vitenskapelig navn id`, and what Artsorakel returns under its `NBIC:`
+  prefix.
+* `artsdatabanken_taxon_concept_id` — Artsdatabanken's internal concept
+  registry. Distinct from the name id even for a single scientific name
+  (e.g. *Vulpes vulpes* has name-id `48034` and concept-id `31176`;
+  *Cladonia chlorophaea* has name-id `69071` and concept-id `45044`).
+
+The NorTaxa Darwin Core archive (dataset `artsnavnebase`) publishes the
+Artsnavnebase name registry: its `dwc:taxonID` column values ARE
+Artsnavnebase scientific-name IDs. See
+`national_sources/nortaxa/<release>/source.json.identifier_namespace_semantics`
+for the machine-readable declaration. Because of this, values under the
+DwC-technical namespace `nortaxa_taxon_id` may be bridged to the
+semantically-correct namespace `artsnavnebase_scientific_name_id` — but
+never to `artsdatabanken_taxon_concept_id`. Numeric equality across the
+two Artsdatabanken registries is coincidence, not identity.
 
 ## Mapping and continuity
 

@@ -393,6 +393,7 @@ def compile_release(
     release_id: str,
     source_release_manifests: dict[str, Path] | None = None,
     legacy_enrichment_path: Path | None = None,
+    redlist_dir: Path | None = None,
 ) -> dict:
     """Compile a deterministic candidate release into ``output_dir``.
 
@@ -1082,6 +1083,32 @@ def compile_release(
             for row in legacy_skips:
                 handle.write(_canonical_dumps(row) + "\n")
 
+        # ----- Norwegian Red List 2021 overlay (Stage 3B.4) ----------------
+        # Identity rule: red-list assessments never allocate a Sporely id.
+        # Resolution is exact-only, against the pre-existing NorTaxa
+        # ``scientificNameID`` binding, and unresolved rows are preserved
+        # verbatim with ``sporely_taxon_id = null``.
+        redlist_out = staging / "redlist_no.jsonl"
+        redlist_diagnostics_out = staging / "redlist_no_diagnostics.json"
+        redlist_binding: dict | None = None
+        redlist_counts: dict = {}
+        redlist_records: list[dict] = []
+        redlist_diagnostics: dict = {}
+        if redlist_dir is not None:
+            redlist_records, redlist_diagnostics, redlist_binding = _compile_redlist(
+                redlist_dir=redlist_dir,
+                source_usages=source_usages,
+            )
+            redlist_counts = redlist_diagnostics.get("counts", {})
+        with redlist_out.open("w", encoding="utf-8") as handle:
+            for row in redlist_records:
+                handle.write(_canonical_dumps(row) + "\n")
+        redlist_diagnostics_out.write_text(
+            json.dumps(redlist_diagnostics, ensure_ascii=False, indent=2,
+                       sort_keys=True) + "\n",
+            encoding="utf-8",
+        )
+
         diagnostics = _build_diagnostics(
             source_reports=source_reports,
             compiled_taxa=compiled_taxa,
@@ -1173,8 +1200,22 @@ def compile_release(
                     "sha256": _sha256_file(diagnostics_out),
                     "bytes": diagnostics_out.stat().st_size,
                 },
+                "redlist_no": {
+                    "name": redlist_out.name,
+                    "sha256": _sha256_file(redlist_out),
+                    "bytes": redlist_out.stat().st_size,
+                },
+                "redlist_no_diagnostics": {
+                    "name": redlist_diagnostics_out.name,
+                    "sha256": _sha256_file(redlist_diagnostics_out),
+                    "bytes": redlist_diagnostics_out.stat().st_size,
+                },
             },
             "counts": diagnostics["counts"],
+            "redlist_no": {
+                "counts": redlist_counts,
+                "source_binding": redlist_binding,
+            },
         }
         manifest_out.write_text(
             json.dumps(manifest, ensure_ascii=False, indent=2, sort_keys=True) + "\n",
@@ -1191,6 +1232,363 @@ def compile_release(
 
 
 FUNGI_KINGDOM = "Fungi"
+
+# ----- Red List overlay (Stage 3B.4) ---------------------------------------
+#
+# Identifier-namespace bridge — CRITICAL SEMANTICS.
+#
+# Artsdatabanken maintains two independent registries:
+#   - artsnavnebase_scientific_name_id  (name registry; one per scientific
+#     name + authorship). Called "Vitenskapelig navn id" in the red-list
+#     workbook and populated with the NBIC prefix by Artsorakel.
+#   - artsdatabanken_taxon_concept_id   (taxon-concept registry; may differ
+#     from the name-id for the SAME name — e.g. Vulpes vulpes has
+#     name-id 48034 and concept-id 31176; Cladonia chlorophaea has
+#     name-id 69071 and concept-id 45044). Sporely never conflates them.
+#
+# The NorTaxa DwC-A archive (dataset `artsnavnebase`) publishes the name
+# registry: its ``dwc:taxonID`` column carries an Artsnavnebase
+# scientific-name id (not a taxon-concept id). This is declared machine-
+# readably in the source profile at
+# ``national_sources/nortaxa/<release>/source.json.identifier_namespace_semantics``
+# and documented in ``docs/identity-contract.md``.
+#
+# The red-list bridge therefore resolves the workbook's assessed name-id
+# (namespace ``artsnavnebase_scientific_name_id`` in the normalized red-list
+# row) against source usages whose SEMANTIC namespace is also
+# ``artsnavnebase_scientific_name_id``. Today, exactly one source populates
+# that semantic namespace: NorTaxa's ``dwc:taxonID`` column, carried
+# through the pipeline under the DwC-technical namespace label
+# ``nortaxa_taxon_id``. If Sporely ever ingests a source that also emits an
+# Artsdatabanken TAXON-CONCEPT id, that concept id must not be added to this
+# bridge — numeric equality between the two registries is coincidence, not
+# identity.
+#
+# No fuzzy match, no scientific-name equality, no cross-namespace numeric
+# coincidence with COL usage ids or any other numeric namespace.
+
+# (source_code, dwc-technical namespace) → semantic namespace declared by
+# that source's identifier_namespace_semantics profile block.
+_ARTSNAVNEBASE_BRIDGE: tuple[tuple[str, str], ...] = (
+    ("nortaxa", "nortaxa_taxon_id"),
+)
+_REDLIST_SEMANTIC_NAMESPACE = "artsnavnebase_scientific_name_id"
+
+
+def _canonical_name_for_compare(name: str) -> str:
+    """Conservative canonicalization used by the red-list coherence check.
+
+    Applies only formatting normalizations that are demonstrably cosmetic:
+    - Strip parenthetical subgenus / section markers such as
+      "Bufo (Bufo) bufo" → "Bufo bufo", which appear in the workbook but
+      not in NorTaxa's scientific-name column.
+    - Collapse repeated whitespace.
+    - Case-fold.
+    Nothing is stemmed, lemmatized, transliterated, or authorship-aware.
+    Two names that reduce to the same canonical string are considered a
+    match FOR THE PURPOSE OF DETECTING GROSS ID/NAME MISMATCH ONLY; the
+    canonical form is never used to establish identity.
+    """
+    if not name:
+        return ""
+    text = str(name)
+    # Remove any parenthetical group and its surrounding padding.
+    text = re.sub(r"\s*\([^)]*\)\s*", " ", text)
+    text = re.sub(r"\s+", " ", text).strip()
+    return text.casefold()
+
+
+def _build_redlist_resolution_index(
+    source_usages: list[dict],
+) -> tuple[dict[str, tuple[int, str]], dict[str, list[int]]]:
+    """Build ``(unique_index, collisions)`` for red-list resolution.
+
+    ``unique_index`` maps an Artsnavnebase scientific-name id (numeric
+    string) to a ``(sporely_taxon_id, source_scientific_name)`` pair when
+    the mapping is unambiguous. The scientific name carries the string
+    NorTaxa published against that name-id and is used ONLY by the
+    source-row coherence check — not to establish identity.
+
+    ``collisions`` maps an Artsnavnebase name-id to the full list of
+    Sporely IDs that claim it when more than one appears. Ambiguous
+    name-ids never resolve — they surface as diagnostics.
+
+    Only ``(source_code, namespace)`` pairs declared as carrying
+    ``artsnavnebase_scientific_name_id`` values (currently NorTaxa's
+    ``nortaxa_taxon_id``) are eligible. Any other namespace — including
+    ``col_usage_id`` (COL is a distinct registry) and
+    ``nortaxa_accepted_name_usage_id`` (this points to a DIFFERENT row's
+    name-id, not the source row's own identity) — is explicitly ignored.
+
+    Both anchors and aliases (synonyms folded onto their accepted Sporely
+    id) qualify, so a red-list assessment against a NorTaxa synonym still
+    lands on the accepted Sporely identity.
+    """
+    eligible = set(_ARTSNAVNEBASE_BRIDGE)
+    by_name_id: dict[str, set[tuple[int, str]]] = {}
+    for u in source_usages:
+        source_code = u.get("source_code")
+        ns = (u.get("source_usage") or {}).get("namespace")
+        if (source_code, ns) not in eligible:
+            continue
+        identifier = (u.get("source_usage") or {}).get("identifier")
+        if not identifier:
+            continue
+        by_name_id.setdefault(str(identifier).strip(), set()).add((
+            int(u["sporely_taxon_id"]),
+            str(u.get("scientific_name") or ""),
+        ))
+    unique_index: dict[str, tuple[int, str]] = {}
+    collisions: dict[str, list[int]] = {}
+    for name_id, pairs in by_name_id.items():
+        ids = {p[0] for p in pairs}
+        if len(ids) == 1:
+            sporely_id = next(iter(ids))
+            # Pair carrying the source row that owns this name-id has a
+            # non-empty scientific_name; prefer it over synonym-alias pairs
+            # that folded onto the same Sporely id with an empty name.
+            names = sorted({p[1] for p in pairs if p[1]})
+            unique_index[name_id] = (sporely_id, names[0] if names else "")
+        else:
+            collisions[name_id] = sorted(ids)
+    return unique_index, collisions
+
+
+def _compile_redlist(
+    *,
+    redlist_dir: Path,
+    source_usages: list[dict],
+) -> tuple[list[dict], dict, dict]:
+    """Resolve normalized red-list assessments against existing Sporely
+    identities.
+
+    Returns ``(records, diagnostics, source_binding)``.
+
+    Records are the resolved rows to be written to ``redlist_no.jsonl``,
+    each carrying either an integer ``taxon_id`` (resolved by exact
+    ``scientificNameID`` bridge) or ``taxon_id = null`` (unresolved).
+    """
+    report_path = redlist_dir / "report.json"
+    assessments_path = redlist_dir / "assessments.jsonl"
+    if not report_path.exists():
+        raise CompilerError(
+            f"redlist report not found: {report_path}"
+        )
+    if not assessments_path.exists():
+        raise CompilerError(
+            f"redlist assessments not found: {assessments_path}"
+        )
+    report = json.loads(report_path.read_text(encoding="utf-8"))
+
+    unique_index, collision_index = _build_redlist_resolution_index(source_usages)
+
+    records: list[dict] = []
+    per_area: dict[str, int] = {}
+    per_category: dict[str, int] = {}
+    resolved_count = 0
+    unresolved_count = 0
+    ambiguous_count = 0
+    name_id_name_mismatch_count = 0
+    ambiguous_samples: list[dict] = []
+    unresolved_samples: list[dict] = []
+    name_id_name_mismatch_samples: list[dict] = []
+    seen_assessment_ids: set[str] = set()
+
+    with assessments_path.open("r", encoding="utf-8") as handle:
+        for line_number, raw in enumerate(handle, start=1):
+            line = raw.strip()
+            if not line:
+                continue
+            try:
+                row = json.loads(line)
+            except json.JSONDecodeError as exc:
+                raise CompilerError(
+                    f"{assessments_path}:{line_number}: malformed JSON: {exc}"
+                ) from exc
+            assessment_id = str(row["assessment_id"])
+            if assessment_id in seen_assessment_ids:
+                raise CompilerError(
+                    f"duplicate assessment_id in normalized input: {assessment_id!r}"
+                )
+            seen_assessment_ids.add(assessment_id)
+            row_namespace = str(row.get("assessed_name_namespace") or "")
+            if row_namespace != _REDLIST_SEMANTIC_NAMESPACE:
+                raise CompilerError(
+                    f"red-list row assessed_name_namespace must be "
+                    f"{_REDLIST_SEMANTIC_NAMESPACE!r}, got {row_namespace!r} "
+                    f"(assessment_id={assessment_id})"
+                )
+            name_id = str(row["assessed_name_id"])
+            resolution = "unresolved"
+            resolution_via = None
+            taxon_id: int | None = None
+            unresolved_reason: str | None = None
+            source_row_name: str | None = None
+            if name_id in unique_index:
+                candidate_id, source_name = unique_index[name_id]
+                # Source-row coherence check. The bridge is a name-id, so
+                # a matched NorTaxa row MUST carry a scientific name that
+                # canonicalizes to the workbook's own scientific_name.
+                # Divergence here means the workbook's Vitenskapelig-navn-id
+                # is being interpreted against a different registry than
+                # Artsnavnebase (or the workbook and NorTaxa disagree about
+                # what that id refers to). Either way, this row must not
+                # bind to a Sporely id. Name matching is NOT attempted as
+                # a fallback.
+                wb_name = row.get("scientific_name_snapshot") or ""
+                if _canonical_name_for_compare(source_name) == \
+                        _canonical_name_for_compare(wb_name):
+                    taxon_id = candidate_id
+                    resolution = "resolved_by_artsnavnebase_scientific_name_id"
+                    resolution_via = _REDLIST_SEMANTIC_NAMESPACE
+                    resolved_count += 1
+                    source_row_name = source_name
+                else:
+                    unresolved_reason = "unresolved_name_id_name_mismatch"
+                    source_row_name = source_name
+                    name_id_name_mismatch_count += 1
+                    unresolved_count += 1
+                    if len(name_id_name_mismatch_samples) < 25:
+                        name_id_name_mismatch_samples.append({
+                            "assessment_id": assessment_id,
+                            "assessed_name_id": name_id,
+                            "workbook_scientific_name": wb_name,
+                            "source_scientific_name": source_name,
+                            "candidate_sporely_taxon_id": candidate_id,
+                            "assessment_area": row.get("assessment_area"),
+                        })
+            elif name_id in collision_index:
+                ambiguous_count += 1
+                unresolved_count += 1
+                unresolved_reason = "unresolved_name_id_ambiguous"
+                if len(ambiguous_samples) < 25:
+                    ambiguous_samples.append({
+                        "assessment_id": assessment_id,
+                        "assessed_name_id": name_id,
+                        "candidates": collision_index[name_id],
+                    })
+            else:
+                unresolved_count += 1
+                unresolved_reason = "unresolved_name_id_not_found"
+                if len(unresolved_samples) < 25:
+                    unresolved_samples.append({
+                        "assessment_id": assessment_id,
+                        "assessed_name_id": name_id,
+                        "scientific_name_snapshot": row.get("scientific_name_snapshot"),
+                        "assessment_area": row.get("assessment_area"),
+                    })
+            record = {
+                "taxon_id": taxon_id,
+                "resolution": resolution,
+                "resolved_via": resolution_via,
+                "unresolved_reason": unresolved_reason,
+                "source_row_scientific_name": source_row_name,
+                **row,
+            }
+            records.append(record)
+            per_area[row["assessment_area"]] = per_area.get(row["assessment_area"], 0) + 1
+            per_category[row["category_code"]] = per_category.get(row["category_code"], 0) + 1
+
+    # Deterministic order for output: (area, assessment_id numeric-first).
+    def sort_key(r: dict) -> tuple:
+        try:
+            aid_num = (0, int(r["assessment_id"]))
+        except ValueError:
+            aid_num = (1, r["assessment_id"])
+        return (r["assessment_area"], aid_num, r["assessment_id"])
+
+    records.sort(key=sort_key)
+
+    # ----- Collision audit (Stage 3B.4 audit step 2) -----------------------
+    # Group resolved rows by (source_release, assessment_area, taxon_id).
+    # Report — never auto-resolve — groups that carry multiple assessments,
+    # conflicting categories, or conflicting ranks. Groups keyed on a NULL
+    # taxon_id are not audited: those rows are unresolved by design and
+    # their "collisions" are just unrelated species that happen to share
+    # nothing but namespace.
+    from collections import defaultdict
+    groups: dict[tuple[str, str, int], list[dict]] = defaultdict(list)
+    for rec in records:
+        if rec["taxon_id"] is None:
+            continue
+        key = (
+            str(rec["source_release"]),
+            str(rec["assessment_area"]),
+            int(rec["taxon_id"]),
+        )
+        groups[key].append(rec)
+    collision_summary = {
+        "unique": 0,
+        "multiple_rows_same_category": 0,
+        "conflicting_categories": 0,
+        "conflicting_ranks": 0,
+    }
+    collision_conflicts: list[dict] = []
+    for (rel, area, tid), rows in groups.items():
+        distinct_categories = sorted({r["category_code"] for r in rows})
+        distinct_ranks = sorted({(r.get("taxon_rank_snapshot") or "")
+                                 for r in rows})
+        distinct_name_ids = sorted({r["assessed_name_id"] for r in rows})
+        conflict = None
+        if len(rows) == 1:
+            collision_summary["unique"] += 1
+        else:
+            same_category = len(distinct_categories) == 1
+            same_rank = len(distinct_ranks) == 1
+            if not same_category:
+                collision_summary["conflicting_categories"] += 1
+                conflict = "conflicting_categories"
+            elif not same_rank:
+                collision_summary["conflicting_ranks"] += 1
+                conflict = "conflicting_ranks"
+            else:
+                collision_summary["multiple_rows_same_category"] += 1
+        if conflict is not None and len(collision_conflicts) < 50:
+            collision_conflicts.append({
+                "source_release": rel,
+                "assessment_area": area,
+                "sporely_taxon_id": tid,
+                "row_count": len(rows),
+                "distinct_assessed_name_ids": distinct_name_ids,
+                "distinct_ranks": distinct_ranks,
+                "distinct_categories": distinct_categories,
+                "conflict": conflict,
+                "assessment_ids": sorted(r["assessment_id"] for r in rows),
+            })
+
+    diagnostics = {
+        "source_system": report.get("source_system"),
+        "source_release": report.get("source_release"),
+        "input_sha256": report.get("input_sha256"),
+        "input_filename": report.get("input_filename"),
+        "counts": {
+            "total": len(records),
+            "resolved": resolved_count,
+            "unresolved": unresolved_count,
+            "ambiguous": ambiguous_count,
+            "name_id_name_mismatch": name_id_name_mismatch_count,
+            "per_area": dict(sorted(per_area.items())),
+            "per_category": dict(sorted(per_category.items())),
+        },
+        "unresolved_samples": unresolved_samples,
+        "ambiguous_samples": ambiguous_samples,
+        "name_id_name_mismatch_samples": name_id_name_mismatch_samples,
+        "collisions": {
+            "grouped_by": ["source_release", "assessment_area",
+                           "sporely_taxon_id"],
+            "summary": collision_summary,
+            "conflicts": collision_conflicts,
+        },
+    }
+    source_binding = {
+        "source_system": report.get("source_system"),
+        "source_release": report.get("source_release"),
+        "input_sha256": report.get("input_sha256"),
+        "input_filename": report.get("input_filename"),
+        "sheet_name": report.get("sheet_name"),
+        "row_count": report.get("row_count"),
+    }
+    return records, diagnostics, source_binding
 
 
 def _count_auto_exact_by_rule(proposals) -> dict[str, int]:
@@ -1673,6 +2071,13 @@ def build_parser() -> argparse.ArgumentParser:
                              "vernaculars). Never allocates Sporely IDs; "
                              "unresolvable rows go to "
                              "legacy_enrichment_skips.jsonl.")
+    parser.add_argument("--redlist", type=Path, default=None,
+                        help="normalized Norwegian Red List 2021 directory "
+                             "(output of normalize_redlist_no.py). Adds an "
+                             "assessment overlay resolved by exact NorTaxa "
+                             "scientificNameID; never allocates Sporely IDs; "
+                             "unresolved assessments are preserved with "
+                             "taxon_id = null.")
     return parser
 
 
@@ -1696,6 +2101,7 @@ def main(argv: Iterable[str] | None = None) -> int:
             release_id=args.release_id,
             source_release_manifests=manifests,
             legacy_enrichment_path=args.legacy_enrichment_input,
+            redlist_dir=args.redlist,
         )
     except CompilerError as exc:
         print(f"error: {exc}", file=sys.stderr)
