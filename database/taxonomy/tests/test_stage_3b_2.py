@@ -226,6 +226,169 @@ def test_read_only_open_verifies_meta(tmp_path: Path) -> None:
         open_taxonomy_v2_readonly(bad)
 
 
+# ---------------- artifact-path derivation --------------------------------
+# Regression guard for the runtime bug where the installer looked for a
+# hardcoded gzip filename that no longer matched the shipped manifest.
+
+
+def test_gz_path_defaults_to_manifest_gz_artifact(tmp_path: Path,
+                                                  monkeypatch) -> None:
+    """When ``gz_path`` is omitted, ``ensure_installed`` derives it from
+    ``manifest.gz_artifact`` joined with the module-level
+    ``TAXONOMY_V2_DIR``. This prevents the release-rollover regression
+    where the runtime kept looking at the previous release's filename."""
+    import utils.taxonomy_v2 as tx
+    src = tmp_path / "raw.sqlite3"
+    _fake_v2_sqlite(src)
+    # The gz file is named to match the manifest's declared ``gz_artifact``.
+    gz = tmp_path / "tax.sqlite3.gz"
+    gz_sha, sql_sha, sql_bytes = _build_gz(src, gz)
+    manifest = tx.TaxonomyV2Manifest.load(
+        _manifest(tmp_path, gz_sha, sql_sha, sql_bytes))
+    # Redirect the module-level directory so the derived path is
+    # ``tmp_path / "tax.sqlite3.gz"``.
+    monkeypatch.setattr(tx, "TAXONOMY_V2_DIR", tmp_path)
+    result = tx.ensure_installed(app_data_dir=tmp_path / "userdata",
+                                 manifest=manifest)
+    assert result.exists()
+    assert hashlib.sha256(result.read_bytes()).hexdigest() == sql_sha
+
+
+def test_explicit_gz_path_override_is_not_overwritten(tmp_path: Path,
+                                                     monkeypatch) -> None:
+    """An explicit ``gz_path`` MUST be used verbatim even when the manifest
+    declares a different filename — the caller owns the location."""
+    import utils.taxonomy_v2 as tx
+    src = tmp_path / "raw.sqlite3"
+    _fake_v2_sqlite(src)
+    explicit_gz = tmp_path / "explicit-name.gz"
+    gz_sha, sql_sha, sql_bytes = _build_gz(src, explicit_gz)
+    manifest = tx.TaxonomyV2Manifest.load(
+        _manifest(tmp_path, gz_sha, sql_sha, sql_bytes))
+    # Point TAXONOMY_V2_DIR at an empty directory so the manifest-derived
+    # path would fail — proving the explicit gz_path is the one actually
+    # opened.
+    empty_dir = tmp_path / "nowhere"
+    empty_dir.mkdir()
+    monkeypatch.setattr(tx, "TAXONOMY_V2_DIR", empty_dir)
+    result = tx.ensure_installed(app_data_dir=tmp_path / "userdata",
+                                 manifest=manifest, gz_path=explicit_gz)
+    assert result.exists()
+    assert hashlib.sha256(result.read_bytes()).hexdigest() == sql_sha
+
+
+def test_missing_artifact_raises_not_found_error(tmp_path: Path,
+                                                 monkeypatch) -> None:
+    """Message shape must remain ``gzip artifact not found at <path>`` so
+    operators can grep for it in logs."""
+    import utils.taxonomy_v2 as tx
+    src = tmp_path / "raw.sqlite3"
+    _fake_v2_sqlite(src)
+    gz = tmp_path / "tax.sqlite3.gz"
+    gz_sha, sql_sha, sql_bytes = _build_gz(src, gz)
+    manifest = tx.TaxonomyV2Manifest.load(
+        _manifest(tmp_path, gz_sha, sql_sha, sql_bytes))
+    # Delete the artifact so the resolved path does not exist.
+    gz.unlink()
+    monkeypatch.setattr(tx, "TAXONOMY_V2_DIR", tmp_path)
+    with pytest.raises(tx.TaxonomyV2InstallError,
+                       match=r"gzip artifact not found at "):
+        tx.ensure_installed(app_data_dir=tmp_path / "userdata",
+                            manifest=manifest)
+
+
+@pytest.mark.parametrize("bad_name", [
+    "",                                     # empty
+    "/etc/passwd",                          # absolute POSIX
+    "..",                                   # parent-only
+    "../evil.sqlite3.gz",                   # parent traversal
+    "sub/tax.sqlite3.gz",                   # embedded separator
+    "sub\\tax.sqlite3.gz",                  # windows-style separator
+    "tax.sqlite3",                          # wrong suffix (no .gz)
+    "tax.gz",                               # wrong suffix (no .sqlite3)
+    ".sqlite3.gz",                          # suffix-only, no basename
+    "C:tax.sqlite3.gz",                     # windows drive-letter
+])
+def test_unsafe_manifest_artifact_name_raises(tmp_path: Path, monkeypatch,
+                                              bad_name: str) -> None:
+    """The manifest's ``gz_artifact`` field MUST be a bare filename with
+    the canonical ``.sqlite3.gz`` suffix. Anything else refuses to
+    install so a malicious or broken manifest cannot direct the extractor
+    at an arbitrary filesystem location."""
+    import utils.taxonomy_v2 as tx
+    src = tmp_path / "raw.sqlite3"
+    _fake_v2_sqlite(src)
+    gz = tmp_path / "tax.sqlite3.gz"
+    gz_sha, sql_sha, sql_bytes = _build_gz(src, gz)
+    # Build a manifest with the offending gz_artifact.
+    manifest_path = tmp_path / "manifest.json"
+    manifest_path.write_text(json.dumps({
+        "manifest_schema_version": 1,
+        "taxonomy_schema_version": 2,
+        "content_release_id": "tax-test",
+        "state": "candidate",
+        "publication": "none",
+        "gz_artifact": bad_name,
+        "gz_sha256": gz_sha,
+        "gz_bytes": 0,
+        "sqlite_sha256": sql_sha,
+        "sqlite_bytes": sql_bytes,
+        "registry_concatenated_sha256": "00" * 32,
+        "compiler_manifest_sha256": "00" * 32,
+        "install_target_name": "vernacular_multilanguage_v2.sqlite3",
+    }))
+    manifest = tx.TaxonomyV2Manifest.load(manifest_path)
+    monkeypatch.setattr(tx, "TAXONOMY_V2_DIR", tmp_path)
+    with pytest.raises(tx.TaxonomyV2InstallError,
+                       match=r"invalid gzip artifact"):
+        tx.ensure_installed(app_data_dir=tmp_path / "userdata",
+                            manifest=manifest)
+
+
+def test_first_install_writes_receipt_and_second_call_takes_fast_path(
+        tmp_path: Path, monkeypatch) -> None:
+    """First-install writes the receipt; the second call must reuse the
+    installed SQLite without running ``_sha256_file`` over any file
+    (fast path) unless ``force_verify`` is set."""
+    import utils.taxonomy_v2 as tx
+    src = tmp_path / "raw.sqlite3"
+    _fake_v2_sqlite(src)
+    gz = tmp_path / "tax.sqlite3.gz"
+    gz_sha, sql_sha, sql_bytes = _build_gz(src, gz)
+    manifest = tx.TaxonomyV2Manifest.load(
+        _manifest(tmp_path, gz_sha, sql_sha, sql_bytes))
+    monkeypatch.setattr(tx, "TAXONOMY_V2_DIR", tmp_path)
+    app_data = tmp_path / "userdata"
+
+    # First install: derives gz_path from the manifest, extracts, hashes.
+    result = tx.ensure_installed(app_data_dir=app_data, manifest=manifest)
+    receipt = result.with_name("install_receipt.json")
+    assert receipt.exists()
+    body = json.loads(receipt.read_text())
+    assert body["sqlite_sha256"] == sql_sha
+    assert body["sqlite_bytes"] == sql_bytes
+    assert body["content_release_id"] == manifest.content_release_id
+
+    # Second call: receipt fast path must run zero full-file hashes.
+    original = tx._sha256_file
+    hash_calls = {"count": 0}
+
+    def counted(path):
+        hash_calls["count"] += 1
+        return original(path)
+
+    monkeypatch.setattr(tx, "_sha256_file", counted)
+    result2 = tx.ensure_installed(app_data_dir=app_data, manifest=manifest)
+    assert result2 == result
+    assert hash_calls["count"] == 0
+
+    # ``force_verify=True`` MUST full-hash the installed SQLite once.
+    hash_calls["count"] = 0
+    tx.ensure_installed(app_data_dir=app_data, manifest=manifest,
+                       force_verify=True)
+    assert hash_calls["count"] == 1
+
+
 def test_activation_env_and_settings_gate(tmp_path: Path, monkeypatch) -> None:
     from utils.taxonomy_v2 import is_activation_enabled
     monkeypatch.delenv("SPORELY_TAXONOMY_V2", raising=False)

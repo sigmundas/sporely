@@ -63,7 +63,7 @@ database/reference_data/generated/*
 !database/reference_data/generated/taxonomy_v2/
 database/reference_data/generated/taxonomy_v2/*
 !database/reference_data/generated/taxonomy_v2/manifest.json
-!database/reference_data/generated/taxonomy_v2/tax-2026.07.29-01.sqlite3.gz
+!database/reference_data/generated/taxonomy_v2/tax-2026.07.30-02.sqlite3.gz
 database/reference_data/generated/*.sqlite3
 database/reference_data/generated/artportalen_scope.sqlite3
 

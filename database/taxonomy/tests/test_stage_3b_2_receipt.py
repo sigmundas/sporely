@@ -100,7 +100,11 @@ class _HashCounter:
 def _prepare_install(tmp_path: Path):
     src = tmp_path / "raw.sqlite3"
     _fake_v2_sqlite(src)
-    gz = tmp_path / "artifact.gz"
+    # Name the gz so it matches the manifest's declared ``gz_artifact`` —
+    # tests that let ``ensure_installed`` derive the path from the manifest
+    # (by monkeypatching ``utils.taxonomy_v2.TAXONOMY_V2_DIR`` to
+    # ``tmp_path``) can then find it without a runtime constant to override.
+    gz = tmp_path / "tax.sqlite3.gz"
     gz_sha, sql_sha, sql_bytes = _make_gz(src, gz)
     manifest_path = _manifest_path(tmp_path, gz_sha, sql_sha, sql_bytes)
     return gz, manifest_path, gz_sha, sql_sha, sql_bytes
@@ -154,10 +158,10 @@ def test_subsequent_resolutions_in_same_process_skip_full_hashing(tmp_path: Path
         # Point manifest resolution at our test manifest.
         original_load = tx.load_manifest
         tx.load_manifest = lambda *_a, **_k: manifest
-        # Also point the default gz-path constant used inside
-        # ensure_installed to our test gz.
-        original_gz = tx.TAXONOMY_V2_GZ_PATH
-        tx.TAXONOMY_V2_GZ_PATH = gz
+        # Redirect the module-level directory used to derive the default
+        # gz-path from the manifest's ``gz_artifact`` filename.
+        original_dir = tx.TAXONOMY_V2_DIR
+        tx.TAXONOMY_V2_DIR = tmp_path
         try:
             with _HashCounter(tx) as counter:
                 resolve_active_taxonomy_v2_path(app_data)
@@ -169,7 +173,7 @@ def test_subsequent_resolutions_in_same_process_skip_full_hashing(tmp_path: Path
                 assert counter.count == 0, counter.count
         finally:
             tx.load_manifest = original_load
-            tx.TAXONOMY_V2_GZ_PATH = original_gz
+            tx.TAXONOMY_V2_DIR = original_dir
     finally:
         del os.environ[ACTIVATION_ENV_VAR]
     invalidate_resolution_cache()
@@ -258,9 +262,9 @@ def test_explicit_verify_env_forces_full_hash_once(tmp_path: Path) -> None:
     os.environ[ACTIVATION_ENV_VAR] = "1"
     os.environ[VERIFY_ENV_VAR] = "1"
     original_load = tx.load_manifest
-    original_gz = tx.TAXONOMY_V2_GZ_PATH
+    original_dir = tx.TAXONOMY_V2_DIR
     tx.load_manifest = lambda *_a, **_k: manifest
-    tx.TAXONOMY_V2_GZ_PATH = gz
+    tx.TAXONOMY_V2_DIR = tmp_path
     try:
         with _HashCounter(tx) as counter:
             resolve_active_taxonomy_v2_path(app_data)
@@ -271,7 +275,7 @@ def test_explicit_verify_env_forces_full_hash_once(tmp_path: Path) -> None:
         os.environ.pop(ACTIVATION_ENV_VAR, None)
         os.environ.pop(VERIFY_ENV_VAR, None)
         tx.load_manifest = original_load
-        tx.TAXONOMY_V2_GZ_PATH = original_gz
+        tx.TAXONOMY_V2_DIR = original_dir
         invalidate_resolution_cache()
 
 
@@ -308,9 +312,9 @@ def test_country_change_burst_does_not_reopen_or_hash(tmp_path: Path) -> None:
     ensure_installed(app_data_dir=app_data, manifest=manifest, gz_path=gz)
     os.environ[ACTIVATION_ENV_VAR] = "1"
     original_load = tx.load_manifest
-    original_gz = tx.TAXONOMY_V2_GZ_PATH
+    original_dir = tx.TAXONOMY_V2_DIR
     tx.load_manifest = lambda *_a, **_k: manifest
-    tx.TAXONOMY_V2_GZ_PATH = gz
+    tx.TAXONOMY_V2_DIR = tmp_path
     try:
         # Warm the process cache.
         resolve_active_taxonomy_v2_path(app_data)
@@ -321,7 +325,7 @@ def test_country_change_burst_does_not_reopen_or_hash(tmp_path: Path) -> None:
     finally:
         os.environ.pop(ACTIVATION_ENV_VAR, None)
         tx.load_manifest = original_load
-        tx.TAXONOMY_V2_GZ_PATH = original_gz
+        tx.TAXONOMY_V2_DIR = original_dir
         invalidate_resolution_cache()
 
 

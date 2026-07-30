@@ -16,8 +16,13 @@ BUNDLED_VERNACULAR_DB_PATH = REFERENCE_DATA_GENERATED_DIR / "vernacular_multilan
 # Taxonomy v2 (Stage 3B.2 dev-activation) — the raw SQLite is ~310 MB; the
 # committed artifact is the deterministic gzip (~63 MB). The runtime installer
 # extracts it into user-data on first activation.
+#
+# There is intentionally no ``TAXONOMY_V2_GZ_PATH`` constant here: the gzip
+# artifact filename is embedded in the release manifest and read from
+# ``manifest.gz_artifact`` at install time. Hardcoding a release-specific
+# filename previously caused the runtime to look for a deleted artifact after
+# a release rollover.
 TAXONOMY_V2_DIR = REFERENCE_DATA_GENERATED_DIR / "taxonomy_v2"
-TAXONOMY_V2_GZ_PATH = TAXONOMY_V2_DIR / "tax-2026.07.29-01.sqlite3.gz"
 TAXONOMY_V2_MANIFEST_PATH = TAXONOMY_V2_DIR / "manifest.json"
 BUNDLED_ARTPORTALEN_BIOTOPES_PATH = REFERENCE_DATA_GENERATED_DIR / "artportalen_biotopes_tree.json"
 BUNDLED_ARTPORTALEN_SUBSTRATE_PATH = REFERENCE_DATA_GENERATED_DIR / "artportalen_substrate_tree.json"

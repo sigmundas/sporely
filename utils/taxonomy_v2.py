@@ -30,7 +30,6 @@ from pathlib import Path
 
 from database.reference_data_paths import (
     TAXONOMY_V2_DIR,
-    TAXONOMY_V2_GZ_PATH,
     TAXONOMY_V2_MANIFEST_PATH,
 )
 
@@ -98,6 +97,58 @@ def _sha256_file(path: Path) -> str:
 
 def load_manifest(manifest_path: Path = TAXONOMY_V2_MANIFEST_PATH) -> TaxonomyV2Manifest:
     return TaxonomyV2Manifest.load(manifest_path)
+
+
+_ALLOWED_GZ_SUFFIX = ".sqlite3.gz"
+
+
+def _safe_manifest_artifact_name(name: str) -> str:
+    """Validate a manifest ``gz_artifact`` value and return it verbatim.
+
+    The manifest declares only a bare filename that lives beside the
+    manifest itself. Anything else is rejected up-front so an attacker or
+    a broken build pipeline cannot direct the installer at an arbitrary
+    filesystem location.
+
+    Rejects (all raise :class:`TaxonomyV2InstallError`):
+
+    * empty / non-string values
+    * absolute paths (POSIX ``/foo`` or Windows drive letters like ``C:``)
+    * any directory separator (``/`` or ``\\``)
+    * a ``..`` path component
+    * any suffix other than ``.sqlite3.gz`` (the canonical release format)
+    """
+    if not isinstance(name, str) or not name:
+        raise TaxonomyV2InstallError(
+            f"invalid gzip artifact name in manifest: {name!r}"
+        )
+    # Reject POSIX-absolute and any embedded separators outright.
+    if name.startswith("/") or "/" in name or "\\" in name:
+        raise TaxonomyV2InstallError(
+            f"invalid gzip artifact name in manifest: {name!r}"
+        )
+    # Reject a Windows drive-letter absolute path (``C:foo`` / ``C:\\foo``).
+    if len(name) >= 2 and name[1] == ":" and name[0].isalpha():
+        raise TaxonomyV2InstallError(
+            f"invalid gzip artifact name in manifest: {name!r}"
+        )
+    # Belt-and-braces: PurePath-based checks catch anything the string
+    # inspection above missed on the current platform.
+    candidate = Path(name)
+    if candidate.is_absolute() or candidate.name != name:
+        raise TaxonomyV2InstallError(
+            f"invalid gzip artifact name in manifest: {name!r}"
+        )
+    if ".." in candidate.parts or name == "..":
+        raise TaxonomyV2InstallError(
+            f"invalid gzip artifact name in manifest: {name!r}"
+        )
+    if not name.endswith(_ALLOWED_GZ_SUFFIX) or name == _ALLOWED_GZ_SUFFIX:
+        raise TaxonomyV2InstallError(
+            f"invalid gzip artifact suffix in manifest: {name!r} "
+            f"(expected *{_ALLOWED_GZ_SUFFIX})"
+        )
+    return name
 
 
 def is_activation_enabled(app_data_dir: Path) -> bool:
@@ -286,7 +337,7 @@ def ensure_installed(
     *,
     app_data_dir: Path,
     manifest: TaxonomyV2Manifest | None = None,
-    gz_path: Path = TAXONOMY_V2_GZ_PATH,
+    gz_path: Path | None = None,
     force_verify: bool = False,
 ) -> Path:
     """Return the path to a verified, installed taxonomy-v2 SQLite.
@@ -305,6 +356,15 @@ def ensure_installed(
     longer match the manifest.
     """
     manifest = manifest or load_manifest()
+
+    if gz_path is None:
+        # Derive the artifact path from the manifest so a new release
+        # never requires a runtime constant update. TAXONOMY_V2_DIR is
+        # read at call time (not at import time) so tests can monkeypatch
+        # it to redirect the installer at a temp directory.
+        artifact_name = _safe_manifest_artifact_name(manifest.gz_artifact)
+        gz_path = TAXONOMY_V2_DIR / artifact_name
+
     if manifest.taxonomy_schema_version != 2:
         raise TaxonomyV2InstallError(
             f"unsupported taxonomy_schema_version: "
