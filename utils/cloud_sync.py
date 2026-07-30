@@ -8103,9 +8103,21 @@ def _merge_cloud_selected_ai_fields(local_obs: dict | None, remote_obs: dict | N
     """
     merged = dict(local_obs or {})
     remote = dict(remote_obs or {})
-    identification_is_empty = not any(
-        str(merged.get(field) or '').strip()
-        for field in ('genus', 'species', 'common_name', 'species_guess')
+    identification_fields = (
+        'genus',
+        'species',
+        'common_name',
+        'species_guess',
+    )
+    # Missing keys mean this may be a partial update payload. Only treat the
+    # identification as explicitly cleared when all identity fields are
+    # present and every one is blank/null.
+    identification_is_empty = (
+        all(field in merged for field in identification_fields)
+        and not any(
+            str(merged.get(field) or '').strip()
+            for field in identification_fields
+        )
     )
     for field in (
         'ai_selected_service',
