@@ -15472,6 +15472,16 @@ class ObservationDetailsDialog(GeometryMixin, QDialog):
         return ""
 
     def _extract_genus_species_from_taxon(self, taxon: dict) -> tuple[str | None, str | None]:
+        """Return ``(genus, species)`` for an AI prediction taxon dict.
+
+        Accepts genus-only predictions (e.g. the Artsorakel row
+        ``trevlesopper (Inocybe)``): when a structured genus field is
+        present without a species, or when the scientific-name text is a
+        single capitalised token, returns ``(genus, None)`` so the caller
+        can still populate the Genus input while leaving Species empty.
+        The AI Copy handler treats the pair as valid whenever ``genus``
+        is set, regardless of ``species``.
+        """
         if not isinstance(taxon, dict):
             return None, None
         genus = taxon.get("genus") or taxon.get("genusName") or taxon.get("genus_name")
@@ -15480,14 +15490,51 @@ class ObservationDetailsDialog(GeometryMixin, QDialog):
             or taxon.get("specificEpithet")
             or taxon.get("specific_epithet")
         )
-        if genus and species:
-            return str(genus).strip(), str(species).strip()
+        genus_text = str(genus).strip() if genus else ""
+        species_text = str(species).strip() if species else ""
+        if genus_text and species_text:
+            return genus_text, species_text
         sci = self._scientific_name_from_taxon(taxon)
         if sci and isinstance(sci, str):
             split = self._split_scientific_name_text(sci)
-            if split:
-                return split
-        return None, None
+            # ``split_scientific_name_text`` returns ``(None, None)`` for
+            # single-token input (a bare genus). Truthiness of a tuple is
+            # not enough — check the parsed genus explicitly before we
+            # accept the split.
+            split_genus = split[0] if split else None
+            split_species = split[1] if split else None
+            if split_genus:
+                return (
+                    genus_text or split_genus,
+                    species_text or split_species,
+                )
+            # Scientific-name text is a single capitalised token — treat
+            # it as a genus-only identification when no structured genus
+            # is present. Matches the shape Artsorakel returns for
+            # genus-level predictions (e.g. ``"Inocybe"``).
+            cleaned = " ".join(str(sci).split())
+            if (
+                cleaned
+                and " " not in cleaned
+                and cleaned[:1].isupper()
+                and cleaned.replace("-", "").isalpha()
+            ):
+                return (genus_text or cleaned, species_text or None)
+        # iNaturalist genus-rank predictions store the genus in
+        # ``taxon.name`` as a bare single token. ``_scientific_name_from_taxon``
+        # rejects it because it fails the binomial regex, but the field
+        # is still an identity signal. Recognise a single capitalised
+        # token in ``name`` as a genus when nothing else pinned it.
+        raw_name = str(taxon.get("name") or "").strip()
+        if raw_name:
+            cleaned_name = " ".join(raw_name.split())
+            if (
+                " " not in cleaned_name
+                and cleaned_name[:1].isupper()
+                and cleaned_name.replace("-", "").isalpha()
+            ):
+                return (genus_text or cleaned_name, species_text or None)
+        return (genus_text or None, species_text or None)
 
     def _selected_ai_prediction(self, source: str) -> dict:
         table = self.ai_tables.get(source) if hasattr(self, "ai_tables") else None
@@ -15529,16 +15576,28 @@ class ObservationDetailsDialog(GeometryMixin, QDialog):
                 genus = fallback_genus
             if not species and fallback_species:
                 species = fallback_species
-        if not genus or not species:
+        # A genus-only Artsorakel/iNat row is a valid identification level
+        # (e.g. ``trevlesopper (Inocybe)`` with no species). Require only a
+        # genus; leave species empty when the AI row has none — do NOT
+        # invent one via string-matching. Refuse only when the payload has
+        # no scientific-level identity at all.
+        if not genus:
             self._set_ai_status(self.tr("Could not parse genus/species from AI suggestion."), "#e67e22", source=source)
             return
-        scientific_name = f"{genus} {species}".strip() if genus and species else None
+        # ``ai_selected_scientific_name`` mirrors what the user picked.
+        # For a full binomial keep the "Genus species" form; for genus-only
+        # keep the bare genus so the "Selected AI: … · Inocybe · …" status
+        # footer still renders and Save persists the same string.
+        if genus and species:
+            scientific_name = f"{genus} {species}".strip()
+        else:
+            scientific_name = genus.strip() if genus else None
         current_tab = self.taxonomy_tabs.currentWidget() if hasattr(self, "taxonomy_tabs") else None
         target_grows = current_tab == getattr(self, "grows_tab", None)
         if target_grows:
             self._host_suppress_taxon_autofill = True
             self.host_genus_input.setText(genus)
-            self.host_species_input.setText(species)
+            self.host_species_input.setText(species or "")
             self._host_suppress_taxon_autofill = False
             if self.vernacular_db:
                 self.host_vernacular_input.clear()
@@ -15553,7 +15612,10 @@ class ObservationDetailsDialog(GeometryMixin, QDialog):
             if hasattr(self, "genus_input"):
                 self.genus_input.setText(genus)
             if hasattr(self, "species_input"):
-                self.species_input.setText(species)
+                # An empty species must clear the widget so a prior
+                # species-level pick doesn't linger under a genus-only
+                # copy.
+                self.species_input.setText(species or "")
             vernacular = (
                 self._inat_preferred_common_name(taxon)
                 if source == "inat"
@@ -15566,16 +15628,25 @@ class ObservationDetailsDialog(GeometryMixin, QDialog):
                 self._set_red_list_category(None, None)
             else:
                 self._set_inaturalist_taxon_id(None)
-                self._set_red_list_category(
-                    self._read_red_list_code(taxon) or self._read_red_list_code(selected_pred),
-                    self._red_list_categories_from_prediction(selected_pred or {}, taxon),
-                )
-                # Stage 3B.5: after applying the Artsorakel source snapshot,
-                # schedule a single deferred local-lookup resolve so a
-                # matching taxonomy pick refines the category into its
-                # final display form (respects degree marker, area, and
-                # conflict semantics).
-                self._schedule_final_redlist_resolution()
+                if species:
+                    self._set_red_list_category(
+                        self._read_red_list_code(taxon) or self._read_red_list_code(selected_pred),
+                        self._red_list_categories_from_prediction(selected_pred or {}, taxon),
+                    )
+                    # Stage 3B.5: after applying the Artsorakel source snapshot,
+                    # schedule a single deferred local-lookup resolve so a
+                    # matching taxonomy pick refines the category into its
+                    # final display form (respects degree marker, area, and
+                    # conflict semantics).
+                    self._schedule_final_redlist_resolution()
+                else:
+                    # Genus-only Artsorakel row: no unambiguous species-
+                    # level identity means no local red-list lookup can
+                    # refine a category. Clear any stale badge from a
+                    # prior species-level copy and skip the deferred
+                    # resolve (its guard would drop the run anyway
+                    # because no snapshot binds).
+                    self._set_red_list_category(None, None)
             self._suppress_taxon_autofill = False
             if self.vernacular_db:
                 self._update_vernacular_suggestions_for_taxon()
@@ -18179,6 +18250,21 @@ class ObservationDetailsDialog(GeometryMixin, QDialog):
                     self._on_taxon_manual_editing_finished
                 )
 
+        # Vernacular -> genus autofill: when the observer finishes
+        # typing a common name that resolves unambiguously to a single
+        # genus (across all matching taxa), auto-populate the Genus
+        # field. Species stays empty and Red List stays untouched — a
+        # bare vernacular can rarely be pinned to one species-level
+        # concept and MUST NOT clear an already-shown badge (Stage 3B.5
+        # vernacular-only invariant). The controller's own
+        # ``on_vernacular_editing_finished`` handler already covers the
+        # exact species-level unique-match case; this hook fires for
+        # the genus-only case it deliberately skips.
+        if self.vernacular_input is not None:
+            self.vernacular_input.editingFinished.connect(
+                self._on_vernacular_editing_finished_populate_genus
+            )
+
     def _on_taxon_manual_editing_finished(self) -> None:
         """Trigger a manual (genus, species) -> sporely_taxon_id resolve
         when the observer finishes editing either scientific-identity
@@ -18226,6 +18312,87 @@ class ObservationDetailsDialog(GeometryMixin, QDialog):
             canonical_scientific_name=resolution.canonical_scientific_name,
             canonical_rank=resolution.canonical_rank,
         )
+
+    def _on_vernacular_editing_finished_populate_genus(self) -> None:
+        """Auto-populate Genus when a typed vernacular resolves to a
+        single genus across all matching taxa.
+
+        Vernacular-only edit invariant (Stage 3B.5): this handler MUST
+        NOT clear the Red List badge, MUST NOT overwrite user-typed
+        text in Genus, and MUST NOT bind a taxonomy snapshot. Species
+        stays empty — a Norwegian common name almost always maps to a
+        genus rather than a species, and the exact species-level case
+        is already handled by :class:`TaxonInputController`'s
+        ``on_vernacular_editing_finished`` (which also fires on this
+        signal and executes before this handler due to connection
+        order).
+
+        Skip conditions:
+          - No taxon lookup available.
+          - Vernacular field is empty.
+          - Genus field already has text (do not overwrite manual input).
+          - A taxonomy snapshot is committed (do not override an
+            explicit picker/manual identity).
+          - The controller is suspended (load-time / programmatic write).
+          - The vernacular resolves to zero, or to multiple distinct
+            genera (ambiguity — user must disambiguate).
+        """
+        controller = getattr(self, "_taxon_controller", None)
+        if controller is None or controller._is_suspended():
+            return
+        try:
+            if controller.committed_snapshot() is not None:
+                return
+        except Exception:
+            return
+        vernacular_widget = getattr(self, "vernacular_input", None)
+        genus_widget = getattr(self, "genus_input", None)
+        if vernacular_widget is None or genus_widget is None:
+            return
+        name = str(vernacular_widget.text() or "").strip()
+        if not name:
+            return
+        current_genus = str(genus_widget.text() or "").strip()
+        if current_genus:
+            # Do not overwrite what the observer has already typed.
+            return
+        lookup = self._ensure_taxon_lookup()
+        if lookup is None:
+            return
+        try:
+            matches = lookup.resolve_common_name(name)
+        except Exception:
+            return
+        if not matches:
+            return
+        genera = set()
+        first_genus = ""
+        for choice in matches:
+            genus_text = str(getattr(choice, "genus", "") or "").strip()
+            if not genus_text:
+                continue
+            key = genus_text.casefold()
+            if not first_genus:
+                first_genus = genus_text
+            genera.add(key)
+            if len(genera) > 1:
+                # Ambiguous across genera — do nothing.
+                return
+        if not first_genus or len(genera) != 1:
+            return
+        # Populate genus without triggering the identity-clear handler
+        # (Stage 3B.5 vernacular-only invariant) or the controller's
+        # sync-vernacular-from-taxon logic (which would overwrite the
+        # freshly typed vernacular). ``_taxon_controller._suspended()``
+        # suppresses both.
+        with controller._suspended():
+            genus_widget.setText(first_genus)
+        # Refresh downstream indicators (tab dots, etc.) without going
+        # through the suppressed textChanged path.
+        try:
+            self._update_taxonomy_tab_indicators()
+        except Exception:
+            pass
 
     def _on_taxon_identity_field_edited(self, _text: str) -> None:
         controller = getattr(self, "_taxon_controller", None)
