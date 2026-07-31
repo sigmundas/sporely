@@ -125,10 +125,34 @@ Sort: `taxon_id ASC, language_code ASC, vernacular_name ASC, source ASC`.
 Language codes are preserved verbatim. `nb`, `nn`, `no`, `se`, `sma`, `smj` are
 distinct; no truncation, folding, or synthesis.
 
-### `taxon_external_id.jsonl` — authoritative (source: `taxon_external_id_text_min`)
+### `taxon_external_id.jsonl` — authoritative (two sources merged)
 
-External IDs whose namespace is declared by the compiler
-(`policies/source_priority.yml.identifier_namespaces`).
+External IDs whose namespace is declared by the compiler. Two authoritative
+source paths, merged in a single deterministic file:
+
+1. **`taxon_external_id_text_min`** — every scoped row verbatim. Namespace
+   is declared per `policies/source_priority.yml.identifier_namespaces`.
+
+2. **Derived NorTaxa row from `taxon_min.norwegian_taxon_id`.** The compiler
+   establishes `taxon_min.norwegian_taxon_id` only from a unique preferred
+   source usage whose original namespace is `nortaxa_taxon_id` (per
+   `docs/identity-contract.md` and the UNIQUE partial index
+   `idx_taxon_no_id` in `build_sqlite_candidate.py`). W1 emits one derived
+   row per scoped concept with a non-null `norwegian_taxon_id`:
+
+   | Field | Value |
+   |---|---|
+   | `source_system` | `"nortaxa"` |
+   | `namespace` | `"nortaxa_taxon_id"` |
+   | `external_id` | `CAST(norwegian_taxon_id AS TEXT)` |
+   | `id_role` | `"accepted"` |
+   | `is_preferred` | `true` |
+   | `external_name` | `canonical_scientific_name` |
+   | `note` | `"derived_from_taxon_min.norwegian_taxon_id"` |
+
+No other namespace is derived from the compiler's integer table; those
+rows remain in `taxon_external_id_legacy_integer.jsonl` verbatim, even
+when the same numeric value exists as a derived authoritative row.
 
 ```
 taxon_id        integer
@@ -142,6 +166,10 @@ note            string | null
 ```
 
 Sort: `taxon_id, source_system, namespace, external_id, id_role, is_preferred`.
+
+Duplicate authoritative semantic keys
+`(source_system, namespace, external_id, taxon_id)` are detected and
+cause the export to fail.
 
 ### `taxon_external_id_legacy_integer.jsonl` — legacy (source: `taxon_external_id_min`)
 
@@ -336,6 +364,22 @@ Before publishing the final directory the exporter verifies:
   and recorded in the manifest under `dangling_parent_references`. The
   parent value is preserved verbatim in `taxon.jsonl`; W1 never nulls a
   dangling parent;
+* after every dataset is written, a **post-emission reference validator**
+  streams `scientific_name.jsonl`, `vernacular.jsonl`,
+  `taxon_external_id.jsonl`, `taxon_external_id_legacy_integer.jsonl`, and
+  `taxon_redlist.jsonl` line-by-line, requires a `taxon_id` field on every
+  row, rejects null/boolean/string values, and confirms the integer is a
+  member of the exported concept set;
+* on a byte-identical rerun, the existing manifest is fully validated
+  (file list matches `DATASET_FILES`; every recorded row count, byte
+  count, and SHA-256 matches the on-disk files; `whole_export_sha256`
+  matches; dangling-parent block matches; every deterministic manifest
+  field matches the fresh staged manifest except `generated_at`). The
+  original `generated_at` is preserved. Stale or forged manifests fail
+  validation and force `--replace`;
+* `--verify-only` runs the source/schema checks, builds the concept
+  scope, and reports the real dangling-parent audit (never a synthetic
+  all-zero report);
 * row counts match pinned-release expectations for `tax-2026.07.30-02`;
 * per-file SHA-256 re-verifies after write;
 * deterministic re-runs produce identical hashes.
@@ -368,7 +412,7 @@ Pinned release: `tax-2026.07.30-02`.
 | `taxon.jsonl` | 634,894 |
 | `scientific_name.jsonl` | 662,649 |
 | `vernacular.jsonl` | 10,294  (nb 6,240; nn 3,975; se 79) |
-| `taxon_external_id.jsonl` (authoritative) | 620,975 (all `col_xr/col_usage_id`) |
+| `taxon_external_id.jsonl` (authoritative) | 634,894 (`col_xr/col_usage_id` 620,975 + derived `nortaxa/nortaxa_taxon_id` 13,919) |
 | `taxon_external_id_legacy_integer.jsonl` | 61,583 (all `artsdatabanken` source; namespace lost) |
 | `taxon_redlist.jsonl` | 7,866  (Norge 7,198; Svalbard 668) |
 | `taxonomy_release.jsonl` | 1 |

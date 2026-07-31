@@ -217,6 +217,15 @@ def _make_fixture_sqlite(path: Path, release_id: str = "tax-2099.01.01-01") -> N
                 rank, "accepted", cansrc, release_id, cansrc, canext,
             ),
         )
+    # Mirror the compiler's unique-preferred NorTaxa shortcut. Each of these
+    # rows is the sole preferred nortaxa_taxon_id source usage for its
+    # Sporely concept, so the compiler is entitled to populate
+    # taxon_min.norwegian_taxon_id from it.
+    for tid, no_id in [(20000, 52796), (20003, 53077), (20004, 56210)]:
+        conn.execute(
+            "UPDATE taxon_min SET norwegian_taxon_id=? WHERE taxon_id=?",
+            (no_id, tid),
+        )
     # Canonical scientific names + one synonym alias to test aliasing.
     sn_rows = [
         (1, "sci", "Fungi", 1, "col_xr", None),
@@ -781,6 +790,321 @@ def test_symlink_output_parent_rejected(tmp_path):
         )
 
 
+def test_derived_nortaxa_authoritative_row(tmp_path):
+    """taxon_min.norwegian_taxon_id → one derived authoritative row per concept."""
+    result = _run_fixture_export(tmp_path)
+    rows = [
+        json.loads(x)
+        for x in (result.output_dir / "taxon_external_id.jsonl")
+        .read_text(encoding="utf-8").splitlines()
+    ]
+    derived = [
+        r for r in rows if r.get("note") == "derived_from_taxon_min.norwegian_taxon_id"
+    ]
+    # Fixture sets norwegian_taxon_id on three concepts.
+    assert len(derived) == 3
+    for r in derived:
+        assert isinstance(r["taxon_id"], int)
+        assert isinstance(r["external_id"], str)
+        assert r["source_system"] == "nortaxa"
+        assert r["namespace"] == "nortaxa_taxon_id"
+        assert r["id_role"] == "accepted"
+        assert r["is_preferred"] is True
+    # Values and external_name match canonical_scientific_name.
+    by_taxon = {r["taxon_id"]: r for r in derived}
+    assert by_taxon[20000]["external_id"] == "52796"
+    assert by_taxon[20000]["external_name"] == "Cortinarius limonius"
+    assert by_taxon[20004]["external_id"] == "56210"
+    assert by_taxon[20004]["external_name"] == "Cantharellus cibarius"
+
+
+def test_no_norwegian_taxon_id_no_derived_row(tmp_path):
+    """Concepts without norwegian_taxon_id produce no derived NorTaxa row."""
+    result = _run_fixture_export(tmp_path)
+    rows = [
+        json.loads(x)
+        for x in (result.output_dir / "taxon_external_id.jsonl")
+        .read_text(encoding="utf-8").splitlines()
+    ]
+    # Fixture concept 20001 ("SomeNortaxaOrder") has no norwegian_taxon_id.
+    derived_for_20001 = [
+        r for r in rows
+        if r.get("taxon_id") == 20001
+        and r.get("note") == "derived_from_taxon_min.norwegian_taxon_id"
+    ]
+    assert derived_for_20001 == []
+
+
+def test_legacy_row_survives_alongside_derived(tmp_path):
+    """The same numeric value may exist in both files without deduplication."""
+    result = _run_fixture_export(tmp_path)
+    auth = [
+        json.loads(x)
+        for x in (result.output_dir / "taxon_external_id.jsonl")
+        .read_text(encoding="utf-8").splitlines()
+    ]
+    legacy = [
+        json.loads(x)
+        for x in (result.output_dir / "taxon_external_id_legacy_integer.jsonl")
+        .read_text(encoding="utf-8").splitlines()
+    ]
+    # Concept 20000: derived authoritative row (nortaxa/nortaxa_taxon_id/52796)
+    # AND legacy integer row (artsdatabanken source, external_id=52796). Both
+    # must survive independently.
+    derived = [
+        r for r in auth
+        if r["taxon_id"] == 20000
+        and r["namespace"] == "nortaxa_taxon_id"
+        and r["external_id"] == "52796"
+    ]
+    legacy_row = [
+        r for r in legacy
+        if r["taxon_id"] == 20000 and r["external_id"] == "52796"
+    ]
+    assert len(derived) == 1
+    assert len(legacy_row) == 1
+
+
+def test_duplicate_authoritative_key_fails(tmp_path):
+    """Two rows with the same (source, namespace, external_id, taxon_id) fail."""
+    art_dir = tmp_path / "artifact"
+    art_dir.mkdir(exist_ok=True)
+    sqlite_path = art_dir / "tax-2099.01.01-01.sqlite3"
+    _make_fixture_sqlite(sqlite_path, release_id="tax-2099.01.01-01")
+
+    conn = sqlite3.connect(sqlite_path)
+    # Add a text-table row that duplicates the derived NorTaxa row for 20000:
+    # source_system='nortaxa', namespace='nortaxa_taxon_id', external_id='52796'.
+    conn.execute(
+        "INSERT INTO taxon_external_id_text_min("
+        "taxon_id, source_system, namespace, external_id, id_role, "
+        "is_preferred, external_name, note) VALUES "
+        "(20000, 'nortaxa', 'nortaxa_taxon_id', '52796', 'accepted', 1, "
+        "'Cortinarius limonius', NULL)"
+    )
+    conn.commit()
+    conn.close()
+
+    gz_path = art_dir / "tax-2099.01.01-01.sqlite3.gz"
+    with sqlite_path.open("rb") as src, gzip.GzipFile(
+        filename="", mode="wb", fileobj=gz_path.open("wb"), mtime=0
+    ) as gz:
+        while True:
+            chunk = src.read(1 << 16)
+            if not chunk:
+                break
+            gz.write(chunk)
+    sq_sha = ce.sha256_file(sqlite_path)
+    gz_sha = ce.sha256_file(gz_path)
+    manifest = art_dir / "manifest.json"
+    manifest.write_text(json.dumps({
+        "manifest_schema_version": 1,
+        "taxonomy_schema_version": 2,
+        "content_release_id": "tax-2099.01.01-01",
+        "state": "candidate",
+        "publication": "none",
+        "gz_artifact": gz_path.name,
+        "gz_sha256": gz_sha,
+        "gz_bytes": gz_path.stat().st_size,
+        "sqlite_sha256": sq_sha,
+        "sqlite_bytes": sqlite_path.stat().st_size,
+    }))
+    sqlite_path.unlink()
+
+    pol = _write_fixture_policies(tmp_path)
+    with pytest.raises(ce.ExportError, match="duplicate authoritative"):
+        ce.run_export(
+            artifact_gz=gz_path, manifest=manifest, output_dir=tmp_path / "out",
+            policy_dir=pol, generated_at="2099-01-01T00:00:00Z",
+        )
+
+
+# ---------- post-emission taxon_id validator --------------------------
+
+
+def test_post_emission_out_of_scope_taxon_id_fails(tmp_path):
+    """A child JSONL row referencing an unknown taxon_id fails validation."""
+    from database.taxonomy.cloud_export import _validate_emitted_taxon_id_references
+    result = _run_fixture_export(tmp_path)
+    # Append a bogus row with an out-of-scope taxon_id.
+    bad = result.output_dir / "vernacular.jsonl"
+    with bad.open("ab") as fh:
+        fh.write(b'{"is_preferred_name":true,"language_code":"nb","source":null,"taxon_id":999999999,"vernacular_name":"impostor"}\n')
+    with pytest.raises(ce.ExportError, match="taxon_id is not in the exported concept set"):
+        _validate_emitted_taxon_id_references(
+            result.output_dir, frozenset(result.scope.concept_ids)
+        )
+
+
+def test_post_emission_null_taxon_id_fails(tmp_path):
+    from database.taxonomy.cloud_export import _validate_emitted_taxon_id_references
+    result = _run_fixture_export(tmp_path)
+    bad = result.output_dir / "vernacular.jsonl"
+    with bad.open("ab") as fh:
+        fh.write(b'{"taxon_id":null,"language_code":"nb","vernacular_name":"x","is_preferred_name":false,"source":null}\n')
+    with pytest.raises(ce.ExportError, match="taxon_id must not be null"):
+        _validate_emitted_taxon_id_references(
+            result.output_dir, frozenset(result.scope.concept_ids)
+        )
+
+
+def test_post_emission_boolean_taxon_id_fails(tmp_path):
+    from database.taxonomy.cloud_export import _validate_emitted_taxon_id_references
+    result = _run_fixture_export(tmp_path)
+    bad = result.output_dir / "vernacular.jsonl"
+    with bad.open("ab") as fh:
+        fh.write(b'{"taxon_id":true,"language_code":"nb","vernacular_name":"x","is_preferred_name":false,"source":null}\n')
+    with pytest.raises(ce.ExportError, match="not boolean"):
+        _validate_emitted_taxon_id_references(
+            result.output_dir, frozenset(result.scope.concept_ids)
+        )
+
+
+def test_post_emission_string_taxon_id_fails(tmp_path):
+    from database.taxonomy.cloud_export import _validate_emitted_taxon_id_references
+    result = _run_fixture_export(tmp_path)
+    bad = result.output_dir / "vernacular.jsonl"
+    with bad.open("ab") as fh:
+        fh.write(b'{"taxon_id":"10001","language_code":"nb","vernacular_name":"x","is_preferred_name":false,"source":null}\n')
+    with pytest.raises(ce.ExportError, match="not a string"):
+        _validate_emitted_taxon_id_references(
+            result.output_dir, frozenset(result.scope.concept_ids)
+        )
+
+
+def test_post_emission_missing_taxon_id_fails(tmp_path):
+    from database.taxonomy.cloud_export import _validate_emitted_taxon_id_references
+    result = _run_fixture_export(tmp_path)
+    bad = result.output_dir / "vernacular.jsonl"
+    with bad.open("ab") as fh:
+        fh.write(b'{"language_code":"nb","vernacular_name":"x","is_preferred_name":false,"source":null}\n')
+    with pytest.raises(ce.ExportError, match="missing taxon_id field"):
+        _validate_emitted_taxon_id_references(
+            result.output_dir, frozenset(result.scope.concept_ids)
+        )
+
+
+# ---------- existing-manifest validation -----------------------------
+
+
+def test_idempotent_rerun_returns_existing_generated_at(tmp_path):
+    """A byte-identical rerun returns the FIRST run's generated_at."""
+    a = _run_fixture_export(tmp_path)
+    first_generated = json.loads(a.manifest_path.read_text())["generated_at"]
+
+    # Second run supplies a different generated_at intentionally.
+    gz, manifest, _ = _wrap_sqlite_as_release(tmp_path)
+    pol = _write_fixture_policies(tmp_path)
+    b = ce.run_export(
+        artifact_gz=gz,
+        manifest=manifest,
+        output_dir=tmp_path / "cloud_export",
+        policy_dir=pol,
+        generated_at="2100-06-15T12:00:00Z",  # deliberately different
+    )
+    assert b.generated_at == first_generated
+    # And the persisted manifest still carries the ORIGINAL generated_at.
+    assert json.loads(b.manifest_path.read_text())["generated_at"] == first_generated
+
+
+def test_idempotent_rerun_leaves_no_staging_dir(tmp_path):
+    """After a no-op rerun, no `.<name>.staging.*` or `.replaced.*` dir remains."""
+    _run_fixture_export(tmp_path)
+    _run_fixture_export(tmp_path)
+    parent = (tmp_path / "cloud_export").parent
+    leftovers = [
+        p for p in parent.iterdir()
+        if p.name.startswith(".cloud_export.")
+    ]
+    assert not leftovers, f"unexpected staging leftovers: {leftovers}"
+
+
+def test_manifest_hash_tampering_forces_replacement(tmp_path):
+    """Mutating a recorded per-file hash in the manifest breaks validation."""
+    _run_fixture_export(tmp_path)
+    mpath = tmp_path / "cloud_export" / ce.MANIFEST_FILENAME
+    m = json.loads(mpath.read_text())
+    m["files"][1]["sha256"] = "00" * 32   # taxon.jsonl
+    mpath.write_text(json.dumps(m))
+    # A rerun without --replace should refuse.
+    with pytest.raises(ce.ExportError, match="differs"):
+        _run_fixture_export(tmp_path, replace=False)
+
+
+def test_manifest_scope_metadata_tampering_forces_replacement(tmp_path):
+    """Mutating scope/release metadata in the manifest breaks validation."""
+    _run_fixture_export(tmp_path)
+    mpath = tmp_path / "cloud_export" / ce.MANIFEST_FILENAME
+    m = json.loads(mpath.read_text())
+    m["content_release_id"] = "tax-1900.01.01-01"  # stale/forged
+    mpath.write_text(json.dumps(m))
+    with pytest.raises(ce.ExportError, match="differs"):
+        _run_fixture_export(tmp_path, replace=False)
+
+
+# ---------- verify_only ---------------------------------------------
+
+
+def test_verify_only_reports_dangling_parents(tmp_path):
+    """--verify-only must run the real dangling audit, not return zeros."""
+    art_dir = tmp_path / "artifact"
+    art_dir.mkdir(exist_ok=True)
+    sqlite_path = art_dir / "tax-2099.01.01-01.sqlite3"
+    _make_fixture_sqlite(sqlite_path, release_id="tax-2099.01.01-01")
+
+    conn = sqlite3.connect(sqlite_path)
+    conn.execute(
+        "INSERT INTO taxon_min("
+        "taxon_id, parent_taxon_id, genus, specific_epithet, family, "
+        "canonical_scientific_name, taxon_rank, taxonomic_status, "
+        "source_system, sporely_content_release_id, canonical_source_system, "
+        "canonical_external_id) VALUES "
+        "(99001, 99999, 'Danglingus', '', NULL, 'Danglingus', 'genus', "
+        "'accepted', 'nortaxa', 'tax-2099.01.01-01', 'nortaxa', 'N:DANG')"
+    )
+    conn.commit()
+    conn.close()
+
+    gz_path = art_dir / "tax-2099.01.01-01.sqlite3.gz"
+    with sqlite_path.open("rb") as src, gzip.GzipFile(
+        filename="", mode="wb", fileobj=gz_path.open("wb"), mtime=0
+    ) as gz:
+        while True:
+            chunk = src.read(1 << 16)
+            if not chunk:
+                break
+            gz.write(chunk)
+    sq_sha = ce.sha256_file(sqlite_path)
+    gz_sha = ce.sha256_file(gz_path)
+    manifest = art_dir / "manifest.json"
+    manifest.write_text(json.dumps({
+        "manifest_schema_version": 1,
+        "taxonomy_schema_version": 2,
+        "content_release_id": "tax-2099.01.01-01",
+        "state": "candidate",
+        "publication": "none",
+        "gz_artifact": gz_path.name,
+        "gz_sha256": gz_sha,
+        "gz_bytes": gz_path.stat().st_size,
+        "sqlite_sha256": sq_sha,
+        "sqlite_bytes": sqlite_path.stat().st_size,
+    }))
+    sqlite_path.unlink()
+
+    pol = _write_fixture_policies(tmp_path)
+    result = ce.run_export(
+        artifact_gz=gz_path, manifest=manifest,
+        output_dir=tmp_path / "would_not_write",
+        policy_dir=pol, verify_only=True,
+        generated_at="2099-01-01T00:00:00Z",
+    )
+    assert result.dangling_parents.count >= 1
+    ids = {s["taxon_id"] for s in result.dangling_parents.sample}
+    assert 99001 in ids
+    # verify-only writes nothing.
+    assert not (tmp_path / "would_not_write").exists()
+
+
 def test_traversal_token_rejected(tmp_path):
     gz, manifest, _ = _wrap_sqlite_as_release(tmp_path)
     pol = _write_fixture_policies(tmp_path)
@@ -860,8 +1184,8 @@ def test_pinned_release_regression_counts(tmp_path):
     assert ds["taxon.jsonl"].row_count == exp["concepts_included"]
     assert ds["scientific_name.jsonl"].row_count == exp["scientific_name_rows"]
     assert ds["vernacular.jsonl"].row_count == exp["vernacular_rows"]
-    assert ds["taxon_external_id.jsonl"].row_count == exp["external_text_rows"]
-    assert ds["taxon_external_id_legacy_integer.jsonl"].row_count == exp["external_int_rows"]
+    assert ds["taxon_external_id.jsonl"].row_count == exp["external_authoritative_total_rows"]
+    assert ds["taxon_external_id_legacy_integer.jsonl"].row_count == exp["external_legacy_int_rows"]
     assert ds["taxon_redlist.jsonl"].row_count == exp["redlist_rows"]
 
 

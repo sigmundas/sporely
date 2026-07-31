@@ -449,9 +449,12 @@ PINNED_RELEASE_EXPECTATIONS = {
     "scientific_name_rows": 662649,
     "vernacular_rows": 10294,
     "vernacular_by_lang": {"nb": 6240, "nn": 3975, "se": 79},
-    "external_int_rows": 61583,
-    "external_text_rows": 620975,
-    "external_total_rows": 682558,
+    # Authoritative external IDs split by source_system:
+    "external_authoritative_col_rows": 620975,   # from taxon_external_id_text_min
+    "external_authoritative_nortaxa_rows": 13919,  # derived from taxon_min.norwegian_taxon_id
+    "external_authoritative_total_rows": 634894,   # = 620975 + 13919
+    # Legacy namespace-lost integer rows:
+    "external_legacy_int_rows": 61583,
     "redlist_rows": 7866,
     "redlist_by_area": {"Norge": 7198, "Svalbard": 668},
 }
@@ -653,22 +656,71 @@ def emit_taxon_external_id_authoritative(
 ) -> DatasetResult:
     """Emit compiler-authoritative external IDs (namespace declared).
 
-    Source: `taxon_external_id_text_min`. Namespace is non-null and declared
-    by the compiler per `policies/source_priority.yml.identifier_namespaces`.
+    Two authoritative sources, merged in a single deterministic file:
+
+    1. `taxon_external_id_text_min` — every scoped row, namespace declared
+       by the compiler per `policies/source_priority.yml.identifier_namespaces`.
+
+    2. `taxon_min.norwegian_taxon_id` — derived authoritative NorTaxa row.
+       The compiler establishes `taxon_min.norwegian_taxon_id` only from a
+       unique preferred source usage whose original namespace is
+       `nortaxa_taxon_id`. This invariant is documented at
+       `docs/identity-contract.md` and enforced by `build_sqlite_candidate.py`
+       through the UNIQUE partial index `idx_taxon_no_id ON (norwegian_taxon_id)
+       WHERE norwegian_taxon_id IS NOT NULL`. The exporter therefore emits
+       one derived row per scoped concept with a non-null `norwegian_taxon_id`:
+
+           source_system : "nortaxa"
+           namespace     : "nortaxa_taxon_id"
+           external_id   : CAST(norwegian_taxon_id AS TEXT)
+           id_role       : "accepted"
+           is_preferred  : true
+           external_name : canonical_scientific_name
+           note          : "derived_from_taxon_min.norwegian_taxon_id"
+
+       No other namespace is derived from `taxon_external_id_min`; those rows
+       remain in `taxon_external_id_legacy_integer.jsonl` verbatim.
+
+    Duplicate authoritative semantic keys `(source_system, namespace,
+    external_id, taxon_id)` are detected and cause an ExportError.
     """
     filename = "taxon_external_id.jsonl"
     sql = (
+        # Text-table authoritative rows.
         "SELECT taxon_id, source_system, namespace, external_id, id_role, "
         "is_preferred, external_name, note "
         "FROM taxon_external_id_text_min "
         "WHERE taxon_id IN (SELECT taxon_id FROM _cloud_export_scope) "
-        "ORDER BY taxon_id ASC, source_system ASC, namespace ASC, "
-        "external_id ASC, id_role ASC, is_preferred ASC"
+        "UNION ALL "
+        # Derived NorTaxa authoritative rows.
+        "SELECT taxon_id, 'nortaxa' AS source_system, "
+        "'nortaxa_taxon_id' AS namespace, "
+        "CAST(norwegian_taxon_id AS TEXT) AS external_id, "
+        "'accepted' AS id_role, 1 AS is_preferred, "
+        "canonical_scientific_name AS external_name, "
+        "'derived_from_taxon_min.norwegian_taxon_id' AS note "
+        "FROM taxon_min "
+        "WHERE taxon_id IN (SELECT taxon_id FROM _cloud_export_scope) "
+        "AND norwegian_taxon_id IS NOT NULL "
+        # UNION ALL ORDER BY uses positional refs. Deterministic sort.
+        "ORDER BY 1 ASC, 2 ASC, 3 ASC, 4 ASC, 5 ASC, 6 ASC"
     )
+
+    # Duplicate detection: no two rows in the combined output may share the
+    # same `(source_system, namespace, external_id, taxon_id)` semantic key.
+    seen: set[tuple] = set()
     rows = 0
     written = 0
     with _open_writer(out_path) as fh:
         for row in conn.execute(sql):
+            key = (row["source_system"], row["namespace"], row["external_id"], row["taxon_id"])
+            if key in seen:
+                raise ExportError(
+                    f"duplicate authoritative semantic key in {filename}: "
+                    f"source_system={key[0]!r}, namespace={key[1]!r}, "
+                    f"external_id={key[2]!r}, taxon_id={key[3]!r}"
+                )
+            seen.add(key)
             written += _write_json_line(fh, _coerce_authoritative_external_row(row))
             rows += 1
     return _finalize_dataset(out_path, filename, rows, written)
@@ -861,16 +913,17 @@ def _assert_pinned_counts(
         errors.append(
             f"vernacular.jsonl rows={datasets['vernacular.jsonl'].row_count} != {exp['vernacular_rows']}"
         )
-    if datasets["taxon_external_id.jsonl"].row_count != exp["external_text_rows"]:
+    if datasets["taxon_external_id.jsonl"].row_count != exp["external_authoritative_total_rows"]:
         errors.append(
             f"taxon_external_id.jsonl (authoritative) rows="
-            f"{datasets['taxon_external_id.jsonl'].row_count} != {exp['external_text_rows']}"
+            f"{datasets['taxon_external_id.jsonl'].row_count} "
+            f"!= {exp['external_authoritative_total_rows']}"
         )
-    if datasets["taxon_external_id_legacy_integer.jsonl"].row_count != exp["external_int_rows"]:
+    if datasets["taxon_external_id_legacy_integer.jsonl"].row_count != exp["external_legacy_int_rows"]:
         errors.append(
             f"taxon_external_id_legacy_integer.jsonl rows="
             f"{datasets['taxon_external_id_legacy_integer.jsonl'].row_count} "
-            f"!= {exp['external_int_rows']}"
+            f"!= {exp['external_legacy_int_rows']}"
         )
     if datasets["taxon_redlist.jsonl"].row_count != exp["redlist_rows"]:
         errors.append(
@@ -900,16 +953,13 @@ class DanglingParentReport:
     sample: list[dict]  # up to 20 sample rows for the manifest
 
 
-def _validate_child_references(conn: sqlite3.Connection) -> None:
-    """Sanity-check that no dependent row emits with an out-of-scope taxon_id.
+def _validate_child_schema(conn: sqlite3.Connection) -> None:
+    """Schema-level drift check on compiler child tables.
 
-    Every emit query already filters on `_cloud_export_scope`, so this is a
-    positive belt-and-braces check: count rows whose taxon_id is NOT in scope
-    but which appear via a hypothetical unfiltered query. If the SELECT that
-    the emitters use were ever changed to drop the scope filter this check
-    would still not fail (it's tautological). It exists purely to detect
-    obvious schema drift: rows without a `taxon_id` column, or NULL taxon_id
-    in a non-redlist child table.
+    Verifies each dependent child table still declares `taxon_id NOT NULL`
+    and that every child row has a matching `taxon_min` row. This is NOT
+    an emitted-row validation — that runs after the JSONL files are on
+    disk (see `_validate_emitted_taxon_id_references`).
     """
     for child_table in (
         "scientific_name_min",
@@ -917,8 +967,6 @@ def _validate_child_references(conn: sqlite3.Connection) -> None:
         "taxon_external_id_min",
         "taxon_external_id_text_min",
     ):
-        # These child tables declare taxon_id NOT NULL; assert schema still
-        # honors that.
         info = list(conn.execute(f"PRAGMA table_info({child_table})"))
         tcol = next((r for r in info if r["name"] == "taxon_id"), None)
         if tcol is None:
@@ -927,7 +975,6 @@ def _validate_child_references(conn: sqlite3.Connection) -> None:
             raise ExportError(
                 f"child table {child_table} taxon_id no longer NOT NULL — schema drift"
             )
-        # Ensure every row of the child table has a matching taxon_min entry.
         orphan = conn.execute(
             f"SELECT count(*) AS n FROM {child_table} c "
             "WHERE c.taxon_id IN (SELECT taxon_id FROM _cloud_export_scope) "
@@ -938,6 +985,84 @@ def _validate_child_references(conn: sqlite3.Connection) -> None:
                 f"child table {child_table} has {orphan} in-scope rows with no "
                 "matching taxon_min row"
             )
+
+
+_DEPENDENT_JSONL_FILES = (
+    "scientific_name.jsonl",
+    "vernacular.jsonl",
+    "taxon_external_id.jsonl",
+    "taxon_external_id_legacy_integer.jsonl",
+    "taxon_redlist.jsonl",
+)
+
+
+def _validate_emitted_taxon_id_references(
+    staging_dir: Path, concept_ids: frozenset[int]
+) -> None:
+    """Stream every emitted child JSONL row and validate its `taxon_id`.
+
+    For each dependent file (`scientific_name.jsonl`, `vernacular.jsonl`,
+    `taxon_external_id.jsonl`, `taxon_external_id_legacy_integer.jsonl`,
+    `taxon_redlist.jsonl`), open line-by-line and require:
+
+    * the line parses as JSON;
+    * the object has a `taxon_id` field;
+    * the value is neither null, boolean, nor string;
+    * the value is a Python `int` (JSON integer);
+    * the integer is a member of the exported concept set `S`.
+
+    Runs BEFORE the manifest is written and BEFORE atomic publication.
+
+    Does not load a whole file into memory: iterates line-by-line.
+    """
+    for name in _DEPENDENT_JSONL_FILES:
+        path = staging_dir / name
+        if not path.is_file():
+            raise ExportError(f"post-emission validator: missing file {name}")
+        with path.open("rb") as fh:
+            line_number = 0
+            for raw in fh:
+                line_number += 1
+                stripped = raw.strip()
+                if not stripped:
+                    raise ExportError(
+                        f"{name}:{line_number}: unexpected empty line in JSONL"
+                    )
+                try:
+                    obj = json.loads(stripped)
+                except json.JSONDecodeError as exc:
+                    raise ExportError(f"{name}:{line_number}: JSON parse error: {exc}") from exc
+                if not isinstance(obj, dict):
+                    raise ExportError(f"{name}:{line_number}: not a JSON object")
+                if "taxon_id" not in obj:
+                    raise ExportError(f"{name}:{line_number}: missing taxon_id field")
+                value = obj["taxon_id"]
+                # bool is a subclass of int in Python — reject explicitly.
+                if isinstance(value, bool):
+                    raise ExportError(
+                        f"{name}:{line_number}: taxon_id={value!r}: "
+                        "reason=taxon_id must be a JSON integer, not boolean"
+                    )
+                if value is None:
+                    raise ExportError(
+                        f"{name}:{line_number}: taxon_id={value!r}: "
+                        "reason=taxon_id must not be null"
+                    )
+                if isinstance(value, str):
+                    raise ExportError(
+                        f"{name}:{line_number}: taxon_id={value!r}: "
+                        "reason=taxon_id must be a JSON integer, not a string"
+                    )
+                if not isinstance(value, int):
+                    raise ExportError(
+                        f"{name}:{line_number}: taxon_id={value!r}: "
+                        f"reason=taxon_id must be a JSON integer, got type={type(value).__name__}"
+                    )
+                if value not in concept_ids:
+                    raise ExportError(
+                        f"{name}:{line_number}: taxon_id={value}: "
+                        "reason=taxon_id is not in the exported concept set"
+                    )
 
 
 def _audit_dangling_parents(conn: sqlite3.Connection) -> DanglingParentReport:
@@ -1080,7 +1205,8 @@ def run_export(
             with _open_ro(src.decompressed_sqlite_path) as conn:
                 scope = build_concept_set(conn)
                 _install_scope_temp_table(conn, scope.concept_ids)
-                _validate_child_references(conn)
+                _validate_child_schema(conn)
+                dangling = _audit_dangling_parents(conn)
             return ExportResult(
                 output_dir=output_dir,
                 datasets={},
@@ -1089,7 +1215,7 @@ def run_export(
                 manifest_sha256="",
                 whole_export_sha256="",
                 scope=scope,
-                dangling_parents=DanglingParentReport(count=0, total_with_parent=0, sample=[]),
+                dangling_parents=dangling,
                 generated_at=gen_at,
             )
 
@@ -1108,12 +1234,12 @@ def run_export(
                 generated_at=gen_at,
             )
             try:
-                if _existing_files_match_staged(output_dir, staged):
+                if _existing_matches_staged(output_dir, staged):
                     _LOG.info("existing export at %s is byte-identical", output_dir)
-                    # Build a result whose `path` fields point at the FINAL
-                    # directory, not the staging one which is about to be
-                    # removed. Hashes and byte counts are recomputed from the
-                    # existing on-disk files so they're authoritative.
+                    existing_manifest = json.loads(
+                        (output_dir / MANIFEST_FILENAME).read_text(encoding="utf-8")
+                    )
+                    existing_generated_at = existing_manifest.get("generated_at", gen_at)
                     final_datasets: dict[str, DatasetResult] = {}
                     for name, ds in staged.datasets.items():
                         p = output_dir / name
@@ -1137,7 +1263,7 @@ def run_export(
                         ),
                         scope=staged.scope,
                         dangling_parents=staged.dangling_parents,
-                        generated_at=gen_at,
+                        generated_at=existing_generated_at,
                     )
                 # Differs — cleanup staging.
                 if not replace:
@@ -1162,25 +1288,101 @@ def run_export(
         return result
 
 
-def _existing_files_match_staged(existing_dir: Path, staged: ExportResult) -> bool:
-    """Hash each existing dataset file on disk and compare to staged hashes.
+_DETERMINISTIC_MANIFEST_KEYS = (
+    "manifest_schema_version",
+    "export_schema_version",
+    "exporter_version",
+    "content_release_id",
+    "taxonomy_schema_version",
+    "scope_predicate_id",
+    "source",
+    "policy_hashes",
+    "included_concept_count",
+    "excluded_concept_count",
+    "fungi_root_ids",
+    "vernacular_language_counts",
+    "redlist_area_counts",
+    "external_id_authoritative_namespace_counts",
+    "external_id_legacy_integer_source_counts",
+    "external_id_source_table_counts",
+    "dangling_parent_references",
+    "files",
+    "whole_export_sha256",
+)
 
-    Trusts the freshly-generated staged export as ground truth (not the recorded
-    manifest, which could be inconsistent with actual on-disk bytes).
+
+def _existing_matches_staged(existing_dir: Path, staged: ExportResult) -> bool:
+    """Faithfully validate an existing export against a freshly staged one.
+
+    Passes only when ALL of the following hold:
+      * Existing manifest parses.
+      * Its `files` list exactly equals `DATASET_FILES`.
+      * Each recorded `row_count`, `bytes`, and `sha256` matches the actual
+        on-disk file at the recorded name.
+      * The recorded `whole_export_sha256` matches a fresh recomputation
+        over the existing files.
+      * The recorded `dangling_parent_references` block matches the staged
+        one (structural equality).
+      * Every deterministic manifest field equals the staged manifest's
+        field. `generated_at` is deliberately excluded from comparison —
+        it is the only field the caller may legitimately vary between runs.
+
+    A stale, forged, or partially-corrupted manifest fails validation and
+    forces the caller to treat the existing output as differing.
     """
-    for name, ds in staged.datasets.items():
-        candidate = existing_dir / name
-        if not candidate.is_file():
-            return False
-        if sha256_file(candidate) != ds.sha256:
-            return False
-    existing_manifest = existing_dir / MANIFEST_FILENAME
-    if not existing_manifest.is_file():
+    existing_manifest_path = existing_dir / MANIFEST_FILENAME
+    if not existing_manifest_path.is_file():
         return False
-    # Whole-export hash across the existing files (in fixed order) must also
-    # match the staged whole hash.
-    files_in_order = [(n, existing_dir / n) for n in DATASET_FILES]
-    return whole_export_sha256(files_in_order) == staged.whole_export_sha256
+    try:
+        existing = json.loads(existing_manifest_path.read_text(encoding="utf-8"))
+    except (OSError, json.JSONDecodeError):
+        return False
+
+    # File list must exactly match DATASET_FILES.
+    existing_files = existing.get("files") or []
+    if [f.get("name") for f in existing_files] != list(DATASET_FILES):
+        return False
+
+    # Cross-check each recorded per-file row_count/bytes/sha256 vs on-disk.
+    for entry in existing_files:
+        name = entry["name"]
+        path = existing_dir / name
+        if not path.is_file():
+            return False
+        if entry.get("bytes") != path.stat().st_size:
+            return False
+        if entry.get("sha256") != sha256_file(path):
+            return False
+        staged_ds = staged.datasets.get(name)
+        if staged_ds is None or staged_ds.row_count != entry.get("row_count"):
+            return False
+        if staged_ds.sha256 != entry.get("sha256"):
+            return False
+
+    # whole_export_sha256 recomputed over the existing files.
+    if whole_export_sha256([(n, existing_dir / n) for n in DATASET_FILES]) != existing.get(
+        "whole_export_sha256"
+    ):
+        return False
+    if existing.get("whole_export_sha256") != staged.whole_export_sha256:
+        return False
+
+    # Dangling-parent block must match the staged report (structural equality).
+    staged_dp = {
+        "count": staged.dangling_parents.count,
+        "total_with_parent": staged.dangling_parents.total_with_parent,
+        "sample": staged.dangling_parents.sample,
+    }
+    if existing.get("dangling_parent_references") != staged_dp:
+        return False
+
+    # Deterministic fields must all match the staged manifest bytes.
+    staged_manifest = json.loads(staged.manifest_path.read_text(encoding="utf-8"))
+    for key in _DETERMINISTIC_MANIFEST_KEYS:
+        if existing.get(key) != staged_manifest.get(key):
+            return False
+
+    return True
 
 
 def _stage_and_finalize(
@@ -1203,7 +1405,7 @@ def _stage_and_finalize(
         with _open_ro(src.decompressed_sqlite_path) as conn:
             scope = build_concept_set(conn)
             _install_scope_temp_table(conn, scope.concept_ids)
-            _validate_child_references(conn)
+            _validate_child_schema(conn)
             dangling = _audit_dangling_parents(conn)
 
             policy_hashes = hash_policies(policy_dir)
@@ -1230,6 +1432,10 @@ def _stage_and_finalize(
             )
 
             lang_counts, area_counts, external_source_table_counts = _dataset_derived_stats(conn)
+
+        # Post-emission reference validation: stream every emitted child JSONL
+        # line and confirm its `taxon_id` is an integer belonging to `S`.
+        _validate_emitted_taxon_id_references(tmp_output, frozenset(scope.concept_ids))
 
         _assert_pinned_counts(
             src.content_release_id,
