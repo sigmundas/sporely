@@ -360,6 +360,10 @@ def _wrap_sqlite_as_release(tmp_path: Path, release_id: str = "tax-2099.01.01-01
     manifest.write_text(
         json.dumps(
             {
+                # Deliberately omit canonical_authority / doi /
+                # checklistbank_dataset_id / nortaxa_release — the pinned
+                # production manifest also lacks them, and the exporter must
+                # emit `null` rather than fabricate a literal.
                 "manifest_schema_version": 1,
                 "taxonomy_schema_version": 2,
                 "content_release_id": release_id,
@@ -370,10 +374,6 @@ def _wrap_sqlite_as_release(tmp_path: Path, release_id: str = "tax-2099.01.01-01
                 "gz_bytes": gz_path.stat().st_size,
                 "sqlite_sha256": sq_sha,
                 "sqlite_bytes": sqlite_path.stat().st_size,
-                "canonical_authority": "COL XR test",
-                "checklistbank_dataset_id": "TEST",
-                "doi": "10.5555/test",
-                "nortaxa_release": "test",
             },
             indent=2,
         ),
@@ -494,41 +494,77 @@ def test_null_vs_empty_string_distinguished(tmp_path):
     assert b'"source":""' in raw
 
 
+def test_authoritative_file_has_namespace_and_no_source_table(tmp_path):
+    result = _run_fixture_export(tmp_path)
+    rows = [
+        json.loads(x)
+        for x in (result.output_dir / "taxon_external_id.jsonl")
+        .read_text(encoding="utf-8").splitlines()
+    ]
+    assert rows, "authoritative file should not be empty"
+    for r in rows:
+        assert r["namespace"] is not None, "authoritative rows must have declared namespace"
+        assert "source_table" not in r, "authoritative rows must not carry legacy discriminator"
+
+
+def test_legacy_integer_file_has_no_namespace_field(tmp_path):
+    result = _run_fixture_export(tmp_path)
+    rows = [
+        json.loads(x)
+        for x in (result.output_dir / "taxon_external_id_legacy_integer.jsonl")
+        .read_text(encoding="utf-8").splitlines()
+    ]
+    assert rows, "legacy integer file should not be empty"
+    for r in rows:
+        assert "namespace" not in r, (
+            "legacy integer rows must not fake a namespace field — the compiler's "
+            "integer table does not preserve namespace"
+        )
+        assert "source_table" not in r
+
+
 def test_nbic_prefix_and_namespace_collisions_preserved(tmp_path):
     result = _run_fixture_export(tmp_path)
-    lines = (result.output_dir / "taxon_external_id.jsonl").read_text(encoding="utf-8").splitlines()
-    rows = [json.loads(x) for x in lines]
+    auth = [
+        json.loads(x) for x in
+        (result.output_dir / "taxon_external_id.jsonl").read_text(encoding="utf-8").splitlines()
+    ]
+    legacy = [
+        json.loads(x) for x in
+        (result.output_dir / "taxon_external_id_legacy_integer.jsonl").read_text(encoding="utf-8").splitlines()
+    ]
 
-    # NBIC prefix retained.
-    nbic = [r for r in rows if r["external_id"] == "NBIC:12345"]
+    # NBIC prefix retained in the authoritative file (text namespace declared).
+    nbic = [r for r in auth if r["external_id"] == "NBIC:12345"]
     assert nbic and nbic[0]["namespace"] == "nbic_scientific_name_id"
     assert nbic[0]["source_system"] == "artsorakel"
 
-    # Namespace-scoped collision: same textual value under different namespaces
-    # both survive.
-    qmky = [r for r in rows if r["external_id"] == "QMKY"]
+    # Namespace-scoped collision — same textual `QMKY` under two namespaces.
+    qmky = [r for r in auth if r["external_id"] == "QMKY"]
     assert len(qmky) == 2
-    ns = {r["namespace"] for r in qmky}
-    assert ns == {"col_usage_id", "gbif_taxon_key"}
+    assert {r["namespace"] for r in qmky} == {"col_usage_id", "gbif_taxon_key"}
 
-    # Integer id 53077 attaches to two different taxa (nortaxa accepted + col_xr synonym).
-    both = [r for r in rows if r["external_id"] == "53077"]
+    # Integer id 53077 (from the legacy integer table) attaches to two taxa
+    # (nortaxa accepted + col_xr synonym). Both survive; both live in the
+    # legacy file with NO namespace field at all.
+    both = [r for r in legacy if r["external_id"] == "53077"]
     assert len(both) == 2
-    # Both should retain namespace = null (integer source table).
     for r in both:
-        assert r["namespace"] is None
-        assert r["source_table"] == "taxon_external_id_min"
+        assert "namespace" not in r
 
-    # No merging by numeric equality across namespaces: 20004 has 56210 (int)
-    # AND QMKY_X (text) both under source_system col_xr — they must both survive.
-    nortaxa_int = [r for r in rows if r["taxon_id"] == 20004 and r["source_system"] == "artsdatabanken"]
-    qmkyx = [r for r in rows if r["external_id"] == "QMKY_X"]
+    # No merging across files by numeric equality: 20004 has 56210 (legacy int)
+    # AND QMKY_X (authoritative text) under source_system col_xr — both must survive.
+    nortaxa_int = [
+        r for r in legacy
+        if r["taxon_id"] == 20004 and r["source_system"] == "artsdatabanken"
+    ]
+    qmkyx = [r for r in auth if r["external_id"] == "QMKY_X"]
     assert nortaxa_int and qmkyx
 
 
-def test_external_id_int_emitted_as_string(tmp_path):
+def test_legacy_integer_id_emitted_as_string(tmp_path):
     result = _run_fixture_export(tmp_path)
-    raw = (result.output_dir / "taxon_external_id.jsonl").read_bytes()
+    raw = (result.output_dir / "taxon_external_id_legacy_integer.jsonl").read_bytes()
     assert b'"external_id":"52796"' in raw
     assert b'"external_id":52796' not in raw  # integer form must not leak
 
@@ -581,11 +617,179 @@ def test_determinism_two_runs_byte_identical(tmp_path):
 def test_manifest_records_namespace_counts(tmp_path):
     result = _run_fixture_export(tmp_path)
     manifest = json.loads(result.manifest_path.read_text())
-    ns_counts = manifest["external_id_namespace_counts"]
-    # keys look like "source_system/namespace" with '' for null namespace
-    assert "artsorakel/nbic_scientific_name_id" in ns_counts
-    assert "col_xr/col_usage_id" in ns_counts
-    assert "artsdatabanken/" in ns_counts  # integer table → empty namespace
+    auth = manifest["external_id_authoritative_namespace_counts"]
+    legacy = manifest["external_id_legacy_integer_source_counts"]
+    # Authoritative keys are "source_system/namespace"; namespace never empty.
+    assert "artsorakel/nbic_scientific_name_id" in auth
+    assert "col_xr/col_usage_id" in auth
+    for key in auth:
+        assert not key.endswith("/"), (
+            f"authoritative namespace count key {key!r} has empty namespace suffix"
+        )
+    # Legacy keys are just the source_system (namespace unavailable).
+    assert "artsdatabanken" in legacy
+
+
+def test_dangling_parent_references_reported(tmp_path):
+    """Parent points outside scope → preserved in taxon.jsonl, listed in manifest."""
+    result = _run_fixture_export(tmp_path)
+    manifest = json.loads(result.manifest_path.read_text())
+    dp = manifest["dangling_parent_references"]
+    # Fixture: taxon_id 20 has parent_taxon_id=2 (Plantae kingdom) which is
+    # excluded from scope. But 20 is Plantae's descendant, also excluded.
+    # So the dangling case in the fixture is different — none exist by default.
+    # Add a synthetic dangling row via a follow-up patch fixture.
+    #
+    # Just assert the manifest block exists and is well-formed here.
+    assert set(dp.keys()) == {"count", "total_with_parent", "sample"}
+    assert dp["count"] >= 0
+    assert isinstance(dp["sample"], list)
+
+
+def test_dangling_parent_preserved_verbatim(tmp_path):
+    """A concept with a parent outside scope must keep parent_taxon_id verbatim."""
+    # Build the fixture, then poke a dangling parent into the SQLite BEFORE
+    # gzipping. Rebuild the artifact + manifest around the mutated content.
+    art_dir = tmp_path / "artifact"
+    art_dir.mkdir(exist_ok=True)
+    sqlite_path = art_dir / "tax-2099.01.01-01.sqlite3"
+    _make_fixture_sqlite(sqlite_path, release_id="tax-2099.01.01-01")
+
+    # Inject: taxon_id 99001 is a NorTaxa concept whose parent 99999 does NOT
+    # exist in taxon_min at all (an obviously dangling reference).
+    conn = sqlite3.connect(sqlite_path)
+    conn.execute(
+        "INSERT INTO taxon_min("
+        "taxon_id, parent_taxon_id, genus, specific_epithet, family, "
+        "canonical_scientific_name, taxon_rank, taxonomic_status, "
+        "source_system, sporely_content_release_id, canonical_source_system, "
+        "canonical_external_id) VALUES "
+        "(99001, 99999, 'Danglingus', '', NULL, 'Danglingus', 'genus', "
+        "'accepted', 'nortaxa', 'tax-2099.01.01-01', 'nortaxa', 'N:DANG')"
+    )
+    conn.commit()
+    conn.close()
+
+    # Rebuild gz + manifest around the mutated SQLite.
+    gz_path = art_dir / "tax-2099.01.01-01.sqlite3.gz"
+    with sqlite_path.open("rb") as src, gzip.GzipFile(
+        filename="", mode="wb", fileobj=gz_path.open("wb"), mtime=0
+    ) as gz:
+        while True:
+            chunk = src.read(1 << 16)
+            if not chunk:
+                break
+            gz.write(chunk)
+    sq_sha = ce.sha256_file(sqlite_path)
+    gz_sha = ce.sha256_file(gz_path)
+    manifest = art_dir / "manifest.json"
+    manifest.write_text(json.dumps({
+        "manifest_schema_version": 1,
+        "taxonomy_schema_version": 2,
+        "content_release_id": "tax-2099.01.01-01",
+        "state": "candidate",
+        "publication": "none",
+        "gz_artifact": gz_path.name,
+        "gz_sha256": gz_sha,
+        "gz_bytes": gz_path.stat().st_size,
+        "sqlite_sha256": sq_sha,
+        "sqlite_bytes": sqlite_path.stat().st_size,
+    }))
+    sqlite_path.unlink()
+
+    pol = _write_fixture_policies(tmp_path)
+    result = ce.run_export(
+        artifact_gz=gz_path, manifest=manifest, output_dir=tmp_path / "out",
+        policy_dir=pol, generated_at="2099-01-01T00:00:00Z",
+    )
+
+    # Manifest reports the dangling reference.
+    m = json.loads(result.manifest_path.read_text())
+    dp = m["dangling_parent_references"]
+    assert dp["count"] >= 1
+    dangling_ids = {s["taxon_id"] for s in dp["sample"]}
+    assert 99001 in dangling_ids
+    danglingus = next(s for s in dp["sample"] if s["taxon_id"] == 99001)
+    assert danglingus["parent_taxon_id"] == 99999
+
+    # And taxon.jsonl preserves the parent_taxon_id verbatim (never nulled).
+    taxon_rows = [
+        json.loads(x) for x in (result.output_dir / "taxon.jsonl")
+        .read_text(encoding="utf-8").splitlines()
+    ]
+    row = next(r for r in taxon_rows if r["taxon_id"] == 99001)
+    assert row["parent_taxon_id"] == 99999
+
+
+def test_noop_returned_paths_point_to_existing_final(tmp_path):
+    """A byte-identical second run must return paths that actually exist."""
+    r1 = _run_fixture_export(tmp_path)
+    r2 = _run_fixture_export(tmp_path)  # no --replace; should short-circuit
+
+    assert r2.output_dir == r1.output_dir
+    assert r2.output_dir.is_dir()
+    assert r2.manifest_path.is_file()
+    for name, ds in r2.datasets.items():
+        assert ds.path.is_file(), f"{name}: {ds.path} does not exist"
+        assert ds.path.parent == r2.output_dir
+        assert ce.sha256_file(ds.path) == ds.sha256
+    # Whole-export hash recomputed from existing files should match staged.
+    assert r2.whole_export_sha256 == r1.whole_export_sha256
+
+
+def test_manifest_missing_required_key_fails_closed(tmp_path):
+    """Manifest without content_release_id must not silently fabricate one."""
+    gz, manifest, _ = _wrap_sqlite_as_release(tmp_path)
+    m = json.loads(manifest.read_text())
+    del m["content_release_id"]
+    manifest.write_text(json.dumps(m))
+    pol = _write_fixture_policies(tmp_path)
+    with pytest.raises(ce.ExportError, match="content_release_id"):
+        ce.run_export(
+            artifact_gz=gz, manifest=manifest, output_dir=tmp_path / "x",
+            policy_dir=pol, generated_at="2099-01-01T00:00:00Z",
+        )
+
+
+def test_taxonomy_release_has_no_fabricated_provenance(tmp_path):
+    """Fixture manifest lacks canonical_authority/doi/etc → JSON emits null."""
+    result = _run_fixture_export(tmp_path)
+    line = (result.output_dir / "taxonomy_release.jsonl").read_text(encoding="utf-8").strip()
+    obj = json.loads(line)
+    # Fixture manifest never sets these; must be null, not a fabricated literal.
+    for key in ("canonical_authority", "checklistbank_dataset_id", "doi"):
+        assert obj[key] is None, (
+            f"{key} was fabricated: {obj[key]!r}; must be null when source lacks it"
+        )
+    # nortaxa_release is derived from source_release[nortaxa].id = "nortaxa:test:2099-01-01"
+    assert obj["nortaxa_release"] == "test"
+
+
+def test_symlink_output_parent_rejected(tmp_path):
+    """If output_dir passes through a symlink component, exporter refuses."""
+    real = tmp_path / "real"
+    real.mkdir()
+    link = tmp_path / "link"
+    link.symlink_to(real, target_is_directory=True)
+    gz, manifest, _ = _wrap_sqlite_as_release(tmp_path)
+    pol = _write_fixture_policies(tmp_path)
+    with pytest.raises(ce.ExportError, match="symlink"):
+        ce.run_export(
+            artifact_gz=gz, manifest=manifest,
+            output_dir=link / "child" / "cloud_export",
+            policy_dir=pol, generated_at="2099-01-01T00:00:00Z",
+        )
+
+
+def test_traversal_token_rejected(tmp_path):
+    gz, manifest, _ = _wrap_sqlite_as_release(tmp_path)
+    pol = _write_fixture_policies(tmp_path)
+    with pytest.raises(ce.ExportError, match="traversal"):
+        ce.run_export(
+            artifact_gz=gz, manifest=manifest,
+            output_dir=Path(str(tmp_path)) / "..",
+            policy_dir=pol, generated_at="2099-01-01T00:00:00Z",
+        )
 
 
 def test_atomic_replace_flag_required(tmp_path):
@@ -656,7 +860,8 @@ def test_pinned_release_regression_counts(tmp_path):
     assert ds["taxon.jsonl"].row_count == exp["concepts_included"]
     assert ds["scientific_name.jsonl"].row_count == exp["scientific_name_rows"]
     assert ds["vernacular.jsonl"].row_count == exp["vernacular_rows"]
-    assert ds["taxon_external_id.jsonl"].row_count == exp["external_total_rows"]
+    assert ds["taxon_external_id.jsonl"].row_count == exp["external_text_rows"]
+    assert ds["taxon_external_id_legacy_integer.jsonl"].row_count == exp["external_int_rows"]
     assert ds["taxon_redlist.jsonl"].row_count == exp["redlist_rows"]
 
 

@@ -125,31 +125,53 @@ Sort: `taxon_id ASC, language_code ASC, vernacular_name ASC, source ASC`.
 Language codes are preserved verbatim. `nb`, `nn`, `no`, `se`, `sma`, `smj` are
 distinct; no truncation, folding, or synthesis.
 
-### `taxon_external_id.jsonl` (sources: `taxon_external_id_min` + `taxon_external_id_text_min`)
+### `taxon_external_id.jsonl` — authoritative (source: `taxon_external_id_text_min`)
 
-Unified normalized schema:
+External IDs whose namespace is declared by the compiler
+(`policies/source_priority.yml.identifier_namespaces`).
 
 ```
 taxon_id        integer
 source_system   string
-namespace       string | null   # null for rows from the integer table
-external_id     string           # integer-source values are cast to text
+namespace       string           # non-null; declared by compiler
+external_id     string
 id_role         string
 is_preferred    boolean
 external_name   string | null
 note            string | null
-source_table    string           # "taxon_external_id_min" | "taxon_external_id_text_min"
 ```
 
-Sort (positional to accommodate UNION ALL): `taxon_id, source_system,
-namespace (nulls first), external_id, source_table, id_role, is_preferred`.
+Sort: `taxon_id, source_system, namespace, external_id, id_role, is_preferred`.
 
-Rules:
+### `taxon_external_id_legacy_integer.jsonl` — legacy (source: `taxon_external_id_min`)
+
+External IDs from the compiler's integer table. The compiler does NOT preserve
+the originating namespace in this table (e.g. `nortaxa_taxon_id` vs
+`nortaxa_dwc_id`); only `source_system` remains. Rows are emitted under an
+explicit legacy label so W2 cannot silently treat them as namespaced.
+
+```
+taxon_id        integer
+source_system   string
+external_id     string           # source column is INTEGER; cast to text
+id_role         string
+is_preferred    boolean
+external_name   string | null
+note            string | null
+```
+
+Sort: `taxon_id, source_system, external_id, id_role, is_preferred`.
+
+Rules (both files):
 
 * Never infer equivalence from numeric equality.
-* `NBIC:` prefixes are preserved verbatim.
+* `NBIC:` prefixes are preserved verbatim (authoritative file).
 * NorTaxa IDs are never reinterpreted as Sporely IDs.
 * Two rows with identical external_id under different namespaces both survive.
+* The two files are semantically distinct sets: authoritative rows carry a
+  known namespace and are joinable by `(source_system, namespace, external_id)`;
+  legacy rows are only joinable by `(source_system, external_id)` and require
+  external knowledge to determine namespace.
 
 ### `taxon_redlist.jsonl` (source: `taxon_redlist_min`)
 
@@ -308,7 +330,12 @@ Before publishing the final directory the exporter verifies:
 * SQLite `taxonomy_meta.content_release_id` matches outer manifest;
 * all required tables and columns exist;
 * Fungi kingdom root(s) discovered;
-* every emitted child row's `taxon_id ∈ S`;
+* every dependent child table row satisfies the schema `taxon_id NOT NULL`
+  invariant and has a matching `taxon_min` row;
+* concepts whose `parent_taxon_id` lies outside scope are counted, sampled
+  and recorded in the manifest under `dangling_parent_references`. The
+  parent value is preserved verbatim in `taxon.jsonl`; W1 never nulls a
+  dangling parent;
 * row counts match pinned-release expectations for `tax-2026.07.30-02`;
 * per-file SHA-256 re-verifies after write;
 * deterministic re-runs produce identical hashes.
@@ -341,7 +368,8 @@ Pinned release: `tax-2026.07.30-02`.
 | `taxon.jsonl` | 634,894 |
 | `scientific_name.jsonl` | 662,649 |
 | `vernacular.jsonl` | 10,294  (nb 6,240; nn 3,975; se 79) |
-| `taxon_external_id.jsonl` | 682,558 (int 61,583; text 620,975) |
+| `taxon_external_id.jsonl` (authoritative) | 620,975 (all `col_xr/col_usage_id`) |
+| `taxon_external_id_legacy_integer.jsonl` | 61,583 (all `artsdatabanken` source; namespace lost) |
 | `taxon_redlist.jsonl` | 7,866  (Norge 7,198; Svalbard 668) |
 | `taxonomy_release.jsonl` | 1 |
 

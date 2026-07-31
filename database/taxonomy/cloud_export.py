@@ -55,12 +55,20 @@ SCOPE_PREDICATE_ID = "fungi_closure_union_nortaxa_v1"
 MANIFEST_FILENAME = "taxonomy_export_manifest.json"
 
 # Fixed dataset file order (also used for `whole_export_sha256`).
+#
+# Authoritative-namespace external IDs (from the compiler's text table) are
+# split out from namespace-lost legacy integer IDs (from the compiler's
+# integer table where `namespace` is not preserved). The two files have
+# different schemas; combining them would silently misrepresent the
+# authoritative rows as sharing a schema with rows whose namespace is only
+# knowable by inference outside this exporter.
 DATASET_FILES = (
     "taxonomy_release.jsonl",
     "taxon.jsonl",
     "scientific_name.jsonl",
     "vernacular.jsonl",
     "taxon_external_id.jsonl",
+    "taxon_external_id_legacy_integer.jsonl",
     "taxon_redlist.jsonl",
 )
 
@@ -119,8 +127,8 @@ TAXON_REDLIST_MIN_ALLOWLIST = (
     "expert_group",
     "assessment_url",
 )
-# Normalized model-neutral external-ID schema.
-TAXON_EXTERNAL_ID_OUTPUT_FIELDS = (
+# Authoritative external IDs (namespace declared by compiler text table).
+TAXON_EXTERNAL_ID_AUTHORITATIVE_FIELDS = (
     "taxon_id",
     "source_system",
     "namespace",
@@ -129,7 +137,18 @@ TAXON_EXTERNAL_ID_OUTPUT_FIELDS = (
     "is_preferred",
     "external_name",
     "note",
-    "source_table",
+)
+# Legacy integer external IDs — the compiler's integer table does not
+# preserve `namespace`. Rows are emitted verbatim under an explicit "legacy"
+# label so downstream consumers cannot misread them as authoritative.
+TAXON_EXTERNAL_ID_LEGACY_INTEGER_FIELDS = (
+    "taxon_id",
+    "source_system",
+    "external_id",  # cast to text; the source column type is INTEGER
+    "id_role",
+    "is_preferred",
+    "external_name",
+    "note",
 )
 
 BOOL_COLUMNS = {
@@ -144,7 +163,10 @@ DATASET_SORT_KEYS = {
     "vernacular.jsonl": ("taxon_id", "language_code", "vernacular_name", "source"),
     "taxon_external_id.jsonl": (
         "taxon_id", "source_system", "namespace", "external_id",
-        "source_table", "id_role", "is_preferred",
+        "id_role", "is_preferred",
+    ),
+    "taxon_external_id_legacy_integer.jsonl": (
+        "taxon_id", "source_system", "external_id", "id_role", "is_preferred",
     ),
     "taxon_redlist.jsonl": (
         "assessment_area", "taxon_id", "source_release",
@@ -246,28 +268,28 @@ def _coerce_row(row: sqlite3.Row, columns: tuple[str, ...]) -> dict:
     return out
 
 
-def _coerce_external_row(
-    *,
-    taxon_id: int,
-    source_system: str,
-    namespace: Optional[str],
-    external_id: str,
-    id_role: str,
-    is_preferred: int,
-    external_name: Optional[str],
-    note: Optional[str],
-    source_table: str,
-) -> dict:
+def _coerce_authoritative_external_row(row: sqlite3.Row) -> dict:
     return {
-        "taxon_id": taxon_id,
-        "source_system": source_system,
-        "namespace": namespace,
-        "external_id": external_id,
-        "id_role": id_role,
-        "is_preferred": bool(is_preferred),
-        "external_name": external_name,
-        "note": note,
-        "source_table": source_table,
+        "taxon_id": row["taxon_id"],
+        "source_system": row["source_system"],
+        "namespace": row["namespace"],
+        "external_id": row["external_id"],
+        "id_role": row["id_role"],
+        "is_preferred": bool(row["is_preferred"]),
+        "external_name": row["external_name"],
+        "note": row["note"],
+    }
+
+
+def _coerce_legacy_integer_external_row(row: sqlite3.Row) -> dict:
+    return {
+        "taxon_id": row["taxon_id"],
+        "source_system": row["source_system"],
+        "external_id": str(row["external_id"]),
+        "id_role": row["id_role"],
+        "is_preferred": bool(row["is_preferred"]),
+        "external_name": row["external_name"],
+        "note": row["note"],
     }
 
 
@@ -626,45 +648,60 @@ def emit_vernacular(conn: sqlite3.Connection, out_path: Path) -> DatasetResult:
     return _finalize_dataset(out_path, filename, rows, written)
 
 
-def emit_taxon_external_id(conn: sqlite3.Connection, out_path: Path) -> DatasetResult:
+def emit_taxon_external_id_authoritative(
+    conn: sqlite3.Connection, out_path: Path
+) -> DatasetResult:
+    """Emit compiler-authoritative external IDs (namespace declared).
+
+    Source: `taxon_external_id_text_min`. Namespace is non-null and declared
+    by the compiler per `policies/source_priority.yml.identifier_namespaces`.
+    """
     filename = "taxon_external_id.jsonl"
-    # Union the integer + text tables into a single normalized shape.
-    # Integer table has no `namespace` column — emit JSON null.
-    # external_id is always emitted as a JSON string (CAST for int table).
-    # UNION ALL ORDER BY only accepts positional / output-column references.
-    # Column positions:
-    #   1=taxon_id, 2=source_system, 3=namespace, 4=external_id, 5=id_role,
-    #   6=is_preferred, 7=external_name, 8=note, 9=source_table.
-    # SQLite sorts NULL before any non-null value by default — deterministic.
     sql = (
-        "SELECT taxon_id, source_system, NULL AS namespace, "
-        "CAST(external_id AS TEXT) AS external_id, id_role, is_preferred, "
-        "external_name, note, 'taxon_external_id_min' AS source_table "
-        "FROM taxon_external_id_min "
-        "WHERE taxon_id IN (SELECT taxon_id FROM _cloud_export_scope) "
-        "UNION ALL "
         "SELECT taxon_id, source_system, namespace, external_id, id_role, "
-        "is_preferred, external_name, note, 'taxon_external_id_text_min' "
+        "is_preferred, external_name, note "
         "FROM taxon_external_id_text_min "
         "WHERE taxon_id IN (SELECT taxon_id FROM _cloud_export_scope) "
-        "ORDER BY 1 ASC, 2 ASC, 3 ASC, 4 ASC, 9 ASC, 5 ASC, 6 ASC"
+        "ORDER BY taxon_id ASC, source_system ASC, namespace ASC, "
+        "external_id ASC, id_role ASC, is_preferred ASC"
     )
     rows = 0
     written = 0
     with _open_writer(out_path) as fh:
         for row in conn.execute(sql):
-            obj = _coerce_external_row(
-                taxon_id=row["taxon_id"],
-                source_system=row["source_system"],
-                namespace=row["namespace"],
-                external_id=row["external_id"],
-                id_role=row["id_role"],
-                is_preferred=row["is_preferred"],
-                external_name=row["external_name"],
-                note=row["note"],
-                source_table=row["source_table"],
-            )
-            written += _write_json_line(fh, obj)
+            written += _write_json_line(fh, _coerce_authoritative_external_row(row))
+            rows += 1
+    return _finalize_dataset(out_path, filename, rows, written)
+
+
+def emit_taxon_external_id_legacy_integer(
+    conn: sqlite3.Connection, out_path: Path
+) -> DatasetResult:
+    """Emit legacy integer external IDs (compiler-lost namespace).
+
+    Source: `taxon_external_id_min`. The compiler's integer table does not
+    preserve the originating namespace (e.g. `nortaxa_taxon_id` vs
+    `nortaxa_dwc_id`); only `source_system` remains. These rows are emitted
+    under an explicit legacy label so downstream code cannot misread them as
+    authoritative.
+
+    `external_id` is cast to text so numeric equality across namespaces
+    cannot silently produce type-based joins.
+    """
+    filename = "taxon_external_id_legacy_integer.jsonl"
+    sql = (
+        "SELECT taxon_id, source_system, CAST(external_id AS TEXT) AS external_id, "
+        "id_role, is_preferred, external_name, note "
+        "FROM taxon_external_id_min "
+        "WHERE taxon_id IN (SELECT taxon_id FROM _cloud_export_scope) "
+        "ORDER BY taxon_id ASC, source_system ASC, external_id ASC, "
+        "id_role ASC, is_preferred ASC"
+    )
+    rows = 0
+    written = 0
+    with _open_writer(out_path) as fh:
+        for row in conn.execute(sql):
+            written += _write_json_line(fh, _coerce_legacy_integer_external_row(row))
             rows += 1
     return _finalize_dataset(out_path, filename, rows, written)
 
@@ -689,6 +726,22 @@ def emit_taxon_redlist(conn: sqlite3.Connection, out_path: Path) -> DatasetResul
     return _finalize_dataset(out_path, filename, rows, written)
 
 
+def _parse_source_release_version(source_release_id: Optional[str]) -> Optional[str]:
+    """Extract the upstream version from a `<source>:<version>[:<date>]` id.
+
+    Compiler-declared format (per `policies/release_contract.yml`) is
+    `<source-code>:<upstream-version-or-issued-date>[:<issued_at>]`. Returns
+    `None` if the input is missing or malformed rather than guessing.
+    """
+    if not source_release_id:
+        return None
+    parts = source_release_id.split(":")
+    if len(parts) < 2:
+        return None
+    version = parts[1].strip()
+    return version or None
+
+
 def emit_taxonomy_release(
     conn: sqlite3.Connection,
     out_path: Path,
@@ -700,13 +753,24 @@ def emit_taxonomy_release(
     manifest = src.manifest
 
     # Deterministic release metadata only (no `generated_at`).
+    #
+    # Fields not present in either the compiler's `taxonomy_meta` nor the
+    # outer manifest are emitted as `null`. No literal fabricated fallback
+    # is applied — this exporter never invents provenance.
+    #
+    # `nortaxa_release` is derivable from the compiler's own record
+    # `source_release[nortaxa].id` (e.g. "nortaxa:1.284:2026-07-17" →
+    # version "1.284"). If the input format changes, `nortaxa_release`
+    # falls back to `null` rather than a guessed constant.
     row_obj: dict = {
         "content_release_id": src.content_release_id,
         "taxonomy_schema_version": int(meta["taxonomy_schema_version"]),
-        "canonical_authority": manifest.get("canonical_authority", "COL XR 2026-07-17"),
-        "checklistbank_dataset_id": manifest.get("checklistbank_dataset_id", "315834"),
-        "doi": manifest.get("doi", "10.48580/dgykv"),
-        "nortaxa_release": manifest.get("nortaxa_release", "1.284"),
+        "canonical_authority": manifest.get("canonical_authority"),
+        "checklistbank_dataset_id": manifest.get("checklistbank_dataset_id"),
+        "doi": manifest.get("doi"),
+        "nortaxa_release": _parse_source_release_version(
+            meta.get("source_release[nortaxa].id")
+        ),
         "sqlite_sha256": src.sqlite_sha256,
         "gz_sha256": src.gz_sha256,
         "compiler_manifest_sha256": meta.get("compiler_manifest_sha256"),
@@ -760,6 +824,7 @@ class ExportResult:
     manifest_sha256: str
     whole_export_sha256: str
     scope: ScopeResult
+    dangling_parents: "DanglingParentReport"
     generated_at: str
 
 
@@ -796,10 +861,16 @@ def _assert_pinned_counts(
         errors.append(
             f"vernacular.jsonl rows={datasets['vernacular.jsonl'].row_count} != {exp['vernacular_rows']}"
         )
-    if datasets["taxon_external_id.jsonl"].row_count != exp["external_total_rows"]:
+    if datasets["taxon_external_id.jsonl"].row_count != exp["external_text_rows"]:
         errors.append(
-            f"taxon_external_id.jsonl rows={datasets['taxon_external_id.jsonl'].row_count} "
-            f"!= {exp['external_total_rows']}"
+            f"taxon_external_id.jsonl (authoritative) rows="
+            f"{datasets['taxon_external_id.jsonl'].row_count} != {exp['external_text_rows']}"
+        )
+    if datasets["taxon_external_id_legacy_integer.jsonl"].row_count != exp["external_int_rows"]:
+        errors.append(
+            f"taxon_external_id_legacy_integer.jsonl rows="
+            f"{datasets['taxon_external_id_legacy_integer.jsonl'].row_count} "
+            f"!= {exp['external_int_rows']}"
         )
     if datasets["taxon_redlist.jsonl"].row_count != exp["redlist_rows"]:
         errors.append(
@@ -809,16 +880,6 @@ def _assert_pinned_counts(
         errors.append(f"vernacular_by_lang={lang_counts} != {exp['vernacular_by_lang']}")
     if area_counts != exp["redlist_by_area"]:
         errors.append(f"redlist_by_area={area_counts} != {exp['redlist_by_area']}")
-    if external_source_table_counts.get("taxon_external_id_min") != exp["external_int_rows"]:
-        errors.append(
-            f"external_int_rows={external_source_table_counts.get('taxon_external_id_min')} "
-            f"!= {exp['external_int_rows']}"
-        )
-    if external_source_table_counts.get("taxon_external_id_text_min") != exp["external_text_rows"]:
-        errors.append(
-            f"external_text_rows={external_source_table_counts.get('taxon_external_id_text_min')} "
-            f"!= {exp['external_text_rows']}"
-        )
     if errors:
         raise ExportError(
             "pinned-release regression assertion failed for "
@@ -826,11 +887,29 @@ def _assert_pinned_counts(
         )
 
 
-def _validate_child_references(conn: sqlite3.Connection, scope: ScopeResult) -> None:
-    """Verify every emitted child row's taxon_id is in scope (belt-and-braces).
+@dataclass
+class DanglingParentReport:
+    """Concept rows in scope whose `parent_taxon_id` lies outside scope.
 
-    Since we filter on `_cloud_export_scope`, this is technically redundant;
-    running it makes intent explicit and catches accidental refactors.
+    Reported, never repaired. Parent values are preserved verbatim in the
+    emitted `taxon.jsonl`; W2 or a future compiler stage decides how to
+    interpret them (e.g. treat as root-in-cloud-scope, or import the parent).
+    """
+    count: int
+    total_with_parent: int
+    sample: list[dict]  # up to 20 sample rows for the manifest
+
+
+def _validate_child_references(conn: sqlite3.Connection) -> None:
+    """Sanity-check that no dependent row emits with an out-of-scope taxon_id.
+
+    Every emit query already filters on `_cloud_export_scope`, so this is a
+    positive belt-and-braces check: count rows whose taxon_id is NOT in scope
+    but which appear via a hypothetical unfiltered query. If the SELECT that
+    the emitters use were ever changed to drop the scope filter this check
+    would still not fail (it's tautological). It exists purely to detect
+    obvious schema drift: rows without a `taxon_id` column, or NULL taxon_id
+    in a non-redlist child table.
     """
     for child_table in (
         "scientific_name_min",
@@ -838,21 +917,60 @@ def _validate_child_references(conn: sqlite3.Connection, scope: ScopeResult) -> 
         "taxon_external_id_min",
         "taxon_external_id_text_min",
     ):
-        row = conn.execute(
-            f"SELECT count(*) AS n FROM {child_table} "
+        # These child tables declare taxon_id NOT NULL; assert schema still
+        # honors that.
+        info = list(conn.execute(f"PRAGMA table_info({child_table})"))
+        tcol = next((r for r in info if r["name"] == "taxon_id"), None)
+        if tcol is None:
+            raise ExportError(f"child table {child_table} missing taxon_id column")
+        if tcol["notnull"] != 1:
+            raise ExportError(
+                f"child table {child_table} taxon_id no longer NOT NULL — schema drift"
+            )
+        # Ensure every row of the child table has a matching taxon_min entry.
+        orphan = conn.execute(
+            f"SELECT count(*) AS n FROM {child_table} c "
+            "WHERE c.taxon_id IN (SELECT taxon_id FROM _cloud_export_scope) "
+            "AND NOT EXISTS (SELECT 1 FROM taxon_min t WHERE t.taxon_id = c.taxon_id)"
+        ).fetchone()["n"]
+        if orphan:
+            raise ExportError(
+                f"child table {child_table} has {orphan} in-scope rows with no "
+                "matching taxon_min row"
+            )
+
+
+def _audit_dangling_parents(conn: sqlite3.Connection) -> DanglingParentReport:
+    """List concepts whose parent lies outside the exported scope.
+
+    Preserves the compiler's `parent_taxon_id` in the emitted taxon rows
+    verbatim; W1 never nulls a dangling parent. Downstream consumers decide
+    whether such rows are treated as roots in the cloud scope, whether the
+    parent should be pulled in, or whether the discrepancy is a data bug.
+    """
+    total_with_parent = conn.execute(
+        "SELECT count(*) AS n FROM taxon_min "
+        "WHERE taxon_id IN (SELECT taxon_id FROM _cloud_export_scope) "
+        "AND parent_taxon_id IS NOT NULL"
+    ).fetchone()["n"]
+    count = conn.execute(
+        "SELECT count(*) AS n FROM taxon_min "
+        "WHERE taxon_id IN (SELECT taxon_id FROM _cloud_export_scope) "
+        "AND parent_taxon_id IS NOT NULL "
+        "AND parent_taxon_id NOT IN (SELECT taxon_id FROM _cloud_export_scope)"
+    ).fetchone()["n"]
+    sample = [
+        dict(r)
+        for r in conn.execute(
+            "SELECT taxon_id, parent_taxon_id, canonical_scientific_name, "
+            "taxon_rank, canonical_source_system FROM taxon_min "
             "WHERE taxon_id IN (SELECT taxon_id FROM _cloud_export_scope) "
-            "AND taxon_id NOT IN (SELECT taxon_id FROM _cloud_export_scope)"
-        ).fetchone()
-        if row["n"]:
-            raise ExportError(f"invariant broken in {child_table}: orphan taxon_id in scope")
-    row = conn.execute(
-        "SELECT count(*) AS n FROM taxon_redlist_min "
-        "WHERE taxon_id IS NOT NULL "
-        "AND taxon_id IN (SELECT taxon_id FROM _cloud_export_scope) "
-        "AND taxon_id NOT IN (SELECT taxon_id FROM _cloud_export_scope)"
-    ).fetchone()
-    if row["n"]:
-        raise ExportError("invariant broken in taxon_redlist_min: orphan taxon_id in scope")
+            "AND parent_taxon_id IS NOT NULL "
+            "AND parent_taxon_id NOT IN (SELECT taxon_id FROM _cloud_export_scope) "
+            "ORDER BY taxon_id LIMIT 20"
+        )
+    ]
+    return DanglingParentReport(count=count, total_with_parent=total_with_parent, sample=sample)
 
 
 def _dataset_derived_stats(conn: sqlite3.Connection) -> tuple[
@@ -898,14 +1016,35 @@ def _iso_utc(ts: Optional[float] = None) -> str:
 
 
 def _reject_symlink_or_traversal(p: Path) -> None:
-    """Refuse to operate on paths that resolve outside their nominal parent."""
-    resolved = p.resolve()
-    if resolved != p.absolute():
-        # Existing symlinks on the path — resolved differs from lexical parent.
-        # We only object if a component is a symlink.
-        for ancestor in (p, *p.parents):
-            if ancestor.is_symlink():
-                raise ExportError(f"path contains a symlink component: {ancestor}")
+    """Reject paths containing a symlink component or a traversal token.
+
+    Walks lexical ancestors up to the filesystem root, testing every
+    existing component with `os.path.islink` (which does NOT follow the
+    link). Purely comparing `resolve()` vs `absolute()` is unreliable
+    because a canonical macOS path can equal a resolved symlink target
+    (e.g. `/tmp` → `/private/tmp`), producing false negatives on the target
+    side and false positives on paths that pass through `/tmp`.
+
+    Also rejects lexical `..` traversal tokens in the caller-supplied path.
+    """
+    # Lexical traversal check on the original (pre-resolution) path.
+    for part in Path(p).parts:
+        if part == "..":
+            raise ExportError(f"path contains '..' traversal token: {p}")
+
+    # Ancestor symlink check — includes `p` itself.
+    current = Path(p).absolute()
+    checked: set = set()
+    while True:
+        if current in checked:
+            break
+        checked.add(current)
+        if os.path.lexists(current) and current.is_symlink():
+            raise ExportError(f"path contains a symlink component: {current}")
+        parent = current.parent
+        if parent == current:
+            break
+        current = parent
 
 
 def run_export(
@@ -919,28 +1058,29 @@ def run_export(
     generated_at: Optional[str] = None,
 ) -> ExportResult:
     """Produce a deterministic cloud-taxonomy export directory."""
+    # Reject symlink / traversal on the caller-supplied output path BEFORE
+    # any `.resolve()` step — resolve() follows symlinks and normalizes '..',
+    # which would erase exactly the tokens we need to catch.
+    _reject_symlink_or_traversal(Path(output_dir))
+
     artifact_gz = Path(artifact_gz).resolve()
     manifest = Path(manifest).resolve()
     output_dir = Path(output_dir).resolve()
     policy_dir = Path(policy_dir).resolve()
-    _reject_symlink_or_traversal(output_dir.parent)
 
     with tempfile.TemporaryDirectory(prefix="sporely_cloud_export_verify_") as scratch:
         scratch_path = Path(scratch)
         src = verify_source(artifact_gz, manifest, scratch_path)
 
         release_id = src.content_release_id
-        expected_final_name = output_dir.name
-        # If output_dir has a name that mentions a different release, that's OK
-        # (caller may want to override), but we record the release id in the
-        # manifest either way.
+        gen_at = generated_at or _iso_utc()
 
         if verify_only:
             _LOG.info("verify-only: source hashes and metadata OK for %s", release_id)
             with _open_ro(src.decompressed_sqlite_path) as conn:
                 scope = build_concept_set(conn)
                 _install_scope_temp_table(conn, scope.concept_ids)
-                _validate_child_references(conn, scope)
+                _validate_child_references(conn)
             return ExportResult(
                 output_dir=output_dir,
                 datasets={},
@@ -949,38 +1089,67 @@ def run_export(
                 manifest_sha256="",
                 whole_export_sha256="",
                 scope=scope,
-                generated_at=generated_at or _iso_utc(),
+                dangling_parents=DanglingParentReport(count=0, total_with_parent=0, sample=[]),
+                generated_at=gen_at,
             )
 
-        # If the target already exists and is byte-identical, short-circuit.
-        if output_dir.is_dir():
-            existing_manifest = output_dir / MANIFEST_FILENAME
-            staged_result: Optional[ExportResult] = None
-            if existing_manifest.is_file():
-                staged_result = _stage_and_finalize(
-                    src=src,
-                    output_parent=output_dir.parent,
-                    output_final_name=output_dir.name,
-                    policy_dir=policy_dir,
-                    replace=False,
-                    dry_run=True,
-                    generated_at=generated_at or _iso_utc(),
-                )
-                if _existing_files_match_staged(output_dir, staged_result):
+        # If the target already exists and every dataset file's on-disk
+        # SHA-256 matches what a fresh staging run would produce, short-
+        # circuit and return a result whose paths point at the existing
+        # final directory (never at a staging dir that has been cleaned up).
+        if output_dir.is_dir() and (output_dir / MANIFEST_FILENAME).is_file():
+            staged = _stage_and_finalize(
+                src=src,
+                output_parent=output_dir.parent,
+                output_final_name=output_dir.name,
+                policy_dir=policy_dir,
+                replace=False,
+                dry_run=True,
+                generated_at=gen_at,
+            )
+            try:
+                if _existing_files_match_staged(output_dir, staged):
                     _LOG.info("existing export at %s is byte-identical", output_dir)
-                    shutil.rmtree(staged_result.output_dir, ignore_errors=True)
-                    return staged_result
+                    # Build a result whose `path` fields point at the FINAL
+                    # directory, not the staging one which is about to be
+                    # removed. Hashes and byte counts are recomputed from the
+                    # existing on-disk files so they're authoritative.
+                    final_datasets: dict[str, DatasetResult] = {}
+                    for name, ds in staged.datasets.items():
+                        p = output_dir / name
+                        final_datasets[name] = DatasetResult(
+                            filename=name,
+                            row_count=ds.row_count,
+                            bytes=p.stat().st_size,
+                            sha256=sha256_file(p),
+                            path=p,
+                        )
+                    final_manifest = output_dir / MANIFEST_FILENAME
+                    manifest_bytes = final_manifest.read_bytes()
+                    return ExportResult(
+                        output_dir=output_dir,
+                        datasets=final_datasets,
+                        manifest_path=final_manifest,
+                        manifest_bytes=len(manifest_bytes),
+                        manifest_sha256=sha256_bytes(manifest_bytes),
+                        whole_export_sha256=whole_export_sha256(
+                            [(n, output_dir / n) for n in DATASET_FILES]
+                        ),
+                        scope=staged.scope,
+                        dangling_parents=staged.dangling_parents,
+                        generated_at=gen_at,
+                    )
+                # Differs — cleanup staging.
+                if not replace:
+                    raise ExportError(
+                        "output directory already exists and differs; pass "
+                        f"replace=True: {output_dir}"
+                    )
+            finally:
+                shutil.rmtree(staged.output_dir, ignore_errors=True)
 
-            # Existing directory differs; either replace or refuse.
-            if not replace:
-                if staged_result is not None:
-                    shutil.rmtree(staged_result.output_dir, ignore_errors=True)
-                raise ExportError(
-                    f"output directory already exists and differs; pass replace=True: {output_dir}"
-                )
-            if staged_result is not None:
-                shutil.rmtree(staged_result.output_dir, ignore_errors=True)
-
+        # Fresh build (either no output_dir at all, or replace=True after
+        # confirming difference).
         result = _stage_and_finalize(
             src=src,
             output_parent=output_dir.parent,
@@ -988,7 +1157,7 @@ def run_export(
             policy_dir=policy_dir,
             replace=replace,
             dry_run=False,
-            generated_at=generated_at or _iso_utc(),
+            generated_at=gen_at,
         )
         return result
 
@@ -1034,7 +1203,8 @@ def _stage_and_finalize(
         with _open_ro(src.decompressed_sqlite_path) as conn:
             scope = build_concept_set(conn)
             _install_scope_temp_table(conn, scope.concept_ids)
-            _validate_child_references(conn, scope)
+            _validate_child_references(conn)
+            dangling = _audit_dangling_parents(conn)
 
             policy_hashes = hash_policies(policy_dir)
 
@@ -1049,8 +1219,11 @@ def _stage_and_finalize(
             datasets["vernacular.jsonl"] = emit_vernacular(
                 conn, tmp_output / "vernacular.jsonl"
             )
-            datasets["taxon_external_id.jsonl"] = emit_taxon_external_id(
+            datasets["taxon_external_id.jsonl"] = emit_taxon_external_id_authoritative(
                 conn, tmp_output / "taxon_external_id.jsonl"
+            )
+            datasets["taxon_external_id_legacy_integer.jsonl"] = emit_taxon_external_id_legacy_integer(
+                conn, tmp_output / "taxon_external_id_legacy_integer.jsonl"
             )
             datasets["taxon_redlist.jsonl"] = emit_taxon_redlist(
                 conn, tmp_output / "taxon_redlist.jsonl"
@@ -1075,6 +1248,7 @@ def _stage_and_finalize(
             src=src,
             datasets=datasets,
             scope=scope,
+            dangling=dangling,
             lang_counts=lang_counts,
             area_counts=area_counts,
             external_source_table_counts=external_source_table_counts,
@@ -1102,6 +1276,7 @@ def _stage_and_finalize(
                 manifest_sha256=manifest_sha,
                 whole_export_sha256=we_hash,
                 scope=scope,
+                dangling_parents=dangling,
                 generated_at=generated_at,
             )
 
@@ -1124,14 +1299,26 @@ def _stage_and_finalize(
         else:
             tmp_output.rename(final_dir)
 
+        # Rewrite dataset `path` fields to point at the final dir.
+        final_datasets = {
+            name: DatasetResult(
+                filename=name,
+                row_count=ds.row_count,
+                bytes=ds.bytes,
+                sha256=ds.sha256,
+                path=final_dir / name,
+            )
+            for name, ds in datasets.items()
+        }
         return ExportResult(
             output_dir=final_dir,
-            datasets=datasets,
+            datasets=final_datasets,
             manifest_path=final_dir / MANIFEST_FILENAME,
             manifest_bytes=len(manifest_bytes),
             manifest_sha256=manifest_sha,
             whole_export_sha256=we_hash,
             scope=scope,
+            dangling_parents=dangling,
             generated_at=generated_at,
         )
     except Exception:
@@ -1145,6 +1332,7 @@ def _build_manifest_dict(
     src: SourceContext,
     datasets: dict[str, DatasetResult],
     scope: ScopeResult,
+    dangling: DanglingParentReport,
     lang_counts: dict[str, int],
     area_counts: dict[str, int],
     external_source_table_counts: dict[str, int],
@@ -1152,15 +1340,21 @@ def _build_manifest_dict(
     whole_export_hash: str,
     generated_at: str,
 ) -> dict:
-    # Namespace counts on the external-id dataset. Compute from datasets on
-    # disk to reflect the actual emitted rows, not the source query.
-    ext_ns_counts: dict[str, int] = {}
-    ext_path = datasets["taxon_external_id.jsonl"].path
-    with ext_path.open("rb") as fh:
+    # Authoritative external-id namespace counts (from the namespaced file).
+    ns_counts: dict[str, int] = {}
+    with datasets["taxon_external_id.jsonl"].path.open("rb") as fh:
         for line in fh:
             obj = json.loads(line)
-            key = f"{obj['source_system']}/{obj.get('namespace') or ''}"
-            ext_ns_counts[key] = ext_ns_counts.get(key, 0) + 1
+            key = f"{obj['source_system']}/{obj['namespace']}"
+            ns_counts[key] = ns_counts.get(key, 0) + 1
+
+    # Legacy integer external-id source_system counts (namespace not present).
+    legacy_source_counts: dict[str, int] = {}
+    with datasets["taxon_external_id_legacy_integer.jsonl"].path.open("rb") as fh:
+        for line in fh:
+            obj = json.loads(line)
+            key = obj["source_system"]
+            legacy_source_counts[key] = legacy_source_counts.get(key, 0) + 1
 
     return {
         "manifest_schema_version": MANIFEST_SCHEMA_VERSION,
@@ -1181,8 +1375,14 @@ def _build_manifest_dict(
         "fungi_root_ids": list(scope.fungi_root_ids),
         "vernacular_language_counts": dict(sorted(lang_counts.items())),
         "redlist_area_counts": dict(sorted(area_counts.items())),
-        "external_id_namespace_counts": dict(sorted(ext_ns_counts.items())),
+        "external_id_authoritative_namespace_counts": dict(sorted(ns_counts.items())),
+        "external_id_legacy_integer_source_counts": dict(sorted(legacy_source_counts.items())),
         "external_id_source_table_counts": dict(sorted(external_source_table_counts.items())),
+        "dangling_parent_references": {
+            "count": dangling.count,
+            "total_with_parent": dangling.total_with_parent,
+            "sample": dangling.sample,
+        },
         "files": [
             {
                 "name": name,
