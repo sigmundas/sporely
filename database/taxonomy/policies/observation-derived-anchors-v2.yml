@@ -1,0 +1,143 @@
+# W2E-A2 curated input for compile_release.py: observation-derived
+# NorTaxa anchors for historical observations whose concepts fall
+# outside the macrofungi scope.
+#
+# EVERY row in this file must be evidenced by an entry in the pinned
+# NorTaxa 1.284 archive (database/taxonomy/sources/nortaxa/1.284/archive.zip).
+# The allocator script re-reads the archive and refuses to allocate any ID
+# that does not appear there with taxonomicStatus in ('valid','synonym').
+#
+# Additions here MUST NOT broaden the macrofungi search cache. Each anchor
+# lands in the sparse persistent registry with cache_state=out_of_cache
+# and scope_state=not_evaluated when consumed by the reconciliation engine.
+#
+# Provenance:
+#   - discovered via W2D-R diagnostic 2026-08-01:
+#     /Users/sigmundas/Documents/Code/sporely/w2dr/out/diagnostic/mapping-diagnostic.csv
+#   - buckets: sqlite_present_no_registry_anchor (19), source_archive_only_no_registry_anchor (2)
+
+release_id: "tax-2026.08.02-02"
+first_seen_source_release: "nortaxa:1.284"
+source_system: "nortaxa"
+namespace: "nortaxa_taxon_id"
+
+# 20 self-accepted taxa (taxonomicStatus=valid; acceptedNameUsageID==taxonID)
+# Ordered by taxonID for deterministic allocation.
+anchors:
+  - taxon_id: "1600"
+    scientific_name: "Natrix natrix"
+    kingdom: "Animalia"
+    rank: "species"
+    diagnostic_bucket: "sqlite_present_no_registry_anchor"
+  - taxon_id: "3026"
+    scientific_name: "Alopecosa pulverulenta"
+    kingdom: "Animalia"
+    rank: "species"
+    diagnostic_bucket: "sqlite_present_no_registry_anchor"
+  - taxon_id: "99419"
+    scientific_name: "Allium ursinum"
+    kingdom: "Plantae"
+    rank: "species"
+    diagnostic_bucket: "sqlite_present_no_registry_anchor"
+  - taxon_id: "99439"
+    scientific_name: "Hemerocallis lilioasphodelus"
+    kingdom: "Plantae"
+    rank: "species"
+    diagnostic_bucket: "sqlite_present_no_registry_anchor"
+  - taxon_id: "100513"
+    scientific_name: "Cirsium arvense"
+    kingdom: "Plantae"
+    rank: "species"
+    diagnostic_bucket: "sqlite_present_no_registry_anchor"
+  - taxon_id: "100758"
+    scientific_name: "Onopordum acanthium"
+    kingdom: "Plantae"
+    rank: "species"
+    diagnostic_bucket: "sqlite_present_no_registry_anchor"
+  - taxon_id: "101107"
+    scientific_name: "Berteroa incana"
+    kingdom: "Plantae"
+    rank: "species"
+    diagnostic_bucket: "sqlite_present_no_registry_anchor"
+  - taxon_id: "101557"
+    scientific_name: "Silene dioica"
+    kingdom: "Plantae"
+    rank: "species"
+    diagnostic_bucket: "sqlite_present_no_registry_anchor"
+  - taxon_id: "101602"
+    scientific_name: "Stellaria nemorum"
+    kingdom: "Plantae"
+    rank: "species"
+    diagnostic_bucket: "sqlite_present_no_registry_anchor"
+  - taxon_id: "101969"
+    scientific_name: "Lotus corniculatus"
+    kingdom: "Plantae"
+    rank: "species"
+    diagnostic_bucket: "sqlite_present_no_registry_anchor"
+  - taxon_id: "102317"
+    scientific_name: "Lavandula angustifolia"
+    kingdom: "Plantae"
+    rank: "species"
+    diagnostic_bucket: "sqlite_present_no_registry_anchor"
+  - taxon_id: "102346"
+    scientific_name: "Nepeta racemosa"
+    kingdom: "Plantae"
+    rank: "species"
+    diagnostic_bucket: "sqlite_present_no_registry_anchor"
+  - taxon_id: "102409"
+    scientific_name: "Fraxinus excelsior"
+    kingdom: "Plantae"
+    rank: "species"
+    diagnostic_bucket: "sqlite_present_no_registry_anchor"
+  - taxon_id: "102774"
+    scientific_name: "Euphorbia paralias"
+    kingdom: "Plantae"
+    rank: "species"
+    diagnostic_bucket: "sqlite_present_no_registry_anchor"
+  - taxon_id: "103138"
+    scientific_name: "Ranunculus acris"
+    kingdom: "Plantae"
+    rank: "species"
+    diagnostic_bucket: "sqlite_present_no_registry_anchor"
+  - taxon_id: "103316"
+    scientific_name: "Fragaria vesca"
+    kingdom: "Plantae"
+    rank: "species"
+    diagnostic_bucket: "sqlite_present_no_registry_anchor"
+  - taxon_id: "103408"
+    scientific_name: "Rubus"
+    kingdom: "Plantae"
+    rank: "genus"
+    diagnostic_bucket: "source_archive_only_no_registry_anchor"
+  - taxon_id: "103560"
+    scientific_name: "Acer pseudoplatanus"
+    kingdom: "Plantae"
+    rank: "species"
+    diagnostic_bucket: "sqlite_present_no_registry_anchor"
+  - taxon_id: "103958"
+    scientific_name: "Equisetum hyemale"
+    kingdom: "Plantae"
+    rank: "species"
+    diagnostic_bucket: "sqlite_present_no_registry_anchor"
+  - taxon_id: "143556"
+    scientific_name: "Salicornia procumbens"
+    kingdom: "Plantae"
+    rank: "species"
+    diagnostic_bucket: "sqlite_present_no_registry_anchor"
+  # Accepted target for the one synonym below (189757 is not itself an
+  # observation identifier — it is required only to receive the alias
+  # binding for 194385).
+  - taxon_id: "189757"
+    scientific_name: "Neckeropsis undulata"
+    kingdom: "Plantae"
+    rank: "species"
+    diagnostic_bucket: "synonym_accepted_target"
+
+# Alias bindings (synonym → accepted target). One case in this release.
+aliases:
+  - taxon_id: "194385"
+    scientific_name: "Distichia undulata"
+    kingdom: "Plantae"
+    rank: "species"
+    accepted_taxon_id: "189757"
+    diagnostic_bucket: "source_archive_only_no_registry_anchor"

@@ -69,7 +69,9 @@ def build_parser() -> argparse.ArgumentParser:
     parser.add_argument("--policy", type=Path, required=True,
                         help="W2D reconciliation policy JSON")
     parser.add_argument("--canonical-registry", type=Path, action="append", default=None,
-                        help="canonical identity registry (JSONL or shard dir); repeatable to stack a supplement on top of the base registry")
+                        help="base canonical identity registry (JSONL or shard dir); may be given once")
+    parser.add_argument("--supplement", type=Path, action="append", default=[],
+                        help="registry supplement directory (contains canonical/ and release/); repeatable and validated for artifact_kind, base_release match, depends_on hashes, and topological order via database.taxonomy.reconciliation.supplement_loader")
     parser.add_argument("--no-summary", action="store_true",
                         help="do not emit the Markdown summary")
     parser.add_argument("--verbose", action="store_true")
@@ -81,9 +83,24 @@ def main(argv: Iterable[str] | None = None) -> int:
     _configure_logging(args.verbose)
 
     rule_set = load_policy(args.policy)
+    # Formal supplement-chain validation runs BEFORE any registry byte is
+    # consumed. This is the loader-side guarantee the accepted contract
+    # requires: no supplement can be loaded standalone, out of order, or
+    # against a base whose hash differs from what the supplement declares.
+    from database.taxonomy.reconciliation.supplement_loader import (
+        load_supplement_chain,
+    )
+    chain = load_supplement_chain(
+        base_release_dir=args.release_dir,
+        supplement_dirs=list(args.supplement or []),
+    )
+    registry_paths: list[Path] = []
+    if args.canonical_registry:
+        registry_paths.extend(args.canonical_registry)
+    registry_paths.extend(s.canonical_dir for s in chain.supplements)
     release = PinnedRelease.load(
         args.release_dir,
-        canonical_registry_path=args.canonical_registry,
+        canonical_registry_path=registry_paths or None,
     )
     resolver = Resolver(release=release, rule_set=rule_set)
 
