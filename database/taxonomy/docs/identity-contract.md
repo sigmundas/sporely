@@ -15,6 +15,15 @@ loaded wholesale into production Supabase. NorTaxa, iNaturalist, Artsorakel,
 and national Red Lists retain their source-specific roles and never replace COL
 or determine global macrofungi scope.
 
+For the pinned 2026-07-17 XR release, the biological labels
+`Pucciniomycotina` and `Ustilaginomycotina` are not exposed as stable COL
+concepts. Executable scope policy uses `Pucciniomycetes` (`H7`) and
+`Ustilaginomycetes` (`K9`) as the approved class-level product boundaries.
+`Gymnosporangium` (`4RXL`) and `Mycosarcoma maydis` (`B24TM`) are explicit
+lower-rank exceptions. `Ustilago maydis` is retained as a pinned COL synonym of
+accepted `B24TM`; it is not a separate identity and is not resolved by name
+equality.
+
 Every external identifier is stored as text with both `source` and `namespace`.
 Mappings may be current, preferred, historical, superseded, rejected, or
 unresolved. Historical usages remain traceable.

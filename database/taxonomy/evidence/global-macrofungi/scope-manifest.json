@@ -1,0 +1,66 @@
+{
+  "format": "sporely-global-macrofungi-scope-evidence-v1",
+  "release_id": "tax-2026.08.01-01",
+  "starting_revision": "690b4bf68fb65ff1a8c1a26162904675541f7e72",
+  "pinned_col_release": "2026-07-17-XR",
+  "dataset_key": 315834,
+  "source_gz_sha256": "fb7660c613d0909c22591abe90768a9ae3c0ea88a8b8d5b2ee2bdf6c69cb8938",
+  "w1_manifest_sha256": "096beb0b9363e69b31ced728d5ce55f7024e33c81b9a416ca1beefd0903e2d95",
+  "policy_sha256": "e4e796286df93b5372264c702c824eea746f680b3b4e8d6467621c99e5b64ea6",
+  "semantic_scope_manifest_sha256": "72758b2c574e8aea27432b6b55c62dfb6ad87f3fadc11ad1c892a61abf23ac4e",
+  "determinism": {
+    "semantic_manifest_byte_identical": true,
+    "desktop_sqlite_byte_identical": true,
+    "compressed_export_byte_identical": true
+  },
+  "counts": {
+    "included_concepts": 52881,
+    "included_species": 49557,
+    "included_genera": 2478,
+    "required_ancestors": 36,
+    "review_concepts": 42420,
+    "excluded_concepts": 525675,
+    "included_basidiomycota": 47447,
+    "included_ascomycota": 5434,
+    "included_other_fungal_phyla": 0,
+    "plants": 0,
+    "animals": 0,
+    "selectable_non_fungi": 0,
+    "scientific_aliases": 4888,
+    "vernacular_names": 3923,
+    "external_mappings": 52881,
+    "field_recordable_exception_concepts": 82,
+    "environmental_sequence_concepts_excluded": 430621
+  },
+  "authorized_exclusion_keys": {
+    "rust_lineage": {"name": "Pucciniomycetes", "col_concept_id": "H7", "rank": "class"},
+    "smut_lineage": {"name": "Ustilaginomycetes", "col_concept_id": "K9", "rank": "class"}
+  },
+  "authorized_exceptions": {
+    "Gymnosporangium": {"col_concept_id": "4RXL", "rank": "genus", "included_concepts": 81},
+    "Mycosarcoma maydis": {"col_concept_id": "B24TM", "rank": "species", "included_concepts": 1, "searchable_synonym": "Ustilago maydis"}
+  },
+  "export": {
+    "uncompressed_bytes": 52215056,
+    "compressed_bytes": 2688182,
+    "compressed_sha256": "9d8cf39e72cd9db757e0be270d7fb4316791d4aff65147d2d7f85e294541c9e0",
+    "contract_validation": "passed"
+  },
+  "desktop": {
+    "sqlite_bytes": 19001344,
+    "compressed_bytes": 5598748,
+    "sha256": "bf70ae05735619f258db0cbbc598199c9b7decccacb24f34dbafed8dc14148dd",
+    "activation_performed": false
+  },
+  "historical_compatibility": {
+    "observations_audited": 337,
+    "inside_scope_with_stable_identity": 0,
+    "outside_scope_with_stable_identity": 0,
+    "unresolved_legacy_identity": 227,
+    "manual_name_without_resolved_identity": 87,
+    "no_identity_evidence": 23
+  },
+  "phase_a_gate": "further_clade_review_required",
+  "phase_b_authorized": false,
+  "full_detail_file": "desktop-candidate.json"
+}

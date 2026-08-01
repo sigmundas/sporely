@@ -1,7 +1,7 @@
 # Sporely Taxonomy v2 Integration — Working Plan
 
 **Plan version:** 2026-08-01
-**Current programme state:** W0–W2B evidence accepted; full-Fungi runtime scope rejected; W2C redefined; W3 blocked
+**Current programme state:** W2C Phase A measured; further clade review required; Phase B and W3 blocked
 **Desktop accepted implementation:** `04602bcbb578e6abefb91ab96e03abbb42c53c3a`
 **Web documentation branch:** `docs/taxonomy-v2-global-macrofungi-correction`
 **Primary objective:** Introduce stable Sporely taxonomy identity across desktop, Supabase and web without breaking the existing taxonomy path or silently binding ambiguous names.
@@ -46,7 +46,7 @@ This document records programme decisions. The repositories remain authoritative
 | W1 repository integration                               | **CLOSEOUT**                          | Merge the desktop feature branch into `integrate/taxonomy-media-2026-07-30`; do not commit the generated export |
 | W2A — Additive Supabase schema, activation and search   | **DONE**                              | Accepted at web commit `d61f2f9`; Model B schema and fixture-tested RPCs added without client cutover           |
 | W2B — Importer, full local load and capacity validation | **DONE**                              | Import experiment passed; its complete-Fungi production scope and W2A representation are rejected                |
-| W2C — Macrofungi scope and sparse-registry design       | **NEXT**                              | Verify the reviewed macrofungi policy against pinned COL IDs and design the sparse cloud registry                 |
+| W2C — Macrofungi scope and sparse-registry design       | **GATE**                              | Phase A generated a 52,881-concept candidate; 42,420 review-state concepts require clade decisions before Phase B |
 | W2D — Cloud implementation                              | **BLOCKED**                           | Await W2C scope measurements and sparse-registry contract                                                         |
 | Publication and provenance                              | **BLOCKED for production activation** | Any future scoped release needs complete licence and publication metadata                                       |
 | W3A — Observation identity schema                       | **PLANNED**                           | Add stable concept identity, state and snapshots without removing legacy fields                                 |
@@ -682,7 +682,7 @@ blocked. The publication/provenance gate remains independently blocked.
 
 ## 11A. W2C — Global macrofungi scope and sparse-registry design
 
-**Status: NEXT — W3 REMAINS BLOCKED**
+**Status: PHASE A COMPLETE — PHASE B BLOCKED PENDING CLADE REVIEW**
 
 The earlier compact-schema experiment remains useful size and search evidence,
 but its 634,894-concept full-Fungi candidate is not the selected production
@@ -696,6 +696,51 @@ The current executable `database/taxonomy/policies/scope.yml` and
 historical broad candidate. This documentation-only correction does not change
 them. They must be revised and validated in the future implementation stage
 before any new macrofungi artifact is built or published.
+
+Phase A is implemented on desktop branch
+`feat/taxonomy-v2-global-macrofungi-scope`. The pinned COL release does not
+expose `Pucciniomycotina` or `Ustilaginomycotina` as stable concepts. The
+executable policy therefore uses class `Pucciniomycetes` (`H7`) and class
+`Ustilaginomycetes` (`K9`) as durable exclusion keys. Genus
+`Gymnosporangium` (`4RXL`) overrides `H7`; accepted species
+`Mycosarcoma maydis` (`B24TM`) overrides `K9`. Pinned NameUsage evidence
+attaches `Ustilago maydis` as a searchable synonym of `B24TM`, never as a
+second Sporely concept or a name-equality resolution.
+
+The first measurement also exposed UNITE sequence hypotheses inherited through
+broad fungal classes. The final policy excludes 430,621 unranked `SH*.10FU`
+sequence-cluster concepts before clade inheritance.
+
+Measured Phase-A result:
+
+```text
+release                              tax-2026.08.01-01
+selectable concepts                  52,881
+accepted species                     49,557
+genera                               2,478
+required classification ancestors   36
+review-state concepts                42,420
+plants / animals / non-Fungi         0 / 0 / 0
+scientific aliases                   4,888
+vernacular names                     3,923
+authoritative external mappings      52,881
+semantic manifest SHA-256            72758b2c574e8aea27432b6b55c62dfb6ad87f3fadc11ad1c892a61abf23ac4e
+uncompressed export bytes            52,215,056
+compressed export bytes              2,688,182
+desktop SQLite bytes                 19,001,344
+desktop SQLite gzip bytes            5,598,748
+```
+
+The applicable seven-file W1 contract validation passed, and two clean builds
+produced byte-identical semantic manifests, compressed exports, and SQLite
+candidates. No runtime activation occurred.
+
+Phase B is blocked because the remaining review set is not yet a manageable
+exception burden: 755 remaining Tremellomycetes concepts, 11,898
+Leotiomycetes concepts, and 27,114 Sordariomycetes concepts, plus mixed
+Xylariaceae, Hypoxylaceae, Diatrypaceae, `Tolypocladium`, `Trichoderma`, and
+Atractiellomycetes. The evidence is in
+`database/taxonomy/evidence/global-macrofungi/`.
 
 ### Product definition
 
@@ -1453,7 +1498,8 @@ An agent must stop rather than guess when:
 [x] Search performance measured
 [x] Full-Fungi W2B importer experiment measured
 [x] Full-Fungi production runtime scope rejected
-[ ] W2C pinned-COL macrofungi rules reviewed and measured
+[x] W2C pinned-COL macrofungi candidate generated and measured
+[ ] W2C mixed-lineage clade review accepted
 [ ] W2C sparse-registry contract accepted
 [ ] W2D production migration and materialization workflow implemented
 [ ] W2D partition publication/reclamation test accepted
