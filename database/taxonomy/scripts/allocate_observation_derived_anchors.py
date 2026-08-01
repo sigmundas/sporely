@@ -247,7 +247,69 @@ def _sha256_file(path: Path) -> str:
     return h.hexdigest()
 
 
-def run(policy_path: Path, existing_registry: Path, output_dir: Path) -> None:
+SUPPLEMENT_CONTRACT_VERSION = "supplement-contract-1.0.0"
+
+
+def _base_release_dependency(base_release_dir: Path | None) -> dict:
+    if base_release_dir is None:
+        return {
+            "base_release_id": None,
+            "base_release_export_manifest_sha256": None,
+            "base_release_scope_manifest_sha256": None,
+        }
+    export_manifest = base_release_dir / "taxonomy_export_manifest.json"
+    scope_manifest = base_release_dir / "scope-manifest.json"
+    manifest_doc = json.loads(export_manifest.read_text())
+    return {
+        "base_release_id": manifest_doc.get("release_id"),
+        "base_release_export_manifest_sha256": _sha256_file(export_manifest),
+        "base_release_scope_manifest_sha256": manifest_doc.get(
+            "scope_manifest_sha256"
+        )
+        or _sha256_file(scope_manifest),
+    }
+
+
+def _supplement_contract(
+    policy,
+    base_release_dir: Path | None,
+    depends_on_supplements: list[dict],
+    diagnostic_reference: str,
+) -> dict:
+    base = _base_release_dependency(base_release_dir)
+    return {
+        "artifact_kind": "registry_supplement",
+        "supplement_contract_version": SUPPLEMENT_CONTRACT_VERSION,
+        "supplement_release_id": policy.release_id,
+        "base_release_id": base["base_release_id"],
+        "base_release_dependency": base,
+        "depends_on": depends_on_supplements,
+        "required_application_order": [
+            "load base release identity records first (see base_release_id)",
+            "load canonical registry (base) with anchors and aliases in append-only order",
+            "load any depends_on supplements in the order listed above",
+            "load THIS supplement's canonical registry shards last",
+        ],
+        "compatibility_rules": [
+            "MUST NOT be loaded as a standalone taxonomy/search release — it lacks scope, name, and vernacular exports",
+            "MUST be loaded strictly on top of base_release_id and every entry in depends_on",
+            "MUST NOT be applied to a base whose export_manifest_sha256 or scope_manifest_sha256 differs from base_release_dependency",
+            "MUST NOT broaden the search cache — supplement mappings materialise into the sparse persistent registry with cache_state=out_of_cache; scope_state carries the source's own value or 'not_evaluated'",
+            "MUST NOT mutate base release bytes or any previously emitted supplement's identity records",
+            "Sporely IDs are strictly-increasing and namespace-partitioned; a supplement never re-uses previously allocated sporely_taxon_ids",
+        ],
+        "diagnostic_reference": diagnostic_reference,
+    }
+
+
+def run(
+    policy_path: Path,
+    existing_registry: Path,
+    output_dir: Path,
+    base_release_dir: Path | None,
+    depends_on_supplements: list[Path],
+    diagnostic_reference: str,
+) -> None:
     if output_dir.exists():
         raise SystemExit(f"output directory already exists: {output_dir}; refusing")
 
@@ -324,7 +386,7 @@ def run(policy_path: Path, existing_registry: Path, output_dir: Path) -> None:
     }
     with shard.open("w", encoding="utf-8") as f:
         f.write(json.dumps(header, sort_keys=True, ensure_ascii=False) + "\n")
-        for entry in sorted(newly_created, key=lambda a: (a.sporely_taxon_id, a.kind)):
+        for entry in sorted(newly_created, key=lambda a: (a.sporely_taxon_id, 0 if a.kind == "anchor" else 1)):
             f.write(entry.to_json_line() + "\n")
     tmp_flat.unlink(missing_ok=True)
 
@@ -381,12 +443,38 @@ def run(policy_path: Path, existing_registry: Path, output_dir: Path) -> None:
     ext_sha = _sha256_file(ext_id)
     (release_dir / "taxon_external_id_supplement.sha256.txt").write_text(ext_sha + "\n")
 
+    # Compute supplement-dependency descriptors from sibling supplement paths.
+    depends_on = []
+    for dep in depends_on_supplements:
+        dep_release = dep / "release/observation-supplement-release.json"
+        if not dep_release.is_file():
+            raise SystemExit(f"depends-on supplement missing release file: {dep_release}")
+        dep_doc = json.loads(dep_release.read_text())
+        depends_on.append(
+            {
+                "supplement_release_id": dep_doc.get("supplement_release_id")
+                or dep_doc.get("release_id"),
+                "supplement_registry_manifest_sha256": dep_doc.get(
+                    "supplement_registry_manifest_sha256"
+                ),
+                "supplement_shard_sha256": dep_doc.get("supplement_shard_sha256"),
+                "supplement_external_id_sha256": dep_doc.get(
+                    "supplement_external_id_sha256"
+                ),
+            }
+        )
+
+    contract = _supplement_contract(
+        policy,
+        base_release_dir,
+        depends_on,
+        diagnostic_reference,
+    )
     provenance = {
-        "release_id": policy.release_id,
+        **contract,
         "based_on_registry_concatenated_sha256_before": src.path.exists()
         and hashlib.sha256((existing_registry / "manifest.json").read_bytes()).hexdigest()
         or None,
-        "diagnostic_reference": "W2D-R mapping-diagnostic 2026-08-01 (buckets: sqlite_present_no_registry_anchor, source_archive_only_no_registry_anchor)",
         "nortaxa_archive_sha256": _sha256_file(NORTAXA_ARCHIVE),
         "nortaxa_release": policy.first_seen_source_release,
         "policy_sha256": _sha256_file(policy_path),
@@ -426,6 +514,25 @@ def _main(argv: list[str] | None = None) -> int:
     )
     parser.add_argument("--output", type=Path, required=True)
     parser.add_argument(
+        "--base-release-dir",
+        type=Path,
+        default=None,
+        help="the pinned base release directory whose bytes this supplement targets",
+    )
+    parser.add_argument(
+        "--depends-on-supplement",
+        type=Path,
+        action="append",
+        default=[],
+        help="path to another supplement output directory this one loads after (repeatable)",
+    )
+    parser.add_argument(
+        "--diagnostic-reference",
+        type=str,
+        default="W2D-R mapping-diagnostic 2026-08-01 (buckets: sqlite_present_no_registry_anchor, source_archive_only_no_registry_anchor)",
+        help="short human-readable pointer to the diagnostic that motivated this supplement",
+    )
+    parser.add_argument(
         "--production",
         action="store_true",
         help="refused; kept only for explicit rejection",
@@ -434,7 +541,14 @@ def _main(argv: list[str] | None = None) -> int:
     if args.production:
         print("refuse: --production is not honoured", file=sys.stderr)
         return 3
-    run(args.policy, args.existing_registry, args.output)
+    run(
+        args.policy,
+        args.existing_registry,
+        args.output,
+        args.base_release_dir,
+        list(args.depends_on_supplement),
+        args.diagnostic_reference,
+    )
     return 0
 
 

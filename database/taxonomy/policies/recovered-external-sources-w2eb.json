@@ -1,0 +1,337 @@
+{
+  "acquisition_date": "2026-08-01",
+  "acquisition_endpoints": {
+    "inaturalist": "https://api.inaturalist.org/v1/taxa/{id}",
+    "nortaxa": "https://artsdatabanken.no/api/Taxon/{id}"
+  },
+  "entries": [
+    {
+      "acquisition": {
+        "date": "2026-08-01",
+        "endpoint": "api.inaturalist.org/v1/taxa/1179954",
+        "http_status": 200,
+        "raw_response_sha256": "bf181d514c27fb60fbe31a74247b74ee4f348724d14d4e1db6d654e03d736117"
+      },
+      "classification": "exact_accepted_mapping",
+      "external_id": "1179954",
+      "iconic_taxon_name": "Fungi",
+      "namespace": "inaturalist_taxon_id",
+      "rank": "species",
+      "scientific_name": "Candolleomyces candolleanus",
+      "source_system": "inaturalist"
+    },
+    {
+      "acquisition": {
+        "date": "2026-08-01",
+        "endpoint": "api.inaturalist.org/v1/taxa/118111",
+        "http_status": 200,
+        "raw_response_sha256": "fe78972177bf32af4a4645a4ae1deb165640c61c3312d0a93d9993f98c85777c"
+      },
+      "classification": "exact_accepted_mapping",
+      "external_id": "118111",
+      "iconic_taxon_name": "Fungi",
+      "namespace": "inaturalist_taxon_id",
+      "rank": "species",
+      "scientific_name": "Trametes ochracea",
+      "source_system": "inaturalist"
+    },
+    {
+      "acquisition": {
+        "date": "2026-08-01",
+        "endpoint": "api.inaturalist.org/v1/taxa/118223",
+        "http_status": 200,
+        "raw_response_sha256": "19492bb64c6c49225f90368bff329c7ae185c9438ba694ddca56ffa7329f753a"
+      },
+      "classification": "exact_accepted_mapping",
+      "external_id": "118223",
+      "iconic_taxon_name": "Fungi",
+      "namespace": "inaturalist_taxon_id",
+      "rank": "species",
+      "scientific_name": "Lactarius rufus",
+      "source_system": "inaturalist"
+    },
+    {
+      "acquisition": {
+        "date": "2026-08-01",
+        "endpoint": "api.inaturalist.org/v1/taxa/118240",
+        "http_status": 200,
+        "raw_response_sha256": "d6ea8e3ea04e39809c77ef7ee69dc504974492f27185c2d946499e51d285c91d"
+      },
+      "classification": "exact_accepted_mapping",
+      "external_id": "118240",
+      "iconic_taxon_name": "Fungi",
+      "namespace": "inaturalist_taxon_id",
+      "rank": "species",
+      "scientific_name": "Marasmius oreades",
+      "source_system": "inaturalist"
+    },
+    {
+      "acquisition": {
+        "date": "2026-08-01",
+        "endpoint": "api.inaturalist.org/v1/taxa/118393",
+        "http_status": 200,
+        "raw_response_sha256": "485ceba1311764f9a66d006cf0ac4b47b7778fe1dd0b9ba728b29fe426c4afba"
+      },
+      "classification": "exact_accepted_mapping",
+      "external_id": "118393",
+      "iconic_taxon_name": "Fungi",
+      "namespace": "inaturalist_taxon_id",
+      "rank": "species",
+      "scientific_name": "Agrocybe pediades",
+      "source_system": "inaturalist"
+    },
+    {
+      "acquisition": {
+        "date": "2026-08-01",
+        "endpoint": "api.inaturalist.org/v1/taxa/122333",
+        "http_status": 200,
+        "raw_response_sha256": "7f27dba087eb331f6d558646e83e277035fb9f1812e91d3948f441882a9ec8f4"
+      },
+      "classification": "exact_accepted_mapping",
+      "external_id": "122333",
+      "iconic_taxon_name": "Fungi",
+      "namespace": "inaturalist_taxon_id",
+      "rank": "species",
+      "scientific_name": "Russula aeruginea",
+      "source_system": "inaturalist"
+    },
+    {
+      "acquisition": {
+        "date": "2026-08-01",
+        "endpoint": "api.inaturalist.org/v1/taxa/127021",
+        "http_status": 200,
+        "raw_response_sha256": "8c209a798b1991c01060aa5aefccda4cdafffa164b7eb08083ba5a6955f5d644"
+      },
+      "classification": "exact_accepted_mapping",
+      "external_id": "127021",
+      "iconic_taxon_name": "Fungi",
+      "namespace": "inaturalist_taxon_id",
+      "rank": "species",
+      "scientific_name": "Inonotus obliquus",
+      "source_system": "inaturalist"
+    },
+    {
+      "acquisition": {
+        "date": "2026-08-01",
+        "endpoint": "api.inaturalist.org/v1/taxa/127215",
+        "http_status": 200,
+        "raw_response_sha256": "0a06a305112c0472df00576c99bd7fa130040d6b7b8c25fe164dd48a6fcc853a"
+      },
+      "classification": "exact_accepted_mapping",
+      "external_id": "127215",
+      "iconic_taxon_name": "Plantae",
+      "namespace": "inaturalist_taxon_id",
+      "rank": "species",
+      "scientific_name": "Eriophorum angustifolium",
+      "source_system": "inaturalist"
+    },
+    {
+      "acquisition": {
+        "date": "2026-08-01",
+        "endpoint": "api.inaturalist.org/v1/taxa/1679299",
+        "http_status": 200,
+        "raw_response_sha256": "f60c0d73b01a02e96e73101ee342966cf941adc6e916089b24e374c42615425b"
+      },
+      "classification": "exact_accepted_mapping",
+      "external_id": "1679299",
+      "iconic_taxon_name": "Fungi",
+      "namespace": "inaturalist_taxon_id",
+      "rank": "species",
+      "scientific_name": "Russula sp. 'IN1'",
+      "source_system": "inaturalist"
+    },
+    {
+      "acquisition": {
+        "date": "2026-08-01",
+        "endpoint": "api.inaturalist.org/v1/taxa/202989",
+        "http_status": 200,
+        "raw_response_sha256": "4daa7bd351016658eaa96bad349b3a1cc5cf233246248b4e25256f40c575e7cd"
+      },
+      "classification": "exact_accepted_mapping",
+      "external_id": "202989",
+      "iconic_taxon_name": "Plantae",
+      "namespace": "inaturalist_taxon_id",
+      "rank": "species",
+      "scientific_name": "Typha laxmannii",
+      "source_system": "inaturalist"
+    },
+    {
+      "acquisition": {
+        "date": "2026-08-01",
+        "endpoint": "api.inaturalist.org/v1/taxa/348990",
+        "http_status": 200,
+        "raw_response_sha256": "edd243c988f41314db76eb33d0385c28388a93e838a7bed1597c0df05fceab0f"
+      },
+      "classification": "exact_accepted_mapping",
+      "external_id": "348990",
+      "iconic_taxon_name": "Fungi",
+      "namespace": "inaturalist_taxon_id",
+      "rank": "species",
+      "scientific_name": "Panaeolus acuminatus",
+      "source_system": "inaturalist"
+    },
+    {
+      "acquisition": {
+        "date": "2026-08-01",
+        "endpoint": "api.inaturalist.org/v1/taxa/43584",
+        "http_status": 200,
+        "raw_response_sha256": "119d800b8181904efc835a583f0b79ce3153739c64bedd0098958960d7861a45"
+      },
+      "classification": "exact_accepted_mapping",
+      "external_id": "43584",
+      "iconic_taxon_name": "Mammalia",
+      "namespace": "inaturalist_taxon_id",
+      "rank": "species",
+      "scientific_name": "Homo sapiens",
+      "source_system": "inaturalist"
+    },
+    {
+      "acquisition": {
+        "date": "2026-08-01",
+        "endpoint": "api.inaturalist.org/v1/taxa/501713",
+        "http_status": 200,
+        "raw_response_sha256": "7712bcae6b0ba408e58333ad85b818beda17e69e23f34893c526714424b24b34"
+      },
+      "classification": "exact_accepted_mapping",
+      "external_id": "501713",
+      "iconic_taxon_name": "Fungi",
+      "namespace": "inaturalist_taxon_id",
+      "rank": "species",
+      "scientific_name": "Russula montana",
+      "source_system": "inaturalist"
+    },
+    {
+      "acquisition": {
+        "date": "2026-08-01",
+        "endpoint": "api.inaturalist.org/v1/taxa/504115",
+        "http_status": 200,
+        "raw_response_sha256": "fca8e1b7d0b27a0fc86820d1bbca7f3a460adff18b3456d177927e06560402d7"
+      },
+      "classification": "exact_accepted_mapping",
+      "external_id": "504115",
+      "iconic_taxon_name": "Fungi",
+      "namespace": "inaturalist_taxon_id",
+      "rank": "species",
+      "scientific_name": "Sphagnurus paluster",
+      "source_system": "inaturalist"
+    },
+    {
+      "acquisition": {
+        "date": "2026-08-01",
+        "endpoint": "api.inaturalist.org/v1/taxa/516129",
+        "http_status": 200,
+        "raw_response_sha256": "30b58b16a14ea8807745bbbcf3916fb4d41fea10e53d920a8625367e1b48b0b6"
+      },
+      "classification": "exact_accepted_mapping",
+      "external_id": "516129",
+      "iconic_taxon_name": "Fungi",
+      "namespace": "inaturalist_taxon_id",
+      "rank": "species",
+      "scientific_name": "Galerina graminea",
+      "source_system": "inaturalist"
+    },
+    {
+      "acquisition": {
+        "date": "2026-08-01",
+        "endpoint": "api.inaturalist.org/v1/taxa/55030",
+        "http_status": 200,
+        "raw_response_sha256": "329437cf83e83f76daf7d5a0c4ea912ebfeed358374772cbae76c095c9d33cce"
+      },
+      "classification": "exact_accepted_mapping",
+      "external_id": "55030",
+      "iconic_taxon_name": "Fungi",
+      "namespace": "inaturalist_taxon_id",
+      "rank": "species",
+      "scientific_name": "Cortinarius sanguineus",
+      "source_system": "inaturalist"
+    },
+    {
+      "acquisition": {
+        "date": "2026-08-01",
+        "endpoint": "api.inaturalist.org/v1/taxa/55573",
+        "http_status": 200,
+        "raw_response_sha256": "d565316728f3007a984f348eb701185cdc25e21044f56127661ddd899b76db97"
+      },
+      "classification": "exact_accepted_mapping",
+      "external_id": "55573",
+      "iconic_taxon_name": "Fungi",
+      "namespace": "inaturalist_taxon_id",
+      "rank": "species",
+      "scientific_name": "Tubaria furfuracea",
+      "source_system": "inaturalist"
+    },
+    {
+      "acquisition": {
+        "date": "2026-08-01",
+        "endpoint": "api.inaturalist.org/v1/taxa/558051",
+        "http_status": 200,
+        "raw_response_sha256": "f6f94dcfc38d76eb16d4b69ebdd34266da80e57f608d0b247ee88d5259277c79"
+      },
+      "classification": "exact_accepted_mapping",
+      "external_id": "558051",
+      "iconic_taxon_name": "Fungi",
+      "namespace": "inaturalist_taxon_id",
+      "rank": "species",
+      "scientific_name": "Gymnopus ocior",
+      "source_system": "inaturalist"
+    },
+    {
+      "acquisition": {
+        "date": "2026-08-01",
+        "endpoint": "api.inaturalist.org/v1/taxa/871027",
+        "http_status": 200,
+        "raw_response_sha256": "64b1e0cdde142c8f7acf13e2b1e0f73c1b44671cd1da233d3f3c81474be2dfc1"
+      },
+      "classification": "exact_accepted_mapping",
+      "external_id": "871027",
+      "iconic_taxon_name": "Plantae",
+      "namespace": "inaturalist_taxon_id",
+      "rank": "species",
+      "scientific_name": "Austrocactus coxii",
+      "source_system": "inaturalist"
+    },
+    {
+      "acquisition": {
+        "date": "2026-08-01",
+        "endpoint": "artsdatabanken.no/api/Taxon/39825472",
+        "http_status": 404,
+        "raw_response_sha256": "61985a9da096ca462e97dc567e7e4d57f425f39e3070ed02c7071fab4934a897"
+      },
+      "classification": "deleted_or_unavailable",
+      "external_id": "39825472",
+      "namespace": "nortaxa_taxon_id",
+      "source_system": "nortaxa"
+    },
+    {
+      "acquisition": {
+        "date": "2026-08-01",
+        "endpoint": "artsdatabanken.no/api/Taxon/40992445",
+        "http_status": 404,
+        "raw_response_sha256": "a4eec1a5c533a41e4a6cf0c216376f9b50aa35b8ca5513d7bc4c127e30beee16"
+      },
+      "classification": "deleted_or_unavailable",
+      "external_id": "40992445",
+      "namespace": "nortaxa_taxon_id",
+      "source_system": "nortaxa"
+    },
+    {
+      "accepted_external_id": "72068",
+      "accepted_namespace": "nortaxa_taxon_id",
+      "acquisition": {
+        "date": "2026-08-01",
+        "endpoint": "artsdatabanken.no/api/Taxon/48041",
+        "http_status": 200,
+        "raw_response_sha256": "57eb6f8b2cbe6be829e389f8f7663da8defa95dc6415aa853e989d92a2cd9083"
+      },
+      "classification": "exact_synonym_replacement_mapping",
+      "external_id": "48041",
+      "namespace": "nortaxa_taxon_id",
+      "rank": "species",
+      "scientific_name": "Neuropogon antarctica",
+      "source_system": "nortaxa",
+      "taxonomic_status": "accepted"
+    }
+  ],
+  "policy_version": "w2eb-1.0.0",
+  "release_id": "tax-2026.08.03-01"
+}
