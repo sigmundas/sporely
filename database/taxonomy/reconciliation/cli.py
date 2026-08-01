@@ -68,8 +68,8 @@ def build_parser() -> argparse.ArgumentParser:
                         help="pinned macrofungi release directory")
     parser.add_argument("--policy", type=Path, required=True,
                         help="W2D reconciliation policy JSON")
-    parser.add_argument("--canonical-registry", type=Path, default=None,
-                        help="optional canonical identity registry (JSONL or shard dir)")
+    parser.add_argument("--canonical-registry", type=Path, action="append", default=None,
+                        help="canonical identity registry (JSONL or shard dir); repeatable to stack a supplement on top of the base registry")
     parser.add_argument("--no-summary", action="store_true",
                         help="do not emit the Markdown summary")
     parser.add_argument("--verbose", action="store_true")

@@ -312,7 +312,23 @@ class PinnedRelease:
                         instance.scientific_name_index[lc] = tuple(sorted(set(existing) | {taxon_id}))
 
         if canonical_registry_path is not None:
-            _load_registry_shards(Path(canonical_registry_path), instance)
+            paths = (
+                [Path(canonical_registry_path)]
+                if not isinstance(canonical_registry_path, (list, tuple))
+                else [Path(p) for p in canonical_registry_path]
+            )
+            hashes: list[str] = []
+            for p in paths:
+                _load_registry_shards(p, instance)
+                if instance.registry_identity_hash:
+                    hashes.append(instance.registry_identity_hash)
+            if len(hashes) > 1:
+                # Deterministic combined identity: SHA-256 of concatenated hashes
+                # in the order they were loaded.
+                combined = hashlib.sha256(
+                    "|".join(hashes).encode("ascii")
+                ).hexdigest()
+                instance.registry_identity_hash = combined
 
         return instance
 
