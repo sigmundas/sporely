@@ -1,0 +1,127 @@
+{
+  "evidence_version": "w2eb-1.0.0",
+  "scope": "W2E-B — external-source recovery for the 22 identifiers unresolved after W2E-A2 (previously classified absent_all_sources: 3 NorTaxa + 19 iNaturalist).",
+  "count_reconciliation": {
+    "note": "Distinct-external-IDs and observation-counts are different measurements; the earlier prose that used them interchangeably is corrected here.",
+    "prior_w2dr_diagnostic_bucket": {
+      "distinct_ids_absent_all_sources": 24,
+      "nortaxa_distinct_ids": 5,
+      "inaturalist_distinct_ids": 19
+    },
+    "current_state_after_w2ea2": {
+      "unresolved_observations": 22,
+      "external_id_occurrences": 22,
+      "distinct_external_ids": 22,
+      "distinct_by_provider": {"nortaxa": 3, "inaturalist": 19},
+      "observations_carrying_multiple_distinct_ids": 0,
+      "observations_carrying_duplicated_signals_for_same_id": 0
+    },
+    "explanation_of_delta": "The prior diagnostic classified 24 distinct external identifiers as absent_all_sources based on probes of taxon_external_id_min and taxon_min.inaturalist_taxon_id only. Two of the 5 NorTaxa IDs then classified as absent (41020336 and 41096500) are in fact anchored in the canonical registry under (nortaxa, nortaxa_taxon_id). The W2D-R diagnostic classifier did not probe the registry directly — it treated registry hits under the 'outside_release_scope' bucket only when the release backbone also lacked the concept. After the W2E-A Part A resolver change lifted the release-membership gate on Level 4, those two IDs resolved via canonical registry, leaving 22 truly unresolved identifiers. The 22-observation / 24-ID / 22-distinct-ID chain is now internally consistent (each remaining unresolved observation carries exactly one distinct exact signal)."
+  },
+  "supplement_contract_formalisation": {
+    "contract_version": "supplement-contract-1.0.0",
+    "applied_to_prior_supplement": "tax-2026.08.02-01",
+    "identity_records_changed": false,
+    "identity_records_changed_note": "The release JSON gained artifact_kind, supplement_release_id, base_release_id, base_release_dependency (with export/scope manifest SHAs), depends_on, required_application_order, and compatibility_rules. The registry shard JSONL, registry manifest.json, and taxon_external_id_supplement.jsonl remain byte-identical to the W2E-A2 output.",
+    "w2ea2_shard_ordering_bug_fix": {
+      "defect": "The W2E-A2 shard emitted the synonym alias line BEFORE its accepted-target anchor line because the writer sorted by (sporely_taxon_id, kind) where 'alias' < 'anchor' lexicographically. Reconciliation.CLI's shard indexer loaded the file correctly (it does not enforce anchor-before-alias), but IdentityRegistry.load() rejects a bare alias whose anchor has not yet been consumed on the same load pass.",
+      "detection": "The W2E-B allocator failed at startup when absorbing the W2E-A2 supplement as depends-on, raising 'registry line 22 alias references unknown anchor sporely_taxon_id 634916'.",
+      "fix": "sort key changed to (sporely_taxon_id, 0 if kind=='anchor' else 1) in database/taxonomy/scripts/allocate_observation_derived_anchors.py. The regenerated shard now loads through both code paths.",
+      "supplement_sha256_before": "a7cf966b71530b56e7b9cd544d45c2959c28752b13c22d623c34fbf7f8cb158a",
+      "supplement_sha256_after": "06c0ee6bf17340e2cea0a502d14a26ac8ab9f6dda9da14fe73de7dfae7e18914",
+      "identity_records_changed": false,
+      "identity_records_changed_note": "The 22 JSONL lines carry the same (sporely_taxon_id, source, namespace, identifier, kind) tuples in both versions; only the emit ORDER changed. No sporely_taxon_id was renumbered or reassigned."
+    }
+  },
+  "source_recovery": {
+    "nortaxa": {
+      "endpoint": "https://artsdatabanken.no/api/Taxon/{id}",
+      "attempted": 3,
+      "outcomes": {
+        "39825472": {"classification": "deleted_or_unavailable", "http_status": 404, "note": "Taxon with id39825472 was not found."},
+        "40992445": {"classification": "deleted_or_unavailable", "http_status": 404, "note": "Taxon with id40992445 was not found."},
+        "48041": {"classification": "exact_synonym_replacement_mapping", "http_status": 200, "scientific_name": "Neuropogon antarctica", "rank": "species", "accepted_external_id": "72068", "accepted_namespace": "nortaxa_taxon_id", "note": "The Artsdatabanken API returns taxonID=48041 as an alternate identifier form for scientificNameID=72068 (accepted). scientificNameID 72068 is already anchored in the base registry as sporely_taxon_id=630103. A source-backed alias binding was emitted."}
+      }
+    },
+    "inaturalist": {
+      "endpoint": "https://api.inaturalist.org/v1/taxa/{id}",
+      "user_agent": "sporely-w2eb-recovery/1.0 (contact: ops@sporely.com)",
+      "attempted": 19,
+      "outcomes_summary": {"exact_accepted_mapping": 19, "deleted_or_unavailable": 0, "ambiguous": 0, "conflict_with_existing_registry_identity": 0, "not_found": 0, "no_col_link_source_record_exists": 0, "note": "Every response returned is_active=true with current_synonymous_taxon_ids=null. No COL cross-reference is exposed in the endpoint, so allocations were emitted as iNat-native anchors (source=inaturalist, namespace=inaturalist_taxon_id) without a COL binding. This matches the identity model: the sparse registry accepts source-native anchors and cache_state=out_of_cache is preserved."}
+    },
+    "acquisition_date": "2026-08-01",
+    "policy_file": "database/taxonomy/policies/recovered-external-sources-w2eb.json",
+    "policy_sha256": "recorded in the supplement release JSON",
+    "raw_responses_committed_to_git": false,
+    "raw_response_sha256_recorded_per_entry": true
+  },
+  "supplement_release_tax_2026_08_03_01": {
+    "artifact_kind": "registry_supplement",
+    "supplement_contract_version": "supplement-contract-1.0.0",
+    "base_release_id": "tax-2026.08.01-01",
+    "base_release_scope_manifest_sha256": "72758b2c574e8aea27432b6b55c62dfb6ad87f3fadc11ad1c892a61abf23ac4e",
+    "depends_on": ["tax-2026.08.02-01"],
+    "supplement_shard_sha256": "bdfdb8c08bf48e9c457d31c009f6ee9446d6f485e010a35d90f221f3a281e947",
+    "sporely_taxon_id_range": {"first": 634917, "last": 634935, "count": 19},
+    "note": "20 records emitted = 19 new iNat anchors + 1 alias binding (48041 -> existing 630103). Only 19 fresh sporely_taxon_ids were allocated; the alias reuses the existing anchor.",
+    "byte_identical_across_two_runs": true
+  },
+  "tax_2026_08_01_01_immutability": {
+    "verified": true,
+    "scope_manifest_sha256": "72758b2c574e8aea27432b6b55c62dfb6ad87f3fadc11ad1c892a61abf23ac4e",
+    "note": "Every file in database/reference_data/generated/taxonomy_v2/global_macrofungi_tax-2026.08.01-01/ still matches the SHAs recorded in taxonomy_export_manifest.json."
+  },
+  "reconciliation_before_after": {
+    "before_semantic_sha256": "884782d120ca446974d392f1118721c46c1592aac7dc67dff314f3dae37a0f9f",
+    "after_semantic_sha256": "054a0de78c354ab9fc2e0978b3be53fe7bd1adb2361ea1e167e0846ffd8de8c6",
+    "byte_identical_across_two_runs": true,
+    "canonical_registries_loaded": ["database/taxonomy/registry/canonical", "tax-2026.08.02-01", "tax-2026.08.03-01"],
+    "state_counts_before": {"resolved_exact": 232, "unresolved_external_identifier": 22, "manual_unresolved": 85, "no_identity_evidence": 30, "total": 369},
+    "state_counts_after": {"resolved_exact": 252, "unresolved_external_identifier": 2, "manual_unresolved": 85, "no_identity_evidence": 30, "total": 369},
+    "observations_newly_resolved": 20,
+    "distinct_ids_newly_resolved": 20,
+    "remaining_unresolved_external_identifier_observations": 2,
+    "remaining_unresolved_distinct_ids": 2,
+    "resolution_method_counts_after": {
+      "direct_taxonomy_v2_mapping": 54,
+      "trusted_secondary_provider_mapping": 198,
+      "legacy_lookup_chain": 0,
+      "pinned_synonym_relationship": 0,
+      "note": "The counts here reflect the highest-priority Level attributed to each resolved observation. 54 in-cache resolutions come through the release backbone (Level 1). Everything materialised out-of-cache flows through the canonical registry (Level 4)."
+    }
+  },
+  "disposable_simulation": {
+    "identification_snapshot_rows": 369,
+    "resolution_link_rows": 369,
+    "registry_concept_rows": 161,
+    "external_mapping_rows": 163,
+    "registry_by_cache_and_scope": {"in_cache_include": 39, "out_of_cache_not_evaluated": 122},
+    "search_cache_broadened": false,
+    "search_cache_membership_note": "The pinned macrofungi release taxon_external_id.jsonl remains 52881 rows keyed on col_xr:col_usage_id. Every W2E-B addition landed in the sparse registry only.",
+    "idempotency": {"verified": true, "counts_first_apply": {"registry_concept": 161, "external_mapping": 163, "identification_snapshot": 369}, "counts_second_apply": {"registry_concept": 161, "external_mapping": 163, "identification_snapshot": 369}, "snapshot_fingerprint_stable": true, "snapshot_fingerprint": "9f7107e948babb356140247802b4b7aa"},
+    "rollback": {"verified": true, "induced_failure_sqlstate": "P0001", "zero_orphan_rows": true},
+    "snapshot_immutability": {"verified": true, "note": "identification_snapshot immutability trigger continues to block UPDATE of original_* fields while snapshot_locked=true"},
+    "mapping_conflict_rollback": {"verified": "carried over from W2E-A2 hardened conflict invariant; no policy change in W2E-B", "test_reference": "sporely-web scripts/taxonomy-v2/w2d-migration-simulation.test.mjs 'W2E-A2 conflict invariant' integration test still applies to the W2E-B manifest"},
+    "correct_supplement_application_order": {"verified": true, "note": "The reconciliation engine consumes supplements in the order supplied to --canonical-registry (base, W2E-A2, W2E-B). The W2E-B supplement's contract declares depends_on=['tax-2026.08.02-01'] and its allocator refuses to run without --depends-on-supplement pointing at that path. The W2E-B allocator loads that supplement into the working registry to obtain the correct baseline_next_id, so allocation order is deterministic. Reordering the CLI flags produces a different (also deterministic) manifest, but only the declared order satisfies the supplement contract."}
+  },
+  "safety": {
+    "production_access": false,
+    "production_writes": false,
+    "production_migrations": false,
+    "client_cutover": false,
+    "desktop_taxonomy_activation": false,
+    "existing_release_mutation": false,
+    "name_only_resolution": false,
+    "search_cache_broadening": false,
+    "manual_registry_anchors": false,
+    "new_upstream_download": "yes — controlled read-only GET to public taxonomy endpoints (Artsdatabanken and iNaturalist) for the 22 unresolved identifiers only; per-request raw-response SHA-256s recorded in the policy file; no writes; no auth tokens sent; identifying user agent set"
+  },
+  "remaining_work": {
+    "unresolved_external_identifier_ids": ["39825472", "40992445"],
+    "reason": "Both taxa return 404 from the current Artsdatabanken API. They are obsolete or purged NorTaxa taxon IDs with no exact source-backed identity available. Their observations remain unresolved_external_identifier; snapshots preserve all original text and the exact identifier verbatim.",
+    "not_in_scope": {
+      "manual_unresolved": 85,
+      "no_identity_evidence": 30
+    }
+  }
+}
