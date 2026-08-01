@@ -174,3 +174,26 @@ This contract does not describe:
   read-only export from a local `observations.sqlite3`.
 * `database/taxonomy/docs/identity-contract.md` — global identity
   policy.
+
+## 9. W2D-R additions
+
+The Stage W2D-R work adds an authorised end-to-end recovery path:
+
+* `database/taxonomy/reconciliation/snapshot/pseudonym.py` — HMAC-keyed
+  observation-reference pseudonymisation. Key supplied at run time via
+  `SPORELY_W2DR_PSEUDONYM_KEY` or `--pseudonym-key-file`. Minimum 32
+  bytes; never committed; never logged.
+* `database/taxonomy/reconciliation/snapshot/validator.py` — schema +
+  privacy validator that refuses prohibited private fields (see §3),
+  raw-UUID observation ids, duplicates, and missing snapshot headers.
+* `database/taxonomy/reconciliation/snapshot/transformer.py` — offline
+  transformer that consumes an authorised raw JSONL export and emits
+  the anonymised snapshot JSONL, `.sha256.txt`, and a `.stats.json`
+  sidecar. Refuses `--production`.
+* `database/taxonomy/docs/w2d-source-recovery-runbook.md` — the
+  operator's runbook for producing an anonymised snapshot.
+
+An observation reference in this contract's `observation_id` must be a
+keyed pseudonym of the form `obs_<24 hex>`, or (for fixture-only
+records) a value prefixed with `synthetic_`. Raw UUIDs are refused by
+the validator.
