@@ -7,6 +7,14 @@ stable Sporely registry. It identifies a Sporely concept, is never derived from
 an external identifier, and is never recycled. Name equality does not establish
 identity.
 
+Catalogue of Life XR remains the global identity and reconciliation backbone:
+accepted concepts, synonym relationships, higher classification, stable source
+identifiers, and pinned-release provenance. The complete source may remain an
+immutable build artifact, but neither it nor the rejected W1 full-Fungi union is
+loaded wholesale into production Supabase. NorTaxa, iNaturalist, Artsorakel,
+and national Red Lists retain their source-specific roles and never replace COL
+or determine global macrofungi scope.
+
 Every external identifier is stored as text with both `source` and `namespace`.
 Mappings may be current, preferred, historical, superseded, rejected, or
 unresolved. Historical usages remain traceable.

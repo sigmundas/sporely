@@ -1,9 +1,9 @@
 # Sporely Taxonomy v2 Integration — Working Plan
 
 **Plan version:** 2026-08-01
-**Current programme state:** W0–W2C accepted; compact Supabase candidate selected; W2D next; W3 blocked
+**Current programme state:** W0–W2B evidence accepted; full-Fungi runtime scope rejected; W2C redefined; W3 blocked
 **Desktop accepted implementation:** `04602bcbb578e6abefb91ab96e03abbb42c53c3a`
-**Web working branch:** `feat/taxonomy-v2-w2c-compact-search-schema`
+**Web documentation branch:** `docs/taxonomy-v2-global-macrofungi-correction`
 **Primary objective:** Introduce stable Sporely taxonomy identity across desktop, Supabase and web without breaking the existing taxonomy path or silently binding ambiguous names.
 
 ## Status legend
@@ -45,10 +45,10 @@ This document records programme decisions. The repositories remain authoritative
 | W1 — Model-neutral cloud exporter                       | **DONE**                              | Accepted at desktop commit `04602bc`; deterministic seven-file JSONL export                                     |
 | W1 repository integration                               | **CLOSEOUT**                          | Merge the desktop feature branch into `integrate/taxonomy-media-2026-07-30`; do not commit the generated export |
 | W2A — Additive Supabase schema, activation and search   | **DONE**                              | Accepted at web commit `d61f2f9`; Model B schema and fixture-tested RPCs added without client cutover           |
-| W2B — Importer, full local load and capacity validation | **DONE**                              | Import/load passed; W2A representation failed capacity and triggered W2C                                         |
-| W2C — Compact schema/search decision                    | **DONE**                              | Purpose-built compact candidate passes measured final, peak, semantic and search gates                            |
-| W2D — Compact schema implementation                     | **NEXT**                              | Implement reviewed additive migration, partition publication, RPCs, security and importer                        |
-| Publication and provenance                              | **BLOCKED for production activation** | Current release remains a candidate; Red List licence and publication metadata must be completed                |
+| W2B — Importer, full local load and capacity validation | **DONE**                              | Import experiment passed; its complete-Fungi production scope and W2A representation are rejected                |
+| W2C — Macrofungi scope and sparse-registry design       | **NEXT**                              | Verify the reviewed macrofungi policy against pinned COL IDs and design the sparse cloud registry                 |
+| W2D — Cloud implementation                              | **BLOCKED**                           | Await W2C scope measurements and sparse-registry contract                                                         |
+| Publication and provenance                              | **BLOCKED for production activation** | Any future scoped release needs complete licence and publication metadata                                       |
 | W3A — Observation identity schema                       | **PLANNED**                           | Add stable concept identity, state and snapshots without removing legacy fields                                 |
 | W3B — Sync, migration and backfill                      | **PLANNED**                           | Carry identity through desktop/web sync; backfill only from authoritative evidence                              |
 | W4A — Web taxonomy service and picker                   | **PLANNED**                           | Introduce v2 search behind a flag; preserve manual and genus-only flows                                         |
@@ -74,8 +74,11 @@ It remains untouched through W2A and W2B.
 | -------------------------- | ------------------------------------------------------------------------------------------------- | ---------------------------------------------------------------------------------------------------------- |
 | Internal identity          | `sporely_taxon_id` is an immutable positive Sporely-owned integer                                 | External IDs must never be reinterpreted as Sporely IDs                                                    |
 | Global canonical authority | COL XR is primary for canonical scientific presentation                                           | NorTaxa can enrich, bridge and provide national authority data, but does not silently replace COL identity |
-| Cloud model                | Model B: stable concepts plus release-scoped snapshots                                            | Concepts persist across releases; names, hierarchy, aliases, vernaculars and assessments are release-bound |
-| W1 output                  | Model-neutral canonical JSONL                                                                     | W2 may decompose rows into Model B tables without changing W1                                              |
+| Cloud model                | External discovery plus a sparse Sporely registry and observation snapshots                       | Supabase must not contain the complete global fungal catalogue; W2A Model B remains experimental evidence  |
+| Global product scope       | Reviewed global macrofungi                                                                         | Neither all Fungi nor any Norway-centred dataset defines the preload                                       |
+| Desktop reference          | Reviewed global macrofungi subset, broader than the cloud registry                                 | Offline search may use a compact pack, but never the entire Fungi kingdom                                  |
+| Plants                     | Outside taxonomy-v2 and the macrofungi search pack                                                  | Habitat plants/trees remain a separate product concern                                                     |
+| W1 output                  | Model-neutral canonical JSONL                                                                     | The historical artifact remains unchanged; future scoped artifacts require new release identity            |
 | Release behavior           | Multiple releases may coexist; exactly zero or one may be active                                  | A new release can be loaded and validated before transactional activation                                  |
 | Ambiguity                  | Distinct Sporely IDs remain distinct even when names are identical                                | Search and resolver RPCs return ambiguity; they never collapse by spelling                                 |
 | Genus-only                 | A selected genus concept is a valid resolved identification                                       | Non-null Sporely ID, rank `genus`, state `resolved`                                                        |
@@ -154,6 +157,10 @@ Agents must not implement work in the wrong repository merely because both repos
 
 ## 5. Accepted source artifacts and W1 contract
 
+The release below is immutable evidence from the rejected broad-scope
+experiment. Its scope predicate describes what W1 and W2B actually tested; it
+is not the approved production scope and must not be relabelled as macrofungi.
+
 ### Release identity
 
 ```text
@@ -218,6 +225,14 @@ The W1 export contains:
 ```text
 634,894 of 634,895 concepts
 ```
+
+This technically importable union of the COL Fungi closure and all NorTaxa is
+rejected as the production runtime model. The complete pinned COL source
+remains a build and reconciliation artifact for identity, synonyms, hierarchy,
+stable source IDs, and release provenance. A future build must derive a
+reviewed global macrofungi subset from it without using Norwegian occurrence,
+NorTaxa membership, Norwegian or Sámi names, Norwegian Red List status,
+Artsorakel coverage, or legacy Norwegian database membership as scope filters.
 
 One excluded COL domain concept remains the parent of the exported Fungi kingdom:
 
@@ -630,7 +645,7 @@ W2A accepted — proceed to W2B importer and full-load validation
 
 ## 11. W2B — Importer, full local load and capacity validation
 
-**Status: GATE — CAPACITY REVIEW REQUIRED**
+**Status: DONE — IMPORTER EXPERIMENT VALID; PRODUCTION SCOPE REJECTED**
 
 Implementation and evidence record (2026-08-01):
 
@@ -660,41 +675,112 @@ Verified results:
 * no production taxonomy import or activation, client change, legacy taxonomy
   mutation, observation schema change, or W3 work occurred.
 
-W2B is not accepted because the capacity gate did not pass. The next safe task
-is an explicit capacity/schema decision using the committed evidence. W3 remains
+W2B is accepted as evidence that the representation is technically importable.
+It is rejected as a production runtime scope and architecture. The next safe
+task is W2C macrofungi-scope verification and sparse-registry design. W3 remains
 blocked. The publication/provenance gate remains independently blocked.
 
-## 11A. W2C — Compact cloud schema and search decision
+## 11A. W2C — Global macrofungi scope and sparse-registry design
 
-**Status: DONE — COMPACT SUPABASE CANDIDATE APPROVED FOR W2D**
+**Status: NEXT — W3 REMAINS BLOCKED**
 
-W2C evidence is recorded on web branch
-`feat/taxonomy-v2-w2c-compact-search-schema` in
-`docs/evidence/taxonomy-v2/w2c-schema-comparison.{json,md}`.
+The earlier compact-schema experiment remains useful size and search evidence,
+but its 634,894-concept full-Fungi candidate is not the selected production
+architecture. W2C is redefined to produce two reviewed outputs:
 
-The full-release audit proved that 634,894 preferred scientific-name rows
-duplicate canonical taxon names and 634,894 authoritative external-ID rows
-duplicate canonical taxon source/ID fields. A purpose-built runtime candidate
-therefore stores 634,894 compact taxon rows, 27,755 true aliases, 10,294
-language-distinct vernacular rows, zero external-ID exceptions for this release,
-and 7,866 compact Red List rows. The immutable W1 artifact remains unchanged.
+1. a COL-ID-keyed global macrofungi policy and measured desktop search pack;
+2. a sparse Supabase registry contract for only materialized Sporely concepts.
 
-Measured candidate relations are 141,606,912 bytes for the first slot and
-303,087,616 bytes with two full slots. Against the independently reproduced
-103,304,339-byte production baseline, final and future publication-peak
-projections are 244,911,251 and 406,391,955 bytes. Literal escaped `LIKE`
-prefixes use selective B-tree indexes, with measured p50 execution of
-approximately 0.027–0.059 ms across the required probe classes.
+The current executable `database/taxonomy/policies/scope.yml` and
+`database/taxonomy/desktop-compatibility.json` continue to describe or pin the
+historical broad candidate. This documentation-only correction does not change
+them. They must be revised and validated in the future implementation stage
+before any new macrofungi artifact is built or published.
 
-W2D must use independently truncatable/list-partitioned slots. The experiment
-confirmed that mixed-slot `DELETE` plus ordinary `VACUUM` does not reclaim the
-retired footprint. Activation changes one small pointer atomically; the old
-slot remains through an approved rollback window and is then truncated or
-detached only while inactive.
+### Product definition
 
-W2C authorizes W2D only. It does not authorize W3, production writes,
-production activation, client cutover, or Red List publication. Red List
-provenance/licensing remains a separate blocker.
+> A macrofungus is a fungus that normally produces a macroscopic,
+> field-observable fruiting or reproductive structure that a person could
+> deliberately photograph, inspect or collect as an organismal observation.
+
+This is product scope, not a formal rank. It generally includes agarics,
+boletes, chanterelles, polypores, observable corticioid fungi, tooth fungi,
+corals and clubs, puffballs and related gasteroid fungi, jelly fungi, morels,
+false morels, cup fungi, earth tongues, observable stromatic ascomycetes, and
+hypogeous macrofungi/truffles. It generally excludes yeasts, moulds, powdery
+mildews, ordinary microscopic leaf-spot fungi, environmental or sequence-only
+concepts, lichenized fungi unless separately authorized, fungus-like organisms
+outside Fungi, and rusts/smuts except reviewed field-recordable exceptions.
+All Basidiomycota are not automatically macrofungi, and all Ascomycota are not
+automatically microfungi.
+
+Plants are not part of taxonomy-v2 or its macrofungi pack. Habitat trees and
+plants may later use controlled habitat or associated-tree categories, free
+text, or external organism discovery; no global or Norwegian plant taxonomy is
+to be imported into Supabase.
+
+### Provisional clade policy
+
+Implementation must verify these human-readable seeds against the pinned COL
+release and persist stable COL concept identifiers rather than name strings:
+
+* broadly include descendants of `Agaricomycetes`, `Dacrymycetes`,
+  `Pezizomycetes`, `Geoglossomycetes`, and `Neolectomycetes`;
+* include only reviewed fruit-body-forming Tremellomycetes lineages; `Tremella`,
+  `Phaeotremella`, `Naematelia`, and `Sirobasidium` are non-exhaustive seeds;
+* exclude `Pucciniomycotina` and `Ustilaginomycotina` by default, but include
+  genus `Gymnosporangium` and species `Ustilago maydis` explicitly;
+* classify `Atractiellomycetes` as review-required/optional and do not preload
+  it initially without evidence;
+* include reviewed Leotiomycetes families/genera, seeded by `Leotia`,
+  `Microglossum`, `Cudonia`, `Spathularia`, `Chlorociboria`, `Ascocoryne`,
+  `Bulgaria`, and `Cyttaria`, using current COL placement;
+* include reviewed visibly stromatic Sordariomycetes lineages, including
+  `Xylariaceae`, `Hypoxylaceae`, selected `Diatrypaceae`, and reviewed visibly
+  fruiting Hypocreales such as `Cordyceps`, `Ophiocordyceps`, selected
+  `Tolypocladium`, `Podostroma`, and stromatic `Trichoderma` lineages;
+* exclude Eurotiomycetes/Eurotiales broadly; review `Elaphomyces` and measure
+  whether all `Elaphomycetaceae` is suitable;
+* exclude remaining Ascomycota by default unless an explicit reviewed rule
+  includes it. `Tuber` needs no special rule because Pezizales already covers it.
+
+Policy precedence is explicit species, genus, family/higher clade, broadly
+included class, broadly excluded subphylum/class, then default exclude. Lower
+ranks override broader rules. Every eventual rule records stable COL concept
+ID, display name, rank, include/exclude/review state, reason, evidence, source
+release, exceptions, and review date.
+
+### Source roles and sparse cloud model
+
+COL XR remains the global identity backbone. NorTaxa supplies Norwegian
+mappings/names, Artsorakel reconciliation, and legacy continuity; national Red
+Lists supply regional conservation enrichment only. iNaturalist may provide
+international discovery/text search and Artsorakel image identification. Every
+external ID stays source- and namespace-specific, with selected values retained
+as provenance. None of these regional or discovery sources replaces COL or
+defines the global preload.
+
+Supabase materializes a concept only when used by an existing observation,
+selected through an external service, received from desktop sync, accepted by a
+manual-resolution workflow, explicitly curated, or seeded into an approved
+small search cache. It retains the Sporely ID, canonical identity snapshot,
+namespaced mappings, selected-name snapshots, source/release provenance, scope
+reason, and review state. Scientific-name equality is never identity.
+
+W3 observation identification must snapshot the resolved Sporely ID when
+available, selected scientific and vernacular names, rank, source system and
+namespace, raw external ID, release or response timestamp, selection timestamp,
+resolution state, and original selected result. Historical display cannot
+depend on a live API or surviving cache entry.
+
+Concepts outside the current preload remain resolvable when referenced by an
+observation, legacy mapping, import, or manual historical record. Discovery
+inclusion, sparse-registry materialization, historical preservation, and current
+product scope are separate states. Existing observations are never deleted or
+rewritten merely because a concept is outside the preload.
+
+W2C does not authorize W3, production taxonomy writes or activation, client
+cutover, or Red List publication.
 
 ### Purpose
 
@@ -1341,7 +1427,7 @@ An agent must stop rather than guess when:
 | Split W2 into W2A and W2B                              | Accepted                 |
 | Do not commit the complete W1 export                   | Accepted                 |
 | Production publication/licence gate                    | Open blocker             |
-| Production database capacity choice                    | Compact design selected  |
+| Production cloud architecture                          | External discovery plus sparse registry |
 | Retired-release retention beyond previous release      | Artifact/metadata only; one rollback slot |
 | Final cutover stability-window duration                | Pending W5 rollout plan  |
 
@@ -1365,11 +1451,11 @@ An agent must stop rather than guess when:
 [x] Complete local release imported
 [x] PostgreSQL storage measured
 [x] Search performance measured
-[x] Capacity decision approved through W2C compact candidate
-[x] W2C duplication and index audit completed
-[x] W2C full compact candidate measured
-[x] W2C semantic/search parity accepted
-[ ] W2D production migration and importer implemented
+[x] Full-Fungi W2B importer experiment measured
+[x] Full-Fungi production runtime scope rejected
+[ ] W2C pinned-COL macrofungi rules reviewed and measured
+[ ] W2C sparse-registry contract accepted
+[ ] W2D production migration and materialization workflow implemented
 [ ] W2D partition publication/reclamation test accepted
 
 [ ] Publication and licence evidence closed
