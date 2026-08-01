@@ -1,7 +1,6 @@
 # Taxonomy UI menu — scope recommendation
 
-**Status:** recorded, not implemented. No `ui/`, activation, acquisition, or
-compiler code changes as a result of this document.
+Status: deferred product recommendation. Not part of the current W2–W5 taxonomy integration critical path.
 
 ## Audiences
 
