@@ -1,7 +1,7 @@
 # Sporely Taxonomy v2 Integration — Working Plan
 
 **Plan version:** 2026-08-01
-**Current programme state:** W0 accepted; W1 accepted; W2A is next
+**Current programme state:** W0 accepted; W1 accepted; W2A accepted; W2B is next
 **Desktop accepted implementation:** `04602bcbb578e6abefb91ab96e03abbb42c53c3a`
 **Web working branch:** `feat/taxonomy-v2-w2-supabase-schema-search`
 **Primary objective:** Introduce stable Sporely taxonomy identity across desktop, Supabase and web without breaking the existing taxonomy path or silently binding ambiguous names.
@@ -44,8 +44,8 @@ This document records programme decisions. The repositories remain authoritative
 | W0 — Cross-repository audit and contract closure        | **DONE**                              | Existing schemas, RPCs, sync behavior, identity vocabulary and migration risks audited                          |
 | W1 — Model-neutral cloud exporter                       | **DONE**                              | Accepted at desktop commit `04602bc`; deterministic seven-file JSONL export                                     |
 | W1 repository integration                               | **CLOSEOUT**                          | Merge the desktop feature branch into `integrate/taxonomy-media-2026-07-30`; do not commit the generated export |
-| W2A — Additive Supabase schema, activation and search   | **NEXT**                              | Implement Model B schema and fixture-tested RPCs; no full release import                                        |
-| W2B — Importer, full local load and capacity validation | **PLANNED**                           | Import the accepted W1 export locally, measure PostgreSQL size and performance, then make a capacity decision   |
+| W2A — Additive Supabase schema, activation and search   | **DONE**                              | Accepted at web commit `d61f2f9`; Model B schema and fixture-tested RPCs added without client cutover           |
+| W2B — Importer, full local load and capacity validation | **NEXT**                              | Import the accepted W1 export locally, measure PostgreSQL size and performance, then make a capacity decision   |
 | Publication and provenance                              | **BLOCKED for production activation** | Current release remains a candidate; Red List licence and publication metadata must be completed                |
 | W3A — Observation identity schema                       | **PLANNED**                           | Add stable concept identity, state and snapshots without removing legacy fields                                 |
 | W3B — Sync, migration and backfill                      | **PLANNED**                           | Carry identity through desktop/web sync; backfill only from authoritative evidence                              |
@@ -421,7 +421,85 @@ W2A may proceed while the PR is under review because the W1 consumer contract is
 
 ## 10. W2A — Additive Supabase schema, activation and search
 
-**Status: NEXT**
+**Status: DONE**
+
+Implementation record:
+
+```text
+Web branch: feat/taxonomy-v2-w2-supabase-schema-search
+Starting web commit: e964b36
+Final web commit: d61f2f9
+Migration: supabase/migrations/20260724130000_add_taxonomy_v2_schema_and_search.sql
+```
+
+### Verified implementation record
+
+Model B was implemented with these exact tables:
+
+```text
+taxonomy_v2_releases
+taxonomy_v2_concepts
+taxonomy_v2_taxa
+taxonomy_v2_scientific_names
+taxonomy_v2_vernacular_names
+taxonomy_v2_external_ids
+taxonomy_v2_legacy_external_ids
+taxonomy_v2_redlist
+taxonomy_v2_import_runs
+```
+
+Exact RPC signatures:
+
+```text
+taxonomy_v2_validate_release(text) -> jsonb
+taxonomy_v2_activate_release(text) -> jsonb
+search_taxa_v2(text, text, integer) -> table
+resolve_taxon_external_id_v2(text, text, text) -> table
+```
+
+Verified behavior:
+
+* release validation reports structured expected/actual counts and errors;
+* activation is advisory-locked, row-locked, validation-gated and transactional;
+* failed activation leaves the prior active release unchanged;
+* search implements the accepted exact/prefix rank order without collapsing
+  distinct Sporely IDs;
+* `no` is a query umbrella for literal `nb`, `nn`, and `no`, while other stored
+  language codes remain distinct;
+* resolver and search use only authoritative namespaced IDs and never consult
+  namespace-lost legacy rows;
+* all nine tables have RLS and explicit client revokes; read RPCs are granted to
+  normal clients, while validation/activation remain service-role-only;
+* the generated schema snapshot includes tables, constraints, indexes, comments,
+  functions, owners, RLS, revokes and grants;
+* no legacy taxonomy object and no client source file changed.
+
+Verification evidence (2026-08-01):
+
+```text
+npx supabase db reset                                      exit 0
+taxonomy_v2_schema_test.sql                               exit 0
+taxonomy_v2_activation_test.sql                           exit 0
+taxonomy_v2_search_test.sql                               exit 0
+taxonomy_v2_security_test.sql                             exit 0
+all other Supabase SQL tests                              exit 0, except known baseline below
+public_observation_point_prep_test.sql                     exit 3 (known unrelated Not_set behavior)
+npm test                                                  exit 1 (382 pass, known unrelated Leaflet CSS loader failure)
+npm run build                                             exit 0
+npx supabase db dump --local --schema public --file ...   exit 0
+git diff --check                                          exit 0
+```
+
+Documentation was maintained from preflight through implementation rather than
+reconstructed only at closeout. The web implementation contract is
+`docs/taxonomy-v2-cloud-contract.md`; `SUPABASE_DB.md` contains the migration-
+backed inventory.
+
+W2A unresolved production blockers are intentionally deferred: the complete W1
+release has not been imported, the W2B capacity gate has not run, and the
+publication/provenance gate remains blocked. No production release was activated.
+
+**W2A verdict:** W2A accepted — proceed to W2B importer and full-load validation.
 
 ### Purpose
 
@@ -1212,9 +1290,9 @@ An agent must stop rather than guess when:
 
 [ ] W1 merged into desktop integration branch
 
-[ ] W2A schema migration implemented
-[ ] W2A RPCs implemented
-[ ] W2A SQL and security tests accepted
+[x] W2A schema migration implemented
+[x] W2A RPCs implemented
+[x] W2A SQL and security tests accepted
 
 [ ] W2B importer implemented
 [ ] Complete local release imported
@@ -1241,6 +1319,6 @@ An agent must stop rather than guess when:
 [ ] Final documentation and runbook completed
 ```
 
-The next engineering task is **W2A only**.
+The next engineering task is **W2B only**.
 
-Do not begin W2B, W3 or W4 in the same agent task.
+Do not begin W3 or W4 in the same W2B agent task.
