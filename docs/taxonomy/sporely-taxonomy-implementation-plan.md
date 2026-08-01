@@ -977,6 +977,38 @@ reconciliation output until an anonymised snapshot is provided.
 
 ---
 
+## 11C. W2D-R — PostgreSQL integration proof and source-recovery tooling
+
+**Status: PostgreSQL integration proof complete; real historical audit blocked pending an authorised anonymised snapshot.**
+
+W2D-R closes the two W2D validation gaps without accessing production:
+
+1. **PostgreSQL integration proof.** All 11 disposable-Supabase
+   integration tests in `sporely-web/scripts/taxonomy-v2/w2d-migration-simulation.test.mjs`
+   now execute and pass against a local OrbStack-hosted Supabase stack
+   (21/21 total tests, 0 skipped). Idempotency, rollback, snapshot
+   immutability, later-exact-resolution snapshot preservation, namespace
+   isolation, conflicting-evidence handling, and out-of-cache
+   materialization are all verified against real PostgreSQL rows and
+   constraints. Evidence:
+   `sporely-web/docs/evidence/taxonomy-v2/w2dr-postgres-integration.{json,md}`.
+
+2. **Source-recovery tooling.** [`database/taxonomy/reconciliation/snapshot/`](../../database/taxonomy/reconciliation/snapshot/)
+   ships an HMAC-keyed pseudonymiser, a schema + privacy validator, and
+   an offline transformer that turns an operator's authorised raw JSONL
+   export into an anonymised snapshot conforming to the W2D input
+   contract. The operator runbook is at
+   [`database/taxonomy/docs/w2d-source-recovery-runbook.md`](../../database/taxonomy/docs/w2d-source-recovery-runbook.md).
+   16 new pytest cases in `tests/taxonomy/test_w2dr_source_recovery.py`
+   cover the tooling; the full desktop suite is 42/42.
+
+Real reconciliation and real disposable simulation remain **not
+performed**. No production access has been requested or granted. W3
+readiness verdict is unchanged: **`human-authorized read-only export
+required`.**
+
+---
+
 ## 12. Publication and provenance gate
 
 **Status: BLOCKED for production activation**

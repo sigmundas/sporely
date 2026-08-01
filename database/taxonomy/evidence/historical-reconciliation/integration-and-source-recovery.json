@@ -1,0 +1,63 @@
+{
+  "evidence_version": "w2dr-1.0.0",
+  "starting_commit": "815335eda51ffa5b9076dc4e8487a57c5837644d",
+  "feature_branch": "feat/taxonomy-v2-w2dr-source-recovery",
+  "postgres_integration_proof": {
+    "location": "sibling repo sporely-web at docs/evidence/taxonomy-v2/w2dr-postgres-integration.json",
+    "status": "complete",
+    "tests_executed": 21,
+    "tests_passed": 21,
+    "tests_skipped": 0,
+    "integration_tests_executed": 11
+  },
+  "source_recovery_tooling": {
+    "input_contract": "database/taxonomy/docs/w2d-input-snapshot-contract.md",
+    "input_schema_version": "w2d-input-1.0.0",
+    "export_specification": "database/taxonomy/scripts/export_observations_snapshot.py",
+    "export_specification_refuses_production": true,
+    "pseudonymiser": "database/taxonomy/reconciliation/snapshot/pseudonym.py",
+    "pseudonym_shape": "obs_<24 hex>",
+    "pseudonym_key_env_var": "SPORELY_W2DR_PSEUDONYM_KEY",
+    "pseudonym_key_minimum_bytes": 32,
+    "validator": "database/taxonomy/reconciliation/snapshot/validator.py",
+    "offline_transformer": "database/taxonomy/reconciliation/snapshot/transformer.py",
+    "operator_runbook": "database/taxonomy/docs/w2d-source-recovery-runbook.md"
+  },
+  "snapshot_availability": {
+    "snapshot_found_or_produced": false,
+    "snapshot_record_count": null,
+    "snapshot_schema_version": null,
+    "snapshot_sha256": null,
+    "privacy_validation_result": null,
+    "committed_to_git": false,
+    "reason": "no human-authorized read-only export supplied; source-recovery tooling ready but no operator has executed it"
+  },
+  "real_reconciliation": {
+    "real_records_audited": 0,
+    "reason": "no human-authorized anonymized snapshot supplied"
+  },
+  "real_disposable_simulation": {
+    "real_manifest_applied": false,
+    "reason": "no real manifest exists; fixture manifest results are documented separately and must not be substituted"
+  },
+  "tests": {
+    "command": "python -m pytest tests/taxonomy/ -q",
+    "total": 42,
+    "passed": 42,
+    "failed": 0,
+    "new_w2dr_tests": 16,
+    "existing_w2d_tests": 26
+  },
+  "production_safety": {
+    "production_supabase_accessed": false,
+    "production_taxonomy_writes": false,
+    "production_observation_writes": false,
+    "production_migrations_created": false,
+    "production_migrations_applied": false,
+    "client_cutover": false,
+    "desktop_taxonomy_activated": false,
+    "legacy_taxonomy_removed": false,
+    "name_only_automatic_resolutions": false
+  },
+  "remaining_blocker": "human-authorized read-only export required"
+}
