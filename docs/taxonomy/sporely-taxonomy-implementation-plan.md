@@ -934,6 +934,49 @@ Release status ready but not active
 
 ---
 
+## 11B. W2D — Historical taxonomy reconciliation (dry run)
+
+**Status: engine + disposable migration simulation completed; 337-observation real audit BLOCKED pending anonymised snapshot.**
+
+W2D is a read-only reconciliation and migration-planning stage. It does not
+activate taxonomy-v2, does not modify production observations, and does not
+switch clients.
+
+Deliverables (accepted):
+
+* Shared contract: [`database/taxonomy/docs/w2d-reconciliation-contract.md`](../../database/taxonomy/docs/w2d-reconciliation-contract.md).
+* Policy: [`database/taxonomy/policies/w2d-reconciliation-policy.json`](../../database/taxonomy/policies/w2d-reconciliation-policy.json) (`policy_version: w2d-1.0.0`).
+* Engine: [`database/taxonomy/reconciliation/`](../../database/taxonomy/reconciliation/) — deterministic 6-level resolver, fixture-backed, 26 pytest tests.
+* Manifest generator + CLI: `python -m database.taxonomy.reconciliation.cli`.
+* Reconciliation manifest (against synthetic fixtures): [`database/taxonomy/evidence/historical-reconciliation/reconciliation-manifest.json`](../../database/taxonomy/evidence/historical-reconciliation/reconciliation-manifest.json), semantic SHA-256 `c4785a25c8690144abd64a75ff369292aaf139dc4030c2ce2ce3df413462d72c`. Byte-identical across repeated runs.
+* Anonymised-snapshot input contract: [`database/taxonomy/docs/w2d-input-snapshot-contract.md`](../../database/taxonomy/docs/w2d-input-snapshot-contract.md).
+* Read-only snapshot export specification: [`database/taxonomy/scripts/export_observations_snapshot.py`](../../database/taxonomy/scripts/export_observations_snapshot.py) — dry-run-only; refuses `--production`.
+* Sibling repo disposable migration simulation: `sporely-web/scripts/taxonomy-v2/experiments/w2d-migration-simulation.sql` + `run-w2d-migration-simulation.mjs` + `w2d-migration-simulation.test.mjs` (10 non-integration tests pass; 11 integration tests skip without local Supabase).
+
+Real-data audit: **blocked.** No local snapshot of the 337 audited
+observations exists in either repository. The 337/227/87/23 Phase-A counts
+originate in `sporely-web/scripts/taxonomy-v2/run-sparse-registry-experiment.mjs`
+as `generate_series(...)` constants. Reproducing the real audit requires
+an anonymised export conforming to the input contract; production access is
+not authorised.
+
+Policy invariants (contract §10, unchanged):
+
+* Identity may never be created from scientific-name / vernacular-name
+  equality, unnamespaced integers, scope membership, Red-List membership,
+  or `(rank, name)`.
+* Multi-provider conflicts return `conflicting_exact_evidence`; no source
+  priority is invented between COL / NorTaxa / iNaturalist / Artportalen.
+* Original identification snapshots are immutable after write; later
+  resolutions attach identity via a separate mutable `resolution_link`
+  record.
+
+W3 readiness verdict (contract §22 / §23): **`legacy-source recovery
+required`.** Production-schema design (W3) may not begin against real
+reconciliation output until an anonymised snapshot is provided.
+
+---
+
 ## 12. Publication and provenance gate
 
 **Status: BLOCKED for production activation**

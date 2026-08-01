@@ -1,0 +1,732 @@
+{
+  "aggregate_counts": {
+    "ambiguous_multiple_candidates": 1,
+    "conflicting_exact_evidence": 1,
+    "invalid_or_unnamespaced_identifier": 1,
+    "manual_unresolved": 2,
+    "no_identity_evidence": 1,
+    "resolved_exact": 3,
+    "resolved_exact_via_legacy_mapping": 1,
+    "source_record_missing": 1,
+    "unresolved_external_identifier": 1,
+    "unresolved_legacy_identifier": 1
+  },
+  "input_source_hash": "71344ade56597930e2c3057f7ef0a4174bbcca4e88414342518919ac17cf8d0a",
+  "manifest_version": "reconciliation-manifest-v1",
+  "policy_sha256": "c408601f71b7d89de0283c307220b06876d80a7418bbb9089337b6d3941c43d6",
+  "policy_version": "w2d-1.0.0",
+  "record_count": 13,
+  "records": [
+    {
+      "candidate_concepts": [
+        {
+          "canonical_name": "Crystallocystidium albescens",
+          "match_field": "observations.scientific_name_snapshot",
+          "match_kind": "scientific_name_exact",
+          "match_value": "Crystallocystidium albescens",
+          "rank": "species",
+          "scope_state": "include",
+          "sporely_taxon_id": 167
+        },
+        {
+          "canonical_name": "Crystallocystidium albobadium",
+          "match_field": "observations.ai_selected_scientific_name",
+          "match_kind": "scientific_name_exact",
+          "match_value": "Crystallocystidium albobadium",
+          "rank": "species",
+          "scope_state": "include",
+          "sporely_taxon_id": 168
+        }
+      ],
+      "conflicting_concepts": [],
+      "migration_action": "manual_review_required",
+      "missing_source_records": [],
+      "observation_id": "fixture-ambiguous-01",
+      "original_external_id": null,
+      "original_legacy_taxon_id": null,
+      "original_scientific_name": "Crystallocystidium albescens",
+      "original_source_namespace": null,
+      "original_source_system": null,
+      "original_vernacular_name": null,
+      "reconciliation_state": "ambiguous_multiple_candidates",
+      "resolution_evidence": [
+        {
+          "action": "manual_identification_preserved",
+          "external_id": null,
+          "level": 6,
+          "method": "preserve_unresolved",
+          "namespace": null,
+          "note": "text-only signals; identity not derivable",
+          "resolved_taxon_id": null,
+          "source_system": null
+        }
+      ],
+      "resolution_method": null,
+      "resolved_canonical_name": null,
+      "resolved_rank": null,
+      "resolved_scope_state": null,
+      "resolved_sporely_taxon_id": null,
+      "review_reason": "2 scientific-name candidates without identity binding",
+      "signals_all": [
+        {
+          "external_id": null,
+          "kind": "text-only",
+          "namespace": null,
+          "notes": "two distinct binomials as candidate seeds",
+          "origin_field": "observations.ai_selected_scientific_name",
+          "raw_value": "Crystallocystidium albobadium",
+          "rule_id": "text_ai_selected_scientific_name_v1",
+          "source_system": null
+        },
+        {
+          "external_id": null,
+          "kind": "text-only",
+          "namespace": null,
+          "notes": null,
+          "origin_field": "observations.scientific_name_snapshot",
+          "raw_value": "Crystallocystidium albescens",
+          "rule_id": "text_scientific_name_snapshot_v1",
+          "source_system": null
+        }
+      ],
+      "unmapped_signals": []
+    },
+    {
+      "candidate_concepts": [],
+      "conflicting_concepts": [
+        {
+          "canonical_name": "Crystallocystidium albescens",
+          "match_field": "observations.ai_selected_taxon_id",
+          "match_kind": "conflicting_exact_signal",
+          "match_value": "323XQ",
+          "rank": "species",
+          "scope_state": "include",
+          "sporely_taxon_id": 167
+        },
+        {
+          "canonical_name": "Crystallocystidium albobadium",
+          "match_field": "observations.sporely_taxon_id",
+          "match_kind": "conflicting_exact_signal",
+          "match_value": "168",
+          "rank": "species",
+          "scope_state": "include",
+          "sporely_taxon_id": 168
+        }
+      ],
+      "migration_action": "manual_review_required",
+      "missing_source_records": [],
+      "observation_id": "fixture-conflict-01",
+      "original_external_id": "168",
+      "original_legacy_taxon_id": "168",
+      "original_scientific_name": "Crystallocystidium albescens",
+      "original_source_namespace": "sporely_taxon_id",
+      "original_source_system": "sporely",
+      "original_vernacular_name": null,
+      "reconciliation_state": "conflicting_exact_evidence",
+      "resolution_evidence": [
+        {
+          "action": "match_taxon_external_id",
+          "external_id": "323XQ",
+          "level": 1,
+          "method": "direct_taxonomy_v2_mapping",
+          "namespace": "col_usage_id",
+          "note": "id_role=accepted; is_preferred=True",
+          "resolved_taxon_id": 167,
+          "source_system": "col_xr"
+        },
+        {
+          "action": "verify_sporely_taxon_id_in_release",
+          "external_id": "168",
+          "level": 2,
+          "method": "legacy_lookup_chain",
+          "namespace": "sporely_taxon_id",
+          "note": "id_role=accepted; is_preferred=True",
+          "resolved_taxon_id": 168,
+          "source_system": "sporely"
+        }
+      ],
+      "resolution_method": null,
+      "resolved_canonical_name": null,
+      "resolved_rank": null,
+      "resolved_scope_state": null,
+      "resolved_sporely_taxon_id": null,
+      "review_reason": "2 distinct concepts across 2 exact signals",
+      "signals_all": [
+        {
+          "external_id": "323XQ",
+          "kind": "exact",
+          "namespace": "col_usage_id",
+          "notes": null,
+          "origin_field": "observations.ai_selected_taxon_id",
+          "raw_value": "323XQ",
+          "rule_id": "artsorakel_bare_int_v1",
+          "source_system": "col_xr"
+        },
+        {
+          "external_id": "168",
+          "kind": "exact",
+          "namespace": "sporely_taxon_id",
+          "notes": "prepopulated sporely id disagrees with the col_xr signal on the same observation",
+          "origin_field": "observations.sporely_taxon_id",
+          "raw_value": "168",
+          "rule_id": "sporely_taxon_id_prepopulated_v1",
+          "source_system": "sporely"
+        }
+      ],
+      "unmapped_signals": []
+    },
+    {
+      "candidate_concepts": [],
+      "conflicting_concepts": [],
+      "migration_action": "retain_unresolved_without_registry_concept",
+      "missing_source_records": [],
+      "observation_id": "fixture-invalid-identifier-01",
+      "original_external_id": "12345",
+      "original_legacy_taxon_id": null,
+      "original_scientific_name": null,
+      "original_source_namespace": null,
+      "original_source_system": "unknownservice",
+      "original_vernacular_name": null,
+      "reconciliation_state": "invalid_or_unnamespaced_identifier",
+      "resolution_evidence": [
+        {
+          "action": "invalid_or_unnamespaced_identifier",
+          "external_id": "12345",
+          "level": 6,
+          "method": "preserve_unresolved",
+          "namespace": null,
+          "note": "unknown ai_selected_service",
+          "resolved_taxon_id": null,
+          "source_system": "unknownservice"
+        }
+      ],
+      "resolution_method": null,
+      "resolved_canonical_name": null,
+      "resolved_rank": null,
+      "resolved_scope_state": null,
+      "resolved_sporely_taxon_id": null,
+      "review_reason": "one or more signals could not be namespaced",
+      "signals_all": [
+        {
+          "external_id": "12345",
+          "kind": "invalid",
+          "namespace": null,
+          "notes": "unknown ai_selected_service",
+          "origin_field": "observations.ai_selected_taxon_id",
+          "raw_value": "12345",
+          "rule_id": "ai_selected_invalid_v1",
+          "source_system": "unknownservice"
+        }
+      ],
+      "unmapped_signals": []
+    },
+    {
+      "candidate_concepts": [],
+      "conflicting_concepts": [],
+      "migration_action": "retain_unresolved_without_registry_concept",
+      "missing_source_records": [],
+      "observation_id": "fixture-manual-unresolved-01",
+      "original_external_id": null,
+      "original_legacy_taxon_id": null,
+      "original_scientific_name": "Boletus regius",
+      "original_source_namespace": null,
+      "original_source_system": null,
+      "original_vernacular_name": "kongesteinsopp",
+      "reconciliation_state": "manual_unresolved",
+      "resolution_evidence": [
+        {
+          "action": "manual_identification_preserved",
+          "external_id": null,
+          "level": 6,
+          "method": "preserve_unresolved",
+          "namespace": null,
+          "note": "text-only signals; identity not derivable",
+          "resolved_taxon_id": null,
+          "source_system": null
+        }
+      ],
+      "resolution_method": null,
+      "resolved_canonical_name": null,
+      "resolved_rank": null,
+      "resolved_scope_state": null,
+      "resolved_sporely_taxon_id": null,
+      "review_reason": "text-only signals; awaiting manual identification",
+      "signals_all": [
+        {
+          "external_id": null,
+          "kind": "text-only",
+          "namespace": null,
+          "notes": null,
+          "origin_field": "observations.common_name",
+          "raw_value": "kongesteinsopp",
+          "rule_id": "text_common_name_v1",
+          "source_system": null
+        },
+        {
+          "external_id": null,
+          "kind": "text-only",
+          "namespace": null,
+          "notes": null,
+          "origin_field": "observations.scientific_name_snapshot",
+          "raw_value": "Boletus regius",
+          "rule_id": "text_scientific_name_snapshot_v1",
+          "source_system": null
+        }
+      ],
+      "unmapped_signals": []
+    },
+    {
+      "candidate_concepts": [],
+      "conflicting_concepts": [],
+      "migration_action": "retain_unresolved_without_registry_concept",
+      "missing_source_records": [],
+      "observation_id": "fixture-no-evidence-01",
+      "original_external_id": null,
+      "original_legacy_taxon_id": null,
+      "original_scientific_name": null,
+      "original_source_namespace": null,
+      "original_source_system": null,
+      "original_vernacular_name": null,
+      "reconciliation_state": "no_identity_evidence",
+      "resolution_evidence": [
+        {
+          "action": "no_identity_evidence",
+          "external_id": null,
+          "level": 6,
+          "method": "preserve_unresolved",
+          "namespace": null,
+          "note": "observation carried no exact or text identity signal",
+          "resolved_taxon_id": null,
+          "source_system": null
+        }
+      ],
+      "resolution_method": null,
+      "resolved_canonical_name": null,
+      "resolved_rank": null,
+      "resolved_scope_state": null,
+      "resolved_sporely_taxon_id": null,
+      "review_reason": "no identity or text signals available",
+      "signals_all": [],
+      "unmapped_signals": []
+    },
+    {
+      "candidate_concepts": [],
+      "conflicting_concepts": [],
+      "migration_action": "materialize_existing_taxonomy_v2_concept",
+      "missing_source_records": [],
+      "observation_id": "fixture-resolved-exact-01",
+      "original_external_id": "323XQ",
+      "original_legacy_taxon_id": null,
+      "original_scientific_name": "Crystallocystidium albescens",
+      "original_source_namespace": "col_usage_id",
+      "original_source_system": "col_xr",
+      "original_vernacular_name": null,
+      "reconciliation_state": "resolved_exact",
+      "resolution_evidence": [
+        {
+          "action": "match_taxon_external_id",
+          "external_id": "323XQ",
+          "level": 1,
+          "method": "direct_taxonomy_v2_mapping",
+          "namespace": "col_usage_id",
+          "note": "id_role=accepted; is_preferred=True",
+          "resolved_taxon_id": 167,
+          "source_system": "col_xr"
+        }
+      ],
+      "resolution_method": "direct_taxonomy_v2_mapping",
+      "resolved_canonical_name": "Crystallocystidium albescens",
+      "resolved_rank": "species",
+      "resolved_scope_state": "include",
+      "resolved_sporely_taxon_id": 167,
+      "review_reason": null,
+      "signals_all": [
+        {
+          "external_id": "323XQ",
+          "kind": "exact",
+          "namespace": "col_usage_id",
+          "notes": "synthetic; direct col_usage_id",
+          "origin_field": "observations.ai_selected_taxon_id",
+          "raw_value": "323XQ",
+          "rule_id": "artsorakel_bare_int_v1",
+          "source_system": "col_xr"
+        }
+      ],
+      "unmapped_signals": []
+    },
+    {
+      "candidate_concepts": [],
+      "conflicting_concepts": [],
+      "migration_action": "materialize_existing_taxonomy_v2_concept",
+      "missing_source_records": [],
+      "observation_id": "fixture-resolved-exact-agreement-01",
+      "original_external_id": "167",
+      "original_legacy_taxon_id": "167",
+      "original_scientific_name": "Crystallocystidium albescens",
+      "original_source_namespace": "sporely_taxon_id",
+      "original_source_system": "sporely",
+      "original_vernacular_name": null,
+      "reconciliation_state": "resolved_exact",
+      "resolution_evidence": [
+        {
+          "action": "match_taxon_external_id",
+          "external_id": "323XQ",
+          "level": 1,
+          "method": "direct_taxonomy_v2_mapping",
+          "namespace": "col_usage_id",
+          "note": "id_role=accepted; is_preferred=True",
+          "resolved_taxon_id": 167,
+          "source_system": "col_xr"
+        },
+        {
+          "action": "verify_sporely_taxon_id_in_release",
+          "external_id": "167",
+          "level": 2,
+          "method": "legacy_lookup_chain",
+          "namespace": "sporely_taxon_id",
+          "note": "id_role=accepted; is_preferred=True",
+          "resolved_taxon_id": 167,
+          "source_system": "sporely"
+        }
+      ],
+      "resolution_method": "direct_taxonomy_v2_mapping",
+      "resolved_canonical_name": "Crystallocystidium albescens",
+      "resolved_rank": "species",
+      "resolved_scope_state": "include",
+      "resolved_sporely_taxon_id": 167,
+      "review_reason": null,
+      "signals_all": [
+        {
+          "external_id": "323XQ",
+          "kind": "exact",
+          "namespace": "col_usage_id",
+          "notes": null,
+          "origin_field": "observations.ai_selected_taxon_id",
+          "raw_value": "323XQ",
+          "rule_id": "artsorakel_bare_int_v1",
+          "source_system": "col_xr"
+        },
+        {
+          "external_id": "167",
+          "kind": "exact",
+          "namespace": "sporely_taxon_id",
+          "notes": null,
+          "origin_field": "observations.sporely_taxon_id",
+          "raw_value": "167",
+          "rule_id": "sporely_taxon_id_prepopulated_v1",
+          "source_system": "sporely"
+        }
+      ],
+      "unmapped_signals": []
+    },
+    {
+      "candidate_concepts": [],
+      "conflicting_concepts": [],
+      "migration_action": "materialize_existing_taxonomy_v2_concept",
+      "missing_source_records": [],
+      "observation_id": "fixture-resolved-exact-out-of-cache-01",
+      "original_external_id": "33D",
+      "original_legacy_taxon_id": null,
+      "original_scientific_name": "Cyttariales",
+      "original_source_namespace": "col_usage_id",
+      "original_source_system": "col_xr",
+      "original_vernacular_name": null,
+      "reconciliation_state": "resolved_exact",
+      "resolution_evidence": [
+        {
+          "action": "match_taxon_external_id",
+          "external_id": "33D",
+          "level": 1,
+          "method": "direct_taxonomy_v2_mapping",
+          "namespace": "col_usage_id",
+          "note": "id_role=accepted; is_preferred=True",
+          "resolved_taxon_id": 931,
+          "source_system": "col_xr"
+        }
+      ],
+      "resolution_method": "direct_taxonomy_v2_mapping",
+      "resolved_canonical_name": "Cyttariales",
+      "resolved_rank": "order",
+      "resolved_scope_state": "required_ancestor",
+      "resolved_sporely_taxon_id": 931,
+      "review_reason": null,
+      "signals_all": [
+        {
+          "external_id": "33D",
+          "kind": "exact",
+          "namespace": "col_usage_id",
+          "notes": "out-of-cache concept (required_ancestor)",
+          "origin_field": "observations.ai_selected_taxon_id",
+          "raw_value": "33D",
+          "rule_id": "artsorakel_bare_int_v1",
+          "source_system": "col_xr"
+        }
+      ],
+      "unmapped_signals": []
+    },
+    {
+      "candidate_concepts": [],
+      "conflicting_concepts": [],
+      "migration_action": "materialize_existing_taxonomy_v2_concept",
+      "missing_source_records": [],
+      "observation_id": "fixture-resolved-legacy-01",
+      "original_external_id": "167",
+      "original_legacy_taxon_id": "167",
+      "original_scientific_name": "Crystallocystidium albescens",
+      "original_source_namespace": "sporely_taxon_id",
+      "original_source_system": "sporely",
+      "original_vernacular_name": null,
+      "reconciliation_state": "resolved_exact_via_legacy_mapping",
+      "resolution_evidence": [
+        {
+          "action": "verify_sporely_taxon_id_in_release",
+          "external_id": "167",
+          "level": 2,
+          "method": "legacy_lookup_chain",
+          "namespace": "sporely_taxon_id",
+          "note": "id_role=accepted; is_preferred=True",
+          "resolved_taxon_id": 167,
+          "source_system": "sporely"
+        }
+      ],
+      "resolution_method": "legacy_lookup_chain",
+      "resolved_canonical_name": "Crystallocystidium albescens",
+      "resolved_rank": "species",
+      "resolved_scope_state": "include",
+      "resolved_sporely_taxon_id": 167,
+      "review_reason": null,
+      "signals_all": [
+        {
+          "external_id": "167",
+          "kind": "exact",
+          "namespace": "sporely_taxon_id",
+          "notes": null,
+          "origin_field": "observations.sporely_taxon_id",
+          "raw_value": "167",
+          "rule_id": "sporely_taxon_id_prepopulated_v1",
+          "source_system": "sporely"
+        }
+      ],
+      "unmapped_signals": []
+    },
+    {
+      "candidate_concepts": [],
+      "conflicting_concepts": [],
+      "migration_action": "retain_unresolved_without_registry_concept",
+      "missing_source_records": [],
+      "observation_id": "fixture-resolved-synonym-01-SKIPPED",
+      "original_external_id": null,
+      "original_legacy_taxon_id": null,
+      "original_scientific_name": "Ustilago maydis",
+      "original_source_namespace": null,
+      "original_source_system": null,
+      "original_vernacular_name": null,
+      "reconciliation_state": "manual_unresolved",
+      "resolution_evidence": [
+        {
+          "action": "manual_identification_preserved",
+          "external_id": null,
+          "level": 6,
+          "method": "preserve_unresolved",
+          "namespace": null,
+          "note": "text-only signals; identity not derivable",
+          "resolved_taxon_id": null,
+          "source_system": null
+        }
+      ],
+      "resolution_method": null,
+      "resolved_canonical_name": null,
+      "resolved_rank": null,
+      "resolved_scope_state": null,
+      "resolved_sporely_taxon_id": null,
+      "review_reason": "text-only signals; awaiting manual identification",
+      "signals_all": [
+        {
+          "external_id": null,
+          "kind": "text-only",
+          "namespace": null,
+          "notes": "SKIPPED: pinned release tax-2026.08.01-01 does not carry any id_role != accepted rows; the synonym relationship Ustilago maydis -> Mycosarcoma maydis exists in COL XR but is not exported by scope-manifest. Fixture retained as documentation of intent; test asserts the record lands in manual_unresolved.",
+          "origin_field": "observations.scientific_name_snapshot",
+          "raw_value": "Ustilago maydis",
+          "rule_id": "text_scientific_name_snapshot_v1",
+          "source_system": null
+        }
+      ],
+      "unmapped_signals": []
+    },
+    {
+      "candidate_concepts": [],
+      "conflicting_concepts": [],
+      "migration_action": "retain_unresolved_without_registry_concept",
+      "missing_source_records": [
+        "observations.sporely_taxon_id:99999999"
+      ],
+      "observation_id": "fixture-source-record-missing-01",
+      "original_external_id": "99999999",
+      "original_legacy_taxon_id": "99999999",
+      "original_scientific_name": null,
+      "original_source_namespace": "sporely_taxon_id",
+      "original_source_system": "sporely",
+      "original_vernacular_name": null,
+      "reconciliation_state": "source_record_missing",
+      "resolution_evidence": [
+        {
+          "action": "sporely_taxon_id_not_in_pinned_release",
+          "external_id": "99999999",
+          "level": 6,
+          "method": "preserve_unresolved",
+          "namespace": "sporely_taxon_id",
+          "note": "legacy sporely_taxon_id absent from taxonomy_v2 taxon.jsonl",
+          "resolved_taxon_id": null,
+          "source_system": "sporely"
+        }
+      ],
+      "resolution_method": null,
+      "resolved_canonical_name": null,
+      "resolved_rank": null,
+      "resolved_scope_state": null,
+      "resolved_sporely_taxon_id": null,
+      "review_reason": "prepopulated sporely_taxon_id no longer present in pinned release",
+      "signals_all": [
+        {
+          "external_id": "99999999",
+          "kind": "exact",
+          "namespace": "sporely_taxon_id",
+          "notes": "prepopulated sporely id no longer in pinned release",
+          "origin_field": "observations.sporely_taxon_id",
+          "raw_value": "99999999",
+          "rule_id": "sporely_taxon_id_prepopulated_v1",
+          "source_system": "sporely"
+        }
+      ],
+      "unmapped_signals": [
+        {
+          "external_id": "99999999",
+          "kind": "exact",
+          "namespace": "sporely_taxon_id",
+          "notes": "prepopulated sporely id no longer in pinned release",
+          "origin_field": "observations.sporely_taxon_id",
+          "raw_value": "99999999",
+          "rule_id": "sporely_taxon_id_prepopulated_v1",
+          "source_system": "sporely"
+        }
+      ]
+    },
+    {
+      "candidate_concepts": [],
+      "conflicting_concepts": [],
+      "migration_action": "retain_unresolved_without_registry_concept",
+      "missing_source_records": [],
+      "observation_id": "fixture-unresolved-external-01",
+      "original_external_id": "999999999",
+      "original_legacy_taxon_id": "999999999",
+      "original_scientific_name": null,
+      "original_source_namespace": "nortaxa_taxon_id",
+      "original_source_system": "nortaxa",
+      "original_vernacular_name": null,
+      "reconciliation_state": "unresolved_external_identifier",
+      "resolution_evidence": [
+        {
+          "action": "external_identifier_not_in_pinned_release",
+          "external_id": "999999999",
+          "level": 6,
+          "method": "preserve_unresolved",
+          "namespace": "nortaxa_taxon_id",
+          "note": "signal preserved; no pinned mapping found",
+          "resolved_taxon_id": null,
+          "source_system": "nortaxa"
+        }
+      ],
+      "resolution_method": null,
+      "resolved_canonical_name": null,
+      "resolved_rank": null,
+      "resolved_scope_state": null,
+      "resolved_sporely_taxon_id": null,
+      "review_reason": "namespaced id not present in pinned release",
+      "signals_all": [
+        {
+          "external_id": "999999999",
+          "kind": "exact",
+          "namespace": "nortaxa_taxon_id",
+          "notes": "namespace known, id absent from pinned release",
+          "origin_field": "observations.artsdata_id",
+          "raw_value": "999999999",
+          "rule_id": "artsdata_id_v1",
+          "source_system": "nortaxa"
+        }
+      ],
+      "unmapped_signals": [
+        {
+          "external_id": "999999999",
+          "kind": "exact",
+          "namespace": "nortaxa_taxon_id",
+          "notes": "namespace known, id absent from pinned release",
+          "origin_field": "observations.artsdata_id",
+          "raw_value": "999999999",
+          "rule_id": "artsdata_id_v1",
+          "source_system": "nortaxa"
+        }
+      ]
+    },
+    {
+      "candidate_concepts": [],
+      "conflicting_concepts": [],
+      "migration_action": "retain_unresolved_without_registry_concept",
+      "missing_source_records": [],
+      "observation_id": "fixture-unresolved-legacy-01",
+      "original_external_id": "76657",
+      "original_legacy_taxon_id": "76657",
+      "original_scientific_name": null,
+      "original_source_namespace": "nortaxa_taxon_id",
+      "original_source_system": "nortaxa",
+      "original_vernacular_name": null,
+      "reconciliation_state": "unresolved_legacy_identifier",
+      "resolution_evidence": [
+        {
+          "action": "legacy_lookup_chain_no_match",
+          "external_id": "76657",
+          "level": 6,
+          "method": "preserve_unresolved",
+          "namespace": "nortaxa_taxon_id",
+          "note": "legacy lookup produced no mapping to a pinned concept",
+          "resolved_taxon_id": null,
+          "source_system": "nortaxa"
+        }
+      ],
+      "resolution_method": null,
+      "resolved_canonical_name": null,
+      "resolved_rank": null,
+      "resolved_scope_state": null,
+      "resolved_sporely_taxon_id": null,
+      "review_reason": "legacy id could not chain to a pinned concept",
+      "signals_all": [
+        {
+          "external_id": "76657",
+          "kind": "exact",
+          "namespace": "nortaxa_taxon_id",
+          "notes": "legacy adb_taxon_id chain missing in this release",
+          "origin_field": "observations.adb_taxon_id",
+          "raw_value": "76657",
+          "rule_id": "legacy_adb_taxon_id_v1",
+          "source_system": "nortaxa"
+        }
+      ],
+      "unmapped_signals": [
+        {
+          "external_id": "76657",
+          "kind": "exact",
+          "namespace": "nortaxa_taxon_id",
+          "notes": "legacy adb_taxon_id chain missing in this release",
+          "origin_field": "observations.adb_taxon_id",
+          "raw_value": "76657",
+          "rule_id": "legacy_adb_taxon_id_v1",
+          "source_system": "nortaxa"
+        }
+      ]
+    }
+  ],
+  "registry_identity_hash": null,
+  "taxonomy_release_id": "tax-2026.08.01-01",
+  "taxonomy_scope_manifest_sha256": "72758b2c574e8aea27432b6b55c62dfb6ad87f3fadc11ad1c892a61abf23ac4e",
+  "verified_scope_manifest_sha256": "72758b2c574e8aea27432b6b55c62dfb6ad87f3fadc11ad1c892a61abf23ac4e"
+}

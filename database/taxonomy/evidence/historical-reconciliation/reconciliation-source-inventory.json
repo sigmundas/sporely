@@ -1,0 +1,302 @@
+{
+  "inventory_version": "w2d-1.0.0",
+  "migration_actions": [
+    {
+      "action": "reuse_existing_registry_concept",
+      "applies_to_states": [
+        "resolved_exact",
+        "resolved_exact_via_legacy_mapping",
+        "resolved_exact_via_synonym_relationship"
+      ],
+      "description": "sporely_taxon_id already registered in the taxonomy_v2 registry"
+    },
+    {
+      "action": "materialize_existing_taxonomy_v2_concept",
+      "applies_to_states": [
+        "resolved_exact",
+        "resolved_exact_via_legacy_mapping",
+        "resolved_exact_via_synonym_relationship"
+      ],
+      "description": "concept present in pinned release but not yet in the cloud registry; sparse registration required"
+    },
+    {
+      "action": "retain_unresolved_without_registry_concept",
+      "applies_to_states": [
+        "invalid_or_unnamespaced_identifier",
+        "manual_unresolved",
+        "no_identity_evidence",
+        "source_record_missing",
+        "unresolved_external_identifier",
+        "unresolved_legacy_identifier"
+      ],
+      "description": "no chain to a pinned concept; snapshots preserved verbatim"
+    },
+    {
+      "action": "manual_review_required",
+      "applies_to_states": [
+        "ambiguous_multiple_candidates",
+        "conflicting_exact_evidence"
+      ],
+      "description": "human review needed; the engine records the candidates but never picks one"
+    }
+  ],
+  "namespace_rules": [
+    {
+      "field": "observations.artsdata_id",
+      "kind": "exact",
+      "namespace": "nortaxa_taxon_id",
+      "notes": "NorTaxa taxonID coerced from int; namespace inferred by migrate_observations_sporely_id.py precedent.",
+      "resolution_level_hint": 2,
+      "rule_id": "artsdata_id_v1",
+      "signal_source_system": "nortaxa",
+      "value_transform": "cast_to_string"
+    },
+    {
+      "field": "observations.artportalen_id",
+      "kind": "exact",
+      "namespace": "artportalen_taxon_id",
+      "notes": "Artportalen precision is name-usage per identity-contract; resolved only if the registry carries an exact mapping.",
+      "resolution_level_hint": 4,
+      "rule_id": "artportalen_id_v1",
+      "signal_source_system": "artportalen",
+      "value_transform": "cast_to_string"
+    },
+    {
+      "field": "observations.inaturalist_taxon_id",
+      "kind": "exact",
+      "namespace": "inaturalist_taxon_id",
+      "notes": "Distinct from inaturalist_id which is an observation identifier.",
+      "resolution_level_hint": 4,
+      "rule_id": "inaturalist_taxon_id_v1",
+      "signal_source_system": "inaturalist",
+      "value_transform": "cast_to_string"
+    },
+    {
+      "field": "observations.inaturalist_id",
+      "kind": "preserve_only",
+      "namespace": null,
+      "notes": "Observation identifier only; never creates identity.",
+      "resolution_level_hint": null,
+      "rule_id": "inaturalist_observation_id_v1",
+      "signal_source_system": "inaturalist",
+      "value_transform": "cast_to_string"
+    },
+    {
+      "field": "observations.mushroomobserver_id",
+      "kind": "preserve_only",
+      "namespace": null,
+      "notes": "Observation identifier only; never creates identity.",
+      "resolution_level_hint": null,
+      "rule_id": "mushroomobserver_observation_id_v1",
+      "signal_source_system": "mushroomobserver",
+      "value_transform": "cast_to_string"
+    },
+    {
+      "field": "observations.ai_selected_taxon_id (service=artsorakel, prefix=NBIC:)",
+      "kind": "exact",
+      "namespace": "nortaxa_taxon_id",
+      "notes": "Values of the form ^NBIC:(\\d+)$ are rewritten to nortaxa:nortaxa_taxon_id:<suffix>. Stripping NBIC never coerces the value into a Sporely id.",
+      "resolution_level_hint": 4,
+      "rule_id": "artsorakel_nbic_prefix_v1",
+      "signal_source_system": "nortaxa",
+      "value_transform": "strip_nbic_prefix"
+    },
+    {
+      "field": "observations.ai_selected_taxon_id (service=artsorakel, bare integer)",
+      "kind": "exact",
+      "namespace": "nortaxa_taxon_id",
+      "notes": "Bare-integer values under ai_selected_service='artsorakel' are treated as nortaxa:nortaxa_taxon_id:<value>. Any deviation from this rule id is a namespace change and must be another rule_id.",
+      "resolution_level_hint": 4,
+      "rule_id": "artsorakel_bare_int_v1",
+      "signal_source_system": "nortaxa",
+      "value_transform": "cast_to_string"
+    },
+    {
+      "field": "observations.ai_selected_taxon_id (service=inaturalist)",
+      "kind": "exact",
+      "namespace": "inaturalist_taxon_id",
+      "notes": "'inat' aliases are normalised to 'inaturalist' before namespace derivation.",
+      "resolution_level_hint": 4,
+      "rule_id": "ai_selected_inaturalist_v1",
+      "signal_source_system": "inaturalist",
+      "value_transform": "cast_to_string"
+    },
+    {
+      "field": "observations.ai_selected_taxon_id (unknown service or ambiguous prefix)",
+      "kind": "invalid",
+      "namespace": null,
+      "notes": "Unknown ai_selected_service or unnamespaced integer without service context yields state=invalid_or_unnamespaced_identifier.",
+      "resolution_level_hint": null,
+      "rule_id": "ai_selected_invalid_v1",
+      "signal_source_system": null,
+      "value_transform": "verbatim"
+    },
+    {
+      "field": "observations.sporely_taxon_id (already populated)",
+      "kind": "exact",
+      "namespace": "sporely_taxon_id",
+      "notes": "Verified against taxon.jsonl in the pinned release. Never fabricated by the resolver.",
+      "resolution_level_hint": 2,
+      "rule_id": "sporely_taxon_id_prepopulated_v1",
+      "signal_source_system": "sporely",
+      "value_transform": "cast_to_string"
+    },
+    {
+      "field": "observations.adb_taxon_id (legacy)",
+      "kind": "exact",
+      "namespace": "nortaxa_taxon_id",
+      "notes": "Legacy column; the schema drops it, but old databases may still carry it. Treated as Level 2 legacy-lookup-chain.",
+      "resolution_level_hint": 2,
+      "rule_id": "legacy_adb_taxon_id_v1",
+      "signal_source_system": "nortaxa",
+      "value_transform": "cast_to_string"
+    },
+    {
+      "field": "observations.genus + observations.species",
+      "kind": "text",
+      "namespace": null,
+      "notes": "Concatenated to a binomial and used for Level 5 candidate generation. Never resolves identity.",
+      "resolution_level_hint": 5,
+      "rule_id": "text_genus_species_v1",
+      "signal_source_system": null,
+      "value_transform": "join_binomial"
+    },
+    {
+      "field": "observations.ai_selected_scientific_name",
+      "kind": "text",
+      "namespace": null,
+      "notes": "Text-only signal for candidate generation.",
+      "resolution_level_hint": 5,
+      "rule_id": "text_ai_selected_scientific_name_v1",
+      "signal_source_system": null,
+      "value_transform": "strip"
+    },
+    {
+      "field": "observations.scientific_name_snapshot",
+      "kind": "text",
+      "namespace": null,
+      "notes": "Verbatim snapshot from Stage 3B.3. Preserved and used for candidates only.",
+      "resolution_level_hint": 5,
+      "rule_id": "text_scientific_name_snapshot_v1",
+      "signal_source_system": null,
+      "value_transform": "strip"
+    },
+    {
+      "field": "observations.common_name",
+      "kind": "text",
+      "namespace": null,
+      "notes": "Vernacular-name text signal; never resolves identity.",
+      "resolution_level_hint": 5,
+      "rule_id": "text_common_name_v1",
+      "signal_source_system": null,
+      "value_transform": "strip"
+    },
+    {
+      "field": "observations.species_guess",
+      "kind": "text",
+      "namespace": null,
+      "notes": "Free-text guess field; never resolves identity.",
+      "resolution_level_hint": 5,
+      "rule_id": "text_species_guess_v1",
+      "signal_source_system": null,
+      "value_transform": "strip"
+    },
+    {
+      "field": "observations.taxon_rank_snapshot",
+      "kind": "text",
+      "namespace": null,
+      "notes": "Whitelisted rank snapshot from Stage 3B.3; used only as a candidate-consistency filter.",
+      "resolution_level_hint": 5,
+      "rule_id": "text_taxon_rank_snapshot_v1",
+      "signal_source_system": null,
+      "value_transform": "strip_lower"
+    }
+  ],
+  "policy_sha256": "c408601f71b7d89de0283c307220b06876d80a7418bbb9089337b6d3941c43d6",
+  "primary_states": [
+    {
+      "name": "ambiguous_multiple_candidates",
+      "resolves_identity": false
+    },
+    {
+      "name": "conflicting_exact_evidence",
+      "resolves_identity": false
+    },
+    {
+      "name": "invalid_or_unnamespaced_identifier",
+      "resolves_identity": false
+    },
+    {
+      "name": "manual_unresolved",
+      "resolves_identity": false
+    },
+    {
+      "name": "no_identity_evidence",
+      "resolves_identity": false
+    },
+    {
+      "name": "resolved_exact",
+      "resolves_identity": true
+    },
+    {
+      "name": "resolved_exact_via_legacy_mapping",
+      "resolves_identity": true
+    },
+    {
+      "name": "resolved_exact_via_synonym_relationship",
+      "resolves_identity": true
+    },
+    {
+      "name": "source_record_missing",
+      "resolves_identity": false
+    },
+    {
+      "name": "unresolved_external_identifier",
+      "resolves_identity": false
+    },
+    {
+      "name": "unresolved_legacy_identifier",
+      "resolves_identity": false
+    }
+  ],
+  "prohibited_behaviours": [
+    "consult_private_data_outside_reconciliation_input",
+    "create_registry_rows_outside_disposable_local_schema",
+    "invent_source_priority_to_break_conflict",
+    "mutate_observation_records_in_either_repo",
+    "resolve_identity_from_scientific_name_equality",
+    "resolve_identity_from_unnamespaced_integer",
+    "resolve_identity_from_vernacular_equality"
+  ],
+  "real_data_available": false,
+  "real_data_note": "No local snapshot of the 337 audited observations exists in either sporely-py or sporely-py-country. The 337/227/87/23 counts originate in sporely-web/scripts/taxonomy-v2/run-sparse-registry-experiment.mjs as generate_series constants. The real 337-observation audit remains blocked pending an anonymised export conforming to database/taxonomy/docs/w2d-input-snapshot-contract.md.",
+  "resolution_methods": [
+    "direct_taxonomy_v2_mapping",
+    "legacy_lookup_chain",
+    "pinned_synonym_relationship",
+    "trusted_secondary_provider_mapping"
+  ],
+  "sources": [
+    {
+      "concepts_included": 52881,
+      "kind": "pinned release",
+      "location": "database/reference_data/generated/taxonomy_v2/global_macrofungi_tax-2026.08.01-01/",
+      "name": "macrofungi release tax-2026.08.01-01",
+      "purpose": "exact-mapping backbone"
+    },
+    {
+      "kind": "legacy desktop taxonomy",
+      "location": "database/reference_data/generated/vernacular_multilanguage_unified.sqlite3",
+      "name": "vernacular_multilanguage_unified.sqlite3",
+      "purpose": "legacy lookup chain and taxon_external_id_min / taxon_external_id_text_min lookups"
+    },
+    {
+      "kind": "sporely registry",
+      "location": "database/taxonomy/registry/canonical/",
+      "name": "canonical identity registry",
+      "purpose": "stable sporely_taxon_id anchors"
+    }
+  ],
+  "taxonomy_release_id": "tax-2026.08.01-01",
+  "taxonomy_scope_manifest_sha256": "72758b2c574e8aea27432b6b55c62dfb6ad87f3fadc11ad1c892a61abf23ac4e"
+}
