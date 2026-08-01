@@ -1,7 +1,7 @@
 # Sporely Taxonomy v2 Integration — Working Plan
 
 **Plan version:** 2026-08-01
-**Current programme state:** W0 accepted; W1 accepted; W2A accepted; W2B is next
+**Current programme state:** W0 accepted; W1 accepted; W2A accepted; W2B capacity review required; W3 blocked
 **Desktop accepted implementation:** `04602bcbb578e6abefb91ab96e03abbb42c53c3a`
 **Web working branch:** `feat/taxonomy-v2-w2-supabase-schema-search`
 **Primary objective:** Introduce stable Sporely taxonomy identity across desktop, Supabase and web without breaking the existing taxonomy path or silently binding ambiguous names.
@@ -45,7 +45,7 @@ This document records programme decisions. The repositories remain authoritative
 | W1 — Model-neutral cloud exporter                       | **DONE**                              | Accepted at desktop commit `04602bc`; deterministic seven-file JSONL export                                     |
 | W1 repository integration                               | **CLOSEOUT**                          | Merge the desktop feature branch into `integrate/taxonomy-media-2026-07-30`; do not commit the generated export |
 | W2A — Additive Supabase schema, activation and search   | **DONE**                              | Accepted at web commit `d61f2f9`; Model B schema and fixture-tested RPCs added without client cutover           |
-| W2B — Importer, full local load and capacity validation | **NEXT**                              | Import the accepted W1 export locally, measure PostgreSQL size and performance, then make a capacity decision   |
+| W2B — Importer, full local load and capacity validation | **GATE**                              | Import/load passed; 817.987 MiB additive projection requires capacity/schema review before W3                    |
 | Publication and provenance                              | **BLOCKED for production activation** | Current release remains a candidate; Red List licence and publication metadata must be completed                |
 | W3A — Observation identity schema                       | **PLANNED**                           | Add stable concept identity, state and snapshots without removing legacy fields                                 |
 | W3B — Sync, migration and backfill                      | **PLANNED**                           | Carry identity through desktop/web sync; backfill only from authoritative evidence                              |
@@ -628,7 +628,39 @@ W2A accepted — proceed to W2B importer and full-load validation
 
 ## 11. W2B — Importer, full local load and capacity validation
 
-**Status: PLANNED**
+**Status: GATE — CAPACITY REVIEW REQUIRED**
+
+Implementation and evidence record (2026-08-01):
+
+```text
+Web branch: feat/taxonomy-v2-w2b-importer-full-load
+Starting web commit: d61f2f9692b3b9e803d265330e21ddf876b26802
+Final web commit: e05979b
+Evidence: docs/evidence/taxonomy-v2/w2b-tax-2026.07.30-02.{json,md}
+```
+
+Verified results:
+
+* the streaming Node/container-psql importer preflighted and loaded the complete
+  accepted W1 artifact in one locked transaction;
+* all exact release-table counts matched and
+  `taxonomy_v2_validate_release` returned `ok=true`;
+* the importer left the release ready; a separate local-only activation was used
+  for correctness and performance evidence;
+* taxonomy-v2 relations occupy 754,417,664 bytes (719.469 MiB);
+* the read-only production baseline is 103,304,339 bytes (98.519 MiB);
+* the additive projection is 857,722,003 bytes (817.987 MiB), with
+  -333,434,003 bytes headroom below 500 MiB;
+* capacity result is `review_required_capacity`; no legacy size was subtracted;
+* selective search p50 is approximately 0.65–0.71 seconds and requires a
+  representation/index review before cutover; authoritative resolver p50 is
+  0.737 ms;
+* no production taxonomy import or activation, client change, legacy taxonomy
+  mutation, observation schema change, or W3 work occurred.
+
+W2B is not accepted because the capacity gate did not pass. The next safe task
+is an explicit capacity/schema decision using the committed evidence. W3 remains
+blocked. The publication/provenance gate remains independently blocked.
 
 ### Purpose
 
@@ -1294,10 +1326,10 @@ An agent must stop rather than guess when:
 [x] W2A RPCs implemented
 [x] W2A SQL and security tests accepted
 
-[ ] W2B importer implemented
-[ ] Complete local release imported
-[ ] PostgreSQL storage measured
-[ ] Search performance measured
+[x] W2B importer implemented
+[x] Complete local release imported
+[x] PostgreSQL storage measured
+[x] Search performance measured
 [ ] Capacity decision approved
 
 [ ] Publication and licence evidence closed
@@ -1319,6 +1351,7 @@ An agent must stop rather than guess when:
 [ ] Final documentation and runbook completed
 ```
 
-The next engineering task is **W2B only**.
+The next engineering task is **W2B capacity/schema review only**.
 
-Do not begin W3 or W4 in the same W2B agent task.
+Do not begin W3 or W4 until the capacity decision is approved and the selective
+search performance defect has an accepted resolution.
