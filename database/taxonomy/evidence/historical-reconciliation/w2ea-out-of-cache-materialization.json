@@ -1,0 +1,96 @@
+{
+  "evidence_version": "w2ea-1.0.0",
+  "policy_accepted": "Historical observations may attach to an exact, source-backed sporely_taxon_id even when the concept is outside the currently supported macrofungi scope. Cache membership and scope state are tracked independently.",
+  "input_snapshot": {
+    "sha256": "a3d0fdb534fce5d9020600767356e18082d6279495bb12bd08e573a0307defb0",
+    "record_count": 369
+  },
+  "release": {
+    "id": "tax-2026.08.01-01",
+    "mutated": false,
+    "scope_manifest_sha256": "72758b2c574e8aea27432b6b55c62dfb6ad87f3fadc11ad1c892a61abf23ac4e"
+  },
+  "part_a": {
+    "resolver_change": "removed the 'concept present in pinned release' gate on Level 4 (canonical registry). When the registry has an anchor, resolve to that sporely_taxon_id regardless of release cache membership. Two new result fields: resolved_cache_state ('in_cache' | 'out_of_cache') and resolved_scope_state (release scope_state if in-cache, 'not_evaluated' otherwise). Contract §12 requirement.",
+    "result_model_change": "ReconciliationResult now carries resolved_cache_state alongside resolved_scope_state. Cache membership and scope state are stored independently and never conflated.",
+    "web_sim_change": "registry_concept table gained cache_state text not null default 'in_cache' check in ('in_cache','out_of_cache'). apply_reconciliation_manifest reads resolved_cache_state from the manifest and stores it verbatim.",
+    "safety": {
+      "cache_broadened": false,
+      "excluded_concepts_added_to_search_cache": false,
+      "release_mutated": false,
+      "name_only_resolution": false,
+      "production_writes": false
+    },
+    "manifest_before_semantic_sha256": "8087d4398311268a4fe049435de61ec16edff7f3c52baf169310807c77f77448",
+    "manifest_after_semantic_sha256": "37950a4d0a92207e16a76e22cd9e1c2057858bb357a6c3f616c7679ce1c51080",
+    "manifest_deterministic_across_two_runs": true,
+    "aggregate_counts_before": {
+      "resolved_exact": 54,
+      "unresolved_external_identifier": 200,
+      "manual_unresolved": 85,
+      "no_identity_evidence": 30,
+      "total": 369
+    },
+    "aggregate_counts_after": {
+      "resolved_exact": 211,
+      "unresolved_external_identifier": 43,
+      "manual_unresolved": 85,
+      "no_identity_evidence": 30,
+      "total": 369
+    },
+    "observation_effects": {
+      "observations_newly_resolved": 157,
+      "distinct_external_ids_newly_resolved": 81,
+      "registry_concepts_materialized_total": 120,
+      "registry_concepts_in_cache": 39,
+      "registry_concepts_out_of_cache": 81,
+      "external_mappings_created": 122,
+      "remaining_unresolved_external_identifier_observations": 43
+    },
+    "cache_scope_independence_proof": {
+      "in_cache_scope_include": 39,
+      "in_cache_scope_not_evaluated": 0,
+      "out_of_cache_scope_include": 0,
+      "out_of_cache_scope_not_evaluated": 81,
+      "note": "in-cache concepts retain their real release scope_state (all 39 = 'include'); out-of-cache concepts carry 'not_evaluated' — the honest value when the macrofungi scope predicate did not evaluate them. No out-of-scope concept was rewritten to a generic scope value."
+    },
+    "disposable_simulation": {
+      "runner": "sporely-web/scripts/taxonomy-v2/run-w2d-migration-simulation.mjs",
+      "idempotency_verified": true,
+      "rollback_verified": true,
+      "snapshot_preservation_verified": true,
+      "identification_snapshots": 369,
+      "resolution_links": 369,
+      "registry_concepts": 120,
+      "external_mappings": 122,
+      "snapshot_fingerprint_stable": true
+    }
+  },
+  "part_b": {
+    "status": "investigated; new immutable release build deferred to a focused session",
+    "diagnostic_reference": "/Users/sigmundas/Documents/Code/sporely/w2dr/out/diagnostic/mapping-diagnostic-summary.md",
+    "identifier_buckets": {
+      "sqlite_present_no_registry_anchor": 19,
+      "source_archive_only_no_registry_anchor": 2
+    },
+    "observation_impact_projection": "these 21 distinct identifiers cover ~21 observations (each id appeared once in the audit; no cross-observation reuse in the diagnostic).",
+    "root_cause": "The 19 SQLite-present IDs are Norwegian non-fungi taxa (plants such as Cirsium arvense, Silene dioica, Berteroa incana, Stellaria nemorum, Rubus, ...). The current identity registry allocator (database/taxonomy/scripts/compile_release.py + identity_registry.py) allocates sporely_taxon_ids from a fungi-scoped W1 pipeline; non-fungi NorTaxa taxa are never seen by the allocator and therefore have no anchor. The 2 archive-only IDs are similarly out-of-scope entries that never entered the compiled SQLite. This is not a bug in the compiler — it is a scope decision at allocation time. Per the new W2E-A policy those historical observations must still receive stable identity; the proper repair widens the allocator's scope predicate to accept observation-derived non-fungi NorTaxa taxa.",
+    "why_deferred": "Producing a new immutable release requires re-running compile_release.py (2114 lines) against the full COL XR + NorTaxa 1.284 source set, then the separate scope-exporter pass that produces global_macrofungi_tax-YYYY.MM.DD-NN. Both steps must be adjusted to include non-fungi observation-derived taxa without polluting the macrofungi search cache. Two structural changes are required: (1) compile_release.py — a new observation-derived-taxa input file, allocated as anchors under a separate audit trail; (2) the scope-exporter — emit their taxon_external_id.jsonl rows too. Each change requires targeted evidence, and the resulting new release must prove tax-2026.08.01-01 remains byte-identical while a sibling release tax-YYYY.MM.DD-NN carries the additional anchors. This is a multi-hour focused pipeline session with careful review; attempting it inline here would risk producing an ill-considered release.",
+    "safe_next_step_recommended": "run W2E-A Part B as a scoped follow-up: add a new observation-derived-anchors input to compile_release.py that reads a curated JSONL of (source, namespace, external_id, taxonomicStatus=accepted) tuples from the desktop SQLite and NorTaxa 1.284 archive. Allocate anchors under the identity_registry allocator, re-shard the registry, then run the scope-exporter with the same macrofungi predicate. tax-2026.08.01-01 output must remain byte-identical when re-run; the new release carries a new manifest hash and a supplementary anchor-provenance artefact.",
+    "release_mutated": false,
+    "registry_mutated": false,
+    "new_upstream_source_download": false,
+    "ad_hoc_anchors_inserted": false
+  },
+  "production_safety": {
+    "production_access": false,
+    "production_writes": false,
+    "production_migrations": false,
+    "client_cutover": false,
+    "desktop_taxonomy_activation": false,
+    "old_release_mutation": false,
+    "name_only_resolution": false,
+    "out_of_scope_concepts_added_to_search_cache": false,
+    "new_upstream_source_download": false
+  }
+}
