@@ -1,0 +1,109 @@
+{
+  "evidence_version": "w2ea2-1.0.0",
+  "scope": "W2E-A2 — source-backed registry-anchor completion for the 21 diagnostic IDs (19 sqlite_present_no_registry_anchor + 2 source_archive_only_no_registry_anchor). Deferred identifiers (5 NorTaxa absent_all_sources, 19 iNaturalist absent_all_sources, 85 manual_unresolved, 30 no_identity_evidence) intentionally left untouched.",
+  "design_proof": {
+    "sporely_taxon_id_allocation_point": "database/taxonomy/scripts/identity_registry.py IdentityRegistry.allocate() and bind_alias()",
+    "stability_guarantee": "the persistent registry is append-only; every allocate() calls lookup first and returns any existing (source, namespace, identifier) tuple unchanged; new anchors receive strictly-increasing sporely_taxon_ids so previously issued IDs are never renumbered",
+    "source_evidence_per_id": "each of the 21 IDs is present in NorTaxa 1.284 database/taxonomy/sources/nortaxa/1.284/archive.zip taxon.txt. 20 IDs are taxonomicStatus=valid with acceptedNameUsageID==taxonID; the 1 synonym (194385, Distichia undulata) has acceptedNameUsageID=189757 (Neckeropsis undulata, valid)",
+    "unique_col_target_check": "not applicable — none of the 21 IDs have a COL cross-reference in the pinned source data; anchors are allocated as NorTaxa-only concepts, which the identity model already supports (identity_registry allocates any (source, namespace, identifier) tuple without requiring a COL binding)",
+    "responsible_pipeline_layer": "canonical registry allocation. sqlite_present_no_registry_anchor: SQLite carries the source-side mapping (taxon_external_id_min: nortaxa taxonID -> desktop taxon_min row) but the fungi-scoped W1 pipeline never presented the row to IdentityRegistry.allocate(). source_archive_only_no_registry_anchor: the SQLite compilation legitimately filtered these out because they fall outside the fungi kingdom scope; the correct fix is to feed them into the allocator via a curated observation-derived anchors input rather than to broaden the SQLite compilation itself (which would pollute the fungi-scoped SQLite).",
+    "smallest_correct_change": "add a single new curated input file (database/taxonomy/policies/observation-derived-anchors.yml) and a single dedicated allocator script (database/taxonomy/scripts/allocate_observation_derived_anchors.py) that re-verifies every entry against the pinned NorTaxa archive and then uses IdentityRegistry.allocate() / bind_alias() unchanged. The output is a separate append-only registry supplement directory the reconciliation engine loads on top of the base registry; no existing anchor is mutated; the macrofungi release is untouched."
+  },
+  "policy_file": {
+    "path": "database/taxonomy/policies/observation-derived-anchors.yml",
+    "sha256": "b34a29c06260d6827773f0ffaca5c4c705f4e41da24b8214333be6a45bf6d396",
+    "anchors_declared": 21,
+    "aliases_declared": 1,
+    "release_id": "tax-2026.08.02-01"
+  },
+  "allocator": {
+    "path": "database/taxonomy/scripts/allocate_observation_derived_anchors.py",
+    "guardrails": [
+      "re-verifies every taxonID against the pinned NorTaxa 1.284 archive taxon.txt before allocation",
+      "requires scientificName, kingdom, and taxonRank to match the archive verbatim",
+      "requires taxonomicStatus in ('valid') for anchors and 'synonym' for aliases",
+      "requires alias.acceptedNameUsageID to match an anchor declared in the same policy",
+      "refuses --production",
+      "refuses to overwrite an existing output directory",
+      "uses IdentityRegistry.allocate() and bind_alias() only — no ad-hoc sporely_taxon_id construction",
+      "byte-identical output on repeat runs against the same inputs"
+    ]
+  },
+  "supplement_registry": {
+    "release_id": "tax-2026.08.02-01",
+    "supplement_shard_sha256": "a7cf966b71530b56e7b9cd544d45c2959c28752b13c22d623c34fbf7f8cb158a",
+    "supplement_manifest_concatenated_sha256": "a7cf966b71530b56e7b9cd544d45c2959c28752b13c22d623c34fbf7f8cb158a",
+    "sporely_taxon_id_range": {"first": 634896, "last": 634916, "count": 22},
+    "note": "22 records = 21 anchors + 1 alias (194385 -> 189757); one accepted target was also allocated (189757, Neckeropsis undulata) even though no observation references it directly, because the pipeline requires the alias's accepted target to be anchored under the same allocation policy",
+    "nortaxa_archive_sha256": "29c11c54d955dc44e4e5a38944dd7932...",
+    "byte_identical_across_two_runs": true
+  },
+  "tax_2026_08_01_01_immutability": {
+    "verified_via_per_file_sha256": true,
+    "scope_manifest_sha256": "72758b2c574e8aea27432b6b55c62dfb6ad87f3fadc11ad1c892a61abf23ac4e",
+    "note": "all files in database/reference_data/generated/taxonomy_v2/global_macrofungi_tax-2026.08.01-01/ still match the SHAs recorded in taxonomy_export_manifest.json; the supplement is a separate directory and never touches the pinned release"
+  },
+  "reconciliation_before_after": {
+    "before_semantic_sha256": "37950a4d0a92207e16a76e22cd9e1c2057858bb357a6c3f616c7679ce1c51080",
+    "after_semantic_sha256": "884782d120ca446974d392f1118721c46c1592aac7dc67dff314f3dae37a0f9f",
+    "byte_identical_across_two_runs": true,
+    "canonical_registries_loaded": ["database/taxonomy/registry/canonical", "supplement (tax-2026.08.02-01)"],
+    "state_counts_before": {
+      "resolved_exact": 211,
+      "unresolved_external_identifier": 43,
+      "manual_unresolved": 85,
+      "no_identity_evidence": 30,
+      "total": 369
+    },
+    "state_counts_after": {
+      "resolved_exact": 232,
+      "unresolved_external_identifier": 22,
+      "manual_unresolved": 85,
+      "no_identity_evidence": 30,
+      "total": 369
+    },
+    "observations_by_bucket": {
+      "sqlite_present_no_registry_anchor_ids": 19,
+      "sqlite_present_no_registry_anchor_observations_unlocked": 19,
+      "source_archive_only_no_registry_anchor_ids": 2,
+      "source_archive_only_no_registry_anchor_observations_unlocked": 2
+    },
+    "observations_newly_resolved": 21,
+    "distinct_ids_newly_resolved": 21,
+    "remaining_unresolved_external_identifier_observations": 22
+  },
+  "disposable_simulation": {
+    "identification_snapshot_rows": 369,
+    "resolution_link_rows": 369,
+    "registry_concept_rows": 141,
+    "external_mapping_rows": 143,
+    "registry_by_cache_state": {"in_cache": 39, "out_of_cache": 102},
+    "registry_by_cache_and_scope": {
+      "in_cache_include": 39,
+      "in_cache_not_evaluated": 0,
+      "out_of_cache_include": 0,
+      "out_of_cache_not_evaluated": 102
+    },
+    "search_cache_broadened": false,
+    "search_cache_membership_note": "the pinned macrofungi release taxon_external_id.jsonl remains 52881 rows keyed on col_xr:col_usage_id; the supplement adds only sparse-registry anchors, not searchable cache entries",
+    "idempotency": {"verified": true, "counts_first": {"identification_snapshot": 369, "registry_concept": 141, "external_mapping": 143}, "counts_second": {"identification_snapshot": 369, "registry_concept": 141, "external_mapping": 143}, "snapshot_fingerprint_stable": true},
+    "rollback": {"verified": true, "induced_failure_sqlstate": "P0001", "zero_orphan_rows": true},
+    "conflict_invariant": {
+      "verified": true,
+      "test_name": "integration: W2E-A2 conflict invariant — reallocating an external_id to a different sporely_taxon_id rolls back with zero partial rows",
+      "sql_change": "external_mapping insert now uses ON CONFLICT (source_system, namespace, external_id) DO UPDATE with a WHERE guard on same sporely_taxon_id; a different target triggers RAISE (SQLSTATE 23505) and the enclosing simulate_migration subtransaction rolls back with row counts unchanged and snapshot fingerprint stable"
+    }
+  },
+  "safety": {
+    "production_access": false,
+    "production_writes": false,
+    "production_migrations": false,
+    "client_cutover": false,
+    "desktop_taxonomy_activation": false,
+    "old_release_mutation": false,
+    "name_only_resolution": false,
+    "search_cache_broadening": false,
+    "new_upstream_download": false,
+    "manual_or_ad_hoc_registry_anchors": false
+  }
+}
