@@ -43,10 +43,10 @@ def _iter_input(path: Path) -> Iterator[ReconciliationInput]:
             if not stripped:
                 continue
             row = json.loads(stripped)
-            if row.get("__synthetic__"):
-                # Sentinel record consumed by the loader and dropped from
-                # the input stream. Its presence is documented in the
-                # fixtures README.
+            if row.get("__synthetic__") or row.get("__snapshot_header__"):
+                # Sentinel / snapshot-header record consumed by the loader
+                # and dropped from the input stream. See fixtures README
+                # and the W2D-R input contract.
                 continue
             yield ReconciliationInput.from_dict(row)
 

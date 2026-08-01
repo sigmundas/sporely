@@ -291,6 +291,34 @@ def test_export_spec_refuses_production():
     assert result.returncode == 3
 
 
+def test_transformer_accepts_supabase_csv_export(tmp_path, key_env):
+    """The offline transformer must consume the CSV that Supabase SQL Editor emits."""
+    csv_path = tmp_path / "supabase-export.csv"
+    csv_path.write_text(
+        "id,artsdata_id,artportalen_id,inaturalist_id,mushroomobserver_id,"
+        "desktop_id,ai_selected_service,ai_selected_taxon_id,"
+        "ai_selected_scientific_name,genus,species,common_name,species_guess\n"
+        "1001,4321,,,,,artsorakel,NBIC:4321,Amanita muscaria,Amanita,muscaria,Fluesopp,\n"
+        "1002,,,,,,inaturalist,47328,Cantharellus cibarius,Cantharellus,cibarius,,\n"
+        "1003,,,,,,,,,Boletus,edulis,Steinsopp,Boletus edulis?\n"
+    )
+    out = tmp_path / "snapshot.jsonl"
+    stats = run_transform(raw_export=csv_path, output=out, pseudonym_key_file=None)
+    assert stats.input_records == 3
+    assert stats.output_records == 3
+    report = validate_snapshot(out)
+    assert report.ok, report.to_dict()
+    # Type coercion: integer columns must be ints in the snapshot, strings
+    # for other columns; empty CSV fields must become None.
+    lines = [json.loads(l) for l in out.read_text().splitlines() if l.strip()]
+    header = lines[0]
+    assert header["__snapshot_header__"] is True
+    first = lines[1]
+    assert first["observation_id"].startswith("obs_")
+    exact = [s for s in first["signals"] if s["kind"] == "exact"]
+    assert any(s["source_system"] == "nortaxa" and s["external_id"] == "4321" for s in exact)
+
+
 def test_real_and_fixture_manifests_are_separately_labelled(tmp_path):
     """Aggregate evidence must keep synthetic-fixture and anonymised-real outputs distinct."""
     repo_root = Path(__file__).resolve().parents[2]

@@ -29,6 +29,7 @@ Determinism guarantees:
 from __future__ import annotations
 
 import argparse
+import csv
 import hashlib
 import json
 import re
@@ -232,6 +233,61 @@ def _iter_jsonl(path: Path) -> Iterable[dict[str, Any]]:
             yield doc
 
 
+_INT_CSV_COLUMNS: frozenset[str] = frozenset(
+    {
+        "id",
+        "artsdata_id",
+        "artportalen_id",
+        "inaturalist_id",
+        "inaturalist_taxon_id",
+        "mushroomobserver_id",
+        "desktop_id",
+        "sporely_taxon_id",
+    }
+)
+
+
+def _coerce_csv_row(row: dict[str, str]) -> dict[str, Any]:
+    coerced: dict[str, Any] = {}
+    for k, v in row.items():
+        if v is None:
+            coerced[k] = None
+            continue
+        stripped = v.strip()
+        if stripped == "" or stripped.upper() == "NULL":
+            coerced[k] = None
+            continue
+        if k in _INT_CSV_COLUMNS:
+            try:
+                coerced[k] = int(stripped)
+            except ValueError:
+                coerced[k] = stripped
+        else:
+            coerced[k] = stripped
+    return coerced
+
+
+def _iter_csv(path: Path) -> Iterable[dict[str, Any]]:
+    with path.open("r", encoding="utf-8-sig", newline="") as f:
+        reader = csv.DictReader(f)
+        if reader.fieldnames is None:
+            raise ValueError("CSV export has no header row")
+        for line_no, row in enumerate(reader, start=2):
+            yield _coerce_csv_row(row)
+
+
+def _iter_raw_export(path: Path) -> Iterable[dict[str, Any]]:
+    suffix = path.suffix.lower()
+    if suffix == ".csv":
+        yield from _iter_csv(path)
+    elif suffix in {".jsonl", ".ndjson", ".json"}:
+        yield from _iter_jsonl(path)
+    else:
+        raise ValueError(
+            f"unsupported raw-export format: {suffix!r}; expected .csv, .jsonl or .ndjson"
+        )
+
+
 def run_transform(
     *,
     raw_export: Path,
@@ -273,7 +329,7 @@ def run_transform(
         }
         out.write(json.dumps(header, sort_keys=True, ensure_ascii=False) + "\n")
 
-        for raw in _iter_jsonl(raw_export):
+        for raw in _iter_raw_export(raw_export):
             input_records += 1
             try:
                 record, prohibited = transform_record(raw, pseudonymise)
