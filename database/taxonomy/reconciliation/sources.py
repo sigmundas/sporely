@@ -372,7 +372,12 @@ def _load_registry_shards(path: Path, target: PinnedRelease) -> None:
             manifest_data.get("concatenated_sha256") or ""
         )
         for shard in manifest_data.get("shards") or ():
-            shard_path = path / str(shard["filename"])
+            shard_name = shard.get("name") or shard.get("filename")
+            if not shard_name:
+                raise ReleaseValidationError(
+                    "registry manifest shard missing 'name' (or 'filename')"
+                )
+            shard_path = path / str(shard_name)
             _index_registry_file(shard_path, target)
     else:
         target.registry_identity_hash = _sha256_file(path)

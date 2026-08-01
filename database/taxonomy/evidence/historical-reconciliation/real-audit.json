@@ -1,0 +1,99 @@
+{
+  "evidence_version": "w2dr-real-1.0.0",
+  "label": "historical anonymized manifest",
+  "note": "Aggregate-only. Row-level content is NOT committed. Manifest and snapshot live outside the repository at the operator's path.",
+  "input_snapshot": {
+    "sha256": "a3d0fdb534fce5d9020600767356e18082d6279495bb12bd08e573a0307defb0",
+    "record_count": 369,
+    "schema_version": "w2d-input-1.0.0",
+    "raw_export_sha256": "8efbedfaedb3fea94c6d5ebcc4b80eb65c04e535f8b27649dfdcf353e40b17e4",
+    "validation_ok": true,
+    "committed_to_git": false
+  },
+  "reconciliation": {
+    "policy_version": "w2d-1.0.0",
+    "policy_sha256": "c408601f71b7d89de0283c307220b06876d80a7418bbb9089337b6d3941c43d6",
+    "taxonomy_release_id": "tax-2026.08.01-01",
+    "taxonomy_scope_manifest_sha256": "72758b2c574e8aea27432b6b55c62dfb6ad87f3fadc11ad1c892a61abf23ac4e",
+    "canonical_registry_used": true,
+    "manifest_semantic_sha256": "8087d4398311268a4fe049435de61ec16edff7f3c52baf169310807c77f77448",
+    "input_source_hash": "9eb322c83e644d5ed72391f19c1abbf728c4afed6fcfeb426f7e993fc6b44d0b",
+    "determinism": "two runs into distinct output directories produced byte-identical manifests and matching semantic SHA-256",
+    "record_count": 369,
+    "aggregate_counts": {
+      "resolved_exact": 54,
+      "resolved_exact_via_legacy_mapping": 0,
+      "resolved_exact_via_synonym_relationship": 0,
+      "ambiguous_multiple_candidates": 0,
+      "conflicting_exact_evidence": 0,
+      "unresolved_external_identifier": 200,
+      "unresolved_legacy_identifier": 0,
+      "manual_unresolved": 85,
+      "no_identity_evidence": 30,
+      "source_record_missing": 0,
+      "invalid_or_unnamespaced_identifier": 0,
+      "total": 369
+    },
+    "resolution_methods": {
+      "direct_taxonomy_v2_mapping": 54,
+      "legacy_lookup_chain": 0,
+      "pinned_synonym_relationship": 0,
+      "trusted_secondary_provider_mapping": 0
+    },
+    "migration_actions": {
+      "materialize_existing_taxonomy_v2_concept": 54,
+      "manual_review_required": 0,
+      "retain_unresolved_without_registry_concept": 315,
+      "reuse_existing_registry_concept": 0
+    }
+  },
+  "registry_impact": {
+    "unique_resolved_concepts": 39,
+    "distinct_from_54_resolved_records": "54 resolved records collapsed to 39 unique sporely_taxon_ids after materialisation dedup",
+    "concepts_inside_macrofungi_cache_note": "pinned release currently exposes only col_xr:col_usage_id in taxon_external_id.jsonl; observation-side signals are namespaces the operator provided (nortaxa/inaturalist); every resolved record materialised through the canonical registry",
+    "external_mappings_created": 39,
+    "external_mapping_deduplication": "duplicate (source_system, namespace, external_id) triples across observations collapse to one mapping row"
+  },
+  "note_on_high_unresolved_count": "The pinned macrofungi release ships no NorTaxa or iNaturalist rows in taxon_external_id.jsonl and an empty taxon_external_id_legacy_integer.jsonl. NorTaxa and iNaturalist provider mappings for the reconciliation must be back-filled into the release (or the canonical registry) before those 200 unresolved_external_identifier records can be resolved automatically. This is the expected 'legacy-source recovery required' surface for real data.",
+  "disposable_simulation": {
+    "runner": "sporely-web/scripts/taxonomy-v2/run-w2d-migration-simulation.mjs",
+    "idempotency": {
+      "verified": true,
+      "records_first_apply": 369,
+      "records_second_apply": 369,
+      "registry_concepts_after_first": 39,
+      "registry_concepts_after_second": 39,
+      "external_mappings_after_first": 39,
+      "external_mappings_after_second": 39,
+      "snapshot_fingerprint_stable": true,
+      "snapshot_fingerprint": "9f7107e948babb356140247802b4b7aa"
+    },
+    "rollback": {
+      "verified": true,
+      "induced_failure_sqlstate": "P0001",
+      "zero_orphan_rows": true,
+      "counts_after_failure": {
+        "identification_snapshot": 0,
+        "resolution_link": 0,
+        "registry_concept": 0,
+        "external_mapping": 0,
+        "reconciliation_result": 0
+      }
+    }
+  },
+  "production_safety": {
+    "production_supabase_accessed": false,
+    "production_taxonomy_writes": false,
+    "production_observation_writes": false,
+    "production_migrations_created": false,
+    "production_migrations_applied": false,
+    "client_cutover": false,
+    "desktop_taxonomy_activated": false,
+    "legacy_taxonomy_removed": false,
+    "name_only_automatic_resolutions": false,
+    "raw_export_committed": false,
+    "anonymised_snapshot_committed": false,
+    "manifest_committed": false
+  },
+  "remaining_blocker": "legacy-source recovery required — pinned macrofungi release lacks NorTaxa / iNaturalist cross-mappings; back-fill needed before automatic resolution of the 200 unresolved_external_identifier records"
+}
