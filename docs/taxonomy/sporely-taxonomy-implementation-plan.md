@@ -1,9 +1,9 @@
 # Sporely Taxonomy v2 Integration — Working Plan
 
 **Plan version:** 2026-08-01
-**Current programme state:** W0 accepted; W1 accepted; W2A accepted; W2B capacity review required; W3 blocked
+**Current programme state:** W0–W2C accepted; compact Supabase candidate selected; W2D next; W3 blocked
 **Desktop accepted implementation:** `04602bcbb578e6abefb91ab96e03abbb42c53c3a`
-**Web working branch:** `feat/taxonomy-v2-w2-supabase-schema-search`
+**Web working branch:** `feat/taxonomy-v2-w2c-compact-search-schema`
 **Primary objective:** Introduce stable Sporely taxonomy identity across desktop, Supabase and web without breaking the existing taxonomy path or silently binding ambiguous names.
 
 ## Status legend
@@ -45,7 +45,9 @@ This document records programme decisions. The repositories remain authoritative
 | W1 — Model-neutral cloud exporter                       | **DONE**                              | Accepted at desktop commit `04602bc`; deterministic seven-file JSONL export                                     |
 | W1 repository integration                               | **CLOSEOUT**                          | Merge the desktop feature branch into `integrate/taxonomy-media-2026-07-30`; do not commit the generated export |
 | W2A — Additive Supabase schema, activation and search   | **DONE**                              | Accepted at web commit `d61f2f9`; Model B schema and fixture-tested RPCs added without client cutover           |
-| W2B — Importer, full local load and capacity validation | **GATE**                              | Import/load passed; 817.987 MiB additive projection requires capacity/schema review before W3                    |
+| W2B — Importer, full local load and capacity validation | **DONE**                              | Import/load passed; W2A representation failed capacity and triggered W2C                                         |
+| W2C — Compact schema/search decision                    | **DONE**                              | Purpose-built compact candidate passes measured final, peak, semantic and search gates                            |
+| W2D — Compact schema implementation                     | **NEXT**                              | Implement reviewed additive migration, partition publication, RPCs, security and importer                        |
 | Publication and provenance                              | **BLOCKED for production activation** | Current release remains a candidate; Red List licence and publication metadata must be completed                |
 | W3A — Observation identity schema                       | **PLANNED**                           | Add stable concept identity, state and snapshots without removing legacy fields                                 |
 | W3B — Sync, migration and backfill                      | **PLANNED**                           | Carry identity through desktop/web sync; backfill only from authoritative evidence                              |
@@ -661,6 +663,38 @@ Verified results:
 W2B is not accepted because the capacity gate did not pass. The next safe task
 is an explicit capacity/schema decision using the committed evidence. W3 remains
 blocked. The publication/provenance gate remains independently blocked.
+
+## 11A. W2C — Compact cloud schema and search decision
+
+**Status: DONE — COMPACT SUPABASE CANDIDATE APPROVED FOR W2D**
+
+W2C evidence is recorded on web branch
+`feat/taxonomy-v2-w2c-compact-search-schema` in
+`docs/evidence/taxonomy-v2/w2c-schema-comparison.{json,md}`.
+
+The full-release audit proved that 634,894 preferred scientific-name rows
+duplicate canonical taxon names and 634,894 authoritative external-ID rows
+duplicate canonical taxon source/ID fields. A purpose-built runtime candidate
+therefore stores 634,894 compact taxon rows, 27,755 true aliases, 10,294
+language-distinct vernacular rows, zero external-ID exceptions for this release,
+and 7,866 compact Red List rows. The immutable W1 artifact remains unchanged.
+
+Measured candidate relations are 141,606,912 bytes for the first slot and
+303,087,616 bytes with two full slots. Against the independently reproduced
+103,304,339-byte production baseline, final and future publication-peak
+projections are 244,911,251 and 406,391,955 bytes. Literal escaped `LIKE`
+prefixes use selective B-tree indexes, with measured p50 execution of
+approximately 0.027–0.059 ms across the required probe classes.
+
+W2D must use independently truncatable/list-partitioned slots. The experiment
+confirmed that mixed-slot `DELETE` plus ordinary `VACUUM` does not reclaim the
+retired footprint. Activation changes one small pointer atomically; the old
+slot remains through an approved rollback window and is then truncated or
+detached only while inactive.
+
+W2C authorizes W2D only. It does not authorize W3, production writes,
+production activation, client cutover, or Red List publication. Red List
+provenance/licensing remains a separate blocker.
 
 ### Purpose
 
@@ -1296,7 +1330,8 @@ An agent must stop rather than guess when:
 | COL canonical authority                                | Accepted                 |
 | NorTaxa national enrichment and authoritative taxon ID | Accepted                 |
 | W1 model-neutral output                                | Accepted                 |
-| Model B cloud decomposition                            | Accepted                 |
+| Model B cloud decomposition                            | W2A baseline only        |
+| Compact purpose-built runtime candidate                | Accepted for W2D         |
 | Seven-file W1 export                                   | Accepted                 |
 | Authoritative/legacy external-ID split                 | Accepted                 |
 | `no` as query umbrella only                            | Accepted                 |
@@ -1306,8 +1341,8 @@ An agent must stop rather than guess when:
 | Split W2 into W2A and W2B                              | Accepted                 |
 | Do not commit the complete W1 export                   | Accepted                 |
 | Production publication/licence gate                    | Open blocker             |
-| Production database capacity choice                    | Pending W2B measurements |
-| Retired-release retention beyond previous release      | Pending measurements     |
+| Production database capacity choice                    | Compact design selected  |
+| Retired-release retention beyond previous release      | Artifact/metadata only; one rollback slot |
 | Final cutover stability-window duration                | Pending W5 rollout plan  |
 
 ### Master completion checklist
@@ -1330,7 +1365,12 @@ An agent must stop rather than guess when:
 [x] Complete local release imported
 [x] PostgreSQL storage measured
 [x] Search performance measured
-[ ] Capacity decision approved
+[x] Capacity decision approved through W2C compact candidate
+[x] W2C duplication and index audit completed
+[x] W2C full compact candidate measured
+[x] W2C semantic/search parity accepted
+[ ] W2D production migration and importer implemented
+[ ] W2D partition publication/reclamation test accepted
 
 [ ] Publication and licence evidence closed
 [ ] Release marked publishable
@@ -1351,7 +1391,7 @@ An agent must stop rather than guess when:
 [ ] Final documentation and runbook completed
 ```
 
-The next engineering task is **W2B capacity/schema review only**.
+The next engineering task is **W2D compact schema implementation only**.
 
-Do not begin W3 or W4 until the capacity decision is approved and the selective
-search performance defect has an accepted resolution.
+Do not begin W3 or W4 until W2D is separately accepted. Do not publish Red List
+enrichment until provenance/licensing is resolved.
