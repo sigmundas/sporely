@@ -149,7 +149,14 @@ class Resolver:
             ),
             resolved_rank=(resolved_concept.taxon_rank if resolved_concept else None),
             resolved_scope_state=(
-                resolved_concept.scope_state if resolved_concept else None
+                resolved_concept.scope_state
+                if resolved_concept
+                else ("not_evaluated" if resolved_taxon_id is not None else None)
+            ),
+            resolved_cache_state=(
+                "in_cache"
+                if resolved_concept is not None
+                else ("out_of_cache" if resolved_taxon_id is not None else None)
             ),
             resolution_method=method,
             resolution_evidence=tuple(chain),
@@ -255,7 +262,13 @@ class Resolver:
 
         # Level 4: canonical registry (if loaded).
         registry_id = self.release.lookup_registry(source, namespace, ext)
-        if registry_id is not None and registry_id in self.release.taxa_by_id:
+        if registry_id is not None:
+            in_cache = registry_id in self.release.taxa_by_id
+            note = (
+                "matched via canonical registry; concept present in pinned release"
+                if in_cache
+                else "matched via canonical registry; concept outside pinned release cache — materialised out_of_cache"
+            )
             step = ChainStep(
                 level=4,
                 method="trusted_secondary_provider_mapping",
@@ -264,7 +277,7 @@ class Resolver:
                 namespace=namespace,
                 external_id=ext,
                 resolved_taxon_id=registry_id,
-                note="matched via canonical registry; concept present in pinned release",
+                note=note,
             )
             return _SignalMatch(
                 signal=signal,

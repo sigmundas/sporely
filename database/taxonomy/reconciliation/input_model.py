@@ -199,6 +199,7 @@ class ReconciliationResult:
     resolved_canonical_name: str | None
     resolved_rank: str | None
     resolved_scope_state: str | None
+    resolved_cache_state: str | None
     resolution_method: str | None
     resolution_evidence: tuple[ChainStep, ...]
     original_legacy_taxon_id: str | None
@@ -240,6 +241,7 @@ class ReconciliationResult:
             "reconciliation_state": self.reconciliation_state,
             "resolution_evidence": [s.to_dict() for s in self.resolution_evidence],
             "resolution_method": self.resolution_method,
+            "resolved_cache_state": self.resolved_cache_state,
             "resolved_canonical_name": self.resolved_canonical_name,
             "resolved_rank": self.resolved_rank,
             "resolved_scope_state": self.resolved_scope_state,
