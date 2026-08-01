@@ -1,0 +1,65 @@
+{
+  "format": "sporely-global-macrofungi-policy-v1",
+  "source": {
+    "system": "col_xr",
+    "release": "2026-07-17-XR",
+    "issued_date": "2026-07-17",
+    "dataset_key": 315834
+  },
+  "default_state": "exclude",
+  "precedence": ["species", "genus", "family", "order", "class", "subphylum"],
+  "source_characteristic_exclusions": [
+    {
+      "code": "exclude_unite_sequence_clusters",
+      "state": "exclude",
+      "reason": "environmental_sequence_exclusion",
+      "criteria": {"rank": "unranked", "col_id_prefix": "SH", "name_equals_col_id": true},
+      "evidence": "COL XR includes UNITE species-hypothesis sequence clusters below fungal classes; they are not organismal observation concepts.",
+      "review_status": "approved",
+      "review_date": "2026-08-01"
+    }
+  ],
+  "rules": [
+    {"code":"include_agaricomycetes","col_concept_id":"7C","name":"Agaricomycetes","rank":"class","state":"include","reason":"macrofruitbody_class","evidence":"Principal mushroom-forming class; approved broad inclusion.","review_status":"approved","review_date":"2026-08-01"},
+    {"code":"include_dacrymycetes","col_concept_id":"622DM","name":"Dacrymycetes","rank":"class","state":"include","reason":"macrofruitbody_class","evidence":"Coherent field-observable jelly-fungus class.","review_status":"approved","review_date":"2026-08-01"},
+    {"code":"review_tremellomycetes","col_concept_id":"JX","name":"Tremellomycetes","rank":"class","state":"review","reason":"review_required","evidence":"Mixed fruit-body-forming, yeast and mycoparasitic lineages; explicit lower-rank inclusions only.","review_status":"needs_review","review_date":"2026-08-01"},
+    {"code":"include_tremella","col_concept_id":"7YQS","name":"Tremella","rank":"genus","state":"include","reason":"macrofruitbody_genus","evidence":"Approved seed genus with macroscopic fruit bodies; not asserted complete for Tremellomycetes.","review_status":"approved","review_date":"2026-08-01"},
+    {"code":"include_phaeotremella","col_concept_id":"6MLH","name":"Phaeotremella","rank":"genus","state":"include","reason":"macrofruitbody_genus","evidence":"Approved seed genus with macroscopic fruit bodies; family-level inclusion is unsafe.","review_status":"approved","review_date":"2026-08-01"},
+    {"code":"include_naematelia","col_concept_id":"5X2M","name":"Naematelia","rank":"genus","state":"include","reason":"macrofruitbody_genus","evidence":"Approved seed genus with macroscopic fruit bodies; family-level inclusion is unsafe.","review_status":"approved","review_date":"2026-08-01"},
+    {"code":"include_sirobasidium","col_concept_id":"7HSB","name":"Sirobasidium","rank":"genus","state":"include","reason":"macrofruitbody_genus","evidence":"Approved seed genus with observable basidiocarps; not asserted complete.","review_status":"approved","review_date":"2026-08-01"},
+    {"code":"exclude_pucciniomycetes","col_concept_id":"H7","name":"Pucciniomycetes","rank":"class","state":"exclude","reason":"default_non_macrofungi_exclusion","evidence":"Pinned COL has no Pucciniomycotina concept; class H7 is the authorized durable product-scope boundary.","review_status":"approved","review_date":"2026-08-01"},
+    {"code":"include_gymnosporangium","col_concept_id":"4RXL","name":"Gymnosporangium","rank":"genus","state":"include","reason":"field_recordable_exception","evidence":"Macroscopic field-recordable rust structures; genus exception overrides H7.","review_status":"approved","review_date":"2026-08-01"},
+    {"code":"exclude_ustilaginomycetes","col_concept_id":"K9","name":"Ustilaginomycetes","rank":"class","state":"exclude","reason":"default_non_macrofungi_exclusion","evidence":"Pinned COL has no Ustilaginomycotina concept; class K9 is the authorized durable product-scope boundary.","review_status":"approved","review_date":"2026-08-01"},
+    {"code":"include_mycosarcoma_maydis","col_concept_id":"B24TM","name":"Mycosarcoma maydis","rank":"species","state":"include","reason":"field_recordable_exception","evidence":"Pinned NameUsage ties scientific synonym Ustilago maydis to accepted usage B24TM; species exception overrides K9.","review_status":"approved","review_date":"2026-08-01","searchable_synonyms":[{"name":"Ustilago maydis","col_name_usage_ids":["TX2P9","7F4HL"]}]},
+    {"code":"review_atractiellomycetes","col_concept_id":"87","name":"Atractiellomycetes","rank":"class","state":"review","reason":"review_required","evidence":"Optional specialist group; no preload inclusion without a concise reviewed whitelist.","review_status":"needs_review","review_date":"2026-08-01"},
+
+    {"code":"include_pezizomycetes","col_concept_id":"G4","name":"Pezizomycetes","rank":"class","state":"include","reason":"macrofruitbody_class","evidence":"Approved broad collectable ascomycete class including Pezizales.","review_status":"approved","review_date":"2026-08-01"},
+    {"code":"include_geoglossomycetes","col_concept_id":"BS","name":"Geoglossomycetes","rank":"class","state":"include","reason":"macrofruitbody_class","evidence":"Approved earth-tongue class.","review_status":"approved","review_date":"2026-08-01"},
+    {"code":"include_neolectomycetes","col_concept_id":"F9","name":"Neolectomycetes","rank":"class","state":"include","reason":"macrofruitbody_class","evidence":"Small visibly fruiting class.","review_status":"approved","review_date":"2026-08-01"},
+    {"code":"review_leotiomycetes","col_concept_id":"DQ","name":"Leotiomycetes","rank":"class","state":"review","reason":"review_required","evidence":"Large mixed class; explicit observable genera only.","review_status":"needs_review","review_date":"2026-08-01"},
+    {"code":"include_leotia","col_concept_id":"5CCM","name":"Leotia","rank":"genus","state":"include","reason":"macrofruitbody_genus","evidence":"Field-observable fruit bodies; genus rule avoids mixed Leotiaceae.","review_status":"approved","review_date":"2026-08-01"},
+    {"code":"include_microglossum","col_concept_id":"63B48","name":"Microglossum","rank":"genus","state":"include","reason":"macrofruitbody_genus","evidence":"Field-observable earth-tongue-like fruit bodies.","review_status":"approved","review_date":"2026-08-01"},
+    {"code":"include_cudonia","col_concept_id":"3X9B","name":"Cudonia","rank":"genus","state":"include","reason":"macrofruitbody_genus","evidence":"Field-observable fruit bodies; genus rule retained.","review_status":"approved","review_date":"2026-08-01"},
+    {"code":"include_spathularia","col_concept_id":"7K4J","name":"Spathularia","rank":"genus","state":"include","reason":"macrofruitbody_genus","evidence":"Field-observable fruit bodies; genus rule retained.","review_status":"approved","review_date":"2026-08-01"},
+    {"code":"include_chlorociboria","col_concept_id":"3NMK","name":"Chlorociboria","rank":"genus","state":"include","reason":"macrofruitbody_genus","evidence":"Conspicuous cup-like fruit bodies; family-level rule not assumed.","review_status":"approved","review_date":"2026-08-01"},
+    {"code":"include_ascocoryne","col_concept_id":"33Q9","name":"Ascocoryne","rank":"genus","state":"include","reason":"macrofruitbody_genus","evidence":"Observable gelatinous fruit bodies; mixed family avoided.","review_status":"approved","review_date":"2026-08-01"},
+    {"code":"include_bulgaria","col_concept_id":"3DYC","name":"Bulgaria","rank":"genus","state":"include","reason":"macrofruitbody_genus","evidence":"Observable gelatinous fruit bodies; current pinned placement used.","review_status":"approved","review_date":"2026-08-01"},
+    {"code":"include_cyttaria","col_concept_id":"3Z7D","name":"Cyttaria","rank":"genus","state":"include","reason":"macrofruitbody_genus","evidence":"Large field-observable fruit bodies; genus rule retained.","review_status":"approved","review_date":"2026-08-01"},
+
+    {"code":"review_sordariomycetes","col_concept_id":"J2","name":"Sordariomycetes","rank":"class","state":"review","reason":"review_required","evidence":"Large mixed class; explicit stromatic or visibly fruiting genera only.","review_status":"needs_review","review_date":"2026-08-01"},
+    {"code":"review_xylariaceae","col_concept_id":"HYK","name":"Xylariaceae","rank":"family","state":"review","reason":"review_required","evidence":"Pinned family has 113 genera and substantial non-macrofruiting content; use genus rules.","review_status":"needs_review","review_date":"2026-08-01"},
+    {"code":"review_hypoxylaceae","col_concept_id":"624W7","name":"Hypoxylaceae","rank":"family","state":"review","reason":"review_required","evidence":"Pinned family has mixed teleomorph/anamorph content; use genus rules.","review_status":"needs_review","review_date":"2026-08-01"},
+    {"code":"review_diatrypaceae","col_concept_id":"977","name":"Diatrypaceae","rank":"family","state":"review","reason":"review_required","evidence":"Pinned family has 47 genera and requires specialist review.","review_status":"needs_review","review_date":"2026-08-01"},
+    {"code":"include_xylaria","col_concept_id":"63XB2","name":"Xylaria","rank":"genus","state":"include","reason":"macrofruitbody_genus","evidence":"Conspicuous stromata.","review_status":"approved","review_date":"2026-08-01"},
+    {"code":"include_kretzschmaria","col_concept_id":"595N","name":"Kretzschmaria","rank":"genus","state":"include","reason":"macrofruitbody_genus","evidence":"Conspicuous stromata.","review_status":"approved","review_date":"2026-08-01"},
+    {"code":"include_daldinia","col_concept_id":"3ZK8","name":"Daldinia","rank":"genus","state":"include","reason":"macrofruitbody_genus","evidence":"Conspicuous stromata.","review_status":"approved","review_date":"2026-08-01"},
+    {"code":"include_hypoxylon","col_concept_id":"52YD","name":"Hypoxylon","rank":"genus","state":"include","reason":"macrofruitbody_genus","evidence":"Field-observable stromata.","review_status":"approved","review_date":"2026-08-01"},
+    {"code":"include_annulohypoxylon","col_concept_id":"62BHR","name":"Annulohypoxylon","rank":"genus","state":"include","reason":"macrofruitbody_genus","evidence":"Field-observable stromata.","review_status":"approved","review_date":"2026-08-01"},
+    {"code":"include_cordyceps","col_concept_id":"62MKV","name":"Cordyceps","rank":"genus","state":"include","reason":"macrofruitbody_genus","evidence":"Field-observable stromata.","review_status":"approved","review_date":"2026-08-01"},
+    {"code":"include_ophiocordyceps","col_concept_id":"68RT","name":"Ophiocordyceps","rank":"genus","state":"include","reason":"macrofruitbody_genus","evidence":"Field-observable stromata.","review_status":"approved","review_date":"2026-08-01"},
+    {"code":"include_podostroma","col_concept_id":"6TFF","name":"Podostroma","rank":"genus","state":"include","reason":"macrofruitbody_genus","evidence":"Field-observable stromata.","review_status":"approved","review_date":"2026-08-01"},
+    {"code":"review_tolypocladium","col_concept_id":"7XJJ","name":"Tolypocladium","rank":"genus","state":"review","reason":"review_required","evidence":"Mixed life histories; selected species require later review.","review_status":"needs_review","review_date":"2026-08-01"},
+    {"code":"review_trichoderma","col_concept_id":"63W3K","name":"Trichoderma","rank":"genus","state":"review","reason":"review_required","evidence":"Large mould-dominated genus with some stromatic lineages; species review required.","review_status":"needs_review","review_date":"2026-08-01"},
+    {"code":"include_elaphomycetaceae","col_concept_id":"9LN","name":"Elaphomycetaceae","rank":"family","state":"include","reason":"macrofruitbody_family","evidence":"Pinned family contains Elaphomyces and Pseudotulostoma; both produce macroscopic reproductive structures.","review_status":"approved","review_date":"2026-08-01"}
+  ]
+}
