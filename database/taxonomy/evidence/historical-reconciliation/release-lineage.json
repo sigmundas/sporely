@@ -1,0 +1,65 @@
+{
+  "manifest_version": "release-lineage-1.0.0",
+  "principle": "Release IDs are immutable. Once a release ID is published, its bytes are frozen. If bytes must change, a new release ID is issued and the prior release is marked superseded (never deleted).",
+  "base_release": {
+    "release_id": "tax-2026.08.01-01",
+    "status": "current",
+    "artifact_kind": "release",
+    "scope_manifest_sha256": "72758b2c574e8aea27432b6b55c62dfb6ad87f3fadc11ad1c892a61abf23ac4e",
+    "note": "Macrofungi backbone. Untouched by W2E-A/W2E-B/W2E-B-corrections."
+  },
+  "supplements": [
+    {
+      "release_id": "tax-2026.08.02-01",
+      "status": "SUPERSEDED",
+      "superseded_by": "tax-2026.08.02-02",
+      "artifact_kind": "registry_supplement",
+      "recorded_supplement_shard_sha256": "a7cf966b71530b56e7b9cd544d45c2959c28752b13c22d623c34fbf7f8cb158a",
+      "note": "Original observation-derived NorTaxa supplement. The shard emitted the synonym alias line BEFORE its accepted-target anchor line (sort key sorted 'alias' < 'anchor' lexicographically). IdentityRegistry.load() legitimately refuses that ordering. The corrected re-emission under a NEW release ID (tax-2026.08.02-02) supersedes this ID; the recorded SHA is retained here so downstream audits can identify any artefact still bearing the a7cf966b… bytes as the superseded variant.",
+      "recovered_from_git": false,
+      "recovered_from_git_reason": "The supplement bytes were produced under /tmp/ during W2E-A2 and never committed to Git. Only the SHA was recorded in the committed W2E-A2 evidence file (w2ea2-source-backed-anchors.json). That committed file is the historical record; no byte recovery is possible or required."
+    },
+    {
+      "release_id": "tax-2026.08.02-02",
+      "status": "current",
+      "artifact_kind": "registry_supplement",
+      "supplement_contract_version": "supplement-contract-1.0.0",
+      "base_release_id": "tax-2026.08.01-01",
+      "depends_on": [],
+      "supplement_shard_sha256": "6c95612b83fbf684d9db7c66fe515b2225e57c8b3b6ceb03e001867fad41067b",
+      "policy_sha256": "a4285d3594be8c9ee750c2eabcfde4289e07b028369ad2cee65a11bf6729825a",
+      "policy_path": "database/taxonomy/policies/observation-derived-anchors-v2.yml",
+      "sporely_taxon_id_range": {"first": 634896, "last": 634916, "count_anchors": 21, "count_aliases": 1},
+      "note": "Replaces tax-2026.08.02-01 with anchor-first shard ordering. Identity records (21 sporely_taxon_ids and their alias binding) are unchanged in TUPLE content — only the emit order differs — but this is emitted under a NEW release ID because publishing distinct bytes under the same release ID would violate the immutability contract."
+    },
+    {
+      "release_id": "tax-2026.08.03-01",
+      "status": "SUPERSEDED",
+      "superseded_by": "tax-2026.08.03-02",
+      "artifact_kind": "registry_supplement",
+      "recorded_supplement_shard_sha256": "bdfdb8c08bf48e9c457d31c009f6ee9446d6f485e010a35d90f221f3a281e947",
+      "note": "Original recovered-external supplement. Allocated 19 iNaturalist-native canonical sporely_taxon_ids. That contradicts the accepted architecture — COL XR is the canonical identity backbone; iNaturalist is a discovery/reference provider. An active iNaturalist record without an exact COL binding is NOT sufficient evidence to allocate a canonical anchor. The corrected re-emission under tax-2026.08.03-02 removes all 19 iNat anchors and reclassifies those observations as unresolved_external_identifier with reason source_record_exists_but_no_exact_canonical_connection.",
+      "recovered_from_git": false,
+      "recovered_from_git_reason": "Same as tax-2026.08.02-01: bytes lived under /tmp/, only the SHA is committed (w2eb-external-source-recovery.json). The committed file is the historical record; no byte recovery is possible or required."
+    },
+    {
+      "release_id": "tax-2026.08.03-02",
+      "status": "current",
+      "artifact_kind": "registry_supplement",
+      "supplement_contract_version": "supplement-contract-1.0.0",
+      "base_release_id": "tax-2026.08.01-01",
+      "depends_on": ["tax-2026.08.02-02"],
+      "supplement_shard_sha256": "dedf0fbc1d691b8f716e8ece3a365d1ab3835474912bef5fc9a527fec784eadd",
+      "policy_sha256": "a26f2a7ef88d75dc24fa28161c9f80909f6a7ea538317fb7e987cf8c11ea0f67",
+      "policy_path": "database/taxonomy/policies/recovered-external-sources-w2eb-v2.json",
+      "sporely_taxon_id_range": {"first": null, "last": null, "count_anchors": 0, "count_aliases": 1},
+      "note": "Only the NorTaxa 48041 -> existing sporely_taxon_id 630103 alias remains. No new sporely_taxon_id is allocated by this supplement. The 19 iNaturalist records are preserved as classification=source_record_exists_but_no_exact_canonical_connection in the policy file (with acquisition provenance and raw-response SHA-256s) but never enter the registry. The 2 deleted_or_unavailable NorTaxa 404s are similarly preserved."
+    }
+  ],
+  "invariants": [
+    "no previously published release identifier refers to two byte-distinct artefacts",
+    "supersession does not delete historical evidence — every prior evidence file remains committed",
+    "corrected releases carry NEW release IDs; the depends_on graph never points at a superseded ID",
+    "the loader (database/taxonomy/reconciliation/supplement_loader.py) refuses to load an out-of-order chain, a missing dependency, a hash mismatch, a cycle, or a release-ID reuse"
+  ]
+}
