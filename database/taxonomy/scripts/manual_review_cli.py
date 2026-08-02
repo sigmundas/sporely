@@ -38,9 +38,177 @@ from pathlib import Path
 
 sys.path.insert(0, str(Path(__file__).resolve().parents[3]))
 
+import csv
+import zipfile
+from collections import defaultdict as _defaultdict
+
 from database.taxonomy.reconciliation.candidates import generate_candidates  # noqa: E402
 from database.taxonomy.reconciliation.input_model import ReconciliationInput, RawSignal  # noqa: E402
 from database.taxonomy.reconciliation.sources import PinnedRelease  # noqa: E402
+
+NORTAXA_ARCHIVE = Path(__file__).resolve().parents[1] / "sources/nortaxa/1.284/archive.zip"
+REPO_ROOT = Path(__file__).resolve().parents[3]
+
+_AUX_CACHE: dict[str, object] = {}
+
+
+def _load_vernacular_index(release_dir: Path) -> dict[str, tuple[int, ...]]:
+    key = f"vern::{release_dir}"
+    if key in _AUX_CACHE:
+        return _AUX_CACHE[key]  # type: ignore[return-value]
+    idx: dict[str, set[int]] = _defaultdict(set)
+    path = release_dir / "vernacular.jsonl"
+    if path.is_file():
+        with path.open("r", encoding="utf-8") as f:
+            for line in f:
+                d = json.loads(line)
+                name = (d.get("vernacular_name") or "").strip().casefold()
+                tid = d.get("taxon_id")
+                if name and tid is not None:
+                    idx[name].add(int(tid))
+    frozen = {k: tuple(sorted(v)) for k, v in idx.items()}
+    _AUX_CACHE[key] = frozen
+    return frozen
+
+
+def _load_nortaxa_synonym_index() -> tuple[dict[str, str], dict[str, dict]]:
+    """Return (synonym_name -> accepted_nortaxa_taxonID, taxonID -> {name, rank}).
+
+    Uses the pinned NorTaxa 1.284 archive that we already trust for W2E-A2/B.
+    """
+    key = "nortaxa_synonyms"
+    if key in _AUX_CACHE:
+        return _AUX_CACHE[key]  # type: ignore[return-value]
+    syn_to_accepted: dict[str, str] = {}
+    id_to_meta: dict[str, dict] = {}
+    if not NORTAXA_ARCHIVE.is_file():
+        _AUX_CACHE[key] = (syn_to_accepted, id_to_meta)
+        return _AUX_CACHE[key]  # type: ignore[return-value]
+    csv.field_size_limit(sys.maxsize)
+    with zipfile.ZipFile(NORTAXA_ARCHIVE) as z:
+        taxon_file = next((n for n in z.namelist() if n.lower().endswith("taxon.txt")), None)
+        if taxon_file is None:
+            _AUX_CACHE[key] = (syn_to_accepted, id_to_meta)
+            return _AUX_CACHE[key]  # type: ignore[return-value]
+        with z.open(taxon_file) as f:
+            reader = csv.DictReader(
+                (line.decode("utf-8", errors="replace") for line in f),
+                delimiter="\t",
+            )
+            for row in reader:
+                status = (row.get("taxonomicStatus") or "").lower()
+                accepted = row.get("acceptedNameUsageID") or ""
+                name = (row.get("scientificName") or "").strip()
+                tid = row.get("taxonID") or ""
+                if not name or not tid:
+                    continue
+                lc = name.casefold()
+                id_to_meta[tid] = {
+                    "scientific_name": name,
+                    "rank": row.get("taxonRank") or None,
+                    "kingdom": row.get("kingdom") or None,
+                }
+                if status == "synonym" and accepted and accepted != tid:
+                    syn_to_accepted[lc] = accepted
+                elif status in ("accepted", "valid"):
+                    syn_to_accepted.setdefault(lc, tid)
+    _AUX_CACHE[key] = (syn_to_accepted, id_to_meta)
+    return _AUX_CACHE[key]  # type: ignore[return-value]
+
+
+def _nortaxa_to_sporely(release: PinnedRelease, nortaxa_taxon_id: str) -> int | None:
+    tid = release.lookup_registry("nortaxa", "nortaxa_taxon_id", str(nortaxa_taxon_id))
+    if tid is None:
+        return None
+    return int(tid)
+
+
+def _lookup_synonym_candidate(release: PinnedRelease, name: str) -> list[dict]:
+    """Given an old/historical scientific name, try to find the current concept
+    via the NorTaxa synonym relationship. Non-authoritative — reviewer confirms.
+    """
+    syn_map, id_to_meta = _load_nortaxa_synonym_index()
+    lc = (name or "").strip().casefold()
+    if not lc:
+        return []
+    out: list[dict] = []
+    accepted_nortaxa = syn_map.get(lc)
+    if accepted_nortaxa is None:
+        return []
+    sporely_id = _nortaxa_to_sporely(release, accepted_nortaxa)
+    if sporely_id is None:
+        return []
+    concept = release.concept(sporely_id) if hasattr(release, "concept") else None
+    canonical_name = concept.canonical_scientific_name if concept else None
+    rank = concept.taxon_rank if concept else None
+    if not canonical_name:
+        meta = id_to_meta.get(str(accepted_nortaxa))
+        if meta:
+            canonical_name = meta.get("scientific_name")
+            rank = rank or meta.get("rank")
+    out.append({
+        "sporely_taxon_id": sporely_id,
+        "canonical_name": canonical_name or "(no canonical name)",
+        "rank": rank,
+        "match_type": "nortaxa_synonym_redirect",
+        "note": f"NorTaxa: {name!r} → accepted taxonID {accepted_nortaxa}",
+    })
+    return out
+
+
+def _lookup_vernacular_candidates(release: PinnedRelease, release_dir: Path, name: str, limit: int = 3) -> list[dict]:
+    idx = _load_vernacular_index(release_dir)
+    lc = (name or "").strip().casefold()
+    if not lc:
+        return []
+    hits = idx.get(lc, ())
+    out: list[dict] = []
+    for tid in hits[:limit]:
+        concept = release.concept(tid) if hasattr(release, "concept") else None
+        out.append({
+            "sporely_taxon_id": int(tid),
+            "canonical_name": concept.canonical_scientific_name if concept else None,
+            "rank": concept.taxon_rank if concept else None,
+            "match_type": "vernacular_exact",
+            "note": f"vernacular {name!r} maps to this concept in the release",
+        })
+    return out
+
+
+def _genus_only_candidates(release: PinnedRelease, genus: str, limit: int = 3) -> list[dict]:
+    lc_prefix = (genus or "").strip().casefold()
+    if not lc_prefix:
+        return []
+    matches: list[tuple[int, str]] = []
+    for lc_name, tids in release.scientific_name_index.items():
+        if lc_name == lc_prefix or lc_name.startswith(lc_prefix + " "):
+            for tid in tids:
+                concept = release.concept(tid) if hasattr(release, "concept") else None
+                if concept is None:
+                    continue
+                if lc_name == lc_prefix and concept.taxon_rank != "genus":
+                    continue
+                matches.append((tid, concept.canonical_scientific_name or lc_name))
+        if len(matches) >= limit * 4:
+            break
+    matches.sort(key=lambda m: m[1])
+    out: list[dict] = []
+    seen: set[int] = set()
+    for tid, name in matches:
+        if tid in seen:
+            continue
+        seen.add(tid)
+        concept = release.concept(tid) if hasattr(release, "concept") else None
+        out.append({
+            "sporely_taxon_id": int(tid),
+            "canonical_name": concept.canonical_scientific_name if concept else name,
+            "rank": concept.taxon_rank if concept else None,
+            "match_type": "genus_match_or_species_in_genus",
+            "note": f"genus-scope suggestion for {genus!r}",
+        })
+        if len(out) >= limit:
+            break
+    return out
 
 
 FORBIDDEN_PATHS = (
@@ -148,7 +316,7 @@ def _load_release_chain(args) -> PinnedRelease:
     return PinnedRelease.load(Path(args.release_dir), canonical_registry_path=registries or None)
 
 
-def _candidates_for_group(release: PinnedRelease, records: list[dict], top_n: int = 5) -> list[dict]:
+def _candidates_for_group(release: PinnedRelease, records: list[dict], release_dir: Path, top_n: int = 5) -> list[dict]:
     # Take the first record and build a synthetic ReconciliationInput from its
     # text signals. generate_candidates() reads stored_scientific_name and the
     # signals to compose candidates.
@@ -204,22 +372,59 @@ def _candidates_for_group(release: PinnedRelease, records: list[dict], top_n: in
             "match_type": d.get("match_type"),
             "note": d.get("author_string_consistency") or d.get("reason") or "",
         })
-    # Also include any pre-computed candidate_concepts from the manifest that
-    # aren't already in the top-N.
-    already = {(c.get("sporely_taxon_id"),) for c in out}
-    for cand in r.get("candidate_concepts") or []:
-        key = (cand.get("sporely_taxon_id"),)
-        if key in already:
-            continue
+    # Additional candidate sources (all non-authoritative; reviewer confirms):
+    #   1. NorTaxa synonym redirect     — old scientific names → current concept
+    #   2. Vernacular index             — Norwegian common names → concept
+    #   3. Genus-only prefix suggestion — for genus-only or malformed inputs
+    #   4. Pre-computed manifest candidates
+    already = {c.get("sporely_taxon_id") for c in out}
+
+    def _extend(new_items):
+        for c in new_items:
+            tid = c.get("sporely_taxon_id")
+            if tid is None or tid in already:
+                continue
+            if len(out) >= top_n:
+                return
+            already.add(tid)
+            out.append(c)
+
+    # Synonym redirect on the stored scientific name and any stored ai/species.
+    for candidate_name in filter(None, [
+        stored_name,
+        r.get("original_scientific_name"),
+        next((s.get("raw_value") for s in r.get("signals_all", []) if s.get("origin_field") == "observations.ai_selected_scientific_name"), None),
+    ]):
+        _extend(_lookup_synonym_candidate(release, candidate_name))
         if len(out) >= top_n:
             break
-        out.append({
+
+    # Vernacular lookups on Norwegian common name and vernacular snapshot.
+    if len(out) < top_n:
+        for vernacular_name in filter(None, [
+            stored_vernacular,
+            next((s.get("raw_value") for s in r.get("signals_all", []) if s.get("origin_field") == "observations.common_name"), None),
+        ]):
+            _extend(_lookup_vernacular_candidates(release, release_dir, vernacular_name))
+            if len(out) >= top_n:
+                break
+
+    # Genus-only fallback when signals name a genus but no confident species.
+    if len(out) < top_n and not stored_name:
+        genus_val = next((s.get("raw_value") for s in r.get("signals_all", []) if s.get("origin_field") == "observations.genus"), None) or \
+                    next((s.get("raw_value") for s in r.get("signals_all", []) if s.get("origin_field") == "observations.species"), None)
+        if genus_val:
+            _extend(_genus_only_candidates(release, str(genus_val)))
+
+    # Pre-computed manifest candidates last.
+    for cand in r.get("candidate_concepts") or []:
+        _extend([{
             "sporely_taxon_id": cand.get("sporely_taxon_id"),
             "canonical_name": cand.get("canonical_name"),
             "rank": cand.get("rank"),
             "match_type": cand.get("match_type") or "manifest-candidate",
             "note": "",
-        })
+        }])
     return out
 
 
@@ -295,7 +500,7 @@ def run_review(
             idx += 1
             continue
         obs_ids = [r["observation_id"] for r in records]
-        candidates = _candidates_for_group(release, records, top_n=5)
+        candidates = _candidates_for_group(release, records, release_dir=release_dir, top_n=5)
         _render_group(idx, len(ordered), key, obs_ids, candidates)
         action = _prompt()
         if action == "q":
