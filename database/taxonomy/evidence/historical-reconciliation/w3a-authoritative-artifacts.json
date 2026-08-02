@@ -1,0 +1,104 @@
+{
+  "manifest_version": "w3a-authoritative-artifacts-1.0.0",
+  "purpose": "Frozen catalogue of every artefact W3-A treats as authoritative for local rehearsal. Any drift from these hashes must be treated as a fresh release ID with its own audit trail.",
+  "base_release": {
+    "release_id": "tax-2026.08.01-01",
+    "artifact_kind": "release",
+    "path": "database/reference_data/generated/taxonomy_v2/global_macrofungi_tax-2026.08.01-01/",
+    "export_manifest_sha256": "52620f72e428709bbf1f7b01d3999386ab8c08039f4a56c6fa7cc9e7631d7b8f",
+    "scope_manifest_sha256": "72758b2c574e8aea27432b6b55c62dfb6ad87f3fadc11ad1c892a61abf23ac4e",
+    "per_file_sha256_reference": "database/reference_data/generated/taxonomy_v2/global_macrofungi_tax-2026.08.01-01/taxonomy_export_manifest.json (files[].sha256)",
+    "record_counts": {
+      "taxonomy_release.jsonl": 1,
+      "taxon.jsonl": 52917,
+      "scientific_name.jsonl": 57769,
+      "vernacular.jsonl": 3923,
+      "taxon_external_id.jsonl": 52881,
+      "taxon_external_id_legacy_integer.jsonl": 0,
+      "taxon_redlist.jsonl": 2262
+    },
+    "depends_on": [],
+    "compatibility_rules": [
+      "identity backbone: Catalogue of Life XR",
+      "search cache: 52,881 col_xr:col_usage_id rows only; never broadened silently",
+      "scope predicate: macrofungi (include=52881, required_ancestor=36 non-selectable ancestors)"
+    ]
+  },
+  "supplement_chain_current": [
+    {
+      "release_id": "tax-2026.08.02-02",
+      "artifact_kind": "registry_supplement",
+      "supplement_contract_version": "supplement-contract-1.0.0",
+      "base_release_id": "tax-2026.08.01-01",
+      "depends_on": [],
+      "supplement_shard_sha256": "6c95612b83fbf684d9db7c66fe515b2225e57c8b3b6ceb03e001867fad41067b",
+      "policy_sha256": "a4285d3594be8c9ee750c2eabcfde4289e07b028369ad2cee65a11bf6729825a",
+      "policy_path": "database/taxonomy/policies/observation-derived-anchors-v2.yml",
+      "record_counts": {"anchors": 21, "aliases": 1, "total_lines_incl_header": 23},
+      "sporely_taxon_id_range": {"first": 634896, "last": 634916},
+      "application_order": 1
+    },
+    {
+      "release_id": "tax-2026.08.03-02",
+      "artifact_kind": "registry_supplement",
+      "supplement_contract_version": "supplement-contract-1.0.0",
+      "base_release_id": "tax-2026.08.01-01",
+      "depends_on": ["tax-2026.08.02-02"],
+      "supplement_shard_sha256": "dedf0fbc1d691b8f716e8ece3a365d1ab3835474912bef5fc9a527fec784eadd",
+      "policy_sha256": "a26f2a7ef88d75dc24fa28161c9f80909f6a7ea538317fb7e987cf8c11ea0f67",
+      "policy_path": "database/taxonomy/policies/recovered-external-sources-w2eb-v2.json",
+      "record_counts": {"anchors": 0, "aliases": 1, "total_lines_incl_header": 2},
+      "sporely_taxon_id_range": null,
+      "application_order": 2
+    }
+  ],
+  "reconciliation_manifest": {
+    "manifest_semantic_sha256": "1beaa33f3891b216d3bc7c6d34cd96df1a936627c5a6f749a515cc75d51c094e",
+    "record_count": 369,
+    "state_counts": {
+      "resolved_exact": 233,
+      "unresolved_external_identifier": 21,
+      "manual_unresolved": 85,
+      "no_identity_evidence": 30
+    },
+    "manifest_committed_to_git": false,
+    "manifest_stored_at_operator_path": "/tmp/w2ebc-real-1/reconciliation-manifest.json (rebuild from source snapshot + supplement chain when needed)"
+  },
+  "superseded_and_retained": [
+    {
+      "release_id": "tax-2026.08.02-01",
+      "status": "SUPERSEDED",
+      "superseded_by": "tax-2026.08.02-02",
+      "reason": "shard emitted synonym alias line before its accepted-target anchor; IdentityRegistry.load() legitimately refuses that ordering",
+      "recorded_supplement_shard_sha256": "a7cf966b71530b56e7b9cd544d45c2959c28752b13c22d623c34fbf7f8cb158a",
+      "bytes_retained": false,
+      "bytes_retained_reason": "supplement bytes were produced under /tmp/ during W2E-A2 and never committed to Git; only the SHA is retained in prior committed evidence (w2ea2-source-backed-anchors.json). Consumers must treat any artefact bearing this shard SHA as the SUPERSEDED variant and refuse it.",
+      "classified_as_unpublished_build_candidate": true
+    },
+    {
+      "release_id": "tax-2026.08.03-01",
+      "status": "SUPERSEDED",
+      "superseded_by": "tax-2026.08.03-02",
+      "reason": "contained 19 iNaturalist-native canonical anchors; iNaturalist is a discovery/reference provider, not the canonical identity backbone; active iNat records without exact COL evidence do not warrant sporely_taxon_id allocation",
+      "recorded_supplement_shard_sha256": "bdfdb8c08bf48e9c457d31c009f6ee9446d6f485e010a35d90f221f3a281e947",
+      "bytes_retained": false,
+      "bytes_retained_reason": "same as tax-2026.08.02-01 — bytes lived under /tmp/, only the SHA is in prior committed evidence (w2eb-external-source-recovery.json)",
+      "classified_as_unpublished_build_candidate": true
+    }
+  ],
+  "application_order_and_compatibility": {
+    "order": [
+      "tax-2026.08.01-01 (base)",
+      "tax-2026.08.02-02 (supplement 1)",
+      "tax-2026.08.03-02 (supplement 2)"
+    ],
+    "compatibility_rules": [
+      "the base release is a full taxonomy/search release (macrofungi scope, 52881 searchable concepts)",
+      "each supplement is a registry_supplement that MUST be loaded on top of its declared base and every entry in depends_on; standalone loading is rejected by database/taxonomy/reconciliation/supplement_loader.py",
+      "no previously published release ID may refer to two byte-distinct artefacts; the SUPERSEDED entries above are the only tolerated form of ID lineage",
+      "search-cache membership is defined solely by the base release's taxon_external_id.jsonl; supplements never contribute to the search cache",
+      "external-mapping tuple (source_system, namespace, external_id) resolves to at most one sporely_taxon_id — enforced by production schema UNIQUE constraint",
+      "identification snapshots are immutable; later resolution updates the resolution_link only"
+    ]
+  }
+}

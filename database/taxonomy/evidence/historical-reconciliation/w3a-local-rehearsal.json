@@ -1,0 +1,147 @@
+{
+  "evidence_version": "w3a-local-rehearsal-1.0.0",
+  "scope": "W3-A local rehearsal of production integration. No production access, no production migration created, no client cutover.",
+  "authoritative_artifacts_manifest": "database/taxonomy/evidence/historical-reconciliation/w3a-authoritative-artifacts.json",
+  "release_chain": [
+    {"role": "base",       "release_id": "tax-2026.08.01-01", "scope_manifest_sha256": "72758b2c574e8aea27432b6b55c62dfb6ad87f3fadc11ad1c892a61abf23ac4e", "export_manifest_sha256": "52620f72e428709bbf1f7b01d3999386ab8c08039f4a56c6fa7cc9e7631d7b8f"},
+    {"role": "supplement", "release_id": "tax-2026.08.02-02", "supplement_shard_sha256": "6c95612b83fbf684d9db7c66fe515b2225e57c8b3b6ceb03e001867fad41067b", "depends_on": []},
+    {"role": "supplement", "release_id": "tax-2026.08.03-02", "supplement_shard_sha256": "dedf0fbc1d691b8f716e8ece3a365d1ab3835474912bef5fc9a527fec784eadd", "depends_on": ["tax-2026.08.02-02"]}
+  ],
+  "superseded_and_retained": [
+    {"release_id": "tax-2026.08.02-01", "recorded_supplement_shard_sha256": "a7cf966b71530b56e7b9cd544d45c2959c28752b13c22d623c34fbf7f8cb158a", "reason": "shard emitted alias before its accepted-target anchor; IdentityRegistry.load() refuses that ordering", "bytes_retained": false, "classified_as_unpublished_build_candidate": true},
+    {"release_id": "tax-2026.08.03-01", "recorded_supplement_shard_sha256": "bdfdb8c08bf48e9c457d31c009f6ee9446d6f485e010a35d90f221f3a281e947", "reason": "contained 19 iNaturalist-native canonical anchors; iNaturalist is a discovery/reference provider, not the identity backbone", "bytes_retained": false, "classified_as_unpublished_build_candidate": true}
+  ],
+  "reconciliation_manifest_used": {
+    "semantic_sha256": "1beaa33f3891b216d3bc7c6d34cd96df1a936627c5a6f749a515cc75d51c094e",
+    "record_count": 369,
+    "state_counts": {"resolved_exact": 233, "unresolved_external_identifier": 21, "manual_unresolved": 85, "no_identity_evidence": 30},
+    "manifest_committed_to_git": false
+  },
+  "artifacts_produced_this_stage": {
+    "schema_draft_sql": "sporely-web/supabase/drafts/taxonomy_v3_schema.sql",
+    "observations_integration_draft_sql": "sporely-web/supabase/drafts/taxonomy_v3_observations_integration_draft.sql",
+    "installer": "sporely-web/scripts/taxonomy-v3/install-release-chain.mjs",
+    "rehearsal_tests": "sporely-web/scripts/taxonomy-v3/w3a-rehearsal.test.mjs",
+    "operator_runbook": "database/taxonomy/docs/w3a-operator-runbook.md",
+    "rollback_plan": "database/taxonomy/docs/w3a-rollback-plan.md",
+    "compatibility_audit": "database/taxonomy/docs/w3a-compatibility-audit.md",
+    "authoritative_artifacts_manifest": "database/taxonomy/evidence/historical-reconciliation/w3a-authoritative-artifacts.json"
+  },
+  "production_migration_created": false,
+  "production_migration_applied": false,
+  "supabase_migrations_touched": false,
+  "supabase_migrations_touched_note": "supabase/drafts/ is intentionally OUTSIDE supabase/migrations/. supabase db reset and supabase migration up never see these files.",
+  "proposed_schema": {
+    "namespace": "taxonomy_v3",
+    "tables": {
+      "registry_concept":              {"pk": "sporely_taxon_id", "columns_added_vs_w2c": ["cache_state (in_cache | out_of_cache)"], "check_constraints": ["scope_state in (include, review, exclude, not_evaluated, required_ancestor) or null", "cache_state in (in_cache, out_of_cache)"]},
+      "external_mapping":              {"unique": ["(source_system, namespace, external_id)"], "conflict_invariant": "same-target reapply idempotent; DIFFERENT target raises inside install_release_chain and rolls back the whole chain"},
+      "identification_snapshot":       {"immutability_trigger": "identification_snapshot_immutability_trg — blocks UPDATE of original_* while snapshot_locked=true", "note": "historical fields NEVER rewritten by resolver"},
+      "resolution_link":               {"mutable": true, "note": "later resolution overwrites this row but NEVER the identification_snapshot"},
+      "release_installation":          {"pk": "release_id", "note": "release-ID reuse with different hashes RAISES; idempotent reinstall of same hashes succeeds"},
+      "supplement_installation":       {"pk": "(supplement_release_id, depends_on_release_id)", "fk": "release_installation(release_id)", "note": "declared depends_on graph is materialised and enforced by FK"},
+      "reconciliation_manifest_audit": {"pk": "manifest_semantic_sha256", "columns": ["record_count", "state_counts jsonb", "applied_at"]}
+    },
+    "observations_integration": {
+      "column_added": "public.observations.resolved_sporely_taxon_id integer references taxonomy_v3.registry_concept(sporely_taxon_id) on delete set null",
+      "constraint": "w3a_new_column_nullable check (resolved_sporely_taxon_id is null or > 0)",
+      "write_guard": "trigger w3a_guard_resolved_sporely_taxon_id_trg — rejects updates to the column from any role except service_role or the local postgres superuser",
+      "link_function": "taxonomy_v3.link_observations_to_resolution() — service_role only; single UPDATE that respects the guard trigger; touches only resolved_sporely_taxon_id"
+    },
+    "rls": {
+      "all_tables_rls_enabled": true,
+      "public_read_grants": ["registry_concept", "external_mapping", "resolution_link"],
+      "public_read_denied": ["identification_snapshot", "release_installation", "supplement_installation", "reconciliation_manifest_audit"],
+      "service_role_execute": ["install_release_chain(jsonb, jsonb, jsonb)", "link_observations_to_resolution()"]
+    }
+  },
+  "migration_phases": [
+    "phase 1 — install schema draft on local disposable stack (W3-A, done)",
+    "phase 2 — human-authorised port to a Supabase migration under supabase/migrations/, plus the RLS policies (NOT W3-A)",
+    "phase 3 — install the release chain on a staging Supabase project via install_release_chain() (NOT W3-A)",
+    "phase 4 — apply the reconciliation manifest on staging (NOT W3-A)",
+    "phase 5 — link_observations_to_resolution() on staging; smoke-test read paths (NOT W3-A)",
+    "phase 6 — dual-read client rollout with feature flag off by default (NOT W3-A)",
+    "phase 7 — feature-flag flip to prefer canonical link where non-null (NOT W3-A)",
+    "phase 8 — dual-write RPC for AI-identification (NOT W3-A)",
+    "phase 9 — legacy-column deprecation (much later; not yet planned)"
+  ],
+  "release_installation_counts_local": {
+    "release_installation": 3,
+    "supplement_installation": 1,
+    "reconciliation_manifest_audit": 1
+  },
+  "reconciliation_counts_local": {
+    "identification_snapshot": 369,
+    "resolution_link_total": 369,
+    "resolution_link_null_canonical": 136,
+    "resolution_link_resolved": 233,
+    "registry_concept_in_cache": 39,
+    "registry_concept_out_of_cache": 103,
+    "external_mapping": 144
+  },
+  "test_results": {
+    "command": "W3A_INTEGRATION=1 node --test scripts/taxonomy-v3/w3a-rehearsal.test.mjs",
+    "passed": 9,
+    "failed": 0,
+    "skipped": 0
+  },
+  "invariants_verified_local": {
+    "369_identification_snapshots_created": true,
+    "233_canonical_links_attached": true,
+    "136_observations_retained_with_null_canonical_links": true,
+    "null_link_breakdown": {"unresolved_external_identifier": 21, "manual_unresolved": 85, "no_identity_evidence": 30},
+    "original_observation_fields_unchanged": true,
+    "second_apply_no_duplicate_rows": true,
+    "later_exact_resolution_updates_link_only": true,
+    "release_id_reuse_with_different_hashes_fails_closed": true,
+    "external_mapping_conflict_full_rollback": true,
+    "search_cache_membership_unchanged": true,
+    "search_cache_membership_note": "base release's taxon_external_id.jsonl still holds 52,881 rows keyed on col_xr:col_usage_id; the two supplements added 22 out-of-cache concepts + 22 external mappings; the base cache count is untouched"
+  },
+  "rls_and_security_results": {
+    "clients_can_read": ["registry_concept", "external_mapping", "resolution_link"],
+    "clients_cannot_read": ["identification_snapshot", "release_installation", "supplement_installation", "reconciliation_manifest_audit"],
+    "clients_can_insert_canonical_mappings": false,
+    "clients_can_modify_immutable_snapshots": false,
+    "namespace_uniqueness_enforced": true,
+    "foreign_key_behaviour_on_delete_registry_concept": "SET NULL on public.observations.resolved_sporely_taxon_id; SET NULL on resolution_link.resolved_sporely_taxon_id; RESTRICT on external_mapping.sporely_taxon_id"
+  },
+  "rollback_results_local": {
+    "before_cutover_full_rollback_verified": true,
+    "before_cutover_actions": ["drop trigger + function guarding resolved_sporely_taxon_id", "alter table drop constraint w3a_new_column_nullable", "alter table drop column resolved_sporely_taxon_id", "drop schema taxonomy_v3 cascade"],
+    "before_cutover_preservation": ["original observation genus/species/common_name/artsdata_id/artportalen_id/inaturalist_id/mushroomobserver_id/desktop_id/ai_selected_* unchanged"],
+    "after_cutover_mode_designed": true,
+    "after_cutover_mode_note": "design in w3a-rollback-plan.md; not exercised in W3-A because no cutover has occurred"
+  },
+  "client_compatibility_summary": {
+    "sporely_web_paths_reviewed": 8,
+    "sporely_py_paths_reviewed": 6,
+    "any_path_broken_by_w3a": false,
+    "deferred_dual_read_paths": ["src/screens/find_detail.js (observation detail canonical-name display)"],
+    "deferred_dual_write_paths": ["src/ai-identification.js (AI-identification apply write path)"],
+    "cutover_required_paths": []
+  },
+  "remaining_blockers": [
+    "porting supabase/drafts/*.sql into supabase/migrations/ requires human authorisation and its own review pass",
+    "operationalising the reconciliation manifest (rebuild + service-role storage) requires the operator's key + local reconciliation runner outputs; those must NOT be committed",
+    "search_taxa_v3 RPC design + implementation for dual-read cutover"
+  ],
+  "exact_production_steps_that_require_human_authorization": [
+    "supabase link + supabase migration new (creating a real migration from the draft SQL files)",
+    "supabase migration up on staging",
+    "manually running install-release-chain.mjs against a staging Supabase project",
+    "granting service_role to any operator or CI environment",
+    "toggling a client feature flag from legacy-only to dual-read"
+  ],
+  "safety": {
+    "production_access": false,
+    "production_writes": false,
+    "production_migration_creation": false,
+    "production_migration_application": false,
+    "client_cutover": false,
+    "desktop_taxonomy_activation": false,
+    "legacy_field_removal": false,
+    "real_manifest_committed": false
+  }
+}
