@@ -123,37 +123,71 @@ def _nortaxa_to_sporely(release: PinnedRelease, nortaxa_taxon_id: str) -> int | 
     return int(tid)
 
 
-def _lookup_synonym_candidate(release: PinnedRelease, name: str) -> list[dict]:
-    """Given an old/historical scientific name, try to find the current concept
-    via the NorTaxa synonym relationship. Non-authoritative — reviewer confirms.
+def _lookup_synonym_candidate(release: PinnedRelease, name: str, input_rank_hint: str | None = None) -> list[dict]:
+    """Look up ``name`` in the pinned NorTaxa 1.284 archive.
+
+    Distinguishes:
+        * nortaxa_accepted_name       — name is self-accepted in NorTaxa
+        * nortaxa_synonym_redirect    — name is a synonym; accepted taxonID differs
+
+    Records the exact anchor identity for the reviewer: sporely_taxon_id,
+    canonical accepted name (from the archive), rank, cache_state, COL
+    usage id (when in-cache), the specific (source_system, namespace,
+    external_id) tuple that anchors it, and the relationship type. Non-
+    authoritative — the reviewer confirms every choice.
     """
     syn_map, id_to_meta = _load_nortaxa_synonym_index()
     lc = (name or "").strip().casefold()
     if not lc:
         return []
-    out: list[dict] = []
     accepted_nortaxa = syn_map.get(lc)
     if accepted_nortaxa is None:
         return []
     sporely_id = _nortaxa_to_sporely(release, accepted_nortaxa)
     if sporely_id is None:
         return []
+    input_meta = None
+    for tid, meta in id_to_meta.items():
+        if meta.get("scientific_name", "").casefold() == lc:
+            input_meta = {"taxon_id": tid, **meta}
+            break
+    accepted_meta = id_to_meta.get(str(accepted_nortaxa)) or {}
+    if input_meta and input_meta["taxon_id"] != str(accepted_nortaxa):
+        relationship = "nortaxa_synonym_redirect"
+        rel_detail = f"synonym {input_meta['taxon_id']}={name!r} → accepted taxonID {accepted_nortaxa}={accepted_meta.get('scientific_name')!r}"
+    else:
+        relationship = "nortaxa_accepted_name"
+        rel_detail = f"{name!r} is currently accepted in NorTaxa 1.284 (taxonID {accepted_nortaxa})"
     concept = release.concept(sporely_id) if hasattr(release, "concept") else None
-    canonical_name = concept.canonical_scientific_name if concept else None
-    rank = concept.taxon_rank if concept else None
-    if not canonical_name:
-        meta = id_to_meta.get(str(accepted_nortaxa))
-        if meta:
-            canonical_name = meta.get("scientific_name")
-            rank = rank or meta.get("rank")
-    out.append({
+    if concept:
+        canonical_name = concept.canonical_scientific_name
+        rank = concept.taxon_rank
+        cache_state = "in_cache"
+        col_source_system = getattr(concept, "canonical_source_system", None)
+        col_external_id = getattr(concept, "canonical_external_id", None)
+    else:
+        canonical_name = accepted_meta.get("scientific_name") or "(no canonical name)"
+        rank = accepted_meta.get("rank")
+        cache_state = "out_of_cache"
+        col_source_system = None
+        col_external_id = None
+    selectable = True
+    if input_rank_hint == "genus" and rank == "species":
+        selectable = False
+    return [{
         "sporely_taxon_id": sporely_id,
-        "canonical_name": canonical_name or "(no canonical name)",
+        "canonical_name": canonical_name,
         "rank": rank,
-        "match_type": "nortaxa_synonym_redirect",
-        "note": f"NorTaxa: {name!r} → accepted taxonID {accepted_nortaxa}",
-    })
-    return out
+        "cache_state": cache_state,
+        "col_usage_id": col_external_id if col_source_system == "col_xr" else None,
+        "canonical_source_system": col_source_system,
+        "source_system": "nortaxa",
+        "source_namespace": "nortaxa_taxon_id",
+        "source_external_id": str(accepted_nortaxa),
+        "match_type": relationship,
+        "note": rel_detail,
+        "selectable": selectable,
+    }]
 
 
 def _lookup_vernacular_candidates(release: PinnedRelease, release_dir: Path, name: str, limit: int = 3) -> list[dict]:
@@ -176,38 +210,78 @@ def _lookup_vernacular_candidates(release: PinnedRelease, release_dir: Path, nam
 
 
 def _genus_only_candidates(release: PinnedRelease, genus: str, limit: int = 3) -> list[dict]:
+    """Return the GENUS concept for ``genus`` (selectable) plus a few species
+    within the genus as non-selectable context.
+
+    A genus-only input must never resolve to a species-level sporely_taxon_id.
+    """
     lc_prefix = (genus or "").strip().casefold()
     if not lc_prefix:
         return []
-    matches: list[tuple[int, str]] = []
-    for lc_name, tids in release.scientific_name_index.items():
-        if lc_name == lc_prefix or lc_name.startswith(lc_prefix + " "):
-            for tid in tids:
-                concept = release.concept(tid) if hasattr(release, "concept") else None
-                if concept is None:
-                    continue
-                if lc_name == lc_prefix and concept.taxon_rank != "genus":
-                    continue
-                matches.append((tid, concept.canonical_scientific_name or lc_name))
-        if len(matches) >= limit * 4:
-            break
-    matches.sort(key=lambda m: m[1])
     out: list[dict] = []
     seen: set[int] = set()
-    for tid, name in matches:
-        if tid in seen:
+
+    # 1. Genus concept via scientific_name_index exact match with rank='genus'.
+    for tid in release.scientific_name_index.get(lc_prefix, ()):
+        concept = release.concept(tid) if hasattr(release, "concept") else None
+        if concept is None:
+            continue
+        if concept.taxon_rank != "genus":
             continue
         seen.add(tid)
-        concept = release.concept(tid) if hasattr(release, "concept") else None
         out.append({
             "sporely_taxon_id": int(tid),
-            "canonical_name": concept.canonical_scientific_name if concept else name,
-            "rank": concept.taxon_rank if concept else None,
-            "match_type": "genus_match_or_species_in_genus",
-            "note": f"genus-scope suggestion for {genus!r}",
+            "canonical_name": concept.canonical_scientific_name or genus,
+            "rank": concept.taxon_rank,
+            "cache_state": "in_cache",
+            "col_usage_id": getattr(concept, "canonical_external_id", None) if getattr(concept, "canonical_source_system", None) == "col_xr" else None,
+            "canonical_source_system": getattr(concept, "canonical_source_system", None),
+            "match_type": "genus_concept",
+            "note": f"genus-level concept matching {genus!r}",
+            "selectable": True,
         })
-        if len(out) >= limit:
-            break
+        break
+
+    # 2. Fall back to NorTaxa lookup for the genus.
+    if not out:
+        via_nortaxa = _lookup_synonym_candidate(release, genus, input_rank_hint="genus")
+        for c in via_nortaxa:
+            if c.get("rank") == "genus":
+                out.append(c)
+                seen.add(c["sporely_taxon_id"])
+                break
+
+    # 3. Non-selectable species-in-genus context, ordered alphabetically.
+    if len(out) < limit:
+        matches: list[tuple[int, str]] = []
+        for lc_name, tids in release.scientific_name_index.items():
+            if lc_name.startswith(lc_prefix + " "):
+                for tid in tids:
+                    if tid in seen:
+                        continue
+                    concept = release.concept(tid) if hasattr(release, "concept") else None
+                    if concept is None or concept.taxon_rank != "species":
+                        continue
+                    matches.append((tid, concept.canonical_scientific_name or lc_name))
+            if len(matches) >= limit * 4:
+                break
+        matches.sort(key=lambda m: m[1])
+        for tid, name in matches:
+            if tid in seen:
+                continue
+            seen.add(tid)
+            concept = release.concept(tid) if hasattr(release, "concept") else None
+            out.append({
+                "sporely_taxon_id": int(tid),
+                "canonical_name": concept.canonical_scientific_name if concept else name,
+                "rank": concept.taxon_rank if concept else None,
+                "cache_state": "in_cache",
+                "match_type": "species_in_genus_context",
+                "note": f"context only — species inside genus {genus!r}",
+                "selectable": False,
+            })
+            if len(out) >= limit:
+                break
     return out
 
 
@@ -389,13 +463,41 @@ def _candidates_for_group(release: PinnedRelease, records: list[dict], release_d
             already.add(tid)
             out.append(c)
 
-    # Synonym redirect on the stored scientific name and any stored ai/species.
+    # Infer the input's rank from evidence.
+    signals = r.get("signals_all", [])
+    genus_val = next((s.get("raw_value") for s in signals if s.get("origin_field") == "observations.genus"), None)
+    species_val = next((s.get("raw_value") for s in signals if s.get("origin_field") == "observations.species"), None)
+    genus_str = (genus_val or "").strip()
+    species_str = (species_val or "").strip()
+    stored_str = (stored_name or "").strip()
+    has_binomial_name = bool(stored_str and " " in stored_str)
+    has_genus_and_species = bool(genus_str and species_str and " " not in species_str)
+
+    # Detect "species" field misused: single Capitalised token treated as genus.
+    import re as _re
+    m_paren = _re.search(r"\(([A-Z][a-zA-Z-]+)\)", species_str or stored_str)
+    if not genus_str and species_str and " " not in species_str and species_str[:1].isupper():
+        genus_str = species_str
+        input_rank_hint = "genus"
+    elif not genus_str and m_paren:
+        genus_str = m_paren.group(1)
+        input_rank_hint = "genus"
+    elif has_binomial_name or has_genus_and_species:
+        input_rank_hint = "species"
+    elif genus_str:
+        input_rank_hint = "genus"
+    else:
+        input_rank_hint = None
+
+    # Synonym / accepted-name lookup on the stored scientific name and any
+    # stored ai/species value. Passes the inferred input rank so a genus-only
+    # input can never resolve to a species concept.
     for candidate_name in filter(None, [
         stored_name,
         r.get("original_scientific_name"),
-        next((s.get("raw_value") for s in r.get("signals_all", []) if s.get("origin_field") == "observations.ai_selected_scientific_name"), None),
+        next((s.get("raw_value") for s in signals if s.get("origin_field") == "observations.ai_selected_scientific_name"), None),
     ]):
-        _extend(_lookup_synonym_candidate(release, candidate_name))
+        _extend(_lookup_synonym_candidate(release, candidate_name, input_rank_hint=input_rank_hint))
         if len(out) >= top_n:
             break
 
@@ -409,12 +511,12 @@ def _candidates_for_group(release: PinnedRelease, records: list[dict], release_d
             if len(out) >= top_n:
                 break
 
-    # Genus-only fallback when signals name a genus but no confident species.
-    if len(out) < top_n and not stored_name:
-        genus_val = next((s.get("raw_value") for s in r.get("signals_all", []) if s.get("origin_field") == "observations.genus"), None) or \
-                    next((s.get("raw_value") for s in r.get("signals_all", []) if s.get("origin_field") == "observations.species"), None)
-        if genus_val:
-            _extend(_genus_only_candidates(release, str(genus_val)))
+    # Genus-only fallback: input is genus-only OR the "species" field just
+    # holds a genus token (e.g. "Gymnopilus"). Returns the genus concept as
+    # selectable and species-in-genus rows as non-selectable context only.
+    if len(out) < top_n and input_rank_hint == "genus":
+        if genus_str:
+            _extend(_genus_only_candidates(release, genus_str))
 
     # Pre-computed manifest candidates last.
     for cand in r.get("candidate_concepts") or []:
@@ -446,7 +548,18 @@ def _render_group(index: int, total: int, key: tuple, obs_ids: list[str], candid
             name = c.get("canonical_name") or "(no name)"
             rank = c.get("rank") or ""
             mt = c.get("match_type") or ""
-            print(f"  [{i}] sporely_taxon_id={c.get('sporely_taxon_id')} name={name!r} rank={rank!r} match={mt!r}")
+            cache = c.get("cache_state") or ""
+            src_bits = []
+            if c.get("source_system") and c.get("source_external_id"):
+                src_bits.append(f"{c['source_system']}:{c.get('source_namespace') or ''}:{c['source_external_id']}")
+            if c.get("col_usage_id"):
+                src_bits.append(f"col_usage_id={c['col_usage_id']}")
+            src = " ".join(src_bits)
+            marker = "  " if c.get("selectable") is not False else "!!"
+            tag = "" if c.get("selectable") is not False else "  [context only, not selectable]"
+            print(f" {marker}[{i}] sporely_taxon_id={c.get('sporely_taxon_id')} name={name!r} rank={rank!r} match={mt!r} cache={cache!r} {src}{tag}")
+            if c.get("note"):
+                print(f"       note: {c['note']}")
     else:
         print("(no candidate concepts available — press n or s or q)")
 
@@ -519,10 +632,11 @@ def run_review(
         if action == "n":
             decision = {"choice": "no_match", "resolved_sporely_taxon_id": None}
         elif action == "y":
-            if len(candidates) != 1:
-                print("y requires exactly one candidate; use 1-5 or n instead")
+            selectable_cands = [c for c in candidates if c.get("selectable") is not False]
+            if len(selectable_cands) != 1:
+                print(f"y requires exactly one SELECTABLE candidate; use 1-5 or n instead")
                 continue
-            c = candidates[0]
+            c = selectable_cands[0]
             decision = {"choice": "accepted_top", "resolved_sporely_taxon_id": c["sporely_taxon_id"], "candidate": c}
         elif action in ("1", "2", "3", "4", "5"):
             n = int(action) - 1
@@ -530,6 +644,9 @@ def run_review(
                 print(f"only {len(candidates)} candidate(s) available")
                 continue
             c = candidates[n]
+            if c.get("selectable") is False:
+                print(f"[{n+1}] is context-only and cannot be selected — its rank differs from the input's rank")
+                continue
             decision = {"choice": f"accepted_{n+1}", "resolved_sporely_taxon_id": c["sporely_taxon_id"], "candidate": c}
         else:
             print(f"unknown action: {action!r}")
