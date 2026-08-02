@@ -120,6 +120,7 @@ def build(
     output: Path,
     fingerprint_dump: Path | None,
     allowlist: list[Path],
+    approved_drift_path: Path | None = None,
 ) -> dict[str, object]:
     _check_output_path(output, allowlist)
     if output.exists():
@@ -156,8 +157,10 @@ def build(
                 )
             pseudonym_to_real[pseudonym] = {**row, "id": raw_id}
 
-    # Optional current-observations fingerprint dump.
+    # Optional current-observations fingerprint dump. Keep the full row so
+    # field-level drift can be reported (not just a hash match/miss).
     current_fingerprints: dict[str, str] = {}
+    current_rows: dict[str, dict[str, str]] = {}
     if fingerprint_dump is not None:
         with fingerprint_dump.open("r", encoding="utf-8-sig", newline="") as f:
             reader = csv.DictReader(f)
@@ -166,11 +169,64 @@ def build(
                 if not obs_id:
                     continue
                 current_fingerprints[obs_id] = _fingerprint(row)
+                current_rows[obs_id] = row
+
+    # Optional local reviewed-drift approval file. Each entry MUST match
+    # (real_observation_id, field, export_value, current_value) exactly.
+    # NULL semantics: JSON null / '' / 'null' / 'NULL' all normalise to None.
+    approvals_by_obs: dict[str, list[dict]] = {}
+    approvals_matched: dict[tuple, bool] = {}
+    approvals_loaded = 0
+    if approved_drift_path is not None:
+        try:
+            approvals_doc = json.loads(approved_drift_path.read_text(encoding="utf-8"))
+        except Exception as exc:
+            raise SystemExit(f"refuse: approved-drift file could not be parsed: {exc}")
+        if not isinstance(approvals_doc, list):
+            raise SystemExit("refuse: approved-drift file must be a JSON list of approval objects")
+        for entry in approvals_doc:
+            if not isinstance(entry, dict):
+                raise SystemExit(f"refuse: approved-drift entry is not an object: {entry!r}")
+            required = ("real_observation_id", "field", "export_value", "current_value", "decision", "reason")
+            missing = [k for k in required if k not in entry]
+            if missing:
+                raise SystemExit(f"refuse: approved-drift entry missing keys {missing}: {entry!r}")
+            if entry["decision"] != "approved_non_identity_drift":
+                raise SystemExit(f"refuse: unknown approval decision {entry['decision']!r}; only approved_non_identity_drift is honoured")
+            obs = str(entry["real_observation_id"])
+            approvals_by_obs.setdefault(obs, []).append(entry)
+            approvals_loaded += 1
+
+    def _norm(v):
+        if v is None:
+            return None
+        if isinstance(v, str):
+            s = v.strip()
+            if s == "" or s.upper() == "NULL":
+                return None
+            return s
+        return v
+
+    def _field_diffs(export_row: dict, current_row: dict) -> list[dict]:
+        diffs: list[dict] = []
+        for field in TAXONOMY_FIELDS:
+            e = _norm(export_row.get(field))
+            c = _norm(current_row.get(field))
+            if e != c:
+                diffs.append({"field": field, "export_value": e, "current_value": c})
+        return diffs
 
     # Compose deployment records — one per manifest observation.
     output.parent.mkdir(parents=True, exist_ok=True)
     match_count = 0
-    drift_counts: dict[str, int] = {"no_drift": 0, "drifted_since_export": 0, "observation_missing": 0, "not_checked": 0}
+    drift_counts: dict[str, int] = {
+        "no_drift": 0,
+        "approved_drift": 0,
+        "unapproved_drift": 0,
+        "observation_missing": 0,
+        "not_checked": 0,
+    }
+    unapproved_details: list[dict] = []
     resolved_count = 0
     unresolved_count = 0
     with output.open("w", encoding="utf-8") as out:
@@ -202,7 +258,35 @@ def build(
                 elif current_fp == fp:
                     drift = "no_drift"
                 else:
-                    drift = "drifted_since_export"
+                    # Fingerprints disagree. Compute the exact field diffs and
+                    # check every one against the approval file. All diffs must
+                    # be individually approved for the row to count as
+                    # approved_drift; any un-approved diff makes the whole row
+                    # unapproved_drift.
+                    diffs = _field_diffs(row, current_rows.get(real_id, {}))
+                    approvals = approvals_by_obs.get(str(real_id), [])
+                    all_approved = True
+                    unmatched = []
+                    for diff in diffs:
+                        match = None
+                        for entry in approvals:
+                            if (
+                                entry["field"] == diff["field"]
+                                and _norm(entry["export_value"]) == diff["export_value"]
+                                and _norm(entry["current_value"]) == diff["current_value"]
+                            ):
+                                match = entry
+                                break
+                        if match is None:
+                            all_approved = False
+                            unmatched.append(diff)
+                        else:
+                            approvals_matched[(str(real_id), match["field"], _norm(match["export_value"]), _norm(match["current_value"]))] = True
+                    if all_approved:
+                        drift = "approved_drift"
+                    else:
+                        drift = "unapproved_drift"
+                        unapproved_details.append({"real_observation_id": real_id, "diffs": unmatched})
             else:
                 drift = "not_checked"
             drift_counts[drift] = drift_counts.get(drift, 0) + 1
@@ -226,6 +310,17 @@ def build(
 
     unmatched_raw = [rid for pseu, row in pseudonym_to_real.items() if pseu not in records_by_pseudonym for rid in [row["id"]]]
 
+    # Approvals that were loaded but never matched by any observed diff are
+    # a red flag — either the approval was stale or the drift check was run
+    # against the wrong export. Surface them so the operator can prune.
+    unused_approvals = []
+    if approved_drift_path is not None:
+        for entries in approvals_by_obs.values():
+            for entry in entries:
+                key = (str(entry["real_observation_id"]), entry["field"], _norm(entry["export_value"]), _norm(entry["current_value"]))
+                if not approvals_matched.get(key):
+                    unused_approvals.append(entry)
+
     summary = {
         "matched_observations": match_count,
         "manifest_records": len(records_by_pseudonym),
@@ -234,6 +329,9 @@ def build(
         "resolved_count": resolved_count,
         "unresolved_or_manual_or_no_evidence_count": unresolved_count,
         "drift_counts": drift_counts,
+        "unapproved_drift_details": unapproved_details,
+        "approvals_loaded": approvals_loaded,
+        "unused_approvals": unused_approvals,
         "manifest_input_file_sha256": manifest_input_sha,
         "raw_export_sha256": raw_sha,
         "output_path": str(output.resolve()),
@@ -248,6 +346,8 @@ def _main(argv: list[str] | None = None) -> int:
     parser.add_argument("--pseudonym-key-file", type=Path, default=None)
     parser.add_argument("--output", type=Path, required=True)
     parser.add_argument("--observations-fingerprint", type=Path, default=None)
+    parser.add_argument("--approved-drift", type=Path, default=None,
+                        help="local JSON file listing (real_observation_id, field, export_value, current_value, decision=approved_non_identity_drift, reason) approvals. Each must match a real diff exactly; every unmatched diff still counts as unapproved_drift.")
     parser.add_argument("--allow-output-under", type=Path, action="append", default=[])
     parser.add_argument("--production", action="store_true")
     args = parser.parse_args(argv)
@@ -261,6 +361,7 @@ def _main(argv: list[str] | None = None) -> int:
         output=args.output,
         fingerprint_dump=args.observations_fingerprint,
         allowlist=list(args.allow_output_under),
+        approved_drift_path=args.approved_drift,
     )
     print(json.dumps(summary, sort_keys=True, ensure_ascii=False, indent=2))
     return 0
