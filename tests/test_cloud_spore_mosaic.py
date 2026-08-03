@@ -25,63 +25,42 @@ from utils.cloud_spore_mosaic import (
     build_spore_mosaic,
     build_storage_key,
     compute_content_digest,
-    compute_mosaic_grid,
-    compute_mosaic_grid_cells,
-    place_tiles,
-    place_tiles_cells,
     plan_common_crop,
     sources_from_measurement_rows,
 )
+from utils.spore_mosaic_render import select_grid_shape
 from utils.spore_thumbnail_render import (
     SporeThumbnailInputs,
     plan_spore_thumbnail,
 )
 
 
-# ── compute_mosaic_grid / place_tiles ────────────────────────────────────────
-
-
-@pytest.mark.parametrize(
-    "count,expected_cols,expected_rows",
-    [
-        (1, 1, 1),
-        (2, 2, 1),
-        (8, 3, 3),
-        (9, 3, 3),
-        (28, 6, 5),
-        (80, 9, 9),
-    ],
-)
-def test_compute_mosaic_grid_shape(count, expected_cols, expected_rows):
-    cols, rows, w, h = compute_mosaic_grid(count, tile_size_px=160)
-    assert cols == expected_cols
-    assert rows == expected_rows
-    assert w == cols * 160
-    assert h == rows * 160
-    assert cols * rows >= count
-
-
-def test_compute_mosaic_grid_rejects_bad_input():
-    with pytest.raises(ValueError):
-        compute_mosaic_grid(0, 160)
-    with pytest.raises(ValueError):
-        compute_mosaic_grid(1, 0)
+# ── Grid selection (migrated from the legacy ceil(sqrt(n)) helpers) ─────────
+#
+# The pre-v3 helpers (`compute_mosaic_grid`, `place_tiles`) hard-coded a
+# `ceil(sqrt(n))` layout with a square-cell assumption.  The shared
+# planner replaced them with `select_grid_shape`, which minimises an
+# aspect-error penalty. These tests preserve the shape guarantees the
+# old helpers provided (no overlap, no gaps beyond the last row, cells
+# stay inside the canvas) while asserting against the new rule.
 
 
 @pytest.mark.parametrize("count", [1, 2, 8, 9, 28, 80])
-def test_place_tiles_no_overlap_and_inside_bounds(count):
-    rects = place_tiles(count, tile_size_px=160)
-    assert len(rects) == count
-    cols, rows, w, h = compute_mosaic_grid(count, 160)
-
+def test_select_grid_shape_places_all_tiles_within_canvas(count):
+    cols, rows = select_grid_shape(count, cell_w=160, cell_h=160, target_aspect=1.0)
+    assert cols * rows >= count
+    canvas_w = cols * 160
+    canvas_h = rows * 160
     seen: set[tuple[int, int]] = set()
-    for x, y, tw, th in rects:
-        assert tw == 160 and th == 160
-        assert 0 <= x <= w - tw
-        assert 0 <= y <= h - th
+    for idx in range(count):
+        row = idx // cols
+        col = idx % cols
+        x = col * 160
+        y = row * 160
+        assert 0 <= x <= canvas_w - 160
+        assert 0 <= y <= canvas_h - 160
         assert (x, y) not in seen
         seen.add((x, y))
-
     assert len(seen) == count
 
 
@@ -267,6 +246,47 @@ def test_sources_from_measurement_rows_reports_missing_image(tmp_path):
     )
     assert sources == []
     assert skipped == [(7, "source image missing")]
+
+
+def test_sources_from_measurement_rows_threads_scale_microns_per_pixel(tmp_path):
+    """The pusher joins `images.scale_microns_per_pixel` into the row so
+    the shared planner can honour authoritative image calibration."""
+    def resolver(_path: Path) -> tuple[int, int]:
+        return 400, 400
+
+    row = _row(
+        mid=1,
+        p1_x=100, p1_y=100, p2_x=200, p2_y=100,
+        p3_x=150, p3_y=80, p4_x=150, p4_y=120,
+        length_um=10.0, width_um=4.0,
+    )
+    row["scale_microns_per_pixel"] = 0.25
+
+    sources, skipped = sources_from_measurement_rows(
+        [row], image_dir=tmp_path, dims_resolver=resolver,
+    )
+    assert skipped == []
+    assert sources[0].scale_um_per_px == pytest.approx(0.25)
+
+
+def test_sources_from_measurement_rows_treats_missing_scale_as_none(tmp_path):
+    """Missing / non-numeric `scale_microns_per_pixel` yields None, so
+    the planner falls back to endpoint-derived scale."""
+    def resolver(_path: Path) -> tuple[int, int]:
+        return 400, 400
+
+    row = _row(mid=1, length_um=10.0, width_um=4.0)
+    # No scale key at all.
+    sources, _ = sources_from_measurement_rows(
+        [row], image_dir=tmp_path, dims_resolver=resolver,
+    )
+    assert sources[0].scale_um_per_px is None
+    # Explicit None also yields None.
+    row["scale_microns_per_pixel"] = None
+    sources, _ = sources_from_measurement_rows(
+        [row], image_dir=tmp_path, dims_resolver=resolver,
+    )
+    assert sources[0].scale_um_per_px is None
 
 
 # ── build_spore_mosaic (PIL-backed) ─────────────────────────────────────────
@@ -480,6 +500,69 @@ def test_build_spore_mosaic_records_skips_for_missing_files(tmp_path):
 
 def test_build_spore_mosaic_returns_none_for_empty_sources():
     assert build_spore_mosaic([], tile_size_px=128) is None
+
+
+def test_build_spore_mosaic_second_run_produces_identical_bytes(tmp_path):
+    """The whole-mosaic signature in `cloud_sync` skips re-upload when
+    the atlas bytes and manifest are unchanged. Determinism guard: two
+    consecutive builds of the same inputs must produce byte-identical
+    atlases, so `MOSAIC_STATUS_SKIP_UNCHANGED` triggers correctly."""
+    src = tmp_path / "src.png"
+    _write_test_source(src, size=(400, 400))
+    sources = [_make_source(src, mid=i + 1) for i in range(3)]
+    first = build_spore_mosaic(sources, tile_size_px=128)
+    second = build_spore_mosaic(sources, tile_size_px=128)
+    assert first is not None and second is not None
+    assert first.image_bytes == second.image_bytes
+    assert (first.width_px, first.height_px) == (second.width_px, second.height_px)
+    assert [t.measurement_id for t in first.tiles] == [
+        t.measurement_id for t in second.tiles
+    ]
+
+
+def test_build_spore_mosaic_timings_populated_on_success(tmp_path):
+    """Timing instrumentation lands in the manifest so the sync layer
+    can log a per-observation summary and the benchmark harness can
+    read the breakdown without depending on debug env flags."""
+    src = tmp_path / "src.png"
+    _write_test_source(src, size=(400, 400))
+    manifest = build_spore_mosaic(
+        [_make_source(src, mid=1), _make_source(src, mid=2)],
+        tile_size_px=128,
+    )
+    assert manifest is not None
+    assert manifest.timings is not None
+    summary = manifest.timings.summary()
+    assert summary["tile_count"] == 2
+    assert summary["distinct_sources"] == 1
+    assert summary["total_ms"] > 0
+    assert summary["render_ms"] >= 0
+    assert summary["encode_ms"] > 0
+    top = manifest.timings.top_slowest(2)
+    assert len(top) == 2
+
+
+def test_build_spore_mosaic_progress_callback_emits_stage_transitions(tmp_path):
+    """Progress hook fires at each stage boundary. Determinism guard:
+    the callback must not affect the produced bytes."""
+    src = tmp_path / "src.png"
+    _write_test_source(src, size=(400, 400))
+    sources = [_make_source(src, mid=i + 1) for i in range(4)]
+    stages: list[tuple[str, int, int]] = []
+    def _record(stage: str, current: int, total: int) -> None:
+        stages.append((stage, current, total))
+
+    manifest_no_cb = build_spore_mosaic(sources, tile_size_px=96)
+    manifest_with_cb = build_spore_mosaic(
+        sources, tile_size_px=96, progress_cb=_record,
+    )
+    assert manifest_no_cb is not None and manifest_with_cb is not None
+    assert manifest_no_cb.image_bytes == manifest_with_cb.image_bytes
+    seen_stages = {s for s, _c, _t in stages}
+    assert "planning" in seen_stages
+    assert "rendering" in seen_stages
+    assert "encoding" in seen_stages
+    assert "complete" in seen_stages
 
 
 def test_build_spore_mosaic_gallery_rotation_still_paints_polygon(tmp_path):
@@ -706,21 +789,35 @@ def test_storage_digest_changes_when_common_crop_geometry_changes(tmp_path):
     assert compute_content_digest(m_small.image_bytes) != compute_content_digest(m_large.image_bytes)
 
 
-def test_place_tiles_cells_uses_rectangular_slots():
-    cells = place_tiles_cells(4, cell_width_px=100, cell_height_px=200)
-    # 4 tiles → 2×2 grid.
-    assert cells == [
-        (0, 0, 100, 200),
-        (100, 0, 100, 200),
-        (0, 200, 100, 200),
-        (100, 200, 100, 200),
-    ]
+def test_select_grid_shape_rectangular_cells_square_target_produces_valid_layout():
+    """Migration guard: with rectangular (100×200) cells + square-image
+    target, 4 tiles into `select_grid_shape` still packs without gaps.
+    Replaces the pre-v3 `place_tiles_cells(4, 100, 200)` fixture."""
+    cols, rows = select_grid_shape(4, cell_w=100, cell_h=200, target_aspect=1.0)
+    assert cols * rows >= 4
+    canvas_w = cols * 100
+    canvas_h = rows * 200
+    seen: set[tuple[int, int]] = set()
+    for idx in range(4):
+        row = idx // cols
+        col = idx % cols
+        x = col * 100
+        y = row * 200
+        assert 0 <= x <= canvas_w - 100
+        assert 0 <= y <= canvas_h - 200
+        assert (x, y) not in seen
+        seen.add((x, y))
+    assert len(seen) == 4
 
 
-def test_compute_mosaic_grid_cells_uses_rectangular_slots():
-    cols, rows, w, h = compute_mosaic_grid_cells(3, cell_width_px=100, cell_height_px=200)
-    assert (cols, rows) == (2, 2)
-    assert (w, h) == (200, 400)
+def test_select_grid_shape_rectangular_cells_three_tiles_leaves_valid_grid():
+    """Replaces the legacy `compute_mosaic_grid_cells(3, 100, 200)` shape
+    test.  The new rule chooses whatever `(cols, rows)` minimises the
+    aspect-error + empty-fraction penalty; the guarantee is only that
+    the grid is valid (no overlap, all inside the canvas)."""
+    cols, rows = select_grid_shape(3, cell_w=100, cell_h=200, target_aspect=1.0)
+    assert cols >= 1 and rows >= 1
+    assert cols * rows >= 3
 
 
 # ── Physical-scale consistency ─────────────────────────────────────────────

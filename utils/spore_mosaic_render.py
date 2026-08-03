@@ -187,6 +187,38 @@ class MosaicLayoutPlan:
     common_crop_height_um: float
 
 
+# Distinguished return shape for `plan_mosaic`.
+#
+# * `layout is not None` — a valid layout exists (>= 1 tile).
+# * `layout is None` — no tiles could be laid out.  `reason` distinguishes:
+#     - "no_input"     : callers passed an empty `sources` sequence.
+#     - "all_skipped"  : every source produced a skip (missing calibration,
+#       invalid source dims, per-item plan failure).  `skipped` records
+#       the reason per item, and callers use it to surface the failure
+#       reason without discarding diagnostics.
+# * `skipped` is ALWAYS the list of `(item_id, reason)` — even on the
+#   success path — so callers never have to reach into `.layout.skipped`
+#   after checking `.layout is not None`.  When both are set, `skipped`
+#   equals `layout.skipped`.
+MOSAIC_PLAN_REASON_NO_INPUT = "no_input"
+MOSAIC_PLAN_REASON_ALL_SKIPPED = "all_skipped"
+
+
+@dataclass(frozen=True)
+class MosaicPlanningResult:
+    """Return value for `plan_mosaic`.
+
+    Structured so callers never lose the per-item skip diagnostics on
+    total failure — the previous `None`-on-empty return silently ate
+    that list, which made "why did nothing render?" hard to explain in
+    the sync log.
+    """
+
+    layout: MosaicLayoutPlan | None
+    skipped: list[tuple[int, str]]
+    reason: str | None
+
+
 # ── Grid selection ──────────────────────────────────────────────────────────
 
 
@@ -252,14 +284,44 @@ def _target_aspect_for_policy(policy: MosaicGridPolicy) -> float:
 # ── Calibration resolution ──────────────────────────────────────────────────
 
 
-def _resolve_calibration(
-    src: SporeMosaicSource,
-) -> tuple[float | None, float | None, str | None]:
-    """Return (length_um, width_um, skip_reason).
+@dataclass(frozen=True)
+class _ResolvedCalibration:
+    """Distinguishes geometry-driving µm values from label-facing ones.
 
-    Follows the resolution order documented in the module docstring:
-    explicit `scale_um_per_px` wins, else fall back to length_um +
-    p1p2 pixel span, else the tile is skipped.
+    * ``geometry_length_um`` / ``geometry_width_um`` control the natural
+      crop dims. When an authoritative image µm-per-pixel is available,
+      they are the endpoint pixel spans reprojected via that scale —
+      not the stored `length_um` / `width_um`. Otherwise they equal the
+      stored values (endpoint-derived scale fallback).
+    * ``label_length_um`` / ``label_width_um`` are the values the label
+      backend renders. They stay bound to `src.length_um` / `src.width_um`
+      whenever available so a mismatch between "image calibration says
+      X µm" and "user saved Y µm" leaves the label at Y — the number
+      the user actually recorded.
+    * ``skip_reason`` — non-None means the tile cannot be laid out (no
+      scale AND no stored length).
+    """
+
+    geometry_length_um: float | None
+    geometry_width_um: float | None
+    label_length_um: float | None
+    label_width_um: float | None
+    skip_reason: str | None
+
+
+def _resolve_calibration(src: SporeMosaicSource) -> _ResolvedCalibration:
+    """Resolution order:
+
+    1. Authoritative image ``scale_um_per_px`` — geometry follows scale
+       on BOTH axes (isotropic), labels stay at the stored length_um /
+       width_um when the caller supplied them.
+    2. Endpoint-derived fallback — length_um plus p1p2 pixel span
+       provides the length-axis scale; width scale falls back to length
+       scale if no width_um is supplied. This matches the pre-cloud
+       behaviour so exports remain identical when no image calibration
+       is stored.
+    3. Skip with ``"missing_calibration"`` — never render at an unknown
+       scale.
     """
     scale = src.scale_um_per_px
     line1_len_px = math.hypot(src.p2_x - src.p1_x, src.p2_y - src.p1_y)
@@ -274,30 +336,54 @@ def _resolve_calibration(
             float(src.p4_y) - float(src.p3_y),
         )
 
+    stored_length = (
+        float(src.length_um) if src.length_um and src.length_um > 0 else None
+    )
+    stored_width = (
+        float(src.width_um) if src.width_um and src.width_um > 0 else None
+    )
+
     if scale is not None and scale > 0:
-        if line1_len_px <= 0 and (
-            src.length_um is None or src.length_um <= 0
-        ):
-            return None, None, "missing_calibration"
-        length_um = (
-            float(src.length_um)
-            if src.length_um and src.length_um > 0
-            else line1_len_px * scale
+        # Authoritative image µm-per-pixel path. Geometry ALWAYS uses the
+        # image scale, regardless of whether stored length/width also
+        # exist. Labels keep the stored values so a user-recorded number
+        # remains visible even when it disagrees with the image
+        # calibration (e.g. the calibration was tuned after the
+        # measurement was saved).
+        if line1_len_px <= 0 and stored_length is None:
+            return _ResolvedCalibration(None, None, None, None, "missing_calibration")
+        geometry_length = (
+            line1_len_px * scale
+            if line1_len_px > 0
+            else stored_length
         )
-        if src.width_um and src.width_um > 0:
-            width_um = float(src.width_um)
-        elif have_p34 and line2_len_px > 0:
-            width_um = line2_len_px * scale
+        if have_p34 and line2_len_px > 0:
+            geometry_width = line2_len_px * scale
+        elif stored_width is not None:
+            # Fall back to reprojecting stored width via image scale so
+            # geometry stays fully driven by the authoritative scale.
+            # Rare — usually p3/p4 are present when width_um is set.
+            geometry_width = stored_width
         else:
-            width_um = None
-        return length_um, width_um, None
+            geometry_width = None
+        return _ResolvedCalibration(
+            geometry_length_um=geometry_length,
+            geometry_width_um=geometry_width,
+            label_length_um=stored_length,
+            label_width_um=stored_width,
+            skip_reason=None,
+        )
 
-    if src.length_um is not None and src.length_um > 0 and line1_len_px > 0:
-        return float(src.length_um), (
-            float(src.width_um) if src.width_um and src.width_um > 0 else None
-        ), None
+    if stored_length is not None and line1_len_px > 0:
+        return _ResolvedCalibration(
+            geometry_length_um=stored_length,
+            geometry_width_um=stored_width,
+            label_length_um=stored_length,
+            label_width_um=stored_width,
+            skip_reason=None,
+        )
 
-    return None, None, "missing_calibration"
+    return _ResolvedCalibration(None, None, None, None, "missing_calibration")
 
 
 # ── Label placement (semantic anchor only) ──────────────────────────────────
@@ -345,38 +431,55 @@ def plan_mosaic(
     output_tile_height_px: int,
     annotation: MosaicAnnotationSpec | None = None,
     background_rgb: tuple[int, int, int] = (18, 18, 22),
-) -> MosaicLayoutPlan | None:
+) -> MosaicPlanningResult:
     """Plan a complete mosaic layout for one observation.
 
     * `orient` is threaded to `plan_spore_thumbnail`. `False` keeps the
       raw source orientation; `True` swings the length axis vertical.
     * `output_tile_height_px` fixes the visible tile height. Width is
       derived from the observation's common physical aspect ratio.
-    * `annotation` is passed through so backends can decide whether to
-      compute label anchors. Cloud path passes `None` and skips labels.
+    * `annotation` decides which annotation metadata gets attached to
+      each tile plan.  When `annotation is None` or its flags are False,
+      the corresponding tile fields are `None`:
+
+        - ``annotation.draw_dimensions=True`` → `MosaicTilePlan.label`
+          carries a semantic label dict.  Otherwise ``.label = None``.
+        - ``annotation.draw_rectangle=True`` → `MosaicTilePlan.
+          oriented_polygon_tile_local` carries the polygon in tile-local
+          coords.  Otherwise it is ``None`` — the cloud backend derives
+          its overlay polygon from the raster path itself (which reuses
+          the shared placement resolver), so nothing is lost.
     * `grid_policy` selects between a near-square atlas and a 4:3
       composite; the aspect target drives `select_grid_shape`.
 
-    Returns `None` when no source produces a usable tile (all skipped
-    due to invalid dims, missing calibration, etc.).
+    Returns a `MosaicPlanningResult` with the layout, the skip list, and
+    a top-level reason string (`None` on success, or `"no_input"` /
+    `"all_skipped"` for the two failure modes).  The `skipped` list is
+    always populated — even on total failure — so callers keep the
+    per-item diagnostics that the old ``None``-return path silently
+    discarded.
     """
     if output_tile_height_px < 8:
         raise ValueError("output_tile_height_px too small")
     if not sources:
-        return None
+        return MosaicPlanningResult(
+            layout=None, skipped=[], reason=MOSAIC_PLAN_REASON_NO_INPUT,
+        )
 
-    _ = annotation  # only used by backend renderers; kept in signature
-    # for symmetry and future planning (e.g. reserving label space).
+    include_polygon = bool(annotation is not None and annotation.draw_rectangle)
+    include_label = bool(annotation is not None and annotation.draw_dimensions)
 
-    plans: list[tuple[SporeMosaicSource, SporeThumbnailPlan, float, float | None]] = []
+    plans: list[
+        tuple[SporeMosaicSource, SporeThumbnailPlan, _ResolvedCalibration]
+    ] = []
     skipped: list[tuple[int, str]] = []
     for src in sources:
         if src.source_width < 1 or src.source_height < 1:
             skipped.append((src.item_id, "invalid source dims"))
             continue
-        resolved_length_um, resolved_width_um, skip_reason = _resolve_calibration(src)
-        if skip_reason is not None:
-            skipped.append((src.item_id, skip_reason))
+        calibration = _resolve_calibration(src)
+        if calibration.skip_reason is not None:
+            skipped.append((src.item_id, calibration.skip_reason))
             continue
         inputs = SporeThumbnailInputs(
             p1_x=src.p1_x, p1_y=src.p1_y,
@@ -388,8 +491,14 @@ def plan_mosaic(
             padding_x_px=DESKTOP_PADDING_X,
             padding_y_px=DESKTOP_PADDING_Y,
             background_rgb=background_rgb,
-            length_um=resolved_length_um,
-            width_um=resolved_width_um,
+            # `SporeThumbnailInputs.length_um` is what
+            # `plan_spore_thumbnail` uses to derive px-per-µm — always the
+            # geometry-driving value (image scale when authoritative, else
+            # stored). Label text is rebuilt separately below from
+            # `calibration.label_*` so the stored user-recorded value
+            # keeps showing when it disagrees with the image scale.
+            length_um=calibration.geometry_length_um,
+            width_um=calibration.geometry_width_um,
         )
         try:
             plan = plan_spore_thumbnail(inputs, src.source_width, src.source_height)
@@ -404,16 +513,25 @@ def plan_mosaic(
         ):
             skipped.append((src.item_id, "missing_calibration"))
             continue
-        plans.append((src, plan, float(resolved_length_um), resolved_width_um))
+        plans.append((src, plan, calibration))
 
     if not plans:
-        return None
+        return MosaicPlanningResult(
+            layout=None, skipped=skipped, reason=MOSAIC_PLAN_REASON_ALL_SKIPPED,
+        )
 
     crop_plan = plan_common_crop(
-        [p for _s, p, _l, _w in plans], output_height_px=output_tile_height_px,
+        [p for _s, p, _c in plans], output_height_px=output_tile_height_px,
     )
     if crop_plan is None:
-        return None
+        # Every plan lacked a physical scale that `plan_common_crop`
+        # could work with — record every planned item as skipped so
+        # callers never lose the "why" here.
+        for src, _plan, _c in plans:
+            skipped.append((src.item_id, "missing_calibration"))
+        return MosaicPlanningResult(
+            layout=None, skipped=skipped, reason=MOSAIC_PLAN_REASON_ALL_SKIPPED,
+        )
 
     common_w_um = crop_plan.common_crop_width_um
     common_h_um = crop_plan.common_crop_height_um
@@ -422,7 +540,7 @@ def plan_mosaic(
 
     # ── Tile plans ──────────────────────────────────────────────────────
     tile_plans: list[MosaicTilePlan] = []
-    for src, plan, resolved_length_um, resolved_width_um in plans:
+    for src, plan, calibration in plans:
         length_scale = plan.length_axis_px_per_um or 0.0
         width_scale = plan.width_axis_px_per_um or 0.0
         crop_w_px = max(1, int(round(common_w_um * width_scale)))
@@ -440,16 +558,30 @@ def plan_mosaic(
             output_width=out_w,
             output_height=out_h,
         )
-        polygon = placement.transform_polygon(plan.oriented_corners)
-        label = _label_dict(
-            src, resolved_length_um, resolved_width_um,
-            output_width=out_w, output_height=out_h,
+        polygon = (
+            placement.transform_polygon(plan.oriented_corners)
+            if include_polygon else None
+        )
+        # Label reads from calibration.label_* — stored user-recorded
+        # values, NOT geometry-derived ones. This preserves what the
+        # user actually saved even when image calibration disagrees.
+        label = (
+            _label_dict(
+                src, calibration.label_length_um, calibration.label_width_um,
+                output_width=out_w, output_height=out_h,
+            )
+            if include_label else None
         )
         diagnostics = {
             "item_id": src.item_id,
             "rotation_deg": round(plan.rotation_deg, 3),
-            "length_um": resolved_length_um,
-            "width_um": resolved_width_um,
+            # Geometry values (what the render actually uses); label
+            # values reported separately so cloud/tile diagnostics can
+            # detect a stored-vs-scale disagreement.
+            "length_um": calibration.geometry_length_um,
+            "width_um": calibration.geometry_width_um,
+            "label_length_um": calibration.label_length_um,
+            "label_width_um": calibration.label_width_um,
             "length_axis_px_per_um": (
                 round(plan.length_axis_px_per_um, 4)
                 if plan.length_axis_px_per_um is not None else None
@@ -509,7 +641,7 @@ def plan_mosaic(
             h_px=out_h,
         ))
 
-    return MosaicLayoutPlan(
+    layout = MosaicLayoutPlan(
         cells=cells,
         skipped=skipped,
         mosaic_width_px=mosaic_w,
@@ -521,3 +653,4 @@ def plan_mosaic(
         common_crop_width_um=common_w_um,
         common_crop_height_um=common_h_um,
     )
+    return MosaicPlanningResult(layout=layout, skipped=skipped, reason=None)

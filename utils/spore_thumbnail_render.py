@@ -31,6 +31,7 @@ the same visible size.
 from __future__ import annotations
 
 import math
+import os
 from dataclasses import dataclass
 from typing import Sequence
 
@@ -615,6 +616,20 @@ def resolve_common_crop_placement(
     branch) delegate here so they never diverge on shift / pad / scale
     math. Vector SVG uses the same result to place polygon and label
     coordinates identically to the raster.
+
+    Semantics
+    ---------
+    * The measurement centre lands at the tile centre whenever
+      geometrically possible.
+    * When the requested crop overflows the source on an axis
+      (``padded_x`` / ``padded_y``), the source is placed inside the
+      canvas so the measurement stays centred; the source is then
+      clamped to keep it fully inside the canvas (no wrap-around, no
+      clipping). Background pixels fill the remainder on both sides as
+      the geometry dictates.
+    * When the requested crop fits the source, the crop origin is the
+      measurement's own centre minus half the crop dims, edge-shifted
+      to keep the crop inside the source.
     """
     if oriented_source_w < 1 or oriented_source_h < 1:
         raise ValueError("oriented source dims must be positive")
@@ -646,11 +661,23 @@ def resolve_common_crop_placement(
     crop_y_int = int(round(crop_y_shifted))
 
     if padded_x:
-        paste_dx = (int(common_crop_width_px) - int(oriented_source_w)) // 2
+        # Ideal placement lands the measurement centre at the canvas
+        # centre: measurement_centre_on_canvas = center_x + paste_dx
+        # → paste_dx = canvas_centre - center_x. Clamp so the source
+        # stays fully inside the canvas ([0, canvas_w - source_w]).
+        ideal_paste_dx = (
+            float(common_crop_width_px) / 2.0 - float(center_x)
+        )
+        max_paste_dx = float(int(common_crop_width_px) - int(oriented_source_w))
+        paste_dx = int(round(max(0.0, min(ideal_paste_dx, max_paste_dx))))
     else:
         paste_dx = -crop_x_int
     if padded_y:
-        paste_dy = (int(common_crop_height_px) - int(oriented_source_h)) // 2
+        ideal_paste_dy = (
+            float(common_crop_height_px) / 2.0 - float(center_y)
+        )
+        max_paste_dy = float(int(common_crop_height_px) - int(oriented_source_h))
+        paste_dy = int(round(max(0.0, min(ideal_paste_dy, max_paste_dy))))
     else:
         paste_dy = -crop_y_int
 
@@ -685,7 +712,54 @@ def _rotate_source_if_needed(
     return _to_rgb(rotated, background_rgb)
 
 
-def render_spore_thumbnail_common_crop(
+# ── Fast local-ROI renderer + reference (Phase 2.B) ────────────────────────
+#
+# The reference implementation (`reference_render_tile`) rotates the
+# whole source before cropping — accurate but wasteful for large source
+# frames because every pixel is resampled even though only the crop
+# region ends up in the final tile.
+#
+# The fast renderer (`fast_render_tile`) collapses rotate + crop + resize
+# into one inverse affine sampled directly at the output resolution. It
+# consumes the same `SporeThumbnailPlan` + `CommonCropPlacement`, so it
+# is guaranteed to land on the exact same tile-local polygon geometry
+# as the reference path — parity tests assert an image-difference
+# threshold and polygon delta.
+#
+# The public entry `render_spore_thumbnail_common_crop` picks between
+# the two based on `SPORELY_MOSAIC_USE_REFERENCE`: any non-empty value
+# forces the reference path so a user can bisect a suspected fast-path
+# regression without changing code.
+
+
+def _use_reference_renderer() -> bool:
+    raw = os.environ.get("SPORELY_MOSAIC_USE_REFERENCE", "").strip().lower()
+    return raw not in ("", "0", "false", "no")
+
+
+def _run_placement(
+    plan: SporeThumbnailPlan,
+    *,
+    common_crop_width: int,
+    common_crop_height: int,
+    output_width: int,
+    output_height: int,
+    oriented_width: int,
+    oriented_height: int,
+) -> CommonCropPlacement:
+    return resolve_common_crop_placement(
+        oriented_source_w=int(oriented_width),
+        oriented_source_h=int(oriented_height),
+        center_x=plan.center_x,
+        center_y=plan.center_y,
+        common_crop_width_px=int(common_crop_width),
+        common_crop_height_px=int(common_crop_height),
+        output_width=int(output_width),
+        output_height=int(output_height),
+    )
+
+
+def reference_render_tile(
     source: Image.Image,
     plan: SporeThumbnailPlan,
     *,
@@ -694,18 +768,11 @@ def render_spore_thumbnail_common_crop(
     output_width: int,
     output_height: int,
 ) -> SporeThumbnailCommonCropResult:
-    """Render a fixed-size crop centred on the measurement.
+    """Reference path: rotate whole source → crop → resize.
 
-    * `common_crop_width` / `common_crop_height` are the size in oriented
-      source-image pixels of the crop window. Chosen from
-      `max(plan.natural_crop_*)` across the observation.
-    * The window is centred on `plan.center_x/y` and edge-shifted so it
-      stays inside the oriented source image where possible.
-    * If the oriented source is smaller than the crop on either axis,
-      background pixels fill the remainder (`padded_x` / `padded_y`
-      report that condition).
-    * The resulting `common_crop_width × common_crop_height` canvas is
-      resized to `output_width × output_height` (LANCZOS).
+    Kept as the ground truth against which the fast local-ROI renderer
+    is parity-tested. Prefer `render_spore_thumbnail_common_crop`
+    (which dispatches by env flag) in production code.
     """
     if common_crop_width < 1 or common_crop_height < 1:
         raise ValueError("common crop dimensions must be positive")
@@ -723,17 +790,14 @@ def render_spore_thumbnail_common_crop(
         float(common_crop_height),
     )
 
-    # Delegate the shift + pad + scale maths to the shared pure resolver
-    # so this raster path never drifts from the Qt / SVG paths.
-    placement = resolve_common_crop_placement(
-        oriented_source_w=working_w,
-        oriented_source_h=working_h,
-        center_x=plan.center_x,
-        center_y=plan.center_y,
-        common_crop_width_px=common_crop_width,
-        common_crop_height_px=common_crop_height,
+    placement = _run_placement(
+        plan,
+        common_crop_width=common_crop_width,
+        common_crop_height=common_crop_height,
         output_width=output_width,
         output_height=output_height,
+        oriented_width=working_w,
+        oriented_height=working_h,
     )
     padded_x = placement.padded_x
     padded_y = placement.padded_y
@@ -746,7 +810,9 @@ def render_spore_thumbnail_common_crop(
             crop_x_int + common_crop_width, crop_y_int + common_crop_height,
         ))
     else:
-        canvas = Image.new("RGB", (common_crop_width, common_crop_height), background_rgb)
+        canvas = Image.new(
+            "RGB", (common_crop_width, common_crop_height), background_rgb,
+        )
         canvas.paste(oriented, (placement.paste_dx, placement.paste_dy))
 
     crop_rect_after = (crop_x_int, crop_y_int, common_crop_width, common_crop_height)
@@ -766,6 +832,297 @@ def render_spore_thumbnail_common_crop(
         padded_x=padded_x,
         padded_y=padded_y,
         reason_no_polygon=plan.reason_no_polygon,
+    )
+
+
+def _compute_tile_to_source_affine(
+    plan: SporeThumbnailPlan,
+    placement: CommonCropPlacement,
+    source_w: int,
+    source_h: int,
+) -> tuple[float, float, float, float, float, float, tuple[float, float]]:
+    """Return the affine coefficients (a, b, c, d, e, f) that map an
+    output-tile pixel back to the source-image pixel, plus the
+    ``(offset_x, offset_y)`` of `_rotated_source_offset` used to build
+    the oriented frame.
+
+    Forward chain (source → tile):
+        rot_pt   = rotate_qt(src, cx, cy, angle)
+        ori_pt   = rot_pt + rotated_source_offset
+        tile_pt  = (ori_pt + (paste_dx, paste_dy)) * (scale_x, scale_y)
+
+    The inverse walks tile → oriented → rotated → source and inlines
+    the shared placement / scale constants so the whole thing is a
+    single 2×3 affine. See the module docstring for the derivation.
+    """
+    rotation_deg = plan.rotation_deg
+    if abs(rotation_deg) <= 0.1:
+        # rotation ~ 0: offset (0, 0), cos=1, sin=0. Directly
+        # sx = tx / scale_x - paste_dx, sy = ty / scale_y - paste_dy.
+        a = 1.0 / placement.scale_x
+        b = 0.0
+        c = -float(placement.paste_dx)
+        d = 0.0
+        e = 1.0 / placement.scale_y
+        f = -float(placement.paste_dy)
+        return a, b, c, d, e, f, (0.0, 0.0)
+
+    ang = math.radians(rotation_deg)
+    cos_a = math.cos(ang)
+    sin_a = math.sin(ang)
+    offset = _rotated_source_offset(source_w, source_h, rotation_deg)
+    cx = float(source_w) / 2.0
+    cy = float(source_h) / 2.0
+    kx = -float(placement.paste_dx) - offset[0]
+    ky = -float(placement.paste_dy) - offset[1]
+    inv_sx = 1.0 / placement.scale_x
+    inv_sy = 1.0 / placement.scale_y
+
+    a = cos_a * inv_sx
+    b = sin_a * inv_sy
+    c = cx + (kx - cx) * cos_a + (ky - cy) * sin_a
+    d = -sin_a * inv_sx
+    e = cos_a * inv_sy
+    f = cy - (kx - cx) * sin_a + (ky - cy) * cos_a
+    return a, b, c, d, e, f, offset
+
+
+# Extra source pixels kept around the ROI to let the small-image
+# rotation resampler blend without edge artefacts. 4 px is enough for
+# BILINEAR sampling. Bigger sources with high rotation angles benefit
+# from a slightly larger margin — kept conservative.
+_FAST_ROI_MARGIN_PX = 8
+
+
+def fast_render_tile(
+    source: Image.Image,
+    plan: SporeThumbnailPlan,
+    *,
+    common_crop_width: int,
+    common_crop_height: int,
+    output_width: int,
+    output_height: int,
+) -> SporeThumbnailCommonCropResult:
+    """Local-ROI renderer: inverse-map the crop back into source coords,
+    crop that small ROI, then rotate + resize only those pixels.
+
+    Contract match with the reference path
+    ---------------------------------------
+    Uses the same filter combo the reference does — BILINEAR for the
+    rotate step and LANCZOS for the resize — so per-pixel diff stays
+    inside the documented parity budget (mean < 3.0, max < 15 out of
+    255) even on high-frequency test patterns. What changes is the
+    working image size: instead of rotating the whole source (up to
+    hundreds of MPix), we rotate a ROI a few tens of KPix wide.
+
+    Fallback: for very small sources (comparable to the crop size) the
+    ROI approach costs almost as much as the reference. We degrade
+    gracefully to the reference path in that case — it stays fast on
+    small inputs while the ROI path pays only for what it actually
+    saves.
+    """
+    if common_crop_width < 1 or common_crop_height < 1:
+        raise ValueError("common crop dimensions must be positive")
+    if output_width < 1 or output_height < 1:
+        raise ValueError("output dimensions must be positive")
+
+    background_rgb = plan.inputs.background_rgb
+    working = _to_rgb(source, background_rgb)
+    src_w, src_h = working.size
+
+    # ROI approach only wins when the source is meaningfully larger than
+    # the crop.  For small sources fall back to the reference path so
+    # we don't add overhead without benefit.
+    oriented_w, oriented_h = _rotated_bounding_box(src_w, src_h, plan.rotation_deg)
+    if oriented_w <= 3 * common_crop_width and oriented_h <= 3 * common_crop_height:
+        return reference_render_tile(
+            source, plan,
+            common_crop_width=common_crop_width,
+            common_crop_height=common_crop_height,
+            output_width=output_width,
+            output_height=output_height,
+        )
+
+    placement = _run_placement(
+        plan,
+        common_crop_width=common_crop_width,
+        common_crop_height=common_crop_height,
+        output_width=output_width,
+        output_height=output_height,
+        oriented_width=oriented_w,
+        oriented_height=oriented_h,
+    )
+    crop_rect_before = (
+        plan.center_x - common_crop_width / 2.0,
+        plan.center_y - common_crop_height / 2.0,
+        float(common_crop_width),
+        float(common_crop_height),
+    )
+    crop_rect_after = (
+        placement.crop_x_int, placement.crop_y_int,
+        common_crop_width, common_crop_height,
+    )
+
+    # If padding is required on either axis the source is smaller than
+    # the crop on that axis — the ROI is the whole source anyway, so
+    # fall back to the reference path.
+    if placement.padded_x or placement.padded_y:
+        return reference_render_tile(
+            source, plan,
+            common_crop_width=common_crop_width,
+            common_crop_height=common_crop_height,
+            output_width=output_width,
+            output_height=output_height,
+        )
+
+    # ── Inverse-map the crop corners back to source pixel space ────────
+    # Build the affine that maps oriented-frame crop pixel → source
+    # pixel.  Feeding this into `Image.transform` on the ROI (BILINEAR)
+    # gives us the exact equivalent of the reference's "rotate whole
+    # source, then crop", but only on a small ROI.
+    ang = math.radians(plan.rotation_deg)
+    cos_a = math.cos(ang)
+    sin_a = math.sin(ang)
+    cx = float(src_w) / 2.0
+    cy = float(src_h) / 2.0
+    if abs(plan.rotation_deg) <= 0.1:
+        # Fast path for un-rotated crops — offset is (0, 0).
+        offset_x = 0.0
+        offset_y = 0.0
+    else:
+        _off = _rotated_source_offset(src_w, src_h, plan.rotation_deg)
+        offset_x, offset_y = _off[0], _off[1]
+
+    kx = float(placement.crop_x_int) - offset_x - cx
+    ky = float(placement.crop_y_int) - offset_y - cy
+
+    # crop_pixel → source_pixel (whole-source):
+    #   sx = cx + (cxp + kx) * cos + (cyp + ky) * sin
+    #   sy = cy - (cxp + kx) * sin + (cyp + ky) * cos
+    #
+    # As a (a', b', c', d', e', f') affine acting on (cxp, cyp):
+    a_full = cos_a
+    b_full = sin_a
+    c_full = cx + kx * cos_a + ky * sin_a
+    d_full = -sin_a
+    e_full = cos_a
+    f_full = cy - kx * sin_a + ky * cos_a
+
+    # ROI = source-space AABB of the crop corners, clamped to source
+    # and expanded by a small margin so the BILINEAR sampler has neighbours.
+    crop_corners = (
+        (0.0, 0.0),
+        (float(common_crop_width), 0.0),
+        (float(common_crop_width), float(common_crop_height)),
+        (0.0, float(common_crop_height)),
+    )
+    src_pts = [
+        (a_full * cxp + b_full * cyp + c_full,
+         d_full * cxp + e_full * cyp + f_full)
+        for cxp, cyp in crop_corners
+    ]
+    min_sx = min(p[0] for p in src_pts) - _FAST_ROI_MARGIN_PX
+    max_sx = max(p[0] for p in src_pts) + _FAST_ROI_MARGIN_PX
+    min_sy = min(p[1] for p in src_pts) - _FAST_ROI_MARGIN_PX
+    max_sy = max(p[1] for p in src_pts) + _FAST_ROI_MARGIN_PX
+    roi_x0 = max(0, int(math.floor(min_sx)))
+    roi_y0 = max(0, int(math.floor(min_sy)))
+    roi_x1 = min(src_w, int(math.ceil(max_sx)))
+    roi_y1 = min(src_h, int(math.ceil(max_sy)))
+    if roi_x1 <= roi_x0 or roi_y1 <= roi_y0:
+        # Crop is entirely outside the source — return background.
+        tile = Image.new(
+            "RGB", (int(output_width), int(output_height)),
+            tuple(int(v) for v in background_rgb),
+        )
+        polygon_tile_local = placement.transform_polygon(plan.oriented_corners)
+        return SporeThumbnailCommonCropResult(
+            image=tile,
+            output_width=output_width,
+            output_height=output_height,
+            polygon_tile_local=polygon_tile_local,
+            crop_rect_before_shift=crop_rect_before,
+            crop_rect_after_shift=crop_rect_after,
+            padded_x=placement.padded_x,
+            padded_y=placement.padded_y,
+            reason_no_polygon=plan.reason_no_polygon,
+        )
+    roi = working.crop((roi_x0, roi_y0, roi_x1, roi_y1))
+
+    # Adjust the affine for ROI-local source coords.
+    a_roi = a_full
+    b_roi = b_full
+    c_roi = c_full - float(roi_x0)
+    d_roi = d_full
+    e_roi = e_full
+    f_roi = f_full - float(roi_y0)
+
+    # Step 1: crop→ROI transform via BILINEAR — mirrors the reference
+    # path's `img.rotate(BILINEAR)` filter on just the pixels we need.
+    crop_canvas = roi.transform(
+        (int(common_crop_width), int(common_crop_height)),
+        Image.AFFINE,
+        (a_roi, b_roi, c_roi, d_roi, e_roi, f_roi),
+        resample=Image.BILINEAR,
+        fillcolor=tuple(int(v) for v in background_rgb),
+    )
+    # Step 2: LANCZOS resize to final tile dims — exact match with the
+    # reference path's resize step.
+    if (int(common_crop_width), int(common_crop_height)) != (
+        int(output_width), int(output_height)
+    ):
+        tile = crop_canvas.resize(
+            (int(output_width), int(output_height)), Image.LANCZOS,
+        )
+    else:
+        tile = crop_canvas
+
+    polygon_tile_local = placement.transform_polygon(plan.oriented_corners)
+
+    return SporeThumbnailCommonCropResult(
+        image=tile,
+        output_width=output_width,
+        output_height=output_height,
+        polygon_tile_local=polygon_tile_local,
+        crop_rect_before_shift=crop_rect_before,
+        crop_rect_after_shift=crop_rect_after,
+        padded_x=placement.padded_x,
+        padded_y=placement.padded_y,
+        reason_no_polygon=plan.reason_no_polygon,
+    )
+
+
+def render_spore_thumbnail_common_crop(
+    source: Image.Image,
+    plan: SporeThumbnailPlan,
+    *,
+    common_crop_width: int,
+    common_crop_height: int,
+    output_width: int,
+    output_height: int,
+) -> SporeThumbnailCommonCropResult:
+    """Render a fixed-size crop centred on the measurement.
+
+    Dispatches to `fast_render_tile` by default and to
+    `reference_render_tile` when ``SPORELY_MOSAIC_USE_REFERENCE`` is
+    set. Both paths honour the same `SporeThumbnailPlan` +
+    `CommonCropPlacement` so callers cannot observe a semantic
+    difference beyond the documented image-difference threshold.
+    """
+    if _use_reference_renderer():
+        return reference_render_tile(
+            source, plan,
+            common_crop_width=common_crop_width,
+            common_crop_height=common_crop_height,
+            output_width=output_width,
+            output_height=output_height,
+        )
+    return fast_render_tile(
+        source, plan,
+        common_crop_width=common_crop_width,
+        common_crop_height=common_crop_height,
+        output_width=output_width,
+        output_height=output_height,
     )
 
 

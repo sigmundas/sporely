@@ -16,8 +16,11 @@ import pytest
 
 from utils.spore_mosaic_render import (
     GRID_EMPTY_FRACTION_PENALTY,
+    MOSAIC_PLAN_REASON_ALL_SKIPPED,
+    MOSAIC_PLAN_REASON_NO_INPUT,
     MosaicAnnotationSpec,
     MosaicGridPolicy,
+    MosaicPlanningResult,
     SporeMosaicSource,
     plan_mosaic,
     select_grid_shape,
@@ -216,20 +219,44 @@ def _source(
     )
 
 
-def test_plan_mosaic_returns_none_for_empty_sources():
-    assert plan_mosaic(
+def test_plan_mosaic_no_input_reason_and_empty_skipped():
+    result = plan_mosaic(
         [], orient=True, grid_policy=MosaicGridPolicy.SQUARE_IMAGE,
         output_tile_height_px=320,
-    ) is None
+    )
+    assert isinstance(result, MosaicPlanningResult)
+    assert result.layout is None
+    assert result.skipped == []
+    assert result.reason == MOSAIC_PLAN_REASON_NO_INPUT
 
 
-def test_plan_mosaic_returns_none_when_all_sources_missing_scale():
+def test_plan_mosaic_all_skipped_reason_preserves_diagnostics():
     src = _source(1, length_um=None, width_um=None)
-    layout = plan_mosaic(
+    result = plan_mosaic(
         [src], orient=True, grid_policy=MosaicGridPolicy.SQUARE_IMAGE,
         output_tile_height_px=320,
     )
-    assert layout is None
+    assert result.layout is None
+    assert result.reason == MOSAIC_PLAN_REASON_ALL_SKIPPED
+    # Even on total failure the caller keeps the per-item skip reasons.
+    assert (1, "missing_calibration") in result.skipped
+
+
+def test_plan_mosaic_records_invalid_source_dims_in_all_skipped_reason():
+    bad = SporeMosaicSource(
+        item_id=42,
+        source_path=Path("/tmp/bad.png"),
+        source_width=0, source_height=0,
+        p1_x=0, p1_y=0, p2_x=1, p2_y=0,
+        length_um=10.0, width_um=4.0,
+    )
+    result = plan_mosaic(
+        [bad], orient=True, grid_policy=MosaicGridPolicy.SQUARE_IMAGE,
+        output_tile_height_px=320,
+    )
+    assert result.layout is None
+    assert result.reason == MOSAIC_PLAN_REASON_ALL_SKIPPED
+    assert (42, "invalid source dims") in result.skipped
 
 
 def test_plan_mosaic_uniform_tile_dims_across_measurements():
@@ -257,7 +284,7 @@ def test_plan_mosaic_uniform_tile_dims_across_measurements():
         [low, hi], orient=True,
         grid_policy=MosaicGridPolicy.SQUARE_IMAGE,
         output_tile_height_px=320,
-    )
+    ).layout
     assert layout is not None
     assert len(layout.cells) == 2
     tiles = [cell.tile for cell in layout.cells]
@@ -290,7 +317,7 @@ def test_plan_mosaic_grid_policy_square_image_targets_square_atlas():
         sources, orient=True,
         grid_policy=MosaicGridPolicy.SQUARE_IMAGE,
         output_tile_height_px=320,
-    )
+    ).layout
     assert layout is not None
     aspect = layout.mosaic_width_px / max(1, layout.mosaic_height_px)
     assert abs(aspect - 1.0) < 0.25, (
@@ -308,11 +335,11 @@ def test_plan_mosaic_grid_policy_4_3_targets_wider_atlas():
     sq = plan_mosaic(
         sources, orient=True, grid_policy=MosaicGridPolicy.SQUARE_IMAGE,
         output_tile_height_px=320,
-    )
+    ).layout
     wide = plan_mosaic(
         sources, orient=True, grid_policy=MosaicGridPolicy.ASPECT_4_3,
         output_tile_height_px=320,
-    )
+    ).layout
     assert sq is not None and wide is not None
     sq_aspect = sq.mosaic_width_px / sq.mosaic_height_px
     wide_aspect = wide.mosaic_width_px / wide.mosaic_height_px
@@ -333,7 +360,7 @@ def test_plan_mosaic_orient_off_keeps_source_orientation():
         [src], orient=False,
         grid_policy=MosaicGridPolicy.SQUARE_IMAGE,
         output_tile_height_px=320,
-    )
+    ).layout
     assert layout is not None
     tile = layout.cells[0].tile
     assert tile.rotation_deg == pytest.approx(0.0, abs=0.1)
@@ -348,11 +375,16 @@ def test_plan_mosaic_orient_on_swings_length_axis_vertical():
         p3_x=400, p3_y=380, p4_x=400, p4_y=420,
         length_um=20.0, width_um=4.0,
     )
+    # Polygon needs explicit opt-in now — cloud path (annotation=None)
+    # relies on the raster placement helper for its overlay geometry,
+    # so the plan itself only carries polygon when a backend has asked
+    # for it via `MosaicAnnotationSpec(draw_rectangle=True)`.
     layout = plan_mosaic(
         [src], orient=True,
         grid_policy=MosaicGridPolicy.SQUARE_IMAGE,
         output_tile_height_px=320,
-    )
+        annotation=MosaicAnnotationSpec(draw_rectangle=True),
+    ).layout
     assert layout is not None
     tile = layout.cells[0].tile
     assert tile.rotation_deg == pytest.approx(-90.0, abs=1.0)
@@ -376,7 +408,8 @@ def test_plan_mosaic_extra_rotation_composes_with_orient():
         [src], orient=True,
         grid_policy=MosaicGridPolicy.SQUARE_IMAGE,
         output_tile_height_px=320,
-    )
+        annotation=MosaicAnnotationSpec(draw_rectangle=True),
+    ).layout
     assert layout is not None
     tile = layout.cells[0].tile
     # -90° (orient) + 180° (extra) = 90°.
@@ -400,7 +433,7 @@ def test_plan_mosaic_records_skipped_for_bad_dims():
         [good, bad], orient=True,
         grid_policy=MosaicGridPolicy.SQUARE_IMAGE,
         output_tile_height_px=320,
-    )
+    ).layout
     assert layout is not None
     assert [c.tile.source.item_id for c in layout.cells] == [1]
     assert (99, "invalid source dims") in layout.skipped
@@ -413,7 +446,7 @@ def test_plan_mosaic_records_skipped_for_missing_calibration():
         [good, unscaled], orient=True,
         grid_policy=MosaicGridPolicy.SQUARE_IMAGE,
         output_tile_height_px=320,
-    )
+    ).layout
     assert layout is not None
     assert [c.tile.source.item_id for c in layout.cells] == [1]
     assert (2, "missing_calibration") in layout.skipped
@@ -435,7 +468,7 @@ def test_plan_mosaic_uses_scale_um_per_px_when_length_um_absent():
         [src], orient=True,
         grid_policy=MosaicGridPolicy.SQUARE_IMAGE,
         output_tile_height_px=320,
-    )
+    ).layout
     assert layout is not None
     tile = layout.cells[0].tile
     assert tile.diagnostics["length_um"] == pytest.approx(10.0, abs=1e-6)
@@ -459,11 +492,75 @@ def test_plan_mosaic_prefers_scale_um_per_px_over_endpoint_derivation():
         [src], orient=True,
         grid_policy=MosaicGridPolicy.SQUARE_IMAGE,
         output_tile_height_px=320,
-    )
+    ).layout
     assert layout is not None
     tile = layout.cells[0].tile
     assert tile.diagnostics["length_um"] == pytest.approx(10.0)
     assert tile.diagnostics["width_um"] == pytest.approx(4.0, abs=1e-6)
+
+
+def test_plan_mosaic_image_scale_wins_geometry_over_stored_length_um():
+    """When image `scale_um_per_px` and stored `length_um` disagree,
+    the render geometry follows the image scale — that's what actual
+    source pixel spacing dictates."""
+    # 100 px length line, image scale = 0.1 µm/px → image-derived length
+    # = 10 µm. Stored length_um = 40 (much larger, e.g. user made an
+    # inconsistent edit or the calibration was retuned after saving).
+    src = SporeMosaicSource(
+        item_id=1,
+        source_path=Path("/tmp/x.png"),
+        source_width=800, source_height=800,
+        p1_x=400, p1_y=450, p2_x=400, p2_y=350,   # 100 px length
+        p3_x=380, p3_y=400, p4_x=420, p4_y=400,   # 40 px width
+        length_um=40.0, width_um=16.0,             # stored disagrees (4x)
+        scale_um_per_px=0.1,                        # 100 px = 10 µm
+    )
+    layout = plan_mosaic(
+        [src], orient=True,
+        grid_policy=MosaicGridPolicy.SQUARE_IMAGE,
+        output_tile_height_px=320,
+        annotation=MosaicAnnotationSpec(draw_dimensions=True),
+    ).layout
+    assert layout is not None
+    tile = layout.cells[0].tile
+    # Geometry follows image scale: length_um in diagnostics is the
+    # image-derived value, not the stored one.
+    assert tile.diagnostics["length_um"] == pytest.approx(10.0, abs=1e-6)
+    assert tile.diagnostics["width_um"] == pytest.approx(4.0, abs=1e-6)
+    # px-per-µm on both axes agrees with 1/scale (isotropic).
+    assert tile.diagnostics["length_axis_px_per_um"] == pytest.approx(10.0, abs=1e-6)
+    assert tile.diagnostics["width_axis_px_per_um"] == pytest.approx(10.0, abs=1e-6)
+
+
+def test_plan_mosaic_label_text_uses_stored_length_um_when_scale_disagrees():
+    """Second half of the calibration contract: the label text still
+    shows the user's stored length_um / width_um even when image
+    calibration would derive a different µm value from the same pixels.
+    Users see the number they saved; render geometry uses the
+    authoritative image scale."""
+    src = SporeMosaicSource(
+        item_id=1,
+        source_path=Path("/tmp/x.png"),
+        source_width=800, source_height=800,
+        p1_x=400, p1_y=450, p2_x=400, p2_y=350,
+        p3_x=380, p3_y=400, p4_x=420, p4_y=400,
+        length_um=40.0, width_um=16.0,             # stored — displayed
+        scale_um_per_px=0.1,                        # image scale drives geometry
+    )
+    layout = plan_mosaic(
+        [src], orient=True,
+        grid_policy=MosaicGridPolicy.SQUARE_IMAGE,
+        output_tile_height_px=320,
+        annotation=MosaicAnnotationSpec(draw_dimensions=True),
+    ).layout
+    assert layout is not None
+    tile = layout.cells[0].tile
+    assert tile.label is not None
+    # Label reads STORED values.
+    assert tile.label["text"] == "40.0 x 16.0"
+    # Diagnostics carry both, so downstream can detect the disagreement.
+    assert tile.diagnostics["label_length_um"] == pytest.approx(40.0)
+    assert tile.diagnostics["label_width_um"] == pytest.approx(16.0)
 
 
 def test_plan_mosaic_skips_when_no_scale_and_no_length():
@@ -478,12 +575,14 @@ def test_plan_mosaic_skips_when_no_scale_and_no_length():
         length_um=None, width_um=None,
         scale_um_per_px=None,
     )
-    layout = plan_mosaic(
+    result = plan_mosaic(
         [src], orient=True,
         grid_policy=MosaicGridPolicy.SQUARE_IMAGE,
         output_tile_height_px=320,
     )
-    assert layout is None
+    assert result.layout is None
+    assert result.reason == MOSAIC_PLAN_REASON_ALL_SKIPPED
+    assert (99, "missing_calibration") in result.skipped
 
 
 def test_plan_mosaic_places_cells_without_overlap():
@@ -492,7 +591,7 @@ def test_plan_mosaic_places_cells_without_overlap():
         sources, orient=True,
         grid_policy=MosaicGridPolicy.SQUARE_IMAGE,
         output_tile_height_px=320,
-    )
+    ).layout
     assert layout is not None
     assert len(layout.cells) == 7
     seen: set[tuple[int, int]] = set()
@@ -514,7 +613,7 @@ def test_plan_mosaic_label_is_semantic_dict_when_dims_available():
         orient=True, grid_policy=MosaicGridPolicy.SQUARE_IMAGE,
         output_tile_height_px=320,
         annotation=MosaicAnnotationSpec(draw_dimensions=True),
-    )
+    ).layout
     assert layout is not None
     tile = layout.cells[0].tile
     assert tile.label is not None
@@ -539,10 +638,50 @@ def test_plan_mosaic_label_absent_when_dims_missing():
         [src], orient=True,
         grid_policy=MosaicGridPolicy.SQUARE_IMAGE,
         output_tile_height_px=320,
-    )
+        annotation=MosaicAnnotationSpec(draw_dimensions=True),
+    ).layout
     assert layout is not None
     tile = layout.cells[0].tile
     assert tile.label is None
+
+
+def test_plan_mosaic_label_absent_when_annotation_flag_off():
+    """When `draw_dimensions=False` (default for cloud), the plan carries
+    no label — the semantic decision is centralised in the planner."""
+    layout = plan_mosaic(
+        [_source(1, length_um=10.0, width_um=4.0)],
+        orient=True, grid_policy=MosaicGridPolicy.SQUARE_IMAGE,
+        output_tile_height_px=320,
+        annotation=MosaicAnnotationSpec(draw_dimensions=False),
+    ).layout
+    assert layout is not None
+    assert layout.cells[0].tile.label is None
+
+
+def test_plan_mosaic_polygon_absent_when_annotation_none():
+    """`annotation=None` is the cloud path's default. Under Option A the
+    planner does not attach polygon coords when no backend has asked
+    for the rectangle. The raster path derives its own overlay polygon
+    via `resolve_common_crop_placement`, so nothing downstream is lost."""
+    layout = plan_mosaic(
+        [_source(1)],
+        orient=True, grid_policy=MosaicGridPolicy.SQUARE_IMAGE,
+        output_tile_height_px=320,
+        annotation=None,
+    ).layout
+    assert layout is not None
+    assert layout.cells[0].tile.oriented_polygon_tile_local is None
+
+
+def test_plan_mosaic_polygon_absent_when_draw_rectangle_flag_off():
+    layout = plan_mosaic(
+        [_source(1)],
+        orient=True, grid_policy=MosaicGridPolicy.SQUARE_IMAGE,
+        output_tile_height_px=320,
+        annotation=MosaicAnnotationSpec(draw_rectangle=False),
+    ).layout
+    assert layout is not None
+    assert layout.cells[0].tile.oriented_polygon_tile_local is None
 
 
 def test_plan_mosaic_polygon_none_when_p3p4_missing():
@@ -558,7 +697,8 @@ def test_plan_mosaic_polygon_none_when_p3p4_missing():
         [src], orient=True,
         grid_policy=MosaicGridPolicy.SQUARE_IMAGE,
         output_tile_height_px=320,
-    )
+        annotation=MosaicAnnotationSpec(draw_rectangle=True),
+    ).layout
     assert layout is not None
     tile = layout.cells[0].tile
     assert tile.oriented_polygon_tile_local is None
@@ -570,7 +710,8 @@ def test_plan_mosaic_polygon_stays_within_tile_bounds():
         orient=True,
         grid_policy=MosaicGridPolicy.SQUARE_IMAGE,
         output_tile_height_px=320,
-    )
+        annotation=MosaicAnnotationSpec(draw_rectangle=True),
+    ).layout
     assert layout is not None
     for cell in layout.cells:
         tile = cell.tile
@@ -586,7 +727,7 @@ def test_plan_mosaic_common_crop_matches_across_tiles():
         orient=True,
         grid_policy=MosaicGridPolicy.SQUARE_IMAGE,
         output_tile_height_px=320,
-    )
+    ).layout
     assert layout is not None
     tiles = [cell.tile for cell in layout.cells]
     common_w = {t.common_crop_width_um for t in tiles}

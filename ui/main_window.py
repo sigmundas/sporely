@@ -15549,14 +15549,24 @@ class MainWindow(GeometryMixin, QMainWindow):
         if not sources:
             return {}
 
-        layout = plan_mosaic(
+        result = plan_mosaic(
             sources,
             orient=bool(orient),
             grid_policy=MosaicGridPolicy.ASPECT_4_3,
             output_tile_height_px=int(output_tile_height_px),
             annotation=None,
         )
+        layout = result.layout
         if layout is None:
+            # Skip diagnostics are useful when a live gallery unexpectedly
+            # renders zero tiles — surface them in the debug log rather
+            # than eating the reason list silently.
+            if result.skipped:
+                print(
+                    f'[main_window] gallery plan produced no tiles: '
+                    f'reason={result.reason} skipped={result.skipped}',
+                    flush=True,
+                )
             return {}
         return {int(cell.tile.source.item_id): cell.tile for cell in layout.cells}
 
@@ -18078,7 +18088,7 @@ class MainWindow(GeometryMixin, QMainWindow):
 
     def create_spore_thumbnail(self, pixmap, points, length_um, width_um, size,
                                measurement_num=0, orient=False, extra_rotation=0,
-                               uniform_length_px=None, color=None,
+                               color=None,
                                rectangle_style=None, rectangle_thickness=None,
                                selected: bool = False,
                                export_mode: bool = False,
@@ -18095,8 +18105,6 @@ class MainWindow(GeometryMixin, QMainWindow):
             measurement_num: Number to display on thumbnail
             orient: If True, rotate so length axis is vertical
             extra_rotation: Additional rotation in degrees (e.g., 180 for flip)
-            uniform_length_px: Legacy height-only clamp. Ignored when
-                ``plan`` is provided.
             plan: Optional `MosaicTilePlan` from
                 `utils.spore_mosaic_render.plan_mosaic`. When set, the
                 tile is cropped to `plan.common_crop_width_px` ×
@@ -18106,7 +18114,9 @@ class MainWindow(GeometryMixin, QMainWindow):
                 is what makes every tile in one observation share the
                 same visible pixel dimensions — required for the live
                 gallery, the cloud atlas and the desktop export to look
-                the same.
+                the same. The legacy `uniform_length_px` parameter has
+                been removed: uniform physical scale is now enforced
+                exclusively via `plan`.
         """
         from PySide6.QtGui import QPainter, QColor, QPolygonF, QPen, QTransform, QPainterPath
         from PySide6.QtCore import QPointF, QRectF
@@ -18396,12 +18406,11 @@ class MainWindow(GeometryMixin, QMainWindow):
                 float(plan_crop_w), float(plan_crop_h),
             )
         else:
-            if uniform_length_px:
-                desired_height = max(max_y - min_y, float(uniform_length_px) + padding_y * 2.0)
-                center_y = (min_y + max_y) / 2.0
-                min_y = center_y - desired_height / 2.0
-                max_y = center_y + desired_height / 2.0
-
+            # No `plan` supplied → legacy natural-crop path. Uniform
+            # physical scale is now delivered exclusively via `plan`;
+            # the old height-only `uniform_length_px` clamp has been
+            # removed (see `_generate_publish_gallery_mosaic_image` for
+            # the migration target).
             crop_rect = QRectF(
                 max(0.0, min_x),
                 max(0.0, min_y),

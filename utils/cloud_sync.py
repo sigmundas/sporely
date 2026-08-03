@@ -15782,8 +15782,24 @@ def _push_spore_mosaic_for_observation(
         )
         return code
 
+    # Progress hook: log a single-line status per stage transition so
+    # the sync log surfaces "rendering", "encoding", "uploading" for a
+    # long-running observation. Deterministic — no wall-clock in the
+    # log line body.
+    def _mosaic_progress(stage: str, current: int, total: int) -> None:
+        if current in (0, total):
+            print(
+                f'[cloud_sync] Mosaic stage obs {obs_local_id}: '
+                f'{stage} {current}/{total}',
+                flush=True,
+            )
+
     try:
-        manifest = build_spore_mosaic(sources, tile_size_px=DEFAULT_TILE_SIZE_PX)
+        manifest = build_spore_mosaic(
+            sources,
+            tile_size_px=DEFAULT_TILE_SIZE_PX,
+            progress_cb=_mosaic_progress,
+        )
     except Exception as exc:
         if is_cloud_auth_error(exc) or is_cloud_temporary_unavailable_error(exc):
             raise
@@ -15802,6 +15818,18 @@ def _push_spore_mosaic_for_observation(
 
     for mid, reason in manifest.skipped:
         print(f'[cloud_sync]   Mosaic tile skip m={mid}: {reason}', flush=True)
+
+    timings = getattr(manifest, "timings", None)
+    if timings is not None:
+        try:
+            summary = timings.summary()
+        except Exception:
+            summary = None
+        if summary is not None:
+            print(
+                f'[cloud_sync] Mosaic timings obs {obs_local_id}: {summary}',
+                flush=True,
+            )
 
     print(
         (

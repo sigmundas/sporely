@@ -448,7 +448,11 @@ def _mock_render(monkeypatch, *, tiles_bytes=b'MOSAIC-BYTES'):
     def fake_sources(rows, image_dir):
         return (['x'], [])
 
-    def fake_build(sources, tile_size_px):
+    def fake_build(sources, tile_size_px, progress_cb=None):
+        # `cloud_sync._push_spore_mosaic_for_observation` passes a
+        # `progress_cb` keyword now — accept and ignore it so this
+        # mock still satisfies the pusher's contract.
+        _ = progress_cb
         return _Manifest(tiles_bytes)
 
     monkeypatch.setattr(cloud_spore_mosaic, 'sources_from_measurement_rows', fake_sources)
@@ -651,7 +655,7 @@ def test_pusher_sends_none_for_non_positive_tile_geometry(tmp_path, db, monkeypa
     )
     monkeypatch.setattr(
         cloud_spore_mosaic, 'build_spore_mosaic',
-        lambda sources, tile_size_px: _EmptyCalibrationManifest(),
+        lambda sources, tile_size_px, progress_cb=None: _EmptyCalibrationManifest(),
     )
     monkeypatch.setattr(cloud_sync, 'direct_r2_runtime_available', lambda: False)
 

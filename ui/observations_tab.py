@@ -9653,10 +9653,28 @@ class ObservationsTab(QWidget):
         output_path: Path | None = None,
         prepared: tuple[dict, list[dict], dict[int, dict], dict] | None = None,
     ) -> str | None:
+        """Compose the publish-plate thumbnail gallery via `plan_mosaic`.
+
+        Migrated to the shared planning core (Phase 1.1): every tile
+        shares uniform physical scale under `MosaicGridPolicy.ASPECT_4_3`
+        so the composite stays consistent with the Analysis export.
+        Legacy `uniform_scale=False` values in settings are silently
+        ignored — the planner always plans uniform tiles.
+        """
         parent = self.window()
         create_thumbnail = getattr(parent, "create_spore_thumbnail", None)
         if not callable(create_thumbnail):
             return None
+
+        # Local imports keep the top-level import graph unchanged so the
+        # observations_tab module still loads without the shared planner
+        # in constrained test environments.
+        from utils.spore_mosaic_render import (
+            MosaicAnnotationSpec,
+            MosaicGridPolicy,
+            SporeMosaicSource,
+            plan_mosaic,
+        )
 
         self._yield_background_sync_ui()
         if cancel_cb:
@@ -9669,7 +9687,9 @@ class ObservationsTab(QWidget):
             prepared = self._prepare_publish_mosaic_inputs(observation_id)
         settings, valid_measurements, image_rows, render_options = prepared
         orient = bool(settings.get("orient", True))
-        uniform_scale = bool(settings.get("uniform_scale", False))
+        # Any persisted `uniform_scale=False` is silently ignored — the
+        # shared planner enforces uniform physical scale on every tile.
+        _ = settings.get("uniform_scale", None)
         if not valid_measurements:
             return None
 
@@ -9687,22 +9707,103 @@ class ObservationsTab(QWidget):
         rectangle_style = render_options.get("rectangle_style")
         rectangle_thickness = render_options.get("rectangle_thickness")
 
-        uniform_length_um = None
-        if uniform_scale:
-            for measurement in valid_measurements:
-                length_um = measurement.get("length_um")
-                try:
-                    length_f = float(length_um)
-                except (TypeError, ValueError):
-                    continue
-                if uniform_length_um is None or length_f > uniform_length_um:
-                    uniform_length_um = length_f
+        # ── Build shared planner input ─────────────────────────────────
+        # Cache image dimensions + colours so we hit the DB once per
+        # source image, not once per measurement.
+        pixmap_cache: dict[str, QPixmap] = {}
 
-        thumbnails: list[QPixmap] = []
-        total_items = len(valid_measurements)
+        def _load_pixmap(path: str) -> QPixmap | None:
+            cached = pixmap_cache.get(path)
+            if cached is not None:
+                return cached
+            pixmap = QPixmap(path)
+            if pixmap.isNull():
+                return None
+            pixmap_cache[path] = pixmap
+            return pixmap
+
+        sources: list[SporeMosaicSource] = []
+        measurement_by_id: dict[int, dict] = {}
+        for measurement in valid_measurements:
+            try:
+                mid = int(measurement.get("id") or 0)
+            except (TypeError, ValueError):
+                continue
+            path = measurement.get("image_filepath")
+            if not path:
+                continue
+            pixmap = _load_pixmap(str(path))
+            if pixmap is None:
+                continue
+            image_row = image_rows.get(int(measurement.get("image_id") or 0), {})
+            scale_mpp = image_row.get("scale_microns_per_pixel")
+            try:
+                scale_um_per_px = float(scale_mpp) if scale_mpp else None
+            except (TypeError, ValueError):
+                scale_um_per_px = None
+            if scale_um_per_px is not None and scale_um_per_px <= 0:
+                scale_um_per_px = None
+            try:
+                length_um = float(measurement.get("length_um"))
+                width_um = float(measurement.get("width_um"))
+            except (TypeError, ValueError):
+                continue
+            sources.append(SporeMosaicSource(
+                item_id=mid,
+                source_path=Path(str(path)),
+                source_width=int(pixmap.width()),
+                source_height=int(pixmap.height()),
+                p1_x=float(measurement["p1_x"]), p1_y=float(measurement["p1_y"]),
+                p2_x=float(measurement["p2_x"]), p2_y=float(measurement["p2_y"]),
+                p3_x=float(measurement["p3_x"]), p3_y=float(measurement["p3_y"]),
+                p4_x=float(measurement["p4_x"]), p4_y=float(measurement["p4_y"]),
+                length_um=length_um, width_um=width_um,
+                scale_um_per_px=scale_um_per_px,
+                extra_rotation_deg=float(
+                    measurement.get("gallery_rotation") or 0
+                ),
+            ))
+            measurement_by_id[mid] = measurement
+
+        if not sources:
+            return None
+
+        # Plate composition targets a 4:3 layout (matches the pre-v3
+        # publish plate intent) and asks the planner for the rectangle
+        # + label so `create_spore_thumbnail(plan=...)` can bake them
+        # via the shared tile-local geometry.
+        result = plan_mosaic(
+            sources,
+            orient=orient,
+            grid_policy=MosaicGridPolicy.ASPECT_4_3,
+            output_tile_height_px=thumbnail_size,
+            annotation=MosaicAnnotationSpec(
+                draw_rectangle=True,
+                draw_dimensions=True,
+                rectangle_style=str(rectangle_style or "b"),
+                rectangle_thickness=float(rectangle_thickness or 2.0),
+                default_colour_rgb=(
+                    default_color.red(), default_color.green(), default_color.blue(),
+                ),
+            ),
+        )
+        layout = result.layout
+        if layout is None or not layout.cells:
+            if result.skipped:
+                print(
+                    f'[observations_tab] publish plate plan produced no tiles: '
+                    f'reason={result.reason} skipped={result.skipped}',
+                    flush=True,
+                )
+            return None
+
+        total_items = len(layout.cells)
         if progress_cb:
             progress_cb(
-                self.tr("Rendering thumbnail gallery {current}/{total} {item_label} for this observation...").format(
+                self.tr(
+                    "Rendering thumbnail gallery {current}/{total} "
+                    "{item_label} for this observation..."
+                ).format(
                     current=0,
                     total=total_items,
                     item_label=gallery_item_label,
@@ -9710,136 +9811,83 @@ class ObservationsTab(QWidget):
                 2,
                 3,
             )
-        for measurement in valid_measurements:
-            self._yield_background_sync_ui()
-            if cancel_cb:
-                cancel_cb()
-            image_path = measurement.get("image_filepath")
-            pixmap = QPixmap(image_path)
-            if pixmap.isNull():
-                continue
 
-            points = [
-                QPointF(float(measurement["p1_x"]), float(measurement["p1_y"])),
-                QPointF(float(measurement["p2_x"]), float(measurement["p2_y"])),
-                QPointF(float(measurement["p3_x"]), float(measurement["p3_y"])),
-                QPointF(float(measurement["p4_x"]), float(measurement["p4_y"])),
-            ]
-            image_row = image_rows.get(int(measurement.get("image_id") or 0), {})
-            mpp = image_row.get("scale_microns_per_pixel")
-            uniform_length_px = None
-            if uniform_scale and uniform_length_um:
-                try:
-                    mpp_value = float(mpp or 0.0)
-                except Exception:
-                    mpp_value = 0.0
-                if mpp_value <= 0:
-                    line1_px = (
-                        (points[1].x() - points[0].x()) ** 2
-                        + (points[1].y() - points[0].y()) ** 2
-                    ) ** 0.5
-                    line2_px = (
-                        (points[3].x() - points[2].x()) ** 2
-                        + (points[3].y() - points[2].y()) ** 2
-                    ) ** 0.5
-                    measured_length_px = max(line1_px, line2_px)
-                    try:
-                        measured_length_um = float(
-                            measurement.get("length_um") or 0.0
-                        )
-                    except (TypeError, ValueError):
-                        measured_length_um = 0.0
-                    if measured_length_px > 0 and measured_length_um > 0:
-                        mpp_value = measured_length_um / measured_length_px
-                if mpp_value > 0:
-                    uniform_length_px = float(uniform_length_um) / mpp_value
+        canvas = QPixmap(layout.mosaic_width_px, layout.mosaic_height_px)
+        canvas.fill(QColor("white"))
+        painter = QPainter(canvas)
+        rendered = 0
+        try:
+            for cell in layout.cells:
+                self._yield_background_sync_ui()
+                if cancel_cb:
+                    cancel_cb()
+                measurement = measurement_by_id.get(int(cell.tile.source.item_id))
+                if measurement is None:
+                    continue
+                pixmap = _load_pixmap(str(measurement["image_filepath"]))
+                if pixmap is None:
+                    continue
 
-            measure_color = default_color
-            custom_color = (image_row.get("measure_color") or "").strip()
-            if custom_color:
-                measure_color = QColor(custom_color)
-
-            thumb = create_thumbnail(
-                pixmap,
-                points,
-                measurement.get("length_um") or 0,
-                measurement.get("width_um") or 0,
-                thumbnail_size,
-                0,
-                orient=orient,
-                extra_rotation=int(measurement.get("gallery_rotation") or 0),
-                uniform_length_px=uniform_length_px,
-                color=measure_color,
-                rectangle_style=rectangle_style,
-                rectangle_thickness=rectangle_thickness,
-                export_mode=True,
-            )
-            if thumb and not thumb.isNull():
-                thumbnails.append(thumb)
-            if progress_cb:
-                progress_cb(
-                    self.tr("Rendering thumbnail gallery {current}/{total} {item_label} for this observation...").format(
-                        current=len(thumbnails),
-                        total=total_items,
-                        item_label=gallery_item_label,
-                    ),
-                    2,
-                    3,
+                points = [
+                    QPointF(float(measurement["p1_x"]), float(measurement["p1_y"])),
+                    QPointF(float(measurement["p2_x"]), float(measurement["p2_y"])),
+                    QPointF(float(measurement["p3_x"]), float(measurement["p3_y"])),
+                    QPointF(float(measurement["p4_x"]), float(measurement["p4_y"])),
+                ]
+                image_row = image_rows.get(
+                    int(measurement.get("image_id") or 0), {}
                 )
-            self._yield_background_sync_ui()
+                measure_color = default_color
+                custom_color = (image_row.get("measure_color") or "").strip()
+                if custom_color:
+                    measure_color = QColor(custom_color)
 
-        if not thumbnails:
+                thumb = create_thumbnail(
+                    pixmap,
+                    points,
+                    measurement.get("length_um") or 0,
+                    measurement.get("width_um") or 0,
+                    thumbnail_size,
+                    0,
+                    orient=orient,
+                    extra_rotation=int(measurement.get("gallery_rotation") or 0),
+                    color=measure_color,
+                    rectangle_style=rectangle_style,
+                    rectangle_thickness=rectangle_thickness,
+                    export_mode=True,
+                    plan=cell.tile,
+                )
+                if thumb and not thumb.isNull():
+                    painter.drawPixmap(cell.x_px, cell.y_px, thumb)
+                    rendered += 1
+                    if progress_cb:
+                        progress_cb(
+                            self.tr(
+                                "Rendering thumbnail gallery {current}/{total} "
+                                "{item_label} for this observation..."
+                            ).format(
+                                current=rendered,
+                                total=total_items,
+                                item_label=gallery_item_label,
+                            ),
+                            2,
+                            3,
+                        )
+                    self._yield_background_sync_ui()
+        finally:
+            painter.end()
+
+        if rendered == 0:
             return None
 
-        import math
-
-        num_items = len(thumbnails)
-        average_tile_width = int(
-            round(sum(thumb.width() for thumb in thumbnails) / max(1, num_items))
-        )
-        tile_height = max(thumb.height() for thumb in thumbnails)
-        grid_shape_fn = getattr(parent, "_gallery_export_grid_shape", None)
-        if callable(grid_shape_fn):
-            try:
-                cols, rows = grid_shape_fn(num_items, average_tile_width, tile_height)
-            except Exception:
-                cols = max(1, int(math.ceil(math.sqrt(num_items))))
-                rows = int(math.ceil(num_items / cols))
-        else:
-            cols = max(1, int(math.ceil(math.sqrt(num_items))))
-            rows = int(math.ceil(num_items / cols))
-
-        spacing = 0
-        row_widths = []
-        for row in range(rows):
-            row_items = thumbnails[row * cols:(row + 1) * cols]
-            row_width = sum(thumb.width() for thumb in row_items)
-            if row_items:
-                row_width += max(0, len(row_items) - 1) * spacing
-            row_widths.append(row_width)
-        canvas_w = max(row_widths) if row_widths else 0
-        canvas_h = rows * tile_height + max(0, rows - 1) * spacing
-
-        canvas = QPixmap(canvas_w, canvas_h)
-        canvas.fill(QColor("white"))
         if progress_cb:
             progress_cb(self.tr("Composing thumbnail gallery image..."), 3, 3)
         self._yield_background_sync_ui()
-        painter = QPainter(canvas)
-        for idx, thumb in enumerate(thumbnails):
-            self._yield_background_sync_ui()
-            if cancel_cb:
-                cancel_cb()
-            row = idx // cols
-            x = sum(
-                thumbnails[row * cols + col_index].width() + spacing
-                for col_index in range(idx % cols)
-            )
-            y = row * (tile_height + spacing)
-            painter.drawPixmap(x, y, thumb)
-        painter.end()
 
-        out_path = Path(output_path) if output_path is not None else temp_dir / "gallery_mosaic.png"
+        out_path = (
+            Path(output_path) if output_path is not None
+            else temp_dir / "gallery_mosaic.png"
+        )
         if not canvas.save(str(out_path), "PNG"):
             return None
         return str(out_path)

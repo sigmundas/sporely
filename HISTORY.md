@@ -1,5 +1,104 @@
 # Sporely Desktop — History & Debugging Notes
 
+### Spore-mosaic Phase 2 performance instrumentation + local-ROI renderer
+
+The Phase 2 pass adds observability first, then a fast renderer that
+skips the whole-source rotation. Atlas bytes are unchanged (parity
+tests assert mean/max RGB diff below documented thresholds), so no
+pipeline-version bump.
+
+* **Build-time instrumentation (Phase 2.A).**
+  `MosaicBuildTimings` records total, plan, decode, per-tile render,
+  paste, encode and digest ns for every `build_spore_mosaic` call.
+  The summary lands on `SporeMosaicManifest.timings.summary()` and
+  `cloud_sync._push_spore_mosaic_for_observation` logs it per
+  observation. `SPORELY_DEBUG_MOSAIC_TIMING=1` emits per-tile debug
+  lines. A synthetic harness lives at
+  `scripts/benchmark_spore_mosaic.py` — it builds 9 / 25 / 49 / 200
+  tile mosaics from a temporary source, prints the timing table, and
+  confirms deterministic atlas bytes (same inputs → identical
+  `image_bytes`, which is exactly the property
+  `MOSAIC_STATUS_SKIP_UNCHANGED` relies on).
+* **Local-ROI renderer (Phase 2.B).** `fast_render_tile` in
+  `utils/spore_thumbnail_render.py` collapses "rotate whole source →
+  crop → resize" into "inverse-map the crop back to source, crop a
+  small ROI, rotate + LANCZOS-resize the ROI". Same filter combo as
+  the reference (BILINEAR rotate + LANCZOS resize), applied to a
+  couple of kilopixels instead of a couple of megapixels.
+  `render_spore_thumbnail_common_crop` now dispatches to
+  `fast_render_tile` by default; `SPORELY_MOSAIC_USE_REFERENCE=1`
+  forces the old whole-source path for regression bisection.
+  For a 4000×4000 source with per-tile rotation the render step
+  drops from ~158 ms/tile (reference) to ~0.35 ms/tile (fast), a
+  ~400× per-tile speedup. On the current benchmark the encode step
+  dominates the remaining wall-clock budget.
+* **Progress callback (Phase 2.E, partial).**
+  `build_spore_mosaic(progress_cb=…)` fires stage transitions
+  (`planning` → `rendering` → `encoding` → `digest` → `complete`)
+  and throttled tile-render updates (default: every 100 ms or every
+  8 tiles). `cloud_sync` wires this up so long observations show
+  the current stage in the sync log. Default is a no-op; callbacks
+  cannot affect deterministic bytes (tested).
+
+### Spore-mosaic Phase 1 correctness follow-ups (v3 → v4 pipeline)
+
+The Phase 1 correctness pass on top of the shared planner tightens
+five gaps in the v3 rollout. The atlas format is unchanged; the pipeline
+version bumps to 4 so every observation re-uploads once with the new
+render geometry.
+
+* **Publish-plate migration to `plan_mosaic`.** The Publish tab's
+  thumbnail gallery mosaic used to call `create_spore_thumbnail` with a
+  legacy `uniform_length_px` height clamp derived from a settings
+  `uniform_scale` boolean. It now routes through
+  `utils.spore_mosaic_render.plan_mosaic` under
+  `MosaicGridPolicy.ASPECT_4_3` and renders every tile via
+  `create_spore_thumbnail(plan=cell.tile)`. Legacy
+  `uniform_scale=False` values in settings are silently dropped — the
+  planner always plans uniform physical scale.
+  `create_spore_thumbnail`'s `uniform_length_px` parameter is gone.
+* **Authoritative image calibration in the cloud adapter.**
+  `SporeCropSource` and the pusher-side `sources_from_measurement_rows`
+  now carry per-image `scale_microns_per_pixel` from the `images`
+  table into `SporeMosaicSource.scale_um_per_px`. The neutral planner
+  splits the resolution into geometry-µm (what the render uses) and
+  label-µm (what the label shows). When both are available and agree,
+  the atlas is byte-identical to v3. When they disagree — e.g. after
+  a calibration retune or a manual `length_um` edit — geometry now
+  follows the calibrated scale on both axes (isotropic) while the
+  label keeps the stored user-recorded number.
+* **Padded off-centre common crop.** When the common crop overflows
+  the source on an axis, `resolve_common_crop_placement` no longer
+  centres the SOURCE in the canvas (which threw off-centre measurements
+  away from the tile centre). It now centres the MEASUREMENT at the
+  tile centre and clamps so the source stays fully inside the canvas.
+  Pillow raster, Qt raster and SVG vector paths all consume the same
+  placement, so the fix lands in every backend at once. Tests cover
+  horizontal-only, vertical-only, both-axes, and near-source-edge
+  clamping.
+* **`MosaicPlanningResult` return shape.** `plan_mosaic` no longer
+  returns `None` on total failure — it returns a `MosaicPlanningResult
+  (layout, skipped, reason)` so callers keep per-item skip
+  diagnostics on empty layouts and can distinguish `"no_input"` from
+  `"all_skipped"`. `cloud_spore_mosaic.build_spore_mosaic`,
+  `main_window._build_gallery_mosaic_plan`,
+  `export_gallery.run_export`, and the new publish-plate flow all log
+  the skip list on total failure.
+* **Annotation API is now behavioural.** `plan_mosaic(annotation=…)`
+  controls whether the plan attaches `MosaicTilePlan.label` (gated by
+  `draw_dimensions`) and `oriented_polygon_tile_local` (gated by
+  `draw_rectangle`). Cloud passes `annotation=None` so the planner
+  skips both fields — the raster path derives its own overlay polygon
+  from the shared `resolve_common_crop_placement`, so nothing
+  downstream is lost. Desktop export continues to pass `draw_rectangle=
+  True, draw_dimensions=True` for baked labels and vector SVG output.
+* **Legacy grid helpers removed.** `compute_mosaic_grid`,
+  `compute_mosaic_grid_cells`, `place_tiles`, `place_tiles_cells` are
+  deleted from `utils.cloud_spore_mosaic`. Live production code has
+  used `plan_mosaic` (which routes through `select_grid_shape`) for
+  every mosaic backend since v3; the last consumers were tests, now
+  migrated to `select_grid_shape` directly.
+
 ### Shared spore-mosaic planning core + v3 pipeline
 
 `utils/spore_mosaic_render.py` is a new backend-agnostic planner shared

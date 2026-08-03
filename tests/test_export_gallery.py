@@ -222,7 +222,7 @@ def test_run_export_png_tiles_are_uniform(monkeypatch, qapp, tmp_path):
     layout = plan_mosaic(
         sources, orient=True,
         grid_policy=MosaicGridPolicy.ASPECT_4_3, output_tile_height_px=160,
-    )
+    ).layout
     assert layout is not None
     widths = {cell.w_px for cell in layout.cells}
     heights = {cell.h_px for cell in layout.cells}

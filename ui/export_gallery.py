@@ -179,7 +179,7 @@ def run_export(main_window) -> None:
     if not sources:
         return
 
-    layout = plan_mosaic(
+    result = plan_mosaic(
         sources,
         orient=orient,
         grid_policy=MosaicGridPolicy.ASPECT_4_3,
@@ -194,7 +194,14 @@ def run_export(main_window) -> None:
             ),
         ),
     )
+    layout = result.layout
     if layout is None or not layout.cells:
+        if result.skipped:
+            print(
+                f'[export_gallery] plan produced no tiles: '
+                f'reason={result.reason} skipped={result.skipped}',
+                flush=True,
+            )
         return
 
     if export_format == "svg":
