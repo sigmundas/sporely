@@ -7393,14 +7393,45 @@ def microscope_image_requires_public_spore_anchor(image_id: int | None) -> bool:
 
 
 def _cloud_explicit_media_upload_selection(observation_id: int | None) -> set[int]:
-    """Return persisted cloud-specific byte-upload choices, when available.
+    """Return image ids checked in the observation thumbnail gallery.
 
-    The current desktop UI has only an external-publish checkbox. Its seeded
-    and excluded settings must not be repurposed as Sporely Cloud controls, so
-    no persisted explicit cloud selection exists yet. Operation-scoped callers
-    may still pass an explicit selection directly.
+    The gallery persists its state as an exclusion list. Cloud media upload
+    shares that visible checkbox contract: checked rows may upload bytes;
+    unchecked rows remain metadata-only. This is intentionally independent of
+    whether a microscope image has spore measurements.
     """
-    return set()
+    local_observation_id = _safe_int(observation_id)
+    if local_observation_id <= 0:
+        return set()
+    conn = get_connection()
+    try:
+        all_ids = {
+            _safe_int(row[0])
+            for row in conn.execute(
+                "SELECT id FROM images WHERE observation_id = ?",
+                (local_observation_id,),
+            ).fetchall()
+            if _safe_int(row[0]) > 0
+        }
+        setting_key = f"artsobs_publish_excluded_image_ids_{local_observation_id}"
+        try:
+            setting_row = conn.execute(
+                "SELECT value FROM settings WHERE key = ?",
+                (setting_key,),
+            ).fetchone()
+        except sqlite3.OperationalError:
+            setting_row = None
+        excluded: set[int] = set()
+        if setting_row:
+            try:
+                values = json.loads(setting_row[0] or "[]")
+                if isinstance(values, list):
+                    excluded = {_safe_int(value) for value in values}
+            except (TypeError, ValueError, json.JSONDecodeError):
+                excluded = set()
+        return all_ids - excluded
+    finally:
+        conn.close()
 
 
 def _cloud_publish_path_key(path: str | None) -> str:
@@ -7444,12 +7475,9 @@ def explain_pending_cloud_image_decision(
 
     Policy (matches the ``sync_images=True`` explicit media-upload semantics):
 
-      * Field images: eligible unless their local file is missing.
-      * Microscope images: eligible only when the user explicitly selected them
-        for media upload, or they have at least one spore measurement (the
-        "public spore points anchor" case). Bare microscope photos that were
-        imported ages ago with no measurements attached stay LOCAL — otherwise a
-        first-time Refresh would upload the entire microscope backlog.
+      * Field and microscope image bytes are eligible only when their thumbnail
+        gallery checkbox is selected. Spore measurements never override an
+        unchecked image; their metadata uses a metadata-only microscope anchor.
       * Cloud-cache rows (`source_role=cloud_recovery_cache` or
         `file_purpose=cache`): never re-upload bytes; they're stubs that only
         need metadata patches, which the sync handles separately.
@@ -7488,6 +7516,10 @@ def explain_pending_cloud_image_decision(
     file_purpose = str(row.get("file_purpose") or "").strip().lower()
     is_cloud_origin = source_role == "cloud_recovery_cache" or file_purpose == "cache"
 
+    explicit = explicit_media_upload_selection
+    if not is_cloud_origin and explicit is not None and image_id not in explicit:
+        return {"pending": False, "reason": PENDING_REASON_EXCLUDED}
+
     filepath = str(row.get("filepath") or row.get("original_filepath") or "").strip()
     if not is_cloud_origin and (not filepath or not Path(filepath).exists()):
         # Non cloud-origin rows need a local file to encode. Cache rows are
@@ -7499,20 +7531,13 @@ def explain_pending_cloud_image_decision(
     if path_key and path_key in seen_paths:
         return {"pending": False, "reason": PENDING_REASON_DUPLICATE}
 
-    if image_type == "microscope" and not is_cloud_origin:
-        # Cache-row cloud_id-null repairs bypass this check — see above.
-        # Otherwise: microscope images are eligible only when the user
-        # explicitly selected them for upload, or when they carry at least one
-        # spore measurement (mosaic-anchor use case). Bare microscope photos
-        # with no measurements stay local until the user opts in.
-        explicit = explicit_media_upload_selection or set()
-        if image_id not in explicit:
-            counts = image_measurement_counts or {}
-            if int(counts.get(image_id, 0) or 0) == 0:
-                return {
-                    "pending": False,
-                    "reason": PENDING_REASON_MICROSCOPE_NO_MEASUREMENTS,
-                }
+    if image_type == "microscope" and not is_cloud_origin and explicit is None:
+        # Callers that do not provide the persisted gallery selection must not
+        # infer byte-upload consent from the presence of measurements.
+        return {
+            "pending": False,
+            "reason": PENDING_REASON_MICROSCOPE_NO_MEASUREMENTS,
+        }
 
     if path_key:
         seen_paths.add(path_key)
@@ -14138,10 +14163,12 @@ def _ensure_metadata_only_microscope_image_for_public_spores(
     payload = _metadata_only_microscope_image_payload(
         client, obs_cloud_id, row,
     )
-    # External-publish exclusions never downgrade a clean Sporely Cloud image
-    # to a metadata-only anchor. Metadata-only rows remain supported for cases
-    # where no canonical source bytes are available.
-    metadata_only = False
+    # An unchecked gallery image may retain its cloud row as the foreign-key
+    # anchor for public spore measurements, but its bytes must not remain
+    # published. Checked images keep any existing storage paths.
+    metadata_only = local_image_id not in _cloud_explicit_media_upload_selection(
+        obs_local_id,
+    )
 
     if remote_row:
         remote_cloud_id = str(remote_row.get('id') or '').strip()
@@ -15085,12 +15112,33 @@ def _push_summary_for_current_observation(
 # as short kebab-cased strings so callers can aggregate them into counters
 # and log them verbatim. Auth / temporary errors are NOT translated to a
 # code — they propagate as exceptions so the caller can abort cleanly.
+#
+# Skip-status differentiation (Phase 2.D): previously every "nothing to
+# upload" outcome collapsed into MOSAIC_STATUS_SKIP_MISSING_SOURCE_IMAGES
+# regardless of whether the source files were absent, calibration was
+# missing, geometry was invalid, or the render loop failed on every
+# tile. Each has a different remediation, so callers now branch on:
+#
+#   * SKIP_MISSING_SOURCE_IMAGES — every eligible item's source file
+#     was absent from the local media directory.
+#   * SKIP_MISSING_CALIBRATION   — every item lacked both a per-image
+#     µm/px calibration and a stored length_um the planner could use.
+#   * SKIP_INVALID_GEOMETRY      — every item had degenerate source
+#     dimensions or a degenerate p1..p4 axis.
+#   * SKIP_NO_USABLE_SOURCES     — the batch was skipped for mixed or
+#     otherwise-uncategorised reasons; keeps the generic bucket alive
+#     for backfills of pre-instrumented rows.
+#   * SKIP_RENDER_FAILURE        — the planner produced tiles but the
+#     render loop raised on every one of them.
 MOSAIC_STATUS_GENERATED = 'generated'
 MOSAIC_STATUS_SKIP_UNCHANGED = 'skip_unchanged'
 MOSAIC_STATUS_SKIP_NO_OBSERVATION = 'skip_no_observation'
 MOSAIC_STATUS_SKIP_NO_PUBLIC_SPORE_DATA = 'skip_no_public_spore_data'
 MOSAIC_STATUS_SKIP_NO_ELIGIBLE_MEASUREMENTS = 'skip_no_eligible_measurements'
 MOSAIC_STATUS_SKIP_MISSING_SOURCE_IMAGES = 'skip_missing_source_images'
+MOSAIC_STATUS_SKIP_MISSING_CALIBRATION = 'skip_missing_calibration'
+MOSAIC_STATUS_SKIP_INVALID_GEOMETRY = 'skip_invalid_geometry'
+MOSAIC_STATUS_SKIP_RENDER_FAILURE = 'skip_render_failure'
 MOSAIC_STATUS_SKIP_NO_USABLE_SOURCES = 'skip_no_usable_sources'
 MOSAIC_STATUS_FAIL_BUILD = 'fail_build'
 MOSAIC_STATUS_FAIL_UPLOAD = 'fail_upload'
@@ -15099,6 +15147,38 @@ MOSAIC_STATUS_FAIL_MOSAIC_UPSERT = 'fail_mosaic_upsert'
 MOSAIC_STATUS_FAIL_NO_MOSAIC_ID = 'fail_no_mosaic_id'
 MOSAIC_STATUS_FAIL_TILE_CLEANUP = 'fail_tile_cleanup'
 MOSAIC_STATUS_FAIL_TILE_INSERT = 'fail_tile_insert'
+
+
+def _classify_mosaic_build_skips(
+    skipped: list[tuple[int, str]],
+    *,
+    include_all_missing_source: bool = True,
+) -> str:
+    """Bucket the per-item skip reasons from `build_spore_mosaic` into
+    one of the ``MOSAIC_STATUS_SKIP_*`` failure codes.
+
+    A batch with a uniform reason maps to a specific code; mixed reasons
+    map to ``MOSAIC_STATUS_SKIP_NO_USABLE_SOURCES``. When
+    ``include_all_missing_source`` is False (callers who already handled
+    the ``sources_from_measurement_rows`` prefilter separately), the
+    "source image missing" bucket falls through to the generic code
+    instead of hiding actual planner failures.
+    """
+    if not skipped:
+        return MOSAIC_STATUS_SKIP_NO_USABLE_SOURCES
+    reasons = {reason for _mid, reason in skipped}
+    if (
+        include_all_missing_source
+        and reasons and all(r == 'source image missing' for r in reasons)
+    ):
+        return MOSAIC_STATUS_SKIP_MISSING_SOURCE_IMAGES
+    if reasons and all(r == 'missing_calibration' for r in reasons):
+        return MOSAIC_STATUS_SKIP_MISSING_CALIBRATION
+    if reasons and all(r == 'invalid source dims' for r in reasons):
+        return MOSAIC_STATUS_SKIP_INVALID_GEOMETRY
+    if any(str(r).startswith('render failed:') for r in reasons):
+        return MOSAIC_STATUS_SKIP_RENDER_FAILURE
+    return MOSAIC_STATUS_SKIP_NO_USABLE_SOURCES
 
 
 # ── Local-only mosaic signature ─────────────────────────────────────────────
@@ -15633,6 +15713,8 @@ def _push_spore_mosaic_for_observation(
     client: 'SporelyCloudClient',
     obs_local_id: int,
     obs_cloud_id: str,
+    *,
+    status_cb: Callable[[str], None] | None = None,
 ) -> str:
     """Generate + upload one public spore mosaic (atlas + tile manifest).
 
@@ -15649,7 +15731,27 @@ def _push_spore_mosaic_for_observation(
     matching the visibility surface of the public observation RPC. The
     per-measurement `thumb_key` / `cropUrl` fallback on the public RPC
     remains authoritative when this step is skipped or fails.
+
+    Progress
+    --------
+    ``status_cb(message)`` fires once per visible stage transition
+    (planning, rendering, encoding, uploading, saving metadata). The
+    caller is expected to bind the outer sync progress hook to it —
+    e.g. ``lambda msg: _emit_progress(progress_cb, msg, state)`` — so
+    the desktop UI surfaces per-observation mosaic progress without
+    the mosaic module having to know about ``ProgressCallback`` or the
+    outer progress state.  Optional: leaving it ``None`` keeps behaviour
+    at the pre-Phase-2.E log-only surface.
     """
+    def _status(message: str) -> None:
+        if status_cb is None:
+            return
+        try:
+            status_cb(message)
+        except Exception:
+            # Progress callbacks must never break a mosaic sync.
+            pass
+
     if not obs_cloud_id:
         return MOSAIC_STATUS_SKIP_NO_OBSERVATION
 
@@ -15719,20 +15821,44 @@ def _push_spore_mosaic_for_observation(
     from utils.cloud_spore_mosaic import (
         DEFAULT_TILE_SIZE_PX,
         MOSAIC_PIPELINE_VERSION,
+        MOSAIC_PROGRESS_COMPLETE,
+        MOSAIC_PROGRESS_DIGEST,
+        MOSAIC_PROGRESS_ENCODING,
+        MOSAIC_PROGRESS_PLANNING,
+        MOSAIC_PROGRESS_RENDERING,
         build_spore_mosaic,
         build_storage_key,
         compute_content_digest,
         sources_from_measurement_rows,
     )
 
+    # Stage timings — each block below stamps a monotonic delta into
+    # `stage_ns` so the aggregate line at the end reads like:
+    #   {signature_ms, remote_check_ms, build_ms, upload_ms,
+    #    mosaic_row_ms, tile_rows_ms, local_signature_ms, total_ms}.
+    # `build_ms` is the local CPU/I/O cost inside `build_spore_mosaic`;
+    # `upload_ms` is the R2 / media-worker network cost. The two are
+    # deliberately named so an operator glancing at the log can tell
+    # whether a slow observation is spending time in the pipeline or
+    # over the wire.
+    push_start_ns = time.monotonic_ns()
+    stage_ns: dict[str, int] = {
+        'signature_ms': 0, 'remote_check_ms': 0, 'build_ms': 0,
+        'upload_ms': 0, 'mosaic_row_ms': 0, 'tile_rows_ms': 0,
+        'local_signature_ms': 0,
+    }
+
     # Cheap change-detection guard. If nothing that determines the mosaic
     # bytes or tile manifest has changed AND a valid remote mosaic row
     # still exists, we can skip Pillow / WebP / R2 / tile-rewrite entirely.
     # Missing remote row → rebuild even when the local signature matches,
     # so a wiped mosaic (or a fresh pipeline version) always recovers.
+    signature_start_ns = time.monotonic_ns()
     new_signature = _local_spore_mosaic_signature(obs_local_id, rows, observation_row)
     stored_signature = _load_local_mosaic_signature(obs_local_id)
+    stage_ns['signature_ms'] = time.monotonic_ns() - signature_start_ns
     if new_signature and stored_signature and new_signature == stored_signature:
+        remote_check_start_ns = time.monotonic_ns()
         try:
             remote_ok = _remote_mosaic_row_exists(
                 client, obs_cloud_id, MOSAIC_PIPELINE_VERSION,
@@ -15741,6 +15867,7 @@ def _push_spore_mosaic_for_observation(
             if is_cloud_auth_error(exc) or is_cloud_temporary_unavailable_error(exc):
                 raise
             remote_ok = False
+        stage_ns['remote_check_ms'] = time.monotonic_ns() - remote_check_start_ns
         if remote_ok:
             print(
                 f'[cloud_sync] Mosaic skip obs {obs_local_id}: '
@@ -15768,34 +15895,49 @@ def _push_spore_mosaic_for_observation(
     if not sources:
         # Distinguish "we couldn't open any file" (fixable by resyncing
         # media) from "the source rows themselves were malformed".
-        all_missing = bool(source_skipped) and all(
-            reason == 'source image missing' for _mid, reason in source_skipped
-        )
-        code = (
-            MOSAIC_STATUS_SKIP_MISSING_SOURCE_IMAGES
-            if all_missing
-            else MOSAIC_STATUS_SKIP_NO_USABLE_SOURCES
-        )
+        code = _classify_mosaic_build_skips(source_skipped)
         print(
             f'[cloud_sync] Mosaic abort obs {obs_local_id}: no usable sources ({code})',
             flush=True,
         )
         return code
 
-    # Progress hook: log a single-line status per stage transition so
-    # the sync log surfaces "rendering", "encoding", "uploading" for a
-    # long-running observation. Deterministic — no wall-clock in the
-    # log line body.
+    # Progress hook: emit human-readable stage transitions on both the
+    # print log AND the optional outer status callback. The message set
+    # matches the desktop UI's "Rendering spore mosaic k/N…" progression
+    # so operators see meaningful transitions during a long build.
+    # Deterministic guarantee: the callback body never depends on the
+    # wall clock, and every branch is a no-op if the flag is False.
     def _mosaic_progress(stage: str, current: int, total: int) -> None:
-        if current in (0, total):
+        if stage == MOSAIC_PROGRESS_PLANNING and current == 0:
+            message = "Planning spore mosaic…"
+        elif stage == MOSAIC_PROGRESS_RENDERING:
+            if total > 0:
+                message = f"Rendering spore mosaic {current}/{total}…"
+            else:
+                message = "Rendering spore mosaic…"
+        elif stage == MOSAIC_PROGRESS_ENCODING and current == 0:
+            message = "Encoding spore mosaic…"
+        elif stage == MOSAIC_PROGRESS_DIGEST and current == 0:
+            # Digest is fast; keep the UI on the encoding message
+            # rather than flashing "digest" for a millisecond.
+            return
+        elif stage == MOSAIC_PROGRESS_COMPLETE:
+            # Terminal state; caller emits a specific "Uploading…"
+            # message next, so no UI-visible transition here.
+            return
+        else:
+            return
+        if current in (0, total) or stage == MOSAIC_PROGRESS_RENDERING:
             print(
-                f'[cloud_sync] Mosaic stage obs {obs_local_id}: '
-                f'{stage} {current}/{total}',
+                f'[cloud_sync] Mosaic status obs {obs_local_id}: {message}',
                 flush=True,
             )
+        _status(message)
 
+    build_start_ns = time.monotonic_ns()
     try:
-        manifest = build_spore_mosaic(
+        build_result = build_spore_mosaic(
             sources,
             tile_size_px=DEFAULT_TILE_SIZE_PX,
             progress_cb=_mosaic_progress,
@@ -15808,13 +15950,40 @@ def _push_spore_mosaic_for_observation(
             flush=True,
         )
         return MOSAIC_STATUS_FAIL_BUILD
+    stage_ns['build_ms'] = time.monotonic_ns() - build_start_ns
 
+    manifest = build_result.manifest
     if manifest is None or not manifest.tiles:
+        # Distinguish the planner-level "all skipped" categories from
+        # the render-level "no tiles rendered" so the operator sees a
+        # specific remediation string.  Mixed skips fall through to the
+        # generic NO_USABLE_SOURCES bucket rather than MISSING_SOURCE_IMAGES.
+        aggregate_skips: list[tuple[int, str]] = list(build_result.skipped)
+        aggregate_reason = build_result.reason
+        if aggregate_reason == 'no_input':
+            code = MOSAIC_STATUS_SKIP_NO_ELIGIBLE_MEASUREMENTS
+        elif aggregate_reason == 'no_tiles_rendered':
+            code = _classify_mosaic_build_skips(aggregate_skips)
+            # Render-loop failures with mixed non-render reasons still
+            # need the RENDER_FAILURE code — the classifier already
+            # prefers that bucket when any 'render failed:' entry
+            # exists, but if none exist we default to
+            # NO_USABLE_SOURCES since something else went wrong.
+        else:
+            code = _classify_mosaic_build_skips(aggregate_skips)
+        for mid, reason in aggregate_skips:
+            print(
+                f'[cloud_sync]   Mosaic aggregate skip m={mid}: {reason}',
+                flush=True,
+            )
         print(
-            f'[cloud_sync] Mosaic empty obs {obs_local_id}: nothing to upload',
+            (
+                f'[cloud_sync] Mosaic empty obs {obs_local_id}: '
+                f'nothing to upload (reason={aggregate_reason!r}, code={code})'
+            ),
             flush=True,
         )
-        return MOSAIC_STATUS_SKIP_MISSING_SOURCE_IMAGES
+        return code
 
     for mid, reason in manifest.skipped:
         print(f'[cloud_sync]   Mosaic tile skip m={mid}: {reason}', flush=True)
@@ -15902,6 +16071,12 @@ def _push_spore_mosaic_for_observation(
         'stored_bytes': str(len(manifest.image_bytes)),
     }
 
+    _status("Uploading spore mosaic…")
+    print(
+        f'[cloud_sync] Mosaic status obs {obs_local_id}: Uploading spore mosaic…',
+        flush=True,
+    )
+    upload_start_ns = time.monotonic_ns()
     try:
         if direct_r2_runtime_available():
             client._get_r2().put_bytes(
@@ -15943,7 +16118,14 @@ def _push_spore_mosaic_for_observation(
             flush=True,
         )
         return MOSAIC_STATUS_FAIL_UPLOAD
+    stage_ns['upload_ms'] = time.monotonic_ns() - upload_start_ns
 
+    _status("Saving spore mosaic metadata…")
+    print(
+        f'[cloud_sync] Mosaic status obs {obs_local_id}: Saving spore mosaic metadata…',
+        flush=True,
+    )
+    mosaic_row_start_ns = time.monotonic_ns()
     try:
         existing = client._get(
             f'spore_measurement_mosaics'
@@ -16008,6 +16190,7 @@ def _push_spore_mosaic_for_observation(
             flush=True,
         )
         return MOSAIC_STATUS_FAIL_MOSAIC_UPSERT
+    stage_ns['mosaic_row_ms'] = time.monotonic_ns() - mosaic_row_start_ns
 
     if not mosaic_id:
         print(
@@ -16016,6 +16199,7 @@ def _push_spore_mosaic_for_observation(
         )
         return MOSAIC_STATUS_FAIL_NO_MOSAIC_ID
 
+    tile_rows_start_ns = time.monotonic_ns()
     # Refresh tile manifest: DELETE any existing tiles for the
     # measurement ids we're about to insert, then bulk INSERT.
     #
@@ -16075,10 +16259,12 @@ def _push_spore_mosaic_for_observation(
             flush=True,
         )
         return MOSAIC_STATUS_FAIL_TILE_INSERT
+    stage_ns['tile_rows_ms'] = time.monotonic_ns() - tile_rows_start_ns
 
     # Only persist the signature once tile rewrite completes cleanly.
     # A partial success (upload OK but tile insert failed) leaves the
     # cache untouched so the next sync retries the rebuild.
+    local_signature_start_ns = time.monotonic_ns()
     if new_signature:
         try:
             _store_local_mosaic_signature(obs_local_id, new_signature)
@@ -16087,8 +16273,19 @@ def _push_spore_mosaic_for_observation(
                 f'[cloud_sync] Mosaic signature persist failed obs {obs_local_id}: {exc}',
                 flush=True,
             )
+    stage_ns['local_signature_ms'] = time.monotonic_ns() - local_signature_start_ns
 
     overlay_count = sum(1 for t in manifest.tiles if t.overlay_json is not None)
+    total_ns_elapsed = time.monotonic_ns() - push_start_ns
+    stage_ns_ms = {key: round(value / 1e6, 2) for key, value in stage_ns.items()}
+    stage_ns_ms['total_ms'] = round(total_ns_elapsed / 1e6, 2)
+    print(
+        (
+            f'[cloud_sync] Mosaic stage timings obs {obs_local_id}: '
+            f'{stage_ns_ms}'
+        ),
+        flush=True,
+    )
     print(
         (
             f'[cloud_sync] Mosaic done obs {obs_local_id}: '

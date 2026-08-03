@@ -606,6 +606,9 @@ class _RecordingClient:
         self.calls.append(('_patch', (path, payload)))
         return None
 
+    def _storage_remove(self, paths):
+        self.calls.append(('_storage_remove', list(paths)))
+
     def upload_image_file(self, *a, **kw):  # pragma: no cover — must never be called
         self.calls.append(('upload_image_file', (a, kw)))
         raise AssertionError('upload_image_file must not be called for metadata-only rows')
@@ -731,6 +734,48 @@ def test_ensure_metadata_only_reuses_remote_row_by_desktop_id(db, monkeypatch, c
     assert _select_image(db, image_id).get('cloud_id') == 'remote-uuid-9'
     stdout, _stderr = capfd.readouterr()
     assert '(validated)' in stdout
+
+
+def test_unchecked_measured_image_is_downgraded_to_metadata_only_anchor(db, monkeypatch):
+    obs_local = _insert_obs(db, cloud_id='745', spore_data_visibility='public')
+    image_id = _insert_image(
+        db, observation_id=obs_local, filepath='/tmp/x.jpg',
+        image_type='microscope', cloud_id='remote-uuid-9',
+    )
+    _insert_measurement(
+        db, image_id=image_id, length_um=10.0, width_um=5.0,
+        measurement_type='manual',
+    )
+    monkeypatch.setattr(
+        cloud_sync,
+        '_cloud_explicit_media_upload_selection',
+        lambda observation_id: set(),
+    )
+    remote = {
+        'id': 'remote-uuid-9',
+        'desktop_id': image_id,
+        'observation_id': '745',
+        'image_type': 'microscope',
+        'storage_path': 'images/full.webp',
+        'original_storage_path': 'images/original.jpg',
+        'deleted_at': None,
+    }
+    client = _RecordingClient()
+
+    result = cloud_sync._ensure_metadata_only_microscope_image_for_public_spores(
+        client,
+        obs_local,
+        '745',
+        _select_image(db, image_id),
+        remote_images=[remote],
+    )
+
+    assert result == 'remote-uuid-9'
+    assert ('_storage_remove', ['images/full.webp', 'images/original.jpg']) in client.calls
+    patches = [call for call in client.calls if call[0] == '_patch']
+    assert len(patches) == 1
+    assert patches[0][1][1]['storage_path'] is None
+    assert patches[0][1][1]['original_storage_path'] is None
 
 
 def test_ensure_metadata_only_skips_non_microscope(db, capfd):

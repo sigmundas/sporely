@@ -577,7 +577,7 @@ def test_cloud_sync_helpers_include_microscope_media_and_allow_recovery_cache():
     ) is True
 
 
-def test_prepare_cloud_sync_image_uploads_ignores_external_publish_selection(tmp_path, monkeypatch):
+def test_prepare_cloud_sync_image_uploads_respects_gallery_checkmarks(tmp_path, monkeypatch):
     field_path = tmp_path / "field.jpg"
     microscope_path = tmp_path / "microscope.jpg"
     field_path.write_bytes(b"field")
@@ -612,8 +612,8 @@ def test_prepare_cloud_sync_image_uploads_ignores_external_publish_selection(tmp
     )
     monkeypatch.setattr(
         cloud_sync,
-        "_measurement_counts_for_observation_images",
-        lambda observation_id: {2: 1},
+        "_cloud_explicit_media_upload_selection",
+        lambda observation_id: {1},
     )
 
     fake_tab = SimpleNamespace(
@@ -636,7 +636,9 @@ def test_prepare_cloud_sync_image_uploads_ignores_external_publish_selection(tmp
         {"id": 631},
     )
 
-    assert [item["image_row"]["id"] for item in prepared] == [1, 2]
+    # Image 2 has measurements but is unchecked, so only its metadata may
+    # sync through the metadata-only anchor path; its bytes are not prepared.
+    assert [item["image_row"]["id"] for item in prepared] == [1]
     assert warnings == []
     assert cleanup is not None
     cleanup()
@@ -699,6 +701,11 @@ def test_prepare_cloud_sync_image_uploads_prefixes_progress_messages(tmp_path, m
         observations_tab.ImageDB,
         "get_images_for_observation",
         lambda observation_id: [field_row],
+    )
+    monkeypatch.setattr(
+        cloud_sync,
+        "_cloud_explicit_media_upload_selection",
+        lambda observation_id: {1},
     )
 
     fake_tab = SimpleNamespace(

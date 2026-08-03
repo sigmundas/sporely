@@ -145,7 +145,7 @@ def test_microscope_without_measurements_is_not_pending_by_default(tmp_path):
     assert decision["reason"] == PENDING_REASON_MICROSCOPE_NO_MEASUREMENTS
 
 
-def test_microscope_with_measurements_is_pending(tmp_path):
+def test_microscope_with_measurements_is_not_pending_without_selection(tmp_path):
     row = _make_row(id=7, image_type="microscope", filepath=_existing_file(tmp_path))
     decision = explain_pending_cloud_image_decision(
         row,
@@ -153,7 +153,10 @@ def test_microscope_with_measurements_is_pending(tmp_path):
         excluded_ids=set(),
         image_measurement_counts={7: 3},
     )
-    assert decision == {"pending": True, "reason": PENDING_REASON_PENDING_UPLOAD}
+    assert decision == {
+        "pending": False,
+        "reason": PENDING_REASON_MICROSCOPE_NO_MEASUREMENTS,
+    }
 
 
 def test_microscope_with_explicit_selection_is_pending_even_without_measurements(tmp_path):
@@ -312,10 +315,9 @@ def test_repeated_metadata_only_sync_does_not_flip_synced_to_dirty(tmp_path, mon
     assert status == "synced"
 
 
-def test_explicit_media_upload_does_re_dirty_when_microscope_has_measurements(tmp_path, monkeypatch):
-    """Under explicit media-upload mode, a microscope image WITH measurements
-    still triggers re-dirty — that's the mosaic-anchor use case where bytes
-    need to reach cloud."""
+def test_explicit_media_upload_does_not_re_dirty_unchecked_measured_microscope(tmp_path, monkeypatch):
+    """Measurements sync through a metadata-only anchor and do not imply that
+    the unchecked microscope image bytes may upload."""
     db_path = _init_db(tmp_path)
     conn = _connect(db_path)
     conn.execute("INSERT INTO observations (id, cloud_id, sync_status) VALUES (500, 'cloud-500', 'synced')")
@@ -328,36 +330,9 @@ def test_explicit_media_upload_does_re_dirty_when_microscope_has_measurements(tm
         (str(fpath),),
     )
     conn.execute("INSERT INTO spore_measurements (id, image_id) VALUES (1, 901)")
-    conn.commit()
-    conn.close()
-
-    monkeypatch.setattr(cloud_sync, "get_connection", lambda: _connect(db_path))
-    monkeypatch.setattr(models, "get_connection", lambda: _connect(db_path))
-
-    cloud_sync._mark_cloud_observations_dirty_for_pending_local_images(
-        include_pending_local_media_uploads=True,
-    )
-
-    status = _connect(db_path).execute(
-        "SELECT sync_status FROM observations WHERE id = 500"
-    ).fetchone()[0]
-    assert status == "dirty"
-
-
-def test_explicit_media_upload_leaves_measurement_less_microscope_alone(tmp_path, monkeypatch):
-    """Even under explicit media-upload mode, a microscope image with NO
-    measurements and no explicit selection stays local — that's the whole
-    point of the tightened push policy."""
-    db_path = _init_db(tmp_path)
-    conn = _connect(db_path)
-    conn.execute("INSERT INTO observations (id, cloud_id, sync_status) VALUES (500, 'cloud-500', 'synced')")
-    fpath = tmp_path / "old_micro.webp"
-    fpath.write_bytes(b"webp")
     conn.execute(
-        "INSERT INTO images (id, observation_id, image_type, cloud_id, sort_order, "
-        "notes, source_role, file_purpose, filepath) "
-        "VALUES (902, 500, 'microscope', NULL, 0, '', 'converted_local', 'microscope', ?)",
-        (str(fpath),),
+        "INSERT INTO settings (key, value) VALUES (?, ?)",
+        ("artsobs_publish_excluded_image_ids_500", "[901]"),
     )
     conn.commit()
     conn.close()
@@ -375,11 +350,46 @@ def test_explicit_media_upload_leaves_measurement_less_microscope_alone(tmp_path
     assert status == "synced"
 
 
-def test_external_checked_microscope_without_measurements_is_not_cloud_intent(
+def test_explicit_media_upload_leaves_measurement_less_microscope_alone(tmp_path, monkeypatch):
+    """Even under explicit media-upload mode, a microscope image with NO
+    measurements and no explicit selection stays local — that's the whole
+    point of the tightened push policy."""
+    db_path = _init_db(tmp_path)
+    conn = _connect(db_path)
+    conn.execute("INSERT INTO observations (id, cloud_id, sync_status) VALUES (500, 'cloud-500', 'synced')")
+    fpath = tmp_path / "old_micro.webp"
+    fpath.write_bytes(b"webp")
+    conn.execute(
+        "INSERT INTO images (id, observation_id, image_type, cloud_id, sort_order, "
+        "notes, source_role, file_purpose, filepath) "
+        "VALUES (902, 500, 'microscope', NULL, 0, '', 'converted_local', 'microscope', ?)",
+        (str(fpath),),
+    )
+    conn.execute(
+        "INSERT INTO settings (key, value) VALUES (?, ?)",
+        ("artsobs_publish_excluded_image_ids_500", "[902]"),
+    )
+    conn.commit()
+    conn.close()
+
+    monkeypatch.setattr(cloud_sync, "get_connection", lambda: _connect(db_path))
+    monkeypatch.setattr(models, "get_connection", lambda: _connect(db_path))
+
+    cloud_sync._mark_cloud_observations_dirty_for_pending_local_images(
+        include_pending_local_media_uploads=True,
+    )
+
+    status = _connect(db_path).execute(
+        "SELECT sync_status FROM observations WHERE id = 500"
+    ).fetchone()[0]
+    assert status == "synced"
+
+
+def test_gallery_checked_microscope_without_measurements_is_cloud_intent(
     tmp_path,
     monkeypatch,
 ):
-    """External publish state does not opt a bare microscope into cloud upload."""
+    """A thumbnail checkmark opts even a bare microscope into byte upload."""
     db_path = _init_db(tmp_path)
     conn = _connect(db_path)
     conn.execute("INSERT INTO observations (id, cloud_id, sync_status) VALUES (500, 'cloud-500', 'synced')")
@@ -408,14 +418,14 @@ def test_external_checked_microscope_without_measurements_is_not_cloud_intent(
     status = _connect(db_path).execute(
         "SELECT sync_status FROM observations WHERE id = 500"
     ).fetchone()[0]
-    assert status == "synced"
+    assert status == "dirty"
 
 
-def test_external_publish_exclusion_does_not_hide_measured_microscope_from_cloud(
+def test_gallery_exclusion_keeps_measured_microscope_bytes_local(
     tmp_path,
     monkeypatch,
 ):
-    """External-publish selection is independent from cloud media eligibility."""
+    """The thumbnail checkmark is the source of cloud byte-upload consent."""
     db_path = _init_db(tmp_path)
     conn = _connect(db_path)
     conn.execute("INSERT INTO observations (id, cloud_id, sync_status) VALUES (500, 'cloud-500', 'synced')")
@@ -449,7 +459,7 @@ def test_external_publish_exclusion_does_not_hide_measured_microscope_from_cloud
     status = _connect(db_path).execute(
         "SELECT sync_status FROM observations WHERE id = 500"
     ).fetchone()[0]
-    assert status == "dirty"
+    assert status == "synced"
 
 
 def test_explicit_media_upload_dirties_when_user_selected_the_microscope(tmp_path, monkeypatch):
