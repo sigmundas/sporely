@@ -3867,6 +3867,232 @@ def _format_review_needed_error(local_id: int, cloud_id: str, reasons: list[str]
     return f'{base} ({reason_text})' if reason_text else base
 
 
+# Marker persisted on `observations.sync_blocked_reason` when push_all's
+# preflight detects an unresolved three-way conflict. The observation stays
+# dirty; a subsequent sync re-evaluates and clears the marker automatically
+# once the divergence is gone (either the user resolved it or an incoming pull
+# reconciled the state).
+CONFLICT_REVIEW_PENDING_MARKER = 'conflict_review_pending'
+
+
+@dataclass(frozen=True)
+class ObservationPushConflictReport:
+    """Structured result from :func:`_analyze_observation_push_conflicts`.
+
+    Mirrors the categories pull_all already reports as review-needed so push
+    never silently overwrites a remote divergence.
+    """
+
+    has_conflict: bool
+    categories: list[str]
+    field_labels: list[str]
+    measurement_conflict_ids: list[int]
+    image_conflict_keys: list[str]
+    remote_removed_image_keys: list[str]
+
+
+def _analyze_observation_push_conflicts(
+    *,
+    local_obs: dict | None,
+    local_images: list[dict] | None,
+    local_measurements_by_cloud_id: dict[str, dict] | None,
+    remote_obs: dict | None,
+    remote_images: list[dict] | None,
+    remote_measurements: list[dict] | None,
+    baseline_snapshot: dict | None,
+) -> ObservationPushConflictReport:
+    """Detect per-observation conflicts before push_all mutates cloud state.
+
+    The three input sides — local rows, fetched remote rows, and the stored
+    sync baseline (``_load_cloud_observation_snapshot`` / parsed) — are the
+    same primitives pull_all uses. Returned categories align with the review
+    reasons pull_all emits so a single review dialog covers both directions:
+
+    * ``observation`` — obs metadata field conflict
+      (via :func:`_analyze_observation_field_changes` ``conflict_fields``).
+    * ``images`` — a shared image was edited on both sides.
+    * ``measurements`` — a shared spore measurement differs local vs remote
+      (mirrors :func:`_import_remote_measurements_for_observation` ``conflict``).
+    * ``remote_removed_media`` — cloud removed an image still present locally
+      (mirrors pull_all's ``removed_keys`` review-needed guard).
+    """
+    baseline_snapshot = dict(baseline_snapshot or {})
+    baseline_obs = _baseline_observation_compare_payload(
+        baseline_snapshot.get('observation') or {}
+    )
+    baseline_images = [dict(row or {}) for row in (baseline_snapshot.get('images') or [])]
+
+    # ---- Observation metadata: three-way conflict fields ----
+    field_changes = _analyze_observation_field_changes(local_obs, remote_obs, baseline_obs)
+    conflict_fields = list(field_changes.get('conflict_fields') or [])
+    field_labels = [
+        _format_observation_metadata_field_label(field)
+        for field in sorted(set(conflict_fields))
+    ]
+
+    # ---- Image removals: mirror pull_all "cloud removed local image files" ----
+    remote_images = list(remote_images or [])
+    remote_image_payloads = [_remote_image_payload(img) for img in remote_images]
+    tombstoned_remote_image_keys = (
+        _deleted_remote_image_identity_keys(remote_images)
+        | _locally_tombstoned_snapshot_image_identity_keys(baseline_images)
+    )
+    remote_image_changes = _analyze_image_changes(
+        remote_image_payloads,
+        baseline_images,
+        ignored_keys=tombstoned_remote_image_keys,
+    )
+    remote_removed_image_keys = list(remote_image_changes.get('removed_keys') or [])
+
+    # ---- Image metadata: three-way conflict on shared cloud image rows ----
+    baseline_by_cloud_id = {
+        str(row.get('id') or '').strip(): row
+        for row in baseline_images
+        if str(row.get('id') or '').strip()
+    }
+    remote_by_cloud_id = {
+        str(row.get('id') or '').strip(): row
+        for row in remote_image_payloads
+        if str(row.get('id') or '').strip()
+    }
+    local_by_cloud_id = {
+        str((img or {}).get('cloud_id') or '').strip(): dict(img or {})
+        for img in (local_images or [])
+        if str((img or {}).get('cloud_id') or '').strip()
+    }
+    image_conflict_keys: list[str] = []
+    shared_cloud_ids = sorted(
+        set(baseline_by_cloud_id) & set(remote_by_cloud_id) & set(local_by_cloud_id)
+    )
+    for cloud_image_id in shared_cloud_ids:
+        baseline_meta = _image_metadata_payload(baseline_by_cloud_id[cloud_image_id])
+        remote_meta = _image_metadata_payload(remote_by_cloud_id[cloud_image_id])
+        local_meta = _image_metadata_payload(local_by_cloud_id[cloud_image_id])
+        local_changed = local_meta != baseline_meta
+        remote_changed = remote_meta != baseline_meta
+        if local_changed and remote_changed and local_meta != remote_meta:
+            image_conflict_keys.append(f'cloud:{cloud_image_id}')
+
+    # ---- Measurements: mirror pull-side conflict detection (no apply) ----
+    remote_measurements = list(remote_measurements or [])
+    remote_image_lookup = {
+        str(row.get('id') or '').strip(): row
+        for row in remote_images
+        if str(row.get('id') or '').strip()
+    }
+    tombstoned_remote_image_ids = _local_tombstoned_cloud_image_ids(list(remote_image_lookup.keys()))
+    local_measurements_by_cloud_id = dict(local_measurements_by_cloud_id or {})
+
+    measurement_conflict_ids: list[int] = []
+    seen_local_ids: set[int] = set()
+    for remote_row in remote_measurements:
+        remote_measurement_id = str(remote_row.get('id') or '').strip()
+        if not remote_measurement_id:
+            continue
+        remote_image_id = str(remote_row.get('image_id') or '').strip()
+        remote_image = remote_image_lookup.get(remote_image_id)
+        if not remote_image:
+            continue
+        if not _is_spore_measurement_source_image(remote_image):
+            continue
+        if remote_image_id in tombstoned_remote_image_ids:
+            continue
+        local_measurement = local_measurements_by_cloud_id.get(remote_measurement_id)
+        if local_measurement is None:
+            continue
+        if not _measurement_payloads_match(
+            local_measurement,
+            remote_row,
+            cloud_image_id=remote_image_id,
+        ):
+            local_measurement_id = _safe_int(local_measurement.get('id'))
+            if local_measurement_id > 0 and local_measurement_id not in seen_local_ids:
+                seen_local_ids.add(local_measurement_id)
+                measurement_conflict_ids.append(local_measurement_id)
+
+    categories: list[str] = []
+    if conflict_fields:
+        categories.append('observation')
+    if image_conflict_keys:
+        categories.append('images')
+    if measurement_conflict_ids:
+        categories.append('measurements')
+    if remote_removed_image_keys:
+        categories.append('remote_removed_media')
+
+    return ObservationPushConflictReport(
+        has_conflict=bool(categories),
+        categories=categories,
+        field_labels=field_labels,
+        measurement_conflict_ids=measurement_conflict_ids,
+        image_conflict_keys=image_conflict_keys,
+        remote_removed_image_keys=remote_removed_image_keys,
+    )
+
+
+def _format_push_conflict_review_reasons(report: ObservationPushConflictReport) -> list[str]:
+    """Human-readable review reasons corresponding to conflict categories."""
+    reasons: list[str] = []
+    if report.field_labels:
+        reasons.append(', '.join(report.field_labels))
+    if report.image_conflict_keys:
+        reasons.append(
+            f'images changed on both sides ({len(report.image_conflict_keys)})'
+        )
+    if report.measurement_conflict_ids:
+        reasons.append(
+            f'measurements changed on both sides ({len(report.measurement_conflict_ids)})'
+        )
+    if report.remote_removed_image_keys:
+        reasons.append('cloud removed local image files')
+    return reasons
+
+
+def _set_observation_conflict_review_pending(local_id: int) -> None:
+    """Mark an observation blocked on user review while keeping it dirty."""
+    conn = get_connection()
+    try:
+        cursor = conn.cursor()
+        update_observation_sync_state(
+            cursor,
+            int(local_id),
+            sync_status='dirty',
+            sync_blocked_reason=CONFLICT_REVIEW_PENDING_MARKER,
+            sync_blocked_at=datetime.now(timezone.utc).isoformat(),
+        )
+        conn.commit()
+    finally:
+        conn.close()
+
+
+def _clear_observation_conflict_review_pending(local_id: int) -> None:
+    """Clear the conflict-review marker without disturbing other sync error state."""
+    conn = get_connection()
+    try:
+        cursor = conn.cursor()
+        columns = _table_columns_for_conflict_marker(cursor)
+        if 'sync_blocked_reason' not in columns:
+            return
+        # Only clear when the current marker is our review flag so we do not
+        # step on privacy/plan blocked reasons written by other paths.
+        cursor.execute(
+            "UPDATE observations SET sync_blocked_reason = NULL, sync_blocked_at = NULL "
+            "WHERE id = ? AND sync_blocked_reason = ?",
+            (int(local_id), CONFLICT_REVIEW_PENDING_MARKER),
+        )
+        conn.commit()
+    finally:
+        conn.close()
+
+
+def _table_columns_for_conflict_marker(cursor) -> set[str]:
+    try:
+        cursor.execute("PRAGMA table_info(observations)")
+        return {str(row[1] or '') for row in cursor.fetchall()}
+    except sqlite3.OperationalError:
+        return set()
+
+
 def _local_has_real_changes_since_snapshot(local_obs: dict, cloud_id: str | None = None) -> bool:
     cloud_value = str(cloud_id or local_obs.get('cloud_id') or '').strip()
     if not cloud_value:
@@ -12465,6 +12691,68 @@ def push_all(
                     }:
                         if field in remote_update_kwargs:
                             push_payload[field] = remote_update_kwargs[field]
+
+                    # Preflight: mirror pull_all's review-needed contract. If
+                    # metadata, images, or measurements diverged on both
+                    # sides, block the entire per-observation push pipeline so
+                    # we never silently overwrite a remote change.
+                    obs_local_id = _safe_int(obs.get('id'))
+                    local_images_for_preflight = (
+                        ImageDB.get_images_for_observation(obs_local_id)
+                        if obs_local_id > 0
+                        else []
+                    )
+                    local_measurements_by_cloud_id: dict[str, dict] = {}
+                    if obs_local_id > 0:
+                        try:
+                            local_measurements_by_cloud_id, _ = _load_local_measurement_lookup(obs_local_id)
+                        except Exception:
+                            local_measurements_by_cloud_id = {}
+                    conflict_report = _analyze_observation_push_conflicts(
+                        local_obs=dict(obs),
+                        local_images=[dict(row or {}) for row in (local_images_for_preflight or [])],
+                        local_measurements_by_cloud_id=local_measurements_by_cloud_id,
+                        remote_obs=dict(remote or {}),
+                        remote_images=[dict(row or {}) for row in (remote_images or [])],
+                        remote_measurements=[dict(row or {}) for row in (remote_measurements or [])],
+                        baseline_snapshot=snapshot_data,
+                    )
+                    if conflict_report.has_conflict:
+                        review_reasons = _format_push_conflict_review_reasons(conflict_report)
+                        errors.append(
+                            _format_review_needed_error(
+                                obs_local_id if obs_local_id > 0 else 0,
+                                cloud_id,
+                                review_reasons,
+                            )
+                        )
+                        if obs_local_id > 0:
+                            _set_observation_conflict_review_pending(obs_local_id)
+                        print(
+                            f"[cloud_sync] conflict push blocked: obs={obs_local_id} "
+                            f"categories={list(conflict_report.categories)} "
+                            f"action=review_required",
+                            flush=True,
+                        )
+                        _advance_progress(progress_state, 1)
+                        _emit_progress(
+                            progress_cb,
+                            _format_cloud_sync_observation_status(
+                                obs,
+                                (
+                                    f"Observation {i + 1}/{max(1, total)} needs review "
+                                    f"before syncing"
+                                ),
+                            ),
+                            progress_state,
+                        )
+                        continue
+
+            # If the preflight ran and reported no conflict (or the fast path
+            # short-circuited above), the observation is safe to push. The
+            # `update_observation_sync_state(..., clear_sync_error_state=True)`
+            # below clears any prior review-pending marker as part of the
+            # normal `dirty→synced` transition.
 
             cloud_id = client.push_observation(
                 _merge_cloud_selected_ai_fields(push_payload, remote),

@@ -463,9 +463,16 @@ class CloudConflictDialog(QDialog):
         self._merge_btn.clicked.connect(self._resolve_merge)
         action_row.addWidget(self._merge_btn)
 
-        self._cancel_btn = QPushButton('Cancel')
-        self._cancel_btn.clicked.connect(self.reject)
-        action_row.addWidget(self._cancel_btn)
+        self._review_later_btn = QPushButton(self.tr('Review later'))
+        self._review_later_btn.setToolTip(
+            self.tr(
+                'Close the dialog without applying changes. This observation '
+                'stays dirty and will be re-detected on the next sync so you '
+                'can decide later.'
+            )
+        )
+        self._review_later_btn.clicked.connect(self.reject)
+        action_row.addWidget(self._review_later_btn)
 
         root.addLayout(action_row)
 

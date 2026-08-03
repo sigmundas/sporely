@@ -514,6 +514,20 @@ class CloudSyncDialog(QDialog):
                 self._resolution_worker.start()
                 return # Deleted remote handled in callback
             else:
+                # "Review later" (or dialog dismissed): keep the observations
+                # dirty so the next sync re-runs the preflight and re-opens the
+                # dialog if the divergence is still present. Do NOT clear
+                # snapshots or stamp anything synced. Emit an INFO log per
+                # deferred conflict for postmortem traceability.
+                for conflict in conflicts:
+                    try:
+                        deferred_local_id = int(conflict.get('local_id') or 0)
+                    except Exception:
+                        deferred_local_id = 0
+                    print(
+                        f"[cloud_sync] conflict review deferred: obs={deferred_local_id}",
+                        flush=True,
+                    )
                 self._status_label.setText(
                     'Conflict review canceled. Unresolved conflicts remain and no decisions were applied.'
                 )
