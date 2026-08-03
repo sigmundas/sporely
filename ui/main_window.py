@@ -8140,12 +8140,6 @@ class MainWindow(GeometryMixin, QMainWindow):
         self.orient_checkbox.stateChanged.connect(self.on_gallery_thumbnail_setting_changed)
         gallery_row.addWidget(self.orient_checkbox)
 
-        self.uniform_scale_checkbox = QCheckBox(self.tr("Uniform scale"))
-        self.uniform_scale_checkbox.setChecked(True)
-        self.uniform_scale_checkbox.setToolTip(self.tr("Use the same scale for all thumbnails"))
-        self.uniform_scale_checkbox.stateChanged.connect(self.on_gallery_thumbnail_setting_changed)
-        gallery_row.addWidget(self.uniform_scale_checkbox)
-
         gallery_row.addSpacing(8)
         gallery_row.addWidget(QLabel(self.tr("Sort:")))
         self.gallery_sort_combo = QComboBox()
@@ -8188,6 +8182,9 @@ class MainWindow(GeometryMixin, QMainWindow):
         self.gallery_export_btn.setMinimumWidth(110)
         self.gallery_export_btn.setSizePolicy(QSizePolicy.Fixed, QSizePolicy.Fixed)
         self.gallery_export_btn.setToolTip(self.tr("Export the thumbnail gallery as a mosaic"))
+        # Delegate the composite export to the dedicated adapter module; the
+        # method on this class stays as a one-line stub for tests that call
+        # `export_gallery_composite` directly.
         self.gallery_export_btn.clicked.connect(self.export_gallery_composite)
         self.gallery_plot_export_btn.setFixedHeight(analysis_button_height)
         self.gallery_export_btn.setFixedHeight(analysis_button_height)
@@ -8584,40 +8581,6 @@ class MainWindow(GeometryMixin, QMainWindow):
             "image_height": image_height,
             "icon_size": icon_size,
         }
-
-    def _gallery_export_grid_shape(
-        self,
-        count: int,
-        tile_width: int,
-        tile_height: int,
-        target_ratio: float = 4.0 / 3.0,
-    ) -> tuple[int, int]:
-        if count <= 0:
-            return 0, 0
-        best_cols = 1
-        best_rows = count
-        best_score = None
-        for cols in range(1, count + 1):
-            rows = int(math.ceil(count / float(cols)))
-            ratio = (float(cols) * float(tile_width)) / max(1.0, float(rows) * float(tile_height))
-            ratio_diff = abs(ratio - float(target_ratio))
-            empty_slots = rows * cols - count
-            score = (ratio_diff, empty_slots, rows * cols)
-            if best_score is None or score < best_score:
-                best_score = score
-                best_cols = cols
-                best_rows = rows
-        return best_cols, best_rows
-
-    @staticmethod
-    def _gallery_export_tile_size(thumbnails: list[QPixmap]) -> tuple[int, int]:
-        """Return the shared export tile size for a set of gallery thumbnails."""
-        if not thumbnails:
-            return 0, 0
-        return (
-            max(1, max(thumbnail.width() for thumbnail in thumbnails)),
-            max(1, max(thumbnail.height() for thumbnail in thumbnails)),
-        )
 
     def _on_gallery_collapse_toggled(self, collapsed):
         self._gallery_collapsed = bool(collapsed)
@@ -15189,39 +15152,36 @@ class MainWindow(GeometryMixin, QMainWindow):
         self._reset_gallery_cache_if_needed()
 
         orient = hasattr(self, 'orient_checkbox') and self.orient_checkbox.isChecked()
-        uniform_scale = hasattr(self, 'uniform_scale_checkbox') and self.uniform_scale_checkbox.isChecked()
         thumbnail_size = self._gallery_thumbnail_size()
         total = len(measurements)
         self._gallery_render_total_items = total
         items_per_row = max(1, total)
 
-        uniform_length_um = None
-        if uniform_scale:
-            for measurement in all_measurements:
-                length_um = measurement.get("length_um")
-                if length_um is None:
-                    continue
-                if uniform_length_um is None or length_um > uniform_length_um:
-                    uniform_length_um = length_um
+        # Route every persisted / rendered tile through the shared
+        # planning core: it derives a common physical crop across the
+        # observation and returns uniform per-tile pixel dimensions.
+        # Live gallery, PNG/JPEG export, cloud atlas and SVG export all
+        # use the same math from this call site down.
+        plan_by_id = self._build_gallery_mosaic_plan(
+            measurements, orient=orient, output_tile_height_px=thumbnail_size,
+        )
 
         render_state = {
             "items_per_row": items_per_row,
             "thumbnail_size": thumbnail_size,
             "image_labels": image_labels,
             "orient": orient,
-            "uniform_scale": uniform_scale,
-            "uniform_length_um": uniform_length_um,
             "image_color_cache": {},
             "display_index": 1,
             "running_width": 0,
             "max_height": 0,
+            "plan_by_id": plan_by_id,
         }
         self._gallery_thumbnail_render_state = {
             "thumbnail_size": thumbnail_size,
             "orient": orient,
-            "uniform_scale": uniform_scale,
-            "uniform_length_um": uniform_length_um,
             "image_color_cache": render_state["image_color_cache"],
+            "plan_by_id": plan_by_id,
         }
         self._gallery_render_total_width = 0
         self._gallery_render_max_height = thumbnail_size
@@ -15449,31 +15409,156 @@ class MainWindow(GeometryMixin, QMainWindow):
         self,
         measurement_id,
         orient,
-        uniform_scale,
-        uniform_length_um,
         thumbnail_size,
         extra_rotation,
         color_key,
         rectangle_style,
         rectangle_thickness,
         selected,
+        plan_key=None,
     ):
-        if uniform_scale:
-            uniform_key = round(float(uniform_length_um or 0.0), 6)
-        else:
-            uniform_key = None
+        # `plan_key` folds in the shared common-crop dimensions so tiles
+        # invalidate when the observation's spore set (and therefore the
+        # common physical crop) changes.
         return (
             measurement_id,
             orient,
-            uniform_scale,
-            uniform_key,
             thumbnail_size,
             extra_rotation,
             color_key,
             normalize_rectangle_style(rectangle_style),
             round(clamp_rectangle_thickness(rectangle_thickness), 3),
             bool(selected),
+            plan_key,
         )
+
+    def _build_gallery_mosaic_plan(
+        self,
+        measurements,
+        *,
+        orient: bool,
+        output_tile_height_px: int,
+    ):
+        """Plan a mosaic for the current gallery preview.
+
+        Returns a dict keyed by measurement id mapping to the shared
+        `MosaicTilePlan`. Returns an empty dict when planning is not
+        possible (no measurements, missing physical scale, etc.); the
+        caller falls back to the legacy per-tile crop.
+        """
+        from PySide6.QtGui import QImageReader
+        from utils.spore_mosaic_render import (
+            MosaicGridPolicy,
+            SporeMosaicSource,
+            plan_mosaic,
+        )
+
+        if not measurements:
+            return {}
+
+        dims_cache: dict[str, tuple[int, int]] = {}
+
+        def _resolve_dims(path: str) -> tuple[int, int] | None:
+            if not path:
+                return None
+            cached = dims_cache.get(path)
+            if cached is not None:
+                return cached
+            reader = QImageReader(path)
+            size = reader.size()
+            if not size.isValid() or size.width() < 1 or size.height() < 1:
+                return None
+            dims = (int(size.width()), int(size.height()))
+            dims_cache[path] = dims
+            return dims
+
+        # Cache per-image µm/px so we resolve the authoritative
+        # calibration once per source image.
+        image_scale_cache: dict[int, float | None] = {}
+
+        def _resolve_scale(image_id) -> float | None:
+            if image_id is None:
+                return None
+            try:
+                key = int(image_id)
+            except (TypeError, ValueError):
+                return None
+            if key in image_scale_cache:
+                return image_scale_cache[key]
+            image_data = ImageDB.get_image(key)
+            value = None
+            if image_data:
+                raw = image_data.get("scale_microns_per_pixel")
+                try:
+                    if raw is not None:
+                        value = float(raw)
+                        if value <= 0:
+                            value = None
+                except (TypeError, ValueError):
+                    value = None
+            image_scale_cache[key] = value
+            return value
+
+        sources: list[SporeMosaicSource] = []
+        for measurement in measurements:
+            try:
+                measurement_id = int(measurement.get("id"))
+            except (TypeError, ValueError):
+                continue
+            if not all(
+                measurement.get(f"p{i}_{axis}") is not None
+                for i in range(1, 5) for axis in ("x", "y")
+            ):
+                continue
+            image_path = measurement.get("image_filepath")
+            if not image_path:
+                continue
+            dims = _resolve_dims(str(image_path))
+            if dims is None:
+                continue
+            gallery_rot = int(
+                measurement.get("gallery_rotation")
+                or self.gallery_rotations.get(measurement_id, 0)
+                or 0
+            )
+            length_um = measurement.get("length_um")
+            width_um = measurement.get("width_um")
+            try:
+                length_um_f = float(length_um) if length_um is not None else None
+            except (TypeError, ValueError):
+                length_um_f = None
+            try:
+                width_um_f = float(width_um) if width_um is not None else None
+            except (TypeError, ValueError):
+                width_um_f = None
+            scale_um_per_px = _resolve_scale(measurement.get("image_id"))
+            sources.append(SporeMosaicSource(
+                item_id=measurement_id,
+                source_path=Path(str(image_path)),
+                source_width=dims[0],
+                source_height=dims[1],
+                p1_x=float(measurement["p1_x"]), p1_y=float(measurement["p1_y"]),
+                p2_x=float(measurement["p2_x"]), p2_y=float(measurement["p2_y"]),
+                p3_x=float(measurement["p3_x"]), p3_y=float(measurement["p3_y"]),
+                p4_x=float(measurement["p4_x"]), p4_y=float(measurement["p4_y"]),
+                length_um=length_um_f, width_um=width_um_f,
+                scale_um_per_px=scale_um_per_px,
+                extra_rotation_deg=float(gallery_rot),
+            ))
+
+        if not sources:
+            return {}
+
+        layout = plan_mosaic(
+            sources,
+            orient=bool(orient),
+            grid_policy=MosaicGridPolicy.ASPECT_4_3,
+            output_tile_height_px=int(output_tile_height_px),
+            annotation=None,
+        )
+        if layout is None:
+            return {}
+        return {int(cell.tile.source.item_id): cell.tile for cell in layout.cells}
 
     def _add_gallery_item(self, measurement, render_state):
         from PySide6.QtWidgets import QLabel as QLabel2, QToolButton
@@ -15620,17 +15705,26 @@ class MainWindow(GeometryMixin, QMainWindow):
         color_key = measure_color.name()
         rectangle_style = self._current_measure_rectangle_style()
         rectangle_thickness = self._current_measure_rectangle_thickness()
+        plan_by_id = render_state.get("plan_by_id") or {}
+        tile_plan = plan_by_id.get(int(measurement_id))
+        plan_key = None
+        if tile_plan is not None:
+            plan_key = (
+                int(tile_plan.common_crop_width_px),
+                int(tile_plan.common_crop_height_px),
+                int(tile_plan.output_w_px),
+                int(tile_plan.output_h_px),
+            )
         cache_key = self._gallery_thumbnail_cache_key(
             measurement_id,
             render_state["orient"],
-            render_state["uniform_scale"],
-            render_state["uniform_length_um"],
             render_state["thumbnail_size"],
             extra_rotation,
             color_key,
             rectangle_style,
             rectangle_thickness,
             False,
+            plan_key=plan_key,
         )
         if cache_key in self._gallery_thumb_cache:
             if metadata_out is not None:
@@ -15644,22 +15738,6 @@ class MainWindow(GeometryMixin, QMainWindow):
             QPointF(measurement['p4_x'], measurement['p4_y'])
         ]
 
-        uniform_length_px = None
-        if render_state["uniform_scale"] and render_state["uniform_length_um"]:
-            if not mpp or mpp <= 0:
-                p1 = points[0]
-                p2 = points[1]
-                p3 = points[2]
-                p4 = points[3]
-                line1_len = math.hypot(p2.x() - p1.x(), p2.y() - p1.y())
-                line2_len = math.hypot(p4.x() - p3.x(), p4.y() - p3.y())
-                length_px = max(line1_len, line2_len)
-                length_um = measurement.get("length_um")
-                if length_px > 0 and length_um:
-                    mpp = float(length_um) / float(length_px)
-            if mpp and mpp > 0:
-                uniform_length_px = float(render_state["uniform_length_um"]) / float(mpp)
-
         thumbnail_meta: dict = {}
         thumbnail = self.create_spore_thumbnail(
             pixmap,
@@ -15670,12 +15748,12 @@ class MainWindow(GeometryMixin, QMainWindow):
             0,
             orient=render_state["orient"],
             extra_rotation=extra_rotation,
-            uniform_length_px=uniform_length_px,
             color=measure_color,
             rectangle_style=rectangle_style,
             rectangle_thickness=rectangle_thickness,
             selected=False,
             metadata=thumbnail_meta,
+            plan=tile_plan,
         )
         if thumbnail:
             self._gallery_thumb_cache[cache_key] = thumbnail
@@ -18004,7 +18082,8 @@ class MainWindow(GeometryMixin, QMainWindow):
                                rectangle_style=None, rectangle_thickness=None,
                                selected: bool = False,
                                export_mode: bool = False,
-                               metadata: dict | None = None):
+                               metadata: dict | None = None,
+                               plan=None):
         """Create a thumbnail image of a single measurement.
 
         Args:
@@ -18016,6 +18095,18 @@ class MainWindow(GeometryMixin, QMainWindow):
             measurement_num: Number to display on thumbnail
             orient: If True, rotate so length axis is vertical
             extra_rotation: Additional rotation in degrees (e.g., 180 for flip)
+            uniform_length_px: Legacy height-only clamp. Ignored when
+                ``plan`` is provided.
+            plan: Optional `MosaicTilePlan` from
+                `utils.spore_mosaic_render.plan_mosaic`. When set, the
+                tile is cropped to `plan.common_crop_width_px` ×
+                `plan.common_crop_height_px` centred on the measurement
+                (background-padded when the source is smaller) and
+                scaled to `plan.output_w_px` × `plan.output_h_px`. This
+                is what makes every tile in one observation share the
+                same visible pixel dimensions — required for the live
+                gallery, the cloud atlas and the desktop export to look
+                the same.
         """
         from PySide6.QtGui import QPainter, QColor, QPolygonF, QPen, QTransform, QPainterPath
         from PySide6.QtCore import QPointF, QRectF
@@ -18263,29 +18354,71 @@ class MainWindow(GeometryMixin, QMainWindow):
         min_y = min(point.y() for point in corners_img) - padding_y
         max_y = max(point.y() for point in corners_img) + padding_y
 
-        if uniform_length_px:
-            desired_height = max(max_y - min_y, float(uniform_length_px) + padding_y * 2.0)
-            center_y = (min_y + max_y) / 2.0
-            min_y = center_y - desired_height / 2.0
-            max_y = center_y + desired_height / 2.0
+        if plan is not None:
+            # Plan-driven mode: force a uniform physical crop centred on
+            # the measurement. Delegates shift + pad + scale to the pure
+            # `resolve_common_crop_placement` helper so this Qt path
+            # never drifts from the Pillow `render_spore_thumbnail_common_crop`
+            # or the vector SVG placement.
+            from utils.spore_thumbnail_render import resolve_common_crop_placement
+            plan_crop_w = max(1, int(plan.common_crop_width_px))
+            plan_crop_h = max(1, int(plan.common_crop_height_px))
+            placement = resolve_common_crop_placement(
+                oriented_source_w=int(pixmap.width()),
+                oriented_source_h=int(pixmap.height()),
+                center_x=float(center.x()),
+                center_y=float(center.y()),
+                common_crop_width_px=plan_crop_w,
+                common_crop_height_px=plan_crop_h,
+                output_width=max(1, int(plan.output_w_px)),
+                output_height=max(1, int(plan.output_h_px)),
+            )
+            canvas_pixmap = QPixmap(plan_crop_w, plan_crop_h)
+            canvas_pixmap.fill(QColor(18, 18, 22))
+            canvas_painter = QPainter(canvas_pixmap)
+            canvas_painter.drawPixmap(
+                int(placement.paste_dx), int(placement.paste_dy), pixmap,
+            )
+            canvas_painter.end()
+            tile_width = max(1, int(plan.output_w_px))
+            tile_height = max(1, int(plan.output_h_px))
+            scaled = canvas_pixmap.scaled(
+                tile_width,
+                tile_height,
+                Qt.IgnoreAspectRatio,
+                Qt.SmoothTransformation,
+            )
+            # Virtual crop_rect that maps source coords → canvas coords
+            # under the same (screen_center = (src - crop_rect.origin) *
+            # scale) contract the annotation code below relies on.
+            crop_rect = QRectF(
+                float(-placement.paste_dx), float(-placement.paste_dy),
+                float(plan_crop_w), float(plan_crop_h),
+            )
+        else:
+            if uniform_length_px:
+                desired_height = max(max_y - min_y, float(uniform_length_px) + padding_y * 2.0)
+                center_y = (min_y + max_y) / 2.0
+                min_y = center_y - desired_height / 2.0
+                max_y = center_y + desired_height / 2.0
 
-        crop_rect = QRectF(
-            max(0.0, min_x),
-            max(0.0, min_y),
-            max(1.0, min(float(pixmap.width()), max_x) - max(0.0, min_x)),
-            max(1.0, min(float(pixmap.height()), max_y) - max(0.0, min_y)),
-        ).intersected(QRectF(0, 0, pixmap.width(), pixmap.height()))
+            crop_rect = QRectF(
+                max(0.0, min_x),
+                max(0.0, min_y),
+                max(1.0, min(float(pixmap.width()), max_x) - max(0.0, min_x)),
+                max(1.0, min(float(pixmap.height()), max_y) - max(0.0, min_y)),
+            ).intersected(QRectF(0, 0, pixmap.width(), pixmap.height()))
 
-        cropped = pixmap.copy(crop_rect.toRect())
-        scale_factor = float(size) / max(1.0, crop_rect.height())
-        tile_width = max(1, int(round(crop_rect.width() * scale_factor)))
-        tile_height = max(1, int(round(crop_rect.height() * scale_factor)))
-        scaled = cropped.scaled(
-            tile_width,
-            tile_height,
-            Qt.IgnoreAspectRatio,
-            Qt.SmoothTransformation,
-        )
+            cropped = pixmap.copy(crop_rect.toRect())
+            scale_factor = float(size) / max(1.0, crop_rect.height())
+            tile_width = max(1, int(round(crop_rect.width() * scale_factor)))
+            tile_height = max(1, int(round(crop_rect.height() * scale_factor)))
+            scaled = cropped.scaled(
+                tile_width,
+                tile_height,
+                Qt.IgnoreAspectRatio,
+                Qt.SmoothTransformation,
+            )
 
         result = QPixmap(tile_width, tile_height)
         result.fill(Qt.transparent)
@@ -18391,210 +18524,15 @@ class MainWindow(GeometryMixin, QMainWindow):
         return result
 
     def export_gallery_composite(self):
-        """Export all spore thumbnails as a single composite image."""
-        from PySide6.QtWidgets import QFileDialog
-        from PySide6.QtGui import QPainter, QColor
-        from PySide6.QtCore import QPointF
+        """Export all spore thumbnails as a single composite image.
 
-        measurements = self.get_gallery_measurements()
-        if not measurements:
-            return
-
-        valid_measurements = [
-            m for m in measurements
-            if all(m.get(f'p{i}_{axis}') is not None for i in range(1, 5) for axis in ['x', 'y'])
-        ]
-
-        if not valid_measurements:
-            return
-
-        # Ask user for format options
-        fmt_dialog = ExportGalleryDialog(parent=self)
-        if fmt_dialog.exec() != QDialog.Accepted:
-            return
-        fmt_settings = fmt_dialog.get_settings()
-        export_format = fmt_settings["format"]
-        export_quality = fmt_settings["quality"]
-
-        # Ask user for save location
-        default_name = "spore_gallery"
-        if self.active_observation_id:
-            obs = ObservationDB.get_observation(self.active_observation_id)
-            if obs:
-                parts = [
-                    obs.get("genus") or "",
-                    obs.get("species") or obs.get("species_guess") or "",
-                    obs.get("date") or ""
-                ]
-                name = " ".join([p for p in parts if p]).strip()
-                name = name.replace(":", "-")
-                name = re.sub(r'[<>:"/\\\\|?*]', "_", name)
-                name = re.sub(r"\\s+", " ", name).strip()
-                if name:
-                    default_name = f"{name} - gallery"
-
-        ext_map = {"png": ".png", "jpg": ".jpg", "svg": ".svg"}
-        default_ext = ext_map.get(export_format, ".png")
-        filter_map = {
-            "png": "PNG Images (*.png)",
-            "jpg": "JPEG Images (*.jpg)",
-            "svg": "SVG Files (*.svg)",
-        }
-        default_path = str(Path(self._get_default_export_dir()) / f"{default_name}{default_ext}")
-        filename, _ = QFileDialog.getSaveFileName(
-            self,
-            "Export Gallery Composite",
-            default_path,
-            f"{filter_map.get(export_format, 'PNG Images (*.png)')};;All Files (*)"
-        )
-
-        if not filename:
-            return
-        self._remember_export_dir(filename)
-
-        # Create composite
-        thumbnail_size = self._gallery_thumbnail_size()
-        thumbnails = []
-        image_color_cache = {}
-        pixmap_cache = {}
-
-        # Match gallery settings
-        orient = hasattr(self, 'orient_checkbox') and self.orient_checkbox.isChecked()
-        uniform_scale = hasattr(self, 'uniform_scale_checkbox') and self.uniform_scale_checkbox.isChecked()
-        filtered_measurements = self._filter_gallery_measurements(valid_measurements)
-        filtered_measurements = self._sort_gallery_measurements(filtered_measurements)
-        if not filtered_measurements:
-            return
-
-        uniform_length_um = None
-        if uniform_scale:
-            for measurement in filtered_measurements:
-                length_um = measurement.get("length_um")
-                if length_um is None:
-                    continue
-                if uniform_length_um is None or length_um > uniform_length_um:
-                    uniform_length_um = length_um
-
-        for measurement in filtered_measurements:
-            pixmap = self.get_measurement_pixmap(measurement, pixmap_cache)
-            if not pixmap or pixmap.isNull():
-                continue
-
-            measurement_id = measurement['id']
-            extra_rotation = measurement.get("gallery_rotation") or self.gallery_rotations.get(measurement_id, 0)
-
-            points = [
-                QPointF(measurement['p1_x'], measurement['p1_y']),
-                QPointF(measurement['p2_x'], measurement['p2_y']),
-                QPointF(measurement['p3_x'], measurement['p3_y']),
-                QPointF(measurement['p4_x'], measurement['p4_y'])
-            ]
-
-            image_id = measurement.get('image_id')
-            stored_color = None
-            mpp = None
-            if image_id:
-                if image_id not in image_color_cache:
-                    image_data = ImageDB.get_image(image_id)
-                    image_color_cache[image_id] = (
-                        {
-                            "measure_color": image_data.get('measure_color') if image_data else None,
-                            "mpp": image_data.get('scale_microns_per_pixel') if image_data else None
-                        }
-                    )
-                cached = image_color_cache[image_id]
-                stored_color = cached.get("measure_color") if cached else None
-                mpp = cached.get("mpp") if cached else None
-            measure_color = QColor(stored_color) if stored_color else self.default_measure_color
-            rectangle_style = self._current_measure_rectangle_style()
-            rectangle_thickness = self._current_measure_rectangle_thickness()
-            uniform_length_px = None
-            if uniform_scale and uniform_length_um:
-                if not mpp or mpp <= 0:
-                    p1 = QPointF(measurement['p1_x'], measurement['p1_y'])
-                    p2 = QPointF(measurement['p2_x'], measurement['p2_y'])
-                    p3 = QPointF(measurement['p3_x'], measurement['p3_y'])
-                    p4 = QPointF(measurement['p4_x'], measurement['p4_y'])
-                    line1_len = math.hypot(p2.x() - p1.x(), p2.y() - p1.y())
-                    line2_len = math.hypot(p4.x() - p3.x(), p4.y() - p3.y())
-                    length_px = max(line1_len, line2_len)
-                    length_um = measurement.get("length_um")
-                    if length_px > 0 and length_um:
-                        mpp = float(length_um) / float(length_px)
-                if mpp and mpp > 0:
-                    uniform_length_px = float(uniform_length_um) / float(mpp)
-
-            thumbnail = self.create_spore_thumbnail(
-                pixmap,
-                points,
-                measurement['length_um'],
-                measurement['width_um'] or 0,
-                thumbnail_size,
-                len(thumbnails) + 1,
-                orient=orient,
-                extra_rotation=extra_rotation,
-                uniform_length_px=uniform_length_px,
-                color=measure_color,
-                rectangle_style=rectangle_style,
-                rectangle_thickness=rectangle_thickness,
-                selected=False,
-                export_mode=True,
-            )
-
-            if thumbnail:
-                thumbnails.append(thumbnail)
-
-        if not thumbnails:
-            return
-
-        num_items = len(thumbnails)
-        tile_width, tile_height = self._gallery_export_tile_size(thumbnails)
-        items_per_row, num_rows = self._gallery_export_grid_shape(
-            num_items,
-            tile_width,
-            tile_height,
-        )
-
-        spacing = 0
-        composite_width = items_per_row * tile_width + max(0, items_per_row - 1) * spacing
-        composite_height = num_rows * tile_height + (num_rows - 1) * spacing
-
-        def _thumbnail_top_left(index: int, thumbnail: QPixmap) -> tuple[int, int]:
-            row = index // items_per_row
-            col = index % items_per_row
-            x = col * (tile_width + spacing)
-            y = row * (tile_height + spacing)
-            x += max(0, int(round((tile_width - thumbnail.width()) / 2.0)))
-            y += max(0, int(round((tile_height - thumbnail.height()) / 2.0)))
-            return x, y
-
-        if export_format == "svg":
-            from PySide6.QtSvg import QSvgGenerator
-            from PySide6.QtCore import QRect, QSize as _QSize
-            generator = QSvgGenerator()
-            generator.setFileName(filename)
-            generator.setSize(_QSize(composite_width, composite_height))
-            generator.setViewBox(QRect(0, 0, composite_width, composite_height))
-            painter = QPainter(generator)
-            for idx, thumbnail in enumerate(thumbnails):
-                x, y = _thumbnail_top_left(idx, thumbnail)
-                painter.drawPixmap(x, y, thumbnail)
-            painter.end()
-        else:
-            composite = QPixmap(composite_width, composite_height)
-            composite.fill(QColor(255, 255, 255))
-            painter = QPainter(composite)
-            for idx, thumbnail in enumerate(thumbnails):
-                x, y = _thumbnail_top_left(idx, thumbnail)
-                painter.drawPixmap(x, y, thumbnail)
-            painter.end()
-            if export_format == "jpg":
-                composite.save(filename, "JPEG", export_quality)
-            else:
-                composite.save(filename)
-
-        self.measure_status_label.setText(f"\u2713 Gallery exported to {Path(filename).name}")
-        self.measure_status_label.setStyleSheet(f"color: #27ae60; font-weight: bold; font-size: {pt(9)}pt;")
+        Thin adapter around `ui.export_gallery.run_export`, which owns
+        the actual filter/sort/plan/rasterise logic. Kept on the
+        MainWindow so existing callers (button connect, tests) can
+        continue to invoke `self.export_gallery_composite()` directly.
+        """
+        from .export_gallery import run_export as _run_export
+        _run_export(self)
 
     def export_ml_dataset(self):
         """Trigger ML export from the observations tab."""
@@ -18902,8 +18840,6 @@ class MainWindow(GeometryMixin, QMainWindow):
             hint = self.tr("Resorting spore thumbnails...")
         elif sender is getattr(self, "orient_checkbox", None):
             hint = self.tr("Rotating spore thumbnails...")
-        elif sender is getattr(self, "uniform_scale_checkbox", None):
-            hint = self.tr("Rescaling spore thumbnails...")
         elif sender is getattr(self, "gallery_filter_combo", None):
             hint = self.tr("Filtering measurements and refreshing gallery...")
         self._queue_gallery_refresh_hint(hint)
@@ -19429,7 +19365,9 @@ class MainWindow(GeometryMixin, QMainWindow):
             "y_min": None,
             "y_max": None,
             "orient": bool(self.orient_checkbox.isChecked()) if hasattr(self, "orient_checkbox") else False,
-            "uniform_scale": bool(self.uniform_scale_checkbox.isChecked()) if hasattr(self, "uniform_scale_checkbox") else False,
+            # `uniform_scale` was removed after the shared planner made
+            # uniform physical scale mandatory. Legacy settings dicts
+            # may still carry the key; the restore path drops it.
             "gallery_sort": self.gallery_sort_combo.currentData() if hasattr(self, "gallery_sort_combo") else "",
             "include_details": bool(self.gallery_include_details_checkbox.isChecked()) if hasattr(self, "gallery_include_details_checkbox") else False,
             "reference_panel": self._collect_reference_panel_state(),
@@ -19449,12 +19387,11 @@ class MainWindow(GeometryMixin, QMainWindow):
     def apply_gallery_settings(self):
         settings = self._load_gallery_settings()
         if not settings:
-            for checkbox_name in ("orient_checkbox", "uniform_scale_checkbox"):
-                checkbox = getattr(self, checkbox_name, None)
-                if checkbox is not None:
-                    checkbox.blockSignals(True)
-                    checkbox.setChecked(True)
-                    checkbox.blockSignals(False)
+            checkbox = getattr(self, "orient_checkbox", None)
+            if checkbox is not None:
+                checkbox.blockSignals(True)
+                checkbox.setChecked(True)
+                checkbox.blockSignals(False)
             return
         loaded_plot_settings = {
             "bins": int(settings.get("bins", self.gallery_plot_settings.get("bins", 8))),
@@ -19557,10 +19494,9 @@ class MainWindow(GeometryMixin, QMainWindow):
             self.orient_checkbox.blockSignals(True)
             self.orient_checkbox.setChecked(bool(settings.get("orient", True)))
             self.orient_checkbox.blockSignals(False)
-        if hasattr(self, "uniform_scale_checkbox"):
-            self.uniform_scale_checkbox.blockSignals(True)
-            self.uniform_scale_checkbox.setChecked(bool(settings.get("uniform_scale", True)))
-            self.uniform_scale_checkbox.blockSignals(False)
+        # Legacy `uniform_scale` is intentionally not restored — every
+        # persisted output is uniform-scale by construction now. Any
+        # stale `uniform_scale=False` in the saved settings is dropped.
         if hasattr(self, "gallery_sort_combo"):
             self.gallery_sort_combo.blockSignals(True)
             sort_val = settings.get("gallery_sort", "") or ""

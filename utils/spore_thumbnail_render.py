@@ -151,6 +151,79 @@ class SporeThumbnailCommonCropResult:
     reason_no_polygon: str | None
 
 
+@dataclass(frozen=True)
+class MosaicCropPlan:
+    """Common visible tile geometry for an observation.
+
+    Fields track the *physical* crop. Per-tile pixel dims are derived at
+    render time from each measurement's own `px_per_um`.
+
+    Lives here in `spore_thumbnail_render` — not in `spore_mosaic_render`
+    — so backends that only pull single-tile helpers do not drag the
+    mosaic-planning module in. `spore_mosaic_render` imports this
+    upward; the reverse would introduce a circular dependency.
+    """
+
+    common_crop_width_um: float
+    common_crop_height_um: float
+    output_tile_width: int
+    output_tile_height: int
+    common_crop_width: int = 0   # legacy: representative pixel width
+    common_crop_height: int = 0  # legacy: representative pixel height
+
+
+def plan_common_crop(
+    plans: "Sequence[SporeThumbnailPlan]",
+    output_height_px: int,
+) -> "MosaicCropPlan | None":
+    """Pick a common crop size in µm from per-measurement natural crops.
+
+    The plan is expressed in **micrometres**: the widest / tallest
+    natural crop across all measurements, in µm, becomes the common
+    physical crop for the observation. The visible tile height is
+    fixed to `output_height_px`; the visible tile width follows the
+    common physical aspect ratio. That guarantees a consistent
+    µm-per-output-pixel mapping across every tile in the observation,
+    even when the underlying microscope frames have different
+    px-per-µm.
+
+    Plans without a valid physical scale (missing length_um or a zero
+    length axis) are silently ignored — the caller filters them.
+    """
+    if not plans:
+        return None
+    scaled = [
+        p for p in plans
+        if p.natural_crop_width_um and p.natural_crop_height_um
+        and p.natural_crop_width_um > 0 and p.natural_crop_height_um > 0
+    ]
+    if not scaled:
+        return None
+    if output_height_px < 8:
+        raise ValueError("output_height_px too small")
+
+    common_w_um = max(p.natural_crop_width_um for p in scaled)
+    common_h_um = max(p.natural_crop_height_um for p in scaled)
+    out_h = int(output_height_px)
+    out_w = max(1, int(round(common_w_um * out_h / common_h_um)))
+
+    # Representative pixel dims (rounded off the widest measurement).
+    # Kept only for backwards-compatible diagnostics; the per-tile
+    # pixel crop is recomputed from each plan's own scale.
+    rep_plan = max(scaled, key=lambda p: p.natural_crop_height_um)
+    rep_w_px = max(1, int(math.ceil(common_w_um * (rep_plan.width_axis_px_per_um or 0))))
+    rep_h_px = max(1, int(math.ceil(common_h_um * (rep_plan.length_axis_px_per_um or 0))))
+
+    return MosaicCropPlan(
+        common_crop_width_um=float(common_w_um),
+        common_crop_height_um=float(common_h_um),
+        output_tile_width=out_w,
+        output_tile_height=out_h,
+        common_crop_width=rep_w_px,
+        common_crop_height=rep_h_px,
+    )
+
+
 # ── Rotation math (matches Qt) ──────────────────────────────────────────────
 
 
@@ -462,6 +535,142 @@ def plan_spore_thumbnail(
     )
 
 
+# ── Common-crop placement (pure, backend-neutral) ──────────────────────────
+
+
+@dataclass(frozen=True)
+class CommonCropPlacement:
+    """Pure geometric plan for placing a common-sized crop onto a tile.
+
+    Every backend that draws or plans a mosaic tile — Pillow raster,
+    Qt raster, vector SVG — consumes this from the same helper so no
+    axis-shift, pad or scale maths lives in more than one place.
+
+    Fields:
+        crop_x_int / crop_y_int
+            Integer crop origin inside the oriented source. When the
+            source is smaller than the requested crop on an axis, the
+            origin snaps to 0 for that axis and `padded_*` reports
+            that condition.
+        common_crop_width_px / common_crop_height_px
+            The requested crop size in oriented source pixels — echoed
+            for callers that only capture the placement.
+        padded_x / padded_y
+            True when the requested crop overflows the source on that
+            axis. Renderers must fill background pixels behind the
+            source when so.
+        paste_dx / paste_dy
+            Where the source's (0, 0) lands in the crop canvas's
+            coordinate frame. Renderers use this to composite the
+            source onto a background-coloured canvas of size
+            `common_crop_width_px × common_crop_height_px`. Any
+            oriented-source point (x, y) maps to `(x + paste_dx,
+            y + paste_dy)` on the canvas.
+        scale_x / scale_y
+            Crop canvas → visible tile scale factor.
+    """
+
+    crop_x_int: int
+    crop_y_int: int
+    common_crop_width_px: int
+    common_crop_height_px: int
+    padded_x: bool
+    padded_y: bool
+    paste_dx: int
+    paste_dy: int
+    scale_x: float
+    scale_y: float
+
+    def source_to_tile(self, x: float, y: float) -> tuple[float, float]:
+        """Map an oriented source point to tile-local pixel coords."""
+        return (
+            (x + self.paste_dx) * self.scale_x,
+            (y + self.paste_dy) * self.scale_y,
+        )
+
+    def transform_polygon(
+        self,
+        corners: Sequence[tuple[float, float]] | None,
+    ) -> list[tuple[float, float]] | None:
+        """Transform an oriented-source polygon into tile-local coords."""
+        if corners is None:
+            return None
+        return [self.source_to_tile(x, y) for x, y in corners]
+
+
+def resolve_common_crop_placement(
+    oriented_source_w: int,
+    oriented_source_h: int,
+    center_x: float,
+    center_y: float,
+    common_crop_width_px: int,
+    common_crop_height_px: int,
+    output_width: int,
+    output_height: int,
+) -> CommonCropPlacement:
+    """Pure resolver for the common-crop placement.
+
+    Both the Pillow raster path (`render_spore_thumbnail_common_crop`)
+    and the Qt raster path (`main_window.create_spore_thumbnail`'s plan
+    branch) delegate here so they never diverge on shift / pad / scale
+    math. Vector SVG uses the same result to place polygon and label
+    coordinates identically to the raster.
+    """
+    if oriented_source_w < 1 or oriented_source_h < 1:
+        raise ValueError("oriented source dims must be positive")
+    if common_crop_width_px < 1 or common_crop_height_px < 1:
+        raise ValueError("common crop dims must be positive")
+    if output_width < 1 or output_height < 1:
+        raise ValueError("output dims must be positive")
+
+    crop_x_ideal = float(center_x) - float(common_crop_width_px) / 2.0
+    crop_y_ideal = float(center_y) - float(common_crop_height_px) / 2.0
+
+    padded_x = int(oriented_source_w) < int(common_crop_width_px)
+    padded_y = int(oriented_source_h) < int(common_crop_height_px)
+
+    if padded_x:
+        crop_x_shifted = 0.0
+    else:
+        crop_x_shifted = max(
+            0.0, min(crop_x_ideal, float(oriented_source_w - common_crop_width_px)),
+        )
+    if padded_y:
+        crop_y_shifted = 0.0
+    else:
+        crop_y_shifted = max(
+            0.0, min(crop_y_ideal, float(oriented_source_h - common_crop_height_px)),
+        )
+
+    crop_x_int = int(round(crop_x_shifted))
+    crop_y_int = int(round(crop_y_shifted))
+
+    if padded_x:
+        paste_dx = (int(common_crop_width_px) - int(oriented_source_w)) // 2
+    else:
+        paste_dx = -crop_x_int
+    if padded_y:
+        paste_dy = (int(common_crop_height_px) - int(oriented_source_h)) // 2
+    else:
+        paste_dy = -crop_y_int
+
+    scale_x = float(output_width) / float(common_crop_width_px)
+    scale_y = float(output_height) / float(common_crop_height_px)
+
+    return CommonCropPlacement(
+        crop_x_int=crop_x_int,
+        crop_y_int=crop_y_int,
+        common_crop_width_px=int(common_crop_width_px),
+        common_crop_height_px=int(common_crop_height_px),
+        padded_x=padded_x,
+        padded_y=padded_y,
+        paste_dx=int(paste_dx),
+        paste_dy=int(paste_dy),
+        scale_x=scale_x,
+        scale_y=scale_y,
+    )
+
+
 # ── Common-crop render ─────────────────────────────────────────────────────
 
 
@@ -507,61 +716,45 @@ def render_spore_thumbnail_common_crop(
     oriented = _rotate_source_if_needed(source, plan.rotation_deg, background_rgb)
     working_w, working_h = oriented.size
 
-    # Ideal crop rect centred on the measurement.
-    crop_x_ideal = plan.center_x - common_crop_width / 2.0
-    crop_y_ideal = plan.center_y - common_crop_height / 2.0
-    crop_rect_before = (crop_x_ideal, crop_y_ideal, float(common_crop_width), float(common_crop_height))
+    crop_rect_before = (
+        plan.center_x - common_crop_width / 2.0,
+        plan.center_y - common_crop_height / 2.0,
+        float(common_crop_width),
+        float(common_crop_height),
+    )
 
-    padded_x = working_w < common_crop_width
-    padded_y = working_h < common_crop_height
-
-    if not padded_x:
-        crop_x_shifted = max(0.0, min(crop_x_ideal, working_w - common_crop_width))
-    else:
-        crop_x_shifted = 0.0
-    if not padded_y:
-        crop_y_shifted = max(0.0, min(crop_y_ideal, working_h - common_crop_height))
-    else:
-        crop_y_shifted = 0.0
-
-    crop_x_int = int(round(crop_x_shifted))
-    crop_y_int = int(round(crop_y_shifted))
+    # Delegate the shift + pad + scale maths to the shared pure resolver
+    # so this raster path never drifts from the Qt / SVG paths.
+    placement = resolve_common_crop_placement(
+        oriented_source_w=working_w,
+        oriented_source_h=working_h,
+        center_x=plan.center_x,
+        center_y=plan.center_y,
+        common_crop_width_px=common_crop_width,
+        common_crop_height_px=common_crop_height,
+        output_width=output_width,
+        output_height=output_height,
+    )
+    padded_x = placement.padded_x
+    padded_y = placement.padded_y
+    crop_x_int = placement.crop_x_int
+    crop_y_int = placement.crop_y_int
 
     if not padded_x and not padded_y:
         canvas = oriented.crop((
             crop_x_int, crop_y_int,
             crop_x_int + common_crop_width, crop_y_int + common_crop_height,
         ))
-        paste_dx = -crop_x_int
-        paste_dy = -crop_y_int
     else:
         canvas = Image.new("RGB", (common_crop_width, common_crop_height), background_rgb)
-        # Where the oriented image's (0, 0) lands in canvas coords.
-        paste_dx = (
-            (common_crop_width - working_w) // 2
-            if padded_x
-            else -crop_x_int
-        )
-        paste_dy = (
-            (common_crop_height - working_h) // 2
-            if padded_y
-            else -crop_y_int
-        )
-        canvas.paste(oriented, (paste_dx, paste_dy))
+        canvas.paste(oriented, (placement.paste_dx, placement.paste_dy))
 
     crop_rect_after = (crop_x_int, crop_y_int, common_crop_width, common_crop_height)
 
     if (common_crop_width, common_crop_height) != (output_width, output_height):
         canvas = canvas.resize((output_width, output_height), Image.LANCZOS)
 
-    scale_x = output_width / float(common_crop_width)
-    scale_y = output_height / float(common_crop_height)
-    polygon_tile_local: list[tuple[float, float]] | None = None
-    if plan.oriented_corners is not None:
-        polygon_tile_local = [
-            ((x + paste_dx) * scale_x, (y + paste_dy) * scale_y)
-            for x, y in plan.oriented_corners
-        ]
+    polygon_tile_local = placement.transform_polygon(plan.oriented_corners)
 
     return SporeThumbnailCommonCropResult(
         image=canvas,

@@ -397,17 +397,52 @@ def test_analysis_gallery_link_focuses_viewer_on_measurement_at_fifty_percent(mo
 
 
 def test_new_observation_analysis_gallery_defaults_are_enabled(monkeypatch, qapp):
+    """Fresh observations default to `orient=True`. The old
+    `uniform_scale_checkbox` was removed as part of the shared-planner
+    rebuild — uniform physical scale is now mandatory for every
+    persisted output, not a toggle."""
     window = _build_minimal_window(monkeypatch)
     window.orient_checkbox = QCheckBox()
-    window.uniform_scale_checkbox = QCheckBox()
     window.orient_checkbox.setChecked(False)
-    window.uniform_scale_checkbox.setChecked(False)
     window._load_gallery_settings = lambda: {}
 
     main_window.MainWindow.apply_gallery_settings(window)
 
     assert window.orient_checkbox.isChecked()
-    assert window.uniform_scale_checkbox.isChecked()
+    assert not hasattr(window, "uniform_scale_checkbox")
+
+    window.deleteLater()
+
+
+def test_apply_gallery_settings_drops_stale_uniform_scale_key(monkeypatch, qapp):
+    """Legacy settings dicts may still carry `uniform_scale=False`.
+    The restore path must silently drop the key without recreating the
+    checkbox or persisting a non-uniform bias anywhere on the window."""
+    import inspect
+
+    window = _build_minimal_window(monkeypatch)
+    window.orient_checkbox = QCheckBox()
+    window.orient_checkbox.setChecked(False)
+    window.gallery_plot_settings = {}
+    window._sync_reference_overlay_controls_state = lambda: None
+    window._sync_gallery_histogram_controls = lambda: None
+    window._sync_gallery_kde_controls = lambda: None
+    window._load_gallery_settings = lambda: {
+        "uniform_scale": False,
+        "orient": True,
+    }
+
+    main_window.MainWindow.apply_gallery_settings(window)
+
+    assert window.orient_checkbox.isChecked()
+    # No checkbox / attribute survives that would tell the gallery to
+    # skip the shared-planner uniform crop.
+    assert not hasattr(window, "uniform_scale_checkbox")
+    # The `apply_gallery_settings` source no longer references the
+    # legacy key at all — this belt-and-braces check locks it in.
+    src = inspect.getsource(main_window.MainWindow.apply_gallery_settings)
+    assert "settings.get(\"uniform_scale\"" not in src
+    assert "settings.get('uniform_scale'" not in src
 
     window.deleteLater()
 
@@ -429,96 +464,21 @@ def test_thumbnail_label_position_is_bottom_centered(qapp):
     assert text_y == max(metrics.ascent() + 4, tile_height - metrics.descent() - 4)
 
 
-def test_export_gallery_composite_uses_widest_thumbnail_width(monkeypatch, qapp, tmp_path):
+def test_export_gallery_composite_delegates_to_export_gallery_module(
+    monkeypatch, qapp, tmp_path,
+):
+    """`main_window.export_gallery_composite` is a thin stub around
+    `ui.export_gallery.run_export`. This test guards the plumbing —
+    the actual export behaviour (uniform tiles, hybrid SVG, etc.) is
+    covered by `tests/test_export_gallery.py`.
+    """
+    from ui import export_gallery
+
     window = _build_minimal_window(monkeypatch)
-    window.active_observation_id = None
-    window.gallery_rotations = {}
-    window.default_measure_color = QColor("#0044aa")
-    window.measure_status_label = SimpleNamespace(
-        setText=lambda _text: None,
-        setStyleSheet=lambda _style: None,
-    )
-    window._get_default_export_dir = lambda: str(tmp_path)
-    window._remember_export_dir = lambda _filename: None
-    window._current_measure_rectangle_style = lambda: "a"
-    window._current_measure_rectangle_thickness = lambda: 1
 
-    measurements = [
-        {
-            "id": 1,
-            "image_id": 11,
-            "length_um": 6.2,
-            "width_um": 4.6,
-            "gallery_rotation": 0,
-            "p1_x": 0.0,
-            "p1_y": 0.0,
-            "p2_x": 1.0,
-            "p2_y": 0.0,
-            "p3_x": 1.0,
-            "p3_y": 1.0,
-            "p4_x": 0.0,
-            "p4_y": 1.0,
-        },
-        {
-            "id": 2,
-            "image_id": 12,
-            "length_um": 6.8,
-            "width_um": 4.8,
-            "gallery_rotation": 0,
-            "p1_x": 0.0,
-            "p1_y": 0.0,
-            "p2_x": 1.0,
-            "p2_y": 0.0,
-            "p3_x": 1.0,
-            "p3_y": 1.0,
-            "p4_x": 0.0,
-            "p4_y": 1.0,
-        },
-    ]
-    window.get_gallery_measurements = lambda: list(measurements)
-    window._filter_gallery_measurements = lambda values: list(values)
-    window._sort_gallery_measurements = lambda values: list(values)
-    window.get_measurement_pixmap = lambda measurement, pixmap_cache: QPixmap(64, 64)
-    monkeypatch.setattr(main_window.ImageDB, "get_image", lambda image_id: None)
-
-    thumb1 = QPixmap(40, 80)
-    thumb1.fill(QColor("#66aaff"))
-    thumb2 = QPixmap(70, 80)
-    thumb2.fill(QColor("#ff9966"))
-
-    def _fake_create_spore_thumbnail(
-        pixmap,
-        points,
-        length_um,
-        width_um,
-        size,
-        measurement_num=0,
-        **kwargs,
-    ):
-        return thumb1 if measurement_num == 1 else thumb2
-
-    window.create_spore_thumbnail = _fake_create_spore_thumbnail
-
-    class _FakeExportGalleryDialog:
-        def __init__(self, parent=None):
-            self.parent = parent
-
-        def exec(self):
-            return QDialog.Accepted
-
-        def get_settings(self):
-            return {"format": "png", "quality": 90}
-
-    output_path = tmp_path / "gallery.png"
-    monkeypatch.setattr(main_window, "ExportGalleryDialog", _FakeExportGalleryDialog)
-    monkeypatch.setattr(
-        main_window.QFileDialog,
-        "getSaveFileName",
-        lambda *args, **kwargs: (str(output_path), "PNG Images (*.png)"),
-    )
+    calls: list[object] = []
+    monkeypatch.setattr(export_gallery, "run_export", lambda mw: calls.append(mw))
 
     window.export_gallery_composite()
 
-    image = QImage(str(output_path))
-    assert image.width() == 140
-    assert image.height() == 80
+    assert calls == [window]

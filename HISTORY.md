@@ -1,5 +1,52 @@
 # Sporely Desktop — History & Debugging Notes
 
+### Shared spore-mosaic planning core + v3 pipeline
+
+`utils/spore_mosaic_render.py` is a new backend-agnostic planner shared
+by every mosaic output: cloud WebP atlas, live Analysis-tab gallery,
+desktop PNG/JPEG export, and desktop hybrid SVG export. It owns the
+per-tile geometry (common physical crop, grid selection, oriented
+polygon transform, dimension label anchor) but never opens a source
+image, never touches Qt, and never produces pixels. Rendering stays in
+the backend that fits the output format.
+
+Highlights:
+
+* Every persisted output now runs at **uniform physical scale**. The
+  `uniform_scale_checkbox` in the Analysis tab is gone; the shared
+  planner enforces one common physical crop across every measurement in
+  an observation. Legacy `uniform_scale=False` values in saved settings
+  are silently dropped on load.
+* `select_grid_shape` scores candidate `(cols, rows)` grids with
+  `abs(log(actual/target)) + K * empty_fraction` (K = 1.5), so slender
+  spores no longer produce tall, narrow atlases — the SQUARE_IMAGE
+  policy pulls the cloud atlas back to near-square, and the ASPECT_4_3
+  policy keeps desktop exports readable.
+* A single pure resolver — `resolve_common_crop_placement` in
+  `utils.spore_thumbnail_render` — computes the shift + pad + scale
+  math consumed by the Pillow raster path, the Qt raster path, and the
+  SVG vector placement. There is no duplicated crop maths in the
+  codebase now.
+* `SporeMosaicSource` carries a `scale_um_per_px` override; the planner
+  prefers authoritative image µm-per-pixel and falls back to the
+  `length_um` + p1p2 pixel-span derivation. Sources with neither are
+  skipped with reason `missing_calibration` and never rendered at an
+  unknown scale.
+* `MOSAIC_PIPELINE_VERSION` bumps from **2 → 3**. Atlas bytes and
+  per-tile positions change because the grid shape changes; per-tile
+  pixel dimensions remain governed by common physical crop +
+  `output_tile_height_px`, independent of grid. Every previously synced
+  cloud atlas re-uploads once via the existing signature mechanism.
+* Desktop SVG export is now **hybrid**: raster tiles embedded as
+  base64 `<image>` and the measurement rectangle + dimension label as
+  editable vector `<polygon>` / `<line>` / `<text>` (with
+  `text-anchor="middle"` and a wide white-stroke halo). Style B emits
+  its corner segments as real vector lines rather than a rasterised
+  approximation. `QSvgGenerator` is dropped from the export path.
+* Cloud manifest field names — `sporeMosaic.{url,width,height}` and
+  per-tile `mosaicX/Y/W/H` / `overlay` — are unchanged. Landing does
+  not need updating.
+
 ### Spore-mosaic scale-bar payload
 
 Landing renders per-observation scale bars over the spore mosaic (and over

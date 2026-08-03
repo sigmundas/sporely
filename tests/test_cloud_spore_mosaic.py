@@ -937,3 +937,34 @@ def test_all_tiles_one_distinct_mosaic_w_and_h(tmp_path):
     assert len(ws) == 1
     assert len(hs) == 1
     assert next(iter(hs)) == 320
+
+
+def test_build_spore_mosaic_slender_spores_produce_near_square_atlas(tmp_path):
+    """v3 grid policy: many slender (q ≈ 2.3) spores should not produce a
+    tall, narrow atlas. The SQUARE_IMAGE grid policy picks a
+    near-square (cols, rows) so the atlas aspect stays close to 1.0.
+
+    Regression guard for the pre-v3 ``ceil(sqrt(n))`` grid, which
+    ignored tile aspect and produced tall, narrow atlases for slender
+    spores.
+    """
+    src = tmp_path / "slender.png"
+    _write_test_source(src, size=(1200, 1200))
+    measurements = []
+    for i in range(12):
+        # q ≈ 2.3: 46 px length, 20 px width, 10 µm × 4.3 µm.
+        measurements.append(SporeCropSource(
+            measurement_id=i + 1, image_id=1,
+            cloud_measurement_id=str(i + 1), cloud_image_id="9",
+            source_path=src, source_width=1200, source_height=1200,
+            p1_x=600, p1_y=623, p2_x=600, p2_y=577,
+            p3_x=590, p3_y=600, p4_x=610, p4_y=600,
+            length_um=10.0, width_um=4.3,
+        ))
+    manifest = build_spore_mosaic(measurements, tile_size_px=320)
+    assert manifest is not None
+    aspect = manifest.width_px / max(1, manifest.height_px)
+    assert abs(aspect - 1.0) < 0.25, (
+        f"SQUARE_IMAGE atlas is not near-square: "
+        f"{manifest.width_px}x{manifest.height_px} aspect={aspect:.3f}"
+    )
