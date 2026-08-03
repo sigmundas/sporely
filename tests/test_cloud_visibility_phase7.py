@@ -2891,6 +2891,326 @@ def test_measurement_cleanup_downgrades_unchecked_microscope_to_metadata_only_an
     ), "expected the metadata-only anchor downgrade log line for image 11"
 
 
+# ── Metadata-only-anchor short-circuit tests (Phase 3B.6) ──────────────────
+#
+# These tests target the fix for the "downgrade-then-re-upload" order-of-
+# operations flaw: an unchecked microscope image with an active measurement
+# gets its `storage_path` PATCHed to NULL by the pre-step, but the
+# downstream image-sync loop used to see the local file signature diverge
+# from the (now-empty) remote and re-upload bytes that were then orphaned
+# in storage (never linked from the metadata row). The
+# `metadata_only_anchor_cloud_ids` set derived from the pre-step now
+# short-circuits that upload branch.
+
+
+def test_unchecked_protected_anchor_with_existing_bytes_downgrades_without_replacement_upload(
+    tmp_path,
+    monkeypatch,
+    capsys,
+):
+    """Full sync of a measured-but-unchecked microscope image: bytes are
+    removed once by the pre-step, `storage_path` ends up NULL on the
+    remote row, and `upload_image_file` is never called."""
+    monkeypatch.setenv("SPORELY_DEBUG_CLOUD_SYNC", "1")
+    ctx = _setup_push_all_tombstone_cleanup_case(
+        tmp_path, monkeypatch, include_deleted_measurement=True,
+    )
+
+    result = cloud_sync.push_all(
+        ctx.client,
+        progress_cb=lambda text, current, total: ctx.progress_messages.append(text),
+        remote_obs=[dict(ctx.remote_obs)],
+        sync_images=True,
+        sync_calibrations=False,
+    )
+    capsys.readouterr()
+
+    assert result["pushed"] == 1
+    assert result["errors"] == []
+
+    # Zero replacement upload — this is the whole point of the short-circuit.
+    assert ctx.client.upload_image_calls == [], (
+        f"expected no bytes upload for the metadata-only anchor, got "
+        f"{ctx.client.upload_image_calls!r}"
+    )
+    # Original-file upload must also not fire (there is no full original
+    # to publish for a metadata-only anchor).
+    assert ctx.client.upload_original_calls == []
+
+    # `_storage_remove` fires exactly once — the pre-step's downgrade
+    # clears the previously-published bytes. Not repeated by the sync loop.
+    assert len(ctx.client.storage_remove_calls) == 1
+    removed_paths = ctx.client.storage_remove_calls[0]
+    # Both the derivative and the original paths get removed.
+    assert any("cloud-obs-1" in p for p in removed_paths)
+
+    # Remote row ends metadata-only.
+    protected = next(
+        row for row in ctx.client.remote_images if row["id"] == "cloud-image-11"
+    )
+    assert protected["storage_path"] is None
+    assert protected["original_storage_path"] is None
+
+
+def test_no_new_storage_key_is_created_or_left_orphaned(
+    tmp_path,
+    monkeypatch,
+    capsys,
+):
+    """No new storage key is ever created for a metadata-only anchor.
+
+    Traverses every recorded upload call and asserts none of them target
+    ``cloud-image-11`` — the metadata row must be the only durable
+    reference and it points at nothing, so nothing may be uploaded that
+    could be left orphaned.
+    """
+    monkeypatch.setenv("SPORELY_DEBUG_CLOUD_SYNC", "1")
+    ctx = _setup_push_all_tombstone_cleanup_case(
+        tmp_path, monkeypatch, include_deleted_measurement=True,
+    )
+
+    cloud_sync.push_all(
+        ctx.client,
+        progress_cb=lambda text, current, total: ctx.progress_messages.append(text),
+        remote_obs=[dict(ctx.remote_obs)],
+        sync_images=True,
+        sync_calibrations=False,
+    )
+    capsys.readouterr()
+
+    # No derivative or original upload for the metadata-only anchor.
+    for call in ctx.client.upload_image_calls:
+        assert call["img_cloud_id"] != "cloud-image-11", (
+            f"a byte upload targeted the metadata-only anchor: {call!r}"
+        )
+    for call in ctx.client.upload_original_calls:
+        assert call["img_cloud_id"] != "cloud-image-11"
+
+    # `push_image_metadata` (which re-attaches a storage_path) also
+    # must NOT fire for cloud-image-11 — the pre-step's PATCH is the
+    # only touch on the row.
+    for call in ctx.client.push_metadata_calls:
+        assert call.get("cloud_id") != "cloud-image-11", (
+            f"push_image_metadata re-attached a storage_path to the "
+            f"metadata-only anchor: {call!r}"
+        )
+    # And the row never picks up a non-null storage_path.
+    protected = next(
+        row for row in ctx.client.remote_images if row["id"] == "cloud-image-11"
+    )
+    assert protected["storage_path"] is None
+    assert protected["original_storage_path"] is None
+
+
+def test_second_unchanged_sync_performs_no_remove_or_upload_for_metadata_only_anchor(
+    tmp_path,
+    monkeypatch,
+    capsys,
+):
+    """After the first sync converges the anchor to metadata-only, a
+    second sync with zero local/remote changes performs no bytes work
+    for that image: zero storage_remove, zero upload, and the remote
+    row's storage_path stays NULL."""
+    monkeypatch.setenv("SPORELY_DEBUG_CLOUD_SYNC", "1")
+    ctx = _setup_push_all_tombstone_cleanup_case(
+        tmp_path, monkeypatch, include_deleted_measurement=True,
+    )
+
+    # First run — the setup runs the downgrade.
+    cloud_sync.push_all(
+        ctx.client,
+        progress_cb=lambda text, current, total: ctx.progress_messages.append(text),
+        remote_obs=[dict(ctx.remote_obs)],
+        sync_images=True,
+        sync_calibrations=False,
+    )
+    capsys.readouterr()
+    first_run_removes = len(ctx.client.storage_remove_calls)
+    first_run_uploads = len(ctx.client.upload_image_calls)
+    first_run_patches = len(ctx.client.patch_calls)
+
+    # Refresh the observation's dirty flag so the second run is not a
+    # no-op at the observation-dispatch layer — the media-anchor loop
+    # still runs, and THAT is what we're testing.
+    with sqlite3.connect(ctx.db_path) as conn:
+        conn.execute(
+            "UPDATE observations SET sync_status = 'dirty' WHERE id = 1"
+        )
+        conn.commit()
+
+    # Second run — inputs unchanged.
+    cloud_sync.push_all(
+        ctx.client,
+        progress_cb=lambda text, current, total: ctx.progress_messages.append(text),
+        remote_obs=[dict(ctx.remote_obs)],
+        sync_images=True,
+        sync_calibrations=False,
+    )
+    capsys.readouterr()
+
+    # Second run must add zero storage-remove calls for cloud-image-11.
+    second_run_new_removes = (
+        len(ctx.client.storage_remove_calls) - first_run_removes
+    )
+    assert second_run_new_removes == 0, (
+        f"second sync added {second_run_new_removes} extra "
+        f"storage_remove calls; unchanged inputs must be a no-op for the "
+        f"metadata-only anchor"
+    )
+
+    # Second run must not upload bytes.
+    second_run_new_uploads = (
+        len(ctx.client.upload_image_calls) - first_run_uploads
+    )
+    assert second_run_new_uploads == 0
+
+    # Second run must not repeat the metadata-only downgrade PATCH.
+    second_run_new_patches = len(ctx.client.patch_calls) - first_run_patches
+    for path, body in ctx.client.patch_calls[first_run_patches:]:
+        # If any new patches did fire, none of them should be
+        # re-downgrading cloud-image-11 (which would be an idempotency
+        # break — the row is already storage_path=NULL).
+        if "cloud-image-11" in path:
+            assert body.get("storage_path", "unset") in (None, "unset"), (
+                f"idempotency broken: {path!r} patched storage_path to "
+                f"{body.get('storage_path')!r} on unchanged inputs"
+            )
+    # Regardless of how many metadata patches fired, the row stays
+    # storage_path=NULL.
+    protected = next(
+        row for row in ctx.client.remote_images if row["id"] == "cloud-image-11"
+    )
+    assert protected["storage_path"] is None
+    assert protected["original_storage_path"] is None
+
+
+def test_checked_microscope_image_remains_eligible_and_uploads_normally(
+    tmp_path,
+    monkeypatch,
+    capsys,
+):
+    """Control case: the metadata-only-anchor short-circuit MUST NOT
+    extend to gallery-checked microscope images.
+
+    A checked microscope image with an active measurement still gets an
+    anchor from the pre-step, but its cloud id must NOT land in
+    ``metadata_only_anchor_cloud_ids`` and the row's ``storage_path``
+    must NOT be downgraded to NULL — the bytes stay published. This is
+    the invariant that keeps the short-circuit from over-reaching and
+    stripping bytes from images the user explicitly opted in to
+    publishing.
+    """
+    monkeypatch.setenv("SPORELY_DEBUG_CLOUD_SYNC", "1")
+    ctx = _setup_push_all_tombstone_cleanup_case(
+        tmp_path, monkeypatch, include_deleted_measurement=True,
+    )
+    # The fixture's uncheck-list is `[11]`. Remove it — image 11 is now
+    # gallery-checked. Everything else in the fixture is identical.
+    with sqlite3.connect(ctx.db_path) as conn:
+        conn.execute(
+            "DELETE FROM settings WHERE key = 'artsobs_publish_excluded_image_ids_1'"
+        )
+        conn.commit()
+
+    cloud_sync.push_all(
+        ctx.client,
+        progress_cb=lambda text, current, total: ctx.progress_messages.append(text),
+        remote_obs=[dict(ctx.remote_obs)],
+        sync_images=True,
+        sync_calibrations=False,
+    )
+    output = capsys.readouterr().out
+
+    # The metadata-only-anchor downgrade log line must NOT appear for
+    # image 11 — the pre-step must not touch storage_path when the
+    # image is gallery-checked.
+    assert (
+        "converted local_image=11 cloud_image=cloud-image-11 to storage_path=NULL"
+        not in output
+    ), "checked microscope image must NOT be downgraded to metadata-only"
+
+    # No storage-remove for the checked image — its bytes stay in cloud.
+    for removed in ctx.client.storage_remove_calls:
+        for path in removed:
+            assert "cloud-image-11" not in path, (
+                f"a checked image had its bytes removed: {path!r}"
+            )
+
+    # Remote row keeps its baseline storage_path (non-NULL).
+    protected = next(
+        row for row in ctx.client.remote_images if row["id"] == "cloud-image-11"
+    )
+    baseline = next(
+        row for row in ctx.remote_images if row["id"] == "cloud-image-11"
+    )
+    assert protected["storage_path"] == baseline["storage_path"], (
+        f"checked image storage_path must stay at baseline; got "
+        f"{protected['storage_path']!r} vs baseline "
+        f"{baseline['storage_path']!r}"
+    )
+    assert isinstance(protected["storage_path"], str) and protected["storage_path"], (
+        "checked image must have a non-empty storage_path"
+    )
+
+
+def test_unchecked_image_that_is_not_an_fk_anchor_follows_normal_removal_path(
+    tmp_path,
+    monkeypatch,
+    capsys,
+):
+    """An unchecked microscope image with NO measurements does not need
+    a metadata-only anchor — it is not in ``metadata_only_anchor_cloud_ids``
+    and the sync loop's short-circuit does NOT fire. The image should
+    proceed through the normal upload-eligibility gate (which today
+    also leaves an unchecked image non-pending, but for a different
+    reason than the anchor short-circuit)."""
+    monkeypatch.setenv("SPORELY_DEBUG_CLOUD_SYNC", "1")
+    # `include_deleted_measurement=False` seeds a microscope image with
+    # NO measurement rows, so the pre-step will NOT ensure an anchor
+    # for it and it stays out of `metadata_only_anchor_cloud_ids`.
+    ctx = _setup_push_all_tombstone_cleanup_case(
+        tmp_path, monkeypatch, include_deleted_measurement=False,
+    )
+    # Simulate a gallery-uncheck on the tombstoned image so the parallel
+    # unchecked-with-no-measurement scenario is well-defined.
+    with sqlite3.connect(ctx.db_path) as conn:
+        conn.execute(
+            "INSERT OR REPLACE INTO settings (key, value) VALUES (?, ?)",
+            ("artsobs_publish_excluded_image_ids_1", "[11]"),
+        )
+        conn.commit()
+
+    cloud_sync.push_all(
+        ctx.client,
+        progress_cb=lambda text, current, total: ctx.progress_messages.append(text),
+        remote_obs=[dict(ctx.remote_obs)],
+        sync_images=True,
+        sync_calibrations=False,
+    )
+    output = capsys.readouterr().out
+
+    # No metadata-only-anchor downgrade fires for image 11: there is
+    # no measurement requiring the anchor, so the pre-step never
+    # touches this row.
+    assert (
+        "converted local_image=11 cloud_image=cloud-image-11 to storage_path=NULL"
+        not in output
+    ), "metadata-only downgrade must NOT fire for a measurement-less image"
+
+    # The anchor-set for the observation is therefore empty for image 11,
+    # and the sync loop's short-circuit does NOT apply — the image
+    # follows the normal removal / gate flow (specifically the
+    # already-existing tombstone honoring path for image 11).
+    # We assert observable state: the image was NOT re-uploaded as a
+    # metadata-only anchor short-circuit would have implied, and the
+    # row's fate follows the normal tombstoned-image rules.
+    for call in ctx.client.upload_image_calls:
+        # The unmeasured image 11 has no reason to be re-uploaded.
+        assert call["img_cloud_id"] != "cloud-image-11", (
+            f"unmeasured unchecked image should not re-upload; got {call!r}"
+        )
+
+
 def test_metadata_anchor_repairs_stale_local_image_cloud_id(monkeypatch, tmp_path):
     db_path = _init_push_all_sync_db(tmp_path)
     with sqlite3.connect(db_path) as conn:

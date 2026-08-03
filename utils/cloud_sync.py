@@ -13329,6 +13329,22 @@ def _push_images_for_observation(
         for value in (anchor_result.get('cloud_ids') or [])
         if str(value or '').strip()
     }
+    # Subset of `protected_anchor_cloud_ids` whose remote row was
+    # downgraded to metadata-only by the pre-step (unchecked gallery
+    # images with active public spore measurements). Bytes were
+    # intentionally removed and `storage_path` PATCHed to NULL; the
+    # image-sync loop uses this set to short-circuit its "local file
+    # differs from remote, upload replacement bytes" branch so it does
+    # not re-upload bytes that would be orphaned (never referenced from
+    # the metadata row's NULL storage_path). The gallery-checkbox
+    # remains the single source of truth for cloud-byte-upload consent
+    # — this set is a derived view of the pre-step's already-made
+    # decision, not a second eligibility rule.
+    metadata_only_anchor_cloud_ids = {
+        str(value or '').strip()
+        for value in (anchor_result.get('metadata_only_cloud_ids') or [])
+        if str(value or '').strip()
+    }
     warnings.extend(_push_pending_image_tombstones(client))
     prepared_items: list[dict] = []
     cleanup = None
@@ -13545,13 +13561,30 @@ def _push_images_for_observation(
                 )
                 continue
             try:
-                existing_storage_path = _normalize_cloud_media_key((remote_row or {}).get('storage_path'))
-                storage_path = existing_storage_path or _build_worker_storage_path(
-                    client.user_id,
-                    obs_cloud_id,
-                    img,
-                    upload_path,
+                # Protected metadata-only anchor short-circuit.
+                # The pre-step already downgraded this row: bytes removed,
+                # `storage_path` PATCHed to NULL. Do NOT rebuild a worker
+                # storage_path here — that would set us on the "file
+                # differs, upload" branch below and orphan bytes in
+                # storage that the metadata row will never reference.
+                # Metadata reconciliation for other fields (notes, EXIF,
+                # sort_order, …) still runs downstream; only the bytes
+                # path is skipped.
+                is_metadata_only_anchor = bool(
+                    remote_cloud_id
+                    and remote_cloud_id in metadata_only_anchor_cloud_ids
                 )
+                if is_metadata_only_anchor:
+                    existing_storage_path = ''
+                    storage_path = ''
+                else:
+                    existing_storage_path = _normalize_cloud_media_key((remote_row or {}).get('storage_path'))
+                    storage_path = existing_storage_path or _build_worker_storage_path(
+                        client.user_id,
+                        obs_cloud_id,
+                        img,
+                        upload_path,
+                    )
                 expected_payload = _prepared_item_remote_payload(
                     img,
                     upload_path,
@@ -13575,7 +13608,14 @@ def _push_images_for_observation(
                 current_file_sig = _file_content_signature(upload_path)
                 stored_file_sig = _load_cloud_image_file_signature(obs.get('id'), local_image_id)
                 file_matches = False
-                if remote_row and _normalize_cloud_media_key(remote_row.get('storage_path')) == _normalize_cloud_media_key(storage_path):
+                if is_metadata_only_anchor:
+                    # Bytes have been intentionally cleared by the pre-step;
+                    # there is nothing to compare and nothing to upload.
+                    # Both `storage_path`s normalize to '' and `file_matches`
+                    # is forced True so the "upload replacement bytes"
+                    # branch below never fires for this row.
+                    file_matches = True
+                elif remote_row and _normalize_cloud_media_key(remote_row.get('storage_path')) == _normalize_cloud_media_key(storage_path):
                     if stored_file_sig and stored_file_sig == current_file_sig:
                         file_matches = True
                     elif (
@@ -14269,8 +14309,23 @@ def _ensure_metadata_only_microscope_images_for_observation(
     establishes the cloud anchor required by its public measurements.
     Non-fatal per-image failures are logged and counted, but do not stop
     the loop. Auth / temporary errors propagate so the backfill aborts.
-    Returns a counters dict with ``considered``, ``created``, ``linked``,
-    ``skipped``, ``failed``.
+    Returns a counters dict with:
+
+    * ``considered`` / ``ensured`` / ``skipped`` / ``failed`` — counts.
+    * ``cloud_ids`` — every microscope anchor cloud id ensured this
+      cycle (checked AND unchecked images), used by the image-sync
+      loop's ``prepass_kept_cloud_ids`` so stale-image cleanup does
+      not delete them.
+    * ``metadata_only_cloud_ids`` — the SUBSET of ``cloud_ids`` that
+      belong to gallery-unchecked images. Membership in this set is
+      the derived signal the image-sync loop uses to short-circuit
+      the "remote storage_path is NULL, local file differs, upload
+      bytes" branch — bytes were intentionally cleared by the
+      per-image helper's metadata-only downgrade, so re-uploading
+      them would just orphan bytes in storage without ever being
+      linked from the metadata row. The gallery-checkbox state is
+      still the single source of truth; this set just surfaces the
+      already-made decision to the downstream loop.
     """
     counters = {
         'considered': 0,
@@ -14278,6 +14333,7 @@ def _ensure_metadata_only_microscope_images_for_observation(
         'skipped': 0,
         'failed': 0,
         'cloud_ids': [],
+        'metadata_only_cloud_ids': [],
     }
     if not obs_cloud_id:
         return counters
@@ -14317,6 +14373,14 @@ def _ensure_metadata_only_microscope_images_for_observation(
                 for row in (puller(obs_cloud_id) or [])
             ]
 
+    # Single per-observation lookup of the gallery-checked selection.
+    # `_ensure_metadata_only_microscope_image_for_public_spores` uses
+    # this exact same rule internally to decide `metadata_only=True/False`
+    # for each image; we mirror the check here so the wrapper's caller
+    # (`_push_images_for_observation`) can see the same decision without
+    # having to re-open the settings row for every image.
+    gallery_checked_ids = _cloud_explicit_media_upload_selection(obs_local_id)
+
     for image_row in rows:
         counters['considered'] += 1
         local_image_id = _safe_int(image_row.get('id'))
@@ -14341,6 +14405,12 @@ def _ensure_metadata_only_microscope_images_for_observation(
         if result:
             counters['ensured'] += 1
             counters['cloud_ids'].append(str(result))
+            # Unchecked image → the per-image helper already downgraded
+            # this anchor to metadata-only (storage_path=NULL, bytes
+            # removed via `_storage_remove`). Surface the derived flag
+            # so the sync loop can short-circuit the re-upload branch.
+            if local_image_id not in gallery_checked_ids:
+                counters['metadata_only_cloud_ids'].append(str(result))
         else:
             counters['skipped'] += 1
 
@@ -14370,6 +14440,7 @@ def _ensure_metadata_anchors_for_public_spore_observation(
         'skipped': 0,
         'failed': 0,
         'cloud_ids': [],
+        'metadata_only_cloud_ids': [],
     }
     if obs_local_id <= 0 or not obs_cloud_id:
         return empty
