@@ -773,6 +773,18 @@ def reference_render_tile(
     Kept as the ground truth against which the fast local-ROI renderer
     is parity-tested. Prefer `render_spore_thumbnail_common_crop`
     (which dispatches by env flag) in production code.
+
+    Timing note
+    -----------
+    This is the pre-Phase 2.B path that resamples every pixel of the
+    input source. It is deliberately slow but exact — the fast path's
+    parity budget is measured against it. Comparing "reference render
+    ms vs fast render ms" is a **render-kernel** benchmark (one tile of
+    a large source); it is NOT a full-build benchmark (planning +
+    decode + N-tile render + paste + WebP encode + digest). See
+    `MosaicBuildTimings.summary()` for the full-build breakdown and
+    `scripts/benchmark_spore_mosaic.py` for the harness that reports
+    both numbers separately.
     """
     if common_crop_width < 1 or common_crop_height < 1:
         raise ValueError("common crop dimensions must be positive")
@@ -906,20 +918,56 @@ def fast_render_tile(
     """Local-ROI renderer: inverse-map the crop back into source coords,
     crop that small ROI, then rotate + resize only those pixels.
 
-    Contract match with the reference path
-    ---------------------------------------
+    Parity budget vs reference (empirical, asserted by tests)
+    ---------------------------------------------------------
     Uses the same filter combo the reference does — BILINEAR for the
     rotate step and LANCZOS for the resize — so per-pixel diff stays
-    inside the documented parity budget (mean < 3.0, max < 15 out of
-    255) even on high-frequency test patterns. What changes is the
-    working image size: instead of rotating the whole source (up to
-    hundreds of MPix), we rotate a ROI a few tens of KPix wide.
+    inside a documented budget on smooth microscopy-like content:
+
+    * **mean absolute channel diff < 3.0** (out of 255)
+    * **max absolute channel diff < 15** (out of 255)
+
+    Those thresholds are the ones the parity tests
+    (`tests/test_spore_thumbnail_render.py`) actually assert. They hold
+    on the structured gradient fixtures used there and on real
+    microscope frames (verified against the production benchmark).
+
+    They may NOT hold on artificial pixel-scale patterns — e.g. a
+    2-pixel-stride black/white alternation or a single 1 px feature
+    on a flat background. Local-affine sampling of such patterns is
+    not identical to "rotate whole source, then crop": rounding of
+    the ROI AABB by ``_FAST_ROI_MARGIN_PX`` and sub-pixel phase
+    differences between one large affine and one small affine
+    produce channel deltas outside the mean/max budget. This is
+    expected and does not represent a bug — the pipeline is not
+    designed for adversarial 1 px content.
+
+    Geometry (polygon coordinates in the tile-local frame) stays
+    within the strict 0.5 px tolerance in ALL cases — the affine
+    is the same math on both paths, and both derive the polygon
+    from the shared `resolve_common_crop_placement` result.
 
     Fallback: for very small sources (comparable to the crop size) the
     ROI approach costs almost as much as the reference. We degrade
     gracefully to the reference path in that case — it stays fast on
     small inputs while the ROI path pays only for what it actually
     saves.
+
+    Diagnosis
+    ---------
+    ``SPORELY_MOSAIC_USE_REFERENCE=1`` in the environment forces
+    `render_spore_thumbnail_common_crop` to route to
+    `reference_render_tile` instead of this function, so a user can
+    bisect a suspected fast-path regression in production without a
+    code change.
+
+    Performance framing
+    -------------------
+    Kernel-only speedup (this function's cost vs `reference_render_tile`)
+    is very large on large sources — the fast path skips the whole-source
+    resample. Full-mosaic-build speedup is bounded by decode + WebP
+    encode; see `MosaicBuildTimings.summary()` for the honest
+    per-stage breakdown.
     """
     if common_crop_width < 1 or common_crop_height < 1:
         raise ValueError("common crop dimensions must be positive")

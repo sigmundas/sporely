@@ -137,12 +137,12 @@ def _run_one(
         # Warm-up run to load Pillow codec + prime the OS page cache.
         first = build_spore_mosaic(
             sources, tile_size_px=DEFAULT_TILE_SIZE_PX, quality=quality,
-        )
+        ).manifest
         assert first is not None and first.timings is not None
         # Actual measurement (post-warm).
         manifest = build_spore_mosaic(
             sources, tile_size_px=DEFAULT_TILE_SIZE_PX, quality=quality,
-        )
+        ).manifest
         assert manifest is not None and manifest.timings is not None
         summary = manifest.timings.summary()
         return BenchResult(
@@ -196,8 +196,12 @@ def _mosaic_signature_probe(source_size: int, tile_count: int, quality: int) -> 
         image_path = Path(tmp) / "src.png"
         _make_source(image_path, source_size)
         sources = _make_sources(tile_count, image_path, source_size)
-        first = build_spore_mosaic(sources, tile_size_px=DEFAULT_TILE_SIZE_PX, quality=quality)
-        second = build_spore_mosaic(sources, tile_size_px=DEFAULT_TILE_SIZE_PX, quality=quality)
+        first = build_spore_mosaic(
+            sources, tile_size_px=DEFAULT_TILE_SIZE_PX, quality=quality,
+        ).manifest
+        second = build_spore_mosaic(
+            sources, tile_size_px=DEFAULT_TILE_SIZE_PX, quality=quality,
+        ).manifest
         assert first is not None and second is not None
         same = first.image_bytes == second.image_bytes
         print(

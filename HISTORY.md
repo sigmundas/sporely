@@ -28,10 +28,32 @@ pipeline-version bump.
   `render_spore_thumbnail_common_crop` now dispatches to
   `fast_render_tile` by default; `SPORELY_MOSAIC_USE_REFERENCE=1`
   forces the old whole-source path for regression bisection.
-  For a 4000×4000 source with per-tile rotation the render step
-  drops from ~158 ms/tile (reference) to ~0.35 ms/tile (fast), a
-  ~400× per-tile speedup. On the current benchmark the encode step
-  dominates the remaining wall-clock budget.
+
+  **Two speedup numbers to keep straight** (do not conflate):
+
+  * **Render-kernel speedup** =
+    `reference_render_ms / fast_render_ms` for a single tile of a
+    large (~4000×4000) source. This is the number the fast path
+    itself is responsible for — hundreds of times faster than the
+    reference because the whole-source resample is gone.
+    Concretely: ~158 ms → ~0.35 ms per tile in benchmark harness
+    runs — the "450×" figure that appeared in earlier notes was this
+    number.
+  * **Full-build speedup** =
+    `reference_build_ms / fast_build_ms` from
+    `MosaicBuildTimings.summary()`. Under production loads the fast
+    kernel has already dropped per-tile render below 1 ms; source
+    **decode** and WebP **encode** now dominate. So the full-build
+    speedup is a small single-digit multiple even though the kernel
+    speedup is >100×. Bench harness prints both columns so this is
+    unambiguous.
+  * Parity test thresholds
+    (`tests/test_spore_thumbnail_render.py::test_fast_render_image_diff_within_threshold`)
+    are: mean absolute channel diff < 3.0 and max < 15 (out of 255)
+    **on smooth microscopy-like fixtures**. Adversarial 1 px or
+    stride-2 alternating patterns may exceed those on channel diff —
+    this is expected. Geometry (polygon coords) stays within a
+    strict 0.5 px tolerance in all cases.
 * **Progress callback (Phase 2.E, partial).**
   `build_spore_mosaic(progress_cb=…)` fires stage transitions
   (`planning` → `rendering` → `encoding` → `digest` → `complete`)

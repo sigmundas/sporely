@@ -50,11 +50,13 @@ from PIL import Image
 from utils.spore_thumbnail_render import (
     SporeThumbnailInputs,
     SporeThumbnailPlan,
+    _to_rgb,
     plan_common_crop as _plan_common_crop_impl,
     plan_spore_thumbnail,
     render_spore_thumbnail_common_crop,
 )
 from utils.spore_mosaic_render import (
+    MosaicCell,
     MosaicGridPolicy,
     SporeMosaicSource,
     plan_mosaic,
@@ -132,6 +134,21 @@ class MosaicBuildTimings:
     otherwise. Aggregates are populated at the end of the build so
     callers can turn `total_ns` into a rate (`tiles / total_s`) or
     detect regressions from a benchmark harness.
+
+    Memory instrumentation (Phase 2.C bounded-source refactor)
+    ----------------------------------------------------------
+    * ``distinct_source_count`` — number of distinct source paths
+      opened during the build.  Mirrors ``distinct_sources`` and is
+      kept as a separate name so the "memory" story reads clearly in
+      the benchmark harness table.
+    * ``peak_open_sources`` — the maximum count of simultaneously
+      decoded source images the builder held open at any moment.
+      With the grouped-render loop this is bounded at 1.
+    * ``peak_decoded_megapixels`` — the largest per-source decoded
+      footprint the builder held at any moment, estimated as
+      ``width * height * (channels_raw + channels_working) / 1e6``.
+      When the raw source is already RGB the working image aliases
+      it, so only the RGB channel count is charged.
     """
 
     total_ns: int = 0
@@ -145,6 +162,9 @@ class MosaicBuildTimings:
     distinct_sources: int = 0
     per_tile_ns: list[tuple[int, int]] = field(default_factory=list)
     total_source_megapixels: float = 0.0
+    peak_open_sources: int = 0
+    peak_decoded_megapixels: float = 0.0
+    distinct_source_count: int = 0
 
     def top_slowest(self, k: int = 5) -> list[tuple[int, int]]:
         """Return the top-k slowest (measurement_id, ns) tiles."""
@@ -167,6 +187,9 @@ class MosaicBuildTimings:
             "digest_ms": round(self.digest_ns / 1e6, 2),
             "tile_count": int(self.tile_count),
             "distinct_sources": int(self.distinct_sources),
+            "distinct_source_count": int(self.distinct_source_count),
+            "peak_open_sources": int(self.peak_open_sources),
+            "peak_decoded_megapixels": round(self.peak_decoded_megapixels, 3),
             "mean_tile_ms": round(mean_tile_ns / 1e6, 2),
             "max_tile_ms": round(max_tile_ns / 1e6, 2),
             "total_source_megapixels": round(self.total_source_megapixels, 3),
@@ -322,6 +345,44 @@ class SporeMosaicManifest:
     timings: MosaicBuildTimings | None = None
 
 
+# ── Structured build result (Phase 2.D) ────────────────────────────────────
+#
+# `build_spore_mosaic` returns a `SporeMosaicBuildResult` so callers can
+# tell WHY nothing was produced without losing the per-item skip list.
+# The old contract ("None on any failure") collapsed distinct failure
+# modes into one — the sync layer then had to guess whether that meant
+# "no eligible measurements", "every source file was missing", "every
+# item lacked calibration", or "the render loop emitted zero tiles".
+# Each of those needs a different remediation, so callers now branch on
+# ``result.reason`` while ``result.manifest`` remains the only field a
+# happy-path caller has to touch.
+
+MOSAIC_BUILD_REASON_NO_INPUT = "no_input"
+MOSAIC_BUILD_REASON_ALL_SKIPPED = "all_skipped"
+MOSAIC_BUILD_REASON_NO_TILES_RENDERED = "no_tiles_rendered"
+
+
+@dataclass(frozen=True)
+class SporeMosaicBuildResult:
+    """Structured return value for `build_spore_mosaic`.
+
+    * ``manifest`` — the built mosaic on success, else ``None``.
+    * ``skipped`` — per-item ``(measurement_id, reason)`` pairs. Always
+      populated: even a successful build may skip individual items and
+      the sync layer surfaces every reason in its log.
+    * ``reason`` — top-level failure category (``None`` on success):
+        - ``"no_input"`` — the input source list was empty.
+        - ``"all_skipped"`` — every planned tile was skipped upstream
+          (missing calibration, invalid dims, missing source file …).
+        - ``"no_tiles_rendered"`` — plan produced tiles but the render
+          loop emitted zero (e.g. a render exception on every item).
+    """
+
+    manifest: SporeMosaicManifest | None
+    skipped: list[tuple[int, str]]
+    reason: str | None
+
+
 # ── plan_common_crop re-export (kept for test back-compat) ──────────────────
 
 
@@ -415,6 +476,38 @@ def _open_source_image(path: Path) -> Image.Image:
     return Image.open(path)
 
 
+def _normalize_source_for_build(
+    img: Image.Image,
+    background_rgb: tuple[int, int, int],
+) -> Image.Image:
+    """Convert a decoded source image to RGB exactly once per build.
+
+    Named separately from `_to_rgb` so tests can spy on the per-build
+    conversion path and assert it fires at most once per distinct
+    source. For already-RGB sources the returned object aliases the
+    input (no allocation) — matching `_to_rgb`'s early-return semantics.
+    """
+    return _to_rgb(img, background_rgb)
+
+
+def _estimate_decoded_megapixels(
+    raw: Image.Image, working: Image.Image,
+) -> float:
+    """Rough peak footprint estimate = width*height*channels/1e6.
+
+    When ``working`` aliases ``raw`` (already-RGB source) only the raw
+    channel count is charged — there is no second buffer. When they
+    differ, both are held simultaneously for the group's lifetime, so
+    both channel counts are summed."""
+    channels_raw = len(raw.getbands())
+    channels_working = 0 if working is raw else len(working.getbands())
+    total_channels = channels_raw + channels_working
+    return (
+        float(raw.width) * float(raw.height) * float(total_channels)
+        / 1_000_000.0
+    )
+
+
 def _bind_cloud_ids(sources: Sequence[SporeCropSource]) -> tuple[
     list[SporeMosaicSource], dict[int, SporeCropSource]
 ]:
@@ -457,7 +550,7 @@ def build_spore_mosaic(
     background: tuple[int, int, int] = DEFAULT_BACKGROUND_RGB,
     overlay_style: str = DEFAULT_RECTANGLE_STYLE,
     progress_cb: MosaicProgressCallback | None = None,
-) -> SporeMosaicManifest | None:
+) -> SporeMosaicBuildResult:
     """Compose a common-crop WebP atlas + tile manifest.
 
     Thin adapter on top of the shared `plan_mosaic` planner. Every tile
@@ -465,6 +558,32 @@ def build_spore_mosaic(
     the widest and tallest natural padded crops across the input
     measurements. Grid layout targets a near-square atlas so slender
     spores do not produce a tall, narrow image.
+
+    Return contract
+    ---------------
+    Always returns a `SporeMosaicBuildResult`. Callers switch on:
+
+    * ``result.manifest`` — the built mosaic on success, ``None`` when
+      the build could not produce an atlas.
+    * ``result.reason`` — one of ``None`` (success), ``"no_input"``,
+      ``"all_skipped"``, ``"no_tiles_rendered"``.  The sync layer maps
+      these to per-status codes so operators see a specific error
+      instead of a generic "empty mosaic".
+    * ``result.skipped`` — every per-item ``(measurement_id, reason)``
+      the planner and render loop recorded, populated even on total
+      failure so diagnostics never get lost.
+
+    Source-image memory
+    -------------------
+    The render loop groups planned cells by ``source_path`` so at most
+    one decoded source is held open at a time. RGB normalisation runs
+    exactly once per source via `_normalize_source_for_build` — repeated
+    per-tile `_to_rgb` invocations on the same grayscale/RGBA frame are
+    gone. Both the raw PIL handle AND any distinct RGB-normalised
+    intermediate are closed when the group finishes, on success and
+    exception paths alike. Tile manifest order still matches the
+    original ``layout.cells`` order — grouping is an implementation
+    detail, never observable to the caller.
 
     Progress
     --------
@@ -476,7 +595,9 @@ def build_spore_mosaic(
     if tile_size_px < 8:
         raise ValueError("tile_size_px too small")
     if not sources:
-        return None
+        return SporeMosaicBuildResult(
+            manifest=None, skipped=[], reason=MOSAIC_BUILD_REASON_NO_INPUT,
+        )
 
     timings = MosaicBuildTimings()
     build_start_ns = time.monotonic_ns()
@@ -487,7 +608,7 @@ def build_spore_mosaic(
 
     progress.force(MOSAIC_PROGRESS_PLANNING, 0, len(neutral_sources))
     plan_start_ns = time.monotonic_ns()
-    result = plan_mosaic(
+    plan_result = plan_mosaic(
         neutral_sources,
         orient=True,
         grid_policy=MosaicGridPolicy.SQUARE_IMAGE,
@@ -496,17 +617,22 @@ def build_spore_mosaic(
         background_rgb=background,
     )
     timings.plan_ns = time.monotonic_ns() - plan_start_ns
-    layout = result.layout
+    layout = plan_result.layout
     if layout is None:
         # Preserve the per-item skip reasons from the planner so the
         # cloud sync log can explain "why nothing rendered" instead of
         # collapsing every failure into a bare `None`.
-        for mid, reason in result.skipped:
+        for mid, reason in plan_result.skipped:
             print(
                 f'[cloud_spore_mosaic] plan skip m={mid}: {reason}',
                 flush=True,
             )
-        return None
+        # Preserve the planner's own reason (either "no_input" or
+        # "all_skipped") so the sync layer can key off it.
+        reason = plan_result.reason or MOSAIC_BUILD_REASON_ALL_SKIPPED
+        return SporeMosaicBuildResult(
+            manifest=None, skipped=list(plan_result.skipped), reason=reason,
+        )
 
     out_w = layout.tile_width_px
     out_h = layout.tile_height_px
@@ -517,139 +643,205 @@ def build_spore_mosaic(
         "RGB", (layout.mosaic_width_px, layout.mosaic_height_px), background,
     )
 
-    tiles: list[SporeMosaicTile] = []
     skipped: list[tuple[int, str]] = list(layout.skipped)
-    open_cache: dict[Path, Image.Image] = {}
-    distinct_sources: set[Path] = set()
+    # Rendered tiles keyed by original layout position so grouping never
+    # changes the manifest order — the atlas coordinates are already
+    # baked into each cell, but tile emission order stays deterministic.
+    rendered_tiles: dict[int, SporeMosaicTile] = {}
     total_source_megapixels = 0.0
     total_tiles = len(layout.cells)
     progress.force(MOSAIC_PROGRESS_RENDERING, 0, total_tiles)
     debug_timing = _mosaic_debug_timing_enabled()
 
-    try:
-        for tile_index, cell in enumerate(layout.cells):
-            tile_plan = cell.tile
-            src_cloud = cloud_index.get(tile_plan.source.item_id)
-            if src_cloud is None:
-                skipped.append((tile_plan.source.item_id, "missing cloud binding"))
-                continue
+    # ── Group planned cells by source_path ─────────────────────────────
+    # Two cells sharing a source read the same file exactly once, and
+    # the RGB normalisation runs exactly once per source. `groups` iters
+    # in first-seen order so single-source observations keep their
+    # historical ordering; multi-source ones read files in the order
+    # they first appear in the layout.
+    groups: dict[Path, list[tuple[int, MosaicCell]]] = {}
+    cells_missing_binding: list[tuple[int, MosaicCell]] = []
+    for cell_index, cell in enumerate(layout.cells):
+        src_cloud = cloud_index.get(cell.tile.source.item_id)
+        if src_cloud is None:
+            cells_missing_binding.append((cell_index, cell))
+            continue
+        groups.setdefault(src_cloud.source_path, []).append((cell_index, cell))
 
+    for cell_index, cell in cells_missing_binding:
+        skipped.append((cell.tile.source.item_id, "missing cloud binding"))
+
+    # ── Render loop, one group at a time ───────────────────────────────
+    tile_index_progress = 0
+    for source_path, cell_group in groups.items():
+        raw_img: Image.Image | None = None
+        working_rgb: Image.Image | None = None
+        try:
+            # Open + decode.
             try:
-                img = open_cache.get(src_cloud.source_path)
-                if img is None:
-                    decode_start_ns = time.monotonic_ns()
-                    img = _open_source_image(src_cloud.source_path)
-                    # Force full decode so subsequent tile renders pay
-                    # no lazy I/O cost — instrumentation matters most
-                    # when we can attribute decode time to this stage.
-                    img.load()
-                    timings.decode_ns += time.monotonic_ns() - decode_start_ns
-                    open_cache[src_cloud.source_path] = img
-                    distinct_sources.add(src_cloud.source_path)
-                    total_source_megapixels += (
-                        float(img.width) * float(img.height) / 1_000_000.0
-                    )
+                decode_start_ns = time.monotonic_ns()
+                raw_img = _open_source_image(source_path)
+                # Force full decode so tile renders pay no lazy I/O
+                # cost within the group.
+                raw_img.load()
+                # Normalise to RGB exactly once — subsequent
+                # `_to_rgb` calls inside the renderers early-return
+                # because the image is already RGB.
+                working_rgb = _normalize_source_for_build(raw_img, background)
+                timings.decode_ns += time.monotonic_ns() - decode_start_ns
             except FileNotFoundError:
-                skipped.append((tile_plan.source.item_id, "source image missing"))
+                for _idx, group_cell in cell_group:
+                    skipped.append(
+                        (group_cell.tile.source.item_id, "source image missing"),
+                    )
                 continue
             except Exception as exc:  # pragma: no cover
-                skipped.append((tile_plan.source.item_id, f"open failed: {exc}"))
+                for _idx, group_cell in cell_group:
+                    skipped.append(
+                        (group_cell.tile.source.item_id, f"open failed: {exc}"),
+                    )
                 continue
 
-            tile_start_ns = time.monotonic_ns()
-            try:
-                result = render_spore_thumbnail_common_crop(
-                    img, tile_plan.thumbnail_plan,
-                    common_crop_width=tile_plan.common_crop_width_px,
-                    common_crop_height=tile_plan.common_crop_height_px,
-                    output_width=out_w,
-                    output_height=out_h,
-                )
-            except Exception as exc:  # pragma: no cover
-                skipped.append((tile_plan.source.item_id, f"render failed: {exc}"))
-                continue
-            tile_render_ns = time.monotonic_ns() - tile_start_ns
-            timings.render_tile_ns += tile_render_ns
-
-            paste_start_ns = time.monotonic_ns()
-            canvas.paste(result.image, (cell.x_px, cell.y_px))
-            timings.paste_ns += time.monotonic_ns() - paste_start_ns
-
-            timings.per_tile_ns.append(
-                (int(src_cloud.measurement_id), int(tile_render_ns)),
+            # Memory accounting: with grouping, at most one source is
+            # open at a time, so peak_open_sources is bounded at 1.
+            timings.peak_open_sources = max(timings.peak_open_sources, 1)
+            source_footprint = _estimate_decoded_megapixels(raw_img, working_rgb)
+            if source_footprint > timings.peak_decoded_megapixels:
+                timings.peak_decoded_megapixels = source_footprint
+            total_source_megapixels += (
+                float(raw_img.width) * float(raw_img.height) / 1_000_000.0
             )
-            if debug_timing:
-                print(
-                    f'[cloud_spore_mosaic] tile m={src_cloud.measurement_id} '
-                    f'render_us={tile_render_ns / 1e3:.1f}',
-                    flush=True,
+            timings.distinct_source_count += 1
+
+            for cell_index, cell in cell_group:
+                tile_plan = cell.tile
+                src_cloud = cloud_index[tile_plan.source.item_id]
+
+                tile_start_ns = time.monotonic_ns()
+                try:
+                    render_result = render_spore_thumbnail_common_crop(
+                        working_rgb, tile_plan.thumbnail_plan,
+                        common_crop_width=tile_plan.common_crop_width_px,
+                        common_crop_height=tile_plan.common_crop_height_px,
+                        output_width=out_w,
+                        output_height=out_h,
+                    )
+                except Exception as exc:  # pragma: no cover
+                    skipped.append(
+                        (tile_plan.source.item_id, f"render failed: {exc}"),
+                    )
+                    continue
+                tile_render_ns = time.monotonic_ns() - tile_start_ns
+                timings.render_tile_ns += tile_render_ns
+
+                paste_start_ns = time.monotonic_ns()
+                canvas.paste(render_result.image, (cell.x_px, cell.y_px))
+                timings.paste_ns += time.monotonic_ns() - paste_start_ns
+
+                timings.per_tile_ns.append(
+                    (int(src_cloud.measurement_id), int(tile_render_ns)),
                 )
-            progress.emit(MOSAIC_PROGRESS_RENDERING, tile_index + 1, total_tiles)
-
-            overlay = (
-                build_overlay_polygon(result.polygon_tile_local, style=overlay_style)
-                if result.polygon_tile_local is not None
-                else None
-            )
-
-            polygon_bounds = None
-            if result.polygon_tile_local is not None:
-                xs = [p[0] for p in result.polygon_tile_local]
-                ys = [p[1] for p in result.polygon_tile_local]
-                polygon_bounds = (
-                    round(min(xs), 2), round(min(ys), 2),
-                    round(max(xs), 2), round(max(ys), 2),
+                if debug_timing:
+                    print(
+                        f'[cloud_spore_mosaic] tile m={src_cloud.measurement_id} '
+                        f'render_us={tile_render_ns / 1e3:.1f}',
+                        flush=True,
+                    )
+                tile_index_progress += 1
+                progress.emit(
+                    MOSAIC_PROGRESS_RENDERING, tile_index_progress, total_tiles,
                 )
 
-            plan_diag = tile_plan.diagnostics
-            diagnostics = {
-                "measurement_id": src_cloud.measurement_id,
-                "have_p1": src_cloud.p1_x is not None and src_cloud.p1_y is not None,
-                "have_p2": src_cloud.p2_x is not None and src_cloud.p2_y is not None,
-                "have_p3": src_cloud.p3_x is not None and src_cloud.p3_y is not None,
-                "have_p4": src_cloud.p4_x is not None and src_cloud.p4_y is not None,
-                "gallery_rotation_deg": src_cloud.gallery_rotation_deg,
-                "rotation_deg": plan_diag.get("rotation_deg"),
-                "length_um": src_cloud.length_um,
-                "width_um": src_cloud.width_um,
-                "length_axis_px": round(tile_plan.thumbnail_plan.length_axis_px, 3),
-                "width_axis_px": round(tile_plan.thumbnail_plan.width_axis_px, 3),
-                "length_axis_px_per_um": plan_diag.get("length_axis_px_per_um"),
-                "width_axis_px_per_um": plan_diag.get("width_axis_px_per_um"),
-                "scale_fallback_reason": plan_diag.get("scale_fallback_reason"),
-                "natural_crop_um": plan_diag.get("natural_crop_um"),
-                "common_crop_um": (round(common_w_um, 3), round(common_h_um, 3)),
-                "crop_px": (tile_plan.common_crop_width_px, tile_plan.common_crop_height_px),
-                "output_tile": (out_w, out_h),
-                "crop_rect_before_shift": tuple(
-                    round(v, 2) for v in result.crop_rect_before_shift
-                ),
-                "crop_rect_after_shift": result.crop_rect_after_shift,
-                "padded_x": result.padded_x,
-                "padded_y": result.padded_y,
-                "visible_rect_in_atlas": (cell.x_px, cell.y_px, out_w, out_h),
-                "polygon_present": overlay is not None,
-                "reason_no_polygon": result.reason_no_polygon,
-                "polygon_bounds": polygon_bounds,
-            }
+                overlay = (
+                    build_overlay_polygon(
+                        render_result.polygon_tile_local, style=overlay_style,
+                    )
+                    if render_result.polygon_tile_local is not None
+                    else None
+                )
 
-            tiles.append(SporeMosaicTile(
-                measurement_id=int(src_cloud.measurement_id),
-                cloud_measurement_id=src_cloud.cloud_measurement_id,
-                cloud_image_id=src_cloud.cloud_image_id,
-                x_px=cell.x_px, y_px=cell.y_px, w_px=out_w, h_px=out_h,
-                overlay_json=overlay,
-                diagnostics=diagnostics,
-            ))
-    finally:
-        for img in open_cache.values():
-            try:
-                img.close()
-            except Exception:
-                pass
+                polygon_bounds = None
+                if render_result.polygon_tile_local is not None:
+                    xs = [p[0] for p in render_result.polygon_tile_local]
+                    ys = [p[1] for p in render_result.polygon_tile_local]
+                    polygon_bounds = (
+                        round(min(xs), 2), round(min(ys), 2),
+                        round(max(xs), 2), round(max(ys), 2),
+                    )
+
+                plan_diag = tile_plan.diagnostics
+                diagnostics = {
+                    "measurement_id": src_cloud.measurement_id,
+                    "have_p1": src_cloud.p1_x is not None and src_cloud.p1_y is not None,
+                    "have_p2": src_cloud.p2_x is not None and src_cloud.p2_y is not None,
+                    "have_p3": src_cloud.p3_x is not None and src_cloud.p3_y is not None,
+                    "have_p4": src_cloud.p4_x is not None and src_cloud.p4_y is not None,
+                    "gallery_rotation_deg": src_cloud.gallery_rotation_deg,
+                    "rotation_deg": plan_diag.get("rotation_deg"),
+                    "length_um": src_cloud.length_um,
+                    "width_um": src_cloud.width_um,
+                    "length_axis_px": round(tile_plan.thumbnail_plan.length_axis_px, 3),
+                    "width_axis_px": round(tile_plan.thumbnail_plan.width_axis_px, 3),
+                    "length_axis_px_per_um": plan_diag.get("length_axis_px_per_um"),
+                    "width_axis_px_per_um": plan_diag.get("width_axis_px_per_um"),
+                    "scale_fallback_reason": plan_diag.get("scale_fallback_reason"),
+                    "natural_crop_um": plan_diag.get("natural_crop_um"),
+                    "common_crop_um": (round(common_w_um, 3), round(common_h_um, 3)),
+                    "crop_px": (tile_plan.common_crop_width_px, tile_plan.common_crop_height_px),
+                    "output_tile": (out_w, out_h),
+                    "crop_rect_before_shift": tuple(
+                        round(v, 2) for v in render_result.crop_rect_before_shift
+                    ),
+                    "crop_rect_after_shift": render_result.crop_rect_after_shift,
+                    "padded_x": render_result.padded_x,
+                    "padded_y": render_result.padded_y,
+                    "visible_rect_in_atlas": (cell.x_px, cell.y_px, out_w, out_h),
+                    "polygon_present": overlay is not None,
+                    "reason_no_polygon": render_result.reason_no_polygon,
+                    "polygon_bounds": polygon_bounds,
+                }
+
+                rendered_tiles[cell_index] = SporeMosaicTile(
+                    measurement_id=int(src_cloud.measurement_id),
+                    cloud_measurement_id=src_cloud.cloud_measurement_id,
+                    cloud_image_id=src_cloud.cloud_image_id,
+                    x_px=cell.x_px, y_px=cell.y_px, w_px=out_w, h_px=out_h,
+                    overlay_json=overlay,
+                    diagnostics=diagnostics,
+                )
+        finally:
+            # Close normalised RGB intermediate first (it aliases the raw
+            # for already-RGB sources — the `is` guard avoids a
+            # double-close), then the raw PIL handle. Both close paths
+            # run on success and on any exception the group raised.
+            if working_rgb is not None and working_rgb is not raw_img:
+                try:
+                    working_rgb.close()
+                except Exception:
+                    pass
+            if raw_img is not None:
+                try:
+                    raw_img.close()
+                except Exception:
+                    pass
+
+    # Emit tiles in the original plan order — grouping is invisible to
+    # callers. `dict.keys()` iteration order isn't sorted, so key by
+    # index explicitly.
+    tiles: list[SporeMosaicTile] = [
+        rendered_tiles[idx] for idx in sorted(rendered_tiles.keys())
+    ]
 
     if not tiles:
-        return None
+        timings.total_ns = time.monotonic_ns() - build_start_ns
+        timings.tile_count = 0
+        timings.distinct_sources = timings.distinct_source_count
+        timings.total_source_megapixels = round(total_source_megapixels, 3)
+        return SporeMosaicBuildResult(
+            manifest=None,
+            skipped=skipped,
+            reason=MOSAIC_BUILD_REASON_NO_TILES_RENDERED,
+        )
 
     progress.force(MOSAIC_PROGRESS_ENCODING, 0, 0)
     encode_start_ns = time.monotonic_ns()
@@ -679,11 +871,11 @@ def build_spore_mosaic(
 
     timings.total_ns = time.monotonic_ns() - build_start_ns
     timings.tile_count = len(tiles)
-    timings.distinct_sources = len(distinct_sources)
+    timings.distinct_sources = timings.distinct_source_count
     timings.total_source_megapixels = round(total_source_megapixels, 3)
     progress.force(MOSAIC_PROGRESS_COMPLETE, timings.tile_count, timings.tile_count)
 
-    return SporeMosaicManifest(
+    manifest = SporeMosaicManifest(
         image_bytes=image_bytes,
         content_type="image/webp",
         width_px=layout.mosaic_width_px,
@@ -698,6 +890,9 @@ def build_spore_mosaic(
         tiles=tiles,
         skipped=skipped,
         timings=timings,
+    )
+    return SporeMosaicBuildResult(
+        manifest=manifest, skipped=skipped, reason=None,
     )
 
 

@@ -321,7 +321,7 @@ def test_build_spore_mosaic_composes_expected_slots(tmp_path):
     src = tmp_path / "src.png"
     _write_test_source(src)
     sources = [_make_source(src, mid=i) for i in range(3)]
-    manifest = build_spore_mosaic(sources, tile_size_px=128)
+    manifest = build_spore_mosaic(sources, tile_size_px=128).manifest
     assert manifest is not None
     assert manifest.content_type == "image/webp"
     assert manifest.tile_size_px == 128
@@ -341,7 +341,7 @@ def test_build_spore_mosaic_composes_expected_slots(tmp_path):
 def test_build_spore_mosaic_emits_polygon_when_p3p4_present(tmp_path):
     src = tmp_path / "src.png"
     _write_test_source(src)
-    manifest = build_spore_mosaic([_make_source(src, mid=1)], tile_size_px=256)
+    manifest = build_spore_mosaic([_make_source(src, mid=1)], tile_size_px=256).manifest
     assert manifest is not None
     tile = manifest.tiles[0]
     assert tile.overlay_json is not None
@@ -377,7 +377,7 @@ def test_build_spore_mosaic_tile_metadata_is_visible_subrect(tmp_path):
         length_um=10.0, width_um=2.0,
         gallery_rotation_deg=0,
     )
-    manifest = build_spore_mosaic([source], tile_size_px=256)
+    manifest = build_spore_mosaic([source], tile_size_px=256).manifest
     assert manifest is not None
     tile = manifest.tiles[0]
     # Visible tile height matches the requested output height.
@@ -406,7 +406,7 @@ def test_build_spore_mosaic_skips_polygon_when_p3p4_missing(tmp_path):
     manifest = build_spore_mosaic(
         [_make_source(src, mid=1, p3=None, p4=None)],
         tile_size_px=256,
-    )
+    ).manifest
     assert manifest is not None
     tile = manifest.tiles[0]
     assert tile.overlay_json is None
@@ -432,7 +432,7 @@ def test_build_spore_mosaic_orient_makes_length_axis_vertical(tmp_path):
         length_um=20.0, width_um=4.0,
         gallery_rotation_deg=0,
     )
-    manifest = build_spore_mosaic([horizontal], tile_size_px=256)
+    manifest = build_spore_mosaic([horizontal], tile_size_px=256).manifest
     assert manifest is not None
     tile = manifest.tiles[0]
     assert tile.overlay_json is not None
@@ -452,7 +452,7 @@ def test_build_spore_mosaic_orient_makes_length_axis_vertical(tmp_path):
 def test_build_spore_mosaic_records_diagnostics(tmp_path):
     src = tmp_path / "src.png"
     _write_test_source(src)
-    manifest = build_spore_mosaic([_make_source(src, mid=42)], tile_size_px=256)
+    manifest = build_spore_mosaic([_make_source(src, mid=42)], tile_size_px=256).manifest
     assert manifest is not None
     diag = manifest.tiles[0].diagnostics
     for key in (
@@ -492,14 +492,14 @@ def test_build_spore_mosaic_records_skips_for_missing_files(tmp_path):
     manifest = build_spore_mosaic(
         [_make_source(good, mid=1), _make_source(missing, mid=2)],
         tile_size_px=128,
-    )
+    ).manifest
     assert manifest is not None
     assert [tile.measurement_id for tile in manifest.tiles] == [1]
     assert manifest.skipped == [(2, "source image missing")]
 
 
 def test_build_spore_mosaic_returns_none_for_empty_sources():
-    assert build_spore_mosaic([], tile_size_px=128) is None
+    assert build_spore_mosaic([], tile_size_px=128).manifest is None
 
 
 def test_build_spore_mosaic_second_run_produces_identical_bytes(tmp_path):
@@ -510,8 +510,8 @@ def test_build_spore_mosaic_second_run_produces_identical_bytes(tmp_path):
     src = tmp_path / "src.png"
     _write_test_source(src, size=(400, 400))
     sources = [_make_source(src, mid=i + 1) for i in range(3)]
-    first = build_spore_mosaic(sources, tile_size_px=128)
-    second = build_spore_mosaic(sources, tile_size_px=128)
+    first = build_spore_mosaic(sources, tile_size_px=128).manifest
+    second = build_spore_mosaic(sources, tile_size_px=128).manifest
     assert first is not None and second is not None
     assert first.image_bytes == second.image_bytes
     assert (first.width_px, first.height_px) == (second.width_px, second.height_px)
@@ -529,7 +529,7 @@ def test_build_spore_mosaic_timings_populated_on_success(tmp_path):
     manifest = build_spore_mosaic(
         [_make_source(src, mid=1), _make_source(src, mid=2)],
         tile_size_px=128,
-    )
+    ).manifest
     assert manifest is not None
     assert manifest.timings is not None
     summary = manifest.timings.summary()
@@ -552,10 +552,10 @@ def test_build_spore_mosaic_progress_callback_emits_stage_transitions(tmp_path):
     def _record(stage: str, current: int, total: int) -> None:
         stages.append((stage, current, total))
 
-    manifest_no_cb = build_spore_mosaic(sources, tile_size_px=96)
+    manifest_no_cb = build_spore_mosaic(sources, tile_size_px=96).manifest
     manifest_with_cb = build_spore_mosaic(
         sources, tile_size_px=96, progress_cb=_record,
-    )
+    ).manifest
     assert manifest_no_cb is not None and manifest_with_cb is not None
     assert manifest_no_cb.image_bytes == manifest_with_cb.image_bytes
     seen_stages = {s for s, _c, _t in stages}
@@ -571,7 +571,7 @@ def test_build_spore_mosaic_gallery_rotation_still_paints_polygon(tmp_path):
     manifest = build_spore_mosaic(
         [_make_source(src, mid=1, gallery_rotation_deg=180)],
         tile_size_px=256,
-    )
+    ).manifest
     assert manifest is not None
     tile = manifest.tiles[0]
     assert tile.overlay_json is not None
@@ -587,8 +587,8 @@ def test_storage_key_changes_when_mosaic_bytes_change(tmp_path):
     src_b = tmp_path / "b.png"
     _write_test_source(src_a, color=(200, 20, 20))
     _write_test_source(src_b, color=(20, 200, 20))
-    manifest_a = build_spore_mosaic([_make_source(src_a, 1)], tile_size_px=128)
-    manifest_b = build_spore_mosaic([_make_source(src_b, 1)], tile_size_px=128)
+    manifest_a = build_spore_mosaic([_make_source(src_a, 1)], tile_size_px=128).manifest
+    manifest_b = build_spore_mosaic([_make_source(src_b, 1)], tile_size_px=128).manifest
     assert manifest_a is not None and manifest_b is not None
     assert manifest_a.image_bytes != manifest_b.image_bytes
     key_a = build_storage_key("u", "42", 1, compute_content_digest(manifest_a.image_bytes))
@@ -658,7 +658,7 @@ def test_build_spore_mosaic_uniform_tile_sizes_across_observation(tmp_path):
             p3=(200, 240), p4=(200, 360),                          # width 120
         ),
     ]
-    manifest = build_spore_mosaic(measurements, tile_size_px=320)
+    manifest = build_spore_mosaic(measurements, tile_size_px=320).manifest
     assert manifest is not None
     ws = {tile.w_px for tile in manifest.tiles}
     hs = {tile.h_px for tile in manifest.tiles}
@@ -681,7 +681,7 @@ def test_build_spore_mosaic_polygons_stay_within_tile_bounds(tmp_path):
             p3=(200, 240), p4=(200, 360),
         ),
     ]
-    manifest = build_spore_mosaic(measurements, tile_size_px=320)
+    manifest = build_spore_mosaic(measurements, tile_size_px=320).manifest
     assert manifest is not None
     for tile in manifest.tiles:
         assert tile.overlay_json is not None
@@ -696,7 +696,7 @@ def test_build_spore_mosaic_no_padding_when_source_is_large(tmp_path):
     than the requested common crop."""
     src = tmp_path / "src.png"
     _write_test_source(src, size=(1000, 1000))
-    manifest = build_spore_mosaic([_make_source(src, mid=1)], tile_size_px=320)
+    manifest = build_spore_mosaic([_make_source(src, mid=1)], tile_size_px=320).manifest
     assert manifest is not None
     diag = manifest.tiles[0].diagnostics
     assert diag["padded_x"] is False
@@ -723,7 +723,7 @@ def test_build_spore_mosaic_padding_used_when_source_smaller_than_crop(tmp_path)
         p3_x=9, p3_y=10, p4_x=11, p4_y=10,
         length_um=4.0, width_um=2.0,
     )
-    manifest = build_spore_mosaic([tiny], tile_size_px=320)
+    manifest = build_spore_mosaic([tiny], tile_size_px=320).manifest
     assert manifest is not None
     diag = manifest.tiles[0].diagnostics
     # Both axes must be padded because 4+30 > 20 and 2+40 > 20.
@@ -743,7 +743,7 @@ def test_build_spore_mosaic_variable_natural_widths_produce_uniform_output(tmp_p
             p1=(600, 640), p2=(600, 560),
             p3=(600 - half_w, 600), p4=(600 + half_w, 600),
         ))
-    manifest = build_spore_mosaic(measurements, tile_size_px=320)
+    manifest = build_spore_mosaic(measurements, tile_size_px=320).manifest
     assert manifest is not None
     widths = {t.w_px for t in manifest.tiles}
     heights = {t.h_px for t in manifest.tiles}
@@ -781,8 +781,8 @@ def test_storage_digest_changes_when_common_crop_geometry_changes(tmp_path):
             length_um=20.0, width_um=8.0,
         ),
     ]
-    m_small = build_spore_mosaic(small_only, tile_size_px=256)
-    m_large = build_spore_mosaic(with_large, tile_size_px=256)
+    m_small = build_spore_mosaic(small_only, tile_size_px=256).manifest
+    m_large = build_spore_mosaic(with_large, tile_size_px=256).manifest
     assert m_small is not None and m_large is not None
     # With_large has a physically taller/wider spore → tile aspect changes.
     assert (m_small.tile_width_px, m_small.tile_height_px) != (m_large.tile_width_px, m_large.tile_height_px)
@@ -882,7 +882,7 @@ def test_same_physical_dimensions_different_px_scales_render_same_size(tmp_path)
         p3_x=760, p3_y=800, p4_x=840, p4_y=800,
         length_um=10.0, width_um=5.0,
     )
-    manifest = build_spore_mosaic([low, hi], tile_size_px=320)
+    manifest = build_spore_mosaic([low, hi], tile_size_px=320).manifest
     assert manifest is not None
     assert len(manifest.tiles) == 2
 
@@ -924,7 +924,7 @@ def test_different_physical_sizes_render_proportional(tmp_path):
         p1=(400, 500), p2=(400, 300), p3=(380, 400), p4=(420, 400),
         length_um=20.0, width_um=8.0,
     )
-    manifest = build_spore_mosaic([small, big], tile_size_px=320)
+    manifest = build_spore_mosaic([small, big], tile_size_px=320).manifest
     assert manifest is not None
 
     def polygon_span(tile: SporeMosaicTile) -> tuple[float, float]:
@@ -965,7 +965,7 @@ def test_common_crop_is_in_micrometres_not_pixels(tmp_path):
         p3_x=760, p3_y=800, p4_x=840, p4_y=800,
         length_um=10.0, width_um=5.0,
     )
-    manifest = build_spore_mosaic([low, hi], tile_size_px=320)
+    manifest = build_spore_mosaic([low, hi], tile_size_px=320).manifest
     assert manifest is not None
     # Common physical crop is the same for both.
     assert manifest.common_crop_width_um > 0
@@ -997,7 +997,7 @@ def test_overlay_polygon_stays_inside_output_after_physical_crop(tmp_path):
             p4_x=600 + length_px // 5, p4_y=600,
             length_um=float(l_um), width_um=float(w_um),
         ))
-    manifest = build_spore_mosaic(measurements, tile_size_px=320)
+    manifest = build_spore_mosaic(measurements, tile_size_px=320).manifest
     assert manifest is not None
     for tile in manifest.tiles:
         assert tile.overlay_json is not None
@@ -1027,7 +1027,7 @@ def test_all_tiles_one_distinct_mosaic_w_and_h(tmp_path):
             p4_x=600 + width_px, p4_y=600,
             length_um=float(l_um), width_um=float(w_um),
         ))
-    manifest = build_spore_mosaic(measurements, tile_size_px=320)
+    manifest = build_spore_mosaic(measurements, tile_size_px=320).manifest
     assert manifest is not None
     ws = {t.w_px for t in manifest.tiles}
     hs = {t.h_px for t in manifest.tiles}
@@ -1058,7 +1058,7 @@ def test_build_spore_mosaic_slender_spores_produce_near_square_atlas(tmp_path):
             p3_x=590, p3_y=600, p4_x=610, p4_y=600,
             length_um=10.0, width_um=4.3,
         ))
-    manifest = build_spore_mosaic(measurements, tile_size_px=320)
+    manifest = build_spore_mosaic(measurements, tile_size_px=320).manifest
     assert manifest is not None
     aspect = manifest.width_px / max(1, manifest.height_px)
     assert abs(aspect - 1.0) < 0.25, (

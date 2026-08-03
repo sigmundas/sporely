@@ -448,12 +448,18 @@ def _mock_render(monkeypatch, *, tiles_bytes=b'MOSAIC-BYTES'):
     def fake_sources(rows, image_dir):
         return (['x'], [])
 
+    from utils.cloud_spore_mosaic import SporeMosaicBuildResult
+
     def fake_build(sources, tile_size_px, progress_cb=None):
         # `cloud_sync._push_spore_mosaic_for_observation` passes a
         # `progress_cb` keyword now — accept and ignore it so this
-        # mock still satisfies the pusher's contract.
+        # mock still satisfies the pusher's contract. Since Phase 2.D
+        # the pusher expects a `SporeMosaicBuildResult` back, so wrap
+        # the mock manifest in one.
         _ = progress_cb
-        return _Manifest(tiles_bytes)
+        return SporeMosaicBuildResult(
+            manifest=_Manifest(tiles_bytes), skipped=[], reason=None,
+        )
 
     monkeypatch.setattr(cloud_spore_mosaic, 'sources_from_measurement_rows', fake_sources)
     monkeypatch.setattr(cloud_spore_mosaic, 'build_spore_mosaic', fake_build)
@@ -649,13 +655,17 @@ def test_pusher_sends_none_for_non_positive_tile_geometry(tmp_path, db, monkeypa
         tiles = [_EmptyCalibrationTile()]
         skipped: list = []
 
+    from utils.cloud_spore_mosaic import SporeMosaicBuildResult
+
     monkeypatch.setattr(
         cloud_spore_mosaic, 'sources_from_measurement_rows',
         lambda rows, image_dir: (['x'], []),
     )
     monkeypatch.setattr(
         cloud_spore_mosaic, 'build_spore_mosaic',
-        lambda sources, tile_size_px, progress_cb=None: _EmptyCalibrationManifest(),
+        lambda sources, tile_size_px, progress_cb=None: SporeMosaicBuildResult(
+            manifest=_EmptyCalibrationManifest(), skipped=[], reason=None,
+        ),
     )
     monkeypatch.setattr(cloud_sync, 'direct_r2_runtime_available', lambda: False)
 
