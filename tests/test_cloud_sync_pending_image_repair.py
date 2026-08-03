@@ -172,7 +172,21 @@ class _MemorySyncClient(cloud_sync.SporelyCloudClient):
 
 
 def test_dirty_scan_ignores_rows_cloud_sync_never_pushes(tmp_path, monkeypatch):
-    """Duplicate-path / missing-file rows are ignored; external exclusions are not."""
+    """The dirty-scan must exactly match the cloud-sync push predicate.
+
+    Rows the sync intentionally skips MUST NOT re-dirty the observation:
+
+    * unchecked gallery images (the checkbox is the source of truth for
+      cloud-byte-upload consent — an unchecked image is intentionally
+      metadata-only, so its presence alone must not force a rebuild),
+    * duplicate-path rows (deduped away at upload time),
+    * missing-file rows (sync skips them).
+
+    Positive control (same observation, different image): a checked
+    cloud-null image WITH a unique local file MUST still dirty the
+    observation, so the test does not just prove inaction — a
+    legitimately-pending image is still detected.
+    """
     db_path = _create_sync_db(tmp_path)
     shared = tmp_path / "shared.jpg"
     shared.write_bytes(b"shared")
@@ -192,11 +206,12 @@ def test_dirty_scan_ignores_rows_cloud_sync_never_pushes(tmp_path, monkeypatch):
         db_path, id=1, observation_id=10, cloud_id="cloud-img-1", filepath=str(shared),
         source_role="local_canonical", file_purpose="field", image_type="field", sort_order=0,
     )
-    # External-publish exclusions do not suppress clean cloud sync.
-    excluded_file = tmp_path / "excluded.jpg"
-    excluded_file.write_bytes(b"excluded")
+    # Gallery-unchecked image — under the new checkbox contract this is
+    # intentionally metadata-only and MUST NOT count as pending cloud media.
+    unchecked_file = tmp_path / "unchecked.jpg"
+    unchecked_file.write_bytes(b"unchecked")
     _insert_image(
-        db_path, id=2, observation_id=10, cloud_id=None, filepath=str(excluded_file),
+        db_path, id=2, observation_id=10, cloud_id=None, filepath=str(unchecked_file),
         source_role="local_canonical", file_purpose="field", image_type="field", sort_order=1,
     )
     # Duplicate-path NULL row (same file as id=1, deduped away by sync).
@@ -212,6 +227,9 @@ def test_dirty_scan_ignores_rows_cloud_sync_never_pushes(tmp_path, monkeypatch):
 
     conn = sqlite3.connect(db_path)
     try:
+        # settings.value column stores the persisted gallery-exclusion list —
+        # `_cloud_explicit_media_upload_selection` reads this and treats every
+        # id NOT in the list as gallery-checked. Image 2 is excluded.
         conn.execute(
             "INSERT INTO settings (key, value) VALUES (?, ?)",
             ("artsobs_publish_excluded_image_ids_10", json.dumps([2])),
@@ -222,13 +240,35 @@ def test_dirty_scan_ignores_rows_cloud_sync_never_pushes(tmp_path, monkeypatch):
 
     _patch_db_connections(monkeypatch, db_path)
 
+    # ── Negative case: no genuinely-pending image, obs must stay synced ────
     # These tests exercise the dirty-scan itself; run in explicit media-upload
     # mode so the gate does not turn the call into a no-op.
     cloud_sync._mark_cloud_observations_dirty_for_pending_local_images(
         include_pending_local_media_uploads=True,
     )
+    assert _sync_status(db_path, 10) == "synced", (
+        "Only images 2 (unchecked), 3 (duplicate path), and 4 (missing "
+        "file) are cloud_id-null; none should count as pending cloud "
+        "media under the gallery-checkbox contract, so the observation "
+        "must stay 'synced'."
+    )
 
-    assert _sync_status(db_path, 10) == "dirty"
+    # ── Positive control: add a checked, unique-path, cloud_id-null image → dirty ──
+    checked_file = tmp_path / "checked-and-pending.jpg"
+    checked_file.write_bytes(b"checked-and-pending")
+    _insert_image(
+        db_path, id=5, observation_id=10, cloud_id=None, filepath=str(checked_file),
+        source_role="local_canonical", file_purpose="field", image_type="field", sort_order=4,
+    )
+    cloud_sync._mark_cloud_observations_dirty_for_pending_local_images(
+        include_pending_local_media_uploads=True,
+    )
+    assert _sync_status(db_path, 10) == "dirty", (
+        "Image 5 is checked (not in the excluded list), has a unique "
+        "local file, and no cloud_id — the dirty-scan must detect it as "
+        "genuinely pending. Without this control the negative-case "
+        "assertion above is meaningless."
+    )
 
 
 def test_dirty_scan_redirties_genuinely_pending_image(tmp_path, monkeypatch):

@@ -2768,11 +2768,36 @@ def test_push_all_skips_image_prep_for_tombstone_only_cleanup(
     assert "measurements pushed" in output
 
 
-def test_external_exclusion_does_not_strip_cloud_bytes_during_measurement_cleanup(
+def test_measurement_cleanup_downgrades_unchecked_microscope_to_metadata_only_anchor(
     tmp_path,
     monkeypatch,
     capsys,
 ):
+    """Measurement cleanup on a gallery-unchecked microscope image must
+    preserve the measurement anchor without soft-deleting the cloud row.
+
+    Contract (gallery-checkbox media-upload semantics):
+
+    * A tombstoned microscope image with an active spore measurement
+      MUST have its tombstone cancelled — the measurement needs the
+      image row as its cloud FK anchor.
+    * The image is unchecked in the gallery, so its remote row is
+      downgraded to a metadata-only anchor: ``storage_path`` becomes
+      ``NULL``, ``original_storage_path`` becomes ``NULL``. Any pre-
+      existing published bytes are removed as part of THAT downgrade
+      contract (the unchecked gallery state is what strips bytes; the
+      measurement-cleanup path itself does not soft-delete the row).
+    * ``soft_delete_image`` MUST NOT be called and the tombstone row
+      MUST be cleared — the measurement anchor is preserved, not
+      re-tombstoned.
+    * The measurement itself is pushed against the anchor.
+
+    This test explicitly does NOT assert on ``upload_image_calls``:
+    under the new contract the ordering of the metadata-only downgrade
+    pre-step vs the image-sync upload path is an implementation detail
+    the observable final state (``storage_path`` NULL on the remote
+    metadata row) encapsulates.
+    """
     monkeypatch.setenv("SPORELY_DEBUG_CLOUD_SYNC", "1")
     ctx = _setup_push_all_tombstone_cleanup_case(
         tmp_path,
@@ -2816,26 +2841,54 @@ def test_external_exclusion_does_not_strip_cloud_bytes_during_measurement_cleanu
     finally:
         conn.close()
 
+    # ── Sync produced no errors and pushed the one dirty observation ──
     assert result["pushed"] == 1
     assert result["errors"] == []
-    assert ctx.client.upload_image_calls == []
+
+    # ── Measurement anchor is preserved and pushed ────────────────────────
     assert ctx.client.measurement_push_calls == [(21, "cloud-image-11")]
-    assert ctx.client.soft_delete_calls == []
-    assert tombstone_row is None
+
+    # ── Tombstone is cancelled (measurement cleanup does NOT re-tombstone) ─
+    assert ctx.client.soft_delete_calls == [], (
+        "measurement cleanup must not soft-delete the anchor row"
+    )
+    assert tombstone_row is None, (
+        "tombstone row must be cleared once the measurement anchor is "
+        "re-established"
+    )
+
+    # ── Remote row is downgraded to a metadata-only anchor ────────────────
+    # The gallery checkbox is the source of truth for cloud-byte-upload
+    # consent; the unchecked state maps to storage_path=NULL on the
+    # remote row. Both storage_path AND original_storage_path clear so
+    # the public RPCs do not resolve to any bytes for this image.
     protected = next(
         row for row in ctx.client.remote_images
         if row["id"] == "cloud-image-11"
     )
-    baseline = next(
-        row for row in ctx.remote_images
-        if row["id"] == "cloud-image-11"
+    assert protected["storage_path"] is None, (
+        "unchecked-microscope anchor must land as metadata-only "
+        "(storage_path NULL)"
     )
-    assert protected["storage_path"] == baseline["storage_path"]
-    assert protected["original_storage_path"] == baseline["original_storage_path"]
-    assert ctx.client.storage_remove_calls == []
+    assert protected["original_storage_path"] is None, (
+        "metadata-only anchor must also clear original_storage_path"
+    )
+    # And critically, the row survives — the anchor is preserved, not
+    # deleted — so measurement 21 still has a valid FK target.
+    assert protected["id"] == "cloud-image-11"
+    assert not str(protected.get("deleted_at") or "").strip(), (
+        "metadata-only anchor row must not be marked deleted"
+    )
+
+    # ── Diagnostic log lines document the observable transition ───────────
     assert "image prep diagnostics" in output
     assert "Cancelled tombstone for microscope image 11" in output
     assert "measurements pushed" in output
+    # And the metadata-only-anchor downgrade path fired for image 11.
+    assert (
+        "converted local_image=11 cloud_image=cloud-image-11 to storage_path=NULL"
+        in output
+    ), "expected the metadata-only anchor downgrade log line for image 11"
 
 
 def test_metadata_anchor_repairs_stale_local_image_cloud_id(monkeypatch, tmp_path):
