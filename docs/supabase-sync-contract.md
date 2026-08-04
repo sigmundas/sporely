@@ -1,757 +1,564 @@
-# Supabase Sync Contract
-
-Status: draft
-
-This document defines the shared-domain contract between `sporely-py` and `sporely-web`.
-It is intentionally narrower than the full Supabase schema.
-
-The goal is to keep the desktop app local-first for ingestion and microscopy, while syncing
-only the domain data that matters across devices, the web app, and future shared workflows.
-No schema or sync code changes are proposed in this document.
-
-## Baseline Sources
-
-- Local desktop schema source of truth:
-  - `database/schema.py`
-  - `database/models.py`
-- Cloud schema source of truth:
-  - `sporely-web/supabase/migrations/20260521120000_baseline_live_public_schema.sql`
-  - `sporely-web/supabase/migrations/20260521150000_add_observation_identification_ai_metadata.sql`
-- The post-baseline AI metadata migration is harmless history redundancy if the baseline export
-  already contains those columns. Keep it in the migration history anyway.
-- Old migration history is not authoritative.
-
-## Classification Legend
-
-- `sync-required`: should travel desktop <-> cloud as part of the shared domain model.
-- `cloud-only`: belongs to the web/cloud layer and should not be mirrored blindly into SQLite.
-- `desktop-only`: local workflow, file system, or ingestion state.
-- `generated/reference-only`: derived or bundled lookup data, not observation state.
-- `future cloud feature`: should likely exist in cloud later, but is not part of the current contract.
-- `shared-but-currently-ignored`: exists on both sides or is visible in the data model, but is not
-  yet part of the active sync contract.
-- `decision point`: intentionally not settled yet; keep the field in the contract and document the
-  preferred direction.
-- `near-term sync-required schema gap`: missing today, but needed soon for the shared model.
-- `future schema gap`: missing from one side even though the product model needs it.
-
-## Device-Local vs Cloud-Synced Boundary
-
-Sporely-py may run on several computers for the same user. The cloud should work as a bridge for shared domain data, not as a mirror of every desktop setting.
-
-### Device-local
-
-These stay local to each computer:
-
-- window and layout settings
-- hardware preferences
-- local file paths
-- import/watch-folder state
-- live lab state
-- cache paths
-- UI preferences
-- temporary session state
-
-### Cloud-synced
-
-These should sync because they are shared domain data needed to recreate or continue work across devices:
-
-- observations
-- image metadata
-- measurement geometry
-- calibration records
-- calibration photos or calibration image references
-- objective/calibration mapping
-- visibility/privacy fields
-- AI crop parameters
-- selected AI result
-- eligible full-resolution original uploads and cache-backed recovery copies as opt-in companion
-  objects, not as a blanket mirror of every desktop file
-
-Cloud sync should not overwrite higher-quality local originals or device-local workflow state. Local originals and local paths remain desktop-owned, while cloud media is used for web display, recovery, and cross-device continuity.
-
-## Contract Principles
-
-- `sporely-web` is the cloud, social, sharing, and publishing layer.
-- `sporely-py` is the desktop, local microscopy, ingestion, and analysis app.
-- Sync should not mirror the entire Supabase schema.
-- Local SQLite primary keys are the desktop identity.
-- Cloud row IDs are the cloud identity.
-- `desktop_id` and `user_id` are the durable cloud-side sync anchors.
-- `cloud_id` is the local link back to the cloud row.
-- Date and time can help humans group or recognize observations, but they are not the sync identity.
-- If both a local original file and a cloud derivative exist, the local original wins for analysis,
-  measurement, export, and re-upload decisions.
-- Cloud media is authoritative for cross-device and web display, but should be treated as a derivative
-  or cache when a better local original exists.
-- Cloud should never silently downsample the desktop source of truth.
-- A normal bidirectional sync may reuse its initially loaded remote observation index only when the
-  complete push result proves there were no dirty observation candidates, calibration writes,
-  tombstones, reconciliation attempts, errors, or other cloud mutations. Incomplete or positive
-  mutation results require a fresh post-push index before pull comparisons.
-
-## Domain Crosswalk
-
-| Domain | Contract stance | Notes |
-| --- | --- | --- |
-| Observation identity and grouping | `sync-required` | Use local IDs, `cloud_id`, `desktop_id`, and `user_id`. `date` and capture time are grouping metadata only. |
-| Location and privacy | `sync-required` | Latitude, longitude, placename, visibility, `location_precision`, and `spore_data_visibility` all matter. |
-| Country and locality | `near-term sync-required schema gap` | Canonical country should be persisted, not only inferred from placename or coordinates. It affects redlist interpretation, biotope/habitat vocabulary, substrate choices, national ecological systems, common names, and external service/source selection. |
-| Taxonomy and determination | `sync-required` | Genus, species, common name, species guess, determination method, and uncertainty flags should sync. |
-| Comments | mixed | `open_comment` should sync. `private_comment` is a decision point, not something to discard. |
-| AI suggestions | mixed | Crop/input parameters are sync-required. Selected result is near-term sync-required. Candidate lists are sync-capable/future-candidate. Raw/debug payloads stay cloud-only/cache unless needed for reproducibility. |
-| Images and originals | mixed | Desktop originals stay local. Cloud stores derivatives, opt-in companion original uploads, and cloud media keys. |
-| Microscope images | `sync-required` for metadata | Geometry, scale, objective, stain, mount medium, sample type, and contrast matter for analysis. |
-| Measurements | `sync-required` | Raw geometry and calibration context must be reconstructable. |
-| Calibration | `sync-required, staged implementation` | Calibration records and calibration photos are shared domain data because cloud bridges multiple desktop installs. |
-| Analysis/reference comparison data | `future cloud feature` | Should become a shared dataset model, not per-observation duplication. |
-| Social and moderation | `cloud-only` | Comments, follows, friendships, shares, reports, and blocks stay in the cloud layer. |
-| Ingestion and lab workflow | `desktop-only` | Session logs, transient import state, and file system paths remain local. |
-| Taxonomy/reference generation | `generated/reference-only` | Bundled lookup DBs and generated taxonomy assets are not observation sync state. |
-
-## Table Crosswalk
-
-| Local table or asset | Cloud table or asset | Contract stance | Notes |
-| --- | --- | --- | --- |
-| `observations` | `public.observations` | `sync-required` | Core observation record. Local `id` maps to cloud `desktop_id`. |
-| `images` | `public.observation_images` | `sync-required` for metadata | Desktop paths are local-only; cloud stores `storage_path`, derivative bookkeeping, and optional `original_storage_path` companion metadata. Recovered originals stay in `cloud_cache/originals` unless explicitly restored later. |
-| `spore_measurements` | `public.spore_measurements` | `sync-required` | Measurement points and values must round-trip. |
-| `calibrations` | `public.calibrations` | `sync-required, staged implementation` | Fields already mostly exist on both sides, but stable sync identity and implementation wiring are not done yet. |
-| `calibration_assets` | none | `desktop-only` | Local multi-asset calibration provenance for source photos, working photos, crops, overlays, debug outputs, and reference caches. |
-| `spore_annotations` | `public.spore_annotations` | `future cloud feature` | Useful for overlays and ML, but not part of the current sync path. |
-| `reference_values.db` / `reference_values` | `public.reference_values` | `generated/reference-only` now, future shared model later | Desktop reference data is local cache / bundled data today. Cloud reference stats are lookup data, not yet a full shared dataset model. |
-| `taxon_min`, `vernacular_min`, `scientific_name_min`, `taxon_external_id_min` | `public.taxa`, `public.taxa_vernacular` | `generated/reference-only` | Lookup taxonomy mirrors, not user content. |
-| `settings` | none direct | `desktop-only` except sync state | App settings and sync caches stay local. |
-| `session_logs` | none | `desktop-only` | Live lab and retrospective ingestion logs stay local. |
-| `observation_identifications` | `public.observation_identifications` | `cloud-owned/cloud-only` | Keep cloud-only for now. Do not mirror the full table into SQLite. |
-| `comments`, `follows`, `friendships`, `observation_shares`, `reports`, `user_blocks` | same-named cloud tables | `cloud-only` | Desktop should only care about the privacy/visibility fields needed for sync or display. |
-| `profiles` | `public.profiles` | `cloud-only` | Desktop may keep linked-account state, but not the whole profile model. |
-
-## Field Ownership Rules
-
-### Observations
-
-- `sync-required`: `date`, `genus`, `species`, `common_name`, `species_guess`, `location`,
-  `gps_latitude`, `gps_longitude`, `location_public`, `location_precision`, `visibility`,
-  `sharing_scope`, `spore_data_visibility`, `is_draft`, `publish_target`, `uncertain`,
-  `unspontaneous`, `determination_method`, habitat fields, `notes`, `open_comment`,
-  `interesting_comment`, `source_type`, `citation`, `data_provider`, `author`, `artsdata_id`,
-  `artportalen_id`, `inaturalist_id`, `mushroomobserver_id`, `spore_statistics`, `auto_threshold`.
-- `decision point`: `private_comment`.
-  - Preferred stance: keep it for Artsobservasjoner upload, local private comments, and eventual
-    web support.
-  - Do not treat it as ignored or disposable data.
-- `near-term sync-required schema gap`: `country_code` or canonical country.
-  - Placename alone is not enough.
-  - Country affects redlist interpretation, biotope and habitat vocabulary, substrate choices,
-    national ecological systems, common-name choices, and preferred external sources.
-- `future schema gap`: observation-level `captured_at` is present in the cloud baseline but not in the
-  local observation table today.
-  - Local desktops already use image capture time for grouping and EXIF backfill.
-  - If we want observation-level capture time on the desktop, add it deliberately.
-- `future schema gap`: `gps_altitude` and `gps_accuracy` are present in the cloud baseline but are
-  not currently modeled as local observation columns.
-- `future schema gap`: `inaturalist_taxon_id` exists locally but not in the current cloud baseline.
-  - Keep this as a deliberate compatibility choice until we decide whether the web needs it.
-- `shared-but-currently-ignored`: `ai_state_json` is local and cloud-visible in the schema, but the
-  desktop should not mirror the whole raw AI state by default.
-
-### Comments
-
-- `open_comment`: `sync-required`.
-- `private_comment`: `decision point`.
-- `interesting_comment`: `sync-required` as a lightweight flag, not a separate social comment.
-- Cloud social comments are not the same thing as observation comments.
-- The desktop should only sync the privacy/display fields it needs for sync or review.
-
-### AI Suggestions and Identifications
-
-AI should not be classified as cloud-only by default.
-
-Separate the AI model into four layers:
-
-| Layer | Contract stance | Notes |
-| --- | --- | --- |
-| Crop and input parameters | `sync-required` | `ai_crop_x1`, `ai_crop_y1`, `ai_crop_x2`, `ai_crop_y2`, `ai_crop_source_w`, `ai_crop_source_h`, and custom-crop flags should travel with the image metadata. |
-| Selected AI result | `near-term sync-required` | Selected service, selected taxon, scientific name, probability, and selection timestamp should be visible across desktop and web. |
-| Candidate suggestion list | `sync-capable/future-candidate` | iNaturalist and Artsorakel suggestion lists may be synced later, but they are not required as the primary contract today. |
-| Raw/debug response | `cloud-only` or cache | Full service response payloads should stay cloud-side or in a cache unless needed for reproducibility. |
-
-- `public.observation_identifications` stays cloud-owned/cloud-only for now.
-- Its AI metadata fields are cloud-only AI metadata:
-  - `top_species_url`
-  - `top_redlist_category`
-  - `top_redlist_status`
-  - `top_redlist_source`
-- The desktop should be able to display or use the same selected result later, but it should not
-  blindly mirror the full identification history table into SQLite.
-
-### Images and Originals
-
-This section defines the local-only provenance vocabulary for image files. It is additive: it
-does not replace `image_type`, `filepath`, `original_filepath`, or cloud upload bookkeeping.
-
-- `filepath` is the local working file path.
-- `original_filepath` is the preserved source/import path when the source file is kept.
-- `source_role`, `file_purpose`, `original_filepath`, `original_mime_type`, and
-  `working_mime_type` are local-only provenance fields on `images`; they are not part of the
-  current cloud contract.
-- `storage_path`, `upload_mode`, `source_width`, `source_height`, `stored_width`, `stored_height`,
-  and `stored_bytes` stay cloud bookkeeping, not provenance.
-- `storage_path`, `image_key`, and `thumb_key` are derivative/recovery keys.
-- `original_storage_path` is optional cloud-side metadata for a companion original object. It is
-  written only after an opt-in upload, defaults to null, and does not authorize replacing a local
-  original. Recovery downloads write to a separate cache path and remain secondary until an
-  explicit restore action copies them into place.
-- `notes` should not be used as a hidden file-role flag.
-- The gallery publish checkbox is authoritative for field and microscope image bytes. A checked
-  field image is eligible for upload; a checked microscope image is eligible even without spore
-  measurements. Unchecking either type excludes it from upload and queues a tombstone when the
-  image already has a cloud identity. Microscope seeded-checkbox state distinguishes an initialized
-  selection from an untouched legacy backlog, so ordinary media sync does not opt in old images.
-- Image, measurement, deletion, and publish-selection mutations mark their owning observation dirty
-  immediately. The global scan for eligible `cloud_id IS NULL` image rows is a versioned, periodic
-  repair pass for legacy or interrupted state, not a prerequisite for every normal media sync. Its
-  completion watermark advances only after a successful sweep.
-
-#### `source_role`
-
-`source_role` describes where the file came from and whether it is the durable working copy.
-
-| Role | Meaning | Analysis-authoritative? | Safe to regenerate/delete? | Should sync? | Browser/public display? |
-| --- | --- | --- | --- | --- | --- |
-| `import_source` | Raw file selected or ingested before conversion | No | Yes, once a durable working copy exists | No | No |
-| `local_canonical` | Durable local original/working copy used for analysis | Yes | No | Metadata only | Yes, locally |
-| `converted_local` | Local decoded/conversion result from an import source | Yes, when it is the durable working copy | Conditional | Metadata only | Yes, locally |
-| `cloud_derivative` | Web-friendly derivative created from decoded pixels or a cloud asset | No | Yes | Yes, cloud-side | Yes, public/browser |
-| `cloud_recovery_cache` | Local cache downloaded from cloud to recover a missing file | No | Yes | No | Owner-only |
-| `generated_artifact` | Derived output such as a plot, thumbnail, spore crop, or reference derivative | No | Yes | Deferred / optional publish-only | Only if intentionally published |
-
-- `converted_local` is intentionally not a disposable-only label. If it is the durable working copy,
-  it can still be authoritative for analysis.
-- `cloud_derivative` and `cloud_recovery_cache` are both derived, but only the derivative is a cloud
-  sync asset. The recovery cache is a local-only fallback copy.
-- `generated_artifact` covers assets that should not be mistaken for canonical scientific originals.
-  If they need persistence, they should move to a later artifact table/model rather than the main
-  `images` table.
-
-#### `file_purpose`
-
-`file_purpose` describes what the file is for. It does not by itself decide whether the bytes are
-authoritative; that comes from `source_role`.
-
-| Purpose | Meaning | Analysis-authoritative? | Safe to regenerate/delete? | Should sync? | Browser/public display? |
-| --- | --- | --- | --- | --- | --- |
-| `field` | Field photo used as observation evidence | Yes, when paired with `local_canonical` or durable `converted_local` | No for canonical copies | Metadata yes; bytes when selected | Yes |
-| `microscope` | Microscope image used for measurement and analysis | Yes, when paired with `local_canonical` or durable `converted_local` | No for canonical copies | Metadata yes; bytes when selected | Yes |
-| `calibration` | Original calibration capture | Yes, when paired with `local_canonical` or durable `converted_local` | No for canonical copies | Metadata yes; bytes later no | Usually local-only |
-| `reference` | Calibration reference derivative or other compact reference asset | No | Yes | Yes, as a derivative asset | Yes |
-| `plot` | Generated comparison or measurement plot | No | Yes | Publish-only, later if needed | Yes, if published |
-| `thumbnail` | UI preview or gallery thumbnail | No | Yes | Usually no | Yes |
-| `spore_crop` | Generated crop around a measured spore or evidence point | No | Yes | Deferred / optional publish-only | Only if intentionally published |
-| `cache` | Recovery or temporary cache file | No | Yes | No | Owner-only |
-
-- `field`, `microscope`, and `calibration` are the only purposes that should normally carry analysis
-  authority, and only when the source role is durable.
-- `reference` is explicitly a derivative classification for calibration-side images, not a scientific
-  original.
-
-HEIC/import behavior:
-
-- Treat HEIC as an import source, not as a durable working format.
-- If a HEIC is decoded to JPEG/PNG for local work, that converted file can become `converted_local`
-  and may still be the authoritative working copy.
-- Preserve the original source path in `original_filepath` when a converted working copy is
-  available.
-- If the original HEIC is preserved, remember it separately through `original_filepath` instead of
-  overloading `filepath`.
-- Cloud uploads should prefer decoded pixels when available so we avoid HEIC -> JPEG -> WebP double
-  compression.
-- WebP should not become the default durable desktop working format unless it is explicitly tested.
-
-Local canonical vs converted local:
-
-- `local_canonical` is the durable local source of truth.
-- `converted_local` is the local decoded/converted file that may become the source of truth when it is
-  the only durable working copy.
-- Neither label should be inferred from `notes`, cloud `storage_path`, or upload metadata.
-
-Cloud derivative vs cloud recovery cache:
-
-- `cloud_derivative` is a cloud-side display/recovery asset, typically WebP or JPEG.
-- `cloud_recovery_cache` is a local-only file restored from cloud storage when the local source is
-  missing.
-- When the desktop stores a local row for a cloud recovery cache, tag it with
-  `file_purpose=cache`.
-- A cloud recovery cache must never replace a higher-quality local canonical source.
-- If both exist, the local canonical or durable converted local copy wins for analysis, measurement,
-  export, and re-upload decisions.
-
-Full-resolution original recovery:
-
-- `recover_full_original_for_image(...)` downloads a cloud original into
-  `app_data_dir()/cloud_cache/originals/...` instead of overwriting `filepath`.
-- The downloaded cache copy is recorded through a small local sidecar file and is tagged as
-  `source_role=cloud_recovery_cache` and `file_purpose=cache` only in that sidecar metadata.
-- Recovery is idempotent: if the cache file already exists and is readable, the helper skips the
-  redownload.
-- Recovered originals stay secondary cache data until an explicit restore/promotion action exists.
-- `should_download_full_original(...)` remains the policy gate for deciding whether recovery is safe
-  for a given local row and remote original key.
-
-Tombstone interaction:
-
-- Tombstones are deletion state.
-- `source_role` and `file_purpose` are provenance state.
-- A tombstone should not be treated as a provenance label.
-- Cloud recovery/cache files should not create tombstones; they are disposable fallback copies, not
-  user-deleted canonical files.
-- Tombstones may optionally snapshot provenance later, but that is additive and not required by this
-  contract.
-
-Deferred items:
-
-- Cloud provenance fields on `public.observation_images` beyond the minimal
-  `original_storage_path` contract support.
-- Explicit restore-to-canonical UI/action for recovered originals.
-- A dedicated `measurement_artifacts` / `spore_measurement_artifacts` table/model for plots,
-  spore crops, thumbnails, and reference derivatives. Keep image thumbnails in `thumbnails`.
-- Calibration multi-asset provenance beyond the representative derivative path.
-
-Full-resolution original upload/recovery note:
-
-- Current cloud image rows expose derivative/recovery media fields such as `storage_path`,
-  `image_key`, and `thumb_key`.
-- The cloud contract also allows optional `original_storage_path` metadata for companion original
-  objects written by the desktop upload slice.
-- The desktop only uploads eligible rows when `sync_full_resolution_originals` is enabled.
-- The desktop surfaces that gate as a conservative `Sync full-resolution originals` checkbox in the
-  Preferences dialog's `Profile & Cloud` section, and the setting stays off by default.
-- Upload source selection is explicit:
-  - `local_canonical` uploads its readable `filepath`
-  - `converted_local` prefers readable `original_filepath`, then falls back to `filepath`
-- Only `field` and `microscope` purposes participate, and the source file must stay within the
-  250 MiB desktop upload ceiling.
-- `original_storage_path` is metadata only. Its presence does not mean the desktop should overwrite
-  a better local original or bypass local provenance rules.
-- Recovery downloads write to a separate cache path and stay secondary until a future explicit
-  restore action promotes them into place.
-- The sync dialog only shows concise original-upload counts when the opt-in is active enough to
-  matter; it stays quiet when the setting is off.
-- `should_download_full_original(...)` remains the gate for any future restore-to-canonical action.
-
-- `sync-required`: `sort_order`, `image_type`, `micro_category`, `objective_name`,
-  `scale_microns_per_pixel`, `resample_scale_factor`, `mount_medium`, `stain`, `sample_type`,
-  `contrast`, `measure_color`, `crop_mode`, `notes`, `gps_source`, `ai_crop_*`.
-- `desktop-only`: local file system paths and local source metadata.
-  - `filepath`
-  - `original_filepath`
-  - local import temp paths
-  - live lab capture state
-  - other ingestion-only file management state
-- `cloud-only`: cloud object references and upload bookkeeping.
-  - `storage_path`
-  - `original_storage_path`
-  - `image_key`
-  - `thumb_key`
-  - `upload_mode`
-  - `source_width`
-  - `source_height`
-  - `stored_width`
-  - `stored_height`
-  - `stored_bytes`
-- `storage_path` and cloud media keys are cloud media references. The desktop may read them for
-  recovery or download, but they are not local source-of-truth.
-- `original_storage_path`, when present, points to the future full-resolution original object and
-  is still not a local overwrite instruction.
-- `shared-but-currently-ignored`: `scale_bar_x1`, `scale_bar_y1`, `scale_bar_x2`, `scale_bar_y2`.
-  - Keep this as a future contract item if the web needs to reproduce the desktop scale-bar overlay
-    exactly.
-
-Cloud upload bookkeeping fields are cloud-only unless the desktop actually needs them for a current
-feature. At present they function as cloud metadata, not desktop source data.
-
-Conflict rule for images:
-
-- Metadata may sync both ways.
-- Cloud image derivatives may be downloaded when local files are missing.
-- A lower-quality cloud image must not replace a higher-quality local original.
-- If a local file is missing but the cloud image exists, mark the recovered file as cloud-derived,
-  recovery, or cache data, not as the canonical original.
-- Sync from cloud must never overwrite local `filepath` or `original_filepath` values when those
-  point to higher-quality local sources.
-- If both exist, the local original wins for analysis, measurement, export, and re-upload decisions.
-- Sync should never silently downsample the desktop source of truth.
-
-Cloud derivative rule:
-
-- Cloud media should normally be compressed and web-friendly, typically WebP or JPEG.
-- Local users may work with large JPEGs, TIFFs, or uncompressed microscope originals.
-- A downloaded cloud copy on a desktop without the original should be treated as a cache or recovery
-  file, not as the canonical original.
-
-### Microscope Images and Measurements
-
-- Measurement geometry must sync independently from rendered images.
-- Overlays and measurement rectangles must be reconstructable from source geometry plus calibration
-  data.
-- Spore thumbnails are generated artifacts, not the only source of truth.
-- Large microscope originals may be uploaded as opt-in companion originals, and recovered originals
-  may be cached separately, but the local original remains authoritative until an explicit restore
-  action exists.
-- Full measurement reproducibility is incomplete until calibration sync implementation lands.
-  Measurement geometry can sync now, but calibration data are part of the shared contract even
-  though the implementation is staged.
-
-`sync-required` measurement fields:
-
-- `length_um`
-- `width_um`
-- `measurement_type`
-- `gallery_rotation`
-- `p1_x`, `p1_y`
-- `p2_x`, `p2_y`
-- `p3_x`, `p3_y`
-- `p4_x`, `p4_y`
-- `measured_at`
-
-`cloud-only` measurement bookkeeping today:
-
-- `image_key`
-- `thumb_key`
-
-#### Measurement reconciliation cadence
-
-- Every normal sync scans for eligible local measurement rows that do not yet have cloud ids and
-  repairs them immediately.
-- Remote existence checks for already-stamped measurement and image ids are recovery work, not
-  ordinary fast-path work. They run when the reconciliation policy version changes, during the
-  periodic child-safety pass, or during an explicit full pull.
-- The durable `cloud_measurement_reconcile_version` and `cloud_measurement_reconcile_at` settings
-  advance only after the stamped-id verification completes. Transport or reconciliation failure
-  therefore leaves the verification due for the next sync.
-- If deep verification finds independently deleted remote rows, the existing observation and
-  mosaic repair paths remain responsible for restoring or re-dirtying the affected local state.
-
-#### Structured observation-level spore summaries
-
-**`cloud-only, computed`** — table `public.observation_spore_summaries`.
-
-- One row per `(observation_id, context_hash)` where `context_hash` is a
-  deterministic SHA-256 over the normalized preparation-context object
-  `{measurement_type, sample_type, mount_reagent, stain_reagent,
-  contrast_method}`.
-- Written by sporely-py during cloud sync in
-  `utils/spore_summary_sync.py::sync_observation_spore_summaries(...)`,
-  invoked from `utils/cloud_sync.py::_push_summary_for_current_observation(...)`
-  after the observation has an established cloud id — independent of
-  image-byte upload success.
-- Numeric contract: min / p05 / mean / median / p95 / max / sample SD
-  (ddof=1) for length, width, Q; plus `n_spores`, `n_paired`, `n_length`,
-  `n_width`. Percentile convention is numpy default (linear
-  interpolation) — matched between the desktop writer and any server
-  aggregate to guarantee client/server consistency.
-- Canonical `q_mean` is the mean of individual `length_i / width_i`
-  ratios, NEVER `length_mean_um / width_mean_um`. Canonical `length_mean_um`
-  and `width_mean_um` use the paired denominator only.
-- Provenance: `stats_version` (bumped on writer-semantic changes),
-  `computed_at`, `source_app = 'sporely-py'`, `source_app_version = APP_VERSION`.
-- **Local persistence deferred.** Summaries are deterministic and cheap
-  to recompute from `spore_measurements` + `images` on each sync. No
-  local SQLite mirror.
-- **Idempotence.** Sync GETs existing `(id, context_hash)` for the
-  observation, PATCHes matching hashes, POSTs new ones, DELETEs any
-  hash that used to exist remotely but is no longer in the local
-  computed set. Zero local summaries wipes every remote row for the
-  observation.
-- **Compatibility.** If the cloud deployment predates the table,
-  `STATUS_SKIP_TABLE_MISSING` is returned and the observation sync
-  continues. Any non-auth / non-temporary error is surfaced via
-  `sync_all(...)`'s returned `result["errors"]` list and marks the
-  observation dirty for retry.
-- **RLS.** Base table is owner-full; public reads exclusively via the
-  `get_public_observation_spore_summaries` RPC (Stage E/H).
-- Design and stage-by-stage progress notes:
-  [docs/spore-statistics-species-profiles.md](spore-statistics-species-profiles.md).
-
-`sync-required, staged calibration fields`:
-
-- `objective_key`
-- `calibration_date`
-- `calibration_image_date`
-- `microns_per_pixel`
-- `microns_per_pixel_std`
-- `confidence_interval_low`
-- `confidence_interval_high`
-- `num_measurements`
-- `measurements_json`
-- `image_filepath`
-- `camera`
-- `megapixels`
-- `target_sampling_pct`
-- `resample_scale_factor`
-- `calibration_image_width`
-- `calibration_image_height`
-- `notes`
-- `is_active`
-- These calibration fields are part of the shared contract, but sync implementation is staged.
-
-### Generated Artifacts and Spore Evidence Crops
-
-Generated artifacts are derived render outputs or evidence views. They are useful, but they are not
-canonical source images.
-
-Artifact categories:
-
-- `thumbnail`: image-level preview for gallery and browsing
-- `spore_crop`: evidence crop around a measured spore
-- `plot`: measurement or comparison plot
-- `reference`: compact calibration/reference derivative
-
-Current generated-artifact `file_purpose` values are `thumbnail`, `spore_crop`, `plot`, and
-`reference`.
-
-Spore evidence crop rules:
-
-- They are derived evidence, not replacements for the original microscope image.
-- They are generated from source image pixels, measurement geometry, and calibration context.
-- When available, they should reference the source image id/cloud id and measurement id/cloud id.
-- If persisted later, they should preserve crop rectangle, measurement geometry, scale/calibration,
-  orientation, generation version, MIME type, pixel dimensions, and `generated_at`.
-- They should be safe to regenerate whenever the source image still exists.
-
-Model decision:
-
-- Keep `thumbnails` for image-level previews.
-- Keep `images` for source, working, and recovery image files.
-- Do not store spore crops in `images`.
-- If persistent artifacts are needed, add a dedicated `measurement_artifacts` /
-  `spore_measurement_artifacts` table later in Stage H.
-
-Source image missing:
-
-- Evidence crops may still preserve useful audit context.
-- They do not replace the original microscope image.
-- UI/web should mark them as "derived evidence only" when the source image is missing.
-- Measurements may remain publishable if geometry and calibration context are intact, but
-  reproducibility is reduced.
-
-Deletion behavior:
-
-- Current image deletion cascades to measurements, annotations, and thumbnails for that image.
-- Future measured-image deletion should warn before destroying source-linked data.
-- A later workflow may offer preserve-vs-purge derived evidence.
-- Artifact tombstones and artifact lifecycle should stay separate from source image tombstones.
-
-### Calibration Identity
-
-- Do not use `objective_key + date` as identity.
-- Do not use plain `desktop_id` as the cross-machine identity.
-- Preferred direction: a stable calibration UUID or sync key scoped by `user_id`.
-- `objective_key` is grouping and display metadata, not identity.
-- Two similar calibrations for the same objective should remain separate unless they share the
-  same stable identity.
-- Use `calibration_uuid` as the portable cross-device link for images.
-- `calibration_id` stays local-only and can be reconciled from `calibration_uuid` after
-  calibration sync.
-
-### Calibration Photos
-
-- Numeric calibration can sync without the original photo.
-- Visual inspection or reproduction needs the calibration photo or reference image and
-  `measurements_json`.
-- Local calibration photos remain authoritative when present.
-- Cloud-hydrated calibration photos should be marked derived, cache, or recovery data.
-- Do not overwrite higher-quality local calibration photos.
-- Calibration-side assets now live in the desktop-only `calibration_assets` table. The current cloud
-  contract does not include those rows yet.
-
-### Calibration Implementation Stages
-
-- Define stable calibration identity and payload shape.
-- Metadata-only calibration sync.
-- Calibration photo or reference sync.
-- Image-calibration linkage and reconciliation.
-- Only later decide whether hidden `measurement_type = "calibration"` rows need cloud
-  representation.
-
-### Country, Redlist, and Locality
-
-- `country_code` or canonical country should be treated as `future schema gap` and future
-  `sync-required`, not as a display-only detail.
-- Placename plus latitude/longitude is not enough for the product model.
-- Country affects:
-  - redlist interpretation
-  - biotope and habitat vocabulary
-  - substrate choices
-  - local and national ecological classification systems
-  - local common-name choices
-  - preferred external services and reference sources
-- If a schema only stores placename and coordinates today, document canonical country as missing
-  product data, not as a cosmetic enhancement.
-- Local `red_list_category` and `red_list_categories_json` should be treated as desktop-side helpers
-  until we have a country-aware shared model.
-- Cloud redlist data in `observation_identifications` is AI metadata, not the same thing as a canonical
-  observation-level redlist field.
-
-### Social and Moderation
-
-Keep these tables `cloud-only`:
-
-- `comments`
-- `follows`
-- `friendships`
-- `observation_shares`
-- `reports`
-- `user_blocks`
-
-The desktop should only care about the visibility and privacy fields needed for sync or display:
-
-- `visibility`
-- `location_public`
-- `location_precision`
-- `spore_data_visibility`
-- `is_draft`
-
-### Ingestion and Local Workflow
-
-These stay `desktop-only`:
-
-- `session_logs`
-- local watch-folder state
-- live lab session state
-- local import matching state
-- `folder_path`
-- `lab_metadata`
-- local temporary file paths
-- `artsobs_web_unpublished`
-
-### Taxonomy and Reference Data
-
-- Bundled taxonomy sources and generated lookup DBs are `generated/reference-only`.
-- `taxa` and `taxa_vernacular` are cloud lookup mirrors, not user-content sync rows.
-- `reference_values` is not yet a shared dataset model. It is a local reference cache / bundled
-  dataset plus a cloud lookup table.
-- Local `reference_values` currently carries provenance-style metadata that the cloud flat table does
-  not fully model.
-
-## Sync Identity Model
-
-- Desktop SQLite primary keys are the local identity.
-- Cloud row IDs are the cloud identity.
-- `desktop_id` is the cloud-side link back to the local row.
-- `cloud_id` is the local-side link back to the cloud row.
-- `user_id` scopes cloud rows and prevents cross-account collisions.
-- Observation-level sync should be keyed by local `observations.id` and cloud `observations.desktop_id`.
-- Image sync should be keyed by local `images.id` and cloud `observation_images.desktop_id`.
-- Measurement sync should be keyed by local `spore_measurements.id` and cloud `spore_measurements.desktop_id`.
-- Relationships should be resolved by foreign keys and IDs, not by file path or by date.
-- Date and capture time may help group imported photos and help humans recognize observations, but they
-  are never the primary identity.
-
-## Gaps and Drift
-
-- `private_comment` is a decision point, not ignored data.
-- `upload_mode`, `source_width`, `source_height`, `stored_width`, `stored_height`, and `stored_bytes`
-  are cloud upload bookkeeping fields. Treat them as cloud-only unless the desktop gains a real feature
-  that needs them.
-- `observation_identifications` stays cloud-only for now, including the four AI redlist/species URL
-  metadata fields.
-- `country_code` / canonical country is a near-term sync-required schema gap even though the product
-  model needs it.
-- Cloud baseline verification:
-  - `captured_at`, `gps_altitude`, and `gps_accuracy` are present in the authoritative cloud
-    observations table.
-  - `camera_model`, `iso`, `exposure_time`, and `f_number` were not found in the authoritative
-    baseline migration, even though desktop EXIF helpers still reference them.
-  - Treat that as either stale-script risk or missing-cloud-schema risk until it is resolved.
-- Local `inaturalist_taxon_id` does not have a matching field in the current cloud baseline.
-- Local `red_list_category` and `red_list_categories_json` do not have a matching canonical cloud
-  observation field today.
-- Local `calibration_id` on images is reconciled from portable `calibration_uuid`; do not use the
-  numeric id as cloud identity.
-- `spore_annotations` exists on both sides, but the contract should treat it as a future shared
-  annotation feature, not as current sync state.
-- Cloud image tombstones should be recorded locally and used to block reupload or recreation, but
-  the desktop active image row stays visible for now. Files, measurements, and annotations remain
-  intact, and any UI hiding or explicit delete confirmation is deferred.
-- `scale_bar_*` exists on both sides but is currently shared-but-ignored. Landing renders
-  the microscope scale bar from `observation_images.scale_microns_per_pixel` (already synced;
-  now surfaced by `search_public_observation_images` / `get_public_observation_images`), not
-  from the endpoint coordinates. The `scale_bar_*` endpoints remain deferred until we need a
-  pixel-exact reproduction of the desktop overlay.
-- `spore_measurement_mosaics.tile_width_px`, `tile_height_px`, `common_crop_width_um`,
-  `common_crop_height_um` are `desktop-source` fields uploaded on every mosaic upsert
-  (`utils/cloud_sync.py::_push_spore_mosaic_for_observation`). All four are nullable on the
-  cloud side; the pusher sends `None` for non-positive manifest values so old / degenerate
-  rows land as SQL NULL, which the public RPC treats as "no scale bar" (keys dropped via
-  `jsonb_strip_nulls`). The desktop `SporeMosaicManifest` already computes these values
-  under the common-crop model; the previous contract simply did not put them on the wire.
-- Current cloud `reference_values` is too flat for shared provenance and usage tracking.
-
-## Analysis and Reference Data Proposal
-
-This is a future shared dataset model proposal only. Do not implement it yet.
-
-Model reference and comparison data as its own versioned asset family, not as duplicated per-observation
-blobs.
-
-Proposed cloud-side shape:
-
-- `reference_datasets`
-  - dataset metadata
-  - uploader / owner `user_id`
-  - citation
-  - provenance
-  - visibility
-  - taxon scope
-  - mount medium and stain context
-  - country scope if relevant
-- `reference_dataset_entries` or `reference_dataset_points`
-  - raw spore measurements or Parmasto-style inputs
-  - summary statistics
-  - source references
-- `reference_dataset_links`
-  - which observations use which shared dataset
-  - role or usage context
-- `reference_dataset_artifacts`
-  - derived plots
-  - thumbnails
-  - SVG / PNG / JPEG render outputs
-  - render parameter hash or cache key
-
-Proposed desktop-side shape:
-
-- Keep `reference_values` as the local cache and bundled reference store.
-- Add a local dataset link table only if the desktop needs to remember which cloud dataset was used.
-- Keep per-observation analysis settings separate from the shared dataset itself.
-
-Rules for this model:
-
-- Observations should link to a shared reference dataset instead of duplicating the whole dataset.
-- Raw reference points and provenance are source data.
-- Summary statistics and rendered plots are derived.
-- Derived plots are cache or render outputs, not primary source-of-truth data.
-- The cloud should eventually be able to show comparison plots, histograms, thumbnails, overlays, and
-  selectable spore size ranges without duplicating the whole dataset into every observation row.
-
-## Source-of-Truth Rules
-
-| Area | Source of truth | Notes |
-| --- | --- | --- |
-| Shared observation, image, and measurement metadata | Cloud schema + sync contract | Cloud is the shared canonical store; the contract defines ownership and transforms. |
-| Desktop file paths, ingestion state, and local workflow | Desktop SQLite schema | Local originals and ingestion state belong to the desktop. |
-| Field ownership and ID mapping | Sync contract | This document is the contract for what syncs and how. |
-| Taxonomy and lookup generation | Taxonomy/reference generation scripts | Bundled lookup DBs and import scripts remain generated artifacts. |
-| Shared reference datasets | Future cloud reference-dataset tables | Until then, local `reference_values` remains the working store. |
-| Plot artifacts, evidence crops, and thumbnails | Generated artifacts | Rebuild from source data and render parameters whenever possible; keep image thumbnails separate from source images. |
-
-## First Implementation Step
-
-No schema change is required to start.
-
-The safe first step is to keep this contract document under version control and use it as the checklist
-for the next sync/schema pass.
-
-If this contract is accepted, the next code change should be the smallest possible field-mapping update
-that closes one real mismatch without expanding scope.
+# Sporely Cloud Sync Contract and Repair Plan
+
+Status: required behavior; media-repair work is pending.
+
+This document defines how `sporely-py` and `sporely-web` must exchange observations, photos, microscope data, and deletions.
+
+The same document is kept in both repositories:
+
+- `sporely/docs/supabase-sync-contract.md`
+- `sporely-web/docs/supabase-sync-contract.md`
+
+A change that alters sync behavior must update both copies in the same work item.
+
+## Why this document exists
+
+Sporely is local-first on the desktop and cloud-connected across desktop, web, and Android.
+
+The desktop must be able to work without the cloud. When cloud sync is enabled, it should copy shared scientific and observation data without silently destroying local files, cloud photos, or work performed on another device.
+
+On 3 August 2026, desktop image-selection logic was connected to cloud deletion logic. Images that were not selected in a publishing gallery could be treated as unwanted cloud images. This caused some cloud photos to disappear while their observations remained visible. The repair plan is included below.
+
+## Plain-English vocabulary
+
+The plain-English term comes first. The technical name is in parentheses.
+
+- **Local record** (`SQLite row`): a desktop database entry.
+- **Cloud record** (`Supabase/Postgres row`): a shared database entry used by the web and Android apps.
+- **Cloud file** (`R2 object`): uploaded image bytes stored behind `media.sporely.no`.
+- **Local-to-cloud link** (`cloud_id`): the cloud record ID stored on the desktop.
+- **Cloud-to-local link** (`desktop_id`): the desktop record ID stored in the cloud.
+- **Known-good baseline** (`sync snapshot`): the last state both sides agreed on.
+- **Removal marker** (`tombstone`): a durable record that the user explicitly deleted something.
+- **Recoverable deletion** (`soft delete`): the record remains but is marked deleted, normally with `deleted_at`.
+- **Permanent deletion** (`hard delete`): the database record is removed.
+- **Measurement-only image record** (`metadata-only anchor`): an image record kept so measurements can refer to it even when no cloud image file exists.
+- **Retry-safe operation** (`idempotent operation`): running the same sync again produces the same correct result without duplicate uploads or extra deletions.
+- **Three-way comparison** (`three-way merge`): compare local state, cloud state, and the known-good baseline before deciding what changed.
+- **Cloud file address** (`storage_path`): the key that points from an image record to its cloud file.
+- **Prepared upload list** (`prepared_items`): images for which the desktop has prepared bytes to upload during this sync.
+- **Protected cloud list** (`kept_cloud_ids`): existing cloud image records that must not be removed during this sync.
+
+## Non-negotiable safety rules
+
+1. **Ordinary sync must not delete photos.**
+
+   A normal refresh or bidirectional sync may add and update data. It must not remove a cloud record or cloud file merely because an image was omitted from an upload list.
+
+2. **Not selected does not mean deleted.**
+
+   An unchecked gallery box may mean “do not include this in this publication” or “do not upload new bytes now.” It must never be interpreted as “delete the existing cloud copy.”
+
+3. **Deletion requires a separate, explicit user action.**
+
+   Deletion intent must be recorded as a removal marker (`tombstone`) or an equally explicit cloud-removal command. It must not be inferred from filtering, missing preparation output, publication settings, or a changed sort order.
+
+4. **Normal sync must not permanently delete cloud image records.**
+
+   Permanent deletion (`hard delete`) is reserved for verified maintenance, account deletion, or a later cleanup job after a safe retention period. Normal image deletion should first use a recoverable deletion (`soft delete`).
+
+5. **Cloud files must not be removed before deletion intent is durable.**
+
+   The database must first contain a durable deletion state. File cleanup may then run as a retry-safe follow-up. A failed cleanup must not make the database claim that a still-needed photo is gone.
+
+6. **Local originals remain authoritative.**
+
+   A smaller cloud copy must never overwrite a better local original. A downloaded cloud copy is a recovery copy (`cloud_recovery_cache`), not automatically the new local original.
+
+7. **A failed sync remains retryable.**
+
+   Sync must not mark an observation as fully synced when any required child operation failed. This includes image upload, image metadata, measurement upload, calibration sync, summary sync, and deletion cleanup.
+
+8. **Conflicts block automatic writes.**
+
+   When local and cloud both changed since the known-good baseline, sync must stop that observation and ask for a choice. It must not silently choose one side.
+
+9. **Stable IDs define identity.**
+
+   Observations, images, measurements, and calibrations are matched by stable IDs. Dates, filenames, paths, species names, and sort order are descriptive data, not identity.
+
+10. **Desktop, web, Android, and public read functions must share the same meaning.**
+
+    A state that is valid on the desktop must be represented deliberately in the cloud and displayed deliberately by the clients.
+
+## What belongs where
+
+| Information | Desired ownership |
+| --- | --- |
+| Observation identity, taxonomy, notes, habitat, location, privacy, and draft state | Shared between desktop and cloud |
+| Image description, type, order, microscope context, calibration link, crop, and scale | Shared between desktop and cloud |
+| Desktop file paths and import/watch-folder state | Desktop only |
+| High-quality local originals | Desktop-owned; optional companion upload only |
+| Web-friendly image copies | Cloud files (`R2 objects`) |
+| Spore measurement geometry and values | Shared between desktop and cloud |
+| Calibration identity and numeric calibration data | Shared between desktop and cloud |
+| Window layout, device settings, caches, and temporary state | Device-local |
+| Social graph, comments, reports, blocks, billing, and moderation | Cloud/web only |
+| Generated thumbnails, plots, mosaics, and crops | Rebuildable outputs unless deliberately persisted |
+
+## Separate the three image decisions
+
+One checkbox cannot safely represent all image behavior. Sporely must keep these decisions separate:
+
+1. **Include in an external publication.**
+
+   Example: include the image in an Artsobservasjoner or iNaturalist upload.
+
+2. **Keep image bytes in Sporely Cloud.**
+
+   This controls whether a cloud file should be uploaded for cross-device use or web display.
+
+3. **Delete the image from Sporely Cloud.**
+
+   This is a destructive action and requires explicit confirmation and a durable removal marker (`tombstone`).
+
+Changing decision 1 must not silently change decision 2 or 3.
+
+Until separate controls exist, existing publication checkboxes must be treated only as publication choices. They must not remove already-uploaded cloud data.
+
+## Desired observation behavior
+
+### First desktop upload
+
+- Create or find the cloud observation using the stable desktop link (`desktop_id`) and owner (`user_id`).
+- Upload only images that are eligible for a new cloud copy.
+- Store the resulting cloud link (`cloud_id`) locally only after the cloud record is confirmed.
+- Save a known-good baseline (`sync snapshot`) after the observation and required child data are complete.
+- If one child operation fails, keep the observation retryable instead of declaring the whole observation synced.
+
+### Repeated sync with no changes
+
+- Do no writes.
+- Do no uploads.
+- Do no deletions.
+- Do not open or re-encode image files unnecessarily.
+- Return a clear “nothing changed” result.
+
+### Local metadata change
+
+- Compare local, cloud, and the known-good baseline.
+- Patch only the changed fields.
+- Preserve cloud-only fields and local-only fields.
+- Refresh the known-good baseline after a successful result.
+
+### Cloud metadata change
+
+- Pull the changed shared fields to the desktop.
+- Preserve local file paths and better local originals.
+- Record cloud-only child records without turning them into local workflow state.
+
+### Both sides changed
+
+- Detect the conflict using a three-way comparison (`three-way merge`).
+- Block automatic push and pull for that observation.
+- Show the changed categories: observation details, images, measurements, calibrations, or deletions.
+- Let the user choose “use this device,” “use Sporely Cloud,” or a future field-by-field merge.
+- Advance the known-good baseline only after resolution.
+
+## Desired image behavior
+
+### Existing field photo
+
+If the desktop image still exists and is linked to an active cloud image record:
+
+- keep the cloud image record in the protected cloud list (`kept_cloud_ids`);
+- keep its cloud file even when the image is not in the prepared upload list (`prepared_items`);
+- patch metadata when needed;
+- upload replacement bytes only when the local source really changed or the cloud file is missing and restoration is intended;
+- never classify it as stale solely because it was unchecked or skipped during preparation.
+
+### New field photo
+
+- If cloud upload is selected, create the cloud file and cloud image record.
+- If cloud upload is not selected, leave it local-only.
+- A later sync may upload it when the user chooses cloud storage.
+- Its local-only state must not affect other cloud images on the same observation.
+
+### Existing microscope photo
+
+- Keep metadata, measurements, and image bytes as independent concerns.
+- If bytes already exist in the cloud, ordinary sync must keep them.
+- Unchecking a publication box must not strip `storage_path`, delete the cloud file, or delete the original companion file.
+- Measurement sync must continue even when no cloud bytes are present.
+
+### Measurement-only microscope record
+
+A measurement-only image record (`metadata-only anchor`) is valid when:
+
+- the user never uploaded the microscope image bytes but chose to share measurement data; or
+- the user explicitly chose “remove cloud image, keep measurements.”
+
+It must not be created merely because an external-publication checkbox was unchecked.
+
+The owner-facing UI should distinguish:
+
+- image available in cloud;
+- measurement-only record;
+- cloud file missing unexpectedly;
+- image deleted intentionally.
+
+### Missing cloud file
+
+When the cloud image record exists but its cloud file address (`storage_path`) points to a missing object:
+
+- mark the image as broken or needing repair;
+- do not silently delete the record;
+- restore from a trusted local file when possible;
+- otherwise show a recoverable error to the owner;
+- public and mobile clients may omit the broken photo from display, but the owner must be able to diagnose it.
+
+### Image order
+
+Changing image order (`sort_order`) is metadata. It must never cause images to be treated as new or deleted.
+
+## Desired deletion behavior
+
+### User deletes an image on the desktop
+
+- Ask for confirmation when the image has cloud data, measurements, annotations, or generated evidence.
+- Record explicit deletion intent locally (`tombstone`).
+- On sync, mark the cloud image recoverably deleted (`deleted_at`).
+- Keep enough identity and storage information for retry and audit.
+- Remove cloud files only after the recoverable deletion is confirmed.
+- Keep file cleanup retry-safe.
+- Do not permanently delete the cloud database record during ordinary sync.
+
+### User removes only the cloud copy
+
+This must be a separate command from deleting the local image.
+
+- Preserve the local image and local measurements.
+- If measurements need the image record, keep a measurement-only record (`metadata-only anchor`).
+- Mark the cloud-media removal as explicit user intent.
+- Remove the cloud file only after the new state is safely stored.
+- Make the resulting state visible to the owner.
+
+### User deletes an observation
+
+- Use one explicit observation-level deletion action.
+- Treat child image and measurement cleanup as part of that action.
+- Do not infer observation deletion from missing local folders, failed imports, or absent upload candidates.
+
+### Cloud deletion discovered by the desktop
+
+- Record the remote deletion locally.
+- Do not automatically erase the local original.
+- Ask whether to accept the cloud deletion, restore the cloud copy from local data, or keep the observation local-only.
+- Do not repeatedly re-upload a remotely deleted image without a user decision.
+
+## Retry and recovery behavior
+
+Every multi-step sync operation must be safe to run again.
+
+For an image upload:
+
+1. create or identify the cloud image record;
+2. upload or verify the cloud file;
+3. patch the cloud file address (`storage_path`);
+4. store the local-to-cloud link (`cloud_id`);
+5. update the known-good baseline (`sync snapshot`).
+
+If a later step fails, the next sync must detect the partial state and continue from it rather than creating duplicates or deleting the row.
+
+For deletion:
+
+1. store explicit deletion intent;
+2. mark the cloud record recoverably deleted (`soft delete`);
+3. remove cloud files;
+4. retain the deletion marker long enough to prevent accidental recreation;
+5. permanently purge only through deliberate maintenance.
+
+## Public and mobile display behavior
+
+The web and Android apps normally show only image records with usable cloud files.
+
+That is correct for a deliberate measurement-only record (`metadata-only anchor`). It is not sufficient for owner diagnostics.
+
+Owner-facing reads should expose enough state to distinguish:
+
+- active image with a valid cloud file;
+- active image with no cloud file by design;
+- active image whose file is unexpectedly missing;
+- recoverably deleted image;
+- permanently purged image.
+
+Public read functions (`RPCs`) may hide measurement-only and broken images from galleries, but they must not turn an accidental data-loss state into an invisible success.
+
+## Current incident: missing photos after the 3 August 2026 desktop changes
+
+### What changed
+
+The desktop began reading the Artsobservasjoner publication exclusion setting:
+
+`artsobs_publish_excluded_image_ids_<observation_id>`
+
+as if it were also the Sporely Cloud image-storage choice.
+
+### How field photos could disappear
+
+- Unchecked images were omitted from the prepared upload list (`prepared_items`).
+- The image-sync loop protected only cloud records that appeared in the prepared or explicitly protected set (`kept_cloud_ids`).
+- Existing cloud rows outside that set were labelled “stale.”
+- The stale cleanup removed the cloud files (`R2 objects`), permanently deleted the cloud image records (`hard delete`), and cleared the local cloud links (`cloud_id`).
+
+The image still existed locally, but Android and web no longer had a cloud image record to display.
+
+### How microscope photos could disappear
+
+For measured microscope images, the desktop protected the database record so measurements could keep their foreign-key relationship. However, unchecked images could be converted to measurement-only records (`metadata-only anchors`):
+
+- cloud derivative and original files were removed;
+- `storage_path` and `original_storage_path` were set to null;
+- `deleted_at` remained null.
+
+The public image read function intentionally hides rows without `storage_path`, so Android correctly displayed no photo even though the measurement anchor remained.
+
+### Why the follow-up did not restore them
+
+A follow-up change stopped the desktop from re-uploading the bytes after converting an image to a measurement-only record. That fixed an orphan-upload loop, but it made the missing-photo state stable instead of restoring the original cloud image.
+
+### Possible affected states
+
+Each affected image must be classified before recovery:
+
+1. **Cloud record permanently deleted.**
+2. **Cloud record still active but file address cleared** (`storage_path IS NULL`).
+3. **Cloud record recoverably deleted** (`deleted_at IS NOT NULL`).
+4. **Cloud record active but cloud file missing.**
+5. **Local removal marker present by mistake** (`tombstone`).
+6. **No damage; client cache or unrelated display issue.**
+
+Known examples reported during the incident include Mica cap, Boletales, and *Mycena haematopus*. These names are starting points for the audit, not a complete affected set.
+
+## Repair plan
+
+### Phase 0 — stop further damage
+
+Desktop repository (`sporely`):
+
+- Disable stale-image deletion during ordinary image sync.
+- Make omitted upload candidates harmless.
+- Stop converting existing cloud-backed microscope images to measurement-only records based on publication checkboxes.
+- Keep all active linked cloud images in the protected cloud list (`kept_cloud_ids`).
+- Do not remove cloud files from the metadata-anchor pre-step.
+- Keep explicit removal-marker processing (`tombstones`) separate and disabled only if its provenance cannot be trusted.
+
+Operational actions:
+
+- Avoid running the affected desktop sync build against important data until the hotfix is available.
+- Back up the local SQLite database before recovery.
+- Export affected cloud image rows before changing them.
+- Preserve any sync logs from 3–4 August 2026.
+
+### Phase 1 — build an evidence report
+
+Add a read-only audit that reports, per observation and image:
+
+- local observation ID and cloud observation ID;
+- local image ID and cloud image ID;
+- image type and sort order;
+- local file existence;
+- local cloud link (`cloud_id`);
+- local removal marker (`tombstone`);
+- cloud deletion timestamps (`deleted_at`, `purged_at`);
+- cloud file addresses (`storage_path`, `original_storage_path`);
+- whether each cloud file actually exists;
+- measurement count;
+- last known sync time and source app version.
+
+The audit must have a dry-run mode and must not mutate data.
+
+Use it first on the reported observations, then on every observation synced by the affected desktop versions.
+
+### Phase 2 — separate selection from deletion
+
+Desktop repository (`sporely`):
+
+- Keep external-publication exclusions in their existing publication setting.
+- Introduce a separate cloud-media choice only when the product has an explicit cloud-storage control.
+- Represent deletion only through explicit user actions and durable removal markers (`tombstones`).
+- Do not derive cloud deletion from:
+  - publication exclusions;
+  - missing `prepared_items`;
+  - missing local temporary files;
+  - changed sort order;
+  - a filtered image type;
+  - a measurement visibility change.
+- Rename helpers and settings so their purpose is unambiguous.
+- Add migration or compatibility code that treats old publication exclusions as non-destructive.
+
+### Phase 3 — fix the desktop image-sync algorithm
+
+Desktop repository (`sporely`):
+
+- Build the protected cloud list (`kept_cloud_ids`) from every active cloud image that still maps to an existing local image, not only from prepared uploads.
+- Make the prepared upload list (`prepared_items`) represent upload work only.
+- Remove the “delete every remote row not kept” rule from ordinary sync.
+- Process explicit removal markers (`tombstones`) in a separate deletion phase.
+- Use recoverable deletion (`soft delete`) instead of permanent row deletion (`hard delete`) in ordinary user workflows.
+- Make file removal a follow-up to a confirmed deletion state.
+- Never clear a valid local cloud link (`cloud_id`) merely because no bytes were uploaded in the current run.
+- Keep measurement-only anchor creation explicit and non-destructive.
+- Rebuild the known-good baseline only after all required image operations succeed.
+
+### Phase 4 — harden the cloud and client behavior
+
+Web repository (`sporely-web`):
+
+- Keep public galleries limited to usable cloud files.
+- Add an owner-facing audit surface or admin query that exposes measurement-only, broken, and deleted image states.
+- Ensure the upload worker can verify file existence without changing data.
+- Make media deletion retry-safe and observable.
+- Consider a clearer stored state only if current fields cannot distinguish:
+  - intentionally measurement-only;
+  - unexpectedly missing file;
+  - delete requested;
+  - recoverably deleted.
+- Do not add a new state column merely to hide an algorithmic bug; first fix the desktop behavior.
+
+### Phase 5 — recover damaged data
+
+Run recovery only after Phases 0–3 are deployed.
+
+For permanently deleted field-photo records:
+
+- find the matching local image by stable desktop identity and observation identity;
+- recreate or relink the cloud image record;
+- re-upload a web-friendly cloud file from the trusted local source;
+- restore order and image metadata;
+- stamp the local cloud link only after success.
+
+For measurement-only records that should still have photos:
+
+- upload the derivative from the trusted local source;
+- patch `storage_path`;
+- optionally restore `original_storage_path` only when the original-upload policy allows it;
+- preserve the existing cloud image ID so measurement links remain valid.
+
+For erroneous removal markers:
+
+- clear only markers proven to come from the publication-selection bug;
+- do not clear genuine user deletions.
+
+For every recovered image:
+
+- verify the cloud file exists;
+- verify owner, observation, and image identity;
+- verify web/Android read functions return the expected photo;
+- update the local known-good baseline and file signature only after verification.
+
+### Phase 6 — add regression tests
+
+Desktop tests must prove:
+
+- unchecking an existing field image does not remove its cloud row or cloud file;
+- unchecking an existing microscope image does not strip existing bytes;
+- omitting an image from `prepared_items` does not make it stale;
+- an active linked image is always added to `kept_cloud_ids`;
+- explicit `tombstone` deletion still works;
+- normal deletion uses `deleted_at` before file cleanup;
+- repeated unchanged sync performs no writes, uploads, or deletions;
+- interruption after upload, metadata patch, or file deletion is recoverable;
+- a missing cloud file is reported as broken instead of silently deleted;
+- conflict detection covers observations, images, measurements, and remote removals;
+- local originals and paths are never overwritten by recovery copies.
+
+Web/cloud tests must prove:
+
+- public image functions hide deliberate measurement-only records;
+- owner/admin diagnostics expose deliberate and broken no-file states;
+- recovered images appear in Android/web image queries;
+- recoverably deleted images stay hidden;
+- media worker deletion is retry-safe;
+- storage keys remain scoped to the authenticated owner.
+
+Cross-repository tests or fixtures must cover the same image-state examples in both implementations.
+
+### Phase 7 — release and monitor
+
+- Ship the desktop safety hotfix before running bulk recovery.
+- Release the read-only audit before the write-capable recovery tool.
+- Require a dry-run report and explicit confirmation for each recovery batch.
+- Record counts for:
+  - rows restored;
+  - files restored;
+  - measurement-only rows left intentionally unchanged;
+  - genuine deletions preserved;
+  - missing local sources;
+  - unresolved conflicts.
+- Monitor image-row deletion, file deletion, null `storage_path`, and recovery counts by app version.
+- Do not remove the recovery code until all affected desktop databases have had a reasonable opportunity to sync safely.
+
+## Definition of done
+
+The incident is resolved when all of these are true:
+
+- ordinary sync cannot delete an image record or file without explicit deletion intent;
+- publication selection and cloud deletion are separate concepts;
+- existing field and microscope photos survive unchecked publication state;
+- measurement-only records are deliberate and visible to owners;
+- all affected observations have been audited;
+- recoverable images have been restored from trusted local sources;
+- genuine user deletions remain deleted;
+- repeated sync is retry-safe and produces no additional changes;
+- Android and web show the restored photos;
+- both repositories contain matching contract documentation and regression tests.
+
+## Repository responsibilities
+
+### Desktop repository (`sporely`)
+
+Owns:
+
+- local database state and local originals;
+- three-way comparison and conflict blocking;
+- upload preparation;
+- local/cloud identity links;
+- explicit removal markers (`tombstones`);
+- measurement and calibration push/pull;
+- recovery from trusted local files;
+- desktop regression tests.
+
+Primary implementation areas:
+
+- `utils/cloud_sync.py`
+- `ui/observations_tab.py`
+- `ui/image_gallery_widget.py`
+- `database/models.py`
+- `tests/test_cloud_sync_*.py`
+- `tests/test_observations_tab_cloud_sync.py`
+
+### Web repository (`sporely-web`)
+
+Owns:
+
+- cloud schema and access rules (`RLS`);
+- public and owner read functions (`RPCs`);
+- Android/web image display;
+- cloud upload and delete worker behavior;
+- admin and owner diagnostics;
+- web/cloud regression tests.
+
+Primary implementation areas:
+
+- `supabase/migrations/`
+- `supabase/tests/`
+- `src/images.js`
+- `src/sync-queue.js`
+- `supabase/functions/`
+- Android/web observation gallery code.
+
+## Change-control checklist
+
+Any change that can remove a cloud record or cloud file must answer all of these in its pull request:
+
+- What explicit user action created deletion intent?
+- Where is that intent stored durably?
+- Is the database change recoverable (`soft delete`)?
+- What happens if file cleanup fails?
+- What happens if the app crashes after each step?
+- Can repeating the operation delete anything extra?
+- Which test proves an omitted upload candidate is not deleted?
+- Which test proves a publication checkbox is not a deletion control?
+- How can an owner audit and recover the result?
+- Were both copies of this contract updated?
