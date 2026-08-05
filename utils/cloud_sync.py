@@ -11159,6 +11159,28 @@ class SporelyCloudClient:
             {'original_storage_path': normalized_key},
         )
 
+    def set_image_storage_path(
+        self,
+        cloud_image_id: str,
+        storage_path: str,
+        *,
+        upload_meta: dict | None = None,
+    ) -> None:
+        """Attach a confirmed derivative object key to one owned image row."""
+        normalized_id = str(cloud_image_id or '').strip()
+        normalized_key = _normalize_cloud_media_key(storage_path)
+        if not normalized_id or not normalized_key:
+            raise CloudSyncError('Missing cloud image id or storage path')
+        payload = {'storage_path': normalized_key}
+        if self._observation_images_support_upload_metadata():
+            for key in _IMG_UPLOAD_META_COLS:
+                if key in (upload_meta or {}):
+                    payload[key] = (upload_meta or {}).get(key)
+        self._patch(
+            f'observation_images?id=eq.{normalized_id}&user_id=eq.{self.user_id}',
+            payload,
+        )
+
     def upload_image_file(
         self,
         local_path: str,
@@ -11166,6 +11188,7 @@ class SporelyCloudClient:
         img_cloud_id: str,
         storage_path: str | None = None,
         upload_meta: dict | None = None,
+        result_meta: dict | None = None,
     ) -> str | None:
         """Upload file to Cloudflare R2. Returns the relative media key or None if missing."""
         path = Path(local_path)
@@ -11232,6 +11255,15 @@ class SporelyCloudClient:
                 'stored_height': str(stored_height),
                 'stored_bytes': str(stored_bytes),
             }
+            if result_meta is not None:
+                result_meta.update({
+                    'upload_mode': upload_mode,
+                    'source_width': source_width,
+                    'source_height': source_height,
+                    'stored_width': stored_width,
+                    'stored_height': stored_height,
+                    'stored_bytes': stored_bytes,
+                })
 
             try:
                 if direct_r2_runtime_available():
