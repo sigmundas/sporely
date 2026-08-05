@@ -10,6 +10,7 @@ files=(
   "ui/observations_tab.py"
   "ui/measurement_tool.py"
   "ui/calibration_dialog.py"
+  "ui/cloud_conflict_dialog.py"
   "ui/species_plate_dialog.py"
   "ui/zoomable_image_widget.py"
   "ui/stats_table_widget.py"

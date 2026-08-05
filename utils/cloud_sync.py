@@ -283,6 +283,7 @@ _OBSERVATION_FLOAT_FIELDS = {
 }
 _OBSERVATION_FLOAT_ABS_TOL = 1e-9
 _OBSERVATION_FLOAT_REL_TOL = 1e-9
+_OBSERVATION_GPS_ABS_TOL = 1e-6
 
 
 def _normalize_observation_bool_value(value, *, default: bool | None = None) -> bool | None:
@@ -3192,7 +3193,11 @@ def _observation_field_values_match(field: str, left, right) -> bool:
             left_value,
             right_value,
             rel_tol=_OBSERVATION_FLOAT_REL_TOL,
-            abs_tol=_OBSERVATION_FLOAT_ABS_TOL,
+            abs_tol=(
+                _OBSERVATION_GPS_ABS_TOL
+                if field in {'gps_latitude', 'gps_longitude'}
+                else _OBSERVATION_FLOAT_ABS_TOL
+            ),
         )
     return left == right
 
@@ -3318,11 +3323,11 @@ def _coords_match(
     return math.isclose(
         float(left_lat), float(right_lat),
         rel_tol=_OBSERVATION_FLOAT_REL_TOL,
-        abs_tol=_OBSERVATION_FLOAT_ABS_TOL,
+        abs_tol=_OBSERVATION_GPS_ABS_TOL,
     ) and math.isclose(
         float(left_lon), float(right_lon),
         rel_tol=_OBSERVATION_FLOAT_REL_TOL,
-        abs_tol=_OBSERVATION_FLOAT_ABS_TOL,
+        abs_tol=_OBSERVATION_GPS_ABS_TOL,
     )
 
 
@@ -3925,6 +3930,10 @@ def _analyze_observation_push_conflicts(
     # ---- Observation metadata: three-way conflict fields ----
     field_changes = _analyze_observation_field_changes(local_obs, remote_obs, baseline_obs)
     conflict_fields = list(field_changes.get('conflict_fields') or [])
+    if local_measurements_by_cloud_id or remote_measurements:
+        # Derived statistics follow the selected scientific measurement set;
+        # they are never an independent winner-takes-all field conflict.
+        conflict_fields = [field for field in conflict_fields if field != 'spore_statistics']
     field_labels = [
         _format_observation_metadata_field_label(field)
         for field in sorted(set(conflict_fields))
@@ -7298,7 +7307,6 @@ _MEASUREMENT_SYNC_FIELDS = [
     'length_um',
     'width_um',
     'measurement_type',
-    'gallery_rotation',
     'p1_x',
     'p1_y',
     'p2_x',
@@ -7309,6 +7317,7 @@ _MEASUREMENT_SYNC_FIELDS = [
     'p4_y',
     'measured_at',
 ]
+_MEASUREMENT_PRESENTATION_FIELDS = ('gallery_rotation',)
 _MEASUREMENT_SYNC_MEDIA_FIELDS = ['image_key', 'thumb_key']
 
 
@@ -9229,7 +9238,6 @@ def _apply_remote_image_metadata_only_to_local(
         'sample_source': _cloud_to_desktop_sample_source(remote_image.get('sample_source')),
         'contrast': remote_image.get('contrast'),
         'crop_mode': remote_image.get('crop_mode'),
-        'sort_order': remote_image.get('sort_order'),
         'gps_source': remote_image.get('gps_source'),
         'resample_scale_factor': remote_image.get('resample_scale_factor'),
         'ai_crop_box': _remote_ai_crop_box(remote_image),
@@ -9548,7 +9556,6 @@ def _sync_existing_remote_image_to_local(
             'sample_source': _cloud_to_desktop_sample_source(remote_image.get('sample_source')),
             'contrast': remote_image.get('contrast'),
             'crop_mode': remote_image.get('crop_mode'),
-            'sort_order': remote_image.get('sort_order'),
             'gps_source': remote_image.get('gps_source'),
             'resample_scale_factor': remote_image.get('resample_scale_factor'),
             'ai_crop_box': _remote_ai_crop_box(remote_image),
@@ -10040,9 +10047,33 @@ def resolve_conflict_keep_cloud(
 
     _apply_remote_observation_fields(int(local_id), remote_obs)
     warnings = _apply_remote_images_to_local(client, int(local_id), remote_images, allow_delete=allow_delete)
+    remote_measurements = _pull_remote_measurements_for_images(
+        client,
+        [str(row.get('id') or '').strip() for row in remote_images if str(row.get('id') or '').strip()],
+    )
+    measurement_result = _import_remote_measurements_for_observation(
+        client,
+        int(local_id),
+        resolved_cloud_id,
+        remote_images=remote_images,
+        remote_measurements=remote_measurements,
+        materialize_remote_images=True,
+        overwrite_conflicts=True,
+    )
+    warnings.extend(str(item) for item in (measurement_result.get('warnings') or []))
+    if measurement_result.get('failed'):
+        raise CloudSyncError(
+            f'Could not apply all Sporely Cloud measurements for observation {local_id}'
+        )
     _stamp_observation_synced(int(local_id), resolved_cloud_id)
     _refresh_local_cloud_media_signature(int(local_id))
-    _store_remote_snapshot(client, resolved_cloud_id, remote_obs, remote_images)
+    _store_remote_snapshot(
+        client,
+        resolved_cloud_id,
+        remote_obs,
+        remote_images,
+        remote_measurements=remote_measurements,
+    )
     return {'local_id': int(local_id), 'cloud_id': resolved_cloud_id, 'warnings': warnings}
 
 
@@ -10133,6 +10164,191 @@ def resolve_conflict_merge(
     _store_remote_snapshot(client, cloud_id)
     _refresh_local_cloud_media_signature(int(local_id))
     return {'local_id': int(local_id), 'cloud_id': cloud_id, 'warnings': warnings}
+
+
+def _format_recomputed_spore_statistics(observation_id: int) -> str | None:
+    stats = MeasurementDB.get_statistics_for_observation(
+        int(observation_id), measurement_category='spores'
+    )
+    if not stats:
+        return None
+    text = (
+        f"Spores: ({stats['length_min']:.1f}-){stats['length_p5']:.1f}-"
+        f"{stats['length_p95']:.1f}(-{stats['length_max']:.1f}) um"
+    )
+    if stats.get('width_mean', 0) > 0:
+        text += (
+            f" x ({stats['width_min']:.1f}-){stats['width_p5']:.1f}-"
+            f"{stats['width_p95']:.1f}(-{stats['width_max']:.1f}) um"
+            f", Q = ({stats['ratio_min']:.1f}-){stats['ratio_p5']:.1f}-"
+            f"{stats['ratio_p95']:.1f}(-{stats['ratio_max']:.1f})"
+            f", Qm = {stats['ratio_mean']:.1f}"
+        )
+    return text + f", n = {stats['count']}"
+
+
+def resolve_conflict_plan(
+    client: "SporelyCloudClient",
+    local_id: int,
+    *,
+    cloud_id: str | None = None,
+    plan: dict | None = None,
+    prepare_images_cb: PreparedImagesCallback | None = None,
+) -> dict:
+    """Apply one explicit, non-destructive per-item conflict plan."""
+    selected_plan = dict(plan or {})
+    if selected_plan.get('allow_media_deletion'):
+        raise CloudSyncError('Conflict plans cannot authorize media deletion')
+    local_obs = ObservationDB.get_observation(int(local_id))
+    if not local_obs:
+        raise CloudSyncError(f'Local observation {local_id} not found')
+    resolved_cloud_id = str(cloud_id or local_obs.get('cloud_id') or '').strip()
+    if not resolved_cloud_id:
+        raise CloudSyncError(f'Observation {local_id} is not linked to Sporely Cloud')
+    remote_obs = client.get_observation(resolved_cloud_id)
+    remote_images = [
+        dict(row or {}) for row in (_pull_remote_images_for_sync(client, resolved_cloud_id) or [])
+        if not str((row or {}).get('deleted_at') or '').strip()
+        and should_pull_cloud_image_to_desktop(row)
+    ]
+    remote_measurements = _pull_remote_measurements_for_images(
+        client,
+        [str(row.get('id') or '').strip() for row in remote_images if str(row.get('id') or '').strip()],
+    )
+    items = [dict(item or {}) for item in (selected_plan.get('items') or [])]
+
+    cloud_field_names = {
+        str(item.get('field') or '')
+        for item in items
+        if item.get('kind') == 'field' and item.get('choice') == 'cloud'
+    }
+    if cloud_field_names:
+        _apply_remote_observation_fields(
+            int(local_id), remote_obs, fields=cloud_field_names
+        )
+
+    local_field_names = {
+        str(item.get('field') or '')
+        for item in items
+        if item.get('kind') == 'field' and item.get('choice') == 'local'
+    }
+    if local_field_names:
+        refreshed_local = ObservationDB.get_observation(int(local_id)) or local_obs
+        local_payload = _observation_push_payload(refreshed_local, local=True)
+        patch_payload = {
+            ('visibility' if field == 'sharing_scope' else field): local_payload.get(
+                'visibility' if field in {'visibility', 'sharing_scope'} else field
+            )
+            for field in local_field_names
+        }
+        if patch_payload:
+            client._patch(f'observations?id=eq.{resolved_cloud_id}', patch_payload)
+
+    remote_image_ids_to_apply = {
+        str(item.get('cloud_id') or '')
+        for item in items
+        if (
+            (item.get('kind') == 'image' and item.get('choice') == 'download')
+            or (item.get('kind') == 'image_metadata' and item.get('choice') == 'cloud')
+        )
+        and str(item.get('cloud_id') or '')
+    }
+    if remote_image_ids_to_apply:
+        _apply_remote_images_to_local(
+            client,
+            int(local_id),
+            [row for row in remote_images if str(row.get('id') or '') in remote_image_ids_to_apply],
+            allow_delete=False,
+            materialize_remote_images=True,
+        )
+
+    remote_measurement_ids_to_apply = {
+        str(item.get('cloud_id') or '')
+        for item in items
+        if item.get('kind') == 'measurement'
+        and item.get('choice') in {'cloud', 'download'}
+        and str(item.get('cloud_id') or '')
+    }
+    if remote_measurement_ids_to_apply:
+        result = _import_remote_measurements_for_observation(
+            client,
+            int(local_id),
+            resolved_cloud_id,
+            remote_images=remote_images,
+            remote_measurements=[
+                row for row in remote_measurements
+                if str(row.get('id') or '') in remote_measurement_ids_to_apply
+            ],
+            materialize_remote_images=True,
+            overwrite_conflicts=True,
+        )
+        if result.get('failed'):
+            raise CloudSyncError('Could not apply selected cloud measurements')
+
+    local_image_ids_to_push = {
+        _safe_int(item.get('local_id'))
+        for item in items
+        if (
+            (item.get('kind') == 'image' and item.get('choice') == 'upload')
+            or item.get('kind') == 'image_metadata'
+        )
+        and _safe_int(item.get('local_id')) > 0
+    }
+    if local_image_ids_to_push and prepare_images_cb is None:
+        raise CloudSyncError('Selected local images require the desktop image preparer')
+    if local_image_ids_to_push:
+        refreshed_local = ObservationDB.get_observation(int(local_id)) or local_obs
+        if not _push_images_for_observation(
+            client,
+            refreshed_local,
+            resolved_cloud_id,
+            prepare_images_cb=prepare_images_cb,
+            include_image_ids=local_image_ids_to_push,
+        ):
+            raise CloudSyncError('Could not upload all selected local images')
+
+    local_measurement_ids_to_push = {
+        _safe_int(item.get('local_id'))
+        for item in items
+        if item.get('kind') == 'measurement'
+        and (
+            item.get('side') == 'matched'
+            or item.get('choice') == 'upload'
+        )
+        and _safe_int(item.get('local_id')) > 0
+    }
+    if local_measurement_ids_to_push:
+        _push_measurements_for_observation(
+            client,
+            int(local_id),
+            measurement_ids=local_measurement_ids_to_push,
+        )
+
+    split_measurement_sets = any(
+        item.get('kind') == 'measurement'
+        and item.get('choice') in {'keep_local', 'keep_cloud'}
+        for item in items
+    )
+    if (
+        selected_plan.get('derived_statistics') == 'recompute_from_measurements'
+        and not split_measurement_sets
+    ):
+        recomputed = _format_recomputed_spore_statistics(int(local_id))
+        ObservationDB.update_spore_statistics(int(local_id), recomputed)
+        client._patch(
+            f'observations?id=eq.{resolved_cloud_id}',
+            {'spore_statistics': recomputed},
+        )
+
+    _stamp_observation_synced(int(local_id), resolved_cloud_id)
+    _refresh_local_cloud_media_signature(int(local_id))
+    _store_remote_snapshot(client, resolved_cloud_id)
+    return {
+        'local_id': int(local_id),
+        'cloud_id': resolved_cloud_id,
+        'plan_applied': True,
+        'media_deleted': False,
+    }
 
 
 def _get_keyring_module():
@@ -12505,52 +12721,553 @@ def get_conflict_detail(client: "SporelyCloudClient", local_id: int, cloud_id: s
     local_image_payloads = [_local_image_snapshot_payload(img) for img in local_images_raw]
     remote_image_payloads = [_remote_image_payload(img) for img in remote_images]
 
-    image_mismatches = []
-    local_map = {_image_compare_key(img): img for img in local_image_payloads}
-    remote_map = {_image_compare_key(img): img for img in remote_image_payloads}
+    # Conflict review deliberately uses identity stricter than the historical
+    # snapshot compare key.  A filename/type/order resemblance is useful as a
+    # suggestion, but is never authoritative enough to put two images in the
+    # same row or to drive a resolution.
+    remote_by_cloud_id = {
+        str(row.get('id') or '').strip(): (raw, row)
+        for raw, row in zip(remote_images, remote_image_payloads)
+        if str(row.get('id') or '').strip()
+    }
+    remote_by_desktop_id: dict[int, list[tuple[dict, dict]]] = {}
+    for raw, row in zip(remote_images, remote_image_payloads):
+        desktop_id = _safe_int(row.get('desktop_id'))
+        if desktop_id > 0:
+            remote_by_desktop_id.setdefault(desktop_id, []).append((raw, row))
 
-    for key in sorted(set(local_map.keys()) | set(remote_map.keys())):
-        if key in tombstoned_remote_image_keys:
+    local_cloud_id_counts: dict[str, int] = {}
+    for row in local_images_raw:
+        linked_cloud_id = str(row.get('cloud_id') or '').strip()
+        if linked_cloud_id:
+            local_cloud_id_counts[linked_cloud_id] = local_cloud_id_counts.get(linked_cloud_id, 0) + 1
+
+    paired_remote_ids: set[str] = set()
+    image_pairs: list[dict] = []
+    local_pair_by_id: dict[int, dict] = {}
+    remote_pair_by_id: dict[str, dict] = {}
+
+    def _review_image(raw: dict | None, payload: dict | None, *, local: bool) -> dict | None:
+        if not raw or not payload:
+            return None
+        result = dict(payload)
+        if local:
+            result.update({
+                'local_id': _safe_int(raw.get('id')),
+                'cloud_id': str(raw.get('cloud_id') or '').strip() or None,
+                # Internal rendering input.  The dialog never displays it.
+                'thumbnail_source': str(raw.get('filepath') or '').strip() or None,
+            })
+        else:
+            result.update({
+                'cloud_id': str(raw.get('id') or '').strip() or None,
+                'local_id': _safe_int(raw.get('desktop_id')) or None,
+                'thumbnail_source': _normalize_cloud_media_key(raw.get('storage_path')) or None,
+            })
+        return result
+
+    for raw, payload in zip(local_images_raw, local_image_payloads):
+        if _image_identity_keys(payload) & tombstoned_remote_image_keys:
             continue
-        l_img, r_img = local_map.get(key), remote_map.get(key)
-        if l_img and r_img:
+        local_image_id = _safe_int(raw.get('id'))
+        local_cloud_id = str(raw.get('cloud_id') or '').strip()
+        match: tuple[dict, dict] | None = None
+        match_basis = ''
+        identity_reasons: list[str] = []
+        cloud_match = remote_by_cloud_id.get(local_cloud_id) if local_cloud_id else None
+        desktop_candidates = remote_by_desktop_id.get(local_image_id, []) if local_image_id > 0 else []
+        if local_cloud_id and local_cloud_id_counts.get(local_cloud_id, 0) > 1:
+            identity_reasons.append('multiple local images share the same cloud ID')
+        if len(desktop_candidates) > 1:
+            identity_reasons.append('multiple cloud images reference this local image ID')
+        if cloud_match:
+            cloud_desktop_id = _safe_int(cloud_match[1].get('desktop_id'))
+            if cloud_desktop_id > 0 and cloud_desktop_id != local_image_id:
+                identity_reasons.append('the linked cloud image references another local image')
+        if cloud_match and len(desktop_candidates) == 1:
+            desktop_cloud_id = str(desktop_candidates[0][1].get('id') or '').strip()
+            if desktop_cloud_id and desktop_cloud_id != local_cloud_id:
+                identity_reasons.append('cloud ID and desktop ID identify different cloud images')
+        if cloud_match and str(cloud_match[1].get('id') or '').strip() in paired_remote_ids:
+            identity_reasons.append('the cloud image is already paired with another local image')
+        if identity_reasons:
+            remote_raw, remote_payload = cloud_match or (
+                desktop_candidates[0] if len(desktop_candidates) == 1 else (None, None)
+            )
+            remote_id = str((remote_payload or {}).get('id') or '').strip()
+            if remote_id:
+                paired_remote_ids.add(remote_id)
+            pair = {
+                'pairing': 'identity_conflict',
+                'match_basis': None,
+                'identity_conflict_reasons': identity_reasons,
+                'local': _review_image(raw, payload, local=True),
+                'remote': _review_image(remote_raw, remote_payload, local=False),
+                'status': 'identity_conflict',
+            }
+            image_pairs.append(pair)
+            if local_image_id > 0:
+                local_pair_by_id[local_image_id] = pair
+            if remote_id:
+                remote_pair_by_id[remote_id] = pair
             continue
-        if not l_img and not r_img:
+        if local_cloud_id and local_cloud_id in remote_by_cloud_id:
+            match = remote_by_cloud_id[local_cloud_id]
+            match_basis = 'cloud_id'
+        elif local_image_id > 0:
+            candidates = [
+                candidate for candidate in remote_by_desktop_id.get(local_image_id, [])
+                if str(candidate[1].get('id') or '').strip() not in paired_remote_ids
+            ]
+            if len(candidates) == 1:
+                match = candidates[0]
+                match_basis = 'desktop_id'
+        remote_raw, remote_payload = match if match else (None, None)
+        remote_id = str((remote_payload or {}).get('id') or '').strip()
+        if remote_id:
+            paired_remote_ids.add(remote_id)
+        pair = {
+            'pairing': 'authoritative' if match else 'unpaired',
+            'match_basis': match_basis or None,
+            'local': _review_image(raw, payload, local=True),
+            'remote': _review_image(remote_raw, remote_payload, local=False),
+        }
+        image_pairs.append(pair)
+        if local_image_id > 0:
+            local_pair_by_id[local_image_id] = pair
+        if remote_id:
+            remote_pair_by_id[remote_id] = pair
+
+    for raw, payload in zip(remote_images, remote_image_payloads):
+        remote_id = str(payload.get('id') or '').strip()
+        if remote_id in paired_remote_ids:
             continue
-        image_mismatches.append({
-            'filename': _image_label(l_img or r_img),
-            'status': 'local_only' if l_img else 'cloud_only',
-        })
+        pair = {
+            'pairing': 'unpaired',
+            'match_basis': None,
+            'local': None,
+            'remote': _review_image(raw, payload, local=False),
+        }
+        image_pairs.append(pair)
+        if remote_id:
+            remote_pair_by_id[remote_id] = pair
+
+    # Unique fallback resemblances are displayed only as warnings.  They stay
+    # as two distinct unpaired cards and never affect sync identity.
+    unpaired_local = [row for row in image_pairs if row.get('local') and not row.get('remote')]
+    unpaired_remote = [row for row in image_pairs if row.get('remote') and not row.get('local')]
+    for local_pair in unpaired_local:
+        local_image = dict(local_pair.get('local') or {})
+        candidates = []
+        for remote_pair in unpaired_remote:
+            remote_image = dict(remote_pair.get('remote') or {})
+            if (
+                str(local_image.get('original_filename') or '').casefold()
+                and str(local_image.get('original_filename') or '').casefold()
+                == str(remote_image.get('original_filename') or '').casefold()
+                and str(local_image.get('image_type') or '') == str(remote_image.get('image_type') or '')
+                and local_image.get('sort_order') == remote_image.get('sort_order')
+            ):
+                candidates.append(remote_pair)
+        if len(candidates) == 1:
+            remote_pair = candidates[0]
+            local_pair['possible_counterpart'] = {
+                'cloud_id': (remote_pair.get('remote') or {}).get('cloud_id'),
+                'reason': 'filename, image type, and sort position match',
+            }
+            remote_pair['possible_counterpart'] = {
+                'local_id': local_image.get('local_id'),
+                'reason': 'filename, image type, and sort position match',
+            }
 
     _, local_measurements_by_id = _load_local_measurement_lookup(int(local_id))
-    local_measurements_by_cloud_id = {
-        str(row.get('cloud_id') or '').strip(): dict(row)
-        for row in local_measurements_by_id.values()
-        if str(row.get('cloud_id') or '').strip()
+    local_measurements = [dict(row or {}) for row in local_measurements_by_id.values()]
+    baseline_measurements = [dict(row or {}) for row in (snapshot.get('measurements') or [])]
+    baseline_by_cloud_id = {
+        str(row.get('id') or '').strip(): row
+        for row in baseline_measurements if str(row.get('id') or '').strip()
     }
-    local_images_by_id = {
-        _safe_int(row.get('id')): dict(row)
-        for row in local_images_raw
-        if _safe_int(row.get('id')) > 0
+    baseline_by_desktop_id = {
+        _safe_int(row.get('desktop_id')): row
+        for row in baseline_measurements if _safe_int(row.get('desktop_id')) > 0
     }
-    measurement_conflicts: list[dict] = []
+    remote_measurements_by_id = {
+        str(row.get('id') or '').strip(): dict(row)
+        for row in remote_measurements if str(row.get('id') or '').strip()
+    }
+    remote_measurements_by_desktop_id: dict[int, list[dict]] = {}
+    for row in remote_measurements:
+        desktop_id = _safe_int(row.get('desktop_id'))
+        if desktop_id > 0:
+            remote_measurements_by_desktop_id.setdefault(desktop_id, []).append(dict(row))
+    local_measurement_cloud_counts: dict[str, int] = {}
+    for row in local_measurements:
+        measurement_cloud_id = str(row.get('cloud_id') or '').strip()
+        if measurement_cloud_id:
+            local_measurement_cloud_counts[measurement_cloud_id] = (
+                local_measurement_cloud_counts.get(measurement_cloud_id, 0) + 1
+            )
+
+    geometry_fields = tuple(
+        f'p{point}_{axis}' for point in range(1, 5) for axis in ('x', 'y')
+    )
+
+    def _geometry_available(values: dict | None) -> bool:
+        return any((values or {}).get(field) is not None for field in geometry_fields)
+
+    def _geometry_change_summary(current: dict | None, baseline: dict | None) -> str:
+        if baseline is None:
+            return 'Current geometry' if _geometry_available(current) else 'No geometry'
+        changed_length = any(
+            not _measurement_field_values_match(field, (current or {}).get(field), baseline.get(field))
+            for field in ('p1_x', 'p1_y', 'p2_x', 'p2_y')
+        )
+        changed_width = any(
+            not _measurement_field_values_match(field, (current or {}).get(field), baseline.get(field))
+            for field in ('p3_x', 'p3_y', 'p4_x', 'p4_y')
+        )
+        if changed_length and changed_width:
+            return 'Length and width axes moved'
+        if changed_length:
+            return 'Length axis moved'
+        if changed_width:
+            return 'Width axis moved'
+        return 'Unchanged'
+
+    def _measurement_review_pair(
+        local_measurement: dict | None,
+        remote_measurement: dict | None,
+        *,
+        status: str,
+        pairing: str,
+        identity_reasons: list[str] | None = None,
+    ) -> dict:
+        local_row = dict(local_measurement or {})
+        remote_row = dict(remote_measurement or {})
+        local_id_value = _safe_int(local_row.get('id'))
+        remote_id_value = str(remote_row.get('id') or '').strip()
+        baseline_row = (
+            baseline_by_cloud_id.get(remote_id_value)
+            or baseline_by_cloud_id.get(str(local_row.get('cloud_id') or '').strip())
+            or baseline_by_desktop_id.get(local_id_value)
+        )
+        local_values = _local_measurement_snapshot_payload(local_row) if local_row else None
+        remote_values = _remote_measurement_snapshot_payload(remote_row) if remote_row else None
+        baseline_values = (
+            _baseline_measurement_compare_payload(baseline_row) if baseline_row else None
+        )
+        local_geometry = _geometry_change_summary(local_values, baseline_values)
+        remote_geometry = _geometry_change_summary(remote_values, baseline_values)
+        if (
+            baseline_values
+            and local_values
+            and remote_values
+            and local_geometry == remote_geometry
+            and local_geometry not in {'Unchanged', 'No geometry'}
+            and any(
+                not _measurement_field_values_match(
+                    field, local_values.get(field), remote_values.get(field)
+                )
+                for field in geometry_fields
+            )
+        ):
+            remote_geometry += ' differently'
+        result = {
+            'pairing': pairing,
+            'status': status,
+            'local_id': local_id_value or None,
+            'cloud_id': remote_id_value or str(local_row.get('cloud_id') or '').strip() or None,
+            'local_image_id': _safe_int(local_row.get('image_id')) or None,
+            'cloud_image_id': str(remote_row.get('image_id') or '').strip() or None,
+            'local_values': local_values,
+            'remote_values': remote_values,
+            'baseline_values': baseline_values,
+            'baseline_available': baseline_values is not None,
+            'geometry_baseline': (
+                'Original geometry' if _geometry_available(baseline_values) else 'No geometry'
+            ) if baseline_values is not None else 'Previous baseline unavailable',
+            'geometry_local': local_geometry if local_values else 'Missing',
+            'geometry_cloud': remote_geometry if remote_values else 'Missing',
+            'identity_conflict_reasons': list(identity_reasons or []),
+            'presentation_differences': [
+                {
+                    'field': field,
+                    'local': (local_values or {}).get(field),
+                    'remote': (remote_values or {}).get(field),
+                    'automatic_policy': 'local_desktop',
+                }
+                for field in _MEASUREMENT_PRESENTATION_FIELDS
+                if local_values and remote_values and not _measurement_field_values_match(
+                    field, local_values.get(field), remote_values.get(field)
+                )
+            ],
+        }
+        if local_values and remote_values:
+            local_image = next(
+                (
+                    row for row in local_images_raw
+                    if _safe_int(row.get('id')) == _safe_int(local_row.get('image_id'))
+                ),
+                {},
+            )
+            diff_fields = _measurement_push_diff_fields(
+                local_row,
+                remote_row,
+                cloud_image_id=str(local_image.get('cloud_id') or '').strip(),
+            )
+            result['fields'] = diff_fields
+            if baseline_values is None:
+                result['change_origin'] = 'baseline_unavailable'
+            else:
+                local_changed = any(
+                    not _measurement_field_values_match(
+                        field, local_values.get(field), baseline_values.get(field)
+                    )
+                    for field in diff_fields
+                )
+                remote_changed = any(
+                    not _measurement_field_values_match(
+                        field, remote_values.get(field), baseline_values.get(field)
+                    )
+                    for field in diff_fields
+                )
+                result['change_origin'] = (
+                    'both' if local_changed and remote_changed
+                    else 'local' if local_changed
+                    else 'cloud' if remote_changed
+                    else 'unknown'
+                )
+        else:
+            result['fields'] = []
+            result['change_origin'] = (
+                'added_local' if local_values else 'added_cloud'
+            )
+        return result
+
+    measurement_pairs: list[dict] = []
+    paired_remote_measurement_ids: set[str] = set()
+    for local_measurement in local_measurements:
+        local_measurement_id = _safe_int(local_measurement.get('id'))
+        linked_cloud_id = str(local_measurement.get('cloud_id') or '').strip()
+        cloud_match = remote_measurements_by_id.get(linked_cloud_id) if linked_cloud_id else None
+        desktop_candidates = remote_measurements_by_desktop_id.get(local_measurement_id, [])
+        identity_reasons: list[str] = []
+        if linked_cloud_id and local_measurement_cloud_counts.get(linked_cloud_id, 0) > 1:
+            identity_reasons.append('multiple local measurements share the same cloud ID')
+        if len(desktop_candidates) > 1:
+            identity_reasons.append('multiple cloud measurements reference this local measurement ID')
+        if cloud_match:
+            remote_desktop_id = _safe_int(cloud_match.get('desktop_id'))
+            if remote_desktop_id > 0 and remote_desktop_id != local_measurement_id:
+                identity_reasons.append('the linked cloud measurement references another local measurement')
+        if cloud_match and len(desktop_candidates) == 1:
+            desktop_cloud_id = str(desktop_candidates[0].get('id') or '').strip()
+            if desktop_cloud_id and desktop_cloud_id != linked_cloud_id:
+                identity_reasons.append('cloud ID and desktop ID identify different measurements')
+        match = cloud_match
+        pairing = 'cloud_id' if cloud_match else ''
+        if match is None and len(desktop_candidates) == 1:
+            match = desktop_candidates[0]
+            pairing = 'desktop_id'
+        matched_remote_id = str((match or {}).get('id') or '').strip()
+        if matched_remote_id in paired_remote_measurement_ids:
+            identity_reasons.append('the cloud measurement is already paired with another local measurement')
+        if identity_reasons:
+            status = 'identity_conflict'
+            pairing = 'identity_conflict'
+        elif match is None:
+            status = 'local_only'
+            pairing = 'unpaired'
+        else:
+            local_image = next(
+                (
+                    row for row in local_images_raw
+                    if _safe_int(row.get('id')) == _safe_int(local_measurement.get('image_id'))
+                ),
+                {},
+            )
+            status = (
+                'same'
+                if _measurement_payloads_match(
+                    local_measurement,
+                    match,
+                    cloud_image_id=str(local_image.get('cloud_id') or '').strip(),
+                )
+                else 'values_differ'
+            )
+            paired_remote_measurement_ids.add(matched_remote_id)
+        measurement_pairs.append(_measurement_review_pair(
+            local_measurement,
+            match,
+            status=status,
+            pairing=pairing,
+            identity_reasons=identity_reasons,
+        ))
+
     for remote_measurement in remote_measurements:
         remote_measurement_id = str(remote_measurement.get('id') or '').strip()
-        local_measurement = local_measurements_by_cloud_id.get(remote_measurement_id)
-        if local_measurement is None:
+        if remote_measurement_id in paired_remote_measurement_ids:
             continue
-        local_image = local_images_by_id.get(_safe_int(local_measurement.get('image_id'))) or {}
-        diff_fields = _measurement_push_diff_fields(
-            local_measurement,
+        if any(
+            pair.get('cloud_id') == remote_measurement_id
+            for pair in measurement_pairs
+            if pair.get('status') == 'identity_conflict'
+        ):
+            continue
+        measurement_pairs.append(_measurement_review_pair(
+            None,
             remote_measurement,
-            cloud_image_id=str(local_image.get('cloud_id') or '').strip(),
+            status='cloud_only',
+            pairing='unpaired',
+        ))
+
+    measurement_differences = [
+        pair for pair in measurement_pairs if pair.get('status') != 'same'
+    ]
+    for measurement_pair in measurement_pairs:
+        image_pair = (
+            local_pair_by_id.get(_safe_int(measurement_pair.get('local_image_id')))
+            or remote_pair_by_id.get(str(measurement_pair.get('cloud_image_id') or ''))
         )
-        if diff_fields:
-            measurement_conflicts.append({
-                'cloud_id': remote_measurement_id,
-                'local_id': _safe_int(local_measurement.get('id')),
-                'fields': diff_fields,
-            })
+        if image_pair is not None:
+            image_pair.setdefault('measurement_pairs', []).append(measurement_pair)
+            if measurement_pair.get('status') != 'same':
+                image_pair.setdefault('measurement_conflicts', []).append(measurement_pair)
+
+    local_measurement_counts: dict[int, int] = {}
+    for row in local_measurements_by_id.values():
+        image_id = _safe_int(row.get('image_id'))
+        local_measurement_counts[image_id] = local_measurement_counts.get(image_id, 0) + 1
+    remote_measurement_counts: dict[str, int] = {}
+    for row in remote_measurements:
+        image_id = str(row.get('image_id') or '').strip()
+        remote_measurement_counts[image_id] = remote_measurement_counts.get(image_id, 0) + 1
+
+    image_metadata_fields = (
+        'image_type', 'micro_category', 'objective_name',
+        'scale_microns_per_pixel', 'mount_medium', 'stain', 'sample_type', 'sample_source',
+        'contrast', 'notes', 'gps_source', 'crop_mode',
+    )
+    def _review_image_values_match(left, right) -> bool:
+        if left in (None, '') and right in (None, ''):
+            return True
+        try:
+            return math.isclose(float(left), float(right), rel_tol=1e-6, abs_tol=1e-6)
+        except (TypeError, ValueError):
+            return _normalize_snapshot_value(left) == _normalize_snapshot_value(right)
+
+    for pair in image_pairs:
+        local_image = pair.get('local') or {}
+        remote_image = pair.get('remote') or {}
+        if local_image:
+            local_image['measurement_count'] = local_measurement_counts.get(
+                _safe_int(local_image.get('local_id')), 0
+            )
+        if remote_image:
+            remote_image['measurement_count'] = remote_measurement_counts.get(
+                str(remote_image.get('cloud_id') or ''), 0
+            )
+
+        metadata_diff: list[str] = []
+        if local_image and remote_image:
+            pair['presentation_differences'] = [
+                {
+                    'field': 'sort_order',
+                    'local': local_image.get('sort_order'),
+                    'remote': remote_image.get('sort_order'),
+                    'automatic_policy': 'local_desktop',
+                }
+            ] if not _review_image_values_match(
+                local_image.get('sort_order'), remote_image.get('sort_order')
+            ) else []
+            metadata_diff = [
+                field for field in image_metadata_fields
+                if not _review_image_values_match(local_image.get(field), remote_image.get(field))
+            ]
+            pair['metadata_diff_fields'] = metadata_diff
+            baseline_image = next(
+                (
+                    row for row in baseline_images
+                    if (
+                        str(row.get('id') or '').strip()
+                        and str(row.get('id') or '').strip()
+                        == str(remote_image.get('cloud_id') or '').strip()
+                    ) or (
+                        _safe_int(row.get('desktop_id')) > 0
+                        and _safe_int(row.get('desktop_id')) == _safe_int(local_image.get('local_id'))
+                    )
+                ),
+                None,
+            )
+            metadata_details = []
+            for field in metadata_diff:
+                baseline_value = (baseline_image or {}).get(field)
+                local_changed = (
+                    baseline_image is None
+                    or not _review_image_values_match(local_image.get(field), baseline_value)
+                )
+                cloud_changed = (
+                    baseline_image is None
+                    or not _review_image_values_match(remote_image.get(field), baseline_value)
+                )
+                metadata_details.append({
+                    'field': field,
+                    'baseline': baseline_value,
+                    'local': local_image.get(field),
+                    'remote': remote_image.get(field),
+                    'change_origin': (
+                        'baseline_unavailable' if baseline_image is None
+                        else 'both' if local_changed and cloud_changed
+                        else 'local' if local_changed
+                        else 'cloud' if cloud_changed
+                        else 'unknown'
+                    ),
+                })
+            pair['metadata_diff_details'] = metadata_details
+
+        if pair.get('pairing') == 'identity_conflict':
+            pair['status'] = 'identity_conflict'
+        elif pair.get('measurement_conflicts'):
+            pair['status'] = 'measurements_differ'
+        elif metadata_diff:
+            pair['status'] = 'metadata_differs'
+        elif local_image and remote_image:
+            pair['status'] = 'same'
+        elif local_image:
+            pair['status'] = 'possible_match' if pair.get('possible_counterpart') else 'local_only'
+        else:
+            pair['status'] = 'possible_match' if pair.get('possible_counterpart') else 'cloud_only'
+
+    image_pairs.sort(key=lambda pair: (
+        0 if str(((pair.get('local') or pair.get('remote') or {}).get('image_type') or '')).lower() == 'field' else 1,
+        _safe_int((pair.get('local') or pair.get('remote') or {}).get('sort_order')),
+        _safe_int((pair.get('local') or {}).get('local_id')),
+        str((pair.get('remote') or {}).get('cloud_id') or ''),
+    ))
+
+    image_mismatches = [
+        {
+            'filename': _image_label(pair.get('local') or pair.get('remote')),
+            'status': pair.get('status'),
+        }
+        for pair in image_pairs
+        if pair.get('status') in {'local_only', 'cloud_only', 'possible_match', 'identity_conflict'}
+    ]
+
+    measurement_data_available = bool(local_measurements or remote_measurements)
+    derived_statistics_rows = [
+        row for row in field_rows if row.get('field') == 'spore_statistics'
+    ]
+    if derived_statistics_rows:
+        field_rows = [row for row in field_rows if row.get('field') != 'spore_statistics']
+    derived_statistics = {
+        'status': (
+            'recompute_from_measurements'
+            if measurement_data_available
+            else 'diagnostic_without_measurements'
+        ),
+        'rows': derived_statistics_rows,
+    } if derived_statistics_rows else None
 
     return {
         'local_id': int(local_id),
@@ -12560,6 +13277,10 @@ def get_conflict_detail(client: "SporelyCloudClient", local_id: int, cloud_id: s
         'remote_observation': dict(remote_obs or {}),
         'field_rows': field_rows,
         'image_mismatches': image_mismatches,
+        'image_pairs': image_pairs,
+        'identity_conflicts': [
+            pair for pair in image_pairs if pair.get('status') == 'identity_conflict'
+        ],
         'local_image_changes': _summarize_image_changes(
             local_image_payloads,
             baseline_images,
@@ -12571,7 +13292,10 @@ def get_conflict_detail(client: "SporelyCloudClient", local_id: int, cloud_id: s
             ignored_keys=tombstoned_remote_image_keys,
         ),
         'local_measurement_count': len(MeasurementDB.get_measurements_for_observation(int(local_id))),
-        'measurement_conflicts': measurement_conflicts,
+        'measurement_pairs': measurement_pairs,
+        'measurement_conflicts': measurement_differences,
+        'derived_statistics': derived_statistics,
+        'baseline_available': bool(snapshot),
     }
 # ── High-level sync entry points ──────────────────────────────────────────────
 
@@ -13652,6 +14376,7 @@ def _push_images_for_observation(
     observation_total: int | None = None,
     summary_warnings: list[str] | None = None,
     original_summary: dict | None = None,
+    include_image_ids: set[int] | None = None,
 ) -> bool:
     """Push selected observation images for one observation."""
     warnings: list[str] = []
@@ -13678,6 +14403,13 @@ def _push_images_for_observation(
     # main upload loop below to avoid a second metadata fetch.
     prepass_existing_rows: list[dict] | None = None
     skip_prepare_image_ids: set[int] = set()
+    if include_image_ids is not None:
+        allowed_ids = {_safe_int(value) for value in include_image_ids if _safe_int(value) > 0}
+        skip_prepare_image_ids.update(
+            _safe_int(row.get('id'))
+            for row in ImageDB.get_images_for_observation(_safe_int(obs.get('id')))
+            if _safe_int(row.get('id')) > 0 and _safe_int(row.get('id')) not in allowed_ids
+        )
     if callable(prepare_images_cb):
         try:
             prepass_existing_rows = client.pull_image_metadata(obs_cloud_id) or []
@@ -14668,6 +15400,7 @@ def _ensure_metadata_anchors_for_public_spore_observation(
 def _push_measurements_for_observation(
     client: SporelyCloudClient,
     obs_local_id: int,
+    measurement_ids: set[int] | None = None,
 ) -> None:
     """Push all spore measurements for an observation's microscope images to the cloud.
 
@@ -14701,6 +15434,7 @@ def _push_measurements_for_observation(
         cursor.execute(
             '''
             SELECT m.id, m.image_id, m.length_um, m.width_um, m.measurement_type,
+                   m.gallery_rotation,
                    m.p1_x, m.p1_y, m.p2_x, m.p2_y,
                    m.p3_x, m.p3_y, m.p4_x, m.p4_y,
                    m.measured_at, m.cloud_id,
@@ -14717,6 +15451,12 @@ def _push_measurements_for_observation(
         measurements = [dict(row) for row in cursor.fetchall()]
     finally:
         conn.close()
+
+    if measurement_ids is not None:
+        selected_ids = {_safe_int(value) for value in measurement_ids if _safe_int(value) > 0}
+        measurements = [
+            row for row in measurements if _safe_int(row.get('id')) in selected_ids
+        ]
 
     tombstoned_cloud_ids = _local_tombstoned_cloud_image_ids(
         [
@@ -18052,6 +18792,7 @@ def _import_remote_measurements_for_observation(
     remote_images: list[dict] | None = None,
     remote_measurements: list[dict] | None = None,
     materialize_remote_images: bool = True,
+    overwrite_conflicts: bool = False,
 ) -> dict:
     warnings: list[str] = []
     if not str(cloud_id or '').strip():
@@ -18276,7 +19017,7 @@ def _import_remote_measurements_for_observation(
                 local_measurement,
                 remote_row,
                 cloud_image_id=remote_image_id,
-            ):
+            ) and not overwrite_conflicts:
                 conflict = True
                 warnings.append(
                     f"obs {int(local_id)}: skipped cloud measurement {remote_measurement_id} "
@@ -18285,6 +19026,12 @@ def _import_remote_measurements_for_observation(
                 continue
 
             write_values = _measurement_write_values(remote_row, local_image_id)
+            # Gallery rotation is presentation state. For an existing
+            # desktop-originated measurement, keep the desktop value even
+            # while scientific cloud values are selected or refreshed.
+            write_values['gallery_rotation'] = _safe_int(
+                local_measurement.get('gallery_rotation')
+            )
             cursor.execute(
                 '''
                 UPDATE spore_measurements
