@@ -736,7 +736,7 @@ def test_ensure_metadata_only_reuses_remote_row_by_desktop_id(db, monkeypatch, c
     assert '(validated)' in stdout
 
 
-def test_unchecked_measured_image_is_downgraded_to_metadata_only_anchor(db, monkeypatch):
+def test_unchecked_measured_cloud_backed_image_preserves_both_storage_paths(db, monkeypatch):
     obs_local = _insert_obs(db, cloud_id='745', spore_data_visibility='public')
     image_id = _insert_image(
         db, observation_id=obs_local, filepath='/tmp/x.jpg',
@@ -771,11 +771,9 @@ def test_unchecked_measured_image_is_downgraded_to_metadata_only_anchor(db, monk
     )
 
     assert result == 'remote-uuid-9'
-    assert ('_storage_remove', ['images/full.webp', 'images/original.jpg']) in client.calls
+    assert not [call for call in client.calls if call[0] == '_storage_remove']
     patches = [call for call in client.calls if call[0] == '_patch']
-    assert len(patches) == 1
-    assert patches[0][1][1]['storage_path'] is None
-    assert patches[0][1][1]['original_storage_path'] is None
+    assert patches == []
 
 
 def test_ensure_metadata_only_skips_non_microscope(db, capfd):

@@ -108,6 +108,8 @@ class _MemorySyncClient(cloud_sync.SporelyCloudClient):
         self.remote_images = [dict(row or {}) for row in (remote_images or [])]
         self.upload_image_calls: list[dict] = []
         self.push_metadata_calls: list[dict] = []
+        self.storage_remove_calls: list[list[str]] = []
+        self.delete_calls: list[str] = []
 
     def _observation_images_support_ai_crop(self) -> bool:
         return False
@@ -169,6 +171,68 @@ class _MemorySyncClient(cloud_sync.SporelyCloudClient):
         existing["storage_path"] = cloud_sync.normalize_media_key(storage_path)
         self.push_metadata_calls.append({"cloud_id": cloud_id, "storage_path": storage_path})
         return cloud_id
+
+    def _storage_remove(self, storage_paths: list[str]) -> None:
+        self.storage_remove_calls.append(list(storage_paths))
+
+    def _delete(self, path: str) -> None:
+        self.delete_calls.append(str(path))
+
+
+def test_prepared_upload_omission_preserves_all_existing_remote_images(tmp_path, monkeypatch):
+    db_path = _create_sync_db(tmp_path)
+    first_path = tmp_path / "first.jpg"
+    second_path = tmp_path / "second.jpg"
+    first_path.write_bytes(b"first-new-bytes")
+    second_path.write_bytes(b"second-existing-bytes")
+    _insert_image(
+        db_path, id=21, observation_id=500, cloud_id="cloud-image-21",
+        filepath=str(first_path), source_role="local_canonical", file_purpose="field",
+        image_type="field", sort_order=0,
+    )
+    _insert_image(
+        db_path, id=22, observation_id=500, cloud_id="cloud-image-22",
+        filepath=str(second_path), source_role="local_canonical", file_purpose="field",
+        image_type="field", sort_order=1,
+    )
+    _patch_db_connections(monkeypatch, db_path)
+    monkeypatch.setattr(cloud_sync, "is_full_resolution_original_sync_enabled", lambda: False)
+    monkeypatch.setattr(cloud_sync, "_file_content_signature", lambda path: "changed")
+    monkeypatch.setattr(cloud_sync, "_load_cloud_image_file_signature", lambda *args: "old")
+    monkeypatch.setattr(cloud_sync, "_store_cloud_image_file_signature", lambda *args: None)
+
+    remote_rows = [
+        {
+            "id": "cloud-image-21", "desktop_id": 21,
+            "observation_id": "cloud-obs-500", "storage_path": "cloud/first.webp",
+            "image_type": "field", "sort_order": 0,
+        },
+        {
+            "id": "cloud-image-22", "desktop_id": 22,
+            "observation_id": "cloud-obs-500", "storage_path": "cloud/second.webp",
+            "image_type": "field", "sort_order": 1,
+        },
+    ]
+    client = _MemorySyncClient(remote_rows)
+
+    def prepare_only_first(observation, progress_cb=None):
+        image_row = next(
+            row for row in cloud_sync.ImageDB.get_images_for_observation(500)
+            if int(row["id"]) == 21
+        )
+        return [{"image_row": image_row, "upload_path": str(first_path)}], None, []
+
+    assert cloud_sync._push_images_for_observation(
+        client, {"id": 500}, "cloud-obs-500", prepare_images_cb=prepare_only_first,
+    ) is True
+    assert len(client.upload_image_calls) == 1
+    assert client.storage_remove_calls == []
+    assert client.delete_calls == []
+    assert _cloud_id(db_path, 21) == "cloud-image-21"
+    assert _cloud_id(db_path, 22) == "cloud-image-22"
+    assert [row["storage_path"] for row in client.remote_images] == [
+        "cloud/first.webp", "cloud/second.webp",
+    ]
 
 
 def test_dirty_scan_ignores_rows_cloud_sync_never_pushes(tmp_path, monkeypatch):

@@ -334,13 +334,12 @@ def test_reconcile_metadata_only_linked_images_skips_unchanged_siblings(monkeypa
 
     client = _StubClient()
     obs = {"id": 481}
-    skip_ids, kept_ids = cloud_sync._reconcile_metadata_only_linked_images(
+    skip_ids = cloud_sync._reconcile_metadata_only_linked_images(
         client, obs, "cloud-obs-481", existing_rows
     )
 
     # Both already-linked images are skipped for WebP prep.
     assert skip_ids == {1825, 1826}
-    assert kept_ids == {"cloud-image-1825", "cloud-image-1826"}
     # Only the drifted-metadata image triggered a push_image_metadata call —
     # the already-matching one is a true no-op.
     assert len(client.push_image_metadata_calls) == 1
@@ -433,7 +432,7 @@ def test_reconcile_metadata_only_linked_images_leaves_changed_bytes_alone(monkey
     ]
 
     client = _StubClient()
-    skip_ids, kept_ids = cloud_sync._reconcile_metadata_only_linked_images(
+    skip_ids = cloud_sync._reconcile_metadata_only_linked_images(
         client, {"id": 91}, "cloud-obs-91", existing_rows
     )
 
@@ -441,7 +440,6 @@ def test_reconcile_metadata_only_linked_images_leaves_changed_bytes_alone(monkey
     # normal prepare-and-upload path so the new bytes actually reach the
     # cloud.
     assert skip_ids == set()
-    assert kept_ids == set()
     assert client.push_image_metadata_calls == []
 
 
@@ -511,9 +509,8 @@ def test_reconcile_metadata_only_linked_images_never_prepares_recovery_cache_byt
         }
     ]
 
-    skip_ids, kept_ids = cloud_sync._reconcile_metadata_only_linked_images(
+    skip_ids = cloud_sync._reconcile_metadata_only_linked_images(
         _StubClient(), {"id": 92}, "cloud-obs-92", existing_rows
     )
 
     assert skip_ids == {702}
-    assert kept_ids == {"cloud-image-702"}

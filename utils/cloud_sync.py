@@ -7622,9 +7622,9 @@ def _cloud_explicit_media_upload_selection(observation_id: int | None) -> set[in
     """Return image ids checked in the observation thumbnail gallery.
 
     The gallery persists its state as an exclusion list. Cloud media upload
-    shares that visible checkbox contract: checked rows may upload bytes;
-    unchecked rows remain metadata-only. This is intentionally independent of
-    whether a microscope image has spore measurements.
+    may use that visible checkbox contract to decide which new bytes to prepare.
+    This selection is not cloud deletion consent: existing cloud rows and bytes
+    must be preserved when their local image is unchecked.
     """
     local_observation_id = _safe_int(observation_id)
     if local_observation_id <= 0:
@@ -13276,7 +13276,7 @@ def _associate_persisted_cloud_images(
     client: SporelyCloudClient,
     obs: dict,
     existing_rows: list[dict],
-) -> tuple[set[int], set[str]]:
+) -> set[int]:
     """Re-link orphaned local image rows to existing remote cloud images.
 
     Targets the repair case described in the sync bug: a local image row whose
@@ -13285,17 +13285,13 @@ def _associate_persisted_cloud_images(
     metadata that already matches. The local ``cloud_id`` is restored without
     uploading any bytes and without encoding a temporary WebP candidate.
 
-    Returns ``(associated_local_image_ids, kept_remote_cloud_ids)``. The first
-    set tells the upload-preparation step which rows it can skip; the second
-    seeds ``kept_cloud_ids`` so the re-linked remote rows are not treated as
-    stale and deleted.
+    Returns local image ids that the upload-preparation step can skip.
     """
     associated_ids: set[int] = set()
-    kept_cloud_ids: set[str] = set()
     try:
         obs_local_id = int(obs.get('id'))
     except Exception:
-        return associated_ids, kept_cloud_ids
+        return associated_ids
 
     existing_by_desktop_id = {
         _safe_int(row.get('desktop_id')): row
@@ -13303,7 +13299,7 @@ def _associate_persisted_cloud_images(
         if _safe_int(row.get('desktop_id')) != 0
     }
     if not existing_by_desktop_id:
-        return associated_ids, kept_cloud_ids
+        return associated_ids
 
     include_ai_crop = client._observation_images_support_ai_crop()
     include_upload_meta = client._observation_images_support_upload_metadata()
@@ -13373,9 +13369,7 @@ def _associate_persisted_cloud_images(
                 f'(restored local cloud_id without preparing an upload candidate)'
             )
         associated_ids.add(local_image_id)
-        kept_cloud_ids.add(remote_cloud_id)
-
-    return associated_ids, kept_cloud_ids
+    return associated_ids
 
 
 def _stored_local_media_signature_image_stats(
@@ -13449,7 +13443,7 @@ def _reconcile_metadata_only_linked_images(
     obs: dict,
     obs_cloud_id: str,
     existing_rows: list[dict],
-) -> tuple[set[int], set[str]]:
+) -> set[int]:
     """Skip WebP prep for linked images whose bytes haven't changed.
 
     Companion to :func:`_associate_persisted_cloud_images`. When an
@@ -13459,17 +13453,14 @@ def _reconcile_metadata_only_linked_images(
     re-encoded to WebP just to end up as a metadata-only patch. This pass
     applies any pending metadata delta directly and returns their ids so the
     prepare callback skips them.
-
-    Returns ``(skip_prepare_image_ids, kept_remote_cloud_ids)``.
     """
     skip_ids: set[int] = set()
-    kept_cloud_ids: set[str] = set()
     try:
         obs_local_id = int(obs.get('id'))
     except Exception:
-        return skip_ids, kept_cloud_ids
+        return skip_ids
     if not existing_rows:
-        return skip_ids, kept_cloud_ids
+        return skip_ids
 
     existing_by_id = {
         str(row.get('id') or '').strip(): row
@@ -13558,7 +13549,6 @@ def _reconcile_metadata_only_linked_images(
                         f'skipping byte upload'
                     )
                     skip_ids.add(local_image_id)
-                    kept_cloud_ids.add(local_cloud_id)
                     continue
                 # Fall back to the normal path if the direct patch failed.
                 print(
@@ -13587,9 +13577,7 @@ def _reconcile_metadata_only_linked_images(
             )
 
         skip_ids.add(local_image_id)
-        kept_cloud_ids.add(local_cloud_id)
-
-    return skip_ids, kept_cloud_ids
+    return skip_ids
 
 
 def _push_images_for_observation(
@@ -13612,22 +13600,8 @@ def _push_images_for_observation(
         _safe_int(obs.get('id')),
         str(obs_cloud_id or '').strip(),
     ) or {}
-    protected_anchor_cloud_ids = {
-        str(value or '').strip()
-        for value in (anchor_result.get('cloud_ids') or [])
-        if str(value or '').strip()
-    }
-    # Subset of `protected_anchor_cloud_ids` whose remote row was
-    # downgraded to metadata-only by the pre-step (unchecked gallery
-    # images with active public spore measurements). Bytes were
-    # intentionally removed and `storage_path` PATCHed to NULL; the
-    # image-sync loop uses this set to short-circuit its "local file
-    # differs from remote, upload replacement bytes" branch so it does
-    # not re-upload bytes that would be orphaned (never referenced from
-    # the metadata row's NULL storage_path). The gallery-checkbox
-    # remains the single source of truth for cloud-byte-upload consent
-    # — this set is a derived view of the pre-step's already-made
-    # decision, not a second eligibility rule.
+    # Existing metadata-only anchors remain protected, but publication
+    # selection must never downgrade a cloud-backed image to this state.
     metadata_only_anchor_cloud_ids = {
         str(value or '').strip()
         for value in (anchor_result.get('metadata_only_cloud_ids') or [])
@@ -13642,7 +13616,6 @@ def _push_images_for_observation(
     # before any temporary WebP candidate is encoded for them. Reused by the
     # main upload loop below to avoid a second metadata fetch.
     prepass_existing_rows: list[dict] | None = None
-    prepass_kept_cloud_ids: set[str] = set(protected_anchor_cloud_ids)
     skip_prepare_image_ids: set[int] = set()
     if callable(prepare_images_cb):
         try:
@@ -13655,22 +13628,18 @@ def _push_images_for_observation(
             )
             prepass_existing_rows = None
         if prepass_existing_rows is not None:
-            associated_skip_ids, associated_kept_cloud_ids = _associate_persisted_cloud_images(
+            associated_skip_ids = _associate_persisted_cloud_images(
                 client, obs, prepass_existing_rows
             )
             skip_prepare_image_ids = skip_prepare_image_ids | associated_skip_ids
-            prepass_kept_cloud_ids = (
-                prepass_kept_cloud_ids | associated_kept_cloud_ids
-            )
             # Also skip WebP prep for sibling images that are already linked
             # and whose local bytes haven't changed since last sync. Their
             # metadata delta (if any) is patched in place here so the
             # prepare_images_cb can focus on images that actually need bytes.
-            metadata_only_ids, metadata_only_kept = _reconcile_metadata_only_linked_images(
+            metadata_only_ids = _reconcile_metadata_only_linked_images(
                 client, obs, obs_cloud_id, prepass_existing_rows
             )
             skip_prepare_image_ids = skip_prepare_image_ids | metadata_only_ids
-            prepass_kept_cloud_ids = prepass_kept_cloud_ids | metadata_only_kept
     if callable(prepare_images_cb):
         try:
             def prepare_progress(message: str, _current: int | None = None, _total: int | None = None) -> None:
@@ -13803,9 +13772,6 @@ def _push_images_for_observation(
     try:
         processed_items = 0
         total_items = len(prepared_items)
-        # Seed with remote rows re-associated by the remote-first pass so they
-        # are not deleted as stale even though they were skipped during prepare.
-        kept_cloud_ids: set[str] = set(prepass_kept_cloud_ids)
         had_failures = False
         include_ai_crop = client._observation_images_support_ai_crop()
         include_upload_meta = client._observation_images_support_upload_metadata()
@@ -13833,9 +13799,6 @@ def _push_images_for_observation(
                 remote_row = existing_by_id.get(local_cloud_id)
             remote_cloud_id = str((remote_row or {}).get('id') or '').strip()
             if not should_push_local_image_to_cloud(img):
-                selected_cloud_id = remote_cloud_id or local_cloud_id
-                if selected_cloud_id:
-                    kept_cloud_ids.add(selected_cloud_id)
                 print(
                     f'[cloud_sync] Observation {obs["id"]}: skipped cloud image '
                     f'{local_image_id or item_index} because it is not eligible for upload'
@@ -13939,10 +13902,6 @@ def _push_images_for_observation(
                         f'[cloud_sync] Observation {obs["id"]}: skipped already synced cloud image '
                         f'{local_image_id or item_index} (storage_path={storage_path})'
                     )
-                    if remote_cloud_id:
-                        kept_cloud_ids.add(remote_cloud_id)
-                    elif local_cloud_id:
-                        kept_cloud_ids.add(local_cloud_id)
                     continue
 
                 if not file_matches:
@@ -13994,8 +13953,6 @@ def _push_images_for_observation(
                     if remote_row and remote_row.get('original_filename'):
                         remote_payload['original_filename'] = _normalize_snapshot_value(remote_row.get('original_filename'))
                     metadata_matches = True
-
-                kept_cloud_ids.add(str(img_cloud_id or '').strip())
 
                 try:
                     image_id = int(img['id'])
@@ -14140,44 +14097,6 @@ def _push_images_for_observation(
             finally:
                 processed_items += 1
                 _advance_progress(progress_state, 1)
-        stale_rows = [
-            row for row in existing_rows
-            if str(row.get('id') or '').strip() and str(row.get('id') or '').strip() not in kept_cloud_ids
-        ]
-        for stale_row in stale_rows:
-            stale_cloud_id = str(stale_row.get('id') or '').strip()
-            stale_storage_path = _normalize_cloud_media_key(stale_row.get('storage_path'))
-            print(
-                f'[cloud_sync] Observation {obs["id"]}: deleting stale cloud image '
-                f'{stale_cloud_id} (storage_path={stale_storage_path})'
-            )
-            if stale_storage_path:
-                try:
-                    client._storage_remove([stale_storage_path])
-                except Exception as e:
-                    if is_cloud_auth_error(e) or is_cloud_temporary_unavailable_error(e):
-                        raise
-                    print(
-                        f'[cloud_sync] Could not remove old cloud storage file for observation {obs["id"]}: {e}'
-                    )
-            try:
-                client._delete(f'observation_images?id=eq.{stale_cloud_id}')
-            except Exception as e:
-                if is_cloud_auth_error(e) or is_cloud_temporary_unavailable_error(e):
-                    raise
-                print(f'[cloud_sync] Could not remove old cloud image row for observation {obs["id"]}: {e}')
-            stale_desktop_id = _safe_int(stale_row.get('desktop_id'))
-            if stale_desktop_id > 0:
-                conn = get_connection()
-                try:
-                    conn.execute(
-                        'UPDATE images SET cloud_id = NULL, synced_at = NULL WHERE id = ?',
-                        (stale_desktop_id,),
-                    )
-                    conn.commit()
-                finally:
-                    conn.close()
-            _clear_cloud_image_file_signature(obs.get('id'), stale_desktop_id or stale_cloud_id)
         if total_items > processed_items:
             _advance_progress(progress_state, total_items - processed_items)
         return not had_failures
@@ -14313,37 +14232,6 @@ def _remote_image_row_matches_anchor_payload(
         if _normalize_cloud_media_key(remote.get('original_storage_path')):
             return False
     return True
-
-
-def _transition_remote_microscope_to_metadata_only(
-    client: 'SporelyCloudClient',
-    remote_row: dict,
-    payload: dict,
-) -> None:
-    remote = dict(remote_row or {})
-    cloud_image_id = str(remote.get('id') or '').strip()
-    if not cloud_image_id:
-        return
-    storage_paths = [
-        value
-        for value in (
-            _normalize_cloud_media_key(remote.get('storage_path')),
-            _normalize_cloud_media_key(remote.get('original_storage_path')),
-        )
-        if value
-    ]
-    if storage_paths:
-        client._storage_remove(storage_paths)
-    patch_payload = dict(payload)
-    patch_payload.pop('observation_id', None)
-    patch_payload.pop('user_id', None)
-    patch_payload['storage_path'] = None
-    patch_payload['original_storage_path'] = None
-    patch_payload['deleted_at'] = None
-    client._patch(
-        f'observation_images?id=eq.{cloud_image_id}&user_id=eq.{client.user_id}',
-        patch_payload,
-    )
 
 
 def _ensure_metadata_only_microscope_image_for_public_spores(
@@ -14491,13 +14379,6 @@ def _ensure_metadata_only_microscope_image_for_public_spores(
     payload = _metadata_only_microscope_image_payload(
         client, obs_cloud_id, row,
     )
-    # An unchecked gallery image may retain its cloud row as the foreign-key
-    # anchor for public spore measurements, but its bytes must not remain
-    # published. Checked images keep any existing storage paths.
-    metadata_only = local_image_id not in _cloud_explicit_media_upload_selection(
-        obs_local_id,
-    )
-
     if remote_row:
         remote_cloud_id = str(remote_row.get('id') or '').strip()
         _cancel_microscope_anchor_tombstones(
@@ -14506,20 +14387,7 @@ def _ensure_metadata_only_microscope_image_for_public_spores(
         _reconcile_local_image_cloud_id(
             local_image_id, remote_cloud_id, mark_synced=True,
         )
-        if metadata_only:
-            if not _remote_image_row_matches_anchor_payload(
-                remote_row, payload, metadata_only=True,
-            ):
-                _transition_remote_microscope_to_metadata_only(
-                    client, remote_row, payload,
-                )
-                print(
-                    f'[cloud_sync] Mosaic image metadata: converted '
-                    f'local_image={local_image_id} cloud_image={remote_cloud_id} '
-                    f'to storage_path=NULL',
-                    flush=True,
-                )
-        elif str(remote_row.get('deleted_at') or '').strip():
+        if str(remote_row.get('deleted_at') or '').strip():
             client._patch(
                 f'observation_images?id=eq.{remote_cloud_id}'
                 f'&user_id=eq.{client.user_id}',
@@ -14600,20 +14468,9 @@ def _ensure_metadata_only_microscope_images_for_observation(
     Returns a counters dict with:
 
     * ``considered`` / ``ensured`` / ``skipped`` / ``failed`` — counts.
-    * ``cloud_ids`` — every microscope anchor cloud id ensured this
-      cycle (checked AND unchecked images), used by the image-sync
-      loop's ``prepass_kept_cloud_ids`` so stale-image cleanup does
-      not delete them.
-    * ``metadata_only_cloud_ids`` — the SUBSET of ``cloud_ids`` that
-      belong to gallery-unchecked images. Membership in this set is
-      the derived signal the image-sync loop uses to short-circuit
-      the "remote storage_path is NULL, local file differs, upload
-      bytes" branch — bytes were intentionally cleared by the
-      per-image helper's metadata-only downgrade, so re-uploading
-      them would just orphan bytes in storage without ever being
-      linked from the metadata row. The gallery-checkbox state is
-      still the single source of truth; this set just surfaces the
-      already-made decision to the downstream loop.
+    * ``cloud_ids`` — every microscope anchor cloud id ensured this cycle.
+    * ``metadata_only_cloud_ids`` — existing legitimate metadata-only
+      anchors, never rows downgraded because of publication selection.
     """
     counters = {
         'considered': 0,
@@ -14661,14 +14518,6 @@ def _ensure_metadata_only_microscope_images_for_observation(
                 for row in (puller(obs_cloud_id) or [])
             ]
 
-    # Single per-observation lookup of the gallery-checked selection.
-    # `_ensure_metadata_only_microscope_image_for_public_spores` uses
-    # this exact same rule internally to decide `metadata_only=True/False`
-    # for each image; we mirror the check here so the wrapper's caller
-    # (`_push_images_for_observation`) can see the same decision without
-    # having to re-open the settings row for every image.
-    gallery_checked_ids = _cloud_explicit_media_upload_selection(obs_local_id)
-
     for image_row in rows:
         counters['considered'] += 1
         local_image_id = _safe_int(image_row.get('id'))
@@ -14693,11 +14542,14 @@ def _ensure_metadata_only_microscope_images_for_observation(
         if result:
             counters['ensured'] += 1
             counters['cloud_ids'].append(str(result))
-            # Unchecked image → the per-image helper already downgraded
-            # this anchor to metadata-only (storage_path=NULL, bytes
-            # removed via `_storage_remove`). Surface the derived flag
-            # so the sync loop can short-circuit the re-upload branch.
-            if local_image_id not in gallery_checked_ids:
+            remote_match = next(
+                (
+                    remote for remote in remote_images
+                    if str(remote.get('id') or '').strip() == str(result)
+                ),
+                None,
+            )
+            if remote_match and not _normalize_cloud_media_key(remote_match.get('storage_path')):
                 counters['metadata_only_cloud_ids'].append(str(result))
         else:
             counters['skipped'] += 1

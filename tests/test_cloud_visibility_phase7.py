@@ -2768,36 +2768,12 @@ def test_push_all_skips_image_prep_for_tombstone_only_cleanup(
     assert "measurements pushed" in output
 
 
-def test_measurement_cleanup_downgrades_unchecked_microscope_to_metadata_only_anchor(
+def test_measurement_cleanup_preserves_unchecked_cloud_backed_microscope(
     tmp_path,
     monkeypatch,
     capsys,
 ):
-    """Measurement cleanup on a gallery-unchecked microscope image must
-    preserve the measurement anchor without soft-deleting the cloud row.
-
-    Contract (gallery-checkbox media-upload semantics):
-
-    * A tombstoned microscope image with an active spore measurement
-      MUST have its tombstone cancelled — the measurement needs the
-      image row as its cloud FK anchor.
-    * The image is unchecked in the gallery, so its remote row is
-      downgraded to a metadata-only anchor: ``storage_path`` becomes
-      ``NULL``, ``original_storage_path`` becomes ``NULL``. Any pre-
-      existing published bytes are removed as part of THAT downgrade
-      contract (the unchecked gallery state is what strips bytes; the
-      measurement-cleanup path itself does not soft-delete the row).
-    * ``soft_delete_image`` MUST NOT be called and the tombstone row
-      MUST be cleared — the measurement anchor is preserved, not
-      re-tombstoned.
-    * The measurement itself is pushed against the anchor.
-
-    This test explicitly does NOT assert on ``upload_image_calls``:
-    under the new contract the ordering of the metadata-only downgrade
-    pre-step vs the image-sync upload path is an implementation detail
-    the observable final state (``storage_path`` NULL on the remote
-    metadata row) encapsulates.
-    """
+    """Publication exclusion preserves existing bytes and measurement links."""
     monkeypatch.setenv("SPORELY_DEBUG_CLOUD_SYNC", "1")
     ctx = _setup_push_all_tombstone_cleanup_case(
         tmp_path,
@@ -2857,22 +2833,16 @@ def test_measurement_cleanup_downgrades_unchecked_microscope_to_metadata_only_an
         "re-established"
     )
 
-    # ── Remote row is downgraded to a metadata-only anchor ────────────────
-    # The gallery checkbox is the source of truth for cloud-byte-upload
-    # consent; the unchecked state maps to storage_path=NULL on the
-    # remote row. Both storage_path AND original_storage_path clear so
-    # the public RPCs do not resolve to any bytes for this image.
+    # ── Existing cloud bytes remain linked ─────────────────────────────────
     protected = next(
         row for row in ctx.client.remote_images
         if row["id"] == "cloud-image-11"
     )
-    assert protected["storage_path"] is None, (
-        "unchecked-microscope anchor must land as metadata-only "
-        "(storage_path NULL)"
+    assert protected["storage_path"] == "user-123/cloud-obs-1/0_1777629600000.jpg"
+    assert protected["original_storage_path"] == (
+        "user-123/cloud-obs-1/originals/cloud-image-11/tombstoned-image.jpg"
     )
-    assert protected["original_storage_path"] is None, (
-        "metadata-only anchor must also clear original_storage_path"
-    )
+    assert ctx.client.storage_remove_calls == []
     # And critically, the row survives — the anchor is preserved, not
     # deleted — so measurement 21 still has a valid FK target.
     assert protected["id"] == "cloud-image-11"
@@ -2880,37 +2850,22 @@ def test_measurement_cleanup_downgrades_unchecked_microscope_to_metadata_only_an
         "metadata-only anchor row must not be marked deleted"
     )
 
-    # ── Diagnostic log lines document the observable transition ───────────
+    # ── Diagnostics confirm measurement sync without a downgrade ──────────
     assert "image prep diagnostics" in output
     assert "Cancelled tombstone for microscope image 11" in output
     assert "measurements pushed" in output
-    # And the metadata-only-anchor downgrade path fired for image 11.
-    assert (
-        "converted local_image=11 cloud_image=cloud-image-11 to storage_path=NULL"
-        in output
-    ), "expected the metadata-only anchor downgrade log line for image 11"
+    assert "converted local_image=11" not in output
 
 
-# ── Metadata-only-anchor short-circuit tests (Phase 3B.6) ──────────────────
-#
-# These tests target the fix for the "downgrade-then-re-upload" order-of-
-# operations flaw: an unchecked microscope image with an active measurement
-# gets its `storage_path` PATCHed to NULL by the pre-step, but the
-# downstream image-sync loop used to see the local file signature diverge
-# from the (now-empty) remote and re-upload bytes that were then orphaned
-# in storage (never linked from the metadata row). The
-# `metadata_only_anchor_cloud_ids` set derived from the pre-step now
-# short-circuits that upload branch.
+# ── Publication exclusion preservation tests ───────────────────────────────
 
 
-def test_unchecked_protected_anchor_with_existing_bytes_downgrades_without_replacement_upload(
+def test_unchecked_protected_anchor_preserves_existing_bytes_without_replacement_upload(
     tmp_path,
     monkeypatch,
     capsys,
 ):
-    """Full sync of a measured-but-unchecked microscope image: bytes are
-    removed once by the pre-step, `storage_path` ends up NULL on the
-    remote row, and `upload_image_file` is never called."""
+    """Full sync preserves an unchecked cloud-backed microscope image."""
     monkeypatch.setenv("SPORELY_DEBUG_CLOUD_SYNC", "1")
     ctx = _setup_push_all_tombstone_cleanup_case(
         tmp_path, monkeypatch, include_deleted_measurement=True,
@@ -2928,42 +2883,32 @@ def test_unchecked_protected_anchor_with_existing_bytes_downgrades_without_repla
     assert result["pushed"] == 1
     assert result["errors"] == []
 
-    # Zero replacement upload — this is the whole point of the short-circuit.
+    # Publication exclusion causes no replacement upload.
     assert ctx.client.upload_image_calls == [], (
-        f"expected no bytes upload for the metadata-only anchor, got "
+        f"expected no bytes upload for the unchecked linked image, got "
         f"{ctx.client.upload_image_calls!r}"
     )
-    # Original-file upload must also not fire (there is no full original
-    # to publish for a metadata-only anchor).
+    # Original-file upload must also not fire.
     assert ctx.client.upload_original_calls == []
 
-    # `_storage_remove` fires exactly once — the pre-step's downgrade
-    # clears the previously-published bytes. Not repeated by the sync loop.
-    assert len(ctx.client.storage_remove_calls) == 1
-    removed_paths = ctx.client.storage_remove_calls[0]
-    # Both the derivative and the original paths get removed.
-    assert any("cloud-obs-1" in p for p in removed_paths)
+    assert ctx.client.storage_remove_calls == []
 
-    # Remote row ends metadata-only.
+    # Remote row keeps both cloud paths.
     protected = next(
         row for row in ctx.client.remote_images if row["id"] == "cloud-image-11"
     )
-    assert protected["storage_path"] is None
-    assert protected["original_storage_path"] is None
+    assert protected["storage_path"] == "user-123/cloud-obs-1/0_1777629600000.jpg"
+    assert protected["original_storage_path"] == (
+        "user-123/cloud-obs-1/originals/cloud-image-11/tombstoned-image.jpg"
+    )
 
 
-def test_no_new_storage_key_is_created_or_left_orphaned(
+def test_unchecked_existing_storage_key_is_preserved_without_byte_upload(
     tmp_path,
     monkeypatch,
     capsys,
 ):
-    """No new storage key is ever created for a metadata-only anchor.
-
-    Traverses every recorded upload call and asserts none of them target
-    ``cloud-image-11`` — the metadata row must be the only durable
-    reference and it points at nothing, so nothing may be uploaded that
-    could be left orphaned.
-    """
+    """No bytes are uploaded or removed for an unchecked linked image."""
     monkeypatch.setenv("SPORELY_DEBUG_CLOUD_SYNC", "1")
     ctx = _setup_push_all_tombstone_cleanup_case(
         tmp_path, monkeypatch, include_deleted_measurement=True,
@@ -2978,45 +2923,36 @@ def test_no_new_storage_key_is_created_or_left_orphaned(
     )
     capsys.readouterr()
 
-    # No derivative or original upload for the metadata-only anchor.
+    # No derivative or original upload for the unchecked linked image.
     for call in ctx.client.upload_image_calls:
         assert call["img_cloud_id"] != "cloud-image-11", (
-            f"a byte upload targeted the metadata-only anchor: {call!r}"
+            f"a byte upload targeted the unchecked linked image: {call!r}"
         )
     for call in ctx.client.upload_original_calls:
         assert call["img_cloud_id"] != "cloud-image-11"
 
-    # `push_image_metadata` (which re-attaches a storage_path) also
-    # must NOT fire for cloud-image-11 — the pre-step's PATCH is the
-    # only touch on the row.
-    for call in ctx.client.push_metadata_calls:
-        assert call.get("cloud_id") != "cloud-image-11", (
-            f"push_image_metadata re-attached a storage_path to the "
-            f"metadata-only anchor: {call!r}"
-        )
-    # And the row never picks up a non-null storage_path.
+    assert ctx.client.storage_remove_calls == []
     protected = next(
         row for row in ctx.client.remote_images if row["id"] == "cloud-image-11"
     )
-    assert protected["storage_path"] is None
-    assert protected["original_storage_path"] is None
+    assert protected["storage_path"] == "user-123/cloud-obs-1/0_1777629600000.jpg"
+    assert protected["original_storage_path"] == (
+        "user-123/cloud-obs-1/originals/cloud-image-11/tombstoned-image.jpg"
+    )
 
 
-def test_second_unchanged_sync_performs_no_remove_or_upload_for_metadata_only_anchor(
+def test_second_unchanged_sync_performs_no_remove_or_upload_for_unchecked_linked_image(
     tmp_path,
     monkeypatch,
     capsys,
 ):
-    """After the first sync converges the anchor to metadata-only, a
-    second sync with zero local/remote changes performs no bytes work
-    for that image: zero storage_remove, zero upload, and the remote
-    row's storage_path stays NULL."""
+    """Repeated sync preserves linked bytes without remove or upload work."""
     monkeypatch.setenv("SPORELY_DEBUG_CLOUD_SYNC", "1")
     ctx = _setup_push_all_tombstone_cleanup_case(
         tmp_path, monkeypatch, include_deleted_measurement=True,
     )
 
-    # First run — the setup runs the downgrade.
+    # First run preserves the existing paths.
     cloud_sync.push_all(
         ctx.client,
         progress_cb=lambda text, current, total: ctx.progress_messages.append(text),
@@ -3055,7 +2991,7 @@ def test_second_unchanged_sync_performs_no_remove_or_upload_for_metadata_only_an
     assert second_run_new_removes == 0, (
         f"second sync added {second_run_new_removes} extra "
         f"storage_remove calls; unchanged inputs must be a no-op for the "
-        f"metadata-only anchor"
+        f"unchecked linked image"
     )
 
     # Second run must not upload bytes.
@@ -3064,24 +3000,24 @@ def test_second_unchanged_sync_performs_no_remove_or_upload_for_metadata_only_an
     )
     assert second_run_new_uploads == 0
 
-    # Second run must not repeat the metadata-only downgrade PATCH.
+    # Second run must not null the existing storage path.
     second_run_new_patches = len(ctx.client.patch_calls) - first_run_patches
     for path, body in ctx.client.patch_calls[first_run_patches:]:
         # If any new patches did fire, none of them should be
-        # re-downgrading cloud-image-11 (which would be an idempotency
-        # break — the row is already storage_path=NULL).
+            # clear cloud-image-11's existing storage path.
         if "cloud-image-11" in path:
             assert body.get("storage_path", "unset") in (None, "unset"), (
                 f"idempotency broken: {path!r} patched storage_path to "
                 f"{body.get('storage_path')!r} on unchanged inputs"
             )
-    # Regardless of how many metadata patches fired, the row stays
-    # storage_path=NULL.
+    # Regardless of harmless metadata patches, the original storage link stays.
     protected = next(
         row for row in ctx.client.remote_images if row["id"] == "cloud-image-11"
     )
-    assert protected["storage_path"] is None
-    assert protected["original_storage_path"] is None
+    assert protected["storage_path"] == "user-123/cloud-obs-1/0_1777629600000.jpg"
+    assert protected["original_storage_path"] == (
+        "user-123/cloud-obs-1/originals/cloud-image-11/tombstoned-image.jpg"
+    )
 
 
 def test_checked_microscope_image_remains_eligible_and_uploads_normally(
