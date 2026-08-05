@@ -23,7 +23,6 @@ from PySide6.QtWidgets import (
     QListWidgetItem,
     QCheckBox,
     QButtonGroup,
-    QMessageBox,
     QPushButton,
     QRadioButton,
     QSplitter,
@@ -36,7 +35,9 @@ from PySide6.QtWidgets import (
 
 from utils.cloud_sync import (
     CloudSyncError,
+    PartialConflictPlanError,
     SporelyCloudClient,
+    SporelyReadOnlyCloudClient,
     _resolve_existing_local_image_asset_path,
     get_conflict_detail,
     resolve_conflict_keep_cloud,
@@ -122,6 +123,52 @@ class ConflictResolutionWorker(QThread):
             self.resolution_finished.emit(resolved_any)
         except Exception as e:
             self.error.emit(str(e))
+
+
+class ConflictPlanApplyWorker(QThread):
+    """Run one per-item plan for one conflict; report per-op statuses.
+
+    The dialog owns exactly one instance while an Apply is in flight.  On
+    success the caller removes the conflict from the list; on failure the
+    caller re-enables controls and displays the error inline.  The worker
+    itself never touches dialog UI directly.
+    """
+
+    succeeded = Signal(dict)                         # result dict from resolve_conflict_plan
+    failed = Signal(str, object)                     # message, partial_result (may be None)
+
+    def __init__(self, *, local_id: int, cloud_id: str, plan: dict,
+                 prepare_images_cb=None, prior_result=None, parent=None):
+        super().__init__(parent)
+        self.setObjectName("Cloud conflict resolution (per-item)")
+        self._local_id = int(local_id or 0)
+        self._cloud_id = str(cloud_id or '').strip()
+        self._plan = dict(plan or {})
+        self._prepare_images_cb = prepare_images_cb
+        self._prior_result = prior_result
+
+    def run(self) -> None:
+        try:
+            client = SporelyCloudClient.from_stored_credentials()
+            if client is None:
+                raise CloudSyncError('Not logged in to Sporely Cloud')
+            if self.isInterruptionRequested():
+                return
+            result = resolve_conflict_plan(
+                client,
+                self._local_id,
+                cloud_id=self._cloud_id or None,
+                plan=self._plan,
+                prepare_images_cb=self._prepare_images_cb,
+                prior_result=self._prior_result,
+            )
+            if self.isInterruptionRequested():
+                return
+            self.succeeded.emit(dict(result or {}))
+        except PartialConflictPlanError as exc:
+            self.failed.emit(str(exc), dict(exc.partial_result or {}))
+        except Exception as exc:
+            self.failed.emit(str(exc), None)
 
 
 def _format_timestamp(value) -> str:
@@ -293,10 +340,15 @@ def _read_only_cloud_client() -> SporelyCloudClient | None:
         raise
     except Exception as exc:
         raise CloudSyncError('Stored cloud authentication is invalid; sign in again.') from exc
-    client = SporelyCloudClient(access_token=access_token, user_id=user_id, refresh_token=None)
-    # Every PostgREST read made by get_conflict_detail now has refresh disabled.
-    client._get = client.get_read_only  # type: ignore[method-assign]
-    return client
+    # A dedicated fixed-token subclass — see utils/cloud_sync.py.  Every
+    # request this instance makes has ``refresh_on_auth_error=False``; refresh,
+    # login, save-credentials, clear-session, and clear-credentials all
+    # short-circuit or raise.  The conflict detail worker and the thumbnail
+    # worker both instantiate this class; neither can rotate or persist
+    # tokens even under authentication failure.
+    return SporelyReadOnlyCloudClient(
+        access_token=access_token, user_id=user_id, refresh_token=None
+    )
 
 
 class ConflictDetailWorker(QThread):
@@ -374,7 +426,7 @@ class ConflictThumbnailWorker(QThread):
                     raise CloudSyncError('Authentication expired')
                 with tempfile.TemporaryDirectory(prefix='sporely_conflict_thumb_') as directory:
                     destination = Path(directory) / 'thumbnail'
-                    downloaded = client.download_image_file(self.source, destination)
+                    downloaded = client.download_image_file_read_only(self.source, destination)
                     data = Path(downloaded).read_bytes()
             if not data:
                 raise CloudSyncError('Image is unavailable')
@@ -445,23 +497,11 @@ class PhotoCard(QFrame):
         status_label.setPalette(status_palette)
         status_label.setStyleSheet('font-weight: 600;')
         layout.addWidget(status_label)
-        if status == 'local_only' and side == 'local':
-            consequence = QLabel(self.tr(
-                'If you choose “Use Sporely Cloud”: this photo remains in the local database and '
-                'its source file is not deleted. The observation is marked synced; the image link '
-                'is left unchanged, and eligible pending media may be offered by a later image-enabled sync.'
-            ), self)
-            consequence.setWordWrap(True)
-            consequence.setStyleSheet('font-size: 11px;')
-            layout.addWidget(consequence)
-        elif status == 'cloud_only' and side == 'cloud':
-            consequence = QLabel(self.tr(
-                'If you choose “Use this device”: this cloud photo remains in Sporely Cloud. Its '
-                'absence on this device is not treated as deletion consent.'
-            ), self)
-            consequence.setWordWrap(True)
-            consequence.setStyleSheet('font-size: 11px;')
-            layout.addWidget(consequence)
+        # Additive one-sided images are now handled automatically by ordinary
+        # sync and never surface here.  The old "Use Sporely Cloud" /
+        # "Use this device" observation-wide actions no longer exist; the
+        # per-item plan replaces them.  Kept as an empty branch so callers
+        # that still ask for a card have a stable widget shape.
 
     def show_loading(self) -> None:
         self.thumbnail.setText(self.tr('Loading thumbnail…'))
@@ -524,6 +564,13 @@ class CloudConflictDialog(QDialog):
         self._choice_specs: dict[str, dict] = {}
         self.decisions: list[dict] = []
         self.resolved_any = False
+        # B1: In-dialog apply.  We keep the failing conflict visible in the
+        # list, retain its most-recent selection map, and carry the resolver's
+        # partial_result so retry can skip already-completed operations.
+        self._apply_worker: ConflictPlanApplyWorker | None = None
+        self._pending_selection: dict[str, str] = {}
+        self._pending_prior_result: dict | None = None
+        self._pending_conflict_row: int | None = None
 
         root = QVBoxLayout(self)
         intro = QLabel(self.tr(
@@ -749,6 +796,13 @@ class CloudConflictDialog(QDialog):
             self._show_loading()
 
     def _on_selection_changed(self, row: int) -> None:
+        # Changing the selected conflict discards any partial-result from a
+        # previous failure — that result only makes sense for its original
+        # conflict.
+        if row != self._pending_conflict_row:
+            self._pending_prior_result = None
+            self._pending_selection = {}
+            self._pending_conflict_row = None
         self._selection_generation += 1
         self._current_detail = None
         self._show_loading()
@@ -764,6 +818,17 @@ class CloudConflictDialog(QDialog):
         if self._closing or generation != self._selection_generation or not isinstance(detail, dict):
             return
         self._detail_cache[key] = dict(detail)
+        # Defensive auto-skip (race protection): if the caller-side final gate
+        # missed a candidate — or state changed between the gate and now — and
+        # the loaded detail has no manual conflicts, remove it silently.  No
+        # decision is recorded; no write occurs.  If the list becomes empty
+        # the dialog accepts and closes without a message box.
+        if not detail.get('has_manual_conflicts', True) and (
+            detail.get('field_rows') is not None
+            and detail.get('image_pairs') is not None
+        ):
+            self._auto_skip_nonmanual_conflict(key)
+            return
         for conflict in self._conflicts:
             if self._key(conflict) == key:
                 conflict['detail'] = dict(detail)
@@ -772,6 +837,27 @@ class CloudConflictDialog(QDialog):
         if current and self._key(current) == key:
             self._populate_detail(detail)
         self._update_list_item(key, detail)
+
+    def _auto_skip_nonmanual_conflict(self, key: str) -> None:
+        """Remove a candidate whose loaded detail is not manual, advance list.
+
+        Never opens a dialog, never writes, never adds a decision.  If the
+        list becomes empty the dialog accepts silently.
+        """
+        idx = None
+        for row, conflict in enumerate(self._conflicts):
+            if self._key(conflict) == key:
+                idx = row
+                break
+        if idx is None:
+            return
+        del self._conflicts[idx]
+        self._reload_list()
+        if self._conflicts:
+            self._list.setCurrentRow(min(idx, len(self._conflicts) - 1))
+        else:
+            # No manual conflicts remain — close the dialog without prompting.
+            self.accept()
 
     def _detail_failed(self, generation: int, key: str, message: str) -> None:
         if self._closing or generation != self._selection_generation:
@@ -922,9 +1008,16 @@ class CloudConflictDialog(QDialog):
             return
         self._field_status.setText(self.tr('Observation field differences'))
         for row_index, row in enumerate(rows):
-            values = [row.get('label'), row.get('baseline'), row.get('local'), row.get('remote')]
-            for column, value in enumerate(values):
-                item = QTableWidgetItem(_format_compare_value(str(row.get('field') or ''), value))
+            field = str(row.get('field') or '')
+            label = str(row.get('label') or field.replace('_', ' ').title())
+            values = [row.get('baseline'), row.get('local'), row.get('remote')]
+            # Column 0 is the field's HUMAN LABEL, not a value — never route it
+            # through _format_compare_value, which would coerce e.g. the label
+            # 'Draft state' into 'Yes' via the is_draft boolean formatter.
+            self._compare_table.setItem(row_index, 0, QTableWidgetItem(label))
+            for offset, value in enumerate(values):
+                column = offset + 1
+                item = QTableWidgetItem(_format_compare_value(field, value))
                 if column == 2 and row.get('local_changed'):
                     background, foreground = _changed_cell_colors(self._compare_table, 'local')
                     item.setBackground(background)
@@ -1021,8 +1114,8 @@ class CloudConflictDialog(QDialog):
                      'local_id': (pair.get('local') or {}).get('local_id'),
                      'cloud_id': (pair.get('remote') or {}).get('cloud_id'),
                      'required': True},
-                    [('local', self.tr('Use this device metadata')),
-                     ('cloud', self.tr('Use Sporely Cloud metadata'))],
+                    [('local', self.tr('Keep this device metadata')),
+                     ('cloud', self.tr('Keep Sporely Cloud metadata'))],
                     group,
                 ))
             if pair.get('presentation_differences'):
@@ -1147,8 +1240,8 @@ class CloudConflictDialog(QDialog):
                     f'measurement:{measurement_identity}',
                     {'kind': 'measurement', 'side': 'matched', 'identity': measurement_identity,
                      'local_id': local_id, 'cloud_id': cloud_id, 'required': True},
-                    [('local', self.tr('Use this device')),
-                     ('cloud', self.tr('Use Sporely Cloud'))],
+                    [('local', self.tr('Keep this device value')),
+                     ('cloud', self.tr('Keep Sporely Cloud value'))],
                     box,
                 ))
             elif status == 'local_only':
@@ -1400,53 +1493,98 @@ class CloudConflictDialog(QDialog):
                 'image_order': 'local_desktop',
             },
             'allow_media_deletion': False,
+            # Drift protection: echo the fingerprint the user reviewed back
+            # into the plan.  ``resolve_conflict_plan`` re-reads local+cloud
+            # state before writing and aborts if anything relevant changed.
+            'baseline': dict((self._current_detail or {}).get('plan_baseline') or {}),
         }
-
-    def _plan_summary(self, plan: dict) -> str:
-        items = list(plan.get('items') or [])
-        counts = {
-            'cloud_fields': sum(1 for item in items if item.get('kind') == 'field' and item.get('choice') == 'cloud'),
-            'local_fields': sum(1 for item in items if item.get('kind') == 'field' and item.get('choice') == 'local'),
-            'local_measurements': sum(1 for item in items if item.get('kind') == 'measurement' and item.get('choice') in {'local', 'upload'}),
-            'cloud_measurements': sum(1 for item in items if item.get('kind') == 'measurement' and item.get('choice') in {'cloud', 'download'}),
-            'upload_images': sum(1 for item in items if item.get('kind') == 'image' and item.get('choice') == 'upload'),
-            'download_images': sum(1 for item in items if item.get('kind') == 'image' and item.get('choice') == 'download'),
-        }
-        lines = [
-            self.tr('Use cloud values for {count} observation field(s)').format(count=counts['cloud_fields']),
-            self.tr('Use device values for {count} observation field(s)').format(count=counts['local_fields']),
-            self.tr('Use or upload {count} device measurement(s)').format(count=counts['local_measurements']),
-            self.tr('Use or download {count} cloud measurement(s)').format(count=counts['cloud_measurements']),
-            self.tr('Upload {count} local-only image(s)').format(count=counts['upload_images']),
-            self.tr('Download {count} cloud-only image(s)').format(count=counts['download_images']),
-        ]
-        if plan.get('derived_statistics') == 'recompute_from_measurements':
-            lines.append(self.tr('Recompute spore statistics'))
-        lines.append(self.tr('No media will be deleted'))
-        return '\n'.join(f'• {line}' for line in lines)
 
     def _apply_selected_changes(self) -> None:
         conflict = self._current_conflict()
         if conflict is None or not self._apply_btn.isEnabled():
             return
+        if self._apply_worker is not None:
+            return  # a second worker cannot start
+        # Preserve current selection so failure can restore it.
+        self._pending_selection = {
+            key: self._selected_choice(key) or '' for key in self._choice_specs
+        }
+        self._pending_conflict_row = self._list.currentRow()
+        # Disable Apply and preset controls immediately.  Review-later remains
+        # enabled UNTIL the worker actually starts (we disable it just below).
+        self._apply_btn.setEnabled(False)
+        self._set_resolution_enabled(False)
+        self._refresh_btn.setEnabled(False)
+        self._review_later_btn.setEnabled(False)
+        for group in self._choice_groups.values():
+            for button in group.buttons():
+                button.setEnabled(False)
         plan = self._build_selected_plan()
-        reply = QMessageBox.question(
-            self,
-            self.tr('Apply selected conflict changes?'),
-            self._plan_summary(plan),
-            QMessageBox.Yes | QMessageBox.No,
-            QMessageBox.No,
+        self._show_status(self.tr('Applying selected changes…'), 'info')
+        worker = ConflictPlanApplyWorker(
+            local_id=int(conflict.get('local_id') or 0),
+            cloud_id=str(conflict.get('cloud_id') or '').strip(),
+            plan=plan,
+            prepare_images_cb=self._prepare_images_cb,
+            prior_result=self._pending_prior_result,
         )
-        if reply != QMessageBox.Yes:
-            return
+        worker.succeeded.connect(self._on_apply_succeeded)
+        worker.failed.connect(self._on_apply_failed)
+        # Retain the worker so it isn't garbage-collected while running; the
+        # existing _retain_worker helper wraps its finished signal too.
+        _retain_worker(worker)
+        self._apply_worker = worker
+        worker.start()
+
+    def _on_apply_succeeded(self, result: dict) -> None:
+        self._apply_worker = None
+        self._pending_prior_result = None
+        self._pending_selection = {}
         self.decisions.append({
-            'local_id': int(conflict.get('local_id') or 0),
-            'cloud_id': str(conflict.get('cloud_id') or '').strip(),
+            'local_id': int((self._current_conflict() or {}).get('local_id') or 0),
+            'cloud_id': str((self._current_conflict() or {}).get('cloud_id') or '').strip(),
             'action': 'plan',
-            'plan': plan,
+            'plan': self._build_selected_plan(),
+            'result': dict(result or {}),
         })
         self.resolved_any = True
+        # Optional presentation warnings surface as inline status.
+        warnings = list((result or {}).get('presentation_warnings') or [])
+        if warnings:
+            self._show_status(
+                self.tr('Applied. Presentation policy was not fully applied for '
+                        '{count} image(s); other data is correct.').format(count=len(warnings)),
+                'info',
+            )
+        else:
+            self._show_status(self.tr('Applied.'), 'success')
         self._remove_current_conflict()
+
+    def _on_apply_failed(self, message: str, partial_result) -> None:
+        self._apply_worker = None
+        # Preserve partial_result for a safe retry (skip completed ops).
+        if isinstance(partial_result, dict) and partial_result:
+            self._pending_prior_result = partial_result
+        self._show_status(
+            self.tr('Apply failed: {message}. Review the plan and try again.').format(
+                message=str(message or '')
+            ),
+            'error',
+        )
+        # Re-enable controls with the same choices intact.
+        for group in self._choice_groups.values():
+            for button in group.buttons():
+                button.setEnabled(True)
+        for key, value in self._pending_selection.items():
+            if value:
+                self._set_choice(key, value)
+        self._refresh_btn.setEnabled(True)
+        self._review_later_btn.setEnabled(True)
+        # Re-run apply-enabling logic; presets stay disabled during failure to
+        # discourage overwriting the still-loaded plan without an explicit
+        # click.  User can hit presets again manually.
+        self._set_resolution_enabled(True)
+        self._update_apply_enabled()
 
     def _remove_current_conflict(self) -> None:
         row = self._list.currentRow()
@@ -1479,16 +1617,27 @@ class CloudConflictDialog(QDialog):
         self._status_label.show()
 
     def reject(self) -> None:
-        # Decisions are merely accumulated until the dialog is accepted by the
-        # caller.  Every rejection path discards them atomically.
-        self.decisions.clear()
-        self.resolved_any = False
+        # If an apply worker is running, do not close mid-write.  The worker's
+        # writes are already in flight; interrupting synchronously here could
+        # leave partial cloud state without a matching local commit.  The
+        # ``Review later`` button is disabled while a worker runs; this guard
+        # protects the programmatic path (Escape, window close).
+        if self._apply_worker is not None:
+            return
+        # Review-later semantics: decisions accumulated by SUCCESSFUL applies
+        # remain — they've already been committed to cloud.  Only the pending
+        # conflicts (not yet applied) are discarded here.
+        self._pending_prior_result = None
+        self._pending_selection = {}
         self._begin_close()
         super().reject()
 
     def closeEvent(self, event) -> None:
-        self.decisions.clear()
-        self.resolved_any = False
+        if self._apply_worker is not None:
+            event.ignore()
+            return
+        self._pending_prior_result = None
+        self._pending_selection = {}
         self._begin_close()
         super().closeEvent(event)
 

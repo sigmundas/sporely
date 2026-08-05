@@ -3780,35 +3780,48 @@ class ObservationsTab(QWidget):
         entries = [dict(row or {}) for row in (conflicts or []) if row]
         if not entries:
             return False
+        # Shared final gate: automatic decisions are applied and only
+        # candidates with genuine manual conflicts reach the dialog.
+        from utils.cloud_sync import finalize_sync_candidates, SporelyCloudClient
+        gate_client = SporelyCloudClient.from_stored_credentials()
+        if gate_client is not None:
+            manual_entries, gate_errors = finalize_sync_candidates(
+                gate_client, entries,
+                prepare_images_cb=self.prepare_cloud_sync_image_uploads,
+            )
+            if gate_errors:
+                self.set_status_message(
+                    self.tr("Cloud sync applied automatic changes with {n} error(s).").format(
+                        n=len(gate_errors)
+                    ),
+                    level="warning",
+                )
+                print(
+                    '[observations_tab] finalize gate errors: '
+                    + '; '.join(str(e) for e in gate_errors),
+                    flush=True,
+                )
+            entries = manual_entries
+        if not entries:
+            # All resolved automatically — do not open an empty dialog.
+            self.refresh_observations(show_status=False)
+            return True
         dialog = CloudConflictDialog(
             self,
             conflicts=entries,
             prepare_images_cb=self.prepare_cloud_sync_image_uploads,
         )
+        # Turn B: the dialog now runs its per-conflict apply worker inline.
+        # By the time exec() returns, dialog.decisions is a log of what was
+        # applied and any remaining conflicts have been left "review later".
         dialog.exec()
-        
+
         if dialog.decisions:
-            from .cloud_conflict_dialog import ConflictResolutionWorker
-            self._cloud_conflict_resolution_worker = ConflictResolutionWorker(
-                dialog.decisions,
-                prepare_images_cb=self.prepare_cloud_sync_image_uploads,
-            )
-            _track_worker(self._cloud_conflict_resolution_worker)
-            self._cloud_conflict_resolution_worker.progress.connect(self._set_status_progress)
-            
-            def _on_finished(resolved_any):
-                self._set_status_progress("", 0, 0)
-                if resolved_any:
-                    self.refresh_observations(show_status=False)
-                    
-            def _on_error(err):
-                self.set_status_message(self.tr("Conflict resolution error: {err}").format(err=err), level="error")
-                
-            self._cloud_conflict_resolution_worker.resolution_finished.connect(_on_finished)
-            self._cloud_conflict_resolution_worker.error.connect(_on_error)
-            self._cloud_conflict_resolution_worker.start()
+            # At least one plan was applied — refresh so the UI drops stale
+            # rows.  No second worker needed; the writes already happened.
+            self.refresh_observations(show_status=False)
             return True
-            
+
         return False
 
     def _format_deleted_cloud_observation_label(self, entry: dict) -> str:

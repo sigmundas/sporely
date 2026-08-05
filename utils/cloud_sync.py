@@ -2091,6 +2091,19 @@ class CloudReauthRequiredError(CloudSyncError):
     """
 
 
+class PartialConflictPlanError(CloudSyncError):
+    """Raised when a conflict plan fails mid-execution.
+
+    Carries the partial operation log so the caller (typically the in-dialog
+    apply worker) can present per-item statuses, keep the conflict visible,
+    and offer a safe retry using ``prior_result`` on the next call.
+    """
+
+    def __init__(self, message: str, *, partial_result: dict):
+        super().__init__(message)
+        self.partial_result = dict(partial_result or {})
+
+
 class CloudSessionAccountMismatchError(AccountMismatchError):
     """Raised when a stale SporelyCloudClient sees on-disk session tokens
     that belong to a different Sporely Cloud user than the one this
@@ -3123,6 +3136,15 @@ def summarize_sync_issues(errors: list[str] | tuple[str, ...] | None) -> dict:
 
 
 def _parse_cloud_observation_snapshot(snapshot: str | None) -> dict:
+    """Parse a snapshot payload.
+
+    Backward-compatible across both schema versions:
+
+    * older snapshots without ``schema_version`` continue to load; no
+      accepted-asymmetry is invented for them (the section is absent);
+    * schema-2 payloads preserve the ``schema_version`` and
+      ``accepted_asymmetry`` sections verbatim.
+    """
     text = str(snapshot or '').strip()
     if not text:
         return {}
@@ -3142,6 +3164,19 @@ def _parse_cloud_observation_snapshot(snapshot: str | None) -> dict:
     measurements = data.get('measurements')
     if isinstance(measurements, list):
         data['measurements'] = [dict(row or {}) for row in measurements]
+    # Preserve accepted_asymmetry when present.  When absent (pre-B3 snapshots)
+    # leave the key unset — do NOT synthesize acceptance.
+    asymmetry = data.get('accepted_asymmetry')
+    if isinstance(asymmetry, dict):
+        data['accepted_asymmetry'] = {
+            key: [dict(entry) for entry in asymmetry.get(key) or [] if isinstance(entry, dict)]
+            for key in (
+                'local_only_images',
+                'cloud_only_images',
+                'local_only_measurements',
+                'cloud_only_measurements',
+            )
+        }
     return data
 
 
@@ -4824,6 +4859,9 @@ def _normalize_cloud_pulled_image_order(local_id: int) -> None:
         _update_image_columns_without_touching_observation(int(image_id), {'sort_order': index})
 
 
+_CLOUD_OBSERVATION_SNAPSHOT_SCHEMA_VERSION = 2
+
+
 def _cloud_observation_snapshot(
     remote: dict,
     remote_images: list[dict] | None,
@@ -4831,12 +4869,24 @@ def _cloud_observation_snapshot(
     *,
     include_images: bool = True,
     include_measurements: bool = True,
+    accepted_asymmetry: dict | None = None,
 ) -> str:
+    """Deterministic snapshot payload.
+
+    Turn-B B3: adds an optional ``accepted_asymmetry`` section that records
+    intentionally one-sided items the user chose to keep.  Older callers that
+    do not pass it still produce a schema-2 payload with an empty asymmetry
+    section (kept backward-compatible on the read side by
+    ``_parse_cloud_observation_snapshot``).
+    """
     obs_part = {
         field: _normalize_snapshot_value((remote or {}).get(field))
         for field in _SNAPSHOT_OBS_FIELDS
     }
-    payload = {'observation': obs_part}
+    payload: dict = {
+        'schema_version': _CLOUD_OBSERVATION_SNAPSHOT_SCHEMA_VERSION,
+        'observation': obs_part,
+    }
     if include_images:
         images_part = []
         filtered_images = [
@@ -4873,7 +4923,68 @@ def _cloud_observation_snapshot(
                 }
             )
         payload['measurements'] = measurements_part
+    # ── Accepted-asymmetry section ────────────────────────────────────────
+    # Only include the section when meaningful; older readers ignore it.
+    if accepted_asymmetry:
+        payload['accepted_asymmetry'] = _normalize_accepted_asymmetry_for_snapshot(
+            accepted_asymmetry
+        )
     return json.dumps(payload, ensure_ascii=True, sort_keys=True, separators=(',', ':'))
+
+
+def _normalize_accepted_asymmetry_for_snapshot(raw: dict | None) -> dict:
+    """Canonicalize the accepted-asymmetry section for stable serialization.
+
+    Each collection is a list of entries; each entry always carries:
+
+    * ``side``: ``"local_only"`` or ``"cloud_only"``;
+    * ``kind``: ``"image"`` or ``"measurement"``;
+    * ``local_id`` and ``cloud_id`` (one of them will be null);
+    * ``owning_local_image_id`` / ``owning_cloud_image_id`` for measurements;
+    * ``fingerprint``: normalized content fingerprint at acceptance time;
+    * ``accepted_at``: ISO timestamp (diagnostic only; never a privacy path);
+    * ``choice``: ``"keep_local"`` or ``"keep_cloud"``.
+
+    No secrets, tokens, or filesystem paths are stored.
+    """
+    if not isinstance(raw, dict):
+        return {
+            'local_only_images': [],
+            'cloud_only_images': [],
+            'local_only_measurements': [],
+            'cloud_only_measurements': [],
+        }
+    result = {
+        'local_only_images': [],
+        'cloud_only_images': [],
+        'local_only_measurements': [],
+        'cloud_only_measurements': [],
+    }
+    for key in result.keys():
+        for entry in raw.get(key) or []:
+            if not isinstance(entry, dict):
+                continue
+            result[key].append(_normalize_accepted_asymmetry_entry(entry))
+        # Stable sort so snapshots round-trip byte-for-byte.
+        result[key].sort(key=lambda e: (
+            str(e.get('local_id') or ''),
+            str(e.get('cloud_id') or ''),
+        ))
+    return result
+
+
+def _normalize_accepted_asymmetry_entry(entry: dict) -> dict:
+    return {
+        'side': str(entry.get('side') or ''),
+        'kind': str(entry.get('kind') or ''),
+        'local_id': _safe_int(entry.get('local_id')) or None,
+        'cloud_id': str(entry.get('cloud_id') or '').strip() or None,
+        'owning_local_image_id': _safe_int(entry.get('owning_local_image_id')) or None,
+        'owning_cloud_image_id': str(entry.get('owning_cloud_image_id') or '').strip() or None,
+        'fingerprint': entry.get('fingerprint') if isinstance(entry.get('fingerprint'), dict) else {},
+        'accepted_at': str(entry.get('accepted_at') or '').strip() or None,
+        'choice': str(entry.get('choice') or '').strip() or None,
+    }
 
 
 def _load_cloud_observation_snapshot(cloud_id: str) -> str:
@@ -9783,6 +9894,170 @@ def _apply_remote_images_to_local(
     return warnings
 
 
+def _build_plan_from_automatic_decisions(detail: dict) -> dict:
+    """Translate ``detail['automatic_decisions']`` into a resolve_conflict_plan.
+
+    The produced plan uses the exact same primitives ordinary sync would
+    otherwise reach for; we route through the plan executor so drift
+    protection, identity validation, presentation policy, statistics
+    recomputation, and finalization all run consistently.
+    """
+    detail = detail or {}
+    auto = detail.get('automatic_decisions') or {}
+    items: list[dict] = []
+    for entry in auto.get('fields') or []:
+        action = entry.get('action')
+        field = entry.get('field')
+        if not field:
+            continue
+        if action == 'push_local':
+            items.append({'kind': 'field', 'field': field, 'choice': 'local'})
+        elif action == 'pull_cloud':
+            items.append({'kind': 'field', 'field': field, 'choice': 'cloud'})
+        elif action == 'auto_draft_wins':
+            side = entry.get('chosen_side') or 'local'
+            items.append({'kind': 'field', 'field': field, 'choice': side})
+    for entry in auto.get('media') or []:
+        kind = entry.get('kind')
+        side = entry.get('side')
+        action = entry.get('action') or ''
+        local_id = _safe_int(entry.get('local_id')) or None
+        cloud_id = str(entry.get('cloud_id') or '').strip() or None
+        if kind == 'image' and side == 'local_only':
+            items.append({'kind': 'image', 'side': 'local_only',
+                          'local_id': local_id, 'choice': 'upload'})
+        elif kind == 'image' and side == 'cloud_only':
+            items.append({'kind': 'image', 'side': 'cloud_only',
+                          'cloud_id': cloud_id, 'choice': 'download'})
+        elif kind == 'image_metadata':
+            choice = 'local' if action == 'auto_apply_local' else 'cloud'
+            items.append({'kind': 'image_metadata',
+                          'local_id': local_id, 'cloud_id': cloud_id,
+                          'choice': choice})
+        elif kind == 'measurement' and side == 'local_only':
+            items.append({'kind': 'measurement', 'side': 'local_only',
+                          'local_id': local_id, 'choice': 'upload'})
+        elif kind == 'measurement' and side == 'cloud_only':
+            items.append({'kind': 'measurement', 'side': 'cloud_only',
+                          'cloud_id': cloud_id, 'choice': 'download'})
+        elif kind == 'measurement' and side == 'matched':
+            choice = 'local' if action == 'auto_apply_local' else 'cloud'
+            items.append({'kind': 'measurement', 'side': 'matched',
+                          'local_id': local_id, 'cloud_id': cloud_id,
+                          'choice': choice})
+    return {
+        'items': items,
+        'baseline': detail.get('plan_baseline'),
+        'allow_media_deletion': False,
+        'derived_statistics': (
+            'recompute_from_measurements'
+            if detail.get('derived_statistics') else 'unchanged'
+        ),
+    }
+
+
+def finalize_sync_candidates(
+    client: "SporelyCloudClient",
+    candidates: list[dict],
+    *,
+    prepare_images_cb=None,
+) -> tuple[list[dict], list[dict]]:
+    """The shared final gate used by both caller sites before the dialog opens.
+
+    For each preflight-flagged candidate:
+
+    1. Load read-only conflict detail.
+    2. If ``automatic_decisions`` contains any operations, execute them
+       through :func:`resolve_conflict_plan` (same executor used for manual
+       plans — same drift/identity/finalization guarantees).
+    3. Reread and reclassify.
+    4. Keep only candidates whose FINAL detail has ``has_manual_conflicts=True``.
+
+    Automatic-execution failures are returned separately as sync errors —
+    they are never silently hidden.  A candidate that fails an automatic
+    step and still has manual work is passed through so the dialog can
+    receive it; a candidate that fails an automatic step with no remaining
+    manual work becomes a plain sync error.
+    """
+    manual_candidates: list[dict] = []
+    automatic_errors: list[dict] = []
+    for candidate in candidates or []:
+        try:
+            local_id = int(candidate.get('local_id') or 0)
+        except (TypeError, ValueError):
+            local_id = 0
+        cloud_id = str(candidate.get('cloud_id') or '').strip()
+        if not local_id:
+            # Malformed candidate — do not silently drop; treat as error.
+            automatic_errors.append({
+                'local_id': 0, 'cloud_id': cloud_id,
+                'phase': 'read', 'error': 'candidate missing local_id',
+            })
+            continue
+        try:
+            detail = get_conflict_detail(client, local_id, cloud_id or None)
+        except Exception as exc:
+            automatic_errors.append({
+                'local_id': local_id, 'cloud_id': cloud_id,
+                'phase': 'read', 'error': str(exc),
+            })
+            continue
+        auto_ops = detail.get('automatic_decisions') or {}
+        has_automatic = bool(auto_ops.get('fields') or auto_ops.get('media'))
+        has_manual = bool(detail.get('has_manual_conflicts'))
+        if has_automatic:
+            plan = _build_plan_from_automatic_decisions(detail)
+            try:
+                resolve_conflict_plan(
+                    client, local_id,
+                    cloud_id=cloud_id or None,
+                    plan=plan,
+                    prepare_images_cb=prepare_images_cb,
+                )
+            except Exception as exc:
+                automatic_errors.append({
+                    'local_id': local_id, 'cloud_id': cloud_id,
+                    'phase': 'execute', 'error': str(exc),
+                })
+                if has_manual:
+                    manual_candidates.append({**candidate, 'detail': detail})
+                continue
+        # Reread and reclassify.
+        try:
+            final_detail = get_conflict_detail(client, local_id, cloud_id or None)
+        except Exception as exc:
+            automatic_errors.append({
+                'local_id': local_id, 'cloud_id': cloud_id,
+                'phase': 'verify', 'error': str(exc),
+            })
+            continue
+        if final_detail.get('has_manual_conflicts'):
+            manual_candidates.append({**candidate, 'detail': final_detail})
+        elif has_automatic:
+            _clear_observation_conflict_review_pending(local_id)
+    return manual_candidates, automatic_errors
+
+
+def _local_observation_id_by_cloud_id(cloud_id: str) -> int:
+    """Resolve local observation id from cloud id via SQL, best-effort."""
+    text = str(cloud_id or '').strip()
+    if not text:
+        return 0
+    try:
+        conn = get_connection()
+        cursor = conn.cursor()
+        cursor.execute(
+            "SELECT id FROM observations WHERE cloud_id = ? LIMIT 1",
+            (text,),
+        )
+        row = cursor.fetchone()
+        if row:
+            return int(row[0])
+    except Exception:
+        return 0
+    return 0
+
+
 def _store_remote_snapshot(
     client: "SporelyCloudClient",
     cloud_id: str,
@@ -9792,6 +10067,7 @@ def _store_remote_snapshot(
     *,
     include_images: bool = True,
     include_measurements: bool = True,
+    accepted_asymmetry: dict | None = None,
 ) -> None:
     cloud_value = str(cloud_id or '').strip()
     if not cloud_value:
@@ -9826,6 +10102,93 @@ def _store_remote_snapshot(
             ))
     else:
         measurements = []
+    # ── B3 + final Fix 2: reconcile accepted-asymmetry on every schema-2
+    # snapshot write.  Ordinary sync callers do NOT supply
+    # ``accepted_asymmetry`` — they invoke this helper to persist a fresh
+    # baseline.  We must never create new acceptance in that path, but we
+    # MUST prune existing entries whose stable identity is no longer one-sided
+    # or no longer exists.  Only the plan resolver passes a non-None
+    # ``accepted_asymmetry`` (containing new / replacement entries) — those
+    # additions come from ``_reconcile_accepted_asymmetry`` upstream and are
+    # respected verbatim here.
+    previous = _parse_cloud_observation_snapshot(
+        _load_cloud_observation_snapshot(cloud_value)
+    )
+    prev_asym = previous.get('accepted_asymmetry')
+    additions_from_caller = accepted_asymmetry if isinstance(accepted_asymmetry, dict) else None
+    if additions_from_caller is not None or isinstance(prev_asym, dict):
+        # Best-effort resolve local observation id from cloud id so we can
+        # apply local-side pruning rules (row deleted / relinked).  If we
+        # cannot resolve it, we degrade gracefully to remote-only pruning.
+        local_observation_id = _local_observation_id_by_cloud_id(cloud_value)
+        current_local_images: list[dict] = []
+        current_local_measurements: list[dict] = []
+        if local_observation_id:
+            try:
+                current_local_images = ImageDB.get_images_for_observation(int(local_observation_id))
+            except Exception:
+                current_local_images = []
+            try:
+                current_local_measurements = MeasurementDB.get_measurements_for_observation(
+                    int(local_observation_id)
+                )
+            except Exception:
+                current_local_measurements = []
+        # Determine matched IDs (counterpart appearance) from remote state.
+        matched_local_image_ids = {
+            _safe_int(row.get('desktop_id'))
+            for row in images if _safe_int(row.get('desktop_id'))
+        } | {
+            _safe_int(row.get('id')) for row in current_local_images
+            if str(row.get('cloud_id') or '').strip()
+        }
+        matched_cloud_image_ids = {
+            str(row.get('cloud_id') or '').strip()
+            for row in current_local_images
+            if str(row.get('cloud_id') or '').strip()
+        }
+        matched_local_measurement_ids = {
+            _safe_int(row.get('desktop_id'))
+            for row in measurements if _safe_int(row.get('desktop_id'))
+        } | {
+            _safe_int(row.get('id')) for row in current_local_measurements
+            if str(row.get('cloud_id') or '').strip()
+        }
+        matched_cloud_measurement_ids = {
+            str(row.get('cloud_id') or '').strip()
+            for row in current_local_measurements
+            if str(row.get('cloud_id') or '').strip()
+        }
+        # Ordinary sync path: additions_from_caller is None → we only prune.
+        # Plan-resolver path: additions_from_caller carries new entries → they
+        # are added on top of the pruned survivors.
+        new_entries_source = additions_from_caller if additions_from_caller is not None else {
+            'local_only_images': [],
+            'cloud_only_images': [],
+            'local_only_measurements': [],
+            'cloud_only_measurements': [],
+        }
+        reconciled = _reconcile_accepted_asymmetry(
+            prev_asym, new_entries_source,
+            plan_items=[],  # ordinary sync has no plan; overrides come from additions_from_caller only
+            current_local_images=current_local_images,
+            current_remote_images=images,
+            current_local_measurements=current_local_measurements,
+            current_remote_measurements=measurements,
+            matched_local_image_ids=matched_local_image_ids,
+            matched_cloud_image_ids=matched_cloud_image_ids,
+            matched_local_measurement_ids=matched_local_measurement_ids,
+            matched_cloud_measurement_ids=matched_cloud_measurement_ids,
+        )
+        # If reconciliation produced nothing meaningful, drop the section
+        # entirely (empty dict) so the snapshot stays lean.
+        if any(reconciled.get(key) for key in (
+            'local_only_images', 'cloud_only_images',
+            'local_only_measurements', 'cloud_only_measurements',
+        )):
+            accepted_asymmetry = reconciled
+        else:
+            accepted_asymmetry = None
     _store_cloud_observation_snapshot(
         cloud_value,
         _cloud_observation_snapshot(
@@ -9834,6 +10197,7 @@ def _store_remote_snapshot(
             measurements if include_measurements else None,
             include_images=include_images,
             include_measurements=include_measurements,
+            accepted_asymmetry=accepted_asymmetry,
         ),
     )
 
@@ -10187,6 +10551,1923 @@ def _format_recomputed_spore_statistics(observation_id: int) -> str | None:
     return text + f", n = {stats['count']}"
 
 
+# ── Per-item conflict plan — helpers ──────────────────────────────────────────
+
+def _conflict_plan_local_observation_fingerprint(record: dict | None) -> dict:
+    """Normalized local observation fingerprint used for drift detection."""
+    return _observation_compare_payload(record or {}, local=True)
+
+
+def _conflict_plan_remote_observation_fingerprint(record: dict | None) -> dict:
+    return _observation_compare_payload(record or {}, local=False)
+
+
+def _conflict_plan_local_image_fingerprint(row: dict | None) -> dict:
+    payload = _local_image_snapshot_payload(row or {})
+    payload['__local_id'] = _safe_int((row or {}).get('id'))
+    payload['__cloud_id'] = str((row or {}).get('cloud_id') or '').strip() or None
+    return payload
+
+
+def _conflict_plan_remote_image_fingerprint(row: dict | None) -> dict:
+    payload = _remote_image_payload(row or {})
+    payload['__cloud_id'] = str((row or {}).get('id') or '').strip() or None
+    payload['__desktop_id'] = _safe_int((row or {}).get('desktop_id'))
+    return payload
+
+
+def _conflict_plan_local_measurement_fingerprint(row: dict | None) -> dict:
+    payload = _local_measurement_snapshot_payload(row or {})
+    payload['__local_id'] = _safe_int((row or {}).get('id'))
+    payload['__cloud_id'] = str((row or {}).get('cloud_id') or '').strip() or None
+    return payload
+
+
+def _conflict_plan_remote_measurement_fingerprint(row: dict | None) -> dict:
+    payload = _remote_measurement_snapshot_payload(row or {})
+    payload['__cloud_id'] = str((row or {}).get('id') or '').strip() or None
+    payload['__desktop_id'] = _safe_int((row or {}).get('desktop_id'))
+    return payload
+
+
+def build_conflict_plan_baseline(
+    *,
+    local_obs: dict | None,
+    remote_obs: dict | None,
+    local_images: list[dict],
+    remote_images: list[dict],
+    local_measurements: list[dict],
+    remote_measurements: list[dict],
+) -> dict:
+    """Deterministic baseline fingerprint returned inside get_conflict_detail.
+
+    The dialog echoes this back inside the plan under ``baseline`` so that
+    ``resolve_conflict_plan`` can prove the reviewed state still matches the
+    live state before any write occurs.
+    """
+    return {
+        'schema_version': _CONFLICT_PLAN_BASELINE_SCHEMA_VERSION,
+        'local_observation': _conflict_plan_local_observation_fingerprint(local_obs),
+        'remote_observation': _conflict_plan_remote_observation_fingerprint(remote_obs),
+        'local_images': [
+            _conflict_plan_local_image_fingerprint(row) for row in (local_images or [])
+        ],
+        'remote_images': [
+            _conflict_plan_remote_image_fingerprint(row) for row in (remote_images or [])
+        ],
+        'local_measurements': [
+            _conflict_plan_local_measurement_fingerprint(row)
+            for row in (local_measurements or [])
+        ],
+        'remote_measurements': [
+            _conflict_plan_remote_measurement_fingerprint(row)
+            for row in (remote_measurements or [])
+        ],
+    }
+
+
+def _plan_drift_message() -> str:
+    return (
+        'The observation changed after this comparison was loaded. '
+        'Refresh the comparison before applying.'
+    )
+
+
+def _find_local_image_fingerprint(baseline_images: list[dict], *, local_id: int | None,
+                                  cloud_id: str | None) -> dict | None:
+    if local_id:
+        for row in baseline_images:
+            if _safe_int(row.get('__local_id')) == int(local_id):
+                return row
+    if cloud_id:
+        for row in baseline_images:
+            if str(row.get('__cloud_id') or '') == str(cloud_id):
+                return row
+    return None
+
+
+def _find_remote_image_fingerprint(baseline_images: list[dict], *, cloud_id: str | None,
+                                   local_id: int | None) -> dict | None:
+    if cloud_id:
+        for row in baseline_images:
+            if str(row.get('__cloud_id') or '') == str(cloud_id):
+                return row
+    if local_id:
+        for row in baseline_images:
+            if _safe_int(row.get('__desktop_id')) == int(local_id):
+                return row
+    return None
+
+
+def _find_local_measurement_fingerprint(rows: list[dict], *, local_id: int | None,
+                                        cloud_id: str | None) -> dict | None:
+    if local_id:
+        for row in rows:
+            if _safe_int(row.get('__local_id')) == int(local_id):
+                return row
+    if cloud_id:
+        for row in rows:
+            if str(row.get('__cloud_id') or '') == str(cloud_id):
+                return row
+    return None
+
+
+def _find_remote_measurement_fingerprint(rows: list[dict], *, cloud_id: str | None,
+                                         local_id: int | None) -> dict | None:
+    if cloud_id:
+        for row in rows:
+            if str(row.get('__cloud_id') or '') == str(cloud_id):
+                return row
+    if local_id:
+        for row in rows:
+            if _safe_int(row.get('__desktop_id')) == int(local_id):
+                return row
+    return None
+
+
+_CONFLICT_PLAN_BASELINE_SCHEMA_VERSION = 1
+_CONFLICT_PLAN_BASELINE_REQUIRED_KEYS = (
+    'local_observation',
+    'remote_observation',
+    'local_images',
+    'remote_images',
+    'local_measurements',
+    'remote_measurements',
+)
+
+
+def _validate_plan_baseline_shape(baseline: dict | None) -> None:
+    """Fail closed when the per-item plan lacks a well-formed baseline.
+
+    Turn-A A1: the item-level plan is not backward-compatible with callers
+    that omit a baseline.  The old whole-observation resolvers
+    (``resolve_conflict_keep_local`` / ``keep_cloud`` / ``merge``) are
+    separate APIs that never took a baseline; those remain compatible.
+    """
+    if not isinstance(baseline, dict) or not baseline:
+        raise CloudSyncError(
+            'Conflict plan is missing the reviewed baseline. '
+            'Refresh the comparison and try again.'
+        )
+    schema = baseline.get('schema_version')
+    if schema != _CONFLICT_PLAN_BASELINE_SCHEMA_VERSION:
+        raise CloudSyncError(
+            f'Unsupported conflict plan baseline schema {schema!r}. '
+            'Refresh the comparison and try again.'
+        )
+    for key in _CONFLICT_PLAN_BASELINE_REQUIRED_KEYS:
+        if key not in baseline:
+            raise CloudSyncError(
+                f'Malformed conflict plan baseline (missing "{key}"). '
+                'Refresh the comparison and try again.'
+            )
+    # Collection keys must be list-shaped.
+    for key in _CONFLICT_PLAN_BASELINE_REQUIRED_KEYS[2:]:
+        if not isinstance(baseline.get(key), list):
+            raise CloudSyncError(
+                f'Malformed conflict plan baseline ("{key}" not a list). '
+                'Refresh the comparison and try again.'
+            )
+    if not isinstance(baseline.get('local_observation'), dict):
+        raise CloudSyncError(
+            'Malformed conflict plan baseline (local_observation not an object). '
+            'Refresh the comparison and try again.'
+        )
+    if not isinstance(baseline.get('remote_observation'), dict):
+        raise CloudSyncError(
+            'Malformed conflict plan baseline (remote_observation not an object). '
+            'Refresh the comparison and try again.'
+        )
+
+
+def _verify_plan_baseline(
+    baseline: dict,
+    items: list[dict],
+    *,
+    local_obs: dict | None,
+    remote_obs: dict | None,
+    local_images: list[dict],
+    remote_images: list[dict],
+    local_measurements: list[dict],
+    remote_measurements: list[dict],
+) -> None:
+    """Abort before any write if reviewed values or identities changed."""
+    has_field_item = any(item.get('kind') == 'field' for item in items)
+    if has_field_item:
+        current_local = _conflict_plan_local_observation_fingerprint(local_obs)
+        if baseline.get('local_observation') != current_local:
+            raise CloudSyncError(_plan_drift_message())
+        current_remote = _conflict_plan_remote_observation_fingerprint(remote_obs)
+        if baseline.get('remote_observation') != current_remote:
+            raise CloudSyncError(_plan_drift_message())
+
+    baseline_local_images = list(baseline.get('local_images') or [])
+    baseline_remote_images = list(baseline.get('remote_images') or [])
+    baseline_local_measurements = list(baseline.get('local_measurements') or [])
+    baseline_remote_measurements = list(baseline.get('remote_measurements') or [])
+
+    current_local_image_by_local = {
+        _safe_int(row.get('id')): _conflict_plan_local_image_fingerprint(row)
+        for row in local_images or []
+        if _safe_int(row.get('id'))
+    }
+    current_local_image_by_cloud = {
+        str(row.get('cloud_id') or '').strip(): _conflict_plan_local_image_fingerprint(row)
+        for row in local_images or []
+        if str(row.get('cloud_id') or '').strip()
+    }
+    current_remote_image_by_cloud = {
+        str(row.get('id') or '').strip(): _conflict_plan_remote_image_fingerprint(row)
+        for row in remote_images or []
+        if str(row.get('id') or '').strip()
+    }
+    current_remote_image_by_desktop = {
+        _safe_int(row.get('desktop_id')): _conflict_plan_remote_image_fingerprint(row)
+        for row in remote_images or []
+        if _safe_int(row.get('desktop_id'))
+    }
+    current_local_measurement_by_local = {
+        _safe_int(row.get('id')): _conflict_plan_local_measurement_fingerprint(row)
+        for row in local_measurements or []
+        if _safe_int(row.get('id'))
+    }
+    current_local_measurement_by_cloud = {
+        str(row.get('cloud_id') or '').strip(): _conflict_plan_local_measurement_fingerprint(row)
+        for row in local_measurements or []
+        if str(row.get('cloud_id') or '').strip()
+    }
+    current_remote_measurement_by_cloud = {
+        str(row.get('id') or '').strip(): _conflict_plan_remote_measurement_fingerprint(row)
+        for row in remote_measurements or []
+        if str(row.get('id') or '').strip()
+    }
+    current_remote_measurement_by_desktop = {
+        _safe_int(row.get('desktop_id')): _conflict_plan_remote_measurement_fingerprint(row)
+        for row in remote_measurements or []
+        if _safe_int(row.get('desktop_id'))
+    }
+
+    for item in items:
+        kind = item.get('kind')
+        local_id = _safe_int(item.get('local_id')) or None
+        cloud_id = str(item.get('cloud_id') or '').strip() or None
+        if kind in {'image', 'image_metadata'}:
+            expected_local = _find_local_image_fingerprint(
+                baseline_local_images, local_id=local_id, cloud_id=cloud_id,
+            )
+            if expected_local is not None:
+                current = (
+                    current_local_image_by_local.get(local_id) if local_id
+                    else current_local_image_by_cloud.get(cloud_id or '')
+                )
+                if current != expected_local:
+                    raise CloudSyncError(_plan_drift_message())
+            expected_remote = _find_remote_image_fingerprint(
+                baseline_remote_images, cloud_id=cloud_id, local_id=local_id,
+            )
+            if expected_remote is not None:
+                current = (
+                    current_remote_image_by_cloud.get(cloud_id or '') if cloud_id
+                    else current_remote_image_by_desktop.get(local_id)
+                )
+                if current != expected_remote:
+                    raise CloudSyncError(_plan_drift_message())
+        elif kind == 'measurement':
+            expected_local = _find_local_measurement_fingerprint(
+                baseline_local_measurements, local_id=local_id, cloud_id=cloud_id,
+            )
+            if expected_local is not None:
+                current = (
+                    current_local_measurement_by_local.get(local_id) if local_id
+                    else current_local_measurement_by_cloud.get(cloud_id or '')
+                )
+                if current != expected_local:
+                    raise CloudSyncError(_plan_drift_message())
+            expected_remote = _find_remote_measurement_fingerprint(
+                baseline_remote_measurements, cloud_id=cloud_id, local_id=local_id,
+            )
+            if expected_remote is not None:
+                current = (
+                    current_remote_measurement_by_cloud.get(cloud_id or '') if cloud_id
+                    else current_remote_measurement_by_desktop.get(local_id)
+                )
+                if current != expected_remote:
+                    raise CloudSyncError(_plan_drift_message())
+
+
+def _validate_plan_identity_state(
+    *,
+    local_images: list[dict],
+    remote_images: list[dict],
+    local_measurements: list[dict],
+    remote_measurements: list[dict],
+    items: list[dict],
+) -> None:
+    """Refuse ambiguous or contradictory identity — resolver-side belt-and-braces."""
+    # duplicate local cloud_ids
+    local_cloud_id_counts: dict[str, int] = {}
+    for row in local_images or []:
+        cid = str(row.get('cloud_id') or '').strip()
+        if cid:
+            local_cloud_id_counts[cid] = local_cloud_id_counts.get(cid, 0) + 1
+    for cid, count in local_cloud_id_counts.items():
+        if count > 1:
+            raise CloudSyncError(
+                f'Image identity conflict: multiple local images share cloud ID {cid}'
+            )
+    # duplicate cloud desktop_ids
+    remote_desktop_counts: dict[int, int] = {}
+    for row in remote_images or []:
+        did = _safe_int(row.get('desktop_id'))
+        if did:
+            remote_desktop_counts[did] = remote_desktop_counts.get(did, 0) + 1
+    for did, count in remote_desktop_counts.items():
+        if count > 1:
+            raise CloudSyncError(
+                f'Image identity conflict: multiple cloud images reference local image {did}'
+            )
+    # contradictory cross-references for every affected image
+    local_by_cloud = {
+        str(row.get('cloud_id') or '').strip(): row
+        for row in local_images or []
+        if str(row.get('cloud_id') or '').strip()
+    }
+    remote_by_cloud = {
+        str(row.get('id') or '').strip(): row
+        for row in remote_images or []
+        if str(row.get('id') or '').strip()
+    }
+    remote_by_desktop = {
+        _safe_int(row.get('desktop_id')): row
+        for row in remote_images or []
+        if _safe_int(row.get('desktop_id'))
+    }
+    for item in items:
+        if item.get('kind') not in {'image', 'image_metadata', 'measurement'}:
+            continue
+        local_id = _safe_int(item.get('local_id')) or None
+        cloud_id = str(item.get('cloud_id') or '').strip() or None
+        if item.get('kind') in {'image', 'image_metadata'}:
+            if cloud_id and cloud_id in remote_by_cloud and local_id:
+                remote_row = remote_by_cloud[cloud_id]
+                remote_desktop = _safe_int(remote_row.get('desktop_id'))
+                if remote_desktop and remote_desktop != local_id:
+                    raise CloudSyncError(
+                        f'Image identity conflict: cloud image {cloud_id} references '
+                        f'local image {remote_desktop}, not {local_id}'
+                    )
+            if local_id and local_id in remote_by_desktop and cloud_id:
+                candidate_cloud = str(remote_by_desktop[local_id].get('id') or '').strip()
+                if candidate_cloud and candidate_cloud != cloud_id:
+                    raise CloudSyncError(
+                        f'Image identity conflict: local image {local_id} is referenced '
+                        f'by cloud image {candidate_cloud}, not {cloud_id}'
+                    )
+    # ── Measurement identity guards (A2) ──────────────────────────────────
+    # 1. duplicate local measurement cloud_ids
+    local_meas_cloud_counts: dict[str, int] = {}
+    for row in local_measurements or []:
+        cid = str(row.get('cloud_id') or '').strip()
+        if cid:
+            local_meas_cloud_counts[cid] = local_meas_cloud_counts.get(cid, 0) + 1
+    for cid, count in local_meas_cloud_counts.items():
+        if count > 1:
+            raise CloudSyncError(
+                f'Measurement identity conflict: multiple local measurements share cloud ID {cid}. '
+                'Refresh the comparison and repair the link before applying.'
+            )
+    # 2. duplicate cloud measurement desktop_ids
+    remote_meas_desktop_counts: dict[int, int] = {}
+    for row in remote_measurements or []:
+        did = _safe_int(row.get('desktop_id'))
+        if did:
+            remote_meas_desktop_counts[did] = remote_meas_desktop_counts.get(did, 0) + 1
+    for did, count in remote_meas_desktop_counts.items():
+        if count > 1:
+            raise CloudSyncError(
+                f'Measurement identity conflict: multiple cloud measurements reference local '
+                f'measurement {did}. Refresh the comparison and repair the link before applying.'
+            )
+    # 3. cross-referenced measurement contradiction
+    local_meas_by_cloud = {
+        str(row.get('cloud_id') or '').strip(): row
+        for row in local_measurements or []
+        if str(row.get('cloud_id') or '').strip()
+    }
+    remote_meas_by_cloud = {
+        str(row.get('id') or '').strip(): row
+        for row in remote_measurements or []
+        if str(row.get('id') or '').strip()
+    }
+    remote_meas_by_desktop = {
+        _safe_int(row.get('desktop_id')): row
+        for row in remote_measurements or []
+        if _safe_int(row.get('desktop_id'))
+    }
+    local_meas_by_local = {
+        _safe_int(row.get('id')): row
+        for row in local_measurements or []
+        if _safe_int(row.get('id'))
+    }
+    for item in items:
+        if item.get('kind') != 'measurement':
+            continue
+        local_id = _safe_int(item.get('local_id')) or None
+        cloud_id = str(item.get('cloud_id') or '').strip() or None
+        side = item.get('side')
+        # 4. missing local target
+        if side in {'matched', 'local_only'} and local_id and local_id not in local_meas_by_local:
+            raise CloudSyncError(
+                f'Measurement identity conflict: local measurement {local_id} no longer exists. '
+                'Refresh the comparison before applying.'
+            )
+        # 5. missing cloud target
+        if side in {'matched', 'cloud_only'} and cloud_id and cloud_id not in remote_meas_by_cloud:
+            raise CloudSyncError(
+                f'Measurement identity conflict: cloud measurement {cloud_id} no longer exists. '
+                'Refresh the comparison before applying.'
+            )
+        # 6. cross-referenced contradiction for matched measurements
+        if side == 'matched' and local_id and cloud_id:
+            remote = remote_meas_by_cloud.get(cloud_id)
+            if remote is not None:
+                remote_desktop = _safe_int(remote.get('desktop_id'))
+                if remote_desktop and remote_desktop != local_id:
+                    raise CloudSyncError(
+                        f'Measurement identity conflict: cloud measurement {cloud_id} '
+                        f'references local measurement {remote_desktop}, not {local_id}. '
+                        'Refresh the comparison before applying.'
+                    )
+            reverse = remote_meas_by_desktop.get(local_id)
+            if reverse is not None:
+                reverse_cloud = str(reverse.get('id') or '').strip()
+                if reverse_cloud and reverse_cloud != cloud_id:
+                    raise CloudSyncError(
+                        f'Measurement identity conflict: local measurement {local_id} is '
+                        f'referenced by cloud measurement {reverse_cloud}, not {cloud_id}. '
+                        'Refresh the comparison before applying.'
+                    )
+        # 7. measurement moved to a different image after review
+        if side == 'matched' and local_id:
+            local_row = local_meas_by_local.get(local_id)
+            reviewed_local_image = _safe_int(item.get('local_image_id')) or None
+            if local_row is not None and reviewed_local_image:
+                current_image = _safe_int(local_row.get('image_id'))
+                if current_image and current_image != reviewed_local_image:
+                    raise CloudSyncError(
+                        f'Measurement identity conflict: local measurement {local_id} '
+                        f'now belongs to image {current_image}, not {reviewed_local_image}. '
+                        'Refresh the comparison before applying.'
+                    )
+        if side == 'matched' and cloud_id:
+            remote_row = remote_meas_by_cloud.get(cloud_id)
+            reviewed_cloud_image = str(item.get('cloud_image_id') or '').strip() or None
+            if remote_row is not None and reviewed_cloud_image:
+                current_image = str(remote_row.get('image_id') or '').strip()
+                if current_image and current_image != reviewed_cloud_image:
+                    raise CloudSyncError(
+                        f'Measurement identity conflict: cloud measurement {cloud_id} '
+                        f'now belongs to image {current_image}, not {reviewed_cloud_image}. '
+                        'Refresh the comparison before applying.'
+                    )
+        # 8. owning image not among the authoritative paired images
+        image_local = _safe_int(item.get('local_image_id')) or None
+        image_cloud = str(item.get('cloud_image_id') or '').strip() or None
+        if image_local:
+            if image_local not in {_safe_int(row.get('id'))
+                                   for row in local_images or [] if _safe_int(row.get('id'))}:
+                raise CloudSyncError(
+                    f'Measurement identity conflict: local image {image_local} no longer exists. '
+                    'Refresh the comparison before applying.'
+                )
+        if image_cloud:
+            if image_cloud not in {str(row.get('id') or '').strip()
+                                    for row in remote_images or [] if str(row.get('id') or '').strip()}:
+                raise CloudSyncError(
+                    f'Measurement identity conflict: cloud image {image_cloud} no longer exists. '
+                    'Refresh the comparison before applying.'
+                )
+        # 9. matched measurement whose reviewed owning-image pair is not itself authoritative
+        if side == 'matched' and image_local and image_cloud:
+            authoritative_pairs = {
+                (_safe_int(lrow.get('id')), str(rrow.get('id') or '').strip())
+                for lrow in local_images or []
+                for rrow in remote_images or []
+                if _safe_int(lrow.get('id'))
+                and str(rrow.get('id') or '').strip()
+                and str(lrow.get('cloud_id') or '').strip() == str(rrow.get('id') or '').strip()
+            }
+            if (image_local, image_cloud) not in authoritative_pairs:
+                raise CloudSyncError(
+                    f'Measurement identity conflict: reviewed owning images '
+                    f'(local {image_local}, cloud {image_cloud}) are not the authoritative '
+                    'paired images. Refresh the comparison and repair the link before applying.'
+                )
+        # 10. ambiguous plan identity
+        if side == 'matched' and not (local_id and cloud_id):
+            raise CloudSyncError(
+                'Measurement identity conflict: matched-measurement plan item is missing '
+                'one of local_id or cloud_id. Refresh the comparison before applying.'
+            )
+
+
+def _capture_local_presentation(rows: list[dict]) -> dict[int, dict]:
+    """Snapshot ``gallery_rotation`` and ``sort_order`` per local image id."""
+    capture: dict[int, dict] = {}
+    for row in rows or []:
+        rid = _safe_int(row.get('id'))
+        if rid <= 0:
+            continue
+        capture[rid] = {
+            'gallery_rotation': row.get('gallery_rotation'),
+            'sort_order': row.get('sort_order'),
+        }
+    return capture
+
+
+def _restore_local_presentation(
+    captured: dict[int, dict],
+    *,
+    matched_local_ids: set[int],
+) -> list[dict]:
+    """Restore captured rotation/sort_order for matched images and verify.
+
+    A3: presentation is no longer silently swallowed.  Each attempted write
+    is followed by a read-back that verifies the row now has the intended
+    ``gallery_rotation`` and ``sort_order``.  Per-row status is returned so
+    the resolver can surface it in the operation log.
+    """
+    statuses: list[dict] = []
+    for local_id in matched_local_ids:
+        snapshot = captured.get(int(local_id))
+        if not snapshot:
+            continue
+        expected_rotation = snapshot.get('gallery_rotation')
+        expected_order = snapshot.get('sort_order')
+        error_message: str | None = None
+        try:
+            ImageDB.update_image(
+                int(local_id),
+                gallery_rotation=expected_rotation,
+                sort_order=expected_order,
+            )
+        except Exception as exc:
+            error_message = f'update_image failed: {exc}'
+        try:
+            current_rows = ImageDB.get_images_for_observation(int(local_id))
+        except Exception as exc:
+            current_rows = []
+            error_message = error_message or f'read-back failed: {exc}'
+        current = next(
+            (row for row in current_rows if _safe_int(row.get('id')) == int(local_id)),
+            None,
+        )
+        status = 'failed'
+        if error_message is None and current is not None:
+            actual_rotation = current.get('gallery_rotation')
+            actual_order = current.get('sort_order')
+            already = (
+                actual_rotation == expected_rotation and actual_order == expected_order
+            )
+            status = 'completed' if already else 'failed'
+            if status == 'failed':
+                error_message = (
+                    f'presentation drift after restore: expected rotation={expected_rotation!r} '
+                    f'order={expected_order!r}, got rotation={actual_rotation!r} '
+                    f'order={actual_order!r}'
+                )
+        statuses.append({
+            'op': 'restore_presentation',
+            'local_id': int(local_id),
+            'status': status,
+            'expected': {'gallery_rotation': expected_rotation, 'sort_order': expected_order},
+            'error': error_message,
+        })
+    return statuses
+
+
+def _assign_downloaded_image_order(
+    *,
+    local_id: int,
+    downloaded_cloud_ids: set[str],
+    captured_before: dict[int, dict],
+) -> list[dict]:
+    """Give newly-downloaded cloud-only images deterministic non-colliding order.
+
+    Returns per-row status entries so the resolver can surface completed vs
+    failed presentation policy in the plan operation log.
+    """
+    statuses: list[dict] = []
+    if not downloaded_cloud_ids:
+        return statuses
+    try:
+        current_rows = ImageDB.get_images_for_observation(int(local_id))
+    except Exception as exc:
+        return [{
+            'op': 'assign_downloaded_order',
+            'status': 'failed',
+            'cloud_ids': sorted(downloaded_cloud_ids),
+            'error': f'read images failed: {exc}',
+        }]
+    new_rows = [
+        row for row in current_rows
+        if str(row.get('cloud_id') or '').strip() in downloaded_cloud_ids
+        and _safe_int(row.get('id')) not in captured_before
+    ]
+    if not new_rows:
+        return statuses
+    existing_orders = [_safe_int(v.get('sort_order')) for v in captured_before.values()]
+    base = (max(existing_orders) + 1) if existing_orders else 1
+    for offset, row in enumerate(
+        sorted(new_rows, key=lambda r: str(r.get('cloud_id') or ''))
+    ):
+        expected_order = base + offset
+        row_local_id = _safe_int(row.get('id'))
+        error_message: str | None = None
+        try:
+            ImageDB.update_image(int(row_local_id), sort_order=expected_order)
+        except Exception as exc:
+            error_message = f'update_image failed: {exc}'
+        try:
+            after_rows = ImageDB.get_images_for_observation(int(local_id))
+        except Exception as exc:
+            after_rows = []
+            error_message = error_message or f'read-back failed: {exc}'
+        current = next(
+            (r for r in after_rows if _safe_int(r.get('id')) == row_local_id),
+            None,
+        )
+        status = 'failed'
+        if error_message is None and current is not None:
+            status = 'completed' if _safe_int(current.get('sort_order')) == expected_order else 'failed'
+            if status == 'failed':
+                error_message = (
+                    f'assigned order drift: expected {expected_order}, '
+                    f'got {current.get("sort_order")!r}'
+                )
+        statuses.append({
+            'op': 'assign_downloaded_order',
+            'local_id': row_local_id,
+            'cloud_id': str(row.get('cloud_id') or '').strip(),
+            'expected_sort_order': expected_order,
+            'status': status,
+            'error': error_message,
+        })
+    return statuses
+
+
+# Material-content fields for the accepted-asymmetry image fingerprint.  Turn-B
+# fix 3: presentation-only fields (``gallery_rotation``, ``sort_order``) and
+# transport/storage/cache metadata are excluded so that a thumbnail rotation
+# or gallery/image-order tweak governed by the automatic desktop presentation
+# policy does NOT resurface an accepted one-sided media conflict.  Only fields
+# that represent genuine user or scientific media content participate.
+_ASYMMETRY_MATERIAL_IMAGE_FIELDS = (
+    'image_type',
+    'micro_category',
+    'notes',
+    'objective_name',
+    'scale_microns_per_pixel',
+    'mount_medium',
+    'stain',
+    'sample_type',
+    'sample_source',
+    'contrast',
+    'crop_mode',
+    'microscope_notes',
+)
+
+
+def _asymmetry_fingerprint_local_image(row: dict | None) -> dict:
+    """Material content fingerprint for a local-only accepted image.
+
+    Excludes presentation-only fields (``gallery_rotation``, ``sort_order``)
+    and every transport/storage/cache/derivative field (``filepath``,
+    ``storage_path``, thumbnail keys, ...).
+    """
+    row = dict(row or {})
+    return {
+        field: _normalize_snapshot_value(row.get(field))
+        for field in _ASYMMETRY_MATERIAL_IMAGE_FIELDS
+    }
+
+
+def _asymmetry_fingerprint_remote_image(row: dict | None) -> dict:
+    row = dict(row or {})
+    return {
+        field: _normalize_snapshot_value(row.get(field))
+        for field in _ASYMMETRY_MATERIAL_IMAGE_FIELDS
+    }
+
+
+def _asymmetry_fingerprint_local_measurement(row: dict | None) -> dict:
+    """Content fingerprint for a local-only accepted measurement."""
+    row = dict(row or {})
+    return {
+        'length_um': _normalize_measurement_float_value(row.get('length_um')),
+        'width_um': _normalize_measurement_float_value(row.get('width_um')),
+        'measurement_type': _normalize_measurement_type_value(row.get('measurement_type')),
+        'p1_x': _normalize_measurement_float_value(row.get('p1_x')),
+        'p1_y': _normalize_measurement_float_value(row.get('p1_y')),
+        'p2_x': _normalize_measurement_float_value(row.get('p2_x')),
+        'p2_y': _normalize_measurement_float_value(row.get('p2_y')),
+        'image_id': _safe_int(row.get('image_id')) or None,
+    }
+
+
+def _asymmetry_fingerprint_remote_measurement(row: dict | None) -> dict:
+    row = dict(row or {})
+    return {
+        'length_um': _normalize_measurement_float_value(row.get('length_um')),
+        'width_um': _normalize_measurement_float_value(row.get('width_um')),
+        'measurement_type': _normalize_measurement_type_value(row.get('measurement_type')),
+        'p1_x': _normalize_measurement_float_value(row.get('p1_x')),
+        'p1_y': _normalize_measurement_float_value(row.get('p1_y')),
+        'p2_x': _normalize_measurement_float_value(row.get('p2_x')),
+        'p2_y': _normalize_measurement_float_value(row.get('p2_y')),
+        'image_id': str(row.get('image_id') or '').strip() or None,
+    }
+
+
+def _accepted_asymmetry_key(entry: dict) -> tuple:
+    return (
+        str(entry.get('side') or ''),
+        str(entry.get('kind') or ''),
+        _safe_int(entry.get('local_id')) or 0,
+        str(entry.get('cloud_id') or '').strip(),
+    )
+
+
+def _build_plan_operations(items: list[dict]) -> list[dict]:
+    """Turn the item plan into a spy-friendly, unambiguous operation list.
+
+    Every op is dispatched later by ``resolve_conflict_plan`` from this list;
+    no set-comprehension is used to derive execution behavior after this point.
+    """
+    ops: list[dict] = []
+    for item in items:
+        kind = item.get('kind')
+        choice = item.get('choice')
+        local_id = _safe_int(item.get('local_id')) or None
+        cloud_id = str(item.get('cloud_id') or '').strip() or None
+        side = item.get('side')
+        if kind == 'field':
+            if choice == 'cloud':
+                ops.append({'op': 'pull_field', 'field': item.get('field')})
+            elif choice == 'local':
+                ops.append({'op': 'push_field', 'field': item.get('field')})
+        elif kind == 'image':
+            if choice == 'upload':
+                ops.append({'op': 'push_image', 'local_id': local_id})
+            elif choice == 'download':
+                ops.append({'op': 'import_image', 'cloud_id': cloud_id})
+            elif choice in {'keep_local', 'keep_cloud'}:
+                ops.append({
+                    'op': 'keep_asymmetric_image',
+                    'side': 'local' if choice == 'keep_local' else 'cloud',
+                    'local_id': local_id,
+                    'cloud_id': cloud_id,
+                })
+        elif kind == 'image_metadata':
+            if choice == 'local':
+                ops.append({
+                    'op': 'push_image_metadata',
+                    'local_id': local_id,
+                    'cloud_id': cloud_id,
+                })
+            elif choice == 'cloud':
+                ops.append({
+                    'op': 'apply_image_metadata',
+                    'local_id': local_id,
+                    'cloud_id': cloud_id,
+                })
+        elif kind == 'measurement':
+            if side == 'matched':
+                if choice == 'local':
+                    ops.append({
+                        'op': 'push_measurement',
+                        'local_id': local_id,
+                        'cloud_id': cloud_id,
+                    })
+                elif choice == 'cloud':
+                    ops.append({
+                        'op': 'import_measurement',
+                        'cloud_id': cloud_id,
+                        'local_id': local_id,
+                    })
+            elif side == 'local_only':
+                if choice == 'upload':
+                    ops.append({
+                        'op': 'push_measurement',
+                        'local_id': local_id,
+                    })
+                elif choice == 'keep_local':
+                    ops.append({
+                        'op': 'keep_asymmetric_measurement',
+                        'side': 'local',
+                        'local_id': local_id,
+                    })
+            elif side == 'cloud_only':
+                if choice == 'download':
+                    ops.append({
+                        'op': 'import_measurement',
+                        'cloud_id': cloud_id,
+                    })
+                elif choice == 'keep_cloud':
+                    ops.append({
+                        'op': 'keep_asymmetric_measurement',
+                        'side': 'cloud',
+                        'cloud_id': cloud_id,
+                    })
+    return ops
+
+
+def _malformed_retry_state(reason: str) -> CloudSyncError:
+    """Fail-closed error used when a retry ``prior_result`` op is unusable."""
+    return CloudSyncError(
+        f'Malformed retry state ({reason}). Refresh the comparison and try again.'
+    )
+
+
+def _reconcile_verification_pending_op(
+    op: dict,
+    *,
+    local_images: list[dict],
+    remote_images: list[dict],
+    local_measurements: list[dict],
+    remote_measurements: list[dict],
+) -> tuple:
+    """Recover from a write-succeeded / read-back-failed op on retry.
+
+    Returns one of:
+
+    * ``('completed', {'local_image_ids': ..., 'cloud_image_ids': ..., ...})``
+      when the intended row is present in current state and material matches;
+    * ``('drift', <reason>)`` when a candidate row is present but its material
+      diverges (unrelated edit) — retry aborts;
+    * ``('missing', None)`` when no candidate row exists — treat the write as
+      not having gone through, let the plan's normal dispatch rerun it.
+    """
+    opname = op.get('op')
+    stable = op.get('stable_identity') or {}
+    intended = op.get('intended_after') or {}
+    kind = intended.get('kind')
+    explained = {'local_image_ids': set(), 'cloud_image_ids': set(),
+                 'local_meas_ids': set(), 'cloud_meas_ids': set()}
+    if kind == 'image':
+        material_local_intended = (intended.get('material_local') or {}).get('material') or {}
+        material_remote_intended = (intended.get('material_remote') or {}).get('material') or {}
+        lid = _safe_int(stable.get('local_id')) or None
+        cid = str(stable.get('cloud_id') or '').strip() or None
+        local_row = None
+        remote_row = None
+        if lid:
+            local_row = next((r for r in local_images if _safe_int(r.get('id')) == lid), None)
+        if not local_row and cid:
+            local_row = next(
+                (r for r in local_images
+                 if str(r.get('cloud_id') or '').strip() == cid),
+                None,
+            )
+        if cid:
+            remote_row = next(
+                (r for r in remote_images
+                 if str(r.get('id') or '').strip() == cid),
+                None,
+            )
+        if not remote_row and lid:
+            remote_row = next(
+                (r for r in remote_images if _safe_int(r.get('desktop_id')) == lid),
+                None,
+            )
+        if not local_row and not remote_row:
+            return ('missing', None)
+        if material_local_intended and local_row is not None:
+            current_local_material = _material_image_expected_state(
+                local_row, side='local',
+            ).get('material')
+            if current_local_material != material_local_intended:
+                return ('drift',
+                        f'{opname} verification recovered a local image whose material differs')
+            explained['local_image_ids'].add(_safe_int(local_row.get('id')))
+        if material_remote_intended and remote_row is not None:
+            current_remote_material = _material_image_expected_state(
+                remote_row, side='remote',
+            ).get('material')
+            if current_remote_material != material_remote_intended:
+                return ('drift',
+                        f'{opname} verification recovered a cloud image whose material differs')
+            explained['cloud_image_ids'].add(str(remote_row.get('id') or '').strip())
+        return ('completed', explained)
+    if kind == 'measurement':
+        material_local_intended = (intended.get('material_local') or {}).get('material') or {}
+        material_remote_intended = (intended.get('material_remote') or {}).get('material') or {}
+        lid = _safe_int(stable.get('local_id')) or None
+        cid = str(stable.get('cloud_id') or '').strip() or None
+        local_row = None
+        remote_row = None
+        if lid:
+            local_row = next(
+                (r for r in local_measurements if _safe_int(r.get('id')) == lid),
+                None,
+            )
+        if not local_row and cid:
+            local_row = next(
+                (r for r in local_measurements
+                 if str(r.get('cloud_id') or '').strip() == cid),
+                None,
+            )
+        if cid:
+            remote_row = next(
+                (r for r in remote_measurements
+                 if str(r.get('id') or '').strip() == cid),
+                None,
+            )
+        if not remote_row and lid:
+            remote_row = next(
+                (r for r in remote_measurements if _safe_int(r.get('desktop_id')) == lid),
+                None,
+            )
+        if not local_row and not remote_row:
+            return ('missing', None)
+        if material_local_intended and local_row is not None:
+            current_local_material = _material_measurement_expected_state(
+                local_row, side='local',
+            ).get('material')
+            if current_local_material != material_local_intended:
+                return ('drift',
+                        f'{opname} verification recovered a local measurement whose material differs')
+            explained['local_meas_ids'].add(_safe_int(local_row.get('id')))
+        if material_remote_intended and remote_row is not None:
+            current_remote_material = _material_measurement_expected_state(
+                remote_row, side='remote',
+            ).get('material')
+            if current_remote_material != material_remote_intended:
+                return ('drift',
+                        f'{opname} verification recovered a cloud measurement whose material differs')
+            explained['cloud_meas_ids'].add(str(remote_row.get('id') or '').strip())
+        return ('completed', explained)
+    return ('missing', None)
+
+
+def _validate_prior_op_expected_after(op: dict) -> None:
+    """Reject a prior completed/verification-pending op with missing structure.
+
+    Fails closed rather than accepting identity-only proof.  This runs BEFORE
+    any explained-set inclusion, so a malformed op cannot make its records
+    silently exclude themselves from drift validation.
+    """
+    opname = str(op.get('op') or '')
+    status = str(op.get('status') or '')
+    expected = op.get('expected_after')
+    intended = op.get('intended_after')
+    if status == 'verification_pending':
+        # Own set of requirements — validated in the verification_pending
+        # branch below; but we still require write_attempted + stable_identity
+        # + intended_after with a kind.
+        if not op.get('write_attempted'):
+            raise _malformed_retry_state(
+                f'{opname} verification_pending without write_attempted flag'
+            )
+        if not isinstance(op.get('stable_identity'), dict):
+            raise _malformed_retry_state(
+                f'{opname} verification_pending missing stable_identity'
+            )
+        if not isinstance(intended, dict):
+            raise _malformed_retry_state(
+                f'{opname} verification_pending missing intended_after'
+            )
+        kind = intended.get('kind')
+        if kind not in {'image', 'measurement'}:
+            raise _malformed_retry_state(
+                f'{opname} verification_pending has invalid intended_after.kind'
+            )
+        return
+    if status != 'completed':
+        return  # failed / pending / already_complete — validated elsewhere
+    if opname in {'push_field', 'pull_field'}:
+        if not isinstance(expected, dict):
+            raise _malformed_retry_state(f'{opname} missing expected_after')
+        if 'value' not in expected:
+            raise _malformed_retry_state(f'{opname} missing expected_after.value')
+        if not op.get('field'):
+            raise _malformed_retry_state(f'{opname} missing field name')
+        return
+    if opname == 'recompute_spore_statistics':
+        if not isinstance(expected, dict) or 'value' not in expected:
+            raise _malformed_retry_state(
+                'recompute_spore_statistics missing expected_after.value'
+            )
+        return
+    if opname in {'keep_asymmetric_image', 'keep_asymmetric_measurement',
+                  'preserve_spore_statistics_no_measurements',
+                  'restore_presentation', 'assign_downloaded_order',
+                  'store_snapshot'}:
+        return  # no material verification needed
+    if opname in {'push_image', 'import_image',
+                  'push_image_metadata', 'apply_image_metadata'}:
+        _require_full_material_expected(op, expected, kind='image')
+        return
+    if opname in {'push_measurement', 'import_measurement'}:
+        _require_full_material_expected(op, expected, kind='measurement')
+        return
+    raise _malformed_retry_state(f'unknown completed op {opname!r}')
+
+
+def _require_full_material_expected(op: dict, expected, *, kind: str) -> None:
+    opname = op.get('op')
+
+    def _bad(reason: str):
+        raise _malformed_retry_state(f'{opname}: {reason}')
+
+    if not isinstance(expected, dict):
+        _bad('missing expected_after')
+    if expected.get('kind') != kind:
+        _bad(f'expected_after.kind should be {kind!r}')
+    for side in ('material_local', 'material_remote'):
+        side_data = expected.get(side)
+        if not isinstance(side_data, dict):
+            _bad(f'missing {side}')
+        stable = side_data.get('stable')
+        material = side_data.get('material')
+        if not isinstance(stable, dict):
+            _bad(f'{side} missing stable identity')
+        if not isinstance(material, dict):
+            _bad(f'{side} missing material fingerprint')
+        if kind == 'image':
+            required_material = set(_ASYMMETRY_MATERIAL_IMAGE_FIELDS)
+        else:
+            required_material = set(_EXPECTED_AFTER_MEASUREMENT_MATERIAL_FIELDS)
+        missing = required_material - set(material.keys())
+        if missing:
+            _bad(f'{side}.material missing fields: {sorted(missing)}')
+    # Op-specific stable-identity requirements.
+    local_stable = expected['material_local']['stable']
+    remote_stable = expected['material_remote']['stable']
+    if opname == 'push_image':
+        if not remote_stable.get('cloud_id'):
+            _bad('material_remote.stable.cloud_id is required after upload')
+        if not local_stable.get('local_id'):
+            _bad('material_local.stable.local_id is required (upload source)')
+    elif opname == 'import_image':
+        if not local_stable.get('local_id'):
+            _bad('material_local.stable.local_id is required after import')
+        if not remote_stable.get('cloud_id'):
+            _bad('material_remote.stable.cloud_id is required (import source)')
+    elif opname in {'push_image_metadata', 'apply_image_metadata'}:
+        if not local_stable.get('local_id'):
+            _bad('material_local.stable.local_id is required')
+        if not remote_stable.get('cloud_id'):
+            _bad('material_remote.stable.cloud_id is required')
+    elif opname in {'push_measurement', 'import_measurement'}:
+        if not local_stable.get('local_id'):
+            _bad('material_local.stable.local_id is required')
+        if not remote_stable.get('cloud_id'):
+            _bad('material_remote.stable.cloud_id is required')
+        # Owning-image identity must be present (may be null, but the key
+        # must exist so we KNOW it was captured, not just omitted).
+        if 'owning_local_image_id' not in local_stable:
+            _bad('material_local.stable.owning_local_image_id is required')
+        if 'owning_cloud_image_id' not in remote_stable:
+            _bad('material_remote.stable.owning_cloud_image_id is required')
+
+
+# ── Full material expected-after fingerprints (Turn-B final Fix 1) ───────────
+# Presentation-only fields (``gallery_rotation``, ``sort_order``) and every
+# transport/storage/cache field are intentionally excluded so that a purely
+# nonmaterial change between attempts does NOT abort a legitimate retry.
+
+_EXPECTED_AFTER_MEASUREMENT_MATERIAL_FIELDS = (
+    'length_um', 'width_um', 'measurement_type',
+    'p1_x', 'p1_y', 'p2_x', 'p2_y', 'p3_x', 'p3_y', 'p4_x', 'p4_y',
+)
+
+
+def _material_image_expected_state(row: dict | None, *, side: str) -> dict:
+    """Full material post-state fingerprint of one image row.
+
+    Includes stable identity + owning-observation link + every material
+    content field.  Used both to record the post-write state on each completed
+    op and to verify it on retry.
+    """
+    row = dict(row or {})
+    if side == 'local':
+        stable = {
+            'local_id': _safe_int(row.get('id')) or None,
+            'cloud_id': str(row.get('cloud_id') or '').strip() or None,
+            'observation_id': _safe_int(row.get('observation_id')) or None,
+        }
+    else:
+        stable = {
+            'cloud_id': str(row.get('id') or '').strip() or None,
+            'local_id': _safe_int(row.get('desktop_id')) or None,
+            'observation_id': str(row.get('observation_id') or '').strip() or None,
+        }
+    payload = {
+        field: _normalize_snapshot_value(row.get(field))
+        for field in _ASYMMETRY_MATERIAL_IMAGE_FIELDS
+    }
+    return {'side': side, 'stable': stable, 'material': payload}
+
+
+def _material_measurement_expected_state(row: dict | None, *, side: str) -> dict:
+    """Full material post-state fingerprint of one measurement row.
+
+    Includes stable identity, owning-image identity, and every scientific
+    value.  Non-scientific / transport / presentation fields are excluded.
+    """
+    row = dict(row or {})
+    if side == 'local':
+        stable = {
+            'local_id': _safe_int(row.get('id')) or None,
+            'cloud_id': str(row.get('cloud_id') or '').strip() or None,
+            'owning_local_image_id': _safe_int(row.get('image_id')) or None,
+            'owning_cloud_image_id': None,
+        }
+    else:
+        stable = {
+            'cloud_id': str(row.get('id') or '').strip() or None,
+            'local_id': _safe_int(row.get('desktop_id')) or None,
+            'owning_local_image_id': None,
+            'owning_cloud_image_id': str(row.get('image_id') or '').strip() or None,
+        }
+    payload: dict = {}
+    for field in _EXPECTED_AFTER_MEASUREMENT_MATERIAL_FIELDS:
+        if field == 'measurement_type':
+            payload[field] = _normalize_measurement_type_value(row.get(field))
+        else:
+            payload[field] = _normalize_measurement_float_value(row.get(field))
+    return {'side': side, 'stable': stable, 'material': payload}
+
+
+def _intended_after_image_from_local(row: dict | None) -> dict:
+    """Build ``intended_after`` for a push whose readback failed.
+
+    Uses the local (source) row's material fields as the intended cloud
+    material — since a push copies material fields, the cloud row is expected
+    to match once it materializes.
+    """
+    row = dict(row or {})
+    local_state = _material_image_expected_state(row, side='local')
+    remote_material = dict(local_state.get('material') or {})
+    return {
+        'kind': 'image',
+        'material_local': local_state,
+        'material_remote': {
+            'side': 'remote',
+            'stable': {
+                'cloud_id': str(row.get('cloud_id') or '').strip() or None,
+                'local_id': _safe_int(row.get('id')) or None,
+                'observation_id': None,
+            },
+            'material': remote_material,
+        },
+    }
+
+
+def _intended_after_image_from_remote(row: dict | None) -> dict:
+    row = dict(row or {})
+    remote_state = _material_image_expected_state(row, side='remote')
+    local_material = dict(remote_state.get('material') or {})
+    return {
+        'kind': 'image',
+        'material_local': {
+            'side': 'local',
+            'stable': {
+                'local_id': _safe_int(row.get('desktop_id')) or None,
+                'cloud_id': str(row.get('id') or '').strip() or None,
+                'observation_id': None,
+            },
+            'material': local_material,
+        },
+        'material_remote': remote_state,
+    }
+
+
+def _intended_after_measurement_from_local(row: dict | None) -> dict:
+    row = dict(row or {})
+    local_state = _material_measurement_expected_state(row, side='local')
+    material = dict(local_state.get('material') or {})
+    return {
+        'kind': 'measurement',
+        'material_local': local_state,
+        'material_remote': {
+            'side': 'remote',
+            'stable': {
+                'cloud_id': str(row.get('cloud_id') or '').strip() or None,
+                'local_id': _safe_int(row.get('id')) or None,
+                'owning_local_image_id': None,
+                'owning_cloud_image_id': None,
+            },
+            'material': material,
+        },
+    }
+
+
+def _intended_after_measurement_from_remote(row: dict | None) -> dict:
+    row = dict(row or {})
+    remote_state = _material_measurement_expected_state(row, side='remote')
+    material = dict(remote_state.get('material') or {})
+    return {
+        'kind': 'measurement',
+        'material_local': {
+            'side': 'local',
+            'stable': {
+                'local_id': _safe_int(row.get('desktop_id')) or None,
+                'cloud_id': str(row.get('id') or '').strip() or None,
+                'owning_local_image_id': None,
+                'owning_cloud_image_id': str(row.get('image_id') or '').strip() or None,
+            },
+            'material': material,
+        },
+        'material_remote': remote_state,
+    }
+
+
+def _material_image_current_state(current_row: dict | None, *, side: str) -> dict:
+    """Alias — the current-side fingerprint uses the same shape."""
+    return _material_image_expected_state(current_row, side=side)
+
+
+def _material_measurement_current_state(current_row: dict | None, *, side: str) -> dict:
+    return _material_measurement_expected_state(current_row, side=side)
+
+
+def _normalize_observation_field_for_baseline(
+    obs: dict | None, field: str, *, local: bool
+) -> object:
+    """Return the same normalized value the baseline fingerprint would carry."""
+    payload = _observation_compare_payload(obs or {}, local=local)
+    return payload.get(field)
+
+
+def _verify_completed_ops_and_rebase(
+    prior_result: dict,
+    original_baseline: dict,
+    *,
+    local_obs: dict | None,
+    remote_obs: dict | None,
+    local_images: list[dict],
+    remote_images: list[dict],
+    local_measurements: list[dict],
+    remote_measurements: list[dict],
+) -> tuple[dict, set[tuple], list[dict]]:
+    """Verify each completed op's expected effect, then rebase the baseline.
+
+    Returns ``(rebased_baseline, completed_op_keys, verified_ops)``.  Raises
+    :class:`CloudSyncError` if any completed op's expected effect is missing
+    from the current state or if any UNRELATED record has drifted.
+
+    The caller treats ``completed_op_keys`` as "do not re-dispatch" and uses
+    the rebased baseline for drift-checking the remaining (pending/failed)
+    operations.  This is the expected-effect-aware retry algorithm.
+    """
+    completed_ops = [
+        op for op in (prior_result.get('operations') or [])
+        if isinstance(op, dict) and op.get('status') in {'completed', 'verification_pending'}
+    ]
+
+    explained_field_names: set[str] = set()
+    explained_local_image_ids: set[int] = set()
+    explained_cloud_image_ids: set[str] = set()
+    explained_local_meas_ids: set[int] = set()
+    explained_cloud_meas_ids: set[str] = set()
+
+    def _drift_error(reason: str) -> CloudSyncError:
+        return CloudSyncError(
+            f'{_plan_drift_message()} ({reason})'
+        )
+
+    # Ops that couldn't be resolved on retry (row missing) fall out of the
+    # explained set so the plan re-dispatches them; they are removed from
+    # ``completed_ops`` here so downstream code doesn't add them.
+    resolved_verification_pending: list[dict] = []
+
+    for op in list(completed_ops):
+        # Fail-closed structure check.  A malformed prior op cannot bypass
+        # drift validation via the explained-set — the exception aborts the
+        # retry before any explained-set entry is added.
+        _validate_prior_op_expected_after(op)
+        if op.get('status') == 'verification_pending':
+            resolution = _reconcile_verification_pending_op(
+                op,
+                local_images=local_images, remote_images=remote_images,
+                local_measurements=local_measurements,
+                remote_measurements=remote_measurements,
+            )
+            # resolution is one of:
+            #   ('completed', explained_ids...) — row discovered and material matches
+            #   ('drift', reason)               — row discovered but material differs
+            #   ('missing', None)               — row not found; re-dispatch normally
+            kind = resolution[0]
+            if kind == 'drift':
+                raise _drift_error(resolution[1])
+            if kind == 'missing':
+                # Do NOT add to explained_* — the plan's normal dispatch reruns
+                # the op (safe: underlying helpers upsert by stable id).
+                completed_ops.remove(op)
+                continue
+            # kind == 'completed'
+            explained = resolution[1]
+            explained_local_image_ids.update(explained.get('local_image_ids', set()))
+            explained_cloud_image_ids.update(explained.get('cloud_image_ids', set()))
+            explained_local_meas_ids.update(explained.get('local_meas_ids', set()))
+            explained_cloud_meas_ids.update(explained.get('cloud_meas_ids', set()))
+            resolved_verification_pending.append(op)
+            continue
+        opname = op.get('op')
+        expected = op.get('expected_after') or {}
+        if opname == 'pull_field':
+            field = op.get('field') or ''
+            if not field:
+                continue
+            current = _normalize_observation_field_for_baseline(
+                local_obs, field, local=True
+            )
+            if not _observation_field_values_match(field, current, expected.get('value')):
+                raise _drift_error(
+                    f'local observation field "{field}" no longer matches the '
+                    'expected effect of a completed pull_field'
+                )
+            explained_field_names.add(field)
+        elif opname == 'push_field':
+            field = op.get('field') or ''
+            if not field:
+                continue
+            current = _normalize_observation_field_for_baseline(
+                remote_obs, field, local=False
+            )
+            if not _observation_field_values_match(field, current, expected.get('value')):
+                raise _drift_error(
+                    f'cloud observation field "{field}" no longer matches the '
+                    'expected effect of a completed push_field'
+                )
+            explained_field_names.add(field)
+        elif opname in {'push_image', 'import_image',
+                        'push_image_metadata', 'apply_image_metadata'}:
+            # Full material verification for every image op.  Identity alone is
+            # not proof of intactness; the material post-state must match.
+            lid = _safe_int(op.get('local_id')) or None
+            cid = str(op.get('cloud_id') or '').strip() or None
+            expected_local = (expected or {}).get('material_local')
+            expected_remote = (expected or {}).get('material_remote')
+            if lid and expected_local is not None:
+                current_local = next(
+                    (r for r in local_images if _safe_int(r.get('id')) == lid),
+                    None,
+                )
+                if current_local is None:
+                    raise _drift_error(
+                        f'{opname}: local image {lid} no longer exists'
+                    )
+                current_fp = _material_image_current_state(current_local, side='local')
+                if current_fp != expected_local:
+                    raise _drift_error(
+                        f'{opname}: local image {lid} material content changed since '
+                        'the completed operation wrote it'
+                    )
+                explained_local_image_ids.add(lid)
+            if cid and expected_remote is not None:
+                current_remote_row = next(
+                    (r for r in remote_images if str(r.get('id') or '').strip() == cid),
+                    None,
+                )
+                if current_remote_row is None:
+                    raise _drift_error(
+                        f'{opname}: cloud image {cid} no longer exists'
+                    )
+                current_fp_r = _material_image_current_state(current_remote_row, side='remote')
+                if current_fp_r != expected_remote:
+                    raise _drift_error(
+                        f'{opname}: cloud image {cid} material content changed since '
+                        'the completed operation wrote it'
+                    )
+                explained_cloud_image_ids.add(cid)
+        elif opname in {'push_measurement', 'import_measurement'}:
+            lid = _safe_int(op.get('local_id')) or None
+            cid = str(op.get('cloud_id') or '').strip() or None
+            expected_local = (expected or {}).get('material_local')
+            expected_remote = (expected or {}).get('material_remote')
+            if lid and expected_local is not None:
+                current_local = next(
+                    (r for r in local_measurements if _safe_int(r.get('id')) == lid),
+                    None,
+                )
+                if current_local is None:
+                    raise _drift_error(
+                        f'{opname}: local measurement {lid} no longer exists'
+                    )
+                # Owning-image change is caught here: material_local includes
+                # ``stable.owning_local_image_id``.
+                current_fp = _material_measurement_current_state(current_local, side='local')
+                if current_fp != expected_local:
+                    raise _drift_error(
+                        f'{opname}: local measurement {lid} scientific values or '
+                        'owning image changed since the completed operation'
+                    )
+                explained_local_meas_ids.add(lid)
+            if cid and expected_remote is not None:
+                current_remote_row = next(
+                    (r for r in remote_measurements if str(r.get('id') or '').strip() == cid),
+                    None,
+                )
+                if current_remote_row is None:
+                    raise _drift_error(
+                        f'{opname}: cloud measurement {cid} no longer exists'
+                    )
+                current_fp_r = _material_measurement_current_state(current_remote_row, side='remote')
+                if current_fp_r != expected_remote:
+                    raise _drift_error(
+                        f'{opname}: cloud measurement {cid} scientific values or '
+                        'owning image changed since the completed operation'
+                    )
+                explained_cloud_meas_ids.add(cid)
+        elif opname == 'recompute_spore_statistics':
+            explained_field_names.add('spore_statistics')
+            value = expected.get('value') if isinstance(expected, dict) else None
+            if value is not None:
+                current_local = _normalize_observation_field_for_baseline(
+                    local_obs, 'spore_statistics', local=True
+                )
+                current_remote = _normalize_observation_field_for_baseline(
+                    remote_obs, 'spore_statistics', local=False
+                )
+                if not (
+                    _observation_field_values_match('spore_statistics', current_local, value)
+                    and _observation_field_values_match(
+                        'spore_statistics', current_remote, value
+                    )
+                ):
+                    raise _drift_error(
+                        'spore_statistics no longer matches the recomputed value'
+                    )
+        # keep_asymmetric_*, preserve_spore_statistics_no_measurements,
+        # restore_presentation, assign_downloaded_order: no verification needed
+        # here (no cloud/local material write happened).
+
+    # ── Now check that every UNRELATED record still matches original baseline ─
+    original_local_obs = original_baseline.get('local_observation') or {}
+    original_remote_obs = original_baseline.get('remote_observation') or {}
+    current_local_obs_fp = _conflict_plan_local_observation_fingerprint(local_obs)
+    current_remote_obs_fp = _conflict_plan_remote_observation_fingerprint(remote_obs)
+    for field, expected_value in original_local_obs.items():
+        if field in explained_field_names:
+            continue
+        if not _observation_field_values_match(
+            field, current_local_obs_fp.get(field), expected_value
+        ):
+            raise _drift_error(
+                f'unrelated local field "{field}" changed since the baseline'
+            )
+    for field, expected_value in original_remote_obs.items():
+        if field in explained_field_names:
+            continue
+        if not _observation_field_values_match(
+            field, current_remote_obs_fp.get(field), expected_value
+        ):
+            raise _drift_error(
+                f'unrelated cloud field "{field}" changed since the baseline'
+            )
+
+    def _local_id(row): return _safe_int(row.get('__local_id')) or _safe_int(row.get('local_id'))
+    def _cloud_id(row): return str(row.get('__cloud_id') or row.get('cloud_id') or '').strip()
+
+    current_local_images_fp = {
+        _safe_int(row.get('id')): _conflict_plan_local_image_fingerprint(row)
+        for row in local_images or [] if _safe_int(row.get('id'))
+    }
+    current_remote_images_fp = {
+        str(row.get('id') or '').strip(): _conflict_plan_remote_image_fingerprint(row)
+        for row in remote_images or [] if str(row.get('id') or '').strip()
+    }
+    for row in original_baseline.get('local_images') or []:
+        lid = _local_id(row)
+        if not lid or lid in explained_local_image_ids:
+            continue
+        current = current_local_images_fp.get(lid)
+        if current != row:
+            raise _drift_error(
+                f'unrelated local image {lid} changed since the baseline'
+            )
+    for row in original_baseline.get('remote_images') or []:
+        cid = _cloud_id(row)
+        if not cid or cid in explained_cloud_image_ids:
+            continue
+        current = current_remote_images_fp.get(cid)
+        if current != row:
+            raise _drift_error(
+                f'unrelated cloud image {cid} changed since the baseline'
+            )
+
+    current_local_meas_fp = {
+        _safe_int(row.get('id')): _conflict_plan_local_measurement_fingerprint(row)
+        for row in local_measurements or [] if _safe_int(row.get('id'))
+    }
+    current_remote_meas_fp = {
+        str(row.get('id') or '').strip(): _conflict_plan_remote_measurement_fingerprint(row)
+        for row in remote_measurements or [] if str(row.get('id') or '').strip()
+    }
+    for row in original_baseline.get('local_measurements') or []:
+        lid = _local_id(row)
+        if not lid or lid in explained_local_meas_ids:
+            continue
+        current = current_local_meas_fp.get(lid)
+        if current != row:
+            raise _drift_error(
+                f'unrelated local measurement {lid} changed since the baseline'
+            )
+    for row in original_baseline.get('remote_measurements') or []:
+        cid = _cloud_id(row)
+        if not cid or cid in explained_cloud_meas_ids:
+            continue
+        current = current_remote_meas_fp.get(cid)
+        if current != row:
+            raise _drift_error(
+                f'unrelated cloud measurement {cid} changed since the baseline'
+            )
+
+    # Rebase — build a fresh baseline from the verified current state.
+    rebased = build_conflict_plan_baseline(
+        local_obs=local_obs,
+        remote_obs=remote_obs,
+        local_images=list(local_images or []),
+        remote_images=list(remote_images or []),
+        local_measurements=list(local_measurements or []),
+        remote_measurements=list(remote_measurements or []),
+    )
+    completed_keys = {_stable_op_key(op) for op in completed_ops}
+    # Attach the observed ``already_complete`` status to the ops we hand back.
+    verified_ops = []
+    for op in completed_ops:
+        entry = dict(op)
+        entry['status'] = 'already_complete'
+        verified_ops.append(entry)
+    return rebased, completed_keys, verified_ops
+
+
+def _stable_op_key(op: dict) -> tuple:
+    """Identity of an operation across retries.  Used to dedupe completed work."""
+    return (
+        str(op.get('op') or ''),
+        str(op.get('field') or ''),
+        _safe_int(op.get('local_id')) or 0,
+        str(op.get('cloud_id') or '').strip(),
+    )
+
+
+def _plan_dispatch_keys(op: dict) -> set:
+    """Every plan-op key an item with the same identity could produce.
+
+    A completed op may carry the newly-formed cloud id (or the newly-linked
+    local id), but the plan-op derived from the user's item won't yet know it.
+    Return both variants so the filter matches either.
+    """
+    opname = str(op.get('op') or '')
+    field = str(op.get('field') or '')
+    local_id = _safe_int(op.get('local_id')) or 0
+    cloud_id = str(op.get('cloud_id') or '').strip()
+    keys: set = {(opname, field, local_id, cloud_id)}
+    if opname in {'push_image', 'push_measurement'}:
+        # Plan-op form: cloud_id not yet known.
+        keys.add((opname, field, local_id, ''))
+    elif opname in {'import_image', 'import_measurement'}:
+        # Plan-op form: local_id not yet known.
+        keys.add((opname, field, 0, cloud_id))
+    return keys
+
+
+def _plan_item_matches_completed_op(item: dict, completed_key: tuple) -> bool:
+    """Return True when a plan item's dispatch matches an already-completed op key."""
+    kind = item.get('kind')
+    choice = item.get('choice')
+    side = item.get('side')
+    local_id = _safe_int(item.get('local_id')) or 0
+    cloud_id = str(item.get('cloud_id') or '').strip()
+    field = str(item.get('field') or '')
+    if kind == 'field':
+        if choice == 'cloud':
+            return completed_key == ('pull_field', field, 0, '')
+        if choice == 'local':
+            return completed_key == ('push_field', field, 0, '')
+    elif kind == 'image':
+        if choice == 'upload':
+            return completed_key == ('push_image', '', local_id, '')
+        if choice == 'download':
+            return completed_key == ('import_image', '', 0, cloud_id)
+        if choice in {'keep_local', 'keep_cloud'}:
+            return completed_key == (
+                'keep_asymmetric_image', '', local_id, cloud_id,
+            )
+    elif kind == 'image_metadata':
+        if choice == 'local':
+            return completed_key == ('push_image_metadata', '', local_id, cloud_id)
+        if choice == 'cloud':
+            return completed_key == ('apply_image_metadata', '', local_id, cloud_id)
+    elif kind == 'measurement':
+        if side == 'matched':
+            if choice == 'local':
+                return completed_key == ('push_measurement', '', local_id, cloud_id)
+            if choice == 'cloud':
+                return completed_key == ('import_measurement', '', local_id, cloud_id)
+        elif side == 'local_only':
+            if choice == 'upload':
+                return completed_key == ('push_measurement', '', local_id, '')
+            if choice == 'keep_local':
+                return completed_key == ('keep_asymmetric_measurement', '', local_id, '')
+        elif side == 'cloud_only':
+            if choice == 'download':
+                return completed_key == ('import_measurement', '', 0, cloud_id)
+            if choice == 'keep_cloud':
+                return completed_key == ('keep_asymmetric_measurement', '', 0, cloud_id)
+    return False
+
+
+def _build_accepted_asymmetry_from_plan(
+    items: list[dict],
+    *,
+    local_images: list[dict],
+    remote_images: list[dict],
+    local_measurements: list[dict],
+    remote_measurements: list[dict],
+) -> dict:
+    """Turn each ``keep_*`` item into a durable accepted-asymmetry entry.
+
+    Only items whose stable identity still resolves to a live row on the
+    named side are recorded; a keep-only choice against a phantom row is
+    ignored so we never invent acceptance.
+    """
+    accepted = {
+        'local_only_images': [],
+        'cloud_only_images': [],
+        'local_only_measurements': [],
+        'cloud_only_measurements': [],
+    }
+    local_image_by_id = {_safe_int(r.get('id')): r for r in local_images
+                         if _safe_int(r.get('id'))}
+    remote_image_by_id = {str(r.get('id') or '').strip(): r for r in remote_images
+                          if str(r.get('id') or '').strip()}
+    local_meas_by_id = {_safe_int(r.get('id')): r for r in local_measurements
+                        if _safe_int(r.get('id'))}
+    remote_meas_by_id = {str(r.get('id') or '').strip(): r for r in remote_measurements
+                         if str(r.get('id') or '').strip()}
+    for item in items:
+        kind = item.get('kind')
+        choice = item.get('choice')
+        if kind == 'image' and choice == 'keep_local':
+            local_id = _safe_int(item.get('local_id'))
+            row = local_image_by_id.get(local_id)
+            if row is None:
+                continue
+            accepted['local_only_images'].append({
+                'side': 'local_only', 'kind': 'image',
+                'local_id': local_id, 'cloud_id': None,
+                'owning_local_image_id': None, 'owning_cloud_image_id': None,
+                'fingerprint': _asymmetry_fingerprint_local_image(row),
+                'accepted_at': _iso_timestamp_now(),
+                'choice': 'keep_local',
+            })
+        elif kind == 'image' and choice == 'keep_cloud':
+            cloud_id = str(item.get('cloud_id') or '').strip()
+            row = remote_image_by_id.get(cloud_id)
+            if row is None:
+                continue
+            accepted['cloud_only_images'].append({
+                'side': 'cloud_only', 'kind': 'image',
+                'local_id': None, 'cloud_id': cloud_id,
+                'owning_local_image_id': None, 'owning_cloud_image_id': None,
+                'fingerprint': _asymmetry_fingerprint_remote_image(row),
+                'accepted_at': _iso_timestamp_now(),
+                'choice': 'keep_cloud',
+            })
+        elif kind == 'measurement' and choice == 'keep_local':
+            local_id = _safe_int(item.get('local_id'))
+            row = local_meas_by_id.get(local_id)
+            if row is None:
+                continue
+            accepted['local_only_measurements'].append({
+                'side': 'local_only', 'kind': 'measurement',
+                'local_id': local_id, 'cloud_id': None,
+                'owning_local_image_id': _safe_int(row.get('image_id')) or None,
+                'owning_cloud_image_id': None,
+                'fingerprint': _asymmetry_fingerprint_local_measurement(row),
+                'accepted_at': _iso_timestamp_now(),
+                'choice': 'keep_local',
+            })
+        elif kind == 'measurement' and choice == 'keep_cloud':
+            cloud_id = str(item.get('cloud_id') or '').strip()
+            row = remote_meas_by_id.get(cloud_id)
+            if row is None:
+                continue
+            accepted['cloud_only_measurements'].append({
+                'side': 'cloud_only', 'kind': 'measurement',
+                'local_id': None, 'cloud_id': cloud_id,
+                'owning_local_image_id': None,
+                'owning_cloud_image_id': str(row.get('image_id') or '').strip() or None,
+                'fingerprint': _asymmetry_fingerprint_remote_measurement(row),
+                'accepted_at': _iso_timestamp_now(),
+                'choice': 'keep_cloud',
+            })
+    return accepted
+
+
+def _identities_referenced_by_plan(items: list[dict]) -> dict:
+    """Every stable identity that this plan explicitly touches with a non-keep choice.
+
+    Used to remove prior accepted-asymmetry entries the user is overriding.
+    """
+    image_identities: set[tuple[int, str]] = set()
+    measurement_identities: set[tuple[int, str]] = set()
+    for item in items or []:
+        kind = item.get('kind')
+        choice = item.get('choice')
+        # ``keep_*`` choices are handled by _build_accepted_asymmetry_from_plan.
+        # Everything else counts as an override that removes any prior keep-only
+        # entry for the same stable identity.
+        if choice in {'keep_local', 'keep_cloud'}:
+            continue
+        local_id = _safe_int(item.get('local_id')) or 0
+        cloud_id = str(item.get('cloud_id') or '').strip()
+        if kind in {'image', 'image_metadata'}:
+            image_identities.add((local_id, cloud_id))
+        elif kind == 'measurement':
+            measurement_identities.add((local_id, cloud_id))
+    return {'images': image_identities, 'measurements': measurement_identities}
+
+
+def _reconcile_accepted_asymmetry(
+    previous: dict | None,
+    new: dict,
+    *,
+    plan_items: list[dict],
+    current_local_images: list[dict],
+    current_remote_images: list[dict],
+    current_local_measurements: list[dict],
+    current_remote_measurements: list[dict],
+    matched_local_image_ids: set[int] | None = None,
+    matched_cloud_image_ids: set[str] | None = None,
+    matched_local_measurement_ids: set[int] | None = None,
+    matched_cloud_measurement_ids: set[str] | None = None,
+) -> dict:
+    """Merge, prune, and supersede accepted-asymmetry entries.
+
+    Removes an accepted entry when any of the following is now true:
+
+    * its stable identity is referenced by a non-keep plan choice (user
+      explicitly changed their mind to upload/download);
+    * the counterpart now exists (row is no longer one-sided);
+    * the accepted row no longer exists on its side (deletion / relink);
+    * for measurements: the row's owning image identity changed;
+    * ownership or side changed.
+
+    Newer keep-only entries for the same identity replace older ones so the
+    fingerprint stays fresh.  The result contains only entries that are still
+    valid.
+    """
+    result = {
+        'local_only_images': [],
+        'cloud_only_images': [],
+        'local_only_measurements': [],
+        'cloud_only_measurements': [],
+    }
+    prev = previous if isinstance(previous, dict) else {}
+    override = _identities_referenced_by_plan(plan_items or [])
+    override_images = override['images']
+    override_measurements = override['measurements']
+    matched_local_image_ids = matched_local_image_ids or set()
+    matched_cloud_image_ids = matched_cloud_image_ids or set()
+    matched_local_measurement_ids = matched_local_measurement_ids or set()
+    matched_cloud_measurement_ids = matched_cloud_measurement_ids or set()
+
+    local_image_by_id = {_safe_int(r.get('id')): r for r in current_local_images or []
+                         if _safe_int(r.get('id'))}
+    remote_image_by_id = {str(r.get('id') or '').strip(): r for r in current_remote_images or []
+                          if str(r.get('id') or '').strip()}
+    local_meas_by_id = {_safe_int(r.get('id')): r for r in current_local_measurements or []
+                        if _safe_int(r.get('id'))}
+    remote_meas_by_id = {str(r.get('id') or '').strip(): r for r in current_remote_measurements or []
+                         if str(r.get('id') or '').strip()}
+
+    def _still_local_only_image(entry: dict) -> bool:
+        local_id = _safe_int(entry.get('local_id'))
+        if not local_id or local_id not in local_image_by_id:
+            return False  # row is gone
+        row = local_image_by_id[local_id]
+        # Row now linked to a cloud row → no longer one-sided.
+        if str(row.get('cloud_id') or '').strip():
+            return False
+        # A cloud row now claims this local id → no longer one-sided.
+        if local_id in matched_local_image_ids:
+            return False
+        # User overrode (upload etc.) → drop.
+        if (local_id, '') in override_images or any(lid == local_id for lid, _ in override_images):
+            return False
+        return True
+
+    def _still_cloud_only_image(entry: dict) -> bool:
+        cloud_id = str(entry.get('cloud_id') or '').strip()
+        if not cloud_id or cloud_id not in remote_image_by_id:
+            return False
+        row = remote_image_by_id[cloud_id]
+        if _safe_int(row.get('desktop_id')):
+            return False  # cloud row now points at a local row
+        if cloud_id in matched_cloud_image_ids:
+            return False
+        if any(cid == cloud_id for _, cid in override_images):
+            return False
+        return True
+
+    def _still_local_only_measurement(entry: dict) -> bool:
+        local_id = _safe_int(entry.get('local_id'))
+        if not local_id or local_id not in local_meas_by_id:
+            return False
+        row = local_meas_by_id[local_id]
+        if str(row.get('cloud_id') or '').strip():
+            return False  # relinked
+        # Owning-image identity changed → drop; fresh conflict.
+        expected_owner = _safe_int(entry.get('owning_local_image_id')) or None
+        current_owner = _safe_int(row.get('image_id')) or None
+        if expected_owner is not None and current_owner is not None and expected_owner != current_owner:
+            return False
+        if local_id in matched_local_measurement_ids:
+            return False
+        if any(lid == local_id for lid, _ in override_measurements):
+            return False
+        return True
+
+    def _still_cloud_only_measurement(entry: dict) -> bool:
+        cloud_id = str(entry.get('cloud_id') or '').strip()
+        if not cloud_id or cloud_id not in remote_meas_by_id:
+            return False
+        row = remote_meas_by_id[cloud_id]
+        if _safe_int(row.get('desktop_id')):
+            return False
+        expected_owner = str(entry.get('owning_cloud_image_id') or '').strip() or None
+        current_owner = str(row.get('image_id') or '').strip() or None
+        if expected_owner and current_owner and expected_owner != current_owner:
+            return False
+        if cloud_id in matched_cloud_measurement_ids:
+            return False
+        if any(cid == cloud_id for _, cid in override_measurements):
+            return False
+        return True
+
+    predicates = {
+        'local_only_images': _still_local_only_image,
+        'cloud_only_images': _still_cloud_only_image,
+        'local_only_measurements': _still_local_only_measurement,
+        'cloud_only_measurements': _still_cloud_only_measurement,
+    }
+
+    for key, predicate in predicates.items():
+        seen: dict[tuple, dict] = {}
+        # Prior entries first (survivors of pruning).
+        for entry in prev.get(key) or []:
+            if isinstance(entry, dict) and predicate(entry):
+                seen[_accepted_asymmetry_key(entry)] = dict(entry)
+        # New entries override / add — they were computed against fresh state
+        # so they are always valid.
+        for entry in new.get(key) or []:
+            if isinstance(entry, dict):
+                seen[_accepted_asymmetry_key(entry)] = dict(entry)
+        result[key] = list(seen.values())
+    return result
+
+
+def _merge_accepted_asymmetry(previous: dict | None, new: dict) -> dict:
+    """Preserved for ordinary sync callers that don't do full reconciliation.
+
+    Kept as a thin wrapper for backward compatibility with helpers that store
+    a snapshot without a plan context (e.g. push_all).  A plan resolution
+    should call ``_reconcile_accepted_asymmetry`` directly.
+    """
+    result = {
+        'local_only_images': [],
+        'cloud_only_images': [],
+        'local_only_measurements': [],
+        'cloud_only_measurements': [],
+    }
+    prev = previous if isinstance(previous, dict) else {}
+    for key in result.keys():
+        seen: dict[tuple, dict] = {}
+        for entry in prev.get(key) or []:
+            if isinstance(entry, dict):
+                seen[_accepted_asymmetry_key(entry)] = dict(entry)
+        for entry in new.get(key) or []:
+            if isinstance(entry, dict):
+                seen[_accepted_asymmetry_key(entry)] = dict(entry)
+        result[key] = list(seen.values())
+    return result
+
+
+def _iso_timestamp_now() -> str:
+    """UTC timestamp for accepted_at diagnostics.  Never used as identity."""
+    try:
+        from datetime import datetime, timezone
+        return datetime.now(tz=timezone.utc).strftime('%Y-%m-%dT%H:%M:%SZ')
+    except Exception:
+        return ''
+
+
 def resolve_conflict_plan(
     client: "SporelyCloudClient",
     local_id: int,
@@ -10194,160 +12475,796 @@ def resolve_conflict_plan(
     cloud_id: str | None = None,
     plan: dict | None = None,
     prepare_images_cb: PreparedImagesCallback | None = None,
+    prior_result: dict | None = None,
 ) -> dict:
-    """Apply one explicit, non-destructive per-item conflict plan."""
+    """Apply one explicit, non-destructive per-item conflict plan.
+
+    Turn-A execution order:
+
+    1. Refetch local and cloud state.
+    2. Validate identity (belt-and-braces of UI-side detection).
+    3. Verify the reviewed plan against the fresh state (drift check).
+    4. Build an explicit per-(kind, side, choice) operation list.
+    5. Capture local presentation state so cloud metadata cannot silently
+       overwrite ``gallery_rotation`` / ``sort_order`` on matched images.
+    6. Execute every operation exactly once.
+    7. Restore presentation for matched images; assign deterministic order to
+       downloaded cloud-only images.
+    8. Recompute spore statistics from the *final* measurement set, preserving
+       cloud value when recomputation legitimately yields nothing.
+    9. Finalize: store snapshot → refresh media signature → stamp synced.
+    """
     selected_plan = dict(plan or {})
     if selected_plan.get('allow_media_deletion'):
         raise CloudSyncError('Conflict plans cannot authorize media deletion')
+
     local_obs = ObservationDB.get_observation(int(local_id))
     if not local_obs:
         raise CloudSyncError(f'Local observation {local_id} not found')
     resolved_cloud_id = str(cloud_id or local_obs.get('cloud_id') or '').strip()
     if not resolved_cloud_id:
         raise CloudSyncError(f'Observation {local_id} is not linked to Sporely Cloud')
+
+    items = [dict(item or {}) for item in (selected_plan.get('items') or [])]
+    baseline = selected_plan.get('baseline')
+    # A1: item-level plans MUST carry a reviewed baseline.  Old whole-observation
+    # resolvers (resolve_conflict_keep_local / _keep_cloud / _merge) are separate
+    # APIs and are unaffected.
+    _validate_plan_baseline_shape(baseline)
+    baseline = dict(baseline)
+
+    # ── B2: partial-retry — carry forward completed operations ─────────────
+    completed_prior_ops: list[dict] = []
+    completed_prior_keys: set = set()
+    if isinstance(prior_result, dict):
+        for op in prior_result.get('operations') or []:
+            if isinstance(op, dict) and op.get('status') in {
+                'completed', 'verification_pending'
+            }:
+                completed_prior_ops.append(dict(op))
+                completed_prior_keys |= _plan_dispatch_keys(op)
+
+    # ── Step 1: refetch current state ─────────────────────────────────────────
     remote_obs = client.get_observation(resolved_cloud_id)
     remote_images = [
-        dict(row or {}) for row in (_pull_remote_images_for_sync(client, resolved_cloud_id) or [])
+        dict(row or {})
+        for row in (_pull_remote_images_for_sync(client, resolved_cloud_id) or [])
         if not str((row or {}).get('deleted_at') or '').strip()
         and should_pull_cloud_image_to_desktop(row)
     ]
     remote_measurements = _pull_remote_measurements_for_images(
         client,
-        [str(row.get('id') or '').strip() for row in remote_images if str(row.get('id') or '').strip()],
+        [
+            str(row.get('id') or '').strip()
+            for row in remote_images
+            if str(row.get('id') or '').strip()
+        ],
     )
-    items = [dict(item or {}) for item in (selected_plan.get('items') or [])]
+    current_local_images = ImageDB.get_images_for_observation(int(local_id))
+    current_local_measurements = MeasurementDB.get_measurements_for_observation(int(local_id))
 
+    # ── Step 2: identity validation ───────────────────────────────────────────
+    _validate_plan_identity_state(
+        local_images=current_local_images,
+        remote_images=remote_images,
+        local_measurements=current_local_measurements,
+        remote_measurements=remote_measurements,
+        items=items,
+    )
+
+    # ── Step 2b: retry rebasing ──────────────────────────────────────────────
+    # Turn-B fix 1: expected-effect-aware rebasing.  If we were handed a
+    # ``prior_result`` from an earlier PartialConflictPlanError, verify each
+    # completed op's ``expected_after`` against the current state, ensure that
+    # every UNRELATED record still matches the original baseline, then replace
+    # the baseline with a fresh one so the drift check for the remaining
+    # (pending/failed) ops runs against the rebased state.
+    verified_completed_ops: list[dict] = []
+    if isinstance(prior_result, dict) and prior_result.get('operations'):
+        baseline, rebased_keys, verified_completed_ops = _verify_completed_ops_and_rebase(
+            prior_result, baseline,
+            local_obs=local_obs, remote_obs=remote_obs,
+            local_images=current_local_images, remote_images=remote_images,
+            local_measurements=current_local_measurements,
+            remote_measurements=remote_measurements,
+        )
+        # Expand the completed keys to include plan-dispatch variants.
+        for op in prior_result.get('operations') or []:
+            if isinstance(op, dict) and op.get('status') in {
+                'completed', 'verification_pending'
+            }:
+                completed_prior_keys |= _plan_dispatch_keys(op)
+        completed_prior_keys |= rebased_keys
+
+    # ── Step 3: drift validation against (possibly rebased) baseline ─────────
+    _verify_plan_baseline(
+        baseline,
+        items,
+        local_obs=local_obs,
+        remote_obs=remote_obs,
+        local_images=current_local_images,
+        remote_images=remote_images,
+        local_measurements=current_local_measurements,
+        remote_measurements=remote_measurements,
+    )
+
+    # ── Step 4: build the explicit operation list ─────────────────────────────
+    ops = [
+        op for op in _build_plan_operations(items)
+        if _stable_op_key(op) not in completed_prior_keys
+    ]
+
+    # ── Step 5: capture local presentation state ──────────────────────────────
+    presentation_before = _capture_local_presentation(current_local_images)
+
+    # ── Step 6: execute operations, in a stable order ─────────────────────────
+    # Retry carries verified completed prior ops forward as ``already_complete``
+    # entries so the return value reports the full history.
+    executed: list[dict] = list(verified_completed_ops) if verified_completed_ops else list(completed_prior_ops)
+    matched_image_local_ids: set[int] = set()
+
+    def _partial_error(message: str, failing: dict | None = None,
+                       cause: Exception | None = None) -> PartialConflictPlanError:
+        pending = list(executed)
+        if failing is not None:
+            pending.append({
+                **failing,
+                'status': 'failed',
+                'error': str(cause) if cause else message,
+            })
+        err = PartialConflictPlanError(
+            message,
+            partial_result={
+                'local_id': int(local_id),
+                'cloud_id': resolved_cloud_id,
+                'plan_applied': False,
+                'operations': pending,
+            },
+        )
+        if cause is not None:
+            err.__cause__ = cause
+        return err
+
+    # Field: pull from cloud
     cloud_field_names = {
-        str(item.get('field') or '')
-        for item in items
-        if item.get('kind') == 'field' and item.get('choice') == 'cloud'
+        str(op.get('field') or '')
+        for op in ops
+        if op.get('op') == 'pull_field' and op.get('field')
     }
     if cloud_field_names:
-        _apply_remote_observation_fields(
-            int(local_id), remote_obs, fields=cloud_field_names
-        )
+        try:
+            _apply_remote_observation_fields(int(local_id), remote_obs, fields=cloud_field_names)
+        except Exception as exc:
+            raise _partial_error(
+                f'Could not apply cloud fields to local: {exc}',
+                failing={'op': 'pull_field', 'fields': sorted(cloud_field_names)},
+                cause=exc,
+            )
+        # Record the expected local value that pull_field wrote — retry
+        # verifies the current local field still matches.
+        refreshed_after_pull = ObservationDB.get_observation(int(local_id)) or local_obs
+        for f in sorted(cloud_field_names):
+            executed.append({
+                'op': 'pull_field', 'field': f, 'status': 'completed',
+                'stable_identity': {'field': f, 'side': 'local'},
+                'expected_after': {
+                    'side': 'local',
+                    'field': f,
+                    'value': _normalize_observation_field_for_baseline(
+                        refreshed_after_pull, f, local=True,
+                    ),
+                },
+            })
 
+    # Field: push to cloud
     local_field_names = {
-        str(item.get('field') or '')
-        for item in items
-        if item.get('kind') == 'field' and item.get('choice') == 'local'
+        str(op.get('field') or '')
+        for op in ops
+        if op.get('op') == 'push_field' and op.get('field')
     }
     if local_field_names:
-        refreshed_local = ObservationDB.get_observation(int(local_id)) or local_obs
-        local_payload = _observation_push_payload(refreshed_local, local=True)
-        patch_payload = {
-            ('visibility' if field == 'sharing_scope' else field): local_payload.get(
-                'visibility' if field in {'visibility', 'sharing_scope'} else field
+        try:
+            refreshed_local = ObservationDB.get_observation(int(local_id)) or local_obs
+            local_payload = _observation_push_payload(refreshed_local, local=True)
+            patch_payload = {
+                ('visibility' if field == 'sharing_scope' else field): local_payload.get(
+                    'visibility' if field in {'visibility', 'sharing_scope'} else field
+                )
+                for field in local_field_names
+            }
+            if patch_payload:
+                client._patch(f'observations?id=eq.{resolved_cloud_id}', patch_payload)
+        except Exception as exc:
+            raise _partial_error(
+                f'Could not push local fields to cloud: {exc}',
+                failing={'op': 'push_field', 'fields': sorted(local_field_names)},
+                cause=exc,
             )
-            for field in local_field_names
-        }
-        if patch_payload:
-            client._patch(f'observations?id=eq.{resolved_cloud_id}', patch_payload)
+        for f in sorted(local_field_names):
+            executed.append({
+                'op': 'push_field', 'field': f, 'status': 'completed',
+                'stable_identity': {'field': f, 'side': 'cloud'},
+                'expected_after': {
+                    'side': 'cloud',
+                    'field': f,
+                    'value': _normalize_observation_field_for_baseline(
+                        refreshed_local, f, local=True,
+                    ),
+                },
+            })
 
-    remote_image_ids_to_apply = {
-        str(item.get('cloud_id') or '')
-        for item in items
-        if (
-            (item.get('kind') == 'image' and item.get('choice') == 'download')
-            or (item.get('kind') == 'image_metadata' and item.get('choice') == 'cloud')
-        )
-        and str(item.get('cloud_id') or '')
+    # Image: import from cloud (materialize) + apply metadata from cloud
+    remote_ids_to_import = {
+        str(op.get('cloud_id') or '')
+        for op in ops
+        if op.get('op') == 'import_image' and str(op.get('cloud_id') or '')
     }
-    if remote_image_ids_to_apply:
-        _apply_remote_images_to_local(
-            client,
-            int(local_id),
-            [row for row in remote_images if str(row.get('id') or '') in remote_image_ids_to_apply],
-            allow_delete=False,
-            materialize_remote_images=True,
-        )
-
-    remote_measurement_ids_to_apply = {
-        str(item.get('cloud_id') or '')
-        for item in items
-        if item.get('kind') == 'measurement'
-        and item.get('choice') in {'cloud', 'download'}
-        and str(item.get('cloud_id') or '')
+    remote_ids_metadata_only = {
+        str(op.get('cloud_id') or '')
+        for op in ops
+        if op.get('op') == 'apply_image_metadata' and str(op.get('cloud_id') or '')
     }
-    if remote_measurement_ids_to_apply:
-        result = _import_remote_measurements_for_observation(
-            client,
-            int(local_id),
-            resolved_cloud_id,
-            remote_images=remote_images,
-            remote_measurements=[
-                row for row in remote_measurements
-                if str(row.get('id') or '') in remote_measurement_ids_to_apply
-            ],
-            materialize_remote_images=True,
-            overwrite_conflicts=True,
-        )
-        if result.get('failed'):
-            raise CloudSyncError('Could not apply selected cloud measurements')
+    combined_remote_ids = remote_ids_to_import | remote_ids_metadata_only
+    if combined_remote_ids:
+        try:
+            _apply_remote_images_to_local(
+                client,
+                int(local_id),
+                [row for row in remote_images if str(row.get('id') or '') in combined_remote_ids],
+                allow_delete=False,
+                materialize_remote_images=True,
+            )
+        except Exception as exc:
+            raise _partial_error(
+                f'Could not apply cloud images to local: {exc}',
+                failing={'op': 'apply_or_import_image',
+                         'cloud_ids': sorted(combined_remote_ids)},
+                cause=exc,
+            )
+        try:
+            local_after = ImageDB.get_images_for_observation(int(local_id))
+            local_by_cloud = {
+                str(r.get('cloud_id') or '').strip(): r for r in local_after
+                if str(r.get('cloud_id') or '').strip()
+            }
+            remote_by_cloud_after = {
+                str(row.get('id') or '').strip(): row for row in remote_images
+                if str(row.get('id') or '').strip()
+            }
+            for cid in sorted(combined_remote_ids):
+                local_link = local_by_cloud.get(cid) or {}
+                remote_row = remote_by_cloud_after.get(cid) or {}
+                op_kind = ('import_image' if cid in remote_ids_to_import
+                           else 'apply_image_metadata')
+                executed.append({
+                    'op': op_kind,
+                    'cloud_id': cid,
+                    'local_id': _safe_int(local_link.get('id')) or None,
+                    'status': 'completed',
+                    'stable_identity': {'cloud_id': cid,
+                                        'local_id': _safe_int(local_link.get('id')) or None},
+                    'expected_after': {
+                        'kind': 'image',
+                        'material_local': _material_image_expected_state(
+                            local_link, side='local'
+                        ),
+                        'material_remote': _material_image_expected_state(
+                            remote_row, side='remote'
+                        ),
+                    },
+                })
+        except Exception as exc:
+            remote_by_cloud_after = {
+                str(row.get('id') or '').strip(): row for row in remote_images
+                if str(row.get('id') or '').strip()
+            }
+            for cid in sorted(combined_remote_ids):
+                remote_row = remote_by_cloud_after.get(cid) or {}
+                op_kind = ('import_image' if cid in remote_ids_to_import
+                           else 'apply_image_metadata')
+                executed.append({
+                    'op': op_kind,
+                    'cloud_id': cid,
+                    'status': 'verification_pending',
+                    'write_attempted': True,
+                    'stable_identity': {'cloud_id': cid},
+                    'intended_after': _intended_after_image_from_remote(remote_row),
+                })
+            raise _partial_error(
+                f'Cloud→local image apply succeeded but verification read failed: {exc}',
+                failing=None, cause=exc,
+            )
 
+    # Track matched image local ids for later presentation restore.
+    # Matched = the local id appears in an image_metadata op (this attempt) OR
+    # was touched by an already-verified image op from a prior attempt.  Even
+    # if the underlying apply is not re-run this attempt, presentation restore
+    # is a nonblocking write that MUST still be re-attempted so a failed
+    # presentation from the prior attempt is retried.
+    for op in ops:
+        if op.get('op') in {'apply_image_metadata', 'push_image_metadata'}:
+            lid = _safe_int(op.get('local_id'))
+            if lid:
+                matched_image_local_ids.add(lid)
+    for op in verified_completed_ops or []:
+        if op.get('op') in {'apply_image_metadata', 'push_image_metadata'}:
+            lid = _safe_int(op.get('local_id'))
+            if lid:
+                matched_image_local_ids.add(lid)
+
+    # Image: upload
     local_image_ids_to_push = {
-        _safe_int(item.get('local_id'))
-        for item in items
-        if (
-            (item.get('kind') == 'image' and item.get('choice') == 'upload')
-            or item.get('kind') == 'image_metadata'
-        )
-        and _safe_int(item.get('local_id')) > 0
+        _safe_int(op.get('local_id'))
+        for op in ops
+        if op.get('op') == 'push_image' and _safe_int(op.get('local_id')) > 0
     }
     if local_image_ids_to_push and prepare_images_cb is None:
         raise CloudSyncError('Selected local images require the desktop image preparer')
     if local_image_ids_to_push:
-        refreshed_local = ObservationDB.get_observation(int(local_id)) or local_obs
-        if not _push_images_for_observation(
-            client,
-            refreshed_local,
-            resolved_cloud_id,
-            prepare_images_cb=prepare_images_cb,
-            include_image_ids=local_image_ids_to_push,
-        ):
-            raise CloudSyncError('Could not upload all selected local images')
+        try:
+            refreshed_local = ObservationDB.get_observation(int(local_id)) or local_obs
+            pushed_ok = _push_images_for_observation(
+                client,
+                refreshed_local,
+                resolved_cloud_id,
+                prepare_images_cb=prepare_images_cb,
+                include_image_ids=local_image_ids_to_push,
+            )
+        except Exception as exc:
+            raise _partial_error(
+                f'Could not upload all selected local images: {exc}',
+                failing={'op': 'push_image', 'local_ids': sorted(local_image_ids_to_push)},
+                cause=exc,
+            )
+        if not pushed_ok:
+            raise _partial_error(
+                'Could not upload all selected local images',
+                failing={'op': 'push_image', 'local_ids': sorted(local_image_ids_to_push)},
+            )
+        # Reread both sides.  If the verification read-back fails after the
+        # write succeeded, emit ``verification_pending`` ops so retry can
+        # discover the created rows via stable identity without re-dispatch.
+        try:
+            local_after_push = ImageDB.get_images_for_observation(int(local_id))
+            by_local_id = {_safe_int(r.get('id')): r for r in local_after_push
+                           if _safe_int(r.get('id'))}
+            remote_after_push = [
+                dict(row or {})
+                for row in (_pull_remote_images_for_sync(client, resolved_cloud_id) or [])
+                if not str((row or {}).get('deleted_at') or '').strip()
+                and should_pull_cloud_image_to_desktop(row)
+            ]
+            remote_by_desktop = {_safe_int(r.get('desktop_id')): r for r in remote_after_push
+                                 if _safe_int(r.get('desktop_id'))}
+            for lid in sorted(local_image_ids_to_push):
+                local_row = by_local_id.get(int(lid)) or {}
+                cid_after = str(local_row.get('cloud_id') or '').strip() or None
+                remote_row = remote_by_desktop.get(int(lid)) or {}
+                executed.append({
+                    'op': 'push_image', 'local_id': lid,
+                    'cloud_id': cid_after,
+                    'status': 'completed',
+                    'stable_identity': {'local_id': lid, 'cloud_id': cid_after},
+                    'expected_after': {
+                        'kind': 'image',
+                        'material_local': _material_image_expected_state(
+                            local_row, side='local'
+                        ),
+                        'material_remote': _material_image_expected_state(
+                            remote_row, side='remote'
+                        ),
+                    },
+                })
+        except Exception as exc:
+            # Cloud write succeeded but verification fetch failed.  Capture
+            # intended_after from the local rows we tried to push, then raise
+            # a partial error so the caller can retry safely.
+            best_local_rows = {_safe_int(r.get('id')): r
+                               for r in current_local_images
+                               if _safe_int(r.get('id'))}
+            for lid in sorted(local_image_ids_to_push):
+                source = best_local_rows.get(int(lid)) or {}
+                cid = str(source.get('cloud_id') or '').strip() or None
+                executed.append({
+                    'op': 'push_image', 'local_id': lid,
+                    'cloud_id': cid,
+                    'status': 'verification_pending',
+                    'write_attempted': True,
+                    'stable_identity': {'local_id': lid, 'cloud_id': cid},
+                    'intended_after': _intended_after_image_from_local(source),
+                })
+            raise _partial_error(
+                f'Push succeeded but verification fetch failed: {exc}',
+                failing=None, cause=exc,
+            )
 
+    # Image metadata: local → cloud.  Only when the user chose 'local'.
+    local_metadata_image_ids_to_push = {
+        _safe_int(op.get('local_id'))
+        for op in ops
+        if op.get('op') == 'push_image_metadata' and _safe_int(op.get('local_id')) > 0
+    }
+    if local_metadata_image_ids_to_push and prepare_images_cb is None:
+        raise CloudSyncError('Selected local images require the desktop image preparer')
+    if local_metadata_image_ids_to_push:
+        try:
+            refreshed_local = ObservationDB.get_observation(int(local_id)) or local_obs
+            pushed_ok = _push_images_for_observation(
+                client,
+                refreshed_local,
+                resolved_cloud_id,
+                prepare_images_cb=prepare_images_cb,
+                include_image_ids=local_metadata_image_ids_to_push,
+            )
+        except Exception as exc:
+            raise _partial_error(
+                f'Could not push local image metadata: {exc}',
+                failing={'op': 'push_image_metadata',
+                         'local_ids': sorted(local_metadata_image_ids_to_push)},
+                cause=exc,
+            )
+        if not pushed_ok:
+            raise _partial_error(
+                'Could not push local image metadata',
+                failing={'op': 'push_image_metadata',
+                         'local_ids': sorted(local_metadata_image_ids_to_push)},
+            )
+        try:
+            local_after_meta = ImageDB.get_images_for_observation(int(local_id))
+            by_local_id_meta = {_safe_int(r.get('id')): r for r in local_after_meta
+                                if _safe_int(r.get('id'))}
+            remote_after_meta = [
+                dict(row or {})
+                for row in (_pull_remote_images_for_sync(client, resolved_cloud_id) or [])
+                if not str((row or {}).get('deleted_at') or '').strip()
+                and should_pull_cloud_image_to_desktop(row)
+            ]
+            remote_meta_by_desktop = {_safe_int(r.get('desktop_id')): r
+                                      for r in remote_after_meta
+                                      if _safe_int(r.get('desktop_id'))}
+            for lid in sorted(local_metadata_image_ids_to_push):
+                local_row = by_local_id_meta.get(int(lid)) or {}
+                remote_row = remote_meta_by_desktop.get(int(lid)) or {}
+                cid_after = str(local_row.get('cloud_id') or '').strip() or None
+                executed.append({
+                    'op': 'push_image_metadata', 'local_id': lid,
+                    'cloud_id': cid_after,
+                    'status': 'completed',
+                    'stable_identity': {'local_id': lid, 'cloud_id': cid_after},
+                    'expected_after': {
+                        'kind': 'image',
+                        'material_local': _material_image_expected_state(
+                            local_row, side='local'
+                        ),
+                        'material_remote': _material_image_expected_state(
+                            remote_row, side='remote'
+                        ),
+                    },
+                })
+        except Exception as exc:
+            best_local_rows = {_safe_int(r.get('id')): r for r in current_local_images
+                               if _safe_int(r.get('id'))}
+            for lid in sorted(local_metadata_image_ids_to_push):
+                source = best_local_rows.get(int(lid)) or {}
+                cid = str(source.get('cloud_id') or '').strip() or None
+                executed.append({
+                    'op': 'push_image_metadata', 'local_id': lid,
+                    'cloud_id': cid,
+                    'status': 'verification_pending',
+                    'write_attempted': True,
+                    'stable_identity': {'local_id': lid, 'cloud_id': cid},
+                    'intended_after': _intended_after_image_from_local(source),
+                })
+            raise _partial_error(
+                f'Metadata push succeeded but verification fetch failed: {exc}',
+                failing=None, cause=exc,
+            )
+
+    # Measurement: cloud → local (matched with choice=cloud, or cloud_only+download)
+    remote_measurement_ids_to_apply = {
+        str(op.get('cloud_id') or '')
+        for op in ops
+        if op.get('op') == 'import_measurement' and str(op.get('cloud_id') or '')
+    }
+    if remote_measurement_ids_to_apply:
+        try:
+            result = _import_remote_measurements_for_observation(
+                client,
+                int(local_id),
+                resolved_cloud_id,
+                remote_images=remote_images,
+                remote_measurements=[
+                    row for row in remote_measurements
+                    if str(row.get('id') or '') in remote_measurement_ids_to_apply
+                ],
+                materialize_remote_images=True,
+                overwrite_conflicts=True,
+            )
+        except Exception as exc:
+            raise _partial_error(
+                f'Could not apply selected cloud measurements: {exc}',
+                failing={'op': 'import_measurement',
+                         'cloud_ids': sorted(remote_measurement_ids_to_apply)},
+                cause=exc,
+            )
+        if result.get('failed'):
+            raise _partial_error(
+                'Could not apply selected cloud measurements',
+                failing={'op': 'import_measurement',
+                         'cloud_ids': sorted(remote_measurement_ids_to_apply)},
+            )
+        try:
+            local_after_import = MeasurementDB.get_measurements_for_observation(int(local_id))
+            by_cloud_id_import = {
+                str(r.get('cloud_id') or '').strip(): r for r in local_after_import
+                if str(r.get('cloud_id') or '').strip()
+            }
+            remote_by_cloud_import = {
+                str(r.get('id') or '').strip(): r for r in remote_measurements
+                if str(r.get('id') or '').strip()
+            }
+            for cid in sorted(remote_measurement_ids_to_apply):
+                local_row = by_cloud_id_import.get(cid) or {}
+                remote_row = remote_by_cloud_import.get(cid) or {}
+                executed.append({
+                    'op': 'import_measurement', 'cloud_id': cid,
+                    'local_id': _safe_int(local_row.get('id')) or None,
+                    'status': 'completed',
+                    'stable_identity': {'cloud_id': cid,
+                                        'local_id': _safe_int(local_row.get('id')) or None},
+                    'expected_after': {
+                        'kind': 'measurement',
+                        'material_local': _material_measurement_expected_state(
+                            local_row, side='local'
+                        ),
+                        'material_remote': _material_measurement_expected_state(
+                            remote_row, side='remote'
+                        ),
+                    },
+                })
+        except Exception as exc:
+            remote_by_cloud_import = {
+                str(r.get('id') or '').strip(): r for r in remote_measurements
+                if str(r.get('id') or '').strip()
+            }
+            for cid in sorted(remote_measurement_ids_to_apply):
+                remote_row = remote_by_cloud_import.get(cid) or {}
+                executed.append({
+                    'op': 'import_measurement', 'cloud_id': cid,
+                    'status': 'verification_pending',
+                    'write_attempted': True,
+                    'stable_identity': {'cloud_id': cid},
+                    'intended_after': _intended_after_measurement_from_remote(remote_row),
+                })
+            raise _partial_error(
+                f'Measurement import succeeded but verification read failed: {exc}',
+                failing=None, cause=exc,
+            )
+
+    # Measurement: local → cloud.  Only ids explicitly marked as push_measurement.
     local_measurement_ids_to_push = {
-        _safe_int(item.get('local_id'))
-        for item in items
-        if item.get('kind') == 'measurement'
-        and (
-            item.get('side') == 'matched'
-            or item.get('choice') == 'upload'
-        )
-        and _safe_int(item.get('local_id')) > 0
+        _safe_int(op.get('local_id'))
+        for op in ops
+        if op.get('op') == 'push_measurement' and _safe_int(op.get('local_id')) > 0
     }
     if local_measurement_ids_to_push:
-        _push_measurements_for_observation(
-            client,
-            int(local_id),
-            measurement_ids=local_measurement_ids_to_push,
-        )
+        try:
+            _push_measurements_for_observation(
+                client,
+                int(local_id),
+                measurement_ids=local_measurement_ids_to_push,
+            )
+        except Exception as exc:
+            raise _partial_error(
+                f'Could not push local measurements: {exc}',
+                failing={'op': 'push_measurement',
+                         'local_ids': sorted(local_measurement_ids_to_push)},
+                cause=exc,
+            )
+        try:
+            local_after_meas_push = MeasurementDB.get_measurements_for_observation(int(local_id))
+            by_local_id_mp = {_safe_int(r.get('id')): r for r in local_after_meas_push
+                              if _safe_int(r.get('id'))}
+            remote_after_meas_push = _pull_remote_measurements_for_images(
+                client,
+                [str(row.get('id') or '').strip() for row in remote_images
+                 if str(row.get('id') or '').strip()],
+            )
+            remote_by_desktop_mp = {_safe_int(r.get('desktop_id')): r
+                                    for r in remote_after_meas_push
+                                    if _safe_int(r.get('desktop_id'))}
+            for lid in sorted(local_measurement_ids_to_push):
+                local_row = by_local_id_mp.get(int(lid)) or {}
+                remote_row = remote_by_desktop_mp.get(int(lid)) or {}
+                cid_after = str(local_row.get('cloud_id') or '').strip() or None
+                executed.append({
+                    'op': 'push_measurement', 'local_id': lid,
+                    'cloud_id': cid_after,
+                    'status': 'completed',
+                    'stable_identity': {'local_id': lid, 'cloud_id': cid_after},
+                    'expected_after': {
+                        'kind': 'measurement',
+                        'material_local': _material_measurement_expected_state(
+                            local_row, side='local'
+                        ),
+                        'material_remote': _material_measurement_expected_state(
+                            remote_row, side='remote'
+                        ),
+                    },
+                })
+        except Exception as exc:
+            best_local_rows = {_safe_int(r.get('id')): r
+                               for r in current_local_measurements
+                               if _safe_int(r.get('id'))}
+            for lid in sorted(local_measurement_ids_to_push):
+                source = best_local_rows.get(int(lid)) or {}
+                cid = str(source.get('cloud_id') or '').strip() or None
+                executed.append({
+                    'op': 'push_measurement', 'local_id': lid,
+                    'cloud_id': cid,
+                    'status': 'verification_pending',
+                    'write_attempted': True,
+                    'stable_identity': {'local_id': lid, 'cloud_id': cid},
+                    'intended_after': _intended_after_measurement_from_local(source),
+                })
+            raise _partial_error(
+                f'Measurement push succeeded but verification fetch failed: {exc}',
+                failing=None, cause=exc,
+            )
 
+    # keep-asymmetric ops are recorded here; B4 turns them into a durable
+    # accepted-asymmetry baseline that _store_remote_snapshot preserves.
+    for op in ops:
+        if op.get('op') in {'keep_asymmetric_image', 'keep_asymmetric_measurement'}:
+            recorded = dict(op)
+            recorded['status'] = 'completed'
+            executed.append(recorded)
+
+    # ── Step 7: restore presentation on matched images ────────────────────────
+    presentation_statuses = _restore_local_presentation(
+        presentation_before, matched_local_ids=matched_image_local_ids
+    )
+    presentation_statuses.extend(_assign_downloaded_image_order(
+        local_id=int(local_id),
+        downloaded_cloud_ids=remote_ids_to_import,
+        captured_before=presentation_before,
+    ))
+    executed.extend(presentation_statuses)
+    presentation_warnings = [
+        status for status in presentation_statuses if status.get('status') != 'completed'
+    ]
+
+    # ── Step 8: derived statistics ────────────────────────────────────────────
     split_measurement_sets = any(
-        item.get('kind') == 'measurement'
-        and item.get('choice') in {'keep_local', 'keep_cloud'}
-        for item in items
+        op.get('op') in {'keep_asymmetric_measurement'} for op in ops
+    )
+    statistics_expected = bool(
+        MeasurementDB.get_measurements_for_observation(int(local_id))
     )
     if (
         selected_plan.get('derived_statistics') == 'recompute_from_measurements'
         and not split_measurement_sets
     ):
-        recomputed = _format_recomputed_spore_statistics(int(local_id))
-        ObservationDB.update_spore_statistics(int(local_id), recomputed)
-        client._patch(
-            f'observations?id=eq.{resolved_cloud_id}',
-            {'spore_statistics': recomputed},
-        )
+        try:
+            recomputed = _format_recomputed_spore_statistics(int(local_id))
+        except Exception as exc:
+            raise _partial_error(
+                f'Could not recompute spore statistics: {exc}',
+                failing={'op': 'recompute_spore_statistics'}, cause=exc,
+            )
+        if recomputed is None or not str(recomputed).strip():
+            if statistics_expected:
+                raise _partial_error(
+                    'Could not recompute spore statistics from the selected measurements',
+                    failing={'op': 'recompute_spore_statistics'},
+                )
+            # No measurements: preserve the current cloud value.
+            executed.append({'op': 'preserve_spore_statistics_no_measurements',
+                             'status': 'completed'})
+        else:
+            try:
+                ObservationDB.update_spore_statistics(int(local_id), recomputed)
+                client._patch(
+                    f'observations?id=eq.{resolved_cloud_id}',
+                    {'spore_statistics': recomputed},
+                )
+            except Exception as exc:
+                raise _partial_error(
+                    f'Could not persist recomputed spore statistics: {exc}',
+                    failing={'op': 'recompute_spore_statistics'}, cause=exc,
+                )
+            executed.append({
+                'op': 'recompute_spore_statistics', 'status': 'completed',
+                'stable_identity': {'field': 'spore_statistics'},
+                'expected_after': {
+                    'side': 'both',
+                    'field': 'spore_statistics',
+                    'value': _normalize_observation_json_value(recomputed),
+                },
+            })
 
-    _stamp_observation_synced(int(local_id), resolved_cloud_id)
+    # ── Step 9: build accepted-asymmetry entries from the plan ────────────────
+    # Reread current local rows so freshly-created cloud IDs (from upload) or
+    # freshly-linked local rows (from download) are visible for reconciliation.
+    reconciled_local_images = ImageDB.get_images_for_observation(int(local_id))
+    reconciled_local_measurements = MeasurementDB.get_measurements_for_observation(int(local_id))
+    reconciled_remote_images = [
+        dict(row or {})
+        for row in (_pull_remote_images_for_sync(client, resolved_cloud_id) or [])
+        if not str((row or {}).get('deleted_at') or '').strip()
+        and should_pull_cloud_image_to_desktop(row)
+    ]
+    reconciled_remote_measurements = _pull_remote_measurements_for_images(
+        client,
+        [str(row.get('id') or '').strip()
+         for row in reconciled_remote_images if str(row.get('id') or '').strip()],
+    )
+    matched_cloud_image_ids: set[str] = set(
+        str(row.get('cloud_id') or '').strip()
+        for row in reconciled_local_images
+        if str(row.get('cloud_id') or '').strip()
+    )
+    matched_local_image_ids_now = matched_image_local_ids | {
+        _safe_int(row.get('desktop_id'))
+        for row in reconciled_remote_images
+        if _safe_int(row.get('desktop_id'))
+    }
+    matched_cloud_measurement_ids: set[str] = set(
+        str(row.get('cloud_id') or '').strip()
+        for row in reconciled_local_measurements
+        if str(row.get('cloud_id') or '').strip()
+    )
+    matched_local_measurement_ids_now = {
+        _safe_int(row.get('desktop_id'))
+        for row in reconciled_remote_measurements
+        if _safe_int(row.get('desktop_id'))
+    }
+    new_asymmetry = _build_accepted_asymmetry_from_plan(
+        items,
+        local_images=reconciled_local_images,
+        remote_images=reconciled_remote_images,
+        local_measurements=reconciled_local_measurements,
+        remote_measurements=reconciled_remote_measurements,
+    )
+    previous_snapshot = _parse_cloud_observation_snapshot(
+        _load_cloud_observation_snapshot(resolved_cloud_id)
+    )
+    prev_asymmetry = previous_snapshot.get('accepted_asymmetry')
+    merged_asymmetry = _reconcile_accepted_asymmetry(
+        prev_asymmetry, new_asymmetry,
+        plan_items=items,
+        current_local_images=reconciled_local_images,
+        current_remote_images=reconciled_remote_images,
+        current_local_measurements=reconciled_local_measurements,
+        current_remote_measurements=reconciled_remote_measurements,
+        matched_local_image_ids=matched_local_image_ids_now,
+        matched_cloud_image_ids=matched_cloud_image_ids,
+        matched_local_measurement_ids=matched_local_measurement_ids_now,
+        matched_cloud_measurement_ids=matched_cloud_measurement_ids,
+    )
+
+    # ── Step 10: finalize in order — snapshot → signature → stamp ─────────────
+    try:
+        _store_remote_snapshot(
+            client, resolved_cloud_id,
+            accepted_asymmetry=merged_asymmetry,
+        )
+    except Exception as exc:
+        raise _partial_error(
+            f'Could not store fresh cloud snapshot after applying plan: {exc}',
+            failing={'op': 'store_snapshot'}, cause=exc,
+        )
     _refresh_local_cloud_media_signature(int(local_id))
-    _store_remote_snapshot(client, resolved_cloud_id)
+    _stamp_observation_synced(int(local_id), resolved_cloud_id)
+
     return {
         'local_id': int(local_id),
         'cloud_id': resolved_cloud_id,
         'plan_applied': True,
         'media_deleted': False,
+        'operations': executed,
+        'presentation_warnings': presentation_warnings,
+        'accepted_asymmetry': merged_asymmetry,
     }
 
 
@@ -12235,6 +15152,74 @@ class SporelyCloudClient:
             except Exception:
                 pass
 
+
+class SporelyReadOnlyCloudClient(SporelyCloudClient):
+    """Fixed-token conflict-review client.
+
+    Every network call this subclass makes is read-only.  It cannot refresh a
+    session, persist credentials, log in, log out, or write anything back to
+    Sporely Cloud.  On authentication failure it raises
+    :class:`CloudReauthRequiredError` (or ``CloudSyncError`` from a specific
+    caller path) and the caller decides how to prompt the user — the client
+    itself never touches settings.
+
+    Prefer this class over monkey-patching a plain ``SporelyCloudClient``:
+    the ``_request_with_refresh`` override guarantees ``refresh_on_auth_error``
+    is always ``False`` even for future call sites (e.g. new REST helpers),
+    and ``download_image_file_read_only`` gives conflict-comparison callers a
+    named, obvious entry point.
+    """
+
+    def _refresh_session_if_possible(self) -> bool:  # type: ignore[override]
+        return False
+
+    def save_credentials(self) -> None:  # type: ignore[override]
+        return None
+
+    def clear_session(self) -> None:  # type: ignore[override]
+        raise CloudSyncError('Read-only conflict-review client cannot clear session')
+
+    def clear_credentials(self) -> None:  # type: ignore[override]
+        raise CloudSyncError('Read-only conflict-review client cannot clear credentials')
+
+    def login(self, *args, **kwargs):  # type: ignore[override]
+        raise CloudSyncError('Read-only conflict-review client cannot log in')
+
+    @classmethod
+    def refresh_login(cls, *args, **kwargs):  # type: ignore[override]
+        raise CloudSyncError('Read-only conflict-review client cannot refresh a session')
+
+    def _request_with_refresh(
+        self, method: str, url: str, *, refresh_on_auth_error: bool = True, **kwargs
+    ):  # type: ignore[override]
+        # Force refresh_on_auth_error=False for every request originating from
+        # this client, regardless of what the caller asked.  Also strip the
+        # refresh callback so an errant refactor cannot re-introduce a refresh
+        # path through this instance.
+        return _request_with_transient_retry(
+            self._s.request,
+            method,
+            url,
+            refresh_on_auth_error=False,
+            refresh_callback=None,
+            **kwargs,
+        )
+
+    def _get(self, path):  # type: ignore[override]
+        return self.get_read_only(path)
+
+    def download_image_file_read_only(self, storage_path: str, dest_path):
+        """Named read-only entry point for the conflict thumbnail worker.
+
+        Uses the same download primitives as ``download_image_file`` — R2
+        direct, then public media fallback, then media worker — none of which
+        touch session state.  Because this instance's ``_request_with_refresh``
+        is refresh-disabled, any future addition to the download path that
+        routes through it will remain read-only.
+        """
+        return self.download_image_file(storage_path, dest_path)
+
+
 def _format_size(size_bytes: int) -> str:
     if size_bytes < 1024: return f"{size_bytes} B"
     if size_bytes < 1024 * 1024: return f"{size_bytes/1024:.1f} KB"
@@ -12700,20 +15685,70 @@ def get_conflict_detail(client: "SporelyCloudClient", local_id: int, cloud_id: s
         [str(row.get('id') or '').strip() for row in remote_images if str(row.get('id') or '').strip()],
     )
 
-    # 1. Field Comparisons
+    # 1. Field comparisons — simplified sync model.
+    #
+    # The dialog receives ONLY genuine two-sided divergence.  One-sided
+    # changes (local moved, cloud unchanged — or vice versa) are handled by
+    # ordinary sync and merely reported in ``automatic_decisions``.  The
+    # ``is_draft`` field never opens the dialog; if both sides changed
+    # differently it resolves automatically to Draft (the safer state) and is
+    # also reported in ``automatic_decisions``.
     local_payload = _observation_compare_payload(local_obs, local=True)
     remote_payload = _observation_compare_payload(remote_obs, local=False)
-    field_rows = []
+    field_rows: list[dict] = []
+    automatic_field_decisions: list[dict] = []
     for field in _CONFLICT_COMPARE_FIELDS:
-        l_val, r_val, b_val = local_payload.get(field), remote_payload.get(field), baseline_obs.get(field)
+        l_val = local_payload.get(field)
+        r_val = remote_payload.get(field)
+        b_val = baseline_obs.get(field)
+        # (a) already converged — no work.
         if _observation_field_values_match(field, l_val, r_val):
             continue
+        local_changed = not _observation_field_values_match(field, l_val, b_val)
+        remote_changed = not _observation_field_values_match(field, r_val, b_val)
+        # (b) only local changed → push local automatically.
+        if local_changed and not remote_changed:
+            automatic_field_decisions.append({
+                'field': field, 'action': 'push_local',
+                'local': l_val, 'remote': r_val, 'baseline': b_val,
+            })
+            continue
+        # (c) only cloud changed → pull cloud automatically.
+        if remote_changed and not local_changed:
+            automatic_field_decisions.append({
+                'field': field, 'action': 'pull_cloud',
+                'local': l_val, 'remote': r_val, 'baseline': b_val,
+            })
+            continue
+        # (d) is_draft: both changed differently → automatically choose Draft.
+        if field == 'is_draft' and local_changed and remote_changed:
+            # Draft = truthy 'is_draft'.  Prefer whichever side is Draft.
+            local_is_draft = bool(l_val)
+            remote_is_draft = bool(r_val)
+            chosen_side = 'local' if local_is_draft else 'cloud'
+            if remote_is_draft and not local_is_draft:
+                chosen_side = 'cloud'
+            elif local_is_draft and not remote_is_draft:
+                chosen_side = 'local'
+            elif not local_is_draft and not remote_is_draft:
+                # Both flipped to Published — treat as converged Published.
+                # (This can only happen if the values reported by
+                # _observation_field_values_match differ despite both being
+                # falsy; extremely unlikely but handled defensively.)
+                chosen_side = 'local'
+            automatic_field_decisions.append({
+                'field': field,
+                'action': 'auto_draft_wins' if (local_is_draft or remote_is_draft) else 'converged',
+                'chosen_side': chosen_side,
+                'local': l_val, 'remote': r_val, 'baseline': b_val,
+            })
+            continue
+        # (e) genuine two-sided divergence — user must choose.
         field_rows.append({
             'field': field,
             'label': _CONFLICT_FIELD_LABELS.get(field, field.replace('_', ' ').title()),
             'baseline': b_val, 'local': l_val, 'remote': r_val,
-            'local_changed': not _observation_field_values_match(field, l_val, b_val),
-            'remote_changed': not _observation_field_values_match(field, r_val, b_val),
+            'local_changed': local_changed, 'remote_changed': remote_changed,
         })
 
     # 2. Detailed Image Differences
@@ -13269,6 +16304,140 @@ def get_conflict_detail(client: "SporelyCloudClient", local_id: int, cloud_id: s
         'rows': derived_statistics_rows,
     } if derived_statistics_rows else None
 
+    # ── B3: filter out accepted-asymmetry items whose fingerprint is unchanged ──
+    accepted_asymmetry = snapshot.get('accepted_asymmetry') if isinstance(snapshot, dict) else None
+    local_meas_all_raw = list(MeasurementDB.get_measurements_for_observation(int(local_id)) or [])
+    image_pairs, filtered_image_pair_ids = _filter_accepted_one_sided_images(
+        image_pairs, accepted_asymmetry, local_images_raw, remote_images,
+    )
+    measurement_pairs, filtered_measurement_pair_ids = _filter_accepted_one_sided_measurements(
+        measurement_pairs, accepted_asymmetry, local_meas_all_raw, remote_measurements,
+    )
+    # If a paired measurement is filtered we may still have its parent image
+    # pair; drop empty measurement_conflicts referring to filtered rows.
+    measurement_differences = [
+        diff for diff in measurement_differences
+        if (
+            _safe_int(diff.get('local_id')), str(diff.get('cloud_id') or '').strip()
+        ) not in filtered_measurement_pair_ids
+    ]
+
+    # ── Simplified sync model: drop additive one-sided items from the dialog ──
+    #
+    # A local-only image or measurement without an explicit tombstone is an
+    # additive change handled by ordinary sync (upload/import automatic).  A
+    # cloud-only image/measurement is likewise additive on the cloud side.
+    # We keep such pairs ONLY when identity is ambiguous or a real error
+    # blocks safe automatic handling (indicated by ``status`` in
+    # {'identity_conflict', 'possible_match'} or a ``pairing`` of
+    # ``identity_conflict``).  Everything else surfaces as an automatic
+    # decision so the dialog does not falsely present it as a conflict.
+    def _pair_is_ambiguous(pair: dict) -> bool:
+        return (
+            pair.get('pairing') == 'identity_conflict'
+            or pair.get('status') in {'identity_conflict', 'possible_match'}
+        )
+
+    automatic_media_decisions: list[dict] = []
+    kept_image_pairs: list[dict] = []
+    for pair in image_pairs:
+        status = pair.get('status')
+        if status == 'local_only' and not _pair_is_ambiguous(pair):
+            local_side = dict(pair.get('local') or {})
+            automatic_media_decisions.append({
+                'kind': 'image', 'side': 'local_only',
+                'action': 'upload_automatic',
+                'local_id': _safe_int(local_side.get('local_id')) or None,
+                'cloud_id': None,
+            })
+            continue
+        if status == 'cloud_only' and not _pair_is_ambiguous(pair):
+            remote_side = dict(pair.get('remote') or {})
+            automatic_media_decisions.append({
+                'kind': 'image', 'side': 'cloud_only',
+                'action': 'download_automatic',
+                'local_id': None,
+                'cloud_id': str(remote_side.get('cloud_id') or '').strip() or None,
+            })
+            continue
+        # For authoritatively-paired images with metadata_diff, drop the diff
+        # entirely unless BOTH sides changed relative to baseline.  One-sided
+        # metadata changes flow through ordinary sync.
+        if pair.get('pairing') == 'authoritative' and pair.get('metadata_diff_details'):
+            filtered_details = []
+            for detail_row in pair.get('metadata_diff_details') or []:
+                change_origin = str(detail_row.get('change_origin') or '').strip()
+                # change_origin is 'local', 'cloud', or 'both'.  Only 'both'
+                # is a true divergence; 'local'/'cloud' auto-sync.
+                if change_origin == 'both':
+                    filtered_details.append(detail_row)
+                else:
+                    automatic_media_decisions.append({
+                        'kind': 'image_metadata',
+                        'field': detail_row.get('field'),
+                        'action': f'auto_apply_{change_origin}',
+                        'local_id': _safe_int((pair.get('local') or {}).get('local_id')) or None,
+                        'cloud_id': str((pair.get('remote') or {}).get('cloud_id') or '').strip() or None,
+                    })
+            if filtered_details:
+                pair = dict(pair)
+                pair['metadata_diff_details'] = filtered_details
+            else:
+                # No genuine two-sided metadata conflict remains → drop the pair
+                # UNLESS it still has a measurement conflict on it.
+                if not pair.get('measurement_conflicts'):
+                    continue
+                pair = dict(pair)
+                pair.pop('metadata_diff_details', None)
+        kept_image_pairs.append(pair)
+    image_pairs = kept_image_pairs
+
+    kept_measurement_pairs: list[dict] = []
+    for pair in measurement_pairs:
+        status = pair.get('status')
+        if status == 'local_only':
+            automatic_media_decisions.append({
+                'kind': 'measurement', 'side': 'local_only',
+                'action': 'upload_automatic',
+                'local_id': _safe_int(pair.get('local_id')) or None,
+                'cloud_id': None,
+            })
+            continue
+        if status == 'cloud_only':
+            automatic_media_decisions.append({
+                'kind': 'measurement', 'side': 'cloud_only',
+                'action': 'download_automatic',
+                'local_id': None,
+                'cloud_id': str(pair.get('cloud_id') or '').strip() or None,
+            })
+            continue
+        if status == 'identity_conflict':
+            kept_measurement_pairs.append(pair)
+            continue
+        # Matched measurement conflicts: check change_origin.  Only 'both'
+        # requires manual review; 'local' / 'cloud' auto-sync.
+        change_origin = str(pair.get('change_origin') or '').strip()
+        if status == 'values_differ' and change_origin in {'local', 'cloud'}:
+            automatic_media_decisions.append({
+                'kind': 'measurement', 'side': 'matched',
+                'action': f'auto_apply_{change_origin}',
+                'local_id': _safe_int(pair.get('local_id')) or None,
+                'cloud_id': str(pair.get('cloud_id') or '').strip() or None,
+            })
+            continue
+        kept_measurement_pairs.append(pair)
+    measurement_pairs = kept_measurement_pairs
+    # Also drop measurement_conflicts (top-level) whose paired row was auto-resolved.
+    kept_conflict_ids: set = {
+        (_safe_int(p.get('local_id')) or 0, str(p.get('cloud_id') or '').strip())
+        for p in measurement_pairs
+    }
+    measurement_differences = [
+        d for d in measurement_differences
+        if (_safe_int(d.get('local_id')) or 0,
+            str(d.get('cloud_id') or '').strip()) in kept_conflict_ids
+    ]
+
     return {
         'local_id': int(local_id),
         'cloud_id': resolved_cloud_id,
@@ -13291,12 +16460,146 @@ def get_conflict_detail(client: "SporelyCloudClient", local_id: int, cloud_id: s
             baseline_images,
             ignored_keys=tombstoned_remote_image_keys,
         ),
-        'local_measurement_count': len(MeasurementDB.get_measurements_for_observation(int(local_id))),
+        'local_measurement_count': len(local_meas_all_raw),
         'measurement_pairs': measurement_pairs,
         'measurement_conflicts': measurement_differences,
         'derived_statistics': derived_statistics,
         'baseline_available': bool(snapshot),
+        'accepted_asymmetry': accepted_asymmetry or None,
+        # Simplified sync model: additive one-sided items and pure one-sided
+        # scalar changes are reported here for the sync log, NOT surfaced in
+        # the manual conflict dialog.  The dialog opens only when at least
+        # one of ``field_rows``, ``image_pairs`` (with divergence), or
+        # ``measurement_pairs`` has content.
+        'automatic_decisions': {
+            'fields': automatic_field_decisions,
+            'media': automatic_media_decisions,
+        },
+        'has_manual_conflicts': bool(
+            field_rows
+            or [
+                p for p in measurement_pairs
+                if p.get('status') in {'values_differ', 'identity_conflict'}
+            ]
+            or [
+                p for p in image_pairs
+                if p.get('status') in {'identity_conflict', 'possible_match'}
+                or p.get('measurement_conflicts')
+                or (p.get('pairing') == 'authoritative' and p.get('metadata_diff_details'))
+            ]
+        ),
+        'plan_baseline': build_conflict_plan_baseline(
+            local_obs=local_obs,
+            remote_obs=remote_obs,
+            local_images=list(local_images_raw),
+            remote_images=list(remote_images),
+            local_measurements=local_meas_all_raw,
+            remote_measurements=list(remote_measurements or []),
+        ),
     }
+
+
+def _filter_accepted_one_sided_images(
+    image_pairs: list[dict],
+    accepted_asymmetry: dict | None,
+    local_images_raw: list[dict],
+    remote_images: list[dict],
+) -> tuple[list[dict], set[tuple[int, str]]]:
+    """Drop one-sided image pairs whose accepted-asymmetry fingerprint is unchanged.
+
+    * Editing the retained item (change to any fingerprint field) resurfaces it.
+    * A counterpart appearing on the other side means the pair is no longer
+      truly one-sided; it goes back through normal identity matching and the
+      acceptance no longer suppresses the pair.
+    """
+    if not isinstance(accepted_asymmetry, dict):
+        return image_pairs, set()
+    local_only_accepted = {
+        _safe_int(entry.get('local_id')): entry
+        for entry in accepted_asymmetry.get('local_only_images') or []
+        if isinstance(entry, dict) and _safe_int(entry.get('local_id'))
+    }
+    cloud_only_accepted = {
+        str(entry.get('cloud_id') or '').strip(): entry
+        for entry in accepted_asymmetry.get('cloud_only_images') or []
+        if isinstance(entry, dict) and str(entry.get('cloud_id') or '').strip()
+    }
+    local_row_by_id = {_safe_int(r.get('id')): r for r in local_images_raw or []
+                       if _safe_int(r.get('id'))}
+    remote_row_by_id = {str(r.get('id') or '').strip(): r for r in remote_images or []
+                        if str(r.get('id') or '').strip()}
+    kept: list[dict] = []
+    dropped_ids: set[tuple[int, str]] = set()
+    for pair in image_pairs:
+        status = pair.get('status')
+        if status == 'local_only':
+            local_id = _safe_int((pair.get('local') or {}).get('local_id'))
+            accepted = local_only_accepted.get(local_id)
+            live_row = local_row_by_id.get(local_id)
+            if accepted and live_row is not None:
+                current_fp = _asymmetry_fingerprint_local_image(live_row)
+                if current_fp == accepted.get('fingerprint'):
+                    dropped_ids.add((local_id, ''))
+                    continue  # unchanged accepted → hide
+        elif status == 'cloud_only':
+            cloud_id = str((pair.get('remote') or {}).get('cloud_id') or '').strip()
+            accepted = cloud_only_accepted.get(cloud_id)
+            live_row = remote_row_by_id.get(cloud_id)
+            if accepted and live_row is not None:
+                current_fp = _asymmetry_fingerprint_remote_image(live_row)
+                if current_fp == accepted.get('fingerprint'):
+                    dropped_ids.add((0, cloud_id))
+                    continue
+        kept.append(pair)
+    return kept, dropped_ids
+
+
+def _filter_accepted_one_sided_measurements(
+    measurement_pairs: list[dict],
+    accepted_asymmetry: dict | None,
+    local_measurements_raw: list[dict],
+    remote_measurements: list[dict],
+) -> tuple[list[dict], set[tuple[int, str]]]:
+    if not isinstance(accepted_asymmetry, dict):
+        return measurement_pairs, set()
+    local_only_accepted = {
+        _safe_int(entry.get('local_id')): entry
+        for entry in accepted_asymmetry.get('local_only_measurements') or []
+        if isinstance(entry, dict) and _safe_int(entry.get('local_id'))
+    }
+    cloud_only_accepted = {
+        str(entry.get('cloud_id') or '').strip(): entry
+        for entry in accepted_asymmetry.get('cloud_only_measurements') or []
+        if isinstance(entry, dict) and str(entry.get('cloud_id') or '').strip()
+    }
+    local_row_by_id = {_safe_int(r.get('id')): r for r in local_measurements_raw or []
+                       if _safe_int(r.get('id'))}
+    remote_row_by_id = {str(r.get('id') or '').strip(): r for r in remote_measurements or []
+                        if str(r.get('id') or '').strip()}
+    kept: list[dict] = []
+    dropped_ids: set[tuple[int, str]] = set()
+    for pair in measurement_pairs:
+        status = pair.get('status')
+        if status == 'local_only':
+            local_id = _safe_int(pair.get('local_id'))
+            accepted = local_only_accepted.get(local_id)
+            live_row = local_row_by_id.get(local_id)
+            if accepted and live_row is not None:
+                current_fp = _asymmetry_fingerprint_local_measurement(live_row)
+                if current_fp == accepted.get('fingerprint'):
+                    dropped_ids.add((local_id, ''))
+                    continue
+        elif status == 'cloud_only':
+            cloud_id = str(pair.get('cloud_id') or '').strip()
+            accepted = cloud_only_accepted.get(cloud_id)
+            live_row = remote_row_by_id.get(cloud_id)
+            if accepted and live_row is not None:
+                current_fp = _asymmetry_fingerprint_remote_measurement(live_row)
+                if current_fp == accepted.get('fingerprint'):
+                    dropped_ids.add((0, cloud_id))
+                    continue
+        kept.append(pair)
+    return kept, dropped_ids
 # ── High-level sync entry points ──────────────────────────────────────────────
 
 def push_all(

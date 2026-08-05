@@ -117,24 +117,22 @@ def dialog(app, monkeypatch):
     app.processEvents()
 
 
-def test_review_later_escape_and_close_discard_all_accumulated_decisions(dialog, monkeypatch):
+def test_review_later_escape_and_close_perform_no_writes_when_idle(dialog, monkeypatch):
+    """Turn B: Review-later, Escape, and close never invoke the resolver.
+
+    Successful applies committed BEFORE the user hits Review-later are already
+    on disk and remain in ``dialog.decisions`` as an audit log; only the
+    currently-pending (unfired) plan for the visible conflict is discarded.
+    """
     calls = []
     monkeypatch.setattr(conflict_ui, "resolve_conflict_keep_local", lambda *args, **kwargs: calls.append("local"))
     monkeypatch.setattr(conflict_ui, "resolve_conflict_keep_cloud", lambda *args, **kwargs: calls.append("cloud"))
     monkeypatch.setattr(conflict_ui, "resolve_conflict_merge", lambda *args, **kwargs: calls.append("merge"))
-    dialog.decisions.append({"local_id": 593, "action": "keep_local"})
-    dialog.resolved_any = True
+    monkeypatch.setattr(conflict_ui, "resolve_conflict_plan", lambda *a, **k: calls.append("plan"))
     dialog._list.setCurrentRow(1)
     dialog.reject()
-    assert dialog.decisions == []
-    assert dialog.resolved_any is False
     assert calls == []
-
-    dialog.decisions.append({"local_id": 671, "action": "keep_cloud"})
-    dialog.resolved_any = True
     dialog.closeEvent(QCloseEvent())
-    assert dialog.decisions == []
-    assert dialog.resolved_any is False
     assert calls == []
 
 
@@ -242,16 +240,119 @@ def test_safe_additions_preset_leaves_scientific_conflict_unresolved(dialog):
     assert not dialog._apply_btn.isEnabled()
 
 
-def test_apply_only_accumulates_selected_plan_after_explicit_yes(dialog, monkeypatch):
+def _patch_inline_apply(monkeypatch, *, resolver=None):
+    """Run the per-conflict apply worker synchronously and route resolve_conflict_plan."""
+    monkeypatch.setattr(
+        conflict_ui.ConflictPlanApplyWorker, "start",
+        lambda self: self.run(),
+    )
+    monkeypatch.setattr(
+        conflict_ui.SporelyCloudClient, "from_stored_credentials",
+        lambda: SimpleNamespace(get_observation=lambda _id: {}),
+    )
+    if resolver is not None:
+        monkeypatch.setattr(conflict_ui, "resolve_conflict_plan", resolver)
+
+
+def test_apply_directly_accumulates_selected_plan_without_confirmation_dialog(dialog, monkeypatch):
     dialog._populate_detail(_detail())
     dialog._keep_local_btn.click()
-    monkeypatch.setattr(QMessageBox, "question", lambda *args, **kwargs: QMessageBox.No)
-    dialog._apply_selected_changes()
-    assert dialog.decisions == []
-    monkeypatch.setattr(QMessageBox, "question", lambda *args, **kwargs: QMessageBox.Yes)
+    assert dialog._apply_btn.isEnabled()
+
+    def _fail_on_question(*args, **kwargs):
+        raise AssertionError("Apply must not open a second confirmation dialog")
+
+    monkeypatch.setattr(QMessageBox, "question", _fail_on_question)
+    monkeypatch.setattr(QMessageBox, "warning", _fail_on_question)
+    monkeypatch.setattr(QMessageBox, "information", _fail_on_question)
+    monkeypatch.setattr(QMessageBox, "critical", _fail_on_question)
+    _patch_inline_apply(monkeypatch, resolver=lambda *a, **k: {
+        'plan_applied': True, 'operations': [], 'presentation_warnings': [],
+    })
     dialog._apply_selected_changes()
     assert dialog.decisions[0]["action"] == "plan"
     assert dialog.decisions[0]["plan"]["allow_media_deletion"] is False
+    # A rapid second click after a successful apply advances to the next
+    # conflict; the resolved one is no longer present.
+    assert dialog._current_conflict() is None or (
+        dialog._current_conflict() != {"local_id": 593, "cloud_id": "902"}
+    )
+
+
+def test_apply_is_disabled_and_ignored_when_plan_incomplete(dialog, monkeypatch):
+    def _fail_on_question(*args, **kwargs):
+        raise AssertionError("Apply must remain disabled and cannot open dialogs")
+
+    monkeypatch.setattr(QMessageBox, "question", _fail_on_question)
+    monkeypatch.setattr(QMessageBox, "warning", _fail_on_question)
+    monkeypatch.setattr(QMessageBox, "information", _fail_on_question)
+    monkeypatch.setattr(QMessageBox, "critical", _fail_on_question)
+    _patch_inline_apply(monkeypatch)
+    dialog._merge_btn.click()  # safe additions preset leaves scientific conflict unresolved
+    assert not dialog._apply_btn.isEnabled()
+    dialog._apply_selected_changes()
+    assert dialog.decisions == []
+
+
+def test_apply_failure_keeps_conflict_and_choices(dialog, monkeypatch):
+    """B1: failed apply keeps the conflict visible with the same selection intact."""
+    dialog._populate_detail(_detail())
+    dialog._keep_local_btn.click()
+    initial_choice = dialog._selected_choice("measurement:31")
+    assert initial_choice == "local"
+
+    def _boom(*a, **k):
+        raise conflict_ui.CloudSyncError("simulated cloud failure")
+
+    _patch_inline_apply(monkeypatch, resolver=_boom)
+    dialog._apply_selected_changes()
+    # Conflict remains in the dialog list.
+    assert dialog._current_conflict() is not None
+    # No decision recorded.
+    assert dialog.decisions == []
+    # Choice preserved so retry can proceed.
+    assert dialog._selected_choice("measurement:31") == "local"
+    # Status label surfaces the error inline.
+    assert "Apply failed" in dialog._status_label.text()
+
+
+def test_apply_partial_failure_carries_prior_result_into_retry(dialog, monkeypatch):
+    """B2: on retry, the resolver receives prior_result so completed ops are skipped."""
+    dialog._populate_detail(_detail())
+    dialog._keep_local_btn.click()
+    seen_prior = []
+
+    def _first_call(*a, **k):
+        raise conflict_ui.PartialConflictPlanError(
+            "half-done",
+            partial_result={
+                'local_id': 593, 'cloud_id': '902', 'plan_applied': False,
+                'operations': [
+                    {'op': 'push_field', 'field': 'notes', 'status': 'completed'},
+                ],
+            },
+        )
+
+    def _second_call(*a, **k):
+        seen_prior.append(k.get('prior_result'))
+        return {'plan_applied': True, 'operations': [], 'presentation_warnings': []}
+
+    resolver = {'n': 0}
+
+    def _resolver(*a, **k):
+        resolver['n'] += 1
+        return _first_call(*a, **k) if resolver['n'] == 1 else _second_call(*a, **k)
+
+    _patch_inline_apply(monkeypatch, resolver=_resolver)
+    dialog._apply_selected_changes()  # first — fails
+    assert dialog.decisions == []
+    assert dialog._pending_prior_result is not None
+    # Retry.
+    dialog._apply_selected_changes()
+    assert dialog.decisions and dialog.decisions[0]["action"] == "plan"
+    assert seen_prior and seen_prior[0].get('operations') == [
+        {'op': 'push_field', 'field': 'notes', 'status': 'completed'},
+    ]
 
 
 def test_detail_model_pairs_only_stable_identity_and_exposes_measurement_values(monkeypatch):
@@ -304,9 +405,15 @@ def test_detail_model_pairs_only_stable_identity_and_exposes_measurement_values(
     assert measurement["remote_values"]["length_um"] == 8.46
     assert measurement["geometry_local"] == "Length axis moved"
     assert measurement["geometry_cloud"] == "Length axis moved differently"
-    assert {row["status"] for row in detail["measurement_pairs"]} >= {
-        "values_differ", "local_only", "cloud_only"
-    }
+    # Simplified sync model: local-only and cloud-only measurements are
+    # additive and auto-resolved by ordinary sync — they no longer appear in
+    # measurement_pairs.  They show up under automatic_decisions.media
+    # instead.  Only two-sided-differ measurements remain in the pairs list.
+    assert {row["status"] for row in detail["measurement_pairs"]} == {"values_differ"}
+    auto_media = detail["automatic_decisions"]["media"]
+    kinds_sides = {(d["kind"], d["side"]) for d in auto_media}
+    assert ("measurement", "local_only") in kinds_sides
+    assert ("measurement", "cloud_only") in kinds_sides
 
 
 def test_gallery_rotation_only_is_presentation_not_scientific_conflict():
@@ -410,9 +517,21 @@ def test_fixed_token_client_cannot_login_refresh_or_persist(monkeypatch):
     })
     client = conflict_ui._read_only_cloud_client()
     assert client is not None
+    assert isinstance(client, cloud_sync.SporelyReadOnlyCloudClient)
     assert client.refresh_token is None
+    # _get on the subclass routes to get_read_only.
     assert client._get.__self__ is client
-    assert client._get.__func__ is conflict_ui.SporelyCloudClient.get_read_only
+    assert client._get.__func__ is cloud_sync.SporelyReadOnlyCloudClient._get
+    # Belt-and-braces: even calling these directly on the instance is a no-op
+    # or raises; nothing observable happens through parent forbidden hooks.
+    assert client._refresh_session_if_possible() is False
+    assert client.save_credentials() is None
+    with pytest.raises(cloud_sync.CloudSyncError):
+        client.clear_session()
+    with pytest.raises(cloud_sync.CloudSyncError):
+        client.login("user", "pw")
+    with pytest.raises(cloud_sync.CloudSyncError):
+        cloud_sync.SporelyReadOnlyCloudClient.refresh_login("stale-token")
     assert forbidden == []
 
 
@@ -428,7 +547,7 @@ def test_actual_detail_worker_uses_fixed_token_client(monkeypatch):
     worker = conflict_ui.ConflictDetailWorker(4, "1::cloud", {"local_id": 1, "cloud_id": "cloud"})
     worker.run()
     assert len(seen) == 1 and seen[0].refresh_token is None
-    assert seen[0]._get.__func__ is conflict_ui.SporelyCloudClient.get_read_only
+    assert isinstance(seen[0], cloud_sync.SporelyReadOnlyCloudClient)
     assert forbidden == []
 
 
@@ -568,13 +687,16 @@ def test_metadata_details_show_exact_user_fields_not_storage_diagnostics(dialog)
     assert dialog._merge_btn.isEnabled()
 
 
-def test_local_and_cloud_only_cards_state_resolution_consequences(dialog):
+def test_local_and_cloud_only_cards_do_not_show_old_consequence_wording(dialog):
+    """Simplified sync model: additive one-sided images auto-sync and never
+    surface in the dialog.  The old "Use Sporely Cloud" / "Use this device"
+    observation-wide consequence wording is gone.
+    """
     dialog._populate_detail(_detail(measurement=False))
     text = " ".join(label.text() for label in dialog._photos_container.findChildren(conflict_ui.QLabel))
-    assert "this photo remains in the local database" in text
-    assert "source file is not deleted" in text
-    assert "this cloud photo remains in Sporely Cloud" in text
-    assert "not treated as deletion consent" in text
+    assert "this photo remains in the local database" not in text
+    assert "Use Sporely Cloud" not in text
+    assert "Use this device" not in text
 
 
 def test_geometry_columns_describe_each_side_separately(dialog):
@@ -674,15 +796,28 @@ def test_resolution_plan_applies_mixed_cloud_field_local_measurement_and_recompu
                         lambda _id, value: calls.append(("statistics_local", value)))
     monkeypatch.setattr(cloud_sync, "_stamp_observation_synced", lambda *a: calls.append(("stamp",)))
     monkeypatch.setattr(cloud_sync, "_refresh_local_cloud_media_signature", lambda *a: None)
-    monkeypatch.setattr(cloud_sync, "_store_remote_snapshot", lambda *a: None)
+    monkeypatch.setattr(cloud_sync, "_store_remote_snapshot", lambda *a, **k: None)
 
     class Client:
         def get_observation(self, _id): return dict(remote_obs)
         def _patch(self, path, payload): calls.append(("patch", path, payload))
 
+    monkeypatch.setattr(cloud_sync.ImageDB, "get_images_for_observation", lambda _id: [])
+    local_meas = [{"id": 31, "cloud_id": "m31", "image_id": 0, "length_um": 5.0}]
+    remote_meas = [{"id": "m31", "desktop_id": 31, "image_id": None, "length_um": 5.0}]
+    monkeypatch.setattr(cloud_sync.MeasurementDB, "get_measurements_for_observation",
+                        lambda _id: list(local_meas))
+    monkeypatch.setattr(cloud_sync, "_pull_remote_measurements_for_images",
+                        lambda *a: list(remote_meas))
+    baseline = cloud_sync.build_conflict_plan_baseline(
+        local_obs=local_obs, remote_obs=remote_obs,
+        local_images=[], remote_images=[],
+        local_measurements=local_meas, remote_measurements=remote_meas,
+    )
     result = cloud_sync.resolve_conflict_plan(Client(), 1, plan={
         "allow_media_deletion": False,
         "derived_statistics": "recompute_from_measurements",
+        "baseline": baseline,
         "items": [
             {"kind": "field", "field": "common_name", "choice": "cloud"},
             {"kind": "measurement", "side": "matched", "local_id": 31,
@@ -705,8 +840,19 @@ def test_resolution_plan_requires_image_preparer_and_never_deletes(monkeypatch):
     class Client:
         def get_observation(self, _id): return {"id": "obs-cloud"}
 
+    monkeypatch.setattr(cloud_sync.ImageDB, "get_images_for_observation",
+                        lambda _id: [{"id": 9, "image_type": "microscope"}])
+    monkeypatch.setattr(cloud_sync.MeasurementDB, "get_measurements_for_observation",
+                        lambda _id: [])
+    baseline = cloud_sync.build_conflict_plan_baseline(
+        local_obs={"id": 1, "cloud_id": "obs-cloud"},
+        remote_obs={"id": "obs-cloud"},
+        local_images=[{"id": 9, "image_type": "microscope"}],
+        remote_images=[], local_measurements=[], remote_measurements=[],
+    )
     with pytest.raises(cloud_sync.CloudSyncError, match="image preparer"):
         cloud_sync.resolve_conflict_plan(Client(), 1, plan={
+            "baseline": baseline,
             "items": [{"kind": "image", "side": "local_only", "local_id": 9,
                        "choice": "upload"}],
             "allow_media_deletion": False,

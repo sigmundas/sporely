@@ -479,47 +479,66 @@ class CloudSyncDialog(QDialog):
             box.setDetailedText('\n'.join(str(err) for err in errors))
             box.exec()
         if conflicts:
+            # Shared final gate: apply the automatic decisions and only pass
+            # candidates still containing genuine manual conflicts to the
+            # dialog.  This prevents the "empty dialog" case where a
+            # preflight-flagged observation has already-automatic changes
+            # (additive image, one-sided scalar edit, Draft transition) that
+            # the dialog itself has no work to do on.
+            from utils.cloud_sync import finalize_sync_candidates, SporelyCloudClient
+            gate_client = SporelyCloudClient.from_stored_credentials()
+            if gate_client is not None:
+                manual_conflicts, gate_errors = finalize_sync_candidates(
+                    gate_client, conflicts,
+                    prepare_images_cb=self._prepare_images_cb,
+                )
+                if gate_errors:
+                    # Surface automatic-execution failures as sync errors —
+                    # never hide.
+                    self._status_label.setText(
+                        f'Cloud sync applied automatic changes with {len(gate_errors)} error(s).'
+                    )
+                    print(
+                        '[cloud_sync] finalize gate errors: '
+                        + '; '.join(str(e) for e in gate_errors),
+                        flush=True,
+                    )
+                conflicts = manual_conflicts
+            if not conflicts:
+                # All flagged candidates resolved automatically.  Do not open
+                # a dialog with nothing to review.
+                self._status_label.setText(
+                    'Cloud sync applied automatic changes; no manual review needed.'
+                )
+                if deleted_remote:
+                    self._prompt_for_deleted_cloud_observations(deleted_remote)
+                return
             dialog = CloudConflictDialog(
                 self,
                 conflicts=conflicts,
                 prepare_images_cb=self._prepare_images_cb,
             )
+            # Turn B: the dialog itself now runs the per-conflict resolution
+            # worker (see ConflictPlanApplyWorker in cloud_conflict_dialog).
+            # dialog.decisions[] is the log of already-committed applies once
+            # exec() returns.  We no longer launch a second worker here.
             result = dialog.exec()
 
-            if result == QDialog.Accepted and dialog.decisions:
-                from .cloud_conflict_dialog import ConflictResolutionWorker
-                self._resolution_worker = ConflictResolutionWorker(dialog.decisions, prepare_images_cb=self._prepare_images_cb)
-                _track_worker(self._resolution_worker)
-
-                def _on_progress(msg, current, total):
-                    self._progress.show()
-                    self._progress.setMaximum(total)
-                    self._progress.setValue(current)
-                    self._status_label.setText(msg)
-
-                def _on_finished(resolved_any):
-                    self._progress.hide()
-                    self._status_label.setText('Conflict resolution finished.')
-                    if deleted_remote:
-                        self._prompt_for_deleted_cloud_observations(deleted_remote)
-
-                def _on_error(err):
-                    self._progress.hide()
-                    self._status_label.setText(f'Conflict resolution error: {err}')
-                    if deleted_remote:
-                        self._prompt_for_deleted_cloud_observations(deleted_remote)
-
-                self._resolution_worker.resolution_finished.connect(_on_finished)
-                self._resolution_worker.error.connect(_on_error)
-                self._resolution_worker.start()
-                return # Deleted remote handled in callback
-            else:
-                # "Review later" (or dialog dismissed): keep the observations
-                # dirty so the next sync re-runs the preflight and re-opens the
-                # dialog if the divergence is still present. Do NOT clear
-                # snapshots or stamp anything synced. Emit an INFO log per
-                # deferred conflict for postmortem traceability.
-                for conflict in conflicts:
+            resolved_count = len([d for d in (dialog.decisions or []) if d.get('action') == 'plan'])
+            deferred_conflicts = [
+                c for c in conflicts
+                if c not in [d.get('_source_conflict') for d in (dialog.decisions or [])]
+            ]
+            if resolved_count:
+                self._status_label.setText(
+                    f'Conflict resolution finished. Applied {resolved_count} plan(s).'
+                )
+            if resolved_count == 0 or result != QDialog.Accepted:
+                # "Review later" (or dialog dismissed): the still-pending
+                # conflicts remain dirty; the next sync will re-open the
+                # dialog if the divergence is still present.  Do NOT clear
+                # snapshots or stamp anything synced.
+                for conflict in deferred_conflicts or conflicts:
                     try:
                         deferred_local_id = int(conflict.get('local_id') or 0)
                     except Exception:
@@ -528,9 +547,10 @@ class CloudSyncDialog(QDialog):
                         f"[cloud_sync] conflict review deferred: obs={deferred_local_id}",
                         flush=True,
                     )
-                self._status_label.setText(
-                    'Conflict review canceled. Unresolved conflicts remain and no decisions were applied.'
-                )
+                if resolved_count == 0:
+                    self._status_label.setText(
+                        'Conflict review canceled. Unresolved conflicts remain and no decisions were applied.'
+                    )
 
         if deleted_remote:
             self._prompt_for_deleted_cloud_observations(deleted_remote)
