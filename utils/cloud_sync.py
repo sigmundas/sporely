@@ -7593,29 +7593,41 @@ def microscope_image_requires_public_spore_anchor(image_id: int | None) -> bool:
     try:
         cursor = conn.execute(
             """
-            SELECT EXISTS (
-                SELECT 1
-                FROM images i
-                JOIN observations o ON o.id = i.observation_id
-                JOIN spore_measurements m ON m.image_id = i.id
-                WHERE i.id = ?
-                  AND i.image_type = 'microscope'
-                  AND lower(COALESCE(o.spore_data_visibility, 'public')) = 'public'
-                  AND m.length_um IS NOT NULL
-                  AND m.width_um IS NOT NULL
-                  AND (
-                    m.measurement_type IS NULL
-                    OR m.measurement_type = ''
-                    OR lower(m.measurement_type) IN ('manual', 'spore', 'spores')
-                  )
-            )
+            SELECT i.image_type, o.spore_data_visibility,
+                   m.length_um, m.width_um, m.measurement_type
+            FROM images i
+            JOIN observations o ON o.id = i.observation_id
+            LEFT JOIN spore_measurements m ON m.image_id = i.id
+            WHERE i.id = ?
             """,
             (local_image_id,),
         )
-        row = cursor.fetchone()
-        return bool(row and int(row[0] or 0))
+        rows = cursor.fetchall()
+        if not rows:
+            return False
+        if str(rows[0][0] or '') != 'microscope':
+            return False
+        if str(rows[0][1] or 'public').lower() != 'public':
+            return False
+        return any(
+            measurement_qualifies_for_public_spore_anchor({
+                'length_um': row[2],
+                'width_um': row[3],
+                'measurement_type': row[4],
+            })
+            for row in rows
+        )
     finally:
         conn.close()
+
+
+def measurement_qualifies_for_public_spore_anchor(measurement: dict | None) -> bool:
+    """Pure eligibility predicate shared by sync and read-only incident audit."""
+    row = dict(measurement or {})
+    if row.get('length_um') is None or row.get('width_um') is None:
+        return False
+    measurement_type = str(row.get('measurement_type') or '').lower()
+    return measurement_type in {'', 'manual', 'spore', 'spores'}
 
 
 def _cloud_explicit_media_upload_selection(observation_id: int | None) -> set[int]:
@@ -10686,6 +10698,23 @@ class SporelyCloudClient:
     def _get(self, path: str) -> list:
         resp = self._request_with_refresh('GET', f'{SUPABASE_URL}/rest/v1/{path}', timeout=_SUPABASE_REST_TIMEOUT)
         if not resp.ok:
+            raise CloudSyncError(f'GET {path}: {resp.text}')
+        return resp.json()
+
+    def get_read_only(self, path: str) -> list:
+        """Perform one REST GET without token refresh or credential writes."""
+        resp = self._request_with_refresh(
+            'GET',
+            f'{SUPABASE_URL}/rest/v1/{path}',
+            timeout=_SUPABASE_REST_TIMEOUT,
+            refresh_on_auth_error=False,
+        )
+        if not resp.ok:
+            status = int(getattr(resp, 'status_code', 0) or 0)
+            if status in {401, 403} or self._response_indicates_auth_error(resp):
+                raise CloudReauthRequiredError(
+                    'Read-only cloud audit authentication expired; sign in again before retrying.'
+                )
             raise CloudSyncError(f'GET {path}: {resp.text}')
         return resp.json()
 

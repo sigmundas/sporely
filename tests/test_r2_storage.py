@@ -172,6 +172,31 @@ def test_media_worker_base_url_defaults_to_production_endpoint(monkeypatch):
     assert media_worker_base_url() == "https://upload.sporely.no"
 
 
+def test_media_worker_probe_uses_authenticated_one_byte_get():
+    captured = {}
+
+    class Response:
+        status_code = 206
+
+        def close(self):
+            captured["closed"] = True
+
+    class Session:
+        def request(self, **kwargs):
+            captured.update(kwargs)
+            return Response()
+
+    client = CloudflareMediaWorkerClient(
+        "audit-token", base_url="https://worker.test", session=Session(),
+    )
+    assert client.probe_object_status("user/image.webp", timeout=7) == 206
+    assert captured["method"] == "GET"
+    assert captured["headers"]["Authorization"] == "Bearer audit-token"
+    assert captured["headers"]["Range"] == "bytes=0-0"
+    assert captured["stream"] is True
+    assert captured["closed"] is True
+
+
 def test_media_worker_upload_sends_bearer_auth_and_worker_headers(monkeypatch, tmp_path):
     client = CloudflareMediaWorkerClient("test-access-token", base_url="https://upload.test")
 

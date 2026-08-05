@@ -679,6 +679,28 @@ class CloudflareMediaWorkerClient:
             return ""
         return f"{self.public_base_url.rstrip('/')}/{normalized}"
 
+    def probe_object_status(self, key: str, *, timeout: int = 15) -> int:
+        """Return an authenticated HTTP status using a one-byte read request."""
+        normalized = normalize_media_key(key)
+        if not normalized:
+            raise ValueError("Missing media key")
+        url = f"{self.base_url}/upload/{self._encode_object_key(normalized)}"
+        response = self._session.request(
+            method="GET",
+            url=url,
+            headers={
+                "Authorization": f"Bearer {self.access_token}",
+                "Range": "bytes=0-0",
+                "Cache-Control": "no-cache",
+            },
+            timeout=timeout,
+            stream=True,
+        )
+        try:
+            return int(getattr(response, "status_code", 0) or 0)
+        finally:
+            response.close()
+
     def put_file(
         self,
         file_path: str | Path,
