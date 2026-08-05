@@ -9,6 +9,10 @@ from pathlib import Path
 from app_identity import app_data_dir
 from database.database_tags import DatabaseTerms
 from database.reference_data_paths import BUNDLED_REFERENCE_DATABASE_PATH
+from database.reference_library_schema import (
+    init_observation_reference_uses_schema,
+    init_reference_library_schema,
+)
 
 _app_dir = app_data_dir()
 DATABASE_PATH = _app_dir / "mushrooms.db"
@@ -516,6 +520,12 @@ def init_reference_database(
     if migrate_legacy:
         _migrate_reference_values(ref_path)
     _migrate_reference_mounts_and_stains(ref_path)
+
+    library_conn = sqlite3.connect(ref_path)
+    try:
+        init_reference_library_schema(library_conn)
+    finally:
+        library_conn.close()
 
 def _ensure_reference_columns(ref_path: Path | None = None):
     """Ensure new percentile columns exist in the reference values table."""
@@ -1823,6 +1833,7 @@ def init_database():
 
     ensure_calibration_uuid_column(cursor)
     ensure_calibration_assets_table(cursor)
+    init_observation_reference_uses_schema(conn)
 
     cursor.execute('CREATE INDEX IF NOT EXISTS idx_observations_species ON observations(genus, species)')
     cursor.execute('CREATE INDEX IF NOT EXISTS idx_observations_source ON observations(source_type)')

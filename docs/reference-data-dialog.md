@@ -1,5 +1,14 @@
 # Reference data dialogs
 
+> **Scope:** This page describes the legacy / current Reference Values UI
+> backed by the `reference_values` table. The normalized reference
+> library introduced in Stage 1 of
+> [PLAN-reference-library-and-public-plots.md](reference-data/PLAN-reference-library-and-public-plots.md)
+> (`reference_works`, `reference_taxon_treatments`,
+> `reference_measurement_sets`, `observation_reference_uses`) is **not
+> yet wired into this dialog**. Stage 2 will introduce the reusable
+> library editor and observation attachment UX.
+
 Figure 1 placeholder: overview of the Reference Values dialog.
 
 These dialogs are used to review, add, edit, and plot stored spore reference data.

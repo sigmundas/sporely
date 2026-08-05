@@ -19,7 +19,89 @@ from database.schema import (
     load_objectives,
     save_objectives,
 )
+from database.reference_library_schema import (
+    init_observation_reference_uses_schema,
+    init_reference_library_schema,
+)
 from utils.heic_converter import build_local_image_provenance
+
+
+_REFERENCE_LIBRARY_TABLES: tuple[str, ...] = (
+    "reference_works",
+    "reference_taxon_treatments",
+    "reference_measurement_sets",
+)
+
+
+def _find_unresolved_ref_use_set_ids(
+    main_conn: sqlite3.Connection,
+    reference_conn: sqlite3.Connection,
+) -> list[str]:
+    """Return distinct measurement-set UUIDs referenced by observation
+    uses in ``main_conn`` but missing from the library in
+    ``reference_conn``. Order is deterministic (sorted)."""
+    rows = main_conn.execute(
+        "SELECT DISTINCT reference_measurement_set_id "
+        "FROM observation_reference_uses"
+    ).fetchall()
+    set_ids = [str(row[0]) for row in rows if row and row[0]]
+    if not set_ids:
+        return []
+    placeholders = ",".join("?" for _ in set_ids)
+    existing_rows = reference_conn.execute(
+        f"SELECT id FROM reference_measurement_sets WHERE id IN ({placeholders})",
+        set_ids,
+    ).fetchall()
+    existing = {str(row[0]) for row in existing_rows}
+    return sorted(sid for sid in set_ids if sid not in existing)
+
+
+def _upsert_library_row_by_revision(
+    src_row: dict,
+    dest_conn: sqlite3.Connection,
+    *,
+    table: str,
+) -> str:
+    """Insert or revision-upgrade a normalized library row keyed by UUID.
+
+    Returns one of ``"inserted"``, ``"updated"``, ``"skipped_same"``,
+    ``"skipped_stale"`` for reporting/telemetry.
+    """
+    row_id = src_row.get("id")
+    if not row_id:
+        return "skipped_stale"
+    dest_cur = dest_conn.cursor()
+    existing = dest_cur.execute(
+        f"SELECT * FROM {table} WHERE id = ?", (row_id,)
+    ).fetchone()
+    src_columns = [
+        col
+        for col in src_row.keys()
+        if col in {row[1] for row in dest_cur.execute(f"PRAGMA table_info({table})").fetchall()}
+    ]
+    if existing is None:
+        placeholders = ", ".join("?" for _ in src_columns)
+        values = [src_row.get(col) for col in src_columns]
+        dest_cur.execute(
+            f"INSERT INTO {table} ({', '.join(src_columns)}) VALUES ({placeholders})",
+            values,
+        )
+        return "inserted"
+    existing_data = dict(existing)
+    src_revision = int(src_row.get("revision") or 1)
+    existing_revision = int(existing_data.get("revision") or 1)
+    if src_revision > existing_revision:
+        assignments = ", ".join(f"{col} = ?" for col in src_columns if col != "id")
+        values = [src_row.get(col) for col in src_columns if col != "id"]
+        values.append(row_id)
+        dest_cur.execute(
+            f"UPDATE {table} SET {assignments} WHERE id = ?",
+            values,
+        )
+        return "updated"
+    if src_revision == existing_revision:
+        return "skipped_same"
+    return "skipped_stale"
 
 
 def _safe_copy(src: Path, dest: Path) -> Path:
@@ -284,6 +366,10 @@ def export_database_bundle(
     selected_tables: list[str] = []
     if include_observations:
         selected_tables.append("observations")
+        # observation_reference_uses lives in the main DB and only makes
+        # sense when observations are exported (its rows carry local
+        # observation FKs).
+        selected_tables.append("observation_reference_uses")
     if include_images or include_measurements:
         selected_tables.append("images")
     if include_measurements:
@@ -563,6 +649,71 @@ def import_database_bundle(
                     values
                 )
                 obs_map[row["id"]] = dest_cur.lastrowid
+
+        # ``observation_reference_uses`` lives in the main DB. Import
+        # after observations so we can remap ``observation_id``. The
+        # ``id`` UUID is preserved and used as an idempotency key. Cross-
+        # database FK to ``reference_measurement_sets`` is enforced later
+        # in the reference-DB step and reported as a warning for any
+        # remaining unresolved attachments rather than silently dropping
+        # historical evidence.
+        imported_ref_uses = 0
+        updated_ref_uses = 0
+        preserved_dangling_use_ids: list[str] = []
+        if include_observations and src_cur is not None:
+            init_observation_reference_uses_schema(dest_conn)
+            uses_exists = src_cur.execute(
+                "SELECT 1 FROM sqlite_master WHERE type='table' "
+                "AND name='observation_reference_uses'"
+            ).fetchone()
+            if uses_exists:
+                for row in src_cur.execute(
+                    "SELECT * FROM observation_reference_uses ORDER BY id"
+                ).fetchall():
+                    data = dict(row)
+                    use_id = data.get("id")
+                    src_observation_id = data.get("observation_id")
+                    if src_observation_id in obs_map:
+                        data["observation_id"] = obs_map[src_observation_id]
+                    else:
+                        warnings.append(
+                            "Skipped observation_reference_use for missing observation "
+                            f"{src_observation_id!r}."
+                        )
+                        continue
+                    existing_use = dest_cur.execute(
+                        "SELECT id, reference_revision FROM observation_reference_uses "
+                        "WHERE id = ?",
+                        (use_id,),
+                    ).fetchone()
+                    columns = [k for k in data.keys()]
+                    values = [data[k] for k in columns]
+                    if existing_use is None:
+                        placeholders = ", ".join("?" for _ in columns)
+                        dest_cur.execute(
+                            f"INSERT INTO observation_reference_uses "
+                            f"({', '.join(columns)}) VALUES ({placeholders})",
+                            values,
+                        )
+                        imported_ref_uses += 1
+                    else:
+                        src_rev = int(data.get("reference_revision") or 0)
+                        dest_rev = int(existing_use["reference_revision"] or 0)
+                        if src_rev > dest_rev:
+                            assignments = ", ".join(
+                                f"{col} = ?" for col in columns if col != "id"
+                            )
+                            update_values = [
+                                data[col] for col in columns if col != "id"
+                            ]
+                            update_values.append(use_id)
+                            dest_cur.execute(
+                                f"UPDATE observation_reference_uses "
+                                f"SET {assignments} WHERE id = ?",
+                                update_values,
+                            )
+                            updated_ref_uses += 1
+                    preserved_dangling_use_ids.append(str(use_id))
 
         if (include_images or include_measurements) and src_cur is not None:
             src_cur.execute("SELECT * FROM images ORDER BY id")
@@ -859,6 +1010,8 @@ def import_database_bundle(
             if merged_objectives != existing_objectives:
                 save_objectives(merged_objectives)
 
+        imported_library_rows = {name: 0 for name in _REFERENCE_LIBRARY_TABLES}
+        updated_library_rows = {name: 0 for name in _REFERENCE_LIBRARY_TABLES}
         if include_reference_values:
             ref_path = temp_dir / "reference_values.db"
             if ref_path.exists():
@@ -867,6 +1020,7 @@ def import_database_bundle(
                 ref_cur = ref_src.cursor()
                 ref_dest = get_reference_connection()
                 ref_dest.row_factory = sqlite3.Row
+                init_reference_library_schema(ref_dest)
                 ref_dest_cur = ref_dest.cursor()
                 existing_ref_keys = {
                     _normalize_reference_row_key(dict(row))
@@ -888,9 +1042,61 @@ def import_database_bundle(
                     )
                     existing_ref_keys.add(row_key)
                     imported_refs += 1
+
+                # Import normalized library tables in parent → child order.
+                # Upserts are keyed by UUID and revision-aware: incoming rows
+                # only replace destination rows when their revision is higher,
+                # so re-importing the same bundle is a safe no-op.
+                for library_table in _REFERENCE_LIBRARY_TABLES:
+                    table_exists = ref_cur.execute(
+                        "SELECT 1 FROM sqlite_master WHERE type='table' AND name=?",
+                        (library_table,),
+                    ).fetchone()
+                    if not table_exists:
+                        continue
+                    for src_lib_row in ref_cur.execute(
+                        f"SELECT * FROM {library_table}"
+                    ).fetchall():
+                        outcome = _upsert_library_row_by_revision(
+                            dict(src_lib_row),
+                            ref_dest,
+                            table=library_table,
+                        )
+                        if outcome == "inserted":
+                            imported_library_rows[library_table] += 1
+                        elif outcome == "updated":
+                            updated_library_rows[library_table] += 1
                 ref_dest.commit()
                 ref_dest.close()
                 ref_src.close()
+
+        # Detect and report — but do not drop — observation reference
+        # uses whose measurement-set UUID is missing from the
+        # destination library after the whole import completes. The row
+        # itself is preserved because it carries a public-safe snapshot
+        # of the reference at the time of attachment; losing that
+        # historical evidence is a much worse outcome than a visible
+        # warning.
+        unresolved_ref_uses: list[str] = []
+        if preserved_dangling_use_ids:
+            ref_dest_check = get_reference_connection()
+            try:
+                ref_dest_check.row_factory = sqlite3.Row
+                init_reference_library_schema(ref_dest_check)
+                unresolved_ref_uses = _find_unresolved_ref_use_set_ids(
+                    dest_conn,
+                    ref_dest_check,
+                )
+            finally:
+                ref_dest_check.close()
+            if unresolved_ref_uses:
+                warnings.append(
+                    "Preserved "
+                    f"{len(unresolved_ref_uses)} observation_reference_use(s) "
+                    "with missing library measurement sets after import "
+                    "(snapshots retained; run reference-library repair to "
+                    "restore or reattach the source records)."
+                )
 
         dest_conn.commit()
         return {
@@ -900,6 +1106,17 @@ def import_database_bundle(
             "calibrations": imported_calibrations,
             "objectives": imported_objectives,
             "reference_values": imported_refs,
+            "reference_works": imported_library_rows["reference_works"],
+            "reference_taxon_treatments": imported_library_rows[
+                "reference_taxon_treatments"
+            ],
+            "reference_measurement_sets": imported_library_rows[
+                "reference_measurement_sets"
+            ],
+            "reference_library_updates": updated_library_rows,
+            "observation_reference_uses": imported_ref_uses,
+            "observation_reference_uses_updated": updated_ref_uses,
+            "unresolved_observation_reference_uses": unresolved_ref_uses,
             "warnings": warnings,
         }
     finally:
