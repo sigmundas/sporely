@@ -23,6 +23,14 @@ REFERENCE_WORK_TYPES: frozenset[str] = frozenset(
     {"book", "article", "chapter", "website", "dataset", "other"}
 )
 
+# Legacy compatibility constants. The application no longer manually
+# assigns a verification status or a per-work visibility scope — public
+# exposure of an attached reference is governed by the observation's
+# visibility and its frozen attachment snapshot, and bibliographic
+# completeness is derived from the record's fields at display time
+# (see ``ui.reference_library_manager_dialog.reference_work_completeness_hints``).
+# These frozensets are kept only so that legacy schema DDL and any
+# still-existing raw-SQL callers do not break at import time.
 REFERENCE_WORK_VERIFICATION_STATUSES: frozenset[str] = frozenset(
     {"incomplete", "unverified", "verified"}
 )
@@ -66,6 +74,11 @@ CREATE TABLE IF NOT EXISTS reference_works (
     language TEXT,
     short_label TEXT NOT NULL,
     citation_override TEXT,
+    -- verification_status and visibility are retained on the DDL for
+    -- backwards compatibility with sqlite files created before these
+    -- concepts were dropped from the product. Application code no
+    -- longer reads or writes either column; DB defaults preserve
+    -- forward-compatibility for older callers doing raw SQL.
     verification_status TEXT NOT NULL DEFAULT 'incomplete',
     visibility TEXT NOT NULL DEFAULT 'private',
     owner_id TEXT,

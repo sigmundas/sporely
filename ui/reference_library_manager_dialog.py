@@ -78,18 +78,65 @@ from database.reference_library import (
 from database.reference_library_schema import (
     OBSERVATION_REFERENCE_ROLES,
     REFERENCE_WORK_TYPES,
-    REFERENCE_WORK_VERIFICATION_STATUSES,
-    REFERENCE_WORK_VISIBILITIES,
 )
 
 
-# --- Verification-status badge ---------------------------------------------
+# --- Completeness hints ----------------------------------------------------
+#
+# The library no longer stores a manually-assigned verification badge or a
+# per-work visibility scope. Instead the UI derives non-blocking hints
+# about which bibliographic fields are still empty. These hints:
+#
+#   * are computed from the current field values,
+#   * are not persisted anywhere,
+#   * never block saving, attaching or plotting a reference.
+#
+# Public exposure of an attached reference is governed by the observation's
+# own visibility and by the frozen ``observation_reference_uses.snapshot_json``
+# — this predicate has no bearing on any of that.
 
-_STATUS_COLORS: dict[str, str] = {
-    "incomplete": "#f59e0b",   # amber
-    "unverified": "#64748b",   # slate
-    "verified": "#16a34a",     # green
-}
+
+def reference_work_completeness_hints(work: "ReferenceWork | dict") -> list[str]:
+    """Return the ordered list of bibliographic fields missing from ``work``.
+
+    Accepts either a :class:`ReferenceWork` instance or the plain dict a
+    form uses while the record is being edited. The return value is a
+    list of translated-friendly *English source* strings (the caller
+    routes each through ``self.tr(...)`` for display); callers that
+    only need a truthy/falsy signal can use ``bool(hints)`` — an empty
+    list means "no missing fields", not "the record is verified".
+    """
+    def _pick(key: str) -> str:
+        value = work.get(key) if isinstance(work, dict) else getattr(work, key, None)
+        if value is None:
+            return ""
+        return str(value).strip()
+
+    hints: list[str] = []
+    if not _pick("title"):
+        hints.append("missing title")
+    # Authors are stored as JSON — treat "[]" and unparseable strings as
+    # missing. Editors are NOT part of the required-completeness set.
+    authors_raw = _pick("authors_json")
+    if not authors_raw:
+        hints.append("missing authors")
+    else:
+        try:
+            parsed = json.loads(authors_raw)
+        except (TypeError, ValueError, json.JSONDecodeError):
+            parsed = None
+        if not isinstance(parsed, list) or not parsed:
+            hints.append("missing authors")
+    year_value = work.get("year") if isinstance(work, dict) else getattr(work, "year", None)
+    if year_value in (None, ""):
+        hints.append("missing year")
+    # A publication needs *some* container-shaped context. The exact
+    # field varies by type — journal for an article, publisher for a
+    # book, etc. — so we accept any of container/publisher/url as a
+    # sign that the operator has provided context.
+    if not (_pick("container_title") or _pick("publisher") or _pick("url")):
+        hints.append("missing publication/container information")
+    return hints
 
 # ``data_kind`` values the manager exposes for creation. ``parmasto`` is a
 # known biometric expression kind that the desktop plot pipeline does not
@@ -220,39 +267,45 @@ def _measurement_set_is_plottable_hint(measurement_set: MeasurementSet) -> bool:
     return core_ok or ext_ok or mean_ok
 
 
-class _VerificationBadge(QFrame):
-    """Small colored badge with translated text so verification status is
-    distinguishable both by color and by label."""
+class _CompletenessHintLabel(QLabel):
+    """Renders a derived, non-blocking bibliographic-completeness hint.
+
+    Consumes the list returned by :func:`reference_work_completeness_hints`
+    and renders it as a small amber label ("missing title, missing year";
+    hidden when the list is empty). The hint is a display artifact only —
+    it is never persisted, never blocks saving/attaching, and never
+    represents a shared or public-catalogue moderation signal.
+    """
+
+    _HINT_LABELS = {
+        "missing title": ("Missing title",),
+        "missing authors": ("Missing authors",),
+        "missing year": ("Missing year",),
+        "missing publication/container information": (
+            "Missing publication/container information",
+        ),
+    }
 
     def __init__(self, parent: QWidget | None = None) -> None:
         super().__init__(parent)
-        self._label = QLabel(self)
-        self._label.setContentsMargins(6, 2, 6, 2)
-        layout = QHBoxLayout(self)
-        layout.setContentsMargins(0, 0, 0, 0)
-        layout.setSpacing(0)
-        layout.addWidget(self._label)
-        self.set_status("")
+        self.setWordWrap(True)
+        self.setStyleSheet("QLabel { color: #b45309; }")
+        self.set_hints([])
 
-    def set_status(self, status: str) -> None:
-        status = str(status or "").strip().lower()
-        color = _STATUS_COLORS.get(status, "#adb5bd")
-        text_map = {
-            "incomplete": self.tr("Incomplete"),
-            "unverified": self.tr("Unverified"),
-            "verified": self.tr("Verified"),
-        }
-        text = text_map.get(status, self.tr("Unknown"))
-        self._label.setText(text)
-        self._label.setStyleSheet(
-            "QLabel {"
-            f" background-color: {color};"
-            " color: white;"
-            " border-radius: 6px;"
-            " padding: 1px 6px;"
-            " font-weight: 600;"
-            "}"
-        )
+    def set_hints(self, hints: list[str]) -> None:
+        if not hints:
+            self.setText("")
+            self.setVisible(False)
+            return
+        translated: list[str] = []
+        for key in hints:
+            candidates = self._HINT_LABELS.get(key)
+            if candidates:
+                translated.append(self.tr(candidates[0]))
+            else:
+                translated.append(self.tr(key))
+        self.setText(", ".join(translated))
+        self.setVisible(True)
 
 
 # --- Work / Treatment / Measurement forms ----------------------------------
@@ -1004,22 +1057,6 @@ class _ReferenceWorkForm(QDialog):
             self.tr("Full citation override:"), self.citation_override_input
         )
 
-        self.verification_combo = QComboBox()
-        for value in ("incomplete", "unverified", "verified"):
-            if value in REFERENCE_WORK_VERIFICATION_STATUSES:
-                self.verification_combo.addItem(
-                    self._verification_status_label(value), value
-                )
-        form.addRow(self.tr("Verification:"), self.verification_combo)
-
-        self.visibility_combo = QComboBox()
-        for value in ("private", "shared", "curated_public"):
-            if value in REFERENCE_WORK_VISIBILITIES:
-                self.visibility_combo.addItem(
-                    self._visibility_label(value), value
-                )
-        form.addRow(self.tr("Visibility:"), self.visibility_combo)
-
         body_layout.addLayout(form)
         return section
 
@@ -1064,6 +1101,11 @@ class _ReferenceWorkForm(QDialog):
         full_holder.setLayout(full_row)
         layout.addRow(self.tr("Full citation:"), full_holder)
 
+        # Derived, non-blocking completeness hint. See
+        # ``reference_work_completeness_hints`` for the rule.
+        self.completeness_hints_label = _CompletenessHintLabel()
+        layout.addRow(self.tr("Missing:"), self.completeness_hints_label)
+
         return box
 
     # ----- Type-aware helpers --------------------------------------------
@@ -1076,20 +1118,6 @@ class _ReferenceWorkForm(QDialog):
             "website": self.tr("Website"),
             "dataset": self.tr("Dataset"),
             "other": self.tr("Other"),
-        }.get(value, value)
-
-    def _verification_status_label(self, value: str) -> str:
-        return {
-            "incomplete": self.tr("Incomplete"),
-            "unverified": self.tr("Unverified"),
-            "verified": self.tr("Verified"),
-        }.get(value, value)
-
-    def _visibility_label(self, value: str) -> str:
-        return {
-            "private": self.tr("Private"),
-            "shared": self.tr("Shared"),
-            "curated_public": self.tr("Curated public"),
         }.get(value, value)
 
     def _current_type(self) -> str:
@@ -1148,12 +1176,6 @@ class _ReferenceWorkForm(QDialog):
         self.url_input.setText(work.url or "")
         self.language_input.setText(work.language or "")
         self.citation_override_input.setPlainText(work.citation_override or "")
-        idx = self.verification_combo.findData(work.verification_status or "")
-        if idx >= 0:
-            self.verification_combo.setCurrentIndex(idx)
-        idx = self.visibility_combo.findData(work.visibility or "")
-        if idx >= 0:
-            self.visibility_combo.setCurrentIndex(idx)
 
     def _collect(self) -> dict[str, Any]:
         return {
@@ -1178,10 +1200,6 @@ class _ReferenceWorkForm(QDialog):
             "citation_override": _empty_to_none(
                 self.citation_override_input.toPlainText()
             ),
-            "verification_status": str(
-                self.verification_combo.currentData() or ""
-            ),
-            "visibility": str(self.visibility_combo.currentData() or ""),
         }
 
     # ----- Preview -------------------------------------------------------
@@ -1257,6 +1275,11 @@ class _ReferenceWorkForm(QDialog):
         )
         self.preview_full_override_indicator.setVisible(
             bool(self.citation_override_input.toPlainText().strip())
+        )
+        # Completeness hints are derived from the current form values and
+        # are non-blocking: an empty list simply hides the label.
+        self.completeness_hints_label.set_hints(
+            reference_work_completeness_hints(work)
         )
 
     # ----- Save / validate ----------------------------------------------
@@ -1885,7 +1908,7 @@ class ReferenceLibraryManagerDialog(QDialog):
 
         self.works_table = QTableWidget(0, 3, self)
         self.works_table.setHorizontalHeaderLabels(
-            [self.tr("Short label"), self.tr("Year"), self.tr("Status")]
+            [self.tr("Short label"), self.tr("Year"), self.tr("Missing")]
         )
         self.works_table.setSelectionBehavior(QAbstractItemView.SelectRows)
         self.works_table.setSelectionMode(QAbstractItemView.SingleSelection)
@@ -1953,8 +1976,11 @@ class ReferenceLibraryManagerDialog(QDialog):
         self.detail_title = QLabel()
         self.detail_title.setStyleSheet("QLabel { font-weight: 600; }")
         header_row.addWidget(self.detail_title, 1)
-        self.status_badge = _VerificationBadge()
-        header_row.addWidget(self.status_badge)
+        # Derived completeness hint replaces the old verification badge.
+        # Hidden when the selected work has no missing fields; never
+        # blocks any action.
+        self.completeness_hint_label = _CompletenessHintLabel()
+        header_row.addWidget(self.completeness_hint_label)
         layout.addLayout(header_row)
 
         self.detail_view = QPlainTextEdit()
@@ -2009,15 +2035,19 @@ class ReferenceLibraryManagerDialog(QDialog):
             self.works_table.setItem(row, 0, label_item)
             year_item = QTableWidgetItem("" if work.year is None else str(work.year))
             self.works_table.setItem(row, 1, year_item)
-            status_item = QTableWidgetItem(
-                self._verification_label(work.verification_status)
+            # Third column: derived, non-blocking completeness hint. Empty
+            # cell means "no missing fields"; a non-zero count is a soft
+            # nudge and never gates any action.
+            hint_count = len(reference_work_completeness_hints(work))
+            hint_item = QTableWidgetItem(
+                "" if hint_count == 0 else str(hint_count)
             )
-            color = _STATUS_COLORS.get(
-                (work.verification_status or "").strip().lower(), None
-            )
-            if color:
-                status_item.setForeground(QColor(color))
-            self.works_table.setItem(row, 2, status_item)
+            if hint_count:
+                hint_item.setForeground(QColor("#b45309"))
+                hint_item.setToolTip(
+                    self.tr("Missing bibliographic fields (derived).")
+                )
+            self.works_table.setItem(row, 2, hint_item)
         self._works_placeholder.setVisible(not works)
         if select_id:
             for row in range(self.works_table.rowCount()):
@@ -2030,13 +2060,10 @@ class ReferenceLibraryManagerDialog(QDialog):
             self._clear_hierarchy()
             self._clear_detail()
 
-    def _verification_label(self, status: str | None) -> str:
-        s = (status or "").strip().lower()
-        return {
-            "incomplete": self.tr("Incomplete"),
-            "unverified": self.tr("Unverified"),
-            "verified": self.tr("Verified"),
-        }.get(s, self.tr("Unknown"))
+    def _completeness_hints_for(self, work: ReferenceWork) -> list[str]:
+        """Public accessor for tests + subclasses. Returns the derived,
+        non-persisted list of missing bibliographic fields for a work."""
+        return reference_work_completeness_hints(work)
 
     def _add_hierarchy_placeholder(self, text: str) -> None:
         """Insert a disabled placeholder item into the hierarchy tree so
@@ -2184,13 +2211,15 @@ class ReferenceLibraryManagerDialog(QDialog):
     def _clear_detail(self) -> None:
         self.detail_title.setText("")
         self.detail_view.setPlainText("")
-        self.status_badge.set_status("")
+        self.completeness_hint_label.set_hints([])
         self.edit_selected_btn.setEnabled(False)
         self.plot_hint_label.setVisible(False)
 
     def _render_work_detail(self, work: ReferenceWork) -> None:
         self.detail_title.setText(work.short_label or work.title or work.id)
-        self.status_badge.set_status(work.verification_status or "")
+        self.completeness_hint_label.set_hints(
+            reference_work_completeness_hints(work)
+        )
         lines = [
             self.tr("Type: {type}").format(type=work.type or ""),
             self.tr("Title: {title}").format(title=work.title or ""),
@@ -2223,7 +2252,6 @@ class ReferenceLibraryManagerDialog(QDialog):
             lines.append(self.tr("Language: {value}").format(value=work.language))
         if work.citation_override:
             lines.append(self.tr("Citation override: {value}").format(value=work.citation_override))
-        lines.append(self.tr("Visibility: {value}").format(value=work.visibility or ""))
         lines.append(self.tr("Revision: {value}").format(value=work.revision or 1))
         lines.append(self.tr("UUID: {value}").format(value=work.id))
         self.detail_view.setPlainText("\n".join(lines))
@@ -2237,10 +2265,12 @@ class ReferenceLibraryManagerDialog(QDialog):
                 f"{parent_work.short_label or parent_work.title or ''} — "
                 f"{treatment.name_as_published or ''}"
             )
-            self.status_badge.set_status(parent_work.verification_status or "")
+            self.completeness_hint_label.set_hints(
+                reference_work_completeness_hints(parent_work)
+            )
         else:
             self.detail_title.setText(treatment.name_as_published or "")
-            self.status_badge.set_status("")
+            self.completeness_hint_label.set_hints([])
         lines = [
             self.tr("Name as published: {value}").format(value=treatment.name_as_published or ""),
         ]
@@ -2276,9 +2306,11 @@ class ReferenceLibraryManagerDialog(QDialog):
             self.tr("Measurement set — {kind}").format(kind=ms.data_kind or "")
         )
         if work is not None:
-            self.status_badge.set_status(work.verification_status or "")
+            self.completeness_hint_label.set_hints(
+                reference_work_completeness_hints(work)
+            )
         else:
-            self.status_badge.set_status("")
+            self.completeness_hint_label.set_hints([])
 
         lines: list[str] = []
         if snapshot is not None:

@@ -134,13 +134,32 @@ Suggested entity: `reference_works`
 | `language` | BCP-47 or short code |
 | `short_label` | Plot/list label, e.g. `Petersen et al. 1990` |
 | `citation_override` | Optional hand-written citation for exceptional cases |
-| `verification_status` | `incomplete`, `unverified`, `verified` |
-| `visibility` | `private`, `shared`, `curated_public` |
 | `owner_id` | Nullable locally; cloud user UUID when personal |
 | `created_at` / `updated_at` | Timestamps |
 | `revision` | Monotonic integer |
 
 Generated full citations should use structured fields. `citation_override` is an escape hatch, not the default storage model.
+
+> **Removed concepts.** Earlier drafts of the schema included
+> `verification_status` (`incomplete` / `unverified` / `verified`) and
+> `visibility` (`private` / `shared` / `curated_public`) columns.
+> These are no longer part of the product model:
+>
+> - Reference works do not carry a manually assigned verification status.
+> - Reference works do not carry a per-work visibility scope. Public
+>   exposure of an attached reference is governed by the observation's
+>   own visibility and by its frozen
+>   `observation_reference_uses.snapshot_json`.
+> - Bibliographic completeness is *derived* from field values at
+>   display time (see
+>   `ui.reference_library_manager_dialog.reference_work_completeness_hints`)
+>   and is a non-blocking hint — it never gates saving or attaching.
+> - The two columns remain on the sqlite DDL as compatibility columns
+>   only, so old installations continue to load. New INSERTs omit
+>   both; new schemas may drop them where doing so does not break
+>   existing migration paths.
+> - A future public shared reference catalogue, if ever implemented,
+>   will have a separate moderation design.
 
 ## 5.2 Taxon treatment
 
@@ -378,8 +397,10 @@ schema-shaped. Its behaviour, as landed in `ui/reference_library_manager_dialog.
   opens and saves an existing record without editing it.
 - **Identifiers** — DOI, ISBN, URL. Blank identifier values are accepted.
 - **Advanced citation details** (collapsed by default) — manually overridden
-  short label (blank uses the generated value), citation key, language, full
-  citation override, verification status, visibility.
+  short label (blank uses the generated value), citation key, language, and
+  full citation override. Verification and visibility controls were removed
+  with the corresponding concepts (see §5.1); completeness is shown as a
+  derived, non-blocking hint underneath the preview instead.
 - **Live preview** — driven by the canonical
   `database.reference_citation.build_short_label` /
   `build_full_citation` service. The preview updates as relevant fields
@@ -471,12 +492,16 @@ Cloud requirements:
 - deleting a personal library item must not erase a published observation snapshot;
 - duplicates are detected, not silently merged.
 
-Suggested visibility:
+Public exposure model (post-simplification):
 
-- `private`: owner only;
-- `shared`: owner plus explicit sharing rules;
-- `curated_public`: public library;
-- observation snapshot: publicly readable only when the observation itself is public.
+- Reference works no longer carry a per-work visibility scope. All local
+  records are treated as owner-private by default.
+- A public observation may expose the frozen citation snapshot for
+  references explicitly attached to it — public exposure is governed by
+  the observation's own visibility, not by any reference-level flag.
+- A future public shared reference catalogue, if implemented, will have a
+  separate moderation design and does NOT reuse a per-work visibility
+  enum on the operator-facing model.
 
 ---
 
@@ -758,7 +783,7 @@ These must be resolved during Stage 0 or explicitly deferred:
 5. Should favourites be local-only or synced?
 6. Can one treatment point to multiple current taxon concepts?
 7. How should hybrid, aggregate, `sensu`, and variety names be represented?
-8. Should reference works be shareable before admin verification?
+8. ~~Should reference works be shareable before admin verification?~~ Resolved by removing verification and per-work visibility from the product; see §5.1.
 9. What delete behavior is safest when an observation snapshot exists?
 10. Should curated works be editable by users as local overlays/forks?
 11. Which existing legacy records can be migrated automatically without bibliographic ambiguity?

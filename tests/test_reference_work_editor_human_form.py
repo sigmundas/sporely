@@ -348,8 +348,6 @@ def test_editing_and_saving_without_changes_preserves_every_field(libs, qapp):
             url="https://example.org/petersen",
             language="da",
             citation_override="Petersen, J. H. (1990). Custom override.",
-            verification_status="verified",
-            visibility="shared",
         )
     )
 
@@ -382,8 +380,6 @@ def test_editing_and_saving_without_changes_preserves_every_field(libs, qapp):
         assert result.url == original.url
         assert result.language == original.language
         assert result.citation_override == original.citation_override
-        assert result.verification_status == original.verification_status
-        assert result.visibility == original.visibility
     finally:
         form.deleteLater()
 

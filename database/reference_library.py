@@ -28,8 +28,6 @@ from database.reference_library_schema import (
     REFERENCE_MEASUREMENT_CHARACTERS,
     REFERENCE_MEASUREMENT_DATA_KINDS,
     REFERENCE_WORK_TYPES,
-    REFERENCE_WORK_VERIFICATION_STATUSES,
-    REFERENCE_WORK_VISIBILITIES,
     init_observation_reference_uses_schema,
     init_reference_library_schema,
 )
@@ -163,8 +161,6 @@ class ReferenceWork:
     url: str | None = None
     language: str | None = None
     citation_override: str | None = None
-    verification_status: str = "incomplete"
-    visibility: str = "private"
     owner_id: str | None = None
     revision: int = 1
     created_at: str | None = None
@@ -288,27 +284,21 @@ class ReferenceWorkRepository:
         "language",
         "short_label",
         "citation_override",
-        "verification_status",
-        "visibility",
         "owner_id",
         "revision",
         "created_at",
         "updated_at",
     )
+    # ``verification_status`` and ``visibility`` remain as compatibility
+    # columns on existing sqlite installations (see
+    # ``reference_library_schema._REFERENCE_WORKS_DDL``) but the
+    # application no longer reads, writes or exposes them. New INSERTs
+    # simply omit both columns and rely on the database DEFAULTs so old
+    # DB files keep loading without a destructive column-drop migration.
 
     @staticmethod
     def _validate(work: ReferenceWork) -> None:
         _validate_enum(work.type, REFERENCE_WORK_TYPES, "reference_work.type")
-        _validate_enum(
-            work.verification_status,
-            REFERENCE_WORK_VERIFICATION_STATUSES,
-            "reference_work.verification_status",
-        )
-        _validate_enum(
-            work.visibility,
-            REFERENCE_WORK_VISIBILITIES,
-            "reference_work.visibility",
-        )
         if not str(work.title or "").strip():
             raise ReferenceValidationError("reference_work.title is required")
         # authors_json / editors_json must be JSON lists (empty is fine)

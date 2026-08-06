@@ -64,8 +64,11 @@ It presents three panes:
 
 1. **Publications** — a searchable table of `reference_works`.
    Substring search matches title, short label, container title, and
-   authors. A colored badge (`Incomplete`, `Unverified`, `Verified`)
-   surfaces the work's `verification_status`.
+   authors. The third column shows a derived, non-blocking count of
+   missing bibliographic fields (from
+   `reference_work_completeness_hints`). Verification and per-work
+   visibility have been removed from the product; see the reference-
+   library plan for the current public-exposure model.
 2. **Treatments and measurement sets** — a hierarchical tree of
    `reference_taxon_treatments` under the selected work, with each
    treatment's `reference_measurement_sets` shown as children.

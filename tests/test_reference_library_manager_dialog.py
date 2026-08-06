@@ -70,8 +70,6 @@ def _seed_work_treatment(libs, *, name="Russula paludosa"):
             short_label="Petersen 1990",
             authors_json=json.dumps([{"family": "Petersen"}]),
             year=1990,
-            verification_status="unverified",
-            visibility="private",
         )
     )
     treatment = TaxonTreatmentRepository.create(
@@ -289,7 +287,12 @@ def test_manager_populates_works_treatments_and_measurement_sets(libs, qapp):
         # Select the work.
         dialog.works_table.selectRow(0)
         assert dialog.current_selection_kind() == "work"
-        assert dialog.status_badge._label.text() == "Unverified"
+        # Verification badge was removed with the concept. The derived,
+        # non-blocking completeness hint takes its place: the seeded work
+        # has title/authors/year but no container/publisher, so the hint
+        # is visible and reports exactly that missing field.
+        assert dialog.completeness_hint_label.isHidden() is False
+        assert "publication" in dialog.completeness_hint_label.text().lower()
         assert dialog.new_treatment_btn.isEnabled() is True
 
         # The tree now contains the treatment with its measurement set.
