@@ -141,6 +141,11 @@ import re
 from PIL import Image, ExifTags
 from database.models import ObservationDB, ImageDB, MeasurementDB, SettingsDB, ReferenceDB, CalibrationDB
 from database.models import SpeciesDataAvailability
+from database.reference_library import (
+    MeasurementSetRepository,
+    ObservationReferenceUseRepository,
+    ReferenceLibraryError,
+)
 from database.taxon_lookup import TAXON_COMPLETER_LIMIT, TaxonChoice, TaxonLookupService
 from database.vernacular_db import VernacularDB
 from database.database_tags import DatabaseTerms
@@ -157,6 +162,7 @@ from database.schema import (
     objective_sort_value,
     resolve_objective_key,
 )
+from references.reference_plotting import translate_observation_reference_use
 from utils.annotation_capture import save_spore_annotation
 from utils.image_metadata_merge import merge_image_lab_metadata
 from utils.thumbnail_generator import generate_all_sizes
@@ -205,6 +211,7 @@ from .observations_tab import ObservationsTab
 from .live_lab_tab import LiveLabTab
 from .database_settings_dialog import DatabaseSettingsDialog
 from .cloud_reference_dialog import CloudReferenceDialog
+from .reference_library_attach_dialog import ReferenceLibraryAttachDialog
 from .section_card import create_section_card
 from .segmented_selector import SegmentedSelector
 from .styles import get_style, apply_palette, pt, _is_dark
@@ -215,7 +222,7 @@ from utils.db_share import export_database_bundle as export_db_bundle
 from utils.db_share import import_database_bundle as import_db_bundle
 from matplotlib.backends.backend_qtagg import FigureCanvasQTAgg as FigureCanvas
 from matplotlib.figure import Figure
-from matplotlib.patches import Ellipse
+from matplotlib.patches import Ellipse, Rectangle
 from matplotlib.ticker import MaxNLocator
 
 
@@ -8907,6 +8914,15 @@ class MainWindow(GeometryMixin, QMainWindow):
         self.ref_series_table.cellClicked.connect(self._on_reference_series_row_clicked)
         layout.addWidget(self.ref_series_table)
 
+        self.ref_attach_library_btn = QPushButton(self.tr("Attach library reference…"))
+        self.ref_attach_library_btn.clicked.connect(self._on_attach_library_reference_clicked)
+        self._register_gallery_hint_widget(
+            self.ref_attach_library_btn,
+            self.tr("Attach a normalized reference measurement set to the active observation"),
+            allow_when_disabled=True,
+        )
+        layout.addWidget(self.ref_attach_library_btn)
+
         self._init_reference_panel_completers()
         self._populate_reference_panel_sources()
         self._apply_reference_panel_values(self.reference_values)
@@ -9197,9 +9213,14 @@ class MainWindow(GeometryMixin, QMainWindow):
         normalized = self.normalize_measurement_category(category)
         return normalized == "spores"
 
-    def _reference_series_key(self, data: dict) -> tuple | None:
+    def _reference_series_key(self, data: dict):
         if not isinstance(data, dict):
             return None
+        # Normalized library-attachment entries use the observation-reference-use
+        # UUID as their stable identity, regardless of any display metadata.
+        use_id = (data.get("observation_reference_use_id") or "")
+        if isinstance(use_id, str) and use_id.strip():
+            return use_id.strip()
         genus = (data.get("genus") or "").strip()
         species = (data.get("species") or "").strip()
         kind = data.get("source_kind") or ("points" if data.get("points") else "reference")
@@ -9216,6 +9237,13 @@ class MainWindow(GeometryMixin, QMainWindow):
         return ("reference", genus, species, source, mount, stain)
 
     def _format_reference_series_label(self, data: dict) -> str:
+        # Normalized library entries always display their work short_label
+        # so the semantic identity of the source stays visible.
+        use_id = (data.get("observation_reference_use_id") or "")
+        if isinstance(use_id, str) and use_id.strip():
+            short = (data.get("short_label") or "").strip()
+            if short:
+                return short
         genus = (data.get("genus") or "").strip()
         species = (data.get("species") or "").strip()
         kind = data.get("source_kind") or ("points" if data.get("points") else "reference")
@@ -9481,7 +9509,10 @@ class MainWindow(GeometryMixin, QMainWindow):
         if not changed or not isinstance(updated_data, dict):
             return
         self._sync_reference_values_from_series_data(key, updated_data)
-        if updated_data.get("source_kind") == "reference":
+        if (
+            updated_data.get("source_kind") == "reference"
+            and not updated_data.get("observation_reference_use_id")
+        ):
             ReferenceDB.set_reference(updated_data)
         self._refresh_reference_series_table()
         self.update_graph_plots_only()
@@ -9525,7 +9556,16 @@ class MainWindow(GeometryMixin, QMainWindow):
             remove_btn.setAutoRaise(True)
             remove_btn.setFixedSize(24, 24)
             remove_btn.clicked.connect(lambda _checked=False, k=key: self._remove_reference_series_key(k))
-            self._register_gallery_hint_widget(remove_btn, self.tr("Remove this plot"))
+            is_normalized = bool(
+                isinstance(entry.get("data"), dict)
+                and entry["data"].get("observation_reference_use_id")
+            )
+            remove_tooltip = (
+                self.tr("Detach from observation")
+                if is_normalized
+                else self.tr("Remove this plot")
+            )
+            self._register_gallery_hint_widget(remove_btn, remove_tooltip)
             self.ref_series_table.setCellWidget(row, 1, remove_btn)
 
             label_item = QTableWidgetItem(label)
@@ -9561,6 +9601,10 @@ class MainWindow(GeometryMixin, QMainWindow):
         entry = entries[row]
         data = entry.get("data", entry) if isinstance(entry, dict) else entry
         if not isinstance(data, dict):
+            return
+        # Normalized library-attachment rows must not populate/load into the
+        # legacy reference_values editor path. Selecting them is a no-op.
+        if data.get("observation_reference_use_id"):
             return
         genus = (data.get("genus") or "").strip()
         species = (data.get("species") or "").strip()
@@ -9625,9 +9669,36 @@ class MainWindow(GeometryMixin, QMainWindow):
         self._save_gallery_settings()
         return True
 
-    def _remove_reference_series_key(self, key: tuple):
+    def _remove_reference_series_key(self, key):
         if not key:
             return
+        # If the row is a normalized library attachment, detach it via the
+        # repository before mutating in-memory state. Leave the row visible
+        # if detach fails so the user sees the actual persistence state.
+        target_use_id: str | None = None
+        for entry in self.reference_series:
+            if not (isinstance(entry, dict) and entry.get("key") == key):
+                continue
+            data = entry.get("data") if isinstance(entry.get("data"), dict) else {}
+            candidate = data.get("observation_reference_use_id")
+            if isinstance(candidate, str) and candidate.strip():
+                target_use_id = candidate.strip()
+            break
+        if target_use_id:
+            try:
+                ObservationReferenceUseRepository.detach(target_use_id)
+            except ReferenceLibraryError as exc:
+                if hasattr(self, "measure_status_label"):
+                    self.measure_status_label.setText(
+                        self.tr("Could not detach library reference: {error}").format(error=str(exc))
+                    )
+                return
+            except Exception as exc:
+                if hasattr(self, "measure_status_label"):
+                    self.measure_status_label.setText(
+                        self.tr("Could not detach library reference: {error}").format(error=str(exc))
+                    )
+                return
         self.reference_series = [
             entry for entry in self.reference_series
             if not (isinstance(entry, dict) and entry.get("key") == key)
@@ -9641,6 +9712,136 @@ class MainWindow(GeometryMixin, QMainWindow):
         self._update_reference_add_state()
         self.update_graph_plots_only()
         self._save_gallery_settings()
+
+    def _current_attached_measurement_set_ids(self) -> set[str]:
+        """Return measurement-set UUIDs already attached to the active observation."""
+        attached: set[str] = set()
+        for entry in self.reference_series or []:
+            if not isinstance(entry, dict):
+                continue
+            data = entry.get("data")
+            if not isinstance(data, dict):
+                continue
+            set_id = data.get("reference_measurement_set_id")
+            if isinstance(set_id, str) and set_id.strip():
+                attached.add(set_id.strip())
+        return attached
+
+    def _clear_normalized_reference_entries(self) -> None:
+        """Drop any in-memory reference-series rows keyed by a use UUID."""
+        remaining = []
+        removed_any = False
+        for entry in self.reference_series or []:
+            if isinstance(entry, dict):
+                data = entry.get("data")
+                if isinstance(data, dict) and data.get("observation_reference_use_id"):
+                    removed_any = True
+                    continue
+            remaining.append(entry)
+        if removed_any:
+            self.reference_series = remaining
+            if hasattr(self, "ref_series_table"):
+                self._refresh_reference_series_table()
+
+    def _restore_reference_uses_for_observation(self, observation_id: int) -> None:
+        """Load persisted observation_reference_uses for ``observation_id``,
+        translate each snapshot, drop stale normalized in-memory entries,
+        and merge translated rows into ``self.reference_series``. Malformed
+        snapshots are reported without crashing observation opening.
+        """
+        if not observation_id:
+            self._clear_normalized_reference_entries()
+            return
+        try:
+            uses = ObservationReferenceUseRepository.list_for_observation(
+                int(observation_id)
+            )
+        except Exception as exc:
+            if hasattr(self, "measure_status_label"):
+                self.measure_status_label.setText(
+                    self.tr("Could not load library references: {error}").format(error=str(exc))
+                )
+            self._clear_normalized_reference_entries()
+            return
+        translated: list[dict] = []
+        malformed = 0
+        for use in uses:
+            entry = translate_observation_reference_use(use)
+            if entry is None:
+                malformed += 1
+                continue
+            translated.append(entry)
+        # Rebuild reference_series: keep non-normalized entries, drop stale
+        # normalized entries, and append fresh translated attachments.
+        kept: list[dict] = []
+        for entry in self.reference_series or []:
+            if isinstance(entry, dict):
+                data = entry.get("data")
+                if isinstance(data, dict) and data.get("observation_reference_use_id"):
+                    continue
+            kept.append(entry)
+        for entry in translated:
+            normalized = self._normalize_reference_series_entry(entry)
+            if normalized:
+                kept.append(normalized)
+        self.reference_series = kept
+        if hasattr(self, "ref_series_table"):
+            self._refresh_reference_series_table()
+        if malformed and hasattr(self, "measure_status_label"):
+            self.measure_status_label.setText(
+                self.tr("Skipped {count} malformed reference attachment(s).").format(count=malformed)
+            )
+
+    def _on_attach_library_reference_clicked(self) -> None:
+        """Open the attachment chooser and persist the user's selection."""
+        observation_id = getattr(self, "active_observation_id", None)
+        if not observation_id:
+            QMessageBox.information(
+                self,
+                self.tr("Attach library reference"),
+                self.tr("Select an observation first before attaching a reference."),
+            )
+            return
+        excluded = self._current_attached_measurement_set_ids()
+        dialog = ReferenceLibraryAttachDialog(
+            self,
+            exclude_measurement_set_ids=excluded,
+        )
+        if dialog.exec() != QDialog.Accepted:
+            return
+        measurement_set_id, role = dialog.result_pair()
+        if not measurement_set_id:
+            return
+        try:
+            use = ObservationReferenceUseRepository.attach(
+                int(observation_id),
+                measurement_set_id,
+                role=role,
+            )
+        except ReferenceLibraryError as exc:
+            QMessageBox.warning(
+                self,
+                self.tr("Attach library reference"),
+                self.tr("Could not attach reference: {error}").format(error=str(exc)),
+            )
+            return
+        entry = translate_observation_reference_use(use)
+        if entry is None:
+            # The snapshot exists but the translator cannot plot this
+            # data kind. Roll the persisted row back so the UI does not
+            # end up with an orphan attachment that has no visible row
+            # (and therefore no detach affordance).
+            try:
+                ObservationReferenceUseRepository.detach(use.id)
+            except Exception:
+                pass
+            QMessageBox.warning(
+                self,
+                self.tr("Attach library reference"),
+                self.tr("The attachment snapshot could not be translated for the plot."),
+            )
+            return
+        self._add_reference_series_entry(entry)
 
     def _clean_ref_species_text(self, text: str | None) -> str:
         if not text:
@@ -16645,6 +16846,120 @@ class MainWindow(GeometryMixin, QMainWindow):
             color = str(entry.get("color") or "#adb5bd")
             label = entry.get("label") or self._format_reference_series_label(data)
 
+            # Dedicated literature-range branch for normalized library
+            # attachments. Applies for range/summary snapshots identified by
+            # an observation_reference_use_id + reference_data_kind. Renders
+            # rectangles regardless of the global ellipse/square preference,
+            # and never routes through KDE, data ellipses, or histogram bars.
+            normalized_use_id = str(data.get("observation_reference_use_id") or "").strip()
+            reference_data_kind = str(data.get("reference_data_kind") or "").strip().lower()
+            if (
+                normalized_use_id
+                and kind == "reference"
+                and reference_data_kind in ("range", "summary")
+            ):
+                l_core_min = data.get("length_p05")
+                l_core_max = data.get("length_p95")
+                w_core_min = data.get("width_p05")
+                w_core_max = data.get("width_p95")
+                l_ext_min = data.get("length_min")
+                l_ext_max = data.get("length_max")
+                w_ext_min = data.get("width_min")
+                w_ext_max = data.get("width_max")
+                l_mean = data.get("length_p50")
+                w_mean = data.get("width_p50")
+
+                def _rect_bounds(lmin, lmax, wmin, wmax):
+                    try:
+                        if lmin is None or lmax is None or wmin is None or wmax is None:
+                            return None
+                        lmin_f = float(lmin)
+                        lmax_f = float(lmax)
+                        wmin_f = float(wmin)
+                        wmax_f = float(wmax)
+                    except (TypeError, ValueError):
+                        return None
+                    if lmax_f <= lmin_f or wmax_f <= wmin_f:
+                        return None
+                    return (lmin_f, wmin_f, lmax_f - lmin_f, wmax_f - wmin_f)
+
+                # Core rectangle: translucent fill + solid edge.
+                core = _rect_bounds(l_core_min, l_core_max, w_core_min, w_core_max)
+                if core is not None:
+                    ax_scatter.add_patch(
+                        Rectangle(
+                            (core[0], core[1]),
+                            core[2],
+                            core[3],
+                            facecolor=color,
+                            edgecolor=color,
+                            alpha=0.18,
+                            linewidth=1.5,
+                            linestyle="-",
+                            fill=True,
+                            zorder=1.6,
+                            label=label,
+                        )
+                    )
+                    labelled = True
+                else:
+                    labelled = False
+
+                # Exceptional outer outline: distinct dotted edge with no fill.
+                # Fall back gracefully when only one axis has exceptional bounds
+                # (use core bounds for the missing axis).
+                ext_l_min = l_ext_min if l_ext_min is not None else l_core_min
+                ext_l_max = l_ext_max if l_ext_max is not None else l_core_max
+                ext_w_min = w_ext_min if w_ext_min is not None else w_core_min
+                ext_w_max = w_ext_max if w_ext_max is not None else w_core_max
+                has_exceptional = any(
+                    v is not None
+                    for v in (l_ext_min, l_ext_max, w_ext_min, w_ext_max)
+                )
+                if has_exceptional:
+                    exceptional = _rect_bounds(ext_l_min, ext_l_max, ext_w_min, ext_w_max)
+                    if exceptional is not None:
+                        outline_kwargs = dict(
+                            facecolor="none",
+                            edgecolor=color,
+                            linewidth=1.2,
+                            linestyle=":",
+                            fill=False,
+                            zorder=1.4,
+                        )
+                        if not labelled:
+                            outline_kwargs["label"] = label
+                            labelled = True
+                        ax_scatter.add_patch(
+                            Rectangle(
+                                (exceptional[0], exceptional[1]),
+                                exceptional[2],
+                                exceptional[3],
+                                **outline_kwargs,
+                            )
+                        )
+
+                # Mean marker only when both p50 dimensions are supplied.
+                if l_mean is not None and w_mean is not None:
+                    try:
+                        ax_scatter.scatter(
+                            [float(l_mean)],
+                            [float(w_mean)],
+                            marker="+",
+                            s=260,
+                            color=color,
+                            linewidths=2.2,
+                            zorder=6,
+                        )
+                    except (TypeError, ValueError):
+                        pass
+
+                if not labelled:
+                    # Ensure the entry appears in the legend even when no
+                    # rectangle drew (highly unusual, but defensive).
+                    ax_scatter.plot([], [], color=color, linestyle="-", label=label)
+                continue
+
             if kind == "observation":
                 points = data.get("points") or []
                 ref_L = np.array([p.get("length_um") for p in points if p.get("length_um") is not None], dtype=float)
@@ -19066,6 +19381,21 @@ class MainWindow(GeometryMixin, QMainWindow):
                 obs_species = self._clean_ref_species_text(obs.get("species")) if obs else ""
                 self._set_reference_panel_loaded_taxon(self.active_observation_id, obs_genus, obs_species)
 
+        # Normalized library attachments are the authoritative durable
+        # source for observation-level references; the gallery-settings
+        # blob intentionally does NOT persist them (see
+        # ``_collect_gallery_settings``). Preserve them across every
+        # ``apply_gallery_settings`` call, including tab switches, so we
+        # do not wipe entries that were restored from
+        # ``observation_reference_uses``.
+        preserved_normalized: list[dict] = []
+        for entry in self.reference_series or []:
+            if not isinstance(entry, dict):
+                continue
+            data = entry.get("data")
+            if isinstance(data, dict) and data.get("observation_reference_use_id"):
+                preserved_normalized.append(entry)
+
         restored_series = []
         has_saved_series = "reference_series" in settings
         saved_series = settings.get("reference_series")
@@ -19086,25 +19416,32 @@ class MainWindow(GeometryMixin, QMainWindow):
         if restored_series:
             last_entry = restored_series[-1]
             self.reference_values = dict(last_entry.get("data", {}))
-            self._set_reference_series(restored_series)
+            merged = restored_series + preserved_normalized
+            self._set_reference_series(merged)
             self._apply_reference_panel_values(self.reference_values)
             self._update_reference_add_state()
             return
 
         if has_saved_series:
             # An explicitly saved empty list is the observation's persisted
-            # choice, not a request to keep a species reference that may have
-            # been auto-loaded before gallery settings were applied.
+            # choice for LEGACY/transient entries, not a request to drop the
+            # normalized library attachments (those live in a separate
+            # durable table and must survive tab switches).
             self.reference_values = {}
-            self._set_reference_series([])
+            self._set_reference_series(list(preserved_normalized))
             self._update_reference_add_state()
             return
 
         restored_values = self._restore_reference_data_from_settings(settings.get("reference_values"))
         if isinstance(restored_values, dict) and restored_values:
             self.reference_values = restored_values
-            self._set_reference_series([restored_values])
+            self._set_reference_series([restored_values] + preserved_normalized)
             self._apply_reference_panel_values(restored_values)
+            self._update_reference_add_state()
+        elif preserved_normalized:
+            # No legacy state to restore, but we still have normalized
+            # attachments to keep visible.
+            self._set_reference_series(list(preserved_normalized))
             self._update_reference_add_state()
 
     def open_gallery_plot_settings(self):
@@ -19342,6 +19679,11 @@ class MainWindow(GeometryMixin, QMainWindow):
         serialized_reference_series = []
         for entry in self.reference_series or []:
             data = entry.get("data", entry) if isinstance(entry, dict) else entry
+            # Normalized library attachments live in observation_reference_uses
+            # (durable per-observation storage). Do not double-persist them
+            # into gallery settings.
+            if isinstance(data, dict) and data.get("observation_reference_use_id"):
+                continue
             serialized = self._serialize_reference_data_for_settings(data)
             if serialized:
                 serialized_reference_series.append({
@@ -20093,6 +20435,7 @@ class MainWindow(GeometryMixin, QMainWindow):
             return
         self.active_observation_id = None
         self.active_observation_name = None
+        self._clear_normalized_reference_entries()
         self._set_reference_panel_loaded_taxon(None, None, None)
         if hasattr(self, "live_lab_tab") and self.live_lab_tab is not None:
             try:
@@ -20142,6 +20485,10 @@ class MainWindow(GeometryMixin, QMainWindow):
         self.load_reference_values()
         self._compute_observation_max_radius(observation_id)
         self.apply_gallery_settings()
+        # Merge durable normalized library attachments AFTER any saved gallery
+        # settings restore, so persisted uses always appear even when the
+        # observation's saved series list is empty or unrelated.
+        self._restore_reference_uses_for_observation(observation_id)
         self._update_gallery_stats_preview()
         self.refresh_gallery_filter_options()
         if schedule_gallery and self.is_analysis_visible():

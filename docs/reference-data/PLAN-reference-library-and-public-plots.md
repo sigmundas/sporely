@@ -966,6 +966,93 @@ the reference-related tests in `tests/`.
    converted to `reference_measurement_sets` without bibliographic
    ambiguity? Do not auto-merge on fuzzy title in Stage 2.
 
+### Stage 2 vertical-slice status
+
+The Stage 2 desktop slice attaches existing normalized measurement
+sets to observations, restores them on observation open, detaches
+them without disturbing the shared library, and renders literature
+ranges with a dedicated rectangle grammar. It intentionally does not
+add a library editor, quick-add flow, favourites, revision-update
+UX, or any cloud/public work.
+
+#### Landed in this slice
+
+- **Attachment chooser** (`ui/reference_library_attach_dialog.py`) —
+  new `ReferenceLibraryAttachDialog(QDialog)` that lists every
+  unattached candidate measurement set via
+  `MeasurementSetRepository.list_attachment_candidates(...)` with
+  joined source, taxon, locator, kind, and raw-expression columns.
+  The dialog returns `(measurement_set_id, role)`; the OK button is
+  disabled until a row is selected.
+- **Role persistence** — the chooser's role selector is limited to
+  the `OBSERVATION_REFERENCE_ROLES` enum
+  (`compared`, `supports_identification`, `contradicts`) and stores
+  the exact enum value through
+  `ObservationReferenceUseRepository.attach(...)`.
+- **Snapshot restore** — `MainWindow._restore_reference_uses_for_observation`
+  is called from `_on_observation_selected_impl` after
+  `apply_gallery_settings()` so gallery settings never overwrite the
+  normalized attachments. The restore path translates every stored
+  snapshot through `translate_observation_reference_use(...)`,
+  drops in-memory entries for the previous observation, and reports
+  malformed snapshots without crashing the observation open.
+- **Detach semantics** — removing a normalized reference row from
+  the Analysis reference-series area resolves
+  `observation_reference_use_id` before mutation and calls
+  `ObservationReferenceUseRepository.detach(...)`. Detach leaves the
+  shared library row intact (verified by the repository tests).
+- **Range/summary rendering** — the update_graph_plots path draws
+  the core `length_p05/p95` × `width_p05/p95` rectangle with a
+  translucent fill and solid edge, plus a distinct outer outline
+  from `length_min/max` × `width_min/max`. A `+` mean marker is
+  drawn only when both supplied means translated to `length_p50`
+  and `width_p50`. Range entries do not go through KDE, ellipses,
+  or histogram bars.
+- **Raw-points rendering** — `raw_points` snapshots stay on the
+  existing observation scatter path because those points are
+  genuine measurements. Only paired numeric `length_um/width_um`
+  entries are emitted; incomplete pairs are dropped.
+- **Gallery-settings guard** — legacy color-menu, row-edit, and
+  gallery-settings serialization/apply paths guard on
+  `observation_reference_use_id` so normalized entries are not
+  written into legacy gallery settings and never open the legacy
+  ReferenceDB editor workflow.
+- **Focused tests** (`tests/test_reference_library_desktop_slice.py`) —
+  translator range/summary mapping, no midpoint synthesis when
+  means are absent, `p50` populated only when means are supplied,
+  raw_points paired-only mapping, malformed-snapshot handling,
+  bulk translator dropping `None` entries, attach → list-for-
+  observation preserves the accepted bounds and revision,
+  detach preserves the library row, attached-use round trip through
+  the translator, `list_attachment_candidates` joins each seeded
+  set with treatment/work context, and `exclude_ids` filtering.
+  A Qt-guarded test constructs `ReferenceLibraryAttachDialog` with
+  stub candidates and asserts `result_pair()` reflects both the
+  selected row and the chosen role.
+- **Localization** — the new `ui/reference_library_attach_dialog.py`
+  is registered with both `tools/update_translations.sh` and
+  `tools/update_translations.ps1`. The three locale catalogs
+  (`i18n/Sporely_nb_NO.ts`, `i18n/Sporely_sv_SE.ts`,
+  `i18n/Sporely_de_DE.ts`) now translate every new string
+  introduced by this slice (attach dialog labels + Analysis-tab
+  attach/detach messages in `ui/main_window.py`). Norwegian
+  Bokmål and Swedish use their standard forms; German uses the
+  informal "du" form.
+
+#### Deferred
+
+- Full library editor UI (create/edit works, treatments, measurement
+  sets from within the desktop app) — this slice reuses the
+  existing repository test paths for seeding.
+- Quick-add flow for entering a new work + treatment + measurement
+  set while attaching to an observation.
+- Favourites / recently-used measurement sets in the chooser.
+- Revision-update UX (surface a note when the attached measurement
+  set has been superseded in the library).
+- Cloud sync of `observation_reference_uses` — deferred to Stage 4.
+  This slice does not touch Supabase, `sporely-web`, or
+  `sporely-landing`.
+
 ---
 
 ## 20. Definition of done

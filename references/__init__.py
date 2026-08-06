@@ -9,9 +9,15 @@ from references.measurement_parser import (
     MeasurementParseResult,
     parse_measurement_string,
 )
+from references.reference_plotting import (
+    translate_observation_reference_use,
+    translate_observation_reference_uses,
+)
 
 __all__ = [
     "DimensionRange",
     "MeasurementParseResult",
     "parse_measurement_string",
+    "translate_observation_reference_use",
+    "translate_observation_reference_uses",
 ]

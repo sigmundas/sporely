@@ -65,6 +65,16 @@ class ReferenceInUseError(ReferenceIntegrityError):
 # --- Helpers -----------------------------------------------------------------
 
 
+# Data kinds that the Analysis reference-series translator can render as
+# an attached observation reference. `parmasto` and any future kinds are
+# intentionally excluded until they have plot support and a translator
+# path so we never persist an orphan attachment row that has no visible
+# entry in the UI (and therefore no detach affordance).
+SUPPORTED_ATTACHMENT_DATA_KINDS: frozenset[str] = frozenset(
+    {"range", "summary", "raw_points"}
+)
+
+
 def _new_uuid() -> str:
     return str(uuid.uuid4())
 
@@ -223,6 +233,24 @@ class ObservationReferenceUse:
     selected_at: str | None = None
     created_at: str | None = None
     updated_at: str | None = None
+
+
+@dataclass
+class MeasurementSetCandidate:
+    """Read-only projection of a measurement set joined with treatment/work
+    display metadata for the attachment chooser UI. Not stored anywhere."""
+
+    measurement_set_id: str
+    short_label: str
+    name_as_published: str
+    locator_text: str | None
+    data_kind: str
+    raw_text: str | None
+    revision: int
+    reference_work_id: str
+    reference_treatment_id: str
+    work_title: str | None = None
+    year: int | None = None
 
 
 def _row_to_dataclass(row: sqlite3.Row, cls):
@@ -918,6 +946,84 @@ class MeasurementSetRepository:
             conn.commit()
         finally:
             conn.close()
+
+    @staticmethod
+    def list_attachment_candidates(
+        *,
+        exclude_ids: Iterable[str] | None = None,
+        supported_kinds: Iterable[str] | None = None,
+    ) -> list[MeasurementSetCandidate]:
+        """Return every measurement set joined with its treatment/work
+        display metadata for the attachment chooser.
+
+        Deterministic ordering by short label, published taxon name,
+        measurement-set id. ``exclude_ids`` (optional) removes rows whose
+        measurement-set UUID is already attached to the caller's active
+        observation. ``supported_kinds`` (optional) restricts the result
+        to measurement sets whose ``data_kind`` is currently plottable
+        by the desktop; defaults to
+        :data:`SUPPORTED_ATTACHMENT_DATA_KINDS` so unsupported kinds
+        (e.g. ``parmasto``) never surface as attachment candidates that
+        would produce orphan use rows.
+        """
+        exclude_set = {str(x) for x in (exclude_ids or [])}
+        if supported_kinds is None:
+            allowed_kinds = set(SUPPORTED_ATTACHMENT_DATA_KINDS)
+        else:
+            allowed_kinds = {str(x) for x in supported_kinds}
+        conn = _connect_reference()
+        try:
+            rows = conn.execute(
+                """
+                SELECT
+                    ms.id AS ms_id,
+                    ms.data_kind AS ms_data_kind,
+                    ms.raw_text AS ms_raw_text,
+                    ms.revision AS ms_revision,
+                    t.id AS t_id,
+                    t.name_as_published AS t_name_as_published,
+                    t.locator_text AS t_locator_text,
+                    w.id AS w_id,
+                    w.short_label AS w_short_label,
+                    w.title AS w_title,
+                    w.year AS w_year
+                FROM reference_measurement_sets AS ms
+                JOIN reference_taxon_treatments AS t
+                  ON t.id = ms.taxon_treatment_id
+                JOIN reference_works AS w
+                  ON w.id = t.reference_work_id
+                ORDER BY
+                    LOWER(COALESCE(w.short_label, w.title, '')),
+                    LOWER(COALESCE(t.name_as_published, '')),
+                    ms.id
+                """
+            ).fetchall()
+        finally:
+            conn.close()
+        result: list[MeasurementSetCandidate] = []
+        for row in rows:
+            set_id = str(row["ms_id"])
+            if set_id in exclude_set:
+                continue
+            data_kind = str(row["ms_data_kind"] or "")
+            if allowed_kinds and data_kind not in allowed_kinds:
+                continue
+            result.append(
+                MeasurementSetCandidate(
+                    measurement_set_id=set_id,
+                    short_label=str(row["w_short_label"] or row["w_title"] or ""),
+                    name_as_published=str(row["t_name_as_published"] or ""),
+                    locator_text=(str(row["t_locator_text"]) if row["t_locator_text"] else None),
+                    data_kind=str(row["ms_data_kind"] or ""),
+                    raw_text=(str(row["ms_raw_text"]) if row["ms_raw_text"] else None),
+                    revision=int(row["ms_revision"] or 1),
+                    reference_work_id=str(row["w_id"]),
+                    reference_treatment_id=str(row["t_id"]),
+                    work_title=(str(row["w_title"]) if row["w_title"] else None),
+                    year=(int(row["w_year"]) if row["w_year"] is not None else None),
+                )
+            )
+        return result
 
 
 # --- Observation reference uses ---------------------------------------------

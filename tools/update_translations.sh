@@ -15,6 +15,7 @@ files=(
   "ui/zoomable_image_widget.py"
   "ui/stats_table_widget.py"
   "ui/spore_preview_widget.py"
+  "ui/reference_library_attach_dialog.py"
 )
 
 if [[ -x ".venv/bin/pyside6-lupdate" ]]; then
