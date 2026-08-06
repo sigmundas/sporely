@@ -30,7 +30,8 @@ $files = @(
     "ui\\zoomable_image_widget.py",
     "ui\\stats_table_widget.py",
     "ui\\spore_preview_widget.py",
-    "ui\\reference_library_attach_dialog.py"
+    "ui\\reference_library_attach_dialog.py",
+    "ui\\reference_library_manager_dialog.py"
 )
 
 & $lupdateCmd $files -no-obsolete -ts i18n\\Sporely_nb_NO.ts i18n\\Sporely_sv_SE.ts i18n\\Sporely_de_DE.ts

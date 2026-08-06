@@ -1245,12 +1245,37 @@ class ObservationReferenceUseRepository:
                 return _row_to_dataclass(existing, ObservationReferenceUse), False
             values = tuple(getattr(use, name) for name in cls._COLUMNS)
             placeholders = ", ".join("?" for _ in cls._COLUMNS)
-            conn.execute(
-                f"INSERT INTO observation_reference_uses "
-                f"({', '.join(cls._COLUMNS)}) VALUES ({placeholders})",
-                values,
-            )
-            conn.commit()
+            try:
+                conn.execute(
+                    f"INSERT INTO observation_reference_uses "
+                    f"({', '.join(cls._COLUMNS)}) VALUES ({placeholders})",
+                    values,
+                )
+                conn.commit()
+            except sqlite3.IntegrityError:
+                # Two callers observed no existing row and one lost the
+                # unique-index race. Fall back to reading the winner's row
+                # and returning it as an already-existing use so callers
+                # never see a raw sqlite exception and rollback logic is
+                # not accidentally invoked for a row we did not create.
+                existing = conn.execute(
+                    """
+                    SELECT * FROM observation_reference_uses
+                    WHERE observation_id = ? AND reference_measurement_set_id = ?
+                    """,
+                    (observation_id, reference_measurement_set_id),
+                ).fetchone()
+                if existing is not None:
+                    return (
+                        _row_to_dataclass(existing, ObservationReferenceUse),
+                        False,
+                    )
+                # Genuinely unable to insert AND unable to observe the row
+                # -> surface as a domain error rather than raw sqlite.
+                raise ReferenceIntegrityError(
+                    "attach lost the unique-index race and the winning "
+                    "row could not be read back"
+                )
         finally:
             conn.close()
         return use, True

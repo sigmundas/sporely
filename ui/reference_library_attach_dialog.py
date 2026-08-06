@@ -10,7 +10,7 @@ from __future__ import annotations
 
 from typing import Iterable
 
-from PySide6.QtCore import Qt
+from PySide6.QtCore import Qt, Signal
 from PySide6.QtWidgets import (
     QAbstractItemView,
     QComboBox,
@@ -19,6 +19,7 @@ from PySide6.QtWidgets import (
     QHBoxLayout,
     QHeaderView,
     QLabel,
+    QPushButton,
     QTableWidget,
     QTableWidgetItem,
     QVBoxLayout,
@@ -39,7 +40,15 @@ _ROLE_VALUES: tuple[str, ...] = (
 
 
 class ReferenceLibraryAttachDialog(QDialog):
-    """Chooser dialog returning ``(measurement_set_id, role)`` on accept."""
+    """Chooser dialog returning ``(measurement_set_id, role)`` on accept.
+
+    Also emits :attr:`manage_library_requested` when the user clicks the
+    "Manage library…" affordance so the parent (MainWindow) can open the
+    normalized library manager. After the manager closes, callers should
+    invoke :meth:`refresh_candidates` to repopulate the chooser table.
+    """
+
+    manage_library_requested = Signal()
 
     def __init__(
         self,
@@ -124,6 +133,13 @@ class ReferenceLibraryAttachDialog(QDialog):
         self._empty_label.setVisible(False)
         layout.addWidget(self._empty_label)
 
+        manage_row = QHBoxLayout()
+        self.manage_library_btn = QPushButton(self.tr("Manage library…"))
+        self.manage_library_btn.clicked.connect(self._on_manage_library_clicked)
+        manage_row.addWidget(self.manage_library_btn)
+        manage_row.addStretch(1)
+        layout.addLayout(manage_row)
+
         self.buttons = QDialogButtonBox(
             QDialogButtonBox.Ok | QDialogButtonBox.Cancel,
             Qt.Horizontal,
@@ -133,6 +149,48 @@ class ReferenceLibraryAttachDialog(QDialog):
         self.buttons.rejected.connect(self.reject)
         layout.addWidget(self.buttons)
 
+        self._populate_table()
+        self._update_accept_state()
+
+    def _on_manage_library_clicked(self) -> None:
+        """Open the normalized Reference Library manager as a child
+        modal, refresh the candidate table when it closes, then emit
+        :attr:`manage_library_requested` so external observers can run
+        follow-up work (e.g. telemetry). The signal fires exactly once,
+        AFTER the manager closes — this makes the lifecycle
+        unambiguous: the chooser is the sole owner of the manager
+        window, and consumers must NOT open a second manager in the
+        signal slot.
+        """
+        try:  # pragma: no branch - import guard, no runtime alternative
+            from .reference_library_manager_dialog import (
+                ReferenceLibraryManagerDialog,
+            )
+        except Exception:
+            # If the manager module cannot be imported, still notify
+            # external observers so they can surface an error, but do
+            # not crash the chooser.
+            self.manage_library_requested.emit()
+            return
+        manager = ReferenceLibraryManagerDialog(self, active_observation_id=None)
+        try:
+            manager.exec()
+        finally:
+            self.refresh_candidates()
+            manager.deleteLater()
+        self.manage_library_requested.emit()
+
+    def refresh_candidates(self) -> None:
+        """Re-query the repository for attachment candidates and rebuild
+        the table. External callers (e.g. MainWindow) should invoke this
+        after the normalized library manager closes so newly-created
+        measurement sets appear immediately without reopening the
+        chooser. Preserves the exclusion set passed at construction.
+        """
+        self._candidates = MeasurementSetRepository.list_attachment_candidates(
+            exclude_ids=self._exclude_ids
+        )
+        self._selected_id = None
         self._populate_table()
         self._update_accept_state()
 

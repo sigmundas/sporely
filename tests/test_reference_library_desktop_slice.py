@@ -577,6 +577,9 @@ def _bind_attach_handler(stub):
     stub._on_attach_library_reference_clicked = MethodType(
         MainWindow._on_attach_library_reference_clicked, stub
     )
+    stub._attach_normalized_reference_to_active_observation = MethodType(
+        MainWindow._attach_normalized_reference_to_active_observation, stub
+    )
     stub._current_attached_measurement_set_ids = MethodType(
         MainWindow._current_attached_measurement_set_ids, stub
     )

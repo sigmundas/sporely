@@ -8924,6 +8924,15 @@ class MainWindow(GeometryMixin, QMainWindow):
         )
         layout.addWidget(self.ref_attach_library_btn)
 
+        self.ref_manage_library_btn = QPushButton(self.tr("Manage reference library…"))
+        self.ref_manage_library_btn.clicked.connect(self._on_manage_reference_library_clicked)
+        self._register_gallery_hint_widget(
+            self.ref_manage_library_btn,
+            self.tr("Browse and edit reference works, treatments, and measurement sets"),
+            allow_when_disabled=True,
+        )
+        layout.addWidget(self.ref_manage_library_btn)
+
         self._init_reference_panel_completers()
         self._populate_reference_panel_sources()
         self._apply_reference_panel_values(self.reference_values)
@@ -9943,9 +9952,102 @@ class MainWindow(GeometryMixin, QMainWindow):
             self,
             exclude_measurement_set_ids=excluded,
         )
+        # The chooser owns the "Manage library…" lifecycle (opens the
+        # manager as its own child modal and refreshes candidates on
+        # close). MainWindow still observes ``manage_library_requested``
+        # for telemetry / follow-up actions, but does not need to open
+        # or refresh anything from here.
         if dialog.exec() != QDialog.Accepted:
             return
         measurement_set_id, role = dialog.result_pair()
+        if not measurement_set_id:
+            return
+        self._attach_normalized_reference_to_active_observation(
+            measurement_set_id, role
+        )
+
+    def _on_manage_reference_library_clicked(self) -> None:
+        """Open the normalized Reference Library manager as a standalone
+        top-level workflow. The active observation id is forwarded so the
+        manager can offer an "Attach to active observation" shortcut when
+        applicable — but attachment always routes through the shared
+        private helper so rollback/warning-row contracts remain identical.
+        """
+        from .reference_library_manager_dialog import (
+            ReferenceLibraryManagerDialog,
+        )
+
+        observation_id = getattr(self, "active_observation_id", None)
+        dialog = ReferenceLibraryManagerDialog(
+            self,
+            active_observation_id=int(observation_id) if observation_id else None,
+        )
+        dialog.attach_requested.connect(
+            self._attach_normalized_reference_from_manager
+        )
+        dialog.exec()
+
+    def _attach_normalized_reference_from_manager(
+        self, measurement_set_id: str, role: str, captured_observation_id: int
+    ) -> None:
+        """Slot for ``ReferenceLibraryManagerDialog.attach_requested``.
+
+        Verifies the observation captured when the manager opened still
+        matches the current active observation. If the user changed
+        observations between opening the manager and clicking Attach,
+        we refuse the attach and surface a warning rather than silently
+        writing to the drifted observation.
+        """
+        current = getattr(self, "active_observation_id", None)
+        if current is None or int(current) != int(captured_observation_id):
+            QMessageBox.warning(
+                self,
+                self.tr("Attach library reference"),
+                self.tr(
+                    "The active observation changed while the reference "
+                    "library was open, so the attachment was cancelled. "
+                    "Re-open the library from the intended observation "
+                    "to try again."
+                ),
+            )
+            return
+        self._attach_normalized_reference_to_active_observation(
+            measurement_set_id, role
+        )
+
+    def _on_manage_reference_library_from_attach(self) -> None:
+        """Slot fired by ReferenceLibraryAttachDialog's "Manage library…"
+        button. Opens the manager without forwarding the active observation
+        (the attach dialog itself owns the attach flow after refresh)."""
+        from .reference_library_manager_dialog import (
+            ReferenceLibraryManagerDialog,
+        )
+
+        dialog = ReferenceLibraryManagerDialog(
+            self,
+            active_observation_id=None,
+        )
+        dialog.exec()
+
+    def _attach_normalized_reference_to_active_observation(
+        self, measurement_set_id: str, role: str
+    ) -> None:
+        """Shared post-selection attach helper.
+
+        Both the attachment chooser and the library manager route through
+        this method so ``attach_with_status`` semantics, plotability
+        translation, rollback of newly-created rows on translator
+        failure, and the pre-existing malformed warning-row path stay in
+        exactly one place.
+        """
+        observation_id = getattr(self, "active_observation_id", None)
+        if not observation_id:
+            QMessageBox.information(
+                self,
+                self.tr("Attach library reference"),
+                self.tr("Select an observation first before attaching a reference."),
+            )
+            return
         if not measurement_set_id:
             return
         try:
