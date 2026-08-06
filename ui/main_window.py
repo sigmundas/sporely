@@ -222,6 +222,7 @@ from utils.db_share import export_database_bundle as export_db_bundle
 from utils.db_share import import_database_bundle as import_db_bundle
 from matplotlib.backends.backend_qtagg import FigureCanvasQTAgg as FigureCanvas
 from matplotlib.figure import Figure
+from matplotlib.colors import to_rgba
 from matplotlib.patches import Ellipse, Rectangle
 from matplotlib.ticker import MaxNLocator
 
@@ -9237,13 +9238,17 @@ class MainWindow(GeometryMixin, QMainWindow):
         return ("reference", genus, species, source, mount, stain)
 
     def _format_reference_series_label(self, data: dict) -> str:
-        # Normalized library entries always display their work short_label
-        # so the semantic identity of the source stays visible.
+        # Normalized library entries expose short label + published taxon
+        # + locator so two rows sourced from the same work but different
+        # taxa or pages remain distinguishable in the reference table.
         use_id = (data.get("observation_reference_use_id") or "")
         if isinstance(use_id, str) and use_id.strip():
             short = (data.get("short_label") or "").strip()
-            if short:
-                return short
+            taxon = (data.get("name_as_published") or "").strip()
+            locator = (data.get("locator_text") or "").strip()
+            parts = [part for part in (short, taxon, locator) if part]
+            if parts:
+                return " — ".join(parts)
         genus = (data.get("genus") or "").strip()
         species = (data.get("species") or "").strip()
         kind = data.get("source_kind") or ("points" if data.get("points") else "reference")
@@ -9570,6 +9575,10 @@ class MainWindow(GeometryMixin, QMainWindow):
 
             label_item = QTableWidgetItem(label)
             label_item.setFlags(Qt.ItemIsEnabled)
+            if isinstance(data, dict) and data.get("observation_reference_use_id"):
+                tooltip = self._format_normalized_reference_row_tooltip(data)
+                if tooltip:
+                    label_item.setToolTip(tooltip)
             self.ref_series_table.setItem(row, 2, label_item)
 
             color_btn = QToolButton()
@@ -9743,6 +9752,123 @@ class MainWindow(GeometryMixin, QMainWindow):
             if hasattr(self, "ref_series_table"):
                 self._refresh_reference_series_table()
 
+    def _apply_normalized_reference_override(
+        self, entry: dict, overrides_map: dict | None = None
+    ) -> None:
+        """Apply persisted per-use display overrides (``enabled``/``plot_color``)
+        to a normalized reference-series entry. When ``overrides_map`` is
+        omitted the method falls back to ``self._normalized_reference_display_overrides``.
+        Missing map / missing use id / missing key → no-op.
+        """
+        if not isinstance(entry, dict):
+            return
+        data = entry.get("data")
+        if not isinstance(data, dict):
+            return
+        use_id = str(data.get("observation_reference_use_id") or "").strip()
+        if not use_id:
+            return
+        if overrides_map is None:
+            overrides_map = getattr(
+                self, "_normalized_reference_display_overrides", {}
+            ) or {}
+        override = overrides_map.get(use_id)
+        if not isinstance(override, dict):
+            return
+        if "enabled" in override:
+            entry["enabled"] = bool(override.get("enabled", True))
+        plot_color = override.get("plot_color")
+        if isinstance(plot_color, str) and plot_color.strip():
+            data["plot_color"] = plot_color.strip().lower()
+
+    def _format_normalized_reference_row_tooltip(self, data: dict) -> str:
+        """Compose the tooltip for a normalized attachment row.
+
+        The label already carries short label + taxon + locator; the
+        tooltip surfaces the details that would otherwise clutter the
+        row: raw measurement expression, role, revision and (when
+        present) the ``malformed`` warning.
+        """
+        if not isinstance(data, dict):
+            return ""
+        lines: list[str] = []
+        if data.get("malformed"):
+            lines.append(
+                self.tr(
+                    "This attachment's persisted snapshot cannot be plotted. "
+                    "Detach it to remove the row."
+                )
+            )
+        raw_text = str(data.get("raw_text") or "").strip()
+        if raw_text:
+            lines.append(self.tr("Raw: {raw}").format(raw=raw_text))
+        role = str(data.get("role") or "").strip()
+        if role:
+            lines.append(self.tr("Role: {role}").format(role=role))
+        revision = data.get("reference_revision")
+        try:
+            revision_int = int(revision) if revision is not None else None
+        except (TypeError, ValueError):
+            revision_int = None
+        if revision_int is not None:
+            lines.append(
+                self.tr("Revision: {revision}").format(revision=revision_int)
+            )
+        return "\n".join(lines)
+
+    def _build_malformed_reference_series_entry(self, use) -> dict | None:
+        """Wrap a persisted-but-unplottable ``ObservationReferenceUse`` as a
+        visible warning row. The row still routes through the normalized
+        detach path (``observation_reference_use_id`` key) so the user has
+        a working affordance to remove the persisted row. Rendering code
+        must skip drawing entries with ``malformed=True``.
+        """
+        use_id = getattr(use, "id", None)
+        if not use_id:
+            return None
+        snapshot: dict = {}
+        raw_snapshot = getattr(use, "snapshot_json", None)
+        if isinstance(raw_snapshot, str) and raw_snapshot.strip():
+            try:
+                parsed = json.loads(raw_snapshot)
+                if isinstance(parsed, dict):
+                    snapshot = parsed
+            except (TypeError, ValueError, json.JSONDecodeError):
+                snapshot = {}
+        short_label = str(snapshot.get("short_label") or "").strip()
+        name_as_published = str(snapshot.get("name_as_published") or "").strip()
+        locator_text = str(snapshot.get("locator_text") or "").strip()
+        raw_expression = str(snapshot.get("raw_text") or "").strip()
+        data_kind = str(snapshot.get("data_kind") or "").strip()
+        data = {
+            "source_kind": "reference",
+            "observation_reference_use_id": str(use_id),
+            "reference_measurement_set_id": str(
+                snapshot.get("reference_measurement_set_id")
+                or getattr(use, "reference_measurement_set_id", "")
+                or ""
+            ),
+            "reference_data_kind": data_kind,
+            "reference_revision": int(getattr(use, "reference_revision", 0) or 0),
+            "role": str(getattr(use, "role", "") or ""),
+            "short_label": short_label,
+            "name_as_published": name_as_published,
+            "locator_text": locator_text,
+            "raw_text": raw_expression,
+            "malformed": True,
+        }
+        label_bits = [
+            bit for bit in (short_label, name_as_published, locator_text) if bit
+        ]
+        base_label = " — ".join(label_bits) if label_bits else self.tr("Reference")
+        label = self.tr("[!] Unplottable snapshot: {label}").format(label=base_label)
+        return {
+            "key": str(use_id),
+            "label": label,
+            "data": data,
+            "enabled": False,
+        }
+
     def _restore_reference_uses_for_observation(self, observation_id: int) -> None:
         """Load persisted observation_reference_uses for ``observation_id``,
         translate each snapshot, drop stale normalized in-memory entries,
@@ -9765,11 +9891,21 @@ class MainWindow(GeometryMixin, QMainWindow):
             return
         translated: list[dict] = []
         malformed = 0
+        overrides_map = getattr(
+            self, "_normalized_reference_display_overrides", {}
+        ) or {}
         for use in uses:
             entry = translate_observation_reference_use(use)
             if entry is None:
-                malformed += 1
+                warning_entry = self._build_malformed_reference_series_entry(use)
+                if warning_entry is not None:
+                    self._apply_normalized_reference_override(
+                        warning_entry, overrides_map
+                    )
+                    translated.append(warning_entry)
+                    malformed += 1
                 continue
+            self._apply_normalized_reference_override(entry, overrides_map)
             translated.append(entry)
         # Rebuild reference_series: keep non-normalized entries, drop stale
         # normalized entries, and append fresh translated attachments.
@@ -9813,7 +9949,7 @@ class MainWindow(GeometryMixin, QMainWindow):
         if not measurement_set_id:
             return
         try:
-            use = ObservationReferenceUseRepository.attach(
+            use, created = ObservationReferenceUseRepository.attach_with_status(
                 int(observation_id),
                 measurement_set_id,
                 role=role,
@@ -9827,18 +9963,48 @@ class MainWindow(GeometryMixin, QMainWindow):
             return
         entry = translate_observation_reference_use(use)
         if entry is None:
-            # The snapshot exists but the translator cannot plot this
-            # data kind. Roll the persisted row back so the UI does not
-            # end up with an orphan attachment that has no visible row
-            # (and therefore no detach affordance).
-            try:
-                ObservationReferenceUseRepository.detach(use.id)
-            except Exception:
-                pass
+            if created:
+                # We just inserted this row; roll it back so the UI does not
+                # end up with an orphan attachment that has no visible row
+                # (and therefore no detach affordance). If the rollback
+                # itself fails we surface a clear error rather than
+                # silently swallowing it — the caller must know the row
+                # is still persisted.
+                try:
+                    ObservationReferenceUseRepository.detach(use.id)
+                except Exception as rollback_exc:
+                    QMessageBox.critical(
+                        self,
+                        self.tr("Attach library reference"),
+                        self.tr(
+                            "Attachment could not be plotted and the rollback "
+                            "of the persisted row failed: {error}. The row "
+                            "with id {use_id} may still be present; please "
+                            "detach it manually."
+                        ).format(error=str(rollback_exc), use_id=use.id),
+                    )
+                    return
+                QMessageBox.warning(
+                    self,
+                    self.tr("Attach library reference"),
+                    self.tr("The attachment snapshot could not be translated for the plot."),
+                )
+                return
+            # A pre-existing use came back with an unplottable snapshot.
+            # Never detach someone else's persisted row as a "rollback"
+            # for the attach we did not perform. Surface it as a warning
+            # row instead so the user still has a working detach action.
+            warning_entry = self._build_malformed_reference_series_entry(use)
+            if warning_entry is not None:
+                self._add_reference_series_entry(warning_entry)
             QMessageBox.warning(
                 self,
                 self.tr("Attach library reference"),
-                self.tr("The attachment snapshot could not be translated for the plot."),
+                self.tr(
+                    "This reference is already attached but its stored "
+                    "snapshot cannot be plotted. It is shown as a warning "
+                    "row so you can detach it."
+                ),
             )
             return
         self._add_reference_series_entry(entry)
@@ -16838,6 +17004,11 @@ class MainWindow(GeometryMixin, QMainWindow):
             data = entry.get("data", {})
             if not isinstance(data, dict) or not data:
                 continue
+            # Warning rows for malformed persisted attachments must appear in
+            # the reference-series table (so the user can detach them) but
+            # must never contribute drawn geometry to the plot.
+            if data.get("malformed"):
+                continue
             kind = data.get("source_kind") or ("points" if data.get("points") else "reference")
             if kind == "points" and not self._reference_allow_points():
                 continue
@@ -16883,17 +17054,21 @@ class MainWindow(GeometryMixin, QMainWindow):
                         return None
                     return (lmin_f, wmin_f, lmax_f - lmin_f, wmax_f - wmin_f)
 
-                # Core rectangle: translucent fill + solid edge.
+                # Core rectangle: translucent fill + fully opaque edge.
+                # Applying a translucent RGBA facecolor while keeping the
+                # edgecolor at full alpha avoids the previous `alpha=`
+                # collapse that dimmed both fill and edge together.
                 core = _rect_bounds(l_core_min, l_core_max, w_core_min, w_core_max)
                 if core is not None:
+                    face_rgba = to_rgba(color, alpha=0.18)
+                    edge_rgba = to_rgba(color, alpha=1.0)
                     ax_scatter.add_patch(
                         Rectangle(
                             (core[0], core[1]),
                             core[2],
                             core[3],
-                            facecolor=color,
-                            edgecolor=color,
-                            alpha=0.18,
+                            facecolor=face_rgba,
+                            edgecolor=edge_rgba,
                             linewidth=1.5,
                             linestyle="-",
                             fill=True,
@@ -19388,12 +19563,36 @@ class MainWindow(GeometryMixin, QMainWindow):
         # ``apply_gallery_settings`` call, including tab switches, so we
         # do not wipe entries that were restored from
         # ``observation_reference_uses``.
+        overrides_raw = settings.get("reference_use_overrides")
+        overrides_map: dict[str, dict] = {}
+        if isinstance(overrides_raw, list):
+            for item in overrides_raw:
+                if not isinstance(item, dict):
+                    continue
+                uid = item.get("use_id")
+                if not (isinstance(uid, str) and uid.strip()):
+                    continue
+                raw_color = item.get("plot_color")
+                plot_color = None
+                if isinstance(raw_color, str) and raw_color.strip():
+                    color_candidate = raw_color.strip().lower()
+                    if QColor(color_candidate).isValid():
+                        plot_color = color_candidate
+                overrides_map[uid.strip()] = {
+                    "enabled": bool(item.get("enabled", True)),
+                    "plot_color": plot_color,
+                }
+        self._normalized_reference_display_overrides = overrides_map
+        # Apply overrides to any normalized entries already present in
+        # memory (tab-switch path, where the entries were restored on
+        # observation open and are just being re-applied here).
         preserved_normalized: list[dict] = []
         for entry in self.reference_series or []:
             if not isinstance(entry, dict):
                 continue
             data = entry.get("data")
             if isinstance(data, dict) and data.get("observation_reference_use_id"):
+                self._apply_normalized_reference_override(entry, overrides_map)
                 preserved_normalized.append(entry)
 
         restored_series = []
@@ -19677,12 +19876,31 @@ class MainWindow(GeometryMixin, QMainWindow):
     def _collect_gallery_settings(self):
         plot_settings = getattr(self, "gallery_plot_settings", {}) or {}
         serialized_reference_series = []
+        reference_use_overrides: list[dict] = []
         for entry in self.reference_series or []:
             data = entry.get("data", entry) if isinstance(entry, dict) else entry
             # Normalized library attachments live in observation_reference_uses
-            # (durable per-observation storage). Do not double-persist them
-            # into gallery settings.
+            # (durable per-observation storage). Do not double-persist snapshot
+            # data into gallery settings; only the small display overrides
+            # (enabled + plot_color) are stored, keyed by use id.
             if isinstance(data, dict) and data.get("observation_reference_use_id"):
+                use_id = str(data.get("observation_reference_use_id") or "").strip()
+                if not use_id:
+                    continue
+                raw_color = data.get("plot_color")
+                if isinstance(raw_color, str) and raw_color.strip():
+                    plot_color = raw_color.strip().lower()
+                else:
+                    plot_color = None
+                reference_use_overrides.append(
+                    {
+                        "use_id": use_id,
+                        "enabled": bool(entry.get("enabled", True))
+                        if isinstance(entry, dict)
+                        else True,
+                        "plot_color": plot_color,
+                    }
+                )
                 continue
             serialized = self._serialize_reference_data_for_settings(data)
             if serialized:
@@ -19724,6 +19942,7 @@ class MainWindow(GeometryMixin, QMainWindow):
             "reference_panel": self._collect_reference_panel_state(),
             "reference_values": self._serialize_reference_data_for_settings(self.reference_values),
             "reference_series": serialized_reference_series,
+            "reference_use_overrides": reference_use_overrides,
             "gallery_splitter_sizes": self.gallery_splitter.sizes() if hasattr(self, "gallery_splitter") else [],
             "plot_width_splitter_sizes": self.plot_width_splitter.sizes() if hasattr(self, "plot_width_splitter") else [],
         }

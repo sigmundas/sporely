@@ -1113,6 +1113,34 @@ class ObservationReferenceUseRepository:
         return measurement_set, treatment, work
 
     @classmethod
+    def attach_with_status(
+        cls,
+        observation_id: int,
+        reference_measurement_set_id: str,
+        *,
+        role: str = "compared",
+        note: str | None = None,
+        allow_dangling: bool = False,
+    ) -> tuple[ObservationReferenceUse, bool]:
+        """Idempotent attach that also reports whether a NEW row was created.
+
+        Returns ``(use, created)`` where ``created`` is ``True`` only when
+        this call inserted a new ``observation_reference_uses`` row. When
+        the same ``(observation_id, reference_measurement_set_id)`` link
+        already existed, ``created`` is ``False`` and ``use`` is the
+        pre-existing record. Callers that need to roll back a failed
+        follow-up step must ONLY detach when ``created`` is ``True``.
+        """
+        use, created = cls._do_attach(
+            observation_id=observation_id,
+            reference_measurement_set_id=reference_measurement_set_id,
+            role=role,
+            note=note,
+            allow_dangling=allow_dangling,
+        )
+        return use, created
+
+    @classmethod
     def attach(
         cls,
         observation_id: int,
@@ -1130,6 +1158,25 @@ class ObservationReferenceUseRepository:
         test/helper mode that intentionally skips the library lookup so
         integrity-detection paths can be exercised.
         """
+        use, _ = cls._do_attach(
+            observation_id=observation_id,
+            reference_measurement_set_id=reference_measurement_set_id,
+            role=role,
+            note=note,
+            allow_dangling=allow_dangling,
+        )
+        return use
+
+    @classmethod
+    def _do_attach(
+        cls,
+        *,
+        observation_id: int,
+        reference_measurement_set_id: str,
+        role: str,
+        note: str | None,
+        allow_dangling: bool,
+    ) -> tuple[ObservationReferenceUse, bool]:
         cls._validate_role(role)
 
         obs_conn = _connect_observations()
@@ -1195,7 +1242,7 @@ class ObservationReferenceUseRepository:
                 (observation_id, reference_measurement_set_id),
             ).fetchone()
             if existing is not None:
-                return _row_to_dataclass(existing, ObservationReferenceUse)
+                return _row_to_dataclass(existing, ObservationReferenceUse), False
             values = tuple(getattr(use, name) for name in cls._COLUMNS)
             placeholders = ", ".join("?" for _ in cls._COLUMNS)
             conn.execute(
@@ -1206,7 +1253,7 @@ class ObservationReferenceUseRepository:
             conn.commit()
         finally:
             conn.close()
-        return use
+        return use, True
 
     @staticmethod
     def list_for_observation(observation_id: int) -> list[ObservationReferenceUse]:

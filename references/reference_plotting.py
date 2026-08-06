@@ -21,10 +21,19 @@ into the existing ``length_um``/``width_um`` point structure.
 from __future__ import annotations
 
 import json
+import math
 from typing import Any, Iterable
 
 
 _RANGE_LIKE_DATA_KINDS = frozenset({"range", "summary"})
+
+
+def _finite_positive(value: Any) -> bool:
+    try:
+        f = float(value)
+    except (TypeError, ValueError):
+        return False
+    return math.isfinite(f) and f > 0.0
 
 
 def _decode_snapshot(snapshot_json: str) -> dict | None:
@@ -82,6 +91,24 @@ def _float_or_none(value: Any) -> float | None:
         return float(value)
     except (TypeError, ValueError):
         return None
+
+
+def _compose_normalized_label(
+    short_label: str, name_as_published: str, locator_text: str
+) -> str:
+    """Build the display label for a normalized reference attachment.
+
+    Combines short label, published taxon and locator so that two rows
+    from the same work but different taxa or pages remain visually
+    distinct. Empty parts are omitted. Callers still keep the raw
+    expression, role and revision on the data dict for tooltip use.
+    """
+    parts = [
+        part.strip()
+        for part in (short_label, name_as_published, locator_text)
+        if part and str(part).strip()
+    ]
+    return " — ".join(parts)
 
 
 def _split_scientific_name(name: str | None) -> tuple[str, str]:
@@ -182,9 +209,13 @@ def _translate_range_or_summary(
     if isinstance(sample_size, int) and sample_size > 0:
         data["sample_size"] = int(sample_size)
 
+    locator_text = str(snapshot.get("locator_text") or "").strip()
+    display_label = _compose_normalized_label(
+        short_label, name_as_published, locator_text
+    ) or short_label or name_as_published or ""
     return {
         "key": use_id,
-        "label": short_label or name_as_published or "",
+        "label": display_label,
         "data": data,
         "enabled": True,
     }
@@ -211,10 +242,12 @@ def _translate_raw_points(
             width = entry.get("w")
         length_float = _float_or_none(length)
         width_float = _float_or_none(width)
-        # Keep only genuine paired numeric points; discard incomplete pairs.
+        # Keep only genuine paired, finite, strictly-positive points.
         if length_float is None or width_float is None:
             continue
-        if length_float <= 0 or width_float <= 0:
+        if not (math.isfinite(length_float) and math.isfinite(width_float)):
+            continue
+        if length_float <= 0.0 or width_float <= 0.0:
             continue
         points.append({"length_um": length_float, "width_um": width_float})
     if not points:
@@ -222,6 +255,7 @@ def _translate_raw_points(
 
     short_label = str(snapshot.get("short_label") or "").strip()
     name_as_published = str(snapshot.get("name_as_published") or "").strip()
+    locator_text = str(snapshot.get("locator_text") or "").strip()
     genus, species = _split_scientific_name(name_as_published)
     data: dict[str, Any] = {
         "source_kind": "points",
@@ -237,20 +271,68 @@ def _translate_raw_points(
         "reference_revision": revision,
         "reference_data_kind": "raw_points",
         "short_label": short_label,
+        "name_as_published": name_as_published,
         "points": points,
         "points_label": short_label,
         "source_type": "reference_library",
         "genus": genus,
         "species": species,
     }
-    if snapshot.get("locator_text"):
-        data["locator_text"] = str(snapshot.get("locator_text"))
+    if locator_text:
+        data["locator_text"] = locator_text
+    display_label = _compose_normalized_label(
+        short_label, name_as_published, locator_text
+    ) or short_label or name_as_published or ""
     return {
         "key": use_id,
-        "label": short_label or name_as_published or "",
+        "label": display_label,
         "data": data,
         "enabled": True,
     }
+
+
+def _rectangle_has_drawable_bounds(
+    lmin: Any, lmax: Any, wmin: Any, wmax: Any
+) -> bool:
+    if not (
+        _finite_positive(lmin)
+        and _finite_positive(lmax)
+        and _finite_positive(wmin)
+        and _finite_positive(wmax)
+    ):
+        return False
+    return float(lmax) > float(lmin) and float(wmax) > float(wmin)
+
+
+def _range_summary_is_plottable(data: dict) -> bool:
+    """A range/summary translation is drawable when either:
+
+    * a strictly-positive L/W core rectangle exists (p05 < p95), OR
+    * a strictly-positive L/W exceptional rectangle exists (min < max), OR
+    * both ``length_mean`` and ``width_mean`` are supplied and positive.
+
+    A single mean without its counterpart, an inverted rectangle, or
+    zero/negative bounds are NOT plottable.
+    """
+    if _rectangle_has_drawable_bounds(
+        data.get("length_p05"),
+        data.get("length_p95"),
+        data.get("width_p05"),
+        data.get("width_p95"),
+    ):
+        return True
+    if _rectangle_has_drawable_bounds(
+        data.get("length_min"),
+        data.get("length_max"),
+        data.get("width_min"),
+        data.get("width_max"),
+    ):
+        return True
+    if _finite_positive(data.get("length_mean")) and _finite_positive(
+        data.get("width_mean")
+    ):
+        return True
+    return False
 
 
 def translate_observation_reference_use(use: Any) -> dict | None:
@@ -271,24 +353,11 @@ def translate_observation_reference_use(use: Any) -> dict | None:
         # Range and summary share the range grammar. Empty data_kind is
         # treated as a range for legacy snapshots that omitted the field.
         result = _translate_range_or_summary(use_id, role, revision, snapshot)
-        # If none of the L/W bounds landed, the snapshot is degenerate.
+        # A supported data_kind is not enough: the wrapper must actually
+        # be drawable. Accept either a rectangle-forming pair of L/W
+        # bounds (core or exceptional) or a complete L/W mean pair.
         data = result["data"]
-        has_bounds = any(
-            key in data
-            for key in (
-                "length_p05",
-                "length_p95",
-                "length_min",
-                "length_max",
-                "width_p05",
-                "width_p95",
-                "width_min",
-                "width_max",
-                "length_mean",
-                "width_mean",
-            )
-        )
-        if not has_bounds:
+        if not _range_summary_is_plottable(data):
             return None
         return result
     # ``parmasto`` and any future kinds are not part of this vertical

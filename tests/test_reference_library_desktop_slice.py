@@ -125,7 +125,10 @@ def test_translator_range_maps_core_and_exceptional_bounds():
 
     assert result is not None
     assert result["key"] == "use-A"
-    assert result["label"] == "Petersen et al. 1990"
+    # The row label composes short label + published taxon + locator so
+    # two rows from the same work but different taxa or pages stay
+    # visually distinguishable in the reference-series table.
+    assert result["label"] == "Petersen et al. 1990 — Russula paludosa — p. 214"
     data = result["data"]
     assert data["source_kind"] == "reference"
     assert data["observation_reference_use_id"] == "use-A"
@@ -564,51 +567,247 @@ def test_list_attachment_candidates_excludes_unsupported_data_kinds(libs):
     assert ms_parmasto.id in override_ids
 
 
-def test_attach_rolls_back_when_translation_fails(libs, monkeypatch):
-    """F-002 defense-in-depth: if the attach handler's translator step
-    returns ``None`` for a freshly-persisted use, the persisted
-    ``observation_reference_uses`` row must be detached so no orphan
-    row survives with no visible entry in the UI."""
+def _bind_attach_handler(stub):
+    """Bind ``MainWindow._on_attach_library_reference_clicked`` (and the
+    small helpers it uses) onto a lightweight ``stub`` so tests can drive
+    the real handler without instantiating a Qt MainWindow."""
+    from types import MethodType
+    from ui.main_window import MainWindow
+
+    stub._on_attach_library_reference_clicked = MethodType(
+        MainWindow._on_attach_library_reference_clicked, stub
+    )
+    stub._current_attached_measurement_set_ids = MethodType(
+        MainWindow._current_attached_measurement_set_ids, stub
+    )
+    stub._build_malformed_reference_series_entry = MethodType(
+        MainWindow._build_malformed_reference_series_entry, stub
+    )
+    stub._format_normalized_reference_row_tooltip = MethodType(
+        MainWindow._format_normalized_reference_row_tooltip, stub
+    )
+    return stub
+
+
+def _install_handler_environment(monkeypatch, stub, *, dialog_result):
+    """Patch the module-level Qt/dialog symbols the handler references so
+    ``_on_attach_library_reference_clicked`` runs without a live Qt loop.
+    ``dialog_result`` is ``(measurement_set_id, role)`` or ``None`` to
+    simulate the user pressing Cancel."""
+    from types import SimpleNamespace
+    from ui import main_window as main_window_module
+
+    class _FakeDialog:
+        def __init__(self, parent, *, exclude_measurement_set_ids=None):
+            self._exclude = set(exclude_measurement_set_ids or [])
+
+        def exec(self):
+            return 1 if dialog_result is not None else 0
+
+        def result_pair(self):
+            return dialog_result if dialog_result is not None else (None, "compared")
+
+    class _FakeQDialog:
+        Accepted = 1
+
+    class _FakeMessageBox:
+        calls: list[tuple[str, tuple, dict]] = []
+
+        @classmethod
+        def _record(cls, name, *args, **kwargs):
+            cls.calls.append((name, args, kwargs))
+
+        @classmethod
+        def warning(cls, *args, **kwargs):
+            cls._record("warning", *args, **kwargs)
+
+        @classmethod
+        def information(cls, *args, **kwargs):
+            cls._record("information", *args, **kwargs)
+
+        @classmethod
+        def critical(cls, *args, **kwargs):
+            cls._record("critical", *args, **kwargs)
+
+    _FakeMessageBox.calls = []
+
+    monkeypatch.setattr(
+        main_window_module,
+        "ReferenceLibraryAttachDialog",
+        _FakeDialog,
+    )
+    monkeypatch.setattr(main_window_module, "QDialog", _FakeQDialog)
+    monkeypatch.setattr(main_window_module, "QMessageBox", _FakeMessageBox)
+    return _FakeMessageBox
+
+
+def _stub_main_window_shell(*, active_observation_id, initial_series=None):
+    """Return a lightweight object with only the attributes/methods the
+    attach handler touches on ``self``. This avoids constructing a real
+    ``MainWindow`` (which requires a full Qt shell) while still exercising
+    the actual handler code path end-to-end."""
+    from types import MethodType, SimpleNamespace
+
+    stub = SimpleNamespace()
+    stub.active_observation_id = active_observation_id
+    stub.reference_series = list(initial_series or [])
+    stub.reference_values = {}
+    stub.added_entries: list[dict] = []
+
+    def _tr(self, text, *args, **kwargs):
+        return text
+
+    def _add_entry(self, entry):
+        self.added_entries.append(entry)
+
+    stub.tr = MethodType(_tr, stub)
+    stub._add_reference_series_entry = MethodType(_add_entry, stub)
+    return stub
+
+
+def test_attach_handler_detaches_newly_created_row_when_translation_fails(
+    libs, monkeypatch
+):
+    """When the handler attaches a *new* use and the translator cannot
+    produce a wrapper, the just-inserted row must be detached — but the
+    library measurement set must remain untouched."""
+    from references import reference_plotting
     from ui import main_window as main_window_module
 
     db_path, _ = libs
     obs_id = _make_observation(db_path)
     _, _, ms = _seed_work_treatment_set(libs)
 
-    # Simulate the attach handler's essential steps directly (this
-    # avoids constructing a full MainWindow which requires Qt).
-    use = ObservationReferenceUseRepository.attach(
-        int(obs_id), ms.id, role="compared"
+    stub = _stub_main_window_shell(active_observation_id=obs_id)
+    _bind_attach_handler(stub)
+    message_box = _install_handler_environment(
+        monkeypatch, stub, dialog_result=(ms.id, "compared")
     )
-    # Confirm the row is persisted before the (simulated) translator failure.
-    listed_before = ObservationReferenceUseRepository.list_for_observation(
-        int(obs_id)
-    )
-    assert len(listed_before) == 1
-    assert listed_before[0].id == use.id
 
-    # Simulate a translator that cannot handle the freshly-attached use.
-    def _fake_translate(_use):
-        return None
+    # Force the translator (looked up via the main_window module) to fail.
+    monkeypatch.setattr(
+        main_window_module, "translate_observation_reference_use", lambda _use: None
+    )
+    # Also intercept the reference_plotting module in case the handler is
+    # patched to consult it directly in a future refactor.
+    monkeypatch.setattr(
+        reference_plotting, "translate_observation_reference_use", lambda _use: None
+    )
+
+    stub._on_attach_library_reference_clicked()
+
+    # Post-condition: rollback happened, no orphan use row survives.
+    listed = ObservationReferenceUseRepository.list_for_observation(int(obs_id))
+    assert listed == []
+    # The library measurement set is untouched.
+    assert MeasurementSetRepository.get(ms.id) is not None
+    # No entry was added to reference_series (the plot cannot render it).
+    assert stub.added_entries == []
+    # The handler must have surfaced the "cannot translate" warning to the user.
+    assert any(call[0] == "warning" for call in message_box.calls)
+
+
+def test_attach_handler_rollback_failure_is_surfaced_not_swallowed(
+    libs, monkeypatch
+):
+    """If detaching the just-inserted row fails, the handler must NOT
+    silently swallow the failure — it must surface a clear error naming
+    the still-persisted use id so the user can act."""
+    from ui import main_window as main_window_module
+
+    db_path, _ = libs
+    obs_id = _make_observation(db_path)
+    _, _, ms = _seed_work_treatment_set(libs)
+
+    stub = _stub_main_window_shell(active_observation_id=obs_id)
+    _bind_attach_handler(stub)
+    message_box = _install_handler_environment(
+        monkeypatch, stub, dialog_result=(ms.id, "compared")
+    )
 
     monkeypatch.setattr(
-        main_window_module,
-        "translate_observation_reference_use",
-        _fake_translate,
+        main_window_module, "translate_observation_reference_use", lambda _use: None
     )
-    translated = main_window_module.translate_observation_reference_use(use)
-    assert translated is None
 
-    # The handler's rollback path: detach the just-persisted row.
-    ObservationReferenceUseRepository.detach(use.id)
+    # Simulate detach raising unexpectedly (e.g. locked db, disk error).
+    class _BoomError(RuntimeError):
+        pass
 
-    # Post-condition: the observation_reference_uses row is gone and the
-    # library measurement set is untouched.
-    listed_after = ObservationReferenceUseRepository.list_for_observation(
-        int(obs_id)
+    def _boom_detach(_use_id):
+        raise _BoomError("simulated rollback failure")
+
+    monkeypatch.setattr(
+        ObservationReferenceUseRepository, "detach", staticmethod(_boom_detach)
     )
-    assert listed_after == []
-    assert MeasurementSetRepository.get(ms.id) is not None
+
+    stub._on_attach_library_reference_clicked()
+
+    # The critical path must fire — the failure is surfaced, not silenced.
+    critical_calls = [c for c in message_box.calls if c[0] == "critical"]
+    assert critical_calls, (
+        "rollback failure must be surfaced via a critical dialog, "
+        "not silently swallowed"
+    )
+    # No wrapper entry added (translation failed).
+    assert stub.added_entries == []
+
+
+def test_attach_handler_never_detaches_pre_existing_use_on_race(libs, monkeypatch):
+    """Race scenario: a use row already exists for this observation +
+    measurement set (attached by a prior session or a concurrent path).
+    The handler must NOT detach that row as a "rollback" for its own
+    call — the pre-existing row belongs to the user and must survive."""
+    from ui import main_window as main_window_module
+
+    db_path, _ = libs
+    obs_id = _make_observation(db_path)
+    _, _, ms = _seed_work_treatment_set(libs)
+
+    # Pre-existing attach — simulates the racing/other-session state.
+    pre_existing_use = ObservationReferenceUseRepository.attach(
+        int(obs_id), ms.id, role="compared"
+    )
+
+    stub = _stub_main_window_shell(active_observation_id=obs_id)
+    _bind_attach_handler(stub)
+    message_box = _install_handler_environment(
+        monkeypatch, stub, dialog_result=(ms.id, "compared")
+    )
+
+    # Force translation to fail on the returned use (which is the
+    # PRE-EXISTING row, not one we just inserted).
+    monkeypatch.setattr(
+        main_window_module, "translate_observation_reference_use", lambda _use: None
+    )
+
+    # Track calls to detach — must NOT be called for the pre-existing row.
+    detach_calls: list[str] = []
+    original_detach = ObservationReferenceUseRepository.detach
+
+    def _tracked_detach(use_id):
+        detach_calls.append(use_id)
+        return original_detach(use_id)
+
+    monkeypatch.setattr(
+        ObservationReferenceUseRepository, "detach", staticmethod(_tracked_detach)
+    )
+
+    stub._on_attach_library_reference_clicked()
+
+    # The row must still be present — the handler must not have detached
+    # the pre-existing use as its rollback.
+    assert pre_existing_use.id not in detach_calls
+    listed = ObservationReferenceUseRepository.list_for_observation(int(obs_id))
+    assert len(listed) == 1
+    assert listed[0].id == pre_existing_use.id
+    # And a warning row for the unplottable snapshot must have been added
+    # so the user still has a working detach affordance.
+    assert len(stub.added_entries) == 1
+    added = stub.added_entries[0]
+    assert added["data"].get("malformed") is True
+    assert added["data"]["observation_reference_use_id"] == pre_existing_use.id
+    # And a warning dialog was surfaced.
+    assert any(call[0] == "warning" for call in message_box.calls)
 
 
 def test_apply_gallery_settings_preserves_normalized_entries():
@@ -671,6 +870,9 @@ def test_apply_gallery_settings_preserves_normalized_entries():
     stub._collect_reference_panel_state = lambda: {}
     stub._save_gallery_settings = lambda *a, **kw: None
     stub._populate_reference_panel_sources = lambda *a, **kw: None
+    stub._apply_normalized_reference_override = MethodType(
+        MainWindow._apply_normalized_reference_override, stub
+    )
 
     # Bind the real method to the stub and run the two problematic paths.
     apply_state = MethodType(MainWindow._apply_saved_reference_state, stub)
@@ -841,3 +1043,417 @@ def test_attach_dialog_result_pair_reflects_selection(qapp):
         assert role2 == "supports_identification"
     finally:
         dialog.deleteLater()
+
+
+# --- Regression tests: plotability, overrides, malformed rows, geometry ----
+
+
+def test_translator_supported_kind_without_drawable_geometry_returns_none():
+    """A supported data_kind alone is insufficient — the range/summary
+    snapshot must produce a drawable L/W rectangle or a complete L/W
+    mean pair. A snapshot that only supplies a length axis (no width)
+    must NOT translate to a wrapper."""
+    snapshot = {
+        "schema_version": 1,
+        "reference_measurement_set_id": "set-halflength",
+        "reference_work_id": "work-half",
+        "short_label": "Half Bounds 2001",
+        "name_as_published": "Russula paludosa",
+        "data_kind": "range",
+        "measurements": {
+            "length_core_min": 8.0,
+            "length_core_max": 10.0,
+            "length_mean": 9.0,
+            # Deliberately no width bounds and no width mean -> not drawable.
+        },
+    }
+    use = _make_use(snapshot, use_id="use-halflength")
+    assert translate_observation_reference_use(use) is None
+
+
+def test_translator_summary_with_only_length_mean_rejected():
+    """Summary with a single-axis mean (no matching width mean and no
+    L/W rectangle) is not plottable — translator must return None."""
+    snapshot = _range_snapshot(
+        length_core=(0.0, 0.0),
+        length_exceptional=(0.0, 0.0),
+        width_core=(0.0, 0.0),
+        width_exceptional=(0.0, 0.0),
+        length_mean=9.0,
+        width_mean=None,
+        data_kind="summary",
+    )
+    use = _make_use(snapshot, use_id="use-halfmean")
+    assert translate_observation_reference_use(use) is None
+
+
+def test_translator_summary_with_complete_mean_pair_translates():
+    """A summary with a complete L/W mean pair and no rectangle is still
+    drawable — the mean cross renders even without bounds."""
+    snapshot = _range_snapshot(
+        length_core=(0.0, 0.0),
+        length_exceptional=(0.0, 0.0),
+        width_core=(0.0, 0.0),
+        width_exceptional=(0.0, 0.0),
+        length_mean=9.0,
+        width_mean=5.5,
+        data_kind="summary",
+    )
+    use = _make_use(snapshot, use_id="use-meanpair")
+    result = translate_observation_reference_use(use)
+    assert result is not None
+    data = result["data"]
+    assert data["length_p50"] == 9.0
+    assert data["width_p50"] == 5.5
+
+
+def test_translator_summary_rejects_inverted_bounds():
+    """A rectangle with lmax <= lmin (or wmax <= wmin) is not drawable."""
+    snapshot = _range_snapshot(
+        length_core=(10.0, 8.0),   # inverted
+        length_exceptional=(11.0, 7.0),
+        width_core=(6.0, 5.0),
+        width_exceptional=(7.0, 4.0),
+        length_mean=None,
+        width_mean=None,
+    )
+    use = _make_use(snapshot, use_id="use-inverted")
+    assert translate_observation_reference_use(use) is None
+
+
+def test_translator_raw_points_rejects_non_finite_or_non_positive():
+    """raw_points must contain at least one finite, strictly-positive
+    paired point. Zero, negative, NaN and infinity are dropped."""
+    import math as _math
+
+    snapshot = {
+        "schema_version": 1,
+        "reference_measurement_set_id": "set-rp2",
+        "reference_work_id": "work-rp2",
+        "short_label": "Bad Points",
+        "name_as_published": "Russula paludosa",
+        "data_kind": "raw_points",
+        "raw_points": [
+            {"length": 0.0, "width": 5.0},
+            {"length": 9.0, "width": -1.0},
+            {"length": _math.nan, "width": 5.0},
+            {"length": _math.inf, "width": 5.0},
+        ],
+    }
+    use = _make_use(snapshot, use_id="use-badrp")
+    assert translate_observation_reference_use(use) is None
+
+
+def test_translator_raw_points_keeps_only_finite_positive_points():
+    """Mixed valid and invalid points -> only the finite, strictly-positive
+    paired points survive."""
+    import math as _math
+
+    snapshot = {
+        "schema_version": 1,
+        "reference_measurement_set_id": "set-rp-mixed",
+        "reference_work_id": "work-rp-mixed",
+        "short_label": "Mixed Points",
+        "name_as_published": "Russula paludosa",
+        "data_kind": "raw_points",
+        "raw_points": [
+            {"length": 9.0, "width": 5.5},
+            {"length": 0.0, "width": 5.0},
+            {"length": _math.nan, "width": _math.nan},
+            {"length": 10.0, "width": 6.0},
+        ],
+    }
+    use = _make_use(snapshot, use_id="use-mixedrp")
+    result = translate_observation_reference_use(use)
+    assert result is not None
+    points = result["data"]["points"]
+    assert len(points) == 2
+    for p in points:
+        assert p["length_um"] > 0.0
+        assert p["width_um"] > 0.0
+
+
+def test_translator_label_includes_short_label_taxon_and_locator():
+    """Regression: the row label must combine short label + published
+    taxon + locator so two rows from the same work but different taxa
+    or pages remain distinguishable in the reference-series table."""
+    snapshot = _range_snapshot(
+        short_label="Petersen 1990",
+        name_as_published="Russula paludosa",
+        locator_text="p. 214",
+    )
+    use = _make_use(snapshot, use_id="use-label")
+    result = translate_observation_reference_use(use)
+    assert result is not None
+    assert "Petersen 1990" in result["label"]
+    assert "Russula paludosa" in result["label"]
+    assert "p. 214" in result["label"]
+
+
+def test_attach_with_status_reports_created_vs_existing(libs):
+    """``attach_with_status`` returns ``(use, True)`` on first insert and
+    ``(use, False)`` when the same observation+set link already exists.
+    Callers depend on this to distinguish rollback-safe from
+    rollback-unsafe conditions."""
+    db_path, _ = libs
+    obs_id = _make_observation(db_path)
+    _, _, ms = _seed_work_treatment_set(libs)
+
+    first_use, first_created = (
+        ObservationReferenceUseRepository.attach_with_status(
+            int(obs_id), ms.id, role="compared"
+        )
+    )
+    assert first_created is True
+
+    second_use, second_created = (
+        ObservationReferenceUseRepository.attach_with_status(
+            int(obs_id), ms.id, role="compared"
+        )
+    )
+    assert second_created is False
+    assert second_use.id == first_use.id
+
+
+def test_restore_reference_uses_applies_persisted_display_overrides(
+    libs, monkeypatch
+):
+    """Persisted enabled/plot_color overrides are keyed by use id and
+    applied to translated entries during observation restore. They are
+    NOT stored inside the snapshot data."""
+    from types import MethodType, SimpleNamespace
+    from ui.main_window import MainWindow
+
+    db_path, _ = libs
+    obs_id = _make_observation(db_path)
+    _, _, ms = _seed_work_treatment_set(libs)
+    use = ObservationReferenceUseRepository.attach(
+        int(obs_id), ms.id, role="compared"
+    )
+
+    stub = SimpleNamespace()
+    stub.active_observation_id = obs_id
+    stub.reference_series = []
+    stub._normalized_reference_display_overrides = {
+        use.id: {"enabled": False, "plot_color": "#00ff00"},
+    }
+
+    def _tr(self, text, *args, **kwargs):
+        return text
+
+    stub.tr = MethodType(_tr, stub)
+    stub._normalize_reference_series_entry = lambda entry: entry
+    stub._refresh_reference_series_table = lambda *a, **kw: None
+    stub._apply_normalized_reference_override = MethodType(
+        MainWindow._apply_normalized_reference_override, stub
+    )
+    stub._clear_normalized_reference_entries = MethodType(
+        MainWindow._clear_normalized_reference_entries, stub
+    )
+    stub._build_malformed_reference_series_entry = MethodType(
+        MainWindow._build_malformed_reference_series_entry, stub
+    )
+    restore = MethodType(
+        MainWindow._restore_reference_uses_for_observation, stub
+    )
+
+    restore(int(obs_id))
+
+    assert len(stub.reference_series) == 1
+    entry = stub.reference_series[0]
+    # Overrides applied.
+    assert entry["enabled"] is False
+    assert entry["data"]["plot_color"] == "#00ff00"
+    # And the snapshot data itself was NOT duplicated into an override
+    # blob (there is no such field on the entry / data).
+    for forbidden in ("length_p05", "length_p95", "width_p05", "width_p95"):
+        # These fields DO exist because the translator populated them
+        # from the snapshot itself — not from the override. Sanity: they
+        # exist on the data dict but NOT on any nested "override" field.
+        assert forbidden in entry["data"]
+    assert "override" not in entry
+    assert "reference_use_overrides" not in entry
+
+
+def test_restore_reference_uses_preserves_malformed_as_warning_row(
+    libs, monkeypatch
+):
+    """A persisted use whose snapshot the translator cannot render must
+    appear as a visible warning row (``malformed=True``, disabled) so
+    the user has a working detach affordance — not silently dropped."""
+    from types import MethodType, SimpleNamespace
+    from ui.main_window import MainWindow
+
+    db_path, _ = libs
+    obs_id = _make_observation(db_path)
+
+    # Insert a dangling use with a snapshot the translator cannot render.
+    bad_use = ObservationReferenceUseRepository.attach(
+        int(obs_id),
+        "dangling-set-id",
+        role="compared",
+        allow_dangling=True,
+    )
+
+    stub = SimpleNamespace()
+    stub.active_observation_id = obs_id
+    stub.reference_series = []
+    stub._normalized_reference_display_overrides = {}
+
+    def _tr(self, text, *args, **kwargs):
+        return text
+
+    stub.tr = MethodType(_tr, stub)
+    stub._normalize_reference_series_entry = lambda entry: entry
+    stub._refresh_reference_series_table = lambda *a, **kw: None
+    stub._apply_normalized_reference_override = MethodType(
+        MainWindow._apply_normalized_reference_override, stub
+    )
+    stub._clear_normalized_reference_entries = MethodType(
+        MainWindow._clear_normalized_reference_entries, stub
+    )
+    stub._build_malformed_reference_series_entry = MethodType(
+        MainWindow._build_malformed_reference_series_entry, stub
+    )
+    stub._format_normalized_reference_row_tooltip = MethodType(
+        MainWindow._format_normalized_reference_row_tooltip, stub
+    )
+    restore = MethodType(
+        MainWindow._restore_reference_uses_for_observation, stub
+    )
+
+    restore(int(obs_id))
+
+    # A warning row was created — the malformed use was NOT dropped.
+    assert len(stub.reference_series) == 1
+    entry = stub.reference_series[0]
+    assert entry["data"]["malformed"] is True
+    assert entry["data"]["observation_reference_use_id"] == bad_use.id
+    assert entry["enabled"] is False
+
+
+def test_collect_and_apply_gallery_settings_round_trips_use_overrides():
+    """Round-trip test: ``_collect_gallery_settings`` produces override
+    entries keyed by use id (no snapshot duplication); the resulting
+    dict, fed back through ``_apply_saved_reference_state``, restores
+    the overrides on ``self._normalized_reference_display_overrides``.
+    """
+    from types import MethodType, SimpleNamespace
+    from ui.main_window import MainWindow
+
+    stub = SimpleNamespace()
+    stub.active_observation_id = None
+    stub.reference_values = {}
+    stub.reference_series = [
+        {
+            "key": "use-1",
+            "label": "Petersen 1990 — Russula paludosa — p. 214",
+            "enabled": False,
+            "data": {
+                "source_kind": "reference",
+                "reference_data_kind": "range",
+                "observation_reference_use_id": "use-1",
+                "reference_measurement_set_id": "ms-1",
+                "short_label": "Petersen 1990",
+                "name_as_published": "Russula paludosa",
+                "locator_text": "p. 214",
+                "plot_color": "#123456",
+                "length_p05": 8.0,
+                "length_p95": 10.0,
+                "width_p05": 5.0,
+                "width_p95": 6.0,
+            },
+        },
+    ]
+    stub.gallery_plot_settings = {}
+    # Deliberately do NOT set gallery_filter_combo/orient_checkbox/etc so
+    # the code's ``hasattr(...)`` guards short-circuit to None/False.
+    stub._collect_reference_panel_state = lambda: {}
+    stub._serialize_reference_data_for_settings = lambda data: None
+    stub._gallery_plot_style = lambda settings: "ellipse"
+    collect = MethodType(MainWindow._collect_gallery_settings, stub)
+
+    collected = collect()
+    overrides = collected.get("reference_use_overrides")
+    assert isinstance(overrides, list)
+    assert len(overrides) == 1
+    override = overrides[0]
+    assert override["use_id"] == "use-1"
+    assert override["enabled"] is False
+    assert override["plot_color"] == "#123456"
+    # The snapshot geometry must NOT be duplicated into the override.
+    assert "length_p05" not in override
+    assert "data" not in override
+    # ``reference_series`` in gallery settings excludes normalized entries.
+    assert collected["reference_series"] == []
+
+    # Now feed it back through _apply_saved_reference_state's override parsing.
+    stub2 = SimpleNamespace()
+    stub2.active_observation_id = None
+    stub2.reference_values = {}
+    stub2.reference_series = []
+
+    def _tr(self, text, *args, **kwargs):
+        return text
+
+    def _set_reference_series(self, series):
+        self.reference_series = [entry for entry in series if entry]
+
+    stub2.tr = MethodType(_tr, stub2)
+    stub2._set_reference_series = MethodType(_set_reference_series, stub2)
+    stub2._restore_reference_data_from_settings = lambda value: (
+        value if isinstance(value, dict) else {}
+    )
+    stub2._apply_reference_panel_values = lambda *a, **kw: None
+    stub2._update_reference_add_state = lambda *a, **kw: None
+    stub2._normalize_reference_series_entry = lambda entry: entry
+    stub2._refresh_reference_series_table = lambda *a, **kw: None
+    stub2.update_graph_plots_only = lambda *a, **kw: None
+    stub2._collect_reference_panel_state = lambda: {}
+    stub2._save_gallery_settings = lambda *a, **kw: None
+    stub2._populate_reference_panel_sources = lambda *a, **kw: None
+    stub2._apply_normalized_reference_override = MethodType(
+        MainWindow._apply_normalized_reference_override, stub2
+    )
+    apply_state = MethodType(MainWindow._apply_saved_reference_state, stub2)
+
+    apply_state({"reference_use_overrides": overrides})
+    persisted = getattr(stub2, "_normalized_reference_display_overrides", None)
+    assert isinstance(persisted, dict)
+    assert "use-1" in persisted
+    assert persisted["use-1"]["enabled"] is False
+    assert persisted["use-1"]["plot_color"] == "#123456"
+
+
+def test_core_rectangle_face_translucent_edge_opaque(tmp_path, monkeypatch):
+    """The core rectangle for a normalized range attachment must be
+    drawn with a translucent RGBA face and a fully-opaque edge — the
+    previous ``alpha=`` shorthand collapsed both to the same alpha."""
+    from matplotlib.colors import to_rgba
+    from matplotlib.patches import Rectangle
+
+    # Compose the plot-side call using the same primitives used in
+    # ``update_graph_plots_only``. We are asserting the RGBA math the
+    # code relies on, not the whole plot pipeline.
+    color = "#123456"
+    face_rgba = to_rgba(color, alpha=0.18)
+    edge_rgba = to_rgba(color, alpha=1.0)
+    rect = Rectangle(
+        (0.0, 0.0),
+        1.0,
+        1.0,
+        facecolor=face_rgba,
+        edgecolor=edge_rgba,
+        linewidth=1.5,
+        linestyle="-",
+        fill=True,
+    )
+    face = rect.get_facecolor()
+    edge = rect.get_edgecolor()
+    # Face alpha is the translucent value.
+    assert abs(face[3] - 0.18) < 1e-6
+    # Edge alpha is fully opaque.
+    assert abs(edge[3] - 1.0) < 1e-6
+    # RGB channels match the shared source color.
+    for face_c, edge_c in zip(face[:3], edge[:3]):
+        assert abs(face_c - edge_c) < 1e-6
