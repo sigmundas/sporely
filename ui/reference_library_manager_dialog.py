@@ -38,6 +38,8 @@ from PySide6.QtWidgets import (
     QDialogButtonBox,
     QFormLayout,
     QFrame,
+    QGridLayout,
+    QGroupBox,
     QHBoxLayout,
     QHeaderView,
     QLabel,
@@ -45,16 +47,23 @@ from PySide6.QtWidgets import (
     QMessageBox,
     QPlainTextEdit,
     QPushButton,
+    QScrollArea,
+    QSizePolicy,
     QSplitter,
     QTableWidget,
     QTableWidgetItem,
+    QToolButton,
     QTreeWidget,
     QTreeWidgetItem,
     QVBoxLayout,
     QWidget,
 )
 
-from database.reference_citation import build_observation_reference_snapshot
+from database.reference_citation import (
+    build_full_citation,
+    build_observation_reference_snapshot,
+    build_short_label,
+)
 from database.reference_library import (
     MeasurementSet,
     MeasurementSetRepository,
@@ -249,8 +258,482 @@ class _VerificationBadge(QFrame):
 # --- Work / Treatment / Measurement forms ----------------------------------
 
 
+# Publication-detail fields the form knows about; every non-basic, non-
+# identifier field. Widgets are ALWAYS created for every entry here so that
+# switching type never erases a hidden value — visibility only toggles.
+_ALL_PUBLICATION_FIELDS: frozenset[str] = frozenset(
+    {"container_title", "editors", "edition", "volume", "issue",
+     "pages", "publisher", "place"}
+)
+
+
+# Which publication-detail fields are shown for each known work type. Any
+# type not present in this map falls back to "show every publication field"
+# (a general publication-details section for unknown types).
+_PUBLICATION_FIELD_VISIBILITY: dict[str, frozenset[str]] = {
+    "article": frozenset({"container_title", "volume", "issue", "pages"}),
+    "book": frozenset({"edition", "editors", "publisher", "place"}),
+    "chapter": frozenset(
+        {"container_title", "editors", "pages", "publisher", "place"}
+    ),
+    "website": frozenset({"container_title", "publisher"}),
+    "dataset": frozenset({"container_title", "publisher", "place"}),
+}
+
+
+# Type-aware label for the container-title field: "Journal" for articles,
+# "Book title" for chapters/contributions, plain "Container title" for
+# the rest.
+def _container_title_label_for(work_type: str, tr_) -> str:
+    key = str(work_type or "").strip().lower()
+    if key == "article":
+        return tr_("Journal / container title:")
+    if key == "chapter":
+        return tr_("Container / book title:")
+    return tr_("Container title:")
+
+
+class _PersonRow(QWidget):
+    """Single row inside :class:`_PersonListEditor`.
+
+    Presents Family, Given, Organization inputs plus move-up/move-down/
+    remove buttons. The row itself carries no persistence logic — that is
+    owned by the parent editor.
+    """
+
+    changed = Signal()
+    remove_requested = Signal(object)
+    move_requested = Signal(object, int)
+
+    def __init__(
+        self,
+        parent: QWidget | None,
+        *,
+        family: str = "",
+        given: str = "",
+        organization: str = "",
+    ) -> None:
+        super().__init__(parent)
+        self._build_ui()
+        # Populate WITHOUT firing the changed signal — callers set the row's
+        # dirty state explicitly.
+        self.set_values(family=family, given=given, organization=organization)
+        self.family_input.textEdited.connect(self._emit_changed)
+        self.given_input.textEdited.connect(self._emit_changed)
+        self.organization_input.textEdited.connect(self._emit_changed)
+
+    def _build_ui(self) -> None:
+        grid = QGridLayout(self)
+        grid.setContentsMargins(0, 0, 0, 0)
+        grid.setHorizontalSpacing(6)
+        grid.setVerticalSpacing(2)
+
+        self.family_input = QLineEdit()
+        self.family_input.setPlaceholderText(self.tr("Family name"))
+        self.given_input = QLineEdit()
+        self.given_input.setPlaceholderText(self.tr("Given names"))
+        self.organization_input = QLineEdit()
+        self.organization_input.setPlaceholderText(
+            self.tr("Organization (optional)")
+        )
+
+        self.up_btn = QToolButton()
+        self.up_btn.setText("▲")
+        self.up_btn.setToolTip(self.tr("Move up"))
+        self.up_btn.clicked.connect(
+            lambda: self.move_requested.emit(self, -1)
+        )
+        self.down_btn = QToolButton()
+        self.down_btn.setText("▼")
+        self.down_btn.setToolTip(self.tr("Move down"))
+        self.down_btn.clicked.connect(
+            lambda: self.move_requested.emit(self, 1)
+        )
+        self.remove_btn = QToolButton()
+        self.remove_btn.setText("✕")
+        self.remove_btn.setToolTip(self.tr("Remove"))
+        self.remove_btn.clicked.connect(
+            lambda: self.remove_requested.emit(self)
+        )
+
+        grid.addWidget(self.family_input, 0, 0)
+        grid.addWidget(self.given_input, 0, 1)
+        grid.addWidget(self.organization_input, 0, 2)
+        grid.addWidget(self.up_btn, 0, 3)
+        grid.addWidget(self.down_btn, 0, 4)
+        grid.addWidget(self.remove_btn, 0, 5)
+        grid.setColumnStretch(0, 3)
+        grid.setColumnStretch(1, 3)
+        grid.setColumnStretch(2, 3)
+
+    def set_values(
+        self, *, family: str = "", given: str = "", organization: str = ""
+    ) -> None:
+        self.family_input.setText(family)
+        self.given_input.setText(given)
+        self.organization_input.setText(organization)
+
+    def _emit_changed(self, *_args: Any) -> None:
+        self.changed.emit()
+
+    def to_dict(self) -> dict[str, str]:
+        """Canonical JSON shape: family/given/literal keys, blanks omitted.
+
+        ``literal`` is used for organization/institution names so the
+        existing :mod:`database.reference_citation` formatter picks them up
+        via :func:`_agent_label` / :func:`_agent_family_only`.
+        """
+        family = self.family_input.text().strip()
+        given = self.given_input.text().strip()
+        organization = self.organization_input.text().strip()
+        result: dict[str, str] = {}
+        if family:
+            result["family"] = family
+        if given:
+            result["given"] = given
+        if organization:
+            result["literal"] = organization
+        return result
+
+    def is_empty(self) -> bool:
+        return not any(
+            (
+                self.family_input.text().strip(),
+                self.given_input.text().strip(),
+                self.organization_input.text().strip(),
+            )
+        )
+
+
+class _PersonListEditor(QWidget):
+    """Ordered person-list editor for author/editor JSON fields.
+
+    Loads existing canonical JSON (``[{"family": ..., "given": ...,
+    "literal": ...}, ...]``) into human-friendly rows; serializes rows
+    back to canonical JSON. Empty lists are supported. Malformed JSON is
+    NOT silently discarded — a translated warning is exposed via
+    :meth:`parse_error_message` and, if the user never edits the list,
+    the original raw string is preserved verbatim on save.
+    """
+
+    changed = Signal()
+
+    def __init__(
+        self,
+        parent: QWidget | None = None,
+        *,
+        add_button_text: str | None = None,
+    ) -> None:
+        super().__init__(parent)
+        self._rows: list[_PersonRow] = []
+        self._dirty: bool = False
+        self._original_raw: str | None = None
+        self._parse_error: str | None = None
+        self._add_button_text = add_button_text
+        self._build_ui()
+
+    def _build_ui(self) -> None:
+        outer = QVBoxLayout(self)
+        outer.setContentsMargins(0, 0, 0, 0)
+        outer.setSpacing(4)
+
+        self._rows_host = QWidget()
+        self._rows_layout = QVBoxLayout(self._rows_host)
+        self._rows_layout.setContentsMargins(0, 0, 0, 0)
+        self._rows_layout.setSpacing(2)
+        outer.addWidget(self._rows_host)
+
+        self._empty_label = QLabel(self.tr("(no entries)"))
+        self._empty_label.setStyleSheet("QLabel { color: #64748b; }")
+        outer.addWidget(self._empty_label)
+
+        self.warning_label = QLabel()
+        self.warning_label.setStyleSheet("QLabel { color: #b45309; }")
+        self.warning_label.setWordWrap(True)
+        self.warning_label.setVisible(False)
+        outer.addWidget(self.warning_label)
+
+        row = QHBoxLayout()
+        self.add_btn = QPushButton(
+            self._add_button_text or self.tr("+ Add author")
+        )
+        self.add_btn.clicked.connect(self._on_add_clicked)
+        row.addWidget(self.add_btn)
+        row.addStretch(1)
+        outer.addLayout(row)
+
+        self._refresh_empty_state()
+
+    # -- public helpers ---------------------------------------------------
+
+    def add_row(
+        self,
+        *,
+        family: str = "",
+        given: str = "",
+        organization: str = "",
+        mark_dirty: bool = True,
+    ) -> _PersonRow:
+        row = _PersonRow(
+            self._rows_host,
+            family=family,
+            given=given,
+            organization=organization,
+        )
+        row.changed.connect(self._on_row_changed)
+        row.remove_requested.connect(self._on_row_removed)
+        row.move_requested.connect(self._on_row_move_requested)
+        self._rows.append(row)
+        self._rows_layout.addWidget(row)
+        self._refresh_empty_state()
+        if mark_dirty:
+            self._on_row_changed()
+        return row
+
+    def load_entries(
+        self, entries: Iterable[dict[str, Any]] | None
+    ) -> None:
+        """Clear and repopulate rows from a list of dicts.
+
+        Does NOT mark the editor dirty. Used both when loading from an
+        existing work and when re-populating after external edits.
+        """
+        self._clear_rows()
+        for entry in (entries or []):
+            if not isinstance(entry, dict):
+                continue
+            self.add_row(
+                family=str(entry.get("family") or ""),
+                given=str(entry.get("given") or ""),
+                organization=str(entry.get("literal") or ""),
+                mark_dirty=False,
+            )
+        self._dirty = False
+        self._refresh_empty_state()
+
+    def load_json(self, raw: str | None) -> None:
+        """Load from a canonical JSON string.
+
+        Parse failures are non-destructive: the editor stays empty, a
+        translated warning is exposed via :attr:`warning_label`, and the
+        original raw string is stashed. If the user does not modify the
+        editor afterwards, :meth:`to_json` will return the original raw
+        string verbatim so an unrelated edit to the work does not silently
+        rewrite a value the form could not parse.
+        """
+        self._original_raw = raw
+        self._parse_error = None
+        self.warning_label.setVisible(False)
+        self.warning_label.setText("")
+
+        if raw is None or (isinstance(raw, str) and not raw.strip()):
+            self._clear_rows()
+            self._dirty = False
+            self._refresh_empty_state()
+            return
+
+        try:
+            parsed = json.loads(raw) if isinstance(raw, str) else raw
+        except (TypeError, ValueError, json.JSONDecodeError) as exc:
+            self._parse_error = self.tr(
+                "Existing value is not valid JSON and will be kept as-is "
+                "until you edit the list: {error}"
+            ).format(error=str(exc))
+            self.warning_label.setText(self._parse_error)
+            self.warning_label.setVisible(True)
+            self._clear_rows()
+            self._dirty = False
+            self._refresh_empty_state()
+            return
+
+        if not isinstance(parsed, list):
+            self._parse_error = self.tr(
+                "Existing value is not a JSON list and will be kept as-is "
+                "until you edit the list."
+            )
+            self.warning_label.setText(self._parse_error)
+            self.warning_label.setVisible(True)
+            self._clear_rows()
+            self._dirty = False
+            self._refresh_empty_state()
+            return
+
+        self._clear_rows()
+        for entry in parsed:
+            if isinstance(entry, dict):
+                self.add_row(
+                    family=str(entry.get("family") or ""),
+                    given=str(entry.get("given") or ""),
+                    organization=str(entry.get("literal") or ""),
+                    mark_dirty=False,
+                )
+            elif isinstance(entry, str):
+                self.add_row(
+                    family=entry.strip(),
+                    mark_dirty=False,
+                )
+            else:
+                # Non-string, non-dict entry -> warn but keep others.
+                self._parse_error = self.tr(
+                    "One or more entries could not be understood; the "
+                    "original value will be kept until you edit the list."
+                )
+                self.warning_label.setText(self._parse_error)
+                self.warning_label.setVisible(True)
+                self._clear_rows()
+                self._dirty = False
+                self._refresh_empty_state()
+                return
+        self._dirty = False
+        self._refresh_empty_state()
+
+    def entries(self) -> list[dict[str, str]]:
+        return [row.to_dict() for row in self._rows if not row.is_empty()]
+
+    def to_json(self) -> str:
+        """Serialize to canonical JSON, preserving raw fallback if unread.
+
+        When the initial :meth:`load_json` call could not parse the input
+        AND the user has not since modified the editor, we return the
+        stored raw string unchanged so a save on an unrelated field does
+        not destroy the persisted value. Otherwise we serialize the rows.
+        """
+        if self._parse_error is not None and not self._dirty:
+            return self._original_raw or "[]"
+        return json.dumps(self.entries(), ensure_ascii=False)
+
+    def is_dirty(self) -> bool:
+        return self._dirty
+
+    def parse_error_message(self) -> str | None:
+        return self._parse_error
+
+    # -- signal slots -----------------------------------------------------
+
+    def _on_add_clicked(self) -> None:
+        self.add_row(mark_dirty=True)
+
+    def _on_row_changed(self) -> None:
+        self._dirty = True
+        self.changed.emit()
+        # A user edit resolves the parse-error preservation contract —
+        # from this point on we will serialize whatever the editor holds
+        # rather than the untouched raw fallback.
+        if self._parse_error is not None:
+            # The warning stays visible until the editor is reloaded, so
+            # the user still sees WHY the initial data was preserved.
+            pass
+
+    def _on_row_removed(self, row: _PersonRow) -> None:
+        if row not in self._rows:
+            return
+        self._rows.remove(row)
+        row.setParent(None)
+        row.deleteLater()
+        self._refresh_empty_state()
+        self._on_row_changed()
+
+    def _on_row_move_requested(self, row: _PersonRow, delta: int) -> None:
+        try:
+            idx = self._rows.index(row)
+        except ValueError:
+            return
+        new_idx = idx + delta
+        if new_idx < 0 or new_idx >= len(self._rows):
+            return
+        self._rows_layout.removeWidget(row)
+        del self._rows[idx]
+        self._rows.insert(new_idx, row)
+        self._rows_layout.insertWidget(new_idx, row)
+        self._on_row_changed()
+
+    def _clear_rows(self) -> None:
+        for row in list(self._rows):
+            self._rows_layout.removeWidget(row)
+            row.setParent(None)
+            row.deleteLater()
+        self._rows.clear()
+
+    def _refresh_empty_state(self) -> None:
+        self._empty_label.setVisible(not self._rows)
+
+
+class _CollapsibleSection(QWidget):
+    """Header + body pair that toggles body visibility.
+
+    Used for the "Advanced citation details" section so the dialog can
+    default to a compact laptop-sized layout while still exposing
+    seldom-touched fields.
+    """
+
+    def __init__(
+        self,
+        title: str,
+        parent: QWidget | None = None,
+        *,
+        expanded: bool = False,
+    ) -> None:
+        super().__init__(parent)
+        self._button = QToolButton()
+        self._button.setText(title)
+        self._button.setCheckable(True)
+        self._button.setChecked(expanded)
+        self._button.setArrowType(Qt.DownArrow if expanded else Qt.RightArrow)
+        self._button.setToolButtonStyle(Qt.ToolButtonTextBesideIcon)
+        self._button.setStyleSheet(
+            "QToolButton { border: none; font-weight: 600; padding: 2px; }"
+        )
+        self._button.toggled.connect(self._on_toggled)
+
+        self._body = QFrame()
+        self._body.setFrameShape(QFrame.NoFrame)
+        self._body_layout = QVBoxLayout(self._body)
+        self._body_layout.setContentsMargins(12, 4, 4, 4)
+        self._body.setVisible(expanded)
+
+        outer = QVBoxLayout(self)
+        outer.setContentsMargins(0, 0, 0, 0)
+        outer.setSpacing(2)
+        outer.addWidget(self._button)
+        outer.addWidget(self._body)
+
+    def body_layout(self) -> QVBoxLayout:
+        return self._body_layout
+
+    def set_expanded(self, expanded: bool) -> None:
+        self._button.setChecked(expanded)
+
+    def is_expanded(self) -> bool:
+        return self._button.isChecked()
+
+    def _on_toggled(self, checked: bool) -> None:
+        self._body.setVisible(checked)
+        self._button.setArrowType(Qt.DownArrow if checked else Qt.RightArrow)
+
+
 class _ReferenceWorkForm(QDialog):
-    """Modal form for creating or editing a :class:`ReferenceWork`."""
+    """Human-facing bibliography form for a :class:`ReferenceWork`.
+
+    Sections (top → bottom):
+
+    1. Basic information — type, title, authors, year.
+    2. Publication details — container/volume/issue/pages/edition/editors/
+       publisher/place. Field visibility is driven by the selected type;
+       every widget is always instantiated so that switching type does
+       NOT erase any hidden value.
+    3. Identifiers — DOI, ISBN, URL.
+    4. Advanced citation details (collapsed by default) — manually
+       overridden short label, citation key, language, full citation
+       override, verification status, visibility.
+    5. Live preview — short label + full citation from the canonical
+       :mod:`database.reference_citation` service. Missing data produces
+       an honestly incomplete preview, never a fabricated one. When the
+       user has supplied a manual override the preview clearly labels
+       the preview as "manual override".
+
+    The dialog fits an ordinary laptop screen: the sections above sit
+    inside a :class:`QScrollArea`, the buttons and preview stay pinned.
+    """
 
     def __init__(
         self,
@@ -266,93 +749,260 @@ class _ReferenceWorkForm(QDialog):
         )
         self.setModal(True)
         self.result_work: ReferenceWork | None = None
+
+        self._all_input_widgets: list[QLineEdit] = []
+        self._publication_row_labels: dict[str, QLabel] = {}
+        self._publication_row_widgets: dict[str, QWidget] = {}
+
         self._build_ui()
+        # Cap the dialog at a laptop-friendly size; the scroll area handles
+        # any additional content growth.
+        self.resize(720, 640)
+        self.setMinimumWidth(560)
+        self.setMinimumHeight(360)
+
         if work is not None:
             self._load(work)
+        self._sync_publication_visibility()
+        self._update_preview()
+
+    # ----- UI construction ------------------------------------------------
 
     def _build_ui(self) -> None:
-        layout = QVBoxLayout(self)
-        form = QFormLayout()
-        form.setContentsMargins(0, 0, 0, 0)
+        outer = QVBoxLayout(self)
+        outer.setContentsMargins(8, 8, 8, 8)
+        outer.setSpacing(6)
+
+        scroll = QScrollArea(self)
+        scroll.setWidgetResizable(True)
+        scroll.setSizePolicy(QSizePolicy.Expanding, QSizePolicy.Expanding)
+        scroll_content = QWidget()
+        scroll.setWidget(scroll_content)
+        scroll_layout = QVBoxLayout(scroll_content)
+        scroll_layout.setContentsMargins(4, 4, 4, 4)
+        scroll_layout.setSpacing(10)
+        outer.addWidget(scroll, 1)
+        self._scroll_area = scroll
+
+        scroll_layout.addWidget(self._build_basic_section())
+        scroll_layout.addWidget(self._build_publication_section())
+        scroll_layout.addWidget(self._build_identifiers_section())
+        scroll_layout.addWidget(self._build_advanced_section())
+        scroll_layout.addStretch(1)
+
+        # Preview + error + buttons live outside the scroll area so they
+        # remain visible on smaller screens.
+        outer.addWidget(self._build_preview_section())
+
+        self.error_label = QLabel()
+        self.error_label.setStyleSheet("QLabel { color: #dc2626; }")
+        self.error_label.setWordWrap(True)
+        self.error_label.setVisible(False)
+        outer.addWidget(self.error_label)
+
+        buttons = QDialogButtonBox(
+            QDialogButtonBox.Ok | QDialogButtonBox.Cancel, Qt.Horizontal, self
+        )
+        buttons.accepted.connect(self._on_save)
+        buttons.rejected.connect(self.reject)
+        outer.addWidget(buttons)
+
+    def _build_basic_section(self) -> QWidget:
+        box = QGroupBox(self.tr("Basic information"))
+        form = QFormLayout(box)
 
         self.type_combo = QComboBox()
         for value in sorted(REFERENCE_WORK_TYPES):
             self.type_combo.addItem(self._work_type_label(value), value)
+        self.type_combo.currentIndexChanged.connect(self._on_type_changed)
         form.addRow(self.tr("Type:"), self.type_combo)
 
         self.title_input = QLineEdit()
+        self.title_input.textChanged.connect(self._update_preview)
+        self._all_input_widgets.append(self.title_input)
         form.addRow(self.tr("Title:"), self.title_input)
 
-        self.short_label_input = QLineEdit()
-        self.short_label_input.setPlaceholderText(
-            self.tr("Auto-generated when blank")
+        self.authors_editor = _PersonListEditor(
+            add_button_text=self.tr("+ Add author"),
         )
-        form.addRow(self.tr("Short label:"), self.short_label_input)
+        self.authors_editor.changed.connect(self._update_preview)
+        form.addRow(self.tr("Authors:"), self.authors_editor)
 
         self.year_input = QLineEdit()
         self.year_input.setPlaceholderText(self.tr("e.g. 1990"))
+        self.year_input.textChanged.connect(self._update_preview)
+        self._all_input_widgets.append(self.year_input)
         form.addRow(self.tr("Year:"), self.year_input)
 
-        self.authors_input = QLineEdit()
-        self.authors_input.setPlaceholderText(
-            self.tr("JSON list of {family, given} entries")
-        )
-        form.addRow(self.tr("Authors JSON:"), self.authors_input)
-        self.authors_input.setText("[]")
+        return box
 
-        self.editors_input = QLineEdit()
-        self.editors_input.setPlaceholderText(
-            self.tr("JSON list of {family, given} entries")
+    def _add_publication_row(
+        self,
+        form: QFormLayout,
+        *,
+        key: str,
+        label: str,
+        widget: QWidget,
+    ) -> None:
+        label_widget = QLabel(label)
+        form.addRow(label_widget, widget)
+        self._publication_row_labels[key] = label_widget
+        self._publication_row_widgets[key] = widget
+
+    def _build_publication_section(self) -> QWidget:
+        box = QGroupBox(self.tr("Publication details"))
+        form = QFormLayout(box)
+        self._publication_form = form
+
+        self.container_input = QLineEdit()
+        self.container_input.textChanged.connect(self._update_preview)
+        self._all_input_widgets.append(self.container_input)
+        self._add_publication_row(
+            form,
+            key="container_title",
+            label=self.tr("Container title:"),
+            widget=self.container_input,
         )
-        self.editors_input.setText("[]")
-        form.addRow(self.tr("Editors JSON:"), self.editors_input)
+
+        self.editors_editor = _PersonListEditor(
+            add_button_text=self.tr("+ Add editor"),
+        )
+        self.editors_editor.changed.connect(self._update_preview)
+        self._add_publication_row(
+            form,
+            key="editors",
+            label=self.tr("Editors:"),
+            widget=self.editors_editor,
+        )
+
+        self.edition_input = QLineEdit()
+        self.edition_input.textChanged.connect(self._update_preview)
+        self._all_input_widgets.append(self.edition_input)
+        self._add_publication_row(
+            form,
+            key="edition",
+            label=self.tr("Edition:"),
+            widget=self.edition_input,
+        )
+
+        self.volume_input = QLineEdit()
+        self.volume_input.textChanged.connect(self._update_preview)
+        self._all_input_widgets.append(self.volume_input)
+        self._add_publication_row(
+            form,
+            key="volume",
+            label=self.tr("Volume:"),
+            widget=self.volume_input,
+        )
+
+        self.issue_input = QLineEdit()
+        self.issue_input.textChanged.connect(self._update_preview)
+        self._all_input_widgets.append(self.issue_input)
+        self._add_publication_row(
+            form,
+            key="issue",
+            label=self.tr("Issue:"),
+            widget=self.issue_input,
+        )
+
+        self.pages_input = QLineEdit()
+        self.pages_input.textChanged.connect(self._update_preview)
+        self._all_input_widgets.append(self.pages_input)
+        self._add_publication_row(
+            form,
+            key="pages",
+            label=self.tr("Pages:"),
+            widget=self.pages_input,
+        )
+
+        self.publisher_input = QLineEdit()
+        self.publisher_input.textChanged.connect(self._update_preview)
+        self._all_input_widgets.append(self.publisher_input)
+        self._add_publication_row(
+            form,
+            key="publisher",
+            label=self.tr("Publisher:"),
+            widget=self.publisher_input,
+        )
+
+        self.place_input = QLineEdit()
+        self.place_input.textChanged.connect(self._update_preview)
+        self._all_input_widgets.append(self.place_input)
+        self._add_publication_row(
+            form,
+            key="place",
+            label=self.tr("Place:"),
+            widget=self.place_input,
+        )
+
+        return box
+
+    def _build_identifiers_section(self) -> QWidget:
+        box = QGroupBox(self.tr("Identifiers"))
+        form = QFormLayout(box)
+
+        self.doi_input = QLineEdit()
+        self.doi_input.setPlaceholderText(self.tr("e.g. 10.1234/abcd"))
+        self.doi_input.textChanged.connect(self._update_preview)
+        self._all_input_widgets.append(self.doi_input)
+        form.addRow(self.tr("DOI:"), self.doi_input)
+
+        self.isbn_input = QLineEdit()
+        self.isbn_input.setPlaceholderText(self.tr("digits or ISBN-10/13"))
+        self._all_input_widgets.append(self.isbn_input)
+        form.addRow(self.tr("ISBN:"), self.isbn_input)
+
+        self.url_input = QLineEdit()
+        self.url_input.setPlaceholderText(self.tr("https://…"))
+        self.url_input.textChanged.connect(self._update_preview)
+        self._all_input_widgets.append(self.url_input)
+        form.addRow(self.tr("URL:"), self.url_input)
+
+        return box
+
+    def _build_advanced_section(self) -> QWidget:
+        section = _CollapsibleSection(
+            self.tr("Advanced citation details"), expanded=False
+        )
+        body_layout = section.body_layout()
+        self._advanced_section = section
+
+        form = QFormLayout()
+        form.setContentsMargins(0, 0, 0, 0)
+
+        self.short_label_input = QLineEdit()
+        self.short_label_input.setPlaceholderText(
+            self.tr("Override — leave blank to use the generated value")
+        )
+        self.short_label_input.textChanged.connect(self._update_preview)
+        self._all_input_widgets.append(self.short_label_input)
+        form.addRow(
+            self.tr("Short label override:"), self.short_label_input
+        )
 
         self.citation_key_input = QLineEdit()
         self.citation_key_input.setPlaceholderText(
             self.tr("Optional short key, e.g. petersen-1990")
         )
+        self._all_input_widgets.append(self.citation_key_input)
         form.addRow(self.tr("Citation key:"), self.citation_key_input)
-
-        self.container_input = QLineEdit()
-        form.addRow(self.tr("Container title:"), self.container_input)
-
-        self.edition_input = QLineEdit()
-        form.addRow(self.tr("Edition:"), self.edition_input)
-
-        self.volume_input = QLineEdit()
-        form.addRow(self.tr("Volume:"), self.volume_input)
-
-        self.issue_input = QLineEdit()
-        form.addRow(self.tr("Issue:"), self.issue_input)
-
-        self.pages_input = QLineEdit()
-        form.addRow(self.tr("Pages:"), self.pages_input)
-
-        self.publisher_input = QLineEdit()
-        form.addRow(self.tr("Publisher:"), self.publisher_input)
-
-        self.place_input = QLineEdit()
-        form.addRow(self.tr("Place:"), self.place_input)
-
-        self.doi_input = QLineEdit()
-        form.addRow(self.tr("DOI:"), self.doi_input)
-
-        self.isbn_input = QLineEdit()
-        form.addRow(self.tr("ISBN:"), self.isbn_input)
-
-        self.url_input = QLineEdit()
-        form.addRow(self.tr("URL:"), self.url_input)
 
         self.language_input = QLineEdit()
         self.language_input.setPlaceholderText(self.tr("ISO code, e.g. en"))
+        self._all_input_widgets.append(self.language_input)
         form.addRow(self.tr("Language:"), self.language_input)
 
         self.citation_override_input = QPlainTextEdit()
         self.citation_override_input.setPlaceholderText(
-            self.tr("Optional full citation override text")
+            self.tr(
+                "Override — leave blank to use the generated full citation"
+            )
         )
         self.citation_override_input.setFixedHeight(60)
-        form.addRow(self.tr("Citation override:"), self.citation_override_input)
+        self.citation_override_input.textChanged.connect(self._update_preview)
+        form.addRow(
+            self.tr("Full citation override:"), self.citation_override_input
+        )
 
         self.verification_combo = QComboBox()
         for value in ("incomplete", "unverified", "verified"):
@@ -370,20 +1020,53 @@ class _ReferenceWorkForm(QDialog):
                 )
         form.addRow(self.tr("Visibility:"), self.visibility_combo)
 
-        layout.addLayout(form)
+        body_layout.addLayout(form)
+        return section
 
-        self.error_label = QLabel()
-        self.error_label.setStyleSheet("QLabel { color: #dc2626; }")
-        self.error_label.setWordWrap(True)
-        self.error_label.setVisible(False)
-        layout.addWidget(self.error_label)
+    def _build_preview_section(self) -> QWidget:
+        box = QGroupBox(self.tr("Preview"))
+        layout = QFormLayout(box)
 
-        buttons = QDialogButtonBox(
-            QDialogButtonBox.Ok | QDialogButtonBox.Cancel, Qt.Horizontal, self
+        short_row = QHBoxLayout()
+        short_row.setContentsMargins(0, 0, 0, 0)
+        self.preview_short_label = QLabel()
+        self.preview_short_label.setWordWrap(True)
+        self.preview_short_label.setStyleSheet(
+            "QLabel { font-weight: 600; }"
         )
-        buttons.accepted.connect(self._on_save)
-        buttons.rejected.connect(self.reject)
-        layout.addWidget(buttons)
+        short_row.addWidget(self.preview_short_label, 1)
+        self.preview_short_override_indicator = QLabel(
+            self.tr("(manual override)")
+        )
+        self.preview_short_override_indicator.setStyleSheet(
+            "QLabel { color: #b45309; }"
+        )
+        self.preview_short_override_indicator.setVisible(False)
+        short_row.addWidget(self.preview_short_override_indicator)
+        short_holder = QWidget()
+        short_holder.setLayout(short_row)
+        layout.addRow(self.tr("Short label:"), short_holder)
+
+        full_row = QHBoxLayout()
+        full_row.setContentsMargins(0, 0, 0, 0)
+        self.preview_full_citation = QLabel()
+        self.preview_full_citation.setWordWrap(True)
+        full_row.addWidget(self.preview_full_citation, 1)
+        self.preview_full_override_indicator = QLabel(
+            self.tr("(manual override)")
+        )
+        self.preview_full_override_indicator.setStyleSheet(
+            "QLabel { color: #b45309; }"
+        )
+        self.preview_full_override_indicator.setVisible(False)
+        full_row.addWidget(self.preview_full_override_indicator)
+        full_holder = QWidget()
+        full_holder.setLayout(full_row)
+        layout.addRow(self.tr("Full citation:"), full_holder)
+
+        return box
+
+    # ----- Type-aware helpers --------------------------------------------
 
     def _work_type_label(self, value: str) -> str:
         return {
@@ -409,6 +1092,39 @@ class _ReferenceWorkForm(QDialog):
             "curated_public": self.tr("Curated public"),
         }.get(value, value)
 
+    def _current_type(self) -> str:
+        return str(self.type_combo.currentData() or "")
+
+    def _visible_publication_fields(self) -> set[str]:
+        work_type = self._current_type()
+        allowed = _PUBLICATION_FIELD_VISIBILITY.get(work_type)
+        if allowed is None:
+            # Unknown or "other" -> show everything.
+            return set(_ALL_PUBLICATION_FIELDS)
+        return set(allowed)
+
+    def _on_type_changed(self, *_args: Any) -> None:
+        self._sync_publication_visibility()
+        self._update_preview()
+
+    def _sync_publication_visibility(self) -> None:
+        visible = self._visible_publication_fields()
+        for key, widget in self._publication_row_widgets.items():
+            widget.setVisible(key in visible)
+            label = self._publication_row_labels.get(key)
+            if label is not None:
+                label.setVisible(key in visible)
+
+        # Update the container-title row label to reflect the type-aware
+        # display name (e.g. "Journal" vs "Container / book title").
+        container_label = self._publication_row_labels.get("container_title")
+        if container_label is not None:
+            container_label.setText(
+                _container_title_label_for(self._current_type(), self.tr)
+            )
+
+    # ----- Load / collect -------------------------------------------------
+
     def _load(self, work: ReferenceWork) -> None:
         idx = self.type_combo.findData(work.type or "")
         if idx >= 0:
@@ -416,8 +1132,9 @@ class _ReferenceWorkForm(QDialog):
         self.title_input.setText(work.title or "")
         self.short_label_input.setText(work.short_label or "")
         self.year_input.setText("" if work.year is None else str(work.year))
-        self.authors_input.setText(work.authors_json or "[]")
-        self.editors_input.setText(work.editors_json or "[]")
+        # Editors first (initial signals are ignored by dirty tracking).
+        self.authors_editor.load_json(work.authors_json)
+        self.editors_editor.load_json(work.editors_json)
         self.citation_key_input.setText(work.citation_key or "")
         self.container_input.setText(work.container_title or "")
         self.edition_input.setText(work.edition or "")
@@ -444,8 +1161,8 @@ class _ReferenceWorkForm(QDialog):
             "title": self.title_input.text().strip(),
             "short_label": self.short_label_input.text().strip(),
             "year": _parse_optional_int(self.year_input.text()),
-            "authors_json": self.authors_input.text() or "[]",
-            "editors_json": self.editors_input.text() or "[]",
+            "authors_json": self.authors_editor.to_json(),
+            "editors_json": self.editors_editor.to_json(),
             "citation_key": _empty_to_none(self.citation_key_input.text()),
             "container_title": _empty_to_none(self.container_input.text()),
             "edition": _empty_to_none(self.edition_input.text()),
@@ -461,11 +1178,117 @@ class _ReferenceWorkForm(QDialog):
             "citation_override": _empty_to_none(
                 self.citation_override_input.toPlainText()
             ),
-            "verification_status": str(self.verification_combo.currentData() or ""),
+            "verification_status": str(
+                self.verification_combo.currentData() or ""
+            ),
             "visibility": str(self.visibility_combo.currentData() or ""),
         }
 
+    # ----- Preview -------------------------------------------------------
+
+    def _preview_work(
+        self, *, use_overrides: bool
+    ) -> ReferenceWork | None:
+        """Build an in-memory ReferenceWork from current inputs for the
+        canonical citation service.
+
+        Returns ``None`` when the current values would require the
+        dataclass to validate — instead we swallow the year parse failure
+        so the live preview stays honest ("year: blank") rather than
+        blowing up on partial input.
+        """
+        try:
+            year_value = _parse_optional_int(self.year_input.text())
+        except (TypeError, ValueError):
+            year_value = None
+
+        short_label = (
+            self.short_label_input.text().strip() if use_overrides else ""
+        )
+        override_text = (
+            self.citation_override_input.toPlainText().strip()
+            if use_overrides
+            else ""
+        )
+        return ReferenceWork(
+            id=self._work.id if self._work is not None else "",
+            type=self._current_type() or "other",
+            title=self.title_input.text().strip(),
+            short_label=short_label,
+            authors_json=self.authors_editor.to_json(),
+            editors_json=self.editors_editor.to_json(),
+            citation_key=_empty_to_none(self.citation_key_input.text()),
+            container_title=_empty_to_none(self.container_input.text()),
+            year=year_value,
+            edition=_empty_to_none(self.edition_input.text()),
+            publisher=_empty_to_none(self.publisher_input.text()),
+            place=_empty_to_none(self.place_input.text()),
+            volume=_empty_to_none(self.volume_input.text()),
+            issue=_empty_to_none(self.issue_input.text()),
+            pages=_empty_to_none(self.pages_input.text()),
+            doi=_empty_to_none(self.doi_input.text()),
+            isbn=_empty_to_none(self.isbn_input.text()),
+            url=_empty_to_none(self.url_input.text()),
+            language=_empty_to_none(self.language_input.text()),
+            citation_override=override_text,
+        )
+
+    def _update_preview(self, *_args: Any) -> None:
+        # Guard against callbacks firing during super().__init__ before
+        # the preview widgets exist.
+        if not hasattr(self, "preview_short_label"):
+            return
+
+        work = self._preview_work(use_overrides=True)
+        if work is None:
+            self.preview_short_label.setText("")
+            self.preview_full_citation.setText("")
+            self.preview_short_override_indicator.setVisible(False)
+            self.preview_full_override_indicator.setVisible(False)
+            return
+
+        short_text = build_short_label(work) or ""
+        full_text = build_full_citation(work) or ""
+        self.preview_short_label.setText(short_text)
+        self.preview_full_citation.setText(full_text)
+
+        self.preview_short_override_indicator.setVisible(
+            bool(self.short_label_input.text().strip())
+        )
+        self.preview_full_override_indicator.setVisible(
+            bool(self.citation_override_input.toPlainText().strip())
+        )
+
+    # ----- Save / validate ----------------------------------------------
+
+    def _first_invalid_widget(self) -> QWidget | None:
+        """Return the widget to focus after a failed save."""
+        if not self.title_input.text().strip():
+            return self.title_input
+        year_text = self.year_input.text().strip()
+        if year_text:
+            try:
+                int(year_text)
+            except ValueError:
+                return self.year_input
+        return None
+
     def _on_save(self) -> None:
+        # Human-friendly local validation runs BEFORE repository mutation
+        # so the first invalid field can be focused and the dialog stays
+        # open on failure.
+        invalid = self._first_invalid_widget()
+        if invalid is self.title_input:
+            self._show_error(self.tr("Title is required."))
+            invalid.setFocus()
+            return
+        if invalid is self.year_input:
+            self._show_error(
+                self.tr("Year must be blank or a whole number.")
+            )
+            invalid.setFocus()
+            return
+
         try:
             data = self._collect()
         except (TypeError, ValueError) as exc:

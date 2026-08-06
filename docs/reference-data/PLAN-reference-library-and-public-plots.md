@@ -351,6 +351,49 @@ Add a desktop library/editor surface with:
 
 The library may initially open from the existing Reference Values dialog.
 
+### 9.1.1 Reference work editor UX (implemented)
+
+The Reference Library work editor is deliberately human-facing rather than
+schema-shaped. Its behaviour, as landed in `ui/reference_library_manager_dialog.py`:
+
+- **Basic information** — Type, Title, Authors, Year are always visible.
+- **Authors / Editors** — ordered person-list editors with per-row fields for
+  *Family*, *Given*, and *Organization*. Users add, remove, reorder, and edit
+  rows without seeing JSON. The canonical `authors_json` / `editors_json` shape
+  (list of `{family, given, literal}` dicts) is produced on save. Malformed
+  existing JSON does **not** crash the dialog and is **not** silently
+  discarded: a translated warning is shown and the original raw string is
+  preserved verbatim until the user explicitly repairs the value.
+- **Publication details** — the section adapts to the selected type:
+  - *Article*: Journal / container title, Volume, Issue, Pages.
+  - *Book*: Edition, Editors, Publisher, Place.
+  - *Chapter or contribution*: Container / book title, Editors, Pages,
+    Publisher, Place.
+  - *Website*: container/publisher only when useful.
+  - *Dataset* and any unknown type: fall back to a general publication section
+    showing every field.
+  Every widget is instantiated regardless of type — switching type only
+  changes visibility and labels. Hidden values are never erased and are still
+  collected on save. Every stored field round-trips unchanged when the user
+  opens and saves an existing record without editing it.
+- **Identifiers** — DOI, ISBN, URL. Blank identifier values are accepted.
+- **Advanced citation details** (collapsed by default) — manually overridden
+  short label (blank uses the generated value), citation key, language, full
+  citation override, verification status, visibility.
+- **Live preview** — driven by the canonical
+  `database.reference_citation.build_short_label` /
+  `build_full_citation` service. The preview updates as relevant fields
+  change and clearly marks when the user has supplied a manual override.
+  Missing data produces an honestly incomplete preview; no author, year,
+  publisher, page, or identifier is ever fabricated.
+- **Human-friendly validation** — title is required; year is blank or a
+  whole number; DOI / ISBN / URL accept blank; the first invalid field is
+  focused and the dialog stays open on failure. Repository validation
+  errors surface via a red error label without closing the dialog.
+- **Laptop-sized layout** — the sections sit inside a `QScrollArea` so the
+  form fits on a typical laptop screen; Cancel / OK stay pinned. The
+  legacy Reference Values dialog is left completely untouched.
+
 ## 9.2 Observation analysis
 
 For the active observation:
