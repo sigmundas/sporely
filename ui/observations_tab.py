@@ -82,6 +82,9 @@ from database.models import (
     MeasurementDB,
     SettingsDB,
     CalibrationDB,
+    CLOUD_IMAGE_STATE_DELETED,
+    CLOUD_IMAGE_STATE_NONE,
+    CLOUD_IMAGE_STATE_UPLOADED,
     update_observation_sync_state,
 )
 from database.vernacular_db import VernacularDB
@@ -2500,6 +2503,7 @@ class ObservationsTab(QWidget):
             default_height=GALLERY_DEFAULT_HEIGHT,
             show_move_to_observation=True,
             show_edit=True,
+            show_delete_cloud_copy=True,
             show_publish_checkbox=True,
             publish_checkbox_hint=self.tr("Select image for external publishing"),
         )
@@ -2511,6 +2515,9 @@ class ObservationsTab(QWidget):
         self.gallery_widget.measureBadgeClicked.connect(self._on_gallery_measure_badge_clicked)
         self.gallery_widget.editRequested.connect(self._on_gallery_edit_requested)
         self.gallery_widget.deleteImagesRequested.connect(self._on_panel_gallery_delete_images_requested)
+        self.gallery_widget.deleteCloudCopiesRequested.connect(
+            lambda ids, g=self.gallery_widget: self._on_gallery_delete_cloud_copies_requested(g, ids)
+        )
         self.gallery_widget.moveToObservationRequested.connect(self._begin_move_selected_gallery_images)
         self.gallery_widget.publishSelectionChanged.connect(self._on_gallery_publish_selection_changed)
         self.gallery_widget.observationLoaded.connect(self._on_gallery_observation_loaded)
@@ -7568,6 +7575,107 @@ class ObservationsTab(QWidget):
         else:
             # Restore whatever hint the tab was showing before (e.g. "Ready.").
             controller.set_hint(self.tr("Ready."))
+
+    def _on_gallery_delete_cloud_copies_requested(self, gallery, image_ids) -> None:
+        """Confirm and tombstone cloud copies for one or many gallery items.
+
+        ``image_ids`` is already pre-filtered by the gallery to items in the
+        UPLOADED cloud state — no further eligibility check needed here. Local
+        image rows are preserved; the next cloud sync deletes the R2 object
+        and marks the tombstone synced.
+        """
+        eligible: list[int] = []
+        seen: set[int] = set()
+        for raw in image_ids or []:
+            try:
+                parsed = int(raw)
+            except (TypeError, ValueError):
+                continue
+            if parsed <= 0 or parsed in seen:
+                continue
+            seen.add(parsed)
+            eligible.append(parsed)
+        if not eligible:
+            return
+
+        if len(eligible) == 1:
+            prompt = self.tr(
+                "Delete the cloud copy of this image?\n\n"
+                "The local file stays on this computer. The cloud copy will be "
+                "removed on the next cloud sync."
+            )
+        else:
+            prompt = self.tr(
+                "Delete the cloud copies of {count} images?\n\n"
+                "The local files stay on this computer. The cloud copies will "
+                "be removed on the next cloud sync."
+            ).format(count=len(eligible))
+        confirmed = self._question_yes_no(
+            self.tr("Delete cloud copies"),
+            prompt,
+            default_yes=False,
+        )
+        if not confirmed:
+            return
+
+        try:
+            queued = ImageDB.queue_image_tombstones_for_local_images(eligible)
+        except Exception:
+            self.set_status_message(
+                self.tr("Failed to queue cloud image deletion."),
+                level="error",
+                auto_clear_ms=8000,
+            )
+            return
+
+        queued_ids = [image_id for image_id, cloud_id in queued.items() if cloud_id]
+        if not queued_ids:
+            self.set_status_message(
+                self.tr("No cloud copies to delete."),
+                level="info",
+                auto_clear_ms=5000,
+            )
+            return
+
+        try:
+            gallery.mark_cloud_delete_pending(queued_ids)
+        except Exception:
+            pass
+
+        # Kick off a cloud sync immediately so the user's action actually
+        # deletes the R2 objects instead of sitting as a pending tombstone
+        # until the next background sync. `sync_images=False` keeps this a
+        # fast metadata-only pass — tombstone push doesn't need image byte
+        # uploads.
+        sync_started = False
+        try:
+            sync_started = self._start_cloud_sync(
+                show_status=True,
+                run_refresh_flow=False,
+                sync_images=False,
+            )
+        except Exception:
+            sync_started = False
+
+        if len(queued_ids) == 1:
+            base_message = self.tr(
+                "Cloud copy marked for deletion."
+            )
+        else:
+            base_message = self.tr(
+                "{count} cloud copies marked for deletion."
+            ).format(count=len(queued_ids))
+        if sync_started:
+            message = self.tr("{base} Syncing to cloud now…").format(base=base_message)
+        else:
+            message = self.tr(
+                "{base} Sign in and click Sync now to remove from cloud."
+            ).format(base=base_message)
+        self.set_status_message(
+            message,
+            level="success" if sync_started else "warning",
+            auto_clear_ms=12000,
+        )
 
     def _on_panel_gallery_delete_images_requested(self, keys) -> None:
         keys_list = list(keys or [])
@@ -14445,6 +14553,7 @@ class ObservationDetailsDialog(GeometryMixin, QDialog):
             show_delete=True,
             show_badges=True,
             show_edit=True,
+            show_delete_cloud_copy=True,
             thumbnail_size=140,
             min_height=90,
             default_height=120,
@@ -14459,6 +14568,9 @@ class ObservationDetailsDialog(GeometryMixin, QDialog):
         self.image_gallery.imageClicked.connect(self._on_gallery_image_clicked)
         self.image_gallery.imageSelected.connect(self._on_gallery_image_clicked)
         self.image_gallery.deleteImagesRequested.connect(self._on_details_dialog_gallery_delete_images_requested)
+        self.image_gallery.deleteCloudCopiesRequested.connect(
+            lambda ids, g=self.image_gallery: self._on_gallery_delete_cloud_copies_requested(g, ids)
+        )
         self.image_gallery.editRequested.connect(self._on_gallery_edit_requested)
         self.image_gallery.imageDoubleClicked.connect(self._on_image_double_clicked)
         self.image_gallery.itemsReordered.connect(self._on_gallery_items_reordered)
@@ -17743,18 +17855,17 @@ class ObservationDetailsDialog(GeometryMixin, QDialog):
         start_time = time.perf_counter()
         items = []
         selected_microscope_group_keys: set[str] = set()
-        cloud_state_cache: dict[int, tuple[str | None, bool, bool]] = {}
+        cloud_state_cache: dict[int, tuple[str | None, bool, bool, str]] = {}
 
-        def _cloud_state_for_image_id(image_id: int | None) -> tuple[str | None, bool, bool]:
+        def _cloud_state_for_image_id(image_id: int | None) -> tuple[str | None, bool, bool, str]:
             try:
                 parsed_id = int(image_id)
             except (TypeError, ValueError):
-                return None, False, False
+                return None, False, False, CLOUD_IMAGE_STATE_NONE
             if parsed_id in cloud_state_cache:
                 return cloud_state_cache[parsed_id]
-            cloud_id = None
-            cloud_uploaded = False
-            cloud_tombstone_synced = False
+            cloud_id: str | None = None
+            tombstone = None
             try:
                 image_row = ImageDB.get_image(parsed_id)
             except Exception:
@@ -17763,9 +17874,10 @@ class ObservationDetailsDialog(GeometryMixin, QDialog):
                 cloud_id = str(image_row.get("cloud_id") or "").strip() or None
                 if cloud_id:
                     tombstone = ImageDB.get_image_tombstone_by_deleted_cloud_id(cloud_id)
-                    cloud_tombstone_synced = bool(str((tombstone or {}).get("delete_synced_at") or "").strip())
-                    cloud_uploaded = not cloud_tombstone_synced
-            cloud_state_cache[parsed_id] = (cloud_id, cloud_uploaded, cloud_tombstone_synced)
+            cloud_state = ImageGalleryWidget._derive_cloud_state(cloud_id, tombstone)
+            cloud_uploaded = cloud_state == CLOUD_IMAGE_STATE_UPLOADED
+            cloud_tombstone_synced = cloud_state == CLOUD_IMAGE_STATE_DELETED
+            cloud_state_cache[parsed_id] = (cloud_id, cloud_uploaded, cloud_tombstone_synced, cloud_state)
             return cloud_state_cache[parsed_id]
 
         for idx, item in enumerate(self.image_results):
@@ -17826,8 +17938,9 @@ class ObservationDetailsDialog(GeometryMixin, QDialog):
             cloud_id = None
             cloud_uploaded = None
             cloud_tombstone_synced = None
+            cloud_state = None
             if item.image_id:
-                cloud_id, cloud_uploaded, cloud_tombstone_synced = _cloud_state_for_image_id(item.image_id)
+                cloud_id, cloud_uploaded, cloud_tombstone_synced, cloud_state = _cloud_state_for_image_id(item.image_id)
             crop_box, crop_source_size = self._image_gallery_ai_crop_preview(item)
             items.append(
                 {
@@ -17848,6 +17961,7 @@ class ObservationDetailsDialog(GeometryMixin, QDialog):
                     "cloud_id": cloud_id,
                     "cloud_uploaded": cloud_uploaded,
                     "cloud_tombstone_synced": cloud_tombstone_synced,
+                    "cloud_state": cloud_state,
                 }
             )
         self.image_gallery.set_items(items)
@@ -17971,6 +18085,98 @@ class ObservationDetailsDialog(GeometryMixin, QDialog):
             self._on_gallery_delete_requested(keys_list[0])
         else:
             self._on_gallery_delete_selection_requested(keys_list)
+
+    def _on_gallery_delete_cloud_copies_requested(self, gallery, image_ids) -> None:
+        """Confirm and tombstone cloud copies for the details-dialog gallery.
+
+        Mirrors ``ObservationsTab._on_gallery_delete_cloud_copies_requested``
+        but uses the dialog's hint bar for feedback instead of the tab's
+        status bar. ``image_ids`` is already filtered to CLOUD_UPLOADED items
+        by the gallery widget.
+        """
+        eligible: list[int] = []
+        seen: set[int] = set()
+        for raw in image_ids or []:
+            try:
+                parsed = int(raw)
+            except (TypeError, ValueError):
+                continue
+            if parsed <= 0 or parsed in seen:
+                continue
+            seen.add(parsed)
+            eligible.append(parsed)
+        if not eligible:
+            return
+
+        if len(eligible) == 1:
+            prompt = self.tr(
+                "Delete the cloud copy of this image?\n\n"
+                "The local file stays on this computer. The cloud copy will be "
+                "removed on the next cloud sync."
+            )
+        else:
+            prompt = self.tr(
+                "Delete the cloud copies of {count} images?\n\n"
+                "The local files stay on this computer. The cloud copies will "
+                "be removed on the next cloud sync."
+            ).format(count=len(eligible))
+        confirmed = self._question_yes_no(
+            self.tr("Delete cloud copies"),
+            prompt,
+            default_yes=False,
+        )
+        if not confirmed:
+            return
+
+        try:
+            queued = ImageDB.queue_image_tombstones_for_local_images(eligible)
+        except Exception:
+            self._set_hint(self.tr("Failed to queue cloud image deletion."), tone="error")
+            return
+
+        queued_ids = [image_id for image_id, cloud_id in queued.items() if cloud_id]
+        if not queued_ids:
+            self._set_hint(self.tr("No cloud copies to delete."), tone="info")
+            return
+
+        try:
+            gallery.mark_cloud_delete_pending(queued_ids)
+        except Exception:
+            pass
+
+        # Trigger a cloud sync via the parent Observations tab so the R2
+        # object is actually removed instead of waiting for the next
+        # background pass. Walk up the parent chain — the dialog is opened
+        # both from the panel gallery and from the ObservationsTab flow, so
+        # we can't assume the immediate parent has ``_start_cloud_sync``.
+        sync_started = False
+        candidate = self.parent()
+        while candidate is not None:
+            starter = getattr(candidate, "_start_cloud_sync", None)
+            if callable(starter):
+                try:
+                    sync_started = bool(
+                        starter(show_status=True, run_refresh_flow=False, sync_images=False)
+                    )
+                except Exception:
+                    sync_started = False
+                break
+            next_parent = getattr(candidate, "parent", None)
+            candidate = next_parent() if callable(next_parent) else None
+
+        if len(queued_ids) == 1:
+            base_message = self.tr("Cloud copy marked for deletion.")
+        else:
+            base_message = self.tr(
+                "{count} cloud copies marked for deletion."
+            ).format(count=len(queued_ids))
+        if sync_started:
+            message = self.tr("{base} Syncing to cloud now…").format(base=base_message)
+        else:
+            message = self.tr(
+                "{base} Close this dialog and click Sync now to remove from cloud."
+            ).format(base=base_message)
+        self._set_hint(message, tone="success" if sync_started else "warning")
 
     def _on_gallery_delete_requested(self, image_key) -> None:
         if isinstance(image_key, (list, tuple, set)):

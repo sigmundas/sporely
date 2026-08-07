@@ -26,7 +26,15 @@ from PySide6.QtWidgets import (
     QStyle,
 )
 
-from database.models import ImageDB, MeasurementDB, get_image_tombstones_by_deleted_cloud_id
+from database.models import (
+    CLOUD_IMAGE_STATE_DELETED,
+    CLOUD_IMAGE_STATE_DELETE_PENDING,
+    CLOUD_IMAGE_STATE_NONE,
+    CLOUD_IMAGE_STATE_UPLOADED,
+    ImageDB,
+    MeasurementDB,
+    get_image_tombstones_by_deleted_cloud_id,
+)
 from database.schema import load_objectives, objective_display_name, resolve_objective_key
 from database.database_tags import DatabaseTerms
 from utils.thumbnail_generator import get_thumbnail_path
@@ -86,6 +94,14 @@ _GALLERY_REORDER_MIME = "application/x-sporely-gallery-item"
 @lru_cache(maxsize=1)
 def _cloud_status_icon() -> QIcon:
     icon_path = Path(__file__).parent.parent / "assets" / "icons" / "cloud_badge.svg"
+    if icon_path.exists():
+        return QIcon(str(icon_path))
+    return QIcon()
+
+
+@lru_cache(maxsize=1)
+def _cloud_delete_pending_icon() -> QIcon:
+    icon_path = Path(__file__).parent.parent / "assets" / "icons" / "cloud_badge_delete_pending.svg"
     if icon_path.exists():
         return QIcon(str(icon_path))
     return QIcon()
@@ -541,6 +557,12 @@ class ImageGalleryWidget(QGroupBox):
     # click) fire with a one-element list; multi-item deletes (right-click
     # "Delete selected photos") fire with the full selection.
     deleteImagesRequested = Signal(list)
+    # Emitted with the list of local image IDs (ints) whose cloud copies the
+    # user asked to tombstone. Local rows are preserved; only the Sporely
+    # Cloud copy is scheduled for deletion on the next cloud sync. The list
+    # is pre-filtered to eligible items by
+    # ``cloud_delete_eligible_image_ids``.
+    deleteCloudCopiesRequested = Signal(list)
     moveToObservationRequested = Signal(list)
     selectionChanged = Signal(list)
     publishSelectionChanged = Signal(object)
@@ -560,6 +582,7 @@ class ImageGalleryWidget(QGroupBox):
         show_publish_checkbox: bool = False,
         show_move_to_observation: bool = False,
         show_edit: bool = False,
+        show_delete_cloud_copy: bool = False,
         publish_checkbox_hint: str = "",
         delete_menu_label_single: str = "",
         delete_menu_label_multi: str = "",
@@ -582,6 +605,7 @@ class ImageGalleryWidget(QGroupBox):
         self._show_publish_checkbox = bool(show_publish_checkbox)
         self._show_move_to_observation = bool(show_move_to_observation)
         self._show_edit = bool(show_edit)
+        self._show_delete_cloud_copy = bool(show_delete_cloud_copy)
         self._publish_checkbox_hint = str(publish_checkbox_hint or "").strip()
         # Per-instance delete labels — lets callers say "Remove from batch"
         # / "Remove from staging" instead of the generic "Delete photo" when
@@ -1071,6 +1095,7 @@ class ImageGalleryWidget(QGroupBox):
                     "cloud_id": item.get("cloud_id"),
                     "cloud_uploaded": item.get("cloud_uploaded"),
                     "cloud_tombstone_synced": item.get("cloud_tombstone_synced"),
+                    "cloud_state": item.get("cloud_state"),
                 }
             )
         self._consume_pending_selection_paths()
@@ -1187,7 +1212,8 @@ class ImageGalleryWidget(QGroupBox):
             )
             cloud_id = str(img.get("cloud_id") or "").strip()
             cloud_tombstone = cloud_tombstones.get(cloud_id) if cloud_id else None
-            cloud_tombstone_synced = bool(str((cloud_tombstone or {}).get("delete_synced_at") or "").strip())
+            cloud_state = ImageGalleryWidget._derive_cloud_state(cloud_id, cloud_tombstone)
+            cloud_tombstone_synced = cloud_state == CLOUD_IMAGE_STATE_DELETED
             microscope_tag_text = img.get("microscope_tag_text")
             microscope_tag_color = img.get("microscope_tag_color")
             if microscope_tag_text is None:
@@ -1215,8 +1241,9 @@ class ImageGalleryWidget(QGroupBox):
                     "microscope_tag_color": microscope_tag_color,
                     "gps_tag_color": img.get("gps_tag_color"),
                     "cloud_id": cloud_id or None,
-                    "cloud_uploaded": bool(cloud_id and not cloud_tombstone_synced),
+                    "cloud_uploaded": cloud_state == CLOUD_IMAGE_STATE_UPLOADED,
                     "cloud_tombstone_synced": cloud_tombstone_synced,
+                    "cloud_state": cloud_state,
                     "publish_selected_default": image_type != "microscope",
                 }
             )
@@ -1249,19 +1276,54 @@ class ImageGalleryWidget(QGroupBox):
             self._last_clicked_index = self._index_for_key(first_key)
 
     @staticmethod
-    def _cloud_badge_visible(item: dict) -> bool:
+    def _derive_cloud_state(cloud_id, tombstone) -> str:
+        """Map a cloud_id + tombstone row into a CLOUD_IMAGE_STATE_* value.
+
+        Callers that have already resolved these two facts about an image
+        row route through here so every code path arrives at the same
+        state string, keeping the badge, menu, and eligibility filter in
+        lockstep.
+        """
+        normalized_cloud_id = str(cloud_id or "").strip()
+        if not normalized_cloud_id:
+            return CLOUD_IMAGE_STATE_NONE
+        if not tombstone:
+            return CLOUD_IMAGE_STATE_UPLOADED
+        synced_at = str((tombstone or {}).get("delete_synced_at") or "").strip()
+        if synced_at:
+            return CLOUD_IMAGE_STATE_DELETED
+        return CLOUD_IMAGE_STATE_DELETE_PENDING
+
+    @staticmethod
+    def _cloud_state_for_item(item: dict) -> str:
         if not item:
-            return False
-        explicit_state = item.get("cloud_uploaded")
-        if explicit_state is not None:
-            return bool(explicit_state)
+            return CLOUD_IMAGE_STATE_NONE
+        cached = item.get("cloud_state")
+        if cached in (
+            CLOUD_IMAGE_STATE_NONE,
+            CLOUD_IMAGE_STATE_UPLOADED,
+            CLOUD_IMAGE_STATE_DELETE_PENDING,
+            CLOUD_IMAGE_STATE_DELETED,
+        ):
+            return cached
+        # Legacy items may only carry the boolean fields; reconstruct the
+        # state from them so downstream logic stays uniform.
         cloud_id = str(item.get("cloud_id") or "").strip()
         if not cloud_id:
-            return False
-        tombstone_synced = item.get("cloud_tombstone_synced")
-        if tombstone_synced is not None:
-            return not bool(tombstone_synced)
-        return True
+            return CLOUD_IMAGE_STATE_NONE
+        if item.get("cloud_tombstone_synced"):
+            return CLOUD_IMAGE_STATE_DELETED
+        explicit_state = item.get("cloud_uploaded")
+        if explicit_state is False:
+            return CLOUD_IMAGE_STATE_DELETE_PENDING
+        return CLOUD_IMAGE_STATE_UPLOADED
+
+    @staticmethod
+    def _cloud_badge_visible(item: dict) -> bool:
+        return ImageGalleryWidget._cloud_state_for_item(item) in (
+            CLOUD_IMAGE_STATE_UPLOADED,
+            CLOUD_IMAGE_STATE_DELETE_PENDING,
+        )
 
     @staticmethod
     def _item_key(item: dict) -> str | int | None:
@@ -1350,6 +1412,18 @@ class ImageGalleryWidget(QGroupBox):
         move_action = None
         if self._show_move_to_observation:
             move_action = menu.addAction(self.tr("Move to observation"))
+        delete_cloud_action = None
+        cloud_eligible_ids: list[int] = []
+        if self._show_delete_cloud_copy:
+            cloud_eligible_ids = self.cloud_delete_eligible_image_ids(selected_keys)
+            if cloud_eligible_ids:
+                if len(cloud_eligible_ids) > 1:
+                    delete_cloud_text = self.tr(
+                        "Delete {count} cloud copies"
+                    ).format(count=len(cloud_eligible_ids))
+                else:
+                    delete_cloud_text = self.tr("Delete cloud copy")
+                delete_cloud_action = menu.addAction(delete_cloud_text)
         # An empty menu (no visible actions for this context) shouldn't pop up.
         if not menu.actions():
             return
@@ -1364,6 +1438,8 @@ class ImageGalleryWidget(QGroupBox):
             self.deleteImagesRequested.emit(list(selected_keys))
         elif move_action is not None and chosen == move_action:
             self.moveToObservationRequested.emit(list(selected_keys))
+        elif delete_cloud_action is not None and chosen == delete_cloud_action:
+            self.deleteCloudCopiesRequested.emit(list(cloud_eligible_ids))
 
     def _reorder_item(self, source_key, target_key, insert_after: bool = False) -> bool:
         ordered_keys = self._ordered_item_keys()
@@ -1857,15 +1933,22 @@ class ImageGalleryWidget(QGroupBox):
             top_center_layout.setSpacing(2)
 
             if cloud_badge_visible:
+                item_cloud_state = ImageGalleryWidget._cloud_state_for_item(item)
                 cloud_badge = QLabel()
-                cloud_badge.setFixedSize(20, 20)
+                cloud_badge.setFixedSize(26, 26)
                 cloud_badge.setAlignment(Qt.AlignCenter)
                 cloud_badge.setStyleSheet(
                     "QLabel { background-color: transparent; border: none; }"
                 )
                 cloud_badge.setAttribute(Qt.WA_TransparentForMouseEvents, True)
-                cloud_badge.setPixmap(_cloud_status_icon().pixmap(QSize(18, 18)))
-                cloud_badge.setToolTip(self.tr("Uploaded to Sporely Cloud"))
+                if item_cloud_state == CLOUD_IMAGE_STATE_DELETE_PENDING:
+                    cloud_badge.setPixmap(_cloud_delete_pending_icon().pixmap(QSize(24, 24)))
+                    cloud_badge.setToolTip(
+                        self.tr("Cloud copy scheduled for deletion on next cloud sync")
+                    )
+                else:
+                    cloud_badge.setPixmap(_cloud_status_icon().pixmap(QSize(24, 24)))
+                    cloud_badge.setToolTip(self.tr("Uploaded to Sporely Cloud"))
                 top_center_layout.addWidget(cloud_badge, 0, Qt.AlignHCenter)
 
             image_layout.addWidget(top_center, 0, 0, alignment=Qt.AlignTop | Qt.AlignHCenter)
@@ -2180,6 +2263,84 @@ class ImageGalleryWidget(QGroupBox):
             if key is not None and key in self._selected_keys:
                 keys.append(key)
         return keys
+
+    def cloud_delete_eligible_image_ids(self, keys=None) -> list[int]:
+        """Return integer image IDs whose cloud copy can still be tombstoned.
+
+        Filters to items in ``CLOUD_IMAGE_STATE_UPLOADED`` — string keys (e.g.
+        calibration placeholders like ``"cal_0"``), items with no cloud copy,
+        and items already scheduled for deletion or deleted are excluded. When
+        ``keys`` is None the current selection is used. Callers can trust the
+        returned list — no further per-item filtering is needed downstream.
+        """
+        if keys is None:
+            target_keys: set = set(self._selected_keys)
+        else:
+            target_keys = set()
+            for key in keys:
+                if isinstance(key, (int, str)):
+                    target_keys.add(key)
+        if not target_keys:
+            return []
+        eligible: list[int] = []
+        seen: set[int] = set()
+        for item in self._items:
+            key = self._item_key(item)
+            if key is None or key not in target_keys:
+                continue
+            if not isinstance(key, int):
+                continue
+            if ImageGalleryWidget._cloud_state_for_item(item) != CLOUD_IMAGE_STATE_UPLOADED:
+                continue
+            if key in seen:
+                continue
+            seen.add(key)
+            eligible.append(key)
+        return eligible
+
+    def mark_cloud_delete_pending(self, image_ids) -> int:
+        """Flip in-memory item state to CLOUD_DELETE_PENDING for immediate UI feedback.
+
+        Called by hosts right after they queue tombstones so the badge
+        switches to the delete-pending variant before the next full gallery
+        reload. Also unticks the "publish externally" checkbox for the
+        affected items — an image scheduled for cloud deletion can't back an
+        external publication either, so keeping the checkbox ticked would be
+        misleading. Emits ``publishSelectionChanged`` when the check state
+        actually changes so the host can persist the exclusion. Only touches
+        integer-keyed items (image DB rows). Returns the number of items
+        updated.
+        """
+        target: set[int] = set()
+        for raw_id in image_ids or []:
+            try:
+                target.add(int(raw_id))
+            except (TypeError, ValueError):
+                continue
+        if not target:
+            return 0
+        updated = 0
+        publish_changed = False
+        for item in self._items:
+            item_id = item.get("id")
+            try:
+                key_int = int(item_id) if item_id is not None else None
+            except (TypeError, ValueError):
+                key_int = None
+            if key_int is None or key_int not in target:
+                continue
+            item["cloud_state"] = CLOUD_IMAGE_STATE_DELETE_PENDING
+            item["cloud_uploaded"] = False
+            if bool(item.get("publish_selected")):
+                item["publish_selected"] = False
+                self._publish_checked_by_key[key_int] = False
+                publish_changed = True
+            updated += 1
+        if updated:
+            self._render()
+        if publish_changed:
+            self.publishSelectionChanged.emit(self.publish_selected_ids())
+        return updated
 
     def center_on_key(self, key) -> None:
         self._queue_center_on_key(key)

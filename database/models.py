@@ -32,6 +32,17 @@ from database.reverse_location_lookup import normalize_country_code
 
 _UNSET = object()
 
+# Per-image cloud lifecycle state used by the gallery UI and other consumers.
+# NONE           — image has no cloud copy (never uploaded, or upload cleared).
+# UPLOADED       — image has a live cloud copy on Sporely Cloud.
+# DELETE_PENDING — a local tombstone was queued but cloud sync hasn't run yet;
+#                  the cloud copy is scheduled for deletion.
+# DELETED        — cloud sync has confirmed the cloud copy is gone.
+CLOUD_IMAGE_STATE_NONE = "none"
+CLOUD_IMAGE_STATE_UPLOADED = "uploaded"
+CLOUD_IMAGE_STATE_DELETE_PENDING = "delete_pending"
+CLOUD_IMAGE_STATE_DELETED = "deleted"
+
 # Stage 3B.3: whitelist of taxon-rank values the observation editor may
 # persist. Anything outside this set (including empty string) is coerced to
 # NULL so the observation store never carries garbage ranks like "section"
@@ -2308,60 +2319,117 @@ class ImageDB:
     def queue_image_tombstone_for_local_image(image_id: int) -> str | None:
         """Queue a cloud tombstone for one synced local image without deleting it."""
         try:
-            image_id = int(image_id)
+            parsed = int(image_id)
         except (TypeError, ValueError):
             return None
-        if image_id <= 0:
+        if parsed <= 0:
             return None
+        return ImageDB.queue_image_tombstones_for_local_images([parsed]).get(parsed)
 
+    @staticmethod
+    def queue_image_tombstones_for_local_images(
+        image_ids,
+    ) -> dict[int, str | None]:
+        """Queue cloud tombstones for multiple local images in one transaction.
+
+        Returns a map from the input image id to the queued cloud id (or None
+        when the image is unknown, has no cloud copy, or the id is invalid).
+        Local image rows are preserved — only the cloud copy is scheduled for
+        deletion. The mapping preserves every requested id so callers can
+        report per-item outcomes without a second round-trip.
+        """
+        requested: list[int] = []
+        seen: set[int] = set()
+        for raw_id in image_ids or []:
+            try:
+                parsed = int(raw_id)
+            except (TypeError, ValueError):
+                continue
+            if parsed <= 0 or parsed in seen:
+                continue
+            seen.add(parsed)
+            requested.append(parsed)
+
+        if not requested:
+            return {}
+
+        result: dict[int, str | None] = {image_id: None for image_id in requested}
         conn = get_connection()
         try:
             conn.row_factory = sqlite3.Row
             cursor = conn.cursor()
             image_columns = _table_columns(cursor, "images")
             observation_columns = _table_columns(cursor, "observations")
-            select_columns = ["observation_id", "filepath", "original_filepath", "image_type"]
             has_image_cloud_id = "cloud_id" in image_columns
-            if has_image_cloud_id:
-                select_columns.append("cloud_id")
+            if not has_image_cloud_id:
+                return result
+
+            select_columns = [
+                "id",
+                "observation_id",
+                "filepath",
+                "original_filepath",
+                "image_type",
+                "cloud_id",
+            ]
+            placeholders = ", ".join("?" for _ in requested)
             cursor.execute(
-                f'SELECT {", ".join(select_columns)} FROM images WHERE id = ?',
-                (image_id,),
+                f'SELECT {", ".join(select_columns)} FROM images WHERE id IN ({placeholders})',
+                requested,
             )
-            row = cursor.fetchone()
-            if row is None:
-                return None
-            cloud_id = str(row["cloud_id"] or "").strip() if has_image_cloud_id else ""
-            if not cloud_id:
-                return None
-            try:
-                observation_id = int(row["observation_id"]) if row["observation_id"] is not None else None
-            except Exception:
-                observation_id = None
-            deleted_observation_cloud_id = None
-            if observation_id and "cloud_id" in observation_columns:
-                obs_row = cursor.execute(
-                    "SELECT cloud_id FROM observations WHERE id = ?",
-                    (observation_id,),
-                ).fetchone()
-                if obs_row:
-                    deleted_observation_cloud_id = str(obs_row[0] or "").strip() or None
-            filepath = str(row["filepath"] or "").strip() or None
-            original_filepath = str(row["original_filepath"] or "").strip() or None
-            _upsert_image_tombstone(
-                cursor,
-                deleted_cloud_id=cloud_id,
-                deleted_storage_path=filepath or original_filepath,
-                deleted_observation_cloud_id=deleted_observation_cloud_id,
-                local_observation_id=observation_id,
-                image_type=str(row["image_type"] or "").strip() or None,
-                filepath=filepath,
-                original_filepath=original_filepath,
-            )
-            if observation_id:
+            image_rows = {int(row["id"]): row for row in cursor.fetchall()}
+
+            observation_cloud_ids: dict[int, str | None] = {}
+            if "cloud_id" in observation_columns:
+                observation_ids = sorted({
+                    int(row["observation_id"])
+                    for row in image_rows.values()
+                    if row["observation_id"] is not None
+                })
+                if observation_ids:
+                    obs_placeholders = ", ".join("?" for _ in observation_ids)
+                    cursor.execute(
+                        f"SELECT id, cloud_id FROM observations WHERE id IN ({obs_placeholders})",
+                        observation_ids,
+                    )
+                    for obs_row in cursor.fetchall():
+                        obs_cloud_id = str(obs_row["cloud_id"] or "").strip() or None
+                        observation_cloud_ids[int(obs_row["id"])] = obs_cloud_id
+
+            touched_observations: set[int] = set()
+            for image_id in requested:
+                row = image_rows.get(image_id)
+                if row is None:
+                    continue
+                cloud_id = str(row["cloud_id"] or "").strip()
+                if not cloud_id:
+                    continue
+                try:
+                    observation_id = (
+                        int(row["observation_id"]) if row["observation_id"] is not None else None
+                    )
+                except Exception:
+                    observation_id = None
+                filepath = str(row["filepath"] or "").strip() or None
+                original_filepath = str(row["original_filepath"] or "").strip() or None
+                _upsert_image_tombstone(
+                    cursor,
+                    deleted_cloud_id=cloud_id,
+                    deleted_storage_path=filepath or original_filepath,
+                    deleted_observation_cloud_id=observation_cloud_ids.get(observation_id or 0),
+                    local_observation_id=observation_id,
+                    image_type=str(row["image_type"] or "").strip() or None,
+                    filepath=filepath,
+                    original_filepath=original_filepath,
+                )
+                if observation_id:
+                    touched_observations.add(observation_id)
+                result[image_id] = cloud_id
+
+            for observation_id in touched_observations:
                 _touch_observation(cursor, observation_id, mark_dirty=True)
             conn.commit()
-            return cloud_id
+            return result
         except Exception:
             conn.rollback()
             raise

@@ -327,6 +327,96 @@ def test_queue_image_tombstone_for_local_image_keeps_local_row_visible(monkeypat
     assert models.ImageDB.get_images_for_observation(fixture["observation_id"])
 
 
+def _seed_multi_image_fixture(db_path: Path) -> list[dict]:
+    """Seed observation 1 with three images: two uploaded, one local-only."""
+    images_root = db_path.parent / "images" / "obs-1"
+    images_root.mkdir(parents=True, exist_ok=True)
+    conn = sqlite3.connect(db_path)
+    try:
+        conn.execute(
+            "INSERT INTO observations (id, cloud_id, sync_status, updated_at) VALUES (?, ?, ?, ?)",
+            (1, "cloud-obs-1", "synced", "2026-05-01 10:00:00"),
+        )
+        seeded = []
+        for local_id, cloud_id in [(11, "cloud-image-1"), (12, "cloud-image-2"), (13, None)]:
+            image_path = images_root / f"img-{local_id}.jpg"
+            image_path.write_text("image", encoding="utf-8")
+            conn.execute(
+                """
+                INSERT INTO images (
+                    id, observation_id, cloud_id, filepath, original_filepath, image_type
+                ) VALUES (?, ?, ?, ?, ?, ?)
+                """,
+                (local_id, 1, cloud_id, str(image_path), str(image_path), "field"),
+            )
+            seeded.append({"image_id": local_id, "cloud_id": cloud_id, "filepath": image_path})
+        conn.commit()
+        return seeded
+    finally:
+        conn.close()
+
+
+def test_queue_image_tombstones_for_local_images_batch_queues_only_uploaded(
+    monkeypatch, tmp_path
+):
+    db_path = tmp_path / "batch_tombstone.sqlite"
+    conn = sqlite3.connect(db_path)
+    try:
+        _create_image_tombstone_test_db(conn)
+    finally:
+        conn.close()
+
+    seeded = _seed_multi_image_fixture(db_path)
+    monkeypatch.setattr(models, "get_connection", lambda: sqlite3.connect(db_path))
+
+    # Include an unknown id (99), duplicates, and a string form to prove the
+    # batch method normalizes inputs like the singular method did.
+    result = models.ImageDB.queue_image_tombstones_for_local_images(
+        [11, 12, 13, 99, "11", -1, None]
+    )
+
+    assert result == {
+        11: "cloud-image-1",
+        12: "cloud-image-2",
+        13: None,
+        99: None,
+    }
+
+    conn = sqlite3.connect(db_path)
+    try:
+        rows = conn.execute(
+            "SELECT deleted_cloud_id, delete_synced_at, local_image_id FROM image_tombstones ORDER BY deleted_cloud_id"
+        ).fetchall()
+        image_count = conn.execute("SELECT COUNT(*) FROM images").fetchone()[0]
+    finally:
+        conn.close()
+
+    # Local rows stay put; only tombstones for the two uploaded images are queued.
+    assert image_count == len(seeded)
+    assert rows == [
+        ("cloud-image-1", None, None),
+        ("cloud-image-2", None, None),
+    ]
+
+
+def test_queue_image_tombstones_for_local_images_empty_and_all_invalid(
+    monkeypatch, tmp_path
+):
+    db_path = tmp_path / "batch_tombstone_empty.sqlite"
+    conn = sqlite3.connect(db_path)
+    try:
+        _create_image_tombstone_test_db(conn)
+    finally:
+        conn.close()
+
+    monkeypatch.setattr(models, "get_connection", lambda: sqlite3.connect(db_path))
+
+    assert models.ImageDB.queue_image_tombstones_for_local_images([]) == {}
+    assert models.ImageDB.queue_image_tombstones_for_local_images(
+        [None, "abc", -1, 0]
+    ) == {}
+
+
 def test_clear_image_cloud_sync_state_removes_cloud_link(monkeypatch, tmp_path):
     db_path = tmp_path / "clear_cloud_state.sqlite"
     conn = sqlite3.connect(db_path)
