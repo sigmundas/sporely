@@ -219,13 +219,14 @@ def test_form_article_shows_journal_volume_issue_pages(libs, qapp):
         assert form.pages_input.isHidden() is False
         assert form.edition_input.isHidden() is True
         assert form.editors_editor.isHidden() is True
-        # DOI/ISBN/URL always visible in the Identifiers section.
+        # Identifiers are per-type: an article has DOI + URL but not ISBN.
         assert form.doi_input.isHidden() is False
-        assert form.isbn_input.isHidden() is False
         assert form.url_input.isHidden() is False
-        # Container label is the journal-flavored one for articles.
+        assert form.isbn_input.isHidden() is True
+        # Container label is the journal-flavored one for articles — no
+        # "container" jargon.
         container_label = form._publication_row_labels["container_title"]
-        assert "journal" in container_label.text().lower()
+        assert container_label.text() == "Journal:"
     finally:
         form.deleteLater()
 
@@ -245,6 +246,10 @@ def test_form_book_shows_edition_editors_publisher_place(libs, qapp):
         assert form.volume_input.isHidden() is True
         assert form.issue_input.isHidden() is True
         assert form.pages_input.isHidden() is True
+        # A book has ISBN + URL but not DOI.
+        assert form.isbn_input.isHidden() is False
+        assert form.url_input.isHidden() is False
+        assert form.doi_input.isHidden() is True
     finally:
         form.deleteLater()
 
@@ -264,8 +269,70 @@ def test_form_chapter_shows_container_editors_pages(libs, qapp):
         assert form.place_input.isHidden() is False
         assert form.volume_input.isHidden() is True
         assert form.issue_input.isHidden() is True
+        # A chapter has DOI + ISBN but not URL (the parent book is the
+        # thing you link to, and its ISBN is the identifier).
+        assert form.doi_input.isHidden() is False
+        assert form.isbn_input.isHidden() is False
+        assert form.url_input.isHidden() is True
+        # Plain-English label — no "container".
         container_label = form._publication_row_labels["container_title"]
-        assert "book" in container_label.text().lower()
+        assert container_label.text() == "In book:"
+        assert "container" not in container_label.text().lower()
+    finally:
+        form.deleteLater()
+
+
+def test_form_website_shows_only_url_no_doi_isbn_publisher_or_container(libs, qapp):
+    """A website is its own container — the ``container_title``,
+    ``publisher``, DOI and ISBN fields would just be noise. The editor
+    hides every publication-details field and shows only the URL in the
+    Identifiers section. The whole Publication-details section box
+    also hides itself so the form does not display an empty header."""
+    from ui.reference_library_manager_dialog import _ReferenceWorkForm
+
+    form = _ReferenceWorkForm(None)
+    try:
+        _select_type(form, "website")
+        # All publication-details fields hidden.
+        for widget in (
+            form.container_input,
+            form.editors_editor,
+            form.edition_input,
+            form.volume_input,
+            form.issue_input,
+            form.pages_input,
+            form.publisher_input,
+            form.place_input,
+        ):
+            assert widget.isHidden() is True, widget
+        # Identifiers: only URL is shown.
+        assert form.doi_input.isHidden() is True
+        assert form.isbn_input.isHidden() is True
+        assert form.url_input.isHidden() is False
+        # Publication-details section header disappears when every row
+        # under it is hidden.
+        assert form._publication_section_box.isHidden() is True
+        # Identifiers box still visible (URL is inside it).
+        assert form._identifiers_section_box.isHidden() is False
+    finally:
+        form.deleteLater()
+
+
+def test_form_never_shows_the_word_container_to_the_user(libs, qapp):
+    """The word "Container" is jargon; no user-facing label should
+    contain it for any of the standard work types."""
+    from ui.reference_library_manager_dialog import _ReferenceWorkForm
+
+    form = _ReferenceWorkForm(None)
+    try:
+        for work_type in ("book", "article", "chapter", "website"):
+            _select_type(form, work_type)
+            label = form._publication_row_labels["container_title"]
+            # Not asserting visibility here (book/website hide it) —
+            # only asserting the LABEL text is never jargon.
+            assert "container" not in label.text().lower(), (
+                work_type, label.text()
+            )
     finally:
         form.deleteLater()
 

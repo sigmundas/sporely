@@ -311,39 +311,61 @@ class _CompletenessHintLabel(QLabel):
 # --- Work / Treatment / Measurement forms ----------------------------------
 
 
-# Publication-detail fields the form knows about; every non-basic, non-
-# identifier field. Widgets are ALWAYS created for every entry here so that
-# switching type never erases a hidden value — visibility only toggles.
+# Every non-basic field the editor knows about (publication details +
+# identifiers). Widgets are ALWAYS created for every key so that switching
+# type never erases a hidden value — visibility only toggles. The DB
+# column ``container_title`` is user-facing as "Journal" for articles and
+# "In book" for chapters; the word "Container" is never shown.
 _ALL_PUBLICATION_FIELDS: frozenset[str] = frozenset(
-    {"container_title", "editors", "edition", "volume", "issue",
-     "pages", "publisher", "place"}
+    {
+        "container_title", "editors", "edition", "volume", "issue",
+        "pages", "publisher", "place",
+        "doi", "isbn", "url",
+    }
 )
 
 
-# Which publication-detail fields are shown for each known work type. Any
-# type not present in this map falls back to "show every publication field"
-# (a general publication-details section for unknown types).
+# Per-type visible field set. A type not in the map (e.g. legacy
+# ``dataset`` records) falls back to "show every field" — the operator
+# can then trim by picking a more specific type.
 _PUBLICATION_FIELD_VISIBILITY: dict[str, frozenset[str]] = {
-    "article": frozenset({"container_title", "volume", "issue", "pages"}),
-    "book": frozenset({"edition", "editors", "publisher", "place"}),
-    "chapter": frozenset(
-        {"container_title", "editors", "pages", "publisher", "place"}
+    "article": frozenset(
+        {"container_title", "volume", "issue", "pages", "doi", "url"}
     ),
-    "website": frozenset({"container_title", "publisher"}),
-    "dataset": frozenset({"container_title", "publisher", "place"}),
+    "book": frozenset(
+        {"edition", "editors", "publisher", "place", "isbn", "url"}
+    ),
+    "chapter": frozenset(
+        {
+            "container_title", "editors", "pages", "publisher", "place",
+            "doi", "isbn",
+        }
+    ),
+    # A website is its own container — the container_title / publisher /
+    # DOI / ISBN fields would just be noise. Keep the URL and that's it.
+    "website": frozenset({"url"}),
 }
 
 
-# Type-aware label for the container-title field: "Journal" for articles,
-# "Book title" for chapters/contributions, plain "Container title" for
-# the rest.
+# Plain-English, type-specific label for the ``container_title`` field.
+# "Container" is deliberately never shown to the user.
 def _container_title_label_for(work_type: str, tr_) -> str:
     key = str(work_type or "").strip().lower()
     if key == "article":
-        return tr_("Journal / container title:")
+        return tr_("Journal:")
     if key == "chapter":
-        return tr_("Container / book title:")
-    return tr_("Container title:")
+        return tr_("In book:")
+    # Fallback for unknown types (e.g. legacy ``dataset``, ``other``).
+    return tr_("Journal / book title:")
+
+
+# Which fields belong to which visible section — used so a section box
+# with zero visible rows can hide itself and keep the form tight.
+_PUBLICATION_DETAIL_KEYS: frozenset[str] = frozenset(
+    {"container_title", "editors", "edition", "volume", "issue",
+     "pages", "publisher", "place"}
+)
+_IDENTIFIER_KEYS: frozenset[str] = frozenset({"doi", "isbn", "url"})
 
 
 class _PersonRow(QWidget):
@@ -906,6 +928,9 @@ class _ReferenceWorkForm(QDialog):
         box = QGroupBox(self.tr("Publication details"))
         form = QFormLayout(box)
         self._publication_form = form
+        # Kept for section-level show/hide when every publication row is
+        # hidden for the current work type.
+        self._publication_section_box = box
 
         self.container_input = QLineEdit()
         self.container_input.textChanged.connect(self._update_preview)
@@ -998,19 +1023,28 @@ class _ReferenceWorkForm(QDialog):
         self.doi_input.setPlaceholderText(self.tr("e.g. 10.1234/abcd"))
         self.doi_input.textChanged.connect(self._update_preview)
         self._all_input_widgets.append(self.doi_input)
-        form.addRow(self.tr("DOI:"), self.doi_input)
+        self._add_publication_row(
+            form, key="doi", label=self.tr("DOI:"), widget=self.doi_input
+        )
 
         self.isbn_input = QLineEdit()
         self.isbn_input.setPlaceholderText(self.tr("digits or ISBN-10/13"))
         self._all_input_widgets.append(self.isbn_input)
-        form.addRow(self.tr("ISBN:"), self.isbn_input)
+        self._add_publication_row(
+            form, key="isbn", label=self.tr("ISBN:"), widget=self.isbn_input
+        )
 
         self.url_input = QLineEdit()
         self.url_input.setPlaceholderText(self.tr("https://…"))
         self.url_input.textChanged.connect(self._update_preview)
         self._all_input_widgets.append(self.url_input)
-        form.addRow(self.tr("URL:"), self.url_input)
+        self._add_publication_row(
+            form, key="url", label=self.tr("URL:"), widget=self.url_input
+        )
 
+        # Kept for section-level show/hide when every identifier is
+        # hidden for the current work type.
+        self._identifiers_section_box = box
         return box
 
     def _build_advanced_section(self) -> QWidget:
@@ -1143,13 +1177,26 @@ class _ReferenceWorkForm(QDialog):
             if label is not None:
                 label.setVisible(key in visible)
 
-        # Update the container-title row label to reflect the type-aware
-        # display name (e.g. "Journal" vs "Container / book title").
+        # Type-specific plain-English label for the ``container_title``
+        # field. "Container" is never shown to the user.
         container_label = self._publication_row_labels.get("container_title")
         if container_label is not None:
             container_label.setText(
                 _container_title_label_for(self._current_type(), self.tr)
             )
+
+        # Hide sections whose every row is hidden for this type — e.g.
+        # Website has no fields in the Publication details section, so
+        # we drop the whole section header rather than showing an empty
+        # box.
+        pub_visible = bool(visible & _PUBLICATION_DETAIL_KEYS)
+        id_visible = bool(visible & _IDENTIFIER_KEYS)
+        pub_box = getattr(self, "_publication_section_box", None)
+        if pub_box is not None:
+            pub_box.setVisible(pub_visible)
+        id_box = getattr(self, "_identifiers_section_box", None)
+        if id_box is not None:
+            id_box.setVisible(id_visible)
 
     # ----- Load / collect -------------------------------------------------
 
@@ -1859,7 +1906,7 @@ class ReferenceLibraryManagerDialog(QDialog):
         )
         self.setWindowTitle(self.tr("Reference Library"))
         self.setModal(True)
-        self.resize(1000, 640)
+        self.resize(1200, 640)
 
         self._works: list[ReferenceWork] = []
         self._current_work: ReferenceWork | None = None
@@ -1882,9 +1929,13 @@ class ReferenceLibraryManagerDialog(QDialog):
         splitter.addWidget(self._build_works_pane())
         splitter.addWidget(self._build_hierarchy_pane())
         splitter.addWidget(self._build_detail_pane())
-        splitter.setStretchFactor(0, 3)
+        # Give the Publications pane enough room for the short-label
+        # column to hold a normal citation on one line. The three panes
+        # can still be resized freely.
+        splitter.setStretchFactor(0, 4)
         splitter.setStretchFactor(1, 3)
         splitter.setStretchFactor(2, 4)
+        splitter.setSizes([440, 320, 440])
         outer.addWidget(splitter, 1)
 
         buttons = QDialogButtonBox(QDialogButtonBox.Close, Qt.Horizontal, self)
@@ -1998,8 +2049,17 @@ class ReferenceLibraryManagerDialog(QDialog):
         self.edit_selected_btn.setEnabled(False)
         layout.addWidget(self.edit_selected_btn)
 
-        attach_row = QHBoxLayout()
-        attach_row.addWidget(QLabel(self.tr("Role:")))
+        # Role is a property of the observation↔measurement-set link
+        # (``observation_reference_uses.role``), NOT of the reference
+        # work. The Role selector only makes sense when the operator
+        # has selected a measurement set AND the manager was opened
+        # against an active observation, so we group Role + Attach in
+        # a single container widget that is hidden as a unit otherwise.
+        self._attach_row_container = QWidget()
+        attach_row = QHBoxLayout(self._attach_row_container)
+        attach_row.setContentsMargins(0, 0, 0, 0)
+        self._role_label = QLabel(self.tr("Role:"))
+        attach_row.addWidget(self._role_label)
         self.role_combo = QComboBox()
         for role in ("compared", "supports_identification", "contradicts"):
             if role in OBSERVATION_REFERENCE_ROLES:
@@ -2008,7 +2068,7 @@ class ReferenceLibraryManagerDialog(QDialog):
         self.attach_btn = QPushButton(self.tr("Attach to active observation"))
         self.attach_btn.clicked.connect(self._on_attach_clicked)
         attach_row.addWidget(self.attach_btn)
-        layout.addLayout(attach_row)
+        layout.addWidget(self._attach_row_container)
         self._update_attach_button_visibility()
         return pane
 
@@ -2460,11 +2520,22 @@ class ReferenceLibraryManagerDialog(QDialog):
         self.accept()
 
     def _update_attach_button_visibility(self) -> None:
+        """Show the Role + Attach row only when attaching actually applies.
+
+        Role is a per-attachment property (see
+        ``observation_reference_uses.role``), not a property of the
+        selected Reference Work — so we hide the whole widget group
+        unless (a) the manager was opened against an active observation
+        AND (b) the current selection is a MeasurementSet that could
+        be attached to it. Prior behaviour kept the Role combo visible
+        while the Attach button was disabled, which misled users into
+        treating role as a work-level attribute.
+        """
         has_observation = self._active_observation_id is not None
         has_set = self._current_measurement_set is not None
-        self.attach_btn.setVisible(has_observation)
-        self.role_combo.setVisible(has_observation)
-        self.attach_btn.setEnabled(has_observation and has_set)
+        applicable = has_observation and has_set
+        self._attach_row_container.setVisible(applicable)
+        self.attach_btn.setEnabled(applicable)
 
     # --- Public helpers used by tests / callers ---
 

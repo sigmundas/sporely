@@ -251,8 +251,12 @@ def test_manager_empty_state_renders_without_exception(libs, qapp):
     try:
         assert dialog.works_table.rowCount() == 0
         assert dialog.current_selection_kind() == "empty"
-        # Attach button is hidden when no observation is provided.
-        assert dialog.attach_btn.isHidden() is True
+        # The whole Role+Attach row is hidden when no observation is
+        # provided AND when the current selection is not a measurement
+        # set. Checking the container is the correct signal because
+        # ``isHidden()`` on individual child widgets doesn't propagate
+        # from a hidden parent in Qt.
+        assert dialog._attach_row_container.isHidden() is True
     finally:
         dialog.deleteLater()
 
@@ -383,6 +387,54 @@ def test_manager_plot_hint_shows_when_set_is_not_plottable(libs, qapp):
             "not plottable yet" in dialog.plot_hint_label.text().lower()
             or "plottable" in dialog.plot_hint_label.text().lower()
         )
+    finally:
+        dialog.deleteLater()
+
+
+def test_role_and_attach_row_hidden_when_selection_is_a_work(libs, qapp):
+    """Regression: the Role selector is a per-attachment property (see
+    ``observation_reference_uses.role``), NOT a property of the
+    Reference Work. When the operator selects a Work (or a Treatment)
+    the Role+Attach row must hide entirely so it does not read as a
+    work-level attribute. It only appears when a MeasurementSet is
+    selected AND the manager was opened against an active observation.
+    """
+    from ui.reference_library_manager_dialog import ReferenceLibraryManagerDialog
+
+    db_path, _ = libs
+    obs_id = _make_observation(db_path)
+    _, treatment = _seed_work_treatment(libs)
+    MeasurementSetRepository.create(
+        MeasurementSet(
+            id="",
+            taxon_treatment_id=treatment.id,
+            character="spore_size",
+            data_kind="range",
+            length_core_min=8.0, length_core_max=10.0,
+            width_core_min=5.0, width_core_max=6.0,
+        )
+    )
+    dialog = ReferenceLibraryManagerDialog(
+        None, active_observation_id=int(obs_id)
+    )
+    try:
+        # Work selected -> Role+Attach row hidden.
+        dialog.works_table.selectRow(0)
+        assert dialog.current_selection_kind() == "work"
+        assert dialog._attach_row_container.isHidden() is True
+
+        # Treatment selected -> still hidden.
+        t_item = dialog.hierarchy_tree.topLevelItem(0)
+        dialog.hierarchy_tree.setCurrentItem(t_item)
+        assert dialog.current_selection_kind() == "treatment"
+        assert dialog._attach_row_container.isHidden() is True
+
+        # Measurement set selected -> Role+Attach becomes visible +
+        # enabled because both an observation and a set are present.
+        dialog.hierarchy_tree.setCurrentItem(t_item.child(0))
+        assert dialog.current_selection_kind() == "measurement_set"
+        assert dialog._attach_row_container.isHidden() is False
+        assert dialog.attach_btn.isEnabled() is True
     finally:
         dialog.deleteLater()
 

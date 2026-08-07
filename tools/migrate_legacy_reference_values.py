@@ -849,6 +849,104 @@ def _normalize_source_key(value: Any) -> str:
     return str(value or "").strip().lower()
 
 
+# --- Personal / Sporely-generated source classifier -------------------------
+#
+# Some legacy ``reference_values`` rows carry sources that are NOT
+# literature citations — they were persisted by the Sporely desktop app
+# itself when the operator's own cloud measurements landed in the same
+# table. These rows must never be migrated into normalized ReferenceWork
+# / TaxonTreatment / MeasurementSet literature records, and they must
+# not clutter the operator's interactive walkthrough as groups to skip.
+#
+# The classifier is intentionally narrow and conservative:
+#
+# - matches an EXPLICIT known prefix (currently ``Cloud:`` only);
+# - never inspects the row's numeric contents;
+# - never matches merely because a source contains an email, a date,
+#   or the word "cloud" somewhere inside a longer citation.
+#
+# Extend this tuple ONLY when a new Sporely-internal source-format
+# convention is confirmed. When in doubt, leave a row classified as
+# literature — the operator can still mark it skipped or unresolved.
+_PERSONAL_SOURCE_PREFIXES: tuple[str, ...] = ("cloud:",)
+
+
+def _is_personal_source(source: Any) -> bool:
+    text = str(source or "").strip().lower()
+    if not text:
+        return False
+    for prefix in _PERSONAL_SOURCE_PREFIXES:
+        if text.startswith(prefix):
+            return True
+    return False
+
+
+def _display_source_label(source: str) -> str:
+    """Return the human-facing source label without embedded PII.
+
+    For personal/cloud sources the raw legacy label often carries the
+    operator's own email + a timestamp. That string must NEVER surface
+    in normal CLI output — the CLI treats these groups as excluded and
+    only displays a redacted label if it prints them at all.
+    """
+    if _is_personal_source(source):
+        return "Sporely personal measurement (redacted)"
+    return str(source or "")
+
+
+# --- Terminal styling -------------------------------------------------------
+
+
+class _Style:
+    """Small ANSI style helper.
+
+    Enabled only when stdout is a TTY and ``NO_COLOR`` is unset. When
+    disabled, every method returns the text unchanged so tests, piped
+    output, and any state/report file we might write remain 100% plain.
+    ANSI codes are NEVER stored anywhere — only used on the terminal.
+    """
+
+    _CODES = {
+        "bold": "1",
+        "dim": "2",
+        "red": "31",
+        "green": "32",
+        "yellow": "33",
+        "cyan": "36",
+        "bold_cyan": "1;36",
+        "bold_yellow": "1;33",
+    }
+
+    def __init__(self, enabled: bool | None = None) -> None:
+        if enabled is None:
+            enabled = self._detect_enabled()
+        self.enabled = bool(enabled)
+
+    @staticmethod
+    def _detect_enabled() -> bool:
+        import os
+        if os.environ.get("NO_COLOR"):
+            return False
+        try:
+            return sys.stdout.isatty()
+        except (AttributeError, ValueError):
+            return False
+
+    def _wrap(self, code: str, text: str) -> str:
+        if not self.enabled or not text:
+            return text
+        return f"\x1b[{code}m{text}\x1b[0m"
+
+    def bold(self, s: str) -> str: return self._wrap(self._CODES["bold"], s)
+    def dim(self, s: str) -> str: return self._wrap(self._CODES["dim"], s)
+    def red(self, s: str) -> str: return self._wrap(self._CODES["red"], s)
+    def green(self, s: str) -> str: return self._wrap(self._CODES["green"], s)
+    def yellow(self, s: str) -> str: return self._wrap(self._CODES["yellow"], s)
+    def cyan(self, s: str) -> str: return self._wrap(self._CODES["cyan"], s)
+    def bold_cyan(self, s: str) -> str: return self._wrap(self._CODES["bold_cyan"], s)
+    def bold_yellow(self, s: str) -> str: return self._wrap(self._CODES["bold_yellow"], s)
+
+
 @dataclass
 class LegacyRowSummary:
     """Read-only projection of one legacy row for interactive display."""
@@ -896,12 +994,41 @@ class WorkCandidate:
     year: int | None
     authors_summary: str
 
-    def display(self, index: int) -> str:
+    def display(self, index: int, style: "_Style | None" = None) -> list[str]:
+        """Return the two lines the picker prints for this candidate.
+
+        Format:
+
+            1. Læssøe et al. 2024
+               Danmarks basidiesvampe
+
+        Year is dropped when it is already present in ``short_label`` so
+        the picker does not show "Læssøe et al. 2024 (2024)". Author list
+        is intentionally omitted from the visible summary — a modern
+        ``short_label`` already carries the author cue. The UUID never
+        appears on a normal candidate line; call :meth:`display_debug`
+        to include it for troubleshooting.
+        """
+        st = style or _Style(enabled=False)
+        short = self.short_label
+        year_suffix = ""
+        if self.year is not None and str(self.year) not in short:
+            year_suffix = f" ({self.year})"
+        header = f"  {index}. " + st.bold(f"{short}{year_suffix}")
+        subtitle = (
+            f"     {self.title}" if self.title and self.title != short else ""
+        )
+        lines = [header]
+        if subtitle:
+            lines.append(subtitle)
+        return lines
+
+    def display_debug(self, index: int) -> str:
+        """UUID-carrying variant for troubleshooting/support only."""
         year = f" ({self.year})" if self.year is not None else ""
-        author = f" — {self.authors_summary}" if self.authors_summary else ""
         return (
-            f"  {index}. {self.short_label}{year}{author} — {self.title} "
-            f"[uuid={self.work_id[:8]}]"
+            f"  {index}. {self.short_label}{year} — {self.title} "
+            f"[uuid={self.work_id}]"
         )
 
 
@@ -1106,23 +1233,46 @@ class InteractiveMigrationSession:
     def pending_groups(self) -> list[SourceGroup]:
         """Groups the operator still has to decide on.
 
-        A group is pending if it has any unmigrated rows AND has neither
-        been skipped nor left unresolved by an earlier session. Groups
-        already bound to a work but with new legacy rows underneath
-        (unlikely — legacy rows are read-only — but possible on restore)
-        stay pending until every row is migrated.
+        A group is pending unless:
+
+        * every row is already migrated (``legacy_reference_value_id``
+          is set) — apply mode advances via this branch;
+        * the operator has ALREADY bound the source to a work this
+          session (``source_bindings`` has an entry) — this is what
+          advances the walkthrough in dry-run mode, where no rows have
+          actually been written yet but the operator has expressed their
+          decision;
+        * the operator has skipped or left the source unresolved;
+        * the source is classified as personal / Sporely-computed.
         """
         groups = self.load_source_groups()
         skipped = set(self.state.skipped_sources)
         unresolved = set(self.state.unresolved_sources)
+        bound = set(self.state.source_bindings.keys())
         pending: list[SourceGroup] = []
         for group in groups:
             if not group.unmigrated_rows:
                 continue
+            if _is_personal_source(group.source):
+                continue
             if group.source_key in skipped or group.source_key in unresolved:
+                continue
+            if group.source_key in bound:
                 continue
             pending.append(group)
         return pending
+
+    def personal_groups(self) -> list[SourceGroup]:
+        """Legacy source groups classified as personal/Sporely-computed.
+
+        Retained for summary counts and for tests. These groups are
+        never presented to the operator as literature-migration work
+        and never migrated into normalized literature records.
+        """
+        return [
+            g for g in self.load_source_groups()
+            if _is_personal_source(g.source)
+        ]
 
     def refresh_library(self) -> None:
         """No-op hook — every method already re-queries the library. The
@@ -1238,6 +1388,20 @@ class InteractiveMigrationSession:
                 {
                     "source_key": source_key,
                     "reason": "source group not found in the current legacy DB",
+                }
+            )
+            return report
+
+        # Safety net: even if a caller somehow supplies a personal/cloud
+        # source key, refuse to migrate its rows into a literature work.
+        if _is_personal_source(group.source):
+            report.failed.append(
+                {
+                    "source_key": source_key,
+                    "reason": (
+                        "source is classified as personal/Sporely-computed "
+                        "and cannot be migrated into a literature Reference Work"
+                    ),
                 }
             )
             return report
@@ -1408,20 +1572,28 @@ class InteractiveMigrationSession:
 
     def summary(self) -> dict[str, Any]:
         groups = self.load_source_groups()
-        total_rows = sum(len(g.rows) for g in groups)
-        migrated = sum(len(g.migrated_rows) for g in groups)
+        # Split legacy rows into literature vs personal/computed. Every
+        # count below counts LITERATURE rows only unless explicitly
+        # labelled ``personal_computed_rows``.
+        literature_groups = [
+            g for g in groups if not _is_personal_source(g.source)
+        ]
+        personal = [g for g in groups if _is_personal_source(g.source)]
+        total_rows = sum(len(g.rows) for g in literature_groups)
+        migrated = sum(len(g.migrated_rows) for g in literature_groups)
         pending_groups = self.pending_groups()
         remaining = sum(len(g.unmigrated_rows) for g in pending_groups)
         skipped_row_count = sum(
             len(g.unmigrated_rows)
-            for g in groups
+            for g in literature_groups
             if g.source_key in set(self.state.skipped_sources)
         )
         unresolved_row_count = sum(
             len(g.unmigrated_rows)
-            for g in groups
+            for g in literature_groups
             if g.source_key in set(self.state.unresolved_sources)
         )
+        personal_computed_rows = sum(len(g.rows) for g in personal)
         next_group = pending_groups[0] if pending_groups else None
         return {
             "total_rows": total_rows,
@@ -1429,6 +1601,8 @@ class InteractiveMigrationSession:
             "remaining": remaining,
             "skipped_rows": skipped_row_count,
             "unresolved_rows": unresolved_row_count,
+            "personal_computed_rows": personal_computed_rows,
+            "personal_computed_groups": len(personal),
             "pending_groups": len(pending_groups),
             "next_source": next_group.source if next_group else None,
             "next_source_row_count": (
@@ -1451,58 +1625,153 @@ _MENU_ACTIONS = {
 }
 
 
-def _print_summary(session: InteractiveMigrationSession) -> None:
+def _emit(line: str, stream_out=None) -> None:
+    if stream_out is None:
+        print(line)
+    else:
+        print(line, file=stream_out)
+
+
+def _print_summary(
+    session: InteractiveMigrationSession,
+    *,
+    style: _Style | None = None,
+    stream_out=None,
+) -> None:
+    st = style or _Style(enabled=False)
     s = session.summary()
     total = s["total_rows"]
-    print()
-    print(f"Migrated:   {s['migrated']} / {total}")
-    print(f"Remaining:  {s['remaining']}")
-    print(f"Skipped:    {s['skipped_rows']}")
-    print(f"Unresolved: {s['unresolved_rows']}")
+    _emit("", stream_out)
+    _emit(
+        f"{st.bold('Literature migrated:')}   "
+        f"{st.green(str(s['migrated']))} / {total}",
+        stream_out,
+    )
+    _emit(f"{st.bold('Literature remaining:')} {s['remaining']}", stream_out)
+    _emit(
+        f"{st.bold('Personal/computed:')}     "
+        f"{st.dim(str(s['personal_computed_rows']))}",
+        stream_out,
+    )
+    _emit(f"{st.bold('Skipped:')}                {s['skipped_rows']}", stream_out)
+    _emit(
+        f"{st.bold('Unresolved:')}             "
+        f"{st.yellow(str(s['unresolved_rows'])) if s['unresolved_rows'] else '0'}",
+        stream_out,
+    )
     if s["next_source"] is not None:
-        print(
-            f"Next source: {s['next_source'] or '(blank source)'} "
-            f"({s['next_source_row_count']} rows)"
+        next_label = s["next_source"] or ""
+        if next_label:
+            display = st.bold_cyan(next_label)
+        else:
+            display = st.bold_yellow("No source recorded")
+        _emit(
+            f"{st.bold('Next source:')} {display} "
+            f"({s['next_source_row_count']} rows)",
+            stream_out,
         )
-    print()
+    _emit("", stream_out)
 
 
-def _print_group(group: SourceGroup, state: InteractiveState) -> None:
-    print()
-    label = group.source or "(blank source)"
-    print(f"Legacy source: {label}")
-    print(f"Rows: {len(group.unmigrated_rows)}")
-    print()
+def _print_group(
+    group: SourceGroup,
+    state: InteractiveState,
+    *,
+    style: _Style | None = None,
+    stream_out=None,
+) -> None:
+    st = style or _Style(enabled=False)
+    _emit("", stream_out)
+    _emit("─" * 57, stream_out)
+    if group.source.strip():
+        label_display = st.bold_cyan(group.source)
+    else:
+        # Genuine empty legacy source — flag visually. The underlying
+        # ``group.source_key`` stays "" so the operator can still bind,
+        # skip, or leave unresolved without special casing.
+        label_display = st.bold_yellow("No source recorded")
+    _emit(f"{st.bold('Legacy source:')} {label_display}", stream_out)
+    row_count = len(group.unmigrated_rows)
+    row_word = "row" if row_count == 1 else "rows"
+    _emit(f"{row_count} legacy {row_word}", stream_out)
+
+    # Group-level provenance note for parmasto sources — printed ONCE
+    # per group rather than as a redundant warning on every row. The
+    # ``· parmasto`` kind marker on each row already conveys the data
+    # shape; this line only tells the operator that the specialized
+    # columns will be preserved in migration ``notes`` for provenance.
+    if any(
+        r.suggested_data_kind == "parmasto"
+        for r in group.unmigrated_rows
+    ):
+        _emit(
+            st.dim(
+                "  Parmasto values preserved as provenance in migration notes."
+            ),
+            stream_out,
+        )
+    _emit("", stream_out)
+
     deselected = set(state.deselected_rows.get(group.source_key, []))
     for row in group.unmigrated_rows:
         mark = "[ ]" if row.legacy_id in deselected else "[x]"
-        plot = "plotable" if row.plotable else "not plotable"
-        extras = ""
+        # Only surface `plotable=True` implicitly (silence) — call
+        # attention to a row only when it is NOT plotable or has an
+        # unexpected unmapped hint. ``parmasto_*`` is intentionally
+        # excluded from per-row warnings: every parmasto row would
+        # otherwise repeat the same string 200 times, and the row's
+        # own ``· parmasto`` kind marker already signals the shape.
+        warnings: list[str] = []
+        if not row.plotable:
+            warnings.append(st.yellow("not plotable"))
         if row.unmapped_fields:
             interesting = [
                 f for f in row.unmapped_fields
-                if f.startswith("parmasto") or f.startswith("plot_color")
+                if f.startswith("plot_color")
             ]
             if interesting:
-                extras = f"    ({'; '.join(interesting)})"
-        print(
-            f"  {mark} {row.taxon_label:<32s} row {row.legacy_id}  "
-            f"kind={row.suggested_data_kind}  {plot}{extras}"
+                warnings.append(st.yellow(f"({'; '.join(interesting)})"))
+        row_extras = ("  " + "  ".join(warnings)) if warnings else ""
+        taxon = row.taxon_label
+        row_line = (
+            f"  {mark} {taxon:<32s} "
+            f"{st.dim(f'row {row.legacy_id}')} · {row.suggested_data_kind}"
+            f"{row_extras}"
         )
+        _emit(row_line, stream_out)
     if group.migrated_rows:
-        print()
-        print("  Already migrated:")
+        _emit("", stream_out)
+        _emit(f"  {st.green('Already migrated:')}", stream_out)
         for row in group.migrated_rows:
-            print(f"    - {row.taxon_label} (row {row.legacy_id})")
+            _emit(
+                f"    - {row.taxon_label} "
+                f"{st.dim(f'(row {row.legacy_id})')}",
+                stream_out,
+            )
 
 
-def _print_candidates(candidates: list[WorkCandidate]) -> None:
+def _print_candidates(
+    candidates: list[WorkCandidate],
+    *,
+    style: _Style | None = None,
+    stream_out=None,
+) -> None:
+    st = style or _Style(enabled=False)
+    _emit("", stream_out)
+    _emit(st.bold("Reference Works"), stream_out)
+    _emit("", stream_out)
     if not candidates:
-        print("  (no matching reference works — press [r] to refresh, "
-              "or use the desktop UI to create one and then press [r])")
+        _emit(
+            "  " + st.yellow(
+                "(no matching reference works — press [r] to refresh, or "
+                "use the desktop UI to create one and then press [r])"
+            ),
+            stream_out,
+        )
         return
     for i, cand in enumerate(candidates, start=1):
-        print(cand.display(i))
+        for line in cand.display(i, style=st):
+            _emit(line, stream_out)
 
 
 def _prompt(prompt_text: str, *, stream_in=None) -> str:
@@ -1519,19 +1788,22 @@ def interactive_loop(
     *,
     stream_in=None,
     stream_out=None,
-) -> None:  # pragma: no cover — thin I/O wrapper exercised via integration tests
+    style: _Style | None = None,
+) -> None:
     """Stdin/stdout driver over :class:`InteractiveMigrationSession`.
 
     The engine itself is I/O-free; this function is intentionally thin so
-    every branch of importance is testable via direct engine calls.
+    every branch is testable by injecting ``stream_in`` and ``stream_out``.
+    Terminal styling is auto-detected (TTY + ``NO_COLOR``) unless a
+    ``_Style`` instance is passed explicitly — tests always pass a
+    disabled style so assertions see plain text.
     """
     import builtins as _b
 
+    st = style or _Style()
+
     def _out(text: str = "") -> None:
-        if stream_out is None:
-            print(text)
-        else:
-            print(text, file=stream_out)
+        _emit(text, stream_out)
 
     def _in(prompt_text: str) -> str:
         if stream_in is None:
@@ -1540,31 +1812,42 @@ def interactive_loop(
         line = stream_in.readline()
         return line.rstrip("\n") if line else "q"
 
-    _print_summary(session)
+    # Mode banner: dry-run is the safe default so the operator should
+    # never wonder whether their picks are being written. The banner is
+    # printed ONCE at the top of the walkthrough.
+    if session.dry_run:
+        _out(st.bold_yellow(
+            "DRY-RUN mode: selections are recorded but nothing is written "
+            "to the normalized database. Re-run with --apply --confirm-backup "
+            "to persist migrations."
+        ))
+    else:
+        _out(st.bold_cyan(
+            "APPLY mode: numeric picks migrate legacy rows immediately."
+        ))
+    _print_summary(session, style=st, stream_out=stream_out)
     while True:
         pending = session.pending_groups()
         if not pending:
-            _out("All groups decided. Nothing left to do.")
+            _out(st.green("All groups decided. Nothing left to do."))
             return
         group = pending[0]
-        _print_group(group, session.state)
-        # Candidate listing.
+        _print_group(group, session.state, style=st, stream_out=stream_out)
         candidates = session.list_work_candidates()
+        _print_candidates(candidates, style=st, stream_out=stream_out)
         _out("")
-        _out("Choose Reference Work:")
-        _print_candidates(candidates)
-        _out("  [r] refresh Reference Library")
-        _out("  [s] skip this source group")
-        _out("  [u] leave unresolved")
-        _out("  [d N] deselect legacy row N (repeat as needed)")
-        _out("  [q] save progress and quit")
+        _out(f"    {st.dim('[r] Refresh')}")
+        _out(f"    {st.dim('[s] Skip')}")
+        _out(f"    {st.dim('[u] Unresolved')}")
+        _out(f"    {st.dim('[d N] Deselect row')}")
+        _out(f"    {st.dim('[q] Save and quit')}")
         raw = _in("Selection: ").strip()
         if not raw:
             continue
         low = raw.lower()
         if low == "q":
             session.save()
-            _out("Progress saved.")
+            _out(st.green("Progress saved."))
             return
         if low == "r":
             session.refresh_library()
@@ -1579,7 +1862,7 @@ def interactive_loop(
             try:
                 legacy_id = int(low.split(None, 1)[1])
             except (ValueError, IndexError):
-                _out("Enter 'd <legacy_id>'.")
+                _out(st.red("Enter 'd <legacy_id>'."))
                 continue
             session.deselect_row(group.source_key, legacy_id)
             continue
@@ -1587,30 +1870,34 @@ def interactive_loop(
             index = int(raw)
             if 1 <= index <= len(candidates):
                 chosen = candidates[index - 1]
-                _out(
-                    f"Assign {len(group.unmigrated_rows)} legacy rows from "
-                    f'"{group.source or "(blank)"}"'
+                # A numeric candidate pick is itself the confirmation —
+                # apply immediately in the current mode (dry-run or apply).
+                rep = session.assign_group_to_work(
+                    group.source_key, chosen.work_id
                 )
-                _out(f'to "{chosen.short_label}"?')
-                for r in group.unmigrated_rows:
-                    _out(f"  {r.taxon_label}")
-                confirm = _in("[y/N]: ").strip().lower()
-                if confirm == "y":
-                    rep = session.assign_group_to_work(
-                        group.source_key, chosen.work_id
-                    )
-                    _out(
-                        f"  created={len(rep.created)} "
-                        f"reused={len(rep.reused)} "
-                        f"skipped={len(rep.skipped)} "
-                        f"failed={len(rep.failed)}"
-                    )
+                created = len(rep.created)
+                reused = len(rep.reused)
+                skipped = len(rep.skipped)
+                failed = len(rep.failed)
+                mode_tag = (
+                    st.yellow(" (dry-run — no rows written)")
+                    if session.dry_run
+                    else ""
+                )
+                _out(
+                    "  "
+                    f"{st.green(f'created={created}')} "
+                    f"{st.green(f'reused={reused}')} "
+                    f"skipped={skipped} "
+                    f"{(st.red(f'failed={failed}') if failed else f'failed={failed}')}"
+                    f"{mode_tag}"
+                )
                 continue
-            _out("Number out of range.")
+            _out(st.red("Number out of range."))
             continue
-        # Free text -> search candidates
+        # Free text -> narrow the candidate list.
         candidates = session.list_work_candidates(query=raw)
-        _print_candidates(candidates)
+        _print_candidates(candidates, style=st, stream_out=stream_out)
 
 
 # ---------------------------------------------------------------------------
@@ -1718,13 +2005,15 @@ def main(argv: list[str] | None = None) -> int:
         )
         if args.summary:
             s = session.summary()
-            print(f"Migrated:   {s['migrated']} / {s['total_rows']}")
-            print(f"Remaining:  {s['remaining']}")
-            print(f"Skipped:    {s['skipped_rows']}")
-            print(f"Unresolved: {s['unresolved_rows']}")
+            print(f"Literature migrated:   {s['migrated']} / {s['total_rows']}")
+            print(f"Literature remaining:  {s['remaining']}")
+            print(f"Personal/computed:     {s['personal_computed_rows']}")
+            print(f"Skipped:               {s['skipped_rows']}")
+            print(f"Unresolved:            {s['unresolved_rows']}")
             if s["next_source"] is not None:
+                next_label = s["next_source"] or "No source recorded"
                 print(
-                    f"Next source: {s['next_source'] or '(blank source)'} "
+                    f"Next source: {next_label} "
                     f"({s['next_source_row_count']} rows)"
                 )
             return 0

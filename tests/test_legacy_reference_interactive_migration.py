@@ -172,7 +172,8 @@ def test_source_group_contains_multiple_taxa(libs, tmp_path):
 
 def test_list_work_candidates_uses_short_label_title_year_authors(libs, tmp_path):
     """AC-5: the candidate projection surfaces human-readable fields;
-    the UUID is present but secondary."""
+    the UUID is present as secondary/debug information but never on the
+    normal candidate line."""
     _, ref_path = libs
     _create_work(title="Danmarks Basidiesvampe", short_label="Petersen 1990",
                  year=1990,
@@ -185,9 +186,17 @@ def test_list_work_candidates_uses_short_label_title_year_authors(libs, tmp_path
     assert c.title == "Danmarks Basidiesvampe"
     assert c.year == 1990
     assert "Petersen" in c.authors_summary
-    assert c.work_id  # UUID present as secondary/debug info
-    line = c.display(1)
-    assert "Petersen" in line and "1990" in line and "Danmarks" in line
+    assert c.work_id  # UUID retained as secondary/debug info
+    # Normal display: two lines, no UUID, no duplicated year.
+    lines = c.display(1)
+    joined = "\n".join(lines)
+    assert "Petersen 1990" in joined
+    assert "Danmarks Basidiesvampe" in joined
+    assert c.work_id not in joined
+    # Year 1990 must appear exactly once (it's already in the short label).
+    assert joined.count("1990") == 1
+    # Debug variant DOES include the UUID for support/troubleshooting.
+    assert c.work_id in c.display_debug(1)
 
 
 def test_candidate_search_filters_existing_works(libs, tmp_path):
