@@ -859,6 +859,73 @@ def test_attach_to_existing_stamps_legacy_id_on_existing_set(libs, tmp_path):
     assert refreshed.legacy_reference_value_id == legacy_id
 
 
+def test_audit_manifest_contract_every_row_gets_migration_state_entry(
+    libs, tmp_path
+):
+    """AC-18: the audit manifest emits ONE migration-state entry per
+    audited legacy row. The top-level fields are ``manifest_version``
+    and ``rows`` — a prior inspection looking for ``version`` / ``entries``
+    reported zero because those field names do not exist in the schema
+    this tool produces. This regression pins both facts down.
+    """
+    from tools import audit_legacy_reference_values as audit_tool
+
+    _, ref_path = libs
+    # Seed 25 legacy rows spanning several source strings, plot-kinds
+    # and empty-source edge cases — the manifest must still enumerate
+    # every one.
+    legacy_ids: list[int] = []
+    for i in range(25):
+        legacy_ids.append(
+            _insert_legacy(
+                ref_path,
+                genus="Russula" if i % 2 else "Flammulina",
+                species=f"sp{i}",
+                source=(
+                    "Ripkova et al, 2010" if i % 3 else "Parmasto, 1987"
+                    if i % 5 else None
+                ),
+                length_min=8.0 if i % 4 else None,
+                length_max=10.0 if i % 4 else None,
+            )
+        )
+    output_dir = tmp_path / "audit"
+    audit_tool.main(
+        [
+            "--database",
+            str(ref_path),
+            "--output-dir",
+            str(output_dir),
+        ]
+    )
+    manifest_path = output_dir / "legacy-reference-migration.json"
+    manifest = json.loads(manifest_path.read_text(encoding="utf-8"))
+
+    # Correct top-level field names.
+    assert "manifest_version" in manifest
+    assert manifest["manifest_version"] == 1
+    assert "rows" in manifest
+    # An inspector using the wrong field names would (correctly) find
+    # nothing — this asserts the schema shape rather than a defect.
+    assert "version" not in manifest
+    assert "entries" not in manifest
+
+    # Every audited legacy row must be represented exactly once.
+    rows = manifest["rows"]
+    assert len(rows) == len(legacy_ids)
+    row_ids = [entry["legacy_id"] for entry in rows]
+    assert sorted(row_ids) == sorted(legacy_ids)
+    # Every entry carries an action.
+    for entry in rows:
+        assert entry["action"] in {
+            "migrate",
+            "attach_to_existing",
+            "skip",
+            "unresolved",
+            "already_migrated",
+        }
+
+
 def test_apply_via_cli_requires_confirm_backup(libs, tmp_path):
     """AC-C: the CLI refuses to write without the explicit
     ``--confirm-backup`` acknowledgement."""

@@ -1107,6 +1107,42 @@ UX, or any cloud/public work.
   Bokmål and Swedish use their standard forms; German uses the
   informal "du" form.
 
+#### Legacy migration workflow (interactive)
+
+The default path for moving legacy `reference_values` rows into the
+normalized library is now the interactive terminal walkthrough in
+`tools/migrate_legacy_reference_values.py --interactive`. The operator
+does not edit JSON:
+
+- `tools/audit_legacy_reference_values.py` produces the read-only
+  inventory + migration manifest template (top-level fields:
+  `manifest_version`, `rows`; one entry per legacy row).
+- `tools/migrate_legacy_reference_values.py --interactive` groups
+  unmigrated legacy rows by *exact* normalized source string (no fuzzy
+  merging), lists the current `ReferenceWorkRepository` search results
+  as human-readable candidates (short-label, title, year, authors; UUID
+  as secondary/debug info), and asks the operator to bind each group
+  to one work.
+- The menu keys are `<n>` (pick candidate), free text (filter), `r`
+  (refresh after creating a new work in the desktop Reference Library
+  UI), `s` (skip the source group), `u` (leave unresolved), `d N`
+  (deselect legacy row N before assigning), and `q` (save progress and
+  quit). Confirmation is required before each apply.
+- Progress persists to `.legacy-reference-migration/interactive-state.json`
+  next to the reference database (or at the path passed via
+  `--state-dir`). On restart the CLI re-queries the normalized library,
+  re-checks `legacy_reference_value_id` links, marks already-migrated
+  rows automatically and never re-asks a completed decision.
+- Migrations remain idempotent; legacy rows are never modified or
+  deleted; parmasto values, `plot_color` and `metadata_json` contents
+  travel into the measurement-set `notes` field as migration
+  provenance, together with the original `source` string.
+- `--summary` prints the current `Migrated / Remaining / Skipped /
+  Unresolved` counts and the next pending source group.
+- Manifest-based operation (`--manifest`) is retained for tests,
+  reproducibility and recovery, but it is not required for the normal
+  workflow.
+
 #### Deferred
 
 - Full library editor UI (create/edit works, treatments, measurement

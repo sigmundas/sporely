@@ -267,11 +267,22 @@ def _compose_notes(
     columns: set[str],
 ) -> str | None:
     """Combine any explicit manifest notes with the preserved provenance
-    dump for parmasto / plot_color / metadata_json."""
+    dump for the legacy ``source`` text plus parmasto / plot_color /
+    metadata_json — the operator's chosen normalized work replaces
+    ``source`` as the bibliographic anchor, but the original free-text
+    label is kept verbatim under the measurement set's ``notes`` field
+    so a later curator can audit which legacy row this came from."""
     unsupported = _unsupported_legacy_notes(legacy_row, columns)
     pieces: list[str] = []
     if manifest_notes:
         pieces.append(str(manifest_notes).strip())
+    source_text = ""
+    if "source" in columns:
+        source_text = str(_row_stat(legacy_row, "source") or "").strip()
+    if source_text:
+        pieces.append(
+            f"[legacy-migration] original source: {source_text}"
+        )
     if unsupported:
         pieces.append(
             "[legacy-migration] preserved from reference_values: "
@@ -814,6 +825,795 @@ def run_migration(
 
 
 # ---------------------------------------------------------------------------
+# Interactive migration engine
+# ---------------------------------------------------------------------------
+#
+# The interactive walkthrough replaces hand-edited JSON as the normal
+# migration path. Legacy rows are grouped by an EXACT normalized source
+# string — no fuzzy merging. The operator explicitly assigns each group
+# to a normalized ReferenceWork they either created via the desktop
+# Reference Library UI or already had. Progress is persisted to a local
+# ignored state directory so quitting and resuming later is safe.
+#
+# The engine is deliberately split into an I/O-free session class
+# (:class:`InteractiveMigrationSession`) and a thin stdin/stdout driver
+# (:func:`interactive_loop`) so tests can exercise every decision path
+# without stubbing terminal I/O.
+
+
+INTERACTIVE_STATE_VERSION = 1
+
+
+def _normalize_source_key(value: Any) -> str:
+    """Exact-string grouping key. Never fuzzy-merges labels."""
+    return str(value or "").strip().lower()
+
+
+@dataclass
+class LegacyRowSummary:
+    """Read-only projection of one legacy row for interactive display."""
+
+    legacy_id: int
+    genus: str
+    species: str
+    source: str
+    suggested_data_kind: str
+    plotable: bool
+    already_migrated: bool
+    existing_measurement_set_id: str | None
+    unmapped_fields: list[str] = field(default_factory=list)
+
+    @property
+    def taxon_label(self) -> str:
+        parts = [p for p in (self.genus, self.species) if p]
+        return " ".join(parts) or f"(row {self.legacy_id})"
+
+
+@dataclass
+class SourceGroup:
+    """One exact-source-string grouping of legacy rows."""
+
+    source: str  # original text, verbatim
+    source_key: str  # normalized lookup key
+    rows: list[LegacyRowSummary] = field(default_factory=list)
+
+    @property
+    def unmigrated_rows(self) -> list[LegacyRowSummary]:
+        return [r for r in self.rows if not r.already_migrated]
+
+    @property
+    def migrated_rows(self) -> list[LegacyRowSummary]:
+        return [r for r in self.rows if r.already_migrated]
+
+
+@dataclass
+class WorkCandidate:
+    """Human-readable projection of a :class:`ReferenceWork` for the picker."""
+
+    work_id: str
+    short_label: str
+    title: str
+    year: int | None
+    authors_summary: str
+
+    def display(self, index: int) -> str:
+        year = f" ({self.year})" if self.year is not None else ""
+        author = f" — {self.authors_summary}" if self.authors_summary else ""
+        return (
+            f"  {index}. {self.short_label}{year}{author} — {self.title} "
+            f"[uuid={self.work_id[:8]}]"
+        )
+
+
+@dataclass
+class InteractiveState:
+    """Session state persisted between interactive runs.
+
+    The DB is always the authoritative source for "already migrated" —
+    ``migrated_legacy_ids`` here is a cache/echo for the summary view
+    and does not gate anything. Source-level decisions the operator has
+    made (bind, skip, unresolved) are stored so a restart never asks the
+    same question twice.
+    """
+
+    version: int = INTERACTIVE_STATE_VERSION
+    source_bindings: dict[str, str] = field(default_factory=dict)
+    skipped_sources: list[str] = field(default_factory=list)
+    unresolved_sources: list[str] = field(default_factory=list)
+    deselected_rows: dict[str, list[int]] = field(default_factory=dict)
+    migrated_legacy_ids: list[int] = field(default_factory=list)
+    session_updated_at: str | None = None
+
+    def to_dict(self) -> dict[str, Any]:
+        return {
+            "state_version": self.version,
+            "source_bindings": dict(self.source_bindings),
+            "skipped_sources": sorted(set(self.skipped_sources)),
+            "unresolved_sources": sorted(set(self.unresolved_sources)),
+            "deselected_rows": {
+                k: sorted(set(v)) for k, v in self.deselected_rows.items()
+            },
+            "migrated_legacy_ids": sorted(set(self.migrated_legacy_ids)),
+            "session_updated_at": self.session_updated_at,
+        }
+
+    @classmethod
+    def from_dict(cls, data: dict[str, Any]) -> "InteractiveState":
+        return cls(
+            version=int(data.get("state_version") or INTERACTIVE_STATE_VERSION),
+            source_bindings=dict(data.get("source_bindings") or {}),
+            skipped_sources=list(data.get("skipped_sources") or []),
+            unresolved_sources=list(data.get("unresolved_sources") or []),
+            deselected_rows={
+                k: [int(x) for x in v]
+                for k, v in (data.get("deselected_rows") or {}).items()
+            },
+            migrated_legacy_ids=[int(x) for x in (data.get("migrated_legacy_ids") or [])],
+            session_updated_at=data.get("session_updated_at"),
+        )
+
+
+def _default_state_dir(database_path: Path) -> Path:
+    """Local ignored state directory adjacent to the reference database."""
+    return Path(database_path).parent / ".legacy-reference-migration"
+
+
+def _load_state(state_path: Path) -> InteractiveState:
+    if not state_path.exists():
+        return InteractiveState()
+    try:
+        raw = json.loads(state_path.read_text(encoding="utf-8"))
+    except (OSError, json.JSONDecodeError):
+        return InteractiveState()
+    if not isinstance(raw, dict):
+        return InteractiveState()
+    return InteractiveState.from_dict(raw)
+
+
+def _save_state(state: InteractiveState, state_path: Path) -> None:
+    state.session_updated_at = datetime.now(timezone.utc).isoformat(
+        timespec="seconds"
+    )
+    state_path.parent.mkdir(parents=True, exist_ok=True)
+    state_path.write_text(
+        json.dumps(state.to_dict(), ensure_ascii=False, indent=2) + "\n",
+        encoding="utf-8",
+    )
+
+
+def _row_to_summary(
+    row: sqlite3.Row,
+    columns: set[str],
+    already_migrated_map: dict[int, str],
+) -> LegacyRowSummary:
+    from tools.audit_legacy_reference_values import (  # local import — audit
+        _analyze_row,                                   # tool is a peer module
+    )
+
+    audit = _analyze_row(
+        row, columns=columns, already_migrated_map={
+            int(row["id"]): [already_migrated_map[int(row["id"])]]
+        } if int(row["id"]) in already_migrated_map else {},
+    )
+    return LegacyRowSummary(
+        legacy_id=audit.legacy_id,
+        genus=audit.genus or "",
+        species=audit.species or "",
+        source=audit.source or "",
+        suggested_data_kind=audit.suggested_data_kind,
+        plotable=audit.plotable,
+        already_migrated=audit.already_migrated,
+        existing_measurement_set_id=(
+            audit.existing_normalized_ids[0]
+            if audit.existing_normalized_ids
+            else None
+        ),
+        unmapped_fields=list(audit.unmapped_fields),
+    )
+
+
+class InteractiveMigrationSession:
+    """I/O-free engine for the interactive migration walkthrough.
+
+    Every decision path — grouping, candidate search, refresh, assign,
+    skip, unresolved, quit — is a method call so tests can exercise the
+    contract without stubbing stdin. The thin :func:`interactive_loop`
+    wrapper is the only piece that touches ``input``/``print``.
+
+    Instances hold no DB connection between calls; every method opens a
+    short-lived connection to ``database_path``. Two instances driving
+    the same DB and state file therefore see the same live view of the
+    normalized library and of prior progress.
+    """
+
+    def __init__(
+        self,
+        *,
+        database_path: Path,
+        state_path: Path,
+        dry_run: bool = True,
+    ) -> None:
+        self.database_path = Path(database_path)
+        self.state_path = Path(state_path)
+        self.dry_run = bool(dry_run)
+        self.state = _load_state(self.state_path)
+
+    # -- persistence -----------------------------------------------------
+
+    def save(self) -> None:
+        _save_state(self.state, self.state_path)
+
+    # -- library queries -------------------------------------------------
+
+    def _open_legacy(self) -> sqlite3.Connection:
+        conn = sqlite3.connect(self.database_path)
+        conn.row_factory = sqlite3.Row
+        return conn
+
+    def _open_normalized(self) -> sqlite3.Connection:
+        conn = sqlite3.connect(self.database_path)
+        conn.row_factory = sqlite3.Row
+        init_reference_library_schema(conn)
+        return conn
+
+    def _already_migrated_map(
+        self, conn: sqlite3.Connection
+    ) -> dict[int, str]:
+        rows = conn.execute(
+            """
+            SELECT id, legacy_reference_value_id
+            FROM reference_measurement_sets
+            WHERE legacy_reference_value_id IS NOT NULL
+            """
+        ).fetchall()
+        return {
+            int(r["legacy_reference_value_id"]): str(r["id"]) for r in rows
+        }
+
+    def load_source_groups(self) -> list[SourceGroup]:
+        """Return all legacy rows grouped by exact normalized source string.
+
+        Empty/blank source strings share one bucket keyed as ``""`` so the
+        operator still has a way to handle them; they are NOT lumped
+        together with any non-blank source.
+        """
+        legacy_conn = self._open_legacy()
+        normalized_conn = self._open_normalized()
+        try:
+            columns = _row_columns(legacy_conn)
+            already_migrated_map = self._already_migrated_map(normalized_conn)
+            select_cols = list(columns)
+            rows = legacy_conn.execute(
+                f"SELECT {', '.join(select_cols)} FROM reference_values ORDER BY id"
+            ).fetchall()
+        finally:
+            legacy_conn.close()
+            normalized_conn.close()
+
+        by_key: dict[str, SourceGroup] = {}
+        for row in rows:
+            summary = _row_to_summary(row, columns, already_migrated_map)
+            key = _normalize_source_key(summary.source)
+            grp = by_key.get(key)
+            if grp is None:
+                grp = SourceGroup(source=summary.source, source_key=key)
+                by_key[key] = grp
+            grp.rows.append(summary)
+        # Refresh the state cache of migrated ids off the authoritative DB.
+        self.state.migrated_legacy_ids = sorted(already_migrated_map.keys())
+        return sorted(by_key.values(), key=lambda g: g.source_key)
+
+    def pending_groups(self) -> list[SourceGroup]:
+        """Groups the operator still has to decide on.
+
+        A group is pending if it has any unmigrated rows AND has neither
+        been skipped nor left unresolved by an earlier session. Groups
+        already bound to a work but with new legacy rows underneath
+        (unlikely — legacy rows are read-only — but possible on restore)
+        stay pending until every row is migrated.
+        """
+        groups = self.load_source_groups()
+        skipped = set(self.state.skipped_sources)
+        unresolved = set(self.state.unresolved_sources)
+        pending: list[SourceGroup] = []
+        for group in groups:
+            if not group.unmigrated_rows:
+                continue
+            if group.source_key in skipped or group.source_key in unresolved:
+                continue
+            pending.append(group)
+        return pending
+
+    def refresh_library(self) -> None:
+        """No-op hook — every method already re-queries the library. The
+        method is exposed for symmetry with the ``r`` menu action and for
+        tests that want an explicit refresh event."""
+        return None
+
+    def list_work_candidates(
+        self,
+        query: str | None = None,
+        *,
+        limit: int = 25,
+    ) -> list[WorkCandidate]:
+        works = ReferenceWorkRepository.search(query or None, limit=int(limit))
+        result: list[WorkCandidate] = []
+        for work in works:
+            authors_summary = ""
+            try:
+                authors = json.loads(work.authors_json or "[]")
+            except (TypeError, ValueError, json.JSONDecodeError):
+                authors = []
+            if isinstance(authors, list) and authors:
+                labels = []
+                for entry in authors:
+                    if isinstance(entry, dict):
+                        family = str(entry.get("family") or "").strip()
+                        literal = str(entry.get("literal") or "").strip()
+                        labels.append(family or literal)
+                    elif isinstance(entry, str):
+                        labels.append(entry.strip())
+                labels = [x for x in labels if x]
+                if len(labels) > 2:
+                    authors_summary = f"{labels[0]} et al."
+                elif labels:
+                    authors_summary = " & ".join(labels)
+            result.append(
+                WorkCandidate(
+                    work_id=work.id,
+                    short_label=work.short_label or work.title or work.id,
+                    title=work.title or "",
+                    year=work.year,
+                    authors_summary=authors_summary,
+                )
+            )
+        return result
+
+    # -- decisions -------------------------------------------------------
+
+    def skip_group(self, source_key: str) -> None:
+        if source_key not in self.state.skipped_sources:
+            self.state.skipped_sources.append(source_key)
+        # Clearing any prior binding — skipping trumps a stale binding.
+        self.state.source_bindings.pop(source_key, None)
+        self.save()
+
+    def mark_unresolved(self, source_key: str) -> None:
+        if source_key not in self.state.unresolved_sources:
+            self.state.unresolved_sources.append(source_key)
+        self.save()
+
+    def deselect_row(self, source_key: str, legacy_id: int) -> None:
+        current = set(self.state.deselected_rows.get(source_key, []))
+        current.add(int(legacy_id))
+        self.state.deselected_rows[source_key] = sorted(current)
+        self.save()
+
+    def clear_deselection(self, source_key: str) -> None:
+        self.state.deselected_rows.pop(source_key, None)
+        self.save()
+
+    def _resolve_group(self, source_key: str) -> SourceGroup | None:
+        for group in self.load_source_groups():
+            if group.source_key == source_key:
+                return group
+        return None
+
+    def _verify_work(self, work_id: str) -> bool:
+        return ReferenceWorkRepository.get(work_id) is not None
+
+    def assign_group_to_work(
+        self,
+        source_key: str,
+        work_id: str,
+    ) -> MigrationReport:
+        """Migrate every currently-selected legacy row under ``source_key``
+        to the normalized work ``work_id``. Idempotent: rows already
+        stamped with ``legacy_reference_value_id`` are reported as reused
+        and never double-inserted.
+        """
+        report = MigrationReport(dry_run=self.dry_run)
+
+        # Validate that the target work still exists — an operator could
+        # have deleted it between candidate listing and confirmation.
+        if not self._verify_work(work_id):
+            report.failed.append(
+                {
+                    "source_key": source_key,
+                    "reason": (
+                        f"selected work {work_id} no longer exists in the "
+                        "normalized library — refresh and pick another"
+                    ),
+                }
+            )
+            # Drop the stale binding if any.
+            if self.state.source_bindings.get(source_key) == work_id:
+                self.state.source_bindings.pop(source_key, None)
+                self.save()
+            return report
+
+        group = self._resolve_group(source_key)
+        if group is None:
+            report.failed.append(
+                {
+                    "source_key": source_key,
+                    "reason": "source group not found in the current legacy DB",
+                }
+            )
+            return report
+
+        # Remember the operator's choice BEFORE writing so a crash mid-
+        # apply still leaves the binding intact for the resume path.
+        self.state.source_bindings[source_key] = work_id
+        # Skipping/unresolved is cleared if the operator now assigns.
+        self.state.skipped_sources = [
+            s for s in self.state.skipped_sources if s != source_key
+        ]
+        self.state.unresolved_sources = [
+            s for s in self.state.unresolved_sources if s != source_key
+        ]
+        self.save()
+
+        deselected = set(self.state.deselected_rows.get(source_key, []))
+
+        legacy_conn = self._open_legacy()
+        normalized_conn = self._open_normalized()
+        try:
+            columns = _row_columns(legacy_conn)
+            # Iterate over every row in the group — already-migrated rows
+            # must still surface as ``reused`` on a re-assign so
+            # idempotency is a first-class property, not an implicit one.
+            for row_summary in group.rows:
+                if row_summary.legacy_id in deselected:
+                    report.skipped.append(
+                        {
+                            "legacy_id": row_summary.legacy_id,
+                            "reason": "deselected by operator",
+                        }
+                    )
+                    continue
+                # Re-check migration status on every row — a concurrent
+                # session might have already migrated it.
+                existing = _find_existing_by_legacy_id(
+                    normalized_conn, row_summary.legacy_id
+                )
+                if existing is not None:
+                    report.reused.append(
+                        {
+                            "legacy_id": row_summary.legacy_id,
+                            "measurement_set_id": existing,
+                            "reason": "already migrated on a prior run",
+                        }
+                    )
+                    continue
+                legacy_row = _fetch_legacy_row(
+                    legacy_conn, row_summary.legacy_id
+                )
+                if legacy_row is None:
+                    report.failed.append(
+                        {
+                            "legacy_id": row_summary.legacy_id,
+                            "reason": "legacy row disappeared between listing and apply",
+                        }
+                    )
+                    continue
+                self._migrate_row_under_work(
+                    legacy_row,
+                    columns=columns,
+                    work_id=work_id,
+                    row_summary=row_summary,
+                    normalized_conn=normalized_conn,
+                    report=report,
+                )
+        finally:
+            legacy_conn.close()
+            normalized_conn.close()
+
+        # Cache authoritative migrated-id list off the DB after writes.
+        with self._open_normalized() as fresh_conn:
+            self.state.migrated_legacy_ids = sorted(
+                self._already_migrated_map(fresh_conn).keys()
+            )
+        self.save()
+        return report
+
+    def _migrate_row_under_work(
+        self,
+        legacy_row: sqlite3.Row,
+        *,
+        columns: set[str],
+        work_id: str,
+        row_summary: LegacyRowSummary,
+        normalized_conn: sqlite3.Connection,
+        report: MigrationReport,
+    ) -> None:
+        legacy_id = int(row_summary.legacy_id)
+        taxon_name = row_summary.taxon_label
+
+        # In dry-run, we still simulate treatment reuse to keep the report
+        # accurate, but no writes hit the DB.
+        if self.dry_run:
+            treatment_id = f"__dry_run_treatment__{legacy_id}"
+        else:
+            existing_treatment_id = _existing_treatment(
+                normalized_conn,
+                work_id=work_id,
+                name_as_published=taxon_name,
+            )
+            if existing_treatment_id is not None:
+                treatment_id = existing_treatment_id
+            else:
+                try:
+                    treatment = TaxonTreatmentRepository.create(
+                        TaxonTreatment(
+                            id="",
+                            reference_work_id=work_id,
+                            name_as_published=taxon_name,
+                        )
+                    )
+                except (ReferenceValidationError, ReferenceLibraryError) as exc:
+                    report.failed.append(
+                        {
+                            "legacy_id": legacy_id,
+                            "reason": f"failed to create treatment: {exc}",
+                        }
+                    )
+                    return
+                treatment_id = treatment.id
+
+        payload = _measurement_payload_from_legacy(
+            legacy_row,
+            columns,
+            {"data_kind": row_summary.suggested_data_kind, "notes": None},
+            treatment_id=treatment_id,
+            legacy_id=legacy_id,
+        )
+        unsupported = _unsupported_legacy_notes(legacy_row, columns)
+        if unsupported:
+            report.unsupported_fields.append(
+                {"legacy_id": legacy_id, "preserved_in_notes": unsupported}
+            )
+
+        if self.dry_run:
+            report.created.append(
+                {
+                    "legacy_id": legacy_id,
+                    "work_id": work_id,
+                    "would_create_measurement_set": True,
+                    "data_kind": payload.data_kind,
+                }
+            )
+            return
+
+        try:
+            created = MeasurementSetRepository.create(payload)
+        except (ReferenceValidationError, ReferenceLibraryError) as exc:
+            report.failed.append(
+                {
+                    "legacy_id": legacy_id,
+                    "reason": f"failed to create measurement set: {exc}",
+                }
+            )
+            return
+        report.created.append(
+            {
+                "legacy_id": legacy_id,
+                "work_id": work_id,
+                "treatment_id": treatment_id,
+                "measurement_set_id": created.id,
+            }
+        )
+
+    # -- summary ---------------------------------------------------------
+
+    def summary(self) -> dict[str, Any]:
+        groups = self.load_source_groups()
+        total_rows = sum(len(g.rows) for g in groups)
+        migrated = sum(len(g.migrated_rows) for g in groups)
+        pending_groups = self.pending_groups()
+        remaining = sum(len(g.unmigrated_rows) for g in pending_groups)
+        skipped_row_count = sum(
+            len(g.unmigrated_rows)
+            for g in groups
+            if g.source_key in set(self.state.skipped_sources)
+        )
+        unresolved_row_count = sum(
+            len(g.unmigrated_rows)
+            for g in groups
+            if g.source_key in set(self.state.unresolved_sources)
+        )
+        next_group = pending_groups[0] if pending_groups else None
+        return {
+            "total_rows": total_rows,
+            "migrated": migrated,
+            "remaining": remaining,
+            "skipped_rows": skipped_row_count,
+            "unresolved_rows": unresolved_row_count,
+            "pending_groups": len(pending_groups),
+            "next_source": next_group.source if next_group else None,
+            "next_source_row_count": (
+                len(next_group.unmigrated_rows) if next_group else 0
+            ),
+        }
+
+
+# ---------------------------------------------------------------------------
+# Interactive terminal driver
+# ---------------------------------------------------------------------------
+
+
+_MENU_ACTIONS = {
+    "r": "refresh",
+    "s": "skip",
+    "u": "unresolved",
+    "q": "quit",
+    "d": "deselect",
+}
+
+
+def _print_summary(session: InteractiveMigrationSession) -> None:
+    s = session.summary()
+    total = s["total_rows"]
+    print()
+    print(f"Migrated:   {s['migrated']} / {total}")
+    print(f"Remaining:  {s['remaining']}")
+    print(f"Skipped:    {s['skipped_rows']}")
+    print(f"Unresolved: {s['unresolved_rows']}")
+    if s["next_source"] is not None:
+        print(
+            f"Next source: {s['next_source'] or '(blank source)'} "
+            f"({s['next_source_row_count']} rows)"
+        )
+    print()
+
+
+def _print_group(group: SourceGroup, state: InteractiveState) -> None:
+    print()
+    label = group.source or "(blank source)"
+    print(f"Legacy source: {label}")
+    print(f"Rows: {len(group.unmigrated_rows)}")
+    print()
+    deselected = set(state.deselected_rows.get(group.source_key, []))
+    for row in group.unmigrated_rows:
+        mark = "[ ]" if row.legacy_id in deselected else "[x]"
+        plot = "plotable" if row.plotable else "not plotable"
+        extras = ""
+        if row.unmapped_fields:
+            interesting = [
+                f for f in row.unmapped_fields
+                if f.startswith("parmasto") or f.startswith("plot_color")
+            ]
+            if interesting:
+                extras = f"    ({'; '.join(interesting)})"
+        print(
+            f"  {mark} {row.taxon_label:<32s} row {row.legacy_id}  "
+            f"kind={row.suggested_data_kind}  {plot}{extras}"
+        )
+    if group.migrated_rows:
+        print()
+        print("  Already migrated:")
+        for row in group.migrated_rows:
+            print(f"    - {row.taxon_label} (row {row.legacy_id})")
+
+
+def _print_candidates(candidates: list[WorkCandidate]) -> None:
+    if not candidates:
+        print("  (no matching reference works — press [r] to refresh, "
+              "or use the desktop UI to create one and then press [r])")
+        return
+    for i, cand in enumerate(candidates, start=1):
+        print(cand.display(i))
+
+
+def _prompt(prompt_text: str, *, stream_in=None) -> str:
+    if stream_in is None:
+        return input(prompt_text)
+    stream_in_line = stream_in.readline()
+    if not stream_in_line:
+        return "q"
+    return stream_in_line.rstrip("\n")
+
+
+def interactive_loop(
+    session: InteractiveMigrationSession,
+    *,
+    stream_in=None,
+    stream_out=None,
+) -> None:  # pragma: no cover — thin I/O wrapper exercised via integration tests
+    """Stdin/stdout driver over :class:`InteractiveMigrationSession`.
+
+    The engine itself is I/O-free; this function is intentionally thin so
+    every branch of importance is testable via direct engine calls.
+    """
+    import builtins as _b
+
+    def _out(text: str = "") -> None:
+        if stream_out is None:
+            print(text)
+        else:
+            print(text, file=stream_out)
+
+    def _in(prompt_text: str) -> str:
+        if stream_in is None:
+            return _b.input(prompt_text)
+        _out(prompt_text)
+        line = stream_in.readline()
+        return line.rstrip("\n") if line else "q"
+
+    _print_summary(session)
+    while True:
+        pending = session.pending_groups()
+        if not pending:
+            _out("All groups decided. Nothing left to do.")
+            return
+        group = pending[0]
+        _print_group(group, session.state)
+        # Candidate listing.
+        candidates = session.list_work_candidates()
+        _out("")
+        _out("Choose Reference Work:")
+        _print_candidates(candidates)
+        _out("  [r] refresh Reference Library")
+        _out("  [s] skip this source group")
+        _out("  [u] leave unresolved")
+        _out("  [d N] deselect legacy row N (repeat as needed)")
+        _out("  [q] save progress and quit")
+        raw = _in("Selection: ").strip()
+        if not raw:
+            continue
+        low = raw.lower()
+        if low == "q":
+            session.save()
+            _out("Progress saved.")
+            return
+        if low == "r":
+            session.refresh_library()
+            continue
+        if low == "s":
+            session.skip_group(group.source_key)
+            continue
+        if low == "u":
+            session.mark_unresolved(group.source_key)
+            continue
+        if low.startswith("d "):
+            try:
+                legacy_id = int(low.split(None, 1)[1])
+            except (ValueError, IndexError):
+                _out("Enter 'd <legacy_id>'.")
+                continue
+            session.deselect_row(group.source_key, legacy_id)
+            continue
+        if raw.isdigit():
+            index = int(raw)
+            if 1 <= index <= len(candidates):
+                chosen = candidates[index - 1]
+                _out(
+                    f"Assign {len(group.unmigrated_rows)} legacy rows from "
+                    f'"{group.source or "(blank)"}"'
+                )
+                _out(f'to "{chosen.short_label}"?')
+                for r in group.unmigrated_rows:
+                    _out(f"  {r.taxon_label}")
+                confirm = _in("[y/N]: ").strip().lower()
+                if confirm == "y":
+                    rep = session.assign_group_to_work(
+                        group.source_key, chosen.work_id
+                    )
+                    _out(
+                        f"  created={len(rep.created)} "
+                        f"reused={len(rep.reused)} "
+                        f"skipped={len(rep.skipped)} "
+                        f"failed={len(rep.failed)}"
+                    )
+                continue
+            _out("Number out of range.")
+            continue
+        # Free text -> search candidates
+        candidates = session.list_work_candidates(query=raw)
+        _print_candidates(candidates)
+
+
+# ---------------------------------------------------------------------------
 # CLI
 # ---------------------------------------------------------------------------
 
@@ -821,13 +1621,46 @@ def run_migration(
 def _build_argparser() -> argparse.ArgumentParser:
     p = argparse.ArgumentParser(
         description=(
-            "Apply a human-authored legacy → normalized reference-library "
-            "migration manifest. Dry-run by default; use --apply plus "
-            "--confirm-backup to actually write."
+            "Legacy → normalized reference-library migration. The default "
+            "workflow is the interactive terminal walkthrough (--interactive) "
+            "which groups legacy rows by exact normalized source string and "
+            "lets the operator explicitly bind each group to an existing "
+            "normalized Reference Work. Dry-run by default; --apply requires "
+            "--confirm-backup. Manifest-based operation is retained for "
+            "tests and recovery."
         )
     )
-    p.add_argument("--manifest", type=Path, required=True)
+    p.add_argument("--manifest", type=Path, default=None)
     p.add_argument("--database", type=Path, default=None)
+    p.add_argument(
+        "--interactive",
+        action="store_true",
+        help=(
+            "Run the interactive terminal walkthrough. Groups legacy rows "
+            "by exact normalized source string and asks the operator to "
+            "pick a normalized Reference Work per group. Progress is "
+            "persisted to the state directory (default: alongside the "
+            "reference database)."
+        ),
+    )
+    p.add_argument(
+        "--state-dir",
+        type=Path,
+        default=None,
+        help=(
+            "Directory for the interactive session's persisted state. "
+            "Defaults to a local ignored directory next to the reference "
+            "database."
+        ),
+    )
+    p.add_argument(
+        "--summary",
+        action="store_true",
+        help=(
+            "Print the interactive migration summary (migrated / remaining "
+            "/ skipped / unresolved counts + next pending source) and exit."
+        ),
+    )
     p.add_argument(
         "--dry-run",
         action="store_true",
@@ -861,7 +1694,50 @@ def _build_argparser() -> argparse.ArgumentParser:
 
 def main(argv: list[str] | None = None) -> int:
     args = _build_argparser().parse_args(argv)
-    manifest_path: Path = args.manifest
+
+    database_path: Path = args.database or Path(get_reference_database_path())
+    if not database_path.exists():
+        print(f"reference database not found: {database_path}", file=sys.stderr)
+        return 2
+
+    if args.interactive or args.summary:
+        state_dir: Path = args.state_dir or _default_state_dir(database_path)
+        state_dir.mkdir(parents=True, exist_ok=True)
+        state_path = state_dir / "interactive-state.json"
+        if args.apply and not args.confirm_backup:
+            print(
+                "refusing to --apply without --confirm-backup: make a copy of "
+                "the reference database first, then rerun with both flags.",
+                file=sys.stderr,
+            )
+            return 2
+        session = InteractiveMigrationSession(
+            database_path=database_path,
+            state_path=state_path,
+            dry_run=not args.apply,
+        )
+        if args.summary:
+            s = session.summary()
+            print(f"Migrated:   {s['migrated']} / {s['total_rows']}")
+            print(f"Remaining:  {s['remaining']}")
+            print(f"Skipped:    {s['skipped_rows']}")
+            print(f"Unresolved: {s['unresolved_rows']}")
+            if s["next_source"] is not None:
+                print(
+                    f"Next source: {s['next_source'] or '(blank source)'} "
+                    f"({s['next_source_row_count']} rows)"
+                )
+            return 0
+        interactive_loop(session)
+        return 0
+
+    manifest_path: Path | None = args.manifest
+    if manifest_path is None:
+        print(
+            "--manifest is required unless --interactive or --summary is passed",
+            file=sys.stderr,
+        )
+        return 2
     if not manifest_path.exists():
         print(f"manifest not found: {manifest_path}", file=sys.stderr)
         return 2
@@ -886,11 +1762,6 @@ def main(argv: list[str] | None = None) -> int:
         dry_run = False
     else:
         dry_run = True
-
-    database_path: Path = args.database or Path(get_reference_database_path())
-    if not database_path.exists():
-        print(f"reference database not found: {database_path}", file=sys.stderr)
-        return 2
 
     try:
         report = run_migration(
