@@ -2505,7 +2505,7 @@ class ObservationsTab(QWidget):
             show_edit=True,
             show_delete_cloud_copy=True,
             show_publish_checkbox=True,
-            publish_checkbox_hint=self.tr("Select image for external publishing"),
+            publish_checkbox_hint=self.tr("Keep image in Sporely Cloud"),
         )
         self.gallery_widget.setSizePolicy(QSizePolicy.Expanding, QSizePolicy.Preferred)
         self.gallery_widget.set_multi_select(True)
@@ -3933,6 +3933,14 @@ class ObservationsTab(QWidget):
                 None,
                 detail="reason=proven_no_local_or_status_change",
             )
+        gallery = getattr(self, "gallery_widget", None)
+        if gallery is not None and hasattr(gallery, "refresh_cloud_states"):
+            gallery.refresh_cloud_states()
+        window_getter = getattr(self, "window", None)
+        host = window_getter() if callable(window_getter) else None
+        measure_gallery = getattr(host, "measure_gallery", None) if host is not None else None
+        if measure_gallery is not None and hasattr(measure_gallery, "refresh_cloud_states"):
+            measure_gallery.refresh_cloud_states()
         if result.get("cancelled"):
             if self._cloud_sync_show_status:
                 self._set_status_progress_visible(False)
@@ -7622,7 +7630,11 @@ class ObservationsTab(QWidget):
             return
 
         try:
-            queued = ImageDB.queue_image_tombstones_for_local_images(eligible)
+            from utils.cloud_sync import set_image_cloud_selected
+            transitions = [
+                set_image_cloud_selected(image_id, False)
+                for image_id in eligible
+            ]
         except Exception:
             self.set_status_message(
                 self.tr("Failed to queue cloud image deletion."),
@@ -7631,7 +7643,11 @@ class ObservationsTab(QWidget):
             )
             return
 
-        queued_ids = [image_id for image_id, cloud_id in queued.items() if cloud_id]
+        queued_ids = [
+            int(transition["image_id"])
+            for transition in transitions
+            if transition and transition.get("action") == "delete_queued"
+        ]
         if not queued_ids:
             self.set_status_message(
                 self.tr("No cloud copies to delete."),
@@ -7891,7 +7907,7 @@ class ObservationsTab(QWidget):
             return
         if not hasattr(self, "gallery_widget"):
             return
-        hint = self.tr("Select image for external publishing")
+        hint = self.tr("Keep image in Sporely Cloud")
         for checkbox in self.gallery_widget.publish_checkbox_widgets():
             self._status_hint_controller.register_widget(checkbox, hint)
 
@@ -7996,10 +8012,21 @@ class ObservationsTab(QWidget):
         unchecked_ids = previous_selected - selected_set
         rechecked_ids = selected_set - previous_selected
         self._set_publish_excluded_image_ids(obs_id, excluded)
+        changed_ids = unchecked_ids | rechecked_ids
+        if changed_ids:
+            from utils import cloud_sync as cloud_sync_module
+            for image_id in sorted(changed_ids):
+                cloud_sync_module.set_image_cloud_selected(
+                    image_id,
+                    image_id in selected_set,
+                )
+            gallery = getattr(self, "gallery_widget", None)
+            if gallery is not None and hasattr(gallery, "refresh_cloud_states"):
+                gallery.refresh_cloud_states(changed_ids)
         # Once the user has interacted with a microscope image's publish state,
         # record it as "seeded" so the default (unchecked) is not re-applied
         # on subsequent gallery loads.
-        touched_ids = unchecked_ids | rechecked_ids
+        touched_ids = changed_ids
         touched_microscope_ids = {
             img_id for img_id in touched_ids
             if (image_by_id.get(img_id) or {}).get("image_type", "").strip().lower() == "microscope"
@@ -8047,6 +8074,7 @@ class ObservationsTab(QWidget):
         if not target_obs_id:
             return
         self._apply_gallery_publish_selection_for_observation(int(target_obs_id))
+        self.gallery_widget.refresh_cloud_states()
 
     def on_selection_changed(self):
         """Update detail view when selection changes."""
@@ -8320,7 +8348,9 @@ class ObservationsTab(QWidget):
         """
         from utils.cloud_sync import (
             PENDING_REASON_ALREADY_SYNCED,
+            PENDING_REASON_EXCLUDED,
             PENDING_REASON_PENDING_UPLOAD,
+            _cloud_sync_debug_enabled,
             _cloud_explicit_media_upload_selection,
             _measurement_counts_for_observation_images,
             explain_pending_cloud_image_decision,
@@ -8342,6 +8372,11 @@ class ObservationsTab(QWidget):
                 explicit_media_upload_selection=explicit_media_upload_selection,
             )
             reason = decision.get("reason") or ""
+            if reason == PENDING_REASON_EXCLUDED and _cloud_sync_debug_enabled():
+                print(
+                    f"[cloud_sync] Observation {observation_id}: image "
+                    f"{int(image.get('id') or 0)} skip byte prep reason=unchecked"
+                )
             # Rows already on cloud need metadata patches; rows scheduled to
             # upload their bytes need both. Everything else is filtered out.
             if reason in {PENDING_REASON_ALREADY_SYNCED, PENDING_REASON_PENDING_UPLOAD}:
@@ -8407,6 +8442,8 @@ class ObservationsTab(QWidget):
         progress_cb=None,
         upload_policy: dict | None = None,
     ) -> tuple[list[dict], object | None, list[str]]:
+        from utils.cloud_sync import _explicit_image_restore_source
+
         policy = upload_policy or self._cloud_sync_upload_policy()
         upload_mode = str(policy.get("uploadMode") or "full")
         obs = observation or {}
@@ -8492,9 +8529,15 @@ class ObservationsTab(QWidget):
                 resized = int(stored_width) != int(source_width) or int(stored_height) != int(source_height)
             except Exception:
                 resized = False
+            prepare_reason = (
+                "explicit_tombstone_reupload"
+                if _explicit_image_restore_source(int(image_row.get("id") or 0))
+                else "new_or_changed_bytes"
+            )
             print(
                 f'[cloud_sync] Observation {obs.get("id")}: prepared upload candidate image '
                 f'{int(image_row.get("id") or idx)} '
+                f'reason={prepare_reason} '
                 f'(resized={resized}, encoding_format={encoding_format}, '
                 f'encoding_quality={encoding_quality}, upload_path={upload_path})'
             )
@@ -18113,12 +18156,20 @@ class ObservationDetailsDialog(GeometryMixin, QDialog):
             return
 
         try:
-            queued = ImageDB.queue_image_tombstones_for_local_images(eligible)
+            from utils.cloud_sync import set_image_cloud_selected
+            transitions = [
+                set_image_cloud_selected(image_id, False)
+                for image_id in eligible
+            ]
         except Exception:
             self._set_hint(self.tr("Failed to queue cloud image deletion."), tone="error")
             return
 
-        queued_ids = [image_id for image_id, cloud_id in queued.items() if cloud_id]
+        queued_ids = [
+            int(transition["image_id"])
+            for transition in transitions
+            if transition and transition.get("action") == "delete_queued"
+        ]
         if not queued_ids:
             self._set_hint(self.tr("No cloud copies to delete."), tone="info")
             return

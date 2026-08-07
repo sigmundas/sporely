@@ -17,7 +17,7 @@ import json
 import sqlite3
 from pathlib import Path
 
-from database import models
+from database import models, schema
 from utils import cloud_sync
 
 
@@ -177,6 +177,73 @@ class _MemorySyncClient(cloud_sync.SporelyCloudClient):
 
     def _delete(self, path: str) -> None:
         self.delete_calls.append(str(path))
+
+
+def test_explicit_tombstone_restore_inserts_new_cloud_identity(monkeypatch):
+    client = cloud_sync.SporelyCloudClient("token", "user-123")
+    patches: list[tuple[str, dict]] = []
+    posts: list[tuple[str, dict]] = []
+    cleared: list[int] = []
+
+    monkeypatch.setattr(client, "_find_cloud_image", lambda desktop_id: "cloud-image-4857")
+    monkeypatch.setattr(client, "_patch", lambda path, payload: patches.append((path, dict(payload))))
+    monkeypatch.setattr(
+        client,
+        "_post",
+        lambda path, payload: posts.append((path, dict(payload))) or [{"id": "cloud-image-new"}],
+    )
+    monkeypatch.setattr(client, "_observation_images_support_ai_crop", lambda: False)
+    monkeypatch.setattr(client, "_observation_images_support_ai_crop_custom", lambda: False)
+    monkeypatch.setattr(client, "_observation_images_support_upload_metadata", lambda: False)
+    monkeypatch.setattr(client, "_observation_images_support_storage_exif_safe", lambda: False)
+    monkeypatch.setattr(client, "_set_observation_media_keys", lambda *args, **kwargs: None)
+    monkeypatch.setattr(cloud_sync, "_apply_image_sample_fields_to_push_payload", lambda *args, **kwargs: None)
+    monkeypatch.setattr(
+        cloud_sync,
+        "_explicit_image_restore_source",
+        lambda image_id: "cloud-image-4857",
+    )
+    monkeypatch.setattr(
+        cloud_sync,
+        "_clear_explicit_image_restore_source",
+        lambda image_id: cleared.append(int(image_id)),
+    )
+
+    cloud_id = client.push_image_metadata(
+        {"id": 4997, "filepath": "/tmp/P8030011.jpg", "image_type": "field"},
+        "cloud-observation-704",
+        "user-123/cloud-observation-704/P8030011.webp",
+    )
+
+    assert cloud_id == "cloud-image-new"
+    assert patches == [
+        (
+            "observation_images?id=eq.cloud-image-4857&user_id=eq.user-123",
+            {"desktop_id": None},
+        )
+    ]
+    assert len(posts) == 1
+    assert posts[0][1]["desktop_id"] == 4997
+    assert posts[0][1]["deleted_at"] is None
+    assert cleared == [4997]
+
+
+def test_explicit_checkbox_change_marks_dirty_without_invalidating_signature(monkeypatch):
+    calls: list[tuple[str, int]] = []
+    monkeypatch.setattr(
+        cloud_sync,
+        "_clear_local_cloud_media_signature",
+        lambda observation_id: calls.append(("signature", int(observation_id))),
+    )
+    monkeypatch.setattr(
+        cloud_sync,
+        "mark_observation_dirty",
+        lambda observation_id: calls.append(("dirty", int(observation_id))),
+    )
+
+    cloud_sync.mark_observation_media_dirty(704)
+
+    assert calls == [("dirty", 704)]
 
 
 def test_prepared_upload_omission_preserves_all_existing_remote_images(tmp_path, monkeypatch):
@@ -463,6 +530,200 @@ def test_remote_first_pass_skips_temp_preparation_for_metadata_only_association(
     assert _cloud_id(db_path, 7) == "cloud-image-7"
     # The prepare callback was told to skip image 7 (no temp candidate encoded).
     assert prepare_calls and prepare_calls[0]["skip_ids"] == [7]
+
+
+def test_p11_recheck_prepares_and_uploads_only_the_tombstoned_target(
+    tmp_path,
+    monkeypatch,
+):
+    """Six checked live siblings must not widen one explicit restore event."""
+    db_path = _create_sync_db(tmp_path)
+    conn = sqlite3.connect(db_path)
+    try:
+        schema._ensure_image_tombstones_table(conn.cursor())
+        conn.executescript(
+            """
+            CREATE TABLE spore_measurements (
+                id INTEGER PRIMARY KEY, image_id INTEGER, notes TEXT
+            );
+            CREATE TABLE spore_annotations (
+                id INTEGER PRIMARY KEY, image_id INTEGER, measurement_id INTEGER
+            );
+            """
+        )
+        conn.execute(
+            "INSERT INTO observations (id, cloud_id, sync_status, synced_at) VALUES (?, ?, ?, ?)",
+            (704, "cloud-obs-704", "synced", "2026-08-01T00:00:00Z"),
+        )
+        conn.execute(
+            "INSERT INTO settings (key, value) VALUES (?, ?)",
+            ("artsobs_publish_excluded_image_ids_704", "[]"),
+        )
+        conn.commit()
+    finally:
+        conn.close()
+
+    live_ids = [5102, 5103, 4992, 4993, 4994, 4996]
+    remote_rows: list[dict] = []
+    for index, image_id in enumerate(live_ids):
+        image_path = tmp_path / f"live-{image_id}.jpg"
+        image_path.write_bytes(f"live-{image_id}".encode())
+        cloud_id = f"cloud-{image_id}"
+        _insert_image(
+            db_path,
+            id=image_id,
+            observation_id=704,
+            cloud_id=cloud_id,
+            filepath=str(image_path),
+            original_filepath=str(image_path),
+            source_role="local_canonical",
+            file_purpose="field",
+            image_type="field",
+            sort_order=index,
+            synced_at="2999-01-01T00:00:00Z",
+        )
+        remote_rows.append(
+            {
+                "id": cloud_id,
+                "desktop_id": image_id,
+                "observation_id": "cloud-obs-704",
+                "storage_path": f"users/user-123/cloud-obs-704/{image_id}.webp",
+                "image_type": "field",
+                "sort_order": index,
+                "original_filename": image_path.name,
+            }
+        )
+
+    target_path = tmp_path / "P8030011.jpg"
+    original_path = tmp_path / "original-P8030011.jpg"
+    target_path.write_bytes(b"target-working-file")
+    original_path.write_bytes(b"target-original-file")
+    _insert_image(
+        db_path,
+        id=4990,
+        observation_id=704,
+        cloud_id="cloud-4857",
+        filepath=str(target_path),
+        original_filepath=str(original_path),
+        source_role="local_canonical",
+        file_purpose="field",
+        image_type="field",
+        sort_order=99,
+        synced_at="2026-08-01T00:00:00Z",
+    )
+    conn = sqlite3.connect(db_path)
+    try:
+        conn.execute(
+            "INSERT INTO image_tombstones (deleted_cloud_id, deleted_at, delete_synced_at, "
+            "local_observation_id, filepath, original_filepath) VALUES (?, ?, ?, ?, ?, ?)",
+            (
+                "cloud-4857",
+                "2026-08-01T00:00:00Z",
+                "2026-08-01T00:01:00Z",
+                704,
+                str(target_path),
+                str(original_path),
+            ),
+        )
+        conn.execute(
+            "INSERT INTO spore_measurements (id, image_id, notes) VALUES (?, ?, ?)",
+            (9001, 4990, "measurement"),
+        )
+        conn.execute(
+            "INSERT INTO spore_annotations (id, image_id, measurement_id) VALUES (?, ?, ?)",
+            (9002, 4990, 9001),
+        )
+        conn.commit()
+    finally:
+        conn.close()
+
+    _patch_db_connections(monkeypatch, db_path)
+    # Converged baseline excludes the still-linked tombstoned target.
+    cloud_sync._store_local_cloud_media_signature(
+        704,
+        json.dumps(
+            {
+                "images": [
+                    {
+                        "id": image_id,
+                        "filepath": cloud_sync._path_stat_signature(
+                            str(tmp_path / f"live-{image_id}.jpg")
+                        ),
+                    }
+                    for image_id in live_ids
+                ]
+            },
+            sort_keys=True,
+        ),
+    )
+    cloud_sync.remember_explicit_image_restore_source(4990, "cloud-4857")
+    assert models.ImageDB.clear_image_cloud_sync_state(4990) is True
+    cloud_sync.mark_observation_media_dirty(704)
+    # The next reads use fresh SQLite connections, exercising the same state
+    # boundary as closing the app after the click and syncing after restart.
+    assert cloud_sync._explicit_image_restore_source(4990) == "cloud-4857"
+    assert _cloud_id(db_path, 4990) is None
+
+    encoded_ids: list[int] = []
+
+    def prepare_only_requested(observation, progress_cb=None):
+        skipped = {
+            int(value)
+            for value in observation.get(cloud_sync.CLOUD_SYNC_SKIP_PREPARE_IMAGE_IDS_KEY, [])
+        }
+        items = []
+        for image in models.ImageDB.get_images_for_observation(704):
+            image_id = int(image["id"])
+            if image_id in skipped:
+                continue
+            encoded_ids.append(image_id)
+            items.append({"image_row": image, "upload_path": image["filepath"]})
+        return items, None, []
+
+    client = _MemorySyncClient(remote_rows)
+    monkeypatch.setattr(cloud_sync, "is_full_resolution_original_sync_enabled", lambda: False)
+    assert cloud_sync._push_images_for_observation(
+        client,
+        {"id": 704},
+        "cloud-obs-704",
+        prepare_images_cb=prepare_only_requested,
+    ) is True
+
+    assert encoded_ids == [4990]
+    assert len(client.upload_image_calls) == 1
+    assert client.upload_image_calls[0]["local_path"] == str(target_path)
+    for image_id, expected_cloud_id in zip(live_ids, [f"cloud-{value}" for value in live_ids]):
+        assert _cloud_id(db_path, image_id) == expected_cloud_id
+    assert _cloud_id(db_path, 4990) not in {None, "cloud-4857"}
+    conn = sqlite3.connect(db_path)
+    try:
+        assert conn.execute(
+            "SELECT deleted_cloud_id FROM image_tombstones WHERE deleted_cloud_id = ?",
+            ("cloud-4857",),
+        ).fetchone() == ("cloud-4857",)
+        assert conn.execute(
+            "SELECT id, notes FROM spore_measurements WHERE image_id = ?",
+            (4990,),
+        ).fetchone() == (9001, "measurement")
+        assert conn.execute(
+            "SELECT id, measurement_id FROM spore_annotations WHERE image_id = ?",
+            (4990,),
+        ).fetchone() == (9002, 9001)
+    finally:
+        conn.close()
+    assert target_path.read_bytes() == b"target-working-file"
+    assert original_path.read_bytes() == b"target-original-file"
+
+    encoded_ids.clear()
+    client.upload_image_calls.clear()
+    assert cloud_sync._push_images_for_observation(
+        client,
+        {"id": 704},
+        "cloud-obs-704",
+        prepare_images_cb=prepare_only_requested,
+    ) is True
+    assert encoded_ids == []
+    assert client.upload_image_calls == []
 
 
 def test_actual_upload_when_no_remote_match_exists(tmp_path, monkeypatch, capsys):

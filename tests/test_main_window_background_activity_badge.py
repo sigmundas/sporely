@@ -233,7 +233,7 @@ def test_background_activity_badge_hover_updates_observation_hint(monkeypatch, q
     window.deleteLater()
 
 
-def test_measure_gallery_publish_uncheck_does_not_mutate_cloud_state(monkeypatch, qapp):
+def test_measure_gallery_publish_uncheck_routes_through_cloud_lifecycle(monkeypatch, qapp):
     window = _build_window(monkeypatch)
     window.active_observation_id = 7
     window.observation_images = [
@@ -247,6 +247,7 @@ def test_measure_gallery_publish_uncheck_does_not_mutate_cloud_state(monkeypatch
         "cloud": [],
         "excluded": [],
         "dirty": [],
+        "transition": [],
     }
 
     monkeypatch.setattr(
@@ -270,6 +271,11 @@ def test_measure_gallery_publish_uncheck_does_not_mutate_cloud_state(monkeypatch
         lambda image_id: calls["cloud"].append(int(image_id)) or True,
     )
     monkeypatch.setattr(cloud_sync, "mark_observation_dirty", lambda obs_id: calls["dirty"].append(int(obs_id)))
+    monkeypatch.setattr(
+        cloud_sync,
+        "set_image_cloud_selected",
+        lambda image_id, selected: calls["transition"].append((int(image_id), bool(selected))),
+    )
     window._get_publish_excluded_image_ids_for_observation = lambda observation_id: set()
     window._set_publish_excluded_image_ids_for_observation = lambda obs_id, excluded: calls["excluded"].append(
         (int(obs_id), tuple(sorted(int(v) for v in excluded)))
@@ -283,10 +289,11 @@ def test_measure_gallery_publish_uncheck_does_not_mutate_cloud_state(monkeypatch
     assert calls["cloud"] == []
     assert calls["excluded"] == [(7, (1,))]
     assert calls["dirty"] == []
+    assert calls["transition"] == [(1, False)]
     window.deleteLater()
 
 
-def test_measure_gallery_publish_recheck_does_not_mutate_cloud_state(monkeypatch, qapp):
+def test_measure_gallery_publish_recheck_detaches_tombstoned_cloud_state_and_marks_dirty(monkeypatch, qapp):
     window = _build_window(monkeypatch)
     window.active_observation_id = 7
     window.observation_images = [
@@ -298,8 +305,10 @@ def test_measure_gallery_publish_recheck_does_not_mutate_cloud_state(monkeypatch
         "queue": [],
         "clear": [],
         "cloud": [],
+        "restore": [],
         "excluded": [],
         "dirty": [],
+        "transition": [],
     }
 
     monkeypatch.setattr(
@@ -327,7 +336,21 @@ def test_measure_gallery_publish_recheck_does_not_mutate_cloud_state(monkeypatch
         "clear_image_cloud_sync_state",
         lambda image_id: calls["cloud"].append(int(image_id)) or True,
     )
-    monkeypatch.setattr(cloud_sync, "mark_observation_dirty", lambda obs_id: calls["dirty"].append(int(obs_id)))
+    monkeypatch.setattr(
+        cloud_sync,
+        "remember_explicit_image_restore_source",
+        lambda image_id, cloud_id: calls["restore"].append((int(image_id), str(cloud_id))),
+    )
+    monkeypatch.setattr(
+        cloud_sync,
+        "mark_observation_media_dirty",
+        lambda obs_id: calls["dirty"].append(int(obs_id)),
+    )
+    monkeypatch.setattr(
+        cloud_sync,
+        "set_image_cloud_selected",
+        lambda image_id, selected: calls["transition"].append((int(image_id), bool(selected))),
+    )
     window._get_publish_excluded_image_ids_for_observation = lambda observation_id: {1}
     window._set_publish_excluded_image_ids_for_observation = lambda obs_id, excluded: calls["excluded"].append(
         (int(obs_id), tuple(sorted(int(v) for v in excluded)))
@@ -339,8 +362,10 @@ def test_measure_gallery_publish_recheck_does_not_mutate_cloud_state(monkeypatch
     assert calls["queue"] == []
     assert calls["clear"] == []
     assert calls["cloud"] == []
+    assert calls["restore"] == []
     assert calls["excluded"] == [(7, ())]
     assert calls["dirty"] == []
+    assert calls["transition"] == [(1, True)]
     window.deleteLater()
 
 

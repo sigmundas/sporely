@@ -33,6 +33,7 @@ from database.models import (
     CLOUD_IMAGE_STATE_UPLOADED,
     ImageDB,
     MeasurementDB,
+    derive_image_cloud_state,
     get_image_tombstones_by_deleted_cloud_id,
 )
 from database.schema import load_objectives, objective_display_name, resolve_objective_key
@@ -1285,15 +1286,7 @@ class ImageGalleryWidget(QGroupBox):
         state string, keeping the badge, menu, and eligibility filter in
         lockstep.
         """
-        normalized_cloud_id = str(cloud_id or "").strip()
-        if not normalized_cloud_id:
-            return CLOUD_IMAGE_STATE_NONE
-        if not tombstone:
-            return CLOUD_IMAGE_STATE_UPLOADED
-        synced_at = str((tombstone or {}).get("delete_synced_at") or "").strip()
-        if synced_at:
-            return CLOUD_IMAGE_STATE_DELETED
-        return CLOUD_IMAGE_STATE_DELETE_PENDING
+        return derive_image_cloud_state(cloud_id, tombstone)
 
     @staticmethod
     def _cloud_state_for_item(item: dict) -> str:
@@ -2345,6 +2338,58 @@ class ImageGalleryWidget(QGroupBox):
         if publish_changed:
             self.publishSelectionChanged.emit(self.publish_selected_ids())
         return updated
+
+    def refresh_cloud_states(self, image_ids=None) -> int:
+        """Reload actual cloud state from SQLite and repaint changed badges."""
+        target = None
+        if image_ids is not None:
+            target = set()
+            for raw_id in image_ids:
+                try:
+                    target.add(int(raw_id))
+                except (TypeError, ValueError):
+                    continue
+        item_ids: set[int] = set()
+        for item in self._items:
+            try:
+                image_id = int(item.get("id"))
+            except (TypeError, ValueError):
+                continue
+            if target is None or image_id in target:
+                item_ids.add(image_id)
+        states = ImageDB.get_image_cloud_states(item_ids)
+        changed = 0
+        for item in self._items:
+            try:
+                image_id = int(item.get("id"))
+            except (TypeError, ValueError):
+                continue
+            state_record = states.get(image_id)
+            if not state_record:
+                continue
+            cloud_id = state_record.get("cloud_id")
+            cloud_state = state_record.get("cloud_state") or CLOUD_IMAGE_STATE_NONE
+            before = (
+                item.get("cloud_id"),
+                item.get("cloud_state"),
+                item.get("cloud_uploaded"),
+                item.get("cloud_tombstone_synced"),
+            )
+            item["cloud_id"] = cloud_id
+            item["cloud_state"] = cloud_state
+            item["cloud_uploaded"] = cloud_state == CLOUD_IMAGE_STATE_UPLOADED
+            item["cloud_tombstone_synced"] = cloud_state == CLOUD_IMAGE_STATE_DELETED
+            after = (
+                item.get("cloud_id"),
+                item.get("cloud_state"),
+                item.get("cloud_uploaded"),
+                item.get("cloud_tombstone_synced"),
+            )
+            if before != after:
+                changed += 1
+        if changed:
+            self._render()
+        return changed
 
     def center_on_key(self, key) -> None:
         self._queue_center_on_key(key)

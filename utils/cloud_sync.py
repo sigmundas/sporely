@@ -41,6 +41,10 @@ import time
 from app_identity import app_data_dir, runtime_profile_scope, using_isolated_profile
 from database.schema import get_connection, get_app_settings, get_images_dir, update_app_settings
 from database.models import (
+    CLOUD_IMAGE_STATE_DELETED,
+    CLOUD_IMAGE_STATE_DELETE_PENDING,
+    CLOUD_IMAGE_STATE_NONE,
+    CLOUD_IMAGE_STATE_UPLOADED,
     ObservationDB,
     ImageDB,
     SettingsDB,
@@ -54,6 +58,7 @@ from database.models import (
     list_pending_image_tombstones,
     mark_image_tombstone_synced,
     reconcile_legacy_publish_exclusion_tombstones,
+    derive_image_cloud_state,
 )
 from database.reverse_location_lookup import normalize_country_code
 from utils.artsdatabanken_link import concept_link_from_name_id
@@ -5170,15 +5175,11 @@ def _record_remote_image_tombstones(
                         (desktop_image_id,),
                     ).fetchone()
 
-            local_image_id = None
             image_type = None
             filepath = None
             original_filepath = None
             if local_image_row:
                 local_image_data = dict(local_image_row)
-                local_image_id_value = _safe_int(local_image_data.get("id"))
-                if local_image_id_value > 0:
-                    local_image_id = local_image_id_value
                 if resolved_local_observation_id is None and "observation_id" in local_image_data:
                     local_observation_id_value = _safe_int(local_image_data.get("observation_id"))
                     if local_observation_id_value > 0:
@@ -5196,7 +5197,10 @@ def _record_remote_image_tombstones(
                     str(cloud_observation_id or remote_image.get("observation_id") or "").strip() or None
                 ),
                 local_observation_id=resolved_local_observation_id,
-                local_image_id=local_image_id,
+                # A remote deletion must not classify a matching active image
+                # as locally deleted.  The upsert keeps any pre-existing ID
+                # from a genuine local deletion via COALESCE.
+                local_image_id=None,
                 image_type=image_type,
                 filepath=filepath,
                 original_filepath=original_filepath,
@@ -6773,6 +6777,110 @@ def mark_observation_dirty(local_id: int) -> None:
         conn.close()
 
 
+def mark_observation_media_dirty(local_id: int) -> None:
+    """Schedule a user-selected media change for the next cloud sync.
+
+    Checkbox changes are event-driven sync work, so they must not depend on
+    the periodic pending-image repair scan. The image-specific cloud-id detach
+    and explicit restore marker identify the pending upload; retaining the
+    observation media signature lets the pre-encode pass prove that unrelated
+    linked images are unchanged.
+    """
+    try:
+        obs_id = int(local_id or 0)
+    except (TypeError, ValueError):
+        return
+    if obs_id <= 0:
+        return
+    mark_observation_dirty(obs_id)
+
+
+def set_image_cloud_selected(image_id: int, selected: bool) -> dict | None:
+    """Apply one checkbox change to the image's canonical cloud lifecycle.
+
+    The checkbox stores desired state elsewhere as the observation's selected
+    image set. This transition owns the actual cloud work: queue/cancel a
+    tombstone, schedule a normal first upload, or start the explicit restore
+    flow after a completed deletion.
+    """
+    image_id = _safe_int(image_id)
+    if image_id <= 0:
+        return None
+    image = ImageDB.get_image(image_id)
+    if not image:
+        return None
+
+    cloud_id = str(image.get("cloud_id") or "").strip()
+    tombstone = (
+        ImageDB.get_image_tombstone_by_deleted_cloud_id(cloud_id)
+        if cloud_id
+        else None
+    )
+    previous_state = derive_image_cloud_state(cloud_id, tombstone)
+    next_state = previous_state
+    next_cloud_id = cloud_id or None
+    action = "none"
+    observation_id = _safe_int(image.get("observation_id"))
+
+    if not selected and previous_state == CLOUD_IMAGE_STATE_UPLOADED:
+        queued_cloud_id = ImageDB.queue_image_tombstone_for_local_image(image_id)
+        if queued_cloud_id:
+            next_state = CLOUD_IMAGE_STATE_DELETE_PENDING
+            next_cloud_id = str(queued_cloud_id)
+            action = "delete_queued"
+    elif selected and previous_state == CLOUD_IMAGE_STATE_DELETE_PENDING:
+        if ImageDB.clear_image_tombstone_by_deleted_cloud_id(cloud_id):
+            next_state = CLOUD_IMAGE_STATE_UPLOADED
+            action = "delete_cancelled"
+    elif selected and previous_state == CLOUD_IMAGE_STATE_DELETED:
+        remember_explicit_image_restore_source(image_id, cloud_id)
+        if ImageDB.clear_image_cloud_sync_state(image_id):
+            next_state = CLOUD_IMAGE_STATE_NONE
+            next_cloud_id = None
+            action = "restore_queued"
+            mark_observation_media_dirty(observation_id)
+    elif selected and previous_state == CLOUD_IMAGE_STATE_NONE:
+        mark_observation_media_dirty(observation_id)
+        action = "upload_queued"
+
+    return {
+        "image_id": image_id,
+        "observation_id": observation_id or None,
+        "selected": bool(selected),
+        "previous_state": previous_state,
+        "cloud_state": next_state,
+        "cloud_id": next_cloud_id,
+        "action": action,
+    }
+
+
+def _explicit_image_restore_source_key(image_id: int | str) -> str:
+    return f"sporely_cloud_explicit_image_restore_source_{int(image_id)}"
+
+
+def remember_explicit_image_restore_source(image_id: int, deleted_cloud_id: str) -> None:
+    """Remember the tombstoned cloud row that an explicit restore must not reuse."""
+    image_id = _safe_int(image_id)
+    cloud_id = str(deleted_cloud_id or "").strip()
+    if image_id > 0 and cloud_id:
+        SettingsDB.set_setting(_explicit_image_restore_source_key(image_id), cloud_id)
+
+
+def _explicit_image_restore_source(image_id: int | str) -> str:
+    image_id = _safe_int(image_id)
+    if image_id <= 0:
+        return ""
+    return str(
+        SettingsDB.get_setting(_explicit_image_restore_source_key(image_id), "") or ""
+    ).strip()
+
+
+def _clear_explicit_image_restore_source(image_id: int | str) -> None:
+    image_id = _safe_int(image_id)
+    if image_id > 0:
+        SettingsDB.set_setting(_explicit_image_restore_source_key(image_id), "")
+
+
 def _safe_int(value, default: int = 0) -> int:
     try:
         return int(value)
@@ -7779,9 +7887,9 @@ def _cloud_explicit_media_upload_selection(observation_id: int | None) -> set[in
     """Return image ids checked in the observation thumbnail gallery.
 
     The gallery persists its state as an exclusion list. Cloud media upload
-    may use that visible checkbox contract to decide which new bytes to prepare.
-    This selection is not cloud deletion consent: existing cloud rows and bytes
-    must be preserved when their local image is unchecked.
+    uses that visible desired-cloud-state contract to decide which new bytes to
+    prepare. Existing uploaded rows are tombstoned by the checkbox transition
+    before this upload-selection predicate runs.
     """
     local_observation_id = _safe_int(observation_id)
     if local_observation_id <= 0:
@@ -14292,13 +14400,25 @@ class SporelyCloudClient:
         if self._observation_images_support_storage_exif_safe():
             payload['storage_exif_safe'] = True
 
+        restore_source_id = _explicit_image_restore_source(img['id'])
         existing_id = self._find_cloud_image(img['id'])
+        if restore_source_id and existing_id == restore_source_id:
+            # Explicit restore creates a new live identity. Release the old
+            # soft-deleted row's unique desktop identity without removing its
+            # row or the corresponding local tombstone.
+            self._patch(
+                f'observation_images?id=eq.{existing_id}&user_id=eq.{self.user_id}',
+                {'desktop_id': None},
+            )
+            existing_id = None
         if existing_id:
             self._patch(f'observation_images?id=eq.{existing_id}', payload)
             cloud_id = existing_id
         else:
             rows = self._post('observation_images', payload)
             cloud_id = rows[0]['id']
+        if cloud_id and restore_source_id:
+            _clear_explicit_image_restore_source(img['id'])
         normalized_key = _normalize_cloud_media_key(payload.get('storage_path'))
         if cloud_id and normalized_key:
             self._cloud_image_storage_key_cache[str(cloud_id)] = normalized_key
@@ -17531,15 +17651,27 @@ def _local_image_source_bytes_unchanged(
         image_id = 0
     if image_id <= 0:
         return False
-    stored_sig = stored_stats.get(image_id)
-    if not isinstance(stored_sig, dict):
-        return False
     filepath = str(image_row.get('filepath') or '').strip()
     if not filepath:
         return False
     current_sig = _path_stat_signature(filepath)
     if not current_sig.get('exists'):
         return False
+    stored_sig = stored_stats.get(image_id)
+    if not isinstance(stored_sig, dict):
+        # A missing observation-wide signature must not turn every linked row
+        # into an upload. The per-image synced_at timestamp is a conservative
+        # fallback: files modified after the last successful image sync still
+        # enter the encode/hash path, while older unchanged sources do not.
+        synced_at = _parse_sync_timestamp(image_row.get('synced_at'))
+        try:
+            current_mtime = datetime.fromtimestamp(
+                int(current_sig.get('mtime_ns') or 0) / 1_000_000_000,
+                tz=timezone.utc,
+            )
+        except Exception:
+            current_mtime = None
+        return bool(synced_at and current_mtime and current_mtime <= synced_at)
     # mtime_ns can be missing on stored payloads normalized via
     # _normalized_local_media_signature_payload — fall back to (path, size).
     def _cmp_key(sig: dict) -> tuple:
@@ -17686,7 +17818,7 @@ def _reconcile_metadata_only_linked_images(
                 f'[cloud_sync] Observation {obs_local_id}: skipped already synced cloud image '
                 f'actual_upload=False image_id={local_image_id} cloud_image_id={local_cloud_id} '
                 f'storage_path={remote_storage_path} '
-                f'({reason})'
+                f'reason=already_synced_unchanged ({reason})'
             )
 
         skip_ids.add(local_image_id)

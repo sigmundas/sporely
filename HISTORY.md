@@ -198,6 +198,13 @@ already-synced cloud image is tombstoned so it disappears from cloud views. The 
 tombstone queue is flushed before dirty-observation pruning, which means deletion still converges
 on an otherwise no-op sync.
 
+The checkbox now expresses desired cloud state while the badge expresses actual state. Unchecking
+an uploaded image immediately shows the delete-pending badge; a pre-sync recheck cancels that
+tombstone and keeps the existing cloud identity. After deletion syncs, the badge disappears even
+when the historical `cloud_id` remains locally linked. Rechecking then uses the image-specific
+explicit restore path, preserving the old tombstone and uploading only that image once. Observations,
+Measure, and the “Delete cloud copy” context menu all use the same transition.
+
 The observation-tab `Sync now` action now uses the same normal media-sync mode as Profile & Cloud:
 `sync_images=True`, `materialize_remote_images=True`, and `full_pull=False`. Deep reconciliation
 remains a separate recovery operation rather than being coupled to ordinary media sync.

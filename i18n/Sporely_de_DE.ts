@@ -4,47 +4,47 @@
 <context>
     <name></name>
     <message>
-        <location filename="../ui/observations_tab.py" line="1507"/>
+        <location filename="../ui/observations_tab.py" line="1510"/>
         <source>Open Map</source>
         <translation>Karte öffnen</translation>
     </message>
     <message>
-        <location filename="../ui/observations_tab.py" line="1515"/>
+        <location filename="../ui/observations_tab.py" line="1518"/>
         <source>Choose a map service:</source>
         <translation>Einen Kartendienst auswählen:</translation>
     </message>
     <message>
-        <location filename="../ui/observations_tab.py" line="1597"/>
+        <location filename="../ui/observations_tab.py" line="1600"/>
         <source>Open location in Google Maps</source>
         <translation>Standort in Google Maps öffnen</translation>
     </message>
     <message>
-        <location filename="../ui/observations_tab.py" line="1598"/>
+        <location filename="../ui/observations_tab.py" line="1601"/>
         <source>Agricultural &amp; land-use maps</source>
         <translation>Landwirtschafts- und Landnutzungskarten</translation>
     </message>
     <message>
-        <location filename="../ui/observations_tab.py" line="1599"/>
+        <location filename="../ui/observations_tab.py" line="1602"/>
         <source>Species occurrence map (Artsdatabanken)</source>
         <translation>Artenfundkarte (Artsdatabanken)</translation>
     </message>
     <message>
-        <location filename="../ui/observations_tab.py" line="1600"/>
+        <location filename="../ui/observations_tab.py" line="1603"/>
         <source>Aerial imagery of Norway</source>
         <translation>Luftbilder von Norwegen</translation>
     </message>
     <message>
-        <location filename="../ui/observations_tab.py" line="1601"/>
+        <location filename="../ui/observations_tab.py" line="1604"/>
         <source>Observations near this location</source>
         <translation>Beobachtungen in der Nähe dieses Ortes</translation>
     </message>
     <message>
-        <location filename="../ui/observations_tab.py" line="1603"/>
+        <location filename="../ui/observations_tab.py" line="1606"/>
         <source>Species page on iNaturalist</source>
         <translation>Artseite auf iNaturalist</translation>
     </message>
     <message>
-        <location filename="../ui/observations_tab.py" line="1604"/>
+        <location filename="../ui/observations_tab.py" line="1607"/>
         <source>Species page on GBIF</source>
         <translation>Artseite auf GBIF</translation>
     </message>
@@ -3878,27 +3878,27 @@ Maßstab fehlt: {missing}</translation>
         <translation>Kalibrierung</translation>
     </message>
     <message>
-        <location filename="../ui/main_window.py" line="17990"/>
+        <location filename="../ui/main_window.py" line="18010"/>
         <source>Spores</source>
         <translation>Sporen</translation>
     </message>
     <message>
-        <location filename="../ui/main_window.py" line="18097"/>
+        <location filename="../ui/main_window.py" line="18117"/>
         <source>No measurements</source>
         <translation>Keine Messungen</translation>
     </message>
     <message>
-        <location filename="../ui/main_window.py" line="19192"/>
+        <location filename="../ui/main_window.py" line="19212"/>
         <source>Profile</source>
         <translation>Profil</translation>
     </message>
     <message>
-        <location filename="../ui/main_window.py" line="19205"/>
+        <location filename="../ui/main_window.py" line="19225"/>
         <source>Name</source>
         <translation>Name</translation>
     </message>
     <message>
-        <location filename="../ui/main_window.py" line="19206"/>
+        <location filename="../ui/main_window.py" line="19226"/>
         <source>Email</source>
         <translation>E-Mail</translation>
     </message>
@@ -3979,13 +3979,13 @@ Neueste Version: {latest}</translation>
     </message>
     <message>
         <location filename="../ui/main_window.py" line="8125"/>
-        <location filename="../ui/main_window.py" line="19915"/>
+        <location filename="../ui/main_window.py" line="19935"/>
         <source>Axis equal</source>
         <translation>Achsen gleich skalieren</translation>
     </message>
     <message>
         <location filename="../ui/main_window.py" line="8126"/>
-        <location filename="../ui/main_window.py" line="19916"/>
+        <location filename="../ui/main_window.py" line="19936"/>
         <source>Use the same scale on X and Y axes</source>
         <translation>Für X- und Y-Achse dieselbe Skalierung verwenden</translation>
     </message>
@@ -4095,13 +4095,13 @@ Neueste Version: {latest}</translation>
     </message>
     <message>
         <location filename="../ui/main_window.py" line="7923"/>
-        <location filename="../ui/main_window.py" line="19762"/>
+        <location filename="../ui/main_window.py" line="19782"/>
         <source>Bins:</source>
         <translation>Klassen:</translation>
     </message>
     <message>
         <location filename="../ui/main_window.py" line="8132"/>
-        <location filename="../ui/main_window.py" line="19751"/>
+        <location filename="../ui/main_window.py" line="19771"/>
         <source>Plot settings</source>
         <translation>Diagramm-Einstellungen</translation>
     </message>
@@ -4121,48 +4121,48 @@ Neueste Version: {latest}</translation>
         <translation>Ausrichten</translation>
     </message>
     <message>
-        <location filename="../ui/main_window.py" line="13325"/>
+        <location filename="../ui/main_window.py" line="13345"/>
         <source>Stopped - Start measuring</source>
         <translation>Angehalten - Messung starten</translation>
     </message>
     <message>
-        <location filename="../ui/main_window.py" line="14474"/>
+        <location filename="../ui/main_window.py" line="14494"/>
         <source>Show grayscale</source>
         <translation>Graustufen anzeigen</translation>
     </message>
     <message>
-        <location filename="../ui/main_window.py" line="16595"/>
-        <location filename="../ui/main_window.py" line="17674"/>
+        <location filename="../ui/main_window.py" line="16615"/>
+        <location filename="../ui/main_window.py" line="17694"/>
         <source>Length (μm)</source>
         <translation>Länge (µm)</translation>
     </message>
     <message>
-        <location filename="../ui/main_window.py" line="16596"/>
-        <location filename="../ui/main_window.py" line="17676"/>
+        <location filename="../ui/main_window.py" line="16616"/>
+        <location filename="../ui/main_window.py" line="17696"/>
         <source>Width (μm)</source>
         <translation>Breite (µm)</translation>
     </message>
     <message>
         <location filename="../ui/main_window.py" line="8157"/>
-        <location filename="../ui/main_window.py" line="17952"/>
+        <location filename="../ui/main_window.py" line="17972"/>
         <source>Length</source>
         <translation>Länge</translation>
     </message>
     <message>
         <location filename="../ui/main_window.py" line="8156"/>
-        <location filename="../ui/main_window.py" line="17952"/>
+        <location filename="../ui/main_window.py" line="17972"/>
         <source>Width</source>
         <translation>Breite</translation>
     </message>
     <message>
         <location filename="../ui/main_window.py" line="8108"/>
-        <location filename="../ui/main_window.py" line="19887"/>
+        <location filename="../ui/main_window.py" line="19907"/>
         <source>Plot Avg Q</source>
         <translation>Durchschnitt Q plotten</translation>
     </message>
     <message>
         <location filename="../ui/main_window.py" line="8119"/>
-        <location filename="../ui/main_window.py" line="19896"/>
+        <location filename="../ui/main_window.py" line="19916"/>
         <source>Plot Q min/max</source>
         <translation>Q Min/Max plotten</translation>
     </message>
@@ -4188,39 +4188,39 @@ Neueste Version: {latest}</translation>
         <translation>Feldfoto – keine Skala gesetzt</translation>
     </message>
     <message>
-        <location filename="../ui/main_window.py" line="13422"/>
+        <location filename="../ui/main_window.py" line="13442"/>
         <source>Aborted - Start measuring</source>
         <translation>Abgebrochen – Messung starten</translation>
     </message>
     <message>
-        <location filename="../ui/main_window.py" line="13432"/>
+        <location filename="../ui/main_window.py" line="13452"/>
         <source>Start measuring to begin</source>
         <translation>Zum Starten Messung beginnen</translation>
     </message>
     <message>
-        <location filename="../ui/main_window.py" line="13436"/>
+        <location filename="../ui/main_window.py" line="13456"/>
         <source>Rectangle: Click point 1</source>
         <translation>Rechteck: Punkt 1 anklicken</translation>
     </message>
     <message>
-        <location filename="../ui/main_window.py" line="13714"/>
+        <location filename="../ui/main_window.py" line="13734"/>
         <source>Rectangle: Click point 2</source>
         <translation>Rechteck: Punkt 2 anklicken</translation>
     </message>
     <message>
-        <location filename="../ui/main_window.py" line="13737"/>
+        <location filename="../ui/main_window.py" line="13757"/>
         <source>Rectangle: Set width, click point 3</source>
         <translation>Rechteck: Breite festlegen, Punkt 3 anklicken</translation>
     </message>
     <message>
-        <location filename="../ui/main_window.py" line="13762"/>
+        <location filename="../ui/main_window.py" line="13782"/>
         <source>Rectangle: Adjust start line, click point 4</source>
         <translation>Rechteck: Startlinie anpassen, Punkt 4 anklicken</translation>
     </message>
     <message>
-        <location filename="../ui/main_window.py" line="13585"/>
-        <location filename="../ui/main_window.py" line="13688"/>
-        <location filename="../ui/main_window.py" line="15094"/>
+        <location filename="../ui/main_window.py" line="13605"/>
+        <location filename="../ui/main_window.py" line="13708"/>
+        <location filename="../ui/main_window.py" line="15114"/>
         <source>Click to measure next</source>
         <translation>Klicken, um die nächste Messung zu machen</translation>
     </message>
@@ -4230,7 +4230,7 @@ Neueste Version: {latest}</translation>
         <translation>Galerie exportieren</translation>
     </message>
     <message>
-        <location filename="../ui/main_window.py" line="18172"/>
+        <location filename="../ui/main_window.py" line="18192"/>
         <source>Save stats</source>
         <translation>Statistik speichern</translation>
     </message>
@@ -4283,17 +4283,17 @@ Neueste Version: {latest}</translation>
         <translation>Warnung: älterer Kalibrierungsstandard verwendet.</translation>
     </message>
     <message>
-        <location filename="../ui/main_window.py" line="12890"/>
+        <location filename="../ui/main_window.py" line="12910"/>
         <source>Delete image?</source>
         <translation>Bild löschen?</translation>
     </message>
     <message>
-        <location filename="../ui/main_window.py" line="12890"/>
+        <location filename="../ui/main_window.py" line="12910"/>
         <source>Confirm Delete</source>
         <translation>Löschen bestätigen</translation>
     </message>
     <message>
-        <location filename="../ui/main_window.py" line="14399"/>
+        <location filename="../ui/main_window.py" line="14419"/>
         <source>Auto: Edge not found</source>
         <translation>Auto: Kante nicht gefunden</translation>
     </message>
@@ -4301,7 +4301,7 @@ Neueste Version: {latest}</translation>
         <location filename="../ui/main_window.py" line="10275"/>
         <location filename="../ui/main_window.py" line="10278"/>
         <location filename="../ui/main_window.py" line="10290"/>
-        <location filename="../ui/main_window.py" line="18073"/>
+        <location filename="../ui/main_window.py" line="18093"/>
         <source>Observation</source>
         <translation>Beobachtung</translation>
     </message>
@@ -4367,7 +4367,7 @@ Neueste Version: {latest}</translation>
     </message>
     <message>
         <location filename="../ui/main_window.py" line="7278"/>
-        <location filename="../ui/main_window.py" line="13339"/>
+        <location filename="../ui/main_window.py" line="13359"/>
         <source>Start measuring (M)</source>
         <translation>Messung starten (M)</translation>
     </message>
@@ -4394,14 +4394,9 @@ Neueste Version: {latest}</translation>
     </message>
     <message>
         <location filename="../ui/main_window.py" line="7448"/>
-        <location filename="../ui/main_window.py" line="14164"/>
+        <location filename="../ui/main_window.py" line="14184"/>
         <source>No image loaded</source>
         <translation>Kein Bild geladen</translation>
-    </message>
-    <message>
-        <location filename="../ui/main_window.py" line="7828"/>
-        <source>Select image for external publishing</source>
-        <translation>Bild für externe Veröffentlichung auswählen</translation>
     </message>
     <message>
         <location filename="../ui/main_window.py" line="7875"/>
@@ -4410,33 +4405,33 @@ Neueste Version: {latest}</translation>
     </message>
     <message>
         <location filename="../ui/main_window.py" line="7937"/>
-        <location filename="../ui/main_window.py" line="19768"/>
+        <location filename="../ui/main_window.py" line="19788"/>
         <source>Plot:</source>
         <translation>Plot:</translation>
     </message>
     <message>
         <location filename="../ui/main_window.py" line="7940"/>
         <location filename="../ui/main_window.py" line="8878"/>
-        <location filename="../ui/main_window.py" line="19770"/>
-        <location filename="../ui/main_window.py" line="19907"/>
+        <location filename="../ui/main_window.py" line="19790"/>
+        <location filename="../ui/main_window.py" line="19927"/>
         <source>Ellipse</source>
         <translation>Ellipse</translation>
     </message>
     <message>
         <location filename="../ui/main_window.py" line="7941"/>
-        <location filename="../ui/main_window.py" line="19771"/>
+        <location filename="../ui/main_window.py" line="19791"/>
         <source>Kernel density</source>
         <translation>Kernel density</translation>
     </message>
     <message>
         <location filename="../ui/main_window.py" line="7942"/>
-        <location filename="../ui/main_window.py" line="19772"/>
+        <location filename="../ui/main_window.py" line="19792"/>
         <source>Mean range</source>
         <translation>Mean range</translation>
     </message>
     <message>
         <location filename="../ui/main_window.py" line="7964"/>
-        <location filename="../ui/main_window.py" line="19774"/>
+        <location filename="../ui/main_window.py" line="19794"/>
         <source>Show data ellipses for the current specimen and any spore-point reference sets. Coverage is set by the slider below.</source>
         <translation>Show data ellipses for the current specimen and any spore-point reference sets. Coverage is set by the slider below.</translation>
     </message>
@@ -4453,8 +4448,8 @@ Neueste Version: {latest}</translation>
     <message>
         <location filename="../ui/main_window.py" line="7980"/>
         <location filename="../ui/main_window.py" line="8060"/>
-        <location filename="../ui/main_window.py" line="19798"/>
-        <location filename="../ui/main_window.py" line="19851"/>
+        <location filename="../ui/main_window.py" line="19818"/>
+        <location filename="../ui/main_window.py" line="19871"/>
         <source>Coverage:</source>
         <translation>Coverage:</translation>
     </message>
@@ -4466,13 +4461,13 @@ Neueste Version: {latest}</translation>
     </message>
     <message>
         <location filename="../ui/main_window.py" line="8012"/>
-        <location filename="../ui/main_window.py" line="19815"/>
+        <location filename="../ui/main_window.py" line="19835"/>
         <source>Bandwidth:</source>
         <translation>Bandwidth:</translation>
     </message>
     <message>
         <location filename="../ui/main_window.py" line="8037"/>
-        <location filename="../ui/main_window.py" line="19834"/>
+        <location filename="../ui/main_window.py" line="19854"/>
         <source>Contours:</source>
         <translation>Contours:</translation>
     </message>
@@ -4496,25 +4491,25 @@ Neueste Version: {latest}</translation>
     </message>
     <message>
         <location filename="../ui/main_window.py" line="8103"/>
-        <location filename="../ui/main_window.py" line="19883"/>
+        <location filename="../ui/main_window.py" line="19903"/>
         <source>Image color</source>
         <translation>Bildfarbe</translation>
     </message>
     <message>
         <location filename="../ui/main_window.py" line="8113"/>
-        <location filename="../ui/main_window.py" line="19891"/>
+        <location filename="../ui/main_window.py" line="19911"/>
         <source>Plot Q 90% range (5%-95%)</source>
         <translation>Plot Q 90% range (5%-95%)</translation>
     </message>
     <message>
         <location filename="../ui/main_window.py" line="8114"/>
-        <location filename="../ui/main_window.py" line="19892"/>
+        <location filename="../ui/main_window.py" line="19912"/>
         <source>Show Q lines for the 5th to 95th percentile range</source>
         <translation>Show Q lines for the 5th to 95th percentile range</translation>
     </message>
     <message>
         <location filename="../ui/main_window.py" line="8120"/>
-        <location filename="../ui/main_window.py" line="19897"/>
+        <location filename="../ui/main_window.py" line="19917"/>
         <source>Show Q lines for the true minimum and maximum values</source>
         <translation>Show Q lines for the true minimum and maximum values</translation>
     </message>
@@ -4835,6 +4830,11 @@ Neueste Version: {latest}</translation>
         <translation>Notiz pro Bild...</translation>
     </message>
     <message>
+        <location filename="../ui/main_window.py" line="7828"/>
+        <source>Keep image in Sporely Cloud</source>
+        <translation>Bild in Sporely Cloud behalten</translation>
+    </message>
+    <message>
         <location filename="../ui/main_window.py" line="8138"/>
         <source>Gallery</source>
         <translation>Galerie</translation>
@@ -4882,13 +4882,13 @@ Neueste Version: {latest}</translation>
     </message>
     <message>
         <location filename="../ui/main_window.py" line="8874"/>
-        <location filename="../ui/main_window.py" line="19905"/>
+        <location filename="../ui/main_window.py" line="19925"/>
         <source>Shape:</source>
         <translation>Form:</translation>
     </message>
     <message>
         <location filename="../ui/main_window.py" line="8879"/>
-        <location filename="../ui/main_window.py" line="19908"/>
+        <location filename="../ui/main_window.py" line="19928"/>
         <source>Square</source>
         <translation>Quadrat</translation>
     </message>
@@ -5114,296 +5114,296 @@ Neueste Version: {latest}</translation>
         <translation>Länge des angezeigten Maßstabs in Millimetern.</translation>
     </message>
     <message>
-        <location filename="../ui/main_window.py" line="12854"/>
+        <location filename="../ui/main_window.py" line="12874"/>
         <source>Selected images will be edited</source>
         <translation>Ausgewählte Bilder werden bearbeitet</translation>
     </message>
     <message>
-        <location filename="../ui/main_window.py" line="12909"/>
+        <location filename="../ui/main_window.py" line="12929"/>
         <source>Delete failed</source>
         <translation>Delete failed</translation>
     </message>
     <message>
-        <location filename="../ui/main_window.py" line="12910"/>
+        <location filename="../ui/main_window.py" line="12930"/>
         <source>Could not delete image: {error}</source>
         <translation>Could not delete image: {error}</translation>
     </message>
     <message>
-        <location filename="../ui/main_window.py" line="13014"/>
+        <location filename="../ui/main_window.py" line="13034"/>
         <source>{n} observations selected</source>
         <translation>{n} Beobachtungen ausgewählt</translation>
     </message>
     <message>
-        <location filename="../ui/main_window.py" line="13334"/>
+        <location filename="../ui/main_window.py" line="13354"/>
         <source>Stop measuring (M)</source>
         <translation>Messung stoppen (M)</translation>
     </message>
     <message>
-        <location filename="../ui/main_window.py" line="13369"/>
+        <location filename="../ui/main_window.py" line="13389"/>
         <source>Set scale first using &apos;Set from scalebar&apos;.</source>
         <translation>Setzen Sie zuerst den Maßstab über &apos;Vom Maßstab setzen&apos;.</translation>
     </message>
     <message>
-        <location filename="../ui/main_window.py" line="13373"/>
+        <location filename="../ui/main_window.py" line="13393"/>
         <source>Set scale first (objective or &apos;Set from scalebar&apos;).</source>
         <translation>Setzen Sie zuerst den Maßstab (Objektiv oder &apos;Vom Maßstab setzen&apos;).</translation>
     </message>
     <message>
-        <location filename="../ui/main_window.py" line="13439"/>
+        <location filename="../ui/main_window.py" line="13459"/>
         <source>Multi-line: Click start point</source>
         <translation>Mehrfachlinie: Startpunkt klicken</translation>
     </message>
     <message>
-        <location filename="../ui/main_window.py" line="13442"/>
-        <location filename="../ui/main_window.py" line="13504"/>
+        <location filename="../ui/main_window.py" line="13462"/>
+        <location filename="../ui/main_window.py" line="13524"/>
         <source>Line: Click start point</source>
         <translation>Linie: Startpunkt klicken</translation>
     </message>
     <message>
-        <location filename="../ui/main_window.py" line="13490"/>
+        <location filename="../ui/main_window.py" line="13510"/>
         <source>Multi-line: Click next point, Right-click to finish</source>
         <translation>Mehrfachlinie: Nächsten Punkt klicken, Rechtsklick zum Abschließen</translation>
     </message>
     <message>
-        <location filename="../ui/main_window.py" line="13514"/>
+        <location filename="../ui/main_window.py" line="13534"/>
         <source>Line: Click end point</source>
         <translation>Linie: Endpunkt klicken</translation>
     </message>
     <message>
-        <location filename="../ui/main_window.py" line="14446"/>
+        <location filename="../ui/main_window.py" line="14466"/>
         <source>Auto Measure Debug</source>
         <translation>Debug für automatische Messung</translation>
     </message>
     <message>
-        <location filename="../ui/main_window.py" line="14468"/>
+        <location filename="../ui/main_window.py" line="14488"/>
         <source>Threshold:</source>
         <translation>Schwellenwert:</translation>
     </message>
     <message>
-        <location filename="../ui/main_window.py" line="15137"/>
+        <location filename="../ui/main_window.py" line="15157"/>
         <source>Changing calibration</source>
         <translation>Kalibrierung ändern</translation>
     </message>
     <message>
-        <location filename="../ui/main_window.py" line="15139"/>
+        <location filename="../ui/main_window.py" line="15159"/>
         <source>You changed the calibration measurement. Do you want to rescale all other measurements for this image to match the new scale?</source>
         <translation>Sie haben die Kalibriermessung geändert. Möchten Sie alle anderen Messungen dieses Bildes neu skalieren, damit sie zur neuen Skala passen?</translation>
     </message>
     <message>
-        <location filename="../ui/main_window.py" line="15142"/>
+        <location filename="../ui/main_window.py" line="15162"/>
         <source>Rescale</source>
         <translation>Neu skalieren</translation>
     </message>
     <message>
-        <location filename="../ui/main_window.py" line="15143"/>
+        <location filename="../ui/main_window.py" line="15163"/>
         <source>Keep as-is</source>
         <translation>Unverändert lassen</translation>
     </message>
     <message>
-        <location filename="../ui/main_window.py" line="15354"/>
-        <location filename="../ui/main_window.py" line="15382"/>
+        <location filename="../ui/main_window.py" line="15374"/>
+        <location filename="../ui/main_window.py" line="15402"/>
         <source>All except spores</source>
         <translation>All except spores</translation>
     </message>
     <message>
-        <location filename="../ui/main_window.py" line="15587"/>
-        <location filename="../ui/main_window.py" line="19439"/>
+        <location filename="../ui/main_window.py" line="15607"/>
+        <location filename="../ui/main_window.py" line="19459"/>
         <source>Refreshing spore plot and gallery...</source>
         <translation>Sporenplot und Galerie werden aktualisiert...</translation>
     </message>
     <message>
-        <location filename="../ui/main_window.py" line="15717"/>
+        <location filename="../ui/main_window.py" line="15737"/>
         <source>Rendering spore thumbnails {done}/{total}...</source>
         <translation>Sporen-Miniaturbilder werden gerendert {done}/{total}...</translation>
     </message>
     <message>
-        <location filename="../ui/main_window.py" line="16105"/>
+        <location filename="../ui/main_window.py" line="16125"/>
         <source>Rotate 180</source>
         <translation>Um 180 drehen</translation>
     </message>
     <message>
-        <location filename="../ui/main_window.py" line="18152"/>
-        <location filename="../ui/main_window.py" line="18160"/>
+        <location filename="../ui/main_window.py" line="18172"/>
+        <location filename="../ui/main_window.py" line="18180"/>
         <source>No Observation</source>
         <translation>Keine Beobachtung</translation>
     </message>
     <message>
-        <location filename="../ui/main_window.py" line="18152"/>
-        <location filename="../ui/main_window.py" line="18160"/>
+        <location filename="../ui/main_window.py" line="18172"/>
+        <location filename="../ui/main_window.py" line="18180"/>
         <source>Select an observation first.</source>
         <translation>Bitte zuerst eine Beobachtung auswählen.</translation>
     </message>
     <message>
-        <location filename="../ui/main_window.py" line="18184"/>
+        <location filename="../ui/main_window.py" line="18204"/>
         <source>Save Failed</source>
         <translation>Speichern fehlgeschlagen</translation>
     </message>
     <message>
-        <location filename="../ui/main_window.py" line="18241"/>
+        <location filename="../ui/main_window.py" line="18261"/>
         <source>Edit photo</source>
         <translation>Foto bearbeiten</translation>
     </message>
     <message>
-        <location filename="../ui/main_window.py" line="18611"/>
+        <location filename="../ui/main_window.py" line="18631"/>
         <source>Parmasto specimen: Lm={lm}, Wm={wm}, Qm={qm}</source>
         <translation>Parmasto specimen: Lm={lm}, Wm={wm}, Qm={qm}</translation>
     </message>
     <message>
-        <location filename="../ui/main_window.py" line="18618"/>
+        <location filename="../ui/main_window.py" line="18638"/>
         <source>Parmasto variation: VindL={vindl}%, VindW={vindw}%, VindE={vinde}%</source>
         <translation>Parmasto variation: VindL={vindl}%, VindW={vindw}%, VindE={vinde}%</translation>
     </message>
     <message>
-        <location filename="../ui/main_window.py" line="18640"/>
+        <location filename="../ui/main_window.py" line="18660"/>
         <source>Outlier</source>
         <translation>Outlier</translation>
     </message>
     <message>
-        <location filename="../ui/main_window.py" line="18653"/>
+        <location filename="../ui/main_window.py" line="18673"/>
         <source>Parmasto warning: specimen spore shape is more variable than typical (VindE {specimen}% &gt; reference {reference}%).</source>
         <translation>Parmasto warning: specimen spore shape is more variable than typical (VindE {specimen}% &gt; reference {reference}%).</translation>
     </message>
     <message>
-        <location filename="../ui/main_window.py" line="19196"/>
+        <location filename="../ui/main_window.py" line="19216"/>
         <source>Name is used for the copyright watermark on images.
 Name and email (optional) are added to observations in the database, useful if you share your observations with others.</source>
         <translation>Name wird fuer das Copyright-Wasserzeichen auf Bildern verwendet.
 Name und E-Mail (optional) werden zu Beobachtungen in der Datenbank hinzugefuegt, nuetzlich, wenn Sie Ihre Beobachtungen mit anderen teilen.</translation>
     </message>
     <message>
-        <location filename="../ui/main_window.py" line="19441"/>
+        <location filename="../ui/main_window.py" line="19461"/>
         <source>Resorting spore thumbnails...</source>
         <translation>Sporen-Miniaturbilder werden neu sortiert...</translation>
     </message>
     <message>
-        <location filename="../ui/main_window.py" line="19443"/>
+        <location filename="../ui/main_window.py" line="19463"/>
         <source>Rotating spore thumbnails...</source>
         <translation>Sporen-Miniaturbilder werden gedreht...</translation>
     </message>
     <message>
-        <location filename="../ui/main_window.py" line="19445"/>
+        <location filename="../ui/main_window.py" line="19465"/>
         <source>Filtering measurements and refreshing gallery...</source>
         <translation>Messungen werden gefiltert und die Galerie wird aktualisiert...</translation>
     </message>
     <message>
-        <location filename="../ui/main_window.py" line="19452"/>
-        <location filename="../ui/main_window.py" line="20211"/>
+        <location filename="../ui/main_window.py" line="19472"/>
+        <location filename="../ui/main_window.py" line="20231"/>
         <source>Updating spore plot...</source>
         <translation>Sporenplot wird aktualisiert...</translation>
     </message>
     <message>
-        <location filename="../ui/main_window.py" line="19486"/>
+        <location filename="../ui/main_window.py" line="19506"/>
         <source>Updating reference overlays...</source>
         <translation>Referenz-Overlays werden aktualisiert...</translation>
     </message>
     <message>
-        <location filename="../ui/main_window.py" line="19777"/>
+        <location filename="../ui/main_window.py" line="19797"/>
         <source>Show Gaussian KDE filled density bands for the measured spore distribution.</source>
         <translation>Show Gaussian KDE filled density bands for the measured spore distribution.</translation>
     </message>
     <message>
-        <location filename="../ui/main_window.py" line="19780"/>
+        <location filename="../ui/main_window.py" line="19800"/>
         <source>Parmasto-style mean comparison with mean point, mean Q line, and expected mean range.</source>
         <translation>Parmasto-style mean comparison with mean point, mean Q line, and expected mean range.</translation>
     </message>
     <message>
-        <location filename="../ui/main_window.py" line="20225"/>
+        <location filename="../ui/main_window.py" line="20245"/>
         <source>Export Options</source>
         <translation>Exportoptionen</translation>
     </message>
     <message>
-        <location filename="../ui/main_window.py" line="20265"/>
+        <location filename="../ui/main_window.py" line="20285"/>
         <source>Export complete: {name}.</source>
         <translation>Export abgeschlossen: {name}.</translation>
     </message>
     <message>
-        <location filename="../ui/main_window.py" line="20270"/>
+        <location filename="../ui/main_window.py" line="20290"/>
         <source>Export failed: {error}</source>
         <translation>Export fehlgeschlagen: {error}</translation>
     </message>
     <message>
-        <location filename="../ui/main_window.py" line="20292"/>
+        <location filename="../ui/main_window.py" line="20312"/>
         <source>Import Options</source>
         <translation>Importoptionen</translation>
     </message>
     <message>
-        <location filename="../ui/main_window.py" line="20319"/>
+        <location filename="../ui/main_window.py" line="20339"/>
         <source>Updated DB.</source>
         <translation>Datenbank aktualisiert.</translation>
     </message>
     <message>
-        <location filename="../ui/main_window.py" line="20326"/>
+        <location filename="../ui/main_window.py" line="20346"/>
         <source>; and {count} more</source>
         <translation>; und {count} weitere</translation>
     </message>
     <message>
-        <location filename="../ui/main_window.py" line="20327"/>
+        <location filename="../ui/main_window.py" line="20347"/>
         <source>Warnings: {text}</source>
         <translation>Warnungen: {text}</translation>
     </message>
     <message>
-        <location filename="../ui/main_window.py" line="20345"/>
+        <location filename="../ui/main_window.py" line="20365"/>
         <source>Import failed: {error}</source>
         <translation>Import fehlgeschlagen: {error}</translation>
     </message>
     <message>
-        <location filename="../ui/main_window.py" line="20399"/>
+        <location filename="../ui/main_window.py" line="20419"/>
         <source>Measurement deleted</source>
         <translation>Messung gelöscht</translation>
     </message>
     <message>
-        <location filename="../ui/main_window.py" line="20555"/>
+        <location filename="../ui/main_window.py" line="20575"/>
         <source>Changing image scale</source>
         <translation>Bildskala wird geändert</translation>
     </message>
     <message>
-        <location filename="../ui/main_window.py" line="20556"/>
+        <location filename="../ui/main_window.py" line="20576"/>
         <source>Changing image scale: This will update previous measurements to match the new scale.</source>
         <translation>Änderung der Bildskala: Dadurch werden frühere Messungen an die neue Skala angepasst.</translation>
     </message>
     <message>
-        <location filename="../ui/main_window.py" line="21009"/>
+        <location filename="../ui/main_window.py" line="21029"/>
         <source>Calibration failed: zero-length line. Try again.</source>
         <translation>Kalibrierung fehlgeschlagen: Linie mit Nulllänge. Bitte erneut versuchen.</translation>
     </message>
     <message>
-        <location filename="../ui/main_window.py" line="21055"/>
+        <location filename="../ui/main_window.py" line="21075"/>
         <source>Scale set: {scale:.4f} mm/px</source>
         <translation>Maßstab gesetzt: {scale:.4f} mm/px</translation>
     </message>
     <message>
-        <location filename="../ui/main_window.py" line="21057"/>
+        <location filename="../ui/main_window.py" line="21077"/>
         <source>Scale set: {scale:.2f} nm/px</source>
         <translation>Maßstab gesetzt: {scale:.2f} nm/px</translation>
     </message>
     <message>
-        <location filename="../ui/main_window.py" line="18640"/>
-        <location filename="../ui/main_window.py" line="19209"/>
-        <location filename="../ui/main_window.py" line="19921"/>
-        <location filename="../ui/main_window.py" line="20557"/>
+        <location filename="../ui/main_window.py" line="18660"/>
+        <location filename="../ui/main_window.py" line="19229"/>
+        <location filename="../ui/main_window.py" line="19941"/>
+        <location filename="../ui/main_window.py" line="20577"/>
         <source>OK</source>
         <translation>OK</translation>
     </message>
     <message>
-        <location filename="../ui/main_window.py" line="19210"/>
-        <location filename="../ui/main_window.py" line="19922"/>
-        <location filename="../ui/main_window.py" line="20558"/>
+        <location filename="../ui/main_window.py" line="19230"/>
+        <location filename="../ui/main_window.py" line="19942"/>
+        <location filename="../ui/main_window.py" line="20578"/>
         <source>Cancel</source>
         <translation>Abbrechen</translation>
     </message>
     <message>
         <location filename="../ui/main_window.py" line="12245"/>
-        <location filename="../ui/main_window.py" line="20963"/>
+        <location filename="../ui/main_window.py" line="20983"/>
         <source>Load an image first to calibrate</source>
         <translation>Zum Kalibrieren zuerst ein Bild laden</translation>
     </message>
     <message>
-        <location filename="../ui/main_window.py" line="20976"/>
+        <location filename="../ui/main_window.py" line="20996"/>
         <source>CALIBRATION: Click first point on scale bar</source>
         <translation>KALIBRIERUNG: Ersten Punkt auf dem Maßstabsbalken anklicken</translation>
     </message>
     <message>
-        <location filename="../ui/main_window.py" line="20990"/>
+        <location filename="../ui/main_window.py" line="21010"/>
         <source>CALIBRATION: Click second point on scale bar</source>
         <translation>KALIBRIERUNG: Zweiten Punkt auf dem Maßstabsbalken anklicken</translation>
     </message>
@@ -5682,832 +5682,871 @@ Name und E-Mail (optional) werden zu Beobachtungen in der Datenbank hinzugefuegt
 <context>
     <name>ObservationDetailsDialog</name>
     <message>
-        <location filename="../ui/observations_tab.py" line="13576"/>
+        <location filename="../ui/observations_tab.py" line="13711"/>
         <source>Edit Observation</source>
         <translation>Beobachtung bearbeiten</translation>
     </message>
     <message>
-        <location filename="../ui/observations_tab.py" line="13576"/>
+        <location filename="../ui/observations_tab.py" line="13711"/>
         <source>New Observation</source>
         <translation>Neue Beobachtung</translation>
     </message>
     <message>
-        <location filename="../ui/observations_tab.py" line="13860"/>
+        <location filename="../ui/observations_tab.py" line="13995"/>
         <source>Observation Details</source>
         <translation>Beobachtungsdetails</translation>
     </message>
     <message>
-        <location filename="../ui/observations_tab.py" line="13900"/>
+        <location filename="../ui/observations_tab.py" line="14035"/>
         <source>Date &amp; time:</source>
         <translation>Datum und Uhrzeit:</translation>
     </message>
     <message>
-        <location filename="../ui/observations_tab.py" line="13937"/>
+        <location filename="../ui/observations_tab.py" line="14072"/>
         <source>Paste OpenStreetMap link</source>
         <translation>OpenStreetMap-Link einfügen</translation>
     </message>
     <message>
-        <location filename="../ui/observations_tab.py" line="13940"/>
+        <location filename="../ui/observations_tab.py" line="14075"/>
         <source>Get map link</source>
         <translation>Kartenlink abrufen</translation>
     </message>
     <message>
-        <location filename="../ui/observations_tab.py" line="13944"/>
+        <location filename="../ui/observations_tab.py" line="14079"/>
         <source>Paste link:</source>
         <translation>Link einfügen:</translation>
     </message>
     <message>
-        <location filename="../ui/observations_tab.py" line="13979"/>
+        <location filename="../ui/observations_tab.py" line="14114"/>
         <source>Location:</source>
         <translation>Ort:</translation>
     </message>
     <message>
-        <location filename="../ui/observations_tab.py" line="13910"/>
+        <location filename="../ui/observations_tab.py" line="14045"/>
         <source>Latitude:</source>
         <translation>Breitengrad:</translation>
     </message>
     <message>
-        <location filename="../ui/observations_tab.py" line="13882"/>
+        <location filename="../ui/observations_tab.py" line="14017"/>
         <source>Draft / WIP</source>
         <translation>Entwurf / WIP</translation>
     </message>
     <message>
-        <location filename="../ui/observations_tab.py" line="13883"/>
+        <location filename="../ui/observations_tab.py" line="14018"/>
         <source>Draft observations are visible as work in progress until you mark them finished.</source>
         <translation>Entwurfsbeobachtungen sind als laufende Arbeit sichtbar, bis Sie sie als fertig markieren.</translation>
     </message>
     <message>
-        <location filename="../ui/observations_tab.py" line="13917"/>
+        <location filename="../ui/observations_tab.py" line="14052"/>
         <source>Longitude:</source>
         <translation>Längengrad:</translation>
     </message>
     <message>
-        <location filename="../ui/observations_tab.py" line="14006"/>
+        <location filename="../ui/observations_tab.py" line="14141"/>
         <source>Sporely Cloud</source>
         <translation>Sporely Cloud</translation>
     </message>
     <message>
-        <location filename="../ui/observations_tab.py" line="14023"/>
+        <location filename="../ui/observations_tab.py" line="14158"/>
         <source>Public</source>
         <translation>Öffentlich</translation>
     </message>
     <message>
-        <location filename="../ui/observations_tab.py" line="14036"/>
+        <location filename="../ui/observations_tab.py" line="14171"/>
         <source>Exact</source>
         <translation>Genau</translation>
     </message>
     <message>
-        <location filename="../ui/observations_tab.py" line="14043"/>
+        <location filename="../ui/observations_tab.py" line="14178"/>
         <source>Fuzzed locations are rounded in public and follow feeds.</source>
         <translation>Verschleierte Standorte werden in öffentlichen Ansichten und in Feeds gerundet.</translation>
     </message>
     <message>
-        <location filename="../ui/observations_tab.py" line="14055"/>
+        <location filename="../ui/observations_tab.py" line="14190"/>
         <source>Location precision:</source>
         <translation>Standort verbergen:</translation>
     </message>
     <message>
-        <location filename="../ui/observations_tab.py" line="14092"/>
+        <location filename="../ui/observations_tab.py" line="14227"/>
         <source>Open comment:</source>
         <translation>Offener Kommentar:</translation>
     </message>
     <message>
-        <location filename="../ui/observations_tab.py" line="14096"/>
+        <location filename="../ui/observations_tab.py" line="14231"/>
         <source>Open comment...</source>
         <translation>Offener Kommentar...</translation>
     </message>
     <message>
-        <location filename="../ui/observations_tab.py" line="14107"/>
+        <location filename="../ui/observations_tab.py" line="14242"/>
         <source>Private comment:</source>
         <translation>Privater Kommentar:</translation>
     </message>
     <message>
-        <location filename="../ui/observations_tab.py" line="14111"/>
+        <location filename="../ui/observations_tab.py" line="14246"/>
         <source>Private comment...</source>
         <translation>Privater Kommentar...</translation>
     </message>
     <message>
-        <location filename="../ui/observations_tab.py" line="14130"/>
+        <location filename="../ui/observations_tab.py" line="14265"/>
         <source>Taxonomy</source>
         <translation>Taxonomie</translation>
     </message>
     <message>
-        <location filename="../ui/observations_tab.py" line="14253"/>
+        <location filename="../ui/observations_tab.py" line="14388"/>
         <source>Determination:</source>
         <translation>Bestimmung:</translation>
     </message>
     <message>
-        <location filename="../ui/observations_tab.py" line="14259"/>
+        <location filename="../ui/observations_tab.py" line="14394"/>
         <source>Microscopy</source>
         <translation>Mikroskopie</translation>
     </message>
     <message>
-        <location filename="../ui/observations_tab.py" line="14260"/>
+        <location filename="../ui/observations_tab.py" line="14395"/>
         <source>Sequencing</source>
         <translation>Sequenzierung</translation>
     </message>
     <message>
-        <location filename="../ui/observations_tab.py" line="14261"/>
+        <location filename="../ui/observations_tab.py" line="14396"/>
         <source>eDNA</source>
         <translation>eDNA</translation>
     </message>
     <message>
-        <location filename="../ui/observations_tab.py" line="14262"/>
+        <location filename="../ui/observations_tab.py" line="14397"/>
         <source>Optional method used for determination.</source>
         <translation>Optionale Methode fur die Bestimmung.</translation>
     </message>
     <message>
-        <location filename="../ui/observations_tab.py" line="14298"/>
+        <location filename="../ui/observations_tab.py" line="14433"/>
         <source>Uncertain</source>
         <translation>Unsicher</translation>
     </message>
     <message>
-        <location filename="../ui/observations_tab.py" line="14308"/>
+        <location filename="../ui/observations_tab.py" line="14443"/>
         <source>Alien or cultivated</source>
         <translation>Eingefuhrt oder kultiviert</translation>
     </message>
     <message>
-        <location filename="../ui/observations_tab.py" line="14316"/>
-        <location filename="../ui/observations_tab.py" line="17248"/>
+        <location filename="../ui/observations_tab.py" line="14451"/>
+        <location filename="../ui/observations_tab.py" line="17387"/>
         <source>Species</source>
         <translation>Art</translation>
     </message>
     <message>
-        <location filename="../ui/observations_tab.py" line="14654"/>
+        <location filename="../ui/observations_tab.py" line="14793"/>
         <source>Place name for the observation. Click the field to choose from lookup suggestions.</source>
         <translation>Ortsname für die Beobachtung. Klicken Sie auf das Feld, um aus den Suchvorschlägen zu wählen.</translation>
     </message>
     <message>
-        <location filename="../ui/observations_tab.py" line="14715"/>
-        <location filename="../ui/observations_tab.py" line="14717"/>
-        <location filename="../ui/observations_tab.py" line="14734"/>
+        <location filename="../ui/observations_tab.py" line="14854"/>
+        <location filename="../ui/observations_tab.py" line="14856"/>
+        <location filename="../ui/observations_tab.py" line="14873"/>
         <source>Select a field image to use AI recognition</source>
         <translation>Ein Feldbild auswählen, um die KI-Erkennung zu verwenden</translation>
     </message>
     <message>
-        <location filename="../ui/observations_tab.py" line="14732"/>
+        <location filename="../ui/observations_tab.py" line="14871"/>
         <source>Select the Species tab or the Grows-on tab to use AI recognition</source>
         <translation>Den Reiter Art oder Wächst auf auswählen, um die KI-Erkennung zu verwenden</translation>
     </message>
     <message>
-        <location filename="../ui/observations_tab.py" line="14736"/>
+        <location filename="../ui/observations_tab.py" line="14875"/>
         <source>Select an AI suggestion to copy</source>
         <translation>Einen KI-Vorschlag zum Kopieren auswählen</translation>
     </message>
     <message>
-        <location filename="../ui/observations_tab.py" line="15146"/>
+        <location filename="../ui/observations_tab.py" line="15285"/>
         <source>Unknown</source>
         <translation>Unbekannt</translation>
     </message>
     <message>
-        <location filename="../ui/observations_tab.py" line="13920"/>
+        <location filename="../ui/observations_tab.py" line="14055"/>
         <source>Map</source>
         <translation>Karte</translation>
     </message>
     <message>
-        <location filename="../ui/observations_tab.py" line="14330"/>
-        <location filename="../ui/observations_tab.py" line="17082"/>
-        <location filename="../ui/observations_tab.py" line="17165"/>
+        <location filename="../ui/observations_tab.py" line="14465"/>
+        <location filename="../ui/observations_tab.py" line="17221"/>
+        <location filename="../ui/observations_tab.py" line="17304"/>
         <source>NIN2 biotope</source>
         <translation>NIN2-Biotop</translation>
     </message>
     <message>
-        <location filename="../ui/observations_tab.py" line="14341"/>
+        <location filename="../ui/observations_tab.py" line="14476"/>
         <source>Biotope note...</source>
         <translation>Biotop-Notiz...</translation>
     </message>
     <message>
-        <location filename="../ui/observations_tab.py" line="14343"/>
+        <location filename="../ui/observations_tab.py" line="14478"/>
         <source>Biotope note:</source>
         <translation>Biotop-Notiz:</translation>
     </message>
     <message>
-        <location filename="../ui/observations_tab.py" line="14359"/>
-        <location filename="../ui/observations_tab.py" line="14374"/>
-        <location filename="../ui/observations_tab.py" line="17084"/>
-        <location filename="../ui/observations_tab.py" line="17169"/>
+        <location filename="../ui/observations_tab.py" line="14494"/>
+        <location filename="../ui/observations_tab.py" line="14509"/>
+        <location filename="../ui/observations_tab.py" line="17223"/>
+        <location filename="../ui/observations_tab.py" line="17308"/>
         <source>Substrate</source>
         <translation>Substrat</translation>
     </message>
     <message>
-        <location filename="../ui/observations_tab.py" line="14369"/>
+        <location filename="../ui/observations_tab.py" line="14504"/>
         <source>Substrate note...</source>
         <translation>Substrat-Notiz...</translation>
     </message>
     <message>
-        <location filename="../ui/observations_tab.py" line="14371"/>
+        <location filename="../ui/observations_tab.py" line="14506"/>
         <source>Substrate note:</source>
         <translation>Substrat-Notiz:</translation>
     </message>
     <message>
-        <location filename="../ui/observations_tab.py" line="14197"/>
-        <location filename="../ui/observations_tab.py" line="14414"/>
+        <location filename="../ui/observations_tab.py" line="14332"/>
+        <location filename="../ui/observations_tab.py" line="14549"/>
         <source>Genus:</source>
         <translation>Gattung:</translation>
     </message>
     <message>
-        <location filename="../ui/observations_tab.py" line="13970"/>
+        <location filename="../ui/observations_tab.py" line="14105"/>
         <source>e.g., Bymarka, Trondheim</source>
         <translation>z. B. Bymarka, Trondheim</translation>
     </message>
     <message>
-        <location filename="../ui/observations_tab.py" line="14202"/>
+        <location filename="../ui/observations_tab.py" line="14337"/>
         <source>e.g., Flammulina</source>
         <translation>z. B. Flammulina</translation>
     </message>
     <message>
-        <location filename="../ui/observations_tab.py" line="14208"/>
-        <location filename="../ui/observations_tab.py" line="14415"/>
+        <location filename="../ui/observations_tab.py" line="14343"/>
+        <location filename="../ui/observations_tab.py" line="14550"/>
         <source>Species:</source>
         <translation>Art:</translation>
     </message>
     <message>
-        <location filename="../ui/observations_tab.py" line="14213"/>
-        <location filename="../ui/observations_tab.py" line="19091"/>
+        <location filename="../ui/observations_tab.py" line="14348"/>
+        <location filename="../ui/observations_tab.py" line="19311"/>
         <source>e.g., velutipes</source>
         <translation>z. B. velutipes</translation>
     </message>
     <message>
-        <location filename="../ui/observations_tab.py" line="14236"/>
+        <location filename="../ui/observations_tab.py" line="14371"/>
         <source>Red list:</source>
         <translation>Rote Liste:</translation>
     </message>
     <message>
-        <location filename="../ui/observations_tab.py" line="14275"/>
+        <location filename="../ui/observations_tab.py" line="14410"/>
         <source>Artsobservasjoner (Norway)</source>
         <translation>Artsobservasjoner (Norwegen)</translation>
     </message>
     <message>
-        <location filename="../ui/observations_tab.py" line="14276"/>
+        <location filename="../ui/observations_tab.py" line="14411"/>
         <source>Artportalen (Sweden)</source>
         <translation>Artportalen (Schweden)</translation>
     </message>
     <message>
-        <location filename="../ui/observations_tab.py" line="14346"/>
-        <location filename="../ui/observations_tab.py" line="17082"/>
-        <location filename="../ui/observations_tab.py" line="17166"/>
+        <location filename="../ui/observations_tab.py" line="14481"/>
+        <location filename="../ui/observations_tab.py" line="17221"/>
+        <location filename="../ui/observations_tab.py" line="17305"/>
         <source>Biotope</source>
         <translation>Biotop</translation>
     </message>
     <message>
-        <location filename="../ui/observations_tab.py" line="14392"/>
+        <location filename="../ui/observations_tab.py" line="14527"/>
         <source>e.g., Betula</source>
         <translation>z. B. Betula</translation>
     </message>
     <message>
-        <location filename="../ui/observations_tab.py" line="14396"/>
-        <location filename="../ui/observations_tab.py" line="18896"/>
+        <location filename="../ui/observations_tab.py" line="14531"/>
+        <location filename="../ui/observations_tab.py" line="19116"/>
         <source>e.g., pendula</source>
         <translation>z. B. pendula</translation>
     </message>
     <message>
-        <location filename="../ui/observations_tab.py" line="14419"/>
+        <location filename="../ui/observations_tab.py" line="14554"/>
         <source>Grows-on note...</source>
         <translation>Wächst-auf-Notiz...</translation>
     </message>
     <message>
-        <location filename="../ui/observations_tab.py" line="14421"/>
+        <location filename="../ui/observations_tab.py" line="14556"/>
         <source>Grows-on note:</source>
         <translation>Wächst-auf-Notiz:</translation>
     </message>
     <message>
-        <location filename="../ui/observations_tab.py" line="14482"/>
-        <location filename="../ui/observations_tab.py" line="17387"/>
+        <location filename="../ui/observations_tab.py" line="14621"/>
+        <location filename="../ui/observations_tab.py" line="17526"/>
         <source>Download media</source>
         <translation>Medien herunterladen</translation>
     </message>
     <message>
-        <location filename="../ui/observations_tab.py" line="14493"/>
+        <location filename="../ui/observations_tab.py" line="14632"/>
         <source>Edit images ({key})</source>
         <translation>Bilder bearbeiten ({key})</translation>
     </message>
     <message>
-        <location filename="../ui/observations_tab.py" line="14499"/>
+        <location filename="../ui/observations_tab.py" line="14638"/>
         <source>Cancel</source>
         <translation>Abbrechen</translation>
     </message>
     <message>
-        <location filename="../ui/observations_tab.py" line="14505"/>
+        <location filename="../ui/observations_tab.py" line="14644"/>
         <source>Save Observation</source>
         <translation>Beobachtung speichern</translation>
     </message>
     <message>
-        <location filename="../ui/observations_tab.py" line="14505"/>
+        <location filename="../ui/observations_tab.py" line="14644"/>
         <source>Create Observation</source>
         <translation>Beobachtung erstellen</translation>
     </message>
     <message>
-        <location filename="../ui/observations_tab.py" line="14643"/>
+        <location filename="../ui/observations_tab.py" line="14782"/>
         <source>Coordinates in WGS84 decimal degrees.</source>
         <translation>Koordinaten im WGS84-Dezimalformat.</translation>
     </message>
     <message>
-        <location filename="../ui/observations_tab.py" line="14644"/>
+        <location filename="../ui/observations_tab.py" line="14783"/>
         <source>Get map link first then paste the link in the text field.</source>
         <translation>Rufen Sie zuerst den Kartenlink ab und fügen Sie ihn dann in das Textfeld ein.</translation>
     </message>
     <message>
-        <location filename="../ui/observations_tab.py" line="14658"/>
+        <location filename="../ui/observations_tab.py" line="14797"/>
         <source>Open location in Google Maps</source>
         <translation>Standort in Google Maps oeffnen</translation>
     </message>
     <message>
-        <location filename="../ui/observations_tab.py" line="14660"/>
+        <location filename="../ui/observations_tab.py" line="14799"/>
         <source>Enter coordinates to enable the map</source>
         <translation>Koordinaten eingeben, um die Karte zu aktivieren</translation>
     </message>
     <message>
-        <location filename="../ui/observations_tab.py" line="14668"/>
+        <location filename="../ui/observations_tab.py" line="14807"/>
         <source>Uncertain identification</source>
         <translation>Unsichere Bestimmung</translation>
     </message>
     <message>
-        <location filename="../ui/observations_tab.py" line="14672"/>
+        <location filename="../ui/observations_tab.py" line="14811"/>
         <source>Introduced species, escaped from cultivation, not native (ikke spontant).</source>
         <translation>Open location in Google Maps</translation>
     </message>
     <message>
-        <location filename="../ui/observations_tab.py" line="14676"/>
+        <location filename="../ui/observations_tab.py" line="14815"/>
         <source>Choose common-name language (applies to the whole app).</source>
         <translation>Sprache für Trivialnamen wählen (gilt für die gesamte App).</translation>
     </message>
     <message>
-        <location filename="../ui/observations_tab.py" line="14692"/>
+        <location filename="../ui/observations_tab.py" line="14831"/>
         <source>Save observation (Enter)</source>
         <translation>Beobachtung speichern (Enter)</translation>
     </message>
     <message>
-        <location filename="../ui/observations_tab.py" line="14692"/>
+        <location filename="../ui/observations_tab.py" line="14831"/>
         <source>Create observation (Enter)</source>
         <translation>Beobachtung erstellen (Enter)</translation>
     </message>
     <message>
-        <location filename="../ui/observations_tab.py" line="14696"/>
+        <location filename="../ui/observations_tab.py" line="14835"/>
         <source>Add or remove images for this observation (E)</source>
         <translation>Bilder fuer diese Beobachtung hinzufuegen oder entfernen (E)</translation>
     </message>
     <message>
-        <location filename="../ui/observations_tab.py" line="14701"/>
+        <location filename="../ui/observations_tab.py" line="14840"/>
         <source>Download cloud images and measurements for this observation.</source>
         <translation>Cloud-Bilder und Messungen für diese Beobachtung herunterladen.</translation>
     </message>
     <message>
-        <location filename="../ui/observations_tab.py" line="14711"/>
+        <location filename="../ui/observations_tab.py" line="14850"/>
         <source>Guess species using AI - select one or more thumbnails (shift/ctrl + click)</source>
         <translation>Choose common-name language (applies to the whole app).</translation>
     </message>
     <message>
-        <location filename="../ui/observations_tab.py" line="14726"/>
+        <location filename="../ui/observations_tab.py" line="14865"/>
         <source>Transfer selected species to grows-on</source>
         <translation>Ausgewählte Art nach &quot;Wächst auf&quot; übertragen</translation>
     </message>
     <message>
-        <location filename="../ui/observations_tab.py" line="14728"/>
+        <location filename="../ui/observations_tab.py" line="14867"/>
         <source>Transfer selected species to taxonomy</source>
         <translation>Transfer selected species to taxonomy</translation>
     </message>
     <message>
-        <location filename="../ui/observations_tab.py" line="14755"/>
+        <location filename="../ui/observations_tab.py" line="14894"/>
         <source>AI suggestions</source>
         <translation>AI-Vorschläge</translation>
     </message>
     <message>
-        <location filename="../ui/observations_tab.py" line="14780"/>
+        <location filename="../ui/observations_tab.py" line="14919"/>
         <source>Artsorakel</source>
         <translation>Artsorakel</translation>
     </message>
     <message>
-        <location filename="../ui/observations_tab.py" line="14781"/>
+        <location filename="../ui/observations_tab.py" line="14920"/>
         <source>Red List</source>
         <translation>Rote Liste</translation>
     </message>
     <message>
-        <location filename="../ui/observations_tab.py" line="14785"/>
+        <location filename="../ui/observations_tab.py" line="14924"/>
         <source>iNaturalist</source>
         <translation>iNaturalist</translation>
     </message>
     <message>
-        <location filename="../ui/observations_tab.py" line="14803"/>
-        <location filename="../ui/observations_tab.py" line="15866"/>
-        <location filename="../ui/observations_tab.py" line="15872"/>
+        <location filename="../ui/observations_tab.py" line="14942"/>
+        <location filename="../ui/observations_tab.py" line="16005"/>
+        <location filename="../ui/observations_tab.py" line="16011"/>
         <source>Guess</source>
         <translation>Vorschlag</translation>
     </message>
     <message>
-        <location filename="../ui/observations_tab.py" line="14805"/>
+        <location filename="../ui/observations_tab.py" line="14944"/>
         <source>Copy</source>
         <translation>Kopieren</translation>
     </message>
     <message>
-        <location filename="../ui/observations_tab.py" line="14781"/>
-        <location filename="../ui/observations_tab.py" line="14786"/>
+        <location filename="../ui/observations_tab.py" line="14920"/>
+        <location filename="../ui/observations_tab.py" line="14925"/>
         <source>Suggested species</source>
         <translation>Vorgeschlagene Art</translation>
     </message>
     <message>
-        <location filename="../ui/observations_tab.py" line="13454"/>
-        <location filename="../ui/observations_tab.py" line="13482"/>
+        <location filename="../ui/observations_tab.py" line="13589"/>
+        <location filename="../ui/observations_tab.py" line="13617"/>
         <source>Private slot availability: unavailable</source>
         <translation>Verfügbarkeit privater Slots: nicht verfügbar</translation>
     </message>
     <message>
-        <location filename="../ui/observations_tab.py" line="13457"/>
-        <location filename="../ui/observations_tab.py" line="13485"/>
+        <location filename="../ui/observations_tab.py" line="13592"/>
+        <location filename="../ui/observations_tab.py" line="13620"/>
         <source>Private slot availability: loading…</source>
         <translation>Verfügbarkeit privater Slots: wird geladen…</translation>
     </message>
     <message>
-        <location filename="../ui/observations_tab.py" line="13460"/>
-        <location filename="../ui/observations_tab.py" line="14071"/>
+        <location filename="../ui/observations_tab.py" line="13595"/>
+        <location filename="../ui/observations_tab.py" line="14206"/>
         <source>Sign in to Sporely Cloud to see private slot availability.</source>
         <translation>Melden Sie sich bei Sporely Cloud an, um die Verfügbarkeit privater Slots zu sehen.</translation>
     </message>
     <message>
-        <location filename="../ui/observations_tab.py" line="13490"/>
+        <location filename="../ui/observations_tab.py" line="13625"/>
         <source>Available private slots: {available} of {limit}</source>
         <translation>Verfügbare private Slots: {available} von {limit}</translation>
     </message>
     <message>
-        <location filename="../ui/observations_tab.py" line="13525"/>
+        <location filename="../ui/observations_tab.py" line="13660"/>
         <source>taxon {taxon_id}</source>
         <translation>Taxon {taxon_id}</translation>
     </message>
     <message>
-        <location filename="../ui/observations_tab.py" line="13534"/>
+        <location filename="../ui/observations_tab.py" line="13669"/>
         <source>Selected AI: {summary}</source>
         <translation>Ausgewählte KI: {summary}</translation>
     </message>
     <message>
-        <location filename="../ui/observations_tab.py" line="14012"/>
+        <location filename="../ui/observations_tab.py" line="14147"/>
         <source>Private</source>
         <translation>Privat</translation>
     </message>
     <message>
-        <location filename="../ui/observations_tab.py" line="14015"/>
+        <location filename="../ui/observations_tab.py" line="14150"/>
         <source>Private observations are visible only to you.</source>
         <translation>Private Beobachtungen sind nur für Sie sichtbar.</translation>
     </message>
     <message>
-        <location filename="../ui/observations_tab.py" line="14018"/>
+        <location filename="../ui/observations_tab.py" line="14153"/>
         <source>Friends</source>
         <translation>Freunde</translation>
     </message>
     <message>
-        <location filename="../ui/observations_tab.py" line="14020"/>
+        <location filename="../ui/observations_tab.py" line="14155"/>
         <source>Friends-only observations consume one privacy slot.</source>
         <translation>Beobachtungen nur für Freunde verbrauchen einen Privatsphäre-Slot.</translation>
     </message>
     <message>
-        <location filename="../ui/observations_tab.py" line="14025"/>
+        <location filename="../ui/observations_tab.py" line="14160"/>
         <source>Public observations do not use a privacy slot.</source>
         <translation>Öffentliche Beobachtungen nutzen keinen Privatsphäre-Slot.</translation>
     </message>
     <message>
-        <location filename="../ui/observations_tab.py" line="14041"/>
+        <location filename="../ui/observations_tab.py" line="14176"/>
         <source>Fuzzed</source>
         <translation>Maskiert</translation>
     </message>
     <message>
-        <location filename="../ui/observations_tab.py" line="14054"/>
+        <location filename="../ui/observations_tab.py" line="14189"/>
         <source>Share with..</source>
         <translation>Teilen mit..</translation>
     </message>
     <message>
-        <location filename="../ui/observations_tab.py" line="14219"/>
+        <location filename="../ui/observations_tab.py" line="14354"/>
         <source>Scientific:</source>
         <translation type="unfinished"></translation>
     </message>
     <message>
-        <location filename="../ui/observations_tab.py" line="14225"/>
+        <location filename="../ui/observations_tab.py" line="14360"/>
         <source>Optional: e.g., Hygrocybe conica var. pseudoconica</source>
         <translation type="unfinished"></translation>
     </message>
     <message>
-        <location filename="../ui/observations_tab.py" line="14288"/>
+        <location filename="../ui/observations_tab.py" line="14423"/>
         <source>Unidentified</source>
         <translation>Unbestimmt</translation>
     </message>
     <message>
-        <location filename="../ui/observations_tab.py" line="14451"/>
+        <location filename="../ui/observations_tab.py" line="14587"/>
         <source>Double-click to open</source>
         <translation>Doppelklicken zum Öffnen</translation>
     </message>
     <message>
-        <location filename="../ui/observations_tab.py" line="14664"/>
+        <location filename="../ui/observations_tab.py" line="14803"/>
         <source>Clear the current identification while keeping AI candidates.</source>
         <translation>Aktuelle Bestimmung entfernen, aber KI-Kandidaten behalten.</translation>
     </message>
     <message>
-        <location filename="../ui/observations_tab.py" line="14713"/>
+        <location filename="../ui/observations_tab.py" line="14852"/>
         <source>Guess species using AI - all field images are used when nothing is selected</source>
         <translation>Art per KI erraten - alle Feldbilder werden verwendet, wenn nichts ausgewählt ist</translation>
     </message>
     <message>
-        <location filename="../ui/observations_tab.py" line="15211"/>
+        <location filename="../ui/observations_tab.py" line="15350"/>
         <source>Not set</source>
         <translation>Nicht gesetzt</translation>
     </message>
     <message>
-        <location filename="../ui/observations_tab.py" line="15330"/>
+        <location filename="../ui/observations_tab.py" line="15469"/>
         <source>Open link</source>
         <translation>Link öffnen</translation>
     </message>
     <message>
-        <location filename="../ui/observations_tab.py" line="15646"/>
+        <location filename="../ui/observations_tab.py" line="15785"/>
         <source>Could not parse genus/species from AI suggestion.</source>
         <translation>Gattung/Art konnten aus dem KI-Vorschlag nicht gelesen werden.</translation>
     </message>
     <message>
-        <location filename="../ui/observations_tab.py" line="15666"/>
+        <location filename="../ui/observations_tab.py" line="15805"/>
         <source>Copied to grows-on species.</source>
         <translation>Zu Wächst-auf-Art kopiert.</translation>
     </message>
     <message>
-        <location filename="../ui/observations_tab.py" line="15724"/>
+        <location filename="../ui/observations_tab.py" line="15863"/>
         <source>Copied to taxonomy.</source>
         <translation>In Taxonomie kopiert.</translation>
     </message>
     <message>
-        <location filename="../ui/observations_tab.py" line="15759"/>
-        <location filename="../ui/observations_tab.py" line="15761"/>
+        <location filename="../ui/observations_tab.py" line="15898"/>
+        <location filename="../ui/observations_tab.py" line="15900"/>
         <source>AI guess only works for field photos</source>
         <translation>AI-Vorschlag funktioniert nur bei Feldfotos</translation>
     </message>
     <message>
-        <location filename="../ui/observations_tab.py" line="15786"/>
-        <location filename="../ui/observations_tab.py" line="15823"/>
+        <location filename="../ui/observations_tab.py" line="15925"/>
+        <location filename="../ui/observations_tab.py" line="15962"/>
         <source>AI guessing...</source>
         <translation>AI schlägt vor...</translation>
     </message>
     <message>
-        <location filename="../ui/observations_tab.py" line="15788"/>
+        <location filename="../ui/observations_tab.py" line="15927"/>
         <source>Sending {count} image(s) to Artsdatabanken AI...</source>
         <translation>Sende {count} Bild(er) an Artsdatabanken AI...</translation>
     </message>
     <message>
-        <location filename="../ui/observations_tab.py" line="15815"/>
+        <location filename="../ui/observations_tab.py" line="15954"/>
         <source>Not logged in to iNaturalist. Log in via Settings -&gt; Online publishing.</source>
         <translation>Nicht bei iNaturalist angemeldet. Melden Sie sich über Einstellungen -&gt; Online-Veröffentlichung an.</translation>
     </message>
     <message>
-        <location filename="../ui/observations_tab.py" line="15828"/>
+        <location filename="../ui/observations_tab.py" line="15967"/>
         <source>Sending {count} image(s) to iNaturalist AI...</source>
         <translation>Sende {count} Bild(er) an iNaturalist AI...</translation>
     </message>
     <message>
-        <location filename="../ui/observations_tab.py" line="15854"/>
-        <location filename="../ui/observations_tab.py" line="16015"/>
-        <location filename="../ui/observations_tab.py" line="16047"/>
+        <location filename="../ui/observations_tab.py" line="15993"/>
+        <location filename="../ui/observations_tab.py" line="16154"/>
+        <location filename="../ui/observations_tab.py" line="16186"/>
         <source>AI guess failed: {message}</source>
         <translation>AI-Vorschlag fehlgeschlagen: {message}</translation>
     </message>
     <message>
-        <location filename="../ui/observations_tab.py" line="16005"/>
-        <location filename="../ui/observations_tab.py" line="16040"/>
+        <location filename="../ui/observations_tab.py" line="16144"/>
+        <location filename="../ui/observations_tab.py" line="16179"/>
         <source>AI suggestion updated</source>
         <translation>AI-Vorschlag aktualisiert</translation>
     </message>
     <message>
-        <location filename="../ui/observations_tab.py" line="16007"/>
-        <location filename="../ui/observations_tab.py" line="16042"/>
+        <location filename="../ui/observations_tab.py" line="16146"/>
+        <location filename="../ui/observations_tab.py" line="16181"/>
         <source>No AI suggestions found</source>
         <translation>Keine AI-Vorschläge gefunden</translation>
     </message>
     <message>
-        <location filename="../ui/observations_tab.py" line="16013"/>
+        <location filename="../ui/observations_tab.py" line="16152"/>
         <source>AI guess failed: server error (500). Try again later.</source>
         <translation>AI-Vorschlag fehlgeschlagen: Serverfehler (500). Bitte später erneut versuchen.</translation>
     </message>
     <message>
-        <location filename="../ui/observations_tab.py" line="16093"/>
+        <location filename="../ui/observations_tab.py" line="16232"/>
         <source>From: {source}</source>
         <translation>Von: {source}</translation>
     </message>
     <message>
-        <location filename="../ui/observations_tab.py" line="16429"/>
-        <location filename="../ui/observations_tab.py" line="16531"/>
+        <location filename="../ui/observations_tab.py" line="16568"/>
+        <location filename="../ui/observations_tab.py" line="16670"/>
         <source>No image selected</source>
         <translation>Kein Bild ausgewählt</translation>
     </message>
     <message>
-        <location filename="../ui/observations_tab.py" line="16485"/>
+        <location filename="../ui/observations_tab.py" line="16624"/>
         <source>Preview unavailable</source>
         <translation>Vorschau nicht verfügbar</translation>
     </message>
     <message>
-        <location filename="../ui/observations_tab.py" line="16506"/>
-        <location filename="../ui/observations_tab.py" line="16512"/>
-        <location filename="../ui/observations_tab.py" line="17996"/>
-        <location filename="../ui/observations_tab.py" line="18002"/>
-        <location filename="../ui/observations_tab.py" line="18058"/>
+        <location filename="../ui/observations_tab.py" line="16645"/>
+        <location filename="../ui/observations_tab.py" line="16651"/>
+        <location filename="../ui/observations_tab.py" line="18216"/>
+        <location filename="../ui/observations_tab.py" line="18222"/>
+        <location filename="../ui/observations_tab.py" line="18278"/>
         <source>Confirm Delete</source>
         <translation>Löschen bestätigen</translation>
     </message>
     <message>
-        <location filename="../ui/observations_tab.py" line="16507"/>
-        <location filename="../ui/observations_tab.py" line="17997"/>
+        <location filename="../ui/observations_tab.py" line="16646"/>
+        <location filename="../ui/observations_tab.py" line="18217"/>
         <source>Delete image?</source>
         <translation>Bild löschen?</translation>
     </message>
     <message>
-        <location filename="../ui/observations_tab.py" line="16513"/>
-        <location filename="../ui/observations_tab.py" line="18003"/>
+        <location filename="../ui/observations_tab.py" line="16652"/>
+        <location filename="../ui/observations_tab.py" line="18223"/>
         <source>Remove image from this observation?</source>
         <translation>Bild aus dieser Beobachtung entfernen?</translation>
     </message>
     <message>
-        <location filename="../ui/observations_tab.py" line="16564"/>
+        <location filename="../ui/observations_tab.py" line="16703"/>
         <source>No GPS data in selected image</source>
         <translation>Keine GPS-Daten im ausgewählten Bild</translation>
     </message>
     <message>
-        <location filename="../ui/observations_tab.py" line="17004"/>
+        <location filename="../ui/observations_tab.py" line="17143"/>
         <source>Sweden</source>
         <translation>Schweden</translation>
     </message>
     <message>
-        <location filename="../ui/observations_tab.py" line="17005"/>
+        <location filename="../ui/observations_tab.py" line="17144"/>
         <source>Norway</source>
         <translation>Norwegen</translation>
     </message>
     <message>
-        <location filename="../ui/observations_tab.py" line="17011"/>
+        <location filename="../ui/observations_tab.py" line="17150"/>
         <source>Country: {country}</source>
         <translation>Land: {country}</translation>
     </message>
     <message>
-        <location filename="../ui/observations_tab.py" line="17019"/>
+        <location filename="../ui/observations_tab.py" line="17158"/>
         <source>Reporting system: {target}</source>
         <translation>Meldesystem: {target}</translation>
     </message>
     <message>
-        <location filename="../ui/observations_tab.py" line="17365"/>
-        <location filename="../ui/observations_tab.py" line="17377"/>
-        <location filename="../ui/observations_tab.py" line="17430"/>
+        <location filename="../ui/observations_tab.py" line="17504"/>
+        <location filename="../ui/observations_tab.py" line="17516"/>
+        <location filename="../ui/observations_tab.py" line="17569"/>
         <source>Cloud media available. Downloading…</source>
         <translation>Cloud-Medien sind verfügbar. Werden heruntergeladen…</translation>
     </message>
     <message>
-        <location filename="../ui/observations_tab.py" line="17390"/>
+        <location filename="../ui/observations_tab.py" line="17529"/>
         <source>Cloud media available on this observation.</source>
         <translation>Cloud-Medien sind für diese Beobachtung verfügbar.</translation>
     </message>
     <message>
-        <location filename="../ui/observations_tab.py" line="17411"/>
+        <location filename="../ui/observations_tab.py" line="17550"/>
         <source>Cloud media could not be loaded for this observation.</source>
         <translation>Cloud-Medien konnten für diese Beobachtung nicht geladen werden.</translation>
     </message>
     <message>
-        <location filename="../ui/observations_tab.py" line="17439"/>
+        <location filename="../ui/observations_tab.py" line="17578"/>
         <source>Downloading cloud media…</source>
         <translation>Cloud-Medien werden heruntergeladen…</translation>
     </message>
     <message>
-        <location filename="../ui/observations_tab.py" line="17445"/>
+        <location filename="../ui/observations_tab.py" line="17584"/>
         <source>Downloading cloud media {current}/{total}: {message}</source>
         <translation>Cloud-Medien {current}/{total}: {message} werden heruntergeladen</translation>
     </message>
     <message>
-        <location filename="../ui/observations_tab.py" line="17464"/>
+        <location filename="../ui/observations_tab.py" line="17603"/>
         <source>Cloud media downloaded.</source>
         <translation>Cloud-Medien wurden heruntergeladen.</translation>
     </message>
     <message>
-        <location filename="../ui/observations_tab.py" line="17473"/>
+        <location filename="../ui/observations_tab.py" line="17612"/>
         <source>Cloud media downloaded with warnings.</source>
         <translation>Cloud-Medien wurden mit Warnungen heruntergeladen.</translation>
     </message>
     <message>
-        <location filename="../ui/observations_tab.py" line="17485"/>
+        <location filename="../ui/observations_tab.py" line="17624"/>
         <source>Cloud media download failed.</source>
         <translation>Herunterladen der Cloud-Medien fehlgeschlagen.</translation>
     </message>
     <message>
-        <location filename="../ui/observations_tab.py" line="17498"/>
+        <location filename="../ui/observations_tab.py" line="17637"/>
         <source>Cloud media download failed: {message}</source>
         <translation>Herunterladen der Cloud-Medien fehlgeschlagen: {message}</translation>
     </message>
     <message>
-        <location filename="../ui/observations_tab.py" line="17840"/>
+        <location filename="../ui/observations_tab.py" line="17980"/>
         <source>GPS</source>
         <translation>GPS</translation>
     </message>
     <message>
-        <location filename="../ui/observations_tab.py" line="17962"/>
+        <location filename="../ui/observations_tab.py" line="18103"/>
         <source>Selected images will be edited</source>
         <translation>Ausgewählte Bilder werden bearbeitet</translation>
     </message>
     <message>
-        <location filename="../ui/observations_tab.py" line="18059"/>
+        <location filename="../ui/observations_tab.py" line="18140"/>
+        <source>Delete the cloud copy of this image?
+
+The local file stays on this computer. The cloud copy will be removed from Cloud on your next sync.</source>
+        <translation type="unfinished"></translation>
+    </message>
+    <message>
+        <location filename="../ui/observations_tab.py" line="18146"/>
+        <source>Delete the cloud copies of {count} images?
+
+The local files stay on this computer. The cloud copies will be removed from Cloud on your next sync.</source>
+        <translation type="unfinished"></translation>
+    </message>
+    <message>
+        <location filename="../ui/observations_tab.py" line="18151"/>
+        <source>Delete cloud copies</source>
+        <translation type="unfinished"></translation>
+    </message>
+    <message>
+        <location filename="../ui/observations_tab.py" line="18165"/>
+        <source>Failed to queue cloud image deletion.</source>
+        <translation type="unfinished"></translation>
+    </message>
+    <message>
+        <location filename="../ui/observations_tab.py" line="18174"/>
+        <source>No cloud copies to delete.</source>
+        <translation type="unfinished"></translation>
+    </message>
+    <message>
+        <location filename="../ui/observations_tab.py" line="18187"/>
+        <source>Cloud copy marked for deletion. Sync to apply the change to Cloud.</source>
+        <translation type="unfinished"></translation>
+    </message>
+    <message>
+        <location filename="../ui/observations_tab.py" line="18191"/>
+        <source>{count} cloud copies marked for deletion. Sync to apply the change to Cloud.</source>
+        <translation type="unfinished"></translation>
+    </message>
+    <message>
+        <location filename="../ui/observations_tab.py" line="18279"/>
         <source>Delete {count} selected image(s)?</source>
         <translation>{count} ausgewählte(s) Bild(er) löschen?</translation>
     </message>
     <message>
-        <location filename="../ui/observations_tab.py" line="18117"/>
+        <location filename="../ui/observations_tab.py" line="18337"/>
         <source>Livsmedium</source>
         <translation>Lebensmedium</translation>
     </message>
     <message>
-        <location filename="../ui/observations_tab.py" line="18117"/>
+        <location filename="../ui/observations_tab.py" line="18337"/>
         <source>Grows on</source>
         <translation>Wächst auf</translation>
     </message>
     <message>
-        <location filename="../ui/observations_tab.py" line="18123"/>
+        <location filename="../ui/observations_tab.py" line="18343"/>
         <source>Namn:</source>
         <translation>Name:</translation>
     </message>
     <message>
-        <location filename="../ui/observations_tab.py" line="18125"/>
-        <location filename="../ui/observations_tab.py" line="18126"/>
+        <location filename="../ui/observations_tab.py" line="18345"/>
+        <location filename="../ui/observations_tab.py" line="18346"/>
         <source>Name:</source>
         <translation>Name:</translation>
     </message>
     <message>
-        <location filename="../ui/observations_tab.py" line="18483"/>
+        <location filename="../ui/observations_tab.py" line="18703"/>
         <source>Accepted concept: {name}</source>
         <translation type="unfinished"></translation>
     </message>
     <message>
-        <location filename="../ui/observations_tab.py" line="18486"/>
+        <location filename="../ui/observations_tab.py" line="18706"/>
         <source>Linked concept: {name}</source>
         <translation type="unfinished"></translation>
     </message>
     <message>
-        <location filename="../ui/observations_tab.py" line="18674"/>
+        <location filename="../ui/observations_tab.py" line="18894"/>
         <source>Multiple assessments</source>
         <translation type="unfinished"></translation>
     </message>
     <message>
-        <location filename="../ui/observations_tab.py" line="19505"/>
-        <location filename="../ui/observations_tab.py" line="19534"/>
-        <location filename="../ui/observations_tab.py" line="19718"/>
+        <location filename="../ui/observations_tab.py" line="19725"/>
+        <location filename="../ui/observations_tab.py" line="19754"/>
+        <location filename="../ui/observations_tab.py" line="19938"/>
         <source>Select...</source>
         <translation>Auswählen...</translation>
     </message>
     <message>
-        <location filename="../ui/observations_tab.py" line="19734"/>
+        <location filename="../ui/observations_tab.py" line="19954"/>
         <source>Clear selection</source>
         <translation>Auswahl aufheben</translation>
     </message>
     <message>
-        <location filename="../ui/observations_tab.py" line="19747"/>
+        <location filename="../ui/observations_tab.py" line="19967"/>
         <source>Level {n}:</source>
         <translation>Ebene {n}:</translation>
     </message>
     <message>
-        <location filename="../ui/observations_tab.py" line="18132"/>
-        <location filename="../ui/observations_tab.py" line="18142"/>
+        <location filename="../ui/observations_tab.py" line="18352"/>
+        <location filename="../ui/observations_tab.py" line="18362"/>
         <source>e.g., Kantarell</source>
         <translation>z. B. Kantarell</translation>
     </message>
     <message>
-        <location filename="../ui/observations_tab.py" line="18134"/>
+        <location filename="../ui/observations_tab.py" line="18354"/>
         <source>e.g., Pfifferling</source>
         <translation>z. B. Pfifferling</translation>
     </message>
     <message>
-        <location filename="../ui/observations_tab.py" line="18136"/>
+        <location filename="../ui/observations_tab.py" line="18356"/>
         <source>e.g., Girolle</source>
         <translation>z. B. Girolle</translation>
     </message>
     <message>
-        <location filename="../ui/observations_tab.py" line="18138"/>
+        <location filename="../ui/observations_tab.py" line="18358"/>
         <source>e.g., Rebozuelo</source>
         <translation>z. B. Rebozuelo</translation>
     </message>
     <message>
-        <location filename="../ui/observations_tab.py" line="18140"/>
+        <location filename="../ui/observations_tab.py" line="18360"/>
         <source>e.g., Kantarel</source>
         <translation>z. B. Kantarel</translation>
     </message>
     <message>
-        <location filename="../ui/observations_tab.py" line="18144"/>
+        <location filename="../ui/observations_tab.py" line="18364"/>
         <source>e.g., Kantarelli</source>
         <translation>z. B. Kantarelli</translation>
     </message>
     <message>
-        <location filename="../ui/observations_tab.py" line="18146"/>
+        <location filename="../ui/observations_tab.py" line="18366"/>
         <source>e.g., Kurka</source>
         <translation>z. B. Kurka</translation>
     </message>
     <message>
-        <location filename="../ui/observations_tab.py" line="18148"/>
+        <location filename="../ui/observations_tab.py" line="18368"/>
         <source>e.g., Cantarelo</source>
         <translation>z. B. Cantarelo</translation>
     </message>
     <message>
-        <location filename="../ui/observations_tab.py" line="18150"/>
+        <location filename="../ui/observations_tab.py" line="18370"/>
         <source>e.g., Gallinaccio</source>
         <translation>z. B. Gallinaccio</translation>
     </message>
     <message>
-        <location filename="../ui/observations_tab.py" line="18151"/>
+        <location filename="../ui/observations_tab.py" line="18371"/>
         <source>e.g., Chanterelle</source>
         <translation>z. B. Chanterelle</translation>
     </message>
     <message>
-        <location filename="../ui/observations_tab.py" line="18232"/>
+        <location filename="../ui/observations_tab.py" line="18452"/>
         <source>Common-name language: {lang}</source>
         <translation>Sprache für Trivialnamen: {lang}</translation>
     </message>
@@ -6579,218 +6618,218 @@ Wählen Sie die Beobachtungen aus, die Sie aktualisieren möchten:</translation>
 <context>
     <name>ObservationsTab</name>
     <message>
-        <location filename="../ui/observations_tab.py" line="2273"/>
+        <location filename="../ui/observations_tab.py" line="2276"/>
         <source>Edit</source>
         <translation>Bearb.</translation>
     </message>
     <message>
-        <location filename="../ui/observations_tab.py" line="2328"/>
+        <location filename="../ui/observations_tab.py" line="2331"/>
         <source>Delete</source>
         <translation>Löschen</translation>
     </message>
     <message>
-        <location filename="../ui/observations_tab.py" line="7597"/>
-        <location filename="../ui/observations_tab.py" line="7637"/>
-        <location filename="../ui/observations_tab.py" line="7643"/>
-        <location filename="../ui/observations_tab.py" line="11996"/>
+        <location filename="../ui/observations_tab.py" line="7705"/>
+        <location filename="../ui/observations_tab.py" line="7745"/>
+        <location filename="../ui/observations_tab.py" line="7751"/>
+        <location filename="../ui/observations_tab.py" line="12131"/>
         <source>Confirm Delete</source>
         <translation>Löschen bestätigen</translation>
     </message>
     <message>
-        <location filename="../ui/observations_tab.py" line="7598"/>
-        <location filename="../ui/observations_tab.py" line="7638"/>
+        <location filename="../ui/observations_tab.py" line="7706"/>
+        <location filename="../ui/observations_tab.py" line="7746"/>
         <source>Delete image?</source>
         <translation>Bild löschen?</translation>
     </message>
     <message>
-        <location filename="../ui/observations_tab.py" line="2365"/>
+        <location filename="../ui/observations_tab.py" line="2368"/>
         <source>Search observations...</source>
         <translation>Beobachtungen suchen...</translation>
     </message>
     <message>
-        <location filename="../ui/observations_tab.py" line="2298"/>
-        <location filename="../ui/observations_tab.py" line="4611"/>
+        <location filename="../ui/observations_tab.py" line="2301"/>
+        <location filename="../ui/observations_tab.py" line="4626"/>
         <source>Publish</source>
         <translation>Veroffentlichen</translation>
     </message>
     <message>
-        <location filename="../ui/observations_tab.py" line="2629"/>
-        <location filename="../ui/observations_tab.py" line="3413"/>
-        <location filename="../ui/observations_tab.py" line="7570"/>
-        <location filename="../ui/observations_tab.py" line="7682"/>
-        <location filename="../ui/observations_tab.py" line="7760"/>
+        <location filename="../ui/observations_tab.py" line="2636"/>
+        <location filename="../ui/observations_tab.py" line="3420"/>
+        <location filename="../ui/observations_tab.py" line="7585"/>
+        <location filename="../ui/observations_tab.py" line="7790"/>
+        <location filename="../ui/observations_tab.py" line="7868"/>
         <source>Ready.</source>
         <translation>Bereit.</translation>
     </message>
     <message>
-        <location filename="../ui/observations_tab.py" line="6929"/>
+        <location filename="../ui/observations_tab.py" line="6944"/>
         <source>ID</source>
         <translation>ID</translation>
     </message>
     <message>
-        <location filename="../ui/observations_tab.py" line="2287"/>
+        <location filename="../ui/observations_tab.py" line="2290"/>
         <source>Plate</source>
         <translation>Tafel</translation>
     </message>
     <message>
-        <location filename="../ui/observations_tab.py" line="6968"/>
+        <location filename="../ui/observations_tab.py" line="6983"/>
         <source>Genus</source>
         <translation>Gattung</translation>
     </message>
     <message>
-        <location filename="../ui/observations_tab.py" line="6969"/>
+        <location filename="../ui/observations_tab.py" line="6984"/>
         <source>Species</source>
         <translation>Art</translation>
     </message>
     <message>
-        <location filename="../ui/observations_tab.py" line="6971"/>
+        <location filename="../ui/observations_tab.py" line="6986"/>
         <source>Date</source>
         <translation>Datum</translation>
     </message>
     <message>
-        <location filename="../ui/observations_tab.py" line="6972"/>
+        <location filename="../ui/observations_tab.py" line="6987"/>
         <source>Location</source>
         <translation>Ort</translation>
     </message>
     <message>
-        <location filename="../ui/observations_tab.py" line="6974"/>
+        <location filename="../ui/observations_tab.py" line="6989"/>
         <source>Map</source>
         <translation>Karte</translation>
     </message>
     <message>
-        <location filename="../ui/observations_tab.py" line="2379"/>
-        <location filename="../ui/observations_tab.py" line="2495"/>
+        <location filename="../ui/observations_tab.py" line="2382"/>
+        <location filename="../ui/observations_tab.py" line="2498"/>
         <source>Images</source>
         <translation>Bilder</translation>
     </message>
     <message>
-        <location filename="../ui/observations_tab.py" line="3773"/>
+        <location filename="../ui/observations_tab.py" line="3780"/>
         <source>Checking links.</source>
         <translation>Links werden gepruft.</translation>
     </message>
     <message>
-        <location filename="../ui/observations_tab.py" line="4015"/>
+        <location filename="../ui/observations_tab.py" line="4030"/>
         <source>{count} to review</source>
         <translation>{count} zu prüfen</translation>
     </message>
     <message>
-        <location filename="../ui/observations_tab.py" line="4173"/>
+        <location filename="../ui/observations_tab.py" line="4188"/>
         <source>Could not check pending image uploads: {error}</source>
         <translation>Ausstehende Bild-Uploads konnten nicht gepruft werden: {error}</translation>
     </message>
     <message>
-        <location filename="../ui/observations_tab.py" line="4184"/>
+        <location filename="../ui/observations_tab.py" line="4199"/>
         <source>1 image added to a published observation. Uploading...</source>
         <translation>1 Bild wurde zu einer veroffentlichten Beobachtung hinzugefugt. Wird hochgeladen...</translation>
     </message>
     <message>
-        <location filename="../ui/observations_tab.py" line="4190"/>
+        <location filename="../ui/observations_tab.py" line="4205"/>
         <source>{count} images added to published observations. Uploading...</source>
         <translation>{count} Bilder wurden zu veroffentlichten Beobachtungen hinzugefugt. Wird hochgeladen...</translation>
     </message>
     <message>
-        <location filename="../ui/observations_tab.py" line="4201"/>
-        <location filename="../ui/observations_tab.py" line="10455"/>
+        <location filename="../ui/observations_tab.py" line="4216"/>
+        <location filename="../ui/observations_tab.py" line="10590"/>
         <source>Upload unavailable: {error}</source>
         <translation>Upload nicht verfugbar: {error}</translation>
     </message>
     <message>
-        <location filename="../ui/observations_tab.py" line="4268"/>
+        <location filename="../ui/observations_tab.py" line="4283"/>
         <source>Uploaded {count} pending image(s) to Artsobservasjoner (web).</source>
         <translation>{count} ausstehende(s) Bild(er) zu Artsobservasjoner (Web) hochgeladen.</translation>
     </message>
     <message>
-        <location filename="../ui/observations_tab.py" line="4278"/>
+        <location filename="../ui/observations_tab.py" line="4293"/>
         <source>Uploaded {ok}/{total} pending image(s). Some uploads failed: {error}</source>
         <translation>{ok}/{total} ausstehende(s) Bild(er) hochgeladen. Einige Uploads sind fehlgeschlagen: {error}</translation>
     </message>
     <message>
-        <location filename="../ui/observations_tab.py" line="4290"/>
+        <location filename="../ui/observations_tab.py" line="4305"/>
         <source>Pending image upload failed: {error}</source>
         <translation>Upload ausstehender Bilder fehlgeschlagen: {error}</translation>
     </message>
     <message>
-        <location filename="../ui/observations_tab.py" line="4386"/>
+        <location filename="../ui/observations_tab.py" line="4401"/>
         <source>AP: Artportalen web</source>
         <translation>AP: Artportalen Web</translation>
     </message>
     <message>
-        <location filename="../ui/observations_tab.py" line="4378"/>
+        <location filename="../ui/observations_tab.py" line="4393"/>
         <source>Ao link shown only after the observation is publicly published.</source>
         <translation>Ao-Link wird erst angezeigt, wenn die Beobachtung öffentlich veröffentlicht ist.</translation>
     </message>
     <message>
-        <location filename="../ui/observations_tab.py" line="4438"/>
+        <location filename="../ui/observations_tab.py" line="4453"/>
         <source>Checking links failed: {error}</source>
         <translation>Linkprufung fehlgeschlagen: {error}</translation>
     </message>
     <message>
-        <location filename="../ui/observations_tab.py" line="4445"/>
+        <location filename="../ui/observations_tab.py" line="4460"/>
         <source>No Artsobs links to check.</source>
         <translation>Keine Artsobs-Links zum Prufen.</translation>
     </message>
     <message>
-        <location filename="../ui/observations_tab.py" line="4498"/>
+        <location filename="../ui/observations_tab.py" line="4513"/>
         <source>Checking links finished.</source>
         <translation>Linkprufung abgeschlossen.</translation>
     </message>
     <message>
-        <location filename="../ui/observations_tab.py" line="4505"/>
+        <location filename="../ui/observations_tab.py" line="4520"/>
         <source>Checking links finished. Cleared Artsobs ID for {count} dead link(s).</source>
         <translation>Linkprufung abgeschlossen. Artsobs-ID fur {count} tote(n) Link(s) entfernt.</translation>
     </message>
     <message>
-        <location filename="../ui/observations_tab.py" line="4512"/>
+        <location filename="../ui/observations_tab.py" line="4527"/>
         <source>Checking links finished. Missing: {dead} of {total}.</source>
         <translation>Linkprufung abgeschlossen. Fehlend: {dead} von {total}.</translation>
     </message>
     <message>
-        <location filename="../ui/observations_tab.py" line="4521"/>
+        <location filename="../ui/observations_tab.py" line="4536"/>
         <source>Checking links finished. All {total} links found.</source>
         <translation>Linkprufung abgeschlossen. Alle {total} Links gefunden.</translation>
     </message>
     <message>
-        <location filename="../ui/observations_tab.py" line="4532"/>
+        <location filename="../ui/observations_tab.py" line="4547"/>
         <source>Dead Artsobs links</source>
         <translation>Tote Artsobs-Links</translation>
     </message>
     <message>
-        <location filename="../ui/observations_tab.py" line="4584"/>
+        <location filename="../ui/observations_tab.py" line="4599"/>
         <source>Upload unavailable</source>
         <translation>Upload nicht verfugbar</translation>
     </message>
     <message>
-        <location filename="../ui/observations_tab.py" line="4586"/>
+        <location filename="../ui/observations_tab.py" line="4601"/>
         <source>Upload helpers unavailable: {error}</source>
         <translation>Upload-Helfer nicht verfugbar: {error}</translation>
     </message>
     <message>
-        <location filename="../ui/observations_tab.py" line="4590"/>
+        <location filename="../ui/observations_tab.py" line="4605"/>
         <source>No publish targets configured</source>
         <translation>Keine Veroffentlichungsziele konfiguriert</translation>
     </message>
     <message>
-        <location filename="../ui/observations_tab.py" line="4599"/>
+        <location filename="../ui/observations_tab.py" line="4614"/>
         <source>No publish targets enabled</source>
         <translation>Keine Veröffentlichungsziele aktiviert</translation>
     </message>
     <message>
-        <location filename="../ui/observations_tab.py" line="4614"/>
+        <location filename="../ui/observations_tab.py" line="4629"/>
         <source>Publish directly to {target}.</source>
         <translation>Direkt zu {target} veröffentlichen.</translation>
     </message>
     <message>
-        <location filename="../ui/observations_tab.py" line="4654"/>
+        <location filename="../ui/observations_tab.py" line="4669"/>
         <source>selected service</source>
         <translation>ausgewählten Dienst</translation>
     </message>
     <message>
-        <location filename="../ui/observations_tab.py" line="4822"/>
+        <location filename="../ui/observations_tab.py" line="4837"/>
         <source>Switch Reporting System</source>
         <translation>Meldesystem wechseln</translation>
     </message>
     <message>
-        <location filename="../ui/observations_tab.py" line="4824"/>
+        <location filename="../ui/observations_tab.py" line="4839"/>
         <source>Publishing to {target} will switch {count} selected observation(s) to that reporting system.
 
 This will affect biotope/substrate choices when you edit them.
@@ -6803,206 +6842,206 @@ Dies wirkt sich auf die Biotop- und Substrat-Auswahl beim Bearbeiten aus.
 Fortfahren?</translation>
     </message>
     <message>
-        <location filename="../ui/observations_tab.py" line="5079"/>
-        <location filename="../ui/observations_tab.py" line="5114"/>
-        <location filename="../ui/observations_tab.py" line="5193"/>
-        <location filename="../ui/observations_tab.py" line="5295"/>
+        <location filename="../ui/observations_tab.py" line="5094"/>
+        <location filename="../ui/observations_tab.py" line="5129"/>
+        <location filename="../ui/observations_tab.py" line="5208"/>
+        <location filename="../ui/observations_tab.py" line="5310"/>
         <source>Select one or more observations to publish.</source>
         <translation>Wahlen Sie eine oder mehrere Beobachtungen zum Veroffentlichen.</translation>
     </message>
     <message>
-        <location filename="../ui/observations_tab.py" line="5120"/>
-        <location filename="../ui/observations_tab.py" line="5128"/>
+        <location filename="../ui/observations_tab.py" line="5135"/>
+        <location filename="../ui/observations_tab.py" line="5143"/>
         <source>the selected service</source>
         <translation>den ausgewählten Dienst</translation>
     </message>
     <message>
-        <location filename="../ui/observations_tab.py" line="5127"/>
+        <location filename="../ui/observations_tab.py" line="5142"/>
         <source>Publishing to {targets} will switch the selected observations to that reporting system.</source>
         <translation>Die Veröffentlichung an {targets} wechselt die ausgewählten Beobachtungen zu diesem Meldesystem.</translation>
     </message>
     <message>
-        <location filename="../ui/observations_tab.py" line="5119"/>
+        <location filename="../ui/observations_tab.py" line="5134"/>
         <source>Publishing to {targets} is disabled for observations that already have an ID in that service.</source>
         <translation>Die Veröffentlichung an {targets} ist für Beobachtungen deaktiviert, die bereits eine ID in diesem Dienst haben.</translation>
     </message>
     <message>
-        <location filename="../ui/observations_tab.py" line="5149"/>
+        <location filename="../ui/observations_tab.py" line="5164"/>
         <source>available services</source>
         <translation>verfügbare Dienste</translation>
     </message>
     <message>
-        <location filename="../ui/observations_tab.py" line="5156"/>
+        <location filename="../ui/observations_tab.py" line="5171"/>
         <source>Select a single observation to generate a plate.</source>
         <translation>Eine einzelne Beobachtung auswählen, um eine Tafel zu erzeugen.</translation>
     </message>
     <message>
-        <location filename="../ui/observations_tab.py" line="5161"/>
+        <location filename="../ui/observations_tab.py" line="5176"/>
         <source>Could not load observation.</source>
         <translation>Beobachtung konnte nicht geladen werden.</translation>
     </message>
     <message>
-        <location filename="../ui/observations_tab.py" line="5215"/>
+        <location filename="../ui/observations_tab.py" line="5230"/>
         <source>Publishing disabled: the selection does not match this reporting system.</source>
         <translation>Veröffentlichung deaktiviert: die Auswahl stimmt nicht mit diesem Meldesystem überein.</translation>
     </message>
     <message>
-        <location filename="../ui/observations_tab.py" line="5223"/>
+        <location filename="../ui/observations_tab.py" line="5238"/>
         <source>Publishing disabled: selection contains an observation already uploaded to this service.</source>
         <translation>Veröffentlichung deaktiviert: die Auswahl enthält eine Beobachtung, die bereits an diesen Dienst hochgeladen wurde.</translation>
     </message>
     <message>
-        <location filename="../ui/observations_tab.py" line="6923"/>
+        <location filename="../ui/observations_tab.py" line="6938"/>
         <source>Navn</source>
         <translation>Name</translation>
     </message>
     <message>
-        <location filename="../ui/observations_tab.py" line="6924"/>
+        <location filename="../ui/observations_tab.py" line="6939"/>
         <source>Name</source>
         <translation>Name</translation>
     </message>
     <message>
-        <location filename="../ui/observations_tab.py" line="6933"/>
+        <location filename="../ui/observations_tab.py" line="6948"/>
         <source>Sporer</source>
         <translation>Sporen</translation>
     </message>
     <message>
-        <location filename="../ui/observations_tab.py" line="6933"/>
+        <location filename="../ui/observations_tab.py" line="6948"/>
         <source>Spores</source>
         <translation>Sporen</translation>
     </message>
     <message>
-        <location filename="../ui/observations_tab.py" line="8881"/>
+        <location filename="../ui/observations_tab.py" line="9016"/>
         <source>Adding watermark {current}/{total}...</source>
         <translation>Wasserzeichen wird hinzugefügt {current}/{total}...</translation>
     </message>
     <message>
-        <location filename="../ui/observations_tab.py" line="10065"/>
+        <location filename="../ui/observations_tab.py" line="10200"/>
         <source>Watermark was skipped because profile name is missing.</source>
         <translation>Wasserzeichen wurde übersprungen, weil der Profilname fehlt.</translation>
     </message>
     <message>
-        <location filename="../ui/observations_tab.py" line="10110"/>
+        <location filename="../ui/observations_tab.py" line="10245"/>
         <source>Adding watermark...</source>
         <translation>Wasserzeichen wird hinzugefügt...</translation>
     </message>
     <message>
-        <location filename="../ui/observations_tab.py" line="10126"/>
+        <location filename="../ui/observations_tab.py" line="10261"/>
         <source>Could not add watermark to images.</source>
         <translation>Wasserzeichen konnte Bildern nicht hinzugefügt werden.</translation>
     </message>
     <message>
-        <location filename="../ui/observations_tab.py" line="10531"/>
+        <location filename="../ui/observations_tab.py" line="10666"/>
         <source>Upload failed: this observation is set to {target}, not {service}.</source>
         <translation>Upload fehlgeschlagen: Diese Beobachtung ist auf {target} gesetzt, nicht auf {service}.</translation>
     </message>
     <message>
-        <location filename="../ui/observations_tab.py" line="10541"/>
+        <location filename="../ui/observations_tab.py" line="10676"/>
         <source>Upload failed: this observation already has an ID in {service}.</source>
         <translation>Upload fehlgeschlagen: Diese Beobachtung hat bereits eine ID in {service}.</translation>
     </message>
     <message>
-        <location filename="../ui/observations_tab.py" line="10564"/>
+        <location filename="../ui/observations_tab.py" line="10699"/>
         <source>Artsobservasjoner allows up to 10 images per observation. You have {count} images.</source>
         <translation>Artsobservasjoner erlaubt bis zu 10 Bilder pro Beobachtung. Sie haben {count} Bilder.</translation>
     </message>
     <message>
-        <location filename="../ui/observations_tab.py" line="10589"/>
+        <location filename="../ui/observations_tab.py" line="10724"/>
         <source>Not logged in to Artsobservasjoner (session expired and no saved credentials). Log in via Settings -&gt; Online publishing.</source>
         <translation>Nicht bei Artsobservasjoner angemeldet (Sitzung abgelaufen und keine gespeicherten Zugangsdaten). Melden Sie sich über Einstellungen -&gt; Online-Veröffentlichung an.</translation>
     </message>
     <message>
-        <location filename="../ui/observations_tab.py" line="10614"/>
+        <location filename="../ui/observations_tab.py" line="10749"/>
         <source>Upload failed: could not resolve an Artportalen taxon id from genus/species.</source>
         <translation>Upload fehlgeschlagen: Artportalen-Taxon-ID konnte aus Gattung/Art nicht ermittelt werden.</translation>
     </message>
     <message>
-        <location filename="../ui/observations_tab.py" line="10623"/>
+        <location filename="../ui/observations_tab.py" line="10758"/>
         <source>Upload failed: could not load Artportalen login helper ({error}).</source>
         <translation>Upload fehlgeschlagen: Der Artportalen-Anmeldehelfer konnte nicht geladen werden ({error}).</translation>
     </message>
     <message>
-        <location filename="../ui/observations_tab.py" line="10630"/>
+        <location filename="../ui/observations_tab.py" line="10765"/>
         <source>Not logged in to Artportalen. Log in via Settings -&gt; Online publishing.</source>
         <translation>Nicht bei Artportalen angemeldet. Melden Sie sich über Einstellungen -&gt; Online-Veröffentlichung an.</translation>
     </message>
     <message>
-        <location filename="../ui/observations_tab.py" line="11081"/>
+        <location filename="../ui/observations_tab.py" line="11216"/>
         <source>Uploaded to {target} (ID {id}).</source>
         <translation>Zu {target} hochgeladen (ID {id}).</translation>
     </message>
     <message>
-        <location filename="../ui/observations_tab.py" line="2643"/>
+        <location filename="../ui/observations_tab.py" line="2650"/>
         <source>Choose a publish target.</source>
         <translation>Wahlen Sie ein Veroffentlichungsziel.</translation>
     </message>
     <message>
-        <location filename="../ui/observations_tab.py" line="2351"/>
+        <location filename="../ui/observations_tab.py" line="2354"/>
         <source>Export</source>
         <translation>Exportieren</translation>
     </message>
     <message>
-        <location filename="../ui/observations_tab.py" line="2342"/>
+        <location filename="../ui/observations_tab.py" line="2345"/>
         <source>Import</source>
         <translation>Importieren</translation>
     </message>
     <message>
-        <location filename="../ui/observations_tab.py" line="2263"/>
+        <location filename="../ui/observations_tab.py" line="2266"/>
         <source>+ New (N)</source>
         <translation>+ Neu (N)</translation>
     </message>
     <message>
-        <location filename="../ui/observations_tab.py" line="2387"/>
+        <location filename="../ui/observations_tab.py" line="2390"/>
         <source>Show thumbnail</source>
         <translation>Show thumbnail</translation>
     </message>
     <message>
-        <location filename="../ui/observations_tab.py" line="2396"/>
+        <location filename="../ui/observations_tab.py" line="2399"/>
         <source>Last cloud import</source>
         <translation>Letzter Cloud-Import</translation>
     </message>
     <message>
-        <location filename="../ui/observations_tab.py" line="2398"/>
+        <location filename="../ui/observations_tab.py" line="2401"/>
         <source>Only show starred observations from the last Sporely Cloud import</source>
         <translation>Nur markierte Beobachtungen aus dem letzten Sporely-Cloud-Import anzeigen</translation>
     </message>
     <message>
-        <location filename="../ui/observations_tab.py" line="2279"/>
+        <location filename="../ui/observations_tab.py" line="2282"/>
         <source>Edit selected observation (⌘E / double-click)</source>
         <translation>Ausgewahlte Beobachtung bearbeiten (⌘E / Doppelklick)</translation>
     </message>
     <message>
-        <location filename="../ui/observations_tab.py" line="2292"/>
+        <location filename="../ui/observations_tab.py" line="2295"/>
         <source>Generate a species plate for selected observation</source>
         <translation>Artentafel fur ausgewahlte Beobachtung erstellen</translation>
     </message>
     <message>
-        <location filename="../ui/observations_tab.py" line="3041"/>
+        <location filename="../ui/observations_tab.py" line="3048"/>
         <source>Could not refresh cloud observations: {error}</source>
         <translation>Cloud-Beobachtungen konnten nicht aktualisiert werden: {error}</translation>
     </message>
     <message>
-        <location filename="../ui/observations_tab.py" line="3523"/>
+        <location filename="../ui/observations_tab.py" line="3530"/>
         <source>Database action unavailable.</source>
         <translation>Datenbankaktion nicht verfügbar.</translation>
     </message>
     <message>
-        <location filename="../ui/observations_tab.py" line="3634"/>
+        <location filename="../ui/observations_tab.py" line="3641"/>
         <source>Sporely Cloud sync already running...</source>
         <translation>Sporely Cloud-Synchronisierung läuft bereits...</translation>
     </message>
     <message>
-        <location filename="../ui/observations_tab.py" line="3664"/>
+        <location filename="../ui/observations_tab.py" line="3671"/>
         <source>Preparing Sporely Cloud sync...</source>
         <translation>Sporely Cloud-Synchronisierung wird vorbereitet...</translation>
     </message>
     <message>
-        <location filename="../ui/observations_tab.py" line="3829"/>
+        <location filename="../ui/observations_tab.py" line="3836"/>
         <source>Unknown species</source>
         <translation>Unbekannte Art</translation>
     </message>
     <message>
-        <location filename="../ui/observations_tab.py" line="3832"/>
+        <location filename="../ui/observations_tab.py" line="3839"/>
         <source>{species}
 Date: {date}
 Location: {location}</source>
@@ -7011,7 +7050,7 @@ Datum: {date}
 Ort: {location}</translation>
     </message>
     <message>
-        <location filename="../ui/observations_tab.py" line="3868"/>
+        <location filename="../ui/observations_tab.py" line="3875"/>
         <source>Cloud observation {cloud_id} was deleted.
 
 {details}
@@ -7028,752 +7067,797 @@ Soll die Desktop-Beobachtung ebenfalls gelöscht werden?
 Wählen Sie Nein, um sie nur lokal zu behalten und die Cloud-Verknüpfung zu entfernen.</translation>
     </message>
     <message>
-        <location filename="../ui/observations_tab.py" line="3882"/>
-        <location filename="../ui/observations_tab.py" line="3891"/>
+        <location filename="../ui/observations_tab.py" line="3889"/>
+        <location filename="../ui/observations_tab.py" line="3898"/>
         <source>Cloud Observation Deleted</source>
         <translation>Cloud-Beobachtung gelöscht</translation>
     </message>
     <message>
-        <location filename="../ui/observations_tab.py" line="3877"/>
+        <location filename="../ui/observations_tab.py" line="3884"/>
         <source>{count} observations remain in this review.</source>
         <translation>{count} Beobachtungen verbleiben in dieser Prüfung.</translation>
     </message>
     <message>
-        <location filename="../ui/observations_tab.py" line="2357"/>
-        <location filename="../ui/observations_tab.py" line="2635"/>
+        <location filename="../ui/observations_tab.py" line="2360"/>
+        <location filename="../ui/observations_tab.py" line="2642"/>
         <source>Export database bundle to zip archive</source>
         <translation>Datenbankpaket in Zip-Archiv exportieren</translation>
     </message>
     <message>
-        <location filename="../ui/observations_tab.py" line="4019"/>
+        <location filename="../ui/observations_tab.py" line="4034"/>
         <source>{count} other issue(s)</source>
         <translation>{count} sonstige(s) Problem(e)</translation>
     </message>
     <message>
-        <location filename="../ui/observations_tab.py" line="4023"/>
+        <location filename="../ui/observations_tab.py" line="4038"/>
         <source>{count} blocked</source>
         <translation>{count} blockiert</translation>
     </message>
     <message>
-        <location filename="../ui/observations_tab.py" line="4034"/>
+        <location filename="../ui/observations_tab.py" line="4049"/>
         <source>{count} cloud deletion(s) to review.</source>
         <translation>{count} Cloud-Löschung(en) zu prüfen.</translation>
     </message>
     <message>
-        <location filename="../ui/observations_tab.py" line="4046"/>
+        <location filename="../ui/observations_tab.py" line="4061"/>
         <source>Cloud sync finished with {count} issue(s).</source>
         <translation>Cloud-Synchronisierung mit {count} Problem(en) abgeschlossen.</translation>
     </message>
     <message>
-        <location filename="../ui/observations_tab.py" line="4051"/>
+        <location filename="../ui/observations_tab.py" line="4066"/>
         <source>Cloud sync finished: {count} deleted cloud observation(s) need review.</source>
         <translation>Cloud-Synchronisierung abgeschlossen: {count} gelöschte Cloud-Beobachtung(en) müssen geprüft werden.</translation>
     </message>
     <message>
-        <location filename="../ui/observations_tab.py" line="4063"/>
+        <location filename="../ui/observations_tab.py" line="4078"/>
         <source>Sporely Cloud already up to date.</source>
         <translation>Sporely Cloud ist bereits auf dem neuesten Stand.</translation>
     </message>
     <message>
-        <location filename="../ui/observations_tab.py" line="3726"/>
-        <location filename="../ui/observations_tab.py" line="4104"/>
+        <location filename="../ui/observations_tab.py" line="3733"/>
+        <location filename="../ui/observations_tab.py" line="4119"/>
         <source>Sporely Cloud Sync</source>
         <translation>Sporely Cloud-Synchronisierung</translation>
     </message>
     <message>
-        <location filename="../ui/observations_tab.py" line="2374"/>
+        <location filename="../ui/observations_tab.py" line="2377"/>
         <source>Table</source>
         <translation>Tabelle</translation>
     </message>
     <message>
-        <location filename="../ui/observations_tab.py" line="6973"/>
+        <location filename="../ui/observations_tab.py" line="6988"/>
         <source>Status</source>
         <translation>Status</translation>
     </message>
     <message>
-        <location filename="../ui/observations_tab.py" line="6975"/>
+        <location filename="../ui/observations_tab.py" line="6990"/>
         <source>External</source>
         <translation>Extern</translation>
     </message>
     <message>
-        <location filename="../ui/observations_tab.py" line="2591"/>
+        <location filename="../ui/observations_tab.py" line="2598"/>
         <source>Cancel cloud sync</source>
         <translation>Brechen Sie die Cloud-Synchronisierung ab</translation>
     </message>
     <message>
-        <location filename="../ui/observations_tab.py" line="2790"/>
-        <location filename="../ui/observations_tab.py" line="7735"/>
+        <location filename="../ui/observations_tab.py" line="2508"/>
+        <location filename="../ui/observations_tab.py" line="7910"/>
+        <source>Keep image in Sporely Cloud</source>
+        <translation>Bild in Sporely Cloud behalten</translation>
+    </message>
+    <message>
+        <location filename="../ui/observations_tab.py" line="2797"/>
+        <location filename="../ui/observations_tab.py" line="7843"/>
         <source>Select a different observation to move the photos to.</source>
         <translation>Wählen Sie eine andere Beobachtung aus, zu der die Fotos verschoben werden sollen.</translation>
     </message>
     <message>
-        <location filename="../ui/observations_tab.py" line="3377"/>
-        <location filename="../ui/observations_tab.py" line="3406"/>
+        <location filename="../ui/observations_tab.py" line="3384"/>
+        <location filename="../ui/observations_tab.py" line="3413"/>
         <source>Logged in, click Sync now to sync.</source>
         <translation>Wenn Sie angemeldet sind, klicken Sie zum Synchronisieren auf Jetzt synchronisieren.</translation>
     </message>
     <message>
-        <location filename="../ui/observations_tab.py" line="3379"/>
+        <location filename="../ui/observations_tab.py" line="3386"/>
         <source>Sign in again, then click Sync now to retry uploads.</source>
         <translation>Melden Sie sich erneut an und klicken Sie dann auf „Jetzt synchronisieren“, um den Upload erneut zu versuchen.</translation>
     </message>
     <message>
-        <location filename="../ui/observations_tab.py" line="3467"/>
+        <location filename="../ui/observations_tab.py" line="3474"/>
         <source>Cancelling cloud sync...</source>
         <translation>Cloud-Synchronisierung wird abgebrochen...</translation>
     </message>
     <message>
-        <location filename="../ui/observations_tab.py" line="3662"/>
+        <location filename="../ui/observations_tab.py" line="3669"/>
         <source>Preparing Sporely Cloud metadata sync...</source>
         <translation>Sporely Cloud-Metadatensynchronisierung wird vorbereitet...</translation>
     </message>
     <message>
-        <location filename="../ui/observations_tab.py" line="3711"/>
+        <location filename="../ui/observations_tab.py" line="3718"/>
         <source>Cloud sync sign-in failed. Please check your email and password.</source>
         <translation>Die Anmeldung bei der Cloud-Synchronisierung ist fehlgeschlagen. Bitte überprüfen Sie Ihre E-Mail-Adresse und Ihr Passwort.</translation>
     </message>
     <message>
-        <location filename="../ui/observations_tab.py" line="3713"/>
-        <location filename="../ui/observations_tab.py" line="4108"/>
+        <location filename="../ui/observations_tab.py" line="3720"/>
+        <location filename="../ui/observations_tab.py" line="4123"/>
         <source>Cloud sync blocked: this database is linked to another account.</source>
         <translation>Cloud-Synchronisierung blockiert: Diese Datenbank ist mit einem anderen Konto verknüpft.</translation>
     </message>
     <message>
-        <location filename="../ui/observations_tab.py" line="3794"/>
+        <location filename="../ui/observations_tab.py" line="3801"/>
         <source>Cloud sync applied automatic changes with {n} error(s).</source>
         <translation type="unfinished"></translation>
     </message>
     <message>
-        <location filename="../ui/observations_tab.py" line="3935"/>
+        <location filename="../ui/observations_tab.py" line="3950"/>
         <source>Cloud sync cancelled.</source>
         <translation>Cloud-Synchronisierung abgebrochen.</translation>
     </message>
     <message>
-        <location filename="../ui/observations_tab.py" line="4009"/>
+        <location filename="../ui/observations_tab.py" line="4024"/>
         <source>Cloud sync complete.</source>
         <translation>Cloud-Synchronisierung abgeschlossen.</translation>
     </message>
     <message>
-        <location filename="../ui/observations_tab.py" line="4317"/>
+        <location filename="../ui/observations_tab.py" line="4332"/>
         <source>Image added to published observation. Click Refresh db to upload the new image. If needed, log in to Artsobservasjoner (web) first.</source>
         <translation>Image added to published observation. Click Refresh db to upload the new image. If needed, log in to Artsobservasjoner (web) first.</translation>
     </message>
     <message>
-        <location filename="../ui/observations_tab.py" line="4324"/>
+        <location filename="../ui/observations_tab.py" line="4339"/>
         <source>{count} images added to published observations. Click Refresh db to upload the new images. If needed, log in to Artsobservasjoner (web) first.</source>
         <translation>{count} images added to published observations. Click Refresh db to upload the new images. If needed, log in to Artsobservasjoner (web) first.</translation>
     </message>
     <message>
-        <location filename="../ui/observations_tab.py" line="4360"/>
+        <location filename="../ui/observations_tab.py" line="4375"/>
         <source>▲: Artsobservasjoner link is no longer available</source>
         <translation>▲: Artsobservasjoner-Link ist nicht mehr verfügbar</translation>
     </message>
     <message>
-        <location filename="../ui/observations_tab.py" line="4372"/>
+        <location filename="../ui/observations_tab.py" line="4387"/>
         <source>MAo: Artsobservasjoner mobile app</source>
         <translation>MAo: Artsobservasjoner Mobil-App</translation>
     </message>
     <message>
-        <location filename="../ui/observations_tab.py" line="4376"/>
+        <location filename="../ui/observations_tab.py" line="4391"/>
         <source>Ao: Artsobservasjoner web</source>
         <translation>Ao: Artsobservasjoner Web</translation>
     </message>
     <message>
-        <location filename="../ui/observations_tab.py" line="4380"/>
+        <location filename="../ui/observations_tab.py" line="4395"/>
         <source>Ao link appears after link check.</source>
         <translation>Ao-Link erscheint nach der Linkprüfung.</translation>
     </message>
     <message>
-        <location filename="../ui/observations_tab.py" line="4392"/>
+        <location filename="../ui/observations_tab.py" line="4407"/>
         <source>iNat: iNaturalist observation</source>
         <translation>iNat: iNaturalist-Beobachtung</translation>
     </message>
     <message>
-        <location filename="../ui/observations_tab.py" line="4398"/>
+        <location filename="../ui/observations_tab.py" line="4413"/>
         <source>MO: Mushroom Observer observation</source>
         <translation>MO: Mushroom Observer-Beobachtung</translation>
     </message>
     <message>
-        <location filename="../ui/observations_tab.py" line="4538"/>
+        <location filename="../ui/observations_tab.py" line="4553"/>
         <source>OK</source>
         <translation>OK</translation>
     </message>
     <message>
-        <location filename="../ui/observations_tab.py" line="4620"/>
-        <location filename="../ui/observations_tab.py" line="4656"/>
-        <location filename="../ui/observations_tab.py" line="5143"/>
+        <location filename="../ui/observations_tab.py" line="4635"/>
+        <location filename="../ui/observations_tab.py" line="4671"/>
+        <location filename="../ui/observations_tab.py" line="5158"/>
         <source>Both</source>
         <translation>Beide</translation>
     </message>
     <message>
-        <location filename="../ui/observations_tab.py" line="5137"/>
+        <location filename="../ui/observations_tab.py" line="5152"/>
         <source>Publish directly to {target}. Saved login will be used automatically if available; otherwise Publish opens Online publishing.</source>
         <translation>Publish directly to {target}. Saved login will be used automatically if available; otherwise Publish opens Online publishing.</translation>
     </message>
     <message>
-        <location filename="../ui/observations_tab.py" line="5147"/>
+        <location filename="../ui/observations_tab.py" line="5162"/>
         <source>Choose where to publish: {targets}. Saved logins will be used automatically when available.</source>
         <translation>Choose where to publish: {targets}. Saved logins will be used automatically when available.</translation>
     </message>
     <message>
-        <location filename="../ui/observations_tab.py" line="5203"/>
-        <location filename="../ui/observations_tab.py" line="5307"/>
+        <location filename="../ui/observations_tab.py" line="5218"/>
+        <location filename="../ui/observations_tab.py" line="5322"/>
         <source>Open Online publishing and log in before publishing.</source>
         <translation>Open Online publishing and log in before publishing.</translation>
     </message>
     <message>
-        <location filename="../ui/observations_tab.py" line="5238"/>
+        <location filename="../ui/observations_tab.py" line="5253"/>
         <source>Publishing {current}/{total}...</source>
         <translation>Veroffentliche {current}/{total}...</translation>
     </message>
     <message>
-        <location filename="../ui/observations_tab.py" line="5262"/>
+        <location filename="../ui/observations_tab.py" line="5277"/>
         <source>Published {count} observations to {target}.</source>
         <translation>{count} Beobachtung(en) zu {target} veroffentlicht.</translation>
     </message>
     <message>
-        <location filename="../ui/observations_tab.py" line="5273"/>
+        <location filename="../ui/observations_tab.py" line="5288"/>
         <source>Published {ok}/{total} observations to {target}. Failed: {failed_count}.</source>
         <translation>{ok}/{total} Beobachtungen zu {target} veroffentlicht. Fehlgeschlagen: {failed_count}.</translation>
     </message>
     <message>
-        <location filename="../ui/observations_tab.py" line="5282"/>
+        <location filename="../ui/observations_tab.py" line="5297"/>
         <source>Publishing to {target} failed for all selected observations.</source>
         <translation>Veroffentlichen zu {target} ist fur alle ausgewahlten Beobachtungen fehlgeschlagen.</translation>
     </message>
     <message>
-        <location filename="../ui/observations_tab.py" line="5830"/>
+        <location filename="../ui/observations_tab.py" line="5845"/>
         <source>Recent cloud import {id}</source>
         <translation>Kürzlicher Cloud-Import {id}</translation>
     </message>
     <message>
-        <location filename="../ui/observations_tab.py" line="5833"/>
+        <location filename="../ui/observations_tab.py" line="5848"/>
         <source>Cloud observation {id}</source>
         <translation>Cloud-Beobachtung {id}</translation>
     </message>
     <message>
-        <location filename="../ui/observations_tab.py" line="5835"/>
+        <location filename="../ui/observations_tab.py" line="5850"/>
         <source>Observation {id}</source>
         <translation>Observation {id}</translation>
     </message>
     <message>
-        <location filename="../ui/observations_tab.py" line="5938"/>
+        <location filename="../ui/observations_tab.py" line="5953"/>
         <source>Refreshed db.</source>
         <translation>Datenbank aktualisiert.</translation>
     </message>
     <message>
-        <location filename="../ui/observations_tab.py" line="6744"/>
+        <location filename="../ui/observations_tab.py" line="6759"/>
         <source>Same date/time</source>
         <translation>Same date/time</translation>
     </message>
     <message>
-        <location filename="../ui/observations_tab.py" line="6747"/>
+        <location filename="../ui/observations_tab.py" line="6762"/>
         <source>Same taxon</source>
         <translation>Same taxon</translation>
     </message>
     <message>
-        <location filename="../ui/observations_tab.py" line="6750"/>
+        <location filename="../ui/observations_tab.py" line="6765"/>
         <source>Same location</source>
         <translation>Same location</translation>
     </message>
     <message>
-        <location filename="../ui/observations_tab.py" line="6753"/>
+        <location filename="../ui/observations_tab.py" line="6768"/>
         <source>Shared image filename</source>
         <translation>Shared image filename</translation>
     </message>
     <message>
-        <location filename="../ui/observations_tab.py" line="6753"/>
+        <location filename="../ui/observations_tab.py" line="6768"/>
         <source>Shared image filenames</source>
         <translation>Shared image filenames</translation>
     </message>
     <message>
-        <location filename="../ui/observations_tab.py" line="6796"/>
+        <location filename="../ui/observations_tab.py" line="6811"/>
         <source>Possible Duplicate Observation</source>
         <translation>Possible Duplicate Observation</translation>
     </message>
     <message>
-        <location filename="../ui/observations_tab.py" line="6804"/>
+        <location filename="../ui/observations_tab.py" line="6819"/>
         <source>A similar observation already exists. Do you still want to create a new observation?</source>
         <translation>A similar observation already exists. Do you still want to create a new observation?</translation>
     </message>
     <message>
-        <location filename="../ui/observations_tab.py" line="6812"/>
+        <location filename="../ui/observations_tab.py" line="6827"/>
         <source>Date: {value}</source>
         <translation>Date: {value}</translation>
     </message>
     <message>
-        <location filename="../ui/observations_tab.py" line="6814"/>
-        <location filename="../ui/observations_tab.py" line="6856"/>
+        <location filename="../ui/observations_tab.py" line="6829"/>
+        <location filename="../ui/observations_tab.py" line="6871"/>
         <source>Location: {value}</source>
         <translation>Location: {value}</translation>
     </message>
     <message>
-        <location filename="../ui/observations_tab.py" line="6818"/>
+        <location filename="../ui/observations_tab.py" line="6833"/>
         <source>Taxon: {value}</source>
         <translation>Taxon: {value}</translation>
     </message>
     <message>
-        <location filename="../ui/observations_tab.py" line="6844"/>
+        <location filename="../ui/observations_tab.py" line="6859"/>
         <source>#{id}  {date}  {label}</source>
         <translation>#{id}  {date}  {label}</translation>
     </message>
     <message>
-        <location filename="../ui/observations_tab.py" line="6846"/>
+        <location filename="../ui/observations_tab.py" line="6861"/>
         <source>Unknown date</source>
         <translation>Unknown date</translation>
     </message>
     <message>
-        <location filename="../ui/observations_tab.py" line="6847"/>
+        <location filename="../ui/observations_tab.py" line="6862"/>
         <source>Unnamed observation</source>
         <translation>Unnamed observation</translation>
     </message>
     <message>
-        <location filename="../ui/observations_tab.py" line="6858"/>
+        <location filename="../ui/observations_tab.py" line="6873"/>
         <source>Images: {count}</source>
         <translation>Images: {count}</translation>
     </message>
     <message>
-        <location filename="../ui/observations_tab.py" line="6860"/>
+        <location filename="../ui/observations_tab.py" line="6875"/>
         <source>Match: {value}</source>
         <translation>Match: {value}</translation>
     </message>
     <message>
-        <location filename="../ui/observations_tab.py" line="6893"/>
+        <location filename="../ui/observations_tab.py" line="6908"/>
         <source>Create Anyway</source>
         <translation>Create Anyway</translation>
     </message>
     <message>
-        <location filename="../ui/observations_tab.py" line="6895"/>
+        <location filename="../ui/observations_tab.py" line="6910"/>
         <source>Go Back</source>
         <translation>Go Back</translation>
     </message>
     <message>
-        <location filename="../ui/observations_tab.py" line="6928"/>
+        <location filename="../ui/observations_tab.py" line="6943"/>
         <source>Photo</source>
         <translation>Photo</translation>
     </message>
     <message>
-        <location filename="../ui/observations_tab.py" line="6976"/>
+        <location filename="../ui/observations_tab.py" line="6991"/>
         <source>Objective</source>
         <translation>Objektiv</translation>
     </message>
     <message>
-        <location filename="../ui/observations_tab.py" line="6977"/>
+        <location filename="../ui/observations_tab.py" line="6992"/>
         <source>Contrast</source>
         <translation>Kontrast</translation>
     </message>
     <message>
-        <location filename="../ui/observations_tab.py" line="6978"/>
+        <location filename="../ui/observations_tab.py" line="6993"/>
         <source>Mount</source>
         <translation>Medium</translation>
     </message>
     <message>
-        <location filename="../ui/observations_tab.py" line="6979"/>
+        <location filename="../ui/observations_tab.py" line="6994"/>
         <source>Stain</source>
         <translation>Färbung</translation>
     </message>
     <message>
-        <location filename="../ui/observations_tab.py" line="6980"/>
+        <location filename="../ui/observations_tab.py" line="6995"/>
         <source>Condition</source>
         <translation>Zustand</translation>
     </message>
     <message>
-        <location filename="../ui/observations_tab.py" line="6981"/>
+        <location filename="../ui/observations_tab.py" line="6996"/>
         <source>Source</source>
         <translation>Quelle</translation>
     </message>
     <message>
-        <location filename="../ui/observations_tab.py" line="7567"/>
+        <location filename="../ui/observations_tab.py" line="7582"/>
         <source>Selected images will be edited</source>
         <translation>Ausgewählte Bilder werden bearbeitet</translation>
     </message>
     <message>
-        <location filename="../ui/observations_tab.py" line="7587"/>
+        <location filename="../ui/observations_tab.py" line="7614"/>
+        <source>Delete the cloud copy of this image?
+
+The local file stays on this computer. The cloud copy will be removed from Cloud on your next sync.</source>
+        <translation type="unfinished"></translation>
+    </message>
+    <message>
+        <location filename="../ui/observations_tab.py" line="7620"/>
+        <source>Delete the cloud copies of {count} images?
+
+The local files stay on this computer. The cloud copies will be removed from Cloud on your next sync.</source>
+        <translation type="unfinished"></translation>
+    </message>
+    <message>
+        <location filename="../ui/observations_tab.py" line="7625"/>
+        <source>Delete cloud copies</source>
+        <translation type="unfinished"></translation>
+    </message>
+    <message>
+        <location filename="../ui/observations_tab.py" line="7640"/>
+        <source>Failed to queue cloud image deletion.</source>
+        <translation type="unfinished"></translation>
+    </message>
+    <message>
+        <location filename="../ui/observations_tab.py" line="7653"/>
+        <source>No cloud copies to delete.</source>
+        <translation type="unfinished"></translation>
+    </message>
+    <message>
+        <location filename="../ui/observations_tab.py" line="7672"/>
+        <source>Cloud copy marked for deletion. Sync to apply the change to Cloud.</source>
+        <translation type="unfinished"></translation>
+    </message>
+    <message>
+        <location filename="../ui/observations_tab.py" line="7676"/>
+        <source>{count} cloud copies marked for deletion. Sync to apply the change to Cloud.</source>
+        <translation type="unfinished"></translation>
+    </message>
+    <message>
+        <location filename="../ui/observations_tab.py" line="7695"/>
         <source>Cloud images cannot be deleted from the local gallery.</source>
         <translation>Cloud-Bilder können nicht aus der lokalen Galerie gelöscht werden.</translation>
     </message>
     <message>
-        <location filename="../ui/observations_tab.py" line="7604"/>
-        <location filename="../ui/observations_tab.py" line="7663"/>
+        <location filename="../ui/observations_tab.py" line="7712"/>
+        <location filename="../ui/observations_tab.py" line="7771"/>
         <source>Image deleted.</source>
         <translation>Bild geloscht.</translation>
     </message>
     <message>
-        <location filename="../ui/observations_tab.py" line="7644"/>
+        <location filename="../ui/observations_tab.py" line="7752"/>
         <source>Delete {count} selected images?</source>
         <translation>{count} ausgewählte Bilder löschen?</translation>
     </message>
     <message>
-        <location filename="../ui/observations_tab.py" line="7656"/>
+        <location filename="../ui/observations_tab.py" line="7764"/>
         <source>selected image</source>
         <translation>ausgewähltes Bild</translation>
     </message>
     <message>
-        <location filename="../ui/observations_tab.py" line="7666"/>
+        <location filename="../ui/observations_tab.py" line="7774"/>
         <source>{count} images deleted.</source>
         <translation>{count} Bilder gelöscht.</translation>
     </message>
     <message>
-        <location filename="../ui/observations_tab.py" line="7708"/>
+        <location filename="../ui/observations_tab.py" line="7816"/>
         <source>Select observation to move the selected photos to.</source>
         <translation>Beobachtung auswählen, zu der die ausgewählten Fotos verschoben werden sollen.</translation>
     </message>
     <message>
-        <location filename="../ui/observations_tab.py" line="7750"/>
+        <location filename="../ui/observations_tab.py" line="7858"/>
         <source>Could not move selected images: {error}</source>
         <translation>Ausgewählte Bilder konnten nicht verschoben werden: {error}</translation>
     </message>
     <message>
-        <location filename="../ui/observations_tab.py" line="7762"/>
+        <location filename="../ui/observations_tab.py" line="7870"/>
         <source>Moved {count} images to observation {obs_id}.</source>
         <translation>{count} Bilder zu Beobachtung {obs_id} verschoben.</translation>
     </message>
     <message>
-        <location filename="../ui/observations_tab.py" line="8355"/>
-        <location filename="../ui/observations_tab.py" line="8375"/>
-        <location filename="../ui/observations_tab.py" line="8545"/>
+        <location filename="../ui/observations_tab.py" line="8484"/>
+        <location filename="../ui/observations_tab.py" line="8504"/>
+        <location filename="../ui/observations_tab.py" line="8680"/>
         <source>Could not prepare image {index} for cloud upload.</source>
         <translation>Bild {index} konnte nicht für den Cloud-Upload vorbereitet werden.</translation>
     </message>
     <message>
-        <location filename="../ui/observations_tab.py" line="8565"/>
+        <location filename="../ui/observations_tab.py" line="8700"/>
         <source>Could not save image {index} for cloud upload.</source>
         <translation>Bild {index} konnte nicht für den Cloud-Upload gespeichert werden.</translation>
     </message>
     <message>
-        <location filename="../ui/observations_tab.py" line="9190"/>
+        <location filename="../ui/observations_tab.py" line="9325"/>
         <source>Preparing annotated image {current}/{total}...</source>
         <translation>Annotiertes Bild {current}/{total} wird vorbereitet...</translation>
     </message>
     <message>
-        <location filename="../ui/observations_tab.py" line="9508"/>
+        <location filename="../ui/observations_tab.py" line="9643"/>
         <source>Preparing measure plot image...</source>
         <translation>Messplot-Bild wird vorbereitet...</translation>
     </message>
     <message>
-        <location filename="../ui/observations_tab.py" line="9520"/>
-        <location filename="../ui/observations_tab.py" line="9653"/>
+        <location filename="../ui/observations_tab.py" line="9655"/>
+        <location filename="../ui/observations_tab.py" line="9788"/>
         <source>Rendering measure plot image...</source>
         <translation>Messplot-Bild wird gerendert...</translation>
     </message>
     <message>
-        <location filename="../ui/observations_tab.py" line="9548"/>
+        <location filename="../ui/observations_tab.py" line="9683"/>
         <source>Collecting measurement data...</source>
         <translation>Messdaten werden gesammelt...</translation>
     </message>
     <message>
-        <location filename="../ui/observations_tab.py" line="9595"/>
+        <location filename="../ui/observations_tab.py" line="9730"/>
         <source>Length (μm)</source>
         <translation>Länge (µm)</translation>
     </message>
     <message>
-        <location filename="../ui/observations_tab.py" line="9596"/>
+        <location filename="../ui/observations_tab.py" line="9731"/>
         <source>Width (μm)</source>
         <translation>Breite (µm)</translation>
     </message>
     <message>
-        <location filename="../ui/observations_tab.py" line="9646"/>
+        <location filename="../ui/observations_tab.py" line="9781"/>
         <source>Length</source>
         <translation>Länge</translation>
     </message>
     <message>
-        <location filename="../ui/observations_tab.py" line="9647"/>
+        <location filename="../ui/observations_tab.py" line="9782"/>
         <source>Width</source>
         <translation>Breite</translation>
     </message>
     <message>
-        <location filename="../ui/observations_tab.py" line="9696"/>
+        <location filename="../ui/observations_tab.py" line="9831"/>
         <source>Preparing thumbnail gallery image...</source>
         <translation>Vorschaubild-Galerie wird vorbereitet...</translation>
     </message>
     <message>
-        <location filename="../ui/observations_tab.py" line="9897"/>
+        <location filename="../ui/observations_tab.py" line="10032"/>
         <source>Composing thumbnail gallery image...</source>
         <translation>Vorschaubild-Galerie wird zusammengesetzt...</translation>
     </message>
     <message>
-        <location filename="../ui/observations_tab.py" line="10072"/>
+        <location filename="../ui/observations_tab.py" line="10207"/>
         <source>Preparing annotated images...</source>
         <translation>Annotierte Bilder werden vorbereitet...</translation>
     </message>
     <message>
-        <location filename="../ui/observations_tab.py" line="10100"/>
-        <location filename="../ui/observations_tab.py" line="10104"/>
+        <location filename="../ui/observations_tab.py" line="10235"/>
+        <location filename="../ui/observations_tab.py" line="10239"/>
         <source>No annotated images were generated; original images were used.</source>
         <translation>Es wurden keine annotierten Bilder erstellt; Originalbilder wurden verwendet.</translation>
     </message>
     <message>
-        <location filename="../ui/observations_tab.py" line="10131"/>
+        <location filename="../ui/observations_tab.py" line="10266"/>
         <source>Preparing measure plot...</source>
         <translation>Messplot wird vorbereitet...</translation>
     </message>
     <message>
-        <location filename="../ui/observations_tab.py" line="10146"/>
+        <location filename="../ui/observations_tab.py" line="10281"/>
         <source>Could not generate measure plot image.</source>
         <translation>Messplot-Bild konnte nicht erstellt werden.</translation>
     </message>
     <message>
-        <location filename="../ui/observations_tab.py" line="10151"/>
+        <location filename="../ui/observations_tab.py" line="10286"/>
         <source>Preparing thumbnail gallery...</source>
         <translation>Vorschaubild-Galerie wird vorbereitet...</translation>
     </message>
     <message>
-        <location filename="../ui/observations_tab.py" line="10186"/>
+        <location filename="../ui/observations_tab.py" line="10321"/>
         <source>Could not generate thumbnail gallery image.</source>
         <translation>Vorschaubild-Galeriebild konnte nicht erstellt werden.</translation>
     </message>
     <message>
-        <location filename="../ui/observations_tab.py" line="10213"/>
+        <location filename="../ui/observations_tab.py" line="10348"/>
         <source>Media files prepared.</source>
         <translation>Mediendateien vorbereitet.</translation>
     </message>
     <message>
-        <location filename="../ui/observations_tab.py" line="10459"/>
+        <location filename="../ui/observations_tab.py" line="10594"/>
         <source>Upload failed: observation not found.</source>
         <translation>Upload fehlgeschlagen: Beobachtung nicht gefunden.</translation>
     </message>
     <message>
-        <location filename="../ui/observations_tab.py" line="10466"/>
+        <location filename="../ui/observations_tab.py" line="10601"/>
         <source>Upload failed: this observation is missing GPS coordinates.</source>
         <translation>Upload fehlgeschlagen: Diese Beobachtung hat keine GPS-Koordinaten.</translation>
     </message>
     <message>
-        <location filename="../ui/observations_tab.py" line="10525"/>
+        <location filename="../ui/observations_tab.py" line="10660"/>
         <source>Upload failed: no uploader is configured for the selected target.</source>
         <translation>Upload fehlgeschlagen: Fur das ausgewahlte Ziel ist kein Uploader konfiguriert.</translation>
     </message>
     <message>
-        <location filename="../ui/observations_tab.py" line="10510"/>
+        <location filename="../ui/observations_tab.py" line="10645"/>
         <source>Upload failed: observation date is missing.</source>
         <translation>Upload fehlgeschlagen: Beobachtungsdatum fehlt.</translation>
     </message>
     <message>
-        <location filename="../ui/observations_tab.py" line="10581"/>
+        <location filename="../ui/observations_tab.py" line="10716"/>
         <source>Upload failed: could not load Artsobservasjoner login helper ({error}).</source>
         <translation>Upload fehlgeschlagen: Artsobservasjoner-Anmeldehilfe konnte nicht geladen werden ({error}).</translation>
     </message>
     <message>
-        <location filename="../ui/observations_tab.py" line="10667"/>
+        <location filename="../ui/observations_tab.py" line="10802"/>
         <source>Upload failed: could not load iNaturalist OAuth helper ({error}).</source>
         <translation>Upload fehlgeschlagen: iNaturalist-OAuth-Helfer konnte nicht geladen werden ({error}).</translation>
     </message>
     <message>
-        <location filename="../ui/observations_tab.py" line="10673"/>
+        <location filename="../ui/observations_tab.py" line="10808"/>
         <source>Not logged in to iNaturalist. Log in via Settings -&gt; Online publishing.</source>
         <translation>Nicht bei iNaturalist angemeldet. Melden Sie sich über Einstellungen -&gt; Online-Veröffentlichung an.</translation>
     </message>
     <message>
-        <location filename="../ui/observations_tab.py" line="10692"/>
+        <location filename="../ui/observations_tab.py" line="10827"/>
         <source>Not logged in to Mushroom Observer. Log in via Settings -&gt; Online publishing.</source>
         <translation>Nicht bei Mushroom Observer angemeldet. Melden Sie sich uber Einstellungen -&gt; Online-Veroffentlichung an.</translation>
     </message>
     <message>
-        <location filename="../ui/observations_tab.py" line="4539"/>
+        <location filename="../ui/observations_tab.py" line="4554"/>
         <source>Cancel</source>
         <translation>Abbrechen</translation>
     </message>
     <message>
-        <location filename="../ui/observations_tab.py" line="2312"/>
+        <location filename="../ui/observations_tab.py" line="2315"/>
         <source>Sync now</source>
         <translation>Jetzt synchronisieren</translation>
     </message>
     <message>
-        <location filename="../ui/observations_tab.py" line="2317"/>
+        <location filename="../ui/observations_tab.py" line="2320"/>
         <source>Sync with cloud now (R)</source>
         <translation>Jetzt mit der Cloud synchronisieren (R)</translation>
     </message>
     <message>
-        <location filename="../ui/observations_tab.py" line="10813"/>
+        <location filename="../ui/observations_tab.py" line="10948"/>
         <source>Preparing media for upload...</source>
         <translation>Medien fur den Upload werden vorbereitet...</translation>
     </message>
     <message>
-        <location filename="../ui/observations_tab.py" line="10834"/>
+        <location filename="../ui/observations_tab.py" line="10969"/>
         <source>Upload failed: no images are available for this observation.</source>
         <translation>Upload fehlgeschlagen: Fur diese Beobachtung sind keine Bilder verfugbar.</translation>
     </message>
     <message>
-        <location filename="../ui/observations_tab.py" line="10903"/>
+        <location filename="../ui/observations_tab.py" line="11038"/>
         <source>Connecting to {target}...</source>
         <translation>Verbinde mit {target}...</translation>
     </message>
     <message>
-        <location filename="../ui/observations_tab.py" line="10951"/>
-        <location filename="../ui/observations_tab.py" line="10964"/>
+        <location filename="../ui/observations_tab.py" line="11086"/>
+        <location filename="../ui/observations_tab.py" line="11099"/>
         <source>Uploading: {step}</source>
         <translation>Lade hoch: {step}</translation>
     </message>
     <message>
-        <location filename="../ui/observations_tab.py" line="10982"/>
+        <location filename="../ui/observations_tab.py" line="11117"/>
         <source>Upload cancelled.</source>
         <translation>Upload abgebrochen.</translation>
     </message>
     <message>
-        <location filename="../ui/observations_tab.py" line="11000"/>
+        <location filename="../ui/observations_tab.py" line="11135"/>
         <source>Upload failed: {error}</source>
         <translation>Upload fehlgeschlagen: {error}</translation>
     </message>
     <message>
-        <location filename="../ui/observations_tab.py" line="11073"/>
-        <location filename="../ui/observations_tab.py" line="11090"/>
+        <location filename="../ui/observations_tab.py" line="11208"/>
+        <location filename="../ui/observations_tab.py" line="11225"/>
         <source>Upload completed with warnings: {warning}</source>
         <translation>Upload mit Warnungen abgeschlossen: {warning}</translation>
     </message>
     <message>
-        <location filename="../ui/observations_tab.py" line="11097"/>
+        <location filename="../ui/observations_tab.py" line="11232"/>
         <source>Upload completed.</source>
         <translation>Upload abgeschlossen.</translation>
     </message>
     <message>
-        <location filename="../ui/observations_tab.py" line="11243"/>
+        <location filename="../ui/observations_tab.py" line="11378"/>
         <source>Observation updated.</source>
         <translation>Beobachtung aktualisiert.</translation>
     </message>
     <message>
-        <location filename="../ui/observations_tab.py" line="12043"/>
-        <location filename="../ui/observations_tab.py" line="12054"/>
+        <location filename="../ui/observations_tab.py" line="12178"/>
+        <location filename="../ui/observations_tab.py" line="12189"/>
         <source>Deleting observations...</source>
         <translation>Beobachtungen werden gelöscht...</translation>
     </message>
     <message>
-        <location filename="../ui/observations_tab.py" line="12062"/>
+        <location filename="../ui/observations_tab.py" line="12197"/>
         <source>cloud observation</source>
         <translation>Cloud-Beobachtung</translation>
     </message>
     <message>
-        <location filename="../ui/observations_tab.py" line="12064"/>
+        <location filename="../ui/observations_tab.py" line="12199"/>
         <source>Deleting cloud observation {current}/{total}: {name}</source>
         <translation>Cloud-Beobachtung {current}/{total} wird gelöscht: {name}</translation>
     </message>
     <message>
-        <location filename="../ui/observations_tab.py" line="12093"/>
+        <location filename="../ui/observations_tab.py" line="12228"/>
         <source>observation</source>
         <translation>Beobachtung</translation>
     </message>
     <message>
-        <location filename="../ui/observations_tab.py" line="12097"/>
+        <location filename="../ui/observations_tab.py" line="12232"/>
         <source>Deleting observation {current}/{total}: {name}</source>
         <translation>Beobachtung {current}/{total} wird gelöscht: {name}</translation>
     </message>
     <message>
-        <location filename="../ui/observations_tab.py" line="12136"/>
+        <location filename="../ui/observations_tab.py" line="12271"/>
         <source>Deleting local images for {name}: {current}/{total}</source>
         <translation>Lokale Bilder für {name} werden gelöscht: {current}/{total}</translation>
     </message>
     <message>
-        <location filename="../ui/observations_tab.py" line="12169"/>
+        <location filename="../ui/observations_tab.py" line="12304"/>
         <source>Finishing delete...</source>
         <translation>Löschen wird abgeschlossen...</translation>
     </message>
     <message>
-        <location filename="../ui/observations_tab.py" line="12197"/>
+        <location filename="../ui/observations_tab.py" line="12332"/>
         <source>Observation deleted with {count} cleanup issue(s).</source>
         <translation>Beobachtung geloscht mit {count} Bereinigungsproblem(en).</translation>
     </message>
     <message>
-        <location filename="../ui/observations_tab.py" line="12202"/>
+        <location filename="../ui/observations_tab.py" line="12337"/>
         <source>Cloud observation deleted.</source>
         <translation>Cloud-Beobachtung gelöscht.</translation>
     </message>
     <message>
-        <location filename="../ui/observations_tab.py" line="12204"/>
+        <location filename="../ui/observations_tab.py" line="12339"/>
         <source>Observation deleted.</source>
         <translation>Beobachtung geloscht.</translation>
     </message>
     <message>
-        <location filename="../ui/observations_tab.py" line="12207"/>
+        <location filename="../ui/observations_tab.py" line="12342"/>
         <source>Deleted {count} observations with {issues} cleanup issue(s).</source>
         <translation>{count} Beobachtungen geloscht mit {issues} Bereinigungsproblem(en).</translation>
     </message>
     <message>
-        <location filename="../ui/observations_tab.py" line="12216"/>
+        <location filename="../ui/observations_tab.py" line="12351"/>
         <source>Deleted {count} observations.</source>
         <translation>{count} Beobachtungen geloscht.</translation>
     </message>
     <message>
-        <location filename="../ui/observations_tab.py" line="12229"/>
-        <location filename="../ui/observations_tab.py" line="12262"/>
+        <location filename="../ui/observations_tab.py" line="12364"/>
+        <location filename="../ui/observations_tab.py" line="12397"/>
         <source>cloud {id}: not logged in to Sporely Cloud</source>
         <translation>cloud {id}: nicht bei Sporely Cloud angemeldet</translation>
     </message>
     <message>
-        <location filename="../ui/observations_tab.py" line="12117"/>
-        <location filename="../ui/observations_tab.py" line="12232"/>
-        <location filename="../ui/observations_tab.py" line="12265"/>
+        <location filename="../ui/observations_tab.py" line="12252"/>
+        <location filename="../ui/observations_tab.py" line="12367"/>
+        <location filename="../ui/observations_tab.py" line="12400"/>
         <source>cloud {id}: {error}</source>
         <translation>cloud {id}: {error}</translation>
     </message>
     <message>
-        <location filename="../ui/observations_tab.py" line="12252"/>
+        <location filename="../ui/observations_tab.py" line="12387"/>
         <source>cloud observation: invalid row data</source>
         <translation>cloud-Beobachtung: ungültige Zeilendaten</translation>
     </message>
     <message>
-        <location filename="../ui/observations_tab.py" line="12256"/>
+        <location filename="../ui/observations_tab.py" line="12391"/>
         <source>cloud observation: missing id</source>
         <translation>cloud-Beobachtung: fehlende id</translation>
     </message>
     <message>
-        <location filename="../ui/observations_tab.py" line="12392"/>
+        <location filename="../ui/observations_tab.py" line="12527"/>
         <source>Missing image files detected ({count}). Relink or remove them.</source>
         <translation>Fehlende Bilddateien erkannt ({count}). Neu verknupfen oder entfernen.</translation>
     </message>
     <message>
-        <location filename="../ui/observations_tab.py" line="10804"/>
-        <location filename="../ui/observations_tab.py" line="10975"/>
+        <location filename="../ui/observations_tab.py" line="10939"/>
+        <location filename="../ui/observations_tab.py" line="11110"/>
         <source>Preparing upload...</source>
         <translation>Upload wird vorbereitet...</translation>
     </message>
     <message>
-        <location filename="../ui/observations_tab.py" line="2268"/>
-        <location filename="../ui/observations_tab.py" line="2631"/>
+        <location filename="../ui/observations_tab.py" line="2271"/>
+        <location filename="../ui/observations_tab.py" line="2638"/>
         <source>Create a new observation</source>
         <translation>Neue Beobachtung erstellen</translation>
     </message>
     <message>
-        <location filename="../ui/observations_tab.py" line="2632"/>
+        <location filename="../ui/observations_tab.py" line="2639"/>
         <source>Edit selected observation</source>
         <translation>Ausgewaehlte Beobachtung bearbeiten</translation>
     </message>
     <message>
-        <location filename="../ui/observations_tab.py" line="2334"/>
-        <location filename="../ui/observations_tab.py" line="2633"/>
+        <location filename="../ui/observations_tab.py" line="2337"/>
+        <location filename="../ui/observations_tab.py" line="2640"/>
         <source>Delete selected observation(s)</source>
         <translation>Ausgewaehlte Beobachtung(en) loeschen</translation>
     </message>
     <message>
-        <location filename="../ui/observations_tab.py" line="2347"/>
-        <location filename="../ui/observations_tab.py" line="2636"/>
+        <location filename="../ui/observations_tab.py" line="2350"/>
+        <location filename="../ui/observations_tab.py" line="2643"/>
         <source>Import observations from zip archive</source>
         <translation>Beobachtungen aus ZIP-Archiv importieren</translation>
     </message>
     <message>
-        <location filename="../ui/observations_tab.py" line="2632"/>
+        <location filename="../ui/observations_tab.py" line="2639"/>
         <source>Select an observation to edit</source>
         <translation>Eine Beobachtung zum Bearbeiten auswaehlen</translation>
     </message>
     <message>
-        <location filename="../ui/observations_tab.py" line="2633"/>
+        <location filename="../ui/observations_tab.py" line="2640"/>
         <source>Select one or more observations to delete</source>
         <translation>Eine oder mehrere Beobachtungen zum Loeschen auswaehlen</translation>
     </message>
     <message>
-        <location filename="../ui/observations_tab.py" line="2634"/>
+        <location filename="../ui/observations_tab.py" line="2641"/>
         <source>Sync with cloud now</source>
         <translation>Jetzt mit der Cloud synchronisieren</translation>
     </message>
     <message>
-        <location filename="../ui/observations_tab.py" line="3371"/>
+        <location filename="../ui/observations_tab.py" line="3378"/>
         <source>observation ID</source>
         <translation>Beobachtungs-ID</translation>
     </message>
     <message>
-        <location filename="../ui/observations_tab.py" line="3371"/>
+        <location filename="../ui/observations_tab.py" line="3378"/>
         <source>observation IDs</source>
         <translation>Beobachtungs-IDs</translation>
     </message>
     <message>
-        <location filename="../ui/observations_tab.py" line="3385"/>
+        <location filename="../ui/observations_tab.py" line="3392"/>
         <source>Cloud sync blocked for {blocked_ids}.
 Cloud sync pending for {pending_ids}.
 Open Sync now to review the error details, then click Sync now to retry uploads.</source>
@@ -7782,230 +7866,224 @@ Cloud-Synchronisierung steht für {pending_ids} aus.
 Öffnen Sie „Jetzt synchronisieren“, um die Fehlerdetails zu überprüfen, und klicken Sie dann auf „Jetzt synchronisieren“, um den Upload erneut zu versuchen.</translation>
     </message>
     <message>
-        <location filename="../ui/observations_tab.py" line="3395"/>
+        <location filename="../ui/observations_tab.py" line="3402"/>
         <source>Cloud sync blocked for {blocked_ids}.
 Open Sync now to review the error details.</source>
         <translation>Cloud-Synchronisierung für {blocked_ids} blockiert.
 Öffnen Sie jetzt Sync, um die Fehlerdetails zu überprüfen.</translation>
     </message>
     <message>
-        <location filename="../ui/observations_tab.py" line="3401"/>
+        <location filename="../ui/observations_tab.py" line="3408"/>
         <source>Cloud sync pending for {pending_ids}.
 {action}</source>
         <translation>Cloud-Synchronisierung steht für {pending_ids} aus.
 {action}</translation>
     </message>
     <message>
-        <location filename="../ui/observations_tab.py" line="3408"/>
+        <location filename="../ui/observations_tab.py" line="3415"/>
         <source>Sign in, then click Sync now to retry uploads.</source>
         <translation>Melden Sie sich an und klicken Sie dann auf „Jetzt synchronisieren“, um den Upload erneut zu versuchen.</translation>
     </message>
     <message>
-        <location filename="../ui/observations_tab.py" line="3715"/>
+        <location filename="../ui/observations_tab.py" line="3722"/>
         <source>Cloud sync failed because WebP support is required for cloud media uploads.</source>
         <translation>Die Cloud-Synchronisierung ist fehlgeschlagen, da WebP-Unterstützung für Cloud-Medien-Uploads erforderlich ist.</translation>
     </message>
     <message>
-        <location filename="../ui/observations_tab.py" line="3719"/>
+        <location filename="../ui/observations_tab.py" line="3726"/>
         <source>Cloud sync failed while pushing local observations to Sporely Cloud.</source>
         <translation>Die Cloud-Synchronisierung ist beim Übertragen lokaler Beobachtungen an Sporely Cloud fehlgeschlagen.</translation>
     </message>
     <message>
-        <location filename="../ui/observations_tab.py" line="3721"/>
+        <location filename="../ui/observations_tab.py" line="3728"/>
         <source>Cloud sync failed while pulling observations from Sporely Cloud.</source>
         <translation>Beim Abrufen von Beobachtungen aus Sporely Cloud ist die Cloud-Synchronisierung fehlgeschlagen.</translation>
     </message>
     <message>
-        <location filename="../ui/observations_tab.py" line="3375"/>
-        <location filename="../ui/observations_tab.py" line="3722"/>
+        <location filename="../ui/observations_tab.py" line="3382"/>
+        <location filename="../ui/observations_tab.py" line="3729"/>
         <source>Cloud sync failed.</source>
         <translation>Die Cloud-Synchronisierung ist fehlgeschlagen.</translation>
     </message>
     <message>
-        <location filename="../ui/observations_tab.py" line="2504"/>
-        <location filename="../ui/observations_tab.py" line="7802"/>
-        <source>Select image for external publishing</source>
-        <translation>Bild für externe Veröffentlichung auswählen</translation>
-    </message>
-    <message>
-        <location filename="../ui/observations_tab.py" line="3884"/>
+        <location filename="../ui/observations_tab.py" line="3891"/>
         <source>Apply this choice to all remaining deleted cloud observations</source>
         <translation>Wenden Sie diese Auswahl auf alle verbleibenden gelöschten Cloud-Beobachtungen an</translation>
     </message>
     <message>
-        <location filename="../ui/observations_tab.py" line="3886"/>
+        <location filename="../ui/observations_tab.py" line="3893"/>
         <source>Delete local copy</source>
         <translation>Lokale Kopie löschen</translation>
     </message>
     <message>
-        <location filename="../ui/observations_tab.py" line="3887"/>
+        <location filename="../ui/observations_tab.py" line="3894"/>
         <source>Keep local only (Unlink)</source>
         <translation>Nur lokal behalten (Verknüpfung aufheben)</translation>
     </message>
     <message>
-        <location filename="../ui/observations_tab.py" line="4027"/>
+        <location filename="../ui/observations_tab.py" line="4042"/>
         <source>{count} will retry</source>
         <translation>{count} wird es erneut versuchen</translation>
     </message>
     <message>
-        <location filename="../ui/observations_tab.py" line="4041"/>
+        <location filename="../ui/observations_tab.py" line="4056"/>
         <source>Cloud sync finished with {count} retryable issue(s).</source>
         <translation>Cloud-Synchronisierung mit {count} wiederholbaren Problemen abgeschlossen.</translation>
     </message>
     <message>
-        <location filename="../ui/observations_tab.py" line="4057"/>
+        <location filename="../ui/observations_tab.py" line="4072"/>
         <source>Cloud sync blocked.</source>
         <translation>Cloud-Synchronisierung blockiert.</translation>
     </message>
     <message>
-        <location filename="../ui/observations_tab.py" line="4060"/>
+        <location filename="../ui/observations_tab.py" line="4075"/>
         <source>Cloud sync needs retry.</source>
         <translation>Die Cloud-Synchronisierung muss erneut versucht werden.</translation>
     </message>
     <message>
-        <location filename="../ui/observations_tab.py" line="4186"/>
+        <location filename="../ui/observations_tab.py" line="4201"/>
         <source>1 image added to a published observation. Log in to Artsobservasjoner (web), then click Refresh db.</source>
         <translation>1 Bild zu veröffentlichter Beobachtung hinzugefügt. Bei Artsobservasjoner (web) anmelden und dann auf «Db aktualisieren» klicken.</translation>
     </message>
     <message>
-        <location filename="../ui/observations_tab.py" line="4193"/>
+        <location filename="../ui/observations_tab.py" line="4208"/>
         <source>{count} images added to published observations. Log in to Artsobservasjoner (web), then click Refresh db.</source>
         <translation>{count} Bilder zu veröffentlichten Beobachtungen hinzugefügt. Bei Artsobservasjoner (web) anmelden und dann auf «Db aktualisieren» klicken.</translation>
     </message>
     <message>
-        <location filename="../ui/observations_tab.py" line="5883"/>
+        <location filename="../ui/observations_tab.py" line="5898"/>
         <source>Open map service</source>
         <translation>Kartendienst oeffnen</translation>
     </message>
     <message>
-        <location filename="../ui/observations_tab.py" line="8344"/>
-        <location filename="../ui/observations_tab.py" line="8533"/>
+        <location filename="../ui/observations_tab.py" line="8473"/>
+        <location filename="../ui/observations_tab.py" line="8668"/>
         <source>Preparing upload {current}/{total}...</source>
         <translation>Upload wird vorbereitet {current}/{total}...</translation>
     </message>
     <message>
-        <location filename="../ui/observations_tab.py" line="9712"/>
+        <location filename="../ui/observations_tab.py" line="9847"/>
         <source>measurement thumbnails</source>
         <translation>Messungs-Miniaturbilder</translation>
     </message>
     <message>
-        <location filename="../ui/observations_tab.py" line="9714"/>
+        <location filename="../ui/observations_tab.py" line="9849"/>
         <source>spore thumbnails</source>
         <translation>Sporen-Miniaturbilder</translation>
     </message>
     <message>
-        <location filename="../ui/observations_tab.py" line="9716"/>
+        <location filename="../ui/observations_tab.py" line="9851"/>
         <source>thumbnails</source>
         <translation>Miniaturbilder</translation>
     </message>
     <message>
-        <location filename="../ui/observations_tab.py" line="9817"/>
-        <location filename="../ui/observations_tab.py" line="9879"/>
+        <location filename="../ui/observations_tab.py" line="9952"/>
+        <location filename="../ui/observations_tab.py" line="10014"/>
         <source>Rendering thumbnail gallery {current}/{total} {item_label} for this observation...</source>
         <translation>Miniaturgalerie {current}/{total} {item_label} für diese Beobachtung wird gerendert...</translation>
     </message>
     <message>
-        <location filename="../ui/observations_tab.py" line="10008"/>
-        <location filename="../ui/observations_tab.py" line="10191"/>
+        <location filename="../ui/observations_tab.py" line="10143"/>
+        <location filename="../ui/observations_tab.py" line="10326"/>
         <source>Preparing plate image...</source>
         <translation>Plattenbild wird vorbereitet...</translation>
     </message>
     <message>
-        <location filename="../ui/observations_tab.py" line="10018"/>
+        <location filename="../ui/observations_tab.py" line="10153"/>
         <source>Rendering plate image...</source>
         <translation>Plattenbild wird gerendert...</translation>
     </message>
     <message>
-        <location filename="../ui/observations_tab.py" line="10206"/>
+        <location filename="../ui/observations_tab.py" line="10341"/>
         <source>Could not generate plate image.</source>
         <translation>Plattenbild konnte nicht erzeugt werden.</translation>
     </message>
     <message>
-        <location filename="../ui/observations_tab.py" line="10558"/>
+        <location filename="../ui/observations_tab.py" line="10693"/>
         <source>Artsobservasjoner allows up to 10 images per observation. You have {count} images, including generated plot, gallery, or plate images (Settings - Online publishing).</source>
         <translation>Artsobservasjoner erlaubt bis zu 10 Bilder pro Beobachtung. Sie haben {count} Bilder, einschließlich generierter Plot-, Galerie- oder Plattenbilder (Einstellungen - Online-Veröffentlichung).</translation>
     </message>
     <message>
-        <location filename="../ui/observations_tab.py" line="10644"/>
+        <location filename="../ui/observations_tab.py" line="10779"/>
         <source>Upload failed: missing iNaturalist Client ID.</source>
         <translation>Upload fehlgeschlagen: fehlende iNaturalist Client-ID.</translation>
     </message>
     <message>
-        <location filename="../ui/observations_tab.py" line="11065"/>
+        <location filename="../ui/observations_tab.py" line="11200"/>
         <source>Observation published, but image upload failed. Images remain pending.</source>
         <translation>Die Beobachtung wurde veröffentlicht, aber der Bild-Upload ist fehlgeschlagen. Bilder bleiben ausstehend.</translation>
     </message>
     <message>
-        <location filename="../ui/observations_tab.py" line="11362"/>
-        <location filename="../ui/observations_tab.py" line="11557"/>
+        <location filename="../ui/observations_tab.py" line="11497"/>
+        <location filename="../ui/observations_tab.py" line="11692"/>
         <source>Images updated.</source>
         <translation>Bilder aktualisiert.</translation>
     </message>
     <message>
-        <location filename="../ui/observations_tab.py" line="11680"/>
-        <location filename="../ui/observations_tab.py" line="11819"/>
+        <location filename="../ui/observations_tab.py" line="11815"/>
+        <location filename="../ui/observations_tab.py" line="11954"/>
         <source>Processing images...</source>
         <translation>Bilder werden verarbeitet...</translation>
     </message>
     <message>
-        <location filename="../ui/observations_tab.py" line="11686"/>
-        <location filename="../ui/observations_tab.py" line="11825"/>
+        <location filename="../ui/observations_tab.py" line="11821"/>
+        <location filename="../ui/observations_tab.py" line="11960"/>
         <source>Processing Images</source>
         <translation>Bilder werden verarbeitet</translation>
     </message>
     <message>
-        <location filename="../ui/observations_tab.py" line="11699"/>
-        <location filename="../ui/observations_tab.py" line="11838"/>
+        <location filename="../ui/observations_tab.py" line="11834"/>
+        <location filename="../ui/observations_tab.py" line="11973"/>
         <source>Processing image {current}/{total}</source>
         <translation>Bild {current}/{total} wird verarbeitet</translation>
     </message>
     <message>
-        <location filename="../ui/observations_tab.py" line="11733"/>
+        <location filename="../ui/observations_tab.py" line="11868"/>
         <source>Observation imported from cloud.</source>
         <translation>Beobachtung aus der Cloud importiert.</translation>
     </message>
     <message>
-        <location filename="../ui/observations_tab.py" line="11863"/>
+        <location filename="../ui/observations_tab.py" line="11998"/>
         <source>Observation created.</source>
         <translation>Beobachtung erstellt.</translation>
     </message>
     <message>
-        <location filename="../ui/observations_tab.py" line="11896"/>
+        <location filename="../ui/observations_tab.py" line="12031"/>
         <source>No spore annotations to export. Measure spores first to create training data.</source>
         <translation>Keine Sporenannotationen zum Exportieren. Messen Sie zuerst Sporen, um Trainingsdaten zu erstellen.</translation>
     </message>
     <message>
-        <location filename="../ui/observations_tab.py" line="11901"/>
+        <location filename="../ui/observations_tab.py" line="12036"/>
         <source>Select an output directory for ML export.</source>
         <translation>Wahlen Sie ein Ausgabeverzeichnis fur den ML-Export.</translation>
     </message>
     <message>
-        <location filename="../ui/observations_tab.py" line="11909"/>
+        <location filename="../ui/observations_tab.py" line="12044"/>
         <source>ML export cancelled.</source>
         <translation>ML-Export abgebrochen.</translation>
     </message>
     <message>
-        <location filename="../ui/observations_tab.py" line="11918"/>
+        <location filename="../ui/observations_tab.py" line="12053"/>
         <source>Export complete. Images: {images}, annotations: {annotations}, skipped: {skipped}.</source>
         <translation>Export abgeschlossen. Bilder: {images}, Annotationen: {annotations}, ubersprungen: {skipped}.</translation>
     </message>
     <message>
-        <location filename="../ui/observations_tab.py" line="11925"/>
+        <location filename="../ui/observations_tab.py" line="12060"/>
         <source>Warnings: {count}.</source>
         <translation>Warnungen: {count}.</translation>
     </message>
     <message>
-        <location filename="../ui/observations_tab.py" line="11930"/>
+        <location filename="../ui/observations_tab.py" line="12065"/>
         <source>Export failed: {error}</source>
         <translation>Export fehlgeschlagen: {error}</translation>
     </message>
     <message>
-        <location filename="../ui/observations_tab.py" line="11941"/>
+        <location filename="../ui/observations_tab.py" line="12076"/>
         <source>Wait for Sporely Cloud sync to finish before deleting observations.</source>
         <translation>Warten Sie, bis die Sporely Cloud-Synchronisierung abgeschlossen ist, bevor Sie Beobachtungen löschen.</translation>
     </message>
     <message>
-        <location filename="../ui/observations_tab.py" line="11967"/>
+        <location filename="../ui/observations_tab.py" line="12102"/>
         <source>Delete cloud observation &apos;{species}&apos;?
 
 This will remove it from Sporely Cloud and delete its synced cloud images.</source>
@@ -8014,7 +8092,7 @@ This will remove it from Sporely Cloud and delete its synced cloud images.</sour
 Dadurch wird sie aus Sporely Cloud entfernt und ihre synchronisierten Cloud-Bilder werden gelöscht.</translation>
     </message>
     <message>
-        <location filename="../ui/observations_tab.py" line="11975"/>
+        <location filename="../ui/observations_tab.py" line="12110"/>
         <source>Delete observation &apos;{species}&apos;?
 
 This will also delete all associated images and measurements.</source>
@@ -8023,7 +8101,7 @@ This will also delete all associated images and measurements.</source>
 Dadurch werden auch alle zugehörigen Bilder und Messungen gelöscht.</translation>
     </message>
     <message>
-        <location filename="../ui/observations_tab.py" line="11981"/>
+        <location filename="../ui/observations_tab.py" line="12116"/>
         <source>Delete {count} observations?
 
 Local observations will also delete their images and measurements.
@@ -8034,7 +8112,7 @@ Lokale Beobachtungen löschen auch ihre Bilder und Messungen.
 Cloud-Beobachtungen werden aus Sporely Cloud entfernt.</translation>
     </message>
     <message>
-        <location filename="../ui/observations_tab.py" line="11987"/>
+        <location filename="../ui/observations_tab.py" line="12122"/>
         <source>Delete {count} cloud observations?
 
 This will remove them from Sporely Cloud and delete their synced cloud images.</source>
@@ -8043,7 +8121,7 @@ This will remove them from Sporely Cloud and delete their synced cloud images.</
 Dadurch werden sie aus Sporely Cloud entfernt und ihre synchronisierten Cloud-Bilder werden gelöscht.</translation>
     </message>
     <message>
-        <location filename="../ui/observations_tab.py" line="11992"/>
+        <location filename="../ui/observations_tab.py" line="12127"/>
         <source>Delete {count} observations?
 
 This will also delete all associated images and measurements.</source>
@@ -8448,382 +8526,362 @@ max</translation>
 <context>
     <name>ReferenceLibraryManagerDialog</name>
     <message>
-        <location filename="../ui/reference_library_manager_dialog.py" line="1014"/>
-        <location filename="../ui/reference_library_manager_dialog.py" line="1175"/>
-        <location filename="../ui/reference_library_manager_dialog.py" line="1243"/>
+        <location filename="../ui/reference_library_manager_dialog.py" line="1860"/>
+        <location filename="../ui/reference_library_manager_dialog.py" line="2024"/>
+        <location filename="../ui/reference_library_manager_dialog.py" line="2093"/>
         <source>Reference Library</source>
         <extracomment>Emitted when the user requests an attachment. ``(measurement_set_id, role, observation_id)`` — role is a value from :data:`OBSERVATION_REFERENCE_ROLES`; ``observation_id`` is the observation id CAPTURED at manager-open time, so a rebind of the parent&apos;s active observation between open and click cannot silently redirect the attachment to a different observation. Emitted whenever a record was created/edited so external listeners (e.g. the attachment chooser) can refresh their state.</extracomment>
         <translation type="unfinished"></translation>
     </message>
     <message>
-        <location filename="../ui/reference_library_manager_dialog.py" line="1056"/>
+        <location filename="../ui/reference_library_manager_dialog.py" line="1902"/>
         <source>Publications</source>
         <translation type="unfinished"></translation>
     </message>
     <message>
-        <location filename="../ui/reference_library_manager_dialog.py" line="1059"/>
+        <location filename="../ui/reference_library_manager_dialog.py" line="1905"/>
         <source>Search by title, author or label</source>
         <translation type="unfinished"></translation>
     </message>
     <message>
-        <location filename="../ui/reference_library_manager_dialog.py" line="1065"/>
+        <location filename="../ui/reference_library_manager_dialog.py" line="1911"/>
         <source>Short label</source>
         <translation type="unfinished"></translation>
     </message>
     <message>
-        <location filename="../ui/reference_library_manager_dialog.py" line="1065"/>
+        <location filename="../ui/reference_library_manager_dialog.py" line="1911"/>
         <source>Year</source>
         <translation type="unfinished"></translation>
     </message>
     <message>
-        <location filename="../ui/reference_library_manager_dialog.py" line="1065"/>
-        <source>Status</source>
-        <translation type="unfinished">Status</translation>
-    </message>
-    <message>
-        <location filename="../ui/reference_library_manager_dialog.py" line="1079"/>
+        <location filename="../ui/reference_library_manager_dialog.py" line="1925"/>
         <source>New work…</source>
         <translation type="unfinished"></translation>
     </message>
     <message>
-        <location filename="../ui/reference_library_manager_dialog.py" line="1082"/>
+        <location filename="../ui/reference_library_manager_dialog.py" line="1928"/>
         <source>Edit work…</source>
         <translation type="unfinished"></translation>
     </message>
     <message>
-        <location filename="../ui/reference_library_manager_dialog.py" line="1090"/>
+        <location filename="../ui/reference_library_manager_dialog.py" line="1936"/>
         <source>No publications yet — use &quot;New work…&quot; to add one.</source>
         <translation type="unfinished"></translation>
     </message>
     <message>
-        <location filename="../ui/reference_library_manager_dialog.py" line="1101"/>
+        <location filename="../ui/reference_library_manager_dialog.py" line="1947"/>
         <source>Treatments and measurement sets</source>
         <translation type="unfinished"></translation>
     </message>
     <message>
-        <location filename="../ui/reference_library_manager_dialog.py" line="1104"/>
+        <location filename="../ui/reference_library_manager_dialog.py" line="1950"/>
         <source>Name / kind</source>
         <translation type="unfinished"></translation>
     </message>
     <message>
-        <location filename="../ui/reference_library_manager_dialog.py" line="1104"/>
+        <location filename="../ui/reference_library_manager_dialog.py" line="1950"/>
         <source>Revision</source>
         <translation type="unfinished"></translation>
     </message>
     <message>
-        <location filename="../ui/reference_library_manager_dialog.py" line="1111"/>
+        <location filename="../ui/reference_library_manager_dialog.py" line="1957"/>
         <source>New treatment…</source>
         <translation type="unfinished"></translation>
     </message>
     <message>
-        <location filename="../ui/reference_library_manager_dialog.py" line="1115"/>
+        <location filename="../ui/reference_library_manager_dialog.py" line="1961"/>
         <source>New measurement set…</source>
         <translation type="unfinished"></translation>
     </message>
     <message>
-        <location filename="../ui/reference_library_manager_dialog.py" line="1127"/>
+        <location filename="../ui/reference_library_manager_dialog.py" line="1973"/>
         <source>Details</source>
         <translation type="unfinished"></translation>
     </message>
     <message>
-        <location filename="../ui/reference_library_manager_dialog.py" line="1147"/>
+        <location filename="../ui/reference_library_manager_dialog.py" line="1996"/>
         <source>Edit selected…</source>
         <translation type="unfinished"></translation>
     </message>
     <message>
-        <location filename="../ui/reference_library_manager_dialog.py" line="1153"/>
+        <location filename="../ui/reference_library_manager_dialog.py" line="2002"/>
         <source>Role:</source>
         <translation type="unfinished">Rolle:</translation>
     </message>
     <message>
-        <location filename="../ui/reference_library_manager_dialog.py" line="1159"/>
+        <location filename="../ui/reference_library_manager_dialog.py" line="2008"/>
         <source>Attach to active observation</source>
         <translation type="unfinished"></translation>
     </message>
     <message>
-        <location filename="../ui/reference_library_manager_dialog.py" line="1176"/>
+        <location filename="../ui/reference_library_manager_dialog.py" line="2025"/>
         <source>Could not load publications: {error}</source>
         <translation type="unfinished"></translation>
     </message>
     <message>
-        <location filename="../ui/reference_library_manager_dialog.py" line="1213"/>
-        <source>Incomplete</source>
-        <translation type="unfinished"></translation>
-    </message>
-    <message>
-        <location filename="../ui/reference_library_manager_dialog.py" line="1214"/>
-        <source>Unverified</source>
-        <translation type="unfinished"></translation>
-    </message>
-    <message>
-        <location filename="../ui/reference_library_manager_dialog.py" line="1215"/>
-        <source>Verified</source>
-        <translation type="unfinished"></translation>
-    </message>
-    <message>
-        <location filename="../ui/reference_library_manager_dialog.py" line="1216"/>
-        <source>Unknown</source>
-        <translation type="unfinished">Unbekannt</translation>
-    </message>
-    <message>
-        <location filename="../ui/reference_library_manager_dialog.py" line="1233"/>
-        <location filename="../ui/reference_library_manager_dialog.py" line="1358"/>
+        <location filename="../ui/reference_library_manager_dialog.py" line="2083"/>
+        <location filename="../ui/reference_library_manager_dialog.py" line="2208"/>
         <source>Select a publication to see its treatments.</source>
         <translation type="unfinished"></translation>
     </message>
     <message>
-        <location filename="../ui/reference_library_manager_dialog.py" line="1244"/>
+        <location filename="../ui/reference_library_manager_dialog.py" line="2094"/>
         <source>Could not load treatments: {error}</source>
         <translation type="unfinished"></translation>
     </message>
     <message>
-        <location filename="../ui/reference_library_manager_dialog.py" line="1249"/>
+        <location filename="../ui/reference_library_manager_dialog.py" line="2099"/>
         <source>No treatments yet — use &quot;New treatment…&quot; to add one.</source>
         <translation type="unfinished"></translation>
     </message>
     <message>
-        <location filename="../ui/reference_library_manager_dialog.py" line="1256"/>
+        <location filename="../ui/reference_library_manager_dialog.py" line="2106"/>
         <source>(unnamed treatment)</source>
         <translation type="unfinished"></translation>
     </message>
     <message>
-        <location filename="../ui/reference_library_manager_dialog.py" line="1372"/>
+        <location filename="../ui/reference_library_manager_dialog.py" line="2224"/>
         <source>Type: {type}</source>
         <translation type="unfinished"></translation>
     </message>
     <message>
-        <location filename="../ui/reference_library_manager_dialog.py" line="1373"/>
+        <location filename="../ui/reference_library_manager_dialog.py" line="2225"/>
         <source>Title: {title}</source>
         <translation type="unfinished"></translation>
     </message>
     <message>
-        <location filename="../ui/reference_library_manager_dialog.py" line="1376"/>
+        <location filename="../ui/reference_library_manager_dialog.py" line="2228"/>
         <source>Year: {year}</source>
         <translation type="unfinished"></translation>
     </message>
     <message>
-        <location filename="../ui/reference_library_manager_dialog.py" line="1378"/>
+        <location filename="../ui/reference_library_manager_dialog.py" line="2230"/>
         <source>Citation key: {value}</source>
         <translation type="unfinished"></translation>
     </message>
     <message>
-        <location filename="../ui/reference_library_manager_dialog.py" line="1380"/>
+        <location filename="../ui/reference_library_manager_dialog.py" line="2232"/>
         <source>Container: {value}</source>
         <translation type="unfinished"></translation>
     </message>
     <message>
-        <location filename="../ui/reference_library_manager_dialog.py" line="1382"/>
+        <location filename="../ui/reference_library_manager_dialog.py" line="2234"/>
         <source>Edition: {value}</source>
         <translation type="unfinished"></translation>
     </message>
     <message>
-        <location filename="../ui/reference_library_manager_dialog.py" line="1384"/>
+        <location filename="../ui/reference_library_manager_dialog.py" line="2236"/>
         <source>Volume: {value}</source>
         <translation type="unfinished"></translation>
     </message>
     <message>
-        <location filename="../ui/reference_library_manager_dialog.py" line="1386"/>
+        <location filename="../ui/reference_library_manager_dialog.py" line="2238"/>
         <source>Issue: {value}</source>
         <translation type="unfinished"></translation>
     </message>
     <message>
-        <location filename="../ui/reference_library_manager_dialog.py" line="1388"/>
+        <location filename="../ui/reference_library_manager_dialog.py" line="2240"/>
         <source>Pages: {value}</source>
         <translation type="unfinished"></translation>
     </message>
     <message>
-        <location filename="../ui/reference_library_manager_dialog.py" line="1390"/>
+        <location filename="../ui/reference_library_manager_dialog.py" line="2242"/>
         <source>Publisher: {value}</source>
         <translation type="unfinished"></translation>
     </message>
     <message>
-        <location filename="../ui/reference_library_manager_dialog.py" line="1392"/>
+        <location filename="../ui/reference_library_manager_dialog.py" line="2244"/>
         <source>Place: {value}</source>
         <translation type="unfinished"></translation>
     </message>
     <message>
-        <location filename="../ui/reference_library_manager_dialog.py" line="1394"/>
+        <location filename="../ui/reference_library_manager_dialog.py" line="2246"/>
         <source>DOI: {value}</source>
         <translation type="unfinished"></translation>
     </message>
     <message>
-        <location filename="../ui/reference_library_manager_dialog.py" line="1396"/>
+        <location filename="../ui/reference_library_manager_dialog.py" line="2248"/>
         <source>ISBN: {value}</source>
         <translation type="unfinished"></translation>
     </message>
     <message>
-        <location filename="../ui/reference_library_manager_dialog.py" line="1398"/>
+        <location filename="../ui/reference_library_manager_dialog.py" line="2250"/>
         <source>URL: {value}</source>
         <translation type="unfinished"></translation>
     </message>
     <message>
-        <location filename="../ui/reference_library_manager_dialog.py" line="1400"/>
+        <location filename="../ui/reference_library_manager_dialog.py" line="2252"/>
         <source>Language: {value}</source>
         <translation type="unfinished"></translation>
     </message>
     <message>
-        <location filename="../ui/reference_library_manager_dialog.py" line="1402"/>
+        <location filename="../ui/reference_library_manager_dialog.py" line="2254"/>
         <source>Citation override: {value}</source>
         <translation type="unfinished"></translation>
     </message>
     <message>
-        <location filename="../ui/reference_library_manager_dialog.py" line="1403"/>
-        <source>Visibility: {value}</source>
+        <location filename="../ui/reference_library_manager_dialog.py" line="1911"/>
+        <source>Missing</source>
         <translation type="unfinished"></translation>
     </message>
     <message>
-        <location filename="../ui/reference_library_manager_dialog.py" line="1404"/>
-        <location filename="../ui/reference_library_manager_dialog.py" line="1437"/>
-        <location filename="../ui/reference_library_manager_dialog.py" line="1496"/>
+        <location filename="../ui/reference_library_manager_dialog.py" line="2048"/>
+        <source>Missing bibliographic fields (derived).</source>
+        <translation type="unfinished"></translation>
+    </message>
+    <message>
+        <location filename="../ui/reference_library_manager_dialog.py" line="2255"/>
+        <location filename="../ui/reference_library_manager_dialog.py" line="2290"/>
+        <location filename="../ui/reference_library_manager_dialog.py" line="2351"/>
         <source>Revision: {value}</source>
         <translation type="unfinished"></translation>
     </message>
     <message>
-        <location filename="../ui/reference_library_manager_dialog.py" line="1405"/>
-        <location filename="../ui/reference_library_manager_dialog.py" line="1438"/>
-        <location filename="../ui/reference_library_manager_dialog.py" line="1497"/>
+        <location filename="../ui/reference_library_manager_dialog.py" line="2256"/>
+        <location filename="../ui/reference_library_manager_dialog.py" line="2291"/>
+        <location filename="../ui/reference_library_manager_dialog.py" line="2352"/>
         <source>UUID: {value}</source>
         <translation type="unfinished"></translation>
     </message>
     <message>
-        <location filename="../ui/reference_library_manager_dialog.py" line="1422"/>
+        <location filename="../ui/reference_library_manager_dialog.py" line="2275"/>
         <source>Name as published: {value}</source>
         <translation type="unfinished"></translation>
     </message>
     <message>
-        <location filename="../ui/reference_library_manager_dialog.py" line="1425"/>
+        <location filename="../ui/reference_library_manager_dialog.py" line="2278"/>
         <source>Taxon id: {value}</source>
         <translation type="unfinished"></translation>
     </message>
     <message>
-        <location filename="../ui/reference_library_manager_dialog.py" line="1428"/>
+        <location filename="../ui/reference_library_manager_dialog.py" line="2281"/>
         <source>Pages: {a}-{b}</source>
         <translation type="unfinished"></translation>
     </message>
     <message>
-        <location filename="../ui/reference_library_manager_dialog.py" line="1434"/>
+        <location filename="../ui/reference_library_manager_dialog.py" line="2287"/>
         <source>Locator: {value}</source>
         <translation type="unfinished"></translation>
     </message>
     <message>
-        <location filename="../ui/reference_library_manager_dialog.py" line="1436"/>
+        <location filename="../ui/reference_library_manager_dialog.py" line="2289"/>
         <source>Notes: {value}</source>
         <translation type="unfinished"></translation>
     </message>
     <message>
-        <location filename="../ui/reference_library_manager_dialog.py" line="1453"/>
+        <location filename="../ui/reference_library_manager_dialog.py" line="2306"/>
         <source>Measurement set — {kind}</source>
         <translation type="unfinished"></translation>
     </message>
     <message>
-        <location filename="../ui/reference_library_manager_dialog.py" line="1462"/>
-        <location filename="../ui/reference_library_manager_dialog.py" line="1493"/>
+        <location filename="../ui/reference_library_manager_dialog.py" line="2317"/>
+        <location filename="../ui/reference_library_manager_dialog.py" line="2348"/>
         <source>Data kind: {value}</source>
         <translation type="unfinished"></translation>
     </message>
     <message>
-        <location filename="../ui/reference_library_manager_dialog.py" line="1465"/>
-        <location filename="../ui/reference_library_manager_dialog.py" line="1495"/>
+        <location filename="../ui/reference_library_manager_dialog.py" line="2320"/>
+        <location filename="../ui/reference_library_manager_dialog.py" line="2350"/>
         <source>Raw expression: {value}</source>
         <translation type="unfinished"></translation>
     </message>
     <message>
-        <location filename="../ui/reference_library_manager_dialog.py" line="1468"/>
+        <location filename="../ui/reference_library_manager_dialog.py" line="2323"/>
         <source>Length min</source>
         <translation type="unfinished"></translation>
     </message>
     <message>
-        <location filename="../ui/reference_library_manager_dialog.py" line="1469"/>
+        <location filename="../ui/reference_library_manager_dialog.py" line="2324"/>
         <source>Length core min</source>
         <translation type="unfinished"></translation>
     </message>
     <message>
-        <location filename="../ui/reference_library_manager_dialog.py" line="1470"/>
+        <location filename="../ui/reference_library_manager_dialog.py" line="2325"/>
         <source>Length core max</source>
         <translation type="unfinished"></translation>
     </message>
     <message>
-        <location filename="../ui/reference_library_manager_dialog.py" line="1471"/>
+        <location filename="../ui/reference_library_manager_dialog.py" line="2326"/>
         <source>Length max</source>
         <translation type="unfinished"></translation>
     </message>
     <message>
-        <location filename="../ui/reference_library_manager_dialog.py" line="1472"/>
+        <location filename="../ui/reference_library_manager_dialog.py" line="2327"/>
         <source>Length mean</source>
         <translation type="unfinished"></translation>
     </message>
     <message>
-        <location filename="../ui/reference_library_manager_dialog.py" line="1473"/>
+        <location filename="../ui/reference_library_manager_dialog.py" line="2328"/>
         <source>Width min</source>
         <translation type="unfinished"></translation>
     </message>
     <message>
-        <location filename="../ui/reference_library_manager_dialog.py" line="1474"/>
+        <location filename="../ui/reference_library_manager_dialog.py" line="2329"/>
         <source>Width core min</source>
         <translation type="unfinished"></translation>
     </message>
     <message>
-        <location filename="../ui/reference_library_manager_dialog.py" line="1475"/>
+        <location filename="../ui/reference_library_manager_dialog.py" line="2330"/>
         <source>Width core max</source>
         <translation type="unfinished"></translation>
     </message>
     <message>
-        <location filename="../ui/reference_library_manager_dialog.py" line="1476"/>
+        <location filename="../ui/reference_library_manager_dialog.py" line="2331"/>
         <source>Width max</source>
         <translation type="unfinished"></translation>
     </message>
     <message>
-        <location filename="../ui/reference_library_manager_dialog.py" line="1477"/>
+        <location filename="../ui/reference_library_manager_dialog.py" line="2332"/>
         <source>Width mean</source>
         <translation type="unfinished"></translation>
     </message>
     <message>
-        <location filename="../ui/reference_library_manager_dialog.py" line="1478"/>
+        <location filename="../ui/reference_library_manager_dialog.py" line="2333"/>
         <source>Q min</source>
         <translation type="unfinished"></translation>
     </message>
     <message>
-        <location filename="../ui/reference_library_manager_dialog.py" line="1479"/>
+        <location filename="../ui/reference_library_manager_dialog.py" line="2334"/>
         <source>Q mean</source>
         <translation type="unfinished"></translation>
     </message>
     <message>
-        <location filename="../ui/reference_library_manager_dialog.py" line="1480"/>
+        <location filename="../ui/reference_library_manager_dialog.py" line="2335"/>
         <source>Q max</source>
         <translation type="unfinished"></translation>
     </message>
     <message>
-        <location filename="../ui/reference_library_manager_dialog.py" line="1481"/>
+        <location filename="../ui/reference_library_manager_dialog.py" line="2336"/>
         <source>Sample size</source>
         <translation type="unfinished"></translation>
     </message>
     <message>
-        <location filename="../ui/reference_library_manager_dialog.py" line="1482"/>
+        <location filename="../ui/reference_library_manager_dialog.py" line="2337"/>
         <source>Specimen count</source>
         <translation type="unfinished"></translation>
     </message>
     <message>
-        <location filename="../ui/reference_library_manager_dialog.py" line="1490"/>
+        <location filename="../ui/reference_library_manager_dialog.py" line="2345"/>
         <source>Raw points: {count} entries</source>
         <translation type="unfinished"></translation>
     </message>
     <message>
-        <location filename="../ui/reference_library_manager_dialog.py" line="1505"/>
+        <location filename="../ui/reference_library_manager_dialog.py" line="2360"/>
         <source>This measurement set is not plottable yet: it lacks a drawable length/width rectangle, a complete mean pair, or valid raw points.</source>
         <translation type="unfinished"></translation>
     </message>
     <message>
-        <location filename="../ui/reference_library_manager_dialog.py" line="1580"/>
+        <location filename="../ui/reference_library_manager_dialog.py" line="2435"/>
         <source>Compared</source>
         <translation type="unfinished">Verglichen</translation>
     </message>
     <message>
-        <location filename="../ui/reference_library_manager_dialog.py" line="1581"/>
+        <location filename="../ui/reference_library_manager_dialog.py" line="2436"/>
         <source>Supports identification</source>
         <translation type="unfinished">Stützt die Bestimmung</translation>
     </message>
     <message>
-        <location filename="../ui/reference_library_manager_dialog.py" line="1582"/>
+        <location filename="../ui/reference_library_manager_dialog.py" line="2437"/>
         <source>Contradicts</source>
         <translation type="unfinished">Widerspricht</translation>
     </message>
@@ -8952,47 +9010,47 @@ max</translation>
 <context>
     <name>RenameObservationDialog</name>
     <message>
-        <location filename="../ui/observations_tab.py" line="20193"/>
+        <location filename="../ui/observations_tab.py" line="20413"/>
         <source>Rename Observation</source>
         <translation>Beobachtung umbenennen</translation>
     </message>
     <message>
-        <location filename="../ui/observations_tab.py" line="20202"/>
+        <location filename="../ui/observations_tab.py" line="20422"/>
         <source>Unknown</source>
         <translation>Unbekannt</translation>
     </message>
     <message>
-        <location filename="../ui/observations_tab.py" line="20206"/>
+        <location filename="../ui/observations_tab.py" line="20426"/>
         <source>Working title (e.g., Unknown 1)</source>
         <translation>Arbeitstitel (z. B. Unbekannt 1)</translation>
     </message>
     <message>
-        <location filename="../ui/observations_tab.py" line="20215"/>
+        <location filename="../ui/observations_tab.py" line="20435"/>
         <source>Working title:</source>
         <translation>Arbeitstitel:</translation>
     </message>
     <message>
-        <location filename="../ui/observations_tab.py" line="20221"/>
+        <location filename="../ui/observations_tab.py" line="20441"/>
         <source>e.g., Flammulina</source>
         <translation>z. B. Flammulina</translation>
     </message>
     <message>
-        <location filename="../ui/observations_tab.py" line="20226"/>
+        <location filename="../ui/observations_tab.py" line="20446"/>
         <source>e.g., velutipes</source>
         <translation>z. B. velutipes</translation>
     </message>
     <message>
-        <location filename="../ui/observations_tab.py" line="20230"/>
+        <location filename="../ui/observations_tab.py" line="20450"/>
         <source>Uncertain identification</source>
         <translation>Unsichere Bestimmung</translation>
     </message>
     <message>
-        <location filename="../ui/observations_tab.py" line="20235"/>
+        <location filename="../ui/observations_tab.py" line="20455"/>
         <source>Save</source>
         <translation>Speichern</translation>
     </message>
     <message>
-        <location filename="../ui/observations_tab.py" line="20238"/>
+        <location filename="../ui/observations_tab.py" line="20458"/>
         <source>Cancel</source>
         <translation>Abbrechen</translation>
     </message>
@@ -9990,112 +10048,112 @@ Dadurch werden die unten aufgeführten Cloud-Metadatenfelder überschrieben.
 <context>
     <name>_MeasurementSetForm</name>
     <message>
-        <location filename="../ui/reference_library_manager_dialog.py" line="624"/>
+        <location filename="../ui/reference_library_manager_dialog.py" line="1470"/>
         <source>Edit measurement set</source>
         <translation type="unfinished"></translation>
     </message>
     <message>
-        <location filename="../ui/reference_library_manager_dialog.py" line="625"/>
+        <location filename="../ui/reference_library_manager_dialog.py" line="1471"/>
         <source>New measurement set</source>
         <translation type="unfinished"></translation>
     </message>
     <message>
-        <location filename="../ui/reference_library_manager_dialog.py" line="656"/>
+        <location filename="../ui/reference_library_manager_dialog.py" line="1502"/>
         <source>Data kind:</source>
         <translation type="unfinished"></translation>
     </message>
     <message>
-        <location filename="../ui/reference_library_manager_dialog.py" line="660"/>
+        <location filename="../ui/reference_library_manager_dialog.py" line="1506"/>
         <source>e.g. (7.5–)8–10(–10.5) × 5–6(–6.5) µm</source>
         <translation type="unfinished"></translation>
     </message>
     <message>
-        <location filename="../ui/reference_library_manager_dialog.py" line="662"/>
+        <location filename="../ui/reference_library_manager_dialog.py" line="1508"/>
         <source>Raw expression:</source>
         <translation type="unfinished"></translation>
     </message>
     <message>
-        <location filename="../ui/reference_library_manager_dialog.py" line="689"/>
+        <location filename="../ui/reference_library_manager_dialog.py" line="1535"/>
         <source>Length min / core_min / core_max / max (µm):</source>
         <translation type="unfinished"></translation>
     </message>
     <message>
-        <location filename="../ui/reference_library_manager_dialog.py" line="693"/>
+        <location filename="../ui/reference_library_manager_dialog.py" line="1539"/>
         <source>Length mean (µm):</source>
         <translation type="unfinished"></translation>
     </message>
     <message>
-        <location filename="../ui/reference_library_manager_dialog.py" line="704"/>
+        <location filename="../ui/reference_library_manager_dialog.py" line="1550"/>
         <source>Width min / core_min / core_max / max (µm):</source>
         <translation type="unfinished"></translation>
     </message>
     <message>
-        <location filename="../ui/reference_library_manager_dialog.py" line="708"/>
+        <location filename="../ui/reference_library_manager_dialog.py" line="1554"/>
         <source>Width mean (µm):</source>
         <translation type="unfinished"></translation>
     </message>
     <message>
-        <location filename="../ui/reference_library_manager_dialog.py" line="717"/>
+        <location filename="../ui/reference_library_manager_dialog.py" line="1563"/>
         <source>Q min / mean / max:</source>
         <translation type="unfinished"></translation>
     </message>
     <message>
-        <location filename="../ui/reference_library_manager_dialog.py" line="720"/>
+        <location filename="../ui/reference_library_manager_dialog.py" line="1566"/>
         <source>Sample size / specimens:</source>
         <translation type="unfinished"></translation>
     </message>
     <message>
-        <location filename="../ui/reference_library_manager_dialog.py" line="732"/>
+        <location filename="../ui/reference_library_manager_dialog.py" line="1578"/>
         <source>JSON list, e.g. [{&quot;length&quot;: 9.0, &quot;width&quot;: 5.5}, {&quot;length&quot;: 9.5, &quot;width&quot;: 5.7}]</source>
         <translation type="unfinished"></translation>
     </message>
     <message>
-        <location filename="../ui/reference_library_manager_dialog.py" line="737"/>
+        <location filename="../ui/reference_library_manager_dialog.py" line="1583"/>
         <source>Raw points JSON:</source>
         <translation type="unfinished"></translation>
     </message>
     <message>
-        <location filename="../ui/reference_library_manager_dialog.py" line="741"/>
+        <location filename="../ui/reference_library_manager_dialog.py" line="1587"/>
         <source>Mount medium:</source>
         <translation type="unfinished">Montagemedium:</translation>
     </message>
     <message>
-        <location filename="../ui/reference_library_manager_dialog.py" line="743"/>
+        <location filename="../ui/reference_library_manager_dialog.py" line="1589"/>
         <source>Stain:</source>
         <translation type="unfinished">Faerbung:</translation>
     </message>
     <message>
-        <location filename="../ui/reference_library_manager_dialog.py" line="745"/>
+        <location filename="../ui/reference_library_manager_dialog.py" line="1591"/>
         <source>Preparation:</source>
         <translation type="unfinished"></translation>
     </message>
     <message>
-        <location filename="../ui/reference_library_manager_dialog.py" line="747"/>
+        <location filename="../ui/reference_library_manager_dialog.py" line="1593"/>
         <source>Measurement method:</source>
         <translation type="unfinished"></translation>
     </message>
     <message>
-        <location filename="../ui/reference_library_manager_dialog.py" line="751"/>
+        <location filename="../ui/reference_library_manager_dialog.py" line="1597"/>
         <source>Notes:</source>
         <translation type="unfinished">Notizen:</translation>
     </message>
     <message>
-        <location filename="../ui/reference_library_manager_dialog.py" line="770"/>
+        <location filename="../ui/reference_library_manager_dialog.py" line="1616"/>
         <source>Range</source>
         <translation type="unfinished"></translation>
     </message>
     <message>
-        <location filename="../ui/reference_library_manager_dialog.py" line="771"/>
+        <location filename="../ui/reference_library_manager_dialog.py" line="1617"/>
         <source>Summary</source>
         <translation type="unfinished"></translation>
     </message>
     <message>
-        <location filename="../ui/reference_library_manager_dialog.py" line="772"/>
+        <location filename="../ui/reference_library_manager_dialog.py" line="1618"/>
         <source>Raw points</source>
         <translation type="unfinished"></translation>
     </message>
     <message>
-        <location filename="../ui/reference_library_manager_dialog.py" line="773"/>
+        <location filename="../ui/reference_library_manager_dialog.py" line="1619"/>
         <source>Parmasto (read-only)</source>
         <translation type="unfinished"></translation>
     </message>
@@ -10103,316 +10161,389 @@ Dadurch werden die unten aufgeführten Cloud-Metadatenfelder überschrieben.
 <context>
     <name>_ObservationImageBrowser</name>
     <message>
-        <location filename="../ui/observations_tab.py" line="1831"/>
+        <location filename="../ui/observations_tab.py" line="1834"/>
         <source>Previous image (←)</source>
         <translation>Vorheriges Bild (←)</translation>
     </message>
     <message>
-        <location filename="../ui/observations_tab.py" line="1845"/>
+        <location filename="../ui/observations_tab.py" line="1848"/>
         <source>Next image (→)</source>
         <translation>Nächstes Bild (→)</translation>
     </message>
     <message>
-        <location filename="../ui/observations_tab.py" line="1865"/>
-        <location filename="../ui/observations_tab.py" line="1947"/>
+        <location filename="../ui/observations_tab.py" line="1868"/>
+        <location filename="../ui/observations_tab.py" line="1950"/>
         <source>No image selected</source>
         <translation>Kein Bild ausgewählt</translation>
     </message>
     <message>
-        <location filename="../ui/observations_tab.py" line="1876"/>
+        <location filename="../ui/observations_tab.py" line="1879"/>
         <source>Upload to cloud / publish this image</source>
         <translation>In die Cloud hochladen / dieses Bild veröffentlichen</translation>
     </message>
     <message>
-        <location filename="../ui/observations_tab.py" line="1929"/>
-        <location filename="../ui/observations_tab.py" line="2034"/>
+        <location filename="../ui/observations_tab.py" line="1932"/>
+        <location filename="../ui/observations_tab.py" line="2037"/>
         <source>No image available</source>
         <translation>Kein Bild verfügbar</translation>
     </message>
     <message>
-        <location filename="../ui/observations_tab.py" line="2050"/>
+        <location filename="../ui/observations_tab.py" line="2053"/>
         <source>Failed to load image</source>
         <translation>Bild konnte nicht geladen werden</translation>
     </message>
 </context>
 <context>
-    <name>_ReferenceWorkForm</name>
+    <name>_PersonListEditor</name>
     <message>
-        <location filename="../ui/reference_library_manager_dialog.py" line="264"/>
-        <source>Edit reference work</source>
+        <location filename="../ui/reference_library_manager_dialog.py" line="499"/>
+        <source>(no entries)</source>
         <translation type="unfinished"></translation>
     </message>
     <message>
-        <location filename="../ui/reference_library_manager_dialog.py" line="265"/>
-        <source>New reference work</source>
+        <location filename="../ui/reference_library_manager_dialog.py" line="511"/>
+        <source>+ Add author</source>
         <translation type="unfinished"></translation>
     </message>
     <message>
-        <location filename="../ui/reference_library_manager_dialog.py" line="281"/>
-        <source>Type:</source>
+        <location filename="../ui/reference_library_manager_dialog.py" line="592"/>
+        <source>Existing value is not valid JSON and will be kept as-is until you edit the list: {error}</source>
         <translation type="unfinished"></translation>
     </message>
     <message>
-        <location filename="../ui/reference_library_manager_dialog.py" line="284"/>
-        <source>Title:</source>
+        <location filename="../ui/reference_library_manager_dialog.py" line="604"/>
+        <source>Existing value is not a JSON list and will be kept as-is until you edit the list.</source>
         <translation type="unfinished"></translation>
     </message>
     <message>
-        <location filename="../ui/reference_library_manager_dialog.py" line="288"/>
-        <source>Auto-generated when blank</source>
+        <location filename="../ui/reference_library_manager_dialog.py" line="631"/>
+        <source>One or more entries could not be understood; the original value will be kept until you edit the list.</source>
+        <translation type="unfinished"></translation>
+    </message>
+</context>
+<context>
+    <name>_PersonRow</name>
+    <message>
+        <location filename="../ui/reference_library_manager_dialog.py" line="385"/>
+        <source>Family name</source>
         <translation type="unfinished"></translation>
     </message>
     <message>
-        <location filename="../ui/reference_library_manager_dialog.py" line="290"/>
-        <source>Short label:</source>
-        <translation type="unfinished"></translation>
-    </message>
-    <message>
-        <location filename="../ui/reference_library_manager_dialog.py" line="293"/>
-        <source>e.g. 1990</source>
-        <translation type="unfinished"></translation>
-    </message>
-    <message>
-        <location filename="../ui/reference_library_manager_dialog.py" line="294"/>
-        <source>Year:</source>
-        <translation type="unfinished"></translation>
-    </message>
-    <message>
-        <location filename="../ui/reference_library_manager_dialog.py" line="298"/>
-        <location filename="../ui/reference_library_manager_dialog.py" line="305"/>
-        <source>JSON list of {family, given} entries</source>
-        <translation type="unfinished"></translation>
-    </message>
-    <message>
-        <location filename="../ui/reference_library_manager_dialog.py" line="300"/>
-        <source>Authors JSON:</source>
-        <translation type="unfinished"></translation>
-    </message>
-    <message>
-        <location filename="../ui/reference_library_manager_dialog.py" line="308"/>
-        <source>Editors JSON:</source>
-        <translation type="unfinished"></translation>
-    </message>
-    <message>
-        <location filename="../ui/reference_library_manager_dialog.py" line="312"/>
-        <source>Optional short key, e.g. petersen-1990</source>
-        <translation type="unfinished"></translation>
-    </message>
-    <message>
-        <location filename="../ui/reference_library_manager_dialog.py" line="314"/>
-        <source>Citation key:</source>
-        <translation type="unfinished"></translation>
-    </message>
-    <message>
-        <location filename="../ui/reference_library_manager_dialog.py" line="317"/>
-        <source>Container title:</source>
-        <translation type="unfinished"></translation>
-    </message>
-    <message>
-        <location filename="../ui/reference_library_manager_dialog.py" line="320"/>
-        <source>Edition:</source>
-        <translation type="unfinished"></translation>
-    </message>
-    <message>
-        <location filename="../ui/reference_library_manager_dialog.py" line="323"/>
-        <source>Volume:</source>
-        <translation type="unfinished"></translation>
-    </message>
-    <message>
-        <location filename="../ui/reference_library_manager_dialog.py" line="326"/>
-        <source>Issue:</source>
-        <translation type="unfinished"></translation>
-    </message>
-    <message>
-        <location filename="../ui/reference_library_manager_dialog.py" line="329"/>
-        <source>Pages:</source>
-        <translation type="unfinished"></translation>
-    </message>
-    <message>
-        <location filename="../ui/reference_library_manager_dialog.py" line="332"/>
-        <source>Publisher:</source>
-        <translation type="unfinished"></translation>
-    </message>
-    <message>
-        <location filename="../ui/reference_library_manager_dialog.py" line="335"/>
-        <source>Place:</source>
-        <translation type="unfinished"></translation>
-    </message>
-    <message>
-        <location filename="../ui/reference_library_manager_dialog.py" line="338"/>
-        <source>DOI:</source>
-        <translation type="unfinished"></translation>
-    </message>
-    <message>
-        <location filename="../ui/reference_library_manager_dialog.py" line="341"/>
-        <source>ISBN:</source>
-        <translation type="unfinished"></translation>
-    </message>
-    <message>
-        <location filename="../ui/reference_library_manager_dialog.py" line="344"/>
-        <source>URL:</source>
-        <translation type="unfinished"></translation>
-    </message>
-    <message>
-        <location filename="../ui/reference_library_manager_dialog.py" line="347"/>
-        <source>ISO code, e.g. en</source>
-        <translation type="unfinished"></translation>
-    </message>
-    <message>
-        <location filename="../ui/reference_library_manager_dialog.py" line="348"/>
-        <source>Language:</source>
-        <translation type="unfinished"></translation>
-    </message>
-    <message>
-        <location filename="../ui/reference_library_manager_dialog.py" line="352"/>
-        <source>Optional full citation override text</source>
-        <translation type="unfinished"></translation>
-    </message>
-    <message>
-        <location filename="../ui/reference_library_manager_dialog.py" line="355"/>
-        <source>Citation override:</source>
-        <translation type="unfinished"></translation>
-    </message>
-    <message>
-        <location filename="../ui/reference_library_manager_dialog.py" line="363"/>
-        <source>Verification:</source>
-        <translation type="unfinished"></translation>
-    </message>
-    <message>
-        <location filename="../ui/reference_library_manager_dialog.py" line="371"/>
-        <source>Visibility:</source>
+        <location filename="../ui/reference_library_manager_dialog.py" line="387"/>
+        <source>Given names</source>
         <translation type="unfinished"></translation>
     </message>
     <message>
         <location filename="../ui/reference_library_manager_dialog.py" line="390"/>
-        <source>Book</source>
-        <translation type="unfinished"></translation>
-    </message>
-    <message>
-        <location filename="../ui/reference_library_manager_dialog.py" line="391"/>
-        <source>Article</source>
-        <translation type="unfinished"></translation>
-    </message>
-    <message>
-        <location filename="../ui/reference_library_manager_dialog.py" line="392"/>
-        <source>Chapter</source>
-        <translation type="unfinished"></translation>
-    </message>
-    <message>
-        <location filename="../ui/reference_library_manager_dialog.py" line="393"/>
-        <source>Website</source>
-        <translation type="unfinished"></translation>
-    </message>
-    <message>
-        <location filename="../ui/reference_library_manager_dialog.py" line="394"/>
-        <source>Dataset</source>
+        <source>Organization (optional)</source>
         <translation type="unfinished"></translation>
     </message>
     <message>
         <location filename="../ui/reference_library_manager_dialog.py" line="395"/>
-        <source>Other</source>
-        <translation type="unfinished">Sonstige</translation>
-    </message>
-    <message>
-        <location filename="../ui/reference_library_manager_dialog.py" line="400"/>
-        <source>Incomplete</source>
+        <source>Move up</source>
         <translation type="unfinished"></translation>
     </message>
     <message>
         <location filename="../ui/reference_library_manager_dialog.py" line="401"/>
-        <source>Unverified</source>
-        <translation type="unfinished"></translation>
-    </message>
-    <message>
-        <location filename="../ui/reference_library_manager_dialog.py" line="402"/>
-        <source>Verified</source>
+        <source>Move down</source>
         <translation type="unfinished"></translation>
     </message>
     <message>
         <location filename="../ui/reference_library_manager_dialog.py" line="407"/>
-        <source>Private</source>
-        <translation type="unfinished">Privat</translation>
+        <source>Remove</source>
+        <translation type="unfinished"></translation>
     </message>
+</context>
+<context>
+    <name>_ReferenceWorkForm</name>
     <message>
-        <location filename="../ui/reference_library_manager_dialog.py" line="408"/>
-        <source>Shared</source>
+        <location filename="../ui/reference_library_manager_dialog.py" line="800"/>
+        <source>Edit reference work</source>
         <translation type="unfinished"></translation>
     </message>
     <message>
-        <location filename="../ui/reference_library_manager_dialog.py" line="409"/>
-        <source>Curated public</source>
+        <location filename="../ui/reference_library_manager_dialog.py" line="801"/>
+        <source>New reference work</source>
         <translation type="unfinished"></translation>
+    </message>
+    <message>
+        <location filename="../ui/reference_library_manager_dialog.py" line="871"/>
+        <source>Type:</source>
+        <translation type="unfinished"></translation>
+    </message>
+    <message>
+        <location filename="../ui/reference_library_manager_dialog.py" line="876"/>
+        <source>Title:</source>
+        <translation type="unfinished"></translation>
+    </message>
+    <message>
+        <location filename="../ui/reference_library_manager_dialog.py" line="1085"/>
+        <source>Short label:</source>
+        <translation type="unfinished"></translation>
+    </message>
+    <message>
+        <location filename="../ui/reference_library_manager_dialog.py" line="885"/>
+        <source>e.g. 1990</source>
+        <translation type="unfinished"></translation>
+    </message>
+    <message>
+        <location filename="../ui/reference_library_manager_dialog.py" line="888"/>
+        <source>Year:</source>
+        <translation type="unfinished"></translation>
+    </message>
+    <message>
+        <location filename="../ui/reference_library_manager_dialog.py" line="1038"/>
+        <source>Optional short key, e.g. petersen-1990</source>
+        <translation type="unfinished"></translation>
+    </message>
+    <message>
+        <location filename="../ui/reference_library_manager_dialog.py" line="1041"/>
+        <source>Citation key:</source>
+        <translation type="unfinished"></translation>
+    </message>
+    <message>
+        <location filename="../ui/reference_library_manager_dialog.py" line="916"/>
+        <source>Container title:</source>
+        <translation type="unfinished"></translation>
+    </message>
+    <message>
+        <location filename="../ui/reference_library_manager_dialog.py" line="864"/>
+        <source>Basic information</source>
+        <translation type="unfinished"></translation>
+    </message>
+    <message>
+        <location filename="../ui/reference_library_manager_dialog.py" line="879"/>
+        <source>+ Add author</source>
+        <translation type="unfinished"></translation>
+    </message>
+    <message>
+        <location filename="../ui/reference_library_manager_dialog.py" line="882"/>
+        <source>Authors:</source>
+        <translation type="unfinished"></translation>
+    </message>
+    <message>
+        <location filename="../ui/reference_library_manager_dialog.py" line="906"/>
+        <source>Publication details</source>
+        <translation type="unfinished"></translation>
+    </message>
+    <message>
+        <location filename="../ui/reference_library_manager_dialog.py" line="921"/>
+        <source>+ Add editor</source>
+        <translation type="unfinished"></translation>
+    </message>
+    <message>
+        <location filename="../ui/reference_library_manager_dialog.py" line="927"/>
+        <source>Editors:</source>
+        <translation type="unfinished"></translation>
+    </message>
+    <message>
+        <location filename="../ui/reference_library_manager_dialog.py" line="937"/>
+        <source>Edition:</source>
+        <translation type="unfinished"></translation>
+    </message>
+    <message>
+        <location filename="../ui/reference_library_manager_dialog.py" line="947"/>
+        <source>Volume:</source>
+        <translation type="unfinished"></translation>
+    </message>
+    <message>
+        <location filename="../ui/reference_library_manager_dialog.py" line="957"/>
+        <source>Issue:</source>
+        <translation type="unfinished"></translation>
+    </message>
+    <message>
+        <location filename="../ui/reference_library_manager_dialog.py" line="967"/>
+        <source>Pages:</source>
+        <translation type="unfinished"></translation>
+    </message>
+    <message>
+        <location filename="../ui/reference_library_manager_dialog.py" line="977"/>
+        <source>Publisher:</source>
+        <translation type="unfinished"></translation>
+    </message>
+    <message>
+        <location filename="../ui/reference_library_manager_dialog.py" line="987"/>
+        <source>Place:</source>
+        <translation type="unfinished"></translation>
+    </message>
+    <message>
+        <location filename="../ui/reference_library_manager_dialog.py" line="994"/>
+        <source>Identifiers</source>
+        <translation type="unfinished"></translation>
+    </message>
+    <message>
+        <location filename="../ui/reference_library_manager_dialog.py" line="998"/>
+        <source>e.g. 10.1234/abcd</source>
+        <translation type="unfinished"></translation>
+    </message>
+    <message>
+        <location filename="../ui/reference_library_manager_dialog.py" line="1001"/>
+        <source>DOI:</source>
+        <translation type="unfinished"></translation>
+    </message>
+    <message>
+        <location filename="../ui/reference_library_manager_dialog.py" line="1004"/>
+        <source>digits or ISBN-10/13</source>
+        <translation type="unfinished"></translation>
+    </message>
+    <message>
+        <location filename="../ui/reference_library_manager_dialog.py" line="1006"/>
+        <source>ISBN:</source>
+        <translation type="unfinished"></translation>
+    </message>
+    <message>
+        <location filename="../ui/reference_library_manager_dialog.py" line="1009"/>
+        <source>https://…</source>
+        <translation type="unfinished"></translation>
+    </message>
+    <message>
+        <location filename="../ui/reference_library_manager_dialog.py" line="1012"/>
+        <source>URL:</source>
+        <translation type="unfinished"></translation>
+    </message>
+    <message>
+        <location filename="../ui/reference_library_manager_dialog.py" line="1018"/>
+        <source>Advanced citation details</source>
+        <translation type="unfinished"></translation>
+    </message>
+    <message>
+        <location filename="../ui/reference_library_manager_dialog.py" line="1028"/>
+        <source>Override — leave blank to use the generated value</source>
+        <translation type="unfinished"></translation>
+    </message>
+    <message>
+        <location filename="../ui/reference_library_manager_dialog.py" line="1033"/>
+        <source>Short label override:</source>
+        <translation type="unfinished"></translation>
+    </message>
+    <message>
+        <location filename="../ui/reference_library_manager_dialog.py" line="1044"/>
+        <source>ISO code, e.g. en</source>
+        <translation type="unfinished"></translation>
+    </message>
+    <message>
+        <location filename="../ui/reference_library_manager_dialog.py" line="1046"/>
+        <source>Language:</source>
+        <translation type="unfinished"></translation>
+    </message>
+    <message>
+        <location filename="../ui/reference_library_manager_dialog.py" line="1051"/>
+        <source>Override — leave blank to use the generated full citation</source>
+        <translation type="unfinished"></translation>
+    </message>
+    <message>
+        <location filename="../ui/reference_library_manager_dialog.py" line="1057"/>
+        <source>Full citation override:</source>
+        <translation type="unfinished"></translation>
+    </message>
+    <message>
+        <location filename="../ui/reference_library_manager_dialog.py" line="1064"/>
+        <source>Preview</source>
+        <translation type="unfinished">Vorschau</translation>
+    </message>
+    <message>
+        <location filename="../ui/reference_library_manager_dialog.py" line="1076"/>
+        <location filename="../ui/reference_library_manager_dialog.py" line="1093"/>
+        <source>(manual override)</source>
+        <translation type="unfinished"></translation>
+    </message>
+    <message>
+        <location filename="../ui/reference_library_manager_dialog.py" line="1102"/>
+        <source>Full citation:</source>
+        <translation type="unfinished"></translation>
+    </message>
+    <message>
+        <location filename="../ui/reference_library_manager_dialog.py" line="1107"/>
+        <source>Missing:</source>
+        <translation type="unfinished"></translation>
+    </message>
+    <message>
+        <location filename="../ui/reference_library_manager_dialog.py" line="1305"/>
+        <source>Title is required.</source>
+        <translation type="unfinished"></translation>
+    </message>
+    <message>
+        <location filename="../ui/reference_library_manager_dialog.py" line="1310"/>
+        <source>Year must be blank or a whole number.</source>
+        <translation type="unfinished"></translation>
+    </message>
+    <message>
+        <location filename="../ui/reference_library_manager_dialog.py" line="1115"/>
+        <source>Book</source>
+        <translation type="unfinished"></translation>
+    </message>
+    <message>
+        <location filename="../ui/reference_library_manager_dialog.py" line="1116"/>
+        <source>Article</source>
+        <translation type="unfinished"></translation>
+    </message>
+    <message>
+        <location filename="../ui/reference_library_manager_dialog.py" line="1117"/>
+        <source>Chapter</source>
+        <translation type="unfinished"></translation>
+    </message>
+    <message>
+        <location filename="../ui/reference_library_manager_dialog.py" line="1118"/>
+        <source>Website</source>
+        <translation type="unfinished"></translation>
+    </message>
+    <message>
+        <location filename="../ui/reference_library_manager_dialog.py" line="1119"/>
+        <source>Dataset</source>
+        <translation type="unfinished"></translation>
+    </message>
+    <message>
+        <location filename="../ui/reference_library_manager_dialog.py" line="1120"/>
+        <source>Other</source>
+        <translation type="unfinished">Sonstige</translation>
     </message>
 </context>
 <context>
     <name>_TaxonTreatmentForm</name>
     <message>
-        <location filename="../ui/reference_library_manager_dialog.py" line="506"/>
+        <location filename="../ui/reference_library_manager_dialog.py" line="1352"/>
         <source>Edit taxon treatment</source>
         <translation type="unfinished"></translation>
     </message>
     <message>
-        <location filename="../ui/reference_library_manager_dialog.py" line="507"/>
+        <location filename="../ui/reference_library_manager_dialog.py" line="1353"/>
         <source>New taxon treatment</source>
         <translation type="unfinished"></translation>
     </message>
     <message>
-        <location filename="../ui/reference_library_manager_dialog.py" line="520"/>
+        <location filename="../ui/reference_library_manager_dialog.py" line="1366"/>
         <source>Name as published:</source>
         <translation type="unfinished"></translation>
     </message>
     <message>
-        <location filename="../ui/reference_library_manager_dialog.py" line="523"/>
+        <location filename="../ui/reference_library_manager_dialog.py" line="1369"/>
         <source>Optional taxon id</source>
         <translation type="unfinished"></translation>
     </message>
     <message>
-        <location filename="../ui/reference_library_manager_dialog.py" line="524"/>
+        <location filename="../ui/reference_library_manager_dialog.py" line="1370"/>
         <source>Taxon id:</source>
         <translation type="unfinished"></translation>
     </message>
     <message>
-        <location filename="../ui/reference_library_manager_dialog.py" line="527"/>
+        <location filename="../ui/reference_library_manager_dialog.py" line="1373"/>
         <source>Page from:</source>
         <translation type="unfinished"></translation>
     </message>
     <message>
-        <location filename="../ui/reference_library_manager_dialog.py" line="530"/>
+        <location filename="../ui/reference_library_manager_dialog.py" line="1376"/>
         <source>Page to:</source>
         <translation type="unfinished"></translation>
     </message>
     <message>
-        <location filename="../ui/reference_library_manager_dialog.py" line="533"/>
+        <location filename="../ui/reference_library_manager_dialog.py" line="1379"/>
         <source>Locator text:</source>
         <translation type="unfinished"></translation>
     </message>
     <message>
-        <location filename="../ui/reference_library_manager_dialog.py" line="537"/>
+        <location filename="../ui/reference_library_manager_dialog.py" line="1383"/>
         <source>Notes:</source>
         <translation type="unfinished">Notizen:</translation>
-    </message>
-</context>
-<context>
-    <name>_VerificationBadge</name>
-    <message>
-        <location filename="../ui/reference_library_manager_dialog.py" line="232"/>
-        <source>Incomplete</source>
-        <translation type="unfinished"></translation>
-    </message>
-    <message>
-        <location filename="../ui/reference_library_manager_dialog.py" line="233"/>
-        <source>Unverified</source>
-        <translation type="unfinished"></translation>
-    </message>
-    <message>
-        <location filename="../ui/reference_library_manager_dialog.py" line="234"/>
-        <source>Verified</source>
-        <translation type="unfinished"></translation>
-    </message>
-    <message>
-        <location filename="../ui/reference_library_manager_dialog.py" line="236"/>
-        <source>Unknown</source>
-        <translation type="unfinished">Unbekannt</translation>
     </message>
 </context>
 <context>

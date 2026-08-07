@@ -48,6 +48,17 @@ CLOUD_IMAGE_STATE_UPLOADED = "uploaded"
 CLOUD_IMAGE_STATE_DELETE_PENDING = "delete_pending"
 CLOUD_IMAGE_STATE_DELETED = "deleted"
 
+
+def derive_image_cloud_state(cloud_id, tombstone: dict | None) -> str:
+    """Return the canonical actual cloud state for one local image row."""
+    if not str(cloud_id or "").strip():
+        return CLOUD_IMAGE_STATE_NONE
+    if not tombstone:
+        return CLOUD_IMAGE_STATE_UPLOADED
+    if str(tombstone.get("delete_synced_at") or "").strip():
+        return CLOUD_IMAGE_STATE_DELETED
+    return CLOUD_IMAGE_STATE_DELETE_PENDING
+
 # Stage 3B.3: whitelist of taxon-rank values the observation editor may
 # persist. Anything outside this set (including empty string) is coerced to
 # NULL so the observation store never carries garbage ranks like "section"
@@ -108,6 +119,7 @@ _CLOUD_SQLITE_SETTING_PREFIXES = (
     "sporely_cloud_snapshot_obs_",
     "sporely_cloud_image_file_sig_",
     "sporely_cloud_local_media_sig_obs_",
+    "sporely_cloud_explicit_image_restore_source_",
 )
 _CLOUD_SQLITE_SETTING_KEYS = {
     "sporely_cloud_media_signature_v1",
@@ -2319,6 +2331,53 @@ class ImageDB:
         if not cloud_id:
             return None
         return get_image_tombstones_by_deleted_cloud_id([cloud_id]).get(cloud_id)
+
+    @staticmethod
+    def get_image_cloud_states(image_ids) -> dict[int, dict]:
+        """Return canonical cloud state records for the requested image IDs."""
+        requested: list[int] = []
+        seen: set[int] = set()
+        for raw_id in image_ids or []:
+            try:
+                image_id = int(raw_id)
+            except (TypeError, ValueError):
+                continue
+            if image_id <= 0 or image_id in seen:
+                continue
+            seen.add(image_id)
+            requested.append(image_id)
+        if not requested:
+            return {}
+
+        conn = get_connection()
+        try:
+            conn.row_factory = sqlite3.Row
+            placeholders = ", ".join("?" for _ in requested)
+            rows = conn.execute(
+                f"SELECT id, cloud_id FROM images WHERE id IN ({placeholders})",
+                requested,
+            ).fetchall()
+        finally:
+            conn.close()
+
+        cloud_ids = {
+            str(row["cloud_id"] or "").strip()
+            for row in rows
+            if str(row["cloud_id"] or "").strip()
+        }
+        tombstones = get_image_tombstones_by_deleted_cloud_id(cloud_ids)
+        states: dict[int, dict] = {}
+        for row in rows:
+            image_id = int(row["id"])
+            cloud_id = str(row["cloud_id"] or "").strip() or None
+            tombstone = tombstones.get(cloud_id) if cloud_id else None
+            states[image_id] = {
+                "image_id": image_id,
+                "cloud_id": cloud_id,
+                "cloud_state": derive_image_cloud_state(cloud_id, tombstone),
+                "tombstone": tombstone,
+            }
+        return states
 
     @staticmethod
     def queue_image_tombstone_for_local_image(image_id: int) -> str | None:

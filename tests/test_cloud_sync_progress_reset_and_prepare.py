@@ -443,6 +443,91 @@ def test_reconcile_metadata_only_linked_images_leaves_changed_bytes_alone(monkey
     assert client.push_image_metadata_calls == []
 
 
+@pytest.mark.parametrize(
+    ("synced_at", "expect_skipped"),
+    [
+        ("2999-01-01T00:00:00Z", True),
+        ("2000-01-01T00:00:00Z", False),
+    ],
+)
+def test_reconcile_linked_image_without_broad_signature_uses_image_sync_time(
+    monkeypatch,
+    tmp_path,
+    synced_at,
+    expect_skipped,
+):
+    """A cleared observation signature must not itself force linked reuploads.
+
+    The image's own sync timestamp still distinguishes an unchanged source
+    from a file modified after its last successful upload.
+    """
+    db_path = _init_db(tmp_path)
+    _patch_connections(monkeypatch, db_path)
+    image_path = tmp_path / "linked-without-baseline.jpg"
+    image_path.write_bytes(b"linked-bytes")
+    conn = sqlite3.connect(db_path)
+    try:
+        conn.execute(
+            "INSERT INTO observations (id, cloud_id, sync_status) VALUES (?, ?, ?)",
+            (93, "cloud-obs-93", "dirty"),
+        )
+        conn.execute(
+            "INSERT INTO images (id, observation_id, cloud_id, filepath, image_type, "
+            "sort_order, synced_at, source_role, file_purpose) "
+            "VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)",
+            (
+                703,
+                93,
+                "cloud-image-703",
+                str(image_path),
+                "field",
+                0,
+                synced_at,
+                "local_canonical",
+                "field",
+            ),
+        )
+        conn.commit()
+    finally:
+        conn.close()
+
+    class _StubClient:
+        user_id = "user-1"
+
+        def _observation_images_support_ai_crop(self):
+            return False
+
+        def _observation_images_support_ai_crop_custom(self):
+            return False
+
+        def _observation_images_support_upload_metadata(self):
+            return False
+
+        def _observation_images_support_original_storage_path(self):
+            return False
+
+        def push_image_metadata(self, img, obs_cloud_id, storage_path):
+            return "cloud-image-703"
+
+    skip_ids = cloud_sync._reconcile_metadata_only_linked_images(
+        _StubClient(),
+        {"id": 93},
+        "cloud-obs-93",
+        [
+            {
+                "id": "cloud-image-703",
+                "desktop_id": 703,
+                "image_type": "field",
+                "sort_order": 0,
+                "storage_path": "user-1/cloud-obs-93/cloud-image-703.webp",
+                "original_filename": image_path.name,
+            }
+        ],
+    )
+
+    assert skip_ids == ({703} if expect_skipped else set())
+
+
 def test_reconcile_metadata_only_linked_images_never_prepares_recovery_cache_bytes(
     monkeypatch, tmp_path
 ):

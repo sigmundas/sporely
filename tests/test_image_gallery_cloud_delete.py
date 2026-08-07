@@ -258,6 +258,33 @@ def test_mark_cloud_delete_pending_no_publish_change_no_signal(tmp_path):
     assert emitted == []
 
 
+def test_refresh_cloud_states_removes_stale_uploaded_badge_for_synced_tombstone(
+    monkeypatch, tmp_path
+):
+    _ensure_qapp()
+    widget = ImageGalleryWidget("Images", show_delete_cloud_copy=True)
+    items = _mixed_cloud_items(tmp_path)
+    widget.set_items([items[0]])
+    assert ImageGalleryWidget._cloud_badge_visible(widget._items[0]) is True
+
+    monkeypatch.setattr(
+        gallery_module.ImageDB,
+        "get_image_cloud_states",
+        lambda image_ids: {
+            1: {
+                "image_id": 1,
+                "cloud_id": "cloud-1",
+                "cloud_state": CLOUD_IMAGE_STATE_DELETED,
+            }
+        },
+    )
+
+    assert widget.refresh_cloud_states() == 1
+    assert widget._items[0]["cloud_state"] == CLOUD_IMAGE_STATE_DELETED
+    assert widget._items[0]["cloud_uploaded"] is False
+    assert ImageGalleryWidget._cloud_badge_visible(widget._items[0]) is False
+
+
 def test_show_delete_cloud_copy_disabled_never_adds_menu_entry(monkeypatch, tmp_path):
     _ensure_qapp()
     widget = ImageGalleryWidget("Images")  # default: show_delete_cloud_copy=False

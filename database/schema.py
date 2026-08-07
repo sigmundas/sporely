@@ -1108,6 +1108,29 @@ def _ensure_image_tombstones_table(cursor: sqlite3.Cursor) -> None:
     )
 
 
+def _repair_remote_tombstones_hiding_active_images(cursor: sqlite3.Cursor) -> int:
+    """Detach remote tombstones that were incorrectly tied to active images.
+
+    A completed local image deletion removes the image row in the same
+    transaction that creates its tombstone.  A tombstone whose
+    ``local_image_id`` still resolves to an active image therefore came from
+    the former remote-tombstone reconciliation bug, not a local deletion.
+    """
+    cursor.execute(
+        """
+        UPDATE image_tombstones
+        SET local_image_id = NULL
+        WHERE local_image_id IS NOT NULL
+          AND EXISTS (
+              SELECT 1
+              FROM images AS i
+              WHERE i.id = image_tombstones.local_image_id
+          )
+        """
+    )
+    return max(int(cursor.rowcount or 0), 0)
+
+
 def init_database():
     """Initialize the database with required tables"""
     db_path = get_database_path()
@@ -1769,6 +1792,12 @@ def init_database():
     ''')
 
     _ensure_image_tombstones_table(cursor)
+    repaired_remote_tombstones = _repair_remote_tombstones_hiding_active_images(cursor)
+    if repaired_remote_tombstones:
+        print(
+            "[cloud_sync] Repaired "
+            f"{repaired_remote_tombstones} remote tombstones that incorrectly hid active local images"
+        )
 
     # Calibrations table for storing objective calibration history
     cursor.execute('''

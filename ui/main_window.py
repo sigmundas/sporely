@@ -7825,7 +7825,7 @@ class MainWindow(GeometryMixin, QMainWindow):
             min_height=GALLERY_MIN_HEIGHT,
             default_height=GALLERY_DEFAULT_HEIGHT,
             show_publish_checkbox=True,
-            publish_checkbox_hint=self.tr("Select image for external publishing"),
+            publish_checkbox_hint=self.tr("Keep image in Sporely Cloud"),
         )
         self.measure_gallery.set_multi_select(True)
         self.measure_gallery.set_reorderable(True)
@@ -12644,23 +12644,43 @@ class MainWindow(GeometryMixin, QMainWindow):
         excluded = {img_id for img_id in excluded if img_id in all_image_ids}
         selected = set(all_image_ids) - set(excluded)
         self.measure_gallery.set_publish_selected_ids(selected, emit_signal=False)
+        if hasattr(self.measure_gallery, "refresh_cloud_states"):
+            self.measure_gallery.refresh_cloud_states(all_image_ids)
 
     def _on_measure_gallery_publish_selection_changed(self, selected_ids) -> None:
         if not self.active_observation_id:
             return
+        obs_id = int(self.active_observation_id)
         all_image_ids = {
             int(image.get("id"))
             for image in (self.observation_images or [])
             if image.get("id") is not None
+        }
+        previous_excluded = self._get_publish_excluded_image_ids_for_observation(obs_id)
+        previous_selected = all_image_ids - {
+            int(image_id) for image_id in previous_excluded if int(image_id) in all_image_ids
         }
         try:
             selected_set = {int(v) for v in (selected_ids or set())}
         except Exception:
             selected_set = set()
         excluded = set(all_image_ids) - set(selected_set)
-        self._set_publish_excluded_image_ids_for_observation(self.active_observation_id, excluded)
+        unchecked_ids = previous_selected - selected_set
+        rechecked_ids = selected_set - previous_selected
+        self._set_publish_excluded_image_ids_for_observation(obs_id, excluded)
+        changed_ids = unchecked_ids | rechecked_ids
+        if changed_ids:
+            from utils import cloud_sync as cloud_sync_module
+            for image_id in sorted(changed_ids):
+                cloud_sync_module.set_image_cloud_selected(
+                    image_id,
+                    image_id in selected_set,
+                )
+            gallery = getattr(self, "measure_gallery", None)
+            if gallery is not None and hasattr(gallery, "refresh_cloud_states"):
+                gallery.refresh_cloud_states(changed_ids)
         if hasattr(self, "_sync_observations_tab_publish_state"):
-            self._sync_observations_tab_publish_state(self.active_observation_id, excluded)
+            self._sync_observations_tab_publish_state(obs_id, excluded)
 
     def _sync_observations_tab_publish_state(self, observation_id: int | None, excluded_ids: set[int] | None = None) -> None:
         """Keep Observations tab publish checkboxes in sync with Measure tab edits."""

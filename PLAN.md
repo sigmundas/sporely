@@ -629,6 +629,11 @@ Status: Done. Unchecking a selected field or microscope image now queues a tombs
 global tombstone queue is flushed even when no observation is otherwise dirty. R2 object purging
 remains separate Stage E3 work.
 
+The gallery checkbox is the desired cloud state. Its shared transition queues deletion from
+`UPLOADED`, cancels an unsynced `DELETE_PENDING` tombstone on recheck, and uses image-specific
+explicit restore from `DELETED`. Badges show actual state only: normal for `UPLOADED`, delete
+pending for `DELETE_PENDING`, and none for `NONE`/`DELETED`.
+
 - Treat `public.observation_images.deleted_at` as the deletion source of truth.
 - Cloud image tombstones must sync to desktop without opening the conflict dialog when image identity is clear.
 - Web-deleted images must create/update local tombstones and block reupload.

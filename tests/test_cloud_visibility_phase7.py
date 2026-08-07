@@ -4548,7 +4548,7 @@ def test_pull_all_ignores_cloud_tombstone_even_when_local_media_changed(monkeypa
     assert result["errors"] == []
     assert result["pulled"] == 1
     assert bulk_calls == [("cloud-obs-1",)]
-    assert tombstone == ("cloud-image-1", "2026-05-29 10:22:16", 1, 11)
+    assert tombstone == ("cloud-image-1", "2026-05-29 10:22:16", 1, None)
     assert image_row == 1
     assert observation == ("cloud-obs-1", "dirty")
 
@@ -4964,7 +4964,7 @@ def test_import_remote_images_records_deleted_rows_and_imports_only_active_rows(
         "user/cloud-obs-1/cloud-image-1_deleted.jpg",
         "cloud-obs-1",
         1,
-        11,
+        None,
     )
     assert image_rows == [
         (11, "cloud-image-1"),

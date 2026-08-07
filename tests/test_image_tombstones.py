@@ -46,6 +46,10 @@ def _create_image_tombstone_test_db(conn: sqlite3.Connection) -> None:
             created_at TEXT DEFAULT CURRENT_TIMESTAMP,
             UNIQUE(image_id, size_preset)
         );
+        CREATE TABLE settings (
+            key TEXT PRIMARY KEY,
+            value TEXT
+        );
         """
     )
     schema._ensure_image_tombstones_table(conn.cursor())
@@ -439,7 +443,9 @@ def test_delete_cloud_copy_regression_end_to_end(monkeypatch, tmp_path):
         (recovered pending == 0);
       * the sync push calls ``soft_delete_image(cloud_id, ...)`` exactly
         once, marks the tombstone synced, and empties the pending queue;
-      * the local image row remains after the sync.
+      * the server's deleted-row echo does not attach the tombstone to the
+        active image or hide it from the gallery;
+      * all local image data and files remain after the sync.
     """
     db_path = tmp_path / "delete_cloud_regression.sqlite"
     conn = sqlite3.connect(db_path)
@@ -511,8 +517,262 @@ def test_delete_cloud_copy_regression_end_to_end(monkeypatch, tmp_path):
     finally:
         conn.close()
     assert synced_at is not None
+
+    # The server returns the same row with deleted_at during the pull phase.
+    # This used to populate local_image_id and hide the preserved local image.
+    cloud_sync._record_remote_image_tombstones(
+        [
+            {
+                "id": fixture["image_cloud_id"],
+                "observation_id": fixture["observation_cloud_id"],
+                "deleted_at": "2026-05-01 11:00:00",
+                "storage_path": "user/cloud-obs-1/cloud-image-1.jpg",
+            }
+        ],
+        local_observation_id=fixture["observation_id"],
+        cloud_observation_id=fixture["observation_cloud_id"],
+    )
+
+    conn = sqlite3.connect(db_path)
+    try:
+        local_image_id = conn.execute(
+            "SELECT local_image_id FROM image_tombstones WHERE deleted_cloud_id = ?",
+            (fixture["image_cloud_id"],),
+        ).fetchone()[0]
+        measurements = conn.execute(
+            "SELECT * FROM spore_measurements WHERE image_id = ?",
+            (fixture["image_id"],),
+        ).fetchall()
+        annotations = conn.execute(
+            "SELECT * FROM spore_annotations WHERE image_id = ? OR measurement_id = ? ORDER BY id",
+            (fixture["image_id"], fixture["measurement_id"]),
+        ).fetchall()
+        thumbnails = conn.execute(
+            "SELECT * FROM thumbnails WHERE image_id = ?",
+            (fixture["image_id"],),
+        ).fetchall()
+    finally:
+        conn.close()
+
+    assert local_image_id is None
+    assert len(measurements) == 1
+    assert len(annotations) == 2
+    assert len(thumbnails) == 1
+    assert fixture["image_path"].exists()
+    assert fixture["original_path"].exists()
+    assert fixture["thumbnail_path"].exists()
+
+
+def test_cloud_selection_uncheck_queues_delete_and_preserves_local_data(monkeypatch, tmp_path):
+    db_path = tmp_path / "selection-uncheck.sqlite"
+    conn = sqlite3.connect(db_path)
+    try:
+        _create_image_tombstone_test_db(conn)
+    finally:
+        conn.close()
+    fixture = _seed_delete_fixture(db_path, synced=True)
+    monkeypatch.setattr(models, "get_connection", lambda: sqlite3.connect(db_path))
+    monkeypatch.setattr(cloud_sync, "get_connection", lambda: sqlite3.connect(db_path))
+
+    transition = cloud_sync.set_image_cloud_selected(fixture["image_id"], False)
+
+    assert transition["previous_state"] == models.CLOUD_IMAGE_STATE_UPLOADED
+    assert transition["cloud_state"] == models.CLOUD_IMAGE_STATE_DELETE_PENDING
+    assert transition["action"] == "delete_queued"
+    state = models.ImageDB.get_image_cloud_states([fixture["image_id"]])[fixture["image_id"]]
+    assert state["cloud_state"] == models.CLOUD_IMAGE_STATE_DELETE_PENDING
+    conn = sqlite3.connect(db_path)
+    try:
+        assert conn.execute(
+            "SELECT cloud_id FROM images WHERE id = ?", (fixture["image_id"],)
+        ).fetchone() == (fixture["image_cloud_id"],)
+        assert conn.execute(
+            "SELECT COUNT(*) FROM spore_measurements WHERE image_id = ?", (fixture["image_id"],)
+        ).fetchone() == (1,)
+        assert conn.execute(
+            "SELECT COUNT(*) FROM spore_annotations WHERE image_id = ?", (fixture["image_id"],)
+        ).fetchone() == (2,)
+    finally:
+        conn.close()
+    assert fixture["image_path"].exists()
+    assert fixture["original_path"].exists()
+
+
+def test_cloud_selection_synced_delete_hides_badge_state_and_stays_unchecked(monkeypatch, tmp_path):
+    db_path = tmp_path / "selection-deleted.sqlite"
+    conn = sqlite3.connect(db_path)
+    try:
+        _create_image_tombstone_test_db(conn)
+        conn.execute(
+            "INSERT INTO settings (key, value) VALUES (?, ?)",
+            ("artsobs_publish_excluded_image_ids_1", "[11]"),
+        )
+        conn.commit()
+    finally:
+        conn.close()
+    fixture = _seed_delete_fixture(db_path, synced=True)
+    monkeypatch.setattr(models, "get_connection", lambda: sqlite3.connect(db_path))
+    monkeypatch.setattr(cloud_sync, "get_connection", lambda: sqlite3.connect(db_path))
+
+    cloud_sync.set_image_cloud_selected(fixture["image_id"], False)
+    models.mark_image_tombstone_synced(fixture["image_cloud_id"])
+
+    state = models.ImageDB.get_image_cloud_states([fixture["image_id"]])[fixture["image_id"]]
+    assert state["cloud_id"] == fixture["image_cloud_id"]
+    assert state["cloud_state"] == models.CLOUD_IMAGE_STATE_DELETED
+    assert cloud_sync._cloud_explicit_media_upload_selection(fixture["observation_id"]) == set()
+
+
+def test_cloud_selection_recheck_cancels_only_pending_delete(monkeypatch, tmp_path):
+    db_path = tmp_path / "selection-cancel.sqlite"
+    conn = sqlite3.connect(db_path)
+    try:
+        _create_image_tombstone_test_db(conn)
+    finally:
+        conn.close()
+    fixture = _seed_delete_fixture(db_path, synced=True)
+    monkeypatch.setattr(models, "get_connection", lambda: sqlite3.connect(db_path))
+    monkeypatch.setattr(cloud_sync, "get_connection", lambda: sqlite3.connect(db_path))
+
+    cloud_sync.set_image_cloud_selected(fixture["image_id"], False)
+    transition = cloud_sync.set_image_cloud_selected(fixture["image_id"], True)
+
+    assert transition["previous_state"] == models.CLOUD_IMAGE_STATE_DELETE_PENDING
+    assert transition["cloud_state"] == models.CLOUD_IMAGE_STATE_UPLOADED
+    assert transition["cloud_id"] == fixture["image_cloud_id"]
+    assert transition["action"] == "delete_cancelled"
+    assert models.list_pending_image_tombstones() == []
+    assert models.ImageDB.get_image_cloud_states([fixture["image_id"]])[fixture["image_id"]][
+        "cloud_state"
+    ] == models.CLOUD_IMAGE_STATE_UPLOADED
+
+
+def test_cloud_selection_recheck_after_synced_delete_starts_explicit_restore(monkeypatch, tmp_path):
+    db_path = tmp_path / "selection-restore.sqlite"
+    conn = sqlite3.connect(db_path)
+    try:
+        _create_image_tombstone_test_db(conn)
+    finally:
+        conn.close()
+    fixture = _seed_delete_fixture(db_path, synced=True)
+    monkeypatch.setattr(models, "get_connection", lambda: sqlite3.connect(db_path))
+    monkeypatch.setattr(cloud_sync, "get_connection", lambda: sqlite3.connect(db_path))
+
+    cloud_sync.set_image_cloud_selected(fixture["image_id"], False)
+    models.mark_image_tombstone_synced(fixture["image_cloud_id"])
+    transition = cloud_sync.set_image_cloud_selected(fixture["image_id"], True)
+
+    assert transition["previous_state"] == models.CLOUD_IMAGE_STATE_DELETED
+    assert transition["cloud_state"] == models.CLOUD_IMAGE_STATE_NONE
+    assert transition["cloud_id"] is None
+    assert transition["action"] == "restore_queued"
+    assert cloud_sync._explicit_image_restore_source(fixture["image_id"]) == fixture["image_cloud_id"]
+    assert models.ImageDB.get_image_tombstone_by_deleted_cloud_id(fixture["image_cloud_id"])[
+        "delete_synced_at"
+    ]
     active_after_sync = models.ImageDB.get_images_for_observation(fixture["observation_id"])
     assert [int(img["id"]) for img in active_after_sync] == [fixture["image_id"]]
+
+
+def test_repair_remote_tombstones_restores_active_image_without_touching_local_data(
+    monkeypatch,
+    tmp_path,
+):
+    db_path = tmp_path / "repair_remote_tombstone.sqlite"
+    conn = sqlite3.connect(db_path)
+    try:
+        _create_image_tombstone_test_db(conn)
+    finally:
+        conn.close()
+
+    fixture = _seed_delete_fixture(db_path, synced=True)
+    conn = sqlite3.connect(db_path)
+    try:
+        conn.execute(
+            """
+            INSERT INTO image_tombstones (
+                deleted_cloud_id, deleted_at, delete_synced_at,
+                deleted_storage_path, deleted_observation_cloud_id,
+                local_observation_id, local_image_id, image_type,
+                filepath, original_filepath
+            ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+            """,
+            (
+                fixture["image_cloud_id"],
+                "2026-05-01 10:00:00",
+                "2026-05-01 10:01:00",
+                "user/cloud-obs-1/cloud-image-1.jpg",
+                fixture["observation_cloud_id"],
+                fixture["observation_id"],
+                fixture["image_id"],
+                "field",
+                str(fixture["image_path"]),
+                str(fixture["original_path"]),
+            ),
+        )
+        before_measurements = conn.execute(
+            "SELECT * FROM spore_measurements WHERE image_id = ?",
+            (fixture["image_id"],),
+        ).fetchall()
+        before_annotations = conn.execute(
+            "SELECT * FROM spore_annotations WHERE image_id = ? OR measurement_id = ? ORDER BY id",
+            (fixture["image_id"], fixture["measurement_id"]),
+        ).fetchall()
+        before_thumbnails = conn.execute(
+            "SELECT * FROM thumbnails WHERE image_id = ?",
+            (fixture["image_id"],),
+        ).fetchall()
+
+        assert schema._repair_remote_tombstones_hiding_active_images(conn.cursor()) == 1
+        assert schema._repair_remote_tombstones_hiding_active_images(conn.cursor()) == 0
+        conn.commit()
+
+        tombstone = conn.execute(
+            "SELECT * FROM image_tombstones WHERE deleted_cloud_id = ?",
+            (fixture["image_cloud_id"],),
+        ).fetchone()
+        after_measurements = conn.execute(
+            "SELECT * FROM spore_measurements WHERE image_id = ?",
+            (fixture["image_id"],),
+        ).fetchall()
+        after_annotations = conn.execute(
+            "SELECT * FROM spore_annotations WHERE image_id = ? OR measurement_id = ? ORDER BY id",
+            (fixture["image_id"], fixture["measurement_id"]),
+        ).fetchall()
+        after_thumbnails = conn.execute(
+            "SELECT * FROM thumbnails WHERE image_id = ?",
+            (fixture["image_id"],),
+        ).fetchall()
+        image_cloud_id = conn.execute(
+            "SELECT cloud_id FROM images WHERE id = ?",
+            (fixture["image_id"],),
+        ).fetchone()[0]
+    finally:
+        conn.close()
+
+    assert tombstone[1:] == (
+        fixture["image_cloud_id"],
+        "2026-05-01 10:00:00",
+        "2026-05-01 10:01:00",
+        "user/cloud-obs-1/cloud-image-1.jpg",
+        fixture["observation_cloud_id"],
+        fixture["observation_id"],
+        None,
+        "field",
+        str(fixture["image_path"]),
+        str(fixture["original_path"]),
+    )
+    assert after_measurements == before_measurements
+    assert after_annotations == before_annotations
+    assert after_thumbnails == before_thumbnails
+    assert image_cloud_id == fixture["image_cloud_id"]
+    assert fixture["image_path"].exists()
+    assert fixture["original_path"].exists()
+    assert fixture["thumbnail_path"].exists()
+
+    monkeypatch.setattr(models, "get_connection", lambda: sqlite3.connect(db_path))
+    active_images = models.ImageDB.get_images_for_observation(fixture["observation_id"])
+    assert [int(img["id"]) for img in active_images] == [fixture["image_id"]]
 
 
 def test_legacy_publish_exclusion_tombstone_is_still_repaired(monkeypatch, tmp_path):
@@ -569,7 +829,7 @@ def test_legacy_publish_exclusion_tombstone_is_still_repaired(monkeypatch, tmp_p
     assert models.list_pending_image_tombstones() == []
 
 
-def test_clear_image_cloud_sync_state_removes_cloud_link(monkeypatch, tmp_path):
+def test_clear_image_cloud_sync_state_preserves_tombstone_and_local_media(monkeypatch, tmp_path):
     db_path = tmp_path / "clear_cloud_state.sqlite"
     conn = sqlite3.connect(db_path)
     try:
@@ -579,20 +839,66 @@ def test_clear_image_cloud_sync_state_removes_cloud_link(monkeypatch, tmp_path):
 
     fixture = _seed_delete_fixture(db_path, synced=True)
     monkeypatch.setattr(models, "get_connection", lambda: sqlite3.connect(db_path))
+    monkeypatch.setattr(cloud_sync, "get_connection", lambda: sqlite3.connect(db_path))
 
+    assert models.ImageDB.queue_image_tombstone_for_local_image(fixture["image_id"]) == fixture["image_cloud_id"]
+    assert cloud_sync._pending_cloud_pushable_image_ids(
+        fixture["observation_id"],
+        explicit_media_upload_selection={fixture["image_id"]},
+    ) == []
+
+    cloud_sync.remember_explicit_image_restore_source(
+        fixture["image_id"], fixture["image_cloud_id"]
+    )
     cleared = models.ImageDB.clear_image_cloud_sync_state(fixture["image_id"])
 
     conn = sqlite3.connect(db_path)
     try:
         image_row = conn.execute(
-            "SELECT cloud_id, synced_at FROM images WHERE id = ?",
+            "SELECT cloud_id, synced_at, filepath, original_filepath FROM images WHERE id = ?",
             (fixture["image_id"],),
         ).fetchone()
+        tombstone = conn.execute(
+            "SELECT deleted_cloud_id FROM image_tombstones WHERE deleted_cloud_id = ?",
+            (fixture["image_cloud_id"],),
+        ).fetchone()
+        measurement = conn.execute(
+            "SELECT id, notes FROM spore_measurements WHERE image_id = ?",
+            (fixture["image_id"],),
+        ).fetchone()
+        annotations = conn.execute(
+            "SELECT id, measurement_id FROM spore_annotations WHERE image_id = ? ORDER BY id",
+            (fixture["image_id"],),
+        ).fetchall()
+        observation_status = conn.execute(
+            "SELECT sync_status FROM observations WHERE id = ?",
+            (fixture["observation_id"],),
+        ).fetchone()[0]
+        restore_source = conn.execute(
+            "SELECT value FROM settings WHERE key = ?",
+            (cloud_sync._explicit_image_restore_source_key(fixture["image_id"]),),
+        ).fetchone()[0]
     finally:
         conn.close()
 
     assert cleared is True
-    assert image_row == (None, None)
+    assert image_row == (
+        None,
+        None,
+        str(fixture["image_path"]),
+        str(fixture["original_path"]),
+    )
+    assert tombstone == (fixture["image_cloud_id"],)
+    assert measurement == (fixture["measurement_id"], "measurement")
+    assert annotations == [(31, None), (32, fixture["measurement_id"])]
+    assert observation_status == "dirty"
+    assert restore_source == fixture["image_cloud_id"]
+    assert fixture["image_path"].read_text(encoding="utf-8") == "image"
+    assert fixture["original_path"].read_text(encoding="utf-8") == "original"
+    assert cloud_sync._pending_cloud_pushable_image_ids(
+        fixture["observation_id"],
+        explicit_media_upload_selection={fixture["image_id"]},
+    ) == [fixture["image_id"]]
 
 
 def test_record_remote_image_tombstones_ignores_active_rows_and_writes_deleted_remote_rows(
@@ -753,7 +1059,7 @@ def test_record_remote_image_tombstones_records_local_metadata_and_keeps_files(
     assert tombstone[3] == "user/cloud-obs-1/cloud-image-1.jpg"
     assert tombstone[4] == "cloud-obs-1"
     assert tombstone[5] == 1
-    assert tombstone[6] == 11
+    assert tombstone[6] is None
     assert tombstone[7] == "field"
     assert tombstone[8] == str(image_path)
     assert tombstone[9] == str(original_path)
@@ -832,7 +1138,7 @@ def test_record_remote_image_tombstones_matches_local_image_by_desktop_id(
         "user/cloud-obs-1/cloud-image-1.jpg",
         "cloud-obs-1",
         1,
-        11,
+        None,
         str(image_path),
         str(original_path),
     )
@@ -971,6 +1277,7 @@ def test_delete_synced_image_writes_tombstone_before_hard_delete_and_marks_obser
 
     fixture = _seed_delete_fixture(db_path, synced=True)
     monkeypatch.setattr(models, "get_connection", lambda: sqlite3.connect(db_path))
+    monkeypatch.setattr(cloud_sync, "get_connection", lambda: sqlite3.connect(db_path))
     monkeypatch.setattr(models, "_images_dir", lambda: fixture["images_root"])
     monkeypatch.setattr(models, "_thumbnails_dir", lambda: fixture["thumbnails_root"])
 
@@ -1001,6 +1308,21 @@ def test_delete_synced_image_writes_tombstone_before_hard_delete_and_marks_obser
     monkeypatch.setattr(models, "_upsert_image_tombstone", wrapped_upsert)
 
     models.ImageDB.delete_image(fixture["image_id"])
+
+    # A later server echo supplies local_image_id=None.  The tombstone upsert
+    # must retain the ID written by the genuine local deletion.
+    cloud_sync._record_remote_image_tombstones(
+        [
+            {
+                "id": fixture["image_cloud_id"],
+                "observation_id": fixture["observation_cloud_id"],
+                "deleted_at": "2026-05-01 11:00:00",
+                "storage_path": "user/cloud-obs-1/cloud-image-1.jpg",
+            }
+        ],
+        local_observation_id=fixture["observation_id"],
+        cloud_observation_id=fixture["observation_cloud_id"],
+    )
 
     conn = sqlite3.connect(db_path)
     try:

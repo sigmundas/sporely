@@ -820,13 +820,14 @@ def test_cloud_sync_finished_proven_noop_skips_observation_refresh():
 
 
 @pytest.mark.parametrize("image_type", ["field", "microscope"])
-def test_gallery_publish_uncheck_does_not_mutate_cloud_state(monkeypatch, image_type):
+def test_gallery_publish_uncheck_routes_through_cloud_lifecycle(monkeypatch, image_type):
     calls: dict[str, list] = {
         "queue": [],
         "clear": [],
         "cloud": [],
         "excluded": [],
         "dirty": [],
+        "transition": [],
     }
 
     monkeypatch.setattr(
@@ -853,6 +854,11 @@ def test_gallery_publish_uncheck_does_not_mutate_cloud_state(monkeypatch, image_
         lambda image_id: calls["cloud"].append(int(image_id)) or True,
     )
     monkeypatch.setattr(cloud_sync, "mark_observation_dirty", lambda obs_id: calls["dirty"].append(int(obs_id)))
+    monkeypatch.setattr(
+        cloud_sync,
+        "set_image_cloud_selected",
+        lambda image_id, selected: calls["transition"].append((int(image_id), bool(selected))),
+    )
     tab = SimpleNamespace(
         selected_observation_id=7,
         _publish_excluded_image_ids=lambda observation_id: set(),
@@ -872,6 +878,7 @@ def test_gallery_publish_uncheck_does_not_mutate_cloud_state(monkeypatch, image_
     assert calls["cloud"] == []
     assert calls["excluded"] == [(7, (1,))]
     assert calls["dirty"] == []
+    assert calls["transition"] == [(1, False)]
 
 
 def test_gallery_publish_uncheck_does_not_touch_public_spore_anchor(monkeypatch):
@@ -880,6 +887,7 @@ def test_gallery_publish_uncheck_does_not_touch_public_spore_anchor(monkeypatch)
         "clear": [],
         "excluded": [],
         "dirty": [],
+        "transition": [],
     }
     monkeypatch.setattr(
         observations_tab.ImageDB,
@@ -904,6 +912,11 @@ def test_gallery_publish_uncheck_does_not_touch_public_spore_anchor(monkeypatch)
         "mark_observation_dirty",
         lambda obs_id: calls["dirty"].append(int(obs_id)),
     )
+    monkeypatch.setattr(
+        cloud_sync,
+        "set_image_cloud_selected",
+        lambda image_id, selected: calls["transition"].append((int(image_id), bool(selected))),
+    )
     tab = SimpleNamespace(
         selected_observation_id=7,
         _publish_excluded_image_ids=lambda observation_id: set(),
@@ -922,15 +935,18 @@ def test_gallery_publish_uncheck_does_not_touch_public_spore_anchor(monkeypatch)
     assert calls["clear"] == []
     assert calls["excluded"] == [(7, (1,))]
     assert calls["dirty"] == []
+    assert calls["transition"] == [(1, False)]
 
 
-def test_gallery_publish_recheck_does_not_mutate_cloud_state(monkeypatch):
+def test_gallery_publish_recheck_detaches_tombstoned_cloud_state_and_marks_dirty(monkeypatch):
     calls: dict[str, list] = {
         "queue": [],
         "clear": [],
         "cloud": [],
+        "restore": [],
         "excluded": [],
         "dirty": [],
+        "transition": [],
     }
 
     monkeypatch.setattr(
@@ -966,7 +982,21 @@ def test_gallery_publish_recheck_does_not_mutate_cloud_state(monkeypatch):
         "clear_image_cloud_sync_state",
         lambda image_id: calls["cloud"].append(int(image_id)) or True,
     )
-    monkeypatch.setattr(cloud_sync, "mark_observation_dirty", lambda obs_id: calls["dirty"].append(int(obs_id)))
+    monkeypatch.setattr(
+        cloud_sync,
+        "remember_explicit_image_restore_source",
+        lambda image_id, cloud_id: calls["restore"].append((int(image_id), str(cloud_id))),
+    )
+    monkeypatch.setattr(
+        cloud_sync,
+        "mark_observation_media_dirty",
+        lambda obs_id: calls["dirty"].append(int(obs_id)),
+    )
+    monkeypatch.setattr(
+        cloud_sync,
+        "set_image_cloud_selected",
+        lambda image_id, selected: calls["transition"].append((int(image_id), bool(selected))),
+    )
 
     tab = SimpleNamespace(
         selected_observation_id=7,
@@ -983,8 +1013,81 @@ def test_gallery_publish_recheck_does_not_mutate_cloud_state(monkeypatch):
     assert calls["queue"] == []
     assert calls["clear"] == []
     assert calls["cloud"] == []
+    assert calls["restore"] == []
     assert calls["excluded"] == [(7, ())]
     assert calls["dirty"] == []
+    assert calls["transition"] == [(1, True)]
+
+
+def test_gallery_publish_recheck_never_uploaded_image_routes_through_cloud_lifecycle(monkeypatch):
+    calls: dict[str, list] = {"cloud": [], "excluded": [], "dirty": [], "transition": []}
+    monkeypatch.setattr(
+        observations_tab.ImageDB,
+        "get_images_for_observation",
+        lambda observation_id: [
+            {"id": 1, "cloud_id": None, "image_type": "field"},
+            {"id": 2, "cloud_id": "cloud-2", "image_type": "field"},
+        ],
+    )
+    monkeypatch.setattr(
+        observations_tab.ImageDB,
+        "clear_image_cloud_sync_state",
+        lambda image_id: calls["cloud"].append(int(image_id)) or True,
+    )
+    monkeypatch.setattr(
+        cloud_sync,
+        "mark_observation_media_dirty",
+        lambda obs_id: calls["dirty"].append(int(obs_id)),
+    )
+    monkeypatch.setattr(
+        cloud_sync,
+        "set_image_cloud_selected",
+        lambda image_id, selected: calls["transition"].append((int(image_id), bool(selected))),
+    )
+    tab = SimpleNamespace(
+        selected_observation_id=7,
+        _publish_excluded_image_ids=lambda observation_id: {1},
+        _set_publish_excluded_image_ids=lambda obs_id, excluded: calls["excluded"].append(
+            (int(obs_id), tuple(sorted(int(v) for v in excluded)))
+        ),
+        window=lambda: None,
+        parent=lambda: None,
+    )
+
+    observations_tab.ObservationsTab._on_gallery_publish_selection_changed(tab, {1, 2})
+
+    assert calls["cloud"] == []
+    assert calls["excluded"] == [(7, ())]
+    assert calls["dirty"] == []
+    assert calls["transition"] == [(1, True)]
+
+
+def test_context_menu_cloud_delete_uses_same_selection_transition(monkeypatch):
+    calls: dict[str, list] = {"transition": [], "pending": [], "status": []}
+    monkeypatch.setattr(
+        cloud_sync,
+        "set_image_cloud_selected",
+        lambda image_id, selected: (
+            calls["transition"].append((int(image_id), bool(selected)))
+            or {"image_id": int(image_id), "action": "delete_queued"}
+        ),
+    )
+    gallery = SimpleNamespace(
+        mark_cloud_delete_pending=lambda image_ids: calls["pending"].append(tuple(image_ids))
+    )
+    tab = SimpleNamespace(
+        tr=lambda text: text,
+        _question_yes_no=lambda *args, **kwargs: True,
+        set_status_message=lambda *args, **kwargs: calls["status"].append((args, kwargs)),
+    )
+
+    observations_tab.ObservationsTab._on_gallery_delete_cloud_copies_requested(
+        tab, gallery, [1]
+    )
+
+    assert calls["transition"] == [(1, False)]
+    assert calls["pending"] == [(1,)]
+    assert calls["status"]
 
 
 def test_default_publish_selection_selects_one_microscope_image_per_magnification():

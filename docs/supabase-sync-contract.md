@@ -37,9 +37,9 @@ Plain English comes first; technical terms are in parentheses.
 
 ## Non-negotiable safety rules
 
-1. **Ordinary sync must not delete photos.** A routine refresh may add or update data. It must not remove a cloud record or file because an image was omitted from an upload list.
-2. **Not selected does not mean deleted.** An unchecked publication box may skip publication or a new upload. It is never deletion consent.
-3. **Deletion requires a separate explicit action.** Store the intent as a removal marker (`tombstone`) or an equally explicit cloud-removal command.
+1. **Ordinary sync must not infer deletion.** A routine refresh may add or update data. It must not remove a cloud record or file merely because an image was omitted from an upload list.
+2. **The gallery checkbox is desired cloud state.** Unchecking a live cloud-backed image is explicit cloud-copy deletion intent; an external-publication choice is not.
+3. **Deletion requires an explicit transition.** Store checkbox uncheck or “Delete cloud copy” intent as a removal marker (`tombstone`) before sync performs the remote deletion.
 4. **Normal sync must not permanently delete image rows.** Use recoverable deletion (`soft delete`) first. Permanent deletion belongs to verified maintenance, account deletion, or retention cleanup.
 5. **Store deletion intent before removing bytes.** Confirm the database deletion state first, then clean up cloud files as a retry-safe follow-up.
 6. **Local originals remain authoritative.** A smaller cloud copy never overwrites a better local original. Downloaded files are recovery copies (`cloud_recovery_cache`) until explicitly promoted.
@@ -61,15 +61,17 @@ Plain English comes first; technical terms are in parentheses.
 | Social graph, social comments, reports, blocks, billing, moderation | Cloud/web only |
 | Thumbnails, plots, mosaics, and crops | Rebuildable unless deliberately persisted |
 
-## Keep three image decisions separate
+## Keep image decisions explicit
 
-One checkbox cannot safely represent all of these:
+The Observations and Measure gallery checkbox represents the desired Sporely Cloud state only:
 
-1. **Include in external publication** — for example Artsobservasjoner or iNaturalist.
-2. **Keep bytes in Sporely Cloud** — for cross-device use and web display.
-3. **Delete from Sporely Cloud** — destructive, confirmed, and recorded durably.
+- checked means the image should have a cloud copy;
+- unchecked means it should not have a cloud copy;
+- the cloud badge reports actual state: uploaded, delete pending, or absent.
 
-Changing decision 1 must not change decisions 2 or 3. Until separate controls exist, publication checkboxes are publication choices only and cannot remove existing cloud data.
+External-publication inclusion (for example Artsobservasjoner or iNaturalist) is a separate workflow decision. Ordinary upload filtering, a missing prepared file, or external-publication exclusion must never be reinterpreted as cloud deletion intent.
+
+Canonical desktop image states are `NONE`, `UPLOADED`, `DELETE_PENDING`, and `DELETED`. A retained `cloud_id` with a synced tombstone is `DELETED`, not `UPLOADED`.
 
 ## Desired observation sync
 
@@ -107,10 +109,10 @@ Changing decision 1 must not change decisions 2 or 3. Until separate controls ex
 When a local image still maps to an active cloud image:
 
 - add it to the protected cloud list (`kept_cloud_ids`) whether or not bytes are prepared;
-- keep the cloud row and file when omitted from `prepared_items`;
+- keep the cloud row and file when omitted from `prepared_items` unless an explicit checkbox/context-menu tombstone is pending;
 - patch metadata when necessary;
 - replace bytes only when the trusted source changed or a missing cloud file is deliberately restored;
-- never call it stale merely because it was unchecked, filtered, skipped, or reordered.
+- never call it stale merely because it was filtered, skipped, or reordered.
 
 ### New local image
 
@@ -122,7 +124,7 @@ When a local image still maps to an active cloud image:
 
 - Treat metadata, measurements, and bytes as separate concerns.
 - Preserve existing cloud bytes during ordinary sync.
-- Publication selection must not clear `storage_path`, clear `original_storage_path`, or delete cloud files.
+- External-publication selection must not clear `storage_path`, clear `original_storage_path`, or delete cloud files.
 - Measurements may sync without bytes.
 
 ### Measurement-only image record
@@ -132,7 +134,7 @@ A measurement-only record (`metadata-only anchor`) is valid only when:
 - bytes were never uploaded but measurements are shared; or
 - the user explicitly chose “remove cloud image, keep measurements.”
 
-It must not be created from a publication checkbox. Owner-facing UI must distinguish deliberate measurement-only state from a broken or deleted image.
+It must not be created from an external-publication choice. Owner-facing UI must distinguish deliberate measurement-only state from a broken or deleted image.
 
 ### Missing cloud file
 
@@ -166,6 +168,13 @@ This is separate from deleting the local image.
 - Store explicit cloud-removal intent.
 - Remove bytes after the new state is safely recorded.
 - Show the resulting state to the owner.
+
+The gallery checkbox and context-menu command share this lifecycle:
+
+- `UPLOADED` + uncheck queues an unsynced tombstone and shows `DELETE_PENDING` immediately;
+- recheck before sync cancels that tombstone, preserves the existing cloud ID, and performs no upload or delete;
+- after successful remote deletion, the checkbox remains unchecked and the synced tombstone yields `DELETED` with no cloud badge;
+- recheck after `DELETED` preserves the historical tombstone, detaches the old identity, and explicitly restores exactly that image as a new cloud row.
 
 ### Remote deletion discovered on desktop
 
@@ -277,13 +286,13 @@ Report per observation/image:
 
 The audit must be dry-run and non-mutating. Run it first on reported observations, then all observations touched by affected desktop versions.
 
-### Phase 2 — separate selection from deletion
+### Phase 2 — make cloud selection explicit
 
 Desktop:
 
 - Keep Artsobservasjoner/iNaturalist selection as publication state only.
-- Introduce cloud-media controls only as separate explicit controls.
-- Represent deletion only through explicit actions and tombstones.
+- Treat the Observations/Measure gallery checkbox as desired Sporely Cloud state.
+- Represent checkbox/context-menu deletion only through explicit tombstones.
 - Never infer deletion from publication exclusions, absent `prepared_items`, missing temporary files, changed order, filtered image type, or measurement visibility.
 - Treat legacy publication exclusions as non-destructive.
 
@@ -323,8 +332,10 @@ Only after the safety fix is deployed:
 
 Desktop tests must prove:
 
-- unchecked existing field images keep row and bytes;
-- unchecked existing microscope images keep existing bytes;
+- unchecked existing field images keep local row/bytes and queue only cloud deletion;
+- unchecked existing microscope images keep local row/bytes, measurements, and annotations;
+- rechecking an unsynced delete cancels it without upload or remote deletion;
+- rechecking a completed delete uses image-specific explicit restore without touching live siblings;
 - omission from `prepared_items` is not stale/deleted;
 - every active linked image enters `kept_cloud_ids`;
 - explicit tombstone deletion still works;
