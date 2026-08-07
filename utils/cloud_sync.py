@@ -5264,13 +5264,19 @@ def _push_pending_image_tombstones(client: "SporelyCloudClient") -> list[str]:
     # Compatibility repair: older versions may have queued a cloud deletion
     # merely because an external-publish checkbox was unchecked.
     repaired = reconcile_legacy_publish_exclusion_tombstones()
-    if repaired.get("pending") or repaired.get("synced"):
+    repaired_pending = int(repaired.get("pending") or 0)
+    repaired_synced = int(repaired.get("synced") or 0)
+    if repaired_pending or repaired_synced:
         print(
             "[cloud_sync] Reconciled legacy external-publish tombstones: "
-            f"{int(repaired.get('pending') or 0)} pending, "
-            f"{int(repaired.get('synced') or 0)} previously synced"
+            f"{repaired_pending} pending, {repaired_synced} previously synced"
         )
-    for tombstone in list_pending_image_tombstones():
+    pending = list_pending_image_tombstones()
+    if pending:
+        print(f"[cloud_sync] Image tombstones pending push: {len(pending)}", flush=True)
+    protected_count = 0
+    soft_deleted: list[str] = []
+    for tombstone in pending:
         cloud_image_id = str(tombstone.get('deleted_cloud_id') or '').strip()
         if not cloud_image_id:
             continue
@@ -5290,6 +5296,7 @@ def _push_pending_image_tombstones(client: "SporelyCloudClient") -> list[str]:
                 warnings.append(warning)
                 print(f'[cloud_sync] Warning: {warning}')
             else:
+                protected_count += 1
                 print(
                     f'[cloud_sync] Cancelled tombstone for microscope image '
                     f'{local_image_id}: public spore metadata anchor required',
@@ -5316,6 +5323,24 @@ def _push_pending_image_tombstones(client: "SporelyCloudClient") -> list[str]:
             )
             warnings.append(warning)
             print(f'[cloud_sync] Warning: {warning}')
+            continue
+        soft_deleted.append(cloud_image_id)
+    if pending:
+        # One summary line makes the delete flow diagnosable from logs
+        # without dumping cloud IDs into normal-path noise.
+        print(
+            "[cloud_sync] Image tombstone push complete: "
+            f"soft_deleted={len(soft_deleted)}, "
+            f"protected_microscope={protected_count}, "
+            f"failed={len(warnings)}",
+            flush=True,
+        )
+        if soft_deleted:
+            print(
+                "[cloud_sync] Soft-deleted cloud image ids: "
+                + ", ".join(soft_deleted),
+                flush=True,
+            )
     return warnings
 
 

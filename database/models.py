@@ -36,8 +36,13 @@ _UNSET = object()
 # NONE           — image has no cloud copy (never uploaded, or upload cleared).
 # UPLOADED       — image has a live cloud copy on Sporely Cloud.
 # DELETE_PENDING — a local tombstone was queued but cloud sync hasn't run yet;
-#                  the cloud copy is scheduled for deletion.
-# DELETED        — cloud sync has confirmed the cloud copy is gone.
+#                  the remote observation image is still visible until sync
+#                  pushes the tombstone.
+# DELETED        — cloud sync has marked the remote row deleted
+#                  (observation_images.deleted_at is set). The remote row
+#                  drops out of web/mobile queries; physical storage bytes
+#                  remain until the server-side purge window elapses and is
+#                  a separate lifecycle we do not manage from the client.
 CLOUD_IMAGE_STATE_NONE = "none"
 CLOUD_IMAGE_STATE_UPLOADED = "uploaded"
 CLOUD_IMAGE_STATE_DELETE_PENDING = "delete_pending"
@@ -2337,6 +2342,17 @@ class ImageDB:
         Local image rows are preserved — only the cloud copy is scheduled for
         deletion. The mapping preserves every requested id so callers can
         report per-item outcomes without a second round-trip.
+
+        The queued row deliberately leaves ``local_image_id`` and
+        ``deleted_storage_path`` NULL. This is what distinguishes a
+        cloud-copy-only tombstone from both a full local deletion (which
+        carries ``local_image_id``) and the historical external-publish
+        tombstone that ``reconcile_legacy_publish_exclusion_tombstones``
+        removes (which set ``local_image_id NULL`` AND put the active
+        image's local filepath in ``deleted_storage_path``). Server-side
+        deletion only needs ``deleted_cloud_id``; the local ``filepath`` and
+        ``original_filepath`` columns still capture where the byte source
+        lived, for audit and possible future restore.
         """
         requested: list[int] = []
         seen: set[int] = set()
@@ -2415,7 +2431,10 @@ class ImageDB:
                 _upsert_image_tombstone(
                     cursor,
                     deleted_cloud_id=cloud_id,
-                    deleted_storage_path=filepath or original_filepath,
+                    # deleted_storage_path stays NULL — see the docstring for
+                    # why this diverges from the legacy publish-exclusion
+                    # tombstone shape.
+                    deleted_storage_path=None,
                     deleted_observation_cloud_id=observation_cloud_ids.get(observation_id or 0),
                     local_observation_id=observation_id,
                     image_type=str(row["image_type"] or "").strip() or None,

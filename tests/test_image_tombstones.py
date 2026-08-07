@@ -417,6 +417,158 @@ def test_queue_image_tombstones_for_local_images_empty_and_all_invalid(
     ) == {}
 
 
+def test_delete_cloud_copy_regression_end_to_end(monkeypatch, tmp_path):
+    """End-to-end regression for the 'delete cloud copy' flow.
+
+    Prior to this fix, ``queue_image_tombstones_for_local_images`` stored
+    the local image's filepath in ``deleted_storage_path``. That row was
+    then indistinguishable from the historical external-publish tombstone
+    shape and ``reconcile_legacy_publish_exclusion_tombstones()`` — which
+    runs at the top of ``_push_pending_image_tombstones`` — silently
+    removed it, so no ``soft_delete_image`` call ever reached the server
+    and the image kept showing up in the web/mobile app.
+
+    This test wires the whole path together with a fake cloud client and
+    asserts:
+
+      * the queued tombstone has ``local_image_id IS NULL`` and
+        ``deleted_storage_path IS NULL`` (new shape);
+      * the local image row is still active and returned by
+        ``get_images_for_observation``;
+      * the legacy reconciler does NOT consume the new tombstone
+        (recovered pending == 0);
+      * the sync push calls ``soft_delete_image(cloud_id, ...)`` exactly
+        once, marks the tombstone synced, and empties the pending queue;
+      * the local image row remains after the sync.
+    """
+    db_path = tmp_path / "delete_cloud_regression.sqlite"
+    conn = sqlite3.connect(db_path)
+    try:
+        _create_image_tombstone_test_db(conn)
+    finally:
+        conn.close()
+
+    fixture = _seed_delete_fixture(db_path, synced=True)
+    monkeypatch.setattr(models, "get_connection", lambda: sqlite3.connect(db_path))
+    monkeypatch.setattr(cloud_sync, "get_connection", lambda: sqlite3.connect(db_path))
+
+    result = models.ImageDB.queue_image_tombstones_for_local_images([fixture["image_id"]])
+    assert result == {fixture["image_id"]: fixture["image_cloud_id"]}
+
+    # Row shape — the cloud-only tombstone must be distinguishable from a
+    # legacy publish-exclusion tombstone.
+    conn = sqlite3.connect(db_path)
+    try:
+        conn.row_factory = sqlite3.Row
+        tombstone_row = conn.execute(
+            "SELECT * FROM image_tombstones WHERE deleted_cloud_id = ?",
+            (fixture["image_cloud_id"],),
+        ).fetchone()
+    finally:
+        conn.close()
+    assert tombstone_row is not None
+    assert tombstone_row["local_image_id"] is None
+    assert tombstone_row["deleted_storage_path"] is None
+    # Local path columns stay populated for audit/restore.
+    assert tombstone_row["filepath"] == str(fixture["image_path"])
+    assert tombstone_row["original_filepath"] == str(fixture["original_path"])
+    assert tombstone_row["delete_synced_at"] is None
+
+    # Local image row is still active and returned to the gallery.
+    active_images = models.ImageDB.get_images_for_observation(fixture["observation_id"])
+    assert [int(img["id"]) for img in active_images] == [fixture["image_id"]]
+
+    # Legacy reconciler must not touch this row.
+    repaired = models.reconcile_legacy_publish_exclusion_tombstones()
+    assert repaired == {"pending": 0, "synced": 0}
+    pending = models.list_pending_image_tombstones()
+    assert len(pending) == 1
+    assert pending[0]["deleted_cloud_id"] == fixture["image_cloud_id"]
+
+    # Sync push should call soft_delete_image once and mark the tombstone
+    # synced. Fake client records every call.
+    class _FakeCloudClient:
+        def __init__(self):
+            self.soft_delete_calls: list[tuple[str, str | None]] = []
+
+        def soft_delete_image(self, cloud_image_id, deleted_at):
+            self.soft_delete_calls.append((cloud_image_id, deleted_at))
+
+    client = _FakeCloudClient()
+    warnings = cloud_sync._push_pending_image_tombstones(client)
+    assert warnings == []
+    assert len(client.soft_delete_calls) == 1
+    assert client.soft_delete_calls[0][0] == fixture["image_cloud_id"]
+
+    # After sync: tombstone marked synced, queue empty, local image still active.
+    assert models.list_pending_image_tombstones() == []
+    conn = sqlite3.connect(db_path)
+    try:
+        synced_at = conn.execute(
+            "SELECT delete_synced_at FROM image_tombstones WHERE deleted_cloud_id = ?",
+            (fixture["image_cloud_id"],),
+        ).fetchone()[0]
+    finally:
+        conn.close()
+    assert synced_at is not None
+    active_after_sync = models.ImageDB.get_images_for_observation(fixture["observation_id"])
+    assert [int(img["id"]) for img in active_after_sync] == [fixture["image_id"]]
+
+
+def test_legacy_publish_exclusion_tombstone_is_still_repaired(monkeypatch, tmp_path):
+    """The compatibility repair must keep working for genuine historical rows.
+
+    A genuine legacy tombstone was written by the pre-Stage flow when the
+    external-publish checkbox was unchecked. It has ``local_image_id NULL``
+    AND ``deleted_storage_path`` equal to the still-active image's local
+    filepath. Those rows must still be reconciled — the new fix narrows the
+    write path, it does not weaken the reconciler.
+    """
+    db_path = tmp_path / "legacy_repair.sqlite"
+    conn = sqlite3.connect(db_path)
+    try:
+        _create_image_tombstone_test_db(conn)
+    finally:
+        conn.close()
+
+    fixture = _seed_delete_fixture(db_path, synced=True)
+    # Simulate the historical shape: local_image_id NULL, deleted_storage_path
+    # points at the still-active local filepath.
+    conn = sqlite3.connect(db_path)
+    try:
+        conn.execute(
+            """
+            INSERT INTO image_tombstones (
+                deleted_cloud_id,
+                deleted_at,
+                deleted_storage_path,
+                local_observation_id,
+                local_image_id,
+                filepath,
+                original_filepath
+            ) VALUES (?, ?, ?, ?, ?, ?, ?)
+            """,
+            (
+                fixture["image_cloud_id"],
+                "2026-05-01 10:00:00",
+                str(fixture["image_path"]),  # <-- the legacy giveaway
+                fixture["observation_id"],
+                None,
+                str(fixture["image_path"]),
+                str(fixture["original_path"]),
+            ),
+        )
+        conn.commit()
+    finally:
+        conn.close()
+
+    monkeypatch.setattr(models, "get_connection", lambda: sqlite3.connect(db_path))
+
+    repaired = models.reconcile_legacy_publish_exclusion_tombstones()
+    assert repaired == {"pending": 1, "synced": 0}
+    assert models.list_pending_image_tombstones() == []
+
+
 def test_clear_image_cloud_sync_state_removes_cloud_link(monkeypatch, tmp_path):
     db_path = tmp_path / "clear_cloud_state.sqlite"
     conn = sqlite3.connect(db_path)
