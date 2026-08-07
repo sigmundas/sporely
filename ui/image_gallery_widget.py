@@ -559,7 +559,8 @@ class ImageGalleryWidget(QGroupBox):
     deleteImagesRequested = Signal(list)
     # Emitted with the list of local image IDs (ints) whose cloud copies the
     # user asked to tombstone. Local rows are preserved; only the Sporely
-    # Cloud copy is scheduled for deletion on the next cloud sync. The list
+    # Cloud copy is queued for deletion locally; the user's next cloud sync
+    # will push the tombstone so the remote row is marked deleted. The list
     # is pre-filtered to eligible items by
     # ``cloud_delete_eligible_image_ids``.
     deleteCloudCopiesRequested = Signal(list)
@@ -1944,7 +1945,10 @@ class ImageGalleryWidget(QGroupBox):
                 if item_cloud_state == CLOUD_IMAGE_STATE_DELETE_PENDING:
                     cloud_badge.setPixmap(_cloud_delete_pending_icon().pixmap(QSize(24, 24)))
                     cloud_badge.setToolTip(
-                        self.tr("Cloud copy scheduled for deletion on next cloud sync")
+                        self.tr(
+                            "Cloud copy marked for deletion. "
+                            "Sync to apply the change to Cloud."
+                        )
                     )
                 else:
                     cloud_badge.setPixmap(_cloud_status_icon().pixmap(QSize(24, 24)))

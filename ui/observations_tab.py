@@ -7580,9 +7580,12 @@ class ObservationsTab(QWidget):
         """Confirm and tombstone cloud copies for one or many gallery items.
 
         ``image_ids`` is already pre-filtered by the gallery to items in the
-        UPLOADED cloud state — no further eligibility check needed here. Local
-        image rows are preserved; the next cloud sync deletes the R2 object
-        and marks the tombstone synced.
+        UPLOADED cloud state — no further eligibility check needed here.
+        Queues a local tombstone; the local image row stays visible. The
+        user's normal or manual cloud sync will send the tombstone; the
+        remote observation image then gets ``deleted_at`` set and drops out
+        of web/mobile lists. Physical storage bytes stay until the server's
+        purge window elapses.
         """
         eligible: list[int] = []
         seen: set[int] = set()
@@ -7601,14 +7604,14 @@ class ObservationsTab(QWidget):
         if len(eligible) == 1:
             prompt = self.tr(
                 "Delete the cloud copy of this image?\n\n"
-                "The local file stays on this computer. The cloud copy will be "
-                "removed on the next cloud sync."
+                "The local file stays on this computer. The cloud copy will "
+                "be removed from Cloud on your next sync."
             )
         else:
             prompt = self.tr(
                 "Delete the cloud copies of {count} images?\n\n"
-                "The local files stay on this computer. The cloud copies will "
-                "be removed on the next cloud sync."
+                "The local files stay on this computer. The cloud copies "
+                "will be removed from Cloud on your next sync."
             ).format(count=len(eligible))
         confirmed = self._question_yes_no(
             self.tr("Delete cloud copies"),
@@ -7642,40 +7645,21 @@ class ObservationsTab(QWidget):
         except Exception:
             pass
 
-        # Kick off a cloud sync immediately so the user's action actually
-        # deletes the R2 objects instead of sitting as a pending tombstone
-        # until the next background sync. `sync_images=False` keeps this a
-        # fast metadata-only pass — tombstone push doesn't need image byte
-        # uploads.
-        sync_started = False
-        try:
-            sync_started = self._start_cloud_sync(
-                show_status=True,
-                run_refresh_flow=False,
-                sync_images=False,
-            )
-        except Exception:
-            sync_started = False
-
+        # Do NOT trigger a cloud sync here. The tombstone is queued locally
+        # and represented by the red DELETE_PENDING cloud badge; the user's
+        # normal or manual cloud sync will push it to Sporely Cloud on their
+        # next sync. Kicking a sync from a context-menu action would run a
+        # full sync worker (progress bar, network I/O) as a surprise side
+        # effect.
         if len(queued_ids) == 1:
-            base_message = self.tr(
-                "Cloud copy marked for deletion."
+            message = self.tr(
+                "Cloud copy marked for deletion. Sync to apply the change to Cloud."
             )
-        else:
-            base_message = self.tr(
-                "{count} cloud copies marked for deletion."
-            ).format(count=len(queued_ids))
-        if sync_started:
-            message = self.tr("{base} Syncing to cloud now…").format(base=base_message)
         else:
             message = self.tr(
-                "{base} Sign in and click Sync now to remove from cloud."
-            ).format(base=base_message)
-        self.set_status_message(
-            message,
-            level="success" if sync_started else "warning",
-            auto_clear_ms=12000,
-        )
+                "{count} cloud copies marked for deletion. Sync to apply the change to Cloud."
+            ).format(count=len(queued_ids))
+        self.set_status_message(message, level="info", auto_clear_ms=10000)
 
     def _on_panel_gallery_delete_images_requested(self, keys) -> None:
         keys_list = list(keys or [])
@@ -18111,14 +18095,14 @@ class ObservationDetailsDialog(GeometryMixin, QDialog):
         if len(eligible) == 1:
             prompt = self.tr(
                 "Delete the cloud copy of this image?\n\n"
-                "The local file stays on this computer. The cloud copy will be "
-                "removed on the next cloud sync."
+                "The local file stays on this computer. The cloud copy "
+                "will be removed from Cloud on your next sync."
             )
         else:
             prompt = self.tr(
                 "Delete the cloud copies of {count} images?\n\n"
-                "The local files stay on this computer. The cloud copies will "
-                "be removed on the next cloud sync."
+                "The local files stay on this computer. The cloud copies "
+                "will be removed from Cloud on your next sync."
             ).format(count=len(eligible))
         confirmed = self._question_yes_no(
             self.tr("Delete cloud copies"),
@@ -18144,39 +18128,18 @@ class ObservationDetailsDialog(GeometryMixin, QDialog):
         except Exception:
             pass
 
-        # Trigger a cloud sync via the parent Observations tab so the R2
-        # object is actually removed instead of waiting for the next
-        # background pass. Walk up the parent chain — the dialog is opened
-        # both from the panel gallery and from the ObservationsTab flow, so
-        # we can't assume the immediate parent has ``_start_cloud_sync``.
-        sync_started = False
-        candidate = self.parent()
-        while candidate is not None:
-            starter = getattr(candidate, "_start_cloud_sync", None)
-            if callable(starter):
-                try:
-                    sync_started = bool(
-                        starter(show_status=True, run_refresh_flow=False, sync_images=False)
-                    )
-                except Exception:
-                    sync_started = False
-                break
-            next_parent = getattr(candidate, "parent", None)
-            candidate = next_parent() if callable(next_parent) else None
-
+        # Queued only — no automatic sync from a thumbnail action. The
+        # DELETE_PENDING badge advertises the state; the user's normal or
+        # manual cloud sync will push it to Sporely Cloud.
         if len(queued_ids) == 1:
-            base_message = self.tr("Cloud copy marked for deletion.")
-        else:
-            base_message = self.tr(
-                "{count} cloud copies marked for deletion."
-            ).format(count=len(queued_ids))
-        if sync_started:
-            message = self.tr("{base} Syncing to cloud now…").format(base=base_message)
+            message = self.tr(
+                "Cloud copy marked for deletion. Sync to apply the change to Cloud."
+            )
         else:
             message = self.tr(
-                "{base} Close this dialog and click Sync now to remove from cloud."
-            ).format(base=base_message)
-        self._set_hint(message, tone="success" if sync_started else "warning")
+                "{count} cloud copies marked for deletion. Sync to apply the change to Cloud."
+            ).format(count=len(queued_ids))
+        self._set_hint(message, tone="info")
 
     def _on_gallery_delete_requested(self, image_key) -> None:
         if isinstance(image_key, (list, tuple, set)):
