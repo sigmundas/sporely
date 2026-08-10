@@ -1,0 +1,7 @@
+version = 1
+
+[ui_review]
+command = ["./.venv/bin/python", "-m", "tools.render_review_screenshots"]
+timeout_seconds = 120
+scenario_flag = "--scenario"
+group_flag = "--group"

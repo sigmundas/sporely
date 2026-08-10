@@ -624,6 +624,8 @@ def _build_worker_upload_headers(
         opts.get("stored_height"),
         meta.get("stored_height"),
     )
+    image_id = _first_text(opts.get("imageId"), opts.get("image_id"))
+    mosaic_id = _first_text(opts.get("mosaicId"), opts.get("mosaic_id"))
 
     headers["X-Sporely-Upload-Mode"] = upload_mode
     headers["X-Sporely-Upload-Variant"] = upload_variant
@@ -641,6 +643,10 @@ def _build_worker_upload_headers(
         headers["X-Sporely-Stored-Width"] = stored_width
     if stored_height:
         headers["X-Sporely-Stored-Height"] = stored_height
+    if image_id:
+        headers["X-Sporely-Image-Id"] = image_id
+    if mosaic_id:
+        headers["X-Sporely-Mosaic-Id"] = mosaic_id
     return headers
 
 
@@ -813,12 +819,7 @@ class CloudflareMediaWorkerClient:
         errors: list[Exception] = []
 
         def _delete_one(key: str) -> None:
-            worker = CloudflareMediaWorkerClient.from_access_token(
-                self.access_token,
-                base_url=self.base_url,
-                public_base_url=self.public_base_url,
-            )
-            worker.delete_object(key, timeout=timeout, ignore_missing=True)
+            self.delete_object(key, timeout=timeout, ignore_missing=True)
 
         with ThreadPoolExecutor(max_workers=worker_count) as executor:
             futures = [executor.submit(_delete_one, key) for key in unique_keys]

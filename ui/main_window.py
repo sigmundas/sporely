@@ -42,6 +42,7 @@ from PySide6.QtCore import (
     QPoint,
     QEvent,
     QSignalBlocker,
+    QSortFilterProxyModel,
     QStringListModel,
     QUrl,
     QStandardPaths,
@@ -142,9 +143,15 @@ from PIL import Image, ExifTags
 from database.models import ObservationDB, ImageDB, MeasurementDB, SettingsDB, ReferenceDB, CalibrationDB
 from database.models import SpeciesDataAvailability
 from database.reference_library import (
+    MeasurementSet,
     MeasurementSetRepository,
     ObservationReferenceUseRepository,
     ReferenceLibraryError,
+    ReferenceWork,
+    ReferenceWorkRepository,
+    SUPPORTED_ATTACHMENT_DATA_KINDS,
+    TaxonTreatment,
+    TaxonTreatmentRepository,
 )
 from database.taxon_lookup import TAXON_COMPLETER_LIMIT, TaxonChoice, TaxonLookupService
 from database.vernacular_db import VernacularDB
@@ -162,7 +169,10 @@ from database.schema import (
     objective_sort_value,
     resolve_objective_key,
 )
-from references.reference_plotting import translate_observation_reference_use
+from references.reference_plotting import (
+    range_payload_is_plottable,
+    translate_observation_reference_use,
+)
 from utils.annotation_capture import save_spore_annotation
 from utils.image_metadata_merge import merge_image_lab_metadata
 from utils.thumbnail_generator import generate_all_sizes
@@ -5238,8 +5248,48 @@ class SporeDataTable(QTableWidget):
         return points
 
 
+class _PublicationSearchProxyModel(QSortFilterProxyModel):
+    """Proxy model backing the publication-picker completer.
+
+    Re-exposes each source row's private search corpus
+    (``Qt.UserRole + 1``, populated by
+    :meth:`ReferenceAddDialog._populate_publication_combo`) via
+    ``Qt.EditRole`` — the role :class:`QCompleter` matches against by
+    default. Every other role is forwarded unchanged so the completer's
+    popup still renders the clean display label instead of the noisy
+    corpus text.
+
+    This split lets the user type an author's given name, a container
+    title, or a citation-key fragment and still hit the row, without
+    the corpus ever polluting either the visible combo text or the
+    legacy ``reference_values.source`` string that
+    :meth:`ReferenceAddDialog._current_source_label` reads from the
+    display role.
+    """
+
+    def data(self, index, role=Qt.DisplayRole):  # type: ignore[override]
+        if role == Qt.EditRole:
+            source = self.mapToSource(index)
+            if source.isValid():
+                corpus = source.data(Qt.UserRole + 1)
+                if corpus:
+                    return corpus
+                # Fall back to the display label so the completer still
+                # matches on the visible text when a row has no corpus
+                # (e.g. the empty placeholder row).
+                return source.data(Qt.DisplayRole)
+        return super().data(index, role)
+
+
 class ReferenceAddDialog(QDialog):
-    """Dialog for adding reference min/max or spore data."""
+    """Dialog for adding reference min/max or spore data.
+
+    Beyond legacy ``reference_values`` writes the dialog can also drive
+    the normalized Reference Library: a publication picker replaces the
+    free-text Source field, and a Data section offers "use an existing
+    measurement set" or "enter new data" paths that MainWindow uses to
+    create/attach normalized rows for the active observation.
+    """
 
     def __init__(
         self,
@@ -5250,6 +5300,8 @@ class ReferenceAddDialog(QDialog):
         data: dict | None = None,
         title: str | None = None,
         allow_delete: bool = False,
+        observation_id: int | None = None,
+        sporely_taxon_id: int | None = None,
     ):
         super().__init__(parent)
         self.setWindowTitle(title or parent.tr("Add reference data"))
@@ -5257,8 +5309,8 @@ class ReferenceAddDialog(QDialog):
         # Min size keeps the five-column header readable; default size opens
         # wide enough for the paste-field placeholder to fit on one line. The
         # user can drag it narrower if they need to.
-        self.setMinimumSize(580, 440)
-        self.resize(820, 560)
+        self.setMinimumSize(580, 480)
+        self.resize(860, 620)
         self._result = None
         self._genus = genus
         self._species = species
@@ -5268,6 +5320,26 @@ class ReferenceAddDialog(QDialog):
         self._allow_delete = bool(allow_delete)
         self._delete_requested = False
         self._default_hint_text = self.tr("Paste from Excel/csv or type values")
+        # Normalized-library context: MainWindow forwards these when the
+        # dialog opens from an observation's Reference panel. The dialog
+        # keeps working when either is absent (legacy-only write / no
+        # attach), so existing callers and tests remain unaffected.
+        self._observation_id: int | None = (
+            int(observation_id) if observation_id else None
+        )
+        self._sporely_taxon_id: int | None = (
+            int(sporely_taxon_id) if sporely_taxon_id else None
+        )
+        # Selected publication / dataset context — populated by the
+        # picker/data controls; MainWindow reads these after accept via
+        # ``result_data()`` and the accessor methods.
+        self._selected_work_id: str | None = None
+        self._selected_measurement_set_id: str | None = None
+        # Multi-treatment ambiguity: when >1 TaxonTreatment on the chosen
+        # work matches sporely_taxon_id we surface a UI error and skip
+        # the normalized path rather than silently picking one. This
+        # flag is consumed by MainWindow's Add handler.
+        self._normalized_write_ambiguous: bool = False
         # Visible column labels are honest about what literature actually
         # publishes — the unparenthesised inner range is the "typical" bulk of
         # measurements, the parenthesised outer values are extreme observations,
@@ -5413,18 +5485,139 @@ class ReferenceAddDialog(QDialog):
             self.parmasto_inputs[key] = line_edit
         self.tabs.addTab(parmasto_tab, self.tr("Parmasto Biometrics"))
 
-        source_row = QFormLayout()
-        self.source_input = QLineEdit()
-        source_prefill = (
-            self._prefill_data.get("source")
-            or self._prefill_data.get("points_label")
-            or self._prefill_data.get("source_label")
-            or ""
+        # --- Publication picker (replaces free-text Source) ----------------
+        pub_group = QGroupBox(self.tr("Publication"))
+        pub_layout = QVBoxLayout(pub_group)
+        pub_layout.setContentsMargins(8, 8, 8, 8)
+        pub_layout.setSpacing(6)
+        pub_row = QHBoxLayout()
+        self.publication_combo = QComboBox()
+        self.publication_combo.setEditable(True)
+        self.publication_combo.setInsertPolicy(QComboBox.NoInsert)
+        self.publication_combo.setPlaceholderText(
+            self.tr("Search existing publications by title, authors, or citation key")
         )
-        if source_prefill:
-            self.source_input.setText(source_prefill)
-        source_row.addRow(self.tr("Source:"), self.source_input)
-        layout.addLayout(source_row)
+        # The completer is installed lazily by
+        # :meth:`_ensure_publication_completer` after the combo model is
+        # first populated. It filters against a private search corpus
+        # role (``Qt.UserRole + 1``) so authors' given names, container
+        # titles and citation keys still match — without appearing in
+        # the visible label or leaking into the legacy source column.
+        self._publication_completer: QCompleter | None = None
+        self._publication_search_proxy: QSortFilterProxyModel | None = None
+        self.publication_combo.currentIndexChanged.connect(self._on_publication_selected)
+        # The initial combo is capped to ~500 recent works. When the user
+        # types a query we also query the repository directly so older
+        # works remain reachable in libraries larger than the cap.
+        self.publication_combo.editTextChanged.connect(
+            self._on_publication_edit_text_changed
+        )
+        self._publication_search_seen_ids: set[str] = set()
+        pub_row.addWidget(self.publication_combo, 1)
+        self.new_publication_btn = QPushButton(self.tr("New publication…"))
+        self.new_publication_btn.setToolTip(
+            self.tr("Create a new publication in the reference library.")
+        )
+        self.new_publication_btn.clicked.connect(self._on_new_publication_clicked)
+        pub_row.addWidget(self.new_publication_btn)
+        pub_layout.addLayout(pub_row)
+
+        # --- No-taxon info label ---------------------------------------
+        # When the active observation has no sporely_taxon_id the dialog
+        # still writes the legacy row but cannot create a normalized
+        # measurement set (no taxon key to bind the treatment to). The
+        # label makes that trade-off visible up-front. When we DO have a
+        # taxon id, or the dialog is opened without an observation
+        # context (existing edit-mode callers), the label stays hidden.
+        self._no_taxon_notice_label = QLabel(
+            self.tr(
+                "No taxon is set on this observation, so this reference will "
+                "be saved to the legacy list only. Set a taxon on the "
+                "observation to create a normalized library entry."
+            )
+        )
+        self._no_taxon_notice_label.setWordWrap(True)
+        self._no_taxon_notice_label.setStyleSheet(
+            "color: #b58900; font-style: italic;"
+        )
+        self._no_taxon_notice_label.setVisible(
+            bool(self._observation_id) and not self._sporely_taxon_id
+        )
+        pub_layout.addWidget(self._no_taxon_notice_label)
+        # Insert the publication picker directly under the species labels,
+        # BEFORE the tabs, so it reads as the top section of the dialog.
+        layout.insertWidget(layout.indexOf(self.tabs), pub_group)
+
+        # --- Data section: existing measurement set or new data --------
+        data_group = QGroupBox(self.tr("Data"))
+        data_layout = QVBoxLayout(data_group)
+        data_layout.setContentsMargins(8, 8, 8, 8)
+        data_layout.setSpacing(6)
+        self._data_choice_group = QButtonGroup(self)
+        self.use_existing_radio = QRadioButton(
+            self.tr("Use existing measurement set")
+        )
+        self.enter_new_radio = QRadioButton(self.tr("Enter new data"))
+        self.enter_new_radio.setChecked(True)
+        self._data_choice_group.addButton(self.use_existing_radio, 0)
+        self._data_choice_group.addButton(self.enter_new_radio, 1)
+        # Default to disabled — the picker enables "use existing" only when
+        # a publication is chosen and it has ≥1 supported measurement set.
+        self.use_existing_radio.setEnabled(False)
+        data_layout.addWidget(self.use_existing_radio)
+        # Keep the two mutually-exclusive choices together. Placing the
+        # "Enter new data" radio after the existing-set table detached it from
+        # its peer and could visually overlap the table's final row at ordinary
+        # dialog sizes.
+        data_layout.addWidget(self.enter_new_radio)
+
+        # Table of existing measurement sets scoped to the chosen (work,
+        # taxon). Kept hidden until the "Use existing" radio is on and
+        # candidates exist so the dialog stays compact in the common
+        # "brand-new data" case.
+        self._existing_search_input = QLineEdit()
+        self._existing_search_input.setPlaceholderText(
+            self.tr("Filter existing sets by locator, kind, or raw expression…")
+        )
+        self._existing_search_input.setClearButtonEnabled(True)
+        self._existing_search_input.textChanged.connect(
+            self._refresh_existing_sets_table
+        )
+        data_layout.addWidget(self._existing_search_input)
+        self._existing_sets_table = QTableWidget(0, 3)
+        self._existing_sets_table.setHorizontalHeaderLabels(
+            [self.tr("Locator"), self.tr("Kind"), self.tr("Raw expression")]
+        )
+        self._existing_sets_table.setSelectionBehavior(
+            QAbstractItemView.SelectRows
+        )
+        self._existing_sets_table.setSelectionMode(
+            QAbstractItemView.SingleSelection
+        )
+        self._existing_sets_table.setEditTriggers(
+            QAbstractItemView.NoEditTriggers
+        )
+        self._existing_sets_table.verticalHeader().setVisible(False)
+        ex_header = self._existing_sets_table.horizontalHeader()
+        ex_header.setSectionResizeMode(0, QHeaderView.ResizeToContents)
+        ex_header.setSectionResizeMode(1, QHeaderView.ResizeToContents)
+        ex_header.setSectionResizeMode(2, QHeaderView.Stretch)
+        self._existing_sets_table.setMinimumHeight(120)
+        self._existing_sets_table.itemSelectionChanged.connect(
+            self._on_existing_set_selection_changed
+        )
+        data_layout.addWidget(self._existing_sets_table)
+        # Cache of available existing measurement sets for the current
+        # (work, taxon) pair so the search box can filter in-memory.
+        self._existing_sets_cache: list[MeasurementSet] = []
+        # Prefilled legacy source string that had no ReferenceWork match:
+        # keep it so edit-mode callers do not silently lose the value.
+        self._legacy_source_prefill: str | None = None
+        layout.insertWidget(layout.indexOf(self.tabs), data_group)
+
+        # Data controls react to the radio choice.
+        self.use_existing_radio.toggled.connect(self._on_data_choice_toggled)
+        self.enter_new_radio.toggled.connect(self._on_data_choice_toggled)
 
         button_row = QHBoxLayout()
         self.hint_bar = HintBar(self)
@@ -5448,7 +5641,12 @@ class ReferenceAddDialog(QDialog):
 
         self._register_hint_widget(self.spore_table, self._default_hint_text)
 
+        self._populate_publication_combo()
         self._apply_prefill()
+        # Apply initial visibility of data-section widgets based on the
+        # radio state (defaults to "Enter new data", so the existing-set
+        # table is hidden).
+        self._on_data_choice_toggled()
 
     def _register_hint_widget(self, widget: QWidget, hint_text: str | None, tone: str = "info") -> None:
         if not widget:
@@ -5681,11 +5879,33 @@ class ReferenceAddDialog(QDialog):
         except ValueError:
             return None
 
+    def _current_source_label(self) -> str | None:
+        """Return the human-readable source label to persist on the legacy
+        row: the selected publication's short_label / title / (year), the
+        preserved legacy source prefill if no library match was found, or
+        None when neither is available.
+        """
+        work_id = self._selected_work_id
+        if work_id:
+            for row in range(self.publication_combo.count()):
+                if str(self.publication_combo.itemData(row) or "") == work_id:
+                    text = self.publication_combo.itemText(row).strip()
+                    if text:
+                        return text
+                    break
+        if self._legacy_source_prefill:
+            return self._legacy_source_prefill
+        # Editable combo may hold a free-text search string the user did
+        # not resolve to an existing work. Preserving it as the legacy
+        # source keeps parity with the previous single-line workflow.
+        typed = self.publication_combo.currentText().strip()
+        return typed or None
+
     def _reference_record_data(self):
         data = {
             "genus": self._genus,
             "species": self._species,
-            "source": self.source_input.text().strip() or None,
+            "source": self._current_source_label(),
             "plot_color": self._plot_color,
             "parmasto_length_mean": self._parmasto_value("parmasto_length_mean"),
             "parmasto_width_mean": self._parmasto_value("parmasto_width_mean"),
@@ -5711,6 +5931,12 @@ class ReferenceAddDialog(QDialog):
             "q_p50": self._table_value(2, 2),
             "q_p95": self._table_value(2, 3),
             "q_max": self._table_value(2, 4),
+            # Legacy *_avg columns have no UI input in this dialog; carry
+            # them forward from prefill so edit-mode round-trips retain
+            # them and downstream consumers keep working.
+            "length_avg": self._prefill_data.get("length_avg") if self._prefill_data else None,
+            "width_avg": self._prefill_data.get("width_avg") if self._prefill_data else None,
+            "q_avg": self._prefill_data.get("q_avg") if self._prefill_data else None,
         }
         has_values = any(
             data.get(key) is not None
@@ -5762,7 +5988,7 @@ class ReferenceAddDialog(QDialog):
         points = self.spore_table.get_points()
         if not points:
             return None
-        source_label = self.source_input.text().strip()
+        source_label = (self._current_source_label() or "").strip()
         if not source_label:
             source_label = self.tr("Reference points")
         return {
@@ -5776,6 +6002,28 @@ class ReferenceAddDialog(QDialog):
         }
 
     def _on_save(self):
+        # "Use existing measurement set" short-circuits both legacy
+        # entry paths: the caller (MainWindow) will resolve the
+        # selection into an attach + reuse the existing normalized row.
+        if self.use_existing_radio.isChecked():
+            if not self._selected_measurement_set_id:
+                QMessageBox.warning(
+                    self,
+                    self.tr("Missing Data"),
+                    self.tr("Select an existing measurement set or switch to \"Enter new data\"."),
+                )
+                return
+            self._result = {
+                "genus": self._genus,
+                "species": self._species,
+                "source": self._current_source_label(),
+                "plot_color": self._plot_color,
+                "source_kind": "existing_measurement_set",
+                "reference_measurement_set_id": self._selected_measurement_set_id,
+                "reference_work_id": self._selected_work_id,
+            }
+            self.accept()
+            return
         if self.tabs.currentIndex() == 1:
             data = self._points_data()
             if not data:
@@ -5794,11 +6042,600 @@ class ReferenceAddDialog(QDialog):
                     self.tr("Enter at least one reference or Parmasto value.")
                 )
                 return
+        # Stamp the normalized-library context onto the payload so the
+        # calling MainWindow can create the treatment + measurement set
+        # + attach after the legacy write completes. When the picker was
+        # never used, ``reference_work_id`` is None and MainWindow
+        # falls back to legacy-only behavior.
+        data["reference_work_id"] = self._selected_work_id
+        data["observation_id"] = self._observation_id
+        data["sporely_taxon_id"] = self._sporely_taxon_id
+        # When the observation has a taxon and the user entered new data
+        # that COULD become a normalized set (has length+width bounds or
+        # raw points), require them to either pick a publication or
+        # confirm they want a legacy-only save. This prevents silent
+        # data loss where the user meant to attach to a work but forgot.
+        if (
+            self._sporely_taxon_id
+            and self._observation_id
+            and not self._selected_work_id
+            and self._new_data_is_normalizable()
+        ):
+            answer = QMessageBox.question(
+                self,
+                self.tr("No publication selected"),
+                self.tr(
+                    "No publication is selected. Save as a legacy-only "
+                    "reference (no library entry, no observation attachment)?"
+                ),
+                QMessageBox.Yes | QMessageBox.No,
+                QMessageBox.No,
+            )
+            if answer != QMessageBox.Yes:
+                return
         self._result = data
         self.accept()
 
+    def _new_data_is_normalizable(self) -> bool:
+        """Would the current form values produce a normalized MeasurementSet?
+
+        Used by :meth:`_on_save` to decide whether a missing publication
+        selection is worth warning about — no warning is shown when the
+        user entered only Parmasto values or nothing that would populate
+        a normalized set.
+        """
+        if self._build_raw_points_json():
+            return True
+        # Build the tentative range payload from the form and apply the
+        # shared plottability predicate. This keeps the "is this
+        # normalizable?" check in step with what
+        # :meth:`normalized_measurement_set_payload` will actually
+        # accept, so we neither warn on unplottable partial ranges nor
+        # skip warning on complete mean-only pairs.
+        tentative = {
+            "length_min": self._table_value(0, 0),
+            "length_core_min": self._table_value(0, 1),
+            "length_mean": self._table_value(0, 2),
+            "length_core_max": self._table_value(0, 3),
+            "length_max": self._table_value(0, 4),
+            "width_min": self._table_value(1, 0),
+            "width_core_min": self._table_value(1, 1),
+            "width_mean": self._table_value(1, 2),
+            "width_core_max": self._table_value(1, 3),
+            "width_max": self._table_value(1, 4),
+        }
+        return range_payload_is_plottable(tentative)
+
+    def selected_reference_work_id(self) -> str | None:
+        return self._selected_work_id
+
+    def selected_measurement_set_id(self) -> str | None:
+        return self._selected_measurement_set_id
+
+    def is_use_existing_set(self) -> bool:
+        return bool(self.use_existing_radio.isChecked())
+
     def result_data(self):
         return self._result
+
+    # ----- Publication picker helpers -------------------------------------
+
+    def _populate_publication_combo(self, select_id: str | None = None) -> None:
+        """Load existing reference works into the combo and set the completer.
+
+        The combo is populated in most-recently-updated order so recently
+        used works surface first. Each row stores TWO texts:
+
+        * the visible ``DisplayRole`` text — a clean legacy-style
+          ``short_label or title`` + ` (year)`. This is the text the
+          user sees in the drop-down and what
+          :meth:`_current_source_label` persists into the legacy source
+          column, so it must not include search-only decoration.
+        * a private search corpus at ``Qt.UserRole + 1`` — title,
+          short_label, container, every author's ``given family`` and
+          citation key, space-joined. The completer filters against
+          this corpus so typing an author's first name, a container
+          title, or a citation-key fragment still narrows the list
+          without polluting the persisted label.
+        """
+        try:
+            works = ReferenceWorkRepository.list_recent(limit=500)
+        except Exception:
+            works = []
+        blocker = QSignalBlocker(self.publication_combo)
+        try:
+            self.publication_combo.clear()
+            self.publication_combo.addItem("", None)
+            self._publication_search_seen_ids = set()
+            for work in works:
+                self._append_publication_row(work)
+        finally:
+            del blocker
+        self._ensure_publication_completer()
+        if select_id:
+            target_row = -1
+            for row in range(self.publication_combo.count()):
+                if str(self.publication_combo.itemData(row) or "") == select_id:
+                    target_row = row
+                    break
+            if target_row >= 0:
+                self.publication_combo.setCurrentIndex(target_row)
+                return
+        # No explicit selection: leave the placeholder row active and
+        # clear the current-selection state.
+        self.publication_combo.setCurrentIndex(0)
+        self._selected_work_id = None
+
+    def _append_publication_row(self, work: ReferenceWork) -> None:
+        """Append a single work to the combo, populating both the visible
+        display label and the private search corpus role. Deduplicates
+        against previously added ids so incremental search results merge
+        cleanly with the initial recent-works page.
+        """
+        work_id = str(getattr(work, "id", "") or "")
+        if not work_id or work_id in self._publication_search_seen_ids:
+            return
+        self._publication_search_seen_ids.add(work_id)
+        display_label = self._format_publication_display_label(work)
+        self.publication_combo.addItem(display_label, work.id)
+        row = self.publication_combo.count() - 1
+        search_text = self._format_publication_search_text(work)
+        index = self.publication_combo.model().index(row, 0)
+        self.publication_combo.model().setData(index, search_text, Qt.UserRole + 1)
+
+    def _on_publication_edit_text_changed(self, text: str) -> None:
+        """Live-search the repository so works outside the initial recent
+        page still surface when the user types. Newly discovered works
+        are appended to the combo so the completer's filter (which reads
+        this combo's model) can match them without any dedicated remote
+        popup.
+
+        Also invalidates the current selection whenever the visible
+        combo text no longer matches the selected row's display label,
+        so a user who types over a previously-chosen publication cannot
+        silently persist against the stale ID. The selection must be
+        re-established by an explicit completer activation or dropdown
+        pick.
+        """
+        # Stale-selection invalidation: if a work was previously bound
+        # but the visible text no longer matches its display label,
+        # drop the binding. currentIndex/currentData in an editable
+        # QComboBox otherwise persist through arbitrary text edits.
+        current = (text or "").strip()
+        if self._selected_work_id is not None:
+            for row in range(self.publication_combo.count()):
+                if str(self.publication_combo.itemData(row) or "") == self._selected_work_id:
+                    if self.publication_combo.itemText(row).strip() != current:
+                        self._selected_work_id = None
+                        blocker = QSignalBlocker(self.publication_combo)
+                        try:
+                            self.publication_combo.setCurrentIndex(0)
+                            # Restore the user's typed text after the
+                            # index reset so we do not clobber their
+                            # in-progress query.
+                            self.publication_combo.setEditText(current)
+                        finally:
+                            del blocker
+                        # Invalidate the existing-set cache too: the
+                        # radio and table are scoped to the previously
+                        # selected work, so a text-edit that clears
+                        # the selection must also clear those. Without
+                        # this, "Use existing measurement set" would
+                        # still hold a set from the stale publication.
+                        try:
+                            self._refresh_existing_sets_cache()
+                        except Exception:
+                            # Defensive: cache refresh failure must not
+                            # break the edit-text signal path.
+                            pass
+                    break
+        query = current
+        if len(query) < 2:
+            return
+        try:
+            matches = ReferenceWorkRepository.search(query=query, limit=50)
+        except Exception:
+            return
+        added = False
+        blocker = QSignalBlocker(self.publication_combo)
+        try:
+            for work in matches:
+                work_id = str(getattr(work, "id", "") or "")
+                if not work_id or work_id in self._publication_search_seen_ids:
+                    continue
+                self._append_publication_row(work)
+                added = True
+        finally:
+            del blocker
+        if added:
+            completer = getattr(self, "_publication_completer", None)
+            if completer is not None:
+                completer.complete()
+
+    def _ensure_publication_completer(self) -> None:
+        """Install a completer whose filter matches against the private
+        search corpus (``Qt.UserRole + 1``) while the popup and the
+        line-edit inserts still use the clean display label.
+
+        The completer is backed by a ``QSortFilterProxyModel`` that
+        re-exposes the search corpus as ``Qt.EditRole`` — the role
+        QCompleter matches against by default — and forwards every
+        other role unchanged so the popup still renders the clean
+        DisplayRole label. This is set up once and re-applied whenever
+        the combo model is re-populated (the proxy tracks its source).
+        """
+        existing = getattr(self, "_publication_completer", None)
+        if existing is not None:
+            return
+        proxy = _PublicationSearchProxyModel(self)
+        proxy.setSourceModel(self.publication_combo.model())
+        completer = QCompleter(proxy, self)
+        completer.setCompletionMode(QCompleter.PopupCompletion)
+        completer.setCaseSensitivity(Qt.CaseInsensitive)
+        completer.setFilterMode(Qt.MatchContains)
+        # Completions read the display column so the line-edit inserts
+        # the clean label (not the corpus) when a completion is picked.
+        completer.setCompletionColumn(0)
+        self.publication_combo.setCompleter(completer)
+        self._publication_completer = completer
+        self._publication_search_proxy = proxy
+
+    @staticmethod
+    def _format_publication_display_label(work: ReferenceWork) -> str:
+        """Return the clean, legacy-style label shown in the picker
+        combo and persisted into the legacy ``reference_values.source``
+        column via :meth:`_current_source_label`.
+
+        Uses ``short_label`` when present (matching the previous
+        free-text convention), falling back to ``title`` when the work
+        has no short label, and appends ``(year)`` when a year is
+        available. It never appends bracketed suffixes, container
+        titles, authors, or citation keys — those live in the private
+        search corpus so typing them still narrows the completer, but
+        they no longer pollute the visible or persisted label.
+        """
+        base = (work.short_label or work.title or "").strip()
+        year = getattr(work, "year", None)
+        if year and str(year).strip():
+            return f"{base} ({year})" if base else str(year)
+        return base or (work.id or "")
+
+    @staticmethod
+    def _format_publication_search_text(work: ReferenceWork) -> str:
+        """Return the space-joined search corpus for the completer.
+
+        Includes every advertised field a user might search by: title,
+        short_label, container title, each author's full ``given
+        family`` name, and citation key. This is stored privately on
+        the combo row (``Qt.UserRole + 1``) so it drives the completer
+        filter without ever appearing in the visible label or being
+        persisted into the legacy source column.
+        """
+        parts: list[str] = []
+        title = (getattr(work, "title", None) or "").strip()
+        if title:
+            parts.append(title)
+        short_label = (getattr(work, "short_label", None) or "").strip()
+        if short_label:
+            parts.append(short_label)
+        container = (getattr(work, "container_title", None) or "").strip()
+        if container:
+            parts.append(container)
+        authors_json = getattr(work, "authors_json", None)
+        if authors_json:
+            try:
+                import json as _json
+
+                authors = _json.loads(authors_json)
+            except Exception:
+                authors = None
+            if isinstance(authors, list):
+                for entry in authors:
+                    if not isinstance(entry, dict):
+                        continue
+                    given = str(entry.get("given") or "").strip()
+                    family = str(entry.get("family") or "").strip()
+                    full = " ".join(p for p in (given, family) if p)
+                    if full:
+                        parts.append(full)
+        citation_key = (getattr(work, "citation_key", None) or "").strip()
+        if citation_key:
+            parts.append(citation_key)
+        year = getattr(work, "year", None)
+        if year and str(year).strip():
+            parts.append(str(year).strip())
+        return " ".join(parts)
+
+    def _on_publication_selected(self, _index: int) -> None:
+        data = self.publication_combo.currentData()
+        self._selected_work_id = str(data) if data else None
+        # Recompute existing-set candidates whenever the work changes so
+        # the "Use existing" radio + table reflect the new context.
+        self._refresh_existing_sets_cache()
+
+    def _on_new_publication_clicked(self) -> None:
+        try:
+            from .reference_library_manager_dialog import ReferenceWorkEditor
+        except Exception as exc:
+            QMessageBox.warning(
+                self,
+                self.tr("New publication"),
+                self.tr("Reference library editor is unavailable: {error}").format(error=str(exc)),
+            )
+            return
+        editor = ReferenceWorkEditor(self)
+        try:
+            if editor.exec() == QDialog.Accepted and editor.result_work is not None:
+                new_id = editor.result_work.id
+                self._populate_publication_combo(select_id=new_id)
+        finally:
+            editor.deleteLater()
+
+    # ----- Existing-set table helpers -------------------------------------
+
+    def _refresh_existing_sets_cache(self) -> None:
+        """Recompute the list of existing measurement sets for the current
+        (work, taxon) pair and update the UI accordingly.
+
+        The Data section's "Use existing" radio is only enabled when we
+        can offer at least one supported (plottable) set for the active
+        observation's taxon on the chosen publication. When multiple
+        treatments match the same taxon on the same work we still list
+        their measurement sets so the user can pick a specific one — the
+        "create a new treatment" write path is what is blocked, not
+        selection of an existing set.
+        """
+        self._existing_sets_cache = []
+        candidates: list[MeasurementSet] = []
+        work_id = self._selected_work_id
+        taxon_id = self._sporely_taxon_id
+        if work_id and taxon_id:
+            try:
+                treatments = TaxonTreatmentRepository.list_for_work(work_id)
+            except Exception:
+                treatments = []
+            taxon_key = str(int(taxon_id))
+            matching_treatments = [
+                t for t in treatments
+                if str(getattr(t, "taxon_id", "") or "") == taxon_key
+            ]
+            for treatment in matching_treatments:
+                try:
+                    sets = MeasurementSetRepository.list_for_treatment(treatment.id)
+                except Exception:
+                    sets = []
+                for ms in sets:
+                    if ms.data_kind in SUPPORTED_ATTACHMENT_DATA_KINDS:
+                        candidates.append(ms)
+        self._existing_sets_cache = candidates
+        # Toggle the "Use existing" radio availability.
+        has_candidates = bool(candidates)
+        self.use_existing_radio.setEnabled(has_candidates)
+        if not has_candidates and self.use_existing_radio.isChecked():
+            # Move back to "Enter new data" so the user is not stuck
+            # with a disabled radio selected.
+            self.enter_new_radio.setChecked(True)
+        self._refresh_existing_sets_table()
+
+    def _refresh_existing_sets_table(self) -> None:
+        query_raw = self._existing_search_input.text() if hasattr(self, "_existing_search_input") else ""
+        query = (query_raw or "").strip().casefold()
+
+        # Pre-resolve treatment lookups so the filter can also match on
+        # locator_text (which lives on the treatment, not the set) without
+        # issuing a DB call per row per keystroke.
+        locator_by_set: dict[str, str] = {}
+        for ms in self._existing_sets_cache:
+            try:
+                treatment = TaxonTreatmentRepository.get(ms.taxon_treatment_id)
+            except Exception:
+                treatment = None
+            if treatment is not None and treatment.locator_text:
+                locator_by_set[ms.id] = str(treatment.locator_text)
+
+        def _match(ms: MeasurementSet) -> bool:
+            if not query:
+                return True
+            for value in (
+                ms.raw_text,
+                getattr(ms, "notes", None),
+                ms.data_kind,
+                locator_by_set.get(ms.id),
+            ):
+                if value is None:
+                    continue
+                if query in str(value).casefold():
+                    return True
+            return False
+
+        visible = [ms for ms in self._existing_sets_cache if _match(ms)]
+        self._existing_sets_table.setRowCount(0)
+        for ms in visible:
+            row = self._existing_sets_table.rowCount()
+            self._existing_sets_table.insertRow(row)
+            # Locator column is populated from the treatment's
+            # locator_text if we can look it up cheaply; fall back to
+            # an empty string. We avoid extra DB round trips by only
+            # querying the treatment table when a treatment id is
+            # attached to the measurement set.
+            locator = locator_by_set.get(ms.id, "")
+            locator_item = QTableWidgetItem(locator)
+            locator_item.setData(Qt.UserRole, ms.id)
+            locator_item.setFlags(Qt.ItemIsSelectable | Qt.ItemIsEnabled)
+            self._existing_sets_table.setItem(row, 0, locator_item)
+            kind_item = QTableWidgetItem(ms.data_kind or "")
+            kind_item.setFlags(Qt.ItemIsSelectable | Qt.ItemIsEnabled)
+            self._existing_sets_table.setItem(row, 1, kind_item)
+            raw_item = QTableWidgetItem(ms.raw_text or "")
+            raw_item.setFlags(Qt.ItemIsSelectable | Qt.ItemIsEnabled)
+            self._existing_sets_table.setItem(row, 2, raw_item)
+        # Preserve prior selection if possible.
+        target_id = self._selected_measurement_set_id
+        if target_id:
+            for row in range(self._existing_sets_table.rowCount()):
+                item = self._existing_sets_table.item(row, 0)
+                if item and str(item.data(Qt.UserRole) or "") == target_id:
+                    self._existing_sets_table.selectRow(row)
+                    break
+            else:
+                self._selected_measurement_set_id = None
+
+    def _on_existing_set_selection_changed(self) -> None:
+        selected_rows = self._existing_sets_table.selectionModel().selectedRows()
+        if not selected_rows:
+            self._selected_measurement_set_id = None
+            return
+        row = selected_rows[0].row()
+        item = self._existing_sets_table.item(row, 0)
+        self._selected_measurement_set_id = (
+            str(item.data(Qt.UserRole)) if item else None
+        )
+
+    def _on_data_choice_toggled(self, *_args) -> None:
+        use_existing = self.use_existing_radio.isChecked()
+        # Toggle table + search visibility.
+        self._existing_search_input.setVisible(use_existing)
+        self._existing_sets_table.setVisible(use_existing)
+        # Toggle new-data tabs; the tab widget stays visible so the
+        # user can see what they are giving up but individual tabs are
+        # disabled to prevent accidental edits while "Use existing" is
+        # chosen. Parmasto tab stays legacy-only either way and does not
+        # participate in the normalized path.
+        try:
+            for index in range(self.tabs.count()):
+                widget = self.tabs.widget(index)
+                widget.setEnabled(not use_existing)
+        except Exception:
+            pass
+        if use_existing:
+            self._refresh_existing_sets_table()
+
+    def _build_raw_points_json(self) -> str | None:
+        """Serialize the Spore-data tab into ``raw_points_json`` using the
+        normalized ``length`` / ``width`` keys the schema expects.
+
+        SporeDataTable.get_points() uses ``length_um`` / ``width_um`` for
+        Qt display; this method translates without changing the
+        widget-facing shape. It also drops non-positive rows so the
+        normalized MeasurementSet, its sample_size, and the eventual
+        plot translator all agree on which points survive. The legacy
+        observation-scoped points payload keeps every historically
+        accepted row via ``get_points`` unchanged.
+        """
+        points = self.spore_table.get_points()
+        if not points:
+            return None
+        translated = []
+        for point in points:
+            length = point.get("length_um")
+            width = point.get("width_um")
+            if length is None or width is None:
+                continue
+            length_f = float(length)
+            width_f = float(width)
+            # Reject non-positive AND non-finite (NaN / Infinity) values.
+            # The plot translator applies the same finite-positive
+            # requirement, so agreeing here keeps the persisted
+            # raw_points_json, sample_size, and plot output consistent.
+            if not (math.isfinite(length_f) and math.isfinite(width_f)):
+                continue
+            if length_f <= 0 or width_f <= 0:
+                continue
+            translated.append({"length": length_f, "width": width_f})
+        if not translated:
+            return None
+        return json.dumps(translated, ensure_ascii=False)
+
+    def normalized_measurement_set_payload(
+        self, *, legacy_reference_value_id: int | None = None
+    ) -> MeasurementSet | None:
+        """Return the normalized ``MeasurementSet`` payload for the
+        current form values, or ``None`` when the observation lacks a
+        taxon or the current tab is Parmasto-only.
+
+        The migration mapping mirrors ``tools/migrate_legacy_reference_values``:
+        Extreme → ``length_min`` / ``length_max``, Typical → ``core_min`` /
+        ``core_max``, Mean / Avg → ``*_mean``. Raw points win over range
+        cells when the Spore-data tab has ≥1 row.
+        """
+        if not self._sporely_taxon_id:
+            return None
+        # Parmasto tab index 2 - even if it has values, we do not create
+        # a normalized set from Parmasto-only submissions.
+        raw_points_json = self._build_raw_points_json()
+        has_range_values = any(
+            self._table_value(row, col) is not None
+            for row in range(3)
+            for col in range(5)
+        )
+        if not raw_points_json and not has_range_values:
+            return None
+        if raw_points_json:
+            data_kind = "raw_points"
+        else:
+            data_kind = "range"
+        sample_size: int | None = None
+        if raw_points_json:
+            try:
+                sample_size = len(json.loads(raw_points_json))
+            except Exception:
+                sample_size = None
+        # Prefer the last successfully parsed buffer, but fall back to the
+        # current paste-input text so a manually corrected or unparsed
+        # expression still round-trips into raw_text.
+        raw_text_input = (self._raw_measurement_text or "").strip()
+        if not raw_text_input and hasattr(self, "measurement_paste_input"):
+            raw_text_input = (self.measurement_paste_input.text() or "").strip()
+        raw_text_input = raw_text_input or None
+        # Carry legacy method metadata forward when we have it (from a
+        # prefilled edit-mode dialog). The dialog has no dedicated input
+        # for these today, so they are propagated verbatim rather than
+        # re-entered — matching the accepted compatibility contract.
+        prefill = self._prefill_data or {}
+        mount_medium = (str(prefill.get("mount_medium") or "").strip() or None)
+        stain = (str(prefill.get("stain") or "").strip() or None)
+        notes = None
+        legacy_meta = prefill.get("metadata_json") if isinstance(prefill, dict) else None
+        if isinstance(legacy_meta, dict):
+            note_candidate = legacy_meta.get("notes")
+            if isinstance(note_candidate, str) and note_candidate.strip():
+                notes = note_candidate.strip()
+        ms = MeasurementSet(
+            id="",
+            taxon_treatment_id="",  # filled in by MainWindow when creating
+            character="spore_size",
+            data_kind=data_kind,
+            raw_text=raw_text_input,
+            length_min=self._table_value(0, 0),
+            length_core_min=self._table_value(0, 1),
+            length_core_max=self._table_value(0, 3),
+            length_max=self._table_value(0, 4),
+            width_min=self._table_value(1, 0),
+            width_core_min=self._table_value(1, 1),
+            width_core_max=self._table_value(1, 3),
+            width_max=self._table_value(1, 4),
+            q_min=self._table_value(2, 0),
+            q_max=self._table_value(2, 4),
+            q_mean=self._table_value(2, 2),
+            length_mean=self._table_value(0, 2),
+            width_mean=self._table_value(1, 2),
+            sample_size=sample_size,
+            raw_points_json=raw_points_json,
+            legacy_reference_value_id=legacy_reference_value_id,
+            mount_medium=mount_medium,
+            stain=stain,
+            notes=notes,
+        )
+        # Guard against unplottable range submissions: the plot / attach
+        # translator would reject the snapshot, causing the attach helper
+        # to detach the newly-attached use but leave the orphan
+        # MeasurementSet row behind. Share the range-plottability
+        # predicate with ``references.reference_plotting`` so the two
+        # ends agree on what counts as a drawable payload. The
+        # ``raw_points`` path is unaffected.
+        if data_kind == "range" and not range_payload_is_plottable(ms):
+            return None
+        return ms
 
     def delete_requested(self) -> bool:
         return bool(self._delete_requested)
@@ -5827,6 +6664,31 @@ class ReferenceAddDialog(QDialog):
         if not data:
             self._set_plot_color(None)
             return
+        # Legacy source prefill: check whether it corresponds to an
+        # existing ReferenceWork label. When it matches, select that
+        # work in the picker; otherwise preserve the string so the
+        # legacy write path retains it.
+        source_prefill = (
+            data.get("source")
+            or data.get("points_label")
+            or data.get("source_label")
+            or ""
+        )
+        if source_prefill:
+            matched_id: str | None = None
+            for row in range(self.publication_combo.count()):
+                label = self.publication_combo.itemText(row).strip()
+                if label and label.casefold() == source_prefill.strip().casefold():
+                    matched_id = str(self.publication_combo.itemData(row) or "") or None
+                    break
+            if matched_id:
+                self._populate_publication_combo(select_id=matched_id)
+            else:
+                self._legacy_source_prefill = source_prefill
+                # Show the prefilled label as free-text so the user knows
+                # the value survives even though it does not resolve to
+                # a library entry.
+                self.publication_combo.setEditText(source_prefill)
 
         def _set_cell(row, col, value):
             if value is None:
@@ -9947,10 +10809,14 @@ class MainWindow(GeometryMixin, QMainWindow):
                 self.tr("Select an observation first before attaching a reference."),
             )
             return
+        captured_observation_id = int(observation_id)
         excluded = self._current_attached_measurement_set_ids()
+        taxon_getter = getattr(self, "_active_sporely_taxon_id", None)
+        active_taxon = taxon_getter() if callable(taxon_getter) else None
         dialog = ReferenceLibraryAttachDialog(
             self,
             exclude_measurement_set_ids=excluded,
+            taxon_id=active_taxon,
         )
         # The chooser owns the "Manage library…" lifecycle (opens the
         # manager as its own child modal and refreshes candidates on
@@ -9961,6 +10827,26 @@ class MainWindow(GeometryMixin, QMainWindow):
             return
         measurement_set_id, role = dialog.result_pair()
         if not measurement_set_id:
+            return
+        # Guard against observation drift while the chooser was open:
+        # the taxon-scoped selection was made under the observation
+        # active at open time. If a background/programmatic change
+        # flipped the active observation, refuse to attach the
+        # scope-A selection to observation B (confused deputy).
+        current_observation_id = getattr(self, "active_observation_id", None)
+        if (
+            current_observation_id is None
+            or int(current_observation_id) != captured_observation_id
+        ):
+            QMessageBox.warning(
+                self,
+                self.tr("Attach library reference"),
+                self.tr(
+                    "The active observation changed while the attachment "
+                    "chooser was open. Reopen the observation and try "
+                    "again — no reference was attached."
+                ),
+            )
             return
         self._attach_normalized_reference_to_active_observation(
             measurement_set_id, role
@@ -11248,20 +12134,377 @@ class MainWindow(GeometryMixin, QMainWindow):
         self.reference_values = data
         self._add_reference_series_entry(data)
 
+    def _active_sporely_taxon_id(self) -> int | None:
+        """Return the sporely_taxon_id of the active observation, or None.
+
+        The value drives the normalized measurement-set/attach path in
+        ReferenceAddDialog. Fails soft on any lookup error so the legacy
+        reference-add flow keeps working.
+        """
+        obs_id = getattr(self, "active_observation_id", None)
+        if not obs_id:
+            return None
+        try:
+            obs = ObservationDB.get_observation(int(obs_id))
+        except Exception:
+            return None
+        if not obs:
+            return None
+        raw = obs.get("sporely_taxon_id")
+        if raw in (None, "", "None"):
+            return None
+        try:
+            candidate = int(raw)
+        except (TypeError, ValueError):
+            return None
+        return candidate if candidate > 0 else None
+
+    def _persist_normalized_reference_from_dialog(
+        self,
+        dialog: "ReferenceAddDialog",
+        payload: dict,
+        *,
+        legacy_id: int | None,
+    ) -> bool:
+        """Route the dialog's result through the normalized library.
+
+        - When ``source_kind`` is ``existing_measurement_set``, attach the
+          selected set to the active observation via the shared helper.
+        - When the dialog produced a new dataset AND a publication is
+          selected AND the observation has a sporely_taxon_id, resolve
+          or create a treatment, create a MeasurementSet with the
+          legacy row's id stamped on it, and attach.
+
+        Parmasto-only submissions and missing-taxon submissions are
+        skipped silently (legacy row already wrote). Multi-treatment
+        ambiguity surfaces a warning and skips the normalized write.
+        """
+        # Bind persistence to the observation ID captured when the
+        # dialog was opened. If the active observation drifted while
+        # the modal was up (a background reload, a programmatic
+        # switch), refuse to commit against the current-active
+        # observation and warn the user — otherwise a scope-A selection
+        # could be attached to observation B (confused-deputy write).
+        captured_obs_id = payload.get("observation_id")
+        active_obs_id = getattr(self, "active_observation_id", None)
+        if not active_obs_id:
+            return False
+        if captured_obs_id is not None and int(captured_obs_id) != int(active_obs_id):
+            QMessageBox.warning(
+                self,
+                self.tr("Reference library"),
+                self.tr(
+                    "The active observation changed while this dialog was "
+                    "open. The legacy reference was still saved, but the "
+                    "normalized library entry was not created — reopen the "
+                    "observation and try again."
+                ),
+            )
+            return False
+        observation_id = int(captured_obs_id) if captured_obs_id is not None else int(active_obs_id)
+        # Also guard against the observation's taxon changing while the
+        # modal was open: the payload's sporely_taxon_id was captured
+        # at dialog-open time and must still match the live taxon on
+        # the observation, otherwise a scope-A selection could be
+        # committed under scope-B's identity.
+        captured_taxon_id = payload.get("sporely_taxon_id")
+        live_taxon_id = self._active_sporely_taxon_id()
+        if (
+            captured_taxon_id is not None
+            and live_taxon_id is not None
+            and int(captured_taxon_id) != int(live_taxon_id)
+        ):
+            QMessageBox.warning(
+                self,
+                self.tr("Reference library"),
+                self.tr(
+                    "The observation's taxon changed while this dialog "
+                    "was open. The legacy reference was still saved, "
+                    "but no normalized library entry was created — "
+                    "reopen the observation and try again."
+                ),
+            )
+            return False
+        source_kind = payload.get("source_kind")
+        if source_kind == "existing_measurement_set":
+            set_id = payload.get("reference_measurement_set_id")
+            if not set_id:
+                return False
+            self._attach_normalized_reference_to_active_observation(
+                str(set_id), "compared"
+            )
+            return self._measurement_set_is_attached_to_observation(
+                int(observation_id), str(set_id)
+            )
+        work_id = payload.get("reference_work_id")
+        taxon_id = payload.get("sporely_taxon_id")
+        if not work_id or not taxon_id:
+            return False
+        try:
+            payload_ms = dialog.normalized_measurement_set_payload(
+                legacy_reference_value_id=legacy_id
+            )
+        except Exception as exc:
+            QMessageBox.warning(
+                self,
+                self.tr("Reference library"),
+                self.tr("Could not build the normalized measurement set: {error}").format(
+                    error=str(exc)
+                ),
+            )
+            return False
+        if payload_ms is None:
+            # Nothing normalized to write (Parmasto-only or no data);
+            # legacy already persisted upstream.
+            return False
+        # Taxon-drift guard: the observation binds sporely_taxon_id +
+        # observation.genus/species together as one identity. The
+        # ReferenceAddDialog is initialised from the panel-editable
+        # genus/species text, which the user can deliberately overwrite
+        # (e.g. to record a historical synonym as the published name).
+        # We must not silently persist a treatment whose
+        # ``name_as_published`` disagrees with the observation's stored
+        # identity — that could bind scientifically contradictory data
+        # to the observation's taxon id. But we also must not lock
+        # ``name_as_published`` to the canonical taxon name, since
+        # recording a legitimate as-published synonym is a real user
+        # need. Require an explicit confirmation instead: default is
+        # "No" so an accidental panel edit cannot slip through.
+        panel_genus = (payload.get("genus") or "").strip()
+        panel_species = (payload.get("species") or "").strip()
+        obs_genus, obs_species = self._observation_taxon_identity(int(observation_id))
+        if (panel_genus or panel_species) and (obs_genus or obs_species):
+            if (
+                panel_genus.casefold() != (obs_genus or "").casefold()
+                or panel_species.casefold() != (obs_species or "").casefold()
+            ):
+                proceed = QMessageBox.question(
+                    self,
+                    self.tr("Reference library"),
+                    self.tr(
+                        "The species entered in the panel ({panel}) differs from the "
+                        "observation's taxon record ({observation}). If you want to "
+                        "record the published name as a synonym or historical name, "
+                        "click Yes. If this is an accidental edit, click No — the "
+                        "legacy reference has already been saved; no normalized "
+                        "library entry will be created."
+                    ).format(
+                        panel=(f"{panel_genus} {panel_species}").strip() or "—",
+                        observation=(f"{obs_genus} {obs_species}").strip() or "—",
+                    ),
+                    QMessageBox.Yes | QMessageBox.No,
+                    QMessageBox.No,
+                )
+                if proceed != QMessageBox.Yes:
+                    return False
+        taxon_key = str(int(taxon_id))
+        try:
+            treatments = TaxonTreatmentRepository.list_for_work(str(work_id))
+        except Exception as exc:
+            QMessageBox.warning(
+                self,
+                self.tr("Reference library"),
+                self.tr("Could not read treatments: {error}").format(error=str(exc)),
+            )
+            return False
+        matching = [
+            t for t in treatments
+            if str(getattr(t, "taxon_id", "") or "") == taxon_key
+        ]
+        if len(matching) > 1:
+            QMessageBox.warning(
+                self,
+                self.tr("Reference library"),
+                self.tr(
+                    "This publication already has more than one treatment "
+                    "matching the observation's taxon. Open the reference "
+                    "library manager to pick one and attach it manually."
+                ),
+            )
+            return False
+        if matching:
+            treatment = matching[0]
+        else:
+            name_as_published = " ".join(
+                part for part in (payload.get("genus"), payload.get("species")) if part
+            ).strip() or (self.tr("Unspecified taxon"))
+            try:
+                treatment = TaxonTreatmentRepository.create(
+                    TaxonTreatment(
+                        id="",
+                        reference_work_id=str(work_id),
+                        taxon_id=taxon_key,
+                        name_as_published=name_as_published,
+                    )
+                )
+            except Exception as exc:
+                QMessageBox.warning(
+                    self,
+                    self.tr("Reference library"),
+                    self.tr("Could not create treatment: {error}").format(error=str(exc)),
+                )
+                return False
+        payload_ms.taxon_treatment_id = treatment.id
+        # Retry-safety: always create a fresh MeasurementSet — never
+        # mutate an existing one on a coarse (obs, treatment, character,
+        # data_kind) key, because that would conflate a legitimate
+        # distinct dataset with a retry and could leave an already-
+        # attached set's snapshot pointing at values the user did not
+        # intend. If this attempt fails at the attach step, compensate
+        # by deleting ONLY the artifacts this attempt created (the new
+        # set and, when we also created the treatment fresh in this
+        # operation, that treatment). Legitimate distinct datasets on
+        # this or other observations are left untouched.
+        try:
+            created_set = MeasurementSetRepository.create(payload_ms)
+        except Exception as exc:
+            # Compensate a treatment created solely by this attempt so
+            # no orphan is left behind if the immediate follow-up
+            # persistence failed. Surface a rollback failure instead of
+            # swallowing it so the user can reconcile any residue.
+            treatment_rollback_error: str | None = None
+            if not matching:
+                try:
+                    TaxonTreatmentRepository.delete(treatment.id)
+                except Exception as rollback_exc:
+                    treatment_rollback_error = str(rollback_exc)
+            if treatment_rollback_error is not None:
+                QMessageBox.critical(
+                    self,
+                    self.tr("Reference library"),
+                    self.tr(
+                        "Could not create measurement set ({error}); the "
+                        "compensating cleanup of taxon_treatment {tid} "
+                        "also failed ({rollback}). Please review the "
+                        "reference library manager."
+                    ).format(
+                        error=str(exc),
+                        tid=treatment.id,
+                        rollback=treatment_rollback_error,
+                    ),
+                )
+                return False
+            QMessageBox.warning(
+                self,
+                self.tr("Reference library"),
+                self.tr("Could not create measurement set: {error}").format(error=str(exc)),
+            )
+            return False
+        # The shared attach helper swallows ReferenceLibraryError and
+        # unplottable-snapshot cases to display them to the user, so it
+        # can return without raising even when no use row was actually
+        # created. Detect that silent failure by re-reading the
+        # observation's uses and roll back this operation's newly
+        # created set (and treatment, when we created it here) if the
+        # attachment did not land.
+        attach_ok = False
+        try:
+            self._attach_normalized_reference_to_active_observation(
+                created_set.id, "compared"
+            )
+            attach_ok = self._measurement_set_is_attached_to_observation(
+                int(observation_id), created_set.id
+            )
+        except Exception:
+            attach_ok = False
+        if not attach_ok:
+            rollback_errors: list[str] = []
+            try:
+                MeasurementSetRepository.delete(created_set.id)
+            except Exception as exc:
+                rollback_errors.append(
+                    f"measurement_set {created_set.id}: {exc}"
+                )
+            if not matching:
+                try:
+                    TaxonTreatmentRepository.delete(treatment.id)
+                except Exception as exc:
+                    rollback_errors.append(
+                        f"taxon_treatment {treatment.id}: {exc}"
+                    )
+            if rollback_errors:
+                # A double-failure (attach failed AND cleanup failed)
+                # leaves persisted state behind. Surface the details so
+                # the user knows what to reconcile manually instead of
+                # silently accumulating orphans across retries.
+                QMessageBox.critical(
+                    self,
+                    self.tr("Reference library"),
+                    self.tr(
+                        "Attachment failed and the compensating cleanup "
+                        "could not fully roll back. The following rows may "
+                        "still be present and should be reviewed in the "
+                        "reference library manager:\n\n{errors}"
+                    ).format(errors="\n".join(rollback_errors)),
+                )
+            return False
+        return True
+
+
+    @staticmethod
+    def _measurement_set_is_attached_to_observation(
+        observation_id: int, measurement_set_id: str
+    ) -> bool:
+        """Return True iff observation ``observation_id`` currently has
+        an attachment pointing at ``measurement_set_id``. Used to
+        detect silent attachment failures from the shared attach helper
+        (which catches domain errors and returns without raising).
+        """
+        try:
+            uses = ObservationReferenceUseRepository.list_for_observation(
+                int(observation_id)
+            )
+        except Exception:
+            return False
+        return any(
+            str(getattr(u, "reference_measurement_set_id", "") or "")
+            == str(measurement_set_id)
+            for u in uses
+        )
+
+    def _observation_taxon_identity(
+        self, observation_id: int
+    ) -> tuple[str | None, str | None]:
+        """Return the observation's stored (genus, species) — the ground
+        truth for the observation's taxon identity — or (None, None) on
+        any lookup failure. Kept intentionally soft-failing so the
+        legacy reference-add flow keeps working even when the
+        observation record cannot be read.
+        """
+        try:
+            obs = ObservationDB.get_observation(int(observation_id))
+        except Exception:
+            return (None, None)
+        if not obs:
+            return (None, None)
+        genus = (obs.get("genus") or "").strip() or None
+        species = (obs.get("species") or "").strip() or None
+        return (genus, species)
+
     def _on_reference_panel_add_clicked(self):
         genus = self._clean_ref_genus_text(self.ref_genus_input.text())
         species = self._clean_ref_species_text(self.ref_species_input.text())
         if not genus or not species:
             return
         vernacular = self.ref_vernacular_input.text().strip() if hasattr(self, "ref_vernacular_input") else ""
-        dialog = ReferenceAddDialog(self, genus, species, vernacular=vernacular)
+        observation_id = getattr(self, "active_observation_id", None)
+        sporely_taxon_id = self._active_sporely_taxon_id()
+        dialog = ReferenceAddDialog(
+            self,
+            genus,
+            species,
+            vernacular=vernacular,
+            observation_id=int(observation_id) if observation_id else None,
+            sporely_taxon_id=sporely_taxon_id,
+        )
         if dialog.exec() != QDialog.Accepted:
             return
         data = dialog.result_data()
         if not isinstance(data, dict) or not data:
             return
+        legacy_id: int | None = None
         if data.get("source_kind") == "reference":
-            ReferenceDB.set_reference(data)
+            legacy_id = ReferenceDB.set_reference(data)
             self._refresh_reference_species_availability()
             self._populate_reference_panel_sources()
             if data.get("source"):
@@ -11270,9 +12513,36 @@ class MainWindow(GeometryMixin, QMainWindow):
                     self.ref_source_input.setCurrentIndex(idx)
                 else:
                     self.ref_source_input.setCurrentText(data.get("source"))
+        # Attempt to persist through the normalized library. For
+        # legacy points/no-source paths this is effectively a no-op.
+        normalized_attached = False
+        try:
+            normalized_attached = self._persist_normalized_reference_from_dialog(
+                dialog, data, legacy_id=legacy_id
+            )
+        except Exception as exc:
+            QMessageBox.warning(
+                self,
+                self.tr("Reference library"),
+                self.tr("Reference stored locally, but library sync failed: {error}").format(
+                    error=str(exc)
+                ),
+            )
+        # An existing-measurement-set selection has no legacy envelope to
+        # persist as a panel entry; the attach helper already appended
+        # the translated series row for the attached set.
+        if data.get("source_kind") == "existing_measurement_set":
+            return
         self.reference_values = data
         self._apply_reference_panel_values(data)
-        self._add_reference_series_entry(data)
+        # Dual-plot dedup: when the normalized attach succeeded, the
+        # attach helper already added a translated series row for the
+        # measurement set. Suppress the legacy envelope's series row so
+        # the same scientific dataset does not render as two enabled
+        # entries. The legacy row itself remains in ``reference_values``
+        # for downgrade compatibility and edit-mode round-trips.
+        if not normalized_attached:
+            self._add_reference_series_entry(data)
 
     def _on_reference_panel_edit_clicked(self):
         genus = self._clean_ref_genus_text(self.ref_genus_input.text())
@@ -11287,6 +12557,8 @@ class MainWindow(GeometryMixin, QMainWindow):
         source_data = self.ref_source_input.currentData()
         allow_delete = bool(isinstance(source_data, dict) and source_data.get("kind") == "reference")
         vernacular = self.ref_vernacular_input.text().strip() if hasattr(self, "ref_vernacular_input") else ""
+        observation_id = getattr(self, "active_observation_id", None)
+        sporely_taxon_id = self._active_sporely_taxon_id()
         dialog = ReferenceAddDialog(
             self,
             genus,
@@ -11295,6 +12567,8 @@ class MainWindow(GeometryMixin, QMainWindow):
             data=data,
             title=self.tr("Edit selected reference data"),
             allow_delete=allow_delete,
+            observation_id=int(observation_id) if observation_id else None,
+            sporely_taxon_id=sporely_taxon_id,
         )
         if dialog.exec() != QDialog.Accepted:
             return
@@ -11331,6 +12605,25 @@ class MainWindow(GeometryMixin, QMainWindow):
                     self.ref_source_input.setCurrentIndex(idx)
                 else:
                     self.ref_source_input.setCurrentText(updated.get("source"))
+        # An existing-measurement-set selection is a purely normalized
+        # attachment for the active observation; route it through the
+        # shared attach helper and skip the empty legacy envelope so no
+        # blank reference-series row is appended. Other source kinds
+        # keep the existing legacy edit semantics.
+        if updated.get("source_kind") == "existing_measurement_set":
+            try:
+                self._persist_normalized_reference_from_dialog(
+                    dialog, updated, legacy_id=None
+                )
+            except Exception as exc:
+                QMessageBox.warning(
+                    self,
+                    self.tr("Reference library"),
+                    self.tr("Reference stored locally, but library sync failed: {error}").format(
+                        error=str(exc)
+                    ),
+                )
+            return
         self.reference_values = updated
         self._add_reference_series_entry(updated)
 

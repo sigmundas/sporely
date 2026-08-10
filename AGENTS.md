@@ -11,6 +11,38 @@
 Ask for confirmation before installing or upgrading packages in .venv.
 For syntax checks, use ./.venv/bin/python -m py_compile <touched files>
 
+## UI screenshot review evidence
+
+- Do not create a new screenshot renderer for each feature. Add scenarios to the
+  generic UI review renderer under `tools/review_ui/scenarios/`; scenario code
+  should construct meaningful states with real production widgets and
+  deterministic, no-network fixtures.
+- List the registered scenario IDs and groups with:
+  ```bash
+  ./.venv/bin/python -m tools.render_review_screenshots --list
+  ```
+- Render a focused group or one or more scenarios with:
+  ```bash
+  QT_QPA_PLATFORM=offscreen ./.venv/bin/python -m tools.render_review_screenshots --group reference-library <output-dir>
+  QT_QPA_PLATFORM=offscreen ./.venv/bin/python -m tools.render_review_screenshots --scenario reference.add-range --scenario reference.dark <output-dir>
+  ```
+- UI-affecting features should normally add or update their relevant review
+  scenarios. Keep feature-specific fixture construction beside those scenarios;
+  the shared renderer owns Qt setup, themes/locales, capture, cleanup, output
+  confinement, and manifest generation.
+- When asked for UI screenshot evidence, run the repository-owned deterministic
+  renderer with an explicit disposable output directory:
+  ```bash
+  QT_QPA_PLATFORM=offscreen ./.venv/bin/python -m tools.render_review_screenshots <output-dir>
+  ```
+- The renderer uses mocked fixtures and offscreen Qt widgets. It must not use
+  production credentials, live cloud/database data, or arbitrary desktop capture.
+- Treat `<output-dir>/manifest.json` as authoritative. Inspect only the PNG/JPEG
+  files it lists, using the current agent environment's image-viewing capability.
+- The renderer is also configured for autonomous review through the repository's
+  `.autonomous-development.toml`; the framework supplies its run-owned output
+  directory automatically.
+
 ## Localization
 
 Development is in English. Translations must be current before publish.

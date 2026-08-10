@@ -1335,6 +1335,14 @@ class _ReferenceWorkForm(QDialog):
         self.error_label.setVisible(True)
 
 
+# Public alias for callers outside this module that need to reuse the
+# canonical publication editor (e.g. ReferenceAddDialog's "New
+# publication…" affordance). The underscore-prefixed name remains for
+# backwards compatibility with existing manager code and tests that
+# import _ReferenceWorkForm directly.
+ReferenceWorkEditor = _ReferenceWorkForm
+
+
 class _TaxonTreatmentForm(QDialog):
     """Modal form for creating or editing a :class:`TaxonTreatment`."""
 

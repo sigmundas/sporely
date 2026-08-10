@@ -13,12 +13,14 @@ from typing import Iterable
 from PySide6.QtCore import Qt, Signal
 from PySide6.QtWidgets import (
     QAbstractItemView,
+    QCheckBox,
     QComboBox,
     QDialog,
     QDialogButtonBox,
     QHBoxLayout,
     QHeaderView,
     QLabel,
+    QLineEdit,
     QPushButton,
     QTableWidget,
     QTableWidgetItem,
@@ -46,6 +48,12 @@ class ReferenceLibraryAttachDialog(QDialog):
     "Manage library…" affordance so the parent (MainWindow) can open the
     normalized library manager. After the manager closes, callers should
     invoke :meth:`refresh_candidates` to repopulate the chooser table.
+
+    When ``taxon_id`` is provided the candidate list is initially scoped
+    to treatments whose ``taxon_id`` matches; a checkbox lets the user
+    widen the search to the whole library. A live text-search box filters
+    the visible rows in-memory against short label, published name,
+    locator, kind and raw expression.
     """
 
     manage_library_requested = Signal()
@@ -56,12 +64,22 @@ class ReferenceLibraryAttachDialog(QDialog):
         *,
         exclude_measurement_set_ids: Iterable[str] | None = None,
         candidates: list[MeasurementSetCandidate] | None = None,
+        taxon_id: int | str | None = None,
     ) -> None:
         super().__init__(parent)
         self.setWindowTitle(self.tr("Attach library reference"))
         self.setModal(True)
         self._selected_id: str | None = None
         self._exclude_ids = {str(x) for x in (exclude_measurement_set_ids or [])}
+        # Normalize the taxon id to a string so the join query (which
+        # stores taxon_id as TEXT) can be filtered against integer or
+        # string inputs without surprising conversions.
+        self._taxon_id: str | None
+        if taxon_id is None:
+            self._taxon_id = None
+        else:
+            text = str(taxon_id).strip()
+            self._taxon_id = text or None
 
         if candidates is None:
             candidates = MeasurementSetRepository.list_attachment_candidates(
@@ -86,6 +104,38 @@ class ReferenceLibraryAttachDialog(QDialog):
         )
         header.setWordWrap(True)
         layout.addWidget(header)
+
+        # Search + taxon-scope row. Both controls are always present so
+        # the layout stays stable across observations with and without a
+        # taxon; the checkbox is disabled (and unchecked) when no taxon
+        # id was provided, so users are not misled by a filter that
+        # cannot narrow anything.
+        filter_row = QHBoxLayout()
+        filter_row.setSpacing(8)
+        filter_label = QLabel(self.tr("Search:"))
+        filter_row.addWidget(filter_label)
+        self.search_input = QLineEdit(self)
+        self.search_input.setPlaceholderText(
+            self.tr("Filter by publication, taxon, locator, kind, or raw text…")
+        )
+        self.search_input.setClearButtonEnabled(True)
+        self.search_input.textChanged.connect(self._on_filter_changed)
+        filter_row.addWidget(self.search_input, 1)
+        self.only_this_taxon_checkbox = QCheckBox(self.tr("Only this taxon"), self)
+        self.only_this_taxon_checkbox.setToolTip(
+            self.tr(
+                "Restrict the list to measurement sets whose treatment matches "
+                "the active observation's taxon."
+            )
+        )
+        if self._taxon_id is None:
+            self.only_this_taxon_checkbox.setEnabled(False)
+            self.only_this_taxon_checkbox.setChecked(False)
+        else:
+            self.only_this_taxon_checkbox.setChecked(True)
+        self.only_this_taxon_checkbox.toggled.connect(self._on_filter_changed)
+        filter_row.addWidget(self.only_this_taxon_checkbox)
+        layout.addLayout(filter_row)
 
         self.table = QTableWidget(0, 5, self)
         self.table.setObjectName("referenceLibraryAttachTable")
@@ -152,6 +202,51 @@ class ReferenceLibraryAttachDialog(QDialog):
         self._populate_table()
         self._update_accept_state()
 
+    # ----- Filtering helpers ------------------------------------------------
+
+    def _filtered_candidates(self) -> list[MeasurementSetCandidate]:
+        """Apply the current taxon scope + text search to ``self._candidates``.
+
+        Returns a fresh list preserving the repository's deterministic
+        order.
+        """
+        candidates = list(self._candidates)
+        if (
+            self._taxon_id is not None
+            and self.only_this_taxon_checkbox.isChecked()
+        ):
+            target = self._taxon_id
+            candidates = [
+                c for c in candidates
+                if str(getattr(c, "taxon_id", "") or "") == target
+            ]
+        query_raw = self.search_input.text() if hasattr(self, "search_input") else ""
+        query = (query_raw or "").strip().casefold()
+        if query:
+            def _match(c: MeasurementSetCandidate) -> bool:
+                for field_value in (
+                    c.short_label,
+                    c.name_as_published,
+                    c.locator_text,
+                    c.raw_text,
+                    c.data_kind,
+                ):
+                    if field_value is None:
+                        continue
+                    if query in str(field_value).casefold():
+                        return True
+                return False
+
+            candidates = [c for c in candidates if _match(c)]
+        return candidates
+
+    def _on_filter_changed(self, *_args) -> None:
+        # Reset selection when the visible set changes so we do not
+        # accept an id that is no longer visible.
+        self._selected_id = None
+        self._populate_table()
+        self._update_accept_state()
+
     def _on_manage_library_clicked(self) -> None:
         """Open the normalized Reference Library manager as a child
         modal, refresh the candidate table when it closes, then emit
@@ -185,7 +280,8 @@ class ReferenceLibraryAttachDialog(QDialog):
         the table. External callers (e.g. MainWindow) should invoke this
         after the normalized library manager closes so newly-created
         measurement sets appear immediately without reopening the
-        chooser. Preserves the exclusion set passed at construction.
+        chooser. Preserves the exclusion set passed at construction and
+        reapplies the active taxon-scope + text-search filters.
         """
         self._candidates = MeasurementSetRepository.list_attachment_candidates(
             exclude_ids=self._exclude_ids
@@ -205,13 +301,31 @@ class ReferenceLibraryAttachDialog(QDialog):
 
     def _populate_table(self) -> None:
         self.table.setRowCount(0)
-        if not self._candidates:
+        visible = self._filtered_candidates()
+        if not visible:
             self.table.setEnabled(False)
+            # The "empty" message differentiates "no candidates in the
+            # library at all" from "no candidates match the current
+            # filters" so the user knows which knob to change.
+            if not self._candidates:
+                self._empty_label.setText(
+                    self.tr(
+                        "No reference measurement sets are available. Add reference "
+                        "works to the library before attaching."
+                    )
+                )
+            else:
+                self._empty_label.setText(
+                    self.tr(
+                        "No measurement sets match the current filters. Clear "
+                        "the search box or widen the taxon scope to see more."
+                    )
+                )
             self._empty_label.setVisible(True)
             return
         self.table.setEnabled(True)
         self._empty_label.setVisible(False)
-        for candidate in self._candidates:
+        for candidate in visible:
             row = self.table.rowCount()
             self.table.insertRow(row)
             source_item = QTableWidgetItem(candidate.short_label or "")

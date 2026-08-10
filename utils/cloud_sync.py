@@ -14041,17 +14041,15 @@ class SporelyCloudClient:
                 continue
             cleaned.append(path_str)
 
-            for variant in ('thumb', 'small', 'medium'):
-                cleaned.append(media_variant_key(path_str, variant))
-
         if not cleaned:
             return
         try:
-            if direct_r2_runtime_available():
-                self._get_r2().delete_objects(cleaned)
-            else:
-                self._get_media_worker().delete_objects(cleaned)
-                _increment_sync_summary(_cloud_sync_current_summary(), 'storage_quota_delta_rpc_calls')
+            # The authenticated Worker owns dual-bucket targeting and logical
+            # quota accounting. Direct S3 deletion is legacy-bucket-only and
+            # must not be used for lifecycle cleanup, even in an explicitly
+            # enabled local admin runtime.
+            self._get_media_worker().delete_objects(cleaned)
+            _increment_sync_summary(_cloud_sync_current_summary(), 'storage_quota_delta_rpc_calls')
         except Exception as exc:
             raise CloudSyncError(f'Media delete failed: {exc}') from exc
 
@@ -14544,44 +14542,34 @@ class SporelyCloudClient:
                 })
 
             try:
-                if direct_r2_runtime_available():
-                    r2 = self._get_r2()
-                    r2.put_file(
-                        prepared_path,
-                        storage_path,
-                        content_type=mime,
-                        cache_control=cache_control,
-                        timeout=120,
-                        custom_metadata=common_metadata,
-                    )
-                else:
-                    worker = self._get_media_worker()
-                    worker_base_url = str(getattr(worker, 'base_url', worker_base_url) or worker_base_url).strip().rstrip('/')
-                    upload_response = worker.put_file(
-                        prepared_path,
-                        storage_path,
-                        content_type=mime,
-                        cache_control=cache_control,
-                        timeout=120,
-                        upload_meta=common_metadata,
-                        options={
-                            'uploadMode': upload_mode,
-                            'uploadVariant': 'full',
-                            'cloudPlan': cloud_plan,
-                            'qualityProfile': quality_profile,
-                            'encodingQuality': encoding_quality,
-                            'encodingFormat': encoding_format,
-                            'sourceWidth': source_width,
-                            'sourceHeight': source_height,
-                            'storedWidth': stored_width,
-                            'storedHeight': stored_height,
-                        },
-                    )
-                    _increment_sync_summary(_cloud_sync_current_summary(), 'storage_quota_delta_rpc_calls')
-                    confirmed_key = _normalize_cloud_media_key(str((upload_response or {}).get('key') or storage_path))
-                    if not confirmed_key:
-                        raise CloudSyncError('Worker upload did not return a storage key')
-                    storage_path = confirmed_key
+                worker = self._get_media_worker()
+                worker_base_url = str(getattr(worker, 'base_url', worker_base_url) or worker_base_url).strip().rstrip('/')
+                upload_response = worker.put_file(
+                    prepared_path,
+                    storage_path,
+                    content_type=mime,
+                    cache_control=cache_control,
+                    timeout=120,
+                    upload_meta=common_metadata,
+                    options={
+                        'imageId': img_cloud_id,
+                        'uploadMode': upload_mode,
+                        'uploadVariant': 'full',
+                        'cloudPlan': cloud_plan,
+                        'qualityProfile': quality_profile,
+                        'encodingQuality': encoding_quality,
+                        'encodingFormat': encoding_format,
+                        'sourceWidth': source_width,
+                        'sourceHeight': source_height,
+                        'storedWidth': stored_width,
+                        'storedHeight': stored_height,
+                    },
+                )
+                _increment_sync_summary(_cloud_sync_current_summary(), 'storage_quota_delta_rpc_calls')
+                confirmed_key = _normalize_cloud_media_key(str((upload_response or {}).get('key') or storage_path))
+                if not confirmed_key:
+                    raise CloudSyncError('Worker upload did not return a storage key')
+                storage_path = confirmed_key
             except Exception as exc:
                 if is_image_too_large_for_plan_error(exc):
                     raise CloudSyncError(
@@ -14646,42 +14634,33 @@ class SporelyCloudClient:
                     }
                     thumb_worker_base_url = media_worker_base_url()
                     thumb_prepared_suffix = Path(variant_path).suffix.lower() or '.webp'
-                    if direct_r2_runtime_available():
-                        self._get_r2().put_bytes(
-                            buffer.getvalue(),
-                            variant_path,
-                            content_type=thumb_mime,
-                            cache_control=cache_control,
-                            timeout=60,
-                            custom_metadata=thumb_metadata,
-                        )
-                    else:
-                        worker = self._get_media_worker()
-                        thumb_worker_base_url = str(getattr(worker, 'base_url', media_worker_base_url()) or media_worker_base_url()).strip().rstrip('/')
-                        thumb_response = worker.put_bytes(
-                            buffer.getvalue(),
-                            variant_path,
-                            content_type=thumb_mime,
-                            cache_control=cache_control,
-                            timeout=60,
-                            upload_meta=thumb_metadata,
-                            options={
-                                'uploadMode': upload_mode,
-                                'uploadVariant': 'thumb',
-                                'cloudPlan': cloud_plan,
-                                'qualityProfile': quality_profile,
-                                'encodingQuality': thumb_quality,
-                                'encodingFormat': thumb_mime,
-                                'sourceWidth': source_width,
-                                'sourceHeight': source_height,
-                                'storedWidth': target_w,
-                                'storedHeight': target_h,
-                            },
-                        )
-                        _increment_sync_summary(_cloud_sync_current_summary(), 'storage_quota_delta_rpc_calls')
-                        confirmed_thumb_key = _normalize_cloud_media_key(str((thumb_response or {}).get('key') or variant_path))
-                        if confirmed_thumb_key != _normalize_cloud_media_key(variant_path):
-                            raise CloudSyncError('Worker thumbnail upload returned an unexpected storage key')
+                    worker = self._get_media_worker()
+                    thumb_worker_base_url = str(getattr(worker, 'base_url', media_worker_base_url()) or media_worker_base_url()).strip().rstrip('/')
+                    thumb_response = worker.put_bytes(
+                        buffer.getvalue(),
+                        variant_path,
+                        content_type=thumb_mime,
+                        cache_control=cache_control,
+                        timeout=60,
+                        upload_meta=thumb_metadata,
+                        options={
+                            'imageId': img_cloud_id,
+                            'uploadMode': upload_mode,
+                            'uploadVariant': 'thumb',
+                            'cloudPlan': cloud_plan,
+                            'qualityProfile': quality_profile,
+                            'encodingQuality': thumb_quality,
+                            'encodingFormat': thumb_mime,
+                            'sourceWidth': source_width,
+                            'sourceHeight': source_height,
+                            'storedWidth': target_w,
+                            'storedHeight': target_h,
+                        },
+                    )
+                    _increment_sync_summary(_cloud_sync_current_summary(), 'storage_quota_delta_rpc_calls')
+                    confirmed_thumb_key = _normalize_cloud_media_key(str((thumb_response or {}).get('key') or variant_path))
+                    if confirmed_thumb_key != _normalize_cloud_media_key(variant_path):
+                        raise CloudSyncError('Worker thumbnail upload returned an unexpected storage key')
             except Exception as e:
                 if is_image_too_large_for_plan_error(e):
                     raise CloudSyncError(
@@ -14782,44 +14761,34 @@ class SporelyCloudClient:
             }
 
             try:
-                if direct_r2_runtime_available():
-                    r2 = self._get_r2()
-                    r2.put_file(
-                        prepared_path,
-                        storage_path,
-                        content_type=content_type,
-                        cache_control=cache_control,
-                        timeout=120,
-                        custom_metadata=common_metadata,
-                    )
-                else:
-                    worker = self._get_media_worker()
-                    worker_base_url = str(getattr(worker, 'base_url', worker_base_url) or worker_base_url).strip().rstrip('/')
-                    upload_response = worker.put_file(
-                        prepared_path,
-                        storage_path,
-                        content_type=content_type,
-                        cache_control=cache_control,
-                        timeout=120,
-                        upload_meta=common_metadata,
-                        options={
-                            'uploadMode': 'full',
-                            'uploadVariant': 'original',
-                            'cloudPlan': cloud_plan,
-                            'qualityProfile': quality_profile,
-                            'encodingQuality': encoding_quality,
-                            'encodingFormat': encoding_format,
-                            'sourceWidth': source_width,
-                            'sourceHeight': source_height,
-                            'storedWidth': stored_width,
-                            'storedHeight': stored_height,
-                        },
-                    )
-                    _increment_sync_summary(_cloud_sync_current_summary(), 'storage_quota_delta_rpc_calls')
-                    confirmed_key = _normalize_cloud_media_key(str((upload_response or {}).get('key') or storage_path))
-                    if not confirmed_key:
-                        raise CloudSyncError('Worker upload did not return a storage key')
-                    storage_path = confirmed_key
+                worker = self._get_media_worker()
+                worker_base_url = str(getattr(worker, 'base_url', worker_base_url) or worker_base_url).strip().rstrip('/')
+                upload_response = worker.put_file(
+                    prepared_path,
+                    storage_path,
+                    content_type=content_type,
+                    cache_control=cache_control,
+                    timeout=120,
+                    upload_meta=common_metadata,
+                    options={
+                        'imageId': img_cloud_id,
+                        'uploadMode': 'full',
+                        'uploadVariant': 'original',
+                        'cloudPlan': cloud_plan,
+                        'qualityProfile': quality_profile,
+                        'encodingQuality': encoding_quality,
+                        'encodingFormat': encoding_format,
+                        'sourceWidth': source_width,
+                        'sourceHeight': source_height,
+                        'storedWidth': stored_width,
+                        'storedHeight': stored_height,
+                    },
+                )
+                _increment_sync_summary(_cloud_sync_current_summary(), 'storage_quota_delta_rpc_calls')
+                confirmed_key = _normalize_cloud_media_key(str((upload_response or {}).get('key') or storage_path))
+                if not confirmed_key:
+                    raise CloudSyncError('Worker upload did not return a storage key')
+                storage_path = confirmed_key
             except Exception as exc:
                 if is_image_too_large_for_plan_error(exc):
                     raise CloudSyncError(
@@ -15182,33 +15151,43 @@ class SporelyCloudClient:
             raise CloudSyncError('Missing cloud observation id')
         total_start = _cloud_sync_perf_counter() if _CLOUD_DEBUG_TIMING else None
         meta_start = _cloud_sync_perf_counter() if _CLOUD_DEBUG_TIMING else None
-        image_rows = self.pull_image_metadata(cloud_id) or []
+        image_rows = self.pull_image_metadata(cloud_id, include_deleted_for_sync=True) or []
+        mosaic_rows = self._get(
+            f'spore_measurement_mosaics?observation_id=eq.{cloud_id}'
+            f'&user_id=eq.{self.user_id}&select=storage_key'
+        ) or []
         _cloud_timing_log(
             'pull image metadata',
             meta_start,
             detail=f'cloud_id={cloud_id} rows={len(image_rows)}',
         )
-        storage_paths = [
-            _normalize_cloud_media_key(row.get('storage_path'))
-            for row in image_rows
-            if _normalize_cloud_media_key(row.get('storage_path'))
-        ]
-        storage_error: list[Exception] = []
-        storage_thread = None
+        storage_paths: set[str] = set()
+        for row in image_rows:
+            full_path = _normalize_cloud_media_key((row or {}).get('storage_path'))
+            if full_path:
+                storage_paths.add(full_path)
+                for variant in ('thumb', 'small', 'medium'):
+                    storage_paths.add(media_variant_key(full_path, variant))
+            original_path = _normalize_cloud_media_key((row or {}).get('original_storage_path'))
+            if original_path:
+                storage_paths.add(original_path)
+        for row in mosaic_rows:
+            mosaic_path = _normalize_cloud_media_key((row or {}).get('storage_key'))
+            if mosaic_path:
+                storage_paths.add(mosaic_path)
+
         if storage_paths:
             storage_start = _cloud_sync_perf_counter() if _CLOUD_DEBUG_TIMING else None
-            def _remove_storage_worker() -> None:
-                try:
-                    self._storage_remove(storage_paths)
-                except Exception as exc:
-                    storage_error.append(exc)
-
-            storage_thread = threading.Thread(
-                target=_remove_storage_worker,
-                name=f'Cloud storage delete {cloud_id}',
-                daemon=True,
+            # Preserve the canonical identities until every configured bucket
+            # has accepted the idempotent delete. A partial Worker failure
+            # aborts before DB rows are removed so the whole operation remains
+            # discoverable and retryable.
+            self._storage_remove(sorted(storage_paths))
+            _cloud_timing_log(
+                'storage remove',
+                storage_start,
+                detail=f'cloud_id={cloud_id} paths={len(storage_paths)}',
             )
-            storage_thread.start()
         images_delete_start = _cloud_sync_perf_counter() if _CLOUD_DEBUG_TIMING else None
         self._delete(f'observation_images?observation_id=eq.{cloud_id}')
         _cloud_timing_log(
@@ -15223,19 +15202,6 @@ class SporelyCloudClient:
             observation_delete_start,
             detail=f'cloud_id={cloud_id}',
         )
-        if storage_thread is not None:
-            storage_thread.join()
-            if storage_error:
-                exc = storage_error[0]
-                if isinstance(exc, CloudSyncError):
-                    print(f'[cloud_sync] Warning: could not remove storage files for {cloud_id}: {exc}')
-                else:
-                    print(f'[cloud_sync] Warning: could not remove storage files for {cloud_id}: {exc}')
-            _cloud_timing_log(
-                'storage remove',
-                storage_start,
-                detail=f'cloud_id={cloud_id} paths={len(storage_paths)}',
-            )
         _cloud_timing_log('TOTAL delete_cloud_observation', total_start, detail=f'cloud_id={cloud_id}')
 
     def download_image_file(self, storage_path: str, dest_path: str | Path) -> Path:
@@ -15247,26 +15213,21 @@ class SporelyCloudClient:
             storage_key = _normalize_cloud_media_key(storage_path)
             if not storage_key:
                 raise CloudSyncError('Missing storage path')
-            if direct_r2_runtime_available():
-                downloaded_path = Path(self._get_r2().download_to_file(storage_key, dest_path, timeout=120))
-                return downloaded_path
             try:
-                downloaded_path = Path(self._download_public_media_file(storage_key, dest_path, timeout=120))
+                # Desktop supplies only the canonical object key and bearer
+                # token. The Worker owns legacy/private bucket discovery.
+                downloaded_path = Path(
+                    self._get_media_worker().download_to_file(
+                        storage_key, dest_path, timeout=120)
+                )
                 return downloaded_path
-            except Exception as public_exc:
-                try:
-                    downloaded_path = Path(self._get_media_worker().download_to_file(storage_key, dest_path, timeout=120))
-                    return downloaded_path
-                except Exception as worker_exc:
-                    detail = str(worker_exc or '').strip() or worker_exc.__class__.__name__
-                    if 'nosuchkey' in detail.lower():
-                        raise CloudSyncError(
-                            f'Cloud image file is missing from storage ({storage_key})'
-                        ) from worker_exc
-                    public_detail = str(public_exc or '').strip()
-                    if public_detail:
-                        detail = f'{detail} (public fallback: {public_detail})'
-                    raise CloudSyncError(f'Download failed: {detail}') from worker_exc
+            except Exception as worker_exc:
+                detail = str(worker_exc or '').strip() or worker_exc.__class__.__name__
+                if 'nosuchkey' in detail.lower():
+                    raise CloudSyncError(
+                        f'Cloud image file is missing from storage ({storage_key})'
+                    ) from worker_exc
+                raise CloudSyncError(f'Download failed: {detail}') from worker_exc
         except CloudSyncError:
             raise
         except Exception as exc:
@@ -15356,9 +15317,9 @@ class SporelyReadOnlyCloudClient(SporelyCloudClient):
     def download_image_file_read_only(self, storage_path: str, dest_path):
         """Named read-only entry point for the conflict thumbnail worker.
 
-        Uses the same download primitives as ``download_image_file`` — R2
-        direct, then public media fallback, then media worker — none of which
-        touch session state.  Because this instance's ``_request_with_refresh``
+        Uses the same authenticated Worker primitive as
+        ``download_image_file`` without touching session state. Because this
+        instance's ``_request_with_refresh``
         is refresh-disabled, any future addition to the download path that
         routes through it will remain read-only.
         """
@@ -18183,13 +18144,36 @@ def _push_images_for_observation(
 
                 img_cloud_id = remote_cloud_id
                 if not file_matches:
-                    uploaded_key = client.upload_image_file(
-                        upload_path,
-                        obs_cloud_id,
-                        img_cloud_id,
-                        storage_path=storage_path,
-                        upload_meta=dict(item.get('cloud_upload_meta') or {}),
-                    )
+                    # Private Worker writes require a server-known image
+                    # identity. Reserve/upsert the metadata row before bytes
+                    # are sent; if the upload fails, remove any partial bytes
+                    # before releasing a row created by this attempt.
+                    reserved_image_row = False
+                    if not img_cloud_id:
+                        img_cloud_id = client.push_image_metadata(
+                            img, obs_cloud_id, storage_path)
+                        reserved_image_row = True
+                    try:
+                        uploaded_key = client.upload_image_file(
+                            upload_path,
+                            obs_cloud_id,
+                            img_cloud_id,
+                            storage_path=storage_path,
+                            upload_meta=dict(item.get('cloud_upload_meta') or {}),
+                        )
+                    except Exception:
+                        if reserved_image_row and img_cloud_id:
+                            try:
+                                client._storage_remove([
+                                    storage_path,
+                                    media_variant_key(storage_path, 'thumb'),
+                                ])
+                            finally:
+                                client._delete(
+                                    f'observation_images?id=eq.{img_cloud_id}'
+                                    f'&user_id=eq.{client.user_id}'
+                                )
+                        raise
                     storage_path = _normalize_cloud_media_key(uploaded_key or storage_path)
 
                 if not img_cloud_id or not metadata_matches:
@@ -18286,6 +18270,13 @@ def _push_images_for_observation(
                                 source_path,
                             )
                             try:
+                                # Bind the canonical original identity before
+                                # the private upload so the Worker can verify
+                                # X-Sporely-Image-Id against this exact key.
+                                client.set_image_original_storage_path(
+                                    img_cloud_id,
+                                    original_storage_path,
+                                )
                                 uploaded_original_key = client.upload_original_image_file(
                                     source_path,
                                     obs_cloud_id,
@@ -18294,6 +18285,14 @@ def _push_images_for_observation(
                                     upload_meta=original_upload_meta,
                                 )
                             except CloudSyncError as exc:
+                                try:
+                                    client._storage_remove([original_storage_path])
+                                finally:
+                                    client._patch(
+                                        f'observation_images?id=eq.{img_cloud_id}'
+                                        f'&user_id=eq.{client.user_id}',
+                                        {'original_storage_path': None},
+                                    )
                                 if profiler is not None:
                                     try:
                                         profiler.record_original_upload_failed()
@@ -18311,35 +18310,16 @@ def _push_images_for_observation(
                                     uploaded_original_key or original_storage_path
                                 )
                                 if original_storage_path:
-                                    try:
-                                        client.set_image_original_storage_path(
-                                            img_cloud_id,
-                                            original_storage_path,
-                                        )
-                                    except Exception as exc:
-                                        if profiler is not None:
-                                            try:
-                                                profiler.record_original_upload_failed()
-                                            except Exception:
-                                                pass
-                                        _record_original_summary('failed_uploads')
-                                        _record_original_upload_warning(
-                                            (
-                                                f"original upload succeeded for image {img.get('id')} "
-                                                f"from {source_kind}, but patching original_storage_path failed: {exc}"
-                                            )
-                                        )
-                                    else:
-                                        if profiler is not None:
-                                            try:
-                                                profiler.record_original_upload_success(source_size)
-                                            except Exception:
-                                                pass
-                                        _record_original_summary('uploaded')
-                                        print(
-                                            f'[cloud_sync] Observation {obs["id"]}: original upload source for image {img.get("id")} '
-                                            f'was {source_kind}'
-                                        )
+                                    if profiler is not None:
+                                        try:
+                                            profiler.record_original_upload_success(source_size)
+                                        except Exception:
+                                            pass
+                                    _record_original_summary('uploaded')
+                                    print(
+                                        f'[cloud_sync] Observation {obs["id"]}: original upload source for image {img.get("id")} '
+                                        f'was {source_kind}'
+                                    )
             except CloudSyncError as e:
                 if is_cloud_auth_error(e) or is_cloud_temporary_unavailable_error(e):
                     raise
@@ -20543,78 +20523,6 @@ def _push_spore_mosaic_for_observation(
         'stored_bytes': str(len(manifest.image_bytes)),
     }
 
-    _status("Uploading spore mosaic…")
-    print(
-        f'[cloud_sync] Mosaic status obs {obs_local_id}: Uploading spore mosaic…',
-        flush=True,
-    )
-    upload_start_ns = time.monotonic_ns()
-    try:
-        if direct_r2_runtime_available():
-            client._get_r2().put_bytes(
-                manifest.image_bytes,
-                storage_key,
-                content_type=manifest.content_type,
-                cache_control=cache_control,
-                timeout=120,
-                custom_metadata=upload_meta,
-            )
-        else:
-            worker = client._get_media_worker()
-            response = worker.put_bytes(
-                manifest.image_bytes,
-                storage_key,
-                content_type=manifest.content_type,
-                cache_control=cache_control,
-                timeout=120,
-                upload_meta=upload_meta,
-                options={
-                    'uploadMode': 'full',
-                    'uploadVariant': 'spore_mosaic',
-                    'sourceWidth': manifest.width_px,
-                    'sourceHeight': manifest.height_px,
-                    'storedWidth': manifest.width_px,
-                    'storedHeight': manifest.height_px,
-                },
-            )
-            confirmed = _normalize_cloud_media_key(
-                str((response or {}).get('key') or storage_key)
-            )
-            if confirmed:
-                storage_key = confirmed
-    except Exception as exc:
-        if is_cloud_auth_error(exc) or is_cloud_temporary_unavailable_error(exc):
-            raise
-        print(
-            f'[cloud_sync] Mosaic upload failed obs {obs_local_id}: {exc}',
-            flush=True,
-        )
-        return MOSAIC_STATUS_FAIL_UPLOAD
-    stage_ns['upload_ms'] = time.monotonic_ns() - upload_start_ns
-
-    _status("Saving spore mosaic metadata…")
-    print(
-        f'[cloud_sync] Mosaic status obs {obs_local_id}: Saving spore mosaic metadata…',
-        flush=True,
-    )
-    mosaic_row_start_ns = time.monotonic_ns()
-    try:
-        existing = client._get(
-            f'spore_measurement_mosaics'
-            f'?observation_id=eq.{obs_cloud_id}'
-            f'&version=eq.{version}'
-            f'&user_id=eq.{client.user_id}'
-            f'&select=id'
-        )
-    except Exception as exc:
-        if is_cloud_auth_error(exc) or is_cloud_temporary_unavailable_error(exc):
-            raise
-        print(
-            f'[cloud_sync] Mosaic lookup failed obs {obs_local_id}: {exc}',
-            flush=True,
-        )
-        return MOSAIC_STATUS_FAIL_MOSAIC_LOOKUP
-
     mosaic_payload: dict = {
         'observation_id': obs_cloud_id,
         'user_id': client.user_id,
@@ -20623,12 +20531,6 @@ def _push_spore_mosaic_for_observation(
         'height_px': manifest.height_px,
         'tile_size_px': manifest.tile_size_px,
         'version': version,
-        # Per-tile geometry + physical scale. The web contract added
-        # nullable columns for these in migration
-        # 20260721120000_add_mosaic_scale_and_image_scale_to_public_rpcs
-        # so landing can render an atlas-wide scale bar without baking
-        # it into pixels. Sent as `None` when the manifest reports a
-        # non-positive value so the cloud row stores NULL rather than 0.
         'tile_width_px': (
             int(manifest.tile_width_px) if manifest.tile_width_px > 0 else None
         ),
@@ -20645,15 +20547,111 @@ def _push_spore_mosaic_for_observation(
         ),
     }
 
+    # Reserve a server-known mosaic identity before a private Worker write.
+    # Existing replacements keep their old key until the new object is
+    # durable; the Worker validates the new content-addressed key against the
+    # same owned observation directory.
+    mosaic_row_start_ns = time.monotonic_ns()
+    try:
+        existing = client._get(
+            f'spore_measurement_mosaics'
+            f'?observation_id=eq.{obs_cloud_id}'
+            f'&version=eq.{version}'
+            f'&user_id=eq.{client.user_id}'
+            f'&select=id,storage_key'
+        )
+    except Exception as exc:
+        if is_cloud_auth_error(exc) or is_cloud_temporary_unavailable_error(exc):
+            raise
+        print(
+            f'[cloud_sync] Mosaic lookup failed obs {obs_local_id}: {exc}',
+            flush=True,
+        )
+        return MOSAIC_STATUS_FAIL_MOSAIC_LOOKUP
+
+    previous_storage_key = ''
+    mosaic_row_reserved = False
     try:
         if existing:
             mosaic_id = str(existing[0]['id'])
-            patch_payload = dict(mosaic_payload)
-            patch_payload['updated_at'] = datetime.now(timezone.utc).isoformat()
-            client._patch(f'spore_measurement_mosaics?id=eq.{mosaic_id}', patch_payload)
+            previous_storage_key = _normalize_cloud_media_key(existing[0].get('storage_key'))
         else:
             rows_ret = client._post('spore_measurement_mosaics', mosaic_payload)
             mosaic_id = str(rows_ret[0]['id']) if rows_ret else ''
+            mosaic_row_reserved = bool(mosaic_id)
+    except Exception as exc:
+        if is_cloud_auth_error(exc) or is_cloud_temporary_unavailable_error(exc):
+            raise
+        print(
+            f'[cloud_sync] Mosaic identity reservation failed obs {obs_local_id}: {exc}',
+            flush=True,
+        )
+        return MOSAIC_STATUS_FAIL_MOSAIC_UPSERT
+    if not mosaic_id:
+        print(
+            f'[cloud_sync] Mosaic identity reservation returned no id obs {obs_local_id}',
+            flush=True,
+        )
+        return MOSAIC_STATUS_FAIL_NO_MOSAIC_ID
+
+    _status("Uploading spore mosaic…")
+    print(
+        f'[cloud_sync] Mosaic status obs {obs_local_id}: Uploading spore mosaic…',
+        flush=True,
+    )
+    upload_start_ns = time.monotonic_ns()
+    try:
+        worker = client._get_media_worker()
+        response = worker.put_bytes(
+            manifest.image_bytes,
+            storage_key,
+            content_type=manifest.content_type,
+            cache_control=cache_control,
+            timeout=120,
+            upload_meta=upload_meta,
+            options={
+                'mosaicId': mosaic_id,
+                'uploadMode': 'full',
+                'uploadVariant': 'spore_mosaic',
+                'sourceWidth': manifest.width_px,
+                'sourceHeight': manifest.height_px,
+                'storedWidth': manifest.width_px,
+                'storedHeight': manifest.height_px,
+            },
+        )
+        confirmed = _normalize_cloud_media_key(
+            str((response or {}).get('key') or storage_key)
+        )
+        if confirmed:
+            storage_key = confirmed
+    except Exception as exc:
+        if mosaic_row_reserved:
+            try:
+                client._storage_remove([storage_key])
+            finally:
+                client._delete(
+                    f'spore_measurement_mosaics?id=eq.{mosaic_id}'
+                    f'&user_id=eq.{client.user_id}'
+                )
+        if is_cloud_auth_error(exc) or is_cloud_temporary_unavailable_error(exc):
+            raise
+        print(
+            f'[cloud_sync] Mosaic upload failed obs {obs_local_id}: {exc}',
+            flush=True,
+        )
+        return MOSAIC_STATUS_FAIL_UPLOAD
+    stage_ns['upload_ms'] = time.monotonic_ns() - upload_start_ns
+
+    _status("Saving spore mosaic metadata…")
+    print(
+        f'[cloud_sync] Mosaic status obs {obs_local_id}: Saving spore mosaic metadata…',
+        flush=True,
+    )
+    try:
+        if existing:
+            patch_payload = dict(mosaic_payload)
+            patch_payload['updated_at'] = datetime.now(timezone.utc).isoformat()
+            client._patch(f'spore_measurement_mosaics?id=eq.{mosaic_id}', patch_payload)
     except Exception as exc:
         if is_cloud_auth_error(exc) or is_cloud_temporary_unavailable_error(exc):
             raise
@@ -20663,13 +20661,6 @@ def _push_spore_mosaic_for_observation(
         )
         return MOSAIC_STATUS_FAIL_MOSAIC_UPSERT
     stage_ns['mosaic_row_ms'] = time.monotonic_ns() - mosaic_row_start_ns
-
-    if not mosaic_id:
-        print(
-            f'[cloud_sync] Mosaic upsert returned no id obs {obs_local_id}',
-            flush=True,
-        )
-        return MOSAIC_STATUS_FAIL_NO_MOSAIC_ID
 
     tile_rows_start_ns = time.monotonic_ns()
     # Refresh tile manifest: DELETE any existing tiles for the
@@ -20732,6 +20723,18 @@ def _push_spore_mosaic_for_observation(
         )
         return MOSAIC_STATUS_FAIL_TILE_INSERT
     stage_ns['tile_rows_ms'] = time.monotonic_ns() - tile_rows_start_ns
+
+    if previous_storage_key and previous_storage_key != storage_key:
+        try:
+            client._storage_remove([previous_storage_key])
+        except Exception as exc:
+            if is_cloud_auth_error(exc) or is_cloud_temporary_unavailable_error(exc):
+                raise
+            print(
+                f'[cloud_sync] Superseded mosaic cleanup failed obs {obs_local_id}: {exc}',
+                flush=True,
+            )
+            return MOSAIC_STATUS_FAIL_MOSAIC_UPSERT
 
     # Only persist the signature once tile rewrite completes cleanly.
     # A partial success (upload OK but tile insert failed) leaves the

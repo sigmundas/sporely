@@ -247,6 +247,7 @@ class MeasurementSetCandidate:
     reference_treatment_id: str
     work_title: str | None = None
     year: int | None = None
+    taxon_id: str | None = None
 
 
 def _row_to_dataclass(row: sqlite3.Row, cls):
@@ -421,10 +422,11 @@ class ReferenceWorkRepository:
                        OR LOWER(COALESCE(short_label, '')) LIKE ?
                        OR LOWER(COALESCE(container_title, '')) LIKE ?
                        OR LOWER(COALESCE(authors_json, '')) LIKE ?
+                       OR LOWER(COALESCE(citation_key, '')) LIKE ?
                     ORDER BY COALESCE(year, 0) DESC, updated_at DESC
                     LIMIT ?
                     """,
-                    (like, like, like, like, int(limit)),
+                    (like, like, like, like, like, int(limit)),
                 ).fetchall()
             else:
                 rows = conn.execute(
@@ -971,6 +973,7 @@ class MeasurementSetRepository:
                     ms.raw_text AS ms_raw_text,
                     ms.revision AS ms_revision,
                     t.id AS t_id,
+                    t.taxon_id AS t_taxon_id,
                     t.name_as_published AS t_name_as_published,
                     t.locator_text AS t_locator_text,
                     w.id AS w_id,
@@ -1011,6 +1014,7 @@ class MeasurementSetRepository:
                     reference_treatment_id=str(row["t_id"]),
                     work_title=(str(row["w_title"]) if row["w_title"] else None),
                     year=(int(row["w_year"]) if row["w_year"] is not None else None),
+                    taxon_id=(str(row["t_taxon_id"]) if row["t_taxon_id"] else None),
                 )
             )
         return result

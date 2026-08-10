@@ -232,6 +232,8 @@ def test_media_worker_upload_sends_bearer_auth_and_worker_headers(monkeypatch, t
             "stored_height": 300,
         },
         options={
+            "imageId": "42",
+            "mosaicId": "77",
             "uploadMode": "reduced",
             "uploadVariant": "full",
             "cloudPlan": "free",
@@ -262,6 +264,9 @@ def test_media_worker_upload_sends_bearer_auth_and_worker_headers(monkeypatch, t
     assert captured["headers"]["X-Sporely-Source-Height"] == "600"
     assert captured["headers"]["X-Sporely-Stored-Width"] == "400"
     assert captured["headers"]["X-Sporely-Stored-Height"] == "300"
+    assert captured["headers"]["X-Sporely-Image-Id"] == "42"
+    assert captured["headers"]["X-Sporely-Mosaic-Id"] == "77"
+    assert "test-access-token" not in captured["url"]
 
 
 def test_media_worker_upload_raises_structured_error_payload(monkeypatch):
@@ -375,3 +380,31 @@ def test_media_worker_delete_tolerates_missing_objects(monkeypatch):
     assert captured["method"] == "DELETE"
     assert captured["url"] == "https://upload.test/upload/user_123/obs_456/photo.jpg"
     assert captured["headers"]["Authorization"] == "Bearer test-access-token"
+
+
+def test_media_worker_delete_objects_attempts_every_identity_and_aggregates_failure(monkeypatch):
+    client = CloudflareMediaWorkerClient("test-access-token", base_url="https://upload.test")
+    attempted = []
+
+    def fake_delete(key, *, timeout=120, ignore_missing=True):
+        attempted.append(key)
+        if key.endswith("original.heic"):
+            raise CloudflareWorkerError("partial bucket failure", status_code=502)
+        return {"ok": True}
+
+    monkeypatch.setattr(client, "delete_object", fake_delete)
+
+    with pytest.raises(CloudflareWorkerError, match="partial bucket failure"):
+        client.delete_objects([
+            "user/obs/full.webp",
+            "user/obs/thumb_full.webp",
+            "user/obs/original.heic",
+            "user/obs/mosaic.webp",
+        ])
+
+    assert sorted(attempted) == [
+        "user/obs/full.webp",
+        "user/obs/mosaic.webp",
+        "user/obs/original.heic",
+        "user/obs/thumb_full.webp",
+    ]

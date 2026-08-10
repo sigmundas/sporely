@@ -34,22 +34,56 @@ These dialogs are used to review, add, edit, and plot stored spore reference dat
 
 Figure 2 placeholder: overview of the Add/Edit Reference Data dialog.
 
-- `Min/max` tab: enter stored percentile values for length, width, and Q.
-- `Spore data` tab: paste raw measurements to create a custom point set.
-- `Parmasto Biometrics` tab: enter species-level summary values if available.
+- **Publication** picker (top): search existing works from the normalized
+  Reference Library by title, author, container, short label, or citation
+  key. Click **New publication…** to open the canonical work editor and
+  select the freshly created work.
+- **Data** section: choose **Use existing measurement set** (enabled when
+  the selected work has ≥1 supported measurement set for the active
+  observation's taxon; the visible list is filtered in-memory by the
+  search field), or **Enter new data** (default) which enables:
+  - `Min/max` tab: enter stored percentile values for length, width, and Q.
+  - `Spore data` tab: paste raw measurements to create a custom point set.
+  - `Parmasto Biometrics` tab: enter species-level summary values if available.
+
+When the active observation has no `sporely_taxon_id`, an inline notice
+explains that the reference will be saved to the legacy list only — the
+normalized library needs a taxon key to bind the treatment.
 
 ## Typical workflow
 
-1. Choose the species.
-2. Fill either percentile values, raw spore points, or Parmasto biometrics.
-3. Add a source label.
-4. Save the record or plot it in Analysis.
+1. Open the dialog from an observation's Reference panel.
+2. Pick an existing publication or create a new one.
+3. Either select an existing measurement set for this taxon, or enter
+   new range/raw-point data.
+4. Save. The dialog writes the legacy `reference_values` row (preserving
+   plot colour and Q typical bounds), and — when a taxon and publication
+   are present — also creates a normalized `TaxonTreatment` /
+   `MeasurementSet` and attaches it to the active observation with
+   role `compared`. Reopening the observation restores the attachment.
+
+### Parmasto fallback
+
+Parmasto values do not have a normalized representation yet, so a
+Parmasto-only save writes the legacy row but does not create a
+`MeasurementSet` or an observation attachment. Add Min/max or Spore
+data alongside Parmasto values to also produce a normalized entry.
+
+### Multi-treatment ambiguity
+
+If the selected publication already has more than one `TaxonTreatment`
+matching the observation's taxon, the dialog refuses to guess and asks
+you to pick the correct treatment through the Reference Library manager
+before attaching. The legacy row is still written in that case.
 
 ## Notes
 
 - `Min/max` is for stored summary ranges.
 - `Spore data` is for a custom measured point set.
 - The add/edit dialog is compact by design and is mainly for fast data entry.
+- Legacy-only fields (plot colour, Q typical percentiles, Parmasto
+  statistics, averages) are preserved in `reference_values`; the
+  normalized `MeasurementSet` links back via `legacy_reference_value_id`.
 
 Figure 3 placeholder: spore-data entry tab.
 

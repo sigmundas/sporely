@@ -835,6 +835,12 @@ QHeaderView::section:last {{
     border-right: none;
 }}
 
+/* Preserve the scientific µm unit: uppercasing turns it into the
+   visually incorrect MM (millimetres) in the raw-points editor. */
+QTableWidget#referenceSporeTable QHeaderView::section {{
+    text-transform: none;
+}}
+
 QTableView::item,
 QTableWidget::item {{
     color: {text};

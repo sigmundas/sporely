@@ -7,6 +7,8 @@ Local direct-R2 admin credentials live in sporely-admin.env (python.env is a dep
 from __future__ import annotations
 
 import argparse
+from dataclasses import replace
+import os
 import sys
 from pathlib import Path
 from xml.etree import ElementTree
@@ -18,7 +20,7 @@ if str(ROOT) not in sys.path:
     sys.path.insert(0, str(ROOT))
 
 from utils.cloud_sync import SUPABASE_KEY, SUPABASE_URL, SporelyCloudClient  # noqa: E402
-from utils.r2_storage import CloudflareR2Client, load_admin_env_file, media_variant_key, normalize_media_key  # noqa: E402
+from utils.r2_storage import CloudflareR2Client, R2Config, load_admin_env_file, media_variant_key, normalize_media_key  # noqa: E402
 
 
 def _chunks(values: list[str], size: int = 1000):
@@ -103,25 +105,34 @@ def _fetch_supabase_column(table: str, column: str, access_token: str) -> set[st
 
 def _referenced_media_keys(access_token: str) -> set[str]:
     referenced: set[str] = set()
-    for table, column in (
-        ("observation_images", "storage_path"),
-        ("observations", "image_key"),
-        ("observations", "thumb_key"),
-        ("spore_measurements", "image_key"),
-        ("spore_measurements", "thumb_key"),
+    for table, column, derive_variants in (
+        ("observation_images", "storage_path", True),
+        ("observation_images", "original_storage_path", False),
+        ("spore_measurement_mosaics", "storage_key", False),
+        ("observations", "image_key", True),
+        ("observations", "thumb_key", False),
+        ("spore_measurements", "image_key", True),
+        ("spore_measurements", "thumb_key", False),
     ):
-        referenced.update(_fetch_supabase_column(table, column, access_token))
+        keys = _fetch_supabase_column(table, column, access_token)
+        referenced.update(keys)
+        if derive_variants:
+            for key in keys:
+                if key and not Path(key).name.startswith("thumb_"):
+                    referenced.add(media_variant_key(key, "thumb"))
+                    referenced.add(media_variant_key(key, "small"))
+                    referenced.add(media_variant_key(key, "medium"))
+    return referenced
 
-    expanded = set(referenced)
-    for key in list(referenced):
-        if not key:
-            continue
-        if Path(key).name.startswith("thumb_"):
-            continue
-        expanded.add(media_variant_key(key, "thumb"))
-        expanded.add(media_variant_key(key, "small"))
-        expanded.add(media_variant_key(key, "medium"))
-    return expanded
+
+def _configured_r2_clients() -> list[tuple[str, CloudflareR2Client]]:
+    base = R2Config.from_env()
+    legacy_name = str(os.environ.get("R2_BUCKET_NAME") or base.bucket_name).strip()
+    private_name = str(os.environ.get("R2_PRIVATE_BUCKET_NAME") or "").strip()
+    clients = [("legacy", CloudflareR2Client(replace(base, bucket_name=legacy_name)))]
+    if private_name and private_name != legacy_name:
+        clients.append(("private", CloudflareR2Client(replace(base, bucket_name=private_name))))
+    return clients
 
 
 def _format_bytes(value: int) -> str:
@@ -153,8 +164,10 @@ def main() -> int:
     cloud_client = SporelyCloudClient.from_stored_credentials()
     if not cloud_client:
         raise RuntimeError("Sign in to Sporely Cloud before running R2 cleanup.")
-    client = CloudflareR2Client.from_env()
-    objects = _list_r2_objects(client, prefix=prefix)
+    clients = _configured_r2_clients()
+    objects = []
+    for role, client in clients:
+        objects.extend({**obj, "bucket_role": role} for obj in _list_r2_objects(client, prefix=prefix))
     referenced = _referenced_media_keys(cloud_client.access_token)
     orphaned = [obj for obj in objects if normalize_media_key(obj.get("key")) not in referenced]
     orphaned.sort(key=lambda obj: str(obj.get("key") or ""))
@@ -171,13 +184,25 @@ def main() -> int:
     print()
     if not args.summary_only:
         for obj in selected:
-            print(f"{_format_bytes(int(obj.get('size') or 0)):>10}  {obj.get('last_modified') or '-':<24}  {obj.get('key')}")
+            print(
+                f"{_format_bytes(int(obj.get('size') or 0)):>10}  "
+                f"{obj.get('last_modified') or '-':<24}  "
+                f"{obj.get('bucket_role') or 'legacy':<7}  {obj.get('key')}"
+            )
 
     if args.delete and selected:
-        keys = [str(obj.get("key") or "") for obj in selected if obj.get("key")]
-        for batch in _chunks(keys):
-            client.delete_objects(batch)
-        print(f"\nDeleted {len(keys)} orphaned object(s).")
+        deleted_count = 0
+        clients_by_role = dict(clients)
+        for role, client in clients:
+            keys = [
+                str(obj.get("key") or "")
+                for obj in selected
+                if obj.get("key") and obj.get("bucket_role") == role
+            ]
+            for batch in _chunks(keys):
+                clients_by_role[role].delete_objects(batch)
+            deleted_count += len(keys)
+        print(f"\nDeleted {deleted_count} orphaned object(s).")
     elif not args.delete:
         print("\nNo changes made. Re-run with --delete to remove these objects.")
     return 0

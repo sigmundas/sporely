@@ -3775,8 +3775,10 @@ class ReferenceDB:
             metadata_json,
         ))
 
+        legacy_id = cursor.lastrowid
         conn.commit()
         conn.close()
+        return int(legacy_id) if legacy_id else None
 
     @staticmethod
     def delete_reference(

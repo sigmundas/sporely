@@ -89,6 +89,8 @@ def test_upload_image_file_uses_worker_without_r2_secrets(monkeypatch, tmp_path)
     assert Path(worker.calls[0][1]).suffix == ".webp"
     assert worker.calls[0][3] == "image/webp"
     assert worker.calls[0][5]["encoding_format"] == "image/webp"
+    assert worker.calls[0][6]["imageId"] == "cloud-img-1"
+    assert worker.calls[1][6]["imageId"] == "cloud-img-1"
     assert worker.calls[0][-1] <= source.stat().st_size
 
 
@@ -352,19 +354,20 @@ def test_upload_image_file_requires_webp_support(monkeypatch, tmp_path):
     assert str(excinfo.value) == cloud_sync.WEBP_REQUIRED_FOR_CLOUD_MEDIA_UPLOAD_MESSAGE
 
 
-def test_download_image_file_uses_public_media_without_r2_secrets(monkeypatch, tmp_path):
+def test_download_image_file_uses_authenticated_worker_without_public_fallback(monkeypatch, tmp_path):
     client = cloud_sync.SporelyCloudClient("token", "user-123")
+    worker = _DummyMediaWorker()
     monkeypatch.delenv("SPORELY_ENABLE_DIRECT_R2", raising=False)
     monkeypatch.setattr(cloud_sync.CloudflareR2Client, "from_env", classmethod(_forbid_from_env))
 
-    def fake_public_download(storage_path, dest_path, *, timeout=120):
-        destination = Path(dest_path)
-        destination.parent.mkdir(parents=True, exist_ok=True)
-        destination.write_bytes(b"public-bytes")
-        return destination
-
-    monkeypatch.setattr(client, "_download_public_media_file", fake_public_download)
-    monkeypatch.setattr(client, "_get_media_worker", lambda: (_ for _ in ()).throw(AssertionError("worker download should not be needed for public media")))
+    monkeypatch.setattr(
+        client,
+        "_download_public_media_file",
+        lambda *args, **kwargs: (_ for _ in ()).throw(
+            AssertionError("public media fallback must not be used")
+        ),
+    )
+    monkeypatch.setattr(client, "_get_media_worker", lambda: worker)
 
     dest_path = tmp_path / "downloaded.jpg"
     result = client.download_image_file(
@@ -373,10 +376,11 @@ def test_download_image_file_uses_public_media_without_r2_secrets(monkeypatch, t
     )
 
     assert result == dest_path
-    assert result.read_bytes() == b"public-bytes"
+    assert result.read_bytes() == b"downloaded-bytes"
+    assert [call[0] for call in worker.calls] == ["download_to_file"]
 
 
-def test_download_image_file_falls_back_to_worker_when_public_media_fails(monkeypatch, tmp_path):
+def test_download_image_file_does_not_probe_public_media(monkeypatch, tmp_path):
     client = cloud_sync.SporelyCloudClient("token", "user-123")
     worker = _DummyMediaWorker()
 
@@ -408,6 +412,13 @@ def test_delete_cloud_observation_uses_worker_without_r2_secrets(monkeypatch):
         ],
     )
     monkeypatch.setattr(client, "_get_media_worker", lambda: worker)
+    monkeypatch.setattr(
+        client,
+        "_get",
+        lambda path: [
+            {"storage_key": "user-123/cloud-obs-1/spore_mosaic.webp"},
+        ] if path.startswith("spore_measurement_mosaics?") else [],
+    )
     monkeypatch.setattr(client, "_delete", lambda path: delete_calls.append(path))
 
     client.delete_cloud_observation("cloud-obs-1")
@@ -419,9 +430,71 @@ def test_delete_cloud_observation_uses_worker_without_r2_secrets(monkeypatch):
     assert worker.calls and worker.calls[0][0] == "delete_objects"
     assert "user-123/cloud-obs-1/source.jpg" in worker.calls[0][1]
     assert "user-123/cloud-obs-1/thumb_source.jpg" in worker.calls[0][1]
+    assert "user-123/cloud-obs-1/spore_mosaic.webp" in worker.calls[0][1]
 
 
-def test_upload_image_file_allows_direct_r2_when_explicit_flag_and_admin_env_are_present(monkeypatch, tmp_path):
+def test_delete_cloud_observation_captures_all_variants_before_database_delete(monkeypatch):
+    client = cloud_sync.SporelyCloudClient("token", "user-123")
+    events = []
+
+    monkeypatch.setattr(
+        client,
+        "pull_image_metadata",
+        lambda cloud_id, include_deleted_for_sync=False: [
+            {
+                "storage_path": "user-123/cloud-obs-1/source.webp",
+                "original_storage_path": "user-123/cloud-obs-1/originals/7/source.heic",
+                "deleted_at": "2026-08-01T00:00:00Z",
+            },
+        ],
+    )
+    monkeypatch.setattr(
+        client,
+        "_get",
+        lambda path: [{"storage_key": "user-123/cloud-obs-1/spore_mosaic.webp"}],
+    )
+    monkeypatch.setattr(client, "_storage_remove", lambda keys: events.append(("storage", list(keys))))
+    monkeypatch.setattr(client, "_delete", lambda path: events.append(("db", path)))
+
+    client.delete_cloud_observation("cloud-obs-1")
+
+    assert events[0] == ("storage", [
+        "user-123/cloud-obs-1/originals/7/source.heic",
+        "user-123/cloud-obs-1/source.webp",
+        "user-123/cloud-obs-1/spore_mosaic.webp",
+        "user-123/cloud-obs-1/thumb_medium_source.webp",
+        "user-123/cloud-obs-1/thumb_small_source.webp",
+        "user-123/cloud-obs-1/thumb_source.webp",
+    ])
+    assert [event[0] for event in events[1:]] == ["db", "db"]
+
+
+def test_delete_cloud_observation_preserves_database_identity_on_storage_failure(monkeypatch):
+    client = cloud_sync.SporelyCloudClient("token", "user-123")
+    db_deletes = []
+
+    monkeypatch.setattr(
+        client,
+        "pull_image_metadata",
+        lambda cloud_id, include_deleted_for_sync=False: [
+            {"storage_path": "user-123/cloud-obs-1/source.webp"},
+        ],
+    )
+    monkeypatch.setattr(client, "_get", lambda path: [])
+    monkeypatch.setattr(
+        client,
+        "_storage_remove",
+        lambda keys: (_ for _ in ()).throw(cloud_sync.CloudSyncError("partial bucket failure")),
+    )
+    monkeypatch.setattr(client, "_delete", lambda path: db_deletes.append(path))
+
+    with pytest.raises(cloud_sync.CloudSyncError, match="partial bucket failure"):
+        client.delete_cloud_observation("cloud-obs-1")
+
+    assert db_deletes == []
+
+
+def test_upload_image_file_uses_worker_even_when_direct_r2_is_explicitly_available(monkeypatch, tmp_path):
     client = cloud_sync.SporelyCloudClient("token", "user-123")
     source = _write_test_image(tmp_path / "source.jpg")
     admin_env = tmp_path / "sporely-admin.env"
@@ -432,6 +505,7 @@ def test_upload_image_file_allows_direct_r2_when_explicit_flag_and_admin_env_are
         encoding="utf-8",
     )
     calls = []
+    worker = _DummyMediaWorker()
 
     class DummyR2:
         def put_file(self, file_path, key, *, content_type=None, cache_control=None, custom_metadata=None, timeout=None):
@@ -445,6 +519,7 @@ def test_upload_image_file_allows_direct_r2_when_explicit_flag_and_admin_env_are
     monkeypatch.setattr("utils.r2_storage._ENV_FILE_CANDIDATES", (admin_env,))
     monkeypatch.setattr("utils.r2_storage._LEGACY_ENV_FILE_CANDIDATES", (tmp_path / "missing-python.env",))
     monkeypatch.setattr(cloud_sync.CloudflareR2Client, "from_env", classmethod(lambda cls: DummyR2()))
+    monkeypatch.setattr(client, "_get_media_worker", lambda: worker)
 
     uploaded_key = client.upload_image_file(
         str(source),
@@ -454,4 +529,5 @@ def test_upload_image_file_allows_direct_r2_when_explicit_flag_and_admin_env_are
     )
 
     assert uploaded_key == "user-123/cloud-obs-1/source.jpg"
-    assert [call[0] for call in calls] == ["put_file", "put_bytes"]
+    assert calls == []
+    assert [call[0] for call in worker.calls[:2]] == ["put_file", "put_bytes"]

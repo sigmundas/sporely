@@ -601,8 +601,15 @@ def _install_handler_environment(monkeypatch, stub, *, dialog_result):
     from ui import main_window as main_window_module
 
     class _FakeDialog:
-        def __init__(self, parent, *, exclude_measurement_set_ids=None):
+        def __init__(
+            self,
+            parent,
+            *,
+            exclude_measurement_set_ids=None,
+            taxon_id=None,
+        ):
             self._exclude = set(exclude_measurement_set_ids or [])
+            self._taxon_id = taxon_id
 
         def exec(self):
             return 1 if dialog_result is not None else 0

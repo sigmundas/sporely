@@ -335,6 +335,73 @@ def _range_summary_is_plottable(data: dict) -> bool:
     return False
 
 
+def _payload_attr(payload: Any, *names: str) -> Any:
+    """Return the first non-None attribute/key on ``payload``.
+
+    Accepts either a mapping (dict) or an object with attributes so a
+    ``MeasurementSet`` dataclass and a plain payload dict can share the
+    same predicate.
+    """
+    for name in names:
+        if isinstance(payload, dict):
+            if name in payload:
+                value = payload.get(name)
+                if value is not None:
+                    return value
+        else:
+            value = getattr(payload, name, None)
+            if value is not None:
+                return value
+    return None
+
+
+def range_payload_is_plottable(payload: Any) -> bool:
+    """Return ``True`` if a MeasurementSet-like payload would produce a
+    drawable range/summary plot.
+
+    Accepts either a :class:`MeasurementSet` dataclass instance or a
+    plain mapping with the same field names (``length_min``/``max``,
+    ``length_core_min``/``core_max``, ``length_mean`` and the ``width_*``
+    counterparts). The plotting-payload aliases ``length_p05``/``p95``
+    (produced by :func:`_translate_range_or_summary`) are also accepted
+    so callers can share this predicate before or after translation.
+
+    A payload is plottable iff at least one of:
+
+    * a strictly-positive core rectangle (all four ``*_core_min``/
+      ``*_core_max`` bounds set with ``core_min < core_max``), OR
+    * a strictly-positive extreme rectangle (all four ``*_min``/
+      ``*_max`` extremes set with ``min < max``), OR
+    * a complete positive ``length_mean`` + ``width_mean`` pair.
+
+    Partial bound combos (e.g., a length range plus only ``width_min``)
+    and inverted ranges are rejected.
+    """
+    if payload is None:
+        return False
+    length_core_min = _payload_attr(payload, "length_core_min", "length_p05")
+    length_core_max = _payload_attr(payload, "length_core_max", "length_p95")
+    width_core_min = _payload_attr(payload, "width_core_min", "width_p05")
+    width_core_max = _payload_attr(payload, "width_core_max", "width_p95")
+    if _rectangle_has_drawable_bounds(
+        length_core_min, length_core_max, width_core_min, width_core_max
+    ):
+        return True
+    length_min = _payload_attr(payload, "length_min")
+    length_max = _payload_attr(payload, "length_max")
+    width_min = _payload_attr(payload, "width_min")
+    width_max = _payload_attr(payload, "width_max")
+    if _rectangle_has_drawable_bounds(
+        length_min, length_max, width_min, width_max
+    ):
+        return True
+    length_mean = _payload_attr(payload, "length_mean")
+    width_mean = _payload_attr(payload, "width_mean")
+    if _finite_positive(length_mean) and _finite_positive(width_mean):
+        return True
+    return False
+
+
 def translate_observation_reference_use(use: Any) -> dict | None:
     """Translate a single ``ObservationReferenceUse`` snapshot into an
     Analysis reference-series wrapper entry.
@@ -376,6 +443,7 @@ def translate_observation_reference_uses(uses: Iterable[Any]) -> list[dict]:
 
 
 __all__ = [
+    "range_payload_is_plottable",
     "translate_observation_reference_use",
     "translate_observation_reference_uses",
 ]

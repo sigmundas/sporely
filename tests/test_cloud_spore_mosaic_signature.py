@@ -378,6 +378,10 @@ class _StubClient:
         self.calls.append(('_delete', path))
         return None
 
+    def _storage_remove(self, keys):
+        self.calls.append(('_storage_remove', list(keys)))
+        return None
+
 
 def _seed_full_observation(db_path: Path, tmp_path: Path) -> tuple[int, str, Path]:
     """Insert an obs + microscope image + one eligible measurement.
@@ -573,6 +577,28 @@ def test_pusher_rebuilds_when_signature_missing(tmp_path, db, monkeypatch):
     assert stored and len(stored) == 40
 
 
+def test_pusher_deletes_superseded_mosaic_after_successful_replacement(tmp_path, db, monkeypatch):
+    obs_local, obs_cloud, _src = _seed_full_observation(db, tmp_path)
+    _mock_render(monkeypatch, tiles_bytes=b'NEW-MOSAIC')
+    old_key = 'user-uuid/719/spore_mosaic_old.webp'
+    new_key = 'user-uuid/719/spore_mosaic_new.webp'
+    client = _StubClient(
+        existing_mosaic=[{'id': 'mosaic-uuid-1', 'storage_key': old_key}],
+        existing_tiles=[],
+    )
+    monkeypatch.setattr(
+        client,
+        '_get_media_worker',
+        lambda: type('W', (), {'put_bytes': lambda self, *a, **k: {'key': new_key}})(),
+        raising=False,
+    )
+
+    status = cloud_sync._push_spore_mosaic_for_observation(client, obs_local, obs_cloud)
+
+    assert status == cloud_sync.MOSAIC_STATUS_GENERATED
+    assert ('_storage_remove', [old_key]) in client.calls
+
+
 def test_pusher_sends_tile_geometry_and_common_crop_um_in_mosaic_upsert(
     tmp_path, db, monkeypatch,
 ):
@@ -707,6 +733,30 @@ def test_pusher_does_not_store_signature_on_upload_failure(tmp_path, db, monkeyp
 
     assert status == cloud_sync.MOSAIC_STATUS_FAIL_UPLOAD
     assert _read_signature(db, obs_local) is None
+    assert any(call[0] == '_storage_remove' for call in client.calls)
+    assert any(
+        call[0] == '_delete' and str(call[1]).startswith('spore_measurement_mosaics?id=eq.mosaic-uuid-1')
+        for call in client.calls
+    )
+
+
+def test_pusher_sends_reserved_mosaic_identity_to_worker(tmp_path, db, monkeypatch):
+    obs_local, obs_cloud, _src = _seed_full_observation(db, tmp_path)
+    _mock_render(monkeypatch)
+    captured = {}
+
+    class _Worker:
+        def put_bytes(self, *args, **kwargs):
+            captured.update(kwargs)
+            return {'key': args[1]}
+
+    client = _StubClient(existing_mosaic=[], existing_tiles=[])
+    monkeypatch.setattr(client, '_get_media_worker', lambda: _Worker(), raising=False)
+
+    status = cloud_sync._push_spore_mosaic_for_observation(client, obs_local, obs_cloud)
+
+    assert status == cloud_sync.MOSAIC_STATUS_GENERATED
+    assert captured['options']['mosaicId'] == 'mosaic-uuid-1'
 
 
 def test_pusher_does_not_store_signature_on_tile_insert_failure(tmp_path, db, monkeypatch):
