@@ -70,6 +70,7 @@ def test_load_image_record_merges_existing_and_ingest_lab_metadata(monkeypatch, 
     fake_self._apply_measure_session_view_for_current_image = lambda: False
     fake_self.image_info_label = SimpleNamespace(setText=lambda *args, **kwargs: None)
     fake_self.apply_image_scale = lambda *args, **kwargs: None
+    fake_self._set_measure_image_tags = lambda *args, **kwargs: None
     fake_self.microns_per_pixel = 1.0
     fake_self.update_controls_for_image_type = lambda *args, **kwargs: None
     fake_self._apply_measure_view_settings_for_current_image = lambda: None

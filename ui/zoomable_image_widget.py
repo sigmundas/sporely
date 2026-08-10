@@ -54,6 +54,7 @@ class ZoomableImageLabel(QLabel):
         self._scale_bar_ep_hover = None  # None, 0, or 1
         self.objective_text = ""
         self.objective_color = QColor(52, 152, 219)
+        self.top_left_tags = []
         self.measure_color = QColor("#0044aa")
         self.measure_rectangle_style = DEFAULT_RECTANGLE_STYLE
         self.measure_rectangle_thickness = DEFAULT_RECTANGLE_THICKNESS
@@ -1017,6 +1018,15 @@ class ZoomableImageLabel(QLabel):
     def set_objective_color(self, color):
         """Set the objective tag color."""
         self.objective_color = QColor(color)
+        self.update()
+
+    def set_top_left_tags(self, tags):
+        """Set the single-row tags rendered in the viewer's upper-left."""
+        self.top_left_tags = [
+            (str(text), QColor(color))
+            for text, color in (tags or [])
+            if str(text or "").strip()
+        ]
         self.update()
 
     def reset_view(self):
@@ -2962,8 +2972,33 @@ class ZoomableImageLabel(QLabel):
             painter.setPen(Qt.white)
             painter.drawText(tag_rect, Qt.AlignCenter, text)
 
-        next_tag_y = 10
-        if self.objective_text:
+        if self.top_left_tags:
+            tag_x = 10
+            for text, bg_color in self.top_left_tags:
+                font = painter.font()
+                font.setPointSize(10)
+                font.setBold(True)
+                painter.setFont(font)
+                metrics = painter.fontMetrics()
+                tag_rect = QRect(
+                    tag_x,
+                    10,
+                    metrics.horizontalAdvance(text) + 20,
+                    metrics.height() + 10,
+                )
+                tag_color = QColor(bg_color)
+                tag_color.setAlpha(200)
+                painter.setPen(Qt.NoPen)
+                painter.setBrush(tag_color)
+                painter.drawRoundedRect(tag_rect, 6, 6)
+                painter.setPen(
+                    QColor("#000000") if tag_color.isValid() and tag_color.lightness() >= 180
+                    else QColor("#ffffff")
+                )
+                painter.drawText(tag_rect, Qt.AlignCenter, text)
+                tag_x = tag_rect.right() + 6
+        elif self.objective_text:
+            next_tag_y = 10
             next_tag_y = _draw_tag(self.objective_text, next_tag_y, self.objective_color, 11)
 
         # Draw zoom info in lower left corner

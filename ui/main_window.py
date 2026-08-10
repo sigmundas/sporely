@@ -191,6 +191,7 @@ from utils.vernacular_utils import (
     list_available_vernacular_languages,
 )
 from .image_gallery_widget import ImageGalleryWidget, center_horizontal_scroll_target, paint_thumbnail_selection_overlay
+from .adaptive_choice_selector import stain_color
 from .splitter_state import (
     GALLERY_DEFAULT_HEIGHT,
     GALLERY_MIN_HEIGHT,
@@ -13150,6 +13151,44 @@ class MainWindow(GeometryMixin, QMainWindow):
             self.microns_per_pixel = 0.0
         self._update_field_scale_label()
 
+    def _set_measure_image_tags(self, image_data: dict) -> None:
+        """Show the current image's microscopy context in one compact row."""
+        lab_metadata = image_data.get("lab_metadata")
+        if not isinstance(lab_metadata, dict):
+            lab_metadata = {}
+
+        def _value(column: str, metadata_key: str | None = None):
+            value = image_data.get(column)
+            if value is None:
+                value = lab_metadata.get(metadata_key or column)
+            return value
+
+        tags = []
+        objective_text = str(getattr(self.image_label, "objective_text", "") or "").strip()
+        contrast = _value("contrast")
+        canonical_contrast = DatabaseTerms.canonicalize("contrast", contrast) if contrast else None
+        if canonical_contrast and str(canonical_contrast).lower() not in {"not_set", "not set"}:
+            objective_text = " ".join(
+                part for part in (objective_text, DatabaseTerms.translate("contrast", canonical_contrast)) if part
+            )
+        if objective_text:
+            tags.append((objective_text, self.image_label.objective_color))
+
+        metadata_tags = (
+            ("mount", _value("mount_medium")),
+            ("stain", _value("stain")),
+            ("sample", _value("sample_type")),
+            ("sample_source", _value("sample_source")),
+        )
+        for category, value in metadata_tags:
+            canonical = DatabaseTerms.canonicalize(category, value) if value else None
+            if not canonical or str(canonical).lower() in {"not_set", "not set"}:
+                continue
+            color = stain_color(canonical) if category == "stain" else None
+            tags.append((DatabaseTerms.translate(category, canonical), color or "#59636e"))
+
+        self.image_label.set_top_left_tags(tags)
+
     def _format_megapixels(self, mp_value: float) -> str:
         text = f"{mp_value:.1f}"
         return text.rstrip("0").rstrip(".")
@@ -13672,6 +13711,7 @@ class MainWindow(GeometryMixin, QMainWindow):
                 self.image_info_label.setText(f"Loaded: {filename}")
 
         self.apply_image_scale(image_data)
+        self._set_measure_image_tags(image_data)
         self.image_label.set_microns_per_pixel(self.microns_per_pixel)
         self.update_controls_for_image_type(image_data.get("image_type"))
         self._apply_measure_view_settings_for_current_image()
@@ -14343,6 +14383,7 @@ class MainWindow(GeometryMixin, QMainWindow):
         self.temp_lines = []
         self.image_label.set_image(None)
         self.image_label.set_objective_text("")
+        self.image_label.set_top_left_tags([])
         self.update_exif_panel(None)
         self.image_label.clear_preview_line()
         self.image_label.clear_preview_rectangle()
