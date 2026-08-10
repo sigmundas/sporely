@@ -159,6 +159,13 @@ class _MemoryOriginalSyncClient(cloud_sync.SporelyCloudClient):
 
     def push_image_metadata(self, img: dict, obs_cloud_id: str, storage_path: str) -> str:
         payload = {col: img.get(col) for col in cloud_sync._IMG_PUSH_COLS}
+        captured_at = cloud_sync._normalize_image_captured_at_for_cloud(
+            img.get("captured_at"), local=True
+        )
+        if captured_at is None:
+            payload.pop("captured_at", None)
+        else:
+            payload["captured_at"] = captured_at
         calibration_uuid = cloud_sync._image_calibration_uuid(img)
         if calibration_uuid:
             payload["calibration_uuid"] = calibration_uuid

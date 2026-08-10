@@ -880,7 +880,7 @@ def test_push_observation_skips_noop_patch_when_remote_matches_after_normalizati
 def test_narrow_select_projection_constants_match_live_schema():
     assert "sharing_scope" not in cloud_sync._OBSERVATION_SELECT_COLUMNS
 
-    assert "captured_at" not in cloud_sync._OBSERVATION_IMAGE_SELECT_COLUMNS
+    assert "captured_at" in cloud_sync._OBSERVATION_IMAGE_SELECT_COLUMNS
     assert "updated_at" not in cloud_sync._OBSERVATION_IMAGE_SELECT_COLUMNS
     assert "deleted_at" in cloud_sync._OBSERVATION_IMAGE_SELECT_COLUMNS
 
@@ -3548,7 +3548,9 @@ def test_import_remote_images_preserves_metadata_and_sets_desktop_id(monkeypatch
     assert captured["ai_crop_box"] == (1.0, 2.0, 3.0, 4.0)
     assert captured["ai_crop_source_size"] == (640, 480)
     assert captured["ai_crop_is_custom"] is True
-    assert captured["captured_at"] == "2026-05-01T12:34:56Z"
+    assert captured["captured_at"] == cloud_sync._cloud_image_captured_at_to_local(
+        "2026-05-01T12:34:56Z"
+    )
     assert captured["copy_to_folder"] is True
     assert captured["mark_observation_dirty"] is False
     assert captured["source_role"] == "cloud_recovery_cache"

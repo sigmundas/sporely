@@ -1507,6 +1507,7 @@ def recover_full_original_for_image(
 _IMG_PUSH_COLS = [
     'sort_order', 'image_type', 'micro_category', 'objective_name',
     'calibration_uuid',
+    'captured_at',
     'scale_microns_per_pixel', 'resample_scale_factor',
     'mount_medium', 'stain',
     # `sample_type` is now specimen condition only (Not_set / Fresh / Dried).
@@ -1549,6 +1550,9 @@ _REMOTE_SYNC_TIMESTAMP_GRACE_SECONDS = 5.0
 _CLOUD_THUMB_MAX_EDGE = 400
 _CALIBRATION_REFERENCE_MAX_EDGE = 2048
 _LOCAL_MEDIA_SIGNATURE_OPTIONAL_IMAGE_KEYS = (
+    # Image capture time joined the cloud contract after local signatures were
+    # already in use. Missing legacy values are equivalent to explicit NULL.
+    'captured_at',
     'ai_crop_x1',
     'ai_crop_y1',
     'ai_crop_x2',
@@ -1574,6 +1578,7 @@ _LOCAL_MEDIA_PREP_RENDER_AFFECTING_IMAGE_FIELDS = frozenset()
 # encoded, no bytes uploaded). Used both to classify sync changes and to
 # document what the "metadata-only image sync" decision covers.
 _IMAGE_METADATA_ONLY_FIELDS = frozenset({
+    'captured_at',
     'ai_crop_x1',
     'ai_crop_y1',
     'ai_crop_x2',
@@ -1632,6 +1637,7 @@ _SNAPSHOT_OBS_FIELDS = [
 
 _SNAPSHOT_IMG_FIELDS = [
     'id', 'desktop_id', 'sort_order', 'image_type', 'micro_category',
+    'captured_at',
     'calibration_uuid',
     'objective_name', 'scale_microns_per_pixel', 'resample_scale_factor',
     'mount_medium', 'stain',
@@ -3447,6 +3453,9 @@ def _local_image_snapshot_payload(image_row: dict | None) -> dict:
         'sort_order': _normalize_snapshot_value(row.get('sort_order')),
         'image_type': _normalize_snapshot_value(row.get('image_type')),
         'micro_category': _normalize_snapshot_value(row.get('micro_category')),
+        'captured_at': _normalize_image_captured_at_for_cloud(
+            row.get('captured_at'), local=True
+        ),
         'calibration_uuid': _normalize_snapshot_value(_image_calibration_uuid(row)),
         'objective_name': _normalize_snapshot_value(row.get('objective_name')),
         'scale_microns_per_pixel': _normalize_snapshot_value(row.get('scale_microns_per_pixel')),
@@ -3671,6 +3680,7 @@ def _image_metadata_payload(image_row: dict | None) -> dict:
 
 def _format_image_metadata_field_label(field: str) -> str:
     labels = {
+        'captured_at': 'capture time',
         'measure_color': 'measurement color',
         'crop_mode': 'crop mode',
         'ai_crop_x1': 'AI crop left',
@@ -4709,6 +4719,41 @@ def _normalize_snapshot_value(value):
     return str(value)
 
 
+def _normalize_image_captured_at_for_cloud(value, *, local: bool) -> str | None:
+    """Return one image capture timestamp as a canonical UTC ISO value.
+
+    SQLite stores capture timestamps as local wall-clock text. Postgres
+    ``timestamptz`` values are absolute instants. Naive local values therefore
+    use the host timezone (including historical DST), while a defensive naive
+    cloud value is interpreted as UTC. A missing/invalid value stays missing;
+    ``created_at`` is never used as a substitute.
+    """
+    if value is None:
+        return None
+    if isinstance(value, datetime):
+        parsed = value
+    else:
+        text = str(value or '').strip()
+        if not text:
+            return None
+        try:
+            parsed = datetime.fromisoformat(text.replace('Z', '+00:00'))
+        except Exception:
+            return None
+    if parsed.tzinfo is None:
+        parsed = parsed.astimezone() if local else parsed.replace(tzinfo=timezone.utc)
+    return parsed.astimezone(timezone.utc).isoformat()
+
+
+def _cloud_image_captured_at_to_local(value) -> str | None:
+    """Convert a cloud capture instant to SQLite's local wall-clock format."""
+    canonical = _normalize_image_captured_at_for_cloud(value, local=False)
+    if canonical is None:
+        return None
+    parsed = datetime.fromisoformat(canonical)
+    return parsed.astimezone().replace(tzinfo=None).strftime('%Y-%m-%d %H:%M:%S')
+
+
 def _is_generated_cloud_image(image_row: dict | None) -> bool:
     row = dict(image_row or {})
     notes = str(row.get('notes') or '').strip().lower()
@@ -4904,6 +4949,9 @@ def _cloud_observation_snapshot(
                 field: _normalize_snapshot_value(image.get(field))
                 for field in _SNAPSHOT_IMG_FIELDS
             }
+            image_payload['captured_at'] = _normalize_image_captured_at_for_cloud(
+                image.get('captured_at'), local=False
+            )
             for field in _SNAPSHOT_IMG_PASSIVE_FIELDS:
                 passive_value = _normalize_cloud_media_key(image.get(field))
                 if passive_value:
@@ -7029,6 +7077,10 @@ def _local_cloud_media_signature(
             "images.sample_source" if 'sample_source' in image_columns
             else "NULL AS sample_source"
         )
+        captured_at_column_sql = (
+            "images.captured_at" if 'captured_at' in image_columns
+            else "NULL AS captured_at"
+        )
         calibration_join_sql = (
             "LEFT JOIN calibrations ON calibrations.id = images.calibration_id"
             if calibration_table_exists and has_image_calibration_id
@@ -7043,6 +7095,7 @@ def _local_cloud_media_signature(
                 images.sort_order,
                 images.image_type,
                 images.micro_category,
+                {captured_at_column_sql},
                 images.objective_name,
                 images.scale_microns_per_pixel,
                 images.resample_scale_factor,
@@ -7129,6 +7182,9 @@ def _local_cloud_media_signature(
                 'sort_order': _normalize_snapshot_value(row.get('sort_order')),
                 'image_type': _normalize_snapshot_value(row.get('image_type')),
                 'micro_category': _normalize_snapshot_value(row.get('micro_category')),
+                'captured_at': _normalize_image_captured_at_for_cloud(
+                    row.get('captured_at'), local=True
+                ),
                 'objective_name': _normalize_snapshot_value(row.get('objective_name')),
                 'scale_microns_per_pixel': _normalize_snapshot_value(row.get('scale_microns_per_pixel')),
                 'resample_scale_factor': _normalize_snapshot_value(row.get('resample_scale_factor')),
@@ -7349,6 +7405,9 @@ def _prepared_item_remote_payload(
         'sort_order': _normalize_snapshot_value(image_row.get('sort_order')),
         'image_type': _normalize_snapshot_value(image_row.get('image_type')),
         'micro_category': _normalize_snapshot_value(image_row.get('micro_category')),
+        'captured_at': _normalize_image_captured_at_for_cloud(
+            image_row.get('captured_at'), local=True
+        ),
         'calibration_uuid': _normalize_snapshot_value(_image_calibration_uuid(image_row)),
         'objective_name': _normalize_snapshot_value(image_row.get('objective_name')),
         'scale_microns_per_pixel': _normalize_snapshot_value(image_row.get('scale_microns_per_pixel')),
@@ -7408,6 +7467,9 @@ def _remote_image_payload(
         'sort_order': _normalize_snapshot_value(image.get('sort_order')),
         'image_type': _normalize_snapshot_value(image.get('image_type')),
         'micro_category': _normalize_snapshot_value(image.get('micro_category')),
+        'captured_at': _normalize_image_captured_at_for_cloud(
+            image.get('captured_at'), local=False
+        ),
         'calibration_uuid': _normalize_snapshot_value(image.get('calibration_uuid')),
         'objective_name': _normalize_snapshot_value(image.get('objective_name')),
         'scale_microns_per_pixel': _normalize_snapshot_value(image.get('scale_microns_per_pixel')),
@@ -7828,6 +7890,67 @@ def _mark_cloud_observations_dirty_for_media_changes() -> None:
     # Persist the new signature so future comparisons are stable, but don't mark
     # every linked observation dirty just because a global render preference changed.
     SettingsDB.set_setting(_SETTING_CLOUD_MEDIA_SIGNATURE, current_signature)
+
+
+def _mark_cloud_observations_dirty_for_image_capture_time_changes() -> int:
+    """Schedule linked images whose capture time is absent from the baseline.
+
+    Older sync signatures predate ``images.captured_at``. Merely adding the
+    field to the normal snapshot contract cannot revisit observations already
+    stamped as synced, so explicit media sync performs this narrow comparison.
+    Once a successful sync refreshes the local signature, the scan is a no-op.
+    """
+    conn = get_connection()
+    try:
+        image_columns = {
+            str(row[1] or '').strip()
+            for row in conn.execute("PRAGMA table_info(images)").fetchall()
+        }
+        if 'captured_at' not in image_columns:
+            return 0
+        rows = conn.execute(
+            """
+            SELECT DISTINCT o.id
+            FROM observations o
+            JOIN images i ON i.observation_id = o.id
+            WHERE o.cloud_id IS NOT NULL
+              AND COALESCE(o.sync_status, '') != 'dirty'
+              AND i.cloud_id IS NOT NULL
+              AND i.captured_at IS NOT NULL
+              AND TRIM(CAST(i.captured_at AS TEXT)) != ''
+            """
+        ).fetchall()
+    finally:
+        conn.close()
+
+    marked = 0
+    for row in rows:
+        observation_id = _safe_int(row[0])
+        if observation_id <= 0:
+            continue
+        stored = _parsed_local_media_signature(
+            _load_local_cloud_media_signature(observation_id)
+        )
+        current = _parsed_local_media_signature(
+            _local_cloud_image_media_signature(observation_id)
+        )
+        stored_by_id = {
+            _safe_int(image.get('id')): dict(image)
+            for image in (stored.get('images') or [])
+            if isinstance(image, dict) and _safe_int(image.get('id')) > 0
+        }
+        needs_sync = any(
+            image.get('captured_at') is not None
+            and image.get('captured_at')
+            != stored_by_id.get(_safe_int(image.get('id')), {}).get('captured_at')
+            for image in (current.get('images') or [])
+            if isinstance(image, dict)
+        )
+        if not needs_sync:
+            continue
+        mark_observation_dirty(observation_id)
+        marked += 1
+    return marked
 
 
 def microscope_image_requires_public_spore_anchor(image_id: int | None) -> bool:
@@ -9491,6 +9614,12 @@ def _apply_remote_image_metadata_only_to_local(
     if calibration_id is not None:
         update_kwargs['calibration_id'] = calibration_id
     ImageDB.update_image(image_id, **update_kwargs)
+    remote_captured_at = _cloud_image_captured_at_to_local(remote_image.get('captured_at'))
+    if remote_captured_at is not None:
+        _update_image_columns_without_touching_observation(
+            image_id,
+            {'captured_at': remote_captured_at},
+        )
     conn = get_connection()
     try:
         conn.execute(
@@ -9610,8 +9739,10 @@ def _ensure_local_metadata_only_microscope_anchor(
         'ai_crop_source_w': ai_crop_source_size[0] if ai_crop_source_size and len(ai_crop_source_size) == 2 else None,
         'ai_crop_source_h': ai_crop_source_size[1] if ai_crop_source_size and len(ai_crop_source_size) == 2 else None,
         'ai_crop_is_custom': _remote_ai_crop_is_custom(remote_row),
-        'captured_at': remote_row.get('captured_at'),
     }
+    remote_captured_at = _cloud_image_captured_at_to_local(remote_row.get('captured_at'))
+    if remote_captured_at is not None:
+        metadata_columns['captured_at'] = remote_captured_at
     if calibration_id is not None:
         metadata_columns['calibration_id'] = calibration_id
 
@@ -9643,7 +9774,7 @@ def _ensure_local_metadata_only_microscope_anchor(
             ai_crop_box=ai_crop_box,
             ai_crop_source_size=ai_crop_source_size,
             ai_crop_is_custom=_remote_ai_crop_is_custom(remote_row),
-            captured_at=remote_row.get('captured_at'),
+            captured_at=remote_captured_at,
             copy_to_folder=False,
             mark_observation_dirty=False,
             source_role='cloud_recovery_cache',
@@ -9809,6 +9940,12 @@ def _sync_existing_remote_image_to_local(
         if calibration_id is not None:
             update_kwargs['calibration_id'] = calibration_id
         ImageDB.update_image(image_id, **update_kwargs)
+        remote_captured_at = _cloud_image_captured_at_to_local(remote_image.get('captured_at'))
+        if remote_captured_at is not None:
+            _update_image_columns_without_touching_observation(
+                image_id,
+                {'captured_at': remote_captured_at},
+            )
         conn = get_connection()
         try:
             conn.execute(
@@ -9971,7 +10108,9 @@ def _apply_remote_images_to_local(
                 ai_crop_box=_remote_ai_crop_box(remote_image),
                 ai_crop_source_size=_remote_ai_crop_source_size(remote_image),
                 ai_crop_is_custom=_remote_ai_crop_is_custom(remote_image),
-                captured_at=remote_image.get('captured_at'),
+                captured_at=_cloud_image_captured_at_to_local(
+                    remote_image.get('captured_at')
+                ),
                 copy_to_folder=True,
                 mark_observation_dirty=False,
                 source_role='cloud_recovery_cache',
@@ -14331,6 +14470,15 @@ class SporelyCloudClient:
     def push_image_metadata(self, img: dict, obs_cloud_id: str, storage_path: str) -> str:
         """Upsert image metadata row. Returns cloud UUID."""
         payload = {col: img.get(col) for col in _IMG_PUSH_COLS}
+        captured_at = _normalize_image_captured_at_for_cloud(
+            img.get('captured_at'), local=True
+        )
+        if captured_at is None:
+            # A local NULL must not erase an authoritative cloud capture
+            # instant. New inserts still naturally receive cloud NULL.
+            payload.pop('captured_at', None)
+        else:
+            payload['captured_at'] = captured_at
         calibration_uuid = _image_calibration_uuid(img)
         if calibration_uuid:
             payload['calibration_uuid'] = calibration_uuid
@@ -16746,6 +16894,14 @@ def push_all(
     )
 
     if sync_images:
+        capture_time_dirty_start = _cloud_sync_perf_counter()
+        capture_time_redirtied = _mark_cloud_observations_dirty_for_image_capture_time_changes()
+        print(
+            f"[cloud_sync] observation preflight: image capture-time dirty scan complete "
+            f"re_dirtied={capture_time_redirtied} "
+            f"duration={(_cloud_sync_perf_counter() - capture_time_dirty_start) * 1000:.0f}ms",
+            flush=True,
+        )
         pending_scan_start = _cloud_sync_perf_counter()
         pending_scan_due, pending_scan_reason = _cloud_pending_image_repair_scan_due()
         pending_scan_completed = False
@@ -22184,7 +22340,9 @@ def _import_remote_images(
                     ai_crop_box=_remote_ai_crop_box(image_row),
                     ai_crop_source_size=_remote_ai_crop_source_size(image_row),
                     ai_crop_is_custom=_remote_ai_crop_is_custom(image_row),
-                    captured_at=image_row.get('captured_at'),
+                    captured_at=_cloud_image_captured_at_to_local(
+                        image_row.get('captured_at')
+                    ),
                     copy_to_folder=True,
                     mark_observation_dirty=False,
                     source_role='cloud_recovery_cache',
