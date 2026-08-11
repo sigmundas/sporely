@@ -28,6 +28,7 @@ class ZoomableImageLabel(QLabel):
     cropChanged = Signal(object)  # Emits (x1, y1, x2, y2) in image coords or None
     cropPreviewChanged = Signal(object)  # Emits live crop preview box in image coords or None
     scaleBarChanged = Signal(list)  # Emits [x1, y1, x2, y2] when scale bar endpoint is dragged
+    topLeftTagClicked = Signal(str)
 
     def __init__(self, parent=None):
         super().__init__(parent)
@@ -55,6 +56,8 @@ class ZoomableImageLabel(QLabel):
         self.objective_text = ""
         self.objective_color = QColor(52, 152, 219)
         self.top_left_tags = []
+        self.top_left_tag_keys = []
+        self._top_left_tag_rects = []
         self.measure_color = QColor("#0044aa")
         self.measure_rectangle_style = DEFAULT_RECTANGLE_STYLE
         self.measure_rectangle_thickness = DEFAULT_RECTANGLE_THICKNESS
@@ -1020,13 +1023,15 @@ class ZoomableImageLabel(QLabel):
         self.objective_color = QColor(color)
         self.update()
 
-    def set_top_left_tags(self, tags):
+    def set_top_left_tags(self, tags, keys=None):
         """Set the single-row tags rendered in the viewer's upper-left."""
         self.top_left_tags = [
             (str(text), QColor(color))
             for text, color in (tags or [])
             if str(text or "").strip()
         ]
+        self.top_left_tag_keys = [str(key) for key in (keys or [])]
+        self._top_left_tag_rects = []
         self.update()
 
     def reset_view(self):
@@ -1299,6 +1304,11 @@ class ZoomableImageLabel(QLabel):
     def mousePressEvent(self, event):
         """Handle mouse press for panning or clicking."""
         if event.button() == Qt.LeftButton:
+            for index, tag_rect in enumerate(self._top_left_tag_rects):
+                if tag_rect.contains(event.position().toPoint()):
+                    if index < len(self.top_left_tag_keys):
+                        self.topLeftTagClicked.emit(self.top_left_tag_keys[index])
+                    return
             # Scale bar endpoint drag — check before crop/pan handling
             ep_hit = self._scale_bar_t_hit_test(event.position())
             if ep_hit is not None:
@@ -2974,7 +2984,9 @@ class ZoomableImageLabel(QLabel):
 
         if self.top_left_tags:
             tag_x = 10
+            self._top_left_tag_rects = []
             for text, bg_color in self.top_left_tags:
+                display_text = f"{text}  ▾"
                 font = painter.font()
                 font.setPointSize(10)
                 font.setBold(True)
@@ -2983,7 +2995,7 @@ class ZoomableImageLabel(QLabel):
                 tag_rect = QRect(
                     tag_x,
                     10,
-                    metrics.horizontalAdvance(text) + 20,
+                    metrics.horizontalAdvance(display_text) + 20,
                     metrics.height() + 10,
                 )
                 tag_color = QColor(bg_color)
@@ -2995,7 +3007,8 @@ class ZoomableImageLabel(QLabel):
                     QColor("#000000") if tag_color.isValid() and tag_color.lightness() >= 180
                     else QColor("#ffffff")
                 )
-                painter.drawText(tag_rect, Qt.AlignCenter, text)
+                painter.drawText(tag_rect, Qt.AlignCenter, display_text)
+                self._top_left_tag_rects.append(QRect(tag_rect))
                 tag_x = tag_rect.right() + 6
         elif self.objective_text:
             next_tag_y = 10

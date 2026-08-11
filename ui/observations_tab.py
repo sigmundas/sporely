@@ -29,6 +29,7 @@ from PySide6.QtGui import (
     QKeySequence,
     QPainterPath,
     QPen,
+    QCursor,
 )
 from PIL import Image, ImageOps, features
 from PySide6.QtCore import QUrl
@@ -203,7 +204,7 @@ from utils.cloud_sync import (
     unlink_local_observation_from_cloud,
 )
 from .cloud_conflict_dialog import CloudConflictDialog
-from .adaptive_choice_selector import objective_short_label
+from .adaptive_choice_selector import objective_color, objective_short_label, stain_color
 from .image_gallery_widget import ImageGalleryWidget, _microscope_tag_from_image
 from .splitter_state import (
     install_persistent_splitter,
@@ -1867,6 +1868,7 @@ class _ObservationImageBrowser(QWidget):
         self.image_label.set_show_measure_overlays(False)
         self.image_label.setText(self.tr("No image selected"))
         self.image_label.installEventFilter(self)
+        self.image_label.topLeftTagClicked.connect(self._show_tag_menu)
 
         self.counter_label = QLabel(self)
         self.counter_label.setAlignment(Qt.AlignCenter)
@@ -2028,6 +2030,7 @@ class _ObservationImageBrowser(QWidget):
 
     def _clear_image_display(self, placeholder: str) -> None:
         self.image_label.set_image_sources(None)
+        self.image_label.set_top_left_tags([])
         self.image_label.setText(placeholder)
         self.counter_label.setText("")
         self.set_publish_state(False, enabled=False)
@@ -2053,7 +2056,109 @@ class _ObservationImageBrowser(QWidget):
             self._clear_image_display(self.tr("Failed to load image"))
             return
         self.image_label.set_image_sources(pixmap, full_path=path)
+        self._set_current_image_tags()
         self.image_label.reset_view()
+        self.currentImageChanged.emit()
+
+    def _set_current_image_tags(self) -> None:
+        image_id = self.current_image_id()
+        image = ImageDB.get_image(image_id) if image_id else None
+        if not image:
+            self.image_label.set_top_left_tags([])
+            return
+        lab_metadata = image.get("lab_metadata")
+        if not isinstance(lab_metadata, dict):
+            lab_metadata = {}
+
+        def _value(column: str):
+            value = image.get(column)
+            return lab_metadata.get(column) if value is None else value
+
+        tags = []
+        keys = []
+        objective_name = _value("objective_name")
+        if objective_name:
+            objectives = load_objectives()
+            objective_key = resolve_objective_key(str(objective_name), objectives) or str(objective_name)
+            objective = objectives.get(objective_key)
+            text = objective_short_label(objective, objective_key) or objective_display_name(objective, objective_key)
+            contrast = _value("contrast")
+            canonical_contrast = DatabaseTerms.canonicalize("contrast", contrast) if contrast else None
+            if canonical_contrast and str(canonical_contrast).lower() not in {"not_set", "not set"}:
+                text = f"{text} {DatabaseTerms.translate('contrast', canonical_contrast)}"
+            tags.append((text, objective_color(objective, objective_key)))
+            keys.append("microscope")
+
+        for category, column in (
+            ("mount", "mount_medium"),
+            ("stain", "stain"),
+            ("sample", "sample_type"),
+            ("sample_source", "sample_source"),
+        ):
+            value = _value(column)
+            canonical = DatabaseTerms.canonicalize(category, value) if value else None
+            if category == "stain" and (
+                not canonical or str(canonical).lower() in {"not_set", "not set"}
+            ):
+                tags.append((self.tr("No stain"), "#59636e"))
+                keys.append(category)
+                continue
+            if not canonical or str(canonical).lower() in {"not_set", "not set"}:
+                continue
+            color = stain_color(canonical) if category == "stain" else None
+            tags.append((DatabaseTerms.translate(category, canonical), color or "#59636e"))
+            keys.append(category)
+        self.image_label.set_top_left_tags(tags, keys)
+
+    def _show_tag_menu(self, category: str) -> None:
+        image_id = self.current_image_id()
+        if not image_id:
+            return
+        menu = QMenu(self)
+        if category == "microscope":
+            objective_menu = menu.addMenu(self.tr("Objective"))
+            objectives = load_objectives()
+            for key, objective in sorted(objectives.items(), key=lambda item: objective_sort_value(item[1], item[0])):
+                action = objective_menu.addAction(objective_display_name(objective, key) or key)
+                action.setData(("objective", key))
+            contrast_menu = menu.addMenu(self.tr("Contrast"))
+            choices = SettingsDB.get_list_setting(
+                DatabaseTerms.setting_key("contrast"), DatabaseTerms.default_values("contrast")
+            )
+            for value in choices:
+                action = contrast_menu.addAction(DatabaseTerms.translate("contrast", value))
+                action.setData(("contrast", value))
+        else:
+            choices = SettingsDB.get_list_setting(
+                DatabaseTerms.setting_key(category), DatabaseTerms.default_values(category)
+            )
+            for value in choices:
+                action = menu.addAction(DatabaseTerms.translate(category, value))
+                action.setData((category, value))
+        selected = menu.exec(QCursor.pos())
+        if not selected or not selected.data():
+            return
+        selected_category, value = selected.data()
+        if selected_category == "objective":
+            objective = load_objectives().get(value) or {}
+            scale = objective.get("microns_per_pixel")
+            calibration_id = CalibrationDB.get_active_calibration_id(value)
+            ImageDB.update_image(
+                image_id,
+                objective_name=value,
+                scale=scale,
+                calibration_id=calibration_id,
+            )
+        else:
+            column = {
+                "contrast": "contrast",
+                "mount": "mount_medium",
+                "stain": "stain",
+                "sample": "sample_type",
+                "sample_source": "sample_source",
+            }[selected_category]
+            ImageDB.update_image(image_id, **{column: value})
+        self._set_current_image_tags()
         self.currentImageChanged.emit()
 
     def _update_nav_state(self) -> None:

@@ -8666,6 +8666,7 @@ class MainWindow(GeometryMixin, QMainWindow):
         self.image_label.setMinimumSize(320, 240)
         self.image_label.clicked.connect(self.image_clicked)
         self.image_label.rightClicked.connect(self.image_right_clicked)
+        self.image_label.topLeftTagClicked.connect(self._show_measure_tag_menu)
         self.image_label.set_measurement_color(self.measure_color)
         self.image_label.set_measurement_active(self.measurement_active)
         self.image_label.set_pan_without_shift(not self.measurement_active)
@@ -13164,6 +13165,7 @@ class MainWindow(GeometryMixin, QMainWindow):
             return value
 
         tags = []
+        keys = []
         objective_text = str(getattr(self.image_label, "objective_text", "") or "").strip()
         contrast = _value("contrast")
         canonical_contrast = DatabaseTerms.canonicalize("contrast", contrast) if contrast else None
@@ -13173,6 +13175,7 @@ class MainWindow(GeometryMixin, QMainWindow):
             )
         if objective_text:
             tags.append((objective_text, self.image_label.objective_color))
+            keys.append("microscope")
 
         metadata_tags = (
             ("mount", _value("mount_medium")),
@@ -13182,12 +13185,67 @@ class MainWindow(GeometryMixin, QMainWindow):
         )
         for category, value in metadata_tags:
             canonical = DatabaseTerms.canonicalize(category, value) if value else None
+            if category == "stain" and (
+                not canonical or str(canonical).lower() in {"not_set", "not set"}
+            ):
+                tags.append((self.tr("No stain"), "#59636e"))
+                keys.append(category)
+                continue
             if not canonical or str(canonical).lower() in {"not_set", "not set"}:
                 continue
             color = stain_color(canonical) if category == "stain" else None
             tags.append((DatabaseTerms.translate(category, canonical), color or "#59636e"))
+            keys.append(category)
 
-        self.image_label.set_top_left_tags(tags)
+        self.image_label.set_top_left_tags(tags, keys)
+
+    def _show_measure_tag_menu(self, category: str) -> None:
+        """Offer enabled microscope values for quick correction in Measure."""
+        if not self.current_image_id:
+            return
+        menu = QMenu(self)
+        if category == "microscope":
+            objective_menu = menu.addMenu(self.tr("Objective"))
+            objectives = self.load_objective_definitions()
+            for key, objective in sorted(objectives.items(), key=lambda item: objective_sort_value(item[1], item[0])):
+                label = objective_display_name(objective, key) or key
+                action = objective_menu.addAction(label)
+                action.setData(("objective", key))
+            contrast_menu = menu.addMenu(self.tr("Contrast"))
+            choices = SettingsDB.get_list_setting(
+                DatabaseTerms.setting_key("contrast"), DatabaseTerms.default_values("contrast")
+            )
+            for value in choices:
+                action = contrast_menu.addAction(DatabaseTerms.translate("contrast", value))
+                action.setData(("contrast", value))
+        else:
+            choices = SettingsDB.get_list_setting(
+                DatabaseTerms.setting_key(category), DatabaseTerms.default_values(category)
+            )
+            for value in choices:
+                action = menu.addAction(DatabaseTerms.translate(category, value))
+                action.setData((category, value))
+
+        selected = menu.exec(QCursor.pos())
+        if not selected or not selected.data():
+            return
+        selected_category, value = selected.data()
+        if selected_category == "objective":
+            index = self.scale_combo.findData(value)
+            if index >= 0:
+                self.scale_combo.setCurrentIndex(index)
+        else:
+            column = {
+                "contrast": "contrast",
+                "mount": "mount_medium",
+                "stain": "stain",
+                "sample": "sample_type",
+                "sample_source": "sample_source",
+            }[selected_category]
+            ImageDB.update_image(self.current_image_id, **{column: value})
+        image_data = ImageDB.get_image(self.current_image_id)
+        if image_data:
+            self._set_measure_image_tags(image_data)
 
     def _format_megapixels(self, mp_value: float) -> str:
         text = f"{mp_value:.1f}"
