@@ -1983,243 +1983,244 @@ Vil du oppdatere disse bildene til å bruke den nye kalibreringen og beregne må
     <message>
         <location filename="../ui/cloud_conflict_dialog.py" line="684"/>
         <source>Apply this choice to all remaining conflicts</source>
-        <translation type="unfinished"></translation>
+        <translation>Bruk dette valget på alle gjenværende konflikter</translation>
     </message>
     <message>
         <location filename="../ui/cloud_conflict_dialog.py" line="748"/>
         <source>Observation local #{local_id} · cloud {cloud_id}</source>
-        <translation type="unfinished"></translation>
+        <translation>Observasjon lokal #{local_id} · sky {cloud_id}</translation>
     </message>
     <message>
         <location filename="../ui/cloud_conflict_dialog.py" line="1033"/>
         <source>Needs your choice</source>
-        <translation type="unfinished"></translation>
+        <translation>Trenger ditt valg</translation>
     </message>
     <message>
         <location filename="../ui/cloud_conflict_dialog.py" line="1038"/>
         <source>This device — {value}</source>
-        <translation type="unfinished"></translation>
+        <translation>Denne enheten — {value}</translation>
     </message>
     <message>
         <location filename="../ui/cloud_conflict_dialog.py" line="1041"/>
         <source>Sporely Cloud — {value}</source>
-        <translation type="unfinished"></translation>
+        <translation>Sporely Cloud — {value}</translation>
     </message>
     <message>
         <location filename="../ui/cloud_conflict_dialog.py" line="1101"/>
         <source>Identity conflict — automatic resolution unavailable</source>
-        <translation type="unfinished"></translation>
+        <translation>Identitetskonflikt — automatisk løsning er utilgjengelig</translation>
     </message>
     <message>
         <location filename="../ui/cloud_conflict_dialog.py" line="1124"/>
         <source>Informational only — image order differs. Desktop order {local} will be used automatically; cloud order is {remote}.</source>
-        <translation type="unfinished"></translation>
+        <translation>Kun informasjon – bilderekkefølgen varierer. Desktop-bestilling {local} vil bli brukt automatisk; skyordre er {remote}.</translation>
     </message>
     <message>
         <location filename="../ui/cloud_conflict_dialog.py" line="1137"/>
         <location filename="../ui/cloud_conflict_dialog.py" line="1252"/>
         <source>Upload to Sporely Cloud</source>
-        <translation type="unfinished"></translation>
+        <translation>Last opp til Sporely Cloud</translation>
     </message>
     <message>
         <location filename="../ui/cloud_conflict_dialog.py" line="1138"/>
         <location filename="../ui/cloud_conflict_dialog.py" line="1253"/>
         <source>Keep only on this device</source>
-        <translation type="unfinished"></translation>
+        <translation>Oppbevar kun på denne enheten</translation>
     </message>
     <message>
         <location filename="../ui/cloud_conflict_dialog.py" line="1148"/>
         <location filename="../ui/cloud_conflict_dialog.py" line="1261"/>
         <source>Download to this device</source>
-        <translation type="unfinished"></translation>
+        <translation>Last ned til denne enheten</translation>
     </message>
     <message>
         <location filename="../ui/cloud_conflict_dialog.py" line="1149"/>
         <location filename="../ui/cloud_conflict_dialog.py" line="1262"/>
         <source>Keep only in Sporely Cloud</source>
-        <translation type="unfinished"></translation>
+        <translation>Oppbevar kun i Sporely Cloud</translation>
     </message>
     <message>
         <location filename="../ui/cloud_conflict_dialog.py" line="1164"/>
         <source>Photo metadata differences</source>
-        <translation type="unfinished"></translation>
+        <translation>Fotometadataforskjeller</translation>
     </message>
     <message>
         <location filename="../ui/cloud_conflict_dialog.py" line="1167"/>
         <source>Image order</source>
-        <translation type="unfinished"></translation>
+        <translation>Bilderekkefølge</translation>
     </message>
     <message>
         <location filename="../ui/cloud_conflict_dialog.py" line="1168"/>
         <source>Image type</source>
-        <translation type="unfinished"></translation>
+        <translation>Bildetype</translation>
     </message>
     <message>
         <location filename="../ui/cloud_conflict_dialog.py" line="1169"/>
         <source>Microscope category</source>
-        <translation type="unfinished"></translation>
+        <translation>Mikroskopkategori</translation>
     </message>
     <message>
         <location filename="../ui/cloud_conflict_dialog.py" line="1170"/>
         <source>Microscope objective</source>
-        <translation type="unfinished">Mikroskopopjektiv</translation>
+        <translation>Mikroskopopjektiv</translation>
     </message>
     <message>
         <location filename="../ui/cloud_conflict_dialog.py" line="1171"/>
         <source>Scale</source>
-        <translation type="unfinished">Skala</translation>
+        <translation>Skala</translation>
     </message>
     <message>
         <location filename="../ui/cloud_conflict_dialog.py" line="1172"/>
         <source>Mount medium</source>
-        <translation type="unfinished"></translation>
+        <translation>Monter medium</translation>
     </message>
     <message>
         <location filename="../ui/cloud_conflict_dialog.py" line="1173"/>
         <source>Stain</source>
-        <translation type="unfinished">Farging</translation>
+        <translation>Farging</translation>
     </message>
     <message>
         <location filename="../ui/cloud_conflict_dialog.py" line="1174"/>
         <source>Sample type</source>
-        <translation type="unfinished"></translation>
+        <translation>Prøvetype</translation>
     </message>
     <message>
         <location filename="../ui/cloud_conflict_dialog.py" line="1175"/>
         <source>Sample source</source>
-        <translation type="unfinished"></translation>
+        <translation>Eksempelkilde</translation>
     </message>
     <message>
         <location filename="../ui/cloud_conflict_dialog.py" line="1176"/>
         <source>Contrast method</source>
-        <translation type="unfinished"></translation>
+        <translation>Kontrastmetode</translation>
     </message>
     <message>
         <location filename="../ui/cloud_conflict_dialog.py" line="1177"/>
         <source>Notes</source>
-        <translation type="unfinished">Notater</translation>
+        <translation>Notater</translation>
     </message>
     <message>
         <location filename="../ui/cloud_conflict_dialog.py" line="1178"/>
         <source>GPS source</source>
-        <translation type="unfinished"></translation>
+        <translation>GPS-kilde</translation>
     </message>
     <message>
         <location filename="../ui/cloud_conflict_dialog.py" line="1179"/>
         <source>Crop mode</source>
-        <translation type="unfinished"></translation>
+        <translation>Beskjæringsmodus</translation>
     </message>
     <message>
         <location filename="../ui/cloud_conflict_dialog.py" line="1185"/>
         <source>Previous baseline unavailable</source>
-        <translation type="unfinished"></translation>
+        <translation>Forrige grunnlinje utilgjengelig</translation>
     </message>
     <message>
         <location filename="../ui/cloud_conflict_dialog.py" line="1190"/>
         <source>• {field}: this device {local} · cloud {remote}
   {origin}</source>
-        <translation type="unfinished"></translation>
+        <translation>• {field}: denne enheten {local} · sky {remote}
+  {origin}</translation>
     </message>
     <message>
         <location filename="../ui/cloud_conflict_dialog.py" line="1211"/>
         <source>Measurement · local {local_id} · cloud {cloud_id}</source>
-        <translation type="unfinished"></translation>
+        <translation>Måling · lokal {local_id} · sky {cloud_id}</translation>
     </message>
     <message>
         <location filename="../ui/cloud_conflict_dialog.py" line="1213"/>
         <location filename="../ui/cloud_conflict_dialog.py" line="1214"/>
         <source>missing</source>
-        <translation type="unfinished"></translation>
+        <translation>savnet</translation>
     </message>
     <message>
         <location filename="../ui/cloud_conflict_dialog.py" line="1232"/>
         <source>Added only on this device</source>
-        <translation type="unfinished"></translation>
+        <translation>Bare lagt til på denne enheten</translation>
     </message>
     <message>
         <location filename="../ui/cloud_conflict_dialog.py" line="1233"/>
         <source>Added only on Sporely Cloud</source>
-        <translation type="unfinished"></translation>
+        <translation>Bare lagt til på Sporely Cloud</translation>
     </message>
     <message>
         <location filename="../ui/cloud_conflict_dialog.py" line="1302"/>
         <source>Baseline:</source>
-        <translation type="unfinished"></translation>
+        <translation>Grunnlinje:</translation>
     </message>
     <message>
         <location filename="../ui/cloud_conflict_dialog.py" line="1304"/>
         <source>On this device:</source>
-        <translation type="unfinished"></translation>
+        <translation>På denne enheten:</translation>
     </message>
     <message>
         <location filename="../ui/cloud_conflict_dialog.py" line="1306"/>
         <source>On Sporely Cloud:</source>
-        <translation type="unfinished"></translation>
+        <translation>På Sporely Cloud:</translation>
     </message>
     <message>
         <location filename="../ui/cloud_conflict_dialog.py" line="1394"/>
         <source>Cannot resolve automatically because image or measurement identities contradict each other. Review later and repair the links first.</source>
-        <translation type="unfinished"></translation>
+        <translation>Kan ikke løses automatisk fordi bilde- eller målingsidentiteter motsier hverandre. Se gjennom senere og reparer koblingene først.</translation>
     </message>
     <message>
         <location filename="../ui/cloud_conflict_dialog.py" line="1398"/>
         <source>Statistics differ without reconstructable measurements. Review the source data before applying.</source>
-        <translation type="unfinished"></translation>
+        <translation>Statistikken er forskjellig uten rekonstruerbare målinger. Se gjennom kildedataene før du søker.</translation>
     </message>
     <message>
         <location filename="../ui/cloud_conflict_dialog.py" line="1405"/>
         <source>Per-item conflict plans cannot be applied blindly to other observations.</source>
-        <translation type="unfinished"></translation>
+        <translation>Konfliktplaner per punkt kan ikke brukes blindt på andre observasjoner.</translation>
     </message>
     <message>
         <location filename="../ui/cloud_conflict_dialog.py" line="1523"/>
         <source>Applying selected changes…</source>
-        <translation type="unfinished"></translation>
+        <translation>Bruker valgte endringer …</translation>
     </message>
     <message>
         <location filename="../ui/cloud_conflict_dialog.py" line="1555"/>
         <source>Applied. Presentation policy was not fully applied for {count} image(s); other data is correct.</source>
-        <translation type="unfinished"></translation>
+        <translation>Påført. Presentasjonspolicy ble ikke brukt fullt ut for {count}-bilder; andre data er korrekte.</translation>
     </message>
     <message>
         <location filename="../ui/cloud_conflict_dialog.py" line="1560"/>
         <source>Applied.</source>
-        <translation type="unfinished"></translation>
+        <translation>Påført.</translation>
     </message>
     <message>
         <location filename="../ui/cloud_conflict_dialog.py" line="1569"/>
         <source>Apply failed: {message}. Review the plan and try again.</source>
-        <translation type="unfinished"></translation>
+        <translation>Påføring mislyktes: {message}. Se gjennom planen og prøv igjen.</translation>
     </message>
     <message>
         <location filename="../ui/cloud_conflict_dialog.py" line="703"/>
         <source>Review later</source>
-        <translation type="unfinished"></translation>
+        <translation>Gjennomgå senere</translation>
     </message>
     <message>
         <location filename="../ui/cloud_conflict_dialog.py" line="550"/>
         <source>Review cloud sync conflicts</source>
-        <translation type="unfinished"></translation>
+        <translation>Gjennomgå skysynkroniseringskonflikter</translation>
     </message>
     <message>
         <location filename="../ui/cloud_conflict_dialog.py" line="577"/>
         <source>Safe automatic changes have already synced. This screen shows only unresolved differences. Nothing in this review is changed until you confirm a resolution action.</source>
-        <translation type="unfinished"></translation>
+        <translation>Trygge automatiske endringer er allerede synkronisert. Denne skjermen viser kun uløste forskjeller. Ingenting i denne anmeldelsen endres før du bekrefter en løsningshandling.</translation>
     </message>
     <message>
         <location filename="../ui/cloud_conflict_dialog.py" line="583"/>
         <source>Review later closes without applying any conflict decision. The observations remain pending and will appear again on a later sync.</source>
-        <translation type="unfinished"></translation>
+        <translation>Gjennomgang stenger senere uten å anvende noen konfliktbeslutning. Observasjonene forblir ventende og vil vises igjen ved en senere synkronisering.</translation>
     </message>
     <message>
         <location filename="../ui/cloud_conflict_dialog.py" line="602"/>
         <source>Conflicted observations</source>
-        <translation type="unfinished"></translation>
+        <translation>Motstridende observasjoner</translation>
     </message>
     <message>
         <location filename="../ui/cloud_conflict_dialog.py" line="614"/>
         <source>Select a conflicted observation</source>
-        <translation type="unfinished"></translation>
+        <translation>Velg en motstridende observasjon</translation>
     </message>
     <message>
         <location filename="../ui/cloud_conflict_dialog.py" line="643"/>
@@ -2227,262 +2228,262 @@ Vil du oppdatere disse bildene til å bruke den nye kalibreringen og beregne må
         <location filename="../ui/cloud_conflict_dialog.py" line="885"/>
         <location filename="../ui/cloud_conflict_dialog.py" line="887"/>
         <source>Loading comparison…</source>
-        <translation type="unfinished"></translation>
+        <translation>Laster inn sammenligning …</translation>
     </message>
     <message>
         <location filename="../ui/cloud_conflict_dialog.py" line="648"/>
         <source>Field</source>
-        <translation type="unfinished">Felt</translation>
+        <translation>Felt</translation>
     </message>
     <message>
         <location filename="../ui/cloud_conflict_dialog.py" line="648"/>
         <location filename="../ui/cloud_conflict_dialog.py" line="1281"/>
         <source>Last synced</source>
-        <translation type="unfinished"></translation>
+        <translation>Sist synkronisert</translation>
     </message>
     <message>
         <location filename="../ui/cloud_conflict_dialog.py" line="648"/>
         <location filename="../ui/cloud_conflict_dialog.py" line="672"/>
         <location filename="../ui/cloud_conflict_dialog.py" line="1281"/>
         <source>On this device</source>
-        <translation type="unfinished"></translation>
+        <translation>På denne enheten</translation>
     </message>
     <message>
         <location filename="../ui/cloud_conflict_dialog.py" line="649"/>
         <location filename="../ui/cloud_conflict_dialog.py" line="673"/>
         <location filename="../ui/cloud_conflict_dialog.py" line="1282"/>
         <source>On Sporely Cloud</source>
-        <translation type="unfinished"></translation>
+        <translation>På Sporely Cloud</translation>
     </message>
     <message>
         <location filename="../ui/cloud_conflict_dialog.py" line="661"/>
         <source>Show matching photos and measurements</source>
-        <translation type="unfinished"></translation>
+        <translation>Vis matchende bilder og mål</translation>
     </message>
     <message>
         <location filename="../ui/cloud_conflict_dialog.py" line="666"/>
         <source>Photo and measurement comparison</source>
-        <translation type="unfinished"></translation>
+        <translation>Foto og måling sammenligning</translation>
     </message>
     <message>
         <location filename="../ui/cloud_conflict_dialog.py" line="687"/>
         <source>Refresh comparison</source>
-        <translation type="unfinished"></translation>
+        <translation>Oppdater sammenligning</translation>
     </message>
     <message>
         <location filename="../ui/cloud_conflict_dialog.py" line="691"/>
         <source>Prefer this device</source>
-        <translation type="unfinished"></translation>
+        <translation>Foretrekk denne enheten</translation>
     </message>
     <message>
         <location filename="../ui/cloud_conflict_dialog.py" line="694"/>
         <source>Prefer Sporely Cloud</source>
-        <translation type="unfinished"></translation>
+        <translation>Foretrekker Sporely Cloud</translation>
     </message>
     <message>
         <location filename="../ui/cloud_conflict_dialog.py" line="697"/>
         <source>Keep safe additions</source>
-        <translation type="unfinished"></translation>
+        <translation>Hold trygge tillegg</translation>
     </message>
     <message>
         <location filename="../ui/cloud_conflict_dialog.py" line="700"/>
         <source>Apply selected changes</source>
-        <translation type="unfinished"></translation>
+        <translation>Bruk valgte endringer</translation>
     </message>
     <message>
         <location filename="../ui/cloud_conflict_dialog.py" line="705"/>
         <source>Close without applying any conflict decision. The observation remains pending and will be shown again on a later sync.</source>
-        <translation type="unfinished"></translation>
+        <translation>Lukk uten å anvende noen konfliktbeslutning. Observasjonen forblir ventende og vil vises igjen ved en senere synkronisering.</translation>
     </message>
     <message>
         <location filename="../ui/cloud_conflict_dialog.py" line="718"/>
         <source>No unresolved Sporely Cloud conflicts.</source>
-        <translation type="unfinished"></translation>
+        <translation>Ingen uløste Sporely Cloud-konflikter.</translation>
     </message>
     <message>
         <location filename="../ui/cloud_conflict_dialog.py" line="768"/>
         <source>{fields} fields · {local} local-only · {cloud} cloud-only · {measurements} measurements</source>
-        <translation type="unfinished"></translation>
+        <translation>{fields}-felt · {local} kun lokalt · {cloud} kun i skyen · {measurements}-målinger</translation>
     </message>
     <message>
         <location filename="../ui/cloud_conflict_dialog.py" line="870"/>
         <source>Authentication expired</source>
-        <translation type="unfinished"></translation>
+        <translation>Autentisering er utløpt</translation>
     </message>
     <message>
         <location filename="../ui/cloud_conflict_dialog.py" line="870"/>
         <source>Could not load cloud details</source>
-        <translation type="unfinished"></translation>
+        <translation>Kunne ikke laste inn nettskydetaljer</translation>
     </message>
     <message>
         <location filename="../ui/cloud_conflict_dialog.py" line="903"/>
         <source>Change labels use the stored last-sync snapshot. “Changed on both sides” means both current versions differ from that snapshot.</source>
-        <translation type="unfinished"></translation>
+        <translation>Endre etiketter bruker det lagrede øyeblikksbildet for siste synkronisering. &quot;Endret på begge sider&quot; betyr at begge gjeldende versjoner er forskjellige fra det øyeblikksbildet.</translation>
     </message>
     <message>
         <location filename="../ui/cloud_conflict_dialog.py" line="908"/>
         <location filename="../ui/cloud_conflict_dialog.py" line="1234"/>
         <source>Previous synchronized state is unavailable; current versions differ.</source>
-        <translation type="unfinished"></translation>
+        <translation>Tidligere synkronisert tilstand er utilgjengelig; nåværende versjoner er forskjellige.</translation>
     </message>
     <message>
         <location filename="../ui/cloud_conflict_dialog.py" line="915"/>
         <source>Spore statistics will be recomputed automatically from the selected scientific measurements.</source>
-        <translation type="unfinished"></translation>
+        <translation>Sporestatistikk vil bli beregnet på nytt automatisk fra de valgte vitenskapelige målingene.</translation>
     </message>
     <message>
         <location filename="../ui/cloud_conflict_dialog.py" line="920"/>
         <source>Spore statistics differ, but reconstructable measurements are unavailable. Review later is required.</source>
-        <translation type="unfinished"></translation>
+        <translation>Sporestatistikk er forskjellig, men rekonstruerbare målinger er utilgjengelige. Gjennomgang senere er nødvendig.</translation>
     </message>
     <message>
         <location filename="../ui/cloud_conflict_dialog.py" line="932"/>
         <source>No ordinary observation fields differ.</source>
-        <translation type="unfinished"></translation>
+        <translation>Ingen ordinære observasjonsfelt skiller seg.</translation>
     </message>
     <message>
         <location filename="../ui/cloud_conflict_dialog.py" line="934"/>
         <source>{count} observation field(s) differ.</source>
-        <translation type="unfinished"></translation>
+        <translation>{count} observasjonsfelt(er) er forskjellige.</translation>
     </message>
     <message>
         <location filename="../ui/cloud_conflict_dialog.py" line="939"/>
         <source>{count} photo(s) exist only on this device.</source>
-        <translation type="unfinished"></translation>
+        <translation>{count}-bilder finnes bare på denne enheten.</translation>
     </message>
     <message>
         <location filename="../ui/cloud_conflict_dialog.py" line="941"/>
         <source>{count} photo(s) exist only on Sporely Cloud.</source>
-        <translation type="unfinished"></translation>
+        <translation>{count}-bilder finnes kun på Sporely Cloud.</translation>
     </message>
     <message>
         <location filename="../ui/cloud_conflict_dialog.py" line="946"/>
         <source>unknown</source>
-        <translation type="unfinished"></translation>
+        <translation>ukjent</translation>
     </message>
     <message>
         <location filename="../ui/cloud_conflict_dialog.py" line="948"/>
         <source>{count} measurement(s) on microscope image {position} differ from the cloud copy.</source>
-        <translation type="unfinished"></translation>
+        <translation>{count}-måling(er) på mikroskopbilde {position} skiller seg fra skykopien.</translation>
     </message>
     <message>
         <location filename="../ui/cloud_conflict_dialog.py" line="953"/>
         <source>Possible counterparts are shown separately because their identity is not confirmed.</source>
-        <translation type="unfinished"></translation>
+        <translation>Mulige motparter vises separat fordi deres identitet ikke er bekreftet.</translation>
     </message>
     <message>
         <location filename="../ui/cloud_conflict_dialog.py" line="1007"/>
         <source>No observation fields differ</source>
-        <translation type="unfinished"></translation>
+        <translation>Ingen observasjonsfelt avviker</translation>
     </message>
     <message>
         <location filename="../ui/cloud_conflict_dialog.py" line="1009"/>
         <source>Observation field differences</source>
-        <translation type="unfinished"></translation>
+        <translation>Observasjonsfeltforskjeller</translation>
     </message>
     <message>
         <location filename="../ui/cloud_conflict_dialog.py" line="1096"/>
         <source>Possible counterpart — identity is not confirmed</source>
-        <translation type="unfinished"></translation>
+        <translation>Mulig motpart — identitet er ikke bekreftet</translation>
     </message>
     <message>
         <location filename="../ui/cloud_conflict_dialog.py" line="1117"/>
         <source>Keep this device metadata</source>
-        <translation type="unfinished"></translation>
+        <translation>Behold denne enhetens metadata</translation>
     </message>
     <message>
         <location filename="../ui/cloud_conflict_dialog.py" line="1118"/>
         <source>Keep Sporely Cloud metadata</source>
-        <translation type="unfinished"></translation>
+        <translation>Behold Sporely Cloud-metadata</translation>
     </message>
     <message>
         <location filename="../ui/cloud_conflict_dialog.py" line="1203"/>
         <source>Measurement comparison</source>
-        <translation type="unfinished"></translation>
+        <translation>Målesammenligning</translation>
     </message>
     <message>
         <location filename="../ui/cloud_conflict_dialog.py" line="1182"/>
         <location filename="../ui/cloud_conflict_dialog.py" line="1229"/>
         <source>Changed only on this device</source>
-        <translation type="unfinished"></translation>
+        <translation>Endret kun på denne enheten</translation>
     </message>
     <message>
         <location filename="../ui/cloud_conflict_dialog.py" line="1183"/>
         <location filename="../ui/cloud_conflict_dialog.py" line="1230"/>
         <source>Changed only on Sporely Cloud</source>
-        <translation type="unfinished"></translation>
+        <translation>Endret kun på Sporely Cloud</translation>
     </message>
     <message>
         <location filename="../ui/cloud_conflict_dialog.py" line="1184"/>
         <location filename="../ui/cloud_conflict_dialog.py" line="1231"/>
         <source>Changed on both sides</source>
-        <translation type="unfinished"></translation>
+        <translation>Byttet på begge sider</translation>
     </message>
     <message>
         <location filename="../ui/cloud_conflict_dialog.py" line="1194"/>
         <location filename="../ui/cloud_conflict_dialog.py" line="1235"/>
         <source>Current versions differ</source>
-        <translation type="unfinished"></translation>
+        <translation>Gjeldende versjoner er forskjellige</translation>
     </message>
     <message>
         <location filename="../ui/cloud_conflict_dialog.py" line="1243"/>
         <source>Keep this device value</source>
-        <translation type="unfinished"></translation>
+        <translation>Behold denne enhetsverdien</translation>
     </message>
     <message>
         <location filename="../ui/cloud_conflict_dialog.py" line="1244"/>
         <source>Keep Sporely Cloud value</source>
-        <translation type="unfinished"></translation>
+        <translation>Behold Sporely Cloud-verdien</translation>
     </message>
     <message>
         <location filename="../ui/cloud_conflict_dialog.py" line="1267"/>
         <source>Informational only — gallery rotation differs. This device value {local}° will be used automatically; cloud value is {remote}°.</source>
-        <translation type="unfinished"></translation>
+        <translation>Kun informasjon – gallerirotasjonen er forskjellig. Denne enhetsverdien {local}° vil bli brukt automatisk; skyverdien er {remote}°.</translation>
     </message>
     <message>
         <location filename="../ui/cloud_conflict_dialog.py" line="1281"/>
         <source>Property</source>
-        <translation type="unfinished"></translation>
+        <translation>Eiendom</translation>
     </message>
     <message>
         <location filename="../ui/cloud_conflict_dialog.py" line="1295"/>
         <source>Measurement geometry</source>
-        <translation type="unfinished"></translation>
+        <translation>Målegeometri</translation>
     </message>
     <message>
         <location filename="../ui/cloud_conflict_dialog.py" line="1311"/>
         <source>Length</source>
-        <translation type="unfinished">Lengde</translation>
+        <translation>Lengde</translation>
     </message>
     <message>
         <location filename="../ui/cloud_conflict_dialog.py" line="1311"/>
         <source>Width</source>
-        <translation type="unfinished">Bredde</translation>
+        <translation>Bredde</translation>
     </message>
     <message>
         <location filename="../ui/cloud_conflict_dialog.py" line="1312"/>
         <source>Gallery rotation</source>
-        <translation type="unfinished"></translation>
+        <translation>Galleri rotasjon</translation>
     </message>
     <message>
         <location filename="../ui/cloud_conflict_dialog.py" line="1313"/>
         <source>Measurement type</source>
-        <translation type="unfinished"></translation>
+        <translation>Måletype</translation>
     </message>
     <message>
         <location filename="../ui/cloud_conflict_dialog.py" line="1314"/>
         <source>Measured at</source>
-        <translation type="unfinished"></translation>
+        <translation>Målt kl</translation>
     </message>
     <message>
         <location filename="../ui/cloud_conflict_dialog.py" line="1315"/>
         <source>Owning image</source>
-        <translation type="unfinished"></translation>
+        <translation>Eie bilde</translation>
     </message>
     <message>
         <location filename="../ui/cloud_conflict_dialog.py" line="1316"/>
         <source>Measurement identity</source>
-        <translation type="unfinished"></translation>
+        <translation>Målingsidentitet</translation>
     </message>
 </context>
 <context>
@@ -4910,12 +4911,12 @@ Nyeste versjon: {latest}</translation>
     <message>
         <location filename="../ui/main_window.py" line="9791"/>
         <source>Manage reference library…</source>
-        <translation type="unfinished"></translation>
+        <translation>Administrer referansebibliotek ...</translation>
     </message>
     <message>
         <location filename="../ui/main_window.py" line="9795"/>
         <source>Browse and edit reference works, treatments, and measurement sets</source>
-        <translation type="unfinished"></translation>
+        <translation>Bla gjennom og rediger oppslagsverk, behandlinger og målesett</translation>
     </message>
     <message>
         <location filename="../ui/main_window.py" line="9998"/>
@@ -4989,27 +4990,27 @@ Nyeste versjon: {latest}</translation>
     <message>
         <location filename="../ui/main_window.py" line="10671"/>
         <source>This attachment&apos;s persisted snapshot cannot be plotted. Detach it to remove the row.</source>
-        <translation type="unfinished"></translation>
+        <translation>Dette vedleggets vedvarende øyeblikksbilde kan ikke plottes. Løsne den for å fjerne raden.</translation>
     </message>
     <message>
         <location filename="../ui/main_window.py" line="10677"/>
         <source>Raw: {raw}</source>
-        <translation type="unfinished"></translation>
+        <translation>Rå: {raw}</translation>
     </message>
     <message>
         <location filename="../ui/main_window.py" line="10680"/>
         <source>Role: {role}</source>
-        <translation type="unfinished"></translation>
+        <translation>Rolle: {role}</translation>
     </message>
     <message>
         <location filename="../ui/main_window.py" line="10688"/>
         <source>Revision: {revision}</source>
-        <translation type="unfinished"></translation>
+        <translation>Revisjon: {revision}</translation>
     </message>
     <message>
         <location filename="../ui/main_window.py" line="10737"/>
         <source>[!] Unplottable snapshot: {label}</source>
-        <translation type="unfinished"></translation>
+        <translation>[!] Uplottbart øyeblikksbilde: {label}</translation>
     </message>
     <message>
         <location filename="../ui/main_window.py" line="10761"/>
@@ -5042,12 +5043,12 @@ Nyeste versjon: {latest}</translation>
     <message>
         <location filename="../ui/main_window.py" line="10847"/>
         <source>The active observation changed while the attachment chooser was open. Reopen the observation and try again — no reference was attached.</source>
-        <translation type="unfinished"></translation>
+        <translation>Den aktive observasjonen endret seg mens vedleggsvelgeren var åpen. Åpne observasjonen på nytt og prøv igjen - ingen referanse ble vedlagt.</translation>
     </message>
     <message>
         <location filename="../ui/main_window.py" line="10895"/>
         <source>The active observation changed while the reference library was open, so the attachment was cancelled. Re-open the library from the intended observation to try again.</source>
-        <translation type="unfinished"></translation>
+        <translation>Den aktive observasjonen endret seg mens referansebiblioteket var åpent, så vedlegget ble kansellert. Åpne biblioteket på nytt fra den tiltenkte observasjonen for å prøve igjen.</translation>
     </message>
     <message>
         <location filename="../ui/main_window.py" line="10951"/>
@@ -5057,7 +5058,7 @@ Nyeste versjon: {latest}</translation>
     <message>
         <location filename="../ui/main_window.py" line="10970"/>
         <source>Attachment could not be plotted and the rollback of the persisted row failed: {error}. The row with id {use_id} may still be present; please detach it manually.</source>
-        <translation type="unfinished"></translation>
+        <translation>Vedlegg kunne ikke plottes og tilbakeføringen av den vedvarende raden mislyktes: {error}. Raden med ID {use_id} kan fortsatt være til stede; vennligst koble den fra manuelt.</translation>
     </message>
     <message>
         <location filename="../ui/main_window.py" line="10980"/>
@@ -5067,7 +5068,7 @@ Nyeste versjon: {latest}</translation>
     <message>
         <location filename="../ui/main_window.py" line="10994"/>
         <source>This reference is already attached but its stored snapshot cannot be plotted. It is shown as a warning row so you can detach it.</source>
-        <translation type="unfinished"></translation>
+        <translation>Denne referansen er allerede vedlagt, men dets lagrede øyeblikksbilde kan ikke plottes. Den vises som en advarselsrad slik at du kan ta den av.</translation>
     </message>
     <message>
         <location filename="../ui/main_window.py" line="11680"/>
@@ -5098,65 +5099,67 @@ Nyeste versjon: {latest}</translation>
     <message>
         <location filename="../ui/main_window.py" line="12199"/>
         <source>The active observation changed while this dialog was open. The legacy reference was still saved, but the normalized library entry was not created — reopen the observation and try again.</source>
-        <translation type="unfinished"></translation>
+        <translation>Den aktive observasjonen endret seg mens denne dialogboksen var åpen. Den eldre referansen ble fortsatt lagret, men den normaliserte bibliotekoppføringen ble ikke opprettet – åpne observasjonen på nytt og prøv på nytt.</translation>
     </message>
     <message>
         <location filename="../ui/main_window.py" line="12223"/>
         <source>The observation&apos;s taxon changed while this dialog was open. The legacy reference was still saved, but no normalized library entry was created — reopen the observation and try again.</source>
-        <translation type="unfinished"></translation>
+        <translation>Observasjonens takson endret seg mens denne dialogboksen var åpen. Den eldre referansen ble fortsatt lagret, men ingen normalisert bibliotekoppføring ble opprettet – åpne observasjonen på nytt og prøv på nytt.</translation>
     </message>
     <message>
         <location filename="../ui/main_window.py" line="12253"/>
         <source>Could not build the normalized measurement set: {error}</source>
-        <translation type="unfinished"></translation>
+        <translation>Kunne ikke bygge det normaliserte målesettet: {error}</translation>
     </message>
     <message>
         <location filename="../ui/main_window.py" line="12287"/>
         <source>The species entered in the panel ({panel}) differs from the observation&apos;s taxon record ({observation}). If you want to record the published name as a synonym or historical name, click Yes. If this is an accidental edit, click No — the legacy reference has already been saved; no normalized library entry will be created.</source>
-        <translation type="unfinished"></translation>
+        <translation>Arten som er lagt inn i panelet ({panel}) skiller seg fra observasjonens taksonrekord ({observation}). Hvis du vil registrere det publiserte navnet som et synonym eller et historisk navn, klikker du Ja. Hvis dette er en utilsiktet redigering, klikker du Nei – den eldre referansen er allerede lagret; ingen normalisert bibliotekoppføring vil bli opprettet.</translation>
     </message>
     <message>
         <location filename="../ui/main_window.py" line="12309"/>
         <source>Could not read treatments: {error}</source>
-        <translation type="unfinished"></translation>
+        <translation>Kunne ikke lese behandlinger: {error}</translation>
     </message>
     <message>
         <location filename="../ui/main_window.py" line="12321"/>
         <source>This publication already has more than one treatment matching the observation&apos;s taxon. Open the reference library manager to pick one and attach it manually.</source>
-        <translation type="unfinished"></translation>
+        <translation>Denne publikasjonen har allerede mer enn én behandling som samsvarer med observasjonens takson. Åpne referansebibliotekbehandlingen for å velge en og legg den ved manuelt.</translation>
     </message>
     <message>
         <location filename="../ui/main_window.py" line="12332"/>
         <source>Unspecified taxon</source>
-        <translation type="unfinished"></translation>
+        <translation>Uspesifisert takson</translation>
     </message>
     <message>
         <location filename="../ui/main_window.py" line="12346"/>
         <source>Could not create treatment: {error}</source>
-        <translation type="unfinished"></translation>
+        <translation>Kunne ikke opprette behandling: {error}</translation>
     </message>
     <message>
         <location filename="../ui/main_window.py" line="12378"/>
         <source>Could not create measurement set ({error}); the compensating cleanup of taxon_treatment {tid} also failed ({rollback}). Please review the reference library manager.</source>
-        <translation type="unfinished"></translation>
+        <translation>Kunne ikke opprette målesett ({error}); den kompenserende oppryddingen av taxon_treatment {tid} mislyktes også ({rollback}). Se gjennom referansebiblioteksjefen.</translation>
     </message>
     <message>
         <location filename="../ui/main_window.py" line="12392"/>
         <source>Could not create measurement set: {error}</source>
-        <translation type="unfinished"></translation>
+        <translation>Kunne ikke opprette målesett: {error}</translation>
     </message>
     <message>
         <location filename="../ui/main_window.py" line="12436"/>
         <source>Attachment failed and the compensating cleanup could not fully roll back. The following rows may still be present and should be reviewed in the reference library manager:
 
 {errors}</source>
-        <translation type="unfinished"></translation>
+        <translation>Vedlegget mislyktes og den kompenserende oppryddingen kunne ikke rulle tilbake helt. Følgende rader kan fortsatt være til stede og bør gjennomgås i referansebiblioteket:
+
+{errors}</translation>
     </message>
     <message>
         <location filename="../ui/main_window.py" line="12529"/>
         <location filename="../ui/main_window.py" line="12624"/>
         <source>Reference stored locally, but library sync failed: {error}</source>
-        <translation type="unfinished"></translation>
+        <translation>Referanse lagret lokalt, men biblioteksynkronisering mislyktes: {error}</translation>
     </message>
     <message>
         <location filename="../ui/main_window.py" line="12704"/>
@@ -6275,12 +6278,12 @@ Navn og e-post (valgfritt) legges til observasjoner i databasen, nyttig hvis du 
     <message>
         <location filename="../ui/observations_tab.py" line="14459"/>
         <source>Scientific:</source>
-        <translation type="unfinished"></translation>
+        <translation>Vitenskapelig:</translation>
     </message>
     <message>
         <location filename="../ui/observations_tab.py" line="14465"/>
         <source>Optional: e.g., Hygrocybe conica var. pseudoconica</source>
-        <translation type="unfinished"></translation>
+        <translation>Valgfritt: f.eks. Hygrocybe conica var. pseudoconica</translation>
     </message>
     <message>
         <location filename="../ui/observations_tab.py" line="14528"/>
@@ -6502,39 +6505,43 @@ Navn og e-post (valgfritt) legges til observasjoner i databasen, nyttig hvis du 
         <source>Delete the cloud copy of this image?
 
 The local file stays on this computer. The cloud copy will be removed from Cloud on your next sync.</source>
-        <translation type="unfinished"></translation>
+        <translation>Vil du slette skykopien av dette bildet?
+
+Den lokale filen forblir på denne datamaskinen. Skykopien vil bli fjernet fra Cloud ved neste synkronisering.</translation>
     </message>
     <message>
         <location filename="../ui/observations_tab.py" line="18251"/>
         <source>Delete the cloud copies of {count} images?
 
 The local files stay on this computer. The cloud copies will be removed from Cloud on your next sync.</source>
-        <translation type="unfinished"></translation>
+        <translation>Vil du slette skykopiene av {count}-bilder?
+
+De lokale filene forblir på denne datamaskinen. Skykopiene vil bli fjernet fra Cloud ved neste synkronisering.</translation>
     </message>
     <message>
         <location filename="../ui/observations_tab.py" line="18256"/>
         <source>Delete cloud copies</source>
-        <translation type="unfinished"></translation>
+        <translation>Slett skykopier</translation>
     </message>
     <message>
         <location filename="../ui/observations_tab.py" line="18270"/>
         <source>Failed to queue cloud image deletion.</source>
-        <translation type="unfinished"></translation>
+        <translation>Kunne ikke sette i kø for sletting av skybilde.</translation>
     </message>
     <message>
         <location filename="../ui/observations_tab.py" line="18279"/>
         <source>No cloud copies to delete.</source>
-        <translation type="unfinished"></translation>
+        <translation>Ingen skykopier å slette.</translation>
     </message>
     <message>
         <location filename="../ui/observations_tab.py" line="18292"/>
         <source>Cloud copy marked for deletion. Sync to apply the change to Cloud.</source>
-        <translation type="unfinished"></translation>
+        <translation>Skykopi merket for sletting. Synkroniser for å bruke endringen til Cloud.</translation>
     </message>
     <message>
         <location filename="../ui/observations_tab.py" line="18296"/>
         <source>{count} cloud copies marked for deletion. Sync to apply the change to Cloud.</source>
-        <translation type="unfinished"></translation>
+        <translation>{count} skykopier merket for sletting. Synkroniser for å bruke endringen til Cloud.</translation>
     </message>
     <message>
         <location filename="../ui/observations_tab.py" line="18384"/>
@@ -6565,17 +6572,17 @@ The local files stay on this computer. The cloud copies will be removed from Clo
     <message>
         <location filename="../ui/observations_tab.py" line="18808"/>
         <source>Accepted concept: {name}</source>
-        <translation type="unfinished"></translation>
+        <translation>Akseptert konsept: {name}</translation>
     </message>
     <message>
         <location filename="../ui/observations_tab.py" line="18811"/>
         <source>Linked concept: {name}</source>
-        <translation type="unfinished"></translation>
+        <translation>Koblet konsept: {name}</translation>
     </message>
     <message>
         <location filename="../ui/observations_tab.py" line="18999"/>
         <source>Multiple assessments</source>
-        <translation type="unfinished"></translation>
+        <translation>Flere vurderinger</translation>
     </message>
     <message>
         <location filename="../ui/observations_tab.py" line="19830"/>
@@ -7103,7 +7110,7 @@ Fortsette?</translation>
     <message>
         <location filename="../ui/observations_tab.py" line="2506"/>
         <source>Only show starred observations from the last Sporely Cloud import</source>
-        <translation>Vis bare stjernemerkede observasjoner fra siste skyimport</translation>
+        <translation>Vis bare stjernemerkede observasjoner fra siste import fra Sporely Cloud</translation>
     </message>
     <message>
         <location filename="../ui/observations_tab.py" line="2387"/>
@@ -7286,7 +7293,7 @@ Velg Nei for å beholde den bare lokalt og fjerne skylenken.</translation>
     <message>
         <location filename="../ui/observations_tab.py" line="3906"/>
         <source>Cloud sync applied automatic changes with {n} error(s).</source>
-        <translation type="unfinished"></translation>
+        <translation>Skysynkronisering brukte automatiske endringer med {n} feil(er).</translation>
     </message>
     <message>
         <location filename="../ui/observations_tab.py" line="4055"/>
@@ -7537,39 +7544,43 @@ Velg Nei for å beholde den bare lokalt og fjerne skylenken.</translation>
         <source>Delete the cloud copy of this image?
 
 The local file stays on this computer. The cloud copy will be removed from Cloud on your next sync.</source>
-        <translation type="unfinished"></translation>
+        <translation>Vil du slette skykopien av dette bildet?
+
+Den lokale filen forblir på denne datamaskinen. Skykopien vil bli fjernet fra Cloud ved neste synkronisering.</translation>
     </message>
     <message>
         <location filename="../ui/observations_tab.py" line="7725"/>
         <source>Delete the cloud copies of {count} images?
 
 The local files stay on this computer. The cloud copies will be removed from Cloud on your next sync.</source>
-        <translation type="unfinished"></translation>
+        <translation>Vil du slette skykopiene av {count}-bilder?
+
+De lokale filene forblir på denne datamaskinen. Skykopiene vil bli fjernet fra Cloud ved neste synkronisering.</translation>
     </message>
     <message>
         <location filename="../ui/observations_tab.py" line="7730"/>
         <source>Delete cloud copies</source>
-        <translation type="unfinished"></translation>
+        <translation>Slett skykopier</translation>
     </message>
     <message>
         <location filename="../ui/observations_tab.py" line="7745"/>
         <source>Failed to queue cloud image deletion.</source>
-        <translation type="unfinished"></translation>
+        <translation>Kunne ikke sette i kø for sletting av skybilde.</translation>
     </message>
     <message>
         <location filename="../ui/observations_tab.py" line="7758"/>
         <source>No cloud copies to delete.</source>
-        <translation type="unfinished"></translation>
+        <translation>Ingen skykopier å slette.</translation>
     </message>
     <message>
         <location filename="../ui/observations_tab.py" line="7777"/>
         <source>Cloud copy marked for deletion. Sync to apply the change to Cloud.</source>
-        <translation type="unfinished"></translation>
+        <translation>Skykopi merket for sletting. Synkroniser for å bruke endringen til Cloud.</translation>
     </message>
     <message>
         <location filename="../ui/observations_tab.py" line="7781"/>
         <source>{count} cloud copies marked for deletion. Sync to apply the change to Cloud.</source>
-        <translation type="unfinished"></translation>
+        <translation>{count} skykopier merket for sletting. Synkroniser for å bruke endringen til Cloud.</translation>
     </message>
     <message>
         <location filename="../ui/observations_tab.py" line="7800"/>
@@ -8235,72 +8246,72 @@ Dette vil også slette alle tilknyttede bilder og målinger.</translation>
     <message>
         <location filename="../ui/cloud_conflict_dialog.py" line="462"/>
         <source>Unavailable</source>
-        <translation type="unfinished"></translation>
+        <translation>Utilgjengelig</translation>
     </message>
     <message>
         <location filename="../ui/cloud_conflict_dialog.py" line="468"/>
         <source>No counterpart</source>
-        <translation type="unfinished"></translation>
+        <translation>Ingen motpart</translation>
     </message>
     <message>
         <location filename="../ui/cloud_conflict_dialog.py" line="472"/>
         <source>Microscope</source>
-        <translation type="unfinished">Mikroskop</translation>
+        <translation>Mikroskop</translation>
     </message>
     <message>
         <location filename="../ui/cloud_conflict_dialog.py" line="472"/>
         <source>Field</source>
-        <translation type="unfinished">Felt</translation>
+        <translation>Felt</translation>
     </message>
     <message>
         <location filename="../ui/cloud_conflict_dialog.py" line="474"/>
         <source>{type} image {position}</source>
-        <translation type="unfinished"></translation>
+        <translation>{type} bilde {position}</translation>
     </message>
     <message>
         <location filename="../ui/cloud_conflict_dialog.py" line="475"/>
         <source>unknown</source>
-        <translation type="unfinished"></translation>
+        <translation>ukjent</translation>
     </message>
     <message>
         <location filename="../ui/cloud_conflict_dialog.py" line="479"/>
         <source>local image #{id}</source>
-        <translation type="unfinished"></translation>
+        <translation>lokalt bilde #{id}</translation>
     </message>
     <message>
         <location filename="../ui/cloud_conflict_dialog.py" line="481"/>
         <source>cloud image {id}</source>
-        <translation type="unfinished"></translation>
+        <translation>skybilde {id}</translation>
     </message>
     <message>
         <location filename="../ui/cloud_conflict_dialog.py" line="491"/>
         <source>Measurements: {count}</source>
-        <translation type="unfinished"></translation>
+        <translation>Mål: {count}</translation>
     </message>
     <message>
         <location filename="../ui/cloud_conflict_dialog.py" line="507"/>
         <source>Loading thumbnail…</source>
-        <translation type="unfinished"></translation>
+        <translation>Laster inn miniatyrbilde …</translation>
     </message>
     <message>
         <location filename="../ui/cloud_conflict_dialog.py" line="512"/>
         <source>Authentication expired</source>
-        <translation type="unfinished"></translation>
+        <translation>Autentisering er utløpt</translation>
     </message>
     <message>
         <location filename="../ui/cloud_conflict_dialog.py" line="514"/>
         <source>Local file unavailable</source>
-        <translation type="unfinished"></translation>
+        <translation>Lokal fil utilgjengelig</translation>
     </message>
     <message>
         <location filename="../ui/cloud_conflict_dialog.py" line="516"/>
         <source>Cloud thumbnail unavailable</source>
-        <translation type="unfinished"></translation>
+        <translation>Cloud-miniatyrbildet er ikke tilgjengelig</translation>
     </message>
     <message>
         <location filename="../ui/cloud_conflict_dialog.py" line="523"/>
         <source>Unsupported image data</source>
-        <translation type="unfinished"></translation>
+        <translation>Bildedata som ikke støttes</translation>
     </message>
 </context>
 <context>
@@ -8496,7 +8507,7 @@ maks</translation>
     <message>
         <location filename="../ui/main_window.py" line="5535"/>
         <source>No taxon is set on this observation, so this reference will be saved to the legacy list only. Set a taxon on the observation to create a normalized library entry.</source>
-        <translation type="unfinished"></translation>
+        <translation>Ingen takson er satt på denne observasjonen, så denne referansen vil bare bli lagret i den eldre listen. Sett et takson på observasjonen for å lage en normalisert bibliotekoppføring.</translation>
     </message>
     <message>
         <location filename="../ui/main_window.py" line="5553"/>
@@ -8521,17 +8532,17 @@ maks</translation>
     <message>
         <location filename="../ui/main_window.py" line="5590"/>
         <source>Locator</source>
-        <translation type="unfinished">Referansepunkt</translation>
+        <translation>Referansepunkt</translation>
     </message>
     <message>
         <location filename="../ui/main_window.py" line="5590"/>
         <source>Kind</source>
-        <translation type="unfinished">Type</translation>
+        <translation>Type</translation>
     </message>
     <message>
         <location filename="../ui/main_window.py" line="5590"/>
         <source>Raw expression</source>
-        <translation type="unfinished">Uttrykk fra kilden</translation>
+        <translation>Uttrykk fra kilden</translation>
     </message>
     <message>
         <location filename="../ui/main_window.py" line="5630"/>
@@ -8593,7 +8604,7 @@ maks</translation>
     <message>
         <location filename="../ui/main_window.py" line="6014"/>
         <source>Select an existing measurement set or switch to &quot;Enter new data&quot;.</source>
-        <translation type="unfinished"></translation>
+        <translation>Velg et eksisterende målesett eller bytt til &quot;Legg inn nye data&quot;.</translation>
     </message>
     <message>
         <location filename="../ui/main_window.py" line="6043"/>
@@ -8603,12 +8614,12 @@ maks</translation>
     <message>
         <location filename="../ui/main_window.py" line="6067"/>
         <source>No publication selected</source>
-        <translation type="unfinished"></translation>
+        <translation>Ingen publikasjon er valgt</translation>
     </message>
     <message>
         <location filename="../ui/main_window.py" line="6069"/>
         <source>No publication is selected. Save as a legacy-only reference (no library entry, no observation attachment)?</source>
-        <translation type="unfinished"></translation>
+        <translation>Ingen publikasjon er valgt. Lagre som en kun referanse (ingen bibliotekoppføring, ingen observasjonsvedlegg)?</translation>
     </message>
     <message>
         <location filename="../ui/main_window.py" line="6363"/>
@@ -8666,7 +8677,7 @@ maks</translation>
     <message>
         <location filename="../ui/reference_library_attach_dialog.py" line="127"/>
         <source>Restrict the list to measurement sets whose treatment matches the active observation&apos;s taxon.</source>
-        <translation type="unfinished"></translation>
+        <translation>Begrens listen til målesett hvis behandling samsvarer med den aktive observasjonens takson.</translation>
     </message>
     <message>
         <location filename="../ui/reference_library_attach_dialog.py" line="144"/>
@@ -8707,7 +8718,7 @@ maks</translation>
     <message>
         <location filename="../ui/reference_library_attach_dialog.py" line="187"/>
         <source>Manage library…</source>
-        <translation type="unfinished"></translation>
+        <translation>Administrer bibliotek...</translation>
     </message>
     <message>
         <location filename="../ui/reference_library_attach_dialog.py" line="295"/>
@@ -8738,359 +8749,359 @@ maks</translation>
         <location filename="../ui/reference_library_manager_dialog.py" line="2101"/>
         <source>Reference Library</source>
         <extracomment>Emitted when the user requests an attachment. ``(measurement_set_id, role, observation_id)`` — role is a value from :data:`OBSERVATION_REFERENCE_ROLES`; ``observation_id`` is the observation id CAPTURED at manager-open time, so a rebind of the parent&apos;s active observation between open and click cannot silently redirect the attachment to a different observation. Emitted whenever a record was created/edited so external listeners (e.g. the attachment chooser) can refresh their state.</extracomment>
-        <translation type="unfinished"></translation>
+        <translation>Referansebibliotek</translation>
     </message>
     <message>
         <location filename="../ui/reference_library_manager_dialog.py" line="1910"/>
         <source>Publications</source>
-        <translation type="unfinished"></translation>
+        <translation>Publikasjoner</translation>
     </message>
     <message>
         <location filename="../ui/reference_library_manager_dialog.py" line="1913"/>
         <source>Search by title, author or label</source>
-        <translation type="unfinished"></translation>
+        <translation>Søk etter tittel, forfatter eller etikett</translation>
     </message>
     <message>
         <location filename="../ui/reference_library_manager_dialog.py" line="1919"/>
         <source>Short label</source>
-        <translation type="unfinished"></translation>
+        <translation>Kort etikett</translation>
     </message>
     <message>
         <location filename="../ui/reference_library_manager_dialog.py" line="1919"/>
         <source>Year</source>
-        <translation type="unfinished"></translation>
+        <translation>År</translation>
     </message>
     <message>
         <location filename="../ui/reference_library_manager_dialog.py" line="1933"/>
         <source>New work…</source>
-        <translation type="unfinished"></translation>
+        <translation>Nytt arbeid…</translation>
     </message>
     <message>
         <location filename="../ui/reference_library_manager_dialog.py" line="1936"/>
         <source>Edit work…</source>
-        <translation type="unfinished"></translation>
+        <translation>Rediger arbeid …</translation>
     </message>
     <message>
         <location filename="../ui/reference_library_manager_dialog.py" line="1944"/>
         <source>No publications yet — use &quot;New work…&quot; to add one.</source>
-        <translation type="unfinished"></translation>
+        <translation>Ingen publikasjoner ennå – bruk «Nytt verk...» for å legge til et.</translation>
     </message>
     <message>
         <location filename="../ui/reference_library_manager_dialog.py" line="1955"/>
         <source>Treatments and measurement sets</source>
-        <translation type="unfinished"></translation>
+        <translation>Behandlinger og målesett</translation>
     </message>
     <message>
         <location filename="../ui/reference_library_manager_dialog.py" line="1958"/>
         <source>Name / kind</source>
-        <translation type="unfinished"></translation>
+        <translation>Navn / type</translation>
     </message>
     <message>
         <location filename="../ui/reference_library_manager_dialog.py" line="1958"/>
         <source>Revision</source>
-        <translation type="unfinished"></translation>
+        <translation>Revisjon</translation>
     </message>
     <message>
         <location filename="../ui/reference_library_manager_dialog.py" line="1965"/>
         <source>New treatment…</source>
-        <translation type="unfinished"></translation>
+        <translation>Ny behandling...</translation>
     </message>
     <message>
         <location filename="../ui/reference_library_manager_dialog.py" line="1969"/>
         <source>New measurement set…</source>
-        <translation type="unfinished"></translation>
+        <translation>Nytt målesett...</translation>
     </message>
     <message>
         <location filename="../ui/reference_library_manager_dialog.py" line="1981"/>
         <source>Details</source>
-        <translation type="unfinished"></translation>
+        <translation>Detaljer</translation>
     </message>
     <message>
         <location filename="../ui/reference_library_manager_dialog.py" line="2004"/>
         <source>Edit selected…</source>
-        <translation type="unfinished"></translation>
+        <translation>Rediger valgte …</translation>
     </message>
     <message>
         <location filename="../ui/reference_library_manager_dialog.py" line="2010"/>
         <source>Role:</source>
-        <translation type="unfinished">Rolle:</translation>
+        <translation>Rolle:</translation>
     </message>
     <message>
         <location filename="../ui/reference_library_manager_dialog.py" line="2016"/>
         <source>Attach to active observation</source>
-        <translation type="unfinished"></translation>
+        <translation>Fest til aktiv observasjon</translation>
     </message>
     <message>
         <location filename="../ui/reference_library_manager_dialog.py" line="2033"/>
         <source>Could not load publications: {error}</source>
-        <translation type="unfinished"></translation>
+        <translation>Kunne ikke laste inn publikasjoner: {error}</translation>
     </message>
     <message>
         <location filename="../ui/reference_library_manager_dialog.py" line="2091"/>
         <location filename="../ui/reference_library_manager_dialog.py" line="2216"/>
         <source>Select a publication to see its treatments.</source>
-        <translation type="unfinished"></translation>
+        <translation>Velg en publikasjon for å se behandlingene.</translation>
     </message>
     <message>
         <location filename="../ui/reference_library_manager_dialog.py" line="2102"/>
         <source>Could not load treatments: {error}</source>
-        <translation type="unfinished"></translation>
+        <translation>Kunne ikke laste inn behandlinger: {error}</translation>
     </message>
     <message>
         <location filename="../ui/reference_library_manager_dialog.py" line="2107"/>
         <source>No treatments yet — use &quot;New treatment…&quot; to add one.</source>
-        <translation type="unfinished"></translation>
+        <translation>Ingen behandlinger ennå – bruk «Ny behandling...» for å legge til en.</translation>
     </message>
     <message>
         <location filename="../ui/reference_library_manager_dialog.py" line="2114"/>
         <source>(unnamed treatment)</source>
-        <translation type="unfinished"></translation>
+        <translation>(behandling uten navn)</translation>
     </message>
     <message>
         <location filename="../ui/reference_library_manager_dialog.py" line="2232"/>
         <source>Type: {type}</source>
-        <translation type="unfinished"></translation>
+        <translation>Type: {type}</translation>
     </message>
     <message>
         <location filename="../ui/reference_library_manager_dialog.py" line="2233"/>
         <source>Title: {title}</source>
-        <translation type="unfinished"></translation>
+        <translation>Tittel: {title}</translation>
     </message>
     <message>
         <location filename="../ui/reference_library_manager_dialog.py" line="2236"/>
         <source>Year: {year}</source>
-        <translation type="unfinished"></translation>
+        <translation>År: {year}</translation>
     </message>
     <message>
         <location filename="../ui/reference_library_manager_dialog.py" line="2238"/>
         <source>Citation key: {value}</source>
-        <translation type="unfinished"></translation>
+        <translation>Sitasjonsnøkkel: {value}</translation>
     </message>
     <message>
         <location filename="../ui/reference_library_manager_dialog.py" line="2240"/>
         <source>Container: {value}</source>
-        <translation type="unfinished"></translation>
+        <translation>Beholder: {value}</translation>
     </message>
     <message>
         <location filename="../ui/reference_library_manager_dialog.py" line="2242"/>
         <source>Edition: {value}</source>
-        <translation type="unfinished"></translation>
+        <translation>Utgave: {value}</translation>
     </message>
     <message>
         <location filename="../ui/reference_library_manager_dialog.py" line="2244"/>
         <source>Volume: {value}</source>
-        <translation type="unfinished"></translation>
+        <translation>Volum: {value}</translation>
     </message>
     <message>
         <location filename="../ui/reference_library_manager_dialog.py" line="2246"/>
         <source>Issue: {value}</source>
-        <translation type="unfinished"></translation>
+        <translation>Utgave: {value}</translation>
     </message>
     <message>
         <location filename="../ui/reference_library_manager_dialog.py" line="2248"/>
         <source>Pages: {value}</source>
-        <translation type="unfinished"></translation>
+        <translation>Sider: {value}</translation>
     </message>
     <message>
         <location filename="../ui/reference_library_manager_dialog.py" line="2250"/>
         <source>Publisher: {value}</source>
-        <translation type="unfinished"></translation>
+        <translation>Utgiver: {value}</translation>
     </message>
     <message>
         <location filename="../ui/reference_library_manager_dialog.py" line="2252"/>
         <source>Place: {value}</source>
-        <translation type="unfinished"></translation>
+        <translation>Sted: {value}</translation>
     </message>
     <message>
         <location filename="../ui/reference_library_manager_dialog.py" line="2254"/>
         <source>DOI: {value}</source>
-        <translation type="unfinished"></translation>
+        <translation>DOI: {value}</translation>
     </message>
     <message>
         <location filename="../ui/reference_library_manager_dialog.py" line="2256"/>
         <source>ISBN: {value}</source>
-        <translation type="unfinished"></translation>
+        <translation>ISBN: {value}</translation>
     </message>
     <message>
         <location filename="../ui/reference_library_manager_dialog.py" line="2258"/>
         <source>URL: {value}</source>
-        <translation type="unfinished"></translation>
+        <translation>URL: {value}</translation>
     </message>
     <message>
         <location filename="../ui/reference_library_manager_dialog.py" line="2260"/>
         <source>Language: {value}</source>
-        <translation type="unfinished"></translation>
+        <translation>Språk: {value}</translation>
     </message>
     <message>
         <location filename="../ui/reference_library_manager_dialog.py" line="2262"/>
         <source>Citation override: {value}</source>
-        <translation type="unfinished"></translation>
+        <translation>Sitatoverstyring: {value}</translation>
     </message>
     <message>
         <location filename="../ui/reference_library_manager_dialog.py" line="1919"/>
         <source>Missing</source>
-        <translation type="unfinished"></translation>
+        <translation>Savnet</translation>
     </message>
     <message>
         <location filename="../ui/reference_library_manager_dialog.py" line="2056"/>
         <source>Missing bibliographic fields (derived).</source>
-        <translation type="unfinished"></translation>
+        <translation>Manglende bibliografiske felt (avledet).</translation>
     </message>
     <message>
         <location filename="../ui/reference_library_manager_dialog.py" line="2263"/>
         <location filename="../ui/reference_library_manager_dialog.py" line="2298"/>
         <location filename="../ui/reference_library_manager_dialog.py" line="2359"/>
         <source>Revision: {value}</source>
-        <translation type="unfinished"></translation>
+        <translation>Revisjon: {value}</translation>
     </message>
     <message>
         <location filename="../ui/reference_library_manager_dialog.py" line="2264"/>
         <location filename="../ui/reference_library_manager_dialog.py" line="2299"/>
         <location filename="../ui/reference_library_manager_dialog.py" line="2360"/>
         <source>UUID: {value}</source>
-        <translation type="unfinished"></translation>
+        <translation>UUID: {value}</translation>
     </message>
     <message>
         <location filename="../ui/reference_library_manager_dialog.py" line="2283"/>
         <source>Name as published: {value}</source>
-        <translation type="unfinished"></translation>
+        <translation>Navn som publisert: {value}</translation>
     </message>
     <message>
         <location filename="../ui/reference_library_manager_dialog.py" line="2286"/>
         <source>Taxon id: {value}</source>
-        <translation type="unfinished"></translation>
+        <translation>Taxon-ID: {value}</translation>
     </message>
     <message>
         <location filename="../ui/reference_library_manager_dialog.py" line="2289"/>
         <source>Pages: {a}-{b}</source>
-        <translation type="unfinished"></translation>
+        <translation>Sider: {a}-{b}</translation>
     </message>
     <message>
         <location filename="../ui/reference_library_manager_dialog.py" line="2295"/>
         <source>Locator: {value}</source>
-        <translation type="unfinished"></translation>
+        <translation>Finner: {value}</translation>
     </message>
     <message>
         <location filename="../ui/reference_library_manager_dialog.py" line="2297"/>
         <source>Notes: {value}</source>
-        <translation type="unfinished"></translation>
+        <translation>Merknader: {value}</translation>
     </message>
     <message>
         <location filename="../ui/reference_library_manager_dialog.py" line="2314"/>
         <source>Measurement set — {kind}</source>
-        <translation type="unfinished"></translation>
+        <translation>Målesett — {kind}</translation>
     </message>
     <message>
         <location filename="../ui/reference_library_manager_dialog.py" line="2325"/>
         <location filename="../ui/reference_library_manager_dialog.py" line="2356"/>
         <source>Data kind: {value}</source>
-        <translation type="unfinished"></translation>
+        <translation>Datatype: {value}</translation>
     </message>
     <message>
         <location filename="../ui/reference_library_manager_dialog.py" line="2328"/>
         <location filename="../ui/reference_library_manager_dialog.py" line="2358"/>
         <source>Raw expression: {value}</source>
-        <translation type="unfinished"></translation>
+        <translation>Rå uttrykk: {value}</translation>
     </message>
     <message>
         <location filename="../ui/reference_library_manager_dialog.py" line="2331"/>
         <source>Length min</source>
-        <translation type="unfinished"></translation>
+        <translation>Lengde min</translation>
     </message>
     <message>
         <location filename="../ui/reference_library_manager_dialog.py" line="2332"/>
         <source>Length core min</source>
-        <translation type="unfinished"></translation>
+        <translation>Lengde kjerne min</translation>
     </message>
     <message>
         <location filename="../ui/reference_library_manager_dialog.py" line="2333"/>
         <source>Length core max</source>
-        <translation type="unfinished"></translation>
+        <translation>Lengde kjerne maks</translation>
     </message>
     <message>
         <location filename="../ui/reference_library_manager_dialog.py" line="2334"/>
         <source>Length max</source>
-        <translation type="unfinished"></translation>
+        <translation>Lengde maks</translation>
     </message>
     <message>
         <location filename="../ui/reference_library_manager_dialog.py" line="2335"/>
         <source>Length mean</source>
-        <translation type="unfinished"></translation>
+        <translation>Lengde gjennomsnitt</translation>
     </message>
     <message>
         <location filename="../ui/reference_library_manager_dialog.py" line="2336"/>
         <source>Width min</source>
-        <translation type="unfinished"></translation>
+        <translation>Bredde min</translation>
     </message>
     <message>
         <location filename="../ui/reference_library_manager_dialog.py" line="2337"/>
         <source>Width core min</source>
-        <translation type="unfinished"></translation>
+        <translation>Bredde kjerne min</translation>
     </message>
     <message>
         <location filename="../ui/reference_library_manager_dialog.py" line="2338"/>
         <source>Width core max</source>
-        <translation type="unfinished"></translation>
+        <translation>Bredde kjerne maks</translation>
     </message>
     <message>
         <location filename="../ui/reference_library_manager_dialog.py" line="2339"/>
         <source>Width max</source>
-        <translation type="unfinished"></translation>
+        <translation>Bredde maks</translation>
     </message>
     <message>
         <location filename="../ui/reference_library_manager_dialog.py" line="2340"/>
         <source>Width mean</source>
-        <translation type="unfinished"></translation>
+        <translation>Bredde gjennomsnitt</translation>
     </message>
     <message>
         <location filename="../ui/reference_library_manager_dialog.py" line="2341"/>
         <source>Q min</source>
-        <translation type="unfinished"></translation>
+        <translation>Q min</translation>
     </message>
     <message>
         <location filename="../ui/reference_library_manager_dialog.py" line="2342"/>
         <source>Q mean</source>
-        <translation type="unfinished"></translation>
+        <translation>Q mener</translation>
     </message>
     <message>
         <location filename="../ui/reference_library_manager_dialog.py" line="2343"/>
         <source>Q max</source>
-        <translation type="unfinished"></translation>
+        <translation>Q maks</translation>
     </message>
     <message>
         <location filename="../ui/reference_library_manager_dialog.py" line="2344"/>
         <source>Sample size</source>
-        <translation type="unfinished"></translation>
+        <translation>Prøvestørrelse</translation>
     </message>
     <message>
         <location filename="../ui/reference_library_manager_dialog.py" line="2345"/>
         <source>Specimen count</source>
-        <translation type="unfinished"></translation>
+        <translation>Antall prøver</translation>
     </message>
     <message>
         <location filename="../ui/reference_library_manager_dialog.py" line="2353"/>
         <source>Raw points: {count} entries</source>
-        <translation type="unfinished"></translation>
+        <translation>Råpoeng: {count} oppføringer</translation>
     </message>
     <message>
         <location filename="../ui/reference_library_manager_dialog.py" line="2368"/>
         <source>This measurement set is not plottable yet: it lacks a drawable length/width rectangle, a complete mean pair, or valid raw points.</source>
-        <translation type="unfinished"></translation>
+        <translation>Dette målesettet er ikke plottbart ennå: det mangler et rektangel som kan trekkes av lengde/bredde, et komplett gjennomsnittspar eller gyldige råpunkter.</translation>
     </message>
     <message>
         <location filename="../ui/reference_library_manager_dialog.py" line="2443"/>
         <source>Compared</source>
-        <translation type="unfinished">Sammenlignet</translation>
+        <translation>Sammenlignet</translation>
     </message>
     <message>
         <location filename="../ui/reference_library_manager_dialog.py" line="2444"/>
         <source>Supports identification</source>
-        <translation type="unfinished">Støtter bestemmelsen</translation>
+        <translation>Støtter bestemmelsen</translation>
     </message>
     <message>
         <location filename="../ui/reference_library_manager_dialog.py" line="2445"/>
         <source>Contradicts</source>
-        <translation type="unfinished">Motsier</translation>
+        <translation>Motsier</translation>
     </message>
 </context>
 <context>
@@ -10257,112 +10268,112 @@ Dette vil overskrive skymetadatafeltene som er oppført nedenfor.
     <message>
         <location filename="../ui/reference_library_manager_dialog.py" line="1478"/>
         <source>Edit measurement set</source>
-        <translation type="unfinished"></translation>
+        <translation>Rediger målesett</translation>
     </message>
     <message>
         <location filename="../ui/reference_library_manager_dialog.py" line="1479"/>
         <source>New measurement set</source>
-        <translation type="unfinished"></translation>
+        <translation>Nytt målesett</translation>
     </message>
     <message>
         <location filename="../ui/reference_library_manager_dialog.py" line="1510"/>
         <source>Data kind:</source>
-        <translation type="unfinished"></translation>
+        <translation>Datatype:</translation>
     </message>
     <message>
         <location filename="../ui/reference_library_manager_dialog.py" line="1514"/>
         <source>e.g. (7.5–)8–10(–10.5) × 5–6(–6.5) µm</source>
-        <translation type="unfinished"></translation>
+        <translation>f.eks. (7,5–)8–10(–10,5) × 5–6(–6,5) µm</translation>
     </message>
     <message>
         <location filename="../ui/reference_library_manager_dialog.py" line="1516"/>
         <source>Raw expression:</source>
-        <translation type="unfinished"></translation>
+        <translation>Rå uttrykk:</translation>
     </message>
     <message>
         <location filename="../ui/reference_library_manager_dialog.py" line="1543"/>
         <source>Length min / core_min / core_max / max (µm):</source>
-        <translation type="unfinished"></translation>
+        <translation>Lengde min / core_min / core_max / maks (µm):</translation>
     </message>
     <message>
         <location filename="../ui/reference_library_manager_dialog.py" line="1547"/>
         <source>Length mean (µm):</source>
-        <translation type="unfinished"></translation>
+        <translation>Lengdegjennomsnitt (µm):</translation>
     </message>
     <message>
         <location filename="../ui/reference_library_manager_dialog.py" line="1558"/>
         <source>Width min / core_min / core_max / max (µm):</source>
-        <translation type="unfinished"></translation>
+        <translation>Bredde min / kjerne_min / kjerne_maks / maks (µm):</translation>
     </message>
     <message>
         <location filename="../ui/reference_library_manager_dialog.py" line="1562"/>
         <source>Width mean (µm):</source>
-        <translation type="unfinished"></translation>
+        <translation>Breddegjennomsnitt (µm):</translation>
     </message>
     <message>
         <location filename="../ui/reference_library_manager_dialog.py" line="1571"/>
         <source>Q min / mean / max:</source>
-        <translation type="unfinished"></translation>
+        <translation>Q min / gjennomsnitt / maks:</translation>
     </message>
     <message>
         <location filename="../ui/reference_library_manager_dialog.py" line="1574"/>
         <source>Sample size / specimens:</source>
-        <translation type="unfinished"></translation>
+        <translation>Prøvestørrelse / prøver:</translation>
     </message>
     <message>
         <location filename="../ui/reference_library_manager_dialog.py" line="1586"/>
         <source>JSON list, e.g. [{&quot;length&quot;: 9.0, &quot;width&quot;: 5.5}, {&quot;length&quot;: 9.5, &quot;width&quot;: 5.7}]</source>
-        <translation type="unfinished"></translation>
+        <translation>JSON-liste, f.eks. [{&quot;length&quot;: 9.0, &quot;width&quot;: 5.5}, {&quot;length&quot;: 9.5, &quot;width&quot;: 5.7}]</translation>
     </message>
     <message>
         <location filename="../ui/reference_library_manager_dialog.py" line="1591"/>
         <source>Raw points JSON:</source>
-        <translation type="unfinished"></translation>
+        <translation>Rå poeng JSON:</translation>
     </message>
     <message>
         <location filename="../ui/reference_library_manager_dialog.py" line="1595"/>
         <source>Mount medium:</source>
-        <translation type="unfinished">Monteringsmedium:</translation>
+        <translation>Monteringsmedium:</translation>
     </message>
     <message>
         <location filename="../ui/reference_library_manager_dialog.py" line="1597"/>
         <source>Stain:</source>
-        <translation type="unfinished">Fargestoff:</translation>
+        <translation>Fargestoff:</translation>
     </message>
     <message>
         <location filename="../ui/reference_library_manager_dialog.py" line="1599"/>
         <source>Preparation:</source>
-        <translation type="unfinished"></translation>
+        <translation>Preparat:</translation>
     </message>
     <message>
         <location filename="../ui/reference_library_manager_dialog.py" line="1601"/>
         <source>Measurement method:</source>
-        <translation type="unfinished"></translation>
+        <translation>Målemetode:</translation>
     </message>
     <message>
         <location filename="../ui/reference_library_manager_dialog.py" line="1605"/>
         <source>Notes:</source>
-        <translation type="unfinished">Notater:</translation>
+        <translation>Notater:</translation>
     </message>
     <message>
         <location filename="../ui/reference_library_manager_dialog.py" line="1624"/>
         <source>Range</source>
-        <translation type="unfinished"></translation>
+        <translation>Spekter</translation>
     </message>
     <message>
         <location filename="../ui/reference_library_manager_dialog.py" line="1625"/>
         <source>Summary</source>
-        <translation type="unfinished"></translation>
+        <translation>Sammendrag</translation>
     </message>
     <message>
         <location filename="../ui/reference_library_manager_dialog.py" line="1626"/>
         <source>Raw points</source>
-        <translation type="unfinished"></translation>
+        <translation>Rå poeng</translation>
     </message>
     <message>
         <location filename="../ui/reference_library_manager_dialog.py" line="1627"/>
         <source>Parmasto (read-only)</source>
-        <translation type="unfinished"></translation>
+        <translation>Parmasto (skrivebeskyttet)</translation>
     </message>
 </context>
 <context>
@@ -10420,27 +10431,27 @@ Dette vil overskrive skymetadatafeltene som er oppført nedenfor.
     <message>
         <location filename="../ui/reference_library_manager_dialog.py" line="499"/>
         <source>(no entries)</source>
-        <translation type="unfinished"></translation>
+        <translation>(ingen oppføringer)</translation>
     </message>
     <message>
         <location filename="../ui/reference_library_manager_dialog.py" line="511"/>
         <source>+ Add author</source>
-        <translation type="unfinished"></translation>
+        <translation>+ Legg til forfatter</translation>
     </message>
     <message>
         <location filename="../ui/reference_library_manager_dialog.py" line="592"/>
         <source>Existing value is not valid JSON and will be kept as-is until you edit the list: {error}</source>
-        <translation type="unfinished"></translation>
+        <translation>Eksisterende verdi er ikke gyldig JSON og vil beholdes som den er til du redigerer listen: {error}</translation>
     </message>
     <message>
         <location filename="../ui/reference_library_manager_dialog.py" line="604"/>
         <source>Existing value is not a JSON list and will be kept as-is until you edit the list.</source>
-        <translation type="unfinished"></translation>
+        <translation>Eksisterende verdi er ikke en JSON-liste og beholdes som den er til du redigerer listen.</translation>
     </message>
     <message>
         <location filename="../ui/reference_library_manager_dialog.py" line="631"/>
         <source>One or more entries could not be understood; the original value will be kept until you edit the list.</source>
-        <translation type="unfinished"></translation>
+        <translation>En eller flere oppføringer kunne ikke forstås; den opprinnelige verdien beholdes til du redigerer listen.</translation>
     </message>
 </context>
 <context>
@@ -10448,32 +10459,32 @@ Dette vil overskrive skymetadatafeltene som er oppført nedenfor.
     <message>
         <location filename="../ui/reference_library_manager_dialog.py" line="385"/>
         <source>Family name</source>
-        <translation type="unfinished"></translation>
+        <translation>Familienavn</translation>
     </message>
     <message>
         <location filename="../ui/reference_library_manager_dialog.py" line="387"/>
         <source>Given names</source>
-        <translation type="unfinished"></translation>
+        <translation>Oppgitte navn</translation>
     </message>
     <message>
         <location filename="../ui/reference_library_manager_dialog.py" line="390"/>
         <source>Organization (optional)</source>
-        <translation type="unfinished"></translation>
+        <translation>Organisasjon (valgfritt)</translation>
     </message>
     <message>
         <location filename="../ui/reference_library_manager_dialog.py" line="395"/>
         <source>Move up</source>
-        <translation type="unfinished"></translation>
+        <translation>Flytt opp</translation>
     </message>
     <message>
         <location filename="../ui/reference_library_manager_dialog.py" line="401"/>
         <source>Move down</source>
-        <translation type="unfinished"></translation>
+        <translation>Flytt ned</translation>
     </message>
     <message>
         <location filename="../ui/reference_library_manager_dialog.py" line="407"/>
         <source>Remove</source>
-        <translation type="unfinished"></translation>
+        <translation>Fjerne</translation>
     </message>
 </context>
 <context>
@@ -10481,243 +10492,243 @@ Dette vil overskrive skymetadatafeltene som er oppført nedenfor.
     <message>
         <location filename="../ui/reference_library_manager_dialog.py" line="800"/>
         <source>Edit reference work</source>
-        <translation type="unfinished"></translation>
+        <translation>Rediger oppslagsverk</translation>
     </message>
     <message>
         <location filename="../ui/reference_library_manager_dialog.py" line="801"/>
         <source>New reference work</source>
-        <translation type="unfinished"></translation>
+        <translation>Nytt oppslagsverk</translation>
     </message>
     <message>
         <location filename="../ui/reference_library_manager_dialog.py" line="871"/>
         <source>Type:</source>
-        <translation type="unfinished"></translation>
+        <translation>Type:</translation>
     </message>
     <message>
         <location filename="../ui/reference_library_manager_dialog.py" line="876"/>
         <source>Title:</source>
-        <translation type="unfinished"></translation>
+        <translation>Tittel:</translation>
     </message>
     <message>
         <location filename="../ui/reference_library_manager_dialog.py" line="1085"/>
         <source>Short label:</source>
-        <translation type="unfinished"></translation>
+        <translation>Kort etikett:</translation>
     </message>
     <message>
         <location filename="../ui/reference_library_manager_dialog.py" line="885"/>
         <source>e.g. 1990</source>
-        <translation type="unfinished"></translation>
+        <translation>f.eks. 1990</translation>
     </message>
     <message>
         <location filename="../ui/reference_library_manager_dialog.py" line="888"/>
         <source>Year:</source>
-        <translation type="unfinished"></translation>
+        <translation>År:</translation>
     </message>
     <message>
         <location filename="../ui/reference_library_manager_dialog.py" line="1038"/>
         <source>Optional short key, e.g. petersen-1990</source>
-        <translation type="unfinished"></translation>
+        <translation>Valgfri korttast, f.eks. petersen-1990</translation>
     </message>
     <message>
         <location filename="../ui/reference_library_manager_dialog.py" line="1041"/>
         <source>Citation key:</source>
-        <translation type="unfinished"></translation>
+        <translation>Sitasjonsnøkkel:</translation>
     </message>
     <message>
         <location filename="../ui/reference_library_manager_dialog.py" line="916"/>
         <source>Container title:</source>
-        <translation type="unfinished"></translation>
+        <translation>Beholdertittel:</translation>
     </message>
     <message>
         <location filename="../ui/reference_library_manager_dialog.py" line="864"/>
         <source>Basic information</source>
-        <translation type="unfinished"></translation>
+        <translation>Grunnleggende informasjon</translation>
     </message>
     <message>
         <location filename="../ui/reference_library_manager_dialog.py" line="879"/>
         <source>+ Add author</source>
-        <translation type="unfinished"></translation>
+        <translation>+ Legg til forfatter</translation>
     </message>
     <message>
         <location filename="../ui/reference_library_manager_dialog.py" line="882"/>
         <source>Authors:</source>
-        <translation type="unfinished"></translation>
+        <translation>Forfattere:</translation>
     </message>
     <message>
         <location filename="../ui/reference_library_manager_dialog.py" line="906"/>
         <source>Publication details</source>
-        <translation type="unfinished"></translation>
+        <translation>Publikasjonsdetaljer</translation>
     </message>
     <message>
         <location filename="../ui/reference_library_manager_dialog.py" line="921"/>
         <source>+ Add editor</source>
-        <translation type="unfinished"></translation>
+        <translation>+ Legg til redaktør</translation>
     </message>
     <message>
         <location filename="../ui/reference_library_manager_dialog.py" line="927"/>
         <source>Editors:</source>
-        <translation type="unfinished"></translation>
+        <translation>Redaktører:</translation>
     </message>
     <message>
         <location filename="../ui/reference_library_manager_dialog.py" line="937"/>
         <source>Edition:</source>
-        <translation type="unfinished"></translation>
+        <translation>Utgave:</translation>
     </message>
     <message>
         <location filename="../ui/reference_library_manager_dialog.py" line="947"/>
         <source>Volume:</source>
-        <translation type="unfinished"></translation>
+        <translation>Volum:</translation>
     </message>
     <message>
         <location filename="../ui/reference_library_manager_dialog.py" line="957"/>
         <source>Issue:</source>
-        <translation type="unfinished"></translation>
+        <translation>Utgave:</translation>
     </message>
     <message>
         <location filename="../ui/reference_library_manager_dialog.py" line="967"/>
         <source>Pages:</source>
-        <translation type="unfinished"></translation>
+        <translation>Sider:</translation>
     </message>
     <message>
         <location filename="../ui/reference_library_manager_dialog.py" line="977"/>
         <source>Publisher:</source>
-        <translation type="unfinished"></translation>
+        <translation>Forlegger:</translation>
     </message>
     <message>
         <location filename="../ui/reference_library_manager_dialog.py" line="987"/>
         <source>Place:</source>
-        <translation type="unfinished"></translation>
+        <translation>Sted:</translation>
     </message>
     <message>
         <location filename="../ui/reference_library_manager_dialog.py" line="994"/>
         <source>Identifiers</source>
-        <translation type="unfinished"></translation>
+        <translation>Identifikatorer</translation>
     </message>
     <message>
         <location filename="../ui/reference_library_manager_dialog.py" line="998"/>
         <source>e.g. 10.1234/abcd</source>
-        <translation type="unfinished"></translation>
+        <translation>f.eks. 10.1234/abcd</translation>
     </message>
     <message>
         <location filename="../ui/reference_library_manager_dialog.py" line="1001"/>
         <source>DOI:</source>
-        <translation type="unfinished"></translation>
+        <translation>DOI:</translation>
     </message>
     <message>
         <location filename="../ui/reference_library_manager_dialog.py" line="1004"/>
         <source>digits or ISBN-10/13</source>
-        <translation type="unfinished"></translation>
+        <translation>sifre eller ISBN-10/13</translation>
     </message>
     <message>
         <location filename="../ui/reference_library_manager_dialog.py" line="1006"/>
         <source>ISBN:</source>
-        <translation type="unfinished"></translation>
+        <translation>ISBN:</translation>
     </message>
     <message>
         <location filename="../ui/reference_library_manager_dialog.py" line="1009"/>
         <source>https://…</source>
-        <translation type="unfinished"></translation>
+        <translation>https://…</translation>
     </message>
     <message>
         <location filename="../ui/reference_library_manager_dialog.py" line="1012"/>
         <source>URL:</source>
-        <translation type="unfinished"></translation>
+        <translation>URL:</translation>
     </message>
     <message>
         <location filename="../ui/reference_library_manager_dialog.py" line="1018"/>
         <source>Advanced citation details</source>
-        <translation type="unfinished"></translation>
+        <translation>Avanserte sitatdetaljer</translation>
     </message>
     <message>
         <location filename="../ui/reference_library_manager_dialog.py" line="1028"/>
         <source>Override — leave blank to use the generated value</source>
-        <translation type="unfinished"></translation>
+        <translation>Overstyr – la stå tomt for å bruke den genererte verdien</translation>
     </message>
     <message>
         <location filename="../ui/reference_library_manager_dialog.py" line="1033"/>
         <source>Short label override:</source>
-        <translation type="unfinished"></translation>
+        <translation>Kort etikettoverstyring:</translation>
     </message>
     <message>
         <location filename="../ui/reference_library_manager_dialog.py" line="1044"/>
         <source>ISO code, e.g. en</source>
-        <translation type="unfinished"></translation>
+        <translation>ISO-kode, f.eks. no</translation>
     </message>
     <message>
         <location filename="../ui/reference_library_manager_dialog.py" line="1046"/>
         <source>Language:</source>
-        <translation type="unfinished"></translation>
+        <translation>Språk:</translation>
     </message>
     <message>
         <location filename="../ui/reference_library_manager_dialog.py" line="1051"/>
         <source>Override — leave blank to use the generated full citation</source>
-        <translation type="unfinished"></translation>
+        <translation>Overstyr – la stå tomt for å bruke den genererte fullstendige henvisningen</translation>
     </message>
     <message>
         <location filename="../ui/reference_library_manager_dialog.py" line="1057"/>
         <source>Full citation override:</source>
-        <translation type="unfinished"></translation>
+        <translation>Full sitatoverstyring:</translation>
     </message>
     <message>
         <location filename="../ui/reference_library_manager_dialog.py" line="1064"/>
         <source>Preview</source>
-        <translation type="unfinished">Forhåndsvisning</translation>
+        <translation>Forhåndsvisning</translation>
     </message>
     <message>
         <location filename="../ui/reference_library_manager_dialog.py" line="1076"/>
         <location filename="../ui/reference_library_manager_dialog.py" line="1093"/>
         <source>(manual override)</source>
-        <translation type="unfinished"></translation>
+        <translation>(manuell overstyring)</translation>
     </message>
     <message>
         <location filename="../ui/reference_library_manager_dialog.py" line="1102"/>
         <source>Full citation:</source>
-        <translation type="unfinished"></translation>
+        <translation>Hele sitatet:</translation>
     </message>
     <message>
         <location filename="../ui/reference_library_manager_dialog.py" line="1107"/>
         <source>Missing:</source>
-        <translation type="unfinished"></translation>
+        <translation>Savnet:</translation>
     </message>
     <message>
         <location filename="../ui/reference_library_manager_dialog.py" line="1305"/>
         <source>Title is required.</source>
-        <translation type="unfinished"></translation>
+        <translation>Tittel er påkrevd.</translation>
     </message>
     <message>
         <location filename="../ui/reference_library_manager_dialog.py" line="1310"/>
         <source>Year must be blank or a whole number.</source>
-        <translation type="unfinished"></translation>
+        <translation>Årstall må være blankt eller et helt tall.</translation>
     </message>
     <message>
         <location filename="../ui/reference_library_manager_dialog.py" line="1115"/>
         <source>Book</source>
-        <translation type="unfinished"></translation>
+        <translation>Bok</translation>
     </message>
     <message>
         <location filename="../ui/reference_library_manager_dialog.py" line="1116"/>
         <source>Article</source>
-        <translation type="unfinished"></translation>
+        <translation>Artikkel</translation>
     </message>
     <message>
         <location filename="../ui/reference_library_manager_dialog.py" line="1117"/>
         <source>Chapter</source>
-        <translation type="unfinished"></translation>
+        <translation>Kapittel</translation>
     </message>
     <message>
         <location filename="../ui/reference_library_manager_dialog.py" line="1118"/>
         <source>Website</source>
-        <translation type="unfinished"></translation>
+        <translation>Nettsted</translation>
     </message>
     <message>
         <location filename="../ui/reference_library_manager_dialog.py" line="1119"/>
         <source>Dataset</source>
-        <translation type="unfinished"></translation>
+        <translation>Datasett</translation>
     </message>
     <message>
         <location filename="../ui/reference_library_manager_dialog.py" line="1120"/>
         <source>Other</source>
-        <translation type="unfinished">Annet</translation>
+        <translation>Annet</translation>
     </message>
 </context>
 <context>
@@ -10725,47 +10736,47 @@ Dette vil overskrive skymetadatafeltene som er oppført nedenfor.
     <message>
         <location filename="../ui/reference_library_manager_dialog.py" line="1360"/>
         <source>Edit taxon treatment</source>
-        <translation type="unfinished"></translation>
+        <translation>Rediger taksonbehandling</translation>
     </message>
     <message>
         <location filename="../ui/reference_library_manager_dialog.py" line="1361"/>
         <source>New taxon treatment</source>
-        <translation type="unfinished"></translation>
+        <translation>Ny taksonbehandling</translation>
     </message>
     <message>
         <location filename="../ui/reference_library_manager_dialog.py" line="1374"/>
         <source>Name as published:</source>
-        <translation type="unfinished"></translation>
+        <translation>Navn som publisert:</translation>
     </message>
     <message>
         <location filename="../ui/reference_library_manager_dialog.py" line="1377"/>
         <source>Optional taxon id</source>
-        <translation type="unfinished"></translation>
+        <translation>Valgfri takson-ID</translation>
     </message>
     <message>
         <location filename="../ui/reference_library_manager_dialog.py" line="1378"/>
         <source>Taxon id:</source>
-        <translation type="unfinished"></translation>
+        <translation>Taxon-ID:</translation>
     </message>
     <message>
         <location filename="../ui/reference_library_manager_dialog.py" line="1381"/>
         <source>Page from:</source>
-        <translation type="unfinished"></translation>
+        <translation>Side fra:</translation>
     </message>
     <message>
         <location filename="../ui/reference_library_manager_dialog.py" line="1384"/>
         <source>Page to:</source>
-        <translation type="unfinished"></translation>
+        <translation>Side til:</translation>
     </message>
     <message>
         <location filename="../ui/reference_library_manager_dialog.py" line="1387"/>
         <source>Locator text:</source>
-        <translation type="unfinished"></translation>
+        <translation>Lokaliseringstekst:</translation>
     </message>
     <message>
         <location filename="../ui/reference_library_manager_dialog.py" line="1391"/>
         <source>Notes:</source>
-        <translation type="unfinished">Notater:</translation>
+        <translation>Notater:</translation>
     </message>
 </context>
 <context>
@@ -10816,48 +10827,48 @@ Dette vil overskrive skymetadatafeltene som er oppført nedenfor.
     <message>
         <location filename="../ui/cloud_conflict_dialog.py" line="534"/>
         <source>Same</source>
-        <translation type="unfinished"></translation>
+        <translation>Samme</translation>
     </message>
     <message>
         <location filename="../ui/cloud_conflict_dialog.py" line="535"/>
         <source>Only on this device</source>
-        <translation type="unfinished"></translation>
+        <translation>Bare på denne enheten</translation>
     </message>
     <message>
         <location filename="../ui/cloud_conflict_dialog.py" line="536"/>
         <source>Only on Sporely Cloud</source>
-        <translation type="unfinished"></translation>
+        <translation>Kun på Sporely Cloud</translation>
     </message>
     <message>
         <location filename="../ui/cloud_conflict_dialog.py" line="537"/>
         <source>Metadata differs</source>
-        <translation type="unfinished"></translation>
+        <translation>Metadata er forskjellige</translation>
     </message>
     <message>
         <location filename="../ui/cloud_conflict_dialog.py" line="538"/>
         <source>Measurements differ</source>
-        <translation type="unfinished"></translation>
+        <translation>Målene er forskjellige</translation>
     </message>
     <message>
         <location filename="../ui/cloud_conflict_dialog.py" line="539"/>
         <source>Values differ</source>
-        <translation type="unfinished"></translation>
+        <translation>Verdiene er forskjellige</translation>
     </message>
     <message>
         <location filename="../ui/cloud_conflict_dialog.py" line="540"/>
         <source>Possible match — review required</source>
-        <translation type="unfinished"></translation>
+        <translation>Mulig samsvar — vurdering kreves</translation>
     </message>
     <message>
         <location filename="../ui/cloud_conflict_dialog.py" line="541"/>
         <source>Identity conflict — automatic resolution unavailable</source>
-        <translation type="unfinished"></translation>
+        <translation>Identitetskonflikt — automatisk løsning er utilgjengelig</translation>
     </message>
     <message>
         <location filename="../ui/cloud_conflict_dialog.py" line="542"/>
         <location filename="../ui/cloud_conflict_dialog.py" line="544"/>
         <source>Unavailable</source>
-        <translation type="unfinished"></translation>
+        <translation>Utilgjengelig</translation>
     </message>
 </context>
 </TS>

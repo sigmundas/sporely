@@ -1983,243 +1983,244 @@ Möchten Sie diese Bilder auf die neue Kalibrierung aktualisieren und die Messun
     <message>
         <location filename="../ui/cloud_conflict_dialog.py" line="684"/>
         <source>Apply this choice to all remaining conflicts</source>
-        <translation type="unfinished"></translation>
+        <translation>Diese Auswahl auf alle verbleibenden Konflikte anwenden</translation>
     </message>
     <message>
         <location filename="../ui/cloud_conflict_dialog.py" line="748"/>
         <source>Observation local #{local_id} · cloud {cloud_id}</source>
-        <translation type="unfinished"></translation>
+        <translation>Beobachtung lokal #{local_id} · Wolke {cloud_id}</translation>
     </message>
     <message>
         <location filename="../ui/cloud_conflict_dialog.py" line="1033"/>
         <source>Needs your choice</source>
-        <translation type="unfinished"></translation>
+        <translation>Deine Auswahl ist erforderlich</translation>
     </message>
     <message>
         <location filename="../ui/cloud_conflict_dialog.py" line="1038"/>
         <source>This device — {value}</source>
-        <translation type="unfinished"></translation>
+        <translation>Dieses Gerät – {value}</translation>
     </message>
     <message>
         <location filename="../ui/cloud_conflict_dialog.py" line="1041"/>
         <source>Sporely Cloud — {value}</source>
-        <translation type="unfinished"></translation>
+        <translation>Sporely Cloud — {value}</translation>
     </message>
     <message>
         <location filename="../ui/cloud_conflict_dialog.py" line="1101"/>
         <source>Identity conflict — automatic resolution unavailable</source>
-        <translation type="unfinished"></translation>
+        <translation>Identitätskonflikt – automatische Lösung nicht verfügbar</translation>
     </message>
     <message>
         <location filename="../ui/cloud_conflict_dialog.py" line="1124"/>
         <source>Informational only — image order differs. Desktop order {local} will be used automatically; cloud order is {remote}.</source>
-        <translation type="unfinished"></translation>
+        <translation>Nur zur Information – die Reihenfolge der Bilder ist unterschiedlich. Desktop-Reihenfolge {local} wird automatisch verwendet; Cloud-Reihenfolge ist {remote}.</translation>
     </message>
     <message>
         <location filename="../ui/cloud_conflict_dialog.py" line="1137"/>
         <location filename="../ui/cloud_conflict_dialog.py" line="1252"/>
         <source>Upload to Sporely Cloud</source>
-        <translation type="unfinished"></translation>
+        <translation>Hochladen auf Sporely Cloud</translation>
     </message>
     <message>
         <location filename="../ui/cloud_conflict_dialog.py" line="1138"/>
         <location filename="../ui/cloud_conflict_dialog.py" line="1253"/>
         <source>Keep only on this device</source>
-        <translation type="unfinished"></translation>
+        <translation>Nur auf diesem Gerät aufbewahren</translation>
     </message>
     <message>
         <location filename="../ui/cloud_conflict_dialog.py" line="1148"/>
         <location filename="../ui/cloud_conflict_dialog.py" line="1261"/>
         <source>Download to this device</source>
-        <translation type="unfinished"></translation>
+        <translation>Auf dieses Gerät herunterladen</translation>
     </message>
     <message>
         <location filename="../ui/cloud_conflict_dialog.py" line="1149"/>
         <location filename="../ui/cloud_conflict_dialog.py" line="1262"/>
         <source>Keep only in Sporely Cloud</source>
-        <translation type="unfinished"></translation>
+        <translation>Nur in Sporely Cloud aufbewahren</translation>
     </message>
     <message>
         <location filename="../ui/cloud_conflict_dialog.py" line="1164"/>
         <source>Photo metadata differences</source>
-        <translation type="unfinished"></translation>
+        <translation>Unterschiede in den Fotometadaten</translation>
     </message>
     <message>
         <location filename="../ui/cloud_conflict_dialog.py" line="1167"/>
         <source>Image order</source>
-        <translation type="unfinished"></translation>
+        <translation>Bildreihenfolge</translation>
     </message>
     <message>
         <location filename="../ui/cloud_conflict_dialog.py" line="1168"/>
         <source>Image type</source>
-        <translation type="unfinished"></translation>
+        <translation>Bildtyp</translation>
     </message>
     <message>
         <location filename="../ui/cloud_conflict_dialog.py" line="1169"/>
         <source>Microscope category</source>
-        <translation type="unfinished"></translation>
+        <translation>Kategorie Mikroskop</translation>
     </message>
     <message>
         <location filename="../ui/cloud_conflict_dialog.py" line="1170"/>
         <source>Microscope objective</source>
-        <translation type="unfinished">Mikroskopobjektiv</translation>
+        <translation>Mikroskopobjektiv</translation>
     </message>
     <message>
         <location filename="../ui/cloud_conflict_dialog.py" line="1171"/>
         <source>Scale</source>
-        <translation type="unfinished">Maßstab</translation>
+        <translation>Maßstab</translation>
     </message>
     <message>
         <location filename="../ui/cloud_conflict_dialog.py" line="1172"/>
         <source>Mount medium</source>
-        <translation type="unfinished"></translation>
+        <translation>Medium montieren</translation>
     </message>
     <message>
         <location filename="../ui/cloud_conflict_dialog.py" line="1173"/>
         <source>Stain</source>
-        <translation type="unfinished">Färbung</translation>
+        <translation>Färbung</translation>
     </message>
     <message>
         <location filename="../ui/cloud_conflict_dialog.py" line="1174"/>
         <source>Sample type</source>
-        <translation type="unfinished"></translation>
+        <translation>Probentyp</translation>
     </message>
     <message>
         <location filename="../ui/cloud_conflict_dialog.py" line="1175"/>
         <source>Sample source</source>
-        <translation type="unfinished"></translation>
+        <translation>Beispielquelle</translation>
     </message>
     <message>
         <location filename="../ui/cloud_conflict_dialog.py" line="1176"/>
         <source>Contrast method</source>
-        <translation type="unfinished"></translation>
+        <translation>Kontrastmethode</translation>
     </message>
     <message>
         <location filename="../ui/cloud_conflict_dialog.py" line="1177"/>
         <source>Notes</source>
-        <translation type="unfinished">Notizen</translation>
+        <translation>Notizen</translation>
     </message>
     <message>
         <location filename="../ui/cloud_conflict_dialog.py" line="1178"/>
         <source>GPS source</source>
-        <translation type="unfinished"></translation>
+        <translation>GPS-Quelle</translation>
     </message>
     <message>
         <location filename="../ui/cloud_conflict_dialog.py" line="1179"/>
         <source>Crop mode</source>
-        <translation type="unfinished"></translation>
+        <translation>Zuschneidemodus</translation>
     </message>
     <message>
         <location filename="../ui/cloud_conflict_dialog.py" line="1185"/>
         <source>Previous baseline unavailable</source>
-        <translation type="unfinished"></translation>
+        <translation>Vorherige Baseline nicht verfügbar</translation>
     </message>
     <message>
         <location filename="../ui/cloud_conflict_dialog.py" line="1190"/>
         <source>• {field}: this device {local} · cloud {remote}
   {origin}</source>
-        <translation type="unfinished"></translation>
+        <translation>• {field}: dieses Gerät {local} · Cloud {remote}
+  {origin}</translation>
     </message>
     <message>
         <location filename="../ui/cloud_conflict_dialog.py" line="1211"/>
         <source>Measurement · local {local_id} · cloud {cloud_id}</source>
-        <translation type="unfinished"></translation>
+        <translation>Messung · lokal {local_id} · Cloud {cloud_id}</translation>
     </message>
     <message>
         <location filename="../ui/cloud_conflict_dialog.py" line="1213"/>
         <location filename="../ui/cloud_conflict_dialog.py" line="1214"/>
         <source>missing</source>
-        <translation type="unfinished"></translation>
+        <translation>fehlen</translation>
     </message>
     <message>
         <location filename="../ui/cloud_conflict_dialog.py" line="1232"/>
         <source>Added only on this device</source>
-        <translation type="unfinished"></translation>
+        <translation>Nur auf diesem Gerät hinzugefügt</translation>
     </message>
     <message>
         <location filename="../ui/cloud_conflict_dialog.py" line="1233"/>
         <source>Added only on Sporely Cloud</source>
-        <translation type="unfinished"></translation>
+        <translation>Nur am Sporely Cloud hinzugefügt</translation>
     </message>
     <message>
         <location filename="../ui/cloud_conflict_dialog.py" line="1302"/>
         <source>Baseline:</source>
-        <translation type="unfinished"></translation>
+        <translation>Grundlinie:</translation>
     </message>
     <message>
         <location filename="../ui/cloud_conflict_dialog.py" line="1304"/>
         <source>On this device:</source>
-        <translation type="unfinished"></translation>
+        <translation>Auf diesem Gerät:</translation>
     </message>
     <message>
         <location filename="../ui/cloud_conflict_dialog.py" line="1306"/>
         <source>On Sporely Cloud:</source>
-        <translation type="unfinished"></translation>
+        <translation>Auf Sporely Cloud:</translation>
     </message>
     <message>
         <location filename="../ui/cloud_conflict_dialog.py" line="1394"/>
         <source>Cannot resolve automatically because image or measurement identities contradict each other. Review later and repair the links first.</source>
-        <translation type="unfinished"></translation>
+        <translation>Kann nicht automatisch aufgelöst werden, da Bild- oder Messungsidentitäten einander widersprechen. Prüfe dies später und repariere zuerst die Verknüpfungen.</translation>
     </message>
     <message>
         <location filename="../ui/cloud_conflict_dialog.py" line="1398"/>
         <source>Statistics differ without reconstructable measurements. Review the source data before applying.</source>
-        <translation type="unfinished"></translation>
+        <translation>Die Statistiken unterscheiden sich, aber die Messungen lassen sich nicht rekonstruieren. Prüfe vor dem Anwenden die Quelldaten.</translation>
     </message>
     <message>
         <location filename="../ui/cloud_conflict_dialog.py" line="1405"/>
         <source>Per-item conflict plans cannot be applied blindly to other observations.</source>
-        <translation type="unfinished"></translation>
+        <translation>Konfliktpläne pro Item können nicht blind auf andere Beobachtungen angewendet werden.</translation>
     </message>
     <message>
         <location filename="../ui/cloud_conflict_dialog.py" line="1523"/>
         <source>Applying selected changes…</source>
-        <translation type="unfinished"></translation>
+        <translation>Ausgewählte Änderungen werden übernommen…</translation>
     </message>
     <message>
         <location filename="../ui/cloud_conflict_dialog.py" line="1555"/>
         <source>Applied. Presentation policy was not fully applied for {count} image(s); other data is correct.</source>
-        <translation type="unfinished"></translation>
+        <translation>Angewandt. Die Präsentationsrichtlinie wurde für {count}-Bilder nicht vollständig angewendet. andere Daten sind korrekt.</translation>
     </message>
     <message>
         <location filename="../ui/cloud_conflict_dialog.py" line="1560"/>
         <source>Applied.</source>
-        <translation type="unfinished"></translation>
+        <translation>Angewandt.</translation>
     </message>
     <message>
         <location filename="../ui/cloud_conflict_dialog.py" line="1569"/>
         <source>Apply failed: {message}. Review the plan and try again.</source>
-        <translation type="unfinished"></translation>
+        <translation>Anwenden fehlgeschlagen: {message}. Prüfe den Plan und versuche es erneut.</translation>
     </message>
     <message>
         <location filename="../ui/cloud_conflict_dialog.py" line="703"/>
         <source>Review later</source>
-        <translation type="unfinished"></translation>
+        <translation>Später prüfen</translation>
     </message>
     <message>
         <location filename="../ui/cloud_conflict_dialog.py" line="550"/>
         <source>Review cloud sync conflicts</source>
-        <translation type="unfinished"></translation>
+        <translation>Cloud-Synchronisierungskonflikte prüfen</translation>
     </message>
     <message>
         <location filename="../ui/cloud_conflict_dialog.py" line="577"/>
         <source>Safe automatic changes have already synced. This screen shows only unresolved differences. Nothing in this review is changed until you confirm a resolution action.</source>
-        <translation type="unfinished"></translation>
+        <translation>Sichere automatische Änderungen wurden bereits synchronisiert. Dieser Bildschirm zeigt nur ungelöste Unterschiede. In dieser Prüfung wird nichts geändert, bis du eine Auflösungsaktion bestätigst.</translation>
     </message>
     <message>
         <location filename="../ui/cloud_conflict_dialog.py" line="583"/>
         <source>Review later closes without applying any conflict decision. The observations remain pending and will appear again on a later sync.</source>
-        <translation type="unfinished"></translation>
+        <translation>Die Überprüfung wird später geschlossen, ohne dass eine Konfliktentscheidung angewendet wird. Die Beobachtungen bleiben ausstehend und werden bei einer späteren Synchronisierung erneut angezeigt.</translation>
     </message>
     <message>
         <location filename="../ui/cloud_conflict_dialog.py" line="602"/>
         <source>Conflicted observations</source>
-        <translation type="unfinished"></translation>
+        <translation>Widersprüchliche Beobachtungen</translation>
     </message>
     <message>
         <location filename="../ui/cloud_conflict_dialog.py" line="614"/>
         <source>Select a conflicted observation</source>
-        <translation type="unfinished"></translation>
+        <translation>Wähle eine Beobachtung mit Konflikt aus</translation>
     </message>
     <message>
         <location filename="../ui/cloud_conflict_dialog.py" line="643"/>
@@ -2227,262 +2228,262 @@ Möchten Sie diese Bilder auf die neue Kalibrierung aktualisieren und die Messun
         <location filename="../ui/cloud_conflict_dialog.py" line="885"/>
         <location filename="../ui/cloud_conflict_dialog.py" line="887"/>
         <source>Loading comparison…</source>
-        <translation type="unfinished"></translation>
+        <translation>Vergleich wird geladen…</translation>
     </message>
     <message>
         <location filename="../ui/cloud_conflict_dialog.py" line="648"/>
         <source>Field</source>
-        <translation type="unfinished">Feld</translation>
+        <translation>Feld</translation>
     </message>
     <message>
         <location filename="../ui/cloud_conflict_dialog.py" line="648"/>
         <location filename="../ui/cloud_conflict_dialog.py" line="1281"/>
         <source>Last synced</source>
-        <translation type="unfinished"></translation>
+        <translation>Zuletzt synchronisiert</translation>
     </message>
     <message>
         <location filename="../ui/cloud_conflict_dialog.py" line="648"/>
         <location filename="../ui/cloud_conflict_dialog.py" line="672"/>
         <location filename="../ui/cloud_conflict_dialog.py" line="1281"/>
         <source>On this device</source>
-        <translation type="unfinished"></translation>
+        <translation>Auf diesem Gerät</translation>
     </message>
     <message>
         <location filename="../ui/cloud_conflict_dialog.py" line="649"/>
         <location filename="../ui/cloud_conflict_dialog.py" line="673"/>
         <location filename="../ui/cloud_conflict_dialog.py" line="1282"/>
         <source>On Sporely Cloud</source>
-        <translation type="unfinished"></translation>
+        <translation>Auf Sporely Cloud</translation>
     </message>
     <message>
         <location filename="../ui/cloud_conflict_dialog.py" line="661"/>
         <source>Show matching photos and measurements</source>
-        <translation type="unfinished"></translation>
+        <translation>Passende Fotos und Maße anzeigen</translation>
     </message>
     <message>
         <location filename="../ui/cloud_conflict_dialog.py" line="666"/>
         <source>Photo and measurement comparison</source>
-        <translation type="unfinished"></translation>
+        <translation>Foto- und Maßvergleich</translation>
     </message>
     <message>
         <location filename="../ui/cloud_conflict_dialog.py" line="687"/>
         <source>Refresh comparison</source>
-        <translation type="unfinished"></translation>
+        <translation>Vergleich aktualisieren</translation>
     </message>
     <message>
         <location filename="../ui/cloud_conflict_dialog.py" line="691"/>
         <source>Prefer this device</source>
-        <translation type="unfinished"></translation>
+        <translation>Dieses Gerät bevorzugen</translation>
     </message>
     <message>
         <location filename="../ui/cloud_conflict_dialog.py" line="694"/>
         <source>Prefer Sporely Cloud</source>
-        <translation type="unfinished"></translation>
+        <translation>Sporely Cloud bevorzugen</translation>
     </message>
     <message>
         <location filename="../ui/cloud_conflict_dialog.py" line="697"/>
         <source>Keep safe additions</source>
-        <translation type="unfinished"></translation>
+        <translation>Sichere Ergänzungen behalten</translation>
     </message>
     <message>
         <location filename="../ui/cloud_conflict_dialog.py" line="700"/>
         <source>Apply selected changes</source>
-        <translation type="unfinished"></translation>
+        <translation>Ausgewählte Änderungen anwenden</translation>
     </message>
     <message>
         <location filename="../ui/cloud_conflict_dialog.py" line="705"/>
         <source>Close without applying any conflict decision. The observation remains pending and will be shown again on a later sync.</source>
-        <translation type="unfinished"></translation>
+        <translation>Schließen, ohne eine Konfliktentscheidung anzuwenden. Die Beobachtung bleibt ausstehend und wird bei einer späteren Synchronisierung erneut angezeigt.</translation>
     </message>
     <message>
         <location filename="../ui/cloud_conflict_dialog.py" line="718"/>
         <source>No unresolved Sporely Cloud conflicts.</source>
-        <translation type="unfinished"></translation>
+        <translation>Keine ungelösten Sporely Cloud-Konflikte.</translation>
     </message>
     <message>
         <location filename="../ui/cloud_conflict_dialog.py" line="768"/>
         <source>{fields} fields · {local} local-only · {cloud} cloud-only · {measurements} measurements</source>
-        <translation type="unfinished"></translation>
+        <translation>{fields}-Felder · {local} nur lokal · {cloud} nur Cloud · {measurements}-Messungen</translation>
     </message>
     <message>
         <location filename="../ui/cloud_conflict_dialog.py" line="870"/>
         <source>Authentication expired</source>
-        <translation type="unfinished"></translation>
+        <translation>Authentifizierung abgelaufen</translation>
     </message>
     <message>
         <location filename="../ui/cloud_conflict_dialog.py" line="870"/>
         <source>Could not load cloud details</source>
-        <translation type="unfinished"></translation>
+        <translation>Cloud-Details konnten nicht geladen werden</translation>
     </message>
     <message>
         <location filename="../ui/cloud_conflict_dialog.py" line="903"/>
         <source>Change labels use the stored last-sync snapshot. “Changed on both sides” means both current versions differ from that snapshot.</source>
-        <translation type="unfinished"></translation>
+        <translation>Änderungsbezeichnungen verwenden den gespeicherten Snapshot der letzten Synchronisierung. „Beidseitig geändert“ bedeutet, dass beide aktuellen Versionen von diesem Schnappschuss abweichen.</translation>
     </message>
     <message>
         <location filename="../ui/cloud_conflict_dialog.py" line="908"/>
         <location filename="../ui/cloud_conflict_dialog.py" line="1234"/>
         <source>Previous synchronized state is unavailable; current versions differ.</source>
-        <translation type="unfinished"></translation>
+        <translation>Der vorherige Synchronisierungsstatus ist nicht verfügbar. Aktuelle Versionen unterscheiden sich.</translation>
     </message>
     <message>
         <location filename="../ui/cloud_conflict_dialog.py" line="915"/>
         <source>Spore statistics will be recomputed automatically from the selected scientific measurements.</source>
-        <translation type="unfinished"></translation>
+        <translation>Die Sporenstatistik wird automatisch aus den ausgewählten wissenschaftlichen Messungen neu berechnet.</translation>
     </message>
     <message>
         <location filename="../ui/cloud_conflict_dialog.py" line="920"/>
         <source>Spore statistics differ, but reconstructable measurements are unavailable. Review later is required.</source>
-        <translation type="unfinished"></translation>
+        <translation>Die Sporenstatistiken sind unterschiedlich, rekonstruierbare Messungen sind jedoch nicht verfügbar. Eine spätere Überprüfung ist erforderlich.</translation>
     </message>
     <message>
         <location filename="../ui/cloud_conflict_dialog.py" line="932"/>
         <source>No ordinary observation fields differ.</source>
-        <translation type="unfinished"></translation>
+        <translation>Keine gewöhnlichen Beobachtungsfelder unterscheiden sich.</translation>
     </message>
     <message>
         <location filename="../ui/cloud_conflict_dialog.py" line="934"/>
         <source>{count} observation field(s) differ.</source>
-        <translation type="unfinished"></translation>
+        <translation>{count} Beobachtungsfelder unterscheiden sich.</translation>
     </message>
     <message>
         <location filename="../ui/cloud_conflict_dialog.py" line="939"/>
         <source>{count} photo(s) exist only on this device.</source>
-        <translation type="unfinished"></translation>
+        <translation>{count}-Foto(s) sind nur auf diesem Gerät vorhanden.</translation>
     </message>
     <message>
         <location filename="../ui/cloud_conflict_dialog.py" line="941"/>
         <source>{count} photo(s) exist only on Sporely Cloud.</source>
-        <translation type="unfinished"></translation>
+        <translation>{count}-Fotos gibt es nur auf Sporely Cloud.</translation>
     </message>
     <message>
         <location filename="../ui/cloud_conflict_dialog.py" line="946"/>
         <source>unknown</source>
-        <translation type="unfinished"></translation>
+        <translation>unbekannt</translation>
     </message>
     <message>
         <location filename="../ui/cloud_conflict_dialog.py" line="948"/>
         <source>{count} measurement(s) on microscope image {position} differ from the cloud copy.</source>
-        <translation type="unfinished"></translation>
+        <translation>{count}-Messungen auf dem Mikroskopbild {position} unterscheiden sich von der Wolkenkopie.</translation>
     </message>
     <message>
         <location filename="../ui/cloud_conflict_dialog.py" line="953"/>
         <source>Possible counterparts are shown separately because their identity is not confirmed.</source>
-        <translation type="unfinished"></translation>
+        <translation>Mögliche Gegenstücke werden gesondert ausgewiesen, da ihre Identität nicht bestätigt ist.</translation>
     </message>
     <message>
         <location filename="../ui/cloud_conflict_dialog.py" line="1007"/>
         <source>No observation fields differ</source>
-        <translation type="unfinished"></translation>
+        <translation>Keine Beobachtungsfelder unterscheiden sich</translation>
     </message>
     <message>
         <location filename="../ui/cloud_conflict_dialog.py" line="1009"/>
         <source>Observation field differences</source>
-        <translation type="unfinished"></translation>
+        <translation>Unterschiede im Beobachtungsfeld</translation>
     </message>
     <message>
         <location filename="../ui/cloud_conflict_dialog.py" line="1096"/>
         <source>Possible counterpart — identity is not confirmed</source>
-        <translation type="unfinished"></translation>
+        <translation>Mögliches Gegenstück – Identität ist nicht bestätigt</translation>
     </message>
     <message>
         <location filename="../ui/cloud_conflict_dialog.py" line="1117"/>
         <source>Keep this device metadata</source>
-        <translation type="unfinished"></translation>
+        <translation>Metadaten dieses Geräts behalten</translation>
     </message>
     <message>
         <location filename="../ui/cloud_conflict_dialog.py" line="1118"/>
         <source>Keep Sporely Cloud metadata</source>
-        <translation type="unfinished"></translation>
+        <translation>Sporely Cloud-Metadaten behalten</translation>
     </message>
     <message>
         <location filename="../ui/cloud_conflict_dialog.py" line="1203"/>
         <source>Measurement comparison</source>
-        <translation type="unfinished"></translation>
+        <translation>Messvergleich</translation>
     </message>
     <message>
         <location filename="../ui/cloud_conflict_dialog.py" line="1182"/>
         <location filename="../ui/cloud_conflict_dialog.py" line="1229"/>
         <source>Changed only on this device</source>
-        <translation type="unfinished"></translation>
+        <translation>Nur auf diesem Gerät geändert</translation>
     </message>
     <message>
         <location filename="../ui/cloud_conflict_dialog.py" line="1183"/>
         <location filename="../ui/cloud_conflict_dialog.py" line="1230"/>
         <source>Changed only on Sporely Cloud</source>
-        <translation type="unfinished"></translation>
+        <translation>Nur am Sporely Cloud geändert</translation>
     </message>
     <message>
         <location filename="../ui/cloud_conflict_dialog.py" line="1184"/>
         <location filename="../ui/cloud_conflict_dialog.py" line="1231"/>
         <source>Changed on both sides</source>
-        <translation type="unfinished"></translation>
+        <translation>Auf beiden Seiten verändert</translation>
     </message>
     <message>
         <location filename="../ui/cloud_conflict_dialog.py" line="1194"/>
         <location filename="../ui/cloud_conflict_dialog.py" line="1235"/>
         <source>Current versions differ</source>
-        <translation type="unfinished"></translation>
+        <translation>Aktuelle Versionen unterscheiden sich</translation>
     </message>
     <message>
         <location filename="../ui/cloud_conflict_dialog.py" line="1243"/>
         <source>Keep this device value</source>
-        <translation type="unfinished"></translation>
+        <translation>Wert dieses Geräts behalten</translation>
     </message>
     <message>
         <location filename="../ui/cloud_conflict_dialog.py" line="1244"/>
         <source>Keep Sporely Cloud value</source>
-        <translation type="unfinished"></translation>
+        <translation>Sporely Cloud-Wert behalten</translation>
     </message>
     <message>
         <location filename="../ui/cloud_conflict_dialog.py" line="1267"/>
         <source>Informational only — gallery rotation differs. This device value {local}° will be used automatically; cloud value is {remote}°.</source>
-        <translation type="unfinished"></translation>
+        <translation>Nur zur Information – die Galerierotation ist unterschiedlich. Dieser Gerätewert {local}° wird automatisch verwendet; Der Wolkenwert ist {remote}°.</translation>
     </message>
     <message>
         <location filename="../ui/cloud_conflict_dialog.py" line="1281"/>
         <source>Property</source>
-        <translation type="unfinished"></translation>
+        <translation>Eigentum</translation>
     </message>
     <message>
         <location filename="../ui/cloud_conflict_dialog.py" line="1295"/>
         <source>Measurement geometry</source>
-        <translation type="unfinished"></translation>
+        <translation>Messgeometrie</translation>
     </message>
     <message>
         <location filename="../ui/cloud_conflict_dialog.py" line="1311"/>
         <source>Length</source>
-        <translation type="unfinished">Länge</translation>
+        <translation>Länge</translation>
     </message>
     <message>
         <location filename="../ui/cloud_conflict_dialog.py" line="1311"/>
         <source>Width</source>
-        <translation type="unfinished">Breite</translation>
+        <translation>Breite</translation>
     </message>
     <message>
         <location filename="../ui/cloud_conflict_dialog.py" line="1312"/>
         <source>Gallery rotation</source>
-        <translation type="unfinished"></translation>
+        <translation>Galerierotation</translation>
     </message>
     <message>
         <location filename="../ui/cloud_conflict_dialog.py" line="1313"/>
         <source>Measurement type</source>
-        <translation type="unfinished"></translation>
+        <translation>Messtyp</translation>
     </message>
     <message>
         <location filename="../ui/cloud_conflict_dialog.py" line="1314"/>
         <source>Measured at</source>
-        <translation type="unfinished"></translation>
+        <translation>Gemessen bei</translation>
     </message>
     <message>
         <location filename="../ui/cloud_conflict_dialog.py" line="1315"/>
         <source>Owning image</source>
-        <translation type="unfinished"></translation>
+        <translation>Bild besitzen</translation>
     </message>
     <message>
         <location filename="../ui/cloud_conflict_dialog.py" line="1316"/>
         <source>Measurement identity</source>
-        <translation type="unfinished"></translation>
+        <translation>Messidentität</translation>
     </message>
 </context>
 <context>
@@ -4910,12 +4911,12 @@ Neueste Version: {latest}</translation>
     <message>
         <location filename="../ui/main_window.py" line="9791"/>
         <source>Manage reference library…</source>
-        <translation type="unfinished"></translation>
+        <translation>Referenzbibliothek verwalten…</translation>
     </message>
     <message>
         <location filename="../ui/main_window.py" line="9795"/>
         <source>Browse and edit reference works, treatments, and measurement sets</source>
-        <translation type="unfinished"></translation>
+        <translation>Referenzwerke, Behandlungen und Messsätze durchsuchen und bearbeiten</translation>
     </message>
     <message>
         <location filename="../ui/main_window.py" line="9998"/>
@@ -4989,27 +4990,27 @@ Neueste Version: {latest}</translation>
     <message>
         <location filename="../ui/main_window.py" line="10671"/>
         <source>This attachment&apos;s persisted snapshot cannot be plotted. Detach it to remove the row.</source>
-        <translation type="unfinished"></translation>
+        <translation>Der gespeicherte Snapshot dieses Anhangs kann nicht dargestellt werden. Trenne ihn, um die Zeile zu entfernen.</translation>
     </message>
     <message>
         <location filename="../ui/main_window.py" line="10677"/>
         <source>Raw: {raw}</source>
-        <translation type="unfinished"></translation>
+        <translation>Roh: {raw}</translation>
     </message>
     <message>
         <location filename="../ui/main_window.py" line="10680"/>
         <source>Role: {role}</source>
-        <translation type="unfinished"></translation>
+        <translation>Rolle: {role}</translation>
     </message>
     <message>
         <location filename="../ui/main_window.py" line="10688"/>
         <source>Revision: {revision}</source>
-        <translation type="unfinished"></translation>
+        <translation>Revision: {revision}</translation>
     </message>
     <message>
         <location filename="../ui/main_window.py" line="10737"/>
         <source>[!] Unplottable snapshot: {label}</source>
-        <translation type="unfinished"></translation>
+        <translation>[!] Nicht plottbarer Schnappschuss: {label}</translation>
     </message>
     <message>
         <location filename="../ui/main_window.py" line="10761"/>
@@ -5042,12 +5043,12 @@ Neueste Version: {latest}</translation>
     <message>
         <location filename="../ui/main_window.py" line="10847"/>
         <source>The active observation changed while the attachment chooser was open. Reopen the observation and try again — no reference was attached.</source>
-        <translation type="unfinished"></translation>
+        <translation>Die aktive Beobachtung hat sich geändert, während die Anhangsauswahl geöffnet war. Öffne die Beobachtung erneut und versuche es noch einmal – es wurde keine Referenz angehängt.</translation>
     </message>
     <message>
         <location filename="../ui/main_window.py" line="10895"/>
         <source>The active observation changed while the reference library was open, so the attachment was cancelled. Re-open the library from the intended observation to try again.</source>
-        <translation type="unfinished"></translation>
+        <translation>Die aktive Beobachtung hat sich geändert, während die Referenzbibliothek geöffnet war; der Anhang wurde daher abgebrochen. Öffne die Bibliothek erneut von der gewünschten Beobachtung aus.</translation>
     </message>
     <message>
         <location filename="../ui/main_window.py" line="10951"/>
@@ -5057,7 +5058,7 @@ Neueste Version: {latest}</translation>
     <message>
         <location filename="../ui/main_window.py" line="10970"/>
         <source>Attachment could not be plotted and the rollback of the persisted row failed: {error}. The row with id {use_id} may still be present; please detach it manually.</source>
-        <translation type="unfinished"></translation>
+        <translation>Der Anhang konnte nicht dargestellt werden und das Zurücksetzen der gespeicherten Zeile ist fehlgeschlagen: {error}. Die Zeile mit der ID {use_id} ist möglicherweise noch vorhanden; bitte trenne sie manuell.</translation>
     </message>
     <message>
         <location filename="../ui/main_window.py" line="10980"/>
@@ -5067,7 +5068,7 @@ Neueste Version: {latest}</translation>
     <message>
         <location filename="../ui/main_window.py" line="10994"/>
         <source>This reference is already attached but its stored snapshot cannot be plotted. It is shown as a warning row so you can detach it.</source>
-        <translation type="unfinished"></translation>
+        <translation>Diese Referenz ist bereits angehängt, ihr gespeicherter Snapshot kann jedoch nicht dargestellt werden. Sie wird als Warnzeile angezeigt, damit du sie trennen kannst.</translation>
     </message>
     <message>
         <location filename="../ui/main_window.py" line="11680"/>
@@ -5098,65 +5099,67 @@ Neueste Version: {latest}</translation>
     <message>
         <location filename="../ui/main_window.py" line="12199"/>
         <source>The active observation changed while this dialog was open. The legacy reference was still saved, but the normalized library entry was not created — reopen the observation and try again.</source>
-        <translation type="unfinished"></translation>
+        <translation>Die aktive Beobachtung hat sich geändert, während dieses Dialogfeld geöffnet war. Die alte Referenz wurde gespeichert, aber der normalisierte Bibliothekseintrag wurde nicht erstellt – öffne die Beobachtung erneut und versuche es noch einmal.</translation>
     </message>
     <message>
         <location filename="../ui/main_window.py" line="12223"/>
         <source>The observation&apos;s taxon changed while this dialog was open. The legacy reference was still saved, but no normalized library entry was created — reopen the observation and try again.</source>
-        <translation type="unfinished"></translation>
+        <translation>Das Taxon der Beobachtung hat sich geändert, während dieses Dialogfeld geöffnet war. Die alte Referenz wurde gespeichert, aber kein normalisierter Bibliothekseintrag erstellt – öffne die Beobachtung erneut und versuche es noch einmal.</translation>
     </message>
     <message>
         <location filename="../ui/main_window.py" line="12253"/>
         <source>Could not build the normalized measurement set: {error}</source>
-        <translation type="unfinished"></translation>
+        <translation>Der normalisierte Messsatz konnte nicht erstellt werden: {error}</translation>
     </message>
     <message>
         <location filename="../ui/main_window.py" line="12287"/>
         <source>The species entered in the panel ({panel}) differs from the observation&apos;s taxon record ({observation}). If you want to record the published name as a synonym or historical name, click Yes. If this is an accidental edit, click No — the legacy reference has already been saved; no normalized library entry will be created.</source>
-        <translation type="unfinished"></translation>
+        <translation>Die im Bereich eingegebene Art ({panel}) unterscheidet sich vom Taxon-Datensatz der Beobachtung ({observation}). Möchtest du den veröffentlichten Namen als Synonym oder historischen Namen erfassen, klicke auf „Ja“. War die Änderung versehentlich, klicke auf „Nein“ – die alte Referenz wurde bereits gespeichert; es wird kein normalisierter Bibliothekseintrag erstellt.</translation>
     </message>
     <message>
         <location filename="../ui/main_window.py" line="12309"/>
         <source>Could not read treatments: {error}</source>
-        <translation type="unfinished"></translation>
+        <translation>Behandlungen konnten nicht gelesen werden: {error}</translation>
     </message>
     <message>
         <location filename="../ui/main_window.py" line="12321"/>
         <source>This publication already has more than one treatment matching the observation&apos;s taxon. Open the reference library manager to pick one and attach it manually.</source>
-        <translation type="unfinished"></translation>
+        <translation>Diese Veröffentlichung enthält mehrere Behandlungen, die zum Taxon der Beobachtung passen. Öffne die Referenzbibliothek, wähle eine aus und hänge sie manuell an.</translation>
     </message>
     <message>
         <location filename="../ui/main_window.py" line="12332"/>
         <source>Unspecified taxon</source>
-        <translation type="unfinished"></translation>
+        <translation>Nicht spezifiziertes Taxon</translation>
     </message>
     <message>
         <location filename="../ui/main_window.py" line="12346"/>
         <source>Could not create treatment: {error}</source>
-        <translation type="unfinished"></translation>
+        <translation>Die Behandlung konnte nicht erstellt werden: {error}</translation>
     </message>
     <message>
         <location filename="../ui/main_window.py" line="12378"/>
         <source>Could not create measurement set ({error}); the compensating cleanup of taxon_treatment {tid} also failed ({rollback}). Please review the reference library manager.</source>
-        <translation type="unfinished"></translation>
+        <translation>Der Messsatz konnte nicht erstellt werden ({error}); auch die ausgleichende Bereinigung von taxon_treatment {tid} ist fehlgeschlagen ({rollback}). Bitte prüfe die Referenzbibliothek.</translation>
     </message>
     <message>
         <location filename="../ui/main_window.py" line="12392"/>
         <source>Could not create measurement set: {error}</source>
-        <translation type="unfinished"></translation>
+        <translation>Der Messsatz konnte nicht erstellt werden: {error}</translation>
     </message>
     <message>
         <location filename="../ui/main_window.py" line="12436"/>
         <source>Attachment failed and the compensating cleanup could not fully roll back. The following rows may still be present and should be reviewed in the reference library manager:
 
 {errors}</source>
-        <translation type="unfinished"></translation>
+        <translation>Der Anhang ist fehlgeschlagen und die kompensierende Bereinigung konnte nicht vollständig zurückgesetzt werden. Die folgenden Zeilen sind möglicherweise noch vorhanden und sollten im Referenzbibliotheksmanager überprüft werden:
+
+{errors}</translation>
     </message>
     <message>
         <location filename="../ui/main_window.py" line="12529"/>
         <location filename="../ui/main_window.py" line="12624"/>
         <source>Reference stored locally, but library sync failed: {error}</source>
-        <translation type="unfinished"></translation>
+        <translation>Referenz lokal gespeichert, aber die Bibliothekssynchronisierung ist fehlgeschlagen: {error}</translation>
     </message>
     <message>
         <location filename="../ui/main_window.py" line="12704"/>
@@ -6275,12 +6278,12 @@ Name und E-Mail (optional) werden zu Beobachtungen in der Datenbank hinzugefuegt
     <message>
         <location filename="../ui/observations_tab.py" line="14459"/>
         <source>Scientific:</source>
-        <translation type="unfinished"></translation>
+        <translation>Wissenschaftlich:</translation>
     </message>
     <message>
         <location filename="../ui/observations_tab.py" line="14465"/>
         <source>Optional: e.g., Hygrocybe conica var. pseudoconica</source>
-        <translation type="unfinished"></translation>
+        <translation>Optional: z. B. Hygrocybe conica var. pseudoconica</translation>
     </message>
     <message>
         <location filename="../ui/observations_tab.py" line="14528"/>
@@ -6502,39 +6505,43 @@ Name und E-Mail (optional) werden zu Beobachtungen in der Datenbank hinzugefuegt
         <source>Delete the cloud copy of this image?
 
 The local file stays on this computer. The cloud copy will be removed from Cloud on your next sync.</source>
-        <translation type="unfinished"></translation>
+        <translation>Cloud-Kopie dieses Bildes löschen?
+
+Die lokale Datei verbleibt auf diesem Computer. Die Cloud-Kopie wird bei Ihrer nächsten Synchronisierung aus der Cloud entfernt.</translation>
     </message>
     <message>
         <location filename="../ui/observations_tab.py" line="18251"/>
         <source>Delete the cloud copies of {count} images?
 
 The local files stay on this computer. The cloud copies will be removed from Cloud on your next sync.</source>
-        <translation type="unfinished"></translation>
+        <translation>Cloud-Kopien von {count}-Bildern löschen?
+
+Die lokalen Dateien bleiben auf diesem Computer. Die Cloud-Kopien werden bei Ihrer nächsten Synchronisierung aus der Cloud entfernt.</translation>
     </message>
     <message>
         <location filename="../ui/observations_tab.py" line="18256"/>
         <source>Delete cloud copies</source>
-        <translation type="unfinished"></translation>
+        <translation>Cloud-Kopien löschen</translation>
     </message>
     <message>
         <location filename="../ui/observations_tab.py" line="18270"/>
         <source>Failed to queue cloud image deletion.</source>
-        <translation type="unfinished"></translation>
+        <translation>Das Löschen des Cloud-Images konnte nicht in die Warteschlange gestellt werden.</translation>
     </message>
     <message>
         <location filename="../ui/observations_tab.py" line="18279"/>
         <source>No cloud copies to delete.</source>
-        <translation type="unfinished"></translation>
+        <translation>Keine Cloud-Kopien zum Löschen.</translation>
     </message>
     <message>
         <location filename="../ui/observations_tab.py" line="18292"/>
         <source>Cloud copy marked for deletion. Sync to apply the change to Cloud.</source>
-        <translation type="unfinished"></translation>
+        <translation>Cloud-Kopie zum Löschen markiert. Synchronisieren, um die Änderung auf die Cloud anzuwenden.</translation>
     </message>
     <message>
         <location filename="../ui/observations_tab.py" line="18296"/>
         <source>{count} cloud copies marked for deletion. Sync to apply the change to Cloud.</source>
-        <translation type="unfinished"></translation>
+        <translation>{count} Cloud-Kopien zum Löschen markiert. Synchronisieren, um die Änderung auf die Cloud anzuwenden.</translation>
     </message>
     <message>
         <location filename="../ui/observations_tab.py" line="18384"/>
@@ -6565,17 +6572,17 @@ The local files stay on this computer. The cloud copies will be removed from Clo
     <message>
         <location filename="../ui/observations_tab.py" line="18808"/>
         <source>Accepted concept: {name}</source>
-        <translation type="unfinished"></translation>
+        <translation>Akzeptiertes Konzept: {name}</translation>
     </message>
     <message>
         <location filename="../ui/observations_tab.py" line="18811"/>
         <source>Linked concept: {name}</source>
-        <translation type="unfinished"></translation>
+        <translation>Verknüpftes Konzept: {name}</translation>
     </message>
     <message>
         <location filename="../ui/observations_tab.py" line="18999"/>
         <source>Multiple assessments</source>
-        <translation type="unfinished"></translation>
+        <translation>Mehrere Beurteilungen</translation>
     </message>
     <message>
         <location filename="../ui/observations_tab.py" line="19830"/>
@@ -7286,7 +7293,7 @@ Wählen Sie Nein, um sie nur lokal zu behalten und die Cloud-Verknüpfung zu ent
     <message>
         <location filename="../ui/observations_tab.py" line="3906"/>
         <source>Cloud sync applied automatic changes with {n} error(s).</source>
-        <translation type="unfinished"></translation>
+        <translation>Die Cloud-Synchronisierung hat automatische Änderungen mit {n}-Fehlern vorgenommen.</translation>
     </message>
     <message>
         <location filename="../ui/observations_tab.py" line="4055"/>
@@ -7537,39 +7544,43 @@ Wählen Sie Nein, um sie nur lokal zu behalten und die Cloud-Verknüpfung zu ent
         <source>Delete the cloud copy of this image?
 
 The local file stays on this computer. The cloud copy will be removed from Cloud on your next sync.</source>
-        <translation type="unfinished"></translation>
+        <translation>Cloud-Kopie dieses Bildes löschen?
+
+Die lokale Datei verbleibt auf diesem Computer. Die Cloud-Kopie wird bei Ihrer nächsten Synchronisierung aus der Cloud entfernt.</translation>
     </message>
     <message>
         <location filename="../ui/observations_tab.py" line="7725"/>
         <source>Delete the cloud copies of {count} images?
 
 The local files stay on this computer. The cloud copies will be removed from Cloud on your next sync.</source>
-        <translation type="unfinished"></translation>
+        <translation>Cloud-Kopien von {count}-Bildern löschen?
+
+Die lokalen Dateien bleiben auf diesem Computer. Die Cloud-Kopien werden bei Ihrer nächsten Synchronisierung aus der Cloud entfernt.</translation>
     </message>
     <message>
         <location filename="../ui/observations_tab.py" line="7730"/>
         <source>Delete cloud copies</source>
-        <translation type="unfinished"></translation>
+        <translation>Cloud-Kopien löschen</translation>
     </message>
     <message>
         <location filename="../ui/observations_tab.py" line="7745"/>
         <source>Failed to queue cloud image deletion.</source>
-        <translation type="unfinished"></translation>
+        <translation>Das Löschen des Cloud-Images konnte nicht in die Warteschlange gestellt werden.</translation>
     </message>
     <message>
         <location filename="../ui/observations_tab.py" line="7758"/>
         <source>No cloud copies to delete.</source>
-        <translation type="unfinished"></translation>
+        <translation>Keine Cloud-Kopien zum Löschen.</translation>
     </message>
     <message>
         <location filename="../ui/observations_tab.py" line="7777"/>
         <source>Cloud copy marked for deletion. Sync to apply the change to Cloud.</source>
-        <translation type="unfinished"></translation>
+        <translation>Cloud-Kopie zum Löschen markiert. Synchronisieren, um die Änderung auf die Cloud anzuwenden.</translation>
     </message>
     <message>
         <location filename="../ui/observations_tab.py" line="7781"/>
         <source>{count} cloud copies marked for deletion. Sync to apply the change to Cloud.</source>
-        <translation type="unfinished"></translation>
+        <translation>{count} Cloud-Kopien zum Löschen markiert. Synchronisieren, um die Änderung auf die Cloud anzuwenden.</translation>
     </message>
     <message>
         <location filename="../ui/observations_tab.py" line="7800"/>
@@ -8235,72 +8246,72 @@ Dadurch werden auch alle zugehörigen Bilder und Messungen gelöscht.</translati
     <message>
         <location filename="../ui/cloud_conflict_dialog.py" line="462"/>
         <source>Unavailable</source>
-        <translation type="unfinished"></translation>
+        <translation>Nicht verfügbar</translation>
     </message>
     <message>
         <location filename="../ui/cloud_conflict_dialog.py" line="468"/>
         <source>No counterpart</source>
-        <translation type="unfinished"></translation>
+        <translation>Kein Gegenstück</translation>
     </message>
     <message>
         <location filename="../ui/cloud_conflict_dialog.py" line="472"/>
         <source>Microscope</source>
-        <translation type="unfinished">Mikroskop</translation>
+        <translation>Mikroskop</translation>
     </message>
     <message>
         <location filename="../ui/cloud_conflict_dialog.py" line="472"/>
         <source>Field</source>
-        <translation type="unfinished">Feld</translation>
+        <translation>Feld</translation>
     </message>
     <message>
         <location filename="../ui/cloud_conflict_dialog.py" line="474"/>
         <source>{type} image {position}</source>
-        <translation type="unfinished"></translation>
+        <translation>{type} Bild {position}</translation>
     </message>
     <message>
         <location filename="../ui/cloud_conflict_dialog.py" line="475"/>
         <source>unknown</source>
-        <translation type="unfinished"></translation>
+        <translation>unbekannt</translation>
     </message>
     <message>
         <location filename="../ui/cloud_conflict_dialog.py" line="479"/>
         <source>local image #{id}</source>
-        <translation type="unfinished"></translation>
+        <translation>lokales Bild #{id}</translation>
     </message>
     <message>
         <location filename="../ui/cloud_conflict_dialog.py" line="481"/>
         <source>cloud image {id}</source>
-        <translation type="unfinished"></translation>
+        <translation>Wolkenbild {id}</translation>
     </message>
     <message>
         <location filename="../ui/cloud_conflict_dialog.py" line="491"/>
         <source>Measurements: {count}</source>
-        <translation type="unfinished"></translation>
+        <translation>Maße: {count}</translation>
     </message>
     <message>
         <location filename="../ui/cloud_conflict_dialog.py" line="507"/>
         <source>Loading thumbnail…</source>
-        <translation type="unfinished"></translation>
+        <translation>Miniaturansicht wird geladen…</translation>
     </message>
     <message>
         <location filename="../ui/cloud_conflict_dialog.py" line="512"/>
         <source>Authentication expired</source>
-        <translation type="unfinished"></translation>
+        <translation>Authentifizierung abgelaufen</translation>
     </message>
     <message>
         <location filename="../ui/cloud_conflict_dialog.py" line="514"/>
         <source>Local file unavailable</source>
-        <translation type="unfinished"></translation>
+        <translation>Lokale Datei nicht verfügbar</translation>
     </message>
     <message>
         <location filename="../ui/cloud_conflict_dialog.py" line="516"/>
         <source>Cloud thumbnail unavailable</source>
-        <translation type="unfinished"></translation>
+        <translation>Cloud-Miniaturansicht nicht verfügbar</translation>
     </message>
     <message>
         <location filename="../ui/cloud_conflict_dialog.py" line="523"/>
         <source>Unsupported image data</source>
-        <translation type="unfinished"></translation>
+        <translation>Nicht unterstützte Bilddaten</translation>
     </message>
 </context>
 <context>
@@ -8496,7 +8507,7 @@ max</translation>
     <message>
         <location filename="../ui/main_window.py" line="5535"/>
         <source>No taxon is set on this observation, so this reference will be saved to the legacy list only. Set a taxon on the observation to create a normalized library entry.</source>
-        <translation type="unfinished"></translation>
+        <translation>Für diese Beobachtung ist kein Taxon festgelegt, daher wird diese Referenz nur in der alten Liste gespeichert. Lege ein Taxon für die Beobachtung fest, um einen normalisierten Bibliothekseintrag zu erstellen.</translation>
     </message>
     <message>
         <location filename="../ui/main_window.py" line="5553"/>
@@ -8521,17 +8532,17 @@ max</translation>
     <message>
         <location filename="../ui/main_window.py" line="5590"/>
         <source>Locator</source>
-        <translation type="unfinished">Fundstelle</translation>
+        <translation>Fundstelle</translation>
     </message>
     <message>
         <location filename="../ui/main_window.py" line="5590"/>
         <source>Kind</source>
-        <translation type="unfinished">Art</translation>
+        <translation>Art</translation>
     </message>
     <message>
         <location filename="../ui/main_window.py" line="5590"/>
         <source>Raw expression</source>
-        <translation type="unfinished">Originalangabe</translation>
+        <translation>Originalangabe</translation>
     </message>
     <message>
         <location filename="../ui/main_window.py" line="5630"/>
@@ -8593,7 +8604,7 @@ max</translation>
     <message>
         <location filename="../ui/main_window.py" line="6014"/>
         <source>Select an existing measurement set or switch to &quot;Enter new data&quot;.</source>
-        <translation type="unfinished"></translation>
+        <translation>Wähle einen vorhandenen Messsatz aus oder wechsle zu „Neue Daten eingeben“.</translation>
     </message>
     <message>
         <location filename="../ui/main_window.py" line="6043"/>
@@ -8603,12 +8614,12 @@ max</translation>
     <message>
         <location filename="../ui/main_window.py" line="6067"/>
         <source>No publication selected</source>
-        <translation type="unfinished"></translation>
+        <translation>Keine Publikation ausgewählt</translation>
     </message>
     <message>
         <location filename="../ui/main_window.py" line="6069"/>
         <source>No publication is selected. Save as a legacy-only reference (no library entry, no observation attachment)?</source>
-        <translation type="unfinished"></translation>
+        <translation>Es ist keine Veröffentlichung ausgewählt. Als reine Legacy-Referenz speichern (kein Bibliothekseintrag, kein Beobachtungsanhang)?</translation>
     </message>
     <message>
         <location filename="../ui/main_window.py" line="6363"/>
@@ -8666,7 +8677,7 @@ max</translation>
     <message>
         <location filename="../ui/reference_library_attach_dialog.py" line="127"/>
         <source>Restrict the list to measurement sets whose treatment matches the active observation&apos;s taxon.</source>
-        <translation type="unfinished"></translation>
+        <translation>Liste auf Messsätze beschränken, deren Behandlung zum Taxon der aktiven Beobachtung passt.</translation>
     </message>
     <message>
         <location filename="../ui/reference_library_attach_dialog.py" line="144"/>
@@ -8707,7 +8718,7 @@ max</translation>
     <message>
         <location filename="../ui/reference_library_attach_dialog.py" line="187"/>
         <source>Manage library…</source>
-        <translation type="unfinished"></translation>
+        <translation>Bibliothek verwalten…</translation>
     </message>
     <message>
         <location filename="../ui/reference_library_attach_dialog.py" line="295"/>
@@ -8738,359 +8749,359 @@ max</translation>
         <location filename="../ui/reference_library_manager_dialog.py" line="2101"/>
         <source>Reference Library</source>
         <extracomment>Emitted when the user requests an attachment. ``(measurement_set_id, role, observation_id)`` — role is a value from :data:`OBSERVATION_REFERENCE_ROLES`; ``observation_id`` is the observation id CAPTURED at manager-open time, so a rebind of the parent&apos;s active observation between open and click cannot silently redirect the attachment to a different observation. Emitted whenever a record was created/edited so external listeners (e.g. the attachment chooser) can refresh their state.</extracomment>
-        <translation type="unfinished"></translation>
+        <translation>Präsenzbibliothek</translation>
     </message>
     <message>
         <location filename="../ui/reference_library_manager_dialog.py" line="1910"/>
         <source>Publications</source>
-        <translation type="unfinished"></translation>
+        <translation>Veröffentlichungen</translation>
     </message>
     <message>
         <location filename="../ui/reference_library_manager_dialog.py" line="1913"/>
         <source>Search by title, author or label</source>
-        <translation type="unfinished"></translation>
+        <translation>Nach Titel, Autor oder Bezeichnung suchen</translation>
     </message>
     <message>
         <location filename="../ui/reference_library_manager_dialog.py" line="1919"/>
         <source>Short label</source>
-        <translation type="unfinished"></translation>
+        <translation>Kurzes Etikett</translation>
     </message>
     <message>
         <location filename="../ui/reference_library_manager_dialog.py" line="1919"/>
         <source>Year</source>
-        <translation type="unfinished"></translation>
+        <translation>Jahr</translation>
     </message>
     <message>
         <location filename="../ui/reference_library_manager_dialog.py" line="1933"/>
         <source>New work…</source>
-        <translation type="unfinished"></translation>
+        <translation>Neue Arbeit…</translation>
     </message>
     <message>
         <location filename="../ui/reference_library_manager_dialog.py" line="1936"/>
         <source>Edit work…</source>
-        <translation type="unfinished"></translation>
+        <translation>Arbeit bearbeiten…</translation>
     </message>
     <message>
         <location filename="../ui/reference_library_manager_dialog.py" line="1944"/>
         <source>No publications yet — use &quot;New work…&quot; to add one.</source>
-        <translation type="unfinished"></translation>
+        <translation>Noch keine Veröffentlichungen – füge mit „Neues Werk…“ eine hinzu.</translation>
     </message>
     <message>
         <location filename="../ui/reference_library_manager_dialog.py" line="1955"/>
         <source>Treatments and measurement sets</source>
-        <translation type="unfinished"></translation>
+        <translation>Behandlungen und Messsets</translation>
     </message>
     <message>
         <location filename="../ui/reference_library_manager_dialog.py" line="1958"/>
         <source>Name / kind</source>
-        <translation type="unfinished"></translation>
+        <translation>Name / Art</translation>
     </message>
     <message>
         <location filename="../ui/reference_library_manager_dialog.py" line="1958"/>
         <source>Revision</source>
-        <translation type="unfinished"></translation>
+        <translation>Revision</translation>
     </message>
     <message>
         <location filename="../ui/reference_library_manager_dialog.py" line="1965"/>
         <source>New treatment…</source>
-        <translation type="unfinished"></translation>
+        <translation>Neue Behandlung…</translation>
     </message>
     <message>
         <location filename="../ui/reference_library_manager_dialog.py" line="1969"/>
         <source>New measurement set…</source>
-        <translation type="unfinished"></translation>
+        <translation>Neues Messset…</translation>
     </message>
     <message>
         <location filename="../ui/reference_library_manager_dialog.py" line="1981"/>
         <source>Details</source>
-        <translation type="unfinished"></translation>
+        <translation>Details</translation>
     </message>
     <message>
         <location filename="../ui/reference_library_manager_dialog.py" line="2004"/>
         <source>Edit selected…</source>
-        <translation type="unfinished"></translation>
+        <translation>Ausgewählte bearbeiten…</translation>
     </message>
     <message>
         <location filename="../ui/reference_library_manager_dialog.py" line="2010"/>
         <source>Role:</source>
-        <translation type="unfinished">Rolle:</translation>
+        <translation>Rolle:</translation>
     </message>
     <message>
         <location filename="../ui/reference_library_manager_dialog.py" line="2016"/>
         <source>Attach to active observation</source>
-        <translation type="unfinished"></translation>
+        <translation>Zur aktiven Beobachtung hinzufügen</translation>
     </message>
     <message>
         <location filename="../ui/reference_library_manager_dialog.py" line="2033"/>
         <source>Could not load publications: {error}</source>
-        <translation type="unfinished"></translation>
+        <translation>Veröffentlichungen konnten nicht geladen werden: {error}</translation>
     </message>
     <message>
         <location filename="../ui/reference_library_manager_dialog.py" line="2091"/>
         <location filename="../ui/reference_library_manager_dialog.py" line="2216"/>
         <source>Select a publication to see its treatments.</source>
-        <translation type="unfinished"></translation>
+        <translation>Wähle eine Veröffentlichung aus, um ihre Behandlungen anzuzeigen.</translation>
     </message>
     <message>
         <location filename="../ui/reference_library_manager_dialog.py" line="2102"/>
         <source>Could not load treatments: {error}</source>
-        <translation type="unfinished"></translation>
+        <translation>Behandlungen konnten nicht geladen werden: {error}</translation>
     </message>
     <message>
         <location filename="../ui/reference_library_manager_dialog.py" line="2107"/>
         <source>No treatments yet — use &quot;New treatment…&quot; to add one.</source>
-        <translation type="unfinished"></translation>
+        <translation>Noch keine Behandlungen – füge mit „Neue Behandlung…“ eine hinzu.</translation>
     </message>
     <message>
         <location filename="../ui/reference_library_manager_dialog.py" line="2114"/>
         <source>(unnamed treatment)</source>
-        <translation type="unfinished"></translation>
+        <translation>(unbenannte Behandlung)</translation>
     </message>
     <message>
         <location filename="../ui/reference_library_manager_dialog.py" line="2232"/>
         <source>Type: {type}</source>
-        <translation type="unfinished"></translation>
+        <translation>Typ: {type}</translation>
     </message>
     <message>
         <location filename="../ui/reference_library_manager_dialog.py" line="2233"/>
         <source>Title: {title}</source>
-        <translation type="unfinished"></translation>
+        <translation>Titel: {title}</translation>
     </message>
     <message>
         <location filename="../ui/reference_library_manager_dialog.py" line="2236"/>
         <source>Year: {year}</source>
-        <translation type="unfinished"></translation>
+        <translation>Jahr: {year}</translation>
     </message>
     <message>
         <location filename="../ui/reference_library_manager_dialog.py" line="2238"/>
         <source>Citation key: {value}</source>
-        <translation type="unfinished"></translation>
+        <translation>Zitierschlüssel: {value}</translation>
     </message>
     <message>
         <location filename="../ui/reference_library_manager_dialog.py" line="2240"/>
         <source>Container: {value}</source>
-        <translation type="unfinished"></translation>
+        <translation>Behälter: {value}</translation>
     </message>
     <message>
         <location filename="../ui/reference_library_manager_dialog.py" line="2242"/>
         <source>Edition: {value}</source>
-        <translation type="unfinished"></translation>
+        <translation>Ausgabe: {value}</translation>
     </message>
     <message>
         <location filename="../ui/reference_library_manager_dialog.py" line="2244"/>
         <source>Volume: {value}</source>
-        <translation type="unfinished"></translation>
+        <translation>Band: {value}</translation>
     </message>
     <message>
         <location filename="../ui/reference_library_manager_dialog.py" line="2246"/>
         <source>Issue: {value}</source>
-        <translation type="unfinished"></translation>
+        <translation>Problem: {value}</translation>
     </message>
     <message>
         <location filename="../ui/reference_library_manager_dialog.py" line="2248"/>
         <source>Pages: {value}</source>
-        <translation type="unfinished"></translation>
+        <translation>Seiten: {value}</translation>
     </message>
     <message>
         <location filename="../ui/reference_library_manager_dialog.py" line="2250"/>
         <source>Publisher: {value}</source>
-        <translation type="unfinished"></translation>
+        <translation>Herausgeber: {value}</translation>
     </message>
     <message>
         <location filename="../ui/reference_library_manager_dialog.py" line="2252"/>
         <source>Place: {value}</source>
-        <translation type="unfinished"></translation>
+        <translation>Ort: {value}</translation>
     </message>
     <message>
         <location filename="../ui/reference_library_manager_dialog.py" line="2254"/>
         <source>DOI: {value}</source>
-        <translation type="unfinished"></translation>
+        <translation>DOI: {value}</translation>
     </message>
     <message>
         <location filename="../ui/reference_library_manager_dialog.py" line="2256"/>
         <source>ISBN: {value}</source>
-        <translation type="unfinished"></translation>
+        <translation>ISBN: {value}</translation>
     </message>
     <message>
         <location filename="../ui/reference_library_manager_dialog.py" line="2258"/>
         <source>URL: {value}</source>
-        <translation type="unfinished"></translation>
+        <translation>URL: {value}</translation>
     </message>
     <message>
         <location filename="../ui/reference_library_manager_dialog.py" line="2260"/>
         <source>Language: {value}</source>
-        <translation type="unfinished"></translation>
+        <translation>Sprache: {value}</translation>
     </message>
     <message>
         <location filename="../ui/reference_library_manager_dialog.py" line="2262"/>
         <source>Citation override: {value}</source>
-        <translation type="unfinished"></translation>
+        <translation>Zitatüberschreibung: {value}</translation>
     </message>
     <message>
         <location filename="../ui/reference_library_manager_dialog.py" line="1919"/>
         <source>Missing</source>
-        <translation type="unfinished"></translation>
+        <translation>Fehlen</translation>
     </message>
     <message>
         <location filename="../ui/reference_library_manager_dialog.py" line="2056"/>
         <source>Missing bibliographic fields (derived).</source>
-        <translation type="unfinished"></translation>
+        <translation>Fehlende bibliografische Felder (abgeleitet).</translation>
     </message>
     <message>
         <location filename="../ui/reference_library_manager_dialog.py" line="2263"/>
         <location filename="../ui/reference_library_manager_dialog.py" line="2298"/>
         <location filename="../ui/reference_library_manager_dialog.py" line="2359"/>
         <source>Revision: {value}</source>
-        <translation type="unfinished"></translation>
+        <translation>Revision: {value}</translation>
     </message>
     <message>
         <location filename="../ui/reference_library_manager_dialog.py" line="2264"/>
         <location filename="../ui/reference_library_manager_dialog.py" line="2299"/>
         <location filename="../ui/reference_library_manager_dialog.py" line="2360"/>
         <source>UUID: {value}</source>
-        <translation type="unfinished"></translation>
+        <translation>UUID: {value}</translation>
     </message>
     <message>
         <location filename="../ui/reference_library_manager_dialog.py" line="2283"/>
         <source>Name as published: {value}</source>
-        <translation type="unfinished"></translation>
+        <translation>Name wie veröffentlicht: {value}</translation>
     </message>
     <message>
         <location filename="../ui/reference_library_manager_dialog.py" line="2286"/>
         <source>Taxon id: {value}</source>
-        <translation type="unfinished"></translation>
+        <translation>Taxon-ID: {value}</translation>
     </message>
     <message>
         <location filename="../ui/reference_library_manager_dialog.py" line="2289"/>
         <source>Pages: {a}-{b}</source>
-        <translation type="unfinished"></translation>
+        <translation>Seiten: {a}-{b}</translation>
     </message>
     <message>
         <location filename="../ui/reference_library_manager_dialog.py" line="2295"/>
         <source>Locator: {value}</source>
-        <translation type="unfinished"></translation>
+        <translation>Standort: {value}</translation>
     </message>
     <message>
         <location filename="../ui/reference_library_manager_dialog.py" line="2297"/>
         <source>Notes: {value}</source>
-        <translation type="unfinished"></translation>
+        <translation>Hinweise: {value}</translation>
     </message>
     <message>
         <location filename="../ui/reference_library_manager_dialog.py" line="2314"/>
         <source>Measurement set — {kind}</source>
-        <translation type="unfinished"></translation>
+        <translation>Messsatz – {kind}</translation>
     </message>
     <message>
         <location filename="../ui/reference_library_manager_dialog.py" line="2325"/>
         <location filename="../ui/reference_library_manager_dialog.py" line="2356"/>
         <source>Data kind: {value}</source>
-        <translation type="unfinished"></translation>
+        <translation>Datenart: {value}</translation>
     </message>
     <message>
         <location filename="../ui/reference_library_manager_dialog.py" line="2328"/>
         <location filename="../ui/reference_library_manager_dialog.py" line="2358"/>
         <source>Raw expression: {value}</source>
-        <translation type="unfinished"></translation>
+        <translation>Rohausdruck: {value}</translation>
     </message>
     <message>
         <location filename="../ui/reference_library_manager_dialog.py" line="2331"/>
         <source>Length min</source>
-        <translation type="unfinished"></translation>
+        <translation>Länge min</translation>
     </message>
     <message>
         <location filename="../ui/reference_library_manager_dialog.py" line="2332"/>
         <source>Length core min</source>
-        <translation type="unfinished"></translation>
+        <translation>Länge Kern min</translation>
     </message>
     <message>
         <location filename="../ui/reference_library_manager_dialog.py" line="2333"/>
         <source>Length core max</source>
-        <translation type="unfinished"></translation>
+        <translation>Länge Kern max</translation>
     </message>
     <message>
         <location filename="../ui/reference_library_manager_dialog.py" line="2334"/>
         <source>Length max</source>
-        <translation type="unfinished"></translation>
+        <translation>Länge max</translation>
     </message>
     <message>
         <location filename="../ui/reference_library_manager_dialog.py" line="2335"/>
         <source>Length mean</source>
-        <translation type="unfinished"></translation>
+        <translation>Längenmittel</translation>
     </message>
     <message>
         <location filename="../ui/reference_library_manager_dialog.py" line="2336"/>
         <source>Width min</source>
-        <translation type="unfinished"></translation>
+        <translation>Breite min</translation>
     </message>
     <message>
         <location filename="../ui/reference_library_manager_dialog.py" line="2337"/>
         <source>Width core min</source>
-        <translation type="unfinished"></translation>
+        <translation>Breite Kern min</translation>
     </message>
     <message>
         <location filename="../ui/reference_library_manager_dialog.py" line="2338"/>
         <source>Width core max</source>
-        <translation type="unfinished"></translation>
+        <translation>Breite Kern max</translation>
     </message>
     <message>
         <location filename="../ui/reference_library_manager_dialog.py" line="2339"/>
         <source>Width max</source>
-        <translation type="unfinished"></translation>
+        <translation>Breite max</translation>
     </message>
     <message>
         <location filename="../ui/reference_library_manager_dialog.py" line="2340"/>
         <source>Width mean</source>
-        <translation type="unfinished"></translation>
+        <translation>Breitenmittelwert</translation>
     </message>
     <message>
         <location filename="../ui/reference_library_manager_dialog.py" line="2341"/>
         <source>Q min</source>
-        <translation type="unfinished"></translation>
+        <translation>Q min</translation>
     </message>
     <message>
         <location filename="../ui/reference_library_manager_dialog.py" line="2342"/>
         <source>Q mean</source>
-        <translation type="unfinished"></translation>
+        <translation>Q bedeutet</translation>
     </message>
     <message>
         <location filename="../ui/reference_library_manager_dialog.py" line="2343"/>
         <source>Q max</source>
-        <translation type="unfinished"></translation>
+        <translation>Q max</translation>
     </message>
     <message>
         <location filename="../ui/reference_library_manager_dialog.py" line="2344"/>
         <source>Sample size</source>
-        <translation type="unfinished"></translation>
+        <translation>Probengröße</translation>
     </message>
     <message>
         <location filename="../ui/reference_library_manager_dialog.py" line="2345"/>
         <source>Specimen count</source>
-        <translation type="unfinished"></translation>
+        <translation>Probenanzahl</translation>
     </message>
     <message>
         <location filename="../ui/reference_library_manager_dialog.py" line="2353"/>
         <source>Raw points: {count} entries</source>
-        <translation type="unfinished"></translation>
+        <translation>Rohpunkte: {count}-Einträge</translation>
     </message>
     <message>
         <location filename="../ui/reference_library_manager_dialog.py" line="2368"/>
         <source>This measurement set is not plottable yet: it lacks a drawable length/width rectangle, a complete mean pair, or valid raw points.</source>
-        <translation type="unfinished"></translation>
+        <translation>Dieser Maßsatz ist noch nicht plottbar: Es fehlen ein zeichnbares Längen-/Breitenrechteck, ein vollständiges Mittelwertpaar oder gültige Rohpunkte.</translation>
     </message>
     <message>
         <location filename="../ui/reference_library_manager_dialog.py" line="2443"/>
         <source>Compared</source>
-        <translation type="unfinished">Verglichen</translation>
+        <translation>Verglichen</translation>
     </message>
     <message>
         <location filename="../ui/reference_library_manager_dialog.py" line="2444"/>
         <source>Supports identification</source>
-        <translation type="unfinished">Stützt die Bestimmung</translation>
+        <translation>Stützt die Bestimmung</translation>
     </message>
     <message>
         <location filename="../ui/reference_library_manager_dialog.py" line="2445"/>
         <source>Contradicts</source>
-        <translation type="unfinished">Widerspricht</translation>
+        <translation>Widerspricht</translation>
     </message>
 </context>
 <context>
@@ -10257,112 +10268,112 @@ Dadurch werden die unten aufgeführten Cloud-Metadatenfelder überschrieben.
     <message>
         <location filename="../ui/reference_library_manager_dialog.py" line="1478"/>
         <source>Edit measurement set</source>
-        <translation type="unfinished"></translation>
+        <translation>Maßsatz bearbeiten</translation>
     </message>
     <message>
         <location filename="../ui/reference_library_manager_dialog.py" line="1479"/>
         <source>New measurement set</source>
-        <translation type="unfinished"></translation>
+        <translation>Neues Messset</translation>
     </message>
     <message>
         <location filename="../ui/reference_library_manager_dialog.py" line="1510"/>
         <source>Data kind:</source>
-        <translation type="unfinished"></translation>
+        <translation>Datenart:</translation>
     </message>
     <message>
         <location filename="../ui/reference_library_manager_dialog.py" line="1514"/>
         <source>e.g. (7.5–)8–10(–10.5) × 5–6(–6.5) µm</source>
-        <translation type="unfinished"></translation>
+        <translation>z.B. (7,5–)8–10(–10,5) × 5–6(–6,5) µm</translation>
     </message>
     <message>
         <location filename="../ui/reference_library_manager_dialog.py" line="1516"/>
         <source>Raw expression:</source>
-        <translation type="unfinished"></translation>
+        <translation>Roher Ausdruck:</translation>
     </message>
     <message>
         <location filename="../ui/reference_library_manager_dialog.py" line="1543"/>
         <source>Length min / core_min / core_max / max (µm):</source>
-        <translation type="unfinished"></translation>
+        <translation>Länge min / core_min / core_max / max (µm):</translation>
     </message>
     <message>
         <location filename="../ui/reference_library_manager_dialog.py" line="1547"/>
         <source>Length mean (µm):</source>
-        <translation type="unfinished"></translation>
+        <translation>Längenmittelwert (µm):</translation>
     </message>
     <message>
         <location filename="../ui/reference_library_manager_dialog.py" line="1558"/>
         <source>Width min / core_min / core_max / max (µm):</source>
-        <translation type="unfinished"></translation>
+        <translation>Breite min / core_min / core_max / max (µm):</translation>
     </message>
     <message>
         <location filename="../ui/reference_library_manager_dialog.py" line="1562"/>
         <source>Width mean (µm):</source>
-        <translation type="unfinished"></translation>
+        <translation>Mittlere Breite (µm):</translation>
     </message>
     <message>
         <location filename="../ui/reference_library_manager_dialog.py" line="1571"/>
         <source>Q min / mean / max:</source>
-        <translation type="unfinished"></translation>
+        <translation>Q min / mittel / max:</translation>
     </message>
     <message>
         <location filename="../ui/reference_library_manager_dialog.py" line="1574"/>
         <source>Sample size / specimens:</source>
-        <translation type="unfinished"></translation>
+        <translation>Probengröße/Proben:</translation>
     </message>
     <message>
         <location filename="../ui/reference_library_manager_dialog.py" line="1586"/>
         <source>JSON list, e.g. [{&quot;length&quot;: 9.0, &quot;width&quot;: 5.5}, {&quot;length&quot;: 9.5, &quot;width&quot;: 5.7}]</source>
-        <translation type="unfinished"></translation>
+        <translation>JSON-Liste, z.B. [{&quot;length&quot;: 9.0, &quot;width&quot;: 5.5}, {&quot;length&quot;: 9.5, &quot;width&quot;: 5.7}]</translation>
     </message>
     <message>
         <location filename="../ui/reference_library_manager_dialog.py" line="1591"/>
         <source>Raw points JSON:</source>
-        <translation type="unfinished"></translation>
+        <translation>Rohpunkte JSON:</translation>
     </message>
     <message>
         <location filename="../ui/reference_library_manager_dialog.py" line="1595"/>
         <source>Mount medium:</source>
-        <translation type="unfinished">Montagemedium:</translation>
+        <translation>Montagemedium:</translation>
     </message>
     <message>
         <location filename="../ui/reference_library_manager_dialog.py" line="1597"/>
         <source>Stain:</source>
-        <translation type="unfinished">Faerbung:</translation>
+        <translation>Faerbung:</translation>
     </message>
     <message>
         <location filename="../ui/reference_library_manager_dialog.py" line="1599"/>
         <source>Preparation:</source>
-        <translation type="unfinished"></translation>
+        <translation>Vorbereitung:</translation>
     </message>
     <message>
         <location filename="../ui/reference_library_manager_dialog.py" line="1601"/>
         <source>Measurement method:</source>
-        <translation type="unfinished"></translation>
+        <translation>Messmethode:</translation>
     </message>
     <message>
         <location filename="../ui/reference_library_manager_dialog.py" line="1605"/>
         <source>Notes:</source>
-        <translation type="unfinished">Notizen:</translation>
+        <translation>Notizen:</translation>
     </message>
     <message>
         <location filename="../ui/reference_library_manager_dialog.py" line="1624"/>
         <source>Range</source>
-        <translation type="unfinished"></translation>
+        <translation>Reichweite</translation>
     </message>
     <message>
         <location filename="../ui/reference_library_manager_dialog.py" line="1625"/>
         <source>Summary</source>
-        <translation type="unfinished"></translation>
+        <translation>Zusammenfassung</translation>
     </message>
     <message>
         <location filename="../ui/reference_library_manager_dialog.py" line="1626"/>
         <source>Raw points</source>
-        <translation type="unfinished"></translation>
+        <translation>Rohe Punkte</translation>
     </message>
     <message>
         <location filename="../ui/reference_library_manager_dialog.py" line="1627"/>
         <source>Parmasto (read-only)</source>
-        <translation type="unfinished"></translation>
+        <translation>Parmasto (schreibgeschützt)</translation>
     </message>
 </context>
 <context>
@@ -10420,27 +10431,27 @@ Dadurch werden die unten aufgeführten Cloud-Metadatenfelder überschrieben.
     <message>
         <location filename="../ui/reference_library_manager_dialog.py" line="499"/>
         <source>(no entries)</source>
-        <translation type="unfinished"></translation>
+        <translation>(keine Einträge)</translation>
     </message>
     <message>
         <location filename="../ui/reference_library_manager_dialog.py" line="511"/>
         <source>+ Add author</source>
-        <translation type="unfinished"></translation>
+        <translation>+ Autor hinzufügen</translation>
     </message>
     <message>
         <location filename="../ui/reference_library_manager_dialog.py" line="592"/>
         <source>Existing value is not valid JSON and will be kept as-is until you edit the list: {error}</source>
-        <translation type="unfinished"></translation>
+        <translation>Der vorhandene Wert ist kein gültiges JSON und bleibt unverändert, bis du die Liste bearbeitest: {error}</translation>
     </message>
     <message>
         <location filename="../ui/reference_library_manager_dialog.py" line="604"/>
         <source>Existing value is not a JSON list and will be kept as-is until you edit the list.</source>
-        <translation type="unfinished"></translation>
+        <translation>Der vorhandene Wert ist keine JSON-Liste und bleibt unverändert, bis du die Liste bearbeitest.</translation>
     </message>
     <message>
         <location filename="../ui/reference_library_manager_dialog.py" line="631"/>
         <source>One or more entries could not be understood; the original value will be kept until you edit the list.</source>
-        <translation type="unfinished"></translation>
+        <translation>Ein oder mehrere Einträge wurden nicht erkannt; der ursprüngliche Wert bleibt erhalten, bis du die Liste bearbeitest.</translation>
     </message>
 </context>
 <context>
@@ -10448,32 +10459,32 @@ Dadurch werden die unten aufgeführten Cloud-Metadatenfelder überschrieben.
     <message>
         <location filename="../ui/reference_library_manager_dialog.py" line="385"/>
         <source>Family name</source>
-        <translation type="unfinished"></translation>
+        <translation>Nachname</translation>
     </message>
     <message>
         <location filename="../ui/reference_library_manager_dialog.py" line="387"/>
         <source>Given names</source>
-        <translation type="unfinished"></translation>
+        <translation>Vornamen</translation>
     </message>
     <message>
         <location filename="../ui/reference_library_manager_dialog.py" line="390"/>
         <source>Organization (optional)</source>
-        <translation type="unfinished"></translation>
+        <translation>Organisation (optional)</translation>
     </message>
     <message>
         <location filename="../ui/reference_library_manager_dialog.py" line="395"/>
         <source>Move up</source>
-        <translation type="unfinished"></translation>
+        <translation>Nach oben verschieben</translation>
     </message>
     <message>
         <location filename="../ui/reference_library_manager_dialog.py" line="401"/>
         <source>Move down</source>
-        <translation type="unfinished"></translation>
+        <translation>Nach unten verschieben</translation>
     </message>
     <message>
         <location filename="../ui/reference_library_manager_dialog.py" line="407"/>
         <source>Remove</source>
-        <translation type="unfinished"></translation>
+        <translation>Entfernen</translation>
     </message>
 </context>
 <context>
@@ -10481,243 +10492,243 @@ Dadurch werden die unten aufgeführten Cloud-Metadatenfelder überschrieben.
     <message>
         <location filename="../ui/reference_library_manager_dialog.py" line="800"/>
         <source>Edit reference work</source>
-        <translation type="unfinished"></translation>
+        <translation>Nachschlagewerk bearbeiten</translation>
     </message>
     <message>
         <location filename="../ui/reference_library_manager_dialog.py" line="801"/>
         <source>New reference work</source>
-        <translation type="unfinished"></translation>
+        <translation>Neues Nachschlagewerk</translation>
     </message>
     <message>
         <location filename="../ui/reference_library_manager_dialog.py" line="871"/>
         <source>Type:</source>
-        <translation type="unfinished"></translation>
+        <translation>Typ:</translation>
     </message>
     <message>
         <location filename="../ui/reference_library_manager_dialog.py" line="876"/>
         <source>Title:</source>
-        <translation type="unfinished"></translation>
+        <translation>Titel:</translation>
     </message>
     <message>
         <location filename="../ui/reference_library_manager_dialog.py" line="1085"/>
         <source>Short label:</source>
-        <translation type="unfinished"></translation>
+        <translation>Kurzbezeichnung:</translation>
     </message>
     <message>
         <location filename="../ui/reference_library_manager_dialog.py" line="885"/>
         <source>e.g. 1990</source>
-        <translation type="unfinished"></translation>
+        <translation>z.B. 1990</translation>
     </message>
     <message>
         <location filename="../ui/reference_library_manager_dialog.py" line="888"/>
         <source>Year:</source>
-        <translation type="unfinished"></translation>
+        <translation>Jahr:</translation>
     </message>
     <message>
         <location filename="../ui/reference_library_manager_dialog.py" line="1038"/>
         <source>Optional short key, e.g. petersen-1990</source>
-        <translation type="unfinished"></translation>
+        <translation>Optionaler Kurzschlüssel, z.B. Petersen-1990</translation>
     </message>
     <message>
         <location filename="../ui/reference_library_manager_dialog.py" line="1041"/>
         <source>Citation key:</source>
-        <translation type="unfinished"></translation>
+        <translation>Zitierschlüssel:</translation>
     </message>
     <message>
         <location filename="../ui/reference_library_manager_dialog.py" line="916"/>
         <source>Container title:</source>
-        <translation type="unfinished"></translation>
+        <translation>Containertitel:</translation>
     </message>
     <message>
         <location filename="../ui/reference_library_manager_dialog.py" line="864"/>
         <source>Basic information</source>
-        <translation type="unfinished"></translation>
+        <translation>Grundlegende Informationen</translation>
     </message>
     <message>
         <location filename="../ui/reference_library_manager_dialog.py" line="879"/>
         <source>+ Add author</source>
-        <translation type="unfinished"></translation>
+        <translation>+ Autor hinzufügen</translation>
     </message>
     <message>
         <location filename="../ui/reference_library_manager_dialog.py" line="882"/>
         <source>Authors:</source>
-        <translation type="unfinished"></translation>
+        <translation>Autoren:</translation>
     </message>
     <message>
         <location filename="../ui/reference_library_manager_dialog.py" line="906"/>
         <source>Publication details</source>
-        <translation type="unfinished"></translation>
+        <translation>Veröffentlichungsdetails</translation>
     </message>
     <message>
         <location filename="../ui/reference_library_manager_dialog.py" line="921"/>
         <source>+ Add editor</source>
-        <translation type="unfinished"></translation>
+        <translation>+ Editor hinzufügen</translation>
     </message>
     <message>
         <location filename="../ui/reference_library_manager_dialog.py" line="927"/>
         <source>Editors:</source>
-        <translation type="unfinished"></translation>
+        <translation>Herausgeber:</translation>
     </message>
     <message>
         <location filename="../ui/reference_library_manager_dialog.py" line="937"/>
         <source>Edition:</source>
-        <translation type="unfinished"></translation>
+        <translation>Ausgabe:</translation>
     </message>
     <message>
         <location filename="../ui/reference_library_manager_dialog.py" line="947"/>
         <source>Volume:</source>
-        <translation type="unfinished"></translation>
+        <translation>Volumen:</translation>
     </message>
     <message>
         <location filename="../ui/reference_library_manager_dialog.py" line="957"/>
         <source>Issue:</source>
-        <translation type="unfinished"></translation>
+        <translation>Ausgabe:</translation>
     </message>
     <message>
         <location filename="../ui/reference_library_manager_dialog.py" line="967"/>
         <source>Pages:</source>
-        <translation type="unfinished"></translation>
+        <translation>Seiten:</translation>
     </message>
     <message>
         <location filename="../ui/reference_library_manager_dialog.py" line="977"/>
         <source>Publisher:</source>
-        <translation type="unfinished"></translation>
+        <translation>Herausgeber:</translation>
     </message>
     <message>
         <location filename="../ui/reference_library_manager_dialog.py" line="987"/>
         <source>Place:</source>
-        <translation type="unfinished"></translation>
+        <translation>Ort:</translation>
     </message>
     <message>
         <location filename="../ui/reference_library_manager_dialog.py" line="994"/>
         <source>Identifiers</source>
-        <translation type="unfinished"></translation>
+        <translation>Identifikatoren</translation>
     </message>
     <message>
         <location filename="../ui/reference_library_manager_dialog.py" line="998"/>
         <source>e.g. 10.1234/abcd</source>
-        <translation type="unfinished"></translation>
+        <translation>z.B. 10.1234/abcd</translation>
     </message>
     <message>
         <location filename="../ui/reference_library_manager_dialog.py" line="1001"/>
         <source>DOI:</source>
-        <translation type="unfinished"></translation>
+        <translation>DOI:</translation>
     </message>
     <message>
         <location filename="../ui/reference_library_manager_dialog.py" line="1004"/>
         <source>digits or ISBN-10/13</source>
-        <translation type="unfinished"></translation>
+        <translation>Ziffern oder ISBN-10/13</translation>
     </message>
     <message>
         <location filename="../ui/reference_library_manager_dialog.py" line="1006"/>
         <source>ISBN:</source>
-        <translation type="unfinished"></translation>
+        <translation>ISBN:</translation>
     </message>
     <message>
         <location filename="../ui/reference_library_manager_dialog.py" line="1009"/>
         <source>https://…</source>
-        <translation type="unfinished"></translation>
+        <translation>https://…</translation>
     </message>
     <message>
         <location filename="../ui/reference_library_manager_dialog.py" line="1012"/>
         <source>URL:</source>
-        <translation type="unfinished"></translation>
+        <translation>URL:</translation>
     </message>
     <message>
         <location filename="../ui/reference_library_manager_dialog.py" line="1018"/>
         <source>Advanced citation details</source>
-        <translation type="unfinished"></translation>
+        <translation>Erweiterte Zitierdetails</translation>
     </message>
     <message>
         <location filename="../ui/reference_library_manager_dialog.py" line="1028"/>
         <source>Override — leave blank to use the generated value</source>
-        <translation type="unfinished"></translation>
+        <translation>Überschreiben – leer lassen, um den erzeugten Wert zu verwenden</translation>
     </message>
     <message>
         <location filename="../ui/reference_library_manager_dialog.py" line="1033"/>
         <source>Short label override:</source>
-        <translation type="unfinished"></translation>
+        <translation>Kurzbezeichnungsüberschreibung:</translation>
     </message>
     <message>
         <location filename="../ui/reference_library_manager_dialog.py" line="1044"/>
         <source>ISO code, e.g. en</source>
-        <translation type="unfinished"></translation>
+        <translation>ISO-Code, z.B. de</translation>
     </message>
     <message>
         <location filename="../ui/reference_library_manager_dialog.py" line="1046"/>
         <source>Language:</source>
-        <translation type="unfinished"></translation>
+        <translation>Sprache:</translation>
     </message>
     <message>
         <location filename="../ui/reference_library_manager_dialog.py" line="1051"/>
         <source>Override — leave blank to use the generated full citation</source>
-        <translation type="unfinished"></translation>
+        <translation>Überschreiben – leer lassen, um das erzeugte vollständige Zitat zu verwenden</translation>
     </message>
     <message>
         <location filename="../ui/reference_library_manager_dialog.py" line="1057"/>
         <source>Full citation override:</source>
-        <translation type="unfinished"></translation>
+        <translation>Vollständige Zitatüberschreibung:</translation>
     </message>
     <message>
         <location filename="../ui/reference_library_manager_dialog.py" line="1064"/>
         <source>Preview</source>
-        <translation type="unfinished">Vorschau</translation>
+        <translation>Vorschau</translation>
     </message>
     <message>
         <location filename="../ui/reference_library_manager_dialog.py" line="1076"/>
         <location filename="../ui/reference_library_manager_dialog.py" line="1093"/>
         <source>(manual override)</source>
-        <translation type="unfinished"></translation>
+        <translation>(manuelle Überbrückung)</translation>
     </message>
     <message>
         <location filename="../ui/reference_library_manager_dialog.py" line="1102"/>
         <source>Full citation:</source>
-        <translation type="unfinished"></translation>
+        <translation>Vollständiges Zitat:</translation>
     </message>
     <message>
         <location filename="../ui/reference_library_manager_dialog.py" line="1107"/>
         <source>Missing:</source>
-        <translation type="unfinished"></translation>
+        <translation>Fehlen:</translation>
     </message>
     <message>
         <location filename="../ui/reference_library_manager_dialog.py" line="1305"/>
         <source>Title is required.</source>
-        <translation type="unfinished"></translation>
+        <translation>Titel ist erforderlich.</translation>
     </message>
     <message>
         <location filename="../ui/reference_library_manager_dialog.py" line="1310"/>
         <source>Year must be blank or a whole number.</source>
-        <translation type="unfinished"></translation>
+        <translation>Das Jahr muss leer oder eine ganze Zahl sein.</translation>
     </message>
     <message>
         <location filename="../ui/reference_library_manager_dialog.py" line="1115"/>
         <source>Book</source>
-        <translation type="unfinished"></translation>
+        <translation>Buch</translation>
     </message>
     <message>
         <location filename="../ui/reference_library_manager_dialog.py" line="1116"/>
         <source>Article</source>
-        <translation type="unfinished"></translation>
+        <translation>Artikel</translation>
     </message>
     <message>
         <location filename="../ui/reference_library_manager_dialog.py" line="1117"/>
         <source>Chapter</source>
-        <translation type="unfinished"></translation>
+        <translation>Kapitel</translation>
     </message>
     <message>
         <location filename="../ui/reference_library_manager_dialog.py" line="1118"/>
         <source>Website</source>
-        <translation type="unfinished"></translation>
+        <translation>Webseite</translation>
     </message>
     <message>
         <location filename="../ui/reference_library_manager_dialog.py" line="1119"/>
         <source>Dataset</source>
-        <translation type="unfinished"></translation>
+        <translation>Datensatz</translation>
     </message>
     <message>
         <location filename="../ui/reference_library_manager_dialog.py" line="1120"/>
         <source>Other</source>
-        <translation type="unfinished">Sonstige</translation>
+        <translation>Sonstige</translation>
     </message>
 </context>
 <context>
@@ -10725,47 +10736,47 @@ Dadurch werden die unten aufgeführten Cloud-Metadatenfelder überschrieben.
     <message>
         <location filename="../ui/reference_library_manager_dialog.py" line="1360"/>
         <source>Edit taxon treatment</source>
-        <translation type="unfinished"></translation>
+        <translation>Taxonbehandlung bearbeiten</translation>
     </message>
     <message>
         <location filename="../ui/reference_library_manager_dialog.py" line="1361"/>
         <source>New taxon treatment</source>
-        <translation type="unfinished"></translation>
+        <translation>Neue Taxon-Behandlung</translation>
     </message>
     <message>
         <location filename="../ui/reference_library_manager_dialog.py" line="1374"/>
         <source>Name as published:</source>
-        <translation type="unfinished"></translation>
+        <translation>Name wie veröffentlicht:</translation>
     </message>
     <message>
         <location filename="../ui/reference_library_manager_dialog.py" line="1377"/>
         <source>Optional taxon id</source>
-        <translation type="unfinished"></translation>
+        <translation>Optionale Taxon-ID</translation>
     </message>
     <message>
         <location filename="../ui/reference_library_manager_dialog.py" line="1378"/>
         <source>Taxon id:</source>
-        <translation type="unfinished"></translation>
+        <translation>Taxon-ID:</translation>
     </message>
     <message>
         <location filename="../ui/reference_library_manager_dialog.py" line="1381"/>
         <source>Page from:</source>
-        <translation type="unfinished"></translation>
+        <translation>Seite von:</translation>
     </message>
     <message>
         <location filename="../ui/reference_library_manager_dialog.py" line="1384"/>
         <source>Page to:</source>
-        <translation type="unfinished"></translation>
+        <translation>Seite zu:</translation>
     </message>
     <message>
         <location filename="../ui/reference_library_manager_dialog.py" line="1387"/>
         <source>Locator text:</source>
-        <translation type="unfinished"></translation>
+        <translation>Locator-Text:</translation>
     </message>
     <message>
         <location filename="../ui/reference_library_manager_dialog.py" line="1391"/>
         <source>Notes:</source>
-        <translation type="unfinished">Notizen:</translation>
+        <translation>Notizen:</translation>
     </message>
 </context>
 <context>
@@ -10816,48 +10827,48 @@ Dadurch werden die unten aufgeführten Cloud-Metadatenfelder überschrieben.
     <message>
         <location filename="../ui/cloud_conflict_dialog.py" line="534"/>
         <source>Same</source>
-        <translation type="unfinished"></translation>
+        <translation>Dasselbe</translation>
     </message>
     <message>
         <location filename="../ui/cloud_conflict_dialog.py" line="535"/>
         <source>Only on this device</source>
-        <translation type="unfinished"></translation>
+        <translation>Nur auf diesem Gerät</translation>
     </message>
     <message>
         <location filename="../ui/cloud_conflict_dialog.py" line="536"/>
         <source>Only on Sporely Cloud</source>
-        <translation type="unfinished"></translation>
+        <translation>Nur auf Sporely Cloud</translation>
     </message>
     <message>
         <location filename="../ui/cloud_conflict_dialog.py" line="537"/>
         <source>Metadata differs</source>
-        <translation type="unfinished"></translation>
+        <translation>Metadaten unterscheiden sich</translation>
     </message>
     <message>
         <location filename="../ui/cloud_conflict_dialog.py" line="538"/>
         <source>Measurements differ</source>
-        <translation type="unfinished"></translation>
+        <translation>Die Maße weichen ab</translation>
     </message>
     <message>
         <location filename="../ui/cloud_conflict_dialog.py" line="539"/>
         <source>Values differ</source>
-        <translation type="unfinished"></translation>
+        <translation>Die Werte sind unterschiedlich</translation>
     </message>
     <message>
         <location filename="../ui/cloud_conflict_dialog.py" line="540"/>
         <source>Possible match — review required</source>
-        <translation type="unfinished"></translation>
+        <translation>Mögliche Übereinstimmung – Überprüfung erforderlich</translation>
     </message>
     <message>
         <location filename="../ui/cloud_conflict_dialog.py" line="541"/>
         <source>Identity conflict — automatic resolution unavailable</source>
-        <translation type="unfinished"></translation>
+        <translation>Identitätskonflikt – automatische Lösung nicht verfügbar</translation>
     </message>
     <message>
         <location filename="../ui/cloud_conflict_dialog.py" line="542"/>
         <location filename="../ui/cloud_conflict_dialog.py" line="544"/>
         <source>Unavailable</source>
-        <translation type="unfinished"></translation>
+        <translation>Nicht verfügbar</translation>
     </message>
 </context>
 </TS>
