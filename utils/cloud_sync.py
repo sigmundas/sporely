@@ -43,6 +43,7 @@ from database.schema import get_connection, get_app_settings, get_images_dir, up
 from database.models import (
     CLOUD_IMAGE_STATE_DELETED,
     CLOUD_IMAGE_STATE_DELETE_PENDING,
+    CLOUD_IMAGE_STATE_METADATA_ONLY,
     CLOUD_IMAGE_STATE_NONE,
     CLOUD_IMAGE_STATE_UPLOADED,
     ObservationDB,
@@ -4701,6 +4702,10 @@ def _cloud_image_file_signature_key(observation_id: int | str, image_id: int | s
     )
 
 
+def _cloud_metadata_only_image_ids_key(observation_id: int | str) -> str:
+    return f"sporely_cloud_metadata_only_image_ids_{str(observation_id or '').strip()}"
+
+
 def _cloud_local_media_signature_key(observation_id: int | str) -> str:
     return f"{_SETTING_CLOUD_LOCAL_MEDIA_SIG_PREFIX}{str(observation_id or '').strip()}"
 
@@ -5080,6 +5085,37 @@ def _store_cloud_image_file_signature(
 
 def _clear_cloud_image_file_signature(observation_id: int | str, image_id: int | str) -> None:
     SettingsDB.set_setting(_cloud_image_file_signature_key(observation_id, image_id), '')
+
+
+def _cloud_metadata_only_image_ids(observation_id: int | str) -> set[int]:
+    raw = SettingsDB.get_setting(_cloud_metadata_only_image_ids_key(observation_id), '[]')
+    try:
+        values = json.loads(raw or '[]')
+    except (TypeError, ValueError, json.JSONDecodeError):
+        return set()
+    if not isinstance(values, list):
+        return set()
+    return {_safe_int(value) for value in values if _safe_int(value) > 0}
+
+
+def _set_cloud_image_metadata_only_state(
+    observation_id: int | str,
+    image_id: int | str,
+    metadata_only: bool,
+) -> None:
+    obs_id = _safe_int(observation_id)
+    local_image_id = _safe_int(image_id)
+    if obs_id <= 0 or local_image_id <= 0:
+        return
+    image_ids = _cloud_metadata_only_image_ids(obs_id)
+    if metadata_only:
+        image_ids.add(local_image_id)
+    else:
+        image_ids.discard(local_image_id)
+    SettingsDB.set_setting(
+        _cloud_metadata_only_image_ids_key(obs_id),
+        json.dumps(sorted(image_ids)),
+    )
 
 
 def _reconcile_local_image_cloud_id(
@@ -6864,7 +6900,13 @@ def set_image_cloud_selected(image_id: int, selected: bool) -> dict | None:
         if cloud_id
         else None
     )
-    previous_state = derive_image_cloud_state(cloud_id, tombstone)
+    previous_state = derive_image_cloud_state(
+        cloud_id,
+        tombstone,
+        metadata_only=(
+            image_id in _cloud_metadata_only_image_ids(image.get("observation_id"))
+        ),
+    )
     next_state = previous_state
     next_cloud_id = cloud_id or None
     action = "none"
@@ -6888,6 +6930,9 @@ def set_image_cloud_selected(image_id: int, selected: bool) -> dict | None:
             action = "restore_queued"
             mark_observation_media_dirty(observation_id)
     elif selected and previous_state == CLOUD_IMAGE_STATE_NONE:
+        mark_observation_media_dirty(observation_id)
+        action = "upload_queued"
+    elif selected and previous_state == CLOUD_IMAGE_STATE_METADATA_ONLY:
         mark_observation_media_dirty(observation_id)
         action = "upload_queued"
 
@@ -18361,6 +18406,10 @@ def _push_images_for_observation(
                     conn.close()
                 if current_file_sig:
                     _store_cloud_image_file_signature(obs.get('id'), local_image_id, current_file_sig)
+                if _normalize_cloud_media_key(storage_path):
+                    _set_cloud_image_metadata_only_state(
+                        obs.get('id'), local_image_id, False,
+                    )
 
                 original_upload_source = resolve_full_original_upload_source(img)
                 original_storage_path = _normalize_cloud_media_key((remote_row or {}).get('original_storage_path'))
@@ -18776,6 +18825,11 @@ def _ensure_metadata_only_microscope_image_for_public_spores(
         _reconcile_local_image_cloud_id(
             local_image_id, remote_cloud_id, mark_synced=True,
         )
+        _set_cloud_image_metadata_only_state(
+            obs_local_id,
+            local_image_id,
+            not bool(_normalize_cloud_media_key(remote_row.get('storage_path'))),
+        )
         if str(remote_row.get('deleted_at') or '').strip():
             client._patch(
                 f'observation_images?id=eq.{remote_cloud_id}'
@@ -18800,6 +18854,7 @@ def _ensure_metadata_only_microscope_image_for_public_spores(
         finally:
             conn.close()
         _clear_cloud_image_file_signature(obs_local_id, local_image_id)
+        _set_cloud_image_metadata_only_state(obs_local_id, local_image_id, False)
         _cancel_microscope_anchor_tombstones(
             local_image_id, existing_local_cloud_id,
         )
@@ -18835,6 +18890,7 @@ def _ensure_metadata_only_microscope_image_for_public_spores(
         local_image_id, existing_local_cloud_id, cloud_image_id,
     )
     _reconcile_local_image_cloud_id(local_image_id, cloud_image_id, mark_synced=True)
+    _set_cloud_image_metadata_only_state(obs_local_id, local_image_id, True)
     print(
         f'[cloud_sync] Mosaic image metadata: linked '
         f'local_image={local_image_id} cloud_image={cloud_image_id}',
@@ -18891,6 +18947,8 @@ def _ensure_metadata_only_microscope_images_for_observation(
     if not rows:
         return counters
 
+    selected_image_ids = _cloud_explicit_media_upload_selection(obs_local_id)
+
     puller = getattr(client, 'pull_image_metadata', None)
     remote_images: list[dict] = []
     if callable(puller):
@@ -18938,7 +18996,11 @@ def _ensure_metadata_only_microscope_images_for_observation(
                 ),
                 None,
             )
-            if remote_match and not _normalize_cloud_media_key(remote_match.get('storage_path')):
+            if (
+                local_image_id not in selected_image_ids
+                and remote_match
+                and not _normalize_cloud_media_key(remote_match.get('storage_path'))
+            ):
                 counters['metadata_only_cloud_ids'].append(str(result))
         else:
             counters['skipped'] += 1

@@ -598,6 +598,40 @@ def test_cloud_selection_uncheck_queues_delete_and_preserves_local_data(monkeypa
     assert fixture["original_path"].exists()
 
 
+def test_metadata_only_anchor_is_not_an_uploaded_copy_and_selection_queues_promotion(
+    monkeypatch, tmp_path
+):
+    db_path = tmp_path / "metadata-only-selection.sqlite"
+    conn = sqlite3.connect(db_path)
+    try:
+        _create_image_tombstone_test_db(conn)
+    finally:
+        conn.close()
+    fixture = _seed_delete_fixture(db_path, synced=True)
+    conn = sqlite3.connect(db_path)
+    try:
+        conn.execute(
+            "INSERT INTO settings (key, value) VALUES (?, ?)",
+            ("sporely_cloud_metadata_only_image_ids_1", "[11]"),
+        )
+        conn.commit()
+    finally:
+        conn.close()
+    monkeypatch.setattr(models, "get_connection", lambda: sqlite3.connect(db_path))
+    monkeypatch.setattr(cloud_sync, "get_connection", lambda: sqlite3.connect(db_path))
+
+    state = models.ImageDB.get_image_cloud_states([fixture["image_id"]])[fixture["image_id"]]
+    assert state["cloud_state"] == models.CLOUD_IMAGE_STATE_METADATA_ONLY
+
+    unchecked = cloud_sync.set_image_cloud_selected(fixture["image_id"], False)
+    assert unchecked["action"] == "none"
+    assert models.list_pending_image_tombstones() == []
+
+    checked = cloud_sync.set_image_cloud_selected(fixture["image_id"], True)
+    assert checked["previous_state"] == models.CLOUD_IMAGE_STATE_METADATA_ONLY
+    assert checked["action"] == "upload_queued"
+
+
 def test_cloud_selection_synced_delete_hides_badge_state_and_stays_unchecked(monkeypatch, tmp_path):
     db_path = tmp_path / "selection-deleted.sqlite"
     conn = sqlite3.connect(db_path)

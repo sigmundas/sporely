@@ -23,6 +23,7 @@ from ui.image_gallery_widget import ImageGalleryWidget
 from database.models import (
     CLOUD_IMAGE_STATE_DELETED,
     CLOUD_IMAGE_STATE_DELETE_PENDING,
+    CLOUD_IMAGE_STATE_METADATA_ONLY,
     CLOUD_IMAGE_STATE_NONE,
     CLOUD_IMAGE_STATE_UPLOADED,
 )
@@ -67,6 +68,25 @@ def test_derive_cloud_state_covers_all_four_states():
     assert derive("cloud-1", {"delete_synced_at": None}) == CLOUD_IMAGE_STATE_DELETE_PENDING
     assert derive("cloud-1", {"delete_synced_at": ""}) == CLOUD_IMAGE_STATE_DELETE_PENDING
     assert derive("cloud-1", {"delete_synced_at": "2026-08-07 10:00:00"}) == CLOUD_IMAGE_STATE_DELETED
+    assert derive("cloud-1", None, metadata_only=True) == CLOUD_IMAGE_STATE_METADATA_ONLY
+
+
+def test_metadata_only_anchor_has_no_upload_badge_or_delete_action(tmp_path):
+    _ensure_qapp()
+    widget = ImageGalleryWidget("Images", show_delete_cloud_copy=True)
+    image_path = tmp_path / "anchor.png"
+    image = QImage(32, 32, QImage.Format_ARGB32)
+    image.fill(QColor("white"))
+    assert image.save(str(image_path))
+    widget.set_items([{
+        "id": 7,
+        "filepath": str(image_path),
+        "cloud_id": "anchor-7",
+        "cloud_state": CLOUD_IMAGE_STATE_METADATA_ONLY,
+    }])
+
+    assert ImageGalleryWidget._cloud_badge_visible(widget._items[0]) is False
+    assert widget.cloud_delete_eligible_image_ids([7]) == []
 
 
 def test_cloud_state_for_item_falls_back_to_legacy_bool_fields():

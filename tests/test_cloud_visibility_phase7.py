@@ -3089,6 +3089,69 @@ def test_checked_microscope_image_remains_eligible_and_uploads_normally(
     )
 
 
+def test_checked_metadata_only_anchor_is_not_protected_from_byte_promotion(
+    tmp_path,
+    monkeypatch,
+):
+    ctx = _setup_push_all_tombstone_cleanup_case(
+        tmp_path, monkeypatch, include_deleted_measurement=True,
+    )
+    with sqlite3.connect(ctx.db_path) as conn:
+        conn.execute(
+            "DELETE FROM settings WHERE key = 'artsobs_publish_excluded_image_ids_1'"
+        )
+        conn.commit()
+    anchor = next(row for row in ctx.client.remote_images if row["id"] == "cloud-image-11")
+    anchor["storage_path"] = None
+    anchor["original_storage_path"] = None
+
+    result = cloud_sync._ensure_metadata_only_microscope_images_for_observation(
+        ctx.client, 1, "cloud-obs-1",
+    )
+
+    assert "cloud-image-11" in result["cloud_ids"]
+    assert "cloud-image-11" not in result["metadata_only_cloud_ids"]
+    assert 11 in cloud_sync._cloud_metadata_only_image_ids(1)
+
+
+def test_checked_metadata_only_anchor_uploads_bytes_and_clears_anchor_state(
+    tmp_path,
+    monkeypatch,
+):
+    ctx = _setup_push_all_tombstone_cleanup_case(
+        tmp_path, monkeypatch, include_deleted_measurement=True,
+    )
+    with sqlite3.connect(ctx.db_path) as conn:
+        conn.execute(
+            "DELETE FROM settings WHERE key = 'artsobs_publish_excluded_image_ids_1'"
+        )
+        conn.commit()
+    anchor = next(row for row in ctx.client.remote_images if row["id"] == "cloud-image-11")
+    anchor["storage_path"] = None
+    anchor["original_storage_path"] = None
+    monkeypatch.setattr(cloud_sync, "is_full_resolution_original_sync_enabled", lambda: False)
+
+    def prepare_images(observation, progress_cb=None):
+        image = cloud_sync.ImageDB.get_image(11)
+        return ([{
+            "image_row": image,
+            "upload_path": image["filepath"],
+            "cloud_upload_meta": {},
+        }], None, [])
+
+    assert cloud_sync._push_images_for_observation(
+        ctx.client,
+        {"id": 1, "spore_data_visibility": "public"},
+        "cloud-obs-1",
+        prepare_images_cb=prepare_images,
+    ) is True
+
+    assert [call["img_cloud_id"] for call in ctx.client.upload_image_calls] == [
+        "cloud-image-11"
+    ]
+    assert 11 not in cloud_sync._cloud_metadata_only_image_ids(1)
+
+
 def test_unchecked_image_that_is_not_an_fk_anchor_follows_normal_removal_path(
     tmp_path,
     monkeypatch,

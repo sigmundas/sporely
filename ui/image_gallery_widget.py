@@ -29,6 +29,7 @@ from PySide6.QtWidgets import (
 from database.models import (
     CLOUD_IMAGE_STATE_DELETED,
     CLOUD_IMAGE_STATE_DELETE_PENDING,
+    CLOUD_IMAGE_STATE_METADATA_ONLY,
     CLOUD_IMAGE_STATE_NONE,
     CLOUD_IMAGE_STATE_UPLOADED,
     ImageDB,
@@ -1166,6 +1167,9 @@ class ImageGalleryWidget(QGroupBox):
             if str(img.get("cloud_id") or "").strip()
         ]
         cloud_tombstones = get_image_tombstones_by_deleted_cloud_id(cloud_ids) if cloud_ids else {}
+        cloud_states = ImageDB.get_image_cloud_states(
+            [img.get("id") for img in image_rows if img.get("id") is not None]
+        )
         items = []
         for idx, img in enumerate(image_rows):
             img_id = img.get("id")
@@ -1214,7 +1218,12 @@ class ImageGalleryWidget(QGroupBox):
             )
             cloud_id = str(img.get("cloud_id") or "").strip()
             cloud_tombstone = cloud_tombstones.get(cloud_id) if cloud_id else None
-            cloud_state = ImageGalleryWidget._derive_cloud_state(cloud_id, cloud_tombstone)
+            state_record = cloud_states.get(int(img_id)) if img_id is not None else None
+            cloud_state = (
+                state_record.get("cloud_state")
+                if state_record
+                else ImageGalleryWidget._derive_cloud_state(cloud_id, cloud_tombstone)
+            )
             cloud_tombstone_synced = cloud_state == CLOUD_IMAGE_STATE_DELETED
             microscope_tag_text = img.get("microscope_tag_text")
             microscope_tag_color = img.get("microscope_tag_color")
@@ -1278,7 +1287,7 @@ class ImageGalleryWidget(QGroupBox):
             self._last_clicked_index = self._index_for_key(first_key)
 
     @staticmethod
-    def _derive_cloud_state(cloud_id, tombstone) -> str:
+    def _derive_cloud_state(cloud_id, tombstone, *, metadata_only: bool = False) -> str:
         """Map a cloud_id + tombstone row into a CLOUD_IMAGE_STATE_* value.
 
         Callers that have already resolved these two facts about an image
@@ -1286,7 +1295,11 @@ class ImageGalleryWidget(QGroupBox):
         state string, keeping the badge, menu, and eligibility filter in
         lockstep.
         """
-        return derive_image_cloud_state(cloud_id, tombstone)
+        return derive_image_cloud_state(
+            cloud_id,
+            tombstone,
+            metadata_only=metadata_only,
+        )
 
     @staticmethod
     def _cloud_state_for_item(item: dict) -> str:
@@ -1298,6 +1311,7 @@ class ImageGalleryWidget(QGroupBox):
             CLOUD_IMAGE_STATE_UPLOADED,
             CLOUD_IMAGE_STATE_DELETE_PENDING,
             CLOUD_IMAGE_STATE_DELETED,
+            CLOUD_IMAGE_STATE_METADATA_ONLY,
         ):
             return cached
         # Legacy items may only carry the boolean fields; reconstruct the

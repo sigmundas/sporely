@@ -43,16 +43,26 @@ _UNSET = object()
 #                  drops out of web/mobile queries; physical storage bytes
 #                  remain until the server-side purge window elapses and is
 #                  a separate lifecycle we do not manage from the client.
+# METADATA_ONLY  — the cloud row exists only as a foreign-key anchor for
+#                  public spore measurements; no image bytes are stored.
 CLOUD_IMAGE_STATE_NONE = "none"
 CLOUD_IMAGE_STATE_UPLOADED = "uploaded"
 CLOUD_IMAGE_STATE_DELETE_PENDING = "delete_pending"
 CLOUD_IMAGE_STATE_DELETED = "deleted"
+CLOUD_IMAGE_STATE_METADATA_ONLY = "metadata_only"
 
 
-def derive_image_cloud_state(cloud_id, tombstone: dict | None) -> str:
+def derive_image_cloud_state(
+    cloud_id,
+    tombstone: dict | None,
+    *,
+    metadata_only: bool = False,
+) -> str:
     """Return the canonical actual cloud state for one local image row."""
     if not str(cloud_id or "").strip():
         return CLOUD_IMAGE_STATE_NONE
+    if metadata_only and not tombstone:
+        return CLOUD_IMAGE_STATE_METADATA_ONLY
     if not tombstone:
         return CLOUD_IMAGE_STATE_UPLOADED
     if str(tombstone.get("delete_synced_at") or "").strip():
@@ -2354,9 +2364,32 @@ class ImageDB:
             conn.row_factory = sqlite3.Row
             placeholders = ", ".join("?" for _ in requested)
             rows = conn.execute(
-                f"SELECT id, cloud_id FROM images WHERE id IN ({placeholders})",
+                f"SELECT id, observation_id, cloud_id FROM images WHERE id IN ({placeholders})",
                 requested,
             ).fetchall()
+            metadata_only_ids: set[int] = set()
+            observation_ids = {
+                int(row["observation_id"])
+                for row in rows
+                if row["observation_id"] is not None
+            }
+            for observation_id in observation_ids:
+                setting_row = conn.execute(
+                    "SELECT value FROM settings WHERE key = ?",
+                    (f"sporely_cloud_metadata_only_image_ids_{observation_id}",),
+                ).fetchone()
+                if setting_row is None:
+                    continue
+                try:
+                    values = json.loads(setting_row[0] or "[]")
+                except (TypeError, ValueError, json.JSONDecodeError):
+                    continue
+                if isinstance(values, list):
+                    for value in values:
+                        try:
+                            metadata_only_ids.add(int(value))
+                        except (TypeError, ValueError):
+                            continue
         finally:
             conn.close()
 
@@ -2374,7 +2407,11 @@ class ImageDB:
             states[image_id] = {
                 "image_id": image_id,
                 "cloud_id": cloud_id,
-                "cloud_state": derive_image_cloud_state(cloud_id, tombstone),
+                "cloud_state": derive_image_cloud_state(
+                    cloud_id,
+                    tombstone,
+                    metadata_only=image_id in metadata_only_ids,
+                ),
                 "tombstone": tombstone,
             }
         return states
