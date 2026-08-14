@@ -35,6 +35,8 @@ def test_raw_processing_controls_round_trip_preserves_raw_settings(qapp):
     assert controls.auto_levels_checkbox.text() == "Auto levels"
     assert controls.auto_levels_btn is controls.auto_levels_checkbox
     assert controls.auto_levels_toggle is controls.auto_levels_checkbox
+    assert controls.auto_levels_method_selector.selected_value() == "a"
+    assert controls.auto_levels_clipping_selector.selected_value() is True
     assert controls.contrast_label.text() == "Contrast:"
     assert controls.contrast_slider.minimum() == -100
     assert controls.contrast_slider.maximum() == 100
@@ -54,6 +56,8 @@ def test_raw_processing_controls_round_trip_preserves_raw_settings(qapp):
         light_ev=0.5,
         dark_ev=-0.25,
         auto_levels=False,
+        auto_levels_method="b",
+        auto_levels_clipping=False,
         black_percentile=0.01,
         white_percentile=0.99,
         auto_levels_strength=0.7,
@@ -84,6 +88,8 @@ def test_raw_processing_controls_round_trip_preserves_raw_settings(qapp):
     assert round_tripped.dark_ev == settings.dark_ev
     assert round_tripped.exposure_ev == pytest.approx(settings.light_ev + settings.dark_ev)
     assert round_tripped.auto_levels == settings.auto_levels
+    assert round_tripped.auto_levels_method == "b"
+    assert round_tripped.auto_levels_clipping is False
     assert round_tripped.auto_levels_soft_tails is False
     assert round_tripped.shadow_lift == settings.shadow_lift
     assert round_tripped.tone_curve_enabled == settings.tone_curve_enabled
@@ -191,6 +197,57 @@ def test_raw_processing_controls_reenabling_auto_levels_restores_cached_slider_p
     assert controls.auto_levels_checkbox.isChecked() is True
     assert controls.light_slider.value() == 357
     assert controls.dark_slider.value() == 143
+
+
+def test_raw_processing_controls_switching_method_clears_saved_bounds(qapp):
+    controls = RawProcessingControls()
+    controls.set_settings(
+        RawRenderSettings(
+            auto_levels=True,
+            auto_levels_method="a",
+            auto_black_level=0.1,
+            auto_white_level=0.9,
+            light_ev=0.152,
+            dark_ev=-0.152,
+        )
+    )
+    emissions: list[RawRenderSettings] = []
+    controls.settingsChanged.connect(emissions.append)
+
+    controls.auto_levels_method_selector.set_selected_value("b", emit=True)
+
+    assert emissions[-1].auto_levels_method == "b"
+    assert emissions[-1].auto_black_level is None
+    assert emissions[-1].auto_white_level is None
+
+
+def test_raw_processing_controls_clipping_uses_preferences_or_zero_cutoffs(qapp):
+    controls = RawProcessingControls()
+    controls.set_auto_level_cutoffs(0.004, 0.006)
+    controls.set_settings(
+        RawRenderSettings(
+            auto_levels=True,
+            auto_levels_clipping=True,
+            auto_black_level=0.1,
+            auto_white_level=0.9,
+        )
+    )
+    emissions: list[RawRenderSettings] = []
+    controls.settingsChanged.connect(emissions.append)
+
+    controls.auto_levels_clipping_selector.set_selected_value(False, emit=True)
+
+    assert emissions[-1].auto_levels_clipping is False
+    assert emissions[-1].black_percentile == pytest.approx(0.0)
+    assert emissions[-1].white_percentile == pytest.approx(1.0)
+    assert emissions[-1].auto_black_level is None
+    assert emissions[-1].auto_white_level is None
+
+    controls.auto_levels_clipping_selector.set_selected_value(True, emit=True)
+
+    assert emissions[-1].auto_levels_clipping is True
+    assert emissions[-1].black_percentile == pytest.approx(0.004)
+    assert emissions[-1].white_percentile == pytest.approx(0.994)
 
 
 def test_raw_processing_controls_set_settings_does_not_emit_settings_changed(qapp):

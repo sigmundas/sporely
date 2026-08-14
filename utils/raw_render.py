@@ -132,6 +132,11 @@ def _normalize_white_balance_mode(mode: Any, *, wb_multipliers: tuple[float, flo
     return normalized
 
 
+def _normalize_auto_levels_method(value: Any) -> str:
+    normalized = str(value or "a").strip().lower()
+    return normalized if normalized in {"a", "b"} else "a"
+
+
 def _normalize_white_balance_multiplier_space(
     value: Any,
     *,
@@ -190,6 +195,8 @@ class RawRenderSettings:
     light_ev: float = 0.0
     dark_ev: float = 0.0
     auto_levels: bool = True
+    auto_levels_method: str = "a"
+    auto_levels_clipping: bool = True
     black_percentile: float = 0.0
     white_percentile: float = 1.0
     auto_levels_strength: float = 1.0
@@ -220,6 +227,8 @@ class RawRenderSettings:
         light_ev: float | None = None,
         dark_ev: float | None = None,
         auto_levels: bool = True,
+        auto_levels_method: str = "a",
+        auto_levels_clipping: bool = True,
         black_percentile: float = 0.0,
         white_percentile: float = 1.0,
         auto_levels_strength: float = 1.0,
@@ -258,6 +267,8 @@ class RawRenderSettings:
         object.__setattr__(self, "light_ev", _coerce_float_in_range(resolved_light_ev, 0.0, 0.0, 2.0))
         object.__setattr__(self, "dark_ev", _coerce_float_in_range(resolved_dark_ev, 0.0, -2.0, 0.0))
         object.__setattr__(self, "auto_levels", bool(auto_levels))
+        object.__setattr__(self, "auto_levels_method", _normalize_auto_levels_method(auto_levels_method))
+        object.__setattr__(self, "auto_levels_clipping", bool(auto_levels_clipping))
         object.__setattr__(self, "black_percentile", _coerce_float_in_range(black_percentile, 0.0, 0.0, 1.0))
         object.__setattr__(self, "white_percentile", _coerce_float_in_range(white_percentile, 1.0, 0.0, 1.0))
         object.__setattr__(self, "auto_levels_strength", _coerce_float_in_range(auto_levels_strength, 1.0, 0.0, 1.0))
@@ -305,6 +316,8 @@ class RawRenderSettings:
             "light_ev": float(self.light_ev),
             "dark_ev": float(self.dark_ev),
             "auto_levels": bool(self.auto_levels),
+            "auto_levels_method": self.auto_levels_method,
+            "auto_levels_clipping": bool(self.auto_levels_clipping),
             "black_percentile": float(self.black_percentile),
             "white_percentile": float(self.white_percentile),
             "auto_levels_strength": float(self.auto_levels_strength),
@@ -386,6 +399,8 @@ class RawRenderSettings:
             light_ev=_coerce_float_in_range(light_ev_value, 0.0, 0.0, 2.0),
             dark_ev=_coerce_float_in_range(dark_ev_value, 0.0, -2.0, 0.0),
             auto_levels=_coerce_bool(mapping.get("auto_levels"), True),
+            auto_levels_method=_normalize_auto_levels_method(mapping.get("auto_levels_method")),
+            auto_levels_clipping=_coerce_bool(mapping.get("auto_levels_clipping"), True),
             black_percentile=_coerce_float(mapping.get("black_percentile"), 0.0),
             white_percentile=_coerce_float(mapping.get("white_percentile"), 1.0),
             auto_levels_strength=_coerce_float_in_range(mapping.get("auto_levels_strength"), 1.0, 0.0, 1.0),

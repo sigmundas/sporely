@@ -5282,7 +5282,7 @@ class _PublicationSearchProxyModel(QSortFilterProxyModel):
         return super().data(index, role)
 
 
-class ReferenceAddDialog(QDialog):
+class ReferenceAddDialog(GeometryMixin, QDialog):
     """Dialog for adding reference min/max or spore data.
 
     Beyond legacy ``reference_values`` writes the dialog can also drive
@@ -5291,6 +5291,8 @@ class ReferenceAddDialog(QDialog):
     measurement set" or "enter new data" paths that MainWindow uses to
     create/attach normalized rows for the active observation.
     """
+
+    _geometry_key = "ReferenceAddDialog"
 
     def __init__(
         self,
@@ -5311,7 +5313,7 @@ class ReferenceAddDialog(QDialog):
         # wide enough for the paste-field placeholder to fit on one line. The
         # user can drag it narrower if they need to.
         self.setMinimumSize(580, 480)
-        self.resize(860, 620)
+        self.resize(860, 720)
         self._result = None
         self._genus = genus
         self._species = species
@@ -5648,6 +5650,8 @@ class ReferenceAddDialog(QDialog):
         # radio state (defaults to "Enter new data", so the existing-set
         # table is hidden).
         self._on_data_choice_toggled()
+        self._restore_geometry()
+        self.finished.connect(self._save_geometry)
 
     def _register_hint_widget(self, widget: QWidget, hint_text: str | None, tone: str = "info") -> None:
         if not widget:

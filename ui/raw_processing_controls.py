@@ -232,6 +232,8 @@ class RawProcessingControls(QWidget):
         self._loading = False
         self._slider_change_pending = False
         self._mixed_wb_mode = False
+        self._mixed_auto_levels_method = False
+        self._mixed_auto_levels_clipping = False
         self._multi_selection_mode = False
         self._pick_context_enabled = True
         self._show_shadow_lift = bool(show_shadow_lift)
@@ -273,7 +275,46 @@ class RawProcessingControls(QWidget):
         # Historical aliases used across the codebase and tests.
         self.auto_levels_btn = self.auto_levels_toggle
         self.auto_levels_checkbox = self.auto_levels_toggle
-        layout.addWidget(self.auto_levels_toggle)
+
+        self.auto_levels_method_selector = SegmentedSelector(
+            self, compact=True, button_height=28, container_height=32
+        )
+        self.auto_levels_method_selector.add_option(self.tr("A"), "a", checked=True)
+        self.auto_levels_method_selector.add_option(self.tr("B"), "b")
+        self.auto_levels_method_selector.selectionChanged.connect(self._on_control_changed)
+        method_heading = QLabel(self.tr("Method"), self)
+        method_heading.setSizePolicy(QSizePolicy.Fixed, QSizePolicy.Preferred)
+        method_control = QWidget(self)
+        method_layout = QVBoxLayout(method_control)
+        method_layout.setContentsMargins(0, 0, 0, 0)
+        method_layout.setSpacing(2)
+        method_layout.addWidget(method_heading)
+        method_layout.addWidget(self.auto_levels_method_selector, 0, Qt.AlignLeft)
+
+        self.auto_levels_clipping_selector = SegmentedSelector(
+            self, compact=True, button_height=28, container_height=32
+        )
+        self.auto_levels_clipping_selector.add_option(self.tr("On"), True, checked=True)
+        self.auto_levels_clipping_selector.add_option(self.tr("Off"), False)
+        self.auto_levels_clipping_selector.selectionChanged.connect(self._on_control_changed)
+        clipping_heading = QLabel(self.tr("Clipping"), self)
+        clipping_heading.setSizePolicy(QSizePolicy.Fixed, QSizePolicy.Preferred)
+        clipping_control = QWidget(self)
+        clipping_layout = QVBoxLayout(clipping_control)
+        clipping_layout.setContentsMargins(0, 0, 0, 0)
+        clipping_layout.setSpacing(2)
+        clipping_layout.addWidget(clipping_heading)
+        clipping_layout.addWidget(self.auto_levels_clipping_selector, 0, Qt.AlignLeft)
+
+        auto_levels_row = QWidget(self)
+        auto_levels_layout = QHBoxLayout(auto_levels_row)
+        auto_levels_layout.setContentsMargins(0, 0, 0, 0)
+        auto_levels_layout.setSpacing(12)
+        auto_levels_layout.addWidget(self.auto_levels_toggle, 0, Qt.AlignTop)
+        auto_levels_layout.addWidget(method_control, 0, Qt.AlignTop)
+        auto_levels_layout.addWidget(clipping_control, 0, Qt.AlignTop)
+        auto_levels_layout.addStretch(1)
+        layout.addWidget(auto_levels_row)
 
         slider_form = QFormLayout()
         slider_form.setContentsMargins(0, 0, 0, 0)
@@ -470,6 +511,30 @@ class RawProcessingControls(QWidget):
                 else:
                     self.auto_levels_checkbox.setChecked(False)
                     self.auto_levels_checkbox.setProperty("mixed", True)
+            method_values = {str(s.auto_levels_method) for s in resolved}
+            with QSignalBlocker(self.auto_levels_method_selector):
+                if len(method_values) == 1:
+                    self.auto_levels_method_selector.set_selected_value(next(iter(method_values)))
+                    self._mixed_auto_levels_method = False
+                else:
+                    group = self.auto_levels_method_selector.button_group
+                    group.setExclusive(False)
+                    for button in self.auto_levels_method_selector.buttons():
+                        button.setChecked(False)
+                    group.setExclusive(True)
+                    self._mixed_auto_levels_method = True
+            clipping_values = {bool(s.auto_levels_clipping) for s in resolved}
+            with QSignalBlocker(self.auto_levels_clipping_selector):
+                if len(clipping_values) == 1:
+                    self.auto_levels_clipping_selector.set_selected_value(next(iter(clipping_values)))
+                    self._mixed_auto_levels_clipping = False
+                else:
+                    group = self.auto_levels_clipping_selector.button_group
+                    group.setExclusive(False)
+                    for button in self.auto_levels_clipping_selector.buttons():
+                        button.setChecked(False)
+                    group.setExclusive(True)
+                    self._mixed_auto_levels_clipping = True
             tone_enabled = {bool(s.tone_curve_enabled) for s in resolved}
             with QSignalBlocker(self.tone_curve_checkbox):
                 if len(tone_enabled) == 1:
@@ -494,6 +559,12 @@ class RawProcessingControls(QWidget):
             mixed.add("white_balance_mode")
         if self.auto_levels_checkbox.property("mixed"):
             mixed.add("auto_levels")
+        if self._mixed_auto_levels_method:
+            mixed.add("auto_levels_method")
+        if self._mixed_auto_levels_clipping:
+            mixed.add("auto_levels_clipping")
+            mixed.add("black_percentile")
+            mixed.add("white_percentile")
         if self.tone_curve_checkbox.property("mixed"):
             mixed.add("tone_curve_enabled")
         return mixed
@@ -506,6 +577,8 @@ class RawProcessingControls(QWidget):
             with QSignalBlocker(self.white_balance_selector):
                 self._set_white_balance_visual_selection(mode)
         self._mixed_wb_mode = False
+        self._mixed_auto_levels_method = False
+        self._mixed_auto_levels_clipping = False
         self.auto_levels_checkbox.setProperty("mixed", False)
         self.tone_curve_checkbox.setProperty("mixed", False)
 
@@ -585,8 +658,8 @@ class RawProcessingControls(QWidget):
         # percentiles.
         self._settings = replace(
             RawRenderSettings.from_dict(self._settings),
-            black_percentile=float(self._dark_cutoff),
-            white_percentile=float(1.0 - self._bright_cutoff),
+            black_percentile=float(self._dark_cutoff) if self._settings.auto_levels_clipping else 0.0,
+            white_percentile=float(1.0 - self._bright_cutoff) if self._settings.auto_levels_clipping else 1.0,
         )
 
     def sync_from_live_bounds(self, black_level: float | None, white_level: float | None) -> None:
@@ -670,6 +743,10 @@ class RawProcessingControls(QWidget):
                 self._set_white_balance_visual_selection(mode)
             with QSignalBlocker(self.auto_levels_checkbox):
                 self.auto_levels_checkbox.setChecked(bool(settings.auto_levels))
+            with QSignalBlocker(self.auto_levels_method_selector):
+                self.auto_levels_method_selector.set_selected_value(settings.auto_levels_method)
+            with QSignalBlocker(self.auto_levels_clipping_selector):
+                self.auto_levels_clipping_selector.set_selected_value(settings.auto_levels_clipping)
             with QSignalBlocker(self.light_slider):
                 self.light_slider.setValue(int(round(float(settings.light_ev) * _EV_SLIDER_SCALE)))
             with QSignalBlocker(self.dark_slider):
@@ -732,6 +809,7 @@ class RawProcessingControls(QWidget):
         dark_ev = -max(0.0, min(2.0, float(self.dark_slider.value()) / _EV_SLIDER_SCALE))
         tone_curve_strength = max(0.0, min(1.0, float(self.curve_strength_slider.value()) / 100.0))
         tone_curve_midpoint = max(0.0, min(1.0, float(self.curve_midpoint_slider.value()) / 100.0))
+        clipping_enabled = bool(self.auto_levels_clipping_selector.selected_value(True))
         settings = replace(
             base_settings,
             white_balance_mode=white_balance_mode if white_balance_mode in {"camera", "auto", "custom"} else "camera",
@@ -744,8 +822,10 @@ class RawProcessingControls(QWidget):
             light_ev=light_ev,
             dark_ev=dark_ev,
             auto_levels=auto_levels_enabled,
-            black_percentile=float(max(0.0, min(1.0, self._dark_cutoff))),
-            white_percentile=float(max(0.0, min(1.0, 1.0 - self._bright_cutoff))),
+            auto_levels_method=str(self.auto_levels_method_selector.selected_value("a") or "a"),
+            auto_levels_clipping=clipping_enabled,
+            black_percentile=float(max(0.0, min(1.0, self._dark_cutoff))) if clipping_enabled else 0.0,
+            white_percentile=float(max(0.0, min(1.0, 1.0 - self._bright_cutoff))) if clipping_enabled else 1.0,
             auto_levels_strength=1.0,
             auto_levels_soft_tails=False,
             auto_levels_tail_size=0.03,
@@ -824,6 +904,24 @@ class RawProcessingControls(QWidget):
             self.auto_levels_checkbox.setProperty("mixed", False)
             if self.auto_levels_checkbox.isChecked():
                 self._apply_auto_level_settings()
+        if sender is self.auto_levels_method_selector:
+            self._mixed_auto_levels_method = False
+            self._auto_level_settings = None
+            self._settings = replace(
+                RawRenderSettings.from_dict(self._settings),
+                auto_levels_method=str(self.auto_levels_method_selector.selected_value("a") or "a"),
+                auto_black_level=None,
+                auto_white_level=None,
+            )
+        if sender is self.auto_levels_clipping_selector:
+            self._mixed_auto_levels_clipping = False
+            self._auto_level_settings = None
+            self._settings = replace(
+                RawRenderSettings.from_dict(self._settings),
+                auto_levels_clipping=bool(self.auto_levels_clipping_selector.selected_value(True)),
+                auto_black_level=None,
+                auto_white_level=None,
+            )
         if sender is self.tone_curve_checkbox:
             self.tone_curve_checkbox.setProperty("mixed", False)
         if isinstance(sender, QSlider):

@@ -1022,6 +1022,55 @@ def test_pending_raw_commit_uses_preview_auto_level_snapshot(tmp_path):
     assert request.raw_settings.auto_white_level == pytest.approx(0.88)
 
 
+def test_pending_raw_method_b_uses_larger_proxy_for_auto_levels(monkeypatch, tmp_path):
+    _qapp()
+    source_path = tmp_path / "capture.ORF"
+    source_path.write_bytes(b"raw-bytes")
+    raw_rgb = np.full((4, 4, 3), 0.5, dtype=np.float32)
+    raw_rgb[0, 0] = 1.0
+    monkeypatch.setattr(
+        live_lab_tab,
+        "render_raw_preview_proxy_rgb",
+        lambda *_args, **_kwargs: raw_rgb,
+    )
+    monkeypatch.setattr(
+        live_lab_tab,
+        "_resize_preview_rgb",
+        lambda *_args, **_kwargs: np.asarray(
+            [
+                [[0.2, 0.2, 0.2], [0.5, 0.5, 0.5]],
+                [[0.3, 0.3, 0.3], [0.4, 0.4, 0.4]],
+            ],
+            dtype=np.float32,
+        ),
+    )
+
+    def render(method: str):
+        settings = RawRenderSettings(auto_levels=True, auto_levels_method=method)
+        capture = live_lab_tab.PendingRawCapture(
+            source_path=source_path,
+            companion_jpeg_path=None,
+            lab_metadata={},
+            raw_settings=settings,
+        )
+        request = live_lab_tab._PendingRawPreviewJobRequest(
+            job_id=1,
+            kind="selected",
+            capture=capture,
+            source_path=source_path,
+            raw_settings=settings,
+            source_signature=(str(source_path), 0, 0),
+            settings_signature=live_lab_tab._pending_raw_settings_signature(settings),
+        )
+        return live_lab_tab._build_pending_raw_preview_job_result(request)
+
+    method_a = render("a")
+    method_b = render("b")
+
+    assert method_a.auto_level_settings.auto_white_level == pytest.approx(0.5)
+    assert method_b.auto_level_settings.auto_white_level == pytest.approx(1.0)
+
+
 def test_live_lab_raw_curve_preview_widget_uses_current_preview_histogram(tmp_path, monkeypatch):
     _qapp()
     state = _build_raw_controls_state()

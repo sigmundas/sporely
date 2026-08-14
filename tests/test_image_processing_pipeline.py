@@ -462,6 +462,29 @@ def test_stored_auto_level_bounds_are_reused_for_different_image_distribution():
     assert reopened_full_debug.white_level == pytest.approx(initial.debug.white_level)
 
 
+def test_clipping_off_forces_full_luminance_range_even_with_saved_cutoffs():
+    ramp = np.linspace(0.0, 1.0, 100, dtype=np.float32).reshape(10, 10)
+    rgb = np.repeat(ramp[..., None], 3, axis=2)
+    clipping_on = RawRenderSettings(
+        auto_levels=True,
+        auto_levels_clipping=True,
+        black_percentile=0.25,
+        white_percentile=0.75,
+    )
+    clipping_off = replace_settings(
+        clipping_on,
+        auto_levels_clipping=False,
+    )
+
+    on_result = apply_post_decode_processing_fast(rgb, clipping_on)
+    off_result = apply_post_decode_processing_fast(rgb, clipping_off)
+
+    assert on_result.debug.black_level == pytest.approx(0.25, abs=0.02)
+    assert on_result.debug.white_level == pytest.approx(0.75, abs=0.02)
+    assert off_result.debug.black_level == pytest.approx(0.0)
+    assert off_result.debug.white_level == pytest.approx(1.0)
+
+
 def replace_settings(settings: RawRenderSettings, **updates) -> RawRenderSettings:
     from dataclasses import replace as _replace
 

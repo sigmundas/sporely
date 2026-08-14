@@ -317,6 +317,22 @@ def _build_pending_raw_preview_job_result(
                 wb_multiplier_space="post_decode_rgb",
                 wb_sample_base_mode=_pending_raw_preview_decode_mode(resolved_settings),
             )
+        if (
+            processed_settings.auto_levels
+            and processed_settings.auto_levels_method == "b"
+            and processed_settings.auto_black_level is None
+        ):
+            analysis_luminance = raw_rgb @ np.asarray(
+                [0.2126, 0.7152, 0.0722], dtype=np.float32
+            )
+            black_level, white_level = compute_auto_level_bounds_from_luminance(
+                analysis_luminance,
+                processed_settings.black_percentile,
+                processed_settings.white_percentile,
+            )
+            processed_settings = apply_auto_level_bounds_to_settings(
+                processed_settings, black_level, white_level
+            )
         prepared = prepare_post_decode_fast_inputs(preview_proxy_rgb, processed_settings)
         fast_result = apply_post_decode_processing_fast(
             preview_proxy_rgb,
@@ -1598,12 +1614,18 @@ class LiveLabTab(QWidget):
         prefs = self._raw_processing_preferences()
         dark_cutoff = float(prefs.get("dark_cutoff", 0.0))
         bright_cutoff = float(prefs.get("bright_cutoff", 0.0))
-        black_percentile = max(0.0, min(1.0, dark_cutoff))
-        white_percentile = max(0.0, min(1.0, 1.0 - bright_cutoff))
+        clipping_enabled = bool(resolved.auto_levels_clipping)
+        black_percentile = max(0.0, min(1.0, dark_cutoff)) if clipping_enabled else 0.0
+        white_percentile = max(0.0, min(1.0, 1.0 - bright_cutoff)) if clipping_enabled else 1.0
         try:
             entry = LiveLabTab._raw_preview_cache_entry(self, source_path, resolved)
-            preview = LiveLabTab._raw_preview_resized_for_entry(entry)
-            luminance = preview @ np.asarray([0.2126, 0.7152, 0.0722], dtype=np.float32)
+            if resolved.auto_levels_method == "b":
+                luminance = entry.raw_rgb @ np.asarray(
+                    [0.2126, 0.7152, 0.0722], dtype=np.float32
+                )
+            else:
+                analysis_rgb = LiveLabTab._raw_preview_resized_for_entry(entry)
+                _, luminance = prepare_post_decode_fast_inputs(analysis_rgb, resolved)
             black_level, white_level = compute_auto_level_bounds_from_luminance(
                 luminance, black_percentile, white_percentile
             )
@@ -2910,6 +2932,22 @@ class LiveLabTab(QWidget):
                 ),
                 wb_multiplier_space="post_decode_rgb",
                 wb_sample_base_mode=self._raw_preview_decode_mode(resolved_settings),
+            )
+        if (
+            processing_settings.auto_levels
+            and processing_settings.auto_levels_method == "b"
+            and processing_settings.auto_black_level is None
+        ):
+            analysis_luminance = entry.raw_rgb @ np.asarray(
+                [0.2126, 0.7152, 0.0722], dtype=np.float32
+            )
+            black_level, white_level = compute_auto_level_bounds_from_luminance(
+                analysis_luminance,
+                processing_settings.black_percentile,
+                processing_settings.white_percentile,
+            )
+            processing_settings = apply_auto_level_bounds_to_settings(
+                processing_settings, black_level, white_level
             )
         process_start = time.perf_counter() if _RAW_DEBUG_TIMING else None
         prepared = LiveLabTab._raw_preview_wb_inputs(entry, processing_settings)

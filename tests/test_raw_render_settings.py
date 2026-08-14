@@ -60,6 +60,8 @@ def test_raw_render_settings_round_trip():
         light_ev=0.75,
         dark_ev=0.0,
         auto_levels=True,
+        auto_levels_method="b",
+        auto_levels_clipping=False,
         black_percentile=0.01,
         white_percentile=0.99,
         auto_levels_strength=0.65,
@@ -100,6 +102,8 @@ def test_raw_render_settings_default_uses_camera_wb_and_auto_levels():
     assert settings.light_ev == 0.0
     assert settings.dark_ev == 0.0
     assert settings.auto_levels is True
+    assert settings.auto_levels_method == "a"
+    assert settings.auto_levels_clipping is True
     assert settings.auto_levels_strength == 1.0
     assert settings.auto_levels_soft_tails is False
     assert settings.auto_levels_tail_size == 0.03

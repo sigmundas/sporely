@@ -120,6 +120,7 @@ from utils.image_processing_pipeline import (
     apply_post_decode_processing,
     apply_post_decode_processing_fast,
     compute_auto_level_bounds,
+    compute_auto_level_bounds_from_luminance,
     compute_pre_levels_working_rgb,
     prepare_post_decode_fast_inputs,
 )
@@ -6822,8 +6823,9 @@ class ImageImportDialog(GeometryMixin, QDialog):
         prefs = self._raw_processing_preferences()
         dark_cutoff = float(prefs.get("dark_cutoff", 0.0))
         bright_cutoff = float(prefs.get("bright_cutoff", 0.0))
-        black_percentile = max(0.0, min(1.0, dark_cutoff))
-        white_percentile = max(0.0, min(1.0, 1.0 - bright_cutoff))
+        clipping_enabled = bool(resolved.auto_levels_clipping)
+        black_percentile = max(0.0, min(1.0, dark_cutoff)) if clipping_enabled else 0.0
+        white_percentile = max(0.0, min(1.0, 1.0 - bright_cutoff)) if clipping_enabled else 1.0
         try:
             analysis_settings = replace(
                 resolved,
@@ -6841,7 +6843,13 @@ class ImageImportDialog(GeometryMixin, QDialog):
                 tone_shadows=0.0,
                 tone_highlights=0.0,
             )
-            preview_rgb = self._raw_preview_proxy_for_result(source, analysis_settings)
+            entry = self._raw_preview_cache_entry(source, analysis_settings)
+            if resolved.auto_levels_method == "b":
+                preview_rgb = entry.raw_rgb
+            else:
+                preview_rgb = compute_pre_levels_working_rgb(
+                    self._raw_preview_resized_for_entry(entry), analysis_settings
+                )
             black_level, white_level = compute_auto_level_bounds(
                 preview_rgb, black_percentile, white_percentile
             )
@@ -7052,6 +7060,22 @@ class ImageImportDialog(GeometryMixin, QDialog):
                     wb_multiplier_space="post_decode_rgb",
                     wb_sample_base_mode=self._raw_preview_decode_mode(settings),
                 )
+            if (
+                processing_settings.auto_levels
+                and processing_settings.auto_levels_method == "b"
+                and processing_settings.auto_black_level is None
+            ):
+                analysis_luminance = entry.raw_rgb @ np.asarray(
+                    [0.2126, 0.7152, 0.0722], dtype=np.float32
+                )
+                black_level, white_level = compute_auto_level_bounds_from_luminance(
+                    analysis_luminance,
+                    processing_settings.black_percentile,
+                    processing_settings.white_percentile,
+                )
+                processing_settings = apply_auto_level_bounds_to_settings(
+                    processing_settings, black_level, white_level
+                )
             # Fast in-memory path (matches Live Lab):
             #   1. Reuse the resized proxy (decoded once per source).
             #   2. Reuse the WB-processed inputs (cached per WB gains).
@@ -7098,14 +7122,10 @@ class ImageImportDialog(GeometryMixin, QDialog):
                 set_start = time.perf_counter() if _RAW_DEBUG_TIMING else None
                 self.preview.set_image_sources(pixmap, preview_source_path, True)
                 _raw_prepare_timing("viewer set_image_sources", set_start)
-                if view_state and view_state.get("size"):
-                    old_w, old_h = view_state["size"]
-                    new_w, new_h = pixmap.width(), pixmap.height()
-                    if old_w == new_w and old_h == new_h:
-                        try:
-                            self.preview.set_view_state(view_state["center"], view_state["zoom"])
-                        except Exception:
-                            pass
+                try:
+                    self._restore_raw_preview_view_state(view_state, pixmap)
+                except Exception:
+                    pass
                 self.preview_stack.setCurrentWidget(self.preview)
         result.processing_status = "preview"
         # Cache the last-rendered RGB so the debounced disk-save doesn't
@@ -7148,6 +7168,23 @@ class ImageImportDialog(GeometryMixin, QDialog):
             QImage.Format.Format_RGB888,
         ).copy()
         return QPixmap.fromImage(qimage)
+
+    def _restore_raw_preview_view_state(self, view_state: dict | None, pixmap: QPixmap) -> None:
+        """Keep the same normalized viewport when a RAW preview changes size."""
+        if not view_state or not view_state.get("size") or not hasattr(self, "preview"):
+            return
+        old_w, old_h = view_state["size"]
+        new_w, new_h = pixmap.width(), pixmap.height()
+        if not old_w or not old_h or not new_w or not new_h:
+            return
+        ratio_x = float(new_w) / float(old_w)
+        ratio_y = float(new_h) / float(old_h)
+        center = view_state.get("center")
+        if center is None:
+            return
+        new_center = QPointF(center.x() * ratio_x, center.y() * ratio_y)
+        new_zoom = float(view_state.get("zoom") or 1.0) / ratio_x
+        self.preview.set_view_state(new_center, new_zoom)
 
     def _schedule_raw_preview_disk_save(self, result: ImageImportResult) -> None:
         self._raw_preview_disk_save_target = result

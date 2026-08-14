@@ -8,7 +8,8 @@ os.environ.setdefault("QT_QPA_PLATFORM", "offscreen")
 
 import numpy as np
 import pytest
-from PySide6.QtCore import QTimer
+from PySide6.QtCore import QPointF, QTimer
+from PySide6.QtGui import QPixmap
 from PySide6.QtTest import QTest
 from PySide6.QtWidgets import QApplication, QWidget
 
@@ -235,6 +236,89 @@ def test_raw_panel_preserves_saved_auto_level_bounds_and_slider_positions(qapp, 
     assert dummy.raw_controls.light_slider.value() == 375
     assert dummy.raw_controls.dark_slider.value() == 125
     assert refreshes == []
+
+
+def test_prepare_images_method_b_uses_larger_proxy_for_auto_levels(tmp_path):
+    raw_path = tmp_path / "sample.nef"
+    raw_path.write_bytes(b"raw-bytes")
+    raw_rgb = np.full((4, 4, 3), 0.5, dtype=np.float32)
+    raw_rgb[0, 0] = 1.0
+    resized_rgb = np.asarray(
+        [
+            [[0.2, 0.2, 0.2], [0.5, 0.5, 0.5]],
+            [[0.3, 0.3, 0.3], [0.4, 0.4, 0.4]],
+        ],
+        dtype=np.float32,
+    )
+    entry = image_import_dialog._RawPreviewCacheEntry(
+        raw_rgb=raw_rgb,
+        preview_rgb=resized_rgb,
+    )
+    dummy = SimpleNamespace(
+        _raw_processing_preferences=lambda: {"dark_cutoff": 0.0, "bright_cutoff": 0.0},
+        _raw_preview_cache_entry=lambda *_args: entry,
+        _raw_preview_resized_for_entry=lambda _entry: _entry.preview_rgb,
+    )
+
+    method_a = ImageImportDialog._raw_auto_level_settings_for_source(
+        dummy, str(raw_path), RawRenderSettings(auto_levels_method="a")
+    )
+    method_b = ImageImportDialog._raw_auto_level_settings_for_source(
+        dummy, str(raw_path), RawRenderSettings(auto_levels_method="b")
+    )
+
+    assert method_a.auto_white_level == pytest.approx(0.5)
+    assert method_b.auto_white_level == pytest.approx(1.0)
+
+
+def test_prepare_images_method_b_matches_historical_pre_custom_wb_analysis(tmp_path):
+    raw_path = tmp_path / "sample.nef"
+    raw_path.write_bytes(b"raw-bytes")
+    raw_rgb = np.full((2, 2, 3), 0.1, dtype=np.float32)
+    raw_rgb[0, 0] = (1.0, 0.0, 0.0)
+    entry = image_import_dialog._RawPreviewCacheEntry(
+        raw_rgb=raw_rgb,
+        preview_rgb=raw_rgb.copy(),
+    )
+    dummy = SimpleNamespace(
+        _raw_processing_preferences=lambda: {"dark_cutoff": 0.0, "bright_cutoff": 0.0},
+        _raw_preview_cache_entry=lambda *_args: entry,
+        _raw_preview_resized_for_entry=lambda _entry: _entry.preview_rgb,
+    )
+    settings = RawRenderSettings(
+        auto_levels_method="b",
+        white_balance_mode="custom",
+        wb_multipliers=(0.1, 1.0, 1.0),
+        wb_multiplier_space="post_decode_rgb",
+    )
+
+    method_b = ImageImportDialog._raw_auto_level_settings_for_source(
+        dummy, str(raw_path), settings
+    )
+
+    assert method_b.auto_white_level == pytest.approx(0.2126, abs=1e-5)
+
+
+def test_raw_preview_size_change_preserves_normalized_center_and_visible_zoom(qapp):
+    restored: list[tuple[QPointF, float]] = []
+    dummy = SimpleNamespace(
+        preview=SimpleNamespace(
+            set_view_state=lambda center, zoom: restored.append((center, zoom))
+        )
+    )
+    pixmap = QPixmap(1000, 500)
+    old_state = {
+        "center": QPointF(1000.0, 500.0),
+        "zoom": 2.0,
+        "size": (4000, 2000),
+    }
+
+    ImageImportDialog._restore_raw_preview_view_state(dummy, old_state, pixmap)
+
+    center, zoom = restored[-1]
+    assert center.x() == pytest.approx(250.0)
+    assert center.y() == pytest.approx(125.0)
+    assert zoom == pytest.approx(8.0)
 
 
 def test_raw_action_tab_shows_apply_copy_and_paste_in_raw_edit_mode(qapp, tmp_path):
