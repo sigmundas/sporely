@@ -20,7 +20,7 @@ from PySide6.QtWidgets import (
     QWidget,
 )
 
-from utils.raw_render import RawRenderSettings
+from utils.raw_render import RawRenderSettings, apply_auto_level_bounds_to_settings
 
 from .segmented_selector import SegmentedSelector
 
@@ -616,12 +616,7 @@ class RawProcessingControls(QWidget):
         light_ev = float(max(0.0, min(2.0, -math.log2(max(1e-6, white_point)))))
         dark_ev = float(max(-2.0, min(0.0, math.log2(max(1e-6, 1.0 - black_point)))))
         base = RawRenderSettings.from_dict(self._auto_level_settings or self._settings)
-        updated = replace(
-            base,
-            light_ev=light_ev,
-            dark_ev=dark_ev,
-            exposure_ev=light_ev + dark_ev,
-        )
+        updated = apply_auto_level_bounds_to_settings(base, black_point, white_point)
         self._auto_level_settings = updated
         if not self.auto_levels_checkbox.isChecked():
             return
@@ -728,7 +723,10 @@ class RawProcessingControls(QWidget):
         )
 
     def _settings_from_controls(self) -> RawRenderSettings:
-        base_settings = RawRenderSettings.from_dict(self._settings)
+        auto_levels_enabled = bool(self.auto_levels_checkbox.isChecked())
+        base_settings = RawRenderSettings.from_dict(
+            self._auto_level_settings if auto_levels_enabled and self._auto_level_settings is not None else self._settings
+        )
         white_balance_mode = str(self.white_balance_selector.selected_value("camera") or "camera").strip().lower() or "camera"
         light_ev = max(0.0, min(2.0, float(self.light_slider.value()) / _EV_SLIDER_SCALE))
         dark_ev = -max(0.0, min(2.0, float(self.dark_slider.value()) / _EV_SLIDER_SCALE))
@@ -745,7 +743,7 @@ class RawProcessingControls(QWidget):
             exposure_ev=light_ev + dark_ev,
             light_ev=light_ev,
             dark_ev=dark_ev,
-            auto_levels=bool(self.auto_levels_checkbox.isChecked()),
+            auto_levels=auto_levels_enabled,
             black_percentile=float(max(0.0, min(1.0, self._dark_cutoff))),
             white_percentile=float(max(0.0, min(1.0, 1.0 - self._bright_cutoff))),
             auto_levels_strength=1.0,

@@ -1593,6 +1593,8 @@ class LiveLabTab(QWidget):
         settings: RawRenderSettings | None,
     ) -> RawRenderSettings:
         resolved = RawRenderSettings.from_dict(settings)
+        if resolved.auto_black_level is not None and resolved.auto_white_level is not None:
+            return resolved
         prefs = self._raw_processing_preferences()
         dark_cutoff = float(prefs.get("dark_cutoff", 0.0))
         bright_cutoff = float(prefs.get("bright_cutoff", 0.0))
@@ -5948,11 +5950,14 @@ class LiveLabTab(QWidget):
     def _commit_pending_raw_capture(self, pending: PendingRawCapture) -> bool:
         if pending is None:
             return False
+        raw_settings = RawRenderSettings.from_dict(pending.raw_settings)
+        if bool(raw_settings.auto_levels) and pending.auto_level_settings is not None:
+            raw_settings = RawRenderSettings.from_dict(pending.auto_level_settings)
         try:
             observation_id = int(getattr(pending, "observation_id", 0) or self._session_observation_id or 0)
             committed = self._ingest_detected_image(
                 str(pending.source_path),
-                raw_settings=pending.raw_settings,
+                raw_settings=raw_settings,
                 lab_metadata=pending.lab_metadata,
                 observation_id=observation_id,
             )
@@ -5975,6 +5980,8 @@ class LiveLabTab(QWidget):
         source_path = Path(pending.source_path)
         source_signature = _pending_raw_source_signature(source_path)
         raw_settings = RawRenderSettings.from_dict(pending.raw_settings)
+        if bool(raw_settings.auto_levels) and pending.auto_level_settings is not None:
+            raw_settings = RawRenderSettings.from_dict(pending.auto_level_settings)
         lab_metadata = copy.deepcopy(getattr(pending, "lab_metadata", None) or {})
         observation_id = int(getattr(pending, "observation_id", 0) or getattr(self, "_session_observation_id", 0) or 0)
         request_kind = "save_all" if str(kind or "").strip().lower() == "save_all" else "save_current"

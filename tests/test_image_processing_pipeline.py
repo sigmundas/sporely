@@ -18,7 +18,7 @@ from utils.image_processing_pipeline import (
     ProcessingDebugInfo,
     soft_luminance_levels,
 )
-from utils.raw_render import RawRenderSettings
+from utils.raw_render import RawRenderSettings, apply_auto_level_bounds_to_settings
 
 
 def test_apply_post_decode_processing_custom_wb_applies_before_auto_levels():
@@ -439,6 +439,27 @@ def test_auto_off_freezes_image_after_slider_sync(seed, black_percentile, white_
     )
     # Mean matters more perceptually than a single hot pixel: keep it tight.
     assert float(diff.mean()) < 5e-4
+
+
+def test_stored_auto_level_bounds_are_reused_for_different_image_distribution():
+    first = _synthetic_microscopy_rgb(20)
+    initial = apply_post_decode_processing_fast(first, RawRenderSettings.default())
+    settings = apply_auto_level_bounds_to_settings(
+        RawRenderSettings.default(),
+        initial.debug.black_level,
+        initial.debug.white_level,
+    )
+    shifted = np.clip(first * 0.55, 0.0, 1.0)
+
+    reopened = apply_post_decode_processing_fast(shifted, settings)
+    _, reopened_full_debug = apply_post_decode_processing(
+        shifted, settings, return_debug=True
+    )
+
+    assert reopened.debug.black_level == pytest.approx(initial.debug.black_level)
+    assert reopened.debug.white_level == pytest.approx(initial.debug.white_level)
+    assert reopened_full_debug.black_level == pytest.approx(initial.debug.black_level)
+    assert reopened_full_debug.white_level == pytest.approx(initial.debug.white_level)
 
 
 def replace_settings(settings: RawRenderSettings, **updates) -> RawRenderSettings:

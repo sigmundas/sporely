@@ -65,6 +65,8 @@ def test_raw_render_settings_round_trip():
         auto_levels_strength=0.65,
         auto_levels_soft_tails=True,
         auto_levels_tail_size=0.04,
+        auto_black_level=0.08,
+        auto_white_level=0.93,
         shadow_lift=0.04,
         tone_curve_enabled=True,
         tone_curve_strength=0.75,
@@ -154,6 +156,8 @@ def test_apply_auto_level_bounds_to_settings_uses_bounds_without_crashing():
     assert adjusted.dark_ev <= 0.0
     assert adjusted.light_ev >= 0.0
     assert adjusted.exposure_ev == pytest.approx(adjusted.light_ev + adjusted.dark_ev)
+    assert adjusted.auto_black_level == pytest.approx(0.12)
+    assert adjusted.auto_white_level == pytest.approx(0.92)
 
 
 def test_render_raw_image_writes_high_quality_local_derivative(tmp_path, monkeypatch):

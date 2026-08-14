@@ -203,6 +203,40 @@ def test_raw_panel_uses_metadata_settings_when_result_raw_settings_missing(qapp,
     assert controls.curve_midpoint_slider.value() == 31
 
 
+def test_raw_panel_preserves_saved_auto_level_bounds_and_slider_positions(qapp, tmp_path):
+    raw_path = tmp_path / "sample.nef"
+    raw_path.write_bytes(b"raw-bytes")
+    saved = RawRenderSettings(
+        auto_levels=True,
+        light_ev=0.375,
+        dark_ev=-0.125,
+        auto_black_level=0.083,
+        auto_white_level=0.771,
+    )
+    result = ImageImportResult(
+        filepath=str(raw_path),
+        preview_path=str(tmp_path / "saved.jpg"),
+        image_type="field",
+        raw_candidate=True,
+        raw_pending=False,
+        raw_settings=None,
+        lab_metadata={"raw_processing": {"settings": saved.to_dict()}},
+    )
+    dummy = _build_raw_dialog_dummy(result)
+    dummy.raw_controls = RawProcessingControls()
+    refreshes: list[object] = []
+    dummy._schedule_raw_preview_refresh = lambda candidate: refreshes.append(candidate)
+
+    ImageImportDialog._update_raw_panel_for_result(dummy, result)
+
+    restored = RawRenderSettings.from_dict(result.raw_settings)
+    assert restored.auto_black_level == pytest.approx(0.083)
+    assert restored.auto_white_level == pytest.approx(0.771)
+    assert dummy.raw_controls.light_slider.value() == 375
+    assert dummy.raw_controls.dark_slider.value() == 125
+    assert refreshes == []
+
+
 def test_raw_action_tab_shows_apply_copy_and_paste_in_raw_edit_mode(qapp, tmp_path):
     result = _build_raw_result(tmp_path)
     result.raw_pending = False

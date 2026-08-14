@@ -81,6 +81,21 @@ def _clamp_range(value: Any, default: float, minimum: float, maximum: float) -> 
     return float(np.clip(numeric, float(minimum), float(maximum)))
 
 
+def _stored_auto_level_bounds(settings: Mapping[str, Any]) -> tuple[float, float] | None:
+    try:
+        black_level = float(settings.get("auto_black_level"))
+        white_level = float(settings.get("auto_white_level"))
+    except (TypeError, ValueError):
+        return None
+    if not np.isfinite(black_level) or not np.isfinite(white_level):
+        return None
+    black_level = float(np.clip(black_level, 0.0, 1.0))
+    white_level = float(np.clip(white_level, 0.0, 1.0))
+    if white_level <= black_level:
+        return None
+    return black_level, white_level
+
+
 def _raw_settings_class():
     from utils.raw_render import RawRenderSettings
 
@@ -572,15 +587,20 @@ def apply_post_decode_processing(
     input_min = float(np.min(working_luminance)) if working_luminance.size else 0.0
     input_max = float(np.max(working_luminance)) if working_luminance.size else 0.0
 
-    shadow_black_level, shadow_white_level = compute_auto_level_bounds(
-        working,
-        float(normalized_settings.get("black_percentile", 0.001)),
-        float(normalized_settings.get("white_percentile", 0.999)),
-    )
+    auto_levels_enabled = bool(normalized_settings.get("auto_levels", True))
+    stored_bounds = _stored_auto_level_bounds(normalized_settings) if auto_levels_enabled else None
+    if stored_bounds is None:
+        shadow_black_level, shadow_white_level = compute_auto_level_bounds(
+            working,
+            float(normalized_settings.get("black_percentile", 0.001)),
+            float(normalized_settings.get("white_percentile", 0.999)),
+        )
+    else:
+        shadow_black_level, shadow_white_level = stored_bounds
 
     black_level = None
     white_level = None
-    if bool(normalized_settings.get("auto_levels", True)) and shadow_black_level is not None and shadow_white_level is not None:
+    if auto_levels_enabled and shadow_black_level is not None and shadow_white_level is not None:
         black_level = shadow_black_level
         white_level = shadow_white_level
         _hard_target, _soft_target, auto_levels_output = compute_auto_levels_transfer(
@@ -600,7 +620,6 @@ def apply_post_decode_processing(
 
     working = np.clip(working, 0.0, 1.0)
 
-    auto_levels_enabled = bool(normalized_settings.get("auto_levels", True))
     if auto_levels_enabled:
         light_ev = 0.0
         dark_ev = 0.0
@@ -699,7 +718,11 @@ def compute_post_decode_transfer_curve(
     sample_count = max(2, int(samples))
     ramp = np.linspace(0.0, 1.0, sample_count, dtype=np.float64)
     sample_values = ramp
-    if shadow_bounds is not None:
+    auto_levels_enabled = bool(normalized_settings.get("auto_levels", True))
+    stored_bounds = _stored_auto_level_bounds(normalized_settings) if auto_levels_enabled else None
+    if stored_bounds is not None:
+        shadow_black_level, shadow_white_level = stored_bounds
+    elif shadow_bounds is not None:
         shadow_black_level, shadow_white_level = shadow_bounds
     else:
         shadow_black_level, shadow_white_level = compute_auto_level_bounds(
@@ -743,7 +766,6 @@ def compute_post_decode_transfer_curve(
         soft_target = sample_values.copy()
         auto_levels_output = sample_values.copy()
 
-    auto_levels_enabled = bool(normalized_settings.get("auto_levels", True))
     if auto_levels_enabled:
         manual_levels_output = auto_levels_output.copy()
     else:
@@ -903,12 +925,14 @@ def apply_post_decode_processing_fast(
     else:
         working_rgb, luminance = prepare_post_decode_fast_inputs(rgb, normalized_settings)
 
-    shadow_bounds = compute_auto_level_bounds_from_luminance(
-        luminance,
-        float(normalized_settings.get("black_percentile", 0.001)),
-        float(normalized_settings.get("white_percentile", 0.999)),
-    )
     auto_levels_enabled = bool(normalized_settings.get("auto_levels", True))
+    shadow_bounds = _stored_auto_level_bounds(normalized_settings) if auto_levels_enabled else None
+    if shadow_bounds is None:
+        shadow_bounds = compute_auto_level_bounds_from_luminance(
+            luminance,
+            float(normalized_settings.get("black_percentile", 0.001)),
+            float(normalized_settings.get("white_percentile", 0.999)),
+        )
     debug_black = shadow_bounds[0] if auto_levels_enabled else None
     debug_white = shadow_bounds[1] if auto_levels_enabled else None
 

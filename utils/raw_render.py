@@ -70,6 +70,18 @@ def _coerce_float_in_range(value: Any, default: float, minimum: float, maximum: 
     return float(np.clip(coerced, float(minimum), float(maximum)))
 
 
+def _coerce_optional_unit_float(value: Any) -> float | None:
+    if value is None:
+        return None
+    try:
+        coerced = float(value)
+    except Exception:
+        return None
+    if not np.isfinite(coerced):
+        return None
+    return float(np.clip(coerced, 0.0, 1.0))
+
+
 def _coerce_int(value: Any, default: int) -> int:
     try:
         return int(value)
@@ -184,6 +196,8 @@ class RawRenderSettings:
     auto_levels_soft_tails: bool = False
     auto_levels_tail_size: float = 0.03
     auto_levels_shadow_lift: float = 0.0
+    auto_black_level: float | None = None
+    auto_white_level: float | None = None
     tone_curve_enabled: bool = False
     tone_curve_strength: float = 0.5
     tone_curve_midpoint: float = 0.5
@@ -212,6 +226,8 @@ class RawRenderSettings:
         auto_levels_soft_tails: bool = False,
         auto_levels_tail_size: float = 0.03,
         auto_levels_shadow_lift: float = 0.0,
+        auto_black_level: float | None = None,
+        auto_white_level: float | None = None,
         shadow_lift: float | None = None,
         tone_curve_enabled: bool = False,
         tone_curve_strength: float = 0.5,
@@ -248,6 +264,17 @@ class RawRenderSettings:
         object.__setattr__(self, "auto_levels_soft_tails", bool(auto_levels_soft_tails))
         object.__setattr__(self, "auto_levels_tail_size", _coerce_float_in_range(auto_levels_tail_size, 0.03, 0.0, 0.5))
         object.__setattr__(self, "auto_levels_shadow_lift", _coerce_float_in_range(resolved_shadow_lift, 0.0, 0.0, 0.10))
+        resolved_auto_black = _coerce_optional_unit_float(auto_black_level)
+        resolved_auto_white = _coerce_optional_unit_float(auto_white_level)
+        if (
+            resolved_auto_black is None
+            or resolved_auto_white is None
+            or resolved_auto_white <= resolved_auto_black
+        ):
+            resolved_auto_black = None
+            resolved_auto_white = None
+        object.__setattr__(self, "auto_black_level", resolved_auto_black)
+        object.__setattr__(self, "auto_white_level", resolved_auto_white)
         object.__setattr__(self, "tone_curve_enabled", bool(tone_curve_enabled))
         object.__setattr__(self, "tone_curve_strength", _coerce_float_in_range(tone_curve_strength, 0.5, 0.0, 1.0))
         object.__setattr__(self, "tone_curve_midpoint", _coerce_float_in_range(tone_curve_midpoint, 0.5, 0.0, 1.0))
@@ -284,6 +311,8 @@ class RawRenderSettings:
             "auto_levels_soft_tails": bool(self.auto_levels_soft_tails),
             "auto_levels_tail_size": float(self.auto_levels_tail_size),
             "auto_levels_shadow_lift": float(self.auto_levels_shadow_lift),
+            "auto_black_level": self.auto_black_level,
+            "auto_white_level": self.auto_white_level,
             "shadow_lift": float(self.shadow_lift),
             "tone_curve_enabled": bool(self.tone_curve_enabled),
             "tone_curve_strength": float(self.tone_curve_strength),
@@ -363,6 +392,8 @@ class RawRenderSettings:
             auto_levels_soft_tails=_coerce_bool(mapping.get("auto_levels_soft_tails"), False),
             auto_levels_tail_size=_coerce_float_in_range(mapping.get("auto_levels_tail_size"), 0.03, 0.0, 0.5),
             auto_levels_shadow_lift=_coerce_float_in_range(shadow_lift_value, 0.0, 0.0, 0.10),
+            auto_black_level=mapping.get("auto_black_level"),
+            auto_white_level=mapping.get("auto_white_level"),
             tone_curve_enabled=_coerce_bool(mapping.get("tone_curve_enabled"), False),
             tone_curve_strength=_coerce_float(mapping.get("tone_curve_strength"), 0.5),
             tone_curve_midpoint=_coerce_float(mapping.get("tone_curve_midpoint"), 0.5),
@@ -473,6 +504,8 @@ def _auto_level_analysis_settings(settings: RawRenderSettings | Mapping[str, Any
         auto_levels_soft_tails=False,
         auto_levels_tail_size=0.03,
         auto_levels_shadow_lift=0.0,
+        auto_black_level=None,
+        auto_white_level=None,
         tone_curve_enabled=False,
         tone_shadows=0.0,
         tone_highlights=0.0,
@@ -512,6 +545,8 @@ def apply_auto_level_bounds_to_settings(
         auto_levels_soft_tails=False,
         auto_levels_tail_size=0.03,
         auto_levels_shadow_lift=0.0,
+        auto_black_level=dark_point,
+        auto_white_level=light_point,
         exposure_ev=light_ev + dark_ev,
         light_ev=light_ev,
         dark_ev=dark_ev,

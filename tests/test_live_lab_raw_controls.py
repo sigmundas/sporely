@@ -22,7 +22,11 @@ import ui.live_lab_tab as live_lab_tab
 from ui.adaptive_choice_selector import AdaptiveChoiceSelector
 from ui.raw_processing_controls import RawProcessingControls
 from ui.segmented_selector import SegmentedSelector
-from utils.raw_render import RawRenderSettings, RawRenderingUnavailableError
+from utils.raw_render import (
+    RawRenderSettings,
+    RawRenderingUnavailableError,
+    apply_auto_level_bounds_to_settings,
+)
 
 
 def _qapp():
@@ -992,6 +996,30 @@ def test_live_lab_pending_preview_auto_level_sliders_freeze_the_rendered_image(m
     )
     assert float(difference.max()) < 4e-3
     assert float(difference.mean()) < 5e-4
+
+
+def test_pending_raw_commit_uses_preview_auto_level_snapshot(tmp_path):
+    _qapp()
+    state = _build_raw_controls_state()
+    source_path = tmp_path / "capture.ORF"
+    source_path.write_bytes(b"raw-bytes")
+    preview_settings = apply_auto_level_bounds_to_settings(
+        RawRenderSettings.default(), 0.12, 0.88
+    )
+    pending = live_lab_tab.PendingRawCapture(
+        source_path=source_path,
+        companion_jpeg_path=None,
+        lab_metadata={},
+        raw_settings=RawRenderSettings.default(),
+        auto_level_settings=preview_settings,
+        observation_id=1,
+    )
+
+    request = state._pending_raw_commit_request_for_capture(pending)
+
+    assert request is not None
+    assert request.raw_settings.auto_black_level == pytest.approx(0.12)
+    assert request.raw_settings.auto_white_level == pytest.approx(0.88)
 
 
 def test_live_lab_raw_curve_preview_widget_uses_current_preview_histogram(tmp_path, monkeypatch):

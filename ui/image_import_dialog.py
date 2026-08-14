@@ -6481,12 +6481,6 @@ class ImageImportDialog(GeometryMixin, QDialog):
             settings = self._default_raw_settings()
         else:
             settings = RawRenderSettings.from_dict(settings).to_dict()
-        source = self._raw_source_path_for_result(result)
-        auto_helper = getattr(self, "_raw_auto_level_settings_for_source", None)
-        if source and _is_raw_path(source) and Path(source).exists() and callable(auto_helper):
-            resolved_settings = RawRenderSettings.from_dict(settings)
-            if bool(resolved_settings.auto_levels):
-                settings = auto_helper(source, resolved_settings).to_dict()
         result.raw_settings = settings
         return settings
 
@@ -6698,12 +6692,9 @@ class ImageImportDialog(GeometryMixin, QDialog):
             if frame is not None:
                 frame.hide()
             return
-        original_settings = RawRenderSettings.from_dict(result.raw_settings or RawRenderSettings.default())
         settings = self._ensure_raw_settings(result)
         source = self._raw_source_path_for_result(result)
         self._load_raw_settings_into_form(settings, source=source)
-        if source and RawRenderSettings.from_dict(settings) != original_settings:
-            self._schedule_raw_preview_refresh(result)
         if convert_btn is not None:
             convert_btn.setText(self.tr("Apply new raw settings"))
         edit_mode = not bool(self._continue_to_observation_details)
@@ -6826,6 +6817,8 @@ class ImageImportDialog(GeometryMixin, QDialog):
         settings: dict | RawRenderSettings | None,
     ) -> RawRenderSettings:
         resolved = RawRenderSettings.from_dict(settings)
+        if resolved.auto_black_level is not None and resolved.auto_white_level is not None:
+            return resolved
         prefs = self._raw_processing_preferences()
         dark_cutoff = float(prefs.get("dark_cutoff", 0.0))
         bright_cutoff = float(prefs.get("bright_cutoff", 0.0))
