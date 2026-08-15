@@ -1083,8 +1083,17 @@ class TaxonInputController(QObject):
         letter. No-ops when the completer/model is unavailable."""
         if self._vernacular_model is None or self._vernacular_completer is None:
             return
-        # Rebuild suggestions (they may be empty if no taxon is resolved yet).
-        self.refresh_vernacular_suggestions()
+        lookup = self.lookup
+        genus = self._current_genus() or None
+        species = self._current_species() or None
+        if lookup and (genus or species):
+            choices = lookup.suggest_common_names(
+                prefix="", genus=genus, species=species, limit=self.max_suggestions
+            )
+            self._last_vernacular_query = ("", genus, species, self.max_suggestions)
+            self._set_vernacular_model(choices, hide_on_exact=False, prefix="")
+        else:
+            self.refresh_vernacular_suggestions()
         if not self.auto_show_popup_on_focus:
             return
         if self._vernacular_model.rowCount() == 0:
