@@ -181,6 +181,11 @@ class _PushAllImageClient(cloud_sync.SporelyCloudClient):
         img_cloud_id: str,
         storage_path: str | None = None,
         upload_meta: dict | None = None,
+        result_meta: dict | None = None,
+        *,
+        observation_id: int | None = None,
+        image_id: int | None = None,
+        recovery_authorized: bool = False,
     ) -> str | None:
         self.upload_image_calls.append(
             {
@@ -213,6 +218,10 @@ class _PushAllImageClient(cloud_sync.SporelyCloudClient):
         img_cloud_id: str,
         storage_path: str | None = None,
         upload_meta: dict | None = None,
+        *,
+        observation_id: int | None = None,
+        image_id: int | None = None,
+        recovery_authorized: bool = False,
     ) -> str | None:
         self.upload_original_calls.append(
             {
@@ -1659,7 +1668,18 @@ def test_push_images_for_observation_emits_uploading_when_file_bytes_are_sent(
     monkeypatch.setattr(cloud_sync, "get_connection", lambda: sqlite3.connect(db_path))
     monkeypatch.setattr(models, "get_connection", lambda: sqlite3.connect(db_path))
 
-    def fake_upload_image_file(local_path, obs_cloud_id, img_cloud_id, storage_path=None, upload_meta=None):
+    def fake_upload_image_file(
+        local_path,
+        obs_cloud_id,
+        img_cloud_id,
+        storage_path=None,
+        upload_meta=None,
+        result_meta=None,
+        *,
+        observation_id=None,
+        image_id=None,
+        recovery_authorized=False,
+    ):
         upload_calls.append((str(local_path), str(obs_cloud_id), str(img_cloud_id), storage_path))
         return storage_path
 
@@ -1728,6 +1748,9 @@ def test_upload_image_file_records_summary_and_quota_rpc_calls(monkeypatch, tmp_
             "cloud-image-1",
             storage_path="user-123/cloud-obs-1/cloud-image-1_source.jpg",
             upload_meta={"observation_id": 1, "image_id": 11},
+            observation_id=1,
+            image_id=11,
+            recovery_authorized=True,
         )
 
     output = capsys.readouterr().out
@@ -5648,7 +5671,19 @@ def test_resolve_conflict_keep_local_records_deleted_cloud_images_before_push(
             push_calls.append(("push_metadata", str(args[0].get("id")), str(args[1])))
             return "cloud-image-1"
 
-        def upload_image_file(self, local_path, obs_cloud_id, img_cloud_id, storage_path=None, upload_meta=None):
+        def upload_image_file(
+            self,
+            local_path,
+            obs_cloud_id,
+            img_cloud_id,
+            storage_path=None,
+            upload_meta=None,
+            result_meta=None,
+            *,
+            observation_id=None,
+            image_id=None,
+            recovery_authorized=False,
+        ):
             uploaded_paths.append(str(local_path))
             return storage_path
 

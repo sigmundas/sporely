@@ -8078,12 +8078,21 @@ class ObservationsTab(QWidget):
         images = ImageDB.get_images_for_observation(int(observation_id))
         # Microscope images are unchecked by default; the user opts in per image.
         self._ensure_microscope_publish_defaults(observation_id, images)
+        # Stage 1: seed the cloud-storage-desired excluded set on first load.
+        # Idempotent — the sentinel prevents re-initialization.
+        try:
+            from utils import cloud_sync as _cloud_sync_module
+            _cloud_sync_module._initialize_cloud_image_storage_desired_state_for_observation(
+                int(observation_id)
+            )
+        except Exception:
+            pass
         all_ids = {
             int(img.get("id"))
             for img in images
             if img.get("id") is not None
         }
-        excluded = self._publish_excluded_image_ids(observation_id)
+        excluded = self._cloud_image_storage_excluded_image_ids(observation_id)
         excluded = {img_id for img_id in excluded if img_id in all_ids}
         selected_ids = all_ids - excluded
         self.gallery_widget.set_publish_selected_ids(selected_ids, emit_signal=False)
@@ -8105,7 +8114,12 @@ class ObservationsTab(QWidget):
             for img in images
             if img.get("id") is not None
         }
-        previous_excluded = self._publish_excluded_image_ids(int(self.selected_observation_id))
+        # Stage 1: the gallery checkbox is now the cloud-storage-desired
+        # state. The publication-exclusion key (Artsobs/iNat) is a separate
+        # decision surface; see docs/supabase-sync-contract.md Phase 2.
+        previous_excluded = self._cloud_image_storage_excluded_image_ids(
+            int(self.selected_observation_id)
+        )
         previous_excluded = {img_id for img_id in previous_excluded if img_id in all_ids}
         previous_selected = all_ids - previous_excluded
         try:
@@ -8116,7 +8130,7 @@ class ObservationsTab(QWidget):
         obs_id = int(self.selected_observation_id)
         unchecked_ids = previous_selected - selected_set
         rechecked_ids = selected_set - previous_selected
-        self._set_publish_excluded_image_ids(obs_id, excluded)
+        self._set_cloud_image_storage_excluded_image_ids(obs_id, excluded)
         changed_ids = unchecked_ids | rechecked_ids
         if changed_ids:
             from utils import cloud_sync as cloud_sync_module
@@ -8130,7 +8144,8 @@ class ObservationsTab(QWidget):
                 gallery.refresh_cloud_states(changed_ids)
         # Once the user has interacted with a microscope image's publish state,
         # record it as "seeded" so the default (unchecked) is not re-applied
-        # on subsequent gallery loads.
+        # on subsequent gallery loads. This is publication-only bookkeeping —
+        # do not couple it to the cloud-storage desired state.
         touched_ids = changed_ids
         touched_microscope_ids = {
             img_id for img_id in touched_ids
@@ -8145,9 +8160,9 @@ class ObservationsTab(QWidget):
         host = self.window()
         if host is None:
             host = self.parent()
-        if host is not None and hasattr(host, "_set_publish_excluded_image_ids_for_observation"):
+        if host is not None and hasattr(host, "_set_cloud_image_storage_excluded_ids_for_observation"):
             try:
-                host._set_publish_excluded_image_ids_for_observation(obs_id, excluded)
+                host._set_cloud_image_storage_excluded_ids_for_observation(obs_id, excluded)
             except Exception:
                 pass
         if (
@@ -8877,6 +8892,43 @@ class ObservationsTab(QWidget):
                 key,
                 json.dumps(normalized),
             )
+        except Exception:
+            pass
+
+    # Stage 1: Sporely Cloud image-storage desired state. Separate from the
+    # publication-exclusion key above so the gallery "Keep image in Sporely
+    # Cloud" checkbox no longer overloads Artsobs/iNat publication selection.
+    @staticmethod
+    def _cloud_image_storage_excluded_setting_key(observation_id: int | None) -> str:
+        from utils.cloud_sync import CLOUD_IMAGE_STORAGE_EXCLUDED_SETTING_PREFIX
+        return f"{CLOUD_IMAGE_STORAGE_EXCLUDED_SETTING_PREFIX}{int(observation_id or 0)}"
+
+    @classmethod
+    def _cloud_image_storage_excluded_image_ids(
+        cls, observation_id: int | None
+    ) -> set[int]:
+        if not observation_id:
+            return set()
+        key = cls._cloud_image_storage_excluded_setting_key(observation_id)
+        raw = SettingsDB.get_setting(key, "[]")
+        try:
+            loaded = json.loads(raw or "[]")
+            if isinstance(loaded, list):
+                return {int(v) for v in loaded}
+        except Exception:
+            pass
+        return set()
+
+    @classmethod
+    def _set_cloud_image_storage_excluded_image_ids(
+        cls, observation_id: int | None, excluded_ids: set[int]
+    ) -> None:
+        if not observation_id:
+            return
+        normalized = sorted({int(v) for v in (excluded_ids or set())})
+        key = cls._cloud_image_storage_excluded_setting_key(observation_id)
+        try:
+            SettingsDB.set_setting(key, json.dumps(normalized))
         except Exception:
             pass
 

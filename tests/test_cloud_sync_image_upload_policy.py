@@ -317,7 +317,12 @@ def test_repeated_metadata_only_sync_does_not_flip_synced_to_dirty(tmp_path, mon
 
 def test_explicit_media_upload_does_not_re_dirty_unchecked_measured_microscope(tmp_path, monkeypatch):
     """Measurements sync through a metadata-only anchor and do not imply that
-    the unchecked microscope image bytes may upload."""
+    the unchecked microscope image bytes may upload.
+
+    Stage 1: the source of truth for "should these bytes upload" is the new
+    ``sporely_cloud_image_storage_excluded_ids_<obs>`` setting, not the old
+    Artsobs publication exclusion key.
+    """
     db_path = _init_db(tmp_path)
     conn = _connect(db_path)
     conn.execute("INSERT INTO observations (id, cloud_id, sync_status) VALUES (500, 'cloud-500', 'synced')")
@@ -332,7 +337,7 @@ def test_explicit_media_upload_does_not_re_dirty_unchecked_measured_microscope(t
     conn.execute("INSERT INTO spore_measurements (id, image_id) VALUES (1, 901)")
     conn.execute(
         "INSERT INTO settings (key, value) VALUES (?, ?)",
-        ("artsobs_publish_excluded_image_ids_500", "[901]"),
+        ("sporely_cloud_image_storage_excluded_ids_500", "[901]"),
     )
     conn.commit()
     conn.close()
@@ -353,7 +358,10 @@ def test_explicit_media_upload_does_not_re_dirty_unchecked_measured_microscope(t
 def test_explicit_media_upload_leaves_measurement_less_microscope_alone(tmp_path, monkeypatch):
     """Even under explicit media-upload mode, a microscope image with NO
     measurements and no explicit selection stays local — that's the whole
-    point of the tightened push policy."""
+    point of the tightened push policy.
+
+    Stage 1: cloud-storage-desired state lives under the new setting key.
+    """
     db_path = _init_db(tmp_path)
     conn = _connect(db_path)
     conn.execute("INSERT INTO observations (id, cloud_id, sync_status) VALUES (500, 'cloud-500', 'synced')")
@@ -367,7 +375,7 @@ def test_explicit_media_upload_leaves_measurement_less_microscope_alone(tmp_path
     )
     conn.execute(
         "INSERT INTO settings (key, value) VALUES (?, ?)",
-        ("artsobs_publish_excluded_image_ids_500", "[902]"),
+        ("sporely_cloud_image_storage_excluded_ids_500", "[902]"),
     )
     conn.commit()
     conn.close()
@@ -425,7 +433,12 @@ def test_gallery_exclusion_keeps_measured_microscope_bytes_local(
     tmp_path,
     monkeypatch,
 ):
-    """The thumbnail checkmark is the source of cloud byte-upload consent."""
+    """The thumbnail checkmark is the source of cloud byte-upload consent.
+
+    Stage 1: the checkbox persists to the new cloud-storage-desired key.
+    The Artsobs publish exclusion is intentionally left as a separate
+    publication-only setting and MUST NOT affect cloud-sync behavior.
+    """
     db_path = _init_db(tmp_path)
     conn = _connect(db_path)
     conn.execute("INSERT INTO observations (id, cloud_id, sync_status) VALUES (500, 'cloud-500', 'synced')")
@@ -444,7 +457,7 @@ def test_gallery_exclusion_keeps_measured_microscope_bytes_local(
     )
     conn.execute(
         "INSERT INTO settings (key, value) VALUES (?, ?)",
-        ("artsobs_publish_excluded_image_ids_500", "[902]"),
+        ("sporely_cloud_image_storage_excluded_ids_500", "[902]"),
     )
     conn.commit()
     conn.close()

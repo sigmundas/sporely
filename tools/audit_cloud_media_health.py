@@ -663,12 +663,16 @@ def _repair_rows(
             continue
 
         try:
+            # Cloud media health repair is an authorized recovery flow: the
+            # storage-desired gate is bypassed explicitly so identity does
+            # not need to be re-derived from the audit row.
             client.upload_image_file(
                 source_path,
                 cloud_observation_id,
                 cloud_image_id,
                 storage_path=storage_path,
                 upload_meta=dict(upload_meta or {}),
+                recovery_authorized=True,
             )
             row["repair_status"] = "uploaded"
             row["repair_uploaded_original_key"] = storage_path

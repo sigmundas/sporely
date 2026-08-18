@@ -861,10 +861,10 @@ def test_gallery_publish_uncheck_routes_through_cloud_lifecycle(monkeypatch, ima
     )
     tab = SimpleNamespace(
         selected_observation_id=7,
-        _publish_excluded_image_ids=lambda observation_id: set(),
-        _set_publish_excluded_image_ids=lambda obs_id, excluded: calls["excluded"].append(
-            (int(obs_id), tuple(sorted(int(v) for v in excluded)))
-        ),
+        _cloud_image_storage_excluded_image_ids=lambda observation_id: set(),
+        _set_cloud_image_storage_excluded_image_ids=lambda obs_id, excluded: calls[
+            "excluded"
+        ].append((int(obs_id), tuple(sorted(int(v) for v in excluded)))),
         _publish_seeded_microscope_ids=lambda observation_id: set(),
         _set_publish_seeded_microscope_ids=lambda observation_id, image_ids: None,
         window=lambda: None,
@@ -919,10 +919,10 @@ def test_gallery_publish_uncheck_does_not_touch_public_spore_anchor(monkeypatch)
     )
     tab = SimpleNamespace(
         selected_observation_id=7,
-        _publish_excluded_image_ids=lambda observation_id: set(),
-        _set_publish_excluded_image_ids=lambda obs_id, excluded: calls["excluded"].append(
-            (int(obs_id), tuple(sorted(int(v) for v in excluded)))
-        ),
+        _cloud_image_storage_excluded_image_ids=lambda observation_id: set(),
+        _set_cloud_image_storage_excluded_image_ids=lambda obs_id, excluded: calls[
+            "excluded"
+        ].append((int(obs_id), tuple(sorted(int(v) for v in excluded)))),
         _publish_seeded_microscope_ids=lambda observation_id: set(),
         _set_publish_seeded_microscope_ids=lambda observation_id, image_ids: None,
         window=lambda: None,
@@ -1000,10 +1000,12 @@ def test_gallery_publish_recheck_detaches_tombstoned_cloud_state_and_marks_dirty
 
     tab = SimpleNamespace(
         selected_observation_id=7,
-        _publish_excluded_image_ids=lambda observation_id: {1},
-        _set_publish_excluded_image_ids=lambda obs_id, excluded: calls["excluded"].append(
-            (int(obs_id), tuple(sorted(int(v) for v in excluded)))
-        ),
+        _cloud_image_storage_excluded_image_ids=lambda observation_id: {1},
+        _set_cloud_image_storage_excluded_image_ids=lambda obs_id, excluded: calls[
+            "excluded"
+        ].append((int(obs_id), tuple(sorted(int(v) for v in excluded)))),
+        _publish_seeded_microscope_ids=lambda observation_id: set(),
+        _set_publish_seeded_microscope_ids=lambda observation_id, image_ids: None,
         window=lambda: None,
         parent=lambda: None,
     )
@@ -1046,10 +1048,12 @@ def test_gallery_publish_recheck_never_uploaded_image_routes_through_cloud_lifec
     )
     tab = SimpleNamespace(
         selected_observation_id=7,
-        _publish_excluded_image_ids=lambda observation_id: {1},
-        _set_publish_excluded_image_ids=lambda obs_id, excluded: calls["excluded"].append(
-            (int(obs_id), tuple(sorted(int(v) for v in excluded)))
-        ),
+        _cloud_image_storage_excluded_image_ids=lambda observation_id: {1},
+        _set_cloud_image_storage_excluded_image_ids=lambda obs_id, excluded: calls[
+            "excluded"
+        ].append((int(obs_id), tuple(sorted(int(v) for v in excluded)))),
+        _publish_seeded_microscope_ids=lambda observation_id: set(),
+        _set_publish_seeded_microscope_ids=lambda observation_id, image_ids: None,
         window=lambda: None,
         parent=lambda: None,
     )

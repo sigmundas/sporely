@@ -271,8 +271,18 @@ def test_original_upload_follows_existing_opt_in(monkeypatch, tmp_path):
     events = []
 
     class Client:
-        def upload_original_image_file(self, path, obs, image, upload_meta=None):
-            events.append((path, obs, image))
+        def upload_original_image_file(
+            self,
+            path,
+            obs,
+            image,
+            upload_meta=None,
+            *,
+            observation_id=None,
+            image_id=None,
+            recovery_authorized=False,
+        ):
+            events.append((path, obs, image, recovery_authorized))
             return "original-key"
 
         def set_image_original_storage_path(self, image, key):
@@ -287,7 +297,10 @@ def test_original_upload_follows_existing_opt_in(monkeypatch, tmp_path):
     assert events == []
     monkeypatch.setattr("utils.cloud_media_recovery.is_full_resolution_original_sync_enabled", lambda: True)
     adapter.upload_original_if_enabled(image, "cloud-7", "cloud-11")
-    assert events == [(str(source), "cloud-7", "cloud-11"), ("cloud-11", "original-key")]
+    assert events == [
+        (str(source), "cloud-7", "cloud-11", True),
+        ("cloud-11", "original-key"),
+    ]
 
 
 @pytest.mark.parametrize("change", ["missing_row", "missing_object", "duplicate", "measurement"])

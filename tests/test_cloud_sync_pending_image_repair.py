@@ -130,7 +130,19 @@ class _MemorySyncClient(cloud_sync.SporelyCloudClient):
             if str(row.get("observation_id") or "").strip() == str(obs_cloud_id or "").strip()
         ]
 
-    def upload_image_file(self, local_path, obs_cloud_id, img_cloud_id, storage_path=None, upload_meta=None):
+    def upload_image_file(
+        self,
+        local_path,
+        obs_cloud_id,
+        img_cloud_id,
+        storage_path=None,
+        upload_meta=None,
+        result_meta=None,
+        *,
+        observation_id=None,
+        image_id=None,
+        recovery_authorized=False,
+    ):
         self.upload_image_calls.append(
             {"local_path": str(local_path), "storage_path": str(storage_path or "")}
         )
@@ -358,12 +370,13 @@ def test_dirty_scan_ignores_rows_cloud_sync_never_pushes(tmp_path, monkeypatch):
 
     conn = sqlite3.connect(db_path)
     try:
-        # settings.value column stores the persisted gallery-exclusion list —
-        # `_cloud_explicit_media_upload_selection` reads this and treats every
-        # id NOT in the list as gallery-checked. Image 2 is excluded.
+        # Stage 1: cloud-storage-desired state lives under the dedicated
+        # `sporely_cloud_image_storage_excluded_ids_<obs>` setting.
+        # `_cloud_explicit_media_upload_selection` reads this and treats
+        # every id NOT in the list as gallery-checked. Image 2 is excluded.
         conn.execute(
             "INSERT INTO settings (key, value) VALUES (?, ?)",
-            ("artsobs_publish_excluded_image_ids_10", json.dumps([2])),
+            ("sporely_cloud_image_storage_excluded_ids_10", json.dumps([2])),
         )
         conn.commit()
     finally:

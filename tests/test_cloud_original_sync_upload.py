@@ -124,6 +124,11 @@ class _MemoryOriginalSyncClient(cloud_sync.SporelyCloudClient):
         img_cloud_id: str,
         storage_path: str | None = None,
         upload_meta: dict | None = None,
+        result_meta: dict | None = None,
+        *,
+        observation_id: int | None = None,
+        image_id: int | None = None,
+        recovery_authorized: bool = False,
     ) -> str | None:
         self.upload_image_calls.append(
             {
@@ -143,6 +148,10 @@ class _MemoryOriginalSyncClient(cloud_sync.SporelyCloudClient):
         img_cloud_id: str,
         storage_path: str | None = None,
         upload_meta: dict | None = None,
+        *,
+        observation_id: int | None = None,
+        image_id: int | None = None,
+        recovery_authorized: bool = False,
     ) -> str | None:
         self.upload_original_calls.append(
             {

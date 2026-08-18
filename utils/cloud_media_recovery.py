@@ -239,6 +239,9 @@ class CloudRecoveryAdapter:
                 "observation_id": image.get("observation_id"), "image_id": image.get("id"),
             },
             result_meta=result_meta,
+            observation_id=image.get("observation_id"),
+            image_id=image.get("id"),
+            recovery_authorized=True,
         )
         if not result:
             raise RecoveryError(f"Image {image.get('id')}: derivative upload returned no key")
@@ -285,6 +288,9 @@ class CloudRecoveryAdapter:
         key = self.client.upload_original_image_file(
             source["source_path"], cloud_observation_id, cloud_image_id,
             upload_meta={"observation_id": image.get("observation_id"), "image_id": image.get("id")},
+            observation_id=image.get("observation_id"),
+            image_id=image.get("id"),
+            recovery_authorized=True,
         )
         if key:
             self.client.set_image_original_storage_path(cloud_image_id, key)

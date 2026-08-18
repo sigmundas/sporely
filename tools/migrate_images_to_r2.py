@@ -128,7 +128,18 @@ def migrate_images(dry_run: bool = False, limit: int | None = None) -> int:
                 f'observation_images?id=eq.{actual_cloud_image_id}',
                 {'storage_path': storage_key},
             )
-        client.upload_image_file(str(upload_path), observation_cloud_id, actual_cloud_image_id)
+        # Migration is a one-time bulk lift for images already known to be
+        # eligible; pass the identity kwargs so the storage-desired gate
+        # sees the same local ids the sync path uses.
+        local_observation_id = int(row.get("observation_id") or 0) or None
+        client.upload_image_file(
+            str(upload_path),
+            observation_cloud_id,
+            actual_cloud_image_id,
+            observation_id=local_observation_id,
+            image_id=local_image_id or None,
+            recovery_authorized=True,
+        )
         _remember_cloud_id(local_image_id, actual_cloud_image_id)
         uploaded += 1
         print(f"[ok] image {local_image_id}: uploaded to {storage_key}")

@@ -276,9 +276,16 @@ def test_measure_gallery_publish_uncheck_routes_through_cloud_lifecycle(monkeypa
         "set_image_cloud_selected",
         lambda image_id, selected: calls["transition"].append((int(image_id), bool(selected))),
     )
-    window._get_publish_excluded_image_ids_for_observation = lambda observation_id: set()
-    window._set_publish_excluded_image_ids_for_observation = lambda obs_id, excluded: calls["excluded"].append(
-        (int(obs_id), tuple(sorted(int(v) for v in excluded)))
+    # Stage 1: the Measure gallery handler now writes to the cloud-storage
+    # desired-state key. The Artsobs publication key is intentionally
+    # untouched — do not fail the test on legacy publication method calls.
+    window._get_cloud_image_storage_excluded_ids_for_observation = (
+        lambda observation_id: set()
+    )
+    window._set_cloud_image_storage_excluded_ids_for_observation = (
+        lambda obs_id, excluded: calls["excluded"].append(
+            (int(obs_id), tuple(sorted(int(v) for v in excluded)))
+        )
     )
     window._sync_observations_tab_publish_state = lambda *args, **kwargs: None
 
@@ -351,9 +358,14 @@ def test_measure_gallery_publish_recheck_detaches_tombstoned_cloud_state_and_mar
         "set_image_cloud_selected",
         lambda image_id, selected: calls["transition"].append((int(image_id), bool(selected))),
     )
-    window._get_publish_excluded_image_ids_for_observation = lambda observation_id: {1}
-    window._set_publish_excluded_image_ids_for_observation = lambda obs_id, excluded: calls["excluded"].append(
-        (int(obs_id), tuple(sorted(int(v) for v in excluded)))
+    # Stage 1: same as above — write to the cloud-storage-desired key.
+    window._get_cloud_image_storage_excluded_ids_for_observation = (
+        lambda observation_id: {1}
+    )
+    window._set_cloud_image_storage_excluded_ids_for_observation = (
+        lambda obs_id, excluded: calls["excluded"].append(
+            (int(obs_id), tuple(sorted(int(v) for v in excluded)))
+        )
     )
     window._sync_observations_tab_publish_state = lambda *args, **kwargs: None
 

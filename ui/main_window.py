@@ -14025,17 +14025,65 @@ class MainWindow(GeometryMixin, QMainWindow):
         except Exception:
             pass
 
+    # Stage 1: cloud-storage-desired excluded set. Split out of the Artsobs
+    # publication-exclusion key so the Measure gallery checkbox no longer
+    # writes to publication settings.
+    def _cloud_image_storage_excluded_setting_key(self, observation_id: int | None) -> str:
+        from utils.cloud_sync import CLOUD_IMAGE_STORAGE_EXCLUDED_SETTING_PREFIX
+        return f"{CLOUD_IMAGE_STORAGE_EXCLUDED_SETTING_PREFIX}{int(observation_id or 0)}"
+
+    def _get_cloud_image_storage_excluded_ids_for_observation(
+        self, observation_id: int | None
+    ) -> set[int]:
+        if not observation_id:
+            return set()
+        obs_id = int(observation_id)
+        key = self._cloud_image_storage_excluded_setting_key(obs_id)
+        raw = SettingsDB.get_setting(key, "[]")
+        parsed: set[int] = set()
+        try:
+            loaded = json.loads(raw or "[]")
+            if isinstance(loaded, list):
+                parsed = {int(v) for v in loaded}
+        except Exception:
+            parsed = set()
+        return parsed
+
+    def _set_cloud_image_storage_excluded_ids_for_observation(
+        self, observation_id: int | None, excluded_ids: set[int]
+    ) -> None:
+        if not observation_id:
+            return
+        obs_id = int(observation_id)
+        normalized = {int(v) for v in (excluded_ids or set())}
+        key = self._cloud_image_storage_excluded_setting_key(obs_id)
+        try:
+            SettingsDB.set_setting(key, json.dumps(sorted(normalized)))
+        except Exception:
+            pass
+
     def _apply_measure_gallery_publish_selection(self) -> None:
         if not hasattr(self, "measure_gallery"):
             return
         if not self.active_observation_id:
             return
+        # Stage 1: seed the cloud-storage-desired excluded set on first load
+        # of the Measure gallery. Idempotent.
+        try:
+            from utils import cloud_sync as _cloud_sync_module
+            _cloud_sync_module._initialize_cloud_image_storage_desired_state_for_observation(
+                int(self.active_observation_id)
+            )
+        except Exception:
+            pass
         all_image_ids = {
             int(image.get("id"))
             for image in (self.observation_images or [])
             if image.get("id") is not None
         }
-        excluded = self._get_publish_excluded_image_ids_for_observation(self.active_observation_id)
+        excluded = self._get_cloud_image_storage_excluded_ids_for_observation(
+            self.active_observation_id
+        )
         excluded = {img_id for img_id in excluded if img_id in all_image_ids}
         selected = set(all_image_ids) - set(excluded)
         self.measure_gallery.set_publish_selected_ids(selected, emit_signal=False)
@@ -14051,7 +14099,7 @@ class MainWindow(GeometryMixin, QMainWindow):
             for image in (self.observation_images or [])
             if image.get("id") is not None
         }
-        previous_excluded = self._get_publish_excluded_image_ids_for_observation(obs_id)
+        previous_excluded = self._get_cloud_image_storage_excluded_ids_for_observation(obs_id)
         previous_selected = all_image_ids - {
             int(image_id) for image_id in previous_excluded if int(image_id) in all_image_ids
         }
@@ -14062,7 +14110,9 @@ class MainWindow(GeometryMixin, QMainWindow):
         excluded = set(all_image_ids) - set(selected_set)
         unchecked_ids = previous_selected - selected_set
         rechecked_ids = selected_set - previous_selected
-        self._set_publish_excluded_image_ids_for_observation(obs_id, excluded)
+        # Stage 1: write to the cloud-storage-desired key. Publication key
+        # (artsobs_publish_excluded_image_ids_*) is intentionally left alone.
+        self._set_cloud_image_storage_excluded_ids_for_observation(obs_id, excluded)
         changed_ids = unchecked_ids | rechecked_ids
         if changed_ids:
             from utils import cloud_sync as cloud_sync_module
@@ -14078,15 +14128,19 @@ class MainWindow(GeometryMixin, QMainWindow):
             self._sync_observations_tab_publish_state(obs_id, excluded)
 
     def _sync_observations_tab_publish_state(self, observation_id: int | None, excluded_ids: set[int] | None = None) -> None:
-        """Keep Observations tab publish checkboxes in sync with Measure tab edits."""
+        """Keep Observations tab cloud-storage checkboxes in sync with Measure tab edits."""
         if not observation_id or not hasattr(self, "observations_tab"):
             return
         obs_id = int(observation_id)
         tab = self.observations_tab
 
-        if excluded_ids is not None and hasattr(tab, "_set_publish_excluded_image_ids"):
+        # Stage 1: mirror the cloud-storage-desired excluded set (not the
+        # publication key). Publication state has its own decision surface.
+        if excluded_ids is not None and hasattr(
+            tab, "_set_cloud_image_storage_excluded_image_ids"
+        ):
             try:
-                tab._set_publish_excluded_image_ids(obs_id, set(excluded_ids))
+                tab._set_cloud_image_storage_excluded_image_ids(obs_id, set(excluded_ids))
             except Exception:
                 pass
 

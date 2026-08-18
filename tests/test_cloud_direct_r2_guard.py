@@ -82,6 +82,7 @@ def test_upload_image_file_uses_worker_without_r2_secrets(monkeypatch, tmp_path)
         "cloud-obs-1",
         "cloud-img-1",
         storage_path="user-123/cloud-obs-1/source.jpg",
+        recovery_authorized=True,
     )
 
     assert uploaded_key == "user-123/cloud-obs-1/source.jpg"
@@ -117,6 +118,7 @@ def test_upload_image_file_uses_worker_even_when_admin_env_exists_without_explic
         "cloud-obs-1",
         "cloud-img-1",
         storage_path="user-123/cloud-obs-1/source.jpg",
+        recovery_authorized=True,
     )
 
     assert uploaded_key == "user-123/cloud-obs-1/source.jpg"
@@ -141,6 +143,7 @@ def test_upload_original_image_file_uses_worker_without_r2_secrets(monkeypatch, 
         "cloud-obs-1",
         "cloud-img-1",
         storage_path="user-123/cloud-obs-1/originals/source.jpg",
+        recovery_authorized=True,
     )
 
     assert uploaded_key == "user-123/cloud-obs-1/originals/source.jpg"
@@ -189,6 +192,7 @@ def test_upload_image_file_surfaces_plan_limit_context(monkeypatch, tmp_path):
             "cloud-img-1",
             storage_path="user-123/cloud-obs-1/source.jpg",
             upload_meta=upload_meta,
+            recovery_authorized=True,
         )
 
     text = str(excinfo.value)
@@ -268,6 +272,7 @@ def test_upload_image_file_surfaces_worker_plan_limit_context_with_missing_detai
             "cloud-img-1",
             storage_path="user-123/cloud-obs-1/source.jpg",
             upload_meta=upload_meta,
+            recovery_authorized=True,
         )
 
     text = str(excinfo.value)
@@ -349,6 +354,7 @@ def test_upload_image_file_requires_webp_support(monkeypatch, tmp_path):
             "cloud-obs-1",
             "cloud-img-1",
             storage_path="user-123/cloud-obs-1/source.jpg",
+            recovery_authorized=True,
         )
 
     assert str(excinfo.value) == cloud_sync.WEBP_REQUIRED_FOR_CLOUD_MEDIA_UPLOAD_MESSAGE
@@ -526,6 +532,7 @@ def test_upload_image_file_uses_worker_even_when_direct_r2_is_explicitly_availab
         "cloud-obs-1",
         "cloud-img-1",
         storage_path="user-123/cloud-obs-1/source.jpg",
+        recovery_authorized=True,
     )
 
     assert uploaded_key == "user-123/cloud-obs-1/source.jpg"

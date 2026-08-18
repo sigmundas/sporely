@@ -4706,6 +4706,22 @@ def _cloud_metadata_only_image_ids_key(observation_id: int | str) -> str:
     return f"sporely_cloud_metadata_only_image_ids_{str(observation_id or '').strip()}"
 
 
+# Stage 1: cloud image-storage desired state lives under its own setting so it
+# is fully independent of the Artsobs/iNaturalist publication exclusion set.
+# The old ``artsobs_publish_excluded_image_ids_<obs>`` key remains a
+# publication-only concern and must not be read to infer cloud deletion intent.
+CLOUD_IMAGE_STORAGE_EXCLUDED_SETTING_PREFIX = "sporely_cloud_image_storage_excluded_ids_"
+_CLOUD_IMAGE_STORAGE_INIT_SENTINEL_PREFIX = "sporely_cloud_image_storage_initialized_"
+
+
+def _cloud_image_storage_excluded_ids_key(observation_id: int | str) -> str:
+    return f"{CLOUD_IMAGE_STORAGE_EXCLUDED_SETTING_PREFIX}{str(observation_id or '').strip()}"
+
+
+def _cloud_image_storage_initialized_key(observation_id: int | str) -> str:
+    return f"{_CLOUD_IMAGE_STORAGE_INIT_SENTINEL_PREFIX}{str(observation_id or '').strip()}"
+
+
 def _cloud_local_media_signature_key(observation_id: int | str) -> str:
     return f"{_SETTING_CLOUD_LOCAL_MEDIA_SIG_PREFIX}{str(observation_id or '').strip()}"
 
@@ -5116,6 +5132,292 @@ def _set_cloud_image_metadata_only_state(
         _cloud_metadata_only_image_ids_key(obs_id),
         json.dumps(sorted(image_ids)),
     )
+
+
+def _cloud_image_storage_excluded_image_ids(observation_id: int | str) -> set[int]:
+    """Return the local image ids the user has excluded from cloud image storage.
+
+    Stage 1 canonical persistence for the gallery "Keep image in Sporely Cloud"
+    checkbox. Separate from the Artsobs/iNat publication-exclusion set.
+    """
+    raw = SettingsDB.get_setting(
+        _cloud_image_storage_excluded_ids_key(observation_id), '[]'
+    )
+    try:
+        values = json.loads(raw or '[]')
+    except (TypeError, ValueError, json.JSONDecodeError):
+        return set()
+    if not isinstance(values, list):
+        return set()
+    return {_safe_int(value) for value in values if _safe_int(value) > 0}
+
+
+def _set_cloud_image_storage_excluded_image_ids(
+    observation_id: int | str,
+    excluded_ids: set[int] | list[int] | tuple[int, ...] | None,
+) -> None:
+    """Persist the full cloud image-storage excluded id set for one observation."""
+    obs_id = _safe_int(observation_id)
+    if obs_id <= 0:
+        return
+    normalized = sorted({
+        _safe_int(value) for value in (excluded_ids or set()) if _safe_int(value) > 0
+    })
+    SettingsDB.set_setting(
+        _cloud_image_storage_excluded_ids_key(obs_id),
+        json.dumps(normalized),
+    )
+
+
+def _add_cloud_image_storage_excluded_image_id(
+    observation_id: int | str,
+    image_id: int | str,
+) -> None:
+    obs_id = _safe_int(observation_id)
+    local_image_id = _safe_int(image_id)
+    if obs_id <= 0 or local_image_id <= 0:
+        return
+    excluded = _cloud_image_storage_excluded_image_ids(obs_id)
+    if local_image_id in excluded:
+        return
+    excluded.add(local_image_id)
+    _set_cloud_image_storage_excluded_image_ids(obs_id, excluded)
+
+
+def _remove_cloud_image_storage_excluded_image_id(
+    observation_id: int | str,
+    image_id: int | str,
+) -> None:
+    obs_id = _safe_int(observation_id)
+    local_image_id = _safe_int(image_id)
+    if obs_id <= 0 or local_image_id <= 0:
+        return
+    excluded = _cloud_image_storage_excluded_image_ids(obs_id)
+    if local_image_id not in excluded:
+        return
+    excluded.discard(local_image_id)
+    _set_cloud_image_storage_excluded_image_ids(obs_id, excluded)
+
+
+def cloud_image_bytes_desired(
+    observation_id: int | str,
+    image_id: int | str,
+    image_row: dict | None = None,
+) -> bool:
+    """Return whether cloud image *bytes* are desired for this local image.
+
+    Byte-storage intent only. Anchors are separate — metadata-only microscope
+    anchor lifecycle is managed by
+    ``_ensure_metadata_only_microscope_image_for_public_spores`` and is not
+    affected by this predicate.
+    """
+    obs_id = _safe_int(observation_id)
+    local_image_id = _safe_int(image_id)
+    if obs_id <= 0 or local_image_id <= 0:
+        return False
+    excluded = _cloud_image_storage_excluded_image_ids(obs_id)
+    return local_image_id not in excluded
+
+
+class CloudImageBytesNotDesiredError(CloudSyncError):
+    """Raised when a byte upload is attempted for an image the user unchecked.
+
+    The cloud-storage-desired predicate rejects the upload at the client
+    boundary. Recovery flows may opt in explicitly by passing
+    ``recovery_authorized=True`` to the upload method.
+    """
+
+
+def _cloud_image_storage_initialized(observation_id: int | str) -> bool:
+    return str(
+        SettingsDB.get_setting(_cloud_image_storage_initialized_key(observation_id), '')
+        or ''
+    ).strip() == '1'
+
+
+def _mark_cloud_image_storage_initialized(observation_id: int | str) -> None:
+    obs_id = _safe_int(observation_id)
+    if obs_id <= 0:
+        return
+    SettingsDB.set_setting(_cloud_image_storage_initialized_key(obs_id), '1')
+
+
+def _microscope_group_key_from_row(row: dict) -> str:
+    """Coarse magnification-group key used by the storage-desired initializer.
+
+    Kept local so ``utils.cloud_sync`` does not import Qt UI code. The heuristic
+    mirrors :func:`ui.observations_tab._image_microscope_publish_group_key` for
+    the fields available on ImageDB rows: use ``objective_name`` and fall back
+    to a magnification number scraped from it. This is only used for the
+    initializer's sparse-default rule; UI still uses its own resolver.
+    """
+    if not isinstance(row, dict):
+        return "__unknown__"
+    objective_name = str(row.get('objective_name') or '').strip()
+    if not objective_name:
+        lab_metadata = row.get('lab_metadata')
+        if isinstance(lab_metadata, dict):
+            objective_name = str(lab_metadata.get('objective_name') or '').strip()
+            if not objective_name:
+                microscope_metadata = lab_metadata.get('microscope')
+                if isinstance(microscope_metadata, dict):
+                    objective_name = str(
+                        microscope_metadata.get('objective_name') or ''
+                    ).strip()
+    if not objective_name:
+        return "__unknown__"
+    import re as _re
+    match = _re.search(r"(\d+(?:\.\d+)?)\s*[xX]", objective_name)
+    if match:
+        return f"{match.group(1)}x".casefold()
+    match = _re.search(r"(\d+(?:\.\d+)?)", objective_name)
+    if match:
+        return f"{match.group(1)}x".casefold()
+    return objective_name.casefold() or "__unknown__"
+
+
+def _initialize_cloud_image_storage_desired_state_for_observation(
+    observation_id: int | str,
+) -> None:
+    """First-run seeding of the cloud-storage excluded set for one observation.
+
+    Idempotent — a sentinel setting marks the observation as initialized so
+    repeat calls are cheap no-ops. Never touches images that already have any
+    kind of cloud identity (uploaded or tombstoned); this preserves prior
+    user intent and prevents legacy Artsobs exclusions from migrating into the
+    cloud-storage set.
+
+    Rules:
+    * UPLOADED image (has ``cloud_id`` and ``synced_at``, no active tombstone)
+      → not excluded (desired=true).
+    * DELETE_PENDING or DELETED image → written into the excluded set so the
+      byte gate refuses re-uploads; tombstone lifecycle is untouched.
+    * Local-only field image → not excluded (desired=true).
+    * Local-only microscope image → sparse default: one image desired per
+      magnification group, remaining images excluded. Groups that already
+      contain any image with a ``cloud_id`` (uploaded, delete-pending, or
+      metadata-only anchor) are left untouched.
+    """
+    obs_id = _safe_int(observation_id)
+    if obs_id <= 0:
+        return
+    if _cloud_image_storage_initialized(obs_id):
+        return
+
+    conn = get_connection()
+    try:
+        conn.row_factory = sqlite3.Row
+        existing_cols = {
+            str(info["name"])
+            for info in conn.execute("PRAGMA table_info(images)").fetchall()
+        }
+        if "id" not in existing_cols:
+            return
+        wanted = [
+            col
+            for col in (
+                "id", "image_type", "cloud_id", "synced_at",
+                "objective_name",
+                "sort_order",
+            )
+            if col in existing_cols
+        ]
+        order_bits: list[str] = []
+        if "sort_order" in existing_cols:
+            order_bits.append("CASE WHEN sort_order IS NULL THEN 1 ELSE 0 END")
+            order_bits.append("sort_order")
+        order_bits.append("id")
+        rows = [
+            dict(row)
+            for row in conn.execute(
+                f"SELECT {', '.join(wanted)} FROM images WHERE observation_id = ? "
+                f"ORDER BY {', '.join(order_bits)}",
+                (obs_id,),
+            ).fetchall()
+        ]
+    finally:
+        conn.close()
+
+    if not rows:
+        _mark_cloud_image_storage_initialized(obs_id)
+        return
+
+    existing_excluded = _cloud_image_storage_excluded_image_ids(obs_id)
+    excluded: set[int] = set(existing_excluded)
+
+    # Group microscope rows by magnification. Groups that already contain any
+    # cloud-identified image (uploaded, delete-pending, metadata-only anchor)
+    # are frozen: the sparse default must not touch them.
+    microscope_groups: dict[str, list[dict]] = {}
+    microscope_group_has_cloud: dict[str, bool] = {}
+    for row in rows:
+        image_type = str(row.get("image_type") or '').strip().lower()
+        if image_type != "microscope":
+            continue
+        group_key = _microscope_group_key_from_row(row)
+        microscope_groups.setdefault(group_key, []).append(row)
+        if str(row.get("cloud_id") or '').strip():
+            microscope_group_has_cloud[group_key] = True
+
+    for row in rows:
+        local_image_id = _safe_int(row.get("id"))
+        if local_image_id <= 0:
+            continue
+        cloud_id = str(row.get("cloud_id") or '').strip()
+        if cloud_id:
+            # Anything cloud-identified retains existing user intent. Tombstone
+            # state is handled elsewhere; we only add DELETE_PENDING/DELETED
+            # to the excluded set so re-uploads are refused. UPLOADED images
+            # must not appear in the excluded set.
+            tombstone = ImageDB.get_image_tombstone_by_deleted_cloud_id(cloud_id)
+            if tombstone:
+                excluded.add(local_image_id)
+            else:
+                excluded.discard(local_image_id)
+            continue
+        image_type = str(row.get("image_type") or '').strip().lower()
+        if image_type == "microscope":
+            group_key = _microscope_group_key_from_row(row)
+            if microscope_group_has_cloud.get(group_key):
+                # Leave already-uploaded groups alone entirely.
+                continue
+
+    # Sparse default for microscope groups with no cloud-identified image at
+    # all: one desired image per group, rest excluded. Skip groups that were
+    # frozen above (any cloud_id present).
+    for group_key, group_rows in microscope_groups.items():
+        if microscope_group_has_cloud.get(group_key):
+            continue
+        # Preserve any prior user intent already in ``excluded`` from a
+        # partial run — do not clobber a manual selection.
+        already_desired = [
+            row for row in group_rows
+            if _safe_int(row.get("id")) > 0
+            and _safe_int(row.get("id")) not in excluded
+        ]
+        if already_desired:
+            # Group already has at least one desired image (either from an
+            # earlier interaction or from the initializer's own iteration).
+            # Exclude the rest.
+            keeper_id = _safe_int(already_desired[0].get("id"))
+            for row in group_rows:
+                rid = _safe_int(row.get("id"))
+                if rid <= 0 or rid == keeper_id:
+                    continue
+                excluded.add(rid)
+            continue
+        # No image in group is currently desired — pick the first.
+        first = group_rows[0]
+        keeper_id = _safe_int(first.get("id"))
+        if keeper_id > 0:
+            excluded.discard(keeper_id)
+        for row in group_rows[1:]:
+            rid = _safe_int(row.get("id"))
+            if rid > 0:
+                excluded.add(rid)
+
+    _set_cloud_image_storage_excluded_image_ids(obs_id, excluded)
+    _mark_cloud_image_storage_initialized(obs_id)
 
 
 def _reconcile_local_image_cloud_id(
@@ -6882,10 +7184,11 @@ def mark_observation_media_dirty(local_id: int) -> None:
 def set_image_cloud_selected(image_id: int, selected: bool) -> dict | None:
     """Apply one checkbox change to the image's canonical cloud lifecycle.
 
-    The checkbox stores desired state elsewhere as the observation's selected
-    image set. This transition owns the actual cloud work: queue/cancel a
-    tombstone, schedule a normal first upload, or start the explicit restore
-    flow after a completed deletion.
+    Stage 1: also mirrors the checkbox into the cloud-storage-desired
+    excluded set (``sporely_cloud_image_storage_excluded_ids_<obs>``) so the
+    boundary byte gate sees a consistent view without depending on any UI
+    layer. Tombstone / delete-pending / restore transitions continue to run
+    as before.
     """
     image_id = _safe_int(image_id)
     if image_id <= 0:
@@ -6935,6 +7238,15 @@ def set_image_cloud_selected(image_id: int, selected: bool) -> dict | None:
     elif selected and previous_state == CLOUD_IMAGE_STATE_METADATA_ONLY:
         mark_observation_media_dirty(observation_id)
         action = "upload_queued"
+
+    # Stage 1: keep the cloud-storage-desired excluded set aligned with the
+    # checkbox. Only mutate when the observation is known; a checkbox without
+    # an observation cannot affect the byte gate anyway.
+    if observation_id > 0:
+        if selected:
+            _remove_cloud_image_storage_excluded_image_id(observation_id, image_id)
+        else:
+            _add_cloud_image_storage_excluded_image_id(observation_id, image_id)
 
     return {
         "image_id": image_id,
@@ -8052,12 +8364,12 @@ def measurement_qualifies_for_public_spore_anchor(measurement: dict | None) -> b
 
 
 def _cloud_explicit_media_upload_selection(observation_id: int | None) -> set[int]:
-    """Return image ids checked in the observation thumbnail gallery.
+    """Return image ids the user has kept in Sporely Cloud image storage.
 
-    The gallery persists its state as an exclusion list. Cloud media upload
-    uses that visible desired-cloud-state contract to decide which new bytes to
-    prepare. Existing uploaded rows are tombstoned by the checkbox transition
-    before this upload-selection predicate runs.
+    Stage 1: this is now the cloud-storage desired selection, read from the
+    dedicated ``sporely_cloud_image_storage_excluded_ids_<obs>`` setting.
+    Legacy ``artsobs_publish_excluded_image_ids_<obs>`` values are ignored
+    here — that key is publication-only.
     """
     local_observation_id = _safe_int(observation_id)
     if local_observation_id <= 0:
@@ -8072,7 +8384,7 @@ def _cloud_explicit_media_upload_selection(observation_id: int | None) -> set[in
             ).fetchall()
             if _safe_int(row[0]) > 0
         }
-        setting_key = f"artsobs_publish_excluded_image_ids_{local_observation_id}"
+        setting_key = _cloud_image_storage_excluded_ids_key(local_observation_id)
         try:
             setting_row = conn.execute(
                 "SELECT value FROM settings WHERE key = ?",
@@ -8111,6 +8423,10 @@ PENDING_REASON_ALREADY_SYNCED = "skipped_already_synced"
 PENDING_REASON_WRONG_TYPE = "skipped_wrong_type"
 PENDING_REASON_GENERATED = "skipped_generated_cloud_image"
 PENDING_REASON_EXCLUDED = "skipped_excluded_by_user"
+# Stage 1: split the "user has not requested a cloud copy" reason out of the
+# generic exclusion bucket so diagnostic reports and callers can distinguish
+# gallery-desired-state rejects from any other exclusion input.
+PENDING_REASON_NOT_DESIRED_BY_USER = "skipped_not_desired_by_user"
 PENDING_REASON_DUPLICATE = "skipped_duplicate_path"
 PENDING_REASON_MISSING_FILE = "skipped_missing_file"
 PENDING_REASON_CACHE_ROW = "skipped_cloud_cache_row"
@@ -8177,7 +8493,7 @@ def explain_pending_cloud_image_decision(
 
     explicit = explicit_media_upload_selection
     if not is_cloud_origin and explicit is not None and image_id not in explicit:
-        return {"pending": False, "reason": PENDING_REASON_EXCLUDED}
+        return {"pending": False, "reason": PENDING_REASON_NOT_DESIRED_BY_USER}
 
     filepath = str(row.get("filepath") or row.get("original_filepath") or "").strip()
     if not is_cloud_origin and (not filepath or not Path(filepath).exists()):
@@ -14658,11 +14974,40 @@ class SporelyCloudClient:
         storage_path: str | None = None,
         upload_meta: dict | None = None,
         result_meta: dict | None = None,
+        *,
+        observation_id: int | None = None,
+        image_id: int | None = None,
+        recovery_authorized: bool = False,
     ) -> str | None:
         """Upload file to Cloudflare R2. Returns the relative media key or None if missing."""
         path = Path(local_path)
         if not path.exists():
             return None
+
+        # Stage 1: byte-storage gate at the client boundary. Fails closed on
+        # missing identity — callers on the normal path MUST pass both
+        # ``observation_id`` and ``image_id`` so the gate can consult
+        # ``cloud_image_bytes_desired``. A caller that omits either identity
+        # kwarg is treated as a silent-bypass attempt and refused with the
+        # same error the desired-state check would raise. Recovery flows
+        # opt in explicitly via ``recovery_authorized=True`` and are the
+        # sole intentional exception; when authorized, missing ids are
+        # tolerated for auditability of the recovery adapter (which does
+        # pass ids in practice).
+        gate_obs = _safe_int(observation_id)
+        gate_image = _safe_int(image_id)
+        if not recovery_authorized:
+            if gate_obs <= 0 or gate_image <= 0:
+                raise CloudImageBytesNotDesiredError(
+                    "cloud image bytes require observation_id and image_id "
+                    "on the normal upload path; recovery_authorized=True is "
+                    f"the only intentional exception (obs={observation_id!r} "
+                    f"image={image_id!r})"
+                )
+            if not cloud_image_bytes_desired(gate_obs, gate_image):
+                raise CloudImageBytesNotDesiredError(
+                    f"cloud image bytes not desired: obs={gate_obs} image={gate_image}"
+                )
 
         storage_path = _normalize_cloud_media_key(
             storage_path or self._build_storage_path(obs_cloud_id, img_cloud_id, local_path)
@@ -14880,11 +15225,35 @@ class SporelyCloudClient:
         img_cloud_id: str,
         storage_path: str | None = None,
         upload_meta: dict | None = None,
+        *,
+        observation_id: int | None = None,
+        image_id: int | None = None,
+        recovery_authorized: bool = False,
     ) -> str | None:
         """Upload a full-resolution original file to cloud storage as WebP."""
         path = Path(local_path)
         if not path.exists():
             return None
+
+        # Stage 1: byte-storage gate at the client boundary. Fails closed on
+        # missing identity — identical rules to ``upload_image_file``.
+        # Identity in ``upload_meta`` alone is diagnostic labelling and
+        # does not satisfy the identity requirement. Recovery flows opt in
+        # via ``recovery_authorized=True``.
+        gate_obs = _safe_int(observation_id)
+        gate_image = _safe_int(image_id)
+        if not recovery_authorized:
+            if gate_obs <= 0 or gate_image <= 0:
+                raise CloudImageBytesNotDesiredError(
+                    "cloud original bytes require observation_id and image_id "
+                    "on the normal upload path; recovery_authorized=True is "
+                    f"the only intentional exception (obs={observation_id!r} "
+                    f"image={image_id!r})"
+                )
+            if not cloud_image_bytes_desired(gate_obs, gate_image):
+                raise CloudImageBytesNotDesiredError(
+                    f"cloud original bytes not desired: obs={gate_obs} image={gate_image}"
+                )
 
         storage_path = _normalize_cloud_media_key(
             storage_path or self._build_original_storage_path(obs_cloud_id, img_cloud_id, local_path)
@@ -17675,10 +18044,14 @@ def _associate_persisted_cloud_images(
     """Re-link orphaned local image rows to existing remote cloud images.
 
     Targets the repair case described in the sync bug: a local image row whose
-    ``cloud_id`` was lost but which still has a matching remote cloud image
-    (same ``desktop_id``), an existing remote ``storage_path`` and descriptive
-    metadata that already matches. The local ``cloud_id`` is restored without
-    uploading any bytes and without encoding a temporary WebP candidate.
+    ``cloud_id`` was lost but which still has an unambiguous remote cloud
+    image match (same ``desktop_id``, same owner, same ``image_type``). The
+    local ``cloud_id`` is restored without uploading any bytes.
+
+    Stage 1: repair is intentionally NOT gated on the cloud-storage-desired
+    checkbox — even an unchecked image with a lost link should be relinked so
+    the byte gate can refuse re-upload and any pending tombstone can complete
+    its deletion instead of creating a duplicate.
 
     Returns local image ids that the upload-preparation step can skip.
     """
@@ -17688,13 +18061,20 @@ def _associate_persisted_cloud_images(
     except Exception:
         return associated_ids
 
-    existing_by_desktop_id = {
-        _safe_int(row.get('desktop_id')): row
-        for row in (existing_rows or [])
-        if _safe_int(row.get('desktop_id')) != 0
-    }
-    if not existing_by_desktop_id:
+    # Bucket remote rows by desktop_id so we can detect ambiguity (2+ rows
+    # sharing the same desktop_id). Ambiguous groups are skipped: identity
+    # cannot be repaired safely without human intervention.
+    remote_rows_by_desktop_id: dict[int, list[dict]] = {}
+    for row in (existing_rows or []):
+        desktop_id = _safe_int(row.get('desktop_id'))
+        if desktop_id <= 0:
+            continue
+        remote_rows_by_desktop_id.setdefault(desktop_id, []).append(row)
+    if not remote_rows_by_desktop_id:
         return associated_ids
+
+    obs_cloud_id = str(obs.get('cloud_id') or '').strip()
+    obs_owner_id = str(obs.get('user_id') or '').strip()
 
     include_ai_crop = client._observation_images_support_ai_crop()
     include_upload_meta = client._observation_images_support_upload_metadata()
@@ -17719,41 +18099,79 @@ def _associate_persisted_cloud_images(
         if local_image_id <= 0 or not should_push_local_image_to_cloud(img):
             continue
         # Only repair orphaned rows. Rows that still hold a cloud_id (correct or
-        # conflicting) and never-synced rows flow through the normal path.
+        # conflicting) flow through the normal path.
         if str(img.get('cloud_id') or '').strip():
             continue
-        if not str(img.get('synced_at') or '').strip():
+        matches = remote_rows_by_desktop_id.get(local_image_id) or []
+        if not matches:
             continue
-        remote_row = existing_by_desktop_id.get(local_image_id)
-        if not remote_row:
+        if len(matches) > 1:
+            print(
+                f'[cloud_sync] Observation {obs_local_id}: ambiguous cloud image match '
+                f'for desktop_id={local_image_id} (found {len(matches)} candidates); '
+                f'skipping identity repair'
+            )
             continue
+        remote_row = matches[0]
         remote_cloud_id = str(remote_row.get('id') or '').strip()
         remote_storage_path = _normalize_cloud_media_key(remote_row.get('storage_path'))
-        if not remote_cloud_id or not remote_storage_path:
+        if not remote_cloud_id:
             continue
 
-        expected_payload = _prepared_item_remote_payload(
-            img,
-            '',
-            remote_storage_path,
-            include_ai_crop=include_ai_crop,
-            include_upload_meta=include_upload_meta,
-        )
-        remote_payload = _remote_image_payload(
-            remote_row,
-            include_ai_crop=include_ai_crop,
-            include_upload_meta=include_upload_meta,
-        )
-        if not _image_calibration_uuid(img):
-            expected_payload.pop('calibration_uuid', None)
-            remote_payload.pop('calibration_uuid', None)
-        for key in upload_derived_keys:
-            expected_payload.pop(key, None)
-            remote_payload.pop(key, None)
-        if expected_payload != remote_payload:
-            # Descriptive metadata changed while the link was missing — let the
-            # normal prepare + metadata-patch path handle it.
+        # Owner scoping: require either the observation cloud_id match or the
+        # remote row's user_id to match the local observation's owner. Prevents
+        # cross-account bleed if a stale cache leaked rows from another user.
+        remote_obs_cloud_id = str(remote_row.get('observation_id') or '').strip()
+        remote_owner_id = str(remote_row.get('user_id') or '').strip()
+        if obs_cloud_id and remote_obs_cloud_id and obs_cloud_id != remote_obs_cloud_id:
+            print(
+                f'[cloud_sync] Observation {obs_local_id}: cloud image '
+                f'desktop_id={local_image_id} does not match this observation '
+                f'({remote_obs_cloud_id} != {obs_cloud_id}); skipping identity repair'
+            )
             continue
+        if obs_owner_id and remote_owner_id and obs_owner_id != remote_owner_id:
+            print(
+                f'[cloud_sync] Observation {obs_local_id}: cloud image '
+                f'desktop_id={local_image_id} has different owner; skipping identity repair'
+            )
+            continue
+
+        # image_type must agree — otherwise this is not the same image.
+        local_type = str(img.get('image_type') or '').strip().lower()
+        remote_type = str(remote_row.get('image_type') or '').strip().lower()
+        if local_type and remote_type and local_type != remote_type:
+            continue
+
+        was_synced_previously = bool(str(img.get('synced_at') or '').strip())
+        if was_synced_previously and remote_storage_path:
+            # Historical repair path: descriptive metadata must already match
+            # so we don't silently drop pending edits. Newly-created local
+            # rows (no prior synced_at) do not have this constraint — their
+            # descriptive metadata is being introduced right now and will be
+            # patched by the normal reconcile step.
+            expected_payload = _prepared_item_remote_payload(
+                img,
+                '',
+                remote_storage_path,
+                include_ai_crop=include_ai_crop,
+                include_upload_meta=include_upload_meta,
+            )
+            remote_payload = _remote_image_payload(
+                remote_row,
+                include_ai_crop=include_ai_crop,
+                include_upload_meta=include_upload_meta,
+            )
+            if not _image_calibration_uuid(img):
+                expected_payload.pop('calibration_uuid', None)
+                remote_payload.pop('calibration_uuid', None)
+            for key in upload_derived_keys:
+                expected_payload.pop(key, None)
+                remote_payload.pop(key, None)
+            if expected_payload != remote_payload:
+                # Descriptive metadata changed while the link was missing — let
+                # the normal prepare + metadata-patch path handle it.
+                continue
 
         if _reconcile_local_image_cloud_id(local_image_id, remote_cloud_id, mark_synced=True):
             _increment_sync_summary(_cloud_sync_current_summary(), 'images_cloud_id_repaired')
@@ -18016,6 +18434,21 @@ def _push_images_for_observation(
         if str(value or '').strip()
     }
     warnings.extend(_push_pending_image_tombstones(client))
+    # Stage 1: cloud-storage-desired initialization is a sync prerequisite —
+    # not a UI concern. Before any prepare_images_cb runs, before any
+    # candidate filtering, before any byte-upload boundary, ensure the
+    # observation's storage-excluded set has been seeded. Idempotent — the
+    # sentinel setting makes repeat calls cheap. Without this, a fresh
+    # observation's local microscope images would fall through the byte
+    # gate as "desired" (empty set → everything desired) and the headless
+    # sync path would upload every frame even though the user never opened
+    # a gallery. Runs AFTER ``_push_pending_image_tombstones`` so that
+    # protected microscope anchors whose tombstones get cancelled in that
+    # step are not incorrectly written into the excluded set by the
+    # initializer's tombstone rule.
+    _initialize_cloud_image_storage_desired_state_for_observation(
+        _safe_int(obs.get('id'))
+    )
     prepared_items: list[dict] = []
     cleanup = None
     preparation_failed = False
@@ -18077,6 +18510,18 @@ def _push_images_for_observation(
         images = ImageDB.get_images_for_observation(obs['id'])
         for img in images:
             if img.get('image_type') == 'microscope' and not img.get('cloud_id'):
+                continue
+            # Stage 1: the prepare_images_cb=None fallback must also honor the
+            # cloud-storage-desired predicate. Sending bytes for an image the
+            # user unchecked would bypass the client boundary gate, and the
+            # boundary gate would then correctly raise.
+            local_img_id = _safe_int(img.get('id'))
+            local_obs_id = _safe_int(obs.get('id'))
+            if (
+                local_obs_id > 0
+                and local_img_id > 0
+                and not cloud_image_bytes_desired(local_obs_id, local_img_id, img)
+            ):
                 continue
             prepared_items.append({
                 'image_row': img,
@@ -18344,6 +18789,27 @@ def _push_images_for_observation(
                     )
 
                 img_cloud_id = remote_cloud_id
+                # Stage 1 defense in depth: even after prepare_images_cb emitted
+                # this row, skip the byte upload if the user unchecked the
+                # image between preparation and this loop. This must NOT
+                # create a metadata-only anchor for non-microscope images; it
+                # only bypasses the byte send and lets downstream metadata
+                # bookkeeping proceed.
+                if (
+                    not file_matches
+                    and local_image_id > 0
+                    and not cloud_image_bytes_desired(
+                        obs.get('id'), local_image_id, img
+                    )
+                ):
+                    print(
+                        f'[cloud_sync] Observation {obs["id"]}: skipped byte upload '
+                        f'for image {local_image_id} because cloud image bytes '
+                        f'are not desired by the user'
+                    )
+                    file_matches = True
+                    if not img_cloud_id and remote_cloud_id:
+                        img_cloud_id = remote_cloud_id
                 if not file_matches:
                     # Private Worker writes require a server-known image
                     # identity. Reserve/upsert the metadata row before bytes
@@ -18361,6 +18827,8 @@ def _push_images_for_observation(
                             img_cloud_id,
                             storage_path=storage_path,
                             upload_meta=dict(item.get('cloud_upload_meta') or {}),
+                            observation_id=_safe_int(obs.get('id')),
+                            image_id=local_image_id,
                         )
                     except Exception:
                         if reserved_image_row and img_cloud_id:
@@ -18475,6 +18943,21 @@ def _push_images_for_observation(
                                 source_path,
                             )
                             try:
+                                # Stage 1 defense in depth for the full-res
+                                # original: never send bytes for an image the
+                                # user has unchecked. The client-boundary gate
+                                # would raise anyway; this local skip keeps
+                                # the loop's bookkeeping tidy.
+                                if (
+                                    local_image_id > 0
+                                    and not cloud_image_bytes_desired(
+                                        obs.get('id'), local_image_id, img
+                                    )
+                                ):
+                                    raise CloudImageBytesNotDesiredError(
+                                        f"cloud original bytes not desired: "
+                                        f"obs={obs.get('id')} image={local_image_id}"
+                                    )
                                 # Bind the canonical original identity before
                                 # the private upload so the Worker can verify
                                 # X-Sporely-Image-Id against this exact key.
@@ -18488,6 +18971,8 @@ def _push_images_for_observation(
                                     img_cloud_id,
                                     storage_path=original_storage_path,
                                     upload_meta=original_upload_meta,
+                                    observation_id=_safe_int(obs.get('id')),
+                                    image_id=local_image_id,
                                 )
                             except CloudSyncError as exc:
                                 try:

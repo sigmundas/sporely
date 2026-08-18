@@ -1,6 +1,6 @@
 # Sporely Cloud Sync Contract and Repair Plan
 
-Status: required behavior; repair work pending.
+Status: required behavior; Stage 1 landed; Stage 2 pending.
 
 This is the shared sync specification for `sporely` (desktop) and `sporely-web` (web, Android, Supabase, and cloud media). Keep an identical copy at:
 
@@ -34,19 +34,43 @@ Plain English comes first; technical terms are in parentheses.
 - **Cloud file address** (`storage_path`): the key pointing to a cloud file.
 - **Prepared upload list** (`prepared_items`): images whose bytes were prepared for this sync.
 - **Protected cloud list** (`kept_cloud_ids`): existing cloud image rows that must remain.
+- **Cloud-storage-desired excluded set** (`sporely_cloud_image_storage_excluded_ids_<obs>`): the local image ids for one observation whose bytes are *not* desired in Sporely Cloud image storage. Everything else is desired.
 
 ## Non-negotiable safety rules
 
-1. **Ordinary sync must not infer deletion.** A routine refresh may add or update data. It must not remove a cloud record or file merely because an image was omitted from an upload list.
-2. **The gallery checkbox is desired cloud state.** Unchecking a live cloud-backed image is explicit cloud-copy deletion intent; an external-publication choice is not.
-3. **Deletion requires an explicit transition.** Store checkbox uncheck or “Delete cloud copy” intent as a removal marker (`tombstone`) before sync performs the remote deletion.
-4. **Normal sync must not permanently delete image rows.** Use recoverable deletion (`soft delete`) first. Permanent deletion belongs to verified maintenance, account deletion, or retention cleanup.
-5. **Store deletion intent before removing bytes.** Confirm the database deletion state first, then clean up cloud files as a retry-safe follow-up.
-6. **Local originals remain authoritative.** A smaller cloud copy never overwrites a better local original. Downloaded files are recovery copies (`cloud_recovery_cache`) until explicitly promoted.
-7. **Failures remain retryable.** Do not mark an observation fully synced if required image, measurement, calibration, summary, or deletion work failed.
-8. **Conflicts block automatic writes.** When local and cloud both changed since the known-good baseline, stop and ask for a choice.
-9. **Stable IDs define identity.** Match by IDs, not dates, filenames, file paths, species names, or sort order.
-10. **All clients share the same state meanings.** Desktop, web, Android, cloud functions, and media workers must distinguish active, measurement-only, broken, and deleted images consistently.
+1. **The gallery "Keep image in Sporely Cloud" checkbox is desired Sporely Cloud image-storage state.**
+   - Checked = a cloud image copy is desired.
+   - Unchecked, local-only image = do not upload bytes.
+   - Unchecking an already-uploaded image = explicit cloud-copy deletion intent, which queues the tombstone/delete-pending lifecycle.
+   - Rechecking before the tombstone syncs cancels the pending deletion and preserves the existing cloud copy.
+2. **Internal omission is never deletion intent.** Filtering, failed preparation, missing files, metadata-only sync passes, `prepare_images_cb`=None fallbacks, `include_image_ids` subsets, or any other implementation detail must never independently create deletion intent. Deletion only comes from an explicit uncheck or an explicit context-menu removal.
+3. **Deletion requires an explicit transition.** Store checkbox uncheck or "Delete cloud copy" intent as a removal marker (`tombstone`) before sync performs the remote deletion.
+4. **Image bytes and metadata-only microscope anchors are different things.** Unchecking a measured microscope image removes its cloud image bytes but may still retain a metadata-only microscope anchor so spore measurements and the public spore mosaic keep working. Never confuse the two: the byte-storage predicate governs bytes only.
+5. **Normal sync must not permanently delete image rows.** Use recoverable deletion (`soft delete`) first. Permanent deletion belongs to verified maintenance, account deletion, or retention cleanup.
+6. **Store deletion intent before removing bytes.** Confirm the database deletion state first, then clean up cloud files as a retry-safe follow-up.
+7. **Local originals remain authoritative.** A smaller cloud copy never overwrites a better local original. Downloaded files are recovery copies (`cloud_recovery_cache`) until explicitly promoted.
+8. **Failures remain retryable.** Do not mark an observation fully synced if required image, measurement, calibration, summary, or deletion work failed.
+9. **Conflicts block automatic writes.** When local and cloud both changed since the known-good baseline, stop and ask for a choice.
+10. **Stable IDs define identity.** Match by IDs, not dates, filenames, file paths, species names, or sort order.
+11. **All clients share the same state meanings.** Desktop, web, Android, cloud functions, and media workers must distinguish active, measurement-only, broken, and deleted images consistently.
+12. **Identity repair is checkbox-independent.** A local row with a lost `cloud_id` must be reconciled with the matching remote row by `desktop_id` regardless of the current gallery checkbox. Repair restores identity; it does not upload bytes. Recovery of identity for an unchecked image lets the byte gate correctly refuse re-uploads and lets a pending tombstone complete instead of creating a duplicate.
+13. **The legacy `artsobs_publish_excluded_image_ids_<obs>` setting is publication-only.** Its values must never automatically tombstone or otherwise remove cloud media. They may surface as audit hints in a later stage but never independently drive cloud-side change.
+
+## Storage of desired cloud image-byte state
+
+Local SQLite is authoritative:
+
+- `images.cloud_id` — the current cloud identity link (if any).
+- `image_tombstones` — durable explicit-deletion intent.
+- `settings["sporely_cloud_image_storage_excluded_ids_<obs>"]` — the per-observation set of local image ids the user has excluded from Sporely Cloud image storage.
+
+The canonical byte-storage predicate is `cloud_image_bytes_desired(observation_id, image_id)`:
+
+- returns `False` when `image_id` is in the excluded set for that observation;
+- returns `True` otherwise;
+- concerns bytes only — anchor lifecycle for measurements is separately governed by the metadata-only microscope anchor helper.
+
+`SporelyCloudClient.upload_image_file` and `SporelyCloudClient.upload_original_image_file` refuse to send bytes when the predicate returns `False`, raising `CloudImageBytesNotDesiredError`. Recovery flows opt in by passing `recovery_authorized=True`.
 
 ## Ownership boundary
 
@@ -69,7 +93,7 @@ The Observations and Measure gallery checkbox represents the desired Sporely Clo
 - unchecked means it should not have a cloud copy;
 - the cloud badge reports actual state: uploaded, delete pending, or absent.
 
-External-publication inclusion (for example Artsobservasjoner or iNaturalist) is a separate workflow decision. Ordinary upload filtering, a missing prepared file, or external-publication exclusion must never be reinterpreted as cloud deletion intent.
+External-publication inclusion (for example Artsobservasjoner or iNaturalist) is a separate workflow decision. It has its own persistence key (`artsobs_publish_excluded_image_ids_<obs>`) and does not participate in cloud storage sync in either direction. Ordinary upload filtering, a missing prepared file, or external-publication exclusion must never be reinterpreted as cloud deletion intent.
 
 Canonical desktop image states are `NONE`, `UPLOADED`, `DELETE_PENDING`, and `DELETED`. A retained `cloud_id` with a synced tombstone is `DELETED`, not `UPLOADED`.
 
@@ -78,7 +102,7 @@ Canonical desktop image states are `NONE`, `UPLOADED`, `DELETE_PENDING`, and `DE
 ### First upload
 
 - Create or find the cloud observation by owner (`user_id`) and stable desktop link (`desktop_id`).
-- Upload only images eligible for a new cloud copy.
+- Upload only images eligible for a new cloud copy (byte-storage desired) and whose bytes are actually available.
 - Store local cloud links (`cloud_id`) only after confirmation.
 - Save the known-good baseline (`sync snapshot`) after all required child work succeeds.
 - Keep partial failures dirty and retryable.
@@ -86,7 +110,7 @@ Canonical desktop image states are `NONE`, `UPLOADED`, `DELETE_PENDING`, and `DE
 ### No changes
 
 - Perform no writes, uploads, deletions, or unnecessary image encoding.
-- Return a clear “nothing changed” result.
+- Return a clear "nothing changed" result.
 
 ### One side changed
 
@@ -100,7 +124,7 @@ Canonical desktop image states are `NONE`, `UPLOADED`, `DELETE_PENDING`, and `DE
 - Detect a conflict using a three-way comparison (`three-way merge`).
 - Block automatic push and pull for that observation.
 - Show affected categories: details, images, measurements, calibrations, or deletion.
-- Offer “use this device,” “use Sporely Cloud,” or a future field-level merge.
+- Offer "use this device," "use Sporely Cloud," or a future field-level merge.
 
 ## Desired image sync
 
@@ -113,6 +137,14 @@ When a local image still maps to an active cloud image:
 - patch metadata when necessary;
 - replace bytes only when the trusted source changed or a missing cloud file is deliberately restored;
 - never call it stale merely because it was filtered, skipped, or reordered.
+
+### Lost local `cloud_id` — identity repair
+
+When a local row has no `cloud_id` but a unique remote row shares the same `desktop_id`, matches owner scope, and matches image type:
+
+- restore the local `cloud_id` from the remote row without uploading bytes;
+- do this whether or not the image is currently desired (unchecked images repair too);
+- if two or more remote rows share the `desktop_id`, do not auto-repair — log a warning and skip.
 
 ### New local image
 
@@ -132,7 +164,7 @@ When a local image still maps to an active cloud image:
 A measurement-only record (`metadata-only anchor`) is valid only when:
 
 - bytes were never uploaded but measurements are shared; or
-- the user explicitly chose “remove cloud image, keep measurements.”
+- the user explicitly chose "remove cloud image, keep measurements."
 
 It must not be created from an external-publication choice. Owner-facing UI must distinguish deliberate measurement-only state from a broken or deleted image.
 
@@ -171,8 +203,8 @@ This is separate from deleting the local image.
 
 The gallery checkbox and context-menu command share this lifecycle:
 
-- `UPLOADED` + uncheck queues an unsynced tombstone and shows `DELETE_PENDING` immediately;
-- recheck before sync cancels that tombstone, preserves the existing cloud ID, and performs no upload or delete;
+- `UPLOADED` + uncheck queues an unsynced tombstone and shows `DELETE_PENDING` immediately; the storage-excluded set gets the image id;
+- recheck before sync cancels that tombstone, preserves the existing cloud ID, removes the image id from the storage-excluded set, and performs no upload or delete;
 - after successful remote deletion, the checkbox remains unchecked and the synced tombstone yields `DELETED` with no cloud badge;
 - recheck after `DELETED` preserves the historical tombstone, detaches the old identity, and explicitly restores exactly that image as a new cloud row.
 
@@ -251,7 +283,7 @@ Reported examples include Mica cap, Boletales, and *Mycena haematopus*. These ar
 
 ## Repair plan
 
-### Phase 0 — stop further damage
+### Phase 0 — stop further damage (shipped)
 
 Desktop (`sporely`):
 
@@ -286,23 +318,32 @@ Report per observation/image:
 
 The audit must be dry-run and non-mutating. Run it first on reported observations, then all observations touched by affected desktop versions.
 
-### Phase 2 — make cloud selection explicit
+### Phase 2 — make cloud selection explicit (Stage 1 shipped)
 
-Desktop:
+Stage 1 implemented on desktop:
 
-- Keep Artsobservasjoner/iNaturalist selection as publication state only.
-- Treat the Observations/Measure gallery checkbox as desired Sporely Cloud state.
-- Represent checkbox/context-menu deletion only through explicit tombstones.
-- Never infer deletion from publication exclusions, absent `prepared_items`, missing temporary files, changed order, filtered image type, or measurement visibility.
-- Treat legacy publication exclusions as non-destructive.
+- The gallery "Keep image in Sporely Cloud" checkbox now persists to a dedicated per-observation setting `sporely_cloud_image_storage_excluded_ids_<obs>`, separate from `artsobs_publish_excluded_image_ids_<obs>`.
+- A canonical predicate `cloud_image_bytes_desired(observation_id, image_id)` is the single source of truth for whether cloud image bytes should be sent for one local image.
+- `SporelyCloudClient.upload_image_file` and `SporelyCloudClient.upload_original_image_file` refuse to send bytes for an image the user has unchecked, raising `CloudImageBytesNotDesiredError`. The gate fails closed on missing identity: normal-path callers must pass valid `observation_id` and `image_id`; recovery flows opt in by passing `recovery_authorized=True` (the only intentional exception, waiving the identity requirement for auditability).
+- `_push_images_for_observation` guards the two byte-upload call sites and the `prepare_images_cb=None` fallback branch with the same predicate.
+- Identity repair (`_associate_persisted_cloud_images`) is decoupled from the checkbox and works by unambiguous `desktop_id` match.
+- A non-destructive initializer `_initialize_cloud_image_storage_desired_state_for_observation` seeds the storage-excluded set on the first sync path (invoked at the top of `_push_images_for_observation`, immediately after pending image tombstones are pushed, before any candidate filtering or byte-upload boundary) — not on gallery open — so background/headless sync cannot upload the full local microscope set for an observation the user has never viewed. UI still calls the same initializer for display consistency but is not required for correctness. Rules: uploaded images stay desired; delete-pending / deleted images are excluded; local-only field images stay desired; local-only microscope images use a sparse per-magnification default when no image in the group already has a cloud identity.
+- Legacy Artsobs publication exclusions are not migrated into the new set.
+- The reason enum split: `PENDING_REASON_EXCLUDED` remains for internal `excluded_ids` arguments; the new `PENDING_REASON_NOT_DESIRED_BY_USER` reports gallery-desired-state rejects.
 
-### Phase 3 — repair desktop image algorithm
+Not yet:
+
+- Fold gallery UI to expose the checkbox as a Sporely Cloud state control (already the case) with matching help text and audit surface.
+- Move Artsobservasjoner/iNaturalist publication selection to its own, separately-scoped UI decision surface with its own default rules.
+- Surface any legacy `artsobs_publish_excluded_image_ids_<obs>` values that correspond to visible cloud photos as audit hints without mutating cloud state.
+
+### Phase 3 — repair desktop image algorithm (future work)
 
 Desktop:
 
 - Build `kept_cloud_ids` from every active cloud row that maps to an existing local image.
 - Use `prepared_items` only for upload work.
-- Remove “delete every remote row not kept” from ordinary sync.
+- Remove "delete every remote row not kept" from ordinary sync.
 - Process tombstones in a separate deletion phase.
 - Use soft deletion before file cleanup.
 - Never clear a valid `cloud_id` because the current run uploaded no bytes.
@@ -344,7 +385,11 @@ Desktop tests must prove:
 - interrupted upload or deletion recovers safely;
 - missing cloud files are reported, not silently deleted;
 - conflicts cover observation, image, measurement, and deletion changes;
-- recovery copies never overwrite local originals.
+- recovery copies never overwrite local originals;
+- `cloud_image_bytes_desired` returns the correct answer for every state (uploaded, delete-pending, deleted, local-only field, local-only microscope with and without measurements);
+- `SporelyCloudClient.upload_image_file` and `SporelyCloudClient.upload_original_image_file` raise `CloudImageBytesNotDesiredError` for undesired images and pass for desired ones;
+- identity repair runs even for undesired images;
+- legacy `artsobs_publish_excluded_image_ids_<obs>` values do not migrate into `sporely_cloud_image_storage_excluded_ids_<obs>`.
 
 Web/cloud tests must prove:
 
@@ -384,10 +429,14 @@ Owns local originals, SQLite state, three-way comparison, conflict blocking, upl
 Primary areas:
 
 - `utils/cloud_sync.py`
+- `utils/cloud_media_recovery.py`
 - `ui/observations_tab.py`
+- `ui/main_window.py`
 - `ui/image_gallery_widget.py`
 - `database/models.py`
 - `tests/test_cloud_sync_*.py`
+- `tests/test_cloud_image_bytes_desired.py`
+- `tests/test_cloud_storage_desired_initializer.py`
 - `tests/test_observations_tab_cloud_sync.py`
 
 ### Web/cloud (`sporely-web`)
