@@ -188,6 +188,8 @@ from utils.cloud_sync import (
     is_image_too_large_for_plan_error,
     materialize_cloud_media_for_observation,
     load_saved_cloud_password,
+    partition_download_from_cloud_issues,
+    summarize_blocked_write_attempts,
     format_cloud_sync_error_details,
     _format_cloud_sync_observation_status,
     _cloud_sync_current_summary,
@@ -508,11 +510,13 @@ class _CloudAutoSyncWorker(QThread):
         sync_images: bool = True,
         full_pull: bool = True,
         child_safety_pull: bool = True,
+        pull_only: bool = False,
         parent=None,
     ):
         super().__init__(parent)
-        self.setObjectName("Cloud sync")
-        self._sync_images = bool(sync_images)
+        self.setObjectName("Cloud download" if pull_only else "Cloud sync")
+        self._pull_only = bool(pull_only)
+        self._sync_images = bool(sync_images) and not self._pull_only
         self._prepare_images_cb = prepare_images_cb if self._sync_images else None
         self._materialize_remote_images = bool(materialize_remote_images)
         # full_pull=False enables the no-op fast path in cloud_sync.sync_all:
@@ -520,7 +524,7 @@ class _CloudAutoSyncWorker(QThread):
         # scans are skipped, and bulk image/measurement fetches only run for
         # observations that actually changed remotely.
         self._full_pull = bool(full_pull)
-        self._child_safety_pull = bool(child_safety_pull)
+        self._child_safety_pull = bool(child_safety_pull) and not self._pull_only
         self.prepare_requested.connect(self._handle_prepare_request)
 
     def _prepare_images(self, observation: dict, progress_cb=None):
@@ -590,6 +594,7 @@ class _CloudAutoSyncWorker(QThread):
                 prepare_images_cb=self._prepare_images if self._sync_images else None,
                 full_pull=self._full_pull,
                 child_safety_pull=self._child_safety_pull,
+                pull_only=self._pull_only,
             )
             self._sync_all_returned_at = time.perf_counter()
             _cloud_sync_completion_timing(
@@ -3727,6 +3732,7 @@ class ObservationsTab(QWidget):
         sync_images: bool = False,
         materialize_remote_images: bool = False,
         full_pull: bool = False,
+        pull_only: bool = False,
     ) -> bool:
         # Defaults are the "no-op fast path" for background / Refresh:
         #  * sync_images=False    → no local image byte uploads, no WebP prep
@@ -3754,10 +3760,11 @@ class ObservationsTab(QWidget):
         # new run starts at 0% instead of appearing stuck at 99–100%.
         self._reset_status_progress()
         self._cloud_sync_worker = _CloudAutoSyncWorker(
-            prepare_images_cb=self.prepare_cloud_sync_image_uploads if sync_images else None,
+            prepare_images_cb=self.prepare_cloud_sync_image_uploads if sync_images and not pull_only else None,
             materialize_remote_images=materialize_remote_images,
-            sync_images=sync_images,
-            full_pull=full_pull,
+            sync_images=sync_images and not pull_only,
+            full_pull=full_pull or pull_only,
+            pull_only=pull_only,
             parent=self,
         )
         self._cloud_sync_worker.progress.connect(self._on_cloud_sync_progress)
@@ -3770,11 +3777,12 @@ class ObservationsTab(QWidget):
             self._set_status_progress_cancel_visible(True)
             if hasattr(self, "status_progress_cancel_btn"):
                 self.status_progress_cancel_btn.setEnabled(True)
-            progress_text = (
-                self.tr("Preparing Sporely Cloud metadata sync...")
-                if not sync_images
-                else self.tr("Preparing Sporely Cloud sync...")
-            )
+            if pull_only:
+                progress_text = self.tr("Preparing Download from Cloud...")
+            elif not sync_images:
+                progress_text = self.tr("Preparing Sporely Cloud metadata sync...")
+            else:
+                progress_text = self.tr("Preparing Sporely Cloud sync...")
             self._set_status_progress(progress_text, 0, 1)
         if hasattr(self, "delete_btn"):
             self.delete_btn.setEnabled(False)
@@ -4062,6 +4070,10 @@ class ObservationsTab(QWidget):
             follow_up_start = time.perf_counter()
             self._finish_manual_refresh_flow()
             _cloud_sync_completion_timing("UI manual refresh follow-up complete", follow_up_start)
+        if result.get("pull_only"):
+            self._finish_cloud_download_from_cloud(result)
+            _cloud_sync_completion_timing("UI pull-only completion handler complete", completion_start)
+            return
         pushed = int(result.get("pushed", 0) or 0)
         pulled = int(result.get("pulled", 0) or 0)
         change_activity = summarize_sync_change_activity(result)
@@ -4204,6 +4216,113 @@ class ObservationsTab(QWidget):
         if conflicts:
             self._show_cloud_conflict_dialog(conflicts)
         _cloud_sync_completion_timing("UI completion handler complete", completion_start)
+
+    def _finish_cloud_download_from_cloud(self, result: dict) -> None:
+        """Completion feedback specific to Download from Cloud (pull-only).
+
+        Compact banner:
+            "Downloaded 259 images; updated 212 observations. No cloud
+             changes made. 14 observations need review."
+        Full detail (blocked-write dedup, review list, real errors) is
+        exposed via a QMessageBox with a Details expander so it never
+        floods the status hub.
+        """
+        images_downloaded = int(result.get("images_downloaded") or 0)
+        observations_updated = int(result.get("observations_updated") or 0)
+        writes_completed = int(result.get("cloud_writes_completed") or 0)
+        blocked_writes = list(result.get("blocked_write_attempts") or [])
+        errors_raw = list(result.get("errors", []) or [])
+        review_items, real_errors = partition_download_from_cloud_issues(errors_raw)
+
+        parts: list[str] = []
+        parts.append(
+            self.tr("Downloaded {images} image(s); updated {observations} observation(s).").format(
+                images=images_downloaded, observations=observations_updated,
+            )
+        )
+        parts.append(
+            self.tr("No cloud changes made.") if writes_completed == 0 else
+            self.tr("{count} cloud change(s) made.").format(count=writes_completed)
+        )
+        if review_items:
+            parts.append(
+                self.tr("{count} observation(s) need review.").format(count=len(review_items))
+            )
+        if real_errors:
+            parts.append(self.tr("{count} error(s).").format(count=len(real_errors)))
+        message = " ".join(parts)
+
+        if real_errors or blocked_writes:
+            level = "warning"
+            status = "warning"
+        elif review_items:
+            level = "info"
+            status = "ok"
+        else:
+            level = "success"
+            status = "ok"
+
+        self._record_cloud_sync_status(message, errors=real_errors, status=status)
+        self._refresh_cloud_sync_idle_hint()
+        if not self._cloud_sync_show_status:
+            return
+        self._set_status_progress_visible(False)
+        self._set_status_progress_cancel_visible(False)
+        self._set_status_progress("", 0, 1)
+        self.set_status_message(
+            message,
+            level=level,
+            auto_clear_ms=20000 if level != "success" else 5000,
+        )
+
+        if blocked_writes or review_items or real_errors:
+            self._show_cloud_download_details_dialog(
+                message, blocked_writes, review_items, real_errors,
+            )
+
+    def _show_cloud_download_details_dialog(
+        self,
+        headline: str,
+        blocked_writes: list[str],
+        review_items: list[str],
+        real_errors: list[str],
+    ) -> None:
+        detail_sections: list[str] = []
+        if blocked_writes:
+            detail_sections.append(
+                self.tr(
+                    "Blocked cloud write attempts (defence in depth — nothing "
+                    "reached the network):"
+                )
+                + "\n"
+                + summarize_blocked_write_attempts(blocked_writes)
+            )
+        if review_items:
+            detail_sections.append(
+                self.tr(
+                    "Observations that need review (cloud/local differences "
+                    "kept as-is):"
+                )
+                + "\n"
+                + "\n".join(f"  • {line}" for line in review_items)
+            )
+        if real_errors:
+            detail_sections.append(
+                self.tr("Errors:")
+                + "\n"
+                + "\n".join(f"  • {line}" for line in real_errors)
+            )
+        if not detail_sections:
+            return
+        box = QMessageBox(self)
+        box.setIcon(
+            QMessageBox.Warning if (real_errors or blocked_writes) else QMessageBox.Information
+        )
+        box.setWindowTitle(self.tr("Download from Cloud"))
+        box.setText(headline)
+        box.setStandardButtons(QMessageBox.Ok)
+        box.setDetailedText("\n\n".join(detail_sections))
+        box.exec()
 
     def _on_cloud_sync_error(self, message: str) -> None:
         self.refresh_observations(show_status=False)

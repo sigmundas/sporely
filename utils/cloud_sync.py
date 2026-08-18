@@ -2103,6 +2103,155 @@ class CloudReauthRequiredError(CloudSyncError):
     """
 
 
+class PullOnlyModeError(CloudSyncError):
+    """Raised when a cloud-write is attempted during a Download-from-Cloud run.
+
+    Download from Cloud is strictly cloud → desktop. Any code path that
+    reaches an upload, PATCH/POST/DELETE, storage removal, or write-back
+    identity call while the pull-only client is active raises this error.
+    The wrapper counts every attempt on ``write_attempts`` so tests can
+    prove zero cloud writes reached the network.
+    """
+
+
+_PULL_ONLY_BLOCKED_CLIENT_METHODS = frozenset({
+    '_patch', '_post', '_delete', '_storage_remove',
+    'push_observation', 'push_image_metadata', 'push_measurement',
+    'upload_image_file', 'upload_original_image_file',
+    'set_image_storage_path', 'set_image_desktop_id', 'set_desktop_id',
+    'set_measurement_desktop_id', 'set_image_original_storage_path',
+    'soft_delete_image', 'delete_cloud_observation',
+    'delete_cloud_measurements_for_image',
+    'push_calibration_reference_image', 'push_calibration_metadata',
+})
+
+
+# Callable methods on the wrapped client that Download-from-Cloud is
+# permitted to invoke. Anything not on this allowlist is treated as
+# potentially write-touching and blocked at the wrapper. Adding a new
+# read method here is an explicit choice; a new writer method is never
+# safe to add.
+_PULL_ONLY_ALLOWED_READ_METHODS = frozenset({
+    # Session / identity — read side of auth, never mutate cloud state.
+    'fetch_current_user_id',
+    'fetch_cloud_plan_profile',
+    'save_credentials',            # writes local settings, no cloud write
+    '_refresh_session_if_possible', # refresh token, no cloud data mutation
+    # Observation reads
+    'list_remote_observations',
+    'get_observation',
+    # Calibration reads
+    'list_remote_calibrations',
+    'find_remote_calibration',
+    # Image / measurement metadata reads
+    'pull_bulk_image_metadata',
+    'pull_image_metadata',
+    'pull_measurements_for_images',
+    'pull_observation_identifications',
+    # Media byte reads
+    'download_image_file',
+    'download_image_file_read_only',
+    # Low-level GET / RPC read helpers
+    '_get',
+    'get_read_only',
+    '_rpc',
+    # Client-internal probes and path builders — pure read/compute.
+    '_find_cloud_image',
+    '_get_media_worker',
+    '_build_original_storage_path',
+    '_observation_images_support_ai_crop',
+    '_observation_images_support_ai_crop_custom',
+    '_observation_images_support_sample_source',
+    '_observation_images_support_upload_metadata',
+    '_using_default_r',
+})
+
+
+class PullOnlyCloudClient:
+    """Fail-closed proxy over ``SporelyCloudClient`` for Download from Cloud.
+
+    Delegation rules:
+
+    * Non-callable attributes on the wrapped client (``user_id``,
+      ``access_token``, …) forward verbatim.
+    * Callable methods on the read allowlist forward verbatim.
+    * Every named writer method raises :class:`PullOnlyModeError` and
+      records the attempt on ``write_attempts``.
+    * **Any other callable** on the wrapped client — including methods
+      not yet named on either list — also raises. Under a plain
+      denylist, a future or unrecognized method whose internals call
+      ``self._patch`` would execute on the wrapped client and bypass
+      the wrapper; the allowlist prevents that class of leak entirely.
+    """
+
+    is_pull_only = True
+
+    def __init__(self, wrapped) -> None:
+        self._wrapped = wrapped
+        self.write_attempts: list[str] = []
+
+    def _block(self, name: str, reason: str):
+        def _blocked(*_args, **_kwargs):
+            self.write_attempts.append(name)
+            raise PullOnlyModeError(
+                f"{reason} '{name}' is not allowed during Download from Cloud"
+            )
+        return _blocked
+
+    def __getattr__(self, name: str):
+        # __getattr__ only fires for attributes not found on ``self``; the
+        # explicit ``is_pull_only`` / ``_wrapped`` / ``write_attempts``
+        # attributes shadow this path.
+        if name in _PULL_ONLY_BLOCKED_CLIENT_METHODS:
+            return self._block(name, "Cloud write")
+        attr = getattr(self._wrapped, name)
+        if not callable(attr):
+            return attr
+        if name in _PULL_ONLY_ALLOWED_READ_METHODS:
+            return attr
+        return self._block(name, "Unrecognized client method")
+
+
+def summarize_blocked_write_attempts(attempts) -> str:
+    """Compress a raw list of blocked writer names into ``name ×N`` groups.
+
+    A single leaky path (e.g. ``set_image_desktop_id``) can fire hundreds of
+    times per run; printing the name once with a count is what the user
+    actually reads.
+    """
+    from collections import Counter as _Counter
+    if not attempts:
+        return ""
+    counts = _Counter(str(n) for n in attempts if n)
+    return ", ".join(f"{name} ×{count}" for name, count in counts.most_common())
+
+
+def partition_download_from_cloud_issues(errors) -> tuple[list[str], list[str]]:
+    """Split pull-only messages into (review_items, real_errors).
+
+    Tombstone-skip and needs-review lines are informational — the pull did
+    the safe thing (skipped write, kept local state, flagged a conflict).
+    They belong in an expandable review list, not the top-level error banner.
+    """
+    review_items: list[str] = []
+    real_errors: list[str] = []
+    for raw in errors or []:
+        text = str(raw or '').strip()
+        if not text:
+            continue
+        if _REVIEW_CONFLICT_RE.match(text):
+            review_items.append(text)
+            continue
+        if 'has a local tombstone' in text or 'tombstoned' in text.lower():
+            review_items.append(text)
+            continue
+        if _PULL_CONFLICT_RE.match(text) or _MEASUREMENT_CONFLICT_RE.match(text):
+            review_items.append(text)
+            continue
+        real_errors.append(text)
+    return review_items, real_errors
+
+
 class PartialConflictPlanError(CloudSyncError):
     """Raised when a conflict plan fails mid-execution.
 
@@ -5925,6 +6074,7 @@ def sync_all(
     prepare_images_cb: PreparedImagesCallback | None = None,
     full_pull: bool = True,
     child_safety_pull: bool = False,
+    pull_only: bool = False,
 ) -> dict:
     """Run a full bidirectional sync: push local changes then pull remote ones.
 
@@ -5953,6 +6103,61 @@ def sync_all(
         # Safety check: ensure this DB belongs to the current user
         with _cloud_sync_phase_scope(profiler, 'ensure_database_linked_to_cloud_user'):
             ensure_database_linked_to_cloud_user(client)
+
+        if pull_only:
+            # Download from Cloud: strict cloud → desktop. Skip both push
+            # phases entirely and wrap the client so any accidental write
+            # fails closed. This branch shares the pull implementation with
+            # normal sync — no parallel engine.
+            pull_only_client = (
+                client
+                if isinstance(client, PullOnlyCloudClient)
+                else PullOnlyCloudClient(client)
+            )
+            progress_state: dict = {'done': 0, 'total': 0}
+            _set_progress_phase(progress_state, 'auth')
+            _emit_progress(progress_cb, "Connecting to Sporely Cloud...", progress_state)
+            _emit_progress(progress_cb, "Loading cloud observations…", progress_state)
+            remote_obs = pull_only_client.list_remote_observations()
+            with _cloud_sync_phase_scope(profiler, 'pull_all'):
+                pull_result = pull_all(
+                    pull_only_client,
+                    progress_cb=progress_cb,
+                    progress_state=progress_state,
+                    remote_obs=remote_obs,
+                    sync_calibrations=True,
+                    materialize_remote_images=materialize_remote_images,
+                    sync_images=sync_images,
+                    full_pull=True,
+                    pull_only=True,
+                )
+            _set_progress_phase(progress_state, 'finalize', phase_total=1)
+            _advance_progress(progress_state, 1)
+            _emit_progress(progress_cb, "Finalizing cloud sync…", progress_state)
+            summary_snapshot = dict(sync_summary)
+            result = {
+                'pushed': 0,
+                'pulled': pull_result.get('pulled', 0),
+                'calibrations_pushed': 0,
+                'calibrations_pulled': pull_result.get('calibrations_pulled', 0),
+                'errors': list(pull_result.get('errors') or []),
+                'deleted_remote': pull_result.get('deleted_remote', []),
+                'sync_summary': summary_snapshot,
+                'pull_only': True,
+                'images_downloaded': int(summary_snapshot.get('remote_media_materializations', 0) or 0),
+                'observations_updated': pull_result.get('pulled', 0),
+                # Writes that actually reached the network. Under pull-only
+                # this is always 0 — the wrapper fails closed on every writer
+                # and source-level gates prevent even the wrapper from being
+                # reached in the normal flow.
+                'cloud_writes_completed': 0,
+                # Writes the wrapper blocked (defence in depth). Should also
+                # be empty once source-level suppression is in place; any
+                # entry here indicates a new pull-side write path that needs
+                # to be gated at its source.
+                'blocked_write_attempts': list(pull_only_client.write_attempts),
+            }
+            return result
 
         # Progress state feeds a weighted global bar: each phase maps onto a
         # fixed percentage range so the bar never sits at 99% while real work
@@ -7935,6 +8140,13 @@ _SPORE_MEASUREMENT_SELECT_COLUMNS = _join_select_columns(
 # go from 18 requests to 9). Kept conservative on purpose; do not raise without
 # re-checking the proxy URL limit for the longest realistic ID list.
 _CLOUD_SYNC_IN_BATCH_SIZE = 100
+
+# PostgREST silently truncates every response body to ``db-max-rows`` — Supabase's
+# default is 1000. Callers of ``_get_paginated`` MUST include a deterministic
+# ``order=`` clause; the helper pages with ``limit=1000&offset=N`` and stops when a
+# page comes back shorter than this cap. Never treat a cap-sized response as
+# complete without paging past it.
+_CLOUD_SYNC_MAX_ROWS_PER_PAGE = 1000
 
 
 def _normalize_measurement_type_value(value) -> str:
@@ -10167,7 +10379,7 @@ def _ensure_local_metadata_only_microscope_anchor(
             },
         )
 
-    if client is not None:
+    if client is not None and not getattr(client, 'is_pull_only', False):
         set_image_desktop_id = getattr(client, 'set_image_desktop_id', None)
         if callable(set_image_desktop_id):
             try:
@@ -10340,6 +10552,11 @@ def _apply_remote_images_to_local(
     materialize_remote_images: bool = True,
 ) -> list[str]:
     warnings: list[str] = []
+    # ``set_image_desktop_id`` PATCHes the cloud row's desktop_id link — a
+    # cloud write. Skip it when running under Download-from-Cloud so we
+    # can honour the zero-cloud-writes contract. The pull_only flag comes
+    # from the wrapping ``PullOnlyCloudClient`` proxy.
+    pull_only = bool(getattr(client, 'is_pull_only', False))
     local_images = ImageDB.get_images_for_observation(int(local_id))
     local_cloud_map = {
         str(img.get('cloud_id') or '').strip(): img
@@ -10373,11 +10590,12 @@ def _apply_remote_images_to_local(
                 continue
             if not materialize_remote_images:
                 _apply_remote_image_metadata_only_to_local(local_image, remote_image)
-                try:
-                    client.set_image_desktop_id(cloud_image_id, int(local_image.get('id')))
-                    remote_image['desktop_id'] = int(local_image.get('id'))
-                except Exception:
-                    pass
+                if not pull_only:
+                    try:
+                        client.set_image_desktop_id(cloud_image_id, int(local_image.get('id')))
+                        remote_image['desktop_id'] = int(local_image.get('id'))
+                    except Exception:
+                        pass
                 continue
             try:
                 _sync_existing_remote_image_to_local(
@@ -10391,11 +10609,12 @@ def _apply_remote_images_to_local(
                     print(f'[cloud_sync] Warning: {_cloud_missing_image_warning(local_id, remote_image)}')
                     continue
                 raise
-            try:
-                client.set_image_desktop_id(cloud_image_id, int(local_image.get('id')))
-                remote_image['desktop_id'] = int(local_image.get('id'))
-            except Exception:
-                pass
+            if not pull_only:
+                try:
+                    client.set_image_desktop_id(cloud_image_id, int(local_image.get('id')))
+                    remote_image['desktop_id'] = int(local_image.get('id'))
+                except Exception:
+                    pass
             continue
 
         if _is_metadata_only_microscope_cloud_image(remote_image):
@@ -10493,11 +10712,12 @@ def _apply_remote_images_to_local(
                 conn.commit()
             finally:
                 conn.close()
-            try:
-                client.set_image_desktop_id(cloud_image_id, int(local_image_id))
-                remote_image['desktop_id'] = int(local_image_id)
-            except Exception:
-                pass
+            if not pull_only:
+                try:
+                    client.set_image_desktop_id(cloud_image_id, int(local_image_id))
+                    remote_image['desktop_id'] = int(local_image_id)
+                except Exception:
+                    pass
             try:
                 _profile_generate_all_sizes(str(download_path), int(local_image_id))
             except Exception:
@@ -14467,6 +14687,33 @@ class SporelyCloudClient:
             raise CloudSyncError(f'GET {path}: {resp.text}')
         return resp.json()
 
+    def _get_paginated(self, path: str, *, page_size: int = _CLOUD_SYNC_MAX_ROWS_PER_PAGE) -> list:
+        """Fully page a PostgREST GET past the server ``db-max-rows`` cap.
+
+        Callers MUST include a deterministic ``order=`` clause (with ``id.asc``
+        as tie-breaker) in ``path``; otherwise offset-based paging can skip or
+        duplicate rows across pages. On any page failure the exception from
+        ``_get`` propagates — partial results are never returned, so callers
+        must not treat truncation as an authoritative empty result.
+        """
+        if page_size <= 0:
+            raise CloudSyncError(f'GET {path}: invalid page_size {page_size}')
+        all_rows: list = []
+        offset = 0
+        sep = '&' if '?' in path else '?'
+        while True:
+            page_path = f'{path}{sep}limit={page_size}&offset={offset}'
+            rows = self._get(page_path)
+            if not isinstance(rows, list):
+                raise CloudSyncError(
+                    f'GET {path}: expected list response for paginated fetch, '
+                    f'got {type(rows).__name__}'
+                )
+            all_rows.extend(rows)
+            if len(rows) < page_size:
+                return all_rows
+            offset += len(rows)
+
     def get_read_only(self, path: str) -> list:
         """Perform one REST GET without token refresh or credential writes."""
         resp = self._request_with_refresh(
@@ -14571,8 +14818,9 @@ class SporelyCloudClient:
         return rows[0] if rows else None
 
     def list_remote_observations(self) -> list[dict]:
-        return self._get(
-            f'observations?user_id=eq.{self.user_id}&order=created_at.asc&select={_OBSERVATION_SELECT_COLUMNS}'
+        return self._get_paginated(
+            f'observations?user_id=eq.{self.user_id}'
+            f'&order=created_at.asc,id.asc&select={_OBSERVATION_SELECT_COLUMNS}'
         )
 
     def count_remote_privacy_slots(self) -> int:
@@ -14603,8 +14851,9 @@ class SporelyCloudClient:
         return rows[0] if rows else None
 
     def list_remote_calibrations(self) -> list[dict]:
-        return self._get(
-            f'calibrations?user_id=eq.{self.user_id}&order=created_at.asc&select={_CALIBRATION_SELECT_COLUMNS}'
+        return self._get_paginated(
+            f'calibrations?user_id=eq.{self.user_id}'
+            f'&order=created_at.asc,id.asc&select={_CALIBRATION_SELECT_COLUMNS}'
         )
 
     def push_calibration_reference_image(
@@ -15403,10 +15652,13 @@ class SporelyCloudClient:
 
     def pull_web_observations(self, after_iso: str | None = None) -> list[dict]:
         """Fetch observations created on mobile/web (desktop_id IS NULL)."""
-        qs = f'observations?desktop_id=is.null&user_id=eq.{self.user_id}&order=created_at.asc&select={_OBSERVATION_SELECT_COLUMNS}'
+        qs = (
+            f'observations?desktop_id=is.null&user_id=eq.{self.user_id}'
+            f'&order=created_at.asc,id.asc&select={_OBSERVATION_SELECT_COLUMNS}'
+        )
         if after_iso:
             qs += f'&created_at=gt.{_encode_postgrest_filter_value(after_iso)}'
-        return self._get(qs)
+        return self._get_paginated(qs)
 
     def set_desktop_id(self, cloud_id: str, desktop_id: int) -> None:
         """Write the local SQLite ID back to the cloud row for future dedup."""
@@ -15483,8 +15735,11 @@ class SporelyCloudClient:
                 chunk = image_ids[i:i + batch_size]
                 ids_str = ','.join(chunk)
                 batch_start = _cloud_sync_perf_counter()
-                rows = self._get(
-                    f'spore_measurements?image_id=in.({ids_str})&user_id=eq.{self.user_id}&order=measured_at.asc,id.asc&select={_SPORE_MEASUREMENT_SELECT_COLUMNS}'
+                rows = self._get_paginated(
+                    f'spore_measurements?image_id=in.({ids_str})'
+                    f'&user_id=eq.{self.user_id}'
+                    f'&order=measured_at.asc,id.asc'
+                    f'&select={_SPORE_MEASUREMENT_SELECT_COLUMNS}'
                 )
                 request_count += 1
                 all_rows.extend(rows)
@@ -15522,8 +15777,15 @@ class SporelyCloudClient:
             for i in range(0, len(obs_cloud_ids), _CLOUD_SYNC_IN_BATCH_SIZE):
                 chunk = obs_cloud_ids[i:i + _CLOUD_SYNC_IN_BATCH_SIZE]
                 ids_str = ','.join(chunk)
-                rows = self._get(
-                    f'observation_images?observation_id=in.({ids_str})&user_id=eq.{self.user_id}&select={_OBSERVATION_IMAGE_SELECT_COLUMNS}'
+                # Deterministic id.asc order + real pagination — without paging
+                # the response is silently truncated at db-max-rows=1000, which
+                # drops entire observations at the tail of a large batch and
+                # leaves them with an empty images list.
+                rows = self._get_paginated(
+                    f'observation_images?observation_id=in.({ids_str})'
+                    f'&user_id=eq.{self.user_id}'
+                    f'&order=id.asc'
+                    f'&select={_OBSERVATION_IMAGE_SELECT_COLUMNS}'
                 )
                 all_images.extend(rows)
             success = True
@@ -21899,6 +22161,7 @@ def pull_all(
     materialize_remote_images: bool = True,
     sync_images: bool = True,
     full_pull: bool = True,
+    pull_only: bool = False,
 ) -> dict:
     """Pull new cloud observations and apply remote updates to clean local rows.
 
@@ -21916,12 +22179,17 @@ def pull_all(
     # UI on the last calibration label, so emit messages and time each sub-step.
     pull_preflight_start = _cloud_sync_perf_counter()
     progress_state = progress_state if isinstance(progress_state, dict) else {}
+    # A PullOnlyCloudClient wrapper carries its own is_pull_only marker;
+    # honour it even if the caller forgot to pass pull_only=True.
+    pull_only = bool(pull_only or getattr(client, 'is_pull_only', False))
     _set_progress_phase(progress_state, 'pull_preflight', phase_total=3)
     _emit_progress(progress_cb, "Preparing cloud observations…", progress_state)
 
     _emit_progress(progress_cb, "Checking local metadata cache…", progress_state)
     exif_start = _cloud_sync_perf_counter()
-    exif_counts = _backfill_missing_exif_on_cloud_images() or {}
+    # EXIF backfill PATCHes cloud rows to fill missing camera metadata; it is a
+    # pull-side cloud write and must not run in Download-from-Cloud mode.
+    exif_counts = {} if pull_only else (_backfill_missing_exif_on_cloud_images() or {})
     exif_elapsed = _cloud_sync_perf_counter() - exif_start
     print(
         f"[cloud_sync] pull preflight: exif backfill complete "
@@ -22214,14 +22482,14 @@ def pull_all(
                     remote_measurements=remote_measurements,
                     materialize_remote_images=materialize_remote_images,
                 )
-                if cloud_id:
+                if cloud_id and not pull_only:
                     client.set_desktop_id(cloud_id, local_id)
                 _refresh_local_cloud_media_signature(local_id)
                 pulled += 1
                 imported_local_ids.append(int(local_id))
             else:
                 local_id = int(local_obs['id'])
-                if cloud_id and int(remote.get('desktop_id') or 0) != local_id:
+                if cloud_id and int(remote.get('desktop_id') or 0) != local_id and not pull_only:
                     try:
                         client.set_desktop_id(cloud_id, local_id)
                     except Exception as exc:
@@ -22913,14 +23181,15 @@ def _import_remote_images(
                 finally:
                     conn.close()
 
-                set_image_desktop_id = getattr(client, 'set_image_desktop_id', None)
-                if cloud_image_id and callable(set_image_desktop_id):
-                    try:
-                        set_image_desktop_id(cloud_image_id, int(local_image_id))
-                        image_row['desktop_id'] = int(local_image_id)
-                    except Exception as exc:
-                        if is_cloud_auth_error(exc) or is_cloud_temporary_unavailable_error(exc):
-                            raise
+                if not getattr(client, 'is_pull_only', False):
+                    set_image_desktop_id = getattr(client, 'set_image_desktop_id', None)
+                    if cloud_image_id and callable(set_image_desktop_id):
+                        try:
+                            set_image_desktop_id(cloud_image_id, int(local_image_id))
+                            image_row['desktop_id'] = int(local_image_id)
+                        except Exception as exc:
+                            if is_cloud_auth_error(exc) or is_cloud_temporary_unavailable_error(exc):
+                                raise
 
                 # Generate thumbnails and signature
                 _profile_generate_all_sizes(str(download_path), int(local_image_id))
@@ -23051,7 +23320,13 @@ def _import_remote_measurements_for_observation(
 
     local_images_by_cloud_id, local_images_by_id = _load_local_images()
     local_measurements_by_cloud_id, local_measurements_by_id = _load_local_measurement_lookup(int(local_id))
-    set_measurement_desktop_id = getattr(client, 'set_measurement_desktop_id', None)
+    # Under Download-from-Cloud the wrapper marks the client is_pull_only; skip
+    # the identity write-back to keep the zero-cloud-writes contract without
+    # relying on the wrapper to raise mid-flow.
+    _pull_only = bool(getattr(client, 'is_pull_only', False))
+    set_measurement_desktop_id = (
+        None if _pull_only else getattr(client, 'set_measurement_desktop_id', None)
+    )
     imported = 0
     conflict = False
     skipped_materialization = 0

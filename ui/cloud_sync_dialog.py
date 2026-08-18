@@ -36,7 +36,9 @@ from utils.cloud_sync import (
     is_cloud_auth_error,
     is_image_too_large_for_plan_error,
     format_original_upload_summary,
+    partition_download_from_cloud_issues,
     sanitize_image_too_large_for_plan_error_message,
+    summarize_blocked_write_attempts,
     summarize_image_too_large_for_plan_error,
     sync_all,
     load_saved_cloud_password,
@@ -58,13 +60,15 @@ class _SyncWorker(QThread):
         push_images: bool,
         materialize_remote_images: bool,
         prepare_images_cb=None,
+        pull_only: bool = False,
     ):
         super().__init__()
-        self.setObjectName("Cloud sync (dialog)")
+        self.setObjectName("Cloud download (dialog)" if pull_only else "Cloud sync (dialog)")
         self._client = client
         self._push_images = push_images
         self._materialize_remote_images = materialize_remote_images
         self._prepare_images_cb = prepare_images_cb
+        self._pull_only = bool(pull_only)
 
     def run(self) -> None:
         try:
@@ -74,6 +78,7 @@ class _SyncWorker(QThread):
                 sync_images=self._push_images,
                 materialize_remote_images=self._materialize_remote_images,
                 prepare_images_cb=self._prepare_images_cb,
+                pull_only=self._pull_only,
             )
             self.sync_finished.emit(result)
         except AccountMismatchError:
@@ -192,6 +197,18 @@ class CloudSyncDialog(QDialog):
         self._sync_btn.clicked.connect(self._do_sync)
         btn_row.addWidget(self._sync_btn)
 
+        # Download from Cloud is a strictly cloud → desktop pull. It never
+        # pushes observation metadata, images, mosaics, measurements, or
+        # tombstones. Kept as a separate button from Sync Now so users can
+        # deliberately choose the read-only path.
+        self._download_btn = QPushButton('Download from Cloud')
+        self._download_btn.setToolTip(
+            'Pull cloud observations and images to this device without '
+            'uploading any local changes.'
+        )
+        self._download_btn.clicked.connect(self._do_download_from_cloud)
+        btn_row.addWidget(self._download_btn)
+
         self._signout_btn = QPushButton('Sign out')
         self._signout_btn.clicked.connect(self._do_signout)
         btn_row.addWidget(self._signout_btn)
@@ -298,6 +315,7 @@ class CloudSyncDialog(QDialog):
         if not self._client:
             return
         self._sync_btn.setEnabled(False)
+        self._download_btn.setEnabled(False)
         self._signout_btn.setEnabled(False)
         self._status_label.setText('Syncing…')
         self._progress.setValue(0)
@@ -309,6 +327,34 @@ class CloudSyncDialog(QDialog):
             self._push_images_check.isChecked(),
             self._pull_images_check.isChecked(),
             prepare_images_cb=self._prepare_images_cb,
+        )
+        self._worker.progress.connect(self._on_sync_progress)
+        self._worker.sync_finished.connect(self._on_sync_done)
+        self._worker.error.connect(self._on_sync_error)
+        _track_worker(self._worker)
+        self._worker.start()
+
+    def _do_download_from_cloud(self) -> None:
+        """Cloud → desktop pull only. Zero cloud writes."""
+        if not self._client:
+            return
+        self._sync_btn.setEnabled(False)
+        self._download_btn.setEnabled(False)
+        self._signout_btn.setEnabled(False)
+        self._status_label.setText('Downloading from Cloud…')
+        self._progress.setValue(0)
+        self._progress.setRange(0, 0)
+        self._progress.show()
+
+        # push_images is irrelevant in pull-only mode; the pull-only
+        # branch skips all push work regardless. Materialization follows
+        # the same checkbox the normal Sync uses.
+        self._worker = _SyncWorker(
+            self._client,
+            push_images=False,
+            materialize_remote_images=self._pull_images_check.isChecked(),
+            prepare_images_cb=None,
+            pull_only=True,
         )
         self._worker.progress.connect(self._on_sync_progress)
         self._worker.sync_finished.connect(self._on_sync_done)
@@ -405,6 +451,9 @@ class CloudSyncDialog(QDialog):
     def _on_sync_done(self, result: dict) -> None:
         self._progress.setRange(0, 1)
         self._progress.setValue(1)
+        if result.get('pull_only'):
+            self._on_download_from_cloud_done(result)
+            return
         pushed = result.get('pushed', 0)
         pulled = result.get('pulled', 0)
         errors = result.get('errors', [])
@@ -459,6 +508,7 @@ class CloudSyncDialog(QDialog):
         self._status_label.setText(summary)
         self._progress.hide()
         self._sync_btn.setEnabled(True)
+        self._download_btn.setEnabled(True)
         self._signout_btn.setEnabled(True)
 
         if errors:
@@ -555,11 +605,77 @@ class CloudSyncDialog(QDialog):
         if deleted_remote:
             self._prompt_for_deleted_cloud_observations(deleted_remote)
 
+    def _on_download_from_cloud_done(self, result: dict) -> None:
+        """Feedback specific to Download from Cloud: images + updates + zero writes."""
+        images_downloaded = int(result.get('images_downloaded') or 0)
+        observations_updated = int(result.get('observations_updated') or 0)
+        writes_completed = int(result.get('cloud_writes_completed') or 0)
+        blocked_writes = list(result.get('blocked_write_attempts') or [])
+        errors_raw = list(result.get('errors') or [])
+        review_items, real_errors = partition_download_from_cloud_issues(errors_raw)
+
+        images_word = 'image' if images_downloaded == 1 else 'images'
+        observations_word = 'observation' if observations_updated == 1 else 'observations'
+        parts = [
+            f"Downloaded {images_downloaded} {images_word}; "
+            f"updated {observations_updated} {observations_word}.",
+            "No cloud changes made." if writes_completed == 0 else
+            f"{writes_completed} cloud change(s) made.",
+        ]
+        if review_items:
+            n = len(review_items)
+            parts.append(f"{n} observation{'s' if n != 1 else ''} need review.")
+        if real_errors:
+            n = len(real_errors)
+            parts.append(f"{n} error{'s' if n != 1 else ''}.")
+        summary = " ".join(parts)
+        self._status_label.setText(summary)
+
+        # Details are only shown behind an information box the user can
+        # open on demand. Blocked writes are deduplicated so a single leaky
+        # source (e.g. 595 identical calls) reads as ``name ×595`` not a
+        # 595-line dump.
+        detail_sections: list[str] = []
+        if blocked_writes:
+            detail_sections.append(
+                "Blocked cloud write attempts (defence in depth — nothing "
+                "reached the network):\n"
+                + summarize_blocked_write_attempts(blocked_writes)
+            )
+        if review_items:
+            detail_sections.append(
+                "Observations that need review (cloud/local differences kept "
+                "as-is):\n" + "\n".join(f"  • {line}" for line in review_items)
+            )
+        if real_errors:
+            detail_sections.append(
+                "Errors:\n" + "\n".join(f"  • {line}" for line in real_errors)
+            )
+
+        if detail_sections:
+            box = QMessageBox(self)
+            box.setIcon(
+                QMessageBox.Warning if (real_errors or blocked_writes) else QMessageBox.Information
+            )
+            box.setWindowTitle('Download from Cloud')
+            box.setText(summary)
+            box.setStandardButtons(QMessageBox.Ok)
+            box.setDetailedText("\n\n".join(detail_sections))
+            box.exec()
+
+        for err in real_errors:
+            print(f'[cloud_sync] {err}')
+        self._progress.hide()
+        self._sync_btn.setEnabled(True)
+        self._download_btn.setEnabled(True)
+        self._signout_btn.setEnabled(True)
+
     def _on_sync_error(self, msg: str) -> None:
         summary = self._summarize_sync_error(msg)
         self._status_label.setText(summary)
         self._progress.hide()
         self._sync_btn.setEnabled(True)
+        self._download_btn.setEnabled(True)
         self._signout_btn.setEnabled(True)
         box = QMessageBox(self)
         is_account_mismatch = str(msg or '').strip() == ACCOUNT_MISMATCH_MESSAGE

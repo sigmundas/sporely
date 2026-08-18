@@ -1289,6 +1289,25 @@ class SettingsHubDialog(QDialog):
             )
         )
         cloud_sync_button_row.addWidget(self.cloud_sync_now_button)
+        # Download from Cloud is intentionally a separate button — it is a
+        # pull-only run (never uploads, patches, or deletes) so users can
+        # deliberately choose the read-only path.
+        self.cloud_download_button = QPushButton(self.tr("Download from Cloud"), cloud_sync_group)
+        self.cloud_download_button.setToolTip(
+            self.tr(
+                "Pull cloud observations and images to this device. "
+                "No local changes are uploaded."
+            )
+        )
+        self.cloud_download_button.clicked.connect(
+            lambda: self._request_settings_cloud_sync(
+                sync_images=False,
+                materialize_remote_images=True,
+                full_pull=True,
+                pull_only=True,
+            )
+        )
+        cloud_sync_button_row.addWidget(self.cloud_download_button)
         self.cloud_sync_log_button = QPushButton(self.tr("Sync log"), cloud_sync_group)
         self.cloud_sync_log_button.clicked.connect(self._show_cloud_sync_details)
         cloud_sync_button_row.addWidget(self.cloud_sync_log_button)
@@ -2316,6 +2335,7 @@ class SettingsHubDialog(QDialog):
         sync_images: bool,
         materialize_remote_images: bool,
         full_pull: bool,
+        pull_only: bool = False,
     ) -> None:
         main_window = self._settings_hub_main_window()
         if main_window is None:
@@ -2342,6 +2362,7 @@ class SettingsHubDialog(QDialog):
                     sync_images=bool(sync_images),
                     materialize_remote_images=bool(materialize_remote_images),
                     full_pull=bool(full_pull),
+                    pull_only=bool(pull_only),
                 )
             )
         finally:
@@ -20705,6 +20726,7 @@ class MainWindow(GeometryMixin, QMainWindow):
         sync_images: bool = True,
         materialize_remote_images: bool = False,
         full_pull: bool = False,
+        pull_only: bool = False,
     ) -> bool:
         observations_tab = getattr(self, "observations_tab", None)
         if observations_tab is None:
@@ -20718,7 +20740,28 @@ class MainWindow(GeometryMixin, QMainWindow):
             sync_images=sync_images,
             materialize_remote_images=materialize_remote_images,
             full_pull=full_pull,
+            pull_only=pull_only,
         ))
+
+    def start_cloud_download(
+        self,
+        *,
+        show_status: bool = True,
+        materialize_remote_images: bool = True,
+    ) -> bool:
+        """Kick off a pull-only Download-from-Cloud run.
+
+        Strictly cloud → desktop: no uploads, no PATCH/POST/DELETE, no
+        tombstone pushes, no mosaic pushes, no repair-side cloud writes.
+        """
+        return self.start_cloud_sync(
+            show_status=show_status,
+            run_refresh_flow=False,
+            sync_images=False,
+            materialize_remote_images=materialize_remote_images,
+            full_pull=True,
+            pull_only=True,
+        )
 
     def is_cloud_sync_running(self) -> bool:
         observations_tab = getattr(self, "observations_tab", None)

@@ -45,6 +45,7 @@ class _FakeMainWindow(QWidget):
         sync_images: bool = True,
         materialize_remote_images: bool,
         full_pull: bool,
+        pull_only: bool = False,
     ) -> bool:
         self.start_calls.append(
             {
@@ -53,6 +54,7 @@ class _FakeMainWindow(QWidget):
                 "sync_images": bool(sync_images),
                 "materialize_remote_images": bool(materialize_remote_images),
                 "full_pull": bool(full_pull),
+                "pull_only": bool(pull_only),
             }
         )
         self._running = True
@@ -502,11 +504,55 @@ def test_profile_cloud_sync_now_starts_media_sync_without_deep_pull(monkeypatch,
             "sync_images": True,
             "materialize_remote_images": True,
             "full_pull": False,
+            "pull_only": False,
         }
     ]
 
     dialog.deleteLater()
     parent.deleteLater()
+
+
+def test_profile_download_from_cloud_starts_pull_only_run(monkeypatch, qapp):
+    """The Download from Cloud button on the Profile page triggers a pull-only run."""
+    parent, dialog = _build_settings_hub_dialog(monkeypatch, qapp)
+
+    dialog.cloud_download_button.click()
+    qapp.processEvents()
+
+    assert parent.start_calls == [
+        {
+            "show_status": True,
+            "run_refresh_flow": False,
+            "sync_images": False,
+            "materialize_remote_images": True,
+            "full_pull": True,
+            "pull_only": True,
+        }
+    ]
+
+    dialog.deleteLater()
+    parent.deleteLater()
+
+
+def test_main_window_start_cloud_download_forwards_pull_only():
+    """start_cloud_download is a strict pull-only wrapper around start_cloud_sync."""
+    calls: list[dict[str, object]] = []
+    fake_window = SimpleNamespace(
+        observations_tab=SimpleNamespace(
+            _start_cloud_sync=lambda **kwargs: calls.append(dict(kwargs)) or True,
+        ),
+    )
+    # start_cloud_download calls self.start_cloud_sync — bind the real
+    # MainWindow method to our fake instance so we exercise both routes.
+    fake_window.start_cloud_sync = MethodType(main_window.MainWindow.start_cloud_sync, fake_window)
+
+    started = main_window.MainWindow.start_cloud_download(fake_window)
+
+    assert started is True
+    assert len(calls) == 1
+    assert calls[0]["pull_only"] is True
+    assert calls[0]["sync_images"] is False
+    assert calls[0]["full_pull"] is True
 
 
 def test_main_window_forwards_full_cloud_sync_flags():
@@ -534,6 +580,7 @@ def test_main_window_forwards_full_cloud_sync_flags():
             "sync_images": True,
             "materialize_remote_images": True,
             "full_pull": True,
+            "pull_only": False,
         }
     ]
 
