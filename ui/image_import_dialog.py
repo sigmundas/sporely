@@ -70,6 +70,7 @@ from PySide6.QtWidgets import (
 )
 
 from app_identity import APP_NAME, SETTINGS_APP, SETTINGS_ORG
+from utils.r2_storage import media_worker_base_url
 from config import (
     LOCAL_IMPORT_IMAGE_FILTER,
     RAW_COMPANION_SOURCE_PREFERENCE_PREFER_RAW,
@@ -443,6 +444,48 @@ def image_import_result_from_candidate(
     )
 
 
+def _resolve_artsorakel_access_token() -> str:
+    """Return a Sporely-Cloud access token for the Artsorakel Worker.
+
+    The Worker fronts Artsdatabanken's ``/identify`` endpoint and expects
+    the same Supabase bearer token the rest of the desktop app already
+    uses. Any failure (offline sign-in, revoked session, refresh error)
+    yields an empty string so callers can prompt the user to sign in
+    without embedding the Artsdatabanken service token in the app.
+    """
+    try:
+        from utils.cloud_sync import SporelyCloudClient
+        client = SporelyCloudClient.from_stored_credentials()
+    except Exception:
+        client = None
+    token = str(getattr(client, "access_token", "") or "").strip()
+    return token
+
+
+def _normalize_artsorakel_lat_lon(
+    latitude: float | None,
+    longitude: float | None,
+) -> tuple[float | None, float | None]:
+    """Validate a lat/lon pair and round each to one decimal.
+
+    Matches the Artsorakel official-clients contract: both coordinates
+    must be present and finite; latitude in [-90, 90], longitude in
+    [-180, 180]. Any invalid or partial pair yields ``(None, None)``.
+    """
+    if latitude is None or longitude is None:
+        return None, None
+    try:
+        lat = float(latitude)
+        lon = float(longitude)
+    except (TypeError, ValueError):
+        return None, None
+    if not (math.isfinite(lat) and math.isfinite(lon)):
+        return None, None
+    if lat < -90.0 or lat > 90.0 or lon < -180.0 or lon > 180.0:
+        return None, None
+    return round(lat, 1), round(lon, 1)
+
+
 class AIGuessWorker(QThread):
     resultReady = Signal(list, list, object, object, list)
     error = Signal(list, str)
@@ -454,6 +497,10 @@ class AIGuessWorker(QThread):
         temp_dir: Path,
         max_dim: int = ai_image_prep.DEFAULT_ARTSORAKEL_MAX_DIM,
         parent=None,
+        *,
+        access_token: str | None = None,
+        latitude: float | None = None,
+        longitude: float | None = None,
     ) -> None:
         super().__init__(parent)
         self.setObjectName("AI guess (import)")
@@ -475,6 +522,8 @@ class AIGuessWorker(QThread):
         self.indices = [req["index"] for req in self.requests]
         self.temp_dir = temp_dir
         self.max_dim = max_dim
+        self.access_token = str(access_token or "").strip()
+        self.latitude, self.longitude = _normalize_artsorakel_lat_lon(latitude, longitude)
 
     def _prepare_image(
         self,
@@ -567,8 +616,15 @@ class AIGuessWorker(QThread):
         *,
         form_field: str = "image",
     ):
-        data = {"application": APP_NAME}
-        headers = {"User-Agent": f"{APP_NAME}/AI"}
+        data: dict[str, str] = {"application": APP_NAME}
+        if self.latitude is not None and self.longitude is not None:
+            data["latitude"] = str(self.latitude)
+            data["longitude"] = str(self.longitude)
+        headers = {
+            "User-Agent": f"{APP_NAME}/AI",
+            "Authorization": f"Bearer {self.access_token}",
+        }
+        url = f"{media_worker_base_url().rstrip('/')}/artsorakel"
         with ExitStack() as stack:
             files: list[tuple[str, tuple[str, object, str]]] = []
             for request in prepared_requests:
@@ -576,7 +632,7 @@ class AIGuessWorker(QThread):
                 handle = stack.enter_context(open(temp_path, "rb"))
                 files.append((form_field, (temp_path.name, handle, "image/jpeg")))
             return requests_module.post(
-                "https://ai.artsdatabanken.no",
+                url,
                 files=files,
                 data=data,
                 headers=headers,
@@ -585,6 +641,12 @@ class AIGuessWorker(QThread):
 
     def run(self) -> None:
         if not self.requests:
+            return
+        if not self.access_token:
+            self.error.emit(
+                self.indices,
+                "Artsorakel requires a signed-in Sporely account.",
+            )
             return
         try:
             import requests
@@ -3413,6 +3475,32 @@ class ImageImportDialog(GeometryMixin, QDialog):
                     dimensions = None
         self._apply_crop_overlay_style(crop_mode, dimensions)
 
+    def _current_ai_lat_lon(self) -> tuple[float | None, float | None]:
+        """Return the current draft's canonical lat/lon (if both known)."""
+        lat: float | None = None
+        lon: float | None = None
+        try:
+            observation_lat = getattr(self, "_observation_lat", None)
+            observation_lon = getattr(self, "_observation_lon", None)
+            if observation_lat is not None:
+                lat = float(observation_lat)
+            if observation_lon is not None:
+                lon = float(observation_lon)
+        except Exception:
+            lat = None
+            lon = None
+        if (lat is None or lon is None) and hasattr(self, "lat_input") and hasattr(self, "lon_input"):
+            try:
+                lat_value = self.lat_input.value()
+                lon_value = self.lon_input.value()
+                if lat_value > self.lat_input.minimum():
+                    lat = float(lat_value)
+                if lon_value > self.lon_input.minimum():
+                    lon = float(lon_value)
+            except Exception:
+                pass
+        return lat, lon
+
     def _on_ai_guess_clicked(self) -> None:
         if not hasattr(self, "ai_guess_btn"):
             return
@@ -3443,6 +3531,13 @@ class ImageImportDialog(GeometryMixin, QDialog):
             return
         if self._ai_thread is not None:
             return
+        access_token = _resolve_artsorakel_access_token()
+        if not access_token:
+            self._set_ai_status(
+                self.tr("Sign in to Sporely Cloud to use Artsorakel AI guess."),
+                "#e67e22",
+            )
+            return
         self.ai_guess_btn.setEnabled(False)
         self.ai_guess_btn.setText(self.tr("AI guessing..."))
         count = len(requests)
@@ -3451,11 +3546,15 @@ class ImageImportDialog(GeometryMixin, QDialog):
             "#3498db",
         )
         temp_dir = get_images_dir() / "imports"
+        lat, lon = self._current_ai_lat_lon()
         self._ai_thread = AIGuessWorker(
             requests,
             temp_dir,
             max_dim=ai_image_prep.DEFAULT_ARTSORAKEL_MAX_DIM,
             parent=self,
+            access_token=access_token,
+            latitude=lat,
+            longitude=lon,
         )
         self._ai_thread.resultReady.connect(self._on_ai_guess_finished)
         self._ai_thread.error.connect(self._on_ai_guess_error)

@@ -16143,6 +16143,38 @@ class ObservationDetailsDialog(GeometryMixin, QDialog):
     def _on_ai_crop_clicked(self) -> None:
         return
 
+    def _observation_ai_lat_lon(self) -> tuple[float | None, float | None]:
+        """Return the observation/draft's canonical lat/lon (if both known).
+
+        Prefers the persisted ``gps_latitude``/``gps_longitude`` on the
+        current observation dict; falls back to the editable
+        ``lat_input``/``lon_input`` values for fresh drafts.
+        """
+        lat: float | None = None
+        lon: float | None = None
+        obs = getattr(self, "observation", None) or {}
+        try:
+            raw_lat = obs.get("gps_latitude")
+            raw_lon = obs.get("gps_longitude")
+            if raw_lat is not None:
+                lat = float(raw_lat)
+            if raw_lon is not None:
+                lon = float(raw_lon)
+        except Exception:
+            lat = None
+            lon = None
+        if (lat is None or lon is None) and hasattr(self, "lat_input") and hasattr(self, "lon_input"):
+            try:
+                lat_value = self.lat_input.value()
+                lon_value = self.lon_input.value()
+                if lat_value > self.lat_input.minimum():
+                    lat = float(lat_value)
+                if lon_value > self.lon_input.minimum():
+                    lon = float(lon_value)
+            except Exception:
+                pass
+        return lat, lon
+
     def _on_ai_guess_clicked(self, source: str | None = None) -> None:
         source_key = "all"
         try:
@@ -16195,26 +16227,43 @@ class ObservationDetailsDialog(GeometryMixin, QDialog):
             temp_dir = get_images_dir() / "imports"
 
             if run_arts and self._ai_thread is None:
-                arts_guess_btn = self.ai_guess_buttons.get("arts")
-                if arts_guess_btn:
-                    arts_guess_btn.setEnabled(False)
-                    arts_guess_btn.setText(self.tr("AI guessing..."))
-                self._set_ai_status(
-                    self.tr("Sending {count} image(s) to Artsdatabanken AI...").format(count=count),
-                    "#3498db",
-                    source="arts",
-                )
-                self._ai_thread = AIGuessWorker(
-                    requests,
-                    temp_dir,
-                    max_dim=ai_image_prep.DEFAULT_ARTSORAKEL_MAX_DIM,
-                    parent=self,
-                )
-                self._ai_thread.resultReady.connect(self._on_ai_guess_finished)
-                self._ai_thread.error.connect(self._on_ai_guess_error)
-                self._ai_thread.finished.connect(self._ai_thread.deleteLater)
-                self._ai_thread.finished.connect(self._on_ai_thread_finished)
-                self._ai_thread.start()
+                arts_access_token = ""
+                try:
+                    arts_client = self._window_cloud_client()
+                    arts_access_token = str(getattr(arts_client, "access_token", "") or "").strip()
+                except Exception:
+                    arts_access_token = ""
+                if not arts_access_token:
+                    self._set_ai_status(
+                        self.tr("Sign in to Sporely Cloud to use Artsorakel AI guess."),
+                        "#e67e22",
+                        source="arts",
+                    )
+                else:
+                    arts_guess_btn = self.ai_guess_buttons.get("arts")
+                    if arts_guess_btn:
+                        arts_guess_btn.setEnabled(False)
+                        arts_guess_btn.setText(self.tr("AI guessing..."))
+                    self._set_ai_status(
+                        self.tr("Sending {count} image(s) to Artsdatabanken AI...").format(count=count),
+                        "#3498db",
+                        source="arts",
+                    )
+                    arts_lat, arts_lon = self._observation_ai_lat_lon()
+                    self._ai_thread = AIGuessWorker(
+                        requests,
+                        temp_dir,
+                        max_dim=ai_image_prep.DEFAULT_ARTSORAKEL_MAX_DIM,
+                        parent=self,
+                        access_token=arts_access_token,
+                        latitude=arts_lat,
+                        longitude=arts_lon,
+                    )
+                    self._ai_thread.resultReady.connect(self._on_ai_guess_finished)
+                    self._ai_thread.error.connect(self._on_ai_guess_error)
+                    self._ai_thread.finished.connect(self._ai_thread.deleteLater)
+                    self._ai_thread.finished.connect(self._on_ai_thread_finished)
+                    self._ai_thread.start()
 
             if run_inat and self._inat_ai_thread is None:
                 from utils.inat_oauth import INatOAuthClient

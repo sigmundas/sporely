@@ -41,6 +41,7 @@ def _make_oriented_image(path: Path) -> Path:
 def _make_dialog_patches(monkeypatch) -> None:
     fake_client = SimpleNamespace(
         user_id="user-123",
+        access_token="supabase-access-token",
         fetch_cloud_plan_profile=lambda: {"cloud_plan": "free", "is_pro": False},
         count_remote_privacy_slots=lambda: 0,
         list_remote_observations=lambda: [],
@@ -306,6 +307,7 @@ def test_artsorakel_worker_batches_selected_images_and_flattens_combined_respons
         ],
         temp_dir,
         max_dim=ai_image_prep.DEFAULT_ARTSORAKEL_MAX_DIM,
+        access_token="supabase-access-token",
     )
 
     emitted: list[tuple[list, list, object, object, list]] = []
@@ -313,9 +315,12 @@ def test_artsorakel_worker_batches_selected_images_and_flattens_combined_respons
 
     worker.run()
 
-    assert captured["url"] == "https://ai.artsdatabanken.no"
+    assert captured["url"] == "https://upload.sporely.no/artsorakel"
     assert captured["data"] == {"application": "Sporely"}
-    assert captured["headers"] == {"User-Agent": "Sporely/AI"}
+    assert captured["headers"] == {
+        "User-Agent": "Sporely/AI",
+        "Authorization": "Bearer supabase-access-token",
+    }
     assert isinstance(captured["files"], list)
     assert len(captured["files"]) == 3
     assert [field_name for field_name, _part in captured["files"]] == ["image", "image", "image"]
