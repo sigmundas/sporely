@@ -67,6 +67,10 @@ Plain English comes first; technical terms are in parentheses.
 17. **PostgREST pagination must use deterministic ordering.** Every paginated bulk read must include an explicit `order=` clause with a unique tie-breaker (`id.asc`); offset-based paging over an unstable order can silently skip or duplicate rows across pages.
 18. **Download from Cloud is a strict zero-cloud-write mode.** A pull-only run must complete with `cloud_writes_completed == 0` and an empty blocked-write list. Every write path — PATCH, POST, DELETE, RPC mutations, storage upload, storage removal, and identity write-backs — is out of scope for this mode.
 19. **Pull-only write blocking is defense in depth, not expected control flow.** The fail-closed pull-only client wrapper exists to catch mistakes, not to be exercised. Pull-side code must gate its own writes at the source; any blocked write attempt recorded during a Download-from-Cloud run is a defect to fix at the source, not a handled event. New client writer methods must be added to the pull-only blocklist; new read methods join the allowlist only as an explicit, reviewed choice.
+20. **The local `cloud_id` is the primary direct local→cloud observation identity.** Once it verifies against an existing same-owner cloud row, that row is the push target. The remote `desktop_id` is the reverse cloud→local link and an identity recovery mechanism — never the primary lookup.
+21. **A missing remote `desktop_id` must never cause object creation when a verified local `cloud_id` already identifies the remote object.** Download from Cloud legitimately creates local rows with `cloud_id` set while the remote `desktop_id` remains NULL until a future normal (write-enabled) sync heals the reverse link. Resolving push identity by reverse link alone creates duplicate cloud observations.
+22. **Direct and reverse identity links resolving to different objects is an identity conflict, not permission to create a third object.** The same applies to an ambiguous reverse-link match (multiple rows carrying one `desktop_id`). The push must fail safely — no update of either candidate, no creation, no snapshot — and the local observation stays dirty/retryable for review.
+23. **Observation creation (POST) is a last resort.** It is allowed only after direct identity verification and reverse-link recovery both find no target. "Lookup failed" never automatically means "create" while the local row carries a direct cloud identity.
 
 ## Storage of desired cloud image-byte state
 
@@ -313,6 +317,25 @@ paginate each batch — batching bounds URL length and is not a substitute
 for pagination. Safety rules 14–17 encode the lessons; regression tests
 live in `tests/test_cloud_download_only.py` (desktop), including the guard
 that a page failure can never yield a page-1-only snapshot.
+
+## Incident: duplicate cloud observations after pull-only import, August 2026
+
+Observations imported by Download from Cloud carry a valid local `cloud_id`
+while the remote `desktop_id` remains NULL (pull-only performs zero cloud
+writes, so the reverse link is deliberately not written back). The desktop
+push path resolved identity only by the reverse link: when such an
+observation later became dirty, the `desktop_id` lookup found nothing, the
+client POSTed a new cloud observation, and the caller overwrote the correct
+local `cloud_id` with the duplicate's id. The next pull then saw the original
+cloud row as unlinked and imported it as a second local observation. Fourteen
+duplicate cloud observations were created before the defect was found.
+
+The repair established a canonical push-identity resolver: a verified local
+`cloud_id` is the primary identity (PATCH, never POST); the reverse
+`desktop_id` link is recovery-only and must match uniquely; disagreement or
+ambiguity fails safely and keeps the observation retryable. Safety rules
+20–23 encode the lessons; regression tests live in
+`tests/test_observation_push_identity.py` (desktop).
 
 ## Repair plan
 

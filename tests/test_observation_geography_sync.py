@@ -361,6 +361,13 @@ class _RecordingClient:
     def _find_cloud_observation(self, _desktop_id):
         return self._existing
 
+    # Use the real canonical identity resolver so these payload-shape tests
+    # exercise the production PATCH/POST routing on top of the stubbed
+    # reverse-link lookup above.
+    _resolve_existing_observation_for_push = (
+        cloud_sync.SporelyCloudClient._resolve_existing_observation_for_push
+    )
+
     def _patch(self, path, payload):
         self.patches.append((path, dict(payload)))
 

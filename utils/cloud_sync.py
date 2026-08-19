@@ -2265,6 +2265,19 @@ class PartialConflictPlanError(CloudSyncError):
         self.partial_result = dict(partial_result or {})
 
 
+class ObservationIdentityConflictError(CloudSyncError):
+    """Raised when observation push identity cannot be resolved safely.
+
+    Two links tie a local observation to a cloud row: the direct link
+    (local ``observations.cloud_id``) and the reverse link (remote
+    ``observations.desktop_id``). This error is raised when they resolve to
+    different cloud rows, or when the reverse-link recovery lookup matches
+    more than one cloud row. PATCHing either candidate could overwrite the
+    wrong row and POSTing would create a duplicate, so the push must fail
+    and leave the observation dirty/retryable for review.
+    """
+
+
 class CloudSessionAccountMismatchError(AccountMismatchError):
     """Raised when a stale SporelyCloudClient sees on-disk session tokens
     that belong to a different Sporely Cloud user than the one this
@@ -14803,10 +14816,93 @@ class SporelyCloudClient:
     # ── Observation push ─────────────────────────────────────────────────
 
     def _find_cloud_observation(self, desktop_id: int) -> str | None:
+        """Reverse-link (``desktop_id``) recovery lookup for one observation.
+
+        Returns the single same-owner cloud observation id carrying this
+        ``desktop_id``, or ``None``. Multiple matches mean cloud-side
+        duplicates; silently picking one could route a push at the wrong
+        row, so that case raises instead of choosing.
+        """
         rows = self._get(
-            f'observations?desktop_id=eq.{desktop_id}&user_id=eq.{self.user_id}&select=id'
+            f'observations?desktop_id=eq.{desktop_id}&user_id=eq.{self.user_id}'
+            '&select=id&order=id.asc'
         )
+        if len(rows) > 1:
+            raise ObservationIdentityConflictError(
+                f'observation desktop_id={desktop_id}: {len(rows)} cloud observations '
+                f'carry this desktop_id '
+                f'({", ".join(str(row.get("id")) for row in rows)}); refusing to '
+                f'choose among duplicates'
+            )
         return rows[0]['id'] if rows else None
+
+    def _resolve_existing_observation_for_push(
+        self,
+        obs: dict,
+        remote_obs: dict | None = None,
+    ) -> str | None:
+        """Canonical owner of observation push identity resolution.
+
+        Decides which existing cloud observation a push must target:
+
+        * The local direct link (``obs['cloud_id']``) is the PRIMARY
+          identity. Once it verifies against an existing same-owner cloud
+          row, that row is the push target — even when the remote
+          ``desktop_id`` is NULL. A NULL reverse link is the normal state
+          for observations imported by Download from Cloud (pull-only
+          performs zero cloud writes, so the reverse link is only healed by
+          a later normal push) and must never cause a duplicate POST.
+        * The remote reverse link (``desktop_id``) is the RECOVERY
+          identity: used when no verified direct link exists, and
+          cross-checked for disagreement when both links resolve.
+
+        Returns the cloud observation id to PATCH, or ``None`` when
+        creating a new cloud observation is permitted (no verified direct
+        target and no unambiguous reverse-link match).
+
+        Raises :class:`ObservationIdentityConflictError` when the two links
+        resolve to different rows or the reverse link is ambiguous. Callers
+        must leave the observation dirty/retryable and must not POST.
+        """
+        local_cloud_id = str(obs.get('cloud_id') or '').strip()
+
+        verified_direct_id = ''
+        if local_cloud_id:
+            candidate = None
+            if remote_obs is not None and str(remote_obs.get('id') or '').strip() == local_cloud_id:
+                # Caller-supplied remote rows come from user-scoped queries
+                # (get_observation / list_remote_observations), so a matching
+                # id is already existence- and ownership-verified.
+                candidate = remote_obs
+            else:
+                candidate = self.get_observation(local_cloud_id)
+            if candidate is not None:
+                verified_direct_id = str(candidate.get('id') or '').strip() or local_cloud_id
+
+        # The reverse-link lookup runs in both branches: as recovery when the
+        # direct link is unusable, and as a disagreement cross-check when it
+        # verified. Raises on multiple matches.
+        recovered_id = self._find_cloud_observation(obs['id'])
+
+        if verified_direct_id:
+            if recovered_id and str(recovered_id) != verified_direct_id:
+                raise ObservationIdentityConflictError(
+                    f"observation {obs['id']}: direct link cloud_id="
+                    f'{verified_direct_id} and reverse link desktop_id match='
+                    f'{recovered_id} resolve to different cloud observations; '
+                    f'refusing to patch either or create a third'
+                )
+            return verified_direct_id
+
+        if recovered_id:
+            return str(recovered_id)
+
+        # No verified direct target and no reverse-link match: creation is
+        # allowed by the existing contract. A populated but unverifiable
+        # local cloud_id (row deleted remotely, or invisible to this
+        # user-scoped client because it belongs to another account) must
+        # never be patched blindly.
+        return None
 
     def get_observation(self, cloud_id: str) -> dict | None:
         cloud_value = str(cloud_id or '').strip()
@@ -15034,9 +15130,9 @@ class SporelyCloudClient:
         payload['user_id'] = self.user_id
         payload['desktop_id'] = obs['id']
 
-        existing_id = self._find_cloud_observation(obs['id'])
+        existing_id = self._resolve_existing_observation_for_push(obs, remote_obs=remote_obs)
         if existing_id:
-            if remote_obs is not None:
+            if remote_obs is not None and str(remote_obs.get('id') or '').strip() == str(existing_id):
                 diff_fields = _observation_push_diff_fields(dict(obs or {}), remote_obs)
                 if not diff_fields:
                     _increment_sync_summary(summary, 'observations_skipped_noop')
