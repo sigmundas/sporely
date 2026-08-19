@@ -9,6 +9,12 @@ This is the shared sync specification for `sporely` (desktop) and `sporely-web` 
 
 Any change to sync behavior must update both copies in the same work item.
 
+This contract is the behavioral specification. For implementation
+navigation — entry points, canonical function ownership, cloud-write and
+destructive boundaries, and the staged refactoring plan — see
+[`cloud-sync-architecture.md`](cloud-sync-architecture.md) (desktop
+repository only).
+
 ## Purpose
 
 Sporely is local-first on desktop and cloud-connected across desktop, web, and Android. Sync should copy shared observation and scientific data without silently destroying local files, cloud photos, or work from another device.
@@ -55,6 +61,12 @@ Plain English comes first; technical terms are in parentheses.
 11. **All clients share the same state meanings.** Desktop, web, Android, cloud functions, and media workers must distinguish active, measurement-only, broken, and deleted images consistently.
 12. **Identity repair is checkbox-independent.** A local row with a lost `cloud_id` must be reconciled with the matching remote row by `desktop_id` regardless of the current gallery checkbox. Repair restores identity; it does not upload bytes. Recovery of identity for an unchecked image lets the byte gate correctly refuse re-uploads and lets a pending tombstone complete instead of creating a duplicate.
 13. **The legacy `artsobs_publish_excluded_image_ids_<obs>` setting is publication-only.** Its values must never automatically tombstone or otherwise remove cloud media. They may surface as audit hints in a later stage but never independently drive cloud-side change.
+14. **A partial remote collection is never authoritative remote state.** PostgREST (and any bounded API) can silently cap a response at the server row limit while returning HTTP 200. A truncated collection must never be used to conclude that rows are absent, to compute deletions, or to drive any diff against local state.
+15. **Bounded or paginated remote reads must be exhausted successfully before absence may be interpreted as deletion.** If any page fails, the whole read fails — the client must raise, not return the pages fetched so far. Absence of a row is meaningful only after a complete, successful paginated read of the relevant scope.
+16. **Incomplete remote data must never be stored as a sync snapshot.** The known-good baseline may only be persisted from a complete, successful remote read (and after all required child work succeeds). A snapshot recorded from truncated data poisons every future three-way comparison for that observation.
+17. **PostgREST pagination must use deterministic ordering.** Every paginated bulk read must include an explicit `order=` clause with a unique tie-breaker (`id.asc`); offset-based paging over an unstable order can silently skip or duplicate rows across pages.
+18. **Download from Cloud is a strict zero-cloud-write mode.** A pull-only run must complete with `cloud_writes_completed == 0` and an empty blocked-write list. Every write path — PATCH, POST, DELETE, RPC mutations, storage upload, storage removal, and identity write-backs — is out of scope for this mode.
+19. **Pull-only write blocking is defense in depth, not expected control flow.** The fail-closed pull-only client wrapper exists to catch mistakes, not to be exercised. Pull-side code must gate its own writes at the source; any blocked write attempt recorded during a Download-from-Cloud run is a defect to fix at the source, not a handled event. New client writer methods must be added to the pull-only blocklist; new read methods join the allowlist only as an explicit, reviewed choice.
 
 ## Storage of desired cloud image-byte state
 
@@ -280,6 +292,27 @@ Public image queries intentionally hide rows without `storage_path`, so the phot
 A follow-up prevented automatic re-upload after this conversion. It stopped an orphan-upload loop but did not restore removed bytes.
 
 Reported examples include Mica cap, Boletales, and *Mycena haematopus*. These are audit starting points, not a complete list.
+
+## Incident: truncated bulk reads, August 2026
+
+A bulk image-metadata fetch issued one unpaginated PostgREST GET for the
+image rows of many observations at once. The server silently capped the
+response at its row limit (1000 rows) while returning HTTP 200, so the
+client treated a truncated collection as the complete remote state. Effects:
+
+- newly pulled observations whose image rows fell past the cap appeared to
+  have zero images;
+- the diff against local state produced false "cloud removed local image
+  files" conflicts.
+
+The repair made `_get_paginated` the canonical bulk reader: explicit
+`limit`/`offset` paging until a short page, a mandatory deterministic
+`order=` clause with `id.asc` tie-breaker, and hard failure (no partial
+result) when any page errors. Batched `in.(…)` queries additionally
+paginate each batch — batching bounds URL length and is not a substitute
+for pagination. Safety rules 14–17 encode the lessons; regression tests
+live in `tests/test_cloud_download_only.py` (desktop), including the guard
+that a page failure can never yield a page-1-only snapshot.
 
 ## Repair plan
 

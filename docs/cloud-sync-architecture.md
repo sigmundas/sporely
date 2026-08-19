@@ -1,0 +1,762 @@
+# Cloud Sync Architecture Map
+
+Status: navigation/implementation document, written August 2026 against
+`utils/cloud_sync.py` at 24,163 lines (13 top-level classes, ~447 top-level
+functions, ~142 methods).
+
+This document explains **how the current implementation is organized** so a
+developer or agent can find the canonical owner of any sync concern before
+changing it. The **behavioral specification** remains
+[`supabase-sync-contract.md`](supabase-sync-contract.md) — if this document
+and the contract ever disagree, the contract wins and this document must be
+fixed.
+
+Line numbers refer to `utils/cloud_sync.py` unless another file is named.
+They will drift; symbol names are the stable reference. Verify with
+`grep -n "def <name>" utils/cloud_sync.py`.
+
+---
+
+## A. System purpose and boundaries
+
+Sporely desktop is local-first. Cloud sync copies shared scientific data
+between the desktop SQLite database and Sporely Cloud without silently
+destroying local files, cloud photos, or work from another device.
+
+| Store | What it holds | Who owns it |
+| --- | --- | --- |
+| **Local SQLite** (`database/`) | Observations, images, measurements, calibrations, settings, tombstones, sync snapshots. **Authoritative for whether individual image bytes are desired in Sporely Cloud** (`sporely_cloud_image_storage_excluded_ids_<obs>` settings keys). | Desktop |
+| **Supabase/Postgres** | Shared observation/image/measurement/calibration metadata rows (`observations`, `observation_images`, `spore_measurements`, calibration tables). Accessed via PostgREST. | Shared; RLS-scoped per user |
+| **R2 via media Worker** | Image bytes (web-friendly derivatives, optional companion originals, mosaics, calibration references). Normal desktop sync always goes through the authenticated Cloudflare Worker, never direct R2 (see `_storage_remove`, L14783, and `README.md`). | Cloud |
+| **Sync snapshots** | The last state both sides agreed on, per observation, stored in local settings. Basis for three-way comparison. | Desktop |
+| **Local originals** | Full-quality files imported on desktop. A smaller cloud copy never overwrites a better local original. | Desktop |
+| **Cloud recovery cache** | Files downloaded from cloud (`source_role=cloud_recovery_cache` / `file_purpose=cache`). Remote-owned copies; their bytes must never be re-uploaded. | Cloud (mirrored locally) |
+| **Metadata-only microscope anchors** | Cloud `observation_images` rows with `storage_path IS NULL AND image_type='microscope'`. Valid rows that carry measurement links and public-spore-mosaic anchoring **without image bytes**. Not broken; not deleted. | Shared |
+| **Tombstones** (`image_tombstones` table) | Durable evidence of an explicit user deletion. The only legitimate source of cloud-deletion intent. | Desktop |
+
+Sibling modules that share sync responsibility (do **not** assume
+`cloud_sync.py` is the whole implementation):
+
+| Module | Responsibility |
+| --- | --- |
+| `utils/cloud_media_policy.py` | Field/microscope byte-eligibility policy helpers |
+| `utils/original_sync_policy.py` | Opt-in full-resolution original upload policy |
+| `utils/cloud_media_recovery.py` | Plan/apply pipeline for repairing broken cloud image rows |
+| `utils/cloud_media_audit.py` | Read-only audit of cloud media rows vs storage objects |
+| `utils/cloud_spore_mosaic.py`, `utils/cloud_spore_mosaic_backfill.py` | Spore-mosaic derivative sync and backfill |
+| `utils/spore_summary_sync.py` | Spore-summary derivative push/pull |
+| `utils/r2_storage.py` | Low-level R2/Worker storage adapter |
+
+---
+
+## B. Sync modes / entry points
+
+All entry points are top-level functions in `utils/cloud_sync.py`.
+
+### Normal bidirectional sync
+
+`sync_all(client, sync_images=…, materialize_remote_images=…, full_pull=…, child_safety_pull=…, pull_only=False)` (L6069)
+
+```
+sync_all()
+  -> ensure_database_linked_to_cloud_user()
+  -> client.list_remote_observations()        # paginated
+  -> client.list_remote_calibrations()        # paginated
+  -> push_calibrations()                      (L6877)
+  -> push_all()                               (L17535)
+       -> _mark_cloud_observations_dirty_for_media_changes()            (L8452)
+       -> _mark_cloud_observations_dirty_for_image_capture_time_changes() (L8464)
+       -> _mark_cloud_observations_dirty_for_pending_local_images()     (L8832, gated scan)
+       -> _push_pending_image_tombstones()    (L5801, flushed BEFORE pruning)
+       -> per dirty observation:
+            _analyze_observation_push_conflicts()  (L4099)
+            client.push_observation()              (L15024)
+            _push_images_for_observation()         (incl. desired-state init, identity repair, uploads)
+            measurement / summary push
+            _store_remote_snapshot() then _stamp_observation_synced()
+  -> pull_all()                               (L22155)
+```
+
+The three flags `sync_images`, `materialize_remote_images`, `full_pull` are
+independent controls with caller-mode rules documented in `AGENTS.md`
+("Cloud sync invariants"). Never treat "all three on" as a generic full sync.
+
+### Push-only / pull-only building blocks
+
+- `push_all(client, …)` (L17535) — pushes dirty observations, images,
+  measurements, tombstones.
+- `pull_all(client, …, full_pull=…, pull_only=False)` (L22155) — pulls
+  new/changed remote observations, applies remote updates to clean local
+  rows, materializes remote media. `full_pull=False` is the no-op fast path
+  (prunes candidates by `updated_at` vs `synced_at`).
+
+### Download from Cloud (strict pull-only)
+
+`sync_all(pull_only=True)` (branch at L6107):
+
+```
+sync_all(pull_only=True)
+  -> PullOnlyCloudClient(client)              (L2170, fail-closed wrapper)
+  -> pull_only_client.list_remote_observations()
+  -> pull_all(pull_only_client, full_pull=True, pull_only=True)
+  -> result: pushed=0, cloud_writes_completed=0,
+             blocked_write_attempts=list(wrapper.write_attempts)
+```
+
+Both push phases are skipped entirely; the pull implementation is shared
+with normal sync (no parallel engine). `pull_all` honours the wrapper's
+`is_pull_only` marker even if the caller forgot `pull_only=True` (L22184),
+and source-gates its own write paths (e.g. EXIF backfill PATCH skipped at
+L22192). See section D for the write-boundary rule.
+
+### Calibration sync
+
+- `push_calibrations(client, …)` (L6877) →
+  `client.push_calibration_metadata()` (L14990),
+  `client.push_calibration_reference_image()` (L14859).
+- `pull_calibrations(client, …)` (L7017).
+- Conflict tools: `list_calibration_conflicts` (L7141),
+  `repair_calibrations_local_wins` (L7199).
+- `download_calibration_reference_to_cache` (L947).
+
+### Measurement sync
+
+Runs inside observation push/pull, not as a separate top-level mode:
+
+- Pull: `client.pull_measurements_for_images()` (L15716, paginated + batched),
+  applied per observation; identity prefetch via
+  `fetch_remote_measurement_identity_cache` (L9049).
+- Push: `client.push_measurement()` (L15872, upsert with no-op detection),
+  `client.set_measurement_desktop_id()` (L15709),
+  `client.delete_cloud_measurements_for_image()` (L15967).
+
+### Image / media sync
+
+Inside `push_all` / `pull_all`:
+
+- Push: `_push_images_for_observation` (desired-state init → identity repair
+  → tombstone-safe candidate filtering → `upload_image_file` /
+  `upload_original_image_file` → `push_image_metadata`).
+- Pull/materialize: bulk metadata via `pull_bulk_image_metadata` (L15769),
+  byte download via `download_image_file` (L16031), local application /
+  materialization helpers around L10155–L10500.
+
+### Recovery / audit / migration paths
+
+- `recover_full_original_for_image` (L1250) — explicit, user-driven original
+  recovery (uses `recovery_authorized=True` upload opt-in where applicable).
+- `utils/cloud_media_recovery.py` — plan/apply repair of broken cloud rows.
+- `utils/cloud_media_audit.py` + `scripts/audit_cloud_media.py` — read-only
+  audit (see `docs/cloud-media-incident-audit.md`).
+- `backfill_public_spore_mosaics` (L21743),
+  `diagnose_public_spore_mosaic_gates` (L20896).
+
+### Conflict resolution surface
+
+```
+finalize_sync_candidates()          (L10812)
+build_conflict_plan_baseline()      (L11446)
+resolve_conflict_plan()             (L13324)
+resolve_conflict_keep_local()       (L11105)
+resolve_conflict_keep_cloud()       (L11236)
+resolve_conflict_merge()            (L11297)
+get_conflict_detail()               (L16591)
+```
+
+### Other public state-mutation entry points (called from UI)
+
+- `set_image_cloud_selected(image_id, selected)` (L7389) — THE entry point
+  for the "Keep image in Sporely Cloud" checkbox; owns the
+  excluded-set + tombstone-queue/cancel lifecycle.
+- `remember_explicit_image_restore_source` (L7471).
+- `mark_observation_dirty` (L7355), `mark_observation_media_dirty` (L7371).
+- `unlink_local_observation_from_cloud` (L7309).
+
+---
+
+## C. Function ownership / canonical functions
+
+"If I need to change X, what function owns X?"
+
+| Concern | Canonical function(s) | Responsibility | Must not be bypassed by | Notes / invariants |
+| --- | --- | --- | --- | --- |
+| Cloud image byte desired-state decision | `cloud_image_bytes_desired` (L5351) | Single predicate over `sporely_cloud_image_storage_excluded_ids_<obs>`; bytes only | Any upload path, prepared-list logic, UI shortcuts | Fails closed on invalid ids. Anchor lifecycle is explicitly NOT governed by this predicate |
+| Byte-upload enforcement | `SporelyCloudClient.upload_image_file` (L15218), `upload_original_image_file` (L15470) | Refuse bytes when predicate is false; raise `CloudImageBytesNotDesiredError` (L5371) | Direct `_post`/Worker calls | `recovery_authorized=True` is the only opt-out, reserved for recovery flows |
+| Desired-state initialization | `_initialize_cloud_image_storage_desired_state_for_observation` (L5428) | Idempotent first-run seeding of the excluded set (sentinel-marked) | Gallery-open-time ad-hoc seeding | Uploaded→desired; delete-pending/deleted→excluded; local-only field→desired; local-only microscope→sparse per-magnification default. Never migrates legacy Artsobs exclusions |
+| Checkbox lifecycle | `set_image_cloud_selected` (L7389) | Uncheck queues tombstone + excludes; recheck cancels tombstone / triggers explicit restore | UI writing settings keys directly | Shares lifecycle with context-menu removal |
+| Tombstone processing | `_push_pending_image_tombstones` (L5801), `_record_remote_image_tombstones` (L5638), `_cancel_microscope_anchor_tombstones` (L19362), `_local_tombstoned_cloud_image_ids` (L5617) | Push explicit deletions; record remote deletions locally; cancel anchor tombstones | Ad-hoc `soft_delete_image` calls | Flushed **before** pruning in `push_all` so an uncheck this session deletes this session |
+| Image identity repair | `_reconcile_local_image_cloud_id` (L5572) (contract name: `_associate_persisted_cloud_images` path) | Restore lost `cloud_id` from unambiguous `desktop_id` match | Upload paths inventing new rows | Checkbox-independent (contract rule 12). Ambiguous match → warn and skip, never auto-pick |
+| Image metadata push | `SporelyCloudClient.push_image_metadata` (L15080) | PATCH-or-POST one `observation_images` row | Raw `_patch`/`_post` | Understands metadata-only semantics (`storage_path IS NULL AND image_type='microscope'`, see L15113) |
+| Original upload | `upload_original_image_file` (L15470) + `utils/original_sync_policy.py` | Companion original bytes, policy-gated | — | Parent image must be desired |
+| Remote image application / materialization | `_apply_remote_image_metadata_only_to_local` (L10155), `_ensure_local_metadata_only_microscope_anchor` (L10259), localization helpers ~L10480 | Apply remote rows locally; download bytes into recovery cache | Direct `ImageDB` writes from pull loops | Downloaded copy only replaces local file when local is not larger (L10489); larger local original kept as-is |
+| Remote snapshot storage | `_store_remote_snapshot` (L10914), `_store_cloud_observation_snapshot` (L5223), `_load_cloud_observation_snapshot` (L5213), `_parse_cloud_observation_snapshot` (L3299), `_clear_cloud_observation_snapshot` (L6452) | Persist/read the known-good baseline | Ad-hoc settings writes | May only run after complete, successful remote reads (section F) and after required child work succeeds |
+| Three-way conflict analysis | `_analyze_observation_push_conflicts` (L4099), `ObservationPushConflictReport` (L4084), `build_conflict_plan_baseline` (L11446) | Compare local vs cloud vs baseline; block writes on both-changed | Push loops writing without preflight | "Needs review" marker: `_set_observation_conflict_review_pending` (L4260) / `_clear_…` (L4277) |
+| Local-vs-cloud change analysis | `_local_has_real_changes_since_snapshot` (L4305), `_remote_snapshot_has_meaningful_changes` (L9098), `_clear_observation_dirty_if_no_real_changes` (L4347) | Distinguish real edits from no-op noise | — | Feeds the no-op fast path |
+| Observation push | `SporelyCloudClient.push_observation` (L15024) | PATCH existing / POST new observation row | Raw transport | Find-by-`desktop_id` before create |
+| Observation pull | `pull_all` per-candidate loop (L22155+) | Apply remote updates to clean local rows; import new | — | Conflicted rows are skipped, not overwritten |
+| Measurement push/pull | `push_measurement` (L15872), `pull_measurements_for_images` (L15716), `delete_cloud_measurements_for_image` (L15967) | Upsert with semantic no-op detection; paginated pull | — | Measurements may reference metadata-only anchors |
+| Calibration push/pull | `push_calibrations` (L6877), `pull_calibrations` (L7017), `push_calibration_metadata` (L14990), `push_calibration_reference_image` (L14859) | Calibration identity, data, reference image | — | Local-wins repair: `repair_calibrations_local_wins` (L7199) |
+| Bulk PostgREST pagination | `SporelyCloudClient._get_paginated` (L14690) | Exhaustively page past the server `db-max-rows` cap | Any bulk `_get` without paging | Callers MUST pass a deterministic `order=` with `id.asc` tie-breaker; page failure propagates; **partial results are never returned** |
+| Bulk readers (must stay on `_get_paginated`) | `list_remote_observations`, `list_remote_calibrations`, `pull_web_observations` (L15653), `pull_measurements_for_images` (L15716), `pull_bulk_image_metadata` (L15769) | Complete remote collections | Single-shot `_get` for unbounded sets | See section F |
+| Metadata-only microscope anchors | `_is_metadata_only_microscope_cloud_image` (L4966), `_is_local_metadata_only_microscope_anchor` (L4986), `_ensure_metadata_only_microscope_image_for_public_spores` (L19422), `_metadata_only_microscope_image_payload` (L19312), `_set_cloud_image_metadata_only_state` (L5266) | Anchor lifecycle, separate from byte storage | Byte predicate; publication logic | `storage_path IS NULL` + `image_type='microscope'` = deliberate anchor, not breakage |
+| sync_status transitions | `_stamp_observation_synced` (L9130), `mark_observation_dirty` (L7355), `mark_observation_media_dirty` (L7371), `_clear_observation_dirty_if_no_real_changes` (L4347) | The only paths that flip dirty/synced | Direct SQL updates on `sync_status` | Stamp only after ALL required child ops succeeded and the snapshot stored |
+| Cloud deletion (soft) | `SporelyCloudClient.soft_delete_image` (L15856) | PATCH `deleted_at` on one image row; **no storage removal** | Hard delete during routine sync | Contract rule 5 |
+| Cloud deletion (hard) | `delete_cloud_observation` (L15971), `delete_cloud_measurements_for_image` (L15967) | Full observation teardown: Worker storage remove first (abort-on-partial keeps it retryable), then DELETE image rows, then observation row | Routine sync loops | Only explicit user deletion flows |
+| Media deletion | `_storage_remove` (L14783) | Worker-owned dual-bucket delete + quota accounting | Direct S3 deletion (legacy-only, never lifecycle cleanup) | |
+| Pull-only enforcement | `PullOnlyCloudClient` (L2170), `_PULL_ONLY_BLOCKED_CLIENT_METHODS` (L2117), `_PULL_ONLY_ALLOWED_READ_METHODS` (L2134) | Fail-closed allowlist proxy; records `write_attempts` | Any Download-from-Cloud path using a raw client | Unrecognized callables are blocked too — an allowlist, not a denylist |
+
+---
+
+## D. Cloud write boundaries
+
+Every path that can change cloud state funnels through methods on
+`SporelyCloudClient` (L14179). Inventory, by mechanism:
+
+### PostgREST PATCH (`_patch`, L14762)
+
+| Method | Writes | Called from |
+| --- | --- | --- |
+| `push_observation` (L15024, PATCH branch L15046) | `observations` row | push loop |
+| `push_image_metadata` (PATCH L15165/L15171) | `observation_images` metadata | image push |
+| `set_image_storage_path` (L15196) | `storage_path` | upload finalize |
+| `set_image_original_storage_path` (L15184) | `original_storage_path` | original upload |
+| `set_image_desktop_id` (L15849) | identity write-back | identity repair |
+| `set_measurement_desktop_id` (L15709) | identity write-back | measurement identity |
+| `soft_delete_image` (L15856) | `deleted_at` | tombstone processing |
+| `push_measurement` (PATCH L15925/L15960) | `spore_measurements` | measurement push |
+| `push_calibration_reference_image` (PATCH L14975) | calibration row | calibration push |
+| profile/avatar PATCH (~L14422/L14621) | profile | profile settings |
+| EXIF backfill (`_backfill_missing_exif_on_cloud_images`, called from `pull_all` L22192) | image EXIF fields | **pull-side write** — explicitly skipped when `pull_only` |
+
+### PostgREST POST (`_post`, L14734)
+
+`push_observation` (POST L15051), `push_image_metadata` (POST L15174),
+`push_measurement` (POST L15928/L15963), `push_calibration_metadata`
+(POST L15015), `upload_profile_avatar` (L14623). `_rpc` (L14746) is
+POST-transported; treat any state-mutating RPC as a write.
+
+### PostgREST DELETE (`_delete`, L14773)
+
+`delete_cloud_observation` (L16016 image rows, L16023 observation row),
+`delete_cloud_measurements_for_image` (L15969). Hard deletes; reserved for
+explicit user deletion flows and verified maintenance.
+
+### Storage / R2 upload
+
+`upload_image_file` (L15218), `upload_original_image_file` (L15470),
+`push_calibration_reference_image` (L14859), mosaic/summary upload via
+`utils/cloud_spore_mosaic.py` and `utils/spore_summary_sync.py`. All go
+through the authenticated Worker; both image-byte uploaders are gated by
+`cloud_image_bytes_desired`. Worker upload-key validation protects against
+replacing the wrong `observation_images` row.
+
+### Storage / R2 removal
+
+`_storage_remove` (L14783) → Worker `delete_objects`. Callers:
+`delete_cloud_observation`, tombstone-driven media cleanup, verified
+maintenance. Direct S3 deletion is legacy-bucket-only and must not be used
+for lifecycle cleanup.
+
+### Which flows may write
+
+- **push_all / push_calibrations**: all writers above except hard deletes
+  of observations (those require an explicit deletion flow).
+- **pull_all (normal)**: EXIF backfill PATCH only (plus identity
+  write-backs when repair runs during pull-side reconciliation).
+- **pull_all (pull_only)**: **none.**
+- **Recovery / conflict-resolution flows**: writes only through the same
+  canonical methods, after explicit user action.
+
+### The PullOnlyCloudClient safety boundary
+
+Download from Cloud must produce:
+
+```
+cloud_writes_completed == 0
+write_attempts == []
+```
+
+`PullOnlyCloudClient` (L2170) is a **fail-closed allowlist proxy**:
+
+- Non-callable attributes forward verbatim.
+- Callables on `_PULL_ONLY_ALLOWED_READ_METHODS` (L2134) forward verbatim.
+- Every method on `_PULL_ONLY_BLOCKED_CLIENT_METHODS` (L2117) raises
+  `PullOnlyModeError` (L2106) and is recorded on `write_attempts`.
+- **Any other callable is also blocked.** Under a plain denylist a future
+  writer whose internals call `self._patch` would execute on the wrapped
+  client and bypass the wrapper; the allowlist closes that class of leak.
+
+**The wrapper is defense in depth, not control flow.** Normal pull-only
+code must gate its own writes at the source (as the EXIF backfill does at
+L22192) and never routinely reach the wrapper. A non-empty
+`blocked_write_attempts` in a Download-from-Cloud result indicates a new
+pull-side write path that needs a source-level gate — it is a bug report,
+not a success. When adding any new writer method to `SporelyCloudClient`,
+it must be added to `_PULL_ONLY_BLOCKED_CLIENT_METHODS` (or it will be
+blocked as "unrecognized", which is safe but noisy); new read methods are
+added to the allowlist only as an explicit, reviewed choice.
+
+---
+
+## E. Local mutation / destructive boundaries
+
+### Normal (reversible / bookkeeping) local mutations
+
+- Dirty/synced stamps: `_stamp_observation_synced` (L9130, delegates to
+  `_set_observation_sync_state`), `mark_observation_dirty` (L7355),
+  `mark_observation_media_dirty` (L7371),
+  `_clear_observation_dirty_if_no_real_changes` (L4347), dirty-scan markers
+  (L8452/L8464/L8832).
+- Snapshot persistence: `_store_cloud_observation_snapshot` (L5223),
+  `_store_remote_snapshot` (L10914), `_clear_cloud_observation_snapshot`
+  (L6452).
+- Identity: `_reconcile_local_image_cloud_id` (L5572) sets a local
+  `cloud_id`; `unlink_local_observation_from_cloud` (L7309) clears
+  observation-level linkage (explicit user action).
+- Desired-state bookkeeping: excluded-set updates via
+  `set_image_cloud_selected` (L7389),
+  `_remove_cloud_image_storage_excluded_image_id` (L5336),
+  `_set_cloud_image_metadata_only_state` (L5266),
+  `_clear_cloud_image_file_signature` (L5251).
+- Tombstone create/cancel: `set_image_cloud_selected`,
+  `_record_remote_image_tombstones` (L5638),
+  `_cancel_microscope_anchor_tombstones` (L19362).
+- Creating local observations/image rows during pull (import of new remote
+  observations, anchor creation via
+  `_ensure_local_metadata_only_microscope_anchor` L10259).
+
+### Destructive local operations (scrutinize every change here)
+
+| Operation | Where | Notes |
+| --- | --- | --- |
+| Temp/cache file unlinks | L1024, L1440, L1503 | Cleanup of recovery-download temp files only; never user originals |
+| Replace local file with downloaded copy | localization path ~L10489 (`shutil.copy2` over target) | **Only when the existing local file is not larger**; a larger local file is the full-res original and is kept as-is |
+| Relocate local file to fallback dir | ~L10251 (`shutil.copy2` + `ImageDB.update_image(filepath=…)`) | Copy-then-repoint, collision-suffixed; original bytes preserved |
+| Temp dir removal | `shutil.rmtree` at L10543, L10727, L23215 | Temp dirs only |
+| Clearing `cloud_id` | `unlink_local_observation_from_cloud` (L7309); historical incident: stale-row cleanup cleared image `cloud_id`s (now removed) | Never clear a valid `cloud_id` because the current run uploaded no bytes |
+
+**There is no code path in normal sync that deletes a user's local original
+file.** Remote deletion discovered during pull records state locally and
+asks the user (contract, "Remote deletion discovered on desktop"). Any new
+code that unlinks a non-temp file needs contract-level review.
+
+---
+
+## F. Remote collection completeness
+
+> **A partial remote collection is NOT authoritative remote state, and must
+> NEVER be persisted as a sync snapshot.**
+
+PostgREST enforces a server-side row cap (`db-max-rows`, 1000 rows in our
+deployment). A single GET against a large collection **silently truncates**
+— HTTP 200, valid JSON, no error.
+
+**Incident (August 2026):** `pull_bulk_image_metadata` fetched image
+metadata for many observations in one unpaginated request. The response was
+silently capped at 1000 rows. Newly pulled observations whose images fell
+past the cap appeared to have **zero images**, and the diff against local
+state produced false "cloud removed local image files" conflicts. The fix
+introduced explicit pagination with deterministic ordering; regression tests
+live in `tests/test_cloud_download_only.py` (see section K).
+
+Rules, as implemented:
+
+- `_get_paginated` (L14690) is the canonical bulk reader. It loops
+  `limit/offset` pages until a short page arrives, and **raises on any page
+  failure — a partial accumulation is never returned.**
+- Callers MUST include a deterministic `order=` clause with `id.asc` as
+  tie-breaker. Offset paging over a nondeterministic order can skip or
+  duplicate rows across pages.
+- **Batching is not pagination.** `pull_measurements_for_images` and
+  `pull_bulk_image_metadata` batch their `in.(…)` ID lists to bound URL
+  length, *and* paginate each batch. Both are required.
+- A short (or empty) first page from a *bounded* query proves nothing about
+  deletion. Absence may only be interpreted after the paginated read
+  completed successfully for the relevant scope (contract rule: bounded
+  APIs must be exhausted before absence means anything).
+- Snapshots (`_store_remote_snapshot`, L10914) may only be persisted after a
+  complete, successful remote read. A snapshot recorded from truncated data
+  poisons every future three-way comparison for that observation.
+- New bulk readers must use `_get_paginated`. A plain `client._get` is only
+  acceptable for queries with a known-small, explicitly bounded result
+  (single row by ID, `limit=1` probes).
+
+---
+
+## G. Image state model
+
+An image participates in **six independent dimensions**. They are not
+interchangeable, and most historical incidents came from conflating two of
+them:
+
+| Dimension | Where stored | Meaning |
+| --- | --- | --- |
+| **Row identity** | local `images.cloud_id` ↔ cloud `observation_images.id` / `desktop_id` | Which cloud row corresponds to which local row |
+| **Byte existence** | cloud `storage_path` / `original_storage_path` + actual R2 object | Whether bytes are actually in cloud storage |
+| **Desired byte-storage state** | local `sporely_cloud_image_storage_excluded_ids_<obs>` via `cloud_image_bytes_desired` | Whether the user wants bytes in Sporely Cloud |
+| **Deletion intent** | local `image_tombstones` | Explicit user removal decision |
+| **Measurements** | `spore_measurements` (local + cloud) | Scientific data; may reference rows with no bytes |
+| **Publication selection** | `artsobs_publish_excluded_image_ids_<obs>` | External publication (Artsobs/iNat) only; never drives cloud storage |
+
+Canonical desktop states (contract) and how they combine:
+
+| State | cloud_id | Cloud bytes | Desired | Tombstone |
+| --- | --- | --- | --- | --- |
+| **Local-only** (`NONE`) | none | none | either | none |
+| **Uploaded** | set | present | yes | none |
+| **Delete pending** | set | present | no | unsynced |
+| **Deleted** | retained | removed | no | synced |
+| **Metadata-only microscope anchor** | set | none (`storage_path IS NULL`, deliberate) | bytes: no; anchor: yes | none (anchor tombstones cancellable, L19362) |
+| **Broken cloud row / missing bytes** | set | row active but object missing | yes | none — mark broken/repair, never silently delete (contract "Missing cloud file") |
+| **Cloud recovery cache** (local file dimension) | n/a | n/a | n/a | Local file with `source_role=cloud_recovery_cache`; remote-owned, bytes never re-uploaded |
+
+State transitions are owned by: `set_image_cloud_selected` (uncheck/recheck
+lifecycle), `_push_pending_image_tombstones` (delete-pending → deleted),
+upload finalize (`set_image_storage_path` → uploaded),
+`_ensure_metadata_only_microscope_image_for_public_spores` (anchor
+creation), `utils/cloud_media_recovery.py` (broken → repaired).
+
+---
+
+## H. Snapshots and conflict detection
+
+**A sync snapshot is the last state both sides agreed on** for one
+observation (plus its images and measurements), stored in local settings
+under a key from `_cloud_observation_snapshot_key` (L4843).
+
+- **Read**: `_load_cloud_observation_snapshot` (L5213), parsed by
+  `_parse_cloud_observation_snapshot` (L3299); consumed by the pull
+  candidate loop (L22231) and push preflight.
+- **Written**: `_store_cloud_observation_snapshot` (L5223) via
+  `_store_remote_snapshot` (L10914) — after successful push/pull of an
+  observation *and all required children*, and by conflict-plan
+  finalization (`finalize_sync_candidates` L10812 stores the snapshot
+  **before** stamping synced; a snapshot failure leaves the conflict
+  unsealed — see `test_cloud_conflict_plan_execution.py`).
+- **Cleared**: `_clear_cloud_observation_snapshot` (L6452),
+  `unlink_local_observation_from_cloud`.
+
+**Three-way comparison** (local vs cloud vs snapshot):
+`_analyze_observation_push_conflicts` (L4099) producing
+`ObservationPushConflictReport` (L4084);
+`build_conflict_plan_baseline` (L11446) for the interactive resolution
+dialog; change classifiers `_local_has_real_changes_since_snapshot` (L4305)
+and `_remote_snapshot_has_meaningful_changes` (L9098).
+
+**When remote absence counts as deletion:**
+
+- The paginated remote read completed successfully for the relevant scope,
+  AND the snapshot shows the row existed at the last agreed state, AND the
+  remote row is genuinely gone (or soft-deleted). Then it is recorded
+  locally as a remote deletion (`_record_remote_image_tombstones`, L5638)
+  and surfaced for user decision — **never** silently mirrored onto local
+  originals.
+
+**When it must NOT count as deletion:**
+
+- Any page of the read failed (exception propagates; no partial result).
+- The row was merely absent from a filtered/bounded/batched subset.
+- The local row was omitted from `prepared_items` or any upload list.
+- The image is a metadata-only anchor (`storage_path IS NULL` is not
+  absence of the row).
+
+**Both changed** → conflict: automatic push and pull for that observation
+are blocked, `_set_observation_conflict_review_pending` (L4260) marks it
+**"needs review"**, and the UI offers keep-local / keep-cloud / merge via
+the `resolve_conflict_*` family. "Needs review" means: no writes in either
+direction for that observation until the user chooses; the marker clears on
+the next clean sync after resolution (`_clear_observation_conflict_review_pending`, L4277).
+
+---
+
+## I. Retryability / failure semantics
+
+The governing rule (contract rule 8): **do not mark an observation fully
+synced if required image, measurement, calibration, summary, or deletion
+work failed.**
+
+- `_stamp_observation_synced` (L9130) may only run after all required child
+  operations succeeded *and* the snapshot stored. Failures leave
+  `sync_status` dirty so the next sync retries.
+- **Child-operation failure**: per-observation push catches child errors,
+  records them in the result's `errors`, and skips the synced stamp for
+  that observation; other observations continue.
+- **Partial uploads**: the retry-safe upload sequence (contract) is
+  row → bytes → `storage_path` PATCH → local `cloud_id` → snapshot. An
+  interruption after any step must be recoverable by repeating sync;
+  find-before-create (`desktop_id` match, `_find_cloud_image`) prevents
+  duplicates on retry.
+- **Partial downloads**: byte downloads go to temp files and are moved into
+  place only after validation (see L1440–L1503 region); a failed download
+  leaves prior local state untouched.
+- **Partial remote reads**: `_get_paginated` raises; no caller ever sees a
+  truncated collection (section F).
+- **Tombstone retries**: tombstones are durable local rows; a failed remote
+  deletion leaves the tombstone unsynced and it is retried on the next
+  `_push_pending_image_tombstones` pass. Hard observation deletion removes
+  storage objects before DB rows precisely so a partial Worker failure
+  aborts while everything is still discoverable and retryable (L16003).
+- **Media worker failures**: surface as errors; quota accounting and
+  dual-bucket targeting are Worker-owned, so client-side retries are safe.
+- **Conflict-plan failures**: `PartialConflictPlanError` (L2255) carries the
+  partial operation log; retry with `prior_result` skips completed
+  operations; snapshot failure leaves the conflict unsealed.
+
+**Subtle-ordering areas worth extra tests (do not "fix" casually):**
+
+1. Tombstone flush happens **before** dirty-observation pruning in
+   `push_all` (~L17608) — reordering would delay deletions a full cycle or
+   resurrect pruned intent.
+2. `finalize_sync_candidates` stores the snapshot **before** stamping
+   synced — inverting this can seal a conflict without a baseline.
+3. The desired-state initializer runs at the top of
+   `_push_images_for_observation`, after tombstone push, before candidate
+   filtering — moving it later can let an uninitialized observation upload
+   its full microscope set.
+4. `pull_all` derives `pull_only` from the client's `is_pull_only` marker
+   (L22184) — new call sites must not construct raw clients for
+   download-only flows.
+
+---
+
+## J. Known pitfalls — COMMON TRAPS
+
+Read this list before changing anything in cloud sync.
+
+1. **Publication exclusion ≠ cloud byte exclusion.**
+   `artsobs_publish_excluded_image_ids_<obs>` is publication-only. The
+   cloud-storage set is `sporely_cloud_image_storage_excluded_ids_<obs>`.
+   Conflating them caused the 3 Aug 2026 data-loss incident.
+2. **Omission ≠ deletion.** Filtering, failed preparation, missing files,
+   `include_image_ids` subsets, `prepare_images_cb=None` fallbacks — none
+   of these create deletion intent. Only an explicit uncheck or
+   context-menu removal does (via a tombstone).
+3. **`storage_path` NULL may be a legitimate metadata-only anchor** (with
+   `image_type='microscope'`). It is not a broken row and must not be
+   "repaired" into deletion or byte upload.
+4. **Lost `cloud_id` must be repaired independently of checkbox state.**
+   Identity repair restores identity; it never uploads bytes. Skipping
+   repair for unchecked images causes duplicate rows and orphaned
+   tombstones.
+5. **`cloud_id` and `desktop_id` point in opposite directions.**
+   `cloud_id` lives locally and names the cloud row; `desktop_id` lives in
+   the cloud and names the local row. Matching logic must not mix them.
+6. **Local original ≠ cloud recovery copy.** `source_role=cloud_recovery_cache`
+   / `file_purpose=cache` files are remote-owned; their bytes must never be
+   prepared or uploaded back. A smaller cloud copy never overwrites a
+   larger local original (localization guard ~L10489).
+7. **`prepared_items` is not the authoritative desired-image set.** It is
+   an upload work list. Protection comes from `kept_cloud_ids` + the
+   desired-state predicate.
+8. **PostgREST queries silently hit server row caps.** HTTP 200 with 1000
+   rows is not "all rows". Bulk reads must go through `_get_paginated`.
+9. **Deterministic pagination ordering is mandatory** (`order=…,id.asc`).
+   Offset paging over an unstable order skips or duplicates rows.
+10. **Partial remote result ≠ deletion.** Absence is meaningful only after
+    a complete, successful paginated read of the relevant scope.
+11. **Snapshot persistence requires complete remote state.** A snapshot
+    from truncated data poisons all future three-way comparisons.
+12. **Pull-only means zero writes, not merely blocked writes.**
+    `blocked_write_attempts` entries are bugs to fix at the source, not
+    events the wrapper "handled".
+13. **Remote deletion does not imply local-original deletion.** Record it,
+    ask the user; never mirror it onto local files.
+14. **Measurements can legitimately reference metadata-only anchors.**
+    Deleting "imageless" rows breaks measurement links and the public
+    spore mosaic.
+15. **Worker upload-key validation protects against replacing the wrong
+    `observation_images` row.** Do not route uploads around the Worker.
+16. **`sync_status` must not hide failed required child operations.** Stamp
+    synced only after images, measurements, calibrations, summaries, and
+    deletions for that observation all succeeded.
+17. **`sync_images` / `materialize_remote_images` / `full_pull` are
+    independent controls** with per-caller rules (see `AGENTS.md`). "Turn
+    everything on" is not a fix.
+18. **The desired-state initializer must never migrate legacy Artsobs
+    exclusions** and never touches images with existing cloud identity.
+19. **Soft delete before storage cleanup** in routine deletion; hard delete
+    (`_delete`) is reserved for explicit whole-observation deletion and
+    verified maintenance.
+20. **Batching ≠ pagination.** Batched `in.(…)` queries must still paginate
+    each batch.
+
+---
+
+## K. Test map
+
+High-value safety tests by invariant (not an exhaustive listing):
+
+| Invariant | Tests |
+| --- | --- |
+| Pull-only performs zero cloud writes | `tests/test_cloud_download_only.py` — wrapper delegation/blocking suite; `test_sync_all_pull_only_records_zero_cloud_writes`; non-push of pending tombstones during pull; dirty local observations preserved |
+| Pagination past the 1000-row cap | `test_cloud_download_only.py::test_pull_bulk_image_metadata_pages_past_1000_row_cap`, `…test_pull_measurements_for_images_pages_past_1000_row_cap`, `…test_list_remote_observations_pages_past_1000_row_cap`, `…test_list_remote_calibrations_pages_past_1000_row_cap`, `…test_pull_bulk_image_metadata_tail_observation_receives_its_images` |
+| Page failure never yields a partial authoritative result / snapshot | `test_cloud_download_only.py::test_get_paginated_propagates_page_error_without_partial_result`, `…test_pull_bulk_image_metadata_page_2_failure_does_not_yield_page_1_only_snapshot` (the August 2026 regression guard) |
+| Image byte desired-state gate | `tests/test_cloud_image_bytes_desired.py` (gates, sparse defaults, boundary refusal, tombstone queue on uncheck, recheck cancels delete); `tests/test_cloud_storage_desired_initializer.py`; `tests/test_cloud_sync_image_upload_policy.py`; `tests/test_original_sync_policy.py` |
+| Tombstone lifecycle | `tests/test_image_tombstones.py` (queue, sync, cancel, restore-after-delete, remote tombstone repair, legacy publish-exclusion non-migration, batch queue); `tests/test_image_gallery_cloud_delete.py` |
+| Identity repair | `test_cloud_image_bytes_desired.py::test_identity_repair_runs_for_unchecked_image_without_upload`; duplicate-identity blockers in `tests/test_cloud_conflict_plan_execution.py` |
+| Metadata-only anchors | `tests/test_cloud_sync_metadata_only.py`; `test_cloud_download_only.py::test_download_from_cloud_never_downloads_metadata_only_microscope_anchor`; metadata-only refresh tests in `tests/test_cloud_sync_dirty_loop_steady_state.py` |
+| Conflict preservation / "needs review" | `tests/test_cloud_sync_conflict_preflight.py`; `tests/test_cloud_conflict_plan_execution.py` (drift aborts, baseline validation, snapshot-before-stamp ordering, unsealed-on-snapshot-failure); `tests/test_observation_snapshot_persistence.py` |
+| Retryability / dirty stays dirty | `tests/test_cloud_sync_dirty_loop_steady_state.py`; `test_cloud_conflict_plan_execution.py::test_partial_error_carries_operations_and_retry_skips_completed`; `tests/test_cloud_measurement_sync_v1.py::test_push_measurements_for_observation_aborts_on_transient_failure`; `tests/test_cloud_sync_dirty_pending_images.py` |
+| Cloud deletion safety | `test_image_tombstones.py` (soft-delete ordering, hard-delete + tombstone ordering); `test_cloud_conflict_plan_execution.py::test_no_media_deletion_api_reachable_from_plan` |
+| Fast path / no-op contract | `tests/test_cloud_sync_fast_path.py` |
+| Measurements | `tests/test_cloud_measurement_sync_v1.py` |
+| Calibrations | `tests/test_cloud_calibration_sync.py` |
+| Media recovery / audit | `tests/test_cloud_media_recovery.py`, `tests/test_cloud_media_audit.py`, `tests/test_cloud_original_sync_recovery.py`, `tests/test_cloud_media_pull_retry.py` |
+
+### Known coverage gaps (documented, not fixed here)
+
+- **Client-side ordering enforcement**: `_get_paginated`'s deterministic
+  ordering requirement is asserted only indirectly (tail-observation test);
+  no test feeds a mismatched-order response to prove behavior.
+- **Anchor byte-fetch guard**: no direct assertion that a
+  `storage_path IS NULL` row never triggers an R2 GET (covered only via the
+  download-only anchor test).
+- **Pull-only beyond the core**: mosaic, spore-summary, and original-upload
+  surfaces have no dedicated zero-write pull-only assertions.
+- **Affirmative identity repair** for measurements/calibrations: covered
+  mostly by duplicate-blocker tests, not by positive repair tests.
+- **Cross-restart retryability**: no end-to-end test asserts `sync_status`
+  dirtiness survives a process restart after child-op failure.
+- **Snapshot schema back-compat**: v2 round-trip + legacy no-version load
+  exist; no broader version matrix.
+
+---
+
+## Proposed staged extraction plan (PLAN ONLY — no implementation)
+
+Goal: split `utils/cloud_sync.py` into a `utils/cloud_sync/` package via
+small, behavior-preserving, mechanical stages. Public import surface
+(`from utils.cloud_sync import sync_all, …`) must remain stable throughout
+(re-export from `utils/cloud_sync/__init__.py`).
+
+Observed coupling that shapes the plan:
+
+- Transport (`_post`/`_patch`/`_delete`/`_rpc`/`_storage_remove`/
+  `_get_paginated`) and `PullOnlyCloudClient` carry **no sync policy** —
+  the natural first cut.
+- Policy predicates (`cloud_image_bytes_desired`, anchor predicates,
+  initializer) are pure local-settings/DB reads — extractable with few
+  dependencies.
+- `SporelyCloudClient` is a 1900-line God-object mixing transport with
+  per-entity push methods; it should be split **last**, after the
+  per-entity logic has homes.
+- Orchestrators (`sync_all`/`push_all`/`pull_all`) touch everything; they
+  move only after their dependencies have stable homes.
+- Cross-cutting infrastructure (profiler, sync-summary contextvars,
+  progress helpers) is imported by everything and should be extracted early
+  as a leaf module.
+
+### Stage 0 — package scaffold + infrastructure (mechanical, very low risk)
+
+- **Move**: `CloudSyncProfiler`, `_cloud_sync_phase_scope`, sync-summary
+  contextvar helpers (`_new_sync_summary`, `_increment_sync_summary`, …),
+  progress helpers (`_emit_progress`, `_set_progress_phase`,
+  `_advance_progress`), error classes (`CloudSyncError` family) →
+  `utils/cloud_sync/{errors,profiling,progress}.py`; convert
+  `utils/cloud_sync.py` into `utils/cloud_sync/__init__.py` re-exporting
+  everything.
+- **Why natural**: leaf dependencies; imported by all later stages.
+- **Tests unchanged**: entire `tests/test_cloud_*` suite (imports resolve
+  through `utils.cloud_sync`).
+- **Do NOT change**: any error message, summary key name, or progress
+  phase name (tests and logs assert on them).
+
+### Stage 1 — transport + pagination + pull-only (mechanical, low risk)
+
+- **Move**: `_post`, `_patch`, `_delete`, `_rpc`, `_storage_remove`,
+  `_get`, `get_read_only`, `_get_paginated`, `_request_with_refresh` and
+  session/auth plumbing → `transport.py` / `pagination.py`;
+  `PullOnlyCloudClient`, `PullOnlyModeError`, both method frozensets,
+  `summarize_blocked_write_attempts`, `partition_download_from_cloud_issues`
+  → `pull_only.py`.
+- **Dependencies**: Stage 0 errors module only.
+- **Why natural**: these concerns must not carry sync policy; the pull-only
+  wrapper is a pure proxy over the client's method names.
+- **Risk**: low. **Tests unchanged**: `tests/test_cloud_download_only.py`
+  in full, plus the suite.
+- **Do NOT change**: the allowlist/blocklist contents, `_get_paginated`
+  semantics, or any HTTP header/Prefer behavior.
+
+### Stage 2 — image policy + desired state (mostly mechanical, low-medium risk)
+
+- **Move**: `cloud_image_bytes_desired`, `CloudImageBytesNotDesiredError`,
+  `should_push_local_image_to_cloud`, `should_pull_cloud_image_to_desktop`,
+  `_is_metadata_only_microscope_cloud_image`,
+  `_is_local_metadata_only_microscope_anchor`,
+  `_initialize_cloud_image_storage_desired_state_for_observation` +
+  sentinel/group-key helpers, excluded-set accessors →
+  `image_policy.py`.
+- **Dependencies**: SettingsDB/ImageDB, Stage 0.
+- **Why natural**: pure predicates/initializers over local state; already
+  the contract's named canonical functions.
+- **Risk**: low-medium (very widely called; predicates must move verbatim).
+- **Tests unchanged**: `test_cloud_image_bytes_desired.py`,
+  `test_cloud_storage_desired_initializer.py`,
+  `test_cloud_sync_metadata_only.py`.
+- **Do NOT change**: settings key formats, sparse-default heuristic, or the
+  non-migration of legacy Artsobs exclusions.
+
+### Stage 3 — tombstones (mechanical, medium risk)
+
+- **Move**: `_push_pending_image_tombstones`,
+  `_record_remote_image_tombstones`, `_local_tombstoned_cloud_image_ids`,
+  `_local_tombstoned_local_image_ids`, `_tombstoned_cloud_image_warning`,
+  `_cancel_microscope_anchor_tombstones` → `tombstones.py`.
+- **Dependencies**: Stages 0–2; client writer methods stay put (called via
+  the client object).
+- **Risk**: medium — ordering relative to `push_all` pruning is
+  load-bearing (section I item 1). **Tests unchanged**:
+  `test_image_tombstones.py`, `test_cloud_image_bytes_desired.py`.
+- **Do NOT change**: flush ordering, tombstone table schema, cancel
+  semantics.
+
+### Stage 4 — snapshots + conflict analysis (medium-high risk)
+
+- **Move**: snapshot store/load/parse/clear family,
+  `_store_remote_snapshot`, `ObservationPushConflictReport`,
+  `_analyze_observation_push_conflicts`, change classifiers,
+  review-pending markers → `snapshots.py` / `conflicts.py`. The
+  interactive conflict-plan machinery (`build_conflict_plan_baseline`,
+  `resolve_conflict_*`, `finalize_sync_candidates`,
+  `PartialConflictPlanError`) can follow in a 4b sub-stage.
+- **Why natural**: self-contained baseline model; heavy but internally
+  coherent.
+- **Risk**: medium-high — snapshot-before-stamp ordering and unsealed-on-
+  failure semantics. **Tests unchanged**:
+  `test_observation_snapshot_persistence.py`,
+  `test_cloud_sync_conflict_preflight.py`,
+  `test_cloud_conflict_plan_execution.py`.
+- **Do NOT change**: snapshot key format, schema versioning, or
+  finalization ordering.
+
+### Stage 5 — measurements + calibrations (mechanical, medium risk)
+
+- **Move**: measurement payload/diff/identity helpers and per-observation
+  push/pull drivers → `measurements.py`; `push_calibrations`,
+  `pull_calibrations`, conflict/repair helpers → `calibrations.py`.
+- **Tests unchanged**: `test_cloud_measurement_sync_v1.py`,
+  `test_cloud_calibration_sync.py`.
+- **Do NOT change**: semantic no-op equivalence logic or identity-cache
+  prefetch behavior.
+
+### Stage 6 — image push/pull mechanics + anchors (medium-high risk)
+
+- **Move**: `_push_images_for_observation` and helpers → `images.py`;
+  materialization/localization/anchor-ensure helpers → `images.py` or
+  `anchors.py`; recovery entry points → `recovery.py`.
+- **Risk**: medium-high — initializer/repair/filter ordering (section I
+  item 3) and localization guards (larger-local-wins).
+- **Tests unchanged**: image-sync suites in section K.
+
+### Stage 7 — client split + orchestration (last)
+
+- **Move**: split `SporelyCloudClient`'s per-entity push methods toward the
+  entity modules (or keep the client as a thin transport+methods facade);
+  `sync_all` / `push_all` / `pull_all` → `orchestration.py`.
+- **Precondition**: every earlier stage landed and stable. Keep
+  `_PULL_ONLY_BLOCKED_CLIENT_METHODS` adjacent to wherever writer methods
+  are defined so new writers cannot be added without seeing the list.
+
+Every stage: pure code movement + imports; zero behavior change; full
+`tests/test_cloud_*` suite green before and after; no stage mixes movement
+with cleanup, renames, or "while we're here" fixes.
