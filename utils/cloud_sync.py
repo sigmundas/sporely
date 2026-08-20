@@ -19692,6 +19692,26 @@ def _push_images_for_observation(
                                 promotion_reserved_key,
                             )
                         raise
+                    if uploaded_key is None:
+                        # A None return from upload_image_file means the
+                        # local file was missing before any Worker call —
+                        # zero bytes were uploaded. On the promotion path
+                        # this must be treated as a failure so the
+                        # reservation is released (or the marker kept for
+                        # a later retry) instead of clearing the pending
+                        # promotion marker as if the bytes had landed.
+                        if promotion_reserved_key and img_cloud_id:
+                            _rollback_anchor_promotion(
+                                client,
+                                obs.get('id'),
+                                local_image_id,
+                                img_cloud_id,
+                                promotion_reserved_key,
+                            )
+                        raise CloudSyncError(
+                            f'upload_image_file returned no key for '
+                            f'image {local_image_id}; local file missing'
+                        )
                     storage_path = _normalize_cloud_media_key(uploaded_key or storage_path)
                     if promotion_reserved_key:
                         # Bytes confirmed — the reservation is now a real

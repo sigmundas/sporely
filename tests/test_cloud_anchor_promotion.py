@@ -436,6 +436,83 @@ def test_interrupted_promotion_failure_rolls_back_to_clean_anchor(tmp_path, monk
     assert not cloud_sync._load_pending_image_promotion_key(465, 1761)
 
 
+def test_promotion_upload_returning_none_is_treated_as_failure(tmp_path, monkeypatch):
+    """`upload_image_file` returns None when the local file is missing —
+    zero bytes were sent. The promotion path must roll back the
+    reservation and mark the image as a per-image failure instead of
+    clearing the pending marker as if the bytes had landed."""
+    db_path, _image_path, client, prepare_cb, obs = _setup_bare_anchor_case(
+        tmp_path, monkeypatch,
+    )
+
+    original_upload = client.upload_image_file
+
+    def none_upload(*args, **kwargs):
+        # Preserve the Worker-parity storage_path check so we still see the
+        # normal reserve → upload flow; then return None as though the local
+        # file had vanished before any bytes were sent.
+        original_upload(*args, **kwargs)
+        # Drop the object the stub added so we can assert nothing survives.
+        key = cloud_sync.normalize_media_key(kwargs.get("storage_path"))
+        client.storage_objects.discard(key)
+        return None
+
+    monkeypatch.setattr(client, "upload_image_file", none_upload)
+
+    assert cloud_sync._push_images_for_observation(
+        client, obs, "762", prepare_images_cb=prepare_cb,
+    ) is False
+
+    reserved_key = client.reserve_calls[0][1]
+    # Rollback ran: partials cleaned and the reservation released back to NULL.
+    assert client.storage_remove_calls == [[
+        reserved_key,
+        cloud_sync.media_variant_key(reserved_key, "thumb"),
+    ]]
+    assert client.release_calls == [("3044", reserved_key)]
+    assert client.remote_images[0]["storage_path"] is None
+    assert client.storage_objects == set()
+    # Anchor identity preserved, no new row created, marker cleared by rollback.
+    assert client.delete_calls == []
+    assert client.created_cloud_ids == []
+    assert len(client.remote_images) == 1
+    assert not cloud_sync._load_pending_image_promotion_key(465, 1761)
+
+
+def test_promotion_upload_none_keeps_marker_when_release_unconfirmed(tmp_path, monkeypatch):
+    """If the release PATCH itself fails, the pending marker must be kept
+    so the next sync re-uploads instead of trusting the reserved key."""
+    db_path, _image_path, client, prepare_cb, obs = _setup_bare_anchor_case(
+        tmp_path, monkeypatch,
+    )
+
+    original_upload = client.upload_image_file
+
+    def none_upload(*args, **kwargs):
+        original_upload(*args, **kwargs)
+        key = cloud_sync.normalize_media_key(kwargs.get("storage_path"))
+        client.storage_objects.discard(key)
+        return None
+
+    def broken_release(cloud_image_id, reserved_key):
+        client.release_calls.append((str(cloud_image_id), cloud_sync.normalize_media_key(reserved_key)))
+        raise cloud_sync.CloudSyncError("release patch failed")
+
+    monkeypatch.setattr(client, "upload_image_file", none_upload)
+    monkeypatch.setattr(
+        client, "release_image_storage_path_reservation", broken_release,
+    )
+
+    assert cloud_sync._push_images_for_observation(
+        client, obs, "762", prepare_images_cb=prepare_cb,
+    ) is False
+
+    reserved_key = client.reserve_calls[0][1]
+    # Marker kept: retry will see it and re-upload rather than skip on
+    # the non-NULL storage_path left on the row.
+    assert cloud_sync._load_pending_image_promotion_key(465, 1761) == reserved_key
+
+
 def test_unchecked_image_with_null_storage_path_stays_metadata_only(tmp_path, monkeypatch):
     db_path, _image_path, client, prepare_cb, obs = _setup_bare_anchor_case(tmp_path, monkeypatch)
     # The user unchecked this image for cloud byte storage. The explicit

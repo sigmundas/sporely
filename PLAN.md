@@ -675,6 +675,23 @@ pull-only-blocked.
 Tests: `tests/test_cloud_storage_intent_ledger.py`,
 `tests/test_cloud_anchor_promotion.py`.
 
+Residual risks (documented, deliberately not fixed now):
+
+- Cross-device reservation adoption: a device that holds a stale pending
+  marker can adopt another device's completed same-key promotion as its
+  own reservation on resume. If that device's re-upload then fails,
+  rollback deletes the other device's real R2 objects. Self-heals on
+  eventual successful re-upload. Candidate fix: check remote
+  `upload_meta` (or an object HEAD) before adopting a reservation.
+- Dangling reserved keys self-heal only on the device that still holds
+  the pending marker. If that device never syncs again the key stays
+  reserved on the row. Candidate fix: detect and surface in
+  `tools/audit_cloud_media_health.py`.
+- `cloud_image_id` is interpolated unencoded into PATCH URLs in the
+  reserve/release helpers. This matches every other writer in
+  `SporelyCloudClient` (server-issued UUIDs, RLS-authoritative); worth
+  revisiting only if we ever accept non-UUID identity elsewhere.
+
 ### Stage E3 — Cloud media garbage collection
 
 Status: deferred.

@@ -164,6 +164,7 @@ def _load_rows(conn: sqlite3.Connection, table: str) -> list[dict]:
 CLOUD_IMAGE_STORAGE_EXCLUDED_PREFIX = "sporely_cloud_image_storage_excluded_ids_"
 CLOUD_METADATA_ONLY_PREFIX = "sporely_cloud_metadata_only_image_ids_"
 CLOUD_STORAGE_INIT_PREFIX = "sporely_cloud_image_storage_initialized_"
+CLOUD_STORAGE_INTENT_LEDGER_PREFIX = "sporely_cloud_image_storage_intent_ids_"
 
 
 def _load_setting(conn: sqlite3.Connection, key: str) -> str | None:
@@ -326,6 +327,9 @@ def load_local_state(conn: sqlite3.Connection) -> LocalState:
             continue
         state.cloud_metadata_only_by_obs[obs_id] = _parse_json_id_list(raw)
 
+    # Legacy observation-level sentinel (retired; nothing writes it anymore
+    # but a running desktop may still hold historical values). Kept as a
+    # fallback so pre-migration DBs are still classified as initialized.
     init_settings = _load_all_settings_with_prefix(
         conn, CLOUD_STORAGE_INIT_PREFIX
     )
@@ -334,6 +338,29 @@ def load_local_state(conn: sqlite3.Connection) -> LocalState:
             key, CLOUD_STORAGE_INIT_PREFIX
         )
         if obs_id > 0 and _normalize_text(raw) == "1":
+            state.cloud_storage_initialized_obs.add(obs_id)
+
+    # Canonical source of initialized-ness is the per-image intent ledger:
+    # an observation counts as initialized when every current image row for
+    # it is recorded in the ledger (mirrors the derived predicate in
+    # ``utils.cloud_sync``). This replaces the retired sentinel for
+    # observations written after the ledger rollout.
+    ledger_settings = _load_all_settings_with_prefix(
+        conn, CLOUD_STORAGE_INTENT_LEDGER_PREFIX
+    )
+    for key, raw in ledger_settings.items():
+        obs_id = _observation_id_from_setting_key(
+            key, CLOUD_STORAGE_INTENT_LEDGER_PREFIX
+        )
+        if obs_id <= 0:
+            continue
+        ledger_ids = _parse_json_id_list(raw)
+        current_image_ids = {
+            _safe_int(row.get("id"))
+            for row in state.images_by_observation_id.get(obs_id, [])
+            if _safe_int(row.get("id")) > 0
+        }
+        if current_image_ids and current_image_ids.issubset(ledger_ids):
             state.cloud_storage_initialized_obs.add(obs_id)
 
     return state
