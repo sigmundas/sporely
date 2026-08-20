@@ -135,6 +135,8 @@ class _PushAllImageClient(cloud_sync.SporelyCloudClient):
         self.delete_calls: list[str] = []
         self.storage_remove_calls: list[list[str]] = []
         self.patch_calls: list[tuple[str, dict]] = []
+        self.reserve_calls: list[tuple[str, str]] = []
+        self.release_calls: list[tuple[str, str]] = []
 
     def push_observation(self, obs, remote_obs=None, **kwargs):
         return "cloud-obs-1"
@@ -210,6 +212,30 @@ class _PushAllImageClient(cloud_sync.SporelyCloudClient):
             }
         )
         return cloud_id
+
+    def reserve_image_storage_path_for_promotion(self, cloud_image_id: str, storage_path: str) -> bool:
+        key = cloud_sync.normalize_media_key(storage_path)
+        self.reserve_calls.append((str(cloud_image_id), key))
+        row = next(
+            (r for r in self.remote_images if str(r.get("id") or "") == str(cloud_image_id or "")),
+            None,
+        )
+        if row is None or cloud_sync.normalize_media_key(row.get("storage_path")):
+            return False
+        row["storage_path"] = key
+        return True
+
+    def release_image_storage_path_reservation(self, cloud_image_id: str, reserved_key: str) -> bool:
+        key = cloud_sync.normalize_media_key(reserved_key)
+        self.release_calls.append((str(cloud_image_id), key))
+        row = next(
+            (r for r in self.remote_images if str(r.get("id") or "") == str(cloud_image_id or "")),
+            None,
+        )
+        if row is None or cloud_sync.normalize_media_key(row.get("storage_path")) != key:
+            return False
+        row["storage_path"] = None
+        return True
 
     def upload_original_image_file(
         self,
@@ -1298,8 +1324,10 @@ def test_push_pending_image_tombstones_runs_before_active_image_push(monkeypatch
     monkeypatch.setattr(cloud_sync, "get_connection", lambda: sqlite3.connect(db_path))
     monkeypatch.setattr(models, "get_connection", lambda: sqlite3.connect(db_path))
     monkeypatch.setattr(client, "pull_image_metadata", lambda obs_cloud_id: order.append("existing_rows") or [])
-    monkeypatch.setattr(client, "push_image_metadata", lambda img, obs_cloud_id, storage_path: order.append("push_metadata") or "cloud-image-1")
-    monkeypatch.setattr(client, "upload_image_file", lambda local_path, obs_cloud_id, img_cloud_id, storage_path=None, upload_meta=None: order.append("upload_file") or storage_path)
+    monkeypatch.setattr(client, "push_image_metadata", lambda *args, **kwargs: order.append("push_metadata") or "cloud-image-1")
+    # Widened signature: post-2a1ebe3/56fee93 upload_image_file receives
+    # observation_id=/image_id= kwargs; the old fixed 5-arg lambda TypeErrors.
+    monkeypatch.setattr(client, "upload_image_file", lambda *args, **kwargs: order.append("upload_file") or kwargs.get("storage_path") or (args[3] if len(args) > 3 else None))
     monkeypatch.setattr(client, "set_image_desktop_id", lambda cloud_image_id, desktop_id: order.append("set_desktop_id"))
     monkeypatch.setattr(client, "_patch", lambda *args, **kwargs: order.append("patch_storage"))
     monkeypatch.setattr(client, "_observation_images_support_ai_crop", lambda: False)
@@ -1308,7 +1336,10 @@ def test_push_pending_image_tombstones_runs_before_active_image_push(monkeypatch
     result = cloud_sync._push_images_for_observation(client, {"id": 1}, "cloud-obs-1")
 
     assert result is True
-    assert order.index("tombstones") < order.index("existing_rows") < order.index("upload_file") < order.index("push_metadata")
+    # Pinned invariant: tombstones flushed before any active push. Post
+    # commit 2a1ebe3 the reserve-metadata-row-before-upload contract means
+    # push_metadata now runs before upload_file (was reversed pre-2a1ebe3).
+    assert order.index("tombstones") < order.index("existing_rows") < order.index("push_metadata") < order.index("upload_file")
 
 
 def test_push_images_for_observation_leaves_image_pending_when_worker_upload_fails(monkeypatch, tmp_path):
@@ -1358,6 +1389,13 @@ def test_push_images_for_observation_leaves_image_pending_when_worker_upload_fai
     monkeypatch.setattr(client, "set_image_desktop_id", lambda *args, **kwargs: order.append("set_desktop_id"))
     monkeypatch.setattr(client, "_observation_images_support_ai_crop", lambda: False)
     monkeypatch.setattr(client, "_observation_images_support_upload_metadata", lambda: False)
+    # Post commit 2a1ebe3, the failure path reserves the metadata row then
+    # rolls it back via _storage_remove + _delete. Stub both so the test does
+    # not hit the network, and record targets to assert rollback occurred.
+    storage_remove_calls: list[object] = []
+    delete_calls: list[str] = []
+    monkeypatch.setattr(client, "_storage_remove", lambda *args, **kwargs: storage_remove_calls.append((args, kwargs)) or True)
+    monkeypatch.setattr(client, "_delete", lambda path, *args, **kwargs: delete_calls.append(path) or True)
 
     result = cloud_sync._push_images_for_observation(client, {"id": 1}, "cloud-obs-1")
 
@@ -1371,7 +1409,11 @@ def test_push_images_for_observation_leaves_image_pending_when_worker_upload_fai
         conn.close()
 
     assert result is False
-    assert "push_metadata" not in order
+    # Pinned invariant (commits 2a1ebe3/56fee93): row is reserved via
+    # push_metadata BEFORE bytes upload, and on upload failure the reserved
+    # row is rolled back via _delete targeting observation_images.
+    assert "push_metadata" in order
+    assert any("observation_images" in p for p in delete_calls), delete_calls
     assert row == (None, None)
 
 
@@ -5465,13 +5507,17 @@ def test_push_images_for_observation_skips_tombstoned_cloud_image_and_keeps_unre
     monkeypatch.setattr(client, "_observation_images_support_upload_metadata", lambda: False)
     monkeypatch.setattr(client, "_patch", lambda *args, **kwargs: None)
 
-    def fake_push_image_metadata(img, obs_cloud_id, storage_path):
+    # Pinned invariant (commits 2a1ebe3/56fee93): tombstoned image is
+    # skipped, push_metadata reserves-then-patches the kept row (double
+    # call), upload_image_file receives kwargs, and no false tombstone
+    # warning is emitted for the unrelated upload.
+    def fake_push_image_metadata(img, *args, **kwargs):
         pushed_ids.append(int(img["id"]))
         return f"cloud-image-{int(img['id'])}"
 
-    def fake_upload_image_file(local_path, obs_cloud_id, img_cloud_id, storage_path=None, upload_meta=None):
+    def fake_upload_image_file(local_path, *args, **kwargs):
         uploaded_paths.append(str(local_path))
-        return storage_path
+        return kwargs.get("storage_path") or (args[2] if len(args) > 2 else None)
 
     monkeypatch.setattr(client, "push_image_metadata", fake_push_image_metadata)
     monkeypatch.setattr(client, "upload_image_file", fake_upload_image_file)
@@ -5497,7 +5543,9 @@ def test_push_images_for_observation_skips_tombstoned_cloud_image_and_keeps_unre
         conn.close()
 
     assert result is True
-    assert pushed_ids == [kept_image_id]
+    # Reserve-before-upload contract: kept row is push_metadata'd twice
+    # (reserve, then patch after upload).
+    assert pushed_ids == [kept_image_id, kept_image_id]
     assert uploaded_paths == [str(kept_path)]
     assert rows == [
         (tombstoned_image_id, "cloud-image-1"),
