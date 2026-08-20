@@ -1544,6 +1544,12 @@ _SETTING_CLOUD_MEDIA_SIGNATURE = "sporely_cloud_media_signature_v1"
 _SETTING_CLOUD_OBS_SNAPSHOT_PREFIX = "sporely_cloud_snapshot_obs_"
 _SETTING_CLOUD_IMAGE_FILE_SIG_PREFIX = "sporely_cloud_image_file_sig_"
 _SETTING_CLOUD_LOCAL_MEDIA_SIG_PREFIX = "sporely_cloud_local_media_sig_obs_"
+# Anchor-promotion pending marker: written when a byte-upload key is reserved
+# on an existing metadata-only cloud image row, cleared only after the byte
+# upload is confirmed (or the reservation is released). While present, a
+# non-NULL remote storage_path equal to the marker must be treated as
+# unconfirmed — bytes may never have reached storage.
+_SETTING_CLOUD_IMAGE_PROMOTION_PENDING_PREFIX = "sporely_cloud_image_promotion_pending_"
 _SETTING_LINKED_CLOUD_USER_ID = "linked_cloud_user_id"
 _CLOUD_LOCAL_MEDIA_RENDER_VERSION = "2"
 _CLEAN_CLOUD_IMAGE_CONVERTER_VERSION = "1"
@@ -2120,6 +2126,8 @@ _PULL_ONLY_BLOCKED_CLIENT_METHODS = frozenset({
     'upload_image_file', 'upload_original_image_file',
     'set_image_storage_path', 'set_image_desktop_id', 'set_desktop_id',
     'set_measurement_desktop_id', 'set_image_original_storage_path',
+    'reserve_image_storage_path_for_promotion',
+    'release_image_storage_path_reservation',
     'soft_delete_image', 'delete_cloud_observation',
     'delete_cloud_measurements_for_image',
     'push_calibration_reference_image', 'push_calibration_metadata',
@@ -4868,20 +4876,38 @@ def _cloud_metadata_only_image_ids_key(observation_id: int | str) -> str:
     return f"sporely_cloud_metadata_only_image_ids_{str(observation_id or '').strip()}"
 
 
+def _cloud_image_promotion_pending_key(observation_id: int | str, image_id: int | str) -> str:
+    return (
+        f"{_SETTING_CLOUD_IMAGE_PROMOTION_PENDING_PREFIX}"
+        f"{str(observation_id or '').strip()}_{str(image_id or '').strip()}"
+    )
+
+
 # Stage 1: cloud image-storage desired state lives under its own setting so it
 # is fully independent of the Artsobs/iNaturalist publication exclusion set.
 # The old ``artsobs_publish_excluded_image_ids_<obs>`` key remains a
 # publication-only concern and must not be read to infer cloud deletion intent.
 CLOUD_IMAGE_STORAGE_EXCLUDED_SETTING_PREFIX = "sporely_cloud_image_storage_excluded_ids_"
-_CLOUD_IMAGE_STORAGE_INIT_SENTINEL_PREFIX = "sporely_cloud_image_storage_initialized_"
+# RETIRED (2026-08-19 mass microscope upload): the observation-level
+# initialization sentinel. Once set, images imported later never received a
+# default and — being absent from the excluded set — looked explicitly
+# checked. No code reads or writes this key anymore; existing rows in user
+# databases are inert. Storage intent initialization is now recorded per
+# image in the ledger key below.
+_CLOUD_IMAGE_STORAGE_LEGACY_SENTINEL_PREFIX = "sporely_cloud_image_storage_initialized_"
+# Per-image storage-intent ledger: JSON list of local image ids for which a
+# default (or explicit) cloud byte-storage decision has been recorded. An
+# image id absent from this ledger has NO storage intent yet — its absence
+# from the excluded set proves nothing.
+_CLOUD_IMAGE_STORAGE_INTENT_LEDGER_PREFIX = "sporely_cloud_image_storage_intent_ids_"
 
 
 def _cloud_image_storage_excluded_ids_key(observation_id: int | str) -> str:
     return f"{CLOUD_IMAGE_STORAGE_EXCLUDED_SETTING_PREFIX}{str(observation_id or '').strip()}"
 
 
-def _cloud_image_storage_initialized_key(observation_id: int | str) -> str:
-    return f"{_CLOUD_IMAGE_STORAGE_INIT_SENTINEL_PREFIX}{str(observation_id or '').strip()}"
+def _cloud_image_storage_intent_ledger_key(observation_id: int | str) -> str:
+    return f"{_CLOUD_IMAGE_STORAGE_INTENT_LEDGER_PREFIX}{str(observation_id or '').strip()}"
 
 
 def _cloud_local_media_signature_key(observation_id: int | str) -> str:
@@ -5265,6 +5291,29 @@ def _clear_cloud_image_file_signature(observation_id: int | str, image_id: int |
     SettingsDB.set_setting(_cloud_image_file_signature_key(observation_id, image_id), '')
 
 
+def _load_pending_image_promotion_key(observation_id: int | str, image_id: int | str) -> str:
+    return _normalize_cloud_media_key(
+        SettingsDB.get_setting(
+            _cloud_image_promotion_pending_key(observation_id, image_id), ''
+        ) or ''
+    )
+
+
+def _store_pending_image_promotion_key(
+    observation_id: int | str,
+    image_id: int | str,
+    storage_path: str,
+) -> None:
+    SettingsDB.set_setting(
+        _cloud_image_promotion_pending_key(observation_id, image_id),
+        _normalize_cloud_media_key(storage_path),
+    )
+
+
+def _clear_pending_image_promotion_key(observation_id: int | str, image_id: int | str) -> None:
+    SettingsDB.set_setting(_cloud_image_promotion_pending_key(observation_id, image_id), '')
+
+
 def _cloud_metadata_only_image_ids(observation_id: int | str) -> set[int]:
     raw = SettingsDB.get_setting(_cloud_metadata_only_image_ids_key(observation_id), '[]')
     try:
@@ -5361,6 +5410,72 @@ def _remove_cloud_image_storage_excluded_image_id(
     _set_cloud_image_storage_excluded_image_ids(obs_id, excluded)
 
 
+def _cloud_image_storage_intent_initialized_ids(observation_id: int | str) -> set[int]:
+    """Local image ids whose cloud byte-storage intent has been recorded.
+
+    Canonical answer to "has default cloud-storage intent already been
+    assigned to this local image?". Membership here — never mere absence
+    from the excluded set — is what proves a decision exists.
+    """
+    raw = SettingsDB.get_setting(
+        _cloud_image_storage_intent_ledger_key(observation_id), '[]'
+    )
+    try:
+        values = json.loads(raw or '[]')
+    except (TypeError, ValueError, json.JSONDecodeError):
+        return set()
+    if not isinstance(values, list):
+        return set()
+    return {_safe_int(value) for value in values if _safe_int(value) > 0}
+
+
+def _set_cloud_image_storage_intent_initialized_ids(
+    observation_id: int | str,
+    image_ids: set[int] | list[int] | tuple[int, ...] | None,
+) -> None:
+    obs_id = _safe_int(observation_id)
+    if obs_id <= 0:
+        return
+    normalized = sorted({
+        _safe_int(value) for value in (image_ids or set()) if _safe_int(value) > 0
+    })
+    SettingsDB.set_setting(
+        _cloud_image_storage_intent_ledger_key(obs_id),
+        json.dumps(normalized),
+    )
+
+
+def _mark_cloud_image_storage_intent_initialized(
+    observation_id: int | str,
+    image_ids: set[int] | list[int] | tuple[int, ...],
+) -> None:
+    """Record that storage intent now exists for these images.
+
+    Called for explicit checkbox interactions and by the initializer itself.
+    Once an image is in the ledger, default seeding never touches it again.
+    """
+    obs_id = _safe_int(observation_id)
+    normalized = {_safe_int(value) for value in (image_ids or ()) if _safe_int(value) > 0}
+    if obs_id <= 0 or not normalized:
+        return
+    ledger = _cloud_image_storage_intent_initialized_ids(obs_id)
+    if normalized <= ledger:
+        return
+    _set_cloud_image_storage_intent_initialized_ids(obs_id, ledger | normalized)
+
+
+def cloud_image_storage_intent_initialized(
+    observation_id: int | str,
+    image_id: int | str,
+) -> bool:
+    """Pure read: has a storage-intent decision been recorded for this image?"""
+    obs_id = _safe_int(observation_id)
+    local_image_id = _safe_int(image_id)
+    if obs_id <= 0 or local_image_id <= 0:
+        return False
+    return local_image_id in _cloud_image_storage_intent_initialized_ids(obs_id)
+
+
 def cloud_image_bytes_desired(
     observation_id: int | str,
     image_id: int | str,
@@ -5391,17 +5506,30 @@ class CloudImageBytesNotDesiredError(CloudSyncError):
 
 
 def _cloud_image_storage_initialized(observation_id: int | str) -> bool:
-    return str(
-        SettingsDB.get_setting(_cloud_image_storage_initialized_key(observation_id), '')
-        or ''
-    ).strip() == '1'
+    """Derived: every current image row of this observation is in the ledger.
 
-
-def _mark_cloud_image_storage_initialized(observation_id: int | str) -> None:
+    Kept as a convenience predicate for tests and diagnostics. The legacy
+    observation-level sentinel setting is retired and no longer consulted —
+    an observation only counts as initialized when each of its images has a
+    per-image intent record.
+    """
     obs_id = _safe_int(observation_id)
     if obs_id <= 0:
-        return
-    SettingsDB.set_setting(_cloud_image_storage_initialized_key(obs_id), '1')
+        return False
+    conn = get_connection()
+    try:
+        image_ids = {
+            _safe_int(row[0])
+            for row in conn.execute(
+                "SELECT id FROM images WHERE observation_id = ?", (obs_id,)
+            ).fetchall()
+        }
+    finally:
+        conn.close()
+    image_ids = {image_id for image_id in image_ids if image_id > 0}
+    if not image_ids:
+        return True
+    return image_ids <= _cloud_image_storage_intent_initialized_ids(obs_id)
 
 
 def _microscope_group_key_from_row(row: dict) -> str:
@@ -5438,33 +5566,57 @@ def _microscope_group_key_from_row(row: dict) -> str:
     return objective_name.casefold() or "__unknown__"
 
 
-def _initialize_cloud_image_storage_desired_state_for_observation(
+def _ensure_cloud_image_storage_intent_initialized(
     observation_id: int | str,
-) -> None:
-    """First-run seeding of the cloud-storage excluded set for one observation.
+) -> dict:
+    """Canonical per-image cloud-storage intent initializer (incremental).
 
-    Idempotent — a sentinel setting marks the observation as initialized so
-    repeat calls are cheap no-ops. Never touches images that already have any
-    kind of cloud identity (uploaded or tombstoned); this preserves prior
-    user intent and prevents legacy Artsobs exclusions from migrating into the
-    cloud-storage set.
+    Records, in the persistent per-image ledger
+    (``sporely_cloud_image_storage_intent_ids_<obs>``), that a default (or
+    explicit) byte-storage decision exists for each local image. Only ledger
+    membership proves a decision — absence from the excluded set proves
+    nothing. This replaces the retired observation-level sentinel, which let
+    images imported after first initialization masquerade as explicitly
+    checked (2026-08-19 mass microscope upload incident).
 
-    Rules:
-    * UPLOADED image (has ``cloud_id`` and ``synced_at``, no active tombstone)
-      → not excluded (desired=true).
-    * DELETE_PENDING or DELETED image → written into the excluded set so the
-      byte gate refuses re-uploads; tombstone lifecycle is untouched.
-    * Local-only field image → not excluded (desired=true).
-    * Local-only microscope image → sparse default: one image desired per
-      magnification group, remaining images excluded. Groups that already
-      contain any image with a ``cloud_id`` (uploaded, delete-pending, or
-      metadata-only anchor) are left untouched.
+    Rules applied to images NOT yet in the ledger (images already in the
+    ledger are never rewritten):
+
+    * Active tombstone (DELETE_PENDING / DELETED) → excluded + initialized.
+      Tombstone lifecycle itself is untouched.
+    * Field (and any non-microscope) image → desired by default (left out of
+      the excluded set) + initialized. A pre-existing explicit exclusion is
+      preserved.
+    * Microscope image whose magnification group already contains ANY
+      initialized member → excluded + initialized. No replacement keeper is
+      chosen: the user may have deliberately unchecked every member of that
+      group, and a silent re-enable is exactly the failure being fixed.
+    * Microscope image in a group with NO initialized member (a genuinely
+      new group, or legacy pre-ledger rows):
+        - Legacy inference (explicit "checked" history was never stored
+          before the ledger existed): a member that is cloud-identified,
+          NOT a registered metadata-only anchor, and NOT tombstoned is
+          treated as byte-backed / previously selected — it stays desired.
+        - If no such member exists, one deterministic keeper is chosen: the
+          first member by (sort_order NULLS LAST, id) that is neither
+          explicitly excluded nor tombstoned.
+        - Every other uninitialized member is excluded.
+      Registered metadata-only anchors are never inferred as byte-backed;
+      unless chosen as the deterministic keeper they default local-only,
+      and their anchor identity/measurements are untouched either way.
+    * In every branch, a cloud-identified non-anchor member without a
+      tombstone is never defaulted into the excluded set — its bytes (or
+      its explicit selection) already exist; only an explicit user action
+      may exclude it.
+
+    Idempotent, mutates local settings only (never cloud I/O, never image
+    rows, never tombstones). Returns a small summary dict for diagnostics:
+    ``{"seeded_desired": int, "seeded_excluded": int}``.
     """
+    summary = {"seeded_desired": 0, "seeded_excluded": 0}
     obs_id = _safe_int(observation_id)
     if obs_id <= 0:
-        return
-    if _cloud_image_storage_initialized(obs_id):
-        return
+        return summary
 
     conn = get_connection()
     try:
@@ -5474,7 +5626,7 @@ def _initialize_cloud_image_storage_desired_state_for_observation(
             for info in conn.execute("PRAGMA table_info(images)").fetchall()
         }
         if "id" not in existing_cols:
-            return
+            return summary
         wanted = [
             col
             for col in (
@@ -5501,85 +5653,126 @@ def _initialize_cloud_image_storage_desired_state_for_observation(
         conn.close()
 
     if not rows:
-        _mark_cloud_image_storage_initialized(obs_id)
-        return
+        return summary
 
-    existing_excluded = _cloud_image_storage_excluded_image_ids(obs_id)
-    excluded: set[int] = set(existing_excluded)
+    ledger = _cloud_image_storage_intent_initialized_ids(obs_id)
+    uninitialized_ids = {
+        _safe_int(row.get("id"))
+        for row in rows
+        if _safe_int(row.get("id")) > 0 and _safe_int(row.get("id")) not in ledger
+    }
+    if not uninitialized_ids:
+        return summary
 
-    # Group microscope rows by magnification. Groups that already contain any
-    # cloud-identified image (uploaded, delete-pending, metadata-only anchor)
-    # are frozen: the sparse default must not touch them.
-    microscope_groups: dict[str, list[dict]] = {}
-    microscope_group_has_cloud: dict[str, bool] = {}
-    for row in rows:
-        image_type = str(row.get("image_type") or '').strip().lower()
-        if image_type != "microscope":
-            continue
-        group_key = _microscope_group_key_from_row(row)
-        microscope_groups.setdefault(group_key, []).append(row)
-        if str(row.get("cloud_id") or '').strip():
-            microscope_group_has_cloud[group_key] = True
+    excluded = _cloud_image_storage_excluded_image_ids(obs_id)
+    anchor_ids = _cloud_metadata_only_image_ids(obs_id)
+    new_excluded: set[int] = set(excluded)
+    new_ledger: set[int] = set(ledger)
 
-    for row in rows:
-        local_image_id = _safe_int(row.get("id"))
-        if local_image_id <= 0:
-            continue
+    tombstone_cache: dict[str, bool] = {}
+
+    def _has_active_tombstone(row: dict) -> bool:
         cloud_id = str(row.get("cloud_id") or '').strip()
-        if cloud_id:
-            # Anything cloud-identified retains existing user intent. Tombstone
-            # state is handled elsewhere; we only add DELETE_PENDING/DELETED
-            # to the excluded set so re-uploads are refused. UPLOADED images
-            # must not appear in the excluded set.
-            tombstone = ImageDB.get_image_tombstone_by_deleted_cloud_id(cloud_id)
-            if tombstone:
-                excluded.add(local_image_id)
-            else:
-                excluded.discard(local_image_id)
+        if not cloud_id:
+            return False
+        if cloud_id not in tombstone_cache:
+            tombstone_cache[cloud_id] = bool(
+                ImageDB.get_image_tombstone_by_deleted_cloud_id(cloud_id)
+            )
+        return tombstone_cache[cloud_id]
+
+    def _inferred_byte_backed(row: dict) -> bool:
+        # Legacy inference documented in the docstring: before the ledger,
+        # cloud identity (minus registered anchors and tombstones) is the
+        # only durable evidence of a prior byte upload / explicit selection.
+        image_id = _safe_int(row.get("id"))
+        return (
+            bool(str(row.get("cloud_id") or '').strip())
+            and image_id not in anchor_ids
+            and not _has_active_tombstone(row)
+        )
+
+    microscope_groups: dict[str, list[dict]] = {}
+    for row in rows:
+        image_id = _safe_int(row.get("id"))
+        if image_id <= 0:
             continue
         image_type = str(row.get("image_type") or '').strip().lower()
         if image_type == "microscope":
-            group_key = _microscope_group_key_from_row(row)
-            if microscope_group_has_cloud.get(group_key):
-                # Leave already-uploaded groups alone entirely.
-                continue
-
-    # Sparse default for microscope groups with no cloud-identified image at
-    # all: one desired image per group, rest excluded. Skip groups that were
-    # frozen above (any cloud_id present).
-    for group_key, group_rows in microscope_groups.items():
-        if microscope_group_has_cloud.get(group_key):
+            microscope_groups.setdefault(
+                _microscope_group_key_from_row(row), []
+            ).append(row)
             continue
-        # Preserve any prior user intent already in ``excluded`` from a
-        # partial run — do not clobber a manual selection.
-        already_desired = [
+        if image_id not in uninitialized_ids:
+            continue
+        if _has_active_tombstone(row):
+            new_excluded.add(image_id)
+        new_ledger.add(image_id)
+
+    for group_rows in microscope_groups.values():
+        pending_members = [
             row for row in group_rows
-            if _safe_int(row.get("id")) > 0
-            and _safe_int(row.get("id")) not in excluded
+            if _safe_int(row.get("id")) in uninitialized_ids
         ]
-        if already_desired:
-            # Group already has at least one desired image (either from an
-            # earlier interaction or from the initializer's own iteration).
-            # Exclude the rest.
-            keeper_id = _safe_int(already_desired[0].get("id"))
-            for row in group_rows:
-                rid = _safe_int(row.get("id"))
-                if rid <= 0 or rid == keeper_id:
-                    continue
-                excluded.add(rid)
+        if not pending_members:
             continue
-        # No image in group is currently desired — pick the first.
-        first = group_rows[0]
-        keeper_id = _safe_int(first.get("id"))
-        if keeper_id > 0:
-            excluded.discard(keeper_id)
-        for row in group_rows[1:]:
-            rid = _safe_int(row.get("id"))
-            if rid > 0:
-                excluded.add(rid)
+        group_has_initialized_member = any(
+            _safe_int(row.get("id")) in ledger for row in group_rows
+        )
+        keeper_ids: set[int] = set()
+        if not group_has_initialized_member:
+            keeper_ids = {
+                _safe_int(row.get("id"))
+                for row in group_rows
+                if _inferred_byte_backed(row)
+                and _safe_int(row.get("id")) not in excluded
+            }
+            if not keeper_ids:
+                for row in group_rows:
+                    image_id = _safe_int(row.get("id"))
+                    if image_id <= 0 or image_id in excluded:
+                        continue
+                    if _has_active_tombstone(row):
+                        continue
+                    keeper_ids = {image_id}
+                    break
+        for row in pending_members:
+            image_id = _safe_int(row.get("id"))
+            if image_id <= 0:
+                continue
+            new_ledger.add(image_id)
+            if image_id in keeper_ids:
+                continue
+            if _has_active_tombstone(row):
+                new_excluded.add(image_id)
+                continue
+            if _inferred_byte_backed(row):
+                # Bytes/selection already exist on cloud — never default an
+                # uploaded image into the excluded set.
+                continue
+            new_excluded.add(image_id)
 
-    _set_cloud_image_storage_excluded_image_ids(obs_id, excluded)
-    _mark_cloud_image_storage_initialized(obs_id)
+    if new_excluded != excluded:
+        _set_cloud_image_storage_excluded_image_ids(obs_id, new_excluded)
+    if new_ledger != ledger:
+        _set_cloud_image_storage_intent_initialized_ids(obs_id, new_ledger)
+
+    seeded = new_ledger - ledger
+    summary["seeded_excluded"] = len([i for i in seeded if i in new_excluded])
+    summary["seeded_desired"] = len(seeded) - summary["seeded_excluded"]
+    return summary
+
+
+def _initialize_cloud_image_storage_desired_state_for_observation(
+    observation_id: int | str,
+) -> None:
+    """Back-compat alias for the canonical per-image intent initializer.
+
+    Existing call sites (gallery load, measure gallery load, sync-time
+    prerequisite) keep this name; all semantics live in
+    :func:`_ensure_cloud_image_storage_intent_initialized`.
+    """
+    _ensure_cloud_image_storage_intent_initialized(observation_id)
 
 
 def _reconcile_local_image_cloud_id(
@@ -7465,6 +7658,9 @@ def set_image_cloud_selected(image_id: int, selected: bool) -> dict | None:
             _remove_cloud_image_storage_excluded_image_id(observation_id, image_id)
         else:
             _add_cloud_image_storage_excluded_image_id(observation_id, image_id)
+        # An explicit user decision IS storage intent — record it in the
+        # per-image ledger so default seeding can never override it.
+        _mark_cloud_image_storage_intent_initialized(observation_id, [image_id])
 
     return {
         "image_id": image_id,
@@ -8652,6 +8848,10 @@ PENDING_REASON_EXCLUDED = "skipped_excluded_by_user"
 # generic exclusion bucket so diagnostic reports and callers can distinguish
 # gallery-desired-state rejects from any other exclusion input.
 PENDING_REASON_NOT_DESIRED_BY_USER = "skipped_not_desired_by_user"
+# A row whose storage intent has never been assigned (not in the per-image
+# ledger) must never be interpreted as pending cloud media: an unseeded
+# excluded set makes everything look desired.
+PENDING_REASON_INTENT_UNINITIALIZED = "skipped_storage_intent_uninitialized"
 PENDING_REASON_DUPLICATE = "skipped_duplicate_path"
 PENDING_REASON_MISSING_FILE = "skipped_missing_file"
 PENDING_REASON_CACHE_ROW = "skipped_cloud_cache_row"
@@ -8665,6 +8865,7 @@ def explain_pending_cloud_image_decision(
     excluded_ids: set[int],
     image_measurement_counts: dict[int, int] | None = None,
     explicit_media_upload_selection: set[int] | None = None,
+    initialized_intent_ids: set[int] | None = None,
 ) -> PendingImageDecision:
     """Shared predicate: should this image row upload its bytes to cloud right now?
 
@@ -8715,6 +8916,15 @@ def explain_pending_cloud_image_decision(
     source_role = str(row.get("source_role") or "").strip().lower()
     file_purpose = str(row.get("file_purpose") or "").strip().lower()
     is_cloud_origin = source_role == "cloud_recovery_cache" or file_purpose == "cache"
+
+    if (
+        not is_cloud_origin
+        and initialized_intent_ids is not None
+        and image_id not in initialized_intent_ids
+    ):
+        # No storage-intent decision exists for this row yet. Refuse to treat
+        # it as pending — the caller must seed intent first.
+        return {"pending": False, "reason": PENDING_REASON_INTENT_UNINITIALIZED}
 
     explicit = explicit_media_upload_selection
     if not is_cloud_origin and explicit is not None and image_id not in explicit:
@@ -8812,8 +9022,19 @@ def _pending_cloud_pushable_image_ids(
         conn.close()
 
     measurement_counts = _measurement_counts_for_observation_images(observation_id)
+    # Only rows with recorded storage intent may be evaluated as pending. A
+    # caller-provided explicit selection IS storage intent for those ids
+    # (e.g. an explicit "upload media" request), so it counts as initialized;
+    # the derived default selection computed below does not.
+    initialized_intent_ids = _cloud_image_storage_intent_initialized_ids(observation_id)
     if explicit_media_upload_selection is None:
         explicit_media_upload_selection = _cloud_explicit_media_upload_selection(observation_id)
+    else:
+        initialized_intent_ids = initialized_intent_ids | {
+            _safe_int(value)
+            for value in explicit_media_upload_selection
+            if _safe_int(value) > 0
+        }
 
     pending: list[int] = []
     seen_paths: set[str] = set()
@@ -8826,6 +9047,7 @@ def _pending_cloud_pushable_image_ids(
             excluded_ids=excluded_ids,
             image_measurement_counts=measurement_counts,
             explicit_media_upload_selection=explicit_media_upload_selection,
+            initialized_intent_ids=initialized_intent_ids,
         )
         reason = decision.get("reason") or ""
         reason_counts[reason] = reason_counts.get(reason, 0) + 1
@@ -8892,6 +9114,19 @@ def _mark_cloud_observations_dirty_for_pending_local_images(
 
     for obs_id in candidate_ids:
         if obs_id <= 0:
+            continue
+        # Incremental storage-intent initialization MUST run before any
+        # cloud-null row here can be interpreted as pending cloud media. A
+        # newly-imported microscope image must never appear desired merely
+        # because the excluded set has not been seeded yet. Fail closed: if
+        # seeding fails, skip this observation instead of evaluating it.
+        try:
+            _ensure_cloud_image_storage_intent_initialized(obs_id)
+        except Exception as exc:
+            print(
+                f"[cloud_sync] Could not initialize storage intent for observation {obs_id}: {exc}"
+            )
+            scan_completed = False
             continue
         try:
             pending_ids = _pending_cloud_pushable_image_ids(
@@ -15297,7 +15532,15 @@ class SporelyCloudClient:
         *,
         upload_meta: dict | None = None,
     ) -> None:
-        """Attach a confirmed derivative object key to one owned image row."""
+        """Attach a confirmed derivative object key to one owned image row.
+
+        This is the post-upload confirmation write: the bytes behind
+        ``storage_path`` must already exist. For binding a key BEFORE bytes
+        are sent (the metadata-anchor → byte-backed promotion), use
+        :meth:`reserve_image_storage_path_for_promotion` /
+        :meth:`release_image_storage_path_reservation` instead — those are
+        conditional and rollback-safe; this method is not.
+        """
         normalized_id = str(cloud_image_id or '').strip()
         normalized_key = _normalize_cloud_media_key(storage_path)
         if not normalized_id or not normalized_key:
@@ -15311,6 +15554,81 @@ class SporelyCloudClient:
             f'observation_images?id=eq.{normalized_id}&user_id=eq.{self.user_id}',
             payload,
         )
+
+    def reserve_image_storage_path_for_promotion(
+        self,
+        cloud_image_id: str,
+        storage_path: str,
+    ) -> bool:
+        """Pre-upload key reservation for the anchor → byte-backed promotion.
+
+        Binds the intended Worker key to one EXISTING owned
+        ``observation_images`` row so the Worker's storage_path check can
+        pass for the byte upload that follows. Owner-scoped and conditional
+        on ``storage_path IS NULL``: a row that is already byte-backed (or
+        was reserved by a concurrent writer) is never overwritten. Returns
+        True when exactly this bare-anchor row was reserved, False when no
+        row matched the conditions.
+
+        This is NOT the post-upload confirmation — bytes do not exist yet
+        when this runs. See :meth:`set_image_storage_path` for attaching a
+        confirmed key, and :meth:`release_image_storage_path_reservation`
+        for the failure rollback.
+        """
+        normalized_id = str(cloud_image_id or '').strip()
+        normalized_key = _normalize_cloud_media_key(storage_path)
+        if not normalized_id or not normalized_key:
+            raise CloudSyncError('Missing cloud image id or storage path for reservation')
+        path = (
+            f'observation_images?id=eq.{normalized_id}'
+            f'&user_id=eq.{self.user_id}'
+            f'&storage_path=is.null'
+        )
+        resp = self._request_with_refresh(
+            'PATCH',
+            f'{SUPABASE_URL}/rest/v1/{path}',
+            json={'storage_path': normalized_key},
+            headers={'Prefer': 'return=representation'},
+            timeout=_SUPABASE_REST_TIMEOUT,
+        )
+        if not resp.ok:
+            raise CloudSyncError(f'PATCH {path}: {resp.text}')
+        rows = resp.json() or []
+        return bool(rows)
+
+    def release_image_storage_path_reservation(
+        self,
+        cloud_image_id: str,
+        reserved_key: str,
+    ) -> bool:
+        """Rollback of :meth:`reserve_image_storage_path_for_promotion`.
+
+        Restores ``storage_path`` to NULL only when the row still carries
+        the exact key reserved by this attempt, so a concurrently confirmed
+        upload (or another writer's key) is never wiped back to a bare
+        anchor. Never deletes the row. Returns True when the reservation
+        was released, False when the row no longer carried the key.
+        """
+        normalized_id = str(cloud_image_id or '').strip()
+        normalized_key = _normalize_cloud_media_key(reserved_key)
+        if not normalized_id or not normalized_key:
+            raise CloudSyncError('Missing cloud image id or reserved key for release')
+        path = (
+            f'observation_images?id=eq.{normalized_id}'
+            f'&user_id=eq.{self.user_id}'
+            f'&storage_path=eq.{_encode_postgrest_filter_value(normalized_key)}'
+        )
+        resp = self._request_with_refresh(
+            'PATCH',
+            f'{SUPABASE_URL}/rest/v1/{path}',
+            json={'storage_path': None},
+            headers={'Prefer': 'return=representation'},
+            timeout=_SUPABASE_REST_TIMEOUT,
+        )
+        if not resp.ok:
+            raise CloudSyncError(f'PATCH {path}: {resp.text}')
+        rows = resp.json() or []
+        return bool(rows)
 
     def upload_image_file(
         self,
@@ -18683,6 +19001,12 @@ def _reconcile_metadata_only_linked_images(
             continue
         if not str(img.get('synced_at') or '').strip():
             continue
+        if _load_pending_image_promotion_key(obs_local_id, local_image_id):
+            # An anchor promotion reserved a byte key on this row but the
+            # upload was never confirmed. The remote storage_path may be
+            # non-NULL without any bytes behind it — this row must go
+            # through the upload path, never the metadata-only fast path.
+            continue
         remote_row = existing_by_id.get(local_cloud_id) or existing_by_desktop_id.get(local_image_id)
         if not remote_row:
             continue
@@ -18764,6 +19088,98 @@ def _reconcile_metadata_only_linked_images(
     return skip_ids
 
 
+def _reserve_anchor_promotion_key(
+    client: 'SporelyCloudClient',
+    observation_id: int | str,
+    local_image_id: int,
+    cloud_image_id: str,
+    storage_path: str,
+) -> str:
+    """Reserve the Worker key on an existing metadata-only anchor row.
+
+    First step of the linked-anchor → byte-backed promotion: the local image
+    already has a valid ``cloud_id``, the remote row is owned and live, but
+    its ``storage_path`` is NULL. Promotion keeps that cloud identity and
+    binds the intended byte key to it — it never creates a second
+    ``observation_images`` row.
+
+    The local pending marker is written BEFORE the remote PATCH so an
+    interruption anywhere leaves a recoverable trail:
+
+    * crash before the PATCH → the remote row is still a clean NULL anchor;
+      the marker is stale but harmless (the next attempt overwrites it).
+    * crash after the PATCH → the remote row carries the reserved key with
+      no bytes behind it; the marker forces the next sync to treat that
+      non-NULL storage_path as unconfirmed and upload the bytes anyway.
+
+    Raises ``CloudSyncError`` when the conditional reservation matched no
+    row (the row is no longer a bare anchor — concurrent writer, or remote
+    state diverged from the cached rows). The observation stays dirty and
+    the next sync re-reads remote state before deciding again.
+    """
+    normalized_key = _normalize_cloud_media_key(storage_path)
+    _store_pending_image_promotion_key(observation_id, local_image_id, normalized_key)
+    if not client.reserve_image_storage_path_for_promotion(cloud_image_id, normalized_key):
+        _clear_pending_image_promotion_key(observation_id, local_image_id)
+        raise CloudSyncError(
+            f'anchor promotion for cloud image {cloud_image_id}: reservation '
+            f'matched no row (storage_path no longer NULL or row not owned); '
+            f'will retry with fresh remote state on the next sync'
+        )
+    return normalized_key
+
+
+def _rollback_anchor_promotion(
+    client: 'SporelyCloudClient',
+    observation_id: int | str,
+    local_image_id: int,
+    cloud_image_id: str,
+    reserved_key: str,
+) -> None:
+    """Failure path of the anchor promotion: restore the clean anchor.
+
+    Removes any partial derivative/thumb objects, then releases the
+    reservation — restoring ``storage_path`` to NULL only when the row
+    still carries the key reserved by this attempt. The existing
+    metadata-anchor row itself is never deleted. All steps are
+    best-effort: the caller re-raises the original upload error either
+    way, and when the release cannot be confirmed the pending marker is
+    kept so the next sync treats the lingering non-NULL storage_path as
+    unconfirmed bytes instead of trusting it.
+    """
+    try:
+        client._storage_remove([
+            reserved_key,
+            media_variant_key(reserved_key, 'thumb'),
+        ])
+    except Exception as exc:
+        # Orphaned partials are overwritten by the retry (which reuses the
+        # reserved key), so a failed delete only costs temporary storage.
+        print(
+            f'[cloud_sync] anchor promotion rollback: partial object cleanup '
+            f'failed for {reserved_key}: {exc}'
+        )
+    try:
+        released = client.release_image_storage_path_reservation(
+            cloud_image_id, reserved_key,
+        )
+    except Exception as exc:
+        print(
+            f'[cloud_sync] anchor promotion rollback: could not release the '
+            f'reservation for cloud image {cloud_image_id}: {exc}; keeping '
+            f'the pending marker so the retry re-uploads instead of '
+            f'trusting the reserved storage_path'
+        )
+        return
+    if not released:
+        print(
+            f'[cloud_sync] anchor promotion rollback: cloud image '
+            f'{cloud_image_id} no longer carries the reserved key '
+            f'{reserved_key}; leaving remote state untouched'
+        )
+    _clear_pending_image_promotion_key(observation_id, local_image_id)
+
+
 def _push_images_for_observation(
     client: SporelyCloudClient,
     obs: dict,
@@ -18793,21 +19209,19 @@ def _push_images_for_observation(
         if str(value or '').strip()
     }
     warnings.extend(_push_pending_image_tombstones(client))
-    # Stage 1: cloud-storage-desired initialization is a sync prerequisite —
-    # not a UI concern. Before any prepare_images_cb runs, before any
-    # candidate filtering, before any byte-upload boundary, ensure the
-    # observation's storage-excluded set has been seeded. Idempotent — the
-    # sentinel setting makes repeat calls cheap. Without this, a fresh
-    # observation's local microscope images would fall through the byte
-    # gate as "desired" (empty set → everything desired) and the headless
-    # sync path would upload every frame even though the user never opened
-    # a gallery. Runs AFTER ``_push_pending_image_tombstones`` so that
+    # Storage-intent initialization is a sync prerequisite — not a UI
+    # concern. Before any prepare_images_cb runs, before any candidate
+    # filtering, before any byte-upload boundary, ensure every local image
+    # of this observation has a per-image intent record. Incremental and
+    # idempotent — images already in the intent ledger are never rewritten,
+    # and images imported after a previous initialization get their default
+    # here instead of falling through the byte gate as "desired" (empty
+    # excluded set → everything desired; the 2026-08-19 mass microscope
+    # upload). Runs AFTER ``_push_pending_image_tombstones`` so that
     # protected microscope anchors whose tombstones get cancelled in that
     # step are not incorrectly written into the excluded set by the
     # initializer's tombstone rule.
-    _initialize_cloud_image_storage_desired_state_for_observation(
-        _safe_int(obs.get('id'))
-    )
+    _ensure_cloud_image_storage_intent_initialized(_safe_int(obs.get('id')))
     prepared_items: list[dict] = []
     cleanup = None
     preparation_failed = False
@@ -19013,6 +19427,11 @@ def _push_images_for_observation(
                 continue
             local_image_id = _safe_int(img.get('id'))
             local_cloud_id = str(img.get('cloud_id') or '').strip()
+            pending_promotion_key = (
+                _load_pending_image_promotion_key(obs.get('id'), local_image_id)
+                if local_image_id > 0
+                else ''
+            )
             remote_row = existing_by_desktop_id.get(local_image_id)
             if remote_row is None and local_cloud_id:
                 remote_row = existing_by_id.get(local_cloud_id)
@@ -19097,6 +19516,23 @@ def _push_images_for_observation(
                         ):
                             file_matches = True
 
+                if (
+                    file_matches
+                    and pending_promotion_key
+                    and pending_promotion_key == _normalize_cloud_media_key(storage_path)
+                ):
+                    # An earlier anchor promotion reserved this key but never
+                    # confirmed the byte upload (interrupted between the
+                    # reservation PATCH and upload success). A non-NULL
+                    # storage_path alone must not prove that bytes exist —
+                    # force the upload; rewriting the same key is idempotent.
+                    print(
+                        f'[cloud_sync] Observation {obs["id"]}: unconfirmed anchor '
+                        f'promotion for image {local_image_id} '
+                        f'(storage_path={storage_path}); forcing byte upload'
+                    )
+                    file_matches = False
+
                 if file_matches and metadata_matches:
                     _increment_sync_summary(_cloud_sync_current_summary(), 'images_skipped_already_synced')
                     # The remote bytes and metadata already match, but the local
@@ -19169,16 +19605,59 @@ def _push_images_for_observation(
                     file_matches = True
                     if not img_cloud_id and remote_cloud_id:
                         img_cloud_id = remote_cloud_id
+                    # No bytes are sent this round, so the metadata patch
+                    # below must not invent a storage key either. Collapse to
+                    # the remote row's actual key: a bare metadata anchor
+                    # (NULL) stays a bare anchor — push_image_metadata omits
+                    # an empty storage_path so the cloud value is untouched.
+                    storage_path = _normalize_cloud_media_key(
+                        (remote_row or {}).get('storage_path')
+                    )
                 if not file_matches:
                     # Private Worker writes require a server-known image
                     # identity. Reserve/upsert the metadata row before bytes
                     # are sent; if the upload fails, remove any partial bytes
                     # before releasing a row created by this attempt.
                     reserved_image_row = False
+                    promotion_reserved_key = ''
+                    remote_row_storage_path = _normalize_cloud_media_key(
+                        (remote_row or {}).get('storage_path')
+                    )
                     if not img_cloud_id:
                         img_cloud_id = client.push_image_metadata(
                             img, obs_cloud_id, storage_path)
                         reserved_image_row = True
+                    elif not remote_row_storage_path and not is_metadata_only_anchor:
+                        # Linked metadata-anchor → byte-backed promotion: a
+                        # cloud row already exists for this image (same owned
+                        # identity) but carries no storage key. Reserve the
+                        # intended Worker key on that exact row so the
+                        # Worker's storage_path check passes. Never create a
+                        # second observation_images row for this transition.
+                        promotion_reserved_key = _reserve_anchor_promotion_key(
+                            client,
+                            obs.get('id'),
+                            local_image_id,
+                            img_cloud_id,
+                            storage_path,
+                        )
+                        print(
+                            f'[cloud_sync] Observation {obs["id"]}: promoted '
+                            f'metadata anchor to byte-backed image '
+                            f'image_id={local_image_id} '
+                            f'cloud_image_id={img_cloud_id} '
+                            f'reserved_storage_path={promotion_reserved_key}'
+                        )
+                    elif (
+                        pending_promotion_key
+                        and remote_row_storage_path == pending_promotion_key
+                        and remote_row_storage_path == _normalize_cloud_media_key(storage_path)
+                    ):
+                        # Resuming an interrupted promotion: the key is
+                        # already reserved on the row by a previous attempt;
+                        # adopt it so a failure here still rolls back to a
+                        # clean NULL anchor.
+                        promotion_reserved_key = pending_promotion_key
                     try:
                         uploaded_key = client.upload_image_file(
                             upload_path,
@@ -19201,8 +19680,25 @@ def _push_images_for_observation(
                                     f'observation_images?id=eq.{img_cloud_id}'
                                     f'&user_id=eq.{client.user_id}'
                                 )
+                        elif promotion_reserved_key and img_cloud_id:
+                            # Promotion failure: restore the clean metadata
+                            # anchor (conditional NULL rollback + partial
+                            # object cleanup). The anchor row is kept.
+                            _rollback_anchor_promotion(
+                                client,
+                                obs.get('id'),
+                                local_image_id,
+                                img_cloud_id,
+                                promotion_reserved_key,
+                            )
                         raise
                     storage_path = _normalize_cloud_media_key(uploaded_key or storage_path)
+                    if promotion_reserved_key:
+                        # Bytes confirmed — the reservation is now a real
+                        # derivative key; drop the pending marker.
+                        _clear_pending_image_promotion_key(
+                            obs.get('id'), local_image_id,
+                        )
 
                 if not img_cloud_id or not metadata_matches:
                     if remote_row and remote_row.get('original_filename'):

@@ -101,7 +101,13 @@ def test_mark_cloud_observations_dirty_for_pending_local_images_marks_synced_obs
         {"id": 389, "sync_status": "dirty"},
         {"id": 390, "sync_status": "synced"},
     ]
-    assert settings_rows == {"sporely_cloud_local_media_sig_obs_389": ""}
+    # The media-mode scan also seeds the per-image storage-intent ledger for
+    # every candidate observation before evaluating pending rows.
+    assert settings_rows == {
+        "sporely_cloud_local_media_sig_obs_389": "",
+        "sporely_cloud_image_storage_intent_ids_389": "[1]",
+        "sporely_cloud_image_storage_intent_ids_390": "[3]",
+    }
 
 
 def test_push_all_invokes_pending_local_image_dirty_scan(tmp_path, monkeypatch):

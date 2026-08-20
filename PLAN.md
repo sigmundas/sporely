@@ -644,6 +644,37 @@ pending for `DELETE_PENDING`, and none for `NONE`/`DELETED`.
 
 
 
+### Stage E2 — Cloud media: per-image storage-intent ledger + anchor promotion
+
+Status: Done. (2026-08-19 incident fix.)
+
+Cloud byte-storage intent is now recorded per image in
+`sporely_cloud_image_storage_intent_ids_<obs>`; only ledger membership
+proves a decision exists — absence from the excluded set proves nothing.
+The observation-level init sentinel is retired (stale sentinels let
+late-imported microscope frames masquerade as explicitly checked and
+mass-upload). `_ensure_cloud_image_storage_intent_initialized` seeds
+defaults incrementally (tombstoned → excluded; field → desired; new
+members of an initialized magnification group → excluded, never a
+silent keeper; genuinely new/legacy groups → one deterministic keeper,
+byte-backed members never excluded by default), performs zero cloud
+I/O, and runs before the pending-media dirty scan (uninitialized rows
+are never "pending"; fail closed). Explicit checkbox choices write the
+ledger and are never reseeded.
+
+Separately, a linked metadata-only anchor (valid `cloud_id`, remote
+`storage_path` NULL) whose bytes become desired is promoted on its
+existing row: the Worker key is reserved via an owner-scoped
+conditional PATCH (`storage_path=is.null`), guarded by a local pending
+marker written before the PATCH; upload failure rolls back partial
+objects and conditionally releases the key
+(`storage_path=eq.<exact key>`); a reserved-but-unconfirmed key is
+never trusted as proof of bytes. Both new client writers are
+pull-only-blocked.
+
+Tests: `tests/test_cloud_storage_intent_ledger.py`,
+`tests/test_cloud_anchor_promotion.py`.
+
 ### Stage E3 — Cloud media garbage collection
 
 Status: deferred.

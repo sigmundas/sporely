@@ -10,8 +10,11 @@ Pins the invariants of
     re-tombstoned by the initializer (idempotent).
   * Local-only microscope images with multiple magnification groups get a
     sparse default: one desired per group, the rest excluded.
-  * A microscope group with any already-uploaded image is left untouched.
-  * The sentinel prevents a second initialization from clobbering user edits.
+  * A microscope group with an already-uploaded image keeps that image as the
+    desired keeper and defaults the cloud-null siblings to excluded (the
+    2026-08-19 fix — the old group-freeze rule left siblings looking checked).
+  * The per-image intent ledger prevents a second initialization from
+    clobbering user edits.
 """
 
 from __future__ import annotations
@@ -262,13 +265,14 @@ def test_initializer_sparse_default_for_local_microscope_groups(
 
 
 # ---------------------------------------------------------------------------
-# 4. Microscope group that already contains any cloud-identified image is
-#    left untouched — the initializer does not disturb the uploaded row, and
-#    does not add group siblings to the excluded set.
+# 4. Microscope group that already contains a cloud-identified image keeps
+#    that image as the desired keeper and defaults the cloud-null siblings to
+#    excluded. (Replaces the old group-freeze rule that left siblings looking
+#    explicitly checked — mechanism A of the 2026-08-19 mass upload.)
 # ---------------------------------------------------------------------------
 
 
-def test_initializer_skips_microscope_groups_with_cloud_uploaded_images(
+def test_initializer_keeps_uploaded_keeper_and_excludes_cloud_null_siblings(
     monkeypatch, tmp_path
 ):
     db_path = _init_db(tmp_path)
@@ -299,23 +303,28 @@ def test_initializer_skips_microscope_groups_with_cloud_uploaded_images(
     cloud_sync._initialize_cloud_image_storage_desired_state_for_observation(703)
 
     excluded = cloud_sync._cloud_image_storage_excluded_image_ids(703)
-    # Group 10x has an already-uploaded image (31) — the initializer must not
-    # touch that group. So 32 and 33 must NOT be added to the excluded set,
-    # and 31 stays desired.
+    # Group 10x has an already-uploaded image (31): it is the byte-backed
+    # keeper and stays desired; cloud-null siblings 32 and 33 default to
+    # excluded instead of silently looking checked.
     assert 31 not in excluded
-    assert 32 not in excluded
-    assert 33 not in excluded
+    assert 32 in excluded
+    assert 33 in excluded
     # Group 40x has no cloud-identified image — sparse default applies:
     # 34 stays desired (first), 35 is excluded.
-    assert excluded == {35}
+    assert excluded == {32, 33, 35}
+    # Every image now has a recorded storage-intent decision.
+    assert cloud_sync._cloud_image_storage_intent_initialized_ids(703) == {
+        31, 32, 33, 34, 35,
+    }
 
 
 # ---------------------------------------------------------------------------
-# 5. Sentinel prevents re-initialization.
+# 5. The per-image intent ledger prevents re-initialization from clobbering
+#    subsequent user edits.
 # ---------------------------------------------------------------------------
 
 
-def test_initializer_sentinel_makes_second_call_a_noop(monkeypatch, tmp_path):
+def test_initializer_ledger_makes_second_call_a_noop(monkeypatch, tmp_path):
     db_path = _init_db(tmp_path)
     _patch(monkeypatch, db_path)
     _seed_obs(db_path, 704)
@@ -341,7 +350,8 @@ def test_initializer_sentinel_makes_second_call_a_noop(monkeypatch, tmp_path):
     cloud_sync._set_cloud_image_storage_excluded_image_ids(704, {41})
 
     # A second initializer call must be a no-op — do not clobber the user
-    # choice. The sentinel makes it a cheap early return.
+    # choice. Both images are already in the per-image intent ledger, so the
+    # call is a cheap early return.
     cloud_sync._initialize_cloud_image_storage_desired_state_for_observation(704)
     after_second = cloud_sync._cloud_image_storage_excluded_image_ids(704)
     assert after_second == {41}

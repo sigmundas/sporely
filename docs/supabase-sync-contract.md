@@ -79,12 +79,23 @@ Local SQLite is authoritative:
 - `images.cloud_id` — the current cloud identity link (if any).
 - `image_tombstones` — durable explicit-deletion intent.
 - `settings["sporely_cloud_image_storage_excluded_ids_<obs>"]` — the per-observation set of local image ids the user has excluded from Sporely Cloud image storage.
+- `settings["sporely_cloud_image_storage_intent_ids_<obs>"]` — the per-observation storage-intent ledger. Only membership in this ledger proves an explicit decision (excluded or desired) exists for that image. Absence from the excluded set alone proves nothing — it may mean "explicitly desired" or "never decided." The observation-level init sentinel is retired; late-imported microscope frames must not inherit a stale "already initialized" flag.
+- `settings["sporely_cloud_image_promotion_pending_<obs>_<img>"]` — a local pending marker written *before* the anchor-promotion reservation PATCH. Its presence together with a non-NULL remote `storage_path` marks the Worker key as UNCONFIRMED (reserved but not yet proven to hold bytes) and must not be trusted as proof of bytes.
 
 The canonical byte-storage predicate is `cloud_image_bytes_desired(observation_id, image_id)`:
 
 - returns `False` when `image_id` is in the excluded set for that observation;
 - returns `True` otherwise;
 - concerns bytes only — anchor lifecycle for measurements is separately governed by the metadata-only microscope anchor helper.
+
+### Anchor promotion (metadata-only → byte-backed)
+
+A linked metadata-only anchor (valid `cloud_id`, remote `storage_path` NULL) whose bytes become desired is promoted on its existing row rather than by creating a new row:
+
+- The Worker media key is reserved via an owner-scoped conditional PATCH with filter `storage_path=is.null` — writing a candidate key only when the remote row is still NULL. The write is guarded by the local pending marker written *before* the PATCH.
+- On successful reservation the upload proceeds; on confirmed upload the marker is cleared.
+- On upload failure the partial R2 objects are removed and the key is released via a second owner-scoped conditional PATCH with filter `storage_path=eq.<exact reserved key>`, so a competing writer's key is never clobbered.
+- A non-NULL `storage_path` combined with a live promotion-pending marker means UNCONFIRMED and must not be treated as bytes present. Once the marker is cleared, `storage_path` is authoritative again.
 
 `SporelyCloudClient.upload_image_file` and `SporelyCloudClient.upload_original_image_file` refuse to send bytes when the predicate returns `False`, raising `CloudImageBytesNotDesiredError`. Recovery flows opt in by passing `recovery_authorized=True`.
 
