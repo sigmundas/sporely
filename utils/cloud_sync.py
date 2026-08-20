@@ -10196,6 +10196,7 @@ def _apply_remote_image_metadata_only_to_local(
         'ai_crop_box': _remote_ai_crop_box(remote_image),
         'ai_crop_source_size': _remote_ai_crop_source_size(remote_image),
         'ai_crop_is_custom': _remote_ai_crop_is_custom(remote_image),
+        'sort_order': remote_image.get('sort_order'),
     }
     if calibration_id is not None:
         update_kwargs['calibration_id'] = calibration_id
