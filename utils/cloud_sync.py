@@ -395,17 +395,6 @@ def _join_select_columns(*columns: str) -> str:
     return ','.join(ordered)
 
 
-def _direct_r2_unavailable_warning(context: str | None = None) -> str:
-    detail = str(context or "").strip()
-    if detail:
-        return f"{R2_DIRECT_ACCESS_UNAVAILABLE_MESSAGE}; {detail}"
-    return R2_DIRECT_ACCESS_UNAVAILABLE_MESSAGE
-
-
-def _is_direct_r2_unavailable_error(exc: Exception | str) -> bool:
-    return R2_DIRECT_ACCESS_UNAVAILABLE_MESSAGE.lower() in str(exc or "").lower()
-
-
 def _image_storage_timestamp_ms(image_row: dict | None) -> int:
     row = dict(image_row or {})
     for key in ('created_at', 'captured_at', 'synced_at'):
@@ -452,14 +441,6 @@ def _sanitize_original_storage_filename(source_path: str | Path) -> str:
     cleaned_name = re.sub(r'[^A-Za-z0-9._-]+', '_', raw_name).strip('._')
     return cleaned_name or 'original'
 
-
-def _client_uses_default_r2_loader(client: object | None) -> bool:
-    if not isinstance(client, SporelyCloudClient):
-        return False
-    try:
-        return client._using_default_r2_loader()
-    except Exception:
-        return False
 
 _CALIBRATION_SYNC_COLS = [
     'calibration_uuid',
@@ -9179,43 +9160,6 @@ def _mark_cloud_observations_dirty_for_pending_local_images(
     return scan_completed
 
 
-def _has_pending_local_push_work() -> bool:
-    conn = get_connection()
-    try:
-        row = conn.execute(
-            "SELECT 1 FROM observations WHERE cloud_id IS NULL OR sync_status = 'dirty' LIMIT 1"
-        ).fetchone()
-        return bool(row)
-    finally:
-        conn.close()
-
-
-def _find_local_observation_for_remote(remote: dict) -> dict | None:
-    cloud_id = str((remote or {}).get('id') or '').strip()
-    desktop_id = (remote or {}).get('desktop_id')
-    conn = get_connection()
-    conn.row_factory = __import__('sqlite3').Row
-    cursor = conn.cursor()
-    try:
-        if cloud_id:
-            cursor.execute('SELECT * FROM observations WHERE cloud_id = ? LIMIT 1', (cloud_id,))
-            row = cursor.fetchone()
-            if row:
-                return dict(row)
-        try:
-            local_id = int(desktop_id)
-        except (TypeError, ValueError):
-            local_id = 0
-        if local_id > 0:
-            cursor.execute('SELECT * FROM observations WHERE id = ? LIMIT 1', (local_id,))
-            row = cursor.fetchone()
-            if row:
-                return dict(row)
-        return None
-    finally:
-        conn.close()
-
-
 def _load_local_observation_lookup() -> tuple[dict[str, dict], dict[int, dict]]:
     conn = get_connection()
     conn.row_factory = __import__('sqlite3').Row
@@ -9333,16 +9277,6 @@ def _find_local_observation_for_remote_cached(
     return None
 
 
-def _remote_observation_changed_since_last_sync(local_obs: dict | None, remote: dict | None) -> bool:
-    if not local_obs:
-        return True
-    synced_at = _parse_sync_timestamp((local_obs or {}).get('synced_at'))
-    remote_changed_at = _parse_sync_timestamp((remote or {}).get('updated_at') or (remote or {}).get('created_at'))
-    if synced_at is None or remote_changed_at is None:
-        return True
-    return (remote_changed_at - synced_at).total_seconds() > _REMOTE_SYNC_TIMESTAMP_GRACE_SECONDS
-
-
 def _remote_snapshot_has_meaningful_changes(
     remote: dict | None,
     remote_images: list[dict] | None,
@@ -9452,15 +9386,6 @@ def _set_observation_plan_image_retryable(local_id: int, raw_error: str) -> str:
     finally:
         conn.close()
     return summarize_image_too_large_for_plan_error(raw_error)
-
-
-def _set_observation_plan_image_blocked(local_id: int, raw_error: str) -> str:
-    return _set_observation_sync_blocked(
-        local_id,
-        raw_error,
-        IMAGE_TOO_LARGE_FOR_PLAN_USER_MESSAGE,
-        error_code='image_too_large_for_plan',
-    )
 
 
 def _remote_observation_update_kwargs(remote: dict) -> dict:
@@ -11302,53 +11227,6 @@ def _store_remote_snapshot(
             accepted_asymmetry=accepted_asymmetry,
         ),
     )
-
-
-def _prompt_for_deleted_cloud_observations(self, deleted_remote: list[dict]) -> bool:
-        """Refined to ensure local files aren't deleted without explicit user choice."""
-        entries = [dict(row or {}) for row in (deleted_remote or []) if row]
-        if not entries:
-            return False
-        
-        changed = False
-        for entry in entries:
-            local_id = int(entry.get('local_id') or 0)
-            if local_id <= 0: continue
-
-            box = QMessageBox(self)
-            box.setIcon(QMessageBox.Question)
-            box.setWindowTitle('Cloud Observation Deleted')
-            box.setText(f"Observation was deleted from Sporely Cloud.")
-            box.setInformativeText(
-                self._format_deleted_cloud_observation_label(entry) +
-                "\n\nHow would you like to handle the local desktop copy?"
-            )
-            
-            # Action Buttons
-            keep_btn = box.addButton('Keep local only (Unlink)', QMessageBox.NoRole)
-            delete_btn = box.addButton('Delete local copy', QMessageBox.DestructiveRole)
-            box.setDefaultButton(keep_btn)
-            
-            box.exec()
-            clicked = box.clickedButton()
-            
-            if clicked is delete_btn:
-                # Double check for files specifically
-                confirm = QMessageBox.warning(
-                    self, "Confirm Delete",
-                    "This will permanently delete the observation record and associated local image references. Continue?",
-                    QMessageBox.Yes | QMessageBox.No
-                )
-                if confirm == QMessageBox.Yes:
-                    ObservationDB.delete_observation(local_id)
-                    changed = True
-            else:
-                # User chose to keep it local but remove the cloud link
-                unlink_local_observation_from_cloud(local_id)
-                changed = True
-        
-        # ... (refresh logic) ...
-        return changed
 
 
 def resolve_conflict_keep_local(
