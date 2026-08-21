@@ -779,9 +779,8 @@ def test_read_only_client_download_does_not_touch_credentials(tmp_path, monkeypa
         p.write_bytes(b'ok')
         return p
 
-    monkeypatch.setattr(cloud_sync, "direct_r2_runtime_available", lambda: True)
-    monkeypatch.setattr(cloud_sync.SporelyReadOnlyCloudClient, "_get_r2",
-                        lambda self: type('R2', (), {
+    monkeypatch.setattr(cloud_sync.SporelyReadOnlyCloudClient, "_get_media_worker",
+                        lambda self: type('Worker', (), {
                             'download_to_file': _fake_download.__get__(self, type(self))
                         })())
 

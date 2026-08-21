@@ -152,6 +152,10 @@ class _RecordingClient:
         self.calls.append(("_delete", path))
         return None
 
+    def _storage_remove(self, paths: list):
+        self.calls.append(("_storage_remove", paths))
+        return None
+
     def _get_media_worker(self):
         outer = self
 

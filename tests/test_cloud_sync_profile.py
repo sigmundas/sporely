@@ -5,17 +5,6 @@ from types import SimpleNamespace
 from utils import cloud_sync
 
 
-class _FakeR2:
-    def __init__(self, payload: bytes):
-        self._payload = payload
-
-    def download_to_file(self, storage_key, dest_path, timeout=120):
-        dest = Path(dest_path)
-        dest.parent.mkdir(parents=True, exist_ok=True)
-        dest.write_bytes(self._payload)
-        return dest
-
-
 class _ProfiledClient(cloud_sync.SporelyCloudClient):
     def __init__(self, remote_images, remote_measurements, payload: bytes = b'cloud-bytes'):
         super().__init__('access-token', 'user-id')
@@ -23,11 +12,17 @@ class _ProfiledClient(cloud_sync.SporelyCloudClient):
         self._remote_measurements = [dict(row or {}) for row in remote_measurements]
         self._payload = payload
 
-    def _download_public_media_file(self, storage_path, dest_path, *, timeout=120):
-        dest = Path(dest_path)
-        dest.parent.mkdir(parents=True, exist_ok=True)
-        dest.write_bytes(self._payload)
-        return dest
+    def _get_media_worker(self):
+        payload = self._payload
+
+        class _FakeWorker:
+            def download_to_file(self, key, dest_path, timeout=120):
+                dest = Path(dest_path)
+                dest.parent.mkdir(parents=True, exist_ok=True)
+                dest.write_bytes(payload)
+                return dest
+
+        return _FakeWorker()
 
     def _get(self, path: str):
         if str(path or '').startswith('observation_images?'):

@@ -191,6 +191,7 @@ class _MemoryOriginalSyncClient(cloud_sync.SporelyCloudClient):
         payload["storage_path"] = cloud_sync.normalize_media_key(storage_path)
 
         cloud_id = str(img.get("cloud_id") or "").strip() or f"cloud-image-{len(self.push_metadata_calls) + 1}"
+        img["cloud_id"] = cloud_id
         existing = next((row for row in self.remote_images if str(row.get("id") or "").strip() == cloud_id), None)
         if existing is None:
             existing = {"id": cloud_id}
@@ -200,6 +201,20 @@ class _MemoryOriginalSyncClient(cloud_sync.SporelyCloudClient):
         existing.setdefault("original_storage_path", None)
         self.push_metadata_calls.append({"payload": dict(payload), "storage_path": storage_path, "cloud_id": cloud_id})
         return cloud_id
+
+    def _patch(self, path: str, payload: dict, **kwargs) -> object:
+        # Simulate PATCH for observation_images rollback (e.g. reset original_storage_path to None)
+        import re
+        m = re.search(r"observation_images\?id=eq\.(\S+?)&", path)
+        if m:
+            cloud_image_id = m.group(1)
+            row = next((r for r in self.remote_images if str(r.get("id") or "").strip() == cloud_image_id), None)
+            if row is not None:
+                row.update(payload)
+        return None
+
+    def _storage_remove(self, keys: list[str]) -> None:
+        pass
 
     def set_image_original_storage_path(self, cloud_image_id: str, original_storage_path: str) -> None:
         normalized_key = cloud_sync.normalize_media_key(original_storage_path)
@@ -235,7 +250,7 @@ def test_original_upload_skips_when_setting_is_disabled_and_keeps_derivative_flo
 
     assert result is True
     assert len(client.upload_image_calls) == 1
-    assert len(client.push_metadata_calls) == 1
+    assert len(client.push_metadata_calls) == 2
     assert client.upload_original_calls == []
     assert client.original_patch_calls == []
     assert client.remote_images[0]["original_storage_path"] is None
@@ -265,7 +280,7 @@ def test_raw_lineage_does_not_upload_originals_by_default(monkeypatch, tmp_path)
     assert result is True
     assert len(client.upload_image_calls) == 1
     assert client.upload_image_calls[0]["local_path"] == str(working_path)
-    assert len(client.push_metadata_calls) == 1
+    assert len(client.push_metadata_calls) == 2
     assert client.upload_original_calls == []
     assert client.original_patch_calls == []
     assert client.remote_images[0]["original_storage_path"] is None
@@ -310,7 +325,7 @@ def test_local_canonical_original_upload_updates_cloud_row_and_snapshot(monkeypa
     assert result is True
     assert summary_warnings == []
     assert len(client.upload_image_calls) == 1
-    assert len(client.push_metadata_calls) == 1
+    assert len(client.push_metadata_calls) == 2
     assert len(client.upload_original_calls) == 1
     assert client.upload_original_calls[0]["local_path"] == str(source_path)
     assert client.upload_original_calls[0]["upload_meta"]["source_kind"] == "filepath"
@@ -417,9 +432,12 @@ def test_original_upload_failure_does_not_write_original_storage_path(monkeypatc
 
     assert result is True
     assert len(client.upload_image_calls) == 1
-    assert len(client.push_metadata_calls) == 1
+    assert len(client.push_metadata_calls) == 2
     assert len(client.upload_original_calls) == 1
-    assert client.original_patch_calls == []
+    # Pre-registration call is made before the upload attempt; on failure
+    # the path is rolled back to None via _patch, so the final remote state
+    # must be None even though set_image_original_storage_path was called.
+    assert len(client.original_patch_calls) == 1
     assert client.remote_images[0]["original_storage_path"] is None
     assert any("original upload failed" in warning for warning in summary_warnings)
 
