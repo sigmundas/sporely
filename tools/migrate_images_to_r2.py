@@ -15,7 +15,7 @@ if str(PROJECT_ROOT) not in sys.path:
     sys.path.insert(0, str(PROJECT_ROOT))
 
 from database.schema import get_connection
-from utils.cloud_sync import SporelyCloudClient, _normalize_cloud_media_key  # noqa: E402
+from utils.cloud_sync import ImageIdentityConflictError, SporelyCloudClient, _normalize_cloud_media_key  # noqa: E402
 
 
 def _load_local_images(limit: int | None = None) -> list[dict]:
@@ -107,7 +107,13 @@ def migrate_images(dry_run: bool = False, limit: int | None = None) -> int:
 
         cloud_image_id = str(row.get("image_cloud_id") or "").strip()
         if not cloud_image_id:
-            cloud_image_id = str(client._find_cloud_image(local_image_id) or "").strip()
+            try:
+                _img_row = client._find_cloud_image(local_image_id, observation_cloud_id)
+            except ImageIdentityConflictError as exc:
+                print(f"[conflict] image {local_image_id} obs {observation_cloud_id}: {exc} — skipping")
+                skipped += 1
+                continue
+            cloud_image_id = str((_img_row or {}).get("id") or "").strip()
         provisional_cloud_image_id = cloud_image_id or str(local_image_id)
         storage_key = _normalize_cloud_media_key(
             client._build_storage_path(observation_cloud_id, provisional_cloud_image_id, str(upload_path))
@@ -118,7 +124,12 @@ def migrate_images(dry_run: bool = False, limit: int | None = None) -> int:
             continue
 
         image_payload = dict(row)
-        actual_cloud_image_id = client.push_image_metadata(image_payload, observation_cloud_id, storage_key)
+        try:
+            actual_cloud_image_id = client.push_image_metadata(image_payload, observation_cloud_id, storage_key)
+        except ImageIdentityConflictError as exc:
+            print(f"[conflict] image {local_image_id} obs {observation_cloud_id}: {exc} — skipping")
+            skipped += 1
+            continue
         expected_key = _normalize_cloud_media_key(
             client._build_storage_path(observation_cloud_id, actual_cloud_image_id, str(upload_path))
         )

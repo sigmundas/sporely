@@ -777,6 +777,121 @@ def test_orphan_subcategory_reflects_bytes_state(tmp_path: Path) -> None:
     assert row_meta.subcategory == recon.SUBCATEGORY_F_METADATA_ONLY
 
 
+def test_desktop_id_match_on_deleted_row_with_synced_tombstone_is_conflicting_intent(
+    tmp_path: Path,
+) -> None:
+    """cloud row matched only by desktop_id, soft-deleted, synced tombstone present.
+
+    This is the known bad case (local image 3258 / cloud row 3694): D1/D2 is wrong
+    because the deletion was already pushed. Classifier must return G_conflicting_intent.
+    """
+    db_path = tmp_path / "sporely.db"
+    _seed_schema(db_path)
+    _insert_observation(db_path, local_id=400, cloud_id="obs-400")
+    # Local row has NO cloud_id (link is broken), so desktop_id fallback fires.
+    _insert_image(db_path, image_id=4001, observation_id=400, cloud_id=None)
+    # Synced tombstone keyed on the cloud row id.
+    _insert_tombstone(
+        db_path,
+        deleted_cloud_id="img-4001-cloud",
+        local_image_id=4001,
+        delete_synced_at="2026-08-10T00:00:00Z",
+    )
+
+    with recon._open_readonly(db_path) as conn:
+        local = recon.load_local_state(conn)
+
+    cloud_row = _cloud_row(
+        id="img-4001-cloud",
+        desktop_id=4001,
+        observation_id="obs-400",
+        storage_path="user-1/obs-400/originals/img-4001-cloud/photo.webp",
+        deleted_at="2026-08-09T00:00:00Z",
+    )
+    match = recon.match_cloud_row_to_local(cloud_row, local)
+    assert match.method == recon.MATCH_METHOD_DESKTOP_ID
+    assert match.cloud_id_link_broken is True
+
+    row = recon.classify_cloud_row(cloud_row, match, local)
+    assert row.category == recon.CATEGORY_BROKEN_ACTIVE
+    assert row.subcategory == recon.SUBCATEGORY_G_CONFLICTING_INTENT
+
+    # Must not appear in D1/D2 counts.
+    report = recon.reconcile(local, [cloud_row], include_broken_active=False)
+    assert report.counts.get(recon.CATEGORY_LOST_LINK_REPAIRABLE_KEEP, 0) == 0
+    assert report.counts.get(recon.CATEGORY_LOST_LINK_REPAIRABLE_REMOVE, 0) == 0
+    assert report.subcounts.get(recon.SUBCATEGORY_G_CONFLICTING_INTENT, 0) == 1
+
+
+def test_desktop_id_match_on_deleted_row_without_synced_tombstone_stays_D1(
+    tmp_path: Path,
+) -> None:
+    """cloud row soft-deleted, desktop_id match, but NO synced tombstone.
+
+    This is a potential recovery case — still classify D1/D2, not G_conflicting_intent.
+    """
+    db_path = tmp_path / "sporely.db"
+    _seed_schema(db_path)
+    _insert_observation(db_path, local_id=401, cloud_id="obs-401")
+    _insert_image(db_path, image_id=4011, observation_id=401, cloud_id=None)
+    # Tombstone present but delete_synced_at is NULL — deletion not yet pushed.
+    _insert_tombstone(
+        db_path,
+        deleted_cloud_id="img-4011-cloud",
+        local_image_id=4011,
+        delete_synced_at=None,
+    )
+
+    with recon._open_readonly(db_path) as conn:
+        local = recon.load_local_state(conn)
+
+    cloud_row = _cloud_row(
+        id="img-4011-cloud",
+        desktop_id=4011,
+        observation_id="obs-401",
+        storage_path="user-1/obs-401/originals/img-4011-cloud/photo.webp",
+        deleted_at="2026-08-09T00:00:00Z",
+    )
+    match = recon.match_cloud_row_to_local(cloud_row, local)
+    row = recon.classify_cloud_row(cloud_row, match, local)
+
+    assert row.category in (
+        recon.CATEGORY_LOST_LINK_REPAIRABLE_KEEP,
+        recon.CATEGORY_LOST_LINK_REPAIRABLE_REMOVE,
+    )
+    assert row.subcategory != recon.SUBCATEGORY_G_CONFLICTING_INTENT
+
+
+def test_desktop_id_match_on_deleted_row_no_tombstone_stays_D1(
+    tmp_path: Path,
+) -> None:
+    """cloud row soft-deleted, desktop_id match, tombstone absent entirely."""
+    db_path = tmp_path / "sporely.db"
+    _seed_schema(db_path)
+    _insert_observation(db_path, local_id=402, cloud_id="obs-402")
+    _insert_image(db_path, image_id=4021, observation_id=402, cloud_id=None)
+    # No tombstone at all.
+
+    with recon._open_readonly(db_path) as conn:
+        local = recon.load_local_state(conn)
+
+    cloud_row = _cloud_row(
+        id="img-4021-cloud",
+        desktop_id=4021,
+        observation_id="obs-402",
+        storage_path="user-1/obs-402/originals/img-4021-cloud/photo.webp",
+        deleted_at="2026-08-09T00:00:00Z",
+    )
+    match = recon.match_cloud_row_to_local(cloud_row, local)
+    row = recon.classify_cloud_row(cloud_row, match, local)
+
+    assert row.category in (
+        recon.CATEGORY_LOST_LINK_REPAIRABLE_KEEP,
+        recon.CATEGORY_LOST_LINK_REPAIRABLE_REMOVE,
+    )
+    assert row.subcategory != recon.SUBCATEGORY_G_CONFLICTING_INTENT
+
+
 def test_desktop_id_match_scoped_to_local_observation(tmp_path: Path) -> None:
     """desktop_id fallback must not match a same-numbered id across a
     different observation (owner+observation scope, per contract)."""

@@ -643,8 +643,29 @@ def test_metadata_only_refresh_patches_image_metadata_on_existing_cloud_rows(tmp
         def _observation_images_support_sample_source(self): return True
         def _set_observation_media_keys(self, *a, **kw): return None
 
-        def _find_cloud_image(self, desktop_id):
-            return "3124" if int(desktop_id or 0) == 871 else None
+        _img_store = [
+            {"id": "3124", "desktop_id": 871, "user_id": "user-obs-631",
+             "observation_id": "cloud-631", "deleted_at": None},
+        ]
+
+        def _get(self, path):
+            import re
+            rows = [dict(r) for r in self._img_store]
+            for param in ("id", "desktop_id", "user_id", "observation_id"):
+                m = re.search(rf"[?&]{param}=eq\.([^&]+)", path)
+                if m:
+                    rows = [r for r in rows if str(r.get(param) or "") == m.group(1)]
+            if "&limit=1" in path:
+                rows = rows[:1]
+            return rows
+
+        def _find_cloud_image(self, desktop_id, obs_cloud_id, **kw):
+            return {"id": "3124", "deleted_at": None} if int(desktop_id or 0) == 871 else None
+
+        def _resolve_existing_image_for_push(self, img, obs_cloud_id, **kw):
+            return cloud_sync.SporelyCloudClient._resolve_existing_image_for_push(
+                self, img, obs_cloud_id, **kw
+            )
 
         def _patch(self, path, payload):
             patch_calls.append({"path": path, "payload": dict(payload)})
@@ -657,9 +678,9 @@ def test_metadata_only_refresh_patches_image_metadata_on_existing_cloud_rows(tmp
         # Reuse the real client's push_image_metadata so the metadata-only
         # branch exercises the same code path production runs — PATCH via
         # `_patch`, no `upload_image_file` call.
-        def push_image_metadata(self, img, obs_cloud_id, storage_path):
+        def push_image_metadata(self, img, obs_cloud_id, storage_path, **kw):
             return cloud_sync.SporelyCloudClient.push_image_metadata(
-                self, img, obs_cloud_id, storage_path
+                self, img, obs_cloud_id, storage_path, **kw
             )
 
         # `_set_observation_media_keys` is invoked inside push_image_metadata;
@@ -899,9 +920,33 @@ def test_metadata_only_refresh_excludes_field_images_from_patch(
         def _observation_images_support_sample_source(self): return True
         def _set_observation_media_keys(self, *a, **kw): return None
 
-        def _find_cloud_image(self, desktop_id):
-            return {838: "2317", 839: "2318", 871: "3124", 872: "3125"}.get(
+        _img_store = [
+            {"id": "2317", "desktop_id": 838, "user_id": "user-obs-389", "observation_id": "cloud-obs-389", "deleted_at": None},
+            {"id": "2318", "desktop_id": 839, "user_id": "user-obs-389", "observation_id": "cloud-obs-389", "deleted_at": None},
+            {"id": "3124", "desktop_id": 871, "user_id": "user-obs-389", "observation_id": "cloud-obs-389", "deleted_at": None},
+            {"id": "3125", "desktop_id": 872, "user_id": "user-obs-389", "observation_id": "cloud-obs-389", "deleted_at": None},
+        ]
+
+        def _get(self, path):
+            import re
+            rows = [dict(r) for r in self._img_store]
+            for param in ("id", "desktop_id", "user_id", "observation_id"):
+                m = re.search(rf"[?&]{param}=eq\.([^&]+)", path)
+                if m:
+                    rows = [r for r in rows if str(r.get(param) or "") == m.group(1)]
+            if "&limit=1" in path:
+                rows = rows[:1]
+            return rows
+
+        def _find_cloud_image(self, desktop_id, obs_cloud_id, **kw):
+            _id = {838: "2317", 839: "2318", 871: "3124", 872: "3125"}.get(
                 int(desktop_id or 0), None
+            )
+            return {"id": _id, "deleted_at": None} if _id else None
+
+        def _resolve_existing_image_for_push(self, img, obs_cloud_id, **kw):
+            return cloud_sync.SporelyCloudClient._resolve_existing_image_for_push(
+                self, img, obs_cloud_id, **kw
             )
 
         def _patch(self, path, payload):
@@ -912,14 +957,14 @@ def test_metadata_only_refresh_excludes_field_images_from_patch(
             post_calls.append({"path": path, "payload": dict(payload)})
             return [{"id": "unexpected-new"}]
 
-        def push_image_metadata(self, img, obs_cloud_id, storage_path):
+        def push_image_metadata(self, img, obs_cloud_id, storage_path, **kw):
             push_metadata_calls.append({
                 "cloud_id": str(img.get("cloud_id") or ""),
                 "image_type": str(img.get("image_type") or ""),
                 "storage_path_arg": storage_path,
             })
             return cloud_sync.SporelyCloudClient.push_image_metadata(
-                self, img, obs_cloud_id, storage_path
+                self, img, obs_cloud_id, storage_path, **kw
             )
 
         def upload_image_file(self, local_path, *args, **kwargs):

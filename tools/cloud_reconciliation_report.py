@@ -570,6 +570,7 @@ def match_cloud_row_to_local(
 SUBCATEGORY_G_HEALTHY_DELETE_LIFECYCLE = "G_healthy_delete_lifecycle"
 SUBCATEGORY_G_REMOTE_ONLY_DELETION = "G_remote_only_deletion"
 SUBCATEGORY_G_NO_CLOUD_ROW_FOUND = "G_no_cloud_row_found"
+SUBCATEGORY_G_CONFLICTING_INTENT = "G_conflicting_intent"
 SUBCATEGORY_F_WITH_BYTES = "F_with_bytes"
 SUBCATEGORY_F_METADATA_ONLY = "F_metadata_only"
 
@@ -745,6 +746,24 @@ def classify_cloud_row(
 
     # Match via desktop_id fallback => lost/broken link.
     if match.method == MATCH_METHOD_DESKTOP_ID and match.cloud_id_link_broken:
+        # Special case: cloud row is soft-deleted AND a synced local tombstone
+        # exists. This means the deletion was already pushed from the desktop.
+        # Repairing the link would conflict with completed local intent — flag
+        # as G_conflicting_intent so a human can decide whether to accept the
+        # deletion locally or restore via an explicit-restore path.
+        if cloud_is_deleted and cloud_image_id:
+            ts = local.tombstones_by_deleted_cloud_id.get(cloud_image_id)
+            if ts and _normalize_text(ts.get("delete_synced_at")):
+                return build(
+                    CATEGORY_BROKEN_ACTIVE,
+                    (
+                        "desktop_id match found but cloud row is soft-deleted "
+                        "with a synced local tombstone — repair requires an "
+                        "explicit decision (accept deletion locally, or restore "
+                        "via explicit-restore path), not a link repair"
+                    ),
+                    subcategory=SUBCATEGORY_G_CONFLICTING_INTENT,
+                )
         # Include cloud-deleted rows here too: broken link on a deleted row
         # still deserves visibility, but classify by the local desire state.
         if local_cloud_bytes_desired:

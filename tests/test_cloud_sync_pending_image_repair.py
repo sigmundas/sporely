@@ -197,7 +197,7 @@ def test_explicit_tombstone_restore_inserts_new_cloud_identity(monkeypatch):
     posts: list[tuple[str, dict]] = []
     cleared: list[int] = []
 
-    monkeypatch.setattr(client, "_find_cloud_image", lambda desktop_id: "cloud-image-4857")
+    monkeypatch.setattr(client, "_find_cloud_image", lambda desktop_id, obs_cloud_id, **kw: {"id": "cloud-image-4857", "deleted_at": None})
     monkeypatch.setattr(client, "_patch", lambda path, payload: patches.append((path, dict(payload))))
     monkeypatch.setattr(
         client,

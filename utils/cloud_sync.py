@@ -2267,6 +2267,13 @@ class ObservationIdentityConflictError(CloudSyncError):
     """
 
 
+class ImageIdentityConflictError(CloudSyncError):
+    """Raised when image push identity is ambiguous or contradictory.
+
+    The caller must not PATCH or POST. Leave the image dirty/retryable.
+    """
+
+
 class CloudSessionAccountMismatchError(AccountMismatchError):
     """Raised when a stale SporelyCloudClient sees on-disk session tokens
     that belong to a different Sporely Cloud user than the one this
@@ -15264,11 +15271,122 @@ class SporelyCloudClient:
 
     # ── Image push ───────────────────────────────────────────────────────
 
-    def _find_cloud_image(self, desktop_id: int) -> str | None:
-        rows = self._get(
-            f'observation_images?desktop_id=eq.{desktop_id}&user_id=eq.{self.user_id}&select=id'
+    def _find_cloud_image(
+        self,
+        desktop_id: int,
+        obs_cloud_id: str,
+        image_type: str | None = None,
+    ) -> dict | None:
+        """Reverse-link (``desktop_id``) recovery lookup for one image.
+
+        Returns a dict with ``id`` and ``deleted_at`` for the single
+        same-owner, same-observation cloud image carrying this
+        ``desktop_id``, or ``None``.  Multiple matches mean cloud-side
+        duplicates; silently picking one could route a push at the wrong
+        row, so that case raises :class:`ImageIdentityConflictError`.
+        """
+        q = (
+            f'observation_images?desktop_id=eq.{desktop_id}'
+            f'&user_id=eq.{self.user_id}'
+            f'&observation_id=eq.{obs_cloud_id}'
+            f'&select=id,deleted_at'
+            f'&order=id.asc'
         )
-        return rows[0]['id'] if rows else None
+        if image_type:
+            q += f'&image_type=eq.{image_type}'
+        rows = self._get(q)
+        if len(rows) > 1:
+            raise ImageIdentityConflictError(
+                f'image desktop_id={desktop_id}: {len(rows)} cloud images '
+                f'carry this desktop_id in observation {obs_cloud_id} '
+                f'({", ".join(str(r.get("id")) for r in rows)}); '
+                f'refusing to choose among duplicates'
+            )
+        return dict(rows[0]) if rows else None
+
+    def _resolve_existing_image_for_push(
+        self,
+        img: dict,
+        obs_cloud_id: str,
+        remote_row: dict | None = None,
+    ) -> str | None:
+        """Canonical owner of image push identity resolution.
+
+        Returns the cloud image id to PATCH, or ``None`` when creating a
+        new cloud image is permitted.
+
+        Raises :class:`ImageIdentityConflictError` on ambiguity or
+        soft-delete conflict without explicit restore intent.
+        """
+        restore_source_id = _explicit_image_restore_source(img['id'])
+        local_cloud_id = str(img.get('cloud_id') or '').strip()
+
+        verified_direct: dict | None = None
+        if local_cloud_id:
+            candidate: dict | None = None
+            if remote_row is not None:
+                r_id = str(remote_row.get('id') or '').strip()
+                r_obs = str(remote_row.get('observation_id') or '').strip()
+                if r_id == local_cloud_id and r_obs == obs_cloud_id:
+                    candidate = dict(remote_row)
+            if candidate is None:
+                rows = self._get(
+                    f'observation_images?id=eq.{local_cloud_id}'
+                    f'&user_id=eq.{self.user_id}'
+                    f'&select=id,desktop_id,deleted_at,observation_id'
+                    f'&limit=1'
+                )
+                candidate = dict(rows[0]) if rows else None
+            if candidate is not None:
+                if candidate.get('deleted_at') and local_cloud_id != restore_source_id:
+                    raise ImageIdentityConflictError(
+                        f'image {local_cloud_id} is soft-deleted and no explicit '
+                        f'restore intent exists; not safe to PATCH'
+                    )
+                verified_direct = candidate
+
+        # Reverse leg — raises on ambiguity.
+        recovered_row = self._find_cloud_image(
+            img['id'], obs_cloud_id, image_type=img.get('image_type')
+        )
+        recovered_id = str(recovered_row['id']) if recovered_row else ''
+        if recovered_row and recovered_row.get('deleted_at') and recovered_id != restore_source_id:
+            raise ImageIdentityConflictError(
+                f'image {recovered_id} is soft-deleted and no explicit '
+                f'restore intent exists'
+            )
+
+        verified_direct_id = str(verified_direct.get('id') or '').strip() if verified_direct else ''
+
+        # Restore release: release old soft-deleted row's desktop identity so
+        # a fresh POST can claim it, then treat as new.
+        for candidate_id in {verified_direct_id, recovered_id}:
+            if candidate_id and restore_source_id and candidate_id == restore_source_id:
+                self._patch(
+                    f'observation_images?id=eq.{restore_source_id}'
+                    f'&user_id=eq.{self.user_id}',
+                    {'desktop_id': None},
+                )
+                if candidate_id == verified_direct_id:
+                    verified_direct = None
+                    verified_direct_id = ''
+                if candidate_id == recovered_id:
+                    recovered_row = None
+                    recovered_id = ''
+                break
+
+        if verified_direct_id and recovered_id and verified_direct_id != recovered_id:
+            raise ImageIdentityConflictError(
+                f"image {img['id']}: direct link cloud_id={verified_direct_id} "
+                f'and reverse link desktop_id match={recovered_id} resolve to '
+                f'different cloud images; refusing to patch either or create a third'
+            )
+
+        if verified_direct_id:
+            return verified_direct_id
+        if recovered_id:
+            return recovered_id
+        return None
 
     def _build_storage_path(self, obs_cloud_id: str, img_cloud_id: str, local_path: str) -> str:
         import urllib.parse
@@ -15287,7 +15405,7 @@ class SporelyCloudClient:
             f'{self.user_id}/{str(obs_cloud_id or "").strip()}/originals/{normalized_image_id}/{safe_name}'
         )
 
-    def push_image_metadata(self, img: dict, obs_cloud_id: str, storage_path: str) -> str:
+    def push_image_metadata(self, img: dict, obs_cloud_id: str, storage_path: str, *, remote_row: dict | None = None) -> str:
         """Upsert image metadata row. Returns cloud UUID."""
         payload = {col: img.get(col) for col in _IMG_PUSH_COLS}
         captured_at = _normalize_image_captured_at_for_cloud(
@@ -15366,19 +15484,10 @@ class SporelyCloudClient:
         if self._observation_images_support_storage_exif_safe():
             payload['storage_exif_safe'] = True
 
+        existing_id = self._resolve_existing_image_for_push(img, obs_cloud_id, remote_row=remote_row)
         restore_source_id = _explicit_image_restore_source(img['id'])
-        existing_id = self._find_cloud_image(img['id'])
-        if restore_source_id and existing_id == restore_source_id:
-            # Explicit restore creates a new live identity. Release the old
-            # soft-deleted row's unique desktop identity without removing its
-            # row or the corresponding local tombstone.
-            self._patch(
-                f'observation_images?id=eq.{existing_id}&user_id=eq.{self.user_id}',
-                {'desktop_id': None},
-            )
-            existing_id = None
         if existing_id:
-            self._patch(f'observation_images?id=eq.{existing_id}', payload)
+            self._patch(f'observation_images?id=eq.{existing_id}&user_id=eq.{self.user_id}', payload)
             cloud_id = existing_id
         else:
             rows = self._post('observation_images', payload)
@@ -18921,7 +19030,7 @@ def _reconcile_metadata_only_linked_images(
 
         if expected_payload != remote_payload:
             try:
-                client.push_image_metadata(img, obs_cloud_id, remote_storage_path)
+                client.push_image_metadata(img, obs_cloud_id, remote_storage_path, remote_row=remote_row)
             except Exception as exc:
                 if is_cloud_auth_error(exc) or is_cloud_temporary_unavailable_error(exc):
                     raise
@@ -19601,7 +19710,7 @@ def _push_images_for_observation(
                 if not img_cloud_id or not metadata_matches:
                     if remote_row and remote_row.get('original_filename'):
                         img['original_filename'] = str(remote_row.get('original_filename') or '').strip()
-                    img_cloud_id = client.push_image_metadata(img, obs_cloud_id, storage_path)
+                    img_cloud_id = client.push_image_metadata(img, obs_cloud_id, storage_path, remote_row=remote_row)
                     remote_payload = _prepared_item_remote_payload(
                         img,
                         upload_path,
@@ -20012,7 +20121,8 @@ def _ensure_metadata_only_microscope_image_for_public_spores(
                 ]
         elif hasattr(client, '_find_cloud_image'):
             try:
-                remote_cloud_id = client._find_cloud_image(local_image_id)
+                _row = client._find_cloud_image(local_image_id, obs_cloud_id)
+                remote_cloud_id = _row['id'] if _row else None
             except Exception as exc:
                 if is_cloud_auth_error(exc) or is_cloud_temporary_unavailable_error(exc):
                     raise

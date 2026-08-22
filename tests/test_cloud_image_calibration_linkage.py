@@ -113,7 +113,7 @@ def test_push_image_metadata_sends_calibration_uuid_instead_of_local_calibration
     client = cloud_sync.SporelyCloudClient("token", "user-123")
     posts: list[tuple[str, dict]] = []
 
-    monkeypatch.setattr(client, "_find_cloud_image", lambda desktop_id: None)
+    monkeypatch.setattr(client, "_resolve_existing_image_for_push", lambda img, obs_cloud_id, **kw: None)
     monkeypatch.setattr(client, "_post", lambda path, payload: posts.append((path, dict(payload))) or [{"id": "cloud-img-1"}])
     monkeypatch.setattr(client, "_patch", lambda *args, **kwargs: None)
     monkeypatch.setattr(client, "_set_observation_media_keys", lambda *args, **kwargs: None)

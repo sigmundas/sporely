@@ -840,7 +840,7 @@ def test_push_image_metadata_marks_reencoded_uploads_as_exif_safe(monkeypatch):
     client = cloud_sync.SporelyCloudClient("token", "user-123")
     posted_payloads: list[dict] = []
 
-    monkeypatch.setattr(client, "_find_cloud_image", lambda desktop_id: None)
+    monkeypatch.setattr(client, "_resolve_existing_image_for_push", lambda img, obs_cloud_id, **kw: None)
     monkeypatch.setattr(client, "_observation_images_support_ai_crop", lambda: False)
     monkeypatch.setattr(client, "_observation_images_support_ai_crop_custom", lambda: False)
     monkeypatch.setattr(client, "_observation_images_support_upload_metadata", lambda: True)

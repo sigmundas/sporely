@@ -511,7 +511,7 @@ def test_push_image_metadata_patches_sample_source_without_uploading_bytes(monke
 
     patched: list[dict] = []
     posted: list[dict] = []
-    monkeypatch.setattr(client, "_find_cloud_image", lambda desktop_id: "cloud-3124")
+    monkeypatch.setattr(client, "_resolve_existing_image_for_push", lambda img, obs_cloud_id, **kw: "cloud-3124")
     monkeypatch.setattr(client, "_observation_images_support_ai_crop", lambda: False)
     monkeypatch.setattr(client, "_observation_images_support_ai_crop_custom", lambda: False)
     monkeypatch.setattr(client, "_observation_images_support_upload_metadata", lambda: False)
@@ -568,7 +568,7 @@ def test_push_image_metadata_drops_sample_source_when_cloud_lacks_column(monkeyp
     client = cloud_sync.SporelyCloudClient("token", "user-631")
 
     patched: list[dict] = []
-    monkeypatch.setattr(client, "_find_cloud_image", lambda desktop_id: "cloud-3124")
+    monkeypatch.setattr(client, "_resolve_existing_image_for_push", lambda img, obs_cloud_id, **kw: "cloud-3124")
     monkeypatch.setattr(client, "_observation_images_support_ai_crop", lambda: False)
     monkeypatch.setattr(client, "_observation_images_support_ai_crop_custom", lambda: False)
     monkeypatch.setattr(client, "_observation_images_support_upload_metadata", lambda: False)

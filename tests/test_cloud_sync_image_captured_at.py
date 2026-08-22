@@ -10,7 +10,7 @@ from utils import cloud_sync
 
 def _client(monkeypatch, *, existing_id="cloud-image-1"):
     client = cloud_sync.SporelyCloudClient("token", "user-1")
-    monkeypatch.setattr(client, "_find_cloud_image", lambda _desktop_id: existing_id)
+    monkeypatch.setattr(client, "_resolve_existing_image_for_push", lambda img, obs_cloud_id, **kw: existing_id)
     monkeypatch.setattr(client, "_observation_images_support_ai_crop", lambda: False)
     monkeypatch.setattr(client, "_observation_images_support_ai_crop_custom", lambda: False)
     monkeypatch.setattr(client, "_observation_images_support_upload_metadata", lambda: False)
