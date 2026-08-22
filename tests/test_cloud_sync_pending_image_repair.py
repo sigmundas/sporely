@@ -148,7 +148,7 @@ class _MemorySyncClient(cloud_sync.SporelyCloudClient):
         )
         return storage_path
 
-    def push_image_metadata(self, img: dict, obs_cloud_id: str, storage_path: str) -> str:
+    def push_image_metadata(self, img: dict, obs_cloud_id: str, storage_path: str, *, remote_row=None) -> str:
         desktop_id = img.get("id")
         # Mirror the real client: upsert by desktop_id, falling back to cloud_id.
         existing = next(

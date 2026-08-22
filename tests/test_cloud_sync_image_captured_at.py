@@ -206,7 +206,7 @@ def test_existing_linked_image_backfill_uses_normal_metadata_patch(monkeypatch):
         def _observation_images_support_upload_metadata(self):
             return False
 
-        def push_image_metadata(self, image, observation_id, storage_path):
+        def push_image_metadata(self, image, observation_id, storage_path, *, remote_row=None):
             pushed.append((dict(image), observation_id, storage_path))
             remote_image["captured_at"] = cloud_sync._normalize_image_captured_at_for_cloud(
                 image.get("captured_at"), local=True

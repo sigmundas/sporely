@@ -594,9 +594,13 @@ class _RecordingClient:
     def _observation_images_support_ai_crop_custom(self):
         return True
 
-    def _find_cloud_image(self, desktop_id: int) -> str | None:
+    def _find_cloud_image(self, desktop_id: int, obs_cloud_id: str, image_type=None) -> dict | None:
         self.calls.append(('_find_cloud_image', desktop_id))
-        return self._existing
+        if self._existing is None:
+            return None
+        if isinstance(self._existing, dict):
+            return self._existing
+        return {"id": self._existing, "deleted_at": None}
 
     def _post(self, path: str, payload):
         self.calls.append(('_post', (path, payload)))

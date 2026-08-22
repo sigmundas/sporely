@@ -15343,6 +15343,12 @@ class SporelyCloudClient:
                         f'image {local_cloud_id} is soft-deleted and no explicit '
                         f'restore intent exists; not safe to PATCH'
                     )
+                if candidate.get('observation_id') != obs_cloud_id and local_cloud_id != restore_source_id:
+                    raise ImageIdentityConflictError(
+                        f"local cloud_id {local_cloud_id!r} points to a cloud image in observation "
+                        f"{candidate.get('observation_id')!r}, not {obs_cloud_id!r}; "
+                        "refusing to reparent"
+                    )
                 verified_direct = candidate
 
         # Reverse leg — raises on ambiguity.
@@ -15386,6 +15392,47 @@ class SporelyCloudClient:
             return verified_direct_id
         if recovered_id:
             return recovered_id
+
+        # When a restore release was processed above, the desktop_id was just
+        # cleared on the cloud row — the global check would find a stale state
+        # and incorrectly raise. Skip it; the POST is intentional here.
+        if restore_source_id:
+            return None
+
+        # Global same-user desktop_id check before permitting POST.
+        global_rows = self._get(
+            f'observation_images?desktop_id=eq.{img["id"]}&user_id=eq.{self.user_id}'
+            f'&select=id,observation_id,image_type,deleted_at&order=id.asc'
+        )
+        if global_rows:
+            if len(global_rows) > 1:
+                raise ImageIdentityConflictError(
+                    f"desktop_id {img['id']} matches {len(global_rows)} cloud images "
+                    f"across observations; ambiguous — refusing to POST duplicate"
+                )
+            row = global_rows[0]
+            if row.get('deleted_at'):
+                raise ImageIdentityConflictError(
+                    f"desktop_id {img['id']} exists as soft-deleted cloud image "
+                    f"{row['id']} in observation {row['observation_id']}; "
+                    "not safe to POST duplicate"
+                )
+            if row.get('observation_id') != obs_cloud_id:
+                raise ImageIdentityConflictError(
+                    f"desktop_id {img['id']} belongs to cloud image {row['id']} "
+                    f"in observation {row['observation_id']}, not {obs_cloud_id}; "
+                    "cannot POST duplicate"
+                )
+            local_image_type = img.get('image_type')
+            if row.get('image_type') and local_image_type and row.get('image_type') != local_image_type:
+                raise ImageIdentityConflictError(
+                    f"desktop_id {img['id']} exists as {row['image_type']} in cloud "
+                    f"but local image_type is {local_image_type}"
+                )
+            raise ImageIdentityConflictError(
+                f"unexpected: global lookup found {row['id']} but obs-scoped reverse was empty"
+            )
+
         return None
 
     def _build_storage_path(self, obs_cloud_id: str, img_cloud_id: str, local_path: str) -> str:
@@ -15490,8 +15537,16 @@ class SporelyCloudClient:
             self._patch(f'observation_images?id=eq.{existing_id}&user_id=eq.{self.user_id}', payload)
             cloud_id = existing_id
         else:
-            rows = self._post('observation_images', payload)
-            cloud_id = rows[0]['id']
+            try:
+                rows = self._post('observation_images', payload)
+                cloud_id = rows[0]['id']
+            except CloudSyncError as e:
+                if '23505' in str(e) or 'unique' in str(e).lower():
+                    raise ImageIdentityConflictError(
+                        f"POST to observation_images hit unique constraint for image {img['id']}; "
+                        "a concurrent race or stale global lookup; image left dirty"
+                    ) from e
+                raise
         if cloud_id and restore_source_id:
             _clear_explicit_image_restore_source(img['id'])
         normalized_key = _normalize_cloud_media_key(payload.get('storage_path'))
@@ -20123,6 +20178,8 @@ def _ensure_metadata_only_microscope_image_for_public_spores(
             try:
                 _row = client._find_cloud_image(local_image_id, obs_cloud_id)
                 remote_cloud_id = _row['id'] if _row else None
+            except ImageIdentityConflictError:
+                raise
             except Exception as exc:
                 if is_cloud_auth_error(exc) or is_cloud_temporary_unavailable_error(exc):
                     raise

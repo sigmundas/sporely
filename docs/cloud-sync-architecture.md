@@ -195,6 +195,7 @@ get_conflict_detail()               (L16687)
 | Three-way conflict analysis | `_analyze_observation_push_conflicts` (L4112), `ObservationPushConflictReport` (L4097), `build_conflict_plan_baseline` (L11459) | Compare local vs cloud vs baseline; block writes on both-changed | Push loops writing without preflight | "Needs review" marker: `_set_observation_conflict_review_pending` (L4273) / `_clear_…` (L4290) |
 | Local-vs-cloud change analysis | `_local_has_real_changes_since_snapshot` (L4318), `_remote_snapshot_has_meaningful_changes` (L9111), `_clear_observation_dirty_if_no_real_changes` (L4360) | Distinguish real edits from no-op noise | — | Feeds the no-op fast path |
 | Observation push identity resolution | `SporelyCloudClient._resolve_existing_observation_for_push` (L14839), `_find_cloud_observation` (L14818), `ObservationIdentityConflictError` (L2268) | Decide which existing cloud observation a push targets: verified local `cloud_id` is primary; remote `desktop_id` is recovery; disagreement/ambiguity raises | Callers doing their own `cloud_id`/`desktop_id` fallback logic | See "Observation identity model" below. A missing remote `desktop_id` must never cause a duplicate POST when the local `cloud_id` verifies |
+| Image push identity resolution | `SporelyCloudClient._resolve_existing_image_for_push`, `_find_cloud_image`, `ImageIdentityConflictError` | Decide which existing cloud image a push targets: verified local `images.cloud_id` is primary (direct); remote `desktop_id` scoped to the observation is recovery; disagreement raises `ImageIdentityConflictError` (no PATCH/POST, stays dirty) | Callers doing their own `cloud_id`/`desktop_id` fallback logic | Pull-only imports with `cloud_id` set and NULL remote `desktop_id` must not trigger duplicate POSTs; mirrors the two-leg observation identity model |
 | Observation push | `SporelyCloudClient.push_observation` (L15120) | PATCH existing / POST new observation row | Raw transport | Identity via `_resolve_existing_observation_for_push`; POST only when it returns no target |
 | Observation pull | `pull_all` per-candidate loop (L22251+) | Apply remote updates to clean local rows; import new | — | Conflicted rows are skipped, not overwritten |
 | Measurement push/pull | `push_measurement` (L15968), `pull_measurements_for_images` (L15812), `delete_cloud_measurements_for_image` (L16063) | Upsert with semantic no-op detection; paginated pull | — | Measurements may reference metadata-only anchors |
@@ -520,8 +521,11 @@ work failed.**
 - **Partial uploads**: the retry-safe upload sequence (contract) is
   row → bytes → `storage_path` PATCH → local `cloud_id` → snapshot. An
   interruption after any step must be recoverable by repeating sync;
-  find-before-create (`desktop_id` match, `_find_cloud_image`) prevents
-  duplicates on retry.
+  find-before-create via `_resolve_existing_image_for_push` (two-leg: direct
+  verified `cloud_id` → recovery `desktop_id` scoped to observation →
+  `ImageIdentityConflictError` on disagreement) prevents duplicates on retry;
+  pull-only imports with `cloud_id` set and NULL remote `desktop_id` do not
+  trigger a duplicate POST.
 - **Partial downloads**: byte downloads go to temp files and are moved into
   place only after validation (see L1440–L1503 region); a failed download
   leaves prior local state untouched.
@@ -621,6 +625,12 @@ Read this list before changing anything in cloud sync.
     link first (`_resolve_existing_observation_for_push`); resolving identity
     by `desktop_id` alone POSTed fourteen duplicate cloud observations in
     August 2026.
+22. **Image push used `desktop_id`-only identity (no `cloud_id` check) —
+    fixed by `_resolve_existing_image_for_push`.** Pull-only imports with
+    `cloud_id` set and NULL remote `desktop_id` previously triggered duplicate
+    POSTs. The two-leg resolver (direct verified `cloud_id` → recovery
+    `desktop_id` scoped to observation) closes this gap; disagreement raises
+    `ImageIdentityConflictError`.
 
 ---
 
@@ -637,6 +647,7 @@ High-value safety tests by invariant (not an exhaustive listing):
 | Tombstone lifecycle | `tests/test_image_tombstones.py` (queue, sync, cancel, restore-after-delete, remote tombstone repair, legacy publish-exclusion non-migration, batch queue); `tests/test_image_gallery_cloud_delete.py` |
 | Identity repair | `test_cloud_image_bytes_desired.py::test_identity_repair_runs_for_unchecked_image_without_upload`; duplicate-identity blockers in `tests/test_cloud_conflict_plan_execution.py` |
 | Observation push identity (no duplicate POST) | `tests/test_observation_push_identity.py` — verified `cloud_id` primary; `desktop_id` recovery; pull-only import → later normal push PATCHes the original row; direct/reverse disagreement and ambiguous reverse matches raise `ObservationIdentityConflictError` (no PATCH/POST/snapshot, stays dirty); reverse-link healing via the normal PATCH payload |
+| Image push identity (no duplicate POST) | `tests/test_image_push_identity.py` — 14 tests; mirrors test_observation_push_identity.py; verified `images.cloud_id` primary, `desktop_id` recovery scoped to observation, `ImageIdentityConflictError` on disagreement (no PATCH/POST, stays dirty); pull-only import with NULL remote `desktop_id` does not trigger a POST |
 | Metadata-only anchors | `tests/test_cloud_sync_metadata_only.py`; `test_cloud_download_only.py::test_download_from_cloud_never_downloads_metadata_only_microscope_anchor`; metadata-only refresh tests in `tests/test_cloud_sync_dirty_loop_steady_state.py` |
 | Conflict preservation / "needs review" | `tests/test_cloud_sync_conflict_preflight.py`; `tests/test_cloud_conflict_plan_execution.py` (drift aborts, baseline validation, snapshot-before-stamp ordering, unsealed-on-snapshot-failure); `tests/test_observation_snapshot_persistence.py` |
 | Retryability / dirty stays dirty | `tests/test_cloud_sync_dirty_loop_steady_state.py`; `test_cloud_conflict_plan_execution.py::test_partial_error_carries_operations_and_retry_skips_completed`; `tests/test_cloud_measurement_sync_v1.py::test_push_measurements_for_observation_aborts_on_transient_failure`; `tests/test_cloud_sync_dirty_pending_images.py` |

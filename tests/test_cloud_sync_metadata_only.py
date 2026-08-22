@@ -385,7 +385,7 @@ class _StubClient:
     def pull_measurements_for_images(self, image_cloud_ids):
         return [dict(row) for row in self.remote_measurements]
 
-    def push_image_metadata(self, img, obs_cloud_id, storage_path):
+    def push_image_metadata(self, img, obs_cloud_id, storage_path, *, remote_row=None):
         record = dict(img)
         record["_obs_cloud_id"] = obs_cloud_id
         record["_storage_path"] = storage_path
@@ -411,11 +411,12 @@ class _StubClient:
     def _observation_images_support_original_storage_path(self):
         return False
 
-    def _find_cloud_image(self, desktop_id):
+    def _find_cloud_image(self, desktop_id, obs_cloud_id=None, image_type=None):
         for row in self.remote_images:
             if int(row.get("desktop_id") or 0) == int(desktop_id):
-                return str(row.get("id") or "")
-        return ""
+                cloud_id = str(row.get("id") or "")
+                return {"id": cloud_id, "deleted_at": None} if cloud_id else None
+        return None
 
     def _using_default_r2_loader(self):
         return False

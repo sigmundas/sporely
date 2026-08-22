@@ -193,17 +193,17 @@ def test_no_cloud_id_unique_desktop_id_same_observation(monkeypatch):
 
 
 def test_no_cloud_id_unique_desktop_id_other_observation(monkeypatch):
-    """Reverse lookup is scoped to the target observation; other-obs rows are invisible."""
+    """Global desktop_id check catches rows in other observations — conflict, no POST."""
     client, calls = _make_client(
         monkeypatch,
         [{"id": "img-300", "desktop_id": 77, "user_id": USER, "observation_id": "cloud-obs-OTHER", "deleted_at": None}],
     )
 
-    cloud_id = client.push_image_metadata(_local_img(77, cloud_id=None), OBS_CLOUD_ID, "")
+    with pytest.raises(cloud_sync.ImageIdentityConflictError):
+        client.push_image_metadata(_local_img(77, cloud_id=None), OBS_CLOUD_ID, "")
 
-    assert cloud_id == "new-cloud-image-id"
     assert calls["patch"] == []
-    assert len(calls["post"]) == 1
+    assert calls["post"] == []
 
 
 # ---------------------------------------------------------------------------
@@ -430,3 +430,138 @@ def test_explicit_restore_via_direct_cloud_id_link(monkeypatch):
     assert "img-800" in release_patches[0]
     # POST for new row must fire (not updating the deleted row)
     assert len(calls["post"]) == 1, "POST for new row must fire"
+
+
+# ---------------------------------------------------------------------------
+# Test 15: direct cloud_id points to another observation → ImageIdentityConflictError
+# ---------------------------------------------------------------------------
+
+
+def test_direct_cloud_id_points_to_another_observation_raises_conflict(monkeypatch):
+    """Finding 2: cloud_id verified but observation_id mismatch → conflict, no write."""
+    client, calls = _make_client(
+        monkeypatch,
+        [{"id": "img-900", "desktop_id": None, "user_id": USER, "observation_id": "other-obs", "deleted_at": None}],
+    )
+
+    with pytest.raises(cloud_sync.ImageIdentityConflictError):
+        client.push_image_metadata(_local_img(10, cloud_id="img-900"), OBS_CLOUD_ID, "")
+
+    assert calls["patch"] == []
+    assert calls["post"] == []
+
+
+# ---------------------------------------------------------------------------
+# Test 16: desktop_id exists in another observation → conflict before POST
+# ---------------------------------------------------------------------------
+
+
+def test_desktop_id_exists_in_another_observation_raises_conflict_before_post(monkeypatch):
+    """Finding 3A: global desktop_id found in another obs → conflict, no POST."""
+    client, calls = _make_client(
+        monkeypatch,
+        [{"id": "img-901", "desktop_id": 50, "user_id": USER, "observation_id": "other-obs", "image_type": "field", "deleted_at": None}],
+    )
+
+    with pytest.raises(cloud_sync.ImageIdentityConflictError):
+        client.push_image_metadata(_local_img(50, cloud_id=None), OBS_CLOUD_ID, "")
+
+    assert calls["post"] == []
+
+
+# ---------------------------------------------------------------------------
+# Test 17: desktop_id exists as soft-deleted → conflict before POST
+# ---------------------------------------------------------------------------
+
+
+def test_desktop_id_exists_as_soft_deleted_raises_conflict(monkeypatch):
+    """Finding 3A: global desktop_id soft-deleted → conflict, no POST."""
+    client, calls = _make_client(
+        monkeypatch,
+        [{"id": "img-902", "desktop_id": 51, "user_id": USER, "observation_id": OBS_CLOUD_ID, "image_type": "field", "deleted_at": "2026-07-01T00:00:00Z"}],
+    )
+
+    with pytest.raises(cloud_sync.ImageIdentityConflictError):
+        client.push_image_metadata(_local_img(51, cloud_id=None), OBS_CLOUD_ID, "")
+
+    assert calls["post"] == []
+
+
+# ---------------------------------------------------------------------------
+# Test 18: multiple global desktop_id matches → conflict
+# ---------------------------------------------------------------------------
+
+
+def test_multiple_global_desktop_id_matches_raises_conflict(monkeypatch):
+    """Finding 3A: ambiguous global desktop_id → conflict."""
+    client, calls = _make_client(
+        monkeypatch,
+        [
+            {"id": "img-903", "desktop_id": 52, "user_id": USER, "observation_id": "other-obs-1", "image_type": "field", "deleted_at": None},
+            {"id": "img-904", "desktop_id": 52, "user_id": USER, "observation_id": "other-obs-2", "image_type": "field", "deleted_at": None},
+        ],
+    )
+
+    with pytest.raises(cloud_sync.ImageIdentityConflictError):
+        client.push_image_metadata(_local_img(52, cloud_id=None), OBS_CLOUD_ID, "")
+
+
+# ---------------------------------------------------------------------------
+# Test 19: POST 23505 unique violation → ImageIdentityConflictError
+# ---------------------------------------------------------------------------
+
+
+def test_23505_race_surfaced_as_identity_conflict(monkeypatch):
+    """Finding 3B: 23505 from POST is wrapped as ImageIdentityConflictError."""
+    client, calls = _make_client(monkeypatch, [])
+
+    def _raising_post(path, payload):
+        raise cloud_sync.CloudSyncError("23505 duplicate key value violates unique constraint")
+
+    monkeypatch.setattr(client, "_post", _raising_post)
+
+    with pytest.raises(cloud_sync.ImageIdentityConflictError):
+        client.push_image_metadata(_local_img(53, cloud_id=None), OBS_CLOUD_ID, "")
+
+
+# ---------------------------------------------------------------------------
+# Test 20: anchor helper propagates ImageIdentityConflictError (not swallowed)
+# ---------------------------------------------------------------------------
+
+
+def test_anchor_helper_propagates_identity_conflict_zero_post(monkeypatch):
+    """Finding 6: ImageIdentityConflictError from _find_cloud_image propagates."""
+    import types
+
+    # Patch DB gate so the helper reaches the _find_cloud_image branch.
+    monkeypatch.setattr(
+        cloud_sync, "microscope_image_requires_public_spore_anchor", lambda image_id: True
+    )
+
+    post_calls: list = []
+
+    def _raise_conflict(desktop_id, obs_cloud_id, image_type=None):
+        raise cloud_sync.ImageIdentityConflictError("injected conflict")
+
+    client = types.SimpleNamespace(
+        user_id=USER,
+        _find_cloud_image=_raise_conflict,
+        _post=lambda path, payload: post_calls.append((path, payload)) or [{"id": "should-not-reach"}],
+        push_image_metadata=lambda *a, **kw: None,
+    )
+
+    image_row = {
+        "id": 60,
+        "cloud_id": None,
+        "filepath": "/tmp/m.jpg",
+        "image_type": "microscope",
+        "sort_order": 0,
+        "observation_id": 1,
+    }
+
+    with pytest.raises(cloud_sync.ImageIdentityConflictError):
+        cloud_sync._ensure_metadata_only_microscope_image_for_public_spores(
+            client, 1, OBS_CLOUD_ID, image_row,
+        )
+
+    assert post_calls == [], "POST must not fire when identity conflict raised"
