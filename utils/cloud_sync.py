@@ -18306,7 +18306,13 @@ def push_all(
                     except Exception as e:
                         if is_cloud_auth_error(e) or is_cloud_temporary_unavailable_error(e):
                             raise
-                        print(f'[cloud_sync] Measurement push failed for obs {local_obs_id}: {e}')
+                        failure_msg = (
+                            f'obs {obs["id"]}: measurement push failed: '
+                            f'{type(e).__name__}: {e}'
+                        )
+                        print(f'[cloud_sync] {failure_msg}')
+                        errors.append(failure_msg)
+                        mark_observation_dirty(local_obs_id)
                     else:
                         print(
                             f'[cloud_sync] Observation {obs["id"]}: measurements pushed '
