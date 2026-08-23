@@ -15343,7 +15343,7 @@ class SporelyCloudClient:
                         f'image {local_cloud_id} is soft-deleted and no explicit '
                         f'restore intent exists; not safe to PATCH'
                     )
-                if candidate.get('observation_id') != obs_cloud_id and local_cloud_id != restore_source_id:
+                if str(candidate.get('observation_id') or '') != str(obs_cloud_id) and local_cloud_id != restore_source_id:
                     raise ImageIdentityConflictError(
                         f"local cloud_id {local_cloud_id!r} points to a cloud image in observation "
                         f"{candidate.get('observation_id')!r}, not {obs_cloud_id!r}; "
@@ -15417,7 +15417,7 @@ class SporelyCloudClient:
                     f"{row['id']} in observation {row['observation_id']}; "
                     "not safe to POST duplicate"
                 )
-            if row.get('observation_id') != obs_cloud_id:
+            if str(row.get('observation_id') or '') != str(obs_cloud_id):
                 raise ImageIdentityConflictError(
                     f"desktop_id {img['id']} belongs to cloud image {row['id']} "
                     f"in observation {row['observation_id']}, not {obs_cloud_id}; "
