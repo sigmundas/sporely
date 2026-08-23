@@ -3268,6 +3268,8 @@ def summarize_sync_issues(errors: list[str] | tuple[str, ...] | None) -> dict:
             )
             entry['cloud_id'] = str(review_match.group('cloud_id') or '').strip() or None
             entry['pull_skipped'] = True
+            if 'push_blocked' in str(review_match.group('reason') or ''):
+                entry['push_skipped'] = True
             continue
         measurement_match = _MEASUREMENT_CONFLICT_RE.match(text)
         if measurement_match:
@@ -4163,8 +4165,12 @@ def _analyze_observation_push_conflicts(
     remote_removed_image_keys = list(remote_image_changes.get('removed_keys') or [])
 
     # ---- Image metadata: three-way conflict on shared cloud image rows ----
+    # Normalize each side to a canonical snapshot payload before comparing so
+    # that representation differences (e.g. cloud lowercase sample_source vs
+    # desktop Title_Case, calibration_id vs calibration_uuid, naive local
+    # captured_at vs UTC timestamptz) do not produce false conflicts.
     baseline_by_cloud_id = {
-        str(row.get('id') or '').strip(): row
+        str(row.get('id') or '').strip(): _remote_image_payload(row)
         for row in baseline_images
         if str(row.get('id') or '').strip()
     }
@@ -4174,7 +4180,7 @@ def _analyze_observation_push_conflicts(
         if str(row.get('id') or '').strip()
     }
     local_by_cloud_id = {
-        str((img or {}).get('cloud_id') or '').strip(): dict(img or {})
+        str((img or {}).get('cloud_id') or '').strip(): _local_image_snapshot_payload(dict(img or {}))
         for img in (local_images or [])
         if str((img or {}).get('cloud_id') or '').strip()
     }
@@ -18206,7 +18212,7 @@ def push_all(
                             _format_review_needed_error(
                                 obs_local_id if obs_local_id > 0 else 0,
                                 cloud_id,
-                                review_reasons,
+                                ['push_blocked', *(review_reasons or [])],
                             )
                         )
                         if obs_local_id > 0:
