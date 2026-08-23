@@ -18514,6 +18514,11 @@ def push_all(
                         _refresh_local_cloud_media_signature(local_obs_id)
                     else:
                         mark_observation_dirty(local_obs_id)
+                        if original_upload_warnings:
+                            errors.append(
+                                f"obs {obs['id']}: image push failures: "
+                                + '; '.join(original_upload_warnings)
+                            )
 
             # Metadata-only image PATCH pass under the fast Refresh mode
             # (`sync_images=False`). The `if sync_images:` block above gates
@@ -18685,6 +18690,7 @@ def push_all(
                     ),
                     progress_state,
                 )
+                mark_observation_dirty(int(obs['id']))
             errors.append(raw_error)
             _advance_progress(progress_state, 1)
 
@@ -19243,6 +19249,10 @@ def _push_images_for_observation(
         _safe_int(obs.get('id')),
         str(obs_cloud_id or '').strip(),
     ) or {}
+    anchor_failures = anchor_result.get('failures') or []
+    for msg in anchor_failures:
+        warnings.append(f'anchor: {msg}')
+    anchor_had_failures = bool(anchor_failures)
     # Existing metadata-only anchors remain protected, but publication
     # selection must never downgrade a cloud-backed image to this state.
     metadata_only_anchor_cloud_ids = {
@@ -19933,13 +19943,15 @@ def _push_images_for_observation(
                 if is_image_too_large_for_plan_error(e):
                     raise
                 had_failures = True
-                print(f'[cloud_sync] Image {img["id"]} push failed: {e}')
+                failure_msg = f'Image {img["id"]}: {type(e).__name__}: {e}'
+                print(f'[cloud_sync] {failure_msg}')
+                _record_original_upload_warning(failure_msg)
             finally:
                 processed_items += 1
                 _advance_progress(progress_state, 1)
         if total_items > processed_items:
             _advance_progress(progress_state, total_items - processed_items)
-        return not had_failures
+        return not (had_failures or anchor_had_failures)
     finally:
         if callable(cleanup):
             try:
@@ -20327,6 +20339,7 @@ def _ensure_metadata_only_microscope_images_for_observation(
         'ensured': 0,
         'skipped': 0,
         'failed': 0,
+        'failures': [],
         'cloud_ids': [],
         'metadata_only_cloud_ids': [],
     }
@@ -20385,9 +20398,11 @@ def _ensure_metadata_only_microscope_images_for_observation(
             if is_cloud_auth_error(exc) or is_cloud_temporary_unavailable_error(exc):
                 raise
             counters['failed'] += 1
+            failure_msg = f'local_image={local_image_id}: {type(exc).__name__}: {exc}'
+            counters['failures'].append(failure_msg)
             print(
                 f'[cloud_sync] Mosaic image metadata: failed '
-                f'local_image={local_image_id}: {exc}',
+                f'{failure_msg}',
                 flush=True,
             )
             continue
@@ -20435,6 +20450,7 @@ def _ensure_metadata_anchors_for_public_spore_observation(
         'ensured': 0,
         'skipped': 0,
         'failed': 0,
+        'failures': [],
         'cloud_ids': [],
         'metadata_only_cloud_ids': [],
     }
@@ -20446,18 +20462,23 @@ def _ensure_metadata_anchors_for_public_spore_observation(
     if visibility != 'public':
         return empty
     try:
-        return _ensure_metadata_only_microscope_images_for_observation(
+        result = _ensure_metadata_only_microscope_images_for_observation(
             client, obs_local_id, obs_cloud_id,
         )
+        inner_failures = result.get('failures') or []
+        if inner_failures:
+            return {**result, 'failures': inner_failures}
+        return result
     except Exception as exc:
         if is_cloud_auth_error(exc) or is_cloud_temporary_unavailable_error(exc):
             raise
+        exc_msg = f'{type(exc).__name__}: {exc}'
         print(
             f'[cloud_sync] Mosaic image metadata: observation failed '
             f'local={obs_local_id} cloud={obs_cloud_id}: {exc}',
             flush=True,
         )
-        return empty
+        return {**empty, 'failures': [exc_msg]}
 
 
 def _push_measurements_for_observation(
