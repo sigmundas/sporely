@@ -172,6 +172,7 @@ _CLOUD_PENDING_IMAGE_REPAIR_VERSION_SETTING = 'cloud_pending_image_repair_versio
 _CLOUD_PENDING_IMAGE_REPAIR_AT_SETTING = 'cloud_pending_image_repair_at'
 _CLOUD_PENDING_IMAGE_REPAIR_VERSION = 1
 _CLOUD_PENDING_IMAGE_REPAIR_INTERVAL_HOURS = 24
+_CLOUD_CHILD_CHANGE_CURSOR_SETTING = 'cloud_child_change_cursor'
 _PULL_NON_BLOCKING_LOCAL_ONLY_FIELDS = frozenset({
     'ai_selected_service',
     'ai_selected_taxon_id',
@@ -2153,6 +2154,8 @@ _PULL_ONLY_ALLOWED_READ_METHODS = frozenset({
     '_observation_images_support_sample_source',
     '_observation_images_support_upload_metadata',
     '_using_default_r',
+    'list_image_changes_since',
+    'list_measurement_changes_since',
 })
 
 
@@ -6153,6 +6156,33 @@ def _cloud_child_safety_pull_due(now: datetime | None = None) -> tuple[bool, str
     return last_at <= stale_before, last_text
 
 
+def _load_child_change_cursor() -> dict | None:
+    """Return stored child-change cursor or None if missing (bootstrap needed)."""
+    raw = get_app_settings().get(_CLOUD_CHILD_CHANGE_CURSOR_SETTING)
+    if not raw:
+        return None
+    try:
+        data = json.loads(str(raw)) if isinstance(raw, str) else raw
+        if (
+            isinstance(data, dict)
+            and isinstance(data.get('images'), dict)
+            and isinstance(data.get('measurements'), dict)
+            and 'ts' in data['images']
+            and 'id' in data['images']
+            and 'ts' in data['measurements']
+            and 'id' in data['measurements']
+        ):
+            return data
+    except Exception:
+        pass
+    return None
+
+
+def _store_child_change_cursor(cursor: dict) -> None:
+    """Persist child-change cursor to app_settings."""
+    update_app_settings({_CLOUD_CHILD_CHANGE_CURSOR_SETTING: json.dumps(cursor)})
+
+
 def _cloud_measurement_remote_verification_due(
     *,
     full_pull: bool,
@@ -6461,6 +6491,51 @@ def sync_all(
                     flush=True,
                 )
 
+        forced_pull_cloud_ids: frozenset[str] = frozenset()
+        child_probe_ok = False
+        child_probe_rows: dict[str, list] = {'images': [], 'measurements': []}
+        if child_safety_pull and not full_pull:
+            cursor = _load_child_change_cursor()
+            if cursor is None:
+                # If the watermark already triggered a safety pull, it will
+                # bootstrap the cursor below. If the watermark is fresh (safety
+                # pull not due), skip the probe silently — no forced IDs, no
+                # extra full pull. Cursor will be seeded next time the 24h
+                # watermark goes stale.
+                if not safety_pull_due:
+                    print('[cloud_sync] child-change cursor missing but watermark fresh: probe skipped', flush=True)
+                else:
+                    print('[cloud_sync] child-change cursor missing: bootstrapping via full safety pull', flush=True)
+            else:
+                try:
+                    img_rows = client.list_image_changes_since(cursor['images']['ts'], cursor['images']['id'])
+                    meas_rows = client.list_measurement_changes_since(cursor['measurements']['ts'], cursor['measurements']['id'])
+                    child_probe_ok = True
+                    child_probe_rows['images'] = img_rows
+                    child_probe_rows['measurements'] = meas_rows
+                    _forced: set[str] = set()
+                    for r in img_rows:
+                        _forced.add(str(r['observation_id']))
+                    for r in meas_rows:
+                        if r.get('observation_id') is not None:
+                            _forced.add(str(r['observation_id']))
+                    forced_pull_cloud_ids = frozenset(_forced)
+                    changed = 'yes' if forced_pull_cloud_ids else 'no'
+                    print(
+                        f"[cloud_sync] child-change watermark check: local={cursor['images']['ts']} "
+                        f"remote_rows={len(img_rows)+len(meas_rows)} changed={changed}",
+                        flush=True,
+                    )
+                    if forced_pull_cloud_ids:
+                        print(
+                            f'[cloud_sync] child-change pull candidates: '
+                            f'rows={len(img_rows)+len(meas_rows)} '
+                            f'observations={len(forced_pull_cloud_ids)}',
+                            flush=True,
+                        )
+                except Exception as e:
+                    print(f'[cloud_sync] child-change probe failed (non-fatal): {e}', flush=True)
+
         # Phase 2: Pull cloud edits to the desktop. A due safety pass changes
         # only candidate breadth; media upload and materialization remain
         # controlled by their existing independent flags.
@@ -6474,6 +6549,7 @@ def sync_all(
                 materialize_remote_images=materialize_remote_images,
                 sync_images=sync_images,
                 full_pull=full_pull or safety_pull_due,
+                forced_pull_cloud_ids=forced_pull_cloud_ids,
             )
         # Row-level review issues are a completed reconciliation outcome, not a
         # failed safety pass. Exceptions from auth, transport, or bulk child
@@ -6493,6 +6569,72 @@ def sync_all(
             })
         if completed_settings:
             update_app_settings(completed_settings)
+
+        # Advance child-change cursor after successful pull
+        if child_safety_pull and not full_pull and child_probe_ok:
+            # Advance images cursor
+            new_img_ts = ''
+            new_img_id = ''
+            for r in child_probe_rows['images']:
+                ts = max(str(r.get('created_at') or ''), str(r.get('deleted_at') or ''))
+                rid = str(r.get('id', ''))
+                if (ts, rid) > (new_img_ts, new_img_id):
+                    new_img_ts, new_img_id = ts, rid
+            # Advance measurements cursor
+            new_meas_ts = ''
+            new_meas_id = ''
+            for r in child_probe_rows['measurements']:
+                ts = str(r.get('measured_at') or '')
+                rid = str(r.get('id', ''))
+                if (ts, rid) > (new_meas_ts, new_meas_id):
+                    new_meas_ts, new_meas_id = ts, rid
+            existing_cursor = _load_child_change_cursor()
+            if existing_cursor is not None:
+                if not new_img_ts:
+                    new_img_ts = existing_cursor['images']['ts']
+                    new_img_id = existing_cursor['images']['id']
+                if not new_meas_ts:
+                    new_meas_ts = existing_cursor['measurements']['ts']
+                    new_meas_id = existing_cursor['measurements']['id']
+            if new_img_ts or new_meas_ts:
+                _store_child_change_cursor({
+                    'images': {'ts': new_img_ts, 'id': new_img_id},
+                    'measurements': {'ts': new_meas_ts, 'id': new_meas_id},
+                })
+
+        # Bootstrap seeding when safety pull runs for the first time (cursor was None)
+        if child_safety_pull and not full_pull and safety_pull_due and _load_child_change_cursor() is None:
+            try:
+                img_seed = client._get(
+                    f'observation_images?user_id=eq.{client.user_id}'
+                    f'&select=id,created_at,deleted_at'
+                    f'&order=created_at.desc&limit=1'
+                )
+                meas_seed = client._get(
+                    f'spore_measurements?user_id=eq.{client.user_id}'
+                    f'&select=id,measured_at'
+                    f'&order=measured_at.desc&limit=1'
+                )
+                _EPOCH = '1970-01-01T00:00:00+00:00'
+                if img_seed:
+                    r = img_seed[0]
+                    img_ts = max(str(r.get('created_at') or ''), str(r.get('deleted_at') or '')) or _EPOCH
+                    img_id = str(r.get('id', ''))
+                else:
+                    img_ts, img_id = _EPOCH, ''
+                if meas_seed:
+                    r = meas_seed[0]
+                    meas_ts = str(r.get('measured_at') or '') or _EPOCH
+                    meas_id = str(r.get('id', ''))
+                else:
+                    meas_ts, meas_id = _EPOCH, ''
+                _store_child_change_cursor({
+                    'images': {'ts': img_ts, 'id': img_id},
+                    'measurements': {'ts': meas_ts, 'id': meas_id},
+                })
+                print('[cloud_sync] child-change cursor bootstrapped', flush=True)
+            except Exception as e:
+                print(f'[cloud_sync] child-change cursor bootstrap failed (non-fatal): {e}', flush=True)
 
         _set_progress_phase(progress_state, 'calibration_pull')
         with _cloud_sync_phase_scope(profiler, 'pull_calibrations'):
@@ -16260,6 +16402,61 @@ class SporelyCloudClient:
                 except Exception:
                     pass
 
+    def list_image_changes_since(self, cursor_ts: str, cursor_id: str) -> list[dict]:
+        """Cheap probe: observation_images rows created or soft-deleted since cursor."""
+        if not cursor_ts:
+            return []
+        rows = self._get_paginated(
+            f'observation_images?user_id=eq.{self.user_id}'
+            f'&or=(created_at.gte.{cursor_ts},deleted_at.gte.{cursor_ts})'
+            f'&select=id,observation_id,created_at,deleted_at'
+            f'&order=created_at.asc,id.asc'
+        )
+        result = []
+        for row in rows:
+            ts = max(
+                str(row.get('created_at') or ''),
+                str(row.get('deleted_at') or ''),
+            )
+            if (ts, str(row.get('id', ''))) > (cursor_ts, cursor_id):
+                result.append(row)
+        return result
+
+    def list_measurement_changes_since(self, cursor_ts: str, cursor_id: str) -> list[dict]:
+        """Cheap probe: spore_measurements rows updated since cursor."""
+        if not cursor_ts:
+            return []
+        rows = self._get_paginated(
+            f'spore_measurements?user_id=eq.{self.user_id}'
+            f'&measured_at=gte.{cursor_ts}'
+            f'&select=id,image_id,measured_at'
+            f'&order=measured_at.asc,id.asc'
+        )
+        result = []
+        for row in rows:
+            ts = str(row.get('measured_at') or '')
+            if (ts, str(row.get('id', ''))) > (cursor_ts, cursor_id):
+                result.append(row)
+        if not result:
+            return result
+        # Map image_id -> observation_id
+        image_ids = list({str(r['image_id']) for r in result if r.get('image_id')})
+        obs_map: dict[str, str] = {}
+        batch_size = 100
+        for i in range(0, len(image_ids), batch_size):
+            chunk = image_ids[i:i + batch_size]
+            ids_str = ','.join(chunk)
+            img_rows = self._get(
+                f'observation_images?id=in.({ids_str})'
+                f'&user_id=eq.{self.user_id}'
+                f'&select=id,observation_id'
+            )
+            for img in (img_rows or []):
+                obs_map[str(img.get('id', ''))] = str(img.get('observation_id', ''))
+        for row in result:
+            row['observation_id'] = obs_map.get(str(row.get('image_id', '')))
+        return result
+
     def search_community_spore_datasets(
         self,
         genus: str,
@@ -22853,6 +23050,7 @@ def pull_all(
     sync_images: bool = True,
     full_pull: bool = True,
     pull_only: bool = False,
+    forced_pull_cloud_ids: frozenset[str] = frozenset(),
 ) -> dict:
     """Pull new cloud observations and apply remote updates to clean local rows.
 
@@ -22965,6 +23163,13 @@ def pull_all(
             local_id = _safe_int((local_obs or {}).get('id')) if local_obs else None
             remote_updated_raw = remote.get('updated_at')
             local_synced_raw = (local_obs or {}).get('synced_at')
+
+            if cloud_id and cloud_id in forced_pull_cloud_ids:
+                _record_reason('child_changed', cloud_id, remote_updated_raw, local_synced_raw, local_id)
+                pruned.append((remote, local_obs, stored_snapshot))
+                if cloud_id:
+                    pruned_cloud_ids.append(cloud_id)
+                continue
 
             if local_obs is None:
                 _record_reason('no_local', cloud_id, remote_updated_raw, local_synced_raw, local_id)
