@@ -173,6 +173,10 @@ _CLOUD_PENDING_IMAGE_REPAIR_AT_SETTING = 'cloud_pending_image_repair_at'
 _CLOUD_PENDING_IMAGE_REPAIR_VERSION = 1
 _CLOUD_PENDING_IMAGE_REPAIR_INTERVAL_HOURS = 24
 _CLOUD_CHILD_CHANGE_CURSOR_SETTING = 'cloud_child_change_cursor'
+# Version must be bumped whenever the image cursor semantics change.
+# v1 (implicit, no 'v' key): used max(created_at, deleted_at) – no updated_at.
+# v2: uses updated_at as the single authoritative timestamp.
+_CHILD_CHANGE_CURSOR_VERSION = 2
 _PULL_NON_BLOCKING_LOCAL_ONLY_FIELDS = frozenset({
     'ai_selected_service',
     'ai_selected_taxon_id',
@@ -6137,7 +6141,14 @@ def _group_remote_measurements_by_observation(
 
 
 def _cloud_child_safety_pull_due(now: datetime | None = None) -> tuple[bool, str | None]:
-    """Return whether the periodic metadata-only child reconciliation is due."""
+    """Return whether the periodic child-reconciliation backstop is due.
+
+    The 24h TTL safety pull is defense-in-depth: it catches anything that falls
+    outside the updated_at cursor's coverage — e.g. hard-deleted rows that leave
+    no updated_at trace, measurement edge-cases where image_id mapping may differ,
+    or any future schema event the cursor does not track.  It is NOT the primary
+    detection mechanism; the cursor probe handles the common case cheaply.
+    """
     raw_last = get_app_settings().get(_CLOUD_LAST_CHILD_SAFETY_PULL_AT_SETTING)
     last_text = str(raw_last or '').strip() or None
     if last_text is None:
@@ -6157,7 +6168,15 @@ def _cloud_child_safety_pull_due(now: datetime | None = None) -> tuple[bool, str
 
 
 def _load_child_change_cursor() -> dict | None:
-    """Return stored child-change cursor or None if missing (bootstrap needed)."""
+    """Return stored child-change cursor or None if missing/old-format (bootstrap needed).
+
+    Returns None for:
+    - missing key
+    - parse failures
+    - cursors without a matching 'v' version marker (format/semantic change —
+      treat conservatively to avoid missing metadata updates that the old
+      created_at/deleted_at cursor never tracked).
+    """
     raw = get_app_settings().get(_CLOUD_CHILD_CHANGE_CURSOR_SETTING)
     if not raw:
         return None
@@ -6165,6 +6184,7 @@ def _load_child_change_cursor() -> dict | None:
         data = json.loads(str(raw)) if isinstance(raw, str) else raw
         if (
             isinstance(data, dict)
+            and data.get('v') == _CHILD_CHANGE_CURSOR_VERSION
             and isinstance(data.get('images'), dict)
             and isinstance(data.get('measurements'), dict)
             and 'ts' in data['images']
@@ -6179,8 +6199,10 @@ def _load_child_change_cursor() -> dict | None:
 
 
 def _store_child_change_cursor(cursor: dict) -> None:
-    """Persist child-change cursor to app_settings."""
-    update_app_settings({_CLOUD_CHILD_CHANGE_CURSOR_SETTING: json.dumps(cursor)})
+    """Persist child-change cursor to app_settings (always written with version marker)."""
+    payload = dict(cursor)
+    payload['v'] = _CHILD_CHANGE_CURSOR_VERSION
+    update_app_settings({_CLOUD_CHILD_CHANGE_CURSOR_SETTING: json.dumps(payload)})
 
 
 def _cloud_measurement_remote_verification_due(
@@ -6494,18 +6516,37 @@ def sync_all(
         forced_pull_cloud_ids: frozenset[str] = frozenset()
         child_probe_ok = False
         child_probe_rows: dict[str, list] = {'images': [], 'measurements': []}
+        # Pre-scan seed captured before the authoritative bootstrap scan so that
+        # nothing written between scan start and cursor seed is skipped on the
+        # next probe. None means bootstrap did not run or pre-capture failed.
+        _pre_scan_img_seed: dict | None = None
+        _pre_scan_meas_seed: dict | None = None
+        _bootstrap_needed = False
+
         if child_safety_pull and not full_pull:
             cursor = _load_child_change_cursor()
             if cursor is None:
-                # If the watermark already triggered a safety pull, it will
-                # bootstrap the cursor below. If the watermark is fresh (safety
-                # pull not due), skip the probe silently — no forced IDs, no
-                # extra full pull. Cursor will be seeded next time the 24h
-                # watermark goes stale.
-                if not safety_pull_due:
-                    print('[cloud_sync] child-change cursor missing but watermark fresh: probe skipped', flush=True)
-                else:
-                    print('[cloud_sync] child-change cursor missing: bootstrapping via full safety pull', flush=True)
+                # No valid cursor (missing or old format): force the authoritative
+                # child safety scan immediately, regardless of the 24h TTL.
+                # Capture remote max(updated_at, id) BEFORE the scan so that rows
+                # written between scan start and cursor seed are not skipped.
+                _bootstrap_needed = True
+                print('[cloud_sync] child-change cursor missing/old: forcing authoritative bootstrap scan', flush=True)
+                try:
+                    img_seed_rows = client._get(
+                        f'observation_images?user_id=eq.{client.user_id}'
+                        f'&select=id,updated_at'
+                        f'&order=updated_at.desc,id.desc&limit=1'
+                    )
+                    meas_seed_rows = client._get(
+                        f'spore_measurements?user_id=eq.{client.user_id}'
+                        f'&select=id,measured_at'
+                        f'&order=measured_at.desc&limit=1'
+                    )
+                    _pre_scan_img_seed = img_seed_rows[0] if img_seed_rows else {}
+                    _pre_scan_meas_seed = meas_seed_rows[0] if meas_seed_rows else {}
+                except Exception as e:
+                    print(f'[cloud_sync] child-change pre-scan seed capture failed (non-fatal): {e}', flush=True)
             else:
                 try:
                     img_rows = client.list_image_changes_since(cursor['images']['ts'], cursor['images']['id'])
@@ -6548,7 +6589,7 @@ def sync_all(
                 sync_calibrations=False,
                 materialize_remote_images=materialize_remote_images,
                 sync_images=sync_images,
-                full_pull=full_pull or safety_pull_due,
+                full_pull=full_pull or safety_pull_due or _bootstrap_needed,
                 forced_pull_cloud_ids=forced_pull_cloud_ids,
             )
         # Row-level review issues are a completed reconciliation outcome, not a
@@ -6572,11 +6613,11 @@ def sync_all(
 
         # Advance child-change cursor after successful pull
         if child_safety_pull and not full_pull and child_probe_ok:
-            # Advance images cursor
+            # Advance images cursor (uses updated_at as authoritative timestamp)
             new_img_ts = ''
             new_img_id = ''
             for r in child_probe_rows['images']:
-                ts = max(str(r.get('created_at') or ''), str(r.get('deleted_at') or ''))
+                ts = str(r.get('updated_at') or '')
                 rid = str(r.get('id', ''))
                 if (ts, rid) > (new_img_ts, new_img_id):
                     new_img_ts, new_img_id = ts, rid
@@ -6596,34 +6637,40 @@ def sync_all(
                 if not new_meas_ts:
                     new_meas_ts = existing_cursor['measurements']['ts']
                     new_meas_id = existing_cursor['measurements']['id']
+            # Only persist when position strictly advanced (avoids a no-op write
+            # when the probe returned no rows and existing cursor is unchanged).
             if new_img_ts or new_meas_ts:
-                _store_child_change_cursor({
-                    'images': {'ts': new_img_ts, 'id': new_img_id},
-                    'measurements': {'ts': new_meas_ts, 'id': new_meas_id},
-                })
+                old_img_ts = (existing_cursor or {}).get('images', {}).get('ts', '')
+                old_img_id = (existing_cursor or {}).get('images', {}).get('id', '')
+                old_meas_ts = (existing_cursor or {}).get('measurements', {}).get('ts', '')
+                old_meas_id = (existing_cursor or {}).get('measurements', {}).get('id', '')
+                position_changed = (
+                    (new_img_ts, new_img_id) != (old_img_ts, old_img_id)
+                    or (new_meas_ts, new_meas_id) != (old_meas_ts, old_meas_id)
+                )
+                if position_changed:
+                    _store_child_change_cursor({
+                        'images': {'ts': new_img_ts, 'id': new_img_id},
+                        'measurements': {'ts': new_meas_ts, 'id': new_meas_id},
+                    })
 
-        # Bootstrap seeding when safety pull runs for the first time (cursor was None)
-        if child_safety_pull and not full_pull and safety_pull_due and _load_child_change_cursor() is None:
+        # Bootstrap seeding: when _bootstrap_needed the full-scan ran above;
+        # seed the cursor with the pre-scan max so that rows written between
+        # scan start and seed are not skipped on the next probe.
+        # On failure, do NOT seed — the next explicit sync retries bootstrap
+        # (repeated full-scan cost while persistently failing is correct behaviour).
+        if child_safety_pull and not full_pull and _bootstrap_needed and _load_child_change_cursor() is None:
             try:
-                img_seed = client._get(
-                    f'observation_images?user_id=eq.{client.user_id}'
-                    f'&select=id,created_at,deleted_at'
-                    f'&order=created_at.desc&limit=1'
-                )
-                meas_seed = client._get(
-                    f'spore_measurements?user_id=eq.{client.user_id}'
-                    f'&select=id,measured_at'
-                    f'&order=measured_at.desc&limit=1'
-                )
                 _EPOCH = '1970-01-01T00:00:00+00:00'
-                if img_seed:
-                    r = img_seed[0]
-                    img_ts = max(str(r.get('created_at') or ''), str(r.get('deleted_at') or '')) or _EPOCH
+                # Use the pre-scan snapshot captured before pull_all ran.
+                if _pre_scan_img_seed is not None:
+                    r = _pre_scan_img_seed
+                    img_ts = str(r.get('updated_at') or '') or _EPOCH
                     img_id = str(r.get('id', ''))
                 else:
                     img_ts, img_id = _EPOCH, ''
-                if meas_seed:
-                    r = meas_seed[0]
+                if _pre_scan_meas_seed is not None:
+                    r = _pre_scan_meas_seed
                     meas_ts = str(r.get('measured_at') or '') or _EPOCH
                     meas_id = str(r.get('id', ''))
                 else:
@@ -6632,9 +6679,12 @@ def sync_all(
                     'images': {'ts': img_ts, 'id': img_id},
                     'measurements': {'ts': meas_ts, 'id': meas_id},
                 })
-                print('[cloud_sync] child-change cursor bootstrapped', flush=True)
+                print('[cloud_sync] child-change cursor bootstrapped after authoritative scan', flush=True)
             except Exception as e:
-                print(f'[cloud_sync] child-change cursor bootstrap failed (non-fatal): {e}', flush=True)
+                print(
+                    f'[cloud_sync] child-change cursor bootstrap seed failed — will retry on next explicit sync: {e}',
+                    flush=True,
+                )
 
         _set_progress_phase(progress_state, 'calibration_pull')
         with _cloud_sync_phase_scope(profiler, 'pull_calibrations'):
@@ -16403,22 +16453,28 @@ class SporelyCloudClient:
                     pass
 
     def list_image_changes_since(self, cursor_ts: str, cursor_id: str) -> list[dict]:
-        """Cheap probe: observation_images rows created or soft-deleted since cursor."""
+        """Cheap probe: observation_images rows updated since cursor (updated_at-based).
+
+        Uses the server-maintained updated_at column (added via migration:
+        every INSERT, metadata UPDATE, soft-delete, and restore advances it;
+        clients cannot spoof it). Ordered by (updated_at, id) to allow exact
+        tie-breaking with no timestamp loss.
+        """
         if not cursor_ts:
             return []
         rows = self._get_paginated(
             f'observation_images?user_id=eq.{self.user_id}'
-            f'&or=(created_at.gte.{cursor_ts},deleted_at.gte.{cursor_ts})'
-            f'&select=id,observation_id,created_at,deleted_at'
-            f'&order=created_at.asc,id.asc'
+            f'&updated_at=gte.{cursor_ts}'
+            f'&select=id,observation_id,updated_at'
+            f'&order=updated_at.asc,id.asc'
         )
         result = []
         for row in rows:
-            ts = max(
-                str(row.get('created_at') or ''),
-                str(row.get('deleted_at') or ''),
-            )
-            if (ts, str(row.get('id', ''))) > (cursor_ts, cursor_id):
+            ts = str(row.get('updated_at') or '')
+            rid = str(row.get('id', ''))
+            # Strict client-side filter: keep rows strictly after the cursor
+            # position, handling identical-ts tie-breaking by id.
+            if ts > cursor_ts or (ts == cursor_ts and rid > cursor_id):
                 result.append(row)
         return result
 

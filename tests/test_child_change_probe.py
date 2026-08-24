@@ -181,6 +181,16 @@ class _MinimalClient:
         return []
 
 
+def _valid_cursor(img_ts='2026-01-01T00:00:00+00:00', img_id='',
+                  meas_ts='2026-01-01T00:00:00+00:00', meas_id='') -> str:
+    """Build a versioned cursor JSON string accepted by _load_child_change_cursor."""
+    return json.dumps({
+        'v': cloud_sync._CHILD_CHANGE_CURSOR_VERSION,
+        'images': {'ts': img_ts, 'id': img_id},
+        'measurements': {'ts': meas_ts, 'id': meas_id},
+    })
+
+
 # ---------------------------------------------------------------------------
 # 1. Regression: forced obs bypasses convergence branch
 # ---------------------------------------------------------------------------
@@ -223,12 +233,12 @@ def test_child_change_forces_pull_candidate(tmp_path, monkeypatch):
 
 
 # ---------------------------------------------------------------------------
-# 2. No rows after cursor advance → empty forced set
+# 2. No rows after cursor advance → empty forced set (updated_at semantics)
 # ---------------------------------------------------------------------------
 
 
 class _FakeClientWithProbe:
-    """Client with list_image_changes_since returning controllable rows."""
+    """Client with list_image_changes_since using updated_at semantics."""
 
     user_id = "user-probe"
 
@@ -237,10 +247,13 @@ class _FakeClientWithProbe:
         self._meas_rows = meas_rows or []
 
     def list_image_changes_since(self, cursor_ts, cursor_id):
-        return [r for r in self._img_rows if (
-            max(str(r.get('created_at') or ''), str(r.get('deleted_at') or '')),
-            str(r.get('id', ''))
-        ) > (cursor_ts, cursor_id)]
+        result = []
+        for r in self._img_rows:
+            ts = str(r.get('updated_at') or '')
+            rid = str(r.get('id', ''))
+            if ts > cursor_ts or (ts == cursor_ts and rid > cursor_id):
+                result.append(r)
+        return result
 
     def list_measurement_changes_since(self, cursor_ts, cursor_id):
         return [r for r in self._meas_rows if (
@@ -254,12 +267,11 @@ def test_no_rows_after_cursor_advance():
     img_row = {
         'id': 'img-1',
         'observation_id': 'cloud-555',
-        'created_at': '2026-07-20T10:00:00+00:00',
-        'deleted_at': None,
+        'updated_at': '2026-07-20T10:00:00+00:00',
     }
     client = _FakeClientWithProbe(img_rows=[img_row])
 
-    # Cursor already at this row's ts+id
+    # Cursor exactly at this row's updated_at + id → nothing newer.
     result = client.list_image_changes_since(
         '2026-07-20T10:00:00+00:00', 'img-1'
     )
@@ -267,17 +279,17 @@ def test_no_rows_after_cursor_advance():
 
 
 # ---------------------------------------------------------------------------
-# 3. Soft delete: deleted_at newer than cursor triggers probe row
+# 3. Soft delete: updated_at advances on delete → probe row returned
 # ---------------------------------------------------------------------------
 
 
 def test_child_softdelete_forces_pull():
-    """A row with deleted_at > cursor_ts but created_at < cursor_ts is returned."""
+    """A row whose updated_at (set by trigger on soft-delete) is newer than
+    the cursor is returned by the probe."""
     img_row = {
         'id': 'img-2',
         'observation_id': 'cloud-555',
-        'created_at': '2026-06-01T00:00:00+00:00',
-        'deleted_at': '2026-07-25T00:00:00+00:00',
+        'updated_at': '2026-07-25T00:00:00+00:00',  # trigger advanced it
     }
     client = _FakeClientWithProbe(img_rows=[img_row])
 
@@ -289,15 +301,15 @@ def test_child_softdelete_forces_pull():
 
 
 # ---------------------------------------------------------------------------
-# 4. Tie semantics
+# 4. Tie semantics: identical updated_at, higher id wins
 # ---------------------------------------------------------------------------
 
 
 def test_tie_semantics():
-    """With two rows at same created_at, cursor at (ts, id_of_first) returns only second."""
+    """With two rows at same updated_at, cursor at (ts, id_of_first) returns only second."""
     ts = '2026-07-20T10:00:00+00:00'
-    row_a = {'id': 'img-a', 'observation_id': 'cloud-1', 'created_at': ts, 'deleted_at': None}
-    row_b = {'id': 'img-b', 'observation_id': 'cloud-2', 'created_at': ts, 'deleted_at': None}
+    row_a = {'id': 'img-a', 'observation_id': 'cloud-1', 'updated_at': ts}
+    row_b = {'id': 'img-b', 'observation_id': 'cloud-2', 'updated_at': ts}
     client = _FakeClientWithProbe(img_rows=[row_a, row_b])
 
     result = client.list_image_changes_since(ts, 'img-a')
@@ -316,10 +328,7 @@ def test_probe_failure_nonfatal(monkeypatch):
 
     settings_store: dict = {
         cloud_sync._CLOUD_MEASUREMENT_RECONCILE_VERSION_SETTING: cloud_sync._CLOUD_MEASUREMENT_RECONCILE_VERSION,
-        cloud_sync._CLOUD_CHILD_CHANGE_CURSOR_SETTING: json.dumps({
-            'images': {'ts': '2026-01-01T00:00:00+00:00', 'id': ''},
-            'measurements': {'ts': '2026-01-01T00:00:00+00:00', 'id': ''},
-        }),
+        cloud_sync._CLOUD_CHILD_CHANGE_CURSOR_SETTING: _valid_cursor(),
     }
     monkeypatch.setattr(cloud_sync, "get_app_settings", lambda: dict(settings_store))
     monkeypatch.setattr(cloud_sync, "update_app_settings", lambda d: settings_store.update(d))
@@ -362,10 +371,7 @@ def test_cursor_not_advanced_on_pull_failure(monkeypatch):
 
     settings_store: dict = {
         cloud_sync._CLOUD_MEASUREMENT_RECONCILE_VERSION_SETTING: cloud_sync._CLOUD_MEASUREMENT_RECONCILE_VERSION,
-        cloud_sync._CLOUD_CHILD_CHANGE_CURSOR_SETTING: json.dumps({
-            'images': {'ts': '2026-01-01T00:00:00+00:00', 'id': ''},
-            'measurements': {'ts': '2026-01-01T00:00:00+00:00', 'id': ''},
-        }),
+        cloud_sync._CLOUD_CHILD_CHANGE_CURSOR_SETTING: _valid_cursor(),
     }
     monkeypatch.setattr(cloud_sync, "get_app_settings", lambda: dict(settings_store))
     store_calls: list = []
@@ -478,3 +484,531 @@ def test_convergence_still_fires_for_non_forced(tmp_path, monkeypatch):
     # Converged → no bulk image fetch needed → fast_path_used
     assert result.get("fast_path_used") is True
     assert client.bulk_image_calls == []
+
+
+# ===========================================================================
+# New tests for updated_at cursor semantics (Tasks 1-4)
+# ===========================================================================
+
+
+# ---------------------------------------------------------------------------
+# N1. New image INSERT detected via updated_at cursor
+# ---------------------------------------------------------------------------
+
+
+def test_new_image_insert_detected_via_updated_at():
+    """A newly inserted image (updated_at > cursor_ts) is returned by probe."""
+    cursor_ts = '2026-07-20T10:00:00+00:00'
+    img_row = {
+        'id': 'img-new',
+        'observation_id': 'cloud-100',
+        'updated_at': '2026-07-21T08:00:00+00:00',
+    }
+    client = _FakeClientWithProbe(img_rows=[img_row])
+    result = client.list_image_changes_since(cursor_ts, '')
+    assert len(result) == 1
+    assert result[0]['id'] == 'img-new'
+
+
+# ---------------------------------------------------------------------------
+# N2. Soft-delete detected (trigger advances updated_at on delete)
+# ---------------------------------------------------------------------------
+
+
+def test_soft_delete_via_updated_at_detected():
+    """Soft-delete advances updated_at via trigger; probe picks it up."""
+    cursor_ts = '2026-07-20T10:00:00+00:00'
+    # Row was created before cursor but deleted (trigger updates updated_at) after.
+    img_row = {
+        'id': 'img-del',
+        'observation_id': 'cloud-200',
+        'updated_at': '2026-07-22T12:00:00+00:00',
+    }
+    client = _FakeClientWithProbe(img_rows=[img_row])
+    result = client.list_image_changes_since(cursor_ts, '')
+    assert len(result) == 1
+    assert result[0]['id'] == 'img-del'
+
+
+# ---------------------------------------------------------------------------
+# N3. Metadata-only child UPDATE detected while parent observation converged
+# ---------------------------------------------------------------------------
+
+
+def test_metadata_update_forces_child_changed_candidate(tmp_path, monkeypatch):
+    """A metadata-only update to an image (updated_at advances, parent obs
+    unchanged/converged) results in forced_pull_cloud_ids with reason child_changed."""
+    db_path = _init_db(tmp_path)
+    _default_monkeypatches(monkeypatch, db_path)
+
+    cloud_id = "cloud-meta"
+    synced_at = "2026-07-15T10:00:00+00:00"
+    _seed_synced_observation(db_path, local_id=300, cloud_id=cloud_id, synced_at=synced_at)
+
+    # Remote obs unchanged (same updated_at as synced_at) → convergence would skip.
+    remote_obs = [{
+        "id": cloud_id,
+        "desktop_id": 300,
+        "updated_at": synced_at,
+        "genus": "Panaeolus",
+        "species": "sp.",
+    }]
+
+    # But an image under this obs had a metadata update after cursor.
+    img_row = {
+        'id': 'img-meta',
+        'observation_id': cloud_id,
+        'updated_at': '2026-07-16T08:00:00+00:00',
+    }
+
+    # Wire up the probe to return this image row.
+    cursor_ts = '2026-07-15T09:00:00+00:00'
+    probe_client_img_rows = [img_row]
+
+    settings_store: dict = {
+        cloud_sync._CLOUD_MEASUREMENT_RECONCILE_VERSION_SETTING: cloud_sync._CLOUD_MEASUREMENT_RECONCILE_VERSION,
+        cloud_sync._CLOUD_CHILD_CHANGE_CURSOR_SETTING: _valid_cursor(img_ts=cursor_ts),
+    }
+
+    forced_ids_seen: list = []
+    original_pull_all = cloud_sync.pull_all
+
+    def _capturing_pull_all(*a, forced_pull_cloud_ids=frozenset(), **kw):
+        forced_ids_seen.append(set(forced_pull_cloud_ids))
+        return {"pulled": 0, "errors": [], "deleted_remote": [], "fast_path_used": True}
+
+    monkeypatch.setattr(cloud_sync, "get_app_settings", lambda: dict(settings_store))
+    monkeypatch.setattr(cloud_sync, "update_app_settings", lambda d: settings_store.update(d))
+    monkeypatch.setattr(cloud_sync, "ensure_database_linked_to_cloud_user", lambda _: None)
+    monkeypatch.setattr(cloud_sync, "push_calibrations", lambda *a, **kw: {"pushed": 0, "total": 0, "errors": []})
+    monkeypatch.setattr(cloud_sync, "pull_calibrations", lambda *a, **kw: {"pulled": 0, "total": 0, "errors": []})
+    monkeypatch.setattr(cloud_sync, "push_all", lambda *a, **kw: {
+        "pushed": 0, "total": 0, "errors": [],
+        "spore_measurement_reconcile": {"candidates": 0, "attempted": 0},
+        "spore_summary_reconcile": {"candidates": 0, "attempted": 0},
+        "sync_summary": cloud_sync._new_sync_summary(),
+    })
+    monkeypatch.setattr(cloud_sync, "pull_all", _capturing_pull_all)
+
+    class _MetaUpdateClient:
+        user_id = "u"
+        def list_remote_observations(self): return remote_obs
+        def list_remote_calibrations(self): return []
+        def list_image_changes_since(self, cursor_ts_, cursor_id):
+            return [r for r in probe_client_img_rows
+                    if str(r['updated_at']) > cursor_ts_]
+        def list_measurement_changes_since(self, *a): return []
+
+    cloud_sync.sync_all(
+        _MetaUpdateClient(),
+        sync_images=False,
+        materialize_remote_images=False,
+        full_pull=False,
+        child_safety_pull=True,
+    )
+
+    assert forced_ids_seen, "pull_all was not called"
+    assert cloud_id in forced_ids_seen[0], (
+        f"cloud_id not in forced set: {forced_ids_seen[0]}"
+    )
+
+
+# ---------------------------------------------------------------------------
+# N4. Identical updated_at + higher id IS detected
+# ---------------------------------------------------------------------------
+
+
+def test_identical_updated_at_higher_id_detected():
+    """Row with same updated_at as cursor but higher id must be returned."""
+    ts = '2026-07-20T10:00:00+00:00'
+    row = {'id': 'img-b', 'observation_id': 'cloud-1', 'updated_at': ts}
+    client = _FakeClientWithProbe(img_rows=[row])
+    # Cursor is at same ts but lower id
+    result = client.list_image_changes_since(ts, 'img-a')
+    assert len(result) == 1
+    assert result[0]['id'] == 'img-b'
+
+
+# ---------------------------------------------------------------------------
+# N5. Identical updated_at + same/lower id NOT reprocessed
+# ---------------------------------------------------------------------------
+
+
+def test_identical_updated_at_same_or_lower_id_not_reprocessed():
+    """Row at same (updated_at, id) as cursor must NOT be returned (not strictly after)."""
+    ts = '2026-07-20T10:00:00+00:00'
+    row_same = {'id': 'img-a', 'observation_id': 'cloud-1', 'updated_at': ts}
+    row_lower = {'id': 'img-0', 'observation_id': 'cloud-2', 'updated_at': ts}
+    client = _FakeClientWithProbe(img_rows=[row_same, row_lower])
+    result = client.list_image_changes_since(ts, 'img-a')
+    assert result == [], f"expected no rows, got: {result}"
+
+
+# ---------------------------------------------------------------------------
+# N6. Echo regression: own desktop image write does not loop
+# ---------------------------------------------------------------------------
+
+
+def test_echo_own_write_does_not_loop(monkeypatch):
+    """Desktop pushes image → probe sees own write (echo) → forced pull →
+    second sync has zero child candidates and no cursor churn."""
+    _EPOCH = '1970-01-01T00:00:00+00:00'
+    img_ts_after_push = '2026-07-20T10:00:00+00:00'
+    img_id = 'img-echo'
+    obs_id = 'cloud-echo'
+
+    # Cursor before the push
+    settings_store: dict = {
+        cloud_sync._CLOUD_MEASUREMENT_RECONCILE_VERSION_SETTING: cloud_sync._CLOUD_MEASUREMENT_RECONCILE_VERSION,
+        cloud_sync._CLOUD_CHILD_CHANGE_CURSOR_SETTING: _valid_cursor(
+            img_ts='2026-07-19T00:00:00+00:00',
+        ),
+    }
+
+    pull_all_calls: list = []
+
+    def _fake_pull_all(*a, forced_pull_cloud_ids=frozenset(), **kw):
+        pull_all_calls.append({'forced': set(forced_pull_cloud_ids)})
+        return {"pulled": 0, "errors": [], "deleted_remote": [], "fast_path_used": True}
+
+    monkeypatch.setattr(cloud_sync, "get_app_settings", lambda: dict(settings_store))
+    monkeypatch.setattr(cloud_sync, "update_app_settings", lambda d: settings_store.update(d))
+    monkeypatch.setattr(cloud_sync, "ensure_database_linked_to_cloud_user", lambda _: None)
+    monkeypatch.setattr(cloud_sync, "push_calibrations", lambda *a, **kw: {"pushed": 0, "total": 0, "errors": []})
+    monkeypatch.setattr(cloud_sync, "pull_calibrations", lambda *a, **kw: {"pulled": 0, "total": 0, "errors": []})
+    monkeypatch.setattr(cloud_sync, "push_all", lambda *a, **kw: {
+        "pushed": 0, "total": 0, "errors": [],
+        "spore_measurement_reconcile": {"candidates": 0, "attempted": 0},
+        "spore_summary_reconcile": {"candidates": 0, "attempted": 0},
+        "sync_summary": cloud_sync._new_sync_summary(),
+    })
+    monkeypatch.setattr(cloud_sync, "pull_all", _fake_pull_all)
+
+    # First sync: probe sees the echo row (own write).
+    class _EchoClient:
+        user_id = "u"
+        _probe_call_count = 0
+
+        def list_remote_observations(self): return []
+        def list_remote_calibrations(self): return []
+
+        def list_image_changes_since(self, cursor_ts, cursor_id):
+            # First probe sees the echo row; subsequent probes see nothing
+            # because cursor has advanced past it.
+            ts = img_ts_after_push
+            rid = img_id
+            if ts > cursor_ts or (ts == cursor_ts and rid > cursor_id):
+                return [{'id': rid, 'observation_id': obs_id, 'updated_at': ts}]
+            return []
+
+        def list_measurement_changes_since(self, *a): return []
+
+    cloud_sync.sync_all(
+        _EchoClient(),
+        sync_images=False,
+        materialize_remote_images=False,
+        full_pull=False,
+        child_safety_pull=True,
+    )
+
+    # First sync: echo row surfaced as forced candidate.
+    assert pull_all_calls, "pull_all not called"
+    assert obs_id in pull_all_calls[0]['forced'], (
+        "echo obs_id should be a forced candidate on first sync"
+    )
+
+    # Second sync: cursor advanced past echo row → zero child candidates.
+    pull_all_calls.clear()
+    cloud_sync.sync_all(
+        _EchoClient(),
+        sync_images=False,
+        materialize_remote_images=False,
+        full_pull=False,
+        child_safety_pull=True,
+    )
+    assert pull_all_calls, "pull_all not called on second sync"
+    assert pull_all_calls[0]['forced'] == set(), (
+        f"second sync should have zero forced child candidates, got: {pull_all_calls[0]['forced']}"
+    )
+
+
+# ---------------------------------------------------------------------------
+# N7. Failed pull does not advance cursor
+# (already covered by test_cursor_not_advanced_on_pull_failure; variant checks
+#  cursor value unchanged on exception)
+# ---------------------------------------------------------------------------
+
+
+def test_failed_pull_cursor_value_unchanged(monkeypatch):
+    """Cursor ts/id must remain identical after a pull_all exception."""
+    original_cursor_json = _valid_cursor(img_ts='2026-06-01T00:00:00+00:00', img_id='img-old')
+    settings_store: dict = {
+        cloud_sync._CLOUD_MEASUREMENT_RECONCILE_VERSION_SETTING: cloud_sync._CLOUD_MEASUREMENT_RECONCILE_VERSION,
+        cloud_sync._CLOUD_CHILD_CHANGE_CURSOR_SETTING: original_cursor_json,
+    }
+    monkeypatch.setattr(cloud_sync, "get_app_settings", lambda: dict(settings_store))
+    monkeypatch.setattr(cloud_sync, "update_app_settings", lambda d: settings_store.update(d))
+    monkeypatch.setattr(cloud_sync, "ensure_database_linked_to_cloud_user", lambda _: None)
+    monkeypatch.setattr(cloud_sync, "push_calibrations", lambda *a, **kw: {"pushed": 0, "total": 0, "errors": []})
+    monkeypatch.setattr(cloud_sync, "pull_calibrations", lambda *a, **kw: {"pulled": 0, "total": 0, "errors": []})
+    monkeypatch.setattr(cloud_sync, "push_all", lambda *a, **kw: {
+        "pushed": 0, "total": 0, "errors": [],
+        "spore_measurement_reconcile": {"candidates": 0, "attempted": 0},
+        "spore_summary_reconcile": {"candidates": 0, "attempted": 0},
+        "sync_summary": cloud_sync._new_sync_summary(),
+    })
+    monkeypatch.setattr(cloud_sync, "pull_all", lambda *a, **kw: (_ for _ in ()).throw(RuntimeError("pull failed")))
+
+    class _ProbeClient:
+        user_id = "u"
+        def list_remote_observations(self): return []
+        def list_remote_calibrations(self): return []
+        def list_image_changes_since(self, *a):
+            return [{'id': 'img-new', 'observation_id': 'obs-1', 'updated_at': '2026-07-01T00:00:00+00:00'}]
+        def list_measurement_changes_since(self, *a): return []
+
+    with pytest.raises(RuntimeError):
+        cloud_sync.sync_all(
+            _ProbeClient(),
+            sync_images=False,
+            materialize_remote_images=False,
+            full_pull=False,
+            child_safety_pull=True,
+        )
+
+    stored = settings_store.get(cloud_sync._CLOUD_CHILD_CHANGE_CURSOR_SETTING)
+    assert stored == original_cursor_json, (
+        f"cursor was modified despite pull failure: {stored}"
+    )
+
+
+# ---------------------------------------------------------------------------
+# N8. Successful pull advances cursor
+# ---------------------------------------------------------------------------
+
+
+def test_successful_pull_advances_cursor(monkeypatch):
+    """After a successful pull_all, cursor is advanced to the probe row's updated_at."""
+    cursor_ts = '2026-06-01T00:00:00+00:00'
+    settings_store: dict = {
+        cloud_sync._CLOUD_MEASUREMENT_RECONCILE_VERSION_SETTING: cloud_sync._CLOUD_MEASUREMENT_RECONCILE_VERSION,
+        cloud_sync._CLOUD_CHILD_CHANGE_CURSOR_SETTING: _valid_cursor(img_ts=cursor_ts),
+    }
+    monkeypatch.setattr(cloud_sync, "get_app_settings", lambda: dict(settings_store))
+    monkeypatch.setattr(cloud_sync, "update_app_settings", lambda d: settings_store.update(d))
+    monkeypatch.setattr(cloud_sync, "ensure_database_linked_to_cloud_user", lambda _: None)
+    monkeypatch.setattr(cloud_sync, "push_calibrations", lambda *a, **kw: {"pushed": 0, "total": 0, "errors": []})
+    monkeypatch.setattr(cloud_sync, "pull_calibrations", lambda *a, **kw: {"pulled": 0, "total": 0, "errors": []})
+    monkeypatch.setattr(cloud_sync, "push_all", lambda *a, **kw: {
+        "pushed": 0, "total": 0, "errors": [],
+        "spore_measurement_reconcile": {"candidates": 0, "attempted": 0},
+        "spore_summary_reconcile": {"candidates": 0, "attempted": 0},
+        "sync_summary": cloud_sync._new_sync_summary(),
+    })
+    monkeypatch.setattr(cloud_sync, "pull_all", lambda *a, **kw: {"pulled": 0, "errors": [], "deleted_remote": []})
+
+    new_ts = '2026-07-20T10:00:00+00:00'
+    new_id = 'img-new'
+
+    class _ProbeClient:
+        user_id = "u"
+        def list_remote_observations(self): return []
+        def list_remote_calibrations(self): return []
+        def list_image_changes_since(self, ts, rid):
+            r = {'id': new_id, 'observation_id': 'obs-1', 'updated_at': new_ts}
+            if new_ts > ts or (new_ts == ts and new_id > rid):
+                return [r]
+            return []
+        def list_measurement_changes_since(self, *a): return []
+
+    cloud_sync.sync_all(
+        _ProbeClient(),
+        sync_images=False,
+        materialize_remote_images=False,
+        full_pull=False,
+        child_safety_pull=True,
+    )
+
+    stored_raw = settings_store.get(cloud_sync._CLOUD_CHILD_CHANGE_CURSOR_SETTING)
+    assert stored_raw is not None, "cursor not stored"
+    stored = json.loads(stored_raw)
+    assert stored['images']['ts'] == new_ts, f"cursor ts not advanced: {stored['images']['ts']}"
+    assert stored['images']['id'] == new_id, f"cursor id not advanced: {stored['images']['id']}"
+    assert stored.get('v') == cloud_sync._CHILD_CHANGE_CURSOR_VERSION
+
+
+# ---------------------------------------------------------------------------
+# N9. Second no-op explicit sync has zero child candidates
+# ---------------------------------------------------------------------------
+
+
+def test_second_noop_sync_zero_child_candidates(monkeypatch):
+    """After cursor advances past all known rows, second sync has zero forced candidates."""
+    img_ts = '2026-07-20T10:00:00+00:00'
+    img_id = 'img-z'
+
+    settings_store: dict = {
+        cloud_sync._CLOUD_MEASUREMENT_RECONCILE_VERSION_SETTING: cloud_sync._CLOUD_MEASUREMENT_RECONCILE_VERSION,
+        cloud_sync._CLOUD_CHILD_CHANGE_CURSOR_SETTING: _valid_cursor(
+            img_ts='2026-07-19T00:00:00+00:00',
+        ),
+    }
+
+    pull_forced: list = []
+
+    def _fake_pull_all(*a, forced_pull_cloud_ids=frozenset(), **kw):
+        pull_forced.append(set(forced_pull_cloud_ids))
+        return {"pulled": 0, "errors": [], "deleted_remote": []}
+
+    monkeypatch.setattr(cloud_sync, "get_app_settings", lambda: dict(settings_store))
+    monkeypatch.setattr(cloud_sync, "update_app_settings", lambda d: settings_store.update(d))
+    monkeypatch.setattr(cloud_sync, "ensure_database_linked_to_cloud_user", lambda _: None)
+    monkeypatch.setattr(cloud_sync, "push_calibrations", lambda *a, **kw: {"pushed": 0, "total": 0, "errors": []})
+    monkeypatch.setattr(cloud_sync, "pull_calibrations", lambda *a, **kw: {"pulled": 0, "total": 0, "errors": []})
+    monkeypatch.setattr(cloud_sync, "push_all", lambda *a, **kw: {
+        "pushed": 0, "total": 0, "errors": [],
+        "spore_measurement_reconcile": {"candidates": 0, "attempted": 0},
+        "spore_summary_reconcile": {"candidates": 0, "attempted": 0},
+        "sync_summary": cloud_sync._new_sync_summary(),
+    })
+    monkeypatch.setattr(cloud_sync, "pull_all", _fake_pull_all)
+
+    class _Client:
+        user_id = "u"
+        def list_remote_observations(self): return []
+        def list_remote_calibrations(self): return []
+        def list_image_changes_since(self, cursor_ts, cursor_id):
+            if img_ts > cursor_ts or (img_ts == cursor_ts and img_id > cursor_id):
+                return [{'id': img_id, 'observation_id': 'obs-z', 'updated_at': img_ts}]
+            return []
+        def list_measurement_changes_since(self, *a): return []
+
+    # First sync: detects the row.
+    cloud_sync.sync_all(_Client(), sync_images=False, materialize_remote_images=False,
+                        full_pull=False, child_safety_pull=True)
+    assert pull_forced[0] == {'obs-z'}, f"first sync should detect row: {pull_forced}"
+
+    # Second sync: cursor advanced → zero candidates.
+    pull_forced.clear()
+    cloud_sync.sync_all(_Client(), sync_images=False, materialize_remote_images=False,
+                        full_pull=False, child_safety_pull=True)
+    assert pull_forced[0] == set(), (
+        f"second sync should have zero forced candidates: {pull_forced[0]}"
+    )
+
+
+# ---------------------------------------------------------------------------
+# N10. Bootstrap: missing/old-format cursor forces authoritative scan
+#       and seeds cursor only after success
+# ---------------------------------------------------------------------------
+
+
+def test_bootstrap_missing_cursor_forces_scan_and_seeds(monkeypatch):
+    """Missing cursor (or old-format) triggers a full scan and seeds cursor after success.
+    Old-format cursor (no 'v' key) is treated as None — bootstrap fires."""
+    _EPOCH = '1970-01-01T00:00:00+00:00'
+    pre_scan_ts = '2026-07-20T10:00:00+00:00'
+    pre_scan_id = 'img-pre'
+
+    # Old-format cursor (no 'v' key) → _load_child_change_cursor returns None.
+    old_cursor = json.dumps({
+        'images': {'ts': '2026-01-01T00:00:00+00:00', 'id': ''},
+        'measurements': {'ts': '2026-01-01T00:00:00+00:00', 'id': ''},
+    })
+
+    settings_store: dict = {
+        cloud_sync._CLOUD_MEASUREMENT_RECONCILE_VERSION_SETTING: cloud_sync._CLOUD_MEASUREMENT_RECONCILE_VERSION,
+        cloud_sync._CLOUD_CHILD_CHANGE_CURSOR_SETTING: old_cursor,
+    }
+
+    pull_all_was_full: list = []
+
+    def _fake_pull_all(*a, full_pull=False, forced_pull_cloud_ids=frozenset(), **kw):
+        pull_all_was_full.append(full_pull)
+        return {"pulled": 0, "errors": [], "deleted_remote": []}
+
+    monkeypatch.setattr(cloud_sync, "get_app_settings", lambda: dict(settings_store))
+    monkeypatch.setattr(cloud_sync, "update_app_settings", lambda d: settings_store.update(d))
+    monkeypatch.setattr(cloud_sync, "ensure_database_linked_to_cloud_user", lambda _: None)
+    monkeypatch.setattr(cloud_sync, "push_calibrations", lambda *a, **kw: {"pushed": 0, "total": 0, "errors": []})
+    monkeypatch.setattr(cloud_sync, "pull_calibrations", lambda *a, **kw: {"pulled": 0, "total": 0, "errors": []})
+    monkeypatch.setattr(cloud_sync, "push_all", lambda *a, **kw: {
+        "pushed": 0, "total": 0, "errors": [],
+        "spore_measurement_reconcile": {"candidates": 0, "attempted": 0},
+        "spore_summary_reconcile": {"candidates": 0, "attempted": 0},
+        "sync_summary": cloud_sync._new_sync_summary(),
+    })
+    monkeypatch.setattr(cloud_sync, "pull_all", _fake_pull_all)
+
+    class _BootstrapClient:
+        user_id = "u"
+        def list_remote_observations(self): return []
+        def list_remote_calibrations(self): return []
+        def list_image_changes_since(self, *a): return []
+        def list_measurement_changes_since(self, *a): return []
+        def _get(self, url):
+            if 'observation_images' in url:
+                return [{'id': pre_scan_id, 'updated_at': pre_scan_ts}]
+            if 'spore_measurements' in url:
+                return [{'id': 'meas-1', 'measured_at': '2026-07-10T00:00:00+00:00'}]
+            return []
+
+    cloud_sync.sync_all(
+        _BootstrapClient(),
+        sync_images=False,
+        materialize_remote_images=False,
+        full_pull=False,
+        child_safety_pull=True,
+    )
+
+    # pull_all must have been called with full_pull=True (bootstrap forces full scan)
+    assert pull_all_was_full, "pull_all was not called"
+    assert pull_all_was_full[0] is True, (
+        f"bootstrap should force full_pull=True, got: {pull_all_was_full[0]}"
+    )
+
+    # Cursor must be seeded with pre-scan max (not missing, not old-format)
+    stored_raw = settings_store.get(cloud_sync._CLOUD_CHILD_CHANGE_CURSOR_SETTING)
+    assert stored_raw is not None, "cursor not seeded after bootstrap"
+    stored = json.loads(stored_raw)
+    assert stored.get('v') == cloud_sync._CHILD_CHANGE_CURSOR_VERSION, "cursor missing version"
+    assert stored['images']['ts'] == pre_scan_ts, (
+        f"cursor should be seeded from pre-scan max: {stored['images']['ts']}"
+    )
+    assert stored['images']['id'] == pre_scan_id
+
+    # Second sync: cursor now valid → probe runs normally (no bootstrap).
+    pull_all_was_full.clear()
+    cloud_sync.sync_all(
+        _BootstrapClient(),
+        sync_images=False,
+        materialize_remote_images=False,
+        full_pull=False,
+        child_safety_pull=True,
+    )
+    # No bootstrap → full_pull should be False (unless 24h TTL fires, which won't here
+    # since safety_pull_due was just set).
+    assert pull_all_was_full, "pull_all not called on second sync"
+    # If 24h just ran, it may be True; what matters is the cursor is not re-bootstrapped.
+    stored_raw2 = settings_store.get(cloud_sync._CLOUD_CHILD_CHANGE_CURSOR_SETTING)
+    stored2 = json.loads(stored_raw2)
+    assert stored2.get('v') == cloud_sync._CHILD_CHANGE_CURSOR_VERSION, (
+        "cursor lost version on second sync"
+    )
+
+
+def test_bootstrap_old_format_cursor_treated_as_missing(monkeypatch):
+    """_load_child_change_cursor returns None for old-format (no 'v') cursor,
+    triggering bootstrap on the next sync."""
+    old_cursor_json = json.dumps({
+        'images': {'ts': '2026-03-01T00:00:00+00:00', 'id': 'img-old'},
+        'measurements': {'ts': '2026-03-01T00:00:00+00:00', 'id': ''},
+    })
+    # Simulate having the old-format in settings
+    settings = {cloud_sync._CLOUD_CHILD_CHANGE_CURSOR_SETTING: old_cursor_json}
+    monkeypatch.setattr(cloud_sync, "get_app_settings", lambda: dict(settings))
+
+    result = cloud_sync._load_child_change_cursor()
+    assert result is None, (
+        "old-format cursor (no 'v') should be treated as None to trigger bootstrap"
+    )

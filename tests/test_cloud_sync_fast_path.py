@@ -16,6 +16,7 @@ Design goal: with 220 observations, a no-op Refresh does 0 bulk fetches.
 
 from __future__ import annotations
 
+import json
 import sqlite3
 from datetime import datetime, timedelta, timezone
 from types import SimpleNamespace
@@ -557,14 +558,27 @@ def _run_safety_sync(
 ):
     pull_kwargs: dict[str, Any] = {}
     settings_updates = settings_updates if settings_updates is not None else []
+    # Always seed a valid versioned cursor so the child-probe path is exercised
+    # without triggering a bootstrap scan (which would add extra update calls and
+    # change pull_kwargs["full_pull"] independently of the safety-pull mechanism).
+    _seeded_cursor = json.dumps({
+        'v': cloud_sync._CHILD_CHANGE_CURSOR_VERSION,
+        'images': {'ts': '2026-01-01T00:00:00+00:00', 'id': ''},
+        'measurements': {'ts': '2026-01-01T00:00:00+00:00', 'id': ''},
+    })
     settings_state = settings_state if settings_state is not None else {
         cloud_sync._CLOUD_MEASUREMENT_RECONCILE_VERSION_SETTING:
             cloud_sync._CLOUD_MEASUREMENT_RECONCILE_VERSION,
+        cloud_sync._CLOUD_CHILD_CHANGE_CURSOR_SETTING: _seeded_cursor,
         **(
             {cloud_sync._CLOUD_LAST_CHILD_SAFETY_PULL_AT_SETTING: watermark}
             if watermark is not None else {}
         ),
     }
+    # Ensure cursor is present even in caller-supplied settings_state so that
+    # existing callers that override settings_state still get probe stubs.
+    if cloud_sync._CLOUD_CHILD_CHANGE_CURSOR_SETTING not in settings_state:
+        settings_state[cloud_sync._CLOUD_CHILD_CHANGE_CURSOR_SETTING] = _seeded_cursor
 
     monkeypatch.setattr(cloud_sync, "get_app_settings", lambda: dict(settings_state))
     monkeypatch.setattr(
@@ -610,9 +624,14 @@ def _run_safety_sync(
         return pull_result or {"pulled": 0, "total": 0, "errors": [], "deleted_remote": []}
 
     monkeypatch.setattr(cloud_sync, "pull_all", _pull)
+
+    # Include probe stubs so list_image_changes_since / list_measurement_changes_since
+    # don't fail with AttributeError when a valid cursor is present.
     client = SimpleNamespace(
         list_remote_observations=lambda: [{"id": "cloud-555"}],
         list_remote_calibrations=lambda: [],
+        list_image_changes_since=lambda *a: [],
+        list_measurement_changes_since=lambda *a: [],
     )
     result = cloud_sync.sync_all(
         client,
