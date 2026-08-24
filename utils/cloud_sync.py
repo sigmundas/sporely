@@ -16467,7 +16467,7 @@ class SporelyCloudClient:
             return []
         rows = self._get_paginated(
             f'observation_images?user_id=eq.{self.user_id}'
-            f'&updated_at=gte.{cursor_ts}'
+            f'&updated_at=gte.{_encode_postgrest_filter_value(cursor_ts)}'
             f'&select=id,observation_id,updated_at'
             f'&order=updated_at.asc,id.asc'
         )
@@ -16487,7 +16487,7 @@ class SporelyCloudClient:
             return []
         rows = self._get_paginated(
             f'spore_measurements?user_id=eq.{self.user_id}'
-            f'&measured_at=gte.{cursor_ts}'
+            f'&measured_at=gte.{_encode_postgrest_filter_value(cursor_ts)}'
             f'&select=id,image_id,measured_at'
             f'&order=measured_at.asc,id.asc'
         )

@@ -1016,3 +1016,72 @@ def test_bootstrap_old_format_cursor_treated_as_missing(monkeypatch):
     assert result is None, (
         "old-format cursor (no 'v') should be treated as None to trigger bootstrap"
     )
+
+
+# ---------------------------------------------------------------------------
+# URL encoding of cursor timestamps (production 22007 regression)
+#
+# PostgREST parses an unencoded '+' in a query string as a space, turning
+# '2026-08-24T10:50:24+00:00' into '2026-08-24T10:50:24 00:00' and failing
+# with 22007 invalid input syntax. Cursor values must go through
+# _encode_postgrest_filter_value before URL interpolation.
+# ---------------------------------------------------------------------------
+
+
+def _real_client_with_captured_paths():
+    client = object.__new__(cloud_sync.SporelyCloudClient)
+    client.user_id = 'user-1'
+    captured: list[str] = []
+
+    def fake_get_paginated(path, **kwargs):
+        captured.append(path)
+        return []
+
+    client._get_paginated = fake_get_paginated
+    return client, captured
+
+
+def test_image_probe_encodes_utc_plus_offset():
+    client, captured = _real_client_with_captured_paths()
+    client.list_image_changes_since('2026-08-24T10:50:24.571833+00:00', 'img-1')
+    assert len(captured) == 1
+    assert 'updated_at=gte.2026-08-24T10%3A50%3A24.571833%2B00%3A00' in captured[0]
+    assert '+' not in captured[0].split('updated_at=gte.')[1].split('&')[0]
+
+
+def test_image_probe_encodes_positive_nonzero_offset():
+    client, captured = _real_client_with_captured_paths()
+    client.list_image_changes_since('2026-08-24T12:50:24+02:00', '')
+    assert '%2B02%3A00' in captured[0]
+
+
+def test_image_probe_negative_offset_remains_valid():
+    client, captured = _real_client_with_captured_paths()
+    client.list_image_changes_since('2026-08-24T05:50:24-05:00', '')
+    # '-' is an unreserved URL character: it must survive literally and the
+    # colons must be percent-encoded.
+    assert 'updated_at=gte.2026-08-24T05%3A50%3A24-05%3A00' in captured[0]
+
+
+def test_measurement_probe_uses_same_safe_encoding():
+    client, captured = _real_client_with_captured_paths()
+    client.list_measurement_changes_since('2026-08-24T10:50:24+00:00', 'm-1')
+    assert len(captured) == 1
+    assert 'measured_at=gte.2026-08-24T10%3A50%3A24%2B00%3A00' in captured[0]
+    assert '+' not in captured[0].split('measured_at=gte.')[1].split('&')[0]
+
+
+def test_strict_tuple_filter_unchanged_by_encoding():
+    client = object.__new__(cloud_sync.SporelyCloudClient)
+    client.user_id = 'user-1'
+    ts = '2026-08-24T10:50:24+00:00'
+    rows = [
+        {'id': 'img-1', 'observation_id': 'o1', 'updated_at': ts},          # == ts, same id: excluded
+        {'id': 'img-2', 'observation_id': 'o1', 'updated_at': ts},          # == ts, higher id: included
+        {'id': 'img-0', 'observation_id': 'o2', 'updated_at': ts},          # == ts, lower id: excluded
+        {'id': 'img-3', 'observation_id': 'o3',
+         'updated_at': '2026-08-24T10:50:25+00:00'},                        # > ts: included
+    ]
+    client._get_paginated = lambda path, **kw: rows
+    result = client.list_image_changes_since(ts, 'img-1')
+    assert [r['id'] for r in result] == ['img-2', 'img-3']
