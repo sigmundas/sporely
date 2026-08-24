@@ -1026,3 +1026,100 @@ def test_metadata_only_refresh_excludes_field_images_from_patch(
     assert upload_calls == [], (
         f"Metadata-only PATCH must not upload bytes; got {upload_calls}"
     )
+
+
+# ---------------------------------------------------------------------------
+# Live loop regressions (obs 580/673/742): ai_selected_at timestamp-format
+# false diffs and unadopted merge-filled red_list_category.
+# ---------------------------------------------------------------------------
+
+
+def test_ai_selected_at_z_suffix_matches_offset_form():
+    """'...Z' (desktop) and '...+00:00' (PostgREST) are the same instant and
+    must not register as a local-only change (live obs 580 dirty loop)."""
+    assert cloud_sync._observation_field_values_match(
+        'ai_selected_at', '2026-07-26T20:08:40Z', '2026-07-26T20:08:40+00:00'
+    )
+    assert cloud_sync._observation_field_values_match(
+        'ai_selected_at', '2026-07-26T20:08:40+00:00', '2026-07-26T20:08:40Z'
+    )
+    # Genuinely different instants still diff.
+    assert not cloud_sync._observation_field_values_match(
+        'ai_selected_at', '2026-07-26T20:08:40Z', '2026-07-26T20:08:41+00:00'
+    )
+    # None/empty semantics preserved.
+    assert cloud_sync._observation_field_values_match('ai_selected_at', None, '')
+    assert not cloud_sync._observation_field_values_match(
+        'ai_selected_at', None, '2026-07-26T20:08:40Z'
+    )
+
+
+def test_analyze_field_changes_ignores_timestamp_format_drift():
+    """Local Z-form vs baseline offset-form must not appear in local_only_fields."""
+    base = {
+        'id': '887', 'desktop_id': 580, 'genus': 'Amanita', 'species': 'fulva',
+        'ai_selected_at': '2026-07-26T20:08:40+00:00',
+    }
+    local = dict(base, ai_selected_at='2026-07-26T20:08:40Z')
+    local['cloud_id'] = '887'
+    local['id'] = 580
+    changes = cloud_sync._analyze_observation_field_changes(local, base, base)
+    assert 'ai_selected_at' not in changes['local_only_fields']
+    assert 'ai_selected_at' not in changes['conflict_fields']
+
+
+def test_adopt_merge_filled_fields_writes_local_row(monkeypatch, tmp_path):
+    """When the push payload fills red_list_category from the cloud row, the
+    local row must adopt the value so it stops diffing against the snapshot
+    (live obs 673/742 dirty loop)."""
+    db_path = tmp_path / 'adopt.sqlite'
+    conn = sqlite3.connect(db_path)
+    conn.execute(
+        "CREATE TABLE observations (id INTEGER PRIMARY KEY, genus TEXT, species TEXT, "
+        "ai_selected_at TEXT, red_list_category TEXT, red_list_categories_json TEXT, "
+        "ai_selected_service TEXT, ai_selected_taxon_id TEXT, "
+        "ai_selected_scientific_name TEXT, ai_selected_probability REAL)"
+    )
+    conn.execute(
+        "INSERT INTO observations (id, genus, species, red_list_category) "
+        "VALUES (673, 'Hygrocybe', 'conica', NULL)"
+    )
+    conn.commit()
+    conn.close()
+
+    def _conn():
+        c = sqlite3.connect(db_path)
+        c.row_factory = sqlite3.Row
+        return c
+
+    monkeypatch.setattr(cloud_sync, 'get_connection', _conn)
+
+    local_obs = {'id': 673, 'genus': 'Hygrocybe', 'species': 'conica',
+                 'red_list_category': None}
+    remote_obs = {'id': '996', 'red_list_category': 'LC',
+                  'red_list_categories_json': {'artsorakel': 'LC'}}
+    merged = cloud_sync._merge_cloud_selected_ai_fields(local_obs, remote_obs)
+    assert merged['red_list_category'] == 'LC'
+
+    cloud_sync._adopt_merge_filled_ai_fields_locally(673, local_obs, merged)
+
+    check = sqlite3.connect(db_path)
+    row = check.execute(
+        "SELECT red_list_category, red_list_categories_json FROM observations WHERE id=673"
+    ).fetchone()
+    check.close()
+    assert row[0] == 'LC'
+    assert json.loads(row[1]) == {'artsorakel': 'LC'}
+
+
+def test_adopt_merge_filled_fields_noop_when_nothing_filled(monkeypatch):
+    """No DB write when local already has values (or merge filled nothing)."""
+    calls = []
+    monkeypatch.setattr(
+        cloud_sync, 'get_connection',
+        lambda: calls.append(1) or (_ for _ in ()).throw(AssertionError('must not connect')),
+    )
+    local_obs = {'id': 1, 'red_list_category': 'VU'}
+    merged = dict(local_obs)
+    cloud_sync._adopt_merge_filled_ai_fields_locally(1, local_obs, merged)
+    assert calls == []

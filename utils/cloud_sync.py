@@ -3397,7 +3397,32 @@ def _normalize_observation_field_value(field: str, value):
     return _normalize_snapshot_value(value)
 
 
+_OBSERVATION_TIMESTAMP_FIELDS = frozenset({'ai_selected_at'})
+
+
+def _normalize_observation_timestamp_value(value) -> str | None:
+    """Canonical instant for comparison: '...Z' and '...+00:00' must match.
+
+    The desktop stores UTC timestamps with a 'Z' suffix while PostgREST
+    returns '+00:00'; raw string equality treats the same instant as a
+    perpetual local-only change (dirty/push loop). Unparseable values fall
+    back to the stripped original so garbage still compares deterministically.
+    """
+    text = str(value or '').strip()
+    if not text:
+        return None
+    try:
+        return datetime.fromisoformat(text.replace('Z', '+00:00')).isoformat()
+    except ValueError:
+        return text
+
+
 def _observation_field_values_match(field: str, left, right) -> bool:
+    if field in _OBSERVATION_TIMESTAMP_FIELDS:
+        return (
+            _normalize_observation_timestamp_value(left)
+            == _normalize_observation_timestamp_value(right)
+        )
     if field in _OBSERVATION_FLOAT_FIELDS:
         left_value = _normalize_observation_float_value(left)
         right_value = _normalize_observation_float_value(right)
@@ -9713,6 +9738,17 @@ def _remote_observation_extra_values(remote: dict) -> dict:
     }
 
 
+_MERGE_PROTECTED_AI_FIELDS = (
+    'ai_selected_service',
+    'ai_selected_taxon_id',
+    'ai_selected_scientific_name',
+    'ai_selected_probability',
+    'ai_selected_at',
+    'red_list_category',
+    'red_list_categories_json',
+)
+
+
 def _merge_cloud_selected_ai_fields(local_obs: dict | None, remote_obs: dict | None) -> dict:
     """Preserve cloud-side selected AI values for an existing identification.
 
@@ -9740,15 +9776,7 @@ def _merge_cloud_selected_ai_fields(local_obs: dict | None, remote_obs: dict | N
             for field in identification_fields
         )
     )
-    for field in (
-        'ai_selected_service',
-        'ai_selected_taxon_id',
-        'ai_selected_scientific_name',
-        'ai_selected_probability',
-        'ai_selected_at',
-        'red_list_category',
-        'red_list_categories_json',
-    ):
+    for field in _MERGE_PROTECTED_AI_FIELDS:
         # An empty local identification is an explicit tombstone when the row
         # is pushed. Preserve raw observation_identifications separately, but
         # do not resurrect the previously selected AI taxon or red-list data.
@@ -9761,6 +9789,50 @@ def _merge_cloud_selected_ai_fields(local_obs: dict | None, remote_obs: dict | N
         if remote_value not in (None, ''):
             merged[field] = remote_value
     return merged
+
+
+def _adopt_merge_filled_ai_fields_locally(local_id, local_obs: dict | None, merged: dict | None) -> None:
+    """Persist merge-protected fields that the push payload filled from cloud.
+
+    ``_merge_cloud_selected_ai_fields`` fills local NULL/'' AI-selection and
+    red-list fields from the remote row so an unrelated push cannot wipe
+    them. Without also adopting those values into the LOCAL row, the cloud
+    row and the stored snapshot carry the value while the local column stays
+    NULL — a manufactured local-only diff that re-marks the observation
+    dirty on every subsequent pull (perpetual push/pull loop, live obs
+    673/742 red_list_category). Writes only the filled columns; never
+    touches sync status or dirty flags.
+    """
+    try:
+        obs_id = int(local_id)
+    except (TypeError, ValueError):
+        return
+    if obs_id <= 0:
+        return
+    updates: dict[str, object] = {}
+    local_row = dict(local_obs or {})
+    merged_row = dict(merged or {})
+    for field in _MERGE_PROTECTED_AI_FIELDS:
+        if local_row.get(field) not in (None, ''):
+            continue
+        merged_value = merged_row.get(field)
+        if merged_value in (None, ''):
+            continue
+        if isinstance(merged_value, (dict, list)):
+            merged_value = json.dumps(merged_value)
+        updates[field] = merged_value
+    if not updates:
+        return
+    conn = get_connection()
+    try:
+        assignments = ', '.join(f'{column} = ?' for column in updates)
+        conn.execute(
+            f'UPDATE observations SET {assignments} WHERE id = ?',
+            (*updates.values(), obs_id),
+        )
+        conn.commit()
+    finally:
+        conn.close()
 
 
 def _normalize_cloud_identification_service(value: object) -> str | None:
@@ -11514,9 +11586,10 @@ def resolve_conflict_keep_local(
         except Exception:
             remote_obs = None
 
+    merged_obs = _merge_cloud_selected_ai_fields(local_obs, remote_obs)
     try:
         cloud_id = client.push_observation(
-            _merge_cloud_selected_ai_fields(local_obs, remote_obs),
+            merged_obs,
             remote_obs=remote_obs,
         )
     except Exception as exc:
@@ -11530,6 +11603,7 @@ def resolve_conflict_keep_local(
             'blocked_reason': blocked_reason,
             'raw_error': str(exc),
         }
+    _adopt_merge_filled_ai_fields_locally(local_id, local_obs, merged_obs)
     conn = get_connection()
     try:
         cursor = conn.cursor()
@@ -11723,9 +11797,10 @@ def resolve_conflict_merge(
         warnings = []
 
     # Then push the local observation (which now includes merged images)
+    merged_obs = _merge_cloud_selected_ai_fields(local_obs, remote_obs)
     try:
         cloud_id = client.push_observation(
-            _merge_cloud_selected_ai_fields(local_obs, remote_obs),
+            merged_obs,
             remote_obs=remote_obs,
         )
     except Exception as exc:
@@ -11740,6 +11815,7 @@ def resolve_conflict_merge(
             'raw_error': str(exc),
             'warnings': warnings,
         }
+    _adopt_merge_filled_ai_fields_locally(local_id, local_obs, merged_obs)
     conn = get_connection()
     try:
         cursor = conn.cursor()
@@ -18563,10 +18639,12 @@ def push_all(
             # below clears any prior review-pending marker as part of the
             # normal `dirty→synced` transition.
 
+            merged_payload = _merge_cloud_selected_ai_fields(push_payload, remote)
             cloud_id = client.push_observation(
-                _merge_cloud_selected_ai_fields(push_payload, remote),
+                merged_payload,
                 remote_obs=remote,
             )
+            _adopt_merge_filled_ai_fields_locally(obs.get('id'), push_payload, merged_payload)
 
             # Update local record with cloud_id and sync_status
             previous_status = str(obs.get('sync_status') or '').strip().lower()
