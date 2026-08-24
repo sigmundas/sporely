@@ -202,7 +202,7 @@ class _PushAllImageClient(cloud_sync.SporelyCloudClient):
             raise cloud_sync.CloudSyncError(cloud_sync.IMAGE_TOO_LARGE_FOR_PLAN_MESSAGE)
         return storage_path or self._build_storage_path(obs_cloud_id, img_cloud_id, local_path)
 
-    def push_image_metadata(self, img: dict, obs_cloud_id: str, storage_path: str) -> str:
+    def push_image_metadata(self, img: dict, obs_cloud_id: str, storage_path: str, *, remote_row: dict | None = None) -> str:
         cloud_id = str(img.get("cloud_id") or "").strip() or f"cloud-image-{len(self.push_metadata_calls) + 1}"
         self.push_metadata_calls.append(
             {
@@ -1621,7 +1621,7 @@ def test_push_images_for_observation_metadata_patch_does_not_emit_uploading_prog
         upload_calls.append((str(local_path), str(obs_cloud_id), str(img_cloud_id), storage_path))
         return storage_path
 
-    def fake_push_image_metadata(img, obs_cloud_id, storage_path):
+    def fake_push_image_metadata(img, obs_cloud_id, storage_path, *, remote_row=None):
         metadata_patch_calls.append((str(obs_cloud_id), dict(img)))
         return "cloud-image-1"
 
@@ -1726,7 +1726,7 @@ def test_push_images_for_observation_emits_uploading_when_file_bytes_are_sent(
         return storage_path
 
     monkeypatch.setattr(client, "upload_image_file", fake_upload_image_file)
-    monkeypatch.setattr(client, "push_image_metadata", lambda img, obs_cloud_id, storage_path: "cloud-image-11")
+    monkeypatch.setattr(client, "push_image_metadata", lambda img, obs_cloud_id, storage_path, **kwargs: "cloud-image-11")
 
     result = cloud_sync._push_images_for_observation(
         client,
@@ -4837,7 +4837,7 @@ def test_push_images_for_observation_skips_tombstoned_local_image_id(monkeypatch
     monkeypatch.setattr(client, "_observation_images_support_upload_metadata", lambda: False)
     monkeypatch.setattr(client, "_patch", lambda *args, **kwargs: None)
 
-    def fake_push_image_metadata(img, obs_cloud_id, storage_path):
+    def fake_push_image_metadata(img, obs_cloud_id, storage_path, *, remote_row=None):
         pushed_ids.append(int(img["id"]))
         return f"cloud-image-{int(img['id'])}"
 
@@ -5629,7 +5629,7 @@ def test_push_images_for_observation_keeps_cloud_recovery_cache_image(monkeypatc
     monkeypatch.setattr(
         client,
         "push_image_metadata",
-        lambda img, obs_cloud_id, storage_path: "cloud-image-1",
+        lambda img, obs_cloud_id, storage_path, **kwargs: "cloud-image-1",
     )
     monkeypatch.setattr(cloud_sync, "_push_pending_image_tombstones", lambda client: [])
     monkeypatch.setattr(cloud_sync, "generate_all_sizes", lambda *args, **kwargs: None)

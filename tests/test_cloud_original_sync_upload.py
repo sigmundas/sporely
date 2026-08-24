@@ -166,7 +166,7 @@ class _MemoryOriginalSyncClient(cloud_sync.SporelyCloudClient):
             raise cloud_sync.CloudSyncError("Original media upload failed: worker refused")
         return storage_path or self._build_original_storage_path(obs_cloud_id, img_cloud_id, local_path)
 
-    def push_image_metadata(self, img: dict, obs_cloud_id: str, storage_path: str) -> str:
+    def push_image_metadata(self, img: dict, obs_cloud_id: str, storage_path: str, *, remote_row: dict | None = None) -> str:
         payload = {col: img.get(col) for col in cloud_sync._IMG_PUSH_COLS}
         captured_at = cloud_sync._normalize_image_captured_at_for_cloud(
             img.get("captured_at"), local=True

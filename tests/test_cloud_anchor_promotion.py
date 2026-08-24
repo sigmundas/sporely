@@ -226,7 +226,7 @@ class _PromotionSyncClient(cloud_sync.SporelyCloudClient):
         self.storage_objects.add(key)
         return key
 
-    def push_image_metadata(self, img: dict, obs_cloud_id: str, storage_path: str) -> str:
+    def push_image_metadata(self, img: dict, obs_cloud_id: str, storage_path: str, *, remote_row: dict | None = None) -> str:
         desktop_id = img.get("id")
         existing = next(
             (
