@@ -989,7 +989,11 @@ def test_bootstrap_missing_cursor_forces_scan_and_seeds(monkeypatch):
     # No bootstrap → full_pull should be False (unless 24h TTL fires, which won't here
     # since safety_pull_due was just set).
     assert pull_all_was_full, "pull_all not called on second sync"
-    # If 24h just ran, it may be True; what matters is the cursor is not re-bootstrapped.
+    # Watermark was just written and the cursor is valid, so neither the TTL
+    # nor bootstrap may force a full pull — this is the no-repeat guarantee.
+    assert pull_all_was_full[0] is False, (
+        f"second sync must not re-bootstrap a full pull, got: {pull_all_was_full[0]}"
+    )
     stored_raw2 = settings_store.get(cloud_sync._CLOUD_CHILD_CHANGE_CURSOR_SETTING)
     stored2 = json.loads(stored_raw2)
     assert stored2.get('v') == cloud_sync._CHILD_CHANGE_CURSOR_VERSION, (

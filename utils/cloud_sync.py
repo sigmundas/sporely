@@ -6657,8 +6657,11 @@ def sync_all(
         # Bootstrap seeding: when _bootstrap_needed the full-scan ran above;
         # seed the cursor with the pre-scan max so that rows written between
         # scan start and seed are not skipped on the next probe.
-        # On failure, do NOT seed — the next explicit sync retries bootstrap
-        # (repeated full-scan cost while persistently failing is correct behaviour).
+        # If pull_all raised we never reach this block, so a failed scan does not
+        # seed — the next explicit sync retries bootstrap (repeated full-scan cost
+        # while persistently failing is correct behaviour). If only the pre-scan
+        # max capture failed, seeding at EPOCH is the safe fallback: the next
+        # probe re-reads everything rather than skipping anything.
         if child_safety_pull and not full_pull and _bootstrap_needed and _load_child_change_cursor() is None:
             try:
                 _EPOCH = '1970-01-01T00:00:00+00:00'
