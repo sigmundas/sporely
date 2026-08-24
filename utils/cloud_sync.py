@@ -6205,6 +6205,25 @@ def _store_child_change_cursor(cursor: dict) -> None:
     update_app_settings({_CLOUD_CHILD_CHANGE_CURSOR_SETTING: json.dumps(payload)})
 
 
+def _child_change_cursor_id_key(rid) -> tuple:
+    """Ordering key for child-change cursor row ids.
+
+    Cloud row ids are numeric (bigint), but the cursor stores them as strings.
+    Plain string comparison misorders across digit-length boundaries
+    ('10000' < '9999'), which would silently drop genuinely new rows from the
+    strict tuple filter and pick the wrong maximum when advancing the cursor.
+    Empty (no position yet) sorts before every id; non-numeric ids (defensive)
+    sort after all numeric ids, lexicographically — matching nothing the server
+    currently produces but keeping the ordering total.
+    """
+    s = str(rid or '').strip()
+    if not s:
+        return (-1, 0, '')
+    if s.isdigit():
+        return (0, len(s), s)
+    return (1, 0, s)
+
+
 def _cloud_measurement_remote_verification_due(
     *,
     full_pull: bool,
@@ -6563,7 +6582,9 @@ def sync_all(
                     forced_pull_cloud_ids = frozenset(_forced)
                     changed = 'yes' if forced_pull_cloud_ids else 'no'
                     print(
-                        f"[cloud_sync] child-change watermark check: local={cursor['images']['ts']} "
+                        f"[cloud_sync] child-change watermark check: "
+                        f"local_images=({cursor['images']['ts']}, {cursor['images']['id'] or '<none>'}) "
+                        f"local_measurements=({cursor['measurements']['ts']}, {cursor['measurements']['id'] or '<none>'}) "
                         f"remote_rows={len(img_rows)+len(meas_rows)} changed={changed}",
                         flush=True,
                     )
@@ -6613,13 +6634,18 @@ def sync_all(
 
         # Advance child-change cursor after successful pull
         if child_safety_pull and not full_pull and child_probe_ok:
-            # Advance images cursor (uses updated_at as authoritative timestamp)
+            # Advance images cursor (uses updated_at as authoritative timestamp).
+            # Ids compare numerically via _child_change_cursor_id_key so the
+            # committed position is the true MAX(updated_at, id) over every
+            # inspected row, matching the strict filter's ordering exactly.
             new_img_ts = ''
             new_img_id = ''
             for r in child_probe_rows['images']:
                 ts = str(r.get('updated_at') or '')
                 rid = str(r.get('id', ''))
-                if (ts, rid) > (new_img_ts, new_img_id):
+                if (ts, _child_change_cursor_id_key(rid)) > (
+                    new_img_ts, _child_change_cursor_id_key(new_img_id)
+                ):
                     new_img_ts, new_img_id = ts, rid
             # Advance measurements cursor
             new_meas_ts = ''
@@ -6627,7 +6653,9 @@ def sync_all(
             for r in child_probe_rows['measurements']:
                 ts = str(r.get('measured_at') or '')
                 rid = str(r.get('id', ''))
-                if (ts, rid) > (new_meas_ts, new_meas_id):
+                if (ts, _child_change_cursor_id_key(rid)) > (
+                    new_meas_ts, _child_change_cursor_id_key(new_meas_id)
+                ):
                     new_meas_ts, new_meas_id = ts, rid
             existing_cursor = _load_child_change_cursor()
             if existing_cursor is not None:
@@ -10761,7 +10789,11 @@ def _ensure_local_metadata_only_microscope_anchor(
             },
         )
 
-    if client is not None and not getattr(client, 'is_pull_only', False):
+    if (
+        client is not None
+        and not getattr(client, 'is_pull_only', False)
+        and not _remote_image_desktop_id_current(remote_row, local_image_id)
+    ):
         set_image_desktop_id = getattr(client, 'set_image_desktop_id', None)
         if callable(set_image_desktop_id):
             try:
@@ -10925,6 +10957,27 @@ def _sync_existing_remote_image_to_local(
         shutil.rmtree(temp_dir, ignore_errors=True)
 
 
+def _remote_image_desktop_id_current(remote_image, local_image_id) -> bool:
+    """True when the cloud row's desktop_id already equals the local image id.
+
+    Guards every ``set_image_desktop_id`` call in the pull path. The PATCH used
+    to be a tolerated no-op when the link was already correct, but the cloud
+    ``updated_at`` trigger now advances on EVERY update — so an unconditional
+    relink PATCH per pulled image makes each sync's own writes look like child
+    changes to the next sync's probe (self-sustaining full-pull echo loop).
+    """
+    try:
+        lid = int(local_image_id)
+    except (TypeError, ValueError):
+        return False
+    if lid <= 0:
+        return False
+    try:
+        return int((remote_image or {}).get('desktop_id')) == lid
+    except (TypeError, ValueError):
+        return False
+
+
 def _apply_remote_images_to_local(
     client: "SporelyCloudClient",
     local_id: int,
@@ -10972,7 +11025,9 @@ def _apply_remote_images_to_local(
                 continue
             if not materialize_remote_images:
                 _apply_remote_image_metadata_only_to_local(local_image, remote_image)
-                if not pull_only:
+                if not pull_only and not _remote_image_desktop_id_current(
+                    remote_image, local_image.get('id')
+                ):
                     try:
                         client.set_image_desktop_id(cloud_image_id, int(local_image.get('id')))
                         remote_image['desktop_id'] = int(local_image.get('id'))
@@ -10991,7 +11046,9 @@ def _apply_remote_images_to_local(
                     print(f'[cloud_sync] Warning: {_cloud_missing_image_warning(local_id, remote_image)}')
                     continue
                 raise
-            if not pull_only:
+            if not pull_only and not _remote_image_desktop_id_current(
+                remote_image, local_image.get('id')
+            ):
                 try:
                     client.set_image_desktop_id(cloud_image_id, int(local_image.get('id')))
                     remote_image['desktop_id'] = int(local_image.get('id'))
@@ -11094,7 +11151,9 @@ def _apply_remote_images_to_local(
                 conn.commit()
             finally:
                 conn.close()
-            if not pull_only:
+            if not pull_only and not _remote_image_desktop_id_current(
+                remote_image, local_image_id
+            ):
                 try:
                     client.set_image_desktop_id(cloud_image_id, int(local_image_id))
                     remote_image['desktop_id'] = int(local_image_id)
@@ -16476,8 +16535,11 @@ class SporelyCloudClient:
             ts = str(row.get('updated_at') or '')
             rid = str(row.get('id', ''))
             # Strict client-side filter: keep rows strictly after the cursor
-            # position, handling identical-ts tie-breaking by id.
-            if ts > cursor_ts or (ts == cursor_ts and rid > cursor_id):
+            # position, handling identical-ts tie-breaking by numeric id.
+            if ts > cursor_ts or (
+                ts == cursor_ts
+                and _child_change_cursor_id_key(rid) > _child_change_cursor_id_key(cursor_id)
+            ):
                 result.append(row)
         return result
 
@@ -16494,7 +16556,9 @@ class SporelyCloudClient:
         result = []
         for row in rows:
             ts = str(row.get('measured_at') or '')
-            if (ts, str(row.get('id', ''))) > (cursor_ts, cursor_id):
+            if (ts, _child_change_cursor_id_key(row.get('id', ''))) > (
+                cursor_ts, _child_change_cursor_id_key(cursor_id)
+            ):
                 result.append(row)
         if not result:
             return result
@@ -24136,7 +24200,9 @@ def _import_remote_images(
                 finally:
                     conn.close()
 
-                if not getattr(client, 'is_pull_only', False):
+                if not getattr(client, 'is_pull_only', False) and not _remote_image_desktop_id_current(
+                    image_row, local_image_id
+                ):
                     set_image_desktop_id = getattr(client, 'set_image_desktop_id', None)
                     if cloud_image_id and callable(set_image_desktop_id):
                         try:

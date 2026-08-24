@@ -1085,3 +1085,254 @@ def test_strict_tuple_filter_unchanged_by_encoding():
     client._get_paginated = lambda path, **kw: rows
     result = client.list_image_changes_since(ts, 'img-1')
     assert [r['id'] for r in result] == ['img-2', 'img-3']
+
+
+# ---------------------------------------------------------------------------
+# Multi-page same-timestamp cohort: real pagination + real probe + sync_all
+# cursor advancement (regression for the live 2510 -> 2509 repeat-pull loop).
+# ---------------------------------------------------------------------------
+
+
+import re as _re
+from urllib.parse import unquote as _unquote
+
+
+class _PagedProbeClient:
+    """Client whose probe methods are the REAL SporelyCloudClient
+    implementations (including _get_paginated offset paging); only the raw
+    HTTP _get is emulated, honouring limit/offset and the updated_at=gte
+    filter with server-side (updated_at, numeric id) ordering."""
+
+    user_id = "user-probe"
+    is_pull_only = False
+
+    def __init__(self, img_rows):
+        self._img_rows = img_rows
+        self.image_probe_pages = 0
+
+    def list_remote_observations(self):
+        return []
+
+    def list_remote_calibrations(self):
+        return []
+
+    def _get(self, path):
+        if path.startswith('spore_measurements'):
+            return []
+        assert path.startswith('observation_images'), path
+        self.image_probe_pages += 1
+        limit = int(_re.search(r'limit=(\d+)', path).group(1))
+        offset = int(_re.search(r'offset=(\d+)', path).group(1))
+        m = _re.search(r'updated_at=gte\.([^&]+)', path)
+        cursor_ts = _unquote(m.group(1)) if m else ''
+        rows = [r for r in self._img_rows if str(r['updated_at']) >= cursor_ts]
+        rows.sort(key=lambda r: (str(r['updated_at']), int(r['id'])))
+        return [dict(r) for r in rows[offset:offset + limit]]
+
+    # Real implementations under test.
+    _get_paginated = cloud_sync.SporelyCloudClient._get_paginated
+    list_image_changes_since = cloud_sync.SporelyCloudClient.list_image_changes_since
+    list_measurement_changes_since = cloud_sync.SporelyCloudClient.list_measurement_changes_since
+
+
+def _run_sync_with_client(monkeypatch, client, settings_store):
+    """Run sync_all with push/pull stubbed out, returning captured pull_all kwargs."""
+    pull_calls: list = []
+    monkeypatch.setattr(cloud_sync, "get_app_settings", lambda: dict(settings_store))
+    monkeypatch.setattr(cloud_sync, "update_app_settings", lambda d: settings_store.update(d))
+    monkeypatch.setattr(cloud_sync, "ensure_database_linked_to_cloud_user", lambda _: None)
+    monkeypatch.setattr(cloud_sync, "push_calibrations", lambda *a, **kw: {"pushed": 0, "total": 0, "errors": []})
+    monkeypatch.setattr(cloud_sync, "pull_calibrations", lambda *a, **kw: {"pulled": 0, "total": 0, "errors": []})
+    monkeypatch.setattr(cloud_sync, "push_all", lambda *a, **kw: {
+        "pushed": 0, "total": 0, "errors": [],
+        "spore_measurement_reconcile": {"candidates": 0, "attempted": 0},
+        "spore_summary_reconcile": {"candidates": 0, "attempted": 0},
+        "sync_summary": cloud_sync._new_sync_summary(),
+    })
+
+    def _fake_pull_all(*a, **kw):
+        pull_calls.append(kw)
+        return {"pulled": 0, "errors": [], "deleted_remote": []}
+
+    monkeypatch.setattr(cloud_sync, "pull_all", _fake_pull_all)
+    cloud_sync.sync_all(
+        client,
+        sync_images=False,
+        materialize_remote_images=False,
+        full_pull=False,
+        child_safety_pull=True,
+    )
+    return pull_calls
+
+
+def _cohort_rows(ts, count, id_start=1):
+    return [
+        {'id': str(i), 'observation_id': f'cloud-obs-{i % 7}', 'updated_at': ts}
+        for i in range(id_start, id_start + count)
+    ]
+
+
+def test_multipage_same_timestamp_cohort_converges_in_one_sync(monkeypatch):
+    """2501 rows sharing ONE updated_at across 3 PostgREST pages: the first
+    sync detects all of them and commits cursor=(T, max_id); the second sync
+    receives the equality-boundary rows from the server but strict filtering
+    yields ZERO candidates and no full pull."""
+    T = '2026-08-24T12:00:00+00:00'
+    rows = _cohort_rows(T, 2501)
+    client = _PagedProbeClient(rows)
+
+    settings_store: dict = {
+        cloud_sync._CLOUD_MEASUREMENT_RECONCILE_VERSION_SETTING: cloud_sync._CLOUD_MEASUREMENT_RECONCILE_VERSION,
+        cloud_sync._CLOUD_CHILD_CHANGE_CURSOR_SETTING: _valid_cursor(
+            img_ts='2026-08-24T10:00:00+00:00', img_id='',
+            meas_ts='2026-08-24T10:00:00+00:00', meas_id='',
+        ),
+    }
+
+    # --- First sync: all 2501 rows are candidates ---
+    pull_calls = _run_sync_with_client(monkeypatch, client, settings_store)
+    assert len(pull_calls) == 1
+    forced = pull_calls[0].get('forced_pull_cloud_ids') or frozenset()
+    assert len(forced) == 7  # all distinct observation ids forced
+    assert client.image_probe_pages >= 3  # cohort really spanned 3+ pages
+
+    cursor = json.loads(settings_store[cloud_sync._CLOUD_CHILD_CHANGE_CURSOR_SETTING])
+    # Committed position must be MAX(updated_at, id) with NUMERIC id order:
+    # '2501', not the lexicographic maximum '999'.
+    assert cursor['images'] == {'ts': T, 'id': '2501'}
+
+    # --- Second sync: equality-boundary rows return, none survive filtering ---
+    cursor_before = settings_store[cloud_sync._CLOUD_CHILD_CHANGE_CURSOR_SETTING]
+    pull_calls2 = _run_sync_with_client(monkeypatch, client, settings_store)
+    assert len(pull_calls2) == 1
+    assert not (pull_calls2[0].get('forced_pull_cloud_ids') or frozenset())
+    assert not pull_calls2[0].get('full_pull')
+    # Cursor unchanged: no rows advanced past it.
+    assert settings_store[cloud_sync._CLOUD_CHILD_CHANGE_CURSOR_SETTING] == cursor_before
+
+
+def test_next_row_after_cohort_detected(monkeypatch):
+    """After consuming a same-timestamp cohort, both (T, max_id+1) and a row
+    at a strictly newer timestamp must be detected."""
+    T = '2026-08-24T12:00:00+00:00'
+    rows = _cohort_rows(T, 2501)
+    client = _PagedProbeClient(rows)
+    settings_store: dict = {
+        cloud_sync._CLOUD_MEASUREMENT_RECONCILE_VERSION_SETTING: cloud_sync._CLOUD_MEASUREMENT_RECONCILE_VERSION,
+        cloud_sync._CLOUD_CHILD_CHANGE_CURSOR_SETTING: _valid_cursor(
+            img_ts='2026-08-24T10:00:00+00:00', img_id='',
+        ),
+    }
+    _run_sync_with_client(monkeypatch, client, settings_store)
+
+    # New row at the SAME timestamp with the next id.
+    client._img_rows = rows + [
+        {'id': '2502', 'observation_id': 'cloud-new-tie', 'updated_at': T},
+    ]
+    pull_calls = _run_sync_with_client(monkeypatch, client, settings_store)
+    forced = pull_calls[0].get('forced_pull_cloud_ids') or frozenset()
+    assert forced == frozenset({'cloud-new-tie'})
+    cursor = json.loads(settings_store[cloud_sync._CLOUD_CHILD_CHANGE_CURSOR_SETTING])
+    assert cursor['images'] == {'ts': T, 'id': '2502'}
+
+    # New row at a strictly newer timestamp (with a LOW id — must still win).
+    T2 = '2026-08-24T13:00:00+00:00'
+    client._img_rows = client._img_rows + [
+        {'id': '5', 'observation_id': 'cloud-new-ts', 'updated_at': T2},
+    ]
+    pull_calls = _run_sync_with_client(monkeypatch, client, settings_store)
+    forced = pull_calls[0].get('forced_pull_cloud_ids') or frozenset()
+    assert forced == frozenset({'cloud-new-ts'})
+    cursor = json.loads(settings_store[cloud_sync._CLOUD_CHILD_CHANGE_CURSOR_SETTING])
+    assert cursor['images'] == {'ts': T2, 'id': '5'}
+
+
+def test_unsorted_same_timestamp_input_defensive():
+    """Strict filtering and max selection are order-independent: a page served
+    out of order must not change which rows pass or the committed maximum."""
+    T = '2026-08-24T12:00:00+00:00'
+    shuffled = [
+        {'id': '1000', 'observation_id': 'o1', 'updated_at': T},
+        {'id': '9', 'observation_id': 'o2', 'updated_at': T},
+        {'id': '999', 'observation_id': 'o3', 'updated_at': T},
+        {'id': '11', 'observation_id': 'o4', 'updated_at': T},
+    ]
+    client = object.__new__(cloud_sync.SporelyCloudClient)
+    client.user_id = 'user-1'
+    client._get_paginated = lambda path, **kw: list(shuffled)
+    result = client.list_image_changes_since(T, '10')
+    # Numeric id ordering: ids 11, 999, 1000 are after cursor id 10; id 9 is not.
+    assert sorted(int(r['id']) for r in result) == [11, 999, 1000]
+
+
+def test_cursor_id_numeric_ordering_across_digit_boundary():
+    """Regression: string comparison would treat '10000' < '9999' and silently
+    drop a genuinely new row at the same timestamp."""
+    T = '2026-08-24T12:00:00+00:00'
+    client = object.__new__(cloud_sync.SporelyCloudClient)
+    client.user_id = 'user-1'
+    client._get_paginated = lambda path, **kw: [
+        {'id': '10000', 'observation_id': 'o-new', 'updated_at': T},
+    ]
+    result = client.list_image_changes_since(T, '9999')
+    assert [r['id'] for r in result] == ['10000']
+
+
+# ---------------------------------------------------------------------------
+# Echo safety: pull must not PATCH desktop_id links that are already correct
+# (each PATCH now advances cloud updated_at and would re-trigger the probe).
+# ---------------------------------------------------------------------------
+
+
+class _DesktopIdCountingClient:
+    user_id = 'user-probe'
+    is_pull_only = False
+
+    def __init__(self):
+        self.desktop_id_patches: list = []
+
+    def set_image_desktop_id(self, cloud_image_id, desktop_id):
+        self.desktop_id_patches.append((cloud_image_id, desktop_id))
+
+
+def _echo_monkeypatches(monkeypatch, local_images):
+    monkeypatch.setattr(
+        cloud_sync.ImageDB, 'get_images_for_observation',
+        staticmethod(lambda _obs_id: [dict(img) for img in local_images]),
+    )
+    monkeypatch.setattr(cloud_sync, '_local_tombstoned_cloud_image_ids', lambda _ids: set())
+    monkeypatch.setattr(cloud_sync, '_apply_remote_image_metadata_only_to_local', lambda *a, **kw: None)
+
+
+def test_pull_skips_desktop_id_patch_when_link_already_correct(monkeypatch):
+    """A remote row whose desktop_id already equals the local image id must
+    NOT be PATCHed during pull — the write would advance updated_at and make
+    the sync's own echo look like a child change to the next probe."""
+    local_images = [{'id': 42, 'cloud_id': '5001', 'image_type': 'field'}]
+    remote_images = [{
+        'id': '5001', 'observation_id': 'cloud-1', 'image_type': 'field',
+        'storage_path': 'user/1/a.webp', 'desktop_id': 42,
+    }]
+    client = _DesktopIdCountingClient()
+    _echo_monkeypatches(monkeypatch, local_images)
+    cloud_sync._apply_remote_images_to_local(
+        client, 1, remote_images,
+        allow_delete=False, materialize_remote_images=False,
+    )
+    assert client.desktop_id_patches == []
+
+
+def test_pull_still_patches_desktop_id_when_link_stale(monkeypatch):
+    """A genuinely stale/missing desktop_id link must still be repaired."""
+    local_images = [{'id': 42, 'cloud_id': '5001', 'image_type': 'field'}]
+    remote_images = [{
+        'id': '5001', 'observation_id': 'cloud-1', 'image_type': 'field',
+        'storage_path': 'user/1/a.webp', 'desktop_id': 7,   # stale link
+    }]
+    client = _DesktopIdCountingClient()
+    _echo_monkeypatches(monkeypatch, local_images)
+    cloud_sync._apply_remote_images_to_local(
+        client, 1, remote_images,
+        allow_delete=False, materialize_remote_images=False,
+    )
+    assert client.desktop_id_patches == [('5001', 42)]
