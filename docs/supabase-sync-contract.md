@@ -71,6 +71,8 @@ Plain English comes first; technical terms are in parentheses.
 21. **A missing remote `desktop_id` must never cause object creation when a verified local `cloud_id` already identifies the remote object.** Download from Cloud legitimately creates local rows with `cloud_id` set while the remote `desktop_id` remains NULL until a future normal (write-enabled) sync heals the reverse link. Resolving push identity by reverse link alone creates duplicate cloud observations.
 22. **Direct and reverse identity links resolving to different objects is an identity conflict, not permission to create a third object.** The same applies to an ambiguous reverse-link match (multiple rows carrying one `desktop_id`). The push must fail safely — no update of either candidate, no creation, no snapshot — and the local observation stays dirty/retryable for review.
 23. **Observation creation (POST) is a last resort.** It is allowed only after direct identity verification and reverse-link recovery both find no target. "Lookup failed" never automatically means "create" while the local row carries a direct cloud identity.
+24. **No no-op cloud writes on sync paths.** `observation_images.updated_at` is trigger-bumped on EVERY update, for every role, regardless of whether values changed — so a value-identical PATCH is a real child-change cursor event, not a harmless idempotent write. Before any cloud write in a sync path, check whether the target value already matches and skip the request if so. (Live incident 2026-08-24: unconditional `desktop_id` relink PATCHes during pull rewrote ~2 500 image rows per sync and created a self-sustaining full child re-pull echo loop.)
+25. **The child-change cursor must commit the true `MAX(updated_at, id)` tuple over every inspected row, with numeric id ordering.** Row ids compare numerically, never as strings (`'10000' > '9999'`), and the strict filter and the advancement comparison must use identical ordering. The cursor advances only after `pull_all` succeeds; a failed pull leaves the cursor untouched so the changes are re-detected next sync.
 
 ## Storage of desired cloud image-byte state
 
@@ -240,6 +242,35 @@ The gallery checkbox and context-menu command share this lifecycle:
 - Record it locally without erasing the local original.
 - Ask whether to accept the deletion, restore cloud data from local files, or remain local-only.
 - Do not repeatedly re-upload without a user decision.
+
+## Child-change detection (`updated_at` cursor)
+
+Child rows (`observation_images`, `spore_measurements`) can change in the
+cloud without their parent observation changing, which the observation-level
+fast path would otherwise miss. Detection works as follows:
+
+- **Server side** (migration `20260824120000`): `observation_images.updated_at`
+  is set to `now()` by a `BEFORE INSERT OR UPDATE` trigger unconditionally,
+  for every role — service-role and admin writes advance it too. Historical
+  values come only from the migration backfill. A covering index
+  `(user_id, updated_at, id)` supports the keyset probe.
+- **Desktop probe**: each sync reads rows with `updated_at >= cursor_ts`
+  (paginated, ordered `updated_at.asc,id.asc`) and applies a strict
+  client-side tuple filter: a row counts as changed only when
+  `(updated_at, id) > (cursor_ts, cursor_id)`, with ids compared
+  numerically. Measurements use the same scheme on their own leg.
+- **Forced pulls**: parent observations of changed child rows are passed to
+  `pull_all` as forced ids, bypassing the unchanged-observation pruning for
+  exactly those observations — never a blanket `full_pull`.
+- **Cursor persistence**: the per-leg `(ts, id)` cursor (v2) is stored in
+  desktop app settings and advances to the maximum inspected tuple only
+  after `pull_all` succeeds.
+- **Consequence — rule 24**: because the trigger stamps every UPDATE, any
+  no-op PATCH the desktop issues during pull becomes next sync's "change".
+  Sync-path writes must be skipped when the remote value already matches
+  (e.g. `desktop_id` relink is guarded by an equality check).
+- Hard DELETEs leave no cursor trace; they are covered by the periodic full
+  child safety scan, not by the probe.
 
 ## Retry-safe sequencing
 

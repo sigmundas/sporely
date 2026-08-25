@@ -74,8 +74,20 @@ sync_all()
             _push_images_for_observation()         (incl. desired-state init, identity repair, uploads)
             measurement / summary push
             _store_remote_snapshot() then _stamp_observation_synced()
-  -> pull_all()                               (L22251)
+  -> child-change probe                       # (updated_at,id) keyset over
+       list_image_changes_since()             #   observation_images +
+       list_measurement_changes_since()       #   spore_measurements legs
+  -> pull_all(forced_pull_cloud_ids=…)        (L22251)
+  -> advance child-change cursor              # only after pull_all succeeds
 ```
+
+The child-change probe detects cloud-side child edits whose parent
+observation is otherwise unchanged. Parents of changed child rows go to
+`pull_all` as `forced_pull_cloud_ids` (bypassing unchanged-observation
+pruning for exactly those observations); the per-leg `(ts, id)` cursor
+(v2, in app settings) advances to the maximum inspected tuple with numeric
+id ordering (`_child_change_cursor_id_key`) only after `pull_all` succeeds.
+Contract details: `supabase-sync-contract.md`, "Child-change detection".
 
 The three flags `sync_images`, `materialize_remote_images`, `full_pull` are
 independent controls with caller-mode rules documented in `AGENTS.md`
@@ -257,7 +269,7 @@ Every path that can change cloud state funnels through methods on
 | `push_image_metadata` (PATCH L15261/L15267) | `observation_images` metadata | image push |
 | `set_image_storage_path` (L15292) | `storage_path` | upload finalize |
 | `set_image_original_storage_path` (L15280) | `original_storage_path` | original upload |
-| `set_image_desktop_id` (L15945) | identity write-back | identity repair |
+| `set_image_desktop_id` (L15945) | identity write-back | identity repair — pull-path callers are guarded by `_remote_image_desktop_id_current` and skip the PATCH when the remote link already matches (no-op writes advance the `updated_at` cursor) |
 | `set_measurement_desktop_id` (L15805) | identity write-back | measurement identity |
 | `soft_delete_image` (L15952) | `deleted_at` | tombstone processing |
 | `push_measurement` (PATCH L16021/L16056) | `spore_measurements` | measurement push |
@@ -631,6 +643,20 @@ Read this list before changing anything in cloud sync.
     POSTs. The two-leg resolver (direct verified `cloud_id` → recovery
     `desktop_id` scoped to observation) closes this gap; disagreement raises
     `ImageIdentityConflictError`.
+23. **A no-op cloud PATCH is a cursor event, not a harmless idempotent
+    write.** `observation_images.updated_at` is trigger-bumped on every
+    UPDATE for every role. Unconditional `set_image_desktop_id` relink
+    PATCHes during pull rewrote ~2 500 rows per sync and made every sync
+    force a full child re-pull of every observation (echo loop, live
+    incident 2026-08-24). Sync-path writes must check the current remote
+    value and skip when it already matches
+    (`_remote_image_desktop_id_current`).
+24. **Cursor ids compare numerically, never as strings.** Lexicographic
+    comparison makes `'10000' < '9999'`, silently dropping new
+    same-timestamp rows once ids cross a digit-length boundary. The strict
+    filter and the advancement loop use one total order
+    (`_child_change_cursor_id_key`); the committed cursor must be the true
+    `MAX(updated_at, id)` over every inspected row.
 
 ---
 
@@ -647,6 +673,8 @@ High-value safety tests by invariant (not an exhaustive listing):
 | Tombstone lifecycle | `tests/test_image_tombstones.py` (queue, sync, cancel, restore-after-delete, remote tombstone repair, legacy publish-exclusion non-migration, batch queue); `tests/test_image_gallery_cloud_delete.py` |
 | Identity repair | `test_cloud_image_bytes_desired.py::test_identity_repair_runs_for_unchecked_image_without_upload`; duplicate-identity blockers in `tests/test_cloud_conflict_plan_execution.py` |
 | Observation push identity (no duplicate POST) | `tests/test_observation_push_identity.py` — verified `cloud_id` primary; `desktop_id` recovery; pull-only import → later normal push PATCHes the original row; direct/reverse disagreement and ambiguous reverse matches raise `ObservationIdentityConflictError` (no PATCH/POST/snapshot, stays dirty); reverse-link healing via the normal PATCH payload |
+| Child-change cursor probe | `tests/test_child_change_probe.py` — strict `(updated_at, id)` tuple filter; numeric id ordering across digit boundaries; real 3-page/2 501-row same-timestamp cohort through the real `_get_paginated` probe converging in one sync; cursor advances only after `pull_all` succeeds; pull skips `desktop_id` PATCH when the link is already correct (echo-loop guard) and still repairs stale links |
+| Local-only-field dirty-loop steady state | `tests/test_cloud_sync_dirty_loop_steady_state.py` — `ai_selected_at` `Z` vs `+00:00` compared as instants; merge-filled AI/red-list fields adopted locally after a successful push so observations converge instead of re-dirtying |
 | Image push identity (no duplicate POST) | `tests/test_image_push_identity.py` — 14 tests; mirrors test_observation_push_identity.py; verified `images.cloud_id` primary, `desktop_id` recovery scoped to observation, `ImageIdentityConflictError` on disagreement (no PATCH/POST, stays dirty); pull-only import with NULL remote `desktop_id` does not trigger a POST |
 | Metadata-only anchors | `tests/test_cloud_sync_metadata_only.py`; `test_cloud_download_only.py::test_download_from_cloud_never_downloads_metadata_only_microscope_anchor`; metadata-only refresh tests in `tests/test_cloud_sync_dirty_loop_steady_state.py` |
 | Conflict preservation / "needs review" | `tests/test_cloud_sync_conflict_preflight.py`; `tests/test_cloud_conflict_plan_execution.py` (drift aborts, baseline validation, snapshot-before-stamp ordering, unsealed-on-snapshot-failure); `tests/test_observation_snapshot_persistence.py` |

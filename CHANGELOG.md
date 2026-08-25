@@ -2,6 +2,21 @@
 
 All notable changes to Sporely are documented here.
 
+## 2026-08-24
+
+### Added
+- **Child-change detection via a server-maintained `updated_at` cursor.** Cloud-side edits to `observation_images` / `spore_measurements` whose parent observation is unchanged are now detected by a per-sync keyset probe (`updated_at >= ts`, ordered `updated_at.asc,id.asc`, strict client-side `(updated_at, id) > (cursor_ts, cursor_id)` tuple filter). Parents of changed child rows are pulled via `forced_pull_cloud_ids` — never a blanket `full_pull`. Server side: sporely-web migration `20260824120000` adds `observation_images.updated_at` (historical backfill from server timestamps; unconditional every-role `BEFORE INSERT OR UPDATE` trigger; `(user_id, updated_at, id)` index). The per-leg `(ts, id)` cursor (v2) advances to the maximum inspected tuple only after `pull_all` succeeds; a missing/old cursor bootstraps with one full child reconciliation. (`034703b`, `f546541`, `c0a02ae`)
+
+### Fixed
+- **Pull-phase `desktop_id` echo loop.** Every pull PATCHed `set_image_desktop_id` for every already-linked image; the new unconditional `updated_at` trigger turned those ~2 500 no-op writes per sync into next sync's "child changes", forcing a permanent full child re-pull of every observation (confirmed in live testing 2026-08-24). All pull-path relink sites are now guarded by `_remote_image_desktop_id_current` and skip the PATCH when the remote link already matches; stale links still repair. New contract rule: no no-op cloud writes on sync paths. (`592cf1e`)
+- **Cursor ids compared as strings.** `'10000' < '9999'` lexicographically, so new same-timestamp rows could be silently dropped once ids crossed a digit-length boundary. Probe filters and cursor advancement now share one numeric total order (`_child_change_cursor_id_key`); the watermark log prints the full `(ts, id)` tuple per leg. Regression: a real 3-page / 2 501-row same-timestamp cohort through the real paginated probe converges in one sync. (`592cf1e`)
+- **Child-probe cursor timestamps were not percent-encoded** in PostgREST filter values (`+00:00` decoded as a space, breaking the `gte` comparison). (`2208926`)
+- **Local-only-field dirty loop.** Two observations re-dirtied after every pull despite successful pushes: `ai_selected_at` stored locally with a `Z` suffix never string-matched the cloud's `+00:00` form (now compared as instants), and merge-filled AI-selection/red-list values (`_merge_cloud_selected_ai_fields`) protected the cloud row but were never adopted into the local row (now persisted locally after a successful push, so local, cloud, and snapshot converge). (`6c753e7`)
+
+### Notes
+- Docs updated: `docs/supabase-sync-contract.md` (child-change detection section; safety rules 24–25; both repository copies), `docs/cloud-sync-architecture.md` (probe in the sync flow, guarded `set_image_desktop_id`, lessons 23–24, test-map rows), `AGENTS.md` cloud-sync invariants.
+- Test-fake cleanup: cloud fakes updated for the `remote_row=` keyword on `push_image_metadata` and `recovery_authorized=` on `upload_image_file` — signature-only, resolved ~30 pre-existing failures. (`a7863d1`, `eee56ff`)
+
 ## 2026-07-30
 
 ### Added
