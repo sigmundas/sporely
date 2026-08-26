@@ -1,6 +1,12 @@
 
 # Spore statistics and Parmasto-style species profiles
 
+Status: Completed for the 2026-07 release cycle; Parmasto matching was explicitly deferred to a separate active plan.
+
+Completed: 2026-07-13
+
+Relevant commits: `41d3e2c`, `390efe0`, `20ed420`, `d0db5f3`
+
 ## Purpose
 
 Sporely currently stores per-observation spore statistics mainly as a legacy literature-style string, for example:
@@ -673,67 +679,11 @@ Acceptance:
 
 ---
 
-## Stage I — Parmasto-style matching foundation
+## Deferred matching work
 
-### Goal
-
-Prepare for ID assistance without implementing a full black-box matcher yet.
-
-### Input
-
-A query observation must have a real measured summary:
-
-```text
-query_Lm
-query_Wm
-query_Qm
-query_n_paired
-```
-
-Do not match from midpoint-estimated means.
-
-### Basic transparent score later
-
-First version can use separate standardized deviations:
-
-```text
-zL = (query_Lm - grand_Lm) / max(sd_Lm, minimum_L_tolerance)
-zW = (query_Wm - grand_Wm) / max(sd_Wm, minimum_W_tolerance)
-zQ = (query_Qm - grand_Qm) / max(sd_Qm, minimum_Q_tolerance)
-```
-
-Then:
-
-```text
-distance = sqrt(zL² + zW² + zQ²)
-```
-
-Later improvement:
-
-```text
-Mahalanobis distance using covariance of observation means
-```
-
-Do not use SEM alone for matching. SEM becomes too small as the database grows and would make the matcher falsely strict. Matching should use biological between-observation spread.
-
-### Tolerance intervals
-
-Tolerance intervals may be added later:
-
-```text
-grand mean ± k * sd
-```
-
-But `k` must be chosen for a defined coverage/confidence level and enough observations. For small sample counts, label all intervals provisional.
-
-Acceptance for this stage:
-
-* Data needed for matching exists.
-* No fake means are used.
-* Species profile exposes between-observation SD.
-* Match explanations can eventually say which dimension fits or fails.
-
----
+Parmasto-style matching was not part of this completed release. Its scoped
+requirements now live in
+[the active Parmasto matching plan](../active/2026-07-12-parmasto-matching-foundation.md).
 
 ## Stage J — Tests
 
@@ -1572,7 +1522,7 @@ Only the `image_render_unchanged` branch reached `_push_measurements_for_current
 
 `local_obs_id = _safe_int(obs.get('id'))` is now hoisted above `if sync_images:` so the summary helper can see it in the `sync_images=False` case.
 
-The call site is [utils/cloud_sync.py](utils/cloud_sync.py) around the observation-processing loop, immediately after the `if sync_images:` block and before `_store_remote_snapshot(...)`.
+The call site is [utils/cloud_sync.py](../../../utils/cloud_sync.py) around the observation-processing loop, immediately after the `if sync_images:` block and before `_store_remote_snapshot(...)`.
 
 ### 2. Real summary sync errors are now surfaced
 
@@ -2231,11 +2181,11 @@ Four new Supabase migrations (chronological order, all forward-only, all backwar
 
 Desktop client:
 
-- `sporely-py` `main.APP_VERSION = "0.9.6"` writes structured summaries via [utils/spore_summary_sync.py](utils/spore_summary_sync.py) hooked into [utils/cloud_sync.py](utils/cloud_sync.py) inside the observation loop. Legacy `observations.spore_statistics` string generation is untouched (documented Stage C parallel path).
+- `sporely-py` `main.APP_VERSION = "0.9.6"` writes structured summaries via [utils/spore_summary_sync.py](../../../utils/spore_summary_sync.py) hooked into [utils/cloud_sync.py](../../../utils/cloud_sync.py) inside the observation loop. Legacy `observations.spore_statistics` string generation is untouched (documented Stage C parallel path).
 
 Landing:
 
-- `sporely-landing` [src/lib/observationSporeSummary.ts](../../sporely-landing/src/lib/observationSporeSummary.ts), [src/lib/observationBalancedProfile.ts](../../sporely-landing/src/lib/observationBalancedProfile.ts), the new [src/lib/publicApi.ts:fetchPublicObservationSporeSummaries](../../sporely-landing/src/lib/publicApi.ts) wrapper, and the wired [src/components/ExploreSporePanel.tsx](../../sporely-landing/src/components/ExploreSporePanel.tsx). Legacy `poolSporeSummaries` remains but no longer emits weighted means.
+- `sporely-landing` [src/lib/observationSporeSummary.ts](../../../../sporely-landing/src/lib/observationSporeSummary.ts), [src/lib/observationBalancedProfile.ts](../../../../sporely-landing/src/lib/observationBalancedProfile.ts), the new [src/lib/publicApi.ts:fetchPublicObservationSporeSummaries](../../../../sporely-landing/src/lib/publicApi.ts) wrapper, and the wired [src/components/ExploreSporePanel.tsx](../../../../sporely-landing/src/components/ExploreSporePanel.tsx). Legacy `poolSporeSummaries` remains but no longer emits weighted means.
 
 ### Sequenced rollout — 1:1 with the plan's five steps
 
@@ -2323,4 +2273,3 @@ None.
 ### End of the spore-statistics-species-profiles plan for this release cycle.
 
 The four migrations, sporely-py 0.9.6 writer, and landing observation-balanced reader are the shippable unit. Parmasto-style matching (Stage I) remains a separate future stage per the plan's explicit non-goals.
-

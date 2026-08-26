@@ -1,10 +1,22 @@
 # Reference Library and Public Reference Plotting Plan
 
-**Status:** Stage 1 (local schema foundation) implemented; Stages 2–6 still proposed.  
-**Canonical repository:** `sporely-py`  
-**Canonical path:** `docs/reference-data/PLAN-reference-library-and-public-plots.md`  
-**Scope:** `sporely-py` → `sporely-web`/Supabase → `sporely-landing`  
+**Status:** Stage 1 (local schema foundation) implemented; Stages 2–6 still proposed.
+**Canonical repository:** `sporely-py`
+**Canonical path:** `docs/plans/active/2026-08-05-reference-library-and-public-plots.md`
+**Scope:** `sporely-py` → `sporely-web`/Supabase → `sporely-landing`
 **Primary outcome:** A reference entered once can be reused across observations, and a public observation can display the exact literature measurement sets used in desktop analysis.
+
+---
+
+## Agent handoff
+
+- Status: Active; Stage 1 and a Stage 2 desktop vertical slice are implemented, while substantial Stage 2 work and Stages 3–6 remain.
+- Last completed stage: Stage 1; the documented Stage 2 vertical slice and interactive legacy migration also landed.
+- Current/next stage: Finish the remaining Stage 2 desktop library/attachment work before cloud/public stages.
+- Relevant commits: `108db20`, `6c9c456`, `08249ec`, `22bd29f`, `f05f2e3`, `2a1ebe3`.
+- Important decisions: Preserve stable UUIDs, frozen observation snapshots, revision-aware records, and the distinction between literature ranges and raw observations.
+- Do not: Fuzzy-merge bibliographic records, fabricate statistics, or begin public catalogue scope without a separate moderation design.
+- Remaining acceptance criteria: The cross-repository definition of done in Section 20.
 
 ---
 
@@ -795,32 +807,32 @@ These must be resolved during Stage 0 or explicitly deferred:
 
 ### Ambiguous legacy sources
 
-**Risk:** Free-text labels do not uniquely identify publications.  
+**Risk:** Free-text labels do not uniquely identify publications.
 **Mitigation:** Never auto-merge on fuzzy title alone; mark migrated rows incomplete and require review.
 
 ### Cross-database integrity
 
-**Risk:** SQLite cannot enforce a foreign key from `mushrooms.db` to `reference_values.db`.  
+**Risk:** SQLite cannot enforce a foreign key from `mushrooms.db` to `reference_values.db`.
 **Mitigation:** Stable UUIDs, service-layer validation, deletion guards, snapshots, integrity tests.
 
 ### Taxonomic drift
 
-**Risk:** Current names change while old literature names remain fixed.  
+**Risk:** Current names change while old literature names remain fixed.
 **Mitigation:** Store both current `taxon_id` and immutable `name_as_published`.
 
 ### Historical plots changing
 
-**Risk:** Editing a library record changes old public evidence.  
+**Risk:** Editing a library record changes old public evidence.
 **Mitigation:** Revisioned records plus observation snapshots and explicit update action.
 
 ### False statistical precision
 
-**Risk:** Range data is rendered as if it were raw measurements.  
+**Risk:** Range data is rendered as if it were raw measurements.
 **Mitigation:** Separate visual grammar and prohibit synthetic points.
 
 ### Scope expansion
 
-**Risk:** Building a full bibliography platform delays the practical feature.  
+**Risk:** Building a full bibliography platform delays the practical feature.
 **Mitigation:** Prove observation attachment and public reproduction before `/references`.
 
 ---

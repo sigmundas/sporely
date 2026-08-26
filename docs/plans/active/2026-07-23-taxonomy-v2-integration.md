@@ -6,6 +6,16 @@
 **Web documentation branch:** `docs/taxonomy-v2-global-macrofungi-correction`
 **Primary objective:** Introduce stable Sporely taxonomy identity across desktop, Supabase and web without breaking the existing taxonomy path or silently binding ambiguous names.
 
+## Agent handoff
+
+- Status: Active, but the programme-status tables below predate the later August 2026 W3 reconciliation work and must be reconciled with repository evidence before choosing a stage.
+- Last completed stage: The repository verifies W3-A rehearsal/corrections and W3-B final reconciliation work after this plan's 2026-08-01 status snapshot; it does not verify completion of the full W4/W5 cutover programme.
+- Current/next stage: Reconcile this plan's stage ledger with the accepted evidence and commits before resuming implementation.
+- Relevant commits: `20859a2`, `bffd142`, `fe1d035`.
+- Important decisions: Stable Sporely-owned identity, namespace-aware external IDs, no name-only resolution, additive rollout, and publication/provenance gates remain binding.
+- Do not: Treat stale stage labels below as current repository state, silently merge ambiguous concepts, or activate an unpublished release.
+- Remaining acceptance criteria: The unchecked master checklist items remain candidates only after status reconciliation.
+
 ## Status legend
 
 | Marker       | Meaning                                                              |
@@ -944,13 +954,13 @@ switch clients.
 
 Deliverables (accepted):
 
-* Shared contract: [`database/taxonomy/docs/w2d-reconciliation-contract.md`](../../database/taxonomy/docs/w2d-reconciliation-contract.md).
-* Policy: [`database/taxonomy/policies/w2d-reconciliation-policy.json`](../../database/taxonomy/policies/w2d-reconciliation-policy.json) (`policy_version: w2d-1.0.0`).
-* Engine: [`database/taxonomy/reconciliation/`](../../database/taxonomy/reconciliation/) — deterministic 6-level resolver, fixture-backed, 26 pytest tests.
+* Shared contract: [`database/taxonomy/docs/w2d-reconciliation-contract.md`](../../../database/taxonomy/docs/w2d-reconciliation-contract.md).
+* Policy: [`database/taxonomy/policies/w2d-reconciliation-policy.json`](../../../database/taxonomy/policies/w2d-reconciliation-policy.json) (`policy_version: w2d-1.0.0`).
+* Engine: [`database/taxonomy/reconciliation/`](../../../database/taxonomy/reconciliation/) — deterministic 6-level resolver, fixture-backed, 26 pytest tests.
 * Manifest generator + CLI: `python -m database.taxonomy.reconciliation.cli`.
-* Reconciliation manifest (against synthetic fixtures): [`database/taxonomy/evidence/historical-reconciliation/reconciliation-manifest.json`](../../database/taxonomy/evidence/historical-reconciliation/reconciliation-manifest.json), semantic SHA-256 `c4785a25c8690144abd64a75ff369292aaf139dc4030c2ce2ce3df413462d72c`. Byte-identical across repeated runs.
-* Anonymised-snapshot input contract: [`database/taxonomy/docs/w2d-input-snapshot-contract.md`](../../database/taxonomy/docs/w2d-input-snapshot-contract.md).
-* Read-only snapshot export specification: [`database/taxonomy/scripts/export_observations_snapshot.py`](../../database/taxonomy/scripts/export_observations_snapshot.py) — dry-run-only; refuses `--production`.
+* Reconciliation manifest (against synthetic fixtures): [`database/taxonomy/evidence/historical-reconciliation/reconciliation-manifest.json`](../../../database/taxonomy/evidence/historical-reconciliation/reconciliation-manifest.json), semantic SHA-256 `c4785a25c8690144abd64a75ff369292aaf139dc4030c2ce2ce3df413462d72c`. Byte-identical across repeated runs.
+* Anonymised-snapshot input contract: [`database/taxonomy/docs/w2d-input-snapshot-contract.md`](../../../database/taxonomy/docs/w2d-input-snapshot-contract.md).
+* Read-only snapshot export specification: [`database/taxonomy/scripts/export_observations_snapshot.py`](../../../database/taxonomy/scripts/export_observations_snapshot.py) — dry-run-only; refuses `--production`.
 * Sibling repo disposable migration simulation: `sporely-web/scripts/taxonomy-v2/experiments/w2d-migration-simulation.sql` + `run-w2d-migration-simulation.mjs` + `w2d-migration-simulation.test.mjs` (10 non-integration tests pass; 11 integration tests skip without local Supabase).
 
 Real-data audit: **blocked.** No local snapshot of the 337 audited
@@ -993,12 +1003,12 @@ W2D-R closes the two W2D validation gaps without accessing production:
    constraints. Evidence:
    `sporely-web/docs/evidence/taxonomy-v2/w2dr-postgres-integration.{json,md}`.
 
-2. **Source-recovery tooling.** [`database/taxonomy/reconciliation/snapshot/`](../../database/taxonomy/reconciliation/snapshot/)
+2. **Source-recovery tooling.** [`database/taxonomy/reconciliation/snapshot/`](../../../database/taxonomy/reconciliation/snapshot/)
    ships an HMAC-keyed pseudonymiser, a schema + privacy validator, and
    an offline transformer that turns an operator's authorised raw JSONL
    export into an anonymised snapshot conforming to the W2D input
    contract. The operator runbook is at
-   [`database/taxonomy/docs/w2d-source-recovery-runbook.md`](../../database/taxonomy/docs/w2d-source-recovery-runbook.md).
+   [`database/taxonomy/docs/w2d-source-recovery-runbook.md`](../../../database/taxonomy/docs/w2d-source-recovery-runbook.md).
    16 new pytest cases in `tests/taxonomy/test_w2dr_source_recovery.py`
    cover the tooling; the full desktop suite is 42/42.
 

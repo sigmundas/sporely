@@ -2,7 +2,17 @@
 
 Status: authoritative planning document for the staged decomposition of `utils/cloud_sync.py`.
 
-This document supersedes the older **“Proposed staged extraction plan”** embedded in `docs/cloud-sync-architecture.md`. Keep the architecture document as the behavioral/navigation map during the refactor; replace its embedded extraction section with a link to this file when the first extraction stage lands.
+## Agent handoff
+
+- Status: Active; no extraction stage is verified as implemented.
+- Last completed stage: Pre-existing E1c dead-code cleanup, commit `919b3e7` (a prerequisite, not an extraction stage).
+- Current/next stage: Pre-stage inventory and baseline, then Stage 0.
+- Relevant commits: `919b3e7`, `de824a4`.
+- Important decisions: Preserve `utils.cloud_sync` as the compatibility facade and move one ownership boundary at a time without behavior changes.
+- Do not: Mix extraction with sync behavior redesign, E3 garbage collection, schema changes, or UI work.
+- Remaining acceptance criteria: The definition of done and per-stage validation matrix below.
+
+This document supersedes the older **“Proposed staged extraction plan”** formerly embedded in `docs/cloud-sync-architecture.md`. The architecture document remains the behavioral/navigation map and now links here for extraction work.
 
 The goal is not to redesign sync. The goal is to split the current monolith into smaller ownership modules while preserving the public import surface, sync semantics, retry behavior, identity rules, deletion rules, pull-only guarantees, and current live-validated behavior.
 
@@ -93,7 +103,7 @@ Risk: low. Required before Stage 0.
 
 ### A. Documentation bookkeeping
 
-- Mark E1c Stage 4 dead-code cleanup as done in `PLAN.md`; commit `919b3e7` already removed the confirmed-dead helpers and the duplicate module-scope deleted-observation prompt.
+- Treat E1c Stage 4 dead-code cleanup as completed historical work; commit `919b3e7` removed the confirmed-dead helpers and the duplicate module-scope deleted-observation prompt.
 - Remove stale references to the retired observation-level image-storage sentinel and sparse-default initialization model where they survive in planning prose.
 - Make `docs/cloud-sync-architecture.md` accurately describe the **current** retry ordering: the early `sync_status='synced'` stamp still exists and required child failures are currently compensated by re-dirtying. Do not claim that the final synced stamp has already been moved after all child work.
 - Link the architecture document to this extraction plan and remove/deprecate its older embedded extraction plan.

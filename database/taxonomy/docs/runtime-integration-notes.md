@@ -2,7 +2,7 @@
 
 This Stage 3B planning document has been superseded by:
 
-- `docs/taxonomy/sporely-taxonomy-implementation-plan.md`
+- `docs/plans/active/2026-07-23-taxonomy-v2-integration.md`
 - `database/taxonomy/docs/identity-contract.md`
 - `database/taxonomy/docs/cloud-export-contract.md`
 

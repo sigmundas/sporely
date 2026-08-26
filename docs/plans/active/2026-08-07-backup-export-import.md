@@ -1,4 +1,17 @@
-Yes. I would simplify the UI considerably: **no toolbar/buttons at all**. Treat backup/restore as application-level operations under **File**, while observation transfer is also accessible there and uses the current observation selection when appropriate.
+# Backup, restore, export, and import plan
+
+Status: Active; implementation has not been verified as complete.
+
+## Agent handoff
+
+- Status: Proposed; repository evidence does not show this plan completed.
+- Last completed stage: None verified.
+- Current/next stage: Phase 1 — define the archive contract.
+- Important decisions: Backup/restore preserves installation identity; portable export/import deliberately remaps local and cloud identity while retaining scientific provenance.
+- Do not: Extend the current selective exporter into a full backup without first establishing the archive contract and authoritative inventory.
+- Remaining acceptance criteria: All phase-specific and round-trip criteria below.
+
+The original planning discussion recommended a deliberately simple UI: **no toolbar/buttons at all**. Treat backup/restore as application-level operations under **File**, while observation transfer is also accessible there and uses the current observation selection when appropriate.
 
 ## Proposed backup/export plan
 
