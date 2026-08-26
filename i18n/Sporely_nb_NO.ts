@@ -2032,7 +2032,7 @@ Vil du oppdatere disse bildene til å bruke den nye kalibreringen og beregne må
     <message>
         <location filename="../ui/cloud_conflict_dialog.py" line="1124"/>
         <source>Informational only — image order differs. Desktop order {local} will be used automatically; cloud order is {remote}.</source>
-        <translation>Kun informasjon – bilderekkefølgen varierer. Desktop-bestilling {local} vil bli brukt automatisk; skyordre er {remote}.</translation>
+        <translation>Kun informasjon – bilderekkefølgen er forskjellig. Rekkefølgen på denne enheten, {local}, brukes automatisk; rekkefølgen i skyen er {remote}.</translation>
     </message>
     <message>
         <location filename="../ui/cloud_conflict_dialog.py" line="1137"/>
@@ -2081,7 +2081,7 @@ Vil du oppdatere disse bildene til å bruke den nye kalibreringen og beregne må
     <message>
         <location filename="../ui/cloud_conflict_dialog.py" line="1170"/>
         <source>Microscope objective</source>
-        <translation>Mikroskopopjektiv</translation>
+        <translation>Mikroskopobjektiv</translation>
     </message>
     <message>
         <location filename="../ui/cloud_conflict_dialog.py" line="1171"/>
@@ -2091,7 +2091,7 @@ Vil du oppdatere disse bildene til å bruke den nye kalibreringen og beregne må
     <message>
         <location filename="../ui/cloud_conflict_dialog.py" line="1172"/>
         <source>Mount medium</source>
-        <translation>Monter medium</translation>
+        <translation>Monteringsmedium</translation>
     </message>
     <message>
         <location filename="../ui/cloud_conflict_dialog.py" line="1173"/>
@@ -2106,7 +2106,7 @@ Vil du oppdatere disse bildene til å bruke den nye kalibreringen og beregne må
     <message>
         <location filename="../ui/cloud_conflict_dialog.py" line="1175"/>
         <source>Sample source</source>
-        <translation>Eksempelkilde</translation>
+        <translation>Prøvekilde</translation>
     </message>
     <message>
         <location filename="../ui/cloud_conflict_dialog.py" line="1176"/>
@@ -2149,7 +2149,7 @@ Vil du oppdatere disse bildene til å bruke den nye kalibreringen og beregne må
         <location filename="../ui/cloud_conflict_dialog.py" line="1213"/>
         <location filename="../ui/cloud_conflict_dialog.py" line="1214"/>
         <source>missing</source>
-        <translation>savnet</translation>
+        <translation>mangler</translation>
     </message>
     <message>
         <location filename="../ui/cloud_conflict_dialog.py" line="1232"/>
@@ -2199,12 +2199,12 @@ Vil du oppdatere disse bildene til å bruke den nye kalibreringen og beregne må
     <message>
         <location filename="../ui/cloud_conflict_dialog.py" line="1555"/>
         <source>Applied. Presentation policy was not fully applied for {count} image(s); other data is correct.</source>
-        <translation>Påført. Presentasjonspolicy ble ikke brukt fullt ut for {count}-bilder; andre data er korrekte.</translation>
+        <translation>Utført. Presentasjonsinnstillingene ble ikke brukt fullt ut for {count} bilde(r); øvrige data er korrekte.</translation>
     </message>
     <message>
         <location filename="../ui/cloud_conflict_dialog.py" line="1560"/>
         <source>Applied.</source>
-        <translation>Påført.</translation>
+        <translation>Utført.</translation>
     </message>
     <message>
         <location filename="../ui/cloud_conflict_dialog.py" line="1569"/>
@@ -2229,7 +2229,7 @@ Vil du oppdatere disse bildene til å bruke den nye kalibreringen og beregne må
     <message>
         <location filename="../ui/cloud_conflict_dialog.py" line="583"/>
         <source>Review later closes without applying any conflict decision. The observations remain pending and will appear again on a later sync.</source>
-        <translation>Gjennomgang stenger senere uten å anvende noen konfliktbeslutning. Observasjonene forblir ventende og vil vises igjen ved en senere synkronisering.</translation>
+        <translation>«Gjennomgå senere» lukker uten å bruke noen konfliktavgjørelse. Observasjonene forblir ventende og vises igjen ved en senere synkronisering.</translation>
     </message>
     <message>
         <location filename="../ui/cloud_conflict_dialog.py" line="602"/>
@@ -2282,7 +2282,7 @@ Vil du oppdatere disse bildene til å bruke den nye kalibreringen og beregne må
     <message>
         <location filename="../ui/cloud_conflict_dialog.py" line="666"/>
         <source>Photo and measurement comparison</source>
-        <translation>Foto og måling sammenligning</translation>
+        <translation>Sammenligning av bilder og målinger</translation>
     </message>
     <message>
         <location filename="../ui/cloud_conflict_dialog.py" line="687"/>
@@ -2297,12 +2297,12 @@ Vil du oppdatere disse bildene til å bruke den nye kalibreringen og beregne må
     <message>
         <location filename="../ui/cloud_conflict_dialog.py" line="694"/>
         <source>Prefer Sporely Cloud</source>
-        <translation>Foretrekker Sporely Cloud</translation>
+        <translation>Foretrekk Sporely Cloud</translation>
     </message>
     <message>
         <location filename="../ui/cloud_conflict_dialog.py" line="697"/>
         <source>Keep safe additions</source>
-        <translation>Hold trygge tillegg</translation>
+        <translation>Behold trygge tillegg</translation>
     </message>
     <message>
         <location filename="../ui/cloud_conflict_dialog.py" line="700"/>
@@ -2337,7 +2337,7 @@ Vil du oppdatere disse bildene til å bruke den nye kalibreringen og beregne må
     <message>
         <location filename="../ui/cloud_conflict_dialog.py" line="903"/>
         <source>Change labels use the stored last-sync snapshot. “Changed on both sides” means both current versions differ from that snapshot.</source>
-        <translation>Endre etiketter bruker det lagrede øyeblikksbildet for siste synkronisering. &quot;Endret på begge sider&quot; betyr at begge gjeldende versjoner er forskjellige fra det øyeblikksbildet.</translation>
+        <translation>Endringsetikettene bruker det lagrede øyeblikksbildet fra siste synkronisering. «Endret på begge sider» betyr at begge gjeldende versjoner avviker fra dette øyeblikksbildet.</translation>
     </message>
     <message>
         <location filename="../ui/cloud_conflict_dialog.py" line="908"/>
@@ -2436,7 +2436,7 @@ Vil du oppdatere disse bildene til å bruke den nye kalibreringen og beregne må
         <location filename="../ui/cloud_conflict_dialog.py" line="1184"/>
         <location filename="../ui/cloud_conflict_dialog.py" line="1231"/>
         <source>Changed on both sides</source>
-        <translation>Byttet på begge sider</translation>
+        <translation>Endret på begge sider</translation>
     </message>
     <message>
         <location filename="../ui/cloud_conflict_dialog.py" line="1194"/>
@@ -2457,12 +2457,12 @@ Vil du oppdatere disse bildene til å bruke den nye kalibreringen og beregne må
     <message>
         <location filename="../ui/cloud_conflict_dialog.py" line="1267"/>
         <source>Informational only — gallery rotation differs. This device value {local}° will be used automatically; cloud value is {remote}°.</source>
-        <translation>Kun informasjon – gallerirotasjonen er forskjellig. Denne enhetsverdien {local}° vil bli brukt automatisk; skyverdien er {remote}°.</translation>
+        <translation>Kun informasjon – gallerirotasjonen er forskjellig. Verdien på denne enheten, {local}°, brukes automatisk; verdien i skyen er {remote}°.</translation>
     </message>
     <message>
         <location filename="../ui/cloud_conflict_dialog.py" line="1281"/>
         <source>Property</source>
-        <translation>Eiendom</translation>
+        <translation>Egenskap</translation>
     </message>
     <message>
         <location filename="../ui/cloud_conflict_dialog.py" line="1295"/>

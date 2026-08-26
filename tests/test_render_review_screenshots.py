@@ -35,6 +35,7 @@ REFERENCE_IDS = {
 }
 CONFLICT_IDS = {
     "conflict.local-changes",
+    "conflict.field",
     "conflict.local-cloud-images",
     "conflict.geometry",
     "conflict.possible-match",
@@ -45,6 +46,12 @@ CONFLICT_IDS = {
     "conflict.light",
     "conflict.dark",
 }
+OTHER_UI_IDS = {
+    "measure.metadata-tags",
+    "observations.image-metadata-tags",
+    "raw-processing.methods",
+}
+ALL_IDS = REFERENCE_IDS | CONFLICT_IDS | OTHER_UI_IDS
 
 
 def _run(*arguments: str, timeout: int = 120) -> subprocess.CompletedProcess[str]:
@@ -65,8 +72,10 @@ def test_registry_has_unique_semantic_ids_and_expected_groups() -> None:
     registry = create_registry()
     ids = [scenario.id for scenario in registry.all()]
     assert len(ids) == len(set(ids))
-    assert set(registry.groups()) == {"conflict", "reference-library"}
-    assert {scenario.id for scenario in registry.all()} == REFERENCE_IDS | CONFLICT_IDS
+    assert set(registry.groups()) == {
+        "conflict", "measure", "observations", "raw-processing", "reference-library"
+    }
+    assert {scenario.id for scenario in registry.all()} == ALL_IDS
 
 
 def test_group_and_explicit_scenario_selection() -> None:
@@ -124,7 +133,7 @@ def test_list_exposes_registered_groups_and_scenarios() -> None:
     assert result.returncode == 0, result.stderr
     assert "conflict:" in result.stdout
     assert "reference-library:" in result.stdout
-    for scenario_id in REFERENCE_IDS | CONFLICT_IDS:
+    for scenario_id in ALL_IDS:
         assert scenario_id in result.stdout
 
 
@@ -140,8 +149,8 @@ def test_default_renderer_emits_central_manifest_and_all_established_states(
     manifest = json.loads(manifest_path.read_text(encoding="utf-8"))
     assert manifest["version"] == 1
     screens = manifest["screens"]
-    assert {screen["id"] for screen in screens} == REFERENCE_IDS | CONFLICT_IDS
-    assert len(screens) == len(REFERENCE_IDS | CONFLICT_IDS)
+    assert {screen["id"] for screen in screens} == ALL_IDS
+    assert len(screens) == len(ALL_IDS)
 
     for screen in screens:
         assert screen["title"].strip()

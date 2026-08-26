@@ -2007,7 +2007,7 @@ Möchten Sie diese Bilder auf die neue Kalibrierung aktualisieren und die Messun
     <message>
         <location filename="../ui/cloud_conflict_dialog.py" line="748"/>
         <source>Observation local #{local_id} · cloud {cloud_id}</source>
-        <translation>Beobachtung lokal #{local_id} · Wolke {cloud_id}</translation>
+        <translation>Beobachtung lokal #{local_id} · Cloud {cloud_id}</translation>
     </message>
     <message>
         <location filename="../ui/cloud_conflict_dialog.py" line="1033"/>
@@ -2076,7 +2076,7 @@ Möchten Sie diese Bilder auf die neue Kalibrierung aktualisieren und die Messun
     <message>
         <location filename="../ui/cloud_conflict_dialog.py" line="1169"/>
         <source>Microscope category</source>
-        <translation>Kategorie Mikroskop</translation>
+        <translation>Mikroskopkategorie</translation>
     </message>
     <message>
         <location filename="../ui/cloud_conflict_dialog.py" line="1170"/>
@@ -2091,7 +2091,7 @@ Möchten Sie diese Bilder auf die neue Kalibrierung aktualisieren und die Messun
     <message>
         <location filename="../ui/cloud_conflict_dialog.py" line="1172"/>
         <source>Mount medium</source>
-        <translation>Medium montieren</translation>
+        <translation>Einbettungsmedium</translation>
     </message>
     <message>
         <location filename="../ui/cloud_conflict_dialog.py" line="1173"/>
@@ -2106,7 +2106,7 @@ Möchten Sie diese Bilder auf die neue Kalibrierung aktualisieren und die Messun
     <message>
         <location filename="../ui/cloud_conflict_dialog.py" line="1175"/>
         <source>Sample source</source>
-        <translation>Beispielquelle</translation>
+        <translation>Probenquelle</translation>
     </message>
     <message>
         <location filename="../ui/cloud_conflict_dialog.py" line="1176"/>
@@ -2149,7 +2149,7 @@ Möchten Sie diese Bilder auf die neue Kalibrierung aktualisieren und die Messun
         <location filename="../ui/cloud_conflict_dialog.py" line="1213"/>
         <location filename="../ui/cloud_conflict_dialog.py" line="1214"/>
         <source>missing</source>
-        <translation>fehlen</translation>
+        <translation>fehlt</translation>
     </message>
     <message>
         <location filename="../ui/cloud_conflict_dialog.py" line="1232"/>
@@ -2159,7 +2159,7 @@ Möchten Sie diese Bilder auf die neue Kalibrierung aktualisieren und die Messun
     <message>
         <location filename="../ui/cloud_conflict_dialog.py" line="1233"/>
         <source>Added only on Sporely Cloud</source>
-        <translation>Nur am Sporely Cloud hinzugefügt</translation>
+        <translation>Nur in Sporely Cloud hinzugefügt</translation>
     </message>
     <message>
         <location filename="../ui/cloud_conflict_dialog.py" line="1302"/>
@@ -2199,7 +2199,7 @@ Möchten Sie diese Bilder auf die neue Kalibrierung aktualisieren und die Messun
     <message>
         <location filename="../ui/cloud_conflict_dialog.py" line="1555"/>
         <source>Applied. Presentation policy was not fully applied for {count} image(s); other data is correct.</source>
-        <translation>Angewandt. Die Präsentationsrichtlinie wurde für {count}-Bilder nicht vollständig angewendet. andere Daten sind korrekt.</translation>
+        <translation>Angewandt. Die Darstellungseinstellungen wurden für {count} Bild(er) nicht vollständig angewendet; die übrigen Daten sind korrekt.</translation>
     </message>
     <message>
         <location filename="../ui/cloud_conflict_dialog.py" line="1560"/>
@@ -2229,7 +2229,7 @@ Möchten Sie diese Bilder auf die neue Kalibrierung aktualisieren und die Messun
     <message>
         <location filename="../ui/cloud_conflict_dialog.py" line="583"/>
         <source>Review later closes without applying any conflict decision. The observations remain pending and will appear again on a later sync.</source>
-        <translation>Die Überprüfung wird später geschlossen, ohne dass eine Konfliktentscheidung angewendet wird. Die Beobachtungen bleiben ausstehend und werden bei einer späteren Synchronisierung erneut angezeigt.</translation>
+        <translation>„Später prüfen“ schließt den Dialog, ohne eine Konfliktentscheidung anzuwenden. Die Beobachtungen bleiben ausstehend und werden bei einer späteren Synchronisierung erneut angezeigt.</translation>
     </message>
     <message>
         <location filename="../ui/cloud_conflict_dialog.py" line="602"/>
@@ -2277,12 +2277,12 @@ Möchten Sie diese Bilder auf die neue Kalibrierung aktualisieren und die Messun
     <message>
         <location filename="../ui/cloud_conflict_dialog.py" line="661"/>
         <source>Show matching photos and measurements</source>
-        <translation>Passende Fotos und Maße anzeigen</translation>
+        <translation>Übereinstimmende Fotos und Messungen anzeigen</translation>
     </message>
     <message>
         <location filename="../ui/cloud_conflict_dialog.py" line="666"/>
         <source>Photo and measurement comparison</source>
-        <translation>Foto- und Maßvergleich</translation>
+        <translation>Foto- und Messungsvergleich</translation>
     </message>
     <message>
         <location filename="../ui/cloud_conflict_dialog.py" line="687"/>
@@ -2383,7 +2383,7 @@ Möchten Sie diese Bilder auf die neue Kalibrierung aktualisieren und die Messun
     <message>
         <location filename="../ui/cloud_conflict_dialog.py" line="948"/>
         <source>{count} measurement(s) on microscope image {position} differ from the cloud copy.</source>
-        <translation>{count}-Messungen auf dem Mikroskopbild {position} unterscheiden sich von der Wolkenkopie.</translation>
+        <translation>{count} Messung(en) auf dem Mikroskopbild {position} unterscheiden sich von der Cloud-Kopie.</translation>
     </message>
     <message>
         <location filename="../ui/cloud_conflict_dialog.py" line="953"/>
@@ -2430,7 +2430,7 @@ Möchten Sie diese Bilder auf die neue Kalibrierung aktualisieren und die Messun
         <location filename="../ui/cloud_conflict_dialog.py" line="1183"/>
         <location filename="../ui/cloud_conflict_dialog.py" line="1230"/>
         <source>Changed only on Sporely Cloud</source>
-        <translation>Nur am Sporely Cloud geändert</translation>
+        <translation>Nur in Sporely Cloud geändert</translation>
     </message>
     <message>
         <location filename="../ui/cloud_conflict_dialog.py" line="1184"/>
@@ -2457,12 +2457,12 @@ Möchten Sie diese Bilder auf die neue Kalibrierung aktualisieren und die Messun
     <message>
         <location filename="../ui/cloud_conflict_dialog.py" line="1267"/>
         <source>Informational only — gallery rotation differs. This device value {local}° will be used automatically; cloud value is {remote}°.</source>
-        <translation>Nur zur Information – die Galerierotation ist unterschiedlich. Dieser Gerätewert {local}° wird automatisch verwendet; Der Wolkenwert ist {remote}°.</translation>
+        <translation>Nur zur Information – die Galerierotation ist unterschiedlich. Der Wert dieses Geräts, {local}°, wird automatisch verwendet; der Cloud-Wert ist {remote}°.</translation>
     </message>
     <message>
         <location filename="../ui/cloud_conflict_dialog.py" line="1281"/>
         <source>Property</source>
-        <translation>Eigentum</translation>
+        <translation>Eigenschaft</translation>
     </message>
     <message>
         <location filename="../ui/cloud_conflict_dialog.py" line="1295"/>
@@ -2497,7 +2497,7 @@ Möchten Sie diese Bilder auf die neue Kalibrierung aktualisieren und die Messun
     <message>
         <location filename="../ui/cloud_conflict_dialog.py" line="1315"/>
         <source>Owning image</source>
-        <translation>Bild besitzen</translation>
+        <translation>Zugehöriges Bild</translation>
     </message>
     <message>
         <location filename="../ui/cloud_conflict_dialog.py" line="1316"/>

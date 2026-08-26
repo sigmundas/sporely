@@ -2339,7 +2339,7 @@ Vil du uppdatera disse bildene til å bruke den nye kalibreringen och beregne m�
     <message>
         <location filename="../ui/cloud_conflict_dialog.py" line="903"/>
         <source>Change labels use the stored last-sync snapshot. “Changed on both sides” means both current versions differ from that snapshot.</source>
-        <translation>Ändra etiketter använder den lagrade ögonblicksbilden för senaste synkronisering. &quot;Ändrad på båda sidor&quot; betyder att båda nuvarande versionerna skiljer sig från den ögonblicksbilden.</translation>
+        <translation>Ändringsetiketterna använder den lagrade ögonblicksbilden från den senaste synkroniseringen. ”Ändrad på båda sidor” betyder att båda aktuella versionerna skiljer sig från den ögonblicksbilden.</translation>
     </message>
     <message>
         <location filename="../ui/cloud_conflict_dialog.py" line="908"/>
@@ -2426,7 +2426,7 @@ Vil du uppdatera disse bildene til å bruke den nye kalibreringen och beregne m�
         <location filename="../ui/cloud_conflict_dialog.py" line="1182"/>
         <location filename="../ui/cloud_conflict_dialog.py" line="1229"/>
         <source>Changed only on this device</source>
-        <translation>Ändrade endast på den här enheten</translation>
+        <translation>Ändrad endast på den här enheten</translation>
     </message>
     <message>
         <location filename="../ui/cloud_conflict_dialog.py" line="1183"/>
@@ -2438,7 +2438,7 @@ Vil du uppdatera disse bildene til å bruke den nye kalibreringen och beregne m�
         <location filename="../ui/cloud_conflict_dialog.py" line="1184"/>
         <location filename="../ui/cloud_conflict_dialog.py" line="1231"/>
         <source>Changed on both sides</source>
-        <translation>Bytt på båda sidor</translation>
+        <translation>Ändrad på båda sidor</translation>
     </message>
     <message>
         <location filename="../ui/cloud_conflict_dialog.py" line="1194"/>
@@ -2459,7 +2459,7 @@ Vil du uppdatera disse bildene til å bruke den nye kalibreringen och beregne m�
     <message>
         <location filename="../ui/cloud_conflict_dialog.py" line="1267"/>
         <source>Informational only — gallery rotation differs. This device value {local}° will be used automatically; cloud value is {remote}°.</source>
-        <translation>Endast information – gallerirotationen skiljer sig. Detta enhetsvärde {local}° kommer att användas automatiskt; molnvärdet är {remote}°.</translation>
+        <translation>Endast information – gallerirotationen skiljer sig. Värdet på den här enheten, {local}°, används automatiskt; värdet i molnet är {remote}°.</translation>
     </message>
     <message>
         <location filename="../ui/cloud_conflict_dialog.py" line="1281"/>
@@ -2474,12 +2474,12 @@ Vil du uppdatera disse bildene til å bruke den nye kalibreringen och beregne m�
     <message>
         <location filename="../ui/cloud_conflict_dialog.py" line="1311"/>
         <source>Length</source>
-        <translation>Lengde</translation>
+        <translation>Längd</translation>
     </message>
     <message>
         <location filename="../ui/cloud_conflict_dialog.py" line="1311"/>
         <source>Width</source>
-        <translation>Bredde</translation>
+        <translation>Bredd</translation>
     </message>
     <message>
         <location filename="../ui/cloud_conflict_dialog.py" line="1312"/>

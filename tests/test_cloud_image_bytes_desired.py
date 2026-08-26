@@ -869,7 +869,9 @@ def test_headless_sync_seeds_sparse_microscope_default_before_byte_upload(
         def pull_image_metadata(self, obs_cloud_id, include_deleted_for_sync=False):
             return []
 
-        def push_image_metadata(self, image_row, obs_cloud_id, storage_path):
+        def push_image_metadata(
+            self, image_row, obs_cloud_id, storage_path, remote_row=None
+        ):
             image_id = int(dict(image_row or {}).get("id") or 0)
             return f"cloud-img-{image_id}"
 

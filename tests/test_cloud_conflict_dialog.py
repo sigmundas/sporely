@@ -191,6 +191,30 @@ def test_apply_all_remains_disabled_for_per_item_metadata_plans(dialog):
     assert dialog._merge_btn.isEnabled()
 
 
+def test_field_only_conflict_requires_choice_and_sizes_table_to_content(dialog):
+    detail = _detail(fields=True, measurement=False)
+    detail["image_pairs"] = []
+    dialog._populate_detail(detail)
+
+    assert dialog._compare_table.rowCount() == 1
+    expected_height = dialog._compare_table.horizontalHeader().height() + sum(
+        dialog._compare_table.rowHeight(row)
+        for row in range(dialog._compare_table.rowCount())
+    ) + dialog._compare_table.frameWidth() * 2 + 6
+    assert dialog._compare_table.height() == max(58, expected_height)
+    assert dialog._selected_choice("field:notes") is None
+    assert not dialog._apply_btn.isEnabled()
+
+    dialog._set_choice("field:notes", "cloud")
+    dialog._update_apply_enabled()
+    assert dialog._apply_btn.isEnabled()
+    plan_items = dialog._build_selected_plan()["items"]
+    assert len(plan_items) == 1
+    assert {
+        key: plan_items[0][key] for key in ("kind", "field", "choice")
+    } == {"kind": "field", "field": "notes", "choice": "cloud"}
+
+
 def test_possible_match_warning_does_not_pair_cards(dialog):
     detail = _detail(measurement=False, possible=True)
     dialog._populate_detail(detail)
@@ -476,14 +500,19 @@ def test_mixed_cloud_field_and_local_measurement_plan_recomputes_statistics(dial
     dialog._populate_detail(detail)
     dialog._set_choice("field:common_name", "cloud")
     dialog._set_choice("measurement:31", "local")
-    dialog._set_choice("image:9", "keep_local")
+    dialog._set_choice("image:9", "upload")
     dialog._set_choice("image:cloud-only", "keep_cloud")
     dialog._update_apply_enabled()
     plan = dialog._build_selected_plan()
     assert dialog._apply_btn.isEnabled()
-    assert {(item["kind"], item.get("field"), item["choice"]) for item in plan["items"]} >= {
-        ("field", "common_name", "cloud"),
-        ("measurement", None, "local"),
+    assert {
+        (item["kind"], item.get("field"), item.get("side"), item["choice"])
+        for item in plan["items"]
+    } >= {
+        ("field", "common_name", None, "cloud"),
+        ("measurement", None, "matched", "local"),
+        ("image", None, "local_only", "upload"),
+        ("image", None, "cloud_only", "keep_cloud"),
     }
     assert plan["derived_statistics"] == "recompute_from_measurements"
     assert plan["presentation_policy"] == {

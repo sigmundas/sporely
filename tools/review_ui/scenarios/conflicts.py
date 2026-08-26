@@ -242,7 +242,20 @@ def _dialog(context: ReviewContext, detail: dict):
 
 
 def _mixed(context: ReviewContext):
-    return _dialog(context, _default_detail(fields=True, measurement=True))
+    dialog = _dialog(context, _default_detail(fields=True, measurement=True))
+    dialog._set_choice("field:common_name", "cloud")
+    dialog._set_choice("measurement:31", "local")
+    dialog._set_choice("image:9", "upload")
+    dialog._set_choice("image:cloud-only", "keep_cloud")
+    dialog._update_apply_enabled()
+    context.app.processEvents()
+    return dialog
+
+
+def _field_only(context: ReviewContext):
+    detail = _default_detail(fields=True, measurement=False)
+    detail["image_pairs"] = []
+    return _dialog(context, detail)
 
 
 def _local_cloud_images(context: ReviewContext):
@@ -323,6 +336,14 @@ def register_conflict_scenarios(registry: ScenarioRegistry) -> None:
             description="Cloud field changes and local measurement changes are resolved together.",
             viewport=VIEWPORT,
             build=_mixed,
+        ),
+        ReviewScenario(
+            id="conflict.field",
+            group="conflict",
+            title="Observation field conflict",
+            description="A field-only conflict requires an explicit per-field choice.",
+            viewport=VIEWPORT,
+            build=_field_only,
         ),
         ReviewScenario(
             id="conflict.local-cloud-images",

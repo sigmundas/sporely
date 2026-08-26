@@ -1,0 +1,82 @@
+{
+  "version": 1,
+  "screens": [
+    {
+      "id": "conflict.local-changes",
+      "path": "conflict.local-changes.png",
+      "title": "Mixed field and measurement choices",
+      "description": "Cloud field changes and local measurement changes are resolved together.",
+      "viewport": "1240x820"
+    },
+    {
+      "id": "conflict.field",
+      "path": "conflict.field.png",
+      "title": "Observation field conflict",
+      "description": "A field-only conflict requires an explicit per-field choice.",
+      "viewport": "1240x820"
+    },
+    {
+      "id": "conflict.local-cloud-images",
+      "path": "conflict.local-cloud-images.png",
+      "title": "Local-only and cloud-only images",
+      "description": "Unpaired local and cloud media remain visible as explicit choices.",
+      "viewport": "1240x820"
+    },
+    {
+      "id": "conflict.geometry",
+      "path": "conflict.geometry.png",
+      "title": "Scientific geometry difference",
+      "description": "A measurement axis geometry conflict exposes the scientific detail.",
+      "viewport": "1240x820"
+    },
+    {
+      "id": "conflict.possible-match",
+      "path": "conflict.possible-match.png",
+      "title": "Possible image match warning",
+      "description": "An uncertain unpaired image match is presented without asserting identity.",
+      "viewport": "1240x820"
+    },
+    {
+      "id": "conflict.identity",
+      "path": "conflict.identity.png",
+      "title": "Identity conflict with Apply disabled",
+      "description": "Ambiguous cloud identity blocks applying an unsafe merge plan.",
+      "viewport": "1240x820"
+    },
+    {
+      "id": "conflict.incomplete-plan",
+      "path": "conflict.incomplete-plan.png",
+      "title": "Incomplete plan with Apply disabled",
+      "description": "The safe-additions preset leaves a measurement decision unresolved.",
+      "viewport": "1240x820"
+    },
+    {
+      "id": "conflict.progress",
+      "path": "conflict.progress.png",
+      "title": "Active apply progress",
+      "description": "The dialog reports active application without a confirmation popup.",
+      "viewport": "1240x820"
+    },
+    {
+      "id": "conflict.image-order",
+      "path": "conflict.image-order.png",
+      "title": "Image-order-only informational state",
+      "description": "Presentation-only image ordering remains informational and nonblocking.",
+      "viewport": "1240x820"
+    },
+    {
+      "id": "conflict.light",
+      "path": "conflict.light.png",
+      "title": "Conflict dialog in light mode",
+      "description": "The mixed conflict state uses the real application light theme.",
+      "viewport": "1240x820"
+    },
+    {
+      "id": "conflict.dark",
+      "path": "conflict.dark.png",
+      "title": "Conflict dialog in dark mode",
+      "description": "The mixed conflict state uses the real application dark theme.",
+      "viewport": "1240x820"
+    }
+  ]
+}
