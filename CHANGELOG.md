@@ -71,7 +71,8 @@ All four are forward-only and backward-compatible: older desktop clients keep sy
 - Removal of the legacy `observations.spore_statistics` string.
 - Historical backfill scripts — backfill happens automatically as users upgrade sporely-py.
 
-Full design and stage-by-stage progress notes live in [docs/spore-statistics-species-profiles.md](docs/spore-statistics-species-profiles.md).
+Full design and stage-by-stage progress notes live in the
+[completed spore-statistics plan](docs/plans/completed/2026-07-13-spore-statistics-species-profiles.md).
 
 ## 2026-06-22
 

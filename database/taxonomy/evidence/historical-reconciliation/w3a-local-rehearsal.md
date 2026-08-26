@@ -26,7 +26,7 @@ in Git; only the SHAs live in prior committed evidence):
 
 ## Deliverables
 
-* Schema draft: [`sporely-web/supabase/drafts/taxonomy_v3_schema.sql`](../../../../sporely-web/supabase/drafts/taxonomy_v3_schema.sql)
+* Schema draft: [`sporely-web/supabase/drafts/taxonomy_v3_schema.sql`](../../../../../sporely-web/supabase/drafts/taxonomy_v3_schema.sql)
   — isolated schema `taxonomy_v3`, RLS on every table, immutable-snapshot trigger, hardened `external_mapping` conflict invariant, `install_release_chain()` transactional installer.
 * Observations integration draft: `sporely-web/supabase/drafts/taxonomy_v3_observations_integration_draft.sql`
   — additive nullable column, service-role write guard, `link_observations_to_resolution()`.

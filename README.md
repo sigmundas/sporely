@@ -144,13 +144,21 @@ Review plots and compare to references:
 ![Review analysis and references](docs/images/4-stats-reference.png)
 
 ## Documentation
+
+- [Technical overview](docs/technical-overview.md) — concise architecture and current-system orientation
+- [GUI development conventions](docs/development/gui-conventions.md) — PySide6 implementation patterns
+- [Development plans](docs/plans/README.md) — inbox, active plans, and completed design records
+- [Agent working agreements](AGENTS.md) — repository rules for coding agents
+- [Engineering history](docs/engineering-history.md) — detailed implementation and debugging notes
+- [Cloud sync contract](docs/supabase-sync-contract.md) — authoritative sync behavior
+- [Cloud sync architecture](docs/cloud-sync-architecture.md) — implementation ownership and navigation
 - [Online publishing](docs/artsobservasjoner.md)
 - [Field photography](docs/field-photography.md)
 - [Microscopy workflow](docs/microscopy-workflow.md)
 - [Spore measurements](docs/spore-measurements.md)
 - [Taxonomy integration](docs/taxonomy-integration.md)
 - [Database structure](docs/database-structure.md)
-- [Changelog](CHANGELOG.md)
+- [Changelog](CHANGELOG.md) — user-facing notable release changes
 
 
 ## License

@@ -5,11 +5,70 @@
 - Do not run heavy build steps, including Capacitor syncs, PyInstaller, Docker builds, full app builds, packaging commands, or dependency installation, unless explicitly requested.
 - Keep patches narrow. If a task touches multiple workflows or large UI files, propose staged patches and stop after the current stage.
 - Do not rewrite or refactor unrelated code while fixing a bug. Preserve existing behavior unless the prompt explicitly asks for a behavior change.
+- Do not commit or push unless the user explicitly asks. Never rewrite published
+  history or force-push without explicit authorization.
 - For sporely-py, always use the project virtual environment:
 /Users/sigmundas/Documents/Code/sporely/sporely-py/.venv/bin/python
 /Users/sigmundas/Documents/Code/sporely/sporely-py/.venv/bin/pytest
 Ask for confirmation before installing or upgrading packages in .venv.
 For syntax checks, use ./.venv/bin/python -m py_compile <touched files>
+
+## Documentation roles
+
+- `README.md` is the human-facing project introduction, installation guide,
+  and documentation index.
+- `AGENTS.md` is the sole repository-wide source of instructions for coding
+  agents.
+- `docs/technical-overview.md` is a concise description of the current
+  architecture. It is orientation material, not a requirements document.
+- `docs/development/gui-conventions.md` contains the detailed PySide6 layout,
+  sizing, state, threading, and image-handling conventions.
+- `docs/plans/INBOX.md` holds rough ideas; `docs/plans/active/` holds
+  scoped unfinished plans; `docs/plans/completed/` preserves finished plans.
+- Detailed contracts, architecture maps, runbooks, audits, and user guides
+  remain beside the subsystem they document.
+
+When documents disagree, current code and tests establish implementation
+reality, while the most specific applicable contract governs intended
+behavior. Plans describe intent and Git history records what actually landed.
+
+## Review and implementation conventions
+
+- In reviews, distinguish correctness defects from cleanup or style opinions.
+  Check especially for duplicate logic, competing sources of truth, database
+  consistency, state-flow errors, UI inconsistency, dead code, unclear
+  boundaries, naming, and error handling. Keep review reports factual and
+  concise.
+- Use Python 3.10+ and PySide6; do not introduce PyQt.
+- Follow `docs/development/gui-conventions.md` for GUI-specific work.
+- Use Qt layouts instead of absolute positioning with `setGeometry()` or
+  `move()`. Avoid fixed width/height where stretch policies work. Use
+  `QSplitter` for resizable panes and persist user-adjustable splitter state
+  through `QSettings`.
+- Guard programmatic widget updates against signal recursion with loading flags
+  or `blockSignals()`.
+- Keep network and other expensive work off the UI thread, normally with
+  `QThread`, and clean up worker threads when their owning UI closes. Use
+  `QTimer.singleShot` when UI initialization genuinely needs to be deferred.
+- Respect EXIF orientation with `QImageReader.setAutoTransform(True)` when
+  loading previews.
+- Use native type annotations for signatures and class variables. Prefix
+  private UI builders and event slots with one underscore.
+- Prefer dataclasses for structured data passed between UI and internal logic;
+  do not broaden a focused patch solely to retrofit existing structures.
+
+## Database and generated artifacts
+
+- Inspect the existing schema and migration path before changing persistence.
+  Local SQLite currently uses the Python helpers documented in
+  `database/sqlite_migrations/README.md`; do not place Supabase/Postgres SQL in
+  that directory.
+- Preserve existing data and add focused migration/round-trip coverage for
+  schema changes.
+- Do not edit or commit generated databases, caches, local credentials,
+  downloaded source archives, or ad hoc screenshot output. Commit generated
+  artifacts only when the owning documented workflow explicitly requires them
+  (for example, translated `.qm` files alongside their `.ts` sources).
 
 ## UI screenshot review evidence
 
@@ -85,6 +144,14 @@ supported; German uses informal "du".
   user-facing `tr(…)` calls, add it to that list.
 ## Cloud sync invariants
 
+- Preserve account binding through `linked_cloud_user_id`; never sync a local
+  database with a different account unless the user explicitly resets the
+  cloud link.
+- Keep `is_draft` (workflow), `sharing_scope`/cloud `visibility` (audience),
+  and `location_precision` (location disclosure) as independent concepts.
+- Auto-merge only non-overlapping changes covered by the sync contract. True
+  overlapping edits require an explicit conflict plan; identity disagreement
+  must fail closed.
 - Treat `sync_images`, `materialize_remote_images`, and `full_pull` as independent controls. Never turn all three on as a generic "full sync" fix.
 - Observations-tab refresh uses `sync_images=False`, `materialize_remote_images=True`, and `full_pull=False`: push metadata, fast-pull only new/changed remote observations, and download their missing media without scanning the local media backlog.
 - Profile & Cloud "Sync now" uses `sync_images=True`, `materialize_remote_images=True`, and `full_pull=False`: upload genuinely pending selected local media and materialize new/changed remote media, while preserving unchanged-observation pruning.

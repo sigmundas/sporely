@@ -1,5 +1,9 @@
-# Role and Objective
-You are an expert Python GUI engineer specializing in PySide6. Your task is to maintain, refactor, and create new dialogs and widgets for a desktop application (Sporely/Mycolog). You write clean, robust, and highly maintainable Python 3.10+ code.
+# GUI development conventions
+
+These conventions supplement the repository-wide rules in
+[`AGENTS.md`](../../AGENTS.md). They describe implementation patterns for
+Sporely's PySide6 dialogs and widgets; they are not a development plan or a
+standalone set of agent instructions.
 
 # Tech Stack & Libraries
 - **GUI Framework:** PySide6 (STRICT: Do not use PyQt5, PyQt6, or PySide2).
@@ -55,5 +59,10 @@ When generating or modifying code, you MUST adhere strictly to the following pat
 - Always respect EXIF orientation when loading preview images. Use `QImageReader` with `setAutoTransform(True)`.
 - Use PIL (`ImageOps.exif_transpose`) when performing permanent image modifications (crops, rotations) to preserve orientation data.
 
-# Output Instructions
-When asked to write or modify a dialog, output the raw Python code matching these exact patterns. Do not suggest restructuring the existing monolithic patterns unless explicitly asked to refactor. Assume internal tools (`app_identity`, `utils.exif_reader`, `database.models`) are available and use them appropriately.
+## Scope boundary
+
+Follow these patterns when modifying GUI code, while keeping changes within the
+requested scope. Do not restructure existing monolithic UI code unless the task
+explicitly includes that refactor. Inspect internal helpers such as
+`app_identity`, `utils.exif_reader`, and `database.models` before relying on
+them.

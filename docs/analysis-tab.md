@@ -76,7 +76,7 @@ The active filter is shown in a label below the gallery controls (e.g., "Length:
 
 ### Multi-Select
 
-Hold Cmd (macOS) or Ctrl (Windows/Linux) while clicking to add points or histogram bins to the current selection rather than replacing it. See [Analysis Development Plan](analysis-development-plan.md).
+Hold Cmd (macOS) or Ctrl (Windows/Linux) while clicking to add points or histogram bins to the current selection rather than replacing it. Related follow-up work is tracked in the [development inbox](plans/INBOX.md).
 
 ### Clear Filter
 

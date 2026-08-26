@@ -93,7 +93,7 @@ Locally proven:
 ## 4. Cryptographic manifest verification
 
 `verifyManifest(rawText, expectedSha)` in
-[`scripts/taxonomy-v3/install-release-chain.mjs`](../../../../sporely-web/scripts/taxonomy-v3/install-release-chain.mjs)
+[`scripts/taxonomy-v3/install-release-chain.mjs`](../../../../../sporely-web/scripts/taxonomy-v3/install-release-chain.mjs)
 recomputes the semantic SHA and enforces every structural rule before
 SQL runs:
 
@@ -159,8 +159,8 @@ while any external mapping still points to it.
 
 New files (no destructive DDL):
 
-* [`sporely-web/supabase/drafts/taxonomy_v3_schema_additive.sql`](../../../../sporely-web/supabase/drafts/taxonomy_v3_schema_additive.sql)
-* [`sporely-web/supabase/drafts/taxonomy_v3_observations_integration_draft_additive.sql`](../../../../sporely-web/supabase/drafts/taxonomy_v3_observations_integration_draft_additive.sql)
+* [`sporely-web/supabase/drafts/taxonomy_v3_schema_additive.sql`](../../../../../sporely-web/supabase/drafts/taxonomy_v3_schema_additive.sql)
+* [`sporely-web/supabase/drafts/taxonomy_v3_observations_integration_draft_additive.sql`](../../../../../sporely-web/supabase/drafts/taxonomy_v3_observations_integration_draft_additive.sql)
 
 Verified locally against three stack states:
 

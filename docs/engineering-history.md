@@ -1,5 +1,10 @@
 # Sporely Desktop — History & Debugging Notes
 
+This is a detailed engineering and debugging record, not an active plan or the
+user-facing release changelog. See [`CHANGELOG.md`](../CHANGELOG.md) for notable
+release changes and [`plans/README.md`](plans/README.md) for the planning
+workflow. Git history remains authoritative for the implementation.
+
 ### Stage 1 desktop-cloud image-sync split: cloud-storage-desired state has its own setting, its own predicate, and a client-boundary byte gate
 
 The gallery "Keep image in Sporely Cloud" checkbox no longer overloads `artsobs_publish_excluded_image_ids_<obs>`. It now persists to a dedicated per-observation setting `sporely_cloud_image_storage_excluded_ids_<obs>`, and a canonical predicate `cloud_image_bytes_desired(observation_id, image_id)` is the single source of truth for whether cloud image bytes may be sent. `SporelyCloudClient.upload_image_file` and `SporelyCloudClient.upload_original_image_file` raise `CloudImageBytesNotDesiredError` when the predicate says no (recovery flows opt in via `recovery_authorized=True`). `_push_images_for_observation` guards the two byte-upload call sites and the `prepare_images_cb=None` fallback with the same predicate. Identity repair (`_associate_persisted_cloud_images`) is decoupled from the checkbox and works by unambiguous `desktop_id` match. A non-destructive initializer seeds the new set on first gallery load; legacy Artsobs publication exclusions never migrate into the new key. Publication paths (`_ensure_microscope_publish_defaults`, `_collect_artsobs_image_paths`, `_collect_publish_selected_image_rows`, Species Plate dialog) are unchanged. See `docs/supabase-sync-contract.md` Phase 2 (Stage 1) for the shipped contract; Phase 3 / Stage 2 (cloud-side reconciliation) remains future work.
@@ -382,10 +387,10 @@ Rule of thumb: on macOS, only use these cursor shapes in `setCursor(...)`:
 Anything else risks the same crash. If a resize/move affordance is wanted, prefer
 setting a status/hint via `HintController` rather than a specialty cursor.
 
-Fix locations (2026-07): [ui/zoomable_image_widget.py](ui/zoomable_image_widget.py)
-(`_crop_corner_cursor` returns `None`), [ui/spore_preview_widget.py](ui/spore_preview_widget.py)
-(hover-inside-rectangle uses `Qt.ArrowCursor`), [ui/species_plate_dialog.py](ui/species_plate_dialog.py)
-(resize/border hover uses `Qt.ArrowCursor`), [ui/hint_status.py](ui/hint_status.py)
+Fix locations (2026-07): [ui/zoomable_image_widget.py](../ui/zoomable_image_widget.py)
+(`_crop_corner_cursor` returns `None`), [ui/spore_preview_widget.py](../ui/spore_preview_widget.py)
+(hover-inside-rectangle uses `Qt.ArrowCursor`), [ui/species_plate_dialog.py](../ui/species_plate_dialog.py)
+(resize/border hover uses `Qt.ArrowCursor`), [ui/hint_status.py](../ui/hint_status.py)
 (`_apply_hint_affordance` always calls `unsetCursor()`).
 
 Also worth noting: passing `Qt.CursorShape` directly to `setCursor(...)` is fine and

@@ -6,6 +6,11 @@
 
 Plans describe intent and decisions. Git history is the source of truth for what was actually implemented.
 
+This directory is not the home for repository instructions, current
+architecture, operational runbooks, or user documentation. Those belong in
+`AGENTS.md`, the relevant architecture/contract document, or the appropriate
+permanent documentation location.
+
 ## Workflow
 
 1. Capture rough observations in `INBOX.md`.

@@ -1,4 +1,13 @@
-# Sporely Desktop (sporely-py) — Technical Spec
+# Sporely Desktop technical overview
+
+This document is a concise map of the current desktop application. It is not
+an implementation plan or an agent-instruction file.
+
+- Start with the repository [README](../README.md) for installation and use.
+- Follow [AGENTS.md](../AGENTS.md) when changing the repository.
+- Use [development plans](plans/README.md) for proposed and staged work.
+- Treat the detailed subsystem contracts and architecture documents as
+  authoritative where they are more specific than this overview.
 
 ## Architecture Overview
 A Python-based desktop application (PySide6) for field observations, microscopy calibration, spore measurements, and cloud synchronization. Acts as the local "source of truth" and offline workstation, while optionally syncing with Sporely Cloud (`sporely-web`).
@@ -20,18 +29,18 @@ A Python-based desktop application (PySide6) for field observations, microscopy 
 
 ## Data Flow & Sync Engine
 - **Local-First Database:** All data is initially written to the local SQLite database.
-- **Cloud Syncing:** `cloud_sync.py` manages bidirectional REST sync with the Supabase PostgreSQL database.
-- **Metadata-First Desktop Sync:** The desktop `Sync now` path refreshes observations, image metadata, measurements, and snapshots without downloading missing cloud media. When a user explicitly wants cloud media on the local device, there is a separate offline-media download action.
-- **Conflict Resolution:** 
+- **Cloud Syncing:** `utils/cloud_sync.py` manages bidirectional REST sync with the Supabase PostgreSQL database.
+- **Caller-specific media behavior:** Refresh, Sync now, and recovery/download flows use different combinations of metadata push, pending-image upload, remote-media materialization, and deep reconciliation. See [the sync contract](supabase-sync-contract.md) and [architecture map](cloud-sync-architecture.md); this overview does not redefine those modes.
+- **Conflict Resolution:**
   - Sync engine stores a last-seen snapshot for cloud observations.
-  - Cloud is the source of truth for linked observation metadata; manual review is reserved for destructive cases such as image removal.
-  - Reduced cloud image copies and harmless metadata drift are merged without a modal.
-  - Missing R2 media objects are gracefully skipped, allowing the rest of the sync to continue.
+  - Non-overlapping changes can merge automatically; genuine overlapping edits require an explicit conflict plan.
+  - Identity disagreement fails closed rather than creating or reparenting records.
+  - Missing or failed child work remains visible and retryable.
 - **Important Upload Failures:** Plan-limit image upload failures surface a detailed dialog naming the observation, image, and file sizes so users can tell which upload needs attention.
 - **Account Lock:** `linked_cloud_user_id` is stored in local settings after the first sync. Any attempt to sync with a different account without explicitly resetting the local cloud link throws an `AccountMismatchError`.
 
 ## Privacy & Visibility Model
-- **Workflow vs Privacy:** 
+- **Workflow vs Privacy:**
   - `is_draft`: Indicates a WIP observation and stays separate from visibility.
   - `sharing_scope`: Maps to Supabase `visibility` (`private`, `friends`, `public`).
   - `location_precision`: Maps to Supabase `location_precision` (`exact`, `fuzzed`).
