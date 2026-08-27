@@ -15,6 +15,18 @@ Line numbers refer to `utils/cloud_sync.py` unless another file is named.
 They will drift; symbol names are the stable reference. Verify with
 `grep -n "def <name>" utils/cloud_sync.py`.
 
+
+## Visual overview
+
+![Sporely cloud sync flow](images/cloud-sync-flow.png)
+
+This diagram summarizes the standard bidirectional desktop sync cycle: push
+preflight and tombstone ordering, three-way conflict detection, image and
+measurement child work, the optional child-change probe, pull reconciliation,
+retry/error paths, and interactive conflict resolution. It is an orientation
+aid; the sync contract, current code, and tests remain authoritative if the
+diagram drifts.
+
 ---
 
 ## A. System purpose and boundaries
