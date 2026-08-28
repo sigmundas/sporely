@@ -1,6 +1,6 @@
 # Reference Library and Public Reference Plotting Plan
 
-**Status:** Stage 1 (local schema foundation) implemented; Stages 2–6 still proposed.
+**Status:** Stages 1–2 and the Stage 3 private cloud schema/mutation slice are implemented; Stage 3 public projection and Stages 4–6 remain.
 **Canonical repository:** `sporely-py`
 **Canonical path:** `docs/plans/active/2026-08-05-reference-library-and-public-plots.md`
 **Scope:** `sporely-py` → `sporely-web`/Supabase → `sporely-landing`
@@ -10,9 +10,12 @@
 
 ## Agent handoff
 
-- Status: Active; Stage 1 and a Stage 2 desktop vertical slice are implemented, while substantial Stage 2 work and Stages 3–6 remain.
-- Last completed stage: Stage 1; the documented Stage 2 vertical slice and interactive legacy migration also landed.
-- Current/next stage: Finish the remaining Stage 2 desktop library/attachment work before cloud/public stages.
+- Status: Active; Stages 1–2 and the Stage 3 private cloud schema/mutation
+  slice are implemented; the Stage 3 public projection and Stages 4–6 remain.
+- Last completed stage: Stage 3 normalized Supabase schema, RLS, and mutation
+  RPCs.
+- Current/next stage: Implement the audited Stage 3 frozen-snapshot public
+  observation projection in `sporely-web`.
 - Relevant commits: `108db20`, `6c9c456`, `08249ec`, `22bd29f`, `f05f2e3`, `2a1ebe3`.
 - Important decisions: Preserve stable UUIDs, frozen observation snapshots, revision-aware records, and the distinction between literature ranges and raw observations.
 - Do not: Fuzzy-merge bibliographic records, fabricate statistics, or begin public catalogue scope without a separate moderation design.
@@ -530,16 +533,26 @@ Each synced row needs:
 
 - stable UUID;
 - `updated_at`;
-- revision;
+- a server `row_version` for compare-and-set, plus the existing domain
+  `revision` on works, treatments, and measurement sets;
 - tombstone/deletion semantics;
 - conflict policy.
 
 Initial conflict policy:
 
 - bibliographic/measurement edits create a new revision;
-- observation attachment edits use last-write-wins only for role/note;
+- cloud compare-and-set uses a separate server `row_version`; desktop content
+  revisions are preserved and never collapsed into the transport token;
+- observation attachment role/note edits also use compare-and-set; there is no
+  silent last-write-wins exception;
 - snapshot changes require explicit update;
 - cloud must never replace a newer local revision silently.
+
+Create/restore sync order is work → treatment → measurement set → observation
+use. Tombstone order is the reverse: use → measurement set → treatment → work.
+The desktop's local observation integer is never uploaded as
+`observation_id`; Stage 4 resolves it through the verified observation cloud
+identity first.
 
 ---
 
@@ -1168,6 +1181,364 @@ does not edit JSON:
 - Cloud sync of `observation_reference_uses` — deferred to Stage 4.
   This slice does not touch Supabase, `sporely-web`, or
   `sporely-landing`.
+
+## 19c. Stage 3 cloud audit and proposed contract (2026-08-28)
+
+This section is the implementation contract for Stage 3. The initial audit
+was read-only; the first implementation slice described below landed on
+2026-08-28.
+
+### Verified `sporely-web` state
+
+1. **Only the legacy reference table exists.** The baseline migration defines
+   `public.reference_values` with a bigint identity and the legacy
+   genus/species/source, preparation, Parmasto, and aggregate measurement
+   columns. It has no owner, stable cross-client UUID, revision, tombstone,
+   bibliography, treatment, normalized measurement-set, or observation-use
+   model. No later migration replaces it.
+2. **The legacy search RPC is a separate compatibility API.**
+   `search_public_reference_values(p_genus text, p_species text,
+   p_limit integer default 50)` is a `STABLE SECURITY DEFINER` function. It
+   returns the legacy bigint `reference_id` and legacy measurement shape,
+   performs case-insensitive exact genus and optional species matching, and
+   orders by `updated_at DESC, id DESC`. It is executable by `anon`,
+   `authenticated`, and `service_role`. Its limit is lower-bounded but not
+   upper-capped.
+3. **There is no single JSON publication payload.** Observation detail reads
+   the owner table or the community/friend views, while microscopy and other
+   public-safe data use separate RPCs. Public eligibility currently means
+   `visibility = 'public'`, `NOT coalesce(is_draft, false)`, no banned owner,
+   and no applicable block. There is no deployed `published_at` or
+   `publish_observation` contract to target.
+4. **Raw sync tables are owner-only.** Current hardening restricts raw
+   observations, images, and measurements to `auth.uid() = user_id`; public
+   consumers use allowlisted views/RPCs. Default privileges no longer expose
+   new public-schema tables/functions automatically. Every new table/function
+   therefore requires deliberate grants as well as RLS.
+5. **Existing deletion precedent is soft deletion.** Media uses `deleted_at`;
+   owner reads can retain tombstones while public projections exclude them.
+   There is no reusable revision-aware upsert pattern, so this project must
+   define one explicitly.
+6. **Supabase tests are transactional SQL fixtures.** Tests in
+   `supabase/tests/` use fixed UUIDs, JWT claim/role switching, exception
+   assertions, and rollback. Privilege tests sometimes need local container
+   `psql` after `supabase db reset --local`.
+
+### Normalized private schema
+
+All four tables are private owner-sync state even though they live in the
+exposed `public` schema. `anon` receives no table privileges. `authenticated`
+receives owner-scoped `SELECT`; mutation is only through the revision-aware
+RPCs below. `service_role` retains administrative access.
+
+Common columns on every table:
+
+- `id uuid NOT NULL` supplied by the desktop; the cloud never replaces it;
+- `user_id uuid NOT NULL REFERENCES auth.users(id) ON DELETE CASCADE`;
+- `row_version bigint NOT NULL DEFAULT 1 CHECK (row_version >= 1)` as the
+  server compare-and-set token;
+- `created_at timestamptz NOT NULL DEFAULT now()`;
+- `updated_at timestamptz NOT NULL DEFAULT now()`;
+- `deleted_at timestamptz NULL` as the durable sync tombstone.
+
+The primary key is `(user_id, id)`, not global `id`. Bundle import currently
+preserves UUIDs, so two accounts may legitimately own private copies of the
+same portable graph. Every point lookup and cursor query is owner-scoped.
+
+`reference_works` adds the Stage 2 fields with these cloud types:
+`type text`, `citation_key text`, `authors_json jsonb`, `editors_json jsonb`,
+`title text`, `container_title text`, `year integer`, `edition text`,
+`publisher text`, `place text`, `volume text`, `issue text`, `pages text`,
+`doi text`, `isbn text`, `url text`, `language text`, `short_label text`, and
+`citation_override text`. `type` is checked against `book`, `article`,
+`chapter`, `website`, `dataset`, and `other`. There is no verification or
+visibility column. It also has `revision integer NOT NULL CHECK (revision >=
+1)`, preserving the desktop content revision independently of `row_version`.
+A partial unique index enforces nonblank live
+`citation_key` per owner. DOI/ISBN get normalized lookup indexes, not global
+uniqueness: duplicate candidates are reported to the owner and never silently
+merged.
+
+`reference_taxon_treatments` adds `reference_work_id uuid NOT NULL`,
+`taxon_id text`, `name_as_published text NOT NULL`, `page_from integer`,
+`page_to integer`, `locator_text text`, and `treatment_notes text`. The taxon
+identifier stays text to preserve the desktop's stable identifier verbatim; it
+is not forced into the current cloud taxonomy's integer key. It has its own
+desktop-compatible `revision integer NOT NULL CHECK (revision >= 1)`.
+
+`reference_measurement_sets` adds `taxon_treatment_id uuid NOT NULL`,
+`character text`, `raw_text text`, `data_kind text`, all numeric/count/method
+fields listed in §5.3, `raw_points_json jsonb`, and `supersedes_id uuid`.
+It has its own desktop-compatible `revision integer NOT NULL CHECK (revision >=
+1)`.
+`character` initially permits only `spore_size`; `data_kind` permits `range`,
+`summary`, `raw_points`, and `parmasto`. A live successor may point only to a
+same-owner set, never itself; a partial unique index on
+`(user_id, supersedes_id)` rejects live forks, and the write function rejects
+cycles. Adoption is never automatic. `legacy_reference_value_id` is local
+migration provenance and is not synced.
+
+`observation_reference_uses` adds `observation_id bigint NOT NULL REFERENCES
+public.observations(id) ON DELETE CASCADE`,
+`reference_measurement_set_id uuid NOT NULL`, `role text NOT NULL`, `note
+text`, `selected_at timestamptz NOT NULL`, `reference_revision integer NOT
+NULL`, and `snapshot_json jsonb NOT NULL`. Its `row_version` detects concurrent
+role, note, detach, refresh, and successor-adoption writes without inventing a
+second desktop content revision. A unique
+constraint on `(user_id, observation_id, reference_measurement_set_id)` makes
+attach/retry idempotent and resurrection reuse the same use UUID.
+
+Composite foreign keys carry
+`user_id` through work → treatment → measurement set → use, so a row cannot
+join another owner's graph. `reference_measurement_sets` uses a composite
+self-FK `(user_id, supersedes_id)`. Add `UNIQUE (user_id, id)` to observations
+and a composite FK `(user_id, observation_id)` from uses, so observation
+ownership is enforced even outside the RPC. The use write path additionally
+verifies that `observations.user_id = auth.uid()`. Parent FKs use `ON DELETE
+RESTRICT`; client-visible hard delete is unsupported.
+
+Owner change-feed indexes end in the UUID tie-breaker:
+`(user_id, updated_at, id)`. Child lookup indexes cover the parent FK and
+active observation uses. Stage 4 readers must paginate completely in ascending
+`updated_at, id` order and must never infer deletion from absence.
+
+### Owner API and revision semantics
+
+Expose one typed, allowlisted mutation RPC per table:
+
+- `sync_reference_work(p_payload jsonb, p_expected_row_version bigint)`;
+- `sync_reference_taxon_treatment(p_payload jsonb, p_expected_row_version bigint)`;
+- `sync_reference_measurement_set(p_payload jsonb, p_expected_row_version bigint)`;
+- `sync_observation_reference_use(p_payload jsonb,
+  p_expected_row_version bigint, p_snapshot_mode text default 'current')`.
+
+The functions accept full-row payloads but extract only the documented keys;
+unknown keys are rejected. `user_id`, timestamps, and `row_version` are never
+trusted from the payload. Library content `revision` is validated as
+nondecreasing domain data and may advance multiple times while offline; it is
+distinct from server `row_version`. Creation
+requires `p_expected_row_version = 0`, a caller-supplied owner-scoped UUID,
+and produces row version 1. Update, tombstone, restore,
+role/note change, explicit snapshot refresh, and explicit successor adoption
+require the current positive row version and atomically produce exactly
+`row_version + 1`. A stale expectation returns a structured `conflict` result
+with the caller-owned current row; it never overwrites. A semantically
+identical retry (including equal domain revision) returns `no_change` and does
+not advance `row_version` or
+`updated_at`. Successful outcomes are `created`, `updated`, or `no_change`.
+
+Each mutation runs in one owner-scoped transaction, locks the target and
+relevant parent/source rows in a documented consistent order, and finishes
+with a conditional `UPDATE ... WHERE row_version = p_expected_row_version`.
+Attach/restore locks the observation and source graph; tombstone locks live
+children/uses before checking; successor graph mutation takes an owner-scoped
+transaction advisory lock before its recursive cycle/fork check. Unique races
+return same-owner `no_change` or `conflict`, never a raw constraint error.
+
+These RPCs are `SECURITY DEFINER` only because direct table mutation is
+revoked. Each uses `SET search_path = ''` with every object schema-qualified,
+rejects null `auth.uid()`, derives the
+owner from `auth.uid()`, verifies every parent/observation owner, revokes
+`EXECUTE` from `PUBLIC`/`anon`, and grants only `authenticated`, not
+`service_role` (administrative code uses its direct table access). They do not
+use JWT user metadata for authorization.
+
+Owner reads use RLS-protected tables directly, including tombstones. Separate
+SELECT/INSERT/UPDATE/DELETE policies are explicit; every predicate is
+`(select auth.uid()) = user_id`, and update has both `USING` and `WITH CHECK`.
+Because direct mutation grants are revoked, those mutation policies are
+defense in depth for privileged/internal callers rather than an alternate
+write path.
+
+### Snapshot and deletion contract
+
+- A newly created or explicitly replaced use must reference a live,
+  same-owner measurement set and observation. Its snapshot must be a JSON
+  object with `schema_version = 1`; embedded work/treatment/set IDs and
+  `reference_revision` must equal the row and current source graph. Role is
+  checked against `compared`, `supports_identification`, and `contradicts`.
+- Snapshot v1 is exactly the shape emitted by
+  `build_observation_reference_snapshot`, including
+  `reference_treatment_id`, `page_from`, `page_to`, and `raw_points` in
+  addition to the fields shown in §6. `p_snapshot_mode = 'current'` requires a
+  complete live same-owner source graph and value agreement. The only other
+  accepted mode is `historical_import`, used for the first cloud sync of an
+  already-frozen local use: it still requires the same-owner source graph and
+  validates schema, size, embedded IDs, and owner/observation access, but does
+  not demand value equality with a now-newer source. A locally dangling use
+  remains local-only until its source graph is restored/synced; its snapshot is
+  never discarded or silently rewritten.
+- Snapshot replacement occurs only through an explicit use write. Editing any
+  work, treatment, or measurement set never updates an existing use.
+  Successor adoption keeps the use UUID and changes its set ID, frozen
+  revision, and snapshot in one compare-and-set operation.
+- Snapshot validation enforces the §6 key/type contract and a conservative
+  encoded-size limit. Public projection reconstructs an allowlisted JSON
+  object rather than returning arbitrary stored keys. Owner-only `note`,
+  treatment/measurement private notes, owner IDs, local provenance, and
+  timestamps are not public.
+- Detach tombstones the use; it does not delete the library row. Reattach
+  restores the same unique use row with a new row version and a newly
+  validated explicit snapshot.
+- Library deletion is a tombstone transition. A measurement set with a live
+  use cannot be tombstoned. A treatment/work cannot be tombstoned until its
+  live children are tombstoned, and descendant sets with live uses therefore
+  block the operation. This mirrors the desktop's in-use guard while retaining
+  durable cross-device deletion intent. Tombstoning or editing a source never
+  cascades to, rewrites, or hides an already frozen live snapshot.
+- Hard deletion is reserved for account erasure/administration. It is never a
+  sync instruction, and a missing/partial/failed remote read is never deletion
+  evidence.
+- Account erasure calls the service-role-only
+  `delete_reference_library_for_account(uuid)` RPC before deleting
+  observations or the auth user. In one transaction it takes the same
+  owner-scoped advisory lock as all mutation RPCs, persists an
+  account-deletion marker, and hard-deletes uses → measurement sets →
+  treatments → works. Subsequent owner mutations fail with
+  `account_deleting`; deletion of the auth user cascades the marker. This
+  prevents authenticated recreation between deletion stages and does not rely
+  on competing auth-user cascades through `ON DELETE RESTRICT` parents.
+
+### Public observation projection
+
+Add an additive batch RPC
+`search_public_observation_references(p_observation_ids bigint[])` and a
+single-observation wrapper
+`get_public_observation_references(p_observation_id bigint)`. Do not change the
+column order or return type of the frequently replaced
+`get_public_observation(bigint)` in the first migration.
+
+The batch RPC is `STABLE SECURITY DEFINER`, uses `SET search_path = ''` with
+schema-qualified objects, rejects an oversized raw array with
+`cardinality(p_observation_ids)` before unnest/deduplication, also caps the
+number of distinct requested observations, and returns one row per eligible
+observation with a deterministic `references jsonb` array ordered by
+`selected_at, id`. Each array item is exactly:
+
+```json
+{
+  "use_id": "uuid",
+  "role": "supports_identification",
+  "reference_revision": 3,
+  "snapshot": { "schema_version": 1 }
+}
+```
+
+Only live uses of observations that are public, non-draft, non-banned, and
+not blocked for the authenticated caller are included. The RPC does not join
+mutable library fields and continues to expose the frozen snapshot if a source
+later becomes unavailable. `note` stays owner-private in Stage 3 because the
+Stage 2 field has no explicit public-safe authoring contract. The function
+revokes `PUBLIC` execution and explicitly grants `anon`, `authenticated`, and
+`service_role`. Stage 5 may compose this result into the landing payload;
+there is still no public reference catalogue.
+
+### Legacy compatibility
+
+`public.reference_values` and the
+`search_public_reference_values(text, text, integer)` signature, bigint IDs,
+normal-call semantics, grants, and result shape remain compatible. A
+compensating definition may clamp `p_limit` to a conservative upper bound to
+remove the existing anonymous resource-amplification path. The normalized private
+tables are not unioned into that RPC, and private records are never copied
+into it merely because an observation uses them. The cloud-reference dialog
+can therefore continue its existing observation-derived/legacy search while
+Stage 4 adds normalized owner sync separately. Any future curated catalogue
+requires the separately scoped Stage 6 moderation/publication design.
+
+### Required Stage 3 tests
+
+- migration replay/fresh reset, constraints, grants, indexes, and RLS;
+- owner create/read/update/tombstone/restore for all four tables;
+- forged owner and cross-owner parent/observation rejection;
+- stale row-version conflict, preservation of multi-step offline content
+  revisions, retry no-op, and no timestamp/row-version echo bump;
+- attach uniqueness/race, explicit snapshot replacement, successor adoption,
+  and tombstone resurrection retaining UUID;
+- deletion blocked by live descendants/uses and frozen snapshots unchanged by
+  source edit/tombstone attempts;
+- anonymous and non-owner denial on raw normalized tables;
+- public projection for public versus draft/private/friends/banned/blocked
+  observations, strict snapshot allowlist, malformed snapshot fail-closed,
+  and owner-only note exclusion;
+- legacy search signature, bigint identity, grants, and result shape unchanged;
+- deterministic pagination/cursor ties and no deletion inference from partial
+  results;
+- transactional attach/tombstone and concurrent successor-fork/cycle races;
+- account deletion in the explicit dependency order, with no RESTRICT failure.
+
+### Corrected assumptions and remaining Stage 4 work
+
+- The cloud public detail path is compositional; Stage 3 should add a focused
+  reference RPC instead of modifying every observation view/RPC.
+- Cloud taxonomy IDs cannot safely replace the desktop's text `taxon_id`.
+- The desktop use table currently lacks a server row-version token, and local
+  library delete/detach operations are physical. Before cloud sync ships,
+  Stage 4 must store cloud `row_version`/baselines and add a durable
+  tombstone/change ledger (or equivalent) for all four entity types. It must
+  push creates/restores parent-first and tombstones child-first, translate the
+  local observation integer through verified cloud identity, and preserve
+  strict pull-only zero-write
+  behavior, cloud-account binding, complete pagination, and cursor/baseline
+  advancement only after a successful whole-graph pull.
+- Public exposure follows observation visibility, not
+  `spore_data_visibility`: the frozen values describe published literature,
+  not the observer's private measurements. This must be called out in Stage 3
+  SQL tests and public API documentation.
+
+### Landed Stage 3 slice: normalized private schema and mutations (2026-08-28)
+
+Migration
+`sporely-web/supabase/migrations/20260828143513_add_normalized_reference_library.sql`
+now implements the four normalized owner-private tables, composite owner/UUID
+keys and foreign keys, live-successor uniqueness, owner cursor indexes,
+durable tombstones, independent domain `revision` and server CAS
+`row_version`, strict owner-read RLS, and revoked direct authenticated writes.
+The four allowlisted `SECURITY DEFINER` sync RPCs are the only authenticated
+mutation surface. They serialize per owner, return structured outcomes,
+preserve exact retries without version churn, reject cross-owner graph links,
+and prevent tombstoning live dependencies.
+
+`current` observation-use writes now require exact equality with a
+server-derived canonical snapshot. `historical_import` accepts only a strict
+snapshot-v1 shape for first upload/create retry and cannot rewrite existing
+evidence. Role/note-only edits and detach retries preserve the frozen snapshot
+without depending on a subsequently edited or tombstoned source. A set change
+is accepted only when it names the unique terminal successor reached from the
+currently attached set; arbitrary same-owner retargeting is rejected.
+
+Account deletion now uses the transactional, service-role-only
+`delete_reference_library_for_account` RPC described above. The Edge Function
+plan and its focused tests use that single stage rather than four independently
+racing deletes.
+
+Transactional coverage is in
+`sporely-web/supabase/tests/reference_library_mutation_test.sql`. It exercises
+owner isolation, denied anonymous/direct writes, owner-scoped UUID reuse,
+parent integrity, CAS success/conflict, domain revisions, lost-response retry
+no-ops, create/update/tombstone behavior, frozen current/historical snapshots,
+successor fork and adoption rules, and account-deletion exclusion. The focused
+delete-account tests cover RPC ordering, failure containment, exact parameters,
+and retries. Verification used a fresh local database reset, the transactional
+SQL test, the focused Node test files, and `supabase db lint --local --level
+warning`.
+
+The security/concurrency review found no cross-owner RLS or definer escape. It
+did identify canonical-snapshot validation, frozen-use update semantics,
+arbitrary successor retargeting, stale-token retry behavior, raw uniqueness
+errors, and an account-deletion race. This slice corrected those issues with
+server canonicalization, strict snapshot keys, target-first retry handling,
+terminal-successor traversal, structured conflict handling, and the persistent
+deletion marker/shared advisory lock.
+
+Remaining Stage 3 work is the deliberately separate public observation
+snapshot projection and its visibility/blocking tests. The legacy
+`reference_values` table and `search_public_reference_values` function remain
+unchanged. Stage 4 desktop sync, including its local `row_version` and durable
+deletion dependencies, remains deferred. Historical raw-point entries retain
+the Stage 2 desktop validator's compatible shape (including additional point
+metadata); the public projection must explicitly reconstruct or sanitize that
+nested data rather than returning stored `raw_points` blindly.
 
 ---
 
