@@ -169,3 +169,17 @@ supported; German uses informal "du".
 - Bulk remote readers must use `SporelyCloudClient._get_paginated` with a deterministic `order=` clause ending in `id.asc`; PostgREST silently caps unpaginated responses at the server row limit.
 - Download from Cloud (`sync_all(pull_only=True)`) is a strict zero-cloud-write mode. Any new `SporelyCloudClient` writer method must be added to `_PULL_ONLY_BLOCKED_CLIENT_METHODS`; new read methods join `_PULL_ONLY_ALLOWED_READ_METHODS` only as an explicit, reviewed choice. Pull-side writes must be gated at the source — a `blocked_write_attempts` entry is a bug, not a handled event.
 - Sync behavior changes must update `docs/supabase-sync-contract.md` (both repository copies) and, when navigation or ownership changes, `docs/cloud-sync-architecture.md`, plus the relevant safety tests (`tests/test_cloud_download_only.py`, `tests/test_image_tombstones.py`, `tests/test_cloud_image_bytes_desired.py`).
+
+## Plugins
+Superpowers skills are optional techniques, not the project workflow.
+
+Do not invoke Superpowers brainstorming, writing-plans,
+executing-plans, subagent-driven-development, or
+finishing-a-development-branch unless explicitly requested.
+
+The repository's docs/plans structure, phase contracts, and
+project-specific agent/review instructions are authoritative.
+
+Superpowers systematic-debugging and
+verification-before-completion may be used when useful,
+provided they do not replace or modify the project workflow.
