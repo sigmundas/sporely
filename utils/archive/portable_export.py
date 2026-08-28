@@ -19,6 +19,8 @@ from utils.archive.full_backup import (
     _StagedFile,
     _candidate,
     _json_image_entries,
+    _report_progress,
+    _require_destination_space,
     _resolve_row_path,
     _snapshot_database,
     _stable_json_bytes,
@@ -386,6 +388,7 @@ def export_observations(
     created_at: str | None = None,
     source_platform: str | None = None,
     validate: Callable[[str | Path], ArchiveManifest] = validate_portable_observations,
+    progress_callback: Callable[[str, int], None] | None = None,
 ) -> BackupResult:
     """Export the exact dependency closure of explicit observation roots."""
     try:
@@ -408,6 +411,7 @@ def export_observations(
     final_path.parent.mkdir(parents=True, exist_ok=True)
     temporary_zip: Path | None = None
     try:
+        _report_progress(progress_callback, "preparing", 0)
         with tempfile.TemporaryDirectory(prefix="sporely-portable-") as temporary:
             staging = Path(temporary)
             staged_main = staging / "portable/mushrooms.db"
@@ -436,18 +440,35 @@ def export_observations(
                     raise PortableExportError(f"duplicate archive destination: {item.archive_path}")
                 seen.add(folded)
 
+            source_sizes = {
+                item.archive_path: item.source_path.stat().st_size
+                for item in files
+                if item.status == "included" and item.source_path is not None
+            }
+            estimated_bytes = sum(source_sizes.values())
+            _report_progress(progress_callback, "checking_space", 3)
+            _require_destination_space(final_path, estimated_bytes)
+
             manifest_files: list[ManifestFile] = []
             included_files: list[_StagedFile] = []
             warnings: list[str] = []
             warning_identities: set[str] = set()
+            hashed_bytes = 0
             for item in sorted(files, key=lambda value: value.archive_path):
                 if item.status == "included":
                     assert item.source_path is not None
+                    size = source_sizes[item.archive_path]
                     manifest_files.append(ManifestFile(
-                        item.archive_path, "included", item.source_path.stat().st_size,
+                        item.archive_path, "included", size,
                         sha256_file(item.source_path),
                     ))
                     included_files.append(item)
+                    hashed_bytes += size
+                    _report_progress(
+                        progress_callback,
+                        "hashing",
+                        5 + int(25 * hashed_bytes / max(1, estimated_bytes)),
+                    )
                 else:
                     manifest_files.append(ManifestFile(item.archive_path, item.status))
                     if item.status == "missing_at_source":
@@ -471,12 +492,21 @@ def export_observations(
             temporary_zip = Path(temporary_name)
             with ZipFile(temporary_zip, "w", compression=ZIP_DEFLATED, allowZip64=True) as archive:
                 archive.writestr("manifest.json", manifest.to_json_bytes())
+                written_bytes = 0
                 for item in sorted(included_files, key=lambda value: value.archive_path):
                     assert item.source_path is not None
                     archive.write(item.source_path, item.archive_path)
+                    written_bytes += source_sizes[item.archive_path]
+                    _report_progress(
+                        progress_callback,
+                        "writing",
+                        30 + int(60 * written_bytes / max(1, estimated_bytes)),
+                    )
+            _report_progress(progress_callback, "validating", 90)
             validate(temporary_zip)
             os.replace(temporary_zip, final_path)
             temporary_zip = None
+            _report_progress(progress_callback, "complete", 100)
             return BackupResult(final_path, manifest, tuple(warnings))
     except PortableExportError:
         raise

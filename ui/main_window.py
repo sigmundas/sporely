@@ -6962,6 +6962,7 @@ class _PortableExportWorker(QThread):
 
     completed = Signal(object)
     failed = Signal(str)
+    progress = Signal(str, int)
 
     def __init__(self, observation_ids: set[int], destination: str, app_version: str, parent=None) -> None:
         super().__init__(parent)
@@ -6972,7 +6973,10 @@ class _PortableExportWorker(QThread):
     def run(self) -> None:
         try:
             result = export_observations(
-                self._observation_ids, self._destination, app_version=self._app_version
+                self._observation_ids,
+                self._destination,
+                app_version=self._app_version,
+                progress_callback=self.progress.emit,
             )
         except Exception as exc:
             self.failed.emit(str(exc))
@@ -22059,7 +22063,7 @@ class MainWindow(GeometryMixin, QMainWindow):
             100,
         )
 
-    def _hide_full_backup_progress(self) -> None:
+    def _hide_archive_progress(self) -> None:
         tab = getattr(self, "observations_tab", None)
         if tab is None:
             return
@@ -22067,7 +22071,7 @@ class MainWindow(GeometryMixin, QMainWindow):
         tab._reset_status_progress()
 
     def _on_full_backup_completed(self, result: BackupResult) -> None:
-        self._hide_full_backup_progress()
+        self._hide_archive_progress()
         if result.warnings:
             message = self.tr(
                 "Backup created: {name}. {count} referenced files were missing."
@@ -22079,7 +22083,7 @@ class MainWindow(GeometryMixin, QMainWindow):
         self._set_observations_status(message, level=level, auto_clear_ms=12000)
 
     def _on_full_backup_failed(self, error: str) -> None:
-        self._hide_full_backup_progress()
+        self._hide_archive_progress()
         self._set_observations_status(
             self.tr("Backup failed: {error}").format(error=error),
             level="error",
@@ -22125,12 +22129,35 @@ class MainWindow(GeometryMixin, QMainWindow):
             observation_ids, filename, self.app_version or "unknown", self
         )
         self._portable_export_worker = worker
+        worker.progress.connect(self._on_portable_export_progress)
         worker.completed.connect(self._on_portable_export_completed)
         worker.failed.connect(self._on_portable_export_failed)
         worker.finished.connect(self._on_portable_export_worker_finished)
+        self._on_portable_export_progress("preparing", 0)
         worker.start()
 
+    def _on_portable_export_progress(self, phase: str, percent: int) -> None:
+        messages = {
+            "preparing": self.tr("Preparing observation export…"),
+            "checking_space": self.tr("Checking export size and free space…"),
+            "hashing": self.tr("Checking export files…"),
+            "writing": self.tr("Writing observation export…"),
+            "validating": self.tr("Verifying observation export…"),
+            "complete": self.tr("Observation export complete."),
+        }
+        tab = getattr(self, "observations_tab", None)
+        if tab is None:
+            return
+        tab._set_status_progress_visible(True)
+        tab._set_status_progress_cancel_visible(False)
+        tab._set_status_progress(
+            messages.get(phase, self.tr("Exporting selected observations…")),
+            percent,
+            100,
+        )
+
     def _on_portable_export_completed(self, result: BackupResult) -> None:
+        self._hide_archive_progress()
         if result.warnings:
             message = self.tr(
                 "Observation export created: {name}. Missing referenced source files: {count}."
@@ -22144,6 +22171,7 @@ class MainWindow(GeometryMixin, QMainWindow):
         self._set_observations_status(message, level=level, auto_clear_ms=12000)
 
     def _on_portable_export_failed(self, error: str) -> None:
+        self._hide_archive_progress()
         self._set_observations_status(
             self.tr("Observation export failed: {error}").format(error=error),
             level="error",

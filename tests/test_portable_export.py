@@ -1,4 +1,5 @@
 import json
+import shutil
 import sqlite3
 from pathlib import Path
 from zipfile import ZipFile
@@ -324,6 +325,51 @@ def test_repeated_missing_source_path_is_reported_once(portable_installation, tm
     ]
     assert len(missing_entries) == 3
     assert len(result.warnings) == 1
+
+
+def test_portable_export_refuses_destination_without_required_free_space(
+    portable_installation, tmp_path, monkeypatch
+):
+    with sqlite3.connect(schema.get_database_path()) as connection:
+        connection.execute("INSERT INTO observations (id, date) VALUES (1, '2026-08-28')")
+        connection.commit()
+    monkeypatch.setattr(
+        shutil,
+        "disk_usage",
+        lambda path: shutil._ntuple_diskusage(total=1000, used=999, free=1),
+    )
+    destination = tmp_path / "too-large.sporely"
+
+    with pytest.raises(PortableExportError, match="not enough free space"):
+        export_observations({1}, destination, app_version="test")
+
+    assert not destination.exists()
+    assert not list(tmp_path.glob(".too-large.sporely.*.tmp"))
+
+
+def test_portable_export_reports_monotonic_phase_progress(
+    portable_installation, tmp_path
+):
+    with sqlite3.connect(schema.get_database_path()) as connection:
+        connection.execute("INSERT INTO observations (id, date) VALUES (1, '2026-08-28')")
+        connection.commit()
+    progress = []
+
+    export_observations(
+        {1},
+        tmp_path / "progress.sporely",
+        app_version="test",
+        progress_callback=lambda phase, percent: progress.append((phase, percent)),
+    )
+
+    assert progress[0] == ("preparing", 0)
+    assert {phase for phase, _percent in progress} >= {
+        "checking_space", "hashing", "writing", "validating", "complete",
+    }
+    assert [percent for _phase, percent in progress] == sorted(
+        percent for _phase, percent in progress
+    )
+    assert progress[-1] == ("complete", 100)
 
 
 def test_conflicting_calibration_asset_identity_fails_closed(portable_installation, tmp_path):

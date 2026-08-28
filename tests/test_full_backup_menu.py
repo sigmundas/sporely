@@ -71,6 +71,54 @@ def test_full_backup_progress_uses_observations_hint_area():
     ]
 
 
+def test_portable_export_worker_forwards_progress(monkeypatch, qapp):
+    progress = []
+    completed = []
+
+    def export(observation_ids, destination, *, app_version, progress_callback):
+        progress_callback("writing", 60)
+        return object()
+
+    monkeypatch.setattr(main_window, "export_observations", export)
+    worker = main_window._PortableExportWorker({835}, "export.sporely", "test")
+    worker.progress.connect(lambda phase, percent: progress.append((phase, percent)))
+    worker.completed.connect(completed.append)
+
+    worker.run()
+
+    assert progress == [("writing", 60)]
+    assert len(completed) == 1
+
+
+def test_portable_export_progress_uses_observations_hint_area():
+    calls = []
+    tab = type("Tab", (), {
+        "_set_status_progress_visible": staticmethod(
+            lambda visible: calls.append(("visible", visible))
+        ),
+        "_set_status_progress_cancel_visible": staticmethod(
+            lambda visible: calls.append(("cancel", visible))
+        ),
+        "_set_status_progress": staticmethod(
+            lambda text, current, total: calls.append(
+                ("progress", text, current, total)
+            )
+        ),
+    })()
+    dummy = type("Window", (), {
+        "observations_tab": tab,
+        "tr": staticmethod(lambda value: value),
+    })()
+
+    main_window.MainWindow._on_portable_export_progress(dummy, "writing", 60)
+
+    assert calls == [
+        ("visible", True),
+        ("cancel", False),
+        ("progress", "Writing observation export…", 60, 100),
+    ]
+
+
 def test_full_restore_worker_emits_prepared_result(monkeypatch, qapp):
     prepared = object()
     received = []
@@ -219,6 +267,7 @@ def test_portable_export_warning_describes_unique_missing_source_count():
     statuses = []
     dummy = type("Window", (), {
         "tr": staticmethod(lambda value: value),
+        "_hide_archive_progress": staticmethod(lambda: None),
         "_set_observations_status": staticmethod(
             lambda message, **kwargs: statuses.append((message, kwargs))
         ),
