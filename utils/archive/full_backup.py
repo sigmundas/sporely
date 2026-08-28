@@ -7,6 +7,7 @@ import json
 import os
 import platform
 import re
+import shutil
 import sqlite3
 import tempfile
 import uuid
@@ -30,6 +31,9 @@ from utils.archive.paths import canonical_archive_path
 from utils.archive.validation import validate_full_backup, verify_sqlite_integrity
 
 
+_MINIMUM_FREE_SPACE_RESERVE = 512 * 1024 * 1024
+
+
 class FullBackupError(RuntimeError):
     """Raised when a full backup cannot be safely completed."""
 
@@ -47,6 +51,36 @@ class _StagedFile:
     source_path: Path | None
     status: str
     warning_identity: str | None = None
+
+
+def _report_progress(
+    callback: Callable[[str, int], None] | None,
+    phase: str,
+    percent: int,
+) -> None:
+    if callback is not None:
+        callback(phase, max(0, min(100, int(percent))))
+
+
+def _format_binary_size(size: int) -> str:
+    value = float(max(0, size))
+    for unit in ("bytes", "KiB", "MiB", "GiB", "TiB"):
+        if value < 1024.0 or unit == "TiB":
+            return f"{value:.1f} {unit}" if unit != "bytes" else f"{int(value)} bytes"
+        value /= 1024.0
+    raise AssertionError("unreachable")
+
+
+def _require_destination_space(destination: Path, estimated_bytes: int) -> None:
+    reserve = max(_MINIMUM_FREE_SPACE_RESERVE, estimated_bytes // 20)
+    required = estimated_bytes + reserve
+    available = shutil.disk_usage(destination.parent).free
+    if available < required:
+        raise FullBackupError(
+            "not enough free space for backup: "
+            f"at least {_format_binary_size(required)} required, "
+            f"{_format_binary_size(available)} available"
+        )
 
 
 def _stable_json_bytes(value: object) -> bytes:
@@ -342,6 +376,7 @@ def create_full_backup(
     source_platform: str | None = None,
     qsettings_values: dict[tuple[str, str], dict[str, object]] | None = None,
     validate: Callable[[str | Path], ArchiveManifest] = validate_full_backup,
+    progress_callback: Callable[[str, int], None] | None = None,
 ) -> BackupResult:
     """Create, verify, and atomically publish a complete ``.sporely`` backup."""
     from database.schema import (
@@ -359,6 +394,7 @@ def create_full_backup(
     final_path.parent.mkdir(parents=True, exist_ok=True)
     temporary_zip: Path | None = None
     try:
+        _report_progress(progress_callback, "preparing", 0)
         with tempfile.TemporaryDirectory(prefix="sporely-backup-") as temporary:
             staging = Path(temporary)
             staged_main = staging / "databases/mushrooms.db"
@@ -394,17 +430,34 @@ def create_full_backup(
                     raise FullBackupError(f"duplicate archive destination: {item.archive_path}")
                 seen.add(folded)
 
+            source_sizes = {
+                item.archive_path: item.source_path.stat().st_size
+                for item in files
+                if item.status == "included" and item.source_path is not None
+            }
+            estimated_bytes = sum(source_sizes.values())
+            _report_progress(progress_callback, "checking_space", 3)
+            _require_destination_space(final_path, estimated_bytes)
+
             manifest_files: list[ManifestFile] = []
             included_files: list[_StagedFile] = []
             warnings: list[str] = []
+            hashed_bytes = 0
             for item in sorted(files, key=lambda value: value.archive_path):
                 if item.status == "included":
                     assert item.source_path is not None
+                    size = source_sizes[item.archive_path]
                     manifest_files.append(ManifestFile(
-                        item.archive_path, "included", item.source_path.stat().st_size,
+                        item.archive_path, "included", size,
                         sha256_file(item.source_path),
                     ))
                     included_files.append(item)
+                    hashed_bytes += size
+                    _report_progress(
+                        progress_callback,
+                        "hashing",
+                        5 + int(25 * hashed_bytes / max(1, estimated_bytes)),
+                    )
                 else:
                     manifest_files.append(ManifestFile(item.archive_path, item.status))
                     if item.status == "missing_at_source":
@@ -426,12 +479,21 @@ def create_full_backup(
             temporary_zip = Path(temporary_name)
             with ZipFile(temporary_zip, "w", compression=ZIP_DEFLATED, allowZip64=True) as archive:
                 archive.writestr("manifest.json", manifest.to_json_bytes())
+                written_bytes = 0
                 for item in sorted(included_files, key=lambda value: value.archive_path):
                     assert item.source_path is not None
                     archive.write(item.source_path, item.archive_path)
+                    written_bytes += source_sizes[item.archive_path]
+                    _report_progress(
+                        progress_callback,
+                        "writing",
+                        30 + int(60 * written_bytes / max(1, estimated_bytes)),
+                    )
+            _report_progress(progress_callback, "validating", 90)
             validate(temporary_zip)
             os.replace(temporary_zip, final_path)
             temporary_zip = None
+            _report_progress(progress_callback, "complete", 100)
             return BackupResult(final_path, manifest, tuple(warnings))
     except FullBackupError:
         raise

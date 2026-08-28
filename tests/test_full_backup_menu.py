@@ -23,6 +23,54 @@ class _DummySpeciesAvailability:
         pass
 
 
+def test_full_backup_worker_forwards_progress(monkeypatch, qapp):
+    progress = []
+    completed = []
+
+    def create(destination, *, app_version, progress_callback):
+        progress_callback("writing", 55)
+        return object()
+
+    monkeypatch.setattr(main_window, "create_full_backup", create)
+    worker = main_window._FullBackupWorker("backup.sporely", "test")
+    worker.progress.connect(lambda phase, percent: progress.append((phase, percent)))
+    worker.completed.connect(completed.append)
+
+    worker.run()
+
+    assert progress == [("writing", 55)]
+    assert len(completed) == 1
+
+
+def test_full_backup_progress_uses_observations_hint_area():
+    calls = []
+    tab = type("Tab", (), {
+        "_set_status_progress_visible": staticmethod(
+            lambda visible: calls.append(("visible", visible))
+        ),
+        "_set_status_progress_cancel_visible": staticmethod(
+            lambda visible: calls.append(("cancel", visible))
+        ),
+        "_set_status_progress": staticmethod(
+            lambda text, current, total: calls.append(
+                ("progress", text, current, total)
+            )
+        ),
+    })()
+    dummy = type("Window", (), {
+        "observations_tab": tab,
+        "tr": staticmethod(lambda value: value),
+    })()
+
+    main_window.MainWindow._on_full_backup_progress(dummy, "writing", 55)
+
+    assert calls == [
+        ("visible", True),
+        ("cancel", False),
+        ("progress", "Writing backup…", 55, 100),
+    ]
+
+
 def test_full_restore_worker_emits_prepared_result(monkeypatch, qapp):
     prepared = object()
     received = []

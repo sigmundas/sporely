@@ -6882,6 +6882,7 @@ class _FullBackupWorker(QThread):
 
     completed = Signal(object)
     failed = Signal(str)
+    progress = Signal(str, int)
 
     def __init__(self, destination: str, app_version: str, parent=None) -> None:
         super().__init__(parent)
@@ -6890,7 +6891,11 @@ class _FullBackupWorker(QThread):
 
     def run(self) -> None:
         try:
-            result = create_full_backup(self._destination, app_version=self._app_version)
+            result = create_full_backup(
+                self._destination,
+                app_version=self._app_version,
+                progress_callback=self.progress.emit,
+            )
         except Exception as exc:
             self.failed.emit(str(exc))
             return
@@ -22027,12 +22032,42 @@ class MainWindow(GeometryMixin, QMainWindow):
         )
         worker = _FullBackupWorker(filename, self.app_version or "unknown", self)
         self._full_backup_worker = worker
+        worker.progress.connect(self._on_full_backup_progress)
         worker.completed.connect(self._on_full_backup_completed)
         worker.failed.connect(self._on_full_backup_failed)
         worker.finished.connect(self._on_full_backup_worker_finished)
+        self._on_full_backup_progress("preparing", 0)
         worker.start()
 
+    def _on_full_backup_progress(self, phase: str, percent: int) -> None:
+        messages = {
+            "preparing": self.tr("Preparing backup…"),
+            "checking_space": self.tr("Checking backup size and free space…"),
+            "hashing": self.tr("Checking backup files…"),
+            "writing": self.tr("Writing backup…"),
+            "validating": self.tr("Verifying backup…"),
+            "complete": self.tr("Backup complete."),
+        }
+        tab = getattr(self, "observations_tab", None)
+        if tab is None:
+            return
+        tab._set_status_progress_visible(True)
+        tab._set_status_progress_cancel_visible(False)
+        tab._set_status_progress(
+            messages.get(phase, self.tr("Creating Sporely backup…")),
+            percent,
+            100,
+        )
+
+    def _hide_full_backup_progress(self) -> None:
+        tab = getattr(self, "observations_tab", None)
+        if tab is None:
+            return
+        tab._set_status_progress_visible(False)
+        tab._reset_status_progress()
+
     def _on_full_backup_completed(self, result: BackupResult) -> None:
+        self._hide_full_backup_progress()
         if result.warnings:
             message = self.tr(
                 "Backup created: {name}. {count} referenced files were missing."
@@ -22044,6 +22079,7 @@ class MainWindow(GeometryMixin, QMainWindow):
         self._set_observations_status(message, level=level, auto_clear_ms=12000)
 
     def _on_full_backup_failed(self, error: str) -> None:
+        self._hide_full_backup_progress()
         self._set_observations_status(
             self.tr("Backup failed: {error}").format(error=error),
             level="error",

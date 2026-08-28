@@ -1,4 +1,5 @@
 import json
+import shutil
 import sqlite3
 from pathlib import Path
 from zipfile import ZipFile
@@ -299,6 +300,52 @@ def test_full_backup_excludes_orf_assets_by_policy(installation, tmp_path):
     with ZipFile(destination) as archive:
         assert "assets/images/1/working.jpg" in archive.namelist()
         assert not any(name.lower().endswith(".orf") for name in archive.namelist())
+
+
+def test_full_backup_refuses_destination_without_required_free_space(
+    installation, tmp_path, monkeypatch
+):
+    destination = tmp_path / "too-large.sporely"
+    monkeypatch.setattr(
+        shutil,
+        "disk_usage",
+        lambda path: shutil._ntuple_diskusage(total=1000, used=999, free=1),
+    )
+
+    with pytest.raises(FullBackupError, match="not enough free space"):
+        create_full_backup(destination, app_version="test", qsettings_values={})
+
+    assert not destination.exists()
+    assert not list(tmp_path.glob(".too-large.sporely.*.tmp"))
+
+
+def test_full_backup_reports_monotonic_phase_progress(installation, tmp_path):
+    image = tmp_path / "image.jpg"
+    image.write_bytes(b"image-bytes")
+    with sqlite3.connect(schema.get_database_path()) as connection:
+        connection.execute("INSERT INTO observations (date) VALUES ('2026-08-28')")
+        connection.execute(
+            "INSERT INTO images (observation_id, filepath) VALUES (1, ?)",
+            (str(image),),
+        )
+        connection.commit()
+    progress = []
+
+    create_full_backup(
+        tmp_path / "progress.sporely",
+        app_version="test",
+        qsettings_values={},
+        progress_callback=lambda phase, percent: progress.append((phase, percent)),
+    )
+
+    assert progress[0] == ("preparing", 0)
+    assert {phase for phase, _percent in progress} >= {
+        "checking_space", "hashing", "writing", "validating", "complete",
+    }
+    assert [percent for _phase, percent in progress] == sorted(
+        percent for _phase, percent in progress
+    )
+    assert progress[-1] == ("complete", 100)
 
 
 def test_unknown_setting_aborts_without_final_archive(installation, tmp_path):
