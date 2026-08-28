@@ -55,14 +55,14 @@ def _make_archive(
     working = managed / "same-name.jpg"
     if not missing_working:
         working.write_bytes(working_bytes)
-    original = root / "external" / "same-name.raw"
+    original = root / "external" / "same-name.tiff"
     if include_original:
         original.parent.mkdir()
         original.write_bytes(b"authoritative-original")
     calibration = root / "external-calibration" / "same-name.tif"
     calibration.parent.mkdir()
     calibration.write_bytes(b"calibration-working")
-    calibration_original = root / "external-calibration" / "same-name.raw"
+    calibration_original = root / "external-calibration" / "same-name.png"
     calibration_original.write_bytes(b"calibration-original")
     companion = root / "external-calibration" / "companion.dat"
     companion.write_bytes(b"calibration-companion")
@@ -97,7 +97,7 @@ def _make_archive(
             "(id, observation_id, filepath, original_filepath, calibration_id, "
             "source_role, file_purpose) VALUES (101, 1, ?, ?, 10, "
             "'local_original', 'authoritative')",
-            (str(working), str(original) if include_original else str(root / "missing.raw")),
+            (str(working), str(original) if include_original else str(root / "missing.tiff")),
         )
         connection.execute(
             "INSERT INTO images "
@@ -244,7 +244,7 @@ def test_reused_stable_calibration_preserves_authoritative_destination_paths(
         first_archive, destination_main_database=main,
         destination_reference_database=reference, destination_assets_root=assets,
     )
-    preserved = tmp_path / "destination-authoritative" / "preserved.raw"
+    preserved = tmp_path / "destination-authoritative" / "preserved.png"
     preserved.parent.mkdir()
     preserved.write_bytes(b"calibration-original")
     with sqlite3.connect(main) as connection:

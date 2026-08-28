@@ -29,6 +29,7 @@ from utils.archive.full_backup import (
 from utils.archive.manifest import ArchiveManifest, ManifestFile, build_manifest
 from utils.archive.paths import canonical_archive_path
 from utils.archive.validation import validate_portable_observations, verify_sqlite_integrity
+from utils.raw_detection import is_raw_image_path
 
 
 class PortableExportError(RuntimeError):
@@ -269,7 +270,7 @@ def _collect_assets(database_path: Path, images_dir: Path) -> list[_StagedFile]:
                     candidates.append(_candidate(
                         source,
                         f"portable/assets/{root}/{row['id']}/{label}{_suffix(source)}",
-                        excluded=excluded,
+                        excluded=excluded or is_raw_image_path(source),
                     ))
         excluded_calibration_paths: set[Path] = set()
         for row in connection.execute(
@@ -308,7 +309,10 @@ def _collect_assets(database_path: Path, images_dir: Path) -> list[_StagedFile]:
                 candidates.append(_candidate(
                     source,
                     f"portable/assets/calibrations/records/{row['id']}/working{_suffix(source)}",
-                    excluded=source.resolve() in excluded_calibration_paths,
+                    excluded=(
+                        source.resolve() in excluded_calibration_paths
+                        or is_raw_image_path(source)
+                    ),
                 ))
             for index, label, value, excluded in _json_image_entries(row["measurements_json"]):
                 source = _resolve_row_path(value, images_dir)
@@ -316,7 +320,7 @@ def _collect_assets(database_path: Path, images_dir: Path) -> list[_StagedFile]:
                     candidates.append(_candidate(
                         source,
                         f"portable/assets/calibrations/records/{row['id']}/metadata-{index}-{label}{_suffix(source)}",
-                        excluded=excluded,
+                        excluded=excluded or is_raw_image_path(source),
                     ))
         for row in connection.execute(
             "SELECT id, local_path, original_path, source_role, file_purpose, metadata_json "
@@ -332,7 +336,7 @@ def _collect_assets(database_path: Path, images_dir: Path) -> list[_StagedFile]:
                     candidates.append(_candidate(
                         source,
                         f"portable/assets/calibrations/assets/{row['id']}/{label}{_suffix(source)}",
-                        excluded=excluded,
+                        excluded=excluded or is_raw_image_path(source),
                     ))
             try:
                 metadata = json.loads(row["metadata_json"]) if row["metadata_json"] else None
@@ -345,7 +349,7 @@ def _collect_assets(database_path: Path, images_dir: Path) -> list[_StagedFile]:
                         candidates.append(_candidate(
                             source,
                             f"portable/assets/calibrations/assets/{row['id']}/metadata-{label}{_suffix(source)}",
-                            excluded=excluded,
+                            excluded=excluded or is_raw_image_path(source),
                         ))
                 for index, value in enumerate(metadata.get("companion_paths") or []):
                     source = _resolve_row_path(value, images_dir)
@@ -353,7 +357,7 @@ def _collect_assets(database_path: Path, images_dir: Path) -> list[_StagedFile]:
                         candidates.append(_candidate(
                             source,
                             f"portable/assets/calibrations/assets/{row['id']}/metadata-companion-{index}{_suffix(source)}",
-                            excluded=excluded,
+                            excluded=excluded or is_raw_image_path(source),
                         ))
     return candidates
 

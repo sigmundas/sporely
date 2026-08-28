@@ -155,7 +155,7 @@ def test_restore_accepts_orf_in_older_full_backup(installation, tmp_path, monkey
         )
         connection.commit()
     monkeypatch.setattr(
-        "utils.archive.full_backup._asset_excluded_by_policy",
+        "utils.archive.full_backup.is_raw_image_path",
         lambda path: False,
     )
     archive = tmp_path / "legacy-source.sporely"

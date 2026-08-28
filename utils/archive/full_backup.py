@@ -29,6 +29,7 @@ from utils.archive.inventory import (
 from utils.archive.manifest import ArchiveManifest, ManifestFile, build_manifest
 from utils.archive.paths import canonical_archive_path
 from utils.archive.validation import validate_full_backup, verify_sqlite_integrity
+from utils.raw_detection import is_raw_image_path
 
 
 _MINIMUM_FREE_SPACE_RESERVE = 512 * 1024 * 1024
@@ -195,10 +196,6 @@ def _resolve_row_path(value: object, images_dir: Path) -> Path | None:
     return path if path.is_absolute() else images_dir / path
 
 
-def _asset_excluded_by_policy(path: Path) -> bool:
-    return path.suffix.casefold() == ".orf"
-
-
 def _candidate(path: Path, archive_path: str, *, excluded: bool = False) -> _StagedFile:
     canonical_archive_path(archive_path)
     if excluded:
@@ -262,7 +259,7 @@ def _collect_database_assets(database_path: Path, images_dir: Path) -> list[_Sta
                     candidates.append(_candidate(
                         source,
                         destination,
-                        excluded=excluded or _asset_excluded_by_policy(source),
+                        excluded=excluded or is_raw_image_path(source),
                     ))
 
         for row in connection.execute(
@@ -274,7 +271,7 @@ def _collect_database_assets(database_path: Path, images_dir: Path) -> list[_Sta
                 candidates.append(_candidate(
                     source,
                     destination,
-                    excluded=_asset_excluded_by_policy(source),
+                    excluded=is_raw_image_path(source),
                 ))
             for index, label, value, excluded in _json_image_entries(row["measurements_json"]):
                 source = _resolve_row_path(value, images_dir)
@@ -283,7 +280,7 @@ def _collect_database_assets(database_path: Path, images_dir: Path) -> list[_Sta
                     candidates.append(_candidate(
                         source,
                         destination,
-                        excluded=excluded or _asset_excluded_by_policy(source),
+                        excluded=excluded or is_raw_image_path(source),
                     ))
 
         for row in connection.execute(
@@ -301,7 +298,7 @@ def _collect_database_assets(database_path: Path, images_dir: Path) -> list[_Sta
                     candidates.append(_candidate(
                         source,
                         destination,
-                        excluded=excluded or _asset_excluded_by_policy(source),
+                        excluded=excluded or is_raw_image_path(source),
                     ))
             metadata = row["metadata_json"]
             try:
@@ -316,7 +313,7 @@ def _collect_database_assets(database_path: Path, images_dir: Path) -> list[_Sta
                         candidates.append(_candidate(
                             source,
                             destination,
-                            excluded=excluded or _asset_excluded_by_policy(source),
+                            excluded=excluded or is_raw_image_path(source),
                         ))
                 for index, value in enumerate(loaded.get("companion_paths") or []):
                     source = _resolve_row_path(value, images_dir)
@@ -325,7 +322,7 @@ def _collect_database_assets(database_path: Path, images_dir: Path) -> list[_Sta
                         candidates.append(_candidate(
                             source,
                             destination,
-                            excluded=excluded or _asset_excluded_by_policy(source),
+                            excluded=excluded or is_raw_image_path(source),
                         ))
     return candidates
 

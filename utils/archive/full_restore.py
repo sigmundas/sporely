@@ -16,15 +16,12 @@ from pathlib import Path
 from typing import Callable
 from zipfile import BadZipFile, ZipFile
 
-from utils.archive.full_backup import (
-    BackupResult,
-    _asset_excluded_by_policy,
-    create_full_backup,
-)
+from utils.archive.full_backup import BackupResult, create_full_backup
 from utils.archive.inventory import MAIN_DATABASE_TABLES, REFERENCE_DATABASE_TABLES, SettingPolicy, app_setting_policy, database_setting_policy, qsettings_policy
 from utils.archive.manifest import ArchiveManifest
 from utils.archive.paths import safe_staging_destination, validate_zip_entries
 from utils.archive.validation import ArchiveValidationError, validate_full_backup, verify_sqlite_integrity
+from utils.raw_detection import is_raw_image_path
 
 
 class FullRestoreError(RuntimeError):
@@ -172,7 +169,7 @@ def _asset_path(staging: Path, statuses: dict[str, str], prefix: str, row_id: in
         if status != "excluded_by_policy":
             raise ArchiveValidationError(f"cache asset was not excluded by policy: {_name}")
         return None
-    if _asset_excluded_by_policy(Path(str(old))) and status == "excluded_by_policy":
+    if is_raw_image_path(str(old)) and status == "excluded_by_policy":
         return None
     if status == "missing_at_source":
         return None

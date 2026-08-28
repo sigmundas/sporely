@@ -8,7 +8,9 @@ import pytest
 
 from database import schema
 from utils.archive.portable_export import PortableExportError, export_observations
+from utils.archive.portable_import import preview_portable_archive
 from utils.archive.validation import validate_portable_observations
+from utils.raw_detection import is_raw_image_path
 
 
 @pytest.fixture
@@ -195,9 +197,9 @@ def test_portable_export_contains_only_selected_dependency_closure(
         assert names[0] == "manifest.json"
         assert set(names) - {"manifest.json"} == included
         assert "portable/assets/images/101/working.jpg" in names
-        assert "portable/assets/originals/101/original.orf" in names
+        assert "portable/assets/originals/101/original.orf" not in names
         assert "portable/assets/calibrations/records/10/working.tif" in names
-        assert "portable/assets/calibrations/assets/1301/local.raw" in names
+        assert "portable/assets/calibrations/assets/1301/local.raw" not in names
         assert "portable/assets/images/102/working.webp" not in names
         assert "portable/assets/calibrations/assets/1302/local.tif" not in names
         assert all("201" not in name and "2301" not in name for name in names)
@@ -211,6 +213,14 @@ def test_portable_export_contains_only_selected_dependency_closure(
         main_db.write_bytes(archive.read("portable/mushrooms.db"))
         reference_db = tmp_path / "portable-reference.db"
         reference_db.write_bytes(archive.read("portable/reference_values.db"))
+
+    statuses = {entry.path: entry.status for entry in manifest.files}
+    assert statuses["portable/assets/originals/101/original.orf"] == "excluded_by_policy"
+    assert (
+        statuses["portable/assets/calibrations/assets/1301/local.raw"]
+        == "excluded_by_policy"
+    )
+    assert not result.warnings
 
     with sqlite3.connect(main_db) as connection:
         assert _ids(connection, "observations") == {1}
@@ -325,6 +335,90 @@ def test_repeated_missing_source_path_is_reported_once(portable_installation, tm
     ]
     assert len(missing_entries) == 3
     assert len(result.warnings) == 1
+
+
+def test_portable_export_excludes_raw_paths_from_every_asset_slot(
+    portable_installation, tmp_path
+):
+    paths = {
+        "image_working": tmp_path / "image.NEF",
+        "image_original": tmp_path / "image-original.ARW",
+        "calibration": tmp_path / "calibration.CR3",
+        "measurement_path": tmp_path / "measurement.DNG",
+        "measurement_companion": tmp_path / "measurement-companion.RAF",
+        "asset_local": tmp_path / "asset-local.RAW",
+        "asset_original": tmp_path / "asset-original.RWL",
+        "asset_source": tmp_path / "asset-source.ORF",
+        "asset_companion": tmp_path / "asset-companion.NRW",
+        "asset_working": tmp_path / "asset-working.TIF",
+        "ordinary_image": tmp_path / "ordinary.JPG",
+    }
+    for name, path in paths.items():
+        path.write_bytes(name.encode("ascii"))
+    with sqlite3.connect(schema.get_database_path()) as connection:
+        connection.execute("INSERT INTO observations (id, date) VALUES (1, '2026-08-28')")
+        connection.execute(
+            "INSERT INTO calibrations "
+            "(id, calibration_uuid, objective_key, calibration_date, microns_per_pixel, "
+            "image_filepath, measurements_json) VALUES (10, 'cal-raw', '100X', "
+            "'2026-08-28', 0.1, ?, ?)",
+            (
+                str(paths["calibration"]),
+                json.dumps({"images": [{
+                    "path": str(paths["measurement_path"]),
+                    "companion_paths": [str(paths["measurement_companion"])],
+                }]}),
+            ),
+        )
+        connection.executemany(
+            "INSERT INTO images (id, observation_id, filepath, original_filepath, calibration_id) "
+            "VALUES (?, 1, ?, ?, 10)",
+            [
+                (101, str(paths["image_working"]), str(paths["image_original"])),
+                (102, str(paths["ordinary_image"]), None),
+            ],
+        )
+        connection.execute(
+            "INSERT INTO calibration_assets "
+            "(id, asset_uuid, calibration_id, calibration_uuid, role, local_path, "
+            "original_path, metadata_json) VALUES (1301, 'asset-raw', 10, 'cal-raw', "
+            "'source', ?, ?, ?)",
+            (
+                str(paths["asset_local"]),
+                str(paths["asset_original"]),
+                json.dumps({
+                    "source_path": str(paths["asset_source"]),
+                    "working_path": str(paths["asset_working"]),
+                    "companion_paths": [str(paths["asset_companion"])],
+                }),
+            ),
+        )
+        connection.commit()
+
+    destination = tmp_path / "raw-policy.sporely"
+    result = export_observations({1}, destination, app_version="test")
+    statuses = {entry.path: entry.status for entry in result.manifest.files}
+    raw_entries = {
+        path: status for path, status in statuses.items()
+        if is_raw_image_path(path)
+    }
+
+    assert raw_entries
+    assert set(raw_entries.values()) == {"excluded_by_policy"}
+    assert statuses["portable/assets/images/102/working.jpg"] == "included"
+    assert (
+        statuses["portable/assets/calibrations/assets/1301/metadata-working_path.tif"]
+        == "included"
+    )
+    assert not result.warnings
+    with ZipFile(destination) as archive:
+        assert not any(is_raw_image_path(name) for name in archive.namelist())
+        assert "portable/assets/images/102/working.jpg" in archive.namelist()
+        assert (
+            "portable/assets/calibrations/assets/1301/metadata-working_path.tif"
+            in archive.namelist()
+        )
+    assert preview_portable_archive(destination).observations[0].observation_id == 1
 
 
 def test_portable_export_refuses_destination_without_required_free_space(

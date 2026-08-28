@@ -12,6 +12,7 @@ from utils.archive.full_restore import restore_full_backup
 from utils.archive.inventory import MAIN_DATABASE_TABLES, REFERENCE_DATABASE_TABLES
 from utils.archive.manifest import ArchiveManifest
 from utils.archive.validation import ArchiveValidationError, validate_full_backup
+from utils.raw_detection import is_raw_image_path
 
 
 @pytest.fixture
@@ -183,7 +184,11 @@ def test_full_backup_sanitizes_staged_state_and_collects_authoritative_assets(
     assert result.path == destination
     validated = validate_full_backup(destination)
     assert validated == result.manifest
-    assert "assets/originals/3/original.raw" in result.warnings
+    assert "assets/originals/3/original.raw" not in result.warnings
+    assert next(
+        entry for entry in result.manifest.files
+        if entry.path == "assets/originals/3/original.raw"
+    ).status == "excluded_by_policy"
     with ZipFile(destination) as archive:
         names = archive.namelist()
         assert names[0] == "manifest.json"
@@ -292,6 +297,7 @@ def test_full_backup_excludes_orf_assets_by_policy(installation, tmp_path):
     result = create_full_backup(destination, app_version="test", qsettings_values={})
 
     statuses = {entry.path: entry.status for entry in result.manifest.files}
+    assert not any(is_raw_image_path(path) for path in result.warnings)
     assert statuses["assets/originals/1/original.orf"] == "excluded_by_policy"
     assert (
         statuses["assets/calibrations/records/1/working.orf"]

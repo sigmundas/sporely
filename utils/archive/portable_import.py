@@ -21,6 +21,7 @@ from utils.archive.checksums import sha256_file
 from utils.archive.manifest import ArchiveManifest
 from utils.archive.paths import safe_staging_destination, validate_zip_entries
 from utils.archive.validation import ArchiveValidationError, validate_portable_observations
+from utils.raw_detection import is_raw_image_path
 
 
 class PortableImportError(RuntimeError):
@@ -1372,7 +1373,11 @@ def _asset_entry(
     entry = matches[0]
     if excluded and entry.status != "excluded_by_policy":
         raise PortableImportError(f"cache asset was not excluded by policy: {entry.path}")
-    if not excluded and entry.status == "excluded_by_policy":
+    if (
+        not excluded
+        and not is_raw_image_path(str(old_path))
+        and entry.status == "excluded_by_policy"
+    ):
         raise PortableImportError(
             f"authoritative asset was excluded by policy: {entry.path}"
         )
