@@ -101,6 +101,211 @@ def test_restore_replaces_installation_rebases_paths_and_keeps_machine_settings(
     assert sentinel.read_text(encoding="utf-8") == "keep"
 
 
+def test_restore_replaces_exact_plate_layout_collection_and_json_files(
+    installation, tmp_path
+):
+    layouts = installation / "plate_layouts"
+    layouts.mkdir()
+    (layouts / "archived.mplate").write_text("archived-layout", encoding="utf-8")
+    objectives = schema.get_objectives_path()
+    objectives.write_text('{"source": "archived"}', encoding="utf-8")
+    last_objective = schema.get_last_objective_path()
+    last_objective.write_text('{"objective": "100X"}', encoding="utf-8")
+    archive = _make_backup(tmp_path)
+
+    (layouts / "archived.mplate").write_text("destination-version", encoding="utf-8")
+    (layouts / "destination-only.mplate").write_text("remove", encoding="utf-8")
+    objectives.write_text('{"source": "destination"}', encoding="utf-8")
+    last_objective.write_text('{"objective": "40X"}', encoding="utf-8")
+
+    _restore_full_backup(
+        archive,
+        app_version="test",
+        safety_backup_path=tmp_path / "safety.sporely",
+    )
+
+    assert sorted(path.name for path in layouts.glob("*.mplate")) == ["archived.mplate"]
+    assert (layouts / "archived.mplate").read_text(encoding="utf-8") == "archived-layout"
+    assert json.loads(objectives.read_text(encoding="utf-8")) == {"source": "archived"}
+    assert json.loads(last_objective.read_text(encoding="utf-8")) == {"objective": "100X"}
+
+
+def test_restore_removes_exact_resources_missing_at_source(installation, tmp_path):
+    objectives = schema.get_objectives_path()
+    last_objective = schema.get_last_objective_path()
+    objectives.unlink(missing_ok=True)
+    last_objective.unlink(missing_ok=True)
+    archive = _make_backup(tmp_path)
+
+    layouts = installation / "plate_layouts"
+    layouts.mkdir(exist_ok=True)
+    (layouts / "destination-only.mplate").write_text("remove", encoding="utf-8")
+    objectives.write_text('{"source": "destination"}', encoding="utf-8")
+    last_objective.write_text('{"objective": "40X"}', encoding="utf-8")
+
+    _restore_full_backup(
+        archive,
+        app_version="test",
+        safety_backup_path=tmp_path / "safety.sporely",
+    )
+
+    assert not layouts.exists()
+    assert not objectives.exists()
+    assert not last_objective.exists()
+
+
+def test_restore_preserves_exact_resources_excluded_by_policy(installation, tmp_path):
+    objectives = schema.get_objectives_path()
+    last_objective = schema.get_last_objective_path()
+    objectives.unlink(missing_ok=True)
+    last_objective.unlink(missing_ok=True)
+    archive = _make_backup(tmp_path)
+    excluded = tmp_path / "excluded-exact-resources.sporely"
+    with ZipFile(archive) as source:
+        manifest = ArchiveManifest.from_json(source.read("manifest.json"))
+        members = {
+            info.filename: source.read(info.filename)
+            for info in source.infolist()
+            if info.filename != "manifest.json"
+        }
+    value = manifest.to_dict()
+    for entry in value["files"]:
+        if entry["path"] in {
+            "data/plate_layouts",
+            "data/objectives.json",
+            "data/last_objective.json",
+        }:
+            entry["status"] = "excluded_by_policy"
+    with ZipFile(excluded, "w") as target:
+        target.writestr("manifest.json", json.dumps(value).encode("utf-8"))
+        for name, payload in members.items():
+            target.writestr(name, payload)
+
+    layouts = installation / "plate_layouts"
+    layouts.mkdir(exist_ok=True)
+    destination_layout = layouts / "destination-only.mplate"
+    destination_layout.write_text("keep", encoding="utf-8")
+    objectives.write_text('{"source": "destination"}', encoding="utf-8")
+    last_objective.write_text('{"objective": "40X"}', encoding="utf-8")
+
+    _restore_full_backup(
+        excluded,
+        app_version="test",
+        safety_backup_path=tmp_path / "safety.sporely",
+    )
+
+    assert destination_layout.read_text(encoding="utf-8") == "keep"
+    assert json.loads(objectives.read_text(encoding="utf-8")) == {
+        "source": "destination"
+    }
+    assert json.loads(last_objective.read_text(encoding="utf-8")) == {
+        "objective": "40X"
+    }
+
+
+def test_restore_legacy_v1_without_plate_layout_state_preserves_destination_layouts(
+    installation, tmp_path
+):
+    archive = _make_backup(tmp_path)
+    legacy = tmp_path / "legacy-unmarked-plate-layouts.sporely"
+    with ZipFile(archive) as source:
+        manifest = ArchiveManifest.from_json(source.read("manifest.json"))
+        members = {
+            info.filename: source.read(info.filename)
+            for info in source.infolist()
+            if info.filename != "manifest.json"
+        }
+    value = manifest.to_dict()
+    value["files"] = [
+        entry for entry in value["files"] if entry["path"] != "data/plate_layouts"
+    ]
+    with ZipFile(legacy, "w") as target:
+        target.writestr("manifest.json", json.dumps(value).encode("utf-8"))
+        for name, payload in members.items():
+            target.writestr(name, payload)
+    validate_full_backup(legacy)
+
+    layouts = installation / "plate_layouts"
+    layouts.mkdir(exist_ok=True)
+    destination_layout = layouts / "destination-only.mplate"
+    destination_layout.write_text("keep", encoding="utf-8")
+
+    _restore_full_backup(
+        legacy,
+        app_version="test",
+        safety_backup_path=tmp_path / "safety.sporely",
+    )
+
+    assert destination_layout.read_text(encoding="utf-8") == "keep"
+
+
+def test_exact_resource_deletions_roll_back_after_later_failure(installation, tmp_path):
+    objectives = schema.get_objectives_path()
+    last_objective = schema.get_last_objective_path()
+    objectives.unlink(missing_ok=True)
+    last_objective.write_text('{"objective": "100X"}', encoding="utf-8")
+    archive = _make_backup(tmp_path)
+
+    layouts = installation / "plate_layouts"
+    layouts.mkdir(exist_ok=True)
+    destination_layout = layouts / "destination-only.mplate"
+    destination_layout.write_text("destination-layout", encoding="utf-8")
+    objectives.write_text('{"source": "destination"}', encoding="utf-8")
+    last_objective.unlink()
+
+    def fail_after_swap() -> None:
+        assert not layouts.exists()
+        assert not objectives.exists()
+        assert json.loads(last_objective.read_text(encoding="utf-8")) == {
+            "objective": "100X"
+        }
+        raise RuntimeError("later restore step failed")
+
+    with pytest.raises(FullRestoreError, match="later restore step failed"):
+        _restore_full_backup(
+            archive,
+            app_version="test",
+            safety_backup_path=tmp_path / "safety.sporely",
+            sanity_check=fail_after_swap,
+        )
+
+    assert destination_layout.read_text(encoding="utf-8") == "destination-layout"
+    assert json.loads(objectives.read_text(encoding="utf-8")) == {
+        "source": "destination"
+    }
+    assert not last_objective.exists()
+
+
+def test_included_plate_layout_replacement_rolls_back_after_later_failure(
+    installation, tmp_path
+):
+    layouts = installation / "plate_layouts"
+    layouts.mkdir()
+    archived_layout = layouts / "archived.mplate"
+    archived_layout.write_text("archived-layout", encoding="utf-8")
+    archive = _make_backup(tmp_path)
+
+    archived_layout.unlink()
+    destination_layout = layouts / "destination-only.mplate"
+    destination_layout.write_text("destination-layout", encoding="utf-8")
+
+    def fail_after_swap() -> None:
+        assert archived_layout.read_text(encoding="utf-8") == "archived-layout"
+        assert not destination_layout.exists()
+        raise RuntimeError("later restore step failed")
+
+    with pytest.raises(FullRestoreError, match="later restore step failed"):
+        _restore_full_backup(
+            archive,
+            app_version="test",
+            safety_backup_path=tmp_path / "safety.sporely",
+            sanity_check=fail_after_swap,
+        )
+
+    assert destination_layout.read_text(encoding="utf-8") == "destination-layout"
+    assert not archived_layout.exists()
+
+
 def test_staging_failure_leaves_current_installation_untouched(installation, tmp_path, monkeypatch):
     archive = _make_backup(tmp_path)
     with sqlite3.connect(schema.get_database_path()) as connection:

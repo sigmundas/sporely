@@ -376,14 +376,16 @@ def _load_qsettings(staged: Path) -> list[tuple[str, str, dict[str, object]]]:
     return result
 
 
-def _local_swap_copy(source: Path, target: Path) -> tuple[Path, Path, Path]:
+def _local_swap_copy(source: Path | None, target: Path) -> tuple[Path, Path, Path]:
     """Copy staged content beside its target so final renames stay on one filesystem."""
     swap_root = target.parent / f".sporely-restore-{uuid.uuid4().hex}"
     swap_root.mkdir(parents=True)
     incoming = swap_root / "incoming"
     rollback = swap_root / "previous"
     try:
-        if source.is_dir():
+        if source is None:
+            pass
+        elif source.is_dir():
             shutil.copytree(source, incoming)
         else:
             shutil.copy2(source, incoming)
@@ -400,7 +402,7 @@ class PreparedRestore:
     app_version: str
     backup_creator: Callable[..., BackupResult]
     temporary: tempfile.TemporaryDirectory
-    targets: list[tuple[Path, Path]]
+    targets: list[tuple[Path | None, Path]]
     swap_targets: list[tuple[tuple[Path, Path, Path], Path]]
     qsettings: list[tuple[str, str, dict[str, object]]]
 
@@ -556,6 +558,7 @@ def prepare_full_restore(
         shutil.copy2(main_db, payload / "mushrooms.db")
         shutil.copy2(ref_db, payload / "reference_values.db")
         _copy_asset_tree(extracted, payload)
+        manifest_statuses = {item.path: item.status for item in manifest.files}
         plate_layouts = extracted / "data/plate_layouts"
         if plate_layouts.is_dir():
             shutil.copytree(plate_layouts, payload / "plate_layouts")
@@ -572,14 +575,35 @@ def prepare_full_restore(
             (asset, images_root / asset.relative_to(payload / "images"))
             for asset in sorted((payload / "images").rglob("*")) if asset.is_file()
         )
-        if (payload / "plate_layouts").is_dir():
-            targets.extend(
-                (layout, Path(schema.get_database_path()).parent / "plate_layouts" / layout.name)
-                for layout in sorted((payload / "plate_layouts").glob("*.mplate"))
-            )
-        for name, target in (("objectives.json", Path(schema.get_objectives_path())), ("last_objective.json", Path(schema.get_last_objective_path()))):
-            if (payload / name).exists():
+        plate_marker = manifest_statuses.get("data/plate_layouts")
+        plate_members = [
+            item
+            for item in manifest.files
+            if item.path.startswith("data/plate_layouts/")
+        ]
+        if plate_marker is not None and plate_members:
+            raise ArchiveValidationError("plate-layout collection has conflicting manifest state")
+        plate_target = Path(schema.get_database_path()).parent / "plate_layouts"
+        if plate_members:
+            if any(item.status != "included" for item in plate_members):
+                raise ArchiveValidationError("plate-layout collection has invalid manifest state")
+            targets.append((payload / "plate_layouts", plate_target))
+        elif plate_marker == "missing_at_source":
+            targets.append((None, plate_target))
+        elif plate_marker not in {None, "excluded_by_policy"}:
+            raise ArchiveValidationError("plate-layout collection has invalid manifest state")
+
+        for name, target in (
+            ("objectives.json", Path(schema.get_objectives_path())),
+            ("last_objective.json", Path(schema.get_last_objective_path())),
+        ):
+            status = manifest_statuses.get(f"data/{name}")
+            if status == "included":
                 targets.append((payload / name, target))
+            elif status == "missing_at_source":
+                targets.append((None, target))
+            elif status != "excluded_by_policy":
+                raise ArchiveValidationError(f"exact resource lacks manifest state: data/{name}")
         for new, target in targets:
             swap_targets.append((_local_swap_copy(new, target), target))
         return PreparedRestore(
@@ -644,7 +668,8 @@ def execute_prepared_restore_swap(
                 old.parent.mkdir(parents=True, exist_ok=True)
                 os.replace(target, old)
             replaced.append((target, old, existed))
-            os.replace(incoming, target)
+            if incoming.exists():
+                os.replace(incoming, target)
         return RestoreSwap(prepared, prepared.safety_backup, replaced)
     except Exception as exc:
         swap = RestoreSwap(prepared, prepared.safety_backup, replaced)

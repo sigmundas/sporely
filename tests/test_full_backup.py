@@ -276,6 +276,35 @@ def test_unknown_setting_aborts_without_final_archive(installation, tmp_path):
     assert not list(tmp_path.glob(".must-not-exist.sporely.*.tmp"))
 
 
+def test_full_backup_accepts_representative_production_settings(installation, tmp_path):
+    production_settings = {
+        "active_reporting_target": "artportalen_se",
+        "artportalen_username": "example-user",
+        "ingestion_hub_offset_seconds": "12.5",
+        "measure_observation_scale_bar_value_micro_um_19": "10.0",
+        "measure_observation_scale_bar_value_micro_um_5": "25.0",
+        "resize_jpeg_quality": "90",
+        "sporely_debug_cloud_plan_override": "server",
+        "sync_full_resolution_originals": "1",
+    }
+    with sqlite3.connect(schema.get_database_path()) as connection:
+        connection.executemany(
+            "INSERT OR REPLACE INTO settings (key, value) VALUES (?, ?)",
+            production_settings.items(),
+        )
+        connection.commit()
+
+    destination = tmp_path / "production-settings.sporely"
+    create_full_backup(destination, app_version="test", qsettings_values={})
+
+    with ZipFile(destination) as archive:
+        staged = tmp_path / "production-settings.db"
+        staged.write_bytes(archive.read("databases/mushrooms.db"))
+    with sqlite3.connect(staged) as connection:
+        archived = dict(connection.execute("SELECT key, value FROM settings"))
+    assert {key: archived[key] for key in production_settings} == production_settings
+
+
 def test_staged_database_does_not_retain_deleted_secret_bytes(installation, tmp_path):
     secret = "phase11-unique-secret-" + ("0123456789abcdef" * 128)
     with sqlite3.connect(schema.get_database_path()) as connection:

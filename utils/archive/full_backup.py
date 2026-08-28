@@ -265,12 +265,13 @@ def _collect_database_assets(database_path: Path, images_dir: Path) -> list[_Sta
 def _collect_plate_layouts(database_path: Path) -> list[_StagedFile]:
     root = database_path.parent / "plate_layouts"
     if not root.is_dir():
-        return []
-    return [
+        return [_StagedFile("data/plate_layouts", None, "missing_at_source")]
+    layouts = [
         _candidate(path, f"data/plate_layouts/{path.name}")
         for path in sorted(root.glob("*.mplate"), key=lambda item: item.name.casefold())
         if path.is_file()
     ]
+    return layouts or [_StagedFile("data/plate_layouts", None, "missing_at_source")]
 
 
 def _excluded_policy_entries() -> list[_StagedFile]:

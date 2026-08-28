@@ -206,18 +206,24 @@ _DB_SECRET_KEYS = {
 _DB_MACHINE_KEYS = {"originals_dir", "live_lab_watch_dir", "ingestion_hub_scan_dir"}
 _DB_REGENERABLE_SUFFIXES = ("_splitter_sizes",)
 _DB_EXACT_KEYS = {
+    "active_reporting_target", "artportalen_username",
     "inat_client_id", "inat_redirect_uri", "original_storage_mode", "store_original_images",
-    "resize_to_optimal_sampling", "target_sampling_pct", "remember_last_used",
+    "resize_jpeg_quality", "resize_to_optimal_sampling", "target_sampling_pct", "remember_last_used",
+    "ingestion_hub_field_match_tolerance_seconds", "ingestion_hub_offset_seconds",
+    "sync_full_resolution_originals",
     "profile_name", "profile_email", "profile_bio", "profile_username", "profile_avatar_url",
     "ui_language", "ui_theme", "vernacular_language", "measure_categories",
+    "contrast_default",
     "contrast_options", "mount_options", "stain_options", "sample_options",
     "sample_source_options",
+    "sporely_debug_cloud_plan_override", "sporely_show_debug_cloud_plan_override",
     "sporely_cloud_media_signature_v1", "cloud_pending_image_repair_version",
     "cloud_pending_image_repair_at", "cloud_exif_backfill_checked",
 }
 _DB_EXACT_PREFIXES = (
     "artsobs_", "sporely_cloud_", "profile_", "last_used_", "gallery_settings_",
-    "live_lab_", "observations_", "measure_view_", "raw_", "default_",
+    "live_lab_", "observations_", "measure_view_", "measure_image_view_settings_",
+    "measure_observation_scale_bar_value_", "raw_", "default_",
 )
 _CREDENTIAL_MARKERS = ("token", "password", "secret", "api_key")
 
