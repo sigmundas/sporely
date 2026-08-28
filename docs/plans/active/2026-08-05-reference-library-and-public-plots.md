@@ -1,6 +1,6 @@
 # Reference Library and Public Reference Plotting Plan
 
-**Status:** Stages 1–3 and Stage 4a–4c are implemented; Stage 4d–4h and Stages 5–6 remain.
+**Status:** Stages 1–3 and Stage 4a–4d are implemented; Stage 4e–4h and Stages 5–6 remain.
 **Canonical repository:** `sporely-py`
 **Canonical path:** `docs/plans/active/2026-08-05-reference-library-and-public-plots.md`
 **Scope:** `sporely-py` → `sporely-web`/Supabase → `sporely-landing`
@@ -10,14 +10,14 @@
 
 ## Agent handoff
 
-- Status: Active; Stages 1–3 and Stage 4a–4c are complete; Stage 4d–4h and
+- Status: Active; Stages 1–3 and Stage 4a–4d are complete; Stage 4e–4h and
   Stages 5–6 remain.
-- Last completed slice: Stage 4c mutation ownership and deterministic graph
-  planner described in §19d. It remains dormant and has no network wiring.
-- Current/next slice: Stage 4d typed remote adapter. Keep it disconnected from
-  production orchestration until the later enablement slice.
+- Last completed slice: Stage 4d typed remote adapter described in §19d. It
+  remains disconnected from production orchestration.
+- Current/next slice: Stage 4e library push executor behind the dormant facade;
+  observation-use execution remains disabled until Stage 4g.
 - Relevant commits: `108db20`, `6c9c456`, `08249ec`, `22bd29f`, `f05f2e3`,
-  `2a1ebe3`, `69ec641`, `8893007`.
+  `2a1ebe3`, `69ec641`, `8893007`, `edd9f70`.
 - Important decisions: Preserve stable UUIDs, frozen observation snapshots, revision-aware records, and the distinction between literature ranges and raw observations.
 - Comparison baseline: the frozen `cloud-sync-pre-refactor` tag; at the Stage 4
   audit it resolves to `e9accd9`, the audit's starting `refactor/cloud-sync`
@@ -2152,6 +2152,35 @@ progress deterministic across process restarts.
 
 Stage 4c does not import a cloud client, execute RPCs, call the dormant facade,
 or change `sync_all`. Typed remote transport remains Stage 4d work.
+
+### Landed Stage 4d slice: typed remote adapter (2026-08-28)
+
+Stage 4d adds `utils/reference_cloud_adapter.py` as the strict typed boundary
+over the Stage 3 Supabase contract. It accepts only the documented payload
+keys, validates nonnegative CAS tokens and tombstone preconditions, and calls
+the four named mutation methods with the exact RPC parameter names. Structured
+responses are parsed only from the exact `{status, row}` envelope. Successful
+rows must retain the requested UUID, authenticated owner, and a positive
+`row_version`; tombstone acknowledgements must include `deleted_at`.
+
+The adapter maps `created`, `updated`, and `no_change` to acknowledged results;
+keeps `conflict` explicit; distinguishes dependency blocks, validation
+rejections, and account deletion; and rejects unknown or malformed responses.
+Authentication, account mismatch, transient transport failure, and terminal
+transport failure remain distinct typed errors. These classifications expose
+transport facts only: retry scheduling, graph ordering, merge policy, and
+state persistence remain outside the adapter.
+
+`SporelyCloudClient` now provides four named RPC writers and four direct
+owner-table readers. Every reader uses complete `_get_paginated` traversal with
+an explicit owner filter, an allowlisted projection, and deterministic
+`updated_at.asc,id.asc` ordering. The writer names are explicitly blocked by
+`PullOnlyCloudClient`; the reader names are explicitly allowed. This closes the
+generic `_rpc` source-gating ambiguity for future reference execution.
+
+The adapter and client methods remain dormant: Stage 4d adds no `sync_all`
+call, planner execution, local-state persistence, or automatic retry. Library
+push execution begins in Stage 4e.
 
 ---
 

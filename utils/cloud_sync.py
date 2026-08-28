@@ -2117,6 +2117,8 @@ _PULL_ONLY_BLOCKED_CLIENT_METHODS = frozenset({
     'soft_delete_image', 'delete_cloud_observation',
     'delete_cloud_measurements_for_image',
     'push_calibration_reference_image', 'push_calibration_metadata',
+    'sync_reference_work', 'sync_reference_taxon_treatment',
+    'sync_reference_measurement_set', 'sync_observation_reference_use',
 })
 
 
@@ -2137,6 +2139,10 @@ _PULL_ONLY_ALLOWED_READ_METHODS = frozenset({
     # Calibration reads
     'list_remote_calibrations',
     'find_remote_calibration',
+    'list_reference_works',
+    'list_reference_taxon_treatments',
+    'list_reference_measurement_sets',
+    'list_observation_reference_uses',
     # Image / measurement metadata reads
     'pull_bulk_image_metadata',
     'pull_image_metadata',
@@ -2145,10 +2151,9 @@ _PULL_ONLY_ALLOWED_READ_METHODS = frozenset({
     # Media byte reads
     'download_image_file',
     'download_image_file_read_only',
-    # Low-level GET / RPC read helpers
+    # Low-level GET helpers. RPC calls are gated by function name below.
     '_get',
     'get_read_only',
-    '_rpc',
     # Client-internal probes and path builders — pure read/compute.
     '_find_cloud_image',
     '_get_media_worker',
@@ -2160,6 +2165,14 @@ _PULL_ONLY_ALLOWED_READ_METHODS = frozenset({
     '_using_default_r',
     'list_image_changes_since',
     'list_measurement_changes_since',
+})
+
+_PULL_ONLY_ALLOWED_RPC_NAMES = frozenset({
+    'search_community_spore_datasets',
+    'get_community_spore_dataset',
+    'community_spore_taxon_summary',
+    'search_public_reference_values',
+    'get_public_observation',
 })
 
 
@@ -2193,6 +2206,17 @@ class PullOnlyCloudClient:
                 f"{reason} '{name}' is not allowed during Download from Cloud"
             )
         return _blocked
+
+    def _rpc(self, function_name: str, payload: dict | None = None):
+        rpc_name = str(function_name or '').strip()
+        if rpc_name not in _PULL_ONLY_ALLOWED_RPC_NAMES:
+            attempt = f'_rpc:{rpc_name or "<missing>"}'
+            self.write_attempts.append(attempt)
+            raise PullOnlyModeError(
+                f"Unrecognized or write-capable RPC '{rpc_name}' is not allowed "
+                "during Download from Cloud"
+            )
+        return self._wrapped._rpc(rpc_name, payload)
 
     def __getattr__(self, name: str):
         # __getattr__ only fires for attributes not found on ``self``; the
@@ -15256,6 +15280,81 @@ class SporelyCloudClient:
         if not resp.content:
             return None
         return resp.json()
+
+    def sync_reference_work(self, payload: dict, expected_row_version: int):
+        return self._rpc('sync_reference_work', {
+            'p_payload': payload,
+            'p_expected_row_version': expected_row_version,
+        })
+
+    def sync_reference_taxon_treatment(self, payload: dict, expected_row_version: int):
+        return self._rpc('sync_reference_taxon_treatment', {
+            'p_payload': payload,
+            'p_expected_row_version': expected_row_version,
+        })
+
+    def sync_reference_measurement_set(self, payload: dict, expected_row_version: int):
+        return self._rpc('sync_reference_measurement_set', {
+            'p_payload': payload,
+            'p_expected_row_version': expected_row_version,
+        })
+
+    def sync_observation_reference_use(
+        self, payload: dict, expected_row_version: int, snapshot_mode: str = 'current'
+    ):
+        return self._rpc('sync_observation_reference_use', {
+            'p_payload': payload,
+            'p_expected_row_version': expected_row_version,
+            'p_snapshot_mode': snapshot_mode,
+        })
+
+    def list_reference_works(self) -> list[dict]:
+        fields = (
+            'user_id,id,type,citation_key,authors_json,editors_json,title,'
+            'container_title,year,edition,publisher,place,volume,issue,pages,doi,'
+            'isbn,url,language,short_label,citation_override,revision,row_version,'
+            'created_at,updated_at,deleted_at'
+        )
+        return self._get_paginated(
+            f'reference_works?user_id=eq.{self.user_id}&select={fields}'
+            '&order=updated_at.asc,id.asc'
+        )
+
+    def list_reference_taxon_treatments(self) -> list[dict]:
+        fields = (
+            'user_id,id,reference_work_id,taxon_id,name_as_published,page_from,'
+            'page_to,locator_text,treatment_notes,revision,row_version,created_at,'
+            'updated_at,deleted_at'
+        )
+        return self._get_paginated(
+            f'reference_taxon_treatments?user_id=eq.{self.user_id}&select={fields}'
+            '&order=updated_at.asc,id.asc'
+        )
+
+    def list_reference_measurement_sets(self) -> list[dict]:
+        fields = (
+            'user_id,id,taxon_treatment_id,character,raw_text,data_kind,length_min,'
+            'length_core_min,length_core_max,length_max,width_min,width_core_min,'
+            'width_core_max,width_max,q_min,q_max,q_mean,length_mean,width_mean,'
+            'sample_size,specimen_count,mount_medium,stain,preparation,'
+            'measurement_method,notes,raw_points_json,supersedes_id,revision,'
+            'row_version,created_at,updated_at,deleted_at'
+        )
+        return self._get_paginated(
+            f'reference_measurement_sets?user_id=eq.{self.user_id}&select={fields}'
+            '&order=updated_at.asc,id.asc'
+        )
+
+    def list_observation_reference_uses(self) -> list[dict]:
+        fields = (
+            'user_id,id,observation_id,reference_measurement_set_id,role,note,'
+            'selected_at,reference_revision,snapshot_json,row_version,created_at,'
+            'updated_at,deleted_at'
+        )
+        return self._get_paginated(
+            f'observation_reference_uses?user_id=eq.{self.user_id}&select={fields}'
+            '&order=updated_at.asc,id.asc'
+        )
 
     def _patch(self, path: str, payload: dict) -> None:
         resp = self._request_with_refresh(
