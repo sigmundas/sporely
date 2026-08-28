@@ -1,6 +1,6 @@
 # Reference Library and Public Reference Plotting Plan
 
-**Status:** Stages 1–3 are implemented in the repositories; Stage 4 desktop sync and Stages 5–6 remain.
+**Status:** Stages 1–3 are implemented; the Stage 4 desktop-sync audit/design is complete and implementation plus Stages 5–6 remain.
 **Canonical repository:** `sporely-py`
 **Canonical path:** `docs/plans/active/2026-08-05-reference-library-and-public-plots.md`
 **Scope:** `sporely-py` → `sporely-web`/Supabase → `sporely-landing`
@@ -10,14 +10,19 @@
 
 ## Agent handoff
 
-- Status: Active; Stages 1–3 are implemented in the repositories; Stages 4–6
-  remain.
-- Last completed stage: Stage 3 owner-private normalized cloud state and the
-  frozen-snapshot public observation projection.
-- Current/next stage: Stage 4 desktop sync, including its explicit local
-  `row_version` and durable-deletion prerequisites. Do not begin it implicitly.
+- Status: Active; Stages 1–3 and the Stage 4 audit/design pass are complete;
+  Stage 4 implementation and Stages 5–6 remain.
+- Last completed slice: Stage 4 audit/design, including the local sync-state,
+  deletion-intent, dependency-order, retry, and cloud-refactor integration
+  contracts in §19d.
+- Current/next slice: Stage 4a characterization and a no-op reference-sync
+  facade. Do not combine it with the Stage 4b persistence migration or begin
+  the full cloud-sync orchestration replacement.
 - Relevant commits: `108db20`, `6c9c456`, `08249ec`, `22bd29f`, `f05f2e3`, `2a1ebe3`.
 - Important decisions: Preserve stable UUIDs, frozen observation snapshots, revision-aware records, and the distinction between literature ranges and raw observations.
+- Comparison baseline: the frozen `cloud-sync-pre-refactor` tag; at the Stage 4
+  audit it resolves to `e9accd9`, the audit's starting `refactor/cloud-sync`
+  HEAD.
 - Do not: Fuzzy-merge bibliographic records, fabricate statistics, or begin public catalogue scope without a separate moderation design.
 - Remaining acceptance criteria: The cross-repository definition of done in Section 20.
 
@@ -1778,6 +1783,259 @@ including its local `row_version` and durable deletion dependencies, remains
 explicitly deferred. Historical raw-point entries retain the Stage 2 desktop
 validator's compatible stored shape; this projection reconstructs their
 public nested shape rather than returning stored metadata blindly.
+
+---
+
+## 19d. Stage 4 desktop-sync audit and implementation contract (2026-08-28)
+
+This audit/design slice changes no runtime behavior. It was performed on the
+clean `refactor/cloud-sync` branch at `e9accd9`; the frozen
+`cloud-sync-pre-refactor` tag resolves to the same commit and is the comparison
+baseline for the implementation slices below.
+
+### Verified desktop and refactor state
+
+1. **The normalized local model is not sync-ready yet.**
+   `database/reference_library_schema.py` stores domain `revision` on works,
+   treatments, and measurement sets, but none of the four entity types has a
+   cloud `row_version`, accepted baseline, dirty/conflict state, `deleted_at`,
+   or durable deletion ledger. An observation use's `reference_revision` is
+   the frozen measurement-set revision; it is not an attachment version.
+2. **Current deletion is physical.** `ReferenceWorkRepository`,
+   `TaxonTreatmentRepository`, and `MeasurementSetRepository` explicitly hard
+   delete child-first after in-use checks; `ObservationReferenceUseRepository`
+   detaches with `DELETE`. The observation FK also cascades use deletion.
+   Therefore changing only the explicit detach method would still lose
+   deletion intent when an observation is deleted.
+3. **Useful local idempotency is narrower than cloud idempotency.** Attach is
+   idempotent for `(observation_id, reference_measurement_set_id)` and archive
+   import compares domain revisions. Neither behavior supplies cloud CAS for
+   role/note changes, snapshot refresh, successor adoption, tombstones, or
+   retries after a lost response.
+4. **The graph spans two SQLite databases.** Works, treatments, and sets live
+   in `reference_values.db`; uses live in `mushrooms.db`. There is no atomic
+   cross-database FK or transaction. Graph planning and recovery must tolerate
+   an interruption between parent and child acknowledgements while never
+   discarding a frozen use snapshot.
+5. **Current cloud orchestration has a stable compatibility boundary.**
+   `sync_all` owns account binding and top-level mode selection; `push_all` and
+   `pull_all` own the observation pipeline. Pull-only shares the pull engine
+   through `PullOnlyCloudClient`. The independent cloud-sync extraction plan
+   keeps `utils/cloud_sync.py` as a facade and has not yet started its
+   mechanical extraction stages.
+6. **Reference sync is a separate graph, not an observation child cursor.**
+   Its owner should be a sibling subsystem such as
+   `utils/reference_cloud_sync.py`, with a narrow facade called by `sync_all`.
+   It must not be distributed through image/measurement loops or overload the
+   existing observation child-change cursor and snapshot store.
+
+The existing contracts to preserve are account-binding fail-closed behavior,
+strict zero-write pull-only mode, complete deterministic pagination, no
+deletion inference from absence, caller-mode independence for `sync_images`,
+`materialize_remote_images`, and `full_pull`, the observation no-op fast path,
+and retry visibility when required work fails. Helper nesting, progress
+percentages, the monolithic file shape, early observation `synced` stamping,
+and settings JSON as the storage mechanism are implementation details rather
+than Stage 4 compatibility promises.
+
+### Verified Stage 3 owner-sync API
+
+The cloud graph is work → treatment → measurement set → observation use.
+Owner reads are direct RLS-protected table reads, including tombstones; there
+is no normalized-reference read RPC. Every table has an owner change-feed
+index ending in `(updated_at, id)`, so desktop reads must paginate completely
+with `updated_at.asc,id.asc` and never treat a missing row as deletion.
+
+The four mutation RPCs are:
+
+- `sync_reference_work(jsonb, bigint)`;
+- `sync_reference_taxon_treatment(jsonb, bigint)`;
+- `sync_reference_measurement_set(jsonb, bigint)`;
+- `sync_observation_reference_use(jsonb, bigint, text)`.
+
+They return `{status, row}`. Create uses expected `row_version = 0`; every
+update, restore, tombstone, explicit snapshot refresh, role/note change, and
+successor adoption uses the current positive token. A successful state change
+increments it exactly once. A semantically identical retry returns
+`no_change` without timestamp or version churn. A stale token returns
+`conflict` and never overwrites; the current row is normally returned but may
+be null for missing-row or uniqueness conflicts. Domain `revision` is separate,
+nondecreasing content state and may jump after offline edits.
+
+Payloads are strict allowlists. Desktop must not send owner identity,
+timestamps, `row_version`, `deleted_at`, or local-only provenance. It requests
+a tombstone with `deleted: true`. Treatment and set parents cannot be changed
+in place. Set successor cycles and live forks are rejected. Use writes require
+the verified cloud observation bigint; the local observation integer is never
+uploaded or used as recovery identity.
+
+`historical_import` is create-only and exists solely for the first upload of
+an already-frozen local use. It accepts an older, never future, source revision
+after validating the same-owner graph and snapshot shape. All later attach,
+reattach, refresh, and successor changes use `current`. Detach retries do not
+depend on a still-live source graph. Reattach restores the same use UUID and
+does not create a replacement attachment.
+
+### Local sync-state and deletion design
+
+Add transport state without overloading domain fields:
+
+- a nullable last-acknowledged cloud `row_version` for every entity, including
+  observation uses;
+- a canonical last-accepted baseline payload (or equivalent normalized
+  baseline record) sufficient for local-only/remote-only/overlapping-change
+  classification;
+- explicit dirty, retry, and conflict state owned by the reference-sync
+  subsystem, not inferred only from timestamps;
+- a durable deletion-intent/tombstone ledger in the database that owns the
+  entity: library entities in `reference_values.db`, uses in `mushrooms.db`;
+- owner/account binding, expected cloud row version, deletion time, and the
+  dependency identities needed after the live row disappears. A use tombstone
+  must retain its use UUID, set UUID, and verified observation cloud ID.
+
+The canonical observation-delete path must record use tombstones before the
+current FK cascade can remove live rows. All observation deletion callers need
+coverage. If that boundary cannot be made exhaustive, use a same-database
+SQLite trigger to capture cascade deletions; do not rely on callers that happen
+to use `detach`. The current UI starts remote observation deletion concurrently
+with local deletion, while the remote hard delete cascades normalized uses.
+Stage 4 must replace that race with one ordered owner: either tombstone and
+acknowledge live remote uses before deleting the remote observation, or treat
+an explicitly successful remote parent deletion as terminal acknowledgement
+for its use intents. A complete authoritative owner read that proves the
+already-linked parent is absent may provide the same terminal result; a
+partial/failed read may not. Local deletion follows only after the needed
+identities and intents are durable.
+
+Deletion intent also needs an explicit local-only cancellation state. If a row
+is created and deleted before any cloud create attempt or accepted baseline,
+there is no remote row to tombstone and the intent can be removed locally once
+its dependants are handled. If a create request may have been sent but its
+response was lost, first reconcile the same UUID with an authoritative owner
+read: tombstone the returned row with its current token, or resolve the intent
+when the complete read proves it absent. Never send `deleted: true` with
+expected version zero and retain it forever—the Stage 3 RPC correctly rejects
+deletion of a row that never existed. Tombstones otherwise remain until cloud
+acknowledgement, successful parent hard deletion, or authoritative absence
+proof and successful dependent processing. They are backed up with their
+owning databases but are device/account sync state and are excluded from
+portable library exchange unless a later contract explicitly changes that
+policy.
+
+Persist every successful returned row and `row_version` immediately in the
+owning database transaction. Because the graph crosses databases, graph-level
+progress is resumable, not atomic: after a crash the planner re-reads durable
+state, skips acknowledged prerequisites, and retries the same stable UUID.
+Never advance an entity baseline merely because a request was sent.
+
+### Ordering, pull, retries, and conflicts
+
+Creates and restores run parent-first:
+
+```text
+work -> treatment -> measurement set -> observation use
+```
+
+Tombstones run child-first:
+
+```text
+observation use -> measurement set -> treatment -> work
+```
+
+A child remains dependency-blocked and retryable until its parent is live and
+acknowledged. A use additionally waits for a verified local
+`observations.cloud_id`; a missing or disputed link is not a create signal.
+Pull stages all four complete feeds, validates the graph, applies live rows
+parent-first and tombstones child-first, and advances per-table cursors and
+baselines only after the complete graph application succeeds. A partial,
+bounded, failed, or filtered read never proves deletion.
+
+Retry the identical UUID, payload, and expected token after transport failure.
+`created`, `updated`, and `no_change` acknowledge the returned baseline.
+`conflict` persists explicit review state for that entity/graph while unrelated
+graphs continue. Dependency/validation failures remain retryable or blocked as
+typed outcomes and do not advance baselines. Automatic merge is limited to
+non-overlapping local/remote changes proven against the accepted baseline;
+overlapping edits, identity disagreement, snapshot replacement, and successor
+adoption require explicit resolution. Cloud never silently replaces a newer
+local domain revision.
+
+Pull-only mode includes reference owner reads but source-gates every reference
+writer. Each new writer must be added to `_PULL_ONLY_BLOCKED_CLIENT_METHODS`;
+each new read is added to `_PULL_ONLY_ALLOWED_READ_METHODS` only deliberately.
+A blocked write attempt remains a bug. Reference metadata sync does not alter
+the existing media flags or enable a full observation pull.
+
+### Stage 4 implementation sequence
+
+Each item below is one reviewable, independently revertible commit. Do not
+combine persistence migration, network wiring, or orchestration replacement.
+
+1. **Stage 4a — characterization and seam.** Add focused tests for the existing
+   `sync_all` call/result contract, pull-only boundary, caller modes, and no-op
+   path. Add a no-op reference-sync facade/result that the coordinator can
+   merge without changing existing observation/media/calibration behavior.
+   Compare outputs with `cloud-sync-pre-refactor`.
+2. **Stage 4b — additive local transport state.** Add cloud row versions,
+   accepted baselines, dirty/conflict state, and durable tombstone ledgers for
+   all four entity types. Cover upgrades, round trips, backup retention,
+   portable-export exclusion, account binding, and the observation-delete
+   cascade boundary. Model never-attempted, create-outcome-unknown, and
+   acknowledged remote identity distinctly. No network calls yet.
+3. **Stage 4c — mutation ownership and graph planner.** Route normalized CRUD,
+   detach, snapshot refresh, successor adoption, and observation deletion
+   through helpers that atomically record sync intent in the owning database.
+   Add a pure deterministic planner with parent-first live work, child-first
+   tombstones, missing-observation-cloud-ID blocking, and restart tests.
+4. **Stage 4d — typed remote adapter.** Add four strict RPC wrappers and four
+   completely paginated owner readers, structured result parsing, deterministic
+   ordering, and explicit pull-only allow/block registration. Test payload
+   allowlists, pagination, status mapping, and zero-write download mode with a
+   fake client; do not invoke the adapter from production orchestration yet.
+5. **Stage 4e — library push executor.** Behind the facade, push/restore works,
+   treatments, and sets parent-first and tombstone them child-first. Persist
+   each acknowledgement, suppress exact no-op retries, isolate conflicts, and
+   keep failed descendants retryable. Observation uses remain disabled.
+6. **Stage 4f — whole-graph pull/reconciliation.** Stage complete feeds for the
+   three library tables, validate dependencies, apply live rows parent-first
+   and tombstones child-first, and commit cursors/baselines only after success.
+   Cover offline edits, stale tokens, non-overlapping auto-merge, overlapping
+   conflict, interrupted pagination, and restart convergence.
+7. **Stage 4g — observation-use sync.** Add uses last, after verified observation
+   cloud identity and source convergence. Cover first `historical_import`,
+   current attach/reattach, role/note edits, explicit refresh, successor
+   adoption, detach, observation deletion, dangling sources, uniqueness races,
+   and frozen-snapshot preservation. Include attach→detach-before-sync,
+   library create→delete-before-sync, lost-create-response reconciliation, and
+   observation deletion before first reference push. Serialize the existing
+   local/remote observation-delete race and verify both tombstone-first and
+   acknowledged-parent-delete terminal paths.
+8. **Stage 4h — enable and compare.** Enable the facade in normal and pull-only
+   coordinator modes, merge typed reference outcomes into the compatible
+   result surface, and run the existing fast-path, dirty-loop, child-cursor,
+   download-only, image/media policy, and caller-mode suites plus new reference
+   integration tests. Compare pre-existing outputs and cloud writes against
+   `cloud-sync-pre-refactor`; only intentional normalized-reference operations
+   may differ.
+
+This sequence may proceed alongside the cloud-sync extraction plan because the
+reference graph has an explicit sibling owner and a narrow facade. Mechanical
+movement of `push_all`, `pull_all`, or `sync_all` must not be mixed into a
+Stage 4 behavior commit. If the extraction reaches its orchestration checkpoint
+first, the reference facade becomes another typed executor; if Stage 4 lands
+first, the extraction preserves that facade as an existing owner.
+
+### Required Stage 4 verification
+
+In addition to focused schema/repository/adapter/planner tests, every wiring
+change runs the exact caller-mode tests and the cloud safety suites required by
+the repository invariants, including `tests/test_cloud_sync_fast_path.py`,
+`tests/test_cloud_sync_dirty_loop_steady_state.py`,
+`tests/test_child_change_probe.py`, `tests/test_cloud_download_only.py`,
+`tests/test_image_tombstones.py`, and the affected media pull/upload policy
+tests. Update both copies of `docs/supabase-sync-contract.md` when behavior
+lands, and update `docs/cloud-sync-architecture.md` when ownership or
+navigation changes. The audit-only commit does not change either contract.
 
 ---
 
