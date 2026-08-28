@@ -236,7 +236,9 @@ def test_partial_progress_restarts_at_failed_level_and_keeps_descendant_pending(
     restarted = RecordingReferenceClient()
     second_result = sync_reference_library(restarted)
 
-    assert restarted.read_calls == ["treatment"]
+    assert restarted.read_calls == [
+        "work", "treatment", "measurement_set", "treatment"
+    ]
     assert [call[0] for call in restarted.calls] == [
         "treatment",
         "measurement_set",
@@ -499,7 +501,7 @@ def test_unknown_create_tombstone_uses_complete_owner_read_before_resolution(dat
     second = RecordingReferenceClient()
     result = sync_reference_library(second)
 
-    assert second.read_calls == ["work"]
+    assert second.read_calls == ["work", "treatment", "measurement_set", "work"]
     assert second.calls == []
     assert result == ReferenceSyncResult()
     assert ReferenceCloudSyncStateRepository.list_library_tombstones("user-1") == []
@@ -519,13 +521,15 @@ def test_unknown_create_reconciles_matching_remote_row_without_duplicate_write(d
         **sent_payload,
         "user_id": "user-1",
         "row_version": 1,
+        "created_at": "2026-08-29T00:00:00Z",
+        "updated_at": "2026-08-29T00:00:00Z",
         "deleted_at": None,
     }]
     result = sync_reference_library(second)
 
-    assert second.read_calls == ["work"]
+    assert second.read_calls == ["work", "treatment", "measurement_set"]
     assert second.calls == []
-    assert result == ReferenceSyncResult()
+    assert result == ReferenceSyncResult(pulled=1)
     state = ReferenceCloudSyncStateRepository.get_library("work", work.id)
     assert state.remote_identity_state == "acknowledged"
     assert state.cloud_row_version == 1

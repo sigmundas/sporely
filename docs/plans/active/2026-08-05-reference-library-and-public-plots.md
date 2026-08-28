@@ -1,6 +1,6 @@
 # Reference Library and Public Reference Plotting Plan
 
-**Status:** Stages 1–3 and Stage 4a–4e are implemented; Stage 4f–4h and Stages 5–6 remain.
+**Status:** Stages 1–3 and Stage 4a–4f are implemented; Stage 4g–4h and Stages 5–6 remain.
 **Canonical repository:** `sporely-py`
 **Canonical path:** `docs/plans/active/2026-08-05-reference-library-and-public-plots.md`
 **Scope:** `sporely-py` → `sporely-web`/Supabase → `sporely-landing`
@@ -10,14 +10,14 @@
 
 ## Agent handoff
 
-- Status: Active; Stages 1–3 and Stage 4a–4e are complete; Stage 4f–4h and
+- Status: Active; Stages 1–3 and Stage 4a–4f are complete; Stage 4g–4h and
   Stages 5–6 remain.
-- Last completed slice: Stage 4e library push executor described in §19d. It
-  remains disconnected from production orchestration and does not process
-  observation-reference-use rows.
-- Current/next slice: Stage 4f whole-graph library pull and reconciliation.
+- Last completed slice: Stage 4f whole-graph library pull and reconciliation
+  described in §19d. It remains disconnected from production orchestration and
+  does not process observation-reference-use rows.
+- Current/next slice: Stage 4g observation-use sync.
 - Relevant commits: `108db20`, `6c9c456`, `08249ec`, `22bd29f`, `f05f2e3`,
-  `2a1ebe3`, `69ec641`, `8893007`, `edd9f70`, `e8b340b`.
+  `2a1ebe3`, `69ec641`, `8893007`, `edd9f70`, `e8b340b`, `ea1e1b9`.
 - Important decisions: Preserve stable UUIDs, frozen observation snapshots, revision-aware records, and the distinction between literature ranges and raw observations.
 - Comparison baseline: the frozen `cloud-sync-pre-refactor` tag; at the Stage 4
   audit it resolves to `e9accd9`, the audit's starting `refactor/cloud-sync`
@@ -2215,6 +2215,39 @@ retryable and terminal failures retain durable intent and are classified in
 the typed result. An attempted item runs at most once per invocation, while
 unrelated graph branches continue and a later invocation resumes from the
 persisted boundary.
+
+### Landed Stage 4f slice: whole-graph pull/reconciliation (2026-08-29)
+
+The dormant reference facade now reads the complete owner feeds for works,
+taxon treatments, and measurement sets through the Stage 4d typed adapter
+before making any local change. It validates identities, owners, required
+payload fields, domain and transport versions, live parent dependencies, and
+measurement-set successor chains in memory. A failed page/read, malformed row,
+duplicate identity, missing dependency, successor fork/cycle, or stale remote
+token leaves domain rows, transport baselines, tombstone state, and cursors
+unchanged. Observation-reference-use feeds remain Stage 4g work.
+
+The validated graph is reconciled in one `BEGIN IMMEDIATE` transaction in
+`reference_values.db`. Live rows apply work → treatment → measurement set;
+explicit remote tombstones apply measurement set → treatment → work. The
+transaction re-reads local payload and transport state so edits made after
+network staging are not silently overwritten. Accepted baselines drive a
+three-way comparison: remote-only changes apply cleanly, local-only changes
+remain dirty with the current remote CAS token, disjoint changes merge and
+remain dirty for the Stage 4e executor, and overlapping/identity/delete
+divergence becomes durable conflict state. A conflicted dependency blocks its
+live descendants while unrelated branches continue.
+
+Per-account, per-table `(updated_at,id)` cursors advance over every inspected
+row, including tombstones, only in the successful whole-graph commit. Explicit
+remote tombstones never echo into outbound deletion intent. A separate durable
+remote-tombstone marker retains the positive row version and canonical deleted
+baseline needed to restore a subsequently recreated stable UUID; repeated
+pulls are no-ops. The direct facade performs reconciliation before its dormant
+library push phase, preventing stale CAS writes and allowing a proven
+non-overlapping merge to be pushed safely. `sync_all`, observation reference
+uses, observation/media cursors, and sync mode flags remain unchanged until
+Stages 4g and 4h.
 
 ---
 

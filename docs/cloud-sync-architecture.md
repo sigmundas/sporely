@@ -57,7 +57,7 @@ Sibling modules that share sync responsibility (do **not** assume
 | `utils/cloud_media_audit.py` | Read-only audit of cloud media rows vs storage objects |
 | `utils/cloud_spore_mosaic.py`, `utils/cloud_spore_mosaic_backfill.py` | Spore-mosaic derivative sync and backfill |
 | `utils/spore_summary_sync.py` | Spore-summary derivative push/pull |
-| `utils/reference_cloud_sync.py` | Dormant Stage 4 normalized-reference sync facade and typed result. Stage 4e executes planned library pushes and tombstones when called directly; `sync_all` integration remains Stage 4h. |
+| `utils/reference_cloud_sync.py` | Dormant Stage 4 normalized-reference sync facade and typed result. Stage 4f stages and atomically reconciles the complete owner library graph before executing Stage 4e pushes when called directly; `sync_all` integration remains Stage 4h. |
 | `database/reference_sync_state.py` | Stage 4 normalized-reference transport repository. It stores account-bound baselines, row versions, retry/conflict state, durable deletion intent, and atomic acknowledgement/restore transitions in the owning database. |
 | `database/reference_sync_planner.py` | Pure Stage 4c normalized-reference graph planner and read-only durable snapshot loader. It orders live work parent-first and tombstones child-first and reports dependency/account/conflict blocks without network activity. |
 | `utils/reference_cloud_adapter.py` | Dormant Stage 4d typed boundary over the four normalized-reference RPC writers and four completely paginated owner readers. It validates payloads/results and classifies transport failures without planning or persistence policy. |
@@ -80,8 +80,16 @@ Application mutations are owned by the repositories in
 the same SQLite transaction. Insert/delete intent remains trigger-owned so
 direct observation cascades cannot bypass it. Archive import revision upgrades
 are the documented repository bypass and call the same connection-scoped
-intent helpers. The Stage 4e facade executes fresh plans only when called
-directly. It persists every library acknowledgement before replanning, skips
+intent helpers. The Stage 4f facade executes fresh plans only when called
+directly. It first stages complete work, treatment, and measurement-set owner
+feeds and reconciles them in one reference-database transaction. Live rows are
+applied parent-first, explicit remote tombstones child-first, and per-table
+`(updated_at,id)` cursors advance only with the successful graph commit.
+Three-way comparison against accepted baselines preserves local-only changes,
+auto-merges only disjoint fields, and records overlapping/delete conflicts.
+Remote tombstone markers retain restore CAS tokens without becoming outbound
+delete intent. The facade then persists every library push acknowledgement
+before replanning, skips
 observation-reference-use work, orders measurement-set successors after their
 acknowledged predecessors, and is not called by `sync_all`. Acknowledgement
 transitions atomically follow a row into a concurrent tombstone or same-ID
@@ -90,9 +98,10 @@ recreation so restart cannot strand a stale delete token.
 The named reference writer methods on `SporelyCloudClient` are registered as
 pull-only blocked operations; the four owner readers are explicitly allowed.
 Readers select an allowlisted row shape and paginate in
-`updated_at.asc,id.asc` order. Stage 4e uses those readers only to reconcile
-ambiguous create outcomes before retrying; the adapter remains unreachable
-from `sync_all` until Stage 4h.
+`updated_at.asc,id.asc` order. Stage 4f consumes all three complete library
+feeds before any local apply; Stage 4e also uses a relevant reader to reconcile
+ambiguous create outcomes before retrying. The adapter remains unreachable from
+`sync_all` until Stage 4h.
 
 ---
 

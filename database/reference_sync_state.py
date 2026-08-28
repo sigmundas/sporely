@@ -353,6 +353,49 @@ class ReferenceCloudSyncStateRepository:
             else None
         )
 
+    @staticmethod
+    def get_library_pull_cursor(
+        cloud_user_id: str, entity_type: LibraryEntityType
+    ) -> tuple[str, str] | None:
+        if entity_type not in _LIBRARY_ENTITY_TYPES:
+            raise ReferenceCloudSyncStateError("invalid library entity type")
+        account_id = _require_cloud_user_id(cloud_user_id)
+        connection = _reference_connection()
+        try:
+            row = connection.execute(
+                "SELECT updated_at, entity_id FROM reference_cloud_pull_cursors "
+                "WHERE cloud_user_id=? AND entity_type=?",
+                (account_id, entity_type),
+            ).fetchone()
+        finally:
+            connection.close()
+        return (str(row["updated_at"]), str(row["entity_id"])) if row else None
+
+    @staticmethod
+    def get_library_remote_tombstone(
+        cloud_user_id: str, entity_type: LibraryEntityType, entity_id: str
+    ) -> dict[str, Any] | None:
+        if entity_type not in _LIBRARY_ENTITY_TYPES:
+            raise ReferenceCloudSyncStateError("invalid library entity type")
+        account_id = _require_cloud_user_id(cloud_user_id)
+        connection = _reference_connection()
+        try:
+            row = connection.execute(
+                "SELECT cloud_row_version, accepted_payload_json, deleted_at "
+                "FROM reference_cloud_remote_tombstone_markers "
+                "WHERE cloud_user_id=? AND entity_type=? AND entity_id=?",
+                (account_id, entity_type, entity_id),
+            ).fetchone()
+        finally:
+            connection.close()
+        if row is None:
+            return None
+        return {
+            "row_version": int(row["cloud_row_version"]),
+            "accepted_payload": _load_json(row["accepted_payload_json"]),
+            "deleted_at": str(row["deleted_at"]),
+        }
+
     @classmethod
     def save_library(
         cls, state: ReferenceCloudSyncState
@@ -659,8 +702,49 @@ class ReferenceCloudSyncStateRepository:
                     "WHERE entity_type=? AND entity_id=? AND cloud_user_id=?",
                     (row["entity_type"], row["entity_id"], account_id),
                 )
+                connection.execute(
+                    "DELETE FROM reference_cloud_remote_tombstone_markers "
+                    "WHERE entity_type=? AND entity_id=? AND cloud_user_id=?",
+                    (row["entity_type"], row["entity_id"], account_id),
+                )
+            marker_rows = connection.execute(
+                """
+                SELECT marker.*
+                FROM reference_cloud_remote_tombstone_markers AS marker
+                JOIN reference_cloud_sync_state AS state
+                  ON state.entity_type=marker.entity_type
+                 AND state.entity_id=marker.entity_id
+                WHERE marker.cloud_user_id=?
+                ORDER BY marker.entity_type, marker.entity_id
+                """,
+                (account_id,),
+            ).fetchall()
+            for row in marker_rows:
+                connection.execute(
+                    """
+                    UPDATE reference_cloud_sync_state
+                    SET cloud_user_id=?, remote_identity_state='acknowledged',
+                        cloud_row_version=?, accepted_payload_json=?,
+                        sync_status='dirty', conflict_json=NULL, retry_count=0,
+                        last_error=NULL, last_attempted_at=NULL,
+                        updated_at=CURRENT_TIMESTAMP
+                    WHERE entity_type=? AND entity_id=?
+                    """,
+                    (
+                        account_id,
+                        row["cloud_row_version"],
+                        row["accepted_payload_json"],
+                        row["entity_type"],
+                        row["entity_id"],
+                    ),
+                )
+                connection.execute(
+                    "DELETE FROM reference_cloud_remote_tombstone_markers "
+                    "WHERE entity_type=? AND entity_id=? AND cloud_user_id=?",
+                    (row["entity_type"], row["entity_id"], account_id),
+                )
             connection.commit()
-            return len(rows)
+            return len(rows) + len(marker_rows)
         except Exception:
             connection.rollback()
             raise

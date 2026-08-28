@@ -6,6 +6,12 @@ from dataclasses import dataclass, replace
 from datetime import datetime, timezone
 
 from database.reference_sync_planner import build_reference_sync_plan
+from database.reference_sync_reconciliation import (
+    ReferencePullReconciliationError,
+    ReferencePullRetryableError,
+    reconcile_reference_library_feed,
+    stage_reference_library_feed,
+)
 from database.reference_sync_state import (
     ReferenceCloudSyncStateError,
     ReferenceCloudSyncStateRepository,
@@ -297,8 +303,47 @@ def _execute_tombstone(
     return "blocked" if result.disposition == "blocked" else "error"
 
 
-def sync_reference_library(client: object) -> ReferenceSyncResult:
-    """Execute library pushes without wiring them into production sync yet."""
+def pull_reference_library(client: object) -> ReferenceSyncResult:
+    """Stage and atomically reconcile the complete owner library graph."""
+    cloud_user_id = str(getattr(client, "user_id", "") or "").strip()
+    adapter = ReferenceCloudAdapter(client, cloud_user_id)
+    try:
+        works = adapter.list_works()
+        treatments = adapter.list_treatments()
+        measurement_sets = adapter.list_measurement_sets()
+        feed = stage_reference_library_feed(
+            cloud_user_id, works, treatments, measurement_sets
+        )
+        applied = reconcile_reference_library_feed(cloud_user_id, feed)
+    except ReferenceCloudTransportError as exc:
+        message = f"reference pull: {exc}"
+        return ReferenceSyncResult(
+            errors=(message,),
+            retryable_errors=(message,) if exc.retryable else (),
+            terminal_errors=() if exc.retryable else (message,),
+        )
+    except ReferencePullRetryableError as exc:
+        message = f"reference pull: {exc}"
+        return ReferenceSyncResult(
+            errors=(message,), retryable_errors=(message,), blocked=("reference_graph",)
+        )
+    except (
+        ReferenceCloudProtocolError,
+        ReferenceCloudAccountMismatchError,
+        ReferencePullReconciliationError,
+        ReferenceCloudSyncStateError,
+    ) as exc:
+        message = f"reference pull: {exc}"
+        return ReferenceSyncResult(errors=(message,), terminal_errors=(message,))
+    return ReferenceSyncResult(
+        pulled=applied.applied,
+        conflicts=applied.conflicts,
+        blocked=applied.blocked,
+    )
+
+
+def _push_reference_library(client: object) -> ReferenceSyncResult:
+    """Execute the Stage 4e library push path."""
     cloud_user_id = str(getattr(client, "user_id", "") or "").strip()
     adapter = ReferenceCloudAdapter(client, cloud_user_id)
     ReferenceCloudSyncStateRepository.claim_library_restores(cloud_user_id)
@@ -423,6 +468,34 @@ def sync_reference_library(client: object) -> ReferenceSyncResult:
         conflicts=tuple(dict.fromkeys(conflicts)),
         blocked=tuple(dict.fromkeys(blocked)),
     )
+
+
+def _combine_reference_results(*results: ReferenceSyncResult) -> ReferenceSyncResult:
+    return ReferenceSyncResult(
+        pushed=sum(result.pushed for result in results),
+        pulled=sum(result.pulled for result in results),
+        errors=tuple(item for result in results for item in result.errors),
+        retryable_errors=tuple(
+            item for result in results for item in result.retryable_errors
+        ),
+        terminal_errors=tuple(
+            item for result in results for item in result.terminal_errors
+        ),
+        conflicts=tuple(
+            dict.fromkeys(item for result in results for item in result.conflicts)
+        ),
+        blocked=tuple(
+            dict.fromkeys(item for result in results for item in result.blocked)
+        ),
+    )
+
+
+def sync_reference_library(client: object) -> ReferenceSyncResult:
+    """Reconcile then push the dormant normalized reference library graph."""
+    pulled = pull_reference_library(client)
+    if pulled.errors:
+        return pulled
+    return _combine_reference_results(pulled, _push_reference_library(client))
 
 
 def merge_reference_sync_result(

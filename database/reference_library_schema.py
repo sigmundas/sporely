@@ -250,6 +250,32 @@ CREATE TABLE IF NOT EXISTS reference_cloud_tombstones (
 )
 """
 
+_REFERENCE_CLOUD_PULL_CURSORS_DDL = """
+CREATE TABLE IF NOT EXISTS reference_cloud_pull_cursors (
+    cloud_user_id TEXT NOT NULL CHECK (TRIM(cloud_user_id) != ''),
+    entity_type TEXT NOT NULL CHECK (
+        entity_type IN ('work', 'treatment', 'measurement_set')
+    ),
+    updated_at TEXT NOT NULL CHECK (TRIM(updated_at) != ''),
+    entity_id TEXT NOT NULL CHECK (TRIM(entity_id) != ''),
+    PRIMARY KEY (cloud_user_id, entity_type)
+)
+"""
+
+_REFERENCE_CLOUD_REMOTE_TOMBSTONE_MARKERS_DDL = """
+CREATE TABLE IF NOT EXISTS reference_cloud_remote_tombstone_markers (
+    cloud_user_id TEXT NOT NULL CHECK (TRIM(cloud_user_id) != ''),
+    entity_type TEXT NOT NULL CHECK (
+        entity_type IN ('work', 'treatment', 'measurement_set')
+    ),
+    entity_id TEXT NOT NULL CHECK (TRIM(entity_id) != ''),
+    cloud_row_version INTEGER NOT NULL CHECK (cloud_row_version >= 1),
+    accepted_payload_json TEXT NOT NULL,
+    deleted_at TEXT NOT NULL CHECK (TRIM(deleted_at) != ''),
+    PRIMARY KEY (cloud_user_id, entity_type, entity_id)
+)
+"""
+
 _OBSERVATION_REFERENCE_USE_CLOUD_SYNC_STATE_DDL = """
 CREATE TABLE IF NOT EXISTS observation_reference_use_cloud_sync_state (
     use_id TEXT PRIMARY KEY,
@@ -380,6 +406,8 @@ _REFERENCE_CLOUD_SYNC_INDEXES: tuple[str, ...] = (
     "ON reference_cloud_sync_state(cloud_user_id, sync_status, entity_type)",
     "CREATE INDEX IF NOT EXISTS idx_reference_cloud_tombstones_pending "
     "ON reference_cloud_tombstones(cloud_user_id, sync_status, entity_type)",
+    "CREATE INDEX IF NOT EXISTS idx_reference_cloud_remote_tombstones_entity "
+    "ON reference_cloud_remote_tombstone_markers(entity_type, entity_id)",
 )
 
 _OBSERVATION_REFERENCE_USE_CLOUD_SYNC_INDEXES: tuple[str, ...] = (
@@ -647,6 +675,8 @@ def init_reference_library_schema(conn: sqlite3.Connection) -> None:
     _ensure_restrict_foreign_keys(conn)
     cursor.execute(_REFERENCE_CLOUD_SYNC_STATE_DDL)
     cursor.execute(_REFERENCE_CLOUD_TOMBSTONES_DDL)
+    cursor.execute(_REFERENCE_CLOUD_PULL_CURSORS_DDL)
+    cursor.execute(_REFERENCE_CLOUD_REMOTE_TOMBSTONE_MARKERS_DDL)
     for statement in _REFERENCE_CLOUD_SYNC_INDEXES:
         cursor.execute(statement)
     for statement in _REFERENCE_CLOUD_SYNC_TRIGGERS:
