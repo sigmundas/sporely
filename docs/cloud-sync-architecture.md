@@ -261,6 +261,16 @@ interchangeable:
 6. **Observation POST is a last resort**, allowed only after direct identity
    verification and reverse-link recovery both find no target
    (`_resolve_existing_observation_for_push` returns `None`).
+7. **Portable imports temporarily disable reverse identity recovery for the
+   whole observation graph.** `observations.portable_cloud_identity_pending`
+   is an identity guard, not general import provenance. While set, observation,
+   image (including metadata-only anchors), and measurement pushes neither
+   match nor emit `desktop_id`; pull-side reconciliation is held to the same
+   rule, and may use only verified destination-side `cloud_id` links. After
+   the complete graph has fresh cloud IDs, a guarded finalization preflights
+   every destination integer reverse ID. It writes those reverse IDs and
+   clears the marker only when no collision exists; otherwise the guard stays
+   active.
 
 The same principle governs image identity (`_reconcile_local_image_cloud_id`,
 L5585), but the two resolvers are deliberately separate functions — image

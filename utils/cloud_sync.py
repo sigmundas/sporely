@@ -9534,8 +9534,30 @@ def _find_local_observation_for_remote_cached(
         return dict(by_cloud_id[cloud_id])
     local_id = _safe_int((remote or {}).get('desktop_id'))
     if local_id > 0 and local_id in by_local_id:
-        return dict(by_local_id[local_id])
+        candidate = dict(by_local_id[local_id])
+        if bool(candidate.get('portable_cloud_identity_pending')):
+            return None
+        return candidate
     return None
+
+
+def _portable_cloud_identity_pending_for_observation(observation_id: int) -> bool:
+    """Return the persistent portable identity guard without assuming migration state."""
+    conn = get_connection()
+    try:
+        try:
+            table_info = list(conn.execute('PRAGMA table_info(observations)'))
+        except (TypeError, sqlite3.Error):
+            return False
+        if 'portable_cloud_identity_pending' not in {str(info[1]) for info in table_info}:
+            return False
+        row = conn.execute(
+            'SELECT portable_cloud_identity_pending FROM observations WHERE id=?',
+            (int(observation_id),),
+        ).fetchone()
+        return bool(row and row[0])
+    finally:
+        conn.close()
 
 
 def _remote_snapshot_has_meaningful_changes(
@@ -10864,6 +10886,9 @@ def _ensure_local_metadata_only_microscope_anchor(
     if (
         client is not None
         and not getattr(client, 'is_pull_only', False)
+        and not _portable_cloud_identity_pending_for_observation(
+            int(local_observation_id)
+        )
         and not _remote_image_desktop_id_current(remote_row, local_image_id)
     ):
         set_image_desktop_id = getattr(client, 'set_image_desktop_id', None)
@@ -11064,6 +11089,9 @@ def _apply_remote_images_to_local(
     # can honour the zero-cloud-writes contract. The pull_only flag comes
     # from the wrapping ``PullOnlyCloudClient`` proxy.
     pull_only = bool(getattr(client, 'is_pull_only', False))
+    suppress_reverse_identity = (
+        pull_only or _portable_cloud_identity_pending_for_observation(int(local_id))
+    )
     local_images = ImageDB.get_images_for_observation(int(local_id))
     local_cloud_map = {
         str(img.get('cloud_id') or '').strip(): img
@@ -11097,7 +11125,7 @@ def _apply_remote_images_to_local(
                 continue
             if not materialize_remote_images:
                 _apply_remote_image_metadata_only_to_local(local_image, remote_image)
-                if not pull_only and not _remote_image_desktop_id_current(
+                if not suppress_reverse_identity and not _remote_image_desktop_id_current(
                     remote_image, local_image.get('id')
                 ):
                     try:
@@ -11118,7 +11146,7 @@ def _apply_remote_images_to_local(
                     print(f'[cloud_sync] Warning: {_cloud_missing_image_warning(local_id, remote_image)}')
                     continue
                 raise
-            if not pull_only and not _remote_image_desktop_id_current(
+            if not suppress_reverse_identity and not _remote_image_desktop_id_current(
                 remote_image, local_image.get('id')
             ):
                 try:
@@ -11223,7 +11251,7 @@ def _apply_remote_images_to_local(
                 conn.commit()
             finally:
                 conn.close()
-            if not pull_only and not _remote_image_desktop_id_current(
+            if not suppress_reverse_identity and not _remote_image_desktop_id_current(
                 remote_image, local_image_id
             ):
                 try:
@@ -15336,6 +15364,10 @@ class SporelyCloudClient:
             if candidate is not None:
                 verified_direct_id = str(candidate.get('id') or '').strip() or local_cloud_id
 
+        portable_identity_pending = bool(obs.get('portable_cloud_identity_pending'))
+        if portable_identity_pending:
+            return verified_direct_id or None
+
         # The reverse-link lookup runs in both branches: as recovery when the
         # direct link is unusable, and as a disagreement cross-check when it
         # verified. Raises on multiple matches.
@@ -15585,7 +15617,10 @@ class SporelyCloudClient:
         summary = sync_summary or _cloud_sync_current_summary()
         payload = _observation_push_payload(obs, local=True)
         payload['user_id'] = self.user_id
-        payload['desktop_id'] = obs['id']
+        if bool(obs.get('portable_cloud_identity_pending')):
+            payload.pop('desktop_id', None)
+        else:
+            payload['desktop_id'] = obs['id']
 
         existing_id = self._resolve_existing_observation_for_push(obs, remote_obs=remote_obs)
         if existing_id:
@@ -15686,6 +15721,9 @@ class SporelyCloudClient:
                         "refusing to reparent"
                     )
                 verified_direct = candidate
+
+        if bool(img.get('portable_cloud_identity_pending')):
+            return str(verified_direct.get('id') or '').strip() if verified_direct else None
 
         # Reverse leg — raises on ambiguity.
         recovered_row = self._find_cloud_image(
@@ -15807,7 +15845,10 @@ class SporelyCloudClient:
             payload.pop('calibration_uuid', None)
         payload['observation_id']    = obs_cloud_id
         payload['user_id']           = self.user_id
-        payload['desktop_id']        = img['id']
+        if bool(img.get('portable_cloud_identity_pending')):
+            payload.pop('desktop_id', None)
+        else:
+            payload['desktop_id'] = img['id']
         # A local image reaching the push path is active (local tombstones are
         # filtered by the caller). Clear a stale remote soft-delete so its
         # measurements become visible again through public RPCs.
@@ -16753,8 +16794,16 @@ class SporelyCloudClient:
         )
         payload['user_id'] = self.user_id
 
+        portable_identity_pending = bool(meas.get('portable_cloud_identity_pending'))
+        if portable_identity_pending:
+            payload.pop('desktop_id', None)
+
         if remote_measurement_cache is not None:
-            for lookup_key in _measurement_push_lookup_keys(meas):
+            lookup_keys = _measurement_push_lookup_keys(meas)
+            if portable_identity_pending:
+                cloud_id = str(meas.get('cloud_id') or '').strip()
+                lookup_keys = [f'cloud:{cloud_id}'] if cloud_id else []
+            for lookup_key in lookup_keys:
                 cached_row = remote_measurement_cache.get(lookup_key)
                 if cached_row is None:
                     continue
@@ -16788,9 +16837,16 @@ class SporelyCloudClient:
             _increment_sync_summary(summary, 'measurements_patched')
             return rows[0]['id']
 
-        rows = self._get(
+        if portable_identity_pending:
+            local_cloud_id = str(meas.get('cloud_id') or '').strip()
+            rows = self._get(
+                f'spore_measurements?id=eq.{local_cloud_id}&user_id=eq.{self.user_id}'
+                f'&select={_SPORE_MEASUREMENT_SELECT_COLUMNS}'
+            ) if local_cloud_id else []
+        else:
+            rows = self._get(
             f'spore_measurements?desktop_id=eq.{payload["desktop_id"]}&user_id=eq.{self.user_id}&select={_SPORE_MEASUREMENT_SELECT_COLUMNS}'
-        )
+            )
         if rows:
             remote_row = dict(rows[0] or {})
             existing_id = str(remote_row.get('id') or '').strip()
@@ -18682,6 +18738,8 @@ def push_all(
             # Hoist it so the summary path runs even when `sync_images`
             # is False.
             local_obs_id = _safe_int(obs.get('id'))
+            if local_obs_id > 0 and bool(obs.get('portable_cloud_identity_pending')):
+                _finalize_portable_cloud_identity_guard(client, local_obs_id)
 
             # (The metadata-only stored-signature refresh used to happen HERE,
             # right after stamping the observation synced. That was too eager:
@@ -18965,7 +19023,12 @@ def push_all(
                 # with a 42501 rejection. Media/storage edits on field
                 # images remain gated behind `sync_images=True`.
                 images_to_patch = [
-                    dict(img)
+                    {
+                        **dict(img),
+                        'portable_cloud_identity_pending': bool(
+                            obs.get('portable_cloud_identity_pending')
+                        ),
+                    }
                     for img in local_images_for_patch
                     if _is_local_metadata_only_microscope_anchor(img)
                 ]
@@ -19171,6 +19234,23 @@ def push_all(
 CLOUD_SYNC_SKIP_PREPARE_IMAGE_IDS_KEY = '_cloud_sync_skip_prepare_image_ids'
 
 
+def _select_remote_image_identity_candidate(
+    *,
+    local_image_id: int,
+    local_cloud_id: str,
+    existing_by_id: dict[str, dict],
+    existing_by_desktop_id: dict[int, dict],
+    portable_identity_pending: bool,
+) -> dict | None:
+    """Select only identity candidates permitted by the current guard."""
+    normalized_cloud_id = str(local_cloud_id or '').strip()
+    if normalized_cloud_id:
+        return existing_by_id.get(normalized_cloud_id)
+    if portable_identity_pending:
+        return None
+    return existing_by_desktop_id.get(int(local_image_id or 0))
+
+
 def _associate_persisted_cloud_images(
     client: SporelyCloudClient,
     obs: dict,
@@ -19194,6 +19274,8 @@ def _associate_persisted_cloud_images(
     try:
         obs_local_id = int(obs.get('id'))
     except Exception:
+        return associated_ids
+    if bool(obs.get('portable_cloud_identity_pending')):
         return associated_ids
 
     # Bucket remote rows by desktop_id so we can detect ambiguity (2+ rows
@@ -19230,6 +19312,9 @@ def _associate_persisted_cloud_images(
 
     for image_row in ImageDB.get_images_for_observation(obs_local_id):
         img = dict(image_row or {})
+        img['portable_cloud_identity_pending'] = bool(
+            obs.get('portable_cloud_identity_pending')
+        )
         local_image_id = _safe_int(img.get('id'))
         if local_image_id <= 0 or not should_push_local_image_to_cloud(img):
             continue
@@ -19451,6 +19536,9 @@ def _reconcile_metadata_only_linked_images(
 
     for image_row in ImageDB.get_images_for_observation(obs_local_id):
         img = dict(image_row or {})
+        img['portable_cloud_identity_pending'] = bool(
+            obs.get('portable_cloud_identity_pending')
+        )
         local_image_id = _safe_int(img.get('id'))
         if local_image_id <= 0 or not should_push_local_image_to_cloud(img):
             continue
@@ -19465,7 +19553,15 @@ def _reconcile_metadata_only_linked_images(
             # non-NULL without any bytes behind it — this row must go
             # through the upload path, never the metadata-only fast path.
             continue
-        remote_row = existing_by_id.get(local_cloud_id) or existing_by_desktop_id.get(local_image_id)
+        remote_row = _select_remote_image_identity_candidate(
+            local_image_id=local_image_id,
+            local_cloud_id=local_cloud_id,
+            existing_by_id=existing_by_id,
+            existing_by_desktop_id=existing_by_desktop_id,
+            portable_identity_pending=bool(
+                obs.get('portable_cloud_identity_pending')
+            ),
+        )
         if not remote_row:
             continue
         remote_storage_path = _normalize_cloud_media_key(remote_row.get('storage_path'))
@@ -19875,6 +19971,9 @@ def _push_images_for_observation(
             _increment_sync_summary(_cloud_sync_current_summary(), 'images_checked')
             img = dict(item.get('image_row') or {})
             img.update(dict(item.get('cloud_upload_meta') or {}))
+            img['portable_cloud_identity_pending'] = bool(
+                obs.get('portable_cloud_identity_pending')
+            )
             if observation_index and observation_total:
                 _emit_progress(
                     progress_cb,
@@ -19894,9 +19993,15 @@ def _push_images_for_observation(
                 if local_image_id > 0
                 else ''
             )
-            remote_row = existing_by_desktop_id.get(local_image_id)
-            if remote_row is None and local_cloud_id:
-                remote_row = existing_by_id.get(local_cloud_id)
+            remote_row = _select_remote_image_identity_candidate(
+                local_image_id=local_image_id,
+                local_cloud_id=local_cloud_id,
+                existing_by_id=existing_by_id,
+                existing_by_desktop_id=existing_by_desktop_id,
+                portable_identity_pending=bool(
+                    img.get('portable_cloud_identity_pending')
+                ),
+            )
             remote_cloud_id = str((remote_row or {}).get('id') or '').strip()
             if not should_push_local_image_to_cloud(img):
                 print(
@@ -20580,6 +20685,7 @@ def _ensure_metadata_only_microscope_image_for_public_spores(
         )
 
     existing_local_cloud_id = str(row.get('cloud_id') or '').strip()
+    portable_identity_pending = bool(row.get('portable_cloud_identity_pending'))
     remote_rows = [dict(remote or {}) for remote in (remote_images or [])]
     if remote_images is None:
         puller = getattr(client, 'pull_image_metadata', None)
@@ -20596,7 +20702,7 @@ def _ensure_metadata_only_microscope_image_for_public_spores(
                     dict(remote or {})
                     for remote in (puller(obs_cloud_id) or [])
                 ]
-        elif hasattr(client, '_find_cloud_image'):
+        elif not portable_identity_pending and hasattr(client, '_find_cloud_image'):
             try:
                 _row = client._find_cloud_image(local_image_id, obs_cloud_id)
                 remote_cloud_id = _row['id'] if _row else None
@@ -20631,19 +20737,26 @@ def _ensure_metadata_only_microscope_image_for_public_spores(
         for remote in remote_rows
         if _safe_int(remote.get('desktop_id')) > 0
     }
-    remote_row = remote_by_desktop_id.get(local_image_id)
+    remote_row = None
+    if not portable_identity_pending:
+        remote_row = remote_by_desktop_id.get(local_image_id)
     if remote_row is None and existing_local_cloud_id:
         candidate = remote_by_id.get(existing_local_cloud_id)
         if (
             candidate
             and str(candidate.get('observation_id') or '').strip() == str(obs_cloud_id)
-            and _safe_int(candidate.get('desktop_id')) in {0, local_image_id}
+            and (
+                portable_identity_pending
+                or _safe_int(candidate.get('desktop_id')) in {0, local_image_id}
+            )
         ):
             remote_row = candidate
 
     payload = _metadata_only_microscope_image_payload(
         client, obs_cloud_id, row,
     )
+    if portable_identity_pending:
+        payload.pop('desktop_id', None)
     if remote_row:
         remote_cloud_id = str(remote_row.get('id') or '').strip()
         _cancel_microscope_anchor_tombstones(
@@ -20758,13 +20871,22 @@ def _ensure_metadata_only_microscope_images_for_observation(
     conn = get_connection()
     conn.row_factory = sqlite3.Row
     try:
+        portable_identity_pending = False
+        if 'portable_cloud_identity_pending' in {
+            str(info[1]) for info in conn.execute('PRAGMA table_info(observations)')
+        }:
+            marker_row = conn.execute(
+                'SELECT portable_cloud_identity_pending FROM observations WHERE id = ?',
+                (obs_local_id,),
+            ).fetchone()
+            portable_identity_pending = bool(marker_row and marker_row[0])
         cursor = conn.execute(
             """
-            SELECT *
+            SELECT images.*
             FROM images
-            WHERE observation_id = ?
-              AND image_type = 'microscope'
-            ORDER BY id
+            WHERE images.observation_id = ?
+              AND images.image_type = 'microscope'
+            ORDER BY images.id
             """,
             (obs_local_id,),
         )
@@ -20794,6 +20916,7 @@ def _ensure_metadata_only_microscope_images_for_observation(
             ]
 
     for image_row in rows:
+        image_row['portable_cloud_identity_pending'] = portable_identity_pending
         counters['considered'] += 1
         local_image_id = _safe_int(image_row.get('id'))
         try:
@@ -20891,6 +21014,125 @@ def _ensure_metadata_anchors_for_public_spore_observation(
         return {**empty, 'failures': [exc_msg]}
 
 
+def _finalize_portable_cloud_identity_guard(
+    client: SporelyCloudClient,
+    obs_local_id: int,
+) -> bool:
+    """Publish collision-free destination reverse IDs, then retire the guard."""
+    connection = get_connection()
+    connection.row_factory = sqlite3.Row
+    try:
+        if 'portable_cloud_identity_pending' not in {
+            str(info[1]) for info in connection.execute('PRAGMA table_info(observations)')
+        }:
+            return False
+        observation_row = connection.execute(
+            "SELECT id, cloud_id, portable_cloud_identity_pending "
+            "FROM observations WHERE id=?",
+            (int(obs_local_id),),
+        ).fetchone()
+        if (
+            observation_row is None
+            or not bool(observation_row['portable_cloud_identity_pending'])
+            or not str(observation_row['cloud_id'] or '').strip()
+        ):
+            return False
+        image_rows = [dict(row) for row in connection.execute(
+            """
+            SELECT id, cloud_id, image_type FROM images
+            WHERE observation_id = ?
+              AND COALESCE(source_role, '') != 'cloud_recovery_cache'
+              AND COALESCE(file_purpose, '') != 'cache'
+            ORDER BY id
+            """,
+            (int(obs_local_id),),
+        )]
+        if any(not str(row.get('cloud_id') or '').strip() for row in image_rows):
+            return False
+        measurement_rows = [dict(row) for row in connection.execute(
+            """
+            SELECT measurement.id, measurement.cloud_id
+            FROM spore_measurements AS measurement
+            JOIN images AS image ON image.id = measurement.image_id
+            WHERE image.observation_id = ?
+              AND COALESCE(image.source_role, '') != 'cloud_recovery_cache'
+              AND COALESCE(image.file_purpose, '') != 'cache'
+            ORDER BY measurement.id
+            """,
+            (int(obs_local_id),),
+        )]
+        if any(not str(row.get('cloud_id') or '').strip() for row in measurement_rows):
+            return False
+    finally:
+        connection.close()
+
+    observation_cloud_id = str(observation_row['cloud_id']).strip()
+    observation_match = client._find_cloud_observation(int(obs_local_id))
+    if observation_match and str(observation_match) != observation_cloud_id:
+        return False
+
+    image_matches: dict[int, str] = {}
+    for image in image_rows:
+        image_id = int(image['id'])
+        image_cloud_id = str(image['cloud_id']).strip()
+        candidates = client._get(
+            f'observation_images?desktop_id=eq.{image_id}'
+            f'&user_id=eq.{client.user_id}&select=id'
+        )
+        candidate_ids = {
+            str(row.get('id') or '').strip()
+            for row in (candidates or [])
+            if str(row.get('id') or '').strip()
+        }
+        if candidate_ids and candidate_ids != {image_cloud_id}:
+            return False
+        image_matches[image_id] = image_cloud_id if candidate_ids else ''
+
+    measurement_matches: dict[int, str] = {}
+    for measurement in measurement_rows:
+        measurement_id = int(measurement['id'])
+        measurement_cloud_id = str(measurement['cloud_id']).strip()
+        rows = client._get(
+            f'spore_measurements?desktop_id=eq.{measurement_id}'
+            f'&user_id=eq.{client.user_id}&select=id'
+        )
+        candidate_ids = {
+            str(row.get('id') or '').strip()
+            for row in (rows or [])
+            if str(row.get('id') or '').strip()
+        }
+        if candidate_ids and candidate_ids != {measurement_cloud_id}:
+            return False
+        measurement_matches[measurement_id] = (
+            measurement_cloud_id if candidate_ids else ''
+        )
+
+    if not observation_match:
+        client.set_desktop_id(observation_cloud_id, int(obs_local_id))
+    for image in image_rows:
+        image_id = int(image['id'])
+        if not image_matches[image_id]:
+            client.set_image_desktop_id(str(image['cloud_id']).strip(), image_id)
+    for measurement in measurement_rows:
+        measurement_id = int(measurement['id'])
+        if not measurement_matches[measurement_id]:
+            client.set_measurement_desktop_id(
+                str(measurement['cloud_id']).strip(), measurement_id
+            )
+
+    connection = get_connection()
+    try:
+        cursor = connection.execute(
+            "UPDATE observations SET portable_cloud_identity_pending=0 "
+            "WHERE id=? AND portable_cloud_identity_pending=1",
+            (int(obs_local_id),),
+        )
+        connection.commit()
+        return int(cursor.rowcount or 0) == 1
+    finally:
+        connection.close()
+
+
 def _push_measurements_for_observation(
     client: SporelyCloudClient,
     obs_local_id: int,
@@ -20951,6 +21193,13 @@ def _push_measurements_for_observation(
         measurements = [
             row for row in measurements if _safe_int(row.get('id')) in selected_ids
         ]
+
+    portable_identity_pending = bool(
+        dict(observation_row).get('portable_cloud_identity_pending')
+        if observation_row is not None else False
+    )
+    for measurement in measurements:
+        measurement['portable_cloud_identity_pending'] = portable_identity_pending
 
     tombstoned_cloud_ids = _local_tombstoned_cloud_image_ids(
         [
@@ -21099,6 +21348,7 @@ def _push_measurements_for_observation(
         ),
         flush=True,
     )
+    _finalize_portable_cloud_identity_guard(client, int(obs_local_id))
 
 
 def _reconcile_missing_spore_measurements(
@@ -23586,7 +23836,15 @@ def pull_all(
                 imported_local_ids.append(int(local_id))
             else:
                 local_id = int(local_obs['id'])
-                if cloud_id and int(remote.get('desktop_id') or 0) != local_id and not pull_only:
+                portable_identity_pending = bool(
+                    local_obs.get('portable_cloud_identity_pending')
+                )
+                if (
+                    cloud_id
+                    and int(remote.get('desktop_id') or 0) != local_id
+                    and not pull_only
+                    and not portable_identity_pending
+                ):
                     try:
                         client.set_desktop_id(cloud_id, local_id)
                     except Exception as exc:
@@ -24103,6 +24361,9 @@ def _import_remote_images(
         result['errors'].append('Could not load Sporely Cloud credentials.')
         result['complete'] = False
         return result
+    suppress_reverse_identity = _portable_cloud_identity_pending_for_observation(
+        int(local_id)
+    )
     synced_at = datetime.now(timezone.utc).isoformat()
     
     remote_images_raw = (
@@ -24278,8 +24539,12 @@ def _import_remote_images(
                 finally:
                     conn.close()
 
-                if not getattr(client, 'is_pull_only', False) and not _remote_image_desktop_id_current(
+                if (
+                    not getattr(client, 'is_pull_only', False)
+                    and not suppress_reverse_identity
+                    and not _remote_image_desktop_id_current(
                     image_row, local_image_id
+                    )
                 ):
                     set_image_desktop_id = getattr(client, 'set_image_desktop_id', None)
                     if cloud_image_id and callable(set_image_desktop_id):
@@ -24423,8 +24688,14 @@ def _import_remote_measurements_for_observation(
     # the identity write-back to keep the zero-cloud-writes contract without
     # relying on the wrapper to raise mid-flow.
     _pull_only = bool(getattr(client, 'is_pull_only', False))
+    _suppress_reverse_identity = (
+        _pull_only
+        or _portable_cloud_identity_pending_for_observation(int(local_id))
+    )
     set_measurement_desktop_id = (
-        None if _pull_only else getattr(client, 'set_measurement_desktop_id', None)
+        None
+        if _suppress_reverse_identity
+        else getattr(client, 'set_measurement_desktop_id', None)
     )
     imported = 0
     conflict = False
@@ -24492,7 +24763,7 @@ def _import_remote_measurements_for_observation(
                 continue
 
             local_measurement = local_measurements_by_cloud_id.get(remote_measurement_id)
-            if local_measurement is None:
+            if local_measurement is None and not _suppress_reverse_identity:
                 remote_desktop_measurement_id = _safe_int(remote_row.get('desktop_id'))
                 if remote_desktop_measurement_id > 0:
                     local_measurement = local_measurements_by_id.get(remote_desktop_measurement_id)
@@ -24737,6 +25008,9 @@ def materialize_cloud_media_for_observation(
             except Exception:
                 pass
         return _finish(summary)
+    suppress_reverse_identity = bool(
+        local_obs.get('portable_cloud_identity_pending')
+    )
 
     cloud_id = str(local_obs.get('cloud_id') or '').strip()
     summary['cloud_observation_id'] = cloud_id or None
@@ -24889,7 +25163,7 @@ def materialize_cloud_media_for_observation(
             finally:
                 conn.close()
 
-        if current_remote_desktop_id != local_image_id:
+        if not suppress_reverse_identity and current_remote_desktop_id != local_image_id:
             set_image_desktop_id = getattr(client, 'set_image_desktop_id', None)
             if callable(set_image_desktop_id):
                 try:
@@ -24922,7 +25196,7 @@ def materialize_cloud_media_for_observation(
         )
 
         local_image = local_images_by_cloud_id.get(cloud_image_id)
-        if local_image is None:
+        if local_image is None and not suppress_reverse_identity:
             remote_desktop_id = _safe_int(remote_image.get('desktop_id'))
             if remote_desktop_id > 0:
                 local_image = local_images_by_id.get(remote_desktop_id)
@@ -25192,7 +25466,7 @@ def cloud_media_materialization_state_for_observation(local_observation_id: int 
             if not cloud_image_id or cloud_image_id in tombstoned_remote_image_ids:
                 continue
             local_image = local_images_by_cloud_id.get(cloud_image_id)
-            if local_image is None:
+            if local_image is None and not suppress_reverse_identity:
                 remote_desktop_id = _safe_int(remote_image.get('desktop_id'))
                 if remote_desktop_id > 0:
                     local_image = local_images_by_id.get(remote_desktop_id)
