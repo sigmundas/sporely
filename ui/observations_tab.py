@@ -2448,31 +2448,6 @@ class ObservationsTab(QWidget):
         self.delete_btn.clicked.connect(self.delete_selected_observation)
         left_panel_layout.addWidget(self.delete_btn)
 
-        # ── Import | Export ───────────────────────────────────────────────
-        io_row = QHBoxLayout()
-        io_row.setSpacing(5)
-
-        self.import_btn = QPushButton(self.tr("Import"))
-        self.import_btn.setObjectName("dataButton")
-        self.import_btn.setIcon(self._btn_icon("icon_import.svg", get_button_icon_color("dataButton")))
-        self.import_btn.setIconSize(self._icon_size)
-        self._button_icon_map[self.import_btn] = ("icon_import.svg", "dataButton")
-        self.import_btn.setToolTip(self.tr("Import observations from zip archive"))
-        self.import_btn.clicked.connect(self._on_import_db_clicked)
-        io_row.addWidget(self.import_btn)
-
-        self.export_btn = QPushButton(self.tr("Export"))
-        self.export_btn.setObjectName("dataButton")
-        self.export_btn.setIcon(self._btn_icon("icon_export.svg", get_button_icon_color("dataButton")))
-        self.export_btn.setIconSize(self._icon_size)
-        self._button_icon_map[self.export_btn] = ("icon_export.svg", "dataButton")
-        self.export_btn.setEnabled(True)
-        self.export_btn.setToolTip(self.tr("Export database bundle to zip archive"))
-        self.export_btn.clicked.connect(self._on_export_db_clicked)
-        io_row.addWidget(self.export_btn)
-
-        left_panel_layout.addLayout(io_row)
-
         # ── Search and filters — less frequent
         self.search_input = QLineEdit()
         self.search_input.setPlaceholderText(self.tr("Search observations..."))
@@ -2749,8 +2724,6 @@ class ObservationsTab(QWidget):
             (getattr(self, "rename_btn", None), self.tr("Edit selected observation"), self.tr("Select an observation to edit")),
             (getattr(self, "delete_btn", None), self.tr("Delete selected observation(s)"), self.tr("Select one or more observations to delete")),
             (getattr(self, "refresh_btn", None), self.tr("Sync with cloud now"), None),
-            (getattr(self, "export_btn", None), self.tr("Export database bundle to zip archive"), None),
-            (getattr(self, "import_btn", None), self.tr("Import observations from zip archive"), None),
         ):
             if widget is not None:
                 self._status_hint_controller.register_widget(widget, hint, disabled_hint=disabled)
@@ -3630,24 +3603,6 @@ class ObservationsTab(QWidget):
         except Exception:
             pass
 
-    def _call_main_window_db_action(self, method_name: str) -> None:
-        main_window = self.window()
-        action = getattr(main_window, method_name, None)
-        if callable(action):
-            action()
-            return
-        self.set_status_message(
-            self.tr("Database action unavailable."),
-            level="warning",
-            auto_clear_ms=8000,
-        )
-
-    def _on_export_db_clicked(self) -> None:
-        self._call_main_window_db_action("export_database_bundle")
-
-    def _on_import_db_clicked(self) -> None:
-        self._call_main_window_db_action("import_database_bundle")
-
     def _schedule_startup_cloud_sync(self) -> None:
         return
 
@@ -3709,8 +3664,6 @@ class ObservationsTab(QWidget):
             "rename_btn",
             "delete_btn",
             "refresh_btn",
-            "export_btn",
-            "import_btn",
             "plate_btn",
             "publish_btn",
             "search_input",
@@ -4942,6 +4895,10 @@ class ObservationsTab(QWidget):
             observation_ids.append(obs_id)
         return observation_ids
 
+    def selected_observation_ids(self) -> list[int]:
+        """Return the selected local observation IDs for application actions."""
+        return self._selected_observation_ids()
+
     @staticmethod
     def _observation_id_from_item(item: QTableWidgetItem | None) -> int | None:
         if item is None:
@@ -6143,8 +6100,6 @@ class ObservationsTab(QWidget):
 
             self.rename_btn.setEnabled(False)
             self.delete_btn.setEnabled(False)
-            if hasattr(self, "export_btn"):
-                self.export_btn.setEnabled(True)
             self._update_publish_controls()
             self.gallery_widget.clear()
             self.selected_observation_id = None
@@ -6551,8 +6506,6 @@ class ObservationsTab(QWidget):
             table.clearSelection()
             self.rename_btn.setEnabled(False)
             self.delete_btn.setEnabled(False)
-            if hasattr(self, "export_btn"):
-                self.export_btn.setEnabled(bool(cache))
             self._update_publish_controls()
             self._redistribute_taxonomy_columns()
         finally:
@@ -8324,9 +8277,8 @@ class ObservationsTab(QWidget):
             self.plate_btn.setEnabled(False)
         if hasattr(self, "publish_btn"):
             self.publish_btn.setEnabled(False)
-        if hasattr(self, "export_btn"):
-            self.export_btn.setEnabled(True)
         selected_rows = self.table.selectionModel().selectedRows()
+        self.selection_count_changed.emit(len(selected_rows))
         if not selected_rows:
             self._cancel_pending_gallery_load()
             self.gallery_widget.clear()
@@ -8340,8 +8292,6 @@ class ObservationsTab(QWidget):
             has_cloud = self._selection_includes_cloud_rows()
             if not has_cloud and not self._is_cloud_sync_running():
                 self.delete_btn.setEnabled(True)
-            if hasattr(self, "export_btn") and not has_cloud:
-                self.export_btn.setEnabled(True)
             self._cancel_pending_gallery_load()
             self.gallery_widget.clear()
             self.selected_observation_id = None
@@ -8349,7 +8299,6 @@ class ObservationsTab(QWidget):
             if hasattr(self, "image_browser"):
                 self.image_browser.clear()
             self._update_publish_controls()
-            self.selection_count_changed.emit(len(selected_rows))
             return
 
         row = selected_rows[0].row()
@@ -8380,8 +8329,6 @@ class ObservationsTab(QWidget):
 
         self.rename_btn.setEnabled(True)
         self.delete_btn.setEnabled(not self._is_cloud_sync_running())
-        if hasattr(self, "export_btn"):
-            self.export_btn.setEnabled(True)
         # Let the table selection repaint before the heavier gallery DB/image work.
         self._schedule_gallery_observation_load(obs_id)
         # Do not force a full Measure-tab reload on every table click.

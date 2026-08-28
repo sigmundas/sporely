@@ -7,6 +7,7 @@ from .references import register_reference_scenarios
 from .measure import register_measure_scenarios
 from .observations import register_observation_scenarios
 from .raw_processing import register_raw_processing_scenarios
+from .portable_import import register_portable_import_scenarios
 
 
 def create_registry() -> ScenarioRegistry:
@@ -16,6 +17,7 @@ def create_registry() -> ScenarioRegistry:
     register_measure_scenarios(registry)
     register_observation_scenarios(registry)
     register_raw_processing_scenarios(registry)
+    register_portable_import_scenarios(registry)
     return registry
 
 

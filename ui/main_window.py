@@ -158,11 +158,14 @@ from database.vernacular_db import VernacularDB
 from database.database_tags import DatabaseTerms
 from database.schema import (
     get_connection,
+    get_reference_connection,
     get_app_settings,
     save_app_settings,
     update_app_settings,
     get_database_path,
+    get_reference_database_path,
     get_images_dir,
+    get_objectives_path,
     init_database,
     load_objectives,
     objective_display_name,
@@ -229,8 +232,26 @@ from .styles import get_style, apply_palette, pt, _is_dark
 from .window_state import GeometryMixin
 from .hint_status import HintBar, HintProgressStack, HintStatusController
 from .export_image_dialog import ExportImageDialog as SharedExportImageDialog, ExportPlotDialog, ExportGalleryDialog
-from utils.db_share import export_database_bundle as export_db_bundle
+from .portable_import_dialog import PortableImportDialog
 from utils.db_share import import_database_bundle as import_db_bundle
+from utils.archive.full_backup import BackupResult, create_full_backup
+from utils.archive.full_restore import (
+    PreparedRestore,
+    RestoredQSettings,
+    RestoreResult,
+    RestoreSwap,
+    apply_prepared_restore_qsettings,
+    execute_prepared_restore_swap,
+    prepare_full_restore,
+)
+from utils.archive.portable_export import export_observations
+from utils.archive.portable_import import (
+    PortableImportError,
+    import_portable_archive,
+    preview_portable_archive,
+)
+from utils.archive.routing import ArchiveRoute, ArchiveRoutingError, classify_archive
+from utils.archive.validation import validate_full_backup
 from matplotlib.backends.backend_qtagg import FigureCanvasQTAgg as FigureCanvas
 from matplotlib.figure import Figure
 from matplotlib.colors import to_rgba
@@ -785,7 +806,7 @@ class ScaleBarCalibrationDialog(QDialog):
 
 
 class DatabaseBundleOptionsDialog(QDialog):
-    """Dialog for choosing which database content to export/import."""
+    """Choose content to recover from a legacy Sporely data package."""
 
     def __init__(self, title: str, defaults: dict | None = None, parent=None):
         super().__init__(parent)
@@ -796,7 +817,7 @@ class DatabaseBundleOptionsDialog(QDialog):
         defaults = defaults or {}
 
         layout = QVBoxLayout(self)
-        prompt = QLabel(self.tr("Select what you want to include:"))
+        prompt = QLabel(self.tr("Select what you want to import:"))
         layout.addWidget(prompt)
 
         self.observations_check = QCheckBox(
@@ -6856,6 +6877,151 @@ class _ReferenceTaxonLookupProxy:
         lookup = self._owner._ensure_reference_taxon_lookup()
         return lookup.best_common_name_for_taxon(genus, species) if lookup else None
 
+class _FullBackupWorker(QThread):
+    """Run full-backup I/O away from the UI thread."""
+
+    completed = Signal(object)
+    failed = Signal(str)
+
+    def __init__(self, destination: str, app_version: str, parent=None) -> None:
+        super().__init__(parent)
+        self._destination = destination
+        self._app_version = app_version
+
+    def run(self) -> None:
+        try:
+            result = create_full_backup(self._destination, app_version=self._app_version)
+        except Exception as exc:
+            self.failed.emit(str(exc))
+            return
+        self.completed.emit(result)
+
+
+class _FullRestoreWorker(QThread):
+    """Prepare and validate a restore without touching Qt widgets or live files."""
+
+    prepared = Signal(object)
+    failed = Signal(str)
+
+    def __init__(self, source: str, app_version: str, parent=None) -> None:
+        super().__init__(parent)
+        self._source = source
+        self._app_version = app_version
+
+    def run(self) -> None:
+        try:
+            prepared = prepare_full_restore(
+                self._source, app_version=self._app_version
+            )
+        except Exception as exc:
+            self.failed.emit(str(exc))
+            return
+        self.prepared.emit(prepared)
+
+
+class _FullRestoreSwapWorker(QThread):
+    """Run filesystem restore apply, commit, or rollback away from Qt's UI thread."""
+
+    completed = Signal(object)
+    failed = Signal(str)
+
+    def __init__(self, operation: str, value: object, parent=None) -> None:
+        super().__init__(parent)
+        self._operation = operation
+        self._value = value
+
+    def run(self) -> None:
+        try:
+            if self._operation == "apply":
+                result = execute_prepared_restore_swap(
+                    self._value, live_quiesced=True
+                )
+            elif self._operation == "commit":
+                result = self._value.commit()
+            elif self._operation == "rollback":
+                self._value.rollback()
+                result = None
+            elif self._operation.startswith("cleanup_"):
+                self._value.cleanup()
+                result = None
+            else:
+                raise RuntimeError(f"unknown restore operation: {self._operation}")
+        except Exception as exc:
+            self.failed.emit(str(exc))
+            return
+        self.completed.emit(result)
+
+
+class _PortableExportWorker(QThread):
+    """Run selected-observation archive I/O away from the UI thread."""
+
+    completed = Signal(object)
+    failed = Signal(str)
+
+    def __init__(self, observation_ids: set[int], destination: str, app_version: str, parent=None) -> None:
+        super().__init__(parent)
+        self._observation_ids = set(observation_ids)
+        self._destination = destination
+        self._app_version = app_version
+
+    def run(self) -> None:
+        try:
+            result = export_observations(
+                self._observation_ids, self._destination, app_version=self._app_version
+            )
+        except Exception as exc:
+            self.failed.emit(str(exc))
+            return
+        self.completed.emit(result)
+
+
+class _PortablePreviewWorker(QThread):
+    completed = Signal(object)
+    failed = Signal(str)
+
+    def __init__(self, archive_path: str, parent=None) -> None:
+        super().__init__(parent)
+        self._archive_path = archive_path
+
+    def run(self) -> None:
+        try:
+            self.completed.emit(preview_portable_archive(self._archive_path))
+        except Exception as exc:
+            self.failed.emit(str(exc))
+
+
+class _PortableImportWorker(QThread):
+    completed = Signal(object)
+    failed = Signal(str)
+
+    def __init__(
+        self,
+        archive_path: str,
+        observation_ids: set[int],
+        archive_sha256: str,
+        parent=None,
+    ) -> None:
+        super().__init__(parent)
+        self._archive_path = archive_path
+        self._observation_ids = set(observation_ids)
+        self._archive_sha256 = archive_sha256
+
+    def run(self) -> None:
+        try:
+            result = import_portable_archive(
+                self._archive_path,
+                destination_main_database=get_database_path(),
+                destination_reference_database=get_reference_database_path(),
+                destination_assets_root=get_images_dir().parent,
+                destination_objectives_path=get_objectives_path(),
+                observation_ids=self._observation_ids,
+                expected_archive_sha256=self._archive_sha256,
+            )
+            self.completed.emit(result)
+        except Exception as exc:
+            self.failed.emit(str(exc))
+
+
 class MainWindow(GeometryMixin, QMainWindow):
     """Main application window with modern UI and measurement table."""
 
@@ -6875,6 +7041,20 @@ class MainWindow(GeometryMixin, QMainWindow):
         self.app_version = app_version or ""
         self._update_check_started = False
         self._cloud_client = None
+        self._full_backup_worker: _FullBackupWorker | None = None
+        self._full_restore_worker: _FullRestoreWorker | None = None
+        self._full_restore_apply_worker: _FullRestoreSwapWorker | None = None
+        self._pending_restore_swap: RestoreSwap | None = None
+        self._pending_restore_qsettings: RestoredQSettings | None = None
+        self._pending_restore_error: str | None = None
+        self._portable_export_worker: _PortableExportWorker | None = None
+        self._portable_preview_worker: _PortablePreviewWorker | None = None
+        self._portable_import_worker: _PortableImportWorker | None = None
+        self._portable_import_filename: str | None = None
+        self._restore_maintenance_active = False
+        self._restore_paused_timers: list[QTimer] = []
+        self._restore_window_was_enabled = True
+        self._restore_action_enabled_states: dict[QAction, bool] = {}
         self._allow_immediate_close = False
         self._close_after_cloud_sync = False
         self._background_activity_manual: dict[int, str] = {}
@@ -7028,6 +7208,9 @@ class MainWindow(GeometryMixin, QMainWindow):
         self._restore_geometry()
 
     def closeEvent(self, event):
+        if getattr(self, "_closing_after_restore", False):
+            super().closeEvent(event)
+            return
         if getattr(self, "_allow_immediate_close", False):
             self._allow_immediate_close = False
 
@@ -7058,6 +7241,47 @@ class MainWindow(GeometryMixin, QMainWindow):
                     login_worker.wait(5000)
             except Exception:
                 pass
+        backup_worker = getattr(self, "_full_backup_worker", None)
+        if backup_worker is not None:
+            try:
+                if backup_worker.isRunning():
+                    backup_worker.wait()
+            except Exception:
+                pass
+        self._full_backup_worker = None
+        restore_worker = getattr(self, "_full_restore_worker", None)
+        if restore_worker is not None:
+            try:
+                if restore_worker.isRunning():
+                    restore_worker.wait()
+            except Exception:
+                pass
+        self._full_restore_worker = None
+        restore_apply_worker = getattr(self, "_full_restore_apply_worker", None)
+        if restore_apply_worker is not None:
+            try:
+                if restore_apply_worker.isRunning():
+                    restore_apply_worker.wait()
+            except Exception:
+                pass
+        self._full_restore_apply_worker = None
+        portable_worker = getattr(self, "_portable_export_worker", None)
+        if portable_worker is not None:
+            try:
+                if portable_worker.isRunning():
+                    portable_worker.wait()
+            except Exception:
+                pass
+        self._portable_export_worker = None
+        for attribute in ("_portable_preview_worker", "_portable_import_worker"):
+            worker = getattr(self, attribute, None)
+            if worker is not None:
+                try:
+                    if worker.isRunning():
+                        worker.wait()
+                except Exception:
+                    pass
+            setattr(self, attribute, None)
         super().closeEvent(event)
 
     def eventFilter(self, obj, event):
@@ -7234,6 +7458,33 @@ class MainWindow(GeometryMixin, QMainWindow):
 
         # File menu
         file_menu = menubar.addMenu(self.tr("File"))
+
+        self.backup_sporely_action = QAction(self.tr("Back Up Sporely…"), self)
+        self.backup_sporely_action.triggered.connect(self.back_up_sporely)
+        file_menu.addAction(self.backup_sporely_action)
+
+        self.restore_sporely_action = QAction(self.tr("Restore Sporely Backup…"), self)
+        self.restore_sporely_action.triggered.connect(self.restore_sporely_backup)
+        file_menu.addAction(self.restore_sporely_action)
+
+        file_menu.addSeparator()
+
+        self.export_selected_observations_action = QAction(
+            self.tr("Export Selected Observations…"), self
+        )
+        self.export_selected_observations_action.setEnabled(False)
+        self.export_selected_observations_action.triggered.connect(
+            self.export_selected_observations
+        )
+        file_menu.addAction(self.export_selected_observations_action)
+
+        self.import_observations_action = QAction(
+            self.tr("Import Observations…"), self
+        )
+        self.import_observations_action.triggered.connect(self.import_observations)
+        file_menu.addAction(self.import_observations_action)
+
+        file_menu.addSeparator()
 
         export_ml_action = QAction(self.tr("Export ML"), self)
         export_handler = getattr(self, "export_ml_dataset", None)
@@ -14501,7 +14752,18 @@ class MainWindow(GeometryMixin, QMainWindow):
 
     def _on_multi_observation_selected(self, count: int):
         """Update the observation header label when multiple rows are selected."""
-        self.observation_header_label.setText(self.tr("{n} observations selected").format(n=count))
+        action = getattr(self, "export_selected_observations_action", None)
+        if action is not None:
+            tab = getattr(self, "observations_tab", None)
+            exportable_count = len(tab.selected_observation_ids()) if tab is not None else count
+            action.setEnabled(
+                exportable_count > 0
+                and not getattr(self, "_restore_maintenance_active", False)
+            )
+        if count > 1 and hasattr(self, "observation_header_label"):
+            self.observation_header_label.setText(self.tr("{n} observations selected").format(n=count))
+        elif count == 0 and hasattr(self, "observation_header_label"):
+            self.observation_header_label.setText("")
 
     def clear_current_image_display(self):
         """Clear the current image and overlays."""
@@ -20728,6 +20990,8 @@ class MainWindow(GeometryMixin, QMainWindow):
         full_pull: bool = False,
         pull_only: bool = False,
     ) -> bool:
+        if getattr(self, "_restore_maintenance_active", False):
+            return False
         observations_tab = getattr(self, "observations_tab", None)
         if observations_tab is None:
             return False
@@ -21733,76 +21997,613 @@ class MainWindow(GeometryMixin, QMainWindow):
         if hasattr(self, "observations_tab") and hasattr(self.observations_tab, "set_status_message"):
             self.observations_tab.set_status_message(message, level=level, auto_clear_ms=auto_clear_ms)
 
-    def export_database_bundle(self):
-        """Export DB and data folders as a zip file."""
-        options_dialog = DatabaseBundleOptionsDialog(self.tr("Export Options"), parent=self)
-        if options_dialog.exec() != QDialog.Accepted:
+    def back_up_sporely(self) -> None:
+        """Choose a destination and create a verified full backup."""
+        if getattr(self, "_restore_maintenance_active", False):
             return
-        options = options_dialog.get_options()
-        default_path = str(Path(self._get_default_export_dir()) / "Sporely_DB.zip")
+        worker = self._full_backup_worker
+        if worker is not None and worker.isRunning():
+            self._set_observations_status(
+                self.tr("A Sporely backup is already running."),
+                level="info",
+            )
+            return
+        default_path = str(Path(self._get_default_export_dir()) / "Sporely Backup.sporely")
         filename, _ = QFileDialog.getSaveFileName(
             self,
-            "Export Database",
+            self.tr("Back Up Sporely"),
             default_path,
-            "Zip Files (*.zip)"
+            self.tr("Sporely Backups (*.sporely)"),
         )
         if not filename:
             return
-        if not filename.lower().endswith(".zip"):
-            filename += ".zip"
+        if not filename.lower().endswith(".sporely"):
+            filename += ".sporely"
         self._remember_export_dir(filename)
-        status_tab = getattr(self, "observations_tab", None)
-        progress_visible = False
+        self._set_observations_status(
+            self.tr("Creating Sporely backup…"),
+            level="info",
+            auto_clear_ms=0,
+        )
+        worker = _FullBackupWorker(filename, self.app_version or "unknown", self)
+        self._full_backup_worker = worker
+        worker.completed.connect(self._on_full_backup_completed)
+        worker.failed.connect(self._on_full_backup_failed)
+        worker.finished.connect(self._on_full_backup_worker_finished)
+        worker.start()
 
-        def set_export_progress(text: str, current: int, total: int) -> None:
-            nonlocal progress_visible
-            if status_tab is not None and hasattr(status_tab, "_set_status_progress_visible"):
-                if not progress_visible:
-                    status_tab._set_status_progress_visible(True)
-                    progress_visible = True
-                if hasattr(status_tab, "_set_status_progress"):
-                    status_tab._set_status_progress(text, current=current, total=total)
-            QApplication.processEvents()
+    def _on_full_backup_completed(self, result: BackupResult) -> None:
+        if result.warnings:
+            message = self.tr(
+                "Backup created: {name}. {count} referenced files were missing."
+            ).format(name=result.path.name, count=len(result.warnings))
+            level = "warning"
+        else:
+            message = self.tr("Backup created: {name}.").format(name=result.path.name)
+            level = "success"
+        self._set_observations_status(message, level=level, auto_clear_ms=12000)
 
-        try:
-            export_db_bundle(
-                filename,
-                include_observations=options["observations"],
-                include_images=options["images"],
-                include_measurements=options["measurements"],
-                include_calibrations=options["calibrations"],
-                include_reference_values=options["reference_values"],
-                progress_cb=set_export_progress,
-            )
+    def _on_full_backup_failed(self, error: str) -> None:
+        self._set_observations_status(
+            self.tr("Backup failed: {error}").format(error=error),
+            level="error",
+            auto_clear_ms=12000,
+        )
+
+    def _on_full_backup_worker_finished(self) -> None:
+        worker = self._full_backup_worker
+        self._full_backup_worker = None
+        if worker is not None:
+            worker.deleteLater()
+
+    def export_selected_observations(self) -> None:
+        """Create a portable archive from the current observation selection."""
+        if getattr(self, "_restore_maintenance_active", False):
+            return
+        tab = getattr(self, "observations_tab", None)
+        observation_ids = set(tab.selected_observation_ids()) if tab is not None else set()
+        if not observation_ids:
+            return
+        worker = self._portable_export_worker
+        if worker is not None and worker.isRunning():
             self._set_observations_status(
-                self.tr("Export complete: {name}.").format(name=Path(filename).name),
-                level="success",
+                self.tr("An observation export is already running."), level="info"
             )
-        except Exception as exc:
-            self._set_observations_status(
-                self.tr("Export failed: {error}").format(error=exc),
-                level="error",
-                auto_clear_ms=12000,
-            )
-        finally:
-            if progress_visible and status_tab is not None:
-                if hasattr(status_tab, "_set_status_progress_visible"):
-                    status_tab._set_status_progress_visible(False)
-                if hasattr(status_tab, "_set_status_progress"):
-                    status_tab._set_status_progress("", current=0, total=1)
+            return
+        default_path = str(Path(self._get_default_export_dir()) / "Sporely Observations.sporely")
+        filename, _ = QFileDialog.getSaveFileName(
+            self,
+            self.tr("Export Selected Observations"),
+            default_path,
+            self.tr("Sporely Archives (*.sporely)"),
+        )
+        if not filename:
+            return
+        if not filename.lower().endswith(".sporely"):
+            filename += ".sporely"
+        self._remember_export_dir(filename)
+        self._set_observations_status(
+            self.tr("Exporting selected observations…"), level="info", auto_clear_ms=0
+        )
+        worker = _PortableExportWorker(
+            observation_ids, filename, self.app_version or "unknown", self
+        )
+        self._portable_export_worker = worker
+        worker.completed.connect(self._on_portable_export_completed)
+        worker.failed.connect(self._on_portable_export_failed)
+        worker.finished.connect(self._on_portable_export_worker_finished)
+        worker.start()
 
-    def import_database_bundle(self):
-        """Import DB and data from a shared zip file."""
+    def _on_portable_export_completed(self, result: BackupResult) -> None:
+        if result.warnings:
+            message = self.tr(
+                "Observation export created: {name}. {count} referenced files were missing."
+            ).format(name=result.path.name, count=len(result.warnings))
+            level = "warning"
+        else:
+            message = self.tr("Observation export created: {name}.").format(
+                name=result.path.name
+            )
+            level = "success"
+        self._set_observations_status(message, level=level, auto_clear_ms=12000)
+
+    def _on_portable_export_failed(self, error: str) -> None:
+        self._set_observations_status(
+            self.tr("Observation export failed: {error}").format(error=error),
+            level="error",
+            auto_clear_ms=12000,
+        )
+
+    def _on_portable_export_worker_finished(self) -> None:
+        worker = self._portable_export_worker
+        self._portable_export_worker = None
+        if worker is not None:
+            worker.deleteLater()
+
+    def import_observations(self) -> None:
+        """Preview and import a selected closure from a portable archive."""
+        if getattr(self, "_restore_maintenance_active", False):
+            return
         filename, _ = QFileDialog.getOpenFileName(
             self,
-            "Import Database",
+            self.tr("Import Observations"),
             self._get_default_import_dir(),
-            "Zip Files (*.zip)"
+            self.tr(
+                "Sporely Archives (*.sporely);;Legacy Sporely Data Packages (*.zip)"
+            ),
         )
         if not filename:
             return
+        try:
+            route = classify_archive(filename)
+        except ArchiveRoutingError as exc:
+            QMessageBox.critical(
+                self,
+                self.tr("Invalid Sporely Archive"),
+                self.tr("The archive could not be identified safely: {error}").format(
+                    error=exc
+                ),
+            )
+            return
+        if route is ArchiveRoute.LEGACY_DATA_PACKAGE:
+            self.import_database_bundle(filename)
+            return
+        if route is ArchiveRoute.FULL_BACKUP:
+            QMessageBox.critical(
+                self,
+                self.tr("Wrong Archive Type"),
+                self.tr(
+                    "This is a full Sporely backup. Use Restore Sporely Backup instead."
+                ),
+            )
+            return
+        if self._portable_preview_worker is not None or self._portable_import_worker is not None:
+            return
+        self._portable_import_filename = filename
+        self._set_observations_status(
+            self.tr("Validating observation archive…"), level="info", auto_clear_ms=0
+        )
+        worker = _PortablePreviewWorker(filename, self)
+        self._portable_preview_worker = worker
+        worker.completed.connect(self._on_portable_preview_completed)
+        worker.failed.connect(self._on_portable_preview_failed)
+        worker.finished.connect(self._on_portable_preview_worker_finished)
+        worker.start()
+
+    def _on_portable_preview_completed(self, preview) -> None:
+        filename = self._portable_import_filename
+        try:
+            dialog = PortableImportDialog(preview, self)
+            if dialog.exec() != QDialog.Accepted:
+                self._set_observations_status("")
+                return
+        except PortableImportError as exc:
+            QMessageBox.critical(
+                self,
+                self.tr("Invalid Sporely Archive"),
+                self.tr("The archive could not be validated: {error}").format(error=exc),
+            )
+            return
+        selected = dialog.selected_observation_ids()
+        if not selected:
+            return
+        if not filename:
+            return
+        self._set_observations_status(
+            self.tr("Importing observations…"), level="info", auto_clear_ms=0
+        )
+        worker = _PortableImportWorker(
+            filename, selected, preview.archive_sha256, self
+        )
+        self._portable_import_filename = filename
+        self._portable_import_worker = worker
+        worker.completed.connect(self._on_portable_import_completed)
+        worker.failed.connect(self._on_portable_import_failed)
+        worker.finished.connect(self._on_portable_import_worker_finished)
+        worker.start()
+
+    def _on_portable_preview_failed(self, error: str) -> None:
+        QMessageBox.critical(
+            self,
+            self.tr("Invalid Sporely Archive"),
+            self.tr("The archive could not be validated: {error}").format(error=error),
+        )
+
+    def _on_portable_preview_worker_finished(self) -> None:
+        worker = self._portable_preview_worker
+        self._portable_preview_worker = None
+        if self._portable_import_worker is None:
+            self._portable_import_filename = None
+        if worker is not None:
+            worker.deleteLater()
+
+    def _on_portable_import_completed(self, result) -> None:
+        filename = self._portable_import_filename
+        if filename:
+            self._remember_import_dir(filename)
+        imported = int(result.new_item_counts.get("observation", 0))
+        reused = int(result.reused_item_counts.get("observation", 0))
+        message = self.tr(
+            "Observation import complete: {imported} new, {reused} already imported."
+        ).format(imported=imported, reused=reused)
+        if hasattr(self, "observations_tab"):
+            self.observations_tab.refresh_observations(status_message=message)
+        else:
+            self._set_observations_status(message, level="success", auto_clear_ms=12000)
+
+    def _on_portable_import_failed(self, error: str) -> None:
+        QMessageBox.critical(
+            self,
+            self.tr("Import Failed"),
+            self.tr("The observations could not be imported: {error}").format(error=error),
+        )
+
+    def _on_portable_import_worker_finished(self) -> None:
+        worker = self._portable_import_worker
+        self._portable_import_worker = None
+        self._portable_import_filename = None
+        if worker is not None:
+            worker.deleteLater()
+
+    def restore_sporely_backup(self) -> None:
+        """Start background preparation of an identity-preserving backup."""
+        if getattr(self, "_restore_maintenance_active", False):
+            return
+        if self._full_backup_worker is not None and self._full_backup_worker.isRunning():
+            QMessageBox.warning(self, self.tr("Restore Sporely Backup"), self.tr("Wait for the current backup to finish before restoring."))
+            return
+        if getattr(self, "_full_restore_worker", None) is not None:
+            QMessageBox.warning(
+                self,
+                self.tr("Restore Sporely Backup"),
+                self.tr("A Sporely restore is already being prepared."),
+            )
+            return
+        filename, _ = QFileDialog.getOpenFileName(
+            self,
+            self.tr("Restore Sporely Backup"),
+            self._get_default_import_dir(),
+            self.tr("Sporely Backups (*.sporely)"),
+        )
+        if not filename:
+            return
+        try:
+            route = classify_archive(filename)
+        except ArchiveRoutingError as exc:
+            QMessageBox.critical(
+                self,
+                self.tr("Invalid Sporely Backup"),
+                self.tr("The backup could not be identified safely: {error}").format(
+                    error=exc
+                ),
+            )
+            return
+        if route is not ArchiveRoute.FULL_BACKUP:
+            message = (
+                self.tr(
+                    "Legacy Sporely data packages are not full backups and cannot be restored here."
+                )
+                if route is ArchiveRoute.LEGACY_DATA_PACKAGE
+                else self.tr(
+                    "Observation archives are not full backups and cannot be restored here."
+                )
+            )
+            QMessageBox.critical(self, self.tr("Wrong Archive Type"), message)
+            return
+        running = self._running_restore_blocking_threads()
+        if running:
+            QMessageBox.warning(self, self.tr("Restore Sporely Backup"), self.tr("Wait for background work to finish before restoring."))
+            return
+        if not self._begin_restore_maintenance():
+            return
+        self.restore_sporely_action.setEnabled(False)
+        self._set_observations_status(
+            self.tr("Preparing and validating Sporely backup…"),
+            level="info",
+            auto_clear_ms=0,
+        )
+        try:
+            worker = _FullRestoreWorker(filename, self.app_version or "unknown", self)
+            self._full_restore_worker = worker
+            worker.prepared.connect(self._on_full_restore_prepared)
+            worker.failed.connect(self._on_full_restore_prepare_failed)
+            worker.finished.connect(self._on_full_restore_worker_finished)
+            worker.start()
+        except Exception:
+            self._full_restore_worker = None
+            self._end_restore_maintenance()
+            raise
+
+    def _begin_restore_maintenance(self) -> bool:
+        """Prevent new live-database work until restore finishes or aborts."""
+        if getattr(self, "_restore_maintenance_active", False):
+            return False
+        self._restore_maintenance_active = True
+        self._restore_window_was_enabled = self.isEnabled()
+        self._restore_paused_timers = [
+            timer for timer in self.findChildren(QTimer) if timer.isActive()
+        ]
+        for timer in self._restore_paused_timers:
+            timer.stop()
+        actions = [
+            getattr(self, name, None)
+            for name in (
+                "backup_sporely_action",
+                "restore_sporely_action",
+                "export_selected_observations_action",
+                "import_observations_action",
+            )
+        ]
+        self._restore_action_enabled_states = {
+            action: action.isEnabled() if hasattr(action, "isEnabled") else True
+            for action in actions
+            if action is not None
+        }
+        for action in self._restore_action_enabled_states:
+            action.setEnabled(False)
+        self.setEnabled(False)
+        return True
+
+    def _end_restore_maintenance(self) -> None:
+        """Release the restore barrier after cancellation or failure."""
+        if not getattr(self, "_restore_maintenance_active", False):
+            return
+        for timer in getattr(self, "_restore_paused_timers", []):
+            timer.start()
+        for action, was_enabled in getattr(
+            self, "_restore_action_enabled_states", {}
+        ).items():
+            action.setEnabled(was_enabled)
+        self._restore_paused_timers = []
+        self._restore_action_enabled_states = {}
+        self._restore_maintenance_active = False
+        self.setEnabled(getattr(self, "_restore_window_was_enabled", True))
+
+    def _running_restore_blocking_threads(self) -> list[QThread]:
+        """Return running Qt workers other than the restore lifecycle workers."""
+        app = QApplication.instance()
+        if app is None:
+            return []
+        allowed = {
+            getattr(self, "_full_restore_worker", None),
+            getattr(self, "_full_restore_apply_worker", None),
+        }
+        find_children = getattr(self, "findChildren", None)
+        candidates = list(find_children(QThread)) if callable(find_children) else []
+        for thread in app.findChildren(QThread):
+            if thread not in candidates:
+                candidates.append(thread)
+        for thread in getattr(app, "_sporely_parked_threads", set()):
+            if thread not in candidates:
+                candidates.append(thread)
+        return [
+            thread
+            for thread in candidates
+            if thread not in allowed and thread.isRunning()
+        ]
+
+    def _database_restore_sanity_check(self) -> None:
+        with get_connection() as connection:
+            connection.execute("SELECT COUNT(*) FROM observations").fetchone()
+        with get_reference_connection() as connection:
+            connection.execute("SELECT COUNT(*) FROM reference_values").fetchone()
+
+    def _close_database_state_for_restore(self) -> None:
+        """Stop database users before replacing files on handle-strict platforms."""
+        if self._running_restore_blocking_threads():
+            raise RuntimeError(
+                "Restore cannot continue because background work is still running."
+            )
+        observations_tab = getattr(self, "observations_tab", None)
+        if observations_tab is not None:
+            observations_tab.shutdown()
+        live_lab_tab = getattr(self, "live_lab_tab", None)
+        if live_lab_tab is not None:
+            live_lab_tab.shutdown()
+        if self._running_restore_blocking_threads():
+            raise RuntimeError(
+                "Restore cannot continue because background work is still running."
+            )
+        for attribute in ("_reference_taxon_lookup", "ref_vernacular_db"):
+            value = getattr(self, attribute, None)
+            close = getattr(value, "close", None)
+            if callable(close):
+                close()
+            setattr(self, attribute, None)
+
+    def _reopen_database_state_after_restore(self) -> None:
+        """Reinitialize schema-backed views after either replacement or rollback."""
+        self._database_restore_sanity_check()
+        observations_tab = getattr(self, "observations_tab", None)
+        if observations_tab is not None:
+            observations_tab.refresh_observations(show_status=False)
+
+    def _on_full_restore_prepared(self, prepared: PreparedRestore) -> None:
+        manifest = prepared.manifest
+        summary = self.tr(
+            "Created: {created}\nApp version: {version}\nObservations: {observations}\nImages: {images}\n\n"
+            "The backup is validated. A fresh safety backup will be created before replacement. Restore now?"
+        ).format(
+            created=manifest.created_at,
+            version=manifest.app_version,
+            observations=manifest.contents.get("observations", 0),
+            images=manifest.contents.get("images", 0),
+        )
+        if QMessageBox.question(
+            self,
+            self.tr("Restore Sporely Backup"),
+            summary,
+            QMessageBox.Yes | QMessageBox.Cancel,
+            QMessageBox.Cancel,
+        ) != QMessageBox.Yes:
+            self._start_restore_filesystem_worker("cleanup_cancel", prepared)
+            return
+        self._set_observations_status(
+            self.tr("Creating safety backup and restoring Sporely…"),
+            level="info",
+            auto_clear_ms=0,
+        )
+        try:
+            self._close_database_state_for_restore()
+        except Exception as exc:
+            self._pending_restore_error = str(exc)
+            try:
+                self._reopen_database_state_after_restore()
+            except Exception as reopen_exc:
+                self._pending_restore_error += f"; could not resume database state: {reopen_exc}"
+            self._start_restore_filesystem_worker("cleanup_failure", prepared)
+            return
+        self._start_restore_filesystem_worker("apply", prepared)
+
+    def _start_restore_filesystem_worker(self, operation: str, value: object) -> None:
+        worker = _FullRestoreSwapWorker(operation, value, self)
+        self._full_restore_apply_worker = worker
+        if operation == "apply":
+            worker.completed.connect(self._on_full_restore_swap_completed)
+        elif operation == "commit":
+            worker.completed.connect(self._on_full_restore_commit_completed)
+        elif operation == "rollback":
+            worker.completed.connect(self._on_full_restore_rollback_completed)
+        else:
+            worker.completed.connect(
+                lambda _unused, current_operation=operation: self._on_full_restore_cleanup_completed(
+                    current_operation
+                )
+            )
+        worker.failed.connect(
+            lambda error, current_operation=operation: self._on_full_restore_filesystem_failed(
+                current_operation, error
+            )
+        )
+        worker.finished.connect(self._on_full_restore_apply_worker_finished)
+        worker.start()
+
+    def _on_full_restore_swap_completed(self, swap: RestoreSwap) -> None:
+        self._pending_restore_swap = swap
+        restored_qsettings: RestoredQSettings | None = None
+        try:
+            restored_qsettings = apply_prepared_restore_qsettings(swap.prepared)
+            self._pending_restore_qsettings = restored_qsettings
+            self._database_restore_sanity_check()
+        except Exception as exc:
+            self._pending_restore_error = str(exc)
+            try:
+                self._close_database_state_for_restore()
+            except Exception as close_exc:
+                self._pending_restore_error += f"; could not close restored state: {close_exc}"
+                self._pending_restore_qsettings = restored_qsettings
+                self._on_full_restore_unrecoverable(self._pending_restore_error)
+                return
+            if restored_qsettings is not None:
+                restored_qsettings.rollback()
+                self._pending_restore_qsettings = None
+            self._start_restore_filesystem_worker("rollback", swap)
+            return
+        self._start_restore_filesystem_worker("commit", swap)
+
+    def _on_full_restore_cleanup_completed(self, operation: str) -> None:
+        if operation == "cleanup_cancel":
+            self._set_observations_status("")
+            self._end_restore_maintenance()
+            return
+        error = self._pending_restore_error or self.tr("Restore preparation failed.")
+        self._pending_restore_error = None
+        self._on_full_restore_failed(error)
+
+    def _on_full_restore_commit_completed(self, result: RestoreResult) -> None:
+        self._pending_restore_swap = None
+        self._pending_restore_qsettings = None
+        self._on_full_restore_completed(result)
+
+    def _on_full_restore_rollback_completed(self, _unused: object = None) -> None:
+        error = self._pending_restore_error or self.tr("Restore rollback completed.")
+        self._pending_restore_swap = None
+        self._pending_restore_qsettings = None
+        self._pending_restore_error = None
+        try:
+            self._reopen_database_state_after_restore()
+        except Exception as reopen_exc:
+            error += f"; could not reopen the previous installation: {reopen_exc}"
+        self._on_full_restore_failed(error)
+
+    def _on_full_restore_filesystem_failed(self, operation: str, error: str) -> None:
+        if operation == "apply":
+            try:
+                self._reopen_database_state_after_restore()
+            except Exception as reopen_exc:
+                error += f"; could not reopen the previous installation: {reopen_exc}"
+        elif operation == "rollback":
+            error = f"Restore rollback failed: {error}"
+        elif operation.startswith("cleanup_"):
+            pending = self._pending_restore_error
+            if pending:
+                error = f"{pending}; staged cleanup failed: {error}"
+        self._pending_restore_swap = None
+        self._pending_restore_qsettings = None
+        self._pending_restore_error = None
+        self._on_full_restore_failed(error)
+
+    def _on_full_restore_unrecoverable(self, error: str) -> None:
+        """Fail closed when live state cannot be quiesced for safe rollback."""
+        QMessageBox.critical(
+            self,
+            self.tr("Restore Failed"),
+            self.tr(
+                "The restore could not be rolled back safely. Recovery copies were preserved. Restart Sporely before continuing: {error}"
+            ).format(error=error),
+        )
+        self._closing_after_restore = True
+        self.close()
+
+    def _on_full_restore_apply_worker_finished(self) -> None:
+        worker = self.sender()
+        if worker is self._full_restore_apply_worker:
+            self._full_restore_apply_worker = None
+        if worker is not None:
+            worker.deleteLater()
+
+    def _on_full_restore_prepare_failed(self, error: str) -> None:
+        self._on_full_restore_failed(error)
+
+    def _on_full_restore_worker_finished(self) -> None:
+        worker = self._full_restore_worker
+        self._full_restore_worker = None
+        action = getattr(self, "restore_sporely_action", None)
+        if action is not None and not getattr(self, "_restore_maintenance_active", False):
+            action.setEnabled(True)
+        if worker is not None:
+            worker.deleteLater()
+
+    def _on_full_restore_completed(self, result: RestoreResult) -> None:
+        self._set_observations_status(self.tr("Sporely backup restored."), level="success", auto_clear_ms=12000)
+        QMessageBox.information(
+            self,
+            self.tr("Restore Complete"),
+            self.tr("The backup was restored successfully. Restart Sporely to load the restored installation.\n\nSafety backup: {path}").format(path=result.safety_backup),
+        )
+        self._closing_after_restore = True
+        self.close()
+
+    def _on_full_restore_failed(self, error: str) -> None:
+        self._end_restore_maintenance()
+        QMessageBox.critical(self, self.tr("Restore Failed"), self.tr("The backup was not restored: {error}").format(error=error))
+        self._set_observations_status(self.tr("Restore failed."), level="error", auto_clear_ms=12000)
+
+    def import_database_bundle(self, filename: str | None = None) -> None:
+        """Import a legacy Sporely data package through the compatibility layer."""
+        if filename is None:
+            filename, _ = QFileDialog.getOpenFileName(
+                self,
+                self.tr("Import Legacy Sporely Data Package"),
+                self._get_default_import_dir(),
+                self.tr("Legacy Sporely Data Packages (*.zip)"),
+            )
+            if not filename:
+                return
         self._remember_import_dir(filename)
-        options_dialog = DatabaseBundleOptionsDialog(self.tr("Import Options"), parent=self)
+        options_dialog = DatabaseBundleOptionsDialog(
+            self.tr("Import Legacy Sporely Data Package"), parent=self
+        )
         if options_dialog.exec() != QDialog.Accepted:
             return
         options = options_dialog.get_options()

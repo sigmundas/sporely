@@ -6,6 +6,7 @@ files=(
   "database/database_tags.py"
   "ui/database_settings_dialog.py"
   "ui/main_window.py"
+  "ui/portable_import_dialog.py"
   "ui/image_import_dialog.py"
   "ui/raw_processing_controls.py"
   "ui/observations_tab.py"
