@@ -1957,6 +1957,10 @@ def init_database(
 
     cursor.execute('CREATE INDEX IF NOT EXISTS idx_observations_cloud_id ON observations(cloud_id)')
     cursor.execute('CREATE INDEX IF NOT EXISTS idx_observations_sync_status ON observations(sync_status)')
+    # The normalized-reference parent-delete trigger needs observations.cloud_id,
+    # which is added above for legacy databases. Re-running the idempotent helper
+    # installs that trigger after the column exists.
+    init_observation_reference_uses_schema(conn)
     try:
         cursor.execute(
             "UPDATE observations SET updated_at = COALESCE(updated_at, created_at, CURRENT_TIMESTAMP) WHERE updated_at IS NULL"

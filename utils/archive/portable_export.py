@@ -129,6 +129,8 @@ def _prune_main_database(database_path: Path, observation_ids: set[int]) -> None
         for table in (
             "settings", "image_tombstones", "thumbnails",
             "portable_import_provenance",
+            "observation_reference_use_cloud_sync_state",
+            "observation_reference_use_cloud_tombstones",
         ):
             connection.execute(f"DELETE FROM {table}")
         connection.commit()
@@ -222,6 +224,9 @@ def _prune_reference_database(main_database: Path, reference_database: Path) -> 
             "SELECT DISTINCT legacy_reference_value_id FROM reference_measurement_sets "
             "WHERE legacy_reference_value_id IS NOT NULL)"
         )
+        connection.execute("DELETE FROM reference_cloud_sync_state")
+        connection.execute("DELETE FROM reference_cloud_tombstones")
+        connection.execute("DELETE FROM reference_measurement_set_preferences")
         connection.commit()
         connection.execute("VACUUM")
 

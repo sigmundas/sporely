@@ -170,6 +170,161 @@ CREATE TABLE IF NOT EXISTS observation_reference_uses (
 )
 """
 
+_REFERENCE_CLOUD_SYNC_STATE_DDL = """
+CREATE TABLE IF NOT EXISTS reference_cloud_sync_state (
+    entity_type TEXT NOT NULL CHECK (
+        entity_type IN ('work', 'treatment', 'measurement_set')
+    ),
+    entity_id TEXT NOT NULL,
+    cloud_user_id TEXT,
+    remote_identity_state TEXT NOT NULL DEFAULT 'never_attempted' CHECK (
+        remote_identity_state IN (
+            'never_attempted', 'create_outcome_unknown', 'acknowledged'
+        )
+    ),
+    cloud_row_version INTEGER CHECK (
+        cloud_row_version IS NULL OR cloud_row_version >= 1
+    ),
+    accepted_payload_json TEXT,
+    sync_status TEXT NOT NULL DEFAULT 'dirty' CHECK (
+        sync_status IN ('dirty', 'clean', 'retry', 'conflict')
+    ),
+    conflict_json TEXT,
+    retry_count INTEGER NOT NULL DEFAULT 0 CHECK (retry_count >= 0),
+    last_error TEXT,
+    last_attempted_at TEXT,
+    updated_at TEXT NOT NULL DEFAULT CURRENT_TIMESTAMP,
+    PRIMARY KEY (entity_type, entity_id),
+    CHECK (
+        (remote_identity_state = 'never_attempted'
+            AND cloud_row_version IS NULL
+            AND accepted_payload_json IS NULL)
+        OR (remote_identity_state = 'create_outcome_unknown'
+            AND cloud_user_id IS NOT NULL
+            AND TRIM(cloud_user_id) != ''
+            AND cloud_row_version IS NULL
+            AND accepted_payload_json IS NULL)
+        OR (remote_identity_state = 'acknowledged'
+            AND cloud_user_id IS NOT NULL
+            AND TRIM(cloud_user_id) != ''
+            AND cloud_row_version >= 1
+            AND accepted_payload_json IS NOT NULL)
+    )
+)
+"""
+
+_REFERENCE_CLOUD_TOMBSTONES_DDL = """
+CREATE TABLE IF NOT EXISTS reference_cloud_tombstones (
+    entity_type TEXT NOT NULL CHECK (
+        entity_type IN ('work', 'treatment', 'measurement_set')
+    ),
+    entity_id TEXT NOT NULL,
+    cloud_user_id TEXT NOT NULL CHECK (TRIM(cloud_user_id) != ''),
+    remote_identity_state TEXT NOT NULL CHECK (
+        remote_identity_state IN ('create_outcome_unknown', 'acknowledged')
+    ),
+    expected_row_version INTEGER CHECK (
+        expected_row_version IS NULL OR expected_row_version >= 1
+    ),
+    accepted_payload_json TEXT,
+    reference_work_id TEXT,
+    taxon_treatment_id TEXT,
+    deleted_at TEXT NOT NULL DEFAULT CURRENT_TIMESTAMP,
+    sync_status TEXT NOT NULL DEFAULT 'dirty' CHECK (
+        sync_status IN ('dirty', 'retry', 'conflict')
+    ),
+    conflict_json TEXT,
+    retry_count INTEGER NOT NULL DEFAULT 0 CHECK (retry_count >= 0),
+    last_error TEXT,
+    last_attempted_at TEXT,
+    updated_at TEXT NOT NULL DEFAULT CURRENT_TIMESTAMP,
+    PRIMARY KEY (entity_type, entity_id),
+    CHECK (
+        (remote_identity_state = 'create_outcome_unknown'
+            AND expected_row_version IS NULL
+            AND accepted_payload_json IS NULL)
+        OR (remote_identity_state = 'acknowledged'
+            AND expected_row_version >= 1
+            AND accepted_payload_json IS NOT NULL)
+    )
+)
+"""
+
+_OBSERVATION_REFERENCE_USE_CLOUD_SYNC_STATE_DDL = """
+CREATE TABLE IF NOT EXISTS observation_reference_use_cloud_sync_state (
+    use_id TEXT PRIMARY KEY,
+    cloud_user_id TEXT,
+    remote_identity_state TEXT NOT NULL DEFAULT 'never_attempted' CHECK (
+        remote_identity_state IN (
+            'never_attempted', 'create_outcome_unknown', 'acknowledged'
+        )
+    ),
+    cloud_row_version INTEGER CHECK (
+        cloud_row_version IS NULL OR cloud_row_version >= 1
+    ),
+    accepted_payload_json TEXT,
+    sync_status TEXT NOT NULL DEFAULT 'dirty' CHECK (
+        sync_status IN ('dirty', 'clean', 'retry', 'conflict')
+    ),
+    conflict_json TEXT,
+    retry_count INTEGER NOT NULL DEFAULT 0 CHECK (retry_count >= 0),
+    last_error TEXT,
+    last_attempted_at TEXT,
+    updated_at TEXT NOT NULL DEFAULT CURRENT_TIMESTAMP,
+    FOREIGN KEY (use_id) REFERENCES observation_reference_uses(id)
+        ON DELETE CASCADE,
+    CHECK (
+        (remote_identity_state = 'never_attempted'
+            AND cloud_row_version IS NULL
+            AND accepted_payload_json IS NULL)
+        OR (remote_identity_state = 'create_outcome_unknown'
+            AND cloud_user_id IS NOT NULL
+            AND TRIM(cloud_user_id) != ''
+            AND cloud_row_version IS NULL
+            AND accepted_payload_json IS NULL)
+        OR (remote_identity_state = 'acknowledged'
+            AND cloud_user_id IS NOT NULL
+            AND TRIM(cloud_user_id) != ''
+            AND cloud_row_version >= 1
+            AND accepted_payload_json IS NOT NULL)
+    )
+)
+"""
+
+_OBSERVATION_REFERENCE_USE_CLOUD_TOMBSTONES_DDL = """
+CREATE TABLE IF NOT EXISTS observation_reference_use_cloud_tombstones (
+    use_id TEXT PRIMARY KEY,
+    reference_measurement_set_id TEXT NOT NULL,
+    local_observation_id INTEGER,
+    observation_cloud_id TEXT NOT NULL CHECK (TRIM(observation_cloud_id) != ''),
+    cloud_user_id TEXT NOT NULL CHECK (TRIM(cloud_user_id) != ''),
+    remote_identity_state TEXT NOT NULL CHECK (
+        remote_identity_state IN ('create_outcome_unknown', 'acknowledged')
+    ),
+    expected_row_version INTEGER CHECK (
+        expected_row_version IS NULL OR expected_row_version >= 1
+    ),
+    accepted_payload_json TEXT,
+    deleted_at TEXT NOT NULL DEFAULT CURRENT_TIMESTAMP,
+    sync_status TEXT NOT NULL DEFAULT 'dirty' CHECK (
+        sync_status IN ('dirty', 'retry', 'conflict')
+    ),
+    conflict_json TEXT,
+    retry_count INTEGER NOT NULL DEFAULT 0 CHECK (retry_count >= 0),
+    last_error TEXT,
+    last_attempted_at TEXT,
+    updated_at TEXT NOT NULL DEFAULT CURRENT_TIMESTAMP,
+    CHECK (
+        (remote_identity_state = 'create_outcome_unknown'
+            AND expected_row_version IS NULL
+            AND accepted_payload_json IS NULL)
+        OR (remote_identity_state = 'acknowledged'
+            AND expected_row_version >= 1
+            AND accepted_payload_json IS NOT NULL)
+    )
+)
+"""
+
 
 _REFERENCE_LIBRARY_INDEXES: tuple[str, ...] = (
     "CREATE INDEX IF NOT EXISTS idx_reference_works_title ON reference_works(title)",
@@ -219,6 +374,159 @@ _OBSERVATION_REFERENCE_USES_INDEXES: tuple[str, ...] = (
         "ON observation_reference_uses(observation_id, reference_measurement_set_id)"
     ),
 )
+
+_REFERENCE_CLOUD_SYNC_INDEXES: tuple[str, ...] = (
+    "CREATE INDEX IF NOT EXISTS idx_reference_cloud_sync_pending "
+    "ON reference_cloud_sync_state(cloud_user_id, sync_status, entity_type)",
+    "CREATE INDEX IF NOT EXISTS idx_reference_cloud_tombstones_pending "
+    "ON reference_cloud_tombstones(cloud_user_id, sync_status, entity_type)",
+)
+
+_OBSERVATION_REFERENCE_USE_CLOUD_SYNC_INDEXES: tuple[str, ...] = (
+    "CREATE INDEX IF NOT EXISTS idx_reference_use_cloud_sync_pending "
+    "ON observation_reference_use_cloud_sync_state(cloud_user_id, sync_status)",
+    "CREATE INDEX IF NOT EXISTS idx_reference_use_cloud_tombstones_pending "
+    "ON observation_reference_use_cloud_tombstones(cloud_user_id, sync_status)",
+)
+
+_REFERENCE_CLOUD_SYNC_TRIGGERS: tuple[str, ...] = (
+    """
+    CREATE TRIGGER IF NOT EXISTS reference_work_cloud_sync_insert
+    AFTER INSERT ON reference_works
+    BEGIN
+        INSERT OR IGNORE INTO reference_cloud_sync_state(entity_type, entity_id)
+        VALUES ('work', NEW.id);
+    END
+    """,
+    """
+    CREATE TRIGGER IF NOT EXISTS reference_treatment_cloud_sync_insert
+    AFTER INSERT ON reference_taxon_treatments
+    BEGIN
+        INSERT OR IGNORE INTO reference_cloud_sync_state(entity_type, entity_id)
+        VALUES ('treatment', NEW.id);
+    END
+    """,
+    """
+    CREATE TRIGGER IF NOT EXISTS reference_measurement_set_cloud_sync_insert
+    AFTER INSERT ON reference_measurement_sets
+    BEGIN
+        INSERT OR IGNORE INTO reference_cloud_sync_state(entity_type, entity_id)
+        VALUES ('measurement_set', NEW.id);
+    END
+    """,
+    """
+    CREATE TRIGGER IF NOT EXISTS reference_work_cloud_sync_delete
+    BEFORE DELETE ON reference_works
+    BEGIN
+        INSERT OR IGNORE INTO reference_cloud_tombstones(
+            entity_type, entity_id, cloud_user_id, remote_identity_state,
+            expected_row_version, accepted_payload_json
+        )
+        SELECT entity_type, entity_id, cloud_user_id, remote_identity_state,
+               cloud_row_version, accepted_payload_json
+        FROM reference_cloud_sync_state
+        WHERE entity_type = 'work' AND entity_id = OLD.id
+          AND remote_identity_state != 'never_attempted';
+        DELETE FROM reference_cloud_sync_state
+        WHERE entity_type = 'work' AND entity_id = OLD.id;
+    END
+    """,
+    """
+    CREATE TRIGGER IF NOT EXISTS reference_treatment_cloud_sync_delete
+    BEFORE DELETE ON reference_taxon_treatments
+    BEGIN
+        INSERT OR IGNORE INTO reference_cloud_tombstones(
+            entity_type, entity_id, cloud_user_id, remote_identity_state,
+            expected_row_version, accepted_payload_json, reference_work_id
+        )
+        SELECT entity_type, entity_id, cloud_user_id, remote_identity_state,
+               cloud_row_version, accepted_payload_json, OLD.reference_work_id
+        FROM reference_cloud_sync_state
+        WHERE entity_type = 'treatment' AND entity_id = OLD.id
+          AND remote_identity_state != 'never_attempted';
+        DELETE FROM reference_cloud_sync_state
+        WHERE entity_type = 'treatment' AND entity_id = OLD.id;
+    END
+    """,
+    """
+    CREATE TRIGGER IF NOT EXISTS reference_measurement_set_cloud_sync_delete
+    BEFORE DELETE ON reference_measurement_sets
+    BEGIN
+        INSERT OR IGNORE INTO reference_cloud_tombstones(
+            entity_type, entity_id, cloud_user_id, remote_identity_state,
+            expected_row_version, accepted_payload_json, taxon_treatment_id
+        )
+        SELECT entity_type, entity_id, cloud_user_id, remote_identity_state,
+               cloud_row_version, accepted_payload_json, OLD.taxon_treatment_id
+        FROM reference_cloud_sync_state
+        WHERE entity_type = 'measurement_set' AND entity_id = OLD.id
+          AND remote_identity_state != 'never_attempted';
+        DELETE FROM reference_cloud_sync_state
+        WHERE entity_type = 'measurement_set' AND entity_id = OLD.id;
+    END
+    """,
+)
+
+_OBSERVATION_REFERENCE_USE_CLOUD_SYNC_TRIGGERS: tuple[str, ...] = (
+    """
+    CREATE TRIGGER IF NOT EXISTS reference_use_cloud_sync_insert
+    AFTER INSERT ON observation_reference_uses
+    BEGIN
+        INSERT OR IGNORE INTO observation_reference_use_cloud_sync_state(use_id)
+        VALUES (NEW.id);
+    END
+    """,
+    """
+    CREATE TRIGGER IF NOT EXISTS reference_use_cloud_sync_delete
+    BEFORE DELETE ON observation_reference_uses
+    BEGIN
+        INSERT INTO observation_reference_use_cloud_tombstones(
+            use_id, reference_measurement_set_id, local_observation_id,
+            observation_cloud_id, cloud_user_id, remote_identity_state,
+            expected_row_version, accepted_payload_json
+        )
+        SELECT OLD.id, OLD.reference_measurement_set_id, OLD.observation_id,
+               (SELECT NULLIF(TRIM(cloud_id), '') FROM observations
+                WHERE id = OLD.observation_id),
+               cloud_user_id, remote_identity_state, cloud_row_version,
+               accepted_payload_json
+        FROM observation_reference_use_cloud_sync_state
+        WHERE use_id = OLD.id
+          AND remote_identity_state != 'never_attempted'
+          AND NOT EXISTS (
+              SELECT 1 FROM observation_reference_use_cloud_tombstones
+              WHERE use_id = OLD.id
+          );
+        DELETE FROM observation_reference_use_cloud_sync_state
+        WHERE use_id = OLD.id;
+    END
+    """,
+)
+
+_OBSERVATION_REFERENCE_USE_PARENT_DELETE_TRIGGER = """
+CREATE TRIGGER IF NOT EXISTS observation_reference_uses_cloud_sync_parent_delete
+BEFORE DELETE ON observations
+BEGIN
+    INSERT INTO observation_reference_use_cloud_tombstones(
+        use_id, reference_measurement_set_id, local_observation_id,
+        observation_cloud_id, cloud_user_id, remote_identity_state,
+        expected_row_version, accepted_payload_json
+    )
+    SELECT use_row.id, use_row.reference_measurement_set_id, OLD.id,
+           NULLIF(TRIM(OLD.cloud_id), ''), state.cloud_user_id,
+           state.remote_identity_state, state.cloud_row_version,
+           state.accepted_payload_json
+    FROM observation_reference_uses AS use_row
+    JOIN observation_reference_use_cloud_sync_state AS state
+      ON state.use_id = use_row.id
+    WHERE use_row.observation_id = OLD.id
+      AND state.remote_identity_state != 'never_attempted'
+      AND NOT EXISTS (
+          SELECT 1 FROM observation_reference_use_cloud_tombstones
+          WHERE use_id = use_row.id
+      );
+END
+"""
 
 
 def _fk_on_delete_actions(
@@ -337,6 +645,23 @@ def init_reference_library_schema(conn: sqlite3.Connection) -> None:
         cursor.execute(statement)
     conn.commit()
     _ensure_restrict_foreign_keys(conn)
+    cursor.execute(_REFERENCE_CLOUD_SYNC_STATE_DDL)
+    cursor.execute(_REFERENCE_CLOUD_TOMBSTONES_DDL)
+    for statement in _REFERENCE_CLOUD_SYNC_INDEXES:
+        cursor.execute(statement)
+    for statement in _REFERENCE_CLOUD_SYNC_TRIGGERS:
+        cursor.execute(statement)
+    cursor.execute(
+        """
+        INSERT OR IGNORE INTO reference_cloud_sync_state(entity_type, entity_id)
+        SELECT 'work', id FROM reference_works
+        UNION ALL
+        SELECT 'treatment', id FROM reference_taxon_treatments
+        UNION ALL
+        SELECT 'measurement_set', id FROM reference_measurement_sets
+        """
+    )
+    conn.commit()
 
 
 def init_observation_reference_uses_schema(conn: sqlite3.Connection) -> None:
@@ -350,6 +675,24 @@ def init_observation_reference_uses_schema(conn: sqlite3.Connection) -> None:
     conn.execute("PRAGMA foreign_keys = ON")
     cursor = conn.cursor()
     cursor.execute(_OBSERVATION_REFERENCE_USES_DDL)
+    cursor.execute(_OBSERVATION_REFERENCE_USE_CLOUD_SYNC_STATE_DDL)
+    cursor.execute(_OBSERVATION_REFERENCE_USE_CLOUD_TOMBSTONES_DDL)
     for statement in _OBSERVATION_REFERENCE_USES_INDEXES:
         cursor.execute(statement)
+    for statement in _OBSERVATION_REFERENCE_USE_CLOUD_SYNC_INDEXES:
+        cursor.execute(statement)
+    for statement in _OBSERVATION_REFERENCE_USE_CLOUD_SYNC_TRIGGERS:
+        cursor.execute(statement)
+    cursor.execute(
+        """
+        INSERT OR IGNORE INTO observation_reference_use_cloud_sync_state(use_id)
+        SELECT id FROM observation_reference_uses
+        """
+    )
+    observation_columns = {
+        str(row[1])
+        for row in cursor.execute("PRAGMA table_info(observations)").fetchall()
+    }
+    if "cloud_id" in observation_columns:
+        cursor.execute(_OBSERVATION_REFERENCE_USE_PARENT_DELETE_TRIGGER)
     conn.commit()

@@ -61,6 +61,8 @@ MAIN_DATABASE_TABLES: dict[str, InventoryPolicy] = {
     "image_tombstones": InventoryPolicy(BackupPolicy.EXACT, PortablePolicy.EXCLUDE),
     "images": InventoryPolicy(BackupPolicy.EXACT, PortablePolicy.DEPENDENCY),
     "observation_reference_uses": InventoryPolicy(BackupPolicy.EXACT, PortablePolicy.DEPENDENCY),
+    "observation_reference_use_cloud_sync_state": InventoryPolicy(BackupPolicy.EXACT, PortablePolicy.EXCLUDE),
+    "observation_reference_use_cloud_tombstones": InventoryPolicy(BackupPolicy.EXACT, PortablePolicy.EXCLUDE),
     "observations": InventoryPolicy(BackupPolicy.EXACT, PortablePolicy.ROOT),
     "portable_import_provenance": InventoryPolicy(BackupPolicy.EXACT, PortablePolicy.EXCLUDE),
     "session_logs": InventoryPolicy(BackupPolicy.EXACT, PortablePolicy.DEPENDENCY),
@@ -74,11 +76,23 @@ REFERENCE_DATABASE_TABLES: dict[str, InventoryPolicy] = {
     name: InventoryPolicy(BackupPolicy.EXACT, PortablePolicy.DEPENDENCY)
     for name in (
         "reference_measurement_sets",
+        "reference_measurement_set_preferences",
         "reference_taxon_treatments",
         "reference_values",
         "reference_works",
     )
 }
+REFERENCE_DATABASE_TABLES.update({
+    "reference_measurement_set_preferences": InventoryPolicy(
+        BackupPolicy.EXACT, PortablePolicy.EXCLUDE
+    ),
+    "reference_cloud_sync_state": InventoryPolicy(
+        BackupPolicy.EXACT, PortablePolicy.EXCLUDE
+    ),
+    "reference_cloud_tombstones": InventoryPolicy(
+        BackupPolicy.EXACT, PortablePolicy.EXCLUDE
+    ),
+})
 
 
 def _schema_path(name: str) -> Callable[[], Path]:

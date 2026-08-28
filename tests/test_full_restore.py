@@ -894,6 +894,76 @@ def test_restore_migrates_supported_older_staged_schema(installation, tmp_path):
         ).fetchone()
 
 
+def test_restore_migrates_pre_stage4b_reference_transport_state(
+    installation, tmp_path
+):
+    archive = _make_backup(tmp_path)
+    older = tmp_path / "pre-stage4b.sporely"
+    with ZipFile(archive) as source:
+        manifest = ArchiveManifest.from_json(source.read("manifest.json"))
+        members = {
+            info.filename: source.read(info.filename)
+            for info in source.infolist()
+            if info.filename != "manifest.json"
+        }
+
+    for member_name, tables in (
+        (
+            "databases/mushrooms.db",
+            (
+                "observation_reference_use_cloud_sync_state",
+                "observation_reference_use_cloud_tombstones",
+            ),
+        ),
+        (
+            "databases/reference_values.db",
+            ("reference_cloud_sync_state", "reference_cloud_tombstones"),
+        ),
+    ):
+        staged = tmp_path / Path(member_name).name
+        staged.write_bytes(members[member_name])
+        with sqlite3.connect(staged) as connection:
+            for table in tables:
+                connection.execute(f'DROP TABLE "{table}"')
+        members[member_name] = staged.read_bytes()
+
+    value = manifest.to_dict()
+    for entry in value["files"]:
+        payload = members.get(entry["path"])
+        if payload is not None:
+            entry["size"] = len(payload)
+            entry["sha256"] = hashlib.sha256(payload).hexdigest()
+    with ZipFile(older, "w") as target:
+        target.writestr("manifest.json", json.dumps(value).encode("utf-8"))
+        for name, payload in members.items():
+            target.writestr(name, payload)
+
+    _restore_full_backup(
+        older,
+        app_version="test",
+        safety_backup_path=tmp_path / "safety-stage4b.sporely",
+    )
+
+    with sqlite3.connect(schema.get_database_path()) as connection:
+        assert connection.execute(
+            "SELECT 1 FROM sqlite_master WHERE type='table' "
+            "AND name='observation_reference_use_cloud_sync_state'"
+        ).fetchone()
+        assert connection.execute(
+            "SELECT 1 FROM sqlite_master WHERE type='table' "
+            "AND name='observation_reference_use_cloud_tombstones'"
+        ).fetchone()
+    with sqlite3.connect(schema.get_reference_database_path()) as connection:
+        assert connection.execute(
+            "SELECT 1 FROM sqlite_master WHERE type='table' "
+            "AND name='reference_cloud_sync_state'"
+        ).fetchone()
+        assert connection.execute(
+            "SELECT 1 FROM sqlite_master WHERE type='table' "
+            "AND name='reference_cloud_tombstones'"
+        ).fetchone()
+
+
 def test_validator_rejects_duplicate_qsettings_namespaces(installation, tmp_path):
     archive = tmp_path / "source.sporely"
     create_full_backup(

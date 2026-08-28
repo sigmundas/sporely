@@ -58,7 +58,19 @@ Sibling modules that share sync responsibility (do **not** assume
 | `utils/cloud_spore_mosaic.py`, `utils/cloud_spore_mosaic_backfill.py` | Spore-mosaic derivative sync and backfill |
 | `utils/spore_summary_sync.py` | Spore-summary derivative push/pull |
 | `utils/reference_cloud_sync.py` | Stage 4 normalized-reference sync facade and typed result. Stage 4a is deliberately side-effect-free and is not invoked by `sync_all`; production orchestration is enabled only in Stage 4h. |
+| `database/reference_sync_state.py` | Dormant Stage 4 normalized-reference transport repository. It stores account-bound baselines, row versions, retry/conflict state, and durable deletion intent in the database that owns each entity. Stage 4b has no network wiring. |
 | `utils/r2_storage.py` | Low-level R2/Worker storage adapter |
+
+Normalized reference transport state is deliberately separate from the domain
+tables. Works, treatments, and measurement sets use
+`reference_cloud_sync_state` / `reference_cloud_tombstones` in
+`reference_values.db`; observation uses use
+`observation_reference_use_cloud_sync_state` /
+`observation_reference_use_cloud_tombstones` in `mushrooms.db`. Schema triggers
+create initial state and capture deletion intent in the same transaction as
+domain mutation, including observation-parent cascades. Full backups retain
+these tables; portable exports exclude them. Mutation ownership and graph
+planning remain Stage 4c work, and `sync_all` remains unchanged until Stage 4h.
 
 ---
 

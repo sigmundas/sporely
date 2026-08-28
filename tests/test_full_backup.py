@@ -98,6 +98,20 @@ def test_full_backup_sanitizes_staged_state_and_collects_authoritative_assets(
             "VALUES ('set-1', 'treatment-1', 'spore_size', 'range', ?)",
             (reference_value_id,),
         )
+        connection.execute(
+            "UPDATE reference_cloud_sync_state "
+            "SET cloud_user_id='backup-user', "
+            "remote_identity_state='acknowledged', cloud_row_version=8, "
+            "accepted_payload_json='{" + '"id":"work-1"' + "}', "
+            "sync_status='clean' WHERE entity_type='work' AND entity_id='work-1'"
+        )
+        connection.execute(
+            "INSERT INTO reference_cloud_tombstones "
+            "(entity_type, entity_id, cloud_user_id, remote_identity_state, "
+            "expected_row_version, accepted_payload_json) VALUES "
+            "('work', 'deleted-work', 'backup-user', 'acknowledged', 3, "
+            "'{" + '"id":"deleted-work"' + "}')"
+        )
         connection.commit()
     with sqlite3.connect(schema.get_database_path()) as connection:
         connection.execute("INSERT INTO observations (date) VALUES ('2026-08-27')")
@@ -153,6 +167,21 @@ def test_full_backup_sanitizes_staged_state_and_collects_authoritative_assets(
             "reference_revision, snapshot_json) "
             "VALUES ('use-1', ?, 'set-1', 'compared', 1, '{}')",
             (observation_id,),
+        )
+        connection.execute(
+            "UPDATE observation_reference_use_cloud_sync_state "
+            "SET cloud_user_id='backup-user', "
+            "remote_identity_state='acknowledged', cloud_row_version=6, "
+            "accepted_payload_json='{" + '"id":"use-1"' + "}', "
+            "sync_status='clean' WHERE use_id='use-1'"
+        )
+        connection.execute(
+            "INSERT INTO observation_reference_use_cloud_tombstones "
+            "(use_id, reference_measurement_set_id, observation_cloud_id, cloud_user_id, "
+            "remote_identity_state, expected_row_version, accepted_payload_json) "
+            "VALUES ('deleted-use', 'set-1', 'cloud-observation-deleted', "
+            "'backup-user', 'acknowledged', 2, "
+            "'{" + '"id":"deleted-use"' + "}')"
         )
         connection.executemany(
             "INSERT OR REPLACE INTO settings (key, value) VALUES (?, ?)",
@@ -216,6 +245,14 @@ def test_full_backup_sanitizes_staged_state_and_collects_authoritative_assets(
         assert connection.execute("SELECT COUNT(*) FROM image_tombstones").fetchone()[0] == 1
         assert connection.execute("SELECT COUNT(*) FROM calibration_assets").fetchone()[0] == 1
         assert connection.execute("SELECT COUNT(*) FROM observation_reference_uses").fetchone()[0] == 1
+        assert connection.execute(
+            "SELECT cloud_row_version FROM observation_reference_use_cloud_sync_state "
+            "WHERE use_id='use-1'"
+        ).fetchone()[0] == 6
+        assert connection.execute(
+            "SELECT expected_row_version FROM observation_reference_use_cloud_tombstones "
+            "WHERE use_id='deleted-use'"
+        ).fetchone()[0] == 2
     assert "inat_client_secret" not in staged_settings
     assert staged_settings["profile_name"] == "Mushroom User"
     assert staged_settings["originals_dir"] == str(original.parent)
@@ -232,6 +269,14 @@ def test_full_backup_sanitizes_staged_state_and_collects_authoritative_assets(
             "reference_measurement_sets",
         ):
             assert connection.execute(f"SELECT COUNT(*) FROM {table}").fetchone()[0] == 1
+        assert connection.execute(
+            "SELECT cloud_row_version FROM reference_cloud_sync_state "
+            "WHERE entity_type='work' AND entity_id='work-1'"
+        ).fetchone()[0] == 8
+        assert connection.execute(
+            "SELECT expected_row_version FROM reference_cloud_tombstones "
+            "WHERE entity_type='work' AND entity_id='deleted-work'"
+        ).fetchone()[0] == 3
     assert b"do-not-archive-token" not in destination.read_bytes()
     assert b"db-secret" not in destination.read_bytes()
     assert b"cache-secret" not in destination.read_bytes()

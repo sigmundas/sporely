@@ -1,6 +1,6 @@
 # Reference Library and Public Reference Plotting Plan
 
-**Status:** Stages 1–3 and Stage 4a are implemented; Stage 4b–4h and Stages 5–6 remain.
+**Status:** Stages 1–3 and Stage 4a–4b are implemented; Stage 4c–4h and Stages 5–6 remain.
 **Canonical repository:** `sporely-py`
 **Canonical path:** `docs/plans/active/2026-08-05-reference-library-and-public-plots.md`
 **Scope:** `sporely-py` → `sporely-web`/Supabase → `sporely-landing`
@@ -10,13 +10,14 @@
 
 ## Agent handoff
 
-- Status: Active; Stages 1–3 and Stage 4a are complete; Stage 4b–4h and
+- Status: Active; Stages 1–3 and Stage 4a–4b are complete; Stage 4c–4h and
   Stages 5–6 remain.
-- Last completed slice: Stage 4a characterization and the dormant normalized
-  reference-sync facade described in §19d.
-- Current/next slice: Stage 4b additive local transport state. Do not add
-  network calls or begin Stage 4c mutation/planner behavior in that slice.
-- Relevant commits: `108db20`, `6c9c456`, `08249ec`, `22bd29f`, `f05f2e3`, `2a1ebe3`.
+- Last completed slice: Stage 4b additive local transport state described in
+  §19d. It remains dormant and has no network wiring.
+- Current/next slice: Stage 4c mutation ownership and graph planner. Keep
+  network adaptation and production orchestration out of that slice.
+- Relevant commits: `108db20`, `6c9c456`, `08249ec`, `22bd29f`, `f05f2e3`,
+  `2a1ebe3`, `69ec641`.
 - Important decisions: Preserve stable UUIDs, frozen observation snapshots, revision-aware records, and the distinction between literature ranges and raw observations.
 - Comparison baseline: the frozen `cloud-sync-pre-refactor` tag; at the Stage 4
   audit it resolves to `e9accd9`, the audit's starting `refactor/cloud-sync`
@@ -2073,6 +2074,51 @@ failure in `test_cloud_media_materialization_state_detects_missing_and_ready_med
 the unchanged `cloud_sync.py` baseline references undefined
 `suppress_reverse_identity`. Stage 4a does not alter that unrelated media path;
 the failure is recorded rather than repaired in this narrow slice.
+
+### Landed Stage 4b slice: additive local transport state (2026-08-28)
+
+Stage 4b adds dormant, account-bound transport state without importing or
+calling the cloud client. The reference database owns
+`reference_cloud_sync_state` and `reference_cloud_tombstones` for works,
+treatments, and measurement sets. The observation database owns
+`observation_reference_use_cloud_sync_state` and
+`observation_reference_use_cloud_tombstones`. State records keep the accepted
+remote payload, positive remote `row_version`, dirty/retry/conflict status,
+retry diagnostics, and the bound cloud user separately from domain rows.
+Remote identity is explicit: `never_attempted`, `create_outcome_unknown`, or
+`acknowledged`; constraints prevent an unknown create from pretending to have
+an accepted baseline and require acknowledged rows to have both a positive
+version and baseline.
+
+Schema initialization creates and backfills state rows idempotently. Insert
+triggers cover later domain inserts. Deletion triggers atomically cancel
+never-attempted local rows or retain remotely plausible deletion intent,
+including dependency IDs and the last accepted baseline. A parent-observation
+`BEFORE DELETE` trigger captures each attached reference use and the
+observation cloud ID before SQLite cascades remove the uses; direct detach uses
+the same durable ledger. A remotely plausible use with no verified observation
+cloud ID fails deletion closed. Transaction rollback restores both the domain
+row and its deletion intent.
+
+`database/reference_sync_state.py` is the repository boundary for round trips,
+account-binding checks, canonical payload storage, account-scoped tombstone
+inspection, and local resolution. It deliberately owns no mutation
+orchestration, graph planning, or network behavior; those begin in Stage 4c and
+later slices.
+
+Full backups retain all four transport tables and restore pre-Stage-4b backups
+through the existing staged additive migration. Modern portable exports clear
+the state after domain pruning so delete triggers cannot leak newly generated
+tombstones. Legacy bundles stage and sanitize the reference database rather
+than archiving the live file, and remain compatible with reference databases
+that predate the new tables. The modern portable archive inventory also
+explicitly excludes reference measurement-set UI preferences, matching their
+established machine-local role.
+
+Focused schema, repository, delete-cascade, backup/restore, portable-export,
+legacy-bundle, and existing reference-library regressions passed. The existing
+observation/media coordinator remains unwired to the dormant facade and state,
+so Stage 4b introduces no cloud requests or sync-result changes.
 
 ---
 

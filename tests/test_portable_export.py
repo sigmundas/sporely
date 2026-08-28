@@ -137,6 +137,20 @@ def test_portable_export_contains_only_selected_dependency_closure(
             "VALUES ('prior-archive', 'observation', '77', '1', ?)",
             ("a" * 64,),
         )
+        connection.execute(
+            "UPDATE observation_reference_use_cloud_sync_state "
+            "SET cloud_user_id='PORTABLE_SYNC_OWNER_SENTINEL', "
+            "remote_identity_state='create_outcome_unknown' "
+            "WHERE use_id='use-a'"
+        )
+        connection.execute(
+            "INSERT INTO observation_reference_use_cloud_tombstones "
+            "(use_id, reference_measurement_set_id, observation_cloud_id, cloud_user_id, "
+            "remote_identity_state) VALUES "
+            "('deleted-use', 'set-a', 'cloud-observation-deleted', "
+            "'PORTABLE_USE_TOMBSTONE_SENTINEL', "
+            "'create_outcome_unknown')"
+        )
         connection.commit()
 
     with sqlite3.connect(schema.get_reference_database_path()) as connection:
@@ -164,6 +178,23 @@ def test_portable_export_contains_only_selected_dependency_closure(
                 ("set-a", "treatment-a", "spore_size", "range", 501),
                 ("set-b", "treatment-b", "spore_size", "range", 502),
             ],
+        )
+        connection.execute(
+            "UPDATE reference_cloud_sync_state "
+            "SET cloud_user_id='PORTABLE_REFERENCE_SYNC_SENTINEL', "
+            "remote_identity_state='create_outcome_unknown' "
+            "WHERE entity_type='work' AND entity_id='work-a'"
+        )
+        connection.execute(
+            "INSERT INTO reference_cloud_tombstones "
+            "(entity_type, entity_id, cloud_user_id, remote_identity_state) "
+            "VALUES ('work', 'deleted-work', "
+            "'PORTABLE_REFERENCE_TOMBSTONE_SENTINEL', 'create_outcome_unknown')"
+        )
+        connection.execute(
+            "INSERT INTO reference_measurement_set_preferences "
+            "(measurement_set_id, is_favorite, recent_use_sequence) "
+            "VALUES ('set-a', 1, 99)"
         )
         connection.commit()
 
@@ -237,6 +268,12 @@ def test_portable_export_contains_only_selected_dependency_closure(
         assert connection.execute(
             "SELECT COUNT(*) FROM portable_import_provenance"
         ).fetchone()[0] == 0
+        assert connection.execute(
+            "SELECT COUNT(*) FROM observation_reference_use_cloud_sync_state"
+        ).fetchone()[0] == 0
+        assert connection.execute(
+            "SELECT COUNT(*) FROM observation_reference_use_cloud_tombstones"
+        ).fetchone()[0] == 0
     assert b"UNRELATED_OBSERVATION_SENTINEL" not in main_db.read_bytes()
     assert b"EXCLUDED_INSTALLATION_SETTING_SENTINEL" not in main_db.read_bytes()
     with sqlite3.connect(reference_db) as connection:
@@ -244,7 +281,20 @@ def test_portable_export_contains_only_selected_dependency_closure(
         assert _ids(connection, "reference_works") == {"work-a"}
         assert _ids(connection, "reference_taxon_treatments") == {"treatment-a"}
         assert _ids(connection, "reference_measurement_sets") == {"set-a"}
+        assert connection.execute(
+            "SELECT COUNT(*) FROM reference_cloud_sync_state"
+        ).fetchone()[0] == 0
+        assert connection.execute(
+            "SELECT COUNT(*) FROM reference_cloud_tombstones"
+        ).fetchone()[0] == 0
+        assert connection.execute(
+            "SELECT COUNT(*) FROM reference_measurement_set_preferences"
+        ).fetchone()[0] == 0
     assert b"UNRELATED_REFERENCE_SENTINEL" not in reference_db.read_bytes()
+    assert b"PORTABLE_SYNC_OWNER_SENTINEL" not in destination.read_bytes()
+    assert b"PORTABLE_USE_TOMBSTONE_SENTINEL" not in destination.read_bytes()
+    assert b"PORTABLE_REFERENCE_SYNC_SENTINEL" not in destination.read_bytes()
+    assert b"PORTABLE_REFERENCE_TOMBSTONE_SENTINEL" not in destination.read_bytes()
 
 
 def test_portable_export_requires_explicit_existing_roots(portable_installation, tmp_path):

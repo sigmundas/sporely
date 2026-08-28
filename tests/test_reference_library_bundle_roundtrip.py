@@ -5,6 +5,7 @@ from __future__ import annotations
 import json
 import sqlite3
 from pathlib import Path
+from zipfile import ZipFile
 
 import pytest
 
@@ -183,6 +184,83 @@ def test_bundle_roundtrip_preserves_library_and_uses(tmp_path, monkeypatch):
         assert snap["reference_measurement_set_id"] == ms.id
     finally:
         conn_main.close()
+
+
+def test_bundle_export_excludes_reference_cloud_transport_state(
+    tmp_path, monkeypatch
+):
+    source_paths, _obs_id, work, _treatment, _ms, _use = _seed_source(
+        monkeypatch, tmp_path
+    )
+    with sqlite3.connect(source_paths["ref"]) as connection:
+        connection.execute(
+            "UPDATE reference_cloud_sync_state "
+            "SET cloud_user_id='BUNDLE_SYNC_OWNER_SENTINEL', "
+            "remote_identity_state='create_outcome_unknown' "
+            "WHERE entity_type='work' AND entity_id=?",
+            (work.id,),
+        )
+        connection.execute(
+            "INSERT INTO reference_cloud_tombstones "
+            "(entity_type, entity_id, cloud_user_id, remote_identity_state) "
+            "VALUES ('work', 'deleted-work', "
+            "'BUNDLE_TOMBSTONE_SENTINEL', 'create_outcome_unknown')"
+        )
+        connection.commit()
+
+    bundle_path = tmp_path / "bundle-with-sync-state.zip"
+    db_share.export_database_bundle(
+        str(bundle_path),
+        include_observations=True,
+        include_images=False,
+        include_measurements=False,
+        include_calibrations=False,
+        include_reference_values=True,
+    )
+
+    archived_reference = tmp_path / "archived-reference.db"
+    with ZipFile(bundle_path) as archive:
+        archived_reference.write_bytes(archive.read("reference_values.db"))
+    with sqlite3.connect(archived_reference) as connection:
+        assert connection.execute(
+            "SELECT COUNT(*) FROM reference_works"
+        ).fetchone()[0] == 1
+        assert connection.execute(
+            "SELECT COUNT(*) FROM reference_cloud_sync_state"
+        ).fetchone()[0] == 0
+        assert connection.execute(
+            "SELECT COUNT(*) FROM reference_cloud_tombstones"
+        ).fetchone()[0] == 0
+    assert b"BUNDLE_SYNC_OWNER_SENTINEL" not in bundle_path.read_bytes()
+    assert b"BUNDLE_TOMBSTONE_SENTINEL" not in bundle_path.read_bytes()
+
+
+def test_bundle_export_accepts_pre_stage4b_reference_database(
+    tmp_path, monkeypatch
+):
+    source_paths, *_ = _seed_source(monkeypatch, tmp_path)
+    with sqlite3.connect(source_paths["ref"]) as connection:
+        for (trigger_name,) in connection.execute(
+            "SELECT name FROM sqlite_master WHERE type='trigger' "
+            "AND name LIKE 'reference_%_cloud_sync_%'"
+        ).fetchall():
+            connection.execute(f'DROP TRIGGER "{trigger_name}"')
+        connection.execute("DROP TABLE reference_cloud_tombstones")
+        connection.execute("DROP TABLE reference_cloud_sync_state")
+        connection.commit()
+
+    bundle_path = tmp_path / "legacy-reference-bundle.zip"
+    db_share.export_database_bundle(
+        str(bundle_path),
+        include_observations=True,
+        include_images=False,
+        include_measurements=False,
+        include_calibrations=False,
+        include_reference_values=True,
+    )
+
+    with ZipFile(bundle_path) as archive:
+        assert "reference_values.db" in archive.namelist()
 
 
 def test_bundle_roundtrip_is_idempotent(tmp_path, monkeypatch):

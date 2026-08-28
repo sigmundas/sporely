@@ -361,6 +361,7 @@ def export_database_bundle(
         [include_observations, include_images, include_measurements, include_calibrations]
     )
     temp_dir = Path(tempfile.mkdtemp())
+    portable_reference_path = temp_dir / "reference_values.db"
     objectives_path = get_objectives_path()
 
     selected_tables: list[str] = []
@@ -481,6 +482,28 @@ def export_database_bundle(
         if include_calibrations and not include_images:
             calibration_asset_files = _collect_calibration_asset_paths(src_conn, images_dir)
 
+        if include_reference_values and ref_path.exists():
+            with sqlite3.connect(ref_path) as source_reference, sqlite3.connect(
+                portable_reference_path
+            ) as portable_reference:
+                source_reference.backup(portable_reference)
+            with sqlite3.connect(portable_reference_path) as portable_reference:
+                portable_reference.execute("PRAGMA journal_mode=DELETE")
+                portable_reference.execute("PRAGMA secure_delete=ON")
+                for table in (
+                    "reference_cloud_sync_state",
+                    "reference_cloud_tombstones",
+                ):
+                    exists = portable_reference.execute(
+                        "SELECT 1 FROM sqlite_master "
+                        "WHERE type='table' AND name=?",
+                        (table,),
+                    ).fetchone()
+                    if exists is not None:
+                        portable_reference.execute(f"DELETE FROM {table}")
+                portable_reference.commit()
+                portable_reference.execute("VACUUM")
+
         with zipfile.ZipFile(zip_path, "w", compression=zipfile.ZIP_DEFLATED) as zf:
             if include_main_db and db_path.exists():
                 _emit_progress("Adding database file...")
@@ -508,7 +531,7 @@ def export_database_bundle(
                 _emit_progress("Objective profiles added.")
             if include_reference_values and ref_path.exists():
                 _emit_progress("Adding reference values...")
-                zf.write(ref_path, arcname="reference_values.db")
+                zf.write(portable_reference_path, arcname="reference_values.db")
                 completed_steps += 1
                 _emit_progress("Reference values added.")
         completed_steps = total_steps
