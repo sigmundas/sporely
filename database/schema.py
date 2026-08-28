@@ -1131,9 +1131,58 @@ def _repair_remote_tombstones_hiding_active_images(cursor: sqlite3.Cursor) -> in
     return max(int(cursor.rowcount or 0), 0)
 
 
-def init_database():
-    """Initialize the database with required tables"""
-    db_path = get_database_path()
+def ensure_portable_import_schema(connection: sqlite3.Connection) -> None:
+    """Create the local-only portable import identity schema."""
+    observation_columns = {
+        str(row[1])
+        for row in connection.execute("PRAGMA table_info(observations)")
+    }
+    if "portable_cloud_identity_pending" not in observation_columns:
+        connection.execute(
+            "ALTER TABLE observations ADD COLUMN portable_cloud_identity_pending "
+            "INTEGER NOT NULL DEFAULT 0"
+        )
+    connection.execute('''
+        CREATE TABLE IF NOT EXISTS portable_import_provenance (
+            archive_id TEXT NOT NULL,
+            source_item_type TEXT NOT NULL,
+            source_item_id TEXT NOT NULL,
+            destination_item_id TEXT NOT NULL,
+            source_content_sha256 TEXT NOT NULL,
+            imported_at TIMESTAMP NOT NULL DEFAULT CURRENT_TIMESTAMP,
+            PRIMARY KEY (archive_id, source_item_type, source_item_id),
+            CHECK (length(trim(archive_id)) > 0),
+            CHECK (length(trim(source_item_type)) > 0),
+            CHECK (length(trim(source_item_id)) > 0),
+            CHECK (length(trim(destination_item_id)) > 0),
+            CHECK (length(source_content_sha256) = 64),
+            CHECK (source_content_sha256 NOT GLOB '*[^0-9a-f]*'),
+            CHECK (source_item_type IN (
+                'observation', 'image', 'measurement', 'annotation',
+                'session_log', 'session', 'calibration', 'calibration_asset',
+                'reference_use', 'reference_value', 'reference_work',
+                'reference_treatment', 'reference_measurement_set', 'archive'
+            ))
+        )
+    ''')
+    connection.execute(
+        "CREATE INDEX IF NOT EXISTS idx_portable_import_provenance_destination "
+        "ON portable_import_provenance (source_item_type, destination_item_id)"
+    )
+
+
+def init_database(
+    db_path: Path | None = None,
+    reference_path: Path | None = None,
+    *,
+    run_model_backfills: bool = True,
+):
+    """Initialize or migrate the requested database paths with production schema helpers."""
+    if db_path is not None and reference_path is None:
+        raise ValueError("reference_path is required when db_path is explicit")
+    if reference_path is not None and db_path is None:
+        raise ValueError("db_path is required when reference_path is explicit")
+    db_path = Path(db_path) if db_path is not None else get_database_path()
     db_path.parent.mkdir(parents=True, exist_ok=True)
 
     conn = sqlite3.connect(db_path)
@@ -1720,6 +1769,10 @@ def init_database():
         "ON session_logs (session_id, recorded_at DESC, id DESC)"
     )
 
+    # Local-only replay identity for portable archives. These mappings are
+    # deliberately separate from every cloud identity column.
+    ensure_portable_import_schema(conn)
+
     # Spore measurements table
     cursor.execute('''
         CREATE TABLE IF NOT EXISTS spore_measurements (
@@ -1914,14 +1967,19 @@ def init_database():
     conn.commit()
     conn.close()
 
-    try:
-        from .models import CalibrationAssetDB
+    if run_model_backfills:
+        try:
+            from .models import CalibrationAssetDB
 
-        CalibrationAssetDB.backfill_all()
-    except Exception as exc:
-        print(f"Warning: Could not backfill calibration assets: {exc}")
+            CalibrationAssetDB.backfill_all()
+        except Exception as exc:
+            print(f"Warning: Could not backfill calibration assets: {exc}")
 
-    init_reference_database()
+    init_reference_database(
+        reference_path,
+        seed_from_bundle=reference_path is None,
+        migrate_legacy=reference_path is None,
+    )
     print(f"Database initialized at {db_path}")
 
 if __name__ == "__main__":
