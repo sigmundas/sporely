@@ -35,14 +35,22 @@ The authoritative schema definitions live in:
 
 Use those files for the most up-to-date table and column definitions.
 
-## Export and Import (Backup / Sharing)
+## Backup, Restore, Export, and Import
 
-Sporely can bundle your data for backup or sharing with others:
+The **File** menu separates installation recovery from portable observation
+transfer:
 
-- **Export DB**: creates a zip file containing the main database, reference database, and image data.
-- **Import DB**: merges a shared bundle into your local data.
+- **Back Up Sporely…** creates a complete `.sporely` recovery archive while
+  preserving installation identity and excluding credentials.
+- **Restore Sporely Backup…** validates and restores a complete Sporely backup.
+- **Export Selected Observations…** creates a portable `.sporely` archive for
+  the observations currently selected in the observations table.
+- **Import Observations…** previews and imports observations with new local and
+  cloud identities.
 
-These are available in the **File** menu as **Export DB** and **Import DB**.
+Older ZIP data packages remain supported only through the observation import
+action as a legacy compatibility path. They are not complete backups and cannot
+be used with **Restore Sporely Backup…**.
 
 ## See also
 
