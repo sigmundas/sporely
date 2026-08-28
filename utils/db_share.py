@@ -23,6 +23,10 @@ from database.reference_library_schema import (
     init_observation_reference_uses_schema,
     init_reference_library_schema,
 )
+from database.reference_sync_state import (
+    record_library_mutation_intent,
+    record_use_mutation_intent,
+)
 from utils.heic_converter import build_local_image_provenance
 
 
@@ -98,6 +102,12 @@ def _upsert_library_row_by_revision(
             f"UPDATE {table} SET {assignments} WHERE id = ?",
             values,
         )
+        entity_type = {
+            "reference_works": "work",
+            "reference_taxon_treatments": "treatment",
+            "reference_measurement_sets": "measurement_set",
+        }[table]
+        record_library_mutation_intent(dest_conn, entity_type, str(row_id))
         return "updated"
     if src_revision == existing_revision:
         return "skipped_same"
@@ -735,6 +745,7 @@ def import_database_bundle(
                                 f"SET {assignments} WHERE id = ?",
                                 update_values,
                             )
+                            record_use_mutation_intent(dest_conn, str(use_id))
                             updated_ref_uses += 1
                     preserved_dangling_use_ids.append(str(use_id))
 

@@ -1,8 +1,8 @@
 """Dormant local transport state for normalized reference cloud sync.
 
 This module stores device/account-specific sync metadata separately from the
-portable reference domain rows. Stage 4b does not perform network operations or
-wire these repositories into ordinary reference mutations.
+portable reference domain rows. Stage 4c mutation owners use its
+connection-scoped helpers, but this module performs no network operations.
 """
 
 from __future__ import annotations
@@ -161,7 +161,9 @@ def _observation_connection() -> sqlite3.Connection:
     return connection
 
 
-def _state_from_row(row: sqlite3.Row, *, entity_type: str, id_column: str) -> ReferenceCloudSyncState:
+def _state_from_row(
+    row: sqlite3.Row, *, entity_type: str, id_column: str
+) -> ReferenceCloudSyncState:
     return ReferenceCloudSyncState(
         entity_type=entity_type,
         entity_id=str(row[id_column]),
@@ -190,6 +192,55 @@ def _require_cloud_user_id(cloud_user_id: str) -> str:
     if not value:
         raise ReferenceCloudSyncStateError("cloud account is required")
     return value
+
+
+def record_library_mutation_intent(
+    connection: sqlite3.Connection,
+    entity_type: LibraryEntityType,
+    entity_id: str,
+    *,
+    schema_name: str = "main",
+) -> None:
+    """Mark a local library edit inside its caller-owned transaction."""
+    if entity_type not in _LIBRARY_ENTITY_TYPES:
+        raise ReferenceCloudSyncStateError("invalid library entity type")
+    if not schema_name.replace("_", "").isalnum():
+        raise ReferenceCloudSyncStateError("invalid SQLite schema name")
+    cursor = connection.execute(
+        f"""
+        UPDATE {schema_name}.reference_cloud_sync_state
+        SET sync_status=CASE
+                WHEN sync_status='conflict' THEN 'conflict' ELSE 'dirty'
+            END,
+            retry_count=0, last_error=NULL, last_attempted_at=NULL,
+            updated_at=CURRENT_TIMESTAMP
+        WHERE entity_type=? AND entity_id=?
+        """,
+        (entity_type, entity_id),
+    )
+    if cursor.rowcount != 1:
+        raise ReferenceCloudSyncStateError("library sync state does not exist")
+
+
+def record_use_mutation_intent(
+    connection: sqlite3.Connection,
+    use_id: str,
+) -> None:
+    """Mark a local observation-use edit inside its caller-owned transaction."""
+    cursor = connection.execute(
+        """
+        UPDATE observation_reference_use_cloud_sync_state
+        SET sync_status=CASE
+                WHEN sync_status='conflict' THEN 'conflict' ELSE 'dirty'
+            END,
+            retry_count=0, last_error=NULL, last_attempted_at=NULL,
+            updated_at=CURRENT_TIMESTAMP
+        WHERE use_id=?
+        """,
+        (use_id,),
+    )
+    if cursor.rowcount != 1:
+        raise ReferenceCloudSyncStateError("observation-use sync state does not exist")
 
 
 class ReferenceCloudSyncStateRepository:

@@ -17,6 +17,7 @@ from pathlib import Path
 from typing import Any, Callable
 from zipfile import BadZipFile, ZipFile
 
+from database.reference_sync_state import record_library_mutation_intent
 from utils.archive.checksums import sha256_file
 from utils.archive.manifest import ArchiveManifest
 from utils.archive.paths import safe_staging_destination, validate_zip_entries
@@ -927,6 +928,18 @@ def _merge_reference_entity(
         destination.execute(
             f"UPDATE {table} SET {assignments} WHERE id=?",
             [*updates.values(), identity],
+        )
+        schema_name, bare_table = table.rsplit(".", 1)
+        entity_type = {
+            "reference_works": "work",
+            "reference_taxon_treatments": "treatment",
+            "reference_measurement_sets": "measurement_set",
+        }[bare_table]
+        record_library_mutation_intent(
+            destination,
+            entity_type,
+            identity,
+            schema_name=schema_name,
         )
     if enrich_legacy_reference_id is not None:
         destination.execute(

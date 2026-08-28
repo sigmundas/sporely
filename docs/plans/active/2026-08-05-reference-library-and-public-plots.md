@@ -1,6 +1,6 @@
 # Reference Library and Public Reference Plotting Plan
 
-**Status:** Stages 1–3 and Stage 4a–4b are implemented; Stage 4c–4h and Stages 5–6 remain.
+**Status:** Stages 1–3 and Stage 4a–4c are implemented; Stage 4d–4h and Stages 5–6 remain.
 **Canonical repository:** `sporely-py`
 **Canonical path:** `docs/plans/active/2026-08-05-reference-library-and-public-plots.md`
 **Scope:** `sporely-py` → `sporely-web`/Supabase → `sporely-landing`
@@ -10,14 +10,14 @@
 
 ## Agent handoff
 
-- Status: Active; Stages 1–3 and Stage 4a–4b are complete; Stage 4c–4h and
+- Status: Active; Stages 1–3 and Stage 4a–4c are complete; Stage 4d–4h and
   Stages 5–6 remain.
-- Last completed slice: Stage 4b additive local transport state described in
-  §19d. It remains dormant and has no network wiring.
-- Current/next slice: Stage 4c mutation ownership and graph planner. Keep
-  network adaptation and production orchestration out of that slice.
+- Last completed slice: Stage 4c mutation ownership and deterministic graph
+  planner described in §19d. It remains dormant and has no network wiring.
+- Current/next slice: Stage 4d typed remote adapter. Keep it disconnected from
+  production orchestration until the later enablement slice.
 - Relevant commits: `108db20`, `6c9c456`, `08249ec`, `22bd29f`, `f05f2e3`,
-  `2a1ebe3`, `69ec641`.
+  `2a1ebe3`, `69ec641`, `8893007`.
 - Important decisions: Preserve stable UUIDs, frozen observation snapshots, revision-aware records, and the distinction between literature ranges and raw observations.
 - Comparison baseline: the frozen `cloud-sync-pre-refactor` tag; at the Stage 4
   audit it resolves to `e9accd9`, the audit's starting `refactor/cloud-sync`
@@ -2119,6 +2119,39 @@ Focused schema, repository, delete-cascade, backup/restore, portable-export,
 legacy-bundle, and existing reference-library regressions passed. The existing
 observation/media coordinator remains unwired to the dormant facade and state,
 so Stage 4b introduces no cloud requests or sync-result changes.
+
+### Landed Stage 4c slice: mutation ownership and graph planner (2026-08-28)
+
+The existing repositories in `database/reference_library.py` remain the one
+application-facing owner for normalized reference mutations. Their work,
+treatment, measurement-set, role/note, snapshot-refresh, and successor-adoption
+updates now record transport intent through connection-scoped helpers before
+the owning transaction commits. The helpers retain account binding, remote
+identity, accepted baseline, and row version; reset obsolete retry diagnostics;
+and preserve an unresolved conflict until an explicit resolution. Existing
+insert/delete triggers continue to own atomic create intent, local-only delete
+cancellation, detach tombstones, and observation-delete cascade capture.
+Idempotent attach and semantic no-op snapshot refresh remain true no-ops.
+
+The legacy bundle and modern portable-import revision-upgrade paths are the two
+intentional repository bypasses. They call the same connection-scoped helpers
+inside their existing transactions, so imported higher revisions cannot remain
+incorrectly clean. Export/pruning and restore machinery remain outside mutation
+ownership because they intentionally preserve or remove transport state as
+specified by their archive contracts.
+
+`database/reference_sync_planner.py` adds a read-only graph snapshot loader and
+a pure immutable planner. Live work is ordered work → treatment → measurement
+set → observation use; tombstones are ordered observation use → measurement set
+→ treatment → work, with UUID tie-breaking. Children remain blocked until the
+durable parent state is acknowledged, ancestor tombstones remain blocked while
+descendant intents exist, and observation uses require a verified observation
+cloud ID. Conflicts and account mismatches are explicit blocked outcomes while
+unrelated graph work remains eligible. Replanning reloads durable state, making
+progress deterministic across process restarts.
+
+Stage 4c does not import a cloud client, execute RPCs, call the dormant facade,
+or change `sync_all`. Typed remote transport remains Stage 4d work.
 
 ---
 

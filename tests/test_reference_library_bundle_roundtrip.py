@@ -354,6 +354,13 @@ def test_bundle_roundtrip_is_revision_aware(tmp_path, monkeypatch):
             "VALUES (?, 'book', ?, ?, 1, 'incomplete', 'private')",
             (work.id, "Legacy title", "Legacy"),
         )
+        conn.execute(
+            "UPDATE reference_cloud_sync_state SET cloud_user_id='user-1', "
+            "remote_identity_state='acknowledged', cloud_row_version=1, "
+            "accepted_payload_json='{}', sync_status='clean' "
+            "WHERE entity_type='work' AND entity_id=?",
+            (work.id,),
+        )
         conn.commit()
     finally:
         conn.close()
@@ -376,10 +383,16 @@ def test_bundle_roundtrip_is_revision_aware(tmp_path, monkeypatch):
             "SELECT title, revision FROM reference_works WHERE id = ?",
             (work.id,),
         ).fetchone()
+        sync_status = conn.execute(
+            "SELECT sync_status FROM reference_cloud_sync_state "
+            "WHERE entity_type='work' AND entity_id=?",
+            (work.id,),
+        ).fetchone()[0]
     finally:
         conn.close()
     assert row[0] == "Nordic Macromycetes (2nd ed.)"
     assert row[1] >= 2
+    assert sync_status == "dirty"
 
 
 def test_bundle_import_reports_unresolved_attachments(tmp_path, monkeypatch):

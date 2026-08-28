@@ -32,6 +32,10 @@ from database.reference_library_schema import (
     init_observation_reference_uses_schema,
     init_reference_library_schema,
 )
+from database.reference_sync_state import (
+    record_library_mutation_intent,
+    record_use_mutation_intent,
+)
 from database.schema import get_connection, get_reference_connection
 
 
@@ -458,6 +462,7 @@ class ReferenceWorkRepository:
                     f"UPDATE reference_works SET {assignments} WHERE id = ?",
                     params,
                 )
+                record_library_mutation_intent(conn, "work", work_id)
             except sqlite3.IntegrityError as exc:
                 raise ReferenceIntegrityError(str(exc)) from exc
             conn.commit()
@@ -757,6 +762,7 @@ class TaxonTreatmentRepository:
                 f"UPDATE reference_taxon_treatments SET {assignments} WHERE id = ?",
                 params,
             )
+            record_library_mutation_intent(conn, "treatment", treatment_id)
             conn.commit()
         finally:
             conn.close()
@@ -981,6 +987,7 @@ class MeasurementSetRepository:
                 f"UPDATE reference_measurement_sets SET {assignments} WHERE id = ?",
                 params,
             )
+            record_library_mutation_intent(conn, "measurement_set", set_id)
             conn.commit()
         finally:
             conn.close()
@@ -1777,6 +1784,7 @@ class ObservationReferenceUseRepository:
                 raise ReferenceIntegrityError(
                     "attachment changed before successor adoption; review it again"
                 )
+            record_use_mutation_intent(conn, use.id)
             conn.commit()
         except sqlite3.IntegrityError as exc:
             conn.rollback()
@@ -1832,6 +1840,7 @@ class ObservationReferenceUseRepository:
                 """,
                 (measurement_set.revision, snapshot_json, _now(), use.id),
             )
+            record_use_mutation_intent(conn, use.id)
             conn.commit()
         finally:
             conn.close()
@@ -1891,6 +1900,7 @@ class ObservationReferenceUseRepository:
                 """,
                 (new_role, new_note, _now(), use_id),
             )
+            record_use_mutation_intent(conn, use_id)
             conn.commit()
             row = conn.execute(
                 "SELECT * FROM observation_reference_uses WHERE id = ?",

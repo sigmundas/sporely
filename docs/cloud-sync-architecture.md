@@ -59,6 +59,7 @@ Sibling modules that share sync responsibility (do **not** assume
 | `utils/spore_summary_sync.py` | Spore-summary derivative push/pull |
 | `utils/reference_cloud_sync.py` | Stage 4 normalized-reference sync facade and typed result. Stage 4a is deliberately side-effect-free and is not invoked by `sync_all`; production orchestration is enabled only in Stage 4h. |
 | `database/reference_sync_state.py` | Dormant Stage 4 normalized-reference transport repository. It stores account-bound baselines, row versions, retry/conflict state, and durable deletion intent in the database that owns each entity. Stage 4b has no network wiring. |
+| `database/reference_sync_planner.py` | Pure Stage 4c normalized-reference graph planner and read-only durable snapshot loader. It orders live work parent-first and tombstones child-first and reports dependency/account/conflict blocks without network activity. |
 | `utils/r2_storage.py` | Low-level R2/Worker storage adapter |
 
 Normalized reference transport state is deliberately separate from the domain
@@ -70,7 +71,16 @@ tables. Works, treatments, and measurement sets use
 create initial state and capture deletion intent in the same transaction as
 domain mutation, including observation-parent cascades. Full backups retain
 these tables; portable exports exclude them. Mutation ownership and graph
-planning remain Stage 4c work, and `sync_all` remains unchanged until Stage 4h.
+planning are implemented but dormant, and `sync_all` remains unchanged until
+Stage 4h.
+
+Application mutations are owned by the repositories in
+`database/reference_library.py`; their update paths record transport intent in
+the same SQLite transaction. Insert/delete intent remains trigger-owned so
+direct observation cascades cannot bypass it. Archive import revision upgrades
+are the documented repository bypass and call the same connection-scoped
+intent helpers. The Stage 4c planner is dormant: it is not called by `sync_all`
+and does not execute its plan.
 
 ---
 
