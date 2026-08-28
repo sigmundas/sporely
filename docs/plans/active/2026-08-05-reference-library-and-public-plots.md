@@ -1,6 +1,6 @@
 # Reference Library and Public Reference Plotting Plan
 
-**Status:** Stages 1–3 are implemented; the Stage 4 desktop-sync audit/design is complete and implementation plus Stages 5–6 remain.
+**Status:** Stages 1–3 and Stage 4a are implemented; Stage 4b–4h and Stages 5–6 remain.
 **Canonical repository:** `sporely-py`
 **Canonical path:** `docs/plans/active/2026-08-05-reference-library-and-public-plots.md`
 **Scope:** `sporely-py` → `sporely-web`/Supabase → `sporely-landing`
@@ -10,14 +10,12 @@
 
 ## Agent handoff
 
-- Status: Active; Stages 1–3 and the Stage 4 audit/design pass are complete;
-  Stage 4 implementation and Stages 5–6 remain.
-- Last completed slice: Stage 4 audit/design, including the local sync-state,
-  deletion-intent, dependency-order, retry, and cloud-refactor integration
-  contracts in §19d.
-- Current/next slice: Stage 4a characterization and a no-op reference-sync
-  facade. Do not combine it with the Stage 4b persistence migration or begin
-  the full cloud-sync orchestration replacement.
+- Status: Active; Stages 1–3 and Stage 4a are complete; Stage 4b–4h and
+  Stages 5–6 remain.
+- Last completed slice: Stage 4a characterization and the dormant normalized
+  reference-sync facade described in §19d.
+- Current/next slice: Stage 4b additive local transport state. Do not add
+  network calls or begin Stage 4c mutation/planner behavior in that slice.
 - Relevant commits: `108db20`, `6c9c456`, `08249ec`, `22bd29f`, `f05f2e3`, `2a1ebe3`.
 - Important decisions: Preserve stable UUIDs, frozen observation snapshots, revision-aware records, and the distinction between literature ranges and raw observations.
 - Comparison baseline: the frozen `cloud-sync-pre-refactor` tag; at the Stage 4
@@ -2036,6 +2034,45 @@ the repository invariants, including `tests/test_cloud_sync_fast_path.py`,
 tests. Update both copies of `docs/supabase-sync-contract.md` when behavior
 lands, and update `docs/cloud-sync-architecture.md` when ownership or
 navigation changes. The audit-only commit does not change either contract.
+
+### Landed Stage 4a slice: characterization and dormant seam (2026-08-28)
+
+Stage 4a adds `utils/reference_cloud_sync.py` as the dependency-light sibling
+owner for normalized reference sync. Its frozen typed `ReferenceSyncResult`,
+side-effect-free `sync_reference_library` facade, and empty-result merge helper
+create the boundary needed by later slices without importing
+`utils.cloud_sync`, reading local state, inspecting the cloud client, or making
+network calls. The merge helper accepts only the empty Stage 4a result and
+fails closed on a premature non-empty result so future behavior cannot be
+silently discarded.
+
+Production `sync_all` does not invoke the facade yet. Enabling normal and
+pull-only orchestration remains explicitly owned by Stage 4h, after durable
+state, transport, push, pull, and observation-use semantics exist. This keeps
+the executable observation/media/calibration behavior byte-for-byte comparable
+with `cloud-sync-pre-refactor` during the intervening slices.
+
+`tests/test_reference_cloud_sync_coordinator.py` characterizes the existing
+normal result shape and error ordering, direct flag forwarding, complete
+prefetch/push/pull phase order, proven no-op remote-list reuse, and strict
+pull-only result/push suppression. Existing Observations-tab tests continue to
+characterize the production refresh, background, and Sync-now caller modes. The
+new tests also prove that the Stage 4a facade does not inspect its client, that
+an empty reference result preserves the legacy result object and shape, and
+that non-empty results cannot be ignored accidentally.
+
+The executable comparison used both structural and behavioral evidence:
+`utils/cloud_sync.py` and the pre-existing sync tests are unchanged from
+`cloud-sync-pre-refactor`, while the new literal result/ordering assertions run
+against that unchanged coordinator. Stage 4a adds no import or call from the
+coordinator to the dormant facade.
+
+The focused Stage 4a and existing coordinator/caller-mode suite passed. The
+broader required regression selection exposed one pre-existing deterministic
+failure in `test_cloud_media_materialization_state_detects_missing_and_ready_media`:
+the unchanged `cloud_sync.py` baseline references undefined
+`suppress_reverse_identity`. Stage 4a does not alter that unrelated media path;
+the failure is recorded rather than repaired in this narrow slice.
 
 ---
 

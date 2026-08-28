@@ -57,6 +57,7 @@ Sibling modules that share sync responsibility (do **not** assume
 | `utils/cloud_media_audit.py` | Read-only audit of cloud media rows vs storage objects |
 | `utils/cloud_spore_mosaic.py`, `utils/cloud_spore_mosaic_backfill.py` | Spore-mosaic derivative sync and backfill |
 | `utils/spore_summary_sync.py` | Spore-summary derivative push/pull |
+| `utils/reference_cloud_sync.py` | Stage 4 normalized-reference sync facade and typed result. Stage 4a is deliberately side-effect-free and is not invoked by `sync_all`; production orchestration is enabled only in Stage 4h. |
 | `utils/r2_storage.py` | Low-level R2/Worker storage adapter |
 
 ---
