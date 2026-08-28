@@ -1,6 +1,6 @@
 # Reference Library and Public Reference Plotting Plan
 
-**Status:** Stages 1–3 and Stage 4a–4d are implemented; Stage 4e–4h and Stages 5–6 remain.
+**Status:** Stages 1–3 and Stage 4a–4e are implemented; Stage 4f–4h and Stages 5–6 remain.
 **Canonical repository:** `sporely-py`
 **Canonical path:** `docs/plans/active/2026-08-05-reference-library-and-public-plots.md`
 **Scope:** `sporely-py` → `sporely-web`/Supabase → `sporely-landing`
@@ -10,14 +10,14 @@
 
 ## Agent handoff
 
-- Status: Active; Stages 1–3 and Stage 4a–4d are complete; Stage 4e–4h and
+- Status: Active; Stages 1–3 and Stage 4a–4e are complete; Stage 4f–4h and
   Stages 5–6 remain.
-- Last completed slice: Stage 4d typed remote adapter described in §19d. It
-  remains disconnected from production orchestration.
-- Current/next slice: Stage 4e library push executor behind the dormant facade;
-  observation-use execution remains disabled until Stage 4g.
+- Last completed slice: Stage 4e library push executor described in §19d. It
+  remains disconnected from production orchestration and does not process
+  observation-reference-use rows.
+- Current/next slice: Stage 4f whole-graph library pull and reconciliation.
 - Relevant commits: `108db20`, `6c9c456`, `08249ec`, `22bd29f`, `f05f2e3`,
-  `2a1ebe3`, `69ec641`, `8893007`, `edd9f70`.
+  `2a1ebe3`, `69ec641`, `8893007`, `edd9f70`, `e8b340b`.
 - Important decisions: Preserve stable UUIDs, frozen observation snapshots, revision-aware records, and the distinction between literature ranges and raw observations.
 - Comparison baseline: the frozen `cloud-sync-pre-refactor` tag; at the Stage 4
   audit it resolves to `e9accd9`, the audit's starting `refactor/cloud-sync`
@@ -2181,6 +2181,40 @@ generic `_rpc` source-gating ambiguity for future reference execution.
 The adapter and client methods remain dormant: Stage 4d adds no `sync_all`
 call, planner execution, local-state persistence, or automatic retry. Library
 push execution begins in Stage 4e.
+
+### Landed Stage 4e slice: library push executor (2026-08-29)
+
+The dormant `sync_reference_library` facade now executes only library work,
+taxon-treatment, and measurement-set mutations. It repeatedly rebuilds the
+durable graph plan after each outcome, so live mutations become eligible in
+work → treatment → measurement-set order and tombstones become eligible in
+measurement-set → treatment → work order. Observation-reference-use live rows
+and tombstones are deliberately ignored until Stage 4g, and `sync_all` remains
+unwired until Stage 4h. A successor measurement set additionally waits for its
+`supersedes_id` row to be acknowledged, independent of UUID sort order.
+
+Every first create is durably marked `create_outcome_unknown` before its RPC.
+After a lost response, the executor performs a complete typed owner read for
+that entity table: a matching row supplies the authoritative token, while
+confirmed absence permits retry of the same UUID and payload with expected
+version zero. Unknown tombstones use the same complete-read rule and are never
+sent with version zero. Recreated same-ID library rows atomically inherit the
+old tombstone's token/baseline and remove that ledger row before the restore
+RPC, making a crash between those steps restart-safe.
+
+`created`, `updated`, and `no_change` persist the returned positive
+`row_version` and a canonical allowlisted baseline immediately. The
+acknowledgement transaction compares the current domain payload with the sent
+payload, preserving dirty intent if the row changed while the RPC was in
+flight. Exact baseline-equal dirty rows become clean without a cloud call.
+If a row is deleted or recreated while an RPC is in flight, acknowledgement
+atomically transfers to the durable tombstone or the replacement live row so a
+stale delete token cannot survive the transition.
+Conflicts retain their prior token/baseline and store structured review data;
+retryable and terminal failures retain durable intent and are classified in
+the typed result. An attempted item runs at most once per invocation, while
+unrelated graph branches continue and a later invocation resumes from the
+persisted boundary.
 
 ---
 

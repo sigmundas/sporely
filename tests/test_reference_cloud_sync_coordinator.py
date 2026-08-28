@@ -228,26 +228,6 @@ def test_sync_all_pull_only_preserves_legacy_result_and_skips_pushes(
     assert events == ["account_binding", "pull_all"]
 
 
-def test_reference_sync_facade_is_a_side_effect_free_noop() -> None:
-    from utils.reference_cloud_sync import (
-        ReferenceSyncResult,
-        sync_reference_library,
-    )
-
-    class _ClientThatMustNotBeInspected:
-        def __getattribute__(self, name: str) -> Any:
-            if name.startswith("__"):
-                return super().__getattribute__(name)
-            raise AssertionError(f"no-op reference sync inspected client.{name}")
-
-    result = sync_reference_library(_ClientThatMustNotBeInspected())
-
-    assert result == ReferenceSyncResult()
-    assert result.pushed == 0
-    assert result.pulled == 0
-    assert result.errors == ()
-
-
 def test_empty_reference_result_merges_without_changing_legacy_result() -> None:
     from utils.reference_cloud_sync import (
         ReferenceSyncResult,
@@ -272,13 +252,13 @@ def test_empty_reference_result_merges_without_changing_legacy_result() -> None:
     }
 
 
-def test_stage4a_merge_rejects_nonempty_reference_results() -> None:
+def test_pre_stage4h_merge_rejects_nonempty_reference_results() -> None:
     from utils.reference_cloud_sync import (
         ReferenceSyncResult,
         merge_reference_sync_result,
     )
 
-    with pytest.raises(ValueError, match="Stage 4a supports only empty"):
+    with pytest.raises(ValueError, match="not wired before Stage 4h"):
         merge_reference_sync_result(
             {"pushed": 0, "pulled": 0, "errors": []},
             ReferenceSyncResult(pushed=1),
