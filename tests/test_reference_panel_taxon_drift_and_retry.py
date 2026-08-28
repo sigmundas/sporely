@@ -44,6 +44,7 @@ import ui.main_window as main_window
 from database import schema as _schema
 from database.reference_library import (
     MeasurementSet,
+    MeasurementSetPreferenceRepository,
     MeasurementSetRepository,
     ObservationReferenceUseRepository,
     ReferenceWork,
@@ -122,6 +123,27 @@ class _StubDialog(QWidget):
             width_mean=rng.get("width_mean"),
             legacy_reference_value_id=legacy_reference_value_id,
         )
+
+
+class _QuickAddStubDialog(_StubDialog):
+    def pending_reference_work(self):
+        return None
+
+    def quick_add_treatment_payload(self):
+        return {
+            "name_as_published": "Agaricus bisporus sensu Author",
+            "locator_text": "p. 42",
+        }
+
+
+class _InvalidQuickAddStubDialog(_QuickAddStubDialog):
+    def quick_add_treatment_payload(self):
+        return {"name_as_published": "", "locator_text": "p. 42"}
+
+
+class _QuickLegacyOnlyStubDialog(_QuickAddStubDialog):
+    def normalized_measurement_set_payload(self, *, legacy_reference_value_id=None):
+        return None
 
 
 def _build_window(monkeypatch, qapp):
@@ -207,6 +229,109 @@ def _range_payload(work_id: str, taxon_id: int, panel_genus: str, panel_species:
             "width_max": 5.0,
         },
     }
+
+
+def test_quick_add_service_path_attaches_snapshot_and_refreshes_plot(
+    monkeypatch, qapp, libs
+):
+    db_path, _ = libs
+    work = _seed_work()
+    observation_id = _make_observation(
+        db_path, genus="Agaricus", species="bisporus"
+    )
+    payload = _range_payload(work.id, 7, "Agaricus", "bisporus")
+    payload["observation_id"] = observation_id
+    dialog = _QuickAddStubDialog(payload)
+    window = _build_window(monkeypatch, qapp)
+    window.active_observation_id = observation_id
+    window._active_sporely_taxon_id = lambda: 7
+    window._observation_taxon_identity = lambda _obs_id: (
+        "Agaricus",
+        "bisporus",
+    )
+    refreshes = []
+    window._restore_reference_uses_for_observation = refreshes.append
+    window.update_graph_plots_only = lambda: refreshes.append("plot")
+
+    assert window._persist_normalized_reference_from_dialog(
+        dialog, payload, legacy_id=None
+    ) is True
+
+    uses = ObservationReferenceUseRepository.list_for_observation(observation_id)
+    assert len(uses) == 1
+    snapshot = json.loads(uses[0].snapshot_json)
+    assert snapshot["name_as_published"] == "Agaricus bisporus sensu Author"
+    assert snapshot["locator_text"] == "p. 42"
+    assert snapshot["raw_text"] == "5.5-8.5 x 3-5"
+    preference = MeasurementSetPreferenceRepository.get(
+        uses[0].reference_measurement_set_id
+    )
+    assert preference is not None
+    assert preference.recent_use_sequence == 1
+    assert refreshes == [observation_id, "plot"]
+
+
+def test_invalid_quick_add_leaves_no_legacy_or_normalized_records(
+    monkeypatch, qapp, libs
+):
+    from database.models import ReferenceDB
+
+    db_path, _ = libs
+    work = _seed_work()
+    observation_id = _make_observation(
+        db_path, genus="Agaricus", species="bisporus"
+    )
+    payload = _range_payload(work.id, 7, "Agaricus", "bisporus")
+    payload["observation_id"] = observation_id
+    monkeypatch.setattr(
+        main_window,
+        "ReferenceAddDialog",
+        lambda *args, **kwargs: _InvalidQuickAddStubDialog(payload),
+    )
+    monkeypatch.setattr(main_window.QMessageBox, "warning", lambda *args: None)
+    window = _build_window(monkeypatch, qapp)
+    window.active_observation_id = observation_id
+    window.ref_genus_input.setText("Agaricus")
+    window.ref_species_input.setText("bisporus")
+    window._active_sporely_taxon_id = lambda: 7
+
+    window._on_reference_panel_add_clicked()
+
+    assert ReferenceDB.get_reference(
+        "Agaricus", "bisporus", payload["source"], None, None
+    ) is None
+    assert ObservationReferenceUseRepository.list_for_observation(observation_id) == []
+
+
+def test_selected_work_legacy_only_submission_keeps_legacy_fallback(
+    monkeypatch, qapp, libs
+):
+    from database.models import ReferenceDB
+
+    db_path, _ = libs
+    work = _seed_work()
+    observation_id = _make_observation(
+        db_path, genus="Agaricus", species="bisporus"
+    )
+    payload = _range_payload(work.id, 7, "Agaricus", "bisporus")
+    payload["observation_id"] = observation_id
+    monkeypatch.setattr(
+        main_window,
+        "ReferenceAddDialog",
+        lambda *args, **kwargs: _QuickLegacyOnlyStubDialog(payload),
+    )
+    window = _build_window(monkeypatch, qapp)
+    window.active_observation_id = observation_id
+    window.ref_genus_input.setText("Agaricus")
+    window.ref_species_input.setText("bisporus")
+    window._active_sporely_taxon_id = lambda: 7
+
+    window._on_reference_panel_add_clicked()
+
+    assert ReferenceDB.get_reference(
+        "Agaricus", "bisporus", payload["source"], None, None
+    ) is not None
+    assert ObservationReferenceUseRepository.list_for_observation(observation_id) == []
 
 
 def test_taxon_drift_confirmation_declined_skips_normalized_write(

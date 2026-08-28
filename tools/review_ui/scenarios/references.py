@@ -313,6 +313,18 @@ def _new_publication(context: ReviewContext):
     return dialog
 
 
+def _library_manager(context: ReviewContext):
+    from ui.reference_library_manager_dialog import ReferenceLibraryManagerDialog
+
+    fixture = _fixture(context)
+    dialog = ReferenceLibraryManagerDialog(context.host, active_observation_id=42)
+    dialog.refresh_works(select_id=fixture["work"].id)
+    dialog._refresh_hierarchy_for_current_work(
+        select_set_id=fixture["sets"][0].id
+    )
+    return dialog
+
+
 def _no_taxon(context: ReviewContext):
     dialog = _make_add_dialog(context, taxon_id=None)
     _populate_range(dialog)
@@ -371,6 +383,14 @@ def register_reference_scenarios(registry: ScenarioRegistry) -> None:
             description="A populated bibliography editor exercises field grouping, citation preview, and scrolling.",
             viewport=(720, 640),
             build=_new_publication,
+        ),
+        ReviewScenario(
+            id="reference.library-manager",
+            group="reference-library",
+            title="Reference Library hierarchy",
+            description="A selected publication, taxon treatment, and measurement set exercise the three-pane CRUD manager.",
+            viewport=(1100, 700),
+            build=_library_manager,
         ),
         ReviewScenario(
             id="reference.no-taxon",

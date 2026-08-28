@@ -257,13 +257,19 @@ def test_reference_series_table_shows_row_controls_and_respects_row_height(
     qapp,
 ) -> None:
     window = _build_minimal_window(monkeypatch, qapp)
-    window.ref_series_table = QTableWidget(0, 4)
+    window.ref_series_table = QTableWidget(0, 5)
     window.ref_series_table.setObjectName("referenceSeriesTable")
     window.ref_series_table.setFocusPolicy(Qt.NoFocus)
     window.ref_series_table.setWordWrap(False)
     window.ref_series_table.setTextElideMode(Qt.ElideRight)
     window.ref_series_table.setHorizontalHeaderLabels(
-        [window.tr("Plot"), "", window.tr("Data set"), window.tr("Color")]
+        [
+            window.tr("Plot"),
+            "",
+            window.tr("Data set"),
+            window.tr("Color"),
+            window.tr("Library"),
+        ]
     )
     window.ref_series_table.verticalHeader().setVisible(False)
     window.ref_series_table.verticalHeader().setDefaultSectionSize(34)
@@ -276,6 +282,7 @@ def test_reference_series_table_shows_row_controls_and_respects_row_height(
     window.ref_series_table.horizontalHeader().setSectionResizeMode(1, QHeaderView.ResizeToContents)
     window.ref_series_table.horizontalHeader().setSectionResizeMode(2, QHeaderView.Stretch)
     window.ref_series_table.horizontalHeader().setSectionResizeMode(3, QHeaderView.ResizeToContents)
+    window.ref_series_table.horizontalHeader().setSectionResizeMode(4, QHeaderView.ResizeToContents)
     window.ref_series_table.setShowGrid(False)
     window.ref_series_table.setSizePolicy(QSizePolicy.Expanding, QSizePolicy.Expanding)
 
@@ -299,6 +306,78 @@ def test_reference_series_table_shows_row_controls_and_respects_row_height(
     assert isinstance(window.ref_series_table.cellWidget(0, 1), QToolButton)
     assert window.ref_series_table.item(0, 2).text() == "A. bisporus (Reference sheet)"
     assert window.ref_series_table.cellWidget(0, 3) is not None
+    assert window.ref_series_table.cellWidget(0, 4) is None
+
+
+def test_reference_series_table_offers_explicit_update_only_for_stale_attachment(
+    monkeypatch, qapp
+) -> None:
+    window = _build_minimal_window(monkeypatch, qapp)
+    window.active_observation_id = 42
+    window.ref_series_table = QTableWidget(0, 5)
+    window.reference_series = [
+        {
+            "key": "use-1",
+            "data": {
+                "source_kind": "reference",
+                "observation_reference_use_id": "use-1",
+                "reference_measurement_set_id": "set-1",
+                "short_label": "Author 2000",
+                "library_snapshot_state": "update_available",
+                "library_update_available": True,
+            },
+            "label": "Author 2000",
+            "enabled": True,
+        }
+    ]
+    calls: list[tuple[str, int]] = []
+    window._update_reference_use_from_library = (
+        lambda use_id, observation_id: calls.append((use_id, observation_id))
+    )
+
+    window._refresh_reference_series_table()
+
+    update_button = window.ref_series_table.cellWidget(0, 4)
+    assert isinstance(update_button, QToolButton)
+    assert update_button.text() == "Update"
+    update_button.click()
+    assert calls == [("use-1", 42)]
+
+
+def test_reference_series_table_offers_distinct_successor_review_action(
+    monkeypatch, qapp
+) -> None:
+    window = _build_minimal_window(monkeypatch, qapp)
+    window.active_observation_id = 42
+    window.ref_series_table = QTableWidget(0, 5)
+    window.reference_series = [
+        {
+            "key": "use-1",
+            "data": {
+                "source_kind": "reference",
+                "observation_reference_use_id": "use-1",
+                "reference_measurement_set_id": "set-old",
+                "short_label": "Author 2000",
+                "library_update_available": False,
+                "library_successor_available": True,
+                "library_successor_id": "set-new",
+            },
+            "label": "Author 2000",
+            "enabled": True,
+        }
+    ]
+    calls: list[tuple[str, int]] = []
+    window._review_reference_successor = (
+        lambda use_id, observation_id: calls.append((use_id, observation_id))
+    )
+
+    window._refresh_reference_series_table()
+
+    review_button = window.ref_series_table.cellWidget(0, 4)
+    assert isinstance(review_button, QToolButton)
+    assert review_button.text() == "Review successor…"
+    review_button.click()
+    assert calls == [("use-1", 42)]
 
 
 def test_reference_panel_taxon_lookup_suggestions_and_hidden_choice_selection(

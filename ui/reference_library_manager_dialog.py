@@ -79,6 +79,7 @@ from database.reference_library_schema import (
     OBSERVATION_REFERENCE_ROLES,
     REFERENCE_WORK_TYPES,
 )
+from references.measurement_parser import parse_measurement_string
 
 
 # --- Completeness hints ----------------------------------------------------
@@ -793,9 +794,11 @@ class _ReferenceWorkForm(QDialog):
         parent: QWidget | None,
         *,
         work: ReferenceWork | None = None,
+        persist_on_accept: bool = True,
     ) -> None:
         super().__init__(parent)
         self._work = work
+        self._persist_on_accept = bool(persist_on_accept)
         self.setWindowTitle(
             self.tr("Edit reference work") if work is not None
             else self.tr("New reference work")
@@ -1317,8 +1320,48 @@ class _ReferenceWorkForm(QDialog):
         except (TypeError, ValueError) as exc:
             self._show_error(str(exc))
             return
+        if self._work is None:
+            normalized_title = " ".join(data["title"].split()).casefold()
+            def _first_author(value: str) -> tuple[str, str]:
+                try:
+                    people = json.loads(value or "[]")
+                except (TypeError, ValueError, json.JSONDecodeError):
+                    return ("", "")
+                if not people or not isinstance(people[0], dict):
+                    return ("", "")
+                return (
+                    str(people[0].get("family") or "").strip().casefold(),
+                    str(people[0].get("given") or "").strip().casefold(),
+                )
+
+            proposed_author = _first_author(data["authors_json"])
+            probable_duplicates = [
+                candidate
+                for candidate in ReferenceWorkRepository.search(
+                    data["title"], limit=50
+                )
+                if " ".join(candidate.title.split()).casefold()
+                == normalized_title
+                and candidate.year == data["year"]
+                and _first_author(candidate.authors_json) == proposed_author
+            ]
+            if probable_duplicates:
+                answer = QMessageBox.question(
+                    self,
+                    self.tr("Possible duplicate reference"),
+                    self.tr(
+                        "A reference with the same title and year already "
+                        "exists. Create another record anyway?"
+                    ),
+                    QMessageBox.Yes | QMessageBox.No,
+                    QMessageBox.No,
+                )
+                if answer != QMessageBox.Yes:
+                    return
         try:
-            if self._work is None:
+            if self._work is None and not self._persist_on_accept:
+                self.result_work = ReferenceWork(id="", **data)
+            elif self._work is None:
                 new_work = ReferenceWork(id="", **data)
                 self.result_work = ReferenceWorkRepository.create(new_work)
             else:
@@ -1513,7 +1556,14 @@ class _MeasurementSetForm(QDialog):
         self.raw_text_input.setPlaceholderText(
             self.tr("e.g. (7.5–)8–10(–10.5) × 5–6(–6.5) µm")
         )
-        form.addRow(self.tr("Raw expression:"), self.raw_text_input)
+        raw_text_row = QHBoxLayout()
+        raw_text_row.addWidget(self.raw_text_input, 1)
+        self.parse_btn = QPushButton(self.tr("Parse expression"))
+        self.parse_btn.clicked.connect(self._on_parse_clicked)
+        raw_text_row.addWidget(self.parse_btn)
+        raw_text_holder = QWidget()
+        raw_text_holder.setLayout(raw_text_row)
+        form.addRow(self.tr("Raw expression:"), raw_text_holder)
 
         self.length_min_input = QLineEdit()
         self.length_core_min_input = QLineEdit()
@@ -1690,6 +1740,43 @@ class _MeasurementSetForm(QDialog):
             self._sample_row_label,
         ):
             widget.setVisible(not raw_points_visible)
+        self.parse_btn.setVisible(not raw_points_visible and kind != "parmasto")
+
+    def _on_parse_clicked(self) -> None:
+        result = parse_measurement_string(self.raw_text_input.text())
+        if not result.ok:
+            self._show_error(
+                self.tr(
+                    "The expression could not be parsed. Keep the printed text "
+                    "and enter the structured values manually."
+                )
+            )
+            return
+
+        def _set(widget: QLineEdit, value: float | int | None) -> None:
+            widget.setText(_format_optional(value))
+
+        _set(self.length_min_input, result.length.min)
+        _set(self.length_core_min_input, result.length.p05)
+        _set(self.length_core_max_input, result.length.p95)
+        _set(self.length_max_input, result.length.max)
+        _set(self.length_mean_input, result.length.p50)
+        _set(self.width_min_input, result.width.min)
+        _set(self.width_core_min_input, result.width.p05)
+        _set(self.width_core_max_input, result.width.p95)
+        _set(self.width_max_input, result.width.max)
+        _set(self.width_mean_input, result.width.p50)
+        # The normalized model has no Q core-bound columns. Preserve an
+        # explicitly supplied Q range in q_min/q_max, preferring source
+        # extremes when present and otherwise the printed core endpoints.
+        _set(self.q_min_input, result.q.min if result.q.min is not None else result.q.p05)
+        _set(self.q_max_input, result.q.max if result.q.max is not None else result.q.p95)
+        _set(
+            self.q_mean_input,
+            result.q_mean if result.q_mean is not None else result.q.p50,
+        )
+        _set(self.sample_size_input, result.n)
+        self.error_label.setVisible(False)
 
     def _collect(self) -> dict[str, Any]:
         kind = str(self.data_kind_combo.currentData() or "").strip().lower()
@@ -2006,6 +2093,11 @@ class ReferenceLibraryManagerDialog(QDialog):
         self.edit_selected_btn.setEnabled(False)
         layout.addWidget(self.edit_selected_btn)
 
+        self.delete_selected_btn = QPushButton(self.tr("Delete selected…"))
+        self.delete_selected_btn.clicked.connect(self._on_delete_selected_clicked)
+        self.delete_selected_btn.setEnabled(False)
+        layout.addWidget(self.delete_selected_btn)
+
         attach_row = QHBoxLayout()
         attach_row.addWidget(QLabel(self.tr("Role:")))
         self.role_combo = QComboBox()
@@ -2150,6 +2242,7 @@ class ReferenceLibraryManagerDialog(QDialog):
             self.edit_work_btn.setEnabled(False)
             self.new_treatment_btn.setEnabled(False)
             self.new_set_btn.setEnabled(False)
+            self.delete_selected_btn.setEnabled(False)
             self._clear_hierarchy()
             self._clear_detail()
             return
@@ -2163,6 +2256,7 @@ class ReferenceLibraryManagerDialog(QDialog):
         self.edit_work_btn.setEnabled(work is not None)
         self.new_treatment_btn.setEnabled(work is not None)
         self.new_set_btn.setEnabled(False)
+        self.delete_selected_btn.setEnabled(work is not None)
         self._refresh_hierarchy_for_current_work()
         if work is not None:
             self._render_work_detail(work)
@@ -2188,6 +2282,7 @@ class ReferenceLibraryManagerDialog(QDialog):
             self._current_treatment = treatment
             self.new_set_btn.setEnabled(treatment is not None)
             self.edit_selected_btn.setEnabled(treatment is not None)
+            self.delete_selected_btn.setEnabled(treatment is not None)
             if treatment is not None:
                 self._render_treatment_detail(treatment)
         elif kind == "measurement_set":
@@ -2204,6 +2299,7 @@ class ReferenceLibraryManagerDialog(QDialog):
                 self._render_measurement_set_detail(ms)
                 self.new_set_btn.setEnabled(self._current_treatment is not None)
                 self.edit_selected_btn.setEnabled(True)
+                self.delete_selected_btn.setEnabled(True)
         self._update_attach_button_visibility()
 
     # --- Detail rendering ---
@@ -2221,6 +2317,7 @@ class ReferenceLibraryManagerDialog(QDialog):
         self.detail_view.setPlainText("")
         self.completeness_hint_label.set_hints([])
         self.edit_selected_btn.setEnabled(False)
+        self.delete_selected_btn.setEnabled(False)
         self.plot_hint_label.setVisible(False)
 
     def _render_work_detail(self, work: ReferenceWork) -> None:
@@ -2265,6 +2362,7 @@ class ReferenceLibraryManagerDialog(QDialog):
         self.detail_view.setPlainText("\n".join(lines))
         self.plot_hint_label.setVisible(False)
         self.edit_selected_btn.setEnabled(False)
+        self.delete_selected_btn.setEnabled(True)
 
     def _render_treatment_detail(self, treatment: TaxonTreatment) -> None:
         parent_work = self._current_work
@@ -2437,6 +2535,61 @@ class ReferenceLibraryManagerDialog(QDialog):
                     select_treatment_id=form.result_treatment.id
                 )
             return
+
+    def _on_delete_selected_clicked(self) -> None:
+        if self._current_measurement_set is not None:
+            label = self.tr("measurement set")
+            delete = lambda: MeasurementSetRepository.delete(
+                self._current_measurement_set.id
+            )
+            refresh_kind = "hierarchy"
+        elif self._current_treatment is not None:
+            label = self.tr("taxon treatment")
+            delete = lambda: TaxonTreatmentRepository.delete(
+                self._current_treatment.id
+            )
+            refresh_kind = "hierarchy"
+        elif self._current_work is not None:
+            label = self.tr("reference work")
+            delete = lambda: ReferenceWorkRepository.delete(self._current_work.id)
+            refresh_kind = "works"
+        else:
+            return
+
+        answer = QMessageBox.question(
+            self,
+            self.tr("Delete library item"),
+            self.tr(
+                "Delete this {item}? This also deletes any unreferenced items "
+                "nested beneath it."
+            ).format(item=label),
+            QMessageBox.Yes | QMessageBox.No,
+            QMessageBox.No,
+        )
+        if answer != QMessageBox.Yes:
+            return
+        try:
+            delete()
+        except ReferenceLibraryError as exc:
+            QMessageBox.warning(
+                self,
+                self.tr("Reference Library"),
+                self.tr(
+                    "Could not delete this library item. It may be attached to "
+                    "an observation.\n\n{error}"
+                ).format(error=str(exc)),
+            )
+            return
+
+        self.library_changed.emit()
+        if refresh_kind == "works":
+            self.refresh_works()
+        else:
+            self._current_treatment = None
+            self._current_measurement_set = None
+            self._refresh_hierarchy_for_current_work()
+            if self._current_work is not None:
+                self._render_work_detail(self._current_work)
 
     def _role_display_label(self, value: str) -> str:
         return {

@@ -27,6 +27,7 @@ REFERENCE_IDS = {
     "reference.raw-points",
     "reference.existing-measurement-set",
     "reference.new-publication",
+    "reference.library-manager",
     "reference.no-taxon",
     "reference.parmasto",
     "reference.attach-taxon-filter",

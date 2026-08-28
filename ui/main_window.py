@@ -144,8 +144,11 @@ from database.models import ObservationDB, ImageDB, MeasurementDB, SettingsDB, R
 from database.models import SpeciesDataAvailability
 from database.reference_library import (
     MeasurementSet,
+    MeasurementSetPreferenceRepository,
     MeasurementSetRepository,
     ObservationReferenceUseRepository,
+    QuickAddReferenceRequest,
+    QuickAddReferenceService,
     ReferenceLibraryError,
     ReferenceWork,
     ReferenceWorkRepository,
@@ -531,6 +534,35 @@ def reference_plot_palette(_dark: bool | None = None) -> list[str]:
         if name == "medium":
             return list(colors)
     return list(_REFERENCE_PLOT_PALETTE)
+
+
+def _annotate_reference_snapshot_status(entry: dict, use) -> None:
+    """Add current-library availability metadata without changing snapshot data."""
+    data = entry.get("data") if isinstance(entry, dict) else None
+    if not isinstance(data, dict):
+        return
+    try:
+        status = ObservationReferenceUseRepository.snapshot_status(str(use.id))
+        state = status.state
+        current_revision = status.current_reference_revision
+    except ReferenceLibraryError:
+        state = "unavailable"
+        current_revision = None
+    data["library_snapshot_state"] = state
+    data["library_update_available"] = state == "update_available"
+    if current_revision is not None:
+        data["library_current_reference_revision"] = current_revision
+    try:
+        successor = ObservationReferenceUseRepository.successor_status(str(use.id))
+        successor_state = successor.state
+        successor_id = successor.successor_id
+    except ReferenceLibraryError:
+        successor_state = "unavailable"
+        successor_id = None
+    data["library_successor_state"] = successor_state
+    data["library_successor_available"] = successor_state == "successor_available"
+    if successor_id is not None:
+        data["library_successor_id"] = successor_id
 
 
 def measure_overlay_palette_groups(_dark: bool | None = None) -> list[tuple[str, list[str]]]:
@@ -5379,6 +5411,8 @@ class ReferenceAddDialog(GeometryMixin, QDialog):
         # picker/data controls; MainWindow reads these after accept via
         # ``result_data()`` and the accessor methods.
         self._selected_work_id: str | None = None
+        self._pending_reference_work: ReferenceWork | None = None
+        self._pending_reference_work_label: str | None = None
         self._selected_measurement_set_id: str | None = None
         # Multi-treatment ambiguity: when >1 TaxonTreatment on the chosen
         # work matches sporely_taxon_id we surface a UI error and skip
@@ -5567,6 +5601,23 @@ class ReferenceAddDialog(GeometryMixin, QDialog):
         pub_row.addWidget(self.new_publication_btn)
         pub_layout.addLayout(pub_row)
 
+        treatment_form = QFormLayout()
+        self.name_as_published_input = QLineEdit(
+            " ".join(part for part in (genus, species) if part).strip()
+        )
+        self.name_as_published_input.setPlaceholderText(
+            self.tr("Name exactly as published")
+        )
+        treatment_form.addRow(
+            self.tr("Name as published:"), self.name_as_published_input
+        )
+        self.locator_input = QLineEdit()
+        self.locator_input.setPlaceholderText(
+            self.tr("Page, figure, table, plate, or section")
+        )
+        treatment_form.addRow(self.tr("Locator:"), self.locator_input)
+        pub_layout.addLayout(treatment_form)
+
         # --- No-taxon info label ---------------------------------------
         # When the active observation has no sporely_taxon_id the dialog
         # still writes the legacy row but cannot create a normalized
@@ -5576,9 +5627,8 @@ class ReferenceAddDialog(GeometryMixin, QDialog):
         # context (existing edit-mode callers), the label stays hidden.
         self._no_taxon_notice_label = QLabel(
             self.tr(
-                "No taxon is set on this observation, so this reference will "
-                "be saved to the legacy list only. Set a taxon on the "
-                "observation to create a normalized library entry."
+                "No taxon identifier is set. The normalized treatment will "
+                "use the name as published without a taxon link."
             )
         )
         self._no_taxon_notice_label.setWordWrap(True)
@@ -5893,7 +5943,7 @@ class ReferenceAddDialog(GeometryMixin, QDialog):
             self._render_measurement_preview(result)
             self._set_hint(self.tr("Parsing failed — manual entry preserved."), tone="warning")
             return
-        self._raw_measurement_text = raw.strip()
+        self._raw_measurement_text = raw
         self._set_parsed_result(result)
         self._set_hint(self.tr("Parsed — review and edit before saving."), tone="info")
 
@@ -6106,6 +6156,7 @@ class ReferenceAddDialog(GeometryMixin, QDialog):
             self._sporely_taxon_id
             and self._observation_id
             and not self._selected_work_id
+            and self._pending_reference_work is None
             and self._new_data_is_normalizable()
         ):
             answer = QMessageBox.question(
@@ -6155,6 +6206,16 @@ class ReferenceAddDialog(GeometryMixin, QDialog):
 
     def selected_reference_work_id(self) -> str | None:
         return self._selected_work_id
+
+    def pending_reference_work(self) -> ReferenceWork | None:
+        return self._pending_reference_work
+
+    def quick_add_treatment_payload(self) -> dict[str, str]:
+        """Return the explicitly entered treatment identity fields."""
+        return {
+            "name_as_published": self.name_as_published_input.text().strip(),
+            "locator_text": self.locator_input.text().strip(),
+        }
 
     def selected_measurement_set_id(self) -> str | None:
         return self._selected_measurement_set_id
@@ -6249,6 +6310,12 @@ class ReferenceAddDialog(GeometryMixin, QDialog):
         # drop the binding. currentIndex/currentData in an editable
         # QComboBox otherwise persist through arbitrary text edits.
         current = (text or "").strip()
+        if (
+            self._pending_reference_work is not None
+            and current != (self._pending_reference_work_label or "")
+        ):
+            self._pending_reference_work = None
+            self._pending_reference_work_label = None
         if self._selected_work_id is not None:
             for row in range(self.publication_combo.count()):
                 if str(self.publication_combo.itemData(row) or "") == self._selected_work_id:
@@ -6396,6 +6463,9 @@ class ReferenceAddDialog(GeometryMixin, QDialog):
     def _on_publication_selected(self, _index: int) -> None:
         data = self.publication_combo.currentData()
         self._selected_work_id = str(data) if data else None
+        if self._selected_work_id:
+            self._pending_reference_work = None
+            self._pending_reference_work_label = None
         # Recompute existing-set candidates whenever the work changes so
         # the "Use existing" radio + table reflect the new context.
         self._refresh_existing_sets_cache()
@@ -6410,11 +6480,23 @@ class ReferenceAddDialog(GeometryMixin, QDialog):
                 self.tr("Reference library editor is unavailable: {error}").format(error=str(exc)),
             )
             return
-        editor = ReferenceWorkEditor(self)
+        editor = ReferenceWorkEditor(self, persist_on_accept=False)
         try:
             if editor.exec() == QDialog.Accepted and editor.result_work is not None:
-                new_id = editor.result_work.id
-                self._populate_publication_combo(select_id=new_id)
+                self._pending_reference_work = editor.result_work
+                self._selected_work_id = None
+                label = (
+                    editor.result_work.short_label
+                    or editor.result_work.title
+                    or self.tr("Untitled reference")
+                )
+                if editor.result_work.year:
+                    label = f"{label} ({editor.result_work.year})"
+                self._pending_reference_work_label = label
+                self.publication_combo.blockSignals(True)
+                self.publication_combo.setEditText(label)
+                self.publication_combo.blockSignals(False)
+                self._refresh_existing_sets_cache()
         finally:
             editor.deleteLater()
 
@@ -6605,8 +6687,6 @@ class ReferenceAddDialog(GeometryMixin, QDialog):
         ``core_max``, Mean / Avg → ``*_mean``. Raw points win over range
         cells when the Spore-data tab has ≥1 row.
         """
-        if not self._sporely_taxon_id:
-            return None
         # Parmasto tab index 2 - even if it has values, we do not create
         # a normalized set from Parmasto-only submissions.
         raw_points_json = self._build_raw_points_json()
@@ -6630,9 +6710,9 @@ class ReferenceAddDialog(GeometryMixin, QDialog):
         # Prefer the last successfully parsed buffer, but fall back to the
         # current paste-input text so a manually corrected or unparsed
         # expression still round-trips into raw_text.
-        raw_text_input = (self._raw_measurement_text or "").strip()
+        raw_text_input = self._raw_measurement_text or ""
         if not raw_text_input and hasattr(self, "measurement_paste_input"):
-            raw_text_input = (self.measurement_paste_input.text() or "").strip()
+            raw_text_input = self.measurement_paste_input.text() or ""
         raw_text_input = raw_text_input or None
         # Carry legacy method metadata forward when we have it (from a
         # prefilled edit-mode dialog). The dialog has no dedicated input
@@ -9992,11 +10072,11 @@ class MainWindow(GeometryMixin, QMainWindow):
             self.tr("Plot this data"),
             allow_when_disabled=True,
         )
-        self.ref_add_btn = QPushButton(self.tr("Add"))
+        self.ref_add_btn = QPushButton(self.tr("Quick add…"))
         self.ref_add_btn.clicked.connect(self._on_reference_panel_add_clicked)
         self._register_gallery_hint_widget(
             self.ref_add_btn,
-            self.tr("Add reference data for the selected species"),
+            self.tr("Create and attach reference data for the active observation"),
             allow_when_disabled=True,
         )
         self.ref_edit_btn = QPushButton(self.tr("Edit"))
@@ -10039,13 +10119,19 @@ class MainWindow(GeometryMixin, QMainWindow):
         layout.addWidget(shape_row_widget)
         _add_section_divider()
 
-        self.ref_series_table = QTableWidget(0, 4)
+        self.ref_series_table = QTableWidget(0, 5)
         self.ref_series_table.setObjectName("referenceSeriesTable")
         self.ref_series_table.setFocusPolicy(Qt.NoFocus)
         self.ref_series_table.setWordWrap(False)
         self.ref_series_table.setTextElideMode(Qt.ElideRight)
         self.ref_series_table.setHorizontalHeaderLabels(
-            [self.tr("Plot"), "", self.tr("Data set"), self.tr("Color")]
+            [
+                self.tr("Plot"),
+                "",
+                self.tr("Data set"),
+                self.tr("Color"),
+                self.tr("Library"),
+            ]
         )
         self.ref_series_table.verticalHeader().setVisible(False)
         self.ref_series_table.verticalHeader().setDefaultSectionSize(34)
@@ -10058,6 +10144,7 @@ class MainWindow(GeometryMixin, QMainWindow):
         self.ref_series_table.horizontalHeader().setSectionResizeMode(1, QHeaderView.ResizeToContents)
         self.ref_series_table.horizontalHeader().setSectionResizeMode(2, QHeaderView.Stretch)
         self.ref_series_table.horizontalHeader().setSectionResizeMode(3, QHeaderView.ResizeToContents)
+        self.ref_series_table.horizontalHeader().setSectionResizeMode(4, QHeaderView.ResizeToContents)
         self.ref_series_table.setShowGrid(False)
         self.ref_series_table.setMinimumHeight(240)
         self.ref_series_table.setSizePolicy(QSizePolicy.Expanding, QSizePolicy.Expanding)
@@ -10753,14 +10840,59 @@ class MainWindow(GeometryMixin, QMainWindow):
             self._register_gallery_hint_widget(color_btn, self.tr("Change the plot color"))
             self.ref_series_table.setCellWidget(row, 3, color_btn)
 
+            library_actions: list[QToolButton] = []
+            if bool(data.get("library_update_available")):
+                update_btn = QToolButton()
+                update_btn.setText(self.tr("Update"))
+                update_btn.setToolButtonStyle(Qt.ToolButtonTextOnly)
+                update_btn.setAutoRaise(True)
+                use_id = str(data.get("observation_reference_use_id") or "")
+                observation_id = int(getattr(self, "active_observation_id", 0) or 0)
+                update_btn.clicked.connect(
+                    lambda _checked=False, uid=use_id, oid=observation_id:
+                    self._update_reference_use_from_library(uid, oid)
+                )
+                self._register_gallery_hint_widget(
+                    update_btn,
+                    self.tr("Update from library"),
+                )
+                library_actions.append(update_btn)
+            if bool(data.get("library_successor_available")):
+                successor_btn = QToolButton()
+                successor_btn.setText(self.tr("Review successor…"))
+                successor_btn.setToolButtonStyle(Qt.ToolButtonTextOnly)
+                successor_btn.setAutoRaise(True)
+                use_id = str(data.get("observation_reference_use_id") or "")
+                observation_id = int(getattr(self, "active_observation_id", 0) or 0)
+                successor_btn.clicked.connect(
+                    lambda _checked=False, uid=use_id, oid=observation_id:
+                    self._review_reference_successor(uid, oid)
+                )
+                self._register_gallery_hint_widget(
+                    successor_btn,
+                    self.tr("Review and adopt the latest explicit successor"),
+                )
+                library_actions.append(successor_btn)
+            if len(library_actions) == 1:
+                self.ref_series_table.setCellWidget(row, 4, library_actions[0])
+            elif library_actions:
+                action_holder = QWidget()
+                action_layout = QHBoxLayout(action_holder)
+                action_layout.setContentsMargins(0, 0, 0, 0)
+                action_layout.setSpacing(4)
+                for action_button in library_actions:
+                    action_layout.addWidget(action_button)
+                self.ref_series_table.setCellWidget(row, 4, action_holder)
+
             self.ref_series_table.setRowHeight(row, row_height)
             self._ref_series_row_entries.append(entry)
         self.ref_series_table.resizeColumnToContents(0)
         self.ref_series_table.resizeColumnToContents(1)
         self.ref_series_table.resizeColumnToContents(3)
+        self.ref_series_table.resizeColumnToContents(4)
 
     def _on_reference_series_row_clicked(self, row: int, col: int):
-        if col in (0, 1, 3):
+        if col in (0, 1, 3, 4):
             return
         entries = getattr(self, "_ref_series_row_entries", []) or []
         if row < 0 or row >= len(entries):
@@ -10972,7 +11104,207 @@ class MainWindow(GeometryMixin, QMainWindow):
             lines.append(
                 self.tr("Revision: {revision}").format(revision=revision_int)
             )
+        snapshot_state = str(data.get("library_snapshot_state") or "")
+        if snapshot_state == "update_available":
+            lines.append(self.tr("Library update available"))
+        elif snapshot_state == "source_missing":
+            lines.append(
+                self.tr(
+                    "Library source unavailable; the saved historical snapshot "
+                    "is still in use."
+                )
+            )
+        successor_state = str(data.get("library_successor_state") or "")
+        if successor_state == "successor_available":
+            lines.append(self.tr("A newer successor measurement set is available."))
+        elif successor_state == "fork":
+            lines.append(
+                self.tr(
+                    "Multiple successor measurement sets exist; none can be "
+                    "selected automatically."
+                )
+            )
+        elif successor_state == "cycle":
+            lines.append(
+                self.tr(
+                    "The successor chain is cyclic; the historical attachment "
+                    "is unchanged."
+                )
+            )
+        elif successor_state == "broken":
+            lines.append(
+                self.tr(
+                    "The successor source is incomplete; the historical "
+                    "attachment is unchanged."
+                )
+            )
+        elif successor_state == "unsupported":
+            lines.append(
+                self.tr(
+                    "The successor cannot be plotted safely; the historical "
+                    "attachment is unchanged."
+                )
+            )
         return "\n".join(lines)
+
+    def _format_reference_successor_review(self, use, status) -> str:
+        try:
+            current = json.loads(use.snapshot_json)
+        except (TypeError, ValueError, json.JSONDecodeError):
+            current = {}
+        try:
+            successor = json.loads(status.successor_snapshot_json or "")
+        except (TypeError, ValueError, json.JSONDecodeError):
+            successor = {}
+
+        def _summary(label: str, snapshot: dict) -> str:
+            source = str(snapshot.get("short_label") or "").strip()
+            citation = str(snapshot.get("full_citation") or "").strip()
+            taxon = str(snapshot.get("name_as_published") or "").strip()
+            locator = str(snapshot.get("locator_text") or "").strip()
+            raw_text = str(snapshot.get("raw_text") or "").strip()
+            taxon_locator = " — ".join(part for part in (taxon, locator) if part)
+            return "\n".join(
+                part
+                for part in (label, source, citation, taxon_locator, raw_text)
+                if part
+            )
+
+        return (
+            _summary(self.tr("Currently attached:"), current)
+            + "\n\n"
+            + _summary(self.tr("Proposed successor:"), successor)
+        )
+
+    def _confirm_reference_successor_adoption(self, use, status) -> bool:
+
+        box = QMessageBox(self)
+        box.setIcon(QMessageBox.Question)
+        box.setWindowTitle(self.tr("Review successor measurement set"))
+        box.setText(
+            self.tr(
+                "Adopting the successor replaces this observation's frozen "
+                "reference snapshot."
+            )
+        )
+        box.setInformativeText(self._format_reference_successor_review(use, status))
+        adopt_button = box.addButton(
+            self.tr("Adopt successor"), QMessageBox.AcceptRole
+        )
+        cancel_button = box.addButton(QMessageBox.Cancel)
+        box.setDefaultButton(cancel_button)
+        box.setEscapeButton(cancel_button)
+        box.exec()
+        return box.clickedButton() is adopt_button
+
+    def _review_reference_successor(
+        self, use_id: str, observation_id: int
+    ) -> None:
+        active_observation_id = int(
+            getattr(self, "active_observation_id", 0) or 0
+        )
+        if not use_id or not observation_id or active_observation_id != observation_id:
+            QMessageBox.warning(
+                self,
+                self.tr("Adopt successor"),
+                self.tr(
+                    "The active observation changed. Reopen the reference and "
+                    "try again."
+                ),
+            )
+            return
+        try:
+            use = ObservationReferenceUseRepository.get(use_id)
+            status = ObservationReferenceUseRepository.successor_status(use_id)
+        except ReferenceLibraryError as exc:
+            QMessageBox.warning(
+                self,
+                self.tr("Adopt successor"),
+                self.tr("Could not review the successor: {error}").format(
+                    error=str(exc)
+                ),
+            )
+            return
+        if use is None or status.state != "successor_available":
+            QMessageBox.warning(
+                self,
+                self.tr("Adopt successor"),
+                self.tr(
+                    "This successor is no longer available. The historical "
+                    "attachment was not changed."
+                ),
+            )
+            return
+        if not self._confirm_reference_successor_adoption(use, status):
+            return
+        if int(getattr(self, "active_observation_id", 0) or 0) != observation_id:
+            return
+        try:
+            ObservationReferenceUseRepository.adopt_successor(
+                use_id,
+                expected_successor_id=status.successor_id,
+                expected_successor_snapshot_json=status.successor_snapshot_json,
+            )
+        except ReferenceLibraryError as exc:
+            QMessageBox.warning(
+                self,
+                self.tr("Adopt successor"),
+                self.tr("Could not adopt the successor: {error}").format(
+                    error=str(exc)
+                ),
+            )
+            return
+        self._restore_reference_uses_for_observation(observation_id)
+        self.update_graph_plots_only()
+        try:
+            MeasurementSetPreferenceRepository.mark_used(
+                str(status.successor_id)
+            )
+        except ReferenceLibraryError:
+            pass
+        if hasattr(self, "measure_status_label"):
+            self.measure_status_label.setText(
+                self.tr("Successor measurement set adopted.")
+            )
+
+    def _update_reference_use_from_library(
+        self, use_id: str, observation_id: int
+    ) -> None:
+        """Explicitly refresh one attachment from its current library source."""
+        active_observation_id = int(
+            getattr(self, "active_observation_id", 0) or 0
+        )
+        if not use_id or not observation_id or active_observation_id != observation_id:
+            QMessageBox.warning(
+                self,
+                self.tr("Update library reference"),
+                self.tr(
+                    "The active observation changed. Reopen the reference and "
+                    "try again."
+                ),
+            )
+            return
+        try:
+            _use, changed = ObservationReferenceUseRepository.refresh_snapshot(
+                use_id
+            )
+        except ReferenceLibraryError as exc:
+            QMessageBox.warning(
+                self,
+                self.tr("Update library reference"),
+                self.tr("Could not update from the library: {error}").format(
+                    error=str(exc)
+                ),
+            )
+            return
+        if int(getattr(self, "active_observation_id", 0) or 0) != observation_id:
+            return
+        self._restore_reference_uses_for_observation(observation_id)
+        self.update_graph_plots_only()
+        if changed and hasattr(self, "measure_status_label"):
+            self.measure_status_label.setText(
+                self.tr("Reference snapshot updated from the library.")
+            )
 
     def _build_malformed_reference_series_entry(self, use) -> dict | None:
         """Wrap a persisted-but-unplottable ``ObservationReferenceUse`` as a
@@ -11057,12 +11389,14 @@ class MainWindow(GeometryMixin, QMainWindow):
             if entry is None:
                 warning_entry = self._build_malformed_reference_series_entry(use)
                 if warning_entry is not None:
+                    _annotate_reference_snapshot_status(warning_entry, use)
                     self._apply_normalized_reference_override(
                         warning_entry, overrides_map
                     )
                     translated.append(warning_entry)
                     malformed += 1
                 continue
+            _annotate_reference_snapshot_status(entry, use)
             self._apply_normalized_reference_override(entry, overrides_map)
             translated.append(entry)
         # Rebuild reference_series: keep non-normalized entries, drop stale
@@ -11283,6 +11617,11 @@ class MainWindow(GeometryMixin, QMainWindow):
             )
             return
         self._add_reference_series_entry(entry)
+        if created:
+            try:
+                MeasurementSetPreferenceRepository.mark_used(measurement_set_id)
+            except ReferenceLibraryError:
+                pass
 
     def _clean_ref_species_text(self, text: str | None) -> str:
         if not text:
@@ -12482,9 +12821,8 @@ class MainWindow(GeometryMixin, QMainWindow):
                 self.tr("Reference library"),
                 self.tr(
                     "The active observation changed while this dialog was "
-                    "open. The legacy reference was still saved, but the "
-                    "normalized library entry was not created — reopen the "
-                    "observation and try again."
+                    "open. No normalized library entry was created. Reopen "
+                    "the observation and try again."
                 ),
             )
             return False
@@ -12506,9 +12844,8 @@ class MainWindow(GeometryMixin, QMainWindow):
                 self.tr("Reference library"),
                 self.tr(
                     "The observation's taxon changed while this dialog "
-                    "was open. The legacy reference was still saved, "
-                    "but no normalized library entry was created — "
-                    "reopen the observation and try again."
+                    "was open. No normalized library entry was created. "
+                    "Reopen the observation and try again."
                 ),
             )
             return False
@@ -12525,7 +12862,11 @@ class MainWindow(GeometryMixin, QMainWindow):
             )
         work_id = payload.get("reference_work_id")
         taxon_id = payload.get("sporely_taxon_id")
-        if not work_id or not taxon_id:
+        pending_work_getter = getattr(dialog, "pending_reference_work", None)
+        pending_work = (
+            pending_work_getter() if callable(pending_work_getter) else None
+        )
+        if not work_id and pending_work is None:
             return False
         try:
             payload_ms = dialog.normalized_measurement_set_payload(
@@ -12573,8 +12914,7 @@ class MainWindow(GeometryMixin, QMainWindow):
                         "observation's taxon record ({observation}). If you want to "
                         "record the published name as a synonym or historical name, "
                         "click Yes. If this is an accidental edit, click No — the "
-                        "legacy reference has already been saved; no normalized "
-                        "library entry will be created."
+                        "normalized library will remain unchanged."
                     ).format(
                         panel=(f"{panel_genus} {panel_species}").strip() or "—",
                         observation=(f"{obs_genus} {obs_species}").strip() or "—",
@@ -12584,6 +12924,59 @@ class MainWindow(GeometryMixin, QMainWindow):
                 )
                 if proceed != QMessageBox.Yes:
                     return False
+
+        treatment_payload_getter = getattr(
+            dialog, "quick_add_treatment_payload", None
+        )
+        if callable(treatment_payload_getter):
+            work = pending_work
+            if work is None and work_id:
+                work = ReferenceWorkRepository.get(str(work_id))
+            if work is None:
+                return False
+            treatment_data = treatment_payload_getter()
+            try:
+                quick_add_result = QuickAddReferenceService.create_and_attach(
+                    QuickAddReferenceRequest(
+                        observation_id=observation_id,
+                        existing_work_id=str(work_id) if work_id else None,
+                        work=work,
+                        treatment=TaxonTreatment(
+                            id="",
+                            reference_work_id=str(work_id or ""),
+                            taxon_id=(str(int(taxon_id)) if taxon_id else None),
+                            name_as_published=str(
+                                treatment_data.get("name_as_published") or ""
+                            ).strip(),
+                            locator_text=str(
+                                treatment_data.get("locator_text") or ""
+                            ).strip()
+                            or None,
+                        ),
+                        measurement_set=payload_ms,
+                        role="compared",
+                    )
+                )
+            except Exception as exc:
+                QMessageBox.warning(
+                    self,
+                    self.tr("Reference library"),
+                    self.tr("Could not add the library reference: {error}").format(
+                        error=str(exc)
+                    ),
+                )
+                return False
+            self._restore_reference_uses_for_observation(observation_id)
+            self.update_graph_plots_only()
+            try:
+                MeasurementSetPreferenceRepository.mark_used(
+                    quick_add_result.measurement_set.id
+                )
+            except ReferenceLibraryError:
+                pass
+            return True
+        if not taxon_id:
+            return False
         taxon_key = str(int(taxon_id))
         try:
             treatments = TaxonTreatmentRepository.list_for_work(str(work_id))
@@ -12788,6 +13181,52 @@ class MainWindow(GeometryMixin, QMainWindow):
             return
         data = dialog.result_data()
         if not isinstance(data, dict) or not data:
+            return
+        # The normalized quick-add path is deliberately not legacy-first.
+        # Validation and canonical attachment must complete before any UI
+        # state is accepted, otherwise a failed quick add would strand a
+        # legacy row that is neither part of the library hierarchy nor the
+        # requested attachment. Explicit legacy-only submissions continue
+        # through the compatibility path below.
+        quick_add_candidate = None
+        quick_add_dialog = callable(
+            getattr(dialog, "quick_add_treatment_payload", None)
+        )
+        if quick_add_dialog:
+            try:
+                quick_add_candidate = dialog.normalized_measurement_set_payload(
+                    legacy_reference_value_id=None
+                )
+            except Exception:
+                # Treat a builder error as an intended normalized attempt so
+                # it cannot fall through and persist a partial legacy row.
+                quick_add_candidate = object()
+        quick_add_intended = (
+            data.get("source_kind") == "reference"
+            and quick_add_dialog
+            and quick_add_candidate is not None
+            and bool(
+                data.get("reference_work_id")
+                or (
+                    callable(getattr(dialog, "pending_reference_work", None))
+                    and dialog.pending_reference_work() is not None
+                )
+            )
+        )
+        if quick_add_intended:
+            try:
+                if self._persist_normalized_reference_from_dialog(
+                    dialog, data, legacy_id=None
+                ):
+                    return
+            except Exception as exc:
+                QMessageBox.warning(
+                    self,
+                    self.tr("Reference library"),
+                    self.tr("Could not add the library reference: {error}").format(
+                        error=str(exc)
+                    ),
+                )
             return
         legacy_id: int | None = None
         if data.get("source_kind") == "reference":

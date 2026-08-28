@@ -15,6 +15,7 @@ import pytest
 from database import schema as _schema
 from database.reference_library import (
     MeasurementSet,
+    MeasurementSetPreferenceRepository,
     MeasurementSetRepository,
     ObservationReferenceUse,
     ObservationReferenceUseRepository,
@@ -1339,7 +1340,285 @@ def test_restore_reference_uses_preserves_malformed_as_warning_row(
     entry = stub.reference_series[0]
     assert entry["data"]["malformed"] is True
     assert entry["data"]["observation_reference_use_id"] == bad_use.id
+    assert entry["data"]["library_snapshot_state"] == "source_missing"
+    assert entry["data"]["library_update_available"] is False
     assert entry["enabled"] is False
+
+
+def test_restore_marks_semantically_changed_attachment_as_update_available(libs):
+    """A work-only edit must decorate the frozen row without replacing its
+    plotted snapshot or relying on the measurement-set revision."""
+    from types import MethodType, SimpleNamespace
+    from ui.main_window import MainWindow
+
+    db_path, _ = libs
+    obs_id = _make_observation(db_path)
+    work, _, ms = _seed_work_treatment_set(libs)
+    use = ObservationReferenceUseRepository.attach(obs_id, ms.id)
+    frozen = use.snapshot_json
+    ReferenceWorkRepository.update(work.id, {"short_label": "Corrected 1990"})
+
+    stub = SimpleNamespace(
+        active_observation_id=obs_id,
+        reference_series=[],
+        _normalized_reference_display_overrides={},
+    )
+    stub.tr = MethodType(lambda self, text, *args, **kwargs: text, stub)
+    stub._normalize_reference_series_entry = lambda entry: entry
+    stub._refresh_reference_series_table = lambda *args, **kwargs: None
+    stub._apply_normalized_reference_override = MethodType(
+        MainWindow._apply_normalized_reference_override, stub
+    )
+    stub._clear_normalized_reference_entries = MethodType(
+        MainWindow._clear_normalized_reference_entries, stub
+    )
+    stub._build_malformed_reference_series_entry = MethodType(
+        MainWindow._build_malformed_reference_series_entry, stub
+    )
+
+    MethodType(MainWindow._restore_reference_uses_for_observation, stub)(obs_id)
+
+    data = stub.reference_series[0]["data"]
+    assert data["library_snapshot_state"] == "update_available"
+    assert data["library_update_available"] is True
+    assert data["short_label"] != "Corrected 1990"
+    assert ObservationReferenceUseRepository.get(use.id).snapshot_json == frozen
+
+
+def test_explicit_ui_update_refreshes_row_and_preserves_display_override(libs):
+    """The explicit UI handler must update the same use, restore its row from
+    persistence, and retain per-use enabled/color preferences."""
+    from types import MethodType, SimpleNamespace
+    from ui.main_window import MainWindow
+
+    db_path, _ = libs
+    obs_id = _make_observation(db_path)
+    work, _, ms = _seed_work_treatment_set(libs)
+    use = ObservationReferenceUseRepository.attach(
+        obs_id, ms.id, role="contradicts", note="keep me"
+    )
+    ReferenceWorkRepository.update(work.id, {"short_label": "Corrected 1990"})
+
+    plot_refreshes: list[bool] = []
+    stub = SimpleNamespace(
+        active_observation_id=obs_id,
+        reference_series=[],
+        _normalized_reference_display_overrides={
+            use.id: {"enabled": False, "plot_color": "#123456"}
+        },
+    )
+    stub.tr = MethodType(lambda self, text, *args, **kwargs: text, stub)
+    stub._normalize_reference_series_entry = lambda entry: entry
+    stub._refresh_reference_series_table = lambda *args, **kwargs: None
+    stub._apply_normalized_reference_override = MethodType(
+        MainWindow._apply_normalized_reference_override, stub
+    )
+    stub._clear_normalized_reference_entries = MethodType(
+        MainWindow._clear_normalized_reference_entries, stub
+    )
+    stub._build_malformed_reference_series_entry = MethodType(
+        MainWindow._build_malformed_reference_series_entry, stub
+    )
+    stub._restore_reference_uses_for_observation = MethodType(
+        MainWindow._restore_reference_uses_for_observation, stub
+    )
+    stub.update_graph_plots_only = lambda: plot_refreshes.append(True)
+
+    MethodType(MainWindow._update_reference_use_from_library, stub)(
+        use.id, obs_id
+    )
+
+    persisted = ObservationReferenceUseRepository.get(use.id)
+    assert persisted is not None
+    assert persisted.role == "contradicts"
+    assert persisted.note == "keep me"
+    assert json.loads(persisted.snapshot_json)["short_label"] == "Corrected 1990"
+    assert stub.reference_series[0]["enabled"] is False
+    assert stub.reference_series[0]["data"]["plot_color"] == "#123456"
+    assert stub.reference_series[0]["data"]["library_update_available"] is False
+    assert plot_refreshes == [True]
+
+
+def test_explicit_ui_update_refuses_observation_drift(monkeypatch):
+    """A button captured for one observation must never update after the
+    user has switched to another observation."""
+    from types import MethodType, SimpleNamespace
+    from ui.main_window import MainWindow
+
+    refresh_calls: list[str] = []
+    warnings: list[str] = []
+    monkeypatch.setattr(
+        ObservationReferenceUseRepository,
+        "refresh_snapshot",
+        lambda use_id: refresh_calls.append(use_id),
+    )
+    monkeypatch.setattr(
+        "ui.main_window.QMessageBox.warning",
+        lambda _parent, _title, message: warnings.append(message),
+    )
+    stub = SimpleNamespace(active_observation_id=12)
+    stub.tr = MethodType(lambda self, text, *args, **kwargs: text, stub)
+
+    MethodType(MainWindow._update_reference_use_from_library, stub)("use-1", 11)
+
+    assert refresh_calls == []
+    assert warnings
+
+
+def test_restore_distinguishes_successor_from_same_set_update(libs):
+    """A successor UUID gets its own review state; it must not masquerade as
+    an in-place snapshot update or alter the frozen plotted row."""
+    from types import MethodType, SimpleNamespace
+    from ui.main_window import MainWindow
+
+    db_path, _ = libs
+    obs_id = _make_observation(db_path)
+    _, _, original = _seed_work_treatment_set(libs)
+    use = ObservationReferenceUseRepository.attach(obs_id, original.id)
+    successor = MeasurementSetRepository.create_revision(
+        original.id, {"raw_text": "9–11 × 5–6 µm"}
+    )
+    stub = SimpleNamespace(
+        active_observation_id=obs_id,
+        reference_series=[],
+        _normalized_reference_display_overrides={},
+    )
+    stub.tr = MethodType(lambda self, text, *args, **kwargs: text, stub)
+    stub._normalize_reference_series_entry = lambda entry: entry
+    stub._refresh_reference_series_table = lambda *args, **kwargs: None
+    stub._apply_normalized_reference_override = MethodType(
+        MainWindow._apply_normalized_reference_override, stub
+    )
+    stub._clear_normalized_reference_entries = MethodType(
+        MainWindow._clear_normalized_reference_entries, stub
+    )
+    stub._build_malformed_reference_series_entry = MethodType(
+        MainWindow._build_malformed_reference_series_entry, stub
+    )
+
+    MethodType(MainWindow._restore_reference_uses_for_observation, stub)(obs_id)
+
+    data = stub.reference_series[0]["data"]
+    assert data["library_update_available"] is False
+    assert data["library_successor_state"] == "successor_available"
+    assert data["library_successor_available"] is True
+    assert data["library_successor_id"] == successor.id
+    assert data["reference_measurement_set_id"] == original.id
+    assert ObservationReferenceUseRepository.get(use.id).reference_measurement_set_id == original.id
+
+
+def test_successor_review_cancellation_keeps_historical_attachment(libs):
+    """Closing the review without confirmation must perform no persistence or
+    plot refresh work."""
+    from types import MethodType, SimpleNamespace
+    from ui.main_window import MainWindow
+
+    db_path, _ = libs
+    obs_id = _make_observation(db_path)
+    _, _, original = _seed_work_treatment_set(libs)
+    use = ObservationReferenceUseRepository.attach(obs_id, original.id)
+    MeasurementSetRepository.create_revision(original.id, {"raw_text": "new"})
+    plot_refreshes: list[bool] = []
+    stub = SimpleNamespace(active_observation_id=obs_id)
+    stub.tr = MethodType(lambda self, text, *args, **kwargs: text, stub)
+    stub._confirm_reference_successor_adoption = lambda *_args: False
+    stub.update_graph_plots_only = lambda: plot_refreshes.append(True)
+
+    MethodType(MainWindow._review_reference_successor, stub)(use.id, obs_id)
+
+    unchanged = ObservationReferenceUseRepository.get(use.id)
+    assert unchanged == use
+    assert plot_refreshes == []
+
+
+def test_confirmed_successor_review_adopts_and_refreshes_row(libs):
+    """Explicit confirmation retargets the same use and reloads the plotted
+    entry from the successor snapshot."""
+    from types import MethodType, SimpleNamespace
+    from ui.main_window import MainWindow
+
+    db_path, _ = libs
+    obs_id = _make_observation(db_path)
+    _, _, original = _seed_work_treatment_set(libs)
+    use = ObservationReferenceUseRepository.attach(
+        obs_id, original.id, role="supports_identification", note="keep"
+    )
+    successor = MeasurementSetRepository.create_revision(
+        original.id,
+        {"raw_text": "9–11 × 5–6 µm", "length_core_min": 9.0, "length_core_max": 11.0},
+    )
+    plot_refreshes: list[bool] = []
+    stub = SimpleNamespace(
+        active_observation_id=obs_id,
+        reference_series=[],
+        _normalized_reference_display_overrides={},
+    )
+    stub.tr = MethodType(lambda self, text, *args, **kwargs: text, stub)
+    stub._confirm_reference_successor_adoption = lambda *_args: True
+    stub._normalize_reference_series_entry = lambda entry: entry
+    stub._refresh_reference_series_table = lambda *args, **kwargs: None
+    stub._apply_normalized_reference_override = MethodType(
+        MainWindow._apply_normalized_reference_override, stub
+    )
+    stub._clear_normalized_reference_entries = MethodType(
+        MainWindow._clear_normalized_reference_entries, stub
+    )
+    stub._build_malformed_reference_series_entry = MethodType(
+        MainWindow._build_malformed_reference_series_entry, stub
+    )
+    stub._restore_reference_uses_for_observation = MethodType(
+        MainWindow._restore_reference_uses_for_observation, stub
+    )
+    stub.update_graph_plots_only = lambda: plot_refreshes.append(True)
+
+    MethodType(MainWindow._review_reference_successor, stub)(use.id, obs_id)
+
+    adopted = ObservationReferenceUseRepository.get(use.id)
+    assert adopted is not None
+    assert adopted.id == use.id
+    assert adopted.reference_measurement_set_id == successor.id
+    assert adopted.role == "supports_identification"
+    assert adopted.note == "keep"
+    assert stub.reference_series[0]["data"]["reference_measurement_set_id"] == successor.id
+    assert stub.reference_series[0]["data"]["length_p05"] == 9.0
+    preference = MeasurementSetPreferenceRepository.get(successor.id)
+    assert preference is not None
+    assert preference.recent_use_sequence == 1
+    assert plot_refreshes == [True]
+
+
+def test_successor_review_text_includes_both_full_citations():
+    from types import MethodType, SimpleNamespace
+    from ui.main_window import MainWindow
+
+    stub = SimpleNamespace(tr=lambda text: text)
+    use = SimpleNamespace(
+        snapshot_json=json.dumps(
+            {
+                "short_label": "Old 2000",
+                "full_citation": "Old Author (2000). Original work.",
+                "raw_text": "8–10 × 5–6 µm",
+            }
+        )
+    )
+    status = SimpleNamespace(
+        successor_snapshot_json=json.dumps(
+            {
+                "short_label": "New 2001",
+                "full_citation": "New Author (2001). Successor work.",
+                "raw_text": "9–11 × 5–6 µm",
+            }
+        )
+    )
+
+    text = MethodType(MainWindow._format_reference_successor_review, stub)(
+        use, status
+    )
+
+    assert "Old Author (2000). Original work." in text
+    assert "New Author (2001). Successor work." in text
+    assert "8–10 × 5–6 µm" in text
+    assert "9–11 × 5–6 µm" in text
 
 
 def test_collect_and_apply_gallery_settings_round_trips_use_overrides():

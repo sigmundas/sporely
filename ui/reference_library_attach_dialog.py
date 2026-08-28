@@ -8,6 +8,7 @@ enum (``compared``, ``supports_identification``, ``contradicts``).
 """
 from __future__ import annotations
 
+from dataclasses import replace
 from typing import Iterable
 
 from PySide6.QtCore import Qt, Signal
@@ -21,6 +22,7 @@ from PySide6.QtWidgets import (
     QHeaderView,
     QLabel,
     QLineEdit,
+    QMessageBox,
     QPushButton,
     QTableWidget,
     QTableWidgetItem,
@@ -30,7 +32,9 @@ from PySide6.QtWidgets import (
 
 from database.reference_library import (
     MeasurementSetCandidate,
+    MeasurementSetPreferenceRepository,
     MeasurementSetRepository,
+    ReferenceLibraryError,
 )
 
 
@@ -135,12 +139,21 @@ class ReferenceLibraryAttachDialog(QDialog):
             self.only_this_taxon_checkbox.setChecked(True)
         self.only_this_taxon_checkbox.toggled.connect(self._on_filter_changed)
         filter_row.addWidget(self.only_this_taxon_checkbox)
+        self.usage_filter_combo = QComboBox(self)
+        self.usage_filter_combo.addItem(self.tr("All"), "all")
+        self.usage_filter_combo.addItem(self.tr("Favourites"), "favorites")
+        self.usage_filter_combo.addItem(self.tr("Recently used"), "recent")
+        self.usage_filter_combo.currentIndexChanged.connect(
+            self._on_filter_changed
+        )
+        filter_row.addWidget(self.usage_filter_combo)
         layout.addLayout(filter_row)
 
-        self.table = QTableWidget(0, 5, self)
+        self.table = QTableWidget(0, 6, self)
         self.table.setObjectName("referenceLibraryAttachTable")
         self.table.setHorizontalHeaderLabels(
             [
+                self.tr("Favourite"),
                 self.tr("Source"),
                 self.tr("Taxon (as published)"),
                 self.tr("Locator"),
@@ -153,13 +166,15 @@ class ReferenceLibraryAttachDialog(QDialog):
         self.table.setEditTriggers(QAbstractItemView.NoEditTriggers)
         self.table.verticalHeader().setVisible(False)
         header_view = self.table.horizontalHeader()
-        header_view.setSectionResizeMode(0, QHeaderView.Stretch)
+        header_view.setSectionResizeMode(0, QHeaderView.ResizeToContents)
         header_view.setSectionResizeMode(1, QHeaderView.Stretch)
-        header_view.setSectionResizeMode(2, QHeaderView.ResizeToContents)
+        header_view.setSectionResizeMode(2, QHeaderView.Stretch)
         header_view.setSectionResizeMode(3, QHeaderView.ResizeToContents)
-        header_view.setSectionResizeMode(4, QHeaderView.Stretch)
+        header_view.setSectionResizeMode(4, QHeaderView.ResizeToContents)
+        header_view.setSectionResizeMode(5, QHeaderView.Stretch)
         self.table.setMinimumHeight(220)
         self.table.itemSelectionChanged.connect(self._on_selection_changed)
+        self.table.cellClicked.connect(self._on_table_cell_clicked)
         layout.addWidget(self.table, 1)
 
         role_row = QHBoxLayout()
@@ -211,6 +226,17 @@ class ReferenceLibraryAttachDialog(QDialog):
         order.
         """
         candidates = list(self._candidates)
+        usage_filter = (
+            self.usage_filter_combo.currentData()
+            if hasattr(self, "usage_filter_combo")
+            else "all"
+        )
+        if usage_filter == "favorites":
+            candidates = [c for c in candidates if c.is_favorite]
+        elif usage_filter == "recent":
+            candidates = [
+                c for c in candidates if c.recent_use_sequence is not None
+            ]
         if (
             self._taxon_id is not None
             and self.only_this_taxon_checkbox.isChecked()
@@ -328,22 +354,85 @@ class ReferenceLibraryAttachDialog(QDialog):
         for candidate in visible:
             row = self.table.rowCount()
             self.table.insertRow(row)
+            star = QTableWidgetItem("★" if candidate.is_favorite else "☆")
+            star.setTextAlignment(Qt.AlignCenter)
+            star.setData(Qt.UserRole, candidate.measurement_set_id)
+            star.setToolTip(
+                self.tr("Remove from favourites")
+                if candidate.is_favorite
+                else self.tr("Add to favourites")
+            )
+            star.setFlags(Qt.ItemIsSelectable | Qt.ItemIsEnabled)
+            self.table.setItem(row, 0, star)
             source_item = QTableWidgetItem(candidate.short_label or "")
             source_item.setData(Qt.UserRole, candidate.measurement_set_id)
             source_item.setFlags(Qt.ItemIsSelectable | Qt.ItemIsEnabled)
-            self.table.setItem(row, 0, source_item)
+            self.table.setItem(row, 1, source_item)
             taxon_item = QTableWidgetItem(candidate.name_as_published or "")
             taxon_item.setFlags(Qt.ItemIsSelectable | Qt.ItemIsEnabled)
-            self.table.setItem(row, 1, taxon_item)
+            self.table.setItem(row, 2, taxon_item)
             locator_item = QTableWidgetItem(candidate.locator_text or "")
             locator_item.setFlags(Qt.ItemIsSelectable | Qt.ItemIsEnabled)
-            self.table.setItem(row, 2, locator_item)
+            self.table.setItem(row, 3, locator_item)
             kind_item = QTableWidgetItem(candidate.data_kind or "")
             kind_item.setFlags(Qt.ItemIsSelectable | Qt.ItemIsEnabled)
-            self.table.setItem(row, 3, kind_item)
+            self.table.setItem(row, 4, kind_item)
             raw_item = QTableWidgetItem(candidate.raw_text or "")
             raw_item.setFlags(Qt.ItemIsSelectable | Qt.ItemIsEnabled)
-            self.table.setItem(row, 4, raw_item)
+            self.table.setItem(row, 5, raw_item)
+
+    def _toggle_favorite(self, measurement_set_id: str) -> None:
+        candidate = next(
+            (
+                item
+                for item in self._candidates
+                if item.measurement_set_id == measurement_set_id
+            ),
+            None,
+        )
+        if candidate is None:
+            return
+        favorite = not candidate.is_favorite
+        try:
+            MeasurementSetPreferenceRepository.set_favorite(
+                measurement_set_id, favorite
+            )
+        except ReferenceLibraryError as exc:
+            self.refresh_candidates()
+            QMessageBox.warning(
+                self,
+                self.tr("Reference favourites"),
+                self.tr("Could not update favourite: {error}").format(
+                    error=str(exc)
+                ),
+            )
+            return
+        self._candidates = [
+            replace(item, is_favorite=favorite)
+            if item.measurement_set_id == measurement_set_id
+            else item
+            for item in self._candidates
+        ]
+        self._candidates.sort(
+            key=lambda item: (
+                not item.is_favorite,
+                item.recent_use_sequence is None,
+                -(item.recent_use_sequence or 0),
+                (item.short_label or "").casefold(),
+                (item.name_as_published or "").casefold(),
+                item.measurement_set_id,
+            )
+        )
+        self._selected_id = None
+        self._populate_table()
+        self._update_accept_state()
+
+    def _on_table_cell_clicked(self, row: int, column: int) -> None:
+        if column != 0:
+            return
+        item = self.table.item(row, 0)
+        if item is not None:
+            self._toggle_favorite(str(item.data(Qt.UserRole) or ""))
 
     def _on_selection_changed(self) -> None:
         selected_rows = self.table.selectionModel().selectedRows()
@@ -351,7 +440,7 @@ class ReferenceLibraryAttachDialog(QDialog):
             self._selected_id = None
         else:
             row = selected_rows[0].row()
-            item = self.table.item(row, 0)
+            item = self.table.item(row, 1)
             self._selected_id = str(item.data(Qt.UserRole)) if item else None
         self._update_accept_state()
 

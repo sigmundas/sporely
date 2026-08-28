@@ -74,12 +74,14 @@ def _fill_minmax_cell(dialog, row: int, col: int, value: float) -> None:
     dialog.minmax_table.setItem(row, col, item)
 
 
-def test_normalized_payload_none_without_taxon(qapp, libs):
+def test_normalized_payload_supports_name_only_treatment_without_taxon(qapp, libs):
     parent, dialog = _new_dialog(qapp, observation_id=42)
     try:
         _fill_minmax_cell(dialog, 0, 0, 6.0)
         _fill_minmax_cell(dialog, 0, 4, 10.0)
-        assert dialog.normalized_measurement_set_payload() is None
+        _fill_minmax_cell(dialog, 1, 0, 3.0)
+        _fill_minmax_cell(dialog, 1, 4, 5.0)
+        assert dialog.normalized_measurement_set_payload() is not None
     finally:
         dialog.deleteLater()
         parent.deleteLater()
@@ -105,6 +107,88 @@ def test_normalized_payload_range_uses_migration_mapping(qapp, libs):
         assert ms.length_core_max == pytest.approx(7.8)
         assert ms.length_max == pytest.approx(8.5)
         assert ms.legacy_reference_value_id == 99
+    finally:
+        dialog.deleteLater()
+        parent.deleteLater()
+
+
+def test_quick_add_treatment_fields_prefill_and_preserve_locator(qapp, libs):
+    parent, dialog = _new_dialog(qapp, observation_id=42, sporely_taxon_id=7)
+    try:
+        assert dialog.name_as_published_input.text() == "Agaricus bisporus"
+        dialog.name_as_published_input.setText("Agaricus campestris var. bisporus")
+        dialog.locator_input.setText("p. 42, fig. 3")
+
+        assert dialog.quick_add_treatment_payload() == {
+            "name_as_published": "Agaricus campestris var. bisporus",
+            "locator_text": "p. 42, fig. 3",
+        }
+    finally:
+        dialog.deleteLater()
+        parent.deleteLater()
+
+
+def test_new_publication_is_kept_as_unpersisted_draft(qapp, libs, monkeypatch):
+    from PySide6.QtWidgets import QDialog
+    from ui import reference_library_manager_dialog as manager
+
+    draft = ReferenceWork(
+        id="", type="article", title="Draft source", short_label="Draft 2026"
+    )
+
+    class _DraftEditor:
+        def __init__(self, _parent, *, persist_on_accept):
+            assert persist_on_accept is False
+            self.result_work = draft
+
+        def exec(self):
+            return QDialog.Accepted
+
+        def deleteLater(self):
+            pass
+
+    monkeypatch.setattr(manager, "ReferenceWorkEditor", _DraftEditor)
+    parent, dialog = _new_dialog(qapp, observation_id=42, sporely_taxon_id=7)
+    try:
+        dialog._on_new_publication_clicked()
+
+        assert dialog.pending_reference_work() is draft
+        dialog.reject()
+        assert ReferenceWorkRepository.search("Draft source") == []
+        dialog.publication_combo.setEditText("Different typed source")
+        assert dialog.pending_reference_work() is None
+    finally:
+        dialog.deleteLater()
+        parent.deleteLater()
+
+
+def test_normalized_payload_preserves_verbatim_measurement_expression(qapp, libs):
+    parent, dialog = _new_dialog(qapp, sporely_taxon_id=7)
+    try:
+        raw = "  (9–)10–12 × 5–6 µm  "
+        dialog.measurement_paste_input.setText(raw)
+        dialog._on_parse_measurement_clicked()
+
+        payload = dialog.normalized_measurement_set_payload()
+
+        assert payload is not None
+        assert payload.raw_text == raw
+    finally:
+        dialog.deleteLater()
+        parent.deleteLater()
+
+
+def test_parser_failure_produces_no_normalized_payload_or_records(qapp, libs):
+    parent, dialog = _new_dialog(
+        qapp, observation_id=42, sporely_taxon_id=7
+    )
+    try:
+        dialog.measurement_paste_input.setText("not a measurement")
+        dialog._on_parse_measurement_clicked()
+
+        assert dialog.normalized_measurement_set_payload() is None
+        assert ReferenceWorkRepository.search() == []
+        assert MeasurementSetRepository.list_attachment_candidates() == []
     finally:
         dialog.deleteLater()
         parent.deleteLater()
@@ -490,7 +574,7 @@ def test_raw_text_falls_back_to_paste_input(qapp, libs):
         dialog._raw_measurement_text = ""  # simulate never-parsed
         ms = dialog.normalized_measurement_set_payload()
         assert ms is not None
-        assert ms.raw_text == "7 x 4.5 (unparsed)"
+        assert ms.raw_text == "  7 x 4.5 (unparsed)  "
     finally:
         dialog.deleteLater()
         parent.deleteLater()

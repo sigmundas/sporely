@@ -246,6 +246,24 @@ def test_measurement_set_raw_points_roundtrip_and_no_synthesis(libs):
     assert summary.raw_points_json is None
 
 
+def test_work_search_includes_year_doi_and_isbn(libs):
+    work = ReferenceWorkRepository.create(
+        ReferenceWork(
+            id="",
+            type="book",
+            title="Distinct source",
+            short_label="Author",
+            year=1987,
+            doi="10.1234/example",
+            isbn="978-1-4028-9462-6",
+        )
+    )
+
+    assert [item.id for item in ReferenceWorkRepository.search("1987")] == [work.id]
+    assert [item.id for item in ReferenceWorkRepository.search("10.1234/example")] == [work.id]
+    assert [item.id for item in ReferenceWorkRepository.search("9781402894626")] == [work.id]
+
+
 def test_name_as_published_is_independent_of_taxon_id(libs):
     work = ReferenceWorkRepository.create(_make_work())
     treatment = TaxonTreatmentRepository.create(

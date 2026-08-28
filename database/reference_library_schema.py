@@ -144,6 +144,16 @@ CREATE TABLE IF NOT EXISTS reference_measurement_sets (
 )
 """
 
+_REFERENCE_MEASUREMENT_SET_PREFERENCES_DDL = """
+CREATE TABLE IF NOT EXISTS reference_measurement_set_preferences (
+    measurement_set_id TEXT PRIMARY KEY,
+    is_favorite INTEGER NOT NULL DEFAULT 0 CHECK (is_favorite IN (0, 1)),
+    recent_use_sequence INTEGER,
+    FOREIGN KEY (measurement_set_id) REFERENCES reference_measurement_sets(id)
+        ON DELETE CASCADE
+)
+"""
+
 _OBSERVATION_REFERENCE_USES_DDL = """
 CREATE TABLE IF NOT EXISTS observation_reference_uses (
     id TEXT PRIMARY KEY,
@@ -322,6 +332,7 @@ def init_reference_library_schema(conn: sqlite3.Connection) -> None:
     cursor.execute(_REFERENCE_WORKS_DDL)
     cursor.execute(_REFERENCE_TAXON_TREATMENTS_DDL)
     cursor.execute(_REFERENCE_MEASUREMENT_SETS_DDL)
+    cursor.execute(_REFERENCE_MEASUREMENT_SET_PREFERENCES_DDL)
     for statement in _REFERENCE_LIBRARY_INDEXES:
         cursor.execute(statement)
     conn.commit()

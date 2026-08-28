@@ -275,3 +275,31 @@ def build_observation_reference_snapshot(
 def serialize_snapshot(snapshot: dict) -> str:
     """Deterministic JSON encoding for the snapshot."""
     return json.dumps(snapshot, ensure_ascii=False, sort_keys=True)
+
+
+def observation_snapshots_semantically_equal(
+    stored_snapshot_json: str,
+    current_snapshot: dict[str, Any],
+) -> bool:
+    """Compare snapshot content while ignoring revision-only churn.
+
+    ``reference_revision`` records the measurement-set revision used at
+    attachment time, but the work and treatment are independently revisioned.
+    Staleness therefore follows the canonical public content, not revision or
+    timestamp counters. Invalid stored JSON is never considered equivalent.
+    """
+    try:
+        stored = json.loads(stored_snapshot_json)
+    except (TypeError, ValueError, json.JSONDecodeError):
+        return False
+    if not isinstance(stored, dict) or not isinstance(current_snapshot, dict):
+        return False
+    stored_semantic = {
+        key: value for key, value in stored.items() if key != "reference_revision"
+    }
+    current_semantic = {
+        key: value
+        for key, value in current_snapshot.items()
+        if key != "reference_revision"
+    }
+    return stored_semantic == current_semantic

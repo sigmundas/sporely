@@ -21,6 +21,7 @@ from database.reference_citation import (
     build_full_citation,
     build_observation_reference_snapshot,
     build_short_label,
+    observation_snapshots_semantically_equal,
     serialize_snapshot,
 )
 from database.reference_library_schema import (
@@ -231,6 +232,27 @@ class ObservationReferenceUse:
     updated_at: str | None = None
 
 
+@dataclass(frozen=True)
+class ObservationReferenceSnapshotStatus:
+    """Semantic relationship between a frozen use and its current source."""
+
+    use_id: str
+    state: str
+    current_reference_revision: int | None = None
+
+
+@dataclass(frozen=True)
+class MeasurementSetSuccessorResolution:
+    """Deterministic resolution of the explicit successor graph."""
+
+    source_id: str
+    state: str
+    path_ids: tuple[str, ...]
+    successor_id: str | None = None
+    fork_successor_ids: tuple[str, ...] = ()
+    successor_snapshot_json: str | None = None
+
+
 @dataclass
 class MeasurementSetCandidate:
     """Read-only projection of a measurement set joined with treatment/work
@@ -248,6 +270,44 @@ class MeasurementSetCandidate:
     work_title: str | None = None
     year: int | None = None
     taxon_id: str | None = None
+    is_favorite: bool = False
+    recent_use_sequence: int | None = None
+
+
+@dataclass(frozen=True)
+class MeasurementSetPreference:
+    """Local chooser preference metadata for one normalized measurement set."""
+
+    measurement_set_id: str
+    is_favorite: bool = False
+    recent_use_sequence: int | None = None
+
+
+@dataclass(frozen=True)
+class QuickAddReferenceRequest:
+    """Validated editor output needed to create and attach a reference."""
+
+    observation_id: int
+    work: ReferenceWork
+    treatment: TaxonTreatment
+    measurement_set: MeasurementSet
+    existing_work_id: str | None = None
+    role: str = "compared"
+    note: str | None = None
+
+
+@dataclass(frozen=True)
+class QuickAddReferenceResult:
+    """Entities selected or created by one quick-add operation."""
+
+    work: ReferenceWork
+    treatment: TaxonTreatment
+    measurement_set: MeasurementSet
+    use: ObservationReferenceUse
+    created_work: bool
+    created_treatment: bool
+    created_measurement_set: bool
+    created_attachment: bool
 
 
 def _row_to_dataclass(row: sqlite3.Row, cls):
@@ -423,10 +483,13 @@ class ReferenceWorkRepository:
                        OR LOWER(COALESCE(container_title, '')) LIKE ?
                        OR LOWER(COALESCE(authors_json, '')) LIKE ?
                        OR LOWER(COALESCE(citation_key, '')) LIKE ?
+                       OR CAST(COALESCE(year, '') AS TEXT) LIKE ?
+                       OR LOWER(COALESCE(doi, '')) LIKE ?
+                       OR LOWER(COALESCE(isbn, '')) LIKE ?
                     ORDER BY COALESCE(year, 0) DESC, updated_at DESC
                     LIMIT ?
                     """,
-                    (like, like, like, like, like, int(limit)),
+                    (like, like, like, like, like, like, like, like, int(limit)),
                 ).fetchall()
             else:
                 rows = conn.execute(
@@ -443,7 +506,33 @@ class ReferenceWorkRepository:
 
     @staticmethod
     def list_recent(limit: int = 20) -> list[ReferenceWork]:
-        return ReferenceWorkRepository.search(query=None, limit=limit)
+        conn = _connect_reference()
+        try:
+            rows = conn.execute(
+                """
+                SELECT w.*,
+                       COALESCE(MAX(p.is_favorite), 0) AS _favorite,
+                       MAX(p.recent_use_sequence) AS _recent_sequence
+                FROM reference_works AS w
+                LEFT JOIN reference_taxon_treatments AS t
+                  ON t.reference_work_id = w.id
+                LEFT JOIN reference_measurement_sets AS ms
+                  ON ms.taxon_treatment_id = t.id
+                LEFT JOIN reference_measurement_set_preferences AS p
+                  ON p.measurement_set_id = ms.id
+                GROUP BY w.id
+                ORDER BY _favorite DESC,
+                         CASE WHEN _recent_sequence IS NULL THEN 1 ELSE 0 END,
+                         _recent_sequence DESC,
+                         w.updated_at DESC,
+                         w.id ASC
+                LIMIT ?
+                """,
+                (int(limit),),
+            ).fetchall()
+        finally:
+            conn.close()
+        return [_row_to_dataclass(row, ReferenceWork) for row in rows]
 
     @staticmethod
     def find_by_doi(doi: str) -> ReferenceWork | None:
@@ -921,6 +1010,67 @@ class MeasurementSetRepository:
         new_ms = MeasurementSet(id=_new_uuid(), **base)
         return cls.create(new_ms)
 
+    @classmethod
+    def resolve_terminal_successor(
+        cls, set_id: str
+    ) -> MeasurementSetSuccessorResolution:
+        """Follow one unambiguous successor chain and fail closed otherwise."""
+        source_id = str(set_id or "").strip()
+        if not source_id or cls.get(source_id) is None:
+            return MeasurementSetSuccessorResolution(
+                source_id=source_id,
+                state="source_missing",
+                path_ids=(),
+            )
+
+        path = [source_id]
+        visited = {source_id}
+        current_id = source_id
+        conn = _connect_reference()
+        try:
+            while True:
+                rows = conn.execute(
+                    """
+                    SELECT id FROM reference_measurement_sets
+                    WHERE supersedes_id = ?
+                    ORDER BY id ASC
+                    """,
+                    (current_id,),
+                ).fetchall()
+                successors = tuple(str(row["id"]) for row in rows)
+                if not successors:
+                    if len(path) == 1:
+                        return MeasurementSetSuccessorResolution(
+                            source_id=source_id,
+                            state="no_successor",
+                            path_ids=tuple(path),
+                        )
+                    return MeasurementSetSuccessorResolution(
+                        source_id=source_id,
+                        state="successor_available",
+                        path_ids=tuple(path),
+                        successor_id=current_id,
+                    )
+                if len(successors) > 1:
+                    return MeasurementSetSuccessorResolution(
+                        source_id=source_id,
+                        state="fork",
+                        path_ids=tuple(path),
+                        fork_successor_ids=successors,
+                    )
+                next_id = successors[0]
+                if next_id in visited:
+                    return MeasurementSetSuccessorResolution(
+                        source_id=source_id,
+                        state="cycle",
+                        path_ids=tuple(path + [next_id]),
+                    )
+                visited.add(next_id)
+                path.append(next_id)
+                current_id = next_id
+        finally:
+            conn.close()
+
     @staticmethod
     def delete(set_id: str) -> None:
         uses = ObservationReferenceUseRepository.count_uses(set_id)
@@ -979,13 +1129,20 @@ class MeasurementSetRepository:
                     w.id AS w_id,
                     w.short_label AS w_short_label,
                     w.title AS w_title,
-                    w.year AS w_year
+                    w.year AS w_year,
+                    COALESCE(p.is_favorite, 0) AS p_is_favorite,
+                    p.recent_use_sequence AS p_recent_use_sequence
                 FROM reference_measurement_sets AS ms
                 JOIN reference_taxon_treatments AS t
                   ON t.id = ms.taxon_treatment_id
                 JOIN reference_works AS w
                   ON w.id = t.reference_work_id
+                LEFT JOIN reference_measurement_set_preferences AS p
+                  ON p.measurement_set_id = ms.id
                 ORDER BY
+                    COALESCE(p.is_favorite, 0) DESC,
+                    CASE WHEN p.recent_use_sequence IS NULL THEN 1 ELSE 0 END,
+                    p.recent_use_sequence DESC,
                     LOWER(COALESCE(w.short_label, w.title, '')),
                     LOWER(COALESCE(t.name_as_published, '')),
                     ms.id
@@ -1015,9 +1172,142 @@ class MeasurementSetRepository:
                     work_title=(str(row["w_title"]) if row["w_title"] else None),
                     year=(int(row["w_year"]) if row["w_year"] is not None else None),
                     taxon_id=(str(row["t_taxon_id"]) if row["t_taxon_id"] else None),
+                    is_favorite=bool(row["p_is_favorite"]),
+                    recent_use_sequence=(
+                        int(row["p_recent_use_sequence"])
+                        if row["p_recent_use_sequence"] is not None
+                        else None
+                    ),
                 )
             )
         return result
+
+
+class MeasurementSetPreferenceRepository:
+    """Local-only favourites and actual-use recency for chooser candidates."""
+
+    @staticmethod
+    def _from_row(row: sqlite3.Row | None) -> MeasurementSetPreference | None:
+        if row is None:
+            return None
+        return MeasurementSetPreference(
+            measurement_set_id=str(row["measurement_set_id"]),
+            is_favorite=bool(row["is_favorite"]),
+            recent_use_sequence=(
+                int(row["recent_use_sequence"])
+                if row["recent_use_sequence"] is not None
+                else None
+            ),
+        )
+
+    @staticmethod
+    def _require_set(conn: sqlite3.Connection, measurement_set_id: str) -> None:
+        if conn.execute(
+            "SELECT 1 FROM reference_measurement_sets WHERE id = ?",
+            (measurement_set_id,),
+        ).fetchone() is None:
+            raise ReferenceIntegrityError(
+                f"measurement_set {measurement_set_id} not found"
+            )
+
+    @classmethod
+    def get(cls, measurement_set_id: str) -> MeasurementSetPreference | None:
+        conn = _connect_reference()
+        try:
+            row = conn.execute(
+                "SELECT measurement_set_id, is_favorite, recent_use_sequence "
+                "FROM reference_measurement_set_preferences "
+                "WHERE measurement_set_id = ?",
+                (measurement_set_id,),
+            ).fetchone()
+        finally:
+            conn.close()
+        return cls._from_row(row)
+
+    @classmethod
+    def list(cls) -> list[MeasurementSetPreference]:
+        conn = _connect_reference()
+        try:
+            rows = conn.execute(
+                "SELECT measurement_set_id, is_favorite, recent_use_sequence "
+                "FROM reference_measurement_set_preferences "
+                "ORDER BY is_favorite DESC, "
+                "CASE WHEN recent_use_sequence IS NULL THEN 1 ELSE 0 END, "
+                "recent_use_sequence DESC, measurement_set_id ASC"
+            ).fetchall()
+        finally:
+            conn.close()
+        return [cls._from_row(row) for row in rows]
+
+    @classmethod
+    def set_favorite(
+        cls, measurement_set_id: str, is_favorite: bool
+    ) -> MeasurementSetPreference:
+        conn = _connect_reference()
+        try:
+            cls._require_set(conn, measurement_set_id)
+            conn.execute(
+                "INSERT INTO reference_measurement_set_preferences "
+                "(measurement_set_id, is_favorite) VALUES (?, ?) "
+                "ON CONFLICT(measurement_set_id) DO UPDATE "
+                "SET is_favorite = excluded.is_favorite",
+                (measurement_set_id, int(bool(is_favorite))),
+            )
+            conn.commit()
+            row = conn.execute(
+                "SELECT measurement_set_id, is_favorite, recent_use_sequence "
+                "FROM reference_measurement_set_preferences "
+                "WHERE measurement_set_id = ?",
+                (measurement_set_id,),
+            ).fetchone()
+        finally:
+            conn.close()
+        preference = cls._from_row(row)
+        assert preference is not None
+        return preference
+
+    @classmethod
+    def toggle_favorite(cls, measurement_set_id: str) -> MeasurementSetPreference:
+        current = cls.get(measurement_set_id)
+        return cls.set_favorite(
+            measurement_set_id,
+            not current.is_favorite if current is not None else True,
+        )
+
+    @classmethod
+    def mark_used(cls, measurement_set_id: str) -> MeasurementSetPreference:
+        conn = _connect_reference()
+        try:
+            conn.execute("BEGIN IMMEDIATE")
+            cls._require_set(conn, measurement_set_id)
+            next_sequence = int(
+                conn.execute(
+                    "SELECT COALESCE(MAX(recent_use_sequence), 0) + 1 "
+                    "FROM reference_measurement_set_preferences"
+                ).fetchone()[0]
+            )
+            conn.execute(
+                "INSERT INTO reference_measurement_set_preferences "
+                "(measurement_set_id, recent_use_sequence) VALUES (?, ?) "
+                "ON CONFLICT(measurement_set_id) DO UPDATE "
+                "SET recent_use_sequence = excluded.recent_use_sequence",
+                (measurement_set_id, next_sequence),
+            )
+            conn.commit()
+            row = conn.execute(
+                "SELECT measurement_set_id, is_favorite, recent_use_sequence "
+                "FROM reference_measurement_set_preferences "
+                "WHERE measurement_set_id = ?",
+                (measurement_set_id,),
+            ).fetchone()
+        except Exception:
+            conn.rollback()
+            raise
+        finally:
+            conn.close()
+        preference = cls._from_row(row)
+        assert preference is not None
+        return preference
 
 
 # --- Observation reference uses ---------------------------------------------
@@ -1291,6 +1581,268 @@ class ObservationReferenceUseRepository:
         return [_row_to_dataclass(row, ObservationReferenceUse) for row in rows]
 
     @staticmethod
+    def get(use_id: str) -> ObservationReferenceUse | None:
+        conn = _connect_observations()
+        try:
+            row = conn.execute(
+                "SELECT * FROM observation_reference_uses WHERE id = ?",
+                (use_id,),
+            ).fetchone()
+        finally:
+            conn.close()
+        return _row_to_dataclass(row, ObservationReferenceUse)
+
+    @classmethod
+    def snapshot_status(
+        cls, use_id: str
+    ) -> ObservationReferenceSnapshotStatus:
+        use = cls.get(use_id)
+        if use is None:
+            raise ReferenceIntegrityError(
+                f"observation_reference_use {use_id} not found"
+            )
+        bundle = cls._load_measurement_set_bundle(
+            use.reference_measurement_set_id
+        )
+        if bundle is None:
+            return ObservationReferenceSnapshotStatus(
+                use_id=use.id,
+                state="source_missing",
+            )
+        measurement_set, treatment, work = bundle
+        current_snapshot = build_observation_reference_snapshot(
+            work, treatment, measurement_set
+        )
+        state = (
+            "current"
+            if observation_snapshots_semantically_equal(
+                use.snapshot_json, current_snapshot
+            )
+            else "update_available"
+        )
+        return ObservationReferenceSnapshotStatus(
+            use_id=use.id,
+            state=state,
+            current_reference_revision=measurement_set.revision,
+        )
+
+    @classmethod
+    def successor_status(
+        cls, use_id: str
+    ) -> MeasurementSetSuccessorResolution:
+        use = cls.get(use_id)
+        if use is None:
+            raise ReferenceIntegrityError(
+                f"observation_reference_use {use_id} not found"
+            )
+        resolution = MeasurementSetRepository.resolve_terminal_successor(
+            use.reference_measurement_set_id
+        )
+        if resolution.state != "successor_available":
+            return resolution
+        # Every link in the selected lineage must still resolve through its
+        # treatment and work. Skipping malformed intermediate records would
+        # make a broken history appear safe merely because its terminal node
+        # happens to be complete.
+        for path_id in resolution.path_ids:
+            if cls._load_measurement_set_bundle(path_id) is None:
+                return MeasurementSetSuccessorResolution(
+                    source_id=resolution.source_id,
+                    state="broken",
+                    path_ids=resolution.path_ids,
+                )
+        successor_id = resolution.successor_id
+        bundle = (
+            cls._load_measurement_set_bundle(successor_id)
+            if successor_id is not None
+            else None
+        )
+        if bundle is None:
+            return MeasurementSetSuccessorResolution(
+                source_id=resolution.source_id,
+                state="broken",
+                path_ids=resolution.path_ids,
+            )
+        measurement_set, treatment, work = bundle
+        snapshot = build_observation_reference_snapshot(
+            work, treatment, measurement_set
+        )
+        # Adoption must not replace a working historical plot with a source
+        # the current desktop cannot render. Import locally to keep the
+        # repository's normal CRUD path independent of plotting concerns.
+        from references.reference_plotting import translate_observation_reference_use
+
+        preview = translate_observation_reference_use(
+            {
+                "id": use.id,
+                "role": use.role,
+                "reference_revision": measurement_set.revision,
+                "snapshot": snapshot,
+            }
+        )
+        if preview is None:
+            return MeasurementSetSuccessorResolution(
+                source_id=resolution.source_id,
+                state="unsupported",
+                path_ids=resolution.path_ids,
+            )
+        return MeasurementSetSuccessorResolution(
+            source_id=resolution.source_id,
+            state=resolution.state,
+            path_ids=resolution.path_ids,
+            successor_id=successor_id,
+            successor_snapshot_json=serialize_snapshot(snapshot),
+        )
+
+    @classmethod
+    def adopt_successor(
+        cls,
+        use_id: str,
+        *,
+        expected_successor_id: str | None = None,
+        expected_successor_snapshot_json: str | None = None,
+    ) -> ObservationReferenceUse:
+        """Explicitly retarget an observation use to its terminal successor."""
+        use = cls.get(use_id)
+        if use is None:
+            raise ReferenceIntegrityError(
+                f"observation_reference_use {use_id} not found"
+            )
+        status = cls.successor_status(use_id)
+        successor_id = status.successor_id
+        if status.state != "successor_available" or not successor_id:
+            raise ReferenceIntegrityError(
+                f"successor lineage is not adoptable ({status.state})"
+            )
+        if expected_successor_id and successor_id != expected_successor_id:
+            raise ReferenceIntegrityError(
+                "successor lineage changed before adoption; review it again"
+            )
+        if not status.successor_snapshot_json:
+            raise ReferenceIntegrityError("successor snapshot is unavailable")
+        if expected_successor_snapshot_json is not None:
+            try:
+                current_snapshot = json.loads(status.successor_snapshot_json)
+            except (TypeError, ValueError, json.JSONDecodeError):
+                current_snapshot = None
+            if not isinstance(current_snapshot, dict) or not (
+                observation_snapshots_semantically_equal(
+                    expected_successor_snapshot_json, current_snapshot
+                )
+            ):
+                raise ReferenceIntegrityError(
+                    "successor content changed since review; review it again"
+                )
+        successor = MeasurementSetRepository.get(successor_id)
+        if successor is None:
+            raise ReferenceIntegrityError(
+                "successor source disappeared before adoption"
+            )
+
+        conn = _connect_observations()
+        try:
+            duplicate = conn.execute(
+                """
+                SELECT id FROM observation_reference_uses
+                WHERE observation_id = ?
+                  AND reference_measurement_set_id = ?
+                  AND id != ?
+                LIMIT 1
+                """,
+                (use.observation_id, successor_id, use.id),
+            ).fetchone()
+            if duplicate is not None:
+                raise ReferenceIntegrityError(
+                    "successor measurement set is already attached to this observation"
+                )
+            cursor = conn.execute(
+                """
+                UPDATE observation_reference_uses
+                SET reference_measurement_set_id = ?,
+                    reference_revision = ?,
+                    snapshot_json = ?,
+                    updated_at = ?
+                WHERE id = ? AND reference_measurement_set_id = ?
+                """,
+                (
+                    successor_id,
+                    successor.revision,
+                    status.successor_snapshot_json,
+                    _now(),
+                    use.id,
+                    use.reference_measurement_set_id,
+                ),
+            )
+            if cursor.rowcount != 1:
+                raise ReferenceIntegrityError(
+                    "attachment changed before successor adoption; review it again"
+                )
+            conn.commit()
+        except sqlite3.IntegrityError as exc:
+            conn.rollback()
+            raise ReferenceIntegrityError(str(exc)) from exc
+        finally:
+            conn.close()
+        adopted = cls.get(use.id)
+        if adopted is None:
+            raise ReferenceIntegrityError(
+                f"observation_reference_use {use.id} disappeared during adoption"
+            )
+        return adopted
+
+    @classmethod
+    def refresh_snapshot(
+        cls, use_id: str
+    ) -> tuple[ObservationReferenceUse, bool]:
+        """Explicitly replace a frozen snapshot with current canonical data.
+
+        Identity, association, role, note and selection time remain unchanged.
+        Semantically identical source saves are a true no-op.
+        """
+        use = cls.get(use_id)
+        if use is None:
+            raise ReferenceIntegrityError(
+                f"observation_reference_use {use_id} not found"
+            )
+        bundle = cls._load_measurement_set_bundle(
+            use.reference_measurement_set_id
+        )
+        if bundle is None:
+            raise ReferenceIntegrityError(
+                "reference library source is unavailable; the historical "
+                "snapshot was preserved"
+            )
+        measurement_set, treatment, work = bundle
+        current_snapshot = build_observation_reference_snapshot(
+            work, treatment, measurement_set
+        )
+        if observation_snapshots_semantically_equal(
+            use.snapshot_json, current_snapshot
+        ):
+            return use, False
+
+        snapshot_json = serialize_snapshot(current_snapshot)
+        conn = _connect_observations()
+        try:
+            conn.execute(
+                """
+                UPDATE observation_reference_uses
+                SET reference_revision = ?, snapshot_json = ?, updated_at = ?
+                WHERE id = ?
+                """,
+                (measurement_set.revision, snapshot_json, _now(), use.id),
+            )
+            conn.commit()
+        finally:
+            conn.close()
+        refreshed = cls.get(use.id)
+        if refreshed is None:
+            raise ReferenceIntegrityError(
+                f"observation_reference_use {use.id} disappeared during update"
+            )
+        return refreshed, True
+
+    @staticmethod
     def count_uses(reference_measurement_set_id: str) -> int:
         conn = _connect_observations()
         try:
@@ -1393,3 +1945,175 @@ class ObservationReferenceUseRepository:
         finally:
             ref_conn.close()
         return [sid for sid in set_ids if sid not in existing_ids]
+
+
+class QuickAddReferenceService:
+    """Create/reuse the minimum normalized hierarchy and attach it.
+
+    The reference library and observation uses are separate SQLite files, so
+    one database transaction cannot cover the complete operation.  This
+    service validates before writing and, on failure, compensates in reverse
+    order, deleting only rows whose creation it recorded itself.  Existing
+    work and treatment rows are therefore never rollback targets.
+    """
+
+    @staticmethod
+    def _normalized_locator(value: str | None) -> str | None:
+        normalized = str(value or "").strip()
+        return normalized or None
+
+    @classmethod
+    def _resolve_work(
+        cls, request: QuickAddReferenceRequest
+    ) -> tuple[ReferenceWork, bool]:
+        proposed = ReferenceWork(**{**asdict(request.work), "id": ""})
+        proposed.doi = normalize_doi(proposed.doi)
+        proposed.isbn = normalize_isbn(proposed.isbn)
+        ReferenceWorkRepository._validate(proposed)
+
+        explicit: ReferenceWork | None = None
+        if request.existing_work_id:
+            explicit = ReferenceWorkRepository.get(request.existing_work_id)
+            if explicit is None:
+                raise ReferenceIntegrityError(
+                    f"reference_work {request.existing_work_id} not found"
+                )
+
+        doi_match = (
+            ReferenceWorkRepository.find_by_doi(proposed.doi)
+            if proposed.doi
+            else None
+        )
+        isbn_match = (
+            ReferenceWorkRepository.find_by_isbn(proposed.isbn)
+            if proposed.isbn
+            else None
+        )
+        identifier_matches = [match for match in (doi_match, isbn_match) if match]
+        matched_ids = {match.id for match in identifier_matches}
+        if len(matched_ids) > 1:
+            raise ReferenceIntegrityError(
+                "the supplied DOI and ISBN identify different works"
+            )
+        if explicit is not None and matched_ids and explicit.id not in matched_ids:
+            raise ReferenceIntegrityError(
+                "the supplied identifier conflicts with the selected work"
+            )
+
+        selected = explicit or (identifier_matches[0] if identifier_matches else None)
+        if selected is not None:
+            if (
+                proposed.doi
+                and selected.doi
+                and normalize_doi(selected.doi) != proposed.doi
+            ):
+                raise ReferenceIntegrityError(
+                    "the supplied DOI conflicts with the selected work"
+                )
+            if (
+                proposed.isbn
+                and selected.isbn
+                and normalize_isbn(selected.isbn) != proposed.isbn
+            ):
+                raise ReferenceIntegrityError(
+                    "the supplied ISBN conflicts with the selected work"
+                )
+            return selected, False
+
+        # Deliberately do not match by title, author, or other fuzzy metadata.
+        return ReferenceWorkRepository.create(proposed), True
+
+    @classmethod
+    def _resolve_treatment(
+        cls,
+        work: ReferenceWork,
+        proposed: TaxonTreatment,
+    ) -> tuple[TaxonTreatment, bool]:
+        name = str(proposed.name_as_published or "").strip()
+        locator = cls._normalized_locator(proposed.locator_text)
+        taxon_id = proposed.taxon_id
+        for existing in TaxonTreatmentRepository.list_for_work(work.id):
+            if (
+                str(existing.name_as_published or "").strip().casefold()
+                == name.casefold()
+                and existing.taxon_id == taxon_id
+                and cls._normalized_locator(existing.locator_text) == locator
+            ):
+                return existing, False
+
+        treatment = TaxonTreatment(
+            **{
+                **asdict(proposed),
+                "id": "",
+                "reference_work_id": work.id,
+                "name_as_published": name,
+                "locator_text": locator,
+            }
+        )
+        TaxonTreatmentRepository._validate(treatment)
+        return TaxonTreatmentRepository.create(treatment), True
+
+    @classmethod
+    def create_and_attach(
+        cls, request: QuickAddReferenceRequest
+    ) -> QuickAddReferenceResult:
+        """Persist a quick-add operation, compensating partial writes."""
+        ObservationReferenceUseRepository._validate_role(request.role)
+
+        # Validate domain/editor output before creating any hierarchy rows.
+        proposed_set = MeasurementSet(
+            **{
+                **asdict(request.measurement_set),
+                "id": "",
+                "taxon_treatment_id": "pending",
+                "supersedes_id": None,
+                "revision": 1,
+                "created_at": None,
+                "updated_at": None,
+            }
+        )
+        MeasurementSetRepository._validate(proposed_set)
+
+        work: ReferenceWork | None = None
+        treatment: TaxonTreatment | None = None
+        measurement_set: MeasurementSet | None = None
+        use: ObservationReferenceUse | None = None
+        created_work = False
+        created_treatment = False
+        created_attachment = False
+        try:
+            work, created_work = cls._resolve_work(request)
+            treatment, created_treatment = cls._resolve_treatment(
+                work, request.treatment
+            )
+            proposed_set.taxon_treatment_id = treatment.id
+            measurement_set = MeasurementSetRepository.create(proposed_set)
+            use, created_attachment = ObservationReferenceUseRepository.attach_with_status(
+                request.observation_id,
+                measurement_set.id,
+                role=request.role,
+                note=request.note,
+            )
+            return QuickAddReferenceResult(
+                work=work,
+                treatment=treatment,
+                measurement_set=measurement_set,
+                use=use,
+                created_work=created_work,
+                created_treatment=created_treatment,
+                created_measurement_set=True,
+                created_attachment=created_attachment,
+            )
+        except Exception:
+            # Reverse-order compensation across the two database files.  The
+            # attachment is normally the final operation, but track it so a
+            # future post-attach step cannot strand a use.
+            if use is not None and created_attachment:
+                ObservationReferenceUseRepository.detach(use.id)
+            if measurement_set is not None:
+                MeasurementSetRepository.delete(measurement_set.id)
+            if treatment is not None and created_treatment:
+                TaxonTreatmentRepository.delete(treatment.id)
+            if work is not None and created_work:
+                ReferenceWorkRepository.delete(work.id)
+            raise

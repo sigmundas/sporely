@@ -503,6 +503,54 @@ def test_measurement_set_form_hides_raw_points_for_range(libs, qapp):
         form.deleteLater()
 
 
+def test_work_editor_draft_mode_does_not_persist(libs, qapp):
+    from ui.reference_library_manager_dialog import _ReferenceWorkForm
+
+    form = _ReferenceWorkForm(None, persist_on_accept=False)
+    try:
+        form.title_input.setText("Incomplete field-note source")
+        form._on_save()
+
+        assert form.result_work is not None
+        assert form.result_work.id == ""
+        assert ReferenceWorkRepository.search("Incomplete field-note source") == []
+    finally:
+        form.deleteLater()
+
+
+def test_work_editor_warns_before_saving_probable_duplicate(
+    libs, qapp, monkeypatch
+):
+    from PySide6.QtWidgets import QMessageBox
+    from ui.reference_library_manager_dialog import _ReferenceWorkForm
+
+    ReferenceWorkRepository.create(
+        ReferenceWork(
+            id="",
+            type="book",
+            title="Same source",
+            short_label="Same 2001",
+            year=2001,
+        )
+    )
+    prompts = []
+    monkeypatch.setattr(
+        "ui.reference_library_manager_dialog.QMessageBox.question",
+        lambda *args: prompts.append(args) or QMessageBox.No,
+    )
+    form = _ReferenceWorkForm(None)
+    try:
+        form.title_input.setText("  same source  ")
+        form.year_input.setText("2001")
+        form._on_save()
+
+        assert prompts
+        assert form.result_work is None
+        assert len(ReferenceWorkRepository.search("Same source")) == 1
+    finally:
+        form.deleteLater()
+
+
 def test_form_save_paths_and_form_regressions(libs, qapp):
     """AC-05/AC-06/AC-07: drive each form's ``_on_save`` against isolated
     repositories. Covers UUID/revision semantics on create + edit, the
@@ -651,6 +699,138 @@ def test_form_save_paths_and_form_regressions(libs, qapp):
         assert preserved.notes == "edited note"
     finally:
         raw_edit.deleteLater()
+
+
+def test_measurement_form_parses_printed_expression_without_inventing_means(
+    libs, qapp
+):
+    """Breaking mutation: removing the parser action or deriving midpoints
+    would either leave bounds blank or populate means the source never gave."""
+    from ui.reference_library_manager_dialog import _MeasurementSetForm
+
+    _, treatment = _seed_work_treatment(libs)
+    form = _MeasurementSetForm(None, taxon_treatment_id=treatment.id)
+    try:
+        source = "(7.5–)8–10(–10.5) × 5–6(–6.5) µm, Q = 1.5–2.0, n = 24"
+        form.raw_text_input.setText(source)
+        form.parse_btn.click()
+
+        assert form.raw_text_input.text() == source
+        assert form.length_min_input.text() == "7.5"
+        assert form.length_core_min_input.text() == "8"
+        assert form.length_core_max_input.text() == "10"
+        assert form.length_max_input.text() == "10.5"
+        assert form.width_min_input.text() == ""
+        assert form.width_core_min_input.text() == "5"
+        assert form.width_core_max_input.text() == "6"
+        assert form.width_max_input.text() == "6.5"
+        assert form.length_mean_input.text() == ""
+        assert form.width_mean_input.text() == ""
+        assert form.q_min_input.text() == "1.5"
+        assert form.q_max_input.text() == "2"
+        assert form.q_mean_input.text() == ""
+        assert form.sample_size_input.text() == "24"
+    finally:
+        form.deleteLater()
+
+
+def test_manager_deletes_selected_set_and_refreshes_attachment_candidates(
+    libs, qapp, monkeypatch
+):
+    """Breaking mutation: bypassing repository delete or skipping refresh
+    would leave the row in storage, the tree, or the attachment chooser."""
+    from PySide6.QtWidgets import QMessageBox
+
+    from ui.reference_library_manager_dialog import ReferenceLibraryManagerDialog
+
+    work, treatment = _seed_work_treatment(libs)
+    ms = MeasurementSetRepository.create(
+        MeasurementSet(
+            id="",
+            taxon_treatment_id=treatment.id,
+            character="spore_size",
+            data_kind="range",
+            raw_text="8–10 × 5–6 µm",
+            length_core_min=8.0,
+            length_core_max=10.0,
+            width_core_min=5.0,
+            width_core_max=6.0,
+        )
+    )
+    monkeypatch.setattr(
+        QMessageBox, "question", lambda *args, **kwargs: QMessageBox.Yes
+    )
+
+    dialog = ReferenceLibraryManagerDialog(None, active_observation_id=None)
+    changes: list[bool] = []
+    dialog.library_changed.connect(lambda: changes.append(True))
+    try:
+        dialog.refresh_works(select_id=work.id)
+        dialog._refresh_hierarchy_for_current_work(select_set_id=ms.id)
+        assert dialog.current_selection_kind() == "measurement_set"
+
+        dialog._on_delete_selected_clicked()
+
+        assert MeasurementSetRepository.get(ms.id) is None
+        assert changes == [True]
+        assert dialog.hierarchy_tree.topLevelItem(0).childCount() == 0
+        candidate_ids = {
+            item.measurement_set_id
+            for item in MeasurementSetRepository.list_attachment_candidates()
+        }
+        assert ms.id not in candidate_ids
+    finally:
+        dialog.deleteLater()
+
+
+def test_manager_surfaces_in_use_delete_error_without_removing_set(
+    libs, qapp, monkeypatch
+):
+    """Breaking mutation: swallowing the repository guard would make an
+    attached measurement set disappear or provide no understandable feedback."""
+    from PySide6.QtWidgets import QMessageBox
+
+    from ui.reference_library_manager_dialog import ReferenceLibraryManagerDialog
+
+    db_path, _ = libs
+    observation_id = _make_observation(db_path)
+    work, treatment = _seed_work_treatment(libs)
+    ms = MeasurementSetRepository.create(
+        MeasurementSet(
+            id="",
+            taxon_treatment_id=treatment.id,
+            character="spore_size",
+            data_kind="range",
+            raw_text="8–10 × 5–6 µm",
+            length_core_min=8.0,
+            length_core_max=10.0,
+            width_core_min=5.0,
+            width_core_max=6.0,
+        )
+    )
+    ObservationReferenceUseRepository.attach(observation_id, ms.id)
+    warnings: list[str] = []
+    monkeypatch.setattr(
+        QMessageBox, "question", lambda *args, **kwargs: QMessageBox.Yes
+    )
+    monkeypatch.setattr(
+        QMessageBox,
+        "warning",
+        lambda _parent, _title, message, *args, **kwargs: warnings.append(message),
+    )
+
+    dialog = ReferenceLibraryManagerDialog(None, active_observation_id=None)
+    try:
+        dialog.refresh_works(select_id=work.id)
+        dialog._refresh_hierarchy_for_current_work(select_set_id=ms.id)
+        dialog._on_delete_selected_clicked()
+
+        assert MeasurementSetRepository.get(ms.id) is not None
+        assert warnings
+        assert "attached" in warnings[0].lower()
+        assert dialog.current_selection_kind() == "measurement_set"
+    finally:
+        dialog.deleteLater()
 
 
 def test_form_surfaces_validation_error_from_repository(libs, qapp):

@@ -267,6 +267,7 @@ When a measurement set is attached to an observation, generate a canonical snaps
 {
   "schema_version": 1,
   "reference_work_id": "uuid",
+  "reference_treatment_id": "uuid",
   "reference_measurement_set_id": "uuid",
   "reference_revision": 3,
   "short_label": "Petersen et al. 1990",
@@ -278,6 +279,8 @@ When a measurement set is attached to an observation, generate a canonical snaps
   "taxon_id": "stable-taxon-id",
   "name_as_published": "Russula paludosa",
   "locator_text": "p. 214",
+  "page_from": 214,
+  "page_to": 214,
   "character": "spore_size",
   "data_kind": "range",
   "raw_text": "(7.5–)8–10(–10.5) × 5–6(–6.5) µm",
@@ -303,7 +306,8 @@ When a measurement set is attached to an observation, generate a canonical snaps
     "stain": null,
     "preparation": null,
     "measurement_method": null
-  }
+  },
+  "raw_points": null
 }
 ```
 
@@ -793,26 +797,39 @@ Stage 1 is complete when:
 - existing Parmasto import tests;
 - existing cloud reference tests;
 - existing analysis plotting tests;
-- backup/export/import tests include new tables.
+- backup/export/import tests include normalized scientific/library and use
+  tables; device-local chooser preferences are not imported.
 
 ---
 
-## 18. Open questions
+## 18. Later-stage questions and resolved decisions
 
 These must be resolved during Stage 0 or explicitly deferred:
 
-1. Does the current desktop persist plotted reference selections anywhere?
-2. What is the current cloud schema behind `search_public_reference_values`?
-3. Should `citation_key` be user-defined, generated, or both?
-4. Which citation style should the UI generate initially?
-5. Should favourites be local-only or synced?
+1. ~~Does the current desktop persist plotted reference selections anywhere?~~
+   Resolved by `observation_reference_uses` plus frozen snapshots.
+2. ~~What is the current cloud schema behind `search_public_reference_values`?~~
+   Resolved by the Stage 3 audit in §19c: it is a legacy, ownerless bigint
+   table/RPC and remains an additive compatibility surface.
+3. ~~Should `citation_key` be user-defined, generated, or both?~~ Resolved:
+   optional and user-entered in Stage 2.
+4. ~~Which citation style should the UI generate initially?~~ Resolved: the
+   deterministic Stage 1 house style, without a selector.
+5. ~~Should favourites be local-only or synced?~~ Resolved: local-only in
+   Stage 2; cloud sync would need a later contract.
 6. Can one treatment point to multiple current taxon concepts?
 7. How should hybrid, aggregate, `sensu`, and variety names be represented?
 8. ~~Should reference works be shareable before admin verification?~~ Resolved by removing verification and per-work visibility from the product; see §5.1.
-9. What delete behavior is safest when an observation snapshot exists?
+9. ~~What delete behavior is safest when an observation snapshot exists?~~
+   Resolved: block deletion while used; retained snapshots remain readable if
+   source records are externally missing.
 10. Should curated works be editable by users as local overlays/forks?
-11. Which existing legacy records can be migrated automatically without bibliographic ambiguity?
-12. Does backup/import already preserve unknown/new tables generically?
+11. ~~Which existing legacy records can be migrated automatically without bibliographic ambiguity?~~
+    Resolved by the review-gated interactive migration; no fuzzy auto-merge.
+12. ~~Does backup/import already preserve unknown/new tables generically?~~
+    Resolved: scientific normalized tables and uses are imported explicitly;
+    local preference metadata may be present in a copied database archive but
+    is intentionally not merged on import.
 
 ---
 
@@ -1044,29 +1061,27 @@ the reference-related tests in `tests/`.
   provenance bundles, and calibration bundles continue to pass;
   plotting is unmodified.
 
-### Unresolved questions for Stage 2
+### Stage 2 decisions and later deferrals
 
-1. `citation_key` policy — user-defined, generated, or both?
-2. Which citation style should the UI generate initially? Stage 1 uses
-   a single deterministic house style; Stage 2 should decide whether to
-   surface the choice.
-3. Should favourites be local-only or synced?
+1. `citation_key` remains an optional user-entered value; Stage 2 does not
+   generate or require it.
+2. The UI uses the canonical deterministic house style from Stage 1. A style
+   selector is not part of Stage 2.
+3. Favourites and recent-use metadata are local-only in Stage 2; any sync
+   policy requires a later explicit contract.
 4. Backup/import: extend `utils/db_share.py::import_database_bundle`
    to copy the new library tables and observation uses on import.
    Deferred until observation attachment UI proves the round trip is
    worth exposing to end users.
-5. Legacy migration: which existing `reference_values` rows can be
-   converted to `reference_measurement_sets` without bibliographic
-   ambiguity? Do not auto-merge on fuzzy title in Stage 2.
+5. The landed interactive legacy migration requires review for ambiguous
+   sources and never auto-merges publications from fuzzy title similarity.
 
 ### Stage 2 vertical-slice status
 
-The Stage 2 desktop slice attaches existing normalized measurement
-sets to observations, restores them on observation open, detaches
-them without disturbing the shared library, and renders literature
-ranges with a dedicated rectangle grammar. It intentionally does not
-add a library editor, quick-add flow, favourites, revision-update
-UX, or any cloud/public work.
+The Stage 2 desktop work is complete: it provides normalized CRUD,
+quick-add and existing-set attachment, restore/detach/plot behavior,
+explicit revision and successor workflows, and local favourite/recent
+conveniences. It intentionally does not add cloud/public behavior.
 
 #### Landed in this slice
 
@@ -1168,16 +1183,200 @@ does not edit JSON:
   reproducibility and recovery, but it is not required for the normal
   workflow.
 
-#### Deferred
+#### Reference Library CRUD completion slice (2026-08-28)
 
-- Full library editor UI (create/edit works, treatments, measurement
-  sets from within the desktop app) — this slice reuses the
-  existing repository test paths for seeding.
-- Quick-add flow for entering a new work + treatment + measurement
-  set while attaching to an observation.
-- Favourites / recently-used measurement sets in the chooser.
-- Revision-update UX (surface a note when the attached measurement
-  set has been superseded in the library).
+The repository already contained substantially more library UI than the
+older deferred-status text below recorded. This slice verified that current
+implementation and closed the remaining parser and deletion gaps needed for
+normal desktop CRUD:
+
+- `ui/reference_library_manager_dialog.py` provides the existing three-pane
+  Work → Taxon Treatment → Measurement Set manager and its human-facing
+  `_ReferenceWorkForm`, `_TaxonTreatmentForm`, and `_MeasurementSetForm`.
+  Create/edit actions use only `ReferenceWorkRepository`,
+  `TaxonTreatmentRepository`, and `MeasurementSetRepository`, retaining UUIDs
+  and repository revision increments.
+- The measurement-set form now calls
+  `references.measurement_parser.parse_measurement_string` from an explicit
+  **Parse expression** action. It maps printed extremes, core bounds, explicit
+  centres/means, Q values, and `n` without inventing midpoints, means, counts,
+  or raw points. `raw_text` remains unchanged and first-class. Because the
+  normalized model has no Q core-bound columns, supplied Q endpoints map to
+  `q_min`/`q_max`; explicit `Qm` (or an explicitly printed Q centre) maps to
+  `q_mean`.
+- The manager now offers confirmed deletion for the selected work, treatment,
+  or measurement set. Deletes go through repository APIs. Active observation
+  uses remain protected by `ReferenceInUseError`, which is surfaced as an
+  understandable warning; the UI never bypasses the guard. Successful deletes
+  refresh the manager and emit `library_changed`, so attachment candidates are
+  refreshed by existing callers.
+- Existing Parmasto rows remain viewable/editable for preservation, but users
+  still cannot create normalized Parmasto sets until the domain model and
+  snapshot/plot contract can represent those values without flattening them.
+- Focused coverage in `tests/test_reference_library_manager_dialog.py` now
+  includes parser-derived bounds, verbatim printed text, nullable means,
+  repository-backed deletion, in-use error surfacing, hierarchy refresh, and
+  post-delete attachment-candidate visibility. The broader existing form tests
+  cover treatment/set create and edit identity/revision behavior, independent
+  `taxon_id` and `name_as_published`, and raw-point preservation.
+- `tools/review_ui/scenarios/references.py` registers
+  `reference.library-manager`, a deterministic no-network screenshot of the
+  complete three-pane hierarchy. All new strings are translated in the
+  maintained Bokmål, Swedish, and informal-German catalogs and compiled `.qm`
+  files.
+
+The assumption that the full library editor was still absent proved stale:
+commits predating this slice had already landed the manager, work/treatment/set
+forms, entry paths, and most CRUD tests. No competing second library surface
+was created. Existing attached observation snapshots remain frozen when an
+underlying library row is edited; the explicit update UX landed in the next
+slice below.
+
+#### Attached snapshot revision-awareness slice (2026-08-28)
+
+- Staleness is defined by the **semantic content of the canonical snapshot**,
+  not by `reference_measurement_sets.revision` alone. The repository rebuilds
+  the candidate snapshot through
+  `database.reference_citation.build_observation_reference_snapshot` and
+  compares parsed JSON after ignoring only the top-level
+  `reference_revision`. This catches citation/work-only and treatment-only
+  changes as well as measurement-set changes, while timestamp changes and
+  revision-only identical saves do not create false update prompts.
+- `observation_snapshots_semantically_equal` owns that comparison contract.
+  `ObservationReferenceUseRepository.snapshot_status` reports `current`,
+  `update_available`, or `source_missing`, and
+  `ObservationReferenceUseRepository.refresh_snapshot` performs the explicit
+  canonical rebuild. A no-op comparison performs no database write.
+- Explicit refresh changes only `snapshot_json`, `reference_revision`, and
+  `updated_at`. The observation-use UUID, observation association,
+  measurement-set UUID, role, note, selection time, and creation time remain
+  unchanged. A successor measurement-set UUID is not followed implicitly;
+  adoption is handled only by the separate explicit workflow below.
+- Missing works/treatments/measurement sets leave the historical snapshot
+  readable and plotted. They are reported as `source_missing`, do not show an
+  update action, and an attempted repository refresh fails without modifying
+  the attachment.
+- The Analysis reference table now has an unobtrusive Library column. Only a
+  semantically stale normalized attachment shows **Update** with an **Update
+  from library** hint. The explicit handler protects against active-observation
+  drift, refreshes the row and plot from persistence, and retains saved
+  enabled/color display overrides. Tooltips report update availability or a
+  missing source without changing the frozen row label or plot first.
+- Focused tests in `tests/test_reference_snapshot_updates.py`,
+  `tests/test_reference_library_desktop_slice.py`, and
+  `tests/test_main_window_reference_panel_taxon_lookup.py` cover work-only,
+  treatment-only, and measurement-set edits; pre-update immutability; explicit
+  refresh; semantic no-ops; missing sources; stable attachment identity and
+  metadata; successor isolation; observation drift; UI decoration/action; and
+  refresh of the plotted in-memory row.
+
+#### Explicit successor-adoption slice (2026-08-28)
+
+- Successor discovery follows the explicit graph direction
+  `successor.supersedes_id → predecessor`; it never guesses from revisions,
+  timestamps, content similarity, or UUID ordering. A single chain resolves to
+  its terminal successor. Forks, cycles, missing attached sources, and broken
+  source bundles at any point in the chain (including the attached source),
+  and successors the current plot translator cannot
+  render fail closed and leave the historical attachment in place.
+- `MeasurementSetRepository.resolve_terminal_successor` owns deterministic
+  graph traversal. `ObservationReferenceUseRepository.successor_status`
+  validates every source bundle in the chain and builds the terminal preview through the canonical
+  snapshot service. `ObservationReferenceUseRepository.adopt_successor`
+  re-resolves before writing and rejects a changed lineage, semantic successor
+  content that differs from the reviewed canonical snapshot, or a successor
+  that is already independently attached to the observation. Revision-only
+  churn with identical canonical content does not invalidate confirmation.
+- Adoption deliberately retains the existing `observation_reference_uses.id`.
+  That UUID identifies the observation's comparison and is also the key for
+  per-use display overrides and bundle-import idempotency. After explicit
+  confirmation, only `reference_measurement_set_id`, `reference_revision`,
+  `snapshot_json`, and `updated_at` change; observation association, role,
+  note, selection time, and creation time remain unchanged.
+- The Analysis Library column distinguishes in-place **Update** from
+  **Review successor…**. The review dialog shows both full canonical citations,
+  labels, taxon/locator, and raw expressions and defaults to cancellation. No successor is adopted until the user selects
+  **Adopt successor**. Observation-selection drift and lineage changes between
+  review and adoption abort safely.
+- Tests in `tests/test_reference_successor_adoption.py`,
+  `tests/test_reference_library_desktop_slice.py`, and
+  `tests/test_main_window_reference_panel_taxon_lookup.py` cover direct and
+  chained successors (including a broken intermediate), no successor,
+  missing/broken sources, fork/cycle, reviewed-content drift
+  protection, explicit adoption, cancellation, stable use identity and
+  metadata, action distinction, and reopen/plot behavior.
+
+#### Active-observation quick-add slice (2026-08-28)
+
+- The Analysis panel's **Quick add…** flow now captures the minimum normalized
+  hierarchy without leaving the observation: an explicitly selected or newly
+  drafted work, editable `name_as_published` and locator, and a verbatim
+  measurement expression parsed by the existing measurement parser/editor.
+  Bibliographic completeness remains a non-blocking hint in the reused work
+  editor.
+- New work editing uses the canonical `ReferenceWorkEditor` in draft mode, so
+  accepting that nested editor does not write anything before the outer quick
+  add is confirmed. Existing works remain searchable and explicitly selected;
+  exact normalized DOI/ISBN identity may safely reuse a work, while titles,
+  authors, and other fuzzy bibliographic similarities never auto-merge.
+- `QuickAddReferenceService` owns normalized persistence. Treatments are reused
+  only on an exact selected-work + taxon ID + case-insensitive trimmed
+  `name_as_published` + normalized locator match. A new measurement set is
+  always created, preserving distinct scientific datasets and leaving
+  successor/revision semantics unchanged. Attachment uses the canonical
+  snapshot repository path, then the observation rows and plot are refreshed.
+- The reference and observation stores are separate SQLite databases, so the
+  operation validates all editor output before writing and records ownership
+  of every new row. If attachment fails, it compensates in reverse order and
+  deletes only the measurement set, treatment, and work created by that
+  attempt; reused hierarchy rows are never rollback targets. Cancelling before
+  confirmation performs no write. Normalized-intended quick adds are validated
+  and attached before any compatibility persistence and do not create a legacy
+  reference row, so a validation or attachment failure cannot leave a fallback
+  row that looks like a successful add. Explicit legacy-only submissions keep
+  their existing behavior.
+- Focused tests in `tests/test_reference_quick_add_service.py`,
+  `tests/test_reference_add_dialog_normalized.py`,
+  `tests/test_reference_library_manager_dialog.py`, and
+  `tests/test_reference_panel_taxon_drift_and_retry.py` cover existing
+  work/treatment reuse, new and incomplete works, exact duplicate avoidance
+  without fuzzy merging, parser success/failure, verbatim `raw_text`, draft
+  cancellation, compensating rollback, canonical snapshot attachment, and
+  observation/plot refresh.
+
+#### Favourites, recents, and Stage 2 completion audit (2026-08-28)
+
+- Favourite and recent-use metadata is local-only in
+  `reference_values.db`. Favourites change only through the chooser's explicit
+  star control. Recency uses a monotonic local sequence and advances only after
+  a new attachment has successfully translated into the plot, including
+  normalized quick-add; browsing, cancellation, restore, detach, revision
+  refresh, and failed attachment do not count as use.
+- Preference metadata is deliberately device-local convenience state and is
+  excluded from cloud sync. A full copied database archive may physically
+  contain the local table, but bundle import intentionally does not merge it;
+  imported library records therefore start without favourite/recent ranking
+  on the receiving device. Scientific records and snapshots are unaffected.
+- The existing attachment chooser now offers **All**, **Favourites**, and
+  **Recently used** views. Ordering is deterministic: favourites first,
+  recency descending, then stable publication/taxon/UUID keys. Missing or
+  deleted measurement sets never surface; normal deletion cascades preference
+  cleanup. This metadata does not participate in snapshots, revisions,
+  successor lineage, legacy storage, or cloud sync.
+- The quick-add publication picker derives its leading work order from the
+  favourite/recent state of that work's measurement sets, then falls back to
+  stable work update/UUID order. This gives the work-level shortcut required
+  by Stage 2 without a second preference source of truth.
+- The completion audit verified library CRUD; nested treatment and measurement
+  editing; attach/detach/restore/plot; quick-add and rollback; canonical
+  snapshot updates; successor adoption; legacy compatibility; translations;
+  and focused regression coverage. Small audit gaps were closed: work search
+  includes year/DOI/ISBN, probable exact title/year/first-author duplicates
+  require confirmation, and name-only normalized treatments remain possible
+  when an observation has no taxon identifier.
+
+#### Deferred beyond Stage 2
+
 - Cloud sync of `observation_reference_uses` — deferred to Stage 4.
   This slice does not touch Supabase, `sporely-web`, or
   `sporely-landing`.

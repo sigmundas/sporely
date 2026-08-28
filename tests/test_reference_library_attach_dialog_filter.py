@@ -6,6 +6,7 @@ import os
 os.environ.setdefault("QT_QPA_PLATFORM", "offscreen")
 
 import pytest
+from PySide6.QtCore import Qt
 from PySide6.QtWidgets import QApplication, QWidget
 
 from database.reference_library import MeasurementSetCandidate
@@ -29,6 +30,8 @@ def _candidate(
     locator: str | None = "p. 42",
     kind: str = "range",
     raw: str = "7-10 x 4-6 µm",
+    favorite: bool = False,
+    recent_sequence: int | None = None,
 ) -> MeasurementSetCandidate:
     return MeasurementSetCandidate(
         measurement_set_id=id_,
@@ -41,6 +44,8 @@ def _candidate(
         reference_work_id="w1",
         reference_treatment_id=f"t-{id_}",
         taxon_id=taxon_id,
+        is_favorite=favorite,
+        recent_use_sequence=recent_sequence,
     )
 
 
@@ -146,6 +151,54 @@ def test_exclusion_still_applies_with_filters(qapp):
         # Exclusion filters the underlying candidate list — with taxon
         # scope on we should still see m2 only.
         assert dialog.table.rowCount() == 1
+    finally:
+        dialog.deleteLater()
+        parent.deleteLater()
+
+
+def test_usage_filter_shows_favourites_and_recent_items(qapp):
+    parent = QWidget()
+    dialog = ReferenceLibraryAttachDialog(
+        parent,
+        candidates=[
+            _candidate("favorite", taxon_id=None, favorite=True),
+            _candidate("recent", taxon_id=None, recent_sequence=4),
+            _candidate("plain", taxon_id=None),
+        ],
+    )
+    try:
+        dialog.usage_filter_combo.setCurrentIndex(
+            dialog.usage_filter_combo.findData("favorites")
+        )
+        assert dialog.table.rowCount() == 1
+        assert dialog.table.item(0, 1).data(Qt.UserRole) == "favorite"
+
+        dialog.usage_filter_combo.setCurrentIndex(
+            dialog.usage_filter_combo.findData("recent")
+        )
+        assert dialog.table.rowCount() == 1
+        assert dialog.table.item(0, 1).data(Qt.UserRole) == "recent"
+    finally:
+        dialog.deleteLater()
+        parent.deleteLater()
+
+
+def test_star_button_explicitly_toggles_favourite(qapp, monkeypatch):
+    calls = []
+    monkeypatch.setattr(
+        "ui.reference_library_attach_dialog.MeasurementSetPreferenceRepository.set_favorite",
+        lambda set_id, favorite: calls.append((set_id, favorite)),
+    )
+    parent = QWidget()
+    dialog = ReferenceLibraryAttachDialog(
+        parent, candidates=[_candidate("m1", taxon_id=None)]
+    )
+    try:
+        star = dialog.table.item(0, 0)
+        assert star.text() == "☆"
+        dialog._on_table_cell_clicked(0, 0)
+        assert calls == [("m1", True)]
+        assert dialog._candidates[0].is_favorite is True
     finally:
         dialog.deleteLater()
         parent.deleteLater()
