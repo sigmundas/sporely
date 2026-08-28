@@ -1,6 +1,6 @@
 # Reference Library and Public Reference Plotting Plan
 
-**Status:** Stages 1–2 and the Stage 3 private cloud schema/mutation slice are implemented; Stage 3 public projection and Stages 4–6 remain.
+**Status:** Stages 1–3 are implemented in the repositories; Stage 4 desktop sync and Stages 5–6 remain.
 **Canonical repository:** `sporely-py`
 **Canonical path:** `docs/plans/active/2026-08-05-reference-library-and-public-plots.md`
 **Scope:** `sporely-py` → `sporely-web`/Supabase → `sporely-landing`
@@ -10,12 +10,12 @@
 
 ## Agent handoff
 
-- Status: Active; Stages 1–2 and the Stage 3 private cloud schema/mutation
-  slice are implemented; the Stage 3 public projection and Stages 4–6 remain.
-- Last completed stage: Stage 3 normalized Supabase schema, RLS, and mutation
-  RPCs.
-- Current/next stage: Implement the audited Stage 3 frozen-snapshot public
-  observation projection in `sporely-web`.
+- Status: Active; Stages 1–3 are implemented in the repositories; Stages 4–6
+  remain.
+- Last completed stage: Stage 3 owner-private normalized cloud state and the
+  frozen-snapshot public observation projection.
+- Current/next stage: Stage 4 desktop sync, including its explicit local
+  `row_version` and durable-deletion prerequisites. Do not begin it implicitly.
 - Relevant commits: `108db20`, `6c9c456`, `08249ec`, `22bd29f`, `f05f2e3`, `2a1ebe3`.
 - Important decisions: Preserve stable UUIDs, frozen observation snapshots, revision-aware records, and the distinction between literature ranges and raw observations.
 - Do not: Fuzzy-merge bibliographic records, fabricate statistics, or begin public catalogue scope without a separate moderation design.
@@ -1730,14 +1730,54 @@ server canonicalization, strict snapshot keys, target-first retry handling,
 terminal-successor traversal, structured conflict handling, and the persistent
 deletion marker/shared advisory lock.
 
-Remaining Stage 3 work is the deliberately separate public observation
-snapshot projection and its visibility/blocking tests. The legacy
-`reference_values` table and `search_public_reference_values` function remain
-unchanged. Stage 4 desktop sync, including its local `row_version` and durable
-deletion dependencies, remains deferred. Historical raw-point entries retain
-the Stage 2 desktop validator's compatible shape (including additional point
-metadata); the public projection must explicitly reconstruct or sanitize that
-nested data rather than returning stored `raw_points` blindly.
+### Landed Stage 3 slice: public frozen-snapshot projection (2026-08-28)
+
+Migration
+`sporely-web/supabase/migrations/20260828172243_add_public_observation_references.sql`
+adds the audited APIs without changing any existing observation RPC:
+
+- `search_public_observation_references(bigint[])` returns one row per
+  requested eligible observation as `(observation_id, references jsonb)`,
+  deduplicates IDs, rejects raw arrays above 200 and distinct sets above 100,
+  and orders each attachment array by `selected_at, id`;
+- `get_public_observation_references(bigint)` returns that observation's array,
+  `[]` for an eligible observation with no valid live attachments, and `NULL`
+  when the observation is not publicly readable;
+- both functions are `STABLE SECURITY DEFINER`, use an empty search path,
+  revoke `PUBLIC`, and explicitly grant `anon`, `authenticated`, and
+  `service_role`.
+
+Eligibility exactly matches the existing public observation RPCs: literal
+public visibility, non-draft, non-banned owner, and no bidirectional block for
+an authenticated caller. There is no owner/private exception. The projection
+reads only live `observation_reference_uses`; it never joins works, treatments,
+or measurement sets, so a later source tombstone cannot alter or hide frozen
+evidence. Each result item contains only `use_id`, `role`,
+`reference_revision`, and a reconstructed snapshot-v1 allowlist. Owner note,
+owner identity, row/tombstone/version metadata, unknown snapshot keys, and
+raw-point metadata are excluded. Malformed or unsupported snapshots are
+omitted fail-closed without hiding other valid attachments.
+
+Transactional coverage in
+`sporely-web/supabase/tests/public_observation_references_test.sql` verifies
+anonymous and authenticated access; public/private/friends/draft boundaries;
+bans and blocks; owner isolation; deterministic ordering and deduplication;
+empty results; exact public shapes; malformed/unsupported snapshots;
+tombstoned uses; frozen evidence after source tombstoning; request caps;
+explicit grants; continued privacy of normalized tables; and preservation of
+the legacy `search_public_reference_values` surface. Fresh reset, the prior
+normalized mutation test, existing public-observation regression tests, and
+schema lint all pass. A fresh security/privacy review found no actionable
+issues after verifying the definer/search-path boundary, visibility and block
+rules, snapshot allowlists, request caps, deterministic aggregation, and the
+absence of current-library joins.
+
+No Stage 3 implementation remains. The new migration still requires the normal
+reviewed deployment workflow before the API is live. Stage 4 desktop sync,
+including its local `row_version` and durable deletion dependencies, remains
+explicitly deferred. Historical raw-point entries retain the Stage 2 desktop
+validator's compatible stored shape; this projection reconstructs their
+public nested shape rather than returning stored metadata blindly.
 
 ---
 
