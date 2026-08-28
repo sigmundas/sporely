@@ -2,6 +2,7 @@ from __future__ import annotations
 
 import os
 import inspect
+from pathlib import Path
 
 os.environ.setdefault("QT_QPA_PLATFORM", "offscreen")
 
@@ -164,6 +165,29 @@ def test_file_menu_contains_each_final_archive_action_once(monkeypatch, qapp):
     assert window.export_selected_observations_action.isEnabled()
     assert window.import_observations_action.isEnabled()
     window.deleteLater()
+
+
+def test_portable_export_warning_describes_unique_missing_source_count():
+    statuses = []
+    dummy = type("Window", (), {
+        "tr": staticmethod(lambda value: value),
+        "_set_observations_status": staticmethod(
+            lambda message, **kwargs: statuses.append((message, kwargs))
+        ),
+    })()
+    result = main_window.BackupResult(
+        Path("Sporely Observations.sporely"),
+        None,
+        ("portable/assets/missing.jpg",),
+    )
+
+    main_window.MainWindow._on_portable_export_completed(dummy, result)
+
+    assert statuses == [(
+        "Observation export created: Sporely Observations.sporely. "
+        "Missing referenced source files: 1.",
+        {"level": "warning", "auto_clear_ms": 12000},
+    )]
 
 
 def test_legacy_observation_tab_controls_and_callbacks_are_removed():

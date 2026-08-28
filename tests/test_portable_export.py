@@ -33,7 +33,7 @@ def test_portable_export_contains_only_selected_dependency_closure(
     images_dir.mkdir()
     selected_image = images_dir / "selected.jpg"
     selected_image.write_bytes(b"selected-working")
-    selected_original = tmp_path / "originals" / "selected.raw"
+    selected_original = tmp_path / "originals" / "selected.ORF"
     selected_original.parent.mkdir()
     selected_original.write_bytes(b"selected-original")
     cache_image = portable_installation / "cloud_cache" / "observations" / "cached.webp"
@@ -194,7 +194,7 @@ def test_portable_export_contains_only_selected_dependency_closure(
         assert names[0] == "manifest.json"
         assert set(names) - {"manifest.json"} == included
         assert "portable/assets/images/101/working.jpg" in names
-        assert "portable/assets/originals/101/original.raw" in names
+        assert "portable/assets/originals/101/original.orf" in names
         assert "portable/assets/calibrations/records/10/working.tif" in names
         assert "portable/assets/calibrations/assets/1301/local.raw" in names
         assert "portable/assets/images/102/working.webp" not in names
@@ -281,6 +281,49 @@ def test_cache_provenance_blocks_calibration_record_path(portable_installation, 
     )
     assert record.status == "excluded_by_policy"
     assert b"CLOUD_CALIBRATION_SENTINEL" not in destination.read_bytes()
+
+
+def test_repeated_missing_source_path_is_reported_once(portable_installation, tmp_path):
+    images_dir = tmp_path / "images"
+    images_dir.mkdir()
+    selected = images_dir / "selected.jpg"
+    selected.write_bytes(b"selected")
+    missing = tmp_path / "expired-calibration-source.jpg"
+    schema.save_app_settings({"images_dir": str(images_dir)})
+    with sqlite3.connect(schema.get_database_path()) as connection:
+        connection.execute("INSERT INTO observations (id, date) VALUES (1, '2026-08-28')")
+        connection.execute(
+            "INSERT INTO calibrations "
+            "(id, calibration_uuid, objective_key, calibration_date, microns_per_pixel, "
+            "image_filepath, measurements_json) VALUES (10, 'cal-x', '100X', "
+            "'2026-08-28', 0.1, ?, ?)",
+            (
+                str(missing),
+                json.dumps({
+                    "images": [{
+                        "path": str(missing),
+                        "source_path": str(missing),
+                    }]
+                }),
+            ),
+        )
+        connection.execute(
+            "INSERT INTO images (id, observation_id, filepath, calibration_id) "
+            "VALUES (101, 1, ?, 10)",
+            (str(selected),),
+        )
+        connection.commit()
+
+    result = export_observations(
+        {1}, tmp_path / "deduplicated-warning.sporely", app_version="test"
+    )
+
+    missing_entries = [
+        entry for entry in result.manifest.files
+        if entry.status == "missing_at_source"
+    ]
+    assert len(missing_entries) == 3
+    assert len(result.warnings) == 1
 
 
 def test_conflicting_calibration_asset_identity_fails_closed(portable_installation, tmp_path):

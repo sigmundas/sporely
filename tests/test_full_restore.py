@@ -101,6 +101,79 @@ def test_restore_replaces_installation_rebases_paths_and_keeps_machine_settings(
     assert sentinel.read_text(encoding="utf-8") == "keep"
 
 
+def test_restore_clears_orf_original_excluded_by_backup_policy(installation, tmp_path):
+    working = tmp_path / "source.jpg"
+    working.write_bytes(b"working-image")
+    original = tmp_path / "source.ORF"
+    original.write_bytes(b"raw-original")
+    with sqlite3.connect(schema.get_database_path()) as connection:
+        connection.execute("INSERT INTO observations (date) VALUES ('2026-08-28')")
+        connection.execute(
+            "INSERT INTO images (observation_id, filepath, original_filepath) "
+            "VALUES (1, ?, ?)",
+            (str(working), str(original)),
+        )
+        connection.execute(
+            "INSERT INTO calibrations "
+            "(calibration_uuid, objective_key, calibration_date, microns_per_pixel, "
+            "image_filepath) VALUES ('cal-orf', '100X', '2026-08-28', 0.1, ?)",
+            (str(original),),
+        )
+        connection.commit()
+    archive = tmp_path / "source.sporely"
+    create_full_backup(archive, app_version="test", qsettings_values={})
+
+    _restore_full_backup(
+        archive,
+        app_version="test",
+        safety_backup_path=tmp_path / "safety.sporely",
+    )
+
+    with sqlite3.connect(schema.get_database_path()) as connection:
+        filepath, original_filepath = connection.execute(
+            "SELECT filepath, original_filepath FROM images"
+        ).fetchone()
+        calibration_path = connection.execute(
+            "SELECT image_filepath FROM calibrations"
+        ).fetchone()[0]
+    assert Path(filepath).read_bytes() == b"working-image"
+    assert original_filepath is None
+    assert calibration_path is None
+
+
+def test_restore_accepts_orf_in_older_full_backup(installation, tmp_path, monkeypatch):
+    working = tmp_path / "source.jpg"
+    working.write_bytes(b"working-image")
+    original = tmp_path / "legacy-source.ORF"
+    original.write_bytes(b"legacy-raw-original")
+    with sqlite3.connect(schema.get_database_path()) as connection:
+        connection.execute("INSERT INTO observations (date) VALUES ('2026-08-28')")
+        connection.execute(
+            "INSERT INTO images (observation_id, filepath, original_filepath) "
+            "VALUES (1, ?, ?)",
+            (str(working), str(original)),
+        )
+        connection.commit()
+    monkeypatch.setattr(
+        "utils.archive.full_backup._asset_excluded_by_policy",
+        lambda path: False,
+    )
+    archive = tmp_path / "legacy-source.sporely"
+    create_full_backup(archive, app_version="test", qsettings_values={})
+
+    _restore_full_backup(
+        archive,
+        app_version="test",
+        safety_backup_path=tmp_path / "safety.sporely",
+    )
+
+    with sqlite3.connect(schema.get_database_path()) as connection:
+        restored_original = connection.execute(
+            "SELECT original_filepath FROM images"
+        ).fetchone()[0]
+    assert Path(restored_original).read_bytes() == b"legacy-raw-original"
+
+
 def test_restore_replaces_exact_plate_layout_collection_and_json_files(
     installation, tmp_path
 ):

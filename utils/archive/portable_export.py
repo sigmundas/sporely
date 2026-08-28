@@ -439,6 +439,7 @@ def export_observations(
             manifest_files: list[ManifestFile] = []
             included_files: list[_StagedFile] = []
             warnings: list[str] = []
+            warning_identities: set[str] = set()
             for item in sorted(files, key=lambda value: value.archive_path):
                 if item.status == "included":
                     assert item.source_path is not None
@@ -450,7 +451,10 @@ def export_observations(
                 else:
                     manifest_files.append(ManifestFile(item.archive_path, item.status))
                     if item.status == "missing_at_source":
-                        warnings.append(item.archive_path)
+                        identity = item.warning_identity or item.archive_path
+                        if identity not in warning_identities:
+                            warning_identities.add(identity)
+                            warnings.append(item.archive_path)
             manifest = build_manifest(
                 mode="portable_observations",
                 archive_id=archive_id or str(uuid.uuid4()),

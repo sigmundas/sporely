@@ -46,6 +46,7 @@ class _StagedFile:
     archive_path: str
     source_path: Path | None
     status: str
+    warning_identity: str | None = None
 
 
 def _stable_json_bytes(value: object) -> bytes:
@@ -160,12 +161,21 @@ def _resolve_row_path(value: object, images_dir: Path) -> Path | None:
     return path if path.is_absolute() else images_dir / path
 
 
+def _asset_excluded_by_policy(path: Path) -> bool:
+    return path.suffix.casefold() == ".orf"
+
+
 def _candidate(path: Path, archive_path: str, *, excluded: bool = False) -> _StagedFile:
     canonical_archive_path(archive_path)
     if excluded:
         return _StagedFile(archive_path, None, "excluded_by_policy")
     if not path.is_file():
-        return _StagedFile(archive_path, None, "missing_at_source")
+        return _StagedFile(
+            archive_path,
+            None,
+            "missing_at_source",
+            os.path.normcase(str(path.resolve(strict=False))),
+        )
     return _StagedFile(archive_path, path, "included")
 
 
@@ -215,7 +225,11 @@ def _collect_database_assets(database_path: Path, images_dir: Path) -> list[_Sta
                 source = _resolve_row_path(row[field], images_dir)
                 if source is not None:
                     destination = f"assets/{root}/{row['id']}/{label}{_suffix(source)}"
-                    candidates.append(_candidate(source, destination, excluded=excluded))
+                    candidates.append(_candidate(
+                        source,
+                        destination,
+                        excluded=excluded or _asset_excluded_by_policy(source),
+                    ))
 
         for row in connection.execute(
             "SELECT id, image_filepath, measurements_json FROM calibrations ORDER BY id"
@@ -223,12 +237,20 @@ def _collect_database_assets(database_path: Path, images_dir: Path) -> list[_Sta
             source = _resolve_row_path(row["image_filepath"], images_dir)
             if source is not None:
                 destination = f"assets/calibrations/records/{row['id']}/working{_suffix(source)}"
-                candidates.append(_candidate(source, destination))
+                candidates.append(_candidate(
+                    source,
+                    destination,
+                    excluded=_asset_excluded_by_policy(source),
+                ))
             for index, label, value, excluded in _json_image_entries(row["measurements_json"]):
                 source = _resolve_row_path(value, images_dir)
                 if source is not None:
                     destination = f"assets/calibrations/records/{row['id']}/metadata-{index}-{label}{_suffix(source)}"
-                    candidates.append(_candidate(source, destination, excluded=excluded))
+                    candidates.append(_candidate(
+                        source,
+                        destination,
+                        excluded=excluded or _asset_excluded_by_policy(source),
+                    ))
 
         for row in connection.execute(
             "SELECT id, asset_uuid, local_path, original_path, source_role, file_purpose, metadata_json FROM calibration_assets ORDER BY id"
@@ -242,7 +264,11 @@ def _collect_database_assets(database_path: Path, images_dir: Path) -> list[_Sta
                 source = _resolve_row_path(row[field], images_dir)
                 if source is not None:
                     destination = f"assets/calibrations/assets/{identity}/{label}{_suffix(source)}"
-                    candidates.append(_candidate(source, destination, excluded=excluded))
+                    candidates.append(_candidate(
+                        source,
+                        destination,
+                        excluded=excluded or _asset_excluded_by_policy(source),
+                    ))
             metadata = row["metadata_json"]
             try:
                 loaded = json.loads(metadata) if isinstance(metadata, str) else metadata
@@ -253,12 +279,20 @@ def _collect_database_assets(database_path: Path, images_dir: Path) -> list[_Sta
                     source = _resolve_row_path(loaded.get(label), images_dir)
                     if source is not None:
                         destination = f"assets/calibrations/assets/{identity}/metadata-{label}{_suffix(source)}"
-                        candidates.append(_candidate(source, destination, excluded=excluded))
+                        candidates.append(_candidate(
+                            source,
+                            destination,
+                            excluded=excluded or _asset_excluded_by_policy(source),
+                        ))
                 for index, value in enumerate(loaded.get("companion_paths") or []):
                     source = _resolve_row_path(value, images_dir)
                     if source is not None:
                         destination = f"assets/calibrations/assets/{identity}/metadata-companion-{index}{_suffix(source)}"
-                        candidates.append(_candidate(source, destination, excluded=excluded))
+                        candidates.append(_candidate(
+                            source,
+                            destination,
+                            excluded=excluded or _asset_excluded_by_policy(source),
+                        ))
     return candidates
 
 

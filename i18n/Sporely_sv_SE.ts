@@ -5233,6 +5233,11 @@ Senaste version: {latest}</translation>
         <translation>Bredde (μm)</translation>
     </message>
     <message>
+        <location filename="../ui/main_window.py" line="22100"/>
+        <source>Observation export created: {name}. Missing referenced source files: {count}.</source>
+        <translation>Observationsexport skapad: {name}. Saknade refererade källfiler: {count}.</translation>
+    </message>
+    <message>
         <location filename="../ui/main_window.py" line="22143"/>
         <source>The archive could not be identified safely: {error}</source>
         <translation>Arkivet kunde inte identifieras på ett säkert sätt: {error}</translation>
@@ -5613,11 +5618,6 @@ Namn och e-post (valfritt) läggs till observationer i databasn, vilket är anv�
         <location filename="../ui/main_window.py" line="22086"/>
         <source>Exporting selected observations…</source>
         <translation>Exporterar valda observationer…</translation>
-    </message>
-    <message>
-        <location filename="../ui/main_window.py" line="22100"/>
-        <source>Observation export created: {name}. {count} referenced files were missing.</source>
-        <translation>Observationsexport skapad: {name}. {count} refererade filer saknades.</translation>
     </message>
     <message>
         <location filename="../ui/main_window.py" line="22104"/>

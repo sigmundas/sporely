@@ -265,6 +265,42 @@ def test_full_backup_sanitizes_staged_state_and_collects_authoritative_assets(
             )
 
 
+def test_full_backup_excludes_orf_assets_by_policy(installation, tmp_path):
+    working = tmp_path / "working.jpg"
+    working.write_bytes(b"working")
+    original = tmp_path / "camera-original.ORF"
+    original.write_bytes(b"large-raw-original")
+    calibration_original = tmp_path / "calibration-source.orf"
+    calibration_original.write_bytes(b"calibration-raw-original")
+    with sqlite3.connect(schema.get_database_path()) as connection:
+        connection.execute("INSERT INTO observations (date) VALUES ('2026-08-28')")
+        connection.execute(
+            "INSERT INTO images (observation_id, filepath, original_filepath) "
+            "VALUES (1, ?, ?)",
+            (str(working), str(original)),
+        )
+        connection.execute(
+            "INSERT INTO calibrations "
+            "(calibration_uuid, objective_key, calibration_date, microns_per_pixel, "
+            "image_filepath) VALUES ('cal-orf', '100X', '2026-08-28', 0.1, ?)",
+            (str(calibration_original),),
+        )
+        connection.commit()
+
+    destination = tmp_path / "without-orfs.sporely"
+    result = create_full_backup(destination, app_version="test", qsettings_values={})
+
+    statuses = {entry.path: entry.status for entry in result.manifest.files}
+    assert statuses["assets/originals/1/original.orf"] == "excluded_by_policy"
+    assert (
+        statuses["assets/calibrations/records/1/working.orf"]
+        == "excluded_by_policy"
+    )
+    with ZipFile(destination) as archive:
+        assert "assets/images/1/working.jpg" in archive.namelist()
+        assert not any(name.lower().endswith(".orf") for name in archive.namelist())
+
+
 def test_unknown_setting_aborts_without_final_archive(installation, tmp_path):
     with sqlite3.connect(schema.get_database_path()) as connection:
         connection.execute("INSERT INTO settings (key, value) VALUES ('unknown_new_key', 'value')")

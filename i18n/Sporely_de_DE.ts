@@ -5510,11 +5510,6 @@ Name und E-Mail (optional) werden zu Beobachtungen in der Datenbank hinzugefuegt
         <translation>Ausgewählte Beobachtungen werden exportiert…</translation>
     </message>
     <message>
-        <location filename="../ui/main_window.py" line="22100"/>
-        <source>Observation export created: {name}. {count} referenced files were missing.</source>
-        <translation>Beobachtungsexport erstellt: {name}. {count} referenzierte Dateien fehlten.</translation>
-    </message>
-    <message>
         <location filename="../ui/main_window.py" line="22104"/>
         <source>Observation export created: {name}.</source>
         <translation>Beobachtungsexport erstellt: {name}.</translation>
@@ -5587,6 +5582,11 @@ Name und E-Mail (optional) werden zu Beobachtungen in der Datenbank hinzugefuegt
         <location filename="../ui/main_window.py" line="22227"/>
         <source>Observation import complete: {imported} new, {reused} already imported.</source>
         <translation>Beobachtungsimport abgeschlossen: {imported} neu, {reused} bereits importiert.</translation>
+    </message>
+    <message>
+        <location filename="../ui/main_window.py" line="22100"/>
+        <source>Observation export created: {name}. Missing referenced source files: {count}.</source>
+        <translation>Beobachtungsexport erstellt: {name}. Fehlende referenzierte Quelldateien: {count}.</translation>
     </message>
     <message>
         <location filename="../ui/main_window.py" line="22253"/>

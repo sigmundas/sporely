@@ -22097,7 +22097,7 @@ class MainWindow(GeometryMixin, QMainWindow):
     def _on_portable_export_completed(self, result: BackupResult) -> None:
         if result.warnings:
             message = self.tr(
-                "Observation export created: {name}. {count} referenced files were missing."
+                "Observation export created: {name}. Missing referenced source files: {count}."
             ).format(name=result.path.name, count=len(result.warnings))
             level = "warning"
         else:

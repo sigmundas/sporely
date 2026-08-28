@@ -5510,11 +5510,6 @@ Navn og e-post (valgfritt) legges til observasjoner i databasen, nyttig hvis du 
         <translation>Eksporterer valgte observasjoner…</translation>
     </message>
     <message>
-        <location filename="../ui/main_window.py" line="22100"/>
-        <source>Observation export created: {name}. {count} referenced files were missing.</source>
-        <translation>Observasjonseksport opprettet: {name}. {count} refererte filer manglet.</translation>
-    </message>
-    <message>
         <location filename="../ui/main_window.py" line="22104"/>
         <source>Observation export created: {name}.</source>
         <translation>Observasjonseksport opprettet: {name}.</translation>
@@ -5587,6 +5582,11 @@ Navn og e-post (valgfritt) legges til observasjoner i databasen, nyttig hvis du 
         <location filename="../ui/main_window.py" line="22227"/>
         <source>Observation import complete: {imported} new, {reused} already imported.</source>
         <translation>Observasjonsimporten er fullført: {imported} nye, {reused} allerede importert.</translation>
+    </message>
+    <message>
+        <location filename="../ui/main_window.py" line="22100"/>
+        <source>Observation export created: {name}. Missing referenced source files: {count}.</source>
+        <translation>Observasjonseksport opprettet: {name}. Manglende refererte kildefiler: {count}.</translation>
     </message>
     <message>
         <location filename="../ui/main_window.py" line="22253"/>
