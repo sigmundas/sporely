@@ -1,6 +1,6 @@
 # Reference Library and Public Reference Plotting Plan
 
-**Status:** Stages 1–3 and Stage 4a–4g are implemented; Stage 4h and Stages 5–6 remain.
+**Status:** Stages 1–4 are implemented and verified; Stages 5–6 remain.
 **Canonical repository:** `sporely-py`
 **Canonical path:** `docs/plans/active/2026-08-05-reference-library-and-public-plots.md`
 **Scope:** `sporely-py` → `sporely-web`/Supabase → `sporely-landing`
@@ -10,14 +10,14 @@
 
 ## Agent handoff
 
-- Status: Active; Stages 1–3 and Stage 4a–4g are complete; Stage 4h and
-  Stages 5–6 remain.
-- Last completed slice: Stage 4g observation-reference-use sync described in
-  §19d. The complete reference graph remains disconnected from production
-  orchestration until Stage 4h.
-- Current/next slice: Stage 4h enable-and-compare orchestration.
-- Relevant commits: `108db20`, `6c9c456`, `08249ec`, `22bd29f`, `f05f2e3`,
-  `2a1ebe3`, `69ec641`, `8893007`, `edd9f70`, `e8b340b`, `ea1e1b9`.
+- Status: Active; Stages 1–4 are complete. Stages 5–6 remain.
+- Last completed slice: Stage 4h enable-and-compare orchestration, including
+  live two-profile verification and the measurement-set retry fix described
+  below.
+- Current/next slice: Stage 5 public API exposure and read models, only when
+  separately started from this canonical plan.
+- Relevant Stage 4 commits: `199f127`, `69ec641`, `8893007`, `edd9f70`,
+  `e8b340b`, `ea1e1b9`, `eaca8e7`, `0277516`.
 - Important decisions: Preserve stable UUIDs, frozen observation snapshots, revision-aware records, and the distinction between literature ranges and raw observations.
 - Comparison baseline: the frozen `cloud-sync-pre-refactor` tag; at the Stage 4
   audit it resolves to `e9accd9`, the audit's starting `refactor/cloud-sync`
@@ -2289,6 +2289,65 @@ parent deletion resolves those child tombstones as terminal; if the parent
 delete fails, the durable tombstones remain eligible for normal child-first
 execution. The reference facade remains absent from `sync_all`; Stage 4h owns
 that activation and old-vs-new behavior comparison.
+
+### Stage 4h activation and verification status (2026-08-29)
+
+The normalized-reference facade is now invoked by both production coordinator
+modes after the legacy observation pull has established observation cloud
+identities. Normal sync completes the existing calibration pull and then runs
+the whole-graph pull/reconciliation followed by the deterministic CAS executor.
+Download from Cloud passes the fail-closed `PullOnlyCloudClient` and an explicit
+`pull_only=True` source gate; the facade performs the four complete owner reads
+and local reconciliation, then returns without planning or attempting writes.
+
+Reference outcomes are additive under `result["reference_sync"]`; the existing
+top-level observation and calibration counts retain their old meaning.
+Reference transport errors, conflicts, and dependency blocks also enter the
+existing top-level error channel. Reference-only pushes or pulls count as real
+sync activity and trigger an observations-tab refresh so restored attachments
+and plots become visible. No media flags, observation/calibration sequencing,
+child-cursor semantics, or caller-mode arguments changed.
+
+The final reference/observation-use suite passes 448 tests. The required
+legacy fast-path, dirty-loop, child-cursor, download-only, tombstone,
+image/media-policy, and caller-mode suite passes 258 tests after deselecting the
+one documented baseline defect. The representative
+old-vs-new suite was run against frozen baseline `e9accd9` and the Stage 4h
+working tree: both produced 258 passes and the same single failure in
+`test_cloud_media_materialization_state_detects_missing_and_ready_media`.
+That failure is a pre-baseline `NameError` for undefined
+`suppress_reverse_identity`, not a Stage 4 regression. Literal legacy
+coordinator result/order/caller-mode characterizations also pass identically.
+The only intended production deltas are the four complete reference owner
+reads in either coordinator mode, CAS reference writers in normal mode only,
+the additive typed result, and Stage 4g's tombstone-first observation-delete
+ordering.
+
+The first live `sync-test-a` run created and uploaded the work and treatment,
+but measurement set `57f47e04-59c9-4fcf-9a30-3eb1d42faabe` returned the Stage
+3 domain status `invalid_payload`; its observation use then correctly remained
+blocked with `parent_not_acknowledged`. The exact local range payload contained
+`"raw_points_json": null`. `sync_reference_measurement_set` inserts that field
+with `p_payload->'raw_points_json'`, so JSON `null` did not become SQL `NULL`
+and violated the cloud constraint requiring either SQL `NULL` or a JSON array.
+The typed adapter now omits this optional field for a create while preserving
+genuine arrays and explicit null on acknowledged updates (which must still be
+able to clear a prior array). Executor errors and blocked outcomes retain the
+exact RPC domain status instead of collapsing it to `remote rejected mutation`
+or a bare entity ID. Focused regressions reproduce the live UUID, values, and
+domain rejection.
+
+The repaired `create_outcome_unknown` row then converged on retry without a new
+identity. The completed disposable-profile gate verified create/retry,
+profile A → cloud → profile B pull, pull-only zero-write behavior, CAS update,
+an overlapping reference edit becoming a durable conflict while preserving
+the cloud row, conflict persistence across restart, and observation-use
+detach/tombstone reconciliation through a fresh-profile pull and restart.
+Dependency ordering, frozen evidence, tombstones, restart safety, and normal
+versus pull-only mode boundaries therefore passed the live activation gate.
+
+Stage 4 is complete. The pre-existing media NameError remains a separately
+scoped baseline defect and is not part of the reference-sync activation.
 
 ---
 

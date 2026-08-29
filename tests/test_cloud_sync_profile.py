@@ -2,7 +2,21 @@ import json
 from pathlib import Path
 from types import SimpleNamespace
 
+import pytest
+
 from utils import cloud_sync
+
+
+@pytest.fixture(autouse=True)
+def _isolate_legacy_profile_contract(monkeypatch):
+    """Keep profiler assertions independent from the Stage 4h executor."""
+    from utils import reference_cloud_sync
+
+    monkeypatch.setattr(
+        reference_cloud_sync,
+        "sync_reference_library",
+        lambda _client, *, pull_only=False: reference_cloud_sync.ReferenceSyncResult(),
+    )
 
 
 class _ProfiledClient(cloud_sync.SporelyCloudClient):
@@ -88,7 +102,7 @@ def test_sync_all_profile_emits_structured_lines_and_phase_metrics(monkeypatch, 
 
     result = cloud_sync.sync_all(client, sync_images=False, materialize_remote_images=False)
     output_lines = [line for line in capsys.readouterr().out.splitlines() if line.startswith('[cloud_sync_profile]')]
-    assert len(output_lines) == 9
+    assert len(output_lines) == 10
 
     phase_events = []
     summary_event = None
@@ -108,6 +122,7 @@ def test_sync_all_profile_emits_structured_lines_and_phase_metrics(monkeypatch, 
         'refresh_remote_observations_after_push',
         'pull_all',
         'pull_calibrations',
+        'reference_sync',
     ]
     assert summary_event is not None
     assert summary_event['status'] == 'ok'

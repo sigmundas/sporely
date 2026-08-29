@@ -117,6 +117,8 @@ class RecordingReferenceClient:
             "row_version": expected + 1 if expected else 1,
             "deleted_at": "2026-08-29T10:00:00Z" if payload.get("deleted") else None,
         }
+        if kind == "measurement_set":
+            row.setdefault("raw_points_json", None)
         self.remote_rows[key] = row
         return {"status": status, "row": row}
 
@@ -582,12 +584,15 @@ def test_tombstone_transport_failure_keeps_durable_retry_intent(databases):
     assert result.retryable_errors == result.errors
 
 
-def test_remote_dependency_block_is_recorded_without_advancing_state(databases):
+@pytest.mark.parametrize("status", ["blocked", "invalid_parent"])
+def test_remote_dependency_block_preserves_rpc_status_without_advancing_state(
+    databases, status
+):
     work = ReferenceWorkRepository.create(
         ReferenceWork("work-a", "book", "Work", "Work")
     )
     client = RecordingReferenceClient()
-    client.statuses[("work", work.id)] = "blocked"
+    client.statuses[("work", work.id)] = status
 
     result = sync_reference_library(client)
 
@@ -596,7 +601,47 @@ def test_remote_dependency_block_is_recorded_without_advancing_state(databases):
     assert state.cloud_row_version is None
     assert state.accepted_payload is None
     assert state.sync_status == "retry"
-    assert result.blocked == ("work:work-a",)
+    assert state.last_error == f"remote status: {status}"
+    assert result.blocked == (f"work:work-a:{status}",)
+
+
+def test_terminal_rpc_rejection_preserves_measurement_set_domain_status(databases):
+    entity_id = "57f47e04-59c9-4fcf-9a30-3eb1d42faabe"
+    work = ReferenceWorkRepository.create(
+        ReferenceWork("226f4c9a-6f9f-4a74-83ce-42777a4215dd", "book", "Work", "Work")
+    )
+    treatment = TaxonTreatmentRepository.create(
+        TaxonTreatment(
+            "1fadc07b-fcf9-4477-8809-add57173efd0",
+            work.id,
+            name_as_published="Russula paludosa",
+        )
+    )
+    measurement_set = MeasurementSetRepository.create(
+        MeasurementSet(
+            id=entity_id,
+            taxon_treatment_id=treatment.id,
+            character="spore_size",
+            raw_text="4-5x6-7",
+            data_kind="range",
+            length_core_min=4.0,
+            length_core_max=5.0,
+            width_core_min=6.0,
+            width_core_max=7.0,
+        )
+    )
+    client = RecordingReferenceClient()
+    client.statuses[("measurement_set", measurement_set.id)] = "invalid_payload"
+
+    result = sync_reference_library(client)
+
+    expected = f"measurement_set:{entity_id}: remote status: invalid_payload"
+    state = ReferenceCloudSyncStateRepository.get_library(
+        "measurement_set", entity_id
+    )
+    assert result.errors == (expected,)
+    assert result.terminal_errors == (expected,)
+    assert state.last_error == "remote status: invalid_payload"
 
 
 def test_incomplete_acknowledgement_row_is_terminal_and_does_not_advance(databases):

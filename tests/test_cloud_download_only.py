@@ -18,6 +18,18 @@ from database import models, schema
 from utils import cloud_sync
 
 
+@pytest.fixture(autouse=True)
+def _isolate_legacy_download_contract(monkeypatch):
+    """Keep this legacy media suite focused; Stage 4h has coordinator coverage."""
+    from utils import reference_cloud_sync
+
+    monkeypatch.setattr(
+        reference_cloud_sync,
+        "sync_reference_library",
+        lambda _client, *, pull_only=False: reference_cloud_sync.ReferenceSyncResult(),
+    )
+
+
 # ---------------------------------------------------------------------------
 # Shared fixtures
 # ---------------------------------------------------------------------------

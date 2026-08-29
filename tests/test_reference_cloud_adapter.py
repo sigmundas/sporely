@@ -139,6 +139,69 @@ def test_mutations_forward_exact_typed_request(method, payload, expected_call):
     assert client.calls == [expected_call]
 
 
+def test_measurement_set_omits_null_raw_points_for_stage3_sql_null_contract():
+    """Reproduce the payload rejected by sync-test-a's Stage 3 RPC."""
+    entity_id = "57f47e04-59c9-4fcf-9a30-3eb1d42faabe"
+    payload = {
+        "id": entity_id,
+        "taxon_treatment_id": "1fadc07b-fcf9-4477-8809-add57173efd0",
+        "character": "spore_size",
+        "raw_text": "4-5x6-7",
+        "data_kind": "range",
+        "length_min": None,
+        "length_core_min": 4.0,
+        "length_core_max": 5.0,
+        "length_max": None,
+        "width_min": None,
+        "width_core_min": 6.0,
+        "width_core_max": 7.0,
+        "width_max": None,
+        "q_min": None,
+        "q_max": None,
+        "q_mean": None,
+        "length_mean": None,
+        "width_mean": None,
+        "sample_size": None,
+        "specimen_count": None,
+        "mount_medium": None,
+        "stain": None,
+        "preparation": None,
+        "measurement_method": None,
+        "notes": None,
+        "raw_points_json": None,
+        "supersedes_id": None,
+        "revision": 1,
+        "deleted": False,
+    }
+    client = FakeClient(
+        mutation_response={"status": "created", "row": _row(entity_id)}
+    )
+
+    ReferenceCloudAdapter(client, "user-1").sync_measurement_set(payload, 0)
+
+    sent_payload = client.calls[0][1]
+    assert "raw_points_json" not in sent_payload
+    assert sent_payload["length_min"] is None
+    assert sent_payload["raw_text"] == "4-5x6-7"
+
+
+def test_measurement_set_update_keeps_null_raw_points_to_clear_remote_array():
+    payload = {
+        "id": "set-1",
+        "taxon_treatment_id": "treatment-1",
+        "raw_points_json": None,
+        "revision": 2,
+    }
+    client = FakeClient(
+        mutation_response={"status": "updated", "row": _row("set-1", row_version=2)}
+    )
+
+    ReferenceCloudAdapter(client, "user-1").sync_measurement_set(payload, 1)
+
+    assert "raw_points_json" in client.calls[0][1]
+    assert client.calls[0][1]["raw_points_json"] is None
+
+
 def test_tombstone_request_and_response_are_preserved():
     client = FakeClient(
         mutation_response={

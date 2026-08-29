@@ -236,7 +236,11 @@ def _handle_live_result(
         )
         return "conflict"
     _record_live_failure(entity_type, entity_id, f"remote status: {result.status}")
-    return "blocked" if result.disposition == "blocked" else "error"
+    return (
+        f"blocked:{result.status}"
+        if result.disposition == "blocked"
+        else f"error:{result.status}"
+    )
 
 
 def _execute_live(
@@ -347,7 +351,11 @@ def _execute_tombstone(
         )
         return "conflict"
     _record_tombstone_failure(current, f"remote status: {result.status}")
-    return "blocked" if result.disposition == "blocked" else "error"
+    return (
+        f"blocked:{result.status}"
+        if result.disposition == "blocked"
+        else f"error:{result.status}"
+    )
 
 
 def _executor_use_blocked(item, cloud_user_id: str) -> str | None:
@@ -415,7 +423,11 @@ def _handle_use_live_result(
         )
         return "conflict"
     _record_use_failure(use_id, f"remote status: {result.status}")
-    return "blocked" if result.disposition == "blocked" else "error"
+    return (
+        f"blocked:{result.status}"
+        if result.disposition == "blocked"
+        else f"error:{result.status}"
+    )
 
 
 def _execute_use_live(
@@ -612,7 +624,11 @@ def _execute_use_tombstone(
         )
         return "conflict"
     _record_use_tombstone_failure(current, f"remote status: {result.status}")
-    return "blocked" if result.disposition == "blocked" else "error"
+    return (
+        f"blocked:{result.status}"
+        if result.disposition == "blocked"
+        else f"error:{result.status}"
+    )
 
 
 def pull_reference_library(client: object) -> ReferenceSyncResult:
@@ -725,10 +741,12 @@ def _push_reference_library(client: object) -> ReferenceSyncResult:
             pushed += 1
         elif outcome == "conflict":
             conflicts.append(f"{item.entity_type}:{item.entity_id}")
-        elif outcome == "blocked":
-            blocked.append(f"{item.entity_type}:{item.entity_id}")
-        elif outcome == "error":
-            message = f"{item.entity_type}:{item.entity_id}: remote rejected mutation"
+        elif outcome.startswith("blocked:"):
+            status = outcome.removeprefix("blocked:")
+            blocked.append(f"{item.entity_type}:{item.entity_id}:{status}")
+        elif outcome.startswith("error:"):
+            status = outcome.removeprefix("error:")
+            message = f"{item.entity_type}:{item.entity_id}: remote status: {status}"
             errors.append(message)
             terminal_errors.append(message)
 
@@ -792,10 +810,12 @@ def _push_reference_library(client: object) -> ReferenceSyncResult:
             pushed += 1
         elif outcome == "conflict":
             conflicts.append(f"{item.entity_type}:{item.entity_id}")
-        elif outcome == "blocked":
-            blocked.append(f"{item.entity_type}:{item.entity_id}")
-        elif outcome == "error":
-            message = f"{item.entity_type}:{item.entity_id}: remote rejected mutation"
+        elif outcome.startswith("blocked:"):
+            status = outcome.removeprefix("blocked:")
+            blocked.append(f"{item.entity_type}:{item.entity_id}:{status}")
+        elif outcome.startswith("error:"):
+            status = outcome.removeprefix("error:")
+            message = f"{item.entity_type}:{item.entity_id}: remote status: {status}"
             errors.append(message)
             terminal_errors.append(message)
 
@@ -850,10 +870,12 @@ def _combine_reference_results(*results: ReferenceSyncResult) -> ReferenceSyncRe
     )
 
 
-def sync_reference_library(client: object) -> ReferenceSyncResult:
-    """Reconcile then push the dormant normalized reference library graph."""
+def sync_reference_library(
+    client: object, *, pull_only: bool = False
+) -> ReferenceSyncResult:
+    """Reconcile the normalized graph, pushing only in bidirectional mode."""
     pulled = pull_reference_library(client)
-    if pulled.errors:
+    if pull_only or pulled.errors:
         return pulled
     return _combine_reference_results(pulled, _push_reference_library(client))
 
@@ -871,8 +893,25 @@ def merge_reference_sync_result(
     legacy_result: dict[str, object],
     reference_result: ReferenceSyncResult,
 ) -> dict[str, object]:
-    """Keep Stage 4e results detached from legacy orchestration until Stage 4h."""
+    """Attach typed reference outcomes without changing legacy sync counters."""
 
-    if reference_result != ReferenceSyncResult():
-        raise ValueError("reference sync results are not wired before Stage 4h")
+    reference_payload = {
+        "pushed": reference_result.pushed,
+        "pulled": reference_result.pulled,
+        "errors": list(reference_result.errors),
+        "retryable_errors": list(reference_result.retryable_errors),
+        "terminal_errors": list(reference_result.terminal_errors),
+        "conflicts": list(reference_result.conflicts),
+        "blocked": list(reference_result.blocked),
+    }
+    legacy_result["reference_sync"] = reference_payload
+    errors = list(legacy_result.get("errors") or [])
+    errors.extend(reference_result.errors)
+    errors.extend(
+        f"reference sync conflict: {item}" for item in reference_result.conflicts
+    )
+    errors.extend(
+        f"reference sync blocked: {item}" for item in reference_result.blocked
+    )
+    legacy_result["errors"] = errors
     return legacy_result

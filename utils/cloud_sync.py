@@ -4799,6 +4799,18 @@ def summarize_sync_change_activity(result: dict | None) -> dict:
     # to the summary count is not tracked separately, so use the result value.
     observations_pulled = _result_int('pulled')
     deleted_remote_rows = len(data.get('deleted_remote') or [])
+    reference_sync = data.get('reference_sync')
+    if not isinstance(reference_sync, dict):
+        reference_sync = {}
+
+    def _reference_int(key: str) -> int:
+        try:
+            return max(0, int(reference_sync.get(key, 0) or 0))
+        except Exception:
+            return 0
+
+    reference_pushed = _reference_int('pushed')
+    reference_pulled = _reference_int('pulled')
 
     real_remote_change = (
         observations_metadata_patched
@@ -4808,12 +4820,14 @@ def summarize_sync_change_activity(result: dict | None) -> dict:
         + calibrations_pushed
         + calibration_reference_images_uploaded
         + observations_deleted_remote
+        + reference_pushed
     )
     real_local_change = (
         observations_pulled
         + calibrations_pulled
         + remote_media_downloads
         + remote_media_materializations
+        + reference_pulled
     )
     # ``deleted_remote_rows`` (cloud observations deleted elsewhere, awaiting local
     # review) is surfaced by its own notification branch, so it is reported here
@@ -4835,6 +4849,8 @@ def summarize_sync_change_activity(result: dict | None) -> dict:
         'remote_media_downloads': remote_media_downloads,
         'remote_media_materializations': remote_media_materializations,
         'deleted_remote_rows': deleted_remote_rows,
+        'reference_pushed': reference_pushed,
+        'reference_pulled': reference_pulled,
         'real_remote_change': real_remote_change,
         'real_local_change': real_local_change,
         'any_real_change': any_real_change,
@@ -4868,6 +4884,22 @@ def sync_result_requires_observation_refresh(result: dict | None) -> bool:
         return True
     if data.get('errors') or data.get('deleted_remote'):
         return True
+
+    reference_sync = data.get('reference_sync')
+    if isinstance(reference_sync, dict):
+        if any(
+            reference_sync.get(key)
+            for key in (
+                'pushed',
+                'pulled',
+                'errors',
+                'retryable_errors',
+                'terminal_errors',
+                'conflicts',
+                'blocked',
+            )
+        ):
+            return True
 
     for key in ('pushed', 'pulled'):
         try:
@@ -6451,6 +6483,17 @@ def sync_all(
                     full_pull=True,
                     pull_only=True,
                 )
+            # Import lazily: the typed adapter depends on cloud-sync's public
+            # error classes, so a module-level import would create a cycle.
+            from utils.reference_cloud_sync import (
+                merge_reference_sync_result,
+                sync_reference_library,
+            )
+
+            with _cloud_sync_phase_scope(profiler, 'reference_sync'):
+                reference_result = sync_reference_library(
+                    pull_only_client, pull_only=True
+                )
             _set_progress_phase(progress_state, 'finalize', phase_total=1)
             _advance_progress(progress_state, 1)
             _emit_progress(progress_cb, "Finalizing cloud sync…", progress_state)
@@ -6477,6 +6520,7 @@ def sync_all(
                 # to be gated at its source.
                 'blocked_write_attempts': list(pull_only_client.write_attempts),
             }
+            merge_reference_sync_result(result, reference_result)
             return result
 
         # Progress state feeds a weighted global bar: each phase maps onto a
@@ -6775,6 +6819,17 @@ def sync_all(
                 remote_calibrations=remote_calibrations,
             )
 
+        # The observation pull has established any cloud identities required
+        # by reference-use reconciliation. Keep this as a sibling executor and
+        # import lazily to avoid a cloud-sync/adapter import cycle.
+        from utils.reference_cloud_sync import (
+            merge_reference_sync_result,
+            sync_reference_library,
+        )
+
+        with _cloud_sync_phase_scope(profiler, 'reference_sync'):
+            reference_result = sync_reference_library(client)
+
         # Leave the UI on a neutral phase rather than the last per-calibration
         # message while the worker finishes and the table refreshes. The
         # finalize phase is the only slot that may reach 100%.
@@ -6805,6 +6860,7 @@ def sync_all(
         if original_sync is not None:
             result['original_sync'] = original_sync
         result['sync_summary'] = dict(sync_summary)
+        merge_reference_sync_result(result, reference_result)
         return result
     except Exception as exc:
         sync_error = exc

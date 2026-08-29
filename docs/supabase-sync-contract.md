@@ -98,6 +98,12 @@ Transport failure retries the identical UUID, payload, and expected token.
 `created`, `updated`, and `no_change` persist the returned authoritative
 baseline; CAS conflict persists review state and does not overwrite local
 intent. An unknown create is resolved by a complete owner read before retry.
+For new measurement-set mutations, absent `raw_points_json` is omitted from
+the RPC payload rather than encoded as JSON `null`: the Stage 3 insert uses the
+JSONB `->` operator and the table accepts only SQL `NULL` or a JSON array.
+Genuine point arrays, including an empty array, are transmitted unchanged;
+acknowledged updates retain explicit JSON `null` so an existing array can be
+cleared through `jsonb_populate_record`.
 
 Observation-use pull imports the frozen `snapshot_json` exactly as stored.
 Three-way reconciliation may automatically combine only disjoint role/note
@@ -106,6 +112,23 @@ divergence remains an explicit conflict. Local observation deletion commits
 child tombstones before requesting remote parent deletion. If that request
 fails, tombstones remain retryable child-first; if it succeeds, the parent
 acknowledgement resolves them without another child write.
+
+Production orchestration runs normalized-reference reconciliation only after
+the legacy observation pull has established observation cloud identities.
+Normal sync reads the four complete owner feeds, reconciles them, then executes
+the deterministic CAS plan. Download from Cloud passes the fail-closed
+pull-only client into the same facade and returns immediately after the four
+reads and local reconciliation; it must issue no reference or legacy writer
+call, complete with `cloud_writes_completed == 0`, and leave
+`blocked_write_attempts` empty.
+
+The coordinator reports normalized-reference outcomes under `reference_sync`
+with separate `pushed`, `pulled`, `errors`, `retryable_errors`,
+`terminal_errors`, `conflicts`, and `blocked` fields. Existing top-level
+observation/calibration counts do not absorb reference counts. Reference
+errors, conflicts, and dependency blocks are also surfaced through the
+existing top-level error channel. Typed errors and blocked outcomes retain the
+RPC domain status (for example, `invalid_payload` or `invalid_parent`).
 
 ## Storage of desired cloud image-byte state
 

@@ -12,9 +12,16 @@ from utils import cloud_sync
 @pytest.fixture(autouse=True)
 def _isolate_spore_summary_sync(monkeypatch):
     """Observation metadata tests do not exercise spore-summary networking."""
+    from utils import reference_cloud_sync
+
     monkeypatch.setattr(cloud_sync, "_push_summary_for_current_observation", lambda *args, **kwargs: None)
     monkeypatch.setattr(cloud_sync, "_reconcile_missing_spore_summaries", lambda *args, **kwargs: 0)
     monkeypatch.setattr(cloud_sync, "_reconcile_missing_spore_measurements", lambda *args, **kwargs: 0)
+    monkeypatch.setattr(
+        reference_cloud_sync,
+        "sync_reference_library",
+        lambda _client, *, pull_only=False: reference_cloud_sync.ReferenceSyncResult(),
+    )
 
 
 def _init_metadata_sync_db(tmp_path):

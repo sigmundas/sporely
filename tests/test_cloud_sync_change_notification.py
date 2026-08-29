@@ -88,6 +88,32 @@ def test_complete_noop_result_does_not_require_observation_refresh():
     assert cloud_sync.sync_result_requires_observation_refresh(result) is False
 
 
+def test_reference_only_changes_are_real_and_refresh_observation_plots():
+    result = _result_with_summary()
+    result.update({
+        "pushed": 0,
+        "pulled": 0,
+        "errors": [],
+        "deleted_remote": [],
+        "reference_sync": {
+            "pushed": 2,
+            "pulled": 3,
+            "errors": [],
+            "retryable_errors": [],
+            "terminal_errors": [],
+            "conflicts": [],
+            "blocked": [],
+        },
+    })
+
+    activity = cloud_sync.summarize_sync_change_activity(result)
+
+    assert activity["reference_pushed"] == 2
+    assert activity["reference_pulled"] == 3
+    assert activity["any_real_change"] is True
+    assert cloud_sync.sync_result_requires_observation_refresh(result) is True
+
+
 def test_observation_refresh_is_conservative_for_incomplete_result():
     assert cloud_sync.sync_result_requires_observation_refresh(
         {"pushed": 0, "pulled": 0, "errors": []}

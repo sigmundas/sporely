@@ -15,6 +15,18 @@ import pytest
 from utils import cloud_sync
 
 
+@pytest.fixture(autouse=True)
+def _isolate_legacy_child_cursor_contract(monkeypatch):
+    """Keep cursor tests focused; reference activation is tested separately."""
+    from utils import reference_cloud_sync
+
+    monkeypatch.setattr(
+        reference_cloud_sync,
+        "sync_reference_library",
+        lambda _client, *, pull_only=False: reference_cloud_sync.ReferenceSyncResult(),
+    )
+
+
 # ---------------------------------------------------------------------------
 # Shared DB helpers (same schema as test_cloud_sync_fast_path.py)
 # ---------------------------------------------------------------------------

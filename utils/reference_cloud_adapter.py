@@ -191,6 +191,11 @@ class ReferenceCloudAdapter:
 
     def sync_measurement_set(self, payload: dict, expected_row_version: int):
         clean = self._request(payload, _MEASUREMENT_SET_KEYS, expected_row_version)
+        # Stage 3 inserts this JSONB field with ``p_payload->``. JSON ``null``
+        # is not SQL NULL and violates the table's array-or-NULL constraint;
+        # omission is the contract representation for an absent point series.
+        if expected_row_version == 0 and clean.get("raw_points_json") is None:
+            clean.pop("raw_points_json", None)
         return self._call(
             self._client.sync_reference_measurement_set, clean, expected_row_version
         )

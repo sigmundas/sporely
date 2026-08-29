@@ -28,6 +28,18 @@ from database import models
 from utils import cloud_sync
 
 
+@pytest.fixture(autouse=True)
+def _isolate_legacy_fast_path_contract(monkeypatch):
+    """Keep fast-path assertions independent from the Stage 4h sibling executor."""
+    from utils import reference_cloud_sync
+
+    monkeypatch.setattr(
+        reference_cloud_sync,
+        "sync_reference_library",
+        lambda _client, *, pull_only=False: reference_cloud_sync.ReferenceSyncResult(),
+    )
+
+
 def _connect(db_path):
     conn = sqlite3.connect(db_path)
     conn.row_factory = sqlite3.Row

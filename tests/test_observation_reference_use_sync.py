@@ -110,6 +110,8 @@ class ReferenceGraphClient:
             "updated_at": "2026-08-29T00:00:01Z",
             "deleted_at": "2026-08-29T00:00:02Z" if payload.get("deleted") else None,
         }
+        if kind == "measurement_set":
+            row.setdefault("raw_points_json", None)
         self.remote_rows[key] = row
         return {"status": "updated" if expected else "created", "row": row}
 

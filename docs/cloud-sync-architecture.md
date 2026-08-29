@@ -57,11 +57,11 @@ Sibling modules that share sync responsibility (do **not** assume
 | `utils/cloud_media_audit.py` | Read-only audit of cloud media rows vs storage objects |
 | `utils/cloud_spore_mosaic.py`, `utils/cloud_spore_mosaic_backfill.py` | Spore-mosaic derivative sync and backfill |
 | `utils/spore_summary_sync.py` | Spore-summary derivative push/pull |
-| `utils/reference_cloud_sync.py` | Dormant Stage 4 normalized-reference sync facade and typed result. Stage 4g stages all four owner feeds, reconciles library dependencies before observation uses, and executes deterministic CAS pushes when called directly; `sync_all` integration remains Stage 4h. |
+| `utils/reference_cloud_sync.py` | Normalized-reference sibling executor and typed result. It stages all four owner feeds, reconciles library dependencies before observation uses, and executes deterministic CAS pushes in normal sync; pull-only stops after reconciliation. |
 | `database/reference_sync_state.py` | Stage 4 normalized-reference transport repository. It stores account-bound baselines, row versions, retry/conflict state, durable deletion intent, and atomic acknowledgement/restore transitions in the owning database. |
 | `database/reference_sync_planner.py` | Pure Stage 4c normalized-reference graph planner and read-only durable snapshot loader. It orders live work parent-first and tombstones child-first and reports dependency/account/conflict blocks without network activity. |
 | `database/reference_use_sync_reconciliation.py` | Stage 4g complete-feed observation-use reconciliation. It preserves frozen snapshots, maps verified observation identities, and applies baseline-aware updates/tombstones without rebuilding evidence. |
-| `utils/reference_cloud_adapter.py` | Dormant Stage 4d typed boundary over the four normalized-reference RPC writers and four completely paginated owner readers. It validates payloads/results and classifies transport failures without planning or persistence policy. |
+| `utils/reference_cloud_adapter.py` | Typed boundary over the four normalized-reference RPC writers and four completely paginated owner readers. It validates payloads/results and classifies transport failures without planning or persistence policy. |
 | `utils/r2_storage.py` | Low-level R2/Worker storage adapter |
 
 Normalized reference transport state is deliberately separate from the domain
@@ -73,16 +73,17 @@ tables. Works, treatments, and measurement sets use
 create initial state and capture deletion intent in the same transaction as
 domain mutation, including observation-parent cascades. Full backups retain
 these tables; portable exports exclude them. Mutation ownership, graph
-planning, and the four-entity push executor are implemented but dormant from
-production orchestration; `sync_all` remains unchanged until Stage 4h.
+planning, and the four-entity executor remain separate from legacy
+observation/media/calibration ownership. `sync_all` invokes the facade only
+after its legacy observation pull has established cloud identities.
 
 Application mutations are owned by the repositories in
 `database/reference_library.py`; their update paths record transport intent in
 the same SQLite transaction. Insert/delete intent remains trigger-owned so
 direct observation cascades cannot bypass it. Archive import revision upgrades
 are the documented repository bypass and call the same connection-scoped
-intent helpers. The Stage 4g facade executes fresh plans only when called
-directly. It first stages complete work, treatment, measurement-set, and
+intent helpers. The reference facade executes a fresh plan for each normal
+sync. It first stages complete work, treatment, measurement-set, and
 observation-use owner feeds. It reconciles the library in its owning database,
 then uses after verified observation identity and source convergence. Live rows are
 applied parent-first, explicit remote tombstones child-first, and per-table
@@ -93,8 +94,8 @@ Remote tombstone markers retain restore CAS tokens without becoming outbound
 delete intent. Use pulls preserve the remote frozen snapshot verbatim and
 three-way merge only non-overlapping role/note changes. The facade then
 persists every push acknowledgement before replanning, orders measurement-set
-successors after their acknowledged predecessors, and is not called by
-`sync_all`. Acknowledgement
+successors after their acknowledged predecessors, and is called after legacy
+observation and calibration pulls. Acknowledgement
 transitions atomically follow a row into a concurrent tombstone or same-ID
 recreation so restart cannot strand a stale delete token.
 
@@ -103,8 +104,9 @@ pull-only blocked operations; the four owner readers are explicitly allowed.
 Readers select an allowlisted row shape and paginate in
 `updated_at.asc,id.asc` order. Stage 4g consumes all four complete owner feeds
 before any local apply; the executor also uses a relevant reader to reconcile
-ambiguous create outcomes before retrying. The adapter remains unreachable from
-`sync_all` until Stage 4h.
+ambiguous create outcomes before retrying. In pull-only mode the facade
+receives the fail-closed wrapper, reads and reconciles all four complete feeds,
+and returns before any push planning or writer call.
 
 ---
 
@@ -138,6 +140,8 @@ sync_all()
        list_measurement_changes_since()       #   spore_measurements legs
   -> pull_all(forced_pull_cloud_ids=…)        (L22251)
   -> advance child-change cursor              # only after pull_all succeeds
+  -> pull_calibrations()
+  -> sync_reference_library()                 # pull graph, then CAS push
 ```
 
 The child-change probe detects cloud-side child edits whose parent
@@ -170,6 +174,8 @@ sync_all(pull_only=True)
   -> PullOnlyCloudClient(client)              (L2170, fail-closed wrapper)
   -> pull_only_client.list_remote_observations()
   -> pull_all(pull_only_client, full_pull=True, pull_only=True)
+  -> sync_reference_library(pull_only_client, pull_only=True)
+       -> four complete paginated owner reads; no reference writer
   -> result: pushed=0, cloud_writes_completed=0,
              blocked_write_attempts=list(wrapper.write_attempts)
 ```
@@ -179,6 +185,13 @@ with normal sync (no parallel engine). `pull_all` honours the wrapper's
 `is_pull_only` marker even if the caller forgot `pull_only=True` (L22280),
 and source-gates its own write paths (e.g. EXIF backfill PATCH skipped at
 L22288). See section D for the write-boundary rule.
+
+Both modes attach a `reference_sync` result object containing separate
+`pushed`, `pulled`, `errors`, `retryable_errors`, `terminal_errors`,
+`conflicts`, and `blocked` fields. Legacy top-level observation/calibration
+counts retain their existing meaning. Actionable reference errors, conflicts,
+and blocks are also appended to the top-level `errors` list so existing UI
+error handling cannot report a false success.
 
 ### Calibration sync
 
