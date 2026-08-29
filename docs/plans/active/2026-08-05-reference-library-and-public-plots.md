@@ -1,7 +1,7 @@
 # Reference Library and Public Reference Plotting Plan
 
-**Status:** Stages 1–5 and Stages 6a–6f are implemented and verified. Stage
-6g–6l remain.
+**Status:** Stages 1–5 and Stages 6a–6g are implemented and verified. Stages
+6h–6l remain.
 **Canonical repository:** `sporely-py`
 **Canonical path:** `docs/plans/active/2026-08-05-reference-library-and-public-plots.md`
 **Scope:** `sporely-py` → `sporely-web`/Supabase → `sporely-admin` →
@@ -12,13 +12,13 @@
 
 ## Agent handoff
 
-- Status: Active; Stages 1–5 and Stage 6a–6f are complete, and the remaining
+- Status: Active; Stages 1–5 and Stage 6a–6g are complete, and the remaining
   Stage 6 contract is resolved.
-- Last completed slice: Stage 6f citation export artifacts in `sporely-web`
-  (`ed04e25`). The catalogue and moderation system remain dormant,
+- Last completed slice: Stage 6g exact-taxon public read APIs in `sporely-web`
+  (`a2eeea5`). The catalogue and moderation system remain dormant,
   operational memberships/policies and allowed origins are still unsupplied,
   and nothing was deployed.
-- Current/next slice: Stage 6g exact-taxon public read APIs in `sporely-web`,
+- Current/next slice: Stage 6h landing curated API/read model and species listing,
   only when separately started from this canonical plan.
 - Relevant Stage 4 commits: `199f127`, `69ec641`, `8893007`, `edd9f70`,
   `e8b340b`, `ea1e1b9`, `eaca8e7`, `0277516`, `9c5346b`.
@@ -2832,13 +2832,15 @@ lands as its own commit. No slice may activate the next slice's behavior.
    conflict refresh. Add action-builder, stale-response, permission, keyboard,
    focus, escaped-text, and lifecycle rendering tests. Do not reuse the dirty
    current checkout or expose service credentials.
-6. **Stage 6f — citation export artifacts (`sporely-web`).** Add an append-only
+6. **Stage 6f — citation export artifacts (`sporely-web`; complete at
+   `ed04e25`).** Add an append-only
    export artifact keyed to each immutable publication bundle and materialize
    UTF-8 plain text, BibTeX, and CSL-JSON solely from its structured curated
    work revision. Backfill/replay deterministically and test Unicode, escaping,
    stable citation keys, exact versions, DOI normalization, hostile text, and
    source changes. No public API or landing behavior; RIS remains deferred.
-7. **Stage 6g — exact-taxon public read APIs (`sporely-web`).** Add the two
+7. **Stage 6g — exact-taxon public read APIs (`sporely-web`; complete at
+   `a2eeea5`).** Add the two
    curated RPCs above plus an additive public species-to-stable-taxonomy
    identity field. Expose the materialized exports in the exact-key envelope.
    Test exact v3 species-rank matching, zero/ambiguous resolved identities,
@@ -3156,6 +3158,62 @@ lands as its own commit. No slice may activate the next slice's behavior.
   tests and fixed with terminal-suffix-only normalization plus a nonempty
   postcondition. Final re-reviews found no remaining material issue.
 
+### Stage 6g completion record (2026-08-30)
+
+- `sporely-web` migration
+  `20260829220943_add_public_curated_reference_reads.sql` adds the exact-key
+  `search_public_curated_reference_sets(integer, integer, timestamptz, uuid)`
+  and `get_public_curated_reference_set(uuid, integer)` RPCs. Discovery accepts
+  only a positive current taxonomy-v3 concept whose rank is exactly `species`;
+  it has no slug, name, taxonomy-v2, descendant, alias, or fuzzy fallback.
+  Discovery returns only each current published head. Exact reads retain an
+  immutable published/deprecated revision and frozen publication taxon name;
+  an explicit withdrawn revision returns only the documented status tombstone.
+- The result envelope is reconstructed from the immutable publication,
+  publication-taxon, and Stage 6f artifact rows. Snapshot and citation keys,
+  types, sizes, IDs, revisions, normalized DOI/export values, source hashes,
+  per-format hashes, and aggregate artifact hash are revalidated before any
+  item is exposed. Malformed or provenance-mismatched bundles fail closed.
+  Output includes only the frozen snapshot, allowlisted structured citation,
+  exact assignment, status/supersession fields, and exact UTF-8 plain-text,
+  BibTeX, and parsed CSL-JSON artifacts. It never reads or projects personal
+  library, submission, report, membership, curator, audit, or private-note
+  state. Draft successors are not exposed.
+- Existing public species search/detail signatures retain every prior field and
+  ordering and add one nullable `taxonIdentity` object. Identity is derived in
+  one set-based pass over the same caller-visible public, non-draft,
+  non-banned, block-filtered observation population. Exactly one distinct
+  non-null resolved v3 species ID returns its current registry canonical name;
+  zero, ambiguity, an ineligible rank, or an invalid name returns null.
+  Existing public observation/reference RPCs are unchanged.
+- Public functions are postgres-owned `SECURITY DEFINER` routines with empty
+  search paths, explicit `anon`/`authenticated`/`service_role` grants, and no
+  direct private helper/table path. Renamed legacy species implementations are
+  execution-revoked. Discovery validates at most 100 deterministic candidates,
+  returns at most the requested 50 items and 1 MiB, and uses bounded overscan
+  so malformed leading rows do not normally strand an older valid row. Exact
+  reads fail closed above 100 assignments or a 1 MiB serialized response.
+  These are technical abuse bounds, not the still-unresolved production rate
+  policy or default page size.
+- Focused tests cover exact species-rank lookup, zero/ambiguous visible
+  identities, caller block filtering, additive legacy field/order parity,
+  multiple frozen assignments, keyset ties, bounded malformed omission,
+  revisions, deprecation/supersession, draft-successor non-leakage, withdrawn
+  tombstones, uppercase HTTPS, hostile text, malformed snapshot/citation/schema,
+  artifact-version corruption, assignment and request limits, grants, direct
+  role denial, and anonymous/authenticated access. A fresh migration reset and
+  21 relevant Stage 3–6g SQL/security regressions passed. Database lint added
+  no warning beyond the already documented pre-existing immutable-versus-stable
+  findings; `git diff --check` passed.
+- Fresh correctness and security/privacy/abuse reviews found and closed
+  per-row observation rescans, repeated per-assignment export reconstruction,
+  unbounded pre-limit work/response size, valid-source bound mismatches,
+  citation schema typing, uppercase URL rejection, draft-successor leakage,
+  oversized-assignment discovery, malformed-page stalling, and legacy ordering.
+  Final re-reviews found no remaining material issue. No migration, public API,
+  landing/Compare behavior, `/references` route, or moderation workflow was
+  deployed or activated.
+
 ### Open operational policy inputs
 
 These do not change the technical boundary, but must be supplied before the
@@ -3171,9 +3229,9 @@ corresponding behavior is activated:
 - public catalogue rate-limit numbers and default page size within the hard
   database caps.
 
-The recommended next implementation slice is Stage 6g only: exact-taxon public
-read APIs in `sporely-web`, while keeping landing/Compare behavior deferred to
-its later slice.
+The recommended next implementation slice is Stage 6h only: the strict curated
+API/read model and exact-species listing in `sporely-landing`, while keeping
+Compare mutation deferred to Stage 6i/6j.
 
 ---
 
