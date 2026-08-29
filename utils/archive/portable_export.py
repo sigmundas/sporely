@@ -131,6 +131,8 @@ def _prune_main_database(database_path: Path, observation_ids: set[int]) -> None
             "portable_import_provenance",
             "observation_reference_use_cloud_sync_state",
             "observation_reference_use_cloud_tombstones",
+            "observation_reference_use_cloud_pull_cursors",
+            "observation_reference_use_cloud_remote_tombstone_markers",
         ):
             connection.execute(f"DELETE FROM {table}")
         connection.commit()
@@ -226,6 +228,8 @@ def _prune_reference_database(main_database: Path, reference_database: Path) -> 
         )
         connection.execute("DELETE FROM reference_cloud_sync_state")
         connection.execute("DELETE FROM reference_cloud_tombstones")
+        connection.execute("DELETE FROM reference_cloud_pull_cursors")
+        connection.execute("DELETE FROM reference_cloud_remote_tombstone_markers")
         connection.execute("DELETE FROM reference_measurement_set_preferences")
         connection.commit()
         connection.execute("VACUUM")

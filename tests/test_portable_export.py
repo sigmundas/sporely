@@ -151,6 +151,16 @@ def test_portable_export_contains_only_selected_dependency_closure(
             "'PORTABLE_USE_TOMBSTONE_SENTINEL', "
             "'create_outcome_unknown')"
         )
+        connection.execute(
+            "INSERT INTO observation_reference_use_cloud_pull_cursors "
+            "(cloud_user_id, updated_at, use_id) VALUES "
+            "('PORTABLE_USE_CURSOR_SENTINEL', '2026-08-29', 'use-a')"
+        )
+        connection.execute(
+            "INSERT INTO observation_reference_use_cloud_remote_tombstone_markers "
+            "(cloud_user_id, use_id, cloud_row_version, accepted_payload_json, deleted_at) "
+            "VALUES ('PORTABLE_USE_MARKER_SENTINEL', 'remote-use', 2, '{}', '2026-08-29')"
+        )
         connection.commit()
 
     with sqlite3.connect(schema.get_reference_database_path()) as connection:
@@ -190,6 +200,17 @@ def test_portable_export_contains_only_selected_dependency_closure(
             "(entity_type, entity_id, cloud_user_id, remote_identity_state) "
             "VALUES ('work', 'deleted-work', "
             "'PORTABLE_REFERENCE_TOMBSTONE_SENTINEL', 'create_outcome_unknown')"
+        )
+        connection.execute(
+            "INSERT INTO reference_cloud_pull_cursors "
+            "(cloud_user_id, entity_type, updated_at, entity_id) VALUES "
+            "('PORTABLE_REFERENCE_CURSOR_SENTINEL', 'work', '2026-08-29', 'work-a')"
+        )
+        connection.execute(
+            "INSERT INTO reference_cloud_remote_tombstone_markers "
+            "(cloud_user_id, entity_type, entity_id, cloud_row_version, "
+            "accepted_payload_json, deleted_at) VALUES "
+            "('PORTABLE_REFERENCE_MARKER_SENTINEL', 'work', 'remote-work', 2, '{}', '2026-08-29')"
         )
         connection.execute(
             "INSERT INTO reference_measurement_set_preferences "
@@ -274,6 +295,12 @@ def test_portable_export_contains_only_selected_dependency_closure(
         assert connection.execute(
             "SELECT COUNT(*) FROM observation_reference_use_cloud_tombstones"
         ).fetchone()[0] == 0
+        assert connection.execute(
+            "SELECT COUNT(*) FROM observation_reference_use_cloud_pull_cursors"
+        ).fetchone()[0] == 0
+        assert connection.execute(
+            "SELECT COUNT(*) FROM observation_reference_use_cloud_remote_tombstone_markers"
+        ).fetchone()[0] == 0
     assert b"UNRELATED_OBSERVATION_SENTINEL" not in main_db.read_bytes()
     assert b"EXCLUDED_INSTALLATION_SETTING_SENTINEL" not in main_db.read_bytes()
     with sqlite3.connect(reference_db) as connection:
@@ -286,6 +313,12 @@ def test_portable_export_contains_only_selected_dependency_closure(
         ).fetchone()[0] == 0
         assert connection.execute(
             "SELECT COUNT(*) FROM reference_cloud_tombstones"
+        ).fetchone()[0] == 0
+        assert connection.execute(
+            "SELECT COUNT(*) FROM reference_cloud_pull_cursors"
+        ).fetchone()[0] == 0
+        assert connection.execute(
+            "SELECT COUNT(*) FROM reference_cloud_remote_tombstone_markers"
         ).fetchone()[0] == 0
         assert connection.execute(
             "SELECT COUNT(*) FROM reference_measurement_set_preferences"

@@ -12464,22 +12464,6 @@ class ObservationsTab(QWidget):
 
                 cloud_failures: list[str] = []
                 cloud_copy_start = time.perf_counter() if _OBS_DEBUG_TIMING and cloud_id else None
-                cloud_copy_thread = None
-                if cloud_id:
-                    def _delete_cloud_copy_worker() -> None:
-                        try:
-                            cloud_failures.extend(
-                                self._delete_cloud_copy_for_local_observation_cloud_id(cloud_id)
-                            )
-                        except Exception as exc:
-                            cloud_failures.append(self.tr("cloud {id}: {error}").format(id=cloud_id, error=exc))
-
-                    cloud_copy_thread = threading.Thread(
-                        target=_delete_cloud_copy_worker,
-                        name=f"Delete cloud copy {cloud_id}",
-                        daemon=True,
-                    )
-                    cloud_copy_thread.start()
 
                 image_count_start = time.perf_counter() if _OBS_DEBUG_TIMING else None
                 actual_image_count = len(ImageDB.get_images_for_observation(obs_id))
@@ -12512,7 +12496,29 @@ class ObservationsTab(QWidget):
                 if actual_image_count <= 0:
                     advance_progress()
                 failures.extend(delete_failures)
-                if cloud_copy_thread is not None:
+                # Local deletion must commit the durable child-use tombstones
+                # before the remote parent can cascade-delete those rows.
+                if cloud_id:
+                    def _delete_cloud_copy_worker() -> None:
+                        try:
+                            cloud_failures.extend(
+                                self._delete_cloud_copy_for_local_observation_cloud_id(
+                                    cloud_id
+                                )
+                            )
+                        except Exception as exc:
+                            cloud_failures.append(
+                                self.tr("cloud {id}: {error}").format(
+                                    id=cloud_id, error=exc
+                                )
+                            )
+
+                    cloud_copy_thread = threading.Thread(
+                        target=_delete_cloud_copy_worker,
+                        name=f"Delete cloud copy {cloud_id}",
+                        daemon=True,
+                    )
+                    cloud_copy_thread.start()
                     cloud_copy_thread.join()
                     _obs_timing_log(
                         "delete local observation cloud copy",
@@ -12586,6 +12592,13 @@ class ObservationsTab(QWidget):
             if client is None:
                 return [self.tr("cloud {id}: not logged in to Sporely Cloud").format(id=cloud_id)]
             client.delete_cloud_observation(cloud_id)
+            cloud_user_id = str(getattr(client, "user_id", "") or "").strip()
+            if cloud_user_id:
+                from utils.reference_cloud_sync import (
+                    acknowledge_observation_parent_delete,
+                )
+
+                acknowledge_observation_parent_delete(cloud_user_id, cloud_id)
         except Exception as exc:
             return [self.tr("cloud {id}: {error}").format(id=cloud_id, error=exc)]
         try:

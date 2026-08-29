@@ -132,11 +132,12 @@ def _set_row(**updates):
 
 
 class PullClient:
-    def __init__(self, *, works=None, treatments=None, sets=None):
+    def __init__(self, *, works=None, treatments=None, sets=None, uses=None):
         self.user_id = "user-1"
         self.works = list(works or [])
         self.treatments = list(treatments or [])
         self.sets = list(sets or [])
+        self.uses = list(uses or [])
         self.calls: list[str] = []
         self.failure: str | None = None
 
@@ -156,7 +157,7 @@ class PullClient:
         return self._read("measurement_set", self.sets)
 
     def list_observation_reference_uses(self):
-        raise AssertionError("Stage 4f must not read observation uses")
+        return self._read("observation_use", self.uses)
 
     def sync_reference_work(self, *_args):
         raise AssertionError("pull must not write")
@@ -239,7 +240,12 @@ def test_fresh_complete_graph_is_imported_parent_first_and_clean(databases):
         state = ReferenceCloudSyncStateRepository.get_library(kind, entity_id)
         assert state.cloud_row_version == 1
         assert state.sync_status == "clean"
-    assert client.calls == ["list:work", "list:treatment", "list:measurement_set"]
+    assert client.calls == [
+        "list:work",
+        "list:treatment",
+        "list:measurement_set",
+        "list:observation_use",
+    ]
     assert ReferenceCloudSyncStateRepository.get_library_pull_cursor(
         "user-1", "measurement_set"
     ) == ("2026-08-01T00:00:05Z", "set-1")

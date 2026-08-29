@@ -112,6 +112,17 @@ def test_full_backup_sanitizes_staged_state_and_collects_authoritative_assets(
             "('work', 'deleted-work', 'backup-user', 'acknowledged', 3, "
             "'{" + '"id":"deleted-work"' + "}')"
         )
+        connection.execute(
+            "INSERT INTO reference_cloud_pull_cursors "
+            "(cloud_user_id, entity_type, updated_at, entity_id) "
+            "VALUES ('backup-user', 'work', '2026-08-29', 'work-1')"
+        )
+        connection.execute(
+            "INSERT INTO reference_cloud_remote_tombstone_markers "
+            "(cloud_user_id, entity_type, entity_id, cloud_row_version, "
+            "accepted_payload_json, deleted_at) VALUES "
+            "('backup-user', 'work', 'remote-work', 4, '{}', '2026-08-29')"
+        )
         connection.commit()
     with sqlite3.connect(schema.get_database_path()) as connection:
         connection.execute("INSERT INTO observations (date) VALUES ('2026-08-27')")
@@ -183,6 +194,16 @@ def test_full_backup_sanitizes_staged_state_and_collects_authoritative_assets(
             "'backup-user', 'acknowledged', 2, "
             "'{" + '"id":"deleted-use"' + "}')"
         )
+        connection.execute(
+            "INSERT INTO observation_reference_use_cloud_pull_cursors "
+            "(cloud_user_id, updated_at, use_id) "
+            "VALUES ('backup-user', '2026-08-29', 'use-1')"
+        )
+        connection.execute(
+            "INSERT INTO observation_reference_use_cloud_remote_tombstone_markers "
+            "(cloud_user_id, use_id, cloud_row_version, accepted_payload_json, deleted_at) "
+            "VALUES ('backup-user', 'remote-use', 3, '{}', '2026-08-29')"
+        )
         connection.executemany(
             "INSERT OR REPLACE INTO settings (key, value) VALUES (?, ?)",
             [
@@ -253,6 +274,14 @@ def test_full_backup_sanitizes_staged_state_and_collects_authoritative_assets(
             "SELECT expected_row_version FROM observation_reference_use_cloud_tombstones "
             "WHERE use_id='deleted-use'"
         ).fetchone()[0] == 2
+        assert connection.execute(
+            "SELECT use_id FROM observation_reference_use_cloud_pull_cursors "
+            "WHERE cloud_user_id='backup-user'"
+        ).fetchone()[0] == "use-1"
+        assert connection.execute(
+            "SELECT cloud_row_version FROM observation_reference_use_cloud_remote_tombstone_markers "
+            "WHERE use_id='remote-use'"
+        ).fetchone()[0] == 3
     assert "inat_client_secret" not in staged_settings
     assert staged_settings["profile_name"] == "Mushroom User"
     assert staged_settings["originals_dir"] == str(original.parent)
@@ -277,6 +306,14 @@ def test_full_backup_sanitizes_staged_state_and_collects_authoritative_assets(
             "SELECT expected_row_version FROM reference_cloud_tombstones "
             "WHERE entity_type='work' AND entity_id='deleted-work'"
         ).fetchone()[0] == 3
+        assert connection.execute(
+            "SELECT entity_id FROM reference_cloud_pull_cursors "
+            "WHERE cloud_user_id='backup-user' AND entity_type='work'"
+        ).fetchone()[0] == "work-1"
+        assert connection.execute(
+            "SELECT cloud_row_version FROM reference_cloud_remote_tombstone_markers "
+            "WHERE entity_type='work' AND entity_id='remote-work'"
+        ).fetchone()[0] == 4
     assert b"do-not-archive-token" not in destination.read_bytes()
     assert b"db-secret" not in destination.read_bytes()
     assert b"cache-secret" not in destination.read_bytes()

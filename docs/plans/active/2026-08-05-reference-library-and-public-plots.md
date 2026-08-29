@@ -1,6 +1,6 @@
 # Reference Library and Public Reference Plotting Plan
 
-**Status:** Stages 1–3 and Stage 4a–4f are implemented; Stage 4g–4h and Stages 5–6 remain.
+**Status:** Stages 1–3 and Stage 4a–4g are implemented; Stage 4h and Stages 5–6 remain.
 **Canonical repository:** `sporely-py`
 **Canonical path:** `docs/plans/active/2026-08-05-reference-library-and-public-plots.md`
 **Scope:** `sporely-py` → `sporely-web`/Supabase → `sporely-landing`
@@ -10,12 +10,12 @@
 
 ## Agent handoff
 
-- Status: Active; Stages 1–3 and Stage 4a–4f are complete; Stage 4g–4h and
+- Status: Active; Stages 1–3 and Stage 4a–4g are complete; Stage 4h and
   Stages 5–6 remain.
-- Last completed slice: Stage 4f whole-graph library pull and reconciliation
-  described in §19d. It remains disconnected from production orchestration and
-  does not process observation-reference-use rows.
-- Current/next slice: Stage 4g observation-use sync.
+- Last completed slice: Stage 4g observation-reference-use sync described in
+  §19d. The complete reference graph remains disconnected from production
+  orchestration until Stage 4h.
+- Current/next slice: Stage 4h enable-and-compare orchestration.
 - Relevant commits: `108db20`, `6c9c456`, `08249ec`, `22bd29f`, `f05f2e3`,
   `2a1ebe3`, `69ec641`, `8893007`, `edd9f70`, `e8b340b`, `ea1e1b9`.
 - Important decisions: Preserve stable UUIDs, frozen observation snapshots, revision-aware records, and the distinction between literature ranges and raw observations.
@@ -2248,6 +2248,47 @@ library push phase, preventing stale CAS writes and allowing a proven
 non-overlapping merge to be pushed safely. `sync_all`, observation reference
 uses, observation/media cursors, and sync mode flags remain unchanged until
 Stages 4g and 4h.
+
+### Landed Stage 4g slice: observation-reference-use sync (2026-08-29)
+
+The dormant facade now stages all four complete owner feeds before any local
+application. It reconciles the library graph first, then observation uses only
+after the referenced measurement set is account-bound, acknowledged, and
+clean and the remote observation bigint maps to exactly one local observation.
+Malformed or failed use reads prevent every graph apply. Missing dependencies,
+identity ambiguity, and recorded conflicts block the affected use without
+inventing rows or treating feed absence as deletion; library cursors are held
+until the full four-feed reconciliation is unblocked.
+
+Use transport state now has an idempotent per-owner `(updated_at,id)` pull
+cursor and durable remote-tombstone marker. Pull imports the server UUID,
+role, note, selected time, reference revision, and stored snapshot verbatim;
+it never invokes a snapshot builder. Accepted baselines provide restart-safe
+three-way reconciliation. Remote-only changes apply cleanly, local-only
+changes keep their intent with the current CAS token, disjoint role/note edits
+merge, and overlapping or structural/snapshot divergence becomes durable
+conflict state. Explicit remote tombstones remove only baseline-equal local
+rows and do not echo an outbound delete; pending local edits remain intact.
+
+Push execution now extends the Stage 4c graph order to live
+work → treatment → measurement set → observation use and tombstones in the
+reverse order. First use creation is durably marked unknown before the
+`historical_import` RPC; every acknowledged update, restore, role/note change,
+explicit snapshot refresh, successor adoption, and delete uses `current` with
+a positive saved `row_version`. Lost responses are reconciled through a
+complete owner read before retrying the identical UUID and payload. Local
+transport state advances only from an acknowledged response or an exact
+authoritative read, while conflicts and classified failures remain durable.
+
+Detach/reattach of the same observation/set pair reuses the tombstoned use UUID
+and atomically claims its saved token. Attach→detach and observation deletion
+before first sync leave no remote delete intent. Observation deletion now
+commits the local cascade and its child-use tombstones before starting the
+remote parent delete, removing the former local/remote race. A confirmed
+parent deletion resolves those child tombstones as terminal; if the parent
+delete fails, the durable tombstones remain eligible for normal child-first
+execution. The reference facade remains absent from `sync_all`; Stage 4h owns
+that activation and old-vs-new behavior comparison.
 
 ---
 

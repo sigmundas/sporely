@@ -752,8 +752,11 @@ def _claim_remote_restore_markers(
 def reconcile_reference_library_feed(
     cloud_user_id: str,
     feed: StagedReferenceLibraryFeed,
+    *,
+    advance_cursors: bool = True,
+    observation_use_feed: Any | None = None,
 ) -> ReferencePullApplyResult:
-    """Atomically reconcile one validated complete three-table owner feed."""
+    """Atomically reconcile a validated owner graph across both databases."""
     connection = get_reference_connection()
     connection.row_factory = sqlite3.Row
     init_reference_library_schema(connection)
@@ -765,6 +768,14 @@ def reconcile_reference_library_feed(
     conflicts: list[str] = []
     blocked_items: list[str] = []
     try:
+        if observation_use_feed is not None:
+            remote_live_sets = {
+                row["id"] for row in feed.measurement_sets if not row["deleted_at"]
+            }
+            from database.reference_use_sync_reconciliation import (
+                _advance_cursor as _advance_use_cursor,
+                reconcile_observation_reference_use_feed,
+            )
         connection.execute("BEGIN IMMEDIATE")
         _claim_remote_restore_markers(connection, cloud_user_id)
         live_sets = {row["id"]: row for row in feed.measurement_sets if not row["deleted_at"]}
@@ -797,6 +808,32 @@ def reconcile_reference_library_feed(
             if conflict:
                 conflicts.append(conflict)
 
+        if observation_use_feed is not None:
+            live_use_result = reconcile_observation_reference_use_feed(
+                cloud_user_id,
+                observation_use_feed,
+                advance_cursor=False,
+                connection=connection,
+                manage_transaction=False,
+                apply_tombstones=False,
+                remote_live_set_ids=remote_live_sets,
+            )
+            applied += live_use_result.applied
+            conflicts.extend(live_use_result.conflicts)
+            blocked_items.extend(live_use_result.blocked)
+
+            tombstone_use_result = reconcile_observation_reference_use_feed(
+                cloud_user_id,
+                observation_use_feed,
+                advance_cursor=False,
+                connection=connection,
+                manage_transaction=False,
+                apply_live=False,
+            )
+            applied += tombstone_use_result.applied
+            conflicts.extend(tombstone_use_result.conflicts)
+            blocked_items.extend(tombstone_use_result.blocked)
+
         deleted_sets = {row["id"]: row for row in feed.measurement_sets if row["deleted_at"]}
         for row in sorted(
             deleted_sets.values(),
@@ -817,8 +854,10 @@ def reconcile_reference_library_feed(
                 applied += count
                 if conflict:
                     conflicts.append(conflict)
-        if not conflicts and not blocked_items:
+        if advance_cursors and not conflicts and not blocked_items:
             _advance_cursors(connection, cloud_user_id, feed)
+            if observation_use_feed is not None:
+                _advance_use_cursor(connection, cloud_user_id, observation_use_feed)
         connection.commit()
     except sqlite3.Error as exc:
         connection.rollback()

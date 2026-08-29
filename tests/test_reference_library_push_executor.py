@@ -80,6 +80,7 @@ class RecordingReferenceClient:
             "work": [],
             "treatment": [],
             "measurement_set": [],
+            "observation_use": [],
         }
         self.remote_rows: dict[tuple[str, str], dict] = {}
         self.failures: dict[tuple[str, str], Exception] = {}
@@ -128,8 +129,8 @@ class RecordingReferenceClient:
     def sync_reference_measurement_set(self, payload: dict, expected: int):
         return self._sync("measurement_set", payload, expected)
 
-    def sync_observation_reference_use(self, *_args, **_kwargs):
-        raise AssertionError("Stage 4e must not push observation reference uses")
+    def sync_observation_reference_use(self, payload, expected, snapshot_mode):
+        return self._sync("observation_use", payload, expected)
 
     def _list(self, kind: str) -> list[dict]:
         self.read_calls.append(kind)
@@ -145,7 +146,7 @@ class RecordingReferenceClient:
         return self._list("measurement_set")
 
     def list_observation_reference_uses(self):
-        raise AssertionError("Stage 4e must not read observation reference uses")
+        return self._list("observation_use")
 
 
 def test_pushes_library_parent_first_and_persists_each_acknowledgement(databases):
@@ -237,7 +238,7 @@ def test_partial_progress_restarts_at_failed_level_and_keeps_descendant_pending(
     second_result = sync_reference_library(restarted)
 
     assert restarted.read_calls == [
-        "work", "treatment", "measurement_set", "treatment"
+        "work", "treatment", "measurement_set", "observation_use", "treatment"
     ]
     assert [call[0] for call in restarted.calls] == [
         "treatment",
@@ -501,7 +502,9 @@ def test_unknown_create_tombstone_uses_complete_owner_read_before_resolution(dat
     second = RecordingReferenceClient()
     result = sync_reference_library(second)
 
-    assert second.read_calls == ["work", "treatment", "measurement_set", "work"]
+    assert second.read_calls == [
+        "work", "treatment", "measurement_set", "observation_use", "work"
+    ]
     assert second.calls == []
     assert result == ReferenceSyncResult()
     assert ReferenceCloudSyncStateRepository.list_library_tombstones("user-1") == []
@@ -527,7 +530,9 @@ def test_unknown_create_reconciles_matching_remote_row_without_duplicate_write(d
     }]
     result = sync_reference_library(second)
 
-    assert second.read_calls == ["work", "treatment", "measurement_set"]
+    assert second.read_calls == [
+        "work", "treatment", "measurement_set", "observation_use"
+    ]
     assert second.calls == []
     assert result == ReferenceSyncResult(pulled=1)
     state = ReferenceCloudSyncStateRepository.get_library("work", work.id)
@@ -617,7 +622,7 @@ def test_incomplete_acknowledgement_row_is_terminal_and_does_not_advance(databas
     assert result.terminal_errors == result.errors
 
 
-def test_observation_reference_uses_remain_disabled_in_stage4e(databases):
+def test_observation_reference_use_with_invalid_cloud_identity_remains_blocked(databases):
     database_path, _ = databases
     _, _, measurement_set = _create_graph()
     with sqlite3.connect(database_path) as connection:

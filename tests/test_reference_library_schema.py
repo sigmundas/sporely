@@ -42,6 +42,8 @@ def test_fresh_reference_db_contains_new_tables(tmp_path, monkeypatch):
             "reference_measurement_sets",
             "reference_cloud_sync_state",
             "reference_cloud_tombstones",
+            "reference_cloud_pull_cursors",
+            "reference_cloud_remote_tombstone_markers",
         ):
             assert expected in tables, f"missing {expected}"
     finally:
@@ -57,6 +59,8 @@ def test_fresh_main_db_contains_observation_reference_uses(tmp_path, monkeypatch
         assert "observation_reference_uses" in tables
         assert "observation_reference_use_cloud_sync_state" in tables
         assert "observation_reference_use_cloud_tombstones" in tables
+        assert "observation_reference_use_cloud_pull_cursors" in tables
+        assert "observation_reference_use_cloud_remote_tombstone_markers" in tables
         cols = _table_columns(conn, "observation_reference_uses")
         for expected in (
             "id",

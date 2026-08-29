@@ -12,12 +12,18 @@ from database.reference_sync_reconciliation import (
     reconcile_reference_library_feed,
     stage_reference_library_feed,
 )
+from database.reference_use_sync_reconciliation import (
+    stage_observation_reference_use_feed,
+)
 from database.reference_sync_state import (
+    ObservationReferenceUseCloudTombstone,
     ReferenceCloudSyncStateError,
     ReferenceCloudSyncStateRepository,
     ReferenceCloudTombstone,
     canonical_library_payload,
+    canonical_observation_use_payload,
     load_library_payload,
+    load_use_payload,
 )
 from utils.reference_cloud_adapter import (
     ReferenceCloudAccountMismatchError,
@@ -29,6 +35,7 @@ from utils.reference_cloud_adapter import (
 
 
 _LIBRARY_TYPES = frozenset({"work", "treatment", "measurement_set"})
+_REFERENCE_TYPES = frozenset({*_LIBRARY_TYPES, "observation_use"})
 
 
 def _attempted_at() -> str:
@@ -122,6 +129,46 @@ def _canonical_remote_payload(entity_type: str, row: dict) -> dict:
         raise ReferenceCloudProtocolError(
             "reference RPC row is missing its canonical baseline"
         ) from exc
+
+
+def _canonical_remote_use_payload(row: dict) -> dict:
+    try:
+        return canonical_observation_use_payload(row)
+    except (KeyError, TypeError, ValueError, ReferenceCloudSyncStateError) as exc:
+        raise ReferenceCloudProtocolError(
+            "observation-use row is missing its canonical baseline"
+        ) from exc
+
+
+def _record_use_failure(use_id: str, message: str) -> None:
+    state = ReferenceCloudSyncStateRepository.get_use(use_id)
+    if state is None:
+        return
+    ReferenceCloudSyncStateRepository.save_use(
+        replace(
+            state,
+            sync_status="conflict" if state.sync_status == "conflict" else "retry",
+            retry_count=state.retry_count + 1,
+            last_error=message,
+            last_attempted_at=_attempted_at(),
+        )
+    )
+
+
+def _record_use_tombstone_failure(
+    tombstone: ObservationReferenceUseCloudTombstone, message: str
+) -> None:
+    ReferenceCloudSyncStateRepository.save_use_tombstone(
+        replace(
+            tombstone,
+            sync_status=(
+                "conflict" if tombstone.sync_status == "conflict" else "retry"
+            ),
+            retry_count=tombstone.retry_count + 1,
+            last_error=message,
+            last_attempted_at=_attempted_at(),
+        )
+    )
 
 
 def _executor_live_blocked(item, cloud_user_id: str) -> str | None:
@@ -303,18 +350,291 @@ def _execute_tombstone(
     return "blocked" if result.disposition == "blocked" else "error"
 
 
+def _executor_use_blocked(item, cloud_user_id: str) -> str | None:
+    if item.blocked_reason is not None:
+        return item.blocked_reason
+    try:
+        payload = load_use_payload(item.entity_id)
+    except ReferenceCloudSyncStateError:
+        return "invalid_observation_cloud_id"
+    if payload is None:
+        return "missing_use"
+    parent = ReferenceCloudSyncStateRepository.get_library(
+        "measurement_set", str(payload["reference_measurement_set_id"])
+    )
+    if parent is None:
+        return "missing_dependency"
+    if parent.cloud_user_id not in {None, cloud_user_id}:
+        return "dependency_account_mismatch"
+    if parent.sync_status == "conflict":
+        return "parent_conflict"
+    if parent.remote_identity_state != "acknowledged":
+        return "parent_not_acknowledged"
+    if parent.sync_status != "clean":
+        return "parent_not_converged"
+    return None
+
+
+def _handle_use_live_result(
+    result: ReferenceRemoteMutationResult,
+    *,
+    use_id: str,
+    cloud_user_id: str,
+    payload: dict,
+    expected_row_version: int,
+) -> str:
+    if result.disposition == "acknowledged":
+        accepted = _canonical_remote_use_payload(result.row)
+        ReferenceCloudSyncStateRepository.acknowledge_use(
+            use_id,
+            cloud_user_id,
+            sent_payload=payload,
+            accepted_payload=accepted,
+            cloud_row_version=result.row["row_version"],
+        )
+        return "pushed"
+    if result.disposition == "conflict":
+        state = ReferenceCloudSyncStateRepository.get_use(use_id)
+        if state is None:
+            raise ReferenceCloudProtocolError(
+                "observation use disappeared while recording conflict"
+            )
+        ReferenceCloudSyncStateRepository.save_use(
+            replace(
+                state,
+                sync_status="conflict",
+                conflict=_diagnostic(
+                    operation="upsert",
+                    expected_row_version=expected_row_version,
+                    payload=payload,
+                    row=result.row,
+                ),
+                last_error="remote compare-and-set conflict",
+                last_attempted_at=_attempted_at(),
+            )
+        )
+        return "conflict"
+    _record_use_failure(use_id, f"remote status: {result.status}")
+    return "blocked" if result.disposition == "blocked" else "error"
+
+
+def _execute_use_live(
+    adapter: ReferenceCloudAdapter, cloud_user_id: str, use_id: str
+) -> str:
+    payload = load_use_payload(use_id)
+    state = ReferenceCloudSyncStateRepository.get_use(use_id)
+    if payload is None or state is None:
+        raise ReferenceCloudProtocolError("planned observation use is missing")
+    if (
+        state.remote_identity_state == "acknowledged"
+        and state.accepted_payload == payload
+        and ReferenceCloudSyncStateRepository.clean_use_if_unchanged(
+            use_id, payload
+        )
+    ):
+        return "noop"
+
+    expected = state.cloud_row_version or 0
+    snapshot_mode = "current" if expected else "historical_import"
+    if state.remote_identity_state == "never_attempted":
+        ReferenceCloudSyncStateRepository.prepare_use_create(use_id, cloud_user_id)
+    elif state.remote_identity_state == "create_outcome_unknown":
+        remote = next(
+            (
+                row
+                for row in adapter.list_observation_uses()
+                if str(row.get("id")) == use_id
+            ),
+            None,
+        )
+        if remote is not None:
+            remote_payload = _canonical_remote_use_payload(remote)
+            if remote_payload == payload:
+                ReferenceCloudSyncStateRepository.acknowledge_use(
+                    use_id,
+                    cloud_user_id,
+                    sent_payload=payload,
+                    accepted_payload=remote_payload,
+                    cloud_row_version=remote["row_version"],
+                )
+                return "noop"
+            state = ReferenceCloudSyncStateRepository.get_use(use_id)
+            ReferenceCloudSyncStateRepository.save_use(
+                replace(
+                    state,
+                    sync_status="conflict",
+                    conflict=_diagnostic(
+                        operation="reconcile_create",
+                        expected_row_version=0,
+                        payload=payload,
+                        row=remote,
+                    ),
+                    last_error="remote create outcome diverged",
+                    last_attempted_at=_attempted_at(),
+                )
+            )
+            return "conflict"
+
+    result = adapter.sync_observation_use(
+        payload, expected, snapshot_mode=snapshot_mode
+    )
+    return _handle_use_live_result(
+        result,
+        use_id=use_id,
+        cloud_user_id=cloud_user_id,
+        payload=payload,
+        expected_row_version=expected,
+    )
+
+
+def _execute_use_tombstone(
+    adapter: ReferenceCloudAdapter,
+    cloud_user_id: str,
+    tombstone: ObservationReferenceUseCloudTombstone,
+) -> str:
+    current = tombstone
+    remote = next(
+        (
+            row
+            for row in adapter.list_observation_uses()
+            if str(row.get("id")) == current.use_id
+        ),
+        None,
+    )
+    if remote is None:
+        # A complete owner read proves the delete already happened (including
+        # a parent-observation cascade whose response was acknowledged before
+        # the desktop could clear its child intents).
+        ReferenceCloudSyncStateRepository.resolve_use_tombstone(
+            current.use_id, cloud_user_id
+        )
+        return "noop"
+    remote_payload = _canonical_remote_use_payload(remote)
+    if remote.get("deleted_at"):
+        ReferenceCloudSyncStateRepository.resolve_use_tombstone(
+            current.use_id, cloud_user_id
+        )
+        ReferenceCloudSyncStateRepository.save_use_remote_tombstone(
+            cloud_user_id,
+            current.use_id,
+            cloud_row_version=remote["row_version"],
+            accepted_payload=remote_payload,
+            deleted_at=remote["deleted_at"],
+        )
+        return "noop"
+    if current.remote_identity_state == "create_outcome_unknown":
+        if (
+            str(remote_payload["observation_id"])
+            != str(current.observation_cloud_id or "").strip()
+            or remote_payload["reference_measurement_set_id"]
+            != current.reference_measurement_set_id
+        ):
+            ReferenceCloudSyncStateRepository.save_use_tombstone(
+                replace(
+                    current,
+                    sync_status="conflict",
+                    conflict=_diagnostic(
+                        operation="reconcile_delete",
+                        expected_row_version=0,
+                        payload={"id": current.use_id, "deleted": True},
+                        row=remote,
+                    ),
+                    last_error="remote create identity diverged",
+                    last_attempted_at=_attempted_at(),
+                )
+            )
+            return "conflict"
+        current = ReferenceCloudSyncStateRepository.save_use_tombstone(
+            replace(
+                current,
+                remote_identity_state="acknowledged",
+                expected_row_version=remote["row_version"],
+                accepted_payload=remote_payload,
+                sync_status="dirty",
+                conflict=None,
+                retry_count=0,
+                last_error=None,
+            )
+        )
+    elif (
+        str(remote_payload["observation_id"])
+        != str(current.observation_cloud_id or "").strip()
+        or remote_payload["reference_measurement_set_id"]
+        != current.reference_measurement_set_id
+    ):
+        ReferenceCloudSyncStateRepository.save_use_tombstone(
+            replace(
+                current,
+                sync_status="conflict",
+                conflict=_diagnostic(
+                    operation="delete_identity",
+                    expected_row_version=current.expected_row_version or 0,
+                    payload={"id": current.use_id, "deleted": True},
+                    row=remote,
+                ),
+                last_error="remote observation-use identity diverged",
+                last_attempted_at=_attempted_at(),
+            )
+        )
+        return "conflict"
+    expected = current.expected_row_version
+    if not expected:
+        raise ReferenceCloudProtocolError(
+            "observation-use tombstone has no acknowledged row version"
+        )
+    payload = {"id": current.use_id, "deleted": True}
+    result = adapter.sync_observation_use(
+        payload, expected, snapshot_mode="current"
+    )
+    if result.disposition == "acknowledged":
+        ReferenceCloudSyncStateRepository.acknowledge_use_tombstone(
+            current.use_id,
+            cloud_user_id,
+            accepted_payload=_canonical_remote_use_payload(result.row),
+            cloud_row_version=result.row["row_version"],
+            deleted_at=result.row["deleted_at"],
+        )
+        return "pushed"
+    if result.disposition == "conflict":
+        ReferenceCloudSyncStateRepository.save_use_tombstone(
+            replace(
+                current,
+                sync_status="conflict",
+                conflict=_diagnostic(
+                    operation="tombstone",
+                    expected_row_version=expected,
+                    payload=payload,
+                    row=result.row,
+                ),
+                last_error="remote compare-and-set conflict",
+                last_attempted_at=_attempted_at(),
+            )
+        )
+        return "conflict"
+    _record_use_tombstone_failure(current, f"remote status: {result.status}")
+    return "blocked" if result.disposition == "blocked" else "error"
+
+
 def pull_reference_library(client: object) -> ReferenceSyncResult:
-    """Stage and atomically reconcile the complete owner library graph."""
+    """Stage all four owner feeds, then reconcile dependencies before uses."""
     cloud_user_id = str(getattr(client, "user_id", "") or "").strip()
     adapter = ReferenceCloudAdapter(client, cloud_user_id)
     try:
         works = adapter.list_works()
         treatments = adapter.list_treatments()
         measurement_sets = adapter.list_measurement_sets()
-        feed = stage_reference_library_feed(
+        observation_uses = adapter.list_observation_uses()
+        library_feed = stage_reference_library_feed(
             cloud_user_id, works, treatments, measurement_sets
         )
-        applied = reconcile_reference_library_feed(cloud_user_id, feed)
+        use_feed = stage_observation_reference_use_feed(
+            cloud_user_id, tuple(observation_uses)
+        )
+        applied = reconcile_reference_library_feed(
+            cloud_user_id,
+            library_feed,
+            observation_use_feed=use_feed,
+        )
     except ReferenceCloudTransportError as exc:
         message = f"reference pull: {exc}"
         return ReferenceSyncResult(
@@ -343,10 +663,11 @@ def pull_reference_library(client: object) -> ReferenceSyncResult:
 
 
 def _push_reference_library(client: object) -> ReferenceSyncResult:
-    """Execute the Stage 4e library push path."""
+    """Execute deterministic library and observation-use graph pushes."""
     cloud_user_id = str(getattr(client, "user_id", "") or "").strip()
     adapter = ReferenceCloudAdapter(client, cloud_user_id)
     ReferenceCloudSyncStateRepository.claim_library_restores(cloud_user_id)
+    ReferenceCloudSyncStateRepository.claim_use_restores(cloud_user_id)
 
     pushed = 0
     errors: list[str] = []
@@ -361,8 +682,12 @@ def _push_reference_library(client: object) -> ReferenceSyncResult:
         item = next(
             (
                 candidate for candidate in plan.live
-                if candidate.entity_type in _LIBRARY_TYPES
-                and _executor_live_blocked(candidate, cloud_user_id) is None
+                if candidate.entity_type in _REFERENCE_TYPES
+                and (
+                    _executor_use_blocked(candidate, cloud_user_id)
+                    if candidate.entity_type == "observation_use"
+                    else _executor_live_blocked(candidate, cloud_user_id)
+                ) is None
                 and ("live", candidate.entity_type, candidate.entity_id) not in attempted
             ),
             None,
@@ -371,17 +696,27 @@ def _push_reference_library(client: object) -> ReferenceSyncResult:
             break
         attempted.add(("live", item.entity_type, item.entity_id))
         try:
-            outcome = _execute_live(
-                adapter, cloud_user_id, item.entity_type, item.entity_id
+            outcome = (
+                _execute_use_live(adapter, cloud_user_id, item.entity_id)
+                if item.entity_type == "observation_use"
+                else _execute_live(
+                    adapter, cloud_user_id, item.entity_type, item.entity_id
+                )
             )
         except ReferenceCloudTransportError as exc:
-            _record_live_failure(item.entity_type, item.entity_id, str(exc))
+            if item.entity_type == "observation_use":
+                _record_use_failure(item.entity_id, str(exc))
+            else:
+                _record_live_failure(item.entity_type, item.entity_id, str(exc))
             message = f"{item.entity_type}:{item.entity_id}: {exc}"
             errors.append(message)
             (retryable_errors if exc.retryable else terminal_errors).append(message)
             continue
         except (ReferenceCloudProtocolError, ReferenceCloudAccountMismatchError) as exc:
-            _record_live_failure(item.entity_type, item.entity_id, str(exc))
+            if item.entity_type == "observation_use":
+                _record_use_failure(item.entity_id, str(exc))
+            else:
+                _record_live_failure(item.entity_type, item.entity_id, str(exc))
             message = f"{item.entity_type}:{item.entity_id}: {exc}"
             errors.append(message)
             terminal_errors.append(message)
@@ -402,7 +737,7 @@ def _push_reference_library(client: object) -> ReferenceSyncResult:
         item = next(
             (
                 candidate for candidate in plan.tombstones
-                if candidate.entity_type in _LIBRARY_TYPES
+                if candidate.entity_type in _REFERENCE_TYPES
                 and candidate.blocked_reason is None
                 and ("tombstone", candidate.entity_type, candidate.entity_id)
                 not in attempted
@@ -412,24 +747,43 @@ def _push_reference_library(client: object) -> ReferenceSyncResult:
         if item is None:
             break
         attempted.add(("tombstone", item.entity_type, item.entity_id))
-        tombstone = next(
-            tombstone
-            for tombstone in ReferenceCloudSyncStateRepository.list_library_tombstones(
-                cloud_user_id
+        if item.entity_type == "observation_use":
+            tombstone = next(
+                tombstone
+                for tombstone in ReferenceCloudSyncStateRepository.list_use_tombstones(
+                    cloud_user_id
+                )
+                if tombstone.use_id == item.entity_id
             )
-            if (tombstone.entity_type, tombstone.entity_id)
-            == (item.entity_type, item.entity_id)
-        )
+        else:
+            tombstone = next(
+                tombstone
+                for tombstone in ReferenceCloudSyncStateRepository.list_library_tombstones(
+                    cloud_user_id
+                )
+                if (tombstone.entity_type, tombstone.entity_id)
+                == (item.entity_type, item.entity_id)
+            )
         try:
-            outcome = _execute_tombstone(adapter, cloud_user_id, tombstone)
+            outcome = (
+                _execute_use_tombstone(adapter, cloud_user_id, tombstone)
+                if item.entity_type == "observation_use"
+                else _execute_tombstone(adapter, cloud_user_id, tombstone)
+            )
         except ReferenceCloudTransportError as exc:
-            _record_tombstone_failure(tombstone, str(exc))
+            if item.entity_type == "observation_use":
+                _record_use_tombstone_failure(tombstone, str(exc))
+            else:
+                _record_tombstone_failure(tombstone, str(exc))
             message = f"{item.entity_type}:{item.entity_id}: {exc}"
             errors.append(message)
             (retryable_errors if exc.retryable else terminal_errors).append(message)
             continue
         except (ReferenceCloudProtocolError, ReferenceCloudAccountMismatchError) as exc:
-            _record_tombstone_failure(tombstone, str(exc))
+            if item.entity_type == "observation_use":
+                _record_use_tombstone_failure(tombstone, str(exc))
+            else:
+                _record_tombstone_failure(tombstone, str(exc))
             message = f"{item.entity_type}:{item.entity_id}: {exc}"
             errors.append(message)
             terminal_errors.append(message)
@@ -449,16 +803,22 @@ def _push_reference_library(client: object) -> ReferenceSyncResult:
     blocked.extend(
         f"{item.entity_type}:{item.entity_id}:{item.blocked_reason}"
         for item in (*final_plan.live, *final_plan.tombstones)
-        if item.entity_type in _LIBRARY_TYPES
+        if item.entity_type in _REFERENCE_TYPES
         and item.blocked_reason is not None
         and item.blocked_reason != "conflict"
     )
     blocked.extend(
         f"{item.entity_type}:{item.entity_id}:{reason}"
         for item in final_plan.live
-        if item.entity_type in _LIBRARY_TYPES
+        if item.entity_type in _REFERENCE_TYPES
         and item.blocked_reason is None
-        and (reason := _executor_live_blocked(item, cloud_user_id)) is not None
+        and (
+            reason := (
+                _executor_use_blocked(item, cloud_user_id)
+                if item.entity_type == "observation_use"
+                else _executor_live_blocked(item, cloud_user_id)
+            )
+        ) is not None
     )
     return ReferenceSyncResult(
         pushed=pushed,
@@ -496,6 +856,15 @@ def sync_reference_library(client: object) -> ReferenceSyncResult:
     if pulled.errors:
         return pulled
     return _combine_reference_results(pulled, _push_reference_library(client))
+
+
+def acknowledge_observation_parent_delete(
+    cloud_user_id: str, observation_cloud_id: str
+) -> int:
+    """Finish durable child-delete intent after a confirmed parent delete."""
+    return ReferenceCloudSyncStateRepository.acknowledge_parent_delete_use_tombstones(
+        cloud_user_id, observation_cloud_id
+    )
 
 
 def merge_reference_sync_result(

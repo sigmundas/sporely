@@ -351,6 +351,26 @@ CREATE TABLE IF NOT EXISTS observation_reference_use_cloud_tombstones (
 )
 """
 
+_OBSERVATION_REFERENCE_USE_CLOUD_PULL_CURSORS_DDL = """
+CREATE TABLE IF NOT EXISTS observation_reference_use_cloud_pull_cursors (
+    cloud_user_id TEXT NOT NULL CHECK (TRIM(cloud_user_id) != ''),
+    updated_at TEXT NOT NULL CHECK (TRIM(updated_at) != ''),
+    use_id TEXT NOT NULL CHECK (TRIM(use_id) != ''),
+    PRIMARY KEY (cloud_user_id)
+)
+"""
+
+_OBSERVATION_REFERENCE_USE_CLOUD_REMOTE_TOMBSTONE_MARKERS_DDL = """
+CREATE TABLE IF NOT EXISTS observation_reference_use_cloud_remote_tombstone_markers (
+    cloud_user_id TEXT NOT NULL CHECK (TRIM(cloud_user_id) != ''),
+    use_id TEXT NOT NULL CHECK (TRIM(use_id) != ''),
+    cloud_row_version INTEGER NOT NULL CHECK (cloud_row_version >= 1),
+    accepted_payload_json TEXT NOT NULL,
+    deleted_at TEXT NOT NULL CHECK (TRIM(deleted_at) != ''),
+    PRIMARY KEY (cloud_user_id, use_id)
+)
+"""
+
 
 _REFERENCE_LIBRARY_INDEXES: tuple[str, ...] = (
     "CREATE INDEX IF NOT EXISTS idx_reference_works_title ON reference_works(title)",
@@ -415,6 +435,8 @@ _OBSERVATION_REFERENCE_USE_CLOUD_SYNC_INDEXES: tuple[str, ...] = (
     "ON observation_reference_use_cloud_sync_state(cloud_user_id, sync_status)",
     "CREATE INDEX IF NOT EXISTS idx_reference_use_cloud_tombstones_pending "
     "ON observation_reference_use_cloud_tombstones(cloud_user_id, sync_status)",
+    "CREATE INDEX IF NOT EXISTS idx_reference_use_remote_tombstones_use "
+    "ON observation_reference_use_cloud_remote_tombstone_markers(use_id)",
 )
 
 _REFERENCE_CLOUD_SYNC_TRIGGERS: tuple[str, ...] = (
@@ -707,6 +729,8 @@ def init_observation_reference_uses_schema(conn: sqlite3.Connection) -> None:
     cursor.execute(_OBSERVATION_REFERENCE_USES_DDL)
     cursor.execute(_OBSERVATION_REFERENCE_USE_CLOUD_SYNC_STATE_DDL)
     cursor.execute(_OBSERVATION_REFERENCE_USE_CLOUD_TOMBSTONES_DDL)
+    cursor.execute(_OBSERVATION_REFERENCE_USE_CLOUD_PULL_CURSORS_DDL)
+    cursor.execute(_OBSERVATION_REFERENCE_USE_CLOUD_REMOTE_TOMBSTONE_MARKERS_DDL)
     for statement in _OBSERVATION_REFERENCE_USES_INDEXES:
         cursor.execute(statement)
     for statement in _OBSERVATION_REFERENCE_USE_CLOUD_SYNC_INDEXES:

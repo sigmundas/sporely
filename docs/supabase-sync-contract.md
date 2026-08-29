@@ -74,6 +74,38 @@ Plain English comes first; technical terms are in parentheses.
 24. **No no-op cloud writes on sync paths.** `observation_images.updated_at` is trigger-bumped on EVERY update, for every role, regardless of whether values changed — so a value-identical PATCH is a real child-change cursor event, not a harmless idempotent write. Before any cloud write in a sync path, check whether the target value already matches and skip the request if so. (Live incident 2026-08-24: unconditional `desktop_id` relink PATCHes during pull rewrote ~2 500 image rows per sync and created a self-sustaining full child re-pull echo loop.)
 25. **The child-change cursor must commit the true `MAX(updated_at, id)` tuple over every inspected row, with numeric id ordering.** Row ids compare numerically, never as strings (`'10000' > '9999'`), and the strict filter and the advancement comparison must use identical ordering. The cursor advances only after `pull_all` succeeds; a failed pull leaves the cursor untouched so the changes are re-detected next sync.
 26. **Portable imports establish a new cloud identity graph.** While an observation has `portable_cloud_identity_pending=1`, push and pull reconciliation for the observation, its images (including metadata anchors), and measurements must ignore remote `desktop_id` recovery and must not write a `desktop_id`. Verified destination-side `cloud_id` links remain authoritative. The marker clears only after the complete graph has fresh cloud IDs and collision checks have safely established reverse IDs from the new destination integer IDs; any collision leaves the guard active.
+27. **Observation reference uses preserve frozen evidence.** Sync must transmit and
+    reconcile the stored use UUID, role, note, selected revision, and
+    `snapshot_json` verbatim. It must never rebuild a snapshot from the current
+    library during transport. A live use waits for a verified observation cloud
+    ID and an acknowledged, converged measurement set. Deletes use durable local
+    intent and positive CAS tokens; a confirmed parent-observation delete is an
+    authoritative terminal acknowledgement for its child-use tombstones.
+
+## Normalized reference graph
+
+The owner graph is ordered work → taxon treatment → measurement set →
+observation reference use for live mutations and in reverse for tombstones.
+All four owner feeds must be completely and successfully paginated and staged
+before pull applies any row. Missing dependencies block the affected child;
+feed absence alone never proves deletion. Pull advances table cursors only
+after the complete staged graph is free of unresolved blocks and conflicts.
+
+Every mutation uses the stable UUID and compare-and-set `row_version`. First
+use creation alone uses `historical_import`; acknowledged updates, explicit
+snapshot refresh, successor adoption, restores, and deletion use `current`.
+Transport failure retries the identical UUID, payload, and expected token.
+`created`, `updated`, and `no_change` persist the returned authoritative
+baseline; CAS conflict persists review state and does not overwrite local
+intent. An unknown create is resolved by a complete owner read before retry.
+
+Observation-use pull imports the frozen `snapshot_json` exactly as stored.
+Three-way reconciliation may automatically combine only disjoint role/note
+edits. Identity, measurement-set, selected-time, revision, or snapshot
+divergence remains an explicit conflict. Local observation deletion commits
+child tombstones before requesting remote parent deletion. If that request
+fails, tombstones remain retryable child-first; if it succeeds, the parent
+acknowledgement resolves them without another child write.
 
 ## Storage of desired cloud image-byte state
 

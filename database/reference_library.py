@@ -1473,12 +1473,59 @@ class ObservationReferenceUseRepository:
         obs_conn = _connect_observations()
         try:
             obs_row = obs_conn.execute(
-                "SELECT id FROM observations WHERE id = ?", (observation_id,)
+                "SELECT id, cloud_id FROM observations WHERE id = ?", (observation_id,)
             ).fetchone()
             if obs_row is None:
                 raise ReferenceIntegrityError(
                     f"observation {observation_id} does not exist"
                 )
+            linked_account_row = obs_conn.execute(
+                "SELECT value FROM settings WHERE key='linked_cloud_user_id'"
+            ).fetchone()
+            linked_account = str(
+                linked_account_row["value"] if linked_account_row else ""
+            ).strip()
+            restore_row = obs_conn.execute(
+                """
+                SELECT use_id
+                FROM observation_reference_use_cloud_tombstones
+                WHERE local_observation_id=?
+                  AND reference_measurement_set_id=?
+                  AND (?='' OR cloud_user_id=?)
+                ORDER BY deleted_at DESC, use_id
+                LIMIT 1
+                """,
+                (
+                    observation_id,
+                    reference_measurement_set_id,
+                    linked_account,
+                    linked_account,
+                ),
+            ).fetchone()
+            if restore_row is None and str(obs_row["cloud_id"] or "").strip():
+                remote_matches: list[str] = []
+                marker_sql = """
+                    SELECT use_id, accepted_payload_json
+                    FROM observation_reference_use_cloud_remote_tombstone_markers
+                    WHERE (?='' OR cloud_user_id=?)
+                    ORDER BY deleted_at DESC, use_id
+                    """
+                for marker in obs_conn.execute(
+                    marker_sql, (linked_account, linked_account)
+                ).fetchall():
+                    try:
+                        accepted = json.loads(marker["accepted_payload_json"])
+                    except (TypeError, ValueError, json.JSONDecodeError):
+                        continue
+                    if (
+                        str(accepted.get("observation_id") or "")
+                        == str(obs_row["cloud_id"]).strip()
+                        and accepted.get("reference_measurement_set_id")
+                        == reference_measurement_set_id
+                    ):
+                        remote_matches.append(str(marker["use_id"]))
+                if len(remote_matches) == 1:
+                    restore_row = {"use_id": remote_matches[0]}
         finally:
             obs_conn.close()
 
@@ -1511,7 +1558,10 @@ class ObservationReferenceUseRepository:
 
         now = _now()
         use = ObservationReferenceUse(
-            id=_new_uuid(),
+            # A detach/reattach is a restore of the same remote identity, not
+            # a new attachment. The executor atomically transfers the saved
+            # CAS token before sending the current frozen payload.
+            id=str(restore_row["use_id"]) if restore_row is not None else _new_uuid(),
             observation_id=int(observation_id),
             reference_measurement_set_id=str(reference_measurement_set_id),
             role=role,
