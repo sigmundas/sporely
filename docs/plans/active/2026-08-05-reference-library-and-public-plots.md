@@ -1,6 +1,6 @@
 # Reference Library and Public Reference Plotting Plan
 
-**Status:** Stages 1–4 are implemented and verified; Stages 5–6 remain.
+**Status:** Stages 1–5 are implemented and verified; Stage 6 remains.
 **Canonical repository:** `sporely-py`
 **Canonical path:** `docs/plans/active/2026-08-05-reference-library-and-public-plots.md`
 **Scope:** `sporely-py` → `sporely-web`/Supabase → `sporely-landing`
@@ -10,14 +10,14 @@
 
 ## Agent handoff
 
-- Status: Active; Stages 1–4 are complete. Stages 5–6 remain.
-- Last completed slice: Stage 4h enable-and-compare orchestration, including
-  live two-profile verification and the measurement-set retry fix described
-  below.
-- Current/next slice: Stage 5 public API exposure and read models, only when
-  separately started from this canonical plan.
+- Status: Active; Stages 1–5 are complete. Stage 6 remains.
+- Last completed slice: Stage 5 public observation read models, frozen
+  literature overlays, and citation cards in `sporely-landing`.
+- Current/next slice: Stage 6 curated reference library and Compare
+  integration, only when separately started from this canonical plan.
 - Relevant Stage 4 commits: `199f127`, `69ec641`, `8893007`, `edd9f70`,
-  `e8b340b`, `ea1e1b9`, `eaca8e7`, `0277516`.
+  `e8b340b`, `ea1e1b9`, `eaca8e7`, `0277516`, `9c5346b`.
+- Relevant Stage 5 commit (`sporely-landing`): `5af3cb8`.
 - Important decisions: Preserve stable UUIDs, frozen observation snapshots, revision-aware records, and the distinction between literature ranges and raw observations.
 - Comparison baseline: the frozen `cloud-sync-pre-refactor` tag; at the Stage 4
   audit it resolves to `e9accd9`, the audit's starting `refactor/cloud-sync`
@@ -576,7 +576,6 @@ Example:
     {
       "use_id": "uuid",
       "role": "supports_identification",
-      "note": null,
       "reference_revision": 3,
       "snapshot": {
         "schema_version": 1,
@@ -2348,6 +2347,53 @@ versus pull-only mode boundaries therefore passed the live activation gate.
 
 Stage 4 is complete. The pre-existing media NameError remains a separately
 scoped baseline defect and is not part of the reference-sync activation.
+
+### Stage 5 public read-model and rendering status (2026-08-29)
+
+Stage 5 is implemented on the `sporely-landing` `refactor/cloud-sync` branch
+at `5af3cb8`. The existing `get_public_observation` detail read remains
+unchanged; the landing client composes it with the dedicated Stage 3
+`get_public_observation_references` RPC only after the observation itself is
+publicly readable. Search/card reads do not incur the extra request.
+
+The browser read model independently enforces the exact Stage 3 item,
+snapshot, measurement, method, UUID, role, schema-version, and revision
+contract. Invalid or unsupported items are omitted independently, so a bad
+attachment cannot expose extra fields or suppress valid siblings. The client
+does not read or join `reference_works`, `reference_taxon_treatments`, or
+`reference_measurement_sets`; owner notes and mutable library state therefore
+cannot enter the public model. Normalization copies the frozen values and
+preserves `raw_text` byte-for-byte, so later private-library edits cannot
+rewrite historical public evidence.
+
+Observation detail now draws each attached source separately. Supplied core
+L × W bounds are translucent dashed rectangles, supplied exceptional bounds
+are an outer outline with whiskers, supplied paired means are `+` markers, and
+only genuine paired raw points become diamond marks. Literature values expand
+the plot domain but are never converted into synthetic observations,
+distributions, sample sizes, or merged ranges. Non-drawable but valid
+snapshots still retain their citation card.
+
+The localized “Compared with literature” section displays the source label,
+full citation, locator, name as published, exact raw expression, supplied
+method fields, and attachment role. It is absent when no valid attachment is
+present. Semantic section/article/definition-list markup, SVG labels,
+shape/dash distinctions, wrapping cards, and a narrow-screen stacked layout
+cover the Stage 5 accessibility and responsive requirements.
+
+Verification used contract fixtures copied from the deployed Stage 3 shape:
+the complete `sporely-landing` Vitest suite passes (49 files, 549 tests),
+TypeScript type checking passes, and `git diff --check` is clean. The Stage 3
+transactional public-projection regression also passes against the local
+Supabase stack, covering visibility/draft/ban/block gates, strict allowlists,
+owner-note exclusion, tombstones, immutable frozen evidence, grants, and
+private-table denial. Fresh review found one raw-expression trimming defect;
+the implementation now preserves that field exactly and has a focused
+regression. The follow-up review found no remaining material issues.
+
+Stage 5 is complete. Species-level curated references, public catalogue
+search, and adding literature sets in Compare remain deliberately deferred to
+Stage 6.
 
 ---
 
