@@ -1,7 +1,7 @@
 # Reference Library and Public Reference Plotting Plan
 
-**Status:** Stages 1–5 and Stage 6a are implemented and verified. Stage 6b–6l
-remain.
+**Status:** Stages 1–5 and Stages 6a–6b are implemented and verified. Stage
+6c–6l remain.
 **Canonical repository:** `sporely-py`
 **Canonical path:** `docs/plans/active/2026-08-05-reference-library-and-public-plots.md`
 **Scope:** `sporely-py` → `sporely-web`/Supabase → `sporely-admin` →
@@ -13,10 +13,10 @@ remain.
 ## Agent handoff
 
 - Status: Active; Stages 1–5 are complete and the Stage 6 contract is resolved.
-- Last completed slice: Stage 6a dormant curated schema and security foundation
-  in `sporely-web` (`11637a4`); it added no public or application behavior and
-  was not deployed.
-- Current/next slice: Stage 6b owner submission and report intake in
+- Last completed slice: Stage 6b owner submission and report intake in
+  `sporely-web` (`6372676`); intake remains disabled until policy values are
+  deliberately configured, and the migration was not deployed.
+- Current/next slice: Stage 6c reviewer workflow and catalogue drafts in
   `sporely-web`, only when separately started from this canonical plan.
 - Relevant Stage 4 commits: `199f127`, `69ec641`, `8893007`, `edd9f70`,
   `e8b340b`, `ea1e1b9`, `eaca8e7`, `0277516`, `9c5346b`.
@@ -2794,7 +2794,8 @@ lands as its own commit. No slice may activate the next slice's behavior.
    migration, zero/negative taxon rejection, all role denies, service access,
    account deletion, and event immutability. No submission/report table, RPC,
    Edge, or public behavior.
-2. **Stage 6b — owner submission and report intake (`sporely-web`).** Create
+2. **Stage 6b — owner submission and report intake (`sporely-web`; complete at
+   `6372676`).** Created
    the private submission/version/report tables and the caller-JWT RPCs,
    including
    `submit_private_reference_for_curation`, which server-reads exactly one
@@ -2913,22 +2914,77 @@ lands as its own commit. No slice may activate the next slice's behavior.
   no remaining material issue. Stage 6b is the next independently authorized
   slice.
 
+### Stage 6b completion record (2026-08-29)
+
+- `sporely-web` migration
+  `20260829145939_add_reference_curation_intake.sql` creates the private intake
+  policy, attestation-version, attempt-ledger, submission-head,
+  append-only-submission-version, and report tables. The Stage 6a catalogue
+  remains dormant: this slice adds no curator mutation, publication, public
+  read, Edge Function, admin/landing UI, or deployment.
+- `submit_private_reference_for_curation` takes stable source IDs plus expected
+  work, treatment, and measurement-set revisions. Under one owner lock it
+  server-reads exactly that same-owner graph, rejects stale or cross-owner
+  inputs, and stores a bounded canonical candidate projection, digest, source
+  revision tuple, and immutable consent/attestation evidence. Unknown nested
+  fields are removed while the established Stage 3 agent and raw-point forms
+  remain valid. Private notes and transport state never enter the candidate.
+- Initial submission, append-only resubmission, withdrawal, and exact
+  publication-revision report intake are caller-JWT `SECURITY DEFINER` RPCs
+  with empty `search_path`. They derive the actor from `auth.uid()`, enforce a
+  current non-banned profile and the account-deletion marker, use CAS for
+  mutable lifecycle heads, distinguish exact retries from idempotency
+  conflicts, and serialize per-account attempt limits. Failed expensive
+  attempts count; exact successful retries do not consume another allowance.
+- Operational inputs are deliberately fail-closed. Submission and report
+  intake default disabled, and cannot be enabled until the matching immutable
+  attestation wording/version, positive rate window/count, and nonnegative
+  retention settings are supplied. No rights text, retention period, or rate
+  number was invented in this slice.
+- Direct `PUBLIC`, `anon`, `authenticated`, and `service_role` table access is
+  denied; caller RPC execution is granted only to `authenticated`. Candidate
+  and attestation history is append-only, event history remains immutable, and
+  the service-only retention path preserves hashes/revisions while purging due
+  candidate bodies and redacting due report detail exactly once.
+- Account deletion now locks the owner/deletion marker, revokes memberships,
+  withdraws open submissions, removes personal-source and actor pointers,
+  schedules configured candidate/report retention, applies immediately due
+  retention, clears attempt state, and only then deletes observation uses and
+  the owner work graph. The sequence is retry-safe; published catalogue data
+  remains independent.
+- Verification passed a fresh local migration reset, five focused Stage 6b SQL
+  suites, all four Stage 6a schema/security/immutability/account-deletion
+  suites, the Stage 3 mutation and Stage 5 public-observation reference SQL
+  regressions, all 49 delete-account tests, `git diff --check`, and
+  `supabase db lint --local --level warning --fail-on error`. Lint had no
+  errors; it reported the existing Stage 3 volatility warnings and equivalent
+  warnings for the new pure immutable JSON projection helpers.
+- Independent correctness and security reviews found and closed retry
+  classification, attestation-version reuse, retention enforcement, source
+  bounds, service-side consistency, nested-field projection, ban-race,
+  failed-attempt accounting, withdrawal retry, and concurrent retention-event
+  gaps. Final re-reviews and a complete security diff scan found no remaining
+  material issue or reportable finding. Stage 6c is the next independently
+  authorized slice.
+
 ### Open operational policy inputs
 
-These do not change the technical boundary or block Stage 6a, but must be set
-before 6b/6c activation:
+These do not change the technical boundary, but must be supplied before the
+corresponding behavior is activated:
 
 - the initial user IDs assigned `reference_reviewer` and
   `reference_publisher`;
-- retention/anonymization periods for rejected/withdrawn submissions and
-  contributor attribution after account deletion;
-- the rights-attestation wording/version and copyright/takedown response SLA;
+- the immutable rights-attestation wording/version used to enable owner
+  submissions;
+- owner submission and report rate windows/counts, submission candidate
+  retention, report-detail retention, and contributor-attribution retention;
+- the copyright/takedown response SLA;
 - public catalogue rate-limit numbers and default page size within the hard
   database caps.
 
-The recommended first implementation slice is Stage 6a only. It establishes
-the separate namespace, immutable version foundation, and deny-by-default
-security posture without exposing data or adding application behavior.
+The recommended next implementation slice is Stage 6c only. It adds the
+reviewer workflow and catalogue-draft boundary while leaving publication and
+public reads dormant.
 
 ---
 
