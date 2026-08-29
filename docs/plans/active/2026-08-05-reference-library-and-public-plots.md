@@ -1,7 +1,7 @@
 # Reference Library and Public Reference Plotting Plan
 
-**Status:** Stages 1–5 are implemented and verified. Stage 6 is designed;
-implementation slices 6a–6l remain.
+**Status:** Stages 1–5 and Stage 6a are implemented and verified. Stage 6b–6l
+remain.
 **Canonical repository:** `sporely-py`
 **Canonical path:** `docs/plans/active/2026-08-05-reference-library-and-public-plots.md`
 **Scope:** `sporely-py` → `sporely-web`/Supabase → `sporely-admin` →
@@ -13,10 +13,11 @@ implementation slices 6a–6l remain.
 ## Agent handoff
 
 - Status: Active; Stages 1–5 are complete and the Stage 6 contract is resolved.
-- Last completed slice: Stage 6 audit/design; no production behavior, schema,
-  migration, or deployment changed.
-- Current/next slice: Stage 6a dormant curated schema and security foundation
-  in `sporely-web`, only when separately started from this canonical plan.
+- Last completed slice: Stage 6a dormant curated schema and security foundation
+  in `sporely-web` (`11637a4`); it added no public or application behavior and
+  was not deployed.
+- Current/next slice: Stage 6b owner submission and report intake in
+  `sporely-web`, only when separately started from this canonical plan.
 - Relevant Stage 4 commits: `199f127`, `69ec641`, `8893007`, `edd9f70`,
   `e8b340b`, `ea1e1b9`, `eaca8e7`, `0277516`, `9c5346b`.
 - Relevant Stage 5 commit (`sporely-landing`): `5af3cb8`.
@@ -2441,6 +2442,12 @@ it changed no production behavior, schema, migration, or deployment.
   current `canonical_name`. Public curated lookup must use that registry key,
   not desktop text IDs, display names, legacy external IDs, the v2 tables, or
   inferred slug equality.
+- Stage 6a verified a migration-safety detail that the v3 registry itself does
+  not enforce: `taxonomy_v3.registry_concept.sporely_taxon_id` is an integer
+  primary key but has no positive-value check. Curated assignment rows must
+  therefore enforce both their v3 foreign key and their own
+  `sporely_taxon_id > 0` constraint; tests seed zero/negative registry rows so
+  a missing curated check cannot be masked by the foreign key.
 - Stage 5 landing code is on `sporely-landing` `refactor/cloud-sync` at
   `5af3cb8`. It has the strict frozen-snapshot parser and non-synthetic plot
   grammar needed by Stage 6. Compare is currently a browser-local
@@ -2493,12 +2500,15 @@ The initial cloud schema uses the following unexposed tables, with all names
 schema-qualified under `private`: `curated_reference_works`,
 `curated_reference_taxon_treatments`, `curated_reference_measurement_sets`,
 `curated_reference_treatment_taxa`, `curated_reference_publications`,
-`reference_curator_memberships`, `reference_curation_submissions`,
+`curated_reference_publication_taxa`, `reference_curator_memberships`,
+`reference_curation_submissions`,
 `reference_curation_submission_versions`, `reference_curation_reports`, and
 `reference_curation_events`. The first three are editable catalogue heads, the
-assignment table contains only explicit stable-concept links, publications,
-candidate versions, and events are append-only, and submissions keep immutable
-candidate content separate from their mutable workflow state.
+treatment-assignment table contains only explicit stable-concept links, the
+publication-assignment table freezes those links per bundle, publications,
+publication assignments, candidate versions, and events are append-only, and
+submissions keep immutable candidate content separate from their mutable
+workflow state.
 
 The idempotency key for an initial submission is `(owner_id,
 source_measurement_set_id, source_work_revision, source_treatment_revision,
@@ -2775,7 +2785,7 @@ the named behavior, updates this canonical plan, receives a fresh review, and
 lands as its own commit. No slice may activate the next slice's behavior.
 
 1. **Stage 6a — dormant curated catalogue foundation
-   (`sporely-web`).** Use `supabase migration new
+   (`sporely-web`; complete at `11637a4`).** Used `supabase migration new
    add_curated_reference_library` to create only the private curated work,
    treatment, measurement-set, taxon-assignment, immutable-publication,
    membership, and event tables. Add lifecycle, CAS, immutability,
@@ -2871,6 +2881,37 @@ lands as its own commit. No slice may activate the next slice's behavior.
     disposable accounts. Run existing Stage 3–5 privacy, public-observation,
     sync, Compare, and admin regressions. Record intentional differences and
     known limitations here. Do not add `/references` in this slice.
+
+### Stage 6a completion record (2026-08-29)
+
+- `sporely-web` migration `20260829141735_add_curated_reference_library.sql`
+  creates only the eight private foundation tables, including the separate
+  immutable `curated_reference_publication_taxa` relation needed to preserve
+  each publication bundle's exact many-to-many species assignments.
+- Mutable heads have stable UUID/creation provenance, semantic revisions, and
+  independent CAS `row_version`. Publication revisions are sequential and bind
+  locked current work/treatment/set revisions. Exact copied taxonomy-v3 species
+  assignments are complete and sealed with the bundle; same-content restoration
+  remains legal as a new bundle revision.
+- Catalogue rows must enter as drafts. Lifecycle, acyclic single-live-successor
+  rules, compatible explicit taxon assignments, and shared graph locking are
+  enforced in the foundation. Publication/event history is append-only, and
+  service-role privileges omit update, delete, and truncate on those tables.
+- All eight tables are in `private`, have RLS enabled with no client policies,
+  and deny `PUBLIC`, `anon`, and `authenticated` direct access. Stage 6a adds no
+  public RPC, submission/report intake, Edge Function, UI, or public catalogue
+  behavior. It was committed but not deployed.
+- Verification passed two fresh local database resets (the second as migration
+  replay evidence), four focused schema/security/immutability/account-deletion
+  SQL suites, the Stage 3 mutation and Stage 5 public-observation reference SQL
+  regressions, all 41 delete-account plan tests, `git diff --check`, and
+  `supabase db lint --local --level warning --fail-on error`. Lint reported only
+  the pre-existing Stage 3 immutable-versus-stable warnings.
+- Fresh correctness and security reviews found and closed privilege,
+  publication sealing/order, semantic revision, null-rank taxonomy, lifecycle,
+  supersession concurrency, and stable-provenance gaps. Final re-reviews found
+  no remaining material issue. Stage 6b is the next independently authorized
+  slice.
 
 ### Open operational policy inputs
 
