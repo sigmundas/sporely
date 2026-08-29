@@ -1,7 +1,7 @@
 # Reference Library and Public Reference Plotting Plan
 
-**Status:** Stages 1–5 and Stages 6a–6b are implemented and verified. Stage
-6c–6l remain.
+**Status:** Stages 1–5 and Stages 6a–6c are implemented and verified. Stage
+6d–6l remain.
 **Canonical repository:** `sporely-py`
 **Canonical path:** `docs/plans/active/2026-08-05-reference-library-and-public-plots.md`
 **Scope:** `sporely-py` → `sporely-web`/Supabase → `sporely-admin` →
@@ -13,10 +13,11 @@
 ## Agent handoff
 
 - Status: Active; Stages 1–5 are complete and the Stage 6 contract is resolved.
-- Last completed slice: Stage 6b owner submission and report intake in
-  `sporely-web` (`6372676`); intake remains disabled until policy values are
-  deliberately configured, and the migration was not deployed.
-- Current/next slice: Stage 6c reviewer workflow and catalogue drafts in
+- Last completed slice: Stage 6c reviewer workflow and catalogue drafts in
+  `sporely-web` (`df22cc0`); the Edge boundary and schema remain dormant, the
+  operational memberships/policies are still unsupplied, and nothing was
+  deployed.
+- Current/next slice: Stage 6d publisher materialization and lifecycle in
   `sporely-web`, only when separately started from this canonical plan.
 - Relevant Stage 4 commits: `199f127`, `69ec641`, `8893007`, `edd9f70`,
   `e8b340b`, `ea1e1b9`, `eaca8e7`, `0277516`, `9c5346b`.
@@ -2803,14 +2804,15 @@ lands as its own commit. No slice may activate the next slice's behavior.
    report intake, exact idempotency, consent, bounds/rate limit, ownership,
    ban/deletion-marker, grants/search-path, and delete-account ordering tests.
    No curator mutation or public read.
-3. **Stage 6c — reviewer workflow and catalogue drafts (`sporely-web`).** Add a
+3. **Stage 6c — reviewer workflow and catalogue drafts (`sporely-web`;
+   complete at `df22cc0`).** Added a
    dedicated `supabase/functions/reference-curation/` Edge boundary for claim,
    request-changes, reject, accept-to-draft, draft editing, and duplicate
    warnings only. Enforce current non-banned database membership/admin checks,
    JWT-to-actor binding, CAS, exact candidate-version decisions, and append-only
-   auditing. Add SQL and Deno tests for stale roles/tokens, cross-owner IDs,
+   auditing. SQL and Deno tests cover stale roles/tokens, cross-owner IDs,
    retries, races, invalid transitions, and rollback. No publication,
-   lifecycle action, or public read.
+   lifecycle action, or public read was added.
 4. **Stage 6d — publisher materialization and lifecycle (`sporely-web`).** Add
    publisher/admin-only publish, deprecate, supersede, and withdraw operations.
    Transactionally materialize the immutable snapshot/citation bundle and
@@ -2967,6 +2969,55 @@ lands as its own commit. No slice may activate the next slice's behavior.
   material issue or reportable finding. Stage 6c is the next independently
   authorized slice.
 
+### Stage 6c completion record (2026-08-29)
+
+- `sporely-web` migration
+  `20260829163642_add_reference_curation_reviewer_workflow.sql` adds the
+  private claim/feedback/acceptance provenance and idempotency-collision state,
+  exact graph foreign keys, immutable acceptance evidence, and service-only
+  reviewer RPCs. Claim, request-changes, reject, accept-to-draft, and draft
+  edits use workflow and entity CAS; exact successful retries are no-ops while
+  negative retries preserve their domain status. All outcomes and distinct
+  request-ID collisions are append-only audited once.
+- The dedicated `supabase/functions/reference-curation/` Edge Function exposes
+  only those five mutations plus read-only duplicate warnings. It binds
+  `getUser` and verified claims to one UUID session, defers service-client
+  creation until authentication succeeds, and relies on a second database
+  check of the current session, non-banned profile, and current admin/reviewer/
+  publisher membership. Requests, action payloads, RPC statuses, successful
+  responses, and browser origins are allowlisted and size-bounded; malformed
+  or expanded privileged responses fail closed. Dependency versions and the
+  Deno lockfile are fixed to the reviewed graph.
+- Acceptance server-reads the exact immutable candidate revision/hash and
+  atomically creates fresh curated work → treatment → measurement-set drafts,
+  or links only an explicit CAS-protected hierarchy prefix with a reason. It
+  never publishes, infers a taxon assignment, reuses a personal UUID, or
+  exposes a personal source identifier. Draft editing remains restricted to
+  allowlisted scientific/bibliographic fields; explicit positive taxonomy-v3
+  species assignments are audited, and clearing raw points stores SQL `NULL`.
+- Claim and membership changes share serialization so revocation/reassignment
+  cannot authorize from a stale membership view. Account deletion releases
+  active claims, anonymizes `accepted_by` without changing immutable candidate
+  or curated-graph provenance, and cannot bypass the public deletion wrapper.
+  Duplicate detection is warning-only: normalized DOI, normalized ISBN, and
+  full structured bibliographic equality are deterministically ordered and
+  capped at 100; no fuzzy title/author merge exists.
+- The slice remains dormant. It adds no publication, deprecate/supersede/
+  withdraw lifecycle operation, public read, admin/landing UI, or deployment.
+  Browser activation additionally requires an explicit
+  `REFERENCE_CURATION_ALLOWED_ORIGINS` value; the empty default denies browser
+  origins.
+- Verification passed a fresh local migration reset; four focused Stage 6c,
+  nine Stage 6a/6b, and the Stage 3/5 reference SQL suites; 30 frozen/locked
+  Deno tests; all 49 delete-account tests; formatting and diff checks; and
+  `supabase db lint --local --level warning --fail-on error`. Lint reported
+  only the previously documented Stage 3/6b immutable-versus-stable warnings.
+  Fresh correctness, Edge, and security reviews found and closed retry-status,
+  audit amplification, account-deletion, acceptance immutability, response
+  projection, body-bound, dependency-lock, duplicate-warning, raw-point-null,
+  and membership-race defects. Final re-reviews and the security diff scan
+  found no remaining material or reportable finding.
+
 ### Open operational policy inputs
 
 These do not change the technical boundary, but must be supplied before the
@@ -2982,9 +3033,9 @@ corresponding behavior is activated:
 - public catalogue rate-limit numbers and default page size within the hard
   database caps.
 
-The recommended next implementation slice is Stage 6c only. It adds the
-reviewer workflow and catalogue-draft boundary while leaving publication and
-public reads dormant.
+The recommended next implementation slice is Stage 6d only: publisher
+materialization and lifecycle in `sporely-web`, while keeping public reads and
+all UI work dormant.
 
 ---
 
