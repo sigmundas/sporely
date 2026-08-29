@@ -1,7 +1,7 @@
 # Reference Library and Public Reference Plotting Plan
 
-**Status:** Stages 1–5 and Stages 6a–6c are implemented and verified. Stage
-6d–6l remain.
+**Status:** Stages 1–5 and Stages 6a–6d are implemented and verified. Stage
+6e–6l remain.
 **Canonical repository:** `sporely-py`
 **Canonical path:** `docs/plans/active/2026-08-05-reference-library-and-public-plots.md`
 **Scope:** `sporely-py` → `sporely-web`/Supabase → `sporely-admin` →
@@ -13,12 +13,12 @@
 ## Agent handoff
 
 - Status: Active; Stages 1–5 are complete and the Stage 6 contract is resolved.
-- Last completed slice: Stage 6c reviewer workflow and catalogue drafts in
-  `sporely-web` (`df22cc0`); the Edge boundary and schema remain dormant, the
+- Last completed slice: Stage 6d publisher materialization and lifecycle in
+  `sporely-web` (`341b4e1`); the Edge boundary and schema remain dormant, the
   operational memberships/policies are still unsupplied, and nothing was
   deployed.
-- Current/next slice: Stage 6d publisher materialization and lifecycle in
-  `sporely-web`, only when separately started from this canonical plan.
+- Current/next slice: Stage 6e curator workspace in `sporely-admin`, only when
+  separately started from this canonical plan.
 - Relevant Stage 4 commits: `199f127`, `69ec641`, `8893007`, `edd9f70`,
   `e8b340b`, `ea1e1b9`, `eaca8e7`, `0277516`, `9c5346b`.
 - Relevant Stage 5 commit (`sporely-landing`): `5af3cb8`.
@@ -2813,7 +2813,8 @@ lands as its own commit. No slice may activate the next slice's behavior.
    auditing. SQL and Deno tests cover stale roles/tokens, cross-owner IDs,
    retries, races, invalid transitions, and rollback. No publication,
    lifecycle action, or public read was added.
-4. **Stage 6d — publisher materialization and lifecycle (`sporely-web`).** Add
+4. **Stage 6d — publisher materialization and lifecycle (`sporely-web`;
+   complete at `341b4e1`).** Added
    publisher/admin-only publish, deprecate, supersede, and withdraw operations.
    Transactionally materialize the immutable snapshot/citation bundle and
    exact taxon assignments, enforce graph revision/supersession rules, and
@@ -3018,6 +3019,51 @@ lands as its own commit. No slice may activate the next slice's behavior.
   and membership-race defects. Final re-reviews and the security diff scan
   found no remaining material or reportable finding.
 
+### Stage 6d completion record (2026-08-29)
+
+- `sporely-web` migration
+  `20260829190945_add_reference_curation_publication_lifecycle.sql` adds the
+  service-only `mutate_reference_curation_lifecycle` RPC and the existing
+  `reference-curation` Edge boundary now accepts only publish, deprecate,
+  supersede, and withdraw in addition to the Stage 6c actions. Current
+  non-banned publisher membership or admin state and the exact live session
+  are checked in the database; direct client RPC execution remains denied.
+- Publication locks and CAS-checks the measurement set, work, treatment, exact
+  sorted taxon-assignment set, and—where a lineage transition mutates it—the
+  predecessor. It server-builds and atomically stores the immutable snapshot,
+  structured citation (including its nullable curated citation key), content
+  hash, exact graph revisions, and copied taxonomy-v3 species assignments.
+  Clients cannot supply publication snapshots, citations, hashes, or taxa.
+- Supersession uses deterministic target/predecessor locking, compatible exact
+  taxon assignments, a single non-withdrawn successor, and atomic predecessor
+  deprecation. Restoration appends a new bundle revision, cannot create two
+  live ends of a lineage, and requires exact predecessor identity/CAS before
+  reapplying predecessor deprecation. Current published bundles cannot be
+  republished in place.
+- Deprecate and withdraw are reasoned status-only transitions: they advance
+  lifecycle CAS state but never rewrite or delete publication bundles, copied
+  taxa, frozen observation snapshots, or future Compare evidence. Target and
+  predecessor audit events keep their own before/after hashes. Exact retries
+  are no-ops, request-ID collisions are audited once, partial failures roll
+  back, and transient serialization/deadlock failures remain retryable rather
+  than becoming durable terminal results.
+- The Edge action boundary strictly validates per-action request and response
+  shapes, canonicalizes UUIDs before exact JSON graph comparison, maps graph,
+  lineage, and CAS domain conflicts explicitly, and returns only the bounded
+  lifecycle result. No public RPC, catalogue read, admin/landing UI, or
+  deployment/activation was added.
+- Verification passed a fresh local migration reset/replay; the focused Stage
+  6d publication/lifecycle SQL suite; all 13 Stage 6a–6c SQL suites; the Stage
+  3 mutation and Stage 5 public-observation reference SQL regressions; all 37
+  reference-curation Deno tests; all 49 delete-account tests; Deno formatting,
+  `git diff --check`, and `supabase db lint --local`. Lint reported only the
+  previously documented Stage 3/6b immutable-versus-stable warnings.
+- Fresh correctness and security reviews found and closed restoration-lineage
+  CAS/locking, supersession state, audit-hash attribution, frozen citation-key,
+  UUID normalization, and historical-evidence coverage gaps. Final re-reviews
+  and the complete security diff scan found no remaining material or
+  reportable issue. Stage 6e is the next independently authorized slice.
+
 ### Open operational policy inputs
 
 These do not change the technical boundary, but must be supplied before the
@@ -3033,9 +3079,9 @@ corresponding behavior is activated:
 - public catalogue rate-limit numbers and default page size within the hard
   database caps.
 
-The recommended next implementation slice is Stage 6d only: publisher
-materialization and lifecycle in `sporely-web`, while keeping public reads and
-all UI work dormant.
+The recommended next implementation slice is Stage 6e only: the isolated
+curator workspace in `sporely-admin`, while keeping public catalogue reads and
+landing behavior dormant.
 
 ---
 
