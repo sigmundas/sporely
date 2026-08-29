@@ -1,7 +1,7 @@
 # Reference Library and Public Reference Plotting Plan
 
-**Status:** Stages 1–5 and Stages 6a–6e are implemented and verified. Stage
-6f–6l remain.
+**Status:** Stages 1–5 and Stages 6a–6f are implemented and verified. Stage
+6g–6l remain.
 **Canonical repository:** `sporely-py`
 **Canonical path:** `docs/plans/active/2026-08-05-reference-library-and-public-plots.md`
 **Scope:** `sporely-py` → `sporely-web`/Supabase → `sporely-admin` →
@@ -12,13 +12,13 @@
 
 ## Agent handoff
 
-- Status: Active; Stages 1–5 are complete and the Stage 6 contract is resolved.
-- Last completed slice: Stage 6e curator workspace in `sporely-admin`
-  (`10f923e`), with its service-only private workspace reads in `sporely-web`
-  (`6f53b5b`). The moderation system remains dormant, operational
-  memberships/policies and allowed origins are still unsupplied, and nothing
-  was deployed.
-- Current/next slice: Stage 6f citation export artifacts in `sporely-web`,
+- Status: Active; Stages 1–5 and Stage 6a–6f are complete, and the remaining
+  Stage 6 contract is resolved.
+- Last completed slice: Stage 6f citation export artifacts in `sporely-web`
+  (`ed04e25`). The catalogue and moderation system remain dormant,
+  operational memberships/policies and allowed origins are still unsupplied,
+  and nothing was deployed.
+- Current/next slice: Stage 6g exact-taxon public read APIs in `sporely-web`,
   only when separately started from this canonical plan.
 - Relevant Stage 4 commits: `199f127`, `69ec641`, `8893007`, `edd9f70`,
   `e8b340b`, `ea1e1b9`, `eaca8e7`, `0277516`, `9c5346b`.
@@ -3108,6 +3108,54 @@ lands as its own commit. No slice may activate the next slice's behavior.
   policy was deployed or activated. Stage 6f is the next independently
   authorized slice.
 
+### Stage 6f completion record (2026-08-29)
+
+- `sporely-web` migration `20260829212131_add_curated_reference_citation_exports.sql`
+  adds one private, append-only export artifact per immutable
+  `(curated_measurement_set_id, bundle_revision)`. Each artifact records the
+  exact frozen curated work UUID/revision and citation-schema version, a source
+  citation hash, per-format SHA-256 hashes, and an aggregate artifact hash.
+  It has no CAS row because the immutable publication key is its idempotency
+  and revision boundary.
+- Publication insertion materializes UTF-8 plain text, BibTeX, and canonical
+  CSL-JSON transactionally from the publication row's frozen `citation_json`;
+  neither future publication nor replay reads the mutable curated work head.
+  Existing bundles are backfilled in deterministic key order. Exact replay is
+  a byte-identical no-op, while any mismatch fails closed instead of updating
+  historical output.
+- Safe explicit ASCII citation keys are retained. Missing, unsafe, or reserved
+  keys use `sporely-auto-<hyphenless-curated-work-uuid>`, keeping the key stable
+  across bundles while reserving a collision-free generated namespace.
+  BibTeX uses fixed type/field ordering and escapes structural characters;
+  CSL-JSON projects only its field allowlist and ordered agents. Control and
+  bidi characters cannot create extra records or fields, while ordinary
+  Unicode remains UTF-8.
+- DOI values are prefix-stripped, lower-cased, and syntax-validated for the
+  structured exports. The exact terminal DOI suffix produced by Stage 6d is
+  replaced with the normalized URL or removed when invalid; internal manual
+  citation-override text is not rewritten, and an empty resulting citation
+  fails closed. No DOI metadata lookup occurs.
+- The artifact table has RLS enabled with no client policy. `PUBLIC`, `anon`,
+  and `authenticated` have no access; `service_role` is read-only and cannot
+  execute the private builders/materializer. Update, delete, and truncate are
+  rejected. Account deletion anonymizes publication attribution without
+  deleting its citation artifacts. No public RPC, Edge function, landing or
+  Compare behavior, RIS output, deployment, or activation was added.
+- Verification passed three fresh local migration reset/replays, the focused
+  export test, all 18 reference/curation SQL regression files, all 42
+  reference-curation Deno tests, and all 49 delete-account Node tests.
+  `git diff --check` passed; database lint reported only the already documented
+  Stage 3/6b immutable-versus-stable warnings. Focused tests cover exact-byte
+  replay, backfill behavior, Unicode, BibTeX/CSL escaping and type mappings,
+  safe and fallback keys, valid/invalid DOI handling, hostile text, exact
+  revision/hash binding, later revisions, rollback, immutability, grants, and
+  account deletion.
+- Fresh correctness and security review found two plain-text DOI edge cases:
+  raw Stage 6d DOI suffixes were initially left unnormalized, and the first fix
+  could rewrite an internal manual override. Both were reproduced with failing
+  tests and fixed with terminal-suffix-only normalization plus a nonempty
+  postcondition. Final re-reviews found no remaining material issue.
+
 ### Open operational policy inputs
 
 These do not change the technical boundary, but must be supplied before the
@@ -3123,9 +3171,9 @@ corresponding behavior is activated:
 - public catalogue rate-limit numbers and default page size within the hard
   database caps.
 
-The recommended next implementation slice is Stage 6f only: append-only
-citation export artifacts in `sporely-web`, while keeping public catalogue
-reads and landing behavior dormant.
+The recommended next implementation slice is Stage 6g only: exact-taxon public
+read APIs in `sporely-web`, while keeping landing/Compare behavior deferred to
+its later slice.
 
 ---
 
