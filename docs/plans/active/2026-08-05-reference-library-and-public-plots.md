@@ -1,20 +1,22 @@
 # Reference Library and Public Reference Plotting Plan
 
-**Status:** Stages 1–5 are implemented and verified; Stage 6 remains.
+**Status:** Stages 1–5 are implemented and verified. Stage 6 is designed;
+implementation slices 6a–6l remain.
 **Canonical repository:** `sporely-py`
 **Canonical path:** `docs/plans/active/2026-08-05-reference-library-and-public-plots.md`
-**Scope:** `sporely-py` → `sporely-web`/Supabase → `sporely-landing`
+**Scope:** `sporely-py` → `sporely-web`/Supabase → `sporely-admin` →
+`sporely-landing`
 **Primary outcome:** A reference entered once can be reused across observations, and a public observation can display the exact literature measurement sets used in desktop analysis.
 
 ---
 
 ## Agent handoff
 
-- Status: Active; Stages 1–5 are complete. Stage 6 remains.
-- Last completed slice: Stage 5 public observation read models, frozen
-  literature overlays, and citation cards in `sporely-landing`.
-- Current/next slice: Stage 6 curated reference library and Compare
-  integration, only when separately started from this canonical plan.
+- Status: Active; Stages 1–5 are complete and the Stage 6 contract is resolved.
+- Last completed slice: Stage 6 audit/design; no production behavior, schema,
+  migration, or deployment changed.
+- Current/next slice: Stage 6a dormant curated schema and security foundation
+  in `sporely-web`, only when separately started from this canonical plan.
 - Relevant Stage 4 commits: `199f127`, `69ec641`, `8893007`, `edd9f70`,
   `e8b340b`, `ea1e1b9`, `eaca8e7`, `0277516`, `9c5346b`.
 - Relevant Stage 5 commit (`sporely-landing`): `5af3cb8`.
@@ -22,7 +24,8 @@
 - Comparison baseline: the frozen `cloud-sync-pre-refactor` tag; at the Stage 4
   audit it resolves to `e9accd9`, the audit's starting `refactor/cloud-sync`
   HEAD.
-- Do not: Fuzzy-merge bibliographic records, fabricate statistics, or begin public catalogue scope without a separate moderation design.
+- Do not: Fuzzy-merge bibliographic records, fabricate statistics, expose
+  personal libraries, or bypass the Stage 6 moderation/publication boundary.
 - Remaining acceptance criteria: The cross-repository definition of done in Section 20.
 
 ---
@@ -729,16 +732,20 @@ Deliver:
 
 ## Stage 6 — Curated reference library and Compare integration
 
-Repositories: all three as needed
+Repositories: `sporely-web`, `sporely-admin`, `sporely-landing`, and
+`sporely-py` only in the explicit personal-fork/submission slice.
 
 Deliver:
 
-- curated public library;
-- admin workflow;
-- species-level reference listing;
-- add-reference flow in Compare;
-- optional `/references` public route;
-- citation export.
+- separate curated storage and immutable published revisions;
+- consent-based personal submission and audited curator workflow;
+- exact stable-taxon public API and species-level reference listing;
+- frozen-reference Compare items that never become synthetic observations;
+- plain-text, BibTeX, and CSL-JSON citation export from curated source data;
+- explicit curated-to-personal fork support without identity reuse or fuzzy
+  merging;
+- no `/references` route in the core Stage 6 delivery; that route remains a
+  separately approved optional follow-up.
 
 ---
 
@@ -820,13 +827,26 @@ These must be resolved during Stage 0 or explicitly deferred:
    deterministic Stage 1 house style, without a selector.
 5. ~~Should favourites be local-only or synced?~~ Resolved: local-only in
    Stage 2; cloud sync would need a later contract.
-6. Can one treatment point to multiple current taxon concepts?
-7. How should hybrid, aggregate, `sensu`, and variety names be represented?
+6. ~~Can one treatment point to multiple current taxon concepts?~~ Resolved for
+   Stage 6: yes, but only through explicit curator-authored assignments to
+   stable `sporely_taxon_id` values. Public lookup never infers descendants or
+   matches names fuzzily.
+7. ~~How should hybrid, aggregate, `sensu`, and variety names be represented?~~
+   Resolved for Stage 6: preserve the source wording in
+   `name_as_published`. A record appears on a species surface only when a
+   curator explicitly assigns it to an existing stable
+   `taxonomy_v3.registry_concept`.
+   Unresolved or ambiguous concepts remain reviewable but are not public-list
+   candidates.
 8. ~~Should reference works be shareable before admin verification?~~ Resolved by removing verification and per-work visibility from the product; see §5.1.
 9. ~~What delete behavior is safest when an observation snapshot exists?~~
    Resolved: block deletion while used; retained snapshots remain readable if
    source records are externally missing.
-10. Should curated works be editable by users as local overlays/forks?
+10. ~~Should curated works be editable by users as local overlays/forks?~~
+    Resolved: curated rows are read-only. A user may explicitly fork a
+    published bundle into a new owner-private graph with new UUIDs and durable
+    origin provenance. The fork never follows or overwrites from catalogue
+    changes automatically.
 11. ~~Which existing legacy records can be migrated automatically without bibliographic ambiguity?~~
     Resolved by the review-gated interactive migration; no fuzzy auto-merge.
 12. ~~Does backup/import already preserve unknown/new tables generically?~~
@@ -2395,6 +2415,480 @@ Stage 5 is complete. Species-level curated references, public catalogue
 search, and adding literature sets in Compare remain deliberately deferred to
 Stage 6.
 
+## 19f. Stage 6 curated-library audit and implementation contract (2026-08-29)
+
+This section is the authoritative Stage 6 contract. The audit was read-only:
+it changed no production behavior, schema, migration, or deployment.
+
+### Verified current state and ownership
+
+- `sporely-py` `refactor/cloud-sync` is clean at `edb5c80`. Its normalized
+  work → treatment → measurement-set graph is owner-private. Stable UUIDs and
+  semantic revisions are separate from transport `row_version`; attachments
+  synchronously store a canonical frozen snapshot before they are plotted.
+- The local `reference_works.visibility` and `verification_status` columns are
+  compatibility residue. Current repositories deliberately omit them. Stage 6
+  must not revive either column or reinterpret `curated_public` on a personal
+  row.
+- `sporely-web` has the Stage 3 private graph and public frozen-observation
+  projection at `68c406d`. Personal tables have composite owner keys,
+  owner-only RLS, same-owner parent/use constraints, and no anonymous table
+  reads. `reference_taxon_treatments.taxon_id` is free text and is not the
+  cloud taxonomy identity.
+- The taxonomy-v2 tables are a disposable experiment and are not the Stage 6
+  identity boundary. The deployed sparse `taxonomy_v3.registry_concept`
+  supplies the current durable positive integer `sporely_taxon_id`, rank, and
+  current `canonical_name`. Public curated lookup must use that registry key,
+  not desktop text IDs, display names, legacy external IDs, the v2 tables, or
+  inferred slug equality.
+- Stage 5 landing code is on `sporely-landing` `refactor/cloud-sync` at
+  `5af3cb8`. It has the strict frozen-snapshot parser and non-synthetic plot
+  grammar needed by Stage 6. Compare is currently a browser-local
+  `sporely.compare.v1` array whose `CompareSet.sourceType` is limited to
+  `observation | taxon_filter`; its permissive legacy loader would misclassify
+  a new kind without an explicit storage migration.
+- The removed mock `SpeciesReferenceDistribution` path generates artificial
+  point clouds and is not a Stage 6 input. The legacy ownerless
+  `reference_values` table/RPC is also not a curated catalogue or migration
+  source.
+- Curator UI belongs in `sporely-admin`, not the public landing site or mobile
+  application. Its current admin boundary verifies the JWT with `getUser`,
+  checks server-side authorization, uses the service credential only inside an
+  Edge Function, allowlists actions, and records an admin audit log. Stage 6
+  extends that pattern through a separate reference-curation endpoint. The
+  existing checkout has unrelated local edits and must not be reused without
+  isolation.
+
+### Private, submitted, and curated domains
+
+There are three distinct domains; no row changes domain in place:
+
+1. **Personal library.** Existing `public.reference_works`,
+   `reference_taxon_treatments`, and `reference_measurement_sets` remain
+   readable only by their owner. Personal sync and observation snapshots keep
+   their Stage 3/4 contracts.
+2. **Submission candidate.** An authenticated, non-banned owner may explicitly
+   submit one synced measurement-set bundle and its two required parents. The
+   submission RPC accepts the personal measurement-set UUID plus expected
+   work/treatment/set revisions and consent/rights attestations; it does not
+   trust an arbitrary client-supplied graph. The server verifies `auth.uid()`
+   ownership and copies only the curated-field allowlist into an immutable
+   candidate payload and content hash. It excludes personal citation keys,
+   favourites/recent state, private notes, observation-use notes, sync state,
+   and unrelated siblings beneath the same work. Later personal edits do not
+   mutate the candidate. Unsynced local data must sync before submission.
+   Candidate content is append-only and versioned: responding to
+   `changes_requested` server-reads the graph again at new expected revisions
+   and appends a new candidate revision/hash/attestation instead of editing the
+   reviewed payload. Every review decision binds one exact candidate revision
+   and content hash.
+3. **Curated catalogue.** Acceptance creates or explicitly links to separate
+   global curated work/treatment/set UUIDs. It never reuses or transfers the
+   personal UUIDs and never grants curators general access to personal tables.
+   The private origin and submitter association remain moderation-only and are
+   not part of any public projection. Admin-authored catalogue drafts use the
+   same review and publication machinery without a personal source.
+
+The initial cloud schema uses the following unexposed tables, with all names
+schema-qualified under `private`: `curated_reference_works`,
+`curated_reference_taxon_treatments`, `curated_reference_measurement_sets`,
+`curated_reference_treatment_taxa`, `curated_reference_publications`,
+`reference_curator_memberships`, `reference_curation_submissions`,
+`reference_curation_submission_versions`, `reference_curation_reports`, and
+`reference_curation_events`. The first three are editable catalogue heads, the
+assignment table contains only explicit stable-concept links, publications,
+candidate versions, and events are append-only, and submissions keep immutable
+candidate content separate from their mutable workflow state.
+
+The idempotency key for an initial submission is `(owner_id,
+source_measurement_set_id, source_work_revision, source_treatment_revision,
+source_measurement_set_revision, content_hash, attestation_version)`. An exact
+retry returns the existing submission and candidate revision, including its
+current terminal status, rather than duplicating either row. Resubmission after
+`changes_requested` appends a version under the same submission with expected
+workflow `row_version`. A rejected or contributor-withdrawn submission is
+terminal; a later submission must have changed content or attestation, gets a
+new submission UUID, and records the prior submission UUID. Identical terminal
+content is returned, not reopened.
+
+Exact DOI, normalized ISBN, or exact structured bibliographic equality may
+raise duplicate candidates for human review. They never merge records
+automatically. Title/author similarity is never an identity rule.
+
+### Curated identity, revisions, and immutable publications
+
+Curated work, treatment, and measurement-set UUIDs are stable entity IDs.
+Draft content changes increment the entity's semantic `revision`; mutable
+workflow rows also carry a separate CAS `row_version`. A published measurement
+set is represented by an immutable publication bundle keyed by
+`(curated_measurement_set_id, bundle_revision)` and records the exact work,
+treatment, and measurement revisions used to build it.
+
+`bundle_revision` advances whenever any public field in the effective work →
+treatment → measurement-set graph changes. Publication materializes:
+
+- canonical snapshot schema v1, with curated UUIDs and
+  `reference_revision = bundle_revision`;
+- a strict public citation schema v1 sourced from that exact work revision;
+- canonical full/short citations;
+- exact taxon assignments and publication timestamp.
+
+Citation export is a derived, append-only artifact keyed to that immutable
+bundle, not a second bibliographic source. Stage 6f adds and backfills those
+artifacts before any landing consumer is activated.
+
+Published bundle rows are append-only. Editing a work used by several sets
+marks those sets as needing review but does not silently republish them; each
+set is republished explicitly. `row_version` is never exposed as a scientific
+revision.
+
+An ordinary correction keeps the curated entity UUID and publishes a new
+bundle revision. A replacement or duplicate retirement creates/uses a
+different measurement-set UUID and records `supersedes_id`. Supersession must
+be acyclic, remain within the same character, have an explicitly compatible
+taxon assignment, and permit only one live successor. Stable IDs are never
+recycled.
+
+### Taxon assignment and species lookup
+
+`name_as_published` remains immutable source evidence and is never used as the
+lookup key. Curators assign a treatment to one or more stable positive
+`sporely_taxon_id` values through an explicit assignment table. Multiple
+assignments are allowed only as separate audited curator decisions; there is
+no descendant expansion, alias fallback, or fuzzy matching.
+
+An assignment may be published only when a positive integer concept exists in
+`taxonomy_v3.registry_concept`, its current `rank` is exactly `species`, and
+its `canonical_name` is nonblank. `scope_state` and `cache_state` describe
+scope/search materialization and are not alternate identities. Hybrids,
+aggregates, varieties, forms, and `sensu` concepts retain their printed
+wording, but do not appear on a species page until an exact supported registry
+assignment exists. Registry maintenance may change the current display name
+without changing the stable concept ID or historical `name_as_published`.
+
+Landing obtains the stable concept through an additive field on the public
+species read. For a legacy slug aggregation, the server returns a stable ID
+only when its visible observations resolve to exactly one non-null
+`public.observations.resolved_sporely_taxon_id` and that ID resolves to an
+eligible v3 species registry row; zero or multiple distinct IDs produce null.
+The field's current display name comes from
+`taxonomy_v3.registry_concept.canonical_name`, not the slug. With no stable ID,
+landing issues no curated-reference query. The curated RPC accepts only
+`sporely_taxon_id`; it never accepts a name, v2 ID, or slug as fallback.
+
+### Moderation and permissions
+
+Keep curator membership in database state, not `user_metadata` or stale JWT
+claims. `reference_reviewer` may claim a submission, request changes, reject,
+and edit a catalogue draft. `reference_publisher` includes reviewer powers and
+may publish, deprecate, supersede, or withdraw. Existing administrators may
+manage memberships and perform publisher actions through an explicit database
+check; administrator status is not copied into a browser-controlled claim.
+Every moderation and membership action re-reads both current role/admin state
+and `profiles.is_banned = false`. A banned privileged account has no curation
+authority, and a banned account cannot be assigned a role.
+
+Submission lifecycle:
+
+`submitted → in_review → changes_requested → submitted`, or
+`in_review → rejected | accepted`; the contributor may withdraw only before
+acceptance. Acceptance creates a catalogue draft and does not publish it.
+
+Catalogue lifecycle:
+
+`draft → published → deprecated | withdrawn`. A deprecated item is always
+excluded from new species/Compare selection, whether or not a successor
+exists, but every published revision remains retrievable by exact ID and
+revision. A withdrawn item is removed from catalogue discovery and its content
+is removed from public exact reads; exact read returns only a status tombstone
+so a stored client can distinguish withdrawal from an unknown ID. Already
+frozen observation snapshots and Compare-tray copies are not rewritten.
+Restoration requires a new reviewed publication revision, never a backward
+status flip.
+
+Every mutation requires an expected `row_version`; publish, reject,
+deprecate, supersede, withdraw, role change, and report resolution also require
+a reason. Append-only events record actor, time, action, target, before/after
+content hashes, and outcome. Published records are platform catalogue content,
+so contributor account deletion does not automatically delete a publication.
+Membership rows use `ON DELETE CASCADE`; report `reporter_id`, submission
+`contributor_id`, and event `actor_user_id` are nullable `ON DELETE SET NULL`.
+Before deleting the auth/profile row, the existing `delete-account` workflow
+and `private.reference_account_deletions` race guard must revoke memberships,
+withdraw open submissions, remove their personal-source pointer, and apply the
+configured report/event text-retention policy. Accepted catalogue provenance
+keeps only non-account content hashes and submission/public IDs. Every owner
+submission RPC checks the same deletion marker, so candidate creation cannot
+race account deletion. Stage 6 extends the existing deletion plan and its
+ordering tests instead of relying on FK cascade alone.
+
+### Public read contract
+
+Stage 6 adds two narrow, `SECURITY DEFINER` RPCs with empty `search_path`,
+schema-qualified access, `PUBLIC` execute revoked, and explicit
+`anon`/`authenticated`/`service_role` grants:
+
+- `search_public_curated_reference_sets(p_sporely_taxon_id integer,
+  p_limit integer, p_after_published_at timestamptz, p_after_id uuid)` returns
+  only the latest selectable published bundle for exact assignments to that
+  concept. The limit is capped, ordering is
+  `(published_at DESC, curated_measurement_set_id ASC)`, and the cursor uses
+  the same tuple. Deprecated, withdrawn, malformed, unresolved, and
+  unassigned drafts are absent.
+- `get_public_curated_reference_set(p_curated_measurement_set_id uuid,
+  p_bundle_revision integer)` returns an exact published or deprecated bundle
+  so persisted clients can explain historical selections. A withdrawn match
+  returns only its ID, requested bundle revision, `status = withdrawn`,
+  `withdrawn_at`, and optional `superseded_by_id`; an unknown ID/revision
+  returns no row. Omitting the revision selects the latest published,
+  non-withdrawn revision but never silently updates an already stored client
+  snapshot.
+
+Each result item is an exact-key envelope containing only:
+
+```json
+{
+  "curated_measurement_set_id": "uuid",
+  "bundle_revision": 3,
+  "status": "published",
+  "superseded_by_id": null,
+  "published_at": "2026-08-29T12:00:00Z",
+  "sporely_taxon_id": 12345,
+  "canonical_scientific_name": "Russula paludosa",
+  "snapshot": { "schema_version": 1 },
+  "citation": { "schema_version": 1 },
+  "exports": {
+    "plain_text": "…",
+    "bibtex": "…",
+    "csl_json": {}
+  }
+}
+```
+
+The taxon ID remains the v3 registry's positive 32-bit integer through the
+JSON/browser boundary. `snapshot` uses the Stage 3 public snapshot allowlist.
+`citation` contains the published structured work fields
+needed for display/export: immutable citation key, type, ordered authors and
+editors, title, container title, year, edition, publisher, place, volume,
+issue, pages, DOI, ISBN, URL, language, short label, and full citation. It
+contains no owner, submitter, private origin, curator, moderation reason,
+audit, timestamps other than publication time, or private notes.
+
+The immutable structured curated work revision is the citation source of
+truth. Stage 6f materializes UTF-8 plain text, BibTeX, and CSL-JSON from that
+revision; clients download/copy those exact values and never parse
+`full_citation` or re-query DOI metadata. Citation keys become immutable at
+first publication and are unique case-insensitively in the curated namespace.
+RIS is deferred. DOI links are constructed only from validated normalized DOI
+text using `https://doi.org/`; ISBN is displayed/exported as text in this
+stage.
+
+No public RPC reads personal tables, submission rows, or moderation tables.
+The existing observation-reference RPC remains unchanged and continues to
+return only deliberately attached frozen snapshots.
+
+### Compare and personal-copy behavior
+
+“Add reference” on `sporely-landing` means add to the browser-local Compare
+tray. It does **not** create an `observation_reference_use`, mutate cloud data,
+or copy into a personal library. At click time the tray stores the exact
+validated curated envelope, snapshot, and `bundle_revision`; later catalogue
+edits, deprecation, or network failure cannot rewrite that selection.
+Re-adding the same `(curated_measurement_set_id, bundle_revision)` is
+idempotent. A newer revision is a distinct choice and requires an explicit
+replace action. Deprecated/withdrawn records already in a tray remain locally
+inspectable and, after a successful exact-status refresh, labelled; they
+cannot be newly selected. Until that refresh, offline clients preserve the
+captured content without claiming knowledge of a later status.
+
+Compare storage becomes a versioned envelope with a discriminated union of
+`ObservationSet`, `TaxonFilterSet`, and `CuratedReferenceSet`. The migration
+reads valid `sporely.compare.v1` arrays once, maps only known legacy shapes,
+and writes `sporely.compare.v2`; unknown entries fail closed. Curated sets
+never flow through observation hydration, `obsRows`, community observation
+counts, or confidence-ellipse fitting. They reuse the Stage 5 literature
+geometry: core/exceptional ranges, supplied paired means, and genuine raw
+points only. `parmasto` stays citation/table-only until a separately defined
+plot contract exists.
+
+Curated records may also be copied into the desktop personal library, but this
+is a separate explicit action, not a side effect of landing Compare. Each
+imported bundle gets fresh owner-private work/treatment/set UUIDs and a durable
+owner-private mapping from `(curated_measurement_set_id, bundle_revision)` to
+those IDs. Reimporting the same bundle revision is idempotent. A newer curated
+revision creates a new private graph; it never overwrites an edited fork or an
+existing observation snapshot. The mapping participates in private sync and
+portable backup/import but is excluded from public snapshots. Existing
+same-owner attachment logic then creates a frozen observation snapshot in the
+normal way. No curated UUID is attached directly to an owner observation.
+
+### `/references` decision
+
+The global `/references` catalogue does not ship in core Stage 6. Species-level
+discovery, Compare, and citation export first establish catalogue quality,
+moderation capacity, pagination cost, and abuse controls. A searchable route
+is a separately approved optional slice after those gates; Stage 6 can be
+complete without it. The old synthetic mock adapter and legacy public
+reference-values RPC must not back such a route.
+
+### Security, privacy, and abuse controls
+
+- Put catalogue drafts, immutable publication bundles, submissions,
+  memberships, reports, and audit events in an unexposed schema. Enable RLS as
+  defense in depth and revoke direct `anon`/`authenticated` access. Public
+  clients receive only the allowlisted read RPCs above.
+- Because current Supabase Data API behavior no longer guarantees automatic
+  exposure for new public objects, migrations must explicitly verify function
+  grants and API accessibility in addition to RLS. Never expose a service or
+  secret key to browser code.
+- Contributor submission is authenticated, owner-checked, ban-checked,
+  bounded by payload size and per-account rate limits, and accepts only one
+  server-read graph. Curator/admin authorization is checked from current
+  database membership on every action; it does not depend on refresh-lagged
+  JWT metadata.
+- Owner submission, resubmission, withdrawal, and report intake are direct
+  caller-JWT `SECURITY DEFINER` RPCs with empty `search_path`, fully qualified
+  objects, `PUBLIC`/`anon`/`service_role` execution revoked, and execution
+  granted only to `authenticated`. They derive owner/reporter solely from
+  `auth.uid()` and never accept a client actor UUID. The moderation Edge
+  Function alone may use the service role; it binds the audit actor to the ID
+  returned by `auth.getUser(token)` and still rechecks current non-banned
+  membership/admin state in the database.
+- Public and moderation projections use strict key/type/size/version
+  allowlists. Text is rendered/exported as text, never HTML. URLs are limited
+  to approved schemes. Search limits, deterministic keyset pagination, and
+  indexed taxon/status/order columns prevent anonymous amplification.
+- Duplicate detection produces review warnings only. It never merges by fuzzy
+  title, author, taxon name, or external-ID coincidence.
+- Authenticated users may report a curated set with a bounded reason enum and
+  text. Reports are rate-limited, audited, and never hide content
+  automatically. Publisher withdrawal is the emergency takedown mechanism;
+  any removal of already-published observation evidence remains a separate
+  observation-moderation decision.
+- No scans, PDFs, full book text, or arbitrary HTML are accepted. Submission
+  records retain an explicit rights/consent attestation version.
+
+### Bisectable Stage 6 implementation sequence
+
+Each slice begins with failing contract/characterization tests, changes only
+the named behavior, updates this canonical plan, receives a fresh review, and
+lands as its own commit. No slice may activate the next slice's behavior.
+
+1. **Stage 6a — dormant curated catalogue foundation
+   (`sporely-web`).** Use `supabase migration new
+   add_curated_reference_library` to create only the private curated work,
+   treatment, measurement-set, taxon-assignment, immutable-publication,
+   membership, and event tables. Add lifecycle, CAS, immutability,
+   taxonomy-v3 FK plus `sporely_taxon_id > 0` checks, supersession, size, and
+   index constraints; revoke direct client access and test fresh/replay
+   migration, zero/negative taxon rejection, all role denies, service access,
+   account deletion, and event immutability. No submission/report table, RPC,
+   Edge, or public behavior.
+2. **Stage 6b — owner submission and report intake (`sporely-web`).** Create
+   the private submission/version/report tables and the caller-JWT RPCs,
+   including
+   `submit_private_reference_for_curation`, which server-reads exactly one
+   owner graph at expected revisions. Add append-only resubmission, withdrawal,
+   report intake, exact idempotency, consent, bounds/rate limit, ownership,
+   ban/deletion-marker, grants/search-path, and delete-account ordering tests.
+   No curator mutation or public read.
+3. **Stage 6c — reviewer workflow and catalogue drafts (`sporely-web`).** Add a
+   dedicated `supabase/functions/reference-curation/` Edge boundary for claim,
+   request-changes, reject, accept-to-draft, draft editing, and duplicate
+   warnings only. Enforce current non-banned database membership/admin checks,
+   JWT-to-actor binding, CAS, exact candidate-version decisions, and append-only
+   auditing. Add SQL and Deno tests for stale roles/tokens, cross-owner IDs,
+   retries, races, invalid transitions, and rollback. No publication,
+   lifecycle action, or public read.
+4. **Stage 6d — publisher materialization and lifecycle (`sporely-web`).** Add
+   publisher/admin-only publish, deprecate, supersede, and withdraw operations.
+   Transactionally materialize the immutable snapshot/citation bundle and
+   exact taxon assignments, enforce graph revision/supersession rules, and
+   emit reasoned audit events. Test stale drafts, ancestor edits, republish,
+   CAS races, rollback, banned actors, deprecation without a successor,
+   successor constraints, status-only withdrawal tombstones, and preservation
+   of already frozen evidence. No public RPC.
+5. **Stage 6e — curator workspace (`sporely-admin`).** Add isolated typed
+   `reference-curation` API/model modules and a review queue/detail surface to
+   the existing admin application. Reviewers can claim, request changes,
+   reject, and edit drafts; publishers/admins get separately confirmed
+   publish/deprecate/supersede/withdraw actions with required reasons and
+   conflict refresh. Add action-builder, stale-response, permission, keyboard,
+   focus, escaped-text, and lifecycle rendering tests. Do not reuse the dirty
+   current checkout or expose service credentials.
+6. **Stage 6f — citation export artifacts (`sporely-web`).** Add an append-only
+   export artifact keyed to each immutable publication bundle and materialize
+   UTF-8 plain text, BibTeX, and CSL-JSON solely from its structured curated
+   work revision. Backfill/replay deterministically and test Unicode, escaping,
+   stable citation keys, exact versions, DOI normalization, hostile text, and
+   source changes. No public API or landing behavior; RIS remains deferred.
+7. **Stage 6g — exact-taxon public read APIs (`sporely-web`).** Add the two
+   curated RPCs above plus an additive public species-to-stable-taxonomy
+   identity field. Expose the materialized exports in the exact-key envelope.
+   Test exact v3 species-rank matching, zero/ambiguous resolved identities,
+   multiple explicit assignments, deterministic pagination/ties, limits,
+   malformed publication omission, deprecation/supersession, status-only
+   withdrawal, grants, RLS bypass hardening, anonymous abuse bounds, and zero
+   leakage of personal/moderation fields. Existing observation and legacy
+   reference RPCs remain compatible except for the documented additive species
+   identity field.
+8. **Stage 6h — landing curated API/read model and species listing
+   (`sporely-landing`).** Extract the Stage 5 snapshot validator into a shared
+   module without behavior change, then add strict curated-envelope,
+   citation-v1, export, cursor, and taxon-identity adapters. Render localized,
+   accessible curated cards on the species page only when an exact stable ID
+   is returned, with dependency-free copy/download actions for the server
+   exports. Use real Stage 6g fixtures; cover malformed/private-expanded items,
+   empty/error/loading pages, pagination, deprecated/withdrawn exact reads,
+   MIME types, sanitized filenames, DOI safety, and all Stage 5 observation
+   regressions. No Compare mutation yet.
+9. **Stage 6i — versioned Compare storage (`sporely-landing`).** Refactor
+   `src/lib/compareTray.ts` to a versioned v2 envelope and discriminated union,
+   with a one-time fail-closed v1 migration. Add storage/round-trip/restart/
+   quota tests and characterization tests proving existing observation and
+   taxon-filter behavior is unchanged. Curated items remain constructible in
+   tests but are not exposed by UI.
+10. **Stage 6j — Compare add/render activation (`sporely-landing`).** Add the
+   species-card action that captures the exact selected bundle revision,
+   explicit revision replacement, literature badge/cards/tables, and Stage 5
+   overlays in Compare. Test duplicate clicks, multiple sources remaining
+   separate, restart/offline rendering, deprecated stored items, missing
+   revisions, no observation RPC hydration, no synthetic points/statistics,
+   responsive layout, keyboard/focus behavior, and localized accessible text.
+11. **Stage 6k — desktop submission and curated fork
+   (`sporely-py`, with owner-private provenance support in `sporely-web`).**
+   Add typed public catalogue reads, dormant local/cloud fork-provenance
+   persistence, explicit submit/copy actions, and the transaction that creates
+   a fresh private graph. Test exact taxon identity, same-revision idempotency,
+   newer-revision explicit copies, edited-fork protection, compensation,
+   normal frozen attachment, sync A→cloud→B, backup/import, and account
+   isolation. Do not add curated rows to owner mutation RPCs or attach them
+   directly to observations.
+12. **Stage 6l — activation and cross-repository gate.** Exercise contributor
+    submission, review, publication, exact species discovery, landing Compare
+    persistence, all exports, deprecation/supersession/withdrawal, personal
+    fork, offline/restart behavior, and owner/curator/anonymous isolation with
+    disposable accounts. Run existing Stage 3–5 privacy, public-observation,
+    sync, Compare, and admin regressions. Record intentional differences and
+    known limitations here. Do not add `/references` in this slice.
+
+### Open operational policy inputs
+
+These do not change the technical boundary or block Stage 6a, but must be set
+before 6b/6c activation:
+
+- the initial user IDs assigned `reference_reviewer` and
+  `reference_publisher`;
+- retention/anonymization periods for rejected/withdrawn submissions and
+  contributor attribution after account deletion;
+- the rights-attestation wording/version and copyright/takedown response SLA;
+- public catalogue rate-limit numbers and default page size within the hard
+  database caps.
+
+The recommended first implementation slice is Stage 6a only. It establishes
+the separate namespace, immutable version foundation, and deny-by-default
+security posture without exposing data or adding application behavior.
+
 ---
 
 ## 20. Definition of done
@@ -2410,4 +2904,21 @@ The cross-repository feature is done when:
 7. `sporely-landing` renders the observation points and literature range distinctly;
 8. the page displays a complete citation and original measurement text;
 9. later library edits do not silently rewrite the published observation;
-10. the same publication can be reused for another observation without retyping it.
+10. the same publication can be reused for another observation without retyping it;
+11. owner consent creates an immutable submission candidate without changing
+    the personal row into public data;
+12. only current, non-banned reviewers/publishers/admins can perform the
+    audited lifecycle actions assigned to them;
+13. published curated bundles have stable IDs, immutable revisions, exact v3
+    species assignments, and no fuzzy bibliographic or taxon merge path;
+14. public catalogue reads expose only allowlisted curated publication data,
+    never personal-library, submitter, or moderation state;
+15. landing Compare captures the chosen frozen bundle revision immediately,
+    does not synthesize observations, and does not create an observation use;
+16. citation display/export comes from the immutable structured curated work
+    revision in plain text, BibTeX, and CSL-JSON;
+17. deprecation, supersession, withdrawal, restart, and offline flows preserve
+    already frozen observation and Compare evidence; and
+18. a curated bundle can be explicitly forked to fresh personal UUIDs without
+    automatic follow/update behavior. A global `/references` route is not
+    required for Stage 6 completion.
