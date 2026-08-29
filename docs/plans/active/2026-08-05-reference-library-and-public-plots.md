@@ -1,7 +1,7 @@
 # Reference Library and Public Reference Plotting Plan
 
-**Status:** Stages 1–5 and Stages 6a–6d are implemented and verified. Stage
-6e–6l remain.
+**Status:** Stages 1–5 and Stages 6a–6e are implemented and verified. Stage
+6f–6l remain.
 **Canonical repository:** `sporely-py`
 **Canonical path:** `docs/plans/active/2026-08-05-reference-library-and-public-plots.md`
 **Scope:** `sporely-py` → `sporely-web`/Supabase → `sporely-admin` →
@@ -13,12 +13,13 @@
 ## Agent handoff
 
 - Status: Active; Stages 1–5 are complete and the Stage 6 contract is resolved.
-- Last completed slice: Stage 6d publisher materialization and lifecycle in
-  `sporely-web` (`341b4e1`); the Edge boundary and schema remain dormant, the
-  operational memberships/policies are still unsupplied, and nothing was
-  deployed.
-- Current/next slice: Stage 6e curator workspace in `sporely-admin`, only when
-  separately started from this canonical plan.
+- Last completed slice: Stage 6e curator workspace in `sporely-admin`
+  (`10f923e`), with its service-only private workspace reads in `sporely-web`
+  (`6f53b5b`). The moderation system remains dormant, operational
+  memberships/policies and allowed origins are still unsupplied, and nothing
+  was deployed.
+- Current/next slice: Stage 6f citation export artifacts in `sporely-web`,
+  only when separately started from this canonical plan.
 - Relevant Stage 4 commits: `199f127`, `69ec641`, `8893007`, `edd9f70`,
   `e8b340b`, `ea1e1b9`, `eaca8e7`, `0277516`, `9c5346b`.
 - Relevant Stage 5 commit (`sporely-landing`): `5af3cb8`.
@@ -2822,7 +2823,8 @@ lands as its own commit. No slice may activate the next slice's behavior.
    CAS races, rollback, banned actors, deprecation without a successor,
    successor constraints, status-only withdrawal tombstones, and preservation
    of already frozen evidence. No public RPC.
-5. **Stage 6e — curator workspace (`sporely-admin`).** Add isolated typed
+5. **Stage 6e — curator workspace (`sporely-admin`; complete at `10f923e`,
+   with private read support in `sporely-web` at `6f53b5b`).** Add isolated typed
    `reference-curation` API/model modules and a review queue/detail surface to
    the existing admin application. Reviewers can claim, request changes,
    reject, and edit drafts; publishers/admins get separately confirmed
@@ -3064,6 +3066,48 @@ lands as its own commit. No slice may activate the next slice's behavior.
   and the complete security diff scan found no remaining material or
   reportable issue. Stage 6e is the next independently authorized slice.
 
+### Stage 6e completion record (2026-08-29)
+
+- `sporely-admin` now has isolated typed `reference-curation` API and model
+  modules plus a queue/detail workspace. Reviewer controls cover claim,
+  reasoned stale-claim takeover, request changes, reject, and draft edits;
+  publisher/admin lifecycle controls cover publish, deprecate, supersede, and
+  withdraw in a visually separate privileged region. Lifecycle mutations and
+  all non-claim reviewer decisions require an explicit reason and confirmation.
+- The browser sends only the signed-in caller JWT to the existing
+  `reference-curation` Edge Function. UI capability checks are advisory: every
+  mutation still relies on Stage 6c/6d live membership, ban/deletion, actor,
+  lifecycle, graph-version, and CAS enforcement. Conflict, not-found, and
+  changed-permission responses invalidate stale UI state and refetch instead
+  of retrying a mutation automatically.
+- The verified Stage 6c/6d boundary had mutation operations but no private
+  queue/detail/capability read contract. The supporting `sporely-web` migration
+  adds only service-role RPC projections routed through that same authenticated
+  Edge Function. Direct `PUBLIC`, `anon`, and `authenticated` execution is
+  denied; each read rechecks the exact live session, non-banned profile,
+  deletion marker, and current database membership/admin state. Projections
+  are strictly allowlisted and bounded and exclude contributor/source,
+  attestation, audit, and transport data. No public catalogue API was added.
+- The queue uses deterministic bounded keyset pagination. Detail reads return
+  the exact current candidate and accepted curated graph needed to build CAS
+  actions, including sorted taxon assignments. Draft editing supports work,
+  treatment, measurement set, individual taxon assignments, and a new exact
+  assignment. All untrusted evidence is escaped as text; dialog and queue
+  keyboard focus is retained across input, paging, refresh, and conflict
+  reconciliation.
+- Verification passed a fresh local migration reset/replay, 17 Stage 3/5/6a–6e
+  SQL regression files, all 42 reference-curation Deno tests, all 49
+  delete-account tests, and all 139 admin Node tests. Syntax, Deno formatting,
+  and diff checks passed. Database lint reported only the already documented
+  immutable-versus-stable warnings.
+- Fresh correctness, security, and accessibility reviews found and closed
+  input/queue focus loss, non-draft edit visibility, multi-taxon editing,
+  queue truncation, claim-takeover reason, and direct-role test-coverage gaps.
+  Final reviews and completed security diff scans found no remaining material
+  or reportable issue. No Edge Function, migration, admin UI, or moderation
+  policy was deployed or activated. Stage 6f is the next independently
+  authorized slice.
+
 ### Open operational policy inputs
 
 These do not change the technical boundary, but must be supplied before the
@@ -3079,9 +3123,9 @@ corresponding behavior is activated:
 - public catalogue rate-limit numbers and default page size within the hard
   database caps.
 
-The recommended next implementation slice is Stage 6e only: the isolated
-curator workspace in `sporely-admin`, while keeping public catalogue reads and
-landing behavior dormant.
+The recommended next implementation slice is Stage 6f only: append-only
+citation export artifacts in `sporely-web`, while keeping public catalogue
+reads and landing behavior dormant.
 
 ---
 
