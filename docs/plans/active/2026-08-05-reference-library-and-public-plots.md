@@ -3588,6 +3588,57 @@ harness/baseline failures. No deployment was performed.
 - Landing commit `77a376460ad7147cf724f0625ae05ad80ab3337b` remains undeployed.
   Step 3 and the final cross-system production smoke test were not run.
 
+#### Runtime-asset recovery attempt (2026-08-30)
+
+- Release `v0.9.20` is superseded because the Apple Silicon application cannot
+  start without `assets/icons/icon_new.svg`; tags `v0.9.18`, `v0.9.19`, and
+  `v0.9.20` remain unchanged. The root cause was cross-platform: all three
+  PyInstaller scripts packaged only `i18n` and `database/reference_data`.
+  macOS's `--icon assets/icons/sporely.icns` consumed packaging artwork but did
+  not make the repository `assets/` tree available at runtime.
+- Runtime inspection found direct production reads of the SVG icon tree and
+  startup loading of the bundled Inter and Manrope fonts. Commit
+  `85402156506a2f2d55bb441a2877d70ccca84fb6` packages the coherent `assets/`
+  tree on Windows, Linux, and macOS, adds a shared required-asset manifest and
+  fail-closed produced-tree validator, and bumps `APP_VERSION` to `0.9.21`.
+  Annotated immutable tag `v0.9.21` points to that exact commit. The existing
+  tag/version gate and macOS plist/signing behavior remain intact.
+- Local verification passed 15 packaging/release tests, PowerShell and shell
+  parsing, Python syntax checks, and 610 focused packaging, release-version,
+  desktop reference, and sync tests. GitHub Actions run `33334760457` passed
+  its tag/version gate. The Windows, Linux, and Apple Silicon PyInstaller jobs
+  each logged successful required-asset validation before packaging.
+- The published Apple Silicon DMG has SHA-256
+  `a49b8e82de8955e5a43504fefc09f8919ad95199b99fbc566b6f1606e72adbfa`.
+  Its arm64 app has both bundle version keys set to `0.9.21`, a valid ad-hoc
+  signature, and all 31 source assets at the expected logical path. It launched
+  from the mounted DMG with isolated application data, initialized its database,
+  loaded the bundled fonts, remained running through the smoke interval, and
+  reported version `0.9.21` through the running application bundle.
+- The published Linux DEB has SHA-256
+  `df9843d7ee32acac8ed51b0590f600c535bd834e729789e1f608ee1bc8cfc63f`.
+  Its control metadata reports version `0.9.21` and architecture `amd64`; the
+  extracted `/opt/sporely/_internal/assets` tree contains all 31 source assets.
+  No compatible Linux runner was available locally for a startup smoke test.
+- The published Windows installer has SHA-256
+  `ae632d1caff580c5ec0900373d2f29fe0be363178d199461cb8b402644d82ac8`.
+  Its PE product metadata reports `Sporely 0.9.21`. The Windows job validated
+  the required files in `dist\\Sporely\\_internal\\assets` before the Inno Setup
+  step recursively packaged that complete tree. No compatible Windows runner
+  was available locally for installation or startup smoke testing.
+- Step 2 remains incomplete because no Intel artifact was produced. Job
+  `99319592047` is queued on `macos-13`, while GitHub's current hosted-runner
+  catalog lists Intel macOS as `macos-15-intel` and no longer lists
+  `macos-13`; the older `v0.9.19` and `v0.9.20` Intel jobs are queued for the
+  same reason. Because `v0.9.21` is immutable, changing the workflow now would
+  not alter its tagged workflow definition. The rollout therefore stopped
+  without treating the three verified platforms as a complete desktop gate.
+- Production desktop sync/reference smoke checks were not run. Landing commit
+  `77a376460ad7147cf724f0625ae05ad80ab3337b` remains undeployed, so Step 3 and
+  the final cross-system production smoke test were not run. Production web
+  commit `fd5970f3cfc82b9f847f0ef029b67799e193aa98` remains deployed and
+  unchanged.
+
 ---
 
 ## 20. Definition of done
