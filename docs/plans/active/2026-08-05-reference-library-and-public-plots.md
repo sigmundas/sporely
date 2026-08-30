@@ -3639,6 +3639,60 @@ harness/baseline failures. No deployment was performed.
   commit `fd5970f3cfc82b9f847f0ef029b67799e193aa98` remains deployed and
   unchanged.
 
+#### Intel-runner recovery and rollout completion (2026-08-31)
+
+- Release `v0.9.21` is superseded only because its Intel macOS artifact could
+  not be produced on the retired `macos-13` runner. Its successful Windows,
+  Linux, and Apple Silicon evidence above remains valid historical evidence,
+  and immutable tags `v0.9.18` through `v0.9.21` remain unchanged.
+- Release-infrastructure commit
+  `7a9963f98b44861ab68b26b23305afaf833e80c2` changes only the Intel matrix
+  runner to `macos-15-intel`, adds a narrow regression check for the supported
+  distinct macOS runners and their existing version/asset gates, and bumps
+  `APP_VERSION` to `0.9.22`. Annotated immutable tag `v0.9.22` points to that
+  exact commit. Local verification passed 16 packaging/release tests, Python
+  syntax checks, shell and PowerShell parsing, the tag/version check, and 611
+  focused packaging, desktop reference, and sync tests.
+- GitHub Actions release run `33336001045` passed all jobs. Intel job
+  `99322920120` actually ran on `macos-15-intel` (`x64`, macOS 15), produced
+  the artifact, passed its runtime-asset and plist gates, and published an
+  x86_64 DMG. Apple Silicon job `99322920036`, Windows job `99322920019`, Linux
+  job `99322920028`, and validation job `99322885590` also passed.
+- Published artifact verification passed on all four platforms. The Intel DMG
+  has SHA-256 `296cbc732c8adb1f3cd087d7635d5c6e44a97436875ec0f7f5dc15cf1ee75dce`;
+  both plist version keys are `0.9.22`, its signature and exact 31-file asset
+  tree validate, and the x86_64 app launched through Rosetta and reported
+  `0.9.22`. The Apple Silicon DMG has SHA-256
+  `b0ce636778c7f78b6e0fc207c65363047eff5678f43a795566e86c7219bab069`;
+  both plist keys, signature, exact asset tree, native startup, and running
+  version passed. The Linux amd64 DEB has SHA-256
+  `24b03c6f795a095f49430652d0161339e4447dd1741fd61295d2280f61698a48`;
+  its control version is `0.9.22` and its extracted runtime asset tree passes.
+  The Windows installer has SHA-256
+  `376ca99e8c3f4eccf4f2c97dc2376b41a8831b55c27416b50b81133b4c0a0dfc`;
+  its PE product version is `0.9.22`, and the Windows job verified the packaged
+  application tree before Inno Setup recursively included it. Step 2 is
+  therefore satisfied by `v0.9.22`.
+- The production desktop smoke used the normal initialized schema and strict
+  pull-only mode (`sync_images=False`, `materialize_remote_images=True`,
+  `full_pull=True`) against the already-deployed backend. An isolated copy of
+  the local profile reconciled 233 observations, materialized one missing
+  image, completed zero cloud writes, recorded zero blocked writes, and
+  returned no sync or reference errors. A warning in the original profile was
+  separately traced to an intentional local image tombstone, not a backend or
+  sync regression.
+- The already-reviewed landing commit
+  `77a376460ad7147cf724f0625ae05ad80ab3337b` passed type checking, all 602
+  tests, and its production build, then deployed to Cloudflare Worker version
+  `8f96fc9b-c69a-4229-9cb0-8c9181104e55`. No landing source change was made.
+  The final production smoke confirmed that `sporely.no` serves the exact
+  deployed bundle (SHA-256
+  `a711ff067422538be69211a20bd2c7f1f669d7e7c00b5a63c5a589f328a14d7b`),
+  its root, species, privacy, and terms routes return HTTP 200,
+  `app.sporely.no` and the `v0.9.22` release page return HTTP 200, and the live
+  public species and curated-reference RPCs respond successfully. Production
+  web commit `fd5970f3cfc82b9f847f0ef029b67799e193aa98` remains unchanged.
+
 ---
 
 ## 20. Definition of done
