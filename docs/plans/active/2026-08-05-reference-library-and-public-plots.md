@@ -19,32 +19,9 @@
   newer revisions require an explicit fail-closed replacement, and Compare
   renders frozen literature evidence without observation hydration. Nothing
   was deployed.
-- Current/next slice: Stage 6k desktop submission and curated fork in
-  `sporely-py`, with owner-private provenance support in `sporely-web`, only
-  when separately started from this canonical plan. Implementation pass 1 is
-  active from canonical head `01beba3`: contract tests and ownership mapping
-  precede the two bounded implementation areas, and Stage 6l remains excluded.
-  Pass 2 has landed the desktop fail-closed Stage 6g envelope boundary and the
-  atomic fresh-UUID local fork/mapping transaction. Exact replays are no-ops,
-  newer bundle revisions create distinct graphs, and edited forks are never
-  overwritten; cloud provenance, sync/backup wiring, and explicit UI actions
-  remain in progress. Pass 3 added immutable owner-private provenance sync,
-  A→cloud→B reconciliation after the canonical private graph, portable/full
-  import preservation, and explicit exact-taxon copy and consent-gated submit
-  surfaces with worker-thread network calls. The web migration/RPC is complete
-  in its isolated Stage 6 worktree; integration verification and fresh review
-  remain. Pass 4 closed the fresh review findings: frozen envelopes now have a
-  fully typed nested allowlist, provenance feeds validate in full before any
-  local write and use a 10-row page/100-row total bound, and both portable and
-  full-database import paths revalidate immutable envelope bytes and digests.
-  Focused round-trip, tamper, attachment, and whole-feed regressions are added;
-  final landing verification is in progress and Stage 6l remains excluded.
-  Pass 5 mirrored the landed Stage 6h nested citation/CSL contract exactly,
-  including citation-key/DOI/timestamp syntax, agent shapes, citation-to-CSL
-  type and DOI coherence, issued-date shape, scalar types, and safe URLs. Pass
-  6 restored normal owner deletion semantics: deleting an unattached private
-  fork graph removes only its owner-private provenance by FK cascade, while
-  the curated-public publication relationship remains restrictive.
+- Current/next slice: Stage 6l activation and cross-repository gate, only when
+  separately started from this canonical plan. Stage 6k is complete at
+  `sporely-py` commit `b2e4513` and `sporely-web` commit `7787fc1`.
 - Relevant Stage 4 commits: `199f127`, `69ec641`, `8893007`, `edd9f70`,
   `e8b340b`, `ea1e1b9`, `eaca8e7`, `0277516`, `9c5346b`.
 - Relevant Stage 5 commit (`sporely-landing`): `5af3cb8`.
@@ -3358,6 +3335,34 @@ lands as its own commit. No slice may activate the next slice's behavior.
   submission/copy behavior, database/API change, `/references` route,
   deployment, or production rate policy was added.
 
+### Stage 6k completion record (2026-08-30)
+
+- `sporely-py` commit `b2e4513` adds fail-closed typed Stage 6g catalogue
+  reads, explicit exact-taxon copy and consent-gated submission actions, and
+  atomic fresh-UUID private work → treatment → measurement-set forks. Exact
+  revision retries are no-ops; newer revisions remain distinct; owner edits
+  and frozen observation evidence are never overwritten.
+- `sporely-web` commit `7787fc1` adds dormant owner-private immutable fork
+  provenance, an owner-bound CAS RPC, exact source-envelope verification, RLS,
+  least-privilege grants, account cleanup, and private-graph lifecycle cascade.
+  Curated-public rows remain outside owner mutation RPCs and are never attached
+  directly to observations.
+- Provenance sync runs after canonical private-graph reconciliation, preserves
+  account binding, validates the whole bounded feed before writes, and restores
+  A→cloud→B from frozen bytes even after catalogue withdrawal. Portable and
+  full-database backup/import preserve and revalidate the mapping; transport
+  state remains excluded.
+- Verification passed 667 relevant Python regressions, focused UI rendering,
+  syntax compilation, a fresh Supabase reset, all reference/curation SQL
+  regressions, database lint with only previously documented warnings, and
+  diff checks. Fresh correctness and security reviews found and closed nested
+  envelope validation, bounded-read, atomic-feed, import integrity, worker
+  lifetime, and deletion-lifecycle gaps. Final reviews found no remaining
+  material issue and no accidental Stage 6l activation.
+- The web production build was attempted but could not start because this
+  isolated worktree has no installed `vite` binary; dependencies were not
+  installed because repository policy requires separate confirmation.
+
 ### Open operational policy inputs
 
 These do not change the technical boundary, but must be supplied before the
@@ -3373,11 +3378,12 @@ corresponding behavior is activated:
 - public catalogue rate-limit numbers and default page size within the hard
   database caps.
 
-The exact next handoff is Stage 6k only: add desktop typed public catalogue
-reads, dormant owner-private curated-fork provenance, explicit submit/copy
-actions, and the fresh-private-graph transaction described above. Preserve the
-Stage 6j exact revision and frozen evidence contracts; do not begin Stage 6l
-activation, add `/references`, deploy anything, or set production rate policy.
+The exact next handoff is Stage 6l only: run the activation and cross-repository
+gate described above with disposable accounts, record intentional differences
+and known limitations here, and preserve every Stage 3–6k privacy, identity,
+immutability, frozen-evidence, lifecycle, bounded-response, and least-privilege
+contract. Do not add `/references`, deploy anything, or set production rate
+policy unless a later separately approved slice explicitly authorizes it.
 
 ---
 
