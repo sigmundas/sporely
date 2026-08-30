@@ -1,7 +1,7 @@
 # Reference Library and Public Reference Plotting Plan
 
-**Status:** Stages 1–5 and Stages 6a–6i are implemented and verified. Stages
-6j–6l remain.
+**Status:** Stages 1–5 and Stages 6a–6j are implemented and verified. Stages
+6k–6l remain.
 **Canonical repository:** `sporely-py`
 **Canonical path:** `docs/plans/active/2026-08-05-reference-library-and-public-plots.md`
 **Scope:** `sporely-py` → `sporely-web`/Supabase → `sporely-admin` →
@@ -12,14 +12,16 @@
 
 ## Agent handoff
 
-- Status: Active; Stages 1–5 and Stage 6a–6i are complete, and the remaining
+- Status: Active; Stages 1–5 and Stage 6a–6j are complete, and the remaining
   Stage 6 contract is resolved.
-- Last completed slice: Stage 6i versioned Compare storage in `sporely-landing`
-  (`06cbbc6`). Curated Compare entries remain storage-only and are not exposed
-  by the UI; the catalogue and moderation system remain dormant and nothing
+- Last completed slice: Stage 6j Compare add/render activation in
+  `sporely-landing` (`d086035`). Species cards capture exact curated revisions,
+  newer revisions require an explicit fail-closed replacement, and Compare
+  renders frozen literature evidence without observation hydration. Nothing
   was deployed.
-- Current/next slice: Stage 6j Compare add/render activation in
-  `sporely-landing`, only when separately started from this canonical plan.
+- Current/next slice: Stage 6k desktop submission and curated fork in
+  `sporely-py`, with owner-private provenance support in `sporely-web`, only
+  when separately started from this canonical plan.
 - Relevant Stage 4 commits: `199f127`, `69ec641`, `8893007`, `edd9f70`,
   `e8b340b`, `ea1e1b9`, `eaca8e7`, `0277516`, `9c5346b`.
 - Relevant Stage 5 commit (`sporely-landing`): `5af3cb8`.
@@ -2867,7 +2869,8 @@ lands as its own commit. No slice may activate the next slice's behavior.
    quota tests and characterization tests proving existing observation and
    taxon-filter behavior is unchanged. Curated items remain constructible in
    tests but are not exposed by UI.
-10. **Stage 6j — Compare add/render activation (`sporely-landing`).** Add the
+10. **Stage 6j — Compare add/render activation (`sporely-landing`; complete at
+   `d086035`).** Add the
    species-card action that captures the exact selected bundle revision,
    explicit revision replacement, literature badge/cards/tables, and Stage 5
    overlays in Compare. Test duplicate clicks, multiple sources remaining
@@ -3295,6 +3298,43 @@ lands as its own commit. No slice may activate the next slice's behavior.
   observation hydration, new API, database migration, or deployment activation
   was added.
 
+### Stage 6j completion record (2026-08-30)
+
+- `sporely-landing` commit `d086035` activates the Stage 6i curated member on
+  exact-taxon species cards and in Compare. Selection captures the already
+  validated Stage 6g envelope and exact bundle revision. Identical clicks are
+  no-ops; an available newer revision requires a separate explicit replacement
+  action.
+- Replacement is one locked storage mutation and fails closed when identity
+  disagrees, the proposed revision is stale, or more than one historical
+  revision of the same measurement set is present. It never deletes an
+  ambiguous set of immutable historical members or changes unrelated sources.
+- Compare deterministically orders curated members and renders their frozen
+  citation, lifecycle, revision, reported values, table rows, and Stage 5 range,
+  supplied-mean, and genuine-raw-point geometry. Parmasto evidence remains
+  citation/table-only. Curated members never enter observation hydration,
+  community counts, synthetic points, or confidence-ellipse fitting.
+- Status refresh is explicit and bounded to one stored
+  `(curated_measurement_set_id, bundle_revision)` exact read. Missing,
+  inaccessible, mismatched, deprecated, and withdrawn responses never rebind or
+  erase frozen evidence; valid monotonic lifecycle changes update only the
+  last-known lifecycle metadata.
+- Curated-only, mixed, empty, restart/offline, multiple-source, replacement,
+  missing-revision, lifecycle, focus-return, native-button, responsive-structure,
+  localization, and no-hydration behavior have focused coverage. New Compare
+  copy, axes, and the SVG accessible name are localized in Norwegian Bokmål,
+  Swedish, English, and informal German.
+- The complete landing suite passed 55 files / 600 tests; TypeScript checking,
+  production build, and `git diff --check` passed. A fresh Supabase reset and
+  eight curated-library, publication, export, exact-public-read,
+  exact-species-identity, observation-reference, and security/immutability SQL
+  regressions passed. The existing Vite chunk-size advisory is unchanged.
+- Fresh review found and closed ambiguous multi-revision deletion,
+  restart/focus/responsive test gaps, and localized table/plot accessibility
+  gaps. Final re-review found no remaining concrete issue. No Stage 6k desktop
+  submission/copy behavior, database/API change, `/references` route,
+  deployment, or production rate policy was added.
+
 ### Open operational policy inputs
 
 These do not change the technical boundary, but must be supplied before the
@@ -3310,11 +3350,11 @@ corresponding behavior is activated:
 - public catalogue rate-limit numbers and default page size within the hard
   database caps.
 
-The exact next handoff is Stage 6j only: activate the species-card Compare
-action for the already frozen Stage 6i curated member, explicit replacement by
-a newer revision, and literature-only rendering/plotting. Preserve the Stage
-6i storage identity, lifecycle, locking, and no-observation-hydration contracts;
-do not begin Stage 6k desktop submission/copy behavior or deploy anything.
+The exact next handoff is Stage 6k only: add desktop typed public catalogue
+reads, dormant owner-private curated-fork provenance, explicit submit/copy
+actions, and the fresh-private-graph transaction described above. Preserve the
+Stage 6j exact revision and frozen evidence contracts; do not begin Stage 6l
+activation, add `/references`, deploy anything, or set production rate policy.
 
 ---
 
