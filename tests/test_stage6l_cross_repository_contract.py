@@ -170,10 +170,11 @@ def test_exact_taxonomy_lifecycle_and_public_access_are_fail_closed() -> None:
     assert "REVOKE ALL ON FUNCTION public.get_public_reference_contribution" in migration
 
 
-def test_submission_contract_matches_and_production_policy_stays_dormant() -> None:
+def test_submission_contract_matches_and_production_policy_is_active() -> None:
     _require_repositories()
     desktop = (ROOT / "utils/cloud_sync.py").read_text()
     sharing = (WEB / "supabase/migrations/20260830183210_add_shared_reference_contributions.sql").read_text()
+    policy = (WEB / "supabase/migrations/20260830193144_configure_shared_reference_production_policy.sql").read_text()
     landing_model = (LANDING / "src/lib/publicCuratedReferences.ts").read_text()
 
     assert _method_rpc_keys(desktop, "share_reference_contribution") == SUBMIT_PARAMETERS
@@ -188,8 +189,18 @@ def test_submission_contract_matches_and_production_policy_stays_dormant() -> No
     assert "attestation" not in sharing.lower()
     assert "reference_reviewer" not in sharing
     assert "reference_publisher" not in sharing
-    assert "configuredCuratedReferencePageSize(): number | null" in landing_model
-    assert "return null" in landing_model
+    assert "configuredCuratedReferencePageSize(): number" in landing_model
+    assert "return 25" in landing_model
+    assert "positiveInteger(value, 100)" in landing_model
+    assert "true, 60, 30, 25, 100, 'indefinite'" in policy
+    assert "interval '90 days', interval '30 days', 5" in policy
+    assert "'response.status','429'" in policy
+    assert "'Retry-After'" in policy
+    assert "apply_shared_reference_policy_retention" in policy
+    assert "shared-reference-policy-retention" in policy
+    assert "CREATE EXTENSION IF NOT EXISTS pg_cron" in policy
+    assert "x-forwarded-for" not in policy
+    assert "x-sporely-session-id" not in policy
 
 
 def test_no_unapproved_references_route_was_activated() -> None:

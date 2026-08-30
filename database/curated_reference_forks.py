@@ -372,9 +372,9 @@ def validate_frozen_curated_provenance(
     return bundle
 
 
-def search_shared_reference_contributions(client: CuratedCatalogueClient, sporely_taxon_id: int, *, limit: int = 20) -> tuple[CuratedReferenceBundle, ...]:
-    if not _positive_int(sporely_taxon_id) or not _positive_int(limit, 50):
-        raise CuratedReferenceError("catalogue search requires a positive exact taxon ID and limit <= 50")
+def search_shared_reference_contributions(client: CuratedCatalogueClient, sporely_taxon_id: int, *, limit: int = 25) -> tuple[CuratedReferenceBundle, ...]:
+    if not _positive_int(sporely_taxon_id) or not _positive_int(limit, 100):
+        raise CuratedReferenceError("catalogue search requires a positive exact taxon ID and limit <= 100")
     search = getattr(client, "search_public_reference_contributions", None)
     if search is None:
         search = getattr(client, "search_public_curated_reference_sets", None)

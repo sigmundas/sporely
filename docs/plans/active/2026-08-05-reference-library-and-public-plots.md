@@ -3458,24 +3458,41 @@ After integration, fresh correctness and security/privacy reviews must run and
 their material findings must be resolved before the slice is committed and
 pushed. Nothing in this slice deploys or selects unresolved operational policy.
 
-### Open operational policy inputs
+### Production-policy gate (approved 2026-08-30)
 
-These do not change the technical boundary, but must be supplied before the
-corresponding behavior is activated:
+- Shared-reference API limits are 60 requests per minute per authenticated user
+  and 30 per minute per anonymous trusted-edge IP/session, with short bursts
+  allowed. Missing trusted anonymous identity uses one fail-closed bucket.
+  Throttling returns HTTP `429` plus `Retry-After`; desktop sync retries without
+  clearing dirty state or losing work.
+- Public catalogue pages default to 25 and are capped at 100.
+- Immutable scientific revisions are retained indefinitely. Withdrawal, source
+  deletion, and account deletion prevent new discovery/use while frozen
+  observation/Compare evidence remains reproducible. Account deletion removes
+  personal account data and anonymizes the retained scientific provenance.
+- Operational policy logs are retained for 90 days; hashed rate-limit/request-
+  abuse metadata is retained for 30 days. A daily database job invokes
+  service-only maintenance to enforce these windows without deleting
+  scientific revisions.
+- Abuse, privacy, and legal takedowns support immediate hiding. Initial human
+  review is targeted within five business days and is independent of scientific
+  correctness.
 
-- contribution/report rate windows and counts;
-- contribution, report-detail, and contributor-attribution retention/deletion
-  behavior;
-- the copyright/takedown response SLA;
-- public catalogue rate-limit numbers and default page size within the hard
-  database caps.
+The production-policy gate is implemented but not deployed. The remaining
+handoff is an explicit authorization to apply the migration and release the
+already verified desktop and landing clients. No `/references` route is part of
+this slice.
 
-The next canonical handoff after this model-simplification slice is the smaller
-production-policy gate above. Supply and review only those operational values,
-rerun the cross-repository gate against the intended release revisions, and
-explicitly authorize deployment. Until then policy-dependent production
-activation remains fail-closed. Do not deploy, add `/references`, or invent
-policy defaults from this handoff.
+Gate verification passed a fresh Supabase reset, all 23 reference SQL/security
+contracts, schema lint, an actual local PostgREST 30/31 anonymous boundary with
+`Retry-After`, 93 focused desktop/cross-repository tests and syntax checks, all
+602 landing tests plus typecheck/build, and the web production build. The broad
+web suite remains at 1,139 passing and 36 skipped with its eight documented
+pre-existing runner/environment failures; the broader relevant desktop run has
+587 passing with the unrelated legacy dry-run file-fingerprint failure. Fresh
+correctness and security/privacy reviews found and closed spoofable anonymous
+identity, unscheduled retention, unmetered mutation paths, and multi-row partial
+update risks, then reported no remaining material finding.
 
 Implementation passes 1–3 are complete across the cloud boundary, desktop, and
 landing Compare/catalogue surfaces. Fresh correctness and security/privacy

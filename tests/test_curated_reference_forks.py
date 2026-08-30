@@ -12,6 +12,7 @@ from database.curated_reference_forks import (
     copy_curated_bundle_to_personal_library,
     normalize_curated_bundle,
     search_curated_catalogue,
+    search_shared_reference_contributions,
     submit_personal_reference_for_curation,
     validate_frozen_curated_provenance,
 )
@@ -130,6 +131,17 @@ def test_catalogue_read_requires_exact_positive_taxon_and_rejects_expansion():
         search_curated_catalogue(Client([expanded]), 2_100_000_081)
 
 
+def test_shared_catalogue_uses_approved_default_and_maximum_page_size():
+    client = Client([])
+    assert search_shared_reference_contributions(client, 2_100_000_081) == ()
+    assert client.calls[-1] == (2_100_000_081, 25, None, None)
+    assert search_shared_reference_contributions(
+        client, 2_100_000_081, limit=100,
+    ) == ()
+    with pytest.raises(CuratedReferenceError, match="limit <= 100"):
+        search_shared_reference_contributions(client, 2_100_000_081, limit=101)
+
+
 def test_shared_contribution_keeps_attribution_and_legacy_fork_compatibility():
     legacy = bundle_row()
     shared = {
@@ -159,7 +171,7 @@ def test_shared_search_does_not_require_legacy_catalogue_method():
             self, taxon_id, limit, after_shared_at, after_id,
         ):
             assert (taxon_id, limit, after_shared_at, after_id) == (
-                2_100_000_081, 20, None, None,
+                2_100_000_081, 25, None, None,
             )
             legacy = bundle_row()
             return [{

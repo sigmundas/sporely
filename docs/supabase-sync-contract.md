@@ -24,6 +24,22 @@ Account deletion withdraws and anonymizes retained immutable history. Withdrawal
 hides catalogue discovery while previously frozen observation and Compare
 evidence continues to reproduce its exact revision.
 
+Production shared-reference policy uses a one-minute fixed window, allowing a
+short burst up to 60 requests per authenticated user or 30 requests per
+anonymous trusted-edge IP/session. Unauthenticated requests without the trusted
+edge identity share one fail-closed fallback bucket rather than trusting
+caller-supplied forwarding/session headers. Throttled responses are HTTP `429` with `Retry-After`;
+clients treat them as retryable and preserve local work. Catalogue pages
+default to 25 rows and accept at most 100. Scientific contribution revisions
+are immutable and retained indefinitely. Withdrawal, source deletion, and
+account deletion remove contributions from new discovery/use while retained
+history remains available to already-frozen observation and Compare evidence;
+account deletion anonymizes that history. Rate-limit/request-abuse metadata is
+retained for 30 days and operational policy logs for 90 days through a daily
+database job and the service-only retention routine. Abuse, privacy, or legal takedowns may hide a
+contribution immediately, with an initial-human-review target of five business
+days. These controls do not introduce scientific approval or attestation.
+
 Status: required behavior; Stage 1 landed; Stage 2 pending.
 
 This is the shared sync specification for `sporely` (desktop) and `sporely-web` (web, Android, Supabase, and cloud media). Keep an identical copy at:

@@ -764,6 +764,13 @@ Read this list before changing anything in cloud sync.
     filter and the advancement loop use one total order
     (`_child_change_cursor_id_key`); the committed cursor must be the true
     `MAX(updated_at, id)` over every inspected row.
+25. **Shared-reference throttling is retryable transport state.** The policy
+    boundary returns HTTP `429` with `Retry-After`; the common request path
+    retries the identical payload and reports temporary unavailability after
+    bounded attempts, leaving local sync work dirty. Policy cleanup retains
+    hashed request-abuse buckets for 30 days and takedown events for 90 days.
+    A daily database job invokes the service-only cleanup routine, which never
+    deletes immutable scientific revisions.
 
 ---
 
@@ -786,6 +793,7 @@ High-value safety tests by invariant (not an exhaustive listing):
 | Metadata-only anchors | `tests/test_cloud_sync_metadata_only.py`; `test_cloud_download_only.py::test_download_from_cloud_never_downloads_metadata_only_microscope_anchor`; metadata-only refresh tests in `tests/test_cloud_sync_dirty_loop_steady_state.py` |
 | Conflict preservation / "needs review" | `tests/test_cloud_sync_conflict_preflight.py`; `tests/test_cloud_conflict_plan_execution.py` (drift aborts, baseline validation, snapshot-before-stamp ordering, unsealed-on-snapshot-failure); `tests/test_observation_snapshot_persistence.py` |
 | Retryability / dirty stays dirty | `tests/test_cloud_sync_dirty_loop_steady_state.py`; `test_cloud_conflict_plan_execution.py::test_partial_error_carries_operations_and_retry_skips_completed`; `tests/test_cloud_measurement_sync_v1.py::test_push_measurements_for_observation_aborts_on_transient_failure`; `tests/test_cloud_sync_dirty_pending_images.py` |
+| Shared-reference policy | `tests/test_cloud_sync_auth_refresh.py::test_cloud_client_retries_429_using_retry_after_without_losing_request`; `tests/test_curated_reference_forks.py::test_shared_catalogue_uses_approved_default_and_maximum_page_size`; cross-repository policy assertions in `tests/test_stage6l_cross_repository_contract.py` |
 | Cloud deletion safety | `test_image_tombstones.py` (soft-delete ordering, hard-delete + tombstone ordering); `test_cloud_conflict_plan_execution.py::test_no_media_deletion_api_reachable_from_plan` |
 | Fast path / no-op contract | `tests/test_cloud_sync_fast_path.py` |
 | Measurements | `tests/test_cloud_measurement_sync_v1.py` |

@@ -29,12 +29,13 @@ def _make_jwt(*, sub: str = "user-123", exp_offset_seconds: int = 3600, kid: str
 
 
 class _FakeResponse:
-    def __init__(self, ok: bool, status_code: int, text: str, payload=None):
+    def __init__(self, ok: bool, status_code: int, text: str, payload=None, headers=None):
         self.ok = ok
         self.status_code = status_code
         self.text = text
         self._payload = payload
         self.content = text.encode("utf-8")
+        self.headers = headers or {}
 
     def json(self):
         if self._payload is None:
@@ -100,6 +101,30 @@ def test_cloud_client_retries_transient_503_with_backoff(monkeypatch):
 
     assert rows == [{"id": "obs-1"}]
     assert sleep_calls == [0.5]
+
+
+def test_cloud_client_retries_429_using_retry_after_without_losing_request(monkeypatch):
+    client = cloud_sync.SporelyCloudClient("access-token", "user-123")
+    responses = iter([
+        _FakeResponse(False, 429, '{"status":"rate_limited"}', headers={"Retry-After": "7"}),
+        _FakeResponse(True, 200, '{"status":"updated"}', payload={"status": "updated"}),
+    ])
+    requests_seen: list[tuple[str, str, object]] = []
+    sleep_calls: list[float] = []
+
+    def fake_request(method, url, **kwargs):
+        requests_seen.append((method, url, kwargs.get("json")))
+        return next(responses)
+
+    monkeypatch.setattr(client._s, "request", fake_request)
+    monkeypatch.setattr(cloud_sync.time, "sleep", lambda seconds: sleep_calls.append(seconds))
+
+    result = client.share_reference_contribution("set-1", 123, 1, 1, 1)
+
+    assert result == {"status": "updated"}
+    assert sleep_calls == [7.0]
+    assert len(requests_seen) == 2
+    assert requests_seen[0][2] == requests_seen[1][2]
 
 
 def test_cloud_request_auth_refresh_failure_is_temporarily_unavailable(monkeypatch):

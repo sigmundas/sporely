@@ -145,7 +145,7 @@ _SUPABASE_PROFILE_UPLOAD_TIMEOUT = 60
 _SUPABASE_REQUEST_MAX_ATTEMPTS = 4
 _SUPABASE_REQUEST_BACKOFF_BASE_SECONDS = 0.5
 _SUPABASE_REQUEST_BACKOFF_MAX_SECONDS = 8.0
-_SUPABASE_TRANSIENT_STATUS_CODES = {500, 502, 503, 504}
+_SUPABASE_TRANSIENT_STATUS_CODES = {429, 500, 502, 503, 504}
 _SUPABASE_TRANSIENT_ERROR_HINTS = (
     'bad gateway',
     'connection aborted',
@@ -2964,6 +2964,18 @@ def _sleep_supabase_backoff(attempt: int) -> None:
     time.sleep(random.uniform(0.0, delay))
 
 
+def _sleep_supabase_retry(response: requests.Response, attempt: int) -> None:
+    """Honor bounded Retry-After seconds, otherwise use jittered backoff."""
+    try:
+        retry_after = float(response.headers.get('Retry-After', ''))
+    except (AttributeError, TypeError, ValueError):
+        retry_after = 0.0
+    if retry_after > 0:
+        time.sleep(min(60.0, retry_after))
+        return
+    _sleep_supabase_backoff(attempt)
+
+
 def _request_exception_is_transient(error: Exception) -> bool:
     if isinstance(error, (requests.Timeout, requests.ConnectionError)):
         return True
@@ -3065,7 +3077,7 @@ def _request_with_transient_retry(
 
         if _response_indicates_transient_supabase_error(response):
             if attempt < _SUPABASE_REQUEST_MAX_ATTEMPTS - 1:
-                _sleep_supabase_backoff(attempt)
+                _sleep_supabase_retry(response, attempt)
                 continue
             raise CloudTemporarilyUnavailableError(_CLOUD_TEMPORARILY_UNAVAILABLE_MESSAGE) from CloudSyncError(
                 f'{method} {url} status={getattr(response, "status_code", "")}: {getattr(response, "text", "")}'
@@ -15459,7 +15471,7 @@ class SporelyCloudClient:
     def search_public_reference_contributions(
         self,
         sporely_taxon_id: int,
-        limit: int = 20,
+        limit: int = 25,
         after_shared_at: str | None = None,
         after_id: str | None = None,
     ) -> list[dict]:
