@@ -1,7 +1,7 @@
 # Reference Library and Public Reference Plotting Plan
 
-**Status:** Stages 1–5 and Stages 6a–6g are implemented and verified. Stages
-6h–6l remain.
+**Status:** Stages 1–5 and Stages 6a–6i are implemented and verified. Stages
+6j–6l remain.
 **Canonical repository:** `sporely-py`
 **Canonical path:** `docs/plans/active/2026-08-05-reference-library-and-public-plots.md`
 **Scope:** `sporely-py` → `sporely-web`/Supabase → `sporely-admin` →
@@ -12,14 +12,14 @@
 
 ## Agent handoff
 
-- Status: Active; Stages 1–5 and Stage 6a–6g are complete, and the remaining
+- Status: Active; Stages 1–5 and Stage 6a–6i are complete, and the remaining
   Stage 6 contract is resolved.
-- Last completed slice: Stage 6g exact-taxon public read APIs in `sporely-web`
-  (`a2eeea5`). The catalogue and moderation system remain dormant,
-  operational memberships/policies and allowed origins are still unsupplied,
-  and nothing was deployed.
-- Current/next slice: Stage 6h landing curated API/read model and species listing,
-  only when separately started from this canonical plan.
+- Last completed slice: Stage 6i versioned Compare storage in `sporely-landing`
+  (`06cbbc6`). Curated Compare entries remain storage-only and are not exposed
+  by the UI; the catalogue and moderation system remain dormant and nothing
+  was deployed.
+- Current/next slice: Stage 6j Compare add/render activation in
+  `sporely-landing`, only when separately started from this canonical plan.
 - Relevant Stage 4 commits: `199f127`, `69ec641`, `8893007`, `edd9f70`,
   `e8b340b`, `ea1e1b9`, `eaca8e7`, `0277516`, `9c5346b`.
 - Relevant Stage 5 commit (`sporely-landing`): `5af3cb8`.
@@ -2860,7 +2860,8 @@ lands as its own commit. No slice may activate the next slice's behavior.
    empty/error/loading pages, pagination, deprecated/withdrawn exact reads,
    MIME types, sanitized filenames, DOI safety, and all Stage 5 observation
    regressions. No Compare mutation yet.
-9. **Stage 6i — versioned Compare storage (`sporely-landing`).** Refactor
+9. **Stage 6i — versioned Compare storage (`sporely-landing`; complete at
+   `06cbbc6`).** Refactor
    `src/lib/compareTray.ts` to a versioned v2 envelope and discriminated union,
    with a one-time fail-closed v1 migration. Add storage/round-trip/restart/
    quota tests and characterization tests proving existing observation and
@@ -3257,6 +3258,43 @@ lands as its own commit. No slice may activate the next slice's behavior.
   heterogeneous rows. Final re-review found no remaining concrete defect.
   There was no `sporely-web` schema or RPC change and nothing was deployed.
 
+### Stage 6i completion record (2026-08-30)
+
+- `sporely-landing` now persists Compare state under `sporely.compare.v2` as a
+  versioned envelope containing observation, taxon-filter, or curated-reference
+  members. Existing observation and taxon-filter UI behavior remains unchanged;
+  curated members are storage-only until Stage 6j.
+- The one-time v1 migration accepts only a wholly valid array of known legacy
+  shapes, normalizes `species_filter`, writes v2 before removing v1, and maps
+  malformed, duplicate, unknown, or over-limit input to an empty fail-closed
+  envelope. Migration and mutation use an ownership-checked expiring browser
+  storage lock and merge from the latest stored envelope inside that lock.
+- Curated identity is exactly `(curated_measurement_set_id, bundle_revision)`.
+  Each member freezes the validated Stage 6g envelope and its selected exact
+  taxonomy-v3 assignment. Identical replays are no-ops, conflicting evidence or
+  taxon identity is rejected, and distinct revisions coexist without rewriting
+  history.
+- New selections accept only current published, non-superseded records.
+  Separately stored last-known lifecycle metadata advances monotonically through
+  published, deprecated, and withdrawn while frozen evidence remains unchanged.
+  Dedicated locked lifecycle and removal mutations prevent stale whole-envelope
+  updates from silently deleting revisions.
+- Storage caps the tray at 100 sets and each community set at 100 observation
+  rows, rejects ambiguous IDs and invalid transitions, and preserves the prior
+  envelope on lock, quota, or storage failure. Callers receive a rejected result
+  instead of announcing an unsuccessful write.
+- Focused storage coverage passed 17 tests. The full landing suite passed 54
+  files / 587 tests; TypeScript checking, production build, and
+  `git diff --check` passed. A fresh Supabase reset through Stage 6g and eight
+  relevant SQL/security regressions passed. The existing Vite chunk-size
+  advisory is unchanged.
+- Fresh security review found and closed identity-key duplication, replay,
+  lifecycle/content rewrite, stale-tab overwrite, migration locking, quota,
+  false-success, and multi-item-removal issues. Final re-review found no
+  remaining material Stage 6i issue. No Compare add/render action, curated
+  observation hydration, new API, database migration, or deployment activation
+  was added.
+
 ### Open operational policy inputs
 
 These do not change the technical boundary, but must be supplied before the
@@ -3272,9 +3310,11 @@ corresponding behavior is activated:
 - public catalogue rate-limit numbers and default page size within the hard
   database caps.
 
-The recommended next implementation slice is Stage 6i only: versioned Compare
-storage in `sporely-landing`. Curated items remain test-constructible but are
-not added by UI until Stage 6j.
+The exact next handoff is Stage 6j only: activate the species-card Compare
+action for the already frozen Stage 6i curated member, explicit replacement by
+a newer revision, and literature-only rendering/plotting. Preserve the Stage
+6i storage identity, lifecycle, locking, and no-observation-hydration contracts;
+do not begin Stage 6k desktop submission/copy behavior or deploy anything.
 
 ---
 
