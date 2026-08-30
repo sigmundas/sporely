@@ -19,9 +19,10 @@
   newer revisions require an explicit fail-closed replacement, and Compare
   renders frozen literature evidence without observation hydration. Nothing
   was deployed.
-- Current/next slice: Stage 6l activation and cross-repository gate, only when
-  separately started from this canonical plan. Stage 6k is complete at
-  `sporely-py` commit `b2e4513` and `sporely-web` commit `7787fc1`.
+- Current/next slice: Stage 6l is complete. No later implementation or
+  deployment slice is authorized; the next handoff is the production-policy
+  gate recorded below. Stage 6k completed at `sporely-py` commit `b2e4513`
+  and `sporely-web` commit `7787fc1`.
   Implementation pass 1 is active from canonical head `7e0de16`: the exact
   Stage 3–6k wire, identity, lifecycle, evidence, access, pagination, and
   compatibility contracts are being checked across the four landed repository
@@ -3381,6 +3382,46 @@ lands as its own commit. No slice may activate the next slice's behavior.
   a non-secret build-only Turnstile placeholder; only the existing Vite chunk
   size and mixed-import advisories remained.
 
+### Stage 6l completion record (2026-08-30)
+
+- The integration implementation is `sporely-py` commit `08f3dea` and
+  `sporely-web` commit `7d9bc8f`. The executable cross-repository gate pins
+  that web revision plus landing `d086035` and admin `10f923e`, then compares
+  real desktop, SQL, landing, and admin contracts for exact RPC signatures,
+  nullable/default behavior, bounded pagination, immutable envelope fields,
+  exact taxonomy, revision identity, lifecycle filtering, access grants,
+  dormant policy, and the absence of `/references`.
+- Review-discovered drift was closed without expanding the public surface.
+  Owner-private curated-fork reads now exhaust deterministic pages through a
+  10,000-row/64-MiB fail-atomic boundary instead of truncating at 100. Citation
+  agents now share the landing contract of at most 100 entries and 1,024
+  UTF-16 code units per value, including astral Unicode; a transactional
+  migration validates stored candidates and curated works before activation.
+- Disposable integration exercised the landed submission, review, acceptance,
+  publication, exact-species discovery, citation exports, Compare persistence,
+  lifecycle, fork, restart/offline, and owner/curator/anonymous boundaries via
+  the existing SQL, Edge, admin, landing, and desktop suites. The admin browser
+  intentionally retains the Stage 6e action set; acceptance remains at the
+  already-approved Edge/SQL boundary rather than adding a new UI control.
+- Verification passed a fresh migration reset; 22 reference/curation,
+  publication, exact-taxonomy, public-read, fork, and security SQL regressions;
+  database lint; 560 relevant Python regressions including UTF-16 and
+  bounded-read coverage plus the six-test cross-repository gate; Python syntax
+  and diff checks; 42 Edge tests;
+  139 admin tests and production build; and 600 landing tests, typecheck, and
+  production build. The web production build passed. Its broad Node suite was
+  957/959: the two failures are pre-existing harness issues in the live-reconnect
+  static fixture and direct Node CSS loading, outside the Stage 6l slice. The
+  repository-wide Supabase test wrapper still hits the pre-existing PostgreSQL
+  crash in `blocked_user_profiles_test.sql`; all 22 applicable SQL files pass
+  directly with stop-on-error after the fresh reset.
+- Fresh independent contract, security/privacy/lifecycle, accidental-surface,
+  reproducibility, and legacy-compatibility reviews found and closed the two
+  cardinality/length mismatches and the fork-feed response-bound mismatch.
+  Final re-review found no remaining material Stage 6l blocker. Nothing was
+  deployed, no production policy value was invented, and `/references` remains
+  absent.
+
 ### Open operational policy inputs
 
 These do not change the technical boundary, but must be supplied before the
@@ -3396,12 +3437,12 @@ corresponding behavior is activated:
 - public catalogue rate-limit numbers and default page size within the hard
   database caps.
 
-The exact next handoff is Stage 6l only: run the activation and cross-repository
-gate described above with disposable accounts, record intentional differences
-and known limitations here, and preserve every Stage 3–6k privacy, identity,
-immutability, frozen-evidence, lifecycle, bounded-response, and least-privilege
-contract. Do not add `/references`, deploy anything, or set production rate
-policy unless a later separately approved slice explicitly authorizes it.
+The exact next canonical handoff is a separately approved production-policy
+gate only: supply and review every open operational input above, rerun the
+Stage 6l gate against the intended release revisions, and explicitly authorize
+deployment. Until then contributor intake and all policy-dependent production
+activation remain fail-closed. Do not deploy, add `/references`, choose policy
+defaults, or begin any later feature stage from this handoff.
 
 ---
 
