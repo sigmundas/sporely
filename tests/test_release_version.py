@@ -80,3 +80,17 @@ def test_all_release_packages_use_the_validated_tag_version():
     assert "check-macos-bundle" in workflow
     assert "set-macos-bundle" in build_mac
     assert "codesign --force --deep --sign - dist/Sporely.app" in build_mac
+
+
+def test_macos_matrix_uses_supported_distinct_runners_and_shared_gates():
+    root = Path(__file__).resolve().parents[1]
+    workflow = (root / ".github/workflows/release.yml").read_text(encoding="utf-8")
+    build_mac = (root / "build_mac.sh").read_text(encoding="utf-8")
+
+    assert "runner: macos-13" not in workflow
+    assert "- arch: intel\n            runner: macos-15-intel" in workflow
+    assert "- arch: apple-silicon\n            runner: macos-latest" in workflow
+    assert "Sporely-${tag}-macos-${{ matrix.arch }}.dmg" in workflow
+    assert "./build_mac.sh" in workflow
+    assert "check-macos-bundle" in workflow
+    assert "verify-artifact" in build_mac
