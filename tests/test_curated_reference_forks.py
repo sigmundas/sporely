@@ -108,6 +108,10 @@ class Client:
         self.calls.append((taxon_id, limit, after_published_at, after_id))
         return self.rows
 
+    def search_public_reference_contributions(self, taxon_id, limit, after_shared_at, after_id):
+        self.calls.append((taxon_id, limit, after_shared_at, after_id))
+        return self.rows
+
     def submit_private_reference_for_curation(self, *args):
         self.calls.append(args)
         return self.rows
@@ -124,6 +128,58 @@ def test_catalogue_read_requires_exact_positive_taxon_and_rejects_expansion():
     expanded["owner_id"] = "private"
     with pytest.raises(CuratedReferenceError):
         search_curated_catalogue(Client([expanded]), 2_100_000_081)
+
+
+def test_shared_contribution_keeps_attribution_and_legacy_fork_compatibility():
+    legacy = bundle_row()
+    shared = {
+        "contribution_id": legacy["curated_measurement_set_id"],
+        "revision": legacy["bundle_revision"],
+        "status": "shared",
+        "shared_at": legacy["published_at"],
+        "sporely_taxon_id": legacy["sporely_taxon_id"],
+        "canonical_scientific_name": legacy["canonical_scientific_name"],
+        "contributor": {
+            "id": "00000000-0000-4000-8000-00000000c101",
+            "label": "User 1",
+        },
+        "snapshot": legacy["snapshot"],
+        "citation": legacy["citation"],
+        "exports": legacy["exports"],
+    }
+    bundle = search_curated_catalogue(Client([shared]), 2_100_000_081)[0]
+    assert bundle.contribution_id == legacy["curated_measurement_set_id"]
+    assert bundle.revision == legacy["bundle_revision"]
+    assert bundle.contributor_label == "User 1"
+
+
+def test_shared_search_does_not_require_legacy_catalogue_method():
+    class SharedOnlyClient:
+        def search_public_reference_contributions(
+            self, taxon_id, limit, after_shared_at, after_id,
+        ):
+            assert (taxon_id, limit, after_shared_at, after_id) == (
+                2_100_000_081, 20, None, None,
+            )
+            legacy = bundle_row()
+            return [{
+                "contribution_id": legacy["curated_measurement_set_id"],
+                "revision": legacy["bundle_revision"],
+                "status": "shared",
+                "shared_at": legacy["published_at"],
+                "sporely_taxon_id": legacy["sporely_taxon_id"],
+                "canonical_scientific_name": legacy["canonical_scientific_name"],
+                "contributor": {
+                    "id": "00000000-0000-4000-8000-00000000c101",
+                    "label": "User 1",
+                },
+                "snapshot": legacy["snapshot"],
+                "citation": legacy["citation"],
+                "exports": legacy["exports"],
+            }]
+
+    result = search_curated_catalogue(SharedOnlyClient(), 2_100_000_081)
+    assert result[0].contributor_label == "User 1"
 
 
 @pytest.mark.parametrize(

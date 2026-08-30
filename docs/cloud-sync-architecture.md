@@ -59,6 +59,7 @@ Sibling modules that share sync responsibility (do **not** assume
 | `utils/spore_summary_sync.py` | Spore-summary derivative push/pull |
 | `utils/reference_cloud_sync.py` | Normalized-reference sibling executor and typed result. It stages all four owner feeds, reconciles library dependencies before observation uses, then delegates immutable curated-fork provenance reconciliation; normal sync executes deterministic CAS pushes and pull-only stops after reads/reconciliation. |
 | `utils/curated_reference_sync.py` | Stage 6k owner-private curated-fork provenance sync. It runs after personal graph reconciliation, validates exact public bundle identity/fingerprint, and never mutates fork content or observation attachments. |
+| `database/curated_reference_forks.py` | Shared-reference contribution read/copy boundary. The historical module name remains for compatibility; public results are owner-attributed immutable contribution revisions, and copying creates fresh owner-private identities rather than a shared mutable record. |
 | `database/reference_sync_state.py` | Stage 4 normalized-reference transport repository. It stores account-bound baselines, row versions, retry/conflict state, durable deletion intent, and atomic acknowledgement/restore transitions in the owning database. |
 | `database/reference_sync_planner.py` | Pure Stage 4c normalized-reference graph planner and read-only durable snapshot loader. It orders live work parent-first and tombstones child-first and reports dependency/account/conflict blocks without network activity. |
 | `database/reference_use_sync_reconciliation.py` | Stage 4g complete-feed observation-use reconciliation. It preserves frozen snapshots, maps verified observation identities, and applies baseline-aware updates/tombstones without rebuilding evidence. |
@@ -113,6 +114,24 @@ The Stage 6k provenance writer is separately named and pull-only blocked. Its
 owner feed and exact public revision reader are explicitly read-allowed. The
 mapping is not a fifth mutable graph entity: it is immutable origin metadata
 whose three personal UUID dependencies must already form one owner graph.
+
+Shared publication is owned by the cloud database rather than by another
+desktop sync planner. After an authenticated observation-reference use is
+synced for an exact species taxon, a database trigger publishes or revises the
+owner-attributed immutable contribution envelope. The public contribution
+readers are pull-only allowed; the explicit share/withdraw writers are
+pull-only blocked. DOI and other citation fields are evidence, never identity:
+two owners can contribute independent records with the same DOI. Other users
+can only read a contribution or copy its frozen revision into fresh local UUIDs.
+The older reviewer/publisher/attestation RPCs remain legacy implementation
+surface and are not part of this publication path.
+Taxon reassignment and removal of the last synced use withdraw stale discovery;
+the cloud handles service-owned taxonomy resolution and hard-delete cascades as
+well as authenticated use updates. Abuse/privacy/legal moderation is an
+independent visibility flag and cannot be undone by owner withdrawal or
+resharing. Account deletion retains immutable revision records while removing
+owner/source identifiers and replacing frozen attribution with a deleted-user
+label.
 
 ---
 

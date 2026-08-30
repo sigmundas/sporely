@@ -1,4 +1,4 @@
-"""Fail-closed Stage 6k curated catalogue reads and personal fork creation."""
+"""Fail-closed shared-contribution reads and owner-private copy creation."""
 from __future__ import annotations
 
 import hashlib
@@ -25,6 +25,11 @@ _FULL_KEYS = frozenset({
     "published_at", "sporely_taxon_id", "canonical_scientific_name", "snapshot",
     "citation", "exports",
 })
+_SHARED_KEYS = frozenset({
+    "contribution_id", "revision", "status", "shared_at", "sporely_taxon_id",
+    "canonical_scientific_name", "contributor", "snapshot", "citation", "exports",
+})
+_CONTRIBUTOR_KEYS = frozenset({"id", "label"})
 _SNAPSHOT_KEYS = frozenset({
     "schema_version", "reference_work_id", "reference_treatment_id",
     "reference_measurement_set_id", "reference_revision", "short_label",
@@ -59,8 +64,8 @@ class CuratedReferenceError(ValueError):
 
 
 class CuratedCatalogueClient(Protocol):
-    def search_public_curated_reference_sets(
-        self, sporely_taxon_id: int, limit: int, after_published_at: str | None,
+    def search_public_reference_contributions(
+        self, sporely_taxon_id: int, limit: int, after_shared_at: str | None,
         after_id: str | None,
     ) -> object: ...
 
@@ -87,6 +92,16 @@ class CuratedReferenceBundle:
     citation: dict[str, Any]
     exports: dict[str, Any]
     source_envelope: dict[str, Any]
+    contributor_id: str | None = None
+    contributor_label: str | None = None
+
+    @property
+    def contribution_id(self) -> str:
+        return self.curated_measurement_set_id
+
+    @property
+    def revision(self) -> int:
+        return self.bundle_revision
 
 
 @dataclass(frozen=True, slots=True)
@@ -236,6 +251,37 @@ def _validate_csl(csl: object, citation: Mapping[str, Any]) -> bool:
 
 
 def normalize_curated_bundle(value: object, *, expected_taxon_id: int | None = None) -> CuratedReferenceBundle:
+    if isinstance(value, dict) and frozenset(value) == _SHARED_KEYS:
+        contributor = _exact_mapping(value["contributor"], _CONTRIBUTOR_KEYS)
+        if contributor is None:
+            raise CuratedReferenceError("invalid contribution attribution")
+        contributor_id = contributor["id"]
+        if contributor_id is not None and (
+            not isinstance(contributor_id, str) or not _UUID.fullmatch(contributor_id)
+        ):
+            raise CuratedReferenceError("invalid contributor identity")
+        if not _bounded_text(contributor["label"], 512, required=True):
+            raise CuratedReferenceError("invalid contributor label")
+        legacy = {
+            "curated_measurement_set_id": value["contribution_id"],
+            "bundle_revision": value["revision"],
+            "status": "published" if value["status"] == "shared" else value["status"],
+            "superseded_by_id": None,
+            "published_at": value["shared_at"],
+            "sporely_taxon_id": value["sporely_taxon_id"],
+            "canonical_scientific_name": value["canonical_scientific_name"],
+            "snapshot": value["snapshot"],
+            "citation": value["citation"],
+            "exports": value["exports"],
+        }
+        bundle = normalize_curated_bundle(legacy, expected_taxon_id=expected_taxon_id)
+        return CuratedReferenceBundle(
+            bundle.curated_measurement_set_id, bundle.bundle_revision,
+            bundle.sporely_taxon_id, bundle.canonical_scientific_name,
+            bundle.published_at, bundle.snapshot, bundle.citation, bundle.exports,
+            json.loads(json.dumps(value, ensure_ascii=False, sort_keys=True, separators=(",", ":"))),
+            contributor_id, contributor["label"],
+        )
     row = _exact_mapping(value, _FULL_KEYS)
     if row is None or row["status"] != "published" or row["superseded_by_id"] is not None:
         raise CuratedReferenceError("curated bundle is not selectable")
@@ -326,10 +372,15 @@ def validate_frozen_curated_provenance(
     return bundle
 
 
-def search_curated_catalogue(client: CuratedCatalogueClient, sporely_taxon_id: int, *, limit: int = 20) -> tuple[CuratedReferenceBundle, ...]:
+def search_shared_reference_contributions(client: CuratedCatalogueClient, sporely_taxon_id: int, *, limit: int = 20) -> tuple[CuratedReferenceBundle, ...]:
     if not _positive_int(sporely_taxon_id) or not _positive_int(limit, 50):
         raise CuratedReferenceError("catalogue search requires a positive exact taxon ID and limit <= 50")
-    response = client.search_public_curated_reference_sets(sporely_taxon_id, limit, None, None)
+    search = getattr(client, "search_public_reference_contributions", None)
+    if search is None:
+        search = getattr(client, "search_public_curated_reference_sets", None)
+    if not callable(search):
+        raise CuratedReferenceError("cloud client does not support shared contribution search")
+    response = search(sporely_taxon_id, limit, None, None)
     if not isinstance(response, list) or len(response) > limit:
         raise CuratedReferenceError("invalid or oversized catalogue response")
     result: list[CuratedReferenceBundle] = []
@@ -342,6 +393,10 @@ def search_curated_catalogue(client: CuratedCatalogueClient, sporely_taxon_id: i
         seen.add(key)
         result.append(bundle)
     return tuple(result)
+
+
+# Compatibility alias for Stage 6 callers and persisted imports.
+search_curated_catalogue = search_shared_reference_contributions
 
 
 def submit_personal_reference_for_curation(

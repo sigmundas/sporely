@@ -96,23 +96,16 @@ def _make_observation(db_path) -> int:
         conn.close()
 
 
-def test_stage6k_actions_are_explicit_and_fail_closed_without_configuration(qapp, libs):
+def test_shared_contribution_browse_is_available_without_curation_policy(qapp, libs):
     from ui.reference_library_manager_dialog import ReferenceLibraryManagerDialog
 
     dialog = ReferenceLibraryManagerDialog(
         None, cloud_client=object(), sporely_taxon_id=123,
     )
     assert dialog.copy_curated_btn.isEnabled()
-    assert not dialog.submit_curation_btn.isEnabled()
-
-    configured = ReferenceLibraryManagerDialog(
-        None, cloud_client=object(), sporely_taxon_id=123,
-        curation_attestation_version="rights-v1",
-        curation_attestation_text="Confirmed wording",
-    )
-    assert not configured.submit_curation_btn.isEnabled()
+    assert dialog.copy_curated_btn.text() == "Copy a shared contribution…"
+    assert not hasattr(dialog, "submit_curation_btn")
     dialog.close()
-    configured.close()
 
 
 # --- Qt-free tests ----------------------------------------------------------

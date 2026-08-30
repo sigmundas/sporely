@@ -10,7 +10,7 @@ from PySide6.QtWidgets import (
 from database.curated_reference_forks import (
     CuratedReferenceBundle,
     copy_curated_bundle_to_personal_library,
-    search_curated_catalogue,
+    search_shared_reference_contributions,
 )
 
 
@@ -26,12 +26,12 @@ class _CatalogueWorker(QObject):
     @Slot()
     def run(self) -> None:
         try:
-            self.finished.emit(search_curated_catalogue(self._client, self._taxon_id))
+            self.finished.emit(search_shared_reference_contributions(self._client, self._taxon_id))
         except Exception as exc:
             self.failed.emit(str(exc))
 
 
-class CuratedReferenceCatalogueDialog(QDialog):
+class SharedReferenceCatalogueDialog(QDialog):
     copied = Signal(str)
 
     def __init__(self, parent: QWidget | None, *, cloud_client: object, sporely_taxon_id: int) -> None:
@@ -41,15 +41,16 @@ class CuratedReferenceCatalogueDialog(QDialog):
         self._bundles: tuple[CuratedReferenceBundle, ...] = ()
         self._thread: QThread | None = None
         self._close_pending = False
-        self.setWindowTitle(self.tr("Public reference catalogue"))
+        self.setWindowTitle(self.tr("Shared reference contributions"))
         self.resize(720, 420)
         layout = QVBoxLayout(self)
         self.status_label = QLabel(self.tr("Loading exact-taxon references…"), self)
         self.status_label.setWordWrap(True)
         layout.addWidget(self.status_label)
-        self.table = QTableWidget(0, 4, self)
+        self.table = QTableWidget(0, 5, self)
         self.table.setHorizontalHeaderLabels([
-            self.tr("Source"), self.tr("Taxon"), self.tr("Revision"), self.tr("Raw expression"),
+            self.tr("Source"), self.tr("Taxon"), self.tr("Revision"),
+            self.tr("Raw expression"), self.tr("Contributor"),
         ])
         self.table.setSelectionBehavior(QAbstractItemView.SelectRows)
         self.table.setSelectionMode(QAbstractItemView.SingleSelection)
@@ -90,18 +91,19 @@ class CuratedReferenceCatalogueDialog(QDialog):
             values = (
                 bundle.citation["short_citation"], bundle.canonical_scientific_name,
                 str(bundle.bundle_revision), bundle.snapshot["raw_text"] or "",
+                bundle.contributor_label or self.tr("Sporely user"),
             )
             for column, value in enumerate(values):
                 self.table.setItem(row, column, QTableWidgetItem(str(value)))
         self.status_label.setText(
-            self.tr("No published references found for this exact taxon.")
-            if not self._bundles else self.tr("Select a published revision to copy.")
+            self.tr("No shared contributions found for this exact taxon.")
+            if not self._bundles else self.tr("Select a contribution revision to copy.")
         )
         self._update_copy_state()
 
     @Slot(str)
     def _failed(self, message: str) -> None:
-        self.status_label.setText(self.tr("Could not load the public catalogue: {error}").format(error=message))
+        self.status_label.setText(self.tr("Could not load shared contributions: {error}").format(error=message))
 
     def _finish_pending_close(self) -> None:
         self._thread = None
@@ -118,13 +120,13 @@ class CuratedReferenceCatalogueDialog(QDialog):
         try:
             result = copy_curated_bundle_to_personal_library(self._bundles[rows[0].row()])
         except Exception as exc:
-            QMessageBox.warning(self, self.tr("Public reference catalogue"), self.tr("Could not copy reference: {error}").format(error=str(exc)))
+            QMessageBox.warning(self, self.tr("Shared reference contributions"), self.tr("Could not copy reference: {error}").format(error=str(exc)))
             return
         self.copied.emit(result.reference_measurement_set_id)
         QMessageBox.information(
-            self, self.tr("Public reference catalogue"),
-            self.tr("The published revision was copied to your personal library.") if result.created
-            else self.tr("This published revision is already in your personal library."),
+            self, self.tr("Shared reference contributions"),
+            self.tr("The contribution was copied to your personal library.") if result.created
+            else self.tr("This contribution is already in your personal library."),
         )
         self.accept()
 
@@ -135,3 +137,7 @@ class CuratedReferenceCatalogueDialog(QDialog):
             event.ignore()
             return
         super().closeEvent(event)
+
+
+# Compatibility alias for callers and persisted imports from Stage 6.
+CuratedReferenceCatalogueDialog = SharedReferenceCatalogueDialog

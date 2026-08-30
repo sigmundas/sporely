@@ -20,37 +20,32 @@ ROOT = Path(__file__).resolve().parents[1]
 CODE_ROOT = ROOT.parent
 WEB = Path(os.environ.get("SPORELY_WEB_REPO", CODE_ROOT / "sporely-web-reference-stage6"))
 LANDING = Path(os.environ.get("SPORELY_LANDING_REPO", CODE_ROOT / "sporely-landing-stage6j"))
-ADMIN = Path(os.environ.get("SPORELY_ADMIN_REPO", CODE_ROOT / "sporely-admin-reference-stage6"))
 
-EXPECTED_HEADS = {
+REQUIRED_ANCESTORS = {
     WEB: "7d9bc8fd8aa14274932b471ad41e23041f9b9ca4",
     LANDING: "d0860354e0af9bf7bccae13c85fc11c5a9d34ab4",
-    ADMIN: "10f923e79433fd59f88fc4584c223f13454bf3ab",
 }
 
 PUBLIC_KEYS = {
-    "curated_measurement_set_id", "bundle_revision", "status",
-    "superseded_by_id", "published_at", "sporely_taxon_id",
-    "canonical_scientific_name", "snapshot", "citation", "exports",
+    "contribution_id", "revision", "status", "shared_at", "sporely_taxon_id",
+    "canonical_scientific_name", "contributor", "snapshot", "citation", "exports",
 }
 WITHDRAWN_KEYS = {
-    "curated_measurement_set_id", "bundle_revision", "status",
-    "withdrawn_at", "superseded_by_id",
+    "contribution_id", "revision", "status", "withdrawn_at",
 }
 SEARCH_PARAMETERS = (
-    "p_sporely_taxon_id", "p_limit", "p_after_published_at", "p_after_id",
+    "p_sporely_taxon_id", "p_limit", "p_after_shared_at", "p_after_id",
 )
-EXACT_PARAMETERS = ("p_curated_measurement_set_id", "p_bundle_revision")
+EXACT_PARAMETERS = ("p_contribution_id", "p_revision")
 SUBMIT_PARAMETERS = (
-    "p_source_measurement_set_id", "p_expected_work_revision",
-    "p_expected_treatment_revision", "p_expected_measurement_set_revision",
-    "p_attestation_version", "p_rights_confirmed",
-    "p_curation_consent_confirmed",
+    "p_source_measurement_set_id", "p_sporely_taxon_id",
+    "p_expected_work_revision", "p_expected_treatment_revision",
+    "p_expected_measurement_set_revision",
 )
 
 
 def _require_repositories() -> None:
-    missing = [str(path) for path in EXPECTED_HEADS if not (path / ".git").exists()]
+    missing = [str(path) for path in REQUIRED_ANCESTORS if not (path / ".git").exists()]
     if missing:
         if os.environ.get("SPORELY_STAGE6L_GATE") == "1":
             pytest.fail(f"Stage 6l sibling worktrees are unavailable: {', '.join(missing)}")
@@ -105,51 +100,51 @@ def _sql_signature(source: str, function_name: str) -> tuple[tuple[str, str], ..
     )
 
 
-def test_stage6l_uses_the_landed_stage6_heads() -> None:
+def test_model_simplification_builds_on_the_landed_stage6_slices() -> None:
     _require_repositories()
-    for repository, revision in EXPECTED_HEADS.items():
-        assert _git(repository, "rev-parse", "HEAD") == revision
-        assert _tracked_tree_is_clean(repository), f"{repository.name} has tracked changes"
+    for repository, revision in REQUIRED_ANCESTORS.items():
+        subprocess.run(
+            ["git", "merge-base", "--is-ancestor", revision, "HEAD"],
+            cwd=repository, check=True,
+        )
 
 
 def test_public_rpc_names_parameters_limits_and_envelopes_match() -> None:
     _require_repositories()
     desktop = (ROOT / "utils/cloud_sync.py").read_text()
     desktop_model = (ROOT / "database/curated_reference_forks.py").read_text()
-    migration = (WEB / "supabase/migrations/20260829220943_add_public_curated_reference_reads.sql").read_text()
+    migration = (WEB / "supabase/migrations/20260830183210_add_shared_reference_contributions.sql").read_text()
     landing_api = (LANDING / "src/lib/publicApi.ts").read_text()
     landing_model = (LANDING / "src/lib/publicCuratedReferences.ts").read_text()
 
-    assert _method_rpc_keys(desktop, "search_public_curated_reference_sets") == SEARCH_PARAMETERS
-    assert _method_rpc_keys(desktop, "get_public_curated_reference_set") == EXACT_PARAMETERS
-    assert _sql_signature(migration, "search_public_curated_reference_sets") == (
+    assert _method_rpc_keys(desktop, "search_public_reference_contributions") == SEARCH_PARAMETERS
+    assert _method_rpc_keys(desktop, "get_public_reference_contribution") == EXACT_PARAMETERS
+    assert _sql_signature(migration, "search_public_reference_contributions") == (
         ("p_sporely_taxon_id", "integer"),
         ("p_limit", "integer"),
-        ("p_after_published_at", "timestamptz"),
+        ("p_after_shared_at", "timestamptz"),
         ("p_after_id", "uuid"),
     )
-    assert _sql_signature(migration, "get_public_curated_reference_set") == (
-        ("p_curated_measurement_set_id", "uuid"),
-        ("p_bundle_revision", "integer DEFAULT NULL"),
+    assert _sql_signature(migration, "get_public_reference_contribution") == (
+        ("p_contribution_id", "uuid"),
+        ("p_revision", "integer DEFAULT NULL"),
     )
     for parameter in SEARCH_PARAMETERS + EXACT_PARAMETERS:
         assert re.search(rf"\b{parameter}\s*:", landing_api)
 
     desktop_keys = set(re.search(
-        r"_FULL_KEYS = frozenset\(\{(.*?)\}\)", desktop_model, re.DOTALL,
+        r"_SHARED_KEYS = frozenset\(\{(.*?)\}\)", desktop_model, re.DOTALL,
     ).group(1).replace('"', '').replace("'", '').replace("\n", "").split(","))
     desktop_keys = {key.strip() for key in desktop_keys if key.strip()}
     assert desktop_keys == PUBLIC_KEYS
-    assert _ts_array(landing_model, "FULL_KEYS") == PUBLIC_KEYS
-    assert _ts_array(landing_model, "WITHDRAWN_KEYS") == WITHDRAWN_KEYS
+    assert _ts_array(landing_model, "SHARED_KEYS") == PUBLIC_KEYS
+    assert _ts_array(landing_model, "SHARED_WITHDRAWN_KEYS") == WITHDRAWN_KEYS
     assert "p_limit IS NULL OR p_limit < 1 OR p_limit > 50" in migration
     assert "LIMIT p_limit" in migration
     assert "value.length > requestedLimit" in landing_model
     assert "len(response) > limit" in desktop_model
 
-    agent_bound_sql = (WEB / (
-        "supabase/migrations/20260830130000_bound_curated_citation_agents.sql"
-    )).read_text()
+    agent_bound_sql = (WEB / "supabase/migrations/20260830130000_bound_curated_citation_agents.sql").read_text()
     assert "len(value) > 100" in desktop_model
     assert "value.length > 100" in landing_model
     assert "jsonb_array_length(p_agents) > 100" in agent_bound_sql
@@ -158,41 +153,41 @@ def test_public_rpc_names_parameters_limits_and_envelopes_match() -> None:
 
 def test_exact_taxonomy_lifecycle_and_public_access_are_fail_closed() -> None:
     _require_repositories()
-    migration = (WEB / "supabase/migrations/20260829220943_add_public_curated_reference_reads.sql").read_text()
+    migration = (WEB / "supabase/migrations/20260830183210_add_shared_reference_contributions.sql").read_text()
     landing_model = (LANDING / "src/lib/publicCuratedReferences.ts").read_text()
     desktop_model = (ROOT / "database/curated_reference_forks.py").read_text()
 
-    assert "publication_taxon.sporely_taxon_id = p_sporely_taxon_id" in migration
-    assert "concept.rank = 'species'" in migration
-    assert "measurement_set.catalogue_status = 'published'" in migration
-    assert "v_set.catalogue_status = 'withdrawn'" in migration
+    assert "c.sporely_taxon_id = p_sporely_taxon_id" in migration
+    assert "c.rank = 'species'" in migration
+    assert "c.status = 'shared'" in migration
+    assert "v_contribution.status = 'withdrawn'" in migration
     assert "item.sporelyTaxonId === requestedTaxonId" in landing_model
     assert "taxon_id != expected_taxon_id" in desktop_model
     assert "SECURITY DEFINER" in migration and "SET search_path = ''" in migration
     for role in ("anon", "authenticated", "service_role"):
         assert role in migration
-    assert "REVOKE ALL ON FUNCTION public.search_public_curated_reference_sets" in migration
-    assert "REVOKE ALL ON FUNCTION public.get_public_curated_reference_set" in migration
+    assert "REVOKE ALL ON FUNCTION public.search_public_reference_contributions" in migration
+    assert "REVOKE ALL ON FUNCTION public.get_public_reference_contribution" in migration
 
 
 def test_submission_contract_matches_and_production_policy_stays_dormant() -> None:
     _require_repositories()
     desktop = (ROOT / "utils/cloud_sync.py").read_text()
-    intake = (WEB / "supabase/migrations/20260829145939_add_reference_curation_intake.sql").read_text()
+    sharing = (WEB / "supabase/migrations/20260830183210_add_shared_reference_contributions.sql").read_text()
     landing_model = (LANDING / "src/lib/publicCuratedReferences.ts").read_text()
 
-    assert _method_rpc_keys(desktop, "submit_private_reference_for_curation") == SUBMIT_PARAMETERS
-    assert _sql_signature(intake, "submit_private_reference_for_curation") == (
+    assert _method_rpc_keys(desktop, "share_reference_contribution") == SUBMIT_PARAMETERS
+    assert _sql_signature(sharing, "share_reference_contribution") == (
         ("p_source_measurement_set_id", "uuid"),
+        ("p_sporely_taxon_id", "integer"),
         ("p_expected_work_revision", "integer"),
         ("p_expected_treatment_revision", "integer"),
         ("p_expected_measurement_set_revision", "integer"),
-        ("p_attestation_version", "text"),
-        ("p_rights_confirmed", "boolean"),
-        ("p_curation_consent_confirmed", "boolean"),
     )
-    assert "NOT v_policy.submissions_enabled" in intake
-    assert "policy_not_configured" in intake
+    assert "exact_taxon_use_required" in sharing
+    assert "attestation" not in sharing.lower()
+    assert "reference_reviewer" not in sharing
+    assert "reference_publisher" not in sharing
     assert "configuredCuratedReferencePageSize(): number | null" in landing_model
     assert "return null" in landing_model
 
@@ -203,36 +198,18 @@ def test_no_unapproved_references_route_was_activated() -> None:
     assert not re.search(r'<Route\s+path=["\']/references(?:/|["\'])', app)
 
 
-def test_admin_edge_contract_is_bounded_and_keeps_service_authority() -> None:
+def test_shared_contribution_public_contract_is_attributed_and_not_curated() -> None:
     _require_repositories()
-    admin_api = (ADMIN / "src/referenceCurationApi.js").read_text()
-    admin_models = (ADMIN / "src/referenceCurationModels.js").read_text()
-    edge_actions = (WEB / "supabase/functions/reference-curation/actions.ts").read_text()
-    edge_reads = (WEB / "supabase/functions/reference-curation/reads.ts").read_text()
-
-    admin_actions = set(re.findall(
-        r"^\s*[a-zA-Z]+:\s*'([^']+)'", re.search(
-            r"REFERENCE_CURATION_ACTIONS = Object\.freeze\(\{(.*?)\}\)",
-            admin_api, re.DOTALL,
-        ).group(1), re.MULTILINE,
-    ))
-    edge_mutations = set(re.findall(
-        r"'([^']+)'", re.search(
-            r"const MUTATION_ACTIONS = new Set\(\[(.*?)\]\)", edge_actions, re.DOTALL,
-        ).group(1),
-    ))
-    edge_lifecycle = set(re.findall(
-        r"'([^']+)'", re.search(
-            r"const LIFECYCLE_ACTIONS = new Set\(\[(.*?)\]\)", edge_actions, re.DOTALL,
-        ).group(1),
-    ))
-    # Stage 6e intentionally left acceptance at the already-tested Edge/SQL
-    # boundary; every browser-exposed mutation must still be understood there.
-    assert admin_actions == (edge_mutations - {"accept_to_draft"}) | edge_lifecycle
-    assert "headers: { Authorization: `Bearer ${token}` }" in admin_api
-    assert "This module never accepts or constructs service credentials" in admin_api
-    assert "value.role === null" in admin_models
-    assert "raw.items.length > 50" in admin_models
-    assert "encodedSize(data) > MAX_RESPONSE_BYTES" in edge_reads
-    assert "p_actor_user_id: context.actorUserId" in edge_actions
-    assert "p_actor_session_id: context.actorSessionId" in edge_actions
+    sharing = (WEB / "supabase/migrations/20260830183210_add_shared_reference_contributions.sql").read_text()
+    landing_api = (LANDING / "src/lib/publicApi.ts").read_text()
+    landing_model = (LANDING / "src/lib/publicCuratedReferences.ts").read_text()
+    assert "search_public_reference_contributions" in landing_api
+    assert "get_public_reference_contribution" in landing_api
+    assert "'contributor'" in landing_model
+    assert "shared_reference_contributions_owner_source_taxon_key" in sharing
+    assert "WHERE owner_id IS NOT NULL AND source_measurement_set_id IS NOT NULL" in sharing
+    assert "doi" not in re.search(
+        r"CREATE TABLE private\.shared_reference_contributions \((.*?)\);",
+        sharing, re.DOTALL,
+    ).group(1).lower()
+    assert "observation_reference_use_shared_contribution_trg" in sharing

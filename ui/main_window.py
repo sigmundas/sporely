@@ -11485,18 +11485,11 @@ class MainWindow(GeometryMixin, QMainWindow):
         )
 
         observation_id = getattr(self, "active_observation_id", None)
-        settings = get_app_settings()
         dialog = ReferenceLibraryManagerDialog(
             self,
             active_observation_id=int(observation_id) if observation_id else None,
             cloud_client=self._cached_cloud_client(),
             sporely_taxon_id=self._active_sporely_taxon_id(),
-            curation_attestation_version=str(
-                settings.get("reference_curation_attestation_version") or ""
-            ) or None,
-            curation_attestation_text=str(
-                settings.get("reference_curation_attestation_text") or ""
-            ) or None,
         )
         dialog.attach_requested.connect(
             self._attach_normalized_reference_from_manager

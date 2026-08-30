@@ -1920,31 +1920,6 @@ class _MeasurementSetForm(QDialog):
 # --- Manager dialog --------------------------------------------------------
 
 
-class _CurationSubmissionWorker(QObject):
-    finished = Signal(object)
-    failed = Signal(str)
-
-    def __init__(self, client: object, measurement_set_id: str, version: str) -> None:
-        super().__init__()
-        self._client = client
-        self._measurement_set_id = measurement_set_id
-        self._version = version
-
-    @Slot()
-    def run(self) -> None:
-        from database.curated_reference_forks import submit_personal_reference_for_curation
-        try:
-            result = submit_personal_reference_for_curation(
-                self._client, self._measurement_set_id,
-                attestation_version=self._version, rights_confirmed=True,
-                curation_consent_confirmed=True,
-            )
-        except Exception as exc:
-            self.failed.emit(str(exc))
-            return
-        self.finished.emit(result)
-
-
 class ReferenceLibraryManagerDialog(QDialog):
     """Top-level Reference Library manager dialog.
 
@@ -1983,10 +1958,8 @@ class ReferenceLibraryManagerDialog(QDialog):
         )
         self._cloud_client = cloud_client
         self._sporely_taxon_id = sporely_taxon_id
-        self._curation_attestation_version = curation_attestation_version
-        self._curation_attestation_text = curation_attestation_text
-        self._submit_thread: QThread | None = None
-        self._close_pending = False
+        # Retained only as ignored constructor compatibility for older callers.
+        del curation_attestation_version, curation_attestation_text
         self.setWindowTitle(self.tr("Reference Library"))
         self.setModal(True)
         self.resize(1000, 640)
@@ -2133,17 +2106,12 @@ class ReferenceLibraryManagerDialog(QDialog):
         self.delete_selected_btn.setEnabled(False)
         layout.addWidget(self.delete_selected_btn)
 
-        self.copy_curated_btn = QPushButton(self.tr("Copy from public catalogue…"))
+        self.copy_curated_btn = QPushButton(self.tr("Copy a shared contribution…"))
         self.copy_curated_btn.clicked.connect(self._on_copy_curated_clicked)
         self.copy_curated_btn.setEnabled(
             self._cloud_client is not None and self._sporely_taxon_id is not None
         )
         layout.addWidget(self.copy_curated_btn)
-
-        self.submit_curation_btn = QPushButton(self.tr("Submit for curation…"))
-        self.submit_curation_btn.clicked.connect(self._on_submit_curation_clicked)
-        self.submit_curation_btn.setEnabled(False)
-        layout.addWidget(self.submit_curation_btn)
 
         attach_row = QHBoxLayout()
         attach_row.addWidget(QLabel(self.tr("Role:")))
@@ -2670,72 +2638,13 @@ class ReferenceLibraryManagerDialog(QDialog):
     def _on_copy_curated_clicked(self) -> None:
         if self._cloud_client is None or self._sporely_taxon_id is None:
             return
-        from .curated_reference_catalogue_dialog import CuratedReferenceCatalogueDialog
-        dialog = CuratedReferenceCatalogueDialog(
+        from .curated_reference_catalogue_dialog import SharedReferenceCatalogueDialog
+        dialog = SharedReferenceCatalogueDialog(
             self, cloud_client=self._cloud_client,
             sporely_taxon_id=self._sporely_taxon_id,
         )
         dialog.copied.connect(lambda _set_id: self.refresh_works())
         dialog.exec()
-
-    def _on_submit_curation_clicked(self) -> None:
-        if self._current_measurement_set is None or self._cloud_client is None:
-            return
-        version = str(self._curation_attestation_version or "").strip()
-        wording = str(self._curation_attestation_text or "").strip()
-        if not version or not wording:
-            QMessageBox.information(
-                self, self.tr("Submit for curation"),
-                self.tr("Reference submissions are not configured for this build."),
-            )
-            return
-        answer = QMessageBox.question(
-            self, self.tr("Submit for curation"), wording,
-            QMessageBox.Yes | QMessageBox.No, QMessageBox.No,
-        )
-        if answer != QMessageBox.Yes:
-            return
-        self.submit_curation_btn.setEnabled(False)
-        thread = QThread(self)
-        worker = _CurationSubmissionWorker(
-            self._cloud_client, self._current_measurement_set.id, version,
-        )
-        worker.moveToThread(thread)
-        thread.started.connect(worker.run)
-        worker.finished.connect(self._on_submission_finished)
-        worker.failed.connect(self._on_submission_failed)
-        worker.finished.connect(thread.quit)
-        worker.failed.connect(thread.quit)
-        thread.finished.connect(worker.deleteLater)
-        thread.finished.connect(self._finish_pending_close)
-        thread.finished.connect(thread.deleteLater)
-        self._submit_thread = thread
-        thread.start()
-
-    @Slot(object)
-    def _on_submission_finished(self, result: object) -> None:
-        status = str(getattr(result, "status", ""))
-        if not self._close_pending:
-            QMessageBox.information(self, self.tr("Submit for curation"), self.tr("Submission status: {status}").format(status=status))
-        self._update_attach_button_visibility()
-
-    @Slot(str)
-    def _on_submission_failed(self, message: str) -> None:
-        if not self._close_pending:
-            QMessageBox.warning(self, self.tr("Submit for curation"), self.tr("Could not submit reference: {error}").format(error=message))
-        self._update_attach_button_visibility()
-
-    def _finish_pending_close(self) -> None:
-        self._submit_thread = None
-        if self._close_pending:
-            self.close()
-
-    def closeEvent(self, event) -> None:
-        if self._submit_thread is not None and self._submit_thread.isRunning():
-            self._close_pending = True
-            event.ignore()
-            return
-        super().closeEvent(event)
 
     def _update_attach_button_visibility(self) -> None:
         has_observation = self._active_observation_id is not None
@@ -2743,12 +2652,6 @@ class ReferenceLibraryManagerDialog(QDialog):
         self.attach_btn.setVisible(has_observation)
         self.role_combo.setVisible(has_observation)
         self.attach_btn.setEnabled(has_observation and has_set)
-        configured = bool(
-            self._cloud_client is not None
-            and self._curation_attestation_version
-            and self._curation_attestation_text
-        )
-        self.submit_curation_btn.setEnabled(configured and has_set)
 
     # --- Public helpers used by tests / callers ---
 

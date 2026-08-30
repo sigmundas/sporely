@@ -1,7 +1,7 @@
 # Reference Library and Public Reference Plotting Plan
 
-**Status:** Stages 1–5 and Stages 6a–6j are implemented and verified. Stages
-6k–6l remain.
+**Status:** Stages 1–6l are implemented and verified. The shared-contribution
+model simplification is active; deployment remains unauthorized.
 **Canonical repository:** `sporely-py`
 **Canonical path:** `docs/plans/active/2026-08-05-reference-library-and-public-plots.md`
 **Scope:** `sporely-py` → `sporely-web`/Supabase → `sporely-admin` →
@@ -12,35 +12,34 @@
 
 ## Agent handoff
 
-- Status: Active; Stages 1–5 and Stage 6a–6j are complete, and the remaining
-  Stage 6 contract is resolved.
+- Status: Active; Stages 1–6l are complete. The current slice replaces the
+  scientific-curation workflow with owner-authored shared contributions while
+  preserving the landed identity, revision, evidence, lifecycle, and access
+  infrastructure.
 - Last completed slice: Stage 6j Compare add/render activation in
   `sporely-landing` (`d086035`). Species cards capture exact curated revisions,
   newer revisions require an explicit fail-closed replacement, and Compare
   renders frozen literature evidence without observation hydration. Nothing
   was deployed.
-- Current/next slice: Stage 6l is complete. No later implementation or
-  deployment slice is authorized; the next handoff is the production-policy
-  gate recorded below. Stage 6k completed at `sporely-py` commit `b2e4513`
-  and `sporely-web` commit `7787fc1`.
-  Implementation pass 1 is active from canonical head `7e0de16`: the exact
-  Stage 3–6k wire, identity, lifecycle, evidence, access, pagination, and
-  compatibility contracts are being checked across the four landed repository
-  slices before any activation change. Production contributor intake remains
-  fail-closed because its attestation, rate, and retention policy inputs are
-  deliberately unresolved; disposable local policy may be used only for the
-  Stage 6l integration exercise. Pass 2 adds an executable cross-repository
-  regression that pins the landed web/landing/admin ancestors and checks the
-  real desktop, SQL, and landing contracts for RPC parameters, public envelope
-  fields, exact taxonomy, pagination bounds, lifecycle tombstones, grants,
-  dormant production policy, and the excluded `/references` route.
-  Pass 3 closes two review-discovered cross-client bounds: curated-fork owner
-  reads now paginate beyond 100 rows but fail atomically above 10,000 rows or
-  64 MiB, and an additive, transactional web migration validates both stored
-  candidates and curated works against the desktop/landing 100-agent citation
-  bound before replacing the intake and public-envelope validators. Agent text
-  is aligned to landing's 1,024 UTF-16-code-unit boundary, including astral
-  Unicode, so every server-valid envelope is accepted by both clients.
+- Current/next slice: shared-contribution model simplification, implementation
+  pass 1. No deployment is authorized. Stage 6k completed at `sporely-py`
+  commit `b2e4513` and `sporely-web` commit `7787fc1`.
+  Pass 1 is complete: migration history was verified aligned before the new
+  additive migration; the canonical contract and both sync-contract copies now
+  define owner-authored sharing and the smaller operational-policy handoff.
+  Pass 2 is complete in the working tree: the server derives sharing from an
+  authenticated synced use plus its observation's exact taxonomy-v3 identity,
+  keeps immutable attributed revisions, exposes new bounded contribution RPCs,
+  and retains the old curated surfaces only for compatibility. Cross-user SQL
+  coverage proves discovery, ownership isolation, independent same-DOI copies,
+  historical revisions, withdrawal, and the absence of attestation/role gates.
+  Pass 3 is complete in the working tree: desktop and landing clients use
+  contribution terminology and APIs while retaining persisted Stage 6 identity
+  aliases. A fresh local Supabase reset, every reference SQL/security test,
+  database lint, focused Python tests, the complete landing suite and both web
+  builds pass. The complete Python and web inventories were also run and retain
+  only recorded baseline/harness failures outside this slice. Fresh independent
+  correctness and security reviews are in progress before commit and push.
 - Relevant Stage 4 commits: `199f127`, `69ec641`, `8893007`, `edd9f70`,
   `e8b340b`, `ea1e1b9`, `eaca8e7`, `0277516`, `9c5346b`.
 - Relevant Stage 5 commit (`sporely-landing`): `5af3cb8`.
@@ -3422,27 +3421,72 @@ lands as its own commit. No slice may activate the next slice's behavior.
   deployed, no production policy value was invented, and `/references` remains
   absent.
 
+### Shared-contribution model simplification (completed 2026-08-30)
+
+The curated publication workflow is replaced by a simpler product contract:
+Sporely does not review, approve, rank, or scientifically certify reference
+values. A synced owner contribution that is used with an exact stable taxon is
+discoverable to other users for that exact taxon. Other users cannot edit it;
+they may copy it to fresh personal identities and publish their corrected copy
+as a separate attributed contribution. Similar citation metadata, including an
+identical DOI, never merges contributions and creates no canonical source.
+
+Implementation pass 1 audits and updates the additive cloud boundary. It must
+preserve owner-only mutation, exact taxonomy, immutable public revisions,
+contributor attribution, frozen historical observation/Compare evidence,
+deterministic bounded pagination, citation/export envelopes, moderation and
+account lifecycle behavior, least privilege, and existing client compatibility.
+Existing `curated_*` / `published` storage names may remain internal legacy
+names where renaming would be destructive, but new public/client terminology
+must describe shared contributions and lifecycle visibility rather than review
+or scientific approval. Reviewer, publisher, and attestation identities or
+gates must not remain on the sharing path.
+
+Implementation pass 2 updates desktop sync/discovery/Compare/fork behavior and
+localized UI terminology. A copy receives fresh personal work, treatment, and
+measurement-set identities plus its own revisions, retains bounded frozen
+source provenance, and never mutates or follows the original contribution.
+
+Implementation pass 3 updates landing API/read-model terminology and rendering,
+then runs the cross-repository compatibility gate. Explicit two-user coverage
+must prove publish-on-synced-exact-taxon-use, same-taxon discovery in analysis,
+library browsing and Compare, owner-only edits, independent forks, duplicate
+citation/DOI coexistence, exact revision replay, withdrawal behavior, and the
+absence of reviewer/publisher/attestation requirements.
+
+After integration, fresh correctness and security/privacy reviews must run and
+their material findings must be resolved before the slice is committed and
+pushed. Nothing in this slice deploys or selects unresolved operational policy.
+
 ### Open operational policy inputs
 
 These do not change the technical boundary, but must be supplied before the
 corresponding behavior is activated:
 
-- the initial user IDs assigned `reference_reviewer` and
-  `reference_publisher`;
-- the immutable rights-attestation wording/version used to enable owner
-  submissions;
-- owner submission and report rate windows/counts, submission candidate
-  retention, report-detail retention, and contributor-attribution retention;
+- contribution/report rate windows and counts;
+- contribution, report-detail, and contributor-attribution retention/deletion
+  behavior;
 - the copyright/takedown response SLA;
 - public catalogue rate-limit numbers and default page size within the hard
   database caps.
 
-The exact next canonical handoff is a separately approved production-policy
-gate only: supply and review every open operational input above, rerun the
-Stage 6l gate against the intended release revisions, and explicitly authorize
-deployment. Until then contributor intake and all policy-dependent production
-activation remain fail-closed. Do not deploy, add `/references`, choose policy
-defaults, or begin any later feature stage from this handoff.
+The next canonical handoff after this model-simplification slice is the smaller
+production-policy gate above. Supply and review only those operational values,
+rerun the cross-repository gate against the intended release revisions, and
+explicitly authorize deployment. Until then policy-dependent production
+activation remains fail-closed. Do not deploy, add `/references`, or invent
+policy defaults from this handoff.
+
+Implementation passes 1–3 are complete across the cloud boundary, desktop, and
+landing Compare/catalogue surfaces. Fresh correctness and security/privacy
+reviews found no remaining material defect after fixes for identity exposure,
+taxon transitions, account deletion, moderation persistence, source bounds,
+hard-delete cleanup, and raw-point Q-value fidelity. Verification included a
+fresh Supabase reset, every reference-related SQL contract, database lint,
+focused desktop/cross-repository tests and syntax checks, landing tests,
+typecheck and production build, plus web tests and production build. The broad
+desktop and web suites retain only the separately documented pre-existing
+harness/baseline failures. No deployment was performed.
 
 ---
 
@@ -3460,20 +3504,20 @@ The cross-repository feature is done when:
 8. the page displays a complete citation and original measurement text;
 9. later library edits do not silently rewrite the published observation;
 10. the same publication can be reused for another observation without retyping it;
-11. owner consent creates an immutable submission candidate without changing
-    the personal row into public data;
-12. only current, non-banned reviewers/publishers/admins can perform the
-    audited lifecycle actions assigned to them;
-13. published curated bundles have stable IDs, immutable revisions, exact v3
-    species assignments, and no fuzzy bibliographic or taxon merge path;
-14. public catalogue reads expose only allowlisted curated publication data,
-    never personal-library, submitter, or moderation state;
+11. syncing an owner contribution used with an exact taxon creates an immutable,
+    attributed public revision without a reviewer, publisher, or attestation;
+12. only the owner can mutate the contribution while moderation can affect
+    visibility for abuse/legal/privacy reasons without judging correctness;
+13. shared contribution bundles have stable IDs, immutable revisions, exact v3
+    species assignments, and no bibliographic or taxon deduplication path;
+14. public catalogue reads expose only allowlisted contribution data, never
+    unrelated personal-library, observation, or moderation state;
 15. landing Compare captures the chosen frozen bundle revision immediately,
     does not synthesize observations, and does not create an observation use;
 16. citation display/export comes from the immutable structured curated work
     revision in plain text, BibTeX, and CSL-JSON;
 17. deprecation, supersession, withdrawal, restart, and offline flows preserve
     already frozen observation and Compare evidence; and
-18. a curated bundle can be explicitly forked to fresh personal UUIDs without
+18. a shared contribution can be explicitly forked to fresh personal UUIDs without
     automatic follow/update behavior. A global `/references` route is not
     required for Stage 6 completion.

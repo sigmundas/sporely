@@ -1,5 +1,29 @@
 # Sporely Cloud Sync Contract and Repair Plan
 
+## Shared reference contributions
+
+A personal reference graph remains owner-private and owner-mutable. After an
+authenticated sync stores an active observation-reference use whose observation
+has an exact stable species identity, the server snapshots that source as an
+immutable, attributed shared-contribution revision. Discovery is keyed only by
+the exact `sporely_taxon_id`; DOI and other citation metadata are optional and
+never identity, deduplication, or merge keys. Other users have read-only access
+to the bounded public envelope and may copy it to fresh personal UUIDs.
+Public envelopes replace all three owner-private graph UUIDs with stable public
+contribution identities. Exact-taxon changes, use reassignment, soft detach,
+and hard deletion withdraw an orphaned contribution; a service-owned taxonomy
+resolution follows the same rule without requiring an end-user JWT subject.
+
+The `curated_*` names retained in older storage and client compatibility code
+are legacy implementation terminology, not scientific review or approval.
+Reviewer, publisher, and attestation policy are not prerequisites for sharing.
+Moderation may change public visibility for abuse, privacy, or legal reasons,
+but does not select a scientifically preferred contribution. Moderation state
+is independent of owner withdrawal, so an owner cannot reshare around a hide.
+Account deletion withdraws and anonymizes retained immutable history. Withdrawal
+hides catalogue discovery while previously frozen observation and Compare
+evidence continues to reproduce its exact revision.
+
 Status: required behavior; Stage 1 landed; Stage 2 pending.
 
 This is the shared sync specification for `sporely` (desktop) and `sporely-web` (web, Android, Supabase, and cloud media). Keep an identical copy at:
