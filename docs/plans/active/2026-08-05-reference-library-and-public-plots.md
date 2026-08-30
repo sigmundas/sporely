@@ -2851,8 +2851,8 @@ lands as its own commit. No slice may activate the next slice's behavior.
    reference RPCs remain compatible except for the documented additive species
    identity field.
 8. **Stage 6h — landing curated API/read model and species listing
-   (`sporely-landing`).** Extract the Stage 5 snapshot validator into a shared
-   module without behavior change, then add strict curated-envelope,
+   (`sporely-landing`; complete at `478eb92`).** Extract the Stage 5 snapshot
+   validator into a shared module without behavior change, then add strict curated-envelope,
    citation-v1, export, cursor, and taxon-identity adapters. Render localized,
    accessible curated cards on the species page only when an exact stable ID
    is returned, with dependency-free copy/download actions for the server
@@ -3214,6 +3214,49 @@ lands as its own commit. No slice may activate the next slice's behavior.
   landing/Compare behavior, `/references` route, or moderation workflow was
   deployed or activated.
 
+### Stage 6h completion record (2026-08-30)
+
+- `sporely-landing` now consumes the Stage 6g contract through strict public
+  taxon-identity, curated-envelope, citation-v1, export, exact-read, and cursor
+  adapters. The Stage 5 frozen-snapshot validator moved to a shared module with
+  its existing exact-key and raw-text behavior preserved. A malformed or
+  privacy-expanded row is omitted; an exact read fails atomically if its rows
+  mix revisions/lifecycle state, disagree on immutable bundle content, repeat
+  or misorder taxon assignments, or do not match the requested stable ID and
+  revision.
+- Public species models accept the additive nullable `taxonIdentity` without
+  changing legacy rows. The species page issues no catalogue request unless it
+  has one valid positive taxonomy-v3 identity and an explicitly configured
+  page size from 1 through the Stage 6g hard cap of 50. Requests use only that
+  numeric identity and the deterministic `(published_at DESC, id ASC)` cursor;
+  there is no slug, name, fuzzy, or taxonomy-v2 fallback and one RPC supplies
+  each page.
+- The localized Norwegian, Swedish, English, and German listing renders only
+  validated current published discovery rows. It has isolated loading, empty,
+  retry, and pagination states; preserves prior cards across a failed next
+  page; rejects stale completions after a species change; and deduplicates by
+  immutable set/revision/taxon identity. Deprecated bundles remain readable
+  only through exact reads, while withdrawal is accepted only as the exact
+  status-only tombstone and never reconstructed into content.
+- Cards render React-escaped immutable citation/snapshot text. DOI links are
+  emitted only from the normalized DOI allowlist. Copy and dependency-free
+  downloads use the server-provided plain text and BibTeX artifacts and a
+  deterministic serialization of the validated Stage 6g CSL object, with
+  explicit UTF-8 MIME types and citation-key/revision filenames. No citation
+  content is rebuilt from mutable library state, and no Compare mutation or
+  `/references` route was added.
+- A fresh local Supabase reset succeeded. The Stage 6g public curated-read and
+  exact species-identity SQL suites, the Stage 5 public observation-reference
+  suite, and curated-library grant/security coverage passed. Landing focused
+  coverage passed 27 tests; the full landing suite passed 53 files / 570 tests;
+  TypeScript checking, production build, and `git diff --check` passed. The
+  existing Vite chunk-size advisory is unchanged.
+- Fresh correctness/security/accessibility review found and closed two issues:
+  stale load-more completion could strand pagination after a species change,
+  and exact-read normalization initially accepted individually valid but
+  heterogeneous rows. Final re-review found no remaining concrete defect.
+  There was no `sporely-web` schema or RPC change and nothing was deployed.
+
 ### Open operational policy inputs
 
 These do not change the technical boundary, but must be supplied before the
@@ -3229,9 +3272,9 @@ corresponding behavior is activated:
 - public catalogue rate-limit numbers and default page size within the hard
   database caps.
 
-The recommended next implementation slice is Stage 6h only: the strict curated
-API/read model and exact-species listing in `sporely-landing`, while keeping
-Compare mutation deferred to Stage 6i/6j.
+The recommended next implementation slice is Stage 6i only: versioned Compare
+storage in `sporely-landing`. Curated items remain test-constructible but are
+not added by UI until Stage 6j.
 
 ---
 
