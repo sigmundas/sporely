@@ -3505,6 +3505,38 @@ typecheck and production build, plus web tests and production build. The broad
 desktop and web suites retain only the separately documented pre-existing
 harness/baseline failures. No deployment was performed.
 
+### Production deployment record (2026-08-30)
+
+- Production Supabase project `zkpjklzfwzefhjluvhfw` received the reviewed
+  migration stack through `sporely-web` commit
+  `fd5970f3cfc82b9f847f0ef029b67799e193aa98`. Remote migration history is
+  contiguous and records `20260830193144` exactly once; a post-deployment dry
+  run reports the database up to date.
+- Live verification confirmed the approved 60 authenticated / 30 anonymous
+  requests-per-minute policy, 25 default / 100 maximum catalogue page size,
+  indefinite scientific revisions, 90-day operational logs, 30-day abuse
+  metadata, the active daily retention job, least-privilege grants, exact-taxon
+  current discovery, withdrawal/hiding exclusion, frozen revision lookup, and
+  absence of a `/references` route. A direct anonymous boundary probe returned
+  HTTP 200 for requests 1–30 and HTTP 429 with `Retry-After` for request 31.
+  Database advisors reported the reviewed intentional public API
+  `SECURITY DEFINER` warnings and no new material reference-object error.
+- The reusable SQL fixtures could not be run unchanged against production
+  because production's Auth trigger creates `profiles` rows before their fixed
+  explicit profile inserts; the transactions persisted no fixture data. The
+  equivalent policy values, schema objects, grants, cron schedule, function
+  definitions, migration history, and live HTTP boundary were verified
+  independently.
+- Desktop commit `4cd6a2f2e2f67002fa7b7e4a63351b13bbf54453` was **not
+  released**. It still declares version `0.9.18`, while published immutable tag
+  `v0.9.18` already targets `58934c2c8ba799fdc2dfc8d42e84e4226a7f1cd9`.
+  The documented release workflow requires a new version tag; proceeding would
+  require either an unreviewed version-bump commit or rewriting a published
+  tag, both outside this authorization.
+- Landing commit `77a376460ad7147cf724f0625ae05ad80ab3337b` was not released,
+  and the final cross-system smoke test was not run, because rollout stopped at
+  the material desktop release gate as required.
+
 ---
 
 ## 20. Definition of done
