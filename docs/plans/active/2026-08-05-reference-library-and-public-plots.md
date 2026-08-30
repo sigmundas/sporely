@@ -3359,9 +3359,9 @@ lands as its own commit. No slice may activate the next slice's behavior.
   envelope validation, bounded-read, atomic-feed, import integrity, worker
   lifetime, and deletion-lifecycle gaps. Final reviews found no remaining
   material issue and no accidental Stage 6l activation.
-- The web production build was attempted but could not start because this
-  isolated worktree has no installed `vite` binary; dependencies were not
-  installed because repository policy requires separate confirmation.
+- The web production build also passed using the existing dependency tree and
+  a non-secret build-only Turnstile placeholder; only the existing Vite chunk
+  size and mixed-import advisories remained.
 
 ### Open operational policy inputs
 
