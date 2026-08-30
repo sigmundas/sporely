@@ -232,6 +232,7 @@ def test_portable_export_contains_only_selected_dependency_closure(
         "annotations": 1,
         "calibration_assets": 2,
         "calibrations": 1,
+        "curated_reference_forks": 0,
         "images": 2,
         "measurements": 1,
         "observation_reference_uses": 1,

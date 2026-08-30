@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 import json
+import hashlib
 import os
 import sqlite3
 from dataclasses import replace
@@ -23,6 +24,7 @@ from utils.archive.portable_import import (
     import_portable_archive,
     preview_portable_archive,
 )
+from tests.test_curated_reference_forks import bundle_row
 
 
 @pytest.fixture(scope="module")
@@ -116,6 +118,16 @@ def _archive(monkeypatch, tmp_path: Path) -> Path:
             "INSERT INTO reference_measurement_sets (id, taxon_treatment_id, character, data_kind, revision) "
             "VALUES (?, ?, 'spore_size', 'range', 1)",
             [("set-a", "treatment-a"), ("set-b", "treatment-b")],
+        )
+        envelope = json.dumps(bundle_row(), ensure_ascii=False, sort_keys=True, separators=(",", ":"))
+        connection.execute(
+            "INSERT INTO curated_reference_forks "
+            "(curated_measurement_set_id,bundle_revision,sporely_taxon_id,reference_work_id,"
+            "taxon_treatment_id,reference_measurement_set_id,source_envelope_json,source_sha256) "
+            "VALUES (?,?,?,?,?,?,?,?)",
+            (bundle_row()["curated_measurement_set_id"], 2, 2_100_000_081,
+             "work-a", "treatment-a", "set-a", envelope,
+             hashlib.sha256(envelope.encode("utf-8")).hexdigest()),
         )
         connection.commit()
     archive = tmp_path / "observations.sporely"
@@ -239,6 +251,8 @@ def test_subset_import_then_overlap_and_replay_preserve_identity(monkeypatch, tm
         assert connection.execute("SELECT COUNT(*) FROM spore_measurements").fetchone()[0] == 3
         assert set(connection.execute("SELECT cloud_id FROM images").fetchall()) == {(None,)}
         assert set(connection.execute("SELECT portable_cloud_identity_pending FROM observations").fetchall()) == {(1,)}
+    with sqlite3.connect(reference) as connection:
+        assert connection.execute("SELECT COUNT(*) FROM curated_reference_forks").fetchone()[0] == 1
 
 
 def test_overlapping_subset_imports_reuse_shared_session_identity(monkeypatch, tmp_path):

@@ -175,10 +175,10 @@ def validate_portable_observations(path: str | Path) -> ArchiveManifest:
                         expected[table] = int(connection.execute(f"SELECT COUNT(*) FROM {table}").fetchone()[0])
                     expected["measurements"] = int(connection.execute("SELECT COUNT(*) FROM spore_measurements").fetchone()[0])
                     expected["annotations"] = int(connection.execute("SELECT COUNT(*) FROM spore_annotations").fetchone()[0])
-                reference_tables = (
-                    "reference_values", "reference_works", "reference_taxon_treatments",
-                    "reference_measurement_sets",
-                )
+                    reference_tables = (
+                        "reference_values", "reference_works", "reference_taxon_treatments",
+                        "reference_measurement_sets", "curated_reference_forks",
+                    )
                 with sqlite3.connect(extracted["portable/reference_values.db"]) as connection:
                     for table in reference_tables:
                         expected[table] = int(connection.execute(f"SELECT COUNT(*) FROM {table}").fetchone()[0])

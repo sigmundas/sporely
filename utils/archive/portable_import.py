@@ -18,6 +18,7 @@ from typing import Any, Callable
 from zipfile import BadZipFile, ZipFile
 
 from database.reference_sync_state import record_library_mutation_intent
+from database.curated_reference_forks import validate_frozen_curated_provenance
 from utils.archive.checksums import sha256_file
 from utils.archive.manifest import ArchiveManifest
 from utils.archive.paths import safe_staging_destination, validate_zip_entries
@@ -2550,12 +2551,76 @@ def import_portable_payload(
             for item_type in _REFERENCE_PROVENANCE_TABLES
         }
 
+        source_curated_forks = []
+        if source_reference.execute(
+            "SELECT 1 FROM sqlite_master WHERE type='table' AND name='curated_reference_forks'"
+        ).fetchone():
+            source_curated_forks = [
+                dict(row) for row in source_reference.execute(
+                    "SELECT * FROM curated_reference_forks "
+                    "ORDER BY curated_measurement_set_id,bundle_revision"
+                )
+            ]
+        for origin in source_curated_forks:
+            try:
+                validate_frozen_curated_provenance(
+                    origin["source_envelope_json"], origin["source_sha256"],
+                    curated_measurement_set_id=origin["curated_measurement_set_id"],
+                    bundle_revision=origin["bundle_revision"],
+                    sporely_taxon_id=origin["sporely_taxon_id"],
+                )
+            except ValueError as exc:
+                raise PortableImportError(f"invalid curated fork provenance: {exc}") from exc
+            existing_origin = destination_main.execute(
+                "SELECT * FROM portable_reference.curated_reference_forks "
+                "WHERE curated_measurement_set_id=? AND bundle_revision=?",
+                (origin["curated_measurement_set_id"], origin["bundle_revision"]),
+            ).fetchone()
+            if existing_origin is None:
+                continue
+            if (existing_origin["sporely_taxon_id"] != origin["sporely_taxon_id"]
+                    or existing_origin["source_sha256"] != origin["source_sha256"]):
+                raise PortableIdentityConflictError(
+                    "curated fork provenance disagrees for the same bundle revision"
+                )
+            reference_existing["reference_work"][origin["reference_work_id"]] = existing_origin["reference_work_id"]
+            reference_existing["reference_treatment"][origin["taxon_treatment_id"]] = existing_origin["taxon_treatment_id"]
+            reference_existing["reference_measurement_set"][origin["reference_measurement_set_id"]] = existing_origin["reference_measurement_set_id"]
+
         value_map, work_map, treatment_map, set_map = _merge_reference_graph(
             source_reference,
             destination_reference,
             destination_schema="portable_reference",
             existing_maps=reference_existing,
         )
+        for origin in source_curated_forks:
+            mapped_ids = (
+                work_map.get(str(origin["reference_work_id"])),
+                treatment_map.get(str(origin["taxon_treatment_id"])),
+                set_map.get(str(origin["reference_measurement_set_id"])),
+            )
+            if any(value is None for value in mapped_ids):
+                raise PortableImportError("curated fork provenance has an unresolved private graph")
+            existing_origin = destination_main.execute(
+                "SELECT reference_work_id,taxon_treatment_id,reference_measurement_set_id,"
+                "sporely_taxon_id,source_sha256 FROM portable_reference.curated_reference_forks "
+                "WHERE curated_measurement_set_id=? AND bundle_revision=?",
+                (origin["curated_measurement_set_id"], origin["bundle_revision"]),
+            ).fetchone()
+            expected = (*mapped_ids, origin["sporely_taxon_id"], origin["source_sha256"])
+            if existing_origin is not None:
+                if tuple(existing_origin) != expected:
+                    raise PortableIdentityConflictError("curated fork destination mapping conflicts")
+                continue
+            destination_main.execute(
+                "INSERT INTO portable_reference.curated_reference_forks "
+                "(curated_measurement_set_id,bundle_revision,sporely_taxon_id,reference_work_id,"
+                "taxon_treatment_id,reference_measurement_set_id,source_envelope_json,source_sha256,created_at) "
+                "VALUES (?,?,?,?,?,?,?,?,?)",
+                (origin["curated_measurement_set_id"], origin["bundle_revision"],
+                 origin["sporely_taxon_id"], *mapped_ids, origin["source_envelope_json"],
+                 origin["source_sha256"], origin["created_at"]),
+            )
         calibration_map = _merge_calibrations(
             source_main, destination_main, integer_map("calibration")
         )

@@ -317,7 +317,12 @@ def _library_manager(context: ReviewContext):
     from ui.reference_library_manager_dialog import ReferenceLibraryManagerDialog
 
     fixture = _fixture(context)
-    dialog = ReferenceLibraryManagerDialog(context.host, active_observation_id=42)
+    dialog = ReferenceLibraryManagerDialog(
+        context.host,
+        active_observation_id=42,
+        cloud_client=object(),
+        sporely_taxon_id=7,
+    )
     dialog.refresh_works(select_id=fixture["work"].id)
     dialog._refresh_hierarchy_for_current_work(
         select_set_id=fixture["sets"][0].id

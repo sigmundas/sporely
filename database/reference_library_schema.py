@@ -154,6 +154,53 @@ CREATE TABLE IF NOT EXISTS reference_measurement_set_preferences (
 )
 """
 
+_CURATED_REFERENCE_FORKS_DDL = """
+CREATE TABLE IF NOT EXISTS curated_reference_forks (
+    curated_measurement_set_id TEXT NOT NULL,
+    bundle_revision INTEGER NOT NULL CHECK (bundle_revision > 0),
+    sporely_taxon_id INTEGER NOT NULL CHECK (
+        sporely_taxon_id > 0 AND sporely_taxon_id <= 2147483647
+    ),
+    reference_work_id TEXT NOT NULL,
+    taxon_treatment_id TEXT NOT NULL,
+    reference_measurement_set_id TEXT NOT NULL,
+    source_envelope_json TEXT NOT NULL,
+    source_sha256 TEXT NOT NULL CHECK (
+        length(source_sha256) = 64
+        AND source_sha256 = lower(source_sha256)
+        AND source_sha256 NOT GLOB '*[^0-9a-f]*'
+    ),
+    created_at TEXT NOT NULL DEFAULT CURRENT_TIMESTAMP,
+    PRIMARY KEY (curated_measurement_set_id, bundle_revision),
+    UNIQUE (reference_work_id),
+    UNIQUE (taxon_treatment_id),
+    UNIQUE (reference_measurement_set_id),
+    FOREIGN KEY (reference_work_id) REFERENCES reference_works(id)
+        ON DELETE CASCADE,
+    FOREIGN KEY (taxon_treatment_id) REFERENCES reference_taxon_treatments(id)
+        ON DELETE CASCADE,
+    FOREIGN KEY (reference_measurement_set_id) REFERENCES reference_measurement_sets(id)
+        ON DELETE CASCADE
+)
+"""
+
+_CURATED_REFERENCE_FORK_CLOUD_SYNC_STATE_DDL = """
+CREATE TABLE IF NOT EXISTS curated_reference_fork_cloud_sync_state (
+    curated_measurement_set_id TEXT NOT NULL,
+    bundle_revision INTEGER NOT NULL,
+    cloud_user_id TEXT,
+    cloud_row_version INTEGER CHECK (cloud_row_version IS NULL OR cloud_row_version >= 1),
+    sync_status TEXT NOT NULL DEFAULT 'dirty' CHECK (sync_status IN ('dirty','clean','retry','conflict')),
+    accepted_payload_json TEXT,
+    last_error TEXT,
+    updated_at TEXT NOT NULL DEFAULT CURRENT_TIMESTAMP,
+    PRIMARY KEY (curated_measurement_set_id, bundle_revision),
+    FOREIGN KEY (curated_measurement_set_id, bundle_revision)
+        REFERENCES curated_reference_forks(curated_measurement_set_id, bundle_revision)
+        ON DELETE CASCADE
+)
+"""
+
 _OBSERVATION_REFERENCE_USES_DDL = """
 CREATE TABLE IF NOT EXISTS observation_reference_uses (
     id TEXT PRIMARY KEY,
@@ -376,12 +423,12 @@ _REFERENCE_LIBRARY_INDEXES: tuple[str, ...] = (
     "CREATE INDEX IF NOT EXISTS idx_reference_works_title ON reference_works(title)",
     "CREATE INDEX IF NOT EXISTS idx_reference_works_year ON reference_works(year)",
     (
-        "CREATE UNIQUE INDEX IF NOT EXISTS idx_reference_works_doi_normalized "
+        "CREATE INDEX IF NOT EXISTS idx_reference_works_doi_normalized "
         "ON reference_works(doi) "
         "WHERE doi IS NOT NULL AND TRIM(doi) != ''"
     ),
     (
-        "CREATE UNIQUE INDEX IF NOT EXISTS idx_reference_works_isbn_normalized "
+        "CREATE INDEX IF NOT EXISTS idx_reference_works_isbn_normalized "
         "ON reference_works(isbn) "
         "WHERE isbn IS NOT NULL AND TRIM(isbn) != ''"
     ),
@@ -401,6 +448,10 @@ _REFERENCE_LIBRARY_INDEXES: tuple[str, ...] = (
         "CREATE INDEX IF NOT EXISTS idx_reference_measurement_sets_legacy "
         "ON reference_measurement_sets(legacy_reference_value_id) "
         "WHERE legacy_reference_value_id IS NOT NULL"
+    ),
+    (
+        "CREATE INDEX IF NOT EXISTS idx_curated_reference_forks_taxon "
+        "ON curated_reference_forks(sporely_taxon_id, curated_measurement_set_id, bundle_revision)"
     ),
 )
 
@@ -691,6 +742,14 @@ def init_reference_library_schema(conn: sqlite3.Connection) -> None:
     cursor.execute(_REFERENCE_TAXON_TREATMENTS_DDL)
     cursor.execute(_REFERENCE_MEASUREMENT_SETS_DDL)
     cursor.execute(_REFERENCE_MEASUREMENT_SET_PREFERENCES_DDL)
+    cursor.execute(_CURATED_REFERENCE_FORKS_DDL)
+    cursor.execute(_CURATED_REFERENCE_FORK_CLOUD_SYNC_STATE_DDL)
+    # Older Stage 1 databases used uniqueness here. Stage 6k must create a
+    # fresh private graph for every explicitly copied curated revision, even
+    # when immutable bibliographic identifiers repeat. Duplicate discovery
+    # remains available through repository lookups; identity is never merged.
+    cursor.execute("DROP INDEX IF EXISTS idx_reference_works_doi_normalized")
+    cursor.execute("DROP INDEX IF EXISTS idx_reference_works_isbn_normalized")
     for statement in _REFERENCE_LIBRARY_INDEXES:
         cursor.execute(statement)
     conn.commit()
@@ -705,12 +764,55 @@ def init_reference_library_schema(conn: sqlite3.Connection) -> None:
         cursor.execute(statement)
     cursor.execute(
         """
+        CREATE TRIGGER IF NOT EXISTS curated_reference_fork_cloud_sync_insert
+        AFTER INSERT ON curated_reference_forks
+        BEGIN
+            INSERT OR IGNORE INTO curated_reference_fork_cloud_sync_state(
+                curated_measurement_set_id, bundle_revision
+            ) VALUES (NEW.curated_measurement_set_id, NEW.bundle_revision);
+        END
+        """
+    )
+    cursor.execute(
+        """
+        CREATE TRIGGER IF NOT EXISTS curated_reference_fork_graph_guard
+        BEFORE INSERT ON curated_reference_forks
+        BEGIN
+            SELECT CASE WHEN NOT EXISTS (
+                SELECT 1 FROM reference_measurement_sets m
+                JOIN reference_taxon_treatments t ON t.id=m.taxon_treatment_id
+                WHERE m.id=NEW.reference_measurement_set_id
+                  AND t.id=NEW.taxon_treatment_id
+                  AND t.reference_work_id=NEW.reference_work_id
+            ) THEN RAISE(ABORT, 'curated fork graph mismatch') END;
+        END
+        """
+    )
+    cursor.execute(
+        """
+        CREATE TRIGGER IF NOT EXISTS curated_reference_fork_immutable
+        BEFORE UPDATE ON curated_reference_forks
+        BEGIN
+            SELECT RAISE(ABORT, 'curated fork provenance is immutable');
+        END
+        """
+    )
+    cursor.execute(
+        """
         INSERT OR IGNORE INTO reference_cloud_sync_state(entity_type, entity_id)
         SELECT 'work', id FROM reference_works
         UNION ALL
         SELECT 'treatment', id FROM reference_taxon_treatments
         UNION ALL
         SELECT 'measurement_set', id FROM reference_measurement_sets
+        """
+    )
+    cursor.execute(
+        """
+        INSERT OR IGNORE INTO curated_reference_fork_cloud_sync_state(
+            curated_measurement_set_id, bundle_revision
+        )
+        SELECT curated_measurement_set_id, bundle_revision FROM curated_reference_forks
         """
     )
     conn.commit()

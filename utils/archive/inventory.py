@@ -76,6 +76,7 @@ REFERENCE_DATABASE_TABLES: dict[str, InventoryPolicy] = {
     name: InventoryPolicy(BackupPolicy.EXACT, PortablePolicy.DEPENDENCY)
     for name in (
         "reference_measurement_sets",
+        "curated_reference_forks",
         "reference_measurement_set_preferences",
         "reference_taxon_treatments",
         "reference_values",
@@ -90,6 +91,9 @@ REFERENCE_DATABASE_TABLES.update({
         BackupPolicy.EXACT, PortablePolicy.EXCLUDE
     ),
     "reference_cloud_tombstones": InventoryPolicy(
+        BackupPolicy.EXACT, PortablePolicy.EXCLUDE
+    ),
+    "curated_reference_fork_cloud_sync_state": InventoryPolicy(
         BackupPolicy.EXACT, PortablePolicy.EXCLUDE
     ),
 })

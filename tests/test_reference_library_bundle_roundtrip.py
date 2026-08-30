@@ -3,6 +3,7 @@ observation reference uses."""
 from __future__ import annotations
 
 import json
+import hashlib
 import sqlite3
 from pathlib import Path
 from zipfile import ZipFile
@@ -20,6 +21,7 @@ from database.reference_library import (
     TaxonTreatmentRepository,
 )
 from utils import db_share
+from tests.test_curated_reference_forks import bundle_row
 
 
 def _isolate(paths, monkeypatch):
@@ -116,6 +118,17 @@ def test_bundle_roundtrip_preserves_library_and_uses(tmp_path, monkeypatch):
     source_paths, obs_id, work, treatment, ms, use = _seed_source(
         monkeypatch, tmp_path
     )
+    envelope = json.dumps(bundle_row(), ensure_ascii=False, sort_keys=True, separators=(",", ":"))
+    with sqlite3.connect(source_paths["ref"]) as connection:
+        connection.execute(
+            "INSERT INTO curated_reference_forks "
+            "(curated_measurement_set_id,bundle_revision,sporely_taxon_id,reference_work_id,"
+            "taxon_treatment_id,reference_measurement_set_id,source_envelope_json,source_sha256) "
+            "VALUES (?,?,?,?,?,?,?,?)",
+            (bundle_row()["curated_measurement_set_id"], 2, 2_100_000_081,
+             work.id, treatment.id, ms.id, envelope,
+             hashlib.sha256(envelope.encode("utf-8")).hexdigest()),
+        )
     bundle_path = tmp_path / "bundle.zip"
     db_share.export_database_bundle(
         str(bundle_path),
@@ -165,6 +178,7 @@ def test_bundle_roundtrip_preserves_library_and_uses(tmp_path, monkeypatch):
             "SELECT * FROM reference_measurement_sets WHERE id = ?", (ms.id,)
         ).fetchone()
         assert ms_row["length_min"] == 7.5
+        assert conn_ref.execute("SELECT COUNT(*) FROM curated_reference_forks").fetchone()[0] == 1
     finally:
         conn_ref.close()
 

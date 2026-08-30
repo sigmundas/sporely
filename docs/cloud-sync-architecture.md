@@ -57,7 +57,8 @@ Sibling modules that share sync responsibility (do **not** assume
 | `utils/cloud_media_audit.py` | Read-only audit of cloud media rows vs storage objects |
 | `utils/cloud_spore_mosaic.py`, `utils/cloud_spore_mosaic_backfill.py` | Spore-mosaic derivative sync and backfill |
 | `utils/spore_summary_sync.py` | Spore-summary derivative push/pull |
-| `utils/reference_cloud_sync.py` | Normalized-reference sibling executor and typed result. It stages all four owner feeds, reconciles library dependencies before observation uses, and executes deterministic CAS pushes in normal sync; pull-only stops after reconciliation. |
+| `utils/reference_cloud_sync.py` | Normalized-reference sibling executor and typed result. It stages all four owner feeds, reconciles library dependencies before observation uses, then delegates immutable curated-fork provenance reconciliation; normal sync executes deterministic CAS pushes and pull-only stops after reads/reconciliation. |
+| `utils/curated_reference_sync.py` | Stage 6k owner-private curated-fork provenance sync. It runs after personal graph reconciliation, validates exact public bundle identity/fingerprint, and never mutates fork content or observation attachments. |
 | `database/reference_sync_state.py` | Stage 4 normalized-reference transport repository. It stores account-bound baselines, row versions, retry/conflict state, durable deletion intent, and atomic acknowledgement/restore transitions in the owning database. |
 | `database/reference_sync_planner.py` | Pure Stage 4c normalized-reference graph planner and read-only durable snapshot loader. It orders live work parent-first and tombstones child-first and reports dependency/account/conflict blocks without network activity. |
 | `database/reference_use_sync_reconciliation.py` | Stage 4g complete-feed observation-use reconciliation. It preserves frozen snapshots, maps verified observation identities, and applies baseline-aware updates/tombstones without rebuilding evidence. |
@@ -107,6 +108,11 @@ before any local apply; the executor also uses a relevant reader to reconcile
 ambiguous create outcomes before retrying. In pull-only mode the facade
 receives the fail-closed wrapper, reads and reconciles all four complete feeds,
 and returns before any push planning or writer call.
+
+The Stage 6k provenance writer is separately named and pull-only blocked. Its
+owner feed and exact public revision reader are explicitly read-allowed. The
+mapping is not a fifth mutable graph entity: it is immutable origin metadata
+whose three personal UUID dependencies must already form one owner graph.
 
 ---
 

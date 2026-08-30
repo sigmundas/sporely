@@ -2119,6 +2119,7 @@ _PULL_ONLY_BLOCKED_CLIENT_METHODS = frozenset({
     'push_calibration_reference_image', 'push_calibration_metadata',
     'sync_reference_work', 'sync_reference_taxon_treatment',
     'sync_reference_measurement_set', 'sync_observation_reference_use',
+    'submit_private_reference_for_curation', 'sync_reference_curated_fork',
 })
 
 
@@ -2143,6 +2144,9 @@ _PULL_ONLY_ALLOWED_READ_METHODS = frozenset({
     'list_reference_taxon_treatments',
     'list_reference_measurement_sets',
     'list_observation_reference_uses',
+    'search_public_curated_reference_sets',
+    'get_public_curated_reference_set',
+    'list_reference_curated_forks',
     # Image / measurement metadata reads
     'pull_bulk_image_metadata',
     'pull_image_metadata',
@@ -2173,6 +2177,8 @@ _PULL_ONLY_ALLOWED_RPC_NAMES = frozenset({
     'community_spore_taxon_summary',
     'search_public_reference_values',
     'get_public_observation',
+    'search_public_curated_reference_sets',
+    'get_public_curated_reference_set',
 })
 
 
@@ -15265,7 +15271,13 @@ class SporelyCloudClient:
             raise CloudSyncError(f'GET {path}: {resp.text}')
         return resp.json()
 
-    def _get_paginated(self, path: str, *, page_size: int = _CLOUD_SYNC_MAX_ROWS_PER_PAGE) -> list:
+    def _get_paginated(
+        self,
+        path: str,
+        *,
+        page_size: int = _CLOUD_SYNC_MAX_ROWS_PER_PAGE,
+        max_rows: int | None = None,
+    ) -> list:
         """Fully page a PostgREST GET past the server ``db-max-rows`` cap.
 
         Callers MUST include a deterministic ``order=`` clause (with ``id.asc``
@@ -15274,7 +15286,7 @@ class SporelyCloudClient:
         ``_get`` propagates — partial results are never returned, so callers
         must not treat truncation as an authoritative empty result.
         """
-        if page_size <= 0:
+        if page_size <= 0 or (max_rows is not None and max_rows <= 0):
             raise CloudSyncError(f'GET {path}: invalid page_size {page_size}')
         all_rows: list = []
         offset = 0
@@ -15288,6 +15300,8 @@ class SporelyCloudClient:
                     f'got {type(rows).__name__}'
                 )
             all_rows.extend(rows)
+            if max_rows is not None and len(all_rows) > max_rows:
+                raise CloudSyncError(f'GET {path}: response exceeds {max_rows} rows')
             if len(rows) < page_size:
                 return all_rows
             offset += len(rows)
@@ -15410,6 +15424,69 @@ class SporelyCloudClient:
         return self._get_paginated(
             f'observation_reference_uses?user_id=eq.{self.user_id}&select={fields}'
             '&order=updated_at.asc,id.asc'
+        )
+
+    def search_public_curated_reference_sets(
+        self,
+        sporely_taxon_id: int,
+        limit: int = 20,
+        after_published_at: str | None = None,
+        after_id: str | None = None,
+    ) -> list[dict]:
+        rows = self._rpc('search_public_curated_reference_sets', {
+            'p_sporely_taxon_id': sporely_taxon_id,
+            'p_limit': limit,
+            'p_after_published_at': after_published_at,
+            'p_after_id': after_id,
+        })
+        return rows if isinstance(rows, list) else []
+
+    def get_public_curated_reference_set(
+        self, curated_measurement_set_id: str, bundle_revision: int,
+    ) -> list[dict]:
+        rows = self._rpc('get_public_curated_reference_set', {
+            'p_curated_measurement_set_id': curated_measurement_set_id,
+            'p_bundle_revision': bundle_revision,
+        })
+        return rows if isinstance(rows, list) else []
+
+    def submit_private_reference_for_curation(
+        self,
+        source_measurement_set_id: str,
+        expected_work_revision: int,
+        expected_treatment_revision: int,
+        expected_measurement_set_revision: int,
+        attestation_version: str,
+        rights_confirmed: bool,
+        curation_consent_confirmed: bool,
+    ) -> object:
+        return self._rpc('submit_private_reference_for_curation', {
+            'p_source_measurement_set_id': source_measurement_set_id,
+            'p_expected_work_revision': expected_work_revision,
+            'p_expected_treatment_revision': expected_treatment_revision,
+            'p_expected_measurement_set_revision': expected_measurement_set_revision,
+            'p_attestation_version': attestation_version,
+            'p_rights_confirmed': rights_confirmed,
+            'p_curation_consent_confirmed': curation_consent_confirmed,
+        })
+
+    def sync_reference_curated_fork(self, payload: dict, expected_row_version: int):
+        return self._rpc('sync_reference_curated_fork', {
+            'p_payload': payload,
+            'p_expected_row_version': expected_row_version,
+        })
+
+    def list_reference_curated_forks(self) -> list[dict]:
+        fields = (
+            'id,user_id,curated_measurement_set_id,bundle_revision,sporely_taxon_id,'
+            'reference_work_id,taxon_treatment_id,reference_measurement_set_id,'
+            'source_sha256,source_envelope_json,row_version,created_at,updated_at'
+        )
+        return self._get_paginated(
+            f'reference_curated_forks?user_id=eq.{self.user_id}&select={fields}'
+            '&order=updated_at.asc,curated_measurement_set_id.asc,bundle_revision.asc,id.asc',
+            page_size=10,
+            max_rows=100,
         )
 
     def _patch(self, path: str, payload: dict) -> None:

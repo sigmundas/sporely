@@ -122,6 +122,19 @@ reads and local reconciliation; it must issue no reference or legacy writer
 call, complete with `cloud_writes_completed == 0`, and leave
 `blocked_write_attempts` empty.
 
+Stage 6k adds immutable owner-private curated-fork provenance after the three
+personal graph parents. The mapping key is the exact
+`(curated_measurement_set_id, bundle_revision)` and records the explicit
+positive taxonomy-v3 assignment plus the fresh personal work, treatment, and
+measurement-set UUIDs and a SHA-256 fingerprint of the validated frozen public
+envelope. Push waits for the personal graph; pull applies only after that graph
+has reconciled and reconstructs the local frozen envelope through the exact
+public revision read. Same-revision replay is a no-op, disagreement is a
+conflict, a newer revision is a separate mapping, and neither path rewrites an
+edited fork or an observation snapshot. Download from Cloud may read this
+owner feed and the exact public bundle, but its provenance writer remains
+blocked.
+
 The coordinator reports normalized-reference outcomes under `reference_sync`
 with separate `pushed`, `pulled`, `errors`, `retryable_errors`,
 `terminal_errors`, `conflicts`, and `blocked` fields. Existing top-level

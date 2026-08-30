@@ -671,9 +671,13 @@ def pull_reference_library(client: object) -> ReferenceSyncResult:
     ) as exc:
         message = f"reference pull: {exc}"
         return ReferenceSyncResult(errors=(message,), terminal_errors=(message,))
+    from utils.curated_reference_sync import pull_curated_reference_forks
+    forks = pull_curated_reference_forks(client)
     return ReferenceSyncResult(
-        pulled=applied.applied,
-        conflicts=applied.conflicts,
+        pulled=applied.applied + forks.pulled,
+        errors=forks.errors,
+        terminal_errors=forks.errors,
+        conflicts=applied.conflicts + forks.conflicts,
         blocked=applied.blocked,
     )
 
@@ -840,12 +844,14 @@ def _push_reference_library(client: object) -> ReferenceSyncResult:
             )
         ) is not None
     )
+    from utils.curated_reference_sync import push_curated_reference_forks
+    forks = push_curated_reference_forks(client)
     return ReferenceSyncResult(
-        pushed=pushed,
-        errors=tuple(errors),
+        pushed=pushed + forks.pushed,
+        errors=tuple(errors) + forks.errors,
         retryable_errors=tuple(retryable_errors),
-        terminal_errors=tuple(terminal_errors),
-        conflicts=tuple(dict.fromkeys(conflicts)),
+        terminal_errors=tuple(terminal_errors) + forks.errors,
+        conflicts=tuple(dict.fromkeys((*conflicts, *forks.conflicts))),
         blocked=tuple(dict.fromkeys(blocked)),
     )
 

@@ -980,6 +980,13 @@ def test_get_paginated_propagates_page_error_without_partial_result():
     # truncated list to be persisted as an authoritative snapshot.
 
 
+def test_get_paginated_enforces_explicit_total_row_bound():
+    client = _PaginatingClient({"widgets": [{"id": f"r{i}"} for i in range(21)]})
+    with pytest.raises(cloud_sync.CloudSyncError, match="exceeds 20 rows"):
+        client._get_paginated("widgets?order=id.asc", page_size=10, max_rows=20)
+    assert len(client._calls) == 3
+
+
 def test_pull_bulk_image_metadata_pages_past_1000_row_cap():
     # 100 observations, 15 images each → 1500 rows for a single batch.
     obs_ids = [str(1000 + i) for i in range(100)]

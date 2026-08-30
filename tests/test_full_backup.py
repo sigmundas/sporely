@@ -7,6 +7,8 @@ from zipfile import ZipFile
 import pytest
 
 from database import schema
+from database.curated_reference_forks import copy_curated_bundle_to_personal_library, normalize_curated_bundle
+from tests.test_curated_reference_forks import bundle_row
 from utils.archive.full_backup import FullBackupError, _snapshot_database, create_full_backup
 from utils.archive.full_restore import restore_full_backup
 from utils.archive.inventory import MAIN_DATABASE_TABLES, REFERENCE_DATABASE_TABLES
@@ -46,6 +48,28 @@ def test_sqlite_snapshot_includes_committed_wal_and_excludes_uncommitted(tmp_pat
         assert connection.execute("PRAGMA integrity_check").fetchone()[0] == "ok"
     writer.rollback()
     writer.close()
+
+
+def test_full_backup_restore_preserves_curated_fork_provenance(installation, tmp_path):
+    fork = copy_curated_bundle_to_personal_library(normalize_curated_bundle(bundle_row()))
+    archive = tmp_path / "curated-fork.sporely"
+    create_full_backup(archive, app_version="test", qsettings_values={})
+    with sqlite3.connect(schema.get_reference_database_path()) as connection:
+        connection.execute("DELETE FROM curated_reference_fork_cloud_sync_state")
+        connection.execute("DELETE FROM curated_reference_forks")
+    restore_full_backup(
+        archive, app_version="test", safety_backup_path=tmp_path / "safety.sporely",
+        close_live=lambda: None, reopen_live=lambda: None,
+    )
+    with sqlite3.connect(schema.get_reference_database_path()) as connection:
+        row = connection.execute(
+            "SELECT curated_measurement_set_id,bundle_revision,reference_measurement_set_id "
+            "FROM curated_reference_forks"
+        ).fetchone()
+    assert row == (
+        fork.curated_measurement_set_id, fork.bundle_revision,
+        fork.reference_measurement_set_id,
+    )
 
 
 def test_full_backup_sanitizes_staged_state_and_collects_authoritative_assets(

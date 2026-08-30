@@ -88,21 +88,21 @@ def test_reference_work_stable_uuid(libs):
     assert fetched.id == work.id
 
 
-def test_reference_work_normalizes_and_dedupes_doi(libs):
-    ReferenceWorkRepository.create(_make_work(doi="10.9999/xyz"))
+def test_reference_work_normalizes_and_detects_duplicate_doi_without_merging(libs):
+    first = ReferenceWorkRepository.create(_make_work(doi="10.9999/xyz"))
     duplicate = _make_work(doi="https://doi.org/10.9999/XYZ", title="Other")
-    with pytest.raises(ReferenceIntegrityError):
-        ReferenceWorkRepository.create(duplicate)
+    second = ReferenceWorkRepository.create(duplicate)
+    assert second.id != first.id
     found = ReferenceWorkRepository.find_by_doi("HTTPS://DOI.ORG/10.9999/xyz")
     assert found is not None
 
 
-def test_reference_work_normalizes_and_dedupes_isbn(libs):
-    ReferenceWorkRepository.create(_make_work(isbn="978-0-306-40615-7"))
-    with pytest.raises(ReferenceIntegrityError):
-        ReferenceWorkRepository.create(
-            _make_work(isbn="9780306406157", title="Reprint")
-        )
+def test_reference_work_normalizes_and_detects_duplicate_isbn_without_merging(libs):
+    first = ReferenceWorkRepository.create(_make_work(isbn="978-0-306-40615-7"))
+    second = ReferenceWorkRepository.create(
+        _make_work(isbn="9780306406157", title="Reprint")
+    )
+    assert second.id != first.id
     found = ReferenceWorkRepository.find_by_isbn("978 0 306 40615 7")
     assert found is not None
 

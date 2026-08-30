@@ -226,6 +226,11 @@ def _prune_reference_database(main_database: Path, reference_database: Path) -> 
             "SELECT DISTINCT legacy_reference_value_id FROM reference_measurement_sets "
             "WHERE legacy_reference_value_id IS NOT NULL)"
         )
+        connection.execute(
+            "DELETE FROM curated_reference_forks WHERE reference_measurement_set_id "
+            "NOT IN (SELECT id FROM reference_measurement_sets)"
+        )
+        connection.execute("DELETE FROM curated_reference_fork_cloud_sync_state")
         connection.execute("DELETE FROM reference_cloud_sync_state")
         connection.execute("DELETE FROM reference_cloud_tombstones")
         connection.execute("DELETE FROM reference_cloud_pull_cursors")
@@ -378,7 +383,7 @@ def _contents(main_database: Path, reference_database: Path) -> dict[str, int]:
     )
     reference_tables = (
         "reference_values", "reference_works", "reference_taxon_treatments",
-        "reference_measurement_sets",
+        "reference_measurement_sets", "curated_reference_forks",
     )
     counts: dict[str, int] = {}
     with sqlite3.connect(main_database) as connection:

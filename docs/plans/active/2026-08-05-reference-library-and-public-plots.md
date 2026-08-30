@@ -21,7 +21,30 @@
   was deployed.
 - Current/next slice: Stage 6k desktop submission and curated fork in
   `sporely-py`, with owner-private provenance support in `sporely-web`, only
-  when separately started from this canonical plan.
+  when separately started from this canonical plan. Implementation pass 1 is
+  active from canonical head `01beba3`: contract tests and ownership mapping
+  precede the two bounded implementation areas, and Stage 6l remains excluded.
+  Pass 2 has landed the desktop fail-closed Stage 6g envelope boundary and the
+  atomic fresh-UUID local fork/mapping transaction. Exact replays are no-ops,
+  newer bundle revisions create distinct graphs, and edited forks are never
+  overwritten; cloud provenance, sync/backup wiring, and explicit UI actions
+  remain in progress. Pass 3 added immutable owner-private provenance sync,
+  A→cloud→B reconciliation after the canonical private graph, portable/full
+  import preservation, and explicit exact-taxon copy and consent-gated submit
+  surfaces with worker-thread network calls. The web migration/RPC is complete
+  in its isolated Stage 6 worktree; integration verification and fresh review
+  remain. Pass 4 closed the fresh review findings: frozen envelopes now have a
+  fully typed nested allowlist, provenance feeds validate in full before any
+  local write and use a 10-row page/100-row total bound, and both portable and
+  full-database import paths revalidate immutable envelope bytes and digests.
+  Focused round-trip, tamper, attachment, and whole-feed regressions are added;
+  final landing verification is in progress and Stage 6l remains excluded.
+  Pass 5 mirrored the landed Stage 6h nested citation/CSL contract exactly,
+  including citation-key/DOI/timestamp syntax, agent shapes, citation-to-CSL
+  type and DOI coherence, issued-date shape, scalar types, and safe URLs. Pass
+  6 restored normal owner deletion semantics: deleting an unattached private
+  fork graph removes only its owner-private provenance by FK cascade, while
+  the curated-public publication relationship remains restrictive.
 - Relevant Stage 4 commits: `199f127`, `69ec641`, `8893007`, `edd9f70`,
   `e8b340b`, `ea1e1b9`, `eaca8e7`, `0277516`, `9c5346b`.
 - Relevant Stage 5 commit (`sporely-landing`): `5af3cb8`.

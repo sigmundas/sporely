@@ -27,6 +27,7 @@ from database.reference_sync_state import (
     record_library_mutation_intent,
     record_use_mutation_intent,
 )
+from database.curated_reference_forks import validate_frozen_curated_provenance
 from utils.heic_converter import build_local_image_provenance
 
 
@@ -35,6 +36,8 @@ _REFERENCE_LIBRARY_TABLES: tuple[str, ...] = (
     "reference_taxon_treatments",
     "reference_measurement_sets",
 )
+
+_REFERENCE_FORK_TABLE = "curated_reference_forks"
 
 
 def _find_unresolved_ref_use_set_ids(
@@ -1100,6 +1103,37 @@ def import_database_bundle(
                             imported_library_rows[library_table] += 1
                         elif outcome == "updated":
                             updated_library_rows[library_table] += 1
+                if ref_cur.execute(
+                    "SELECT 1 FROM sqlite_master WHERE type='table' AND name=?",
+                    (_REFERENCE_FORK_TABLE,),
+                ).fetchone():
+                    for source in ref_cur.execute(
+                        "SELECT * FROM curated_reference_forks ORDER BY curated_measurement_set_id,bundle_revision"
+                    ).fetchall():
+                        source = dict(source)
+                        validate_frozen_curated_provenance(
+                            source["source_envelope_json"], source["source_sha256"],
+                            curated_measurement_set_id=source["curated_measurement_set_id"],
+                            bundle_revision=source["bundle_revision"],
+                            sporely_taxon_id=source["sporely_taxon_id"],
+                        )
+                        existing = ref_dest_cur.execute(
+                            "SELECT * FROM curated_reference_forks WHERE curated_measurement_set_id=? AND bundle_revision=?",
+                            (source["curated_measurement_set_id"], source["bundle_revision"]),
+                        ).fetchone()
+                        if existing is not None:
+                            immutable = (
+                                "sporely_taxon_id", "reference_work_id", "taxon_treatment_id",
+                                "reference_measurement_set_id", "source_envelope_json", "source_sha256",
+                            )
+                            if any(existing[key] != source[key] for key in immutable):
+                                raise ValueError("curated reference fork provenance conflicts during import")
+                            continue
+                        columns = [key for key in source]
+                        ref_dest_cur.execute(
+                            f"INSERT INTO curated_reference_forks ({', '.join(columns)}) VALUES ({', '.join('?' for _ in columns)})",
+                            [source[key] for key in columns],
+                        )
                 ref_dest.commit()
                 ref_dest.close()
                 ref_src.close()
