@@ -1,6 +1,8 @@
 #!/usr/bin/env bash
 set -euo pipefail
 
+build_version="${SPORELY_BUILD_VERSION:-$(python tools/release_version.py app-version --app-file main.py)}"
+
 python -m pip install -r requirements.txt
 
 pyinstaller \
@@ -30,3 +32,8 @@ pyinstaller \
   --exclude-module gi \
   --exclude-module kivy \
   main.py
+
+python tools/release_version.py set-macos-bundle \
+  --plist dist/Sporely.app/Contents/Info.plist \
+  --version "$build_version"
+codesign --force --deep --sign - dist/Sporely.app

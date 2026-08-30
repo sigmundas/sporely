@@ -9,7 +9,25 @@ permissions:
   contents: write
 
 jobs:
+  validate-version:
+    runs-on: ubuntu-latest
+    outputs:
+      version: ${{ steps.version.outputs.version }}
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Validate release tag and application version
+        id: version
+        shell: bash
+        run: |
+          version=$(python tools/release_version.py check-release \
+            --tag "${{ github.ref_name }}" \
+            --app-file main.py)
+          echo "version=$version" >> "$GITHUB_OUTPUT"
+
   build-windows:
+    needs: validate-version
     runs-on: windows-latest
 
     steps:
@@ -36,7 +54,7 @@ jobs:
         id: installer
         shell: pwsh
         run: |
-          $version = "${{ github.ref_name }}" -replace '^v', ''
+          $version = "${{ needs.validate-version.outputs.version }}"
           $iscc = "C:\Program Files (x86)\Inno Setup 6\ISCC.exe"
           & $iscc /DMyAppVersion=$version installer.iss
           if ($LASTEXITCODE -ne 0) { exit $LASTEXITCODE }
@@ -49,6 +67,7 @@ jobs:
           generate_release_notes: true
 
   build-linux:
+    needs: validate-version
     runs-on: ubuntu-latest
 
     steps:
@@ -74,8 +93,7 @@ jobs:
       - name: Build .deb
         id: deb
         run: |
-          tag="${{ github.ref_name }}"
-          version="${tag#v}"
+          version="${{ needs.validate-version.outputs.version }}"
           pkg="sporely_${version}_amd64"
 
           mkdir -p "$pkg/DEBIAN"
@@ -119,6 +137,7 @@ jobs:
           generate_release_notes: true
 
   build-macos:
+    needs: validate-version
     # Use a matrix to build for both Intel (x86_64) and Apple Silicon (arm64)
     strategy:
       matrix:
@@ -168,10 +187,18 @@ jobs:
           rm -rf "$ICONSET"
 
       - name: Build with PyInstaller
+        env:
+          SPORELY_BUILD_VERSION: ${{ needs.validate-version.outputs.version }}
         run: |
           chmod +x ./build_mac.sh
           # PyInstaller automatically detects the runner's architecture
           ./build_mac.sh
+
+      - name: Verify macOS bundle version
+        run: |
+          python tools/release_version.py check-macos-bundle \
+            --plist dist/Sporely.app/Contents/Info.plist \
+            --expected "${{ needs.validate-version.outputs.version }}"
 
       - name: Package .dmg
         id: dmg
