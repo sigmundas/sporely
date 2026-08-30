@@ -3537,6 +3537,32 @@ harness/baseline failures. No deployment was performed.
   and the final cross-system smoke test was not run, because rollout stopped at
   the material desktop release gate as required.
 
+#### Desktop rollout resumption (2026-08-30)
+
+- The preceding partial-deployment record was committed and pushed separately
+  as documentation-only commit `fe686333d2c30b3fb1f94d5f70801a53ad221f8d`.
+- Remote tag inspection confirmed `v0.9.19` was unused. The sole tracked
+  application version declaration was changed from `0.9.18` to `0.9.19`, then
+  committed and pushed as `258b8b47071ca831730b5b1206de8f61ae994629`.
+  Annotated tag `v0.9.19` points to that commit; historical tag `v0.9.18`
+  remains unchanged at `58934c2c8ba799fdc2dfc8d42e84e4226a7f1cd9`.
+- Syntax and release-version checks passed, as did 116 focused desktop tests
+  covering 429 retry/pending-work preservation, shared-reference catalogue and
+  fork behavior, cross-repository contracts, push/pull reconciliation, and the
+  desktop reference-library slice.
+- GitHub release `v0.9.19` was published. Windows, Linux, and Apple Silicon
+  artifacts built and uploaded successfully; the Intel macOS job was still
+  queued when the rollout stop was recorded. The Apple Silicon artifact was
+  mounted and launched with an isolated application-data directory and remained
+  running normally through the startup check.
+- Step 2 nevertheless stopped on a material release-metadata verification
+  failure: the installed macOS bundle's `CFBundleShortVersionString` is `0.0.0`
+  rather than `0.9.19`. Correcting the packaging metadata would require a newly
+  reviewed release-only change and a new immutable patch tag; the published
+  `v0.9.19` tag was not moved or rewritten.
+- Landing commit `77a376460ad7147cf724f0625ae05ad80ab3337b` remains undeployed.
+  Step 3 and the final cross-system production smoke test were not run.
+
 ---
 
 ## 20. Definition of done
