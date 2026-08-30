@@ -15277,6 +15277,7 @@ class SporelyCloudClient:
         *,
         page_size: int = _CLOUD_SYNC_MAX_ROWS_PER_PAGE,
         max_rows: int | None = None,
+        max_response_bytes: int | None = None,
     ) -> list:
         """Fully page a PostgREST GET past the server ``db-max-rows`` cap.
 
@@ -15286,9 +15287,11 @@ class SporelyCloudClient:
         ``_get`` propagates — partial results are never returned, so callers
         must not treat truncation as an authoritative empty result.
         """
-        if page_size <= 0 or (max_rows is not None and max_rows <= 0):
+        if (page_size <= 0 or (max_rows is not None and max_rows <= 0)
+                or (max_response_bytes is not None and max_response_bytes <= 0)):
             raise CloudSyncError(f'GET {path}: invalid page_size {page_size}')
         all_rows: list = []
+        response_bytes = 0
         offset = 0
         sep = '&' if '?' in path else '?'
         while True:
@@ -15298,6 +15301,13 @@ class SporelyCloudClient:
                 raise CloudSyncError(
                     f'GET {path}: expected list response for paginated fetch, '
                     f'got {type(rows).__name__}'
+                )
+            response_bytes += len(json.dumps(
+                rows, ensure_ascii=False, separators=(',', ':'),
+            ).encode('utf-8'))
+            if max_response_bytes is not None and response_bytes > max_response_bytes:
+                raise CloudSyncError(
+                    f'GET {path}: response exceeds {max_response_bytes} bytes'
                 )
             all_rows.extend(rows)
             if max_rows is not None and len(all_rows) > max_rows:
@@ -15486,7 +15496,8 @@ class SporelyCloudClient:
             f'reference_curated_forks?user_id=eq.{self.user_id}&select={fields}'
             '&order=updated_at.asc,curated_measurement_set_id.asc,bundle_revision.asc,id.asc',
             page_size=10,
-            max_rows=100,
+            max_rows=10_000,
+            max_response_bytes=64 * 1024 * 1024,
         )
 
     def _patch(self, path: str, payload: dict) -> None:

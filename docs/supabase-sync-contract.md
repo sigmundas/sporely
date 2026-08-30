@@ -135,6 +135,12 @@ edited fork or an observation snapshot. Download from Cloud may read this
 owner feed and the exact public bundle, but its provenance writer remains
 blocked.
 
+The owner feed is a complete, deterministically paginated collection. Desktop
+reconciliation accepts up to 10,000 mappings and 64 MiB of encoded response
+data per account; exceeding either bound fails the complete read without
+returning a partial collection. There is no smaller undocumented 100-row
+transport cap from which absence could be inferred.
+
 The coordinator reports normalized-reference outcomes under `reference_sync`
 with separate `pushed`, `pulled`, `errors`, `retryable_errors`,
 `terminal_errors`, `conflicts`, and `blocked` fields. Existing top-level

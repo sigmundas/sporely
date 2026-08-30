@@ -22,6 +22,24 @@
 - Current/next slice: Stage 6l activation and cross-repository gate, only when
   separately started from this canonical plan. Stage 6k is complete at
   `sporely-py` commit `b2e4513` and `sporely-web` commit `7787fc1`.
+  Implementation pass 1 is active from canonical head `7e0de16`: the exact
+  Stage 3–6k wire, identity, lifecycle, evidence, access, pagination, and
+  compatibility contracts are being checked across the four landed repository
+  slices before any activation change. Production contributor intake remains
+  fail-closed because its attestation, rate, and retention policy inputs are
+  deliberately unresolved; disposable local policy may be used only for the
+  Stage 6l integration exercise. Pass 2 adds an executable cross-repository
+  regression that pins the landed web/landing/admin ancestors and checks the
+  real desktop, SQL, and landing contracts for RPC parameters, public envelope
+  fields, exact taxonomy, pagination bounds, lifecycle tombstones, grants,
+  dormant production policy, and the excluded `/references` route.
+  Pass 3 closes two review-discovered cross-client bounds: curated-fork owner
+  reads now paginate beyond 100 rows but fail atomically above 10,000 rows or
+  64 MiB, and an additive, transactional web migration validates both stored
+  candidates and curated works against the desktop/landing 100-agent citation
+  bound before replacing the intake and public-envelope validators. Agent text
+  is aligned to landing's 1,024 UTF-16-code-unit boundary, including astral
+  Unicode, so every server-valid envelope is accepted by both clients.
 - Relevant Stage 4 commits: `199f127`, `69ec641`, `8893007`, `edd9f70`,
   `e8b340b`, `ea1e1b9`, `eaca8e7`, `0277516`, `9c5346b`.
 - Relevant Stage 5 commit (`sporely-landing`): `5af3cb8`.

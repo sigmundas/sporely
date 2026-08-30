@@ -132,6 +132,8 @@ def test_catalogue_read_requires_exact_positive_taxon_and_rejects_expansion():
         lambda row: row["snapshot"].__setitem__("page_from", "not-an-integer"),
         lambda row: row["citation"].__setitem__("year", {"unexpected": True}),
         lambda row: row["citation"]["authors"][0].__setitem__("private", "value"),
+        lambda row: row["citation"]["authors"][0].__setitem__("family", "x" * 1025),
+        lambda row: row["citation"]["authors"][0].__setitem__("family", "🍄" * 513),
         lambda row: row["citation"].__setitem__("url", "file:///private/source"),
         lambda row: row["exports"]["csl_json"].__setitem__("private", "value"),
         lambda row: row["exports"]["csl_json"].__setitem__("author", {"private": "value"}),

@@ -183,14 +183,16 @@ def _validate_agents(value: object) -> bool:
         return False
     for agent in value:
         if isinstance(agent, str):
-            if not agent.strip() or len(agent) > 2048:
+            if not agent.strip() or len(agent.encode("utf-16-le")) // 2 > 1024:
                 return False
             continue
         if not isinstance(agent, dict) or not agent or not set(agent) <= _AGENT_KEYS:
             return False
         if not any(isinstance(v, str) and v.strip() for v in agent.values()):
             return False
-        if any(v is not None and (not isinstance(v, str) or len(v) > 2048) for v in agent.values()):
+        if any(v is not None and (
+            not isinstance(v, str) or len(v.encode("utf-16-le")) // 2 > 1024
+        ) for v in agent.values()):
             return False
     return True
 

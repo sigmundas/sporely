@@ -431,6 +431,35 @@ def test_reference_owner_reader_returns_all_pages_or_no_partial_result(monkeypat
         client.list_reference_works()
 
 
+def test_curated_fork_reader_accepts_more_than_one_hundred_owner_rows(monkeypatch):
+    client = SporelyCloudClient.__new__(SporelyCloudClient)
+    client.user_id = "user-1"
+    calls = []
+    monkeypatch.setattr(
+        client,
+        "_get_paginated",
+        lambda path, **options: calls.append((path, options)) or [],
+    )
+
+    assert client.list_reference_curated_forks() == []
+    assert calls[0][1] == {
+        "page_size": 10,
+        "max_rows": 10_000,
+        "max_response_bytes": 64 * 1024 * 1024,
+    }
+
+
+def test_paginated_reader_fails_before_accumulating_over_byte_bound(monkeypatch):
+    client = SporelyCloudClient.__new__(SporelyCloudClient)
+    pages = iter([[{"value": "x" * 40}], [{"value": "y" * 40}]])
+    monkeypatch.setattr(client, "_get", lambda _path: next(pages))
+
+    with pytest.raises(CloudSyncError, match="response exceeds 80 bytes"):
+        client._get_paginated(
+            "items?order=id.asc", page_size=1, max_response_bytes=80,
+        )
+
+
 def test_pull_only_classifies_all_reference_methods_before_delegation():
     wrapped = FakeClient(read_rows=[])
     client = PullOnlyCloudClient(wrapped)
