@@ -3563,6 +3563,31 @@ harness/baseline failures. No deployment was performed.
 - Landing commit `77a376460ad7147cf724f0625ae05ad80ab3337b` remains undeployed.
   Step 3 and the final cross-system production smoke test were not run.
 
+#### macOS metadata recovery attempt (2026-08-30)
+
+- Release `v0.9.19` is superseded because its macOS bundle metadata reported
+  `0.0.0`; the tag remains immutable at
+  `258b8b47071ca831730b5b1206de8f61ae994629`.
+- Packaging-fix commit `ecd6552af86c3a0def405e377c3fbc1e8df47f2f`
+  was pushed and tagged immutably as `v0.9.20`. It adds a fail-closed
+  tag-to-`APP_VERSION` gate shared by all release jobs, writes both macOS bundle
+  version keys from that validated version, re-signs the app, and verifies the
+  produced plist before DMG packaging. Seven focused release-version tests and
+  116 focused desktop reference/sync tests passed.
+- The release workflow's version gate, Windows build, Linux build, and Apple
+  Silicon build passed. Published Windows and Linux package names carry
+  `0.9.20`. The downloaded Apple Silicon DMG has
+  `CFBundleShortVersionString=0.9.20` and `CFBundleVersion=0.9.20`, and its code
+  signature verifies. The Intel macOS job was still queued on the `macos-13`
+  runner when this stop was recorded.
+- Step 2 remains incomplete because the downloaded Apple Silicon application
+  fails its startup smoke test after database initialization: the bundle is
+  missing `Contents/Frameworks/assets/icons/icon_new.svg`. No opportunistic
+  packaging/content fix was made. Production cloud-sync and cross-user behavior
+  checks were not run after this material artifact failure.
+- Landing commit `77a376460ad7147cf724f0625ae05ad80ab3337b` remains undeployed.
+  Step 3 and the final cross-system production smoke test were not run.
+
 ---
 
 ## 20. Definition of done
