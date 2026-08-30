@@ -4,6 +4,7 @@ set -euo pipefail
 build_version="${SPORELY_BUILD_VERSION:-$(python tools/release_version.py app-version --app-file main.py)}"
 
 python -m pip install -r requirements.txt
+runtime_assets="$(python tools/runtime_assets.py pyinstaller-add-data --separator ':')"
 
 pyinstaller \
   --noconfirm \
@@ -12,6 +13,7 @@ pyinstaller \
   --windowed \
   --name Sporely \
   --icon "assets/icons/sporely.icns" \
+  --add-data "$runtime_assets" \
   --add-data "i18n:i18n" \
   --add-data "database/reference_data:database/reference_data" \
   --hidden-import pillow_heif \
@@ -33,6 +35,8 @@ pyinstaller \
   --exclude-module kivy \
   main.py
 
+python tools/runtime_assets.py verify-artifact \
+  --artifact-root dist/Sporely.app/Contents/Frameworks
 python tools/release_version.py set-macos-bundle \
   --plist dist/Sporely.app/Contents/Info.plist \
   --version "$build_version"

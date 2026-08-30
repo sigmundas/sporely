@@ -2,6 +2,7 @@
 set -euo pipefail
 
 python -m pip install -r requirements.txt
+runtime_assets="$(python tools/runtime_assets.py pyinstaller-add-data --separator ':')"
 
 pyinstaller \
   --noconfirm \
@@ -9,6 +10,7 @@ pyinstaller \
   --onedir \
   --windowed \
   --name Sporely \
+  --add-data "$runtime_assets" \
   --add-data "i18n:i18n" \
   --add-data "database/reference_data:database/reference_data" \
   --hidden-import pillow_heif \
@@ -29,3 +31,5 @@ pyinstaller \
   --exclude-module gi \
   --exclude-module kivy \
   main.py
+
+python tools/runtime_assets.py verify-artifact --artifact-root dist/Sporely

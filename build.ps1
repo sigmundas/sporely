@@ -2,6 +2,8 @@ $ErrorActionPreference = "Stop"
 
 python -m pip install --upgrade pip --disable-pip-version-check
 python -m pip install -r requirements.txt --disable-pip-version-check
+$runtimeAssets = python tools/runtime_assets.py pyinstaller-add-data --separator ";"
+if ($LASTEXITCODE -ne 0) { exit $LASTEXITCODE }
 
 pyinstaller `
     --noconfirm `
@@ -10,6 +12,7 @@ pyinstaller `
     --windowed `
     --name Sporely `
     --icon "assets\icons\sporely.ico" `
+    --add-data $runtimeAssets `
     --add-data "i18n;i18n" `
     --add-data "database\reference_data;database\reference_data" `
     --hidden-import pillow_heif `
@@ -30,3 +33,7 @@ pyinstaller `
     --exclude-module gi `
     --exclude-module kivy `
     main.py
+
+if ($LASTEXITCODE -ne 0) { exit $LASTEXITCODE }
+python tools/runtime_assets.py verify-artifact --artifact-root dist\Sporely
+if ($LASTEXITCODE -ne 0) { exit $LASTEXITCODE }
