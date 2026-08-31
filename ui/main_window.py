@@ -6727,6 +6727,20 @@ class ReferenceAddDialog(GeometryMixin, QDialog):
             note_candidate = legacy_meta.get("notes")
             if isinstance(note_candidate, str) and note_candidate.strip():
                 notes = note_candidate.strip()
+        # MeasurementSet has no Q "core" columns, so a parsed
+        # ``Q = a–b`` (written into the Typical cells) and a parsed
+        # ``Qm`` (routed to the Parmasto Q-mean field) must fall back
+        # into q_min / q_max / q_mean or the data is silently lost.
+        # Explicit Extreme / Mean cells still win when filled.
+        q_min = self._table_value(2, 0)
+        if q_min is None:
+            q_min = self._table_value(2, 1)
+        q_max = self._table_value(2, 4)
+        if q_max is None:
+            q_max = self._table_value(2, 3)
+        q_mean = self._table_value(2, 2)
+        if q_mean is None:
+            q_mean = self._parmasto_value("parmasto_q_mean")
         ms = MeasurementSet(
             id="",
             taxon_treatment_id="",  # filled in by MainWindow when creating
@@ -6741,9 +6755,9 @@ class ReferenceAddDialog(GeometryMixin, QDialog):
             width_core_min=self._table_value(1, 1),
             width_core_max=self._table_value(1, 3),
             width_max=self._table_value(1, 4),
-            q_min=self._table_value(2, 0),
-            q_max=self._table_value(2, 4),
-            q_mean=self._table_value(2, 2),
+            q_min=q_min,
+            q_max=q_max,
+            q_mean=q_mean,
             length_mean=self._table_value(0, 2),
             width_mean=self._table_value(1, 2),
             sample_size=sample_size,
