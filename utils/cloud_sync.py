@@ -2111,6 +2111,7 @@ _PULL_ONLY_BLOCKED_CLIENT_METHODS = frozenset({
     'push_observation', 'push_image_metadata', 'push_measurement',
     'upload_image_file', 'upload_original_image_file',
     'set_image_storage_path', 'set_image_desktop_id', 'set_desktop_id',
+    'set_observation_selected_taxon',
     'set_measurement_desktop_id', 'set_image_original_storage_path',
     'reserve_image_storage_path_for_promotion',
     'release_image_storage_path_reservation',
@@ -8638,6 +8639,7 @@ _SNAPSHOT_MEAS_FIELDS = [
 _OBSERVATION_SELECT_COLUMNS = _join_select_columns(
     'id',
     'desktop_id',
+    'selected_sporely_taxon_id',
     'captured_at',
     'created_at',
     'updated_at',
@@ -15930,17 +15932,63 @@ class SporelyCloudClient:
                 diff_fields = _observation_push_diff_fields(dict(obs or {}), remote_obs)
                 if not diff_fields:
                     _increment_sync_summary(summary, 'observations_skipped_noop')
+                    self._sync_observation_selected_taxon(
+                        existing_id,
+                        obs,
+                        remote_obs=remote_obs,
+                    )
                     return existing_id
             # Coord-change / preserve-only geography rules — see §4 in the spec.
             _shape_geography_patch_payload(payload, obs, existing_id)
             self._patch(f'observations?id=eq.{existing_id}', payload)
             _increment_sync_summary(summary, 'observations_patched')
+            self._sync_observation_selected_taxon(
+                existing_id,
+                obs,
+                remote_obs=remote_obs,
+            )
             return existing_id
         # New observation: never invent a region_id.
         payload.pop('region_id', None)
         rows = self._post('observations', payload)
         _increment_sync_summary(summary, 'observations_patched')
-        return rows[0]['id']
+        cloud_id = rows[0]['id']
+        self._sync_observation_selected_taxon(cloud_id, obs, remote_obs=None)
+        return cloud_id
+
+    def _sync_observation_selected_taxon(
+        self,
+        cloud_id: str,
+        obs: dict,
+        *,
+        remote_obs: dict | None,
+    ) -> None:
+        """Forward an authoritative desktop selection through the guarded RPC.
+
+        A missing local value is deliberately not inferred from genus/species
+        text and does not erase cloud identity.  The RPC is skipped when the
+        remote row already carries the same exact selection.
+        """
+        taxon_id = _normalize_observation_int_value(obs.get('sporely_taxon_id'))
+        if taxon_id is None or taxon_id <= 0:
+            return
+        remote_taxon_id = _normalize_observation_int_value(
+            (remote_obs or {}).get('selected_sporely_taxon_id')
+        )
+        if remote_taxon_id == taxon_id:
+            return
+        self.set_observation_selected_taxon(cloud_id, taxon_id)
+
+    def set_observation_selected_taxon(
+        self,
+        cloud_id: str,
+        sporely_taxon_id: int,
+    ) -> None:
+        """Persist an owner-selected exact taxonomy identity on the cloud row."""
+        self._rpc('set_observation_selected_taxon_v2', {
+            'p_observation_id': int(cloud_id),
+            'p_sporely_taxon_id': int(sporely_taxon_id),
+        })
 
     # ── Image push ───────────────────────────────────────────────────────
 

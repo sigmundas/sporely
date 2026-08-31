@@ -19,11 +19,13 @@ from database.reference_library import (
     MeasurementSetRepository,
     ObservationReferenceUse,
     ObservationReferenceUseRepository,
+    ReferenceIntegrityError,
     ReferenceWork,
     ReferenceWorkRepository,
     TaxonTreatment,
     TaxonTreatmentRepository,
 )
+from database.models import ReferenceDB
 from references.reference_plotting import (
     translate_observation_reference_use,
     translate_observation_reference_uses,
@@ -310,6 +312,7 @@ def _seed_work_treatment_set(
     width_core=(5.0, 6.0),
     width_exceptional=(5.0, 6.5),
     locator_text="p. 214",
+    legacy_reference_value_id=None,
 ):
     """Seed one work + treatment + range measurement set. Returns the
     (work, treatment, ms) tuple."""
@@ -348,6 +351,7 @@ def _seed_work_treatment_set(
             width_core_min=width_core[0],
             width_core_max=width_core[1],
             width_max=width_exceptional[1],
+            legacy_reference_value_id=legacy_reference_value_id,
         )
     )
     return work, treatment, ms
@@ -397,6 +401,113 @@ def test_attach_then_list_for_observation_preserves_accepted_bounds(libs):
     assert measurements["width_core_max"] == 6.0
     assert measurements["width_min"] == 5.0
     assert measurements["width_max"] == 6.5
+
+
+def test_plot_library_reference_persists_one_compared_use_and_reuses_snapshot(
+    libs, monkeypatch
+):
+    """Repeated plotting and hide/show reuse one frozen scientific use."""
+    from types import MethodType, SimpleNamespace
+    from ui.main_window import MainWindow
+
+    db_path, _ = libs
+    obs_id = _make_observation(db_path)
+    legacy_id = ReferenceDB.set_reference({
+        "genus": "Russula", "species": "paludosa",
+        "source": "Petersen et al. 1990",
+        "length_p05": 8.0, "length_p95": 10.0,
+        "width_p05": 5.0, "width_p95": 6.0,
+    })
+    work, _, ms = _seed_work_treatment_set(
+        libs, legacy_reference_value_id=legacy_id
+    )
+    plotted = ReferenceDB.get_reference(
+        "Russula", "paludosa", "Petersen et al. 1990"
+    )
+    plotted["source_kind"] = "reference"
+
+    stub = _stub_main_window_shell(active_observation_id=obs_id)
+    _bind_attach_handler(stub)
+    stub.ref_source_input = SimpleNamespace(currentData=lambda: None)
+    stub.reference_values = plotted
+    stub._on_reference_panel_plot_clicked = MethodType(
+        MainWindow._on_reference_panel_plot_clicked, stub
+    )
+    stub._ensure_reference_series_entries = MethodType(
+        MainWindow._ensure_reference_series_entries, stub
+    )
+    stub._set_reference_series_enabled = MethodType(
+        MainWindow._set_reference_series_enabled, stub
+    )
+    stub.update_graph_plots_only = lambda: None
+    stub._save_gallery_settings = lambda: None
+    monkeypatch.setattr(
+        MeasurementSetPreferenceRepository, "mark_used", staticmethod(lambda _id: None)
+    )
+
+    stub._on_reference_panel_plot_clicked()
+    first = ObservationReferenceUseRepository.list_for_observation(obs_id)
+    assert len(first) == 1
+    assert first[0].role == "compared"
+    frozen_snapshot = first[0].snapshot_json
+    frozen_revision = first[0].reference_revision
+
+    stub._on_reference_panel_plot_clicked()
+    assert ObservationReferenceUseRepository.list_for_observation(obs_id) == first
+
+    entry = stub.added_entries[-1]
+    stub.reference_series = [entry]
+    stub._set_reference_series_enabled(entry["key"], False)
+    stub._set_reference_series_enabled(entry["key"], True)
+    after_toggle = ObservationReferenceUseRepository.list_for_observation(obs_id)
+    assert len(after_toggle) == 1
+    assert after_toggle[0].id == first[0].id
+
+    ReferenceWorkRepository.update(work.id, {"short_label": "Edited later"})
+    stub._on_reference_panel_plot_clicked()
+    persisted = ObservationReferenceUseRepository.list_for_observation(obs_id)[0]
+    assert persisted.id == first[0].id
+    assert persisted.reference_revision == frozen_revision
+    assert persisted.snapshot_json == frozen_snapshot
+
+
+def test_plot_library_reference_reuses_existing_non_compared_role(libs, monkeypatch):
+    """Plotting an existing attachment never rewrites its scientific role."""
+    from types import MethodType, SimpleNamespace
+    from ui.main_window import MainWindow
+
+    db_path, _ = libs
+    obs_id = _make_observation(db_path)
+    legacy_id = ReferenceDB.set_reference({
+        "genus": "Russula", "species": "paludosa", "source": "Funga Nordica",
+        "length_p05": 8.0, "length_p95": 10.0,
+        "width_p05": 5.0, "width_p95": 6.0,
+    })
+    _, _, ms = _seed_work_treatment_set(
+        libs, legacy_reference_value_id=legacy_id
+    )
+    existing = ObservationReferenceUseRepository.attach(
+        obs_id, ms.id, role="supports_identification"
+    )
+    plotted = ReferenceDB.get_reference("Russula", "paludosa", "Funga Nordica")
+    plotted["source_kind"] = "reference"
+    stub = _stub_main_window_shell(active_observation_id=obs_id)
+    _bind_attach_handler(stub)
+    stub.ref_source_input = SimpleNamespace(currentData=lambda: None)
+    stub.reference_values = plotted
+    stub._on_reference_panel_plot_clicked = MethodType(
+        MainWindow._on_reference_panel_plot_clicked, stub
+    )
+    monkeypatch.setattr(
+        MeasurementSetPreferenceRepository, "mark_used", staticmethod(lambda _id: None)
+    )
+
+    stub._on_reference_panel_plot_clicked()
+
+    uses = ObservationReferenceUseRepository.list_for_observation(obs_id)
+    assert len(uses) == 1
+    assert uses[0].id == existing.id
+    assert uses[0].role == "supports_identification"
 
 
 def test_detach_removes_use_row_but_preserves_library_set(libs):
@@ -521,6 +632,29 @@ def test_list_attachment_candidates_excludes_ids(libs):
     assert all(c.measurement_set_id != ms.id for c in excluded)
     included = MeasurementSetRepository.list_attachment_candidates()
     assert any(c.measurement_set_id == ms.id for c in included)
+
+
+def test_legacy_reference_bridge_fails_closed_when_mapping_is_ambiguous(libs):
+    legacy_id = 77
+    _, _, first = _seed_work_treatment_set(
+        libs, legacy_reference_value_id=legacy_id
+    )
+    MeasurementSetRepository.create(
+        MeasurementSet(
+            id="",
+            taxon_treatment_id=first.taxon_treatment_id,
+            character="spore_size",
+            data_kind="range",
+            length_core_min=9.0,
+            length_core_max=11.0,
+            width_core_min=5.0,
+            width_core_max=7.0,
+            legacy_reference_value_id=legacy_id,
+        )
+    )
+
+    with pytest.raises(ReferenceIntegrityError, match="multiple normalized"):
+        MeasurementSetRepository.find_by_legacy_reference_value_id(legacy_id)
 
 
 def test_list_attachment_candidates_excludes_unsupported_data_kinds(libs):

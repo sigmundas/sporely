@@ -1189,6 +1189,43 @@ class MeasurementSetRepository:
             )
         return result
 
+    @staticmethod
+    def find_by_legacy_reference_value_id(
+        legacy_reference_value_id: int,
+    ) -> MeasurementSet | None:
+        """Return the normalized set sourced from one legacy library row.
+
+        ``legacy_reference_value_id`` is the explicit bridge written by the
+        interactive migration/quick-add paths.  Looking up that bridge avoids
+        guessing from citation labels or taxon text when Analysis plots a
+        legacy-shaped library entry.
+        """
+        try:
+            legacy_id = int(legacy_reference_value_id)
+        except (TypeError, ValueError):
+            return None
+        if legacy_id <= 0:
+            return None
+        conn = _connect_reference()
+        try:
+            rows = conn.execute(
+                """
+                SELECT * FROM reference_measurement_sets
+                WHERE legacy_reference_value_id = ?
+                ORDER BY id
+                LIMIT 2
+                """,
+                (legacy_id,),
+            ).fetchall()
+        finally:
+            conn.close()
+        if len(rows) > 1:
+            raise ReferenceIntegrityError(
+                "multiple normalized measurement sets map to legacy "
+                f"reference_value {legacy_id}"
+            )
+        return _row_to_dataclass(rows[0], MeasurementSet) if rows else None
+
 
 class MeasurementSetPreferenceRepository:
     """Local-only favourites and actual-use recency for chooser candidates."""

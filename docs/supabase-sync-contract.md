@@ -14,6 +14,16 @@ contribution identities. Exact-taxon changes, use reassignment, soft detach,
 and hard deletion withdraw an orphaned contribution; a service-owned taxonomy
 resolution follows the same rule without requiring an end-user JWT subject.
 
+Plotting a normalized library reference for an active desktop observation is
+an explicit scientific use and must idempotently persist the existing frozen
+observation-reference association, creating it with role `compared` only when
+none exists. Plot visibility is display state and never attaches or detaches.
+Desktop exact identity is forwarded only from a stored positive
+`sporely_taxon_id` through the guarded selected-taxon RPC; names and citation
+text are never taxonomy evidence. Historical contribution backfill is limited
+to active owner-matched uses with a valid source graph and an already-stored
+species-level exact taxon, and is replay-safe.
+
 The `curated_*` names retained in older storage and client compatibility code
 are legacy implementation terminology, not scientific review or approval.
 Reviewer, publisher, and attestation policy are not prerequisites for sharing.

@@ -12759,6 +12759,28 @@ class MainWindow(GeometryMixin, QMainWindow):
             return
         if not (data.get("genus") and data.get("species")):
             return
+        if data.get("source_kind") == "reference":
+            try:
+                measurement_set = MeasurementSetRepository.find_by_legacy_reference_value_id(
+                    data.get("id")
+                )
+            except ReferenceLibraryError as exc:
+                QMessageBox.warning(
+                    self,
+                    self.tr("Attach library reference"),
+                    self.tr("Could not attach reference: {error}").format(error=str(exc)),
+                )
+                return
+            if measurement_set is not None:
+                # Plotting a normalized library reference is a scientific use,
+                # not display-only state.  The canonical attach path freezes
+                # the selected revision and idempotently reuses any existing
+                # association (including a non-``compared`` role).
+                self._attach_normalized_reference_to_active_observation(
+                    measurement_set.id,
+                    "compared",
+                )
+                return
         self.reference_values = data
         self._add_reference_series_entry(data)
 
