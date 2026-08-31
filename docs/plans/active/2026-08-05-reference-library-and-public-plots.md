@@ -3695,6 +3695,76 @@ harness/baseline failures. No deployment was performed.
 
 ---
 
+### Landing-only public-plots follow-up (2026-08-31)
+
+#### Implementation pass 1: landed-contract audit
+
+- Source-of-truth baselines are desktop `e0397e9`, cloud `bd47c60`, and
+  landing Stage 1 `c17a2d9`. This follow-up is restricted to
+  `sporely-landing`; no desktop or cloud behavior change is planned.
+- The live observation route already obtains frozen references through
+  `get_public_observation_references`, normalizes the allowlisted snapshot,
+  builds Stage 1 L/W and Q-clipped overlays, and renders the frozen citation
+  cards. Existing tests cover the adapter and isolated page rendering, but a
+  page-level public-RPC contract test is still required.
+- The species route already gates shared contributions on the authoritative
+  exact `taxonIdentity` and passes its `sporelyTaxonId` to
+  `search_public_reference_contributions`. Existing component tests cover the
+  section in isolation, but the species-page forward path needs page-level
+  coverage proving exact-taxon request and display.
+- One concrete pagination inconsistency remains: landing configuration,
+  request validation, and the deployed shared-contribution RPC allow limits
+  through 100, while `normalizePublicCuratedSearchPage` still rejects a
+  requested limit above 50. The landing normalizer will be aligned to 100 and
+  regression-tested at both 100 and 101.
+- The observation plot distinguishes literature geometry visually but does not
+  explain the dashed translucent range to readers. The implementation pass
+  will add a small localized plot key tied to the frozen citation labels,
+  without displaying reference graph UUIDs or changing snapshot/revision
+  semantics.
+
+#### Implementation pass 2: landing changes
+
+- `normalizePublicCuratedSearchPage` now accepts the same inclusive maximum of
+  100 as landing configuration, request validation, and the production RPC;
+  101 continues to fail closed.
+- Observation L/W plots with frozen reference geometry now show a compact,
+  localized orange dashed-range key. It explains that the area is the
+  published L × W range and that available Q limits clip the shape; it does
+  not add mutable source reads or expose graph identifiers.
+- The observation page contract test now passes a real
+  `get_public_observation` plus `get_public_observation_references` response
+  through the production landing normalizer before asserting the frozen card,
+  Stage 1 overlay, plot key, and absence of work/treatment/measurement UUIDs
+  from rendered output.
+- The shared-reference display test now uses the production landing RPC client
+  and a page size of 100, asserts the exact authoritative `sporely_taxon_id`
+  request, renders the species contribution card, and verifies that the
+  contribution UUID is not displayed. Existing fail-closed coverage still
+  proves that no section or request exists without exact taxonomy identity.
+- Local correctness review found and fixed one presentation edge case: the
+  range key is shown only when an overlay actually contains core L/W range
+  geometry, so raw-point-only frozen evidence is not mislabeled as a range.
+
+#### Verification and handoff
+
+- Focused observation/reference, shared-contribution, overlay, and pagination
+  coverage passed: 52 tests across 9 files.
+- The complete landing suite passed: 612 tests across 55 files. TypeScript
+  project type checking passed with `tsc -b --noEmit`.
+- The production bundle passed using non-secret, syntactically valid public
+  build-test values for the required Supabase and Turnstile variables: 343
+  modules transformed and the bundle emitted successfully. The existing
+  large-chunk advisory remains informational.
+- `git diff --check` passed. The final local contract review found no accidental
+  association creation, taxonomy inference, mutable revision lookup, or graph
+  UUID display. No desktop/cloud behavior changed and nothing was deployed.
+- Per the user's explicit instruction for this follow-up, no subagent review
+  was run; the requested fresh review checkpoint was replaced by the focused
+  local correctness review above.
+
+---
+
 ## 20. Definition of done
 
 The cross-repository feature is done when:
