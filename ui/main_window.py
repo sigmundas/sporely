@@ -5379,6 +5379,7 @@ class ReferenceAddDialog(GeometryMixin, QDialog):
         allow_delete: bool = False,
         observation_id: int | None = None,
         sporely_taxon_id: int | None = None,
+        require_explicit_publication_assignment: bool = False,
     ):
         super().__init__(parent)
         self.setWindowTitle(title or parent.tr("Add reference data"))
@@ -5396,6 +5397,9 @@ class ReferenceAddDialog(GeometryMixin, QDialog):
         self._plot_color = None
         self._allow_delete = bool(allow_delete)
         self._delete_requested = False
+        self._require_explicit_publication_assignment = bool(
+            require_explicit_publication_assignment
+        )
         self._default_hint_text = self.tr("Paste from Excel/csv or type values")
         # Normalized-library context: MainWindow forwards these when the
         # dialog opens from an observation's Reference panel. The dialog
@@ -6822,7 +6826,7 @@ class ReferenceAddDialog(GeometryMixin, QDialog):
                 if label and label.casefold() == source_prefill.strip().casefold():
                     matched_id = str(self.publication_combo.itemData(row) or "") or None
                     break
-            if matched_id:
+            if matched_id and not self._require_explicit_publication_assignment:
                 self._populate_publication_combo(select_id=matched_id)
             else:
                 self._legacy_source_prefill = source_prefill
@@ -12795,8 +12799,85 @@ class MainWindow(GeometryMixin, QMainWindow):
                     "compared",
                 )
                 return
+            if self._legacy_reference_requires_normalization(data):
+                self._normalize_legacy_reference_for_plot(data)
+                return
         self.reference_values = data
         self._add_reference_series_entry(data)
+
+    @staticmethod
+    def _legacy_reference_requires_normalization(data: dict) -> bool:
+        """Return whether an unbridged legacy row can become a durable use.
+
+        Parmasto-only records intentionally remain outside the normalized
+        library because their current representation is not lossless there.
+        They retain the legacy plotting behavior; normalizable range/raw-point
+        references must instead pass through explicit publication assignment.
+        """
+        try:
+            legacy_id = int(data.get("id"))
+        except (TypeError, ValueError):
+            return False
+        if legacy_id <= 0:
+            return False
+        return range_payload_is_plottable(data) or bool(data.get("points"))
+
+    def _normalize_legacy_reference_for_plot(self, data: dict) -> None:
+        """Require explicit library identity before plotting a legacy source.
+
+        This reuses ReferenceAddDialog's existing legacy-to-normalized flow:
+        the user chooses or enters the work, then the normal persistence path
+        creates the bridge and idempotent observation use.  It deliberately
+        performs no source-label matching and never falls back to a transient
+        scientific comparison when the assignment is cancelled or incomplete.
+        """
+        try:
+            legacy_id = int(data.get("id"))
+        except (TypeError, ValueError):
+            return
+        if legacy_id <= 0:
+            return
+        genus = self._clean_ref_genus_text(str(data.get("genus") or ""))
+        species = self._clean_ref_species_text(str(data.get("species") or ""))
+        observation_id = getattr(self, "active_observation_id", None)
+        if not genus or not species or not observation_id:
+            return
+        dialog = ReferenceAddDialog(
+            self,
+            genus,
+            species,
+            data=data,
+            title=self.tr("Assign reference to library"),
+            observation_id=int(observation_id),
+            sporely_taxon_id=self._active_sporely_taxon_id(),
+            require_explicit_publication_assignment=True,
+        )
+        if dialog.exec() != QDialog.Accepted:
+            return
+        payload = dialog.result_data()
+        if not isinstance(payload, dict) or not payload:
+            QMessageBox.warning(
+                self,
+                self.tr("Reference library"),
+                self.tr(
+                    "This reference was not plotted because it needs a "
+                    "publication assignment before it can be attached to "
+                    "the observation."
+                ),
+            )
+            return
+        if not self._persist_normalized_reference_from_dialog(
+            dialog, payload, legacy_id=legacy_id
+        ):
+            QMessageBox.warning(
+                self,
+                self.tr("Reference library"),
+                self.tr(
+                    "This reference was not plotted because a publication "
+                    "assignment is required for a durable observation "
+                    "comparison."
+                ),
+            )
 
     def _active_sporely_taxon_id(self) -> int | None:
         """Return the sporely_taxon_id of the active observation, or None.
@@ -13013,9 +13094,16 @@ class MainWindow(GeometryMixin, QMainWindow):
             except ReferenceLibraryError:
                 pass
             return True
-        if not taxon_id:
-            return False
-        taxon_key = str(int(taxon_id))
+        # Older observations may predate canonical taxon selection.  They
+        # can still safely receive a normalized treatment when the user has
+        # explicitly identified the publication: preserve the published
+        # name and leave the optional taxon foreign key NULL.  This matches
+        # the legacy migration representation and the dialog's visible
+        # no-taxon notice; it must not fall back to a transient comparison.
+        taxon_key = str(int(taxon_id)) if taxon_id else None
+        name_as_published = " ".join(
+            part for part in (payload.get("genus"), payload.get("species")) if part
+        ).strip() or (self.tr("Unspecified taxon"))
         try:
             treatments = TaxonTreatmentRepository.list_for_work(str(work_id))
         except Exception as exc:
@@ -13027,7 +13115,15 @@ class MainWindow(GeometryMixin, QMainWindow):
             return False
         matching = [
             t for t in treatments
-            if str(getattr(t, "taxon_id", "") or "") == taxon_key
+            if (
+                str(getattr(t, "taxon_id", "") or "") == taxon_key
+                if taxon_key is not None
+                else (
+                    getattr(t, "taxon_id", None) in (None, "")
+                    and str(getattr(t, "name_as_published", "") or "").casefold()
+                    == name_as_published.casefold()
+                )
+            )
         ]
         if len(matching) > 1:
             QMessageBox.warning(
@@ -13043,9 +13139,6 @@ class MainWindow(GeometryMixin, QMainWindow):
         if matching:
             treatment = matching[0]
         else:
-            name_as_published = " ".join(
-                part for part in (payload.get("genus"), payload.get("species")) if part
-            ).strip() or (self.tr("Unspecified taxon"))
             try:
                 treatment = TaxonTreatmentRepository.create(
                     TaxonTreatment(

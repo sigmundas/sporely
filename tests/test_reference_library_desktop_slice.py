@@ -510,6 +510,267 @@ def test_plot_library_reference_reuses_existing_non_compared_role(libs, monkeypa
     assert uses[0].role == "supports_identification"
 
 
+def test_plotting_unbridged_legacy_reference_requires_normalization_and_persists_it(
+    libs, monkeypatch
+):
+    """A legacy range is never left as a transient comparison once the
+    user assigns it to an explicit ReferenceWork through the normal dialog.
+    """
+    from types import MethodType, SimpleNamespace
+    from ui import main_window as main_window_module
+    from ui.main_window import MainWindow
+
+    db_path, _ = libs
+    obs_id = _make_observation(db_path)
+    legacy_id = ReferenceDB.set_reference({
+        "genus": "Russula", "species": "paludosa", "source": "Mapped source",
+        "length_p05": 8.0, "length_p95": 10.0,
+        "width_p05": 5.0, "width_p95": 6.0,
+    })
+    _, _, mapped_set = _seed_work_treatment_set(
+        libs, legacy_reference_value_id=legacy_id
+    )
+    unbridged_id = ReferenceDB.set_reference({
+        "genus": "Russula", "species": "paludosa", "source": "Legacy source",
+        "length_p05": 11.0, "length_p95": 13.0,
+        "width_p05": 7.0, "width_p95": 8.0,
+    })
+    assignment_work, _, _ = _seed_work_treatment_set(
+        libs, work_title="Assigned legacy source", short_label="Assigned source"
+    )
+    mapped = ReferenceDB.get_reference("Russula", "paludosa", "Mapped source")
+    legacy = ReferenceDB.get_reference("Russula", "paludosa", "Legacy source")
+    assert mapped is not None
+    assert legacy is not None
+    mapped["source_kind"] = "reference"
+    legacy["source_kind"] = "reference"
+
+    class _AssignmentDialog:
+        def __init__(self, *_args, **_kwargs):
+            assert _kwargs["require_explicit_publication_assignment"] is True
+            self._payload = {
+                **legacy,
+                "reference_work_id": assignment_work.id,
+                "observation_id": obs_id,
+                "sporely_taxon_id": 7,
+            }
+
+        def exec(self):
+            return 1
+
+        def result_data(self):
+            return self._payload
+
+        def pending_reference_work(self):
+            return None
+
+        def normalized_measurement_set_payload(self, *, legacy_reference_value_id=None):
+            return MeasurementSet(
+                id="",
+                taxon_treatment_id="",
+                character="spore_size",
+                data_kind="range",
+                length_core_min=11.0,
+                length_core_max=13.0,
+                width_core_min=7.0,
+                width_core_max=8.0,
+                legacy_reference_value_id=legacy_reference_value_id,
+            )
+
+    stub = _stub_main_window_shell(active_observation_id=obs_id)
+    stub.ref_source_input = SimpleNamespace(currentData=lambda: None)
+    stub.reference_values = mapped
+    stub._active_sporely_taxon_id = lambda: 7
+    stub._on_reference_panel_plot_clicked = MethodType(
+        MainWindow._on_reference_panel_plot_clicked, stub
+    )
+    stub._legacy_reference_requires_normalization = (
+        MainWindow._legacy_reference_requires_normalization
+    )
+    stub._normalize_legacy_reference_for_plot = MethodType(
+        MainWindow._normalize_legacy_reference_for_plot, stub
+    )
+    stub._persist_normalized_reference_from_dialog = MethodType(
+        MainWindow._persist_normalized_reference_from_dialog, stub
+    )
+    stub._measurement_set_is_attached_to_observation = (
+        MainWindow._measurement_set_is_attached_to_observation
+    )
+    stub._observation_taxon_identity = MethodType(
+        MainWindow._observation_taxon_identity, stub
+    )
+    stub._restore_reference_uses_for_observation = lambda _obs_id: None
+    stub.update_graph_plots_only = lambda: None
+    stub._clean_ref_genus_text = lambda value: value.strip()
+    stub._clean_ref_species_text = lambda value: value.strip()
+    stub._attach_normalized_reference_to_active_observation = (
+        lambda set_id, role: ObservationReferenceUseRepository.attach_with_status(
+            obs_id, set_id, role=role
+        )
+    )
+    monkeypatch.setattr(main_window_module, "ReferenceAddDialog", _AssignmentDialog)
+    monkeypatch.setattr(
+        MeasurementSetPreferenceRepository, "mark_used", staticmethod(lambda _id: None)
+    )
+
+    stub._on_reference_panel_plot_clicked()
+    stub._on_reference_panel_plot_clicked()
+    stub.reference_values = legacy
+    stub._on_reference_panel_plot_clicked()
+    stub._on_reference_panel_plot_clicked()
+
+    uses = ObservationReferenceUseRepository.list_for_observation(obs_id)
+    assert len(uses) == 2
+    assert {use.reference_measurement_set_id for use in uses} >= {mapped_set.id}
+    legacy_sets = [
+        use for use in uses
+        if use.reference_measurement_set_id != mapped_set.id
+    ]
+    assert len(legacy_sets) == 1
+    normalized = MeasurementSetRepository.get(legacy_sets[0].reference_measurement_set_id)
+    assert normalized is not None
+    assert normalized.legacy_reference_value_id == unbridged_id
+    assert stub.added_entries == []
+
+
+def test_unresolved_legacy_publication_is_visible_and_never_becomes_transient(
+    libs, monkeypatch,
+):
+    """An accepted assignment dialog without a selected work must block the
+    plot rather than recreating the old transient legacy-series behavior.
+    """
+    from types import MethodType
+    from ui import main_window as main_window_module
+    from ui.main_window import MainWindow
+
+    db_path, _ = libs
+    obs_id = _make_observation(db_path)
+    ReferenceDB.set_reference({
+        "genus": "Russula", "species": "paludosa", "source": "Unresolved",
+        "length_p05": 8.0, "length_p95": 10.0,
+        "width_p05": 5.0, "width_p95": 6.0,
+    })
+    legacy = ReferenceDB.get_reference("Russula", "paludosa", "Unresolved")
+    assert legacy is not None
+
+    class _UnresolvedDialog:
+        def __init__(self, *_args, **_kwargs):
+            pass
+
+        def exec(self):
+            return 1
+
+        def result_data(self):
+            return {}
+
+    class _Messages:
+        warnings: list[tuple] = []
+
+        @classmethod
+        def warning(cls, *args):
+            cls.warnings.append(args)
+
+    stub = _stub_main_window_shell(active_observation_id=obs_id)
+    stub._normalize_legacy_reference_for_plot = MethodType(
+        MainWindow._normalize_legacy_reference_for_plot, stub
+    )
+    stub._clean_ref_genus_text = lambda value: value.strip()
+    stub._clean_ref_species_text = lambda value: value.strip()
+    stub._active_sporely_taxon_id = lambda: 7
+    monkeypatch.setattr(main_window_module, "ReferenceAddDialog", _UnresolvedDialog)
+    monkeypatch.setattr(main_window_module, "QMessageBox", _Messages)
+
+    stub._normalize_legacy_reference_for_plot(legacy)
+
+    assert _Messages.warnings
+    assert stub.added_entries == []
+    assert ObservationReferenceUseRepository.list_for_observation(obs_id) == []
+
+
+def test_parmasto_only_legacy_reference_is_not_normalized(libs):
+    """Parmasto's unsupported legacy representation stays outside the
+    normalized bridge instead of being converted into invented range data.
+    """
+    from ui.main_window import MainWindow
+
+    legacy_id = ReferenceDB.set_reference({
+        "genus": "Russula", "species": "paludosa", "source": "Parmasto",
+        "parmasto_length_mean": 8.5,
+        "parmasto_width_mean": 5.0,
+        "parmasto_q_mean": 1.7,
+    })
+    data = ReferenceDB.get_reference("Russula", "paludosa", "Parmasto")
+    assert data is not None
+    assert data["id"] == legacy_id
+    assert MainWindow._legacy_reference_requires_normalization(data) is False
+    assert MeasurementSetRepository.find_by_legacy_reference_value_id(legacy_id) is None
+
+
+def test_explicit_legacy_assignment_normalizes_taxonless_observation(libs):
+    """Older observations without a canonical taxon still retain a durable
+    use when the user explicitly assigns a real publication."""
+    from types import MethodType
+    from ui.main_window import MainWindow
+
+    db_path, _ = libs
+    obs_id = _make_observation(db_path)
+    work, _, _ = _seed_work_treatment_set(libs, work_title="mycena.no")
+    legacy_id = ReferenceDB.set_reference({
+        "genus": "Mycena", "species": "galopus", "source": "mycena.no",
+        "length_p05": 10.0, "length_p95": 14.0,
+        "width_p05": 5.0, "width_p95": 6.0,
+    })
+
+    class _AssignmentDialog:
+        def pending_reference_work(self):
+            return None
+
+        def normalized_measurement_set_payload(self, *, legacy_reference_value_id=None):
+            return MeasurementSet(
+                id="", taxon_treatment_id="", character="spore_size",
+                data_kind="range", length_core_min=10.0, length_core_max=14.0,
+                width_core_min=5.0, width_core_max=6.0,
+                legacy_reference_value_id=legacy_reference_value_id,
+            )
+
+    stub = _stub_main_window_shell(active_observation_id=obs_id)
+    stub._persist_normalized_reference_from_dialog = MethodType(
+        MainWindow._persist_normalized_reference_from_dialog, stub
+    )
+    stub._active_sporely_taxon_id = lambda: None
+    stub._observation_taxon_identity = lambda _obs_id: ("Mycena", "galopus")
+    stub._attach_normalized_reference_to_active_observation = (
+        lambda set_id, role: ObservationReferenceUseRepository.attach_with_status(
+            obs_id, set_id, role=role
+        )
+    )
+    stub._measurement_set_is_attached_to_observation = (
+        MainWindow._measurement_set_is_attached_to_observation
+    )
+    stub._restore_reference_uses_for_observation = lambda _obs_id: None
+    stub.update_graph_plots_only = lambda: None
+
+    assert stub._persist_normalized_reference_from_dialog(
+        _AssignmentDialog(),
+        {
+            "genus": "Mycena", "species": "galopus",
+            "reference_work_id": work.id,
+            "observation_id": obs_id,
+            "sporely_taxon_id": None,
+        },
+        legacy_id=legacy_id,
+    )
+    uses = ObservationReferenceUseRepository.list_for_observation(obs_id)
+    assert len(uses) == 1
+    created = MeasurementSetRepository.get(uses[0].reference_measurement_set_id)
+    assert created is not None
+    assert created.legacy_reference_value_id == legacy_id
+    treatment = TaxonTreatmentRepository.get(created.taxon_treatment_id)
+    assert treatment is not None
+    assert treatment.taxon_id is None
+    assert treatment.name_as_published == "Mycena galopus"
+
+
 def test_detach_removes_use_row_but_preserves_library_set(libs):
     """Detach clears the observation link but never touches the shared
     library measurement set (other observations may still point at it)."""

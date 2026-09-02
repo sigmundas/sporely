@@ -14,6 +14,7 @@ from database.reference_library import (
     TaxonTreatment,
     TaxonTreatmentRepository,
 )
+from database.reference_sync_planner import build_reference_sync_plan
 from database.reference_sync_state import ReferenceCloudSyncStateRepository
 from utils.cloud_sync import CloudTemporarilyUnavailableError
 from utils.reference_cloud_sync import (
@@ -186,6 +187,60 @@ def test_first_use_push_waits_for_library_and_uses_historical_import(databases):
     assert state.remote_identity_state == "acknowledged"
     assert state.cloud_row_version == 1
     assert state.sync_status == "clean"
+
+
+def test_two_distinct_uses_on_one_observation_are_planned_pushed_and_idempotent(
+    databases,
+):
+    """A single observation may carry two independently frozen sources.
+
+    Both attachment states must reach the graph planner and the normal
+    reference push; replaying the same Plot-derived associations must not
+    manufacture a second cloud mutation.
+    """
+    _, treatment, first_set, first_use = _create_graph_and_use()
+    second_set = MeasurementSetRepository.create(
+        MeasurementSet(
+            "set-2",
+            treatment.id,
+            "spore_size",
+            "range",
+            raw_text="10-12 x 6-7 um",
+            length_min=10.0,
+            length_max=12.0,
+            width_min=6.0,
+            width_max=7.0,
+        )
+    )
+    second_use = ObservationReferenceUseRepository.attach(
+        1, second_set.id, role="compared"
+    )
+
+    assert ReferenceCloudSyncStateRepository.get_use(first_use.id) is not None
+    assert ReferenceCloudSyncStateRepository.get_use(second_use.id) is not None
+    plan = build_reference_sync_plan("user-1")
+    assert {
+        item.entity_id for item in plan.live
+        if item.entity_type == "observation_use"
+    } == {first_use.id, second_use.id}
+
+    client = ReferenceGraphClient()
+    result = sync_reference_library(client)
+
+    assert result.pushed == 6
+    assert {call[1]["id"] for call in _use_calls(client)} == {
+        first_use.id,
+        second_use.id,
+    }
+    assert all(
+        ReferenceCloudSyncStateRepository.get_use(use.id).sync_status == "clean"
+        for use in (first_use, second_use)
+    )
+
+    client.calls.clear()
+    replay = sync_reference_library(client)
+    assert replay == ReferenceSyncResult()
+    assert _use_calls(client) == []
 
 
 def test_role_note_update_uses_current_and_preserves_frozen_snapshot(databases):

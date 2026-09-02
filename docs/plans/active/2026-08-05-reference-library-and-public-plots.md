@@ -24,6 +24,30 @@ reference source is now preserved on the mainlines: `sporely-web` commit
 - Current/next slice: none. `sporely-web/main` now contains the deployed
   reference stack at merge commit `89bd2df`; `sporely-admin/main` contains its
   Stage 6 workspace at merge commit `4104ca1`.
+- Post-deployment repair (2026-09-02): plotting an unbridged legacy
+  `reference_values` range could create only transient desktop series state,
+  leaving no `observation_reference_uses` row for cloud sync. The plot action
+  now opens the existing explicit publication-assignment workflow, creates the
+  normal legacy-to-`MeasurementSet` bridge, and attaches the frozen use before
+  rendering. The workflow never matches a legacy source label to a work: the
+  user must choose or create the bibliographic work. Cancellation or missing
+  identity renders no transient scientific comparison. Parmasto-only legacy
+  records remain intentionally legacy-only because they cannot yet be
+  normalized without inventing data.
+- Production acceptance (2026-09-02): local observation 700's legacy
+  `reference_values.id=277` (`mycena.no`) was explicitly assigned to the
+  existing verified `mycena.no` work (Arne Aronsen, 2026,
+  `https://mycena.no`). The observation has no canonical taxon id; the
+  accepted path therefore created one name-as-published, taxonless treatment
+  and one bridged measurement set, rather than conflating it with another
+  taxonless treatment. Repeated Plot reuse left exactly two uses and one
+  bridge for id 277. Normal sync acknowledged both uses; production
+  observation 1025 has two live rows, and anonymous
+  `get_public_observation_references(1025)` returns the Funga Nordica and
+  mycena.no snapshots, both with plottable ranges. `sporely.no/observations/1025`
+  returned HTTP 200. Visual browser verification of the two rendered overlays
+  and citation cards remains pending because no browser surface was connected
+  in the acceptance environment.
 - Relevant Stage 4 commits: `199f127`, `69ec641`, `8893007`, `edd9f70`,
   `e8b340b`, `ea1e1b9`, `eaca8e7`, `0277516`, `9c5346b`.
 - Relevant Stage 5 commit (`sporely-landing`): `5af3cb8`.
