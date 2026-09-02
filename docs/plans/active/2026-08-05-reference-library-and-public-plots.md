@@ -1,7 +1,10 @@
 # Reference Library and Public Reference Plotting Plan
 
-**Status:** Stages 1–6l are implemented and verified. The shared-contribution
-model simplification is active; deployment remains unauthorized.
+**Status:** Stages 1–6l and the landing public-plots follow-up are implemented,
+verified, and deployed. The shared-contribution model is active. The deployed
+reference source is now preserved on the mainlines: `sporely-web` commit
+`89bd2df` and `sporely-admin` commit `4104ca1` merge the Stage 6 stack into
+`main`.
 **Canonical repository:** `sporely-py`
 **Canonical path:** `docs/plans/active/2026-08-05-reference-library-and-public-plots.md`
 **Scope:** `sporely-py` → `sporely-web`/Supabase → `sporely-admin` →
@@ -12,34 +15,15 @@ model simplification is active; deployment remains unauthorized.
 
 ## Agent handoff
 
-- Status: Active; Stages 1–6l are complete. The current slice replaces the
-  scientific-curation workflow with owner-authored shared contributions while
-  preserving the landed identity, revision, evidence, lifecycle, and access
-  infrastructure.
-- Last completed slice: Stage 6j Compare add/render activation in
-  `sporely-landing` (`d086035`). Species cards capture exact curated revisions,
-  newer revisions require an explicit fail-closed replacement, and Compare
-  renders frozen literature evidence without observation hydration. Nothing
-  was deployed.
-- Current/next slice: shared-contribution model simplification, implementation
-  pass 1. No deployment is authorized. Stage 6k completed at `sporely-py`
-  commit `b2e4513` and `sporely-web` commit `7787fc1`.
-  Pass 1 is complete: migration history was verified aligned before the new
-  additive migration; the canonical contract and both sync-contract copies now
-  define owner-authored sharing and the smaller operational-policy handoff.
-  Pass 2 is complete in the working tree: the server derives sharing from an
-  authenticated synced use plus its observation's exact taxonomy-v3 identity,
-  keeps immutable attributed revisions, exposes new bounded contribution RPCs,
-  and retains the old curated surfaces only for compatibility. Cross-user SQL
-  coverage proves discovery, ownership isolation, independent same-DOI copies,
-  historical revisions, withdrawal, and the absence of attestation/role gates.
-  Pass 3 is complete in the working tree: desktop and landing clients use
-  contribution terminology and APIs while retaining persisted Stage 6 identity
-  aliases. A fresh local Supabase reset, every reference SQL/security test,
-  database lint, focused Python tests, the complete landing suite and both web
-  builds pass. The complete Python and web inventories were also run and retain
-  only recorded baseline/harness failures outside this slice. Fresh independent
-  correctness and security reviews are in progress before commit and push.
+- Status: Complete; feature work is deployed and the source-reconciliation
+  closeout is complete. Owner-authored shared contributions preserve the landed
+  identity, revision, evidence, lifecycle, and access infrastructure.
+- Last completed slice: Landing-only public-plots follow-up (`sporely-landing`
+  `323e96c`) and the desktop Q/Qm normalized-payload repair (`sporely-py`
+  `4fbe414`). The Worker and desktop v0.9.22 rollout are recorded below.
+- Current/next slice: none. `sporely-web/main` now contains the deployed
+  reference stack at merge commit `89bd2df`; `sporely-admin/main` contains its
+  Stage 6 workspace at merge commit `4104ca1`.
 - Relevant Stage 4 commits: `199f127`, `69ec641`, `8893007`, `edd9f70`,
   `e8b340b`, `ea1e1b9`, `eaca8e7`, `0277516`, `9c5346b`.
 - Relevant Stage 5 commit (`sporely-landing`): `5af3cb8`.
@@ -49,7 +33,8 @@ model simplification is active; deployment remains unauthorized.
   HEAD.
 - Do not: Fuzzy-merge bibliographic records, fabricate statistics, expose
   personal libraries, or bypass the Stage 6 moderation/publication boundary.
-- Remaining acceptance criteria: The cross-repository definition of done in Section 20.
+- Remaining acceptance criteria: none; the Section 20 manual acceptance checks
+  have passed.
 
 ---
 

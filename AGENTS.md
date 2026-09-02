@@ -1,185 +1,84 @@
 ## Working agreements
 
+Search symbols first. Never read main_window.py or cloud_sync.py wholesale unless there is a demonstrated need.
+
 - Do not run `npm test` after modifying JavaScript files.
 - Ask for confirmation before adding new production dependencies.
 - Do not run heavy build steps, including Capacitor syncs, PyInstaller, Docker builds, full app builds, packaging commands, or dependency installation, unless explicitly requested.
 - Keep patches narrow. If a task touches multiple workflows or large UI files, propose staged patches and stop after the current stage.
 - Do not rewrite or refactor unrelated code while fixing a bug. Preserve existing behavior unless the prompt explicitly asks for a behavior change.
-- Do not commit or push unless the user explicitly asks. Never rewrite published
-  history or force-push without explicit authorization.
+- Do not commit or push unless the user explicitly asks. Never rewrite published history or force-push without explicit authorization.
 - For sporely-py, always use the project virtual environment:
-/Users/sigmundas/Documents/Code/sporely/sporely-py/.venv/bin/python
-/Users/sigmundas/Documents/Code/sporely/sporely-py/.venv/bin/pytest
-Ask for confirmation before installing or upgrading packages in .venv.
-For syntax checks, use ./.venv/bin/python -m py_compile <touched files>
+  `/Users/sigmundas/Documents/Code/sporely/sporely-py/.venv/bin/python` and
+  `/Users/sigmundas/Documents/Code/sporely/sporely-py/.venv/bin/pytest`.
+  Ask for confirmation before installing or upgrading packages in .venv.
+  For syntax checks, use `./.venv/bin/python -m py_compile <touched files>`.
+
+## Subsystem rules (read before touching these areas)
+
+Detailed invariants live in `.claude/rules/` (Claude loads them automatically for matching paths; other agents must read them explicitly):
+
+- **Cloud sync** (`utils/cloud_sync*`, sync tests, sync contracts): read `.claude/rules/cloud-sync.md` before any sync, cursor, media-flag, or cloud-write change. These invariants encode real incidents; do not improvise.
+- **Localization** (`tr(...)` strings, `i18n/`): read `.claude/rules/localization.md`.
+- **UI screenshot evidence** (`tools/review_ui/`): read `.claude/rules/ui-screenshots.md`.
+
+## Agent routing and token budget
+
+Use one top-level agent for one architectural slice. Subagents are optional and should be used only when they save context or provide genuinely independent review. Do not automatically chain planner -> implementer -> reviewer.
+
+### Codex roles
+
+- `act` — **Luna, low effort**. Use for small, direct, low-risk work that is already clear: targeted symbol lookup, documentation, narrow mechanical edits, focused test repairs, or one-file/tightly bounded changes. If the task reveals a contract or subsystem question, stop and hand off rather than expanding.
+- `explore-review` — **Luna, medium effort, read-only**. Use as the cheap scout: locate symbols, map a call/data path, triage a diff, or perform a first-pass low-risk review. Return a compact symbol map or concrete findings; do not independently rediscover the whole subsystem.
+- `planner` — **Terra, medium effort, read-only**. Use before ambiguous, cross-repository, persistence/schema, sync, or architecture-changing work. Produce small independently verifiable stages. Do not use for an already-clear local patch.
+- `implementer` — **Terra, low effort**. Use for an approved bounded plan stage that needs nontrivial edits and focused tests. Stop at the stage boundary.
+- `reviewer` — **Terra, medium effort, read-only**. Use once at a meaningful stage/landing boundary or when explicitly requested. Do not spawn it after every small patch.
+- `security_reviewer` — **Terra, high effort, read-only**. Use only when a change materially touches auth/session handling, RLS/authorization, SECURITY DEFINER/public RPCs, storage access, secrets/service-role use, account binding, privacy/visibility, moderation/blocking, deletion, or another authoritative security boundary.
+- **Sol is escalation-only**, not the default. Use it only when the user explicitly requests it, Terra reports unresolved high-risk ambiguity, or a release/production gate has unusual architectural or security risk.
+
+Claude role agents under `.claude/agents/` follow the same boundaries with Claude models (shared routing/escalation policy: `../CLAUDE.md`). Do not invoke a role agent merely because it exists; delegate only when the role boundary above is met.
+
+### Context discipline
+
+- The active plan is durable project memory; the current agent context is disposable working memory. At an architectural/subsystem boundary, update the plan/handoff and prefer a fresh agent. Keep the same agent only for tightly related follow-up work where its recent context is directly useful.
+- Read the active plan's **current stage/handoff first**. Do not read completed-stage history unless a concrete compatibility question requires it. Use `docs/technical-overview.md` for orientation instead of rediscovering the repository.
+- Search before reading. Use `rg`/symbol search, then inspect bounded ranges around relevant definitions/callers. Never dump a large file to context just to understand it. In particular, do not read `ui/main_window.py`, `utils/cloud_sync.py`, or other multi-thousand-line modules wholesale.
+- Start reviews with `git diff --stat`, `git diff --name-only`, and the actual targeted diff. Expand into surrounding code only for touched symbols or a concrete suspected failure mode.
+- Do not have multiple agents perform the same repository archaeology. If a scout already returned the relevant symbols/call path, later agents should use that handoff and verify only where necessary.
+- When delegating a scout/review subtask, give a narrow question and ask for a compact result (normally <=20 lines plus file/symbol references). Do not ask for broad repository summaries.
+- Keep command output small: prefer focused tests and quiet output during iteration. The implementer owns repository-required validation; reviewers should not rerun already-passed broad suites unless a finding requires it.
+- Compaction restores context-window room but does not make prior work free. Do not use compaction as a reason to broaden scope or carry a finished subsystem into the next stage.
 
 ## Documentation roles
 
-- `README.md` is the human-facing project introduction, installation guide,
-  and documentation index.
-- `AGENTS.md` is the sole repository-wide source of instructions for coding
-  agents.
-- `docs/technical-overview.md` is a concise description of the current
-  architecture. It is orientation material, not a requirements document.
-- `docs/development/gui-conventions.md` contains the detailed PySide6 layout,
-  sizing, state, threading, and image-handling conventions.
-- `docs/plans/INBOX.md` holds rough ideas; `docs/plans/active/` holds
-  scoped unfinished plans; `docs/plans/completed/` preserves finished plans.
-- Detailed contracts, architecture maps, runbooks, audits, and user guides
-  remain beside the subsystem they document.
+- `README.md` is the human-facing project introduction, installation guide, and documentation index.
+- `AGENTS.md` is the repository-wide source of instructions for coding agents; `.claude/rules/` holds path-scoped subsystem invariants.
+- `docs/technical-overview.md` is a concise description of the current architecture. It is orientation material, not a requirements document.
+- `docs/development/gui-conventions.md` contains the detailed PySide6 layout, sizing, state, threading, and image-handling conventions.
+- `docs/plans/INBOX.md` holds rough ideas; `docs/plans/active/` holds scoped unfinished plans; `docs/plans/completed/` preserves finished plans.
+- For active work, read the current stage/handoff and referenced invariants first. Historical completed-stage detail is reference-only unless the current task depends on it.
+- Detailed contracts, architecture maps, runbooks, audits, and user guides remain beside the subsystem they document.
 
-When documents disagree, current code and tests establish implementation
-reality, while the most specific applicable contract governs intended
-behavior. Plans describe intent and Git history records what actually landed.
+When documents disagree, current code and tests establish implementation reality, while the most specific applicable contract governs intended behavior. Plans describe intent and Git history records what actually landed.
 
 ## Review and implementation conventions
 
-- In reviews, distinguish correctness defects from cleanup or style opinions.
-  Check especially for duplicate logic, competing sources of truth, database
-  consistency, state-flow errors, UI inconsistency, dead code, unclear
-  boundaries, naming, and error handling. Keep review reports factual and
-  concise.
+- In reviews, distinguish correctness defects from cleanup or style opinions. Check especially for duplicate logic, competing sources of truth, database consistency, state-flow errors, UI inconsistency, dead code, unclear boundaries, naming, and error handling. Keep review reports factual and concise.
 - Use Python 3.10+ and PySide6; do not introduce PyQt.
 - Follow `docs/development/gui-conventions.md` for GUI-specific work.
-- Use Qt layouts instead of absolute positioning with `setGeometry()` or
-  `move()`. Avoid fixed width/height where stretch policies work. Use
-  `QSplitter` for resizable panes and persist user-adjustable splitter state
-  through `QSettings`.
-- Guard programmatic widget updates against signal recursion with loading flags
-  or `blockSignals()`.
-- Keep network and other expensive work off the UI thread, normally with
-  `QThread`, and clean up worker threads when their owning UI closes. Use
-  `QTimer.singleShot` when UI initialization genuinely needs to be deferred.
-- Respect EXIF orientation with `QImageReader.setAutoTransform(True)` when
-  loading previews.
-- Use native type annotations for signatures and class variables. Prefix
-  private UI builders and event slots with one underscore.
-- Prefer dataclasses for structured data passed between UI and internal logic;
-  do not broaden a focused patch solely to retrofit existing structures.
+- Use Qt layouts instead of absolute positioning with `setGeometry()` or `move()`. Avoid fixed width/height where stretch policies work. Use `QSplitter` for resizable panes and persist user-adjustable splitter state through `QSettings`.
+- Guard programmatic widget updates against signal recursion with loading flags or `blockSignals()`.
+- Keep network and other expensive work off the UI thread, normally with `QThread`, and clean up worker threads when their owning UI closes. Use `QTimer.singleShot` when UI initialization genuinely needs to be deferred.
+- Respect EXIF orientation with `QImageReader.setAutoTransform(True)` when loading previews.
+- Use native type annotations for signatures and class variables. Prefix private UI builders and event slots with one underscore.
+- Prefer dataclasses for structured data passed between UI and internal logic; do not broaden a focused patch solely to retrofit existing structures.
 
 ## Database and generated artifacts
 
-- Inspect the existing schema and migration path before changing persistence.
-  Local SQLite currently uses the Python helpers documented in
-  `database/sqlite_migrations/README.md`; do not place Supabase/Postgres SQL in
-  that directory.
-- Preserve existing data and add focused migration/round-trip coverage for
-  schema changes.
-- Do not edit or commit generated databases, caches, local credentials,
-  downloaded source archives, or ad hoc screenshot output. Commit generated
-  artifacts only when the owning documented workflow explicitly requires them
-  (for example, translated `.qm` files alongside their `.ts` sources).
-
-## UI screenshot review evidence
-
-- Do not create a new screenshot renderer for each feature. Add scenarios to the
-  generic UI review renderer under `tools/review_ui/scenarios/`; scenario code
-  should construct meaningful states with real production widgets and
-  deterministic, no-network fixtures.
-- List the registered scenario IDs and groups with:
-  ```bash
-  ./.venv/bin/python -m tools.render_review_screenshots --list
-  ```
-- Render a focused group or one or more scenarios with:
-  ```bash
-  QT_QPA_PLATFORM=offscreen ./.venv/bin/python -m tools.render_review_screenshots --group reference-library <output-dir>
-  QT_QPA_PLATFORM=offscreen ./.venv/bin/python -m tools.render_review_screenshots --scenario reference.add-range --scenario reference.dark <output-dir>
-  ```
-- UI-affecting features should normally add or update their relevant review
-  scenarios. Keep feature-specific fixture construction beside those scenarios;
-  the shared renderer owns Qt setup, themes/locales, capture, cleanup, output
-  confinement, and manifest generation.
-- When asked for UI screenshot evidence, run the repository-owned deterministic
-  renderer with an explicit disposable output directory:
-  ```bash
-  QT_QPA_PLATFORM=offscreen ./.venv/bin/python -m tools.render_review_screenshots <output-dir>
-  ```
-- The renderer uses mocked fixtures and offscreen Qt widgets. It must not use
-  production credentials, live cloud/database data, or arbitrary desktop capture.
-- Treat `<output-dir>/manifest.json` as authoritative. Inspect only the PNG/JPEG
-  files it lists, using the current agent environment's image-viewing capability.
-- The renderer is also configured for autonomous review through the repository's
-  `.autonomous-development.toml`; the framework supplies its run-owned output
-  directory automatically.
-
-## Localization
-
-Development is in English. Translations must be current before publish.
-Norwegian Bokmål (`nb_NO`), Swedish (`sv_SE`) and German (`de_DE`) are
-supported; German uses informal "du".
-
-- Any translatable UI string must be wrapped in Qt's `self.tr("…")`
-  (or `QCoreApplication.translate(…)` in non-widget code). Never
-  hardcode a bare English literal in a widget's user-facing surface.
-- After adding or changing any `tr("…")` call, run:
-  ```bash
-  ./tools/update_translations.sh
-  ```
-  This calls `.venv/bin/pyside6-lupdate` to refresh
-  `i18n/Sporely_nb_NO.ts`, `Sporely_sv_SE.ts`, `Sporely_de_DE.ts`, then
-  `.venv/bin/pyside6-lrelease` to compile the matching `.qm` binaries
-  that the app loads at runtime. Both `.ts` and `.qm` files must be
-  committed together.
-- New or changed strings appear in the `.ts` files as
-  `<translation type="unfinished">`. To hand these to a translation
-  agent, run:
-  ```bash
-  ./.venv/bin/python tools/agent_translate.py
-  ```
-  which extracts every unfinished/empty message into
-  `missing_translations.json`. Fill in the JSON (or hand it to an
-  agent), then merge the results back into the `.ts` files and re-run
-  `update_translations.sh` so the `.qm` binaries pick up the new
-  translations.
-- Do not leave `<translation type="unfinished">` entries in a published
-  build. If a language cannot be translated in the current task, note
-  it explicitly in the task report so a follow-up agent can finish it.
-- Do not translate: product names (`Sporely`, `Sporely Pro`), domains
-  (`sporely.no`, `app.sporely.no`), third-party product names
-  (`iNaturalist`, `Artsobservasjoner`, `Artdatabanken`, `Artsorakel`,
-  `Google Play`, `Stripe`, `Obtanium`), file-format acronyms, or
-  scientific names.
-- The `tools/update_translations.sh` file list determines which source
-  files `lupdate` scans. If you add a new Python module that contains
-  user-facing `tr(…)` calls, add it to that list.
-## Cloud sync invariants
-
-- Preserve account binding through `linked_cloud_user_id`; never sync a local
-  database with a different account unless the user explicitly resets the
-  cloud link.
-- Keep `is_draft` (workflow), `sharing_scope`/cloud `visibility` (audience),
-  and `location_precision` (location disclosure) as independent concepts.
-- Auto-merge only non-overlapping changes covered by the sync contract. True
-  overlapping edits require an explicit conflict plan; identity disagreement
-  must fail closed.
-- Treat `sync_images`, `materialize_remote_images`, and `full_pull` as independent controls. Never turn all three on as a generic "full sync" fix.
-- Observations-tab refresh uses `sync_images=False`, `materialize_remote_images=True`, and `full_pull=False`: push metadata, fast-pull only new/changed remote observations, and download their missing media without scanning the local media backlog.
-- Profile & Cloud "Sync now" uses `sync_images=True`, `materialize_remote_images=True`, and `full_pull=False`: upload genuinely pending selected local media and materialize new/changed remote media, while preserving unchanged-observation pruning.
-- `full_pull=True` is a deep reconciliation/recovery control. Pair it with `sync_images=False` unless a separately named, user-confirmed migration explicitly requires scanning and uploading all pending local media.
-- `sync_images=True` activates the global pending-image dirty scan. It may re-dirty synced observations containing eligible `cloud_id IS NULL` rows and must never be enabled for background/startup/ordinary refresh paths.
-- `materialize_remote_images=True` controls remote byte download; it does not require `sync_images=True` or `full_pull=True`.
-- Rows with `source_role=cloud_recovery_cache` or `file_purpose=cache` are remote-owned recovery copies. They may receive metadata/link repairs but their bytes must never be prepared or uploaded back to cloud.
-- Preserve the no-op fast-path contract: unchanged observations must not trigger bulk image/measurement fetches, WebP preparation, measurement pushes, or mosaic rebuilds.
-- Never issue no-op cloud writes on sync paths. `observation_images.updated_at` is trigger-bumped on every UPDATE for every role, so a value-identical PATCH advances the child-change cursor and forces re-pulls (2026-08-24 echo-loop incident). Check the current remote value and skip the request when it already matches (e.g. `_remote_image_desktop_id_current` for `desktop_id` relinks).
-- The child-change cursor commits the true `MAX(updated_at, id)` tuple over every inspected row, ids compared numerically via `_child_change_cursor_id_key` (identical ordering in filter and advancement), and advances only after `pull_all` succeeds. Cursor/probe changes must run `tests/test_child_change_probe.py`.
-- Any sync flag or media-selection wiring change must include focused tests for the exact caller mode and run `tests/test_cloud_sync_fast_path.py`, `tests/test_cloud_sync_dirty_loop_steady_state.py`, and the affected media pull/upload policy tests.
-- Do not add new sync behavior by finding a convenient location in `utils/cloud_sync.py`. Identify the canonical owning subsystem/function first (see the ownership table in `docs/cloud-sync-architecture.md`). If ownership is unclear, document or establish the boundary before adding another implementation path.
-- Do not bypass canonical policy functions: `cloud_image_bytes_desired` for byte-storage decisions, `_reconcile_local_image_cloud_id` for image identity repair, `_resolve_existing_observation_for_push` for observation push identity (verified local `cloud_id` is primary; remote `desktop_id` is recovery-only; a reverse-link miss is never a create signal), `_resolve_existing_image_for_push` for image push identity (verified `images.cloud_id` is primary; `desktop_id` scoped to observation is recovery; disagreement raises `ImageIdentityConflictError`), the tombstone helpers for deletion intent, and the snapshot store/load helpers for baselines.
-- Never interpret a filtered, batched, bounded, or partial remote collection as deletion. Absence is meaningful only after a complete, successful paginated read.
-- Bulk remote readers must use `SporelyCloudClient._get_paginated` with a deterministic `order=` clause ending in `id.asc`; PostgREST silently caps unpaginated responses at the server row limit.
-- Download from Cloud (`sync_all(pull_only=True)`) is a strict zero-cloud-write mode. Any new `SporelyCloudClient` writer method must be added to `_PULL_ONLY_BLOCKED_CLIENT_METHODS`; new read methods join `_PULL_ONLY_ALLOWED_READ_METHODS` only as an explicit, reviewed choice. Pull-side writes must be gated at the source — a `blocked_write_attempts` entry is a bug, not a handled event.
-- Sync behavior changes must update `docs/supabase-sync-contract.md` (both repository copies) and, when navigation or ownership changes, `docs/cloud-sync-architecture.md`, plus the relevant safety tests (`tests/test_cloud_download_only.py`, `tests/test_image_tombstones.py`, `tests/test_cloud_image_bytes_desired.py`).
+- Inspect the existing schema and migration path before changing persistence. Local SQLite currently uses the Python helpers documented in `database/sqlite_migrations/README.md`; do not place Supabase/Postgres SQL in that directory.
+- Preserve existing data and add focused migration/round-trip coverage for schema changes.
+- Do not edit or commit generated databases, caches, local credentials, downloaded source archives, or ad hoc screenshot output. Commit generated artifacts only when the owning documented workflow explicitly requires them (for example, translated `.qm` files alongside their `.ts` sources).
 
 ## Plugins
-Superpowers skills are optional techniques, not the project workflow.
 
-Do not invoke Superpowers brainstorming, writing-plans,
-executing-plans, subagent-driven-development, or
-finishing-a-development-branch unless explicitly requested.
-
-The repository's docs/plans structure, phase contracts, and
-project-specific agent/review instructions are authoritative.
-
-Superpowers systematic-debugging and
-verification-before-completion may be used when useful,
-provided they do not replace or modify the project workflow.
+Superpowers skills are optional techniques, not the project workflow. Do not invoke Superpowers brainstorming, writing-plans, executing-plans, subagent-driven-development, or finishing-a-development-branch unless explicitly requested. The repository's docs/plans structure, phase contracts, and project-specific agent/review instructions are authoritative. Superpowers systematic-debugging and verification-before-completion may be used when useful, provided they do not replace or modify the project workflow.
