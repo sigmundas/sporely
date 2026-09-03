@@ -6,118 +6,16 @@ import hashlib
 import base64
 import os
 import secrets
-import threading
 import time
 import webbrowser
-import socket
-from dataclasses import dataclass
-from http.server import BaseHTTPRequestHandler, HTTPServer
 from pathlib import Path
-from urllib.parse import parse_qs, urlencode, urlparse
+from urllib.parse import urlencode
 
 import requests
 
+from utils.oauth_loopback import LoopbackCallbackServer, OAuthCallbackPayload
 
-@dataclass
-class OAuthCallbackPayload:
-    code: str | None = None
-    state: str | None = None
-    error: str | None = None
-    error_description: str | None = None
-
-
-class DualStackServer(HTTPServer):
-    """HTTP server that binds to both IPv4 and IPv6 if available."""
-
-    def __init__(self, server_address, RequestHandlerClass):
-        host, port = server_address
-        if host in ("localhost", "127.0.0.1", "::1", "") and getattr(socket, "has_ipv6", False):
-            self.address_family = socket.AF_INET6
-            host = "::"
-        super().__init__((host, port), RequestHandlerClass)
-
-    def server_bind(self):
-        if self.address_family == getattr(socket, "AF_INET6", object()):
-            try:
-                self.socket.setsockopt(socket.IPPROTO_IPV6, socket.IPV6_V6ONLY, 0)
-            except Exception:
-                pass
-        super().server_bind()
-
-
-class LocalCallbackServer:
-    """Temporary local HTTP server used for OAuth redirect callbacks."""
-
-    def __init__(self, redirect_uri: str) -> None:
-        parsed = urlparse(redirect_uri)
-        if parsed.scheme != "http":
-            raise ValueError("Only http redirect URIs are supported for local callback server.")
-        if not parsed.hostname or not parsed.port:
-            raise ValueError("Redirect URI must include host and port, e.g. http://localhost:8000/callback.")
-        self.redirect_uri = redirect_uri
-        self.host = parsed.hostname
-        self.port = int(parsed.port)
-        self.path = parsed.path or "/callback"
-        self.bind_host = "127.0.0.1" if self.host in {"localhost", "127.0.0.1"} else self.host
-
-    def wait_for_callback(self, timeout: int = 180, tick_callback=None) -> OAuthCallbackPayload:
-        payload = OAuthCallbackPayload()
-        callback_event = threading.Event()
-        callback_path = self.path
-
-        class Handler(BaseHTTPRequestHandler):
-            def log_message(self, format, *args):  # noqa: A003 - inherited API
-                return
-
-            def _send(self, status: int, body: str) -> None:
-                data = body.encode("utf-8")
-                self.send_response(status)
-                self.send_header("Content-Type", "text/html; charset=utf-8")
-                self.send_header("Content-Length", str(len(data)))
-                self.end_headers()
-                self.wfile.write(data)
-
-            def do_GET(self):  # noqa: N802 - inherited API
-                parsed = urlparse(self.path)
-                if parsed.path != callback_path:
-                    self._send(404, "<html><body><h3>Not Found</h3></body></html>")
-                    return
-                query = parse_qs(parsed.query)
-                payload.code = (query.get("code") or [None])[0]
-                payload.state = (query.get("state") or [None])[0]
-                payload.error = (query.get("error") or [None])[0]
-                payload.error_description = (query.get("error_description") or [None])[0]
-                callback_event.set()
-                if payload.error:
-                    self._send(200, "<html><body><h3>Login failed.</h3>You may close this tab.</body></html>")
-                else:
-                    self._send(200, "<html><body><h3>Login complete.</h3>You may close this tab.</body></html>")
-
-        try:
-            try:
-                server = DualStackServer((self.bind_host, self.port), Handler)
-            except OSError:
-                # Fallback to standard IPv4 if dual-stack IPv6 failed
-                server = HTTPServer(("127.0.0.1", self.port), Handler)
-        except OSError as exc:
-            raise RuntimeError(f"Could not start local callback server on {self.bind_host}:{self.port}: {exc}") from exc
-        try:
-            server.timeout = 0.05
-            deadline = time.time() + max(1, int(timeout))
-            while time.time() < deadline and not callback_event.is_set():
-                server.handle_request()
-                if tick_callback is not None:
-                    try:
-                        tick_callback()
-                    except Exception as exc:
-                        if isinstance(exc, InterruptedError):
-                            raise
-        finally:
-            server.server_close()
-
-        if not callback_event.is_set():
-            raise TimeoutError("Timed out waiting for OAuth callback.")
-        return payload
+__all__ = ["INatOAuthClient", "OAuthCallbackPayload"]
 
 
 class INatOAuthClient:
@@ -286,7 +184,7 @@ class INatOAuthClient:
         code_challenge = base64.urlsafe_b64encode(hashed).rstrip(b'=').decode("utf-8")
 
         url = self.build_authorization_url(state, code_challenge)
-        callback_server = LocalCallbackServer(self.redirect_uri)
+        callback_server = LoopbackCallbackServer(self.redirect_uri)
         if open_browser:
             print(f"Opening browser for iNaturalist login: {url}\n(If browser doesn't open automatically, ensure xdg-utils is installed on Linux)")
             webbrowser.open(url, new=2)

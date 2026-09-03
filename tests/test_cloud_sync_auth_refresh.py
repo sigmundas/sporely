@@ -975,3 +975,215 @@ def test_settings_session_is_compatible_handles_edge_cases():
     # Settings has an access token but its subject is undecodable and
     # user id is missing — refuse.
     assert cloud_sync._settings_session_is_compatible("user-U1", "", "not-a-jwt") is False
+
+
+# ---------------------------------------------------------------------
+# Stage 7 — password fallback removed from from_stored_credentials
+# ---------------------------------------------------------------------
+
+
+def test_from_stored_credentials_does_not_fall_back_to_password_after_reauth_required(monkeypatch):
+    """When near-expiry refresh raises CloudReauthRequiredError and a saved
+    password exists, from_stored_credentials must return None — not attempt
+    email/password login."""
+    stale = _make_jwt(exp_offset_seconds=-120)
+    login_calls: list[tuple[str, str]] = []
+
+    def fake_refresh_login(refresh_token: str) -> None:
+        raise cloud_sync.CloudReauthRequiredError("Refresh token revoked")
+
+    def fake_login(email: str, password: str):
+        login_calls.append((email, password))
+        return cloud_sync.SporelyCloudClient("tok", "user-123")
+
+    settings = {
+        "cloud_access_token": stale,
+        "cloud_user_id": "user-123",
+        "cloud_refresh_token": "R1",
+    }
+    monkeypatch.setattr(cloud_sync, "get_app_settings", lambda: dict(settings))
+    monkeypatch.setattr(
+        cloud_sync.SporelyCloudClient,
+        "refresh_login",
+        classmethod(lambda cls, tok: fake_refresh_login(tok)),
+    )
+    monkeypatch.setattr(
+        cloud_sync.SporelyCloudClient,
+        "login",
+        classmethod(lambda cls, e, p: fake_login(e, p)),
+    )
+    monkeypatch.setattr(
+        cloud_sync.SporelyCloudClient,
+        "save_credentials",
+        lambda self, *a, **kw: None,
+    )
+    # Saved password is present — must NOT be used.
+    monkeypatch.setattr(cloud_sync, "load_saved_cloud_password", lambda: ("user@example.com", "secret", True))
+
+    result = cloud_sync.SporelyCloudClient.from_stored_credentials()
+
+    assert result is None, "Expected None; password fallback must not restore a dead session"
+    assert login_calls == [], f"login() was called unexpectedly: {login_calls}"
+
+
+def test_from_stored_credentials_does_not_attempt_password_login_when_refresh_fails(monkeypatch):
+    """When the only stored credential is a refresh token that fails with a
+    generic CloudSyncError, from_stored_credentials must return None — not
+    attempt email/password login."""
+    login_calls: list[tuple[str, str]] = []
+
+    def fake_refresh_login(refresh_token: str) -> None:
+        raise cloud_sync.CloudSyncError("Refresh failed")
+
+    def fake_login(email: str, password: str):
+        login_calls.append((email, password))
+        return cloud_sync.SporelyCloudClient("tok", "user-123")
+
+    settings = {"cloud_refresh_token": "R1"}
+    monkeypatch.setattr(cloud_sync, "get_app_settings", lambda: dict(settings))
+    monkeypatch.setattr(
+        cloud_sync.SporelyCloudClient,
+        "refresh_login",
+        classmethod(lambda cls, tok: fake_refresh_login(tok)),
+    )
+    monkeypatch.setattr(
+        cloud_sync.SporelyCloudClient,
+        "login",
+        classmethod(lambda cls, e, p: fake_login(e, p)),
+    )
+    monkeypatch.setattr(cloud_sync, "load_saved_cloud_password", lambda: ("user@example.com", "secret", True))
+
+    result = cloud_sync.SporelyCloudClient.from_stored_credentials()
+
+    assert result is None, "Expected None; password fallback must not be attempted after refresh failure"
+    assert login_calls == [], f"login() was called unexpectedly: {login_calls}"
+
+
+def test_from_stored_credentials_does_not_attempt_password_login_when_no_tokens(monkeypatch):
+    """With no stored access or refresh token and a saved password present,
+    from_stored_credentials must return None — not attempt email/password login."""
+    login_calls: list[tuple[str, str]] = []
+
+    def fake_login(email: str, password: str):
+        login_calls.append((email, password))
+        return cloud_sync.SporelyCloudClient("tok", "user-123")
+
+    monkeypatch.setattr(cloud_sync, "get_app_settings", lambda: {})
+    monkeypatch.setattr(
+        cloud_sync.SporelyCloudClient,
+        "login",
+        classmethod(lambda cls, e, p: fake_login(e, p)),
+    )
+    monkeypatch.setattr(cloud_sync, "load_saved_cloud_password", lambda: ("user@example.com", "secret", True))
+
+    result = cloud_sync.SporelyCloudClient.from_stored_credentials()
+
+    assert result is None, "Expected None; no tokens means no session, password fallback must not be tried"
+    assert login_calls == [], f"login() was called unexpectedly: {login_calls}"
+
+
+def test_oauth_client_login_raises_cloud_sync_error():
+    """OAuthSporelyCloudClient.login() must raise CloudSyncError so that
+    password-auth cannot be invoked via an OAuth session instance."""
+    with pytest.raises(cloud_sync.CloudSyncError, match="OAuth sessions do not support password login"):
+        cloud_sync.OAuthSporelyCloudClient.login("user@example.com", "password")
+
+
+# ---------------------------------------------------------------------------
+# Explicit sign-out: from_stored_credentials() must not reconstruct a session
+# ---------------------------------------------------------------------------
+
+def _install_fake_settings_store(monkeypatch, initial: dict) -> dict:
+    """Back cloud_sync's get/update_app_settings with a real mutable dict.
+
+    Mirrors the on-disk JSON round trip closely enough to catch a sign-out
+    path that forgets to persist a field, without touching the real
+    app_settings.json file.
+    """
+    store = dict(initial)
+    monkeypatch.setattr(cloud_sync, "get_app_settings", lambda: dict(store))
+
+    def _update(updates):
+        store.update(updates)
+        return dict(store)
+
+    monkeypatch.setattr(cloud_sync, "update_app_settings", _update)
+    return store
+
+
+def test_signout_clears_legacy_token_session_and_from_stored_credentials_returns_none(monkeypatch):
+    token = _make_jwt(sub="user-123")
+    store = _install_fake_settings_store(
+        monkeypatch,
+        {
+            "cloud_access_token": token,
+            "cloud_user_id": "user-123",
+            "cloud_refresh_token": "refresh-1",
+            "cloud_auth_method": None,
+            "linked_cloud_user_id": "user-123",
+        },
+    )
+    monkeypatch.setattr(cloud_sync, "clear_saved_cloud_password", lambda: None)
+
+    assert cloud_sync.SporelyCloudClient.from_stored_credentials() is not None
+
+    cloud_sync.SporelyCloudClient.clear_credentials()
+
+    assert cloud_sync.SporelyCloudClient.from_stored_credentials() is None
+    assert store["cloud_access_token"] is None
+    assert store["cloud_refresh_token"] is None
+    assert store["cloud_auth_method"] is None
+    assert store["linked_cloud_user_id"] == "user-123", (
+        "Sign-out must not clear the database's cloud-account link; "
+        "that is a separate unlink/reset operation."
+    )
+
+
+def test_signout_clears_oauth_session_and_from_stored_credentials_returns_none(monkeypatch):
+    token = _make_jwt(sub="user-456")
+    store = _install_fake_settings_store(
+        monkeypatch,
+        {
+            "cloud_access_token": token,
+            "cloud_user_id": "user-456",
+            "cloud_refresh_token": "refresh-oauth",
+            "cloud_auth_method": "oauth",
+            "linked_cloud_user_id": "user-456",
+        },
+    )
+    monkeypatch.setattr(cloud_sync, "clear_saved_cloud_password", lambda: None)
+
+    client = cloud_sync.SporelyCloudClient.from_stored_credentials()
+    assert isinstance(client, cloud_sync.OAuthSporelyCloudClient)
+
+    cloud_sync.SporelyCloudClient.clear_credentials()
+
+    assert cloud_sync.SporelyCloudClient.from_stored_credentials() is None
+    assert store["cloud_access_token"] is None
+    assert store["cloud_refresh_token"] is None
+    assert store["cloud_auth_method"] is None
+    assert store["linked_cloud_user_id"] == "user-456"
+
+
+def test_signout_clears_user_id_and_tolerates_missing_email_field(monkeypatch):
+    token = _make_jwt(sub="user-789")
+    store = _install_fake_settings_store(
+        monkeypatch,
+        {
+            "cloud_access_token": token,
+            "cloud_user_id": "user-789",
+            "cloud_refresh_token": "refresh-2",
+            "cloud_user_email": "user@example.com",
+            "cloud_auth_method": None,
+            "linked_cloud_user_id": "user-789",
+        },
+    )
+    monkeypatch.setattr(cloud_sync, "clear_saved_cloud_password", lambda: None)
+
+    cloud_sync.SporelyCloudClient.clear_credentials()
+
+    assert store["cloud_user_id"] is None
+    # cloud_user_email is non-auth convenience state; clear_credentials()
+    # clearing it too is acceptable, but it must never gate re-derivation of
+    # an authenticated session on its own.
+    assert store["linked_cloud_user_id"] == "user-789"

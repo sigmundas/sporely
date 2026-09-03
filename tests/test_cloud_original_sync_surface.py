@@ -26,7 +26,6 @@ def qapp():
 def _build_cloud_dialog(monkeypatch) -> CloudSyncDialog:
     fake_client = SimpleNamespace(user_id="user-123")
     monkeypatch.setattr(cloud_sync_dialog.SporelyCloudClient, "from_stored_credentials", lambda: fake_client)
-    monkeypatch.setattr(cloud_sync_dialog, "load_saved_cloud_password", lambda: ("", None, False))
     monkeypatch.setattr(cloud_sync_dialog, "get_app_settings", lambda: {})
     return CloudSyncDialog()
 
@@ -157,5 +156,5 @@ def test_cloud_sync_dialog_treats_jwt_expired_as_sign_in_failure(monkeypatch, qa
         dialog._summarize_sync_error(
             'GET observation_images?...: {"code":"PGRST303","message":"JWT expired"}'
         )
-        == "Cloud sync sign-in failed. Please check your email and password."
+        == "Cloud sync sign-in failed. Please sign in again."
     )

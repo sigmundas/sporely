@@ -631,7 +631,7 @@ def test_cloud_login_failure_refreshes_parent_ui_without_crashing(monkeypatch):
         "reset_progress",
         "progress_visible:False",
         "idle_hint",
-        "status:Cloud sync sign-in failed. Please check your email and password.:warning",
+        "status:Cloud sync sign-in failed. Please sign in again.:warning",
     ]
     assert "settings_refresh" in events
     assert "badge_refresh" in events
@@ -802,8 +802,6 @@ def test_cloud_login_success_does_not_auto_start_sync(monkeypatch):
     assert save_calls == [
         {
             "email": "sigmund.as@gmail.com",
-            "password": "secret",
-            "remember_password": True,
         }
     ]
     assert sync_calls == []
@@ -964,3 +962,95 @@ def test_raw_processing_preferences_page_exposes_advanced_controls(monkeypatch, 
 
     dialog.deleteLater()
     parent.deleteLater()
+
+
+# ---------------------------------------------------------------------------
+# Sign-out cache invalidation (2026-09-03 regression: signing out from the
+# standalone "Manage online publishing accounts" entry point — where
+# ArtsobservasjonerSettingsDialog is parented directly to MainWindow instead
+# of being embedded in SettingsHubDialog — left MainWindow's own cached
+# client in place, so a freshly reopened dialog appeared signed in again.
+# ---------------------------------------------------------------------------
+
+def _make_logout_dialog(monkeypatch, *, parent, cached_client):
+    """A lightweight stand-in for ArtsobservasjonerSettingsDialog, exercising
+    the real _logout_cloud/_cached_cloud_client methods without building a
+    full QDialog."""
+    events: list[str] = []
+    dialog = SimpleNamespace(
+        tr=lambda text: text,
+        parent=lambda: parent,
+        _cloud_client=cached_client,
+        _update_cloud_controls=lambda: events.append("update_controls"),
+        _update_status=lambda: events.append("update_status"),
+    )
+    monkeypatch.setattr(cloud_sync.SporelyCloudClient, "clear_credentials", lambda: events.append("clear_credentials"))
+    monkeypatch.setattr(main_window, "update_app_settings", lambda updates: events.append(("update_app_settings", dict(updates))))
+    return dialog, events
+
+
+def test_logout_cloud_standalone_entry_point_invalidates_stale_parent_cache(monkeypatch):
+    """Reproduces the reported regression: MainWindow has no
+    _on_cloud_logout_changed hook of its own, so _logout_cloud must fall back
+    to clearing MainWindow's _cloud_client directly."""
+    fake_client = SimpleNamespace(user_id="user-123")
+    corner_ui_calls: list[str] = []
+    badge_calls: list[str] = []
+    main_window_fake = SimpleNamespace(
+        _cloud_client=fake_client,
+        _update_corner_ui=lambda: corner_ui_calls.append("refreshed"),
+        _refresh_background_activity_badge=lambda: badge_calls.append("refreshed"),
+    )
+    assert not hasattr(main_window_fake, "_on_cloud_logout_changed")
+
+    dialog, events = _make_logout_dialog(monkeypatch, parent=main_window_fake, cached_client=fake_client)
+
+    main_window.ArtsobservasjonerSettingsDialog._logout_cloud(dialog)
+
+    assert dialog._cloud_client is None
+    assert main_window_fake._cloud_client is None, (
+        "MainWindow's cached client must be invalidated even when this "
+        "dialog was opened directly against MainWindow, not the "
+        "SettingsHubDialog-embedded page."
+    )
+    assert corner_ui_calls == ["refreshed"]
+    assert badge_calls == ["refreshed"]
+    assert "clear_credentials" in events
+
+
+def test_logout_cloud_embedded_entry_point_still_uses_settings_hub_hook(monkeypatch):
+    """The Preferences → Profile & Cloud page (embedded in SettingsHubDialog)
+    must keep using the existing, more thorough _on_cloud_logout_changed
+    propagation instead of the MainWindow-only fallback path."""
+    fake_client = SimpleNamespace(user_id="user-123")
+    hook_calls: list[str] = []
+    settings_hub_fake = SimpleNamespace(
+        _on_cloud_logout_changed=lambda: hook_calls.append("hook_called"),
+    )
+
+    dialog, events = _make_logout_dialog(monkeypatch, parent=settings_hub_fake, cached_client=fake_client)
+
+    main_window.ArtsobservasjonerSettingsDialog._logout_cloud(dialog)
+
+    assert dialog._cloud_client is None
+    assert hook_calls == ["hook_called"]
+
+
+def test_stale_cached_client_does_not_survive_reopen_after_signout(monkeypatch):
+    """A brand-new dialog instance (simulating "close, then reopen") parented
+    to the same MainWindow must not resurrect the signed-out session by
+    reading a stale parent-level cache."""
+    fake_client = SimpleNamespace(user_id="user-123")
+    main_window_fake = SimpleNamespace(
+        _cloud_client=fake_client,
+        _update_corner_ui=lambda: None,
+        _refresh_background_activity_badge=lambda: None,
+    )
+    dialog, _events = _make_logout_dialog(monkeypatch, parent=main_window_fake, cached_client=fake_client)
+
+    main_window.ArtsobservasjonerSettingsDialog._logout_cloud(dialog)
+
+    reopened_dialog = SimpleNamespace(_cloud_client=None, parent=lambda: main_window_fake)
+    resolved = main_window.ArtsobservasjonerSettingsDialog._cached_cloud_client(reopened_dialog)
+
+    assert resolved is None, "Reopening after sign-out must show the logged-out state, not the stale session"

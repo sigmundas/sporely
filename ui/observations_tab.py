@@ -187,7 +187,6 @@ from utils.cloud_sync import (
     is_cloud_auth_error,
     is_image_too_large_for_plan_error,
     materialize_cloud_media_for_observation,
-    load_saved_cloud_password,
     partition_download_from_cloud_issues,
     summarize_blocked_write_attempts,
     format_cloud_sync_error_details,
@@ -570,14 +569,12 @@ class _CloudAutoSyncWorker(QThread):
             client = SporelyCloudClient.from_stored_credentials()
             if client is None:
                 settings = get_app_settings()
-                saved_email, saved_password, _ = load_saved_cloud_password()
                 has_saved_credentials = bool(
                     settings.get("cloud_access_token")
                     or settings.get("cloud_refresh_token")
-                    or (saved_email and saved_password)
                 )
                 if has_saved_credentials:
-                    self.error.emit("Cloud sync sign-in failed. Please check your email and password.")
+                    self.error.emit("Cloud sync sign-in failed. Please sign in again.")
                 else:
                     self.sync_finished.emit({"pushed": 0, "pulled": 0, "errors": [], "skipped": True})
                 return
@@ -3461,7 +3458,21 @@ class ObservationsTab(QWidget):
             noun = self.tr("observation ID") if len(ids) == 1 else self.tr("observation IDs")
             return f"{noun} {ids_text}" if ids_text else noun
 
-        if last_status in {"error", "blocked", "warning"} and not blocked_ids:
+        if last_status == "reauth_required":
+            reauth_action = self.tr("Cloud sign-in is required. Click Sync now to sign in again.")
+            if pending_ids:
+                message = self.tr(
+                    "Cloud sync pending for {pending_ids}.\n"
+                    "{action}"
+                ).format(
+                    pending_ids=_ids_phrase(pending_ids),
+                    action=reauth_action,
+                )
+            else:
+                failure = last_summary or self.tr("Cloud sign-in is required.")
+                message = f"{failure}\n{reauth_action}"
+            tone = "warning"
+        elif last_status in {"error", "blocked", "warning"} and not blocked_ids:
             failure = last_summary or (error_messages[0] if error_messages else self.tr("Cloud sync failed."))
             action = (
                 self.tr("Logged in, click Sync now to sync.")
@@ -3771,6 +3782,8 @@ class ObservationsTab(QWidget):
     def _summarize_sync_error(self, message: str) -> str:
         text = str(message or "").strip()
         lower = text.lower()
+        if "captcha_failed" in lower or "captcha protection" in lower:
+            return self.tr("Cloud sign-in is required.")
         if (
             "sign-in failed" in lower
             or "sign in failed" in lower
@@ -3781,7 +3794,7 @@ class ObservationsTab(QWidget):
             or "authentication failed" in lower
             or "no valid cloud credentials" in lower
         ):
-            return self.tr("Cloud sync sign-in failed. Please check your email and password.")
+            return self.tr("Cloud sync sign-in failed. Please sign in again.")
         if text == ACCOUNT_MISMATCH_MESSAGE:
             return self.tr("Cloud sync blocked: this database is linked to another account.")
         if WEBP_REQUIRED_FOR_CLOUD_MEDIA_UPLOAD_MESSAGE.lower() in text.lower():
@@ -4283,7 +4296,13 @@ class ObservationsTab(QWidget):
             self._finish_manual_refresh_flow()
         summary = self._summarize_sync_error(message)
         is_account_mismatch = str(message or "").strip() == ACCOUNT_MISMATCH_MESSAGE
-        self._record_cloud_sync_status(summary, errors=[message], status="blocked" if is_account_mismatch else "error")
+        if is_account_mismatch:
+            status = "blocked"
+        elif is_cloud_auth_error(message):
+            status = "reauth_required"
+        else:
+            status = "error"
+        self._record_cloud_sync_status(summary, errors=[message], status=status)
         self._refresh_cloud_sync_idle_hint()
         if not self._cloud_sync_show_status:
             return

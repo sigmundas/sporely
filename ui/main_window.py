@@ -78,6 +78,22 @@ _SVG_CLOUD_DISCONNECTED = b"""<svg xmlns="http://www.w3.org/2000/svg" viewBox="0
   <path d="M8.7 4.3A7 7 0 0 1 19 10.5c2.3.4 4 2.4 4 4.8 0 1-.3 2-.9 2.8"/>
 </svg>"""
 
+
+def _has_active_or_reloadable_cloud_session(settings, cloud_client) -> bool:
+    """Return whether the corner UI can truthfully show a signed-in account."""
+    if cloud_client is not None:
+        return True
+    access_token = str(settings.get("cloud_access_token") or "").strip()
+    user_id = str(settings.get("cloud_user_id") or "").strip()
+    refresh_token = str(settings.get("cloud_refresh_token") or "").strip()
+    return bool((access_token and user_id) or refresh_token)
+
+
+def _clear_cached_cloud_avatar(owner) -> None:
+    """Prevent a signed-out corner from being repainted with an old avatar."""
+    if hasattr(owner, "_avatar_pixmap_cached"):
+        delattr(owner, "_avatar_pixmap_cached")
+
 # Stage micrometer: tick-marked ruler bar inside a circle
 try:
     from pathlib import Path
@@ -324,24 +340,36 @@ def _thumbnail_label_position(
     return text_x, text_y
 
 
-class _CloudLoginWorker(QThread):
-    ok = Signal(object, str)
-    fail = Signal(str)
+class _CloudOAuthLoginWorker(QThread):
+    ok   = Signal(object)   # OAuthSporelyCloudClient
+    fail = Signal(str)      # error message
 
-    def __init__(self, email: str, password: str, parent=None) -> None:
+    def __init__(self, parent=None) -> None:
         super().__init__(parent)
-        self.setObjectName("Cloud login")
-        self._email = str(email or "").strip()
-        self._password = password or ""
+        self.setObjectName("Cloud OAuth login")
+        self._stop_requested = False
+
+    def cancel(self) -> None:
+        self._stop_requested = True
 
     def run(self) -> None:
-        try:
-            from utils.cloud_sync import SporelyCloudClient
+        from utils.sporely_cloud_auth import SporelyDesktopOAuthClient, OAuthError
+        from utils.cloud_sync import OAuthSporelyCloudClient
 
-            client = SporelyCloudClient.login(self._email, self._password)
-            self.ok.emit(client, self._email)
-        except Exception as exc:
-            self.fail.emit(str(exc))
+        def _tick():
+            if self._stop_requested:
+                raise InterruptedError()
+
+        try:
+            result = SporelyDesktopOAuthClient().authorize(tick_callback=_tick)
+            client = OAuthSporelyCloudClient.from_oauth_session(result)
+            self.ok.emit(client)
+        except InterruptedError:
+            self.fail.emit("Sign-in cancelled.")
+        except OAuthError as e:
+            self.fail.emit(str(e))
+        except Exception as e:
+            self.fail.emit(str(e))
 
 
 class AnalysisGalleryTile(QWidget):
@@ -2679,6 +2707,7 @@ class SettingsHubDialog(QDialog):
         main_window = self._settings_hub_main_window()
         if main_window is not None:
             setattr(main_window, "_cloud_client", None)
+            _clear_cached_cloud_avatar(main_window)
             updater = getattr(main_window, "_update_corner_ui", None)
             if callable(updater):
                 try:
@@ -2932,10 +2961,7 @@ class ArtsobservasjonerSettingsDialog(QDialog):
         self._inat_session_client_id = ""
         self._inat_session_client_secret = ""
         self._cloud_client = None
-        self._cloud_login_worker: _CloudLoginWorker | None = None
-        self._cloud_login_email = ""
-        self._cloud_login_password = ""
-        self._cloud_login_remember = False
+        self._cloud_login_worker: _CloudOAuthLoginWorker | None = None
         self._cloud_debug_tap_count = 0
         self._cloud_debug_tap_timer = QTimer(self)
         self._cloud_debug_tap_timer.setSingleShot(True)
@@ -3998,109 +4024,42 @@ class ArtsobservasjonerSettingsDialog(QDialog):
     def _open_cloud_login(self) -> None:
         if self._cloud_login_worker is not None:
             return
-        from utils.cloud_sync import load_saved_cloud_password
 
+        # Show a waiting dialog; browser opens immediately in the worker.
         dialog = QDialog(self)
-        dialog.setWindowTitle(self.tr("Sporely Cloud login"))
+        dialog.setWindowTitle(self.tr("Sporely Cloud Sign-In"))
         dialog.setModal(True)
-        dialog.setMinimumWidth(420)
-
-        saved_email, saved_password, can_store_password = load_saved_cloud_password()
-        has_saved_password = bool(saved_password)
-        password_edited = False
-        submitted_password = None
-        remember_login = False
-
+        dialog.setMinimumWidth(340)
         layout = QVBoxLayout(dialog)
-        layout.addWidget(
-            QLabel(
-                self.tr("Sign in with your Sporely Cloud account.")
-            )
-        )
+        layout.setSpacing(12)
+        layout.setContentsMargins(20, 20, 20, 20)
+        layout.addWidget(QLabel(self.tr("Waiting for browser sign-in…")))
+        cancel_btn = QPushButton(self.tr("Cancel"))
+        layout.addWidget(cancel_btn)
 
-        form = QFormLayout()
-        email_edit = QLineEdit()
-        email_edit.setPlaceholderText(self.tr("Email"))
-        email_edit.setText(saved_email or str(get_app_settings().get("cloud_user_email") or "").strip())
-        password_edit = QLineEdit()
-        password_edit.setPlaceholderText(self.tr("Password"))
-        password_edit.setEchoMode(QLineEdit.Password)
-        if has_saved_password:
-            password_edit.setText("********")
-        form.addRow(self.tr("Email:"), email_edit)
-        form.addRow(self.tr("Password:"), password_edit)
-        layout.addLayout(form)
+        self._cloud_login_worker = _CloudOAuthLoginWorker(parent=self)
 
-        remember_checkbox = QCheckBox(self.tr("Save password on this device"))
-        remember_checkbox.setChecked(bool(saved_email or has_saved_password))
-        if not can_store_password:
-            remember_checkbox.setChecked(False)
-            remember_checkbox.setEnabled(False)
-            remember_checkbox.setToolTip(self.tr("Install keyring to enable encrypted password storage."))
-        layout.addWidget(remember_checkbox)
-        if has_saved_password:
-            layout.addWidget(QLabel(self.tr("Saved password loaded (shown masked).")))
-        if not can_store_password:
-            warning = QLabel(self.tr("Secure password storage unavailable: password will not be saved."))
-            warning.setWordWrap(True)
-            warning.setStyleSheet("color: #c05848;")
-            layout.addWidget(warning)
-
-        buttons = QDialogButtonBox(dialog)
-        ok_btn = buttons.addButton(self.tr("Log in"), QDialogButtonBox.AcceptRole)
-        cancel_btn = buttons.addButton(self.tr("Cancel"), QDialogButtonBox.RejectRole)
-        layout.addWidget(buttons)
-
-        def _on_password_edited(_text: str) -> None:
-            nonlocal password_edited
-            password_edited = True
-
-        password_edit.textEdited.connect(_on_password_edited)
-
-        def _accept_if_valid() -> None:
-            nonlocal submitted_password, remember_login
-            if not email_edit.text().strip() or not password_edit.text():
-                QMessageBox.warning(
-                    dialog,
-                    self.tr("Missing Information"),
-                    self.tr("Please enter your email and password."),
-                )
-                return
-            if has_saved_password and not password_edited:
-                submitted_password = saved_password
-            else:
-                submitted_password = password_edit.text()
-            remember_login = bool(remember_checkbox.isChecked())
-            if remember_login and not can_store_password:
-                QMessageBox.warning(
-                    dialog,
-                    self.tr("Secure Storage Unavailable"),
-                    self.tr("Password saving requires secure keyring support on this system."),
-                )
-                return
+        def _on_ok(client):
             dialog.accept()
+            self._on_cloud_login_success(client, client.user_email or "")
 
-        ok_btn.clicked.connect(_accept_if_valid)
-        cancel_btn.clicked.connect(dialog.reject)
-        email_edit.returnPressed.connect(_accept_if_valid)
-        password_edit.returnPressed.connect(_accept_if_valid)
+        def _on_fail(msg):
+            dialog.reject()
+            self._on_cloud_login_failure(msg)
 
-        if dialog.exec() != QDialog.Accepted:
-            return
+        def _on_cancel():
+            if self._cloud_login_worker is not None:
+                self._cloud_login_worker.cancel()
 
-        self._cloud_login_email = email_edit.text().strip()
-        self._cloud_login_password = submitted_password or password_edit.text()
-        self._cloud_login_remember = bool(remember_login)
-        self._cloud_login_worker = _CloudLoginWorker(
-            self._cloud_login_email,
-            self._cloud_login_password,
-            parent=self,
-        )
-        self._cloud_login_worker.ok.connect(self._on_cloud_login_success)
-        self._cloud_login_worker.fail.connect(self._on_cloud_login_failure)
+        cancel_btn.clicked.connect(_on_cancel)
+        dialog.rejected.connect(_on_cancel)
+
+        self._cloud_login_worker.ok.connect(_on_ok)
+        self._cloud_login_worker.fail.connect(_on_fail)
         self._cloud_login_worker.finished.connect(self._on_cloud_login_finished)
         self._update_cloud_controls()
         self._cloud_login_worker.start()
+        dialog.exec()
 
     def _on_cloud_login_success(self, client, email: str) -> None:
         try:
@@ -4109,8 +4068,6 @@ class ArtsobservasjonerSettingsDialog(QDialog):
             ensure_database_linked_to_cloud_user(client)
             client.save_credentials(
                 email=str(email or "").strip(),
-                password=getattr(self, "_cloud_login_password", None),
-                remember_password=bool(getattr(self, "_cloud_login_remember", False)),
             )
             update_app_settings({"cloud_user_email": str(email or "").strip()})
             SettingsDB.set_setting("profile_email", str(email or "").strip())
@@ -4132,7 +4089,7 @@ class ArtsobservasjonerSettingsDialog(QDialog):
             self._cloud_client = None
 
     def _on_cloud_login_failure(self, message: str) -> None:
-        summary = self.tr("Cloud sync sign-in failed. Please check your email and password.")
+        summary = self.tr("Cloud sync sign-in failed. Please sign in again.")
         raw_error = str(message or "").strip() or summary
         try:
             update_app_settings(
@@ -4180,9 +4137,6 @@ class ArtsobservasjonerSettingsDialog(QDialog):
 
     def _on_cloud_login_finished(self) -> None:
         self._cloud_login_worker = None
-        self._cloud_login_email = ""
-        self._cloud_login_password = ""
-        self._cloud_login_remember = False
         self._update_cloud_controls()
 
     def _logout_cloud(self) -> None:
@@ -4199,14 +4153,40 @@ class ArtsobservasjonerSettingsDialog(QDialog):
             )
             return
         self._cloud_client = None
+        # Invalidate the parent's cached client *before* refreshing this
+        # dialog's controls: _update_cloud_controls() reads through
+        # _cached_cloud_client(), which falls back to the parent's
+        # _cloud_client attribute when this dialog's own cache is empty.  A
+        # stale parent cache would otherwise re-hydrate self._cloud_client
+        # immediately below, undoing the sign-out within this same call.
+        settings_hub = self.parent()
+        if settings_hub is not None:
+            if hasattr(settings_hub, "_on_cloud_logout_changed"):
+                try:
+                    settings_hub._on_cloud_logout_changed()
+                except Exception:
+                    pass
+            else:
+                # Opened directly against MainWindow (e.g. the standalone
+                # "Manage online publishing accounts" entry point), which has
+                # no _on_cloud_logout_changed hook of its own.
+                if hasattr(settings_hub, "_cloud_client"):
+                    settings_hub._cloud_client = None
+                _clear_cached_cloud_avatar(settings_hub)
+                updater = getattr(settings_hub, "_update_corner_ui", None)
+                if callable(updater):
+                    try:
+                        updater()
+                    except Exception:
+                        pass
+                refresher = getattr(settings_hub, "_refresh_background_activity_badge", None)
+                if callable(refresher):
+                    try:
+                        refresher()
+                    except Exception:
+                        pass
         self._update_cloud_controls()
         self._update_status()
-        settings_hub = self.parent()
-        if settings_hub is not None and hasattr(settings_hub, "_on_cloud_logout_changed"):
-            try:
-                settings_hub._on_cloud_logout_changed()
-            except Exception:
-                pass
 
     def _open_login(self):
         selected_uploader = self._selected_uploader()
@@ -7663,15 +7643,7 @@ class MainWindow(GeometryMixin, QMainWindow):
 
         settings = get_app_settings()
         cloud_client = getattr(self, "_cloud_client", None)
-        has_stored_cloud_credentials = bool(
-            (settings.get("cloud_access_token") and settings.get("cloud_user_id"))
-            or settings.get("cloud_refresh_token")
-            or settings.get("cloud_user_email")
-            or settings.get("linked_cloud_user_id")
-        )
-        if cloud_client is not None and not has_stored_cloud_credentials:
-            cloud_client = None
-            self._cloud_client = None
+        has_cloud_session = _has_active_or_reloadable_cloud_session(settings, cloud_client)
         cloud_email = str(settings.get("cloud_user_email") or "").strip()
         cloud_user_id = str(
             getattr(cloud_client, "user_id", "")
@@ -7679,7 +7651,7 @@ class MainWindow(GeometryMixin, QMainWindow):
             or settings.get("linked_cloud_user_id")
             or ""
         ).strip()
-        if cloud_client is not None or has_stored_cloud_credentials:
+        if has_cloud_session:
             self._avatar_corner_btn.setVisible(True)
             self._avatar_corner_btn.setToolTip(self.tr("Sporely Cloud Profile"))
             profile = SettingsDB.get_profile() if hasattr(SettingsDB, "get_profile") else {}
@@ -8301,7 +8273,12 @@ class MainWindow(GeometryMixin, QMainWindow):
     def _handle_avatar_reply(self, reply):
         try:
             from PySide6.QtNetwork import QNetworkReply
-            if reply.error() == QNetworkReply.NoError:
+            if (
+                reply.error() == QNetworkReply.NoError
+                and _has_active_or_reloadable_cloud_session(
+                    get_app_settings(), getattr(self, "_cloud_client", None)
+                )
+            ):
                 data = reply.readAll()
                 pixmap = QPixmap()
                 if pixmap.loadFromData(data):

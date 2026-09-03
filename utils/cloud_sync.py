@@ -2888,6 +2888,9 @@ _CLOUD_AUTH_ERROR_HINTS = (
     'unauthorized',
     'pgrst301',
     'pgrst303',
+    # Supabase returns this when password login is attempted without a captcha
+    # token — the user must sign in interactively (e.g. via browser).
+    'captcha_failed',
 )
 
 # Hints that identify a *terminal* refresh-token invalidation coming from
@@ -15096,6 +15099,9 @@ class SporelyCloudClient:
     @classmethod
     def from_stored_credentials(cls) -> 'SporelyCloudClient | None':
         settings = get_app_settings()
+        # Delegate to OAuthSporelyCloudClient when the stored session uses OAuth.
+        if cls is SporelyCloudClient and str(settings.get('cloud_auth_method') or '').strip() == 'oauth':
+            return OAuthSporelyCloudClient.from_stored_credentials()
         token = settings.get('cloud_access_token')
         user_id = settings.get('cloud_user_id')
         refresh_token = settings.get('cloud_refresh_token')
@@ -15127,9 +15133,9 @@ class SporelyCloudClient:
                     # call will retry the refresh through the same lock.
                     return client
                 except CloudReauthRequiredError:
-                    # Session is genuinely dead — fall through to the
-                    # saved-password path below without wiping tokens.
-                    pass
+                    # Session is genuinely dead — return None so the caller
+                    # surfaces reauth_required.  Password fallback removed.
+                    return None
             else:
                 return client
         if refresh_text:
@@ -15141,16 +15147,6 @@ class SporelyCloudClient:
                 raise
             except CloudSyncError:
                 pass
-        email, password, _ = load_saved_cloud_password()
-        if email and password:
-            try:
-                client = cls.login(email, password)
-                client.save_credentials(email=email)
-                return client
-            except CloudTemporarilyUnavailableError:
-                raise
-            except CloudSyncError:
-                return None
         return None
 
     def fetch_current_user_id(self) -> str:
@@ -15270,6 +15266,7 @@ class SporelyCloudClient:
             'cloud_access_token': None,
             'cloud_user_id': None,
             'cloud_refresh_token': None,
+            'cloud_auth_method': None,
         })
 
     @staticmethod
@@ -15280,6 +15277,7 @@ class SporelyCloudClient:
             'cloud_user_id': None,
             'cloud_refresh_token': None,
             'cloud_user_email': None,
+            'cloud_auth_method': None,
         })
 
     # ── REST helpers ─────────────────────────────────────────────────────
@@ -17346,6 +17344,165 @@ class SporelyCloudClient:
                     _increment_sync_summary(_cloud_sync_current_summary(), 'remote_media_downloads')
             except Exception:
                 pass
+
+
+class OAuthSporelyCloudClient(SporelyCloudClient):
+    """SporelyCloudClient that refreshes via the Supabase OAuth endpoint.
+
+    Constructed from an OAuthTokenResult (Stage 4). Uses
+    SporelyDesktopOAuthClient.refresh() instead of the password-session
+    /auth/v1/token?grant_type=refresh_token path.
+    Never reads or writes desktop passwords.
+    """
+
+    def __init__(
+        self,
+        access_token: str,
+        user_id: str,
+        refresh_token: str | None = None,
+        user_email: str | None = None,
+    ):
+        super().__init__(access_token, user_id, refresh_token)
+        self.user_email = str(user_email or '').strip() or None
+
+    @classmethod
+    def from_oauth_session(cls, result) -> 'OAuthSporelyCloudClient':
+        """Construct from a freshly-obtained OAuthTokenResult.
+
+        result.user_id / result.user_email are trusted when present;
+        JWT sub is used as authoritative fallback.
+        Never persists passwords, authorization codes, or PKCE state.
+        Call save_credentials() on the returned client to persist the session.
+        """
+        access_token = str(result.access_token or '').strip()
+        if not access_token:
+            raise CloudSyncError("OAuth session is missing an access token.")
+        user_id = ''
+        # JWT sub is authoritative; fall back to server-provided user_id.
+        jwt_user_id = _decode_jwt_subject(access_token)
+        if jwt_user_id:
+            user_id = jwt_user_id
+        elif result.user_id:
+            user_id = _normalize_cloud_user_id(result.user_id)
+        if not user_id:
+            raise CloudSyncError("OAuth session is missing user identity.")
+        # An empty refresh_token means the server did not rotate it.
+        # A freshly-obtained session with no refresh token simply stores None.
+        refresh_token = str(result.refresh_token or '').strip() or None
+        return cls(
+            access_token=access_token,
+            user_id=user_id,
+            refresh_token=refresh_token,
+            user_email=getattr(result, 'user_email', None),
+        )
+
+    @classmethod
+    def refresh_login(cls, refresh_token: str) -> 'OAuthSporelyCloudClient':
+        """Refresh via the Supabase OAuth endpoint (not the password path).
+
+        OAuthError (revoked/invalid token) -> CloudReauthRequiredError.
+        RuntimeError (network/infra failure) -> CloudTemporarilyUnavailableError.
+        Empty returned refresh_token -> preserve the supplied token (non-rotating server).
+        """
+        from utils.sporely_cloud_auth import SporelyDesktopOAuthClient, OAuthError
+        token = str(refresh_token or '').strip()
+        if not token:
+            raise CloudSyncError('Missing refresh token')
+        try:
+            result = SporelyDesktopOAuthClient().refresh(token)
+        except OAuthError as exc:
+            raise CloudReauthRequiredError(
+                "OAuth refresh token is invalid or has been revoked. (invalid_grant)"
+            ) from exc
+        except RuntimeError as exc:
+            raise CloudTemporarilyUnavailableError(
+                f"OAuth token refresh temporarily failed: {exc}"
+            ) from exc
+        user_id = _decode_jwt_subject(result.access_token) or _normalize_cloud_user_id(result.user_id)
+        # Preserve the existing refresh token when the server does not rotate it.
+        new_refresh = str(result.refresh_token or '').strip() or token
+        return cls(
+            access_token=result.access_token,
+            user_id=user_id,
+            refresh_token=new_refresh,
+            user_email=getattr(result, 'user_email', None),
+        )
+
+    def save_credentials(
+        self,
+        email: str | None = None,
+        password: str | None = None,
+        remember_password: bool | None = None,
+    ) -> None:
+        """Persist OAuth session tokens; never reads or writes passwords."""
+        updates: dict[str, object] = {
+            'cloud_access_token': self.access_token,
+            'cloud_user_id': self.user_id,
+            'cloud_refresh_token': self.refresh_token,
+            'cloud_auth_method': 'oauth',
+        }
+        if email is not None:
+            updates['cloud_user_email'] = str(email or '').strip()
+        update_app_settings(updates)
+
+    @classmethod
+    def from_stored_credentials(cls) -> 'OAuthSporelyCloudClient | None':
+        """Load an OAuth session from settings.
+
+        Unlike the base class, does NOT fall through to password login.
+        CloudReauthRequiredError propagates so callers can surface the
+        reauth_required status instead of silently returning None.
+        """
+        settings = get_app_settings()
+        token = settings.get('cloud_access_token')
+        user_id = settings.get('cloud_user_id')
+        refresh_token = settings.get('cloud_refresh_token')
+        user_email = settings.get('cloud_user_email')
+        token_text = str(token or '').strip()
+        user_id_text = _normalize_cloud_user_id(user_id)
+        refresh_text = str(refresh_token or '').strip() or None
+        if token_text and user_id_text:
+            token_user_id = _decode_jwt_subject(token_text)
+            client = cls(
+                access_token=token_text,
+                user_id=token_user_id or user_id_text,
+                refresh_token=refresh_text,
+                user_email=user_email,
+            )
+            expiry_seconds = _decode_jwt_expiry(token_text)
+            if (
+                expiry_seconds is not None
+                and _jwt_expires_soon(token_text)
+                and refresh_text
+            ):
+                try:
+                    client._refresh_session_if_possible()
+                    return client
+                except CloudTemporarilyUnavailableError:
+                    return client  # transient — caller retries on first request
+                except CloudReauthRequiredError:
+                    raise  # OAuth: propagate; do not fall through to password
+            else:
+                return client
+        if refresh_text:
+            try:
+                client = cls.refresh_login(refresh_text)
+                client.save_credentials()
+                return client
+            except CloudTemporarilyUnavailableError:
+                raise
+            except CloudReauthRequiredError:
+                raise  # propagate; caller surfaces reauth_required status
+            except CloudSyncError:
+                return None
+        return None
+
+    @classmethod
+    def login(cls, *args, **kwargs) -> 'OAuthSporelyCloudClient':
+        raise CloudSyncError(
+            "OAuth sessions do not support password login. "
+            "Use SporelyDesktopOAuthClient.authorize() to obtain a new session."
+        )
 
 
 class SporelyReadOnlyCloudClient(SporelyCloudClient):

@@ -38,7 +38,7 @@ def test_cloud_workers_have_non_empty_object_names(qapp):
         observations_tab._ThumbnailLoaderWorker([]),
         observations_tab.LocationLookupWorker(0.0, 0.0),
         observations_tab.ArtsobsMobileLinkCheckWorker([]),
-        main_window._CloudLoginWorker("a@example.com", "pw"),
+        main_window._CloudOAuthLoginWorker(),
         ConflictResolutionWorker([]),
     ]
     try:
@@ -212,7 +212,6 @@ def test_cloud_auto_sync_worker_reports_auth_failure_when_saved_credentials_are_
 
     monkeypatch.setattr(observations_tab.SporelyCloudClient, "from_stored_credentials", lambda: None)
     monkeypatch.setattr(observations_tab, "get_app_settings", lambda: {"cloud_access_token": "expired-token"})
-    monkeypatch.setattr(observations_tab, "load_saved_cloud_password", lambda: ("", None, False))
     monkeypatch.setattr(
         observations_tab,
         "sync_all",
@@ -225,7 +224,7 @@ def test_cloud_auto_sync_worker_reports_auth_failure_when_saved_credentials_are_
 
     worker.run()
 
-    assert errors == ["Cloud sync sign-in failed. Please check your email and password."]
+    assert errors == ["Cloud sync sign-in failed. Please sign in again."]
     assert results == []
 
 
@@ -235,7 +234,6 @@ def test_cloud_auto_sync_worker_skips_without_saved_credentials(monkeypatch, qap
 
     monkeypatch.setattr(observations_tab.SporelyCloudClient, "from_stored_credentials", lambda: None)
     monkeypatch.setattr(observations_tab, "get_app_settings", lambda: {})
-    monkeypatch.setattr(observations_tab, "load_saved_cloud_password", lambda: ("", None, False))
     monkeypatch.setattr(
         observations_tab,
         "sync_all",
@@ -250,6 +248,36 @@ def test_cloud_auto_sync_worker_skips_without_saved_credentials(monkeypatch, qap
 
     assert errors == []
     assert results == [{"pushed": 0, "pulled": 0, "errors": [], "skipped": True}]
+
+
+def test_cloud_auto_sync_worker_after_explicit_signout_does_not_reauthenticate(monkeypatch, qapp):
+    """After an explicit sign-out (no stored tokens at all), background sync
+    must quietly no-op — it must never open a browser or attempt a fresh
+    OAuth authorization on the user's behalf."""
+    import webbrowser
+
+    errors: list[str] = []
+    results: list[dict] = []
+    browser_opens: list[str] = []
+
+    monkeypatch.setattr(observations_tab.SporelyCloudClient, "from_stored_credentials", lambda: None)
+    monkeypatch.setattr(observations_tab, "get_app_settings", lambda: {})
+    monkeypatch.setattr(webbrowser, "open", lambda url, *a, **k: browser_opens.append(url) or True)
+    monkeypatch.setattr(
+        observations_tab,
+        "sync_all",
+        lambda *args, **kwargs: (_ for _ in ()).throw(AssertionError("sync_all should not run")),
+    )
+
+    worker = observations_tab._CloudAutoSyncWorker()
+    worker.error.connect(errors.append)
+    worker.sync_finished.connect(results.append)
+
+    worker.run()
+
+    assert errors == []
+    assert results == [{"pushed": 0, "pulled": 0, "errors": [], "skipped": True}]
+    assert browser_opens == [], "Background sync must not launch a browser after explicit sign-out"
 
 
 def test_cloud_auto_sync_worker_cancels_during_sync(monkeypatch, qapp):
@@ -539,11 +567,11 @@ def test_cloud_sync_error_for_invalid_login_clears_progress_and_reports_sign_in_
     assert calls["visible"] == [False]
     assert calls["progress"] == (("", 0, 1), {})
     record_args, record_kwargs = calls["record"]
-    assert record_args == ("Cloud sync sign-in failed. Please check your email and password.",)
+    assert record_args == ("Cloud sync sign-in failed. Please sign in again.",)
     assert record_kwargs["errors"] == ["invalid_grant"]
-    assert record_kwargs["status"] == "error"
+    assert record_kwargs["status"] == "reauth_required"
     status_args, status_kwargs = calls["status_message"]
-    assert status_args == ("Cloud sync sign-in failed. Please check your email and password.",)
+    assert status_args == ("Cloud sync sign-in failed. Please sign in again.",)
     assert status_kwargs["level"] == "warning"
 
 
@@ -555,7 +583,7 @@ def test_cloud_sync_error_for_jwt_expired_reports_sign_in_failure():
         'GET observation_images?...: {"code":"PGRST303","message":"JWT expired"}',
     )
 
-    assert summary == "Cloud sync sign-in failed. Please check your email and password."
+    assert summary == "Cloud sync sign-in failed. Please sign in again."
 
 
 def test_cloud_sync_helpers_include_microscope_media_and_allow_recovery_cache():
@@ -1429,9 +1457,9 @@ def test_cloud_sync_idle_hint_prefers_error_over_pending(monkeypatch):
         "get_app_settings",
         lambda: {
             "cloud_last_sync_status": "error",
-            "cloud_last_sync_summary": "Cloud sync sign-in failed. Please check your email and password.",
+            "cloud_last_sync_summary": "Cloud sync sign-in failed. Please sign in again.",
             "cloud_last_sync_errors_json": json.dumps([
-                "Cloud sync sign-in failed. Please check your email and password.",
+                "Cloud sync sign-in failed. Please sign in again.",
             ]),
         },
     )
@@ -1448,7 +1476,7 @@ def test_cloud_sync_idle_hint_prefers_error_over_pending(monkeypatch):
     assert kind == "hint"
     assert tone == "warning"
     assert timeout_ms is None
-    assert "Cloud sync sign-in failed. Please check your email and password." in message
+    assert "Cloud sync sign-in failed. Please sign in again." in message
     assert "Sign in again, then click Sync now to retry uploads." in message
     assert "Cloud sync pending" not in message
 
@@ -1468,9 +1496,9 @@ def test_cloud_sync_idle_hint_uses_logged_in_copy_when_client_is_restored(monkey
         "get_app_settings",
         lambda: {
             "cloud_last_sync_status": "error",
-            "cloud_last_sync_summary": "Cloud sync sign-in failed. Please check your email and password.",
+            "cloud_last_sync_summary": "Cloud sync sign-in failed. Please sign in again.",
             "cloud_last_sync_errors_json": json.dumps([
-                "Cloud sync sign-in failed. Please check your email and password.",
+                "Cloud sync sign-in failed. Please sign in again.",
             ]),
         },
     )
@@ -1489,6 +1517,133 @@ def test_cloud_sync_idle_hint_uses_logged_in_copy_when_client_is_restored(monkey
     assert timeout_ms is None
     assert "Logged in, click Sync now to sync." in message
     assert "Sign in again, then click Sync now to retry uploads." not in message
+
+
+def test_cloud_sync_idle_hint_reauth_required_with_pending_ids_shows_signin_message(monkeypatch):
+    """When cloud_last_sync_status is reauth_required and there are pending
+    observation IDs, the hint must show the pending IDs AND the sign-in
+    message — never 'Logged in, click Sync now to sync.'"""
+    hint_controller = _DummyHintController()
+    fake_client = SimpleNamespace(user_id="user-123")
+    fake_window = SimpleNamespace(
+        _cloud_client=fake_client,
+        _cached_cloud_client=lambda: fake_client,
+        _cloud_sync_pending_observation_ids=lambda: [839, 700],
+        _cloud_sync_blocked_observation_ids=lambda: [],
+        _format_cloud_sync_observation_ids=main_window.MainWindow._format_cloud_sync_observation_ids,
+    )
+    monkeypatch.setattr(
+        observations_tab,
+        "get_app_settings",
+        lambda: {
+            "cloud_last_sync_status": "reauth_required",
+            "cloud_last_sync_summary": "Cloud sign-in is required.",
+            "cloud_last_sync_errors_json": json.dumps([
+                "Login failed (status=400): captcha_failed",
+            ]),
+        },
+    )
+    tab = SimpleNamespace(
+        tr=lambda text: text,
+        _status_hint_controller=hint_controller,
+        window=lambda: fake_window,
+    )
+
+    observations_tab.ObservationsTab._refresh_cloud_sync_idle_hint(tab)
+
+    assert hint_controller.calls
+    kind, message, tone, timeout_ms = hint_controller.calls[-1]
+    assert kind == "hint"
+    assert tone == "warning"
+    assert "Cloud sync pending for observation IDs 839, 700." in message
+    assert "Cloud sign-in is required. Click Sync now to sign in again." in message
+    assert "Logged in" not in message
+
+
+def test_cloud_sync_idle_hint_reauth_required_no_pending_ids_shows_signin_message(monkeypatch):
+    """When reauth_required and no pending IDs, hint shows sign-in required."""
+    hint_controller = _DummyHintController()
+    fake_client = SimpleNamespace(user_id="user-123")
+    fake_window = SimpleNamespace(
+        _cloud_client=fake_client,
+        _cached_cloud_client=lambda: fake_client,
+        _cloud_sync_pending_observation_ids=lambda: [],
+        _cloud_sync_blocked_observation_ids=lambda: [],
+        _format_cloud_sync_observation_ids=main_window.MainWindow._format_cloud_sync_observation_ids,
+    )
+    monkeypatch.setattr(
+        observations_tab,
+        "get_app_settings",
+        lambda: {
+            "cloud_last_sync_status": "reauth_required",
+            "cloud_last_sync_summary": "Cloud sign-in is required.",
+            "cloud_last_sync_errors_json": json.dumps([
+                "Refresh failed (status=400): invalid_grant",
+            ]),
+        },
+    )
+    tab = SimpleNamespace(
+        tr=lambda text: text,
+        _status_hint_controller=hint_controller,
+        window=lambda: fake_window,
+    )
+
+    observations_tab.ObservationsTab._refresh_cloud_sync_idle_hint(tab)
+
+    assert hint_controller.calls
+    kind, message, tone, timeout_ms = hint_controller.calls[-1]
+    assert kind == "hint"
+    assert tone == "warning"
+    assert "Logged in" not in message
+    assert "Cloud sign-in is required. Click Sync now to sign in again." in message
+
+
+def test_captcha_failed_error_classified_as_reauth_required(monkeypatch):
+    """A captcha_failed sync error must be stored as reauth_required, not error."""
+    calls: dict[str, object] = {}
+
+    tab = SimpleNamespace(
+        tr=lambda text: text,
+        refresh_observations=lambda show_status=False: None,
+        _cloud_sync_run_refresh_flow=False,
+        _cloud_sync_show_status=False,
+        _record_cloud_sync_status=lambda *args, **kwargs: calls.update({"record_args": args, "record_kwargs": kwargs}),
+        _refresh_cloud_sync_idle_hint=lambda: None,
+    )
+    tab._summarize_sync_error = lambda msg: observations_tab.ObservationsTab._summarize_sync_error(tab, msg)
+
+    captcha_msg = 'Login failed (status=400): {"code":"captcha_failed","message":"captcha protection: request disallowed (no captcha_token found)"}'
+    observations_tab.ObservationsTab._on_cloud_sync_error(tab, captcha_msg)
+
+    assert calls["record_kwargs"]["status"] == "reauth_required"
+    summary = calls["record_args"][0]
+    assert "Cloud sign-in is required." in summary
+    assert "Logged in" not in summary
+
+
+def test_captcha_failed_recognized_as_cloud_auth_error():
+    """is_cloud_auth_error must match captcha_failed so callers classify it as auth failure."""
+    captcha_msg = 'Login failed (status=400): {"code":"captcha_failed","message":"captcha protection: request disallowed"}'
+    assert cloud_sync.is_cloud_auth_error(captcha_msg)
+
+
+def test_non_auth_error_keeps_error_status(monkeypatch):
+    """Generic (non-auth) sync errors must still be stored as status=error, not reauth_required."""
+    calls: dict[str, object] = {}
+
+    tab = SimpleNamespace(
+        tr=lambda text: text,
+        refresh_observations=lambda show_status=False: None,
+        _cloud_sync_run_refresh_flow=False,
+        _cloud_sync_show_status=False,
+        _record_cloud_sync_status=lambda *args, **kwargs: calls.update({"record_args": args, "record_kwargs": kwargs}),
+        _refresh_cloud_sync_idle_hint=lambda: None,
+    )
+    tab._summarize_sync_error = lambda msg: observations_tab.ObservationsTab._summarize_sync_error(tab, msg)
+
+    observations_tab.ObservationsTab._on_cloud_sync_error(tab, "Push phase failed: connection refused")
+
+    assert calls["record_kwargs"]["status"] == "error"
 
 
 def test_refresh_cloud_sync_idle_hint_uses_persistent_channel(monkeypatch):

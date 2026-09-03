@@ -3,7 +3,7 @@ from __future__ import annotations
 
 from PySide6.QtCore import Qt, QThread, Signal
 from PySide6.QtWidgets import (
-    QDialog, QVBoxLayout, QHBoxLayout, QLabel, QLineEdit,
+    QDialog, QVBoxLayout, QHBoxLayout, QLabel,
     QPushButton, QProgressBar, QFrame, QMessageBox, QCheckBox,
 )
 
@@ -32,6 +32,7 @@ from utils.cloud_sync import (
     SporelyCloudClient,
     ACCOUNT_MISMATCH_MESSAGE,
     AccountMismatchError,
+    CloudReauthRequiredError,
     CloudSyncError,
     is_cloud_auth_error,
     is_image_too_large_for_plan_error,
@@ -41,11 +42,44 @@ from utils.cloud_sync import (
     summarize_blocked_write_attempts,
     summarize_image_too_large_for_plan_error,
     sync_all,
-    load_saved_cloud_password,
     summarize_sync_issues,
     unlink_local_observation_from_cloud,
 )
 from utils.cloud_media_policy import WEBP_REQUIRED_FOR_CLOUD_MEDIA_UPLOAD_MESSAGE
+
+
+class _OAuthLoginWorker(QThread):
+    ok    = Signal(object)       # OAuthSporelyCloudClient
+    fail  = Signal(str, str)     # message, kind: "cancelled"|"oauth_error"|"runtime_error"
+
+    def __init__(self, parent=None):
+        super().__init__(parent)
+        self.setObjectName("Cloud OAuth login")
+        self._stop_requested = False
+
+    def cancel(self) -> None:
+        self._stop_requested = True
+
+    def run(self) -> None:
+        from utils.sporely_cloud_auth import SporelyDesktopOAuthClient, OAuthError
+        from utils.cloud_sync import OAuthSporelyCloudClient
+
+        def _tick():
+            if self._stop_requested:
+                raise InterruptedError("Cancelled.")
+
+        try:
+            result = SporelyDesktopOAuthClient().authorize(tick_callback=_tick)
+            client = OAuthSporelyCloudClient.from_oauth_session(result)
+            self.ok.emit(client)
+        except InterruptedError:
+            self.fail.emit("Sign-in cancelled.", "cancelled")
+        except OAuthError as e:
+            self.fail.emit(str(e), "oauth_error")
+        except RuntimeError as e:
+            self.fail.emit(str(e), "runtime_error")
+        except Exception as e:
+            self.fail.emit(f"Unexpected error: {e}", "runtime_error")
 from .cloud_conflict_dialog import CloudConflictDialog
 
 
@@ -104,6 +138,7 @@ class CloudSyncDialog(QDialog):
 
         self._client: SporelyCloudClient | None = None
         self._worker: _SyncWorker | None = None
+        self._oauth_worker: _OAuthLoginWorker | None = None
         self._prepare_images_cb = prepare_images_cb
 
         root = QVBoxLayout(self)
@@ -121,48 +156,29 @@ class CloudSyncDialog(QDialog):
         lf.setSpacing(10)
         lf.setContentsMargins(0, 0, 0, 0)
 
-        lf.addWidget(QLabel('Sign in with your Sporely account to enable cloud sync.'))
+        self._login_desc_label = QLabel('Sign in to your Sporely account to enable cloud sync.')
+        self._login_desc_label.setWordWrap(True)
+        lf.addWidget(self._login_desc_label)
 
-        self._email_input = QLineEdit()
-        self._email_input.setPlaceholderText('Email')
-        self._email_input.returnPressed.connect(self._do_login)
-        lf.addWidget(self._email_input)
+        self._signin_btn = QPushButton('Sign in in browser')
+        self._signin_btn.setDefault(True)
+        self._signin_btn.clicked.connect(self._start_oauth_login)
+        lf.addWidget(self._signin_btn)
 
-        self._pw_input = QLineEdit()
-        self._pw_input.setPlaceholderText('Password')
-        self._pw_input.setEchoMode(QLineEdit.Password)
-        self._pw_input.returnPressed.connect(self._do_login)
-        lf.addWidget(self._pw_input)
+        self._waiting_label = QLabel('Waiting for browser sign-in…')
+        self._waiting_label.hide()
+        lf.addWidget(self._waiting_label)
 
-        saved_email, saved_password, can_store_password = load_saved_cloud_password()
-        self._saved_cloud_password = saved_password
-        self._saved_cloud_password_loaded = bool(saved_password)
-        self._cloud_password_edited = False
-        self._remember_cloud_password = False
-        if saved_email:
-            self._email_input.setText(saved_email)
-        if self._saved_cloud_password_loaded:
-            self._pw_input.setText('********')
-        self._pw_input.textEdited.connect(self._on_password_edited)
-
-        self._remember_pw_check = QCheckBox('Save password on this device')
-        self._remember_pw_check.setChecked(bool(saved_email or saved_password))
-        if not can_store_password:
-            self._remember_pw_check.setChecked(False)
-            self._remember_pw_check.setEnabled(False)
-            self._remember_pw_check.setToolTip('Install keyring to enable encrypted password storage.')
-        lf.addWidget(self._remember_pw_check)
+        self._cancel_btn = QPushButton('Cancel')
+        self._cancel_btn.clicked.connect(self._cancel_oauth_login)
+        self._cancel_btn.hide()
+        lf.addWidget(self._cancel_btn)
 
         self._login_error = QLabel('')
         self._login_error.setWordWrap(True)
         self._login_error.setStyleSheet('color: #c05848;')
         self._login_error.hide()
         lf.addWidget(self._login_error)
-
-        self._login_btn = QPushButton('Sign in')
-        self._login_btn.setDefault(True)
-        self._login_btn.clicked.connect(self._do_login)
-        lf.addWidget(self._login_btn)
 
         root.addWidget(self._login_frame)
 
@@ -222,15 +238,29 @@ class CloudSyncDialog(QDialog):
         root.addWidget(self._close_btn)
 
         # Check for stored credentials and decide which panel to show
-        self._client = SporelyCloudClient.from_stored_credentials()
-        if self._client:
-            self._show_sync_panel()
+        try:
+            self._client = SporelyCloudClient.from_stored_credentials()
+        except CloudReauthRequiredError:
+            self._client = None
+            self._show_login_panel(reauth=True)
         else:
-            self._show_login_panel()
+            if self._client:
+                self._show_sync_panel()
+            else:
+                self._show_login_panel()
 
     # ── Panel switching ──────────────────────────────────────────────────
 
-    def _show_login_panel(self) -> None:
+    def _show_login_panel(self, *, reauth: bool = False) -> None:
+        if reauth:
+            self._login_desc_label.setText('Cloud sign-in is required.')
+        else:
+            self._login_desc_label.setText('Sign in to your Sporely account to enable cloud sync.')
+        self._signin_btn.show()
+        self._signin_btn.setEnabled(True)
+        self._waiting_label.hide()
+        self._cancel_btn.hide()
+        self._login_error.hide()
         self._login_frame.show()
         self._sync_frame.hide()
         self.adjustSize()
@@ -246,68 +276,55 @@ class CloudSyncDialog(QDialog):
         self._sync_frame.show()
         self.adjustSize()
 
-    # ── Login ────────────────────────────────────────────────────────────
+    # ── Login (OAuth) ───────────────────────────────────────────────────────
 
-    def _do_login(self) -> None:
-        email = self._email_input.text().strip()
-        pw    = self._pw_input.text()
-        if not email or not pw:
-            self._show_login_error('Please enter your email and password.')
+    def _start_oauth_login(self) -> None:
+        if self._oauth_worker is not None:
             return
-
-        if self._saved_cloud_password_loaded and not self._cloud_password_edited:
-            pw = self._saved_cloud_password or ''
-        self._remember_cloud_password = bool(self._remember_pw_check.isChecked())
-
-        self._login_btn.setEnabled(False)
-        self._login_btn.setText('Signing in…')
+        self._signin_btn.setEnabled(False)
+        self._signin_btn.hide()
+        self._waiting_label.show()
+        self._cancel_btn.show()
         self._login_error.hide()
 
-        # Run in thread so UI stays responsive
-        class _LoginWorker(QThread):
-            ok    = Signal(object)
-            fail  = Signal(str)
-            def __init__(self, email, pw):
-                super().__init__()
-                self.setObjectName("Cloud login (dialog)")
-                self._email, self._pw = email, pw
-            def run(self):
-                try:
-                    client = SporelyCloudClient.login(self._email, self._pw)
-                    self.ok.emit(client)
-                except CloudSyncError as e:
-                    self.fail.emit(str(e))
+        self._oauth_worker = _OAuthLoginWorker(self)
+        self._oauth_worker.ok.connect(self._on_oauth_success)
+        self._oauth_worker.fail.connect(self._on_oauth_failure)
+        self._oauth_worker.finished.connect(self._on_oauth_worker_done)
+        _track_worker(self._oauth_worker)
+        self._oauth_worker.start()
 
-        self._login_worker = _LoginWorker(email, pw)
-        self._login_worker.ok.connect(self._on_login_ok)
-        self._login_worker.fail.connect(self._on_login_fail)
-        _track_worker(self._login_worker)
-        self._login_worker.start()
+    def _cancel_oauth_login(self) -> None:
+        if self._oauth_worker is not None:
+            self._oauth_worker.cancel()
 
-    def _on_login_ok(self, client: SporelyCloudClient) -> None:
-        self._client = client
-        self._client.save_credentials(
-            email=self._email_input.text().strip(),
-            password=(self._saved_cloud_password if self._saved_cloud_password_loaded and not self._cloud_password_edited else self._pw_input.text()),
-            remember_password=self._remember_cloud_password,
-        )
+    def _on_oauth_success(self, client) -> None:
         from database.schema import update_app_settings
-        update_app_settings({'cloud_user_email': self._email_input.text().strip()})
-        self._login_btn.setEnabled(True)
-        self._login_btn.setText('Sign in')
+        self._client = client
+        email = client.user_email or ''
+        client.save_credentials(email=email or None)
+        if email:
+            update_app_settings({'cloud_user_email': email})
         self._show_sync_panel()
 
-    def _on_login_fail(self, msg: str) -> None:
-        self._login_btn.setEnabled(True)
-        self._login_btn.setText('Sign in')
-        self._show_login_error(msg)
+    def _on_oauth_failure(self, message: str, kind: str) -> None:
+        if kind == 'cancelled':
+            self._login_error.hide()
+        else:
+            self._login_error.setText(message)
+            self._login_error.show()
+        self._waiting_label.hide()
+        self._cancel_btn.hide()
+        self._signin_btn.show()
+        self._signin_btn.setEnabled(True)
 
-    def _show_login_error(self, msg: str) -> None:
-        self._login_error.setText(msg)
-        self._login_error.show()
+    def _on_oauth_worker_done(self) -> None:
+        self._oauth_worker = None
 
-    def _on_password_edited(self, _text: str) -> None:
-        self._cloud_password_edited = True
+    def closeEvent(self, event) -> None:
+        if self._oauth_worker is not None:
+            self._oauth_worker.cancel()
+        super().closeEvent(event)
 
     # ── Sync ─────────────────────────────────────────────────────────────
 
@@ -701,7 +718,7 @@ class CloudSyncDialog(QDialog):
         if text == ACCOUNT_MISMATCH_MESSAGE:
             return 'Cloud sync blocked: this database is linked to another account.'
         if is_cloud_auth_error(text):
-            return 'Cloud sync sign-in failed. Please check your email and password.'
+            return 'Cloud sync sign-in failed. Please sign in again.'
         if WEBP_REQUIRED_FOR_CLOUD_MEDIA_UPLOAD_MESSAGE.lower() in text.lower():
             return 'Cloud sync failed because WebP support is required for cloud media uploads.'
         if is_image_too_large_for_plan_error(text):
@@ -717,6 +734,4 @@ class CloudSyncDialog(QDialog):
     def _do_signout(self) -> None:
         SporelyCloudClient.clear_credentials()
         self._client = None
-        self._email_input.clear()
-        self._pw_input.clear()
         self._show_login_panel()
