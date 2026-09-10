@@ -6,7 +6,10 @@ Manual verification accepted by the user on 2026-09-10: “this works. commit”
 Automated validation passed as recorded below; authorized for commit and push.
 Branch: `feature/reference-save-and-plot`.
 Base HEAD: `40022707108410ca674b04fdcc5b8149c857d75e`.
-Candidate SHA: recorded in the post-commit handoff update.
+Candidate SHA: `4efdf7dd2e06b6153942fe66283dff38f9d95075` (immutable implementation commit).
+This documentation-only follow-up records its handoff; both commits are on the
+feature branch for review. Stage prompt: user’s “Fix this” request and separate
+library-save/plot buttons, followed by “this works. commit”.
 This is the canonical plan for the user's follow-up to the reference audit.
 
 ## Authorized scope
