@@ -7836,6 +7836,8 @@ class MainWindow(GeometryMixin, QMainWindow):
         self.ref_shape_selector.set_selected_value("square" if reference_shape == "square" else "ellipse")
         self.ref_shape_selector.selectionChanged.connect(lambda _value: self.on_reference_overlay_setting_changed())
         plot_layout.addRow(self.tr("Reference shape:"), self.ref_shape_selector)
+        # Keep compatibility settings widgets, but ranges no longer offer ellipses.
+        plot_layout.setRowVisible(self.ref_shape_selector, False)
         self.ref_show_minmax_checkbox = QCheckBox(self.tr("Min/Max"))
         self.ref_show_minmax_checkbox.setChecked(bool(self.gallery_plot_settings.get("reference_minmax", True)))
         self.ref_show_minmax_checkbox.toggled.connect(self.on_reference_overlay_setting_changed)
@@ -9864,7 +9866,7 @@ class MainWindow(GeometryMixin, QMainWindow):
         )
         taxon_label = " ".join(part for part in (genus, species) if part).strip()
 
-        def _add_callback(identifier: str, role: str) -> None:
+        def _add_callback(identifier: str, role: str) -> bool | None:
             current_observation_id = getattr(self, "active_observation_id", None)
             if (
                 current_observation_id is None
@@ -9879,7 +9881,7 @@ class MainWindow(GeometryMixin, QMainWindow):
                         "no reference was attached."
                     ),
                 )
-                return
+                return False
             if isinstance(identifier, str) and identifier.startswith("observation:"):
                 self._attach_personal_observation_reference_to_active_observation(
                     identifier.split(":", 1)[1], genus, species
@@ -9887,6 +9889,9 @@ class MainWindow(GeometryMixin, QMainWindow):
                 return
             self._attach_normalized_reference_to_active_observation(
                 identifier, role
+            )
+            return self._measurement_set_is_attached_to_observation(
+                captured_observation_id, identifier
             )
 
         def _add_cloud_callback(data: dict) -> None:
@@ -9923,8 +9928,20 @@ class MainWindow(GeometryMixin, QMainWindow):
                     ),
                 )
                 return False
-            self._submit_reference_editor_result(editor, sync_panel=False)
-            return True
+            return self._submit_reference_editor_result(editor, sync_panel=False)
+
+        def _save_manual_callback(editor: "ReferenceEntryEditor") -> str | None:
+            try:
+                result = self._persist_normalized_reference_from_dialog(
+                    editor, editor.result_data(), legacy_id=None, attach_to_plot=False
+                )
+            except Exception as exc:
+                QMessageBox.warning(
+                    self, self.tr("Reference library"),
+                    self.tr("Could not add the library reference: {error}").format(error=str(exc)),
+                )
+                return None
+            return result if isinstance(result, str) else None
 
         dialog = AddReferenceDialog(
             self,
@@ -9938,6 +9955,7 @@ class MainWindow(GeometryMixin, QMainWindow):
             attach_callback=_add_callback,
             cloud_attach_callback=_add_cloud_callback,
             manual_attach_callback=_add_manual_callback,
+            manual_save_callback=_save_manual_callback,
             ai_candidates=self._collect_reference_ai_suggestions(),
         )
         dialog.exec()
@@ -11465,8 +11483,12 @@ class MainWindow(GeometryMixin, QMainWindow):
         payload: dict,
         *,
         legacy_id: int | None,
-    ) -> bool:
+        attach_to_plot: bool = True,
+    ) -> bool | str:
         """Route the dialog's result through the normalized library.
+
+        With attach_to_plot=False, save a new set and return its ID, without
+        creating an observation use or refreshing the plot. Failures return False.
 
         - When ``source_kind`` is ``existing_measurement_set``, attach the
           selected set to the active observation via the shared helper.
@@ -11564,9 +11586,17 @@ class MainWindow(GeometryMixin, QMainWindow):
             )
             return False
         if payload_ms is None:
+            if not attach_to_plot:
+                QMessageBox.warning(
+                    self, self.tr("Reference library"),
+                    self.tr("Enter a supported measurement range or raw spore data before saving to the library."),
+                )
             # Nothing normalized to write (Parmasto-only or no data);
             # legacy already persisted upstream.
             return False
+        # The independent picker explicitly captures observation_taxon_id;
+        # its reference name belongs to the comparison target. Only older
+        # panel callers lack that field and need the legacy synonym check.
         # Taxon-drift guard: the observation binds sporely_taxon_id +
         # observation.genus/species together as one identity. The
         # ReferenceAddDialog is initialised from the panel-editable
@@ -11583,7 +11613,11 @@ class MainWindow(GeometryMixin, QMainWindow):
         panel_genus = (payload.get("genus") or "").strip()
         panel_species = (payload.get("species") or "").strip()
         obs_genus, obs_species = self._observation_taxon_identity(int(observation_id))
-        if (panel_genus or panel_species) and (obs_genus or obs_species):
+        if (
+            "observation_taxon_id" not in payload
+            and (panel_genus or panel_species)
+            and (obs_genus or obs_species)
+        ):
             if (
                 panel_genus.casefold() != (obs_genus or "").casefold()
                 or panel_species.casefold() != (obs_species or "").casefold()
@@ -11618,7 +11652,11 @@ class MainWindow(GeometryMixin, QMainWindow):
                 return False
             treatment_data = treatment_payload_getter()
             try:
-                quick_add_result = QuickAddReferenceService.create_and_attach(
+                create = (
+                    QuickAddReferenceService.create_and_attach
+                    if attach_to_plot else QuickAddReferenceService.create_in_library
+                )
+                quick_add_result = create(
                     QuickAddReferenceRequest(
                         observation_id=observation_id,
                         existing_work_id=str(work_id) if work_id else None,
@@ -11648,6 +11686,8 @@ class MainWindow(GeometryMixin, QMainWindow):
                     ),
                 )
                 return False
+            if not attach_to_plot:
+                return quick_add_result.measurement_set.id
             self._restore_reference_uses_for_observation(observation_id)
             self.update_graph_plots_only()
             try:
@@ -11855,7 +11895,7 @@ class MainWindow(GeometryMixin, QMainWindow):
         species = (obs.get("species") or "").strip() or None
         return (genus, species)
 
-    def _submit_reference_editor_result(self, editor, *, sync_panel: bool = False) -> None:
+    def _submit_reference_editor_result(self, editor, *, sync_panel: bool = False) -> bool:
         """Persist a validated editor's ``result_data()``.
 
         Normalized-first quick-add, then legacy write + normalized attach,
@@ -11874,7 +11914,7 @@ class MainWindow(GeometryMixin, QMainWindow):
         """
         data = editor.result_data()
         if not isinstance(data, dict) or not data:
-            return
+            return False
         # The normalized quick-add path is deliberately not legacy-first.
         # Validation and canonical attachment must complete before any UI
         # state is accepted, otherwise a failed quick add would strand a
@@ -11908,9 +11948,9 @@ class MainWindow(GeometryMixin, QMainWindow):
         )
         if quick_add_intended:
             try:
-                self._persist_normalized_reference_from_dialog(
+                return bool(self._persist_normalized_reference_from_dialog(
                     editor, data, legacy_id=None
-                )
+                ))
             except Exception as exc:
                 QMessageBox.warning(
                     self,
@@ -11919,7 +11959,7 @@ class MainWindow(GeometryMixin, QMainWindow):
                         error=str(exc)
                     ),
                 )
-            return
+            return False
         legacy_id: int | None = None
         if data.get("source_kind") == "reference":
             legacy_id = ReferenceDB.set_reference(data)
@@ -11950,7 +11990,7 @@ class MainWindow(GeometryMixin, QMainWindow):
         # persist as a panel entry; the attach helper already appended
         # the translated series row for the attached set.
         if data.get("source_kind") == "existing_measurement_set":
-            return
+            return bool(normalized_attached)
         if sync_panel:
             self.reference_values = data
             self._apply_reference_panel_values(data)
@@ -11962,6 +12002,7 @@ class MainWindow(GeometryMixin, QMainWindow):
         # for downgrade compatibility and edit-mode round-trips.
         if not normalized_attached:
             self._add_reference_series_entry(data)
+        return True
 
     def _on_reference_panel_add_clicked(self):
         genus = self._clean_ref_genus_text(self.ref_genus_input.text())
@@ -17946,29 +17987,12 @@ class MainWindow(GeometryMixin, QMainWindow):
         def _plot_reference_range_shape(x_left, x_right, y_bottom, y_top, edge_color, linestyle, q_low=None, q_high=None):
             if x_left is None or x_right is None or y_bottom is None or y_top is None:
                 return
-            if reference_shape == "square":
-                polygon = _constrained_box_polygon(x_left, x_right, y_bottom, y_top, q_low=q_low, q_high=q_high)
-                if not polygon:
-                    return
-                xs = [point[0] for point in polygon] + [polygon[0][0]]
-                ys = [point[1] for point in polygon] + [polygon[0][1]]
-                ax_scatter.plot(xs, ys, color=edge_color, linewidth=1.5, linestyle=linestyle)
+            polygon = _constrained_box_polygon(x_left, x_right, y_bottom, y_top, q_low=q_low, q_high=q_high)
+            if not polygon:
                 return
-            width = abs(x_right - x_left)
-            height = abs(y_top - y_bottom)
-            if width <= 0 or height <= 0:
-                return
-            center = ((x_left + x_right) / 2.0, (y_bottom + y_top) / 2.0)
-            ellipse = Ellipse(
-                center,
-                width=width,
-                height=height,
-                fill=False,
-                edgecolor=edge_color,
-                linewidth=1.5,
-                linestyle=linestyle,
-            )
-            ax_scatter.add_patch(ellipse)
+            xs = [point[0] for point in polygon] + [polygon[0][0]]
+            ys = [point[1] for point in polygon] + [polygon[0][1]]
+            ax_scatter.plot(xs, ys, color=edge_color, linewidth=1.5, linestyle=linestyle)
 
         def _plot_reference_mean_shape(
             x_left,
@@ -20857,6 +20881,7 @@ class MainWindow(GeometryMixin, QMainWindow):
             reference_shape_selector.set_selected_value("square")
         reference_shape_layout.addWidget(reference_shape_selector, 0, Qt.AlignLeft)
         layout.addRow("", reference_shape_row)
+        layout.setRowVisible(reference_shape_row, False)
         _sync_dialog_kde_controls()
 
         axis_equal_checkbox = QCheckBox(self.tr("Axis equal"))

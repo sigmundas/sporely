@@ -199,3 +199,14 @@ def test_attachment_failure_compensates_only_new_records(libs, monkeypatch):
     assert TaxonTreatmentRepository.list_for_work(existing.id) == []
     assert MeasurementSetRepository.list_attachment_candidates() == []
     assert ObservationReferenceUseRepository.list_for_observation(libs) == []
+
+
+def test_save_to_library_does_not_attach_until_requested(libs):
+    result = QuickAddReferenceService.create_in_library(_request(libs))
+    assert MeasurementSetRepository.get(result.measurement_set.id) is not None
+    assert result.use is None
+    assert result.created_attachment is False
+    assert ObservationReferenceUseRepository.list_for_observation(libs) == []
+    use = ObservationReferenceUseRepository.attach(libs, result.measurement_set.id, role="compared")
+    assert use.reference_measurement_set_id == result.measurement_set.id
+    assert len(MeasurementSetRepository.list_for_treatment(result.treatment.id)) == 1

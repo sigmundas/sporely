@@ -881,3 +881,24 @@ def test_retry_after_measurement_set_failure_creates_no_duplicate_treatment(
     listed = ObservationReferenceUseRepository.list_for_observation(obs_id)
     assert len(listed) == 1
     assert listed[0].reference_measurement_set_id == sets_after[0].id
+
+
+@pytest.mark.parametrize("target_taxon", [None, 99])
+def test_manual_comparison_target_saves_without_observation_name_warning(monkeypatch, qapp, libs, target_taxon):
+    db_path, _ = libs
+    obs_id = _make_observation(db_path, genus="Hebeloma", species="velutipes", sporely_taxon_id=7)
+    work = _seed_work()
+    payload = _range_payload(work.id, target_taxon, "Hebeloma", "sinapizans")
+    payload.update(observation_id=obs_id, observation_taxon_id=7)
+    editor = _QuickAddStubDialog(payload)
+    window = _build_window(monkeypatch, qapp)
+    window.active_observation_id = obs_id
+    window._active_sporely_taxon_id = lambda: 7
+    monkeypatch.setattr(main_window.QMessageBox, "question", lambda *a, **k: pytest.fail("Comparison must not prompt about the observation name"))
+    saved_id = window._persist_normalized_reference_from_dialog(editor, payload, legacy_id=None, attach_to_plot=False)
+    assert isinstance(saved_id, str)
+    assert ObservationReferenceUseRepository.list_for_observation(obs_id) == []
+    measurement_set = MeasurementSetRepository.get(saved_id)
+    treatment = TaxonTreatmentRepository.get(measurement_set.taxon_treatment_id)
+    assert treatment.taxon_id == (str(target_taxon) if target_taxon else None)
+    assert window._observation_taxon_identity(obs_id) == ("Hebeloma", "velutipes")

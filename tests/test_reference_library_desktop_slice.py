@@ -2168,3 +2168,24 @@ def test_core_rectangle_face_translucent_edge_opaque(tmp_path, monkeypatch):
     # RGB channels match the shared source color.
     for face_c, edge_c in zip(face[:3], edge[:3]):
         assert abs(face_c - edge_c) < 1e-6
+
+
+def test_legacy_reference_range_is_rectangular_even_with_saved_ellipse_setting():
+    """Exercise the actual nested drawing helper with the old saved preference."""
+    import ast
+    from pathlib import Path
+    from matplotlib.figure import Figure
+    from matplotlib.patches import Ellipse
+    from ui import main_window
+
+    tree = ast.parse(Path(main_window.__file__).read_text())
+    names = {"_clip_polygon_to_q_constraint", "_constrained_box_polygon", "_plot_reference_range_shape"}
+    nodes = [node for node in ast.walk(tree) if isinstance(node, ast.FunctionDef) and node.name in names]
+    assert len(nodes) == 3
+    axis = Figure().subplots()
+    namespace = {"ax_scatter": axis, "reference_shape": "ellipse", "Ellipse": Ellipse}
+    exec(compile(ast.Module(body=nodes, type_ignores=[]), "reference-range-helper", "exec"), namespace)
+    namespace["_plot_reference_range_shape"](9.5, 13.5, 6, 8, "green", "-")
+    assert not axis.patches
+    assert list(axis.lines[0].get_xdata()) == [9.5, 13.5, 13.5, 9.5, 9.5]
+    assert list(axis.lines[0].get_ydata()) == [6, 6, 8, 8, 6]

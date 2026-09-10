@@ -761,7 +761,8 @@ def test_manual_tab_add_to_plot_disabled_until_valid_input():
     dialog.tabs.setCurrentIndex(dialog._manual_tab_index)
     assert dialog.add_to_plot_btn.isEnabled() is False
     _set_manual_range(dialog)
-    assert dialog.add_to_plot_btn.isEnabled() is True
+    assert dialog.add_to_plot_btn.isEnabled() is False
+    assert dialog.save_to_library_btn.isEnabled() is True
 
 
 def test_manual_tab_invalid_input_cannot_submit(monkeypatch):
@@ -776,33 +777,35 @@ def test_manual_tab_invalid_input_cannot_submit(monkeypatch):
     assert dialog.result() != QDialog.Accepted
 
 
-def test_manual_tab_add_to_plot_invokes_callback_and_accepts_on_success(monkeypatch):
-    from PySide6.QtWidgets import QMessageBox
-
-    monkeypatch.setattr(QMessageBox, "warning", lambda *a, **k: None)
-    monkeypatch.setattr(QMessageBox, "question", lambda *a, **k: QMessageBox.Yes)
-    received = []
-    dialog = _make_dialog(manual_attach_callback=lambda editor: received.append(editor) or True)
+@pytest.mark.parametrize("save_succeeds", [False, True])
+def test_manual_save_then_attach_are_separate(monkeypatch, save_succeeds):
+    saved, attached = [], []
+    dialog = _make_dialog(
+        manual_save_callback=lambda editor: saved.append(editor) or ("set-saved" if save_succeeds else None),
+        attach_callback=lambda identifier, role: attached.append((identifier, role)) or True,
+    )
     dialog.tabs.setCurrentIndex(dialog._manual_tab_index)
     _set_manual_range(dialog)
+    dialog.manual_editor._selected_work_id = "work-1"
     dialog._on_add_to_plot_clicked()
-    assert received == [dialog.manual_editor]
-    assert dialog.result() == QDialog.Accepted
+    assert not saved and not attached
+    dialog._on_save_to_library_clicked()
+    assert saved == [dialog.manual_editor]
+    assert not attached
+    assert dialog.result() != QDialog.Accepted
+    assert dialog.add_to_plot_btn.isEnabled() is save_succeeds
+    if save_succeeds:
+        dialog._on_save_to_library_clicked()
+        assert len(saved) == 1
+        dialog._on_add_to_plot_clicked()
+        assert attached == [("set-saved", "compared")]
+        assert dialog.result() == QDialog.Accepted
 
 
-def test_manual_tab_stays_open_when_callback_reports_failure(monkeypatch):
-    """A manual submission can fail after validation (e.g. the observation
-    drifted while the picker was open); the picker must stay open and must
-    not claim success -- unlike the other three tabs, which always accept()
-    once their callback is invoked.
-    """
-    from PySide6.QtWidgets import QMessageBox
-
-    monkeypatch.setattr(QMessageBox, "warning", lambda *a, **k: None)
-    monkeypatch.setattr(QMessageBox, "question", lambda *a, **k: QMessageBox.Yes)
-    dialog = _make_dialog(manual_attach_callback=lambda editor: False)
+def test_saved_manual_set_stays_open_when_attachment_fails():
+    dialog = _make_dialog(attach_callback=lambda *_: False)
     dialog.tabs.setCurrentIndex(dialog._manual_tab_index)
-    _set_manual_range(dialog)
+    dialog._saved_manual_set_id = "saved-set"
     dialog._on_add_to_plot_clicked()
     assert dialog.result() != QDialog.Accepted
 
@@ -940,6 +943,7 @@ def test_manual_callback_routes_through_shared_submission_helper(monkeypatch):
     """
     window, kwargs = _make_host_window_for_manual_callback(monkeypatch)
     editor = object()  # opaque stand-in; the callback never inspects it
+    window._submit_reference_editor_result.return_value = True
     result = kwargs["manual_attach_callback"](editor)
     assert result is True
     window._submit_reference_editor_result.assert_called_once_with(
@@ -957,3 +961,9 @@ def test_manual_callback_rejects_when_observation_drifted(monkeypatch):
     result = kwargs["manual_attach_callback"](editor)
     assert result is False
     window._submit_reference_editor_result.assert_not_called()
+
+
+def test_manual_callback_propagates_failed_submission(monkeypatch):
+    window, kwargs = _make_host_window_for_manual_callback(monkeypatch)
+    window._submit_reference_editor_result.return_value = False
+    assert kwargs["manual_attach_callback"](object()) is False

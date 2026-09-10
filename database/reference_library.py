@@ -308,7 +308,7 @@ class QuickAddReferenceResult:
     work: ReferenceWork
     treatment: TaxonTreatment
     measurement_set: MeasurementSet
-    use: ObservationReferenceUse
+    use: ObservationReferenceUse | None
     created_work: bool
     created_treatment: bool
     created_measurement_set: bool
@@ -2160,6 +2160,15 @@ class QuickAddReferenceService:
         cls, request: QuickAddReferenceRequest
     ) -> QuickAddReferenceResult:
         """Persist a quick-add operation, compensating partial writes."""
+        return cls._create(request, attach=True)
+
+    @classmethod
+    def create_in_library(cls, request: QuickAddReferenceRequest) -> QuickAddReferenceResult:
+        """Save a reference set without adding an observation attachment."""
+        return cls._create(request, attach=False)
+
+    @classmethod
+    def _create(cls, request: QuickAddReferenceRequest, *, attach: bool) -> QuickAddReferenceResult:
         ObservationReferenceUseRepository._validate_role(request.role)
 
         # Validate domain/editor output before creating any hierarchy rows.
@@ -2190,12 +2199,13 @@ class QuickAddReferenceService:
             )
             proposed_set.taxon_treatment_id = treatment.id
             measurement_set = MeasurementSetRepository.create(proposed_set)
-            use, created_attachment = ObservationReferenceUseRepository.attach_with_status(
-                request.observation_id,
-                measurement_set.id,
-                role=request.role,
-                note=request.note,
-            )
+            if attach:
+                use, created_attachment = ObservationReferenceUseRepository.attach_with_status(
+                    request.observation_id,
+                    measurement_set.id,
+                    role=request.role,
+                    note=request.note,
+                )
             return QuickAddReferenceResult(
                 work=work,
                 treatment=treatment,

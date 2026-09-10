@@ -38,23 +38,14 @@ normalized measurement-set identity, so the host dispatches that prefix to
 the legacy ``source_kind == "observation"`` comparison-series path instead
 of the measurement-set attach path.
 
-The Enter-manually tab embeds a
-:class:`~ui.reference_entry_editor.ReferenceEntryEditor` — the same paste/
-parse table, publication picker, and Data section the legacy Quick-add
-dialog uses, without its modal Save/Cancel chrome — sharing the shared
-:class:`ReferencePreviewPane` and this dialog's "Add to plot"/Cancel footer
-instead. "Add to plot" routes through a dedicated
-``manual_attach_callback(editor) -> bool`` rather than the string-identifier
-``attach_callback``, since a manual submission can fail validation or an
-observation-drift check *after* the click and must leave the picker open
-rather than claim success — the callback's return value tells this dialog
-whether to close. Changing the "Compare against" target rebinds the
-editor's publication/treatment identity (see
-:meth:`ReferenceEntryEditor.set_comparison_target`) without discarding
-already-entered measurement values, and to the submission path,
-``ReferenceEntryEditor`` is duck-typed identically to the legacy dialog's
-own wrapper, so ``MainWindow`` reuses one shared post-validation
-persistence routine for both.
+The Enter-manually tab reuses ReferenceEntryEditor and the shared preview.
+New data is saved through manual_save_callback(editor), which returns the
+new library set ID or None on failure. Saving keeps the picker open and
+locks the saved editor; Add to plot then attaches that same ID. Existing-set
+selections use manual_attach_callback(editor), whose boolean result controls
+whether the picker closes. Changing the comparison target before saving
+rebinds the editor's reference identity without changing the observation.
+
 """
 from __future__ import annotations
 
@@ -252,9 +243,10 @@ class AddReferenceDialog(GeometryMixin, QDialog):
         exclude_observation_id: int | None = None,
         exclude_observation_cloud_id: str | None = None,
         exclude_measurement_set_ids: Iterable[str] | None = None,
-        attach_callback: Callable[[str, str], None] | None = None,
+        attach_callback: Callable[[str, str], bool | None] | None = None,
         cloud_attach_callback: Callable[[dict], None] | None = None,
         manual_attach_callback: Callable[["ReferenceEntryEditor"], bool] | None = None,
+        manual_save_callback: Callable[["ReferenceEntryEditor"], str | None] | None = None,
         candidates: list[MeasurementSetCandidate] | None = None,
         my_observations: list[PersonalObservationCandidate] | None = None,
         community_results: list[dict] | None = None,
@@ -286,6 +278,8 @@ class AddReferenceDialog(GeometryMixin, QDialog):
         self._attach_callback = attach_callback
         self._cloud_attach_callback = cloud_attach_callback
         self._manual_attach_callback = manual_attach_callback
+        self._manual_save_callback = manual_save_callback
+        self._saved_manual_set_id: str | None = None
         # Optional injected candidate list, mirroring
         # ReferenceLibraryAttachDialog's testability convention: when
         # provided, skips the repository query so tests/scenarios can run
@@ -346,6 +340,9 @@ class AddReferenceDialog(GeometryMixin, QDialog):
         self.cancel_btn = QPushButton(QCoreApplication.translate("AddReferenceDialog", "Cancel"), self)
         self.cancel_btn.clicked.connect(self.reject)
         footer.addWidget(self.cancel_btn)
+        self.save_to_library_btn = QPushButton(QCoreApplication.translate("AddReferenceDialog", "Save to library"), self)
+        self.save_to_library_btn.clicked.connect(self._on_save_to_library_clicked)
+        footer.addWidget(self.save_to_library_btn)
         self.add_to_plot_btn = QPushButton(QCoreApplication.translate("AddReferenceDialog", "Add to plot"), self)
         self.add_to_plot_btn.setEnabled(False)
         self.add_to_plot_btn.setDefault(True)
@@ -1041,14 +1038,57 @@ class AddReferenceDialog(GeometryMixin, QDialog):
             # preview (and emits data_changed) before the footer button
             # exists yet; nothing to update this early.
             return
+        manual = self.tabs.currentIndex() == self._manual_tab_index
+        self.save_to_library_btn.setVisible(manual)
+        self.save_to_library_btn.setEnabled(
+            manual and not self._saved_manual_set_id
+            and not self.manual_editor.is_use_existing_set()
+            and self.manual_editor.is_ready_to_submit()
+        )
+        if manual:
+            self.status_hint_label.setText(
+                QCoreApplication.translate("AddReferenceDialog", "Saved to library. Add this set to the plot, or close.")
+                if self._saved_manual_set_id else (
+                    "" if self.manual_editor.is_use_existing_set() else
+                    QCoreApplication.translate("AddReferenceDialog", "Save new data to the library first, then add the saved set to the plot.")
+                )
+            )
+        elif self.tabs.currentWidget() is self._library_tab:
+            self.status_hint_label.setText(
+                QCoreApplication.translate("AddReferenceDialog", "No matching measurement sets in the library.")
+                if not self._filtered_candidates() else ""
+            )
+        else:
+            self.status_hint_label.setText("")
         if self.tabs.currentIndex() == self._my_observations_tab_index:
             self.add_to_plot_btn.setEnabled(self._selected_observation is not None)
         elif self.tabs.currentIndex() == self._community_tab_index:
             self.add_to_plot_btn.setEnabled(self._community_pane.has_selection())
         elif self.tabs.currentIndex() == self._manual_tab_index:
-            self.add_to_plot_btn.setEnabled(self.manual_editor.is_ready_to_submit())
+            self.add_to_plot_btn.setEnabled(bool(self._saved_manual_set_id) or (
+                self.manual_editor.is_use_existing_set() and self.manual_editor.is_ready_to_submit()
+            ))
         else:
             self.add_to_plot_btn.setEnabled(self._selected_candidate is not None)
+
+    def _on_save_to_library_clicked(self) -> None:
+        if self._saved_manual_set_id or self._manual_save_callback is None:
+            return
+        editor = self.manual_editor
+        if not editor._selected_work_id and editor.pending_reference_work() is None:
+            QMessageBox.warning(self, QCoreApplication.translate("AddReferenceDialog", "Publication required"),
+                QCoreApplication.translate("AddReferenceDialog", "Select or create a publication before saving to the library."))
+            return
+        if not editor.validate_and_build_result():
+            return
+        saved_id = self._manual_save_callback(editor)
+        if not saved_id:
+            return
+        self._saved_manual_set_id = saved_id
+        editor.setEnabled(False)
+        self.taxon_target_combo.setEnabled(False)
+        self.cancel_btn.setText(QCoreApplication.translate("AddReferenceDialog", "Close"))
+        self._update_footer_state()
 
     def _on_add_to_plot_clicked(self) -> None:
         if self.tabs.currentIndex() == self._my_observations_tab_index:
@@ -1069,6 +1109,14 @@ class AddReferenceDialog(GeometryMixin, QDialog):
             self.accept()
             return
         if self.tabs.currentIndex() == self._manual_tab_index:
+            if self._saved_manual_set_id:
+                if self._attach_callback is not None:
+                    result = self._attach_callback(self._saved_manual_set_id, "compared")
+                    if result is not False:
+                        self.accept()
+                return
+            if not self.manual_editor.is_use_existing_set():
+                return
             if self._manual_attach_callback is None:
                 return
             if not self.manual_editor.validate_and_build_result():

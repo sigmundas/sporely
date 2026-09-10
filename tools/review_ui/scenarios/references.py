@@ -1093,11 +1093,14 @@ def _add_dialog_manual(context: ReviewContext, *, taxon_id: str | None = "7"):
         context.host,
         taxon_label="Cortinarius limonius",
         taxon_id=taxon_id,
+        genus="Cortinarius",
+        species="limonius",
         candidates=_add_dialog_candidates(),
         community_results=[],
         attach_callback=lambda *_args: None,
         cloud_attach_callback=lambda *_args: None,
         manual_attach_callback=lambda *_args: True,
+        manual_save_callback=lambda *_args: "saved-preview-set",
     )
     dialog.tabs.setCurrentIndex(dialog._manual_tab_index)
     return dialog, fixture
@@ -1107,6 +1110,12 @@ def _add_dialog_manual_range(context: ReviewContext):
     dialog, fixture = _add_dialog_manual(context)
     _select_work(dialog.manual_editor, fixture["work"].id)
     _populate_range(dialog.manual_editor)
+    return dialog
+
+
+def _add_dialog_manual_saved(context: ReviewContext):
+    dialog = _add_dialog_manual_range(context)
+    dialog._on_save_to_library_clicked()
     return dialog
 
 
@@ -1494,7 +1503,12 @@ def register_reference_scenarios(registry: ScenarioRegistry) -> None:
         (
             "manual-range",
             _add_dialog_manual_range,
-            "Enter-manually tab, a realistic parsed literature range with a selected publication; the shared preview pane shows the entered data and Add to plot is enabled.",
+            "Enter-manually tab, a realistic parsed literature range with a selected publication; the shared preview pane shows entered data, Save to library is enabled and Add to plot waits for saving.",
+        ),
+        (
+            "manual-saved",
+            _add_dialog_manual_saved,
+            "Saved reference remains open with Add to plot enabled and duplicate saving disabled.",
         ),
         (
             "manual-points",
