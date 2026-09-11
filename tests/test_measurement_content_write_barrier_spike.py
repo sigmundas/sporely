@@ -18,6 +18,7 @@ connection factories listed in the contract's writer map.
 from __future__ import annotations
 
 import json
+import re
 import sqlite3
 from pathlib import Path
 
@@ -403,6 +404,25 @@ def test_old_binary_table_rebuild_fails_closed_and_keeps_the_barrier(library):
     assert conn.execute("SELECT COUNT(*) FROM reference_measurement_sets").fetchone()[0] == 2
     assert _row(conn, ENHANCED_ID)["measurement_details_json"] == ENHANCED["measurement_details_json"]
     conn.close()
+
+
+def test_barrier_constants_match_the_contract_document():
+    doc = Path(__file__).parents[1] / "docs" / "reference-data" / "measurement-content-contract.md"
+    blocks = re.findall(r"```json contract-spec\n(.*?)\n```", doc.read_text(encoding="utf-8"), re.DOTALL)
+    assert len(blocks) == 1
+    spec = json.loads(blocks[0])
+    assert spec["contract_function"] == CONTRACT_FUNCTION
+    assert spec["local_contract_version"] == LOCAL_CONTRACT_VERSION
+    assert spec["barrier_message"] == BARRIER_MESSAGE
+    trigger_names = {
+        line.split()[-1]
+        for ddl in BARRIER_TRIGGERS_DDL
+        for line in ddl.splitlines()
+        if "CREATE TRIGGER" in line
+    }
+    assert trigger_names == set(spec["barrier_triggers"])
+    for column in spec["extension_fields"]:
+        assert any(column in ddl for ddl in EXTENSION_COLUMNS_DDL)
 
 
 def test_barrier_installation_is_idempotent(library):

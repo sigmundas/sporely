@@ -13,6 +13,7 @@ from __future__ import annotations
 
 import json
 import math
+import re
 from pathlib import Path
 
 import pytest
@@ -20,6 +21,16 @@ import pytest
 from database.reference_citation import serialize_snapshot
 
 FIXTURES = Path(__file__).parent / "fixtures" / "reference_statistics"
+CONTRACT_DOC = Path(__file__).parents[1] / "docs" / "reference-data" / "measurement-content-contract.md"
+_SPEC_BLOCK = re.compile(r"```json contract-spec\n(.*?)\n```", re.DOTALL)
+
+
+def load_contract_spec() -> dict:
+    """The machine-readable block in contract section 14."""
+    text = CONTRACT_DOC.read_text(encoding="utf-8")
+    blocks = _SPEC_BLOCK.findall(text)
+    assert len(blocks) == 1, "exactly one contract-spec block is expected"
+    return json.loads(blocks[0])
 
 # --- Contract constants (must match the contract document) -------------------
 
@@ -156,12 +167,25 @@ def is_enhanced(row: dict) -> bool:
     return any(row.get(field) is not None for field in EXTENSION_FIELDS)
 
 
+def acknowledgement_state(row: dict) -> str:
+    present = sum(field in row for field in EXTENSION_FIELDS)
+    if present == 0:
+        return "absent"
+    if present == len(EXTENSION_FIELDS):
+        return "complete"
+    return "partial"
+
+
 def acknowledges_extension(row: dict) -> bool:
-    return all(field in row for field in EXTENSION_FIELDS)
+    return acknowledgement_state(row) == "complete"
 
 
-def import_decision(incoming: dict, destination: dict) -> str:
-    """Contract §6 policy for a same-id row arriving by bundle/portable import."""
+def import_decision(incoming: dict, destination: dict | None) -> str:
+    """Contract §8 policy for a row arriving by bundle/portable import."""
+    if acknowledgement_state(incoming) == "partial":
+        return "reject_partial_extension"
+    if destination is None:
+        return "replace"
     src_rev = int(incoming.get("revision") or 1)
     dst_rev = int(destination.get("revision") or 1)
     if src_rev < dst_rev:
@@ -232,8 +256,49 @@ def test_fixture_set_is_complete():
         "snapshot_v2_enhanced.json",
         "import_row_omitting_extension.json",
         "import_row_explicit_null_extension.json",
+        "import_row_partial_extension.json",
     }
     assert {path.name for path in FIXTURES.glob("*.json")} == expected
+
+
+def test_contract_document_spec_matches_these_constants():
+    """Executable linkage: the prose contract's machine-readable block and the
+    constants restated here must agree, so editing either alone fails."""
+    spec = load_contract_spec()
+    assert spec["details_schema_version"] == MEASUREMENT_DETAILS_SCHEMA_VERSION
+    assert set(spec["supported_details_versions"]) == SUPPORTED_DETAILS_VERSIONS
+    assert set(spec["supported_snapshot_versions"]) == SUPPORTED_SNAPSHOT_VERSIONS
+    assert spec["details_max_bytes"] == MEASUREMENT_DETAILS_MAX_BYTES
+    assert spec["snapshot_max_bytes"] == 65536
+    assert tuple(spec["metrics"]) == METRICS
+    assert set(spec["metric_keys"]) == METRIC_KEYS
+    assert set(spec["outer_range_kinds"]) == OUTER_RANGE_KINDS
+    assert set(spec["core_range_kinds"]) == CORE_RANGE_KINDS
+    assert set(spec["interval_kinds"]) == INTERVAL_KINDS
+    assert tuple(spec["extension_fields"]) == EXTENSION_FIELDS
+    assert set(spec["scientific_content_fields"]) == SCIENTIFIC_CONTENT_FIELDS
+    assert len(spec["scientific_content_fields"]) == len(SCIENTIFIC_CONTENT_FIELDS)
+    assert set(spec["snapshot_v2_added_keys"]) == SNAPSHOT_V2_KEYS - SNAPSHOT_V1_KEYS
+    assert set(spec["measurements_v2_added_keys"]) == MEASUREMENT_V2_KEYS - MEASUREMENT_V1_KEYS
+    assert set(spec["acknowledgement_states"]) == {"absent", "complete", "partial"}
+    decisions = {
+        "reject_partial_extension", "skip_stale", "skip_unacknowledged",
+        "equivalent_if_content_equal", "reject_unacknowledged_extension", "replace",
+    }
+    assert set(spec["import_decisions"]) == decisions
+    assert set(spec["validation_modes"]) == {"edit", "authoritative"}
+    assert spec["cloud_rejection_status"] == "invalid_payload"
+
+
+def test_contract_prose_names_every_enum_value_and_field():
+    text = CONTRACT_DOC.read_text(encoding="utf-8")
+    for value in OUTER_RANGE_KINDS | CORE_RANGE_KINDS | INTERVAL_KINDS:
+        assert f"`{value}`" in text, f"enum value {value!r} missing from the contract prose"
+    for field in SCIENTIFIC_CONTENT_FIELDS | set(EXTENSION_FIELDS):
+        assert field in text, f"field {field!r} missing from the contract"
+    for outcome in ("rejected_partial_extension", "rejected_unacknowledged_extension", "skipped_unacknowledged"):
+        assert f"`{outcome}`" in text
+    assert 'mode="edit"' in text and 'mode="authoritative"' in text
 
 
 def test_hebeloma_details_match_the_plan_example(hebeloma, enhanced_row):
@@ -390,6 +455,31 @@ def test_import_fixture_with_explicit_nulls_is_an_acknowledged_clear(enhanced_ro
     )
     assert import_decision(explicit, enhanced_row) == "replace"
     assert not is_enhanced(explicit)
+
+
+def test_import_fixture_with_partial_extension_is_rejected_everywhere(enhanced_row, legacy_row):
+    partial = load("import_row_partial_extension.json")
+    omitting = load("import_row_omitting_extension.json")
+    assert acknowledgement_state(partial) == "partial"
+    assert not acknowledges_extension(partial)
+    assert "measurement_details_json" not in partial
+    assert partial["q_core_min"] == 1.36 and partial["q_core_max"] == 2.19
+    assert {k: v for k, v in partial.items() if k not in EXTENSION_FIELDS} == omitting
+    # Rejected regardless of destination state, revision, or absence of a destination.
+    assert import_decision(partial, enhanced_row) == "reject_partial_extension"
+    assert import_decision(partial, legacy_row) == "reject_partial_extension"
+    assert import_decision(partial, None) == "reject_partial_extension"
+    assert import_decision({**partial, "revision": 1}, enhanced_row) == "reject_partial_extension"
+    # Whereas the same content with all keys present would simply be inserted.
+    assert import_decision(load("import_row_explicit_null_extension.json"), None) == "replace"
+
+
+def test_acknowledgement_states_are_exhaustive(enhanced_row, legacy_row):
+    assert acknowledgement_state(enhanced_row) == "complete"
+    assert acknowledgement_state(legacy_row) == "complete"
+    assert acknowledgement_state(load("import_row_omitting_extension.json")) == "absent"
+    assert acknowledgement_state(load("import_row_explicit_null_extension.json")) == "complete"
+    assert acknowledgement_state(load("import_row_partial_extension.json")) == "partial"
 
 
 def test_enum_values_are_closed_sets():
