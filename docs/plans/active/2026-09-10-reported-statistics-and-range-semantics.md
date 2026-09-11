@@ -7,6 +7,18 @@ fixtures and barrier spike committed green). No production code, schema, UI or
 parser change. `2026-09-09-reference-measurement-table-parser.md` retains the
 existing parser-stage verification record.
 
+Human review decisions (2026-09-11), recorded in the commit that carries this
+paragraph, on top of frozen candidate `3f8066c` (sparring verdict READY after
+two send-backs): the coarse unsupported-open policy is accepted as final;
+enhanced-bundle exposure uses a minimum-supported-desktop-version policy, not
+release notes; enhanced attachments use a minimum-supported-reader-version
+gate, not a waiting period; shipped-old-build verification stays human-gated
+and is a prerequisite for the persistent local-schema/barrier sub-stage.
+Changes: contract §6, §7 step 5, §11, §12 cases 19–20, §13, §14 spec
+(`release_gates`, `unsupported_open_policy`); one new contract-consistency
+test; this handoff. No production code; no settled schema/ontology choice
+reopened. A new candidate SHA supersedes `3f8066c` for acceptance.
+
 - Stage id: `stage-reported-statistics-contract` (brief in
   `.sparring/stages/stage-reported-statistics-contract/`).
 - Branch: `feature/reported-statistics-contract` (linked worktree
@@ -80,15 +92,23 @@ Blocker disposition (details and symbol citations in the contract document):
    Discovered: function resolution precedes the trigger `WHEN` clause, so an
    unaware binary can neither INSERT nor UPDATE any `reference_measurement_sets`
    row once the barrier exists (reads, deletes and every other table work).
-   This is adopted as the unsupported-open policy; the reviewer must accept or
-   reject it explicitly. Open (human-gated): running an actual shipped older
-   build; and an older binary importing an enhanced bundle into a library that
-   no aware binary ever opened is lossy and cannot be stopped by schema.
+   This is the unsupported-open policy, **accepted by human review on
+   2026-09-11** as final: no finer row-dependent compatibility for unaware
+   binaries. Human-gated and a **prerequisite for the persistent
+   local-schema/barrier sub-stage of Stage 3**: running an actual shipped
+   older build against an enhanced library. An older binary importing an
+   enhanced bundle into a library that no aware binary ever opened is lossy
+   and cannot be stopped by schema; the accepted mitigation is a
+   minimum-supported-desktop-version policy (release notes alone are not a
+   safety mechanism), and every supported import path must preserve enhanced
+   content or reject it explicitly.
 3. **Snapshot v2 — resolved.** Exact shape (details outside `measurements`,
    `q_core_*` inside, 65536/4096-byte limits), version-aware projection rule,
-   emit-v1-for-legacy rule, and a five-step reader-first rollout. Open (human):
-   the waiting period or minimum-version gate before enabling enhanced
-   attachments, since pre-reader desktops reject the whole use feed.
+   emit-v1-for-legacy rule, and a five-step reader-first rollout. Decided by
+   human review on 2026-09-11: activation of enhanced attachments and v2
+   emission sits behind a **minimum-supported-reader-version gate**; they stay
+   disabled until every supported desktop version can consume v2 safely,
+   since pre-reader desktops reject the whole use feed. No waiting period.
 4. **Import omission/NULL/revision policy — resolved.** Key presence decides
    acknowledgement (`absent` / `complete` / `partial`) before any
    normalization; partial rows are rejected everywhere; omitting
@@ -361,9 +381,14 @@ unaware successor insert, or by an old-binary table rebuild. Amended by Stage 1:
 because function resolution precedes the trigger `WHEN` clause, the barrier is
 coarse — an unaware binary cannot INSERT or UPDATE any row of that table once
 the barrier exists (reads, deletes and all other tables are unaffected). This is
-the adopted unsupported-open policy. Still human-gated: exercising an actual
-shipped older build; an older binary importing an enhanced bundle into a library
-never opened by an aware binary remains lossy and is a release-notes matter.
+the unsupported-open policy, accepted by human review on 2026-09-11 with no
+finer row-dependent compatibility to be attempted. Exercising an actual shipped
+older build stays human-gated and must succeed before the persistent
+local-schema/barrier sub-stage is implemented. An older binary importing an
+enhanced bundle into a library never opened by an aware binary remains lossy;
+that desktop is below the minimum supported version for enhanced bundles, and
+supported import paths must preserve or explicitly reject. Release notes alone
+are not a safety mechanism.
 
 If safe downgrade cannot be established, define an enforceable unsupported-open
 policy before release; do not merely document that users should avoid old binaries.
@@ -474,11 +499,15 @@ relevant sync/Supabase/GUI/localization rules before touching those subsystems.
    snapshots/comparison and transfer preservation. Unsupported enhanced transfer
    routes must explicitly reject. Review exact cloud/local sub-stage boundaries;
    feature activation waits for the complete end-to-end round-trip slice.
+   **Prerequisite:** the persistent local-schema/barrier sub-stage does not
+   start until the human-gated shipped-old-build verification (contract §6)
+   has succeeded and is recorded in this handoff.
 4. **Minimal inspection and guarded editing.** Add tags and reported values to
    existing preview/reopen/attachment paths. Wire compact entry editing and either
    equivalent library-manager editing or read-only enhanced content. Separate
-   generic Q means from Parmasto input. No new scoring/interval plots. Snapshot
-   reader and old-writer rollout gates must pass before enhanced attachments.
+   generic Q means from Parmasto input. No new scoring/interval plots. The
+   minimum-supported-reader-version gate and the old-writer rollout gates must
+   pass before enhanced attachments are enabled.
 5. **Independent final review and activation decision.** A fresh top-level reviewer
    verifies frozen candidate SHAs and repository state. No automatic merge. Update
    this handoff every pass with exact scope, verification, deferred work and SHA.
