@@ -123,9 +123,11 @@ def encode_measurement_details(details) -> str | None          # None for None/e
 def measurement_details_equal(a: str | None, b: str | None) -> bool
 def content_from_row(row: Mapping[str, Any]) -> MeasurementContent
 def content_row_updates(content: MeasurementContent) -> dict[str, Any]
-def validate_measurement_content(content: MeasurementContent) -> None     # sections 1–2, raises MeasurementContentError
+def validate_measurement_content(content: MeasurementContent, *, mode: Literal["edit", "authoritative"]) -> None
+                                             # sections 1–2, raises MeasurementContentError; mode rules below
 def is_enhanced_row(row: Mapping[str, Any]) -> bool
-def acknowledges_extension(row: Mapping[str, Any]) -> bool
+def acknowledgement_state(row: Mapping[str, Any]) -> Literal["absent", "complete", "partial"]
+def acknowledges_extension(row: Mapping[str, Any]) -> bool   # == (acknowledgement_state(row) == "complete")
 # explicit edit operations (plan: clear/switch/swap); each returns a new MeasurementContent
 def clear_pair(content, metric, which: Literal["outer", "core"])
 def clear_statistic(content, metric, statistic: Literal["mean", "median", "sd"])
@@ -134,9 +136,26 @@ def set_mean_interval(content, metric, lower, upper, kind)   # clears scalar mea
 def swap_length_width(content)                        # moves numbers and descriptors together
 ```
 
-`UnsupportedMeasurementDetails` is read-only: validation accepts it only on
-authoritative-state paths (pull, import) and rejects it on edit paths;
-`encode_measurement_details` re-encodes `raw` unchanged.
+**Validation modes.** `mode` is a required keyword. Both modes apply
+sections 1–2 in full to supported details and differ only for
+`UnsupportedMeasurementDetails` (decoded object whose `schema_version` is not
+in `SUPPORTED_DETAILS_VERSIONS`): `mode="authoritative"` (pull
+`stage_reference_library_feed`, `_reconcile_live`, bundle/portable import,
+curated copy) accepts it opaquely, enforces only descriptor-independent
+numeric rules (pair ordering), and `encode_measurement_details` re-encodes
+`raw` unchanged; `mode="edit"` (`MeasurementSetRepository._validate`, both
+editors, parser output) raises `MeasurementContentError("unsupported
+measurement details version")`, so the row is inspect-only until the binary
+is upgraded. Opaque details take part in snapshot projection as decoded
+objects (section 7 compares `measurement_details` by object equality). The
+cloud accepts only versions its validator knows (section 9 item 7), so a
+future version reaches a desktop only from a newer server or bundle.
+
+**Acknowledgement states** (`acknowledgement_state`): `absent` when none of
+`EXTENSION_FIELDS` is present as a key, `complete` when all three are,
+`partial` otherwise. `partial` is always an error on every path (section 8,
+section 9 item 3): an exporter or client that knows some but not all of the
+extension cannot be trusted to have preserved any of it.
 
 **SQLite-side pieces live with the schema owner**, not in the pure module:
 `database/reference_library_schema.py::register_measurement_contract(conn)`
@@ -403,14 +422,22 @@ columns and leaves the newer descriptors standing
 half; `test_unaware_bundle_import_merge_fails_and_aware_reproduces_current_behavior`).
 
 Acknowledgement is decided from key presence **before** any normalization
-(never default missing keys to NULL first). For bundle and portable sources
-the keys are present iff the source table has the columns
-(`SELECT *` → `dict(row)`), so an old exporter produces omitting rows and a
-new exporter produces acknowledging rows.
+(never default missing keys to NULL first), using `acknowledgement_state`:
+`absent` (no extension key), `complete` (all three), `partial` (some). For
+bundle and portable sources the keys are present iff the source table has the
+columns (`SELECT *` → `dict(row)`), so an old exporter produces `absent` rows
+and a new exporter `complete` rows; `partial` arises only from a damaged or
+hand-edited source and is **rejected on every path before any other rule**:
+bundle outcome `rejected_partial_extension`, portable
+`PortableIdentityConflictError("incomplete measurement content extension")`,
+including the no-destination insert case. It is never downgraded to `absent`
+and never treated as `complete`. "R omits" below means `absent`;
+"R acknowledges" means `complete`.
 
 | Incoming row R vs destination D (same id) | Decision |
 | --- | --- |
-| No D | Insert. Acknowledging R with content: validate via `validate_measurement_content`, reject the row explicitly on failure. Omitting R: legacy-only row, extension NULL. |
+| R partial (any D, or no D) | **Reject explicitly**; nothing written. |
+| No D | Insert. Acknowledging R with content: `validate_measurement_content(..., mode="authoritative")`, reject the row explicitly on failure. Omitting R: legacy-only row, extension NULL. |
 | `R.revision < D.revision` | Skip as today (`skipped_stale` / `continue`). |
 | Same revision, R acknowledges | Compare the full group with decoded JSON equality; equal ⇒ equivalent/skip; different ⇒ conflict (`PortableIdentityConflictError`; bundle reports a conflict outcome). |
 | Same revision, R omits, D not enhanced | Omission compares as NULL (recognized historical baseline) ⇒ equivalent if the rest matches. |
@@ -424,7 +451,9 @@ new exporter produces acknowledging rows.
 required keys with the rule above. Fixtures: `import_row_omitting_extension.json`
 (revision 3, omits the keys, also changes a bound) and
 `import_row_explicit_null_extension.json` (identical except the keys are
-present with NULL); `test_import_fixture_*` pin the decisions.
+present with NULL) and `import_row_partial_extension.json` (carries the two
+`q_core_*` keys but not `measurement_details_json`); `test_import_fixture_*`
+pin the decisions.
 
 Cloud pull: the remote row always acknowledges once step 3 of section 7 is
 deployed; before that, `_payload_from_mapping` raises on the missing key and
@@ -472,11 +501,22 @@ omitted keys keep the current value and JSON null sets SQL NULL.
    NULL explicitly for the jsonb column
    (`CASE WHEN jsonb_typeof(p_payload->'measurement_details_json') = 'null'
    THEN NULL ELSE … END`); `->>` casts already yield NULL for the two doubles.
-7. Structural validation on the server: a new
-   `private.reference_measurement_details_valid(jsonb)` mirrors section 1 and
-   a CHECK constraint bounds size (4096 bytes) and type (object or NULL). A
+7. Validation on the server is row-level, not JSON-only:
+   `private.reference_measurement_content_valid(public.reference_measurement_sets)`
+   takes the populated `v_next` record (both the create and update branches)
+   and enforces sections 1 **and** 2 — details structure and enum values via
+   the component `private.reference_measurement_details_valid(jsonb)`, plus
+   descriptor/column consistency (a descriptor requires its complete ordered
+   pair; explicit extremes enclose the core pair), scalar-mean/interval
+   exclusivity per metric, `q_core_min <= q_core_max`, and the 4096-byte
+   canonical size. Failure returns `invalid_payload`. The server accepts only
+   `schema_version` values it knows (`1` at first deployment); a CHECK
+   constraint bounds type (object or NULL) and size as defence in depth. A
    server at step ≤ 2 already rejects enhanced writes as `invalid_payload`
    through `reference_payload_has_unknown_keys` (line 573): no lossy fallback.
+9. Partial acknowledgement: a payload carrying some but not all of the three
+   extension keys returns `invalid_payload` before any other check, on create
+   and on update, whatever the row's state (section 3, acknowledgement states).
 8. Key presence acknowledges the contract; it is not authorization. No client
    version registry.
 
@@ -484,7 +524,7 @@ omitted keys keep the current value and JSON null sets SQL NULL.
 
 | Plan path | Concrete enforcing symbol(s) |
 | --- | --- |
-| Repository create/update | `MeasurementSetRepository._validate` → `validate_measurement_content(content_from_row(merged))`; `update` keeps merging `updates` into the existing row |
+| Repository create/update | `MeasurementSetRepository._validate` → `validate_measurement_content(content_from_row(merged), mode="edit")`; `update` keeps merging `updates` into the existing row |
 | Successor creation | `MeasurementSetRepository.create_revision` validates the merged base before `create` |
 | Parser and both editors | `references/measurement_parser.py` emits `MeasurementContent`; `ui/reference_entry_editor.py` and `ui/reference_library_manager_dialog.py` call the edit operations of section 3 (Stage 2/4) |
 | Bundle and portable import | `_upsert_library_row_by_revision`, `_merge_reference_entity`, `_equivalent_rows` per section 8 |
@@ -499,24 +539,34 @@ omitted keys keep the current value and JSON null sets SQL NULL.
 
 ## 11. Representative old-client matrix
 
-Clients: **D0** desktop before this work; **D1** desktop with readers only
-(section 7 step 1); **D2** desktop with full support. Servers: **C0** before
-step 2; **C1** steps 2–3 deployed; **C2** step 3 plus activation.
+Clients: **D0** desktop before this work; **D1** desktop with snapshot
+readers only (section 7 step 1; its payload column lists and repository are
+still D0's); **D2** desktop with full support. Servers: **C0** before step 2
+(no extension columns; unknown keys rejected); **C1** steps 2–3 deployed
+(columns, row-level validation and RPC guard live; canonical snapshot emits
+v2 for enhanced rows; enhanced editing not yet activated on clients); **C2**
+C1 plus client activation (step 5).
 
-| Operation | D0 | D1 | D2 |
-| --- | --- | --- | --- |
-| Open enhanced library, browse, plot | works | works | works |
-| Edit or create any measurement set locally after barrier | blocked (`no such function`, section 6) | blocked | works |
-| Delete a measurement set locally | works | works | works |
-| Edit works / treatments / attachments | works | works | works |
-| Pull library from C2 | works; `_payload_from_mapping` projects only the columns it knows, so the local copy is a degraded read-only view (no barrier exists in a never-upgraded library) | same as D0 | works |
-| Pull library from C0/C1 | works | works | feed rejected (`_payload_from_mapping` raises on the missing key) until step 3 is deployed; D2 ships after step 3 |
-| Pull use feed containing a v2 use | whole feed rejected | works | works |
-| Push content edit of an enhanced row to C2 | `invalid_payload` (section 9) | `invalid_payload` | works |
-| Push delete of an enhanced row | works (lifecycle) | works | works |
-| Import enhanced bundle into aware library | blocked by barrier on UPDATE; INSERT of new rows blocked too | same | preserve or reject per section 8 |
-| Import enhanced bundle into never-upgraded library | lossy insert (no trigger present; section 6 open item) | same | n/a |
-| D2 pushes enhanced content to C0/C1 | — | — | `invalid_payload` (unknown keys / not yet enabled); no fallback |
+A library is **upgraded** once any D2 has opened it (barrier installed);
+otherwise **never-upgraded**. D0 and D1 behave identically except for the
+use-feed row.
+
+| Operation | D0 / D1 | D2 |
+| --- | --- | --- |
+| Open an upgraded library, browse, plot | works | works |
+| Edit, create or supersede a measurement set in an upgraded library | blocked (`no such function`, section 6) | works |
+| Edit, create or supersede in a never-upgraded library | **works with no protection**: `MeasurementSetRepository.update`/`create_revision` have no check; the local row is legacy content and diverges from any enhanced cloud/bundle original. Only the server guard catches it later. | works |
+| Delete a measurement set locally | works | works |
+| Edit works / treatments / attachments | works | works |
+| Pull library from C1/C2 | works; `_payload_from_mapping` keeps only the columns it knows, so the local row lacks the extension. It is **not** read-only: local edits succeed (row above) and the subsequent content push is rejected by the server (`invalid_payload`), leaving the item rejected locally. | works |
+| Pull library from C0 | works | feed rejected (`_payload_from_mapping` raises on the missing key); D2 ships only after C1 is live |
+| Pull use feed containing a v2 use | D0: whole feed rejected. D1: works | works |
+| Push content edit of an enhanced row to C1/C2 | `invalid_payload` (section 9 item 3) | works |
+| Push delete of an enhanced row | works (lifecycle exemption) | works |
+| Push enhanced content to C0 | — | `invalid_payload` (unknown keys, line 573); no fallback payload |
+| Push enhanced content to C1 | — | accepted and stored (server support is dormant ahead of activation; activation is a client gate, not a server switch) |
+| Import enhanced bundle into an upgraded library | blocked by barrier on UPDATE and INSERT | preserve or reject per section 8 |
+| Import enhanced bundle into a never-upgraded library | lossy insert (no trigger present; section 6 open item) | n/a |
 
 ## 12. Acceptance cases deferred to Stage 2/3 (enumerated)
 
@@ -567,6 +617,15 @@ Each requires production code that does not exist yet; none is stubbed.
     row ⇒ `invalid_payload`; `{"id","deleted":true}` ⇒ `updated`; explicit NULL
     ⇒ cleared; omitting successor of enhanced predecessor ⇒ `invalid_payload`;
     `reference_canonical_snapshot` emits v2 only for enhanced rows.
+17. `import_row_partial_extension.json` is rejected by
+    `_upsert_library_row_by_revision` (`rejected_partial_extension`), by
+    `_merge_reference_entity` (`PortableIdentityConflictError`) and, on the
+    cloud, with `invalid_payload`, both against `row_enhanced.json` and with no
+    destination row; nothing is written.
+18. `validate_measurement_content(content, mode="edit")` raises for
+    `details_unsupported_future_version.json` while `mode="authoritative"`
+    accepts it and `encode_measurement_details` returns its canonical
+    re-encoding unchanged.
 
 ## 13. Decisions that amend the plan
 
@@ -579,3 +638,37 @@ Each requires production code that does not exist yet; none is stubbed.
   left notes unnamed).
 - Rejected unaware cloud mutations use the existing `invalid_payload` status
   rather than a new status.
+- Partial acknowledgement (some extension keys present) is a third state,
+  rejected everywhere; the plan spoke only of omission versus explicit NULL.
+
+## 14. Machine-readable specification
+
+`tests/test_measurement_content_contract_fixtures.py` parses this block and
+asserts its own constants against it, so prose and tests cannot drift apart
+silently. Stage 2 loads the same block in a test of the real module.
+
+```json contract-spec
+{"details_schema_version": 1, "supported_details_versions": [1],
+ "supported_snapshot_versions": [1, 2], "details_max_bytes": 4096, "snapshot_max_bytes": 65536,
+ "metrics": ["length", "width", "q"],
+ "metric_keys": ["outer_range", "core_range", "mean_interval", "median", "sd"],
+ "outer_range_kinds": ["reported_extremes"],
+ "core_range_kinds": ["unspecified", "typical_range", "reported_range", "percentile_interval"],
+ "interval_kinds": ["reported_range", "typical_range"],
+ "extension_fields": ["measurement_details_json", "q_core_min", "q_core_max"],
+ "scientific_content_fields": ["character", "data_kind", "raw_text",
+   "length_min", "length_core_min", "length_core_max", "length_max",
+   "width_min", "width_core_min", "width_core_max", "width_max",
+   "q_min", "q_core_min", "q_core_max", "q_max", "q_mean", "length_mean", "width_mean",
+   "sample_size", "specimen_count", "mount_medium", "stain", "preparation", "measurement_method",
+   "raw_points_json", "measurement_details_json"],
+ "snapshot_v2_added_keys": ["measurement_details"],
+ "measurements_v2_added_keys": ["q_core_min", "q_core_max"],
+ "acknowledgement_states": ["absent", "complete", "partial"],
+ "import_decisions": ["reject_partial_extension", "skip_stale", "skip_unacknowledged",
+   "equivalent_if_content_equal", "reject_unacknowledged_extension", "replace"],
+ "validation_modes": ["edit", "authoritative"], "cloud_rejection_status": "invalid_payload",
+ "contract_function": "sporely_measurement_contract", "local_contract_version": 1,
+ "barrier_message": "measurement content contract required",
+ "barrier_triggers": ["reference_measurement_content_guard_update", "reference_measurement_content_guard_insert"]}
+```
