@@ -509,7 +509,8 @@ step 2; **C1** steps 2–3 deployed; **C2** step 3 plus activation.
 | Edit or create any measurement set locally after barrier | blocked (`no such function`, section 6) | blocked | works |
 | Delete a measurement set locally | works | works | works |
 | Edit works / treatments / attachments | works | works | works |
-| Pull library from C2 | feed rejected (missing canonical keys) | feed rejected | works |
+| Pull library from C2 | works; `_payload_from_mapping` projects only the columns it knows, so the local copy is a degraded read-only view (no barrier exists in a never-upgraded library) | same as D0 | works |
+| Pull library from C0/C1 | works | works | feed rejected (`_payload_from_mapping` raises on the missing key) until step 3 is deployed; D2 ships after step 3 |
 | Pull use feed containing a v2 use | whole feed rejected | works | works |
 | Push content edit of an enhanced row to C2 | `invalid_payload` (section 9) | `invalid_payload` | works |
 | Push delete of an enhanced row | works (lifecycle) | works | works |
