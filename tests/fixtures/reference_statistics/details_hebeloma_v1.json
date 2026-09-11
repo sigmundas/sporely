@@ -1,0 +1,26 @@
+{
+  "schema_version": 1,
+  "metrics": {
+    "length": {
+      "outer_range": {"kind": "reported_extremes"},
+      "core_range": {"kind": "percentile_interval", "percentile_bounds": [5, 95]},
+      "mean_interval": {"lower": 8.9, "upper": 13.7, "kind": "reported_range"},
+      "median": {"lower": 9.0, "upper": 13.9, "kind": "reported_range"},
+      "sd": {"value": 0.696}
+    },
+    "width": {
+      "outer_range": {"kind": "reported_extremes"},
+      "core_range": {"kind": "percentile_interval", "percentile_bounds": [5, 95]},
+      "mean_interval": {"lower": 5.6, "upper": 7.5, "kind": "reported_range"},
+      "median": {"lower": 5.6, "upper": 7.5, "kind": "reported_range"},
+      "sd": {"value": 0.323}
+    },
+    "q": {
+      "outer_range": {"kind": "reported_extremes"},
+      "core_range": {"kind": "percentile_interval", "percentile_bounds": [5, 95]},
+      "mean_interval": {"lower": 1.51, "upper": 1.96, "kind": "reported_range"},
+      "median": {"lower": 1.50, "upper": 1.95, "kind": "reported_range"},
+      "sd": {"value": 0.097}
+    }
+  }
+}
