@@ -162,3 +162,7 @@ sopp.jpg
 /database/taxonomy/registry/*.tmp
 !/database/taxonomy/registry/canonical/
 !/database/taxonomy/registry/canonical/**
+
+# agent-sparring per-stage working artifacts
+# (.sparring/project.toml and .sparring/PROJECT.md stay tracked)
+.sparring/stages/
