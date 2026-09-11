@@ -140,13 +140,19 @@ def swap_length_width(content)                        # moves numbers and descri
 sections 1–2 in full to supported details and differ only for
 `UnsupportedMeasurementDetails` (decoded object whose `schema_version` is not
 in `SUPPORTED_DETAILS_VERSIONS`): `mode="authoritative"` (pull
-`stage_reference_library_feed`, `_reconcile_live`, bundle/portable import,
-curated copy) accepts it opaquely, enforces only descriptor-independent
-numeric rules (pair ordering), and `encode_measurement_details` re-encodes
-`raw` unchanged; `mode="edit"` (`MeasurementSetRepository._validate`, both
-editors, parser output) raises `MeasurementContentError("unsupported
-measurement details version")`, so the row is inspect-only until the binary
-is upgraded. Opaque details take part in snapshot projection as decoded
+`stage_reference_library_feed`, `_reconcile_live`, bundle import
+`_upsert_library_row_by_revision`, portable import `_merge_reference_entity`)
+accepts it opaquely, enforces only descriptor-independent numeric rules (pair
+ordering), and `encode_measurement_details` re-encodes `raw` unchanged;
+`mode="edit"` (`MeasurementSetRepository._validate`, both editors, parser
+output) raises `MeasurementContentError("unsupported measurement details
+version")`, so the row is inspect-only until the binary is upgraded. Curated
+copy is the one authoritative-state path that does **not** accept opaque
+details: `copy_curated_bundle_to_personal_library` creates a fresh local graph
+the user is expected to edit, so it validates the bundle's snapshot details
+with `mode="edit"` semantics and raises `CuratedReferenceError` on an
+unsupported version (section 8), never writing a degraded row. Opaque details
+take part in snapshot projection as decoded
 objects (section 7 compares `measurement_details` by object equality). The
 cloud accepts only versions its validator knows (section 9 item 7), so a
 future version reaches a desktop only from a newer server or bundle.
@@ -462,7 +468,10 @@ a higher revision against unchanged local enhanced content is an acknowledged
 clear by an aware client (the RPC guard guarantees no other origin) and is
 applied through the group rule of section 5. Curated fork copy: v1 bundle ⇒
 legacy-only row; v2 with supported details ⇒ copy all three; v2 with an
-unsupported details version ⇒ `CuratedReferenceError`, never a degraded row.
+unsupported details version ⇒ `CuratedReferenceError` raised by
+`copy_curated_bundle_to_personal_library` (validated in `_validate_snapshot`),
+never a degraded row; curated copy is excluded from the opaque-acceptance rule
+of section 3 because it creates editable local content.
 
 ## 9. Cloud request-key presence and lifecycle rules
 
@@ -558,7 +567,8 @@ use-feed row.
 | Edit, create or supersede in a never-upgraded library | **works with no protection**: `MeasurementSetRepository.update`/`create_revision` have no check; the local row is legacy content and diverges from any enhanced cloud/bundle original. Only the server guard catches it later. | works |
 | Delete a measurement set locally | works | works |
 | Edit works / treatments / attachments | works | works |
-| Pull library from C1/C2 | works; `_payload_from_mapping` keeps only the columns it knows, so the local row lacks the extension. It is **not** read-only: local edits succeed (row above) and the subsequent content push is rejected by the server (`invalid_payload`), leaving the item rejected locally. | works |
+| Pull library from C1/C2 into a never-upgraded library | works; `_payload_from_mapping` keeps only the columns it knows, so the local row lacks the extension. It is **not** read-only: local edits succeed (row above) and the subsequent content push is rejected by the server (`invalid_payload`), leaving the item rejected locally. | works |
+| Pull library from C1/C2 into an upgraded library | fails closed whenever the feed needs a measurement-set domain write: `_write_domain`'s `INSERT … ON CONFLICT DO UPDATE` cannot be prepared (`no such function`, spike case c4), the `BEGIN IMMEDIATE` transaction in `reconcile_reference_library_feed` rolls back, and the pull reports an error. Pulls that touch only works, treatments or already-identical sets still apply; nothing is written partially. | works |
 | Pull library from C0 | works | feed rejected (`_payload_from_mapping` raises on the missing key); D2 ships only after C1 is live |
 | Pull use feed containing a v2 use | D0: whole feed rejected. D1: works | works |
 | Push content edit of an enhanced row to C1/C2 | `invalid_payload` (section 9 item 3) | works |
