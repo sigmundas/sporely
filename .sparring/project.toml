@@ -1,0 +1,19 @@
+project = "sporely-py"
+
+[repo]
+root = "."
+
+[commands]
+test = "/Users/sigmundas/Documents/Code/sporely/sporely-py/.venv/bin/pytest -q -p no:cacheprovider"
+
+[agents.stage]
+provider = "claude-cli"
+
+[agents.sparring]
+provider = "codex-cli"
+
+[sparring]
+default_mode = "local-auto"
+
+[stage]
+self_check = true
