@@ -2,32 +2,123 @@
 
 ## Current stage / reviewer handoff — 2026-09-11
 
-Status: revised design following adversarial review; no implementation in this pass.
-The user requested incorporation of the review findings. This document supersedes
-its 2026-09-10 design. It is the canonical plan for subsequent statistics work;
-`2026-09-09-reference-measurement-table-parser.md` retains the existing parser-stage
-verification record.
+Status: **Stage 1 candidate ready for independent review** (contract frozen,
+fixtures and barrier spike committed green). No production code, schema, UI or
+parser change. `2026-09-09-reference-measurement-table-parser.md` retains the
+existing parser-stage verification record.
 
-Review baseline: `feature/reference-save-and-plot`, HEAD
-`8097bc8f9689a730b1cfb9991ff3874eae3d2930`. This is review context, not a candidate
-implementation SHA. Existing uncommitted parser/test work is preserved.
-Candidate SHA: none. Verification this pass: document consistency and
-`git diff --check`; no application tests or schema/cloud operations.
+- Stage id: `stage-reported-statistics-contract` (brief in
+  `.sparring/stages/stage-reported-statistics-contract/`).
+- Branch: `feature/reported-statistics-contract` (linked worktree
+  `sporely-py-reported-statistics`).
+- Base SHA: `8097bc8f9689a730b1cfb9991ff3874eae3d2930`. The plan/sparring
+  configuration commit `09afc99` sits between base and candidate.
+- Content commits: `b98da04d` (fixtures, contract-consistency tests,
+  write-barrier spike), `7a2e1e84` (contract document), `865654be`
+  (old-client matrix correction), `1b098a43` (response to the first
+  sparring round) and `a0f12f3f` (response to the second round, both below).
+  **Frozen content SHA: `a0f12f3f03234dc40fa1157c86887b27ac2060bb`.**
+  The commit carrying this handoff follows it and changes only this plan file.
+- Deliverables: `docs/reference-data/measurement-content-contract.md`
+  (684 lines; over the ~600 guideline because the sparring rounds added the
+  partial-acknowledgement state, validation modes, a corrected matrix and the
+  machine-readable spec block — trimmed where possible, content kept);
+  `tests/fixtures/reference_statistics/*.json` (9 fixtures);
+  `tests/test_measurement_content_contract_fixtures.py` (28 tests);
+  `tests/test_measurement_content_write_barrier_spike.py` (19 tests).
 
-The prior read-only review inspected desktop code and cloud migration/RPC
-contracts in canonical `sporely-web`, not deployed database state. Probes confirmed
-that adding a NULL snapshot field changes current snapshot equality, unknown keys
-are dropped by canonical payload projection, and missing known keys raise KeyError.
-These findings are inputs to the design, not evidence that the proposed fixes work.
+Verification at `a0f12f3f` (project venv, commands per `.sparring/PROJECT.md`):
+new modules 47 passed; required unaffected modules unchanged —
+`test_reference_library_schema` 13, `_repository` 23, `_snapshot` 9,
+`_pull_reconciliation` 17, `_bundle_roundtrip` 6 (115 passed together);
+`py_compile` on both new test modules ok; `git diff --check` clean. Full
+suite: the plain command aborts at collection on the pre-existing
+`tests/test_cloud_media_recovery.py` shadowing error (baseline item 3), so it
+was rerun with `--continue-on-collection-errors`: **31 failed, 3983 passed,
+10 skipped, 55 errors, exit 1** (2 min 25 s) against the baseline
+31 failed / 3936 passed / 10 skipped / 55 errors. The +47 passes are exactly
+the new tests; the failing and erroring module set is identical to PROJECT.md
+items 1–4 (`test_w2d_reconciliation` 19 E + 1 F, `test_image_gallery_widget`
+17 E + 1 F, `test_supplement_loader` 12 F, `test_observations_tab_gallery_move`
+12 E, `test_observation_geography_sync` 9 F, `test_live_lab_raw_controls` 6 E,
+`test_render_review_screenshots` 4 F, `test_taxon_lookup`,
+`test_sample_source_ui_presence`, `test_archive_inventory`, `test_ai_id_parity`
+1 F each, `test_cloud_media_recovery` 1 collection E). No Supabase connection,
+no schema or cloud operation.
 
-Decisions retained: one JSON extension plus Q core columns; no duplicate ordinary
-range numbers; no inferred scalar means or Parmasto eligibility. Changes: smaller
-semantics, explicit invariant ownership and conflict grouping, request-key cloud
-compatibility, snapshot v2 rollout, and lossless transfer gates.
+Second sparring round (SEND_BACK on `1b098a43`) and responses in `a0f12f3f`:
+(1) handoff, counts and push completed here; (2) curated copy is now stated
+as the one authoritative path that rejects unsupported details, at
+`copy_curated_bundle_to_personal_library`, and removed from the opaque-accept
+list in §3; (3) the §11 pull row is split into never-upgraded libraries
+(degraded editable copy) and upgraded libraries (fail closed at
+`_write_domain`, transaction rolled back, no partial write).
 
-Four blockers must be resolved before schema implementation: cross-field merge
-rules, enforceable local older-client write protection, snapshot read/version
-compatibility, and omission handling in imports. Stage 1 resolves these concretely.
+First sparring round (SEND_BACK on `865654be`) and responses, all in `1b098a43`:
+(1) partial acknowledgement is now a third state, rejected on every path, with
+fixture `import_row_partial_extension.json` and tests; (2) matrix §11 now
+states that never-upgraded libraries give older desktops no local protection
+and that pulled copies are editable until the server rejects the push; C1 is
+defined as columns plus guard live, accepting enhanced writes; (3)
+`validate_measurement_content` gained a required `mode` (`edit` /
+`authoritative`) with the opaque-future-version rules, and server validation is
+row-level cross-field, not JSON-only; (4) the contract embeds a
+`json contract-spec` block that both test modules parse and assert against;
+(5) this handoff, counts and push complete the review surface.
+
+Blocker disposition (details and symbol citations in the contract document):
+
+1. **Conflict group — resolved.** 26 explicit fields (contract §5); identity
+   fields stay under `_IDENTITY_FIELDS`; `notes` explicitly excluded; group
+   moves as one unit in `_reconcile_live`, then the merged row is validated.
+2. **Local write barrier — resolved by executable spike, with one discovered
+   property and one open item.** Trigger pair calling a connection-registered
+   SQL function; unaware connections fail at statement prepare. Proven for
+   content edit, clearing the extension, attached-database import
+   (`_merge_reference_entity`), bundle merge (`_upsert_library_row_by_revision`),
+   pull-style upsert, unaware successor insert, and old-binary table rebuild.
+   Discovered: function resolution precedes the trigger `WHEN` clause, so an
+   unaware binary can neither INSERT nor UPDATE any `reference_measurement_sets`
+   row once the barrier exists (reads, deletes and every other table work).
+   This is adopted as the unsupported-open policy; the reviewer must accept or
+   reject it explicitly. Open (human-gated): running an actual shipped older
+   build; and an older binary importing an enhanced bundle into a library that
+   no aware binary ever opened is lossy and cannot be stopped by schema.
+3. **Snapshot v2 — resolved.** Exact shape (details outside `measurements`,
+   `q_core_*` inside, 65536/4096-byte limits), version-aware projection rule,
+   emit-v1-for-legacy rule, and a five-step reader-first rollout. Open (human):
+   the waiting period or minimum-version gate before enabling enhanced
+   attachments, since pre-reader desktops reject the whole use feed.
+4. **Import omission/NULL/revision policy — resolved.** Key presence decides
+   acknowledgement (`absent` / `complete` / `partial`) before any
+   normalization; partial rows are rejected everywhere; omitting
+   higher-revision rows against an enhanced destination are rejected
+   explicitly; explicit NULL clears; omission equals NULL only against
+   non-enhanced destinations. The spike records today's lossy-upgrade
+   behaviour as evidence.
+
+Also frozen: shared module `references/measurement_content.py` and its API
+(with validation modes), single codec (`json.dumps(..., ensure_ascii=True,
+sort_keys=True, separators=(",", ":"))`) with decoded-object equality, cloud
+key-presence rules using the existing `invalid_payload` status with
+tombstone/lifecycle exemptions and row-level server validation, writer/reader
+map, old-client matrix, and 18 enumerated Stage 2/3 acceptance cases (no
+skipped or xfail placeholders written).
+
+Plan amendments made by Stage 1 (contract §13): the *Local/offline
+compatibility* paragraph below now records the proven barrier and its coarse
+effect; `notes` is outside the conflict group; rejected unaware cloud
+mutations reuse `invalid_payload`; partial acknowledgement is a third state.
+
+Deferred to later stages: everything in *Revised implementation sequence*
+items 2–5; the cloud sub-stage in `sporely-web` (validators, columns, RPC
+guard, canonical/public snapshot builders, curated CHECK relaxation).
+
+Subagents: none used.
+
+The earlier design-revision handoff (2026-09-11, no implementation) remains
+summarized in the sections below; its probe findings are now superseded by the
+executable evidence cited in the contract document.
 
 ## Problem and user intent
 
@@ -260,13 +351,19 @@ Current normalized SQLite initialization has no forward-version write guard.
 An old binary can change known columns while preserving unknown details. A new
 schema-version field alone cannot protect against code that never checks it.
 
-Stage 1 must select and verify an enforceable barrier. A candidate is a narrowly
-scoped SQLite trigger requiring a connection-registered contract capability for
-enhanced-row content mutations. Unaware connections fail closed. This is proposed,
-not existing infrastructure or a proven solution. Audit ordinary connections,
-attached-database import connections, direct SQL writers, successor operations,
-and old startup migrations; test actual supported older binaries. The barrier
-must not be bypassed by clearing extension fields or by a legacy import merge.
+Stage 1 selected and proved the barrier (contract §6, spike
+`tests/test_measurement_content_write_barrier_spike.py`): SQLite triggers on
+`reference_measurement_sets` whose body calls a connection-registered function,
+`sporely_measurement_contract()`. Unaware connections fail at statement prepare
+(`no such function`), which is not bypassed by clearing extension fields, by an
+attached-database import, by a legacy bundle merge, by a pull-style upsert, by an
+unaware successor insert, or by an old-binary table rebuild. Amended by Stage 1:
+because function resolution precedes the trigger `WHEN` clause, the barrier is
+coarse — an unaware binary cannot INSERT or UPDATE any row of that table once
+the barrier exists (reads, deletes and all other tables are unaffected). This is
+the adopted unsupported-open policy. Still human-gated: exercising an actual
+shipped older build; an older binary importing an enhanced bundle into a library
+never opened by an aware binary remains lossy and is a release-notes matter.
 
 If safe downgrade cannot be established, define an enforceable unsupported-open
 policy before release; do not merely document that users should avoid old binaries.
