@@ -1,0 +1,73 @@
+{
+  "schema_version": 2,
+  "reference_work_id": "0f3e7c2a-5b1d-4e9f-a8c7-6d5e4f3a2b1c",
+  "reference_measurement_set_id": "9b4c2d7e-1a5f-4e8b-b3c6-7d2e9f0a1b2c",
+  "reference_treatment_id": "2a9e6b1c-7d4f-4a3e-8c5b-1f0e9d8c7b6a",
+  "reference_revision": 2,
+  "short_label": "Example & Author 2020",
+  "full_citation": "Example A. & Author B. (2020) Fixture monograph. Fixture Press, Trondheim.",
+  "work_type": "book",
+  "year": 2020,
+  "doi": null,
+  "isbn": null,
+  "taxon_id": "12345",
+  "name_as_published": "Hebeloma fixtura",
+  "locator_text": "p. 42",
+  "page_from": 42,
+  "page_to": 42,
+  "character": "spore_size",
+  "data_kind": "range",
+  "raw_text": "Spore(min) 5%-95% (max)meanmedianS.D.\n(6.9) 8.0–15.2 (16.1)\t8.9–13.7\t9.0–13.9\t0.696\n(4.1) 5.1–8.2 (8.9)\t5.6–7.5\t5.6–7.5\t0.323\n(1.17) 1.36–2.19 (2.79)\t1.51–1.96\t1.50–1.95\t0.097",
+  "measurements": {
+    "length_min": 6.9,
+    "length_core_min": 8.0,
+    "length_core_max": 15.2,
+    "length_max": 16.1,
+    "width_min": 4.1,
+    "width_core_min": 5.1,
+    "width_core_max": 8.2,
+    "width_max": 8.9,
+    "q_min": 1.17,
+    "q_core_min": 1.36,
+    "q_core_max": 2.19,
+    "q_max": 2.79,
+    "q_mean": null,
+    "length_mean": null,
+    "width_mean": null,
+    "sample_size": null,
+    "specimen_count": null
+  },
+  "method": {
+    "mount_medium": null,
+    "stain": null,
+    "preparation": null,
+    "measurement_method": null
+  },
+  "raw_points": null,
+  "measurement_details": {
+    "schema_version": 1,
+    "metrics": {
+      "length": {
+        "outer_range": {"kind": "reported_extremes"},
+        "core_range": {"kind": "percentile_interval", "percentile_bounds": [5, 95]},
+        "mean_interval": {"lower": 8.9, "upper": 13.7, "kind": "reported_range"},
+        "median": {"lower": 9.0, "upper": 13.9, "kind": "reported_range"},
+        "sd": {"value": 0.696}
+      },
+      "width": {
+        "outer_range": {"kind": "reported_extremes"},
+        "core_range": {"kind": "percentile_interval", "percentile_bounds": [5, 95]},
+        "mean_interval": {"lower": 5.6, "upper": 7.5, "kind": "reported_range"},
+        "median": {"lower": 5.6, "upper": 7.5, "kind": "reported_range"},
+        "sd": {"value": 0.323}
+      },
+      "q": {
+        "outer_range": {"kind": "reported_extremes"},
+        "core_range": {"kind": "percentile_interval", "percentile_bounds": [5, 95]},
+        "mean_interval": {"lower": 1.51, "upper": 1.96, "kind": "reported_range"},
+        "median": {"lower": 1.50, "upper": 1.95, "kind": "reported_range"},
+        "sd": {"value": 0.097}
+      }
+    }
+  }
+}
