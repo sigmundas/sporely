@@ -196,7 +196,8 @@ def test_unaware_update_of_legacy_row_also_fails_this_is_the_unsupported_open_po
     """Function resolution happens at prepare time, before the WHEN clause is
     evaluated, so the barrier is coarse: an unaware binary cannot UPDATE any
     row of the table once the barrier is installed. The contract records this
-    as the unsupported-open policy rather than hiding it."""
+    as the unsupported-open policy rather than hiding it; human review accepted
+    it on 2026-09-11 as final (no finer row-dependent compatibility)."""
     conn = unaware(library)
     with pytest.raises(sqlite3.OperationalError, match="no such function"):
         conn.execute("UPDATE reference_measurement_sets SET raw_text='x' WHERE id=?", (LEGACY_ID,))

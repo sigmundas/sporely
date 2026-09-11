@@ -288,6 +288,34 @@ def test_contract_document_spec_matches_these_constants():
     assert set(spec["import_decisions"]) == decisions
     assert set(spec["validation_modes"]) == {"edit", "authoritative"}
     assert spec["cloud_rejection_status"] == "invalid_payload"
+    assert spec["unsupported_open_policy"] == "coarse_table_barrier_accepted"
+    assert set(spec["release_gates"]) == RELEASE_GATES
+
+
+RELEASE_GATES = {
+    "minimum_supported_desktop_version",
+    "minimum_supported_reader_version",
+    "shipped_old_build_verification",
+}
+
+
+def test_contract_records_the_human_review_decisions():
+    """Human review on 2026-09-11 replaced documentation-only mitigations with
+    enforceable gates. The prose must keep naming the gates and must not
+    reintroduce release notes or a waiting period as a safety mechanism."""
+    raw = CONTRACT_DOC.read_text(encoding="utf-8")
+    # Collapse hard wraps so phrases can be matched across line breaks.
+    text = " ".join(raw.split())
+    assert "accepted by human review" in text
+    assert "Do not attempt finer row-dependent compatibility" in text
+    assert "minimum-supported-reader-version gate" in text
+    assert "minimum supported desktop version" in text
+    assert "Release notes alone are not a safety mechanism" in text
+    assert "must succeed before the persistent local-schema/barrier sub-stage" in text
+    prose = " ".join(_SPEC_BLOCK.sub("", raw).split())
+    assert "release notes / minimum version" not in prose
+    assert "waiting period or a minimum-version gate" not in prose
+    assert "release-notes matter" not in prose
 
 
 def test_contract_prose_names_every_enum_value_and_field():

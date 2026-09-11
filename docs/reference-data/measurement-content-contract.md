@@ -303,13 +303,17 @@ resolution precedes evaluation of the trigger's `WHEN` clause, an unaware
 connection cannot prepare *any* INSERT or UPDATE on `reference_measurement_sets`
 once the barrier exists, including edits of legacy-only rows
 (`test_unaware_update_of_legacy_row_also_fails_this_is_the_unsupported_open_policy`).
-This is accepted as the policy the plan asked for: **after a contract-aware
-binary has opened a library, older binaries can read the library and delete
-measurement sets, but cannot create or modify them.** Every other table is
-unaffected, so older binaries still start, browse, plot, attach existing sets
-and edit works and treatments. The `WHEN` clauses remain so that aware
-connections pay nothing on legacy rows and so that a registered-but-older
-contract version (function returning 0) is confined to enhanced rows.
+This is the policy the plan asked for, **accepted by human review on
+2026-09-11**: **after a contract-aware binary has opened or upgraded a
+library, unaware older binaries can read the library and delete measurement
+sets, but cannot insert or update measurement-set scientific content,
+legacy-only rows included.** Every other table is unaffected, so older
+binaries still start, browse, plot, attach existing sets and edit works and
+treatments. Do not attempt finer row-dependent compatibility for unaware
+binaries; the coarse barrier is the accepted design. The `WHEN` clauses
+remain so that aware connections pay nothing on legacy rows and so that a
+registered-but-older contract version (function returning 0) is confined to
+enhanced rows.
 
 Rejected finer alternative: a transaction-scoped marker row checked by the
 trigger (`EXISTS (SELECT 1 FROM reference_contract_session)`) would let
@@ -339,16 +343,25 @@ section 9 also exempts (`test_unaware_delete_is_permitted_as_a_lifecycle_operati
 | `ui/reference_entry_editor.py`, `ui/reference_library_manager_dialog.py` | via repository | none (no direct SQL; grep finds no `reference_measurement_sets` DML in `ui/`) |
 | tests and tools writing rows directly | raw connect | must call `register_measurement_contract` |
 
-**What remains open for a human.** The spike proves the mechanism against
-connections that behave like older binaries. Running an actual shipped
-desktop build against an enhanced library (startup, browse, edit attempt
-error text, delete, bundle import into an *old-schema* destination) is
-human-gated. One case the barrier cannot reach: an older binary importing an
-enhanced bundle into a library that a contract-aware binary has **never**
-opened has no trigger to hit; `_upsert_library_row_by_revision` intersects
-columns and inserts legacy-only rows. Nothing existing is damaged, but the
-imported content is lossy on that machine. Mitigation is product-level
-(release notes / minimum version), not schema-level.
+**Shipped-old-build verification (human-gated, prerequisite).** The spike
+proves the mechanism against connections that behave like older binaries.
+Running an actual shipped desktop build against an enhanced library
+(startup, browse, edit attempt error text, delete, bundle import into an
+*old-schema* destination) is human-gated and **must succeed before the
+persistent local-schema/barrier sub-stage of Stage 3 is implemented**. The
+Stage 3 brief for that sub-stage cites the verification record; without it
+the sub-stage does not start.
+
+**Minimum-supported-version policy for enhanced-bundle exposure.** One case
+the barrier cannot reach: an older binary importing an enhanced bundle into a
+library that a contract-aware binary has **never** opened has no trigger to
+hit; `_upsert_library_row_by_revision` intersects columns and inserts
+legacy-only rows. Nothing existing is damaged, but the imported content is
+lossy on that machine. The accepted mitigation is a **minimum supported
+desktop version**: desktop versions below it are unsupported for enhanced
+bundles, and every *supported* import path (section 8) must preserve
+enhanced content completely or reject it explicitly. Release notes alone are
+not a safety mechanism and do not satisfy this policy.
 
 ## 7. Snapshot version 2 (blocker 3)
 
@@ -414,7 +427,11 @@ before the previous is live):
    enabled only after 1–4 are deployed. A desktop older than step 1 that pulls
    an account containing one v2 use fails the whole use feed with
    "unsupported snapshot schema" (current behaviour, never silent omission).
-   Choosing the waiting period or a minimum-version gate is a human decision.
+   Activation is therefore behind a **minimum-supported-reader-version gate**
+   (accepted by human review, 2026-09-11): enhanced attachments and v2 snapshot
+   emission stay disabled until every supported desktop version can consume
+   the v2 representation safely, that is, until the oldest supported desktop
+   version includes step 1. A waiting period is not a substitute for the gate.
 
 ## 8. Import policy for omitted or NULL extension (blocker 4)
 
@@ -576,7 +593,7 @@ use-feed row.
 | Push enhanced content to C0 | — | `invalid_payload` (unknown keys, line 573); no fallback payload |
 | Push enhanced content to C1 | — | accepted and stored (server support is dormant ahead of activation; activation is a client gate, not a server switch) |
 | Import enhanced bundle into an upgraded library | blocked by barrier on UPDATE and INSERT | preserve or reject per section 8 |
-| Import enhanced bundle into a never-upgraded library | lossy insert (no trigger present; section 6 open item) | n/a |
+| Import enhanced bundle into a never-upgraded library | lossy insert (no trigger present); such a desktop is below the minimum supported version and unsupported for enhanced bundles (section 6 policy) | n/a |
 
 ## 12. Acceptance cases deferred to Stage 2/3 (enumerated)
 
@@ -636,6 +653,16 @@ Each requires production code that does not exist yet; none is stubbed.
     `details_unsupported_future_version.json` while `mode="authoritative"`
     accepts it and `encode_measurement_details` returns its canonical
     re-encoding unchanged.
+19. Activation gate (section 7 step 5): while the minimum-supported-reader
+    -version gate is closed, `build_observation_reference_snapshot(row_enhanced)`
+    is not reachable from attachment paths and no v2 snapshot is emitted; the
+    gate is a single named constant or setting, and the test that opens it is
+    the only way `snapshot_v2_enhanced.json` is produced end to end.
+20. Minimum-supported-version policy (section 6): every supported import path
+    (`_upsert_library_row_by_revision`, `_merge_reference_entity`,
+    `copy_curated_bundle_to_personal_library`) either stores all three
+    extension fields of `row_enhanced.json` or returns its explicit rejection;
+    no path stores a legacy-only projection of an enhanced row.
 
 ## 13. Decisions that amend the plan
 
@@ -650,6 +677,22 @@ Each requires production code that does not exist yet; none is stubbed.
   rather than a new status.
 - Partial acknowledgement (some extension keys present) is a third state,
   rejected everywhere; the plan spoke only of omission versus explicit NULL.
+
+Human review decisions recorded on 2026-09-11 (no Stage 1 redesign):
+
+- The coarse unsupported-open policy (section 6) is accepted as final; no
+  finer row-dependent compatibility for unaware binaries will be attempted.
+- Enhanced-bundle exposure is governed by a minimum-supported-desktop-version
+  policy, not release notes (section 6). Supported import paths preserve or
+  explicitly reject.
+- Enhanced attachments and v2 emission are governed by a
+  minimum-supported-reader-version gate, not a waiting period (section 7).
+- Shipped-old-build verification stays human-gated and is a prerequisite for
+  the persistent local-schema/barrier sub-stage (section 6).
+
+The spec block below names these three gates under `release_gates`; the
+contract-consistency tests assert the prose keeps them and does not
+reintroduce release notes or a waiting period as a mitigation.
 
 ## 14. Machine-readable specification
 
@@ -680,5 +723,8 @@ silently. Stage 2 loads the same block in a test of the real module.
  "validation_modes": ["edit", "authoritative"], "cloud_rejection_status": "invalid_payload",
  "contract_function": "sporely_measurement_contract", "local_contract_version": 1,
  "barrier_message": "measurement content contract required",
- "barrier_triggers": ["reference_measurement_content_guard_update", "reference_measurement_content_guard_insert"]}
+ "barrier_triggers": ["reference_measurement_content_guard_update", "reference_measurement_content_guard_insert"],
+ "unsupported_open_policy": "coarse_table_barrier_accepted",
+ "release_gates": ["minimum_supported_desktop_version", "minimum_supported_reader_version",
+   "shipped_old_build_verification"]}
 ```
