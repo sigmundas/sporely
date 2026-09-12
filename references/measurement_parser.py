@@ -363,12 +363,14 @@ _VALUE_TOKEN_RE = re.compile(_VALUE_TOKEN)
 
 # ``Qav`` and ``Qm`` are aliases for the reported Q mean. Alternation order
 # matters: ``Qav`` and ``Qm`` before ``Q``; ``n`` only as a standalone token.
-_NAMED_VALUE_RE = re.compile(
-    rf"(?<![A-Za-z])(?P<label>Qav|Qm|Q|n)(?![A-Za-z])\s*=\s*"
-    rf"(?P<value>{_VALUE_TOKEN}(?![A-Za-z0-9.%]))?",
-    re.IGNORECASE,
+_NAMED_LABEL_RE = re.compile(
+    r"(?<![A-Za-z])(?P<label>Qav|Qm|Q|n)(?![A-Za-z])\s*=\s*", re.IGNORECASE
 )
 _NAMED_VALUE_KEYS = {"qav": "qm", "qm": "qm", "q": "q", "n": "n"}
+_NAMED_VALUE_SEPARATOR_RE = re.compile(r"[,;]")
+# The whole value expression must be exactly one value token. ``fullmatch``
+# leaves no room for backtracking to a shorter scalar or interval prefix.
+_VALUE_TOKEN_FULL_RE = re.compile(rf"\s*{_VALUE_TOKEN}\s*")
 
 
 def _strip_named_values(
@@ -376,26 +378,34 @@ def _strip_named_values(
 ) -> tuple[str, dict[str, str]]:
     """Pull ``Qm = ...`` / ``Qav = ...``, ``Q = ...`` and ``n = ...`` out.
 
-    Returns the remainder (with those tokens removed) and the first raw value
-    per key (``'qm'`` for either alias, ``'q'``, ``'n'``). A repeated key with
-    a different value warns and keeps the first; a label without a numeric
-    value warns and is removed from the remainder.
+    A named value's expression runs from its ``=`` to the next ``,`` / ``;``,
+    the next named label, or the end of the string. It is accepted only when
+    that whole expression is one numeric value token; otherwise the complete
+    expression is rejected with a warning. Either way it is removed from the
+    remainder, so nothing of it can leak into length/width parsing.
+
+    Returns the remainder and the first raw value per key (``'qm'`` for either
+    alias, ``'q'``, ``'n'``). A repeated key with a different value warns and
+    keeps the first.
     """
     extracted: dict[str, str] = {}
     first_label: dict[str, str] = {}
     spans: list[tuple[int, int]] = []
-    for m in _NAMED_VALUE_RE.finditer(text):
+    labels = list(_NAMED_LABEL_RE.finditer(text))
+    for index, m in enumerate(labels):
         label = m.group("label")
         key = _NAMED_VALUE_KEYS[label.lower()]
-        value = (m.group("value") or "").strip()
-        if not value:
-            # Drop the unparseable value text with its label so it cannot
-            # leak into the length/width remainder.
-            trailing = re.split(r"[,;]", text[m.end():], maxsplit=1)[0]
-            spans.append((m.start(), m.end() + len(trailing)))
-            warnings.append(f"{label}: could not parse '{trailing.strip()}'.")
+        start = m.end()
+        end = labels[index + 1].start() if index + 1 < len(labels) else len(text)
+        separator = _NAMED_VALUE_SEPARATOR_RE.search(text, start, end)
+        if separator:
+            end = separator.start()
+        expression = text[start:end]
+        value = expression.strip()
+        spans.append((m.start(), end))
+        if not value or not _VALUE_TOKEN_FULL_RE.fullmatch(expression):
+            warnings.append(f"{label}: could not parse '{value}'.")
             continue
-        spans.append((m.start(), m.end()))
         if key in extracted:
             if _WHITESPACE_RE.sub("", extracted[key]) != _WHITESPACE_RE.sub("", value):
                 warnings.append(

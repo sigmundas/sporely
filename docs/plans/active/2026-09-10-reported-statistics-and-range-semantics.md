@@ -13,8 +13,27 @@ cloud, sync, snapshot, UI or persistence change. Stage 1 remains accepted at
   `sporely-py-reported-statistics`). Base SHA: `a0bdcd37`.
 - Candidate SHA: recorded in the stage notes and the commit that carries this
   section (the section is committed together with the code). The first
-  candidate `7e64508a` received a sparring SEND_BACK; the corrections below
-  are a new commit on top of it (no history rewritten).
+  candidate `7e64508a` and the second `f8c4505d` each received a sparring
+  SEND_BACK; every correction is a new commit on top (no history rewritten).
+
+Sparring round 2 (SEND_BACK on `f8c4505d`; finding 4 still reproducible for
+malformed intervals and numeric suffixes) and response, in the third
+candidate commit: the named-value regex could backtrack to a shorter prefix
+(`Qav = 1.5-2e2` → `1.5`, leaving `-2e2` in the dimension remainder).
+`_strip_named_values` no longer uses an optional regex group. A named value's
+expression now runs from its `=` to the next `,`/`;`, the next named label,
+or the end of the string, and is accepted only when that whole expression
+`fullmatch`es one value token (`_VALUE_TOKEN_FULL_RE`); otherwise the complete
+expression is rejected with `"<label>: could not parse '<expression>'."`.
+Accepted or rejected, the expression is removed from the remainder, so no
+suffix reaches width parsing. Consequence, deliberately accepted: a stray
+token after a value (`Qm = 1.5-1.7 x`) or a named value glued to the
+dimensions without a separator (`Qm = 1.9 x 5-6`) is now rejected as a whole
+rather than partially read. Regressions: `1.5-2e2`, `1.5-`, `1.5-2.5%`,
+`1.5±0.2`, `1.5/2`, `1.5 approx`, `1.5-1.7 x`, `(1.3) 1.4-1.9 (2.1)x`,
+`1.5 1.7`, `-1.5`, each asserting no Q mean, the exact warning and an intact
+width; valid separations (`Q = 1.2-1.4 Qm = 1.3 n = 30`, comma-separated
+Hebeloma strings) keep parsing.
 
 Sparring round 1 (SEND_BACK on `7e64508a`) and responses, all in the second
 candidate commit:
@@ -40,10 +59,9 @@ candidate commit:
    positivity no longer depends on a descriptor. The test that accepted a
    negative untagged bound was replaced by parametrised rejections of
    negative/zero/NaN bounds, scalar means and untagged pairs.
-4. *Numeric prefixes leaked into width.* A named value must be a complete
-   numeric token followed by a boundary (`(?![A-Za-z0-9.%])`); `Qav = 1.5e2`,
-   `1.5%`, `1.5x`, `12abc` are rejected whole with a targeted warning and
-   removed from the remainder, leaving width intact.
+4. *Numeric prefixes leaked into width.* First response (a negative lookahead
+   after the token) was incomplete because the regex could still backtrack to
+   a shorter prefix; superseded by the round 2 response above.
 
 Deliverables:
 
@@ -84,8 +102,9 @@ Deliverables:
   core tagged `unspecified`; `Qav`/`Qm` aliases (scalar → `q_mean`, interval →
   Q `mean_interval`), ordinary `Q =` ranges independent, repeated named values
   with different numbers warn and keep the first, a single Q value together
-  with Qm warns and keeps both; named values are matched as numeric tokens so
-  they cannot swallow a following dimension. New result fields
+  with Qm warns and keeps both; a named value's whole expression up to the
+  next separator or label must be exactly one numeric token, so it can neither
+  swallow a following dimension nor leak a suffix into it. New result fields
   `length_mean`, `width_mean`, `metric_details: dict[str, MetricDetails]` and
   `MeasurementParseResult.to_content()`; `swap_length_width` moves numbers,
   scalar means and details together. Range descriptors emitted by the parser:
@@ -97,8 +116,8 @@ Deliverables:
 - Tests: `tests/test_measurement_content.py` (new; 81 collected cases incl.
   22 mutation ids: contract §12 cases 1, 2, 3 and 18 at module level,
   spec-block linkage, codec, both modes, positivity, every edit operation)
-  and Stage 2 cases appended to `tests/test_measurement_parser.py` (86
-  collected cases, 59 new; the existing 27 unchanged). The Stage 1 fixture
+  and Stage 2 cases appended to `tests/test_measurement_parser.py` (96
+  collected cases, 69 new; the existing 27 unchanged). The Stage 1 fixture
   `row_enhanced.json` is
   reproduced end to end: parsing its `raw_text` yields its 15 numeric columns
   and encodes to its stored `measurement_details_json` byte for byte.
@@ -111,18 +130,18 @@ and were not modified. Intervals, medians and S.D. reach neither `p50` nor
 `q_mean`; only a scalar *mean* cell or scalar Qm/Qav fills a scalar mean.
 
 Verification (project venv; commands per `.sparring/PROJECT.md`): new/extended
-modules `test_measurement_content` + `test_measurement_parser` 167 passed;
+modules `test_measurement_content` + `test_measurement_parser` 177 passed;
 with the Stage 1 fixture and barrier-spike modules, both editor test modules
-and `test_reference_library_{schema,repository}` 319 passed;
+and `test_reference_library_{schema,repository}` 329 passed;
 reference-library regressions
 (`test_reference_library_{schema,repository,snapshot,pull_reconciliation,bundle_roundtrip,manager_dialog}`,
 `test_curated_reference_forks`, `test_legacy_reference_migration`,
 `test_reference_add_dialog_normalized`) 181 passed; `py_compile` on the four
 touched files ok; `git diff --check` clean. Full suite
 (`--continue-on-collection-errors`, as for Stage 1): **31 failed,
-4125 passed, 10 skipped, 55 errors, exit 1** (first candidate:
-31 / 4100 / 10 / 55) against the Stage 1 report of 31 failed / 3983 passed /
-10 skipped / 55 errors. The failing and erroring
+4135 passed, 10 skipped, 55 errors, exit 1** (earlier candidates:
+31 / 4100 / 10 / 55 and 31 / 4125 / 10 / 55) against the Stage 1 report of
+31 failed / 3983 passed / 10 skipped / 55 errors. The failing and erroring
 module set is identical to PROJECT.md items 1–4 (`test_w2d_reconciliation`
 19 E + 1 F, `test_image_gallery_widget` 17 E + 1 F, `test_supplement_loader`
 12 F, `test_observations_tab_gallery_move` 12 E,
