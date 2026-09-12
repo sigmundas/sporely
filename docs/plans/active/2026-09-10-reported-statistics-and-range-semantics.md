@@ -1,6 +1,160 @@
 # Reported statistics and explicit range semantics
 
-## Current stage / reviewer handoff — 2026-09-12 (Stage 3A)
+## Current stage / reviewer handoff — 2026-09-12 (Stage 3B)
+
+Status: **Stage 3B candidate ready for sparring.** Local persistence of the
+typed measurement content through the existing production owners: repository
+read/write/successor, bundle import, portable import (merge and replay check)
+and pull reconciliation. Stage 3A (schema and barrier, candidate `68d1855f`,
+human gate passed) is the base; nothing Stage 1, 2 or 3A froze was reopened.
+The candidate SHA is the commit that carries this section (recorded in the
+stage notes once known). Acceptance and merge remain the branch owner's
+separate decision.
+
+- Stage id: `stage-reported-statistics-local-persistence` (brief in
+  `.sparring/stages/stage-reported-statistics-local-persistence/`).
+- Branch: `feature/reported-statistics-contract` (linked worktree
+  `sporely-py-reported-statistics`). Base SHA: `04ea56d7`.
+
+Files changed: `database/reference_library.py`,
+`database/reference_sync_reconciliation.py`, `references/measurement_content.py`,
+`utils/db_share.py`, `utils/archive/portable_import.py`; tests
+`tests/test_reference_measurement_content_persistence.py` (new, 47 cases),
+`tests/test_measurement_content_contract_fixtures.py`,
+`tests/test_measurement_content_write_barrier_spike.py`,
+`tests/test_reference_library_manager_dialog.py`; this plan. Production code
+changed: yes. Tests changed: yes. No schema, cloud, snapshot, parser or UI
+change.
+
+Repository (`database/reference_library.py`): `MeasurementSet` gains
+`measurement_details_json`, `q_core_min`, `q_core_max` (all default `None`),
+the `is_enhanced` property and `measurement_content()` (typed view through
+`content_from_row`, contract §3). `MeasurementSetRepository._COLUMNS` lists the
+three columns, so `create`, `update` (`allowed` = `_COLUMNS`) and every
+`SELECT *` → dataclass read carry them. `_validate` now returns the canonical
+`measurement_details_json` text: it builds `content_from_row(asdict(ms))`,
+passes the details through `encode_measurement_details` →
+`decode_measurement_details` (so semantically empty objects, blank text and
+JSON `null` normalize to NULL and stored text is always the codec's canonical
+form), then runs `validate_measurement_content(mode="edit")`; a
+`MeasurementContentError` becomes `ReferenceValidationError` before any SQL.
+`create` and `update` assign the returned text and roll back on any exception;
+`create_revision` is unchanged in code (it already copies `asdict(existing)`
+and goes through `create`) and therefore copies and re-validates the
+extension. Typed → SQLite mapping: numeric columns and the Q core pair map
+field-for-field, details map through the codec; SQLite → typed is
+`content_from_row`. Edit transitions are the contract's operations applied to
+`existing.measurement_content()` with `content_row_updates(...)` passed to
+`update`; the repository validates the merged row as state and never repairs
+it. Behaviour change to flag: the validator also rejects non-finite,
+non-positive and inverted ordinary numeric values that the old `_validate`
+accepted; `test_plot_hint_rejects_infinity_and_negative_values` was adjusted
+to exercise the hint on unpersisted objects and assert the rejection.
+
+Unsupported future `measurement_details_json` version: read opaquely
+(`UnsupportedMeasurementDetails`, stored bytes untouched by reading); the
+repository refuses `update`, `create_revision` and `create` of such a row
+(`mode="edit"` → "unsupported measurement details version"), so it is
+inspect-only until the binary is upgraded, and no successor is created.
+Malformed stored text (`{broken`) loads as a row, `measurement_content()`
+raises, and any update is rejected; nothing is reinterpreted.
+
+Import policy (contract §8) is now owned by `references/measurement_content.py`
+(`IMPORT_DECISIONS`, `import_decision`, `scientific_content_equal`; moved out
+of the Stage 1 fixture test, which now asserts against the production owner).
+Bundle import (`utils/db_share.py::_upsert_library_row_by_revision`) applies it
+to `reference_measurement_sets` before any SQL, reading acknowledgement from
+the source row's key presence before normalization; new no-write outcomes
+`rejected_partial_extension`, `rejected_unacknowledged_extension`,
+`rejected_invalid_content`, `skipped_unacknowledged`, `conflict` are counted in
+`import_database_bundle`'s report (`reference_measurement_set_rejections`) and
+appended to `warnings`. Enhanced incoming rows are validated in
+`mode="authoritative"` (a future details version is accepted opaquely) and
+their details stored in canonical codec form. Behaviour change to flag: at an
+equal revision the bundle importer previously returned `skipped_same` without
+comparing content; it now compares the §5 scientific-content group
+(`scientific_content_equal`, omitted keys read as NULL) and reports
+`conflict` when it differs, for legacy rows too. Neither outcome writes
+anything, so the only visible difference is the warning. Portable import
+(`utils/archive/portable_import.py::_merge_reference_entity`): partial
+acknowledgement raises `PortableIdentityConflictError("… incomplete measurement
+content extension")` before any other rule, including the insert case; an
+omitting source at the same or a higher revision against an enhanced
+destination raises `"… source predates measurement content contract"` (no
+partial update); enhanced sources are validated (`_prepare_measurement_content`,
+`PortableImportError` on failure) before insert and before revision upgrade;
+`measurement_details_json` joined `raw_points_json` as a JSON-compared field in
+`_merge_reference_graph` and `_validate_replayed_stable_content`, which also
+gained the predates check. Legacy sources (no extension keys) keep their exact
+previous behaviour and acquire no semantics. Export side audited, unchanged:
+bundle and portable export copy the reference database file, so a new exporter
+produces complete rows automatically; the v1 observation snapshot projection of
+an enhanced row equals that of the same row stripped of the extension (test).
+Curated fork copy (`copy_curated_bundle_to_personal_library`) reads v1
+snapshots, which cannot carry the extension, and produces legacy-only rows
+(§8); unchanged, v2 is Stage 3D.
+
+Pull reconciliation (`database/reference_sync_reconciliation.py`): remote
+payloads do not acknowledge the extension before Stage 3C, and `_write_domain`
+upserts only `_PAYLOAD_COLUMNS`, so writing a remote change over a locally
+enhanced row would leave descriptors describing numbers they were not written
+for. `_extension_write_blocked` (kind `measurement_set`, remote does not
+acknowledge, stored local row enhanced) now turns both `_reconcile_live` write
+sites (remote-only change, and merge) into a recorded conflict with reason
+`unacknowledged_measurement_content_extension` and no domain write. New-row
+adoption (`local is None`) and legacy rows are untouched. The §5 group rule for
+cloud reconciliation is Stage 3C work, when remote rows carry the group.
+Deliberately not extended: `_LIBRARY_PAYLOAD_COLUMNS`, `_PAYLOAD_COLUMNS`,
+`_JSON_COLUMNS`, `_MEASUREMENT_SET_KEYS` — pushing the keys before the cloud
+allowlist accepts them would reject whole feeds (§4).
+
+Barrier: no new registration. Repository connections come from
+`_connect_reference` / `get_reference_connection`, bundle import from
+`get_reference_connection`, portable import registers after `ATTACH` — all
+Stage 3A sites. Tests prove repository INSERT, UPDATE and successor of enhanced
+rows succeed, that raw unaware INSERT/UPDATE stays blocked after repository
+use (also on legacy rows), and that a fresh `sqlite3.connect` has no
+`sporely_measurement_contract` function (registration is per connection).
+
+Atomicity: validation precedes every statement; `update` writes all allowed
+columns (ordinary and extension) in one UPDATE plus intent recording, commits
+once and rolls back on any exception. Regression: a failure injected into
+`record_library_mutation_intent` after the UPDATE leaves the raw row
+byte-identical; a failed validation of a combined ordinary+details update
+leaves it byte-identical; every rejected import outcome writes nothing
+(asserted with before/after raw rows).
+
+Parser boundary: `ParsedMeasurement.to_content()` (Stage 2) is the typed
+output, but no production path saves parser output directly — both editors
+parse into table cells and build a `MeasurementSet` from the cells
+(`ui/reference_entry_editor.py::_build_measurement_set`,
+`ui/reference_library_manager_dialog.py::_on_save`). Wiring the typed output
+through those editors is editor work (Stage 4). No parser change.
+
+Verification (project venv): new module 47 passed; with the fixtures, spike,
+content, schema and manager-dialog modules 248 passed; reference-library /
+curated / legacy / reference-use / portable / full-backup / db-share / archive
+/ measurement regressions **1 failed, 1036 passed** — the one failure is the
+pre-existing `test_archive_inventory` table-set assertion (PROJECT.md item 4);
+`py_compile` on all nine touched Python files ok; `git diff --check` clean.
+Full suite (`QT_QPA_PLATFORM=offscreen pytest -q -p no:cacheprovider
+--continue-on-collection-errors`, 2 min 32 s): **31 failed, 4225 passed,
+10 skipped, 55 errors** against the baseline 31 / 4178 / 10 / 55 — the +47
+are the new module and the failing set is exactly the PROJECT.md baseline
+(`qapp` fixture errors, taxonomy release-dir errors/failures,
+`test_cloud_media_recovery` collection error, and the listed single
+failures). No reference-library, archive, import or sync module regressed.
+
+Deferred: **Stage 3C** — cloud columns/RPC allowlist, payload and key
+registries (§4), remote acknowledgement, §5 group rule in `_reconcile_live`
+replacing the fail-closed guard, cloud transport of the extension. **Stage 3D**
+— snapshot v2, curated copy of v2 snapshots, attachment/export/import
+representation and minimum-reader-version gating. **Stage 4** — editor
+inspection and guarded editing, `to_content()` → repository wiring.
+
+Subagents: none used.
+
+## Stage 3A handoff — 2026-09-12 (candidate `68d1855f`, human gate passed)
 
 Status: **Stage 3A candidate READY (sparring verdict on `68d1855f`) and the
 human v0.9.22 compatibility gate passed** (evidence recorded below, in the

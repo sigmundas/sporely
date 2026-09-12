@@ -464,6 +464,81 @@ def acknowledges_extension(row: Mapping[str, Any]) -> bool:
     return acknowledgement_state(row) == "complete"
 
 
+# --- Import policy (contract section 8) ---------------------------------------
+
+IMPORT_DECISIONS: tuple[str, ...] = (
+    "reject_partial_extension",
+    "skip_stale",
+    "skip_unacknowledged",
+    "equivalent_if_content_equal",
+    "reject_unacknowledged_extension",
+    "replace",
+)
+
+_JSON_CONTENT_FIELDS: frozenset[str] = frozenset({"raw_points_json", "measurement_details_json"})
+
+
+def _json_content_equal(a: Any, b: Any) -> bool:
+    """Decoded-object equality for JSON text columns; NULL equals NULL and
+    unparsable text falls back to text equality. Never rewrites either side."""
+    if a is None or b is None:
+        return a is None and b is None
+    try:
+        return json.loads(a) == json.loads(b)
+    except (TypeError, ValueError):
+        return a == b
+
+
+def scientific_content_equal(a: Mapping[str, Any], b: Mapping[str, Any]) -> bool:
+    """Whether two rows carry the same scientific-content group (section 5).
+
+    JSON columns compare by decoded object, everything else by value. A key
+    missing on either side reads as NULL: an omitting historical source
+    compares as the recognized NULL baseline (section 8). Acknowledgement is
+    decided separately by :func:`import_decision`; this never inspects it.
+    """
+    for name in SCIENTIFIC_CONTENT_FIELDS:
+        left, right = a.get(name), b.get(name)
+        if name in _JSON_CONTENT_FIELDS:
+            if not _json_content_equal(left, right):
+                return False
+        elif left != right:
+            return False
+    return True
+
+
+def import_decision(
+    incoming: Mapping[str, Any], destination: Mapping[str, Any] | None
+) -> str:
+    """Section 8 decision for a row arriving by bundle or portable import.
+
+    ``incoming`` must be the source row *before* any key normalization so
+    that acknowledgement can be read from key presence. ``destination`` is
+    the existing row with the same id, or ``None``. The result is one of
+    :data:`IMPORT_DECISIONS`; ``"equivalent_if_content_equal"`` leaves the
+    group comparison (:func:`scientific_content_equal`) to the caller.
+    Validation of accepted content is also the caller's step, in
+    ``mode="authoritative"``.
+    """
+    if acknowledgement_state(incoming) == "partial":
+        return "reject_partial_extension"
+    if destination is None:
+        return "replace"
+    incoming_revision = int(incoming.get("revision") or 1)
+    destination_revision = int(destination.get("revision") or 1)
+    if incoming_revision < destination_revision:
+        return "skip_stale"
+    acknowledged = acknowledges_extension(incoming)
+    destination_enhanced = is_enhanced_row(destination)
+    if incoming_revision == destination_revision:
+        if not acknowledged and destination_enhanced:
+            return "skip_unacknowledged"
+        return "equivalent_if_content_equal"
+    if not acknowledged and destination_enhanced:
+        return "reject_unacknowledged_extension"
+    return "replace"
+
+
 # --- Validation ---------------------------------------------------------------
 
 
@@ -768,6 +843,7 @@ __all__ = (
     "CORE_PAIR",
     "CORE_RANGE_KINDS",
     "EXTENSION_FIELDS",
+    "IMPORT_DECISIONS",
     "INTERVAL_KINDS",
     "MEASUREMENT_DETAILS_MAX_BYTES",
     "MEASUREMENT_DETAILS_SCHEMA_VERSION",
@@ -795,8 +871,10 @@ __all__ = (
     "decode_measurement_details",
     "details_to_object",
     "encode_measurement_details",
+    "import_decision",
     "is_enhanced_row",
     "measurement_details_equal",
+    "scientific_content_equal",
     "set_mean_interval",
     "set_scalar_mean",
     "swap_length_width",

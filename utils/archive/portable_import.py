@@ -18,6 +18,14 @@ from typing import Any, Callable
 from zipfile import BadZipFile, ZipFile
 
 from database.reference_library_schema import register_measurement_contract
+from references.measurement_content import (
+    MeasurementContentError,
+    acknowledgement_state,
+    content_from_row,
+    encode_measurement_details,
+    is_enhanced_row,
+    validate_measurement_content,
+)
 from database.reference_sync_state import record_library_mutation_intent
 from database.curated_reference_forks import validate_frozen_curated_provenance
 from utils.archive.checksums import sha256_file
@@ -870,6 +878,31 @@ def _validate_reference_snapshot(
         )
 
 
+_MEASUREMENT_SET_JSON_FIELDS: frozenset[str] = frozenset(
+    {"raw_points_json", "measurement_details_json"}
+)
+
+
+def _prepare_measurement_content(data: dict[str, Any], *, table: str, identity: str) -> None:
+    """Validate enhanced incoming measurement content before a durable write
+    and replace its details text with the contract's canonical encoding.
+
+    ``mode="authoritative"``: transported state is validated as state, never
+    repaired; an unsupported future details version is preserved opaquely.
+    Legacy rows (no extension value) are left exactly as they arrived.
+    """
+    if not is_enhanced_row(data):
+        return
+    try:
+        content = content_from_row(data)
+        validate_measurement_content(content, mode="authoritative")
+    except MeasurementContentError as exc:
+        raise PortableImportError(
+            f"{table} {identity} has invalid measurement content: {exc}"
+        ) from exc
+    data["measurement_details_json"] = encode_measurement_details(content.details)
+
+
 def _merge_reference_entity(
     source: dict[str, Any],
     destination: sqlite3.Connection,
@@ -881,6 +914,13 @@ def _merge_reference_entity(
     identity = str(source.get("id") or "").strip()
     if not identity:
         raise PortableImportError(f"{table} row has no stable identity")
+    is_measurement_set = table.rsplit(".", 1)[-1] == "reference_measurement_sets"
+    if is_measurement_set and acknowledgement_state(source) == "partial":
+        # Contract section 8: a source that knows some but not all extension
+        # keys cannot have preserved any of it. Rejected before any other rule.
+        raise PortableIdentityConflictError(
+            f"{table} {identity} has an incomplete measurement content extension"
+        )
     existing_row = destination.execute(
         f"SELECT * FROM {table} WHERE id=?", (identity,)
     ).fetchone()
@@ -888,11 +928,13 @@ def _merge_reference_entity(
     if "owner_id" in data:
         data["owner_id"] = None
     if existing_row is None:
+        if is_measurement_set:
+            _prepare_measurement_content(data, table=table, identity=identity)
         _insert_row(destination, table, data)
         return identity
     existing = dict(existing_row)
     enrich_legacy_reference_id = None
-    if table.rsplit(".", 1)[-1] == "reference_measurement_sets":
+    if is_measurement_set:
         source_legacy_id = data.get("legacy_reference_value_id")
         destination_legacy_id = existing.get("legacy_reference_value_id")
         if source_legacy_id is not None and destination_legacy_id is not None:
@@ -915,12 +957,26 @@ def _merge_reference_entity(
     ignored = {"created_at", "updated_at", "owner_id"}
     if table.rsplit(".", 1)[-1] == "reference_works":
         ignored.update({"verification_status", "visibility"})
+    if (
+        is_measurement_set
+        and source_revision >= destination_revision
+        and acknowledgement_state(source) == "absent"
+        and is_enhanced_row(existing)
+    ):
+        # Contract section 8: a source without the extension keys cannot
+        # confirm or replace enhanced destination content. Same revision is
+        # not equivalent; a higher revision must not partially update.
+        raise PortableIdentityConflictError(
+            f"{table} {identity} source predates measurement content contract"
+        )
     if source_revision == destination_revision:
         if not _equivalent_rows(data, existing, ignored=ignored, json_fields=json_fields):
             raise PortableIdentityConflictError(
                 f"{table} {identity} has conflicting content at revision {source_revision}"
             )
     elif source_revision > destination_revision:
+        if is_measurement_set:
+            _prepare_measurement_content(data, table=table, identity=identity)
         allowed = _columns(destination, table)
         updates = {
             key: value for key, value in data.items()
@@ -1064,7 +1120,7 @@ def _merge_reference_graph(
             immutable_fields={
                 "taxon_treatment_id", "supersedes_id",
             },
-            json_fields={"raw_points_json"},
+            json_fields=set(_MEASUREMENT_SET_JSON_FIELDS),
         )
         set_map[str(row["id"])] = identity
     return value_map, work_map, treatment_map, set_map
@@ -1321,7 +1377,11 @@ def _validate_replayed_stable_content(
     reference_specs = (
         ("reference_work", "reference_works", {"authors_json", "editors_json"}),
         ("reference_treatment", "reference_taxon_treatments", set()),
-        ("reference_measurement_set", "reference_measurement_sets", {"raw_points_json"}),
+        (
+            "reference_measurement_set",
+            "reference_measurement_sets",
+            set(_MEASUREMENT_SET_JSON_FIELDS),
+        ),
     )
     for item_type, table, json_fields in reference_specs:
         for row in _rows(source_reference, table):
@@ -1347,6 +1407,14 @@ def _validate_replayed_stable_content(
             destination_revision = int(existing.get("revision") or 1)
             if destination_revision > source_revision:
                 continue
+            if (
+                item_type == "reference_measurement_set"
+                and acknowledgement_state(row) != "complete"
+                and is_enhanced_row(existing)
+            ):
+                raise PortableIdentityConflictError(
+                    f"{item_type} {row['id']} source predates measurement content contract"
+                )
             comparable = dict(row)
             if item_type == "reference_measurement_set":
                 legacy_id = comparable.get("legacy_reference_value_id")
