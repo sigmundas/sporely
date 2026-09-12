@@ -16,10 +16,20 @@ from database.reference_library_schema import (
 from database.reference_sync_state import (
     ReferenceCloudSyncStateError,
     canonical_library_payload,
+    recognize_library_baseline,
 )
 from database.schema import get_reference_connection
 from database import schema as database_schema
-from references.measurement_content import acknowledges_extension, is_enhanced_row
+from references.measurement_content import (
+    SCIENTIFIC_CONTENT_FIELDS,
+    MeasurementContentError,
+    acknowledges_extension,
+    content_from_row,
+    decode_measurement_details,
+    encode_measurement_details,
+    is_enhanced_row,
+    validate_measurement_content,
+)
 
 
 _KINDS = ("work", "treatment", "measurement_set")
@@ -47,6 +57,8 @@ _PAYLOAD_COLUMNS = {
         "specimen_count", "mount_medium", "stain", "preparation",
         "measurement_method", "notes", "raw_points_json", "revision",
         "supersedes_id",
+        # Measurement-content extension (contract section 4).
+        "measurement_details_json", "q_core_min", "q_core_max",
     ),
 }
 _IDENTITY_FIELDS = {
@@ -54,7 +66,7 @@ _IDENTITY_FIELDS = {
     "treatment": {"id", "reference_work_id"},
     "measurement_set": {"id", "taxon_treatment_id", "supersedes_id"},
 }
-_JSON_COLUMNS = {"authors_json", "editors_json", "raw_points_json"}
+_JSON_COLUMNS = {"authors_json", "editors_json", "raw_points_json", "measurement_details_json"}
 
 
 class ReferencePullReconciliationError(ReferenceCloudSyncStateError):
@@ -90,6 +102,35 @@ def _parse_json(value: str | None) -> dict[str, Any] | None:
     if not isinstance(parsed, dict):
         raise ReferencePullReconciliationError("stored baseline is not an object")
     return parsed
+
+
+def _baseline(kind: str, value: str | None) -> dict[str, Any] | None:
+    """A stored acknowledged baseline, historical omissions read as NULL."""
+    return recognize_library_baseline(kind, _parse_json(value))
+
+
+def _details_text(payload: dict[str, Any]) -> str | None:
+    """The decoded ``measurement_details_json`` object of a payload as
+    canonical text (the contract codec), or None."""
+    value = payload.get("measurement_details_json")
+    return None if value is None else _canonical_json(value)
+
+
+def _measurement_content_error(payload: dict[str, Any]) -> str | None:
+    """Why ``payload`` is unacceptable measurement content, or None.
+
+    The details object must decode (shape of contract section 1); an
+    enhanced row is then validated as a whole in ``authoritative`` mode, which
+    accepts an unknown future details version opaquely. A legacy row (all
+    extension fields NULL) acquires no new rule here.
+    """
+    try:
+        content = content_from_row({**payload, "measurement_details_json": _details_text(payload)})
+        if is_enhanced_row(payload):
+            validate_measurement_content(content, mode="authoritative")
+    except MeasurementContentError as exc:
+        return str(exc)
+    return None
 
 
 def _rows(feed: StagedReferenceLibraryFeed, kind: str) -> tuple[dict[str, Any], ...]:
@@ -185,6 +226,12 @@ def stage_reference_library_feed(
                 ):
                     raise ReferencePullReconciliationError(
                         "remote measurement points must be an array"
+                    )
+                content_error = _measurement_content_error(payload)
+                if content_error is not None:
+                    raise ReferencePullReconciliationError(
+                        "remote measurement set has invalid measurement content: "
+                        f"{content_error}"
                     )
             normalized.append({**row, "_payload": payload})
         staged[kind] = tuple(normalized)
@@ -300,7 +347,13 @@ def _domain_values(kind: str, payload: dict[str, Any]) -> list[Any]:
     values = []
     for column in _PAYLOAD_COLUMNS[kind]:
         value = payload[column]
-        if column in _JSON_COLUMNS and value is not None:
+        if column == "measurement_details_json" and value is not None:
+            # Stored text is always the contract codec's canonical form
+            # (contract section 3); a semantically empty object becomes NULL.
+            value = encode_measurement_details(
+                decode_measurement_details(_canonical_json(value))
+            )
+        elif column in _JSON_COLUMNS and value is not None:
             value = json.dumps(value, ensure_ascii=True, separators=(",", ":"))
         values.append(value)
     return values
@@ -456,7 +509,7 @@ def _reconcile_live(
         expected = tombstone["expected_row_version"]
         if expected is not None and row["row_version"] < expected:
             raise ReferencePullRetryableError("remote row version moved backwards")
-        baseline = _parse_json(tombstone["accepted_payload_json"])
+        baseline = _baseline(kind, tombstone["accepted_payload_json"])
         if tombstone["sync_status"] == "conflict":
             return 0, f"{kind}:{entity_id}"
         if tombstone["remote_identity_state"] == "create_outcome_unknown" or baseline == remote:
@@ -507,7 +560,7 @@ def _reconcile_live(
         raise ReferencePullRetryableError("remote row version moved backwards")
     if state["sync_status"] == "conflict":
         return 0, f"{kind}:{entity_id}"
-    baseline = _parse_json(state["accepted_payload_json"])
+    baseline = _baseline(kind, state["accepted_payload_json"])
     if state["remote_identity_state"] != "acknowledged" or baseline is None:
         if local == remote:
             _save_acknowledged_state(
@@ -532,6 +585,17 @@ def _reconcile_live(
     compare_fields = set(remote) - {"revision", "deleted"}
     local_changes = {key for key in compare_fields if local.get(key) != baseline.get(key)}
     remote_changes = {key for key in compare_fields if remote.get(key) != baseline.get(key)}
+    if kind == "measurement_set":
+        # Contract section 5: the scientific-content group moves as one unit.
+        # A change set that touches any group field is expanded to the whole
+        # group, so concurrent edits inside the group conflict unless the
+        # complete resulting content is identical, while ``notes`` and the
+        # identity fields keep per-field behaviour.
+        group = SCIENTIFIC_CONTENT_FIELDS & compare_fields
+        if local_changes & group:
+            local_changes |= group
+        if remote_changes & group:
+            remote_changes |= group
     identity_change = remote_changes & _IDENTITY_FIELDS[kind]
     overlap = local_changes & remote_changes
     if identity_change or any(local.get(key) != remote.get(key) for key in overlap):
@@ -585,6 +649,19 @@ def _reconcile_live(
         int(local.get("revision") or 0),
         int(remote.get("revision") or 0),
     ) + 1
+    if kind == "measurement_set":
+        # The merged candidate is validated as a whole before any write
+        # (contract section 5 step 4); a failure is a conflict, never a write.
+        content_error = _measurement_content_error(merged)
+        if content_error is not None:
+            _record_conflict(
+                connection, kind, entity_id,
+                reason="invalid_merged_measurement_content",
+                baseline=baseline, local=local, remote=remote,
+                remote_row_version=row["row_version"],
+                overlapping_fields=local_changes & remote_changes,
+            )
+            return 0, f"{kind}:{entity_id}"
     _write_domain(connection, kind, merged, row, preserve_updated_at=True)
     _save_acknowledged_state(
         connection, kind, entity_id, cloud_user_id, remote, row["row_version"], "dirty"
@@ -651,7 +728,7 @@ def _reconcile_tombstone(
         raise ReferencePullRetryableError("remote row version moved backwards")
     if state["sync_status"] == "conflict":
         return 0, f"{kind}:{entity_id}"
-    baseline = _parse_json(state["accepted_payload_json"])
+    baseline = _baseline(kind, state["accepted_payload_json"])
     if (
         state["remote_identity_state"] == "acknowledged"
         and baseline is not None

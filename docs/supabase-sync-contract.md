@@ -155,6 +155,25 @@ Genuine point arrays, including an empty array, are transmitted unchanged;
 acknowledged updates retain explicit JSON `null` so an existing array can be
 cleared through `jsonb_populate_record`.
 
+Measurement sets carry the measurement-content extension
+(`measurement_details_json`, `q_core_min`, `q_core_max`; contract
+`docs/reference-data/measurement-content-contract.md`, section 9). Every
+measurement-set mutation payload sends all three keys, JSON `null` included;
+the adapter never strips them, because key presence is how a request
+acknowledges the contract. On the server, a request that omits the keys may
+still create a legacy row, retry unchanged, delete or restore, but any other
+change to a row whose extension is non-NULL, and any successor of such a row,
+is rejected with `invalid_payload`; a payload carrying some but not all keys is
+rejected everywhere. Every content change is validated row-level (finite
+positive values, ordered pairs, details structure and the 4096-byte limit; an
+unknown future `schema_version` is stored opaquely). Owner reads and RPC rows
+return the three columns, so a pre-extension server's rows are rejected by the
+desktop as missing canonical fields, and a stored baseline that predates the
+extension is read with the three keys as `null`. Pull reconciliation treats the
+26 scientific-content fields of a measurement set as one conflict group:
+concurrent edits inside the group conflict unless the complete resulting
+content is identical, while `notes` keeps per-field merging.
+
 Observation-use pull imports the frozen `snapshot_json` exactly as stored.
 Three-way reconciliation may automatically combine only disjoint role/note
 edits. Identity, measurement-set, selected-time, revision, or snapshot
