@@ -19,6 +19,7 @@ from database.reference_sync_state import (
 )
 from database.schema import get_reference_connection
 from database import schema as database_schema
+from references.measurement_content import acknowledges_extension, is_enhanced_row
 
 
 _KINDS = ("work", "treatment", "measurement_set")
@@ -248,6 +249,27 @@ def _payload_from_local(connection: sqlite3.Connection, kind: str, entity_id: st
             mapping[key] = json.loads(mapping[key])
     mapping["deleted_at"] = None
     return canonical_library_payload(kind, mapping)
+
+
+def _extension_write_blocked(
+    connection: sqlite3.Connection, kind: str, entity_id: str, remote: dict[str, Any]
+) -> bool:
+    """True when a domain write of ``remote`` over the local row would drop
+    or orphan measurement content the remote payload does not acknowledge.
+
+    The stored local row is enhanced (contract terminology) while the remote
+    payload carries none of the extension keys: writing its ordinary columns
+    would leave the local descriptors describing numbers they were not
+    written for. Such a pull is recorded as a conflict instead (Stage 3B);
+    cloud transport of the extension is Stage 3C, after which remote
+    payloads acknowledge the extension and this check no longer fires.
+    """
+    if kind != "measurement_set" or acknowledges_extension(remote):
+        return False
+    row = connection.execute(
+        f"SELECT * FROM {_TABLES[kind]} WHERE id=?", (entity_id,)
+    ).fetchone()
+    return row is not None and is_enhanced_row(dict(row))
 
 
 def _state_row(connection: sqlite3.Connection, kind: str, entity_id: str):
@@ -528,6 +550,14 @@ def _reconcile_live(
                 connection, kind, entity_id, cloud_user_id, remote, row["row_version"], "dirty"
             )
             return 1, None
+        if _extension_write_blocked(connection, kind, entity_id, remote):
+            _record_conflict(
+                connection, kind, entity_id,
+                reason="unacknowledged_measurement_content_extension",
+                baseline=baseline, local=local, remote=remote,
+                remote_row_version=row["row_version"],
+            )
+            return 0, f"{kind}:{entity_id}"
         _write_domain(connection, kind, remote, row)
         _save_acknowledged_state(
             connection, kind, entity_id, cloud_user_id, remote, row["row_version"], "clean"
@@ -538,6 +568,15 @@ def _reconcile_live(
             connection, kind, entity_id, cloud_user_id, remote, row["row_version"], "dirty"
         )
         return 1, None
+    if _extension_write_blocked(connection, kind, entity_id, remote):
+        _record_conflict(
+            connection, kind, entity_id,
+            reason="unacknowledged_measurement_content_extension",
+            baseline=baseline, local=local, remote=remote,
+            remote_row_version=row["row_version"],
+            overlapping_fields=local_changes & remote_changes,
+        )
+        return 0, f"{kind}:{entity_id}"
     merged = dict(remote)
     for key in local_changes:
         merged[key] = local[key]

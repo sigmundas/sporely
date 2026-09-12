@@ -28,7 +28,10 @@ import pytest
 
 from database import reference_library_schema as lib_schema
 from database.reference_library_schema import register_measurement_contract
-from utils.archive.portable_import import _merge_reference_entity
+from utils.archive.portable_import import (
+    PortableIdentityConflictError,
+    _merge_reference_entity,
+)
 from utils.db_share import _upsert_library_row_by_revision
 
 FIXTURES = Path(__file__).parent / "fixtures" / "reference_statistics"
@@ -296,17 +299,25 @@ def test_unaware_successor_of_enhanced_row_cannot_be_created(library):
 def test_unaware_attached_database_import_fails_and_aware_succeeds(library, tmp_path):
     """Mirrors ``import_portable_payload``: the destination reference library is
     ATTACHed to the main-database connection and written through
-    ``_merge_reference_entity`` with a higher-revision source row."""
-    incoming = _load("import_row_omitting_extension.json")
+    ``_merge_reference_entity`` with a higher-revision source row.
+
+    The acknowledging fixture (explicit NULL extension, revision 3) reaches
+    the UPDATE, so the barrier decides: unaware fails to prepare, aware
+    applies the acknowledged clear. The omitting fixture never reaches SQL:
+    since Stage 3B the importer rejects it against an enhanced destination
+    (contract section 8) on any connection."""
+    acknowledging = _load("import_row_explicit_null_extension.json")
+    omitting = _load("import_row_omitting_extension.json")
     immutable = {"taxon_treatment_id", "supersedes_id"}
+    json_fields = {"raw_points_json", "measurement_details_json"}
 
     main = sqlite3.connect(tmp_path / "mushrooms.db")
     main.row_factory = sqlite3.Row
     main.execute("ATTACH DATABASE ? AS portable_reference", (str(library),))
     with pytest.raises(sqlite3.OperationalError, match="no such function"):
         _merge_reference_entity(
-            incoming, main, table="portable_reference.reference_measurement_sets",
-            immutable_fields=immutable, json_fields={"raw_points_json"},
+            acknowledging, main, table="portable_reference.reference_measurement_sets",
+            immutable_fields=immutable, json_fields=json_fields,
         )
     main.rollback()
     untouched = dict(main.execute(
@@ -315,40 +326,53 @@ def test_unaware_attached_database_import_fails_and_aware_succeeds(library, tmp_
     assert untouched["revision"] == 2 and untouched["length_core_max"] == 15.2
 
     register_measurement_contract(main)
+    with pytest.raises(PortableIdentityConflictError, match="predates measurement content contract"):
+        _merge_reference_entity(
+            omitting, main, table="portable_reference.reference_measurement_sets",
+            immutable_fields=immutable, json_fields=json_fields,
+        )
+    main.rollback()
+    assert dict(main.execute(
+        "SELECT * FROM portable_reference.reference_measurement_sets WHERE id=?", (ENHANCED_ID,)
+    ).fetchone()) == untouched, "the omitting source changes nothing, not even a bound"
+
     _merge_reference_entity(
-        incoming, main, table="portable_reference.reference_measurement_sets",
-        immutable_fields=immutable, json_fields={"raw_points_json"},
+        acknowledging, main, table="portable_reference.reference_measurement_sets",
+        immutable_fields=immutable, json_fields=json_fields,
     )
     main.commit()
     merged = dict(main.execute(
         "SELECT * FROM portable_reference.reference_measurement_sets WHERE id=?", (ENHANCED_ID,)
     ).fetchone())
     assert merged["revision"] == 3 and merged["length_core_max"] == 15.0
-    # Current production behavior, recorded as evidence for blocker 4: the
-    # omitting source revision-upgrades the numeric fields while the newer
-    # descriptors survive untouched. Stage 3 must reject this combination.
-    assert merged["measurement_details_json"] == ENHANCED["measurement_details_json"]
+    assert all(merged[name] is None for name in EXTENSION_COLUMNS), "explicit NULL clears"
     main.close()
 
 
-def test_unaware_bundle_import_merge_fails_and_aware_reproduces_current_behavior(library):
+def test_unaware_bundle_import_merge_fails_and_aware_applies_the_import_policy(library):
     """Mirrors ``import_database_bundle`` → ``_upsert_library_row_by_revision``."""
-    incoming = _load("import_row_omitting_extension.json")
+    acknowledging = _load("import_row_explicit_null_extension.json")
+    omitting = _load("import_row_omitting_extension.json")
     conn = unaware(library)
     with pytest.raises(sqlite3.OperationalError, match="no such function"):
-        _upsert_library_row_by_revision(incoming, conn, table="reference_measurement_sets")
+        _upsert_library_row_by_revision(acknowledging, conn, table="reference_measurement_sets")
     conn.rollback()
     assert _row(conn, ENHANCED_ID)["revision"] == 2
     conn.close()
 
     conn = aware(library)
-    assert _upsert_library_row_by_revision(incoming, conn, table="reference_measurement_sets") == "updated"
+    before = _row(conn, ENHANCED_ID)
+    assert (
+        _upsert_library_row_by_revision(omitting, conn, table="reference_measurement_sets")
+        == "rejected_unacknowledged_extension"
+    )
+    conn.commit()
+    assert _row(conn, ENHANCED_ID) == before, "Stage 3B policy: rejected, nothing written"
+    assert _upsert_library_row_by_revision(acknowledging, conn, table="reference_measurement_sets") == "updated"
     conn.commit()
     merged = _row(conn, ENHANCED_ID)
-    assert merged["revision"] == 3
-    assert merged["measurement_details_json"] == ENHANCED["measurement_details_json"], (
-        "column intersection keeps the extension but never rejects; Stage 3 policy"
-    )
+    assert merged["revision"] == 3 and merged["length_core_max"] == 15.0
+    assert all(merged[name] is None for name in EXTENSION_COLUMNS), "explicit NULL clears"
     conn.close()
 
 

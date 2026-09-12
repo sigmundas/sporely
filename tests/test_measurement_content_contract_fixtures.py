@@ -3,11 +3,14 @@
 
 These tests pin the frozen contract to executable checks so the JSON fixtures
 under ``tests/fixtures/reference_statistics/`` cannot drift from the prose.
-They deliberately use no production code beyond the existing snapshot
-serializer: the validation rules are restated here as the specification that
-Stage 2 (``references/measurement_content.py``) must implement. When Stage 2
-lands, these helpers should be replaced by the real module and the tests
-kept.
+The validation and snapshot-projection rules are still restated here as the
+specification (Stage 2 tests them against the real module in
+``tests/test_measurement_content.py``). The acknowledgement and import-policy
+helpers are no longer restated: since Stage 3B they are owned by
+``references/measurement_content.py`` (``acknowledgement_state``,
+``acknowledges_extension``, ``is_enhanced_row``, ``import_decision``) and
+applied by the bundle and portable importers, so the fixture decisions below
+exercise the production owner.
 """
 from __future__ import annotations
 
@@ -19,6 +22,13 @@ from pathlib import Path
 import pytest
 
 from database.reference_citation import serialize_snapshot
+from references.measurement_content import (
+    IMPORT_DECISIONS,
+    acknowledgement_state,
+    acknowledges_extension,
+    import_decision,
+)
+from references.measurement_content import is_enhanced_row as is_enhanced
 
 FIXTURES = Path(__file__).parent / "fixtures" / "reference_statistics"
 CONTRACT_DOC = Path(__file__).parents[1] / "docs" / "reference-data" / "measurement-content-contract.md"
@@ -163,43 +173,6 @@ def validate_details_v1(details: dict, row: dict) -> None:
             assert _is_number(body["sd"]["value"]) and body["sd"]["value"] >= 0
 
 
-def is_enhanced(row: dict) -> bool:
-    return any(row.get(field) is not None for field in EXTENSION_FIELDS)
-
-
-def acknowledgement_state(row: dict) -> str:
-    present = sum(field in row for field in EXTENSION_FIELDS)
-    if present == 0:
-        return "absent"
-    if present == len(EXTENSION_FIELDS):
-        return "complete"
-    return "partial"
-
-
-def acknowledges_extension(row: dict) -> bool:
-    return acknowledgement_state(row) == "complete"
-
-
-def import_decision(incoming: dict, destination: dict | None) -> str:
-    """Contract §8 policy for a row arriving by bundle/portable import."""
-    if acknowledgement_state(incoming) == "partial":
-        return "reject_partial_extension"
-    if destination is None:
-        return "replace"
-    src_rev = int(incoming.get("revision") or 1)
-    dst_rev = int(destination.get("revision") or 1)
-    if src_rev < dst_rev:
-        return "skip_stale"
-    acknowledged = acknowledges_extension(incoming)
-    if src_rev == dst_rev:
-        if not acknowledged:
-            return "skip_unacknowledged" if is_enhanced(destination) else "equivalent_if_content_equal"
-        return "equivalent_if_content_equal"
-    if not acknowledged:
-        return "reject_unacknowledged_extension" if is_enhanced(destination) else "replace"
-    return "replace"
-
-
 def snapshot_semantic_projection(snapshot: dict):
     """Contract §5 version-aware projection; ``None`` for unsupported versions."""
     version = snapshot.get("schema_version")
@@ -286,6 +259,7 @@ def test_contract_document_spec_matches_these_constants():
         "equivalent_if_content_equal", "reject_unacknowledged_extension", "replace",
     }
     assert set(spec["import_decisions"]) == decisions
+    assert set(IMPORT_DECISIONS) == decisions, "production owner of the import policy"
     assert set(spec["validation_modes"]) == {"edit", "authoritative"}
     assert spec["cloud_rejection_status"] == "invalid_payload"
     assert spec["unsupported_open_policy"] == "coarse_table_barrier_accepted"

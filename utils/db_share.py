@@ -28,6 +28,15 @@ from database.reference_sync_state import (
     record_use_mutation_intent,
 )
 from database.curated_reference_forks import validate_frozen_curated_provenance
+from references.measurement_content import (
+    MeasurementContentError,
+    content_from_row,
+    encode_measurement_details,
+    import_decision,
+    is_enhanced_row,
+    scientific_content_equal,
+    validate_measurement_content,
+)
 from utils.heic_converter import build_local_image_provenance
 
 
@@ -38,6 +47,17 @@ _REFERENCE_LIBRARY_TABLES: tuple[str, ...] = (
 )
 
 _REFERENCE_FORK_TABLE = "curated_reference_forks"
+
+# Measurement-set import outcomes that write nothing and must be surfaced in
+# the import report (contract section 8). ``skipped_same``/``skipped_stale``
+# remain silent no-ops as for the other library tables.
+_MEASUREMENT_SET_SURFACED_OUTCOMES: tuple[str, ...] = (
+    "rejected_partial_extension",
+    "rejected_unacknowledged_extension",
+    "rejected_invalid_content",
+    "skipped_unacknowledged",
+    "conflict",
+)
 
 
 def _find_unresolved_ref_use_set_ids(
@@ -72,7 +92,16 @@ def _upsert_library_row_by_revision(
     """Insert or revision-upgrade a normalized library row keyed by UUID.
 
     Returns one of ``"inserted"``, ``"updated"``, ``"skipped_same"``,
-    ``"skipped_stale"`` for reporting/telemetry.
+    ``"skipped_stale"`` for reporting/telemetry. For
+    ``reference_measurement_sets`` the measurement content contract's import
+    policy (section 8, ``import_decision``) applies first and may also return
+    ``"rejected_partial_extension"``, ``"rejected_unacknowledged_extension"``,
+    ``"rejected_invalid_content"``, ``"skipped_unacknowledged"`` or
+    ``"conflict"``; every one of those writes nothing. Enhanced incoming
+    content is validated in ``mode="authoritative"`` (an unsupported future
+    details version is preserved opaquely) and its details text is stored in
+    the contract's canonical codec form. Legacy rows keep their historical
+    behaviour and acquire no new semantics.
     """
     row_id = src_row.get("id")
     if not row_id:
@@ -81,11 +110,41 @@ def _upsert_library_row_by_revision(
     existing = dest_cur.execute(
         f"SELECT * FROM {table} WHERE id = ?", (row_id,)
     ).fetchone()
+    existing_data = dict(existing) if existing is not None else None
     src_columns = [
         col
         for col in src_row.keys()
         if col in {row[1] for row in dest_cur.execute(f"PRAGMA table_info({table})").fetchall()}
     ]
+    if table == "reference_measurement_sets":
+        # Acknowledgement is read from key presence of the source row before
+        # any normalization; a row from an old exporter has no extension keys.
+        decision = import_decision(src_row, existing_data)
+        if decision == "reject_partial_extension":
+            return "rejected_partial_extension"
+        if decision == "skip_stale":
+            return "skipped_stale"
+        if decision == "skip_unacknowledged":
+            return "skipped_unacknowledged"
+        if decision == "reject_unacknowledged_extension":
+            return "rejected_unacknowledged_extension"
+        if decision == "equivalent_if_content_equal":
+            return (
+                "skipped_same"
+                if scientific_content_equal(src_row, existing_data)
+                else "conflict"
+            )
+        assert decision == "replace", decision
+        if is_enhanced_row(src_row):
+            try:
+                content = content_from_row(src_row)
+                validate_measurement_content(content, mode="authoritative")
+            except MeasurementContentError:
+                return "rejected_invalid_content"
+            src_row = dict(src_row)
+            src_row["measurement_details_json"] = encode_measurement_details(
+                content.details
+            )
     if existing is None:
         placeholders = ", ".join("?" for _ in src_columns)
         values = [src_row.get(col) for col in src_columns]
@@ -94,7 +153,6 @@ def _upsert_library_row_by_revision(
             values,
         )
         return "inserted"
-    existing_data = dict(existing)
     src_revision = int(src_row.get("revision") or 1)
     existing_revision = int(existing_data.get("revision") or 1)
     if src_revision > existing_revision:
@@ -1049,6 +1107,9 @@ def import_database_bundle(
 
         imported_library_rows = {name: 0 for name in _REFERENCE_LIBRARY_TABLES}
         updated_library_rows = {name: 0 for name in _REFERENCE_LIBRARY_TABLES}
+        measurement_set_rejections = {
+            name: 0 for name in _MEASUREMENT_SET_SURFACED_OUTCOMES
+        }
         if include_reference_values:
             ref_path = temp_dir / "reference_values.db"
             if ref_path.exists():
@@ -1103,6 +1164,12 @@ def import_database_bundle(
                             imported_library_rows[library_table] += 1
                         elif outcome == "updated":
                             updated_library_rows[library_table] += 1
+                        elif outcome in measurement_set_rejections:
+                            measurement_set_rejections[outcome] += 1
+                            warnings.append(
+                                "Did not import reference measurement set "
+                                f"{src_lib_row['id']!r}: {outcome}."
+                            )
                 if ref_cur.execute(
                     "SELECT 1 FROM sqlite_master WHERE type='table' AND name=?",
                     (_REFERENCE_FORK_TABLE,),
@@ -1182,6 +1249,7 @@ def import_database_bundle(
                 "reference_measurement_sets"
             ],
             "reference_library_updates": updated_library_rows,
+            "reference_measurement_set_rejections": measurement_set_rejections,
             "observation_reference_uses": imported_ref_uses,
             "observation_reference_uses_updated": updated_ref_uses,
             "unresolved_observation_reference_uses": unresolved_ref_uses,
