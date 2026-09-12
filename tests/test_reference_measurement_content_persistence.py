@@ -791,11 +791,17 @@ def test_snapshot_of_enhanced_row_is_still_the_v1_projection_of_its_ordinary_col
 
 
 # --- 24: pull reconciliation never silently drops the extension ---------------
+# Since Stage 3C every remote row from a supporting server acknowledges the
+# extension (all three keys present, NULL for legacy content), so the cases
+# below are decided by the contract section 5 group rule in ``_reconcile_live``
+# rather than by the Stage 3B fail-closed guard. The guard itself is exercised
+# directly in ``tests/test_reference_measurement_content_cloud_transport.py``.
 
 
 def test_pull_of_remote_change_over_enhanced_local_row_records_conflict(libs):
     _seed_acknowledged_graph()
-    # Local row becomes enhanced without touching any cloud payload column.
+    # Local row becomes enhanced (Q core pair) while the remote edits a bound:
+    # both sides touched the scientific-content group and the results differ.
     MeasurementSetRepository.update(
         "set-1",
         {"q_core_min": 1.4, "q_core_max": 1.8},
@@ -811,7 +817,8 @@ def test_pull_of_remote_change_over_enhanced_local_row_records_conflict(libs):
     state = ReferenceCloudSyncStateRepository.get_library("measurement_set", "set-1")
     assert result.conflicts == ("measurement_set:set-1",)
     assert state.sync_status == "conflict"
-    assert state.conflict["reason"] == "unacknowledged_measurement_content_extension"
+    assert state.conflict["reason"] == "overlapping_remote_change"
+    assert set(state.conflict["overlapping_fields"]) == {"length_max", "q_core_min", "q_core_max"}
     assert _raw_row(libs[1], "set-1") == before, "no ordinary column changed under local descriptors"
 
 

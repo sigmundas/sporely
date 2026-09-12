@@ -14251,6 +14251,7 @@ class SporelyCloudClient(CloudTransportMixin, CloudPaginationMixin):
             'width_core_max,width_max,q_min,q_max,q_mean,length_mean,width_mean,'
             'sample_size,specimen_count,mount_medium,stain,preparation,'
             'measurement_method,notes,raw_points_json,supersedes_id,revision,'
+            'measurement_details_json,q_core_min,q_core_max,'
             'row_version,created_at,updated_at,deleted_at'
         )
         return self._get_paginated(

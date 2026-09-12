@@ -19,6 +19,7 @@ from database.reference_library_schema import (
     init_reference_library_schema,
 )
 from database.schema import get_connection, get_reference_connection
+from references.measurement_content import EXTENSION_FIELDS
 
 
 LibraryEntityType = Literal["work", "treatment", "measurement_set"]
@@ -52,6 +53,9 @@ _LIBRARY_PAYLOAD_COLUMNS = {
         "specimen_count", "mount_medium", "stain", "preparation",
         "measurement_method", "notes", "raw_points_json", "supersedes_id",
         "revision",
+        # Measurement-content extension (contract section 4): always carried,
+        # NULL included, so every payload acknowledges the contract.
+        "measurement_details_json", "q_core_min", "q_core_max",
     ),
 }
 _LIBRARY_TABLES = {
@@ -59,7 +63,29 @@ _LIBRARY_TABLES = {
     "treatment": "reference_taxon_treatments",
     "measurement_set": "reference_measurement_sets",
 }
-_JSON_PAYLOAD_COLUMNS = frozenset({"authors_json", "editors_json", "raw_points_json"})
+_JSON_PAYLOAD_COLUMNS = frozenset(
+    {"authors_json", "editors_json", "raw_points_json", "measurement_details_json"}
+)
+
+
+def recognize_library_baseline(
+    entity_type: str, payload: dict[str, Any] | None
+) -> dict[str, Any] | None:
+    """Read a stored acknowledged baseline in the current payload shape.
+
+    Baselines persisted before the measurement-content extension existed omit
+    the three extension keys. Such a recognized historical omission compares
+    as NULL (plan: *Imports, baselines and retry behavior*) so that an
+    unchanged row is not pushed again and a remote tombstone of an unchanged
+    row is not mistaken for a conflict. Only complete omission is recognized;
+    a baseline carrying some of the keys is returned unchanged. Incoming
+    request payloads are never normalized here.
+    """
+    if payload is None or entity_type != "measurement_set":
+        return payload
+    if any(key in payload for key in EXTENSION_FIELDS):
+        return payload
+    return {**payload, **{key: None for key in EXTENSION_FIELDS}}
 
 
 class ReferenceCloudSyncStateError(ValueError):
@@ -200,7 +226,9 @@ def _state_from_row(
         cloud_user_id=row["cloud_user_id"],
         remote_identity_state=str(row["remote_identity_state"]),
         cloud_row_version=row["cloud_row_version"],
-        accepted_payload=_load_json(row["accepted_payload_json"]),
+        accepted_payload=recognize_library_baseline(
+            entity_type, _load_json(row["accepted_payload_json"])
+        ),
         sync_status=str(row["sync_status"]),
         conflict=_load_json(row["conflict_json"]),
         retry_count=int(row["retry_count"]),
@@ -495,7 +523,9 @@ class ReferenceCloudSyncStateRepository:
             return None
         return {
             "row_version": int(row["cloud_row_version"]),
-            "accepted_payload": _load_json(row["accepted_payload_json"]),
+            "accepted_payload": recognize_library_baseline(
+                entity_type, _load_json(row["accepted_payload_json"])
+            ),
             "deleted_at": str(row["deleted_at"]),
         }
 
@@ -1324,7 +1354,9 @@ class ReferenceCloudSyncStateRepository:
                 cloud_user_id=str(row["cloud_user_id"]),
                 remote_identity_state=str(row["remote_identity_state"]),
                 expected_row_version=row["expected_row_version"],
-                accepted_payload=_load_json(row["accepted_payload_json"]),
+                accepted_payload=recognize_library_baseline(
+                    str(row["entity_type"]), _load_json(row["accepted_payload_json"])
+                ),
                 reference_work_id=row["reference_work_id"],
                 taxon_treatment_id=row["taxon_treatment_id"],
                 deleted_at=row["deleted_at"],

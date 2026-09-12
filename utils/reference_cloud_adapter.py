@@ -53,6 +53,10 @@ _MEASUREMENT_SET_KEYS = frozenset({
     "specimen_count", "mount_medium", "stain", "preparation",
     "measurement_method", "notes", "raw_points_json", "supersedes_id",
     "revision", "deleted",
+    # Measurement-content extension (Stage 3C). Writers send all three keys
+    # on every content mutation, NULL included; key presence acknowledges the
+    # contract, so the adapter must never strip a NULL extension key.
+    "measurement_details_json", "q_core_min", "q_core_max",
 })
 _USE_KEYS = frozenset({
     "id", "observation_id", "reference_measurement_set_id", "role", "note",
@@ -194,6 +198,10 @@ class ReferenceCloudAdapter:
         # Stage 3 inserts this JSONB field with ``p_payload->``. JSON ``null``
         # is not SQL NULL and violates the table's array-or-NULL constraint;
         # omission is the contract representation for an absent point series.
+        # This workaround applies to ``raw_points_json`` only: the extension
+        # keys (``measurement_details_json``, ``q_core_min``, ``q_core_max``)
+        # are transmitted as sent, because omitting one would turn an
+        # acknowledging request into an unaware one.
         if expected_row_version == 0 and clean.get("raw_points_json") is None:
             clean.pop("raw_points_json", None)
         return self._call(

@@ -5,6 +5,257 @@ sections under *Canonical stage sequence* below (Stage 1 → 2 → 3A → 3B →
 3D → 4 → 5). The `… handoff` sections that follow this paragraph are historical
 records of completed stages, kept verbatim; they define nothing.
 
+## Stage 3C handoff — 2026-09-13 (candidate on `feature/reported-statistics-contract`, sparring pending)
+
+Status: **Stage 3C implemented, self-verified, awaiting sparring.** Cloud
+schema/RPC and desktop sync transport of the three extension fields. Stage 3B
+(accepted at `ee90fbe0`) and the plan-decomposition commit `d865d91d` are the
+base. Nothing Stage 1, 2, 3A or 3B froze was reopened; snapshots, the local
+barrier, the parser, editors, plotting and matching are untouched. Merge of
+either branch, and deployment of the migration, remain the branch owner's
+separate decisions.
+
+- Stage id: `stage-3c-cloud-schema-rpc-and-sync-transport` (brief in
+  `.sparring/stages/stage-3c-cloud-schema-rpc-and-sync-transport/`).
+- `sporely-py`: branch `feature/reported-statistics-contract`, base
+  `d865d91d`; the candidate is the commit that adds this handoff (recorded in
+  the stage directory's `handoff.md` and the sparring state).
+- `sporely-web`: branch `feature/reported-statistics-cloud-transport`, base
+  `d3be3d8a` (`main`), candidate **`b32eb92214f6eae9d308baa17128a53b83b6a896`**,
+  pushed. Worked in the linked worktree `sporely-web-reported-statistics`
+  because the main checkout carries unrelated uncommitted work on another
+  branch; the two SQL files were tested from the main checkout and then
+  committed from the worktree (byte-identical), and the untracked copies were
+  removed from the main checkout.
+
+Files changed — `sporely-web`:
+`supabase/migrations/20260913120000_add_reference_measurement_content_extension.sql`
+(new), `supabase/tests/reference_measurement_content_extension_test.sql` (new),
+`docs/supabase-sync-contract.md`. Production code changed: yes (migration).
+Tests changed: yes. `supabase/schema.sql` not regenerated (AGENTS.md).
+
+Files changed — `sporely-py`: `database/reference_sync_state.py`,
+`database/reference_sync_reconciliation.py`, `utils/reference_cloud_adapter.py`,
+`utils/cloud_sync.py` (owner read column list only), `docs/supabase-sync-contract.md`;
+tests `tests/test_reference_measurement_content_cloud_transport.py` (new, 26
+cases), `tests/test_reference_library_pull_reconciliation.py` (`_set_row`
+carries the keys), `tests/test_reference_measurement_content_persistence.py`
+(two Stage 3B pull expectations, see below), `tests/test_reference_sync_state.py`
+and `tests/test_reference_sync_mutation_ownership.py` (baseline shape); this
+plan. Production code changed: yes. Tests changed: yes.
+
+Migration and RPC ownership. `20260913120000` adds `measurement_details_json
+jsonb`, `q_core_min`, `q_core_max double precision` to
+`public.reference_measurement_sets` (nullable, no default, no backfill, no
+down step) plus CHECK `reference_measurement_sets_details_shape_check`
+(object-or-NULL, `jsonb::text` ≤ 8192 as a loose defence-in-depth bound; the
+exact limit lives in the validator). It redefines
+`public.sync_reference_measurement_set_unthrottled` (the authoritative
+implementation renamed by `20260830193144`; the public
+`sync_reference_measurement_set` rate-limit wrapper is untouched) with
+`CREATE OR REPLACE`, re-asserting `OWNER TO postgres` and the REVOKEs. New
+`private` helpers, all IMMUTABLE and revoked from `PUBLIC, anon,
+authenticated`: `reference_jsonb_compact_text` (compact serialization with
+byte-ordered keys, the codec's shape for ASCII content),
+`reference_positive_finite`, `reference_pair_ordered`,
+`reference_json_number_valid`, `reference_range_descriptor_valid`,
+`reference_interval_statistic_valid`, `reference_scalar_statistic_valid`,
+`reference_measurement_details_valid(jsonb)` (contract §1 structure and
+enums) and `reference_measurement_content_valid(public.reference_measurement_sets)`
+(contract §2 on the populated record).
+
+Guard and validation rules as implemented (`sync_reference_measurement_set_unthrottled`):
+
+1. Allowlist carries the three keys. Right after it, the count of extension
+   keys present must be 0 or 3, else `invalid_payload` (contract §9 item 9),
+   before identity parsing and locking.
+2. Create branch: if `supersedes_id` names a row with any non-NULL extension
+   column and the request omits the keys ⇒ `invalid_payload` (item 4). The
+   candidate is populated with `jsonb_populate_record(NULL::row, payload -
+   'deleted')` (cast failures ⇒ `invalid_payload`), validated with
+   `reference_measurement_content_valid` ⇒ `invalid_payload`, then inserted;
+   the INSERT takes the three values from the populated record, so JSON
+   `null` and an omitted key both store SQL NULL (item 6). The
+   `raw_points_json` insert path is unchanged.
+3. Update branch: `v_content_changed` := `to_jsonb(v_next)` and
+   `to_jsonb(v_current)` minus `{revision,row_version,created_at,updated_at,
+   deleted_at}` are distinct. After the existing first `no_change` return and
+   before the CAS check: `v_content_changed AND NOT acknowledging AND
+   enhanced(v_current)` ⇒ `invalid_payload` with the current row (item 3).
+   The existing same-revision rule now uses `v_content_changed` (same
+   projection as before). After the parent, second `no_change` and
+   live-use `blocked` checks: `v_content_changed AND NOT
+   reference_measurement_content_valid(v_next)` ⇒ `invalid_payload` (item 7),
+   so lifecycle-only requests (delete, restore, exact retry) are neither
+   guarded nor re-validated and cannot smuggle content (a tombstone that also
+   changes a column is content-changed and rejected). UPDATE writes the three
+   columns.
+4. `reference_measurement_content_valid`: every one of the 15 dimension/Q
+   columns NULL or finite and > 0 (NaN and Infinity excluded explicitly);
+   the six pairs ordered; then, if details are non-NULL: structure per §1
+   (`schema_version` integer; version 1 has exactly `schema_version` and
+   `metrics`, non-empty `metrics` over `length|width|q`, non-empty metric
+   objects over the five keys, descriptor/interval/scalar shapes and enums,
+   percentile bounds `0 <= lo < hi <= 100` only for `percentile_interval`,
+   positive interval endpoints with `lower <= upper`, positive median value,
+   non-negative sd, booleans are not numbers); compact canonical size ≤ 4096
+   bytes; for version 1 the §2 rules 1–4 per metric (outer descriptor ⇒
+   complete outer pair, core descriptor ⇒ complete core pair, both ⇒ outer
+   encloses core, mean interval ⇒ scalar mean NULL). Any other integer
+   `schema_version` is accepted opaquely, bounded by size and by the
+   column rules — the stage brief's "unknown future version accepted
+   opaquely" (equivalent to `mode="authoritative"`); contract §9 item 7's
+   phrase "accepts only schema_version values it knows" is superseded by the
+   brief for this stage and should be reconciled in the contract text by the
+   reviewer's decision.
+
+Registries extended (contract §4): `_LIBRARY_PAYLOAD_COLUMNS["measurement_set"]`
+and `_JSON_PAYLOAD_COLUMNS` (`database/reference_sync_state.py`);
+`_PAYLOAD_COLUMNS["measurement_set"]` and `_JSON_COLUMNS`
+(`database/reference_sync_reconciliation.py`); `_MEASUREMENT_SET_KEYS`
+(`utils/reference_cloud_adapter.py`); the owner read `select=` list of
+`SporelyCloudClient.list_reference_measurement_sets` (`utils/cloud_sync.py`).
+The adapter's raw-points create workaround is unchanged and explicitly limited
+to `raw_points_json`; a NULL extension key is transmitted (test). Every
+measurement-set payload therefore carries the three keys, so an unaware
+server (C0) rejects every measurement-set write as `invalid_payload` — proven
+locally by calling the RPC on the pre-migration local schema
+(`PRE-3C OK: enhanced write rejected with invalid_payload`), which is not the
+deployed-server proof (human-gated).
+
+Baselines and retries: `recognize_library_baseline(entity_type, payload)`
+(`database/reference_sync_state.py`) adds the three keys as `None` to a
+measurement-set baseline that carries none of them (a partially carrying
+baseline is returned unchanged) and is applied where baselines are read:
+`_state_from_row`, `get_library_remote_tombstone`, `list_library_tombstones`,
+and `_baseline()` in reconciliation (live and tombstone paths). Incoming
+request payloads are never normalized. `_execute_live` is unchanged in code;
+tests cover the transitions: unchanged legacy row with a historical baseline
+⇒ no RPC call; content edit after upgrade ⇒ one push carrying all keys with
+the stored CAS token, baseline replaced; remote tombstone over a historical
+baseline ⇒ applied, no conflict; unknown-create recovery matches the remote
+row carrying the keys without a duplicate write.
+
+Pull reconciliation (`database/reference_sync_reconciliation.py`):
+`stage_reference_library_feed` decodes each remote measurement set's details
+and, for enhanced rows only, runs `validate_measurement_content(mode=
+"authoritative")` (`_measurement_content_error`); a failure rejects the whole
+feed as `ReferencePullReconciliationError` before any write, as the existing
+character/data-kind checks do. Legacy remote rows acquire no new rule (test:
+a legacy row with an inverted pair still pulls). `_domain_values` stores
+`measurement_details_json` through `encode_measurement_details(
+decode_measurement_details(...))`, so stored text is the codec's canonical
+form. `_reconcile_live`: after computing `local_changes`/`remote_changes`
+against the baseline, for `measurement_set` a change set that intersects
+`SCIENTIFIC_CONTENT_FIELDS` is expanded to the whole group; conflict iff an
+identity field changed remotely or any field in the expanded overlap differs
+between local and remote (`overlapping_fields` lists the differing group
+fields); merge takes local for every expanded local change, remote
+otherwise; the merged measurement set is validated
+(`invalid_merged_measurement_content` conflict, no write) before
+`_write_domain`. `notes` and identity keep per-field behaviour. The Stage 3B
+guard `_extension_write_blocked` and both call sites are unchanged; it fires
+only for a payload that does not acknowledge the extension. Since
+`canonical_library_payload` now requires the keys, a pre-Stage-3C server's
+rows are rejected at staging ("missing canonical fields", zero writes, no
+cursor), and the guard is exercised directly in the new test module.
+
+Behaviour changes to flag: (a) two concurrent edits to *different* numeric
+fields of one measurement set (for example local `length_max`, remote
+`width_max`) now conflict instead of merging — the §5 rule applied to legacy
+rows too (test `test_unrelated_numeric_edits_inside_the_group_now_conflict`);
+(b) the two Stage 3B pull tests that expected
+`unacknowledged_measurement_content_extension` now assert the group-rule
+outcome `overlapping_remote_change`, because every row from a supporting
+server acknowledges the extension; (c) on the server, any content change to
+a *legacy* row is now also validated (finite positive values, ordered pairs),
+so a historical cloud row with, say, `length_min = 0` cannot be
+content-edited until corrected, while delete/restore still work; (d) an
+unaware edit of `notes` alone on an enhanced row is rejected — the server
+projection is coarse by design (contract §9 item 3), whereas the desktop
+group rule treats `notes` per field; (e) `supabase db reset` from the
+worktree applied the migration to the shared local stack, so
+`supabase migration list` in the main `sporely-web` checkout shows
+`20260913120000` as local-only until the branch is merged.
+
+Pre-existing defect observed, out of scope, not changed: the bare tombstone
+payload `{"id", "deleted": true}` that `utils/reference_cloud_sync.py::
+_execute_tombstone` sends for measurement sets returns `invalid_parent` from
+the unchanged parent check (`taxon_treatment_id` absent ⇒ NULL), on the
+pre-3C server as well as now; `reference_library_mutation_test.sql` always
+sends the parent id with tombstones, and the new test does the same.
+Treatments have the same shape. Recommend a separate stage.
+
+Verification — `sporely-web` (local stack `supabase start`, CLI 2.98.2;
+`supabase db query --file` cannot run multi-statement files with this CLI,
+so tests ran through `psql` inside the `supabase_db_*` container):
+`supabase migration list` before the change — local and remote identical
+through `20260831152354`; migration plus new test applied and rolled back in
+one transaction against the pre-3C schema (all cases pass); `supabase db
+reset --local` from the worktree — all migrations including the new one
+applied; then `reference_measurement_content_extension_test`,
+`reference_library_mutation_test`, `public_observation_references_test`,
+`shared_reference_contributions_test`,
+`reference_curated_fork_provenance_test` and
+`reference_curation_publication_lifecycle_test` **all PASS** against the
+reset database. The new test covers §12 cases 16 and 17: unaware create
+without predecessor accepted and returning NULL keys; partial keys rejected
+with and without a row; aware create stored exactly and retried as
+`no_change`; unaware exact retry `no_change`; unaware bound and notes
+mutations `invalid_payload` with the row unchanged; unaware tombstone and
+restore `updated` with content intact; tombstone-plus-content rejected;
+unaware successor of an enhanced predecessor rejected, aware successor
+created, unaware successor of a legacy predecessor created; explicit NULL
+clears, then an unaware mutation succeeds; aware re-enhancement; future
+`schema_version` 2 stored opaquely; 23 validation rejections on create and
+one on update (row unchanged), the clear-then-set-scalar transition
+accepted; `reference_canonical_snapshot` of the enhanced row equals its
+legacy twin's, is version 1, has no extension key and passes
+`reference_snapshot_valid`; validators not executable by `authenticated`/
+`anon`; the shape CHECK fires on a raw privileged write. Not run: `npm test`
+(no JavaScript changed).
+
+Verification — `sporely-py` (project venv): new module 26 passed; focused
+set (`test_reference_measurement_content_cloud_transport`,
+`test_reference_library_pull_reconciliation`,
+`test_reference_library_push_executor`, `test_reference_cloud_adapter`,
+`test_reference_sync_state`, `test_reference_sync_mutation_ownership`,
+`test_reference_sync_planner`, `test_reference_cloud_sync_coordinator`,
+`test_reference_measurement_content_persistence`,
+`test_reference_measurement_content_schema`,
+`test_measurement_content_contract_fixtures`,
+`test_measurement_content_write_barrier_spike`, `test_measurement_content`,
+`test_curated_reference_sync`) **374 passed, 0 failed**; `py_compile` on all
+touched Python files ok; `git diff --check` clean. Full suite
+(`QT_QPA_PLATFORM=offscreen pytest -q -p no:cacheprovider
+--continue-on-collection-errors`, 2 min 30 s): **31 failed, 4251 passed,
+10 skipped, 55 errors** against Stage 3B's 31 / 4225 / 10 / 55 — the +26 are
+the new module and the failing set is exactly the PROJECT.md baseline
+(`qapp` fixture errors in `test_image_gallery_widget` 17,
+`test_observations_tab_gallery_move` 12, `test_live_lab_raw_controls` 6;
+taxonomy release-directory errors/failures in `test_w2d_reconciliation` 19
+errors and `test_supplement_loader`; `test_cloud_media_recovery` collection
+error; the listed single failures). No reference-library, sync, import or
+archive module regressed.
+
+Human-gated (AGENTS.md), not claimed: deploying `20260913120000`
+(`supabase db push` after `migration list` / `db push --dry-run`); live
+cloud writes, CAS and cross-client behaviour against the deployed project;
+that the *deployed* pre-Stage-3C server rejects an enhanced write (only the
+local pre-migration schema was exercised); PostgREST's JSONB rendering of
+`measurement_details_json` on a real owner read (the fakes return decoded
+objects, which is what PostgREST does).
+
+Deferred: **Stage 3D** — snapshot v2, `reference_canonical_snapshot` v2 for
+enhanced rows, curated CHECK/`_validate_snapshot` version awareness,
+attachment/export/import transport and the minimum-reader-version gate.
+**Stage 4** — editor inspection and guarded editing (cloud support is
+dormant: nothing here enables enhanced attachments or editor saving).
+Separate follow-up recommended: the bare-tombstone `invalid_parent` defect
+above.
+
+Subagents: none used.
+
 ## Stage 3B handoff — 2026-09-12 (accepted at `ee90fbe0`)
 
 Status: **Stage 3B accepted** at `ee90fbe08953f42f1f1e1db2f4cf0b56af459d9f`
@@ -1114,7 +1365,8 @@ yet wired to any production save.
 
 ## Stage 3C — Cloud schema/RPC and sync transport
 
-Next implementation stage. Not started.
+Implemented 2026-09-13; candidate awaiting sparring (see the Stage 3C handoff
+at the top of this plan).
 
 ### Goal
 
