@@ -1,14 +1,19 @@
 # Reported statistics and explicit range semantics
 
-## Current stage / reviewer handoff — 2026-09-12 (Stage 3B)
+The executable stage definitions of this plan are the `## Stage <label> — …`
+sections under *Canonical stage sequence* below (Stage 1 → 2 → 3A → 3B → 3C →
+3D → 4 → 5). The `… handoff` sections that follow this paragraph are historical
+records of completed stages, kept verbatim; they define nothing.
 
-Status: **Stage 3B candidate ready for sparring.** Local persistence of the
-typed measurement content through the existing production owners: repository
-read/write/successor, bundle import, portable import (merge and replay check)
-and pull reconciliation. Stage 3A (schema and barrier, candidate `68d1855f`,
-human gate passed) is the base; nothing Stage 1, 2 or 3A froze was reopened.
-The candidate SHA is the commit that carries this section (recorded in the
-stage notes once known). Acceptance and merge remain the branch owner's
+## Stage 3B handoff — 2026-09-12 (accepted at `ee90fbe0`)
+
+Status: **Stage 3B accepted** at `ee90fbe08953f42f1f1e1db2f4cf0b56af459d9f`
+(the round-1 correction commit; sparring verdict READY). Local persistence of
+the typed measurement content through the existing production owners:
+repository read/write/successor, bundle import, portable import (merge and
+replay check) and pull reconciliation. Stage 3A (schema and barrier, code
+candidate `68d1855f`, human gate passed, accepted at `04ea56d7`) is the base;
+nothing Stage 1, 2 or 3A froze was reopened. Merge remains the branch owner's
 separate decision.
 
 - Stage id: `stage-reported-statistics-local-persistence` (brief in
@@ -878,11 +883,14 @@ null and returns the authoritative row. Keep existing ownership/CAS/revision rul
 - Add the extension to all payload/read allowlists and JSON decoding registries.
   Unsupported old servers must reject enhanced writes; no lossy fallback payload.
 
-### Local/offline compatibility — unresolved pre-schema blocker
+### Local/offline compatibility — write barrier (resolved)
 
-Current normalized SQLite initialization has no forward-version write guard.
-An old binary can change known columns while preserving unknown details. A new
-schema-version field alone cannot protect against code that never checks it.
+Before this work, normalized SQLite initialization had no forward-version write
+guard: an old binary could change known columns while preserving unknown
+details, and a schema-version field alone cannot protect against code that
+never checks it. Stage 3A implemented the barrier described here in the
+production schema owner, and the human-gated shipped v0.9.22 verification
+passed (see the Stage 3A handoff).
 
 Stage 1 selected and proved the barrier (contract §6, spike
 `tests/test_measurement_content_write_barrier_spike.py`): SQLite triggers on
@@ -990,40 +998,24 @@ retaining the stored extension. No destructive down migration.
 - No automatically derived Parmasto CV, SD, midpoint, species mean, or matching
   eligibility. Tags describe evidence; they do not by themselves qualify a record.
 
-## Revised implementation sequence and acceptance
+## Canonical stage sequence
 
-Each stage needs a bounded prompt and independent review; no application work is
-part of this plan revision. Read child AGENTS.md before cross-repository work and
-relevant sync/Supabase/GUI/localization rules before touching those subsystems.
+Each stage needs a bounded prompt and independent review. Read child AGENTS.md
+before cross-repository work and relevant sync/Supabase/GUI/localization rules
+before touching those subsystems. The order is Stage 1 → Stage 2 → Stage 3A →
+Stage 3B → Stage 3C → Stage 3D → Stage 4 → Stage 5; every stage below has one
+`## Stage <label> — <title>` heading, and its section is that stage's brief.
 
-1. **Freeze the contract and compatibility fixtures.** Resolve the four blockers:
-   exact scientific conflict group; proven local write barrier; snapshot v2 shape
-   and reader rollout; import omission/revision policy. Finalize shared API, codecs,
-   cloud key-presence rules and lifecycle exceptions. Deliver exact writer/reader
-   map, representative old-client matrix, and executable acceptance cases. No
-   persistent schema until these decisions are independently reviewed.
-2. **Typed contract and parser specification.** Implement shared validation/edit
-   helpers and pure parser tests, including headed partial tables, HTML entities,
-   Qav and scalar/interval distinction. Parser development need not wait for cloud
-   deployment. Do not enable saving the new output until durable storage is ready.
-3. **Durable storage and compatibility, in bounded sub-stages.** Cloud schema/RPC
-   guards and snapshot readers can precede UI. Implement local migration/barrier,
-   all authoritative writer checks, grouped reconciliation, canonical payloads,
-   snapshots/comparison and transfer preservation. Unsupported enhanced transfer
-   routes must explicitly reject. Review exact cloud/local sub-stage boundaries;
-   feature activation waits for the complete end-to-end round-trip slice.
-   **Prerequisite:** the persistent local-schema/barrier sub-stage does not
-   start until the human-gated shipped-old-build verification (contract §6)
-   has succeeded and is recorded in this handoff.
-4. **Minimal inspection and guarded editing.** Add tags and reported values to
-   existing preview/reopen/attachment paths. Wire compact entry editing and either
-   equivalent library-manager editing or read-only enhanced content. Separate
-   generic Q means from Parmasto input. No new scoring/interval plots. The
-   minimum-supported-reader-version gate and the old-writer rollout gates must
-   pass before enhanced attachments are enabled.
-5. **Independent final review and activation decision.** A fresh top-level reviewer
-   verifies frozen candidate SHAs and repository state. No automatic merge. Update
-   this handoff every pass with exact scope, verification, deferred work and SHA.
+Stage 3 as a whole is *durable storage and compatibility*: cloud schema/RPC
+guards and snapshot readers may precede UI; local migration/barrier, all
+authoritative writer checks, grouped reconciliation, canonical payloads,
+snapshots/comparison and transfer preservation are implemented; unsupported
+enhanced transfer routes reject explicitly; feature activation waits for the
+complete end-to-end round-trip slice. Its reviewed execution split it into
+Stage 3A (local schema and barrier), Stage 3B (local persistence, import and
+reconciliation), Stage 3C (cloud schema/RPC and sync transport) and Stage 3D
+(snapshot v2 and attachment/export/import transport). Only those four sections
+define work; this paragraph is the umbrella, not a stage.
 
 Self-verifiable work: contract/parser/unit tests, local fixture migrations, import
 and snapshot round trips, syntax checks. Human-gated work under AGENTS.md: live
@@ -1031,7 +1023,281 @@ cloud/CAS/cross-client behavior and interactive edit/swap/save/restart; rendered
 screenshots prove layout only. Leave human-gated candidates uncommitted until the
 required manual verification is confirmed. Do not commit unrelated parser work.
 
-### Required regression matrix
+## Stage 1 — Contract and compatibility fixtures
+
+Completed: accepted at `a0bdcd3737370b307717a71e6ff2579798604ee4` (stage
+`stage-reported-statistics-contract`; record in the Stage 1 handoff).
+
+Freeze the contract and compatibility fixtures. Resolve the four blockers: exact
+scientific conflict group; proven local write barrier; snapshot v2 shape and
+reader rollout; import omission/revision policy. Finalize shared API, codecs,
+cloud key-presence rules and lifecycle exceptions. Deliver exact writer/reader
+map, representative old-client matrix, and executable acceptance cases. No
+persistent schema until these decisions are independently reviewed.
+
+Result: `docs/reference-data/measurement-content-contract.md` with its
+machine-readable spec block, the nine fixtures and two test modules; the coarse
+unsupported-open policy, the minimum-supported-desktop-version and
+minimum-supported-reader-version gates accepted by human review on 2026-09-11.
+
+## Stage 2 — Typed contract and parser specification
+
+Completed: accepted at `829be09b9298ecf4e8423bb7278301af876b85d1` (stage
+`stage-reported-statistics-typed-parser`; record in the Stage 2 handoff).
+
+Implement shared validation/edit helpers and pure parser tests, including headed
+partial tables, HTML entities, Qav and scalar/interval distinction. Parser
+development need not wait for cloud deployment. Do not enable saving the new
+output until durable storage is ready.
+
+Result: `references/measurement_content.py` (the contract §3 surface, codec,
+row helpers, validation modes, edit operations) and the extended
+`references/measurement_parser.py` with `MeasurementParseResult.to_content()`.
+Nothing consumes `to_content()` in production until Stage 4.
+
+## Stage 3A — Local schema and old-client safety barrier
+
+Completed: accepted at `04ea56d74a05b931d55106aeac70f89536d53b4b` (stage
+`stage-reported-statistics-local-schema-barrier`; frozen code candidate
+`68d1855f`, the accepted commit records the passed human gate; record in the
+Stage 3A handoff).
+
+Ownership: the local `reference_values.db` schema extension and the coarse
+old-client write barrier, in the production schema owner
+`database/reference_library_schema.py` only. Adds `measurement_details_json
+TEXT`, `q_core_min REAL`, `q_core_max REAL` to `reference_measurement_sets`,
+idempotently and atomically on every migration path (fresh, legacy upgrade,
+CASCADE-era rebuild), with no committed state that has the columns without the
+guard triggers. The barrier is exactly contract §6: BEFORE INSERT/UPDATE
+triggers whose body requires the connection-registered
+`sporely_measurement_contract()`; supported code identifies itself through
+`register_measurement_contract` at the schema owner, `get_reference_connection`
+and the portable-import `ATTACH` site. Legacy rows get NULL and no invented
+semantics; DELETE and SELECT are outside the barrier.
+
+Prerequisite, satisfied: the human-gated shipped-old-build verification
+(contract §6). The shipped macOS v0.9.22 read the upgraded library, was blocked
+on UPDATE and INSERT with no partial mutation, and `quick_check` stayed `ok`.
+
+Boundaries that held: no repository, import, reconciliation, cloud, snapshot,
+parser or UI change; the repository still wrote only pre-feature columns.
+
+## Stage 3B — Local persistence, import and reconciliation wiring
+
+Completed: accepted at `ee90fbe08953f42f1f1e1db2f4cf0b56af459d9f` (stage
+`stage-reported-statistics-local-persistence`; record in the Stage 3B handoff).
+
+Ownership: local production round-tripping of the three extension fields
+through the existing owners. `MeasurementSet` / `MeasurementSetRepository`
+(`_COLUMNS`, `_validate` → canonical codec + `validate_measurement_content(mode=
+"edit")`, `create`, `update`, `create_revision`, `_require_editable_source` for
+unsupported-version and malformed rows, inspect-only until upgrade); import
+policy (contract §8) owned by `references/measurement_content.py` and applied
+by bundle import (`utils/db_share.py::_upsert_library_row_by_revision`, new
+no-write outcomes and `conflict` at equal revision when the §5 group differs)
+and portable import (`utils/archive/portable_import.py::_merge_reference_entity`,
+partial acknowledgement and predates-contract rejections, replay check); pull
+reconciliation (`database/reference_sync_reconciliation.py`) fails closed with
+a recorded conflict `unacknowledged_measurement_content_extension` when a
+non-acknowledging remote would overwrite a locally enhanced row. Validation
+precedes every statement; writes are atomic. Behaviour changes recorded in the
+handoff: the validator also rejects non-finite, non-positive and inverted
+ordinary numeric values, and the bundle importer reports `conflict` instead of
+`skipped_same` for differing content at equal revision.
+
+Boundaries that held and remain: `_LIBRARY_PAYLOAD_COLUMNS`, `_PAYLOAD_COLUMNS`,
+`_JSON_COLUMNS`, `_MEASUREMENT_SET_KEYS` were deliberately not extended
+(pushing the keys before the cloud allowlist accepts them would reject whole
+feeds, §4); curated copy still produces legacy-only rows from v1 snapshots;
+no parser, editor, snapshot, cloud or plotting change; `to_content()` is not
+yet wired to any production save.
+
+## Stage 3C — Cloud schema/RPC and sync transport
+
+Next implementation stage. Not started.
+
+### Goal
+
+Carry the three extension fields between the desktop reference library and
+the Supabase reference tables with the compatibility mechanism of *Small cloud
+compatibility mechanism* above, so that an enhanced row survives push, pull
+and reconciliation unchanged and an unaware writer is rejected rather than
+allowed to strip it. The Stage 1 contract (§3–§5, §7, §11, §12) and the Stage
+2/3A/3B code are authoritative; do not reopen schema, naming, the coarse local
+barrier, ontology or snapshot decisions.
+
+### Scope — `sporely-web` (deploy first)
+
+- Reviewed migration adding `measurement_details_json JSONB`, `q_core_min
+  double precision`, `q_core_max double precision` to the normalized cloud
+  `reference_measurement_sets`, nullable, no default, no backfill, no
+  destructive down migration. Read the current migration ownership named in
+  *Code evidence* (`20260828143513_add_normalized_reference_library.sql` and
+  the public-RPC wrapper) before writing SQL.
+- Row-level cross-field validation of the complete candidate row in the
+  authoritative mutation path, equivalent to `validate_measurement_content`
+  in `authoritative` mode (finite positive values, pair ordering, the
+  4096-byte limit, supported `schema_version` accepted, unknown future version
+  accepted opaquely). Not JSON-only validation.
+- Key-presence guard in the authoritative underlying implementation of
+  `sync_reference_measurement_set`, before `jsonb_populate_record`: a content
+  mutation of an enhanced row, and creation of a successor of an enhanced row,
+  require all three extension keys present; omission is rejected with the
+  existing `invalid_payload` status; explicit JSON `null` clears; unchanged
+  requests may keep no-op behaviour. Delete/restore and other lifecycle
+  operations are exempt exactly as contract §7 step 5 / §12 cases 19–20
+  state, and must not become a content-write bypass. Existing ownership, CAS
+  and revision rules are unchanged.
+- Curated tables: no relaxation of curated snapshot CHECKs and no change to
+  `private.reference_snapshot_valid` / `private.reference_canonical_snapshot`
+  in this stage (Stage 3D). Prove that the existing v1 snapshot builders are
+  unaffected by rows that carry the new columns.
+
+### Scope — `sporely-py`
+
+- Register the fields end to end in the payload and key registries the plan
+  names: `database/reference_sync_state.py::_LIBRARY_PAYLOAD_COLUMNS`,
+  `_JSON_PAYLOAD_COLUMNS`, `canonical_library_payload`;
+  `database/reference_sync_reconciliation.py::_PAYLOAD_COLUMNS`,
+  `_JSON_COLUMNS`, `_MEASUREMENT_SET_KEYS`; `utils/reference_cloud_adapter.py`
+  read allowlists and JSON decoding registries. Encoding and equality use the
+  Stage 2 codec and decoded-object equality; no second serialization.
+- New writers always send all three keys, including NULL. Do not strip a NULL
+  extension key in the adapter (the raw-points create workaround must not be
+  copied); that would destroy the acknowledgement.
+- Pull reconciliation: when the remote row carries the group, apply the §5
+  scientific-content conflict-group rule in `_reconcile_live` — the 26 fields
+  move as one unit, concurrent edits inside the group conflict unless the
+  complete resulting content is identical, unrelated fields keep current merge
+  rules, and the merged row is validated before `_write_domain`. The Stage 3B
+  fail-closed guard `_extension_write_blocked` stays in force for remotes that
+  do not acknowledge the extension (an old server, or a pre-Stage-3C client's
+  row); it is replaced only for acknowledging remotes, never removed.
+- Retries and baselines (`utils/reference_cloud_sync.py::_execute_live`): the
+  current retry reloads canonical row state; test upgrade/retry transitions
+  across an acknowledging request rather than asserting payload immutability.
+  Recognized historical baseline omissions compare as NULL; incoming request
+  keys are never normalized to NULL before compatibility checks.
+- Unsupported old servers must reject enhanced writes; there is no lossy
+  fallback payload. Cloud support may be dormant ahead of UI: nothing in this
+  stage enables enhanced attachments or editor saving.
+
+### Verification expectations
+
+- Contract §12 cases that concern cloud transport, executed against the
+  production owners; the *Required regression matrix* items for explicit
+  extension NULL vs omitted keys, create/update/clear, enhanced-predecessor
+  successor requests, no-op and delete/restore, baselines and retries across
+  upgrade, unknown-create recovery, stable JSON object equality,
+  unchanged-record no-op, CAS and pull-only zero writes, and grouped conflict
+  vs unrelated merge.
+- Round trip: an enhanced local row pushed, pulled into a second library and
+  reconciled is byte-identical in canonical form; a legacy row acquires no
+  semantics; a future-version details object survives opaquely.
+- `sporely-web`: the repository's own migration and RPC test conventions,
+  including a rejected unaware mutation with `invalid_payload`, an accepted
+  lifecycle operation on an enhanced row, and validation rejections.
+- Desktop: focused sync/reconciliation/adapter modules, Stage 3A/3B schema,
+  barrier and persistence regressions, `py_compile`, `git diff --check`, full
+  suite against the PROJECT.md baseline with exact counts.
+- Human-gated under AGENTS.md: live cloud/CAS/cross-client behaviour, and
+  that a deployed pre-Stage-3C server rejects an enhanced write. Do not claim
+  either without the branch owner's evidence.
+
+### Hard boundaries
+
+Do not: implement snapshot v2 or change any snapshot version, builder or
+comparison; enable enhanced attachment transport or the use feed for v2;
+change the Stage 3A local schema or weaken the barrier; change the coarse
+old-client policy; change parser, editor, plotting or matching behaviour;
+derive Parmasto statistics, CVs, midpoint means or eligibility; relax curated
+CHECKs; add a capability registry or client-version negotiation; write a
+destructive down migration; commit unrelated work.
+
+### Handoff
+
+Report exact files changed in both repositories, the migration and RPC
+ownership, the exact guard and validation rules as implemented, every registry
+extended, how `_reconcile_live` applies the group rule and where the fail-closed
+guard still applies, focused/full-suite verification with baseline failures
+separated, human-gated items still pending, and the candidate SHA per
+repository.
+
+## Stage 3D — Snapshot v2 and attachment/export/import transport
+
+Future stage; starts after Stage 3C is accepted. Owns the frozen-evidence
+representation of enhanced content and the gates that protect old readers.
+
+- Snapshot v2 with the shape frozen by Stage 1 (contract §9 / blocker 3):
+  details object outside the numeric-only `measurements` mapping, `q_core_*`
+  inside it, 65536/4096-byte limits; `details_to_object` is the embedded form.
+  Update the Python builder (`build_observation_reference_snapshot`), cloud
+  validators and canonical/public/share/curation builders
+  (`private.reference_snapshot_valid`, `private.reference_canonical_snapshot`,
+  curated CHECK relaxation) and curated/portable validators together.
+- Version-aware semantic projection for v1/v2 comparison
+  (`database/reference_citation.py::observation_snapshots_semantically_equal`):
+  missing extension equals no extension; missing versus real statistics
+  differs; unsupported future versions are never projected as v1. Emit v1 for
+  unchanged legacy-only content where practical. Never rewrite or enrich
+  historical snapshots; replacement evidence goes through the existing
+  refresh/successor workflows.
+- Readers first: the desktop use-feed reader
+  (`database/reference_use_sync_reconciliation.py::stage_observation_reference_use_feed`)
+  accepts v2 before any v2 is emitted; curated copy
+  (`copy_curated_bundle_to_personal_library`) preserves v2 content or rejects
+  the unsupported bundle; bundle/portable/public transfer paths preserve or
+  reject, never intersect away.
+- Gates as mechanisms: the minimum-supported-reader-version gate for v2
+  emission and enhanced attachments, and the minimum-supported-desktop-version
+  policy for enhanced bundles, implemented so that activation is an explicit,
+  reversible switch; this stage ships them disabled. Rollback disables enhanced
+  editing while retaining the stored extension.
+- Verification: the *Required regression matrix* v1/v2 items, transfer round
+  trips, preserve-or-reject behaviour, curated/public builders; human-gated:
+  an actual older desktop reading a feed that contains v2.
+- Boundaries: no editor/UI change, no plotting or matching, no activation of
+  enhanced attachments, no change to Stage 3A–3C decisions.
+
+## Stage 4 — Editor and UI inspection and guarded editing
+
+Future stage; starts after Stage 3D is accepted. Minimal inspection and guarded
+editing: add tags and reported values to existing preview/reopen/attachment
+paths. Wire compact entry editing and either equivalent library-manager editing
+or read-only enhanced content. Separate generic Q means from Parmasto input. No
+new scoring/interval plots. The minimum-supported-reader-version gate and the
+old-writer rollout gates must pass before enhanced attachments are enabled.
+
+- Owns the parser → repository wiring deferred by Stage 3B: both editors
+  (`ui/reference_entry_editor.py::_build_measurement_set`,
+  `ui/reference_library_manager_dialog.py::_on_save`) build a `MeasurementSet`
+  from `to_content()` through the Stage 2 edit operations; no second entry
+  workflow.
+- Follows *Parser and UI behavior* above in full: scalar-or-interval mean
+  input, compact meaning tags with accessible explanation, percentile numbers
+  only for explicit descriptors, median and SD in the details area kept apart
+  from means, explicit correction/clear controls, `_summary_interval` shape
+  fix, inspect-only presentation acceptable in the library manager before
+  richer editing, tags and intervals in summary/reopen/prefill/attachment
+  preview and relevant exports.
+- Human-gated under AGENTS.md: interactive edit/swap/save/restart; rendered
+  screenshots prove layout only. Leave human-gated candidates uncommitted until
+  the manual verification is confirmed.
+- Boundaries: no population or provenance-history forms, no automatically
+  derived Parmasto CV, SD, midpoint, species mean or matching eligibility, no
+  new plots; tags describe evidence and do not qualify a record.
+
+## Stage 5 — Independent final review and activation decision
+
+A fresh top-level reviewer verifies frozen candidate SHAs and repository state
+across `sporely-py` and `sporely-web`, the complete end-to-end round-trip slice
+(local → cloud → second client → snapshot → reader) and every gate in this plan.
+No automatic merge. The activation of v2 emission and enhanced attachments is
+this stage's explicit decision, taken only when the minimum-supported-reader
+and old-writer gates have passed. The handoff sections of this plan are updated
+every pass with exact scope, verification, deferred work and SHA.
+
+## Required regression matrix
 
 - Exact Hebeloma table, glued/separated headers, browser tabs, Markdown, missing
   mean, range-only and reordered columns, malformed/duplicate headings/cells.
@@ -1058,7 +1324,7 @@ required manual verification is confirmed. Do not commit unrelated parser work.
 - Negative plotting/Parmasto checks: intervals, median/SD and tags never populate
   scalar mean or Parmasto inputs. Existing scalar consumers remain explicit.
 
-### Deferred without compromising the first slice
+## Deferred without compromising the first slice
 
 Population ontology, provenance/edit history, formal confidence/tolerance intervals,
 SQL mean-interval filtering, new plots and matching, editable advanced details,
