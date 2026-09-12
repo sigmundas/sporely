@@ -5,6 +5,7 @@ import sqlite3
 import pytest
 
 from database import schema
+from database.reference_library_schema import register_measurement_contract
 from tests.test_portable_identity_import import (
     _initialize_database_pair,
     _insert_source_graph,
@@ -149,6 +150,7 @@ def test_replay_rejects_higher_revision_with_conflicting_immutable_reference_ide
     )
     _import(source_main, source_reference, destination_main, destination_reference)
     with sqlite3.connect(destination_reference) as connection:
+        register_measurement_contract(connection)
         connection.execute(
             "UPDATE reference_measurement_sets SET revision=2, supersedes_id='other-set' "
             "WHERE id='set-a'"

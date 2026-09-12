@@ -1,4 +1,4 @@
-"""Stage 1 spike: enforceable local write barrier for enhanced measurement rows.
+"""Stage 1 barrier cases, now run against the production barrier.
 
 Blocker 2 of ``docs/plans/active/2026-09-10-reported-statistics-and-range-semantics.md``.
 The barrier is a pair of SQLite triggers on ``reference_measurement_sets`` whose
@@ -9,11 +9,13 @@ DML statement, so an unaware connection cannot even compile an INSERT or
 UPDATE against the table: the statement fails with ``no such function`` and
 nothing is written. See the contract document, section "Local write barrier".
 
-This module is prototype code. It adds the proposed columns and triggers to a
-temporary database *after* the real ``init_reference_library_schema`` and
-does not change any production schema. Stage 3 moves ``install_spike_barrier``
-into the schema owner and ``register_measurement_contract`` into the
-connection factories listed in the contract's writer map.
+Written as a Stage 1 spike with its own DDL; since Stage 3A the columns,
+triggers and ``register_measurement_contract`` are owned by
+``database/reference_library_schema.py`` and installed by
+``init_reference_library_schema``. This module keeps the Stage 1 bypass
+scenarios (importer merge paths, upsert, successor, table rebuild) and runs
+them against that production implementation; the schema/migration cases are in
+``tests/test_reference_measurement_content_schema.py``.
 """
 from __future__ import annotations
 
@@ -25,75 +27,29 @@ from pathlib import Path
 import pytest
 
 from database import reference_library_schema as lib_schema
+from database.reference_library_schema import register_measurement_contract
 from utils.archive.portable_import import _merge_reference_entity
 from utils.db_share import _upsert_library_row_by_revision
 
 FIXTURES = Path(__file__).parent / "fixtures" / "reference_statistics"
 
-CONTRACT_FUNCTION = "sporely_measurement_contract"
-LOCAL_CONTRACT_VERSION = 1
-BARRIER_MESSAGE = "measurement content contract required"
+CONTRACT_FUNCTION = lib_schema.MEASUREMENT_CONTRACT_FUNCTION
+LOCAL_CONTRACT_VERSION = lib_schema.LOCAL_MEASUREMENT_CONTRACT_VERSION
+BARRIER_MESSAGE = lib_schema.MEASUREMENT_CONTRACT_BARRIER_MESSAGE
+EXTENSION_COLUMNS = tuple(name for name, _ in lib_schema.MEASUREMENT_CONTENT_EXTENSION_COLUMNS)
 
-EXTENSION_COLUMNS_DDL = (
-    "ALTER TABLE reference_measurement_sets ADD COLUMN measurement_details_json TEXT",
-    "ALTER TABLE reference_measurement_sets ADD COLUMN q_core_min REAL",
-    "ALTER TABLE reference_measurement_sets ADD COLUMN q_core_max REAL",
-)
 
-_ENHANCED_OLD = (
-    "OLD.measurement_details_json IS NOT NULL OR OLD.q_core_min IS NOT NULL OR OLD.q_core_max IS NOT NULL"
-)
-_ENHANCED_NEW = (
-    "NEW.measurement_details_json IS NOT NULL OR NEW.q_core_min IS NOT NULL OR NEW.q_core_max IS NOT NULL"
-)
-_GUARD_BODY = f"""
-BEGIN
-    SELECT CASE WHEN coalesce({CONTRACT_FUNCTION}(), 0) < {LOCAL_CONTRACT_VERSION}
-        THEN RAISE(ABORT, '{BARRIER_MESSAGE}') END;
-END
-"""
+def _pre_feature_sets_ddl() -> str:
+    """The table DDL as an older binary carries it (no extension columns)."""
+    ddl = lib_schema._REFERENCE_MEASUREMENT_SETS_DDL
+    for name, sql_type in lib_schema.MEASUREMENT_CONTENT_EXTENSION_COLUMNS:
+        ddl = ddl.replace(f"    {name} {sql_type},\n", "", 1)
+    assert not any(name in ddl for name in EXTENSION_COLUMNS)
+    return ddl
 
-BARRIER_TRIGGERS_DDL = (
-    f"""
-    CREATE TRIGGER IF NOT EXISTS reference_measurement_content_guard_update
-    BEFORE UPDATE ON reference_measurement_sets
-    FOR EACH ROW
-    WHEN {_ENHANCED_OLD} OR {_ENHANCED_NEW}
-    {_GUARD_BODY}
-    """,
-    f"""
-    CREATE TRIGGER IF NOT EXISTS reference_measurement_content_guard_insert
-    BEFORE INSERT ON reference_measurement_sets
-    FOR EACH ROW
-    WHEN {_ENHANCED_NEW} OR (
-        NEW.supersedes_id IS NOT NULL AND EXISTS (
-            SELECT 1 FROM reference_measurement_sets p
-            WHERE p.id = NEW.supersedes_id
-              AND (p.measurement_details_json IS NOT NULL
-                   OR p.q_core_min IS NOT NULL OR p.q_core_max IS NOT NULL)
-        )
-    )
-    {_GUARD_BODY}
-    """,
-)
 
 WORK_ID = "0f3e7c2a-5b1d-4e9f-a8c7-6d5e4f3a2b1c"
 TREATMENT_ID = "2a9e6b1c-7d4f-4a3e-8c5b-1f0e9d8c7b6a"
-
-
-def register_measurement_contract(conn: sqlite3.Connection, version: int = LOCAL_CONTRACT_VERSION) -> None:
-    """Mark ``conn`` as contract-aware (the only awareness mechanism)."""
-    conn.create_function(CONTRACT_FUNCTION, 0, lambda: version, deterministic=True)
-
-
-def install_spike_barrier(conn: sqlite3.Connection) -> None:
-    columns = {row[1] for row in conn.execute("PRAGMA table_info(reference_measurement_sets)")}
-    for ddl in EXTENSION_COLUMNS_DDL:
-        if ddl.rsplit(" ", 2)[-2] not in columns:
-            conn.execute(ddl)
-    for ddl in BARRIER_TRIGGERS_DDL:
-        conn.execute(ddl)
-    conn.commit()
 
 
 def _load(name: str) -> dict:
@@ -125,13 +81,11 @@ def _seed(conn: sqlite3.Connection) -> None:
 
 @pytest.fixture
 def library(tmp_path):
-    """A real normalized library with the spike barrier installed and rows seeded."""
+    """A real normalized library initialized by production code and seeded."""
     path = tmp_path / "reference_values.db"
     conn = sqlite3.connect(path)
     conn.row_factory = sqlite3.Row
-    lib_schema.init_reference_library_schema(conn)
-    register_measurement_contract(conn)
-    install_spike_barrier(conn)
+    lib_schema.init_reference_library_schema(conn)  # registers the contract on conn
     _seed(conn)
     conn.close()
     return path
@@ -210,8 +164,21 @@ def test_unaware_reads_and_startup_initialization_still_work(library):
     conn = unaware(library)
     rows = conn.execute("SELECT id, length_core_max FROM reference_measurement_sets ORDER BY id").fetchall()
     assert {row["id"] for row in rows} == {ENHANCED_ID, LEGACY_ID}
-    # The older binary's idempotent startup path must not break on an enhanced library.
-    lib_schema.init_reference_library_schema(conn)
+    # The older binary's idempotent startup path must not break on an enhanced
+    # library. Its ``init_reference_library_schema`` runs the same statements as
+    # the current one minus the extension/barrier/registration steps: the table
+    # DDL it carries (IF NOT EXISTS, a no-op here), the indexes, the sync
+    # triggers and the sync-state backfill, all on an unregistered connection.
+    conn.execute(_pre_feature_sets_ddl())
+    for statement in lib_schema._REFERENCE_LIBRARY_INDEXES:
+        conn.execute(statement)
+    for statement in lib_schema._REFERENCE_CLOUD_SYNC_TRIGGERS:
+        conn.execute(statement)
+    conn.execute(
+        "INSERT OR IGNORE INTO reference_cloud_sync_state(entity_type, entity_id) "
+        "SELECT 'measurement_set', id FROM reference_measurement_sets"
+    )
+    conn.commit()
     assert _triggers(conn) >= {
         "reference_measurement_content_guard_update",
         "reference_measurement_content_guard_insert",
@@ -394,10 +361,10 @@ def test_old_binary_table_rebuild_fails_closed_and_keeps_the_barrier(library):
         lib_schema._rebuild_table_with_restrict_fks(
             conn,
             table="reference_measurement_sets",
-            ddl=lib_schema._REFERENCE_MEASUREMENT_SETS_DDL,
+            ddl=_pre_feature_sets_ddl(),
         )
     columns = {row[1] for row in conn.execute("PRAGMA table_info(reference_measurement_sets)")}
-    assert {"measurement_details_json", "q_core_min", "q_core_max"} <= columns
+    assert set(EXTENSION_COLUMNS) <= columns
     assert _triggers(conn) >= {
         "reference_measurement_content_guard_update",
         "reference_measurement_content_guard_insert",
@@ -417,19 +384,18 @@ def test_barrier_constants_match_the_contract_document():
     assert spec["barrier_message"] == BARRIER_MESSAGE
     trigger_names = {
         line.split()[-1]
-        for ddl in BARRIER_TRIGGERS_DDL
+        for ddl in lib_schema._MEASUREMENT_CONTENT_GUARD_TRIGGERS_DDL
         for line in ddl.splitlines()
         if "CREATE TRIGGER" in line
     }
-    assert trigger_names == set(spec["barrier_triggers"])
-    for column in spec["extension_fields"]:
-        assert any(column in ddl for ddl in EXTENSION_COLUMNS_DDL)
+    assert trigger_names == set(spec["barrier_triggers"]) == set(lib_schema.MEASUREMENT_CONTENT_GUARD_TRIGGERS)
+    assert list(spec["extension_fields"]) == list(EXTENSION_COLUMNS)
 
 
 def test_barrier_installation_is_idempotent(library):
     conn = aware(library)
-    install_spike_barrier(conn)
-    install_spike_barrier(conn)
+    lib_schema.init_reference_library_schema(conn)
+    lib_schema.init_reference_library_schema(conn)
     assert len(_triggers(conn) & {
         "reference_measurement_content_guard_update",
         "reference_measurement_content_guard_insert",

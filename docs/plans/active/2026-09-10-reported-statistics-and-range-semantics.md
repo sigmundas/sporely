@@ -1,6 +1,119 @@
 # Reported statistics and explicit range semantics
 
-## Current stage / reviewer handoff — 2026-09-12 (Stage 2)
+## Current stage / reviewer handoff — 2026-09-12 (Stage 3A)
+
+Status: **Stage 3A candidate code-complete, ready for independent review;
+human v0.9.22 verification still pending** (see the gate below). Local
+SQLite schema extension and old-client write barrier only. Stage 2 is accepted
+at `829be09b9298ecf4e8423bb7278301af876b85d1`; nothing Stage 1 or Stage 2
+froze was reopened.
+
+- Stage id: `stage-reported-statistics-local-schema-barrier` (brief in
+  `.sparring/stages/stage-reported-statistics-local-schema-barrier/`).
+- Branch: `feature/reported-statistics-contract` (linked worktree
+  `sporely-py-reported-statistics`). Base SHA: `829be09b`.
+- Candidate SHA: the commit that carries this section (also recorded in the
+  stage notes once known).
+
+Schema (production owner `database/reference_library_schema.py`):
+
+- `_REFERENCE_MEASUREMENT_SETS_DDL` now declares `measurement_details_json
+  TEXT`, `q_core_min REAL`, `q_core_max REAL` as the last three columns
+  (nullable, no default), so fresh and upgraded libraries have the same
+  column order.
+- `_ensure_measurement_content_extension(conn)` adds any missing extension
+  column with `ALTER TABLE … ADD COLUMN` and creates the two guard triggers
+  (`IF NOT EXISTS`) in **one transaction** (unless the caller already holds
+  one), so no committed state has the columns without the barrier. It runs in
+  `init_reference_library_schema` **after** `_ensure_restrict_foreign_keys`,
+  because the CASCADE→RESTRICT rebuild drops triggers. A no-op when both
+  columns and triggers exist: repeated initialization leaves `sqlite_master`,
+  `PRAGMA data_version` and every row unchanged. Nothing reads, validates or
+  rewrites `measurement_details_json`; legacy rows get NULL in all three
+  fields and no invented semantics.
+
+Barrier mechanism (exactly contract §6 / spec §14): triggers
+`reference_measurement_content_guard_update` (BEFORE UPDATE, WHEN old or new
+row enhanced) and `reference_measurement_content_guard_insert` (BEFORE INSERT,
+WHEN new row enhanced or its `supersedes_id` points at an enhanced row), body
+`RAISE(ABORT, 'measurement content contract required')` when
+`coalesce(sporely_measurement_contract(), 0) < 1`. Because SQLite resolves
+functions at prepare time, a connection without the function cannot compile
+*any* INSERT or UPDATE on the table (`OperationalError: no such function:
+sporely_measurement_contract`), including on legacy rows; this is the coarse
+unsupported-open policy accepted 2026-09-11. DELETE and SELECT are outside the
+barrier and unchanged (the existing tombstone trigger still fires).
+
+How supported code identifies itself: `register_measurement_contract(conn,
+version=1)` (schema owner) calls `conn.create_function` for
+`sporely_measurement_contract`. It is invoked (a) as the first statement of
+`init_reference_library_schema`, so `_connect_reference`, the repository,
+pull reconciliation, curated copy, bundle import and `init_reference_database`
+are covered; (b) in `database/schema.py::get_reference_connection`; (c) in
+`utils/archive/portable_import.py::import_portable_payload` right after
+`ATTACH … AS portable_reference` (the one production writer that neither
+calls init nor uses the factory). No import/export *behavior* changed; those
+two lines only keep the new application from blocking itself. Awareness is
+connection-scoped and cannot leak: an aware writer committing does not open
+the door for an unaware connection.
+
+Old-client operations on an upgraded library: rejected — INSERT (repository
+shape, `INSERT OR REPLACE`, `REPLACE`, `INSERT … ON CONFLICT DO UPDATE`,
+`INSERT OR IGNORE`, successor of an enhanced row), UPDATE (content edit,
+notes-only, revision bump, legacy-id enrichment, `UPDATE OR IGNORE`),
+through an ATTACHed database, inside `executescript`, and inside an explicit
+transaction (rollback restores everything, including a DELETE made earlier in
+the same transaction). Allowed — SELECT, DELETE, writes to every other table,
+the older binary's startup statements (table/index/trigger `IF NOT EXISTS`,
+sync-state backfill).
+
+Tests: `tests/test_reference_measurement_content_schema.py` (new, 39 cases)
+covers brief items 1–16: populated legacy upgrade (RESTRICT- and CASCADE-era
+DDL built from the pre-feature table definition), fresh library through
+`init_reference_database`, exact `PRAGMA table_info` for the three columns,
+identical shape fresh vs upgraded, legacy rows NULL/not enhanced with every
+old value byte-identical, idempotence (three runs, `data_version`, integrity
+check, no duplicate columns), enhanced values and malformed/future/blank
+details text untouched by re-initialization, columns and triggers restored
+together, factory/repository/init-registered/explicit writers pass,
+version-0 registration stopped by the trigger body, and the old-client matrix
+above using raw SQL shaped like the pre-feature `MeasurementSetRepository`
+(its 31-column list, statement forms and connection pragmas). Item 17:
+`tests/test_measurement_content_write_barrier_spike.py` no longer carries its
+own DDL/helper; its 20 Stage 1 scenarios (importer merge paths, upsert,
+successor, table rebuild, contract-spec constants) now run against the
+production barrier, and the "older startup" case executes the pre-feature
+init statements on an unregistered connection. Eight existing test modules
+that seed measurement rows through raw `sqlite3.connect` now call
+`register_measurement_contract` at those seeding sites (the contract's
+"tests and tools writing rows directly" row); no assertion changed.
+
+Verification (project venv): new module 39 passed; spike + fixtures + content
+modules 129 passed; reference-library / curated / legacy / reference-use /
+portable / backup / db-share / archive regressions 856 passed with the one
+pre-existing `test_archive_inventory` failure (table-set assertion about
+`observation_reference_use_cloud_*` tables, PROJECT.md item 4, unrelated to
+the new columns); `py_compile` on all 12 touched files ok; `git diff --check`
+clean. Full-suite counts are in the stage notes.
+
+Deferred to Stage 3B by design: `MeasurementSet` / `_COLUMNS`, payload and key
+registries (contract §4), `_validate` → `validate_measurement_content`,
+`create_revision` copying the extension, import decisions (§8), reconciliation
+JSON canonicalization, snapshot v2, cloud allowlist, editors. The repository
+still reads and writes only the pre-feature columns; it passes the barrier
+because its connection is registered.
+
+**Human gate (not yet supplied):** the shipped macOS v0.9.22 build must be
+run against the upgraded disposable copy under `~/Desktop/sporely-old-client-test`
+(open/upgrade with this build, `PRAGMA integrity_check`, v0.9.22 read, v0.9.22
+edit-save rejected, v0.9.22 create-save rejected, no partial mutation, data
+intact on reopen, enhanced rows intact, DELETE per policy). No claim about
+v0.9.22 behaviour is made here; the candidate must not be frozen or accepted
+until the branch owner supplies that result.
+
+Subagents: none used.
+
+## Stage 2 handoff — 2026-09-12 (accepted at `829be09b`)
 
 Status: **Stage 2 candidate ready for independent review** (typed contract
 module and parser specification; pure Python and tests only). No schema,
