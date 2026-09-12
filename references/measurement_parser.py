@@ -364,7 +364,8 @@ _VALUE_TOKEN_RE = re.compile(_VALUE_TOKEN)
 # ``Qav`` and ``Qm`` are aliases for the reported Q mean. Alternation order
 # matters: ``Qav`` and ``Qm`` before ``Q``; ``n`` only as a standalone token.
 _NAMED_VALUE_RE = re.compile(
-    rf"(?<![A-Za-z])(?P<label>Qav|Qm|Q|n)(?![A-Za-z])\s*=\s*(?P<value>{_VALUE_TOKEN})?",
+    rf"(?<![A-Za-z])(?P<label>Qav|Qm|Q|n)(?![A-Za-z])\s*=\s*"
+    rf"(?P<value>{_VALUE_TOKEN}(?![A-Za-z0-9.%]))?",
     re.IGNORECASE,
 )
 _NAMED_VALUE_KEYS = {"qav": "qm", "qm": "qm", "q": "q", "n": "n"}
@@ -453,12 +454,14 @@ _RANGE_HEADING = (
     r"|min\.?\s*-\s*max\.?"
     r"|range"
 )
+# Heading words match only as whole words: ``mean error`` or ``meaningful``
+# is not a mean column. The glued Hebeloma heading is matched separately.
 _HEADING_TOKEN_RE = re.compile(
-    rf"(?P<range>{_RANGE_HEADING})"
-    r"|(?P<label>spores?|character|dimension|statistic|parameter|measure(?:ment)?s?)"
-    r"|(?P<mean>mean|average|avg\.?)"
-    r"|(?P<median>median)"
-    r"|(?P<sd>s\.\s*d\.?|(?<![A-Za-z])sd(?![A-Za-z])|std\.?\s*dev\.?|standard\s+deviation)",
+    rf"(?P<range>{_RANGE_HEADING})(?![A-Za-z])"
+    r"|(?<![A-Za-z])(?P<label>spores?|character|dimension|statistic|parameter|measure(?:ment)?s?)(?![A-Za-z])"
+    r"|(?<![A-Za-z])(?P<mean>mean|average|avg\.?)(?![A-Za-z])"
+    r"|(?<![A-Za-z])(?P<median>median)(?![A-Za-z])"
+    r"|(?<![A-Za-z])(?P<sd>s\.\s*d\.?|sd|std\.?\s*dev\.?|standard\s+deviation)(?![A-Za-z])",
     re.IGNORECASE,
 )
 _PERCENT_BOUNDS_RE = re.compile(rf"(?P<lo>{_NUM})\s*%\s*-\s*(?P<hi>{_NUM})\s*%")
@@ -466,7 +469,7 @@ _PERCENT_BOUNDS_RE = re.compile(rf"(?P<lo>{_NUM})\s*%\s*-\s*(?P<hi>{_NUM})\s*%")
 # The pasted Hebeloma heading survives some clipboards glued together. It is
 # an explicitly recognised form: label, range, mean, median, S.D.
 _GLUED_HEBELOMA_HEADING_RE = re.compile(
-    r"^\s*spores?\s*\(\s*min\s*\)\s*5\s*%\s*-\s*95\s*%\s*\(\s*max\s*\)"
+    rf"^\s*spores?\s*\(\s*min\s*\)\s*(?:{_NUM}\s*%\s*-\s*{_NUM}\s*%\s*)?\(\s*max\s*\)"
     r"\s*mean\s*median\s*s\.?\s*d\.?\s*$",
     re.IGNORECASE,
 )
@@ -482,6 +485,8 @@ class _TableLine:
     label: str | None = None
     cells: list[str] = field(default_factory=list)   # value cells, label removed
     header_cells: list[str] | None = None            # delimited header cells
+    delimited: bool = False                          # tab/pipe cells vs value tokens
+    label_assumed: bool = False                      # label assigned by row order
 
 
 def _split_cells(line: str) -> list[str] | None:
@@ -543,9 +548,9 @@ def _classify_line(line: str) -> _TableLine:
         if any(_VALUE_TOKEN_RE.fullmatch(c) for c in values) or (
             label is not None and any(values)
         ):
-            return _TableLine("data", line, label=label, cells=values)
+            return _TableLine("data", line, label=label, cells=values, delimited=True)
         if any(_is_header_text(c) for c in cells if c):
-            return _TableLine("header", line, header_cells=cells)
+            return _TableLine("header", line, header_cells=cells, delimited=True)
         return _TableLine("prose", line)
 
     m = _LABEL_PREFIX_RE.match(line)
@@ -568,6 +573,8 @@ def _classify_line(line: str) -> _TableLine:
 class _Header:
     roles: list[str | None]                 # per column position
     core: RangeDescriptor | None = None     # heading-derived core descriptor
+    has_label_column: bool = False          # first position is the row-label column
+    ambiguous: bool = False                 # space-separated heading with unknown text
 
 
 def _percentile_descriptor(text: str, warnings: list[str]) -> RangeDescriptor | None:
@@ -592,26 +599,63 @@ def _percentile_descriptor(text: str, warnings: list[str]) -> RangeDescriptor | 
     return RangeDescriptor(kind="percentile_interval", percentile_bounds=(lo, hi))
 
 
-def _tokenize_heading(text: str, warnings: list[str]) -> list[str | None]:
-    """Roles of a glued or space-separated heading, in reading order."""
+def _tokenize_heading(text: str, warnings: list[str]) -> tuple[list[str | None], bool]:
+    """Roles of a glued or space-separated heading, in reading order.
+
+    Unrecognised text between recognised headings keeps its position as one
+    unknown column (``None``) and marks the heading ambiguous, because
+    space-separated text gives no reliable column count. Rows under an
+    ambiguous heading bind only when their cell count matches exactly.
+    """
     if _GLUED_HEBELOMA_HEADING_RE.match(text):
-        return ["label", "range", "mean", "median", "sd"]
+        return ["label", "range", "mean", "median", "sd"], False
     roles: list[str | None] = []
-    for m in _HEADING_TOKEN_RE.finditer(text):
+    unknown: list[str] = []
+    position = 0
+    for m in list(_HEADING_TOKEN_RE.finditer(text)) + [None]:
+        end = m.start() if m is not None else len(text)
+        gap = text[position:end]
+        if _HEADING_NOISE_RE.sub("", gap):
+            roles.append(None)
+            unknown.append(gap.strip(" \t()[].,:;|/-"))
+        if m is None:
+            break
         roles.append(m.lastgroup)
-    leftover = _HEADING_NOISE_RE.sub("", _HEADING_TOKEN_RE.sub(" ", text))
-    if leftover:
-        warnings.append(f"Unrecognized text in table heading: '{leftover}'.")
-    return roles
+        position = m.end()
+    if unknown:
+        warnings.append(
+            "Unrecognized text in table heading: "
+            + ", ".join(f"'{u}'" for u in unknown)
+            + "; each is kept as one unknown column and rows bind only when "
+            "their cell count matches."
+        )
+    return roles, bool(unknown)
+
+
+def _classify_heading_cell(cell: str, warnings: list[str]) -> str | None:
+    """Role of one delimited heading cell. The whole cell must be a single
+    recognised heading (plus units/punctuation); partial matches such as
+    ``mean error`` are unknown, not a mean column."""
+    found = {m.lastgroup for m in _HEADING_TOKEN_RE.finditer(cell)}
+    leftover = _HEADING_NOISE_RE.sub("", _HEADING_TOKEN_RE.sub(" ", cell))
+    if not found or leftover:
+        warnings.append(f"Unknown table column heading '{cell}'; its cells are ignored.")
+        return None
+    if len(found) > 1:
+        warnings.append(f"Ambiguous table column heading '{cell}'; its cells are ignored.")
+        return None
+    return found.pop()
 
 
 def _parse_header(line: _TableLine, warnings: list[str]) -> _Header:
     cells = line.header_cells
     non_empty = [c for c in (cells or []) if c]
+    ambiguous = False
     if cells is None or len(non_empty) <= 1:
         text = non_empty[0] if non_empty else line.text
-        roles = _tokenize_heading(text, warnings)
+        roles, ambiguous = _tokenize_heading(text, warnings)
         range_text = text
+        has_label_column = bool(roles) and roles[0] == "label"
     else:
         roles = []
         range_text = ""
@@ -621,27 +665,20 @@ def _parse_header(line: _TableLine, warnings: list[str]) -> _Header:
                 if index > 0:
                     warnings.append(f"Table column {index + 1} has no heading; its cells are ignored.")
                 continue
-            found = {m.lastgroup for m in _HEADING_TOKEN_RE.finditer(cell)}
-            if len(found) == 1:
-                role = found.pop()
-                roles.append(role)
-                if role == "range":
-                    range_text = cell
-            elif not found:
-                warnings.append(f"Unknown table column heading '{cell}'; its cells are ignored.")
-                roles.append(None)
-            else:
-                warnings.append(
-                    f"Ambiguous table column heading '{cell}'; its cells are ignored."
-                )
-                roles.append(None)
+            role = _classify_heading_cell(cell, warnings)
+            roles.append(role)
+            if role == "range":
+                range_text = cell
+        # In a delimited heading the first cell heads the row-label column
+        # unless it is itself a value column heading.
+        has_label_column = bool(roles) and roles[0] in ("label", None)
     # Duplicate headings: neither column can be trusted.
     for role in ("range", "mean", "median", "sd"):
         if roles.count(role) > 1:
             warnings.append(f"Duplicate '{role}' table columns; both are ignored.")
             roles = [None if r == role else r for r in roles]
     core = _percentile_descriptor(range_text, warnings) if "range" in roles else None
-    return _Header(roles=roles, core=core)
+    return _Header(roles=roles, core=core, has_label_column=has_label_column, ambiguous=ambiguous)
 
 
 def _apply_row(
@@ -658,7 +695,7 @@ def _apply_row(
     median: ScalarStatistic | IntervalStatistic | None = None
     sd: ScalarStatistic | None = None
     for role, cell in pairs:
-        if role is None or cell is None or _PLACEHOLDER_CELL_RE.match(cell):
+        if role in (None, "label") or cell is None or _PLACEHOLDER_CELL_RE.match(cell):
             continue
         if role == "range":
             rng = _parse_range(cell, label=title, warnings=result.warnings)
@@ -716,6 +753,7 @@ def _parse_table(text: str, result: MeasurementParseResult) -> bool:
         if len(rows) in (2, 3):
             for row, metric in zip(rows, _METRICS):
                 row.label = metric
+                row.label_assumed = True
             result.warnings.append(
                 "Table rows carry no labels; assumed length, width and Q in that order."
             )
@@ -726,14 +764,7 @@ def _parse_table(text: str, result: MeasurementParseResult) -> bool:
             )
             return True
 
-    if header is not None:
-        value_roles = list(header.roles)
-        if value_roles and value_roles[0] == "label":
-            value_roles = value_roles[1:]
-        core = header.core
-    else:
-        value_roles = list(_HEADERLESS_ROLES)
-        core = None
+    core = header.core if header is not None else None
 
     seen: set[str] = set()
     for row in rows:
@@ -749,7 +780,6 @@ def _parse_table(text: str, result: MeasurementParseResult) -> bool:
             continue
         seen.add(row.label)
         cells = list(row.cells)
-        row_roles = value_roles
         if header is None:
             if len(cells) not in (1, 4):
                 result.warnings.append(
@@ -758,12 +788,35 @@ def _parse_table(text: str, result: MeasurementParseResult) -> bool:
                 )
                 cells = cells[:1]
             # A range-only row is a complete headerless row, not a short one.
-            row_roles = value_roles[: len(cells)]
+            row_roles: list[str | None] = list(_HEADERLESS_ROLES[: len(cells)])
+        elif row.delimited:
+            # Explicit cell boundaries: bind by full column position, the
+            # row-label cell included, so an unknown heading keeps its slot.
+            row_roles = list(header.roles)
+            if not row.label_assumed:
+                cells = [""] + cells  # the label cell's own position
+                if not header.has_label_column:
+                    row_roles = [None] + row_roles
+            elif header.has_label_column and len(cells) == len(row_roles) - 1:
+                row_roles = row_roles[1:]  # unlabelled rows under a label heading
+        else:
+            # Space-separated values have no column boundaries: only an exact
+            # count can be bound; a short or long row cannot say which column
+            # is missing, so nothing binds.
+            row_roles = list(header.roles)
+            if header.has_label_column and row_roles:
+                row_roles = row_roles[1:]
+            if len(cells) != len(row_roles):
+                result.warnings.append(
+                    f"{title}: {len(cells)} value(s) for {len(row_roles)} heading "
+                    "column(s) with no cell boundaries; row not read."
+                )
+                continue
         pairs: list[tuple[str | None, str | None]] = []
         for index, role in enumerate(row_roles):
             if index < len(cells):
                 pairs.append((role, cells[index]))
-            elif role is not None:
+            elif role not in (None, "label"):
                 result.warnings.append(f"{title}: no cell for the '{role}' column.")
         extra = len(cells) - len(row_roles)
         if extra > 0:

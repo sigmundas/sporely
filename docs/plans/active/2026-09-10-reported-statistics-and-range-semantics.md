@@ -12,7 +12,38 @@ cloud, sync, snapshot, UI or persistence change. Stage 1 remains accepted at
 - Branch: `feature/reported-statistics-contract` (linked worktree
   `sporely-py-reported-statistics`). Base SHA: `a0bdcd37`.
 - Candidate SHA: recorded in the stage notes and the commit that carries this
-  section (the section is committed together with the code).
+  section (the section is committed together with the code). The first
+  candidate `7e64508a` received a sparring SEND_BACK; the corrections below
+  are a new commit on top of it (no history rewritten).
+
+Sparring round 1 (SEND_BACK on `7e64508a`) and responses, all in the second
+candidate commit:
+
+1. *Heading recognition could invent semantics and shift columns.* Heading
+   words now match only as whole cells (delimited) or whole words
+   (space-separated): `mean error` or `meaningful` is an unknown heading, not
+   a mean column (`_classify_heading_cell`). In a space-separated heading,
+   unrecognised text keeps its position as one unknown column and marks the
+   heading ambiguous (`_tokenize_heading`); rows under it bind only when their
+   value count equals the column count. The glued Hebeloma form stays an
+   explicit pattern, now for any `N%-M%` percentiles. Delimited rows bind by
+   full column position including the row-label cell, so a header without a
+   label column, or with an unknown first heading, still aligns.
+2. *Short space-separated rows shifted statistics.* A space-separated row
+   whose value count differs from the heading's column count binds nothing
+   and warns (`"… with no cell boundaries; row not read"`); only tab/pipe
+   rows, which have explicit boundaries, keep positional binding of short or
+   long rows with per-column warnings.
+3. *Non-positive dimensions and scalar means passed validation.*
+   `_validate_columns` now requires every dimension, core, Q and scalar-mean
+   column to be a finite, non-boolean, **positive** number in both modes;
+   positivity no longer depends on a descriptor. The test that accepted a
+   negative untagged bound was replaced by parametrised rejections of
+   negative/zero/NaN bounds, scalar means and untagged pairs.
+4. *Numeric prefixes leaked into width.* A named value must be a complete
+   numeric token followed by a boundary (`(?![A-Za-z0-9.%])`); `Qav = 1.5e2`,
+   `1.5%`, `1.5x`, `12abc` are rejected whole with a targeted warning and
+   removed from the remainder, leaving width intact.
 
 Deliverables:
 
@@ -35,8 +66,8 @@ Deliverables:
   (enums, ordering, signs, emptiness, the 4096-byte limit) live in validate,
   so hand-built dataclasses are checked the same way as decoded text.
   Validation modes follow §3: `edit` rejects unsupported versions,
-  `authoritative` accepts them opaquely and still enforces column type sanity,
-  pair ordering and size. Edit operations are pure transitions that never
+  `authoritative` accepts them opaquely and still enforces finite positive
+  column values, pair ordering and size. Edit operations are pure transitions that never
   validate the whole row; all of them refuse `UnsupportedMeasurementDetails`.
 - `references/measurement_parser.py` (extended, same public names): HTML
   entity decoding and `<br>` normalisation before any splitting (`<br>` is a
@@ -63,11 +94,11 @@ Deliverables:
   parenthesised extremes are present. The legacy `p50` centre (single value or
   `a-b-c` form) has no typed home and stays a legacy-editor value; the
   contract carries no untyped scalar and the plan forbids inferring a mean.
-- Tests: `tests/test_measurement_content.py` (new; 36 test functions, 67
-  collected cases incl. 22 mutation ids: contract §12 cases 1, 2, 3 and 18 at
-  module level, spec-block linkage, codec, both modes, every edit operation)
-  and Stage 2 cases appended to `tests/test_measurement_parser.py` (75
-  collected cases, 48 new; the existing 27 unchanged). The Stage 1 fixture
+- Tests: `tests/test_measurement_content.py` (new; 81 collected cases incl.
+  22 mutation ids: contract §12 cases 1, 2, 3 and 18 at module level,
+  spec-block linkage, codec, both modes, positivity, every edit operation)
+  and Stage 2 cases appended to `tests/test_measurement_parser.py` (86
+  collected cases, 59 new; the existing 27 unchanged). The Stage 1 fixture
   `row_enhanced.json` is
   reproduced end to end: parsing its `raw_text` yields its 15 numeric columns
   and encodes to its stored `measurement_details_json` byte for byte.
@@ -80,17 +111,18 @@ and were not modified. Intervals, medians and S.D. reach neither `p50` nor
 `q_mean`; only a scalar *mean* cell or scalar Qm/Qav fills a scalar mean.
 
 Verification (project venv; commands per `.sparring/PROJECT.md`): new/extended
-modules `test_measurement_content` + `test_measurement_parser` 142 passed;
+modules `test_measurement_content` + `test_measurement_parser` 167 passed;
 with the Stage 1 fixture and barrier-spike modules, both editor test modules
-and `test_reference_library_{schema,repository}` 294 passed;
+and `test_reference_library_{schema,repository}` 319 passed;
 reference-library regressions
 (`test_reference_library_{schema,repository,snapshot,pull_reconciliation,bundle_roundtrip,manager_dialog}`,
 `test_curated_reference_forks`, `test_legacy_reference_migration`,
 `test_reference_add_dialog_normalized`) 181 passed; `py_compile` on the four
 touched files ok; `git diff --check` clean. Full suite
-(`--continue-on-collection-errors`, as for Stage 1): **31 failed, 4100 passed,
-10 skipped, 55 errors, exit 1** (2 min 30 s) against the Stage 1 report of
-31 failed / 3983 passed / 10 skipped / 55 errors. The failing and erroring
+(`--continue-on-collection-errors`, as for Stage 1): **31 failed,
+4125 passed, 10 skipped, 55 errors, exit 1** (first candidate:
+31 / 4100 / 10 / 55) against the Stage 1 report of 31 failed / 3983 passed /
+10 skipped / 55 errors. The failing and erroring
 module set is identical to PROJECT.md items 1–4 (`test_w2d_reconciliation`
 19 E + 1 F, `test_image_gallery_widget` 17 E + 1 F, `test_supplement_loader`
 12 F, `test_observations_tab_gallery_move` 12 E,
