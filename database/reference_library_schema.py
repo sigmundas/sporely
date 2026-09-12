@@ -247,8 +247,9 @@ def _ensure_measurement_content_extension(conn: sqlite3.Connection) -> None:
     else; the triggers use ``IF NOT EXISTS``. Missing columns and triggers are
     applied in one transaction (unless the caller already holds one), so the
     columns never become visible without the barrier and a partial upgrade
-    cannot be committed. Must run after ``_ensure_restrict_foreign_keys``: a
-    table rebuild drops every trigger on the table.
+    cannot be committed. ``init_reference_library_schema`` calls it inside the
+    transaction that creates the table, and the CASCADE-era rebuild recreates
+    the triggers inside its own transaction.
     """
     existing = {
         str(row[1])
@@ -797,13 +798,16 @@ def _rebuild_table_with_restrict_fks(
     *,
     table: str,
     ddl: str,
+    post_ddl: tuple[str, ...] = (),
 ) -> None:
     """Recreate ``table`` in place from ``ddl`` (which must use RESTRICT).
 
     Copies all existing rows over. Runs inside its own transaction with
     ``foreign_keys`` temporarily disabled, then verifies FK integrity
     before committing. Column set is derived from the existing table so
-    additive column changes remain safe.
+    additive column changes remain safe. ``post_ddl`` statements (for
+    example triggers, which ``DROP TABLE`` removes) run on the rebuilt table
+    inside the same transaction, so they are never committed separately.
     """
     cursor = conn.cursor()
     prev_fk = cursor.execute("PRAGMA foreign_keys").fetchone()[0]
@@ -831,6 +835,8 @@ def _rebuild_table_with_restrict_fks(
             )
         cursor.execute(f"DROP TABLE {table}")
         cursor.execute(f"ALTER TABLE {tmp_table} RENAME TO {table}")
+        for statement in post_ddl:
+            cursor.execute(statement)
         fk_violations = cursor.execute("PRAGMA foreign_key_check").fetchall()
         if fk_violations:
             raise sqlite3.IntegrityError(
@@ -868,6 +874,7 @@ def _ensure_restrict_foreign_keys(conn: sqlite3.Connection) -> None:
             conn,
             table="reference_measurement_sets",
             ddl=_REFERENCE_MEASUREMENT_SETS_DDL,
+            post_ddl=_MEASUREMENT_CONTENT_GUARD_TRIGGERS_DDL,
         )
 
 
@@ -902,31 +909,47 @@ def init_reference_library_schema(conn: sqlite3.Connection) -> None:
     register_measurement_contract(conn)
     conn.execute("PRAGMA foreign_keys = ON")
     cursor = conn.cursor()
-    cursor.execute(_REFERENCE_WORKS_DDL)
-    cursor.execute(_REFERENCE_TAXON_TREATMENTS_DDL)
-    cursor.execute(_REFERENCE_MEASUREMENT_SETS_DDL)
-    cursor.execute(_REFERENCE_MEASUREMENT_SET_PREFERENCES_DDL)
-    cursor.execute(_CURATED_REFERENCE_FORKS_DDL)
-    cursor.execute(_CURATED_REFERENCE_FORK_CLOUD_SYNC_STATE_DDL)
-    # Older Stage 1 databases used uniqueness here. Stage 6k must create a
-    # fresh private graph for every explicitly copied curated revision, even
-    # when immutable bibliographic identifiers repeat. Duplicate discovery
-    # remains available through repository lookups; identity is never merged.
-    # Only drop when the stored definition actually differs from the target
-    # (e.g. the old unique variant) — an already-migrated index must not be
-    # rewritten on every ordinary initialization call.
-    for legacy_index_name, target_sql in (
-        ("idx_reference_works_doi_normalized", _REFERENCE_LIBRARY_INDEXES[2]),
-        ("idx_reference_works_isbn_normalized", _REFERENCE_LIBRARY_INDEXES[3]),
-    ):
-        existing_sql = _existing_index_sql(conn, legacy_index_name)
-        if existing_sql is not None and existing_sql != _normalized_index_ddl(target_sql):
-            cursor.execute(f"DROP INDEX IF EXISTS {legacy_index_name}")
-    for statement in _REFERENCE_LIBRARY_INDEXES:
-        cursor.execute(statement)
-    conn.commit()
+    # The core tables, the measurement content extension and its write
+    # barrier are created in one explicit transaction: DDL statements do not
+    # open an implicit transaction in Python's sqlite3, and an unaware older
+    # binary must never find committed extension columns without the guard
+    # triggers (fresh library, legacy upgrade or interrupted start alike).
+    owns_transaction = not conn.in_transaction
+    if owns_transaction:
+        cursor.execute("BEGIN")
+    try:
+        cursor.execute(_REFERENCE_WORKS_DDL)
+        cursor.execute(_REFERENCE_TAXON_TREATMENTS_DDL)
+        cursor.execute(_REFERENCE_MEASUREMENT_SETS_DDL)
+        _ensure_measurement_content_extension(conn)
+        cursor.execute(_REFERENCE_MEASUREMENT_SET_PREFERENCES_DDL)
+        cursor.execute(_CURATED_REFERENCE_FORKS_DDL)
+        cursor.execute(_CURATED_REFERENCE_FORK_CLOUD_SYNC_STATE_DDL)
+        # Older Stage 1 databases used uniqueness here. Stage 6k must create a
+        # fresh private graph for every explicitly copied curated revision, even
+        # when immutable bibliographic identifiers repeat. Duplicate discovery
+        # remains available through repository lookups; identity is never merged.
+        # Only drop when the stored definition actually differs from the target
+        # (e.g. the old unique variant) — an already-migrated index must not be
+        # rewritten on every ordinary initialization call.
+        for legacy_index_name, target_sql in (
+            ("idx_reference_works_doi_normalized", _REFERENCE_LIBRARY_INDEXES[2]),
+            ("idx_reference_works_isbn_normalized", _REFERENCE_LIBRARY_INDEXES[3]),
+        ):
+            existing_sql = _existing_index_sql(conn, legacy_index_name)
+            if existing_sql is not None and existing_sql != _normalized_index_ddl(target_sql):
+                cursor.execute(f"DROP INDEX IF EXISTS {legacy_index_name}")
+        for statement in _REFERENCE_LIBRARY_INDEXES:
+            cursor.execute(statement)
+        if owns_transaction:
+            conn.commit()
+    except Exception:
+        if owns_transaction:
+            conn.rollback()
+        raise
+    # A CASCADE-era rebuild drops the table's triggers; it recreates the
+    # guard triggers inside its own transaction (see _ensure_restrict_foreign_keys).
     _ensure_restrict_foreign_keys(conn)
-    _ensure_measurement_content_extension(conn)
     cursor.execute(_REFERENCE_CLOUD_SYNC_STATE_DDL)
     cursor.execute(_REFERENCE_CLOUD_TOMBSTONES_DDL)
     cursor.execute(_REFERENCE_CLOUD_PULL_CURSORS_DDL)

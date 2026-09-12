@@ -445,6 +445,152 @@ def test_columns_and_barrier_become_visible_together_and_missing_triggers_are_re
     old.close()
 
 
+# --- Interruption: columns are never committed without the barrier ----------
+
+
+class _InjectedFailure(RuntimeError):
+    pass
+
+
+class _StatementCounter:
+    def __init__(self, fail_at: int) -> None:
+        self.fail_at = fail_at
+        self.seen = 0
+
+    def tick(self) -> None:
+        self.seen += 1
+        if self.seen == self.fail_at:
+            raise _InjectedFailure(f"injected failure at statement {self.fail_at}")
+
+
+def _failing_connection_factory(counter: _StatementCounter):
+    class FailingCursor(sqlite3.Cursor):
+        def execute(self, sql, *args, **kwargs):
+            counter.tick()
+            return super().execute(sql, *args, **kwargs)
+
+    class FailingConnection(sqlite3.Connection):
+        def cursor(self, factory=FailingCursor):
+            return super().cursor(factory)
+
+        def execute(self, sql, *args, **kwargs):
+            counter.tick()
+            return super().execute(sql, *args, **kwargs)
+
+    return FailingConnection
+
+
+def _count_init_statements(path: Path) -> int:
+    counter = _StatementCounter(fail_at=0)  # never fires
+    conn = sqlite3.connect(path, factory=_failing_connection_factory(counter))
+    try:
+        lib_schema.init_reference_library_schema(conn)
+    finally:
+        conn.close()
+    return counter.seen
+
+
+def assert_extension_never_visible_without_barrier(path: Path) -> None:
+    """The invariant an unaware binary relies on, checked on committed state
+    through a fresh unregistered connection."""
+    conn = old_client_connect(path)
+    try:
+        exists = conn.execute(
+            "SELECT 1 FROM sqlite_master WHERE type='table' AND name='reference_measurement_sets'"
+        ).fetchone()
+        if exists is None:
+            return
+        info = table_info(conn)
+        has_extension = any(name in info for name in EXTENSION_FIELDS)
+        if not has_extension:
+            return
+        assert all(name in info for name in EXTENSION_FIELDS), info
+        assert set(guard_triggers(conn)) == set(lib_schema.MEASUREMENT_CONTENT_GUARD_TRIGGERS), (
+            "extension columns committed without the barrier"
+        )
+        with pytest.raises(sqlite3.OperationalError, match=NO_SUCH_FUNCTION):
+            conn.execute("UPDATE reference_measurement_sets SET notes = 'x' WHERE 0")
+    finally:
+        conn.close()
+
+
+def _start_state(kind: str, path: Path) -> None:
+    if kind == "legacy":
+        build_legacy_library(path)
+    elif kind == "cascade-legacy":
+        build_legacy_library(path, cascade=True)
+    else:
+        assert kind == "empty"
+
+
+@pytest.mark.parametrize("kind", ["empty", "legacy", "cascade-legacy"])
+def test_initialization_interrupted_at_every_statement_never_exposes_columns_without_barrier(tmp_path, kind):
+    """Inject a failure at each statement position of initialization, from a
+    fresh copy of the start state each time. After every failure the committed
+    file must satisfy the invariant, and a subsequent uninterrupted
+    initialization must converge to the same schema and rows as an
+    uninterrupted run."""
+    reference = tmp_path / "reference.db"
+    _start_state(kind, reference)
+    total = _count_init_statements(reference)
+    assert total > 10
+    # Steady state after two starts. (A CASCADE-era rebuild drops the two
+    # measurement-set indexes together with the old table and the same run
+    # does not recreate them; the next start does. Pre-existing behaviour of
+    # _ensure_restrict_foreign_keys, unrelated to the barrier and left as is.)
+    upgrade(reference)
+    expected_rows, expected_schema, expected_info = _snapshot(reference)
+
+    interrupted_positions = 0
+    for position in range(1, total + 1):
+        path = tmp_path / f"{kind}-{position}.db"
+        _start_state(kind, path)
+        counter = _StatementCounter(fail_at=position)
+        conn = sqlite3.connect(path, factory=_failing_connection_factory(counter))
+        try:
+            with pytest.raises(_InjectedFailure):
+                lib_schema.init_reference_library_schema(conn)
+        finally:
+            conn.close()
+        interrupted_positions += 1
+        assert_extension_never_visible_without_barrier(path)
+
+        upgrade(path)  # resume on the next application start
+        assert_extension_never_visible_without_barrier(path)
+        upgrade(path)  # and the start after that: steady state
+        rows_after, schema_after, info_after = _snapshot(path)
+        assert info_after == expected_info, position
+        assert schema_after == expected_schema, position
+        assert rows_after == expected_rows, position
+    assert interrupted_positions == total
+
+
+def test_cascade_rebuild_recreates_the_guards_inside_its_own_transaction(tmp_path):
+    """Direct check of the rebuild path: dropping the old table removes the
+    triggers, and the rebuilt table must carry them before the commit."""
+    path = tmp_path / "reference.db"
+    build_legacy_library(path, cascade=True)
+    conn = aware_connect(path)
+    try:
+        lib_schema.init_reference_library_schema(conn)
+        assert set(guard_triggers(conn)) == set(lib_schema.MEASUREMENT_CONTENT_GUARD_TRIGGERS)
+        # Rebuild again explicitly with the production arguments and a failing
+        # post-DDL step: the whole rebuild rolls back, columns and guards stay.
+        with pytest.raises(sqlite3.OperationalError):
+            lib_schema._rebuild_table_with_restrict_fks(
+                conn,
+                table="reference_measurement_sets",
+                ddl=lib_schema._REFERENCE_MEASUREMENT_SETS_DDL,
+                post_ddl=(*lib_schema._MEASUREMENT_CONTENT_GUARD_TRIGGERS_DDL, "CREATE TRIGGER broken"),
+            )
+        assert set(guard_triggers(conn)) == set(lib_schema.MEASUREMENT_CONTENT_GUARD_TRIGGERS)
+        assert set(EXTENSION_FIELDS) <= set(table_info(conn))
+        assert conn.execute("SELECT COUNT(*) FROM reference_measurement_sets").fetchone()[0] == 2
+    finally:
+        conn.close()
+    assert_extension_never_visible_without_barrier(path)
+
+
 # --- 8: supported writers pass the barrier deliberately -----------------------
 
 
