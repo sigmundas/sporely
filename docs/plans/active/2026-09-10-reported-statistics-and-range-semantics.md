@@ -2,11 +2,15 @@
 
 ## Current stage / reviewer handoff — 2026-09-12 (Stage 3A)
 
-Status: **Stage 3A candidate code-complete, ready for independent review;
-human v0.9.22 verification still pending** (see the gate below). Local
-SQLite schema extension and old-client write barrier only. Stage 2 is accepted
-at `829be09b9298ecf4e8423bb7278301af876b85d1`; nothing Stage 1 or Stage 2
-froze was reopened.
+Status: **Stage 3A candidate READY (sparring verdict on `68d1855f`) and the
+human v0.9.22 compatibility gate passed** (evidence recorded below, in the
+commit that carries this paragraph). Local SQLite schema extension and
+old-client write barrier only. Stage 2 is accepted at
+`829be09b9298ecf4e8423bb7278301af876b85d1`; nothing Stage 1 or Stage 2
+froze was reopened. Frozen code candidate: `68d1855f37dd64a2e29322ed5ab4a3b0ff36cce2`
+(one correction commit on top of the sent-back `713c6b4b`; this
+evidence-recording commit is documentation only). Acceptance and merge remain
+the branch owner's separate decision.
 
 - Stage id: `stage-reported-statistics-local-schema-barrier` (brief in
   `.sparring/stages/stage-reported-statistics-local-schema-barrier/`).
@@ -139,13 +143,19 @@ JSON canonicalization, snapshot v2, cloud allowlist, editors. The repository
 still reads and writes only the pre-feature columns; it passes the barrier
 because its connection is registered.
 
-**Human gate (not yet supplied):** the shipped macOS v0.9.22 build must be
-run against the upgraded disposable copy under `~/Desktop/sporely-old-client-test`
-(open/upgrade with this build, `PRAGMA integrity_check`, v0.9.22 read, v0.9.22
-edit-save rejected, v0.9.22 create-save rejected, no partial mutation, data
-intact on reopen, enhanced rows intact, DELETE per policy). No claim about
-v0.9.22 behaviour is made here; the candidate must not be frozen or accepted
-until the branch owner supplies that result.
+**Human gate — passed (branch owner, 2026-09-12).** The actually shipped
+macOS Sporely v0.9.22 was run against an isolated copy under
+`~/Desktop/sporely-old-client-test` that candidate `68d1855f` had upgraded.
+The pre-Stage-3A baseline had established that v0.9.22 could read, update
+and insert reference measurements in that copy. After the upgrade: v0.9.22
+opened and read the reference library; UPDATE of an existing reference
+measurement was blocked; INSERT/create of a new reference measurement was
+blocked; the failure was the old connection lacking the measurement-contract
+registration (the accepted mechanism); SQLite `quick_check` remained `ok`;
+before/after semantic snapshots of `reference_measurement_sets` were
+identical; no partial mutation was observed. This is the shipped-old-build
+verification the contract (§6) lists under `release_gates`. DELETE was not
+reported as exercised; its policy is covered by the automated tests.
 
 Subagents: none used.
 
