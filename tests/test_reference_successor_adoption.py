@@ -7,6 +7,7 @@ import sqlite3
 import pytest
 
 from database import schema as _schema
+from database.reference_library_schema import register_measurement_contract
 from database.reference_library import (
     MeasurementSet,
     MeasurementSetRepository,
@@ -155,6 +156,7 @@ def test_successor_with_missing_parent_link_fails_closed(libs):
     successor = MeasurementSetRepository.create_revision(original.id, {})
     _, ref_path = libs
     with sqlite3.connect(ref_path) as conn:
+        register_measurement_contract(conn)
         conn.execute("PRAGMA foreign_keys = OFF")
         conn.execute(
             "UPDATE reference_measurement_sets SET taxon_treatment_id = ? WHERE id = ?",
@@ -175,6 +177,7 @@ def test_successor_chain_with_broken_intermediate_fails_closed(libs):
     MeasurementSetRepository.create_revision(middle.id, {})
     _, ref_path = libs
     with sqlite3.connect(ref_path) as conn:
+        register_measurement_contract(conn)
         conn.execute("PRAGMA foreign_keys = OFF")
         conn.execute(
             "UPDATE reference_measurement_sets SET taxon_treatment_id = ? WHERE id = ?",
@@ -192,6 +195,7 @@ def test_successor_chain_with_broken_attached_source_fails_closed(libs):
     MeasurementSetRepository.create_revision(original.id, {})
     _, ref_path = libs
     with sqlite3.connect(ref_path) as conn:
+        register_measurement_contract(conn)
         conn.execute("PRAGMA foreign_keys = OFF")
         conn.execute(
             "UPDATE reference_measurement_sets SET taxon_treatment_id = ? WHERE id = ?",

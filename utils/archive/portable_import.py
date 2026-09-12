@@ -17,6 +17,7 @@ from pathlib import Path
 from typing import Any, Callable
 from zipfile import BadZipFile, ZipFile
 
+from database.reference_library_schema import register_measurement_contract
 from database.reference_sync_state import record_library_mutation_intent
 from database.curated_reference_forks import validate_frozen_curated_provenance
 from utils.archive.checksums import sha256_file
@@ -2505,6 +2506,9 @@ def import_portable_payload(
         "ATTACH DATABASE ? AS portable_reference",
         (str(Path(destination_reference_database).resolve()),),
     )
+    # The attached reference library carries the measurement content write
+    # barrier; this connection writes reference_measurement_sets through it.
+    register_measurement_contract(destination_main)
     destination_reference = destination_main
     for connection in (source_main, source_reference, destination_main):
         connection.row_factory = sqlite3.Row

@@ -139,10 +139,152 @@ CREATE TABLE IF NOT EXISTS reference_measurement_sets (
     legacy_reference_value_id INTEGER,
     created_at TEXT NOT NULL DEFAULT CURRENT_TIMESTAMP,
     updated_at TEXT NOT NULL DEFAULT CURRENT_TIMESTAMP,
+    measurement_details_json TEXT,
+    q_core_min REAL,
+    q_core_max REAL,
     FOREIGN KEY (taxon_treatment_id) REFERENCES reference_taxon_treatments(id)
         ON DELETE RESTRICT
 )
 """
+
+# --- Measurement content contract: extension columns and write barrier -------
+#
+# Frozen by ``docs/reference-data/measurement-content-contract.md`` (sections 1,
+# 6 and 14). The three extension columns are nullable with no default: existing
+# rows keep NULL, which the contract defines as "never examined". Nothing here
+# reads, validates or rewrites their content; the typed rules live in
+# ``references/measurement_content.py`` and are applied by writers.
+#
+# The barrier is a pair of BEFORE triggers whose body calls the
+# application-defined SQL function ``sporely_measurement_contract()``. Only a
+# contract-aware connection registers that function (``register_measurement_contract``).
+# SQLite resolves functions when it prepares the DML statement, so a connection
+# without it cannot compile any INSERT or UPDATE on ``reference_measurement_sets``
+# (``OperationalError: no such function``) and nothing is written. This is the
+# coarse unsupported-open policy accepted on 2026-09-11: after a contract-aware
+# binary has opened a library, unaware older binaries can read it and DELETE
+# measurement sets but cannot INSERT or UPDATE the table, legacy rows included.
+# DELETE is deliberately outside the barrier. The WHEN clauses cost aware
+# connections nothing on legacy rows and confine a registered-but-lower version
+# to enhanced rows.
+
+MEASUREMENT_CONTRACT_FUNCTION = "sporely_measurement_contract"
+LOCAL_MEASUREMENT_CONTRACT_VERSION = 1
+MEASUREMENT_CONTRACT_BARRIER_MESSAGE = "measurement content contract required"
+MEASUREMENT_CONTENT_EXTENSION_COLUMNS: tuple[tuple[str, str], ...] = (
+    ("measurement_details_json", "TEXT"),
+    ("q_core_min", "REAL"),
+    ("q_core_max", "REAL"),
+)
+MEASUREMENT_CONTENT_GUARD_TRIGGERS: tuple[str, str] = (
+    "reference_measurement_content_guard_update",
+    "reference_measurement_content_guard_insert",
+)
+
+_ENHANCED_OLD = (
+    "OLD.measurement_details_json IS NOT NULL "
+    "OR OLD.q_core_min IS NOT NULL OR OLD.q_core_max IS NOT NULL"
+)
+_ENHANCED_NEW = (
+    "NEW.measurement_details_json IS NOT NULL "
+    "OR NEW.q_core_min IS NOT NULL OR NEW.q_core_max IS NOT NULL"
+)
+_MEASUREMENT_CONTRACT_GUARD_BODY = f"""
+BEGIN
+    SELECT CASE WHEN coalesce({MEASUREMENT_CONTRACT_FUNCTION}(), 0)
+                     < {LOCAL_MEASUREMENT_CONTRACT_VERSION}
+        THEN RAISE(ABORT, '{MEASUREMENT_CONTRACT_BARRIER_MESSAGE}') END;
+END
+"""
+
+_MEASUREMENT_CONTENT_GUARD_TRIGGERS_DDL = (
+    f"""
+    CREATE TRIGGER IF NOT EXISTS {MEASUREMENT_CONTENT_GUARD_TRIGGERS[0]}
+    BEFORE UPDATE ON reference_measurement_sets
+    FOR EACH ROW
+    WHEN {_ENHANCED_OLD} OR {_ENHANCED_NEW}
+    {_MEASUREMENT_CONTRACT_GUARD_BODY}
+    """,
+    f"""
+    CREATE TRIGGER IF NOT EXISTS {MEASUREMENT_CONTENT_GUARD_TRIGGERS[1]}
+    BEFORE INSERT ON reference_measurement_sets
+    FOR EACH ROW
+    WHEN {_ENHANCED_NEW} OR (
+        NEW.supersedes_id IS NOT NULL AND EXISTS (
+            SELECT 1 FROM reference_measurement_sets p
+            WHERE p.id = NEW.supersedes_id
+              AND (p.measurement_details_json IS NOT NULL
+                   OR p.q_core_min IS NOT NULL OR p.q_core_max IS NOT NULL)
+        )
+    )
+    {_MEASUREMENT_CONTRACT_GUARD_BODY}
+    """,
+)
+
+
+def register_measurement_contract(
+    conn: sqlite3.Connection,
+    version: int = LOCAL_MEASUREMENT_CONTRACT_VERSION,
+) -> None:
+    """Mark ``conn`` as aware of the measurement content contract.
+
+    This is the only mechanism by which a connection may INSERT or UPDATE
+    ``reference_measurement_sets`` once the barrier exists. It is invoked by
+    ``init_reference_library_schema`` and by every production connection
+    factory listed in the contract's writer map; test or tool code that writes
+    rows through a raw connection must call it explicitly.
+    """
+    conn.create_function(
+        MEASUREMENT_CONTRACT_FUNCTION, 0, lambda: version, deterministic=True
+    )
+
+
+def _ensure_measurement_content_extension(conn: sqlite3.Connection) -> None:
+    """Add the extension columns and the barrier triggers where absent.
+
+    Additive and idempotent: ``ALTER TABLE … ADD COLUMN`` with no default
+    leaves every existing row NULL in the new columns and rewrites nothing
+    else; the triggers use ``IF NOT EXISTS``. Missing columns and triggers are
+    applied in one transaction (unless the caller already holds one), so the
+    columns never become visible without the barrier and a partial upgrade
+    cannot be committed. Must run after ``_ensure_restrict_foreign_keys``: a
+    table rebuild drops every trigger on the table.
+    """
+    existing = {
+        str(row[1])
+        for row in conn.execute("PRAGMA table_info(reference_measurement_sets)").fetchall()
+    }
+    missing = [
+        (name, sql_type)
+        for name, sql_type in MEASUREMENT_CONTENT_EXTENSION_COLUMNS
+        if name not in existing
+    ]
+    present_triggers = {
+        str(row[0])
+        for row in conn.execute(
+            "SELECT name FROM sqlite_master WHERE type='trigger' AND tbl_name=?",
+            ("reference_measurement_sets",),
+        ).fetchall()
+    }
+    if not missing and set(MEASUREMENT_CONTENT_GUARD_TRIGGERS) <= present_triggers:
+        return
+    owns_transaction = not conn.in_transaction
+    if owns_transaction:
+        conn.execute("BEGIN")
+    try:
+        for name, sql_type in missing:
+            conn.execute(
+                f"ALTER TABLE reference_measurement_sets ADD COLUMN {name} {sql_type}"
+            )
+        for statement in _MEASUREMENT_CONTENT_GUARD_TRIGGERS_DDL:
+            conn.execute(statement)
+        if owns_transaction:
+            conn.commit()
+    except Exception:
+        if owns_transaction:
+            conn.rollback()
+        raise
+
 
 _REFERENCE_MEASUREMENT_SET_PREFERENCES_DDL = """
 CREATE TABLE IF NOT EXISTS reference_measurement_set_preferences (
@@ -752,7 +894,12 @@ def init_reference_library_schema(conn: sqlite3.Connection) -> None:
     Idempotent: safe to call on every application startup and after
     connecting to an existing (possibly legacy-only) reference database.
     The legacy ``reference_values`` table is not touched here.
+
+    Registers the measurement content contract on ``conn`` first, so every
+    connection initialized here may write ``reference_measurement_sets``
+    (see ``register_measurement_contract``).
     """
+    register_measurement_contract(conn)
     conn.execute("PRAGMA foreign_keys = ON")
     cursor = conn.cursor()
     cursor.execute(_REFERENCE_WORKS_DDL)
@@ -779,6 +926,7 @@ def init_reference_library_schema(conn: sqlite3.Connection) -> None:
         cursor.execute(statement)
     conn.commit()
     _ensure_restrict_foreign_keys(conn)
+    _ensure_measurement_content_extension(conn)
     cursor.execute(_REFERENCE_CLOUD_SYNC_STATE_DDL)
     cursor.execute(_REFERENCE_CLOUD_TOMBSTONES_DDL)
     cursor.execute(_REFERENCE_CLOUD_PULL_CURSORS_DDL)

@@ -12,6 +12,7 @@ from database.reference_data_paths import BUNDLED_REFERENCE_DATABASE_PATH
 from database.reference_library_schema import (
     init_observation_reference_uses_schema,
     init_reference_library_schema,
+    register_measurement_contract,
 )
 
 _app_dir = app_data_dir()
@@ -396,6 +397,7 @@ def get_reference_connection():
     conn = sqlite3.connect(ref_path, timeout=10)
     conn.execute("PRAGMA busy_timeout = 5000")
     conn.execute("PRAGMA journal_mode = WAL")
+    register_measurement_contract(conn)
     return conn
 
 def _copy_reference_seed_rows(source_path: Path, target_path: Path) -> bool:

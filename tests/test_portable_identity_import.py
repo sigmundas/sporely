@@ -7,6 +7,7 @@ from pathlib import Path
 import pytest
 
 from database import schema
+from database.reference_library_schema import register_measurement_contract
 from utils.archive.portable_import import (
     PortableIdentityConflictError,
     PortableImportError,
@@ -31,6 +32,7 @@ def _initialize_database_pair(monkeypatch, root: Path) -> tuple[Path, Path]:
 
 
 def _insert_reference_graph(connection: sqlite3.Connection, *, legacy_id: int) -> None:
+    register_measurement_contract(connection)
     connection.execute("DELETE FROM reference_values")
     connection.execute(
         "INSERT INTO reference_values "
@@ -488,6 +490,7 @@ def test_portable_identity_import_preserves_external_supersedes_identity(
     source_main, source_reference = _initialize_database_pair(monkeypatch, tmp_path / "source")
     _insert_source_graph(source_main, source_reference)
     with sqlite3.connect(source_reference) as connection:
+        register_measurement_contract(connection)
         connection.execute(
             "UPDATE reference_measurement_sets SET supersedes_id='prior-set' "
             "WHERE id='set-a'"

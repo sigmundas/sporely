@@ -5,6 +5,7 @@ import sqlite3
 import pytest
 
 from database import schema
+from database.reference_library_schema import register_measurement_contract
 from database.curated_reference_forks import copy_curated_bundle_to_personal_library, normalize_curated_bundle
 from tests.test_curated_reference_forks import bundle_row
 from utils.curated_reference_sync import pull_curated_reference_forks, push_curated_reference_forks
@@ -70,6 +71,7 @@ def test_provenance_sync_a_cloud_b_round_trip(isolated, monkeypatch, tmp_path):
     bundle = normalize_curated_bundle(bundle_row())
     copied = copy_curated_bundle_to_personal_library(bundle)
     with sqlite3.connect(second_reference) as connection:
+        register_measurement_contract(connection)
         connection.execute("DELETE FROM curated_reference_fork_cloud_sync_state")
         connection.execute("DELETE FROM curated_reference_forks")
         connection.execute("UPDATE reference_works SET id=? WHERE id=?", (fork.reference_work_id, copied.reference_work_id))
