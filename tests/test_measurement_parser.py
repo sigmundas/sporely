@@ -337,8 +337,13 @@ def test_named_statistics_do_not_contaminate_width():
     r = parse_measurement_string("8.4–13.0 x 5.1–7.2 Qav = 1.5 n = 30")
     assert r.width == DimensionRange(None, 5.1, None, 7.2, None)
     assert r.q_mean == 1.5 and r.n == 30
+    # A trailing stray token makes the whole named expression malformed; it is
+    # rejected and removed as a unit, so width is still intact.
     r = parse_measurement_string("8.4–13.0 × 5.1–7.2, Qm = 1.5–1.7 x")
     assert r.width == DimensionRange(None, 5.1, None, 7.2, None)
+    assert "q" not in r.metric_details and r.q_mean is None
+    assert "Qm: could not parse '1.5-1.7 x'." in r.warnings
+    r = parse_measurement_string("8.4–13.0 × 5.1–7.2, Qm = 1.5–1.7")
     assert r.metric_details["q"].mean_interval == IntervalStatistic(1.5, 1.7, "reported_range")
 
 
@@ -850,7 +855,15 @@ def test_headings_without_a_label_column_and_unknown_first_headings_align_by_pos
     assert r.width == DimensionRange(None, 5.0, None, 7.0, None) and r.width_mean == 6.0
 
 
-@pytest.mark.parametrize("value", ["1.5e2", "1.5%", "1.5x", "1.5.2", "12abc"])
+@pytest.mark.parametrize(
+    "value",
+    [
+        "1.5e2", "1.5%", "1.5x", "1.5.2", "12abc",
+        # Sparring round 2: no fallback to a shorter scalar or interval prefix.
+        "1.5-2e2", "1.5-", "1.5-2.5%", "1.5±0.2", "1.5/2", "1.5 approx", "1.5-1.7 x",
+        "(1.3) 1.4-1.9 (2.1)x", "1.5 1.7", "-1.5",
+    ],
+)
 def test_malformed_named_values_are_rejected_whole_and_do_not_leak_into_width(value):
     r = parse_measurement_string(f"8-12 x 5-7; Qav = {value}")
     assert r.q_mean is None and "q" not in r.metric_details
