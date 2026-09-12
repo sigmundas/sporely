@@ -12,8 +12,33 @@ froze was reopened.
   `.sparring/stages/stage-reported-statistics-local-schema-barrier/`).
 - Branch: `feature/reported-statistics-contract` (linked worktree
   `sporely-py-reported-statistics`). Base SHA: `829be09b`.
-- Candidate SHA: the commit that carries this section (also recorded in the
+- First candidate `713c6b4b` received a sparring SEND_BACK (migration
+  atomicity gap, below). The correction is a new commit on top; the current
+  candidate SHA is the commit that carries this section (also recorded in the
   stage notes once known).
+
+Sparring round 1 (SEND_BACK on `713c6b4b`) and response: fresh table
+creation (DDL with the extension columns) and the CASCADE-era rebuild both
+committed the extended table before the guard triggers existed, because
+Python's `sqlite3` autocommits DDL and the rebuild commits its own
+transaction; an interruption there left committed columns without a barrier.
+Response: (1) `init_reference_library_schema` now opens an explicit
+transaction (unless the caller holds one) around the core table DDL, the
+extension step and the indexes, and rolls it back on any failure; the
+extension step runs immediately after the sets DDL inside that transaction.
+(2) `_rebuild_table_with_restrict_fks` gained `post_ddl` statements executed
+on the rebuilt table before its commit; `_ensure_restrict_foreign_keys`
+passes the guard-trigger DDL for `reference_measurement_sets`, so a rebuild
+never commits without the guards. (3) New tests inject a failure at every
+statement position of initialization (fail-on-Nth-statement connection
+factory) for empty, legacy and CASCADE-era start states, and after each
+failure assert through an unregistered connection that extension columns are
+never present without both triggers and a rejected UPDATE; then resume and
+assert convergence to the steady state. Plus a direct rebuild test with a
+failing `post_ddl` that rolls the whole rebuild back. Observed while doing
+this, pre-existing and left as is: a CASCADE-era rebuild drops the two
+`reference_measurement_sets` indexes with the old table and the same run does
+not recreate them; the next start does.
 
 Schema (production owner `database/reference_library_schema.py`):
 
@@ -23,14 +48,15 @@ Schema (production owner `database/reference_library_schema.py`):
   column order.
 - `_ensure_measurement_content_extension(conn)` adds any missing extension
   column with `ALTER TABLE … ADD COLUMN` and creates the two guard triggers
-  (`IF NOT EXISTS`) in **one transaction** (unless the caller already holds
-  one), so no committed state has the columns without the barrier. It runs in
-  `init_reference_library_schema` **after** `_ensure_restrict_foreign_keys`,
-  because the CASCADE→RESTRICT rebuild drops triggers. A no-op when both
-  columns and triggers exist: repeated initialization leaves `sqlite_master`,
-  `PRAGMA data_version` and every row unchanged. Nothing reads, validates or
-  rewrites `measurement_details_json`; legacy rows get NULL in all three
-  fields and no invented semantics.
+  (`IF NOT EXISTS`); it runs inside the explicit transaction that
+  `init_reference_library_schema` opens around table creation, so no
+  committed state has the columns without the barrier. The CASCADE→RESTRICT
+  rebuild, which drops triggers, recreates the guards inside its own
+  transaction (`post_ddl`). A no-op when both columns and triggers exist:
+  repeated initialization leaves `sqlite_master`, `PRAGMA data_version` and
+  every row unchanged. Nothing reads, validates or rewrites
+  `measurement_details_json`; legacy rows get NULL in all three fields and no
+  invented semantics.
 
 Barrier mechanism (exactly contract §6 / spec §14): triggers
 `reference_measurement_content_guard_update` (BEFORE UPDATE, WHEN old or new
@@ -67,8 +93,8 @@ the same transaction). Allowed — SELECT, DELETE, writes to every other table,
 the older binary's startup statements (table/index/trigger `IF NOT EXISTS`,
 sync-state backfill).
 
-Tests: `tests/test_reference_measurement_content_schema.py` (new, 39 cases)
-covers brief items 1–16: populated legacy upgrade (RESTRICT- and CASCADE-era
+Tests: `tests/test_reference_measurement_content_schema.py` (new, 43 cases)
+covers brief items 1–16 and the interruption invariant: populated legacy upgrade (RESTRICT- and CASCADE-era
 DDL built from the pre-feature table definition), fresh library through
 `init_reference_database`, exact `PRAGMA table_info` for the three columns,
 identical shape fresh vs upgraded, legacy rows NULL/not enhanced with every
@@ -88,13 +114,23 @@ that seed measurement rows through raw `sqlite3.connect` now call
 `register_measurement_contract` at those seeding sites (the contract's
 "tests and tools writing rows directly" row); no assertion changed.
 
-Verification (project venv): new module 39 passed; spike + fixtures + content
-modules 129 passed; reference-library / curated / legacy / reference-use /
-portable / backup / db-share / archive regressions 856 passed with the one
+Verification (project venv, after the correction): new module 43 passed; with
+spike + fixtures + content modules 172 passed; reference-library / curated /
+legacy / reference-use / portable / backup / db-share / archive regressions
+860 passed with the one
 pre-existing `test_archive_inventory` failure (table-set assertion about
 `observation_reference_use_cloud_*` tables, PROJECT.md item 4, unrelated to
 the new columns); `py_compile` on all 12 touched files ok; `git diff --check`
-clean. Full-suite counts are in the stage notes.
+clean. Full suite (`--continue-on-collection-errors`) on the corrected
+code: **31 failed, 4178 passed, 10 skipped, 55 errors, exit 1** (first
+candidate 31 / 4174 / 10 / 55; Stage 2 31 / 4135 / 10 / 55). The failing and
+erroring module set is exactly PROJECT.md items 1–4 (`test_w2d_reconciliation`
+19 E + 1 F, `test_image_gallery_widget` 17 E + 1 F, `test_supplement_loader`
+12 F, `test_observations_tab_gallery_move` 12 E,
+`test_observation_geography_sync` 9 F, `test_live_lab_raw_controls` 6 E,
+`test_render_review_screenshots` 4 F, `test_taxon_lookup`,
+`test_sample_source_ui_presence`, `test_archive_inventory`, `test_ai_id_parity`
+1 F each, `test_cloud_media_recovery` 1 collection E); nothing else fails.
 
 Deferred to Stage 3B by design: `MeasurementSet` / `_COLUMNS`, payload and key
 registries (contract §4), `_validate` → `validate_measurement_content`,
