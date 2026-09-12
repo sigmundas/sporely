@@ -596,12 +596,13 @@ def _validate_supported_details(details: MeasurementDetails, content: Measuremen
 
 
 def _validate_columns(content: MeasurementContent) -> None:
-    """Descriptor-independent numeric rules: finite non-boolean numbers and
-    ordered pairs. Applied in both modes to every details state."""
+    """Descriptor-independent numeric rules: finite, non-boolean, positive
+    dimension and Q values (contract section 1) and ordered pairs. Applied in
+    both modes to every details state."""
     for name in _NUMERIC_COLUMNS:
         value = getattr(content, name)
         if value is not None:
-            _require_number(value, name)
+            _require_positive(value, name)
     for metric in METRICS:
         for lo_name, hi_name in (OUTER_PAIR[metric], CORE_PAIR[metric]):
             lo = getattr(content, lo_name)

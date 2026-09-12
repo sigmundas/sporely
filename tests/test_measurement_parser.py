@@ -786,3 +786,84 @@ def test_to_content_shape():
     assert isinstance(content.details, MeasurementDetails)
     assert set(content.details.metrics) == {"length", "width", "q"}
     assert content.character is None and content.data_kind is None, "the caller owns row identity"
+
+
+# --- Sparring round 1 regressions ------------------------------------------------
+
+
+def test_unknown_word_in_space_separated_heading_keeps_its_column_position():
+    raw = "Spore Range variance mean median S.D.\nLength 8-12 0.1 10 9 0.4\nWidth 5-7 0.2 6 5.5 0.3"
+    r = parse_measurement_string(raw)
+    assert any("Unrecognized text in table heading: 'variance'" in w for w in r.warnings)
+    assert r.length == DimensionRange(None, 8.0, None, 12.0, None)
+    assert r.length_mean == 10.0, "mean is bound to its own column, not to the variance cell"
+    assert r.metric_details["length"].median == ScalarStatistic(9.0)
+    assert r.metric_details["length"].sd == ScalarStatistic(0.4)
+    assert r.width_mean == 6.0 and r.metric_details["width"].sd == ScalarStatistic(0.3)
+    _valid_content(r)
+
+
+def test_row_count_mismatch_under_ambiguous_heading_binds_nothing():
+    raw = "Spore Range variance mean median S.D.\nLength 8-12 10 9 0.4\nWidth 5-7 0.2 6 5.5 0.3"
+    r = parse_measurement_string(raw)
+    assert r.length.is_empty() and r.length_mean is None and "length" not in r.metric_details
+    assert any("Length: 4 value(s) for 5 heading column(s)" in w and "row not read" in w for w in r.warnings)
+    assert r.width_mean == 6.0
+
+
+def test_partial_heading_match_is_unknown_not_a_statistic():
+    raw = "Spore | range | mean error | mean\nLength | 8-12 | 0.5 | 10\nWidth | 5-7 | 0.2 | 6"
+    r = parse_measurement_string(raw)
+    assert any("Unknown table column heading 'mean error'" in w for w in r.warnings)
+    assert not any("Duplicate" in w for w in r.warnings)
+    assert r.length_mean == 10.0 and r.width_mean == 6.0
+    r = parse_measurement_string("Spore\trange\tmeaningful\nLength\t8-12\t9\nWidth\t5-7\t6")
+    assert any("Unknown table column heading 'meaningful'" in w for w in r.warnings)
+    assert r.length_mean is None and r.width_mean is None
+
+
+def test_short_space_separated_row_binds_nothing_but_delimited_short_row_binds_positionally():
+    raw = "Spore Range mean median S.D.\nLength 8-12    9 0.4\nWidth 5-7 6 5.5 0.3"
+    r = parse_measurement_string(raw)
+    assert r.length.is_empty() and r.length_mean is None and "length" not in r.metric_details
+    assert any("Length: 3 value(s) for 4 heading column(s) with no cell boundaries" in w for w in r.warnings)
+    assert r.width == DimensionRange(None, 5.0, None, 7.0, None)
+    assert r.width_mean == 6.0 and r.metric_details["width"].median == ScalarStatistic(5.5)
+    # Long rows are equally ambiguous without boundaries.
+    r = parse_measurement_string("Spore Range mean\nLength 8-12 9 0.4\nWidth 5-7 6")
+    assert r.length.is_empty() and any("Length: 3 value(s) for 2 heading" in w for w in r.warnings)
+    assert r.width_mean == 6.0
+    # With tab boundaries the same short row binds range and mean only.
+    r = parse_measurement_string("Spore\tRange\tmean\tmedian\tS.D.\nLength\t8-12\t9\nWidth\t5-7\t6\t5.5\t0.3")
+    assert r.length == DimensionRange(None, 8.0, None, 12.0, None) and r.length_mean == 9.0
+    assert r.metric_details["length"].median is None and r.metric_details["length"].sd is None
+    assert any("Length: no cell for the 'median' column" in w for w in r.warnings)
+
+
+def test_headings_without_a_label_column_and_unknown_first_headings_align_by_position():
+    r = parse_measurement_string("Range | mean\nLength | 8-12 | 9\nWidth | 5-7 | 6")
+    assert r.length == DimensionRange(None, 8.0, None, 12.0, None) and r.length_mean == 9.0
+    assert r.width_mean == 6.0
+    r = parse_measurement_string("| foo | range | mean |\n| 1 | 8-12 | 9 |\n| 2 | 5-7 | 6 |")
+    assert any("Unknown table column heading 'foo'" in w for w in r.warnings)
+    assert r.length == DimensionRange(None, 8.0, None, 12.0, None) and r.length_mean == 9.0
+    assert r.width == DimensionRange(None, 5.0, None, 7.0, None) and r.width_mean == 6.0
+
+
+@pytest.mark.parametrize("value", ["1.5e2", "1.5%", "1.5x", "1.5.2", "12abc"])
+def test_malformed_named_values_are_rejected_whole_and_do_not_leak_into_width(value):
+    r = parse_measurement_string(f"8-12 x 5-7; Qav = {value}")
+    assert r.q_mean is None and "q" not in r.metric_details
+    assert any(w == f"Qav: could not parse '{value}'." for w in r.warnings), r.warnings
+    assert r.length == DimensionRange(None, 8.0, None, 12.0, None)
+    assert r.width == DimensionRange(None, 5.0, None, 7.0, None)
+    assert not any("Width: could not parse" in w for w in r.warnings)
+
+
+def test_glued_heading_with_other_percentiles_is_still_recognized():
+    raw = "Spore(min) 2.5%-97.5% (max)meanmedianS.D.\n" + _table(None, HEBELOMA_ROWS)
+    r = parse_measurement_string(raw)
+    _assert_hebeloma_numbers(r)
+    assert r.metric_details["length"].core_range == RangeDescriptor("percentile_interval", (2.5, 97.5))
+    assert r.metric_details["length"].mean_interval == IntervalStatistic(9.2, 11.7, "reported_range")
+    assert not any("Unrecognized" in w for w in r.warnings)

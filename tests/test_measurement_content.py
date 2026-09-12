@@ -305,16 +305,35 @@ def test_pair_ordering_is_enforced_without_descriptors(legacy_row):
     validate_measurement_content(replace(legacy, q_core_min=1.9, q_core_max=1.9), mode="edit")
 
 
-@pytest.mark.parametrize("bad", [float("nan"), float("inf"), True, "10", -1.0])
-def test_column_numbers_must_be_finite_non_boolean_numbers(legacy_row, bad):
+@pytest.mark.parametrize("bad", [float("nan"), float("inf"), True, "10", -1.0, 0, 0.0])
+@pytest.mark.parametrize("mode", ["edit", "authoritative"])
+def test_column_numbers_must_be_finite_positive_non_boolean_numbers(legacy_row, bad, mode):
+    """Contract section 1: dimensions and Q values are finite and positive.
+    Positivity does not depend on a descriptor being present."""
     legacy = content_from_row(legacy_row)
-    if bad == -1.0:
-        # Negative numbers are finite numbers; without a descriptor the
-        # contract only asks for ordering, so this one is accepted here.
-        validate_measurement_content(replace(legacy, length_min=bad), mode="edit")
-        return
-    with pytest.raises(MeasurementContentError):
-        validate_measurement_content(replace(legacy, length_min=bad), mode="edit")
+    with pytest.raises(MeasurementContentError, match="length_min"):
+        validate_measurement_content(replace(legacy, length_min=bad), mode=mode)
+
+
+@pytest.mark.parametrize(
+    "columns",
+    [
+        {"length_mean": -2.0},
+        {"q_mean": 0},
+        {"width_mean": float("nan")},
+        {"length_min": -3.0, "length_max": -1.0},  # ordered, untagged, still negative
+        {"q_core_min": 0.0, "q_core_max": 2.0},
+    ],
+    ids=["negative-scalar-mean", "zero-q-mean", "nan-width-mean", "negative-untagged-pair", "zero-core-bound"],
+)
+def test_nonpositive_scalar_means_and_untagged_bounds_are_rejected(legacy_row, columns):
+    legacy = content_from_row(legacy_row)
+    for mode in ("edit", "authoritative"):
+        with pytest.raises(MeasurementContentError):
+            validate_measurement_content(replace(legacy, **columns), mode=mode)
+    # Positive values in the same slots are fine.
+    positive = {name: 1.5 if name.endswith("min") or name.endswith("mean") else 2.5 for name in columns}
+    validate_measurement_content(replace(legacy, **positive), mode="edit")
 
 
 def test_equal_endpoint_intervals_are_preserved_as_intervals():
