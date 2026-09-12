@@ -1,6 +1,142 @@
 # Reported statistics and explicit range semantics
 
-## Current stage / reviewer handoff — 2026-09-11
+## Current stage / reviewer handoff — 2026-09-12 (Stage 2)
+
+Status: **Stage 2 candidate ready for independent review** (typed contract
+module and parser specification; pure Python and tests only). No schema,
+cloud, sync, snapshot, UI or persistence change. Stage 1 remains accepted at
+`a0bdcd3737370b307717a71e6ff2579798604ee4`; nothing it froze was reopened.
+
+- Stage id: `stage-reported-statistics-typed-parser` (brief in
+  `.sparring/stages/stage-reported-statistics-typed-parser/`).
+- Branch: `feature/reported-statistics-contract` (linked worktree
+  `sporely-py-reported-statistics`). Base SHA: `a0bdcd37`.
+- Candidate SHA: recorded in the stage notes and the commit that carries this
+  section (the section is committed together with the code).
+
+Deliverables:
+
+- `references/measurement_content.py` (new): the shared contract module with
+  exactly the public surface of contract §3 — constants (`METRICS`,
+  `EXTENSION_FIELDS`, `SCIENTIFIC_CONTENT_FIELDS`, the three kind sets,
+  `MEASUREMENT_DETAILS_MAX_BYTES`, `SUPPORTED_DETAILS_VERSIONS`),
+  `MeasurementContentError`, the frozen dataclasses (`RangeDescriptor`,
+  `IntervalStatistic`, `ScalarStatistic`, `MetricDetails`,
+  `MeasurementDetails`, `UnsupportedMeasurementDetails`, `MeasurementContent`),
+  the codec (`decode_measurement_details`, `encode_measurement_details`,
+  `measurement_details_equal`, plus `details_to_object` for the decoded
+  object snapshot v2 will embed), row helpers (`content_from_row`,
+  `content_row_updates`, `is_enhanced_row`, `acknowledgement_state`,
+  `acknowledges_extension`), `validate_measurement_content(content, *, mode)`
+  and the edit operations `clear_pair`, `clear_statistic`, `set_scalar_mean`,
+  `set_mean_interval`, `swap_length_width`. `MeasurementContent` holds the 26
+  group fields with `measurement_details_json` represented decoded as
+  `details`. Decode raises on malformed JSON or wrong *shape*; semantic rules
+  (enums, ordering, signs, emptiness, the 4096-byte limit) live in validate,
+  so hand-built dataclasses are checked the same way as decoded text.
+  Validation modes follow §3: `edit` rejects unsupported versions,
+  `authoritative` accepts them opaquely and still enforces column type sanity,
+  pair ordering and size. Edit operations are pure transitions that never
+  validate the whole row; all of them refuse `UnsupportedMeasurementDetails`.
+- `references/measurement_parser.py` (extended, same public names): HTML
+  entity decoding and `<br>` normalisation before any splitting (`<br>` is a
+  row break, but a soft space inside a Markdown row); table recognition on the
+  structure-preserving text before whitespace folding (`_parse_table`,
+  `_classify_line`, `_parse_header`, `_apply_row`); heading-driven column
+  mapping for tab, pipe and space delimited rows with per-column binding (a
+  missing or malformed cell never shifts a neighbour; unknown, duplicate,
+  ambiguous headings and malformed/short/extra cells each warn by name); the
+  glued `Spore(min) 5%-95% (max)meanmedianS.D.` heading as an explicit form
+  (`_GLUED_HEBELOMA_HEADING_RE`); unlabelled rows under a heading assumed
+  L/W/Q only when there are two or three, with a warning; headerless labelled
+  rows read with the documented layout (range, or range/mean/median/S.D.) and
+  core tagged `unspecified`; `Qav`/`Qm` aliases (scalar → `q_mean`, interval →
+  Q `mean_interval`), ordinary `Q =` ranges independent, repeated named values
+  with different numbers warn and keep the first, a single Q value together
+  with Qm warns and keeps both; named values are matched as numeric tokens so
+  they cannot swallow a following dimension. New result fields
+  `length_mean`, `width_mean`, `metric_details: dict[str, MetricDetails]` and
+  `MeasurementParseResult.to_content()`; `swap_length_width` moves numbers,
+  scalar means and details together. Range descriptors emitted by the parser:
+  `percentile_interval` only from an explicit `N%-M%` heading, otherwise
+  `unspecified` for every inner pair; `reported_extremes` only when both
+  parenthesised extremes are present. The legacy `p50` centre (single value or
+  `a-b-c` form) has no typed home and stays a legacy-editor value; the
+  contract carries no untyped scalar and the plan forbids inferring a mean.
+- Tests: `tests/test_measurement_content.py` (new; 36 test functions, 67
+  collected cases incl. 22 mutation ids: contract §12 cases 1, 2, 3 and 18 at
+  module level, spec-block linkage, codec, both modes, every edit operation)
+  and Stage 2 cases appended to `tests/test_measurement_parser.py` (75
+  collected cases, 48 new; the existing 27 unchanged). The Stage 1 fixture
+  `row_enhanced.json` is
+  reproduced end to end: parsing its `raw_text` yields its 15 numeric columns
+  and encodes to its stored `measurement_details_json` byte for byte.
+
+Existing consumers: `DimensionRange`, `q_mean`, `n`, `to_record_dict()` and
+the warning strings the entry editor filters are unchanged; both editors
+(`ui/reference_entry_editor.py::_set_parsed_result`,
+`ui/reference_library_manager_dialog.py::_on_parse_clicked`) read only those
+and were not modified. Intervals, medians and S.D. reach neither `p50` nor
+`q_mean`; only a scalar *mean* cell or scalar Qm/Qav fills a scalar mean.
+
+Verification (project venv; commands per `.sparring/PROJECT.md`): new/extended
+modules `test_measurement_content` + `test_measurement_parser` 142 passed;
+with the Stage 1 fixture and barrier-spike modules, both editor test modules
+and `test_reference_library_{schema,repository}` 294 passed;
+reference-library regressions
+(`test_reference_library_{schema,repository,snapshot,pull_reconciliation,bundle_roundtrip,manager_dialog}`,
+`test_curated_reference_forks`, `test_legacy_reference_migration`,
+`test_reference_add_dialog_normalized`) 181 passed; `py_compile` on the four
+touched files ok; `git diff --check` clean. Full suite
+(`--continue-on-collection-errors`, as for Stage 1): **31 failed, 4100 passed,
+10 skipped, 55 errors, exit 1** (2 min 30 s) against the Stage 1 report of
+31 failed / 3983 passed / 10 skipped / 55 errors. The failing and erroring
+module set is identical to PROJECT.md items 1–4 (`test_w2d_reconciliation`
+19 E + 1 F, `test_image_gallery_widget` 17 E + 1 F, `test_supplement_loader`
+12 F, `test_observations_tab_gallery_move` 12 E,
+`test_observation_geography_sync` 9 F, `test_live_lab_raw_controls` 6 E,
+`test_render_review_screenshots` 4 F, `test_taxon_lookup`,
+`test_sample_source_ui_presence`, `test_archive_inventory`, `test_ai_id_parity`
+1 F each, `test_cloud_media_recovery` 1 collection E). No Supabase
+connection, no schema or cloud operation.
+
+Decisions the reviewer should challenge (recorded so they are not silent):
+
+1. The parser tags the core pair `unspecified` for every inner range without
+   a percentile heading, including the compact `A-B x C-D` form. This is the
+   plan's "marked with unspecified meanings" and contract §1's "statement by
+   the parser"; the alternative (no tag) would make parser output
+   indistinguishable from never-examined legacy rows.
+2. The parser tags `reported_extremes` when both parenthesised extremes are
+   present, in tables and compact strings alike. Parentheses are the notation
+   the module docstring has always read as extreme observations; a one-sided
+   extreme leaves the pair untagged because rule 1 of §2 needs a complete pair.
+3. A scalar Q *mean* cell in a headed table fills `q_mean`, exactly like
+   `Qm = x` already does. Separating generic Q means from the Parmasto widget
+   is Stage 4 UI work (plan: *Parser and UI behavior*).
+4. `decode_measurement_details` raises on shape errors (non-object, unknown
+   keys, wrong key sets) while `validate_measurement_content` owns semantics.
+   Both raise `MeasurementContentError`.
+
+Not done, by design (Stage 3 or later): no column, migration, trigger,
+`register_measurement_contract`, payload-registry, reconciliation, snapshot,
+importer, cloud or UI change; `MeasurementSetRepository._validate` does not
+yet call `validate_measurement_content`; nothing consumes `to_content()`.
+`tests/test_measurement_content_contract_fixtures.py` keeps its restated
+helpers (import decision and snapshot projection have no production owner
+until Stage 3); the new module tests the real code against the same fixtures.
+
+Repository hazard to note: the canonical checkout
+(`sporely-py`, branch `feature/reference-save-and-plot`) still carries
+*uncommitted*, human-gated parser work (`SummaryStatistics`, `_parse_table`,
+`range_semantics`) recorded in `2026-09-09-reference-measurement-table-parser.md`.
+This stage supersedes that scope on this branch (same inputs, typed output);
+the two must not both land. That local work was read for consistency and not
+touched.
+
+Subagents: none used.
+
+## Stage 1 handoff — 2026-09-11 (accepted at `a0bdcd37`)
 
 Status: **Stage 1 candidate ready for independent review** (contract frozen,
 fixtures and barrier spike committed green). No production code, schema, UI or
