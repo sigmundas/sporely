@@ -422,6 +422,21 @@ def test_unsupported_future_details_are_preserved_and_read_only(libs):
         MeasurementSetRepository.create_revision(row["id"], {"notes": "successor"})
     with pytest.raises(ReferenceValidationError, match="unsupported measurement details version"):
         MeasurementSetRepository.create(_set(ENHANCED, id="", measurement_details_json=FUTURE_TEXT))
+    # Overriding the details themselves must not downgrade the stored row:
+    # neither clearing them (NULL) nor replacing them with valid v1 content,
+    # through update or through a successor.
+    downgrades = (
+        {"measurement_details_json": None},
+        {"measurement_details_json": None, "q_core_min": None, "q_core_max": None},
+        {"measurement_details_json": json.dumps(HEBELOMA)},
+    )
+    for override in downgrades:
+        with pytest.raises(ReferenceValidationError, match="unsupported measurement details version"):
+            MeasurementSetRepository.update(row["id"], override)
+        with pytest.raises(ReferenceValidationError, match="unsupported measurement details version"):
+            MeasurementSetRepository.update(row["id"], override, bump_revision=False)
+        with pytest.raises(ReferenceValidationError, match="unsupported measurement details version"):
+            MeasurementSetRepository.create_revision(row["id"], override)
     assert _raw_row(libs[1], row["id"]) == before
     conn = _aware(libs[1])
     assert conn.execute(
@@ -440,6 +455,14 @@ def test_malformed_stored_details_are_reported_not_reinterpreted(libs):
         fetched.measurement_content()
     with pytest.raises(ReferenceValidationError, match="not valid JSON"):
         MeasurementSetRepository.update(row["id"], {"notes": "x"})
+    # Nor may the broken text be cleared or replaced from the repository.
+    before = _raw_row(libs[1], row["id"])
+    for override in ({"measurement_details_json": None}, {"measurement_details_json": json.dumps(HEBELOMA)}):
+        with pytest.raises(ReferenceValidationError, match="not valid JSON"):
+            MeasurementSetRepository.update(row["id"], override)
+        with pytest.raises(ReferenceValidationError, match="not valid JSON"):
+            MeasurementSetRepository.create_revision(row["id"], override)
+    assert _raw_row(libs[1], row["id"]) == before
 
 
 # --- 16–18: the Stage 3A barrier and the repository ---------------------------

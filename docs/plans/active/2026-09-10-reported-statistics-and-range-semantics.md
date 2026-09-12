@@ -58,6 +58,14 @@ repository refuses `update`, `create_revision` and `create` of such a row
 inspect-only until the binary is upgraded, and no successor is created.
 Malformed stored text (`{broken`) loads as a row, `measurement_content()`
 raises, and any update is rejected; nothing is reinterpreted.
+Correction after sparring round 1 (candidate `9d66d6b3`): validating only the
+merged candidate let an override of `measurement_details_json` (NULL, or
+valid v1 text) through `update` or `create_revision` downgrade a stored
+future-version row. `_require_editable_source(existing)` now runs on the
+stored row before any override is applied in both paths; the future-version
+and malformed-row tests assert that NULL, NULL-plus-cleared-Q-core and v1
+replacements are rejected through `update` (with and without revision bump)
+and `create_revision`, leaving the raw row byte-identical and no successor.
 
 Import policy (contract §8) is now owned by `references/measurement_content.py`
 (`IMPORT_DECISIONS`, `import_decision`, `scientific_content_equal`; moved out
@@ -144,6 +152,11 @@ are the new module and the failing set is exactly the PROJECT.md baseline
 (`qapp` fixture errors, taxonomy release-dir errors/failures,
 `test_cloud_media_recovery` collection error, and the listed single
 failures). No reference-library, archive, import or sync module regressed.
+After the round-1 correction: persistence module 47 passed; the
+reference-library / curated / legacy / reference-use / sync / editor /
+fixture / spike / content / schema set 519 passed; `py_compile` and
+`git diff --check` clean. The correction touches only `update` and
+`create_revision` guards plus their tests, so the full suite was not rerun.
 
 Deferred: **Stage 3C** — cloud columns/RPC allowlist, payload and key
 registries (§4), remote acknowledgement, §5 group rule in `_reconcile_live`

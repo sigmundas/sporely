@@ -40,6 +40,7 @@ from database.schema import get_connection, get_reference_connection
 from references.measurement_content import (
     MeasurementContent,
     MeasurementContentError,
+    UnsupportedMeasurementDetails,
     content_from_row,
     decode_measurement_details,
     encode_measurement_details,
@@ -953,6 +954,28 @@ class MeasurementSetRepository:
             ) from exc
         return canonical
 
+    @staticmethod
+    def _require_editable_source(existing: MeasurementSet) -> None:
+        """Reject edits and successors of a stored row whose details cannot
+        be edited by this binary (contract section 3: inspect-only).
+
+        Validating only the merged candidate would let an override of
+        ``measurement_details_json`` (NULL or a supported version) silently
+        downgrade an unsupported future version. Malformed stored text is
+        likewise never rewritten from here.
+        """
+        try:
+            details = existing.measurement_content().details
+        except MeasurementContentError as exc:
+            raise ReferenceValidationError(
+                f"measurement_set content invalid: {exc}"
+            ) from exc
+        if isinstance(details, UnsupportedMeasurementDetails):
+            raise ReferenceValidationError(
+                "measurement_set content invalid: unsupported measurement "
+                "details version (row is inspect-only until upgraded)"
+            )
+
     @classmethod
     def create(cls, ms: MeasurementSet) -> MeasurementSet:
         ms.measurement_details_json = cls._validate(ms)
@@ -1026,6 +1049,7 @@ class MeasurementSetRepository:
         existing = cls.get(set_id)
         if existing is None:
             raise ReferenceIntegrityError(f"measurement_set {set_id} not found")
+        cls._require_editable_source(existing)
 
         allowed = {name for name in cls._COLUMNS if name != "id"}
         for name in list(updates.keys()):
@@ -1073,6 +1097,7 @@ class MeasurementSetRepository:
         existing = cls.get(set_id)
         if existing is None:
             raise ReferenceIntegrityError(f"measurement_set {set_id} not found")
+        cls._require_editable_source(existing)
         base = asdict(existing)
         base.pop("id", None)
         base.pop("created_at", None)
