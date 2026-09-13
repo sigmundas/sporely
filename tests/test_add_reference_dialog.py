@@ -202,18 +202,73 @@ def test_changing_taxon_target_never_touches_exclude_observation_id():
     assert dialog._exclude_observation_id == before
 
 
-def test_derived_minimum_size_fits_both_tab_bars():
-    """The dialog's minimum width must be at least the source tab bar's own
+def test_derived_default_size_fits_both_tab_bars():
+    """The dialog's DEFAULT width must be at least the source tab bar's own
     size hint plus the preview pane's sub-tab bar's own size hint -- the
     exact condition that avoids the QTabWidget scroll-arrow fallback (see
     stage-4b-fix Part 2.2). No hardcoded pixel width is asserted here; the
     check is relative to the widgets' own hints.
+
+    Asserted on the opening size rather than ``minimumSize()``: the derived
+    size is what the dialog opens at, not a floor it may never go below
+    (see ``test_dialog_can_be_resized_below_its_default_size``).
     """
     dialog = _make_dialog()
-    min_size = dialog.minimumSize()
+    default_size = dialog.size()
     source_tabbar_w = dialog.tabs.tabBar().sizeHint().width()
     preview_tabbar_w = dialog.preview_pane.review_tabs.tabBar().sizeHint().width()
-    assert min_size.width() >= source_tabbar_w + preview_tabbar_w
+    assert default_size.width() >= source_tabbar_w + preview_tabbar_w
+
+
+def test_dialog_can_be_resized_below_its_default_size():
+    """The picker must stay resizable. The derived "everything fits" size was
+    previously also applied as ``setMinimumSize()``, which on a 768px-tall
+    laptop screen exceeded the usable desktop height: the dialog could be
+    grown but never shrunk. Qt silently clamps a ``resize()`` below a
+    widget's minimum, so shrinking it and reading the size back is what
+    actually proves the floor is gone.
+    """
+    dialog = _make_dialog()
+    default_size = dialog.size()
+    # No hard floor may be pinned on the dialog at all: the derived size is
+    # applied with resize(), never setMinimumSize().
+    assert dialog.minimumSize().width() == 0
+    assert dialog.minimumSize().height() == 0
+
+    # Shrink to the layout's own declared minimum rather than an invented
+    # pixel size, so the assertion holds under any font metrics: whatever
+    # that minimum is, it must be genuinely smaller than the default.
+    floor = dialog.minimumSizeHint()
+    assert floor.width() < default_size.width()
+    assert floor.height() < default_size.height()
+
+    dialog.resize(floor)
+    assert dialog.size().width() < default_size.width()
+    assert dialog.size().height() < default_size.height()
+
+
+def test_splitter_panes_cannot_be_collapsed_away():
+    """Neither source nor preview pane may be draggable to nothing, so both
+    stay reachable at any dialog size now that neither carries a hard
+    minimum width. Set after ``restoreState``, which carries this flag in
+    its saved stream and would otherwise restore it to True.
+    """
+    dialog = _make_dialog()
+    assert dialog._body_splitter.childrenCollapsible() is False
+
+
+def test_manual_tab_editor_is_scrollable():
+    """The manual editor's own minimum size hint is the largest in the
+    picker and was the remaining floor on the dialog's width and height
+    once the explicit minimums were removed. It must be hosted in a scroll
+    area so every field stays reachable at a small dialog size.
+    """
+    from PySide6.QtWidgets import QScrollArea
+
+    dialog = _make_dialog()
+    assert isinstance(dialog._manual_scroll, QScrollArea)
+    assert dialog._manual_scroll.widget() is dialog.manual_editor
+    assert dialog._manual_scroll.widgetResizable() is True
 
 
 def test_only_this_taxon_checked_shows_only_working_taxon_sets():
@@ -957,3 +1012,64 @@ def test_manual_callback_rejects_when_observation_drifted(monkeypatch):
     result = kwargs["manual_attach_callback"](editor)
     assert result is False
     window._submit_reference_editor_result.assert_not_called()
+
+
+def test_manual_callback_propagates_failed_submission(monkeypatch):
+    window, kwargs = _make_host_window_for_manual_callback(monkeypatch)
+    window._submit_reference_editor_result.return_value = False
+    assert kwargs["manual_attach_callback"](object()) is False
+
+
+# ---------------------------------------------------------------------
+# "+ New publication…" must not open a modal from inside the selection
+# signal (segfault regression)
+# ---------------------------------------------------------------------
+
+
+def _new_publication_row(dialog: AddReferenceDialog) -> int:
+    import ui.add_reference_dialog as picker
+
+    for row in range(dialog.results_list.count()):
+        if dialog.results_list.item(row).data(Qt.UserRole) == picker._NEW_PUBLICATION_ROLE:
+            return row
+    raise AssertionError("no '+ New publication…' row in the results list")
+
+
+def test_new_publication_row_does_not_open_its_editor_inside_the_selection_signal():
+    """Selecting "+ New publication…" must defer, never call straight through.
+
+    ``itemSelectionChanged`` is emitted from inside
+    ``QListView::setSelection``, still inside the list's own
+    ``mousePressEvent``. ``_on_new_publication_clicked`` runs a nested modal
+    loop and then rebuilds the results list, which calls
+    ``results_list.clear()`` and destroys the items Qt is still holding
+    pointers to further up that stack. Running it synchronously segfaulted
+    the app when the publication editor was cancelled.
+
+    Asserting "not called synchronously, called after the event loop turns"
+    is what pins the fix: a later refactor that inlines the call back would
+    reintroduce a crash that no assertion about the end state would catch.
+    """
+    dialog = _make_dialog()
+    calls: list[int] = []
+    dialog._on_new_publication_clicked = lambda: calls.append(1)
+
+    dialog.results_list.setCurrentRow(_new_publication_row(dialog))
+
+    assert calls == [], "publication editor opened inside the selection signal"
+
+    _app().processEvents()
+    assert calls == [1], "deferred publication editor never ran"
+
+
+def test_new_publication_row_clears_the_library_selection():
+    """The placeholder row is an action, not a selectable candidate, so it
+    must not be left behind as the dialog's selected measurement set."""
+    dialog = _make_dialog()
+    dialog._on_new_publication_clicked = lambda: None
+
+    dialog.results_list.setCurrentRow(_new_publication_row(dialog))
+    _app().processEvents()
+
+    assert dialog._selected_candidate is None
+    assert dialog.add_to_plot_btn.isEnabled() is False
