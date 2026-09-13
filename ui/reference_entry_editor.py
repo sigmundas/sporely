@@ -446,6 +446,14 @@ class ReferenceEntryEditor(QWidget):
         )
         treatment_form.addRow(QCoreApplication.translate("ReferenceAddDialog", "Taxon:"), self.taxon_label)
         self.name_as_published_input = QLineEdit()
+        # Prefilled with the current taxon name, not left blank. The field is
+        # required by TaxonTreatmentRepository._validate, and the publication
+        # normally uses the same name as the normalized taxon, so a blank
+        # field just blocks the save with a raw validation message. Prefilling
+        # keeps the stored value visible and editable before saving rather
+        # than substituting one silently at save time, so recording a synonym
+        # or historical combination is still a deliberate, visible edit.
+        self.name_as_published_input.setText(current_taxon_label)
         self.name_as_published_input.setPlaceholderText(
             QCoreApplication.translate("ReferenceAddDialog", "Name exactly as published (e.g., as written in the publication)")
         )
@@ -600,7 +608,11 @@ class ReferenceEntryEditor(QWidget):
             del blocker
         taxon_label = " ".join(part for part in (self._genus, self._species) if part).strip()
         self.taxon_label.setText(taxon_label or QCoreApplication.translate("ReferenceAddDialog", "No taxon selected"))
-        self.name_as_published_input.setText("")
+        # Re-prefill for the new target rather than blanking. A name typed
+        # for the previous taxon must not survive onto this one, and leaving
+        # it empty would block the save on a required field (see the same
+        # reasoning where this input is constructed).
+        self.name_as_published_input.setText(taxon_label)
         self._refresh_existing_sets_cache()
         self._no_taxon_notice_label.setVisible(
             bool(self._observation_id) and not self._sporely_taxon_id
@@ -1229,8 +1241,21 @@ class ReferenceEntryEditor(QWidget):
         return self._pending_reference_work
 
     def quick_add_treatment_payload(self) -> dict[str, str]:
+        name_as_published = self.name_as_published_input.text().strip()
+        if not name_as_published:
+            # "Name as published" is a required field on the treatment
+            # (TaxonTreatmentRepository._validate), so leaving it empty used
+            # to fail the save outright with a raw validation message. The
+            # overwhelmingly common case is that the publication uses the
+            # same name as the normalized taxon, so fall back to that rather
+            # than blocking the save. A user recording an old synonym,
+            # spelling variant, or historical combination still types it in
+            # and that value is used verbatim.
+            name_as_published = " ".join(
+                part for part in (self._genus, self._species) if part
+            ).strip()
         return {
-            "name_as_published": self.name_as_published_input.text().strip(),
+            "name_as_published": name_as_published,
             "locator_text": self.locator_input.text().strip(),
         }
 

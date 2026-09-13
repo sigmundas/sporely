@@ -53,7 +53,7 @@ import json
 from dataclasses import dataclass
 from typing import Callable, Iterable
 
-from PySide6.QtCore import QCoreApplication, QSettings, QSize, Qt, Signal
+from PySide6.QtCore import QCoreApplication, QSettings, QSize, Qt, QTimer, Signal
 from PySide6.QtWidgets import (
     QCheckBox,
     QComboBox,
@@ -65,6 +65,7 @@ from PySide6.QtWidgets import (
     QListWidgetItem,
     QMessageBox,
     QPushButton,
+    QScrollArea,
     QSizePolicy,
     QSplitter,
     QStyle,
@@ -219,6 +220,39 @@ def default_my_observation_candidates(
     return result
 
 
+class _EditorScrollArea(QScrollArea):
+    """A :class:`QScrollArea` that reports its hosted widget's own size hint.
+
+    ``QScrollArea.sizeHint()`` is a fixed style heuristic that ignores how
+    large the hosted widget actually wants to be. Hosting the manual editor
+    in a plain scroll area therefore hid the editor's size from the picker's
+    derived default size, which opened ~250px too short and put scrollbars
+    on the editor at its *default* size -- not just when deliberately
+    shrunk.
+
+    Only ``sizeHint`` is overridden, never ``minimumSizeHint``: the whole
+    point of the scroll area is that the dialog can still be resized far
+    below this hint, at which point the scrollbars are the correct
+    fallback.
+    """
+
+    def sizeHint(self) -> QSize:  # noqa: N802 - Qt override
+        widget = self.widget()
+        if widget is None:
+            return super().sizeHint()
+        hint = widget.sizeHint()
+        # Reserve one scrollbar extent on each axis so the hint describes a
+        # size at which the editor fits with the scrollbars absent, rather
+        # than one where showing a scrollbar immediately clips the content.
+        extent = self.style().pixelMetric(QStyle.PM_ScrollBarExtent)
+        margins = self.contentsMargins()
+        frame = 2 * self.frameWidth()
+        return QSize(
+            hint.width() + extent + margins.left() + margins.right() + frame,
+            hint.height() + extent + margins.top() + margins.bottom() + frame,
+        )
+
+
 class AddReferenceDialog(GeometryMixin, QDialog):
     """Tabbed picker for adding a reference dataset to the comparison plot.
 
@@ -354,27 +388,40 @@ class AddReferenceDialog(GeometryMixin, QDialog):
         self._refresh_candidates()
         self._refresh_my_observations()
 
-        min_size, source_width, preview_width = self._derive_minimum_size()
-        self.setMinimumSize(min_size)
-        self.resize(min_size)
-        # A floor on each pane, not just an initial setSizes(): the splitter
-        # otherwise redistributes space by stretch factor on any later
-        # resize (restored geometry, a maximize, a manual drag), which can
-        # squeeze either tab bar back into its own scroll-arrow fallback
-        # even though the dialog stays wide enough overall.
-        self.tabs.setMinimumWidth(source_width)
-        self.preview_pane.setMinimumWidth(preview_width)
+        default_size, source_width, preview_width = self._derive_default_size()
+        # The derived size is this dialog's DEFAULT, not a floor. At this
+        # width every source tab and every preview sub-tab is visible with
+        # no scroll-arrow fallback, which is what the default should give
+        # the user. It must not also become setMinimumSize(): that floor
+        # (≈1085x756 with the shipped fonts) exceeded the usable height of
+        # a 768px-tall laptop screen, so the dialog could be grown but
+        # never shrunk -- effectively unresizable. Below the default,
+        # Qt's own tab-bar scroll arrows and the manual tab's scroll area
+        # are the correct fallback for a deliberately narrow window.
+        self.resize(default_size)
+        self.setSizeGripEnabled(True)
         self._body_splitter.setSizes([source_width, preview_width])
         self._restore_geometry()
         self._restore_splitter_state()
+        # After restoreState, never before: QSplitter::restoreState carries
+        # childrenCollapsible in its saved stream, so a state written by an
+        # earlier build silently restores that flag to True. Each pane keeps
+        # its own natural minimumSizeHint and cannot be dragged away
+        # entirely, so both stay reachable at any dialog size without
+        # pinning a hard pixel width on either one.
+        self._body_splitter.setChildrenCollapsible(False)
         self.finished.connect(self._save_geometry)
         self.finished.connect(self._save_splitter_state)
         self.finished.connect(self._community_pane.close)
 
-    def _derive_minimum_size(self) -> tuple[QSize, int, int]:
+    def _derive_default_size(self) -> tuple[QSize, int, int]:
         """Derive the smallest size at which all four source tabs and all
         five preview sub-tabs are visible without scroll arrows, from the
         widgets' own size hints rather than a hardcoded pixel value.
+
+        This is the dialog's opening size, not a minimum: the user may
+        resize below it, at which point Qt's tab-bar scroll arrows take
+        over (see the note at the call site).
 
         Returns the dialog size plus the source/preview pane widths that
         produced it, so the caller can also seat the splitter at that split
@@ -393,7 +440,10 @@ class AddReferenceDialog(GeometryMixin, QDialog):
         source_width = max(
             self.tabs.tabBar().sizeHint().width(),
             self._library_tab.sizeHint().width(),
-            self.manual_editor.sizeHint().width(),
+            # The scroll area's hint, not the bare editor's: it adds the
+            # scrollbar allowance the editor needs to sit inside it without
+            # a scrollbar appearing at the dialog's own default size.
+            self._manual_scroll.sizeHint().width(),
         ) + scroll_button_clearance
         preview_width = max(
             self.preview_pane.review_tabs.tabBar().sizeHint().width(),
@@ -687,7 +737,19 @@ class AddReferenceDialog(GeometryMixin, QDialog):
         role = items[0].data(Qt.UserRole)
         if role == _NEW_PUBLICATION_ROLE:
             self._selected_candidate = None
-            self._on_new_publication_clicked()
+            # Deferred deliberately, and this must not be inlined back.
+            # itemSelectionChanged is emitted from inside
+            # QListView::setSelection, which is itself still inside the
+            # list's own mousePressEvent. _on_new_publication_clicked runs a
+            # nested modal event loop and, when that dialog closes, calls
+            # _refresh_candidates -> _populate_results_list ->
+            # results_list.clear(). That destroys the very items Qt still
+            # holds pointers to further up the stack, so the app segfaults
+            # as the mouse event unwinds -- confirmed from a crash report
+            # with QListWidget::clear called under QListView::setSelection.
+            # Running it on the next event-loop turn lets the mouse event
+            # finish first, leaving nothing live to invalidate.
+            QTimer.singleShot(0, self._on_new_publication_clicked)
             return
         candidate = next(
             (c for c in self._candidates if c.measurement_set_id == role),
@@ -1026,7 +1088,17 @@ class AddReferenceDialog(GeometryMixin, QDialog):
             preview_pane=self.preview_pane,
         )
         self.manual_editor.data_changed.connect(self._update_footer_state)
-        layout.addWidget(self.manual_editor)
+        # The editor's own minimum size hint (its measurement tables) is the
+        # widest and tallest thing in the picker, and was what stopped the
+        # dialog shrinking even once the explicit floors were removed.
+        # Scrolling it here -- in the picker only, not in the shared editor
+        # widget, which the legacy Quick-add dialog also hosts -- lets the
+        # dialog be resized small while keeping every field reachable.
+        self._manual_scroll = _EditorScrollArea(self._manual_tab)
+        self._manual_scroll.setWidgetResizable(True)
+        self._manual_scroll.setFrameShape(QScrollArea.NoFrame)
+        self._manual_scroll.setWidget(self.manual_editor)
+        layout.addWidget(self._manual_scroll)
 
     # ------------------------------------------------------------------
     # Footer
