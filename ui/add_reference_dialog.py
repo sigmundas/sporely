@@ -335,7 +335,7 @@ class AddReferenceDialog(GeometryMixin, QDialog):
         )
         self._build_manual_tab()
         self._manual_tab_index = self.tabs.addTab(
-            self._manual_tab, QCoreApplication.translate("AddReferenceDialog", "Enter manually")
+            self._manual_tab, QCoreApplication.translate("AddReferenceDialog", "Add new")
         )
         self.tabs.currentChanged.connect(self._on_tab_changed)
 
@@ -432,16 +432,16 @@ class AddReferenceDialog(GeometryMixin, QDialog):
     def _build_taxon_target_row(self) -> QHBoxLayout:
         row = QHBoxLayout()
         row.setSpacing(8)
-        row.addWidget(QLabel(QCoreApplication.translate("AddReferenceDialog", "Compare against:"), self))
+        row.addWidget(QLabel(QCoreApplication.translate("AddReferenceDialog", "Reference taxon:"), self))
         self.taxon_target_combo = QComboBox(self)
         self.taxon_target_combo.setEditable(True)
         self.taxon_target_combo.setInsertPolicy(QComboBox.NoInsert)
         self.taxon_target_combo.setSizePolicy(QSizePolicy.Expanding, QSizePolicy.Fixed)
         self.taxon_target_combo.setToolTip(
             QCoreApplication.translate("AddReferenceDialog",
-                "Choose which taxon's published spore data to compare "
-                "against -- an AI suggestion, or type a genus and species. "
-                "This never changes the observation's own identification."
+                "Choose which taxon's published spore data to compare against. "
+                "Select 'Use observation taxon' if available, search another taxon by typing genus and species, "
+                "or choose an AI suggestion. This never changes the observation's own identification."
             )
         )
         row.addWidget(self.taxon_target_combo, 1)
@@ -463,9 +463,9 @@ class AddReferenceDialog(GeometryMixin, QDialog):
         combo.clear()
         own_label = self._own_taxon_display_label()
         combo.addItem(
-            QCoreApplication.translate("AddReferenceDialog", "This observation: {taxon}").format(taxon=own_label)
+            QCoreApplication.translate("AddReferenceDialog", "Use observation taxon: {taxon}").format(taxon=own_label)
             if own_label
-            else QCoreApplication.translate("AddReferenceDialog", "This observation's taxon"),
+            else QCoreApplication.translate("AddReferenceDialog", "Search another taxon…"),
             {
                 "genus": self._own_genus,
                 "species": self._own_species,
