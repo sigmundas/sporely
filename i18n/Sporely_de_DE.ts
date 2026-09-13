@@ -49,122 +49,122 @@
         <translation>Artseite auf GBIF</translation>
     </message>
     <message>
-        <location filename="../ui/cloud_reference_dialog.py" line="151"/>
+        <location filename="../ui/cloud_reference_dialog.py" line="163"/>
         <source>Reference values</source>
         <translation>Referenzwerte</translation>
     </message>
     <message>
-        <location filename="../ui/cloud_reference_dialog.py" line="159"/>
+        <location filename="../ui/cloud_reference_dialog.py" line="171"/>
         <source>Community observation {date}</source>
         <translation>Community-Beobachtung {date}</translation>
     </message>
     <message>
-        <location filename="../ui/cloud_reference_dialog.py" line="161"/>
+        <location filename="../ui/cloud_reference_dialog.py" line="173"/>
         <source>Community observation</source>
         <translation>Community-Beobachtung</translation>
     </message>
     <message>
-        <location filename="../ui/cloud_reference_dialog.py" line="189"/>
+        <location filename="../ui/cloud_reference_dialog.py" line="201"/>
         <source>Cloud reference</source>
         <translation>Cloud-Referenz</translation>
     </message>
     <message>
-        <location filename="../ui/cloud_reference_dialog.py" line="192"/>
+        <location filename="../ui/cloud_reference_dialog.py" line="204"/>
         <source>Cloud observation</source>
         <translation>Cloud-Beobachtung</translation>
     </message>
     <message>
-        <location filename="../ui/cloud_reference_dialog.py" line="320"/>
+        <location filename="../ui/cloud_reference_dialog.py" line="332"/>
         <source>Community dataset</source>
         <translation>Community-Datensatz</translation>
     </message>
     <message>
-        <location filename="../ui/cloud_reference_dialog.py" line="325"/>
+        <location filename="../ui/cloud_reference_dialog.py" line="337"/>
         <source>Contributor: {contributor}  •  Date: {date}  •  n={count}</source>
         <translation>Beitragende(r): {contributor}  •  Datum: {date}  •  n={count}</translation>
     </message>
     <message>
-        <location filename="../ui/cloud_reference_dialog.py" line="349"/>
+        <location filename="../ui/cloud_reference_dialog.py" line="361"/>
         <source>Mount recorded</source>
         <translation>Präparationsmedium erfasst</translation>
     </message>
     <message>
-        <location filename="../ui/cloud_reference_dialog.py" line="350"/>
+        <location filename="../ui/cloud_reference_dialog.py" line="362"/>
         <source>Stain recorded</source>
         <translation>Färbung erfasst</translation>
     </message>
     <message>
-        <location filename="../ui/cloud_reference_dialog.py" line="351"/>
+        <location filename="../ui/cloud_reference_dialog.py" line="363"/>
         <source>Sample type recorded</source>
         <translation>Probentyp erfasst</translation>
     </message>
     <message>
-        <location filename="../ui/cloud_reference_dialog.py" line="352"/>
+        <location filename="../ui/cloud_reference_dialog.py" line="364"/>
         <source>Contrast recorded</source>
         <translation>Kontrast erfasst</translation>
     </message>
     <message>
-        <location filename="../ui/cloud_reference_dialog.py" line="353"/>
+        <location filename="../ui/cloud_reference_dialog.py" line="365"/>
         <source>Objective recorded</source>
         <translation>Objektiv erfasst</translation>
     </message>
     <message>
-        <location filename="../ui/cloud_reference_dialog.py" line="354"/>
+        <location filename="../ui/cloud_reference_dialog.py" line="366"/>
         <source>Scale recorded</source>
         <translation>Maßstab erfasst</translation>
     </message>
     <message>
-        <location filename="../ui/cloud_reference_dialog.py" line="355"/>
+        <location filename="../ui/cloud_reference_dialog.py" line="367"/>
         <source>Measurement points recorded</source>
         <translation>Messpunkte erfasst</translation>
     </message>
     <message>
-        <location filename="../ui/cloud_reference_dialog.py" line="359"/>
+        <location filename="../ui/cloud_reference_dialog.py" line="371"/>
         <source>QC signals: {signals}</source>
         <translation>QK-Signale: {signals}</translation>
     </message>
     <message>
-        <location filename="../ui/cloud_reference_dialog.py" line="360"/>
+        <location filename="../ui/cloud_reference_dialog.py" line="372"/>
         <source>No extra QC metadata</source>
         <translation>Keine zusätzlichen QK-Metadaten</translation>
     </message>
     <message>
-        <location filename="../ui/cloud_reference_dialog.py" line="373"/>
+        <location filename="../ui/cloud_reference_dialog.py" line="385"/>
         <source>No raw point data returned.</source>
         <translation>Keine rohen Punktdaten zurückgegeben.</translation>
     </message>
     <message>
-        <location filename="../ui/cloud_reference_dialog.py" line="407"/>
+        <location filename="../ui/cloud_reference_dialog.py" line="419"/>
         <source>Calibration details come from image/objective metadata in the synced observation dataset.</source>
         <translation>Kalibrierungsdetails stammen aus den Bild-/Objektiv-Metadaten im synchronisierten Beobachtungsdatensatz.</translation>
     </message>
     <message>
-        <location filename="../ui/cloud_reference_dialog.py" line="410"/>
+        <location filename="../ui/cloud_reference_dialog.py" line="422"/>
         <source>Reference rows currently expose summary values only.</source>
         <translation>Referenzzeilen zeigen derzeit nur zusammengefasste Werte.</translation>
     </message>
     <message>
-        <location filename="../ui/cloud_reference_dialog.py" line="420"/>
+        <location filename="../ui/cloud_reference_dialog.py" line="432"/>
         <source>Imported reference values are currently treated as shared reference material.</source>
         <translation>Importierte Referenzwerte werden derzeit als gemeinsam genutztes Referenzmaterial behandelt.</translation>
     </message>
     <message>
-        <location filename="../ui/cloud_reference_dialog.py" line="423"/>
+        <location filename="../ui/cloud_reference_dialog.py" line="435"/>
         <source>Location and private observation content are intentionally excluded from this review flow.</source>
         <translation>Standort und private Beobachtungsinhalte sind aus diesem Prüfablauf bewusst ausgeschlossen.</translation>
     </message>
     <message>
-        <location filename="../ui/cloud_reference_dialog.py" line="430"/>
+        <location filename="../ui/cloud_reference_dialog.py" line="442"/>
         <source>not reported</source>
         <translation>nicht angegeben</translation>
     </message>
     <message>
-        <location filename="../ui/cloud_reference_dialog.py" line="432"/>
+        <location filename="../ui/cloud_reference_dialog.py" line="444"/>
         <source>Reported by: {contributor} ({date}) · sample size: {size} · method recorded: {method}</source>
         <translation>Gemeldet von: {contributor} ({date}) · Stichprobengröße: {size} · Methode erfasst: {method}</translation>
     </message>
     <message>
-        <location filename="../ui/cloud_reference_dialog.py" line="437"/>
+        <location filename="../ui/cloud_reference_dialog.py" line="449"/>
         <source>yes</source>
         <translation>ja</translation>
     </message>
@@ -172,241 +172,241 @@
 <context>
     <name>AddReferenceDialog</name>
     <message>
-        <location filename="../ui/add_reference_dialog.py" line="299"/>
-        <location filename="../ui/add_reference_dialog.py" line="552"/>
+        <location filename="../ui/add_reference_dialog.py" line="333"/>
+        <location filename="../ui/add_reference_dialog.py" line="592"/>
         <source>Add reference</source>
         <translation>Referenz hinzufügen</translation>
     </message>
     <message>
-        <location filename="../ui/add_reference_dialog.py" line="301"/>
-        <location filename="../ui/add_reference_dialog.py" line="550"/>
+        <location filename="../ui/add_reference_dialog.py" line="335"/>
+        <location filename="../ui/add_reference_dialog.py" line="590"/>
         <source>Add reference — {taxon}</source>
         <translation>Referenz hinzufügen – {taxon}</translation>
     </message>
     <message>
-        <location filename="../ui/add_reference_dialog.py" line="323"/>
+        <location filename="../ui/add_reference_dialog.py" line="357"/>
         <source>Library</source>
         <translation>Bibliothek</translation>
     </message>
     <message>
-        <location filename="../ui/add_reference_dialog.py" line="325"/>
+        <location filename="../ui/add_reference_dialog.py" line="359"/>
         <source>Community</source>
         <translation>Community</translation>
     </message>
     <message>
-        <location filename="../ui/add_reference_dialog.py" line="328"/>
+        <location filename="../ui/add_reference_dialog.py" line="362"/>
         <source>My observations</source>
         <translation>Meine Beobachtungen</translation>
     </message>
     <message>
-        <location filename="../ui/add_reference_dialog.py" line="340"/>
+        <location filename="../ui/add_reference_dialog.py" line="374"/>
         <source>Cancel</source>
         <translation>Abbrechen</translation>
     </message>
     <message>
-        <location filename="../ui/add_reference_dialog.py" line="343"/>
+        <location filename="../ui/add_reference_dialog.py" line="377"/>
         <source>Save to library</source>
         <translation>In Bibliothek speichern</translation>
     </message>
     <message>
-        <location filename="../ui/add_reference_dialog.py" line="346"/>
+        <location filename="../ui/add_reference_dialog.py" line="380"/>
         <source>Add to plot</source>
         <translation>Zum Diagramm hinzufügen</translation>
     </message>
     <message>
-        <location filename="../ui/add_reference_dialog.py" line="332"/>
+        <location filename="../ui/add_reference_dialog.py" line="366"/>
         <source>Add new</source>
         <translation type="unfinished"></translation>
     </message>
     <message>
-        <location filename="../ui/add_reference_dialog.py" line="432"/>
+        <location filename="../ui/add_reference_dialog.py" line="482"/>
         <source>Reference taxon:</source>
         <translation type="unfinished"></translation>
     </message>
     <message>
-        <location filename="../ui/add_reference_dialog.py" line="438"/>
+        <location filename="../ui/add_reference_dialog.py" line="488"/>
         <source>Choose which taxon&apos;s published spore data to compare against. Select &apos;Use observation taxon&apos; if available, search another taxon by typing genus and species, or choose an AI suggestion. This never changes the observation&apos;s own identification.</source>
         <translation type="unfinished"></translation>
     </message>
     <message>
-        <location filename="../ui/add_reference_dialog.py" line="464"/>
+        <location filename="../ui/add_reference_dialog.py" line="513"/>
         <source>Use observation taxon: {taxon}</source>
         <translation type="unfinished"></translation>
     </message>
     <message>
-        <location filename="../ui/add_reference_dialog.py" line="490"/>
+        <location filename="../ui/add_reference_dialog.py" line="515"/>
         <source>Search another taxon…</source>
         <translation type="unfinished"></translation>
     </message>
     <message>
-        <location filename="../ui/add_reference_dialog.py" line="590"/>
+        <location filename="../ui/add_reference_dialog.py" line="630"/>
         <source>Filter by publication, taxon, or raw expression…</source>
         <translation>Nach Publikation, Taxon oder Rohausdruck filtern…</translation>
     </message>
     <message>
-        <location filename="../ui/add_reference_dialog.py" line="595"/>
+        <location filename="../ui/add_reference_dialog.py" line="635"/>
         <source>Only this taxon</source>
         <translation>Nur dieses Taxon</translation>
     </message>
     <message>
-        <location filename="../ui/add_reference_dialog.py" line="651"/>
+        <location filename="../ui/add_reference_dialog.py" line="691"/>
         <source>+ New publication…</source>
         <translation>+ Neue Publikation…</translation>
     </message>
     <message>
-        <location filename="../ui/add_reference_dialog.py" line="658"/>
-        <location filename="../ui/add_reference_dialog.py" line="1068"/>
+        <location filename="../ui/add_reference_dialog.py" line="698"/>
+        <location filename="../ui/add_reference_dialog.py" line="1130"/>
         <source>No matching measurement sets in the library.</source>
         <translation>Keine passenden Messreihen in der Bibliothek.</translation>
     </message>
     <message>
-        <location filename="../ui/add_reference_dialog.py" line="660"/>
+        <location filename="../ui/add_reference_dialog.py" line="700"/>
         <source>The reference library has no measurement sets yet.</source>
         <translation>Die Referenzbibliothek enthält noch keine Messreihen.</translation>
     </message>
     <message>
-        <location filename="../ui/add_reference_dialog.py" line="667"/>
-        <location filename="../ui/add_reference_dialog.py" line="717"/>
+        <location filename="../ui/add_reference_dialog.py" line="707"/>
+        <location filename="../ui/add_reference_dialog.py" line="769"/>
         <source>Untitled</source>
         <translation>Ohne Titel</translation>
     </message>
     <message>
-        <location filename="../ui/add_reference_dialog.py" line="725"/>
-        <location filename="../ui/add_reference_dialog.py" line="982"/>
+        <location filename="../ui/add_reference_dialog.py" line="777"/>
+        <location filename="../ui/add_reference_dialog.py" line="1034"/>
         <source>Length</source>
         <translation>Länge</translation>
     </message>
     <message>
-        <location filename="../ui/add_reference_dialog.py" line="726"/>
-        <location filename="../ui/add_reference_dialog.py" line="983"/>
+        <location filename="../ui/add_reference_dialog.py" line="778"/>
+        <location filename="../ui/add_reference_dialog.py" line="1035"/>
         <source>Width</source>
         <translation>Breite</translation>
     </message>
     <message>
-        <location filename="../ui/add_reference_dialog.py" line="727"/>
-        <location filename="../ui/add_reference_dialog.py" line="984"/>
+        <location filename="../ui/add_reference_dialog.py" line="779"/>
+        <location filename="../ui/add_reference_dialog.py" line="1036"/>
         <source>Q</source>
         <translation>Q</translation>
     </message>
     <message>
-        <location filename="../ui/add_reference_dialog.py" line="760"/>
+        <location filename="../ui/add_reference_dialog.py" line="812"/>
         <source>No additional notes.</source>
         <translation>Keine zusätzlichen Notizen.</translation>
     </message>
     <message>
-        <location filename="../ui/add_reference_dialog.py" line="772"/>
+        <location filename="../ui/add_reference_dialog.py" line="824"/>
         <source>not reported</source>
         <translation>nicht angegeben</translation>
     </message>
     <message>
-        <location filename="../ui/add_reference_dialog.py" line="774"/>
+        <location filename="../ui/add_reference_dialog.py" line="826"/>
         <source>Reported by: {work} ({year}) · sample size: {size} · method recorded: {method}</source>
         <translation>Gemeldet von: {work} ({year}) · Stichprobengröße: {size} · Methode erfasst: {method}</translation>
     </message>
     <message>
-        <location filename="../ui/add_reference_dialog.py" line="780"/>
+        <location filename="../ui/add_reference_dialog.py" line="832"/>
         <source>yes</source>
         <translation>ja</translation>
     </message>
     <message>
-        <location filename="../ui/add_reference_dialog.py" line="789"/>
+        <location filename="../ui/add_reference_dialog.py" line="841"/>
         <source>This is a range summary; no raw spore points are stored.</source>
         <translation>Dies ist eine Bereichszusammenfassung; es sind keine rohen Sporenpunkte gespeichert.</translation>
     </message>
     <message>
-        <location filename="../ui/add_reference_dialog.py" line="801"/>
+        <location filename="../ui/add_reference_dialog.py" line="853"/>
         <source>No calibration details recorded.</source>
         <translation>Keine Kalibrierungsdetails erfasst.</translation>
     </message>
     <message>
-        <location filename="../ui/add_reference_dialog.py" line="803"/>
+        <location filename="../ui/add_reference_dialog.py" line="855"/>
         <source>Not reported</source>
         <translation>Nicht angegeben</translation>
     </message>
     <message>
-        <location filename="../ui/add_reference_dialog.py" line="807"/>
+        <location filename="../ui/add_reference_dialog.py" line="859"/>
         <source>Publication: {work}</source>
         <translation>Publikation: {work}</translation>
     </message>
     <message>
-        <location filename="../ui/add_reference_dialog.py" line="809"/>
+        <location filename="../ui/add_reference_dialog.py" line="861"/>
         <source>Source notes: {notes}</source>
         <translation>Quellennotizen: {notes}</translation>
     </message>
     <message>
-        <location filename="../ui/add_reference_dialog.py" line="848"/>
+        <location filename="../ui/add_reference_dialog.py" line="900"/>
         <source>New publication</source>
         <translation>Neue Publikation</translation>
     </message>
     <message>
-        <location filename="../ui/add_reference_dialog.py" line="849"/>
+        <location filename="../ui/add_reference_dialog.py" line="901"/>
         <source>Reference library editor is unavailable: {error}</source>
         <translation>Der Referenzbibliothek-Editor ist nicht verfügbar: {error}</translation>
     </message>
     <message>
-        <location filename="../ui/add_reference_dialog.py" line="922"/>
+        <location filename="../ui/add_reference_dialog.py" line="974"/>
         <source>No previous observations of this taxon have spore measurements.</source>
         <translation>Es gibt keine früheren Beobachtungen dieses Taxons mit Sporenmessungen.</translation>
     </message>
     <message>
-        <location filename="../ui/add_reference_dialog.py" line="929"/>
-        <location filename="../ui/add_reference_dialog.py" line="970"/>
+        <location filename="../ui/add_reference_dialog.py" line="981"/>
+        <location filename="../ui/add_reference_dialog.py" line="1022"/>
         <source>My observation — {author}</source>
         <translation>Meine Beobachtung — {author}</translation>
     </message>
     <message>
-        <location filename="../ui/add_reference_dialog.py" line="931"/>
-        <location filename="../ui/add_reference_dialog.py" line="972"/>
+        <location filename="../ui/add_reference_dialog.py" line="983"/>
+        <location filename="../ui/add_reference_dialog.py" line="1024"/>
         <source>My observation</source>
         <translation>Meine Beobachtung</translation>
     </message>
     <message>
-        <location filename="../ui/add_reference_dialog.py" line="934"/>
+        <location filename="../ui/add_reference_dialog.py" line="986"/>
         <source>n = {count}</source>
         <translation>n = {count}</translation>
     </message>
     <message>
-        <location filename="../ui/add_reference_dialog.py" line="994"/>
+        <location filename="../ui/add_reference_dialog.py" line="1046"/>
         <source>n = {count} spore measurements</source>
         <translation>n = {count} Sporenmessungen</translation>
     </message>
     <message>
-        <location filename="../ui/add_reference_dialog.py" line="1012"/>
+        <location filename="../ui/add_reference_dialog.py" line="1064"/>
         <source>Not applicable: this is a personal observation, not a normalized library entry.</source>
         <translation>Nicht zutreffend: Dies ist eine persönliche Beobachtung, kein normalisierter Bibliothekseintrag.</translation>
     </message>
     <message>
-        <location filename="../ui/add_reference_dialog.py" line="1015"/>
+        <location filename="../ui/add_reference_dialog.py" line="1067"/>
         <source>Personal observation, {date}</source>
         <translation>Persönliche Beobachtung, {date}</translation>
     </message>
     <message>
-        <location filename="../ui/add_reference_dialog.py" line="1017"/>
+        <location filename="../ui/add_reference_dialog.py" line="1069"/>
         <source>Personal observation</source>
         <translation>Persönliche Beobachtung</translation>
     </message>
     <message>
-        <location filename="../ui/add_reference_dialog.py" line="1060"/>
+        <location filename="../ui/add_reference_dialog.py" line="1122"/>
         <source>Saved to library. Add this set to the plot, or close.</source>
         <translation>In der Bibliothek gespeichert. Füge diesen Datensatz zum Diagramm hinzu oder schließe das Fenster.</translation>
     </message>
     <message>
-        <location filename="../ui/add_reference_dialog.py" line="1063"/>
+        <location filename="../ui/add_reference_dialog.py" line="1125"/>
         <source>Save new data to the library first, then add the saved set to the plot.</source>
         <translation>Speichere neue Daten zuerst in der Bibliothek und füge den gespeicherten Datensatz dann zum Diagramm hinzu.</translation>
     </message>
     <message>
-        <location filename="../ui/add_reference_dialog.py" line="1089"/>
+        <location filename="../ui/add_reference_dialog.py" line="1151"/>
         <source>Publication required</source>
         <translation>Publikation erforderlich</translation>
     </message>
     <message>
-        <location filename="../ui/add_reference_dialog.py" line="1090"/>
+        <location filename="../ui/add_reference_dialog.py" line="1152"/>
         <source>Select or create a publication before saving to the library.</source>
         <translation>Wähle oder erstelle eine Publikation, bevor du in der Bibliothek speicherst.</translation>
     </message>
     <message>
-        <location filename="../ui/add_reference_dialog.py" line="1100"/>
+        <location filename="../ui/add_reference_dialog.py" line="1162"/>
         <source>Close</source>
         <translation>Schließen</translation>
     </message>
@@ -2857,169 +2857,169 @@ Möchten Sie diese Bilder auf die neue Kalibrierung aktualisieren und die Messun
 <context>
     <name>CloudReferenceDialog</name>
     <message>
-        <location filename="../ui/cloud_reference_dialog.py" line="468"/>
+        <location filename="../ui/cloud_reference_dialog.py" line="480"/>
         <source>Search Community Spore Data</source>
         <translation>Community-Sporendaten durchsuchen</translation>
     </message>
     <message>
-        <location filename="../ui/cloud_reference_dialog.py" line="498"/>
+        <location filename="../ui/cloud_reference_dialog.py" line="510"/>
         <source>Search public and friend-visible community spore datasets, review measurement quality, and import only after checking the method and calibration context.</source>
         <translation>Durchsuche öffentliche und für Freunde sichtbare Community-Sporendatensätze, prüfe die Messqualität und importiere erst nach Kontrolle von Methode und Kalibrierungskontext.</translation>
     </message>
     <message>
-        <location filename="../ui/cloud_reference_dialog.py" line="517"/>
+        <location filename="../ui/cloud_reference_dialog.py" line="529"/>
         <source>e.g., Flammulina</source>
         <translation>z. B. Flammulina</translation>
     </message>
     <message>
-        <location filename="../ui/cloud_reference_dialog.py" line="519"/>
-        <location filename="../ui/cloud_reference_dialog.py" line="724"/>
+        <location filename="../ui/cloud_reference_dialog.py" line="531"/>
+        <location filename="../ui/cloud_reference_dialog.py" line="736"/>
         <source>e.g., velutipes</source>
         <translation>z. B. velutipes</translation>
     </message>
     <message>
-        <location filename="../ui/cloud_reference_dialog.py" line="522"/>
+        <location filename="../ui/cloud_reference_dialog.py" line="534"/>
         <source>Genus:</source>
         <translation>Gattung:</translation>
     </message>
     <message>
-        <location filename="../ui/cloud_reference_dialog.py" line="523"/>
+        <location filename="../ui/cloud_reference_dialog.py" line="535"/>
         <source>Species:</source>
         <translation>Art:</translation>
     </message>
     <message>
-        <location filename="../ui/cloud_reference_dialog.py" line="529"/>
+        <location filename="../ui/cloud_reference_dialog.py" line="541"/>
         <source>Search</source>
         <translation>Suchen</translation>
     </message>
     <message>
-        <location filename="../ui/cloud_reference_dialog.py" line="551"/>
+        <location filename="../ui/cloud_reference_dialog.py" line="563"/>
         <source>Results</source>
         <translation>Ergebnisse</translation>
     </message>
     <message>
-        <location filename="../ui/cloud_reference_dialog.py" line="558"/>
+        <location filename="../ui/cloud_reference_dialog.py" line="570"/>
         <source>Source</source>
         <translation>Quelle</translation>
     </message>
     <message>
-        <location filename="../ui/cloud_reference_dialog.py" line="558"/>
+        <location filename="../ui/cloud_reference_dialog.py" line="570"/>
         <source>n</source>
         <translation>n</translation>
     </message>
     <message>
-        <location filename="../ui/cloud_reference_dialog.py" line="558"/>
+        <location filename="../ui/cloud_reference_dialog.py" line="570"/>
         <source>Q / L-W</source>
         <translation>Q / L-B</translation>
     </message>
     <message>
-        <location filename="../ui/cloud_reference_dialog.py" line="558"/>
+        <location filename="../ui/cloud_reference_dialog.py" line="570"/>
         <source>Contributor</source>
         <translation>Beitragende(r)</translation>
     </message>
     <message>
-        <location filename="../ui/cloud_reference_dialog.py" line="584"/>
+        <location filename="../ui/cloud_reference_dialog.py" line="596"/>
         <source>Review</source>
         <translation>Prüfung</translation>
     </message>
     <message>
-        <location filename="../ui/cloud_reference_dialog.py" line="603"/>
+        <location filename="../ui/cloud_reference_dialog.py" line="615"/>
         <source>Import summary as reference</source>
         <translation>Zusammenfassung als Referenz importieren</translation>
     </message>
     <message>
-        <location filename="../ui/cloud_reference_dialog.py" line="608"/>
+        <location filename="../ui/cloud_reference_dialog.py" line="620"/>
         <source>Use raw points for plot</source>
         <translation>Rohdatenpunkte für Diagramm verwenden</translation>
     </message>
     <message>
-        <location filename="../ui/cloud_reference_dialog.py" line="613"/>
+        <location filename="../ui/cloud_reference_dialog.py" line="625"/>
         <source>Close</source>
         <translation>Schließen</translation>
     </message>
     <message>
-        <location filename="../ui/cloud_reference_dialog.py" line="694"/>
+        <location filename="../ui/cloud_reference_dialog.py" line="706"/>
         <source>Common name</source>
         <translation>Trivialname</translation>
     </message>
     <message>
-        <location filename="../ui/cloud_reference_dialog.py" line="1076"/>
+        <location filename="../ui/cloud_reference_dialog.py" line="1088"/>
         <source>Missing Genus</source>
         <translation>Gattung fehlt</translation>
     </message>
     <message>
-        <location filename="../ui/cloud_reference_dialog.py" line="1077"/>
+        <location filename="../ui/cloud_reference_dialog.py" line="1089"/>
         <source>Enter at least a genus to search community spore data.</source>
         <translation>Gib mindestens eine Gattung ein, um die Community-Sporendaten zu durchsuchen.</translation>
     </message>
     <message>
-        <location filename="../ui/cloud_reference_dialog.py" line="1087"/>
+        <location filename="../ui/cloud_reference_dialog.py" line="1099"/>
         <source>Searching community spore data...</source>
         <translation>Community-Sporendaten werden durchsucht …</translation>
     </message>
     <message>
-        <location filename="../ui/cloud_reference_dialog.py" line="1102"/>
+        <location filename="../ui/cloud_reference_dialog.py" line="1114"/>
         <source>Found {count} community source(s). Select one to review before importing.</source>
         <translation>{count} Community-Quelle(n) gefunden. Wähle eine zur Prüfung vor dem Import aus.</translation>
     </message>
     <message>
-        <location filename="../ui/cloud_reference_dialog.py" line="1108"/>
+        <location filename="../ui/cloud_reference_dialog.py" line="1120"/>
         <source>Community aggregate: {datasets} dataset(s), n={count}.</source>
         <translation>Community-Aggregat: {datasets} Datensatz/Datensätze, n={count}.</translation>
     </message>
     <message>
-        <location filename="../ui/cloud_reference_dialog.py" line="1114"/>
+        <location filename="../ui/cloud_reference_dialog.py" line="1126"/>
         <source>Use Import summary to save a local reference, or Use raw points for a temporary comparison plot.</source>
         <translation>Verwende „Zusammenfassung importieren“, um eine lokale Referenz zu speichern, oder „Rohdatenpunkte verwenden“ für ein temporäres Vergleichsdiagramm.</translation>
     </message>
     <message>
-        <location filename="../ui/cloud_reference_dialog.py" line="1121"/>
+        <location filename="../ui/cloud_reference_dialog.py" line="1133"/>
         <source>No community spore results found for {taxon}.</source>
         <translation>Keine Community-Sporenergebnisse für {taxon} gefunden.</translation>
     </message>
     <message>
-        <location filename="../ui/cloud_reference_dialog.py" line="1127"/>
+        <location filename="../ui/cloud_reference_dialog.py" line="1139"/>
         <source>Community search failed.</source>
         <translation>Community-Suche fehlgeschlagen.</translation>
     </message>
     <message>
-        <location filename="../ui/cloud_reference_dialog.py" line="1140"/>
+        <location filename="../ui/cloud_reference_dialog.py" line="1152"/>
         <source>Loading review details...</source>
         <translation>Prüfdetails werden geladen …</translation>
     </message>
     <message>
-        <location filename="../ui/cloud_reference_dialog.py" line="1142"/>
+        <location filename="../ui/cloud_reference_dialog.py" line="1154"/>
         <source>Loading dataset details...</source>
         <translation>Datensatzdetails werden geladen …</translation>
     </message>
     <message>
-        <location filename="../ui/cloud_reference_dialog.py" line="1158"/>
+        <location filename="../ui/cloud_reference_dialog.py" line="1170"/>
         <source>Could not load dataset</source>
         <translation>Datensatz konnte nicht geladen werden</translation>
     </message>
     <message>
-        <location filename="../ui/cloud_reference_dialog.py" line="1160"/>
+        <location filename="../ui/cloud_reference_dialog.py" line="1172"/>
         <source>This result could not be reviewed.</source>
         <translation>Dieses Ergebnis konnte nicht geprüft werden.</translation>
     </message>
     <message>
-        <location filename="../ui/cloud_reference_dialog.py" line="1181"/>
+        <location filename="../ui/cloud_reference_dialog.py" line="1193"/>
         <source>Review complete. Import summary saves a local reference; Use raw points adds a temporary comparison plot.</source>
         <translation>Prüfung abgeschlossen. „Zusammenfassung importieren“ speichert eine lokale Referenz; „Rohdatenpunkte verwenden“ fügt ein temporäres Vergleichsdiagramm hinzu.</translation>
     </message>
     <message>
-        <location filename="../ui/cloud_reference_dialog.py" line="1202"/>
-        <location filename="../ui/cloud_reference_dialog.py" line="1211"/>
+        <location filename="../ui/cloud_reference_dialog.py" line="1214"/>
+        <location filename="../ui/cloud_reference_dialog.py" line="1223"/>
         <source>Missing Data</source>
         <translation>Fehlende Daten</translation>
     </message>
     <message>
-        <location filename="../ui/cloud_reference_dialog.py" line="1202"/>
+        <location filename="../ui/cloud_reference_dialog.py" line="1214"/>
         <source>No summary data is loaded for import.</source>
         <translation>Für den Import sind keine Zusammenfassungsdaten geladen.</translation>
     </message>
     <message>
-        <location filename="../ui/cloud_reference_dialog.py" line="1211"/>
+        <location filename="../ui/cloud_reference_dialog.py" line="1223"/>
         <source>No raw spore points are available for plotting.</source>
         <translation>Für das Diagramm sind keine rohen Sporenpunkte verfügbar.</translation>
     </message>
@@ -3027,82 +3027,91 @@ Möchten Sie diese Bilder auf die neue Kalibrierung aktualisieren und die Messun
 <context>
     <name>CommunityResultsPane</name>
     <message>
-        <location filename="../ui/cloud_reference_dialog.py" line="1296"/>
-        <source>Search genus, species, or name…</source>
-        <translation type="unfinished"></translation>
-    </message>
-    <message>
-        <location filename="../ui/cloud_reference_dialog.py" line="1299"/>
-        <source>Type a genus and species (e.g., &apos;Hebeloma mesophaeum&apos;) to search community spore data. Leave empty to browse results for the selected reference taxon.</source>
-        <translation type="unfinished"></translation>
-    </message>
-    <message>
-        <location filename="../ui/cloud_reference_dialog.py" line="1324"/>
+        <location filename="../ui/cloud_reference_dialog.py" line="1355"/>
         <source>Range summary</source>
         <translation>Bereichszusammenfassung</translation>
     </message>
     <message>
-        <location filename="../ui/cloud_reference_dialog.py" line="1325"/>
+        <location filename="../ui/cloud_reference_dialog.py" line="1356"/>
         <source>Raw points (n=0)</source>
         <translation>Rohdatenpunkte (n=0)</translation>
     </message>
     <message>
-        <location filename="../ui/cloud_reference_dialog.py" line="1417"/>
-        <source>No taxon selected — enter a genus and species first.</source>
-        <translation>Kein Taxon ausgewählt – gib zuerst Gattung und Art ein.</translation>
+        <location filename="../ui/cloud_reference_dialog.py" line="1323"/>
+        <source>Search genus, or genus and species…</source>
+        <translation>Nach Gattung oder Gattung und Art suchen…</translation>
     </message>
     <message>
-        <location filename="../ui/cloud_reference_dialog.py" line="1420"/>
+        <location filename="../ui/cloud_reference_dialog.py" line="1326"/>
+        <source>Type a genus (e.g., &apos;Hebeloma&apos;) to search every community dataset for it, or a genus and species (e.g., &apos;Hebeloma mesophaeum&apos;) to narrow it. Results refresh as you type. Clear the field to browse the selected reference taxon again.
+
+The genus must be spelled out in full: community search matches it exactly, not as a prefix.</source>
+        <translation>Gib eine Gattung ein (z. B. „Hebeloma“), um alle Community-Datensätze dazu zu durchsuchen, oder Gattung und Art (z. B. „Hebeloma mesophaeum“), um einzugrenzen. Die Ergebnisse werden beim Tippen aktualisiert. Leere das Feld, um wieder das ausgewählte Referenztaxon zu durchsuchen.
+
+Der Gattungsname muss vollständig ausgeschrieben werden: Die Community-Suche trifft exakt, nicht als Präfix.</translation>
+    </message>
+    <message>
+        <location filename="../ui/cloud_reference_dialog.py" line="1478"/>
+        <source>No taxon selected — enter a genus to search.</source>
+        <translation>Kein Taxon ausgewählt – gib eine Gattung ein, um zu suchen.</translation>
+    </message>
+    <message>
+        <location filename="../ui/cloud_reference_dialog.py" line="1483"/>
+        <source>Keep typing — enter the full genus name to search.</source>
+        <translation>Tippe weiter – gib den vollständigen Gattungsnamen ein, um zu suchen.</translation>
+    </message>
+    <message>
+        <location filename="../ui/cloud_reference_dialog.py" line="1486"/>
         <source>Searching community spore data...</source>
         <translation>Community-Sporendaten werden durchsucht …</translation>
     </message>
     <message>
-        <location filename="../ui/cloud_reference_dialog.py" line="1469"/>
+        <location filename="../ui/cloud_reference_dialog.py" line="1539"/>
         <source>Community search failed.</source>
         <translation>Community-Suche fehlgeschlagen.</translation>
     </message>
     <message>
-        <location filename="../ui/cloud_reference_dialog.py" line="1474"/>
+        <location filename="../ui/cloud_reference_dialog.py" line="1544"/>
         <source>Found {count} community source(s). Select one to review before adding.</source>
         <translation>{count} Community-Quelle(n) gefunden. Wähle eine zur Prüfung vor dem Hinzufügen aus.</translation>
     </message>
     <message>
-        <location filename="../ui/cloud_reference_dialog.py" line="1479"/>
+        <location filename="../ui/cloud_reference_dialog.py" line="1549"/>
         <source>No community spore results found for this taxon.</source>
         <translation>Keine Community-Sporenergebnisse für dieses Taxon gefunden.</translation>
     </message>
     <message>
-        <location filename="../ui/cloud_reference_dialog.py" line="1485"/>
+        <location filename="../ui/cloud_reference_dialog.py" line="1555"/>
         <source>n = {count}</source>
         <translation>n = {count}</translation>
     </message>
     <message>
-        <location filename="../ui/cloud_reference_dialog.py" line="1488"/>
+        <location filename="../ui/cloud_reference_dialog.py" line="1558"/>
         <source>Q {range}</source>
         <translation>Q {range}</translation>
     </message>
     <message>
-        <location filename="../ui/cloud_reference_dialog.py" line="1536"/>
+        <location filename="../ui/cloud_reference_dialog.py" line="1606"/>
         <source>Loading review details...</source>
         <translation>Prüfdetails werden geladen …</translation>
     </message>
     <message>
-        <location filename="../ui/cloud_reference_dialog.py" line="1539"/>
+        <location filename="../ui/cloud_reference_dialog.py" line="1609"/>
         <source>Loading dataset details...</source>
         <translation>Datensatzdetails werden geladen …</translation>
     </message>
     <message>
-        <location filename="../ui/cloud_reference_dialog.py" line="1569"/>
+        <location filename="../ui/cloud_reference_dialog.py" line="1639"/>
         <source>Could not load dataset</source>
         <translation>Datensatz konnte nicht geladen werden</translation>
     </message>
     <message>
-        <location filename="../ui/cloud_reference_dialog.py" line="1572"/>
+        <location filename="../ui/cloud_reference_dialog.py" line="1642"/>
         <source>This result could not be reviewed.</source>
         <translation>Dieses Ergebnis konnte nicht geprüft werden.</translation>
     </message>
     <message>
-        <location filename="../ui/cloud_reference_dialog.py" line="1595"/>
+        <location filename="../ui/cloud_reference_dialog.py" line="1665"/>
         <source>Raw points (n={count})</source>
         <translation>Rohdatenpunkte (n={count})</translation>
     </message>
@@ -9689,25 +9698,25 @@ max</translation>
     </message>
     <message>
         <location filename="../ui/reference_entry_editor.py" line="353"/>
-        <location filename="../ui/reference_entry_editor.py" line="664"/>
-        <location filename="../ui/reference_entry_editor.py" line="723"/>
-        <location filename="../ui/reference_entry_editor.py" line="781"/>
+        <location filename="../ui/reference_entry_editor.py" line="676"/>
+        <location filename="../ui/reference_entry_editor.py" line="735"/>
+        <location filename="../ui/reference_entry_editor.py" line="793"/>
         <source>Length</source>
         <translation>Länge</translation>
     </message>
     <message>
         <location filename="../ui/reference_entry_editor.py" line="353"/>
-        <location filename="../ui/reference_entry_editor.py" line="665"/>
-        <location filename="../ui/reference_entry_editor.py" line="724"/>
-        <location filename="../ui/reference_entry_editor.py" line="782"/>
+        <location filename="../ui/reference_entry_editor.py" line="677"/>
+        <location filename="../ui/reference_entry_editor.py" line="736"/>
+        <location filename="../ui/reference_entry_editor.py" line="794"/>
         <source>Width</source>
         <translation>Breite</translation>
     </message>
     <message>
         <location filename="../ui/reference_entry_editor.py" line="353"/>
-        <location filename="../ui/reference_entry_editor.py" line="666"/>
-        <location filename="../ui/reference_entry_editor.py" line="725"/>
-        <location filename="../ui/reference_entry_editor.py" line="783"/>
+        <location filename="../ui/reference_entry_editor.py" line="678"/>
+        <location filename="../ui/reference_entry_editor.py" line="737"/>
+        <location filename="../ui/reference_entry_editor.py" line="795"/>
         <source>Q</source>
         <translation>Q</translation>
     </message>
@@ -9793,7 +9802,7 @@ max</translation>
     </message>
     <message>
         <location filename="../ui/reference_entry_editor.py" line="439"/>
-        <location filename="../ui/reference_entry_editor.py" line="602"/>
+        <location filename="../ui/reference_entry_editor.py" line="610"/>
         <source>No taxon selected</source>
         <translation type="unfinished"></translation>
     </message>
@@ -9808,140 +9817,140 @@ max</translation>
         <translation type="unfinished"></translation>
     </message>
     <message>
-        <location filename="../ui/reference_entry_editor.py" line="450"/>
+        <location filename="../ui/reference_entry_editor.py" line="458"/>
         <source>Name exactly as published (e.g., as written in the publication)</source>
         <translation type="unfinished"></translation>
     </message>
     <message>
-        <location filename="../ui/reference_entry_editor.py" line="453"/>
+        <location filename="../ui/reference_entry_editor.py" line="461"/>
         <source>The exact name used in the publication. This can be an old synonym, spelling variant, or historical combination — separate from the normalized taxon above.</source>
         <translation type="unfinished"></translation>
     </message>
     <message>
-        <location filename="../ui/reference_entry_editor.py" line="459"/>
+        <location filename="../ui/reference_entry_editor.py" line="467"/>
         <source>Name as published:</source>
         <translation>Name wie veröffentlicht:</translation>
     </message>
     <message>
-        <location filename="../ui/reference_entry_editor.py" line="463"/>
+        <location filename="../ui/reference_entry_editor.py" line="471"/>
         <source>Page, figure, table, plate, or section</source>
         <translation>Seite, Abbildung, Tabelle, Tafel oder Abschnitt</translation>
     </message>
     <message>
-        <location filename="../ui/reference_entry_editor.py" line="465"/>
+        <location filename="../ui/reference_entry_editor.py" line="473"/>
         <source>Locator:</source>
         <translation>Fundstelle:</translation>
     </message>
     <message>
-        <location filename="../ui/reference_entry_editor.py" line="469"/>
+        <location filename="../ui/reference_entry_editor.py" line="477"/>
         <source>No taxon identifier is set. The normalized treatment will use the name as published without a taxon link.</source>
         <translation>Es ist keine Taxon-ID festgelegt. Die normalisierte Behandlung verwendet den veröffentlichten Namen ohne Taxon-Verknüpfung.</translation>
     </message>
     <message>
-        <location filename="../ui/reference_entry_editor.py" line="484"/>
+        <location filename="../ui/reference_entry_editor.py" line="492"/>
         <source>Data</source>
         <translation>Daten</translation>
     </message>
     <message>
-        <location filename="../ui/reference_entry_editor.py" line="490"/>
+        <location filename="../ui/reference_entry_editor.py" line="498"/>
         <source>Use existing measurement set</source>
         <translation>Vorhandenen Messsatz verwenden</translation>
     </message>
     <message>
-        <location filename="../ui/reference_entry_editor.py" line="492"/>
+        <location filename="../ui/reference_entry_editor.py" line="500"/>
         <source>Enter new data</source>
         <translation>Neue Daten eingeben</translation>
     </message>
     <message>
-        <location filename="../ui/reference_entry_editor.py" line="502"/>
+        <location filename="../ui/reference_entry_editor.py" line="510"/>
         <source>Filter existing sets by locator, kind, or raw expression…</source>
         <translation>Vorhandene Sätze nach Ort, Art oder Rohausdruck filtern…</translation>
     </message>
     <message>
-        <location filename="../ui/reference_entry_editor.py" line="511"/>
+        <location filename="../ui/reference_entry_editor.py" line="519"/>
         <source>Locator</source>
         <translation>Fundstelle</translation>
     </message>
     <message>
-        <location filename="../ui/reference_entry_editor.py" line="511"/>
+        <location filename="../ui/reference_entry_editor.py" line="519"/>
         <source>Kind</source>
         <translation>Art</translation>
     </message>
     <message>
-        <location filename="../ui/reference_entry_editor.py" line="511"/>
+        <location filename="../ui/reference_entry_editor.py" line="519"/>
         <source>Raw expression</source>
         <translation>Originalangabe</translation>
     </message>
     <message>
-        <location filename="../ui/reference_entry_editor.py" line="655"/>
+        <location filename="../ui/reference_entry_editor.py" line="667"/>
         <source>Existing measurement set</source>
         <translation>Vorhandener Messsatz</translation>
     </message>
     <message>
-        <location filename="../ui/reference_entry_editor.py" line="672"/>
-        <location filename="../ui/reference_entry_editor.py" line="808"/>
+        <location filename="../ui/reference_entry_editor.py" line="684"/>
+        <location filename="../ui/reference_entry_editor.py" line="820"/>
         <source>This is a range summary; no raw spore points are stored.</source>
         <translation>Dies ist eine Bereichszusammenfassung; es sind keine rohen Sporenpunkte gespeichert.</translation>
     </message>
     <message>
-        <location filename="../ui/reference_entry_editor.py" line="682"/>
+        <location filename="../ui/reference_entry_editor.py" line="694"/>
         <source>No calibration details recorded.</source>
         <translation>Keine Kalibrierungsdetails erfasst.</translation>
     </message>
     <message>
-        <location filename="../ui/reference_entry_editor.py" line="686"/>
-        <location filename="../ui/reference_entry_editor.py" line="740"/>
-        <location filename="../ui/reference_entry_editor.py" line="815"/>
+        <location filename="../ui/reference_entry_editor.py" line="698"/>
+        <location filename="../ui/reference_entry_editor.py" line="752"/>
+        <location filename="../ui/reference_entry_editor.py" line="827"/>
         <source>Source notes: {notes}</source>
         <translation>Quellennotizen: {notes}</translation>
     </message>
     <message>
-        <location filename="../ui/reference_entry_editor.py" line="687"/>
-        <location filename="../ui/reference_entry_editor.py" line="741"/>
-        <location filename="../ui/reference_entry_editor.py" line="816"/>
+        <location filename="../ui/reference_entry_editor.py" line="699"/>
+        <location filename="../ui/reference_entry_editor.py" line="753"/>
+        <location filename="../ui/reference_entry_editor.py" line="828"/>
         <source>Not reported</source>
         <translation>Nicht angegeben</translation>
     </message>
     <message>
-        <location filename="../ui/reference_entry_editor.py" line="696"/>
+        <location filename="../ui/reference_entry_editor.py" line="708"/>
         <source>not reported</source>
         <translation>nicht angegeben</translation>
     </message>
     <message>
-        <location filename="../ui/reference_entry_editor.py" line="698"/>
+        <location filename="../ui/reference_entry_editor.py" line="710"/>
         <source>Reported by: {work} ({year}) · sample size: {size} · method recorded: {method}</source>
         <translation>Gemeldet von: {work} ({year}) · Stichprobengröße: {size} · Methode erfasst: {method}</translation>
     </message>
     <message>
-        <location filename="../ui/reference_entry_editor.py" line="704"/>
+        <location filename="../ui/reference_entry_editor.py" line="716"/>
         <source>yes</source>
         <translation>ja</translation>
     </message>
     <message>
-        <location filename="../ui/reference_entry_editor.py" line="714"/>
-        <location filename="../ui/reference_entry_editor.py" line="797"/>
+        <location filename="../ui/reference_entry_editor.py" line="726"/>
+        <location filename="../ui/reference_entry_editor.py" line="809"/>
         <source>Manual entry</source>
         <translation>Manuelle Eingabe</translation>
     </message>
     <message>
-        <location filename="../ui/reference_entry_editor.py" line="730"/>
+        <location filename="../ui/reference_entry_editor.py" line="742"/>
         <source>n = {count} spore measurements</source>
         <translation>n = {count} Sporenmessungen</translation>
     </message>
     <message>
-        <location filename="../ui/reference_entry_editor.py" line="736"/>
-        <location filename="../ui/reference_entry_editor.py" line="811"/>
+        <location filename="../ui/reference_entry_editor.py" line="748"/>
+        <location filename="../ui/reference_entry_editor.py" line="823"/>
         <source>Not applicable: entered manually.</source>
         <translation>Nicht zutreffend: manuell eingegeben.</translation>
     </message>
     <message>
-        <location filename="../ui/reference_entry_editor.py" line="738"/>
-        <location filename="../ui/reference_entry_editor.py" line="813"/>
+        <location filename="../ui/reference_entry_editor.py" line="750"/>
+        <location filename="../ui/reference_entry_editor.py" line="825"/>
         <source>Manually entered</source>
         <translation>Manuell eingegeben</translation>
     </message>
     <message>
-        <location filename="../ui/reference_entry_editor.py" line="802"/>
+        <location filename="../ui/reference_entry_editor.py" line="814"/>
         <source>Range summary</source>
         <translation>Bereichszusammenfassung</translation>
     </message>
@@ -9961,79 +9970,79 @@ max</translation>
         <translation>Abbrechen</translation>
     </message>
     <message>
-        <location filename="../ui/reference_entry_editor.py" line="969"/>
+        <location filename="../ui/reference_entry_editor.py" line="981"/>
         <source>Nothing parsed.</source>
         <translation>Nichts eingelesen.</translation>
     </message>
     <message>
-        <location filename="../ui/reference_entry_editor.py" line="985"/>
+        <location filename="../ui/reference_entry_editor.py" line="997"/>
         <source>Parsed:</source>
         <translation>Eingelesen:</translation>
     </message>
     <message>
-        <location filename="../ui/reference_entry_editor.py" line="997"/>
+        <location filename="../ui/reference_entry_editor.py" line="1009"/>
         <source>Paste a measurement string first.</source>
         <translation>Fügen Sie zuerst einen Messstring ein.</translation>
     </message>
     <message>
-        <location filename="../ui/reference_entry_editor.py" line="1004"/>
+        <location filename="../ui/reference_entry_editor.py" line="1016"/>
         <source>Parsing failed — manual entry preserved.</source>
         <translation>Einlesen fehlgeschlagen — manuelle Eingabe beibehalten.</translation>
     </message>
     <message>
-        <location filename="../ui/reference_entry_editor.py" line="1008"/>
+        <location filename="../ui/reference_entry_editor.py" line="1020"/>
         <source>Parsed — review and edit before saving.</source>
         <translation>Eingelesen — vor dem Speichern prüfen und bearbeiten.</translation>
     </message>
     <message>
-        <location filename="../ui/reference_entry_editor.py" line="1023"/>
+        <location filename="../ui/reference_entry_editor.py" line="1035"/>
         <source>Length and width swapped.</source>
         <translation>Länge und Breite vertauscht.</translation>
     </message>
     <message>
-        <location filename="../ui/reference_entry_editor.py" line="1117"/>
+        <location filename="../ui/reference_entry_editor.py" line="1129"/>
         <source>Reference points</source>
         <translation>Referenzpunkte</translation>
     </message>
     <message>
-        <location filename="../ui/reference_entry_editor.py" line="1150"/>
-        <location filename="../ui/reference_entry_editor.py" line="1169"/>
-        <location filename="../ui/reference_entry_editor.py" line="1178"/>
+        <location filename="../ui/reference_entry_editor.py" line="1162"/>
+        <location filename="../ui/reference_entry_editor.py" line="1181"/>
+        <location filename="../ui/reference_entry_editor.py" line="1190"/>
         <source>Missing Data</source>
         <translation>Fehlende Daten</translation>
     </message>
     <message>
-        <location filename="../ui/reference_entry_editor.py" line="1151"/>
+        <location filename="../ui/reference_entry_editor.py" line="1163"/>
         <source>Select an existing measurement set or switch to &quot;Enter new data&quot;.</source>
         <translation>Wähle einen vorhandenen Messsatz aus oder wechsle zu „Neue Daten eingeben“.</translation>
     </message>
     <message>
-        <location filename="../ui/reference_entry_editor.py" line="1179"/>
+        <location filename="../ui/reference_entry_editor.py" line="1191"/>
         <source>Enter at least one reference or Parmasto value.</source>
         <translation>Enter at least one reference or Parmasto value.</translation>
     </message>
     <message>
-        <location filename="../ui/reference_entry_editor.py" line="1195"/>
+        <location filename="../ui/reference_entry_editor.py" line="1207"/>
         <source>No publication selected</source>
         <translation>Keine Publikation ausgewählt</translation>
     </message>
     <message>
-        <location filename="../ui/reference_entry_editor.py" line="1196"/>
+        <location filename="../ui/reference_entry_editor.py" line="1208"/>
         <source>No publication is selected. Save as a legacy-only reference (no library entry, no observation attachment)?</source>
         <translation>Es ist keine Veröffentlichung ausgewählt. Als reine Legacy-Referenz speichern (kein Bibliothekseintrag, kein Beobachtungsanhang)?</translation>
     </message>
     <message>
-        <location filename="../ui/reference_entry_editor.py" line="1408"/>
+        <location filename="../ui/reference_entry_editor.py" line="1433"/>
         <source>New publication</source>
         <translation>Neue Publikation</translation>
     </message>
     <message>
-        <location filename="../ui/reference_entry_editor.py" line="1409"/>
+        <location filename="../ui/reference_entry_editor.py" line="1434"/>
         <source>Reference library editor is unavailable: {error}</source>
         <translation>Referenzbibliothek-Editor ist nicht verfügbar: {error}</translation>
     </message>
     <message>
-        <location filename="../ui/reference_entry_editor.py" line="1420"/>
+        <location filename="../ui/reference_entry_editor.py" line="1445"/>
         <source>Untitled reference</source>
         <translation>Unbenannte Referenz</translation>
     </message>
@@ -10048,7 +10057,7 @@ max</translation>
         <translation>Delete the selected stored reference?</translation>
     </message>
     <message>
-        <location filename="../ui/reference_entry_editor.py" line="1170"/>
+        <location filename="../ui/reference_entry_editor.py" line="1182"/>
         <source>Enter at least one length and width value.</source>
         <translation>Bitte mindestens einen Längen- und Breitenwert eingeben.</translation>
     </message>
