@@ -434,11 +434,26 @@ class ReferenceEntryEditor(QWidget):
         pub_layout.addLayout(pub_row)
 
         treatment_form = QFormLayout()
-        self.name_as_published_input = QLineEdit(
-            " ".join(part for part in (genus, species) if part).strip()
+        current_taxon_label = " ".join(part for part in (genus, species) if part).strip()
+        self.taxon_label = QLineEdit()
+        self.taxon_label.setText(current_taxon_label or QCoreApplication.translate("ReferenceAddDialog", "No taxon selected"))
+        self.taxon_label.setReadOnly(True)
+        self.taxon_label.setToolTip(
+            QCoreApplication.translate("ReferenceAddDialog",
+                "The normalized taxon this treatment is linked to. "
+                "To change the taxon, go back to the Reference taxon selector above."
+            )
         )
+        treatment_form.addRow(QCoreApplication.translate("ReferenceAddDialog", "Taxon:"), self.taxon_label)
+        self.name_as_published_input = QLineEdit()
         self.name_as_published_input.setPlaceholderText(
-            QCoreApplication.translate("ReferenceAddDialog", "Name exactly as published")
+            QCoreApplication.translate("ReferenceAddDialog", "Name exactly as published (e.g., as written in the publication)")
+        )
+        self.name_as_published_input.setToolTip(
+            QCoreApplication.translate("ReferenceAddDialog",
+                "The exact name used in the publication. This can be an old synonym, "
+                "spelling variant, or historical combination — separate from the normalized taxon above."
+            )
         )
         treatment_form.addRow(
             QCoreApplication.translate("ReferenceAddDialog", "Name as published:"), self.name_as_published_input
@@ -583,9 +598,9 @@ class ReferenceEntryEditor(QWidget):
             self.publication_combo.setEditText("")
         finally:
             del blocker
-        self.name_as_published_input.setText(
-            " ".join(part for part in (self._genus, self._species) if part).strip()
-        )
+        taxon_label = " ".join(part for part in (self._genus, self._species) if part).strip()
+        self.taxon_label.setText(taxon_label or QCoreApplication.translate("ReferenceAddDialog", "No taxon selected"))
+        self.name_as_published_input.setText("")
         self._refresh_existing_sets_cache()
         self._no_taxon_notice_label.setVisible(
             bool(self._observation_id) and not self._sporely_taxon_id

@@ -1288,6 +1288,23 @@ class CommunityResultsPane(QWidget):
         layout.setContentsMargins(8, 8, 8, 8)
         layout.setSpacing(8)
 
+        search_row = QHBoxLayout()
+        search_row.setSpacing(8)
+        from PySide6.QtWidgets import QLineEdit
+        self.search_input = QLineEdit(self)
+        self.search_input.setPlaceholderText(
+            QCoreApplication.translate("CommunityResultsPane", "Search genus, species, or name…")
+        )
+        self.search_input.setToolTip(
+            QCoreApplication.translate("CommunityResultsPane",
+                "Type a genus and species (e.g., 'Hebeloma mesophaeum') to search community spore data. "
+                "Leave empty to browse results for the selected reference taxon."
+            )
+        )
+        self.search_input.returnPressed.connect(self._on_search_input_submitted)
+        search_row.addWidget(self.search_input)
+        layout.addLayout(search_row)
+
         # Same QListWidget + TwoLineRow convention as the Library and
         # My-observations tabs (title line + independently-elided detail
         # line), rather than the legacy dialog's 4-column QTableWidget, so
@@ -1331,6 +1348,19 @@ class CommunityResultsPane(QWidget):
         """
         self._genus = str(genus or "").strip()
         self._species = str(species or "").strip()
+        self.refresh()
+
+    def _on_search_input_submitted(self) -> None:
+        """Handle explicit search input from the search field."""
+        text = self.search_input.text().strip()
+        if not text:
+            return
+        parts = text.split(None, 1)
+        if len(parts) < 2:
+            return
+        genus, species = parts[0], parts[1]
+        self._genus = genus
+        self._species = species
         self.refresh()
 
     def _exclude_self_reference(self, rows: list[dict[str, Any]]) -> list[dict[str, Any]]:

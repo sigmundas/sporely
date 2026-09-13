@@ -3288,6 +3288,17 @@ class ArtsobservasjonerSettingsDialog(QDialog):
         self.cloud_logout_button = QPushButton(self.tr("Log out"))
         self.cloud_logout_button.clicked.connect(self._logout_cloud)
         cloud_button_row.addWidget(self.cloud_logout_button)
+
+        self.cloud_reset_button = QPushButton(self.tr("Change account…"))
+        self.cloud_reset_button.setToolTip(
+            self.tr(
+                "Reset the cloud account link and sign in with a different account. "
+                "Local data will remain, but cloud sync state will be cleared."
+            )
+        )
+        self.cloud_reset_button.clicked.connect(self._on_reset_cloud_account)
+        cloud_button_row.addWidget(self.cloud_reset_button)
+
         cloud_button_row.addStretch(1)
         cloud_signin_row_layout.addLayout(cloud_button_row)
 
@@ -4012,6 +4023,8 @@ class ArtsobservasjonerSettingsDialog(QDialog):
             )
         if hasattr(self, "cloud_logout_button"):
             self.cloud_logout_button.setEnabled(self._cloud_login_worker is None and logged_in)
+        if hasattr(self, "cloud_reset_button"):
+            self.cloud_reset_button.setEnabled(self._cloud_login_worker is None and logged_in)
         self._update_cloud_account_summary_labels()
         self._update_cloud_debug_controls()
 
@@ -4190,6 +4203,54 @@ class ArtsobservasjonerSettingsDialog(QDialog):
                         pass
         self._update_cloud_controls()
         self._update_status()
+
+    def _on_reset_cloud_account(self) -> None:
+        confirmed = QMessageBox.question(
+            self,
+            self.tr("Reset Cloud Account Link?"),
+            self.tr(
+                "This will clear the cloud account link and allow you to sign in with a different account.\n\n"
+                "Your local data will remain unchanged. Cloud sync status will be reset, "
+                "and data will need to be synced again after signing into the new account."
+            ),
+            QMessageBox.Ok | QMessageBox.Cancel,
+            QMessageBox.Cancel,
+        )
+        if confirmed != QMessageBox.Ok:
+            return
+        try:
+            from database.models import reset_cloud_sync_state
+            from utils.cloud_sync import SporelyCloudClient, clear_saved_cloud_password
+            reset_cloud_sync_state()
+            SporelyCloudClient.clear_credentials()
+            clear_saved_cloud_password()
+            update_app_settings({"cloud_user_email": None})
+        except Exception as exc:
+            QMessageBox.warning(
+                self,
+                self.tr("Reset Failed"),
+                self.tr("Unable to reset cloud account link.\n\n{error}").format(error=exc),
+            )
+            return
+        self._cloud_client = None
+        settings_hub = self.parent()
+        if settings_hub is not None:
+            if hasattr(settings_hub, "_on_cloud_logout_changed"):
+                try:
+                    settings_hub._on_cloud_logout_changed()
+                except Exception:
+                    pass
+            else:
+                if hasattr(settings_hub, "_cloud_client"):
+                    settings_hub._cloud_client = None
+                _clear_cached_cloud_avatar(settings_hub)
+        self._update_cloud_controls()
+        self._update_status()
+        QMessageBox.information(
+            self,
+            self.tr("Account Link Reset"),
+            self.tr("Cloud account link has been cleared. You can now sign in with a different account."),
+        )
 
     def _open_login(self):
         selected_uploader = self._selected_uploader()
