@@ -163,6 +163,14 @@ sopp.jpg
 !/database/taxonomy/registry/canonical/
 !/database/taxonomy/registry/canonical/**
 
-# agent-sparring per-stage working artifacts
-# (.sparring/project.toml and .sparring/PROJECT.md stay tracked)
+# agent-sparring working artifacts: per-stage files and plan-run position.
+# (.sparring/project.toml and .sparring/PROJECT.md stay tracked.)
+#
+# Both must be ignored. freeze-candidate requires a clean worktree and
+# exempts only the current stage's own artifact files, and the plan runner
+# rewrites its run-state file at every stage boundary — so a visible
+# .sparring/plans/ would make every freeze after the first refuse the
+# worktree as dirty, part-way through a run. `sparring check-config`
+# reports both.
 .sparring/stages/
+.sparring/plans/
