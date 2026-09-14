@@ -100,11 +100,14 @@ would otherwise have rebuilt away. The curated publication CHECK and
 gains the three keys under `measurement_set` as all-or-none rather than
 required, because candidates captured before the migration legitimately lack
 them, and `private.reference_curation_capture_candidate` now always emits all
-three. The two replaced function bodies are copied verbatim from the
-migrations that own them by
-`.sparring/stages/<stage id>/build_web_migration.py`, with only the version
-guard and the three added keys changed, so re-running the generator reproduces
-the migration byte for byte.
+three. The two replaced function bodies were copied verbatim from the
+migrations that own them rather than retyped. That is directly checkable by
+diffing each `CREATE OR REPLACE FUNCTION … $$;` block in `20260914090000`
+against its `CREATE FUNCTION` original: `reference_curated_public_envelope`
+differs in exactly two lines (the `CREATE OR REPLACE` header and
+`snapshot_schema_version NOT IN (1, 2)`) and
+`reference_curation_capture_candidate` in exactly the header plus the three
+added keys with their comment. Nothing else in either body moved.
 
 Boundary assertions updated, not weakened. The Stage 3B test
 `test_snapshot_of_enhanced_row_is_still_the_v1_projection_of_its_ordinary_columns`
