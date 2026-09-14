@@ -777,17 +777,40 @@ def test_create_revision_copies_all_extension_fields(libs):
     assert not MeasurementSetRepository.get(legacy_successor.id).is_enhanced
 
 
-def test_snapshot_of_enhanced_row_is_still_the_v1_projection_of_its_ordinary_columns(libs):
-    """Existing scalar consumers see nothing new (snapshot v2 is Stage 3D)."""
+def test_snapshot_of_enhanced_row_is_v2_and_of_stripped_content_is_v1(libs):
+    """Since Stage 3D the emit rule follows the row, not a setting: an
+    enhanced row builds version 2, and the same row without the extension
+    builds exactly the version-1 snapshot it built before the feature."""
     created = MeasurementSetRepository.create(_set(ENHANCED))
     work = ReferenceWorkRepository.get(WORK_ID)
     treatment = TaxonTreatmentRepository.get(TREATMENT_ID)
     enhanced_snapshot = build_observation_reference_snapshot(work, treatment, created)
     stripped = replace(created, measurement_details_json=None, q_core_min=None, q_core_max=None)
-    assert enhanced_snapshot == build_observation_reference_snapshot(work, treatment, stripped)
-    assert enhanced_snapshot["schema_version"] == 1
-    assert "measurement_details" not in enhanced_snapshot
+    legacy_snapshot = build_observation_reference_snapshot(work, treatment, stripped)
+
+    assert enhanced_snapshot["schema_version"] == 2
+    assert legacy_snapshot["schema_version"] == 1
+    assert "measurement_details" not in legacy_snapshot
+    assert "q_core_min" not in legacy_snapshot["measurements"]
+    assert enhanced_snapshot["measurement_details"] == json.loads(
+        created.measurement_details_json
+    )
+    assert enhanced_snapshot["measurements"]["q_core_min"] == created.q_core_min
+    assert enhanced_snapshot["measurements"]["q_core_max"] == created.q_core_max
+    # The ordinary columns are unchanged by the extension; no statistic leaks
+    # into a scalar mean.
     assert enhanced_snapshot["measurements"]["length_mean"] is None
+    for key, value in legacy_snapshot["measurements"].items():
+        assert enhanced_snapshot["measurements"][key] == value, key
+    assert {
+        key: value
+        for key, value in enhanced_snapshot.items()
+        if key not in {"schema_version", "measurements", "measurement_details"}
+    } == {
+        key: value
+        for key, value in legacy_snapshot.items()
+        if key not in {"schema_version", "measurements"}
+    }
 
 
 # --- 24: pull reconciliation never silently drops the extension ---------------

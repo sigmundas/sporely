@@ -22,6 +22,7 @@ from database.schema import (
 from database.reference_library_schema import (
     init_observation_reference_uses_schema,
     init_reference_library_schema,
+    reference_library_has_enhanced_rows,
 )
 from database.reference_sync_state import (
     record_library_mutation_intent,
@@ -36,6 +37,10 @@ from references.measurement_content import (
     is_enhanced_row,
     scientific_content_equal,
     validate_measurement_content,
+)
+from references.measurement_content_gates import (
+    ENHANCED_BUNDLE_BLOCKED_MESSAGE,
+    enhanced_bundle_export_enabled,
 )
 from utils.heic_converter import build_local_image_provenance
 
@@ -383,6 +388,32 @@ def _copy_table_rows(
     return len(values)
 
 
+class EnhancedBundleExportBlocked(RuntimeError):
+    """The reference library holds content this build may not put in a bundle."""
+
+
+def _guard_enhanced_bundle_export(reference_path: Path) -> None:
+    """Enforce the minimum-supported-desktop-version policy on export.
+
+    A desktop that has never opened an upgraded library has no write barrier,
+    so importing an enhanced bundle there would insert a legacy-only
+    projection of it (contract sections 6 and 11). Until the gate is open,
+    this build therefore refuses to *produce* such a bundle rather than
+    exporting one that an unsupported desktop would quietly mangle. Nothing is
+    stripped: the refusal is the whole mechanism, and stored content is
+    untouched.
+    """
+    if enhanced_bundle_export_enabled() or not reference_path.exists():
+        return
+    connection = sqlite3.connect(reference_path)
+    try:
+        blocked = reference_library_has_enhanced_rows(connection)
+    finally:
+        connection.close()
+    if blocked:
+        raise EnhancedBundleExportBlocked(ENHANCED_BUNDLE_BLOCKED_MESSAGE)
+
+
 def _normalize_reference_row_key(row: dict | None) -> str:
     payload = {
         str(key): row.get(key)
@@ -428,6 +459,10 @@ def export_database_bundle(
 
     images_dir = get_images_dir()
     ref_path = get_reference_database_path()
+    if include_reference_values:
+        # Refuse before any temporary file, copy or zip entry exists, so a
+        # blocked export leaves nothing half-written behind.
+        _guard_enhanced_bundle_export(ref_path)
     include_main_db = any(
         [include_observations, include_images, include_measurements, include_calibrations]
     )

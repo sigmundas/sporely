@@ -9,6 +9,14 @@ from __future__ import annotations
 import json
 from typing import TYPE_CHECKING, Any
 
+from references.measurement_content import (
+    MEASUREMENT_DETAILS_MAX_BYTES,
+    MeasurementContentError,
+    UnsupportedMeasurementDetails,
+    decode_measurement_details,
+    details_to_object,
+)
+
 if TYPE_CHECKING:  # pragma: no cover
     from database.reference_library import (
         MeasurementSet,
@@ -17,7 +25,22 @@ if TYPE_CHECKING:  # pragma: no cover
     )
 
 
+#: Version emitted for legacy-only content; unchanged legacy rows keep
+#: producing byte-identical version-1 snapshots (contract section 7).
 SNAPSHOT_SCHEMA_VERSION = 1
+
+#: Version emitted for an enhanced measurement set: ``measurements`` gains
+#: ``q_core_min``/``q_core_max`` and one new top-level ``measurement_details``
+#: key that sits *outside* the numeric-only ``measurements`` mapping.
+SNAPSHOT_SCHEMA_VERSION_ENHANCED = 2
+
+SUPPORTED_SNAPSHOT_VERSIONS: frozenset[int] = frozenset(
+    {SNAPSHOT_SCHEMA_VERSION, SNAPSHOT_SCHEMA_VERSION_ENHANCED}
+)
+
+#: Whole-snapshot limit, matching ``private.reference_snapshot_valid`` and
+#: ``curated_reference_forks._validate_snapshot``.
+SNAPSHOT_MAX_BYTES = 65536
 
 
 # --- Author / editor formatting ---------------------------------------------
@@ -203,6 +226,17 @@ def build_observation_reference_snapshot(
     The result is a plain JSON-serializable dict with deterministic keys.
     It intentionally excludes local filesystem paths, owner identity,
     credentials, and private notes.
+
+    Version 1 is emitted for a legacy-only measurement set and version 2 for an
+    enhanced one (contract section 7). The emit rule is a property of the row,
+    not of a setting: an unchanged legacy row keeps producing the exact
+    version-1 snapshot it produced before this feature existed, so no existing
+    attachment becomes stale on upgrade. Whether an enhanced row may *become*
+    frozen evidence at all is the reader-version gate's decision, applied by
+    the attachment repository, not here.
+
+    A malformed stored details object raises :class:`MeasurementContentError`
+    rather than yielding a snapshot that silently omits the statistics.
     """
     if measurement_set.taxon_treatment_id != treatment.id:
         raise ValueError(
@@ -219,6 +253,11 @@ def build_observation_reference_snapshot(
             raw_points = json.loads(measurement_set.raw_points_json)
         except (TypeError, ValueError, json.JSONDecodeError):
             raw_points = None
+
+    enhanced = any(
+        getattr(measurement_set, name) is not None
+        for name in ("measurement_details_json", "q_core_min", "q_core_max")
+    )
 
     measurements = {
         "length_min": measurement_set.length_min,
@@ -269,12 +308,85 @@ def build_observation_reference_snapshot(
         "method": method,
         "raw_points": raw_points,
     }
+    if not enhanced:
+        return snapshot
+
+    # Version 2. The two new numeric columns join the numeric-only
+    # ``measurements`` mapping; the details object is a separate top-level key
+    # so ``measurements`` keeps holding numbers or null only.
+    details = decode_measurement_details(measurement_set.measurement_details_json)
+    if isinstance(details, UnsupportedMeasurementDetails):
+        # A preserved future version travels unchanged; this desktop never
+        # reinterprets or downgrades it.
+        details_object: Any = dict(details.raw)
+    elif details is not None:
+        details_object = details_to_object(details)
+    else:
+        details_object = None
+
+    snapshot["schema_version"] = SNAPSHOT_SCHEMA_VERSION_ENHANCED
+    measurements["q_core_min"] = measurement_set.q_core_min
+    measurements["q_core_max"] = measurement_set.q_core_max
+    snapshot["measurement_details"] = details_object
+
+    if details_object is not None:
+        encoded = json.dumps(
+            details_object, ensure_ascii=True, sort_keys=True, separators=(",", ":")
+        )
+        if len(encoded.encode("utf-8")) > MEASUREMENT_DETAILS_MAX_BYTES:
+            raise MeasurementContentError(
+                "measurement details exceed the snapshot embedding limit"
+            )
+    if len(serialize_snapshot(snapshot).encode("utf-8")) > SNAPSHOT_MAX_BYTES:
+        raise MeasurementContentError("reference snapshot exceeds its size limit")
     return snapshot
 
 
 def serialize_snapshot(snapshot: dict) -> str:
     """Deterministic JSON encoding for the snapshot."""
     return json.dumps(snapshot, ensure_ascii=False, sort_keys=True)
+
+
+def snapshot_semantic_projection(snapshot: Any) -> dict[str, Any] | None:
+    """Version-aware semantic form of a snapshot (contract section 7).
+
+    Drops ``schema_version`` and ``reference_revision``, fills the version-2
+    extension with ``None`` where a version-1 snapshot simply has no such key,
+    and returns ``None`` for an unsupported version. ``None`` means *not
+    projectable*: such a snapshot is never equal to anything, including
+    another copy of itself, so a reader holds or rejects rather than silently
+    treating a future representation as version 1.
+
+    Hence a version-1 snapshot equals the version-2 rendering of the same
+    legacy-only content, and differs from a version-2 snapshot that carries
+    real statistics.
+    """
+    if not isinstance(snapshot, dict):
+        return None
+    if snapshot.get("schema_version") not in SUPPORTED_SNAPSHOT_VERSIONS:
+        return None
+    measurements = snapshot.get("measurements")
+    projected = {
+        key: value
+        for key, value in snapshot.items()
+        if key
+        not in {
+            "schema_version",
+            "reference_revision",
+            "measurements",
+            "measurement_details",
+        }
+    }
+    if isinstance(measurements, dict):
+        projected["measurements"] = {
+            "q_core_min": None,
+            "q_core_max": None,
+            **measurements,
+        }
+    else:
+        projected["measurements"] = measurements
+    projected["measurement_details"] = snapshot.get("measurement_details")
+    return projected
 
 
 def observation_snapshots_semantically_equal(
@@ -286,20 +398,16 @@ def observation_snapshots_semantically_equal(
     ``reference_revision`` records the measurement-set revision used at
     attachment time, but the work and treatment are independently revisioned.
     Staleness therefore follows the canonical public content, not revision or
-    timestamp counters. Invalid stored JSON is never considered equivalent.
+    timestamp counters. Invalid stored JSON is never considered equivalent,
+    and neither is a snapshot whose schema version this desktop does not
+    support, on either side of the comparison.
     """
     try:
         stored = json.loads(stored_snapshot_json)
     except (TypeError, ValueError, json.JSONDecodeError):
         return False
-    if not isinstance(stored, dict) or not isinstance(current_snapshot, dict):
+    stored_semantic = snapshot_semantic_projection(stored)
+    current_semantic = snapshot_semantic_projection(current_snapshot)
+    if stored_semantic is None or current_semantic is None:
         return False
-    stored_semantic = {
-        key: value for key, value in stored.items() if key != "reference_revision"
-    }
-    current_semantic = {
-        key: value
-        for key, value in current_snapshot.items()
-        if key != "reference_revision"
-    }
     return stored_semantic == current_semantic

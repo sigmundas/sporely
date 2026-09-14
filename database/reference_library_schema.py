@@ -239,6 +239,29 @@ def register_measurement_contract(
     )
 
 
+def reference_library_has_enhanced_rows(conn: sqlite3.Connection) -> bool:
+    """Whether ``reference_measurement_sets`` holds at least one enhanced row.
+
+    Read-only, and tolerant of a library that predates the extension columns:
+    such a library cannot hold enhanced content at all, so it answers ``False``
+    rather than failing. Used by the export paths to apply the
+    minimum-supported-desktop-version policy without duplicating knowledge of
+    which columns make a row enhanced.
+    """
+    columns = {
+        str(row[1])
+        for row in conn.execute("PRAGMA table_info(reference_measurement_sets)")
+    }
+    names = tuple(name for name, _type in MEASUREMENT_CONTENT_EXTENSION_COLUMNS)
+    if not columns or not set(names) <= columns:
+        return False
+    predicate = " OR ".join(f"{name} IS NOT NULL" for name in names)
+    row = conn.execute(
+        f"SELECT 1 FROM reference_measurement_sets WHERE {predicate} LIMIT 1"
+    ).fetchone()
+    return row is not None
+
+
 def _ensure_measurement_content_extension(conn: sqlite3.Connection) -> None:
     """Add the extension columns and the barrier triggers where absent.
 
