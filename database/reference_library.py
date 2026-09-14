@@ -47,6 +47,10 @@ from references.measurement_content import (
     is_enhanced_row,
     validate_measurement_content,
 )
+from references.measurement_content_gates import (
+    ENHANCED_ATTACHMENT_BLOCKED_MESSAGE,
+    enhanced_attachments_enabled,
+)
 
 
 # --- Errors ------------------------------------------------------------------
@@ -1452,6 +1456,40 @@ class MeasurementSetPreferenceRepository:
 # --- Observation reference uses ---------------------------------------------
 
 
+def _gated_observation_reference_snapshot(
+    work: "ReferenceWork",
+    treatment: "TaxonTreatment",
+    measurement_set: "MeasurementSet",
+) -> dict[str, Any]:
+    """Build a snapshot for an attachment, applying the reader-version gate.
+
+    ``build_observation_reference_snapshot`` emits version 2 for an enhanced
+    measurement set. Until the minimum-supported-reader-version gate is open,
+    a desktop older than the version-2 readers would reject a whole use feed
+    containing such a snapshot, so an enhanced source cannot become frozen
+    evidence yet. Refusing is the only safe answer: emitting version 1 instead
+    would freeze evidence that silently omits the reported statistics.
+
+    A malformed stored details object surfaces through the same boundary, as a
+    library error the callers of this repository already handle, rather than as
+    a bare ``ValueError`` escaping into the UI.
+    """
+    if not enhanced_attachments_enabled() and is_enhanced_row(
+        {
+            "measurement_details_json": measurement_set.measurement_details_json,
+            "q_core_min": measurement_set.q_core_min,
+            "q_core_max": measurement_set.q_core_max,
+        }
+    ):
+        raise ReferenceIntegrityError(ENHANCED_ATTACHMENT_BLOCKED_MESSAGE)
+    try:
+        return build_observation_reference_snapshot(work, treatment, measurement_set)
+    except MeasurementContentError as exc:
+        raise ReferenceIntegrityError(
+            f"reference measurement content cannot be snapshotted: {exc}"
+        ) from exc
+
+
 class ObservationReferenceUseRepository:
     """Cross-database observation ↔ measurement-set link management."""
 
@@ -1682,7 +1720,7 @@ class ObservationReferenceUseRepository:
                     f"reference_measurement_set {reference_measurement_set_id} does not exist"
                 )
             measurement_set, treatment, work = bundle
-            snapshot = build_observation_reference_snapshot(
+            snapshot = _gated_observation_reference_snapshot(
                 work, treatment, measurement_set
             )
             snapshot_json = serialize_snapshot(snapshot)
@@ -1799,7 +1837,7 @@ class ObservationReferenceUseRepository:
                 state="source_missing",
             )
         measurement_set, treatment, work = bundle
-        current_snapshot = build_observation_reference_snapshot(
+        current_snapshot = _gated_observation_reference_snapshot(
             work, treatment, measurement_set
         )
         state = (
@@ -1853,9 +1891,19 @@ class ObservationReferenceUseRepository:
                 path_ids=resolution.path_ids,
             )
         measurement_set, treatment, work = bundle
-        snapshot = build_observation_reference_snapshot(
-            work, treatment, measurement_set
-        )
+        try:
+            snapshot = _gated_observation_reference_snapshot(
+                work, treatment, measurement_set
+            )
+        except ReferenceIntegrityError:
+            # An enhanced successor this desktop may not freeze yet, or one
+            # whose stored content is unreadable, is reported exactly like a
+            # successor it cannot render: reviewable, not adoptable.
+            return MeasurementSetSuccessorResolution(
+                source_id=resolution.source_id,
+                state="unsupported",
+                path_ids=resolution.path_ids,
+            )
         # Adoption must not replace a working historical plot with a source
         # the current desktop cannot render. Import locally to keep the
         # repository's normal CRUD path independent of plotting concerns.
@@ -2003,7 +2051,7 @@ class ObservationReferenceUseRepository:
                 "snapshot was preserved"
             )
         measurement_set, treatment, work = bundle
-        current_snapshot = build_observation_reference_snapshot(
+        current_snapshot = _gated_observation_reference_snapshot(
             work, treatment, measurement_set
         )
         if observation_snapshots_semantically_equal(

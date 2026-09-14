@@ -827,6 +827,9 @@ def _validate_reference_snapshot(
     snapshot = _canonical_json(row.get("snapshot_json"))
     if not isinstance(snapshot, dict):
         raise PortableImportError(f"reference use {row.get('id')} has an invalid snapshot")
+    # Version-keyed exact key sets (contract section 7): a version-2 snapshot
+    # is preserved as it arrived, an unknown version is rejected. The shape is
+    # never intersected down to the keys this reader happens to know.
     allowed_keys = {
         "schema_version", "reference_work_id", "reference_measurement_set_id",
         "reference_treatment_id", "reference_revision", "short_label",
@@ -835,7 +838,17 @@ def _validate_reference_snapshot(
         "character", "data_kind", "raw_text", "measurements", "method",
         "raw_points",
     }
-    if snapshot.get("schema_version") != 1 or set(snapshot) != allowed_keys:
+    allowed_keys_by_version = {
+        1: allowed_keys,
+        2: allowed_keys | {"measurement_details"},
+    }
+    version = snapshot.get("schema_version")
+    if isinstance(version, bool) or not isinstance(version, int):
+        version = None
+    if (
+        version not in allowed_keys_by_version
+        or set(snapshot) != allowed_keys_by_version[version]
+    ):
         raise PortableImportError(
             f"reference use {row.get('id')} has a noncanonical snapshot"
         )

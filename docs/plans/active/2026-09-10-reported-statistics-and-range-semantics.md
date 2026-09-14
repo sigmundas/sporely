@@ -1477,8 +1477,40 @@ repository.
 
 ## Stage 3D — Snapshot v2 and attachment/export/import transport
 
-Future stage; starts after Stage 3C is accepted. Owns the frozen-evidence
-representation of enhanced content and the gates that protect old readers.
+Implemented 2026-09-14; desktop candidate awaiting sparring (see the Stage 3D
+handoff). Stage 3C was accepted at `3c0f65b5`, which is this stage's base.
+Owns the frozen-evidence representation of enhanced content and the gates that
+protect old readers.
+
+Implementation record:
+
+- Desktop: `database/reference_citation.py` emits v1/v2 by the row's enhanced
+  state and owns `snapshot_semantic_projection`;
+  `database/reference_library.py::_gated_observation_reference_snapshot`
+  applies the reader gate at the attachment boundary (`_do_attach`,
+  `snapshot_status`, `refresh_snapshot`, and `successor_status`, which reports
+  an enhanced successor as `unsupported`) and maps a malformed stored details
+  object to `ReferenceIntegrityError`;
+  `stage_observation_reference_use_feed`, `curated_reference_forks` and
+  `utils/archive/portable_import.py` accept v1/v2 with version-keyed exact key
+  sets; `copy_curated_bundle_to_personal_library` copies all three extension
+  fields or rejects; `references/measurement_content_gates.py` holds both
+  gates, closed, and `utils/db_share.py` /
+  `utils/archive/portable_export.py` refuse to produce an enhanced archive
+  while the desktop-version gate is closed.
+- Cloud: migration
+  `20260914090000_extend_reference_snapshots_to_version_2.sql` in
+  `sporely-web` makes `private.reference_snapshot_valid` version-keyed,
+  `private.reference_canonical_snapshot` emit v2 for an enhanced row,
+  `private.public_reference_snapshot` preserve the extension, relaxes the
+  curated publication CHECK and the public curated reader to `IN (1, 2)`, and
+  gives the curation-intake candidate the three keys under `measurement_set`
+  (all-or-none). Not yet committed, tested or deployed.
+- Deferred and named: curated *storage* of the extension
+  (`private.curated_reference_measurement_sets` has no extension columns, so
+  the curation pipeline still publishes v1 bundles; the desktop copy path is
+  reached with v2 through shared contributions, which carry the canonical
+  snapshot directly).
 
 - Snapshot v2 with the shape frozen by Stage 1 (contract §9 / blocker 3):
   details object outside the numeric-only `measurements` mapping, `q_core_*`

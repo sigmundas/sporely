@@ -174,6 +174,27 @@ extension is read with the three keys as `null`. Pull reconciliation treats the
 concurrent edits inside the group conflict unless the complete resulting
 content is identical, while `notes` keeps per-field merging.
 
+Observation-reference snapshots have two supported versions (contract section
+7). Version 2 is version 1 with `schema_version: 2`, `q_core_min`/`q_core_max`
+inside the numeric-only `measurements` mapping (17 keys) and one new top-level
+`measurement_details` key holding the decoded details object or `null`; the
+whole snapshot stays within 65536 bytes and the details object within 4096
+bytes of its canonical encoding. The emit rule follows the row, not a setting:
+a legacy-only measurement set still produces its exact version-1 snapshot, an
+enhanced one produces version 2. Readers ship before writers — the desktop use
+feed, the curated and portable validators and the cloud validators accept both
+versions, and any other version is refused loudly rather than read as version
+1. Comparison is by version-aware semantic projection: `schema_version` and
+`reference_revision` are dropped, a missing extension equals an explicitly null
+one, real statistics are a genuine difference, and an unsupported version is
+never projectable, so it is never equal to anything. Nothing rewrites or
+enriches a historical snapshot; replacement evidence goes through explicit
+refresh or successor adoption. Enhanced content becoming frozen evidence is
+held behind the minimum-supported-reader-version gate
+(`references/measurement_content_gates.py`), which ships closed: while it is
+closed the desktop refuses to attach, refresh onto, or adopt an enhanced
+measurement set instead of freezing a lossy version-1 snapshot of it.
+
 Observation-use pull imports the frozen `snapshot_json` exactly as stored.
 Three-way reconciliation may automatically combine only disjoint role/note
 edits. Identity, measurement-set, selected-time, revision, or snapshot
