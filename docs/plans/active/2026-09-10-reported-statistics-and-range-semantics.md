@@ -143,10 +143,25 @@ The CLI's `supabase db query --file` cannot run these multi-statement scripts
 (`cannot insert multiple commands into a prepared statement`), so `psql` is
 the documented runner in the new test's header.
 
-Still human-gated: an actual older desktop reading an observation-use feed
-that contains a valid version-2 snapshot (contract section 7 rollout step 1);
-`supabase migration list` / `db push --dry-run` / `db push` against the
-deployed project; and any decision to open either gate.
+**Human gate — passed (branch owner, 2026-09-14), check
+`pre-activation-desktop-v2-feed`.** The oldest desktop build that will remain
+supported when the reader gate opens, with enhanced attachment emission still
+disabled, pulled a complete cloud observation-use feed from a synthetic test
+account containing ordinary rows and at least one valid `schema_version` 2
+snapshot whose `measurement_details` is top level and whose
+`q_core_min`/`q_core_max` are inside `measurements`. The synchronized use and
+the other feed rows were then inspected. This is the proof contract section 7
+rollout step 1 requires before version-2 emission may ever be enabled: an
+older reader neither rejects the whole feed nor silently omits the row.
+
+Sparring returned `READY` on 2026-09-14 for both candidates with no
+implementation defect found. Acceptance and merge remain the branch owner's
+separate decisions.
+
+Remaining release-owner work, outside this stage: `supabase migration list`,
+`supabase db push --dry-run`, `supabase db push` and the post-push
+`migration list` check against the deployed project; and any decision to open
+either rollout gate, which stay closed here.
 
 ## Stage 3C handoff — 2026-09-13 (candidate on `feature/reported-statistics-contract`, sparring pending)
 
@@ -1620,11 +1635,20 @@ repository.
 
 ## Stage 3D — Snapshot v2 and attachment/export/import transport
 
-Implemented 2026-09-14; candidates pushed in both repositories and awaiting
-sparring (see the Stage 3D handoff at the top of this plan for the full
+Implemented 2026-09-14; sparring returned `READY` for both candidates and the
+human gate passed, so acceptance and merge are the branch owner's remaining
+decisions (see the Stage 3D handoff at the top of this plan for the full
 record). Stage 3C was accepted at `3c0f65b5` / `b32eb922`, the base in each
 repository. Owns the frozen-evidence representation of enhanced content and
 the gates that protect old readers.
+
+Prerequisite, satisfied: the human-gated pre-activation reader check
+(`pre-activation-desktop-v2-feed`, contract section 7 rollout step 1). The
+oldest desktop build that will remain supported pulled a complete
+observation-use feed containing a valid version-2 snapshot from a synthetic
+account, and neither rejected the feed nor omitted the row. Version-2
+emission and enhanced attachments nevertheless stay disabled: passing the
+check is what makes opening the gate *permissible*, not what opens it.
 
 Implementation record:
 
