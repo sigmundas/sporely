@@ -710,14 +710,36 @@ class AddReferenceDialog(GeometryMixin, QDialog):
         self.results_list.addItem(new_pub_item)
 
         if not visible:
-            self.status_hint_label.setText(
-                QCoreApplication.translate("AddReferenceDialog", "No matching measurement sets in the library.")
-                if self._candidates
-                else QCoreApplication.translate("AddReferenceDialog", "The reference library has no measurement sets yet.")
-            )
+            self.status_hint_label.setText(self._empty_library_hint())
         else:
             self.status_hint_label.setText("")
         self.preview_pane.clear()
+
+    def _empty_library_hint(self) -> str:
+        """Why the library list is empty, and what would un-empty it.
+
+        "Only this taxon" is checked by default and ANDs with the search
+        box, so a user searching the library for a genus while the picker
+        sits on one species gets an empty list and no indication that the
+        checkbox -- not their search text -- is what excluded the rows.
+        Only say so when unchecking would genuinely reveal something.
+        """
+        if not self._candidates:
+            return QCoreApplication.translate("AddReferenceDialog", "The reference library has no measurement sets yet.")
+        if self.only_this_taxon_checkbox.isChecked():
+            without_taxon_scope = filter_library_candidates(
+                self._candidates,
+                taxon_id=self._taxon_id,
+                only_this_taxon=False,
+                query=self.search_input.text(),
+                taxon_text=self._taxon_target_query_text(),
+            )
+            if without_taxon_scope:
+                return QCoreApplication.translate(
+                    "AddReferenceDialog",
+                    "No matching measurement sets for this taxon. {count} more match if you turn off “Only this taxon”.",
+                ).format(count=len(without_taxon_scope))
+        return QCoreApplication.translate("AddReferenceDialog", "No matching measurement sets in the library.")
 
     def _add_candidate_item(self, candidate: MeasurementSetCandidate) -> None:
         label = candidate.short_label or candidate.name_as_published or QCoreApplication.translate("AddReferenceDialog", "Untitled")
