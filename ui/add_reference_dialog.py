@@ -178,6 +178,11 @@ class PersonalObservationCandidate:
     author: str
     location: str
     points: list[dict]
+    # The row's own taxon. Only meaningful when the tab is browsing a whole
+    # genus, where several species share the list and the date/author label
+    # alone does not say which one a row is.
+    genus: str = ""
+    species: str = ""
 
     @property
     def n(self) -> int:
@@ -185,7 +190,7 @@ class PersonalObservationCandidate:
 
 
 def default_my_observation_candidates(
-    genus: str, species: str, *, exclude_observation_id: int | None = None
+    genus: str, species: str = "", *, exclude_observation_id: int | None = None
 ) -> list[PersonalObservationCandidate]:
     """Load My-observations candidates from the same query that populates
     the legacy Source dropdown's "My data <date>" entries.
@@ -194,8 +199,14 @@ def default_my_observation_candidates(
     returned (mirrors the point-filtering in
     ``MainWindow._maybe_load_reference_panel_reference``'s observation
     branch), since an entry with no points cannot be plotted.
+
+    A genus with no species browses every personal observation in that
+    genus. This tab previously required both and returned nothing for a
+    genus-only identification, which is the common case while an
+    observation is still being worked out -- exactly when comparing it
+    against one's own earlier collections is most useful.
     """
-    if not genus or not species:
+    if not genus:
         return []
     rows = ObservationDB.get_personal_observations_for_species(
         genus, species, exclude_observation_id=exclude_observation_id
@@ -224,6 +235,8 @@ def default_my_observation_candidates(
                 author=(row.get("author") or "").strip(),
                 location=(obs.get("location") or "").strip(),
                 points=points,
+                genus=str(row.get("genus") or "").strip(),
+                species=str(row.get("species") or "").strip(),
             )
         )
     return result
@@ -972,10 +985,19 @@ class AddReferenceDialog(GeometryMixin, QDialog):
         self.my_observations_list.clear()
         for candidate in self._my_observations:
             self._add_observation_item(candidate)
-        self.my_observations_status_label.setText(
-            "" if self._my_observations
-            else QCoreApplication.translate("AddReferenceDialog", "No previous observations of this taxon have spore measurements.")
-        )
+        if self._my_observations:
+            self.my_observations_status_label.setText("")
+        elif not str(self._genus or "").strip():
+            # Distinct from the "none have measurements" case below, which
+            # would be a false statement here: with no genus the query never
+            # ran, so nothing has been looked at yet.
+            self.my_observations_status_label.setText(
+                QCoreApplication.translate("AddReferenceDialog", "Select a taxon to browse your own observations of it.")
+            )
+        else:
+            self.my_observations_status_label.setText(
+                QCoreApplication.translate("AddReferenceDialog", "No previous observations of this taxon have spore measurements.")
+            )
         if self.tabs.currentIndex() == self._my_observations_tab_index:
             self.preview_pane.clear()
 
@@ -985,7 +1007,19 @@ class AddReferenceDialog(GeometryMixin, QDialog):
             if candidate.author
             else QCoreApplication.translate("AddReferenceDialog", "My observation")
         )
-        detail_parts = [candidate.date] if candidate.date else []
+        detail_parts: list[str] = []
+        # Browsing a whole genus puts several species in one list, where the
+        # date and author alone do not say which species a row is. Mirrors
+        # the same disambiguation the Library tab does when "Only this
+        # taxon" is off (see _add_candidate_item).
+        if not str(self._species or "").strip():
+            row_taxon = " ".join(
+                part for part in (candidate.genus, candidate.species) if part
+            ).strip()
+            if row_taxon:
+                detail_parts.append(row_taxon)
+        if candidate.date:
+            detail_parts.append(candidate.date)
         detail_parts.append(QCoreApplication.translate("AddReferenceDialog", "n = {count}").format(count=candidate.n))
         if candidate.location:
             detail_parts.append(candidate.location)
@@ -1026,7 +1060,18 @@ class AddReferenceDialog(GeometryMixin, QDialog):
             if candidate.author
             else QCoreApplication.translate("AddReferenceDialog", "My observation")
         )
-        meta_parts = [candidate.date] if candidate.date else []
+        meta_parts: list[str] = []
+        # Always name the row's taxon here, even when the list is pinned to
+        # one species: this is the pane the user reads before adding the
+        # series to the plot, so what is about to be attached should be
+        # stated rather than inferred from the tab's current filter.
+        row_taxon = " ".join(
+            part for part in (candidate.genus, candidate.species) if part
+        ).strip()
+        if row_taxon:
+            meta_parts.append(row_taxon)
+        if candidate.date:
+            meta_parts.append(candidate.date)
         if candidate.location:
             meta_parts.append(candidate.location)
         meta = " · ".join(meta_parts)
