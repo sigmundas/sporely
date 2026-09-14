@@ -2,8 +2,148 @@
 
 The executable stage definitions of this plan are the `## Stage <label> — …`
 sections under *Canonical stage sequence* below (Stage 1 → 2 → 3A → 3B → 3C →
-3D → 4 → 5). The `… handoff` sections that follow this paragraph are historical
-records of completed stages, kept verbatim; they define nothing.
+3D → 4 → 5). The `… handoff` sections that follow this paragraph are records of
+stage execution, newest first; they define nothing. The first one is the
+**current stage**; the rest are historical and kept verbatim.
+
+## Stage 3D handoff — 2026-09-14 (current stage; candidates pushed in both repositories, sparring round 2)
+
+Status: **Stage 3D implemented and self-verified in both repositories.**
+Snapshot version 2, version-aware v1/v2 comparison, readers accepting v2
+before anything emits it, preserve-or-reject on every transfer path, and the
+two rollout gates as explicit reversible switches, shipped closed. Stage 3C
+(accepted at `3c0f65b5` / `b32eb922`) is the base in both repositories.
+Nothing Stage 1, 2, 3A, 3B or 3C froze was reopened; the parser, the editors,
+plotting and matching are untouched, and no enhanced attachment or enhanced
+editing is activated. Merging either branch, and deploying the migration,
+remain the branch owner's separate decisions.
+
+- Stage id: `stage-3d-snapshot-v2-and-attachment-export-import-transport`
+  (brief, handoff and notes in `.sparring/stages/<that id>/`).
+- `sporely-py`: branch `feature/reported-statistics-contract`, base
+  `3c0f65b5cf43f9ee7d08db4d2c9f8ea12478ecc5`, desktop candidate
+  **`4e451abd5c113747a5b49382b2efc1011f42a8a3`**, pushed. The commit that adds
+  this handoff records the cloud slice and the aligned contract text; it does
+  not alter the frozen desktop candidate.
+- `sporely-web`: branch `feature/reported-statistics-cloud-transport`, base
+  `b32eb92214f6eae9d308baa17128a53b83b6a896` (the accepted Stage 3C
+  candidate), candidate **`1bb5c804833bcdfff6b7f05c37395c1abd4e2de9`**,
+  pushed. Worked in the linked worktree `sporely-web-reported-statistics`,
+  as in Stage 3C, because the main checkout carries unrelated uncommitted
+  work on another branch; the SQL files were authored and run from the main
+  checkout and then copied into the worktree byte-identically, and the
+  untracked copies were removed from the main checkout.
+
+Files changed — `sporely-py`: `references/measurement_content_gates.py` (new),
+`database/reference_citation.py`, `database/reference_library.py`,
+`database/reference_library_schema.py`,
+`database/reference_use_sync_reconciliation.py`,
+`database/curated_reference_forks.py`, `utils/db_share.py`,
+`utils/archive/portable_export.py`, `utils/archive/portable_import.py`,
+`docs/supabase-sync-contract.md`; tests
+`tests/test_reference_snapshot_v2_transport.py` (new, 32 cases) and
+`tests/test_reference_measurement_content_persistence.py` (one Stage 3B
+boundary assertion, see below); this plan. Production code changed: yes.
+Tests changed: yes.
+
+Files changed — `sporely-web`:
+`supabase/migrations/20260914090000_extend_reference_snapshots_to_version_2.sql`
+(new), `supabase/tests/reference_snapshot_v2_test.sql` (new),
+`supabase/tests/reference_measurement_content_extension_test.sql` (one Stage
+3C boundary assertion, see below), `docs/supabase-sync-contract.md`.
+Production code changed: yes (migration). Tests changed: yes.
+`supabase/schema.sql` not regenerated (AGENTS.md).
+
+Desktop ownership. `build_observation_reference_snapshot` emits version 1 for
+a legacy-only measurement set and version 2 for an enhanced one; the emit rule
+is a property of the row, not of a setting, so an unchanged legacy row builds
+the exact snapshot it built before and no existing attachment goes stale. The
+4096-byte details limit and the 65536-byte snapshot limit are enforced at
+emission; a preserved future details version is embedded verbatim; a malformed
+stored details object raises rather than producing a snapshot that silently
+omits the statistics. `snapshot_semantic_projection` drops `schema_version`
+and `reference_revision`, fills the absent extension with `None`, and returns
+`None` for an unsupported version, so such a snapshot is never equal to
+anything, including another copy of itself; `observation_snapshots_semantically_equal`
+compares projections.
+
+Readers ship before writers: `stage_observation_reference_use_feed`,
+`curated_reference_forks._validate_snapshot` and
+`portable_import._validate_reference_snapshot` accept both versions through
+version-keyed *exact* key sets, so a version-2 snapshot is never intersected
+down to the keys a reader happens to know and an unknown version is refused.
+`copy_curated_bundle_to_personal_library` writes all three extension fields or
+rejects the bundle; it validates with `mode="edit"` deliberately, because
+contract section 8 excludes curated copy from opaque acceptance.
+
+Gates. `references/measurement_content_gates.py` holds both switches, both
+`False`, read at call time. The reader gate is applied at one boundary,
+`reference_library._gated_observation_reference_snapshot`, through which
+`_do_attach`, `snapshot_status`, `refresh_snapshot` and `successor_status`
+build snapshots; while it is closed an enhanced row cannot become frozen
+evidence (attach and refresh raise `ReferenceIntegrityError`,
+`successor_status` returns the existing `unsupported` state and
+`adopt_successor` therefore refuses). Emitting version 1 instead was rejected:
+that would freeze evidence that silently omits the statistics. No new UI state
+was introduced. The desktop-version gate makes `db_share.export_database_bundle`
+and `portable_export.export_observations` refuse to produce an archive
+carrying enhanced reference content; `full_backup.py` is deliberately not
+gated, being the same user's restore path. Both refusals strip nothing, and
+closing a gate again leaves every stored extension value untouched.
+
+Cloud ownership. `private.reference_snapshot_valid` is version-keyed in both
+directions; `private.reference_canonical_snapshot` emits version 2 for an
+enhanced row, composed with `||` so the version-1 object is literally
+unchanged; `private.public_reference_snapshot` preserves the extension it
+would otherwise have rebuilt away. The curated publication CHECK and
+`private.reference_curated_public_envelope` accept `1` or `2`; curation intake
+gains the three keys under `measurement_set` as all-or-none rather than
+required, because candidates captured before the migration legitimately lack
+them, and `private.reference_curation_capture_candidate` now always emits all
+three. The two replaced function bodies are copied verbatim from the
+migrations that own them by
+`.sparring/stages/<stage id>/build_web_migration.py`, with only the version
+guard and the three added keys changed, so re-running the generator reproduces
+the migration byte for byte.
+
+Boundary assertions updated, not weakened. The Stage 3B test
+`test_snapshot_of_enhanced_row_is_still_the_v1_projection_of_its_ordinary_columns`
+and the Stage 3C SQL assertion "v1 canonical snapshot changed for an enhanced
+row" both pinned the boundary *this* stage exists to remove. Each was rewritten
+to assert the Stage 3D truth and to keep what its own stage owns: that the
+extension disturbs no ordinary snapshot field or measurement value, and that a
+legacy row still emits its exact version-1 snapshot.
+
+Verification — `sporely-py`: `py_compile` on every touched module and
+`git diff --check` clean; the new module's 32 cases pass; the reference-area
+sweep is 1439 passed with only baseline failures; the full suite is **33
+failed, 4281 passed, 10 skipped, 55 errors** (run with
+`--continue-on-collection-errors`, needed because the `scripts/` shadowing in
+PROJECT.md baseline item 3 otherwise aborts collection). The failing set is the
+documented baseline (31) plus the two
+`tests/test_cloud_visibility_phase7.py` push cases, which were verified to
+fail identically with the working tree checked out at the base commit
+`3c0f65b5`; they pre-date this stage and are simply newer than the PROJECT.md
+capture at `8097bc8`.
+
+Verification — `sporely-web`, on the running local stack: `supabase migration
+up --local` applied `20260914090000` cleanly onto a database already at
+`20260913120000`; both auto-named CHECK constraints the migration drops were
+confirmed against the live schema before applying
+(`curated_reference_publications_snapshot_schema_version_check`,
+`reference_curation_submission_versions_candidate_json_check`); the whole
+`supabase/tests` suite run through `psql` is **59 passed, 1 failed**. The one
+failure, `public_observation_point_prep_test.sql`, is independent: its only
+RPC is `public.get_public_observation`, whose source references neither
+`private.public_reference_snapshot` nor `private.reference_snapshot_valid`.
+The CLI's `supabase db query --file` cannot run these multi-statement scripts
+(`cannot insert multiple commands into a prepared statement`), so `psql` is
+the documented runner in the new test's header.
+
+Still human-gated: an actual older desktop reading an observation-use feed
+that contains a valid version-2 snapshot (contract section 7 rollout step 1);
+`supabase migration list` / `db push --dry-run` / `db push` against the
+deployed project; and any decision to open either gate.
 
 ## Stage 3C handoff — 2026-09-13 (candidate on `feature/reported-statistics-contract`, sparring pending)
 
@@ -1477,10 +1617,11 @@ repository.
 
 ## Stage 3D — Snapshot v2 and attachment/export/import transport
 
-Implemented 2026-09-14; desktop candidate awaiting sparring (see the Stage 3D
-handoff). Stage 3C was accepted at `3c0f65b5`, which is this stage's base.
-Owns the frozen-evidence representation of enhanced content and the gates that
-protect old readers.
+Implemented 2026-09-14; candidates pushed in both repositories and awaiting
+sparring (see the Stage 3D handoff at the top of this plan for the full
+record). Stage 3C was accepted at `3c0f65b5` / `b32eb922`, the base in each
+repository. Owns the frozen-evidence representation of enhanced content and
+the gates that protect old readers.
 
 Implementation record:
 
@@ -1500,12 +1641,13 @@ Implementation record:
   while the desktop-version gate is closed.
 - Cloud: migration
   `20260914090000_extend_reference_snapshots_to_version_2.sql` in
-  `sporely-web` makes `private.reference_snapshot_valid` version-keyed,
-  `private.reference_canonical_snapshot` emit v2 for an enhanced row,
-  `private.public_reference_snapshot` preserve the extension, relaxes the
-  curated publication CHECK and the public curated reader to `IN (1, 2)`, and
-  gives the curation-intake candidate the three keys under `measurement_set`
-  (all-or-none). Not yet committed, tested or deployed.
+  `sporely-web` (candidate `1bb5c804`) makes `private.reference_snapshot_valid`
+  version-keyed, `private.reference_canonical_snapshot` emit v2 for an
+  enhanced row, `private.public_reference_snapshot` preserve the extension,
+  relaxes the curated publication CHECK and the public curated reader to
+  `IN (1, 2)`, and gives the curation-intake candidate the three keys under
+  `measurement_set` (all-or-none). Applied and tested on the local stack;
+  deployment to the project remains the branch owner's step.
 - Deferred and named: curated *storage* of the extension
   (`private.curated_reference_measurement_sets` has no extension columns, so
   the curation pipeline still publishes v1 bundles; the desktop copy path is
