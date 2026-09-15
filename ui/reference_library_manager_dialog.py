@@ -25,7 +25,7 @@ and the current selection is a measurement set.
 from __future__ import annotations
 
 import json
-from dataclasses import fields
+from dataclasses import asdict, fields
 from typing import Any, Iterable
 
 from PySide6.QtCore import QObject, QThread, Qt, Signal, Slot
@@ -79,7 +79,23 @@ from database.reference_library_schema import (
     OBSERVATION_REFERENCE_ROLES,
     REFERENCE_WORK_TYPES,
 )
+from references.measurement_content import (
+    CORE_PAIR,
+    METRICS,
+    OUTER_PAIR,
+    MeasurementContent,
+    MeasurementContentError,
+    MeasurementDetails,
+    ScalarStatistic,
+    clear_pair,
+    content_from_row,
+    encode_measurement_details,
+    measurement_details_equal,
+)
+from references.measurement_content_gates import enhanced_editing_enabled
 from references.measurement_parser import parse_measurement_string
+
+from . import measurement_content_view as mcv
 
 
 # --- Completeness hints ----------------------------------------------------
@@ -161,6 +177,19 @@ def _parse_optional_float(text: str | None) -> float | None:
     if value is None:
         return None
     return float(value)
+
+
+def _parse_optional_mean(text: str | None) -> float | None:
+    """A mean field's *scalar* value, or ``None`` when it holds an interval.
+
+    An interval mean has no scalar column by contract rule 4; it belongs in
+    the details object, which ``_extension_updates`` writes. Unreadable text
+    raises, so a typo is refused rather than quietly saved as NULL.
+    """
+    statistic = mcv.parse_mean_cell(text)
+    if isinstance(statistic, ScalarStatistic):
+        return statistic.value
+    return None
 
 
 def _parse_optional_int(text: str | None) -> int | None:
@@ -1517,6 +1546,8 @@ class _MeasurementSetForm(QDialog):
         super().__init__(parent)
         self._taxon_treatment_id = taxon_treatment_id
         self._measurement_set = measurement_set
+        #: ``to_content()`` of the last parse in this dialog session, if any.
+        self._parsed_content: MeasurementContent | None = None
         self.setWindowTitle(
             self.tr("Edit measurement set") if measurement_set is not None
             else self.tr("New measurement set")
@@ -1576,6 +1607,8 @@ class _MeasurementSetForm(QDialog):
         self.width_max_input = QLineEdit()
         self.width_mean_input = QLineEdit()
         self.q_min_input = QLineEdit()
+        self.q_core_min_input = QLineEdit()
+        self.q_core_max_input = QLineEdit()
         self.q_max_input = QLineEdit()
         self.q_mean_input = QLineEdit()
         self.sample_size_input = QLineEdit()
@@ -1612,13 +1645,22 @@ class _MeasurementSetForm(QDialog):
         self._width_mean_label = QLabel(self.tr("Width mean (µm):"))
         form.addRow(self._width_mean_label, self.width_mean_input)
 
+        # The Q core pair has had columns of its own since Stage 3A, so the Q
+        # row can finally map role-for-role like length and width. The two
+        # inputs are shown only while enhanced editing is enabled: offering a
+        # field this version cannot persist would be a lie, and with the gate
+        # closed the historical q_min/q_max fallback still applies.
         q_row = QHBoxLayout()
         q_row.addWidget(self.q_min_input)
+        q_row.addWidget(self.q_core_min_input)
         q_row.addWidget(self.q_mean_input)
+        q_row.addWidget(self.q_core_max_input)
         q_row.addWidget(self.q_max_input)
         q_holder = QWidget()
         q_holder.setLayout(q_row)
         self._q_row_label = QLabel(self.tr("Q min / mean / max:"))
+        self._q_core_row_label = self.tr("Q min / core_min / mean / core_max / max:")
+        self._q_plain_row_label = self.tr("Q min / mean / max:")
         form.addRow(self._q_row_label, q_holder)
 
         self._sample_row_label = QLabel(self.tr("Sample size / specimens:"))
@@ -1655,6 +1697,21 @@ class _MeasurementSetForm(QDialog):
         form.addRow(self.tr("Notes:"), self.notes_input)
 
         layout.addLayout(form)
+
+        # Reported statistics (measurement content contract, version 1) are
+        # presented here read-only. This form owns the ordinary measurement
+        # columns; the meaning tags and the reported median / standard
+        # deviation of an existing set are shown so an editor can see what
+        # the row claims, and are preserved untouched on save. The one
+        # exception is removal: emptying a column pair a tag describes also
+        # removes that tag, because a tag must never outlive its numbers.
+        self.reported_statistics_label = QLabel("")
+        self.reported_statistics_label.setObjectName("measurementReportedStatistics")
+        self.reported_statistics_label.setWordWrap(True)
+        self.reported_statistics_label.setVisible(False)
+        # No colour override: the tags are content, and a hardcoded
+        # light-theme foreground is unreadable against the dark theme.
+        layout.addWidget(self.reported_statistics_label)
 
         self.error_label = QLabel()
         self.error_label.setStyleSheet("QLabel { color: #dc2626; }")
@@ -1693,8 +1750,22 @@ class _MeasurementSetForm(QDialog):
         self.width_max_input.setText(_format_optional(ms.width_max))
         self.width_mean_input.setText(_format_optional(ms.width_mean))
         self.q_min_input.setText(_format_optional(ms.q_min))
+        self.q_core_min_input.setText(_format_optional(ms.q_core_min))
+        self.q_core_max_input.setText(_format_optional(ms.q_core_max))
         self.q_max_input.setText(_format_optional(ms.q_max))
-        self.q_mean_input.setText(_format_optional(ms.q_mean))
+        stored = self._stored_content()
+        self.q_mean_input.setText(
+            mcv.format_mean_cell(stored, "q") if stored is not None
+            else _format_optional(ms.q_mean)
+        )
+        self.length_mean_input.setText(
+            mcv.format_mean_cell(stored, "length") if stored is not None
+            else _format_optional(ms.length_mean)
+        )
+        self.width_mean_input.setText(
+            mcv.format_mean_cell(stored, "width") if stored is not None
+            else _format_optional(ms.width_mean)
+        )
         self.sample_size_input.setText(_format_optional(ms.sample_size))
         self.specimen_count_input.setText(_format_optional(ms.specimen_count))
         self.raw_points_input.setPlainText(ms.raw_points_json or "")
@@ -1703,6 +1774,56 @@ class _MeasurementSetForm(QDialog):
         self.preparation_input.setText(ms.preparation or "")
         self.method_input.setText(ms.measurement_method or "")
         self.notes_input.setPlainText(ms.notes or "")
+        self._show_reported_statistics(self._stored_content())
+
+    def _stored_content(self) -> MeasurementContent | None:
+        """Typed content of the set being edited, or ``None``.
+
+        A malformed stored details object returns ``None`` here: the form
+        still shows and edits the ordinary columns, and the repository refuses
+        the write with its own message rather than this panel guessing.
+        """
+        existing = self._measurement_set
+        if existing is None:
+            return None
+        try:
+            return content_from_row(asdict(existing))
+        except MeasurementContentError:
+            return None
+
+    def _show_reported_statistics(
+        self, content: MeasurementContent | None, *, parsed: bool = False
+    ) -> None:
+        """Render the read-only tags and reported median / S.D. line."""
+        if content is None:
+            self.reported_statistics_label.setVisible(False)
+            self.reported_statistics_label.setText("")
+            return
+        notice = mcv.unsupported_details_notice(content)
+        if notice:
+            self.reported_statistics_label.setText(notice)
+            self.reported_statistics_label.setToolTip(notice)
+            self.reported_statistics_label.setAccessibleDescription(notice)
+            self.reported_statistics_label.setVisible(True)
+            return
+        entries = mcv.content_tags(content) + mcv.content_reported_statistics(content)
+        if not entries:
+            self.reported_statistics_label.setVisible(False)
+            self.reported_statistics_label.setText("")
+            return
+        if parsed and not enhanced_editing_enabled():
+            heading = self.tr("Found in the expression (not stored by this version):")
+        elif parsed:
+            heading = self.tr("Found in the expression:")
+        else:
+            heading = self.tr("Reported by the source:")
+        explanation = mcv.explanation_text(entries)
+        self.reported_statistics_label.setText(
+            f"{heading} {mcv.compact_tag_text(entries)}"
+        )
+        self.reported_statistics_label.setToolTip(explanation)
+        self.reported_statistics_label.setAccessibleDescription(explanation)
+        self.reported_statistics_label.setVisible(True)
 
     def _sync_visibility(self) -> None:
         kind = str(self.data_kind_combo.currentData() or "").strip().lower()
@@ -1740,6 +1861,13 @@ class _MeasurementSetForm(QDialog):
             self._sample_row_label,
         ):
             widget.setVisible(not raw_points_visible)
+        # The Q core pair is only shown when it can actually be stored.
+        q_core_visible = not raw_points_visible and enhanced_editing_enabled()
+        self.q_core_min_input.setVisible(q_core_visible)
+        self.q_core_max_input.setVisible(q_core_visible)
+        self._q_row_label.setText(
+            self._q_core_row_label if q_core_visible else self._q_plain_row_label
+        )
         self.parse_btn.setVisible(not raw_points_visible and kind != "parmasto")
 
     def _on_parse_clicked(self) -> None:
@@ -1756,26 +1884,56 @@ class _MeasurementSetForm(QDialog):
         def _set(widget: QLineEdit, value: float | int | None) -> None:
             widget.setText(_format_optional(value))
 
+        def _set_text(widget: QLineEdit, text: str) -> None:
+            widget.setText(text)
+
         _set(self.length_min_input, result.length.min)
         _set(self.length_core_min_input, result.length.p05)
         _set(self.length_core_max_input, result.length.p95)
         _set(self.length_max_input, result.length.max)
-        _set(self.length_mean_input, result.length.p50)
         _set(self.width_min_input, result.width.min)
         _set(self.width_core_min_input, result.width.p05)
         _set(self.width_core_max_input, result.width.p95)
         _set(self.width_max_input, result.width.max)
-        _set(self.width_mean_input, result.width.p50)
-        # The normalized model has no Q core-bound columns. Preserve an
-        # explicitly supplied Q range in q_min/q_max, preferring source
-        # extremes when present and otherwise the printed core endpoints.
-        _set(self.q_min_input, result.q.min if result.q.min is not None else result.q.p05)
-        _set(self.q_max_input, result.q.max if result.q.max is not None else result.q.p95)
-        _set(
-            self.q_mean_input,
-            result.q_mean if result.q_mean is not None else result.q.p50,
-        )
+        # The typed parser output is what this form saves from here on: the
+        # numeric fields below are its legacy projection, and ``_collect``
+        # folds them back into it through the Stage 2 edit operations.
+        content = result.to_content()
+        self._parsed_content = content
+        if enhanced_editing_enabled():
+            # Role-for-role, like length and width: extremes in q_min/q_max,
+            # the printed inner range in the core pair. No derived extreme is
+            # written beside a core pair that already holds the same numbers.
+            _set(self.q_min_input, result.q.min)
+            _set(self.q_core_min_input, result.q.p05)
+            _set(self.q_core_max_input, result.q.p95)
+            _set(self.q_max_input, result.q.max)
+        else:
+            # Historical fallback, unchanged: with no core columns to write,
+            # an explicitly supplied Q range is preserved in q_min/q_max,
+            # preferring source extremes and otherwise the printed endpoints.
+            _set(
+                self.q_min_input,
+                result.q.min if result.q.min is not None else result.q.p05,
+            )
+            _set(
+                self.q_max_input,
+                result.q.max if result.q.max is not None else result.q.p95,
+            )
+        # A mean field takes the source's own mean, scalar or interval; the
+        # parser's ``p50`` centre is the legacy stand-in for the compact
+        # ``a-b-c`` form only, and a table's median cell never reaches it.
+        _set_text(self.length_mean_input, mcv.format_mean_cell(content, "length"))
+        if not self.length_mean_input.text():
+            _set(self.length_mean_input, result.length.p50)
+        _set_text(self.width_mean_input, mcv.format_mean_cell(content, "width"))
+        if not self.width_mean_input.text():
+            _set(self.width_mean_input, result.width.p50)
+        _set_text(self.q_mean_input, mcv.format_mean_cell(content, "q"))
+        if not self.q_mean_input.text():
+            _set(self.q_mean_input, result.q.p50)
         _set(self.sample_size_input, result.n)
+        self._show_reported_statistics(content, parsed=True)
         self.error_label.setVisible(False)
 
     def _collect(self) -> dict[str, Any]:
@@ -1827,6 +1985,13 @@ class _MeasurementSetForm(QDialog):
                 # Fresh raw_points record (or user converted an existing
                 # non-raw_points record). No pre-existing aggregate stats
                 # for the raw list to overwrite; leave the columns NULL.
+                # The reported statistics go with them: descriptors left
+                # behind would describe columns that are now NULL, which the
+                # contract refuses, and the conversion is the user's own
+                # explicit discarding of the aggregate view.
+                payload["measurement_details_json"] = None
+                payload["q_core_min"] = None
+                payload["q_core_max"] = None
                 payload["length_min"] = None
                 payload["length_core_min"] = None
                 payload["length_core_max"] = None
@@ -1851,7 +2016,10 @@ class _MeasurementSetForm(QDialog):
                 self.length_core_max_input.text()
             )
             payload["length_max"] = _parse_optional_float(self.length_max_input.text())
-            payload["length_mean"] = _parse_optional_float(
+            # A mean field may hold a scalar or an interval. An interval lives
+            # in the details object, so the scalar column is NULL by contract
+            # rule 4 — ``_extension_updates`` puts it where it belongs.
+            payload["length_mean"] = _parse_optional_mean(
                 self.length_mean_input.text()
             )
             payload["width_min"] = _parse_optional_float(self.width_min_input.text())
@@ -1862,12 +2030,12 @@ class _MeasurementSetForm(QDialog):
                 self.width_core_max_input.text()
             )
             payload["width_max"] = _parse_optional_float(self.width_max_input.text())
-            payload["width_mean"] = _parse_optional_float(
+            payload["width_mean"] = _parse_optional_mean(
                 self.width_mean_input.text()
             )
             payload["q_min"] = _parse_optional_float(self.q_min_input.text())
             payload["q_max"] = _parse_optional_float(self.q_max_input.text())
-            payload["q_mean"] = _parse_optional_float(self.q_mean_input.text())
+            payload["q_mean"] = _parse_optional_mean(self.q_mean_input.text())
             payload["sample_size"] = _parse_optional_int(
                 self.sample_size_input.text()
             )
@@ -1887,7 +2055,117 @@ class _MeasurementSetForm(QDialog):
                 payload["raw_points_json"] = existing.raw_points_json
             else:
                 payload["raw_points_json"] = None
+            payload.update(self._extension_updates(payload))
         return payload
+
+    def _metric_inputs(self) -> dict[str, mcv.MetricInput]:
+        """The form's current values, keyed by metric.
+
+        The Q core inputs are only populated while enhanced editing is
+        enabled; with the gate closed they are hidden and empty, which is
+        also what the removal-only path wants to see.
+        """
+        return {
+            "length": mcv.MetricInput(
+                outer_min=_parse_optional_float(self.length_min_input.text()),
+                core_min=_parse_optional_float(self.length_core_min_input.text()),
+                core_max=_parse_optional_float(self.length_core_max_input.text()),
+                outer_max=_parse_optional_float(self.length_max_input.text()),
+                mean_text=self.length_mean_input.text(),
+            ),
+            "width": mcv.MetricInput(
+                outer_min=_parse_optional_float(self.width_min_input.text()),
+                core_min=_parse_optional_float(self.width_core_min_input.text()),
+                core_max=_parse_optional_float(self.width_core_max_input.text()),
+                outer_max=_parse_optional_float(self.width_max_input.text()),
+                mean_text=self.width_mean_input.text(),
+            ),
+            "q": mcv.MetricInput(
+                outer_min=_parse_optional_float(self.q_min_input.text()),
+                core_min=_parse_optional_float(self.q_core_min_input.text()),
+                core_max=_parse_optional_float(self.q_core_max_input.text()),
+                outer_max=_parse_optional_float(self.q_max_input.text()),
+                mean_text=self.q_mean_input.text(),
+            ),
+        }
+
+    def _extension_base(self) -> MeasurementContent | None:
+        """The typed content this save starts from, or ``None`` to send none.
+
+        A parse in this dialog session restated the whole expression and
+        overwrote every numeric field, so its :meth:`to_content` output is the
+        base — exactly the parser → repository wiring Stage 3B deferred to
+        this stage. Otherwise the stored row's own content is, so an ordinary
+        edit preserves what it does not touch. ``None`` means the stored
+        details are a future version or unreadable: the repository refuses
+        such a write anyway, and this form must never rewrite them.
+        """
+        if self._parsed_content is not None:
+            return self._parsed_content
+        existing = self._measurement_set
+        if existing is None:
+            return MeasurementContent()
+        content = self._stored_content()
+        if content is None:
+            return None
+        if content.details is not None and not isinstance(
+            content.details, MeasurementDetails
+        ):
+            return None
+        return content
+
+    def _extension_updates(self, payload: dict[str, Any]) -> dict[str, Any]:
+        """The extension columns this save should write.
+
+        With enhanced editing enabled the form builds its ``MeasurementSet``
+        from the typed content — parsed or stored — folded through the
+        contract's section 3 edit operations, so interval means, medians,
+        standard deviations, range tags and the Q core pair all persist.
+
+        With the gate closed the form must not *create* enhanced content, for
+        the reason in :func:`enhanced_editing_enabled`. It still owns
+        removal: a ``5%-95%`` or ``reported extremes`` tag left on a pair the
+        user has just cleared would claim a meaning for numbers that no longer
+        exist, and the repository would refuse the write citing a column this
+        form does not show. Returns an empty mapping when nothing changes, so
+        an ordinary edit of a legacy row still sends no extension key at all.
+        """
+        base = self._extension_base()
+        if base is None:
+            return {}
+        try:
+            content = mcv.fold_metric_inputs(base, self._metric_inputs(), strict=True)
+        except MeasurementContentError as exc:
+            raise ValueError(str(exc)) from exc
+
+        if enhanced_editing_enabled():
+            return {
+                "measurement_details_json": encode_measurement_details(content.details),
+                "q_core_min": content.q_core_min,
+                "q_core_max": content.q_core_max,
+            }
+
+        existing = self._measurement_set
+        stored_json = existing.measurement_details_json if existing is not None else None
+        if stored_json is None:
+            return {}
+        # Removal only: start from what is stored and take away the tags whose
+        # pairs are now empty. Nothing the user typed can add a descriptor.
+        removed = content_from_row(asdict(existing))
+        if not isinstance(removed.details, MeasurementDetails):
+            return {}
+        row = {**asdict(existing), **payload}
+        for metric in METRICS:
+            for which, (low, high) in (
+                ("outer", OUTER_PAIR[metric]),
+                ("core", CORE_PAIR[metric]),
+            ):
+                if row.get(low) is None and row.get(high) is None:
+                    removed = clear_pair(removed, metric, which)
+        encoded = encode_measurement_details(removed.details)
+        if measurement_details_equal(encoded, stored_json):
+            return {}
+        return {"measurement_details_json": encoded}
 
     def _on_save(self) -> None:
         try:
@@ -2413,6 +2691,40 @@ class ReferenceLibraryManagerDialog(QDialog):
         self.detail_view.setPlainText("\n".join(lines))
         self.plot_hint_label.setVisible(False)
 
+    def _reported_statistics_lines(self, ms: MeasurementSet) -> list[str]:
+        """Detail-pane lines for what the source said about the numbers.
+
+        Meaning tags first, then any reported median and standard deviation,
+        each on its own labelled line and never mixed into the measurement
+        list above — a reported median is not a mean and must not read as one.
+        """
+        try:
+            content = content_from_row(asdict(ms))
+        except MeasurementContentError as exc:
+            return [
+                self.tr("Reported statistics: unreadable ({error})").format(error=str(exc))
+            ]
+        notice = mcv.unsupported_details_notice(content)
+        if notice:
+            return [notice]
+        lines: list[str] = []
+        tags = mcv.content_tags(content)
+        if tags:
+            lines.append(
+                self.tr("Reported meaning: {tags}").format(
+                    tags=mcv.compact_tag_text(tags)
+                )
+            )
+            lines.extend(f"  {tag.explanation}" for tag in tags)
+        statistics = mcv.content_reported_statistics(content)
+        if statistics:
+            lines.append(
+                self.tr("Also reported: {values}").format(
+                    values=mcv.compact_tag_text(statistics)
+                )
+            )
+        return lines
+
     def _render_measurement_set_detail(self, ms: MeasurementSet) -> None:
         work = self._current_work
         treatment = self._current_treatment
@@ -2452,6 +2764,8 @@ class ReferenceLibraryManagerDialog(QDialog):
                 (self.tr("Width max"), "width_max"),
                 (self.tr("Width mean"), "width_mean"),
                 (self.tr("Q min"), "q_min"),
+                (self.tr("Q core min"), "q_core_min"),
+                (self.tr("Q core max"), "q_core_max"),
                 (self.tr("Q mean"), "q_mean"),
                 (self.tr("Q max"), "q_max"),
                 (self.tr("Sample size"), "sample_size"),
@@ -2469,6 +2783,7 @@ class ReferenceLibraryManagerDialog(QDialog):
             lines.append(self.tr("Data kind: {value}").format(value=ms.data_kind or ""))
             if ms.raw_text:
                 lines.append(self.tr("Raw expression: {value}").format(value=ms.raw_text))
+        lines.extend(self._reported_statistics_lines(ms))
         lines.append(self.tr("Revision: {value}").format(value=ms.revision or 1))
         lines.append(self.tr("UUID: {value}").format(value=ms.id))
         self.detail_view.setPlainText("\n".join(lines))

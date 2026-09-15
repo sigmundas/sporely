@@ -6,7 +6,192 @@ sections under *Canonical stage sequence* below (Stage 1 → 2 → 3A → 3B →
 stage execution, newest first; they define nothing. The first one is the
 **current stage**; the rest are historical and kept verbatim.
 
-## Stage 3D handoff — 2026-09-14 (current stage; candidates pushed in both repositories, sparring round 2)
+## Stage 4 handoff — 2026-09-14 (current stage; **human-gated, uncommitted**)
+
+Status: **Stage 4 implemented and self-verified as far as this tier allows.**
+Editor and UI inspection with guarded editing: the typed parser output now
+reaches both editors, compact meaning tags carry an accessible explanation,
+the mean field accepts a scalar *or* an interval, reported median and S.D.
+appear beside the mean and never inside it, a reported Q mean no longer lands
+in the Parmasto species-mean field, and the library manager presents enhanced
+content read-only while preserving it untouched. **Nothing is committed.** The
+stage is human-gated under AGENTS.md (interactive edit / swap / save /
+restart), so the candidate stays in the working tree until the numbered manual
+checks below are confirmed.
+
+- Stage id: `stage-4-editor-and-ui-inspection-and-guarded-editing` (brief,
+  handoff and notes in `.sparring/stages/<that id>/`).
+- Branch `feature/reported-statistics-contract`, base
+  `12992e61630c325dabd61817ddc2d8ed1fb81e00`. Candidate SHA: **none yet** —
+  see the human gate.
+- Both rollout gates remain **closed**. Stage 5 still owns the decision to
+  open either one.
+
+Files changed: `ui/measurement_content_view.py` (new),
+`ui/reference_entry_editor.py`, `ui/reference_library_manager_dialog.py`,
+`ui/reference_preview_pane.py`, `references/measurement_content_gates.py`,
+`tools/review_ui/scenarios/references.py` (two new scenarios),
+`tools/update_translations.sh`,
+`i18n/Sporely_{nb_NO,sv_SE,de_DE}.{ts,qm}`; tests
+`tests/test_measurement_content_view.py` (new, 50 cases),
+`tests/test_reference_editor_reported_statistics.py` (new, 34 cases),
+`tests/test_render_review_screenshots.py` (two registered scenario ids); this
+plan. Production code changed: yes. Tests changed: yes. No schema, cloud,
+sync, snapshot, parser or repository change.
+
+**The guard, and why it is the reader gate.** Everything the entry editor
+creates is bound for an observation attachment, and
+`_gated_observation_reference_snapshot` refuses to freeze an enhanced row as
+evidence while the reader gate is closed. Storing enhanced content from this
+editor would therefore only move the refusal to the save button — and because
+the Stage 2 parser tags *every* inner range, that would break the ordinary
+paste-and-attach flow for essentially every source. New accessor
+`enhanced_editing_enabled()` in `references/measurement_content_gates.py` reads
+the same reader gate from the editors' side (no new switch). While it is closed
+both editors *show* the tags, the reported median/S.D. and the interval mean,
+state plainly that this version does not store them yet, and persist the
+legacy-only projection — byte-for-byte what the same source produced before
+this contract existed; the manager additionally hides the Q core inputs it
+cannot write, because offering a field this version cannot persist would be a
+lie. With the gate open the same code paths write `measurement_details_json`
+and the Q core pair. Decision the reviewer should
+challenge: the accessor mirrors the *reader* gate only, not the
+minimum-supported-desktop bundle-export gate, because the reader gate is the
+one the attachment boundary actually enforces; requiring both would invent a
+fourth policy the contract does not define.
+
+**Parser → content wiring (the Stage 3B deferral), in both editors.** One
+function owns the transition rules —
+`ui/measurement_content_view.py::fold_metric_inputs` — and both editors are
+adapters over it, so there is genuinely no second entry workflow. Plain values
+move by assignment, but every *transition* goes through the frozen Stage 2
+operations: `clear_pair` when a described pair is emptied,
+`clear_statistic` / `set_scalar_mean` / `set_mean_interval` for the mean (via
+`apply_mean_cell`), and `swap_length_width` on L↔W so a `5%-95%` or
+`reported extremes` tag can never be left describing the other dimension.
+`ReferenceEntryEditor._set_parsed_result` keeps `result.to_content()` as the
+editor's working state; `_MeasurementSetForm` keeps `self._parsed_content` and
+`_extension_updates` folds the form's values into it, so a parsed manager entry
+persists its interval means, medians, standard deviations, range tags and Q
+core pair. The manager gained the Q core inputs that mapping needs (shown only
+while the gate is open, since a field this version cannot persist must not be
+offered) and its mean fields now take a scalar or an interval. Content written
+by a newer version is never rewritten: the fold returns it untouched and the UI
+says so instead of showing tags it cannot interpret.
+
+**Correction is retraction, not assertion.** The tag strip's control is a menu:
+per-metric "drop the range interpretation" for each metric that carries one,
+plus "Discard all reported statistics". Both keep every measured number; the
+per-metric form also keeps that metric's reported median and S.D. Asserting a
+*different* descriptor kind is deliberately absent — contract section 3
+enumerates five edit operations and adding a sixth is a Stage 1 amendment, the
+plan defers "editable advanced details", and on the merits a field that lets a
+reader type in a percentile the source never printed manufactures exactly the
+evidence this contract exists to keep honest.
+
+**Defects this stage fixes.** Both editors filled their mean field from the
+parser's `p50` centre and dropped `result.length_mean` / `width_mean`
+entirely, so a headed table's reported mean was lost; both now prefer the
+source's own scalar mean and keep `p50` only as the legacy stand-in for the
+compact `a-b-c` form (a table's *median* cell never reaches `p50`, so no
+median can land in a mean field). `_set_parsed_result` wrote a parsed
+`Qm`/`Qav` into the Parmasto species-mean widget; it now goes to the Q row's
+Mean cell, which already mapped to `q_mean`. The min/max tab overlapped its
+own widgets once the tag strip was added and is now a `QScrollArea` with a
+three-row minimum on the table. The tag strip and the preview pane's new line
+inherit the theme foreground instead of a hardcoded slate that was unreadable
+in dark mode. `ReferencePreviewPane.set_summary` now resets the
+reported-statistics line, because the pane is shared between the picker's tabs
+and a tagged literature entry would otherwise leave its tags describing a
+community dataset's numbers.
+
+**`_summary_interval` — already resolved, nothing to fix.** The name exists
+only in this plan; it belonged to the superseded `SummaryStatistics` prototype
+still sitting uncommitted in the canonical checkout. Stage 2 replaced that
+scope with `ScalarStatistic` versus `IntervalStatistic`, which preserve the
+shape by construction (`_parse_statistic` never collapses `9.2-9.2`). Stage 4
+carries the distinction the rest of the way: `parse_mean_cell` /
+`format_statistic` round-trip it through the editor, asserted directly.
+
+**Library manager under a closed gate.** Sparring round 1 was right that
+inspect-only presentation does not waive the wiring above; both are now
+implemented and the gate decides which runs. With the gate open the form saves
+the full typed content. With it closed the form shows a stored set's tags and
+reported median/S.D. read-only and preserves the extension by simply not
+sending those columns — an omitted key leaves the stored value alone, so an
+ordinary edit is byte-identical — and owns exactly one transition, removal:
+`clear_pair` when the user empties a column pair a tag describes, because
+otherwise the repository would refuse the write citing a column the form does
+not display. Converting a set to `raw_points` clears the extension along with
+the aggregate numbers it already discarded. Under a closed gate the manager
+never *creates* enhanced content.
+
+Verification (project venv): `py_compile` on every touched module clean;
+`git diff --check` clean; the two new test modules 84 passed; the reference-area
+sweep (`-k "reference or measurement or curated or legacy or add_reference"`,
+which covers both editors, the parser and the contract module) 1328 passed with
+only
+the two baseline taxonomy release-dir errors. The full suite
+(`QT_QPA_PLATFORM=offscreen pytest -q -p no:cacheprovider
+--continue-on-collection-errors`, 2 min 45 s) is **33 failed, 4365 passed, 10
+skipped, 55 errors** against Stage 3D's 33 / 4281 / 10 / 55 — the same failing
+and erroring module set (PROJECT.md baseline items 1-4 plus the two
+`test_cloud_visibility_phase7.py` push cases Stage 3D verified pre-date it),
+and the +84 are exactly this stage's two new test modules (50 + 34).
+`tests/test_render_review_screenshots.py` still shows its documented
+four baseline failures: two from the missing worktree `.venv`, two from two
+scenario ids (`reference.add-dialog-manual-saved`, `-dark`) that were already
+unregistered before this stage. Both of this stage's scenarios
+(`reference.reported-statistics`, `reference.measurement-set-form-enhanced`)
+are registered, so this change adds no new drift.
+
+Screenshots (layout only, per `.claude/rules/ui-screenshots.md`): new scenario
+`reference.reported-statistics` renders the 5%-95% headed table with
+`9.2-11.7` in the Mean column for Length, `5.6-6.7` for Width and `1.55-1.78`
+for Q; the tag strip reads `L extremes: reported · L inner 5–95% · L mean:
+interval · …`; the "Also reported:" line reads `L median 9.2-11.7 · L S.D. 0.6
+· …`; the amber notice and the *Discard reported statistics* button are both
+visible. `reference.nb-no` shows the Norwegian strings (`L ytterverdier:
+oppgitt · L indre: uspesifisert · …`) fitting on two lines.
+`reference.add-dialog-manual-range-dark` shows both tag strips legible in dark
+mode and `Qm = 1.89` in the Q row's Mean cell rather than the Parmasto tab.
+`reference.measurement-set-form-enhanced` patches the reader gate open for that
+scenario alone and shows the library-manager form the corrected save path
+fills: the Q row reading `1.3 | 1.42 | 1.55-1.78 | 1.96 | 2.07`, interval means
+in the Length and Width mean fields, and the "Found in the expression:" line.
+
+Localization: `ui/measurement_content_view.py` added to
+`tools/update_translations.sh`; 24 new `MeasurementContent` strings plus 13 in
+the two editors, all translated into nb_NO, sv_SE and de_DE and compiled.
+`lrelease` reports 2368 finished, **0 unfinished** in all three languages. The
+module calls `QCoreApplication.translate` with the literal context at every
+site on purpose — a shorter local wrapper hid every string in it from
+`lupdate`, which was caught and fixed during this stage.
+
+**Sparring round 1 returned `SEND_BACK`; both findings are implemented.**
+(1) The library manager did not build its set from `to_content()` — the fix is
+the shared fold above, plus the Q core inputs and interval-capable mean fields
+it needed. (2) There was no explicit correction control for a wrong range
+interpretation — the fix is the retraction menu above. Full response in the
+stage's `sparring.md`.
+
+**Human gate — required before any commit.** Numbered checklist in
+`.sparring/stages/stage-4-editor-and-ui-inspection-and-guarded-editing/handoff.md`.
+Screenshots prove the layout; none of the interactions below are visible in
+one.
+
+Deferred, deliberately: the parsed sample size `n` still does not reach
+`normalized_measurement_set_payload` (pre-existing; the payload derives
+`sample_size` from raw points only). `_render_measurement_preview` still
+prints untranslated `L`/`W`/`Q` prefixes, so the Norwegian build shows `W` in
+the parse line beside `B` in the tag strip. Editable advanced details,
+percentile-bound correction and a descriptor-kind control remain out of scope
+— the frozen Stage 2 API has no descriptor-set operation, and the plan defers
+richer authoring.
+
+Subagents: none used.
+
+## Stage 3D handoff — 2026-09-14 (candidate `4e451abd`, sparring round 2 READY)
 
 Status: **Stage 3D implemented and self-verified in both repositories.**
 Snapshot version 2, version-aware v1/v2 comparison, readers accepting v2

@@ -24,6 +24,8 @@ ROOT = Path(__file__).resolve().parents[1]
 PYTHON = ROOT / ".venv" / "bin" / "python"
 REFERENCE_IDS = {
     "reference.add-range",
+    "reference.reported-statistics",
+    "reference.measurement-set-form-enhanced",
     "reference.raw-points",
     "reference.existing-measurement-set",
     "reference.new-publication",

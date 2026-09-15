@@ -65,6 +65,28 @@ def _populate_range(dialog) -> None:
     dialog._parse_measurement_btn.click()
 
 
+def _populate_reported_statistics(dialog) -> None:
+    """A headed literature table that reports meanings and statistics.
+
+    The Hebeloma layout names its inner range a 5%–95% percentile interval,
+    prints the mean as an interval rather than a scalar, and adds a median
+    and a standard deviation. It exercises the compact tag strip, the
+    interval mean cells, the reported median / S.D. line and the
+    reader-version notice in one shot.
+    """
+    dialog.measurement_paste_input.setText(
+        "\n".join(
+            [
+                "Spore\t(min) 5%-95% (max)\tmean\tmedian\tS.D.",
+                "Length\t(7.5) 8.4-13.0 (13.2)\t9.2-11.7\t9.2-11.7\t0.600",
+                "Width\t(5.0) 5.1-7.2 (7.6)\t5.6-6.7\t5.6-6.7\t0.280",
+                "Q\t(1.30) 1.42-1.96 (2.07)\t1.55-1.78\t1.54-1.79\t0.095",
+            ]
+        )
+    )
+    dialog._parse_measurement_btn.click()
+
+
 def _populate_raw_points(dialog) -> None:
     dialog.tabs.setCurrentIndex(1)
     points = (
@@ -291,6 +313,12 @@ def _range(context: ReviewContext):
     return dialog
 
 
+def _reported_statistics(context: ReviewContext):
+    dialog = _make_add_dialog(context)
+    _populate_reported_statistics(dialog)
+    return dialog
+
+
 def _raw_points(context: ReviewContext):
     dialog = _make_add_dialog(context)
     _populate_raw_points(dialog)
@@ -340,6 +368,41 @@ def _library_manager(context: ReviewContext):
         select_set_id=fixture["sets"][0].id
     )
     return dialog
+
+
+def _measurement_set_form_enhanced(context: ReviewContext):
+    """The library-manager form with enhanced editing switched on.
+
+    Both rollout gates ship closed, so this is the only way to see the form
+    the parser → repository wiring actually fills: the Q core pair visible
+    beside its extremes, interval means in the mean fields, and the reported
+    median / S.D. line. The gate is patched for this scenario alone.
+    """
+    from references import measurement_content_gates as gates
+    from ui.reference_library_manager_dialog import _MeasurementSetForm
+
+    _fixture(context)
+    context.enter_fixture(
+        patch.object(gates, "MINIMUM_SUPPORTED_READER_VERSION_GATE_OPEN", True)
+    )
+    from database.reference_library import TaxonTreatmentRepository
+
+    treatment = TaxonTreatmentRepository.list_for_work(
+        context.state["reference.fixture"]["work"].id
+    )[0]
+    form = _MeasurementSetForm(context.host, taxon_treatment_id=treatment.id)
+    form.raw_text_input.setText(
+        "\n".join(
+            [
+                "Spore\t(min) 5%-95% (max)\tmean\tmedian\tS.D.",
+                "Length\t(7.5) 8.4-13.0 (13.2)\t9.2-11.7\t9.2-11.7\t0.600",
+                "Width\t(5.0) 5.1-7.2 (7.6)\t5.6-6.7\t5.6-6.7\t0.280",
+                "Q\t(1.30) 1.42-1.96 (2.07)\t1.55-1.78\t1.54-1.79\t0.095",
+            ]
+        )
+    )
+    form.parse_btn.click()
+    return form
 
 
 def _no_taxon(context: ReviewContext):
@@ -1171,6 +1234,19 @@ def register_reference_scenarios(registry: ScenarioRegistry) -> None:
             build=_range,
         ),
         ReviewScenario(
+            id="reference.reported-statistics",
+            group="reference-library",
+            title="Add reference — reported statistics from a headed table",
+            description=(
+                "A 5%–95% headed table with interval means, medians and "
+                "standard deviations exercises the tag strip, the "
+                "scalar-or-interval mean column and the reported-statistics "
+                "line."
+            ),
+            viewport=(900, 780),
+            build=_reported_statistics,
+        ),
+        ReviewScenario(
             id="reference.raw-points",
             group="reference-library",
             title="Add reference — raw measurement points",
@@ -1201,6 +1277,18 @@ def register_reference_scenarios(registry: ScenarioRegistry) -> None:
             description="A selected publication, taxon treatment, and measurement set exercise the three-pane CRUD manager.",
             viewport=(1100, 700),
             build=_library_manager,
+        ),
+        ReviewScenario(
+            id="reference.measurement-set-form-enhanced",
+            group="reference-library",
+            title="Library manager measurement-set form with enhanced editing on",
+            description=(
+                "The gate-open form: the Q core pair beside its extremes, "
+                "interval means in the mean fields, and the reported "
+                "median / S.D. line the save path now persists."
+            ),
+            viewport=(760, 720),
+            build=_measurement_set_form_enhanced,
         ),
         ReviewScenario(
             id="reference.no-taxon",
