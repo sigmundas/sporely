@@ -6,26 +6,30 @@ sections under *Canonical stage sequence* below (Stage 1 → 2 → 3A → 3B →
 stage execution, newest first; they define nothing. The first one is the
 **current stage**; the rest are historical and kept verbatim.
 
-## Stage 4 handoff — 2026-09-14 (current stage; **human-gated, uncommitted**)
+## Stage 4 handoff — 2026-09-15 (current stage; candidate pushed, human gate passed)
 
-Status: **Stage 4 implemented and self-verified as far as this tier allows.**
-Editor and UI inspection with guarded editing: the typed parser output now
-reaches both editors, compact meaning tags carry an accessible explanation,
-the mean field accepts a scalar *or* an interval, reported median and S.D.
-appear beside the mean and never inside it, a reported Q mean no longer lands
-in the Parmasto species-mean field, and the library manager presents enhanced
-content read-only while preserving it untouched. **Nothing is committed.** The
-stage is human-gated under AGENTS.md (interactive edit / swap / save /
-restart), so the candidate stays in the working tree until the numbered manual
-checks below are confirmed.
+Status: **Stage 4 implemented, human gate passed, candidate committed and
+pushed.** Editor and UI inspection with guarded editing: the typed parser
+output now reaches both editors, compact meaning tags carry an accessible
+explanation, the mean field accepts a scalar *or* an interval, reported median
+and S.D. appear beside the mean and never inside it, a reported Q mean no
+longer lands in the Parmasto species-mean field, and the library manager
+presents enhanced content read-only under a closed gate while preserving it
+untouched. The stage was human-gated under AGENTS.md (interactive edit / swap /
+save / restart); those checks were run by the branch owner on 2026-09-15 and
+recorded below, which is what released the candidate for commit. Acceptance and
+merge remain the branch owner's separate decisions.
 
 - Stage id: `stage-4-editor-and-ui-inspection-and-guarded-editing` (brief,
   handoff and notes in `.sparring/stages/<that id>/`).
 - Branch `feature/reported-statistics-contract`, base
-  `12992e61630c325dabd61817ddc2d8ed1fb81e00`. Candidate SHA: **none yet** —
-  see the human gate.
-- Both rollout gates remain **closed**. Stage 5 still owns the decision to
-  open either one.
+  `12992e61630c325dabd61817ddc2d8ed1fb81e00`, candidate
+  **`0c43a1bb33afe3f6e568786c6eda8bbb27456c08`**, pushed. The commit that adds
+  this status record is a documentation-only follow-up; it does not alter the
+  frozen candidate, whose production, test and translation content is exactly
+  what the human checks were run against.
+- Both rollout gates are committed **closed**. Stage 5 still owns the decision
+  to open either one.
 
 Files changed: `ui/measurement_content_view.py` (new),
 `ui/reference_entry_editor.py`, `ui/reference_library_manager_dialog.py`,
@@ -172,13 +176,42 @@ site on purpose — a shorter local wrapper hid every string in it from
 (1) The library manager did not build its set from `to_content()` — the fix is
 the shared fold above, plus the Q core inputs and interval-capable mean fields
 it needed. (2) There was no explicit correction control for a wrong range
-interpretation — the fix is the retraction menu above. Full response in the
-stage's `sparring.md`.
+interpretation — the fix is the retraction menu above. Round 2 returned
+`READY` on the implementation, and round 3 sent back documentation only: this
+handoff still read "uncommitted / Candidate SHA: none yet" after the candidate
+was pushed, which is what the follow-up commit carrying this text corrects.
+Full response in the stage's `sparring.md`.
 
-**Human gate — required before any commit.** Numbered checklist in
+**Human gate — passed (branch owner, 2026-09-15).** Five blocking checks, all
+reported Pass, run against content identical to the candidate. Screenshots
+prove layout only; none of these interactions is visible in one.
+
+1. `compact-editor-edit-swap-save-restart` — with both rollout switches closed,
+   a synthetic tagged table (interval means, median, S.D. and Q) pasted into
+   the compact editor, values edited, length and width swapped, the set saved
+   and attached, the application closed and reopened, and the saved attachment
+   inspected.
+2. `reported-statistics-retraction` — tagged content parsed, then each
+   available per-metric "drop the range interpretation" action used, then
+   "Discard all reported statistics"; fields and save results inspected after
+   each.
+3. `library-manager-closed-gate` — with the reader gate closed, an existing
+   enhanced measurement set opened in the library manager, an ordinary field
+   edited and saved, the row reopened; and a synthetic enhanced table parsed
+   into a new manager form.
+4. `library-manager-open-gate-roundtrip` — with
+   `MINIMUM_SUPPORTED_READER_VERSION_GATE_OPEN` set true locally, a synthetic
+   table carrying explicit percentile/core and extreme bounds, interval means,
+   median, S.D. and Q core values parsed and saved through the library
+   manager, then restarted and reopened; the switch restored to false before
+   committing, and confirmed `False` in the candidate.
+5. `ui-wording-and-layout` — both editors inspected in light and dark themes
+   and in Norwegian, with content long enough to wrap the tag and
+   reported-statistics lines, and the controls navigated by keyboard and
+   accessibility tooling.
+
+The numbered operator checklist these came from is in
 `.sparring/stages/stage-4-editor-and-ui-inspection-and-guarded-editing/handoff.md`.
-Screenshots prove the layout; none of the interactions below are visible in
-one.
 
 Deferred, deliberately: the parsed sample size `n` still does not reach
 `normalized_measurement_set_payload` (pre-existing; the payload derives
