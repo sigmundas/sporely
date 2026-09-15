@@ -338,27 +338,50 @@ class INaturalistUploader:
         if not obs_id:
             raise RuntimeError("iNaturalist response did not include observation id.")
 
+        # The observation now exists on iNaturalist. A later image failure must
+        # not throw that id away, or the caller would keep its stale local id and
+        # create a second replacement observation on the next attempt. Report it
+        # as a partial success via the existing raw["image_upload_error"]
+        # contract instead of raising.
         total_steps = max(2, len(image_paths) + 1)
+        images_uploaded = 0
+        image_upload_error: str | None = None
         for idx, path in enumerate(image_paths or [], start=1):
             if progress_cb:
                 progress_cb(f"Uploading image {idx}/{len(image_paths)}...", min(total_steps - 1, idx + 1), total_steps)
-            with open(path, "rb") as handle:
-                image_response = requests.post(
-                    f"{self.API_BASE_URL}/observation_photos",
-                    headers={**headers, "Accept": "application/json"},
-                    data={"observation_photo[observation_id]": str(obs_id)},
-                    files={"file": handle},
-                    timeout=60,
+            try:
+                with open(path, "rb") as handle:
+                    image_response = requests.post(
+                        f"{self.API_BASE_URL}/observation_photos",
+                        headers={**headers, "Accept": "application/json"},
+                        data={"observation_photo[observation_id]": str(obs_id)},
+                        files={"file": handle},
+                        timeout=60,
+                    )
+            except Exception as exc:
+                image_upload_error = (
+                    f"iNaturalist image upload failed: {str(exc).strip() or exc.__class__.__name__}"
                 )
+                break
             if image_response.status_code >= 400:
                 error_text = self._response_error_text(image_response) or "Bad Request"
-                raise RuntimeError(
+                image_upload_error = (
                     f"iNaturalist image upload failed ({image_response.status_code}): {error_text}"
                 )
+                break
+            images_uploaded += 1
 
-        if progress_cb:
+        raw: dict = {
+            "observation": create_payload,
+            "images_uploaded": images_uploaded,
+        }
+        if image_upload_error:
+            raw["image_upload_error"] = image_upload_error
+            if progress_cb:
+                progress_cb("Image upload failed.", total_steps, total_steps)
+        elif progress_cb:
             progress_cb("Upload complete.", total_steps, total_steps)
-        return UploadResult(sighting_id=int(obs_id), raw=create_payload)
+        return UploadResult(sighting_id=int(obs_id), raw=raw)
 
 
 class MushroomObserverUploader:

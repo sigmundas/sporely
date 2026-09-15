@@ -215,3 +215,35 @@ never deletes local data or remote photos on this path.
 
 Adding media to a live observation (Stage 2), publish-action wording per state
 and a manual "Clear iNaturalist link" escape hatch (Stage 3).
+
+### Stage 1 correction — 2026-09-15
+
+Three boundary issues found in review of `c2213d0`.
+
+**A. "Both" regression.** Relaxing the stored-id gate also made the combined
+"Both" action eligible. Because `_publish_selected_observations_both()`
+publishes `web` first and `inat` second, a live existing iNaturalist link would
+have been discovered only after the Artsobservasjoner record was already
+created. "Both" now keeps the original stored-id block, in the action
+enablement and as a runtime guard in `_publish_selected_observations_both()`;
+the individual iNaturalist action stays relaxed so stale-link repair works.
+
+**B. Create-success / media-failure window.** `INaturalistUploader.upload()`
+raised on the first image failure, discarding an observation id that already
+existed remotely. The caller then kept its stale local id, so a retry created a
+second replacement observation. The image loop now records the first failure in
+`raw["image_upload_error"]` and returns the new id, reusing the partial-success
+contract `utils/artsobservasjoner_submit.py` already uses and
+`upload_observation_to_artsobs()` already handles. Create failure still raises,
+so a failure before any remote observation exists leaves the old id untouched.
+
+Artsobservasjoner web queues failed images for retry, so its media failures stay
+non-final and its reporting is unchanged. iNaturalist has no such queue, so a
+media failure there is reported as a warning and carried to batch callers as the
+third element of `upload_observation_to_artsobs()`'s return tuple: `ok=True`
+with a message now means partial success.
+
+**C. Translations.** Five new source strings registered in the three Sporely
+`.ts` catalogs via `tools/update_translations.sh`. The `.qm` files are unchanged
+because the new strings are untranslated and `lrelease` omits them; they fall
+back to English until a translator fills them in.

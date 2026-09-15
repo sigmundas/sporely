@@ -134,10 +134,17 @@ class _RecordingUploader:
     key = "inat"
     label = "iNaturalist"
 
-    def __init__(self, link_status, sighting_id: int | None = 999, error: Exception | None = None):
+    def __init__(
+        self,
+        link_status,
+        sighting_id: int | None = 999,
+        error: Exception | None = None,
+        image_upload_error: str | None = None,
+    ):
         self._link_status = link_status
         self._sighting_id = sighting_id
         self._error = error
+        self._image_upload_error = image_upload_error
         self.link_checks: list[int] = []
         self.uploads: list[list[str]] = []
 
@@ -149,7 +156,10 @@ class _RecordingUploader:
         self.uploads.append(list(image_paths or []))
         if self._error is not None:
             raise self._error
-        return SimpleNamespace(sighting_id=self._sighting_id, raw={})
+        raw: dict = {"observation": {"id": self._sighting_id}}
+        if self._image_upload_error:
+            raw["image_upload_error"] = self._image_upload_error
+        return SimpleNamespace(sighting_id=self._sighting_id, raw=raw)
 
 
 class _FakeOAuthClient:
@@ -398,6 +408,178 @@ def test_stored_inaturalist_id_no_longer_blocks_the_publish_action():
     assert blocks(tab, "web") is True
     assert blocks(tab, "artportalen") is True
     assert blocks(tab, "mo") is True
+
+
+def test_stale_link_keeps_new_id_when_only_the_image_upload_fails(monkeypatch):
+    """Replacement observation created, media failed: the new id must be stored.
+
+    Forgetting the new id here would leave a live orphan on iNaturalist and make
+    the next retry create yet another replacement observation.
+    """
+    uploader = _RecordingUploader(
+        _link_status("missing"),
+        sighting_id=777,
+        image_upload_error="iNaturalist image upload failed (422): Photo is invalid",
+    )
+    fake_tab, recorded = _build_env(
+        monkeypatch, uploader, dict(_OBSERVATION_BASE, inaturalist_id=4242), confirm=True
+    )
+
+    ok, published_id, error = _publish(fake_tab)
+
+    assert ok is True
+    assert published_id == 777
+    # The stale 4242 is replaced by the observation that really exists now.
+    assert recorded["set_inat_calls"] == [(7, 777)]
+    # The media failure is reported, not swallowed as a clean success.
+    assert error is not None
+    assert "image upload failed" in error
+    assert "Photo is invalid" in error
+    assert recorded["status_messages"]
+    assert recorded["status_messages"][-1][1] == "warning"
+
+
+def test_first_time_publish_keeps_new_id_when_only_the_image_upload_fails(monkeypatch):
+    uploader = _RecordingUploader(
+        _link_status("live"),
+        sighting_id=555,
+        image_upload_error="iNaturalist image upload failed (500): Internal Server Error",
+    )
+    fake_tab, recorded = _build_env(
+        monkeypatch, uploader, dict(_OBSERVATION_BASE, inaturalist_id=None), confirm=False
+    )
+
+    ok, published_id, error = _publish(fake_tab)
+
+    assert ok is True
+    assert published_id == 555
+    assert recorded["set_inat_calls"] == [(7, 555)]
+    assert error is not None and "image upload failed" in error
+    assert recorded["status_messages"][-1][1] == "warning"
+
+
+def test_inaturalist_upload_returns_partial_result_instead_of_raising(monkeypatch, tmp_path):
+    """The uploader itself must not throw away a created observation id."""
+    image_path = tmp_path / "spore-plot.jpg"
+    image_path.write_bytes(b"jpeg")
+    posts: list[str] = []
+
+    def fake_post(url, headers=None, json=None, data=None, files=None, timeout=None):
+        posts.append(url)
+        if url.endswith("/observations"):
+            return _FakeResponse(200, {"results": [{"id": 4321}]})
+        return _FakeResponse(422, {"errors": ["Photo is invalid"]})
+
+    monkeypatch.setattr("utils.artsobs_uploaders.requests.post", fake_post)
+
+    result = INaturalistUploader().upload(
+        {"species_guess": "Atheniella flavoalba", "observed_datetime": "2024-01-01 12:00:00"},
+        [str(image_path)],
+        {"access_token": "tok"},
+    )
+
+    assert result.sighting_id == 4321
+    assert result.raw["images_uploaded"] == 0
+    assert "Photo is invalid" in result.raw["image_upload_error"]
+    assert posts == [
+        "https://api.inaturalist.org/v1/observations",
+        "https://api.inaturalist.org/v1/observation_photos",
+    ]
+
+
+def test_inaturalist_upload_still_raises_when_the_observation_is_not_created(monkeypatch):
+    """Create failure must raise so the caller keeps the old local id."""
+    monkeypatch.setattr(
+        "utils.artsobs_uploaders.requests.post",
+        lambda *args, **kwargs: _FakeResponse(422, {"errors": ["Taxon is invalid"]}),
+    )
+
+    with pytest.raises(RuntimeError, match="create observation failed"):
+        INaturalistUploader().upload(
+            {"species_guess": "Atheniella flavoalba"}, [], {"access_token": "tok"}
+        )
+
+
+# --------------------------------------------------------------------------
+# "Both" stays blocked by a stored iNaturalist id
+# --------------------------------------------------------------------------
+
+
+def _both_tab(inat_has_existing_upload: bool, calls: list, messages: list):
+    return SimpleNamespace(
+        tr=lambda text: text,
+        _selected_observation_ids=lambda: [7],
+        _publish_target_login_status=lambda force_refresh=False: {"web": True, "inat": True},
+        _publish_target_saved_login_status=lambda force_refresh=False: {"web": True, "inat": True},
+        _open_online_publishing_settings=lambda: False,
+        _invalidate_publish_login_status_cache=lambda: None,
+        _update_publish_controls=lambda: None,
+        _publish_actions={},
+        _selection_has_existing_upload_for_uploader=lambda key: (
+            inat_has_existing_upload if key == "inat" else False
+        ),
+        _selection_blocks_publish_for_uploader=lambda key: (
+            observations_tab.ObservationsTab._selection_blocks_publish_for_uploader(
+                SimpleNamespace(
+                    _existing_upload_blocks_publish=lambda k: (
+                        observations_tab.ObservationsTab._existing_upload_blocks_publish(None, k)
+                    ),
+                    _selection_has_existing_upload_for_uploader=lambda k: (
+                        inat_has_existing_upload if k == "inat" else False
+                    ),
+                ),
+                key,
+            )
+        ),
+        _selection_matches_uploader_target=lambda key: True,
+        _ensure_selection_publish_target=lambda uploader_key, observation_ids: True,
+        refresh_observations=lambda *args, **kwargs: None,
+        set_status_message=lambda message, level="info", auto_clear_ms=8000: messages.append(
+            (str(message), str(level))
+        ),
+        upload_observation_to_artsobs=lambda observation_id, uploader_key, show_status, refresh_table, publish_bundle=None: (
+            calls.append(uploader_key) or (True, 456, None)
+        ),
+    )
+
+
+def test_stored_inaturalist_id_still_blocks_the_combined_both_action():
+    """Both publishes web first, so it must not start when the iNat half may refuse."""
+    calls: list[str] = []
+    messages: list[tuple[str, str]] = []
+
+    observations_tab.ObservationsTab._publish_selected_observations_both(
+        _both_tab(inat_has_existing_upload=True, calls=calls, messages=messages)
+    )
+
+    # Critically, no Artsobservasjoner publish happened before the iNat refusal.
+    assert calls == []
+    assert messages
+    assert "already uploaded to this service" in messages[-1][0]
+    assert messages[-1][1] == "warning"
+
+
+def test_stored_inaturalist_id_does_not_block_the_individual_inaturalist_action():
+    calls: list[str] = []
+    messages: list[tuple[str, str]] = []
+
+    observations_tab.ObservationsTab._publish_selected_observations(
+        _both_tab(inat_has_existing_upload=True, calls=calls, messages=messages), "inat"
+    )
+
+    # The stale-link repair path is reached for the individual action.
+    assert calls == ["inat"]
+
+
+def test_both_still_runs_when_no_inaturalist_id_is_stored():
+    calls: list[str] = []
+    messages: list[tuple[str, str]] = []
+
+    observations_tab.ObservationsTab._publish_selected_observations_both(
+        _both_tab(inat_has_existing_upload=False, calls=calls, messages=messages)
+    )
+
+    assert calls == ["web", "inat"]
 
 
 def test_selection_gate_still_blocks_non_inaturalist_targets():

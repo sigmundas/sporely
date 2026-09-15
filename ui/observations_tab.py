@@ -5324,8 +5324,13 @@ class ObservationsTab(QWidget):
                 any_target_enabled = True
 
         if both_action is not None:
+            # "Both" publishes to Artsobservasjoner first and iNaturalist second,
+            # so a stale-link repair cannot be offered before the web half has
+            # already been sent. A stored iNaturalist id therefore still blocks
+            # "Both"; the individual iNaturalist action stays available so that
+            # stale links can be repaired there.
             both_enabled = has_selection and not any(
-                self._selection_blocks_publish_for_uploader(key)
+                self._selection_has_existing_upload_for_uploader(key)
                 for key in ("web", "inat")
             )
             both_action.setEnabled(bool(both_enabled))
@@ -5464,6 +5469,7 @@ class ObservationsTab(QWidget):
         total = len(observation_ids)
         success_count = 0
         failed: list[tuple[int, str | None]] = []
+        partial: list[tuple[int, str]] = []
         for idx, observation_id in enumerate(observation_ids, start=1):
             self.set_status_message(
                 self.tr("Publishing {current}/{total}...").format(current=idx, total=total),
@@ -5483,12 +5489,26 @@ class ObservationsTab(QWidget):
             )
             if ok:
                 success_count += 1
+                # ok with a message is a partial success (remote record created,
+                # media incomplete) and must not be summarised as clean success.
+                if error:
+                    partial.append((observation_id, error))
             else:
                 failed.append((observation_id, error))
 
         self.refresh_observations()
         self._invalidate_publish_login_status_cache()
         if not failed:
+            if partial:
+                summary = self.tr(
+                    "Published {count} observations to {target}, with warnings."
+                ).format(count=success_count, target=target_label)
+                self.set_status_message(
+                    f"{summary} {partial[0][1]}",
+                    level="warning",
+                    auto_clear_ms=15000,
+                )
+                return
             self.set_status_message(
                 self.tr("Published {count} observations to {target}.").format(
                     count=success_count,
@@ -5527,6 +5547,20 @@ class ObservationsTab(QWidget):
                 level="warning",
             )
             return
+
+        # Unlike the individual iNaturalist action, "Both" cannot offer a
+        # stale-link repair: the Artsobservasjoner half is published first, so a
+        # live iNaturalist link discovered afterwards would leave a half-finished
+        # publish. Keep the pre-existing stored-id block for both halves here.
+        for key in ("web", "inat"):
+            if self._selection_has_existing_upload_for_uploader(key):
+                self.set_status_message(
+                    self.tr("Publishing disabled: selection contains an observation already uploaded to this service."),
+                    level="warning",
+                    auto_clear_ms=12000,
+                )
+                self._update_publish_controls()
+                return
 
         login_status = self._publish_target_login_status(force_refresh=True)
         saved_login_status = self._publish_target_saved_login_status(force_refresh=True)
@@ -11520,9 +11554,26 @@ class ObservationsTab(QWidget):
                         updated_obs or {"id": observation_id, "mushroomobserver_id": int(obs_id)},
                     )
                 self._update_publish_controls()
+        # Artsobservasjoner web marks failed images pending and retries them, so a
+        # media failure there is not final. iNaturalist has no such queue: the
+        # observation exists remotely with missing photos, and the user has to be
+        # told even when the batch caller owns the status line.
+        media_failure_is_final = bool(image_upload_error) and uploader.key not in {"mobile", "web"}
+        final_media_warning = None
+        if obs_id and media_failure_is_final:
+            final_media_warning = self.tr(
+                "Published to {target} (ID {id}), but image upload failed. "
+                "The observation exists without those images."
+            ).format(target=self.tr(uploader.label), id=obs_id)
+            final_media_warning = f"{final_media_warning} Details: {image_upload_error}"
         if show_status:
             if obs_id:
-                if image_upload_error:
+                if final_media_warning:
+                    message = final_media_warning
+                    if publish_warning_text:
+                        message = f"{message} {publish_warning_text}"
+                    self.set_status_message(message, level="warning", auto_clear_ms=15000)
+                elif image_upload_error:
                     message = self.tr(
                         "Observation published, but image upload failed. Images remain pending."
                     )
@@ -11557,7 +11608,10 @@ class ObservationsTab(QWidget):
                     )
                 else:
                     self.set_status_message(self.tr("Upload completed."), level="success")
-        return True, obs_id, None
+        # ok=True with a message means partial success: the remote observation
+        # exists and its id is stored, but its media did not all arrive. Batch
+        # callers must not report this as a clean success.
+        return True, obs_id, final_media_warning
 
     def edit_observation(self):
         """Edit the selected observation."""
