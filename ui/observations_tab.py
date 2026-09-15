@@ -11046,12 +11046,38 @@ class ObservationsTab(QWidget):
             return _fail(self.tr("Upload failed: observation not found."))
         publish_target = self._observation_publish_target(obs)
 
+        target_key = self._preferred_publish_uploader_key(obs, uploader_key)
+
+        # Create-only metadata. Coordinates and the observation date are sent
+        # only when a new remote observation is created; adding media to a live
+        # iNaturalist observation sends neither and rewrites no remote metadata,
+        # so refusing an append for a missing local date would be refusing over
+        # a field that is never transmitted. For that one case the refusal is
+        # deferred until the create-vs-append decision is known. Every other
+        # target - and iNaturalist with no stored id - still fails right here,
+        # in the order it always did.
         lat = obs.get("gps_latitude")
         lon = obs.get("gps_longitude")
+        observed_datetime = obs.get("date")
+        create_metadata_failure: tuple[str, str] | None = None
         if lat is None or lon is None:
-            return _fail(
+            create_metadata_failure = (
                 self.tr("Upload failed: this observation is missing GPS coordinates."),
-                level="warning",
+                "warning",
+            )
+        elif not observed_datetime:
+            create_metadata_failure = (
+                self.tr("Upload failed: observation date is missing."),
+                "warning",
+            )
+        inaturalist_append_possible = target_key == "inat" and self._observation_has_existing_upload(
+            obs,
+            "inat",
+        )
+        if create_metadata_failure and not inaturalist_append_possible:
+            return _fail(
+                create_metadata_failure[0],
+                level=create_metadata_failure[1],
                 auto_clear_ms=12000,
             )
 
@@ -11091,13 +11117,6 @@ class ObservationsTab(QWidget):
             include_thumbnail_gallery and measurement_availability["has_gallery_measurements"]
         )
 
-        observed_datetime = obs.get("date")
-        if not observed_datetime:
-            return _fail(
-                self.tr("Upload failed: observation date is missing."),
-                level="warning",
-                auto_clear_ms=12000,
-            )
         image_license_code = self._publish_image_license_code()
         copyright_text = (
             self._publish_copyright_text(obs)
@@ -11105,7 +11124,6 @@ class ObservationsTab(QWidget):
             else None
         )
 
-        target_key = self._preferred_publish_uploader_key(obs, uploader_key)
         uploader = get_uploader(target_key)
         if not uploader:
             return _fail(
@@ -11306,6 +11324,18 @@ class ObservationsTab(QWidget):
                 "user_key": user_key,
             }
 
+        if create_metadata_failure and not inat_append_observation_id:
+            # Deferred above for a possible iNaturalist media append. The
+            # operation is now known to be a create or a stale-link republish,
+            # both of which do send this metadata, so the original refusal
+            # applies after all. Creation validation is unchanged; only the
+            # point at which it is enforced moved.
+            return _fail(
+                create_metadata_failure[0],
+                level=create_metadata_failure[1],
+                auto_clear_ms=12000,
+            )
+
         self._set_status_progress_visible(True)
         QApplication.processEvents()
 
@@ -11462,69 +11492,77 @@ class ObservationsTab(QWidget):
                     # nothing created, nothing mutated, not a failure.
                     return False, None, None
 
-            spore_stats = self._publish_spore_stats_text(
-                observation_id,
-                obs,
-                spore_stats=measurement_availability.get("spore_stats"),
-            )
-            legacy_notes = (obs.get("notes") or "").strip()
-            open_comment = (obs.get("open_comment") or "").strip()
-            private_comment = (obs.get("private_comment") or "").strip()
-            interesting_comment = bool(obs.get("interesting_comment", 0))
-            open_comment_text = compose_publish_notes(
-                open_comment or legacy_notes,
-                spore_stats if include_spore_stats else None,
-                sporely_public_observation_url(obs),
-                uploader_key=uploader.key,
-            )
-            observation_payload = {
-                "taxon_id": taxon_id,
-                "taxon_id_source": taxon_resolution.source_field if taxon_resolution else None,
-                "latitude": float(lat),
-                "longitude": float(lon),
-                "observed_datetime": observed_datetime,
-                "count": 1,
-                "comment": open_comment_text,
-                "open_comment": open_comment_text,
-                "private_comment": private_comment or None,
-                "interesting_comment": interesting_comment,
-                "accuracy_meters": obs.get("gps_accuracy") or 25,
-                "site_name": (obs.get("location") or "").strip(),
-                "habitat": (obs.get("habitat") or "").strip() or None,
-                "notes": None,
-                "uncertain": bool(obs.get("uncertain", 0)),
-                "unspontaneous": bool(obs.get("unspontaneous", 0)),
-                "determination_method": obs.get("determination_method"),
-                "include_annotations_on_images": include_annotations,
-                "include_spore_stats_in_comment": include_spore_stats,
-                "include_measure_plots": include_measure_plots,
-                "include_thumbnail_gallery": include_thumbnail_gallery,
-                "include_plate": include_plate,
-                "include_copyright": include_copyright,
-                "image_license_code": image_license_code,
-                "genus": (obs.get("genus") or "").strip(),
-                "species": (obs.get("species") or "").strip(),
-                "species_guess": (obs.get("species_guess") or "").strip(),
-                "inaturalist_taxon_id": taxon_id,
-                "publish_target": publish_target,
-                "habitat_nin2_path": obs.get("habitat_nin2_path"),
-                "habitat_substrate_path": obs.get("habitat_substrate_path"),
-                "habitat_nin2_note": (obs.get("habitat_nin2_note") or "").strip() or None,
-                "habitat_substrate_note": (obs.get("habitat_substrate_note") or "").strip() or None,
-                "habitat_grows_on_note": (obs.get("habitat_grows_on_note") or "").strip() or None,
-                "habitat_host_scientific": " ".join(
-                    [
-                        (obs.get("habitat_host_genus") or "").strip(),
-                        (obs.get("habitat_host_species") or "").strip(),
-                    ]
-                ).strip()
-                or None,
-                "habitat_host_common_name": (obs.get("habitat_host_common_name") or "").strip() or None,
-                "habitat_host_taxon_id": ObservationDB.resolve_adb_taxon_id(
-                    (obs.get("habitat_host_genus") or "").strip() or None,
-                    (obs.get("habitat_host_species") or "").strip() or None,
-                ),
-            }
+            if inat_append_observation_id:
+                # add_images() sends media only. None of the create payload -
+                # taxon, coordinates, date, notes, spore statistics, habitat -
+                # is transmitted or would be allowed to change the existing
+                # remote observation, so it is not built at all. That also keeps
+                # the append independent of local metadata it never sends.
+                observation_payload = None
+            else:
+                spore_stats = self._publish_spore_stats_text(
+                    observation_id,
+                    obs,
+                    spore_stats=measurement_availability.get("spore_stats"),
+                )
+                legacy_notes = (obs.get("notes") or "").strip()
+                open_comment = (obs.get("open_comment") or "").strip()
+                private_comment = (obs.get("private_comment") or "").strip()
+                interesting_comment = bool(obs.get("interesting_comment", 0))
+                open_comment_text = compose_publish_notes(
+                    open_comment or legacy_notes,
+                    spore_stats if include_spore_stats else None,
+                    sporely_public_observation_url(obs),
+                    uploader_key=uploader.key,
+                )
+                observation_payload = {
+                    "taxon_id": taxon_id,
+                    "taxon_id_source": taxon_resolution.source_field if taxon_resolution else None,
+                    "latitude": float(lat),
+                    "longitude": float(lon),
+                    "observed_datetime": observed_datetime,
+                    "count": 1,
+                    "comment": open_comment_text,
+                    "open_comment": open_comment_text,
+                    "private_comment": private_comment or None,
+                    "interesting_comment": interesting_comment,
+                    "accuracy_meters": obs.get("gps_accuracy") or 25,
+                    "site_name": (obs.get("location") or "").strip(),
+                    "habitat": (obs.get("habitat") or "").strip() or None,
+                    "notes": None,
+                    "uncertain": bool(obs.get("uncertain", 0)),
+                    "unspontaneous": bool(obs.get("unspontaneous", 0)),
+                    "determination_method": obs.get("determination_method"),
+                    "include_annotations_on_images": include_annotations,
+                    "include_spore_stats_in_comment": include_spore_stats,
+                    "include_measure_plots": include_measure_plots,
+                    "include_thumbnail_gallery": include_thumbnail_gallery,
+                    "include_plate": include_plate,
+                    "include_copyright": include_copyright,
+                    "image_license_code": image_license_code,
+                    "genus": (obs.get("genus") or "").strip(),
+                    "species": (obs.get("species") or "").strip(),
+                    "species_guess": (obs.get("species_guess") or "").strip(),
+                    "inaturalist_taxon_id": taxon_id,
+                    "publish_target": publish_target,
+                    "habitat_nin2_path": obs.get("habitat_nin2_path"),
+                    "habitat_substrate_path": obs.get("habitat_substrate_path"),
+                    "habitat_nin2_note": (obs.get("habitat_nin2_note") or "").strip() or None,
+                    "habitat_substrate_note": (obs.get("habitat_substrate_note") or "").strip() or None,
+                    "habitat_grows_on_note": (obs.get("habitat_grows_on_note") or "").strip() or None,
+                    "habitat_host_scientific": " ".join(
+                        [
+                            (obs.get("habitat_host_genus") or "").strip(),
+                            (obs.get("habitat_host_species") or "").strip(),
+                        ]
+                    ).strip()
+                    or None,
+                    "habitat_host_common_name": (obs.get("habitat_host_common_name") or "").strip() or None,
+                    "habitat_host_taxon_id": ObservationDB.resolve_adb_taxon_id(
+                        (obs.get("habitat_host_genus") or "").strip() or None,
+                        (obs.get("habitat_host_species") or "").strip() or None,
+                    ),
+                }
             update_progress(
                 self.tr("Connecting to {target}...").format(target=self.tr(uploader.label)),
                 0,
@@ -11724,11 +11762,14 @@ class ObservationsTab(QWidget):
         final_media_warning = None
         if obs_id and media_failure_is_final:
             if inat_append_observation_id:
-                # Some images did arrive, so the remote observation changed.
-                # Saying "failed" here would be untrue in the other direction.
+                # Some images did arrive, so the remote observation changed;
+                # saying "failed" outright would be untrue. The attachment loop
+                # stops at the first failure, so the images after it were never
+                # sent - reporting them as failed would be untrue the other way.
                 final_media_warning = self.tr(
-                    "Added {done} of {total} images to {target} observation {id}; the rest failed. "
-                    "The observation and its earlier photos are unchanged."
+                    "Added {done} of {total} images to {target} observation {id}. "
+                    "An image failed to upload, so any images after it were not attempted. "
+                    "The observation's other details and its earlier photos are unchanged."
                 ).format(
                     done=images_attached,
                     total=len(upload_image_paths),

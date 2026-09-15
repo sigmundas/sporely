@@ -312,6 +312,11 @@ def test_append_reports_partial_success_when_a_later_image_fails(monkeypatch):
     assert error is not None
     assert "Added 1 of 3 images" in error
     assert "Internal Server Error" in error
+    # The loop stops at the first failure, so image 3 was never sent. Calling it
+    # failed would be as untrue as calling the whole append a failure.
+    assert "not attempted" in error
+    assert "the rest failed" not in error
+    assert "earlier photos are unchanged" in error
     assert uploader.uploads == []
     assert recorded["set_inat_calls"] == []
     assert recorded["status_messages"][-1][1] == "warning"
@@ -412,6 +417,151 @@ def test_append_with_an_empty_selection_fails_with_a_useful_message(monkeypatch)
     assert uploader.uploads == []
     # Nothing to confirm when there is nothing to send.
     assert recorded["prompts"] == []
+
+
+# --------------------------------------------------------------------------
+# Append is independent of create-only metadata
+# --------------------------------------------------------------------------
+#
+# ``add_images()`` posts nothing but photos, so an append must not be refused
+# over local fields it never transmits. These tests also prove the create
+# payload is not built in append mode: constructing it evaluates ``float(lat)``,
+# which would raise on a missing coordinate and turn the publish into a failure.
+
+
+@pytest.mark.parametrize(
+    "missing",
+    [
+        pytest.param({"gps_latitude": None, "gps_longitude": None}, id="no-gps"),
+        pytest.param({"gps_latitude": None}, id="no-latitude"),
+        pytest.param({"date": None}, id="no-date"),
+        pytest.param({"date": ""}, id="blank-date"),
+        pytest.param(
+            {"gps_latitude": None, "gps_longitude": None, "date": None},
+            id="no-gps-and-no-date",
+        ),
+    ],
+)
+def test_append_proceeds_without_create_only_metadata(monkeypatch, missing):
+    uploader = _RecordingUploader(_link_status("live"))
+    fake_tab, recorded = _build_env(
+        monkeypatch,
+        uploader,
+        dict(_OBSERVATION_BASE, inaturalist_id=4242, **missing),
+        confirm=True,
+        base_image_paths=["/tmp/plot.jpg"],
+    )
+
+    ok, published_id, error = _publish(fake_tab)
+
+    assert (ok, published_id, error) == (True, 4242, None)
+    assert uploader.appends == [(4242, ["/tmp/plot.jpg"])]
+    assert uploader.uploads == []
+    assert recorded["set_inat_calls"] == []
+
+
+def test_create_still_requires_gps_and_date(monkeypatch):
+    for missing, expected in (
+        ({"gps_latitude": None, "gps_longitude": None}, "missing GPS coordinates"),
+        ({"gps_longitude": None}, "missing GPS coordinates"),
+        ({"date": None}, "observation date is missing"),
+        ({"date": ""}, "observation date is missing"),
+    ):
+        uploader = _RecordingUploader(_link_status("live"), sighting_id=555)
+        fake_tab, recorded = _build_env(
+            monkeypatch,
+            uploader,
+            dict(_OBSERVATION_BASE, inaturalist_id=None, **missing),
+            confirm=True,
+        )
+
+        ok, published_id, error = _publish(fake_tab)
+
+        assert (ok, published_id) == (False, None), missing
+        assert expected in (error or ""), missing
+        assert uploader.uploads == []
+        assert uploader.appends == []
+        assert recorded["set_inat_calls"] == []
+
+
+def test_stale_link_republish_still_requires_create_metadata(monkeypatch):
+    """A republish is a create, so deferring the check must not let it through."""
+    for missing, expected in (
+        ({"gps_latitude": None, "gps_longitude": None}, "missing GPS coordinates"),
+        ({"date": None}, "observation date is missing"),
+    ):
+        uploader = _RecordingUploader(_link_status("missing"), sighting_id=777)
+        fake_tab, recorded = _build_env(
+            monkeypatch,
+            uploader,
+            dict(_OBSERVATION_BASE, inaturalist_id=4242, **missing),
+            confirm=True,
+            base_image_paths=["/tmp/plot.jpg"],
+        )
+
+        ok, published_id, error = _publish(fake_tab)
+
+        assert (ok, published_id) == (False, None), missing
+        assert expected in (error or ""), missing
+        assert uploader.uploads == []  # no create attempted
+        assert uploader.appends == []
+        assert recorded["set_inat_calls"] == []  # the stale id survives
+
+
+def test_unverified_link_without_create_metadata_still_reports_the_link_failure(monkeypatch):
+    """The deferred metadata check must not pre-empt the Stage 1 refusal."""
+    uploader = _RecordingUploader(_link_status("unverified", "HTTP 503"))
+    fake_tab, recorded = _build_env(
+        monkeypatch,
+        uploader,
+        dict(_OBSERVATION_BASE, inaturalist_id=4242, gps_latitude=None, gps_longitude=None),
+        confirm=True,
+    )
+
+    ok, published_id, error = _publish(fake_tab)
+
+    assert (ok, published_id) == (False, None)
+    assert "could not check" in (error or "")
+    assert uploader.uploads == []
+    assert uploader.appends == []
+    assert recorded["set_inat_calls"] == []
+
+
+def test_declined_republish_without_create_metadata_is_still_a_plain_skip(monkeypatch):
+    uploader = _RecordingUploader(_link_status("missing"))
+    fake_tab, recorded = _build_env(
+        monkeypatch,
+        uploader,
+        dict(_OBSERVATION_BASE, inaturalist_id=4242, date=None),
+        confirm=False,
+    )
+
+    ok, published_id, error = _publish(fake_tab)
+
+    # The decline is resolved before the deferred metadata refusal, so this
+    # stays the (False, None, None) skip shape rather than becoming a failure.
+    assert (ok, published_id, error) == (False, None, None)
+    assert uploader.uploads == []
+    assert uploader.appends == []
+    assert recorded["set_inat_calls"] == []
+
+
+def test_append_without_create_metadata_still_refuses_an_empty_selection(monkeypatch):
+    uploader = _RecordingUploader(_link_status("live"))
+    fake_tab, recorded = _build_env(
+        monkeypatch,
+        uploader,
+        dict(_OBSERVATION_BASE, inaturalist_id=4242, gps_latitude=None, gps_longitude=None),
+        confirm=True,
+        base_image_paths=[],
+    )
+
+    ok, published_id, error = _publish(fake_tab)
+
+    assert (ok, published_id) == (False, None)
+    assert "no images are selected" in (error or "")
+    assert uploader.appends == []
+    assert recorded["set_inat_calls"] == []
 
 
 # --------------------------------------------------------------------------
@@ -554,6 +704,7 @@ def test_batch_reports_a_partial_append_as_a_warning(monkeypatch):
     assert level == "warning"
     assert "with warnings" in text
     assert "Added 1 of 2 images" in text
+    assert "not attempted" in text
 
 
 def test_batch_reports_a_declined_append_as_cancelled(monkeypatch):

@@ -430,3 +430,59 @@ observation cannot be verified from here.
 State-aware publish action wording ("Publish" / "Add images" / "Republish"), a
 selection-level append confirmation, and the manual "Clear iNaturalist link"
 escape hatch.
+
+### Stage 2 correction — 2026-09-15
+
+Two correctness boundaries found in review of `b40edad`. The Stage 2
+architecture was accepted unchanged.
+
+**A. Append required create-only metadata it never sends.**
+`upload_observation_to_artsobs()` validated GPS coordinates and the observation
+date near the top, before the iNaturalist create-vs-append decision existed. An
+otherwise valid media append was therefore refused over fields `add_images()`
+does not transmit and does not update remotely.
+
+The two checks are now evaluated into a single deferred
+`create_metadata_failure` tuple at the original position. Every target except
+"iNaturalist with a stored id" still fails there, in the order it always did, so
+no other publish path changed. Only that one case defers, and the refusal is
+re-applied immediately after the auth/link chain once `decision.mode` is known.
+A create or a stale-link republish therefore still fails exactly as before; only
+the point of enforcement moved. `target_key` moved up because the deferral test
+needs it, and the date check merged into the GPS check as an `elif`, which
+preserves the existing message precedence when both are missing.
+
+The create payload is now built only in create mode (`observation_payload` is
+`None` for an append), so the append no longer constructs notes, spore
+statistics, taxon, coordinates or habitat data that `add_images()` never reads.
+That is also what the new tests exercise: building the payload evaluates
+`float(lat)`, which would raise on a missing coordinate, so an append that
+succeeds with no GPS proves the payload was not built.
+
+Ordering note: the link check still runs first, so an unverified link or a
+declined republish on a record that also lacks GPS/date reports the Stage 1 link
+outcome rather than a metadata refusal. Both are covered by tests.
+
+**B. Partial-append wording overstated the failure.**
+`_post_observation_photos()` stops at the first failure, so with three images
+and a failure on the second, the third is never attempted. "Added 1 of 3
+images … the rest failed" claimed otherwise. The message now reads "Added
+{done} of {total} images to {target} observation {id}. An image failed to
+upload, so any images after it were not attempted. The observation's other
+details and its earlier photos are unchanged." The stop-at-first-failure API
+behavior is unchanged.
+
+**Tests.** `tests/test_inaturalist_add_media_to_existing.py` gained a
+create-only-metadata section: append proceeds without GPS, without latitude,
+without date and with both missing (5 parametrised cases); create still fails
+for missing GPS/date; stale-link republish still fails rather than bypassing
+validation; an unverified link still reports the link failure; a declined
+republish is still a plain skip; and an append with no GPS still refuses an
+empty selection. The partial-append test and the batch partial test now pin the
+corrected wording.
+
+One source string replaced, one obsolete entry removed, via
+`tools/update_translations.sh`; `.qm` unchanged (the new string is
+untranslated).
+
+**Verification.** Same suite as above: 115 passed.
