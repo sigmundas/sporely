@@ -247,3 +247,35 @@ with a message now means partial success.
 `.ts` catalogs via `tools/update_translations.sh`. The `.qm` files are unchanged
 because the new strings are untranslated and `lrelease` omits them; they fall
 back to English until a translator fills them in.
+
+### Stage 1 batch-semantics correction — 2026-09-15
+
+`_publish_selected_observations()` classified every `ok=False` result as a
+failure and reported a partial success only when nothing else had failed.
+
+`upload_observation_to_artsobs()` now documents four outcomes in its docstring,
+and the batch wrapper sorts results into three buckets:
+
+| Result tuple | Bucket |
+| --- | --- |
+| `(True, id, None)` | success |
+| `(True, id, message)` | success **and** partial (remote record exists, media incomplete) |
+| `(False, None, message)` | failed |
+| `(False, None, None)` | skipped - the user declined the stale-link republish |
+
+Only `_fail()` produces the failure shape and it always sets a message, so the
+bare `(False, None, None)` from the decline branch is unambiguous.
+
+Batch summaries:
+
+| Outcome mix | Summary |
+| --- | --- |
+| all clean | success, unchanged |
+| partial only | warning, "…with warnings" plus the first partial detail |
+| hard failure only | error, unchanged |
+| partial + hard failure | failure summary plus first error **and** first partial detail |
+| decline only | info, "Publishing to {target} was cancelled." - not a failure |
+| success + decline | success; the decline is not counted in the failure count |
+
+One new source string, "Publishing to {target} was cancelled.", registered via
+`tools/update_translations.sh`.

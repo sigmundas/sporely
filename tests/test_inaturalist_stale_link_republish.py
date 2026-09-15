@@ -582,6 +582,178 @@ def test_both_still_runs_when_no_inaturalist_id_is_stored():
     assert calls == ["web", "inat"]
 
 
+# --------------------------------------------------------------------------
+# Batch summary semantics in _publish_selected_observations
+# --------------------------------------------------------------------------
+
+
+def _batch_tab(results: dict[int, tuple], observation_ids: list[int], messages: list):
+    """Fake tab driving the real batch wrapper with canned per-observation results."""
+    return SimpleNamespace(
+        tr=lambda text: text,
+        _selected_observation_ids=lambda: list(observation_ids),
+        _publish_target_login_status=lambda force_refresh=False: {"inat": True},
+        _publish_target_saved_login_status=lambda force_refresh=False: {"inat": True},
+        _open_online_publishing_settings=lambda: False,
+        _invalidate_publish_login_status_cache=lambda: None,
+        _update_publish_controls=lambda: None,
+        _publish_actions={},
+        _selection_has_existing_upload_for_uploader=lambda key: False,
+        _selection_blocks_publish_for_uploader=lambda key: False,
+        _selection_matches_uploader_target=lambda key: True,
+        _ensure_selection_publish_target=lambda uploader_key, observation_ids: True,
+        refresh_observations=lambda *args, **kwargs: None,
+        set_status_message=lambda message, level="info", auto_clear_ms=8000: messages.append(
+            (str(message), str(level))
+        ),
+        upload_observation_to_artsobs=lambda observation_id, uploader_key, show_status, refresh_table, publish_bundle=None: (
+            results[observation_id]
+        ),
+    )
+
+
+def _final(messages: list) -> tuple[str, str]:
+    return messages[-1]
+
+
+_DECLINED = (False, None, None)
+_HARD_FAILURE = (False, None, "Upload failed: iNaturalist create observation failed (422).")
+_PARTIAL = (True, 777, "Published to iNaturalist (ID 777), but image upload failed.")
+_CLEAN = (True, 555, None)
+
+
+def test_batch_declined_stale_link_is_not_reported_as_a_failure():
+    messages: list[tuple[str, str]] = []
+    observations_tab.ObservationsTab._publish_selected_observations(
+        _batch_tab({7: _DECLINED}, [7], messages), "inat"
+    )
+
+    text, level = _final(messages)
+    assert level != "error"
+    assert "failed" not in text.lower()
+    assert "cancelled" in text.lower()
+
+
+def test_declined_stale_link_is_not_a_failure_through_the_real_publish_path(monkeypatch):
+    """End-to-end: the real uploader decision reaches the real batch summary.
+
+    The canned-tuple tests above assume a decline yields ``(False, None, None)``;
+    this one wires the actual publish method into the actual batch wrapper so the
+    two halves cannot drift apart.
+    """
+    uploader = _RecordingUploader(_link_status("missing"))
+    fake_tab, recorded = _build_env(
+        monkeypatch, uploader, dict(_OBSERVATION_BASE, inaturalist_id=4242), confirm=False
+    )
+    messages: list[tuple[str, str]] = []
+    batch_tab = _batch_tab({}, [7], messages)
+    batch_tab.upload_observation_to_artsobs = (
+        lambda observation_id, uploader_key, show_status, refresh_table, publish_bundle=None: (
+            observations_tab.ObservationsTab.upload_observation_to_artsobs(
+                fake_tab,
+                observation_id=observation_id,
+                uploader_key=uploader_key,
+                show_status=show_status,
+                refresh_table=refresh_table,
+            )
+        )
+    )
+
+    observations_tab.ObservationsTab._publish_selected_observations(batch_tab, "inat")
+
+    text, level = _final(messages)
+    assert level != "error"
+    assert "failed" not in text.lower()
+    assert "cancelled" in text.lower()
+    assert recorded["prompts"]  # the user really was asked
+    assert recorded["set_inat_calls"] == []  # no local mutation
+    assert uploader.uploads == []  # no remote creation
+
+
+def test_batch_decline_alongside_a_success_still_reports_success():
+    messages: list[tuple[str, str]] = []
+    observations_tab.ObservationsTab._publish_selected_observations(
+        _batch_tab({7: _CLEAN, 8: _DECLINED}, [7, 8], messages), "inat"
+    )
+
+    text, level = _final(messages)
+    assert level == "success"
+    assert "Published 1 observations" in text
+    assert "failed" not in text.lower()
+
+
+def test_batch_decline_does_not_inflate_the_failure_count():
+    messages: list[tuple[str, str]] = []
+    observations_tab.ObservationsTab._publish_selected_observations(
+        _batch_tab({7: _CLEAN, 8: _DECLINED, 9: _HARD_FAILURE}, [7, 8, 9], messages), "inat"
+    )
+
+    text, level = _final(messages)
+    assert level == "warning"
+    assert "Failed: 1." in text  # the decline is not counted
+
+
+def test_batch_reports_partial_success_and_hard_failure_together():
+    messages: list[tuple[str, str]] = []
+    observations_tab.ObservationsTab._publish_selected_observations(
+        _batch_tab({7: _PARTIAL, 8: _HARD_FAILURE}, [7, 8], messages), "inat"
+    )
+
+    text, level = _final(messages)
+    assert level == "warning"
+    # The hard failure is reported...
+    assert "Failed: 1." in text
+    assert "create observation failed (422)" in text
+    # ...and the remote observation that exists without its media is not dropped.
+    assert "image upload failed" in text
+    assert "ID 777" in text
+
+
+def test_batch_reports_partial_success_and_total_failure_together():
+    messages: list[tuple[str, str]] = []
+    observations_tab.ObservationsTab._publish_selected_observations(
+        _batch_tab({7: _PARTIAL, 8: _HARD_FAILURE, 9: _HARD_FAILURE}, [7, 8, 9], messages), "inat"
+    )
+
+    text, _level = _final(messages)
+    assert "image upload failed" in text
+
+
+def test_batch_all_clean_successes_keep_the_plain_success_summary():
+    messages: list[tuple[str, str]] = []
+    observations_tab.ObservationsTab._publish_selected_observations(
+        _batch_tab({7: _CLEAN, 8: _CLEAN}, [7, 8], messages), "inat"
+    )
+
+    text, level = _final(messages)
+    assert level == "success"
+    assert text == "Published 2 observations to inat."
+
+
+def test_batch_partial_success_only_is_a_warning():
+    messages: list[tuple[str, str]] = []
+    observations_tab.ObservationsTab._publish_selected_observations(
+        _batch_tab({7: _PARTIAL}, [7], messages), "inat"
+    )
+
+    text, level = _final(messages)
+    assert level == "warning"
+    assert "with warnings" in text
+    assert "image upload failed" in text
+
+
+def test_batch_hard_failure_only_keeps_the_error_summary():
+    messages: list[tuple[str, str]] = []
+    observations_tab.ObservationsTab._publish_selected_observations(
+        _batch_tab({7: _HARD_FAILURE}, [7], messages), "inat"
+    )
+
+    text, level = _final(messages)
+    assert level == "error"
+    assert "failed for all selected observations" in text
+    assert "create observation failed (422)" in text
+
+
 def test_selection_gate_still_blocks_non_inaturalist_targets():
     calls: list[str] = []
     tab = SimpleNamespace(

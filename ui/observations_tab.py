@@ -5470,6 +5470,7 @@ class ObservationsTab(QWidget):
         success_count = 0
         failed: list[tuple[int, str | None]] = []
         partial: list[tuple[int, str]] = []
+        skipped: list[int] = []
         for idx, observation_id in enumerate(observation_ids, start=1):
             self.set_status_message(
                 self.tr("Publishing {current}/{total}...").format(current=idx, total=total),
@@ -5493,18 +5494,34 @@ class ObservationsTab(QWidget):
                 # media incomplete) and must not be summarised as clean success.
                 if error:
                     partial.append((observation_id, error))
+            elif error is None:
+                # The user declined the stale-link republish. Nothing was
+                # created and nothing was mutated, so this is a skip, not a
+                # failure, and it must not inflate the failure count.
+                skipped.append(observation_id)
             else:
                 failed.append((observation_id, error))
 
         self.refresh_observations()
         self._invalidate_publish_login_status_cache()
+
+        partial_detail = partial[0][1] if partial else None
+        first_error = failed[0][1] if failed and failed[0][1] else None
+
         if not failed:
-            if partial:
+            if not success_count and skipped:
+                self.set_status_message(
+                    self.tr("Publishing to {target} was cancelled.").format(target=target_label),
+                    level="info",
+                    auto_clear_ms=8000,
+                )
+                return
+            if partial_detail:
                 summary = self.tr(
                     "Published {count} observations to {target}, with warnings."
                 ).format(count=success_count, target=target_label)
                 self.set_status_message(
-                    f"{summary} {partial[0][1]}",
+                    f"{summary} {partial_detail}",
                     level="warning",
                     auto_clear_ms=15000,
                 )
@@ -5534,9 +5551,12 @@ class ObservationsTab(QWidget):
                 target=target_label
             )
             level = "error"
-        first_error = failed[0][1] if failed and failed[0][1] else None
         if first_error:
             summary = f"{summary} {first_error}"
+        # A partial success alongside a hard failure still means a remote
+        # observation exists without its media. Do not drop it.
+        if partial_detail:
+            summary = f"{summary} {partial_detail}"
         self.set_status_message(summary, level=level, auto_clear_ms=15000)
 
     def _publish_selected_observations_both(self) -> None:
@@ -10930,6 +10950,20 @@ class ObservationsTab(QWidget):
         refresh_table: bool = True,
         publish_bundle: PublishMediaBundle | None = None,
     ) -> tuple[bool, int | None, str | None]:
+        """Publish one observation and report ``(ok, remote_id, message)``.
+
+        The tuple carries four distinct outcomes, and batch callers must keep
+        them apart:
+
+        * ``(True, id, None)`` - clean success.
+        * ``(True, id, message)`` - partial success: the remote observation
+          exists and its id is stored, but its media did not all arrive.
+        * ``(False, None, message)`` - failure; ``message`` is always set,
+          because every failure goes through ``_fail``.
+        * ``(False, None, None)`` - the user deliberately cancelled (declining
+          the stale-iNaturalist-link republish). Nothing was created and
+          nothing was mutated; this is a skip, not a failure.
+        """
         def _fail(message: str, level: str = "error", auto_clear_ms: int = 12000):
             if show_status:
                 self.set_status_message(message, level=level, auto_clear_ms=auto_clear_ms)
