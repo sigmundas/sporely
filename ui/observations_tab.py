@@ -11241,7 +11241,6 @@ class ObservationsTab(QWidget):
                     auto_clear_ms=12000,
                 )
         elif uploader.key == "inat":
-            taxon_id = self._resolve_inaturalist_taxon_id(obs)
             from utils.inat_oauth import INatOAuthClient
 
             client_id = (SettingsDB.get_setting("inat_client_id", "") or "").strip() or (
@@ -11300,6 +11299,14 @@ class ObservationsTab(QWidget):
                 return False, None, None
             if decision.mode == INAT_PUBLISH_MODE_APPEND:
                 inat_append_observation_id = decision.existing_observation_id
+            else:
+                # Create-only, and deferred to here for that reason:
+                # ``add_images()`` sends no taxon and changes no remote
+                # metadata, so resolving one for an append would query local
+                # taxonomy for a value that is never transmitted. Placing it
+                # after the decision also means a refused or declined publish
+                # does not pay for it.
+                taxon_id = self._resolve_inaturalist_taxon_id(obs)
         elif uploader.key == "mo":
             app_key = (SettingsDB.get_setting(self.SETTING_MO_APP_API_KEY, "") or "").strip() or (
                 os.getenv("MO_APP_API_KEY", "") or ""

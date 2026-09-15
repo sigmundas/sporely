@@ -486,3 +486,30 @@ One source string replaced, one obsolete entry removed, via
 untranslated).
 
 **Verification.** Same suite as above: 115 passed.
+
+### Stage 2 correction 2 — 2026-09-15
+
+One remaining create-only dependency found in review of `eb787fa`.
+
+The iNaturalist branch still called `_resolve_inaturalist_taxon_id(obs)` as its
+first statement, before the create-vs-append decision existed. That helper reads
+the local taxonomy tables and, on a miss, parses the Artsdatabanken taxon file,
+so a media-only append was coupled to state `add_images()` never transmits.
+
+The call moved into an `else` on the decision branch, so it runs for create and
+for a confirmed stale-link republish exactly as before, and not at all for an
+append, an unverified-link refusal or a declined republish (both of which return
+before it). `taxon_id` stays `None` in append mode, which is harmless because the
+create payload is not built there.
+
+Nothing else changed: no new strings, no API change, no flow redesign.
+
+**Tests.** `test_append_never_resolves_a_taxon` replaces the helper with one
+that raises, then asserts the append still succeeds, `add_images()` ran, no
+create happened and the stored id is unchanged - proving the coupling is gone
+rather than merely unexercised. `test_create_and_republish_still_resolve_a_taxon`
+asserts the helper is called exactly once on both create paths and that the new
+id is stored. `test_refused_or_declined_publish_resolves_no_taxon` covers the
+unverified and declined cases with the same raising helper.
+
+**Verification.** Same suite: 119 passed.

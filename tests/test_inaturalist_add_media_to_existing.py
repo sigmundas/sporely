@@ -546,6 +546,73 @@ def test_declined_republish_without_create_metadata_is_still_a_plain_skip(monkey
     assert recorded["set_inat_calls"] == []
 
 
+def test_append_never_resolves_a_taxon(monkeypatch):
+    """Taxon resolution is create-only, so an append must not even attempt it.
+
+    ``_resolve_inaturalist_taxon_id()`` reads local taxonomy tables and, on a
+    miss, the Artsdatabanken taxon file. ``add_images()`` sends no taxon and
+    changes no remote metadata, so an append that depended on it would be
+    coupled to state it never transmits. Raising on call proves the coupling is
+    gone rather than merely unused.
+    """
+    def _explode(obs):
+        raise AssertionError("taxon resolution must not run for a media append")
+
+    uploader = _RecordingUploader(_link_status("live"))
+    fake_tab, recorded = _live(monkeypatch, uploader, base_image_paths=["/tmp/plot.jpg"])
+    fake_tab._resolve_inaturalist_taxon_id = _explode
+
+    ok, published_id, error = _publish(fake_tab)
+
+    assert (ok, published_id, error) == (True, 4242, None)
+    assert uploader.appends == [(4242, ["/tmp/plot.jpg"])]
+    assert uploader.uploads == []
+    assert recorded["set_inat_calls"] == []
+
+
+def test_create_and_republish_still_resolve_a_taxon(monkeypatch):
+    """The deferral must not quietly drop taxon resolution from the create paths."""
+    for stored_id, link_state, expected_new_id in (
+        (None, "live", 555),
+        (4242, "missing", 777),
+    ):
+        resolved: list[int] = []
+        uploader = _RecordingUploader(_link_status(link_state), sighting_id=expected_new_id)
+        fake_tab, recorded = _build_env(
+            monkeypatch,
+            uploader,
+            dict(_OBSERVATION_BASE, inaturalist_id=stored_id),
+            confirm=True,
+        )
+        fake_tab._resolve_inaturalist_taxon_id = lambda obs: resolved.append(48484) or 48484
+
+        ok, published_id, _error = _publish(fake_tab)
+
+        assert (ok, published_id) == (True, expected_new_id), stored_id
+        assert resolved == [48484], stored_id
+        assert uploader.uploads  # the create really ran
+        assert recorded["set_inat_calls"] == [(7, expected_new_id)], stored_id
+
+
+@pytest.mark.parametrize("link_state", ["unverified", "missing"])
+def test_refused_or_declined_publish_resolves_no_taxon(monkeypatch, link_state):
+    """An unverified link refuses, and a declined republish skips, before taxon work."""
+    def _explode(obs):
+        raise AssertionError("taxon resolution must not run for a refused publish")
+
+    uploader = _RecordingUploader(_link_status(link_state, "HTTP 503"))
+    # confirm=False makes the "missing" case a decline rather than a republish.
+    fake_tab, recorded = _live(monkeypatch, uploader, confirm=False)
+    fake_tab._resolve_inaturalist_taxon_id = _explode
+
+    ok, published_id, _error = _publish(fake_tab)
+
+    assert (ok, published_id) == (False, None)
+    assert uploader.uploads == []
+    assert uploader.appends == []
+    assert recorded["set_inat_calls"] == []
+
+
 def test_append_without_create_metadata_still_refuses_an_empty_selection(monkeypatch):
     uploader = _RecordingUploader(_link_status("live"))
     fake_tab, recorded = _build_env(
