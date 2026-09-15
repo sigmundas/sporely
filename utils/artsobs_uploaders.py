@@ -18,6 +18,37 @@ class UploadResult:
     raw: dict | None
 
 
+REMOTE_LINK_LIVE = "live"
+REMOTE_LINK_MISSING = "missing"
+REMOTE_LINK_UNVERIFIED = "unverified"
+
+
+@dataclass(frozen=True)
+class RemoteLinkStatus:
+    """Outcome of checking whether a stored remote observation still exists.
+
+    ``missing`` means the service positively told us the observation is gone.
+    ``unverified`` means we could not find out (auth, network, timeout, rate
+    limit, 5xx, unreadable payload) and the stored id must be left alone.
+    """
+
+    state: str
+    status_code: int | None = None
+    detail: str = ""
+
+    @property
+    def is_live(self) -> bool:
+        return self.state == REMOTE_LINK_LIVE
+
+    @property
+    def is_missing(self) -> bool:
+        return self.state == REMOTE_LINK_MISSING
+
+    @property
+    def is_unverified(self) -> bool:
+        return self.state == REMOTE_LINK_UNVERIFIED
+
+
 class ObservationUploader(Protocol):
     key: str
     label: str
@@ -131,6 +162,90 @@ class INaturalistUploader:
     login_url = "https://www.inaturalist.org/oauth/authorize"
 
     API_BASE_URL = "https://api.inaturalist.org/v1"
+    OBSERVATION_LOOKUP_TIMEOUT = 20
+
+    def check_observation_link(
+        self,
+        observation_id,
+        cookies: dict | None = None,
+        timeout: int | None = None,
+    ) -> RemoteLinkStatus:
+        """Check whether a stored iNaturalist observation id still resolves.
+
+        The v1 API answers a deleted or never-existing observation with HTTP
+        200 and an empty ``results`` list rather than 404/410, so an empty
+        result set is the normal "gone" signal; 404/410 are handled too because
+        older/alternate endpoints use them. Anything else - including auth
+        errors, rate limits and 5xx - is reported as unverified so that callers
+        never mistake a failed check for a deleted observation.
+        """
+        try:
+            remote_id = int(observation_id)
+        except (TypeError, ValueError):
+            remote_id = 0
+        if remote_id <= 0:
+            return RemoteLinkStatus(REMOTE_LINK_MISSING, None, "")
+
+        headers = {"Accept": "application/json"}
+        access_token = (cookies or {}).get("access_token")
+        if access_token:
+            headers["Authorization"] = f"Bearer {access_token}"
+
+        try:
+            response = requests.get(
+                f"{self.API_BASE_URL}/observations/{remote_id}",
+                headers=headers,
+                timeout=timeout or self.OBSERVATION_LOOKUP_TIMEOUT,
+            )
+        except Exception as exc:
+            return RemoteLinkStatus(
+                REMOTE_LINK_UNVERIFIED,
+                None,
+                str(exc).strip() or exc.__class__.__name__,
+            )
+
+        try:
+            status_code = int(getattr(response, "status_code", 0) or 0)
+        except (TypeError, ValueError):
+            status_code = 0
+
+        if status_code in (404, 410):
+            return RemoteLinkStatus(REMOTE_LINK_MISSING, status_code, "")
+        if status_code != 200:
+            return RemoteLinkStatus(
+                REMOTE_LINK_UNVERIFIED,
+                status_code,
+                self._response_error_text(response) or f"HTTP {status_code}",
+            )
+
+        try:
+            payload = response.json()
+        except Exception:
+            payload = None
+        if not isinstance(payload, dict):
+            return RemoteLinkStatus(
+                REMOTE_LINK_UNVERIFIED,
+                status_code,
+                "iNaturalist returned an unreadable response.",
+            )
+        results = payload.get("results")
+        if not isinstance(results, list):
+            return RemoteLinkStatus(
+                REMOTE_LINK_UNVERIFIED,
+                status_code,
+                "iNaturalist returned an unreadable response.",
+            )
+        for item in results:
+            if isinstance(item, dict) and str(item.get("id") or "") == str(remote_id):
+                return RemoteLinkStatus(REMOTE_LINK_LIVE, status_code, "")
+        if results:
+            # Something came back, but not this observation. Do not guess.
+            return RemoteLinkStatus(
+                REMOTE_LINK_UNVERIFIED,
+                status_code,
+                "iNaturalist returned an unexpected observation.",
+            )
+        return RemoteLinkStatus(REMOTE_LINK_MISSING, status_code, "")
 
     @staticmethod
     def _response_error_text(response: requests.Response) -> str:

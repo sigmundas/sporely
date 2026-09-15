@@ -5079,6 +5079,22 @@ class ObservationsTab(QWidget):
                 return True
         return False
 
+    def _existing_upload_blocks_publish(self, uploader_key: str) -> bool:
+        """Whether a stored remote id alone is enough to disable publishing.
+
+        For iNaturalist it is not: the stored id may point at an observation the
+        user deleted on iNaturalist. That link is verified when the publish
+        action is actually invoked, not during table refreshes, so the action
+        stays available and the real decision happens in
+        ``_resolve_inaturalist_link_before_publish``.
+        """
+        return (uploader_key or "").strip().lower() != "inat"
+
+    def _selection_blocks_publish_for_uploader(self, uploader_key: str) -> bool:
+        if not self._existing_upload_blocks_publish(uploader_key):
+            return False
+        return self._selection_has_existing_upload_for_uploader(uploader_key)
+
     def _publish_target_logged_in(self, uploader_key: str) -> bool:
         key = (uploader_key or "").strip().lower()
         if key in {"mobile", "web"}:
@@ -5299,7 +5315,7 @@ class ObservationsTab(QWidget):
         enabled_keys = list(getattr(self, "_publish_enabled_keys", []) or [])
         any_target_enabled = False
         for key in enabled_keys:
-            has_existing_upload = self._selection_has_existing_upload_for_uploader(key)
+            has_existing_upload = self._selection_blocks_publish_for_uploader(key)
             enabled = has_selection and not has_existing_upload
             action = self._publish_actions.get(key)
             if action is not None:
@@ -5309,7 +5325,7 @@ class ObservationsTab(QWidget):
 
         if both_action is not None:
             both_enabled = has_selection and not any(
-                self._selection_has_existing_upload_for_uploader(key)
+                self._selection_blocks_publish_for_uploader(key)
                 for key in ("web", "inat")
             )
             both_action.setEnabled(bool(both_enabled))
@@ -5327,7 +5343,7 @@ class ObservationsTab(QWidget):
 
         if not has_selection:
             self.publish_btn.setProperty("_hint_text", self.tr("Select one or more observations to publish."))
-        elif any(self._selection_has_existing_upload_for_uploader(key) for key in enabled_keys):
+        elif any(self._selection_blocks_publish_for_uploader(key) for key in enabled_keys):
             enabled_labels = ", ".join(self._enabled_uploader_labels(enabled_keys))
             self.publish_btn.setProperty(
                 "_hint_text",
@@ -5433,7 +5449,7 @@ class ObservationsTab(QWidget):
             )
             self._update_publish_controls()
             return
-        if self._selection_has_existing_upload_for_uploader(uploader_key):
+        if self._selection_blocks_publish_for_uploader(uploader_key):
             self.set_status_message(
                 self.tr("Publishing disabled: selection contains an observation already uploaded to this service."),
                 level="warning",
@@ -10709,6 +10725,65 @@ class ObservationsTab(QWidget):
                 )
         return taxon_id
 
+    def _resolve_inaturalist_link_before_publish(
+        self,
+        observation_id: int,
+        obs: dict,
+        uploader,
+        cookies: dict,
+    ) -> tuple[bool, str | None, str]:
+        """Decide whether publishing may continue for a stored iNaturalist link.
+
+        A stored ``inaturalist_id`` is not proof that the observation still
+        exists: the user may have deleted it on iNaturalist. The link is checked
+        here, when the publish action is invoked, and the stored id is never
+        touched at this point - a replacement id is only written after the new
+        publish has succeeded.
+
+        Returns ``(proceed, failure_message, failure_level)``. A ``False``
+        result with no message means the user declined the republish, which is
+        not a failure and must not mutate anything.
+        """
+        try:
+            existing_inat_id = int((obs or {}).get("inaturalist_id") or 0)
+        except (TypeError, ValueError):
+            existing_inat_id = 0
+        if existing_inat_id <= 0:
+            return True, None, "info"
+
+        status = uploader.check_observation_link(existing_inat_id, cookies)
+
+        if status.is_live:
+            return (
+                False,
+                self.tr("Upload failed: this observation already has an ID in {service}.").format(
+                    service=self.tr(uploader.label)
+                ),
+                "warning",
+            )
+
+        if not status.is_missing:
+            message = self.tr(
+                "Upload failed: could not check the linked {service} observation. The existing link was kept."
+            ).format(service=self.tr(uploader.label))
+            detail = (status.detail or "").strip()
+            if detail:
+                message = f"{message} {detail}"
+            return False, message, "warning"
+
+        confirmed = ask_wrapped_yes_no(
+            self,
+            self.tr("Stale iNaturalist link"),
+            self.tr(
+                "The linked iNaturalist observation no longer exists.\n\n"
+                "Publish this find as a new iNaturalist observation?"
+            ),
+            default_yes=False,
+        )
+        if not confirmed:
+            return False, None, "info"
+        return True, None, "info"
+
     def _preferred_publish_uploader_key(self, obs: dict, requested_uploader_key: str | None = None) -> str:
         requested_key = (requested_uploader_key or "").strip().lower()
         if requested_key in {"artportalen", "inat", "mo"}:
@@ -10913,7 +10988,7 @@ class ObservationsTab(QWidget):
                 level="warning",
                 auto_clear_ms=12000,
             )
-        if self._observation_has_existing_upload(obs, uploader.key):
+        if self._observation_has_existing_upload(obs, uploader.key) and self._existing_upload_blocks_publish(uploader.key):
             return _fail(
                 self.tr("Upload failed: this observation already has an ID in {service}.").format(
                     service=self.tr(uploader.label)
@@ -11052,6 +11127,16 @@ class ObservationsTab(QWidget):
                     auto_clear_ms=12000,
                 )
             cookies = {"access_token": access_token}
+            proceed, link_message, link_level = self._resolve_inaturalist_link_before_publish(
+                observation_id,
+                obs,
+                uploader,
+                cookies,
+            )
+            if not proceed:
+                if link_message:
+                    return _fail(link_message, level=link_level, auto_clear_ms=12000)
+                return False, None, None
         elif uploader.key == "mo":
             app_key = (SettingsDB.get_setting(self.SETTING_MO_APP_API_KEY, "") or "").strip() or (
                 os.getenv("MO_APP_API_KEY", "") or ""
