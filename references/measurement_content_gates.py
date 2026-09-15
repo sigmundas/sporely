@@ -59,3 +59,20 @@ def enhanced_attachments_enabled() -> bool:
 def enhanced_bundle_export_enabled() -> bool:
     """Whether a bundle may carry enhanced reference rows."""
     return MINIMUM_SUPPORTED_DESKTOP_VERSION_GATE_OPEN
+
+
+def enhanced_editing_enabled() -> bool:
+    """Whether the two reference editors may persist enhanced content.
+
+    This is not a third switch: it is the reader gate read from the editors'
+    side. A measurement set exists to be attached to an observation, and
+    :func:`enhanced_attachments_enabled` governs whether an enhanced one may
+    become frozen evidence. Storing enhanced rows while that is false would
+    only move the refusal later — the user would fill in a literature table,
+    save it, and be told at attach time that the evidence cannot be frozen.
+    While the gate is closed both editors therefore *show* the reported
+    statistics for review and persist the legacy-only projection of them,
+    which is exactly what the same source produced before this contract
+    existed. Neither editor strips anything already stored.
+    """
+    return enhanced_attachments_enabled()

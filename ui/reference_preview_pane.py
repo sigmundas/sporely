@@ -74,6 +74,17 @@ class ReferencePreviewPane(QWidget):
         self.summary_table.setSelectionMode(QAbstractItemView.NoSelection)
         self.summary_layout.addWidget(self.summary_table)
 
+        # What the source said about the numbers in the table above: compact
+        # meaning tags and any reported median / standard deviation. Kept
+        # below the table and out of the "Median / Mean" column so a reported
+        # median is never read as a mean.
+        self.reported_statistics_label = QLabel("")
+        self.reported_statistics_label.setWordWrap(True)
+        self.reported_statistics_label.setVisible(False)
+        # Deliberately no colour override: the tags are content, and a
+        # hardcoded light-theme foreground is unreadable in dark mode.
+        self.summary_layout.addWidget(self.reported_statistics_label)
+
         self.summary_note_label = QLabel()
         self.summary_note_label.setWordWrap(True)
         self.summary_note_label.setFrameShape(QFrame.StyledPanel)
@@ -133,6 +144,7 @@ class ReferencePreviewPane(QWidget):
             self.tr("Import actions stay disabled until a search result is selected and loaded.")
         )
         self.provenance_summary_label.setText("")
+        self.set_reported_statistics("")
         for row, metric in enumerate(
             (self.tr("Length"), self.tr("Width"), self.tr("Q"))
         ):
@@ -171,7 +183,13 @@ class ReferencePreviewPane(QWidget):
         directly reported extreme -- never a judgment about whether the
         value holds up, only about where it came from. Derived cells render
         with a footnote marker and an explanatory tooltip.
+
+        Resets the reported-statistics line. This pane is shared between the
+        picker's tabs, so a caller that says nothing about meaning tags must
+        not inherit the previous dataset's; a caller that has them calls
+        :meth:`set_reported_statistics` straight afterwards.
         """
+        self.set_reported_statistics("")
         self.summary_title_label.setText(title)
         self.summary_meta_label.setText(meta)
         derived_tooltip = self.tr("Derived from typical range; not directly reported")
@@ -184,6 +202,20 @@ class ReferencePreviewPane(QWidget):
                     item.setToolTip(derived_tooltip)
                 self.summary_table.setItem(row_idx, col, item)
         self.summary_note_label.setText(note)
+
+    def set_reported_statistics(self, text: str, explanation: str = "") -> None:
+        """Set the compact meaning tags and reported median / S.D. line.
+
+        *text* is the compact form shown on screen; *explanation* is the full
+        sentence per tag, exposed as the tooltip and the accessible
+        description so the short form is never the only way to read it. An
+        empty *text* hides the line entirely — a source that said nothing
+        extra must not grow a placeholder row.
+        """
+        self.reported_statistics_label.setText(text or "")
+        self.reported_statistics_label.setToolTip(explanation or "")
+        self.reported_statistics_label.setAccessibleDescription(explanation or "")
+        self.reported_statistics_label.setVisible(bool(text))
 
     def set_provenance_summary(self, text: str) -> None:
         """Set the one-line "what was reported" summary above the Summary
