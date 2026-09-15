@@ -140,13 +140,18 @@ class _RecordingUploader:
         sighting_id: int | None = 999,
         error: Exception | None = None,
         image_upload_error: str | None = None,
+        images_attached: int | None = None,
+        append_error: Exception | None = None,
     ):
         self._link_status = link_status
         self._sighting_id = sighting_id
         self._error = error
         self._image_upload_error = image_upload_error
+        self._images_attached = images_attached
+        self._append_error = append_error
         self.link_checks: list[int] = []
         self.uploads: list[list[str]] = []
+        self.appends: list[tuple[int, list[str]]] = []
 
     def check_observation_link(self, observation_id, cookies=None, timeout=None):
         self.link_checks.append(int(observation_id))
@@ -160,6 +165,21 @@ class _RecordingUploader:
         if self._image_upload_error:
             raw["image_upload_error"] = self._image_upload_error
         return SimpleNamespace(sighting_id=self._sighting_id, raw=raw)
+
+    def add_images(self, observation_id, image_paths, cookies, progress_cb=None):
+        paths = list(image_paths or [])
+        self.appends.append((int(observation_id), paths))
+        if self._append_error is not None:
+            raise self._append_error
+        attached = len(paths) if self._images_attached is None else self._images_attached
+        raw: dict = {
+            "observation_id": int(observation_id),
+            "images_requested": len(paths),
+            "images_uploaded": attached,
+        }
+        if self._image_upload_error:
+            raw["image_upload_error"] = self._image_upload_error
+        return SimpleNamespace(sighting_id=int(observation_id), raw=raw)
 
 
 class _FakeOAuthClient:
@@ -184,14 +204,35 @@ def _link_status(state: str, detail: str = ""):
     )
 
 
-def _build_env(monkeypatch, uploader, observation, confirm):
-    """Wire up a minimal fake ObservationsTab around the real publish method."""
+def _build_env(
+    monkeypatch,
+    uploader,
+    observation,
+    confirm,
+    base_image_paths: list[str] | None = None,
+    prepared_image_paths: list[str] | None = None,
+):
+    """Wire up a minimal fake ObservationsTab around the real publish method.
+
+    ``base_image_paths`` stands in for the gallery selection and
+    ``prepared_image_paths`` for whatever the publishing-media pipeline turns it
+    into; the kwargs the real code passes to ``_prepare_publish_media_assets``
+    are recorded so tests can assert that the append path goes through that
+    pipeline rather than around it.
+    """
+    base_paths = ["/tmp/spore-plot.jpg"] if base_image_paths is None else list(base_image_paths)
+    prepared_paths = list(base_paths) if prepared_image_paths is None else list(prepared_image_paths)
     recorded: dict[str, object] = {
         "status_messages": [],
         "set_inat_calls": [],
         "prompts": [],
         "rendered": [],
+        "prepare_calls": [],
     }
+
+    def _fake_prepare(**kwargs):
+        recorded["prepare_calls"].append(dict(kwargs))
+        return list(prepared_paths), None, []
 
     fake_tab = SimpleNamespace(
         tr=lambda text: text,
@@ -222,8 +263,8 @@ def _build_env(monkeypatch, uploader, observation, confirm):
         _publish_image_license_code=lambda: "10",
         _publish_copyright_text=lambda obs: None,
         _preferred_publish_uploader_key=lambda obs, uploader_key: "inat",
-        _collect_artsobs_image_paths=lambda observation_id: ["/tmp/spore-plot.jpg"],
-        _prepare_publish_media_assets=lambda **kwargs: (["/tmp/spore-plot.jpg"], None, []),
+        _collect_artsobs_image_paths=lambda observation_id: list(base_paths),
+        _prepare_publish_media_assets=_fake_prepare,
         _publish_spore_stats_text=lambda observation_id, obs, spore_stats=None: None,
         _resolve_inaturalist_taxon_id=lambda obs: None,
         _render_publish_cell=lambda row, obs: recorded["rendered"].append(dict(obs)),
@@ -246,6 +287,13 @@ def _build_env(monkeypatch, uploader, observation, confirm):
         lambda observation_id, obs, up, cookies: (
             observations_tab.ObservationsTab._resolve_inaturalist_link_before_publish(
                 fake_tab, observation_id, obs, up, cookies
+            )
+        )
+    )
+    fake_tab._confirm_inaturalist_media_append = (
+        lambda existing_observation_id, upload_image_paths: (
+            observations_tab.ObservationsTab._confirm_inaturalist_media_append(
+                fake_tab, existing_observation_id, upload_image_paths
             )
         )
     )
@@ -311,6 +359,13 @@ def test_publish_without_existing_id_takes_the_normal_create_path(monkeypatch):
 
 
 def test_publish_with_live_remote_observation_creates_no_duplicate(monkeypatch):
+    """Stage 1's guarantee, still enforced: a live link never creates a second observation.
+
+    Stage 2 replaced the old "already has an ID" refusal with a media append, so
+    what this pins is the part that did not change - no ``/observations`` create
+    request and no rewrite of the stored id. The append behaviour itself is
+    covered in ``test_inaturalist_add_media_to_existing.py``.
+    """
     uploader = _RecordingUploader(_link_status("live"))
     fake_tab, recorded = _build_env(
         monkeypatch, uploader, dict(_OBSERVATION_BASE, inaturalist_id=4242), confirm=True
@@ -318,13 +373,10 @@ def test_publish_with_live_remote_observation_creates_no_duplicate(monkeypatch):
 
     ok, published_id, error = _publish(fake_tab)
 
-    assert ok is False
-    assert published_id is None
-    assert "already has an ID" in (error or "")
+    assert (ok, published_id, error) == (True, 4242, None)
     assert uploader.link_checks == [4242]
     assert uploader.uploads == []
     assert recorded["set_inat_calls"] == []
-    assert recorded["prompts"] == []
 
 
 @pytest.mark.parametrize("missing_reason", ["404", "410"])

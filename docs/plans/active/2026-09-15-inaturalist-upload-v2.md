@@ -279,3 +279,154 @@ Batch summaries:
 
 One new source string, "Publishing to {target} was cancelled.", registered via
 `tools/update_translations.sh`.
+
+---
+
+## Stage 2 record — 2026-09-15 (implemented)
+
+**Status:** implemented on `feature/inaturalist-republish-media`. Base
+`352a639`. Stage 3 not started.
+
+### Existing flow that was changed
+
+`upload_observation_to_artsobs()` resolves auth per uploader, and for `inat`
+calls `_resolve_inaturalist_link_before_publish()` **before** any media work.
+That check returned `(proceed, message, level)` and answered a live link with
+`proceed=False` plus "Upload failed: this observation already has an ID in
+{service}." — the refusal Stage 2 replaces. Media preparation
+(`_prepare_publish_media_assets`, fed by `_collect_artsobs_image_paths`) runs
+afterwards, inside the big `try`, and produces `upload_image_paths`; the worker
+thread then calls `uploader.upload(...)`.
+
+### Chosen create-vs-append control flow
+
+`_resolve_inaturalist_link_before_publish()` now returns a frozen
+`InatPublishDecision` (`ui/observations_tab.py`) carrying a mode
+(`INAT_PUBLISH_MODE_CREATE` / `INAT_PUBLISH_MODE_APPEND`) and, for append, the
+existing remote id. A live link yields append mode; missing still prompts for a
+republish in create mode; unverified and a declined republish are unchanged.
+
+The append id is held in `inat_append_observation_id` and drives three places:
+the worker calls `add_images()` instead of `upload()`, the stored id is not
+rewritten, and the result is reported with append wording. No other uploader
+sees any change.
+
+The confirmation deliberately happens **after** media preparation, not at the
+link check, so the count in the prompt is the prepared-media count rather than
+the gallery count.
+
+### API method added
+
+`INaturalistUploader.add_images(observation_id, image_paths, cookies,
+progress_cb=None) -> UploadResult`, using the same bearer-token convention as
+`upload()`. It POSTs `/v1/observation_photos` with
+`observation_photo[observation_id]` per image and never POSTs `/observations`.
+`upload()` keeps its own docstring saying it always means create; it does not
+inspect any stored id. The per-image POST loop both methods share was extracted
+as `_post_observation_photos()`.
+
+`add_images()` raises only when nothing was attempted (missing token, non-
+positive id, empty path list). Otherwise it returns
+`UploadResult(sighting_id=observation_id, raw={observation_id,
+images_requested, images_uploaded, image_upload_error?})`, which distinguishes
+all three outcomes the caller needs.
+
+### How prepared media reach the append
+
+Unchanged pipeline. `_collect_artsobs_image_paths()` →
+`_prepare_publish_media_assets()` → `upload_image_paths` → `add_images()`. No
+second image-generation path exists, and the publishing checkboxes, annotated
+images, measurement plots, thumbnail gallery, plate, scale bar and copyright
+treatment all apply exactly as they do for a create.
+
+### Result semantics
+
+| `add_images` outcome | Reported as |
+| --- | --- |
+| all images attached | `(True, existing_id, None)`, success status |
+| some attached, then one failed | `(True, existing_id, warning)`, partial success — the Stage 1 shape |
+| nothing attached (first failed) | `(False, None, message)`, warning-level failure |
+| `add_images` raised | `(False, None, message)` via the existing exception handler |
+| append confirmation declined | `(False, None, None)`, the Stage 1 "cancelled" skip |
+| no images selected | `(False, None, message)`, warning-level failure, nothing posted |
+
+The stored `inaturalist_id` is never written on any of these paths, so
+`ObservationDB.set_inaturalist_id()` (which marks the row dirty for cloud sync)
+is not called at all in append mode.
+
+### Duplicate-media limitation
+
+Sporely persists no local-image ↔ iNaturalist `photo`/`observation_photo`
+mapping, and the default publishing selection is *every* non-excluded field or
+microscope image (`_collect_artsobs_image_paths`). Publishing a live-linked
+find would therefore re-upload everything already published. Nothing
+deduplicates, skips by filename, deletes, or replaces remote photos.
+
+That risk is surfaced by `_confirm_inaturalist_media_append()`, which states
+the prepared image count, the remote observation id, that only the current
+selection is sent, that Sporely does not track what was already uploaded so
+earlier images will be added again as duplicates, and that nothing else on the
+observation changes. It defaults to No. Users narrow the selection through the
+existing per-observation publish exclusion (`_publish_excluded_image_ids`).
+
+### Stage 1 behavior preserved
+
+Stale (`missing`) links still prompt and republish as a new observation,
+replacing the id only on success. Unverified links still refuse with no create,
+no append and no mutation. Observations with no stored id still take the
+ordinary create path. `Both` still refuses outright for any stored `web` or
+`inat` id, in both the action enablement and the runtime guard in
+`_publish_selected_observations_both()`. The four batch result semantics are
+unchanged; an append simply produces the success, partial or cancelled shapes
+the batch wrapper already sorts.
+
+### Design issues found, not silently fixed
+
+1. **Batch appends prompt per observation.** The individual iNaturalist action
+   is relaxed for stored ids, so selecting several live-linked observations
+   produces one confirmation each. That is safe and explicit but tedious; a
+   single selection-level prompt belongs with Stage 3's state-aware UI.
+2. **Publish menu wording is still create-shaped.** The action still reads
+   "iNaturalist" and the hint still says "Publish directly to …", even though
+   invoking it on a live link appends. That is exactly Stage 3's scope and was
+   left alone.
+3. **A prepare-time warning outranks the append success message.** The
+   pre-existing `publish_warning_text` branch reports "Upload completed with
+   warnings" before the append-specific wording. Truthful, less specific;
+   unchanged to keep the patch narrow.
+
+### Files changed
+
+- `utils/artsobs_uploaders.py` — `_post_observation_photos()`, `add_images()`,
+  `upload()` docstring; `upload()`'s photo loop now delegates.
+- `ui/observations_tab.py` — `InatPublishDecision` + mode constants;
+  `_resolve_inaturalist_link_before_publish()` return type and live branch;
+  `_confirm_inaturalist_media_append()`; append plumbing, id preservation and
+  reporting in `upload_observation_to_artsobs()`;
+  `_existing_upload_blocks_publish()` docstring.
+- `tests/test_inaturalist_add_media_to_existing.py` — new.
+- `tests/test_inaturalist_stale_link_republish.py` — `_RecordingUploader` gained
+  `add_images`; `_build_env` gained configurable base/prepared media paths and
+  records `_prepare_publish_media_assets` kwargs; the live-link test now pins
+  "no duplicate create" instead of the removed refusal message.
+- `i18n/Sporely_{nb_NO,sv_SE,de_DE}.ts` — six new source strings registered via
+  `tools/update_translations.sh`. The `.qm` files are unchanged because the new
+  strings are untranslated and `lrelease` omits them.
+
+### Verification
+
+`pytest tests/test_inaturalist_add_media_to_existing.py
+tests/test_inaturalist_stale_link_republish.py
+tests/test_artsobservasjoner_submit.py tests/test_publish_media_cache.py
+tests/test_publish_media_stage2.py tests/test_publish_plate_export.py
+tests/test_publish_targets.py` — 105 passed. No test makes a real iNaturalist
+request.
+
+The acceptance test is human-gated: a real append against a live iNaturalist
+observation cannot be verified from here.
+
+### Deferred to Stage 3
+
+State-aware publish action wording ("Publish" / "Add images" / "Republish"), a
+selection-level append confirmation, and the manual "Clear iNaturalist link"
+escape hatch.

@@ -269,6 +269,122 @@ class INaturalistUploader:
                 pass
         return text
 
+    def _post_observation_photos(
+        self,
+        observation_id,
+        image_paths: list[str],
+        headers: dict,
+        progress_cb: Optional[ProgressCallback],
+        *,
+        total_steps: int,
+        step_offset: int,
+        progress_cap: int,
+    ) -> tuple[int, str | None]:
+        """POST each image to ``/observation_photos``, stopping at the first failure.
+
+        Returns ``(images_uploaded, image_upload_error)`` and never raises: by
+        the time this runs the remote observation exists, so the caller must be
+        able to keep its id and report a partial result. The counts let the
+        caller tell "everything arrived" from "some arrived, then one failed"
+        from "nothing arrived at all".
+        """
+        paths = list(image_paths or [])
+        images_uploaded = 0
+        image_upload_error: str | None = None
+        for idx, path in enumerate(paths, start=1):
+            if progress_cb:
+                progress_cb(
+                    f"Uploading image {idx}/{len(paths)}...",
+                    min(progress_cap, idx + step_offset),
+                    total_steps,
+                )
+            try:
+                with open(path, "rb") as handle:
+                    image_response = requests.post(
+                        f"{self.API_BASE_URL}/observation_photos",
+                        headers={**headers, "Accept": "application/json"},
+                        data={"observation_photo[observation_id]": str(observation_id)},
+                        files={"file": handle},
+                        timeout=60,
+                    )
+            except Exception as exc:
+                image_upload_error = (
+                    f"iNaturalist image upload failed: {str(exc).strip() or exc.__class__.__name__}"
+                )
+                break
+            if image_response.status_code >= 400:
+                error_text = self._response_error_text(image_response) or "Bad Request"
+                image_upload_error = (
+                    f"iNaturalist image upload failed ({image_response.status_code}): {error_text}"
+                )
+                break
+            images_uploaded += 1
+        return images_uploaded, image_upload_error
+
+    def add_images(
+        self,
+        observation_id,
+        image_paths: list[str],
+        cookies: dict,
+        progress_cb: Optional[ProgressCallback] = None,
+    ) -> UploadResult:
+        """Attach images to an iNaturalist observation that already exists.
+
+        Deliberately separate from ``upload()``: this never POSTs
+        ``/observations`` and never touches the observation's taxon,
+        description, date, location, positional accuracy or any other metadata.
+        ``upload()`` always means "create" and this always means "append";
+        neither infers which one is wanted from the data it is handed.
+
+        Sporely stores no mapping between local images and iNaturalist photo
+        ids, so this cannot and does not deduplicate - every path given is
+        posted, and posting an already-published image creates a duplicate
+        remote photo. Callers must make that explicit to the user.
+
+        Returns an ``UploadResult`` whose ``sighting_id`` is the unchanged
+        ``observation_id``, with ``raw["images_requested"]``,
+        ``raw["images_uploaded"]`` and an optional ``raw["image_upload_error"]``
+        describing how far it got. Raising is reserved for the cases where no
+        attachment was even attempted.
+        """
+        access_token = (cookies or {}).get("access_token")
+        if not access_token:
+            raise RuntimeError("Missing iNaturalist access token.")
+        try:
+            remote_id = int(observation_id)
+        except (TypeError, ValueError):
+            remote_id = 0
+        if remote_id <= 0:
+            raise RuntimeError("Missing iNaturalist observation id.")
+        paths = [str(path) for path in (image_paths or [])]
+        if not paths:
+            raise RuntimeError("No images were selected to add to the iNaturalist observation.")
+
+        headers = {"Authorization": f"Bearer {access_token}"}
+        total_steps = max(1, len(paths))
+        images_uploaded, image_upload_error = self._post_observation_photos(
+            remote_id,
+            paths,
+            headers,
+            progress_cb,
+            total_steps=total_steps,
+            step_offset=0,
+            progress_cap=total_steps,
+        )
+
+        raw: dict = {
+            "observation_id": remote_id,
+            "images_requested": len(paths),
+            "images_uploaded": images_uploaded,
+        }
+        if image_upload_error:
+            raw["image_upload_error"] = image_upload_error
+            if progress_cb:
+                progress_cb("Image upload failed.", total_steps, total_steps)
+        elif progress_cb:
+            progress_cb("Upload complete.", total_steps, total_steps)
+        return UploadResult(sighting_id=remote_id, raw=raw)
+
     def upload(
         self,
         observation: dict,
@@ -276,6 +392,11 @@ class INaturalistUploader:
         cookies: dict,
         progress_cb: Optional[ProgressCallback] = None,
     ) -> UploadResult:
+        """Create a new iNaturalist observation and attach ``image_paths`` to it.
+
+        Always a create. To add media to an observation that already exists,
+        use ``add_images()``.
+        """
         access_token = (cookies or {}).get("access_token")
         if not access_token:
             raise RuntimeError("Missing iNaturalist access token.")
@@ -344,32 +465,17 @@ class INaturalistUploader:
         # as a partial success via the existing raw["image_upload_error"]
         # contract instead of raising.
         total_steps = max(2, len(image_paths) + 1)
-        images_uploaded = 0
-        image_upload_error: str | None = None
-        for idx, path in enumerate(image_paths or [], start=1):
-            if progress_cb:
-                progress_cb(f"Uploading image {idx}/{len(image_paths)}...", min(total_steps - 1, idx + 1), total_steps)
-            try:
-                with open(path, "rb") as handle:
-                    image_response = requests.post(
-                        f"{self.API_BASE_URL}/observation_photos",
-                        headers={**headers, "Accept": "application/json"},
-                        data={"observation_photo[observation_id]": str(obs_id)},
-                        files={"file": handle},
-                        timeout=60,
-                    )
-            except Exception as exc:
-                image_upload_error = (
-                    f"iNaturalist image upload failed: {str(exc).strip() or exc.__class__.__name__}"
-                )
-                break
-            if image_response.status_code >= 400:
-                error_text = self._response_error_text(image_response) or "Bad Request"
-                image_upload_error = (
-                    f"iNaturalist image upload failed ({image_response.status_code}): {error_text}"
-                )
-                break
-            images_uploaded += 1
+        images_uploaded, image_upload_error = self._post_observation_photos(
+            obs_id,
+            image_paths,
+            headers,
+            progress_cb,
+            total_steps=total_steps,
+            # The create call already consumed step 1, and the final step is
+            # reserved for the completion message.
+            step_offset=1,
+            progress_cap=total_steps - 1,
+        )
 
         raw: dict = {
             "observation": create_payload,

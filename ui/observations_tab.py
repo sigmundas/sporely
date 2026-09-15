@@ -33,6 +33,7 @@ from PySide6.QtGui import (
 )
 from PIL import Image, ImageOps, features
 from PySide6.QtCore import QUrl
+from dataclasses import dataclass
 from pathlib import Path
 import io
 import sqlite3
@@ -2179,6 +2180,31 @@ class _ObservationImageBrowser(QWidget):
             self.imageDoubleClicked.emit()
             return True
         return super().eventFilter(obj, event)
+
+
+INAT_PUBLISH_MODE_CREATE = "create"
+INAT_PUBLISH_MODE_APPEND = "append"
+
+
+@dataclass(frozen=True)
+class InatPublishDecision:
+    """What the iNaturalist publish action is allowed to do for one observation.
+
+    The stored ``inaturalist_id`` alone does not say which it is: the remote
+    observation may be live (append media to it), gone (offer a republish), or
+    unverifiable (do nothing). Resolving that once, up front, keeps the create
+    and append paths from having to guess later.
+
+    ``proceed=False`` with no ``failure_message`` means the user deliberately
+    cancelled, which is a skip rather than a failure and must not mutate
+    anything.
+    """
+
+    proceed: bool
+    mode: str = INAT_PUBLISH_MODE_CREATE
+    existing_observation_id: int | None = None
+    failure_message: str | None = None
+    failure_level: str = "info"
 
 
 class ObservationsTab(QWidget):
@@ -5082,11 +5108,12 @@ class ObservationsTab(QWidget):
     def _existing_upload_blocks_publish(self, uploader_key: str) -> bool:
         """Whether a stored remote id alone is enough to disable publishing.
 
-        For iNaturalist it is not: the stored id may point at an observation the
-        user deleted on iNaturalist. That link is verified when the publish
-        action is actually invoked, not during table refreshes, so the action
-        stays available and the real decision happens in
-        ``_resolve_inaturalist_link_before_publish``.
+        For iNaturalist it is not. The stored id may point at an observation the
+        user deleted on iNaturalist, and even a live one is publishable - it
+        gains the selected media instead of being duplicated. That link is
+        verified when the publish action is actually invoked, not during table
+        refreshes, so the action stays available and the real create-or-append
+        decision happens in ``_resolve_inaturalist_link_before_publish``.
         """
         return (uploader_key or "").strip().lower() != "inat"
 
@@ -10785,35 +10812,34 @@ class ObservationsTab(QWidget):
         obs: dict,
         uploader,
         cookies: dict,
-    ) -> tuple[bool, str | None, str]:
-        """Decide whether publishing may continue for a stored iNaturalist link.
+    ) -> InatPublishDecision:
+        """Decide whether publishing creates, appends to, or leaves alone a link.
 
         A stored ``inaturalist_id`` is not proof that the observation still
         exists: the user may have deleted it on iNaturalist. The link is checked
         here, when the publish action is invoked, and the stored id is never
-        touched at this point - a replacement id is only written after the new
-        publish has succeeded.
-
-        Returns ``(proceed, failure_message, failure_level)``. A ``False``
-        result with no message means the user declined the republish, which is
-        not a failure and must not mutate anything.
+        touched at this point - a replacement id is only written after a new
+        publish has succeeded, and the append path never rewrites it at all.
         """
         try:
             existing_inat_id = int((obs or {}).get("inaturalist_id") or 0)
         except (TypeError, ValueError):
             existing_inat_id = 0
         if existing_inat_id <= 0:
-            return True, None, "info"
+            return InatPublishDecision(True, INAT_PUBLISH_MODE_CREATE)
 
         status = uploader.check_observation_link(existing_inat_id, cookies)
 
         if status.is_live:
-            return (
-                False,
-                self.tr("Upload failed: this observation already has an ID in {service}.").format(
-                    service=self.tr(uploader.label)
-                ),
-                "warning",
+            # The remote observation is still there. Publishing must not create
+            # a second one; the selected media are added to this one instead.
+            # Whether the user really wants that - and the duplicate-photo risk
+            # it carries - is confirmed later, once the prepared media are known
+            # and the count in the prompt can be exact.
+            return InatPublishDecision(
+                True,
+                INAT_PUBLISH_MODE_APPEND,
+                existing_observation_id=existing_inat_id,
             )
 
         if not status.is_missing:
@@ -10823,7 +10849,11 @@ class ObservationsTab(QWidget):
             detail = (status.detail or "").strip()
             if detail:
                 message = f"{message} {detail}"
-            return False, message, "warning"
+            return InatPublishDecision(
+                False,
+                failure_message=message,
+                failure_level="warning",
+            )
 
         confirmed = ask_wrapped_yes_no(
             self,
@@ -10835,8 +10865,37 @@ class ObservationsTab(QWidget):
             default_yes=False,
         )
         if not confirmed:
-            return False, None, "info"
-        return True, None, "info"
+            return InatPublishDecision(False)
+        return InatPublishDecision(True, INAT_PUBLISH_MODE_CREATE)
+
+    def _confirm_inaturalist_media_append(
+        self,
+        existing_observation_id: int,
+        upload_image_paths: list[str],
+    ) -> bool:
+        """Ask before adding media to an observation that already exists.
+
+        Sporely keeps no mapping between local images and iNaturalist photo ids,
+        so it cannot know which of the selected images are already on the remote
+        observation, and the default publishing selection is "every image that
+        is not explicitly excluded". Re-running Publish would therefore silently
+        re-upload everything, so the count and the duplicate risk are spelled
+        out rather than assumed.
+        """
+        return ask_wrapped_yes_no(
+            self,
+            self.tr("Add images to iNaturalist"),
+            self.tr(
+                "Add the {count} selected image(s) to the existing iNaturalist "
+                "observation {id}?\n\n"
+                "Only the images in your current publishing selection are sent. "
+                "Sporely does not track which images were already uploaded, so "
+                "any image you published before will be added again as a "
+                "duplicate.\n\n"
+                "Nothing else on the iNaturalist observation is changed."
+            ).format(count=len(upload_image_paths), id=existing_observation_id),
+            default_yes=False,
+        )
 
     def _preferred_publish_uploader_key(self, obs: dict, requested_uploader_key: str | None = None) -> str:
         requested_key = (requested_uploader_key or "").strip().lower()
@@ -10961,8 +11020,16 @@ class ObservationsTab(QWidget):
         * ``(False, None, message)`` - failure; ``message`` is always set,
           because every failure goes through ``_fail``.
         * ``(False, None, None)`` - the user deliberately cancelled (declining
-          the stale-iNaturalist-link republish). Nothing was created and
-          nothing was mutated; this is a skip, not a failure.
+          the stale-iNaturalist-link republish, or the media-append
+          confirmation). Nothing was created and nothing was mutated; this is a
+          skip, not a failure.
+
+        For a stored iNaturalist link that verifies live, this adds the
+        currently selected publishing media to that existing observation rather
+        than creating a second one. ``id`` is then the unchanged existing id,
+        and the same four outcomes apply: a clean append reports success, some
+        images attached before a failure reports partial success, and nothing
+        attached reports failure because the remote observation is untouched.
         """
         def _fail(message: str, level: str = "error", auto_clear_ms: int = 12000):
             if show_status:
@@ -11093,6 +11160,10 @@ class ObservationsTab(QWidget):
         taxon_id = None
         taxon_resolution = None
         cookies: dict = {}
+        # Set only when a stored iNaturalist link was verified live: publishing
+        # then means "add the selected media to that observation", never
+        # "create another one".
+        inat_append_observation_id: int | None = None
         if uploader.key in {"mobile", "web"}:
             try:
                 from utils.artsobservasjoner_auto_login import ArtsObservasjonerAuth
@@ -11195,16 +11266,22 @@ class ObservationsTab(QWidget):
                     auto_clear_ms=12000,
                 )
             cookies = {"access_token": access_token}
-            proceed, link_message, link_level = self._resolve_inaturalist_link_before_publish(
+            decision = self._resolve_inaturalist_link_before_publish(
                 observation_id,
                 obs,
                 uploader,
                 cookies,
             )
-            if not proceed:
-                if link_message:
-                    return _fail(link_message, level=link_level, auto_clear_ms=12000)
+            if not decision.proceed:
+                if decision.failure_message:
+                    return _fail(
+                        decision.failure_message,
+                        level=decision.failure_level,
+                        auto_clear_ms=12000,
+                    )
                 return False, None, None
+            if decision.mode == INAT_PUBLISH_MODE_APPEND:
+                inat_append_observation_id = decision.existing_observation_id
         elif uploader.key == "mo":
             app_key = (SettingsDB.get_setting(self.SETTING_MO_APP_API_KEY, "") or "").strip() or (
                 os.getenv("MO_APP_API_KEY", "") or ""
@@ -11365,6 +11442,25 @@ class ObservationsTab(QWidget):
                     level="warning",
                     auto_clear_ms=12000,
                 )
+            if inat_append_observation_id:
+                # Appending has nothing else to send, so an empty selection is a
+                # no-op rather than a metadata-only publish.
+                if not upload_image_paths:
+                    return _fail(
+                        self.tr(
+                            "Upload failed: no images are selected to add to the existing "
+                            "{service} observation."
+                        ).format(service=self.tr(uploader.label)),
+                        level="warning",
+                        auto_clear_ms=12000,
+                    )
+                if not self._confirm_inaturalist_media_append(
+                    inat_append_observation_id,
+                    upload_image_paths,
+                ):
+                    # A deliberate cancel, reported like a declined republish:
+                    # nothing created, nothing mutated, not a failure.
+                    return False, None, None
 
             spore_stats = self._publish_spore_stats_text(
                 observation_id,
@@ -11452,12 +11548,22 @@ class ObservationsTab(QWidget):
 
             def _upload_worker() -> None:
                 try:
-                    upload_state["result"] = uploader.upload(
-                        observation_payload,
-                        upload_image_paths,
-                        cookies,
-                        progress_cb=worker_progress_cb,
-                    )
+                    if inat_append_observation_id:
+                        # Media attachment only: no /observations request, and
+                        # the observation's metadata is left exactly as it is.
+                        upload_state["result"] = uploader.add_images(
+                            inat_append_observation_id,
+                            upload_image_paths,
+                            cookies,
+                            progress_cb=worker_progress_cb,
+                        )
+                    else:
+                        upload_state["result"] = uploader.upload(
+                            observation_payload,
+                            upload_image_paths,
+                            cookies,
+                            progress_cb=worker_progress_cb,
+                        )
                 except Exception as exc:
                     upload_state["error"] = exc
                 finally:
@@ -11535,11 +11641,30 @@ class ObservationsTab(QWidget):
 
         obs_id = None
         image_upload_error = None
+        images_attached = 0
         if result and getattr(result, "sighting_id", None):
             obs_id = result.sighting_id
         if result and getattr(result, "raw", None):
             image_upload_error = result.raw.get("image_upload_error")
+            try:
+                images_attached = int(result.raw.get("images_uploaded") or 0)
+            except (TypeError, ValueError):
+                images_attached = 0
         publish_warning_text = publish_warnings[0] if publish_warnings else None
+        if inat_append_observation_id and image_upload_error and images_attached <= 0:
+            # Nothing reached the remote observation, so there is no partial
+            # success to report. The link and its existing photos are untouched
+            # and no observation was created, so this is an ordinary failure and
+            # a retry is safe.
+            message = self.tr(
+                "Upload failed: could not add images to the existing {service} observation "
+                "{id}. The existing link and its photos are unchanged."
+            ).format(service=self.tr(uploader.label), id=inat_append_observation_id)
+            return _fail(
+                f"{message} Details: {image_upload_error}",
+                level="warning",
+                auto_clear_ms=15000,
+            )
         if obs_id:
             if uploader.key in {"mobile", "web"}:
                 ObservationDB.update_observation(observation_id, artsdata_id=int(obs_id))
@@ -11555,7 +11680,10 @@ class ObservationsTab(QWidget):
             elif uploader.key == "artportalen":
                 ObservationDB.set_artportalen_id(observation_id, int(obs_id))
             elif uploader.key == "inat":
-                ObservationDB.set_inaturalist_id(observation_id, int(obs_id))
+                # Appending media never changes which observation is linked, so
+                # the stored id is left alone rather than rewritten with itself.
+                if not inat_append_observation_id:
+                    ObservationDB.set_inaturalist_id(observation_id, int(obs_id))
             elif uploader.key == "mo":
                 ObservationDB.set_mushroomobserver_id(observation_id, int(obs_id))
         if refresh_table:
@@ -11595,10 +11723,23 @@ class ObservationsTab(QWidget):
         media_failure_is_final = bool(image_upload_error) and uploader.key not in {"mobile", "web"}
         final_media_warning = None
         if obs_id and media_failure_is_final:
-            final_media_warning = self.tr(
-                "Published to {target} (ID {id}), but image upload failed. "
-                "The observation exists without those images."
-            ).format(target=self.tr(uploader.label), id=obs_id)
+            if inat_append_observation_id:
+                # Some images did arrive, so the remote observation changed.
+                # Saying "failed" here would be untrue in the other direction.
+                final_media_warning = self.tr(
+                    "Added {done} of {total} images to {target} observation {id}; the rest failed. "
+                    "The observation and its earlier photos are unchanged."
+                ).format(
+                    done=images_attached,
+                    total=len(upload_image_paths),
+                    target=self.tr(uploader.label),
+                    id=obs_id,
+                )
+            else:
+                final_media_warning = self.tr(
+                    "Published to {target} (ID {id}), but image upload failed. "
+                    "The observation exists without those images."
+                ).format(target=self.tr(uploader.label), id=obs_id)
             final_media_warning = f"{final_media_warning} Details: {image_upload_error}"
         if show_status:
             if obs_id:
@@ -11622,6 +11763,15 @@ class ObservationsTab(QWidget):
                         ),
                         level="warning",
                         auto_clear_ms=15000,
+                    )
+                elif inat_append_observation_id:
+                    self.set_status_message(
+                        self.tr("Added {count} image(s) to {target} observation {id}.").format(
+                            count=images_attached,
+                            target=self.tr(uploader.label),
+                            id=obs_id,
+                        ),
+                        level="success",
                     )
                 else:
                     self.set_status_message(
