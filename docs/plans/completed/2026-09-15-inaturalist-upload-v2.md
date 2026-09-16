@@ -832,3 +832,42 @@ enabled publishing target:
 6. With both targets enabled, select a find published to Artsobservasjoner only
    — *Both* is greyed out and its tooltip names Artsobservasjoner, not the
    iNaturalist action.
+
+---
+
+## Final closeout — 2026-09-16
+
+**Status:** All three stages complete and independently accepted.
+
+**Final feature head:** `cfa4a3b` (ui: make iNaturalist publish wording truthful in every selection state)
+
+### Acceptance summary
+
+- **Stage 1** (stale-link recovery): `c2213d0` accepted. Stored `inaturalist_id` is verified when the user invokes the publish action. Live link → no duplicate creation. Missing/deleted link → user can deliberately republish. Unverified/auth/network/5xx → no local mutation. Replacing a stale link happens only after successful creation.
+
+- **Stage 2** (append media to existing observation): `b40edad` accepted as corrected by `eb787fa`. Selected media can be added to live linked observations. Append uses the existing `/observation_photos` path, never POSTs a new observation, never rewrites metadata, never rewrites the stored iNaturalist observation ID. Duplicate-photo risk is explicitly warned.
+
+- **Stage 3** (truthful UX and manual link repair): `cfa4a3b` accepted as corrected. No local link → `Publish to iNaturalist`; all selected rows linked → `Update iNaturalist…`; mixed linked/unlinked → `Publish / update iNaturalist…`. The same state-aware wording works when iNaturalist is the only enabled publishing target. Ordinary table refresh performs no iNaturalist existence check. Batch result text always names the stable service `iNaturalist`, never raw `inat` or dynamic action wording. `Both` remains blocked when appropriate, with a truthful explanation of the actual blocker. Manual `Clear iNaturalist link…` removes only Sporely's local link and never modifies iNaturalist; it uses the ordinary observation setter, dirty bookkeeping, metadata cloud sync, and UI refresh.
+
+### Verification
+
+Focused publishing suite passed:
+- `pytest tests/test_inaturalist_publish_state_ux.py tests/test_inaturalist_add_media_to_existing.py tests/test_inaturalist_stale_link_republish.py tests/test_artsobservasjoner_submit.py tests/test_publish_media_cache.py tests/test_publish_media_stage2.py tests/test_publish_plate_export.py tests/test_publish_targets.py tests/test_observations_tab_cloud_sync.py` — **218 passed** at acceptance; **159 passed** on Stage 3 correction re-run. No test makes a real iNaturalist request.
+
+Full suite failures reproduced identically on the pre-feature baseline (e.g., `tests/taxonomy/`, `test_observation_geography_sync.py`, `test_render_review_screenshots.py`), confirming no feature regression.
+
+### Out of scope
+
+During acceptance testing, a separate source-image publication exclusion policy bug was discovered: source-image publication selection currently affects which measurements appear in the spore mosaic. This issue is being handled separately and is explicitly outside this plan's scope.
+
+### Implementation history preserved
+
+The feature branch contains 8 logical commits:
+- `c2213d0`: detect stale observation links and allow republish
+- `352a639`: keep declines and partial successes distinct in batch summaries
+- `705441b`: fix Stage 1 boundary issues (Both gate, partial media failure)
+- `b40edad`: add media to existing observations
+- `eb787fa`: decouple media append from create-only validation and fix its wording
+- `7c8196b`: defer taxon resolution until the create-vs-append decision
+- `a546f54`: expose iNaturalist publish/repair states
+- `cfa4a3b`: make iNaturalist publish wording truthful in every selection state

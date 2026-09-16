@@ -65,7 +65,7 @@ A Python-based desktop application (PySide6) for field observations, microscopy 
 
 ## External Integrations
 - **Authentication:** Email/password for Sporely Cloud. Custom PKCE OAuth2 flow over `http://localhost:8000` for iNaturalist.
-- **Publishing:** Artsobservasjoner and Artportalen run on invisible web session cookies. Successfully published observations persist their remote ID (`artsdata_id`, `inaturalist_id`, etc.) locally to prevent duplicate uploads.
+- **Publishing:** Artsobservasjoner and Artportalen run on invisible web session cookies. Successfully published observations persist their remote ID (`artsdata_id`, `inaturalist_id`, etc.) locally to prevent duplicate uploads. iNaturalist supports three publish modes: create a new observation, append selected media to an existing linked observation, or republish as a new observation if the linked remote observation has been deleted. Linked observations are verified before publishing; unverified links report the verification error rather than creating a duplicate. Users can manually clear a local iNaturalist link without affecting the remote observation.
 - **AI Species Suggestion:** The observation editor provides AI-powered species suggestions from Artsdatabanken (Artsorakel) and iNaturalist.
   - Pressing "Guess" sends the selected image to both services simultaneously.
   - Results are displayed in separate tabs.
