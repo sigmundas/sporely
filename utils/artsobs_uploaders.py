@@ -18,6 +18,37 @@ class UploadResult:
     raw: dict | None
 
 
+REMOTE_LINK_LIVE = "live"
+REMOTE_LINK_MISSING = "missing"
+REMOTE_LINK_UNVERIFIED = "unverified"
+
+
+@dataclass(frozen=True)
+class RemoteLinkStatus:
+    """Outcome of checking whether a stored remote observation still exists.
+
+    ``missing`` means the service positively told us the observation is gone.
+    ``unverified`` means we could not find out (auth, network, timeout, rate
+    limit, 5xx, unreadable payload) and the stored id must be left alone.
+    """
+
+    state: str
+    status_code: int | None = None
+    detail: str = ""
+
+    @property
+    def is_live(self) -> bool:
+        return self.state == REMOTE_LINK_LIVE
+
+    @property
+    def is_missing(self) -> bool:
+        return self.state == REMOTE_LINK_MISSING
+
+    @property
+    def is_unverified(self) -> bool:
+        return self.state == REMOTE_LINK_UNVERIFIED
+
+
 class ObservationUploader(Protocol):
     key: str
     label: str
@@ -131,6 +162,90 @@ class INaturalistUploader:
     login_url = "https://www.inaturalist.org/oauth/authorize"
 
     API_BASE_URL = "https://api.inaturalist.org/v1"
+    OBSERVATION_LOOKUP_TIMEOUT = 20
+
+    def check_observation_link(
+        self,
+        observation_id,
+        cookies: dict | None = None,
+        timeout: int | None = None,
+    ) -> RemoteLinkStatus:
+        """Check whether a stored iNaturalist observation id still resolves.
+
+        The v1 API answers a deleted or never-existing observation with HTTP
+        200 and an empty ``results`` list rather than 404/410, so an empty
+        result set is the normal "gone" signal; 404/410 are handled too because
+        older/alternate endpoints use them. Anything else - including auth
+        errors, rate limits and 5xx - is reported as unverified so that callers
+        never mistake a failed check for a deleted observation.
+        """
+        try:
+            remote_id = int(observation_id)
+        except (TypeError, ValueError):
+            remote_id = 0
+        if remote_id <= 0:
+            return RemoteLinkStatus(REMOTE_LINK_MISSING, None, "")
+
+        headers = {"Accept": "application/json"}
+        access_token = (cookies or {}).get("access_token")
+        if access_token:
+            headers["Authorization"] = f"Bearer {access_token}"
+
+        try:
+            response = requests.get(
+                f"{self.API_BASE_URL}/observations/{remote_id}",
+                headers=headers,
+                timeout=timeout or self.OBSERVATION_LOOKUP_TIMEOUT,
+            )
+        except Exception as exc:
+            return RemoteLinkStatus(
+                REMOTE_LINK_UNVERIFIED,
+                None,
+                str(exc).strip() or exc.__class__.__name__,
+            )
+
+        try:
+            status_code = int(getattr(response, "status_code", 0) or 0)
+        except (TypeError, ValueError):
+            status_code = 0
+
+        if status_code in (404, 410):
+            return RemoteLinkStatus(REMOTE_LINK_MISSING, status_code, "")
+        if status_code != 200:
+            return RemoteLinkStatus(
+                REMOTE_LINK_UNVERIFIED,
+                status_code,
+                self._response_error_text(response) or f"HTTP {status_code}",
+            )
+
+        try:
+            payload = response.json()
+        except Exception:
+            payload = None
+        if not isinstance(payload, dict):
+            return RemoteLinkStatus(
+                REMOTE_LINK_UNVERIFIED,
+                status_code,
+                "iNaturalist returned an unreadable response.",
+            )
+        results = payload.get("results")
+        if not isinstance(results, list):
+            return RemoteLinkStatus(
+                REMOTE_LINK_UNVERIFIED,
+                status_code,
+                "iNaturalist returned an unreadable response.",
+            )
+        for item in results:
+            if isinstance(item, dict) and str(item.get("id") or "") == str(remote_id):
+                return RemoteLinkStatus(REMOTE_LINK_LIVE, status_code, "")
+        if results:
+            # Something came back, but not this observation. Do not guess.
+            return RemoteLinkStatus(
+                REMOTE_LINK_UNVERIFIED,
+                status_code,
+                "iNaturalist returned an unexpected observation.",
+            )
+        return RemoteLinkStatus(REMOTE_LINK_MISSING, status_code, "")
 
     @staticmethod
     def _response_error_text(response: requests.Response) -> str:
@@ -154,6 +269,122 @@ class INaturalistUploader:
                 pass
         return text
 
+    def _post_observation_photos(
+        self,
+        observation_id,
+        image_paths: list[str],
+        headers: dict,
+        progress_cb: Optional[ProgressCallback],
+        *,
+        total_steps: int,
+        step_offset: int,
+        progress_cap: int,
+    ) -> tuple[int, str | None]:
+        """POST each image to ``/observation_photos``, stopping at the first failure.
+
+        Returns ``(images_uploaded, image_upload_error)`` and never raises: by
+        the time this runs the remote observation exists, so the caller must be
+        able to keep its id and report a partial result. The counts let the
+        caller tell "everything arrived" from "some arrived, then one failed"
+        from "nothing arrived at all".
+        """
+        paths = list(image_paths or [])
+        images_uploaded = 0
+        image_upload_error: str | None = None
+        for idx, path in enumerate(paths, start=1):
+            if progress_cb:
+                progress_cb(
+                    f"Uploading image {idx}/{len(paths)}...",
+                    min(progress_cap, idx + step_offset),
+                    total_steps,
+                )
+            try:
+                with open(path, "rb") as handle:
+                    image_response = requests.post(
+                        f"{self.API_BASE_URL}/observation_photos",
+                        headers={**headers, "Accept": "application/json"},
+                        data={"observation_photo[observation_id]": str(observation_id)},
+                        files={"file": handle},
+                        timeout=60,
+                    )
+            except Exception as exc:
+                image_upload_error = (
+                    f"iNaturalist image upload failed: {str(exc).strip() or exc.__class__.__name__}"
+                )
+                break
+            if image_response.status_code >= 400:
+                error_text = self._response_error_text(image_response) or "Bad Request"
+                image_upload_error = (
+                    f"iNaturalist image upload failed ({image_response.status_code}): {error_text}"
+                )
+                break
+            images_uploaded += 1
+        return images_uploaded, image_upload_error
+
+    def add_images(
+        self,
+        observation_id,
+        image_paths: list[str],
+        cookies: dict,
+        progress_cb: Optional[ProgressCallback] = None,
+    ) -> UploadResult:
+        """Attach images to an iNaturalist observation that already exists.
+
+        Deliberately separate from ``upload()``: this never POSTs
+        ``/observations`` and never touches the observation's taxon,
+        description, date, location, positional accuracy or any other metadata.
+        ``upload()`` always means "create" and this always means "append";
+        neither infers which one is wanted from the data it is handed.
+
+        Sporely stores no mapping between local images and iNaturalist photo
+        ids, so this cannot and does not deduplicate - every path given is
+        posted, and posting an already-published image creates a duplicate
+        remote photo. Callers must make that explicit to the user.
+
+        Returns an ``UploadResult`` whose ``sighting_id`` is the unchanged
+        ``observation_id``, with ``raw["images_requested"]``,
+        ``raw["images_uploaded"]`` and an optional ``raw["image_upload_error"]``
+        describing how far it got. Raising is reserved for the cases where no
+        attachment was even attempted.
+        """
+        access_token = (cookies or {}).get("access_token")
+        if not access_token:
+            raise RuntimeError("Missing iNaturalist access token.")
+        try:
+            remote_id = int(observation_id)
+        except (TypeError, ValueError):
+            remote_id = 0
+        if remote_id <= 0:
+            raise RuntimeError("Missing iNaturalist observation id.")
+        paths = [str(path) for path in (image_paths or [])]
+        if not paths:
+            raise RuntimeError("No images were selected to add to the iNaturalist observation.")
+
+        headers = {"Authorization": f"Bearer {access_token}"}
+        total_steps = max(1, len(paths))
+        images_uploaded, image_upload_error = self._post_observation_photos(
+            remote_id,
+            paths,
+            headers,
+            progress_cb,
+            total_steps=total_steps,
+            step_offset=0,
+            progress_cap=total_steps,
+        )
+
+        raw: dict = {
+            "observation_id": remote_id,
+            "images_requested": len(paths),
+            "images_uploaded": images_uploaded,
+        }
+        if image_upload_error:
+            raw["image_upload_error"] = image_upload_error
+            if progress_cb:
+                progress_cb("Image upload failed.", total_steps, total_steps)
+        elif progress_cb:
+            progress_cb("Upload complete.", total_steps, total_steps)
+        return UploadResult(sighting_id=remote_id, raw=raw)
+
     def upload(
         self,
         observation: dict,
@@ -161,6 +392,11 @@ class INaturalistUploader:
         cookies: dict,
         progress_cb: Optional[ProgressCallback] = None,
     ) -> UploadResult:
+        """Create a new iNaturalist observation and attach ``image_paths`` to it.
+
+        Always a create. To add media to an observation that already exists,
+        use ``add_images()``.
+        """
         access_token = (cookies or {}).get("access_token")
         if not access_token:
             raise RuntimeError("Missing iNaturalist access token.")
@@ -223,27 +459,35 @@ class INaturalistUploader:
         if not obs_id:
             raise RuntimeError("iNaturalist response did not include observation id.")
 
+        # The observation now exists on iNaturalist. A later image failure must
+        # not throw that id away, or the caller would keep its stale local id and
+        # create a second replacement observation on the next attempt. Report it
+        # as a partial success via the existing raw["image_upload_error"]
+        # contract instead of raising.
         total_steps = max(2, len(image_paths) + 1)
-        for idx, path in enumerate(image_paths or [], start=1):
-            if progress_cb:
-                progress_cb(f"Uploading image {idx}/{len(image_paths)}...", min(total_steps - 1, idx + 1), total_steps)
-            with open(path, "rb") as handle:
-                image_response = requests.post(
-                    f"{self.API_BASE_URL}/observation_photos",
-                    headers={**headers, "Accept": "application/json"},
-                    data={"observation_photo[observation_id]": str(obs_id)},
-                    files={"file": handle},
-                    timeout=60,
-                )
-            if image_response.status_code >= 400:
-                error_text = self._response_error_text(image_response) or "Bad Request"
-                raise RuntimeError(
-                    f"iNaturalist image upload failed ({image_response.status_code}): {error_text}"
-                )
+        images_uploaded, image_upload_error = self._post_observation_photos(
+            obs_id,
+            image_paths,
+            headers,
+            progress_cb,
+            total_steps=total_steps,
+            # The create call already consumed step 1, and the final step is
+            # reserved for the completion message.
+            step_offset=1,
+            progress_cap=total_steps - 1,
+        )
 
-        if progress_cb:
+        raw: dict = {
+            "observation": create_payload,
+            "images_uploaded": images_uploaded,
+        }
+        if image_upload_error:
+            raw["image_upload_error"] = image_upload_error
+            if progress_cb:
+                progress_cb("Image upload failed.", total_steps, total_steps)
+        elif progress_cb:
             progress_cb("Upload complete.", total_steps, total_steps)
-        return UploadResult(sighting_id=int(obs_id), raw=create_payload)
+        return UploadResult(sighting_id=int(obs_id), raw=raw)
 
 
 class MushroomObserverUploader:

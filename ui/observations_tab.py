@@ -33,6 +33,7 @@ from PySide6.QtGui import (
 )
 from PIL import Image, ImageOps, features
 from PySide6.QtCore import QUrl
+from dataclasses import dataclass
 from pathlib import Path
 import io
 import sqlite3
@@ -2181,6 +2182,40 @@ class _ObservationImageBrowser(QWidget):
         return super().eventFilter(obj, event)
 
 
+INAT_PUBLISH_MODE_CREATE = "create"
+INAT_PUBLISH_MODE_APPEND = "append"
+
+# How the current selection relates to iNaturalist, derived from stored local
+# ids alone. The publish wording is chosen from this and nothing else: a mixed
+# selection really does both a create and an update, and claiming either one
+# for the whole selection hides the other.
+INAT_SELECTION_EMPTY = "empty"
+INAT_SELECTION_NONE_LINKED = "none_linked"
+INAT_SELECTION_ALL_LINKED = "all_linked"
+INAT_SELECTION_MIXED = "mixed"
+
+
+@dataclass(frozen=True)
+class InatPublishDecision:
+    """What the iNaturalist publish action is allowed to do for one observation.
+
+    The stored ``inaturalist_id`` alone does not say which it is: the remote
+    observation may be live (append media to it), gone (offer a republish), or
+    unverifiable (do nothing). Resolving that once, up front, keeps the create
+    and append paths from having to guess later.
+
+    ``proceed=False`` with no ``failure_message`` means the user deliberately
+    cancelled, which is a skip rather than a failure and must not mutate
+    anything.
+    """
+
+    proceed: bool
+    mode: str = INAT_PUBLISH_MODE_CREATE
+    existing_observation_id: int | None = None
+    failure_message: str | None = None
+    failure_level: str = "info"
+
+
 class ObservationsTab(QWidget):
     """Tab for viewing and managing observations."""
 
@@ -2265,6 +2300,7 @@ class ObservationsTab(QWidget):
         self.selected_observation_id = None
         self._observations_splitter_syncing = False
         self._publish_actions: dict[str, object] = {}
+        self._publish_action_base_labels: dict[str, str] = {}
         self._artsobs_dead_by_observation_id: dict[int, bool] = {}
         self._artsobs_public_published_by_observation_id: dict[int, bool] = {}
         self._artsobs_check_thread: ArtsobsMobileLinkCheckWorker | None = None
@@ -2555,6 +2591,8 @@ class ObservationsTab(QWidget):
         self.table.setItemDelegate(_ObservationsMoveTargetHoverDelegate(self.table))
         self.table.itemSelectionChanged.connect(self.on_selection_changed)
         self.table.itemDoubleClicked.connect(self.on_row_double_clicked)
+        self.table.setContextMenuPolicy(Qt.CustomContextMenu)
+        self.table.customContextMenuRequested.connect(self._show_observation_context_menu)
         self.table.setSortingEnabled(True)
         self._observations_table_default_row_height = self.table.verticalHeader().defaultSectionSize()
 
@@ -4785,6 +4823,10 @@ class ObservationsTab(QWidget):
     def _build_publish_menu(self) -> None:
         self.publish_menu.clear()
         self._publish_actions = {}
+        # The iNaturalist action's visible text changes with the selection (see
+        # _sync_inaturalist_action_wording), so the plain service label is kept
+        # here for the status messages that name the target.
+        self._publish_action_base_labels = {}
         self._publish_direct_target_key = None
         self._publish_both_action = None
         self._disconnect_publish_click_if_needed()
@@ -4814,6 +4856,10 @@ class ObservationsTab(QWidget):
         if len(enabled_uploaders) == 1:
             uploader = enabled_uploaders[0]
             self._publish_direct_target_key = uploader.key
+            base_label = self.tr(uploader.label)
+            # No QAction exists on this path, so the stable service label still
+            # has to be recorded for the status messages that name the target.
+            self._publish_action_base_labels[uploader.key] = base_label
             self.publish_btn.setMenu(None)
             self.publish_btn.clicked.connect(
                 lambda _checked=False, key=uploader.key: self._publish_selected_observations(key)
@@ -4822,8 +4868,11 @@ class ObservationsTab(QWidget):
             self.publish_btn.setText(self.tr("Publish"))
             self.publish_btn.setProperty(
                 "_hint_text",
-                self.tr("Publish directly to {target}.").format(target=self.tr(uploader.label)),
+                self.tr("Publish directly to {target}.").format(target=base_label),
             )
+            # The button is the only visible surface here, so it - not a menu
+            # action - carries the create/update distinction.
+            self._sync_inaturalist_action_wording()
             return
 
         self.publish_btn.setMenu(self.publish_menu)
@@ -4833,12 +4882,15 @@ class ObservationsTab(QWidget):
                 lambda _checked=False: self._publish_selected_observations("both")
             )
             self._publish_both_action = both_action
+        self.publish_menu.setToolTipsVisible(True)
         for uploader in enabled_uploaders:
-            action = self.publish_menu.addAction(self.tr(uploader.label))
+            base_label = self.tr(uploader.label)
+            action = self.publish_menu.addAction(base_label)
             action.triggered.connect(
                 lambda _checked=False, key=uploader.key: self._publish_selected_observations(key)
             )
             self._publish_actions[uploader.key] = action
+            self._publish_action_base_labels[uploader.key] = base_label
 
     def _disconnect_publish_click_if_needed(self) -> None:
         if not getattr(self, "_publish_direct_click_connected", False):
@@ -4865,9 +4917,14 @@ class ObservationsTab(QWidget):
             return self.tr("selected service")
         if key == "both":
             return self.tr("Both")
-        action = self._publish_actions.get(key)
-        if action is not None and action.text():
-            return action.text()
+        # Prefer the label the menu was built with: the iNaturalist action's
+        # visible text becomes state-aware ("Update iNaturalist…"), which would
+        # read wrong inside a sentence that names the service.
+        base_label = (getattr(self, "_publish_action_base_labels", None) or {}).get(key)
+        if base_label:
+            return base_label
+        # Deliberately never fall back to the QAction text: it is state-aware
+        # ("Update iNaturalist…") and would read wrong inside such a sentence.
         try:
             from utils.artsobs_uploaders import get_uploader
 
@@ -5078,6 +5135,103 @@ class ObservationsTab(QWidget):
             if obs and self._observation_has_existing_upload(obs, uploader_key):
                 return True
         return False
+
+    def _existing_upload_blocks_publish(self, uploader_key: str) -> bool:
+        """Whether a stored remote id alone is enough to disable publishing.
+
+        For iNaturalist it is not. The stored id may point at an observation the
+        user deleted on iNaturalist, and even a live one is publishable - it
+        gains the selected media instead of being duplicated. That link is
+        verified when the publish action is actually invoked, not during table
+        refreshes, so the action stays available and the real create-or-append
+        decision happens in ``_resolve_inaturalist_link_before_publish``.
+        """
+        return (uploader_key or "").strip().lower() != "inat"
+
+    def _selection_blocks_publish_for_uploader(self, uploader_key: str) -> bool:
+        if not self._existing_upload_blocks_publish(uploader_key):
+            return False
+        return self._selection_has_existing_upload_for_uploader(uploader_key)
+
+    # ------------------------------------------------------------------
+    # iNaturalist publish-state wording
+    #
+    # Only two states can be named without asking iNaturalist: "no stored
+    # link" and "a link is stored, whose remote state Sporely has not
+    # checked". Everything finer - live, deleted, unreachable - is known only
+    # after ``check_observation_link()``, which runs when the user invokes the
+    # action. The wording below therefore never promises that a stored link is
+    # reachable, and nothing here issues a remote request.
+    # ------------------------------------------------------------------
+
+    def _inaturalist_selection_link_state(self) -> str:
+        """Classify the selection by stored iNaturalist ids, without any request.
+
+        An observation that is no longer in the database counts as unlinked: it
+        has no stored id to update.
+        """
+        observation_ids = self._selected_observation_ids()
+        if not observation_ids:
+            return INAT_SELECTION_EMPTY
+        linked = 0
+        for observation_id in observation_ids:
+            obs = ObservationDB.get_observation(observation_id)
+            if obs and self._observation_has_existing_upload(obs, "inat"):
+                linked += 1
+        if linked == 0:
+            return INAT_SELECTION_NONE_LINKED
+        if linked == len(observation_ids):
+            return INAT_SELECTION_ALL_LINKED
+        return INAT_SELECTION_MIXED
+
+    def _inaturalist_action_label(self, selection_state: str) -> str:
+        if selection_state == INAT_SELECTION_ALL_LINKED:
+            return self.tr("Update iNaturalist…")
+        if selection_state == INAT_SELECTION_MIXED:
+            return self.tr("Publish / update iNaturalist…")
+        return self.tr("Publish to iNaturalist")
+
+    def _inaturalist_action_hint(self, selection_state: str) -> str:
+        if selection_state == INAT_SELECTION_ALL_LINKED:
+            return self.tr(
+                "Check the linked iNaturalist observation, then add the selected images "
+                "or offer to republish if the link is stale."
+            )
+        if selection_state == INAT_SELECTION_MIXED:
+            return self.tr(
+                "Publish unlinked finds as new iNaturalist observations; check the linked "
+                "observations and then add the selected images or offer to republish if a "
+                "link is stale."
+            )
+        return self.tr("Publish the selected find(s) as new iNaturalist observations.")
+
+    def _sync_inaturalist_action_wording(self) -> None:
+        """Retitle the iNaturalist action from local state only.
+
+        Called from the ordinary selection/enablement refresh, so it must stay
+        free of network access: it reads the stored ``inaturalist_id`` and
+        nothing else.
+
+        When iNaturalist is the only enabled target there is no menu action at
+        all - the publish button is wired straight to it - so the button itself
+        carries the wording.
+        """
+        actions = getattr(self, "_publish_actions", None) or {}
+        action = actions.get("inat")
+        is_direct_inat = getattr(self, "_publish_direct_target_key", None) == "inat"
+        if action is None and not is_direct_inat:
+            return
+        selection_state = self._inaturalist_selection_link_state()
+        label = self._inaturalist_action_label(selection_state)
+        hint = self._inaturalist_action_hint(selection_state)
+        if action is not None:
+            if action.text() != label:
+                action.setText(label)
+            action.setToolTip(hint)
+            action.setStatusTip(hint)
+        if is_direct_inat and hasattr(self, "publish_btn"):
+            if self.publish_btn.text() != label:
+                self.publish_btn.setText(label)
 
     def _publish_target_logged_in(self, uploader_key: str) -> bool:
         key = (uploader_key or "").strip().lower()
@@ -5292,6 +5446,7 @@ class ObservationsTab(QWidget):
                 both_action.setEnabled(False)
             self.publish_btn.setEnabled(False)
             self.publish_btn.setProperty("_hint_text", self.tr("Select one or more observations to publish."))
+            self._sync_inaturalist_action_wording()
             if hasattr(self, "plate_btn"):
                 self.plate_btn.setEnabled(False)
             return
@@ -5299,22 +5454,54 @@ class ObservationsTab(QWidget):
         enabled_keys = list(getattr(self, "_publish_enabled_keys", []) or [])
         any_target_enabled = False
         for key in enabled_keys:
-            has_existing_upload = self._selection_has_existing_upload_for_uploader(key)
+            has_existing_upload = self._selection_blocks_publish_for_uploader(key)
             enabled = has_selection and not has_existing_upload
             action = self._publish_actions.get(key)
             if action is not None:
                 action.setEnabled(enabled)
             if enabled:
                 any_target_enabled = True
+        self._sync_inaturalist_action_wording()
 
         if both_action is not None:
-            both_enabled = has_selection and not any(
-                self._selection_has_existing_upload_for_uploader(key)
+            # "Both" publishes to Artsobservasjoner first and iNaturalist second,
+            # so a stale-link repair cannot be offered before the web half has
+            # already been sent. A stored iNaturalist id therefore still blocks
+            # "Both"; the individual iNaturalist action stays available so that
+            # stale links can be repaired there.
+            blocking_keys = [
+                key
                 for key in ("web", "inat")
-            )
+                if self._selection_has_existing_upload_for_uploader(key)
+            ]
+            both_enabled = has_selection and not blocking_keys
             both_action.setEnabled(bool(both_enabled))
             if both_enabled:
                 any_target_enabled = True
+                both_action.setToolTip(
+                    self.tr("Publish to Artsobservasjoner and iNaturalist in one pass.")
+                )
+            elif blocking_keys == ["inat"]:
+                # Only the iNaturalist half is blocked, so the individual
+                # iNaturalist action really is the route forward.
+                both_action.setToolTip(
+                    self.tr(
+                        "Unavailable: the selection already has an iNaturalist ID. "
+                        "Use the individual iNaturalist action to add images to a linked "
+                        "observation or to repair a stale link."
+                    )
+                )
+            else:
+                # An existing Artsobservasjoner publication is what blocks Both
+                # here; pointing at the iNaturalist action would misname the
+                # blocker.
+                blocked_labels = ", ".join(self._enabled_uploader_labels(blocking_keys))
+                both_action.setToolTip(
+                    self.tr(
+                        "Unavailable: the selection already has a publication ID in "
+                        "{targets}. Use the individual publishing actions instead."
+                    ).format(targets=blocked_labels or self.tr("the selected service"))
+                )
 
         self.publish_btn.setEnabled(has_selection and any_target_enabled)
         if len(enabled_keys) > 1:
@@ -5327,7 +5514,7 @@ class ObservationsTab(QWidget):
 
         if not has_selection:
             self.publish_btn.setProperty("_hint_text", self.tr("Select one or more observations to publish."))
-        elif any(self._selection_has_existing_upload_for_uploader(key) for key in enabled_keys):
+        elif any(self._selection_blocks_publish_for_uploader(key) for key in enabled_keys):
             enabled_labels = ", ".join(self._enabled_uploader_labels(enabled_keys))
             self.publish_btn.setProperty(
                 "_hint_text",
@@ -5346,12 +5533,24 @@ class ObservationsTab(QWidget):
         elif len(enabled_keys) == 1:
             target_key = enabled_keys[0]
             target_label = self._uploader_label(target_key)
-            self.publish_btn.setProperty(
-                "_hint_text",
-                self.tr(
-                    "Publish directly to {target}. Saved login will be used automatically if available; otherwise Publish opens Online publishing."
-                ).format(target=target_label),
-            )
+            if target_key == "inat":
+                # iNaturalist is the only target, so "Publish directly to …"
+                # would misdescribe what the button does whenever any selected
+                # row is linked. What it actually does depends on a link check
+                # that has not happened yet, so the hint mirrors the button.
+                self.publish_btn.setProperty(
+                    "_hint_text",
+                    self._inaturalist_action_hint(
+                        self._inaturalist_selection_link_state()
+                    ),
+                )
+            else:
+                self.publish_btn.setProperty(
+                    "_hint_text",
+                    self.tr(
+                        "Publish directly to {target}. Saved login will be used automatically if available; otherwise Publish opens Online publishing."
+                    ).format(target=target_label),
+                )
         else:
             enabled_labels = self._enabled_uploader_labels(enabled_keys)
             if both_action is not None and {"web", "inat"}.issubset(set(enabled_keys)):
@@ -5433,7 +5632,7 @@ class ObservationsTab(QWidget):
             )
             self._update_publish_controls()
             return
-        if self._selection_has_existing_upload_for_uploader(uploader_key):
+        if self._selection_blocks_publish_for_uploader(uploader_key):
             self.set_status_message(
                 self.tr("Publishing disabled: selection contains an observation already uploaded to this service."),
                 level="warning",
@@ -5442,12 +5641,16 @@ class ObservationsTab(QWidget):
             self._update_publish_controls()
             return
 
-        action = self._publish_actions.get(uploader_key)
-        target_label = action.text() if action else uploader_key
+        # The stable service name, never the action text: that is state-aware
+        # ("Update iNaturalist…") and in single-target mode there is no action
+        # at all, which used to leak the raw "inat" key into summaries.
+        target_label = self._uploader_label(uploader_key)
 
         total = len(observation_ids)
         success_count = 0
         failed: list[tuple[int, str | None]] = []
+        partial: list[tuple[int, str]] = []
+        skipped: list[int] = []
         for idx, observation_id in enumerate(observation_ids, start=1):
             self.set_status_message(
                 self.tr("Publishing {current}/{total}...").format(current=idx, total=total),
@@ -5467,12 +5670,42 @@ class ObservationsTab(QWidget):
             )
             if ok:
                 success_count += 1
+                # ok with a message is a partial success (remote record created,
+                # media incomplete) and must not be summarised as clean success.
+                if error:
+                    partial.append((observation_id, error))
+            elif error is None:
+                # The user declined the stale-link republish. Nothing was
+                # created and nothing was mutated, so this is a skip, not a
+                # failure, and it must not inflate the failure count.
+                skipped.append(observation_id)
             else:
                 failed.append((observation_id, error))
 
         self.refresh_observations()
         self._invalidate_publish_login_status_cache()
+
+        partial_detail = partial[0][1] if partial else None
+        first_error = failed[0][1] if failed and failed[0][1] else None
+
         if not failed:
+            if not success_count and skipped:
+                self.set_status_message(
+                    self.tr("Publishing to {target} was cancelled.").format(target=target_label),
+                    level="info",
+                    auto_clear_ms=8000,
+                )
+                return
+            if partial_detail:
+                summary = self.tr(
+                    "Published {count} observations to {target}, with warnings."
+                ).format(count=success_count, target=target_label)
+                self.set_status_message(
+                    f"{summary} {partial_detail}",
+                    level="warning",
+                    auto_clear_ms=15000,
+                )
+                return
             self.set_status_message(
                 self.tr("Published {count} observations to {target}.").format(
                     count=success_count,
@@ -5498,9 +5731,12 @@ class ObservationsTab(QWidget):
                 target=target_label
             )
             level = "error"
-        first_error = failed[0][1] if failed and failed[0][1] else None
         if first_error:
             summary = f"{summary} {first_error}"
+        # A partial success alongside a hard failure still means a remote
+        # observation exists without its media. Do not drop it.
+        if partial_detail:
+            summary = f"{summary} {partial_detail}"
         self.set_status_message(summary, level=level, auto_clear_ms=15000)
 
     def _publish_selected_observations_both(self) -> None:
@@ -5511,6 +5747,20 @@ class ObservationsTab(QWidget):
                 level="warning",
             )
             return
+
+        # Unlike the individual iNaturalist action, "Both" cannot offer a
+        # stale-link repair: the Artsobservasjoner half is published first, so a
+        # live iNaturalist link discovered afterwards would leave a half-finished
+        # publish. Keep the pre-existing stored-id block for both halves here.
+        for key in ("web", "inat"):
+            if self._selection_has_existing_upload_for_uploader(key):
+                self.set_status_message(
+                    self.tr("Publishing disabled: selection contains an observation already uploaded to this service."),
+                    level="warning",
+                    auto_clear_ms=12000,
+                )
+                self._update_publish_controls()
+                return
 
         login_status = self._publish_target_login_status(force_refresh=True)
         saved_login_status = self._publish_target_saved_login_status(force_refresh=True)
@@ -10709,6 +10959,229 @@ class ObservationsTab(QWidget):
                 )
         return taxon_id
 
+    def _resolve_inaturalist_link_before_publish(
+        self,
+        observation_id: int,
+        obs: dict,
+        uploader,
+        cookies: dict,
+    ) -> InatPublishDecision:
+        """Decide whether publishing creates, appends to, or leaves alone a link.
+
+        A stored ``inaturalist_id`` is not proof that the observation still
+        exists: the user may have deleted it on iNaturalist. The link is checked
+        here, when the publish action is invoked, and the stored id is never
+        touched at this point - a replacement id is only written after a new
+        publish has succeeded, and the append path never rewrites it at all.
+        """
+        try:
+            existing_inat_id = int((obs or {}).get("inaturalist_id") or 0)
+        except (TypeError, ValueError):
+            existing_inat_id = 0
+        if existing_inat_id <= 0:
+            return InatPublishDecision(True, INAT_PUBLISH_MODE_CREATE)
+
+        status = uploader.check_observation_link(existing_inat_id, cookies)
+
+        if status.is_live:
+            # The remote observation is still there. Publishing must not create
+            # a second one; the selected media are added to this one instead.
+            # Whether the user really wants that - and the duplicate-photo risk
+            # it carries - is confirmed later, once the prepared media are known
+            # and the count in the prompt can be exact.
+            return InatPublishDecision(
+                True,
+                INAT_PUBLISH_MODE_APPEND,
+                existing_observation_id=existing_inat_id,
+            )
+
+        if not status.is_missing:
+            message = self.tr(
+                "Upload failed: could not check the linked {service} observation. The existing link was kept."
+            ).format(service=self.tr(uploader.label))
+            detail = (status.detail or "").strip()
+            if detail:
+                message = f"{message} {detail}"
+            return InatPublishDecision(
+                False,
+                failure_message=message,
+                failure_level="warning",
+            )
+
+        confirmed = ask_wrapped_yes_no(
+            self,
+            self.tr("Republish to iNaturalist"),
+            self.tr(
+                "The linked iNaturalist observation {id} no longer exists.\n\n"
+                "Publish this find as a new iNaturalist observation?\n\n"
+                "Sporely's stored link is replaced only if the new observation is "
+                "created successfully."
+            ).format(id=existing_inat_id),
+            default_yes=False,
+        )
+        if not confirmed:
+            return InatPublishDecision(False)
+        return InatPublishDecision(True, INAT_PUBLISH_MODE_CREATE)
+
+    def _confirm_inaturalist_media_append(
+        self,
+        existing_observation_id: int,
+        upload_image_paths: list[str],
+    ) -> bool:
+        """Ask before adding media to an observation that already exists.
+
+        Sporely keeps no mapping between local images and iNaturalist photo ids,
+        so it cannot know which of the selected images are already on the remote
+        observation, and the default publishing selection is "every image that
+        is not explicitly excluded". Re-running Publish would therefore silently
+        re-upload everything, so the count and the duplicate risk are spelled
+        out rather than assumed.
+        """
+        return ask_wrapped_yes_no(
+            self,
+            self.tr("Add images to iNaturalist"),
+            self.tr(
+                "Add the {count} selected image(s) to the existing iNaturalist "
+                "observation {id}?\n\n"
+                "Only the images in your current publishing selection are sent. "
+                "Sporely does not track which images were already uploaded, so "
+                "any image you published before will be added again as a "
+                "duplicate.\n\n"
+                "Nothing else on the iNaturalist observation is changed."
+            ).format(count=len(upload_image_paths), id=existing_observation_id),
+            default_yes=False,
+        )
+
+    # ------------------------------------------------------------------
+    # Manual link repair: clearing Sporely's stored iNaturalist link
+    # ------------------------------------------------------------------
+
+    def _show_observation_context_menu(self, pos) -> None:
+        """Row context menu. Currently the home of the link-repair escape hatch."""
+        index = self.table.indexAt(pos)
+        if index.isValid():
+            selection_model = self.table.selectionModel()
+            selected_rows = (
+                {selected.row() for selected in selection_model.selectedRows()}
+                if selection_model
+                else set()
+            )
+            if index.row() not in selected_rows:
+                self.table.selectRow(index.row())
+
+        menu = QMenu(self)
+        menu.setToolTipsVisible(True)
+        clear_action = menu.addAction(self.tr("Clear iNaturalist link…"))
+        linked = self._selected_inaturalist_links()
+        clear_action.setEnabled(bool(linked))
+        if linked:
+            clear_action.setToolTip(
+                self.tr("Remove Sporely's stored iNaturalist link. Nothing on iNaturalist is changed.")
+            )
+        else:
+            clear_action.setToolTip(
+                self.tr("Unavailable: none of the selected observations has a stored iNaturalist link.")
+            )
+        clear_action.triggered.connect(lambda _checked=False: self._clear_inaturalist_link_for_selection())
+        menu.exec(self.table.viewport().mapToGlobal(pos))
+
+    def _selected_inaturalist_links(self) -> list[tuple[int, int]]:
+        """``(observation_id, inaturalist_id)`` for selected rows that have a link."""
+        links: list[tuple[int, int]] = []
+        for observation_id in self._selected_observation_ids():
+            obs = ObservationDB.get_observation(observation_id)
+            if not obs:
+                continue
+            try:
+                inaturalist_id = int(obs.get("inaturalist_id") or 0)
+            except (TypeError, ValueError):
+                continue
+            if inaturalist_id > 0:
+                links.append((observation_id, inaturalist_id))
+        return links
+
+    def _confirm_clear_inaturalist_link(self, links: list[tuple[int, int]]) -> bool:
+        """Ask before dropping a stored link, naming the remote ids being forgotten.
+
+        This is a recovery tool for a link that has gone wrong, so the one thing
+        the message has to make unmistakable is that it is local-only: no
+        iNaturalist request is made, and no remote observation or photo is
+        touched.
+        """
+        remote_ids = ", ".join(str(inaturalist_id) for _obs_id, inaturalist_id in links)
+        if len(links) == 1:
+            question = self.tr(
+                "Clear Sporely's link to iNaturalist observation {ids}?"
+            ).format(ids=remote_ids)
+        else:
+            question = self.tr(
+                "Clear Sporely's links to {count} iNaturalist observations ({ids})?"
+            ).format(count=len(links), ids=remote_ids)
+        explanation = self.tr(
+            "This removes the stored iNaturalist link from Sporely only. "
+            "It does not delete or modify anything on iNaturalist: the observation "
+            "and its photos stay exactly as they are.\n\n"
+            "Afterwards Sporely treats the find as unpublished, so publishing again "
+            "would create a new iNaturalist observation."
+        )
+        return ask_wrapped_yes_no(
+            self,
+            self.tr("Clear iNaturalist link"),
+            f"{question}\n\n{explanation}",
+            default_yes=False,
+        )
+
+    def _clear_inaturalist_link_for_selection(self) -> None:
+        links = self._selected_inaturalist_links()
+        if not links:
+            self.set_status_message(
+                self.tr("None of the selected observations has a stored iNaturalist link."),
+                level="warning",
+                auto_clear_ms=12000,
+            )
+            return
+        if not self._confirm_clear_inaturalist_link(links):
+            return
+
+        cleared: list[int] = []
+        failures: list[str] = []
+        for observation_id, _inaturalist_id in links:
+            try:
+                # The ordinary setter: it nulls the column and marks the row
+                # dirty, which is the same metadata bookkeeping a publish uses.
+                # No iNaturalist request is involved on this path.
+                ObservationDB.set_inaturalist_id(observation_id, None)
+            except Exception as exc:
+                failures.append(str(exc))
+                continue
+            cleared.append(observation_id)
+            self.schedule_metadata_cloud_sync(observation_id)
+
+        for observation_id in cleared:
+            row = self._find_table_row_for_observation(observation_id)
+            if row >= 0:
+                updated_obs = ObservationDB.get_observation(observation_id)
+                self._render_publish_cell(
+                    row,
+                    updated_obs or {"id": observation_id, "inaturalist_id": None},
+                )
+        self._update_publish_controls()
+
+        if failures:
+            self.set_status_message(
+                self.tr("Could not clear the iNaturalist link: {error}").format(error=failures[0]),
+                level="error",
+                auto_clear_ms=15000,
+            )
+            return
+        self.set_status_message(
+            self.tr("Cleared the stored iNaturalist link for {count} observation(s). Nothing on iNaturalist was changed.").format(
+                count=len(cleared)
+            ),
+            level="info",
+            auto_clear_ms=12000,
+        )
+
     def _preferred_publish_uploader_key(self, obs: dict, requested_uploader_key: str | None = None) -> str:
         requested_key = (requested_uploader_key or "").strip().lower()
         if requested_key in {"artportalen", "inat", "mo"}:
@@ -10821,6 +11294,28 @@ class ObservationsTab(QWidget):
         refresh_table: bool = True,
         publish_bundle: PublishMediaBundle | None = None,
     ) -> tuple[bool, int | None, str | None]:
+        """Publish one observation and report ``(ok, remote_id, message)``.
+
+        The tuple carries four distinct outcomes, and batch callers must keep
+        them apart:
+
+        * ``(True, id, None)`` - clean success.
+        * ``(True, id, message)`` - partial success: the remote observation
+          exists and its id is stored, but its media did not all arrive.
+        * ``(False, None, message)`` - failure; ``message`` is always set,
+          because every failure goes through ``_fail``.
+        * ``(False, None, None)`` - the user deliberately cancelled (declining
+          the stale-iNaturalist-link republish, or the media-append
+          confirmation). Nothing was created and nothing was mutated; this is a
+          skip, not a failure.
+
+        For a stored iNaturalist link that verifies live, this adds the
+        currently selected publishing media to that existing observation rather
+        than creating a second one. ``id`` is then the unchanged existing id,
+        and the same four outcomes apply: a clean append reports success, some
+        images attached before a failure reports partial success, and nothing
+        attached reports failure because the remote observation is untouched.
+        """
         def _fail(message: str, level: str = "error", auto_clear_ms: int = 12000):
             if show_status:
                 self.set_status_message(message, level=level, auto_clear_ms=auto_clear_ms)
@@ -10836,12 +11331,38 @@ class ObservationsTab(QWidget):
             return _fail(self.tr("Upload failed: observation not found."))
         publish_target = self._observation_publish_target(obs)
 
+        target_key = self._preferred_publish_uploader_key(obs, uploader_key)
+
+        # Create-only metadata. Coordinates and the observation date are sent
+        # only when a new remote observation is created; adding media to a live
+        # iNaturalist observation sends neither and rewrites no remote metadata,
+        # so refusing an append for a missing local date would be refusing over
+        # a field that is never transmitted. For that one case the refusal is
+        # deferred until the create-vs-append decision is known. Every other
+        # target - and iNaturalist with no stored id - still fails right here,
+        # in the order it always did.
         lat = obs.get("gps_latitude")
         lon = obs.get("gps_longitude")
+        observed_datetime = obs.get("date")
+        create_metadata_failure: tuple[str, str] | None = None
         if lat is None or lon is None:
-            return _fail(
+            create_metadata_failure = (
                 self.tr("Upload failed: this observation is missing GPS coordinates."),
-                level="warning",
+                "warning",
+            )
+        elif not observed_datetime:
+            create_metadata_failure = (
+                self.tr("Upload failed: observation date is missing."),
+                "warning",
+            )
+        inaturalist_append_possible = target_key == "inat" and self._observation_has_existing_upload(
+            obs,
+            "inat",
+        )
+        if create_metadata_failure and not inaturalist_append_possible:
+            return _fail(
+                create_metadata_failure[0],
+                level=create_metadata_failure[1],
                 auto_clear_ms=12000,
             )
 
@@ -10881,13 +11402,6 @@ class ObservationsTab(QWidget):
             include_thumbnail_gallery and measurement_availability["has_gallery_measurements"]
         )
 
-        observed_datetime = obs.get("date")
-        if not observed_datetime:
-            return _fail(
-                self.tr("Upload failed: observation date is missing."),
-                level="warning",
-                auto_clear_ms=12000,
-            )
         image_license_code = self._publish_image_license_code()
         copyright_text = (
             self._publish_copyright_text(obs)
@@ -10895,7 +11409,6 @@ class ObservationsTab(QWidget):
             else None
         )
 
-        target_key = self._preferred_publish_uploader_key(obs, uploader_key)
         uploader = get_uploader(target_key)
         if not uploader:
             return _fail(
@@ -10913,7 +11426,7 @@ class ObservationsTab(QWidget):
                 level="warning",
                 auto_clear_ms=12000,
             )
-        if self._observation_has_existing_upload(obs, uploader.key):
+        if self._observation_has_existing_upload(obs, uploader.key) and self._existing_upload_blocks_publish(uploader.key):
             return _fail(
                 self.tr("Upload failed: this observation already has an ID in {service}.").format(
                     service=self.tr(uploader.label)
@@ -10950,6 +11463,10 @@ class ObservationsTab(QWidget):
         taxon_id = None
         taxon_resolution = None
         cookies: dict = {}
+        # Set only when a stored iNaturalist link was verified live: publishing
+        # then means "add the selected media to that observation", never
+        # "create another one".
+        inat_append_observation_id: int | None = None
         if uploader.key in {"mobile", "web"}:
             try:
                 from utils.artsobservasjoner_auto_login import ArtsObservasjonerAuth
@@ -11009,7 +11526,6 @@ class ObservationsTab(QWidget):
                     auto_clear_ms=12000,
                 )
         elif uploader.key == "inat":
-            taxon_id = self._resolve_inaturalist_taxon_id(obs)
             from utils.inat_oauth import INatOAuthClient
 
             client_id = (SettingsDB.get_setting("inat_client_id", "") or "").strip() or (
@@ -11052,6 +11568,30 @@ class ObservationsTab(QWidget):
                     auto_clear_ms=12000,
                 )
             cookies = {"access_token": access_token}
+            decision = self._resolve_inaturalist_link_before_publish(
+                observation_id,
+                obs,
+                uploader,
+                cookies,
+            )
+            if not decision.proceed:
+                if decision.failure_message:
+                    return _fail(
+                        decision.failure_message,
+                        level=decision.failure_level,
+                        auto_clear_ms=12000,
+                    )
+                return False, None, None
+            if decision.mode == INAT_PUBLISH_MODE_APPEND:
+                inat_append_observation_id = decision.existing_observation_id
+            else:
+                # Create-only, and deferred to here for that reason:
+                # ``add_images()`` sends no taxon and changes no remote
+                # metadata, so resolving one for an append would query local
+                # taxonomy for a value that is never transmitted. Placing it
+                # after the decision also means a refused or declined publish
+                # does not pay for it.
+                taxon_id = self._resolve_inaturalist_taxon_id(obs)
         elif uploader.key == "mo":
             app_key = (SettingsDB.get_setting(self.SETTING_MO_APP_API_KEY, "") or "").strip() or (
                 os.getenv("MO_APP_API_KEY", "") or ""
@@ -11075,6 +11615,18 @@ class ObservationsTab(QWidget):
                 "app_key": app_key,
                 "user_key": user_key,
             }
+
+        if create_metadata_failure and not inat_append_observation_id:
+            # Deferred above for a possible iNaturalist media append. The
+            # operation is now known to be a create or a stale-link republish,
+            # both of which do send this metadata, so the original refusal
+            # applies after all. Creation validation is unchanged; only the
+            # point at which it is enforced moved.
+            return _fail(
+                create_metadata_failure[0],
+                level=create_metadata_failure[1],
+                auto_clear_ms=12000,
+            )
 
         self._set_status_progress_visible(True)
         QApplication.processEvents()
@@ -11212,70 +11764,97 @@ class ObservationsTab(QWidget):
                     level="warning",
                     auto_clear_ms=12000,
                 )
+            if inat_append_observation_id:
+                # Appending has nothing else to send, so an empty selection is a
+                # no-op rather than a metadata-only publish.
+                if not upload_image_paths:
+                    return _fail(
+                        self.tr(
+                            "Upload failed: no images are selected to add to the existing "
+                            "{service} observation."
+                        ).format(service=self.tr(uploader.label)),
+                        level="warning",
+                        auto_clear_ms=12000,
+                    )
+                if not self._confirm_inaturalist_media_append(
+                    inat_append_observation_id,
+                    upload_image_paths,
+                ):
+                    # A deliberate cancel, reported like a declined republish:
+                    # nothing created, nothing mutated, not a failure.
+                    return False, None, None
 
-            spore_stats = self._publish_spore_stats_text(
-                observation_id,
-                obs,
-                spore_stats=measurement_availability.get("spore_stats"),
-            )
-            legacy_notes = (obs.get("notes") or "").strip()
-            open_comment = (obs.get("open_comment") or "").strip()
-            private_comment = (obs.get("private_comment") or "").strip()
-            interesting_comment = bool(obs.get("interesting_comment", 0))
-            open_comment_text = compose_publish_notes(
-                open_comment or legacy_notes,
-                spore_stats if include_spore_stats else None,
-                sporely_public_observation_url(obs),
-                uploader_key=uploader.key,
-            )
-            observation_payload = {
-                "taxon_id": taxon_id,
-                "taxon_id_source": taxon_resolution.source_field if taxon_resolution else None,
-                "latitude": float(lat),
-                "longitude": float(lon),
-                "observed_datetime": observed_datetime,
-                "count": 1,
-                "comment": open_comment_text,
-                "open_comment": open_comment_text,
-                "private_comment": private_comment or None,
-                "interesting_comment": interesting_comment,
-                "accuracy_meters": obs.get("gps_accuracy") or 25,
-                "site_name": (obs.get("location") or "").strip(),
-                "habitat": (obs.get("habitat") or "").strip() or None,
-                "notes": None,
-                "uncertain": bool(obs.get("uncertain", 0)),
-                "unspontaneous": bool(obs.get("unspontaneous", 0)),
-                "determination_method": obs.get("determination_method"),
-                "include_annotations_on_images": include_annotations,
-                "include_spore_stats_in_comment": include_spore_stats,
-                "include_measure_plots": include_measure_plots,
-                "include_thumbnail_gallery": include_thumbnail_gallery,
-                "include_plate": include_plate,
-                "include_copyright": include_copyright,
-                "image_license_code": image_license_code,
-                "genus": (obs.get("genus") or "").strip(),
-                "species": (obs.get("species") or "").strip(),
-                "species_guess": (obs.get("species_guess") or "").strip(),
-                "inaturalist_taxon_id": taxon_id,
-                "publish_target": publish_target,
-                "habitat_nin2_path": obs.get("habitat_nin2_path"),
-                "habitat_substrate_path": obs.get("habitat_substrate_path"),
-                "habitat_nin2_note": (obs.get("habitat_nin2_note") or "").strip() or None,
-                "habitat_substrate_note": (obs.get("habitat_substrate_note") or "").strip() or None,
-                "habitat_grows_on_note": (obs.get("habitat_grows_on_note") or "").strip() or None,
-                "habitat_host_scientific": " ".join(
-                    [
-                        (obs.get("habitat_host_genus") or "").strip(),
-                        (obs.get("habitat_host_species") or "").strip(),
-                    ]
-                ).strip()
-                or None,
-                "habitat_host_common_name": (obs.get("habitat_host_common_name") or "").strip() or None,
-                "habitat_host_taxon_id": ObservationDB.resolve_adb_taxon_id(
-                    (obs.get("habitat_host_genus") or "").strip() or None,
-                    (obs.get("habitat_host_species") or "").strip() or None,
-                ),
-            }
+            if inat_append_observation_id:
+                # add_images() sends media only. None of the create payload -
+                # taxon, coordinates, date, notes, spore statistics, habitat -
+                # is transmitted or would be allowed to change the existing
+                # remote observation, so it is not built at all. That also keeps
+                # the append independent of local metadata it never sends.
+                observation_payload = None
+            else:
+                spore_stats = self._publish_spore_stats_text(
+                    observation_id,
+                    obs,
+                    spore_stats=measurement_availability.get("spore_stats"),
+                )
+                legacy_notes = (obs.get("notes") or "").strip()
+                open_comment = (obs.get("open_comment") or "").strip()
+                private_comment = (obs.get("private_comment") or "").strip()
+                interesting_comment = bool(obs.get("interesting_comment", 0))
+                open_comment_text = compose_publish_notes(
+                    open_comment or legacy_notes,
+                    spore_stats if include_spore_stats else None,
+                    sporely_public_observation_url(obs),
+                    uploader_key=uploader.key,
+                )
+                observation_payload = {
+                    "taxon_id": taxon_id,
+                    "taxon_id_source": taxon_resolution.source_field if taxon_resolution else None,
+                    "latitude": float(lat),
+                    "longitude": float(lon),
+                    "observed_datetime": observed_datetime,
+                    "count": 1,
+                    "comment": open_comment_text,
+                    "open_comment": open_comment_text,
+                    "private_comment": private_comment or None,
+                    "interesting_comment": interesting_comment,
+                    "accuracy_meters": obs.get("gps_accuracy") or 25,
+                    "site_name": (obs.get("location") or "").strip(),
+                    "habitat": (obs.get("habitat") or "").strip() or None,
+                    "notes": None,
+                    "uncertain": bool(obs.get("uncertain", 0)),
+                    "unspontaneous": bool(obs.get("unspontaneous", 0)),
+                    "determination_method": obs.get("determination_method"),
+                    "include_annotations_on_images": include_annotations,
+                    "include_spore_stats_in_comment": include_spore_stats,
+                    "include_measure_plots": include_measure_plots,
+                    "include_thumbnail_gallery": include_thumbnail_gallery,
+                    "include_plate": include_plate,
+                    "include_copyright": include_copyright,
+                    "image_license_code": image_license_code,
+                    "genus": (obs.get("genus") or "").strip(),
+                    "species": (obs.get("species") or "").strip(),
+                    "species_guess": (obs.get("species_guess") or "").strip(),
+                    "inaturalist_taxon_id": taxon_id,
+                    "publish_target": publish_target,
+                    "habitat_nin2_path": obs.get("habitat_nin2_path"),
+                    "habitat_substrate_path": obs.get("habitat_substrate_path"),
+                    "habitat_nin2_note": (obs.get("habitat_nin2_note") or "").strip() or None,
+                    "habitat_substrate_note": (obs.get("habitat_substrate_note") or "").strip() or None,
+                    "habitat_grows_on_note": (obs.get("habitat_grows_on_note") or "").strip() or None,
+                    "habitat_host_scientific": " ".join(
+                        [
+                            (obs.get("habitat_host_genus") or "").strip(),
+                            (obs.get("habitat_host_species") or "").strip(),
+                        ]
+                    ).strip()
+                    or None,
+                    "habitat_host_common_name": (obs.get("habitat_host_common_name") or "").strip() or None,
+                    "habitat_host_taxon_id": ObservationDB.resolve_adb_taxon_id(
+                        (obs.get("habitat_host_genus") or "").strip() or None,
+                        (obs.get("habitat_host_species") or "").strip() or None,
+                    ),
+                }
             update_progress(
                 self.tr("Connecting to {target}...").format(target=self.tr(uploader.label)),
                 0,
@@ -11299,12 +11878,22 @@ class ObservationsTab(QWidget):
 
             def _upload_worker() -> None:
                 try:
-                    upload_state["result"] = uploader.upload(
-                        observation_payload,
-                        upload_image_paths,
-                        cookies,
-                        progress_cb=worker_progress_cb,
-                    )
+                    if inat_append_observation_id:
+                        # Media attachment only: no /observations request, and
+                        # the observation's metadata is left exactly as it is.
+                        upload_state["result"] = uploader.add_images(
+                            inat_append_observation_id,
+                            upload_image_paths,
+                            cookies,
+                            progress_cb=worker_progress_cb,
+                        )
+                    else:
+                        upload_state["result"] = uploader.upload(
+                            observation_payload,
+                            upload_image_paths,
+                            cookies,
+                            progress_cb=worker_progress_cb,
+                        )
                 except Exception as exc:
                     upload_state["error"] = exc
                 finally:
@@ -11382,11 +11971,30 @@ class ObservationsTab(QWidget):
 
         obs_id = None
         image_upload_error = None
+        images_attached = 0
         if result and getattr(result, "sighting_id", None):
             obs_id = result.sighting_id
         if result and getattr(result, "raw", None):
             image_upload_error = result.raw.get("image_upload_error")
+            try:
+                images_attached = int(result.raw.get("images_uploaded") or 0)
+            except (TypeError, ValueError):
+                images_attached = 0
         publish_warning_text = publish_warnings[0] if publish_warnings else None
+        if inat_append_observation_id and image_upload_error and images_attached <= 0:
+            # Nothing reached the remote observation, so there is no partial
+            # success to report. The link and its existing photos are untouched
+            # and no observation was created, so this is an ordinary failure and
+            # a retry is safe.
+            message = self.tr(
+                "Upload failed: could not add images to the existing {service} observation "
+                "{id}. The existing link and its photos are unchanged."
+            ).format(service=self.tr(uploader.label), id=inat_append_observation_id)
+            return _fail(
+                f"{message} Details: {image_upload_error}",
+                level="warning",
+                auto_clear_ms=15000,
+            )
         if obs_id:
             if uploader.key in {"mobile", "web"}:
                 ObservationDB.update_observation(observation_id, artsdata_id=int(obs_id))
@@ -11402,7 +12010,10 @@ class ObservationsTab(QWidget):
             elif uploader.key == "artportalen":
                 ObservationDB.set_artportalen_id(observation_id, int(obs_id))
             elif uploader.key == "inat":
-                ObservationDB.set_inaturalist_id(observation_id, int(obs_id))
+                # Appending media never changes which observation is linked, so
+                # the stored id is left alone rather than rewritten with itself.
+                if not inat_append_observation_id:
+                    ObservationDB.set_inaturalist_id(observation_id, int(obs_id))
             elif uploader.key == "mo":
                 ObservationDB.set_mushroomobserver_id(observation_id, int(obs_id))
         if refresh_table:
@@ -11435,9 +12046,42 @@ class ObservationsTab(QWidget):
                         updated_obs or {"id": observation_id, "mushroomobserver_id": int(obs_id)},
                     )
                 self._update_publish_controls()
+        # Artsobservasjoner web marks failed images pending and retries them, so a
+        # media failure there is not final. iNaturalist has no such queue: the
+        # observation exists remotely with missing photos, and the user has to be
+        # told even when the batch caller owns the status line.
+        media_failure_is_final = bool(image_upload_error) and uploader.key not in {"mobile", "web"}
+        final_media_warning = None
+        if obs_id and media_failure_is_final:
+            if inat_append_observation_id:
+                # Some images did arrive, so the remote observation changed;
+                # saying "failed" outright would be untrue. The attachment loop
+                # stops at the first failure, so the images after it were never
+                # sent - reporting them as failed would be untrue the other way.
+                final_media_warning = self.tr(
+                    "Added {done} of {total} images to {target} observation {id}. "
+                    "An image failed to upload, so any images after it were not attempted. "
+                    "The observation's other details and its earlier photos are unchanged."
+                ).format(
+                    done=images_attached,
+                    total=len(upload_image_paths),
+                    target=self.tr(uploader.label),
+                    id=obs_id,
+                )
+            else:
+                final_media_warning = self.tr(
+                    "Published to {target} (ID {id}), but image upload failed. "
+                    "The observation exists without those images."
+                ).format(target=self.tr(uploader.label), id=obs_id)
+            final_media_warning = f"{final_media_warning} Details: {image_upload_error}"
         if show_status:
             if obs_id:
-                if image_upload_error:
+                if final_media_warning:
+                    message = final_media_warning
+                    if publish_warning_text:
+                        message = f"{message} {publish_warning_text}"
+                    self.set_status_message(message, level="warning", auto_clear_ms=15000)
+                elif image_upload_error:
                     message = self.tr(
                         "Observation published, but image upload failed. Images remain pending."
                     )
@@ -11452,6 +12096,15 @@ class ObservationsTab(QWidget):
                         ),
                         level="warning",
                         auto_clear_ms=15000,
+                    )
+                elif inat_append_observation_id:
+                    self.set_status_message(
+                        self.tr("Added {count} image(s) to {target} observation {id}.").format(
+                            count=images_attached,
+                            target=self.tr(uploader.label),
+                            id=obs_id,
+                        ),
+                        level="success",
                     )
                 else:
                     self.set_status_message(
@@ -11472,7 +12125,10 @@ class ObservationsTab(QWidget):
                     )
                 else:
                     self.set_status_message(self.tr("Upload completed."), level="success")
-        return True, obs_id, None
+        # ok=True with a message means partial success: the remote observation
+        # exists and its id is stored, but its media did not all arrive. Batch
+        # callers must not report this as a clean success.
+        return True, obs_id, final_media_warning
 
     def edit_observation(self):
         """Edit the selected observation."""
