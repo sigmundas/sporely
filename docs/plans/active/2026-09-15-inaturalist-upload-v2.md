@@ -513,3 +513,210 @@ id is stored. `test_refused_or_declined_publish_resolves_no_taxon` covers the
 unverified and declined cases with the same raising helper.
 
 **Verification.** Same suite: 119 passed.
+
+---
+
+## Stage 3 record — 2026-09-16 (implemented)
+
+**Status:** implemented on `feature/inaturalist-republish-media`. Base `7c8196b`.
+Stage 3 is the last stage of this plan.
+
+### UI wording that was there
+
+| Surface | Before |
+| --- | --- |
+| publish menu action | `iNaturalist` (the raw `INaturalistUploader.label`), no tooltip |
+| publish button hint, single target | "Publish directly to {target}. Saved login will be used automatically…" |
+| publish button hint, multiple targets | "Choose where to publish: {targets}…" |
+| `Both` when disabled | no explanation at all |
+| stale-link confirmation | title "Stale iNaturalist link"; "The linked iNaturalist observation no longer exists." - no id |
+| append confirmation | title "Add images to iNaturalist"; already named the count, the id and the duplicate risk |
+| publication column | `iNat` link to `https://www.inaturalist.org/observations/{id}` |
+| row context menu | none existed |
+
+Every one of those said or implied "create", even though invoking the action on
+a live link had appended media since Stage 2.
+
+### Chosen local-state wording
+
+Only two states are knowable without a remote request, so only two are named:
+
+| Local state | Action text | Tooltip / status tip |
+| --- | --- | --- |
+| no stored `inaturalist_id` | **Publish to iNaturalist** | "Publish this find as a new iNaturalist observation." |
+| stored `inaturalist_id` | **Update iNaturalist…** | "Check the linked iNaturalist observation, then add the selected images or offer to republish if the link is stale." |
+
+"Update" is truthful because it commits to changing the linked observation
+without claiming which change: the ellipsis marks that something is decided
+after the click, and the tooltip names all three outcomes (add images,
+republish, refuse). The rejected wording was "Add images to iNaturalist", which
+asserts the remote observation is reachable - a claim Stage 1 exists precisely
+because Sporely cannot make from a stored id.
+
+`_sync_inaturalist_action_wording()` does the retitling from
+`_selection_has_existing_upload_for_uploader("inat")`, a local DB read, and is
+called only from `_update_publish_controls()`. No remote request is issued to
+produce a label.
+
+Because the action's visible text is now state-dependent, `_uploader_label()`
+would have started returning "Update iNaturalist…" inside sentences that name
+the service ("Publishing to {targets}…"). The labels the menu was built with are
+therefore kept in `_publish_action_base_labels` and preferred there, so every
+existing status message is unchanged.
+
+The single-target publish-button hint also switches to the update hint when
+iNaturalist is the only enabled target and the selection is already linked;
+otherwise "Publish directly to {target}…" is unchanged.
+
+### Transient last-known state
+
+**None was introduced.** No session cache, no timestamp, no persisted remote
+health. The two-state wording above needs no memory of an earlier check, so
+adding one would only create a second, decaying source of truth about remote
+state. `check_observation_link()` remains the only authority and runs only when
+the user invokes the action.
+
+### "Clear iNaturalist link…"
+
+The observations table had no row/context menu, so one was added:
+`QTableWidget.setContextMenuPolicy(Qt.CustomContextMenu)` →
+`_show_observation_context_menu()`, whose only entry is **Clear iNaturalist
+link…**. It is enabled only when the selection contains a stored link, and
+carries a tooltip either way. The publish menu was rejected as the home because
+it is replaced by a direct-click button when only one publish target is enabled,
+which would have made the action unreachable in exactly the single-target
+iNaturalist setup that needs it most.
+
+The confirmation names the remote id(s), then states that the link is removed
+"from Sporely only", that Sporely "does not delete or modify anything on
+iNaturalist: the observation and its photos stay exactly as they are", and that
+the find is afterwards treated as unpublished so publishing again would create a
+new observation. It defaults to No.
+
+### Persistence semantics when clearing
+
+`ObservationDB.set_inaturalist_id(observation_id, None)` was traced before being
+used: it nulls the column and calls `_touch_observation(..., mark_dirty=True)`,
+the same bookkeeping the publish success path uses when it *writes* an id. It is
+the smallest existing truthful path, so no new setter was added.
+`schedule_metadata_cloud_sync(observation_id)` is then called, matching
+`_ensure_selection_publish_target()` and the `web` publish branch;
+`inaturalist_id` is already in the cloud-sync observation field lists
+(`utils/cloud_sync.py`), so the cleared value propagates as ordinary metadata.
+
+Rendering is refreshed the same way the publish path does it:
+`_find_table_row_for_observation()` → `_render_publish_cell()` with the reloaded
+row, then `_update_publish_controls()`. The `iNat` link disappears and the
+action text falls back to "Publish to iNaturalist".
+
+**No iNaturalist request is made on this path.** The method touches
+`ObservationDB`, the table and the status line only; it never obtains a token,
+never calls `get_uploader`, and never reaches `check_observation_link()` or
+`add_images()`. Two tests enforce this rather than assert it: the fake
+environment installs an uploader whose `check_observation_link` raises and
+replaces `utils.artsobs_uploaders.requests.get/post` with tripwires.
+
+### Confirmation consistency
+
+Both confirmations now lead with the remote id and name one operation only:
+
+* append - "Add the {count} selected image(s) to the existing iNaturalist
+  observation {id}?" plus the unchanged duplicate warning and "Nothing else on
+  the iNaturalist observation is changed." Title "Add images to iNaturalist".
+  Unchanged from Stage 2; the duplicate warning was **not** shortened.
+* republish - "The linked iNaturalist observation {id} no longer exists. /
+  Publish this find as a new iNaturalist observation? / Sporely's stored link is
+  replaced only if the new observation is created successfully." Title changed
+  from "Stale iNaturalist link" to **Republish to iNaturalist**, and the id was
+  added.
+
+Both still default to No. A test asserts the republish message contains no
+duplicate warning, so the two operations cannot silently blur.
+
+### Batch prompts: deliberately left per-observation
+
+Not consolidated. Whether an observation appends or republishes is knowable only
+after its own `check_observation_link()`, so a single up-front prompt would
+either guess, or force the batch loop into a check-everything-then-act two-phase
+state machine - the complexity the stage brief rules out. A mixed selection
+(no-id, live, stale, unverifiable) has no honest one-sentence summary. The
+per-observation confirmations stay, with the improved wording; only the actions'
+titles and hints changed.
+
+### Files changed
+
+- `ui/observations_tab.py`
+  - `__init__`: `_publish_action_base_labels`.
+  - table construction: `setContextMenuPolicy` + `customContextMenuRequested`.
+  - `_build_publish_menu()`: records base labels, `setToolTipsVisible(True)`.
+  - `_uploader_label()`: prefers the base label.
+  - new `_inaturalist_action_label()`, `_inaturalist_action_hint()`,
+    `_sync_inaturalist_action_wording()`.
+  - `_update_publish_controls()`: calls the wording sync in both the
+    no-selection and normal paths; iNaturalist-only hint branch; `Both` tooltip
+    in the enabled and disabled cases.
+  - new `_show_observation_context_menu()`, `_selected_inaturalist_links()`,
+    `_confirm_clear_inaturalist_link()`,
+    `_clear_inaturalist_link_for_selection()`.
+  - `_resolve_inaturalist_link_before_publish()`: republish confirmation title
+    and text only.
+- `tests/test_inaturalist_publish_state_ux.py` — new, 23 tests.
+- `i18n/Sporely_{nb_NO,sv_SE,de_DE}.ts` — 18 new source strings, 2 obsolete
+  removed, via `tools/update_translations.sh`. The `.qm` files are unchanged
+  because the new strings are untranslated and `lrelease` omits them; they fall
+  back to English.
+
+No behavior in `utils/artsobs_uploaders.py`, the Stage 1/2 decision logic, the
+append/create flow, the batch result semantics or the `Both` gate was changed.
+
+### Verification
+
+`pytest tests/test_inaturalist_publish_state_ux.py
+tests/test_inaturalist_add_media_to_existing.py
+tests/test_inaturalist_stale_link_republish.py
+tests/test_artsobservasjoner_submit.py tests/test_publish_media_cache.py
+tests/test_publish_media_stage2.py tests/test_publish_plate_export.py
+tests/test_publish_targets.py tests/test_observations_tab_cloud_sync.py` —
+**218 passed**. No test makes a real iNaturalist request.
+
+The new file covers: create-oriented label/hint without a stored id;
+check-oriented label/hint with one, asserted not to say "Add images"; the
+iNaturalist-only button hint; `_uploader_label()` stability; no remote call
+during `_update_publish_controls`/`_sync_inaturalist_action_wording`/
+`_selected_inaturalist_links`; empty selection resetting the label; live → append
+mode; the append confirmation's count/id/duplicate text; missing → republish
+confirmation naming the id and carrying no duplicate warning; declined republish
+as a bare skip; unverified → warning with the detail and no republish offer;
+clear-link confirmed (id nulled, dirty/cloud-sync bookkeeping, UI refresh,
+status text, no API call); clear-link declined (nothing changes); the
+"not modified on iNaturalist" wording; multi-row clearing skipping unlinked
+rows; clear-link with nothing linked; the context menu's contents and
+enablement in both states; the `iNat` link still rendering for a stored id and
+disappearing once cleared; `Both` still disabled for a stored id with the new
+explanation, and still enabled for an unpublished find.
+
+### Human-gated verification
+
+No test instantiates the real `ObservationsTab`, so these need the running app:
+
+1. Select a find with **no** iNaturalist link — the publish menu entry reads
+   *Publish to iNaturalist*; hovering it shows the create hint.
+2. Select a find **with** a link — the entry reads *Update iNaturalist…* with
+   the check/add/repair hint, and is not greyed out.
+3. Browse and re-sort the table with linked finds selected and deselected —
+   no network activity, no delay, no iNaturalist errors.
+4. Right-click a linked row — *Clear iNaturalist link…* is present and enabled;
+   right-click an unlinked row — it is greyed out with the explanation.
+5. Clear a link, decline the dialog — the `iNat` link stays.
+6. Clear it again and confirm — the `iNat` link disappears, the action text
+   falls back to *Publish to iNaturalist*, and the observation still opens on
+   iNaturalist through the URL you noted from the dialog (proving nothing was
+   deleted remotely).
+7. Click the `iNat` link on a linked row — it opens the observation and changes
+   nothing.
+8. Invoke *Update iNaturalist…* on a live link — the Stage 2 append
+   confirmation appears, defaulting to No.
+9. Invoke it on a deleted remote observation — the *Republish to iNaturalist*
+   confirmation names the old id.
+10. Select a linked find with both targets enabled — *Both* is greyed out and
+    its tooltip points at the individual iNaturalist action.

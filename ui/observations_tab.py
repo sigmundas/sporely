@@ -2291,6 +2291,7 @@ class ObservationsTab(QWidget):
         self.selected_observation_id = None
         self._observations_splitter_syncing = False
         self._publish_actions: dict[str, object] = {}
+        self._publish_action_base_labels: dict[str, str] = {}
         self._artsobs_dead_by_observation_id: dict[int, bool] = {}
         self._artsobs_public_published_by_observation_id: dict[int, bool] = {}
         self._artsobs_check_thread: ArtsobsMobileLinkCheckWorker | None = None
@@ -2581,6 +2582,8 @@ class ObservationsTab(QWidget):
         self.table.setItemDelegate(_ObservationsMoveTargetHoverDelegate(self.table))
         self.table.itemSelectionChanged.connect(self.on_selection_changed)
         self.table.itemDoubleClicked.connect(self.on_row_double_clicked)
+        self.table.setContextMenuPolicy(Qt.CustomContextMenu)
+        self.table.customContextMenuRequested.connect(self._show_observation_context_menu)
         self.table.setSortingEnabled(True)
         self._observations_table_default_row_height = self.table.verticalHeader().defaultSectionSize()
 
@@ -4811,6 +4814,10 @@ class ObservationsTab(QWidget):
     def _build_publish_menu(self) -> None:
         self.publish_menu.clear()
         self._publish_actions = {}
+        # The iNaturalist action's visible text changes with the selection (see
+        # _sync_inaturalist_action_wording), so the plain service label is kept
+        # here for the status messages that name the target.
+        self._publish_action_base_labels = {}
         self._publish_direct_target_key = None
         self._publish_both_action = None
         self._disconnect_publish_click_if_needed()
@@ -4859,12 +4866,15 @@ class ObservationsTab(QWidget):
                 lambda _checked=False: self._publish_selected_observations("both")
             )
             self._publish_both_action = both_action
+        self.publish_menu.setToolTipsVisible(True)
         for uploader in enabled_uploaders:
-            action = self.publish_menu.addAction(self.tr(uploader.label))
+            base_label = self.tr(uploader.label)
+            action = self.publish_menu.addAction(base_label)
             action.triggered.connect(
                 lambda _checked=False, key=uploader.key: self._publish_selected_observations(key)
             )
             self._publish_actions[uploader.key] = action
+            self._publish_action_base_labels[uploader.key] = base_label
 
     def _disconnect_publish_click_if_needed(self) -> None:
         if not getattr(self, "_publish_direct_click_connected", False):
@@ -4891,6 +4901,12 @@ class ObservationsTab(QWidget):
             return self.tr("selected service")
         if key == "both":
             return self.tr("Both")
+        # Prefer the label the menu was built with: the iNaturalist action's
+        # visible text becomes state-aware ("Update iNaturalist…"), which would
+        # read wrong inside a sentence that names the service.
+        base_label = (getattr(self, "_publish_action_base_labels", None) or {}).get(key)
+        if base_label:
+            return base_label
         action = self._publish_actions.get(key)
         if action is not None and action.text():
             return action.text()
@@ -5122,6 +5138,48 @@ class ObservationsTab(QWidget):
             return False
         return self._selection_has_existing_upload_for_uploader(uploader_key)
 
+    # ------------------------------------------------------------------
+    # iNaturalist publish-state wording
+    #
+    # Only two states can be named without asking iNaturalist: "no stored
+    # link" and "a link is stored, whose remote state Sporely has not
+    # checked". Everything finer - live, deleted, unreachable - is known only
+    # after ``check_observation_link()``, which runs when the user invokes the
+    # action. The wording below therefore never promises that a stored link is
+    # reachable, and nothing here issues a remote request.
+    # ------------------------------------------------------------------
+
+    def _inaturalist_action_label(self, has_stored_link: bool) -> str:
+        if has_stored_link:
+            return self.tr("Update iNaturalist…")
+        return self.tr("Publish to iNaturalist")
+
+    def _inaturalist_action_hint(self, has_stored_link: bool) -> str:
+        if has_stored_link:
+            return self.tr(
+                "Check the linked iNaturalist observation, then add the selected images "
+                "or offer to republish if the link is stale."
+            )
+        return self.tr("Publish this find as a new iNaturalist observation.")
+
+    def _sync_inaturalist_action_wording(self) -> None:
+        """Retitle the iNaturalist action from local state only.
+
+        Called from the ordinary selection/enablement refresh, so it must stay
+        free of network access: it reads the stored ``inaturalist_id`` and
+        nothing else.
+        """
+        action = (getattr(self, "_publish_actions", None) or {}).get("inat")
+        if action is None:
+            return
+        has_stored_link = self._selection_has_existing_upload_for_uploader("inat")
+        label = self._inaturalist_action_label(has_stored_link)
+        hint = self._inaturalist_action_hint(has_stored_link)
+        if action.text() != label:
+            action.setText(label)
+        action.setToolTip(hint)
+        action.setStatusTip(hint)
+
     def _publish_target_logged_in(self, uploader_key: str) -> bool:
         key = (uploader_key or "").strip().lower()
         if key in {"mobile", "web"}:
@@ -5335,6 +5393,7 @@ class ObservationsTab(QWidget):
                 both_action.setEnabled(False)
             self.publish_btn.setEnabled(False)
             self.publish_btn.setProperty("_hint_text", self.tr("Select one or more observations to publish."))
+            self._sync_inaturalist_action_wording()
             if hasattr(self, "plate_btn"):
                 self.plate_btn.setEnabled(False)
             return
@@ -5349,6 +5408,7 @@ class ObservationsTab(QWidget):
                 action.setEnabled(enabled)
             if enabled:
                 any_target_enabled = True
+        self._sync_inaturalist_action_wording()
 
         if both_action is not None:
             # "Both" publishes to Artsobservasjoner first and iNaturalist second,
@@ -5363,6 +5423,17 @@ class ObservationsTab(QWidget):
             both_action.setEnabled(bool(both_enabled))
             if both_enabled:
                 any_target_enabled = True
+                both_action.setToolTip(
+                    self.tr("Publish to Artsobservasjoner and iNaturalist in one pass.")
+                )
+            else:
+                both_action.setToolTip(
+                    self.tr(
+                        "Unavailable: the selection already has a publication ID. "
+                        "Use the individual iNaturalist action to add images to a linked "
+                        "observation or to repair a stale link."
+                    )
+                )
 
         self.publish_btn.setEnabled(has_selection and any_target_enabled)
         if len(enabled_keys) > 1:
@@ -5394,12 +5465,22 @@ class ObservationsTab(QWidget):
         elif len(enabled_keys) == 1:
             target_key = enabled_keys[0]
             target_label = self._uploader_label(target_key)
-            self.publish_btn.setProperty(
-                "_hint_text",
-                self.tr(
-                    "Publish directly to {target}. Saved login will be used automatically if available; otherwise Publish opens Online publishing."
-                ).format(target=target_label),
-            )
+            if target_key == "inat" and self._selection_has_existing_upload_for_uploader("inat"):
+                # iNaturalist is the only target and the selection is already
+                # linked, so "Publish directly to …" would misdescribe what the
+                # button does. What it actually does depends on a link check
+                # that has not happened yet.
+                self.publish_btn.setProperty(
+                    "_hint_text",
+                    self._inaturalist_action_hint(True),
+                )
+            else:
+                self.publish_btn.setProperty(
+                    "_hint_text",
+                    self.tr(
+                        "Publish directly to {target}. Saved login will be used automatically if available; otherwise Publish opens Online publishing."
+                    ).format(target=target_label),
+                )
         else:
             enabled_labels = self._enabled_uploader_labels(enabled_keys)
             if both_action is not None and {"web", "inat"}.issubset(set(enabled_keys)):
@@ -10857,11 +10938,13 @@ class ObservationsTab(QWidget):
 
         confirmed = ask_wrapped_yes_no(
             self,
-            self.tr("Stale iNaturalist link"),
+            self.tr("Republish to iNaturalist"),
             self.tr(
-                "The linked iNaturalist observation no longer exists.\n\n"
-                "Publish this find as a new iNaturalist observation?"
-            ),
+                "The linked iNaturalist observation {id} no longer exists.\n\n"
+                "Publish this find as a new iNaturalist observation?\n\n"
+                "Sporely's stored link is replaced only if the new observation is "
+                "created successfully."
+            ).format(id=existing_inat_id),
             default_yes=False,
         )
         if not confirmed:
@@ -10895,6 +10978,136 @@ class ObservationsTab(QWidget):
                 "Nothing else on the iNaturalist observation is changed."
             ).format(count=len(upload_image_paths), id=existing_observation_id),
             default_yes=False,
+        )
+
+    # ------------------------------------------------------------------
+    # Manual link repair: clearing Sporely's stored iNaturalist link
+    # ------------------------------------------------------------------
+
+    def _show_observation_context_menu(self, pos) -> None:
+        """Row context menu. Currently the home of the link-repair escape hatch."""
+        index = self.table.indexAt(pos)
+        if index.isValid():
+            selection_model = self.table.selectionModel()
+            selected_rows = (
+                {selected.row() for selected in selection_model.selectedRows()}
+                if selection_model
+                else set()
+            )
+            if index.row() not in selected_rows:
+                self.table.selectRow(index.row())
+
+        menu = QMenu(self)
+        menu.setToolTipsVisible(True)
+        clear_action = menu.addAction(self.tr("Clear iNaturalist link…"))
+        linked = self._selected_inaturalist_links()
+        clear_action.setEnabled(bool(linked))
+        if linked:
+            clear_action.setToolTip(
+                self.tr("Remove Sporely's stored iNaturalist link. Nothing on iNaturalist is changed.")
+            )
+        else:
+            clear_action.setToolTip(
+                self.tr("Unavailable: none of the selected observations has a stored iNaturalist link.")
+            )
+        clear_action.triggered.connect(lambda _checked=False: self._clear_inaturalist_link_for_selection())
+        menu.exec(self.table.viewport().mapToGlobal(pos))
+
+    def _selected_inaturalist_links(self) -> list[tuple[int, int]]:
+        """``(observation_id, inaturalist_id)`` for selected rows that have a link."""
+        links: list[tuple[int, int]] = []
+        for observation_id in self._selected_observation_ids():
+            obs = ObservationDB.get_observation(observation_id)
+            if not obs:
+                continue
+            try:
+                inaturalist_id = int(obs.get("inaturalist_id") or 0)
+            except (TypeError, ValueError):
+                continue
+            if inaturalist_id > 0:
+                links.append((observation_id, inaturalist_id))
+        return links
+
+    def _confirm_clear_inaturalist_link(self, links: list[tuple[int, int]]) -> bool:
+        """Ask before dropping a stored link, naming the remote ids being forgotten.
+
+        This is a recovery tool for a link that has gone wrong, so the one thing
+        the message has to make unmistakable is that it is local-only: no
+        iNaturalist request is made, and no remote observation or photo is
+        touched.
+        """
+        remote_ids = ", ".join(str(inaturalist_id) for _obs_id, inaturalist_id in links)
+        if len(links) == 1:
+            question = self.tr(
+                "Clear Sporely's link to iNaturalist observation {ids}?"
+            ).format(ids=remote_ids)
+        else:
+            question = self.tr(
+                "Clear Sporely's links to {count} iNaturalist observations ({ids})?"
+            ).format(count=len(links), ids=remote_ids)
+        explanation = self.tr(
+            "This removes the stored iNaturalist link from Sporely only. "
+            "It does not delete or modify anything on iNaturalist: the observation "
+            "and its photos stay exactly as they are.\n\n"
+            "Afterwards Sporely treats the find as unpublished, so publishing again "
+            "would create a new iNaturalist observation."
+        )
+        return ask_wrapped_yes_no(
+            self,
+            self.tr("Clear iNaturalist link"),
+            f"{question}\n\n{explanation}",
+            default_yes=False,
+        )
+
+    def _clear_inaturalist_link_for_selection(self) -> None:
+        links = self._selected_inaturalist_links()
+        if not links:
+            self.set_status_message(
+                self.tr("None of the selected observations has a stored iNaturalist link."),
+                level="warning",
+                auto_clear_ms=12000,
+            )
+            return
+        if not self._confirm_clear_inaturalist_link(links):
+            return
+
+        cleared: list[int] = []
+        failures: list[str] = []
+        for observation_id, _inaturalist_id in links:
+            try:
+                # The ordinary setter: it nulls the column and marks the row
+                # dirty, which is the same metadata bookkeeping a publish uses.
+                # No iNaturalist request is involved on this path.
+                ObservationDB.set_inaturalist_id(observation_id, None)
+            except Exception as exc:
+                failures.append(str(exc))
+                continue
+            cleared.append(observation_id)
+            self.schedule_metadata_cloud_sync(observation_id)
+
+        for observation_id in cleared:
+            row = self._find_table_row_for_observation(observation_id)
+            if row >= 0:
+                updated_obs = ObservationDB.get_observation(observation_id)
+                self._render_publish_cell(
+                    row,
+                    updated_obs or {"id": observation_id, "inaturalist_id": None},
+                )
+        self._update_publish_controls()
+
+        if failures:
+            self.set_status_message(
+                self.tr("Could not clear the iNaturalist link: {error}").format(error=failures[0]),
+                level="error",
+                auto_clear_ms=15000,
+            )
+            return
+        self.set_status_message(
+            self.tr("Cleared the stored iNaturalist link for {count} observation(s). Nothing on iNaturalist was changed.").format(
+                count=len(cleared)
+            ),
+            level="info",
+            auto_clear_ms=12000,
         )
 
     def _preferred_publish_uploader_key(self, obs: dict, requested_uploader_key: str | None = None) -> str:
