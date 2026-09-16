@@ -22,7 +22,7 @@ from types import SimpleNamespace
 
 import pytest
 from PySide6.QtCore import QPoint
-from PySide6.QtWidgets import QApplication, QLabel, QMenu, QTableWidget
+from PySide6.QtWidgets import QApplication, QLabel, QMenu, QPushButton, QTableWidget
 
 from ui import observations_tab
 from ui.observations_tab import ObservationsTab
@@ -64,12 +64,37 @@ class _ExplodingUploader:
         raise AssertionError("check_observation_link must be user-action driven")
 
 
-def _fake_tab(monkeypatch, *, observations, selected_ids, enabled_keys=("web", "inat")):
+_UPLOADER_LABELS = {
+    "web": "Artsobservasjoner",
+    "inat": "iNaturalist",
+    "artportalen": "Artportalen",
+}
+
+
+def _uploader_stubs(keys):
+    return [
+        SimpleNamespace(key=key, label=_UPLOADER_LABELS.get(key, key)) for key in keys
+    ]
+
+
+def _fake_tab(
+    monkeypatch,
+    *,
+    observations,
+    selected_ids,
+    enabled_keys=("web", "inat"),
+    build_menu=False,
+):
     """A minimal stand-in for ObservationsTab carrying only publish-UI state.
 
     ``observations`` maps local observation id to its row dict, so the real
     local-state helpers (``_observation_has_existing_upload``,
     ``_selection_has_existing_upload_for_uploader``) do the deciding.
+
+    With ``build_menu=True`` the publish surface is produced by the real
+    ``_build_publish_menu()`` rather than pre-populated here. That is the only
+    way to exercise the single-enabled-uploader branch, which wires the button
+    directly and creates no QAction at all.
     """
     recorded: dict[str, list] = {
         "status_messages": [],
@@ -83,20 +108,18 @@ def _fake_tab(monkeypatch, *, observations, selected_ids, enabled_keys=("web", "
     menu = QMenu()
     actions = {}
     base_labels = {}
-    for key in enabled_keys:
-        label = {"web": "Artsobservasjoner", "inat": "iNaturalist"}.get(key, key)
-        actions[key] = menu.addAction(label)
-        base_labels[key] = label
-    both_action = menu.addAction("Both") if {"web", "inat"}.issubset(set(enabled_keys)) else None
+    both_action = None
+    if not build_menu:
+        for key in enabled_keys:
+            label = _UPLOADER_LABELS.get(key, key)
+            actions[key] = menu.addAction(label)
+            base_labels[key] = label
+        if {"web", "inat"}.issubset(set(enabled_keys)):
+            both_action = menu.addAction("Both")
 
-    publish_btn = SimpleNamespace(
-        _props={},
-        _enabled=None,
-        setEnabled=lambda value: publish_btn.__setattr__("_enabled", bool(value)),
-        setProperty=lambda name, value: publish_btn._props.__setitem__(name, value),
-        setMenu=lambda menu_or_none: None,
-        property=lambda name: publish_btn._props.get(name),
-    )
+    # A real button, so the direct single-target path (which sets the button's
+    # own text) is observable instead of being stubbed away.
+    publish_btn = QPushButton("Publish")
 
     tab = SimpleNamespace(
         tr=lambda text: text,
@@ -107,6 +130,9 @@ def _fake_tab(monkeypatch, *, observations, selected_ids, enabled_keys=("web", "
         _publish_action_base_labels=base_labels,
         _publish_both_action=both_action,
         _publish_enabled_keys=list(enabled_keys),
+        _publish_direct_target_key=None,
+        _publish_direct_click_connected=False,
+        _enabled_publish_uploader_keys=lambda uploaders=None: list(enabled_keys),
         _delete_in_progress=False,
         _artsobs_dead_by_observation_id={},
         _artsobs_public_published_by_observation_id={},
@@ -132,10 +158,12 @@ def _fake_tab(monkeypatch, *, observations, selected_ids, enabled_keys=("web", "
         "_enabled_uploader_labels",
         "_selection_has_existing_upload_for_uploader",
         "_selection_blocks_publish_for_uploader",
+        "_inaturalist_selection_link_state",
         "_inaturalist_action_label",
         "_inaturalist_action_hint",
         "_sync_inaturalist_action_wording",
         "_update_publish_controls",
+        "_build_publish_menu",
         "_selected_inaturalist_links",
         "_confirm_clear_inaturalist_link",
         "_clear_inaturalist_link_for_selection",
@@ -157,6 +185,10 @@ def _fake_tab(monkeypatch, *, observations, selected_ids, enabled_keys=("web", "
         ),
     )
     monkeypatch.setattr("utils.artsobs_uploaders.get_uploader", lambda key: _ExplodingUploader())
+    monkeypatch.setattr(
+        "utils.artsobs_uploaders.list_uploaders",
+        lambda: _uploader_stubs(enabled_keys),
+    )
     _forbid_network(monkeypatch)
 
     def _ask(parent, title, message, default_yes=False, **kwargs):
@@ -164,6 +196,14 @@ def _fake_tab(monkeypatch, *, observations, selected_ids, enabled_keys=("web", "
         return recorded.get("confirm", True)
 
     monkeypatch.setattr(observations_tab, "ask_wrapped_yes_no", _ask)
+
+    if build_menu:
+        # The real builder owns _publish_actions / _publish_action_base_labels /
+        # _publish_direct_target_key from here on.
+        real_disconnect = ObservationsTab._disconnect_publish_click_if_needed
+        tab._disconnect_publish_click_if_needed = lambda: real_disconnect(tab)
+        tab._build_publish_menu()
+
     return tab, recorded
 
 
@@ -228,6 +268,211 @@ def test_stored_link_hint_replaces_publish_directly_wording_for_inat_only(qapp, 
     hint = tab.publish_btn.property("_hint_text")
     assert "Publish directly to" not in hint
     assert "Check the linked iNaturalist observation" in hint
+
+
+# --------------------------------------------------------------------------
+# B. three-way local selection state: none / all / mixed
+#
+# The state is derived from stored ids only; a mixed selection must not be
+# summarised as either create-only or update-only.
+# --------------------------------------------------------------------------
+
+
+_MIXED_OBSERVATIONS = {
+    7: dict(_OBSERVATION_BASE, id=7, inaturalist_id=None),
+    8: dict(_OBSERVATION_BASE, id=8, inaturalist_id=4242),
+}
+
+
+def test_selection_state_none_linked(qapp, monkeypatch):
+    tab, _recorded = _fake_tab(
+        monkeypatch,
+        observations={
+            7: dict(_OBSERVATION_BASE, id=7, inaturalist_id=None),
+            8: dict(_OBSERVATION_BASE, id=8, inaturalist_id=None),
+        },
+        selected_ids=[7, 8],
+    )
+
+    tab._update_publish_controls()
+
+    assert tab._inaturalist_selection_link_state() == observations_tab.INAT_SELECTION_NONE_LINKED
+    action = tab._publish_actions["inat"]
+    assert action.text() == "Publish to iNaturalist"
+    assert action.toolTip() == (
+        "Publish the selected find(s) as new iNaturalist observations."
+    )
+
+
+def test_selection_state_all_linked(qapp, monkeypatch):
+    tab, _recorded = _fake_tab(
+        monkeypatch,
+        observations={
+            7: dict(_OBSERVATION_BASE, id=7, inaturalist_id=4242),
+            8: dict(_OBSERVATION_BASE, id=8, inaturalist_id=5150),
+        },
+        selected_ids=[7, 8],
+    )
+
+    tab._update_publish_controls()
+
+    assert tab._inaturalist_selection_link_state() == observations_tab.INAT_SELECTION_ALL_LINKED
+    action = tab._publish_actions["inat"]
+    assert action.text() == "Update iNaturalist…"
+    assert action.toolTip() == (
+        "Check the linked iNaturalist observation, then add the selected images "
+        "or offer to republish if the link is stale."
+    )
+
+
+def test_selection_state_mixed_claims_neither_create_only_nor_update_only(qapp, monkeypatch):
+    tab, _recorded = _fake_tab(
+        monkeypatch,
+        observations={key: dict(value) for key, value in _MIXED_OBSERVATIONS.items()},
+        selected_ids=[7, 8],
+    )
+
+    tab._update_publish_controls()
+
+    assert tab._inaturalist_selection_link_state() == observations_tab.INAT_SELECTION_MIXED
+    action = tab._publish_actions["inat"]
+    # Not "Update iNaturalist…": observation 7 will be created, not updated.
+    assert action.text() == "Publish / update iNaturalist…"
+    hint = action.toolTip()
+    assert "Publish unlinked finds as new iNaturalist observations" in hint
+    assert "check the linked" in hint
+    assert "add the selected images" in hint
+    assert "republish if a link is stale" in hint
+
+
+def test_selection_state_empty(qapp, monkeypatch):
+    tab, _recorded = _fake_tab(
+        monkeypatch,
+        observations={key: dict(value) for key, value in _MIXED_OBSERVATIONS.items()},
+        selected_ids=[],
+    )
+
+    tab._update_publish_controls()
+
+    assert tab._inaturalist_selection_link_state() == observations_tab.INAT_SELECTION_EMPTY
+    action = tab._publish_actions["inat"]
+    assert action.isEnabled() is False
+    assert action.text() == "Publish to iNaturalist"
+    assert tab.publish_btn.property("_hint_text") == (
+        "Select one or more observations to publish."
+    )
+
+
+# --------------------------------------------------------------------------
+# A. the real single-enabled-uploader path: no QAction exists, so the button
+# itself must carry the wording.
+# --------------------------------------------------------------------------
+
+
+def _direct_tab(monkeypatch, *, observations, selected_ids, key="inat"):
+    tab, recorded = _fake_tab(
+        monkeypatch,
+        observations=observations,
+        selected_ids=selected_ids,
+        enabled_keys=(key,),
+        build_menu=True,
+    )
+    # Proof that this really is the direct path and not the menu path.
+    assert tab._publish_actions == {}
+    assert tab._publish_direct_target_key == key
+    return tab, recorded
+
+
+def test_direct_single_target_button_is_create_oriented_without_a_link(qapp, monkeypatch):
+    tab, _recorded = _direct_tab(
+        monkeypatch,
+        observations={7: dict(_OBSERVATION_BASE, inaturalist_id=None)},
+        selected_ids=[7],
+    )
+
+    tab._update_publish_controls()
+
+    assert tab.publish_btn.text() == "Publish to iNaturalist"
+    assert tab.publish_btn.property("_hint_text") == (
+        "Publish the selected find(s) as new iNaturalist observations."
+    )
+
+
+def test_direct_single_target_button_says_update_when_linked(qapp, monkeypatch):
+    tab, _recorded = _direct_tab(
+        monkeypatch,
+        observations={7: dict(_OBSERVATION_BASE, inaturalist_id=4242)},
+        selected_ids=[7],
+    )
+
+    tab._update_publish_controls()
+
+    # This is the bug the fake-action tests could not see: the button used to
+    # say "Publish" in every state.
+    assert tab.publish_btn.text() == "Update iNaturalist…"
+    hint = tab.publish_btn.property("_hint_text")
+    assert "Check the linked iNaturalist observation" in hint
+    assert "Publish directly to" not in hint
+
+
+def test_direct_single_target_button_is_mixed_for_a_mixed_selection(qapp, monkeypatch):
+    tab, _recorded = _direct_tab(
+        monkeypatch,
+        observations={key: dict(value) for key, value in _MIXED_OBSERVATIONS.items()},
+        selected_ids=[7, 8],
+    )
+
+    tab._update_publish_controls()
+
+    assert tab.publish_btn.text() == "Publish / update iNaturalist…"
+    assert "Publish unlinked finds as new iNaturalist observations" in tab.publish_btn.property(
+        "_hint_text"
+    )
+
+
+def test_direct_single_target_button_returns_to_create_wording_without_a_selection(
+    qapp, monkeypatch
+):
+    tab, _recorded = _direct_tab(
+        monkeypatch,
+        observations={7: dict(_OBSERVATION_BASE, inaturalist_id=4242)},
+        selected_ids=[7],
+    )
+    tab._update_publish_controls()
+    assert tab.publish_btn.text() == "Update iNaturalist…"
+
+    tab._selected_observation_ids = lambda: []
+    tab._update_publish_controls()
+
+    assert tab.publish_btn.text() == "Publish to iNaturalist"
+
+
+def test_direct_single_target_wording_is_unchanged_for_other_services(qapp, monkeypatch):
+    tab, _recorded = _direct_tab(
+        monkeypatch,
+        observations={7: dict(_OBSERVATION_BASE, id=7, artsdata_id=0)},
+        selected_ids=[7],
+        key="web",
+    )
+
+    tab._update_publish_controls()
+
+    assert tab.publish_btn.text() == "Publish"
+    assert "Publish directly to Artsobservasjoner" in tab.publish_btn.property("_hint_text")
+
+
+def test_direct_single_target_records_the_stable_service_label(qapp, monkeypatch):
+    tab, _recorded = _direct_tab(
+        monkeypatch,
+        observations={7: dict(_OBSERVATION_BASE, inaturalist_id=4242)},
+        selected_ids=[7],
+    )
+
+    tab._update_publish_controls()
+
+    assert tab.publish_btn.text() == "Update iNaturalist…"
+    # ...but sentences that name the target still get the service name.
+    assert tab._uploader_label("inat") == "iNaturalist"
 
 
 def test_status_messages_still_name_the_plain_service_label(qapp, monkeypatch):
@@ -632,3 +877,133 @@ def test_both_is_available_when_nothing_is_published_yet(qapp, monkeypatch):
     tab._update_publish_controls()
 
     assert tab._publish_both_action.isEnabled() is True
+
+
+def test_both_disabled_by_artsobservasjoner_alone_names_that_blocker(qapp, monkeypatch):
+    """The blocker here is the web publication, so the tooltip must not blame iNaturalist."""
+    tab, _recorded = _fake_tab(
+        monkeypatch,
+        observations={
+            7: dict(_OBSERVATION_BASE, id=7, artsdata_id=99, inaturalist_id=None)
+        },
+        selected_ids=[7],
+    )
+
+    tab._update_publish_controls()
+
+    tooltip = tab._publish_both_action.toolTip()
+    assert tab._publish_both_action.isEnabled() is False
+    assert "Artsobservasjoner" in tooltip
+    assert "iNaturalist" not in tooltip
+    assert "Use the individual publishing actions instead." in tooltip
+
+
+def test_both_disabled_by_both_ids_names_both_blockers(qapp, monkeypatch):
+    tab, _recorded = _fake_tab(
+        monkeypatch,
+        observations={
+            7: dict(_OBSERVATION_BASE, id=7, artsdata_id=99, inaturalist_id=4242)
+        },
+        selected_ids=[7],
+    )
+
+    tab._update_publish_controls()
+
+    tooltip = tab._publish_both_action.toolTip()
+    assert "Artsobservasjoner, iNaturalist" in tooltip
+    assert "Use the individual publishing actions instead." in tooltip
+
+
+# --------------------------------------------------------------------------
+# C. batch/status summaries must use the stable service name
+#
+# The iNaturalist action text is deliberately state-dependent, and in
+# single-target mode no action exists at all, so neither can be the source of
+# the target name in a sentence.
+# --------------------------------------------------------------------------
+
+
+def _batch_tab(monkeypatch, *, results, enabled_keys=("web", "inat"), build_menu=False):
+    """A tab whose uploads return canned ``(ok, uploaded_id, error)`` tuples."""
+    observations = {7: dict(_OBSERVATION_BASE, id=7, inaturalist_id=4242)}
+    tab, recorded = _fake_tab(
+        monkeypatch,
+        observations=observations,
+        selected_ids=[7],
+        enabled_keys=enabled_keys,
+        build_menu=build_menu,
+    )
+    tab._invalidate_publish_login_status_cache = lambda: None
+    tab._publish_target_login_status = lambda force_refresh=False: {
+        key: True for key in enabled_keys
+    }
+    tab._publish_target_saved_login_status = lambda force_refresh=False: {
+        key: True for key in enabled_keys
+    }
+    tab._ensure_selection_publish_target = lambda key, observation_ids: True
+    tab.refresh_observations = lambda: None
+    tab.upload_observation_to_artsobs = lambda observation_id, **kwargs: results.pop(0)
+    tab._publish_selected_observations = lambda key, **kwargs: (
+        ObservationsTab._publish_selected_observations(tab, key, **kwargs)
+    )
+    return tab, recorded
+
+
+def _last_message(recorded):
+    return recorded["status_messages"][-1][0]
+
+
+def test_batch_success_summary_uses_the_service_name_not_the_action_text(qapp, monkeypatch):
+    tab, recorded = _batch_tab(monkeypatch, results=[(True, 1, None)])
+    tab._update_publish_controls()
+    assert tab._publish_actions["inat"].text() == "Update iNaturalist…"
+
+    tab._publish_selected_observations("inat")
+
+    assert _last_message(recorded) == "Published 1 observations to iNaturalist."
+
+
+def test_batch_summary_in_direct_single_target_mode_never_leaks_the_raw_key(qapp, monkeypatch):
+    tab, recorded = _batch_tab(
+        monkeypatch,
+        results=[(True, 1, None)],
+        enabled_keys=("inat",),
+        build_menu=True,
+    )
+    tab._update_publish_controls()
+    # No QAction on this path - the old fallback produced the bare key.
+    assert tab._publish_actions == {}
+
+    tab._publish_selected_observations("inat")
+
+    message = _last_message(recorded)
+    assert message == "Published 1 observations to iNaturalist."
+    assert "inat." not in message
+
+
+def test_batch_partial_summary_uses_the_service_name(qapp, monkeypatch):
+    tab, recorded = _batch_tab(monkeypatch, results=[(True, 1, "1 image failed")])
+
+    tab._publish_selected_observations("inat")
+
+    message = _last_message(recorded)
+    assert "Published 1 observations to iNaturalist, with warnings." in message
+    assert "1 image failed" in message
+
+
+def test_batch_failure_summary_uses_the_service_name(qapp, monkeypatch):
+    tab, recorded = _batch_tab(monkeypatch, results=[(False, None, "HTTP 500")])
+
+    tab._publish_selected_observations("inat")
+
+    message = _last_message(recorded)
+    assert message.startswith("Publishing to iNaturalist failed for all selected observations.")
+    assert "HTTP 500" in message
+
+
+def test_batch_cancel_summary_uses_the_service_name(qapp, monkeypatch):
+    tab, recorded = _batch_tab(monkeypatch, results=[(False, None, None)])
+
+    tab._publish_selected_observations("inat")
+
+    assert _last_message(recorded) == "Publishing to iNaturalist was cancelled."

@@ -15,6 +15,16 @@ from types import SimpleNamespace
 import pytest
 
 from ui import observations_tab
+
+
+def _stable_uploader_label(uploader_key: str) -> str:
+    """The stable service name, as the real ``_uploader_label`` returns it.
+
+    The iNaturalist action text is state-aware ("Update iNaturalist…"), so the
+    batch summaries must not be built from it.
+    """
+    return {"web": "Artsobservasjoner", "inat": "iNaturalist"}.get(uploader_key, uploader_key)
+
 from utils.artsobs_uploaders import INaturalistUploader
 
 
@@ -567,6 +577,8 @@ def _both_tab(inat_has_existing_upload: bool, calls: list, messages: list):
         _invalidate_publish_login_status_cache=lambda: None,
         _update_publish_controls=lambda: None,
         _publish_actions={},
+        # Status sentences name the service, not the state-aware action text.
+        _uploader_label=_stable_uploader_label,
         _selection_has_existing_upload_for_uploader=lambda key: (
             inat_has_existing_upload if key == "inat" else False
         ),
@@ -650,6 +662,8 @@ def _batch_tab(results: dict[int, tuple], observation_ids: list[int], messages: 
         _invalidate_publish_login_status_cache=lambda: None,
         _update_publish_controls=lambda: None,
         _publish_actions={},
+        # Status sentences name the service, not the state-aware action text.
+        _uploader_label=_stable_uploader_label,
         _selection_has_existing_upload_for_uploader=lambda key: False,
         _selection_blocks_publish_for_uploader=lambda key: False,
         _selection_matches_uploader_target=lambda key: True,
@@ -779,7 +793,9 @@ def test_batch_all_clean_successes_keep_the_plain_success_summary():
 
     text, level = _final(messages)
     assert level == "success"
-    assert text == "Published 2 observations to inat."
+    # The target is named by the stable service label, never the raw key and
+    # never the state-aware action text.
+    assert text == "Published 2 observations to iNaturalist."
 
 
 def test_batch_partial_success_only_is_a_warning():

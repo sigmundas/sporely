@@ -2185,6 +2185,15 @@ class _ObservationImageBrowser(QWidget):
 INAT_PUBLISH_MODE_CREATE = "create"
 INAT_PUBLISH_MODE_APPEND = "append"
 
+# How the current selection relates to iNaturalist, derived from stored local
+# ids alone. The publish wording is chosen from this and nothing else: a mixed
+# selection really does both a create and an update, and claiming either one
+# for the whole selection hides the other.
+INAT_SELECTION_EMPTY = "empty"
+INAT_SELECTION_NONE_LINKED = "none_linked"
+INAT_SELECTION_ALL_LINKED = "all_linked"
+INAT_SELECTION_MIXED = "mixed"
+
 
 @dataclass(frozen=True)
 class InatPublishDecision:
@@ -4847,6 +4856,10 @@ class ObservationsTab(QWidget):
         if len(enabled_uploaders) == 1:
             uploader = enabled_uploaders[0]
             self._publish_direct_target_key = uploader.key
+            base_label = self.tr(uploader.label)
+            # No QAction exists on this path, so the stable service label still
+            # has to be recorded for the status messages that name the target.
+            self._publish_action_base_labels[uploader.key] = base_label
             self.publish_btn.setMenu(None)
             self.publish_btn.clicked.connect(
                 lambda _checked=False, key=uploader.key: self._publish_selected_observations(key)
@@ -4855,8 +4868,11 @@ class ObservationsTab(QWidget):
             self.publish_btn.setText(self.tr("Publish"))
             self.publish_btn.setProperty(
                 "_hint_text",
-                self.tr("Publish directly to {target}.").format(target=self.tr(uploader.label)),
+                self.tr("Publish directly to {target}.").format(target=base_label),
             )
+            # The button is the only visible surface here, so it - not a menu
+            # action - carries the create/update distinction.
+            self._sync_inaturalist_action_wording()
             return
 
         self.publish_btn.setMenu(self.publish_menu)
@@ -4907,9 +4923,8 @@ class ObservationsTab(QWidget):
         base_label = (getattr(self, "_publish_action_base_labels", None) or {}).get(key)
         if base_label:
             return base_label
-        action = self._publish_actions.get(key)
-        if action is not None and action.text():
-            return action.text()
+        # Deliberately never fall back to the QAction text: it is state-aware
+        # ("Update iNaturalist…") and would read wrong inside such a sentence.
         try:
             from utils.artsobs_uploaders import get_uploader
 
@@ -5149,18 +5164,46 @@ class ObservationsTab(QWidget):
     # reachable, and nothing here issues a remote request.
     # ------------------------------------------------------------------
 
-    def _inaturalist_action_label(self, has_stored_link: bool) -> str:
-        if has_stored_link:
+    def _inaturalist_selection_link_state(self) -> str:
+        """Classify the selection by stored iNaturalist ids, without any request.
+
+        An observation that is no longer in the database counts as unlinked: it
+        has no stored id to update.
+        """
+        observation_ids = self._selected_observation_ids()
+        if not observation_ids:
+            return INAT_SELECTION_EMPTY
+        linked = 0
+        for observation_id in observation_ids:
+            obs = ObservationDB.get_observation(observation_id)
+            if obs and self._observation_has_existing_upload(obs, "inat"):
+                linked += 1
+        if linked == 0:
+            return INAT_SELECTION_NONE_LINKED
+        if linked == len(observation_ids):
+            return INAT_SELECTION_ALL_LINKED
+        return INAT_SELECTION_MIXED
+
+    def _inaturalist_action_label(self, selection_state: str) -> str:
+        if selection_state == INAT_SELECTION_ALL_LINKED:
             return self.tr("Update iNaturalist…")
+        if selection_state == INAT_SELECTION_MIXED:
+            return self.tr("Publish / update iNaturalist…")
         return self.tr("Publish to iNaturalist")
 
-    def _inaturalist_action_hint(self, has_stored_link: bool) -> str:
-        if has_stored_link:
+    def _inaturalist_action_hint(self, selection_state: str) -> str:
+        if selection_state == INAT_SELECTION_ALL_LINKED:
             return self.tr(
                 "Check the linked iNaturalist observation, then add the selected images "
                 "or offer to republish if the link is stale."
             )
-        return self.tr("Publish this find as a new iNaturalist observation.")
+        if selection_state == INAT_SELECTION_MIXED:
+            return self.tr(
+                "Publish unlinked finds as new iNaturalist observations; check the linked "
+                "observations and then add the selected images or offer to republish if a "
+                "link is stale."
+            )
+        return self.tr("Publish the selected find(s) as new iNaturalist observations.")
 
     def _sync_inaturalist_action_wording(self) -> None:
         """Retitle the iNaturalist action from local state only.
@@ -5168,17 +5211,27 @@ class ObservationsTab(QWidget):
         Called from the ordinary selection/enablement refresh, so it must stay
         free of network access: it reads the stored ``inaturalist_id`` and
         nothing else.
+
+        When iNaturalist is the only enabled target there is no menu action at
+        all - the publish button is wired straight to it - so the button itself
+        carries the wording.
         """
-        action = (getattr(self, "_publish_actions", None) or {}).get("inat")
-        if action is None:
+        actions = getattr(self, "_publish_actions", None) or {}
+        action = actions.get("inat")
+        is_direct_inat = getattr(self, "_publish_direct_target_key", None) == "inat"
+        if action is None and not is_direct_inat:
             return
-        has_stored_link = self._selection_has_existing_upload_for_uploader("inat")
-        label = self._inaturalist_action_label(has_stored_link)
-        hint = self._inaturalist_action_hint(has_stored_link)
-        if action.text() != label:
-            action.setText(label)
-        action.setToolTip(hint)
-        action.setStatusTip(hint)
+        selection_state = self._inaturalist_selection_link_state()
+        label = self._inaturalist_action_label(selection_state)
+        hint = self._inaturalist_action_hint(selection_state)
+        if action is not None:
+            if action.text() != label:
+                action.setText(label)
+            action.setToolTip(hint)
+            action.setStatusTip(hint)
+        if is_direct_inat and hasattr(self, "publish_btn"):
+            if self.publish_btn.text() != label:
+                self.publish_btn.setText(label)
 
     def _publish_target_logged_in(self, uploader_key: str) -> bool:
         key = (uploader_key or "").strip().lower()
@@ -5416,23 +5469,38 @@ class ObservationsTab(QWidget):
             # already been sent. A stored iNaturalist id therefore still blocks
             # "Both"; the individual iNaturalist action stays available so that
             # stale links can be repaired there.
-            both_enabled = has_selection and not any(
-                self._selection_has_existing_upload_for_uploader(key)
+            blocking_keys = [
+                key
                 for key in ("web", "inat")
-            )
+                if self._selection_has_existing_upload_for_uploader(key)
+            ]
+            both_enabled = has_selection and not blocking_keys
             both_action.setEnabled(bool(both_enabled))
             if both_enabled:
                 any_target_enabled = True
                 both_action.setToolTip(
                     self.tr("Publish to Artsobservasjoner and iNaturalist in one pass.")
                 )
-            else:
+            elif blocking_keys == ["inat"]:
+                # Only the iNaturalist half is blocked, so the individual
+                # iNaturalist action really is the route forward.
                 both_action.setToolTip(
                     self.tr(
-                        "Unavailable: the selection already has a publication ID. "
+                        "Unavailable: the selection already has an iNaturalist ID. "
                         "Use the individual iNaturalist action to add images to a linked "
                         "observation or to repair a stale link."
                     )
+                )
+            else:
+                # An existing Artsobservasjoner publication is what blocks Both
+                # here; pointing at the iNaturalist action would misname the
+                # blocker.
+                blocked_labels = ", ".join(self._enabled_uploader_labels(blocking_keys))
+                both_action.setToolTip(
+                    self.tr(
+                        "Unavailable: the selection already has a publication ID in "
+                        "{targets}. Use the individual publishing actions instead."
+                    ).format(targets=blocked_labels or self.tr("the selected service"))
                 )
 
         self.publish_btn.setEnabled(has_selection and any_target_enabled)
@@ -5465,14 +5533,16 @@ class ObservationsTab(QWidget):
         elif len(enabled_keys) == 1:
             target_key = enabled_keys[0]
             target_label = self._uploader_label(target_key)
-            if target_key == "inat" and self._selection_has_existing_upload_for_uploader("inat"):
-                # iNaturalist is the only target and the selection is already
-                # linked, so "Publish directly to …" would misdescribe what the
-                # button does. What it actually does depends on a link check
-                # that has not happened yet.
+            if target_key == "inat":
+                # iNaturalist is the only target, so "Publish directly to …"
+                # would misdescribe what the button does whenever any selected
+                # row is linked. What it actually does depends on a link check
+                # that has not happened yet, so the hint mirrors the button.
                 self.publish_btn.setProperty(
                     "_hint_text",
-                    self._inaturalist_action_hint(True),
+                    self._inaturalist_action_hint(
+                        self._inaturalist_selection_link_state()
+                    ),
                 )
             else:
                 self.publish_btn.setProperty(
@@ -5571,8 +5641,10 @@ class ObservationsTab(QWidget):
             self._update_publish_controls()
             return
 
-        action = self._publish_actions.get(uploader_key)
-        target_label = action.text() if action else uploader_key
+        # The stable service name, never the action text: that is state-aware
+        # ("Update iNaturalist…") and in single-target mode there is no action
+        # at all, which used to leak the raw "inat" key into summaries.
+        target_label = self._uploader_label(uploader_key)
 
         total = len(observation_ids)
         success_count = 0

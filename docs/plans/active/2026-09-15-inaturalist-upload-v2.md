@@ -720,3 +720,115 @@ No test instantiates the real `ObservationsTab`, so these need the running app:
    confirmation names the old id.
 10. Select a linked find with both targets enabled — *Both* is greyed out and
     its tooltip points at the individual iNaturalist action.
+
+### Stage 3 correction — 2026-09-16
+
+Four UI-truthfulness gaps in the Stage 3 candidate `a546f54`. The Stage 3
+architecture is unchanged: still no background verification, still local state
+only, still per-observation confirmations, still the conservative `Both` block.
+
+**A. The single-target button had no state-aware wording.**
+`_build_publish_menu()`'s one-enabled-uploader branch wires `publish_btn`
+directly and returns before creating `_publish_actions["inat"]`, so
+`_sync_inaturalist_action_wording()` - which only retitled that action - did
+nothing in the commonest configuration. The button read *Publish* whether the
+selection was linked or not. `_sync_inaturalist_action_wording()` now also
+retitles `publish_btn` when `_publish_direct_target_key == "inat"`, and the
+direct branch calls it once at build time. The direct branch also records
+`_publish_action_base_labels[key]`, which previously existed only on the menu
+path. Wording for other single targets is untouched (*Publish*, plus the
+existing *Publish directly to …* hint).
+
+**B. A mixed selection is now its own state.**
+The old question - *does any selected row have a stored id?* - relabelled a
+mixed selection *Update iNaturalist…*, hiding the create that will happen on
+the unlinked rows. `_inaturalist_selection_link_state()` derives one of
+`INAT_SELECTION_EMPTY` / `NONE_LINKED` / `ALL_LINKED` / `MIXED` from stored ids
+alone, and `_inaturalist_action_label()`/`_inaturalist_action_hint()` take that
+state instead of a bool. A row missing from the database counts as unlinked.
+No remote request anywhere in the classification.
+
+| state | label | hint |
+| --- | --- | --- |
+| empty / none linked | `Publish to iNaturalist` | Publish the selected find(s) as new iNaturalist observations. |
+| all linked | `Update iNaturalist…` | Check the linked iNaturalist observation, then add the selected images or offer to republish if the link is stale. |
+| mixed | `Publish / update iNaturalist…` | Publish unlinked finds as new iNaturalist observations; check the linked observations and then add the selected images or offer to republish if a link is stale. |
+
+The iNaturalist-only button hint now mirrors the state in every case, not only
+when a link is stored.
+
+**C. Batch summaries use the stable service name.**
+`_publish_selected_observations()` built `target_label` from
+`_publish_actions[key].text()`, which is deliberately state-dependent - it
+could produce *Published 2 observations to Update iNaturalist….* - and fell
+back to the raw key `inat` in single-target mode, where no action exists. It
+now uses `_uploader_label(key)`. `_uploader_label()` itself lost its
+`action.text()` fallback for the same reason; it resolves through
+`_publish_action_base_labels`, then `get_uploader().label`, then the key.
+Result/tuple semantics are unchanged.
+
+**D. The `Both` disabled tooltip names the actual blocker.**
+The block is unchanged - either a stored Artsobservasjoner id or a stored
+iNaturalist id disables `Both` - but the explanation always told the user to use
+the individual iNaturalist action, which is wrong when only the web half is
+published. The blocking keys are now collected, and an iNaturalist-only block
+keeps the iNaturalist advice while any block involving Artsobservasjoner names
+the blocking service(s) and points at the individual publishing actions.
+
+`Clear iNaturalist link…` is untouched.
+
+#### Files changed
+
+* `ui/observations_tab.py` — `INAT_SELECTION_*` constants (2188-2196);
+  `_build_publish_menu()` single-target branch (4856-4876);
+  `_uploader_label()` (4923-4927);
+  `_inaturalist_selection_link_state()` / `_inaturalist_action_label()` /
+  `_inaturalist_action_hint()` / `_sync_inaturalist_action_wording()`
+  (5167-5234); `Both` tooltip in `_update_publish_controls()` (5469-5504);
+  iNaturalist-only button hint (5533-5546); batch `target_label` (5641-5647).
+* `tests/test_inaturalist_publish_state_ux.py` — `_fake_tab()` now uses a real
+  `QPushButton` and takes `build_menu=True` to run the real
+  `_build_publish_menu()`; 21 new tests.
+* `tests/test_inaturalist_stale_link_republish.py`,
+  `tests/test_artsobservasjoner_submit.py` — the batch/both fakes gained
+  `_uploader_label`, and the one assertion that pinned the old raw-key summary
+  (`"Published 2 observations to inat."`) now expects `iNaturalist`.
+* `i18n/Sporely_{nb_NO,sv_SE,de_DE}.ts` — regenerated
+  (`tools/update_translations.sh`): 5 new strings, 2 obsolete removed, plus
+  line-number churn. `.qm` left alone, as in the Stage 3 candidate.
+
+#### Verification
+
+`pytest tests/test_inaturalist_publish_state_ux.py
+tests/test_inaturalist_add_media_to_existing.py
+tests/test_inaturalist_stale_link_republish.py tests/test_publish_media_cache.py
+tests/test_publish_media_stage2.py tests/test_publish_plate_export.py
+tests/test_publish_targets.py tests/test_artsobservasjoner_submit.py` —
+**159 passed**.
+
+The five direct-button tests were confirmed to fail against the candidate's
+behaviour (the button-retitling line reverted), which is the gap the previous
+fake `_publish_actions["inat"]` setup hid.
+
+Full suite: `4035 passed, 34 failed, 54 errors` — identical counts at `a546f54`,
+in `tests/taxonomy/`, `test_observation_geography_sync.py`,
+`test_render_review_screenshots.py` and other areas this correction does not
+touch. `tests/test_cloud_media_recovery.py` still fails to import
+(`scripts/` has no `__init__.py`), also pre-existing.
+
+#### Human-gated verification
+
+The direct-button path needs the running app with iNaturalist as the only
+enabled publishing target:
+
+1. Enable iNaturalist only. Select an unlinked find — the button reads
+   *Publish to iNaturalist*.
+2. Select a linked find — it reads *Update iNaturalist…*.
+3. Select one linked and one unlinked find — it reads
+   *Publish / update iNaturalist…*, and the hint mentions both operations.
+4. Deselect everything — it returns to *Publish to iNaturalist*.
+5. Publish in that configuration — the summary says *…to iNaturalist*, never
+   *inat* and never *Update iNaturalist…*.
+6. With both targets enabled, select a find published to Artsobservasjoner only
+   — *Both* is greyed out and its tooltip names Artsobservasjoner, not the
+   iNaturalist action.
