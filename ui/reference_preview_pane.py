@@ -1,4 +1,4 @@
-"""Reusable community-dataset review pane (Summary / Raw spores / Method / Calibration / Provenance)."""
+"""Reusable reference review pane (Summary / Raw spores / Method / Calibration / Provenance)."""
 from __future__ import annotations
 
 from PySide6.QtCore import Qt
@@ -18,7 +18,15 @@ from PySide6.QtWidgets import (
 
 
 class ReferencePreviewPane(QWidget):
-    """Tabbed review pane for a community spore dataset.
+    """Tabbed review pane for one reference dataset.
+
+    Shared by every source in the Add reference picker -- the Library,
+    Community and My observations tabs all populate this one pane (see
+    ``AddReferenceDialog.preview_pane`` and
+    ``CommunityResultsPane._preview_pane``). Its placeholder text must
+    therefore stay source-neutral: it is equally on screen for a library
+    measurement set and for a personal observation, neither of which is a
+    "community result".
 
     Owns the QTabWidget and all sub-tab widgets. Callers populate it
     through the public API below; all tr() calls live here so strings
@@ -137,11 +145,11 @@ class ReferencePreviewPane(QWidget):
         self.summary_title_label.setText(self.tr("No dataset selected"))
         self.summary_meta_label.setText(
             self.tr(
-                "Search by genus (or genus + species) and choose a result to review stats, method, calibration, and provenance."
+                "Choose a result to review stats, method, calibration, and provenance."
             )
         )
         self.summary_note_label.setText(
-            self.tr("Import actions stay disabled until a search result is selected and loaded.")
+            self.tr("Actions stay disabled until a result is selected and loaded.")
         )
         self.provenance_summary_label.setText("")
         self.set_reported_statistics("")
@@ -153,16 +161,16 @@ class ReferencePreviewPane(QWidget):
             self.summary_table.setItem(row, 2, QTableWidgetItem("—"))
             self.summary_table.setItem(row, 3, QTableWidgetItem("—"))
         self.raw_spores_text.setPlainText(
-            self.tr("Select a community result to review raw spore points.")
+            self.tr("Select a result to review raw spore points.")
         )
         for label in self._method_labels.values():
             label.setText("—")
         self.calibration_text.setPlainText(
-            self.tr("Select a community result to review calibration details.")
+            self.tr("Select a result to review calibration details.")
         )
         self.provenance_text.setPlainText(
             self.tr(
-                "Select a community result to review contributor and source provenance."
+                "Select a result to review contributor and source provenance."
             )
         )
 

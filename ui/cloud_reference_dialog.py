@@ -49,6 +49,18 @@ from .reference_preview_pane import ReferencePreviewPane
 from .taxon_input_controller import TaxonInputController
 from .two_line_row import TwoLineRow
 
+# Quiet period after the last keystroke in the Community tab's search field
+# before a search is issued. One search is a QThread plus three network RPCs,
+# so this exists to keep an unthrottled keystroke from spending that on every
+# prefix of the word being typed.
+_COMMUNITY_SEARCH_DEBOUNCE_MS = 350
+
+# Shortest genus a community search will be issued for. The server matches the
+# genus exactly (``lower(o.genus) = lower(p_genus)`` in
+# ``search_community_spore_datasets``), never as a prefix, so a one- or
+# two-letter fragment cannot match anything and is not worth a round trip.
+_COMMUNITY_MIN_GENUS_CHARS = 3
+
 
 def _should_select_all_on_focus(event) -> bool:
     reason_getter = getattr(event, "reason", None)
@@ -1223,10 +1235,11 @@ class CommunityResultsPane(QWidget):
     ``community_summary_reference_payload``, ``community_points_payload``,
     ``community_detail_preview_fields``) rather than duplicating them, and
     populates the host's shared ``ReferencePreviewPane`` instance instead of
-    owning its own. Unlike ``CloudReferenceDialog``, genus/species are fixed
-    by the host (the picker's working taxon) rather than entered here, so
-    there is no taxon search form: results load automatically for that
-    taxon, mirroring the My-observations tab.
+    owning its own. Unlike ``CloudReferenceDialog``, there is no full taxon
+    entry form: results load automatically for the host's working taxon
+    (``set_taxon``), mirroring the My-observations tab. A single search field
+    overrides that taxon, debounced per keystroke, and accepts a genus alone
+    as well as a genus and species; clearing it returns to the host's taxon.
 
     The dialog's two footer buttons ("Import summary as reference" / "Use
     raw points for plot") become the ``range_summary_radio`` /
@@ -1283,10 +1296,45 @@ class CommunityResultsPane(QWidget):
         # latest one and ignored instead of overwriting current state.
         self._search_generation = 0
         self._detail_generation = 0
+        # The picker's own taxon, kept apart from the effective query above:
+        # typing in the search field overrides it, and clearing the field
+        # must fall back to it rather than to whatever was typed last.
+        self._host_genus = self._genus
+        self._host_species = self._species
+        # Per-keystroke search is debounced because one refresh() costs a
+        # QThread plus three network RPCs (search_community_spore_datasets,
+        # search_public_reference_values, community_spore_taxon_summary).
+        # Searching on every keystroke unthrottled would fire those for every
+        # prefix of the word being typed.
+        self._search_debounce = QTimer(self)
+        self._search_debounce.setSingleShot(True)
+        self._search_debounce.setInterval(_COMMUNITY_SEARCH_DEBOUNCE_MS)
+        self._search_debounce.timeout.connect(self._apply_search_text)
 
         layout = QVBoxLayout(self)
         layout.setContentsMargins(8, 8, 8, 8)
         layout.setSpacing(8)
+
+        search_row = QHBoxLayout()
+        search_row.setSpacing(8)
+        from PySide6.QtWidgets import QLineEdit
+        self.search_input = QLineEdit(self)
+        self.search_input.setPlaceholderText(
+            QCoreApplication.translate("CommunityResultsPane", "Search genus, or genus and species…")
+        )
+        self.search_input.setToolTip(
+            QCoreApplication.translate("CommunityResultsPane",
+                "Type a genus (e.g., 'Hebeloma') to search every community dataset for it, or a "
+                "genus and species (e.g., 'Hebeloma mesophaeum') to narrow it. Results refresh as "
+                "you type. Clear the field to browse the selected reference taxon again.\n\n"
+                "The genus must be spelled out in full: community search matches it exactly, not "
+                "as a prefix."
+            )
+        )
+        self.search_input.textChanged.connect(self._on_search_text_changed)
+        self.search_input.returnPressed.connect(self._on_search_input_submitted)
+        search_row.addWidget(self.search_input)
+        layout.addLayout(search_row)
 
         # Same QListWidget + TwoLineRow convention as the Library and
         # My-observations tabs (title line + independently-elided detail
@@ -1329,8 +1377,51 @@ class CommunityResultsPane(QWidget):
         Community tab has no per-candidate taxon field to filter by, so a
         target change re-searches for the new genus/species instead.
         """
-        self._genus = str(genus or "").strip()
-        self._species = str(species or "").strip()
+        self._host_genus = str(genus or "").strip()
+        self._host_species = str(species or "").strip()
+        self._genus = self._host_genus
+        self._species = self._host_species
+        self.refresh()
+
+    def _parse_search_text(self) -> tuple[str, str]:
+        """Split the search field into (genus, species) for the RPCs.
+
+        An empty field falls back to the picker's own taxon. A single word is
+        a genus-only query, which both ``search_community_spore_datasets`` and
+        ``search_public_reference_values`` support: each treats an empty
+        species as "any species" rather than as no match.
+        """
+        text = self.search_input.text().strip()
+        if not text:
+            return self._host_genus, self._host_species
+        parts = text.split(None, 1)
+        genus = parts[0]
+        species = parts[1].strip() if len(parts) > 1 else ""
+        return genus, species
+
+    def _on_search_text_changed(self, _text: str) -> None:
+        """Restart the debounce window on every keystroke."""
+        self._search_debounce.start()
+
+    def _on_search_input_submitted(self) -> None:
+        """Search immediately on Return, without waiting out the debounce."""
+        self._search_debounce.stop()
+        self._apply_search_text()
+
+    def _apply_search_text(self) -> None:
+        """Adopt the search field's taxon and reload, if it actually changed.
+
+        Re-searching an unchanged target would discard the current selection
+        and its loaded preview for nothing, so a keystroke that does not
+        change the effective genus/species (trailing whitespace, retyping the
+        same letter) is deliberately inert.
+        """
+        self._search_debounce.stop()
+        genus, species = self._parse_search_text()
+        if genus == self._genus and species == self._species:
+            return
+        self._genus = genus
+        self._species = species
         self.refresh()
 
     def _exclude_self_reference(self, rows: list[dict[str, Any]]) -> list[dict[str, Any]]:
@@ -1384,7 +1475,12 @@ class CommunityResultsPane(QWidget):
             return
         if not self._genus:
             self.status_label.setText(
-                QCoreApplication.translate("CommunityResultsPane", "No taxon selected — enter a genus and species first.")
+                QCoreApplication.translate("CommunityResultsPane", "No taxon selected — enter a genus to search.")
+            )
+            return
+        if len(self._genus) < _COMMUNITY_MIN_GENUS_CHARS:
+            self.status_label.setText(
+                QCoreApplication.translate("CommunityResultsPane", "Keep typing — enter the full genus name to search.")
             )
             return
         self.status_label.setText(QCoreApplication.translate("CommunityResultsPane", "Searching community spore data..."))
@@ -1409,6 +1505,10 @@ class CommunityResultsPane(QWidget):
         worker.deleteLater()
 
     def closeEvent(self, event) -> None:  # noqa: N802 - Qt override
+        # Stop the debounce before waiting on workers: a pending keystroke
+        # must not start a fresh search thread after the pane has begun
+        # shutting its outstanding ones down.
+        self._search_debounce.stop()
         self._search_generation += 1
         self._detail_generation += 1
         self._selected_result = None

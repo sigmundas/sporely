@@ -62,7 +62,7 @@ import json
 from dataclasses import dataclass
 from typing import Callable, Iterable
 
-from PySide6.QtCore import QCoreApplication, QSettings, QSize, Qt, Signal
+from PySide6.QtCore import QCoreApplication, QSettings, QSize, Qt, QTimer, Signal
 from PySide6.QtWidgets import (
     QCheckBox,
     QComboBox,
@@ -74,6 +74,7 @@ from PySide6.QtWidgets import (
     QListWidgetItem,
     QMessageBox,
     QPushButton,
+    QScrollArea,
     QSizePolicy,
     QSplitter,
     QStyle,
@@ -177,6 +178,11 @@ class PersonalObservationCandidate:
     author: str
     location: str
     points: list[dict]
+    # The row's own taxon. Only meaningful when the tab is browsing a whole
+    # genus, where several species share the list and the date/author label
+    # alone does not say which one a row is.
+    genus: str = ""
+    species: str = ""
 
     @property
     def n(self) -> int:
@@ -184,7 +190,7 @@ class PersonalObservationCandidate:
 
 
 def default_my_observation_candidates(
-    genus: str, species: str, *, exclude_observation_id: int | None = None
+    genus: str, species: str = "", *, exclude_observation_id: int | None = None
 ) -> list[PersonalObservationCandidate]:
     """Load My-observations candidates from the same query that populates
     the legacy Source dropdown's "My data <date>" entries.
@@ -193,8 +199,14 @@ def default_my_observation_candidates(
     returned (mirrors the point-filtering in
     ``MainWindow._maybe_load_reference_panel_reference``'s observation
     branch), since an entry with no points cannot be plotted.
+
+    A genus with no species browses every personal observation in that
+    genus. This tab previously required both and returned nothing for a
+    genus-only identification, which is the common case while an
+    observation is still being worked out -- exactly when comparing it
+    against one's own earlier collections is most useful.
     """
-    if not genus or not species:
+    if not genus:
         return []
     rows = ObservationDB.get_personal_observations_for_species(
         genus, species, exclude_observation_id=exclude_observation_id
@@ -223,9 +235,44 @@ def default_my_observation_candidates(
                 author=(row.get("author") or "").strip(),
                 location=(obs.get("location") or "").strip(),
                 points=points,
+                genus=str(row.get("genus") or "").strip(),
+                species=str(row.get("species") or "").strip(),
             )
         )
     return result
+
+
+class _EditorScrollArea(QScrollArea):
+    """A :class:`QScrollArea` that reports its hosted widget's own size hint.
+
+    ``QScrollArea.sizeHint()`` is a fixed style heuristic that ignores how
+    large the hosted widget actually wants to be. Hosting the manual editor
+    in a plain scroll area therefore hid the editor's size from the picker's
+    derived default size, which opened ~250px too short and put scrollbars
+    on the editor at its *default* size -- not just when deliberately
+    shrunk.
+
+    Only ``sizeHint`` is overridden, never ``minimumSizeHint``: the whole
+    point of the scroll area is that the dialog can still be resized far
+    below this hint, at which point the scrollbars are the correct
+    fallback.
+    """
+
+    def sizeHint(self) -> QSize:  # noqa: N802 - Qt override
+        widget = self.widget()
+        if widget is None:
+            return super().sizeHint()
+        hint = widget.sizeHint()
+        # Reserve one scrollbar extent on each axis so the hint describes a
+        # size at which the editor fits with the scrollbars absent, rather
+        # than one where showing a scrollbar immediately clips the content.
+        extent = self.style().pixelMetric(QStyle.PM_ScrollBarExtent)
+        margins = self.contentsMargins()
+        frame = 2 * self.frameWidth()
+        return QSize(
+            hint.width() + extent + margins.left() + margins.right() + frame,
+            hint.height() + extent + margins.top() + margins.bottom() + frame,
+        )
 
 
 class AddReferenceDialog(GeometryMixin, QDialog):
@@ -299,6 +346,14 @@ class AddReferenceDialog(GeometryMixin, QDialog):
         self._injected_community_results = community_results
         self._candidates: list[MeasurementSetCandidate] = []
         self._selected_candidate: MeasurementSetCandidate | None = None
+        # True from the moment a "+ New publication…" editor is scheduled
+        # until that editor has closed. A single click on the action row
+        # emits itemSelectionChanged several times (QAbstractItemView's
+        # mousePressEvent sets the current index and then the selection,
+        # and the release can set it again), so without this every one of
+        # those emissions would queue its own editor and the user would
+        # have to cancel the modal once per emission.
+        self._new_publication_editor_active = False
         self._my_observations: list[PersonalObservationCandidate] = []
         self._selected_observation: PersonalObservationCandidate | None = None
 
@@ -335,7 +390,7 @@ class AddReferenceDialog(GeometryMixin, QDialog):
         )
         self._build_manual_tab()
         self._manual_tab_index = self.tabs.addTab(
-            self._manual_tab, QCoreApplication.translate("AddReferenceDialog", "Enter manually")
+            self._manual_tab, QCoreApplication.translate("AddReferenceDialog", "Add new")
         )
         self.tabs.currentChanged.connect(self._on_tab_changed)
 
@@ -357,27 +412,40 @@ class AddReferenceDialog(GeometryMixin, QDialog):
         self._refresh_candidates()
         self._refresh_my_observations()
 
-        min_size, source_width, preview_width = self._derive_minimum_size()
-        self.setMinimumSize(min_size)
-        self.resize(min_size)
-        # A floor on each pane, not just an initial setSizes(): the splitter
-        # otherwise redistributes space by stretch factor on any later
-        # resize (restored geometry, a maximize, a manual drag), which can
-        # squeeze either tab bar back into its own scroll-arrow fallback
-        # even though the dialog stays wide enough overall.
-        self.tabs.setMinimumWidth(source_width)
-        self.preview_pane.setMinimumWidth(preview_width)
+        default_size, source_width, preview_width = self._derive_default_size()
+        # The derived size is this dialog's DEFAULT, not a floor. At this
+        # width every source tab and every preview sub-tab is visible with
+        # no scroll-arrow fallback, which is what the default should give
+        # the user. It must not also become setMinimumSize(): that floor
+        # (≈1085x756 with the shipped fonts) exceeded the usable height of
+        # a 768px-tall laptop screen, so the dialog could be grown but
+        # never shrunk -- effectively unresizable. Below the default,
+        # Qt's own tab-bar scroll arrows and the manual tab's scroll area
+        # are the correct fallback for a deliberately narrow window.
+        self.resize(default_size)
+        self.setSizeGripEnabled(True)
         self._body_splitter.setSizes([source_width, preview_width])
         self._restore_geometry()
         self._restore_splitter_state()
+        # After restoreState, never before: QSplitter::restoreState carries
+        # childrenCollapsible in its saved stream, so a state written by an
+        # earlier build silently restores that flag to True. Each pane keeps
+        # its own natural minimumSizeHint and cannot be dragged away
+        # entirely, so both stay reachable at any dialog size without
+        # pinning a hard pixel width on either one.
+        self._body_splitter.setChildrenCollapsible(False)
         self.finished.connect(self._save_geometry)
         self.finished.connect(self._save_splitter_state)
         self.finished.connect(self._community_pane.close)
 
-    def _derive_minimum_size(self) -> tuple[QSize, int, int]:
+    def _derive_default_size(self) -> tuple[QSize, int, int]:
         """Derive the smallest size at which all four source tabs and all
         five preview sub-tabs are visible without scroll arrows, from the
         widgets' own size hints rather than a hardcoded pixel value.
+
+        This is the dialog's opening size, not a minimum: the user may
+        resize below it, at which point Qt's tab-bar scroll arrows take
+        over (see the note at the call site).
 
         Returns the dialog size plus the source/preview pane widths that
         produced it, so the caller can also seat the splitter at that split
@@ -396,7 +464,10 @@ class AddReferenceDialog(GeometryMixin, QDialog):
         source_width = max(
             self.tabs.tabBar().sizeHint().width(),
             self._library_tab.sizeHint().width(),
-            self.manual_editor.sizeHint().width(),
+            # The scroll area's hint, not the bare editor's: it adds the
+            # scrollbar allowance the editor needs to sit inside it without
+            # a scrollbar appearing at the dialog's own default size.
+            self._manual_scroll.sizeHint().width(),
         ) + scroll_button_clearance
         preview_width = max(
             self.preview_pane.review_tabs.tabBar().sizeHint().width(),
@@ -432,16 +503,16 @@ class AddReferenceDialog(GeometryMixin, QDialog):
     def _build_taxon_target_row(self) -> QHBoxLayout:
         row = QHBoxLayout()
         row.setSpacing(8)
-        row.addWidget(QLabel(QCoreApplication.translate("AddReferenceDialog", "Compare against:"), self))
+        row.addWidget(QLabel(QCoreApplication.translate("AddReferenceDialog", "Reference taxon:"), self))
         self.taxon_target_combo = QComboBox(self)
         self.taxon_target_combo.setEditable(True)
         self.taxon_target_combo.setInsertPolicy(QComboBox.NoInsert)
         self.taxon_target_combo.setSizePolicy(QSizePolicy.Expanding, QSizePolicy.Fixed)
         self.taxon_target_combo.setToolTip(
             QCoreApplication.translate("AddReferenceDialog",
-                "Choose which taxon's published spore data to compare "
-                "against -- an AI suggestion, or type a genus and species. "
-                "This never changes the observation's own identification."
+                "Choose which taxon's published spore data to compare against. "
+                "Select 'Use observation taxon' if available, search another taxon by typing genus and species, "
+                "or choose an AI suggestion. This never changes the observation's own identification."
             )
         )
         row.addWidget(self.taxon_target_combo, 1)
@@ -463,9 +534,9 @@ class AddReferenceDialog(GeometryMixin, QDialog):
         combo.clear()
         own_label = self._own_taxon_display_label()
         combo.addItem(
-            QCoreApplication.translate("AddReferenceDialog", "This observation: {taxon}").format(taxon=own_label)
+            QCoreApplication.translate("AddReferenceDialog", "Use observation taxon: {taxon}").format(taxon=own_label)
             if own_label
-            else QCoreApplication.translate("AddReferenceDialog", "This observation's taxon"),
+            else QCoreApplication.translate("AddReferenceDialog", "Search another taxon…"),
             {
                 "genus": self._own_genus,
                 "species": self._own_species,
@@ -647,14 +718,36 @@ class AddReferenceDialog(GeometryMixin, QDialog):
         self.results_list.addItem(new_pub_item)
 
         if not visible:
-            self.status_hint_label.setText(
-                QCoreApplication.translate("AddReferenceDialog", "No matching measurement sets in the library.")
-                if self._candidates
-                else QCoreApplication.translate("AddReferenceDialog", "The reference library has no measurement sets yet.")
-            )
+            self.status_hint_label.setText(self._empty_library_hint())
         else:
             self.status_hint_label.setText("")
         self.preview_pane.clear()
+
+    def _empty_library_hint(self) -> str:
+        """Why the library list is empty, and what would un-empty it.
+
+        "Only this taxon" is checked by default and ANDs with the search
+        box, so a user searching the library for a genus while the picker
+        sits on one species gets an empty list and no indication that the
+        checkbox -- not their search text -- is what excluded the rows.
+        Only say so when unchecking would genuinely reveal something.
+        """
+        if not self._candidates:
+            return QCoreApplication.translate("AddReferenceDialog", "The reference library has no measurement sets yet.")
+        if self.only_this_taxon_checkbox.isChecked():
+            without_taxon_scope = filter_library_candidates(
+                self._candidates,
+                taxon_id=self._taxon_id,
+                only_this_taxon=False,
+                query=self.search_input.text(),
+                taxon_text=self._taxon_target_query_text(),
+            )
+            if without_taxon_scope:
+                return QCoreApplication.translate(
+                    "AddReferenceDialog",
+                    "No matching measurement sets for this taxon. {count} more match if you turn off “Only this taxon”.",
+                ).format(count=len(without_taxon_scope))
+        return QCoreApplication.translate("AddReferenceDialog", "No matching measurement sets in the library.")
 
     def _add_candidate_item(self, candidate: MeasurementSetCandidate) -> None:
         label = candidate.short_label or candidate.name_as_published or QCoreApplication.translate("AddReferenceDialog", "Untitled")
@@ -690,7 +783,24 @@ class AddReferenceDialog(GeometryMixin, QDialog):
         role = items[0].data(Qt.UserRole)
         if role == _NEW_PUBLICATION_ROLE:
             self._selected_candidate = None
-            self._on_new_publication_clicked()
+            # Deferred deliberately, and this must not be inlined back.
+            # itemSelectionChanged is emitted from inside
+            # QListView::setSelection, which is itself still inside the
+            # list's own mousePressEvent. _on_new_publication_clicked runs a
+            # nested modal event loop and, when that dialog closes, calls
+            # _refresh_candidates -> _populate_results_list ->
+            # results_list.clear(). That destroys the very items Qt still
+            # holds pointers to further up the stack, so the app segfaults
+            # as the mouse event unwinds -- confirmed from a crash report
+            # with QListWidget::clear called under QListView::setSelection.
+            # Running it on the next event-loop turn lets the mouse event
+            # finish first, leaving nothing live to invalidate.
+            if self._new_publication_editor_active:
+                # A later emission from the same click, or a selection
+                # change while the editor is still open. One editor only.
+                return
+            self._new_publication_editor_active = True
+            QTimer.singleShot(0, self._open_new_publication_editor)
             return
         candidate = next(
             (c for c in self._candidates if c.measurement_set_id == role),
@@ -832,6 +942,39 @@ class AddReferenceDialog(GeometryMixin, QDialog):
         except Exception:
             return str(value)
 
+    def _open_new_publication_editor(self) -> None:
+        """Deferred entry point for the "+ New publication…" action row.
+
+        Owns ``_new_publication_editor_active`` for the whole lifetime of
+        the editor -- including while its nested modal event loop runs, so
+        selection events delivered inside that loop cannot queue a second
+        editor -- and releases the guard even if the editor raises.
+        """
+        try:
+            self._clear_action_row_selection()
+            self._on_new_publication_clicked()
+        finally:
+            self._new_publication_editor_active = False
+
+    def _clear_action_row_selection(self) -> None:
+        """Drop the selection on the action row, which is a command and not
+        a selectable candidate.
+
+        Signals are blocked because clearing re-enters
+        ``_on_selection_changed``; the guard would stop it rescheduling an
+        editor, but the empty-selection branch would still churn the
+        preview and footer while an editor is about to open.
+        """
+        was_blocked = self.results_list.blockSignals(True)
+        try:
+            self.results_list.setCurrentItem(None)
+            self.results_list.clearSelection()
+        finally:
+            self.results_list.blockSignals(was_blocked)
+        self._selected_candidate = None
+        self.preview_pane.clear()
+        self._update_footer_state()
+
     def _on_new_publication_clicked(self) -> None:
         try:
             from .reference_library_manager_dialog import ReferenceWorkEditor
@@ -910,10 +1053,19 @@ class AddReferenceDialog(GeometryMixin, QDialog):
         self.my_observations_list.clear()
         for candidate in self._my_observations:
             self._add_observation_item(candidate)
-        self.my_observations_status_label.setText(
-            "" if self._my_observations
-            else QCoreApplication.translate("AddReferenceDialog", "No previous observations of this taxon have spore measurements.")
-        )
+        if self._my_observations:
+            self.my_observations_status_label.setText("")
+        elif not str(self._genus or "").strip():
+            # Distinct from the "none have measurements" case below, which
+            # would be a false statement here: with no genus the query never
+            # ran, so nothing has been looked at yet.
+            self.my_observations_status_label.setText(
+                QCoreApplication.translate("AddReferenceDialog", "Select a taxon to browse your own observations of it.")
+            )
+        else:
+            self.my_observations_status_label.setText(
+                QCoreApplication.translate("AddReferenceDialog", "No previous observations of this taxon have spore measurements.")
+            )
         if self.tabs.currentIndex() == self._my_observations_tab_index:
             self.preview_pane.clear()
 
@@ -923,7 +1075,19 @@ class AddReferenceDialog(GeometryMixin, QDialog):
             if candidate.author
             else QCoreApplication.translate("AddReferenceDialog", "My observation")
         )
-        detail_parts = [candidate.date] if candidate.date else []
+        detail_parts: list[str] = []
+        # Browsing a whole genus puts several species in one list, where the
+        # date and author alone do not say which species a row is. Mirrors
+        # the same disambiguation the Library tab does when "Only this
+        # taxon" is off (see _add_candidate_item).
+        if not str(self._species or "").strip():
+            row_taxon = " ".join(
+                part for part in (candidate.genus, candidate.species) if part
+            ).strip()
+            if row_taxon:
+                detail_parts.append(row_taxon)
+        if candidate.date:
+            detail_parts.append(candidate.date)
         detail_parts.append(QCoreApplication.translate("AddReferenceDialog", "n = {count}").format(count=candidate.n))
         if candidate.location:
             detail_parts.append(candidate.location)
@@ -964,7 +1128,18 @@ class AddReferenceDialog(GeometryMixin, QDialog):
             if candidate.author
             else QCoreApplication.translate("AddReferenceDialog", "My observation")
         )
-        meta_parts = [candidate.date] if candidate.date else []
+        meta_parts: list[str] = []
+        # Always name the row's taxon here, even when the list is pinned to
+        # one species: this is the pane the user reads before adding the
+        # series to the plot, so what is about to be attached should be
+        # stated rather than inferred from the tab's current filter.
+        row_taxon = " ".join(
+            part for part in (candidate.genus, candidate.species) if part
+        ).strip()
+        if row_taxon:
+            meta_parts.append(row_taxon)
+        if candidate.date:
+            meta_parts.append(candidate.date)
         if candidate.location:
             meta_parts.append(candidate.location)
         meta = " · ".join(meta_parts)
@@ -1029,7 +1204,17 @@ class AddReferenceDialog(GeometryMixin, QDialog):
             preview_pane=self.preview_pane,
         )
         self.manual_editor.data_changed.connect(self._update_footer_state)
-        layout.addWidget(self.manual_editor)
+        # The editor's own minimum size hint (its measurement tables) is the
+        # widest and tallest thing in the picker, and was what stopped the
+        # dialog shrinking even once the explicit floors were removed.
+        # Scrolling it here -- in the picker only, not in the shared editor
+        # widget, which the legacy Quick-add dialog also hosts -- lets the
+        # dialog be resized small while keeping every field reachable.
+        self._manual_scroll = _EditorScrollArea(self._manual_tab)
+        self._manual_scroll.setWidgetResizable(True)
+        self._manual_scroll.setFrameShape(QScrollArea.NoFrame)
+        self._manual_scroll.setWidget(self.manual_editor)
+        layout.addWidget(self._manual_scroll)
 
     # ------------------------------------------------------------------
     # Footer

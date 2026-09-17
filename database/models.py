@@ -1677,26 +1677,42 @@ class ObservationDB:
     @staticmethod
     def get_personal_observations_for_species(
         genus: str,
-        species: str,
+        species: str = "",
         exclude_observation_id: int | None = None,
     ) -> List[dict]:
-        """Return personal observations for a species that have spore measurements."""
+        """Return personal observations for a taxon that have spore measurements.
+
+        An empty *species* browses the whole genus instead of one species,
+        matching the genus-only search the Community tab already supports
+        (``search_community_spore_datasets`` treats an empty species as "any
+        species"). Callers that pass a species keep the previous
+        exact-taxon behaviour unchanged.
+
+        ``genus`` and ``species`` are compared exactly, not case-folded:
+        both are written from the same taxonomy source as the rows being
+        matched, so folding here would only widen the match without making
+        any currently-missed row reachable.
+        """
         conn = get_connection()
         conn.row_factory = sqlite3.Row
         cursor = conn.cursor()
-        where = [
-            "o.genus = ?",
-            "o.species = ?",
-            "o.source_type = 'personal'",
+        where = ["o.genus = ?"]
+        params: list = [genus]
+        species_text = str(species or "").strip()
+        if species_text:
+            where.append("o.species = ?")
+            params.append(species_text)
+        where.append("o.source_type = 'personal'")
+        where.append(
             "EXISTS (SELECT 1 FROM spore_measurements m JOIN images i ON m.image_id = i.id"
-            " WHERE i.observation_id = o.id AND m.length_um IS NOT NULL AND m.width_um IS NOT NULL)",
-        ]
-        params: list = [genus, species]
+            " WHERE i.observation_id = o.id AND m.length_um IS NOT NULL AND m.width_um IS NOT NULL)"
+        )
         if exclude_observation_id:
             where.append("o.id != ?")
             params.append(exclude_observation_id)
         cursor.execute(
-            f"SELECT id, date, author FROM observations o WHERE {' AND '.join(where)} ORDER BY date DESC",
+            "SELECT id, date, author, genus, species FROM observations o"
+            f" WHERE {' AND '.join(where)} ORDER BY date DESC",
             tuple(params),
         )
         rows = cursor.fetchall()

@@ -261,3 +261,62 @@ def test_sync_preview_repopulates_after_tab_revisit():
     assert pane.summary_table.item(0, 1).text() == "—"
     editor.sync_preview()
     assert pane.summary_table.item(0, 1).text() == "8.00"
+
+
+# ---------------------------------------------------------------------
+# "Name as published" fallback to the normalized taxon name
+# ---------------------------------------------------------------------
+
+
+def test_treatment_payload_falls_back_to_taxon_name_when_name_as_published_blank():
+    """An empty "Name as published" must not block the save.
+
+    ``TaxonTreatmentRepository._validate`` requires the field, so leaving it
+    blank previously failed the whole save with a raw
+    "taxon_treatment.name_as_published is required" message. The publication
+    normally uses the same name as the normalized taxon, so that is the
+    fallback.
+    """
+    editor = _make_editor(genus="Lacrymaria", species="lacrymabunda")
+    editor.name_as_published_input.setText("")
+
+    payload = editor.quick_add_treatment_payload()
+
+    assert payload["name_as_published"] == "Lacrymaria lacrymabunda"
+
+
+def test_treatment_payload_keeps_an_explicit_name_as_published_verbatim():
+    """The fallback must never overwrite a name the user actually typed.
+
+    Recording an old synonym or historical combination is the entire point
+    of the field being separate from the normalized taxon.
+    """
+    editor = _make_editor(genus="Lacrymaria", species="lacrymabunda")
+    editor.name_as_published_input.setText("Psathyrella velutina (Pers.) Singer")
+
+    payload = editor.quick_add_treatment_payload()
+
+    assert payload["name_as_published"] == "Psathyrella velutina (Pers.) Singer"
+
+
+def test_treatment_payload_stays_blank_when_there_is_no_taxon_either():
+    """With no taxon to fall back to, the field stays empty and the
+    repository's own validation remains the thing that reports it."""
+    editor = _make_editor(genus="", species="")
+    editor.name_as_published_input.setText("")
+
+    assert editor.quick_add_treatment_payload()["name_as_published"] == ""
+
+
+def test_treatment_payload_follows_a_changed_comparison_target():
+    """The fallback must track the current reference taxon, not the one the
+    editor happened to be constructed with."""
+    editor = _make_editor(genus="Cortinarius", species="limonius")
+    editor.set_comparison_target(
+        genus="Lacrymaria", species="lacrymabunda", sporely_taxon_id=None
+    )
+
+    assert (
+        editor.quick_add_treatment_payload()["name_as_published"]
+        == "Lacrymaria lacrymabunda"
+    )
