@@ -1056,6 +1056,53 @@ def test_new_publication_row_does_not_open_its_editor_inside_the_selection_signa
     assert calls == [1], "deferred publication editor never ran"
 
 
+def test_repeated_new_publication_selection_opens_exactly_one_editor():
+    """Several selection notifications before the event loop turns must
+    still open one editor.
+
+    A single click on the action row emits ``itemSelectionChanged`` more
+    than once -- ``QAbstractItemView::mousePressEvent`` sets the current
+    index and then the selection, and the release can set it again. Each
+    emission used to schedule its own ``QTimer.singleShot``, so the queued
+    modals stacked up and the user had to click Cancel once per emission
+    before the picker was usable again.
+    """
+    dialog = _make_dialog()
+    calls: list[int] = []
+    dialog._on_new_publication_clicked = lambda: calls.append(1)
+
+    dialog.results_list.setCurrentRow(_new_publication_row(dialog))
+    for _ in range(3):
+        # Re-notify with the action row still selected, exactly as the view
+        # does within one mouse click, and without an event-loop turn.
+        dialog.results_list.itemSelectionChanged.emit()
+
+    assert calls == [], "publication editor opened inside the selection signal"
+
+    _app().processEvents()
+    _app().processEvents()
+    assert calls == [1], f"expected exactly one editor, got {len(calls)}"
+
+
+def test_new_publication_editor_guard_resets_when_the_editor_raises():
+    """A failing or cancelled editor must not wedge the action row."""
+    dialog = _make_dialog()
+
+    def _boom() -> None:
+        raise RuntimeError("editor blew up")
+
+    dialog._on_new_publication_clicked = _boom
+    with pytest.raises(RuntimeError):
+        dialog._open_new_publication_editor()
+    assert dialog._new_publication_editor_active is False
+
+    calls: list[int] = []
+    dialog._on_new_publication_clicked = lambda: calls.append(1)
+    dialog.results_list.setCurrentRow(_new_publication_row(dialog))
+    _app().processEvents()
+    assert calls == [1], "action row stayed wedged after the editor raised"
+
+
 def test_new_publication_row_clears_the_library_selection():
     """The placeholder row is an action, not a selectable candidate, so it
     must not be left behind as the dialog's selected measurement set."""

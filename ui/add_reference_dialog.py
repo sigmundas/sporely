@@ -346,6 +346,14 @@ class AddReferenceDialog(GeometryMixin, QDialog):
         self._injected_community_results = community_results
         self._candidates: list[MeasurementSetCandidate] = []
         self._selected_candidate: MeasurementSetCandidate | None = None
+        # True from the moment a "+ New publication…" editor is scheduled
+        # until that editor has closed. A single click on the action row
+        # emits itemSelectionChanged several times (QAbstractItemView's
+        # mousePressEvent sets the current index and then the selection,
+        # and the release can set it again), so without this every one of
+        # those emissions would queue its own editor and the user would
+        # have to cancel the modal once per emission.
+        self._new_publication_editor_active = False
         self._my_observations: list[PersonalObservationCandidate] = []
         self._selected_observation: PersonalObservationCandidate | None = None
 
@@ -787,7 +795,12 @@ class AddReferenceDialog(GeometryMixin, QDialog):
             # with QListWidget::clear called under QListView::setSelection.
             # Running it on the next event-loop turn lets the mouse event
             # finish first, leaving nothing live to invalidate.
-            QTimer.singleShot(0, self._on_new_publication_clicked)
+            if self._new_publication_editor_active:
+                # A later emission from the same click, or a selection
+                # change while the editor is still open. One editor only.
+                return
+            self._new_publication_editor_active = True
+            QTimer.singleShot(0, self._open_new_publication_editor)
             return
         candidate = next(
             (c for c in self._candidates if c.measurement_set_id == role),
@@ -928,6 +941,39 @@ class AddReferenceDialog(GeometryMixin, QDialog):
             return f"{float(value):.2f}"
         except Exception:
             return str(value)
+
+    def _open_new_publication_editor(self) -> None:
+        """Deferred entry point for the "+ New publication…" action row.
+
+        Owns ``_new_publication_editor_active`` for the whole lifetime of
+        the editor -- including while its nested modal event loop runs, so
+        selection events delivered inside that loop cannot queue a second
+        editor -- and releases the guard even if the editor raises.
+        """
+        try:
+            self._clear_action_row_selection()
+            self._on_new_publication_clicked()
+        finally:
+            self._new_publication_editor_active = False
+
+    def _clear_action_row_selection(self) -> None:
+        """Drop the selection on the action row, which is a command and not
+        a selectable candidate.
+
+        Signals are blocked because clearing re-enters
+        ``_on_selection_changed``; the guard would stop it rescheduling an
+        editor, but the empty-selection branch would still churn the
+        preview and footer while an editor is about to open.
+        """
+        was_blocked = self.results_list.blockSignals(True)
+        try:
+            self.results_list.setCurrentItem(None)
+            self.results_list.clearSelection()
+        finally:
+            self.results_list.blockSignals(was_blocked)
+        self._selected_candidate = None
+        self.preview_pane.clear()
+        self._update_footer_state()
 
     def _on_new_publication_clicked(self) -> None:
         try:
