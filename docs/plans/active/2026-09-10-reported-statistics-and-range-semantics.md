@@ -76,8 +76,19 @@ were transplanted. Nothing else from the cloud-sync effort is present:
 is byte-identical to main, and `utils/cloud_sync.py` differs from main by one
 line — Stage 3C adding the three extension columns to the cloud select list.
 
-Result against `origin/main`: **66 files changed, +15880/-1118, 25 commits**,
-down from 93 files, +21463/-4247 and 42 commits.
+Result against `origin/main` (`2e735780683f70bb2a5d0f305757e0be945071f6`):
+**67 files changed, +16189/-1118, 30 commits** on branch
+`feature/reported-statistics-narrow`, down from 93 files, +21463/-4247 and 42
+commits on the wide branch. Final SHA recorded at the end of this section.
+
+The commit count grew from the 25 first reported, in three steps. The initial
+transplant was the 24-commit range `8097bc8..0c43a1b` plus one translation
+regeneration commit, giving 25. Cherry-picking the two Stage 4 documentation
+commits `24f9fd0` and `e3c2ddc`, which fall *after* the frozen candidate and so
+were outside the transplanted range, plus this Stage 5 handoff record, brought
+it to 28. The permanent Add plot regression test and the present handoff update
+make 30. No production commit was added after the transplant: every commit
+beyond the original 25 is documentation, translation regeneration or test.
 
 ### Verification
 
@@ -91,10 +102,10 @@ Project venv, `QT_QPA_PLATFORM=offscreen`.
   still DELETE (deliberately outside the barrier). Registering the contract on
   that same connection makes the INSERT succeed, confirming the barrier is
   registration-based and not data corruption.
-- Reported-statistics and reference suites: **561 passed**.
+- Reported-statistics and reference suites: **564 passed**.
 - iNaturalist and publish-media suites from main: **156 passed**.
 - Sweep `-k "reference or measurement or curated or legacy or add_reference"`:
-  **1342 passed, 2 skipped, 3 errors** — the same three pre-existing baseline
+  **1345 passed, 2 skipped, 3 errors** — the same three pre-existing baseline
   errors (two taxonomy release-dir, one `scripts` package-name collision under
   the sweep's import order).
 - Real manual-reference / Add plot workflow, driven through
@@ -102,11 +113,32 @@ Project venv, `QT_QPA_PLATFORM=offscreen`.
   basidiesvampe" spore-size reference creates work, treatment and measurement
   set, attaches to the observation, persists the legacy-only projection with all
   three extension columns NULL, and freezes a v1 snapshot carrying no enhanced
-  content — correct behavior under a closed reader gate.
+  content — correct behavior under a closed reader gate. This is now a permanent
+  regression, `tests/test_reference_add_plot_workflow.py` (3 cases), rather than
+  a throwaway check; it is the suite that would have caught the reported
+  "Could not add the library reference: no such function:
+  sporely_measurement_contract" failure.
 - Cloud-sync facade verified against **main's** implementation: `utils.cloud_sync`
   resolves to the 26188-line module, `cloud_sync_impl` is never imported, and
   `ui.observations_tab`, `ui.main_window`, `utils.publish_media` and
   `utils.artsobs_uploaders` all import cleanly.
+
+### Merging this branch deploys nothing
+
+Checked explicitly, because finding 1 below would become merge-blocking if a
+merge to `main` applied a migration. It does not, in either repository:
+
+- `sporely-py` has no `supabase/` directory and no migration or `.sql` file
+  anywhere in this branch's diff; its single workflow `.github/workflows/release.yml`
+  triggers only on `v*.*.*` tags, not on a push to `main`, so merging does not
+  even build a desktop release.
+- `sporely-web` has only `release-android.yml` (tags plus manual dispatch) and
+  `supabase-heartbeat.yml` (cron plus manual dispatch). Neither runs
+  `supabase db push`, `supabase migration up` or `supabase link`; no CI step
+  applies a migration at all.
+
+Migrations reach production only through a deliberate manual `supabase db push`.
+Finding 1 therefore blocks that push, not this merge.
 
 ### Outstanding
 
@@ -132,6 +164,16 @@ Project venv, `QT_QPA_PLATFORM=offscreen`.
 6. Before pushing, confirm production's two CHECK constraints carry the assumed
    auto-generated names; a mismatch aborts `20260914090000` at
    `DROP CONSTRAINT`.
+
+### Branch state at the end of this pass
+
+Branch `feature/reported-statistics-narrow`, cut from `main` at
+`2e735780683f70bb2a5d0f305757e0be945071f6`. Final SHA recorded in the commit
+that adds this line; the branch is **not pushed** and no pull request is open,
+pending the branch owner's review of the narrowed diff. Every excluded commit
+remains reachable on `feature/reported-statistics-contract`,
+`feature/cloud-sync-transport-boundary`, `feature/reference-save-and-plot` and
+`review/cloud-sync-prestage-2026-09-08`; nothing was dropped.
 
 ### Why this plan stays open
 
