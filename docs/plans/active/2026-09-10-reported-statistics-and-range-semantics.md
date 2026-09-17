@@ -6,7 +6,143 @@ sections under *Canonical stage sequence* below (Stage 1 → 2 → 3A → 3B →
 stage execution, newest first; they define nothing. The first one is the
 **current stage**; the rest are historical and kept verbatim.
 
-## Stage 4 handoff — 2026-09-15 (current stage; candidate pushed, human gate passed)
+## Stage 5 handoff — 2026-09-17 (current stage; review passed, gates stay closed, landing narrowed)
+
+Status: **Stage 5 independent review complete. Merge approved in both
+repositories. Both rollout gates remain CLOSED. The plan stays open.**
+
+Stage 5 owns two separate decisions and they resolved differently: the
+candidates are correct and safe to land, but neither gate may open yet. Landing
+this work therefore activates nothing.
+
+### Reviewed candidates
+
+- `sporely-py`: frozen Stage 4 candidate
+  `0c43a1bb33afe3f6e568786c6eda8bbb27456c08`, base
+  `12992e61630c325dabd61817ddc2d8ed1fb81e00`. The two commits above it
+  (`24f9fd0`, `e3c2ddc`) were verified documentation-only — `git diff --stat`
+  touches this plan file alone — so the human gate was run against content
+  still present at HEAD.
+- `sporely-web`: frozen candidate
+  `1bb5c804833bcdfff6b7f05c37395c1abd4e2de9` on
+  `feature/reported-statistics-cloud-transport`, which is exactly that branch's
+  tip. No migration landed on `sporely-web` main since its base.
+
+### Verdicts
+
+Merge safety: **APPROVED** for both candidates. No privilege widening, no
+migration collision, and the old-client RPC guard has no bypass — the public
+wrapper forwards the payload unmodified, `authenticated` holds only `SELECT` on
+`reference_measurement_sets`, and the RPC is the sole writer to that table.
+
+Activation: **both gates KEEP CLOSED.** The reason is structural rather than a
+missing checklist item. `MINIMUM_SUPPORTED_READER_VERSION_GATE_OPEN` requires
+that every supported desktop can read snapshot v2, but the v2 reader exists only
+on this unmerged branch, so no released build can read v2 and there is by
+definition no deployed reader population.
+`MINIMUM_SUPPORTED_DESKTOP_VERSION_GATE_OPEN` fails for the same reason: no
+released desktop carries the Stage 3A write barrier. Both gates can only be
+reconsidered after this work merges and ships. There is client-version
+telemetry (`profiles.last_app_version`, `client_activity_daily`) but no
+server-side minimum-version enforcement on the reference RPCs; telemetry is
+observation, not a gate.
+
+### Narrowed landing
+
+The Stage 4 candidate sat on a branch that had accumulated two unrelated
+efforts. Landing was narrowed to a clean branch cut from `main` (`2e73578`)
+carrying only this plan's commits, the contiguous range `8097bc8..0c43a1b` plus
+the two Stage 4 documentation commits.
+
+Deliberately excluded and preserved on `feature/reported-statistics-contract`,
+not dropped:
+
+- The cloud-sync facade extraction (`ea55c68`, `4dc6b82`, `6e05f31`, `8d06a9d`
+  and related), which moves ~1529 lines out of `utils/cloud_sync.py` into
+  `utils/cloud_sync_impl/*`. It belongs to
+  `docs/plans/active/2026-08-23-cloud-sync-extraction.md`.
+- `4efdf7d` "Fix reference identity and separate library saving from plotting",
+  which belongs to `docs/plans/active/2026-09-10-reference-save-and-plot.md` and
+  carries the `ui/main_window.py` change hiding the reference-shape setting.
+
+One genuine dependency was found and is recorded rather than used as grounds to
+re-include the refactor. Stage 3A's `68d1855` needs two pure helpers,
+`_normalized_index_ddl` and `_existing_index_sql` (~17 lines of `sqlite_master`
+index comparison in `database/reference_library_schema.py`), which had been
+committed inside the cloud-sync prestage baseline repair `ca16130`. They are
+reference-library schema code, not cloud-sync code, and only those two functions
+were transplanted. Nothing else from the cloud-sync effort is present:
+`utils/cloud_sync_impl/` does not exist on the narrow branch, `ui/main_window.py`
+is byte-identical to main, and `utils/cloud_sync.py` differs from main by one
+line — Stage 3C adding the three extension columns to the cloud select list.
+
+Result against `origin/main`: **66 files changed, +15880/-1118, 25 commits**,
+down from 93 files, +21463/-4247 and 42 commits.
+
+### Verification
+
+Project venv, `QT_QPA_PLATFORM=offscreen`.
+
+- Write barrier, exercised directly against a real SQLite file: a
+  contract-aware connection initializes the schema, both guard triggers and all
+  three extension columns are present, and it inserts normally. An unaware
+  connection is refused on INSERT and UPDATE with
+  `no such function: sporely_measurement_contract`, can still SELECT, and can
+  still DELETE (deliberately outside the barrier). Registering the contract on
+  that same connection makes the INSERT succeed, confirming the barrier is
+  registration-based and not data corruption.
+- Reported-statistics and reference suites: **561 passed**.
+- iNaturalist and publish-media suites from main: **156 passed**.
+- Sweep `-k "reference or measurement or curated or legacy or add_reference"`:
+  **1342 passed, 2 skipped, 3 errors** — the same three pre-existing baseline
+  errors (two taxonomy release-dir, one `scripts` package-name collision under
+  the sweep's import order).
+- Real manual-reference / Add plot workflow, driven through
+  `QuickAddReferenceService.create_and_attach`: a manual "Danmarks
+  basidiesvampe" spore-size reference creates work, treatment and measurement
+  set, attaches to the observation, persists the legacy-only projection with all
+  three extension columns NULL, and freezes a v1 snapshot carrying no enhanced
+  content — correct behavior under a closed reader gate.
+- Cloud-sync facade verified against **main's** implementation: `utils.cloud_sync`
+  resolves to the 26188-line module, `cloud_sync_impl` is never imported, and
+  `ui.observations_tab`, `ui.main_window`, `utils.publish_media` and
+  `utils.artsobs_uploaders` all import cleanly.
+
+### Outstanding
+
+1. **Public snapshot forwards unvalidated future versions.**
+   `private.reference_measurement_details_valid` returns true for any non-1
+   `schema_version`, and `private.public_reference_snapshot` forwards the object
+   verbatim to RPCs granted to `anon`. Deviates from contract sections 3 and 9.
+   Must be fixed before `supabase db push`, not before merge.
+2. **Gate coupling.** Opening the reader gate alone lets the editors create
+   enhanced rows, which then trip the still-closed export gate and break bundle
+   and portable export (`utils/db_share.py:414`,
+   `utils/archive/portable_export.py:62`, neither caught in production code).
+   Open both together, or add UI-level handling first.
+3. **Gate messages are not translatable** (`references/measurement_content_gates.py`),
+   unreachable while both gates are closed.
+4. **31 untranslated iNaturalist strings** per language, already untranslated on
+   main and not regressed here.
+5. **Deployment ordering, hard constraint.** `sporely-web` migration
+   `20260913120000` must be pushed and verified before any desktop build
+   carrying the Stage 3C adapter is released: that adapter sends all three new
+   keys on every measurement-set payload and a pre-migration server rejects all
+   of them via the unknown-keys allowlist. Independent of both gates.
+6. Before pushing, confirm production's two CHECK constraints carry the assumed
+   auto-generated names; a mismatch aborts `20260914090000` at
+   `DROP CONSTRAINT`.
+
+### Why this plan stays open
+
+Stage 5's activation decision was to keep both gates closed, so the plan's own
+objective — v2 emission and enhanced attachments in the field — is not yet met.
+The plan reopens for an activation pass once this work has shipped and the
+reader population can be established. `docs/plans/active/2026-09-09-reference-measurement-table-parser.md`
+likewise stays open: it defers its Stage 2 to this plan and states explicitly
+that parser-stage completion is not completion of the overall request.
+
+## Stage 4 handoff — 2026-09-15 (candidate pushed, human gate passed)
 
 Status: **Stage 4 implemented, human gate passed, candidate committed and
 pushed.** Editor and UI inspection with guarded editing: the typed parser
