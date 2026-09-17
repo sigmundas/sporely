@@ -6,7 +6,75 @@ sections under *Canonical stage sequence* below (Stage 1 → 2 → 3A → 3B →
 stage execution, newest first; they define nothing. The first one is the
 **current stage**; the rest are historical and kept verbatim.
 
-## Stage 5 handoff — 2026-09-17 (current stage; review passed, gates stay closed, landing narrowed)
+## Stage 5 landing record — 2026-09-17 (current stage; both repositories merged, nothing activated)
+
+Status: **Both reviewed candidates are merged to `main` in both repositories.
+Both desktop rollout gates remain CLOSED. Stage 3D is not deployed. The plan
+stays open because activation and deployment are intentionally unfinished.**
+
+This section supersedes the *Branch state at the end of this pass* record in the
+Stage 5 handoff below. The durable references for this work are now the merge
+commits on `main`; the narrow landing branch and the excluded-work branches it
+names are history, not current state, and must not be treated as where the code
+lives.
+
+### What landed
+
+- **Desktop** (`sigmundas/sporely`): the reported-statistics contract, parser,
+  local schema and persistence, Stage 3C cloud adapter, and Stage 4 editor/UI
+  work landed in **PR #3**, merge commit **`eb639aa`** on `main`.
+- **Cloud** (`sigmundas/sporely-web`): the Stage 3C/3D source history landed in
+  **PR #3**, merge commit **`f45a19d`** on `main`. The merge reconciled the
+  cloud-transport candidate onto `main` and deployed nothing.
+
+### Migration state
+
+- `supabase/migrations/20260913120000_add_reference_measurement_content_extension.sql`
+  — **already applied in production**, and as of the `f45a19d` merge it also
+  exists on `sporely-web` `main`, so the source history and the deployed
+  database now agree on it.
+- `supabase/migrations/20260914090000_extend_reference_snapshots_to_version_2.sql`
+  — **committed but deliberately not applied.** This is the Stage 3D migration;
+  it stays unapplied until the deployment preconditions below are met.
+
+No production query and no Stage 3D deployment was performed during landing.
+
+### Gate state
+
+Both desktop rollout gates remain **closed**:
+`MINIMUM_SUPPORTED_READER_VERSION_GATE_OPEN` and
+`MINIMUM_SUPPORTED_DESKTOP_VERSION_GATE_OPEN`. Merging changed neither. The
+structural reason recorded in the Stage 5 handoff still holds in its first half:
+a reader population can only be established once a desktop build carrying the
+v2 reader is actually released, and that release has not happened yet.
+
+### What Stage 3D deployment waits for
+
+1. Desktop reader support **released**, and the reader rollout criterion
+   satisfied against the resulting deployed population.
+2. The two SQL tests run against local/staging Supabase.
+3. Production preflight, specifically: rows carrying an unknown
+   details-schema-version, and confirmation of the two `CHECK` constraint names
+   that `20260914090000` drops (a name mismatch aborts the migration at
+   `DROP CONSTRAINT`).
+4. A final `supabase migration list` and `supabase db push --dry-run`.
+
+The *Outstanding* items in the Stage 5 handoff below remain open and are
+unchanged by landing; item 1 there (the public snapshot forwarding unvalidated
+future `schema_version` values) is still a push blocker rather than a merge
+blocker.
+
+### Open design decision, required before Stage 3D
+
+The **shared-reference-contribution path** remains an explicit pre-Stage-3D
+design decision. It can publish a v2 canonical snapshot **outside** the desktop
+observation-attachment gate, so the desktop gates do not bound what that path
+can emit. Before Stage 3D, decide deliberately whether to gate that
+envelope/read path as well, or to support v2 there explicitly. This is a
+decision to make, not a defect to patch; it must be settled before the Stage 3D
+migration is pushed.
+
+## Stage 5 handoff — 2026-09-17 (review passed, gates stay closed, landing narrowed)
 
 Status: **Stage 5 independent review complete. Merge approved in both
 repositories. Both rollout gates remain CLOSED. The plan stays open.**
