@@ -77,9 +77,11 @@ is byte-identical to main, and `utils/cloud_sync.py` differs from main by one
 line — Stage 3C adding the three extension columns to the cloud select list.
 
 Result against `origin/main` (`2e735780683f70bb2a5d0f305757e0be945071f6`):
-**67 files changed, +16189/-1118, 30 commits** on branch
+**67 files changed, +16231/-1118, 30 commits** on branch
 `feature/reported-statistics-narrow`, down from 93 files, +21463/-4247 and 42
-commits on the wide branch. Final SHA recorded at the end of this section.
+commits on the wide branch. (A handoff cannot state a diffstat that includes
+its own edit; these are the numbers at the final SHA below, which is the commit
+that corrected them.)
 
 The commit count grew from the 25 first reported, in three steps. The initial
 transplant was the 24-commit range `8097bc8..0c43a1b` plus one translation
@@ -168,9 +170,12 @@ Finding 1 therefore blocks that push, not this merge.
 ### Branch state at the end of this pass
 
 Branch `feature/reported-statistics-narrow`, cut from `main` at
-`2e735780683f70bb2a5d0f305757e0be945071f6`. Final SHA recorded in the commit
-that adds this line; the branch is **not pushed** and no pull request is open,
-pending the branch owner's review of the narrowed diff. Every excluded commit
+`2e735780683f70bb2a5d0f305757e0be945071f6`. The final SHA is the commit that
+carries this section — a commit cannot contain its own hash, so read it with
+`git rev-parse feature/reported-statistics-narrow` rather than from this file.
+The preceding commit, the last one to touch anything but this plan, is
+`2ae923abac17d9167c81b930189f40fed8f9bf20`. The branch is **not pushed** and no
+pull request is open, pending the branch owner's review of the narrowed diff. Every excluded commit
 remains reachable on `feature/reported-statistics-contract`,
 `feature/cloud-sync-transport-boundary`, `feature/reference-save-and-plot` and
 `review/cloud-sync-prestage-2026-09-08`; nothing was dropped.
