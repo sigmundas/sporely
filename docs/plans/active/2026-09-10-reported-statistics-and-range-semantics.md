@@ -54,6 +54,21 @@ efforts. Landing was narrowed to a clean branch cut from `main` (`2e73578`)
 carrying only this plan's commits, the contiguous range `8097bc8..0c43a1b` plus
 the two Stage 4 documentation commits.
 
+A review pass on 2026-09-17 accepted the contract implementation itself and sent
+back one remaining scope leak, now removed. The first transplanted commit
+(`09afc99`) had combined this plan's documents with agent-sparring project
+configuration. `.sparring/project.toml` hard-coded a machine-specific test
+command (`/Users/<user>/.../sporely-py/.venv/bin/pytest`), and
+`.sparring/PROJECT.md` recorded branch and worktree state as durable project
+knowledge — naming a canonical checkout on `feature/reference-save-and-plot`, a
+linked worktree for `feature/reported-statistics-contract`, and a frozen
+`8097bc8` test baseline from 2026-09-11. On `main` all of that is stale the
+moment branches move, and would mislead a future agent. Both files were removed
+along with the `.gitignore` entries that existed only to support them, leaving
+`.gitignore` byte-identical to `main`. Both plan documents in
+`docs/plans/active/` were kept. Agent-sparring can be adopted later as its own
+infrastructure change with a portable configuration.
+
 Deliberately excluded and preserved on `feature/reported-statistics-contract`,
 not dropped:
 
@@ -77,20 +92,20 @@ is byte-identical to main, and `utils/cloud_sync.py` differs from main by one
 line — Stage 3C adding the three extension columns to the cloud select list.
 
 Result against `origin/main` (`2e735780683f70bb2a5d0f305757e0be945071f6`):
-**67 files changed, +16231/-1118, 30 commits** on branch
+**64 files changed, +15998/-1118, 32 commits** on branch
 `feature/reported-statistics-narrow`, down from 93 files, +21463/-4247 and 42
-commits on the wide branch. (A handoff cannot state a diffstat that includes
-its own edit; these are the numbers at the final SHA below, which is the commit
-that corrected them.)
+commits on the wide branch. These are the numbers as of the scope-leak cleanup
+commit that carries this line, the final commit of this pass.
 
 The commit count grew from the 25 first reported, in three steps. The initial
 transplant was the 24-commit range `8097bc8..0c43a1b` plus one translation
 regeneration commit, giving 25. Cherry-picking the two Stage 4 documentation
 commits `24f9fd0` and `e3c2ddc`, which fall *after* the frozen candidate and so
 were outside the transplanted range, plus this Stage 5 handoff record, brought
-it to 28. The permanent Add plot regression test and the present handoff update
-make 30. No production commit was added after the transplant: every commit
-beyond the original 25 is documentation, translation regeneration or test.
+it to 28. The permanent Add plot regression test and two handoff updates made
+30, and the scope-leak cleanup described below makes 32. No production commit
+was added after the transplant: every commit beyond the original 25 is
+documentation, translation regeneration, test or scope removal.
 
 ### Verification
 
@@ -173,9 +188,9 @@ Branch `feature/reported-statistics-narrow`, cut from `main` at
 `2e735780683f70bb2a5d0f305757e0be945071f6`. The final SHA is the commit that
 carries this section — a commit cannot contain its own hash, so read it with
 `git rev-parse feature/reported-statistics-narrow` rather than from this file.
-The preceding commit, the last one to touch anything but this plan, is
-`2ae923abac17d9167c81b930189f40fed8f9bf20`. The branch is **not pushed** and no
-pull request is open, pending the branch owner's review of the narrowed diff. Every excluded commit
+The last commit to touch production or test code is
+`b68858fe0845d6ff80305d1ebbf5b8c15ec96621`, the Add plot regression; everything
+after it is this plan and the scope-leak removal. Every excluded commit
 remains reachable on `feature/reported-statistics-contract`,
 `feature/cloud-sync-transport-boundary`, `feature/reference-save-and-plot` and
 `review/cloud-sync-prestage-2026-09-08`; nothing was dropped.
