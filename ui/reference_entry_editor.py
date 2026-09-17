@@ -30,6 +30,7 @@ from __future__ import annotations
 import json
 import math
 import re
+from dataclasses import asdict, replace as dc_replace
 
 from PySide6.QtCore import (
     QCoreApplication,
@@ -48,14 +49,17 @@ from PySide6.QtWidgets import (
     QCompleter,
     QDialog,
     QFormLayout,
+    QFrame,
     QGroupBox,
     QHBoxLayout,
     QHeaderView,
     QLabel,
     QLineEdit,
+    QMenu,
     QMessageBox,
     QPushButton,
     QRadioButton,
+    QScrollArea,
     QTableWidget,
     QTableWidgetItem,
     QTabWidget,
@@ -71,8 +75,22 @@ from database.reference_library import (
     SUPPORTED_ATTACHMENT_DATA_KINDS,
     TaxonTreatmentRepository,
 )
+from references.measurement_content import (
+    METRICS,
+    IntervalStatistic,
+    MeasurementContent,
+    MeasurementContentError,
+    MeasurementDetails,
+    ScalarStatistic,
+    clear_pair,
+    content_from_row,
+    encode_measurement_details,
+    swap_length_width as swap_content_length_width,
+)
+from references.measurement_content_gates import enhanced_editing_enabled
 from references.reference_plotting import range_payload_is_plottable
 
+from . import measurement_content_view as mcv
 from .dialog_helpers import make_github_help_button
 from .hint_status import HintBar, HintStatusController
 from .styles import pt
@@ -282,7 +300,7 @@ class ReferenceEntryEditor(QWidget):
         self._minmax_header_hints = {
             0: QCoreApplication.translate("ReferenceAddDialog", "Extreme min: outermost observed value (parenthesised in literature)."),
             1: QCoreApplication.translate("ReferenceAddDialog", "Typical min: lower end of the typical range, e.g. the unparenthesised left value."),
-            2: QCoreApplication.translate("ReferenceAddDialog", "Mean/central value when explicitly supplied by the source. Not calculated automatically."),
+            2: QCoreApplication.translate("ReferenceAddDialog", "Mean/central value when explicitly supplied by the source. Not calculated automatically. A source that reports the mean as an interval may be entered as 9.2-11.7."),
             3: QCoreApplication.translate("ReferenceAddDialog", "Typical max: upper end of the typical range, e.g. the unparenthesised right value."),
             4: QCoreApplication.translate("ReferenceAddDialog", "Extreme max: outermost observed value (parenthesised in literature)."),
         }
@@ -329,6 +347,43 @@ class ReferenceEntryEditor(QWidget):
         )
         minmax_layout.addWidget(self._measurement_preview_label)
 
+        # Reported statistics (contract version 1): what the source says about
+        # the numbers in the table below. They sit with the rest of the parse
+        # feedback — compact tags with the full sentence behind them, the
+        # reported median/S.D. on their own line so neither is ever read as a
+        # mean, and the notice about what this version will actually store.
+        self._measurement_content: MeasurementContent | None = None
+        self.measurement_tags_label = QLabel("")
+        self.measurement_tags_label.setObjectName("referenceMeasurementTags")
+        self.measurement_tags_label.setWordWrap(True)
+        self.measurement_tags_label.setVisible(False)
+        # No colour override: the tags are content, and a hardcoded slate
+        # foreground is unreadable against the application's dark theme.
+        self.measurement_tags_label.setStyleSheet(
+            f"font-size: {pt(9)}pt; padding: 2px 0px 0px 0px;"
+        )
+        minmax_layout.addWidget(self.measurement_tags_label)
+
+        self.reported_statistics_label = QLabel("")
+        self.reported_statistics_label.setObjectName("referenceReportedStatistics")
+        self.reported_statistics_label.setWordWrap(True)
+        self.reported_statistics_label.setVisible(False)
+        self.reported_statistics_label.setStyleSheet(
+            f"color: #7f8c8d; font-size: {pt(9)}pt;"
+        )
+        minmax_layout.addWidget(self.reported_statistics_label)
+
+        self._reported_statistics_notice_label = QLabel("")
+        self._reported_statistics_notice_label.setObjectName(
+            "referenceReportedStatisticsNotice"
+        )
+        self._reported_statistics_notice_label.setWordWrap(True)
+        self._reported_statistics_notice_label.setVisible(False)
+        self._reported_statistics_notice_label.setStyleSheet(
+            f"color: #b58900; font-style: italic; font-size: {pt(9)}pt; padding: 0px 0px 2px 0px;"
+        )
+        minmax_layout.addWidget(self._reported_statistics_notice_label)
+
         self._raw_measurement_text: str = ""
         prefill_meta = self._prefill_data.get("metadata_json") if self._prefill_data else None
         if isinstance(prefill_meta, dict):
@@ -361,10 +416,50 @@ class ReferenceEntryEditor(QWidget):
         self._minmax_header_viewport.setMouseTracking(True)
         self._minmax_header_viewport.installEventFilter(self)
         self.minmax_table.verticalHeader().setDefaultSectionSize(30)
+        # Three rows plus the two-line header, so the Length/Width/Q rows stay
+        # readable now that the tag strip, the reported-statistics line and the
+        # gate notice above compete for the tab's vertical space.
+        self.minmax_table.setMinimumHeight(40 + 3 * 30 + 6)
         self._formatting_minmax = False
         self.minmax_table.itemChanged.connect(self._on_minmax_item_changed)
         minmax_layout.addWidget(self.minmax_table)
-        self.tabs.addTab(minmax_tab, QCoreApplication.translate("ReferenceAddDialog", "Min/max"))
+
+        # Correction is offered as *retraction*: a reader who knows a tag is
+        # wrong can drop that metric's range interpretation, or discard the
+        # reported statistics altogether, while every measured number stays.
+        # Asserting a different interpretation is deliberately not offered —
+        # see ``measurement_content_view.without_range_tags``.
+        # A QPushButton rather than a QToolButton: it carries a menu just as
+        # well and inherits the application's button styling, which a bare
+        # tool button does not.
+        self._clear_reported_statistics_btn = QPushButton(
+            QCoreApplication.translate("ReferenceAddDialog", "Correct interpretation")
+        )
+        self._clear_reported_statistics_btn.setToolTip(
+            QCoreApplication.translate(
+                "ReferenceAddDialog",
+                "Drop a range interpretation this source does not actually "
+                "state, or discard the reported statistics altogether. The "
+                "measured values in the table are left untouched.",
+            )
+        )
+        self._reported_statistics_menu = QMenu(self._clear_reported_statistics_btn)
+        self._clear_reported_statistics_btn.setMenu(self._reported_statistics_menu)
+        self._clear_reported_statistics_btn.setVisible(False)
+        # Beside Parse and Swap L↔W rather than on a row of its own: it acts
+        # on the same parsed result those two produce, and the Min/max tab has
+        # no vertical space to spare.
+        paste_button_row.insertWidget(2, self._clear_reported_statistics_btn)
+
+        # The tab now carries the table, the parse preview, the tag strip, the
+        # reported-statistics line and the gate notice. Let it scroll rather
+        # than let Qt overlap them when the dialog is short.
+        minmax_scroll = QScrollArea()
+        minmax_scroll.setObjectName("referenceMinmaxScroll")
+        minmax_scroll.setWidgetResizable(True)
+        minmax_scroll.setFrameShape(QFrame.NoFrame)
+        minmax_scroll.setWidget(minmax_tab)
+        self.tabs.addTab(minmax_scroll, QCoreApplication.translate("ReferenceAddDialog", "Min/max"))
 
         spore_tab = QWidget()
         spore_layout = QVBoxLayout(spore_tab)
@@ -612,6 +707,48 @@ class ReferenceEntryEditor(QWidget):
             stats[f"{prefix}_max"] = max(values)
         return stats
 
+    @staticmethod
+    def _measurement_set_content(ms) -> MeasurementContent | None:
+        """Typed content of a stored set, or ``None`` when it cannot be read.
+
+        A malformed stored details object must not stop the preview from
+        showing the measured values; the manager's detail pane and the
+        repository both surface that condition with a real error message.
+        """
+        try:
+            return content_from_row(asdict(ms))
+        except MeasurementContentError:
+            return None
+
+    @staticmethod
+    def _summary_mean_text(ms, content: MeasurementContent | None, metric: str) -> str:
+        """Mean cell for the summary table: a scalar, or a reported interval.
+
+        The scalar column keeps its existing two-decimal presentation. Only a
+        set whose mean is an interval — where that column is NULL by contract
+        rule 4 — renders differently, because otherwise the preview would
+        show an em dash for a mean the source did report.
+        """
+        scalar = getattr(ms, f"{metric}_mean", None)
+        if scalar is not None or content is None:
+            return _format_stat(scalar)
+        return mcv.format_mean_cell(content, metric) or "—"
+
+    @staticmethod
+    def _apply_reported_statistics_to_pane(pane, content: MeasurementContent | None) -> None:
+        """Show meaning tags and reported median / S.D. in the preview pane."""
+        if content is None:
+            pane.set_reported_statistics("")
+            return
+        notice = mcv.unsupported_details_notice(content)
+        if notice:
+            pane.set_reported_statistics(notice, notice)
+            return
+        entries = mcv.content_tags(content) + mcv.content_reported_statistics(content)
+        pane.set_reported_statistics(
+            mcv.compact_tag_text(entries), mcv.explanation_text(entries)
+        )
+
     def sync_preview(self) -> None:
         """Repopulate the shared preview pane from current editor state.
 
@@ -638,11 +775,14 @@ class ReferenceEntryEditor(QWidget):
                 pane.clear()
                 return
             title = self._current_source_label() or QCoreApplication.translate("ReferenceAddDialog", "Existing measurement set")
+            # Reopening a stored set shows what it actually says, including a
+            # mean reported as an interval, which has no scalar column.
+            stored_content = self._measurement_set_content(ms)
             rows = [
                 (
                     label,
                     _format_stat(getattr(ms, f"{prefix}_min", None)),
-                    _format_stat(getattr(ms, f"{prefix}_mean", None)),
+                    self._summary_mean_text(ms, stored_content, prefix),
                     _format_stat(getattr(ms, f"{prefix}_max", None)),
                 )
                 for label, prefix in (
@@ -652,6 +792,7 @@ class ReferenceEntryEditor(QWidget):
                 )
             ]
             pane.set_summary(title, "", rows, ms.raw_text or "")
+            self._apply_reported_statistics_to_pane(pane, stored_content)
             pane.set_raw_spores(
                 ms.raw_points_json
                 or QCoreApplication.translate("ReferenceAddDialog", "This is a range summary; no raw spore points are stored.")
@@ -716,6 +857,7 @@ class ReferenceEntryEditor(QWidget):
             )
             # Manually entered, not yet reported by any external source.
             pane.set_provenance_summary("")
+            pane.set_reported_statistics("")
             pane.set_raw_spores(json.dumps(points, indent=2, ensure_ascii=False, default=str))
             pane.set_method({"mount": "", "stain": "", "sample_type": "", "objective": ""})
             pane.set_calibration(QCoreApplication.translate("ReferenceAddDialog", "Not applicable: entered manually."))
@@ -750,15 +892,23 @@ class ReferenceEntryEditor(QWidget):
             typical = self._table_value(row, typical_col)
             return typical, typical is not None
 
-        def _mean(row: int, parmasto_key: str | None) -> tuple[float | None, bool]:
+        def _mean_text(row: int, parmasto_key: str | None) -> str:
             # The Parmasto species-mean fields are a directly entered value,
             # not a derivation from the typical range, so falling back to
-            # them must never set the derived flag.
-            value = self._table_value(row, 2)
+            # them must never set the derived flag. A mean entered as an
+            # interval is shown as the interval it is, never as one endpoint.
+            raw = self._mean_cell_text(row)
+            if raw:
+                try:
+                    statistic = mcv.parse_mean_cell(raw)
+                except MeasurementContentError:
+                    statistic = None
+                if isinstance(statistic, IntervalStatistic):
+                    return mcv.format_statistic(statistic)
+            value = self._table_value(row, self._MEAN_COLUMN)
             if value is not None or parmasto_key is None:
-                return value, False
-            derived_value = self._parmasto_value(parmasto_key)
-            return derived_value, False
+                return _format_stat(value)
+            return _format_stat(self._parmasto_value(parmasto_key))
 
         rows: list[tuple[str, str, str, str]] = []
         derived_cells: list[tuple[bool, bool, bool]] = []
@@ -768,17 +918,16 @@ class ReferenceEntryEditor(QWidget):
             (QCoreApplication.translate("ReferenceAddDialog", "Q"), 2, "parmasto_q_mean"),
         ):
             min_value, min_derived = _bound(row, 0, 1)
-            mean_value, mean_derived = _mean(row, parmasto_key)
             max_value, max_derived = _bound(row, 4, 3)
             rows.append(
                 (
                     label,
                     _format_stat(min_value),
-                    _format_stat(mean_value),
+                    _mean_text(row, parmasto_key),
                     _format_stat(max_value),
                 )
             )
-            derived_cells.append((min_derived, mean_derived, max_derived))
+            derived_cells.append((min_derived, False, max_derived))
         title = self._current_source_label() or QCoreApplication.translate("ReferenceAddDialog", "Manual entry")
         pane.set_summary(
             title,
@@ -789,6 +938,7 @@ class ReferenceEntryEditor(QWidget):
         )
         # Manually entered, not yet reported by any external source.
         pane.set_provenance_summary("")
+        self._apply_reported_statistics_to_pane(pane, self._measurement_content)
         pane.set_raw_spores(
             QCoreApplication.translate("ReferenceAddDialog", "This is a range summary; no raw spore points are stored.")
         )
@@ -855,7 +1005,12 @@ class ReferenceEntryEditor(QWidget):
         if not item:
             return
         text = item.text().strip()
+        if item.column() == self._MEAN_COLUMN:
+            self._on_mean_cell_changed(item, text)
+            return
         if not text:
+            self._sync_measurement_content_from_table()
+            self._refresh_measurement_content_view()
             self._refresh_preview()
             return
         try:
@@ -868,17 +1023,244 @@ class ReferenceEntryEditor(QWidget):
             item.setTextAlignment(Qt.AlignCenter)
         finally:
             self._formatting_minmax = False
+        self._sync_measurement_content_from_table()
+        self._refresh_measurement_content_view()
+        self._refresh_preview()
+
+    def _on_mean_cell_changed(self, item: QTableWidgetItem, text: str) -> None:
+        """Accept a scalar *or* an interval in the Mean column.
+
+        A scalar keeps the table's two-decimal presentation; an interval is
+        normalised to ``lower-upper`` with equal endpoints preserved, because
+        ``9.2-9.2`` is a different statement from ``9.2`` and the contract
+        stores the two differently. Unreadable text is refused outright — the
+        cell is never silently reinterpreted as the number it starts with.
+        """
+        try:
+            statistic = mcv.parse_mean_cell(text)
+        except MeasurementContentError as exc:
+            self._set_hint(str(exc), tone="warning")
+            return
+        if statistic is None:
+            canonical = ""
+        elif isinstance(statistic, ScalarStatistic):
+            canonical = f"{statistic.value:.2f}"
+        else:
+            canonical = mcv.format_statistic(statistic)
+        if canonical != item.text():
+            self._formatting_minmax = True
+            try:
+                item.setText(canonical)
+                item.setTextAlignment(Qt.AlignCenter)
+            finally:
+                self._formatting_minmax = False
+        self._sync_measurement_content_from_table()
+        self._refresh_measurement_content_view()
         self._refresh_preview()
 
     _MINMAX_ROW_BY_DIMENSION = {"length": 0, "width": 1, "q": 2}
 
-    def _apply_parsed_dimension(self, row: int, dim) -> None:
+    #: Table columns, left to right: extreme min, typical min, mean, typical
+    #: max, extreme max. Rows come from ``_MINMAX_ROW_BY_DIMENSION``.
+    _MEAN_COLUMN = 2
+    _PAIR_COLUMNS_BY_METRIC: dict[str, tuple[str, str, str, str]] = {
+        "length": ("length_min", "length_core_min", "length_core_max", "length_max"),
+        "width": ("width_min", "width_core_min", "width_core_max", "width_max"),
+        "q": ("q_min", "q_core_min", "q_core_max", "q_max"),
+    }
+
+    def _mean_cell_text(self, row: int) -> str:
+        item = self.minmax_table.item(row, self._MEAN_COLUMN)
+        return item.text().strip() if item else ""
+
+    def _sync_measurement_content_from_table(self) -> None:
+        """Fold the table's current numbers back into the typed content.
+
+        The table is the editable surface; the typed content carries what the
+        source said about it. Plain numbers move by assignment, but every
+        *transition* — emptying a described pair, clearing a mean, switching a
+        mean between a scalar and an interval — goes through the contract's
+        own edit operations, so a descriptor can never outlive the numbers it
+        describes and the two shapes of a mean can never both be stored.
+
+        Content written by a newer version is left exactly as it was found:
+        it is inspect-only everywhere else and must not be rewritten here.
+        """
+        content = self._measurement_content
+        if content is None:
+            # Manual entry starts with no typed content. An empty one is the
+            # right starting point: it says nothing about meaning, so a hand
+            # typed range acquires no tag, while a hand typed mean interval
+            # still has somewhere to live.
+            content = MeasurementContent()
+        # ``strict=False``: the cell handler has already told the user why an
+        # unreadable mean was refused, and one bad cell must not discard the
+        # rest of the edit.
+        self._measurement_content = mcv.fold_metric_inputs(
+            content, self._metric_inputs(), strict=False
+        )
+
+    def _metric_inputs(self) -> dict[str, mcv.MetricInput]:
+        """The table's current values, keyed by metric."""
+        inputs: dict[str, mcv.MetricInput] = {}
+        for metric in METRICS:
+            # Explicit row lookup rather than METRICS' own order: a change to
+            # that tuple must not silently shift a metric onto another row.
+            row = self._MINMAX_ROW_BY_DIMENSION[metric]
+            inputs[metric] = mcv.MetricInput(
+                outer_min=self._table_value(row, 0),
+                core_min=self._table_value(row, 1),
+                core_max=self._table_value(row, 3),
+                outer_max=self._table_value(row, 4),
+                mean_text=self._mean_cell_text(row),
+            )
+        return inputs
+
+    def _current_measurement_content(self) -> MeasurementContent | None:
+        """The typed content matching what is on screen right now."""
+        self._sync_measurement_content_from_table()
+        return self._measurement_content
+
+    def _refresh_measurement_content_view(self) -> None:
+        """Repaint the tag strip, the reported-statistics line and the notice."""
+        content = self._measurement_content
+        tags = mcv.content_tags(content) if content is not None else []
+        statistics = mcv.content_reported_statistics(content) if content is not None else []
+        unsupported = (
+            mcv.unsupported_details_notice(content) if content is not None else None
+        )
+
+        tag_text = mcv.compact_tag_text(tags)
+        tag_explanation = mcv.explanation_text(tags)
+        self.measurement_tags_label.setText(tag_text)
+        self.measurement_tags_label.setToolTip(tag_explanation)
+        self.measurement_tags_label.setAccessibleDescription(tag_explanation)
+        self.measurement_tags_label.setVisible(bool(tag_text))
+
+        statistics_text = mcv.compact_tag_text(statistics)
+        statistics_explanation = mcv.explanation_text(statistics)
+        if statistics_text:
+            statistics_text = (
+                QCoreApplication.translate("ReferenceAddDialog", "Also reported:")
+                + " "
+                + statistics_text
+            )
+        self.reported_statistics_label.setText(statistics_text)
+        self.reported_statistics_label.setToolTip(statistics_explanation)
+        self.reported_statistics_label.setAccessibleDescription(statistics_explanation)
+        self.reported_statistics_label.setVisible(bool(statistics_text))
+
+        # The notice is about what will be lost on save, so it follows the
+        # tags and statistics, not the Q core columns: a hand typed Q typical
+        # range keeps its existing q_min/q_max mapping and loses nothing.
+        notice = unsupported or ""
+        if not notice and (tags or statistics) and not enhanced_editing_enabled():
+            notice = QCoreApplication.translate(
+                "ReferenceAddDialog",
+                "Reported statistics are shown here for review. This "
+                "version does not store them yet, so saving keeps the "
+                "measured values only.",
+            )
+        self._reported_statistics_notice_label.setText(notice)
+        self._reported_statistics_notice_label.setVisible(bool(notice))
+
+        self._rebuild_reported_statistics_menu(content)
+        self._clear_reported_statistics_btn.setVisible(
+            bool(tag_text or statistics_text) and unsupported is None
+        )
+
+    def _rebuild_reported_statistics_menu(
+        self, content: MeasurementContent | None
+    ) -> None:
+        """Offer retraction per metric, plus discarding the lot.
+
+        Only metrics that actually carry a range interpretation get an entry,
+        so the menu never invites a correction there is nothing to correct.
+        """
+        menu = self._reported_statistics_menu
+        menu.clear()
+        if content is None:
+            return
+        for metric in mcv.metrics_with_range_tags(content):
+            action = menu.addAction(
+                QCoreApplication.translate(
+                    "ReferenceAddDialog", "{metric}: drop the range interpretation"
+                ).format(metric=mcv.metric_label(metric))
+            )
+            action.setToolTip(
+                QCoreApplication.translate(
+                    "ReferenceAddDialog",
+                    "The source does not actually state what this range "
+                    "means. Removes the tag and keeps the numbers.",
+                )
+            )
+            action.triggered.connect(
+                lambda _checked=False, m=metric: self._on_drop_range_tags(m)
+            )
+        if not menu.isEmpty():
+            menu.addSeparator()
+        discard = menu.addAction(
+            QCoreApplication.translate(
+                "ReferenceAddDialog", "Discard all reported statistics"
+            )
+        )
+        discard.triggered.connect(
+            lambda _checked=False: self._on_clear_reported_statistics_clicked()
+        )
+
+    def _on_drop_range_tags(self, metric: str) -> None:
+        content = self._current_measurement_content()
+        if content is None:
+            return
+        self._measurement_content = mcv.without_range_tags(content, metric)
+        self._refresh_measurement_content_view()
+        self._set_hint(
+            QCoreApplication.translate(
+                "ReferenceAddDialog",
+                "{metric} range interpretation dropped. The measured values "
+                "are unchanged.",
+            ).format(metric=mcv.metric_label(metric)),
+            tone="info",
+        )
+        self._refresh_preview()
+
+    def _on_clear_reported_statistics_clicked(self) -> None:
+        # Fold the table in first: otherwise the next sync would reinstate
+        # whatever the visible cells still say and the tag strip would go
+        # stale against the payload.
+        content = self._current_measurement_content()
+        if content is None:
+            return
+        self._measurement_content = mcv.without_reported_statistics(content)
+        self._refresh_measurement_content_view()
+        self._set_hint(
+            QCoreApplication.translate(
+                "ReferenceAddDialog",
+                "Reported statistics discarded. The measured values are unchanged.",
+            ),
+            tone="info",
+        )
+        self._refresh_preview()
+
+    def _apply_parsed_dimension(self, row: int, dim, mean_text: str) -> None:
+        """Write one parsed metric into its table row.
+
+        The Mean column is passed in rather than taken from ``dim`` because a
+        mean is not a range endpoint: it is the source's scalar mean, or its
+        reported mean interval, or (for the compact ``a-b-c`` form only) the
+        printed centre. A table's *median* cell never reaches this column.
+        """
         from references.measurement_parser import DimensionRange  # local import
         assert isinstance(dim, DimensionRange)
-        column_values = (dim.min, dim.p05, dim.p50, dim.p95, dim.max)
+        column_values = (dim.min, dim.p05, None, dim.p95, dim.max)
         self._formatting_minmax = True
         try:
             for col, value in enumerate(column_values):
+                if col == 2:
+                    item = QTableWidgetItem(mean_text)
+                    item.setTextAlignment(Qt.AlignCenter)
+                    self.minmax_table.setItem(row, col, item)
+                    continue
                 if value is None:
                     blank = QTableWidgetItem("")
                     blank.setTextAlignment(Qt.AlignCenter)
@@ -890,19 +1272,42 @@ class ReferenceEntryEditor(QWidget):
         finally:
             self._formatting_minmax = False
 
+    def _parsed_mean_text(self, content: MeasurementContent, metric: str, dim) -> str:
+        """Mean-cell text for one parsed metric.
+
+        Priority: the typed content's mean (a scalar mean column, or a
+        reported mean interval), then the legacy centre of an ``a-b-c``
+        compact range, which has no typed home and stays a legacy value.
+        """
+        text = mcv.format_mean_cell(content, metric)
+        if text:
+            return text
+        return mcv.format_number(dim.p50)
+
     def _set_parsed_result(self, result) -> None:
-        self._apply_parsed_dimension(0, result.length)
-        self._apply_parsed_dimension(1, result.width)
-        self._apply_parsed_dimension(2, result.q)
-        if result.q_mean is not None:
-            qm_widget = self.parmasto_inputs.get("parmasto_q_mean")
-            if qm_widget is not None and not qm_widget.text().strip():
-                qm_widget.setText(f"{float(result.q_mean):g}")
+        # The typed parser output is the editor's working state from here on:
+        # tags, reported statistics and the mean's shape all live in it, and
+        # the table holds the same numbers in their legacy column layout.
+        content = result.to_content()
+        self._measurement_content = content
+        for metric, dim in (
+            ("length", result.length), ("width", result.width), ("q", result.q)
+        ):
+            self._apply_parsed_dimension(
+                self._MINMAX_ROW_BY_DIMENSION[metric],
+                dim,
+                self._parsed_mean_text(content, metric, dim),
+            )
+        # A reported Q mean is generic evidence from the source; the Parmasto
+        # tab holds species means the user enters deliberately. Routing the
+        # parser through it would make a single publication's Qm look like a
+        # Parmasto biometric, so the value goes to the Q row's Mean cell.
         self._render_measurement_preview(result)
         try:
             self.tabs.setCurrentIndex(0)
         except Exception:
             pass
+        self._refresh_measurement_content_view()
         self._refresh_preview()
 
     _MEASUREMENT_PREVIEW_NOISE_PREFIXES = (
@@ -1001,10 +1406,27 @@ class ReferenceEntryEditor(QWidget):
                 b = self.minmax_table.item(row_b, col)
                 text_a = a.text() if a else ""
                 text_b = b.text() if b else ""
-                self.minmax_table.setItem(row_a, col, QTableWidgetItem(text_b))
-                self.minmax_table.setItem(row_b, col, QTableWidgetItem(text_a))
+                item_a = QTableWidgetItem(text_b)
+                item_b = QTableWidgetItem(text_a)
+                item_a.setTextAlignment(Qt.AlignCenter)
+                item_b.setTextAlignment(Qt.AlignCenter)
+                self.minmax_table.setItem(row_a, col, item_a)
+                self.minmax_table.setItem(row_b, col, item_b)
         finally:
             self._formatting_minmax = False
+        # The tags and reported statistics must travel with their numbers:
+        # a "5%-95%" or "extremes reported" tag left behind would describe the
+        # other dimension's values after the swap.
+        content = self._measurement_content
+        if content is not None:
+            try:
+                self._measurement_content = swap_content_length_width(content)
+            except MeasurementContentError:
+                # Unsupported future details cannot be transformed; leave the
+                # stored object untouched rather than desynchronising it.
+                pass
+        self._sync_measurement_content_from_table()
+        self._refresh_measurement_content_view()
         self._set_hint(QCoreApplication.translate("ReferenceAddDialog", "Length and width swapped."), tone="info")
         self._refresh_preview()
 
@@ -1583,12 +2005,35 @@ class ReferenceEntryEditor(QWidget):
             note_candidate = legacy_meta.get("notes")
             if isinstance(note_candidate, str) and note_candidate.strip():
                 notes = note_candidate.strip()
-        q_min = self._table_value(2, 0)
-        if q_min is None:
-            q_min = self._table_value(2, 1)
-        q_max = self._table_value(2, 4)
-        if q_max is None:
-            q_max = self._table_value(2, 3)
+        # Typed content matching the table as it stands. It carries the
+        # meaning tags, the reported median/S.D. and the mean's shape; the
+        # ordinary columns below are still read from the table so the legacy
+        # mapping is unchanged for every source that says nothing extra.
+        content = self._current_measurement_content()
+        store_reported = (
+            content is not None
+            and mcv.has_reported_content(content)
+            and enhanced_editing_enabled()
+        )
+        typed_q_core = (
+            content.q_core_min is not None and content.q_core_max is not None
+            if content is not None
+            else False
+        )
+        if store_reported and typed_q_core:
+            # The Q core pair has a column of its own now, so q_min/q_max
+            # carry only genuine extremes. Falling back to the typical bounds
+            # here would write a derived extreme next to a core pair that
+            # already holds the same numbers under a different meaning.
+            q_min = self._table_value(2, 0)
+            q_max = self._table_value(2, 4)
+        else:
+            q_min = self._table_value(2, 0)
+            if q_min is None:
+                q_min = self._table_value(2, 1)
+            q_max = self._table_value(2, 4)
+            if q_max is None:
+                q_max = self._table_value(2, 3)
         q_mean = self._table_value(2, 2)
         if q_mean is None:
             q_mean = self._parmasto_value("parmasto_q_mean")
@@ -1618,6 +2063,10 @@ class ReferenceEntryEditor(QWidget):
             stain=stain,
             notes=notes,
         )
+        if store_reported:
+            ms.measurement_details_json = encode_measurement_details(content.details)
+            ms.q_core_min = content.q_core_min
+            ms.q_core_max = content.q_core_max
         if data_kind == "range" and not range_payload_is_plottable(ms):
             return None
         return ms

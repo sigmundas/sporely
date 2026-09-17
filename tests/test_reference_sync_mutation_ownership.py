@@ -16,7 +16,10 @@ from database.reference_library import (
     TaxonTreatment,
     TaxonTreatmentRepository,
 )
-from database.reference_sync_state import ReferenceCloudSyncStateRepository
+from database.reference_sync_state import (
+    ReferenceCloudSyncStateRepository,
+    recognize_library_baseline,
+)
 from utils.archive.portable_import import _merge_reference_entity
 
 
@@ -117,7 +120,9 @@ def test_library_repository_updates_atomically_mark_transport_state_dirty(
         assert state.sync_status == "dirty"
         assert state.cloud_user_id == "user-1"
         assert state.cloud_row_version == 7
-        assert state.accepted_payload == {"id": entity_id}
+        # Stored baselines are read in the current payload shape: a
+        # measurement-set baseline without the extension keys reads them as NULL.
+        assert state.accepted_payload == recognize_library_baseline(kind, {"id": entity_id})
         assert state.retry_count == 0
         assert state.last_error is None
 

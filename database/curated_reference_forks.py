@@ -14,6 +14,12 @@ from typing import Any, Mapping, Protocol
 from database.reference_library import ReferenceIntegrityError
 from database.reference_library_schema import init_reference_library_schema
 from database.schema import get_reference_connection
+from references.measurement_content import (
+    MeasurementContentError,
+    content_from_row,
+    encode_measurement_details,
+    validate_measurement_content,
+)
 
 
 _UUID = re.compile(r"^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$", re.I)
@@ -43,6 +49,17 @@ _MEASUREMENT_KEYS = frozenset({
     "q_max", "q_mean", "length_mean", "width_mean", "sample_size",
     "specimen_count",
 })
+# Version-keyed exact key sets (contract section 7). A curated bundle is
+# accepted at exactly one of these shapes; an unknown version is rejected
+# rather than read as version 1.
+_SNAPSHOT_KEYS_BY_VERSION: Mapping[int, frozenset[str]] = {
+    1: _SNAPSHOT_KEYS,
+    2: _SNAPSHOT_KEYS | {"measurement_details"},
+}
+_MEASUREMENT_KEYS_BY_VERSION: Mapping[int, frozenset[str]] = {
+    1: _MEASUREMENT_KEYS,
+    2: _MEASUREMENT_KEYS | {"q_core_min", "q_core_max"},
+}
 _METHOD_KEYS = frozenset({"mount_medium", "stain", "preparation", "measurement_method"})
 _CITATION_KEYS = frozenset({
     "schema_version", "citation_key", "type", "authors", "editors", "title",
@@ -143,9 +160,58 @@ def _exact_mapping(value: object, keys: frozenset[str]) -> Mapping[str, Any] | N
     return value if isinstance(value, dict) and frozenset(value) == keys else None
 
 
+def _measurement_details_from_snapshot(snapshot: Mapping[str, Any]) -> str | None:
+    """Validate the version-2 extension against the whole candidate row and
+    return its canonical stored encoding.
+
+    A curated copy creates *editable* local content, so it is deliberately
+    excluded from the opaque-acceptance rule for future details versions
+    (contract section 8): an unsupported version is rejected here instead of
+    producing a local row nothing in this desktop may edit. ``mode="edit"``
+    is what enforces that.
+    """
+    measurements = snapshot["measurements"]
+    details_object = snapshot["measurement_details"]
+    if details_object is not None and not isinstance(details_object, dict):
+        raise CuratedReferenceError("invalid curated measurement details")
+    row = {
+        "character": snapshot["character"],
+        "data_kind": snapshot["data_kind"],
+        "raw_text": snapshot["raw_text"],
+        "mount_medium": snapshot["method"]["mount_medium"],
+        "stain": snapshot["method"]["stain"],
+        "preparation": snapshot["method"]["preparation"],
+        "measurement_method": snapshot["method"]["measurement_method"],
+        "sample_size": measurements["sample_size"],
+        "specimen_count": measurements["specimen_count"],
+        "measurement_details_json": (
+            None if details_object is None else _json(details_object)
+        ),
+    }
+    for key in _MEASUREMENT_KEYS_BY_VERSION[2] - {"sample_size", "specimen_count"}:
+        row[key] = measurements[key]
+    try:
+        content = content_from_row(row)
+        validate_measurement_content(content, mode="edit")
+    except MeasurementContentError as exc:
+        raise CuratedReferenceError(
+            f"invalid curated measurement details: {exc}"
+        ) from exc
+    return encode_measurement_details(content.details)
+
+
 def _validate_snapshot(value: object, set_id: str, revision: int) -> dict[str, Any]:
-    snapshot = _exact_mapping(value, _SNAPSHOT_KEYS)
-    if snapshot is None or snapshot["schema_version"] != 1:
+    if not isinstance(value, dict):
+        raise CuratedReferenceError("invalid curated snapshot shape")
+    version = value.get("schema_version")
+    if (
+        isinstance(version, bool)
+        or not isinstance(version, int)
+        or version not in _SNAPSHOT_KEYS_BY_VERSION
+    ):
+        raise CuratedReferenceError("unsupported curated snapshot version")
+    snapshot = _exact_mapping(value, _SNAPSHOT_KEYS_BY_VERSION[version])
+    if snapshot is None:
         raise CuratedReferenceError("invalid curated snapshot shape")
     if snapshot["reference_measurement_set_id"] != set_id or snapshot["reference_revision"] != revision:
         raise CuratedReferenceError("curated snapshot identity mismatch")
@@ -167,7 +233,9 @@ def _validate_snapshot(value: object, set_id: str, revision: int) -> dict[str, A
     for key in ("year", "page_from", "page_to"):
         if snapshot[key] is not None and (not isinstance(snapshot[key], int) or isinstance(snapshot[key], bool)):
             raise CuratedReferenceError(f"invalid curated snapshot {key}")
-    measurements = _exact_mapping(snapshot["measurements"], _MEASUREMENT_KEYS)
+    measurements = _exact_mapping(
+        snapshot["measurements"], _MEASUREMENT_KEYS_BY_VERSION[version]
+    )
     method = _exact_mapping(snapshot["method"], _METHOD_KEYS)
     if measurements is None or method is None or not all(_finite_number_or_none(v) for v in measurements.values()):
         raise CuratedReferenceError("invalid curated measurement payload")
@@ -190,6 +258,8 @@ def _validate_snapshot(value: object, set_id: str, revision: int) -> dict[str, A
                     or not any(key in point for key in ("length", "width", "l", "w"))
                     or any(not isinstance(item, (int, float, bool)) or (isinstance(item, float) and not math.isfinite(item)) for item in point.values())):
                 raise CuratedReferenceError("invalid curated raw point")
+    if version >= 2:
+        _measurement_details_from_snapshot(snapshot)
     return dict(snapshot)
 
 
@@ -502,15 +572,26 @@ def copy_curated_bundle_to_personal_library(bundle: CuratedReferenceBundle) -> C
              snapshot["page_from"], snapshot["page_to"], snapshot["locator_text"]),
         )
         m, method = snapshot["measurements"], snapshot["method"]
+        # A version-1 bundle produces a legacy-only row with a NULL extension;
+        # a version-2 bundle copies all three extension fields. There is no
+        # third outcome: an unsupported version or unsupported details version
+        # was already rejected by ``_validate_snapshot``, so this path never
+        # stores a legacy-only projection of enhanced content.
+        details_json = (
+            _measurement_details_from_snapshot(snapshot)
+            if snapshot["schema_version"] >= 2
+            else None
+        )
         conn.execute(
-            "INSERT INTO reference_measurement_sets (id,taxon_treatment_id,character,raw_text,data_kind,length_min,length_core_min,length_core_max,length_max,width_min,width_core_min,width_core_max,width_max,q_min,q_max,q_mean,length_mean,width_mean,sample_size,specimen_count,mount_medium,stain,preparation,measurement_method,raw_points_json,revision) VALUES (?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,1)",
+            "INSERT INTO reference_measurement_sets (id,taxon_treatment_id,character,raw_text,data_kind,length_min,length_core_min,length_core_max,length_max,width_min,width_core_min,width_core_max,width_max,q_min,q_max,q_mean,length_mean,width_mean,sample_size,specimen_count,mount_medium,stain,preparation,measurement_method,raw_points_json,measurement_details_json,q_core_min,q_core_max,revision) VALUES (?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,1)",
             (set_id, treatment_id, snapshot["character"], snapshot["raw_text"], snapshot["data_kind"],
              m["length_min"], m["length_core_min"], m["length_core_max"], m["length_max"],
              m["width_min"], m["width_core_min"], m["width_core_max"], m["width_max"],
              m["q_min"], m["q_max"], m["q_mean"], m["length_mean"], m["width_mean"],
              m["sample_size"], m["specimen_count"], method["mount_medium"], method["stain"],
              method["preparation"], method["measurement_method"],
-             None if snapshot["raw_points"] is None else _json(snapshot["raw_points"])),
+             None if snapshot["raw_points"] is None else _json(snapshot["raw_points"]),
+             details_json, m.get("q_core_min"), m.get("q_core_max")),
         )
         conn.execute(
             "INSERT INTO curated_reference_forks (curated_measurement_set_id,bundle_revision,sporely_taxon_id,reference_work_id,taxon_treatment_id,reference_measurement_set_id,source_envelope_json,source_sha256) VALUES (?,?,?,?,?,?,?,?)",

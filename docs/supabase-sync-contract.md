@@ -155,6 +155,54 @@ Genuine point arrays, including an empty array, are transmitted unchanged;
 acknowledged updates retain explicit JSON `null` so an existing array can be
 cleared through `jsonb_populate_record`.
 
+Measurement sets carry the measurement-content extension
+(`measurement_details_json`, `q_core_min`, `q_core_max`; contract
+`docs/reference-data/measurement-content-contract.md`, section 9). Every
+measurement-set mutation payload sends all three keys, JSON `null` included;
+the adapter never strips them, because key presence is how a request
+acknowledges the contract. On the server, a request that omits the keys may
+still create a legacy row, retry unchanged, delete or restore, but any other
+change to a row whose extension is non-NULL, and any successor of such a row,
+is rejected with `invalid_payload`; a payload carrying some but not all keys is
+rejected everywhere. Every content change is validated row-level (finite
+positive values, ordered pairs, details structure and the 4096-byte limit; an
+unknown future `schema_version` is stored opaquely). Owner reads and RPC rows
+return the three columns, so a pre-extension server's rows are rejected by the
+desktop as missing canonical fields, and a stored baseline that predates the
+extension is read with the three keys as `null`. Pull reconciliation treats the
+26 scientific-content fields of a measurement set as one conflict group:
+concurrent edits inside the group conflict unless the complete resulting
+content is identical, while `notes` keeps per-field merging.
+
+Observation-reference snapshots have two supported versions (contract section
+7). Version 2 is version 1 with `schema_version: 2`, `q_core_min`/`q_core_max`
+inside the numeric-only `measurements` mapping (17 keys) and one new top-level
+`measurement_details` key holding the decoded details object or `null`; the
+whole snapshot stays within 65536 bytes and the details object within 4096
+bytes of its canonical encoding. The emit rule follows the row, not a setting:
+a legacy-only measurement set still produces its exact version-1 snapshot and
+an enhanced one produces version 2. `private.reference_canonical_snapshot` and
+the desktop builder apply the same rule, so the attachment RPC's equality with
+the canonical snapshot keeps rejecting a version-1 projection of an enhanced
+row. Readers ship before writers: the desktop use feed, the curated and
+portable validators and `private.reference_snapshot_valid` accept both
+versions through version-keyed exact key sets, and any other version is
+refused loudly rather than read as version 1.
+`private.public_reference_snapshot` preserves the extension instead of
+rebuilding `measurements` without it, and the curated publication CHECK and
+public curated reader accept `1` or `2`. Comparison is by version-aware
+semantic projection: `schema_version` and `reference_revision` are dropped, a
+missing extension equals an explicitly null one, real statistics are a genuine
+difference, and an unsupported version is never projectable, so it is never
+equal to anything. Nothing rewrites or enriches a historical snapshot;
+replacement evidence goes through explicit refresh or successor adoption.
+Enhanced content becoming frozen evidence is held behind the
+minimum-supported-reader-version gate
+(`references/measurement_content_gates.py` in `sporely-py`), which ships
+closed: while it is closed the desktop refuses to attach, refresh onto, or
+adopt an enhanced measurement set instead of freezing a lossy version-1
+snapshot of it.
+
 Observation-use pull imports the frozen `snapshot_json` exactly as stored.
 Three-way reconciliation may automatically combine only disjoint role/note
 edits. Identity, measurement-set, selected-time, revision, or snapshot

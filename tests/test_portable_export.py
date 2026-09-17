@@ -7,6 +7,7 @@ from zipfile import ZipFile
 import pytest
 
 from database import schema
+from database.reference_library_schema import register_measurement_contract
 from utils.archive.portable_export import PortableExportError, export_observations
 from utils.archive.portable_import import preview_portable_archive
 from utils.archive.validation import validate_portable_observations
@@ -164,6 +165,7 @@ def test_portable_export_contains_only_selected_dependency_closure(
         connection.commit()
 
     with sqlite3.connect(schema.get_reference_database_path()) as connection:
+        register_measurement_contract(connection)
         connection.executemany(
             "INSERT INTO reference_values (id, genus, species, source) VALUES (?, ?, ?, ?)",
             [(501, "Selected", "reference", "test"), (502, "Other", "reference", "test")],

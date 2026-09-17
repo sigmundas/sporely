@@ -8,6 +8,7 @@ from dataclasses import dataclass
 from typing import Any
 
 from database import schema as database_schema
+from database.reference_citation import SUPPORTED_SNAPSHOT_VERSIONS
 from database.reference_library_schema import (
     OBSERVATION_REFERENCE_ROLES,
     init_observation_reference_uses_schema,
@@ -99,7 +100,11 @@ def stage_observation_reference_use_feed(
                 "remote observation use has invalid role"
             )
         snapshot = payload["snapshot_json"]
-        if snapshot.get("schema_version") != 1:
+        # Readers ship before writers (contract section 7, rollout step 1): a
+        # version-2 snapshot is accepted here well before this desktop may
+        # emit one, so a feed that already carries one is never rejected as a
+        # whole. Any other version is still refused loudly.
+        if snapshot.get("schema_version") not in SUPPORTED_SNAPSHOT_VERSIONS:
             raise ReferencePullReconciliationError(
                 "remote observation use has unsupported snapshot schema"
             )

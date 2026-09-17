@@ -25,6 +25,7 @@ files=(
   "ui/comparison_panel.py"
   "ui/cloud_reference_dialog.py"
   "ui/reference_preview_pane.py"
+  "ui/measurement_content_view.py"
 )
 
 if [[ -x ".venv/bin/pyside6-lupdate" ]]; then

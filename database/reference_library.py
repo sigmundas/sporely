@@ -37,6 +37,20 @@ from database.reference_sync_state import (
     record_use_mutation_intent,
 )
 from database.schema import get_connection, get_reference_connection
+from references.measurement_content import (
+    MeasurementContent,
+    MeasurementContentError,
+    UnsupportedMeasurementDetails,
+    content_from_row,
+    decode_measurement_details,
+    encode_measurement_details,
+    is_enhanced_row,
+    validate_measurement_content,
+)
+from references.measurement_content_gates import (
+    ENHANCED_ATTACHMENT_BLOCKED_MESSAGE,
+    enhanced_attachments_enabled,
+)
 
 
 # --- Errors ------------------------------------------------------------------
@@ -220,6 +234,27 @@ class MeasurementSet:
     legacy_reference_value_id: int | None = None
     created_at: str | None = None
     updated_at: str | None = None
+    # Measurement content extension (contract sections 1–2; Stage 3A columns).
+    # ``measurement_details_json`` is the stored canonical codec text; the
+    # typed view is ``measurement_content()``. ``q_core_min``/``q_core_max``
+    # are the inner Q pair and are never a substitute for ``q_min``/``q_max``.
+    measurement_details_json: str | None = None
+    q_core_min: float | None = None
+    q_core_max: float | None = None
+
+    @property
+    def is_enhanced(self) -> bool:
+        """True when any extension column is non-NULL (contract terminology)."""
+        return is_enhanced_row(asdict(self))
+
+    def measurement_content(self) -> MeasurementContent:
+        """Typed scientific content (contract section 5) with decoded details.
+
+        Legacy rows decode to ``details=None``; unsupported future versions
+        decode opaquely; malformed stored details raise
+        ``MeasurementContentError`` rather than being reinterpreted.
+        """
+        return content_from_row(asdict(self))
 
 
 @dataclass
@@ -854,10 +889,24 @@ class MeasurementSetRepository:
         "legacy_reference_value_id",
         "created_at",
         "updated_at",
+        "measurement_details_json",
+        "q_core_min",
+        "q_core_max",
     )
 
     @staticmethod
-    def _validate(ms: MeasurementSet) -> None:
+    def _validate(ms: MeasurementSet) -> str | None:
+        """Validate the complete candidate row and return the canonical
+        ``measurement_details_json`` text to persist.
+
+        The scientific content (numeric columns, the Q core pair and the
+        decoded details) is validated together through the contract
+        validator in ``mode="edit"``, so an unsupported future details
+        version is rejected: such a row is inspect-only until the binary is
+        upgraded. Details are passed through the contract codec first, so
+        semantically empty objects normalize to NULL and the stored text is
+        always canonical. Nothing here infers new semantics for legacy rows.
+        """
         if not str(ms.taxon_treatment_id or "").strip():
             raise ReferenceValidationError(
                 "measurement_set.taxon_treatment_id is required"
@@ -898,10 +947,42 @@ class MeasurementSetRepository:
                     "measurement_set.raw_points_json entries must be numeric or "
                     "dicts containing at least one numeric length/width"
                 )
+        try:
+            content = content_from_row(asdict(ms))
+            canonical = encode_measurement_details(content.details)
+            content.details = decode_measurement_details(canonical)
+            validate_measurement_content(content, mode="edit")
+        except MeasurementContentError as exc:
+            raise ReferenceValidationError(
+                f"measurement_set content invalid: {exc}"
+            ) from exc
+        return canonical
+
+    @staticmethod
+    def _require_editable_source(existing: MeasurementSet) -> None:
+        """Reject edits and successors of a stored row whose details cannot
+        be edited by this binary (contract section 3: inspect-only).
+
+        Validating only the merged candidate would let an override of
+        ``measurement_details_json`` (NULL or a supported version) silently
+        downgrade an unsupported future version. Malformed stored text is
+        likewise never rewritten from here.
+        """
+        try:
+            details = existing.measurement_content().details
+        except MeasurementContentError as exc:
+            raise ReferenceValidationError(
+                f"measurement_set content invalid: {exc}"
+            ) from exc
+        if isinstance(details, UnsupportedMeasurementDetails):
+            raise ReferenceValidationError(
+                "measurement_set content invalid: unsupported measurement "
+                "details version (row is inspect-only until upgraded)"
+            )
 
     @classmethod
     def create(cls, ms: MeasurementSet) -> MeasurementSet:
-        cls._validate(ms)
+        ms.measurement_details_json = cls._validate(ms)
         if not ms.id:
             ms.id = _new_uuid()
         now = _now()
@@ -927,6 +1008,9 @@ class MeasurementSetRepository:
                 values,
             )
             conn.commit()
+        except Exception:
+            conn.rollback()
+            raise
         finally:
             conn.close()
         return ms
@@ -969,13 +1053,19 @@ class MeasurementSetRepository:
         existing = cls.get(set_id)
         if existing is None:
             raise ReferenceIntegrityError(f"measurement_set {set_id} not found")
+        cls._require_editable_source(existing)
 
         allowed = {name for name in cls._COLUMNS if name != "id"}
         for name in list(updates.keys()):
             if name not in allowed:
                 raise ReferenceValidationError(f"cannot update field {name!r}")
         merged = MeasurementSet(**{**asdict(existing), **updates})
-        cls._validate(merged)
+        # The merged candidate is validated as a whole (contract section 5:
+        # single-writer path). Callers expressing explicit clear/switch/swap
+        # edits apply the contract's edit operations to
+        # ``existing.measurement_content()`` and pass ``content_row_updates``
+        # of the result; nothing here repairs or infers semantics.
+        merged.measurement_details_json = cls._validate(merged)
         if bump_revision:
             merged.revision = int(existing.revision or 1) + 1
             merged.updated_at = _now()
@@ -990,6 +1080,9 @@ class MeasurementSetRepository:
             )
             record_library_mutation_intent(conn, "measurement_set", set_id)
             conn.commit()
+        except Exception:
+            conn.rollback()
+            raise
         finally:
             conn.close()
         return merged
@@ -1008,6 +1101,7 @@ class MeasurementSetRepository:
         existing = cls.get(set_id)
         if existing is None:
             raise ReferenceIntegrityError(f"measurement_set {set_id} not found")
+        cls._require_editable_source(existing)
         base = asdict(existing)
         base.pop("id", None)
         base.pop("created_at", None)
@@ -1362,6 +1456,40 @@ class MeasurementSetPreferenceRepository:
 # --- Observation reference uses ---------------------------------------------
 
 
+def _gated_observation_reference_snapshot(
+    work: "ReferenceWork",
+    treatment: "TaxonTreatment",
+    measurement_set: "MeasurementSet",
+) -> dict[str, Any]:
+    """Build a snapshot for an attachment, applying the reader-version gate.
+
+    ``build_observation_reference_snapshot`` emits version 2 for an enhanced
+    measurement set. Until the minimum-supported-reader-version gate is open,
+    a desktop older than the version-2 readers would reject a whole use feed
+    containing such a snapshot, so an enhanced source cannot become frozen
+    evidence yet. Refusing is the only safe answer: emitting version 1 instead
+    would freeze evidence that silently omits the reported statistics.
+
+    A malformed stored details object surfaces through the same boundary, as a
+    library error the callers of this repository already handle, rather than as
+    a bare ``ValueError`` escaping into the UI.
+    """
+    if not enhanced_attachments_enabled() and is_enhanced_row(
+        {
+            "measurement_details_json": measurement_set.measurement_details_json,
+            "q_core_min": measurement_set.q_core_min,
+            "q_core_max": measurement_set.q_core_max,
+        }
+    ):
+        raise ReferenceIntegrityError(ENHANCED_ATTACHMENT_BLOCKED_MESSAGE)
+    try:
+        return build_observation_reference_snapshot(work, treatment, measurement_set)
+    except MeasurementContentError as exc:
+        raise ReferenceIntegrityError(
+            f"reference measurement content cannot be snapshotted: {exc}"
+        ) from exc
+
+
 class ObservationReferenceUseRepository:
     """Cross-database observation ↔ measurement-set link management."""
 
@@ -1592,7 +1720,7 @@ class ObservationReferenceUseRepository:
                     f"reference_measurement_set {reference_measurement_set_id} does not exist"
                 )
             measurement_set, treatment, work = bundle
-            snapshot = build_observation_reference_snapshot(
+            snapshot = _gated_observation_reference_snapshot(
                 work, treatment, measurement_set
             )
             snapshot_json = serialize_snapshot(snapshot)
@@ -1709,7 +1837,7 @@ class ObservationReferenceUseRepository:
                 state="source_missing",
             )
         measurement_set, treatment, work = bundle
-        current_snapshot = build_observation_reference_snapshot(
+        current_snapshot = _gated_observation_reference_snapshot(
             work, treatment, measurement_set
         )
         state = (
@@ -1763,9 +1891,19 @@ class ObservationReferenceUseRepository:
                 path_ids=resolution.path_ids,
             )
         measurement_set, treatment, work = bundle
-        snapshot = build_observation_reference_snapshot(
-            work, treatment, measurement_set
-        )
+        try:
+            snapshot = _gated_observation_reference_snapshot(
+                work, treatment, measurement_set
+            )
+        except ReferenceIntegrityError:
+            # An enhanced successor this desktop may not freeze yet, or one
+            # whose stored content is unreadable, is reported exactly like a
+            # successor it cannot render: reviewable, not adoptable.
+            return MeasurementSetSuccessorResolution(
+                source_id=resolution.source_id,
+                state="unsupported",
+                path_ids=resolution.path_ids,
+            )
         # Adoption must not replace a working historical plot with a source
         # the current desktop cannot render. Import locally to keep the
         # repository's normal CRUD path independent of plotting concerns.
@@ -1913,7 +2051,7 @@ class ObservationReferenceUseRepository:
                 "snapshot was preserved"
             )
         measurement_set, treatment, work = bundle
-        current_snapshot = build_observation_reference_snapshot(
+        current_snapshot = _gated_observation_reference_snapshot(
             work, treatment, measurement_set
         )
         if observation_snapshots_semantically_equal(
