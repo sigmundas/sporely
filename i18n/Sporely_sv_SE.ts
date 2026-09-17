@@ -236,27 +236,27 @@
     <message>
         <location filename="../ui/add_reference_dialog.py" line="385"/>
         <source>Add new</source>
-        <translation type="unfinished"></translation>
+        <translation>Lägg till ny</translation>
     </message>
     <message>
         <location filename="../ui/add_reference_dialog.py" line="498"/>
         <source>Reference taxon:</source>
-        <translation type="unfinished"></translation>
+        <translation>Referenstaxon:</translation>
     </message>
     <message>
         <location filename="../ui/add_reference_dialog.py" line="504"/>
         <source>Choose which taxon&apos;s published spore data to compare against. Select &apos;Use observation taxon&apos; if available, search another taxon by typing genus and species, or choose an AI suggestion. This never changes the observation&apos;s own identification.</source>
-        <translation type="unfinished"></translation>
+        <translation>Välj vilken taxons publicerade sporidata du vill jämföra med. Välj ”Använd observationens taxon” om det finns, sök upp en annan taxon genom att skriva släkte och art, eller välj ett AI-förslag. Detta ändrar aldrig observationens egen identifiering.</translation>
     </message>
     <message>
         <location filename="../ui/add_reference_dialog.py" line="529"/>
         <source>Use observation taxon: {taxon}</source>
-        <translation type="unfinished"></translation>
+        <translation>Använd observationens taxon: {taxon}</translation>
     </message>
     <message>
         <location filename="../ui/add_reference_dialog.py" line="531"/>
         <source>Search another taxon…</source>
-        <translation type="unfinished"></translation>
+        <translation>Sök efter en annan taxon…</translation>
     </message>
     <message>
         <location filename="../ui/add_reference_dialog.py" line="738"/>
@@ -659,12 +659,12 @@
     <message>
         <location filename="../ui/main_window.py" line="3292"/>
         <source>Change account…</source>
-        <translation type="unfinished"></translation>
+        <translation>Byt konto…</translation>
     </message>
     <message>
         <location filename="../ui/main_window.py" line="3295"/>
         <source>Reset the cloud account link and sign in with a different account. Local data will remain, but cloud sync state will be cleared.</source>
-        <translation type="unfinished"></translation>
+        <translation>Återställ kopplingen till molnkontot och logga in med ett annat konto. Lokala data behålls, men molnsynkroniseringens status rensas.</translation>
     </message>
     <message>
         <location filename="../ui/main_window.py" line="3341"/>
@@ -761,36 +761,40 @@ Obs: detta åsidosätter aktuella visningsinställningar för varje bild</transl
     <message>
         <location filename="../ui/main_window.py" line="4210"/>
         <source>Reset Cloud Account Link?</source>
-        <translation type="unfinished"></translation>
+        <translation>Återställa kopplingen till molnkontot?</translation>
     </message>
     <message>
         <location filename="../ui/main_window.py" line="4212"/>
         <source>This will clear the cloud account link and allow you to sign in with a different account.
 
 Your local data will remain unchanged. Cloud sync status will be reset, and data will need to be synced again after signing into the new account.</source>
-        <translation type="unfinished"></translation>
+        <translation>Detta rensar kopplingen till molnkontot så att du kan logga in med ett annat konto.
+
+Dina lokala data förblir oförändrade. Molnsynkroniseringens status återställs och data måste synkroniseras igen efter att du loggat in på det nya kontot.</translation>
     </message>
     <message>
         <location filename="../ui/main_window.py" line="4231"/>
         <source>Reset Failed</source>
-        <translation type="unfinished"></translation>
+        <translation>Återställningen misslyckades</translation>
     </message>
     <message>
         <location filename="../ui/main_window.py" line="4232"/>
         <source>Unable to reset cloud account link.
 
 {error}</source>
-        <translation type="unfinished"></translation>
+        <translation>Kunde inte återställa kopplingen till molnkontot.
+
+{error}</translation>
     </message>
     <message>
         <location filename="../ui/main_window.py" line="4251"/>
         <source>Account Link Reset</source>
-        <translation type="unfinished"></translation>
+        <translation>Kontokopplingen är återställd</translation>
     </message>
     <message>
         <location filename="../ui/main_window.py" line="4252"/>
         <source>Cloud account link has been cleared. You can now sign in with a different account.</source>
-        <translation type="unfinished"></translation>
+        <translation>Kopplingen till molnkontot har rensats. Du kan nu logga in med ett annat konto.</translation>
     </message>
     <message>
         <location filename="../ui/main_window.py" line="4465"/>
@@ -10079,27 +10083,27 @@ max</translation>
         <location filename="../ui/reference_entry_editor.py" line="534"/>
         <location filename="../ui/reference_entry_editor.py" line="705"/>
         <source>No taxon selected</source>
-        <translation type="unfinished"></translation>
+        <translation>Ingen taxon vald</translation>
     </message>
     <message>
         <location filename="../ui/reference_entry_editor.py" line="537"/>
         <source>The normalized taxon this treatment is linked to. To change the taxon, go back to the Reference taxon selector above.</source>
-        <translation type="unfinished"></translation>
+        <translation>Det normaliserade taxon som denna behandling är kopplad till. Gå tillbaka till väljaren ”Referenstaxon” ovan för att byta taxon.</translation>
     </message>
     <message>
         <location filename="../ui/reference_entry_editor.py" line="542"/>
         <source>Taxon:</source>
-        <translation type="unfinished"></translation>
+        <translation>Taxon:</translation>
     </message>
     <message>
         <location filename="../ui/reference_entry_editor.py" line="553"/>
         <source>Name exactly as published (e.g., as written in the publication)</source>
-        <translation type="unfinished"></translation>
+        <translation>Namn exakt som publicerat (t.ex. som det står i publikationen)</translation>
     </message>
     <message>
         <location filename="../ui/reference_entry_editor.py" line="556"/>
         <source>The exact name used in the publication. This can be an old synonym, spelling variant, or historical combination — separate from the normalized taxon above.</source>
-        <translation type="unfinished"></translation>
+        <translation>Det exakta namn som används i publikationen. Det kan vara en gammal synonym, en stavningsvariant eller en historisk kombination – skilt från det normaliserade taxonet ovan.</translation>
     </message>
     <message>
         <location filename="../ui/reference_entry_editor.py" line="562"/>

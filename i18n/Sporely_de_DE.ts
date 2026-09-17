@@ -236,27 +236,27 @@
     <message>
         <location filename="../ui/add_reference_dialog.py" line="385"/>
         <source>Add new</source>
-        <translation type="unfinished"></translation>
+        <translation>Neu hinzufügen</translation>
     </message>
     <message>
         <location filename="../ui/add_reference_dialog.py" line="498"/>
         <source>Reference taxon:</source>
-        <translation type="unfinished"></translation>
+        <translation>Referenztaxon:</translation>
     </message>
     <message>
         <location filename="../ui/add_reference_dialog.py" line="504"/>
         <source>Choose which taxon&apos;s published spore data to compare against. Select &apos;Use observation taxon&apos; if available, search another taxon by typing genus and species, or choose an AI suggestion. This never changes the observation&apos;s own identification.</source>
-        <translation type="unfinished"></translation>
+        <translation>Wähle aus, mit welchem Taxon du die veröffentlichten Sporendaten vergleichen möchtest. Wähle „Taxon der Beobachtung verwenden“, falls verfügbar, suche ein anderes Taxon, indem du Gattung und Art eingibst, oder wähle einen KI-Vorschlag. Dies ändert nie die eigene Bestimmung der Beobachtung.</translation>
     </message>
     <message>
         <location filename="../ui/add_reference_dialog.py" line="529"/>
         <source>Use observation taxon: {taxon}</source>
-        <translation type="unfinished"></translation>
+        <translation>Taxon der Beobachtung verwenden: {taxon}</translation>
     </message>
     <message>
         <location filename="../ui/add_reference_dialog.py" line="531"/>
         <source>Search another taxon…</source>
-        <translation type="unfinished"></translation>
+        <translation>Anderes Taxon suchen…</translation>
     </message>
     <message>
         <location filename="../ui/add_reference_dialog.py" line="738"/>
@@ -618,12 +618,12 @@
     <message>
         <location filename="../ui/main_window.py" line="3292"/>
         <source>Change account…</source>
-        <translation type="unfinished"></translation>
+        <translation>Konto wechseln…</translation>
     </message>
     <message>
         <location filename="../ui/main_window.py" line="3295"/>
         <source>Reset the cloud account link and sign in with a different account. Local data will remain, but cloud sync state will be cleared.</source>
-        <translation type="unfinished"></translation>
+        <translation>Setze die Verknüpfung mit dem Cloud-Konto zurück und melde dich mit einem anderen Konto an. Lokale Daten bleiben erhalten, der Cloud-Synchronisierungsstatus wird jedoch gelöscht.</translation>
     </message>
     <message>
         <location filename="../ui/main_window.py" line="3335"/>
@@ -736,36 +736,40 @@
     <message>
         <location filename="../ui/main_window.py" line="4210"/>
         <source>Reset Cloud Account Link?</source>
-        <translation type="unfinished"></translation>
+        <translation>Verknüpfung mit dem Cloud-Konto zurücksetzen?</translation>
     </message>
     <message>
         <location filename="../ui/main_window.py" line="4212"/>
         <source>This will clear the cloud account link and allow you to sign in with a different account.
 
 Your local data will remain unchanged. Cloud sync status will be reset, and data will need to be synced again after signing into the new account.</source>
-        <translation type="unfinished"></translation>
+        <translation>Dadurch wird die Verknüpfung mit dem Cloud-Konto gelöscht und du kannst dich mit einem anderen Konto anmelden.
+
+Deine lokalen Daten bleiben unverändert. Der Cloud-Synchronisierungsstatus wird zurückgesetzt, und die Daten müssen nach der Anmeldung beim neuen Konto erneut synchronisiert werden.</translation>
     </message>
     <message>
         <location filename="../ui/main_window.py" line="4231"/>
         <source>Reset Failed</source>
-        <translation type="unfinished"></translation>
+        <translation>Zurücksetzen fehlgeschlagen</translation>
     </message>
     <message>
         <location filename="../ui/main_window.py" line="4232"/>
         <source>Unable to reset cloud account link.
 
 {error}</source>
-        <translation type="unfinished"></translation>
+        <translation>Verknüpfung mit dem Cloud-Konto konnte nicht zurückgesetzt werden.
+
+{error}</translation>
     </message>
     <message>
         <location filename="../ui/main_window.py" line="4251"/>
         <source>Account Link Reset</source>
-        <translation type="unfinished"></translation>
+        <translation>Kontoverknüpfung zurückgesetzt</translation>
     </message>
     <message>
         <location filename="../ui/main_window.py" line="4252"/>
         <source>Cloud account link has been cleared. You can now sign in with a different account.</source>
-        <translation type="unfinished"></translation>
+        <translation>Die Verknüpfung mit dem Cloud-Konto wurde gelöscht. Du kannst dich jetzt mit einem anderen Konto anmelden.</translation>
     </message>
     <message>
         <location filename="../ui/main_window.py" line="4271"/>
@@ -10077,27 +10081,27 @@ max</translation>
         <location filename="../ui/reference_entry_editor.py" line="534"/>
         <location filename="../ui/reference_entry_editor.py" line="705"/>
         <source>No taxon selected</source>
-        <translation type="unfinished"></translation>
+        <translation>Kein Taxon ausgewählt</translation>
     </message>
     <message>
         <location filename="../ui/reference_entry_editor.py" line="537"/>
         <source>The normalized taxon this treatment is linked to. To change the taxon, go back to the Reference taxon selector above.</source>
-        <translation type="unfinished"></translation>
+        <translation>Das normalisierte Taxon, mit dem diese Behandlung verknüpft ist. Um das Taxon zu ändern, gehe zurück zur Auswahl „Referenztaxon“ oben.</translation>
     </message>
     <message>
         <location filename="../ui/reference_entry_editor.py" line="542"/>
         <source>Taxon:</source>
-        <translation type="unfinished"></translation>
+        <translation>Taxon:</translation>
     </message>
     <message>
         <location filename="../ui/reference_entry_editor.py" line="553"/>
         <source>Name exactly as published (e.g., as written in the publication)</source>
-        <translation type="unfinished"></translation>
+        <translation>Name genau wie veröffentlicht (z.&#x202f;B. wie in der Publikation geschrieben)</translation>
     </message>
     <message>
         <location filename="../ui/reference_entry_editor.py" line="556"/>
         <source>The exact name used in the publication. This can be an old synonym, spelling variant, or historical combination — separate from the normalized taxon above.</source>
-        <translation type="unfinished"></translation>
+        <translation>Der genaue Name, der in der Publikation verwendet wird. Das kann ein altes Synonym, eine Schreibvariante oder eine historische Kombination sein – unabhängig vom normalisierten Taxon oben.</translation>
     </message>
     <message>
         <location filename="../ui/reference_entry_editor.py" line="562"/>

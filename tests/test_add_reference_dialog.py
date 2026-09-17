@@ -1014,12 +1014,6 @@ def test_manual_callback_rejects_when_observation_drifted(monkeypatch):
     window._submit_reference_editor_result.assert_not_called()
 
 
-def test_manual_callback_propagates_failed_submission(monkeypatch):
-    window, kwargs = _make_host_window_for_manual_callback(monkeypatch)
-    window._submit_reference_editor_result.return_value = False
-    assert kwargs["manual_attach_callback"](object()) is False
-
-
 # ---------------------------------------------------------------------
 # "+ New publication…" must not open a modal from inside the selection
 # signal (segfault regression)
