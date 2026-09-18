@@ -51,6 +51,7 @@ from references.measurement_content_gates import (
     ENHANCED_ATTACHMENT_BLOCKED_MESSAGE,
     enhanced_attachments_enabled,
 )
+from references.reference_display import SourceDisplay, display_from_row
 
 
 # --- Errors ------------------------------------------------------------------
@@ -312,6 +313,18 @@ class MeasurementSetCandidate:
     is_favorite: bool = False
     recent_use_sequence: int | None = None
     treatment_notes: str | None = None
+    #: What this set actually contains, projected once while the chooser list
+    #: is loaded (see :mod:`references.reference_display`). ``None`` only for
+    #: a candidate built by hand in a test or a screenshot scenario; ask
+    #: :meth:`source_display` instead of reading ``data_kind`` to decide a
+    #: badge, so no widget re-interprets stored columns on its own.
+    display: SourceDisplay | None = None
+
+    def source_display(self) -> SourceDisplay:
+        """This candidate's display semantics, empty rather than missing."""
+        if self.display is not None:
+            return self.display
+        return SourceDisplay(source_kind="library", stored_data_kind=self.data_kind or None)
 
 
 @dataclass(frozen=True)
@@ -1224,6 +1237,37 @@ class MeasurementSetRepository:
                     ms.data_kind AS ms_data_kind,
                     ms.raw_text AS ms_raw_text,
                     ms.revision AS ms_revision,
+                    -- Scientific-content columns under their own names so
+                    -- ``content_from_row`` reads the row directly. Joined in
+                    -- here rather than fetched per selected row: the chooser
+                    -- needs each row's display semantics to label it, and one
+                    -- query per visible row is what this avoids.
+                    ms.character,
+                    ms.data_kind,
+                    ms.raw_text,
+                    ms.length_min,
+                    ms.length_core_min,
+                    ms.length_core_max,
+                    ms.length_max,
+                    ms.width_min,
+                    ms.width_core_min,
+                    ms.width_core_max,
+                    ms.width_max,
+                    ms.q_min,
+                    ms.q_core_min,
+                    ms.q_core_max,
+                    ms.q_max,
+                    ms.q_mean,
+                    ms.length_mean,
+                    ms.width_mean,
+                    ms.sample_size,
+                    ms.specimen_count,
+                    ms.mount_medium,
+                    ms.stain,
+                    ms.preparation,
+                    ms.measurement_method,
+                    ms.raw_points_json,
+                    ms.measurement_details_json,
                     t.id AS t_id,
                     t.taxon_id AS t_taxon_id,
                     t.name_as_published AS t_name_as_published,
@@ -1284,6 +1328,7 @@ class MeasurementSetRepository:
                     treatment_notes=(
                         str(row["t_treatment_notes"]) if row["t_treatment_notes"] else None
                     ),
+                    display=display_from_row(dict(row), source_kind="library"),
                 )
             )
         return result

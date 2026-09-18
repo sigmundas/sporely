@@ -139,7 +139,7 @@ simply deleting coverage.
 
 # Canonical stage sequence
 
-## Stage 0 — Commit the design contract and pin the baseline
+## Preflight — Commit the design contract and pin the baseline
 
 **Goal:** make the visual/behavioral target durable before production code
 moves.
@@ -665,3 +665,123 @@ requirement, the source semantics survive round-trip into the preview and
 storage, the PR #6 behaviors still work (or are explicitly superseded with
 replacement tests), and no final UI state depends on unlanded historical branch
 behavior.
+
+---
+
+# Implementation record
+
+## Stage 1 — Scientific display semantics and chooser projection (done)
+
+Landed as `references/reference_display.py`, a pure non-Qt projection over the
+frozen measurement-content contract. It answers one question per source —
+*what did this source really report?* — and nothing else: it derives no
+statistic, computes no midpoint and infers no percentile.
+
+`ui/measurement_content_view.py` was deliberately **not** extended. That module
+is the reference *editors'* presentation layer: it produces translated
+`MeaningTag` objects and imports `PySide6`, so `database/` cannot depend on it
+and its output is per-descriptor prose rather than the one coarse badge the
+chooser needs. The two layers now split by question, not by duplication:
+`measurement_content_view` says what a descriptor means in words,
+`reference_display` says which badge a row deserves and which values a
+comparison row may show.
+
+### Shape of the projection
+
+- `SourceDisplay` — one source: `source_kind`, per-metric `MetricDisplay` map,
+  `raw_point_count`, `sample_size`, `specimen_count`, `measurement_method`,
+  `stored_data_kind` (diagnostics only), `unsupported_details_version`,
+  `details_unreadable`, plus the derived `has_raw_points`, `inspect_only`,
+  `has_any_range`, `has_reported_descriptor` and `data_label`.
+- `MetricDisplay` — `outer_range` / `outer_kind`, `core_range` / `core_kind`,
+  `percentile_bounds`, `scalar_mean`, `mean_interval`, `median`, `sd`, plus
+  `has_centre` and `is_percentile_core`.
+- `DataLabel` — an untranslated *meaning*: `raw_data`, `published_range`,
+  `percentile_range` (carrying explicit bounds) or `none`. The wording
+  `5–95% range` versus `10–90% range` is the UI's rendering of those bounds, so
+  the translation catalogue stays in the UI layer and the rule stays here.
+
+Label precedence: real points beat everything; an explicit
+`percentile_interval` descriptor with bounds beats a plain range; every other
+stated range — typical, reported or unspecified — is a published range.
+
+### Entry points, one per source path
+
+- Library: `display_from_row(row)`, via `content_from_row`.
+- Manual/parser: `display_from_content(result.to_content(), ...)`. The parser
+  already tags a printed inner range `unspecified`, which projects to
+  `published_range` — a printed monograph range can never become a percentile.
+- My observations: `display_from_points(points)`. Sets the raw-data badge and
+  the point count, and summarises nothing.
+- Community: `display_from_community_summary(payload)` /
+  `community_summary_content(payload)`.
+
+### Audit result: no schema change is needed
+
+The Community aggregate was the only path with a plausible representational
+gap. Its `*_min`/`*_max`, `*_p05`/`*_p95`, `*_p50` and `*_avg` columns all have
+exact homes in the version-1 contract: the outer pair with a
+`reported_extremes` descriptor, the inner pair with an explicit
+`percentile_interval` descriptor carrying bounds `(5, 95)`, the median as a
+reported statistic and the mean in the scalar column. Q carries no percentile
+pair in the aggregate and therefore gets extremes, median and mean only. No new
+column and no new enum value were added anywhere.
+
+`parmasto` stays what it already is: a provenance/method value in
+`data_kind`. It never changes a badge, and `measurement_method` is projected
+alongside so a later stage can show it as provenance.
+
+### Chooser projection without an N+1
+
+`MeasurementSetRepository.list_attachment_candidates` already joins
+`reference_measurement_sets` once. The scientific-content columns were added to
+that same `SELECT` under their own (unaliased) names, so `content_from_row`
+reads the row directly, and each `MeasurementSetCandidate` now carries
+`display: SourceDisplay | None`. `MeasurementSetCandidate.source_display()`
+returns an empty projection for a candidate built by hand in a test or
+screenshot scenario, so no widget has to fall back to reading `data_kind`.
+`tests/test_reference_library_candidate_display.py::
+test_listing_candidates_needs_no_query_per_row` pins the single-query property
+with a SQLite trace callback.
+
+A row whose `measurement_details_json` cannot be decoded reports
+`details_unreadable` and still shows its stored numeric columns, rather than
+raising out of list loading and emptying the chooser.
+
+### Verification
+
+- `tests/test_reference_display.py` (27 cases) — raw points, published range,
+  outer extremes with an explicit 5–95 core, non-5/95 bounds, typical core
+  without a percentile descriptor, Parmasto-style content, explicit mean and
+  median, mean/median intervals, no centre statistic, legacy untagged row,
+  unsupported future details version, undecodable details, and each of the
+  four source paths.
+- `tests/test_reference_library_candidate_display.py` (6 cases) — the
+  repository projection, including the single-query property and the
+  `data_kind`-alone-is-not-raw-data rule.
+- Existing contract suites pass unchanged: `test_measurement_content.py`,
+  `test_measurement_content_view.py`,
+  `test_measurement_content_contract_fixtures.py`,
+  `test_reference_measurement_content_schema.py`,
+  `test_reference_measurement_content_persistence.py` (279 passed together
+  with the new projection tests).
+- Candidate-path suites pass: `test_reference_add_dialog_normalized.py`,
+  `test_reference_quick_add_service.py`,
+  `test_reference_library_preferences.py`,
+  `test_reference_library_desktop_slice.py`, `test_add_reference_dialog.py`.
+- `py_compile` on every touched module; `git diff --check` clean.
+
+Four failures seen in the wider `-k "reference or measurement or library or
+cloud"` run (`test_cloud_media_pull_retry.py`,
+`test_cloud_sync_progress_reset_and_prepare.py`, `test_image_gallery_widget.py`,
+`test_observation_geography_sync.py`) reproduce unchanged at the stage's base
+commit in a clean worktree. They are pre-existing cloud-sync/gallery failures,
+unrelated to this stage, and are not addressed here.
+
+### Deferred to later stages
+
+No UI consumes the projection yet; Stage 2 onward wires it into the Library
+row anatomy and the preview comparison. `ui/add_reference_dialog.py::
+_populate_preview` still fetches the full `MeasurementSet` for the selected
+row and applies its own extreme-or-typical fallback — correct for one selected
+row, and replaced when the preview moves onto the projection.
