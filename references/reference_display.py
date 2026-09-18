@@ -78,22 +78,30 @@ SourceKind = Literal["library", "community", "observation", "manual"]
 #: at all, which is a real state the chooser must be able to show honestly.
 DataLabelKind = Literal["raw_data", "published_range", "percentile_range", "none"]
 
-#: Where a source's statistics came from. This is the reported-versus-derived
-#: distinction, and it is a property of the *source*, not of one number: a
-#: monograph's printed mean and a Community aggregate's mean are both "the
-#: mean", but only one of them is a value some author chose to publish.
+#: Where one number came from. This is the reported-versus-derived
+#: distinction: a monograph's printed mean and a Community aggregate's mean are
+#: both "the mean", but only one of them is a value an author chose to publish.
+#:
+#: Provenance is tracked per *kind of number*, not per source, because the two
+#: really do differ inside a single row. A library row transcribed from a
+#: monograph holds a printed mean, but if it also stores raw points then
+#: ``ui/reference_entry_editor.py::normalized_measurement_set_payload`` filled
+#: its ``sample_size`` with ``len(raw_points_json)`` — a count Sporely
+#: calculated, sitting beside statistics the author published.
 #:
 #: ``reported``
-#:     The statistic is reproduced as the source stated it — a published
-#:     monograph value, a manually entered value, or either of those stored in
-#:     the library. Nothing was calculated by Sporely or by the cloud.
+#:     Stated by the source: a published monograph value, a value typed into
+#:     the manual editor, a number the parser read out of printed text, or one
+#:     of those stored in the library. Nothing calculated it.
 #: ``computed``
-#:     The statistic was calculated from individual measurements — a Community
-#:     aggregate over contributors' points. Honest, but not something an author
-#:     published, and a later stage must be able to say so on screen.
-#: ``none``
-#:     The source states no centre statistic at all.
-StatisticsOrigin = Literal["reported", "computed", "none"]
+#:     Calculated from individual measurements — a Community observation
+#:     aggregate's percentiles, or a count of points on file. Honest, but not
+#:     something an author published, and a later stage must be able to say so.
+#: ``unknown``
+#:     Storage does not establish which. Preferred over a guess in either
+#:     direction: the projection would rather admit uncertainty than let a UI
+#:     attribute a number to an author who never printed it.
+Provenance = Literal["reported", "computed", "unknown"]
 
 
 @dataclass(frozen=True)

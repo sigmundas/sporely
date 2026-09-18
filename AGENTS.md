@@ -47,6 +47,13 @@ Claude role agents under `.claude/agents/` follow the same boundaries with Claud
 ### Context discipline
 
 - The active plan is durable project memory; the current agent context is disposable working memory. At an architectural/subsystem boundary, update the plan/handoff and prefer a fresh agent. Keep the same agent only for tightly related follow-up work where its recent context is directly useful.
+- On staged implementation work outside an Agent Sparring managed run, update
+  the canonical active plan's current-stage/handoff record before stopping.
+
+- During an Agent Sparring managed plan run, the active plan document is
+  immutable. Do not edit it, append implementation records, or mark stages
+  complete there. Record progress and handoff information only in the
+  Agent Sparring stage artifacts.
 - Read the active plan's **current stage/handoff first**. Do not read completed-stage history unless a concrete compatibility question requires it. Use `docs/technical-overview.md` for orientation instead of rediscovering the repository.
 - Search before reading. Use `rg`/symbol search, then inspect bounded ranges around relevant definitions/callers. Never dump a large file to context just to understand it. In particular, do not read `ui/main_window.py`, `ui/observations_tab.py`, `utils/cloud_sync.py`, or other multi-thousand-line modules wholesale.
 - Scope every search to the repository you are working in. Never search the

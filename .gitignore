@@ -162,3 +162,7 @@ sopp.jpg
 /database/taxonomy/registry/*.tmp
 !/database/taxonomy/registry/canonical/
 !/database/taxonomy/registry/canonical/**
+
+# Agent Sparring runtime state
+.sparring/stages/
+.sparring/plans/

@@ -1,0 +1,13 @@
+project = "sporely-py"
+
+[repo]
+root = "."
+
+[agents.stage]
+provider = "claude-cli"
+
+[agents.sparring]
+provider = "codex-cli"
+
+[stage]
+self_check = false
