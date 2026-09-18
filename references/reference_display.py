@@ -97,11 +97,11 @@ DataLabelKind = Literal["raw_data", "published_range", "percentile_range", "none
 #:     Calculated from individual measurements — a Community observation
 #:     aggregate's percentiles, or a count of points on file. Honest, but not
 #:     something an author published, and a later stage must be able to say so.
-#: ``unknown``
-#:     Storage does not establish which. Preferred over a guess in either
-#:     direction: the projection would rather admit uncertainty than let a UI
-#:     attribute a number to an author who never printed it.
-Provenance = Literal["reported", "computed", "unknown"]
+#: ``none``
+#:     The source states no statistic at all — not a sample size, not a range,
+#:     not a point. There is no number here whose origin could be attributed,
+#:     which is a real state an empty or placeholder row is in.
+StatisticsOrigin = Literal["reported", "computed", "none"]
 
 
 @dataclass(frozen=True)

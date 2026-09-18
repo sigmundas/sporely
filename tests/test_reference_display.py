@@ -565,3 +565,46 @@ def test_typed_content_with_an_explicit_point_count_override():
     # Real points outrank every descriptor.
     assert display.data_label == DataLabel(kind="raw_data")
     assert display.raw_point_count == 12
+
+
+# --- The module's own public surface ------------------------------------------
+
+
+def test_every_exported_name_and_annotation_actually_resolves():
+    """The type aliases must exist, not merely be spelled in an annotation.
+
+    ``from __future__ import annotations`` means a dataclass field typed with a
+    name that was never defined still constructs fine, so the behavioural tests
+    above cannot catch a half-finished rename of one of the aliases. A star
+    import and a type-hint resolution both do, and both are things a caller is
+    entitled to do.
+    """
+    import typing
+
+    from references import reference_display
+
+    missing = [
+        name for name in reference_display.__all__ if not hasattr(reference_display, name)
+    ]
+    assert missing == [], f"__all__ names nothing defines: {missing}"
+
+    for cls in (
+        reference_display.DataLabel,
+        reference_display.MetricDisplay,
+        reference_display.SourceDisplay,
+    ):
+        typing.get_type_hints(cls)
+
+
+def test_statistics_origin_lists_exactly_the_values_the_projection_produces():
+    """The alias is a contract for later UI stages, so it may not drift.
+
+    A value the module never produces would invite a widget to write a branch
+    that can never run; a value it produces but does not list would make a
+    legitimate branch look like a typo.
+    """
+    import typing
+
+    from references.reference_display import StatisticsOrigin
+
+    assert set(typing.get_args(StatisticsOrigin)) == {"reported", "computed", "none"}
