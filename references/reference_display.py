@@ -97,11 +97,17 @@ DataLabelKind = Literal["raw_data", "published_range", "percentile_range", "none
 #:     Calculated from individual measurements — a Community observation
 #:     aggregate's percentiles, or a count of points on file. Honest, but not
 #:     something an author published, and a later stage must be able to say so.
+#: ``unknown``
+#:     Storage does not establish which. Preferred over a guess in either
+#:     direction: the projection would rather admit uncertainty than let a UI
+#:     attribute a number to an author who never printed it. Produced for a
+#:     sample size that is indistinguishable from a count of the stored points
+#:     (see :attr:`SourceDisplay.sample_size_origin`).
 #: ``none``
 #:     The source states no statistic at all — not a sample size, not a range,
 #:     not a point. There is no number here whose origin could be attributed,
 #:     which is a real state an empty or placeholder row is in.
-StatisticsOrigin = Literal["reported", "computed", "none"]
+StatisticsOrigin = Literal["reported", "computed", "unknown", "none"]
 
 
 @dataclass(frozen=True)
@@ -183,10 +189,19 @@ class SourceDisplay:
     sample_size: int | None = None
     specimen_count: int | None = None
     measurement_method: str | None = None
-    #: Whether this source's statistics were published or calculated. Set once
-    #: per source by the constructor that knows the answer; see
-    #: :data:`StatisticsOrigin`.
+    #: Whether this source's *centre statistics* — its means, medians and
+    #: intervals — were published or calculated. See :data:`StatisticsOrigin`.
     statistics_origin: StatisticsOrigin = "none"
+    #: Where :attr:`sample_size` came from, tracked separately because it
+    #: genuinely differs from the rest of the row.
+    #:
+    #: ``ui/reference_entry_editor.py`` (see ``sample_size = len(...)``) fills a
+    #: raw-points row's ``n`` with a count of the stored points, while the same
+    #: row's mean may be a figure transcribed from a monograph. One
+    #: source-wide origin cannot describe that row: calling it ``reported``
+    #: credits an author with a number Sporely counted, and calling it
+    #: ``computed`` denies the author the mean they really did print.
+    sample_size_origin: StatisticsOrigin = "none"
     #: ``data_kind`` exactly as stored, for diagnostics only. Never consulted
     #: when choosing a label (rules 1 and 4).
     stored_data_kind: str | None = None
@@ -249,13 +264,26 @@ class SourceDisplay:
 
     @property
     def sample_size_is_reported(self) -> bool:
-        """Whether :attr:`sample_size` came from the source rather than a count.
+        """Whether :attr:`sample_size` is a number an author actually printed.
 
         A Community aggregate's ``n`` is the number of measurements behind it
         and a personal observation's is the number of points on file; a
-        monograph's ``n`` is a number its author printed.
+        monograph's ``n`` is a number its author printed. This asks
+        :attr:`sample_size_origin`, not the source-wide
+        :attr:`statistics_origin`, so a row whose mean was published but whose
+        ``n`` is a count of stored points answers ``False`` here.
         """
-        return self.sample_size is not None and self.statistics_origin == "reported"
+        return self.sample_size is not None and self.sample_size_origin == "reported"
+
+    @property
+    def sample_size_is_computed(self) -> bool:
+        """Whether :attr:`sample_size` is known to be a count, not a claim.
+
+        Deliberately not the negation of :attr:`sample_size_is_reported`: an
+        ``n`` whose origin storage cannot establish is neither, and a UI that
+        must attribute the number should say so rather than pick a side.
+        """
+        return self.sample_size is not None and self.sample_size_origin == "computed"
 
     def metric(self, metric: str) -> MetricDisplay:
         """This source's projection for one metric, empty rather than missing."""
@@ -376,6 +404,32 @@ def raw_point_count(raw_points_json: str | None) -> int:
     return sum(1 for point in decoded if is_measurement_point(point))
 
 
+def _derive_sample_size_origin(
+    resolved_n: int | None, raw_points: int, statistics_origin: StatisticsOrigin
+) -> StatisticsOrigin:
+    """Where a stored ``n`` came from, refusing to credit an author on a guess.
+
+    A count of the stored points is what ``ui/reference_entry_editor.py``
+    writes for every raw-points row, so an ``n`` equal to the number of points
+    on file is indistinguishable from that count — even though a monograph
+    printing ``n = 30`` beside thirty transcribed measurements would look the
+    same. That is ``unknown``: not a count we can prove, and not a figure we
+    may attribute to an author.
+
+    An ``n`` that differs from the point count cannot be the editor's count, so
+    somebody stated it, and it inherits the source's own origin.
+    """
+    if resolved_n is None:
+        return "none"
+    if statistics_origin == "computed":
+        # The caller knows this whole source is an aggregate; its n is the
+        # number of measurements behind that aggregate.
+        return "computed"
+    if raw_points > 0 and resolved_n == raw_points:
+        return "unknown"
+    return statistics_origin
+
+
 def display_from_content(
     content: MeasurementContent,
     *,
@@ -384,6 +438,7 @@ def display_from_content(
     details_unreadable: bool = False,
     statistics_origin: StatisticsOrigin | None = None,
     sample_size: int | None = None,
+    sample_size_origin: StatisticsOrigin | None = None,
 ) -> SourceDisplay:
     """Project already-decoded typed content.
 
@@ -397,6 +452,10 @@ def display_from_content(
     library or typed into the manual editor is a value some author published.
     The Community adapter passes ``computed`` explicitly, because a cloud
     aggregate's mean and median are calculated from contributors' points.
+
+    ``sample_size_origin`` is derived separately by
+    :func:`_derive_sample_size_origin` unless a caller states it, because a
+    single row really can hold a published mean beside a counted ``n``.
     """
     details = content.details
     count = raw_points if raw_points is not None else raw_point_count(content.raw_points_json)
@@ -412,12 +471,17 @@ def display_from_content(
             or count > 0
         )
         statistics_origin = "reported" if states_something else "none"
+    if sample_size_origin is None:
+        sample_size_origin = _derive_sample_size_origin(
+            resolved_n, max(0, int(count)), statistics_origin
+        )
     return SourceDisplay(
         source_kind=source_kind,
         metrics=metrics,
         raw_point_count=max(0, int(count)),
         sample_size=resolved_n,
         statistics_origin=statistics_origin,
+        sample_size_origin=sample_size_origin,
         specimen_count=content.specimen_count,
         measurement_method=content.measurement_method,
         stored_data_kind=content.data_kind,
@@ -498,6 +562,9 @@ def display_from_points(
         raw_point_count=count,
         sample_size=count or None,
         statistics_origin="computed" if count else "none",
+        # This n *is* the count, with no ambiguity to preserve: the caller
+        # handed us the points themselves rather than a stored column.
+        sample_size_origin="computed" if count else "none",
     )
 
 

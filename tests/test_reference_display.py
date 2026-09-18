@@ -607,4 +607,95 @@ def test_statistics_origin_lists_exactly_the_values_the_projection_produces():
 
     from references.reference_display import StatisticsOrigin
 
-    assert set(typing.get_args(StatisticsOrigin)) == {"reported", "computed", "none"}
+    assert set(typing.get_args(StatisticsOrigin)) == {
+        "reported",
+        "computed",
+        "unknown",
+        "none",
+    }
+
+
+# --- A counted n beside a published mean --------------------------------------
+
+
+def test_a_counted_sample_size_is_not_credited_to_an_author():
+    """The mixed-origin row: a printed mean beside an ``n`` Sporely counted.
+
+    ``ui/reference_entry_editor.py`` fills every raw-points row's sample size
+    with ``len(raw_points_json)``. That count must not be presented as a figure
+    a monograph printed — but the mean on the same row genuinely was printed,
+    so the source-wide origin must stay ``reported``. One origin per source
+    cannot express this row, which is why the sample size has its own.
+    """
+    points = [{"length": 9.0, "width": 5.0}, {"length": 9.4, "width": 5.2}]
+    display = display_from_row(
+        _row(
+            data_kind="raw_points",
+            raw_points_json=json.dumps(points),
+            sample_size=2,
+            length_mean=9.2,
+        )
+    )
+
+    assert display.sample_size == 2
+    assert not display.sample_size_is_reported
+    assert not display.sample_size_is_computed  # indistinguishable, so neither
+    assert display.sample_size_origin == "unknown"
+
+    # The mean is untouched by the sample size's uncertainty.
+    assert display.statistics_origin == "reported"
+    assert display.has_reported_statistic
+    assert display.metric("length").scalar_mean == 9.2
+
+
+def test_a_sample_size_unlike_the_point_count_was_stated_by_someone():
+    """Thirty measured spores behind two transcribed points is a claim.
+
+    The editor's count can only ever equal the number of stored points, so an
+    ``n`` that differs from it did not come from there.
+    """
+    points = [{"length": 9.0}, {"length": 9.4}]
+    display = display_from_row(
+        _row(data_kind="raw_points", raw_points_json=json.dumps(points), sample_size=30)
+    )
+
+    assert display.raw_point_count == 2
+    assert display.sample_size == 30
+    assert display.sample_size_origin == "reported"
+    assert display.sample_size_is_reported
+
+
+def test_a_monograph_sample_size_without_points_stays_reported():
+    display = display_from_row(
+        _row(sample_size=30, length_core_min=8.0, length_core_max=11.0)
+    )
+
+    assert display.sample_size_origin == "reported"
+    assert display.sample_size_is_reported
+
+
+def test_a_community_aggregate_n_is_a_count_of_contributed_measurements():
+    display = display_from_community_summary({"measurement_count": 41, "length_avg": 9.0})
+
+    assert display.sample_size == 41
+    assert display.sample_size_origin == "computed"
+    assert display.sample_size_is_computed
+    assert not display.sample_size_is_reported
+
+
+def test_personal_observation_n_is_a_count_with_no_ambiguity():
+    """Here the points themselves were handed over, so the count is certain."""
+    display = display_from_points([{"length_um": 9.0}, {"length_um": 9.4}])
+
+    assert display.sample_size == 2
+    assert display.sample_size_origin == "computed"
+    assert display.sample_size_is_computed
+
+
+def test_a_source_with_no_sample_size_attributes_nothing():
+    display = display_from_row(_row(length_core_min=8.0, length_core_max=11.0))
+
+    assert display.sample_size is None
+    assert display.sample_size_origin == "none"
+    assert not display.sample_size_is_reported
+    assert not display.sample_size_is_computed
