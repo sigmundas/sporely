@@ -38,13 +38,18 @@ Four rules carry this module's scientific weight:
    compact badge collapses them to ``published_range`` while
    :attr:`MetricDisplay.core_kind` preserves the precise descriptor for the
    detail view.
-4. **``parmasto`` is provenance, not a data kind.** It describes how spores
+4. **A published statistic and a calculated one are never the same claim.**
+   :attr:`SourceDisplay.statistics_origin` says which a source holds, so a
+   Community aggregate's mean can be shown as the aggregate it is rather than
+   as something an author printed.
+5. **``parmasto`` is provenance, not a data kind.** It describes how spores
    were measured and reported; it never changes which badge a row gets.
 """
 
 from __future__ import annotations
 
 import json
+import math
 from dataclasses import dataclass, field
 from typing import Any, Iterable, Literal, Mapping
 
@@ -72,6 +77,23 @@ SourceKind = Literal["library", "community", "observation", "manual"]
 #: The meaning of a compact badge. ``none`` means the source states no range
 #: at all, which is a real state the chooser must be able to show honestly.
 DataLabelKind = Literal["raw_data", "published_range", "percentile_range", "none"]
+
+#: Where a source's statistics came from. This is the reported-versus-derived
+#: distinction, and it is a property of the *source*, not of one number: a
+#: monograph's printed mean and a Community aggregate's mean are both "the
+#: mean", but only one of them is a value some author chose to publish.
+#:
+#: ``reported``
+#:     The statistic is reproduced as the source stated it — a published
+#:     monograph value, a manually entered value, or either of those stored in
+#:     the library. Nothing was calculated by Sporely or by the cloud.
+#: ``computed``
+#:     The statistic was calculated from individual measurements — a Community
+#:     aggregate over contributors' points. Honest, but not something an author
+#:     published, and a later stage must be able to say so on screen.
+#: ``none``
+#:     The source states no centre statistic at all.
+StatisticsOrigin = Literal["reported", "computed", "none"]
 
 
 @dataclass(frozen=True)
@@ -129,7 +151,18 @@ class MetricDisplay:
 
     @property
     def is_percentile_core(self) -> bool:
-        return self.core_kind == "percentile_interval" and self.percentile_bounds is not None
+        """Whether this metric really has a drawable percentile interval.
+
+        All three parts are required: the descriptor kind, its explicit bounds
+        *and* the two stored numbers the descriptor describes. A descriptor
+        without its interval describes nothing, and a badge derived from it
+        would promise a range the source does not contain.
+        """
+        return (
+            self.core_kind == "percentile_interval"
+            and self.percentile_bounds is not None
+            and self.core_range is not None
+        )
 
 
 @dataclass(frozen=True)
@@ -142,6 +175,10 @@ class SourceDisplay:
     sample_size: int | None = None
     specimen_count: int | None = None
     measurement_method: str | None = None
+    #: Whether this source's statistics were published or calculated. Set once
+    #: per source by the constructor that knows the answer; see
+    #: :data:`StatisticsOrigin`.
+    statistics_origin: StatisticsOrigin = "none"
     #: ``data_kind`` exactly as stored, for diagnostics only. Never consulted
     #: when choosing a label (rules 1 and 4).
     stored_data_kind: str | None = None
@@ -177,6 +214,40 @@ class SourceDisplay:
             m.outer_kind is not None or m.core_kind is not None
             for m in self.metrics.values()
         )
+
+    @property
+    def has_centre_statistic(self) -> bool:
+        """Whether any metric states a mean, mean interval or median."""
+        return any(m.has_centre for m in self.metrics.values())
+
+    @property
+    def has_reported_statistic(self) -> bool:
+        """A centre statistic exists and some author published it.
+
+        A later stage may present such a value plainly. Compare
+        :attr:`has_computed_statistic`, which must be attributed.
+        """
+        return self.has_centre_statistic and self.statistics_origin == "reported"
+
+    @property
+    def has_computed_statistic(self) -> bool:
+        """A centre statistic exists but was calculated from measurements.
+
+        ``True`` for a Community aggregate's mean and median. Presenting one of
+        these as if a source had printed it is the confusion this projection
+        exists to prevent.
+        """
+        return self.has_centre_statistic and self.statistics_origin == "computed"
+
+    @property
+    def sample_size_is_reported(self) -> bool:
+        """Whether :attr:`sample_size` came from the source rather than a count.
+
+        A Community aggregate's ``n`` is the number of measurements behind it
+        and a personal observation's is the number of points on file; a
+        monograph's ``n`` is a number its author printed.
+        """
+        return self.sample_size is not None and self.statistics_origin == "reported"
 
     def metric(self, metric: str) -> MetricDisplay:
         """This source's projection for one metric, empty rather than missing."""
@@ -245,10 +316,44 @@ def _metric_display(content: MeasurementContent, metric: str) -> MetricDisplay:
     )
 
 
+#: Keys a stored raw point may carry, matching the accepted curated-snapshot
+#: shape in ``database/curated_reference_forks.py``.
+_POINT_KEYS: frozenset[str] = frozenset({"length", "width", "l", "w", "q"})
+_POINT_DIMENSION_KEYS: tuple[str, ...] = ("length", "width", "l", "w")
+
+
+def is_measurement_point(point: Any) -> bool:
+    """Whether one decoded list member is really an individual measurement.
+
+    A bare finite number is accepted (a single-dimension point, as the curated
+    snapshot shape allows); a mapping must carry at least one length or width
+    key and only finite numeric values. ``null``, an empty object, a string and
+    a nested list are all rejected — they are not measurements, and counting
+    them would let a corrupt blob earn the ``Raw data`` badge.
+    """
+    if isinstance(point, bool):
+        return False
+    if isinstance(point, (int, float)):
+        return math.isfinite(point)
+    if not isinstance(point, Mapping):
+        return False
+    if not set(point) <= _POINT_KEYS:
+        return False
+    if not any(key in point for key in _POINT_DIMENSION_KEYS):
+        return False
+    return all(
+        not isinstance(value, bool)
+        and isinstance(value, (int, float))
+        and math.isfinite(value)
+        for value in point.values()
+    )
+
+
 def raw_point_count(raw_points_json: str | None) -> int:
     """Number of individual measurements stored as points, ``0`` when none.
 
-    Only a JSON list counts, and only its length. Malformed text answers ``0``
+    Only a JSON list counts, and within it only members that are actually
+    measurements (:func:`is_measurement_point`). Malformed text answers ``0``
     rather than raising: an unreadable points blob means the chooser may not
     claim raw data, not that the row vanishes.
     """
@@ -260,7 +365,7 @@ def raw_point_count(raw_points_json: str | None) -> int:
         return 0
     if not isinstance(decoded, list):
         return 0
-    return len(decoded)
+    return sum(1 for point in decoded if is_measurement_point(point))
 
 
 def display_from_content(
@@ -269,20 +374,42 @@ def display_from_content(
     source_kind: SourceKind,
     raw_points: int | None = None,
     details_unreadable: bool = False,
+    statistics_origin: StatisticsOrigin | None = None,
+    sample_size: int | None = None,
 ) -> SourceDisplay:
     """Project already-decoded typed content.
 
     ``raw_points`` overrides the count derived from
     ``content.raw_points_json`` for a source that carries its points outside
     the content object (a personal observation, a Community detail).
+    ``sample_size`` likewise overrides ``content.sample_size`` for a source
+    that keeps its ``n`` outside the content columns.
+
+    ``statistics_origin`` defaults to ``reported``: everything stored in the
+    library or typed into the manual editor is a value some author published.
+    The Community adapter passes ``computed`` explicitly, because a cloud
+    aggregate's mean and median are calculated from contributors' points.
     """
     details = content.details
     count = raw_points if raw_points is not None else raw_point_count(content.raw_points_json)
+    resolved_n = sample_size if sample_size is not None else content.sample_size
+    metrics = {metric: _metric_display(content, metric) for metric in METRICS}
+    if statistics_origin is None:
+        # "none" is reserved for a source that states nothing at all. A
+        # monograph that printed only "n = 30" still reported that number, so
+        # the origin does not depend on a centre statistic existing.
+        states_something = (
+            any(body.has_centre or body.has_any_range for body in metrics.values())
+            or resolved_n is not None
+            or count > 0
+        )
+        statistics_origin = "reported" if states_something else "none"
     return SourceDisplay(
         source_kind=source_kind,
-        metrics={metric: _metric_display(content, metric) for metric in METRICS},
+        metrics=metrics,
         raw_point_count=max(0, int(count)),
-        sample_size=content.sample_size,
+        sample_size=resolved_n,
+        statistics_origin=statistics_origin,
         specimen_count=content.specimen_count,
         measurement_method=content.measurement_method,
         stored_data_kind=content.data_kind,
@@ -312,6 +439,36 @@ def display_from_row(row: Mapping[str, Any], *, source_kind: SourceKind = "libra
     return display_from_content(content, source_kind=source_kind)
 
 
+#: Every spelling of a point's length/width a caller may hand to
+#: :func:`display_from_points`. A personal observation's rows use the ``_um``
+#: suffix and carry unrelated keys (id, measurement_type) alongside, so this
+#: check is looser than the strict stored-snapshot shape above.
+_LOOSE_DIMENSION_KEYS: tuple[str, ...] = (
+    "length",
+    "width",
+    "l",
+    "w",
+    "length_um",
+    "width_um",
+)
+
+
+def _carries_a_dimension(point: Any) -> bool:
+    if isinstance(point, bool):
+        return False
+    if isinstance(point, (int, float)):
+        return math.isfinite(point)
+    if not isinstance(point, Mapping):
+        return False
+    for key in _LOOSE_DIMENSION_KEYS:
+        value = point.get(key)
+        if isinstance(value, bool) or not isinstance(value, (int, float)):
+            continue
+        if math.isfinite(value):
+            return True
+    return False
+
+
 def display_from_points(
     points: Iterable[Any], *, source_kind: SourceKind = "observation"
 ) -> SourceDisplay:
@@ -319,14 +476,20 @@ def display_from_points(
 
     No range, mean or median is computed from the points: summarising them is
     the plotting layer's job, and a chooser badge must not imply the source
-    reported a statistic it never printed.
+    reported a statistic it never printed. Only members that actually carry a
+    measured dimension are counted, so an empty or malformed member cannot
+    inflate ``n`` or manufacture the ``Raw data`` badge.
+
+    The count is a count, not a published figure, so
+    :attr:`SourceDisplay.statistics_origin` is ``computed``.
     """
-    count = len(list(points or []))
+    count = sum(1 for point in (points or []) if _carries_a_dimension(point))
     return SourceDisplay(
         source_kind=source_kind,
         metrics={metric: MetricDisplay(metric=metric) for metric in METRICS},
         raw_point_count=count,
         sample_size=count or None,
+        statistics_origin="computed" if count else "none",
     )
 
 
@@ -343,6 +506,28 @@ def _number(value: Any) -> float | None:
         return float(value)
     except (TypeError, ValueError):
         return None
+
+
+def community_sample_size(payload: Mapping[str, Any]) -> int | None:
+    """The ``n`` behind one Community aggregate.
+
+    The cloud detail calls it ``measurement_count`` — the same number
+    ``ui/cloud_reference_dialog.py::community_detail_preview_fields`` prints as
+    ``n=`` — while a locally normalized payload may already carry
+    ``sample_size``. Zero means "no measurements behind this aggregate", which
+    is absence, not a sample of size zero.
+    """
+    for key in ("measurement_count", "sample_size"):
+        value = payload.get(key)
+        if value is None or isinstance(value, bool):
+            continue
+        try:
+            count = int(value)
+        except (TypeError, ValueError):
+            continue
+        if count > 0:
+            return count
+    return None
 
 
 def community_summary_content(payload: Mapping[str, Any]) -> MeasurementContent:
@@ -390,6 +575,7 @@ def community_summary_content(payload: Mapping[str, Any]) -> MeasurementContent:
     return MeasurementContent(
         character="spore_size",
         data_kind="summary",
+        sample_size=community_sample_size(payload),
         mount_medium=(payload.get("mount_medium") or None),
         stain=(payload.get("stain") or None),
         details=MeasurementDetails(metrics=metrics) if metrics else None,
@@ -404,9 +590,15 @@ def display_from_community_summary(payload: Mapping[str, Any]) -> SourceDisplay:
     desktop holds, so it never earns the ``raw_data`` badge. The separate
     raw-points mode of the same Community result does, through
     :func:`display_from_points`.
+
+    Every statistic here was calculated from contributors' measurements rather
+    than published by an author, so the projection says ``computed``.
     """
     return display_from_content(
-        community_summary_content(payload), source_kind="community", raw_points=0
+        community_summary_content(payload),
+        source_kind="community",
+        raw_points=0,
+        statistics_origin="computed",
     )
 
 
@@ -417,10 +609,13 @@ __all__ = [
     "MetricDisplay",
     "SourceDisplay",
     "SourceKind",
+    "StatisticsOrigin",
+    "community_sample_size",
     "community_summary_content",
     "display_from_community_summary",
     "display_from_content",
     "display_from_points",
     "display_from_row",
+    "is_measurement_point",
     "raw_point_count",
 ]

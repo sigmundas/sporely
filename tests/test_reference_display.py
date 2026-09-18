@@ -27,6 +27,7 @@ from references.measurement_content import (
 from references.reference_display import (
     COMMUNITY_PERCENTILE_BOUNDS,
     DataLabel,
+    community_sample_size,
     display_from_community_summary,
     display_from_content,
     display_from_points,
@@ -82,6 +83,54 @@ def test_raw_points_data_kind_without_points_is_not_raw_data():
 @pytest.mark.parametrize("stored", [None, "", "[]", "null", "not json", '{"a": 1}'])
 def test_raw_point_count_is_zero_for_anything_that_is_not_a_points_list(stored):
     assert raw_point_count(stored) == 0
+
+
+@pytest.mark.parametrize(
+    "members",
+    [
+        [None, {}],
+        [None],
+        [{}],
+        ["9.0 x 5.0"],
+        [[9.0, 5.0]],
+        [{"note": "wide"}],
+        [{"length": "nine"}],
+        [{"q": 1.8}],
+        [{"length": True}],
+    ],
+)
+def test_list_members_that_are_not_measurements_earn_nothing(members):
+    display = display_from_row(
+        _row(data_kind="raw_points", raw_points_json=json.dumps(members))
+    )
+
+    assert display.raw_point_count == 0
+    assert not display.has_raw_points
+    assert display.data_label == DataLabel(kind="none")
+
+
+def test_only_the_real_measurements_in_a_mixed_list_are_counted():
+    members = [None, {"length": 9.0, "width": 5.0}, {}, 9.4, {"note": "x"}]
+    display = display_from_row(
+        _row(data_kind="raw_points", raw_points_json=json.dumps(members))
+    )
+
+    assert display.raw_point_count == 2
+    assert display.data_label == DataLabel(kind="raw_data")
+
+
+def test_observation_points_without_a_dimension_do_not_inflate_the_count():
+    display = display_from_points(
+        [
+            {"id": 1, "length_um": 9.0, "width_um": 5.0},
+            {"id": 2, "length_um": None, "width_um": None},
+            {},
+            None,
+        ]
+    )
+
+    assert display.raw_point_count == 1
+    assert display.sample_size == 1
 
 
 # --- Published range ----------------------------------------------------------
@@ -173,6 +222,35 @@ def test_percentile_kind_without_bounds_does_not_claim_a_percentile_label():
     assert display.data_label == DataLabel(kind="published_range")
 
 
+@pytest.mark.parametrize(
+    "columns",
+    [
+        {},
+        {"length_core_min": 8.0},
+        {"length_core_max": 11.0},
+    ],
+)
+def test_a_percentile_descriptor_without_its_interval_claims_nothing(columns):
+    """The descriptor describes a column pair. With no pair there is no range,
+    and a badge built from the descriptor alone would promise data the source
+    does not contain."""
+    display = display_from_row(
+        _row(
+            measurement_details_json=_details(
+                core_range={"kind": "percentile_interval", "percentile_bounds": [5, 95]}
+            ),
+            **columns,
+        )
+    )
+    length = display.metric("length")
+
+    assert length.core_range is None
+    assert length.core_kind == "percentile_interval"
+    assert length.percentile_bounds == (5, 95)
+    assert not length.is_percentile_core
+    assert display.data_label == DataLabel(kind="none")
+
+
 # --- Centre statistics --------------------------------------------------------
 
 
@@ -219,6 +297,65 @@ def test_a_range_alone_yields_no_centre_statistic():
     assert length.scalar_mean is None
     assert length.median is None
     assert length.mean_interval is None
+
+
+# --- Reported versus computed statistics --------------------------------------
+
+
+def test_a_published_mean_is_reported_not_computed():
+    display = display_from_row(
+        _row(length_core_min=8.0, length_core_max=11.0, length_mean=9.4, sample_size=30)
+    )
+
+    assert display.statistics_origin == "reported"
+    assert display.has_centre_statistic
+    assert display.has_reported_statistic
+    assert not display.has_computed_statistic
+    assert display.sample_size_is_reported
+
+
+def test_a_community_mean_and_median_are_computed_not_reported():
+    display = display_from_community_summary(
+        {"length_p50": 9.3, "length_avg": 9.4, "measurement_count": 30}
+    )
+
+    assert display.statistics_origin == "computed"
+    assert display.has_centre_statistic
+    assert display.has_computed_statistic
+    assert not display.has_reported_statistic
+    # The n behind an aggregate is a count of measurements, not a printed
+    # figure, so it must not be presented as something an author reported.
+    assert display.sample_size == 30
+    assert not display.sample_size_is_reported
+
+
+def test_personal_observation_statistics_are_computed():
+    display = display_from_points([{"length_um": 9.0, "width_um": 5.0}] * 8)
+
+    assert display.statistics_origin == "computed"
+    assert display.sample_size == 8
+    assert not display.sample_size_is_reported
+    # Points alone state no centre, so neither flag claims one.
+    assert not display.has_centre_statistic
+    assert not display.has_computed_statistic
+
+
+def test_a_reported_sample_size_survives_without_any_centre_statistic():
+    display = display_from_row(_row(length_core_min=8.0, length_core_max=11.0, sample_size=30))
+
+    assert display.statistics_origin == "reported"
+    assert display.sample_size_is_reported
+    assert not display.has_centre_statistic
+    assert not display.has_reported_statistic
+
+
+def test_a_source_that_states_nothing_has_no_statistics_origin():
+    display = display_from_row(_row())
+
+    assert display.statistics_origin == "none"
+    assert not display.has_reported_statistic
+    assert not display.has_computed_statistic
+    assert not display.sample_size_is_reported
 
 
 # --- Provenance is not a data kind --------------------------------------------
@@ -318,6 +455,10 @@ def test_personal_observation_points_are_raw_data_and_summarise_nothing():
 def test_community_aggregate_maps_onto_the_existing_contract():
     display = display_from_community_summary(
         {
+            "measurement_count": 30,
+            "dataset_count": 4,
+            "contributor_label": "Community",
+            "mount_medium": "KOH",
             "length_min": 7.2,
             "length_p05": 8.0,
             "length_p50": 9.3,
@@ -352,6 +493,29 @@ def test_community_aggregate_maps_onto_the_existing_contract():
     assert q.scalar_mean == 1.75
     # An aggregate of other people's points is not this desktop's raw data.
     assert not display.has_raw_points
+    # The same n that community_detail_preview_fields prints as "n=30".
+    assert display.sample_size == 30
+    assert display.statistics_origin == "computed"
+
+
+@pytest.mark.parametrize(
+    "payload, expected",
+    [
+        ({"measurement_count": 30}, 30),
+        ({"sample_size": 12}, 12),
+        # A locally normalized payload and a raw cloud detail may both be
+        # handed in; the cloud's own count wins where they disagree.
+        ({"measurement_count": 30, "sample_size": 12}, 30),
+        # Zero means no measurements behind the aggregate, not n=0.
+        ({"measurement_count": 0}, None),
+        ({"measurement_count": None}, None),
+        ({"measurement_count": "not a number"}, None),
+        ({}, None),
+    ],
+)
+def test_community_sample_size_reads_the_cloud_measurement_count(payload, expected):
+    assert community_sample_size(payload) == expected
+    assert display_from_community_summary(payload).sample_size == expected
 
 
 def test_community_aggregate_without_percentiles_is_a_published_range():

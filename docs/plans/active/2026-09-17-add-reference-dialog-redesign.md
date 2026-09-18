@@ -785,3 +785,51 @@ row anatomy and the preview comparison. `ui/add_reference_dialog.py::
 _populate_preview` still fetches the full `MeasurementSet` for the selected
 row and applies its own extreme-or-typical fallback — correct for one selected
 row, and replaced when the preview moves onto the projection.
+
+### Stage 1 follow-up: three semantic gaps closed after review
+
+Candidate `23f64a2` was sent back with three findings, all confirmed against
+the code and all fixed in a follow-up commit. The first candidate is left in
+history rather than amended.
+
+**1. No reported-versus-derived flags.** The brief asked for them and
+`has_reported_descriptor` only covered *range* descriptors, so a published mean
+and a Community mean calculated from contributors' points were
+indistinguishable. `SourceDisplay.statistics_origin` (`StatisticsOrigin`:
+`reported` / `computed` / `none`) now records which a source holds, with
+`has_centre_statistic`, `has_reported_statistic`, `has_computed_statistic` and
+`sample_size_is_reported` derived from it. The origin is a property of the
+source, not of one number, and it does not depend on a centre statistic
+existing: a monograph that printed only `n = 30` reported that number, so it is
+`reported` with `has_centre_statistic` false.
+
+**2. Community `n` was dropped.** `community_summary_content` ignored
+`measurement_count` — the same count
+`ui/cloud_reference_dialog.py::community_detail_preview_fields` prints as
+`n=` — so a 30-measurement aggregate projected `sample_size=None`. The new
+`community_sample_size` reads `measurement_count` first and `sample_size`
+second, so both a raw cloud detail and a locally normalized payload work, and
+treats `0` as absence rather than a sample of size zero.
+
+**3. Badges could claim data that does not exist.** Two ways:
+
+- `raw_point_count` counted arbitrary list members, so
+  `raw_points_json = "[null, {}]"` earned `Raw data`. Counting now goes through
+  `is_measurement_point`, which accepts a finite bare number or a mapping whose
+  keys are within the stored-snapshot shape
+  (`length`/`width`/`l`/`w`/`q`, at least one dimension present) and whose
+  values are all finite numbers. `display_from_points` has its own looser check
+  for a personal observation's `length_um`/`width_um` rows, which carry
+  unrelated keys alongside, so a point with no measured dimension no longer
+  inflates `n`.
+- `MetricDisplay.is_percentile_core` did not require the interval it describes,
+  so a `percentile_interval` descriptor with no stored `*_core_min` /
+  `*_core_max` earned a `5–95% range` badge. It now requires the kind, the
+  explicit bounds *and* the complete numeric pair.
+
+Follow-up verification: `tests/test_reference_display.py` (53 cases) and
+`tests/test_reference_library_candidate_display.py` (7 cases) pass; 312 pass
+together with the five existing measurement-content contract suites; 245 pass
+across the candidate-path, dialog, parser and add-plot suites; `py_compile`
+clean; `git diff --check` clean. The four pre-existing cloud-sync/gallery
+failures recorded above are unchanged and still unrelated.

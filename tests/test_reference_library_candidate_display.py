@@ -83,6 +83,19 @@ def test_candidate_carries_the_projection_for_a_plain_published_range(libs):
     assert display.data_label == DataLabel(kind="published_range")
     assert display.metric("length").core_range == (8.0, 10.0)
     assert display.metric("width").core_range == (5.0, 6.0)
+    # A library row holds what an author published, never a cloud aggregate.
+    assert display.statistics_origin == "reported"
+
+
+def test_candidate_projection_marks_a_published_mean_as_reported(libs):
+    _seed("Epsilon", length_mean=9.4, sample_size=30)
+
+    display = _candidate("Epsilon").source_display()
+
+    assert display.has_reported_statistic
+    assert not display.has_computed_statistic
+    assert display.sample_size == 30
+    assert display.sample_size_is_reported
 
 
 def test_candidate_projection_reads_stored_percentile_bounds(libs):
