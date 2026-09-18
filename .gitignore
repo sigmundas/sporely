@@ -32,7 +32,13 @@ htmlcov/
 
 # Cline / other agent local state
 .cline/
-.claude/
+# Keep local Claude state ignored; version only the required project rules.
+.claude/*
+!.claude/rules/
+.claude/rules/*
+!.claude/rules/cloud-sync.md
+!.claude/rules/localization.md
+!.claude/rules/ui-screenshots.md
 .gemini/
 .geminiignore
 

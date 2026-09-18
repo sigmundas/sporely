@@ -1,55 +1,17 @@
 # Sporely Python project context
 
-## Repository
+Desktop Python application using PySide6. Work in the selected Git worktree on
+the run's expected branch.
 
-Desktop Python application using PySide6.
+Read `AGENTS.md` once per session for repository-wide implementation rules,
+Python/test commands, subsystem reading routes, verification and Git policy.
+Claude imports the same contract through `CLAUDE.md`. Do not duplicate those
+rules here or reread this injected context unless it changes.
 
-Repository root is the current Git worktree. Never search sibling worktrees or
-the parent `sporely/` directory for implementation truth.
+The run's stage brief defines the current scope. Follow `AGENTS.md` for managed
+plan immutability, stage notes and role-specific reports. Push authorization
+must be explicit in the current run; this configuration does not grant it.
 
-## Python environment
-
-Use the canonical Sporely virtual environment:
-
-`/Users/sigmundas/Documents/Code/sporely/sporely-py/.venv/bin/python`
-
-Tests:
-
-`/Users/sigmundas/Documents/Code/sporely/sporely-py/.venv/bin/pytest`
-
-Do not install or upgrade dependencies without human approval.
-
-## Agent instructions
-
-`AGENTS.md` is the repository-wide coding-agent contract.
-
-Claude also follows `CLAUDE.md` and applicable `.claude/rules/`.
-
-Those repository instructions are authoritative for implementation conventions,
-testing, Git behavior, and subsystem-specific invariants.
-
-## Agent Sparring managed plans
-
-When Agent Sparring is executing a managed plan:
-
-- the active plan document is input and must not be edited by stage agents;
-- stage progress, implementation notes, review findings and handoff information
-  belong in Agent Sparring stage artifacts;
-- only the currently assigned stage is in scope;
-- a later stage must not be started early.
-
-## Git/worktrees
-
-Work only in the currently selected worktree and expected branch.
-
-Do not switch branches, rewrite history or push unless explicitly authorized.
-
-Agent Sparring runtime state under:
-
-- `.sparring/stages/`
-- `.sparring/plans/`
-
-is local workflow bookkeeping and is ignored by Git.
-
-`.sparring/project.toml` and `.sparring/PROJECT.md` are tracked project
-configuration.
+`.sparring/project.toml` and this file are version-controlled project
+configuration. `.sparring/stages/` and `.sparring/plans/` are ignored local
+runtime state owned by Agent Sparring.
