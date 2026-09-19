@@ -628,10 +628,31 @@ def _comparison_list_longnames(context: ReviewContext):
 
 
 def _add_dialog_candidates():
+    import json
+
     from database.reference_library import MeasurementSetCandidate
+    from references.reference_display import display_from_row
 
     # Reuses the long-names data (60+ char title, æøå) already exercised by
     # reference.comparison-list-longnames rather than inventing a new fixture.
+    #
+    # Each row carries a real ``display`` projection, because the Library
+    # row's measurement cell and data-semantics badge are rendered from it
+    # (see ``references.reference_display``). Building these by hand rather
+    # than from a database keeps the renderer deterministic and offline.
+    decile_details = json.dumps(
+        {
+            "schema_version": 1,
+            "metrics": {
+                "length": {
+                    "core_range": {
+                        "kind": "percentile_interval",
+                        "percentile_bounds": [5, 95],
+                    }
+                }
+            },
+        }
+    )
     return [
         MeasurementSetCandidate(
             measurement_set_id="add-dialog-1",
@@ -649,6 +670,20 @@ def _add_dialog_candidates():
             ),
             year=2018,
             taxon_id="7",
+            display=display_from_row(
+                {
+                    "data_kind": "range",
+                    "length_min": 8.1,
+                    "length_max": 11.4,
+                    "length_core_min": 8.5,
+                    "length_core_max": 10.8,
+                    "width_min": 4.2,
+                    "width_max": 6.1,
+                    "width_core_min": 4.5,
+                    "width_core_max": 5.8,
+                    "sample_size": 36,
+                }
+            ),
         ),
         MeasurementSetCandidate(
             measurement_set_id="add-dialog-2",
@@ -662,6 +697,18 @@ def _add_dialog_candidates():
             reference_treatment_id="treatment-main",
             year=2018,
             taxon_id="7",
+            display=display_from_row(
+                {
+                    "data_kind": "raw_points",
+                    "raw_points_json": json.dumps(
+                        [
+                            {"length": 8.6, "width": 4.8},
+                            {"length": 9.1, "width": 5.2},
+                            {"length": 9.9, "width": 5.5},
+                        ]
+                    ),
+                }
+            ),
         ),
         MeasurementSetCandidate(
             measurement_set_id="add-dialog-3",
@@ -675,6 +722,38 @@ def _add_dialog_candidates():
             reference_treatment_id="treatment-other",
             year=2020,
             taxon_id="99",
+            display=display_from_row(
+                {
+                    "data_kind": "range",
+                    "length_core_min": 8.0,
+                    "length_core_max": 9.5,
+                    "width_core_min": 5.5,
+                    "width_core_max": 6.5,
+                    "measurement_details_json": decile_details,
+                }
+            ),
+        ),
+        MeasurementSetCandidate(
+            measurement_set_id="add-dialog-4",
+            short_label="Funga Nordica 2012",
+            name_as_published="Amanita muscaria (L.) Lam.",
+            locator_text="p. 604",
+            data_kind="range",
+            raw_text="9.0–11.0 × 6.5–8.0 µm",
+            revision=1,
+            reference_work_id="work-nordica",
+            reference_treatment_id="treatment-nordica",
+            year=2012,
+            taxon_id="500",
+            display=display_from_row(
+                {
+                    "data_kind": "range",
+                    "length_core_min": 9.0,
+                    "length_core_max": 11.0,
+                    "width_core_min": 6.5,
+                    "width_core_max": 8.0,
+                }
+            ),
         ),
     ]
 
@@ -687,12 +766,34 @@ def _add_dialog_library(context: ReviewContext):
         context.host,
         taxon_label="Cortinarius limonius",
         taxon_id="7",
+        genus="Cortinarius",
+        species="limonius",
         candidates=_add_dialog_candidates(),
         attach_callback=lambda *_args: None,
     )
+    # Unscoped so all three relevance groups have members, which is the
+    # state the grouped list has to be reviewed in.
     dialog.only_this_taxon_checkbox.setChecked(False)
-    dialog.results_list.setCurrentRow(0)
+    _check_add_dialog_row(dialog, "add-dialog-1")
+    _check_add_dialog_row(dialog, "add-dialog-2")
+    # Preview a third, un-checked row: selected and checked are different
+    # states and the screenshot should show both at once.
+    dialog.results_list.setCurrentRow(_add_dialog_row(dialog, "add-dialog-3"))
     return dialog
+
+
+def _add_dialog_row(dialog, measurement_set_id: str) -> int:
+    from PySide6.QtCore import Qt
+
+    for row in range(dialog.results_list.count()):
+        if dialog.results_list.item(row).data(Qt.UserRole) == measurement_set_id:
+            return row
+    raise AssertionError(f"no Library row for {measurement_set_id!r}")
+
+
+def _check_add_dialog_row(dialog, measurement_set_id: str) -> None:
+    item = dialog.results_list.item(_add_dialog_row(dialog, measurement_set_id))
+    dialog.results_list.itemWidget(item).checkbox.setChecked(True)
 
 
 def _add_dialog_library_empty(context: ReviewContext):

@@ -677,6 +677,52 @@ def display_from_community_summary(payload: Mapping[str, Any]) -> SourceDisplay:
     )
 
 
+# --- Compact row expression ---------------------------------------------------
+
+
+def _format_bound(value: float) -> str:
+    return f"{float(value):.1f}"
+
+
+def metric_range_for_display(display: SourceDisplay, metric: str) -> tuple[float, float] | None:
+    """The range a compact row should print for one metric, or ``None``.
+
+    The outer (extreme) pair wins when both are stored, which is the same
+    extreme-or-typical rule the preview summary already applies
+    (``AddReferenceDialog._populate_preview``) and the same one the plotting
+    path uses to resolve a drawable rectangle. A source reported only as a
+    typical range — the common case in older literature — therefore still
+    prints something rather than a dash.
+
+    This chooses *which stored pair to print*; it never says what the pair
+    means. That is :attr:`SourceDisplay.data_label`'s job, and the two are
+    rendered side by side so a percentile interval is never mistaken for
+    min/max.
+    """
+    body = display.metric(metric)
+    return body.outer_range if body.outer_range is not None else body.core_range
+
+
+def format_measurement_expression(display: SourceDisplay) -> str:
+    """``8.5–10.8 × 4.5–5.8 µm`` for one source, or ``""`` when it has none.
+
+    Length and width only: the compact list cell has to survive beside an
+    italic taxon on one line, and Q is available in the comparison pane. Width
+    is dropped rather than faked when only a length range is stored.
+    """
+    length = metric_range_for_display(display, "length")
+    width = metric_range_for_display(display, "width")
+    if length is None and width is None:
+        return ""
+    parts = [
+        f"{_format_bound(low)}–{_format_bound(high)}"
+        for pair in (length, width)
+        if pair is not None
+        for low, high in (pair,)
+    ]
+    return f"{' × '.join(parts)} µm"
+
+
 __all__ = [
     "COMMUNITY_PERCENTILE_BOUNDS",
     "DataLabel",
@@ -691,6 +737,8 @@ __all__ = [
     "display_from_content",
     "display_from_points",
     "display_from_row",
+    "format_measurement_expression",
     "is_measurement_point",
+    "metric_range_for_display",
     "raw_point_count",
 ]

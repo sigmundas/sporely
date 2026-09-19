@@ -172,222 +172,289 @@
 <context>
     <name>AddReferenceDialog</name>
     <message>
-        <location filename="../ui/add_reference_dialog.py" line="352"/>
-        <location filename="../ui/add_reference_dialog.py" line="608"/>
+        <location filename="../ui/add_reference_dialog.py" line="465"/>
+        <location filename="../ui/add_reference_dialog.py" line="721"/>
         <source>Add reference</source>
+        <extracomment>Library relevance groups, in the fixed display order of the design contract (N6). The strings are keys, not wording: the headings are translated in :meth:`AddReferenceDialog._library_group_heading`.</extracomment>
         <translation>Lägg till referens</translation>
     </message>
     <message>
-        <location filename="../ui/add_reference_dialog.py" line="354"/>
-        <location filename="../ui/add_reference_dialog.py" line="606"/>
+        <location filename="../ui/add_reference_dialog.py" line="467"/>
+        <location filename="../ui/add_reference_dialog.py" line="719"/>
         <source>Add reference — {taxon}</source>
         <translation>Lägg till referens – {taxon}</translation>
     </message>
     <message>
-        <location filename="../ui/add_reference_dialog.py" line="376"/>
+        <location filename="../ui/add_reference_dialog.py" line="489"/>
         <source>Library</source>
         <translation>Bibliotek</translation>
     </message>
     <message>
-        <location filename="../ui/add_reference_dialog.py" line="378"/>
+        <location filename="../ui/add_reference_dialog.py" line="491"/>
         <source>Community</source>
         <translation>Gemenskap</translation>
     </message>
     <message>
-        <location filename="../ui/add_reference_dialog.py" line="381"/>
+        <location filename="../ui/add_reference_dialog.py" line="494"/>
         <source>My observations</source>
         <translation>Mina observationer</translation>
     </message>
     <message>
-        <location filename="../ui/add_reference_dialog.py" line="393"/>
+        <location filename="../ui/add_reference_dialog.py" line="506"/>
         <source>Cancel</source>
         <translation>Avbryt</translation>
     </message>
     <message>
-        <location filename="../ui/add_reference_dialog.py" line="396"/>
+        <location filename="../ui/add_reference_dialog.py" line="509"/>
+        <location filename="../ui/add_reference_dialog.py" line="1584"/>
         <source>Add to plot</source>
         <translation>Lägg till i diagrammet</translation>
     </message>
     <message>
-        <location filename="../ui/add_reference_dialog.py" line="646"/>
+        <location filename="../ui/add_reference_dialog.py" line="766"/>
         <source>Filter by publication, taxon, or raw expression…</source>
         <translation>Filtrera efter publikation, taxon eller råuttryck…</translation>
     </message>
     <message>
-        <location filename="../ui/add_reference_dialog.py" line="651"/>
+        <location filename="../ui/add_reference_dialog.py" line="771"/>
         <source>Only this taxon</source>
         <translation>Endast denna taxon</translation>
     </message>
     <message>
-        <location filename="../ui/add_reference_dialog.py" line="707"/>
+        <location filename="../ui/add_reference_dialog.py" line="947"/>
         <source>+ New publication…</source>
         <translation>+ Ny publikation…</translation>
     </message>
     <message>
-        <location filename="../ui/add_reference_dialog.py" line="742"/>
+        <location filename="../ui/add_reference_dialog.py" line="1015"/>
         <source>No matching measurement sets in the library.</source>
         <translation>Inga matchande mätuppsättningar i biblioteket.</translation>
     </message>
     <message>
-        <location filename="../ui/add_reference_dialog.py" line="728"/>
+        <location filename="../ui/add_reference_dialog.py" line="1001"/>
         <source>The reference library has no measurement sets yet.</source>
         <translation>Referensbiblioteket har inga mätuppsättningar än.</translation>
     </message>
     <message>
-        <location filename="../ui/add_reference_dialog.py" line="385"/>
+        <location filename="../ui/add_reference_dialog.py" line="498"/>
         <source>Add new</source>
         <translation>Lägg till ny</translation>
     </message>
     <message>
-        <location filename="../ui/add_reference_dialog.py" line="498"/>
+        <location filename="../ui/add_reference_dialog.py" line="611"/>
         <source>Reference taxon:</source>
         <translation>Referenstaxon:</translation>
     </message>
     <message>
-        <location filename="../ui/add_reference_dialog.py" line="504"/>
+        <location filename="../ui/add_reference_dialog.py" line="617"/>
         <source>Choose which taxon&apos;s published spore data to compare against. Select &apos;Use observation taxon&apos; if available, search another taxon by typing genus and species, or choose an AI suggestion. This never changes the observation&apos;s own identification.</source>
         <translation>Välj vilken taxons publicerade sporidata du vill jämföra med. Välj ”Använd observationens taxon” om det finns, sök upp en annan taxon genom att skriva släkte och art, eller välj ett AI-förslag. Detta ändrar aldrig observationens egen identifiering.</translation>
     </message>
     <message>
-        <location filename="../ui/add_reference_dialog.py" line="529"/>
+        <location filename="../ui/add_reference_dialog.py" line="642"/>
         <source>Use observation taxon: {taxon}</source>
         <translation>Använd observationens taxon: {taxon}</translation>
     </message>
     <message>
-        <location filename="../ui/add_reference_dialog.py" line="531"/>
+        <location filename="../ui/add_reference_dialog.py" line="644"/>
         <source>Search another taxon…</source>
         <translation>Sök efter en annan taxon…</translation>
     </message>
     <message>
-        <location filename="../ui/add_reference_dialog.py" line="738"/>
+        <location filename="../ui/add_reference_dialog.py" line="863"/>
+        <source>This taxon ({count})</source>
+        <translation>Denna taxon ({count})</translation>
+    </message>
+    <message>
+        <location filename="../ui/add_reference_dialog.py" line="865"/>
+        <source>Same genus ({count})</source>
+        <translation>Samma släkte ({count})</translation>
+    </message>
+    <message>
+        <location filename="../ui/add_reference_dialog.py" line="867"/>
+        <source>Rest of library ({count})</source>
+        <translation>Resten av biblioteket ({count})</translation>
+    </message>
+    <message>
+        <location filename="../ui/add_reference_dialog.py" line="878"/>
+        <source>Same taxon</source>
+        <translation>Samma taxon</translation>
+    </message>
+    <message>
+        <location filename="../ui/add_reference_dialog.py" line="880"/>
+        <source>Same genus</source>
+        <translation>Samma släkte</translation>
+    </message>
+    <message>
+        <location filename="../ui/add_reference_dialog.py" line="895"/>
+        <source>Raw data</source>
+        <translation>Rådata</translation>
+    </message>
+    <message>
+        <location filename="../ui/add_reference_dialog.py" line="898"/>
+        <source>{low}–{high}% range</source>
+        <translation>{low}–{high} %-intervall</translation>
+    </message>
+    <message>
+        <location filename="../ui/add_reference_dialog.py" line="902"/>
+        <source>Published range</source>
+        <translation>Publicerat intervall</translation>
+    </message>
+    <message>
+        <location filename="../ui/add_reference_dialog.py" line="977"/>
+        <source>1 source selected</source>
+        <translation>1 källa vald</translation>
+    </message>
+    <message>
+        <location filename="../ui/add_reference_dialog.py" line="982"/>
+        <source>{count} sources selected</source>
+        <translation>{count} källor valda</translation>
+    </message>
+    <message>
+        <location filename="../ui/add_reference_dialog.py" line="1011"/>
         <source>No matching measurement sets for this taxon. {count} more match if you turn off “Only this taxon”.</source>
         <translation>Inga mätuppsättningar för detta taxon. {count} fler träffar om du stänger av ”Endast detta taxon”.</translation>
     </message>
     <message>
-        <location filename="../ui/add_reference_dialog.py" line="745"/>
-        <location filename="../ui/add_reference_dialog.py" line="807"/>
+        <location filename="../ui/add_reference_dialog.py" line="1020"/>
+        <source>Unnamed taxon</source>
+        <translation>Namnlös taxon</translation>
+    </message>
+    <message>
+        <location filename="../ui/add_reference_dialog.py" line="1023"/>
+        <location filename="../ui/add_reference_dialog.py" line="1174"/>
         <source>Untitled</source>
         <translation>Namnlös</translation>
     </message>
     <message>
-        <location filename="../ui/add_reference_dialog.py" line="815"/>
-        <location filename="../ui/add_reference_dialog.py" line="1104"/>
+        <location filename="../ui/add_reference_dialog.py" line="1182"/>
+        <location filename="../ui/add_reference_dialog.py" line="1505"/>
         <source>Length</source>
         <translation>Längd</translation>
     </message>
     <message>
-        <location filename="../ui/add_reference_dialog.py" line="816"/>
-        <location filename="../ui/add_reference_dialog.py" line="1105"/>
+        <location filename="../ui/add_reference_dialog.py" line="1183"/>
+        <location filename="../ui/add_reference_dialog.py" line="1506"/>
         <source>Width</source>
         <translation>Bredd</translation>
     </message>
     <message>
-        <location filename="../ui/add_reference_dialog.py" line="817"/>
-        <location filename="../ui/add_reference_dialog.py" line="1106"/>
+        <location filename="../ui/add_reference_dialog.py" line="1184"/>
+        <location filename="../ui/add_reference_dialog.py" line="1507"/>
         <source>Q</source>
         <translation>Q</translation>
     </message>
     <message>
-        <location filename="../ui/add_reference_dialog.py" line="850"/>
+        <location filename="../ui/add_reference_dialog.py" line="1217"/>
         <source>No additional notes.</source>
         <translation>Inga ytterligare anteckningar.</translation>
     </message>
     <message>
-        <location filename="../ui/add_reference_dialog.py" line="862"/>
+        <location filename="../ui/add_reference_dialog.py" line="1229"/>
         <source>not reported</source>
         <translation>ej rapporterat</translation>
     </message>
     <message>
-        <location filename="../ui/add_reference_dialog.py" line="864"/>
+        <location filename="../ui/add_reference_dialog.py" line="1231"/>
         <source>Reported by: {work} ({year}) · sample size: {size} · method recorded: {method}</source>
         <translation>Rapporterad av: {work} ({year}) · urvalsstorlek: {size} · metod registrerad: {method}</translation>
     </message>
     <message>
-        <location filename="../ui/add_reference_dialog.py" line="870"/>
+        <location filename="../ui/add_reference_dialog.py" line="1237"/>
         <source>yes</source>
         <translation>ja</translation>
     </message>
     <message>
-        <location filename="../ui/add_reference_dialog.py" line="879"/>
+        <location filename="../ui/add_reference_dialog.py" line="1246"/>
         <source>This is a range summary; no raw spore points are stored.</source>
         <translation>Detta är en intervallsammanfattning; inga råa sporpunkter är lagrade.</translation>
     </message>
     <message>
-        <location filename="../ui/add_reference_dialog.py" line="891"/>
+        <location filename="../ui/add_reference_dialog.py" line="1258"/>
         <source>No calibration details recorded.</source>
         <translation>Inga kalibreringsuppgifter registrerade.</translation>
     </message>
     <message>
-        <location filename="../ui/add_reference_dialog.py" line="893"/>
+        <location filename="../ui/add_reference_dialog.py" line="1260"/>
         <source>Not reported</source>
         <translation>Ej rapporterat</translation>
     </message>
     <message>
-        <location filename="../ui/add_reference_dialog.py" line="897"/>
+        <location filename="../ui/add_reference_dialog.py" line="1264"/>
         <source>Publication: {work}</source>
         <translation>Publikation: {work}</translation>
     </message>
     <message>
-        <location filename="../ui/add_reference_dialog.py" line="899"/>
+        <location filename="../ui/add_reference_dialog.py" line="1266"/>
         <source>Source notes: {notes}</source>
         <translation>Källanteckningar: {notes}</translation>
     </message>
     <message>
-        <location filename="../ui/add_reference_dialog.py" line="938"/>
+        <location filename="../ui/add_reference_dialog.py" line="1339"/>
         <source>New publication</source>
         <translation>Ny publikation</translation>
     </message>
     <message>
-        <location filename="../ui/add_reference_dialog.py" line="939"/>
+        <location filename="../ui/add_reference_dialog.py" line="1340"/>
         <source>Reference library editor is unavailable: {error}</source>
         <translation>Referensbibliotekets redigerare är inte tillgänglig: {error}</translation>
     </message>
     <message>
-        <location filename="../ui/add_reference_dialog.py" line="1017"/>
+        <location filename="../ui/add_reference_dialog.py" line="1418"/>
         <source>Select a taxon to browse your own observations of it.</source>
         <translation>Välj ett taxon för att bläddra bland dina egna observationer av det.</translation>
     </message>
     <message>
-        <location filename="../ui/add_reference_dialog.py" line="1021"/>
+        <location filename="../ui/add_reference_dialog.py" line="1422"/>
         <source>No previous observations of this taxon have spore measurements.</source>
         <translation>Inga tidigare observationer av denna taxon har spormätningar.</translation>
     </message>
     <message>
-        <location filename="../ui/add_reference_dialog.py" line="1028"/>
-        <location filename="../ui/add_reference_dialog.py" line="1081"/>
+        <location filename="../ui/add_reference_dialog.py" line="1429"/>
+        <location filename="../ui/add_reference_dialog.py" line="1482"/>
         <source>My observation — {author}</source>
         <translation>Min observation — {author}</translation>
     </message>
     <message>
-        <location filename="../ui/add_reference_dialog.py" line="1030"/>
-        <location filename="../ui/add_reference_dialog.py" line="1083"/>
+        <location filename="../ui/add_reference_dialog.py" line="1431"/>
+        <location filename="../ui/add_reference_dialog.py" line="1484"/>
         <source>My observation</source>
         <translation>Min observation</translation>
     </message>
     <message>
-        <location filename="../ui/add_reference_dialog.py" line="1045"/>
+        <location filename="../ui/add_reference_dialog.py" line="1446"/>
         <source>n = {count}</source>
         <translation>n = {count}</translation>
     </message>
     <message>
-        <location filename="../ui/add_reference_dialog.py" line="1116"/>
+        <location filename="../ui/add_reference_dialog.py" line="1517"/>
         <source>n = {count} spore measurements</source>
         <translation>n = {count} spormätningar</translation>
     </message>
     <message>
-        <location filename="../ui/add_reference_dialog.py" line="1134"/>
+        <location filename="../ui/add_reference_dialog.py" line="1535"/>
         <source>Not applicable: this is a personal observation, not a normalized library entry.</source>
         <translation>Ej tillämpligt: detta är en personlig observation, inte en normaliserad bibliotekspost.</translation>
     </message>
     <message>
-        <location filename="../ui/add_reference_dialog.py" line="1137"/>
+        <location filename="../ui/add_reference_dialog.py" line="1538"/>
         <source>Personal observation, {date}</source>
         <translation>Personlig observation, {date}</translation>
     </message>
     <message>
-        <location filename="../ui/add_reference_dialog.py" line="1139"/>
+        <location filename="../ui/add_reference_dialog.py" line="1540"/>
         <source>Personal observation</source>
         <translation>Personlig observation</translation>
+    </message>
+    <message>
+        <location filename="../ui/add_reference_dialog.py" line="1600"/>
+        <source>Add {count} to plot</source>
+        <translation>Lägg till {count} i diagrammet</translation>
+    </message>
+    <message>
+        <location filename="../ui/add_reference_dialog.py" line="1611"/>
+        <source>Adding several sources at once is not available yet. Leave one source checked, or add them one at a time.</source>
+        <translation>Att lägga till flera källor samtidigt är inte tillgängligt ännu. Låt en källa vara ikryssad, eller lägg till dem en i taget.</translation>
     </message>
 </context>
 <context>

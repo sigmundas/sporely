@@ -116,6 +116,11 @@ def _result_row_for(dialog: AddReferenceDialog, measurement_set_id: str) -> int:
     raise AssertionError(f"no results-list row for {measurement_set_id!r}")
 
 
+def _row_widget(dialog: AddReferenceDialog, measurement_set_id: str):
+    row = _result_row_for(dialog, measurement_set_id)
+    return dialog.results_list.itemWidget(dialog.results_list.item(row))
+
+
 def _ai_candidates() -> list[dict]:
     return [
         {
@@ -185,12 +190,24 @@ def test_only_this_taxon_defaults_checked_even_without_taxon_id():
     assert dialog.only_this_taxon_checkbox.isChecked() is True
 
 
-def test_unchecking_only_this_taxon_shows_taxon_in_row_detail():
+def test_taxon_is_the_row_headline_whether_or_not_the_scope_is_on():
+    """Supersedes the old "taxon appears in the detail line when unscoped" rule.
+
+    That rule existed because the row headline used to be the publication,
+    which left several "Funga Nordica (2008)" rows indistinguishable once
+    the taxon scope was off. The taxon is now the primary line in both
+    states (design contract N4), so the conditional detail-line prefix is
+    gone rather than duplicated.
+    """
     dialog = _make_dialog()
-    dialog.only_this_taxon_checkbox.setChecked(False)
-    row = _result_row_for(dialog, "ms-3")
-    widget = dialog.results_list.itemWidget(dialog.results_list.item(row))
-    assert "Cortinarius rubellus" in widget._full_detail
+    for scoped in (True, False):
+        dialog.only_this_taxon_checkbox.setChecked(scoped)
+        wanted = "ms-1" if scoped else "ms-3"
+        widget = _row_widget(dialog, wanted)
+        assert "Cortinarius" in widget.taxon_label.full_text()
+        assert widget.taxon_label.font().italic() is True
+        # The publication is metadata on the second line, never the headline.
+        assert "Cortinarius" not in widget.citation_label.full_text()
 
 
 def test_changing_taxon_target_never_touches_exclude_observation_id():
@@ -326,8 +343,8 @@ def test_add_to_plot_disabled_with_no_selection():
 def test_add_to_plot_enabled_once_a_result_is_selected():
     dialog = _make_dialog()
     dialog.results_list.setCurrentRow(_result_row_for(dialog, "ms-1"))
-    assert dialog._selected_candidate is not None
-    assert dialog._selected_candidate.measurement_set_id == "ms-1"
+    assert dialog._preview_candidate is not None
+    assert dialog._preview_candidate.measurement_set_id == "ms-1"
     assert dialog.add_to_plot_btn.isEnabled() is True
 
 
@@ -339,14 +356,20 @@ def test_add_to_plot_invokes_callback_and_accepts():
     assert received == [("ms-1", "compared")]
 
 
-def test_library_row_renders_two_lines_title_and_detail():
+def test_library_row_puts_citation_and_locator_on_the_secondary_line():
+    """Supersedes the old title/detail row assertions.
+
+    The detail line used to be ``data_kind · raw_text``. ``data_kind`` was a
+    stored column shown to users, which is exactly what the Stage 1
+    projection exists to stop; the second line is now citation metadata and
+    the semantics arrive as a badge.
+    """
     dialog = _make_dialog()
-    row = _result_row_for(dialog, "ms-2")
-    widget = dialog.results_list.itemWidget(dialog.results_list.item(row))
-    assert "Niskanen" in widget.title_label.text()
-    # data_kind + raw_text, per the row-anatomy spec (kind + raw expression).
-    assert "raw_points" in widget.detail_label.text()
-    assert "8 paired holotype measurements" in widget.detail_label.text()
+    widget = _row_widget(dialog, "ms-2")
+    citation = widget.citation_label.full_text()
+    assert "Niskanen" in citation
+    assert "supplementary dataset S4" in citation
+    assert "raw_points" not in citation
 
 
 def test_preview_summary_falls_back_to_core_bounds_when_extremes_missing(monkeypatch):
@@ -1112,5 +1135,5 @@ def test_new_publication_row_clears_the_library_selection():
     dialog.results_list.setCurrentRow(_new_publication_row(dialog))
     _app().processEvents()
 
-    assert dialog._selected_candidate is None
+    assert dialog._preview_candidate is None
     assert dialog.add_to_plot_btn.isEnabled() is False

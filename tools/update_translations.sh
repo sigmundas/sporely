@@ -19,6 +19,7 @@ files=(
   "ui/spore_preview_widget.py"
   "ui/reference_library_attach_dialog.py"
   "ui/add_reference_dialog.py"
+  "ui/library_source_row.py"
   "ui/reference_entry_editor.py"
   "ui/reference_library_manager_dialog.py"
   "ui/curated_reference_catalogue_dialog.py"

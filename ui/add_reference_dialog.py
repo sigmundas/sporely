@@ -29,6 +29,16 @@ exact path the (soon to be retired) ``ReferenceLibraryAttachDialog`` uses.
 Color assignment is not touched here: it happens automatically, keyed by
 list position, inside ``MainWindow._resolved_reference_series_entries``.
 
+Its list carries two states that must not be collapsed into one. The
+*selected* row is what the shared preview shows; the *checked* rows are what
+the footer will add to the plot. Rows are grouped by relevance to the picker's
+taxon (``group_library_candidates``) and rendered by
+:class:`~ui.library_source_row.LibrarySourceRow`. The footer counts the
+checked rows, but adding more than one source in a single click is not wired:
+``attach_callback`` returns ``None`` on success and on every failure alike, so
+a batch loop could not report which sources landed (see
+``_on_add_to_plot_clicked``).
+
 The My observations tab lists previous observations of the working taxon —
 the same query (``ObservationDB.get_personal_observations_for_species``)
 that populates the legacy Source dropdown's "My data <date>" entries — and
@@ -63,6 +73,7 @@ from dataclasses import dataclass
 from typing import Callable, Iterable
 
 from PySide6.QtCore import QCoreApplication, QSettings, QSize, Qt, QTimer, Signal
+from PySide6.QtGui import QFont
 from PySide6.QtWidgets import (
     QCheckBox,
     QComboBox,
@@ -90,15 +101,19 @@ from database.reference_library import (
     MeasurementSetRepository,
 )
 
+from references.reference_display import format_measurement_expression
+
 from app_identity import SETTINGS_APP, SETTINGS_ORG
 
 from .cloud_reference_dialog import CommunityResultsPane
+from .library_source_row import LibraryResultsList, LibrarySourceRow
 from .reference_entry_editor import ReferenceEntryEditor
 from .reference_preview_pane import ReferencePreviewPane
 from .two_line_row import TwoLineRow
 from .window_state import GeometryMixin
 
 _NEW_PUBLICATION_ROLE = "new_publication"
+_GROUP_HEADING_ROLE = "group_heading"
 
 _USABLE_MEASUREMENT_TYPES = (None, "", "manual", "spore", "spores")
 
@@ -165,6 +180,80 @@ def filter_library_candidates(
 
         result = [c for c in result if _match(c)]
     return result
+
+
+#: Library relevance groups, in the fixed display order of the design
+#: contract (N6). The strings are keys, not wording: the headings are
+#: translated in :meth:`AddReferenceDialog._library_group_heading`.
+LIBRARY_GROUP_ORDER = ("this_taxon", "same_genus", "rest")
+
+
+def _published_genus(candidate: MeasurementSetCandidate) -> str:
+    """First word of a candidate's published name, which is its genus.
+
+    Published names carry authorities and infraspecific ranks
+    (``Cortinarius limonius (Fr.) Fr.``), so nothing but the leading word is
+    reliable here — and nothing more than the genus is needed.
+    """
+    name = str(candidate.name_as_published or "").strip()
+    return name.split()[0] if name else ""
+
+
+def library_relevance(
+    candidate: MeasurementSetCandidate,
+    *,
+    taxon_id: str | None,
+    genus: str,
+    taxon_name: str,
+) -> str:
+    """Which relevance group one candidate belongs to.
+
+    Two independent signals establish "this taxon", because the picker's
+    target does not always have an id: an AI suggestion or a freely-typed
+    binomial gives a name and nothing else (see
+    ``AddReferenceDialog._taxon_target_query_text``). Matching on either the
+    id *or* the published name keeps a hand-typed target grouping the same
+    rows an identified one would, rather than silently demoting every match
+    to ``same_genus``.
+    """
+    target_id = str(taxon_id or "").strip()
+    if target_id and str(getattr(candidate, "taxon_id", "") or "") == target_id:
+        return "this_taxon"
+    name = str(candidate.name_as_published or "").casefold()
+    needle = taxon_name.strip().casefold()
+    if needle and needle in name:
+        return "this_taxon"
+    target_genus = genus.strip().casefold()
+    if target_genus and _published_genus(candidate).casefold() == target_genus:
+        return "same_genus"
+    return "rest"
+
+
+def group_library_candidates(
+    candidates: Iterable[MeasurementSetCandidate],
+    *,
+    taxon_id: str | None,
+    genus: str,
+    taxon_name: str,
+) -> list[tuple[str, list[MeasurementSetCandidate]]]:
+    """Split candidates into the contract's three groups, in fixed order.
+
+    Pure, and deliberately separate from :func:`filter_library_candidates`:
+    filtering decides what the user may see at all, grouping only decides the
+    order it is shown in. Empty groups are dropped rather than rendered as a
+    heading with ``(0)``, so the list never advertises a category the library
+    cannot fill. Within a group the caller's order is preserved.
+    """
+    buckets: dict[str, list[MeasurementSetCandidate]] = {
+        key: [] for key in LIBRARY_GROUP_ORDER
+    }
+    for candidate in candidates:
+        buckets[
+            library_relevance(
+                candidate, taxon_id=taxon_id, genus=genus, taxon_name=taxon_name
+            )
+        ].append(candidate)
+    return [(key, buckets[key]) for key in LIBRARY_GROUP_ORDER if buckets[key]]
 
 
 @dataclass
@@ -345,7 +434,23 @@ class AddReferenceDialog(GeometryMixin, QDialog):
         self._injected_my_observations = my_observations
         self._injected_community_results = community_results
         self._candidates: list[MeasurementSetCandidate] = []
-        self._selected_candidate: MeasurementSetCandidate | None = None
+        # The Library list carries two independent states. The *preview*
+        # candidate is the one row the shared preview pane is showing; the
+        # *checked* ids are the zero or more sources the footer will add to
+        # the plot. Conflating them is the bug this split exists to prevent:
+        # a user must be able to look at a fourth source without silently
+        # adding it, and must be able to keep three sources queued while
+        # looking at a fourth.
+        self._preview_candidate: MeasurementSetCandidate | None = None
+        # Insertion-ordered, so a multi-source add happens in the order the
+        # user chose the sources rather than in whatever order a set
+        # iterates. Ids, not candidates, so a repository refresh cannot
+        # leave the dialog holding a stale row object.
+        self._checked_ids: list[str] = []
+        # How many candidate rows the last repopulate actually showed, so
+        # the footer hint can tell "no rows" from "rows, none checked"
+        # without re-running the filter.
+        self._visible_candidate_count = 0
         # True from the moment a "+ New publication…" editor is scheduled
         # until that editor has closed. A single click on the action row
         # emits itemSelectionChanged several times (QAbstractItemView's
@@ -615,7 +720,14 @@ class AddReferenceDialog(GeometryMixin, QDialog):
             if display_label
             else QCoreApplication.translate("AddReferenceDialog", "Add reference")
         )
-        self._selected_candidate = None
+        self._preview_candidate = None
+        # Checked sources are dropped, not carried across. They were chosen
+        # as comparisons *for the previous taxon*, and the relevance groups
+        # they were picked from have just been recomputed underneath them —
+        # a row the user checked under "This taxon" may now sit in "Rest of
+        # library". Silently adding those to a plot of a different taxon is
+        # the worse failure; re-checking two rows is cheap.
+        self._checked_ids.clear()
         self._populate_results_list()
         self._community_pane.set_taxon(self._genus, self._species)
         self._refresh_my_observations()
@@ -633,7 +745,7 @@ class AddReferenceDialog(GeometryMixin, QDialog):
         elif self.tabs.currentIndex() == self._manual_tab_index:
             self.manual_editor.sync_preview()
         elif self.tabs.currentWidget() is self._library_tab:
-            self._populate_preview(self._selected_candidate)
+            self._populate_preview(self._preview_candidate)
         else:
             self.preview_pane.clear()
 
@@ -657,26 +769,41 @@ class AddReferenceDialog(GeometryMixin, QDialog):
         self.search_input.textChanged.connect(self._on_filter_changed)
         filter_row.addWidget(self.search_input, 1)
         self.only_this_taxon_checkbox = QCheckBox(QCoreApplication.translate("AddReferenceDialog", "Only this taxon"), self._library_tab)
-        # Default checked: unfiltered, library rows show only publication
-        # and range (see _add_candidate_item), so without this the user has
-        # no way to tell which species several "Funga Nordica (2008)" rows
-        # each describe. Falls back to a name-text match (_taxon_target_query_text)
-        # when the target has no taxon_id, so it still narrows the list for
-        # an AI-suggested or freely-typed genus/species.
+        # Narrows the list to the picker's taxon. It composes with the
+        # search box by AND, and with relevance grouping by preceding it:
+        # scoping decides which rows exist, grouping only orders them, so
+        # with this checked the list is normally one "This taxon" group.
+        # Falls back to a name-text match (_taxon_target_query_text) when
+        # the target has no taxon_id, so it still narrows the list for an
+        # AI-suggested or freely-typed genus/species.
         self.only_this_taxon_checkbox.setChecked(True)
         self.only_this_taxon_checkbox.toggled.connect(self._on_filter_changed)
         filter_row.addWidget(self.only_this_taxon_checkbox)
         layout.addLayout(filter_row)
 
-        self.results_list = QListWidget(self._library_tab)
+        self.results_list = LibraryResultsList(self._library_tab)
         # Elide long rows instead of growing a horizontal scrollbar; matches
         # the row-eliding convention in ui/comparison_panel.py.
         self.results_list.setHorizontalScrollBarPolicy(Qt.ScrollBarAlwaysOff)
+        # Qt's default blue selection highlight is suppressed so the
+        # approved green treatment LibrarySourceRow paints is the only
+        # selected-row signal (design contract N8). Two rules, because a
+        # selected row that loses focus is drawn with the Inactive palette
+        # and would otherwise come back as a grey block.
+        self.results_list.setStyleSheet(
+            "QListWidget::item:selected { background: transparent; }"
+            " QListWidget::item:selected:!active { background: transparent; }"
+        )
         self.results_list.itemSelectionChanged.connect(self._on_selection_changed)
         layout.addWidget(self.results_list, 1)
 
     def _on_filter_changed(self, *_args) -> None:
-        self._selected_candidate = None
+        # Deliberately does NOT touch _checked_ids. Typing in the search box
+        # is a question about the library, not a decision about the plot: a
+        # row the user checked and then filtered out of view stays queued,
+        # and the footer keeps counting it. Silently un-checking rows as the
+        # visible set changes would lose a selection the user never undid.
+        self._preview_candidate = None
         self._populate_results_list()
         self._update_footer_state()
 
@@ -687,7 +814,12 @@ class AddReferenceDialog(GeometryMixin, QDialog):
             self._candidates = MeasurementSetRepository.list_attachment_candidates(
                 exclude_ids=self._exclude_ids
             )
-        self._selected_candidate = None
+        # The library itself was reloaded (a "+ New publication…" editor has
+        # just closed), so a checked id may no longer exist. Drop only those;
+        # keep everything still attachable.
+        known = {str(c.measurement_set_id) for c in self._candidates}
+        self._checked_ids = [i for i in self._checked_ids if i in known]
+        self._preview_candidate = None
         self._populate_results_list()
         self._update_footer_state()
 
@@ -696,6 +828,16 @@ class AddReferenceDialog(GeometryMixin, QDialog):
         ``taxon_id`` (an AI candidate or a freely-typed genus/species)."""
         if self._taxon_id is not None:
             return ""
+        return " ".join(part for part in (self._genus, self._species) if part).strip()
+
+    def _taxon_name_text(self) -> str:
+        """The current target as a binomial, whether or not it has an id.
+
+        Unlike :meth:`_taxon_target_query_text` this is not a fallback:
+        relevance grouping wants the name in *both* cases, because a
+        candidate row carries a published name even when it carries no
+        ``taxon_id`` to compare against.
+        """
         return " ".join(part for part in (self._genus, self._species) if part).strip()
 
     def _filtered_candidates(self) -> list[MeasurementSetCandidate]:
@@ -707,21 +849,144 @@ class AddReferenceDialog(GeometryMixin, QDialog):
             taxon_text=self._taxon_target_query_text(),
         )
 
+    def _grouped_candidates(self) -> list[tuple[str, list[MeasurementSetCandidate]]]:
+        return group_library_candidates(
+            self._filtered_candidates(),
+            taxon_id=self._taxon_id,
+            genus=self._genus,
+            taxon_name=self._taxon_name_text(),
+        )
+
+    @staticmethod
+    def _library_group_heading(group: str, count: int) -> str:
+        if group == "this_taxon":
+            template = QCoreApplication.translate("AddReferenceDialog", "This taxon ({count})")
+        elif group == "same_genus":
+            template = QCoreApplication.translate("AddReferenceDialog", "Same genus ({count})")
+        else:
+            template = QCoreApplication.translate("AddReferenceDialog", "Rest of library ({count})")
+        return template.format(count=count)
+
+    @staticmethod
+    def _relevance_badge_text(group: str) -> str:
+        """Badge wording for a relevance group, or ``""`` for no badge.
+
+        "Rest of library" gets none: a badge there would label the absence
+        of a relationship, which is what the grouping already shows.
+        """
+        if group == "this_taxon":
+            return QCoreApplication.translate("AddReferenceDialog", "Same taxon")
+        if group == "same_genus":
+            return QCoreApplication.translate("AddReferenceDialog", "Same genus")
+        return ""
+
+    @staticmethod
+    def _semantic_badge_text(candidate: MeasurementSetCandidate) -> str:
+        """The data-semantics badge, straight from the Stage 1 projection.
+
+        This method chooses wording only. Which badge a row deserves was
+        decided by :attr:`SourceDisplay.data_label`, so no widget re-reads
+        ``data_kind`` or a database column to guess (design contract
+        N10–N14). An explicit percentile interval prints its real bounds, so
+        a 10–90% source is never shown as 5–95%.
+        """
+        label = candidate.source_display().data_label
+        if label.kind == "raw_data":
+            return QCoreApplication.translate("AddReferenceDialog", "Raw data")
+        if label.kind == "percentile_range" and label.percentile_bounds:
+            low, high = label.percentile_bounds
+            return QCoreApplication.translate(
+                "AddReferenceDialog", "{low}–{high}% range"
+            ).format(low=f"{low:g}", high=f"{high:g}")
+        if label.kind == "published_range":
+            return QCoreApplication.translate("AddReferenceDialog", "Published range")
+        return ""
+
+    def _add_group_heading(self, group: str, count: int) -> None:
+        item = QListWidgetItem(self._library_group_heading(group, count))
+        # Not selectable and not enabled: a heading is a label, and letting
+        # it become the current row would clear the preview every time the
+        # user arrow-keys past it.
+        item.setFlags(Qt.NoItemFlags)
+        item.setData(Qt.UserRole, _GROUP_HEADING_ROLE)
+        item.setData(Qt.UserRole + 1, group)
+        font = QFont(self.results_list.font())
+        font.setBold(True)
+        font.setPointSizeF(max(font.pointSizeF() - 1.0, 7.0))
+        item.setFont(font)
+        item.setForeground(self.palette().mid())
+        self.results_list.addItem(item)
+
     def _populate_results_list(self) -> None:
+        # Signals are blocked for the whole rebuild, and this is load-bearing.
+        # ``clear()`` removes the current row from under the view, which walks
+        # the current index onto whatever row survives longest -- and the row
+        # that survives longest is "+ New publication…", the last item. The
+        # resulting itemSelectionChanged would reach _on_selection_changed
+        # with the action row selected and schedule a publication editor that
+        # the user never asked for: toggling "Only this taxon" with a result
+        # selected would pop a modal. Every caller of this method intends to
+        # end with no selection, so the rebuild emits none.
+        was_blocked = self.results_list.blockSignals(True)
+        try:
+            self._rebuild_results_items()
+            self.results_list.setCurrentItem(None)
+            self.results_list.clearSelection()
+        finally:
+            self.results_list.blockSignals(was_blocked)
+        self._refresh_status_hint()
+        self.preview_pane.clear()
+
+    def _rebuild_results_items(self) -> None:
         self.results_list.clear()
-        visible = self._filtered_candidates()
-        for candidate in visible:
-            self._add_candidate_item(candidate)
+        groups = self._grouped_candidates()
+        for group, members in groups:
+            self._add_group_heading(group, len(members))
+            for candidate in members:
+                self._add_candidate_item(candidate, group)
         new_pub_item = QListWidgetItem(QCoreApplication.translate("AddReferenceDialog", "+ New publication…"))
         new_pub_item.setData(Qt.UserRole, _NEW_PUBLICATION_ROLE)
         new_pub_item.setForeground(self.palette().link())
+        # Selectable (that is how the action fires) but explicitly not
+        # checkable: it is a command, never a source that could be queued
+        # for the plot. Qt's default item flags include ItemIsUserCheckable,
+        # so this has to be stated rather than assumed.
+        new_pub_item.setFlags(Qt.ItemIsSelectable | Qt.ItemIsEnabled)
         self.results_list.addItem(new_pub_item)
+        self._visible_candidate_count = sum(len(members) for _, members in groups)
 
-        if not visible:
-            self.status_hint_label.setText(self._empty_library_hint())
-        else:
-            self.status_hint_label.setText("")
-        self.preview_pane.clear()
+    def _refresh_status_hint(self) -> None:
+        """The single writer of the footer hint while the Library tab is up.
+
+        One writer on purpose. The hint used to be set by both
+        ``_populate_results_list`` and ``_update_footer_state``, and since
+        the latter runs second on every filter change it silently overwrote
+        the more specific message (see
+        ``tests/test_library_taxon_scope_hint.py``). Both callers now route
+        here instead of composing their own text.
+
+        What is queued outranks why the list looks the way it does: once a
+        source is checked, the count is the thing the user is about to act
+        on.
+        """
+        if self.tabs.currentWidget() is not self._library_tab:
+            return
+        checked = len(self._checked_ids)
+        if checked == 1:
+            self.status_hint_label.setText(
+                QCoreApplication.translate("AddReferenceDialog", "1 source selected")
+            )
+            return
+        if checked > 1:
+            self.status_hint_label.setText(
+                QCoreApplication.translate(
+                    "AddReferenceDialog", "{count} sources selected"
+                ).format(count=checked)
+            )
+            return
+        self.status_hint_label.setText(
+            "" if self._visible_candidate_count else self._empty_library_hint()
+        )
 
     def _empty_library_hint(self) -> str:
         """Why the library list is empty, and what would un-empty it.
@@ -749,40 +1014,128 @@ class AddReferenceDialog(GeometryMixin, QDialog):
                 ).format(count=len(without_taxon_scope))
         return QCoreApplication.translate("AddReferenceDialog", "No matching measurement sets in the library.")
 
-    def _add_candidate_item(self, candidate: MeasurementSetCandidate) -> None:
-        label = candidate.short_label or candidate.name_as_published or QCoreApplication.translate("AddReferenceDialog", "Untitled")
+    def _add_candidate_item(
+        self, candidate: MeasurementSetCandidate, group: str = "rest"
+    ) -> None:
+        taxon = candidate.name_as_published or QCoreApplication.translate(
+            "AddReferenceDialog", "Unnamed taxon"
+        )
+        citation = candidate.short_label or candidate.work_title or QCoreApplication.translate("AddReferenceDialog", "Untitled")
         # short_label conventionally already ends with the year (see
         # database.reference_citation.build_short_label); only append it
         # when genuinely missing, to avoid "... 2018 (2018)".
-        if candidate.year and str(candidate.year) not in label:
-            label = f"{label} ({candidate.year})"
-        detail = candidate.data_kind or ""
-        if candidate.raw_text:
-            detail = f"{detail} · {candidate.raw_text}" if detail else candidate.raw_text
-        if not self.only_this_taxon_checkbox.isChecked() and candidate.name_as_published:
-            # Unfiltered, several rows can share a publication -- show which
-            # taxon each one describes instead of leaving that ambiguous.
-            detail = f"{candidate.name_as_published} · {detail}" if detail else candidate.name_as_published
+        if candidate.year and str(candidate.year) not in citation:
+            citation = f"{citation} ({candidate.year})"
+        if candidate.locator_text:
+            citation = f"{citation} · {candidate.locator_text}"
+        measurement = format_measurement_expression(candidate.source_display())
 
         item = QListWidgetItem()
-        item.setToolTip(label if not detail else f"{label}\n{detail}")
+        # The raw expression is the full, unrounded thing the source printed;
+        # the row's compact cell is a rendering of the stored bounds. Keeping
+        # it in the tooltip means the abbreviation never hides the original.
+        tooltip_lines = [taxon, citation]
+        if candidate.raw_text:
+            tooltip_lines.append(str(candidate.raw_text))
+        item.setToolTip("\n".join(line for line in tooltip_lines if line))
         item.setData(Qt.UserRole, candidate.measurement_set_id)
-        item.setData(Qt.UserRole + 1, detail)
+        item.setData(Qt.UserRole + 1, group)
         self.results_list.addItem(item)
-        row_widget = TwoLineRow(label, detail, self.results_list)
+        row_widget = LibrarySourceRow(
+            measurement_set_id=candidate.measurement_set_id,
+            taxon=taxon,
+            citation=citation,
+            measurement=measurement,
+            relevance_badge=self._relevance_badge_text(group),
+            semantic_badge=self._semantic_badge_text(candidate),
+            parent=self.results_list,
+        )
+        # Before the signal is connected, so restoring a checked row during
+        # a rebuild cannot look like the user clicking the checkbox.
+        row_widget.set_checked_silently(
+            str(candidate.measurement_set_id) in self._checked_ids
+        )
+        row_widget.check_toggled.connect(self._on_source_check_toggled)
         item.setSizeHint(row_widget.sizeHint())
         self.results_list.setItemWidget(item, row_widget)
 
+    # -- Library selection / check state --------------------------------
+
+    def _library_row_widgets(self) -> list[tuple[QListWidgetItem, LibrarySourceRow]]:
+        widgets = []
+        for row in range(self.results_list.count()):
+            item = self.results_list.item(row)
+            widget = self.results_list.itemWidget(item)
+            if isinstance(widget, LibrarySourceRow):
+                widgets.append((item, widget))
+        return widgets
+
+    def _row_for_measurement_set(self, measurement_set_id: str) -> int | None:
+        for row in range(self.results_list.count()):
+            if self.results_list.item(row).data(Qt.UserRole) == measurement_set_id:
+                return row
+        return None
+
+    def _sync_selected_row_painting(self) -> None:
+        """Tell each row whether it is the preview row.
+
+        Qt's own highlight is off (see ``_build_library_tab``), so nothing
+        draws the selected state unless the rows are told.
+        """
+        current = (
+            self._preview_candidate.measurement_set_id
+            if self._preview_candidate is not None
+            else None
+        )
+        for _item, widget in self._library_row_widgets():
+            widget.set_selected(widget.measurement_set_id == current)
+
+    def _on_source_check_toggled(self, measurement_set_id: str, checked: bool) -> None:
+        """A checkbox changed: update the queue, and preview what was checked.
+
+        Checking also previews (design contract N7), because a user who has
+        just decided to plot a source is the user most likely to want to
+        look at it. The reverse does not hold and is not implemented:
+        selecting a row leaves the queue alone.
+        """
+        measurement_set_id = str(measurement_set_id)
+        if checked:
+            if measurement_set_id not in self._checked_ids:
+                self._checked_ids.append(measurement_set_id)
+            row = self._row_for_measurement_set(measurement_set_id)
+            if row is not None:
+                self.results_list.setCurrentRow(row)
+        elif measurement_set_id in self._checked_ids:
+            self._checked_ids.remove(measurement_set_id)
+        self._update_footer_state()
+
+    def checked_source_ids(self) -> list[str]:
+        """The sources queued for the plot, in the order the user checked them.
+
+        Deduplicated by construction (``_on_source_check_toggled`` appends
+        only ids it does not already hold), so no source can be attached
+        twice. Includes ids whose row is currently filtered out of view:
+        a search is not an un-check.
+        """
+        return list(self._checked_ids)
+
     def _on_selection_changed(self) -> None:
+        """Selection moves the preview and nothing else.
+
+        In particular it never touches ``_checked_ids``: looking at a source
+        must not queue it for the plot (design contract N7).
+        """
         items = self.results_list.selectedItems()
         if not items:
-            self._selected_candidate = None
+            self._preview_candidate = None
+            self._sync_selected_row_painting()
             self.preview_pane.clear()
             self._update_footer_state()
             return
         role = items[0].data(Qt.UserRole)
         if role == _NEW_PUBLICATION_ROLE:
-            self._selected_candidate = None
+            self._preview_candidate = None
+            self._sync_selected_row_painting()
             # Deferred deliberately, and this must not be inlined back.
             # itemSelectionChanged is emitted from inside
             # QListView::setSelection, which is itself still inside the
@@ -806,7 +1159,8 @@ class AddReferenceDialog(GeometryMixin, QDialog):
             (c for c in self._candidates if c.measurement_set_id == role),
             None,
         )
-        self._selected_candidate = candidate
+        self._preview_candidate = candidate
+        self._sync_selected_row_painting()
         self._populate_preview(candidate)
         self._update_footer_state()
 
@@ -971,7 +1325,8 @@ class AddReferenceDialog(GeometryMixin, QDialog):
             self.results_list.clearSelection()
         finally:
             self.results_list.blockSignals(was_blocked)
-        self._selected_candidate = None
+        self._preview_candidate = None
+        self._sync_selected_row_painting()
         self.preview_pane.clear()
         self._update_footer_state()
 
@@ -1226,14 +1581,45 @@ class AddReferenceDialog(GeometryMixin, QDialog):
             # preview (and emits data_changed) before the footer button
             # exists yet; nothing to update this early.
             return
+        default_text = QCoreApplication.translate("AddReferenceDialog", "Add to plot")
         if self.tabs.currentIndex() == self._my_observations_tab_index:
+            self.add_to_plot_btn.setText(default_text)
+            self.add_to_plot_btn.setToolTip("")
             self.add_to_plot_btn.setEnabled(self._selected_observation is not None)
         elif self.tabs.currentIndex() == self._community_tab_index:
+            self.add_to_plot_btn.setText(default_text)
+            self.add_to_plot_btn.setToolTip("")
             self.add_to_plot_btn.setEnabled(self._community_pane.has_selection())
         elif self.tabs.currentIndex() == self._manual_tab_index:
+            self.add_to_plot_btn.setText(default_text)
+            self.add_to_plot_btn.setToolTip("")
             self.add_to_plot_btn.setEnabled(self.manual_editor.is_ready_to_submit())
         else:
-            self.add_to_plot_btn.setEnabled(self._selected_candidate is not None)
+            checked = len(self._checked_ids)
+            self.add_to_plot_btn.setText(
+                QCoreApplication.translate(
+                    "AddReferenceDialog", "Add {count} to plot"
+                ).format(count=checked)
+                if checked > 1
+                else default_text
+            )
+            if checked > 1:
+                # Honest, and the reason it is not in the hint (which the
+                # contract reserves for the count) but on the button that
+                # cannot be pressed. See _on_add_to_plot_clicked.
+                self.add_to_plot_btn.setToolTip(
+                    QCoreApplication.translate(
+                        "AddReferenceDialog",
+                        "Adding several sources at once is not available yet. "
+                        "Leave one source checked, or add them one at a time.",
+                    )
+                )
+            else:
+                self.add_to_plot_btn.setToolTip("")
+            self.add_to_plot_btn.setEnabled(
+                checked == 1 or (checked == 0 and self._preview_candidate is not None)
+            )
+        self._refresh_status_hint()
 
     def _on_add_to_plot_clicked(self) -> None:
         if self.tabs.currentIndex() == self._my_observations_tab_index:
@@ -1265,16 +1651,44 @@ class AddReferenceDialog(GeometryMixin, QDialog):
             if self._manual_attach_callback(self.manual_editor):
                 self.accept()
             return
-        if self._attach_callback is None or self._selected_candidate is None:
+        if self._attach_callback is None:
             return
-        self._attach_callback(self._selected_candidate.measurement_set_id, "compared")
+        checked = self.checked_source_ids()
+        if len(checked) > 1:
+            # Not reachable through the UI: the button is disabled for more
+            # than one checked source (see _update_footer_state).
+            #
+            # Multi-attach is deliberately NOT wired here. ``attach_callback``
+            # is ``(measurement_set_id, role) -> None``: its host
+            # (``MainWindow._attach_normalized_reference_to_active_
+            # observation``) returns ``None`` whether the attach succeeded,
+            # was refused because no observation is active, raised
+            # ``ReferenceLibraryError``, or produced an untranslatable
+            # snapshot. A loop over that callback could not tell which
+            # sources landed, so it could neither keep the failed ones for a
+            # retry nor avoid closing the dialog on a claim of success it
+            # has no evidence for. Failure propagation for this path is part
+            # of the unlanded ``feature/reference-save-and-plot`` work the
+            # redesign plan explicitly forbids recreating piecemeal.
+            return
+        target = checked[0] if checked else (
+            self._preview_candidate.measurement_set_id
+            if self._preview_candidate is not None
+            else None
+        )
+        if target is None:
+            return
+        self._attach_callback(target, "compared")
         self.accept()
 
 
 __all__ = [
     "AddReferenceDialog",
+    "LIBRARY_GROUP_ORDER",
     "filter_library_candidates",
     "format_ai_candidate_display",
+    "group_library_candidates",
+    "library_relevance",
     "PersonalObservationCandidate",
     "default_my_observation_candidates",
 ]
