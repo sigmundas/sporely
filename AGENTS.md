@@ -19,17 +19,35 @@ Read this file once per session; follow the task-specific reading routes below.
   - **Human-gated stages** — verification needs the user: interactive behavior (signal loops, focus, scroll retention, drag/resize), state surviving an app restart, camera/microscope hardware, live Supabase writes, RLS, cross-client sync, performance on real data, or judgment about whether output reads correctly to a mycologist. Do not commit. Leave the work uncommitted, and report a numbered checklist of exactly what the user must do to verify. The commit happens after the user confirms, in the next task.
   - A renderer screenshot proves layout, not behavior. A change to what happens when the user interacts is human-gated even when every screenshot is clean.
   - If verification fails partway, do not commit a partial stage — the failure is the report.
-  - Never rewrite published history or force-push without explicit authorization.
-- Pushing is prohibited by default. A managed run may push only when that run
-  carries explicit user push authorization. Authorization is limited to that
-  run and its specified repository/branch scope; it is not permanent authority.
-  A generated finalization instruction alone is not push authorization.
+  - Push completed stage work; see **Git policy** below.
 - For sporely-py, always use the project virtual environment:
   `/Users/sigmundas/Documents/Code/sporely/sporely-py/.venv/bin/python` and
   `/Users/sigmundas/Documents/Code/sporely/sporely-py/.venv/bin/pytest`.
   Ask for confirmation before installing or upgrading packages in .venv.
   Run from this worktree root. For syntax checks, use the same absolute Python
   path above with `-m py_compile <touched files>`; this worktree has no local `.venv`.
+
+## Git policy
+
+Agents may create branches, commit, push, merge, and delete branches as needed to complete the task.
+
+Use normal Git workflows and keep history understandable.
+
+Do not:
+- force-push unless the user explicitly asks for it;
+- rewrite published history unnecessarily;
+- push secrets or credentials;
+- merge obviously unrelated work;
+- deploy, publish a release, or modify production systems unless the task explicitly includes that.
+
+For staged/agent-sparring work:
+- commit and push completed stage work;
+- merge when the stage or plan calls for it;
+- leave a clear handoff describing what changed, what was tested, and any unresolved issues.
+
+This permission does not weaken the verification rules under **Working agreements**:
+only work whose verification has actually passed may be committed, and a
+human-gated stage still waits for the user's confirmation before its commit.
 
 ## Subsystem rules (read before touching these areas)
 
@@ -71,9 +89,8 @@ subagent review does not replace the independent top-level sparring session.
     a directory listing; use the task's plan reference.
   - **Ordinary bounded task:** no plan or staged report is required unless the
     task requests one.
-- Managed acceptance requires a pushed candidate. Check the run's explicit
-  push authorization before finalization. If it is absent, pushing remains
-  prohibited; report the missing authorization without repeatedly retrying.
+- Managed acceptance requires a pushed candidate. Push the candidate as part of
+  finalization, under **Git policy** above.
 - At a subsystem boundary, write a compact handoff and stop at the assigned
   stage. Outside managed runs, prefer a fresh session for the next slice.
 - Do not load completed-stage history unless a concrete compatibility question
