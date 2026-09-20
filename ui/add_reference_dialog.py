@@ -342,7 +342,7 @@ def default_my_observation_candidates(
     return result
 
 
-class _EditorScrollArea(QScrollArea):
+class EditorScrollArea(QScrollArea):
     """A :class:`QScrollArea` that reports its hosted widget's own size hint.
 
     ``QScrollArea.sizeHint()`` is a fixed style heuristic that ignores how
@@ -1622,15 +1622,21 @@ class AddReferenceDialog(GeometryMixin, QDialog):
             sporely_taxon_id=self._taxon_id,
             observation_taxon_id=self._own_taxon_id,
             preview_pane=self.preview_pane,
+            # Manual entry renders into this dialog's frozen domains and
+            # against this dialog's observation, exactly like Library and
+            # Community, so what the user is typing can be compared by eye
+            # with the source they looked at a moment ago.
+            comparison_view_factory=self._comparison_view_for,
         )
         self.manual_editor.data_changed.connect(self._update_footer_state)
-        # The editor's own minimum size hint (its measurement tables) is the
-        # widest and tallest thing in the picker, and was what stopped the
-        # dialog shrinking even once the explicit floors were removed.
-        # Scrolling it here -- in the picker only, not in the shared editor
-        # widget, which the legacy Quick-add dialog also hosts -- lets the
-        # dialog be resized small while keeping every field reachable.
-        self._manual_scroll = _EditorScrollArea(self._manual_tab)
+        # The editor's own minimum size hint (its measurement grid and spore
+        # table) is the widest and tallest thing in the picker, and was what
+        # stopped the dialog shrinking even once the explicit floors were
+        # removed. Scrolling it here -- in each host rather than inside the
+        # shared editor widget, so a host can still decide it has room --
+        # lets the dialog be resized small while keeping every field
+        # reachable. The legacy Quick-add dialog wraps it the same way.
+        self._manual_scroll = EditorScrollArea(self._manual_tab)
         self._manual_scroll.setWidgetResizable(True)
         self._manual_scroll.setFrameShape(QScrollArea.NoFrame)
         self._manual_scroll.setWidget(self.manual_editor)

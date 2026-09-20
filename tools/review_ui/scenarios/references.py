@@ -88,7 +88,7 @@ def _populate_reported_statistics(dialog) -> None:
 
 
 def _populate_raw_points(dialog) -> None:
-    dialog.tabs.setCurrentIndex(1)
+    dialog._spore_section.set_expanded(True)
     points = (
         (8.4, 4.6),
         (8.8, 4.7),
@@ -413,7 +413,7 @@ def _no_taxon(context: ReviewContext):
 
 def _parmasto(context: ReviewContext):
     dialog = _make_add_dialog(context)
-    dialog.tabs.setCurrentIndex(2)
+    dialog._parmasto_section.set_expanded(True)
     values = {
         "parmasto_length_mean": "9.62",
         "parmasto_width_mean": "5.08",
@@ -1295,24 +1295,27 @@ def _add_dialog_manual_range(context: ReviewContext):
 
 
 def _add_dialog_manual_species_mean(context: ReviewContext):
-    """Stage 5 follow-up: exercises ``ReferenceEntryEditor._refresh_preview``
-    on the real embedded editor with only extreme bounds entered plus a
-    directly reported Parmasto species mean (no min/max-table mean, no
-    typical range) -- the mean must render with no derived marker, while a
-    genuine typical-range fallback (Q row) still shows one, so both states
-    are visible side by side from real widget state, not a hand-set
-    fixture."""
+    """Three metrics whose stated content differs, in one shot.
+
+    Length has reported extremes plus a Parmasto species mean and no
+    typical range; width has extremes and a stated mean; Q has only a
+    typical range and therefore no centre at all. Rendered from real widget
+    state, so the comparison must show a filled outer band for length and
+    width, a core band for Q, and a centre mark on exactly the two metrics
+    that state one -- never an invented midpoint for Q.
+    """
     dialog, fixture = _add_dialog_manual(context)
     _select_work(dialog.manual_editor, fixture["work"].id)
     editor = dialog.manual_editor
-    editor.minmax_table.setItem(0, 0, QTableWidgetItem("8.00"))
-    editor.minmax_table.setItem(0, 4, QTableWidgetItem("11.00"))
+    editor._parmasto_section.set_expanded(True)
+    editor.set_measurement_cell_text(0, 0, "8.00")
+    editor.set_measurement_cell_text(0, 4, "11.00")
     editor.parmasto_inputs["parmasto_length_mean"].setText("9.50")
-    editor.minmax_table.setItem(1, 0, QTableWidgetItem("6.00"))
-    editor.minmax_table.setItem(1, 4, QTableWidgetItem("8.00"))
-    editor.minmax_table.setItem(1, 2, QTableWidgetItem("7.10"))
-    editor.minmax_table.setItem(2, 1, QTableWidgetItem("1.20"))
-    editor.minmax_table.setItem(2, 3, QTableWidgetItem("1.40"))
+    editor.set_measurement_cell_text(1, 0, "6.00")
+    editor.set_measurement_cell_text(1, 4, "8.00")
+    editor.set_measurement_cell_text(1, 2, "7.10")
+    editor.set_measurement_cell_text(2, 1, "1.20")
+    editor.set_measurement_cell_text(2, 3, "1.40")
     editor._refresh_preview()
     return dialog
 
@@ -1415,7 +1418,11 @@ def register_reference_scenarios(registry: ScenarioRegistry) -> None:
             group="reference-library",
             title="Parmasto biometrics legacy path",
             description="Realistic Parmasto values exercise the retained legacy-only biometric branch.",
-            viewport=(900, 720),
+            # Taller than the other Quick-add scenarios: the one-column
+            # editor puts the publication block and the measurement grid
+            # above this section, so 720px would capture the scroll area
+            # rather than the biometric fields the scenario is about.
+            viewport=(900, 1080),
             build=_parmasto,
         ),
         ReviewScenario(

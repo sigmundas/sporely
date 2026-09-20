@@ -849,13 +849,11 @@ def test_return_with_deliberately_edited_text_still_parses_free_taxon():
 
 
 def _set_manual_range(dialog: AddReferenceDialog, *, length=(8.0, 11.0), width=(6.0, 8.0)) -> None:
-    from PySide6.QtWidgets import QTableWidgetItem
-
     editor = dialog.manual_editor
-    editor.minmax_table.setItem(0, 0, QTableWidgetItem(f"{length[0]:.2f}"))
-    editor.minmax_table.setItem(0, 4, QTableWidgetItem(f"{length[1]:.2f}"))
-    editor.minmax_table.setItem(1, 0, QTableWidgetItem(f"{width[0]:.2f}"))
-    editor.minmax_table.setItem(1, 4, QTableWidgetItem(f"{width[1]:.2f}"))
+    editor.set_measurement_cell_text(0, 0, f"{length[0]:.2f}")
+    editor.set_measurement_cell_text(0, 4, f"{length[1]:.2f}")
+    editor.set_measurement_cell_text(1, 0, f"{width[0]:.2f}")
+    editor.set_measurement_cell_text(1, 4, f"{width[1]:.2f}")
 
 
 def test_manual_tab_uses_pickers_observation_and_own_taxon_id():
@@ -926,7 +924,7 @@ def test_changing_taxon_target_resets_manual_editor_publication_state():
     assert dialog.manual_editor._genus == "Cortinarius"
     assert dialog.manual_editor._species == "rubellus"
     # Entered measurement values survive the target switch.
-    assert dialog.manual_editor._table_value(0, 0) == 8.0
+    assert dialog.manual_editor.measurement_cell_text(0, 0) == "8.00"
 
 
 def test_switching_to_manual_tab_resyncs_shared_preview_pane():
@@ -935,7 +933,10 @@ def test_switching_to_manual_tab_resyncs_shared_preview_pane():
     dialog.tabs.setCurrentIndex(0)  # Library tab
     dialog.preview_pane.clear()
     dialog.tabs.setCurrentIndex(dialog._manual_tab_index)
-    assert dialog.preview_pane.summary_table.item(0, 1).text() == "8.00"
+    view = dialog.preview_pane.comparison_view.view()
+    assert view.has_source is True
+    length = view.metric("length").source
+    assert (length.outer.low, length.outer.high) == pytest.approx((8.0, 11.0))
 
 
 # ---------------------------------------------------------------------

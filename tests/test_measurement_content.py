@@ -14,6 +14,7 @@ import pytest
 
 from references import measurement_content as mc
 from references.measurement_content import (
+    PROJECTION_LOSS_KINDS,
     IntervalStatistic,
     MeasurementContent,
     MeasurementContentError,
@@ -31,6 +32,7 @@ from references.measurement_content import (
     decode_measurement_details,
     encode_measurement_details,
     is_enhanced_row,
+    legacy_projection_losses,
     measurement_details_equal,
     set_mean_interval,
     set_scalar_mean,
@@ -598,3 +600,112 @@ def test_edit_operations_do_not_validate_transported_state(enhanced):
     assert still_broken.details.metrics["length"].sd is None
     with pytest.raises(MeasurementContentError, match="length_mean"):
         validate_measurement_content(still_broken, mode="edit")
+
+
+# --- Version-1 projection losses (Stage 3 semantic boundary) ------------------
+
+
+def _parsed(text: str):
+    from references.measurement_parser import parse_measurement_string
+
+    return parse_measurement_string(text).to_content()
+
+
+def test_a_bare_published_range_projects_to_version_1_without_loss():
+    """Numbers with no stated cut-off rule are exactly what a v1 row says."""
+    assert legacy_projection_losses(_parsed("8.4-13.0 x 5.1-7.2 um")) == []
+
+
+def test_reported_extremes_around_a_typical_range_project_without_loss():
+    """Length and width descriptors cost nothing to store as v1.
+
+    ``*_min``/``*_max`` have always meant reported extremes and the core
+    columns have always held the inner pair, so the descriptors naming them
+    are annotation rather than claim.
+    """
+    losses = legacy_projection_losses(
+        _parsed("(9.5-)9.8-11.3(-11.7) x (7.3-)8.0-9.4(-9.4) um")
+    )
+    assert losses == []
+
+
+def test_a_q_typical_range_is_a_loss_even_without_reported_q_extremes():
+    """v1 has no Q core columns, so the pair cannot be stored as itself.
+
+    With no Q extremes reported the bounds slide into ``q_min``/``q_max``
+    and are relabelled as extremes; that is still the row claiming something
+    the source did not.
+    """
+    losses = legacy_projection_losses(
+        _parsed("(9.5-)9.8-11.3(-11.7) x (7.3-)8.0-9.4(-9.4) um, Q = 1.2-1.3")
+    )
+    assert losses == [("q", "q_core_pair")]
+
+
+def test_a_q_core_range_beside_reported_q_extremes_is_discarded_outright():
+    """The case that disproved treating the Q fallback as mere relabelling.
+
+    The parser supports both Q ranges at once. A v1 row keeps the outer pair
+    and has nowhere to put the inner one, so 1.2-1.8 does not move into the
+    extreme columns -- it disappears.
+    """
+    content = _parsed("10-12 x 5-6, Q = (1.1-)1.2-1.8(-1.9), Qm = 1.5")
+
+    assert (content.q_min, content.q_max) == pytest.approx((1.1, 1.9))
+    assert (content.q_core_min, content.q_core_max) == pytest.approx((1.2, 1.8))
+    assert ("q", "q_core_pair") in legacy_projection_losses(content)
+
+
+def test_an_explicit_percentile_interval_is_reported_as_a_loss():
+    content = _parsed(
+        "\n".join(
+            [
+                "Spore\t(min) 5%-95% (max)\tmean\tmedian\tS.D.",
+                "Length\t(7.5) 8.4-13.0 (13.2)\t9.2-11.7\t9.2-11.7\t0.600",
+            ]
+        )
+    )
+    losses = legacy_projection_losses(content)
+    assert ("length", "percentile_interval") in losses
+    assert ("length", "mean_interval") in losses
+    assert ("length", "median") in losses
+    assert ("length", "sd") in losses
+
+
+def test_a_descriptor_with_no_numbers_left_is_not_a_loss():
+    """A descriptor describing an absent pair claims nothing to lose."""
+    content = MeasurementContent(
+        details=MeasurementDetails(
+            metrics={
+                "length": MetricDetails(
+                    core_range=RangeDescriptor(
+                        kind="percentile_interval", percentile_bounds=(5.0, 95.0)
+                    )
+                )
+            }
+        )
+    )
+    assert legacy_projection_losses(content) == []
+
+
+def test_unsupported_future_details_are_reported_as_inspect_only():
+    content = MeasurementContent(
+        details=UnsupportedMeasurementDetails(schema_version=99, raw={})
+    )
+    assert legacy_projection_losses(content) == [("", "unsupported_details")]
+
+
+def test_every_reported_loss_kind_is_declared():
+    """The registry and the producer cannot drift apart silently."""
+    content = _parsed(
+        "\n".join(
+            [
+                "Spore\t(min) 5%-95% (max)\tmean\tmedian\tS.D.",
+                "Length\t(7.5) 8.4-13.0 (13.2)\t9.2-11.7\t9.2-11.7\t0.600",
+                "Q\t(1.30) 1.42-1.96 (2.07)\t1.55-1.78\t1.54-1.79\t0.095",
+            ]
+        )
+    )
+    kinds = {kind for _metric, kind in legacy_projection_losses(content)}
+    assert kinds <= set(PROJECTION_LOSS_KINDS)
+    assert "q_core_pair" in kinds and "percentile_interval" in kinds

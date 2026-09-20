@@ -244,7 +244,7 @@ from .observations_tab import ObservationsTab
 from .live_lab_tab import LiveLabTab
 from .database_settings_dialog import DatabaseSettingsDialog
 from .cloud_reference_dialog import CloudReferenceDialog
-from .add_reference_dialog import AddReferenceDialog
+from .add_reference_dialog import AddReferenceDialog, EditorScrollArea
 from .comparison_panel import ComparisonListWidget, ComparisonRow
 from .reference_entry_editor import ReferenceEntryEditor, SporeDataTable
 from .reference_library_attach_dialog import ReferenceLibraryAttachDialog
@@ -5308,7 +5308,15 @@ class ReferenceAddDialog(GeometryMixin, QDialog):
             sporely_taxon_id=sporely_taxon_id,
             require_explicit_publication_assignment=require_explicit_publication_assignment,
         )
-        layout.addWidget(self.editor, 1)
+        # The one-column editor is taller than the tab bar it replaced, so
+        # this dialog scrolls it exactly as the picker does. Without it the
+        # measurement grid is squeezed to nothing at the dialog's own
+        # minimum height instead of staying reachable.
+        editor_scroll = EditorScrollArea(self)
+        editor_scroll.setWidgetResizable(True)
+        editor_scroll.setFrameShape(QScrollArea.NoFrame)
+        editor_scroll.setWidget(self.editor)
+        layout.addWidget(editor_scroll, 1)
 
         button_row = QHBoxLayout()
         self.save_btn = QPushButton(self.tr("Save"))

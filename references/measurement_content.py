@@ -814,6 +814,91 @@ def set_mean_interval(
     return _with_metric(content, metric, body, **{SCALAR_MEAN[metric]: None})
 
 
+#: Claims a version-1 row already expresses by column position, so omitting
+#: the descriptor that names them costs an annotation rather than a claim.
+#:
+#: ``unspecified`` is what a legacy row says by definition: numbers with no
+#: stated cut-off rule. ``typical_range`` and ``reported_range`` describe the
+#: inner pair, which is exactly what the ``*_core_*`` columns hold, and
+#: contract N13 makes "typical" a stored nuance rather than a badge the
+#: reader sees. ``reported_extremes`` describes the outer pair, which is what
+#: ``*_min`` / ``*_max`` have always meant.
+_V1_EQUIVALENT_RANGE_KINDS: frozenset[str] = frozenset(
+    {"unspecified", "typical_range", "reported_range", "reported_extremes"}
+)
+
+#: Loss kinds :func:`legacy_projection_losses` can report.
+PROJECTION_LOSS_KINDS: tuple[str, ...] = (
+    "unsupported_details",
+    "percentile_interval",
+    "mean_interval",
+    "median",
+    "sd",
+    "q_core_pair",
+)
+
+
+def legacy_projection_losses(content: MeasurementContent) -> list[tuple[str, str]]:
+    """Scientific claims that a version-1 projection of *content* would drop.
+
+    A version-1 row has no ``measurement_details_json`` and no Q core pair,
+    so writing one while the enhanced gate is closed silently discards part
+    of what the source said. This names the parts whose loss a reader would
+    actually notice, and deliberately stays quiet about the parts a v1 row
+    still expresses:
+
+    - an explicit **percentile interval** becomes an unlabelled inner pair,
+      which contract N12/N14 say must never be presented as, or mistaken
+      for, an ordinary published range;
+    - a **mean reported as an interval** disappears outright: contract rule 4
+      leaves the scalar ``*_mean`` column NULL for it, and v1 has nowhere
+      else to put it;
+    - a reported **median** and **standard deviation** have no v1 column at
+      all;
+    - the **Q core pair** falls back into ``q_min``/``q_max``, which turns a
+      core pair into reported extremes — a different claim, not a smaller one.
+
+    Range descriptors in :data:`_V1_EQUIVALENT_RANGE_KINDS` are not reported:
+    the ordinary ``(extreme–)typical–typical(–extreme)`` literature notation
+    projects to v1 without losing a claim, and blocking it would stop nearly
+    every paste-and-attach for no scientific gain.
+
+    Returns ``(metric, kind)`` pairs — never a translated sentence, so the
+    two editors and their tests can word the refusal themselves. Unsupported
+    (future-version) details report ``("", "unsupported_details")``: they are
+    inspect-only and must never be re-encoded from this binary.
+    """
+    details = content.details
+    if isinstance(details, UnsupportedMeasurementDetails):
+        return [("", "unsupported_details")]
+    losses: list[tuple[str, str]] = []
+    if isinstance(details, MeasurementDetails):
+        for metric in METRICS:
+            body = details.metrics.get(metric)
+            if body is None:
+                continue
+            core = body.core_range
+            low, high = CORE_PAIR[metric]
+            if (
+                core is not None
+                and core.kind not in _V1_EQUIVALENT_RANGE_KINDS
+                # A descriptor with no pair to describe claims nothing, so
+                # dropping it loses nothing either.
+                and getattr(content, low, None) is not None
+                and getattr(content, high, None) is not None
+            ):
+                losses.append((metric, "percentile_interval"))
+            if body.mean_interval is not None:
+                losses.append((metric, "mean_interval"))
+            if body.median is not None:
+                losses.append((metric, "median"))
+            if body.sd is not None:
+                losses.append((metric, "sd"))
+    if content.q_core_min is not None or content.q_core_max is not None:
+        losses.append(("q", "q_core_pair"))
+    return losses
+
+
 def swap_length_width(content: MeasurementContent) -> MeasurementContent:
     """Swap length and width: pairs, scalar means and descriptors move
     together so numbers never part from their interpretation. Q is unchanged."""
@@ -873,7 +958,9 @@ __all__ = (
     "encode_measurement_details",
     "import_decision",
     "is_enhanced_row",
+    "legacy_projection_losses",
     "measurement_details_equal",
+    "PROJECTION_LOSS_KINDS",
     "scientific_content_equal",
     "set_mean_interval",
     "set_scalar_mean",

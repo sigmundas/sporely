@@ -292,7 +292,7 @@ class _MetricTrack(QWidget):
                     ]
                 )
             )
-        if band.clipped_high:
+        if clipped_high:
             right = left + width
             painter.drawPolygon(
                 QPolygonF(
