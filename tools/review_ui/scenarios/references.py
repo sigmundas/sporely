@@ -631,6 +631,7 @@ def _add_dialog_candidates():
     import json
 
     from database.reference_library import MeasurementSetCandidate
+    from references.reference_comparison import point_extents
     from references.reference_display import display_from_row
 
     # Reuses the long-names data (60+ char title, æøå) already exercised by
@@ -640,6 +641,11 @@ def _add_dialog_candidates():
     # row's measurement cell and data-semantics badge are rendered from it
     # (see ``references.reference_display``). Building these by hand rather
     # than from a database keeps the renderer deterministic and offline.
+    raw_points = [
+        {"length": 8.6, "width": 4.8},
+        {"length": 9.1, "width": 5.2},
+        {"length": 9.9, "width": 5.5},
+    ]
     decile_details = json.dumps(
         {
             "schema_version": 1,
@@ -698,17 +704,15 @@ def _add_dialog_candidates():
             year=2018,
             taxon_id="7",
             display=display_from_row(
-                {
-                    "data_kind": "raw_points",
-                    "raw_points_json": json.dumps(
-                        [
-                            {"length": 8.6, "width": 4.8},
-                            {"length": 9.1, "width": 5.2},
-                            {"length": 9.9, "width": 5.5},
-                        ]
-                    ),
-                }
+                {"data_kind": "raw_points", "raw_points_json": json.dumps(raw_points)}
             ),
+            # A raw-points row states no range, so its projection carries no
+            # numbers for the comparison axes. The repository projects the
+            # measured span alongside the display semantics
+            # (``MeasurementSetRepository.list_candidates``); the fixture has
+            # to do the same or this candidate renders off-scale in a way
+            # production never would.
+            raw_point_extents=point_extents(raw_points),
         ),
         MeasurementSetCandidate(
             measurement_set_id="add-dialog-3",
@@ -758,6 +762,20 @@ def _add_dialog_candidates():
     ]
 
 
+def _add_dialog_observation_points():
+    """The observation the picker compares against, as the host would pass it.
+
+    Deterministic and plausible for *Cortinarius limonius*, so the preview's
+    outlined observation band has something real to sit against. Without these
+    the comparison renders with the source alone, which is a legitimate state
+    but not the one this screenshot is for.
+    """
+    return [
+        {"length_um": 8.4 + index * 0.22, "width_um": 4.6 + index * 0.06}
+        for index in range(14)
+    ]
+
+
 def _add_dialog_library(context: ReviewContext):
     from ui.add_reference_dialog import AddReferenceDialog
 
@@ -769,6 +787,7 @@ def _add_dialog_library(context: ReviewContext):
         genus="Cortinarius",
         species="limonius",
         candidates=_add_dialog_candidates(),
+        observation_points=_add_dialog_observation_points(),
         attach_callback=lambda *_args: None,
     )
     # Unscoped so all three relevance groups have members, which is the
@@ -805,6 +824,7 @@ def _add_dialog_library_empty(context: ReviewContext):
         taxon_label="Cortinarius limonius",
         taxon_id="not-present-in-any-candidate",
         candidates=_add_dialog_candidates(),
+        observation_points=_add_dialog_observation_points(),
         attach_callback=lambda *_args: None,
     )
     # "Only this taxon" defaults to checked; no candidate matches this

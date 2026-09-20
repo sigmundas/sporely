@@ -10000,6 +10000,13 @@ class MainWindow(GeometryMixin, QMainWindow):
             cloud_attach_callback=_add_cloud_callback,
             manual_attach_callback=_add_manual_callback,
             ai_candidates=self._collect_reference_ai_suggestions(),
+            # The picker compares every source against this observation, so
+            # the host supplies its measurements rather than letting the
+            # dialog run a second query that could disagree with the one
+            # behind the plot.
+            observation_points=self._spore_points_for_observation(
+                captured_observation_id
+            ),
         )
         dialog.exec()
 
@@ -10020,13 +10027,7 @@ class MainWindow(GeometryMixin, QMainWindow):
             source_id = int(source_observation_id)
         except (TypeError, ValueError):
             return
-        raw = MeasurementDB.get_measurements_for_observation(source_id)
-        points = [
-            m for m in raw
-            if m.get("length_um") is not None
-            and m.get("width_um") is not None
-            and (m.get("measurement_type") in (None, "", "manual", "spore", "spores"))
-        ]
+        points = self._spore_points_for_observation(source_id)
         if not points:
             QMessageBox.warning(
                 self,
@@ -10953,6 +10954,25 @@ class MainWindow(GeometryMixin, QMainWindow):
                 continue
             options.append((source, {"kind": "reference", "source": source}))
         return options
+
+    @staticmethod
+    def _spore_points_for_observation(observation_id: int) -> list[dict]:
+        """One observation's usable spore measurements.
+
+        The same filter the personal-observation comparison path has always
+        applied -- both dimensions present, and a measurement type that is
+        actually a spore rather than, say, a cap diameter. Shared so the
+        Add-reference picker's observation baseline and the series it plots
+        are computed from exactly the same rows.
+        """
+        raw = MeasurementDB.get_measurements_for_observation(int(observation_id)) or []
+        return [
+            m
+            for m in raw
+            if m.get("length_um") is not None
+            and m.get("width_um") is not None
+            and (m.get("measurement_type") in (None, "", "manual", "spore", "spores"))
+        ]
 
     def _reference_stats_from_points(self, points: list[dict]) -> dict:
         if not points:

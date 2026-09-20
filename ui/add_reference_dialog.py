@@ -69,7 +69,7 @@ persistence routine for both.
 from __future__ import annotations
 
 import json
-from dataclasses import dataclass
+from dataclasses import asdict, dataclass
 from typing import Callable, Iterable
 
 from PySide6.QtCore import QCoreApplication, QSettings, QSize, Qt, QTimer, Signal
@@ -101,7 +101,14 @@ from database.reference_library import (
     MeasurementSetRepository,
 )
 
-from references.reference_display import format_measurement_expression
+from references.reference_comparison import (
+    MetricDomain,
+    ObservationBaseline,
+    build_domains,
+    comparison_view,
+    observation_baseline_from_points,
+)
+from references.reference_display import display_from_row, format_measurement_expression
 
 from app_identity import SETTINGS_APP, SETTINGS_ORG
 
@@ -395,6 +402,7 @@ class AddReferenceDialog(GeometryMixin, QDialog):
         my_observations: list[PersonalObservationCandidate] | None = None,
         community_results: list[dict] | None = None,
         ai_candidates: list[dict] | None = None,
+        observation_points: list[dict] | None = None,
     ) -> None:
         super().__init__(parent)
         self._taxon_id: str | None = str(taxon_id).strip() or None if taxon_id is not None else None
@@ -461,6 +469,17 @@ class AddReferenceDialog(GeometryMixin, QDialog):
         self._new_publication_editor_active = False
         self._my_observations: list[PersonalObservationCandidate] = []
         self._selected_observation: PersonalObservationCandidate | None = None
+        # The user's own observation, summarized once from the measurements
+        # the host handed in. The picker never queries them itself: the same
+        # points are already loaded by MainWindow to decide whether the
+        # observation can be plotted, and a second read here could disagree
+        # with the first.
+        self._observation_baseline: ObservationBaseline = observation_baseline_from_points(
+            observation_points
+        )
+        # Filled once, after the candidate lists are loaded, and then frozen
+        # for the rest of the session -- see _freeze_comparison_domains.
+        self._comparison_domains: dict[str, MetricDomain] = {}
 
         title = QCoreApplication.translate("AddReferenceDialog", "Add reference")
         if taxon_label:
@@ -516,6 +535,7 @@ class AddReferenceDialog(GeometryMixin, QDialog):
         self.preview_pane.clear()
         self._refresh_candidates()
         self._refresh_my_observations()
+        self._freeze_comparison_domains()
 
         default_size, source_width, preview_width = self._derive_default_size()
         # The derived size is this dialog's DEFAULT, not a floor. At this
@@ -1164,6 +1184,42 @@ class AddReferenceDialog(GeometryMixin, QDialog):
         self._populate_preview(candidate)
         self._update_footer_state()
 
+    def _freeze_comparison_domains(self) -> None:
+        """Derive the session's three axes once, from what is known right now.
+
+        Called after the Library and My-observations lists have loaded, so the
+        axes cover the observation plus every candidate already on screen, and
+        never again: contract N19 makes a fixed axis the whole basis of the
+        comparison, and a dialog that rescaled when the taxon target changed
+        would silently invalidate the shape the user had just read.
+
+        Content that arrives afterwards -- a Community search result -- is not
+        represented here by design. It is drawn clipped and marked rather than
+        given a new axis (see ``BandView.clipped``).
+
+        A raw-data Library row states no range, so its projection contributes
+        no numbers: its extent comes from ``candidate.axis_extents()``, which
+        the chooser query projected while loading the list. Without that, a
+        library of measured spores would be sized entirely out of the axes and
+        then drawn fully clipped the moment one was selected.
+        """
+        if self._comparison_domains:
+            return
+        self._comparison_domains = build_domains(
+            baseline=self._observation_baseline,
+            displays=[candidate.source_display() for candidate in self._candidates],
+            point_sets=[candidate.points for candidate in self._my_observations],
+            extents=[candidate.axis_extents() for candidate in self._candidates],
+        )
+        self.preview_pane.set_observation_baseline(self._baseline_comparison_view())
+
+    def _baseline_comparison_view(self):
+        """The no-selection model: the observation alone, on the frozen axes."""
+        return comparison_view(
+            domains=self._comparison_domains,
+            baseline=self._observation_baseline,
+        )
+
     def _populate_preview(self, candidate: MeasurementSetCandidate | None) -> None:
         if candidate is None:
             self.preview_pane.clear()
@@ -1175,47 +1231,28 @@ class AddReferenceDialog(GeometryMixin, QDialog):
         meta = candidate.name_as_published or ""
         if candidate.locator_text:
             meta = f"{meta} · {candidate.locator_text}" if meta else candidate.locator_text
-        rows: list[tuple[str, str, str, str]] = []
-        derived_cells: list[tuple[bool, bool, bool]] = []
-        if measurement_set is not None:
-            for label, prefix in (
-                (QCoreApplication.translate("AddReferenceDialog", "Length"), "length"),
-                (QCoreApplication.translate("AddReferenceDialog", "Width"), "width"),
-                (QCoreApplication.translate("AddReferenceDialog", "Q"), "q"),
-            ):
-                # Extreme (parenthesised) bounds win when present; otherwise
-                # fall back to the "core"/typical bound the parser stores
-                # separately (``length_core_min``/``width_core_max`` etc —
-                # there is no such fallback field for Q). This mirrors the
-                # same extreme-or-typical rule already applied when writing
-                # Q's min/max (``ReferenceAddDialog.normalized_measurement_
-                # set_payload``) and when the plotting path resolves a
-                # drawable rectangle (``references.reference_plotting.
-                # range_payload_is_plottable``); without it, a source
-                # reported only as a typical range (the common case) shows
-                # correctly in the raw-text list line but as "—" here.
-                vmin = getattr(measurement_set, f"{prefix}_min", None)
-                min_derived = False
-                if vmin is None:
-                    vmin = getattr(measurement_set, f"{prefix}_core_min", None)
-                    min_derived = vmin is not None
-                vmax = getattr(measurement_set, f"{prefix}_max", None)
-                max_derived = False
-                if vmax is None:
-                    vmax = getattr(measurement_set, f"{prefix}_core_max", None)
-                    max_derived = vmax is not None
-                vmean = getattr(measurement_set, f"{prefix}_mean", None)
-                rows.append(
-                    (
-                        label,
-                        self._format_stat(vmin),
-                        self._format_stat(vmean),
-                        self._format_stat(vmax),
-                    )
-                )
-                derived_cells.append((min_derived, False, max_derived))
+        # One projection of the stored row, and the comparison model built from
+        # it. The old 3x4 table read the columns here directly and applied its
+        # own extreme-or-typical fallback, which is how an inner typical range
+        # came to be printed in a "Min"/"Max" column with no way to tell it
+        # from reported extremes. The projection keeps outer and core apart and
+        # names each one, so the pane can draw both and label both.
+        display = (
+            display_from_row(asdict(measurement_set), source_kind="library")
+            if measurement_set is not None
+            else candidate.source_display()
+        )
+        raw_points = self._decoded_raw_points(measurement_set)
         note = candidate.raw_text or QCoreApplication.translate("AddReferenceDialog", "No additional notes.")
-        self.preview_pane.set_summary(title, meta, rows, note, derived=derived_cells)
+        self.preview_pane.set_header(title, meta, note)
+        self.preview_pane.set_comparison(
+            comparison_view(
+                domains=self._comparison_domains,
+                baseline=self._observation_baseline,
+                display=display,
+                source_points=raw_points,
+            )
+        )
         method_recorded = bool(
             measurement_set is not None
             and (
@@ -1238,12 +1275,18 @@ class AddReferenceDialog(GeometryMixin, QDialog):
             )
         )
 
-        if measurement_set is not None and measurement_set.raw_points_json:
-            self.preview_pane.set_raw_spores(measurement_set.raw_points_json)
+        if raw_points:
+            self.preview_pane.set_raw_spore_points(raw_points)
         else:
-            # Range-kind measurement sets have no raw points to show.
-            self.preview_pane.set_raw_spores(
-                QCoreApplication.translate("AddReferenceDialog", "This is a range summary; no raw spore points are stored.")
+            # A source that published a range has no per-spore rows, and the
+            # tab says exactly that instead of dumping the raw JSON blob or --
+            # far worse -- expanding the range into plausible-looking spores
+            # (contract N22). A blob that would not decode gets the separate,
+            # neutral wording: it is a Sporely problem, not a statement about
+            # what the author printed.
+            self.preview_pane.set_raw_spores_unavailable(
+                plotted_as_band=display.has_any_range,
+                unreadable=raw_points is None,
             )
         if measurement_set is not None:
             self.preview_pane.set_method(
@@ -1265,6 +1308,26 @@ class AddReferenceDialog(GeometryMixin, QDialog):
             + "\n"
             + QCoreApplication.translate("AddReferenceDialog", "Source notes: {notes}").format(notes=source_notes)
         )
+
+    @staticmethod
+    def _decoded_raw_points(measurement_set: MeasurementSet | None) -> list | None:
+        """The individual measurements a stored set really holds.
+
+        ``None`` means *unreadable*, and is deliberately not the same answer as
+        the empty list. A source with no ``raw_points_json`` published no
+        individual measurements, which is a fact about the publication; a
+        source whose stored blob is malformed JSON or is not a list establishes
+        nothing about what its author published, only that Sporely cannot read
+        what is on file. The Raw spores tab words those two differently, so
+        collapsing them here would put a claim in the author's mouth.
+        """
+        if measurement_set is None or not measurement_set.raw_points_json:
+            return []
+        try:
+            decoded = json.loads(measurement_set.raw_points_json)
+        except ValueError:
+            return None
+        return decoded if isinstance(decoded, list) else None
 
     @staticmethod
     def _min_mean_max_from_points(points: list[dict]) -> dict:

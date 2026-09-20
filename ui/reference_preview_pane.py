@@ -9,12 +9,17 @@ from PySide6.QtWidgets import (
     QHeaderView,
     QLabel,
     QPlainTextEdit,
+    QScrollArea,
     QTableWidget,
     QTableWidgetItem,
     QTabWidget,
     QVBoxLayout,
     QWidget,
 )
+
+from references.reference_comparison import ComparisonView, raw_point_rows
+
+from .reference_comparison_view import ReferenceComparisonView
 
 
 class ReferencePreviewPane(QWidget):
@@ -31,10 +36,33 @@ class ReferencePreviewPane(QWidget):
     Owns the QTabWidget and all sub-tab widgets. Callers populate it
     through the public API below; all tr() calls live here so strings
     are attributed to this class's context.
+
+    The Summary tab has two mutually exclusive bodies:
+
+    * :class:`~ui.reference_comparison_view.ReferenceComparisonView` — the
+      comparison the redesign is built around, set through
+      :meth:`set_comparison`, and the state :meth:`clear` falls back to (it
+      then shows the injected observation baseline rather than an empty grid).
+    * :attr:`summary_table` — the original 3x4 numeric table, still driven by
+      :meth:`set_summary`. It is the migration surface for the source tabs that
+      have not moved onto the comparison model yet (Community, My observations
+      and the manual editor); each is a separate stage, and leaving their
+      numbers on screen in the meantime is what keeps this dialog working
+      between those stages. Exactly one of the two is visible at any time.
     """
 
     def __init__(self, parent: QWidget | None = None) -> None:
         super().__init__(parent)
+        #: The no-selection model, injected by the host that knows the current
+        #: observation (see ``AddReferenceDialog``). ``None`` for a host with
+        #: no observation context, which produces the honest
+        #: "no measurements to compare against" baseline rather than a guess.
+        self._baseline_view: ComparisonView | None = None
+        #: Which Summary body is current. Tracked explicitly rather than read
+        #: back off ``isVisible()``, which is ``False`` for every widget in a
+        #: dialog that has not been shown yet and would therefore make a
+        #: still-hidden pane answer "table" no matter what it last rendered.
+        self._summary_mode = "comparison"
         self._build_ui()
 
     # ------------------------------------------------------------------
@@ -71,6 +99,20 @@ class ReferencePreviewPane(QWidget):
         self.provenance_summary_label.setStyleSheet("color: #7f8c8d; font-style: italic;")
         self.summary_layout.addWidget(self.provenance_summary_label)
 
+        self.comparison_view = ReferenceComparisonView()
+        # Scrolled, because the comparison is genuinely taller than a narrow
+        # preview pane: three tracks plus the captions that name each band
+        # wrap to different heights per source. Without this the layout
+        # squeezed the rows until a band was painted across the words
+        # describing it, and the dialog is deliberately resizable down to a
+        # small laptop screen.
+        self._comparison_scroll = QScrollArea(self.summary_tab)
+        self._comparison_scroll.setWidgetResizable(True)
+        self._comparison_scroll.setFrameShape(QFrame.NoFrame)
+        self._comparison_scroll.setHorizontalScrollBarPolicy(Qt.ScrollBarAlwaysOff)
+        self._comparison_scroll.setWidget(self.comparison_view)
+        self.summary_layout.addWidget(self._comparison_scroll, 1)
+
         self.summary_table = QTableWidget(3, 4)
         self.summary_table.setFocusPolicy(Qt.NoFocus)
         self.summary_table.setHorizontalHeaderLabels(
@@ -80,6 +122,9 @@ class ReferencePreviewPane(QWidget):
         self.summary_table.horizontalHeader().setSectionResizeMode(QHeaderView.Stretch)
         self.summary_table.setEditTriggers(QAbstractItemView.NoEditTriggers)
         self.summary_table.setSelectionMode(QAbstractItemView.NoSelection)
+        # Hidden until a caller that still uses the legacy row API asks for
+        # it; the comparison is the Summary tab's default body.
+        self.summary_table.setVisible(False)
         self.summary_layout.addWidget(self.summary_table)
 
         # What the source said about the numbers in the table above: compact
@@ -140,6 +185,34 @@ class ReferencePreviewPane(QWidget):
     # Public API
     # ------------------------------------------------------------------
 
+    def set_observation_baseline(self, view: ComparisonView | None) -> None:
+        """Install the no-selection model and show it immediately.
+
+        Injected by the host rather than queried here: the pane has no idea
+        which observation is open, and giving it one would mean a second,
+        divergent read of the same measurements.
+        """
+        self._baseline_view = view
+        current = self.comparison_view.view()
+        if self._summary_mode == "comparison" and (current is None or not current.has_source):
+            self.comparison_view.set_view(view)
+
+    def set_header(self, title: str, meta: str, note: str) -> None:
+        """Set the Summary tab's title / metadata / note lines.
+
+        The same three labels :meth:`set_summary` writes, separated out so a
+        caller on the comparison model can fill them without also asking for
+        the legacy table.
+        """
+        self.summary_title_label.setText(title)
+        self.summary_meta_label.setText(meta)
+        self.summary_note_label.setText(note)
+
+    def set_comparison(self, view: ComparisonView) -> None:
+        """Show one source against the observation on the frozen axes."""
+        self.comparison_view.set_view(view)
+        self._show_comparison_body()
+
     def clear(self) -> None:
         """Reset all sub-tabs to their initial placeholder state."""
         self.summary_title_label.setText(self.tr("No dataset selected"))
@@ -153,6 +226,11 @@ class ReferencePreviewPane(QWidget):
         )
         self.provenance_summary_label.setText("")
         self.set_reported_statistics("")
+        # The baseline comparison, not a grid of dashes (contract N21). The
+        # legacy table is still filled underneath so a caller mid-migration
+        # that reads it sees a consistent cleared state, but it is hidden.
+        self.comparison_view.set_view(self._baseline_view)
+        self._show_comparison_body()
         for row, metric in enumerate(
             (self.tr("Length"), self.tr("Width"), self.tr("Q"))
         ):
@@ -198,6 +276,7 @@ class ReferencePreviewPane(QWidget):
         :meth:`set_reported_statistics` straight afterwards.
         """
         self.set_reported_statistics("")
+        self._show_table_body()
         self.summary_title_label.setText(title)
         self.summary_meta_label.setText(meta)
         derived_tooltip = self.tr("Derived from typical range; not directly reported")
@@ -234,8 +313,88 @@ class ReferencePreviewPane(QWidget):
         """
         self.provenance_summary_label.setText(text)
 
+    def _show_comparison_body(self) -> None:
+        self._summary_mode = "comparison"
+        self._comparison_scroll.setVisible(True)
+        self.summary_table.setVisible(False)
+
+    def _show_table_body(self) -> None:
+        self._summary_mode = "table"
+        self._comparison_scroll.setVisible(False)
+        self.summary_table.setVisible(True)
+
     def set_raw_spores(self, text: str) -> None:
-        """Set the Raw spores tab content."""
+        """Set the Raw spores tab content verbatim."""
+        self.raw_spores_text.setPlainText(text)
+
+    def set_raw_spore_points(self, points, *, caption: str = "") -> None:
+        """Show the source's *actual* individual measurements.
+
+        Falls through to :meth:`set_raw_spores_unavailable` when the points
+        decode to nothing. Which explanation that produces depends on what was
+        handed in: an empty list is a source that stores no measurements, while
+        a non-empty list none of whose members carries a dimension is content
+        this binary could not read. Reporting the second as "not published"
+        would state, on the author's behalf, something the corrupt blob does
+        not establish.
+        """
+        rows = raw_point_rows(points)
+        if not rows:
+            self.set_raw_spores_unavailable(unreadable=bool(points))
+            return
+        header = (
+            self.tr("#").ljust(5)
+            + self.tr("Length").rjust(8)
+            + self.tr("Width").rjust(8)
+            + self.tr("Q").rjust(8)
+        )
+        lines = [
+            self.tr("{count} individual spore measurements").format(count=len(rows)),
+            "",
+            header,
+            "-" * len(header),
+        ]
+        lines.extend(
+            index.ljust(5) + length.rjust(8) + width.rjust(8) + q.rjust(8)
+            for index, length, width, q in rows
+        )
+        if caption:
+            lines.extend(("", caption))
+        self.raw_spores_text.setPlainText("\n".join(lines))
+
+    def set_raw_spores_unavailable(
+        self, *, plotted_as_band: bool = True, unreadable: bool = False
+    ) -> None:
+        """State plainly that there are no per-spore measurements to show.
+
+        Contract N22: a range is never expanded into invented rows to make
+        this tab look populated. Saying what *will* be plotted keeps the
+        absence from reading as a failure — the source is still usable, it
+        simply contains a different kind of claim.
+
+        ``unreadable`` separates two states this tab must not conflate. A
+        source that stores no points did not publish individual measurements,
+        and saying so is a fact about the publication. A source whose stored
+        points cannot be decoded establishes nothing about what its author
+        published — only that Sporely cannot read what is on file — so it gets
+        neutral wording naming the real problem.
+        """
+        if unreadable:
+            text = self.tr(
+                "No individual spore measurements are available to display: "
+                "the measurements stored for this source could not be read."
+            )
+            if plotted_as_band:
+                text += "\n" + self.tr(
+                    "The published range will be plotted as a range band."
+                )
+            self.raw_spores_text.setPlainText(text)
+            return
+        text = self.tr(
+            "Individual spore measurements were not published for this source."
+        )
+        if plotted_as_band:
+            text += "\n" + self.tr("The published range will be plotted as a range band.")
         self.raw_spores_text.setPlainText(text)
 
     def set_method(self, mapping: dict[str, str]) -> None:

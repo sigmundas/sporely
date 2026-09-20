@@ -15,7 +15,7 @@ import sqlite3
 import uuid
 from dataclasses import dataclass, field, fields, asdict
 from datetime import datetime, timezone
-from typing import Any, Iterable, Sequence
+from typing import Any, Iterable, Mapping, Sequence
 
 from database.reference_citation import (
     build_full_citation,
@@ -51,6 +51,7 @@ from references.measurement_content_gates import (
     ENHANCED_ATTACHMENT_BLOCKED_MESSAGE,
     enhanced_attachments_enabled,
 )
+from references.reference_comparison import point_extents
 from references.reference_display import SourceDisplay, display_from_row
 
 
@@ -319,12 +320,27 @@ class MeasurementSetCandidate:
     #: :meth:`source_display` instead of reading ``data_kind`` to decide a
     #: badge, so no widget re-interprets stored columns on its own.
     display: SourceDisplay | None = None
+    #: Per-metric ``(min, max)`` of this set's individual measurements, when it
+    #: stores any (see :func:`references.reference_comparison.point_extents`).
+    #: Projected here, beside :attr:`display`, because the chooser query
+    #: already holds the decoded row: the Add-reference dialog needs a
+    #: raw-data candidate's real extent to freeze its comparison axes, and
+    #: re-reading every row's ``raw_points_json`` at that moment would be the
+    #: duplicate query the injection seam exists to avoid.
+    #:
+    #: **Not a range.** It is the span of measurements on file, for sizing an
+    #: axis, and must never be drawn as something the source published.
+    raw_point_extents: Mapping[str, tuple[float, float]] | None = None
 
     def source_display(self) -> SourceDisplay:
         """This candidate's display semantics, empty rather than missing."""
         if self.display is not None:
             return self.display
         return SourceDisplay(source_kind="library", stored_data_kind=self.data_kind or None)
+
+    def axis_extents(self) -> Mapping[str, tuple[float, float]]:
+        """This candidate's measured spans, empty rather than missing."""
+        return self.raw_point_extents or {}
 
 
 @dataclass(frozen=True)
@@ -361,6 +377,27 @@ class QuickAddReferenceResult:
     created_treatment: bool
     created_measurement_set: bool
     created_attachment: bool
+
+
+def _decoded_point_extents(
+    raw_points_json: Any,
+) -> Mapping[str, tuple[float, float]] | None:
+    """Per-metric spans of one row's stored points, ``None`` when it has none.
+
+    Malformed text answers ``None`` rather than raising, matching
+    ``references.reference_display.raw_point_count``: a points blob this
+    binary cannot read means the chooser knows nothing about that row's
+    extent, not that the whole library fails to load.
+    """
+    if not raw_points_json or not isinstance(raw_points_json, str):
+        return None
+    try:
+        decoded = json.loads(raw_points_json)
+    except ValueError:
+        return None
+    if not isinstance(decoded, list):
+        return None
+    return point_extents(decoded) or None
 
 
 def _row_to_dataclass(row: sqlite3.Row, cls):
@@ -1329,6 +1366,7 @@ class MeasurementSetRepository:
                         str(row["t_treatment_notes"]) if row["t_treatment_notes"] else None
                     ),
                     display=display_from_row(dict(row), source_kind="library"),
+                    raw_point_extents=_decoded_point_extents(row["raw_points_json"]),
                 )
             )
         return result

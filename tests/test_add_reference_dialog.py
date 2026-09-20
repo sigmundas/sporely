@@ -372,16 +372,18 @@ def test_library_row_puts_citation_and_locator_on_the_secondary_line():
     assert "raw_points" not in citation
 
 
-def test_preview_summary_falls_back_to_core_bounds_when_extremes_missing(monkeypatch):
-    """Stage-6 manual test 2, defect B: a source reported only as a typical
-    (unparenthesised) range -- e.g. "7-12 x 4-6, q=1.5-1.8" -- is stored with
-    ``length_min``/``width_min``/``max`` left ``None`` and the typical bound
-    in ``length_core_min``/``core_max``/``width_core_min``/``core_max``
-    (mirrors how ``ReferenceEntryEditor.normalized_measurement_set_payload``
-    writes Q's own extreme-or-typical fallback, and how
-    ``references.reference_plotting`` already resolves a drawable rectangle).
-    The Summary pane must show the core bound instead of "--", exactly like
-    the list's raw-text line already does."""
+def test_preview_comparison_shows_a_typical_only_source_as_its_core_band(monkeypatch):
+    """Supersedes the old summary table's extreme-or-typical fallback.
+
+    A source reported only as a typical (unparenthesised) range -- e.g.
+    "7-12 x 4-6, q=1.5-1.8" -- stores ``length_min``/``length_max`` as
+    ``None`` and the typical bound in ``length_core_min``/``core_max``. The
+    table used to copy that inner bound into its "Min"/"Max" columns behind a
+    "derived" dagger, which printed a typical range in the place reported
+    extremes belong. The comparison keeps the two apart: there is no outer
+    band because the source stated no extremes, and the core band that does
+    exist says what it is.
+    """
     from database.reference_library import MeasurementSet
     from ui import add_reference_dialog as picker
 
@@ -404,20 +406,29 @@ def test_preview_summary_falls_back_to_core_bounds_when_extremes_missing(monkeyp
     dialog = _make_dialog()
     dialog.results_list.setCurrentRow(_result_row_for(dialog, "ms-1"))
 
-    table = dialog.preview_pane.summary_table
-    length_row = [table.item(0, col).text() for col in range(4)]
-    width_row = [table.item(1, col).text() for col in range(4)]
-    q_row = [table.item(2, col).text() for col in range(4)]
-    # Length/Width bounds are derived from the core/typical fallback (marked
-    # with the existing "†" derived-cell convention); Q's bounds were
-    # written directly (no core fallback field exists for Q) and carry no
-    # derived marker.
-    assert length_row == ["Length", "7.00 †", "—", "12.00 †"]
-    assert width_row == ["Width", "4.00 †", "—", "6.00 †"]
-    assert q_row == ["Q", "1.50", "—", "1.80"]
+    view = dialog.preview_pane.comparison_view.view()
+    length = view.metric("length").source
+    assert length.outer is None
+    assert (length.core.low, length.core.high) == (7.0, 12.0)
+    # Q was written straight into the outer pair (there is no core fallback
+    # field for Q on the write path), and stays an outer band here.
+    q = view.metric("q").source
+    assert (q.outer.low, q.outer.high) == (1.5, 1.8)
+    assert q.core is None
+    # Nothing reported a centre, so nothing draws one (contract N15).
+    assert length.centres == ()
+    assert "no centre reported" in (
+        dialog.preview_pane.comparison_view.rows["length"].source_caption_label.text()
+    )
 
 
-def test_preview_summary_extreme_bounds_win_over_core_when_both_present(monkeypatch):
+def test_preview_comparison_keeps_extremes_and_core_as_separate_bands(monkeypatch):
+    """Both pairs stored means both bands are drawn, and stay distinguishable.
+
+    The old table had one Min and one Max cell, so a source carrying reported
+    extremes *and* an inner range could only show one of them (N15's
+    "min/max and 5-95% must remain distinguishable when both are available").
+    """
     from database.reference_library import MeasurementSet
     from ui import add_reference_dialog as picker
 
@@ -437,9 +448,9 @@ def test_preview_summary_extreme_bounds_win_over_core_when_both_present(monkeypa
     dialog = _make_dialog()
     dialog.results_list.setCurrentRow(_result_row_for(dialog, "ms-1"))
 
-    table = dialog.preview_pane.summary_table
-    length_row = [table.item(0, col).text() for col in range(4)]
-    assert length_row == ["Length", "6.50", "—", "12.50"]
+    length = dialog.preview_pane.comparison_view.view().metric("length").source
+    assert (length.outer.low, length.outer.high) == (6.5, 12.5)
+    assert (length.core.low, length.core.high) == (7.0, 12.0)
 
 
 # ---------------------------------------------------------------------
@@ -937,6 +948,7 @@ def test_host_own_target_uses_captured_observation(monkeypatch, observation):
         ref_species_input=SimpleNamespace(text=lambda: "muscaria"),
         _current_attached_measurement_set_ids=lambda: set(),
         _collect_reference_ai_suggestions=_ai_candidates,
+        _spore_points_for_observation=lambda _id: [],
     )
     for name in ("_clean_ref_genus_text", "_clean_ref_species_text", "_active_sporely_taxon_id"):
         setattr(window, name, getattr(host.MainWindow, name).__get__(window))
@@ -992,6 +1004,7 @@ def _make_host_window_for_manual_callback(monkeypatch):
         _current_attached_measurement_set_ids=lambda: set(),
         _collect_reference_ai_suggestions=_ai_candidates,
         _submit_reference_editor_result=Mock(),
+        _spore_points_for_observation=lambda _id: [],
     )
     for name in ("_clean_ref_genus_text", "_clean_ref_species_text", "_active_sporely_taxon_id"):
         setattr(window, name, getattr(host.MainWindow, name).__get__(window))
