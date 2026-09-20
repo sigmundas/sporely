@@ -108,7 +108,11 @@ from references.reference_comparison import (
     comparison_view,
     observation_baseline_from_points,
 )
-from references.reference_display import display_from_row, format_measurement_expression
+from references.reference_display import (
+    display_from_points,
+    display_from_row,
+    format_measurement_expression,
+)
 
 from app_identity import SETTINGS_APP, SETTINGS_ORG
 
@@ -480,6 +484,14 @@ class AddReferenceDialog(GeometryMixin, QDialog):
         # Filled once, after the candidate lists are loaded, and then frozen
         # for the rest of the session -- see _freeze_comparison_domains.
         self._comparison_domains: dict[str, MetricDomain] = {}
+        # Assigned properly as each tab is added below. Seeded here because
+        # ``CommunityResultsPane`` searches from its own constructor and asks
+        # ``_community_tab_is_current`` whether it may paint -- which happens
+        # before ``addTab`` has returned this tab's real index. -1 is the
+        # correct answer at that moment: the picker opens on the Library tab.
+        self._community_tab_index = -1
+        self._my_observations_tab_index = -1
+        self._manual_tab_index = -1
 
         title = QCoreApplication.translate("AddReferenceDialog", "Add reference")
         if taxon_label:
@@ -1213,12 +1225,26 @@ class AddReferenceDialog(GeometryMixin, QDialog):
         )
         self.preview_pane.set_observation_baseline(self._baseline_comparison_view())
 
-    def _baseline_comparison_view(self):
-        """The no-selection model: the observation alone, on the frozen axes."""
+    def _comparison_view_for(self, display=None, source_points=None):
+        """Build one comparison model on this session's frozen axes.
+
+        The single place the dialog's axes and observation baseline are bound
+        to a source, so every tab -- Library here, Community through the
+        factory handed to ``CommunityResultsPane`` -- compares against the same
+        two things. A tab that assembled its own ``comparison_view`` call could
+        quietly pass different domains and produce a picture that cannot be
+        compared with the previous selection's.
+        """
         return comparison_view(
             domains=self._comparison_domains,
             baseline=self._observation_baseline,
+            display=display,
+            source_points=source_points,
         )
+
+    def _baseline_comparison_view(self):
+        """The no-selection model: the observation alone, on the frozen axes."""
+        return self._comparison_view_for()
 
     def _populate_preview(self, candidate: MeasurementSetCandidate | None) -> None:
         if candidate is None:
@@ -1246,12 +1272,7 @@ class AddReferenceDialog(GeometryMixin, QDialog):
         note = candidate.raw_text or QCoreApplication.translate("AddReferenceDialog", "No additional notes.")
         self.preview_pane.set_header(title, meta, note)
         self.preview_pane.set_comparison(
-            comparison_view(
-                domains=self._comparison_domains,
-                baseline=self._observation_baseline,
-                display=display,
-                source_points=raw_points,
-            )
+            self._comparison_view_for(display=display, source_points=raw_points)
         )
         method_recorded = bool(
             measurement_set is not None
@@ -1329,36 +1350,6 @@ class AddReferenceDialog(GeometryMixin, QDialog):
             return None
         return decoded if isinstance(decoded, list) else None
 
-    @staticmethod
-    def _min_mean_max_from_points(points: list[dict]) -> dict:
-        """Length/width/Q min-mean-max, for the My-observations preview.
-
-        A lighter-weight sibling of ``MainWindow._reference_stats_from_points``
-        (which also computes percentiles the Summary tab here does not use).
-        """
-        lengths = [p["length_um"] for p in points if p.get("length_um") is not None]
-        widths = [p["width_um"] for p in points if p.get("width_um") is not None]
-        if not lengths or not widths:
-            return {}
-        qs = [l / w for l, w in zip(lengths, widths) if w]
-        stats: dict[str, float] = {}
-        for prefix, values in (("length", lengths), ("width", widths), ("q", qs)):
-            if not values:
-                continue
-            stats[f"{prefix}_min"] = min(values)
-            stats[f"{prefix}_mean"] = sum(values) / len(values)
-            stats[f"{prefix}_max"] = max(values)
-        return stats
-
-    @staticmethod
-    def _format_stat(value) -> str:
-        if value is None:
-            return "—"
-        try:
-            return f"{float(value):.2f}"
-        except Exception:
-            return str(value)
-
     def _open_new_publication_editor(self) -> None:
         """Deferred entry point for the "+ New publication…" action row.
 
@@ -1428,9 +1419,24 @@ class AddReferenceDialog(GeometryMixin, QDialog):
             preview_pane=self.preview_pane,
             results=self._injected_community_results,
             exclude_observation_cloud_id=self._exclude_observation_cloud_id,
+            # The pane owns no axes of its own. It renders into this dialog's
+            # frozen domains and against this dialog's observation, so a
+            # community source is comparable by eye with the library source
+            # the user looked at a moment ago.
+            comparison_view_factory=self._comparison_view_for,
+            # The pane's search and detail both complete asynchronously, so a
+            # response can arrive after the user has moved to another source
+            # tab. This is how the pane knows it is no longer the one on
+            # screen; it keeps the response either way, and repaints from
+            # ``sync_preview`` when the user comes back.
+            preview_is_active=self._community_tab_is_current,
         )
+
         self._community_pane.selection_changed.connect(self._update_footer_state)
         layout.addWidget(self._community_pane, 1)
+
+    def _community_tab_is_current(self) -> bool:
+        return self.tabs.currentIndex() == self._community_tab_index
 
     # ------------------------------------------------------------------
     # My observations tab
@@ -1562,30 +1568,26 @@ class AddReferenceDialog(GeometryMixin, QDialog):
             meta_parts.append(candidate.location)
         meta = " · ".join(meta_parts)
 
-        stats = self._min_mean_max_from_points(candidate.points)
-        rows: list[tuple[str, str, str, str]] = []
-        for label, prefix in (
-            (QCoreApplication.translate("AddReferenceDialog", "Length"), "length"),
-            (QCoreApplication.translate("AddReferenceDialog", "Width"), "width"),
-            (QCoreApplication.translate("AddReferenceDialog", "Q"), "q"),
-        ):
-            rows.append(
-                (
-                    label,
-                    self._format_stat(stats.get(f"{prefix}_min")),
-                    self._format_stat(stats.get(f"{prefix}_mean")),
-                    self._format_stat(stats.get(f"{prefix}_max")),
-                )
-            )
         note = QCoreApplication.translate("AddReferenceDialog", "n = {count} spore measurements").format(count=candidate.n)
-        self.preview_pane.set_summary(title, meta, rows, note)
+        # A personal observation *is* individual measurements, so its
+        # projection states no range at all and the comparison derives its
+        # bands from the points themselves -- labelled as measured extremes,
+        # a measured 5-95 interval and a measured median, never as something
+        # anybody published. The old 3x4 table printed a bare min / mean / max
+        # with no such distinction, which read identically to a monograph's
+        # reported figures.
+        display = display_from_points(candidate.points, source_kind="observation")
+        self.preview_pane.set_header(title, meta, note)
+        self.preview_pane.set_comparison(
+            self._comparison_view_for(display=display, source_points=candidate.points)
+        )
         # A personal observation is not a published/community reference, so
         # there is no reported-source provenance to summarize here.
         self.preview_pane.set_provenance_summary("")
 
-        self.preview_pane.set_raw_spores(
-            json.dumps(candidate.points, indent=2, ensure_ascii=False, default=str)
-        )
+        # Real rows, not the stored JSON blob: these points genuinely are per
+        # spore measurements, which is the one case the Raw spores tab is for.
+        self.preview_pane.set_raw_spore_points(candidate.points)
         self.preview_pane.set_method(
             {
                 "mount": "",

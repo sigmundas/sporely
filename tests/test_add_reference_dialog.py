@@ -615,6 +615,25 @@ def test_community_selection_populates_shared_preview_pane():
     assert "8.0" in dialog.preview_pane.raw_spores_text.toPlainText()
 
 
+def test_community_pane_is_wired_into_its_tab_and_the_footer():
+    """The Community tab's own widget and its footer signal.
+
+    Every other Community test drives the pane object directly or calls
+    ``_on_add_to_plot_clicked`` itself, so all of them still pass with the
+    pane parented to the tab but never added to its layout and its
+    ``selection_changed`` never connected -- a Community tab that renders
+    blank and whose "Add to plot" button never enables. This pins both.
+    """
+    dialog = _make_community_dialog()
+    dialog.tabs.setCurrentIndex(dialog._community_tab_index)
+    assert dialog._community_tab.layout().indexOf(dialog._community_pane) >= 0
+    assert dialog.add_to_plot_btn.isEnabled() is False
+    dialog._community_pane.results_list.setCurrentRow(0)
+    assert dialog.add_to_plot_btn.isEnabled() is True
+    dialog._community_pane.results_list.clearSelection()
+    assert dialog.add_to_plot_btn.isEnabled() is False
+
+
 def test_community_add_to_plot_range_summary_uses_reference_source_kind():
     received = []
     dialog = _make_community_dialog(cloud_attach_callback=lambda data: received.append(data))

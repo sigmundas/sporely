@@ -493,9 +493,21 @@ class MetricComparisonRow(QWidget):
         return phrase
 
     def _band_meaning(self, band: BandView) -> str:
-        if band.meaning == MEASURED_EXTREMES:
+        # A band calculated from measurements is worded the same way whichever
+        # descriptor it was stored under. A Community aggregate's extremes are
+        # tagged ``reported_extremes`` because that is their shape in the
+        # frozen contract, but nobody reported them -- they are the min and max
+        # of contributors' spores. Calling them "reported" here would credit an
+        # author with a number Sporely computed, and would contradict the
+        # "measured median" this very caption prints beside them (N15).
+        measured = band.origin == "computed"
+        if band.meaning == MEASURED_EXTREMES or (
+            measured and band.meaning == "reported_extremes"
+        ):
             return self.tr("measured min–max")
-        if band.meaning == MEASURED_PERCENTILE:
+        if band.meaning == MEASURED_PERCENTILE or (
+            measured and band.meaning == "percentile_interval" and band.percentile_bounds
+        ):
             bounds = band.percentile_bounds or (5.0, 95.0)
             return self.tr("measured {low}–{high}%").format(
                 low=f"{bounds[0]:g}", high=f"{bounds[1]:g}"

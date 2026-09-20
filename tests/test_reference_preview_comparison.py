@@ -18,6 +18,7 @@ import os
 os.environ.setdefault("QT_QPA_PLATFORM", "offscreen")
 
 import pytest
+from PySide6.QtCore import QObject, Signal
 from PySide6.QtWidgets import QApplication
 
 from database.reference_library import MeasurementSet, MeasurementSetCandidate
@@ -549,7 +550,7 @@ def test_a_source_that_simply_stores_no_points_still_states_that_plainly(monkeyp
 
 
 def test_a_caller_on_the_legacy_row_api_still_gets_its_table(monkeypatch):
-    """Community, My observations and manual entry move in later stages.
+    """Manual entry moves onto the comparison in a later stage.
 
     Until then ``set_summary`` must keep working and must swap the Summary
     body, so the pane never shows a comparison and a table at once.
@@ -563,5 +564,660 @@ def test_a_caller_on_the_legacy_row_api_still_gets_its_table(monkeypatch):
         pane.clear()
         assert pane.comparison_view.isVisibleTo(pane)
         assert not pane.summary_table.isVisibleTo(pane)
+    finally:
+        dialog.close()
+
+
+# --- Community and My observations on the same contract ----------------------
+#
+# Stage 2: the two non-Library source tabs feed the one comparison model. What
+# these pin is not that a band appears but *which claim* each tab is allowed to
+# make -- a community aggregate of bare extremes must not acquire 5-95
+# semantics, and a personal observation's own spores must be labelled as
+# measured rather than as something published.
+
+
+def _community_dialog(results: list[dict], **kwargs) -> AddReferenceDialog:
+    _app()
+    kwargs.setdefault("observation_points", _observation_points())
+    return AddReferenceDialog(
+        None,
+        taxon_label="Cortinarius limonius",
+        genus="Cortinarius",
+        species="limonius",
+        candidates=[],
+        my_observations=[],
+        community_results=results,
+        **kwargs,
+    )
+
+
+def _my_obs_dialog(candidates, **kwargs) -> AddReferenceDialog:
+    _app()
+    kwargs.setdefault("observation_points", _observation_points())
+    return AddReferenceDialog(
+        None,
+        taxon_label="Cortinarius limonius",
+        genus="Cortinarius",
+        species="limonius",
+        candidates=[],
+        community_results=[],
+        my_observations=candidates,
+        **kwargs,
+    )
+
+
+def _community_row(**payload) -> dict:
+    """One injected community result, already carrying its detail fields.
+
+    ``AddReferenceDialog(community_results=...)`` treats injected rows as
+    complete details, so selection needs no network fetch.
+    """
+    row = {
+        "_kind": "reference",
+        "genus": "Cortinarius",
+        "species": "limonius",
+        "contributor_label": "mycena.no",
+        "source": "mycena.no",
+        "measurement_count": 0,
+    }
+    row.update(payload)
+    return row
+
+
+def _personal(points: list[dict], observation_id: int = 101):
+    return picker.PersonalObservationCandidate(
+        observation_id=observation_id,
+        date="2024-05-01",
+        author="Åse Øyen",
+        location="Trøndelag",
+        points=points,
+    )
+
+
+# --- Community: range summaries ----------------------------------------------
+
+
+def test_community_bare_extremes_stay_a_published_range(monkeypatch):
+    """The payload states two bounds and nothing else, so that is all it gets.
+
+    Specifically no inner band: a community aggregate that carries no p05/p95
+    must not be drawn as though it reported a 5-95 interval.
+    """
+    dialog = _community_dialog([_community_row(length_min=8.0, length_max=11.0)])
+    try:
+        dialog.tabs.setCurrentIndex(dialog._community_tab_index)
+        dialog._community_pane.results_list.setCurrentRow(0)
+        view = dialog.preview_pane.comparison_view.view()
+        assert view.has_source is True
+        assert view.source_display.data_label.kind == "published_range"
+        length = view.metric("length").source
+        assert (length.outer.low, length.outer.high) == (8.0, 11.0)
+        assert length.core is None
+        # No p50 and no avg in the payload, so no centre is invented.
+        assert length.centres == ()
+        caption = dialog.preview_pane.comparison_view.rows["length"].source_caption_label.text()
+        # An aggregate's extremes are the min and max of contributors'
+        # measurements, so the caption must not call them reported.
+        assert "measured min–max" in caption
+        assert "reported extremes" not in caption
+        assert "no centre reported" in caption
+    finally:
+        dialog.close()
+
+
+def test_community_explicit_percentiles_keep_their_own_bounds(monkeypatch):
+    """p05/p95 really are a percentile interval, so they may say so."""
+    dialog = _community_dialog(
+        [
+            _community_row(
+                length_min=7.0,
+                length_max=12.0,
+                length_p05=8.0,
+                length_p95=11.0,
+                length_p50=9.5,
+            )
+        ]
+    )
+    try:
+        dialog.tabs.setCurrentIndex(dialog._community_tab_index)
+        dialog._community_pane.results_list.setCurrentRow(0)
+        view = dialog.preview_pane.comparison_view.view()
+        label = view.source_display.data_label
+        assert label.kind == "percentile_range"
+        assert label.percentile_bounds == (5.0, 95.0)
+        length = view.metric("length").source
+        assert (length.core.low, length.core.high) == (8.0, 11.0)
+        assert length.core.percentile_bounds == (5.0, 95.0)
+        caption = dialog.preview_pane.comparison_view.rows["length"].source_caption_label.text()
+        # The bounds are the payload's own, and the wording says they were
+        # calculated: a community percentile is not one an author printed.
+        assert "measured 5–95%" in caption
+        assert "reported" not in caption
+    finally:
+        dialog.close()
+
+
+def test_community_centre_is_attributed_as_calculated(monkeypatch):
+    """A community median was computed from contributors' spores, not printed."""
+    dialog = _community_dialog(
+        [_community_row(length_min=8.0, length_max=11.0, length_p50=9.5)]
+    )
+    try:
+        dialog.tabs.setCurrentIndex(dialog._community_tab_index)
+        dialog._community_pane.results_list.setCurrentRow(0)
+        length = dialog.preview_pane.comparison_view.view().metric("length").source
+        centre = length.centre("median")
+        assert centre.value == 9.5
+        assert centre.origin == "computed"
+    finally:
+        dialog.close()
+
+
+def test_community_summary_without_points_says_so_in_raw_spores(monkeypatch):
+    dialog = _community_dialog([_community_row(length_min=8.0, length_max=11.0)])
+    try:
+        dialog.tabs.setCurrentIndex(dialog._community_tab_index)
+        dialog._community_pane.results_list.setCurrentRow(0)
+        text = dialog.preview_pane.raw_spores_text.toPlainText()
+        assert "were not published for this source" in text
+        assert "plotted as a range band" in text
+    finally:
+        dialog.close()
+
+
+# --- Community: raw points ----------------------------------------------------
+
+
+def _community_points_row() -> dict:
+    return _community_row(
+        _kind="observation",
+        observation_id="cloud-1",
+        contributor_label="sporely_community_user_7",
+        observed_on="2025-05-01",
+        measurement_count=3,
+        length_min=8.0,
+        length_max=10.0,
+        measurements_json=[
+            {"length_um": 8.0, "width_um": 5.0},
+            {"length_um": 9.0, "width_um": 6.0},
+            {"length_um": 10.0, "width_um": 7.0},
+        ],
+    )
+
+
+def test_community_raw_points_mode_is_raw_data_derived_from_the_points(monkeypatch):
+    dialog = _community_dialog([_community_points_row()])
+    try:
+        dialog.tabs.setCurrentIndex(dialog._community_tab_index)
+        pane = dialog._community_pane
+        pane.results_list.setCurrentRow(0)
+        assert pane.raw_points_radio.isEnabled() is True
+        pane.raw_points_radio.setChecked(True)
+        view = dialog.preview_pane.comparison_view.view()
+        assert view.source_display.data_label.kind == "raw_data"
+        length = view.metric("length").source
+        assert (length.outer.low, length.outer.high) == (8.0, 10.0)
+        # Derived from the measurements, and labelled as measured rather than
+        # as anything a contributor published.
+        assert length.outer.meaning == "measured_extremes"
+        assert length.outer.origin == "computed"
+    finally:
+        dialog.close()
+
+
+def test_switching_community_mode_redraws_the_comparison(monkeypatch):
+    """The two radios attach two different claims; the pane shows the checked one."""
+    dialog = _community_dialog([_community_points_row()])
+    try:
+        dialog.tabs.setCurrentIndex(dialog._community_tab_index)
+        pane = dialog._community_pane
+        pane.results_list.setCurrentRow(0)
+        assert pane.range_summary_radio.isChecked() is True
+        assert (
+            dialog.preview_pane.comparison_view.view().source_display.data_label.kind
+            == "published_range"
+        )
+        pane.raw_points_radio.setChecked(True)
+        assert (
+            dialog.preview_pane.comparison_view.view().source_display.data_label.kind
+            == "raw_data"
+        )
+        pane.range_summary_radio.setChecked(True)
+        assert (
+            dialog.preview_pane.comparison_view.view().source_display.data_label.kind
+            == "published_range"
+        )
+    finally:
+        dialog.close()
+
+
+def test_community_points_render_as_rows_not_a_blob(monkeypatch):
+    dialog = _community_dialog([_community_points_row()])
+    try:
+        dialog.tabs.setCurrentIndex(dialog._community_tab_index)
+        dialog._community_pane.results_list.setCurrentRow(0)
+        text = dialog.preview_pane.raw_spores_text.toPlainText()
+        assert "3 individual spore measurements" in text
+        assert "length_um" not in text
+    finally:
+        dialog.close()
+
+
+def test_community_selection_shows_the_comparison_body_not_the_table(monkeypatch):
+    dialog = _community_dialog([_community_row(length_min=8.0, length_max=11.0)])
+    try:
+        dialog.tabs.setCurrentIndex(dialog._community_tab_index)
+        dialog._community_pane.results_list.setCurrentRow(0)
+        pane = dialog.preview_pane
+        assert pane.comparison_view.isVisibleTo(pane)
+        assert not pane.summary_table.isVisibleTo(pane)
+    finally:
+        dialog.close()
+
+
+def test_community_result_does_not_move_the_frozen_axes(monkeypatch):
+    """A result fetched after the axes froze is clipped and marked, not rescaled."""
+    dialog = _community_dialog([_community_row(length_min=1.0, length_max=90.0)])
+    try:
+        before = dialog.preview_pane.comparison_view.view().metric("length").domain
+        dialog.tabs.setCurrentIndex(dialog._community_tab_index)
+        dialog._community_pane.results_list.setCurrentRow(0)
+        after = dialog.preview_pane.comparison_view.view().metric("length")
+        assert (after.domain.low, after.domain.high) == (before.low, before.high)
+        assert after.clipped is True
+        assert after.source.outer.clipped_high is True
+    finally:
+        dialog.close()
+
+
+def test_community_load_failure_draws_no_source_band(monkeypatch):
+    """A failed fetch establishes nothing, so nothing is drawn for the source."""
+    dialog = _community_dialog([])
+    try:
+        pane = dialog._community_pane
+        dialog.tabs.setCurrentIndex(dialog._community_tab_index)
+        pane._on_detail_error("network unavailable", pane._detail_generation)
+        view = dialog.preview_pane.comparison_view.view()
+        assert view.has_source is False
+        assert "Could not load dataset" in dialog.preview_pane.summary_title_label.text()
+    finally:
+        dialog.close()
+
+
+# --- My observations ----------------------------------------------------------
+
+
+def test_my_observation_is_its_own_measured_spores(monkeypatch):
+    points = [{"length_um": 8.0 + i * 0.5, "width_um": 5.0} for i in range(8)]
+    dialog = _my_obs_dialog([_personal(points)])
+    try:
+        dialog.tabs.setCurrentIndex(dialog._my_observations_tab_index)
+        dialog.my_observations_list.setCurrentRow(0)
+        view = dialog.preview_pane.comparison_view.view()
+        assert view.has_source is True
+        assert view.source_display.data_label.kind == "raw_data"
+        assert view.source_display.sample_size == 8
+        length = view.metric("length").source
+        assert (length.outer.low, length.outer.high) == (8.0, 11.5)
+        assert length.outer.meaning == "measured_extremes"
+        assert length.outer.origin == "computed"
+        assert length.centre("median").origin == "computed"
+        # A measured 5-95 interval is stated as measured, never as a
+        # percentile anybody published.
+        assert length.core.meaning == "measured_percentile_interval"
+    finally:
+        dialog.close()
+
+
+def test_my_observation_raw_spores_shows_rows_not_json(monkeypatch):
+    points = [{"length_um": 8.0, "width_um": 5.0}, {"length_um": 9.0, "width_um": 5.5}]
+    dialog = _my_obs_dialog([_personal(points)])
+    try:
+        dialog.tabs.setCurrentIndex(dialog._my_observations_tab_index)
+        dialog.my_observations_list.setCurrentRow(0)
+        text = dialog.preview_pane.raw_spores_text.toPlainText()
+        assert "2 individual spore measurements" in text
+        assert "length_um" not in text
+        assert "{" not in text
+    finally:
+        dialog.close()
+
+
+def test_my_observation_shows_the_comparison_body_not_the_table(monkeypatch):
+    dialog = _my_obs_dialog([_personal([{"length_um": 8.0, "width_um": 5.0}])])
+    try:
+        dialog.tabs.setCurrentIndex(dialog._my_observations_tab_index)
+        dialog.my_observations_list.setCurrentRow(0)
+        pane = dialog.preview_pane
+        assert pane.comparison_view.isVisibleTo(pane)
+        assert not pane.summary_table.isVisibleTo(pane)
+    finally:
+        dialog.close()
+
+
+def test_my_observations_are_inside_the_frozen_axes(monkeypatch):
+    """Unlike a community result, these are known before the axes freeze."""
+    points = [{"length_um": 20.0, "width_um": 9.0}, {"length_um": 24.0, "width_um": 10.0}]
+    dialog = _my_obs_dialog([_personal(points)])
+    try:
+        dialog.tabs.setCurrentIndex(dialog._my_observations_tab_index)
+        dialog.my_observations_list.setCurrentRow(0)
+        assert dialog.preview_pane.comparison_view.view().metric("length").clipped is False
+    finally:
+        dialog.close()
+
+
+# --- Source switching ---------------------------------------------------------
+
+
+def test_switching_source_tabs_leaves_no_stale_preview(monkeypatch):
+    """Three tabs share one pane, so each switch must state its own source."""
+    monkeypatch.setattr(picker.MeasurementSetRepository, "get", lambda _id: None)
+    _app()
+    dialog = AddReferenceDialog(
+        None,
+        taxon_label="Cortinarius limonius",
+        taxon_id="7",
+        genus="Cortinarius",
+        species="limonius",
+        candidates=[_candidate("ms-1")],
+        community_results=[_community_row(length_min=8.0, length_max=11.0)],
+        my_observations=[_personal([{"length_um": 8.0, "width_um": 5.0}])],
+        observation_points=_observation_points(),
+    )
+    try:
+        pane = dialog.preview_pane
+
+        dialog.tabs.setCurrentIndex(dialog._community_tab_index)
+        dialog._community_pane.results_list.setCurrentRow(0)
+        assert pane.comparison_view.view().source_display.source_kind == "community"
+
+        # Switching to a tab with nothing selected must drop the community
+        # source rather than leave its bands on screen.
+        dialog.tabs.setCurrentIndex(dialog._my_observations_tab_index)
+        assert pane.comparison_view.view().has_source is False
+
+        dialog.my_observations_list.setCurrentRow(0)
+        assert pane.comparison_view.view().source_display.source_kind == "observation"
+
+        dialog.tabs.setCurrentIndex(0)  # Library, no row selected
+        assert pane.comparison_view.view().has_source is False
+
+        dialog.tabs.setCurrentIndex(dialog._community_tab_index)
+        assert pane.comparison_view.view().source_display.source_kind == "community"
+    finally:
+        dialog.close()
+
+
+# --- The shared preview has one owner at a time ------------------------------
+#
+# Community search and detail both complete asynchronously, so a response can
+# land after the user has moved to another source tab. These pin that a late
+# response never repaints a tab it does not belong to, that the response is
+# still kept, and that no half-loaded state leaves the previous source's
+# method, calibration, provenance or spore rows under a new source's name.
+
+
+class _FakeWorker(QObject):
+    """Stand-in for ``_CloudSearchWorker`` / ``_CloudDetailWorker``.
+
+    Created synchronously and inert on ``start()``: nothing completes until a
+    test emits it, which is the only way to place a response *after* a tab
+    switch deterministically. Same manual-completion contract as the fakes in
+    ``tests/test_community_results_pane_requests.py``.
+    """
+
+    search_done = Signal(list, dict)
+    detail_done = Signal(dict)
+    error = Signal(str)
+    finished = Signal()
+
+    def __init__(self, *_args) -> None:
+        super().__init__()
+
+    def start(self) -> None:
+        pass
+
+    def wait(self, *_args, **_kwargs) -> bool:
+        return True
+
+    def deleteLater(self) -> None:  # pragma: no cover - Qt cleanup no-op
+        pass
+
+
+def _async_dialog(monkeypatch, **kwargs):
+    """The picker with Community on its real asynchronous worker path.
+
+    ``community_results`` is deliberately not injected: injected rows are
+    treated as complete details and complete synchronously, which is exactly
+    the timing these tests need to avoid.
+    """
+    import ui.cloud_reference_dialog as cloud
+
+    searches: list[_FakeWorker] = []
+    details: list[_FakeWorker] = []
+
+    def make_search(_genus, _species):
+        worker = _FakeWorker()
+        searches.append(worker)
+        return worker
+
+    def make_detail(_row):
+        worker = _FakeWorker()
+        details.append(worker)
+        return worker
+
+    monkeypatch.setattr(cloud, "_CloudSearchWorker", make_search)
+    monkeypatch.setattr(cloud, "_CloudDetailWorker", make_detail)
+    monkeypatch.setattr(picker.MeasurementSetRepository, "get", lambda _id: None)
+    _app()
+    kwargs.setdefault("observation_points", _observation_points())
+    dialog = AddReferenceDialog(
+        None,
+        taxon_label="Cortinarius limonius",
+        genus="Cortinarius",
+        species="limonius",
+        candidates=[],
+        **kwargs,
+    )
+    return dialog, searches, details
+
+
+def _search_rows() -> list[dict]:
+    return [
+        {"_kind": "reference", "observation_id": "cloud-1", "contributor_label": "one"},
+        {"_kind": "reference", "observation_id": "cloud-2", "contributor_label": "two"},
+    ]
+
+
+def _loaded_detail(**overrides) -> dict:
+    detail = _community_row(
+        length_min=8.0,
+        length_max=11.0,
+        mount_medium="KOH 5%",
+        stain="Congo red",
+        measurement_count=12,
+    )
+    detail.update(overrides)
+    return detail
+
+
+def _source_kind(dialog):
+    display = dialog.preview_pane.comparison_view.view().source_display
+    return None if display is None else display.source_kind
+
+
+def test_late_community_detail_does_not_repaint_another_tab(monkeypatch):
+    """The reported race: a detail arriving after the user moved on.
+
+    The response is not stale -- its generation still matches -- it simply is
+    no longer the tab on screen, which a generation check cannot express.
+    """
+    dialog, searches, details = _async_dialog(
+        monkeypatch, my_observations=[_personal([{"length_um": 8.0, "width_um": 5.0}])]
+    )
+    try:
+        searches[0].search_done.emit(_search_rows(), {})
+        dialog.tabs.setCurrentIndex(dialog._community_tab_index)
+        dialog._community_pane.results_list.setCurrentRow(0)
+        assert len(details) == 1  # the detail request is genuinely outstanding
+
+        dialog.tabs.setCurrentIndex(dialog._my_observations_tab_index)
+        dialog.my_observations_list.setCurrentRow(0)
+        assert _source_kind(dialog) == "observation"
+
+        details[0].detail_done.emit(_loaded_detail())
+
+        assert _source_kind(dialog) == "observation"
+        assert "My observation" in dialog.preview_pane.summary_title_label.text()
+        # The response was kept, not discarded: the footer can still attach it.
+        assert dialog._community_pane.has_selection() is True
+    finally:
+        dialog.close()
+
+
+def test_returning_to_community_restores_the_detail_that_arrived_while_away(monkeypatch):
+    dialog, searches, details = _async_dialog(
+        monkeypatch, my_observations=[_personal([{"length_um": 8.0, "width_um": 5.0}])]
+    )
+    try:
+        searches[0].search_done.emit(_search_rows(), {})
+        dialog.tabs.setCurrentIndex(dialog._community_tab_index)
+        dialog._community_pane.results_list.setCurrentRow(0)
+        dialog.tabs.setCurrentIndex(dialog._my_observations_tab_index)
+        dialog.my_observations_list.setCurrentRow(0)
+        details[0].detail_done.emit(_loaded_detail())
+
+        dialog.tabs.setCurrentIndex(dialog._community_tab_index)
+
+        assert _source_kind(dialog) == "community"
+        length = dialog.preview_pane.comparison_view.view().metric("length").source
+        assert (length.outer.low, length.outer.high) == (8.0, 11.0)
+        assert dialog.preview_pane._method_labels["mount"].text() == "KOH 5%"
+    finally:
+        dialog.close()
+
+
+def test_late_community_detail_error_does_not_repaint_another_tab(monkeypatch):
+    dialog, searches, details = _async_dialog(
+        monkeypatch, my_observations=[_personal([{"length_um": 8.0, "width_um": 5.0}])]
+    )
+    try:
+        searches[0].search_done.emit(_search_rows(), {})
+        dialog.tabs.setCurrentIndex(dialog._community_tab_index)
+        dialog._community_pane.results_list.setCurrentRow(0)
+        dialog.tabs.setCurrentIndex(dialog._my_observations_tab_index)
+        dialog.my_observations_list.setCurrentRow(0)
+
+        details[0].error.emit("network unavailable")
+
+        assert _source_kind(dialog) == "observation"
+        assert "Could not load dataset" not in dialog.preview_pane.summary_title_label.text()
+
+        # And the failure is not forgotten: it is what Community shows on return.
+        dialog.tabs.setCurrentIndex(dialog._community_tab_index)
+        assert "Could not load dataset" in dialog.preview_pane.summary_title_label.text()
+        assert "network unavailable" in dialog.preview_pane.summary_meta_label.text()
+        assert dialog.preview_pane.comparison_view.view().has_source is False
+    finally:
+        dialog.close()
+
+
+def test_late_community_search_does_not_clear_another_tabs_preview(monkeypatch):
+    """A debounced search reloads the list, which clears its selection.
+
+    That clear used to reach the shared pane, so a search settling just after
+    a tab switch wiped the source the user was looking at.
+    """
+    dialog, searches, details = _async_dialog(
+        monkeypatch, my_observations=[_personal([{"length_um": 8.0, "width_um": 5.0}])]
+    )
+    try:
+        searches[0].search_done.emit(_search_rows(), {})
+        dialog.tabs.setCurrentIndex(dialog._community_tab_index)
+        dialog._community_pane.results_list.setCurrentRow(0)
+        details[0].detail_done.emit(_loaded_detail())
+
+        dialog.tabs.setCurrentIndex(dialog._my_observations_tab_index)
+        dialog.my_observations_list.setCurrentRow(0)
+        assert _source_kind(dialog) == "observation"
+
+        # The keystroke was typed on the Community tab; its debounce fires now.
+        dialog._community_pane.search_input.setText("Hebeloma")
+        dialog._community_pane._apply_search_text()
+
+        assert _source_kind(dialog) == "observation"
+        assert "My observation" in dialog.preview_pane.summary_title_label.text()
+    finally:
+        dialog.close()
+
+
+def test_taxon_target_change_does_not_clear_another_tabs_preview(monkeypatch):
+    """The same clear, reached through the picker's taxon selector."""
+    dialog, searches, details = _async_dialog(
+        monkeypatch, my_observations=[_personal([{"length_um": 8.0, "width_um": 5.0}])]
+    )
+    try:
+        dialog.tabs.setCurrentIndex(dialog._my_observations_tab_index)
+        dialog.my_observations_list.setCurrentRow(0)
+        assert _source_kind(dialog) == "observation"
+
+        dialog._community_pane.set_taxon("Hebeloma", "mesophaeum")
+
+        assert _source_kind(dialog) == "observation"
+    finally:
+        dialog.close()
+
+
+def test_pending_community_selection_drops_the_previous_sources_details(monkeypatch):
+    """Loading must not leave one dataset's method under another's name."""
+    dialog, searches, details = _async_dialog(monkeypatch, my_observations=[])
+    try:
+        searches[0].search_done.emit(_search_rows(), {})
+        dialog.tabs.setCurrentIndex(dialog._community_tab_index)
+        dialog._community_pane.results_list.setCurrentRow(0)
+        details[0].detail_done.emit(_loaded_detail())
+        pane = dialog.preview_pane
+        assert pane._method_labels["mount"].text() == "KOH 5%"
+        assert "12" in pane.provenance_summary_label.text()
+
+        dialog._community_pane.results_list.setCurrentRow(1)
+
+        assert "Loading review details" in pane.summary_title_label.text()
+        assert pane._method_labels["mount"].text() == "—"
+        assert pane._method_labels["stain"].text() == "—"
+        assert "Select a result" in pane.calibration_text.toPlainText()
+        assert "Select a result" in pane.provenance_text.toPlainText()
+        assert "Select a result" in pane.raw_spores_text.toPlainText()
+        assert pane.provenance_summary_label.text() == ""
+        assert pane.comparison_view.view().has_source is False
+    finally:
+        dialog.close()
+
+
+def test_failed_community_selection_drops_the_previous_sources_details(monkeypatch):
+    """The populated -> pending -> error path, end to end."""
+    dialog, searches, details = _async_dialog(monkeypatch, my_observations=[])
+    try:
+        searches[0].search_done.emit(_search_rows(), {})
+        dialog.tabs.setCurrentIndex(dialog._community_tab_index)
+        dialog._community_pane.results_list.setCurrentRow(0)
+        details[0].detail_done.emit(_loaded_detail())
+        pane = dialog.preview_pane
+        assert pane._method_labels["mount"].text() == "KOH 5%"
+
+        dialog._community_pane.results_list.setCurrentRow(1)
+        details[1].error.emit("network unavailable")
+
+        assert "Could not load dataset" in pane.summary_title_label.text()
+        assert pane._method_labels["mount"].text() == "—"
+        assert "Select a result" in pane.calibration_text.toPlainText()
+        assert "Select a result" in pane.provenance_text.toPlainText()
+        assert pane.provenance_summary_label.text() == ""
+        assert "network unavailable" in pane.raw_spores_text.toPlainText()
+        assert pane.comparison_view.view().has_source is False
+        # A failed fetch is not a selection the footer may attach.
+        assert dialog._community_pane.has_selection() is False
     finally:
         dialog.close()
