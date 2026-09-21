@@ -1686,6 +1686,68 @@ class ReferenceEntryEditor(QWidget):
             return False
         return bool(self._reference_record_data())
 
+    def _has_grid_values(self) -> bool:
+        return any(
+            self._table_value(row, col) is not None
+            for row in range(3)
+            for col in range(5)
+        )
+
+    def has_storable_measurement_content(self) -> bool:
+        """Whether the normalized library has anything to store from this form.
+
+        The same precondition :meth:`normalized_measurement_set_payload`
+        applies before it will build anything: a measurement range in the
+        grid, or individual spore points. It is deliberately narrower than
+        :meth:`is_ready_to_submit`, which also accepts a Parmasto-only
+        entry — those biometrics ride along on the legacy reference row and
+        have no normalized measurement set of their own, so offering to
+        "save" one to the library would store nothing.
+
+        Exposed so a host can disable a save action up front instead of
+        letting the user press it and get silence.
+        """
+        return bool(self._build_raw_points_json()) or self._has_grid_values()
+
+    def library_entry_fingerprint(self) -> tuple | None:
+        """A comparable snapshot of everything a library entry is built from.
+
+        Two equal fingerprints mean a measurement set saved earlier still
+        describes what this form holds, so a host can attach that set
+        rather than storing the same data a second time. ``None`` means
+        "cannot tell" — no storable content, or a payload this version
+        refuses to project — and a caller must treat it as changed rather
+        than as a match.
+
+        Derived from the real payload builders, not from a parallel reading
+        of the widgets, so it cannot drift away from what a save writes.
+
+        The Data mode is part of the identity. Switching to "Use an
+        existing measurement set" only disables the manual fields, it does
+        not clear them (see :meth:`_on_data_choice_toggled`), so the typed
+        values — and therefore the payload built from them — are unchanged
+        by the switch. Without the mode and the chosen set in here, an
+        entry saved manually would still look current while the form now
+        points at a different, already-stored set.
+        """
+        try:
+            payload = self.normalized_measurement_set_payload()
+        except Exception:
+            return None
+        if payload is None:
+            return None
+        pending = self.pending_reference_work()
+        treatment = self.quick_add_treatment_payload()
+        return (
+            bool(self.is_use_existing_set()),
+            str(self.selected_measurement_set_id() or ""),
+            str(self.selected_reference_work_id() or ""),
+            repr(sorted(asdict(pending).items())) if pending is not None else "",
+            str(treatment.get("name_as_published") or ""),
+            str(treatment.get("locator_text") or ""),
+            repr(sorted(asdict(payload).items())),
+        )
+
     def _blocked_projection_losses(self) -> list[tuple[str, str]]:
         """Scientific claims this entry cannot be saved without losing.
 
@@ -2181,12 +2243,7 @@ class ReferenceEntryEditor(QWidget):
         self, *, legacy_reference_value_id: int | None = None
     ) -> MeasurementSet | None:
         raw_points_json = self._build_raw_points_json()
-        has_range_values = any(
-            self._table_value(row, col) is not None
-            for row in range(3)
-            for col in range(5)
-        )
-        if not raw_points_json and not has_range_values:
+        if not raw_points_json and not self._has_grid_values():
             return None
         if raw_points_json:
             data_kind = "raw_points"

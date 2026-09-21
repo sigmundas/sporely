@@ -372,7 +372,10 @@ class QuickAddReferenceResult:
     work: ReferenceWork
     treatment: TaxonTreatment
     measurement_set: MeasurementSet
-    use: ObservationReferenceUse
+    # ``None`` for a save-only operation (:meth:`QuickAddReferenceService.
+    # create_only`), which writes the library hierarchy but deliberately
+    # does not attach it to an observation.
+    use: ObservationReferenceUse | None
     created_work: bool
     created_treatment: bool
     created_measurement_set: bool
@@ -2381,7 +2384,36 @@ class QuickAddReferenceService:
         cls, request: QuickAddReferenceRequest
     ) -> QuickAddReferenceResult:
         """Persist a quick-add operation, compensating partial writes."""
-        ObservationReferenceUseRepository._validate_role(request.role)
+        return cls._create(request, attach=True)
+
+    @classmethod
+    def create_only(
+        cls, request: QuickAddReferenceRequest
+    ) -> QuickAddReferenceResult:
+        """Persist the library hierarchy WITHOUT attaching it anywhere.
+
+        "Save to library" is a distinct user intent from "plot this": the
+        reference becomes a permanent, reusable library entry, but the
+        observation gains no ``observation_reference_use`` row and the plot
+        is untouched. The result's ``use`` is therefore ``None`` and
+        ``created_attachment`` is ``False``.
+
+        The caller that later decides to plot the same reference must
+        attach ``result.measurement_set.id`` through the ordinary attach
+        path rather than calling this service again -- a second call would
+        create a second measurement set for the same typed data.
+
+        Creation, validation and reverse-order compensation are shared with
+        :meth:`create_and_attach`; only the attachment step differs.
+        """
+        return cls._create(request, attach=False)
+
+    @classmethod
+    def _create(
+        cls, request: QuickAddReferenceRequest, *, attach: bool
+    ) -> QuickAddReferenceResult:
+        if attach:
+            ObservationReferenceUseRepository._validate_role(request.role)
 
         # Validate domain/editor output before creating any hierarchy rows.
         proposed_set = MeasurementSet(
@@ -2411,12 +2443,13 @@ class QuickAddReferenceService:
             )
             proposed_set.taxon_treatment_id = treatment.id
             measurement_set = MeasurementSetRepository.create(proposed_set)
-            use, created_attachment = ObservationReferenceUseRepository.attach_with_status(
-                request.observation_id,
-                measurement_set.id,
-                role=request.role,
-                note=request.note,
-            )
+            if attach:
+                use, created_attachment = ObservationReferenceUseRepository.attach_with_status(
+                    request.observation_id,
+                    measurement_set.id,
+                    role=request.role,
+                    note=request.note,
+                )
             return QuickAddReferenceResult(
                 work=work,
                 treatment=treatment,

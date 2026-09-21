@@ -271,6 +271,222 @@ def test_quick_add_service_path_attaches_snapshot_and_refreshes_plot(
     assert refreshes == [observation_id, "plot"]
 
 
+def test_save_only_path_stores_the_set_without_attaching_or_plotting(
+    monkeypatch, qapp, libs
+):
+    """``attach=False`` is the picker's "Save to library" intent.
+
+    The same validation, guards and creation run, but the observation
+    gains no use row and the plot is never refreshed — and the caller gets
+    the new set's id back so it can attach that exact set later instead of
+    creating a second one.
+    """
+    db_path, _ = libs
+    work = _seed_work()
+    observation_id = _make_observation(
+        db_path, genus="Agaricus", species="bisporus"
+    )
+    payload = _range_payload(work.id, 7, "Agaricus", "bisporus")
+    payload["observation_id"] = observation_id
+    dialog = _QuickAddStubDialog(payload)
+    window = _build_window(monkeypatch, qapp)
+    window.active_observation_id = observation_id
+    window._active_sporely_taxon_id = lambda: 7
+    window._observation_taxon_identity = lambda _obs_id: ("Agaricus", "bisporus")
+    refreshes = []
+    window._restore_reference_uses_for_observation = refreshes.append
+    window.update_graph_plots_only = lambda: refreshes.append("plot")
+
+    saved_id = window._persist_normalized_reference_from_dialog(
+        dialog, payload, legacy_id=None, attach=False
+    )
+
+    assert isinstance(saved_id, str) and saved_id
+    assert MeasurementSetRepository.get(saved_id) is not None
+    assert ObservationReferenceUseRepository.list_for_observation(observation_id) == []
+    assert refreshes == []
+
+    # The host wrapper the picker actually calls returns an id too.
+    second = window._save_manual_reference_to_library(dialog)
+    assert isinstance(second, str) and second
+    # Each save creates its own set. The picker avoids storing the same
+    # typed data twice by remembering the id it already saved, not by the
+    # persistence layer silently deduplicating.
+    assert second != saved_id
+
+
+def test_submission_reports_failure_when_the_quick_add_is_refused(
+    monkeypatch, qapp, libs
+):
+    """The picker closes on this return value, so it must be the truth.
+
+    A declined taxon-identity confirmation persists nothing on the
+    quick-add path; reporting success would close the picker over a
+    reference the user never added.
+    """
+    db_path, _ = libs
+    work = _seed_work()
+    observation_id = _make_observation(
+        db_path, genus="Mycena", species="filopes"
+    )
+    # Panel text names a different species than the observation record,
+    # which is what raises the confirmation.
+    payload = _range_payload(work.id, 7, "Amanita", "muscaria")
+    payload["observation_id"] = observation_id
+    dialog = _QuickAddStubDialog(payload)
+    window = _build_window(monkeypatch, qapp)
+    window.active_observation_id = observation_id
+    window._active_sporely_taxon_id = lambda: 7
+    window._observation_taxon_identity = lambda _obs_id: ("Mycena", "filopes")
+    monkeypatch.setattr(
+        main_window.QMessageBox, "question", lambda *a, **kw: QMessageBox.No
+    )
+
+    assert window._submit_reference_editor_result(dialog, sync_panel=False) is False
+    assert ObservationReferenceUseRepository.list_for_observation(observation_id) == []
+
+
+def test_submission_reports_success_when_the_quick_add_lands(
+    monkeypatch, qapp, libs
+):
+    db_path, _ = libs
+    work = _seed_work()
+    observation_id = _make_observation(
+        db_path, genus="Agaricus", species="bisporus"
+    )
+    payload = _range_payload(work.id, 7, "Agaricus", "bisporus")
+    payload["observation_id"] = observation_id
+    dialog = _QuickAddStubDialog(payload)
+    window = _build_window(monkeypatch, qapp)
+    window.active_observation_id = observation_id
+    window._active_sporely_taxon_id = lambda: 7
+    window._observation_taxon_identity = lambda _obs_id: ("Agaricus", "bisporus")
+    window._restore_reference_uses_for_observation = lambda _obs_id: None
+    window.update_graph_plots_only = lambda: None
+
+    assert window._submit_reference_editor_result(dialog, sync_panel=False) is True
+    assert len(ObservationReferenceUseRepository.list_for_observation(observation_id)) == 1
+
+
+def test_save_with_no_storable_measurements_says_so(monkeypatch, qapp, libs):
+    """A save that can write nothing must not fail silently.
+
+    ``attach=False`` is "Save to library", and on that path this routine
+    is the only writer — no legacy row precedes it and no plot series
+    follows — so a quiet ``False`` would read to the user as success.
+    """
+    db_path, _ = libs
+    work = _seed_work()
+    observation_id = _make_observation(
+        db_path, genus="Agaricus", species="bisporus"
+    )
+    payload = _range_payload(work.id, 7, "Agaricus", "bisporus")
+    payload["observation_id"] = observation_id
+    dialog = _QuickAddStubDialog(payload)
+    # Nothing the normalized library can store.
+    dialog.normalized_measurement_set_payload = (
+        lambda *, legacy_reference_value_id=None: None
+    )
+    window = _build_window(monkeypatch, qapp)
+    window.active_observation_id = observation_id
+    window._active_sporely_taxon_id = lambda: 7
+    window._observation_taxon_identity = lambda _obs_id: ("Agaricus", "bisporus")
+    warnings = []
+    monkeypatch.setattr(
+        main_window.QMessageBox,
+        "warning",
+        lambda _parent, _title, text, *a, **kw: warnings.append(text),
+    )
+
+    assert (
+        window._persist_normalized_reference_from_dialog(
+            dialog, payload, legacy_id=None, attach=False
+        )
+        is False
+    )
+    assert len(warnings) == 1
+    assert "nothing for the reference library to store" in warnings[0]
+    assert ObservationReferenceUseRepository.list_for_observation(observation_id) == []
+
+
+def test_attaching_callers_stay_silent_about_an_empty_normalized_payload(
+    monkeypatch, qapp, libs
+):
+    """A Parmasto-only entry is not an error on the attaching path.
+
+    ``_submit_reference_editor_result`` excludes a ``None`` normalized
+    payload from ``quick_add_intended`` and takes the legacy route, which
+    writes its own reference row and plot series. The missing normalized
+    mirror is expected there and must not raise an alarm.
+    """
+    db_path, _ = libs
+    work = _seed_work()
+    observation_id = _make_observation(
+        db_path, genus="Agaricus", species="bisporus"
+    )
+    payload = _range_payload(work.id, 7, "Agaricus", "bisporus")
+    payload["observation_id"] = observation_id
+    dialog = _QuickAddStubDialog(payload)
+    dialog.normalized_measurement_set_payload = (
+        lambda *, legacy_reference_value_id=None: None
+    )
+    window = _build_window(monkeypatch, qapp)
+    window.active_observation_id = observation_id
+    window._active_sporely_taxon_id = lambda: 7
+    window._observation_taxon_identity = lambda _obs_id: ("Agaricus", "bisporus")
+    warnings = []
+    monkeypatch.setattr(
+        main_window.QMessageBox,
+        "warning",
+        lambda _parent, _title, text, *a, **kw: warnings.append(text),
+    )
+
+    # Both shapes the attaching callers use: after a legacy row was
+    # written, and before one was (the non-"reference" source kinds).
+    assert (
+        window._persist_normalized_reference_from_dialog(
+            dialog, payload, legacy_id=123
+        )
+        is False
+    )
+    assert (
+        window._persist_normalized_reference_from_dialog(
+            dialog, payload, legacy_id=None
+        )
+        is False
+    )
+    assert warnings == []
+
+
+def test_save_only_is_refused_for_an_already_stored_set(monkeypatch, qapp, libs):
+    """Selecting an existing library set has nothing to save."""
+    db_path, _ = libs
+    observation_id = _make_observation(
+        db_path, genus="Agaricus", species="bisporus"
+    )
+    payload = {
+        "source_kind": "existing_measurement_set",
+        "reference_measurement_set_id": "ms-does-not-matter",
+        "observation_id": observation_id,
+        "sporely_taxon_id": 7,
+    }
+    window = _build_window(monkeypatch, qapp)
+    window.active_observation_id = observation_id
+    window._active_sporely_taxon_id = lambda: 7
+    attached = []
+    window._attach_normalized_reference_to_active_observation = (
+        lambda set_id, role: attached.append((set_id, role))
+    )
+
+    assert (
+        window._persist_normalized_reference_from_dialog(
+            _QuickAddStubDialog(payload), payload, legacy_id=None, attach=False
+        )
+        is False
+    )
+    assert attached == []
+
+
 def test_invalid_quick_add_leaves_no_legacy_or_normalized_records(
     monkeypatch, qapp, libs
 ):

@@ -65,6 +65,17 @@ already-entered measurement values, and to the submission path,
 ``ReferenceEntryEditor`` is duck-typed identically to the legacy dialog's
 own wrapper, so ``MainWindow`` reuses one shared post-validation
 persistence routine for both.
+
+That tab also owns the footer's second action, "Save to library"
+(``manual_save_callback(editor) -> str | None``), which is hidden on the
+other three tabs — their sources are already stored somewhere. Saving is
+not plotting: it writes the library hierarchy, leaves the picker open and
+the plot untouched, and returns the new measurement set's id. While that id
+is held, "Add to plot" attaches *that* set through
+``attach_saved_set_callback(measurement_set_id) -> bool`` rather than
+submitting the editor a second time, which would store the same typed data
+twice. Editing the form afterwards drops the id, because the saved set no
+longer describes what is on screen.
 """
 from __future__ import annotations
 
@@ -402,6 +413,8 @@ class AddReferenceDialog(GeometryMixin, QDialog):
         attach_callback: Callable[[str, str], None] | None = None,
         cloud_attach_callback: Callable[[dict], None] | None = None,
         manual_attach_callback: Callable[["ReferenceEntryEditor"], bool] | None = None,
+        manual_save_callback: Callable[["ReferenceEntryEditor"], str | None] | None = None,
+        attach_saved_set_callback: Callable[[str], bool] | None = None,
         candidates: list[MeasurementSetCandidate] | None = None,
         my_observations: list[PersonalObservationCandidate] | None = None,
         community_results: list[dict] | None = None,
@@ -434,6 +447,26 @@ class AddReferenceDialog(GeometryMixin, QDialog):
         self._attach_callback = attach_callback
         self._cloud_attach_callback = cloud_attach_callback
         self._manual_attach_callback = manual_attach_callback
+        self._manual_save_callback = manual_save_callback
+        self._attach_saved_set_callback = attach_saved_set_callback
+        # Set by a successful "Save to library": the id of the measurement
+        # set the manual entry now IS in the library. While it is valid,
+        # "Add to plot" attaches that exact set instead of submitting the
+        # editor again, which would store the same typed data twice.
+        #
+        # Validity is decided by comparing the editor's own content
+        # fingerprint, NOT by the arrival of a ``data_changed`` signal:
+        # that signal also fires for pure preview refreshes (the editor's
+        # ``sync_preview``, which _on_tab_changed calls every time the
+        # manual tab comes back to the front), and treating those as edits
+        # would silently drop the saved identity and store a duplicate on
+        # the next Add to plot.
+        self._saved_manual_measurement_set_id: str | None = None
+        # The form content the last save ATTEMPT described, successful or
+        # not, so both the saved identity and a failure notice stop
+        # applying as soon as the entry they were about changes.
+        self._last_manual_save_fingerprint: tuple | None = None
+        self._manual_save_failed = False
         # Optional injected candidate list, mirroring
         # ReferenceLibraryAttachDialog's testability convention: when
         # provided, skips the repository query so tests/scenarios can run
@@ -537,6 +570,17 @@ class AddReferenceDialog(GeometryMixin, QDialog):
         self.cancel_btn = QPushButton(QCoreApplication.translate("AddReferenceDialog", "Cancel"), self)
         self.cancel_btn.clicked.connect(self.reject)
         footer.addWidget(self.cancel_btn)
+        # Manual-tab only: the other three tabs offer sources that are
+        # already stored somewhere, so there is nothing for them to save.
+        # Visibility (not just enablement) is toggled in
+        # _update_footer_state so the footer of those tabs is unchanged.
+        self.save_to_library_btn = QPushButton(
+            QCoreApplication.translate("AddReferenceDialog", "Save to library"), self
+        )
+        self.save_to_library_btn.setEnabled(False)
+        self.save_to_library_btn.setVisible(False)
+        self.save_to_library_btn.clicked.connect(self._on_save_to_library_clicked)
+        footer.addWidget(self.save_to_library_btn)
         self.add_to_plot_btn = QPushButton(QCoreApplication.translate("AddReferenceDialog", "Add to plot"), self)
         self.add_to_plot_btn.setEnabled(False)
         self.add_to_plot_btn.setDefault(True)
@@ -1001,7 +1045,16 @@ class AddReferenceDialog(GeometryMixin, QDialog):
         source is checked, the count is the thing the user is about to act
         on.
         """
+        if hasattr(self, "_manual_tab_index") and (
+            self.tabs.currentIndex() == self._manual_tab_index
+        ):
+            self.status_hint_label.setText(self._manual_footer_hint())
+            return
         if self.tabs.currentWidget() is not self._library_tab:
+            # Clear rather than leave the previous tab's hint standing:
+            # the manual tab's copy is about its own two buttons and would
+            # be wrong here.
+            self.status_hint_label.setText("")
             return
         checked = len(self._checked_ids)
         if checked == 1:
@@ -1628,7 +1681,7 @@ class AddReferenceDialog(GeometryMixin, QDialog):
             # with the source they looked at a moment ago.
             comparison_view_factory=self._comparison_view_for,
         )
-        self.manual_editor.data_changed.connect(self._update_footer_state)
+        self.manual_editor.data_changed.connect(self._on_manual_data_changed)
         # The editor's own minimum size hint (its measurement grid and spore
         # table) is the widest and tallest thing in the picker, and was what
         # stopped the dialog shrinking even once the explicit floors were
@@ -1653,6 +1706,7 @@ class AddReferenceDialog(GeometryMixin, QDialog):
             # exists yet; nothing to update this early.
             return
         default_text = QCoreApplication.translate("AddReferenceDialog", "Add to plot")
+        self._update_save_to_library_state()
         if self.tabs.currentIndex() == self._my_observations_tab_index:
             self.add_to_plot_btn.setText(default_text)
             self.add_to_plot_btn.setToolTip("")
@@ -1664,7 +1718,13 @@ class AddReferenceDialog(GeometryMixin, QDialog):
         elif self.tabs.currentIndex() == self._manual_tab_index:
             self.add_to_plot_btn.setText(default_text)
             self.add_to_plot_btn.setToolTip("")
-            self.add_to_plot_btn.setEnabled(self.manual_editor.is_ready_to_submit())
+            # A saved entry is attached by id, not resubmitted, so its
+            # readiness was settled at save time -- and any edit since then
+            # would have cleared the id.
+            self.add_to_plot_btn.setEnabled(
+                self._saved_manual_measurement_set_id is not None
+                or self.manual_editor.is_ready_to_submit()
+            )
         else:
             checked = len(self._checked_ids)
             self.add_to_plot_btn.setText(
@@ -1692,6 +1752,140 @@ class AddReferenceDialog(GeometryMixin, QDialog):
             )
         self._refresh_status_hint()
 
+    def _current_saved_set_id(self) -> str | None:
+        """The saved measurement set's id, while it still fits the form.
+
+        Re-verified against the editor's fingerprint at every point of
+        use, rather than trusted from the last signal: that makes the
+        shortcut correct even if some edit path failed to announce itself,
+        and immune to the preview refreshes that announce themselves
+        without an edit. An unknown fingerprint on either side means
+        "cannot tell", which is not a match.
+        """
+        if self._saved_manual_measurement_set_id is None:
+            return None
+        if self.manual_editor.is_use_existing_set():
+            # The form is no longer offering the entry that was saved; it
+            # is pointing at a set the user picked out of the library. That
+            # selection is what Add to plot must attach, so the shortcut
+            # does not apply here at all.
+            return None
+        if not self._manual_entry_matches_last_save():
+            return None
+        return self._saved_manual_measurement_set_id
+
+    def _manual_entry_matches_last_save(self) -> bool:
+        if self._last_manual_save_fingerprint is None:
+            return False
+        return (
+            self.manual_editor.library_entry_fingerprint()
+            == self._last_manual_save_fingerprint
+        )
+
+    def _forget_last_manual_save(self) -> None:
+        self._saved_manual_measurement_set_id = None
+        self._last_manual_save_fingerprint = None
+        self._manual_save_failed = False
+
+    def _update_save_to_library_state(self) -> None:
+        """Show "Save to library" on the manual tab only, and only when
+        there is something the library can actually store.
+
+        A library entry needs a publication to hang the treatment on, so a
+        typed range with no publication selected is not saveable — the
+        library has nowhere to put it. It also needs measurement content
+        the normalized library can hold: ``is_ready_to_submit`` alone is
+        too permissive, because it accepts a Parmasto-only entry, whose
+        biometrics live on the legacy reference row and produce no
+        measurement set at all (see
+        ``ReferenceEntryEditor.has_storable_measurement_content``).
+        "Use an existing set" is likewise not saveable: that set is
+        already in the library. Each case leaves the button disabled
+        rather than failing, or doing nothing, at the click.
+        """
+        if not hasattr(self, "save_to_library_btn"):
+            return
+        on_manual_tab = self.tabs.currentIndex() == self._manual_tab_index
+        self.save_to_library_btn.setVisible(on_manual_tab)
+        if not on_manual_tab:
+            self.save_to_library_btn.setEnabled(False)
+            return
+        editor = self.manual_editor
+        has_publication = bool(
+            editor.selected_reference_work_id() or editor.pending_reference_work()
+        )
+        self.save_to_library_btn.setEnabled(
+            self._manual_save_callback is not None
+            and self._saved_manual_measurement_set_id is None
+            and not editor.is_use_existing_set()
+            and has_publication
+            and editor.has_storable_measurement_content()
+            and editor.is_ready_to_submit()
+        )
+
+    def _manual_footer_hint(self) -> str:
+        """What the manual tab's two actions do -- never why one is greyed.
+
+        The footer explains the difference between saving and plotting,
+        which is the thing a user cannot guess from two buttons sitting
+        side by side. It deliberately does not narrate the disabled state:
+        a control that cannot be pressed is not a place to teach.
+        """
+        if self._saved_manual_measurement_set_id is not None:
+            return QCoreApplication.translate(
+                "AddReferenceDialog",
+                "Saved to the reference library. Add to plot will use the saved reference.",
+            )
+        if self._manual_save_failed:
+            return QCoreApplication.translate(
+                "AddReferenceDialog",
+                "Not saved — nothing was stored in the reference library.",
+            )
+        return QCoreApplication.translate(
+            "AddReferenceDialog",
+            "Save to library keeps this reference for reuse without adding it to the plot.",
+        )
+
+    def _on_manual_data_changed(self) -> None:
+        """Keep the footer honest as the form changes.
+
+        An edit makes a previous save stale: the saved measurement set
+        holds the values as they were at save time, so once the form
+        differs from it the shortcut is dropped and a fresh submission
+        happens instead. A pure preview refresh reaches here too and must
+        change nothing, which is why staleness is decided by comparing
+        content rather than by the signal having arrived at all.
+        """
+        if (
+            self._last_manual_save_fingerprint is not None
+            and not self._manual_entry_matches_last_save()
+        ):
+            self._forget_last_manual_save()
+        self._update_footer_state()
+
+    def _on_save_to_library_clicked(self) -> None:
+        """Store the manual entry in the library and stay open.
+
+        Saving is not plotting: on success the picker remains open with the
+        entry still on screen, and the plot is untouched until the user
+        also presses Add to plot. On failure the picker likewise stays open
+        -- the host has already said what went wrong -- and nothing claims
+        the reference was saved.
+        """
+        if self._manual_save_callback is None:
+            return
+        if not self.manual_editor.validate_and_build_result():
+            return
+        saved_id = self._manual_save_callback(self.manual_editor)
+        fingerprint = self.manual_editor.library_entry_fingerprint()
+        self._saved_manual_measurement_set_id = str(saved_id) if saved_id else None
+        self._last_manual_save_fingerprint = fingerprint
+        # The host has already said what went wrong. The footer says that
+        # nothing was stored, so a user who dismissed the message is not
+        # left reading the pre-save copy as confirmation.
+        self._manual_save_failed = not saved_id
+        self._update_footer_state()
+
     def _on_add_to_plot_clicked(self) -> None:
         if self.tabs.currentIndex() == self._my_observations_tab_index:
             if self._attach_callback is None or self._selected_observation is None:
@@ -1711,6 +1905,15 @@ class AddReferenceDialog(GeometryMixin, QDialog):
             self.accept()
             return
         if self.tabs.currentIndex() == self._manual_tab_index:
+            saved_id = self._current_saved_set_id()
+            if saved_id is not None and self._attach_saved_set_callback is not None:
+                # Already in the library, unchanged since it was saved.
+                # Attach that set rather than submitting the editor again:
+                # a second submission would create a second measurement
+                # set holding the same typed data.
+                if self._attach_saved_set_callback(saved_id):
+                    self.accept()
+                return
             if self._manual_attach_callback is None:
                 return
             if not self.manual_editor.validate_and_build_result():

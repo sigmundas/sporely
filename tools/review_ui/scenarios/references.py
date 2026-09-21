@@ -1282,6 +1282,8 @@ def _add_dialog_manual(context: ReviewContext, *, taxon_id: str | None = "7"):
         attach_callback=lambda *_args: None,
         cloud_attach_callback=lambda *_args: None,
         manual_attach_callback=lambda *_args: True,
+        manual_save_callback=lambda *_args: "review-saved-set",
+        attach_saved_set_callback=lambda *_args: True,
     )
     dialog.tabs.setCurrentIndex(dialog._manual_tab_index)
     return dialog, fixture
@@ -1317,6 +1319,46 @@ def _add_dialog_manual_species_mean(context: ReviewContext):
     editor.set_measurement_cell_text(2, 1, "1.20")
     editor.set_measurement_cell_text(2, 3, "1.40")
     editor._refresh_preview()
+    return dialog
+
+
+def _add_dialog_manual_saveable(context: ReviewContext):
+    """Both footer actions live, before either has been used.
+
+    A plain extremes-plus-typical range with a publication selected: this
+    is the state in which "Save to library" is genuinely offered. (The
+    ``manual-range`` fixture deliberately carries a statistic this version
+    cannot store, so both of its actions are correctly greyed.)
+    """
+    dialog, fixture = _add_dialog_manual(context)
+    _select_work(dialog.manual_editor, fixture["work"].id)
+    editor = dialog.manual_editor
+    editor.set_measurement_cell_text(0, 0, "8.10")
+    editor.set_measurement_cell_text(0, 4, "11.40")
+    editor.set_measurement_cell_text(1, 0, "4.20")
+    editor.set_measurement_cell_text(1, 4, "6.10")
+    editor._refresh_preview()
+    return dialog
+
+
+def _add_dialog_manual_saved(context: ReviewContext):
+    """The same footer after a successful Save to library.
+
+    The two actions stay distinct: saving is spent, and Add to plot is
+    still live because it will attach the set that was just saved. The
+    hint says what happened and what the remaining button will do -- not
+    why the spent one is grey.
+    """
+    dialog = _add_dialog_manual_saveable(context)
+    # Set directly rather than by clicking: the click first runs the
+    # editor's own validation, which is allowed to raise a modal
+    # confirmation, and a modal would block this offscreen renderer
+    # forever. What is captured is the footer a successful save leaves.
+    dialog._saved_manual_measurement_set_id = "review-saved-set"
+    dialog._last_manual_save_fingerprint = (
+        dialog.manual_editor.library_entry_fingerprint()
+    )
+    dialog._update_footer_state()
     return dialog
 
 
@@ -1711,6 +1753,16 @@ def register_reference_scenarios(registry: ScenarioRegistry) -> None:
             "manual-range",
             _add_dialog_manual_range,
             "Enter-manually tab, a realistic parsed literature range with a selected publication; the shared preview pane shows the entered data and Add to plot is enabled.",
+        ),
+        (
+            "manual-saveable",
+            _add_dialog_manual_saveable,
+            "Enter-manually tab with a storable range and a publication selected: Save to library and Add to plot are both offered, and the hint says what saving does instead of why anything is disabled.",
+        ),
+        (
+            "manual-saved",
+            _add_dialog_manual_saved,
+            "Enter-manually tab after Save to library succeeded: the entry is in the library, the picker is still open, and the footer says Add to plot will use the saved reference.",
         ),
         (
             "manual-points",
