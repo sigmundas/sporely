@@ -53,6 +53,7 @@ from references.measurement_content import (
     set_mean_interval,
     set_scalar_mean,
 )
+from references.reference_display import DataLabel
 
 #: The interval kind recorded when a user types an interval into a mean
 #: field. ``reported_range`` is the honest reading of a printed ``a-b`` mean:
@@ -474,6 +475,35 @@ def has_reported_content(content: MeasurementContent) -> bool:
     if isinstance(details, MeasurementDetails):
         return not details.is_empty()
     return False
+
+
+def data_label_text(label: DataLabel) -> str:
+    """Wording for a :class:`~references.reference_display.DataLabel`.
+
+    Which badge a source deserves was already decided by
+    :attr:`~references.reference_display.SourceDisplay.data_label`; this
+    function only names it, so no widget re-reads ``data_kind`` or a database
+    column to guess (design contract N10-N14). An explicit percentile
+    interval prints its real bounds, so a 10-90% source is never shown as
+    5-95%.
+
+    It lives beside the other measurement-content wording rather than in
+    either dialog because the Library list and the manual editor's preview
+    both need the same three words. The manual preview used to hard-code
+    "Range summary" from a data-mode selector that no longer exists, which
+    labelled an explicitly typed 5-95% interval as though it were a plain
+    published range.
+    """
+    if label.kind == "raw_data":
+        return QCoreApplication.translate("MeasurementContent", "Raw data")
+    if label.kind == "percentile_range" and label.percentile_bounds:
+        low, high = label.percentile_bounds
+        return QCoreApplication.translate(
+            "MeasurementContent", "{low}–{high}% range"
+        ).format(low=f"{low:g}", high=f"{high:g}")
+    if label.kind == "published_range":
+        return QCoreApplication.translate("MeasurementContent", "Published range")
+    return ""
 
 
 def metrics_with_range_tags(content: MeasurementContent) -> list[str]:

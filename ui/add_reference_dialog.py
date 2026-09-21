@@ -127,6 +127,7 @@ from references.reference_display import (
 
 from app_identity import SETTINGS_APP, SETTINGS_ORG
 
+from . import measurement_content_view as mcv
 from .cloud_reference_dialog import CommunityResultsPane
 from .library_source_row import LibraryResultsList, LibrarySourceRow
 from .reference_entry_editor import ReferenceEntryEditor
@@ -960,23 +961,14 @@ class AddReferenceDialog(GeometryMixin, QDialog):
     def _semantic_badge_text(candidate: MeasurementSetCandidate) -> str:
         """The data-semantics badge, straight from the Stage 1 projection.
 
-        This method chooses wording only. Which badge a row deserves was
-        decided by :attr:`SourceDisplay.data_label`, so no widget re-reads
-        ``data_kind`` or a database column to guess (design contract
-        N10–N14). An explicit percentile interval prints its real bounds, so
-        a 10–90% source is never shown as 5–95%.
+        Which badge a row deserves was decided by
+        :attr:`SourceDisplay.data_label`, so no widget re-reads ``data_kind``
+        or a database column to guess (design contract N10–N14). The wording
+        itself is :func:`ui.measurement_content_view.data_label_text`, shared
+        with the manual editor's preview so the same projection cannot be
+        named two different ways in one dialog.
         """
-        label = candidate.source_display().data_label
-        if label.kind == "raw_data":
-            return QCoreApplication.translate("AddReferenceDialog", "Raw data")
-        if label.kind == "percentile_range" and label.percentile_bounds:
-            low, high = label.percentile_bounds
-            return QCoreApplication.translate(
-                "AddReferenceDialog", "{low}–{high}% range"
-            ).format(low=f"{low:g}", high=f"{high:g}")
-        if label.kind == "published_range":
-            return QCoreApplication.translate("AddReferenceDialog", "Published range")
-        return ""
+        return mcv.data_label_text(candidate.source_display().data_label)
 
     def _add_group_heading(self, group: str, count: int) -> None:
         item = QListWidgetItem(self._library_group_heading(group, count))

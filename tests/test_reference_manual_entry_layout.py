@@ -310,6 +310,22 @@ def test_an_empty_grid_shows_the_baseline_rather_than_a_source(editor):
     assert view is None or view.has_source is False
 
 
+def test_the_manual_preview_names_the_data_the_way_the_library_rows_do(editor):
+    """The note is the projection's data label, not a fixed caption.
+
+    It used to read "Range summary" whatever had been typed -- the label of
+    a data-mode selector the one-column layout removed. An explicitly stated
+    5-95% interval was therefore announced in the same words as a plain
+    published range, contradicting both the badge a Library row carries for
+    the same content and the caption drawn two lines below it.
+    """
+    _parse(editor, PUBLISHED_RANGE)
+    assert editor._preview_pane.summary_note_label.text() == "Published range"
+
+    _parse(editor, EXPLICIT_5_95)
+    assert editor._preview_pane.summary_note_label.text() == "5–95% range"
+
+
 def test_the_raw_spores_tab_never_invents_rows_for_a_range(editor):
     """Contract N22: a published range has no per-spore measurements."""
     _parse(editor, EXPLICIT_5_95)

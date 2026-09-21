@@ -1375,6 +1375,198 @@ def _add_dialog_manual_invalid(context: ReviewContext):
     return dialog
 
 
+def _percentile_with_extent_candidate():
+    """One source stating reported extremes *and* an explicit 5-95% core.
+
+    ``_add_dialog_candidates``'s ``add-dialog-3`` carries the percentile
+    descriptor on its own, so it cannot show the thing the contract cares
+    about here: that the 5-95% band stays visually and verbally distinct
+    from a reported min/max drawn around it, and that neither is relabelled
+    as the other (contract N13). Kept as its own fixture rather than added
+    to the shared list, so the eight scenarios built from that list keep
+    their established grouping and counts.
+    """
+    import json
+
+    from database.reference_library import MeasurementSetCandidate
+    from references.reference_display import display_from_row
+
+    percentile_details = json.dumps(
+        {
+            "schema_version": 1,
+            "metrics": {
+                metric: {
+                    "core_range": {
+                        "kind": "percentile_interval",
+                        "percentile_bounds": [5, 95],
+                    }
+                }
+                for metric in ("length", "width")
+            },
+        }
+    )
+    return MeasurementSetCandidate(
+        measurement_set_id="add-dialog-percentile",
+        short_label="Ainsworth & Henrici 2021",
+        name_as_published="Cortinarius limonius (Fr.) Fr.",
+        locator_text="Table 4, 5–95 percentiles",
+        data_kind="range",
+        raw_text="8.2–11.6 µm extremes; 8.9–10.9 µm (5–95%) × 4.4–6.0 µm, n = 120",
+        revision=1,
+        reference_work_id="work-percentile",
+        reference_treatment_id="treatment-percentile",
+        year=2021,
+        taxon_id="7",
+        display=display_from_row(
+            {
+                "data_kind": "range",
+                "length_min": 8.2,
+                "length_max": 11.6,
+                "length_core_min": 8.9,
+                "length_core_max": 10.9,
+                "width_min": 4.4,
+                "width_max": 6.0,
+                "width_core_min": 4.7,
+                "width_core_max": 5.7,
+                "sample_size": 120,
+                "measurement_details_json": percentile_details,
+            }
+        ),
+    )
+
+
+def _stored_raw_points_candidate(fixture):
+    """A Library candidate backed by the seeded raw-points measurement set.
+
+    The shared ``_add_dialog_candidates`` rows exist only in memory, which is
+    fine while they are being listed: the row's cell and badge come from the
+    projection the candidate carries. The *preview* is different --
+    ``AddReferenceDialog._populate_preview`` loads the stored row to decode
+    its individual points, so an in-memory raw-points candidate previews as a
+    source that reports nothing at all. Pointing at the real seeded set is
+    what makes this screenshot show the state it claims to.
+    """
+    from dataclasses import asdict
+
+    from database.reference_library import MeasurementSetCandidate
+    from references.reference_comparison import point_extents
+    from references.reference_display import display_from_row
+
+    stored = next(
+        row for row in fixture["sets"] if row.data_kind == "raw_points"
+    )
+    points = json.loads(stored.raw_points_json)
+    return MeasurementSetCandidate(
+        measurement_set_id=stored.id,
+        short_label="Niskanen, Liimatainen & Kytövuori 2018",
+        name_as_published="Cortinarius limonius (Fr.) Fr.",
+        locator_text="supplementary dataset S4",
+        data_kind="raw_points",
+        raw_text=stored.raw_text,
+        revision=1,
+        reference_work_id="work-main",
+        reference_treatment_id=stored.taxon_treatment_id,
+        year=2018,
+        taxon_id="7",
+        display=display_from_row(asdict(stored)),
+        raw_point_extents=point_extents(points),
+    )
+
+
+def _add_dialog_preview(context: ReviewContext, select, *, candidates=None):
+    """The picker's Library tab with exactly one row previewed.
+
+    The existing ``reference.add-dialog-library`` screenshot shows the
+    grouped list with two rows checked and a third previewed, which is the
+    state the *list* needs reviewing in. These scenarios exist for the other
+    half of the dialog: one row selected and nothing checked, so the right
+    pane's comparison and its data-semantics wording can be read on their
+    own for each kind of source content.
+
+    ``select`` and ``candidates`` take the fixture, because a candidate that
+    has to resolve to a stored measurement set can only be built once the
+    isolated library has been seeded.
+    """
+    from ui.add_reference_dialog import AddReferenceDialog
+
+    fixture = _fixture(context)
+    rows = (
+        _add_dialog_candidates()
+        if candidates is None
+        else candidates(fixture)
+    )
+    dialog = AddReferenceDialog(
+        context.host,
+        taxon_label="Cortinarius limonius",
+        taxon_id="7",
+        genus="Cortinarius",
+        species="limonius",
+        candidates=rows,
+        observation_points=_add_dialog_observation_points(),
+        attach_callback=lambda *_args: None,
+    )
+    dialog.only_this_taxon_checkbox.setChecked(False)
+    dialog.results_list.setCurrentRow(_add_dialog_row(dialog, select(fixture)))
+    return dialog
+
+
+def _add_dialog_baseline(context: ReviewContext):
+    """No source selected: the observation's own spores and nothing else.
+
+    Deliberately leaves the list's current row alone. The pane must show the
+    Length / Width / Q baseline built from the host's observation points plus
+    the explanatory copy -- not a table of dashes waiting to be filled in.
+    """
+    from ui.add_reference_dialog import AddReferenceDialog
+
+    _fixture(context)
+    dialog = AddReferenceDialog(
+        context.host,
+        taxon_label="Cortinarius limonius",
+        taxon_id="7",
+        genus="Cortinarius",
+        species="limonius",
+        candidates=_add_dialog_candidates(),
+        observation_points=_add_dialog_observation_points(),
+        attach_callback=lambda *_args: None,
+    )
+    dialog.only_this_taxon_checkbox.setChecked(False)
+    return dialog
+
+
+def _add_dialog_preview_published_range(context: ReviewContext):
+    return _add_dialog_preview(context, lambda _fixture_data: "add-dialog-1")
+
+
+def _add_dialog_preview_raw_data(context: ReviewContext):
+    def rows(fixture):
+        # The stored row replaces the in-memory ``add-dialog-2`` rather than
+        # joining it, so the list does not show two raw-points sources from
+        # the same supplementary dataset.
+        return [
+            candidate
+            for candidate in _add_dialog_candidates()
+            if candidate.measurement_set_id != "add-dialog-2"
+        ] + [_stored_raw_points_candidate(fixture)]
+
+    return _add_dialog_preview(
+        context,
+        lambda fixture: _stored_raw_points_candidate(fixture).measurement_set_id,
+        candidates=rows,
+    )
+
+
+def _add_dialog_preview_percentile(context: ReviewContext):
+    return _add_dialog_preview(
+        context,
+        lambda _fixture_data: "add-dialog-percentile",
+        candidates=lambda _fixture_data: [
+            *_add_dialog_candidates(),
+            _percentile_with_extent_candidate(),
+        ],
+    )
+
+
 def _open_taxon_popup(dialog):
     dialog.taxon_target_combo.showPopup()
     return dialog.taxon_target_combo.view().window()
@@ -1660,6 +1852,73 @@ def register_reference_scenarios(registry: ScenarioRegistry) -> None:
             description="No community results for the working taxon: honest empty state, Add to plot stays disabled.",
             viewport=(900, 560),
             build=_add_dialog_community_empty,
+        ),
+        ReviewScenario(
+            id="reference.add-dialog-baseline",
+            group="reference-library",
+            title="Add-reference picker — no source selected, observation baseline",
+            description="Nothing selected in the Library list: the preview shows the observation's own Length/Width/Q baseline and the explanatory copy, with no table of dashes and no source band.",
+            viewport=(1400, 760),
+            build=_add_dialog_baseline,
+        ),
+        ReviewScenario(
+            id="reference.add-dialog-baseline-dark",
+            group="reference-library",
+            title="Add-reference picker — observation baseline (dark)",
+            description="The same no-selection baseline in dark theme, to check the outlined observation band and the chips keep their contrast.",
+            viewport=(1400, 760),
+            build=_add_dialog_baseline,
+            theme="dark",
+        ),
+        ReviewScenario(
+            id="reference.add-dialog-preview-published-range",
+            group="reference-library",
+            title="Add-reference picker — Published range preview",
+            description="A source with reported extremes and a typical core and no stated centre: the badge and caption read \"Published range\", both bands are drawn against the observation, and no mean or median mark is invented.",
+            viewport=(1400, 760),
+            build=_add_dialog_preview_published_range,
+        ),
+        ReviewScenario(
+            id="reference.add-dialog-preview-published-range-dark",
+            group="reference-library",
+            title="Add-reference picker — Published range preview (dark)",
+            description="The same Published-range comparison in dark theme: filled source band against outlined observation band.",
+            viewport=(1400, 760),
+            build=_add_dialog_preview_published_range,
+            theme="dark",
+        ),
+        ReviewScenario(
+            id="reference.add-dialog-preview-raw-data",
+            group="reference-library",
+            title="Add-reference picker — Raw data preview",
+            description="A source backed by real stored individual points: the badge reads \"Raw data\", every band and centre is captioned as measured rather than reported, and a median-to-median delta is offered because both sides state the same statistic.",
+            viewport=(1400, 760),
+            build=_add_dialog_preview_raw_data,
+        ),
+        ReviewScenario(
+            id="reference.add-dialog-preview-percentile",
+            group="reference-library",
+            title="Add-reference picker — 5–95% range with outer extent",
+            description="One source stating reported extremes and an explicit 5–95% core: the inner percentile band stays distinct from the outer min/max and is labelled 5–95%, never as a published range.",
+            viewport=(1400, 760),
+            build=_add_dialog_preview_percentile,
+        ),
+        ReviewScenario(
+            id="reference.add-dialog-preview-percentile-nb-no",
+            group="reference-library",
+            title="Add-reference picker — 5–95% range in Norwegian Bokmål",
+            description="The same explicit-percentile comparison with the real Norwegian translator: the band captions are the longest text in this pane, so this is where Norwegian width shows up first.",
+            viewport=(1400, 760),
+            build=_add_dialog_preview_percentile,
+            locale="nb_NO",
+        ),
+        ReviewScenario(
+            id="reference.add-dialog-narrow",
+            group="reference-library",
+            title="Add-reference picker — narrow window",
+            description="The picker at a width well below its derived default with a source previewed: the splitter, grouped list, comparison rows and footer must stay legible without clipping. Layout evidence only — re-expanding is interactive and not visible here.",
+            viewport=(760, 520),
+            build=_add_dialog_preview_published_range,
         ),
         ReviewScenario(
             id="reference.comparison-list-suppressed",

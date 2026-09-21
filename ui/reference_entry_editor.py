@@ -1047,11 +1047,12 @@ class ReferenceEntryEditor(QWidget):
         # centre gets no centre mark. The summary table this replaced applied
         # its own extreme-or-typical fallback, which is how an inner typical
         # range came to be printed in a "Min"/"Max" column.
-        pane.set_header(
-            title,
-            "",
-            QCoreApplication.translate("ReferenceAddDialog", "Range summary"),
-        )
+        # The note names what the typed grid actually amounts to, taken from
+        # the same projection the Library rows are badged from. It used to
+        # read a fixed "Range summary", the label of a data-mode selector the
+        # one-column layout replaced, so an explicitly typed 5-95% interval
+        # was announced in the preview as an ordinary range.
+        pane.set_header(title, "", mcv.data_label_text(display.data_label))
         pane.set_comparison(self._comparison_for(display=display))
         # Manually entered, not yet reported by any external source.
         pane.set_provenance_summary("")
