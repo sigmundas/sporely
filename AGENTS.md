@@ -60,11 +60,6 @@ Read only the rules for the area the task touches:
   also see the Localization & Text section in `docs/development/gui-conventions.md`.
 - **Visual UI changes / screenshot tooling**: `.claude/rules/ui-screenshots.md`;
   the renderer entry point is `tools/render_review_screenshots.py`.
-- **Publish media / observation summary media** (`utils/publish_media.py`,
-  publish paths in `ui/observations_tab.py`, `ui/species_plate_dialog.py`,
-  spore mosaic inputs): the Standing invariants section of
-  `docs/engineering-history.md` — source publication selection must not narrow
-  analytical measurement selection.
 - **GUI behavior/layout**: relevant sections of `docs/development/gui-conventions.md`.
 - **SQLite persistence**: `database/sqlite_migrations/README.md` before schema edits.
 
