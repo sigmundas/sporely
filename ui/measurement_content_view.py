@@ -53,6 +53,7 @@ from references.measurement_content import (
     set_mean_interval,
     set_scalar_mean,
 )
+from references.reference_display import DataLabel
 
 #: The interval kind recorded when a user types an interval into a mean
 #: field. ``reported_range`` is the honest reading of a printed ``a-b`` mean:
@@ -393,6 +394,77 @@ def unsupported_details_notice(content: MeasurementContent) -> str | None:
     ).format(version=details.schema_version)
 
 
+def describe_projection_losses(losses: list[tuple[str, str]]) -> list[str]:
+    """One sentence per thing a version-1 row could not carry.
+
+    Takes the ``(metric, kind)`` pairs
+    :func:`~references.measurement_content.legacy_projection_losses` produces
+    and words them, so the contract module stays free of translated text and
+    the editors do not each invent their own phrasing.
+
+    Grouped by kind, not by metric. A headed literature table typically
+    reports the same four things for all three metrics, and one sentence per
+    pair turned the notice into twelve near-identical lines that nobody
+    reads. The metric names stay in the sentence, because a reader fixing
+    the entry still needs to know which rows are affected.
+    """
+    wording = {
+        "percentile_interval": QCoreApplication.translate(
+            "MeasurementContent",
+            "{metric}: the inner range is an explicit percentile interval, "
+            "which would be stored as an ordinary published range.",
+        ),
+        "mean_interval": QCoreApplication.translate(
+            "MeasurementContent",
+            "{metric}: the mean is reported as an interval, which this "
+            "version has nowhere to store — it would be lost.",
+        ),
+        "median": QCoreApplication.translate(
+            "MeasurementContent", "{metric}: the reported median would be lost."
+        ),
+        "sd": QCoreApplication.translate(
+            "MeasurementContent",
+            "{metric}: the reported standard deviation would be lost.",
+        ),
+        # Two different outcomes behind one message, both bad and both
+        # blocked. With no reported extremes the typical range slides into
+        # the extreme columns and is relabelled; with extremes *also*
+        # reported the extremes win and the typical range is dropped
+        # outright. The wording has to hold for both, because an earlier
+        # version promised the first and silently did the second.
+        "q_core_pair": QCoreApplication.translate(
+            "MeasurementContent",
+            "{metric}: the typical range has no column of its own in this "
+            "version, so it cannot be stored beside the extremes.",
+        ),
+    }
+    grouped: dict[str, list[str]] = {}
+    messages: list[str] = []
+    for metric, kind in losses:
+        if kind == "unsupported_details":
+            messages.append(
+                QCoreApplication.translate(
+                    "MeasurementContent",
+                    "This entry carries reported statistics written by a "
+                    "newer version of Sporely. They are preserved unchanged "
+                    "and cannot be re-saved from here.",
+                )
+            )
+            continue
+        if kind not in wording:
+            continue
+        names = grouped.setdefault(kind, [])
+        label = metric_label(metric)
+        if label not in names:
+            names.append(label)
+    separator = QCoreApplication.translate("MeasurementContent", ", ")
+    for kind, template in wording.items():
+        names = grouped.get(kind)
+        if names:
+            messages.append(template.format(metric=separator.join(names)))
+    return messages
+
+
 def has_reported_content(content: MeasurementContent) -> bool:
     """Whether anything in this content needs the extension columns."""
     if content.q_core_min is not None or content.q_core_max is not None:
@@ -403,6 +475,35 @@ def has_reported_content(content: MeasurementContent) -> bool:
     if isinstance(details, MeasurementDetails):
         return not details.is_empty()
     return False
+
+
+def data_label_text(label: DataLabel) -> str:
+    """Wording for a :class:`~references.reference_display.DataLabel`.
+
+    Which badge a source deserves was already decided by
+    :attr:`~references.reference_display.SourceDisplay.data_label`; this
+    function only names it, so no widget re-reads ``data_kind`` or a database
+    column to guess (design contract N10-N14). An explicit percentile
+    interval prints its real bounds, so a 10-90% source is never shown as
+    5-95%.
+
+    It lives beside the other measurement-content wording rather than in
+    either dialog because the Library list and the manual editor's preview
+    both need the same three words. The manual preview used to hard-code
+    "Range summary" from a data-mode selector that no longer exists, which
+    labelled an explicitly typed 5-95% interval as though it were a plain
+    published range.
+    """
+    if label.kind == "raw_data":
+        return QCoreApplication.translate("MeasurementContent", "Raw data")
+    if label.kind == "percentile_range" and label.percentile_bounds:
+        low, high = label.percentile_bounds
+        return QCoreApplication.translate(
+            "MeasurementContent", "{low}–{high}% range"
+        ).format(low=f"{low:g}", high=f"{high:g}")
+    if label.kind == "published_range":
+        return QCoreApplication.translate("MeasurementContent", "Published range")
+    return ""
 
 
 def metrics_with_range_tags(content: MeasurementContent) -> list[str]:

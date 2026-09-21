@@ -19,7 +19,7 @@ import os
 os.environ.setdefault("QT_QPA_PLATFORM", "offscreen")
 
 import pytest
-from PySide6.QtWidgets import QApplication, QTableWidgetItem, QWidget
+from PySide6.QtWidgets import QApplication, QMessageBox, QWidget
 
 from database import schema as _schema
 from database.reference_library import (
@@ -31,7 +31,10 @@ from database.reference_library import (
     TaxonTreatmentRepository,
 )
 from references import measurement_content_gates as gates
-from references.measurement_content import decode_measurement_details
+from references.measurement_content import (
+    MeasurementContentError,
+    decode_measurement_details,
+)
 
 MEAN_COLUMN = 2
 
@@ -83,6 +86,18 @@ def reader_gate_open(monkeypatch):
     return True
 
 
+@pytest.fixture(autouse=True)
+def _no_modal_warnings(monkeypatch):
+    """``validate_and_build_result`` pops a real, blocking QMessageBox.
+
+    Record the call instead of hanging the suite on a modal dialog with no
+    user to dismiss it; the refusal's own wording is asserted through the
+    raised error and the notice label.
+    """
+    monkeypatch.setattr(QMessageBox, "warning", lambda *a, **k: None)
+    monkeypatch.setattr(QMessageBox, "question", lambda *a, **k: QMessageBox.Yes)
+
+
 @pytest.fixture()
 def editor(qapp, libs):
     from ui.reference_entry_editor import ReferenceEntryEditor
@@ -122,12 +137,11 @@ def _parse(widget, text: str) -> None:
 
 
 def _cell(widget, row: int, col: int) -> str:
-    item = widget.minmax_table.item(row, col)
-    return item.text() if item else ""
+    return widget.measurement_cell_text(row, col)
 
 
 def _set_cell(widget, row: int, col: int, text: str) -> None:
-    widget.minmax_table.setItem(row, col, QTableWidgetItem(text))
+    widget.set_measurement_cell_text(row, col, text)
 
 
 def _seed_treatment():
@@ -181,6 +195,11 @@ def test_a_reported_q_mean_does_not_reach_the_parmasto_species_mean_field(editor
     assert editor.parmasto_inputs["parmasto_q_mean"].text() == ""
     assert _cell(editor, 2, MEAN_COLUMN) == "1.25"
 
+    # The Q typical range this expression also states cannot be stored while
+    # the gate is closed, so retract it to reach the payload. The Qm routing
+    # is what this test is about and is unaffected by that.
+    _set_cell(editor, 2, 1, "")
+    _set_cell(editor, 2, 3, "")
     payload = editor.normalized_measurement_set_payload()
     assert payload is not None
     assert payload.q_mean == pytest.approx(1.25)
@@ -209,36 +228,49 @@ def test_a_range_with_no_percentile_heading_shows_no_percentile_number(editor):
 # --- Entry editor: the reader-version guard ----------------------------------
 
 
-def test_closed_reader_gate_keeps_the_payload_legacy_only(editor):
-    """Guarded editing: shown, reviewed, not yet stored.
+def test_closed_reader_gate_refuses_a_lossy_payload_instead_of_degrading_it(editor):
+    """Guarded editing: shown, reviewed, and *refused* rather than downgraded.
 
-    An enhanced row cannot become an attachment while the gate is closed, so
-    persisting one here would only move the refusal to the save button.
+    Replaces ``test_closed_reader_gate_keeps_the_payload_legacy_only``. That
+    test pinned the opposite outcome -- the payload was built with its
+    percentile descriptors, interval means, median and S.D. silently
+    dropped. Stage 3 forbids storing "a visually correct but semantically
+    degraded row", and the redesigned preview makes the mismatch worse by
+    drawing the 5-95% interval the stored row would not carry. The gate
+    itself is untouched and still closed; what changed is that this desktop
+    now declines the write instead of performing a lossy one.
     """
     assert gates.enhanced_editing_enabled() is False
     _parse(editor, HEBELOMA_TABLE)
 
-    payload = editor.normalized_measurement_set_payload()
-    assert payload is not None
-    assert payload.measurement_details_json is None
-    assert payload.q_core_min is None
-    assert payload.q_core_max is None
-    # ...and the ordinary columns are unchanged by the extension being off.
-    assert payload.length_core_min == pytest.approx(8.4)
-    assert payload.length_max == pytest.approx(13.2)
-    # The user is told, rather than left to assume the tags were stored.
-    assert editor._reported_statistics_notice_label.text()
+    with pytest.raises(MeasurementContentError) as excinfo:
+        editor.normalized_measurement_set_payload()
+
+    message = str(excinfo.value)
+    assert "percentile interval" in message
+    assert "median" in message
+    # The refusal reaches the user before they press anything...
+    assert editor.is_ready_to_submit() is False
+    assert editor.validate_and_build_result() is False
+    assert editor.result_data() is None
+    # ...and the standing notice states the refusal rather than implying the
+    # measured values would quietly go through.
+    assert "cannot be saved" in editor._reported_statistics_notice_label.text()
 
 
-def test_a_parsed_table_still_attaches_to_an_observation_while_the_gate_is_closed(
+def test_ordinary_literature_notation_still_attaches_while_the_gate_is_closed(
     editor, libs
 ):
-    """The whole reason the editor is guarded rather than merely delayed.
+    """The refusal must stay narrow enough to keep the common case working.
 
-    ``_gated_observation_reference_snapshot`` refuses to freeze an enhanced
-    row as evidence while the reader gate is closed, and the Stage 2 parser
-    tags every inner range — so an ungated editor would turn almost every
-    paste-and-attach into a ``ReferenceIntegrityError`` at save time.
+    ``(extreme-)typical-typical(-extreme)`` with a Q range is the single most
+    common thing anybody pastes. Its descriptors -- reported extremes around
+    an unspecified inner range -- are exactly what a version-1 row's columns
+    already mean, so nothing about the stored claim changes and the entry
+    must still attach. This is the half of
+    ``test_a_parsed_table_still_attaches_to_an_observation_while_the_gate_is_closed``
+    that survives: an editor that refused here would turn almost every
+    paste-and-attach into a dead end.
     """
     from database.reference_library import (
         ObservationReferenceUseRepository,
@@ -248,7 +280,9 @@ def test_a_parsed_table_still_attaches_to_an_observation_while_the_gate_is_close
 
     db_path, _ = libs
     observation_id = _make_observation(db_path)
-    _parse(editor, HEBELOMA_TABLE)
+    # No Q range: v1 can hold length and width extremes plus their inner
+    # pairs exactly as stated, so nothing about the claim changes.
+    _parse(editor, "(9.5-)9.8-11.3(-11.7) x (7.3-)8.0-9.4(-9.4) um")
     payload = editor.normalized_measurement_set_payload()
     assert payload is not None
 
@@ -257,10 +291,10 @@ def test_a_parsed_table_still_attaches_to_an_observation_while_the_gate_is_close
             observation_id=observation_id,
             existing_work_id=None,
             work=ReferenceWork(
-                id="", type="book", title="Hebeloma", short_label="H 2004", year=2004
+                id="", type="book", title="Cortinarius", short_label="C 2018", year=2018
             ),
             treatment=TaxonTreatment(
-                id="", reference_work_id="", name_as_published="Hebeloma sp."
+                id="", reference_work_id="", name_as_published="Cortinarius sp."
             ),
             measurement_set=payload,
             role="compared",
@@ -270,12 +304,45 @@ def test_a_parsed_table_still_attaches_to_an_observation_while_the_gate_is_close
     assert result.use is not None and result.created_attachment
     stored = MeasurementSetRepository.get(result.measurement_set.id)
     assert stored.measurement_details_json is None
-    assert stored.q_core_min is None and stored.q_core_max is None
-    # The ordinary columns the same source always produced are all there.
-    assert stored.length_core_min == pytest.approx(8.4)
-    assert stored.width_max == pytest.approx(7.6)
+    assert stored.length_min == pytest.approx(9.5)
+    assert stored.length_core_min == pytest.approx(9.8)
+    assert stored.length_max == pytest.approx(11.7)
     uses = ObservationReferenceUseRepository.list_for_observation(observation_id)
     assert [u.reference_measurement_set_id for u in uses] == [stored.id]
+
+
+def test_a_refused_entry_becomes_saveable_once_its_statistics_are_dropped(editor):
+    """The refusal is actionable, not a dead end.
+
+    "Correct interpretation" already exists to retract what a source does
+    not really state; after discarding the reported statistics the same
+    measured numbers save normally.
+    """
+    _parse(editor, HEBELOMA_TABLE)
+    assert editor.is_ready_to_submit() is False
+
+    editor._on_clear_reported_statistics_clicked()
+
+    # Not saveable yet, and correctly so: "Correct interpretation" retracts
+    # interpretations, medians and S.D.s, but the interval means are still
+    # sitting in the Mean fields as values the user can see. Dropping those
+    # behind their back is the silent loss this whole check exists to stop.
+    assert editor.is_ready_to_submit() is False
+    assert "mean" in editor._reported_statistics_notice_label.text().lower()
+
+    for row in range(3):
+        editor.set_measurement_cell_text(row, MEAN_COLUMN, "")
+    # The Q typical range is the last thing v1 cannot hold.
+    editor.set_measurement_cell_text(2, 1, "")
+    editor.set_measurement_cell_text(2, 3, "")
+
+    assert editor.is_ready_to_submit() is True
+    payload = editor.normalized_measurement_set_payload()
+    assert payload is not None
+    assert payload.measurement_details_json is None
+    # The measured values the source printed are all still there.
+    assert payload.length_core_min == pytest.approx(8.4)
+    assert payload.length_max == pytest.approx(13.2)
 
 
 def test_open_reader_gate_persists_the_tags_and_the_q_core_pair(editor, reader_gate_open):
@@ -327,13 +394,64 @@ def test_open_gate_writes_no_derived_q_extreme_next_to_a_tagged_core_pair(
     assert payload.q_max is None
 
 
-def test_closed_gate_keeps_the_historical_q_bound_fallback(editor):
+def test_a_q_typical_range_is_refused_rather_than_relabelled_as_extremes(editor):
+    """Replaces ``test_closed_gate_keeps_the_historical_q_bound_fallback``.
+
+    That fallback quietly moved a stated Q typical range into
+    ``q_min``/``q_max``, so the row claimed reported extremes the source
+    never printed. The historical mapping is still what a v1 row would get;
+    the editor simply no longer produces one.
+    """
     _parse(editor, "9.8-11.3 x 8.0-9.4 um, Q = 1.1-1.3")
 
+    assert editor.is_ready_to_submit() is False
+    with pytest.raises(MeasurementContentError):
+        editor.normalized_measurement_set_payload()
+    assert editor.validate_and_build_result() is False
+
+
+def test_a_q_core_range_beside_q_extremes_is_refused_not_silently_dropped(editor):
+    """The loss that is numeric, not cosmetic.
+
+    ``Q = (1.1-)1.2-1.8(-1.9)`` states both ranges. A v1 row keeps 1.1-1.9
+    and has no column for 1.2-1.8, so the inner range vanished entirely
+    while the editor reported the save as successful.
+    """
+    _parse(editor, "10-12 x 5-6, Q = (1.1-)1.2-1.8(-1.9), Qm = 1.5")
+
+    # Both ranges really are on screen, so both are the user's to lose.
+    assert editor.measurement_cell_text(2, 0) == "1.10"
+    assert editor.measurement_cell_text(2, 1) == "1.20"
+    assert editor.measurement_cell_text(2, 3) == "1.80"
+    assert editor.measurement_cell_text(2, 4) == "1.90"
+
+    assert editor.is_ready_to_submit() is False
+    with pytest.raises(MeasurementContentError) as excinfo:
+        editor.normalized_measurement_set_payload()
+    assert "typical range" in str(excinfo.value)
+    assert editor.validate_and_build_result() is False
+    assert editor.result_data() is None
+
+
+def test_dropping_the_q_range_interpretation_makes_the_entry_saveable(editor):
+    """The Q refusal is as actionable as the others.
+
+    Retracting Q's range interpretation clears the core pair, leaving the
+    reported extremes the source did print.
+    """
+    _parse(editor, "10-12 x 5-6, Q = (1.1-)1.2-1.8(-1.9), Qm = 1.5")
+    assert editor.is_ready_to_submit() is False
+
+    for row in (2,):
+        editor.set_measurement_cell_text(row, 1, "")
+        editor.set_measurement_cell_text(row, 3, "")
+
+    assert editor.is_ready_to_submit() is True
     payload = editor.normalized_measurement_set_payload()
     assert payload is not None
     assert payload.q_min == pytest.approx(1.1)
-    assert payload.q_max == pytest.approx(1.3)
+    assert payload.q_max == pytest.approx(1.9)
+    assert payload.q_core_min is None and payload.q_core_max is None
 
 
 def test_a_hand_typed_range_acquires_no_tag_and_no_extension(editor, reader_gate_open):
@@ -513,11 +631,22 @@ def test_a_later_summary_without_tags_does_not_inherit_the_previous_one(editor):
     assert pane.reported_statistics_label.isVisible() is False
 
 
-def test_the_preview_shows_an_interval_mean_rather_than_an_em_dash(editor):
+def test_the_preview_shows_an_interval_mean_as_an_interval(editor):
+    """Replaces the old summary-table assertion for the same guarantee.
+
+    The table this stage removed printed the mean in a single cell, so the
+    only way to keep a reported mean *interval* honest there was to print
+    both bounds as text. The comparison model carries the interval as an
+    interval, and that -- not its rendering -- is what must not collapse to
+    a midpoint nobody reported.
+    """
     _parse(editor, HEBELOMA_TABLE)
     editor.sync_preview()
 
-    assert editor._preview_pane.summary_table.item(0, 2).text() == "9.2-11.7"
+    view = editor._preview_pane.comparison_view.view()
+    centre = view.metric("length").source.centre("mean")
+    assert centre.value is None
+    assert centre.interval == pytest.approx((9.2, 11.7))
 
 
 def test_reopening_a_stored_enhanced_set_shows_what_it_reports(editor, libs):
@@ -567,7 +696,11 @@ def test_reopening_a_stored_enhanced_set_shows_what_it_reports(editor, libs):
     pane = editor._preview_pane
     assert "L inner 5–95%" in pane.reported_statistics_label.text()
     assert "L S.D. 0.6" in pane.reported_statistics_label.text()
-    assert pane.summary_table.item(0, 2).text() == "9.2-11.7"
+    length = pane.comparison_view.view().metric("length").source
+    assert length.centre("mean").interval == pytest.approx((9.2, 11.7))
+    # The stored core pair is an explicit percentile interval and stays one.
+    assert length.core.meaning == "percentile_interval"
+    assert length.core.percentile_bounds == pytest.approx((5.0, 95.0))
 
 
 # --- Library manager form: inspect-only presentation --------------------------

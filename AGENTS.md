@@ -1,99 +1,152 @@
 ## Working agreements
 
-Search symbols first. Never read main_window.py, observations_tab.py, or cloud_sync.py wholesale unless there is a demonstrated need.
+These instructions apply to this Git worktree and override conflicting shared
+Sporely workflow defaults (including the parent's Claude commit/push policy).
+Explicit user instructions take precedence over repository defaults. A generated
+stage prompt does not by itself authorize overriding a repository Git restriction.
+
+Start with `git status --short` to identify existing work. Preserve unrelated edits.
+Read this file once per session; follow the task-specific reading routes below.
 
 - Do not run `npm test` after modifying JavaScript files.
 - Ask for confirmation before adding new production dependencies.
 - Do not run heavy build steps, including Capacitor syncs, PyInstaller, Docker builds, full app builds, packaging commands, or dependency installation, unless explicitly requested.
 - Keep patches narrow. If a task touches multiple workflows or large UI files, propose staged patches and stop after the current stage.
 - Do not rewrite or refactor unrelated code while fixing a bug. Preserve existing behavior unless the prompt explicitly asks for a behavior change.
-- Agents may commit, but only work whose verification has actually passed, and never push. When a task defines numbered stages, commit each verified stage as its own commit and report the hash.
-  - On every staged implementation pass, update the canonical active plan's current-stage/handoff record before stopping, including verification, commit or manual-test status, and deferred work.
+- Agents may commit, but only work whose verification has actually passed. When a task defines numbered stages, commit each verified stage as its own commit and report the hash.
+  - Record progress before stopping using the workflow-specific destination under **Context discipline** below. Include verification, commit or manual-test status, and deferred work.
   - **Self-verifiable stages** — the checks are ones you can run: unit tests, syntax checks, renderer screenshots for static layout. Run them, then commit.
   - **Human-gated stages** — verification needs the user: interactive behavior (signal loops, focus, scroll retention, drag/resize), state surviving an app restart, camera/microscope hardware, live Supabase writes, RLS, cross-client sync, performance on real data, or judgment about whether output reads correctly to a mycologist. Do not commit. Leave the work uncommitted, and report a numbered checklist of exactly what the user must do to verify. The commit happens after the user confirms, in the next task.
   - A renderer screenshot proves layout, not behavior. A change to what happens when the user interacts is human-gated even when every screenshot is clean.
   - If verification fails partway, do not commit a partial stage — the failure is the report.
-  - Never rewrite published history or force-push without explicit authorization.
+  - Push completed stage work; see **Git policy** below.
 - For sporely-py, always use the project virtual environment:
   `/Users/sigmundas/Documents/Code/sporely/sporely-py/.venv/bin/python` and
   `/Users/sigmundas/Documents/Code/sporely/sporely-py/.venv/bin/pytest`.
   Ask for confirmation before installing or upgrading packages in .venv.
-  For syntax checks, use `./.venv/bin/python -m py_compile <touched files>`.
+  Run from this worktree root. For syntax checks, use the same absolute Python
+  path above with `-m py_compile <touched files>`; this worktree has no local `.venv`.
+
+## Git policy
+
+Agents may create branches, commit, push, merge, and delete branches as needed to complete the task.
+
+Use normal Git workflows and keep history understandable.
+
+Do not:
+- force-push unless the user explicitly asks for it;
+- rewrite published history unnecessarily;
+- push secrets or credentials;
+- merge obviously unrelated work;
+- deploy, publish a release, or modify production systems unless the task explicitly includes that.
+
+For staged/agent-sparring work:
+- commit and push completed stage work;
+- merge when the stage or plan calls for it;
+- leave a clear handoff describing what changed, what was tested, and any unresolved issues.
+
+This permission does not weaken the verification rules under **Working agreements**:
+only work whose verification has actually passed may be committed, and a
+human-gated stage still waits for the user's confirmation before its commit.
 
 ## Subsystem rules (read before touching these areas)
 
-Detailed invariants live in `.claude/rules/` (Claude loads them automatically for matching paths; other agents must read them explicitly):
+Read only the rules for the area the task touches:
 
-- **Cloud sync** (`utils/cloud_sync*`, sync tests, sync contracts): read `.claude/rules/cloud-sync.md` before any sync, cursor, media-flag, or cloud-write change. These invariants encode real incidents; do not improvise.
-- **Localization** (`tr(...)` strings, `i18n/`): read `.claude/rules/localization.md`.
-- **UI screenshot evidence** (`tools/review_ui/`): read `.claude/rules/ui-screenshots.md`.
+- **Cloud sync** (`utils/cloud_sync*`, sync tests/contracts, cursors, media flags,
+  cloud writes): `.claude/rules/cloud-sync.md`; the tracked contract is
+  `docs/supabase-sync-contract.md`, with navigation in `docs/cloud-sync-architecture.md`.
+- **Localization** (`tr(...)` strings, `i18n/`): `.claude/rules/localization.md`;
+  also see the Localization & Text section in `docs/development/gui-conventions.md`.
+- **Visual UI changes / screenshot tooling**: `.claude/rules/ui-screenshots.md`;
+  the renderer entry point is `tools/render_review_screenshots.py`.
+- **GUI behavior/layout**: relevant sections of `docs/development/gui-conventions.md`.
+- **SQLite persistence**: `database/sqlite_migrations/README.md` before schema edits.
+
+The three `.claude/rules/` files are version-controlled project invariants.
+Claude can load matching path rules automatically; other agents must read the
+applicable rule explicitly. Do not load unrelated subsystem rules.
 
 ## Agent routing and token budget
 
 Use one top-level agent for one architectural slice. Subagents are optional and should be used only when they save context or provide genuinely independent review. Do not automatically chain planner -> implementer -> reviewer.
 
-### Codex roles
-
-- `act` — **Luna, low effort**. Use for small, direct, low-risk work that is already clear: targeted symbol lookup, documentation, narrow mechanical edits, focused test repairs, or one-file/tightly bounded changes. If the task reveals a contract or subsystem question, stop and hand off rather than expanding.
-- `explore` — **Luna, medium effort, read-only**. Use only as the cheap scout: locate symbols and map a call/data path. Return a compact symbol map; do not solve or review the task.
-- `planner` — **Terra, medium effort, read-only**. Use before ambiguous, cross-repository, persistence/schema, sync, or architecture-changing work. Produce small independently verifiable stages. Do not use for an already-clear local patch.
-- `implementer` — **Terra, medium effort**. Use for an approved bounded plan stage that needs nontrivial edits and focused tests. Stop at the stage boundary.
-- `reviewer` — **Terra, high effort, read-only**. Use once at a meaningful stage/landing boundary or when explicitly requested. It is not the independent top-level sparring reviewer.
-- `security_reviewer` — **Sol, high effort, read-only**. Use only when a change materially touches auth/session handling, RLS/authorization, SECURITY DEFINER/public RPCs, storage access, secrets/service-role use, account binding, privacy/visibility, moderation/blocking, deletion, or another authoritative security boundary.
-- **Sol is escalation-only**, not the default. Use it only when the user explicitly requests it, Terra reports unresolved high-risk ambiguity, or a release/production gate has unusual architectural or security risk.
-
-Claude role agents under `.claude/agents/` follow the same boundaries with Claude models (shared routing/escalation policy: `../CLAUDE.md`). Do not invoke a role agent merely because it exists; delegate only when the role boundary above is met.
+For optional role/model selection, read `docs/development/agent-routing.md`
+only when delegating. Use bounded read-only exploration, test/log investigation,
+or specialist review; do not delegate concurrent implementation writes. A
+subagent review does not replace the independent top-level sparring session.
 
 ### Context discipline
 
-- The active plan is durable project memory; the current agent context is disposable working memory. At an architectural/subsystem boundary, update the plan/handoff and prefer a fresh agent. Keep the same agent only for tightly related follow-up work where its recent context is directly useful.
-- Read the active plan's **current stage/handoff first**. Do not read completed-stage history unless a concrete compatibility question requires it. Use `docs/technical-overview.md` for orientation instead of rediscovering the repository.
+- Identify the workflow from the current task, not merely the presence of
+  `.sparring/`. Read only the assigned stage and current feedback/handoff.
+  - **Agent Sparring managed run:** the input plan is immutable. Record progress
+    in the current stage's `notes.md`; the engine owns generated handoffs,
+    verdicts, state and plan-run bookkeeping. Do not manually edit those files.
+    The engine owns top-level session lifecycle and stage advancement.
+  - **Other staged implementation:** update the canonical active plan's current
+    stage/handoff record before stopping. Do not select a plan by guessing from
+    a directory listing; use the task's plan reference.
+  - **Ordinary bounded task:** no plan or staged report is required unless the
+    task requests one.
+- Managed acceptance requires a pushed candidate. Push the candidate as part of
+  finalization, under **Git policy** above.
+- At a subsystem boundary, write a compact handoff and stop at the assigned
+  stage. Outside managed runs, prefer a fresh session for the next slice.
+- Do not load completed-stage history unless a concrete compatibility question
+  requires it. Use relevant headings of `docs/technical-overview.md` only when
+  orientation is needed, rather than reading the whole overview by default.
 - Search before reading. Use `rg`/symbol search, then inspect bounded ranges around relevant definitions/callers. Never dump a large file to context just to understand it. In particular, do not read `ui/main_window.py`, `ui/observations_tab.py`, `utils/cloud_sync.py`, or other multi-thousand-line modules wholesale.
-- Scope every search to the repository you are working in. Never search the
-  parent `~/Documents/Code/sporely/` root: it holds orphaned worktree copies
-  (`sporely-web-*`, `sporely-landing-stage6*`, `sporely-admin-*`,
-  `sporely-recovery-*`) whose git metadata is dead. They return plausible,
-  well-formed, stale code, and nothing in the files says so. If a finding's
-  paths point into one of those directories, discard it and re-search in the
-  canonical repo.
-- Start reviews with `git diff --stat`, `git diff --name-only`, and the actual targeted diff. Expand into surrounding code only for touched symbols or a concrete suspected failure mode.
+- Scope searches to this worktree. Never search the parent `sporely/` directory
+  or substitute sibling worktrees: they can contain plausible stale code.
+- Start change reviews with status and diff stat/name lists for the actual review
+  base and candidate (include staged/untracked work for a working-tree review).
+  Then read targeted diffs. An empty unstaged diff does not prove there is no
+  change. Expand only for touched symbols or a concrete suspected failure mode.
 - Do not have multiple agents perform the same repository archaeology. If a scout already returned the relevant symbols/call path, later agents should use that handoff and verify only where necessary.
 - When delegating a scout/review subtask, give a narrow question and ask for a compact result (normally <=20 lines plus file/symbol references). Do not ask for broad repository summaries.
-- Keep command output small: prefer focused tests and quiet output during iteration. The implementer owns repository-required validation; reviewers should not rerun already-passed broad suites unless a finding requires it.
+- Keep command output small: scoped `rg -n`, bounded `sed` ranges, focused tests.
+  If output truncates, narrow the query rather than rereading the same dump.
+  The implementer owns required validation. Reviewers verify evidence against
+  the candidate and rerun checks when a finding, changed code/environment, or
+  missing/stale evidence warrants it; a prior agent's report is not proof.
 - Compaction restores context-window room but does not make prior work free. Do not use compaction as a reason to broaden scope or carry a finished subsystem into the next stage.
 
-## Documentation roles
+## Document authority
 
-- `README.md` is the human-facing project introduction, installation guide, and documentation index.
-- `AGENTS.md` is the repository-wide source of instructions for coding agents; `.claude/rules/` holds path-scoped subsystem invariants.
-- `docs/technical-overview.md` is a concise description of the current architecture. It is orientation material, not a requirements document.
-- `docs/development/gui-conventions.md` contains the detailed PySide6 layout, sizing, state, threading, and image-handling conventions.
-- `docs/plans/INBOX.md` holds rough ideas; `docs/plans/active/` holds scoped unfinished plans; `docs/plans/completed/` preserves finished plans.
-- For active work, read the current stage/handoff and referenced invariants first. Historical completed-stage detail is reference-only unless the current task depends on it.
-- Detailed contracts, architecture maps, runbooks, audits, and user guides remain beside the subsystem they document.
-
-When documents disagree, current code and tests establish implementation reality, while the most specific applicable contract governs intended behavior. Plans describe intent and Git history records what actually landed.
+`AGENTS.md` owns agent workflow; subsystem rules/contracts own specific intended
+behavior. Code/tests establish implementation reality, not permission to ignore
+a contract. Report disagreements. `README.md` is the human-facing index and
+`docs/technical-overview.md` is orientation, not requirements. Plans under
+`docs/plans/active/` describe unfinished work; `INBOX.md` and completed plans are
+not current task authorization.
 
 ## Review and implementation conventions
 
 - In reviews, distinguish correctness defects from cleanup or style opinions. Check especially for duplicate logic, competing sources of truth, database consistency, state-flow errors, UI inconsistency, dead code, unclear boundaries, naming, and error handling. Keep review reports factual and concise.
 - Prefer extending an existing widget, dialog, state structure, or code path over adding a parallel one. If the task assumes a reuse target and you cannot find it, stop and report rather than writing a second implementation.
 - Use Python 3.10+ and PySide6; do not introduce PyQt.
-- Follow `docs/development/gui-conventions.md` for GUI-specific work.
-- Use Qt layouts instead of absolute positioning with `setGeometry()` or `move()`. Avoid fixed width/height where stretch policies work. Use `QSplitter` for resizable panes and persist user-adjustable splitter state through `QSettings`.
-- Guard programmatic widget updates against signal recursion with loading flags or `blockSignals()`.
-- Keep network and other expensive work off the UI thread, normally with `QThread`, and clean up worker threads when their owning UI closes. Use `QTimer.singleShot` when UI initialization genuinely needs to be deferred.
-- Respect EXIF orientation with `QImageReader.setAutoTransform(True)` when loading previews.
-- Use native type annotations for signatures and class variables. Prefix private UI builders and event slots with one underscore.
-- Prefer dataclasses for structured data passed between UI and internal logic; do not broaden a focused patch solely to retrofit existing structures.
+- Read applicable GUI conventions via the subsystem routes above. Preserve Qt
+  layouts, flexible sizing, persisted splitters, signal-recursion guards, worker
+  cleanup and EXIF-aware loading. Do not retrofit unrelated code to these rules.
 
 ### Stage reports
 
-When a task defines a stage, report exactly: files touched and the specific symbols/line ranges modified in large modules; existing code paths reused, by symbol name; validation run and results; screenshot evidence where the change is visual (see `.claude/rules/ui-screenshots.md`); deviations from the task spec, each with its reason; the verification tier (self-verified and committed, with the hash — or human-gated, with the numbered checklist of what the user must verify). Assertions about what code does must cite the symbol or line range that shows it. "Renders without errors" is not evidence about a layout — say what the screenshot showed, and do not offer a screenshot as evidence about behavior.
+In managed runs, follow the generated role-specific response format. Reviewers
+return the required structured verdict, not an implementation checklist. Keep
+implementation evidence in current-stage notes; do not duplicate whole diffs or
+completed-stage history.
+
+For implementation stages outside managed runs, report touched files/symbols,
+reused code paths, validation/results, visual evidence, deviations with reasons,
+and verification tier (commit hash or numbered human checks). Cite symbols or
+lines for behavior claims. Describe what screenshots show; rendering without
+errors is neither layout inspection nor proof of interactive behavior.
 
 ## Database and generated artifacts
 
-- Inspect the existing schema and migration path before changing persistence. Local SQLite currently uses the Python helpers documented in `database/sqlite_migrations/README.md`; do not place Supabase/Postgres SQL in that directory.
+- Inspect the existing schema and the SQLite migration guide before changing
+  persistence; do not put Supabase/Postgres SQL in the SQLite migration directory.
 - Preserve existing data and add focused migration/round-trip coverage for schema changes.
 - Do not edit or commit generated databases, caches, local credentials, downloaded source archives, or ad hoc screenshot output. Commit generated artifacts only when the owning documented workflow explicitly requires them (for example, translated `.qm` files alongside their `.ts` sources).
 

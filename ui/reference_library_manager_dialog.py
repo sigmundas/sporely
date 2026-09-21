@@ -37,7 +37,6 @@ from PySide6.QtWidgets import (
     QDialog,
     QDialogButtonBox,
     QFormLayout,
-    QFrame,
     QGridLayout,
     QGroupBox,
     QHBoxLayout,
@@ -96,6 +95,7 @@ from references.measurement_content_gates import enhanced_editing_enabled
 from references.measurement_parser import parse_measurement_string
 
 from . import measurement_content_view as mcv
+from .dialog_helpers import CollapsibleSection
 
 
 # --- Completeness hints ----------------------------------------------------
@@ -741,59 +741,6 @@ class _PersonListEditor(QWidget):
         self._empty_label.setVisible(not self._rows)
 
 
-class _CollapsibleSection(QWidget):
-    """Header + body pair that toggles body visibility.
-
-    Used for the "Advanced citation details" section so the dialog can
-    default to a compact laptop-sized layout while still exposing
-    seldom-touched fields.
-    """
-
-    def __init__(
-        self,
-        title: str,
-        parent: QWidget | None = None,
-        *,
-        expanded: bool = False,
-    ) -> None:
-        super().__init__(parent)
-        self._button = QToolButton()
-        self._button.setText(title)
-        self._button.setCheckable(True)
-        self._button.setChecked(expanded)
-        self._button.setArrowType(Qt.DownArrow if expanded else Qt.RightArrow)
-        self._button.setToolButtonStyle(Qt.ToolButtonTextBesideIcon)
-        self._button.setStyleSheet(
-            "QToolButton { border: none; font-weight: 600; padding: 2px; }"
-        )
-        self._button.toggled.connect(self._on_toggled)
-
-        self._body = QFrame()
-        self._body.setFrameShape(QFrame.NoFrame)
-        self._body_layout = QVBoxLayout(self._body)
-        self._body_layout.setContentsMargins(12, 4, 4, 4)
-        self._body.setVisible(expanded)
-
-        outer = QVBoxLayout(self)
-        outer.setContentsMargins(0, 0, 0, 0)
-        outer.setSpacing(2)
-        outer.addWidget(self._button)
-        outer.addWidget(self._body)
-
-    def body_layout(self) -> QVBoxLayout:
-        return self._body_layout
-
-    def set_expanded(self, expanded: bool) -> None:
-        self._button.setChecked(expanded)
-
-    def is_expanded(self) -> bool:
-        return self._button.isChecked()
-
-    def _on_toggled(self, checked: bool) -> None:
-        self._body.setVisible(checked)
-        self._button.setArrowType(Qt.DownArrow if checked else Qt.RightArrow)
-
-
 class _ReferenceWorkForm(QDialog):
     """Human-facing bibliography form for a :class:`ReferenceWork`.
 
@@ -1046,7 +993,7 @@ class _ReferenceWorkForm(QDialog):
         return box
 
     def _build_advanced_section(self) -> QWidget:
-        section = _CollapsibleSection(
+        section = CollapsibleSection(
             self.tr("Advanced citation details"), expanded=False
         )
         body_layout = section.body_layout()

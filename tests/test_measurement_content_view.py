@@ -480,3 +480,37 @@ def test_format_number_is_compact_and_empty_for_none():
     assert mcv.format_number(None) == ""
     assert mcv.format_number(0.6) == "0.6"
     assert mcv.format_number(9.0) == "9"
+
+
+def test_data_label_text_names_each_projection_kind_exactly_once():
+    """One wording function, so a badge and a caption cannot disagree.
+
+    The Library row's badge and the manual editor's preview note both come
+    from here. Before that they were separate literals, and the manual side
+    printed a fixed "Range summary" for every kind of typed content.
+    """
+    from references.reference_display import DataLabel
+
+    assert mcv.data_label_text(DataLabel(kind="raw_data")) == "Raw data"
+    assert mcv.data_label_text(DataLabel(kind="published_range")) == "Published range"
+    assert mcv.data_label_text(DataLabel(kind="none")) == ""
+
+
+def test_data_label_text_prints_the_percentile_bounds_it_was_given():
+    """Contract N14: a 10-90% source is never announced as 5-95%."""
+    from references.reference_display import DataLabel
+
+    assert (
+        mcv.data_label_text(
+            DataLabel(kind="percentile_range", percentile_bounds=(5.0, 95.0))
+        )
+        == "5–95% range"
+    )
+    assert (
+        mcv.data_label_text(
+            DataLabel(kind="percentile_range", percentile_bounds=(10.0, 90.0))
+        )
+        == "10–90% range"
+    )
+    # Bounds are what make the claim; without them there is nothing to state.
+    assert mcv.data_label_text(DataLabel(kind="percentile_range")) == ""

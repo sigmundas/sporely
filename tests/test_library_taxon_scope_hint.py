@@ -70,6 +70,21 @@ def _library_candidates() -> list[MeasurementSetCandidate]:
     ]
 
 
+def _candidate_rows(dialog: AddReferenceDialog) -> int:
+    """Candidate rows only: the list also holds group headings and the
+    "+ New publication…" action row, neither of which is a source."""
+    from ui.library_source_row import LibrarySourceRow
+
+    return sum(
+        1
+        for row in range(dialog.results_list.count())
+        if isinstance(
+            dialog.results_list.itemWidget(dialog.results_list.item(row)),
+            LibrarySourceRow,
+        )
+    )
+
+
 def _library_dialog() -> AddReferenceDialog:
     _app()
     return AddReferenceDialog(
@@ -116,9 +131,9 @@ def test_unchecking_only_this_taxon_actually_reveals_the_promised_rows():
     dialog = _library_dialog()
     try:
         dialog.search_input.setText("Brandrud")
-        assert dialog.results_list.count() == 1  # only the "+ New publication…" row
+        assert _candidate_rows(dialog) == 0
         dialog.only_this_taxon_checkbox.setChecked(False)
-        assert dialog.results_list.count() == 2  # the revealed row, plus "+ New publication…"
+        assert _candidate_rows(dialog) == 1
         assert dialog.status_hint_label.text() == ""
     finally:
         dialog.close()

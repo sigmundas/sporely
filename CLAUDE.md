@@ -1,3 +1,5 @@
 @AGENTS.md
 
-Path-scoped rules in `.claude/rules/` (cloud-sync, localization, ui-screenshots) load automatically when matching files are touched; Codex and other agents must read them via the pointers in AGENTS.md.
+AGENTS.md is the repository contract, including exceptions to parent workflow
+rules. Follow its task-specific reading routes. Tracked `.claude/rules/` files
+supply path-scoped invariants; other agents must read applicable rules explicitly.

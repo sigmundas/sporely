@@ -116,6 +116,11 @@ def _result_row_for(dialog: AddReferenceDialog, measurement_set_id: str) -> int:
     raise AssertionError(f"no results-list row for {measurement_set_id!r}")
 
 
+def _row_widget(dialog: AddReferenceDialog, measurement_set_id: str):
+    row = _result_row_for(dialog, measurement_set_id)
+    return dialog.results_list.itemWidget(dialog.results_list.item(row))
+
+
 def _ai_candidates() -> list[dict]:
     return [
         {
@@ -185,12 +190,24 @@ def test_only_this_taxon_defaults_checked_even_without_taxon_id():
     assert dialog.only_this_taxon_checkbox.isChecked() is True
 
 
-def test_unchecking_only_this_taxon_shows_taxon_in_row_detail():
+def test_taxon_is_the_row_headline_whether_or_not_the_scope_is_on():
+    """Supersedes the old "taxon appears in the detail line when unscoped" rule.
+
+    That rule existed because the row headline used to be the publication,
+    which left several "Funga Nordica (2008)" rows indistinguishable once
+    the taxon scope was off. The taxon is now the primary line in both
+    states (design contract N4), so the conditional detail-line prefix is
+    gone rather than duplicated.
+    """
     dialog = _make_dialog()
-    dialog.only_this_taxon_checkbox.setChecked(False)
-    row = _result_row_for(dialog, "ms-3")
-    widget = dialog.results_list.itemWidget(dialog.results_list.item(row))
-    assert "Cortinarius rubellus" in widget._full_detail
+    for scoped in (True, False):
+        dialog.only_this_taxon_checkbox.setChecked(scoped)
+        wanted = "ms-1" if scoped else "ms-3"
+        widget = _row_widget(dialog, wanted)
+        assert "Cortinarius" in widget.taxon_label.full_text()
+        assert widget.taxon_label.font().italic() is True
+        # The publication is metadata on the second line, never the headline.
+        assert "Cortinarius" not in widget.citation_label.full_text()
 
 
 def test_changing_taxon_target_never_touches_exclude_observation_id():
@@ -326,8 +343,8 @@ def test_add_to_plot_disabled_with_no_selection():
 def test_add_to_plot_enabled_once_a_result_is_selected():
     dialog = _make_dialog()
     dialog.results_list.setCurrentRow(_result_row_for(dialog, "ms-1"))
-    assert dialog._selected_candidate is not None
-    assert dialog._selected_candidate.measurement_set_id == "ms-1"
+    assert dialog._preview_candidate is not None
+    assert dialog._preview_candidate.measurement_set_id == "ms-1"
     assert dialog.add_to_plot_btn.isEnabled() is True
 
 
@@ -339,26 +356,34 @@ def test_add_to_plot_invokes_callback_and_accepts():
     assert received == [("ms-1", "compared")]
 
 
-def test_library_row_renders_two_lines_title_and_detail():
+def test_library_row_puts_citation_and_locator_on_the_secondary_line():
+    """Supersedes the old title/detail row assertions.
+
+    The detail line used to be ``data_kind · raw_text``. ``data_kind`` was a
+    stored column shown to users, which is exactly what the Stage 1
+    projection exists to stop; the second line is now citation metadata and
+    the semantics arrive as a badge.
+    """
     dialog = _make_dialog()
-    row = _result_row_for(dialog, "ms-2")
-    widget = dialog.results_list.itemWidget(dialog.results_list.item(row))
-    assert "Niskanen" in widget.title_label.text()
-    # data_kind + raw_text, per the row-anatomy spec (kind + raw expression).
-    assert "raw_points" in widget.detail_label.text()
-    assert "8 paired holotype measurements" in widget.detail_label.text()
+    widget = _row_widget(dialog, "ms-2")
+    citation = widget.citation_label.full_text()
+    assert "Niskanen" in citation
+    assert "supplementary dataset S4" in citation
+    assert "raw_points" not in citation
 
 
-def test_preview_summary_falls_back_to_core_bounds_when_extremes_missing(monkeypatch):
-    """Stage-6 manual test 2, defect B: a source reported only as a typical
-    (unparenthesised) range -- e.g. "7-12 x 4-6, q=1.5-1.8" -- is stored with
-    ``length_min``/``width_min``/``max`` left ``None`` and the typical bound
-    in ``length_core_min``/``core_max``/``width_core_min``/``core_max``
-    (mirrors how ``ReferenceEntryEditor.normalized_measurement_set_payload``
-    writes Q's own extreme-or-typical fallback, and how
-    ``references.reference_plotting`` already resolves a drawable rectangle).
-    The Summary pane must show the core bound instead of "--", exactly like
-    the list's raw-text line already does."""
+def test_preview_comparison_shows_a_typical_only_source_as_its_core_band(monkeypatch):
+    """Supersedes the old summary table's extreme-or-typical fallback.
+
+    A source reported only as a typical (unparenthesised) range -- e.g.
+    "7-12 x 4-6, q=1.5-1.8" -- stores ``length_min``/``length_max`` as
+    ``None`` and the typical bound in ``length_core_min``/``core_max``. The
+    table used to copy that inner bound into its "Min"/"Max" columns behind a
+    "derived" dagger, which printed a typical range in the place reported
+    extremes belong. The comparison keeps the two apart: there is no outer
+    band because the source stated no extremes, and the core band that does
+    exist says what it is.
+    """
     from database.reference_library import MeasurementSet
     from ui import add_reference_dialog as picker
 
@@ -381,20 +406,29 @@ def test_preview_summary_falls_back_to_core_bounds_when_extremes_missing(monkeyp
     dialog = _make_dialog()
     dialog.results_list.setCurrentRow(_result_row_for(dialog, "ms-1"))
 
-    table = dialog.preview_pane.summary_table
-    length_row = [table.item(0, col).text() for col in range(4)]
-    width_row = [table.item(1, col).text() for col in range(4)]
-    q_row = [table.item(2, col).text() for col in range(4)]
-    # Length/Width bounds are derived from the core/typical fallback (marked
-    # with the existing "†" derived-cell convention); Q's bounds were
-    # written directly (no core fallback field exists for Q) and carry no
-    # derived marker.
-    assert length_row == ["Length", "7.00 †", "—", "12.00 †"]
-    assert width_row == ["Width", "4.00 †", "—", "6.00 †"]
-    assert q_row == ["Q", "1.50", "—", "1.80"]
+    view = dialog.preview_pane.comparison_view.view()
+    length = view.metric("length").source
+    assert length.outer is None
+    assert (length.core.low, length.core.high) == (7.0, 12.0)
+    # Q was written straight into the outer pair (there is no core fallback
+    # field for Q on the write path), and stays an outer band here.
+    q = view.metric("q").source
+    assert (q.outer.low, q.outer.high) == (1.5, 1.8)
+    assert q.core is None
+    # Nothing reported a centre, so nothing draws one (contract N15).
+    assert length.centres == ()
+    assert "no centre reported" in (
+        dialog.preview_pane.comparison_view.rows["length"].source_caption_label.text()
+    )
 
 
-def test_preview_summary_extreme_bounds_win_over_core_when_both_present(monkeypatch):
+def test_preview_comparison_keeps_extremes_and_core_as_separate_bands(monkeypatch):
+    """Both pairs stored means both bands are drawn, and stay distinguishable.
+
+    The old table had one Min and one Max cell, so a source carrying reported
+    extremes *and* an inner range could only show one of them (N15's
+    "min/max and 5-95% must remain distinguishable when both are available").
+    """
     from database.reference_library import MeasurementSet
     from ui import add_reference_dialog as picker
 
@@ -414,9 +448,9 @@ def test_preview_summary_extreme_bounds_win_over_core_when_both_present(monkeypa
     dialog = _make_dialog()
     dialog.results_list.setCurrentRow(_result_row_for(dialog, "ms-1"))
 
-    table = dialog.preview_pane.summary_table
-    length_row = [table.item(0, col).text() for col in range(4)]
-    assert length_row == ["Length", "6.50", "—", "12.50"]
+    length = dialog.preview_pane.comparison_view.view().metric("length").source
+    assert (length.outer.low, length.outer.high) == (6.5, 12.5)
+    assert (length.core.low, length.core.high) == (7.0, 12.0)
 
 
 # ---------------------------------------------------------------------
@@ -579,6 +613,25 @@ def test_community_selection_populates_shared_preview_pane():
     dialog._community_pane.results_list.setCurrentRow(0)
     assert "Cortinarius limonius" in dialog.preview_pane.summary_title_label.text()
     assert "8.0" in dialog.preview_pane.raw_spores_text.toPlainText()
+
+
+def test_community_pane_is_wired_into_its_tab_and_the_footer():
+    """The Community tab's own widget and its footer signal.
+
+    Every other Community test drives the pane object directly or calls
+    ``_on_add_to_plot_clicked`` itself, so all of them still pass with the
+    pane parented to the tab but never added to its layout and its
+    ``selection_changed`` never connected -- a Community tab that renders
+    blank and whose "Add to plot" button never enables. This pins both.
+    """
+    dialog = _make_community_dialog()
+    dialog.tabs.setCurrentIndex(dialog._community_tab_index)
+    assert dialog._community_tab.layout().indexOf(dialog._community_pane) >= 0
+    assert dialog.add_to_plot_btn.isEnabled() is False
+    dialog._community_pane.results_list.setCurrentRow(0)
+    assert dialog.add_to_plot_btn.isEnabled() is True
+    dialog._community_pane.results_list.clearSelection()
+    assert dialog.add_to_plot_btn.isEnabled() is False
 
 
 def test_community_add_to_plot_range_summary_uses_reference_source_kind():
@@ -796,13 +849,11 @@ def test_return_with_deliberately_edited_text_still_parses_free_taxon():
 
 
 def _set_manual_range(dialog: AddReferenceDialog, *, length=(8.0, 11.0), width=(6.0, 8.0)) -> None:
-    from PySide6.QtWidgets import QTableWidgetItem
-
     editor = dialog.manual_editor
-    editor.minmax_table.setItem(0, 0, QTableWidgetItem(f"{length[0]:.2f}"))
-    editor.minmax_table.setItem(0, 4, QTableWidgetItem(f"{length[1]:.2f}"))
-    editor.minmax_table.setItem(1, 0, QTableWidgetItem(f"{width[0]:.2f}"))
-    editor.minmax_table.setItem(1, 4, QTableWidgetItem(f"{width[1]:.2f}"))
+    editor.set_measurement_cell_text(0, 0, f"{length[0]:.2f}")
+    editor.set_measurement_cell_text(0, 4, f"{length[1]:.2f}")
+    editor.set_measurement_cell_text(1, 0, f"{width[0]:.2f}")
+    editor.set_measurement_cell_text(1, 4, f"{width[1]:.2f}")
 
 
 def test_manual_tab_uses_pickers_observation_and_own_taxon_id():
@@ -862,6 +913,365 @@ def test_manual_tab_stays_open_when_callback_reports_failure(monkeypatch):
     assert dialog.result() != QDialog.Accepted
 
 
+# ---------------------------------------------------------------------
+# "Save to library": storing a manual entry without plotting it
+# ---------------------------------------------------------------------
+
+
+def _set_manual_publication(dialog: AddReferenceDialog, work_id: str = "w-1") -> None:
+    """Select a publication, which a library entry cannot exist without."""
+    dialog.manual_editor._selected_work_id = work_id
+    dialog._update_footer_state()
+
+
+def _saveable_manual_dialog(**kwargs) -> AddReferenceDialog:
+    dialog = _make_dialog(**kwargs)
+    dialog.tabs.setCurrentIndex(dialog._manual_tab_index)
+    _set_manual_range(dialog)
+    _set_manual_publication(dialog)
+    return dialog
+
+
+def test_save_to_library_is_visible_only_on_the_manual_tab():
+    dialog = _make_dialog(manual_save_callback=lambda editor: "ms-1")
+    # isVisibleTo: the picker itself is never shown in these tests, so
+    # isVisible() would be False for every widget regardless of the state
+    # under test.
+    for index in (
+        0,
+        dialog._community_tab_index,
+        dialog._my_observations_tab_index,
+    ):
+        dialog.tabs.setCurrentIndex(index)
+        assert dialog.save_to_library_btn.isVisibleTo(dialog) is False
+
+    dialog.tabs.setCurrentIndex(dialog._manual_tab_index)
+    assert dialog.save_to_library_btn.isVisibleTo(dialog) is True
+
+
+def test_save_to_library_needs_a_publication_and_measurements():
+    dialog = _make_dialog(manual_save_callback=lambda editor: "ms-1")
+    dialog.tabs.setCurrentIndex(dialog._manual_tab_index)
+    assert dialog.save_to_library_btn.isEnabled() is False
+
+    # Measurements alone are enough to plot, but not to store: the library
+    # has nowhere to hang a treatment without a publication.
+    _set_manual_range(dialog)
+    assert dialog.add_to_plot_btn.isEnabled() is True
+    assert dialog.save_to_library_btn.isEnabled() is False
+
+    _set_manual_publication(dialog)
+    assert dialog.save_to_library_btn.isEnabled() is True
+
+
+def test_save_to_library_is_disabled_for_an_already_stored_set():
+    dialog = _saveable_manual_dialog(manual_save_callback=lambda editor: "ms-1")
+    dialog.manual_editor.use_existing_radio.setChecked(True)
+    dialog._update_footer_state()
+    assert dialog.save_to_library_btn.isEnabled() is False
+
+
+def test_saving_does_not_plot_and_does_not_close_the_picker(monkeypatch):
+    """Saving is a different intent from plotting.
+
+    The entry lands in the library, the picker stays open with the form
+    still on screen, and no attach callback runs.
+    """
+    from PySide6.QtWidgets import QMessageBox
+
+    monkeypatch.setattr(QMessageBox, "warning", lambda *a, **k: None)
+    monkeypatch.setattr(QMessageBox, "question", lambda *a, **k: QMessageBox.Yes)
+    saved = []
+    attached = []
+    dialog = _saveable_manual_dialog(
+        manual_save_callback=lambda editor: saved.append(editor) or "ms-77",
+        manual_attach_callback=lambda editor: attached.append(editor) or True,
+    )
+    dialog._on_save_to_library_clicked()
+
+    assert saved == [dialog.manual_editor]
+    assert attached == []
+    assert dialog.result() != QDialog.Accepted
+    assert dialog._saved_manual_measurement_set_id == "ms-77"
+    # Saved once; pressing it again would store the same data twice.
+    assert dialog.save_to_library_btn.isEnabled() is False
+
+
+def test_failed_save_keeps_the_picker_open_and_claims_nothing(monkeypatch):
+    from PySide6.QtWidgets import QMessageBox
+
+    monkeypatch.setattr(QMessageBox, "warning", lambda *a, **k: None)
+    monkeypatch.setattr(QMessageBox, "question", lambda *a, **k: QMessageBox.Yes)
+    dialog = _saveable_manual_dialog(manual_save_callback=lambda editor: None)
+    dialog._on_save_to_library_clicked()
+
+    assert dialog.result() != QDialog.Accepted
+    assert dialog._saved_manual_measurement_set_id is None
+    # Still offered, so the user can retry after fixing the cause.
+    assert dialog.save_to_library_btn.isEnabled() is True
+    assert "Saved" not in dialog.status_hint_label.text()
+
+
+def test_add_to_plot_after_a_save_attaches_the_saved_set(monkeypatch):
+    """The saved measurement set is attached, not created a second time."""
+    from PySide6.QtWidgets import QMessageBox
+
+    monkeypatch.setattr(QMessageBox, "warning", lambda *a, **k: None)
+    monkeypatch.setattr(QMessageBox, "question", lambda *a, **k: QMessageBox.Yes)
+    resubmitted = []
+    attached = []
+    dialog = _saveable_manual_dialog(
+        manual_save_callback=lambda editor: "ms-77",
+        manual_attach_callback=lambda editor: resubmitted.append(editor) or True,
+        attach_saved_set_callback=lambda set_id: attached.append(set_id) or True,
+    )
+    dialog._on_save_to_library_clicked()
+    dialog._on_add_to_plot_clicked()
+
+    assert attached == ["ms-77"]
+    assert resubmitted == []
+    assert dialog.result() == QDialog.Accepted
+
+
+def test_failed_attach_after_a_save_keeps_the_picker_open(monkeypatch):
+    from PySide6.QtWidgets import QMessageBox
+
+    monkeypatch.setattr(QMessageBox, "warning", lambda *a, **k: None)
+    monkeypatch.setattr(QMessageBox, "question", lambda *a, **k: QMessageBox.Yes)
+    dialog = _saveable_manual_dialog(
+        manual_save_callback=lambda editor: "ms-77",
+        attach_saved_set_callback=lambda set_id: False,
+    )
+    dialog._on_save_to_library_clicked()
+    dialog._on_add_to_plot_clicked()
+
+    assert dialog.result() != QDialog.Accepted
+    # The save itself still stands; only the attachment failed.
+    assert dialog._saved_manual_measurement_set_id == "ms-77"
+
+
+def test_editing_after_a_save_invalidates_the_saved_set(monkeypatch):
+    """Once the form differs from what was saved, the shortcut is wrong.
+
+    Attaching the saved set would plot values other than the ones on
+    screen, so the next Add to plot submits the edited entry instead.
+    """
+    from PySide6.QtWidgets import QMessageBox
+
+    monkeypatch.setattr(QMessageBox, "warning", lambda *a, **k: None)
+    monkeypatch.setattr(QMessageBox, "question", lambda *a, **k: QMessageBox.Yes)
+    resubmitted = []
+    attached = []
+    dialog = _saveable_manual_dialog(
+        manual_save_callback=lambda editor: "ms-77",
+        manual_attach_callback=lambda editor: resubmitted.append(editor) or True,
+        attach_saved_set_callback=lambda set_id: attached.append(set_id) or True,
+    )
+    dialog._on_save_to_library_clicked()
+    assert dialog._saved_manual_measurement_set_id == "ms-77"
+
+    _set_manual_range(dialog, length=(9.0, 12.0))
+    assert dialog._saved_manual_measurement_set_id is None
+    assert dialog.save_to_library_btn.isEnabled() is True
+
+    dialog._on_add_to_plot_clicked()
+    assert attached == []
+    assert resubmitted == [dialog.manual_editor]
+
+
+def test_manual_footer_copy_describes_the_actions(monkeypatch):
+    """The hint explains save-versus-plot, never why a button is greyed."""
+    from PySide6.QtWidgets import QMessageBox
+
+    monkeypatch.setattr(QMessageBox, "warning", lambda *a, **k: None)
+    monkeypatch.setattr(QMessageBox, "question", lambda *a, **k: QMessageBox.Yes)
+    dialog = _make_dialog(manual_save_callback=lambda editor: "ms-77")
+    dialog.tabs.setCurrentIndex(dialog._manual_tab_index)
+
+    # Nothing entered yet: still the action, not "disabled because...".
+    before = dialog.status_hint_label.text()
+    assert "without adding it to the plot" in before
+    assert "disabled" not in before.casefold()
+
+    _set_manual_range(dialog)
+    _set_manual_publication(dialog)
+    dialog._on_save_to_library_clicked()
+    assert "Saved to the reference library" in dialog.status_hint_label.text()
+
+
+def test_leaving_and_returning_to_the_manual_tab_keeps_the_saved_set(monkeypatch):
+    """A preview refresh is not an edit.
+
+    ``_on_tab_changed`` calls the editor's ``sync_preview`` every time the
+    manual tab comes back to the front, and that emits ``data_changed``
+    without anything having been typed. If the saved identity were dropped
+    on the signal alone, Add to plot would store the same data a second
+    time instead of attaching what was just saved.
+    """
+    from PySide6.QtWidgets import QMessageBox
+
+    monkeypatch.setattr(QMessageBox, "warning", lambda *a, **k: None)
+    monkeypatch.setattr(QMessageBox, "question", lambda *a, **k: QMessageBox.Yes)
+    resubmitted = []
+    attached = []
+    dialog = _saveable_manual_dialog(
+        manual_save_callback=lambda editor: "ms-77",
+        manual_attach_callback=lambda editor: resubmitted.append(editor) or True,
+        attach_saved_set_callback=lambda set_id: attached.append(set_id) or True,
+    )
+    dialog._on_save_to_library_clicked()
+    assert dialog._saved_manual_measurement_set_id == "ms-77"
+
+    emissions = []
+    dialog.manual_editor.data_changed.connect(lambda: emissions.append(1))
+    dialog.tabs.setCurrentIndex(0)  # Library
+    dialog.tabs.setCurrentIndex(dialog._manual_tab_index)
+    # Guards this test against becoming vacuous: the round trip really does
+    # emit the signal that used to drop the saved identity.
+    assert emissions, "expected sync_preview to emit data_changed"
+
+    assert dialog._saved_manual_measurement_set_id == "ms-77"
+    assert "Saved to the reference library" in dialog.status_hint_label.text()
+    assert dialog.save_to_library_btn.isEnabled() is False
+
+    dialog._on_add_to_plot_clicked()
+    assert attached == ["ms-77"]
+    assert resubmitted == []
+
+
+def test_a_bare_preview_refresh_keeps_the_saved_set(monkeypatch):
+    """The same invariant at its source, without going through the tabs."""
+    from PySide6.QtWidgets import QMessageBox
+
+    monkeypatch.setattr(QMessageBox, "warning", lambda *a, **k: None)
+    monkeypatch.setattr(QMessageBox, "question", lambda *a, **k: QMessageBox.Yes)
+    dialog = _saveable_manual_dialog(manual_save_callback=lambda editor: "ms-77")
+    dialog._on_save_to_library_clicked()
+
+    emissions = []
+    dialog.manual_editor.data_changed.connect(lambda: emissions.append(1))
+    dialog.manual_editor.sync_preview()
+
+    assert emissions, "expected sync_preview to emit data_changed"
+    assert dialog._saved_manual_measurement_set_id == "ms-77"
+
+
+def test_selecting_an_existing_set_after_a_save_attaches_that_set(monkeypatch):
+    """Switching Data mode must retire the saved-entry shortcut.
+
+    "Use an existing measurement set" only disables the manual fields, it
+    does not clear them, so the typed values still describe the set that
+    was saved a moment ago. If the shortcut survived that switch, Add to
+    plot would attach the saved entry instead of the library set the user
+    just picked — the wrong reference, silently.
+    """
+    from PySide6.QtWidgets import QMessageBox
+
+    monkeypatch.setattr(QMessageBox, "warning", lambda *a, **k: None)
+    monkeypatch.setattr(QMessageBox, "question", lambda *a, **k: QMessageBox.Yes)
+    submitted = []
+    attached_saved = []
+    dialog = _saveable_manual_dialog(
+        manual_save_callback=lambda editor: "ms-saved-A",
+        manual_attach_callback=lambda editor: submitted.append(
+            editor.result_data()
+        )
+        or True,
+        attach_saved_set_callback=lambda set_id: attached_saved.append(set_id)
+        or True,
+    )
+    dialog._on_save_to_library_clicked()
+    assert dialog._saved_manual_measurement_set_id == "ms-saved-A"
+
+    # The user now picks a different, already-stored set instead.
+    editor = dialog.manual_editor
+    editor.use_existing_radio.setEnabled(True)
+    editor.use_existing_radio.setChecked(True)
+    editor._selected_measurement_set_id = "ms-existing-B"
+    dialog._update_footer_state()
+
+    assert dialog._current_saved_set_id() is None
+    # The fingerprint alone also notices, independently of the mode guard.
+    assert dialog._manual_entry_matches_last_save() is False
+
+    dialog._on_add_to_plot_clicked()
+
+    assert attached_saved == [], "must not attach the saved manual entry"
+    assert len(submitted) == 1
+    assert submitted[0]["source_kind"] == "existing_measurement_set"
+    assert submitted[0]["reference_measurement_set_id"] == "ms-existing-B"
+
+
+def test_parmasto_only_entry_cannot_be_saved_to_the_library():
+    """Parmasto biometrics alone produce no measurement set.
+
+    ``is_ready_to_submit`` accepts them, because they can still be written
+    as a legacy reference row, but the normalized library would store
+    nothing — so offering Save here would be an action that does nothing.
+    """
+    dialog = _make_dialog(manual_save_callback=lambda editor: "ms-1")
+    dialog.tabs.setCurrentIndex(dialog._manual_tab_index)
+    editor = dialog.manual_editor
+    editor._parmasto_section.set_expanded(True)
+    editor.parmasto_inputs["parmasto_length_mean"].setText("9.50")
+    _set_manual_publication(dialog)
+
+    assert editor.is_ready_to_submit() is True
+    assert editor.has_storable_measurement_content() is False
+    assert dialog.save_to_library_btn.isEnabled() is False
+
+    # A grid value is storable, so the same entry becomes saveable.
+    editor.set_measurement_cell_text(0, 0, "8.10")
+    editor.set_measurement_cell_text(0, 4, "11.40")
+    dialog._update_footer_state()
+    assert editor.has_storable_measurement_content() is True
+    assert dialog.save_to_library_btn.isEnabled() is True
+
+
+def test_manual_add_to_plot_stays_open_when_the_host_reports_failure(monkeypatch):
+    """Exercised through the real host callback, not a stub lambda.
+
+    ``_submit_reference_editor_result`` returns whether anything was
+    persisted; the callback the picker is given must pass that through so
+    a refused submission does not close the picker.
+    """
+    from unittest.mock import Mock
+
+    window, kwargs = _make_host_window_for_manual_callback(monkeypatch)
+    window._submit_reference_editor_result = Mock(return_value=False)
+    assert kwargs["manual_attach_callback"](object()) is False
+
+    window._submit_reference_editor_result = Mock(return_value=True)
+    assert kwargs["manual_attach_callback"](object()) is True
+
+
+def test_failed_save_says_nothing_was_stored(monkeypatch):
+    from PySide6.QtWidgets import QMessageBox
+
+    monkeypatch.setattr(QMessageBox, "warning", lambda *a, **k: None)
+    monkeypatch.setattr(QMessageBox, "question", lambda *a, **k: QMessageBox.Yes)
+    dialog = _saveable_manual_dialog(manual_save_callback=lambda editor: None)
+    dialog._on_save_to_library_clicked()
+    assert "Not saved" in dialog.status_hint_label.text()
+
+    # Editing the entry retires the notice: it was about the old content.
+    _set_manual_range(dialog, length=(9.0, 12.0))
+    assert "Not saved" not in dialog.status_hint_label.text()
+
+
+def test_manual_footer_copy_does_not_leak_onto_the_other_tabs(monkeypatch):
+    from PySide6.QtWidgets import QMessageBox
+
+    monkeypatch.setattr(QMessageBox, "warning", lambda *a, **k: None)
+    monkeypatch.setattr(QMessageBox, "question", lambda *a, **k: QMessageBox.Yes)
+    dialog = _saveable_manual_dialog(manual_save_callback=lambda editor: "ms-77")
+    dialog._on_save_to_library_clicked()
+    assert "Saved to the reference library" in dialog.status_hint_label.text()
+
+    dialog.tabs.setCurrentIndex(dialog._community_tab_index)
+    assert dialog.status_hint_label.text() == ""
+
+
 def test_changing_taxon_target_resets_manual_editor_publication_state():
     dialog = _make_dialog(taxon_id=7, ai_candidates=_ai_candidates())
     _set_manual_range(dialog)
@@ -873,7 +1283,7 @@ def test_changing_taxon_target_resets_manual_editor_publication_state():
     assert dialog.manual_editor._genus == "Cortinarius"
     assert dialog.manual_editor._species == "rubellus"
     # Entered measurement values survive the target switch.
-    assert dialog.manual_editor._table_value(0, 0) == 8.0
+    assert dialog.manual_editor.measurement_cell_text(0, 0) == "8.00"
 
 
 def test_switching_to_manual_tab_resyncs_shared_preview_pane():
@@ -882,7 +1292,10 @@ def test_switching_to_manual_tab_resyncs_shared_preview_pane():
     dialog.tabs.setCurrentIndex(0)  # Library tab
     dialog.preview_pane.clear()
     dialog.tabs.setCurrentIndex(dialog._manual_tab_index)
-    assert dialog.preview_pane.summary_table.item(0, 1).text() == "8.00"
+    view = dialog.preview_pane.comparison_view.view()
+    assert view.has_source is True
+    length = view.metric("length").source
+    assert (length.outer.low, length.outer.high) == pytest.approx((8.0, 11.0))
 
 
 # ---------------------------------------------------------------------
@@ -914,6 +1327,7 @@ def test_host_own_target_uses_captured_observation(monkeypatch, observation):
         ref_species_input=SimpleNamespace(text=lambda: "muscaria"),
         _current_attached_measurement_set_ids=lambda: set(),
         _collect_reference_ai_suggestions=_ai_candidates,
+        _spore_points_for_observation=lambda _id: [],
     )
     for name in ("_clean_ref_genus_text", "_clean_ref_species_text", "_active_sporely_taxon_id"):
         setattr(window, name, getattr(host.MainWindow, name).__get__(window))
@@ -969,6 +1383,10 @@ def _make_host_window_for_manual_callback(monkeypatch):
         _current_attached_measurement_set_ids=lambda: set(),
         _collect_reference_ai_suggestions=_ai_candidates,
         _submit_reference_editor_result=Mock(),
+        _spore_points_for_observation=lambda _id: [],
+        _save_manual_reference_to_library=Mock(return_value="ms-77"),
+        _attach_normalized_reference_to_active_observation=Mock(),
+        _measurement_set_is_attached_to_observation=Mock(return_value=True),
     )
     for name in ("_clean_ref_genus_text", "_clean_ref_species_text", "_active_sporely_taxon_id"):
         setattr(window, name, getattr(host.MainWindow, name).__get__(window))
@@ -1012,6 +1430,60 @@ def test_manual_callback_rejects_when_observation_drifted(monkeypatch):
     result = kwargs["manual_attach_callback"](editor)
     assert result is False
     window._submit_reference_editor_result.assert_not_called()
+
+
+def test_save_callback_saves_without_going_through_the_plotting_helper(monkeypatch):
+    """"Save to library" must not route through the submit-and-plot helper.
+
+    ``_submit_reference_editor_result``'s contract is "persist and put it
+    on the plot"; the save action reuses the layer below it instead.
+    """
+    window, kwargs = _make_host_window_for_manual_callback(monkeypatch)
+    editor = object()
+    assert kwargs["manual_save_callback"](editor) == "ms-77"
+    window._save_manual_reference_to_library.assert_called_once_with(editor)
+    window._submit_reference_editor_result.assert_not_called()
+
+
+def test_save_callback_rejects_when_observation_drifted(monkeypatch):
+    from PySide6.QtWidgets import QMessageBox
+
+    monkeypatch.setattr(QMessageBox, "warning", lambda *a, **k: None)
+    window, kwargs = _make_host_window_for_manual_callback(monkeypatch)
+    window.active_observation_id = 999
+    assert kwargs["manual_save_callback"](object()) is None
+    window._save_manual_reference_to_library.assert_not_called()
+
+
+def test_attach_saved_set_callback_attaches_that_exact_set(monkeypatch):
+    window, kwargs = _make_host_window_for_manual_callback(monkeypatch)
+    assert kwargs["attach_saved_set_callback"]("ms-77") is True
+    window._attach_normalized_reference_to_active_observation.assert_called_once_with(
+        "ms-77", "compared"
+    )
+
+
+def test_attach_saved_set_callback_reports_a_silent_attach_failure(monkeypatch):
+    """The attach helper swallows its own failures and returns ``None``.
+
+    The callback must therefore verify the attachment actually landed
+    rather than reporting success the picker would close on.
+    """
+    from unittest.mock import Mock
+
+    window, kwargs = _make_host_window_for_manual_callback(monkeypatch)
+    window._measurement_set_is_attached_to_observation = Mock(return_value=False)
+    assert kwargs["attach_saved_set_callback"]("ms-77") is False
+
+
+def test_attach_saved_set_callback_rejects_when_observation_drifted(monkeypatch):
+    from PySide6.QtWidgets import QMessageBox
+
+    monkeypatch.setattr(QMessageBox, "warning", lambda *a, **k: None)
+    window, kwargs = _make_host_window_for_manual_callback(monkeypatch)
+    window.active_observation_id = 999
+    assert kwargs["attach_saved_set_callback"]("ms-77") is False
+    window._attach_normalized_reference_to_active_observation.assert_not_called()
 
 
 # ---------------------------------------------------------------------
@@ -1112,5 +1584,5 @@ def test_new_publication_row_clears_the_library_selection():
     dialog.results_list.setCurrentRow(_new_publication_row(dialog))
     _app().processEvents()
 
-    assert dialog._selected_candidate is None
+    assert dialog._preview_candidate is None
     assert dialog.add_to_plot_btn.isEnabled() is False

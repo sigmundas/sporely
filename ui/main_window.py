@@ -244,7 +244,7 @@ from .observations_tab import ObservationsTab
 from .live_lab_tab import LiveLabTab
 from .database_settings_dialog import DatabaseSettingsDialog
 from .cloud_reference_dialog import CloudReferenceDialog
-from .add_reference_dialog import AddReferenceDialog
+from .add_reference_dialog import AddReferenceDialog, EditorScrollArea
 from .comparison_panel import ComparisonListWidget, ComparisonRow
 from .reference_entry_editor import ReferenceEntryEditor, SporeDataTable
 from .reference_library_attach_dialog import ReferenceLibraryAttachDialog
@@ -5308,7 +5308,15 @@ class ReferenceAddDialog(GeometryMixin, QDialog):
             sporely_taxon_id=sporely_taxon_id,
             require_explicit_publication_assignment=require_explicit_publication_assignment,
         )
-        layout.addWidget(self.editor, 1)
+        # The one-column editor is taller than the tab bar it replaced, so
+        # this dialog scrolls it exactly as the picker does. Without it the
+        # measurement grid is squeezed to nothing at the dialog's own
+        # minimum height instead of staying reachable.
+        editor_scroll = EditorScrollArea(self)
+        editor_scroll.setWidgetResizable(True)
+        editor_scroll.setFrameShape(QScrollArea.NoFrame)
+        editor_scroll.setWidget(self.editor)
+        layout.addWidget(editor_scroll, 1)
 
         button_row = QHBoxLayout()
         self.save_btn = QPushButton(self.tr("Save"))
@@ -9925,50 +9933,12 @@ class MainWindow(GeometryMixin, QMainWindow):
         )
         taxon_label = " ".join(part for part in (genus, species) if part).strip()
 
-        def _add_callback(identifier: str, role: str) -> None:
-            current_observation_id = getattr(self, "active_observation_id", None)
-            if (
-                current_observation_id is None
-                or int(current_observation_id) != captured_observation_id
-            ):
-                QMessageBox.warning(
-                    self,
-                    self.tr("Add reference"),
-                    self.tr(
-                        "The active observation changed while the picker "
-                        "was open. Reopen the observation and try again — "
-                        "no reference was attached."
-                    ),
-                )
-                return
-            if isinstance(identifier, str) and identifier.startswith("observation:"):
-                self._attach_personal_observation_reference_to_active_observation(
-                    identifier.split(":", 1)[1], genus, species
-                )
-                return
-            self._attach_normalized_reference_to_active_observation(
-                identifier, role
-            )
-
-        def _add_cloud_callback(data: dict) -> None:
-            current_observation_id = getattr(self, "active_observation_id", None)
-            if (
-                current_observation_id is None
-                or int(current_observation_id) != captured_observation_id
-            ):
-                QMessageBox.warning(
-                    self,
-                    self.tr("Add reference"),
-                    self.tr(
-                        "The active observation changed while the picker "
-                        "was open. Reopen the observation and try again — "
-                        "no reference was attached."
-                    ),
-                )
-                return
-            self._add_reference_series_entry(data)
-
-        def _add_manual_callback(editor: "ReferenceEntryEditor") -> bool:
+        def _observation_still_active() -> bool:
+            """Refuse to write against a different observation than the one
+            the picker was opened on, warning the user once. Shared by every
+            callback below so all four source tabs and the save action apply
+            the identical drift guard.
+            """
             current_observation_id = getattr(self, "active_observation_id", None)
             if (
                 current_observation_id is None
@@ -9984,8 +9954,62 @@ class MainWindow(GeometryMixin, QMainWindow):
                     ),
                 )
                 return False
-            self._submit_reference_editor_result(editor, sync_panel=False)
             return True
+
+        def _add_callback(identifier: str, role: str) -> None:
+            if not _observation_still_active():
+                return
+            if isinstance(identifier, str) and identifier.startswith("observation:"):
+                self._attach_personal_observation_reference_to_active_observation(
+                    identifier.split(":", 1)[1], genus, species
+                )
+                return
+            self._attach_normalized_reference_to_active_observation(
+                identifier, role
+            )
+
+        def _add_cloud_callback(data: dict) -> None:
+            if not _observation_still_active():
+                return
+            self._add_reference_series_entry(data)
+
+        def _add_manual_callback(editor: "ReferenceEntryEditor") -> bool:
+            if not _observation_still_active():
+                return False
+            # The picker closes on this answer, so report what the shared
+            # submission helper actually managed to persist rather than
+            # assuming the click succeeded.
+            return bool(
+                self._submit_reference_editor_result(editor, sync_panel=False)
+            )
+
+        def _save_manual_callback(editor: "ReferenceEntryEditor") -> str | None:
+            """Save the manual entry to the library, plotting nothing."""
+            if not _observation_still_active():
+                return None
+            return self._save_manual_reference_to_library(editor)
+
+        def _attach_saved_set_callback(measurement_set_id: str) -> bool:
+            """Plot an already-saved measurement set, reporting honestly.
+
+            Used when the user saved the manual entry first and then chose
+            to add it: the set already exists, so this attaches that exact
+            set through the same normalized attach helper the Library tab
+            uses instead of creating a second one.
+
+            ``_attach_normalized_reference_to_active_observation`` displays
+            its own failures and returns ``None`` either way, so re-read the
+            observation's uses to find out whether the attachment actually
+            landed -- the picker must not close on an unverified claim.
+            """
+            if not _observation_still_active():
+                return False
+            self._attach_normalized_reference_to_active_observation(
+                str(measurement_set_id), "compared"
+            )
+            return self._measurement_set_is_attached_to_observation(
+                captured_observation_id, str(measurement_set_id)
+            )
 
         dialog = AddReferenceDialog(
             self,
@@ -9999,7 +10023,16 @@ class MainWindow(GeometryMixin, QMainWindow):
             attach_callback=_add_callback,
             cloud_attach_callback=_add_cloud_callback,
             manual_attach_callback=_add_manual_callback,
+            manual_save_callback=_save_manual_callback,
+            attach_saved_set_callback=_attach_saved_set_callback,
             ai_candidates=self._collect_reference_ai_suggestions(),
+            # The picker compares every source against this observation, so
+            # the host supplies its measurements rather than letting the
+            # dialog run a second query that could disagree with the one
+            # behind the plot.
+            observation_points=self._spore_points_for_observation(
+                captured_observation_id
+            ),
         )
         dialog.exec()
 
@@ -10020,13 +10053,7 @@ class MainWindow(GeometryMixin, QMainWindow):
             source_id = int(source_observation_id)
         except (TypeError, ValueError):
             return
-        raw = MeasurementDB.get_measurements_for_observation(source_id)
-        points = [
-            m for m in raw
-            if m.get("length_um") is not None
-            and m.get("width_um") is not None
-            and (m.get("measurement_type") in (None, "", "manual", "spore", "spores"))
-        ]
+        points = self._spore_points_for_observation(source_id)
         if not points:
             QMessageBox.warning(
                 self,
@@ -10954,6 +10981,25 @@ class MainWindow(GeometryMixin, QMainWindow):
             options.append((source, {"kind": "reference", "source": source}))
         return options
 
+    @staticmethod
+    def _spore_points_for_observation(observation_id: int) -> list[dict]:
+        """One observation's usable spore measurements.
+
+        The same filter the personal-observation comparison path has always
+        applied -- both dimensions present, and a measurement type that is
+        actually a spore rather than, say, a cap diameter. Shared so the
+        Add-reference picker's observation baseline and the series it plots
+        are computed from exactly the same rows.
+        """
+        raw = MeasurementDB.get_measurements_for_observation(int(observation_id)) or []
+        return [
+            m
+            for m in raw
+            if m.get("length_um") is not None
+            and m.get("width_um") is not None
+            and (m.get("measurement_type") in (None, "", "manual", "spore", "spores"))
+        ]
+
     def _reference_stats_from_points(self, points: list[dict]) -> dict:
         if not points:
             return {}
@@ -11526,7 +11572,8 @@ class MainWindow(GeometryMixin, QMainWindow):
         payload: dict,
         *,
         legacy_id: int | None,
-    ) -> bool:
+        attach: bool = True,
+    ) -> bool | str:
         """Route the dialog's result through the normalized library.
 
         - When ``source_kind`` is ``existing_measurement_set``, attach the
@@ -11539,6 +11586,20 @@ class MainWindow(GeometryMixin, QMainWindow):
         Parmasto-only submissions and missing-taxon submissions are
         skipped silently (legacy row already wrote). Multi-treatment
         ambiguity surfaces a warning and skips the normalized write.
+
+        ``attach=False`` is the picker's "Save to library" intent: run the
+        identical validation, drift guards and quick-add creation, but stop
+        before the observation attachment so saving does not imply
+        plotting. It is defined only for the quick-add hierarchy (a
+        publication plus a newly typed measurement set); every other branch
+        returns ``False`` rather than guessing what a save-without-plot
+        would mean there.
+
+        Returns ``True``/``False`` in the default attaching mode. With
+        ``attach=False`` a success returns the id of the measurement set
+        that was created, so the caller can later attach *that* set instead
+        of creating a second one for the same typed data; failure still
+        returns ``False``.
         """
         # Bind persistence to the observation ID captured when the
         # dialog was opened. If the active observation drifted while
@@ -11597,6 +11658,11 @@ class MainWindow(GeometryMixin, QMainWindow):
             set_id = payload.get("reference_measurement_set_id")
             if not set_id:
                 return False
+            if not attach:
+                # An already-stored set has nothing to save; the only thing
+                # this branch does is attach, which is what the caller
+                # asked us not to do.
+                return False
             self._attach_normalized_reference_to_active_observation(
                 str(set_id), "compared"
             )
@@ -11625,8 +11691,29 @@ class MainWindow(GeometryMixin, QMainWindow):
             )
             return False
         if payload_ms is None:
-            # Nothing normalized to write (Parmasto-only or no data);
-            # legacy already persisted upstream.
+            # Nothing normalized to write (Parmasto-only or no data).
+            if not attach:
+                # "Save to library" has no fallback: unlike the attaching
+                # callers, nothing else has written a legacy row and no
+                # plot series follows, so returning quietly here would be
+                # a no-op the user can only read as success. The button is
+                # disabled for this state (ReferenceEntryEditor.
+                # has_storable_measurement_content), and this is the
+                # backstop if it is ever reached anyway.
+                QMessageBox.warning(
+                    self,
+                    self.tr("Reference library"),
+                    self.tr(
+                        "This entry has no measurement range and no "
+                        "individual spore measurements, so there is "
+                        "nothing for the reference library to store. "
+                        "Nothing was saved."
+                    ),
+                )
+            # The attaching callers stay silent: a Parmasto-only entry
+            # legitimately has no normalized measurement set, its legacy
+            # row has already persisted upstream, and the caller still
+            # adds its plot series below.
             return False
         # Taxon-drift guard: the observation binds sporely_taxon_id +
         # observation.genus/species together as one identity. The
@@ -11678,8 +11765,16 @@ class MainWindow(GeometryMixin, QMainWindow):
             if work is None:
                 return False
             treatment_data = treatment_payload_getter()
+            # One canonical creation path for both intents: the request is
+            # built identically, and only the final attachment step differs
+            # (see QuickAddReferenceService.create_only).
+            create = (
+                QuickAddReferenceService.create_and_attach
+                if attach
+                else QuickAddReferenceService.create_only
+            )
             try:
-                quick_add_result = QuickAddReferenceService.create_and_attach(
+                quick_add_result = create(
                     QuickAddReferenceRequest(
                         observation_id=observation_id,
                         existing_work_id=str(work_id) if work_id else None,
@@ -11709,15 +11804,21 @@ class MainWindow(GeometryMixin, QMainWindow):
                     ),
                 )
                 return False
-            self._restore_reference_uses_for_observation(observation_id)
-            self.update_graph_plots_only()
+            if attach:
+                self._restore_reference_uses_for_observation(observation_id)
+                self.update_graph_plots_only()
             try:
                 MeasurementSetPreferenceRepository.mark_used(
                     quick_add_result.measurement_set.id
                 )
             except ReferenceLibraryError:
                 pass
-            return True
+            return True if attach else quick_add_result.measurement_set.id
+        if not attach:
+            # Reached only when the editor is not a quick-add editor. The
+            # legacy branch below is create-and-attach by construction, so
+            # there is no honest save-without-plot to perform here.
+            return False
         # Older observations may predate canonical taxon selection.  They
         # can still safely receive a normalized treatment when the user has
         # explicitly identified the publication: preserve the published
@@ -11916,7 +12017,31 @@ class MainWindow(GeometryMixin, QMainWindow):
         species = (obs.get("species") or "").strip() or None
         return (genus, species)
 
-    def _submit_reference_editor_result(self, editor, *, sync_panel: bool = False) -> None:
+    def _save_manual_reference_to_library(self, editor) -> str | None:
+        """Save a validated manual entry to the library without plotting it.
+
+        The Add-reference picker's "Save to library" action. It deliberately
+        does NOT reuse :meth:`_submit_reference_editor_result`, whose whole
+        contract is "persist and put it on the plot"; it reuses the layer
+        below that -- the same
+        :meth:`_persist_normalized_reference_from_dialog` with its drift
+        guards, taxon-identity confirmation and compensating rollback --
+        with the attachment step switched off.
+
+        Returns the created measurement set's id, or ``None`` when nothing
+        was saved. A ``None`` return always means the user has already been
+        shown why (the persistence helper owns those messages); the caller
+        must keep the picker open rather than claim success.
+        """
+        data = editor.result_data()
+        if not isinstance(data, dict) or not data:
+            return None
+        saved = self._persist_normalized_reference_from_dialog(
+            editor, data, legacy_id=None, attach=False
+        )
+        return saved if isinstance(saved, str) and saved else None
+
+    def _submit_reference_editor_result(self, editor, *, sync_panel: bool = False) -> bool:
         """Persist a validated editor's ``result_data()``.
 
         Normalized-first quick-add, then legacy write + normalized attach,
@@ -11932,10 +12057,18 @@ class MainWindow(GeometryMixin, QMainWindow):
         ``sync_panel`` additionally refreshes the legacy reference-panel
         Source dropdown/state — only meaningful for the panel's own Quick-
         add entry point, which owns those widgets.
+
+        Returns whether the submission actually stored or attached
+        something. The Add-reference picker closes on that answer, so it
+        must not be optimistic: a quick-add that was refused (observation
+        drift, a declined taxon-identity confirmation, a failed write) has
+        persisted nothing and reports ``False``. The legacy path reports
+        ``True`` because it has written its own reference row and plot
+        series even when the normalized mirror of it failed.
         """
         data = editor.result_data()
         if not isinstance(data, dict) or not data:
-            return
+            return False
         # The normalized quick-add path is deliberately not legacy-first.
         # Validation and canonical attachment must complete before any UI
         # state is accepted, otherwise a failed quick add would strand a
@@ -11969,8 +12102,10 @@ class MainWindow(GeometryMixin, QMainWindow):
         )
         if quick_add_intended:
             try:
-                self._persist_normalized_reference_from_dialog(
-                    editor, data, legacy_id=None
+                return bool(
+                    self._persist_normalized_reference_from_dialog(
+                        editor, data, legacy_id=None
+                    )
                 )
             except Exception as exc:
                 QMessageBox.warning(
@@ -11980,7 +12115,7 @@ class MainWindow(GeometryMixin, QMainWindow):
                         error=str(exc)
                     ),
                 )
-            return
+                return False
         legacy_id: int | None = None
         if data.get("source_kind") == "reference":
             legacy_id = ReferenceDB.set_reference(data)
@@ -12011,7 +12146,7 @@ class MainWindow(GeometryMixin, QMainWindow):
         # persist as a panel entry; the attach helper already appended
         # the translated series row for the attached set.
         if data.get("source_kind") == "existing_measurement_set":
-            return
+            return bool(normalized_attached)
         if sync_panel:
             self.reference_values = data
             self._apply_reference_panel_values(data)
@@ -12023,6 +12158,7 @@ class MainWindow(GeometryMixin, QMainWindow):
         # for downgrade compatibility and edit-mode round-trips.
         if not normalized_attached:
             self._add_reference_series_entry(data)
+        return True
 
     def _on_reference_panel_add_clicked(self):
         genus = self._clean_ref_genus_text(self.ref_genus_input.text())
