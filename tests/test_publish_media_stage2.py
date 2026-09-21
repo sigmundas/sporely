@@ -131,11 +131,139 @@ def test_analysis_and_publish_use_same_ordered_mosaic_inputs(monkeypatch, tmp_pa
     assert [row["id"] for row in analysis_rows] == [2, 3, 4]
     assert [row["id"] for row in publish_rows] == [2, 3, 4]
 
-    publish._publish_excluded_image_ids = lambda _observation_id: {20}
-    _settings, excluded_rows, _images, _render = (
+
+
+
+def test_source_image_publish_exclusion_does_not_filter_mosaic_measurements(
+    monkeypatch, tmp_path
+):
+    """Unchecking a source image withholds the file, not its measurements.
+
+    The real failure this guards against: an observation with 61 eligible
+    spore measurements spread over several microscope images collapsed to the
+    3 spores sitting on the one image the user had ticked for upload.  Both
+    halves of the contract are asserted together so a future change cannot
+    "restore" the mosaic by re-uploading the deselected source images.
+    """
+    image_ids = [101, 102, 103, 104]
+    sources = {}
+    for index, image_id in enumerate(image_ids):
+        path = tmp_path / f"micro_{image_id}.png"
+        _write_png(path, color=(10 + index, 20, 30))
+        sources[image_id] = str(path)
+
+    # 61 eligible spore measurements: exactly 3 of them live on image 101,
+    # which is the only source image the user selected for upload.
+    rows = [_measurement(index, 101, path=sources[101]) for index in (1, 2, 3)]
+    remaining = [102, 103, 104]
+    for offset in range(58):
+        image_id = remaining[offset % len(remaining)]
+        rows.append(
+            _measurement(4 + offset, image_id, path=sources[image_id])
+        )
+    assert len(rows) == 61
+
+    images = [
+        {"id": image_id, "filepath": sources[image_id], "image_type": "microscope"}
+        for image_id in image_ids
+    ]
+    excluded = {102, 103, 104}
+
+    monkeypatch.setattr(
+        observations_tab.MeasurementDB,
+        "get_measurements_for_observation",
+        lambda _observation_id: list(rows),
+    )
+    monkeypatch.setattr(
+        observations_tab.ImageDB,
+        "get_images_for_observation",
+        lambda _observation_id: list(images),
+    )
+    monkeypatch.setattr(
+        ObservationsTab,
+        "_publish_excluded_image_ids",
+        classmethod(lambda _cls, _observation_id: set(excluded)),
+    )
+
+    publish = SimpleNamespace(
+        window=lambda: SimpleNamespace(
+            _gallery_thumbnail_size=lambda: 200,
+            _current_measure_rectangle_style=lambda: "a",
+            _current_measure_rectangle_thickness=lambda: 1,
+        ),
+        _load_gallery_settings_for_observation=lambda _observation_id: {
+            "measurement_type": "spores",
+            "gallery_sort": "length",
+            "orient": True,
+        },
+        _publish_excluded_image_ids=ObservationsTab._publish_excluded_image_ids,
+    )
+
+    uploaded_paths = ObservationsTab._collect_artsobs_image_paths(publish, 77)
+    _settings, mosaic_rows, _images, _render = (
         ObservationsTab._prepare_publish_mosaic_inputs(publish, 77)
     )
-    assert [row["id"] for row in excluded_rows] == [2]
+
+    # Side one: only the selected source image file is uploaded.
+    assert uploaded_paths == [sources[101]]
+    # Side two: every eligible measurement still feeds the mosaic.
+    assert len(mosaic_rows) == 61
+    assert {row["image_id"] for row in mosaic_rows} == set(image_ids)
+
+
+def test_mosaic_inputs_still_apply_measurement_category_and_geometry_rules(
+    monkeypatch, tmp_path
+):
+    """Legitimate measurement filtering is untouched by the exclusion fix."""
+    source = tmp_path / "source.png"
+    _write_png(source)
+    missing = tmp_path / "gone.png"
+
+    keeper = _measurement(1, 10, path=str(source))
+    calibration = _measurement(2, 10, path=str(source))
+    calibration["measurement_type"] = "calibration"
+    other_category = _measurement(3, 10, path=str(source))
+    other_category["measurement_type"] = "cystidia"
+    incomplete = _measurement(4, 10, path=str(source))
+    incomplete["p3_y"] = None
+    absent_file = _measurement(5, 10, path=str(missing))
+
+    rows = [keeper, calibration, other_category, incomplete, absent_file]
+
+    monkeypatch.setattr(
+        observations_tab.MeasurementDB,
+        "get_measurements_for_observation",
+        lambda _observation_id: list(rows),
+    )
+    monkeypatch.setattr(
+        observations_tab.ImageDB,
+        "get_images_for_observation",
+        lambda _observation_id: [{"id": 10, "filepath": str(source)}],
+    )
+
+    publish = SimpleNamespace(
+        window=lambda: SimpleNamespace(),
+        _load_gallery_settings_for_observation=lambda _observation_id: {
+            "measurement_type": "spores",
+            "gallery_sort": "length",
+        },
+    )
+
+    _settings, mosaic_rows, _images, _render = (
+        ObservationsTab._prepare_publish_mosaic_inputs(publish, 77)
+    )
+
+    assert [row["id"] for row in mosaic_rows] == [1]
+
+    # The calibration row stays excluded even when the category is "all".
+    publish._load_gallery_settings_for_observation = lambda _observation_id: {
+        "measurement_type": "all",
+        "gallery_sort": "length",
+    }
+    _settings, all_rows, _images, _render = (
+        ObservationsTab._prepare_publish_mosaic_inputs(publish, 77)
+    )
+    assert [row["id"] for row in all_rows] == [1, 3]
 
 
 def test_mosaic_signature_tracks_relevant_inputs_but_not_scale_bar(tmp_path):
