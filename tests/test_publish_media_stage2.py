@@ -320,6 +320,229 @@ def test_mosaic_signature_tracks_relevant_inputs_but_not_scale_bar(tmp_path):
     )
 
 
+def _publish_mosaic_signature(
+    monkeypatch,
+    *,
+    rows: list[dict],
+    images: list[dict],
+    settings: dict,
+    excluded: set[int],
+) -> tuple[str, list[dict], dict]:
+    """Return the mosaic signature produced by the real publish input path.
+
+    Signature-level regressions have to be taken through
+    ``_prepare_publish_mosaic_inputs`` rather than through a hand-built
+    dependency dict: the interesting question is whether observation state the
+    UI reads on the way to ``mosaic_dependencies()`` can reach the cache key.
+    """
+    monkeypatch.setattr(
+        observations_tab.MeasurementDB,
+        "get_measurements_for_observation",
+        lambda _observation_id: list(rows),
+    )
+    monkeypatch.setattr(
+        observations_tab.ImageDB,
+        "get_images_for_observation",
+        lambda _observation_id: list(images),
+    )
+    monkeypatch.setattr(
+        ObservationsTab,
+        "_publish_excluded_image_ids",
+        classmethod(lambda _cls, _observation_id: set(excluded)),
+    )
+
+    publish = SimpleNamespace(
+        window=lambda: SimpleNamespace(
+            _gallery_thumbnail_size=lambda: 200,
+            _current_measure_rectangle_style=lambda: "a",
+            _current_measure_rectangle_thickness=lambda: 1,
+        ),
+        _load_gallery_settings_for_observation=lambda _observation_id: dict(settings),
+        _publish_excluded_image_ids=ObservationsTab._publish_excluded_image_ids,
+    )
+
+    prepared_settings, mosaic_rows, image_rows, render_options = (
+        ObservationsTab._prepare_publish_mosaic_inputs(publish, 77)
+    )
+    dependencies = mosaic_dependencies(
+        observation_id=77,
+        measurements=mosaic_rows,
+        image_rows=image_rows,
+        settings=prepared_settings,
+        render_options=render_options,
+    )
+    signature = publish_media_signature(
+        "mosaic", MOSAIC_RENDERER_VERSION, dependencies
+    )
+    return signature, mosaic_rows, dependencies
+
+
+def _mosaic_fixture(tmp_path: Path) -> tuple[list[dict], list[dict]]:
+    image_ids = [101, 102, 103]
+    sources = {}
+    for index, image_id in enumerate(image_ids):
+        path = tmp_path / f"micro_{image_id}.png"
+        _write_png(path, color=(10 + index, 20, 30))
+        sources[image_id] = str(path)
+    rows = [
+        _measurement(1, 101, length=9.0, path=sources[101]),
+        _measurement(2, 102, length=11.0, path=sources[102]),
+        _measurement(3, 103, length=13.0, path=sources[103]),
+    ]
+    images = [
+        {
+            "id": image_id,
+            "filepath": sources[image_id],
+            "scale_microns_per_pixel": 0.2,
+            "measure_color": "#123456",
+        }
+        for image_id in image_ids
+    ]
+    return rows, images
+
+
+_BASE_MOSAIC_SETTINGS = {
+    "measurement_type": "spores",
+    "gallery_sort": "length",
+    "orient": True,
+    "uniform_scale": False,
+}
+
+
+def test_publish_selection_does_not_enter_the_mosaic_cache_key(monkeypatch, tmp_path):
+    """Toggling which source image files upload must not touch the cache key.
+
+    Stage 1 removed the only path by which the exclusion set reached the
+    mosaic, through the pre-filtered measurement list.  This pins the
+    consequence at signature level: nothing else the publish path reads
+    (image rows, gallery settings, render options) carries the selection, so
+    a valid cached mosaic survives any change to it.
+    """
+    rows, images = _mosaic_fixture(tmp_path)
+
+    nothing_excluded, rows_a, _deps_a = _publish_mosaic_signature(
+        monkeypatch,
+        rows=rows,
+        images=images,
+        settings=_BASE_MOSAIC_SETTINGS,
+        excluded=set(),
+    )
+    two_excluded, rows_b, _deps_b = _publish_mosaic_signature(
+        monkeypatch,
+        rows=rows,
+        images=images,
+        settings=_BASE_MOSAIC_SETTINGS,
+        excluded={102, 103},
+    )
+    all_excluded, rows_c, _deps_c = _publish_mosaic_signature(
+        monkeypatch,
+        rows=rows,
+        images=images,
+        settings=_BASE_MOSAIC_SETTINGS,
+        excluded={101, 102, 103},
+    )
+
+    assert [row["id"] for row in rows_a] == [1, 2, 3]
+    assert [row["id"] for row in rows_b] == [1, 2, 3]
+    assert [row["id"] for row in rows_c] == [1, 2, 3]
+    assert nothing_excluded == two_excluded == all_excluded
+
+
+def test_publish_selection_change_reuses_the_cached_mosaic(monkeypatch, tmp_path):
+    """A selection change must be a cache hit, not a re-render."""
+    rows, images = _mosaic_fixture(tmp_path)
+    cache_root = tmp_path / "cache"
+    renders: list[Path] = []
+
+    def render(destination: Path):
+        renders.append(destination)
+        _write_png(destination)
+        return True
+
+    def resolve(excluded: set[int]):
+        _signature, _rows, dependencies = _publish_mosaic_signature(
+            monkeypatch,
+            rows=rows,
+            images=images,
+            settings=_BASE_MOSAIC_SETTINGS,
+            excluded=excluded,
+        )
+        with PublishMediaBundle(
+            77,
+            cache=PublishMediaCache(cache_root),
+        ) as bundle:
+            return bundle.resolve_cached_image(
+                asset_kind="mosaic",
+                renderer_version=MOSAIC_RENDERER_VERSION,
+                dependencies=dependencies,
+                extension="png",
+                render=render,
+            )
+
+    first = resolve(set())
+    second = resolve({102, 103})
+
+    assert first.from_cache is False
+    assert second.from_cache is True
+    assert second.path == first.path
+    assert len(renders) == 1
+
+
+def test_measurement_and_setting_changes_still_invalidate_the_mosaic_cache(
+    monkeypatch, tmp_path
+):
+    """The other direction: genuine mosaic inputs must still invalidate."""
+    rows, images = _mosaic_fixture(tmp_path)
+    baseline, _rows, _deps = _publish_mosaic_signature(
+        monkeypatch,
+        rows=rows,
+        images=images,
+        settings=_BASE_MOSAIC_SETTINGS,
+        excluded=set(),
+    )
+
+    fewer_measurements, _rows, _deps = _publish_mosaic_signature(
+        monkeypatch,
+        rows=rows[:-1],
+        images=images,
+        settings=_BASE_MOSAIC_SETTINGS,
+        excluded=set(),
+    )
+    edited_geometry, _rows, _deps = _publish_mosaic_signature(
+        monkeypatch,
+        rows=[{**rows[0], "p4_x": 12.5}, *rows[1:]],
+        images=images,
+        settings=_BASE_MOSAIC_SETTINGS,
+        excluded=set(),
+    )
+    recalibrated, _rows, _deps = _publish_mosaic_signature(
+        monkeypatch,
+        rows=rows,
+        images=[{**images[0], "scale_microns_per_pixel": 0.4}, *images[1:]],
+        settings=_BASE_MOSAIC_SETTINGS,
+        excluded=set(),
+    )
+
+    assert baseline != fewer_measurements
+    assert baseline != edited_geometry
+    assert baseline != recalibrated
+
+    for changed_setting in (
+        {"gallery_sort": "width"},
+        {"measurement_type": "all"},
+        {"orient": False},
+        {"uniform_scale": True},
+    ):
+        changed, _rows, _deps = _publish_mosaic_signature(
+            monkeypatch,
+            rows=rows,
+            images=images,
+            settings={**_BASE_MOSAIC_SETTINGS, **changed_setting},
+            excluded=set(),
+        )
+        assert baseline != changed, changed_setting
+
+
 def test_annotated_signature_tracks_scale_bar_and_measurements(tmp_path):
     source = tmp_path / "source.png"
     _write_png(source)
