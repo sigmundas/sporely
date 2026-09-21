@@ -19,7 +19,7 @@ Available content options:
 - include thumbnail gallery
 - include plate
 
-For image uploads, only the images with checked boxes in the observation gallery are used.
+For image uploads, only the images with checked boxes in the observation gallery are used. That choice applies to the image files themselves. It does not change the generated summary media: the thumbnail mosaic, the plate and the spore statistics still cover every measurement of the observation (see the standing invariant in [Engineering history](./engineering-history.md#source-publication-selection--analytical-measurement-selection)).
 
 Thumbnail mosaics and baked scale-bar/measurement images are disposable
 publish derivatives. Sporely keeps reusable copies in the application cache,
