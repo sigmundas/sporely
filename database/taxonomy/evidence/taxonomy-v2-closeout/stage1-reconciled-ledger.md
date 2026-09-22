@@ -60,6 +60,14 @@ That directory **does not exist in this worktree** and is gitignored
 (`.gitignore:70` — `database/reference_data/generated/taxonomy_v2/*`). Only
 `tax-2026.07.30-02.sqlite3.gz` and a `manifest.json` are present.
 
+**The `07.30-02` artifact *was* inspected** — see §2.1. It is the
+`build_sqlite_candidate.py` output for the full unscoped build and it carries
+the compiler's actual bindings, which is enough to verify §2's binding claims
+and §3's join key from data. What it does **not** carry is the compiler's
+`mappings.jsonl` provenance (no mapping table exists in the schema), nor the
+scoped active release. So §3's evidence grading and all `08.01-01`-specific
+counts remain blocked on the missing artifacts.
+
 The counts 52,917 / 57,769 / 3,923 / 52,881 / 2,041 are therefore **not
 independently reproducible here**. They are treated in this ledger as recorded
 prior measurements, not as re-verified fact. This is consistent with the July
@@ -302,44 +310,94 @@ wrong; Phase 2d binds it as an anchor. For `52369` specifically, the closeout
 plan's original framing — loss by COL-retention filtering — is **correct**, and
 my Gate 1 / Gate 2 analysis does not apply to it.
 
-**Three distinct loss mechanisms, not one** — stated as **conditional code-path
-explanations, not verified release facts.** No compiled record for either taxon
-was inspected (§0.2): what follows is what the code *must* do given the inputs
-each case implies, not a measurement of what it *did*.
+**Three distinct loss mechanisms, not one — now verified against compiled
+records.** The `tax-2026.07.30-02` SQLite artifact *is* present locally and has
+been inspected (§2.1). It is the `build_sqlite_candidate.py` output for the full
+unscoped build, so it contains the compiler's actual bindings for both
+regression cases.
 
-| Case | Binding (inferred) | Lost at (inferred) |
+| Case | Binding (**measured**) | Lost at |
 |---|---|---|
-| `53482` (agreeing names) | alias onto COL concept `7821` (Phase 2c) — **assumes** the strict or fallback exact rule was satisfied | Gate 1 (namespace routing) and Gate 2 (anchor-only derivation) |
-| `52369` (divergent names) | **own anchor concept** (Phase 2d) — **assumes** it is an accepted bridge record with no approved manual mapping | the COL-only scope universe, `macrofungi_scope.py:105-108` |
+| `53482` (agreeing names) | **alias** onto COL concept `7821` — `is_preferred=0` | Gate 1 (namespace routing) and Gate 2 (anchor-only derivation) |
+| `52369` (divergent names) | **own anchor concept `624680`** (Phase 2d) — `is_preferred=1`, `parent_taxon_id` NULL | the COL-only scope universe, `macrofungi_scope.py:105-108` |
 | — | — | Gate 1 also silently empties the legacy-integer file (D7) |
 
-**What would falsify each row.** For `53482`: an approved manual mapping, a
-`PROPOSAL_AMBIGUOUS` outcome from a competing homonym, or an authorship mismatch
-would each route it differently. For `52369`: an approved manual bridge would
-alias it in Phase 2b/2c instead of anchoring it in 2d, and a non-accepted
-`taxonomic_status` would exclude it from `accepted_bridge_records` altogether.
-Stage 3 must read the compiled `mappings.jsonl` / `source_usages.jsonl` records
-for both before relying on either row.
+### 2.1 Evidence from `tax-2026.07.30-02`
 
-The plan's claim that the `53482` bridge "was demonstrably computed during the
-build" rests on the vernacular join, which is itself an inference from the
-recorded 3,923/2,041 counts (§0.2) rather than a record this stage inspected.
+Reproduce with (65 MB gzip → 305 MB database; written to `/tmp`, not committed):
 
-**A conditional reading of the `tax-2026.07.30-02` duplicate block.** The plan
-describes an un-deduplicated NorTaxa id block (625xxx–626xxx) with
-`parent_taxon_id = null`. Phase 2d anchors admitted without the COL scope filter
-**would** have exactly that shape — NorTaxa-anchored concepts whose parents the
-COL backbone does not contain, hence null parents. That makes Phase 2d a strong
-candidate explanation, and it would mean the two releases are two ways of
-handling the same Phase 2d output: admit it wholesale (duplicates) or filter it
-entirely (bridge loss).
+```
+gunzip -c database/reference_data/generated/taxonomy_v2/tax-2026.07.30-02.sqlite3.gz > /tmp/tax0730.sqlite3
+sqlite3 /tmp/tax0730.sqlite3
+```
 
-**This is a hypothesis, not an identification.** Stage 1 did not inspect that
-release's rows and cannot claim the block *is* the Phase 2d set, nor that it is
-the block's only contributor. Confirming it requires reading
-`tax-2026.07.30-02` (present locally as a 65 MB gzip, not opened in this stage)
-and comparing its NorTaxa-sourced ids against the compiler's registry
-allocations.
+**Release composition** — `taxon_min` holds two disjoint id ranges:
+
+| `source_system` | rows | id range |
+|---|---:|---|
+| `col_xr` | 620,976 | 1 – 620,976 |
+| `nortaxa` | 13,919 | 620,977 – 634,895 |
+
+All 13,919 NorTaxa concepts have `norwegian_taxon_id` set — consistent with
+their being Phase 2d **anchors** (`is_preferred=1`), which is exactly Gate 2's
+condition. The count matches `cloud_export.py:454`
+(`external_authoritative_nortaxa_rows: 13919`) and `macrofungi_scope.py:362`
+(`nortaxa_additional_concepts: 13919`).
+
+**The duplicate block is confirmed, not hypothesised.** For
+`taxon_id BETWEEN 625000 AND 626999`: 2,000 rows, **all** `source_system =
+nortaxa`, **all** with `parent_taxon_id IS NULL`. The plan's description of the
+625xxx–626xxx block matches the Phase 2d anchor set exactly. (This confirms the
+block's composition in that range; it does not exhaustively prove Phase 2d is
+its only contributor across the whole NorTaxa range.)
+
+**Gate 1 confirmed.** `taxon_external_id_text_min` — the authoritative namespaced
+table — contains **only** `col_xr` / `col_usage_id` (620,976 rows). Not one
+NorTaxa row. Every NorTaxa identifier (61,583 rows, all `artsdatabanken`) sits in
+the namespace-free `taxon_external_id_min`, matching
+`cloud-export-contract.md:416` verbatim.
+
+**The two regression cases:**
+
+```
+sqlite> SELECT taxon_id, source_system, external_id, id_role, is_preferred, external_name
+        FROM taxon_external_id_min WHERE external_id IN (52369,53482);
+624680|artsdatabanken|52369|accepted|1|Pholiotina rugosa
+  7821|artsdatabanken|53482|accepted|0|Entoloma conferendum
+```
+
+- **`52369` → taxon `624680`**, `source_system = nortaxa`,
+  `canonical_scientific_name = 'Pholiotina rugosa'`, `parent_taxon_id` NULL,
+  `norwegian_taxon_id = 52369`, `is_preferred = 1`. **Independently anchored**,
+  as predicted.
+- **`53482` → taxon `7821`**, `is_preferred = 0`, alongside seven further
+  `synonym`-role NorTaxa aliases (`59746`, `59754`, `59796`, `59818`, `59926`,
+  `59945`, `59946`). **Alias-bound to the COL concept**, as predicted — and
+  because `is_preferred = 0`, it does not populate `norwegian_taxon_id`
+  (confirmed: querying `norwegian_taxon_id IN (52369,53482)` returns only
+  `624680`, never `7821`).
+
+**Independent corroboration of the plan's baseline.** The plan's recorded
+identities check out against this artifact: `Conocybe rugosa` is Sporely
+`83668` (col_xr) and `Entoloma conferendum` is Sporely `7821` (col_xr). Taxon
+`7821` carries exactly the NorTaxa vernaculars the plan names —
+`stjernesporet rødspore` (nb, preferred), `stjernespora raudspore` (nn,
+preferred), plus the two `…rødskivesopp` / `…raudskivesopp` non-preferred
+variants — all with `source = nortaxa`.
+
+**The `52369` prediction holds, and the consequence is worse than the plan
+states.** `83668` (`Conocybe rugosa`) carries **zero** NorTaxa external IDs and
+**zero** vernaculars. The Norwegian name for that concept
+(`slank ringkjeglesopp`, nb and nn) sits on the *separate* anchor `624680`,
+which the COL-only scope drops wholesale. So for the divergent-name case the
+release loses not just the identity bridge but the **Norwegian vernacular name
+as well** — a name-loss class the plan does not currently enumerate.
+
+**Scope caveat.** This is the `07.30-02` build, not the active `08.01-01`. The
+bindings above are compiler-determined and the compiler is unchanged between
+them, so they carry over; the `08.01-01`-specific step is the macrofungi scope
+filter, which is precisely the mechanism that removes `624680`. Confirming the
+active release still requires its artifacts (§0.2).
 
 **Testable predictions for Stage 3** (neither executed here — see §0.2):
 
@@ -438,22 +496,54 @@ separates "full agreement" from "agreed because authorship was missing on one
 side" — the latter is the weakest class and should be expected to fail an
 authoritative-bridge standard.
 
-### This criterion is INCOMPLETE
+### 3.1 Population structure — measured
 
-To be explicit about what §3 is and is not: **everything above is read off the
-compiler source, not measured against the 2,041 actual associations.** The
-release artifacts are absent (§0.2), so no `mappings.jsonl` or
-`source_usages.jsonl` was inspected and no association was classified.
+`tax-2026.07.30-02` (§2.1) lets the *shape* of the association population be
+measured, though not its evidence grade. Counts are for the full unscoped build:
 
-What §3 delivers is a *classification scheme* and a *verdict on the strongest
-available rule*. What it does not deliver is the distribution — how many of the
-2,041 are `policy_auto_approved` under the strict rule, how many rest on the
-missing-authorship fallback, how many came from reviewed manual mappings, and
-whether any arrived by a path not enumerated here.
+| Population | rows | distinct taxa |
+|---|---:|---:|
+| NorTaxa external IDs, **anchor** (`is_preferred=1`) | 13,919 | 13,919 |
+| NorTaxa external IDs, **alias** (`is_preferred=0`) | 47,664 | — |
+| …of which alias rows land on a **`col_xr`** concept | 32,988 | **19,808** |
+| …of which alias rows land on a **`nortaxa`** concept | 14,676 | 5,551 |
+| NorTaxa vernaculars on a **`col_xr`** concept | 5,413 | **3,070** |
+| NorTaxa vernaculars on a **`nortaxa`** concept | 4,881 | 2,633 |
+
+**The decisive structural fact: 3,070 ⊂ 19,808.** Every COL concept carrying a
+NorTaxa vernacular is a strict subset of those carrying a NorTaxa *alias
+binding*. This confirms §3's join-key account directly from data — a vernacular
+reaches a COL concept **only** where a NorTaxa source usage was alias-bound to
+it. The vernacular is not joined by name at vernacular time; it rides an
+existing identity binding.
+
+It also bounds the Stage 3 question usefully: the association population is
+**19,808 alias bindings**, of which only 3,070 happen to carry vernaculars. The
+plan's 2,041 figure is the scoped-release remnant of that 3,070. **Vernacular
+presence is therefore an arbitrary sampling of the bridge population, not a
+criterion** — Stage 3 should classify the alias bindings, not the vernacular
+joins, or it will silently ignore ~16,700 bindings that differ only in whether
+Artsdatabanken happened to publish a Norwegian name.
+
+### This criterion is still INCOMPLETE
+
+What remains unmeasured is the **evidence grade**: for each alias binding, was
+it `kind=manual` (reviewed) or `kind=cross_source_proposal` (automatic), and
+under the strict exact rule or the missing-authorship fallback? That lives in
+the compiler's `mappings.jsonl`, which is **not** carried into the SQLite
+artifact — it has no mapping/provenance table. So the grading still requires the
+pinned compiler outputs (§0.2).
+
+What §3 now delivers is a *classification scheme*, a *verdict on the strongest
+available rule*, and the *population structure* (§3.1). What it does not deliver
+is the grade distribution — how many bindings are `policy_auto_approved` under
+the strict rule, how many rest on the missing-authorship fallback, and how many
+came from reviewed manual mappings.
 
 The acceptance-gate criterion "the evidence behind the NorTaxa vernacular join
 is characterized well enough for Stage 3 to classify associations" is therefore
-**not met**.
+**not yet met**, though §3.1 closes a material part of it: the join key is now
+confirmed from data rather than inferred from source.
 
 **This remains unfinished Stage 1 work and must not be handed to Stage 3.** An
 earlier draft assigned the measurement to Stage 3; that was wrong. The stage
@@ -465,11 +555,15 @@ the special-casing risk the coverage requirement exists to prevent.
 
 **To complete this criterion, Stage 1 needs** the pinned artifacts from §0.2 —
 a rebuilt or recovered `global_macrofungi_tax-2026.08.01-01/` plus the
-compiler's `mappings.jsonl` and `source_usages.jsonl` — and then must report,
-for the 2,041 taxa: the count per `review_status`, the split between
-`kind=manual` and `kind=cross_source_proposal`, the split between the strict
-exact rule and the missing-authorship fallback, and any association reaching a
-vernacular join by a path not enumerated above.
+compiler's `mappings.jsonl` and `source_usages.jsonl` — and must then report,
+per §3.1, the count by `review_status`, the split between `kind=manual` and
+`kind=cross_source_proposal`, and the split between the strict exact rule and
+the missing-authorship fallback.
+
+Report these **over the alias-binding population, not the vernacular-joined
+subset**, for the reason given in §3.1. The 2,041 figure should appear only as
+the scoped intersection, so that the count of bindings deliberately left
+unemitted is visible rather than hidden behind a vernacular filter.
 
 ---
 
@@ -771,6 +865,8 @@ an evidence artifact alongside this file.
 | D6 | July plan's publication gate contradicts the recorded active production release | §1.1 | Medium — unresolved, blocks Stage 3 release safety |
 | D7 | `taxon_external_id_legacy_integer.jsonl` is written unconditionally empty, silently discarding every integer-namespace external ID | `macrofungi_scope.py:480` | Medium — data loss with no diagnostic |
 
+| **D10** | **Norwegian vernacular loss for dropped anchors.** A divergent-name NorTaxa concept keeps its vernaculars on its own Phase 2d anchor, which the COL-only scope drops — so the retained COL concept has no Norwegian name at all. Verified: `83668` (`Conocybe rugosa`) has zero vernaculars while `slank ringkjeglesopp` sits on dropped anchor `624680`. Affects the 2,633 NorTaxa-anchored concepts carrying vernaculars (§3.1) | §2.1, §3.1 | **High — a name-loss class the plan does not enumerate** |
+
 **Withdrawn:** the earlier D4 ("zero NorTaxa mappings make `_resolve_via_nortaxa`
 unmatchable, so name matching is the only live path") is retracted. It inferred
 the contents of the desktop SQLite from cloud-export measurements; those are
@@ -855,35 +951,68 @@ Do **not** change the v2 search-pack resolution path; its IDs are artifact-prove
 3. `src/taxonomy-v2.js` — parse `NBIC:<id>` into
    `(nortaxa, nortaxa_taxon_id, <id>)` and preserve it regardless of resolution.
 
-### Stage 3 — 2 files, plus the audit
+### Stage 3 — one mechanism, two entry points
 
-1. `database/taxonomy/scripts/build_sqlite_candidate.py` — the bridge must be
-   emitted from the **alias** binding, not only the anchor. The minimal change is
-   to stop routing reviewed NorTaxa bridges through the integer/legacy path
-   (Gate 1) and to stop requiring `is_preferred == 1` (Gate 2). Preferably emit
-   `nortaxa / nortaxa_taxon_id` rows into `taxon_external_id_text_min` directly,
-   with `is_preferred` reflecting anchor status rather than gating emission.
-2. `database/taxonomy/macrofungi_scope.py:480` — stop unconditionally emptying
-   the legacy-integer file, or make the emptying explicit and validated (D7).
+The bindings this rests on are measured (§2.1). What remains conditional is the
+**evidence grade** of the alias population (§3), so the proposal below is stated
+as: *this is the shape of the fix; which bindings are eligible to flow through it
+is decided by the §3 audit, which Stage 1 must still complete.*
 
-`52369` is not fixed by either of those. It is anchored as its **own** NorTaxa
-concept (Phase 2d) and excluded by the COL-only scope universe
-(`macrofungi_scope.py:105-108`). Two candidate approaches, both needing review:
+**Single change, at the routing decision** —
+`build_sqlite_candidate.py:473-490`. A NorTaxa identifier that the §3 audit
+grades as a reviewed bridge is emitted to `external_text_rows`
+(`taxon_external_id_text_min`) with `source_system`, `namespace` and its
+identifier as text. `is_preferred` then records anchor-vs-alias status rather
+than gating emission.
 
-- **Reviewed manual mapping** — add an approved manual bridge entry so `52369`
-  is alias-bound onto the retained COL concept in Phase 2b/2c instead of being
-  anchored in 2d. This is the approach consistent with the plan's
-  "reviewed cross-source bridge" language, and it touches the manual-mappings
-  input rather than the emitter.
-- **Admit selected Phase 2d anchors into scope** — rejected: this is exactly
-  what produced the `tax-2026.07.30-02` duplicate-concept block the plan forbids.
+This is one change, not two. It addresses Gate 1 directly, and it makes Gate 2's
+derived `norwegian_taxon_id` branch (`cloud_export.py:696-704`) **redundant
+rather than something to also modify** — that branch exists only to reconstruct
+an identifier routing had discarded. An earlier draft of this section prescribed
+changing both gates, which contradicted §8's own desktop subsection; the
+single-route version is the consistent one. Gate 2 should be *retired* once the
+text route carries NorTaxa, not relaxed to accept aliases.
 
-**That is why the two regressions need two different mechanisms**, and why a
-Stage 3 candidate should be rejected if it fixes only one. Note the asymmetry in
-review burden: `53482` needs an *emitter* change over an association the compiler
-already derived, while `52369` needs a *human decision* that no automatic rule
-can supply — which is the correct outcome, since its two sources genuinely
-disagree about the accepted name.
+Eligibility is the audit's output, not namespace membership: emitting every
+NorTaxa alias because it is a NorTaxa alias would infer authoritative identity
+from an automatic name+rank match, which §3 shows the evidence does not support.
+
+**Entry point A — `53482`.** Already alias-bound to `7821` (`is_preferred=0`,
+§2.1). If the §3 audit grades that binding as a reviewed bridge, the routing
+change alone emits it. No new relationship is created.
+
+**Entry point B — `52369`.** Anchored as its own concept `624680` (§2.1) and
+excluded by the COL-only scope universe (`macrofungi_scope.py:105-108`), so the
+routing change does **not** reach it. It needs an **approved manual bridge entry**
+so it is alias-bound onto `83668` in Phase 2b/2c instead of anchored in 2d —
+touching the manual-mappings input, not the emitter. That is a human decision no
+automatic rule can supply, which is the correct outcome given that the sources
+genuinely disagree on the accepted name.
+
+Rejected alternative: admitting Phase 2d anchors into scope. §2.1 confirms that
+is what produced the `tax-2026.07.30-02` duplicate block (2,000 null-parent
+NorTaxa rows in 625xxx–626xxx alone).
+
+Once B is aliased, it flows through the *same* routing change as A — so this is
+one mechanism with two entry points, not two mechanisms. A Stage 3 candidate
+should still be rejected if it satisfies only one regression, because A alone
+leaves divergent-name bridges unrepresented and B alone is a special case.
+
+**Also in scope for Stage 3:**
+
+- `macrofungi_scope.py:480` — stop unconditionally emptying the legacy-integer
+  file, or make the emptying explicit and validated (D7).
+- **Vernacular loss for dropped anchors.** §2.1 shows `83668` has no Norwegian
+  name because `slank ringkjeglesopp` sits on the dropped anchor `624680`. Any
+  fix for B must carry the vernaculars across with the identity, or the concept
+  stays unnamed in Norwegian. This affects the 2,633 NorTaxa-anchored concepts
+  carrying their own vernaculars (§3.1), not just `52369`.
+
+**Constraint inherited from the identity contract** (§4.5): where a client-side
+external identifier enters this path, the raw provider value must be retained
+and any namespace hop — for example `nbic_scientific_name_id` →
+`artsnavnebase_scientific_name_id` → `nortaxa_taxon_id` — recorded as an
+evidenced bridge rather than performed silently by stripping a prefix.
 
 ---
 
@@ -897,8 +1026,8 @@ correction` is NOT claimed.** Three acceptance-gate criteria are unmet:
 | Deployed and repository state agree with the ledger | **Unmet** — deployed side unverifiable (§0.1) |
 | Observation 917 has a reproducible before-state | **Unmet** — not readable (§6) |
 | Desktop leak traced to a concrete write path | **Partially met** — the only demonstrated converter is the migration (§4.3, D3a/D3b). The plan's premise that the *picker* leaks is **unsupported** (§4.2) |
-| NorTaxa bridge loss traced to a concrete compile/export path | **Partially verified** — §2. Three mechanisms located in code (Gates 1 and 2; the COL-only scope universe), but the per-case bindings are inferred, not read from compiled records |
-| Vernacular join characterized for Stage 3 classification | **Unmet** — rules identified and a verdict reached, but the 2,041 associations are uninspected. **Unfinished Stage 1 work**, not deferrable to Stage 3 (§3) |
+| NorTaxa bridge loss traced to a concrete compile/export path | **Met for the compiler bindings** — §2.1 verifies both cases against compiled records (`52369` → anchor `624680`; `53482` → alias on `7821`, `is_preferred=0`), plus the duplicate block. Confirmation against the *active* release remains outstanding (§0.2) |
+| Vernacular join characterized for Stage 3 classification | **Partially met** — the join key is now confirmed from data (§3.1: vernacular-joined taxa are a strict subset of alias-bound taxa), but the evidence **grading** is unmeasured. **Unfinished Stage 1 work**, not deferrable to Stage 3 (§3) |
 | `Entoloma conferendum` failure traced, or recorded unconfirmed with reason | **Met** (recorded unconfirmed, §5) |
 | No unexplained taxonomy production objects | **Unmet** — §1.1 activation/publication contradiction |
 
@@ -911,16 +1040,35 @@ own, blocked on two external dependencies:
    deployed reconciliation, and the §1.1 activation contradiction. Note that
    authentication alone does not resolve this: the review session had a working
    connection and was still refused under approval policy `never`;
-2. **the pinned release and source artifacts** (§0.2, §0.3) — for the 2,041
-   coverage counts (§3, a Stage 1 deliverable), the `52369`/`53482`
-   compiled-record confirmations (§2), and optionally the `tax-2026.07.30-02`
-   duplicate-block hypothesis;
+2. **the pinned release and compiler artifacts** (§0.2, §0.3) — for the evidence
+   **grading** of the alias population (§3, a Stage 1 deliverable) and for
+   confirming §2.1's bindings against the *active* release. The compiled-record
+   bindings and the duplicate-block question are **no longer blocked**: both were
+   resolved in §2.1 from the locally present `tax-2026.07.30-02` artifact;
 
 plus capturing one raw Artsorakel response for §5, which remains unavailable, so
 the Part B mechanism stays unconfirmed.
 
 Test results in §0.4 were produced in the implementation session and have not
 been independently rerun by a reviewer.
+
+### Corrections applied after third review
+
+The third review found that §8 still asserted conclusions §2 had just retracted,
+prescribed changing both export gates while §8's own desktop subsection said the
+text route makes the derived gate redundant, and left the compiled-record
+inspection assigned to Stage 3.
+
+Rather than only softening the wording, this revision **obtained the evidence**:
+the `tax-2026.07.30-02` SQLite artifact was present locally and had not been
+opened. Inspecting it (§2.1) converts §2's conditional bindings into measured
+facts, confirms the duplicate-block hypothesis, and confirms §3's join key from
+data. §8 is rewritten as one consistent mechanism with two entry points, with
+Gate 2 retired rather than also modified, and the contract constraints from §4.5
+carried into the proposal. The record inspection stays in Stage 1.
+
+New finding from that evidence: D10, Norwegian vernacular loss for dropped
+anchors — a name-loss class the plan does not enumerate.
 
 ### Corrections applied after second review
 
