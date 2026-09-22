@@ -7,6 +7,7 @@ from zipfile import ZipFile
 import pytest
 
 from database import schema
+from database.reference_library_schema import register_measurement_contract
 from database.curated_reference_forks import copy_curated_bundle_to_personal_library, normalize_curated_bundle
 from tests.test_curated_reference_forks import bundle_row
 from utils.archive.full_backup import FullBackupError, _snapshot_database, create_full_backup
@@ -103,6 +104,7 @@ def test_full_backup_sanitizes_staged_state_and_collects_authoritative_assets(
         "cloud_last_sync_status": "ok",
     })
     with sqlite3.connect(schema.get_reference_database_path()) as connection:
+        register_measurement_contract(connection)
         reference_value_id = connection.execute(
             "INSERT INTO reference_values (genus, species, source) VALUES (?, ?, ?)",
             ("Amanita", "muscaria", "phase-2-test"),

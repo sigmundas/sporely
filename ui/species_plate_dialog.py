@@ -1855,18 +1855,11 @@ class PlatePreviewCanvas(QWidget):
 # ── Main dialog ───────────────────────────────────────────────────────────────
 class SpeciesPlateDialog(QDialog):
 
-    def __init__(self, observation: dict,
-                 excluded_image_ids: set[int] | None = None,
-                 parent=None):
+    def __init__(self, observation: dict, parent=None):
         super().__init__(parent)
         self.setWindowTitle(self.tr("Species Plate"))
         self._obs = observation
         self._obs_id = int(observation.get("id", 0))
-        self._excluded_image_ids = {
-            int(image_id)
-            for image_id in (excluded_image_ids or set())
-            if image_id is not None
-        }
 
         # ── Load settings early so defaults are correct ────────────────────
         self._ins_r = _INS_R_DEFAULT
@@ -1888,11 +1881,16 @@ class SpeciesPlateDialog(QDialog):
         self._load_settings()
 
         # ── Load ALL images (no exclusion) ─────────────────────────────────
-        all_imgs = [
-            img
-            for img in ImageDB.get_images_for_observation(self._obs_id)
-            if int(img.get("id") or 0) not in self._excluded_image_ids
-        ]
+        # The plate is an observation-level summary, so its panels, its
+        # gallery and its spore statistics start from every image of the
+        # observation.  Do not narrow this list with the publication
+        # exclusion set: `artsobs_publish_excluded_image_ids_<obs>` decides
+        # which source image *files* are uploaded to Artsobservasjoner or
+        # iNaturalist, and feeding it in here also dropped those images'
+        # measurements out of `_build_spore_stats()` — an analytical summary
+        # silently narrowed by an upload choice.  A plate that should show
+        # fewer panels needs its own explicit plate state.
+        all_imgs = list(ImageDB.get_images_for_observation(self._obs_id))
         self._all_images: list[dict] = all_imgs
         self._field_images = [i for i in all_imgs if i.get("image_type") == "field"]
         micro = [i for i in all_imgs if i.get("image_type") == "microscope"]
@@ -3825,10 +3823,14 @@ class SpeciesPlateDialog(QDialog):
 def export_observation_plate_image(
     observation: dict,
     path: str | Path,
-    excluded_image_ids: set[int] | None = None,
 ) -> bool:
-    """Render the current plate state for an observation to a raster image."""
-    dialog = SpeciesPlateDialog(observation, excluded_image_ids=excluded_image_ids)
+    """Render the current plate state for an observation to a raster image.
+
+    Takes no image-exclusion argument on purpose: the plate renders the
+    observation's own saved plate state, independent of which source images
+    were selected for external publication.
+    """
+    dialog = SpeciesPlateDialog(observation)
     try:
         img = QImage(_W, _H, QImage.Format_RGB32)
         img.fill(QColor("#1c1c1e"))

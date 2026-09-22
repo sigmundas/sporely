@@ -19,12 +19,15 @@ files=(
   "ui/spore_preview_widget.py"
   "ui/reference_library_attach_dialog.py"
   "ui/add_reference_dialog.py"
+  "ui/library_source_row.py"
   "ui/reference_entry_editor.py"
   "ui/reference_library_manager_dialog.py"
   "ui/curated_reference_catalogue_dialog.py"
   "ui/comparison_panel.py"
   "ui/cloud_reference_dialog.py"
   "ui/reference_preview_pane.py"
+  "ui/reference_comparison_view.py"
+  "ui/measurement_content_view.py"
 )
 
 if [[ -x ".venv/bin/pyside6-lupdate" ]]; then

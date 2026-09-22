@@ -5,6 +5,49 @@ user-facing release changelog. See [`CHANGELOG.md`](../CHANGELOG.md) for notable
 release changes and [`plans/README.md`](plans/README.md) for the planning
 workflow. Git history remains authoritative for the implementation.
 
+## Standing invariants
+
+Rules that outlive the entries below. Read the relevant one before changing the
+area it names.
+
+### Source publication selection ≠ analytical measurement selection
+
+> `artsobs_publish_excluded_image_ids_<obs>` controls which source images are
+> sent to an external publication target. It must not alter the measurements
+> used to generate observation-level analytical summary media such as the spore
+> mosaic. Measurement exclusion requires separate explicit measurement/filter
+> state.
+
+The setting answers one question — "should this source image file itself be
+uploaded to Artsobservasjoner or iNaturalist?" — and it is the wrong answer to
+"which measurements belong in this observation's summary?". The boundary:
+
+| Kind of media | May the publication exclusion set narrow it? |
+| --- | --- |
+| **Source image files** sent to the external target, and the per-image derivatives baked from them (scale bar, measure overlay, watermark) | **Yes.** Choosing which files go out is exactly what the set is for. |
+| **Observation-level analytical summary media** — the spore mosaic, the species plate and its spore statistics, and anything else that summarises the observation's measurements | **No.** These describe the observation, not the selected files. An upload choice must never silently shrink the sample they report. |
+
+Two separate regressions came from crossing that line: `_prepare_publish_mosaic_inputs()`
+in `ui/observations_tab.py` filtered mosaic measurements by the set, collapsing
+a 61-spore mosaic to the 3 spores that sat on the one image ticked for upload;
+and `SpeciesPlateDialog` accepted the same set and filtered the image list that
+feeds `_build_spore_stats()`, which would have done the same to the plate's
+spore summary. Both call sites now carry a comment saying why the key must not
+be read there, and `tests/test_publish_media_stage2.py` and
+`tests/test_publish_plate_export.py` pin the reversion shape. A summary that
+should cover fewer measurements needs its own explicit measurement, category or
+plate state.
+
+This is the second invariant protecting the same key. Its sibling —
+*publication exclusion ≠ cloud byte exclusion*, where the cloud-storage decision
+belongs to `sporely_cloud_image_storage_excluded_ids_<obs>` — is stated in
+[`supabase-sync-contract.md`](supabase-sync-contract.md) (invariant 13) and
+[`cloud-sync-architecture.md`](cloud-sync-architecture.md) §J. The shared
+lesson is that this one legacy key keeps attracting decisions that are not its
+own.
+
+## History and debugging entries
+
 ### Stage 1 desktop-cloud image-sync split: cloud-storage-desired state has its own setting, its own predicate, and a client-boundary byte gate
 
 The gallery "Keep image in Sporely Cloud" checkbox no longer overloads `artsobs_publish_excluded_image_ids_<obs>`. It now persists to a dedicated per-observation setting `sporely_cloud_image_storage_excluded_ids_<obs>`, and a canonical predicate `cloud_image_bytes_desired(observation_id, image_id)` is the single source of truth for whether cloud image bytes may be sent. `SporelyCloudClient.upload_image_file` and `SporelyCloudClient.upload_original_image_file` raise `CloudImageBytesNotDesiredError` when the predicate says no (recovery flows opt in via `recovery_authorized=True`). `_push_images_for_observation` guards the two byte-upload call sites and the `prepare_images_cb=None` fallback with the same predicate. Identity repair (`_associate_persisted_cloud_images`) is decoupled from the checkbox and works by unambiguous `desktop_id` match. A non-destructive initializer seeds the new set on first gallery load; legacy Artsobs publication exclusions never migrate into the new key. Publication paths (`_ensure_microscope_publish_defaults`, `_collect_artsobs_image_paths`, `_collect_publish_selected_image_rows`, Species Plate dialog) are unchanged. See `docs/supabase-sync-contract.md` Phase 2 (Stage 1) for the shipped contract; Phase 3 / Stage 2 (cloud-side reconciliation) remains future work.

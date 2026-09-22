@@ -155,6 +155,54 @@ Genuine point arrays, including an empty array, are transmitted unchanged;
 acknowledged updates retain explicit JSON `null` so an existing array can be
 cleared through `jsonb_populate_record`.
 
+Measurement sets carry the measurement-content extension
+(`measurement_details_json`, `q_core_min`, `q_core_max`; contract
+`docs/reference-data/measurement-content-contract.md`, section 9). Every
+measurement-set mutation payload sends all three keys, JSON `null` included;
+the adapter never strips them, because key presence is how a request
+acknowledges the contract. On the server, a request that omits the keys may
+still create a legacy row, retry unchanged, delete or restore, but any other
+change to a row whose extension is non-NULL, and any successor of such a row,
+is rejected with `invalid_payload`; a payload carrying some but not all keys is
+rejected everywhere. Every content change is validated row-level (finite
+positive values, ordered pairs, details structure and the 4096-byte limit; an
+unknown future `schema_version` is stored opaquely). Owner reads and RPC rows
+return the three columns, so a pre-extension server's rows are rejected by the
+desktop as missing canonical fields, and a stored baseline that predates the
+extension is read with the three keys as `null`. Pull reconciliation treats the
+26 scientific-content fields of a measurement set as one conflict group:
+concurrent edits inside the group conflict unless the complete resulting
+content is identical, while `notes` keeps per-field merging.
+
+Observation-reference snapshots have two supported versions (contract section
+7). Version 2 is version 1 with `schema_version: 2`, `q_core_min`/`q_core_max`
+inside the numeric-only `measurements` mapping (17 keys) and one new top-level
+`measurement_details` key holding the decoded details object or `null`; the
+whole snapshot stays within 65536 bytes and the details object within 4096
+bytes of its canonical encoding. The emit rule follows the row, not a setting:
+a legacy-only measurement set still produces its exact version-1 snapshot and
+an enhanced one produces version 2. `private.reference_canonical_snapshot` and
+the desktop builder apply the same rule, so the attachment RPC's equality with
+the canonical snapshot keeps rejecting a version-1 projection of an enhanced
+row. Readers ship before writers: the desktop use feed, the curated and
+portable validators and `private.reference_snapshot_valid` accept both
+versions through version-keyed exact key sets, and any other version is
+refused loudly rather than read as version 1.
+`private.public_reference_snapshot` preserves the extension instead of
+rebuilding `measurements` without it, and the curated publication CHECK and
+public curated reader accept `1` or `2`. Comparison is by version-aware
+semantic projection: `schema_version` and `reference_revision` are dropped, a
+missing extension equals an explicitly null one, real statistics are a genuine
+difference, and an unsupported version is never projectable, so it is never
+equal to anything. Nothing rewrites or enriches a historical snapshot;
+replacement evidence goes through explicit refresh or successor adoption.
+Enhanced content becoming frozen evidence is held behind the
+minimum-supported-reader-version gate
+(`references/measurement_content_gates.py` in `sporely-py`), which ships
+closed: while it is closed the desktop refuses to attach, refresh onto, or
+adopt an enhanced measurement set instead of freezing a lossy version-1
+snapshot of it.
+
 Observation-use pull imports the frozen `snapshot_json` exactly as stored.
 Three-way reconciliation may automatically combine only disjoint role/note
 edits. Identity, measurement-set, selected-time, revision, or snapshot
@@ -333,6 +381,81 @@ When an active row points to missing bytes:
 - public clients may omit the broken photo, but owner diagnostics must expose the problem.
 
 Changing image order (`sort_order`) is metadata only and cannot imply creation or deletion.
+
+### Image-prep fast paths require upload completeness
+
+> **Invariant.** Local media signatures describe local input/render state.
+> They never prove remote upload completeness. Required cloud-media work is
+> determined from per-image storage intent and cloud/link state.
+
+A local media/render signature describes whether local *render inputs*
+changed. It carries neither `cloud_id` nor cloud-storage intent, so it never
+proves that the cloud identity or the bytes for the user's selected media
+exist. Do not add either to the signature — that would make every cloud link
+repair look like a local render change.
+
+Consequence for `push_all` when `sync_images=True` and the observation already
+exists in cloud: before any image-preparation fast path
+(`image_render_unchanged` skip, tombstone-cleanup-only, metadata-only image
+sync) may be taken, upload completeness is established separately:
+
+1. `_ensure_cloud_image_storage_intent_initialized` seeds per-image storage
+   intent — it must run *before* desiredness is read, because an unseeded
+   ledger makes every row look uninitialized and an unseeded excluded set
+   makes every row look desired;
+2. `_pending_cloud_pushable_image_ids` computes the canonical pending set once
+   for the observation;
+3. a non-empty pending set vetoes all three fast paths and the existing full
+   image-preparation/upload path runs instead;
+4. if completeness cannot be established (any error), the sync fails closed
+   into full image preparation.
+
+There is exactly one pending-image predicate. Rows the upload path would skip
+anyway — user-excluded, missing file, duplicate path, not-yet-initialized
+intent — are not pending and therefore cannot cause a dirty loop.
+
+`sync_images=False` (Refresh / background sync) never evaluates upload
+completeness: it cannot upload bytes, so it must not be re-dirtied by them.
+
+Without this gate an observation whose render inputs never changed but whose
+selected images were never uploaded stays permanently stranded: dirty on every
+sync, bytes never sent (`tests/test_cloud_sync_upload_completeness.py`).
+
+The repaired run must converge along the whole chain, not merely send bytes:
+one cloud image identity per local image (no duplicate row, no re-upload on
+the next sync), measurement synchronization against that identity, and the
+mosaic pusher receiving the resulting cloud-linked measurements
+(`tests/test_cloud_media_measurement_mosaic_chain.py`).
+
+Byte-storage state and measurement/mosaic participation stay independent, in
+both directions. A microscope image the user excluded from cloud image storage
+keeps no cloud bytes, yet its metadata-only anchor still carries its public
+spore measurements to cloud and into the mosaic. A stranded-media incident is
+therefore never repaired by requiring measured microscope source images to
+upload their bytes — the byte-storage predicate governs bytes only.
+
+### Recovering already-stranded observations
+
+Installations stranded by an earlier defect are recovered through the existing
+scanner, not a second one. `_mark_cloud_observations_dirty_for_pending_local_images`
+is the only pending-image dirty scan, it only runs under `sync_images=True`,
+and its cadence is owned by `_cloud_pending_image_repair_scan_due`: a versioned
+repair generation (`cloud_pending_image_repair_version`) plus a 24-hour
+watermark (`cloud_pending_image_repair_at`).
+
+When a fix changes which observations the scan can actually rescue, bump
+`_CLOUD_PENDING_IMAGE_REPAIR_VERSION`. An installation holding the previous
+generation then performs exactly one rescan on its next explicit
+`sync_images=True` synchronization, however fresh its watermark, and returns to
+ordinary interval throttling afterwards. Do not recover stranded data by
+widening the scan to Refresh/background sync, by removing the throttle, or by
+adding a permanent broad scan.
+
+Generation 2 covers the mosaic fix: an unchanged local render signature no
+longer implies the selected media reached the cloud, so `synced` observations
+holding desired, uploadable `cloud_id IS NULL` media become discoverable again
+(`tests/test_cloud_sync_dirty_pending_images.py`,
+`tests/test_cloud_sync_pending_image_repair.py`).
 
 ## Desired deletion flow
 

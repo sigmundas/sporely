@@ -36,6 +36,31 @@ class PortableExportError(RuntimeError):
     """Raised when a selected-observation archive cannot be created safely."""
 
 
+def _guard_enhanced_reference_export(reference_database: Path) -> None:
+    """Apply the minimum-supported-desktop-version policy to this archive.
+
+    Mirrors ``utils.db_share._guard_enhanced_bundle_export``; both refuse to
+    *produce* a transferable archive carrying enhanced reference content while
+    the gate is closed, rather than letting an unsupported desktop import a
+    legacy-only projection of it (contract sections 6 and 11).
+    """
+    from database.reference_library_schema import reference_library_has_enhanced_rows
+    from references.measurement_content_gates import (
+        ENHANCED_BUNDLE_BLOCKED_MESSAGE,
+        enhanced_bundle_export_enabled,
+    )
+
+    if enhanced_bundle_export_enabled():
+        return
+    connection = sqlite3.connect(reference_database)
+    try:
+        blocked = reference_library_has_enhanced_rows(connection)
+    finally:
+        connection.close()
+    if blocked:
+        raise PortableExportError(ENHANCED_BUNDLE_BLOCKED_MESSAGE)
+
+
 def _placeholders(values: set[object]) -> str:
     return ",".join("?" for _value in values)
 
@@ -440,6 +465,12 @@ def export_observations(
             _snapshot_database(Path(get_reference_database_path()), staged_reference)
             _prune_reference_database(staged_main, staged_reference)
             verify_sqlite_integrity(staged_reference)
+            # Same minimum-supported-desktop-version policy as the shared
+            # bundle: an archive carrying enhanced reference content must not
+            # exist while an unsupported desktop could import a legacy-only
+            # projection of it. Checked after pruning, so only the rows this
+            # archive would actually carry can block it.
+            _guard_enhanced_reference_export(staged_reference)
             objectives = staging / "portable/objectives.json"
             objectives.parent.mkdir(parents=True, exist_ok=True)
             objectives.write_bytes(_filtered_objectives(staged_main, Path(get_objectives_path())))

@@ -15,7 +15,7 @@ import sqlite3
 import uuid
 from dataclasses import dataclass, field, fields, asdict
 from datetime import datetime, timezone
-from typing import Any, Iterable, Sequence
+from typing import Any, Iterable, Mapping, Sequence
 
 from database.reference_citation import (
     build_full_citation,
@@ -37,6 +37,22 @@ from database.reference_sync_state import (
     record_use_mutation_intent,
 )
 from database.schema import get_connection, get_reference_connection
+from references.measurement_content import (
+    MeasurementContent,
+    MeasurementContentError,
+    UnsupportedMeasurementDetails,
+    content_from_row,
+    decode_measurement_details,
+    encode_measurement_details,
+    is_enhanced_row,
+    validate_measurement_content,
+)
+from references.measurement_content_gates import (
+    ENHANCED_ATTACHMENT_BLOCKED_MESSAGE,
+    enhanced_attachments_enabled,
+)
+from references.reference_comparison import point_extents
+from references.reference_display import SourceDisplay, display_from_row
 
 
 # --- Errors ------------------------------------------------------------------
@@ -220,6 +236,27 @@ class MeasurementSet:
     legacy_reference_value_id: int | None = None
     created_at: str | None = None
     updated_at: str | None = None
+    # Measurement content extension (contract sections 1–2; Stage 3A columns).
+    # ``measurement_details_json`` is the stored canonical codec text; the
+    # typed view is ``measurement_content()``. ``q_core_min``/``q_core_max``
+    # are the inner Q pair and are never a substitute for ``q_min``/``q_max``.
+    measurement_details_json: str | None = None
+    q_core_min: float | None = None
+    q_core_max: float | None = None
+
+    @property
+    def is_enhanced(self) -> bool:
+        """True when any extension column is non-NULL (contract terminology)."""
+        return is_enhanced_row(asdict(self))
+
+    def measurement_content(self) -> MeasurementContent:
+        """Typed scientific content (contract section 5) with decoded details.
+
+        Legacy rows decode to ``details=None``; unsupported future versions
+        decode opaquely; malformed stored details raise
+        ``MeasurementContentError`` rather than being reinterpreted.
+        """
+        return content_from_row(asdict(self))
 
 
 @dataclass
@@ -277,6 +314,33 @@ class MeasurementSetCandidate:
     is_favorite: bool = False
     recent_use_sequence: int | None = None
     treatment_notes: str | None = None
+    #: What this set actually contains, projected once while the chooser list
+    #: is loaded (see :mod:`references.reference_display`). ``None`` only for
+    #: a candidate built by hand in a test or a screenshot scenario; ask
+    #: :meth:`source_display` instead of reading ``data_kind`` to decide a
+    #: badge, so no widget re-interprets stored columns on its own.
+    display: SourceDisplay | None = None
+    #: Per-metric ``(min, max)`` of this set's individual measurements, when it
+    #: stores any (see :func:`references.reference_comparison.point_extents`).
+    #: Projected here, beside :attr:`display`, because the chooser query
+    #: already holds the decoded row: the Add-reference dialog needs a
+    #: raw-data candidate's real extent to freeze its comparison axes, and
+    #: re-reading every row's ``raw_points_json`` at that moment would be the
+    #: duplicate query the injection seam exists to avoid.
+    #:
+    #: **Not a range.** It is the span of measurements on file, for sizing an
+    #: axis, and must never be drawn as something the source published.
+    raw_point_extents: Mapping[str, tuple[float, float]] | None = None
+
+    def source_display(self) -> SourceDisplay:
+        """This candidate's display semantics, empty rather than missing."""
+        if self.display is not None:
+            return self.display
+        return SourceDisplay(source_kind="library", stored_data_kind=self.data_kind or None)
+
+    def axis_extents(self) -> Mapping[str, tuple[float, float]]:
+        """This candidate's measured spans, empty rather than missing."""
+        return self.raw_point_extents or {}
 
 
 @dataclass(frozen=True)
@@ -308,11 +372,35 @@ class QuickAddReferenceResult:
     work: ReferenceWork
     treatment: TaxonTreatment
     measurement_set: MeasurementSet
-    use: ObservationReferenceUse
+    # ``None`` for a save-only operation (:meth:`QuickAddReferenceService.
+    # create_only`), which writes the library hierarchy but deliberately
+    # does not attach it to an observation.
+    use: ObservationReferenceUse | None
     created_work: bool
     created_treatment: bool
     created_measurement_set: bool
     created_attachment: bool
+
+
+def _decoded_point_extents(
+    raw_points_json: Any,
+) -> Mapping[str, tuple[float, float]] | None:
+    """Per-metric spans of one row's stored points, ``None`` when it has none.
+
+    Malformed text answers ``None`` rather than raising, matching
+    ``references.reference_display.raw_point_count``: a points blob this
+    binary cannot read means the chooser knows nothing about that row's
+    extent, not that the whole library fails to load.
+    """
+    if not raw_points_json or not isinstance(raw_points_json, str):
+        return None
+    try:
+        decoded = json.loads(raw_points_json)
+    except ValueError:
+        return None
+    if not isinstance(decoded, list):
+        return None
+    return point_extents(decoded) or None
 
 
 def _row_to_dataclass(row: sqlite3.Row, cls):
@@ -854,10 +942,24 @@ class MeasurementSetRepository:
         "legacy_reference_value_id",
         "created_at",
         "updated_at",
+        "measurement_details_json",
+        "q_core_min",
+        "q_core_max",
     )
 
     @staticmethod
-    def _validate(ms: MeasurementSet) -> None:
+    def _validate(ms: MeasurementSet) -> str | None:
+        """Validate the complete candidate row and return the canonical
+        ``measurement_details_json`` text to persist.
+
+        The scientific content (numeric columns, the Q core pair and the
+        decoded details) is validated together through the contract
+        validator in ``mode="edit"``, so an unsupported future details
+        version is rejected: such a row is inspect-only until the binary is
+        upgraded. Details are passed through the contract codec first, so
+        semantically empty objects normalize to NULL and the stored text is
+        always canonical. Nothing here infers new semantics for legacy rows.
+        """
         if not str(ms.taxon_treatment_id or "").strip():
             raise ReferenceValidationError(
                 "measurement_set.taxon_treatment_id is required"
@@ -898,10 +1000,42 @@ class MeasurementSetRepository:
                     "measurement_set.raw_points_json entries must be numeric or "
                     "dicts containing at least one numeric length/width"
                 )
+        try:
+            content = content_from_row(asdict(ms))
+            canonical = encode_measurement_details(content.details)
+            content.details = decode_measurement_details(canonical)
+            validate_measurement_content(content, mode="edit")
+        except MeasurementContentError as exc:
+            raise ReferenceValidationError(
+                f"measurement_set content invalid: {exc}"
+            ) from exc
+        return canonical
+
+    @staticmethod
+    def _require_editable_source(existing: MeasurementSet) -> None:
+        """Reject edits and successors of a stored row whose details cannot
+        be edited by this binary (contract section 3: inspect-only).
+
+        Validating only the merged candidate would let an override of
+        ``measurement_details_json`` (NULL or a supported version) silently
+        downgrade an unsupported future version. Malformed stored text is
+        likewise never rewritten from here.
+        """
+        try:
+            details = existing.measurement_content().details
+        except MeasurementContentError as exc:
+            raise ReferenceValidationError(
+                f"measurement_set content invalid: {exc}"
+            ) from exc
+        if isinstance(details, UnsupportedMeasurementDetails):
+            raise ReferenceValidationError(
+                "measurement_set content invalid: unsupported measurement "
+                "details version (row is inspect-only until upgraded)"
+            )
 
     @classmethod
     def create(cls, ms: MeasurementSet) -> MeasurementSet:
-        cls._validate(ms)
+        ms.measurement_details_json = cls._validate(ms)
         if not ms.id:
             ms.id = _new_uuid()
         now = _now()
@@ -927,6 +1061,9 @@ class MeasurementSetRepository:
                 values,
             )
             conn.commit()
+        except Exception:
+            conn.rollback()
+            raise
         finally:
             conn.close()
         return ms
@@ -969,13 +1106,19 @@ class MeasurementSetRepository:
         existing = cls.get(set_id)
         if existing is None:
             raise ReferenceIntegrityError(f"measurement_set {set_id} not found")
+        cls._require_editable_source(existing)
 
         allowed = {name for name in cls._COLUMNS if name != "id"}
         for name in list(updates.keys()):
             if name not in allowed:
                 raise ReferenceValidationError(f"cannot update field {name!r}")
         merged = MeasurementSet(**{**asdict(existing), **updates})
-        cls._validate(merged)
+        # The merged candidate is validated as a whole (contract section 5:
+        # single-writer path). Callers expressing explicit clear/switch/swap
+        # edits apply the contract's edit operations to
+        # ``existing.measurement_content()`` and pass ``content_row_updates``
+        # of the result; nothing here repairs or infers semantics.
+        merged.measurement_details_json = cls._validate(merged)
         if bump_revision:
             merged.revision = int(existing.revision or 1) + 1
             merged.updated_at = _now()
@@ -990,6 +1133,9 @@ class MeasurementSetRepository:
             )
             record_library_mutation_intent(conn, "measurement_set", set_id)
             conn.commit()
+        except Exception:
+            conn.rollback()
+            raise
         finally:
             conn.close()
         return merged
@@ -1008,6 +1154,7 @@ class MeasurementSetRepository:
         existing = cls.get(set_id)
         if existing is None:
             raise ReferenceIntegrityError(f"measurement_set {set_id} not found")
+        cls._require_editable_source(existing)
         base = asdict(existing)
         base.pop("id", None)
         base.pop("created_at", None)
@@ -1130,6 +1277,37 @@ class MeasurementSetRepository:
                     ms.data_kind AS ms_data_kind,
                     ms.raw_text AS ms_raw_text,
                     ms.revision AS ms_revision,
+                    -- Scientific-content columns under their own names so
+                    -- ``content_from_row`` reads the row directly. Joined in
+                    -- here rather than fetched per selected row: the chooser
+                    -- needs each row's display semantics to label it, and one
+                    -- query per visible row is what this avoids.
+                    ms.character,
+                    ms.data_kind,
+                    ms.raw_text,
+                    ms.length_min,
+                    ms.length_core_min,
+                    ms.length_core_max,
+                    ms.length_max,
+                    ms.width_min,
+                    ms.width_core_min,
+                    ms.width_core_max,
+                    ms.width_max,
+                    ms.q_min,
+                    ms.q_core_min,
+                    ms.q_core_max,
+                    ms.q_max,
+                    ms.q_mean,
+                    ms.length_mean,
+                    ms.width_mean,
+                    ms.sample_size,
+                    ms.specimen_count,
+                    ms.mount_medium,
+                    ms.stain,
+                    ms.preparation,
+                    ms.measurement_method,
+                    ms.raw_points_json,
+                    ms.measurement_details_json,
                     t.id AS t_id,
                     t.taxon_id AS t_taxon_id,
                     t.name_as_published AS t_name_as_published,
@@ -1190,6 +1368,8 @@ class MeasurementSetRepository:
                     treatment_notes=(
                         str(row["t_treatment_notes"]) if row["t_treatment_notes"] else None
                     ),
+                    display=display_from_row(dict(row), source_kind="library"),
+                    raw_point_extents=_decoded_point_extents(row["raw_points_json"]),
                 )
             )
         return result
@@ -1360,6 +1540,40 @@ class MeasurementSetPreferenceRepository:
 
 
 # --- Observation reference uses ---------------------------------------------
+
+
+def _gated_observation_reference_snapshot(
+    work: "ReferenceWork",
+    treatment: "TaxonTreatment",
+    measurement_set: "MeasurementSet",
+) -> dict[str, Any]:
+    """Build a snapshot for an attachment, applying the reader-version gate.
+
+    ``build_observation_reference_snapshot`` emits version 2 for an enhanced
+    measurement set. Until the minimum-supported-reader-version gate is open,
+    a desktop older than the version-2 readers would reject a whole use feed
+    containing such a snapshot, so an enhanced source cannot become frozen
+    evidence yet. Refusing is the only safe answer: emitting version 1 instead
+    would freeze evidence that silently omits the reported statistics.
+
+    A malformed stored details object surfaces through the same boundary, as a
+    library error the callers of this repository already handle, rather than as
+    a bare ``ValueError`` escaping into the UI.
+    """
+    if not enhanced_attachments_enabled() and is_enhanced_row(
+        {
+            "measurement_details_json": measurement_set.measurement_details_json,
+            "q_core_min": measurement_set.q_core_min,
+            "q_core_max": measurement_set.q_core_max,
+        }
+    ):
+        raise ReferenceIntegrityError(ENHANCED_ATTACHMENT_BLOCKED_MESSAGE)
+    try:
+        return build_observation_reference_snapshot(work, treatment, measurement_set)
+    except MeasurementContentError as exc:
+        raise ReferenceIntegrityError(
+            f"reference measurement content cannot be snapshotted: {exc}"
+        ) from exc
 
 
 class ObservationReferenceUseRepository:
@@ -1592,7 +1806,7 @@ class ObservationReferenceUseRepository:
                     f"reference_measurement_set {reference_measurement_set_id} does not exist"
                 )
             measurement_set, treatment, work = bundle
-            snapshot = build_observation_reference_snapshot(
+            snapshot = _gated_observation_reference_snapshot(
                 work, treatment, measurement_set
             )
             snapshot_json = serialize_snapshot(snapshot)
@@ -1709,7 +1923,7 @@ class ObservationReferenceUseRepository:
                 state="source_missing",
             )
         measurement_set, treatment, work = bundle
-        current_snapshot = build_observation_reference_snapshot(
+        current_snapshot = _gated_observation_reference_snapshot(
             work, treatment, measurement_set
         )
         state = (
@@ -1763,9 +1977,19 @@ class ObservationReferenceUseRepository:
                 path_ids=resolution.path_ids,
             )
         measurement_set, treatment, work = bundle
-        snapshot = build_observation_reference_snapshot(
-            work, treatment, measurement_set
-        )
+        try:
+            snapshot = _gated_observation_reference_snapshot(
+                work, treatment, measurement_set
+            )
+        except ReferenceIntegrityError:
+            # An enhanced successor this desktop may not freeze yet, or one
+            # whose stored content is unreadable, is reported exactly like a
+            # successor it cannot render: reviewable, not adoptable.
+            return MeasurementSetSuccessorResolution(
+                source_id=resolution.source_id,
+                state="unsupported",
+                path_ids=resolution.path_ids,
+            )
         # Adoption must not replace a working historical plot with a source
         # the current desktop cannot render. Import locally to keep the
         # repository's normal CRUD path independent of plotting concerns.
@@ -1913,7 +2137,7 @@ class ObservationReferenceUseRepository:
                 "snapshot was preserved"
             )
         measurement_set, treatment, work = bundle
-        current_snapshot = build_observation_reference_snapshot(
+        current_snapshot = _gated_observation_reference_snapshot(
             work, treatment, measurement_set
         )
         if observation_snapshots_semantically_equal(
@@ -2160,7 +2384,36 @@ class QuickAddReferenceService:
         cls, request: QuickAddReferenceRequest
     ) -> QuickAddReferenceResult:
         """Persist a quick-add operation, compensating partial writes."""
-        ObservationReferenceUseRepository._validate_role(request.role)
+        return cls._create(request, attach=True)
+
+    @classmethod
+    def create_only(
+        cls, request: QuickAddReferenceRequest
+    ) -> QuickAddReferenceResult:
+        """Persist the library hierarchy WITHOUT attaching it anywhere.
+
+        "Save to library" is a distinct user intent from "plot this": the
+        reference becomes a permanent, reusable library entry, but the
+        observation gains no ``observation_reference_use`` row and the plot
+        is untouched. The result's ``use`` is therefore ``None`` and
+        ``created_attachment`` is ``False``.
+
+        The caller that later decides to plot the same reference must
+        attach ``result.measurement_set.id`` through the ordinary attach
+        path rather than calling this service again -- a second call would
+        create a second measurement set for the same typed data.
+
+        Creation, validation and reverse-order compensation are shared with
+        :meth:`create_and_attach`; only the attachment step differs.
+        """
+        return cls._create(request, attach=False)
+
+    @classmethod
+    def _create(
+        cls, request: QuickAddReferenceRequest, *, attach: bool
+    ) -> QuickAddReferenceResult:
+        if attach:
+            ObservationReferenceUseRepository._validate_role(request.role)
 
         # Validate domain/editor output before creating any hierarchy rows.
         proposed_set = MeasurementSet(
@@ -2190,12 +2443,13 @@ class QuickAddReferenceService:
             )
             proposed_set.taxon_treatment_id = treatment.id
             measurement_set = MeasurementSetRepository.create(proposed_set)
-            use, created_attachment = ObservationReferenceUseRepository.attach_with_status(
-                request.observation_id,
-                measurement_set.id,
-                role=request.role,
-                note=request.note,
-            )
+            if attach:
+                use, created_attachment = ObservationReferenceUseRepository.attach_with_status(
+                    request.observation_id,
+                    measurement_set.id,
+                    role=request.role,
+                    note=request.note,
+                )
             return QuickAddReferenceResult(
                 work=work,
                 treatment=treatment,

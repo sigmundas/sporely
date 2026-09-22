@@ -15,6 +15,7 @@ from PySide6.QtCore import Qt
 from PySide6.QtWidgets import QApplication, QDialogButtonBox
 
 from database import schema
+from database.reference_library_schema import register_measurement_contract
 from ui.portable_import_dialog import PortableImportDialog
 from utils.archive.portable_export import export_observations
 from utils.archive.checksums import sha256_file
@@ -105,6 +106,7 @@ def _archive(monkeypatch, tmp_path: Path) -> Path:
         )
         connection.commit()
     with sqlite3.connect(reference) as connection:
+        register_measurement_contract(connection)
         connection.executemany(
             "INSERT INTO reference_works (id, type, title, short_label, revision) VALUES (?, 'book', ?, ?, 1)",
             [("work-a", "Work A", "A"), ("work-b", "Work B", "B")],

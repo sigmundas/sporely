@@ -124,10 +124,10 @@ def test_range_reference_persists_and_survives_reopen(qapp, libs):
     try:
         # Fill length row min/max + typical bounds + mean.
         for col, value in enumerate([5.5, 6.2, 7.0, 7.8, 8.5]):
-            dialog.minmax_table.setItem(0, col, QTableWidgetItem(f"{value:.2f}"))
+            dialog.set_measurement_cell_text(0, col, f"{value:.2f}")
         # Fill width row min/max.
-        dialog.minmax_table.setItem(1, 0, QTableWidgetItem("3.00"))
-        dialog.minmax_table.setItem(1, 4, QTableWidgetItem("5.00"))
+        dialog.set_measurement_cell_text(1, 0, "3.00")
+        dialog.set_measurement_cell_text(1, 4, "5.00")
         created = _persist_like_mainwindow(
             dialog, work_id=work.id, taxon_id=7, obs_id=obs_id
         )
@@ -206,12 +206,12 @@ def test_treatment_reuse_across_two_sets_on_same_work_and_taxon(qapp, libs):
             sporely_taxon_id=7,
         )
         try:
-            dialog.minmax_table.setItem(0, 0, QTableWidgetItem(f"{value_min:.2f}"))
-            dialog.minmax_table.setItem(0, 4, QTableWidgetItem(f"{value_max:.2f}"))
+            dialog.set_measurement_cell_text(0, 0, f"{value_min:.2f}")
+            dialog.set_measurement_cell_text(0, 4, f"{value_max:.2f}")
             # Both dimensions must have at least one bound for the
             # payload to qualify as a plottable range.
-            dialog.minmax_table.setItem(1, 0, QTableWidgetItem("3.00"))
-            dialog.minmax_table.setItem(1, 4, QTableWidgetItem("5.00"))
+            dialog.set_measurement_cell_text(1, 0, "3.00")
+            dialog.set_measurement_cell_text(1, 4, "5.00")
             created = _persist_like_mainwindow(
                 dialog, work_id=work.id, taxon_id=7, obs_id=obs_id
             )

@@ -1,0 +1,10 @@
+{
+  "schema_version": 2,
+  "metrics": {
+    "length": {
+      "core_range": {"kind": "percentile_interval", "percentile_bounds": [5, 95]},
+      "population": {"kind": "specimen_means", "n": 12}
+    }
+  },
+  "provenance": {"basis": "verbatim"}
+}

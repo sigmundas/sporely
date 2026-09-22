@@ -17,6 +17,7 @@ import pytest
 from PySide6.QtWidgets import QApplication, QTableWidgetItem, QWidget
 
 from database import schema as _schema
+from references.measurement_content import MeasurementContentError
 from database.reference_library import (
     MeasurementSetRepository,
     ReferenceWork,
@@ -70,8 +71,7 @@ def _new_dialog(qapp, **kwargs):
 
 
 def _fill_minmax_cell(dialog, row: int, col: int, value: float) -> None:
-    item = QTableWidgetItem(f"{value:.2f}")
-    dialog.minmax_table.setItem(row, col, item)
+    dialog.set_measurement_cell_text(row, col, f"{value:.2f}")
 
 
 def test_normalized_payload_supports_name_only_treatment_without_taxon(qapp, libs):
@@ -178,17 +178,30 @@ def test_normalized_payload_preserves_verbatim_measurement_expression(qapp, libs
         parent.deleteLater()
 
 
-def test_parsed_q_range_and_qm_persist_to_normalized_payload(qapp, libs):
-    """Parser output for ``Q = 1.2–1.3, Qm = 1.25`` lands in the Typical
-    cells of the Q row and the Parmasto Q-mean field; the normalized
-    payload must map those into q_min/q_max/q_mean instead of silently
-    dropping them (F-004)."""
+def test_parsed_q_range_is_refused_rather_than_silently_dropped(qapp, libs):
+    """F-004 asked that a parsed ``Q = 1.2-1.3, Qm = 1.25`` not be dropped.
+
+    It used to be honoured by mapping the Q typical bounds into
+    ``q_min``/``q_max``, which is a different claim -- and which loses the
+    bounds outright when the source also states Q extremes. The requirement
+    is still met, by refusing instead of writing either. Retracting the Q
+    range interpretation restores the old mapping deliberately.
+    """
     parent, dialog = _new_dialog(qapp, sporely_taxon_id=7)
     try:
         dialog.measurement_paste_input.setText(
             "9.8-11.3 x 8.0-9.4 µm, Q = 1.2-1.3, Qm = 1.25"
         )
         dialog._on_parse_measurement_clicked()
+
+        with pytest.raises(MeasurementContentError):
+            dialog.normalized_measurement_set_payload()
+        assert dialog.is_ready_to_submit() is False
+
+        dialog.set_measurement_cell_text(2, 1, "")
+        dialog.set_measurement_cell_text(2, 3, "")
+        dialog.set_measurement_cell_text(2, 0, "1.20")
+        dialog.set_measurement_cell_text(2, 4, "1.30")
 
         payload = dialog.normalized_measurement_set_payload()
         assert payload is not None
@@ -200,20 +213,17 @@ def test_parsed_q_range_and_qm_persist_to_normalized_payload(qapp, libs):
         parent.deleteLater()
 
 
-def test_explicit_q_cells_win_over_typical_and_parmasto_fallbacks(qapp, libs):
+def test_explicit_q_cells_win_over_the_parmasto_fallback(qapp, libs):
+    """The Q Mean cell beats the Parmasto species-mean field."""
     parent, dialog = _new_dialog(qapp, sporely_taxon_id=7)
     try:
         _fill_minmax_cell(dialog, 0, 1, 9.8)
         _fill_minmax_cell(dialog, 0, 3, 11.3)
         _fill_minmax_cell(dialog, 1, 1, 8.0)
         _fill_minmax_cell(dialog, 1, 3, 9.4)
-        # Explicit Extreme / Mean cells for Q...
         _fill_minmax_cell(dialog, 2, 0, 1.1)
         _fill_minmax_cell(dialog, 2, 2, 1.22)
         _fill_minmax_cell(dialog, 2, 4, 1.4)
-        # ...must beat the Typical cells and the Parmasto Q-mean field.
-        _fill_minmax_cell(dialog, 2, 1, 1.2)
-        _fill_minmax_cell(dialog, 2, 3, 1.3)
         dialog.parmasto_inputs["parmasto_q_mean"].setText("1.25")
 
         payload = dialog.normalized_measurement_set_payload()
@@ -221,6 +231,33 @@ def test_explicit_q_cells_win_over_typical_and_parmasto_fallbacks(qapp, libs):
         assert payload.q_min == pytest.approx(1.1)
         assert payload.q_mean == pytest.approx(1.22)
         assert payload.q_max == pytest.approx(1.4)
+    finally:
+        dialog.deleteLater()
+        parent.deleteLater()
+
+
+def test_q_typical_cells_entered_beside_q_extremes_are_refused(qapp, libs):
+    """Hand-typed values reach the same boundary as parsed ones.
+
+    This previously asserted that the extreme cells "win" over the typical
+    cells -- which is true, and is exactly the problem: the 1.2 and 1.3 the
+    user typed into the Q typical columns were dropped on the floor while
+    the save reported success. Typing a value is not consent to discard it.
+    """
+    parent, dialog = _new_dialog(qapp, sporely_taxon_id=7)
+    try:
+        _fill_minmax_cell(dialog, 0, 1, 9.8)
+        _fill_minmax_cell(dialog, 0, 3, 11.3)
+        _fill_minmax_cell(dialog, 1, 1, 8.0)
+        _fill_minmax_cell(dialog, 1, 3, 9.4)
+        _fill_minmax_cell(dialog, 2, 0, 1.1)
+        _fill_minmax_cell(dialog, 2, 4, 1.4)
+        _fill_minmax_cell(dialog, 2, 1, 1.2)
+        _fill_minmax_cell(dialog, 2, 3, 1.3)
+
+        assert dialog.is_ready_to_submit() is False
+        with pytest.raises(MeasurementContentError):
+            dialog.normalized_measurement_set_payload()
     finally:
         dialog.deleteLater()
         parent.deleteLater()

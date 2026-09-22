@@ -35,6 +35,7 @@ from database.reference_library import (
     MeasurementSet,
     MeasurementSetRepository,
     ObservationReferenceUseRepository,
+    ReferenceValidationError,
     ReferenceWork,
     ReferenceWorkRepository,
     TaxonTreatment,
@@ -906,7 +907,13 @@ def test_hierarchy_shows_empty_placeholder_when_no_work_selected(libs, qapp):
 def test_plot_hint_rejects_infinity_and_negative_values(libs):
     """F-006 regression: the plot hint must apply finite-positive checks,
     not just ordering. NaN, infinity, zero and negative values must fail
-    exactly like the translator's finite-positive rule."""
+    exactly like the translator's finite-positive rule.
+
+    Since Stage 3B the repository itself rejects non-finite or non-positive
+    dimension values (measurement content contract, section 1), so such rows
+    can only reach the hint from rows written outside the repository. The
+    hint is exercised on unpersisted objects, and the repository rejection is
+    asserted alongside."""
     import math as _math
 
     from ui.reference_library_manager_dialog import (
@@ -915,46 +922,46 @@ def test_plot_hint_rejects_infinity_and_negative_values(libs):
 
     _, treatment = _seed_work_treatment(libs)
 
-    negative = MeasurementSetRepository.create(
-        MeasurementSet(
-            id="",
-            taxon_treatment_id=treatment.id,
-            character="spore_size",
-            data_kind="range",
-            length_core_min=-10.0,
-            length_core_max=-5.0,
-            width_core_min=-6.0,
-            width_core_max=-3.0,
-        )
+    negative = MeasurementSet(
+        id="",
+        taxon_treatment_id=treatment.id,
+        character="spore_size",
+        data_kind="range",
+        length_core_min=-10.0,
+        length_core_max=-5.0,
+        width_core_min=-6.0,
+        width_core_max=-3.0,
     )
     assert _measurement_set_is_plottable_hint(negative) is False
+    with pytest.raises(ReferenceValidationError, match="must be positive"):
+        MeasurementSetRepository.create(negative)
 
-    infinite = MeasurementSetRepository.create(
-        MeasurementSet(
-            id="",
-            taxon_treatment_id=treatment.id,
-            character="spore_size",
-            data_kind="range",
-            length_core_min=1.0,
-            length_core_max=float("inf"),
-            width_core_min=1.0,
-            width_core_max=2.0,
-        )
+    infinite = MeasurementSet(
+        id="",
+        taxon_treatment_id=treatment.id,
+        character="spore_size",
+        data_kind="range",
+        length_core_min=1.0,
+        length_core_max=float("inf"),
+        width_core_min=1.0,
+        width_core_max=2.0,
     )
     assert _measurement_set_is_plottable_hint(infinite) is False
+    with pytest.raises(ReferenceValidationError, match="finite number"):
+        MeasurementSetRepository.create(infinite)
 
     # Mean pair with a NaN element is not plottable either.
-    nan_mean = MeasurementSetRepository.create(
-        MeasurementSet(
-            id="",
-            taxon_treatment_id=treatment.id,
-            character="spore_size",
-            data_kind="summary",
-            length_mean=_math.nan,
-            width_mean=5.0,
-        )
+    nan_mean = MeasurementSet(
+        id="",
+        taxon_treatment_id=treatment.id,
+        character="spore_size",
+        data_kind="summary",
+        length_mean=_math.nan,
+        width_mean=5.0,
     )
     assert _measurement_set_is_plottable_hint(nan_mean) is False
+    with pytest.raises(ReferenceValidationError, match="finite number"):
+        MeasurementSetRepository.create(nan_mean)
 
 
 def test_attach_dialog_manage_button_opens_manager_and_refreshes(libs, qapp, monkeypatch):

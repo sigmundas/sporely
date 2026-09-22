@@ -223,7 +223,15 @@ def test_library_tombstone_retains_dependency_and_transport_state(
     assert tombstones[0].entity_id == "set-1"
     assert tombstones[0].taxon_treatment_id == "treatment-1"
     assert tombstones[0].expected_row_version == 3
-    assert tombstones[0].accepted_payload == {"id": "set-1"}
+    # A stored measurement-set baseline is read in the current payload shape:
+    # a historical baseline without the measurement-content extension keys
+    # compares as NULL (recognize_library_baseline).
+    assert tombstones[0].accepted_payload == {
+        "id": "set-1",
+        "measurement_details_json": None,
+        "q_core_min": None,
+        "q_core_max": None,
+    }
 
     assert ReferenceCloudSyncStateRepository.resolve_library_tombstone(
         "measurement_set", "set-1", "other-user"

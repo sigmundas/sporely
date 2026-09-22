@@ -1666,3 +1666,32 @@ suitable Amanita muscaria observation exists. That case is not a verified
 pass. A subsequent review invocation found Stage 6 already committed as
 `86ff879` with its prompt archived and HEAD at `4597fb6`; it did not perform
 a new independent acceptance review or create a duplicate Stage 6 commit.
+
+### Landing note — UI transplant onto current main — 2026-09-17
+
+The reference-discovery and cloud-account UX fixes were rebuilt as a narrow
+branch from `origin/main` (`0ec2619`), carrying only the seven UI commits and
+none of the cloud-sync / reported-statistics ancestry the original branch had
+accumulated beneath them.
+
+Two deliberate deviations from those seven commits, both caused by main having
+moved underneath them:
+
+- **Failure propagation from the manual Add-reference callback is not part of
+  this transplant.** One transplanted test,
+  `test_manual_callback_propagates_failed_submission`, asserted that the
+  picker's `manual_attach_callback` returns `False` when
+  `_submit_reference_editor_result` fails. That depends on the `-> bool` return
+  contract introduced by `4efdf7d`, which belongs to the separately preserved
+  `feature/reference-save-and-plot` work and was intentionally left out here.
+  On main the helper is still `-> None` and `_add_manual_callback` returns
+  `True` unconditionally. The test was removed rather than the production
+  contract changed; propagation lands with that feature, not with this UI
+  cleanup.
+- **`_update_footer_state` keeps main's shape.** The "Only this taxon" commit
+  also rewrote a block managing `save_to_library_btn` / `_saved_manual_set_id`
+  and a duplicate library status hint. Main has none of those attributes — the
+  save-to-library-from-picker flow lives on the same preserved branch — so that
+  hunk was dropped. The commit's actual subject, the `_empty_library_hint()`
+  extraction in `_populate_results_list`, applied unchanged, and the duplicate
+  wording it also fixed does not exist on main.

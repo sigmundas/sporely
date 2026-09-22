@@ -7,6 +7,7 @@ from PySide6.QtWidgets import (
     QCheckBox,
     QDialog,
     QDialogButtonBox,
+    QFrame,
     QHBoxLayout,
     QLabel,
     QLayout,
@@ -18,6 +19,66 @@ from PySide6.QtWidgets import (
 )
 
 from app_identity import APP_DOCS_BASE_URL
+
+
+class CollapsibleSection(QWidget):
+    """Header + body pair that toggles body visibility.
+
+    Shared so a dialog that needs to keep a seldom-touched group reachable
+    without giving it the same weight as the primary content has one place
+    to get it. Used by the reference library manager's "Advanced citation
+    details" and by the manual reference editor's individual-spore and
+    Parmasto sections.
+
+    ``ui/main_window.py`` still defines its own older ``CollapsibleSection``
+    with a different constructor (it takes a prebuilt content widget). The
+    two have not been merged here: unifying them touches panels this change
+    has no reason to disturb.
+    """
+
+    def __init__(
+        self,
+        title: str,
+        parent: QWidget | None = None,
+        *,
+        expanded: bool = False,
+    ) -> None:
+        super().__init__(parent)
+        self._button = QToolButton()
+        self._button.setText(title)
+        self._button.setCheckable(True)
+        self._button.setChecked(expanded)
+        self._button.setArrowType(Qt.DownArrow if expanded else Qt.RightArrow)
+        self._button.setToolButtonStyle(Qt.ToolButtonTextBesideIcon)
+        self._button.setStyleSheet(
+            "QToolButton { border: none; font-weight: 600; padding: 2px; }"
+        )
+        self._button.toggled.connect(self._on_toggled)
+
+        self._body = QFrame()
+        self._body.setFrameShape(QFrame.NoFrame)
+        self._body_layout = QVBoxLayout(self._body)
+        self._body_layout.setContentsMargins(12, 4, 4, 4)
+        self._body.setVisible(expanded)
+
+        outer = QVBoxLayout(self)
+        outer.setContentsMargins(0, 0, 0, 0)
+        outer.setSpacing(2)
+        outer.addWidget(self._button)
+        outer.addWidget(self._body)
+
+    def body_layout(self) -> QVBoxLayout:
+        return self._body_layout
+
+    def set_expanded(self, expanded: bool) -> None:
+        self._button.setChecked(expanded)
+
+    def is_expanded(self) -> bool:
+        return self._button.isChecked()
+
+    def _on_toggled(self, checked: bool) -> None:
+        self._body.setVisible(checked)
+        self._button.setArrowType(Qt.DownArrow if checked else Qt.RightArrow)
 
 
 def github_doc_url(doc_filename: str) -> str:

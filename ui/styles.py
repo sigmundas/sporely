@@ -159,6 +159,14 @@ def apply_palette(theme: str = "auto") -> None:
         palette.setColor(QPalette.Highlight,       QColor("#3d5a52"))
         palette.setColor(QPalette.HighlightedText, QColor("#e8e8e8"))
         palette.setColor(QPalette.PlaceholderText, QColor("#c1c8c4"))
+        # Neither theme used to set Link, so every widget asking the palette
+        # for an accent colour got Qt's default #0000ff. On #1c1b1b that is
+        # effectively invisible: the reference picker's "+ New publication…"
+        # row and the conflict dialog's status line both read as dark blue on
+        # near-black. Stated per theme so the accent is legible on the base
+        # colour it is actually painted on.
+        palette.setColor(QPalette.Link,            QColor("#7fb3a3"))
+        palette.setColor(QPalette.LinkVisited,     QColor("#a08bbd"))
         palette.setColor(QPalette.Disabled, QPalette.WindowText, QColor("#6b7270"))
         palette.setColor(QPalette.Disabled, QPalette.Text,       QColor("#6b7270"))
         palette.setColor(QPalette.Disabled, QPalette.ButtonText, QColor("#6b7270"))
@@ -182,6 +190,8 @@ def apply_palette(theme: str = "auto") -> None:
         palette.setColor(QPalette.Highlight,       QColor("#dbeafe"))
         palette.setColor(QPalette.HighlightedText, QColor("#1e293b"))
         palette.setColor(QPalette.PlaceholderText, QColor("#64748b"))
+        palette.setColor(QPalette.Link,            QColor("#1d4ed8"))
+        palette.setColor(QPalette.LinkVisited,     QColor("#6d28d9"))
         palette.setColor(QPalette.Disabled, QPalette.WindowText, QColor("#64748b"))
         palette.setColor(QPalette.Disabled, QPalette.Text,       QColor("#64748b"))
         palette.setColor(QPalette.Disabled, QPalette.ButtonText, QColor("#64748b"))

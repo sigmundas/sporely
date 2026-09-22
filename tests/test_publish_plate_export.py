@@ -163,8 +163,8 @@ def test_publish_plate_export_keeps_full_color_png(monkeypatch, tmp_path):
         },
     )
 
-    def fake_export_observation_plate_image(observation, path, excluded_image_ids=None):
-        captured["excluded_image_ids"] = excluded_image_ids
+    def fake_export_observation_plate_image(observation, path, *args, **kwargs):
+        captured["extra_args"] = (args, kwargs)
         image = Image.new("RGB", (12, 12))
         for x in range(12):
             for y in range(12):
@@ -181,7 +181,9 @@ def test_publish_plate_export_keeps_full_color_png(monkeypatch, tmp_path):
     out_path = ObservationsTab._generate_publish_plate_image(ctx, 377, tmp_path)
 
     assert out_path is not None
-    assert captured["excluded_image_ids"] is None
+    # The plate export hands over the observation and the output path only —
+    # no source-image exclusion set may reach the plate renderer.
+    assert captured["extra_args"] == ((), {})
     with Image.open(out_path) as exported:
         assert exported.mode in {"RGB", "RGBA"}
         assert exported.mode != "P"
@@ -272,4 +274,96 @@ def test_species_plate_saved_empty_slot_stays_empty_on_reopen(monkeypatch, tmp_p
     finally:
         reopened.reject()
         reopened.deleteLater()
+        settings.clear()
+
+
+def test_species_plate_spore_stats_ignore_publication_exclusion(monkeypatch, tmp_path):
+    """Stage 3 audit regression.
+
+    The plate's spore statistics line is an observation-level analytical
+    summary.  Selecting only some source images for upload to
+    Artsobservasjoner / iNaturalist must not change it, while the gallery's
+    publish checkboxes must still reflect that selection.  Both sides are
+    asserted here so the exclusion set cannot be routed back into the plate's
+    image list to "fix" one of them.
+    """
+    _qapp()
+    org = "SporelyTestPlateSporeStats"
+    monkeypatch.setattr(species_plate_dialog, "SETTINGS_ORG", org)
+    settings = QSettings(org, "SpeciesPlate")
+    settings.clear()
+
+    image_paths = []
+    for idx in (1, 2):
+        path = tmp_path / f"spores_{idx}.jpg"
+        Image.new("RGB", (20, 20), (idx * 40, idx * 40, idx * 40)).save(path)
+        image_paths.append(path)
+
+    monkeypatch.setattr(
+        species_plate_dialog.ImageDB,
+        "get_images_for_observation",
+        lambda observation_id: [
+            {
+                "id": 1,
+                "filepath": str(image_paths[0]),
+                "image_type": "microscope",
+                "sample_source": "Spore_print",
+                "micro_category": "Spores",
+            },
+            {
+                "id": 2,
+                "filepath": str(image_paths[1]),
+                "image_type": "microscope",
+                "sample_source": "Spore_print",
+                "micro_category": "Spores",
+            },
+        ],
+    )
+    # 7 spores on image 1, 5 on the image the user excluded from upload,
+    # plus a calibration row that must stay out of the statistics.
+    measurements = [
+        {
+            "id": index,
+            "image_id": 1 if index <= 7 else 2,
+            "measurement_type": "spores",
+            "length_um": 8.0 + index * 0.1,
+            "width_um": 5.0 + index * 0.05,
+        }
+        for index in range(1, 13)
+    ]
+    measurements.append({
+        "id": 99,
+        "image_id": 2,
+        "measurement_type": "calibration",
+        "length_um": 100.0,
+        "width_um": 100.0,
+    })
+    monkeypatch.setattr(
+        species_plate_dialog.MeasurementDB,
+        "get_measurements_for_observation",
+        lambda observation_id: list(measurements),
+    )
+    monkeypatch.setattr(species_plate_dialog.SettingsDB, "get_profile", lambda: {})
+    monkeypatch.setattr(
+        species_plate_dialog.SettingsDB,
+        "get_setting",
+        lambda key, default=None: (
+            "[2]" if key == "artsobs_publish_excluded_image_ids_77" else default
+        ),
+    )
+
+    obs = {"id": 77, "genus": "Agaricus", "species": "campestris"}
+    dialog = species_plate_dialog.SpeciesPlateDialog(obs)
+    try:
+        # Every spore measurement of the observation is summarised, including
+        # the five on the image left out of the upload; calibration excluded.
+        assert "n = 12" in dialog._stats_text
+        assert {int(img["id"]) for img in dialog._all_images} == {1, 2}
+        # The publication selection itself is still honoured in the gallery.
+        gallery_by_id = {item["id"]: item for item in dialog._gallery._items}
+        assert gallery_by_id[1]["publish_selected"] is True
+        assert gallery_by_id[2]["publish_selected"] is False
+    finally:
+        dialog.reject()
+        dialog.deleteLater()
         settings.clear()

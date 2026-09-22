@@ -10,6 +10,16 @@ import pytest
 from database import models
 from database.models import ImageDB
 from ui import observations_tab
+
+
+def _stable_uploader_label(uploader_key: str) -> str:
+    """The stable service name, as the real ``_uploader_label`` returns it.
+
+    The iNaturalist action text is state-aware ("Update iNaturalist…"), so the
+    batch summaries must not be built from it.
+    """
+    return {"web": "Artsobservasjoner", "inat": "iNaturalist"}.get(uploader_key, uploader_key)
+
 from utils.artsobservasjoner_submit import (
     ArtsObservasjonerWebClient,
     UploadImageActionEndpointMismatchError,
@@ -458,7 +468,10 @@ def test_publish_selected_observations_both_triggers_web_and_inat(monkeypatch):
         _invalidate_publish_login_status_cache=lambda: None,
         _update_publish_controls=lambda: None,
         _publish_actions={},
+        # Status sentences name the service, not the state-aware action text.
+        _uploader_label=_stable_uploader_label,
         _selection_has_existing_upload_for_uploader=lambda key: False,
+        _selection_blocks_publish_for_uploader=lambda key: False,
         _selection_matches_uploader_target=lambda key: True,
         _ensure_selection_publish_target=lambda uploader_key, observation_ids: True,
         refresh_observations=lambda *args, **kwargs: None,
@@ -532,7 +545,10 @@ def test_publish_both_attempts_inat_after_artsobservasjoner_failure(monkeypatch)
         _invalidate_publish_login_status_cache=lambda: None,
         _update_publish_controls=lambda: None,
         _publish_actions={},
+        # Status sentences name the service, not the state-aware action text.
+        _uploader_label=_stable_uploader_label,
         _selection_has_existing_upload_for_uploader=lambda key: False,
+        _selection_blocks_publish_for_uploader=lambda key: False,
         _selection_matches_uploader_target=lambda key: True,
         _ensure_selection_publish_target=lambda uploader_key, observation_ids: True,
         refresh_observations=lambda *args, **kwargs: None,

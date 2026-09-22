@@ -1,0 +1,17 @@
+project = "sporely-py"
+
+[repo]
+root = "."
+
+[agents.stage]
+provider = "claude-cli"
+model = "opus"
+effort = "medium"
+
+[agents.sparring]
+provider = "codex-cli"
+model = "gpt-6-astra"
+effort = "medium"
+
+[stage]
+self_check = false

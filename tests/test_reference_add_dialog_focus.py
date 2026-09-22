@@ -17,12 +17,16 @@ def qapp():
     return app
 
 
-def test_reference_add_dialog_tables_accept_keyboard_focus(qapp):
+def test_reference_add_dialog_inputs_accept_keyboard_focus(qapp):
     parent = QWidget()
     dialog = ReferenceAddDialog(parent, "Agaricus", "bisporus")
 
-    assert dialog.minmax_table.focusPolicy() == Qt.StrongFocus
-    assert dialog.minmax_table.editTriggers() == QAbstractItemView.AllEditTriggers
+    # The 3 x 5 measurement grid replaced the min/max table (contract N24),
+    # so the keyboard guarantee is now about its fifteen plain inputs.
+    for row in dialog.measurement_inputs:
+        for field in row:
+            assert field.focusPolicy() == Qt.StrongFocus
+            assert field.isReadOnly() is False
     assert dialog.spore_table.focusPolicy() == Qt.StrongFocus
     assert dialog.spore_table.editTriggers() == QAbstractItemView.AllEditTriggers
 

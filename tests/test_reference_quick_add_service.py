@@ -199,3 +199,52 @@ def test_attachment_failure_compensates_only_new_records(libs, monkeypatch):
     assert TaxonTreatmentRepository.list_for_work(existing.id) == []
     assert MeasurementSetRepository.list_attachment_candidates() == []
     assert ObservationReferenceUseRepository.list_for_observation(libs) == []
+
+
+def test_create_only_stores_the_library_entry_without_attaching_it(libs):
+    """"Save to library" must leave the observation's plot alone.
+
+    The work, treatment and measurement set become permanent library rows,
+    but no ``observation_reference_use`` is written, so nothing is plotted
+    until the user separately asks for it.
+    """
+    result = QuickAddReferenceService.create_only(_request(libs))
+
+    assert result.created_measurement_set is True
+    assert result.measurement_set.id
+    assert MeasurementSetRepository.get(result.measurement_set.id) is not None
+    assert TaxonTreatmentRepository.get(result.treatment.id) is not None
+    assert ReferenceWorkRepository.get(result.work.id) is not None
+
+    assert result.use is None
+    assert result.created_attachment is False
+    assert ObservationReferenceUseRepository.list_for_observation(libs) == []
+
+
+def test_create_only_compensates_a_failed_measurement_set_write(libs, monkeypatch):
+    """Save-only shares create-and-attach's reverse-order compensation."""
+
+    def fail_create(*args, **kwargs):
+        raise RuntimeError("injected measurement set failure")
+
+    monkeypatch.setattr(MeasurementSetRepository, "create", fail_create)
+    with pytest.raises(RuntimeError, match="injected"):
+        QuickAddReferenceService.create_only(_request(libs))
+
+    assert ReferenceWorkRepository.search() == []
+    assert MeasurementSetRepository.list_attachment_candidates() == []
+    assert ObservationReferenceUseRepository.list_for_observation(libs) == []
+
+
+def test_create_only_reuses_an_existing_work_and_treatment(libs):
+    """Saving the same publication twice must not fork the hierarchy."""
+    first = QuickAddReferenceService.create_only(_request(libs))
+    second = QuickAddReferenceService.create_only(
+        _request(libs, existing_work_id=first.work.id)
+    )
+
+    assert second.work.id == first.work.id
+    assert second.treatment.id == first.treatment.id
+    # A second save of the same data is still a second dataset: only the
+    # picker's saved-id shortcut prevents a duplicate, not this service.
+    assert second.measurement_set.id != first.measurement_set.id
