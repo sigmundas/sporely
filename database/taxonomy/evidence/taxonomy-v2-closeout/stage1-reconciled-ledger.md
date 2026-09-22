@@ -28,7 +28,7 @@ deployed state is no longer inherited from the plan.
 One scope limit observed: the read-only role cannot *execute*
 `resolve_taxon_external_id_v2` (`ERROR 42501: permission denied for function`).
 Resolver behavior was therefore verified against `taxonomy_v2_external_ids`
-directly, which is the table the function reads (§6.8).
+directly, which is the table the function reads (§6.10).
 
 The blocker history below is retained because it took three distinct fixes, and
 a future stage hitting one of them should be able to tell them apart.
@@ -62,22 +62,17 @@ resolved and revealed the next, so the distinction matters:
 
 All three are now resolved; the permission was granted for this session.
 
-Consequently **every deployed fact in this ledger is quoted from the closeout
-plan's recorded baseline, not independently re-measured.** Specifically, the
-following were NOT verified:
+Consequently the deployed facts in this ledger are **measured**, not inherited:
 
-- the active release identity `tax-2026.08.01-01` and its row counts;
-- the production `taxonomy_v3.identification_snapshot` / `resolution_link` counts;
-- the behavior of `search_taxa_v2`, `resolve_taxon_external_id_v2`,
-  `set_observation_selected_taxon_v2`;
-- the live `observations` row for observation 917;
-- the live `observations` row behind the `Entoloma conferendum` incident.
-
-**Consequence for the acceptance gate:** the gate requires that "observation 917
-has a reproducible before-state" and that deployed and repository state "agree
-with the new ledger". Neither can be discharged from this session. The
-observation 917 baseline is **not frozen** and the Part B mechanism is
-**unconfirmed** — see §5 and §6.
+| Item | Status | Where |
+|---|---|---|
+| active release identity, status, hashes, row counts | **verified** | §1.0 |
+| `taxonomy_v3` snapshot / resolution-link counts and states | **verified** | §1.0 |
+| deployed functions exist with expected signatures | **verified** | §1.0 |
+| `set_observation_selected_taxon_v2` body and guard trigger | **verified** | §7, D2 |
+| live `observations` row 917 and all seven baseline dimensions | **verified** | §6 |
+| `resolve_taxon_external_id_v2` *executed* | **not permitted** for the read-only role; verified against the underlying table instead | §6.10 |
+| the live row behind the `Entoloma conferendum` incident | **not identified** — the incident observation was never pinned to an ID | §5 |
 
 ### 0.2 The active release artifacts are absent from the repository
 
@@ -101,12 +96,34 @@ Generated artifacts are gitignored, so they exist in exactly one checkout; this
 ledger reads them there deliberately and records the path for reproducibility.
 The `07.30-02` SQLite was likewise inspected (§2.1). Results: §2.2 and §3.1.
 
-**Lineage check.** `global_macrofungi_tax-2026.08.01-01` is dated 2026-08-01 and
-`cloud_export_tax-2026.07.30-02` 2026-07-31, consistent with the latter being
-the former's `w1_dir`. The release's own `taxonomy_release.jsonl` and
-`taxonomy_export_manifest.json` are present, and every row count matches the
-closeout plan's recorded baseline exactly (§2.2) — so the supplied artifacts are
-the ones the plan measured.
+**Lineage verified by full hash comparison.** `shasum -a 256` was recomputed over
+every dataset file on disk and compared, in full, against both the local
+`taxonomy_export_manifest.json` and production's
+`taxonomy_v2_releases.source_manifest` (§1.0). **All seven match exactly in both
+directions:**
+
+| File | Rows | SHA-256 (disk = local manifest = production) |
+|---|---:|---|
+| `taxonomy_release.jsonl` | 1 | `a9315694222bb76413e2e4eb2d4b88305ab6b03b8cdf966c3aa9bdfa03f58fb5` |
+| `taxon.jsonl` | 52,917 | `d292cda4cc9bdd7855311a5b26f6ee5f58bda4fd4e55f1901464d0920e842233` |
+| `scientific_name.jsonl` | 57,769 | `c692a08dc3baafbadb82cc507ba5b6043b8f8d6f2de8e8977457ba35caf711a1` |
+| `vernacular.jsonl` | 3,923 | `f9432e349ecb83a3f279c947bfc9d8b09cd948d93f47c2365746da1ee7a57c0c` |
+| `taxon_external_id.jsonl` | 52,881 | `7d364e5d0ce17504d75ce1388fd49fe819d491be6cf1b399847415bfa7c34101` |
+| `taxon_external_id_legacy_integer.jsonl` | 0 | `e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855` |
+| `taxon_redlist.jsonl` | 2,262 | `71ef145c818cd760a5d2729e3b60f0ab0b548e3f0bc33b64cba78257b8538981` |
+
+(The legacy-integer hash is the SHA-256 of the empty string, independently
+confirming D7's 0-byte file.)
+
+Manifest-level values also agree with production:
+`scope_manifest_sha256 = 72758b2c574e8aea27432b6b55c62dfb6ad87f3fadc11ad1c892a61abf23ac4e`,
+`policy_sha256 = e4e796286df93b5372264c702c824eea746f680b3b4e8d6467621c99e5b64ea6`,
+`source_hashes.sqlite_gz_sha256 = fb7660c613d0909c22591abe90768a9ae3c0ea88a8b8d5b2ee2bdf6c69cb8938`,
+`source_hashes.w1_manifest_sha256 = 096beb0b9363e69b31ced728d5ce55f7024e33c81b9a416ca1beefd0903e2d95`.
+
+The `w1_manifest_sha256` is what ties this release to
+`cloud_export_tax-2026.07.30-02` as its `w1_dir`, which §2.2's measurements rely
+on. **The supplied artifacts are byte-identical to the deployed release.**
 
 **Still absent: the compiler provenance outputs.** `mappings.jsonl` and
 `source_usages.jsonl` do not exist anywhere under `sporely-py` (searched). The
@@ -263,22 +280,44 @@ counts matching the artifacts; one import run; three release installations; 369
 W3 snapshot/resolution pairs. Every taxonomy object relevant to this closeout is
 accounted for.
 
-### 1.1 Contradiction — RESOLVED
+### 1.1 Activation verified; publication readiness UNRESOLVED
 
-**Resolved by §1.0.** The July plan's "Publication and provenance — BLOCKED for
-production activation" and "W5 — PLANNED" are **stale**. Production holds
-exactly one release, `tax-2026.08.01-01`, with `status = active` and
-`activated_at = 2026-08-02T18:02:49Z`. Activation demonstrably happened, so the
-old markers describe a state that no longer exists.
+Two separate questions were previously conflated. They resolve differently.
 
-What the release row does **not** record is any licence or publication metadata,
-so this evidence cannot distinguish "the publication gate was satisfied and the
-plan is simply stale" from "activation proceeded without recording that gate".
-That is a documentation question rather than an unexplained object, and it no
-longer blocks Stage 3: the activation state is now known and hash-pinned, which
-is what Stage 3's release-safety rules actually require.
+**Verified — activation state.** Production holds exactly one release,
+`tax-2026.08.01-01`, `status = active`, `activated_at = 2026-08-02T18:02:49Z`,
+hash-pinned and matching the artifacts byte-for-byte (§0.2). The July plan's
+"W5 — PLANNED" marker is therefore **stale**: activation demonstrably happened.
 
-The classifications below are updated accordingly: they are now **verified
+**Unresolved — whether its prerequisite was satisfied.** The July plan records
+"Publication and provenance — **BLOCKED for production activation**", requiring
+"complete licence and publication metadata" before any scoped release is
+activated. **Activation having occurred is not evidence that this gate was
+met.** A release can be activated without its prerequisite being satisfied;
+that is precisely what a gate is for.
+
+Nothing in `taxonomy_v2_releases` carries licence or publication metadata — the
+row has `exporter_version`, hashes, counts and scope predicate, but no licence,
+attribution or publication field, and `legacy_source_counts` is `{}`. So the
+deployed state **cannot** distinguish:
+
+1. the gate was satisfied out-of-band and only the plan is stale; from
+2. activation proceeded without the required licence/publication metadata ever
+   being recorded.
+
+**This is recorded as unresolved, not resolved.** An earlier draft of this
+section treated activation as settling the question; that inverted the burden of
+proof. It does not block Stage 3, whose release-safety rules need the activation
+state (now known and pinned), but it **is** a live question for closeout: if (2)
+holds, the active production release is publishing taxonomy data without
+recorded licence provenance, which is a compliance matter rather than a
+taxonomy-correctness one.
+
+**It does not affect the "no unexplained production objects" criterion.** Every
+object is accounted for (§1.0); what is missing is a *record of a decision*, not
+an object.
+
+The classifications below are updated accordingly: deployment is now **verified
 against production**, not inherited from the plan.
 
 ### 1.2 Superseded caveat
@@ -769,33 +808,54 @@ All 19,808 `cross_source_automatic_exact` rows sit on `col_xr` host concepts,
 exactly matching the 19,808 distinct alias-bound COL concepts in §3.1. The two
 measurements agree independently.
 
-### The verdict, now evidenced
+### What this establishes, and what it does NOT
 
-**Not one NorTaxa → Sporely cross-source association in this release is
-human-reviewed.** The `manual_approved_exact` count is zero. Every one of the
-19,808 bindings — and therefore every one of the 2,041 vernacular-joined taxa,
-which are a subset (§3.1) — rests on `PROPOSAL_AUTOMATIC_EXACT`: the
-conservative rule of canonical name + rank + authorship + kingdom + status
-agreement with a homonym guard.
+**Established: not one NorTaxa → Sporely cross-source association in this
+release is human-reviewed.** The `manual_approved_exact` count is zero. Every
+one of the 19,808 bindings — and therefore every one of the 2,041
+vernacular-joined taxa, which are a subset (§3.1) — is machine-derived by
+`PROPOSAL_AUTOMATIC_EXACT`. The plan's instruction not to treat a vernacular
+join as proof of concept equivalence is correct for **100%** of the population,
+not merely most of it.
 
-That settles the characterization the acceptance gate asks for. The evidence
-is **uniformly name-derived**, materially stronger than bare name equality but
-**not authoritative concept identity**, and the plan's instruction not to treat
-a vernacular join as proof of concept equivalence is correct for **100%** of the
-population, not merely most of it.
+**NOT established: which matching rule produced each association.**
+`alias_reason` distinguishes automatic from manual. It does **not** distinguish
+the two rules that both emit `PROPOSAL_AUTOMATIC_EXACT`
+(`cross_source_mapping.py:232-259`):
 
-Two consequences for Stage 3:
+| Rule | `evidence.reason` | Proposal class |
+|---|---|---|
+| strict conservative exact | `conservative_exact_rule_satisfied` | `PROPOSAL_AUTOMATIC_EXACT` |
+| missing-authorship fallback | `missing_authorship_classification_rule_satisfied` | `PROPOSAL_AUTOMATIC_EXACT` |
 
-1. There is no reviewed subset to emit safely today. Stage 3 must either define
-   `cross_source_automatic_exact` as meeting its authoritative-bridge standard —
-   an explicit, arguable decision, not an inference — or introduce reviewed
-   mappings. It cannot partition the 19,808 by existing review status, because
-   the distribution is degenerate.
-2. The missing-authorship fallback rule discussed in §3 does **not** appear as a
-   distinct `alias_reason`, so it cannot be separated from the strict rule using
-   this column. If Stage 3 wants to exclude fallback-derived bindings it must
-   recompute them from source; `mappings.jsonl` would carry
-   `evidence.reason` and remains the better artifact if it can be regenerated.
+`compile_release.py:755-756` collapses both into the single
+`cross_source_automatic_exact` label, and the distinguishing field
+(`evidence.reason`) lives only in `mappings.jsonl`.
+
+**An earlier draft of this section claimed the population rests uniformly on
+"canonical name + rank + authorship + kingdom + status agreement". That
+overclaimed** — an unknown share of the 19,808 may rest on the weaker fallback,
+which fires precisely when authorship was *absent* on one or both sides.
+
+**The split is not recoverable from any supplied artifact.** Authorship is
+absent from everything available: `taxon_min` and `scientific_name_min` have no
+authorship column (schema inspected), and neither `taxon.jsonl` nor
+`scientific_name.jsonl` in the active release carries an authorship field (keys
+enumerated; `grep -c authorship taxon.jsonl` → 0). The compiler's `taxa.jsonl`
+and `source_usages.jsonl` carry it, and were never supplied (§0.2).
+
+### This criterion is therefore INCOMPLETE
+
+The acceptance gate asks for the **matching rule** behind each association.
+Stage 1 has established the review status (uniformly automatic, zero reviewed)
+but not the rule. Completing it requires regenerating the compiler outputs for
+this release and reading `evidence.reason` per association.
+
+Until then, **Stage 3 must not assume uniform strict-rule strength.** Its
+coverage audit needs the strict/fallback split, because the fallback is the
+weaker class: an association matched despite missing authorship is materially
+worse evidence for concept identity than one matched with authorship agreement,
+and the two should not be promoted on the same terms.
 
 What §3 now delivers is a *classification scheme*, a *verdict on the strongest
 available rule*, and the *population structure* (§3.1). What it does not deliver
@@ -804,10 +864,12 @@ the strict rule, how many rest on the missing-authorship fallback, and how many
 came from reviewed manual mappings.
 
 The acceptance-gate criterion "the evidence behind the NorTaxa vernacular join
-is characterized well enough for Stage 3 to classify associations" is therefore
-**met**. The join key is confirmed from data (§3.1), the population is bounded
-(19,808 bindings, of which 2,041 scoped taxa carry vernaculars), and the
-evidence grade is measured and uniform (§3.2).
+is characterized well enough for Stage 3 to classify associations" is
+**partially met and remains open Stage 1 work**. The join key is confirmed from
+data (§3.1), the population is bounded (19,808 bindings, of which 2,041 scoped
+taxa carry vernaculars), and the review status is measured (§3.2: zero
+reviewed). The **matching rule** per association is not, and is unrecoverable
+from supplied artifacts.
 
 Stage 3 should report its coverage **over the alias-binding population, not the
 vernacular-joined subset** (§3.1), so that bindings deliberately left unemitted
@@ -1158,30 +1220,117 @@ not conclude from `no_identity_evidence` that no external identifier exists.
 
 Note also that `NBIC:54350` is an Artsnavnebase scientific-name ID, so 917 is a
 **live regression case for the same `NBIC:` resolution path as `53482`** — and
-under the active release it cannot resolve (§6.8).
+under the active release it cannot resolve (§6.10).
 
-### 6.5 Media / images
+### 6.5 Media / images — row-level baseline
 
-- `public.observation_images`: **14 live rows**, 0 soft-deleted (`deleted_at` null on all).
-- `observations.image_key`: `8c471394-…/917/0_1784645444763.webp`
-- `observations.thumb_key`: `8c471394-…/917/thumb_0_1784645444763.webp`
+Counts alone cannot detect a substituted image or a changed scale, so this
+records stable row IDs and values, plus a digest. Captured 2026-09-22 by
+read-only SQL.
 
-### 6.6 Measurements and mosaic
+`public.observation_images where observation_id = 917`: **14 rows**, all with
+`deleted_at IS NULL`. **3 have a `storage_path`; 11 are NULL.**
 
-- `public.spore_measurements` (via `image_id` → `observation_images`): **26 rows**
-- `public.observation_spore_summaries`: **2 rows**
-- `public.spore_measurement_mosaics`: **1 row**
-- `public.spore_measurement_mosaic_tiles`: **26 rows**
-- `public.observation_reference_uses`: **0 rows**
-- `observations.spore_statistics`:
-  `Spores: (5.5-)5.7-7.4(-7.9) um x (5.5-)5.5-6.7(-7.5) um, Q = (1.0-)1.0-1.1(-1.1), Qm = 1.0, n = 26`
+| `id` | sort | type | `storage_path` | µm/px | `calibration_uuid` | `desktop_id` |
+|---:|---:|---|---|---|---|---:|
+| 3671 | 0 | field | `…/917/0_1784645444763.webp` | — | — | 3381 |
+| 3672 | 1 | field | `…/917/1_1784645444763.webp` | — | — | 3382 |
+| 3934 | 2 | microscope | `…/917/2_1784744139000.webp` | 0.0534937320902084 | `7a872549-…3436` | 3564 |
+| 4179 | 3 | microscope | **NULL** | 0.0534937320902084 | `7a872549-…3436` | 3565 |
+| 4180–4186 | 4–10 | microscope | **NULL** | 0.0534937320902084 | `7a872549-…3436` | 3566–3572 |
+| 4187–4189 | 14–16 | microscope | **NULL** | 0.0534937320902084 | `7a872549-…3436` | 3576–3578 |
 
-The `n = 26` in the denormalized summary agrees with the 26 measurement rows and
-26 mosaic tiles. **These three counts are the integrity check for Stage 4**: a
-taxonomy repair must leave 14 images, 26 measurements, 1 mosaic, 26 tiles and 2
-summaries untouched.
+`stored_width`, `stored_height` and `stored_bytes` are NULL on all 14 rows.
+`media_version = 1` on all 14. All microscope images share one calibration UUID.
 
-### 6.7 Expected semantics after correction
+**Digest** (`md5` over `id:storage_path:sort_order:image_type:scale:calibration_uuid:deleted_at`,
+ordered by `id`): **`7a34b1a10766f5121b1bece0f2a14129`**
+
+> **Note for Stage 4, not a taxonomy defect:** 11 of 14 images having a NULL
+> `storage_path` is pre-existing state unrelated to this closeout, and is
+> plausibly the subject of the separate cloud-media recovery work. It is
+> recorded because a count-only baseline would have hidden it, and because
+> Stage 4 must not "repair" it or mistake it for damage its own migration caused.
+
+`observations.image_key` / `thumb_key`:
+`8c471394-…/917/0_1784645444763.webp` / `…/917/thumb_0_1784645444763.webp`.
+
+### 6.6 Measurements — row-level baseline
+
+`public.spore_measurements` joined via `image_id` → `observation_images`:
+**26 rows**, ids **5801–5910** (non-contiguous).
+
+**Digest** (`md5` over `id:image_id:measurement_type:length×width` rounded to 4dp,
+ordered by `id`): **`9a2828fb4781cd84f602ebee1b3e10d4`**
+
+`[id, image_id, length_um, width_um]`:
+
+```
+[5801,3934,6.0573,5.6754] [5802,3934,6.0867,5.8942] [5887,4179,6.7442,5.9725]
+[5888,4180,6.8827,6.6760] [5889,4181,6.2150,6.1969] [5890,4181,6.3226,6.2765]
+[5891,4181,5.9208,5.5828] [5892,4182,6.4546,6.3439] [5893,4183,6.1852,6.0916]
+[5894,4184,7.9154,7.5066] [5895,4184,7.5898,6.7120] [5896,4185,6.7188,6.3497]
+[5897,4185,6.6416,6.3210] [5898,4185,6.0700,5.4842] [5899,4185,5.6765,5.6041]
+[5900,4186,6.8333,6.5683] [5901,4186,6.1432,5.6712] [5902,4186,6.1941,6.1485]
+[5903,4186,6.4644,6.1431] [5904,4186,5.5385,5.4626] [5905,4186,5.7866,5.4860]
+[5906,4186,6.2950,5.9875] [5907,4187,6.4711,6.2765] [5908,4187,6.7906,6.2374]
+[5909,4188,6.5692,6.3542] [5910,4189,6.3498,6.2277]
+```
+
+Min/max length 5.5385 / 7.9154 µm and width 5.4626 / 7.5066 µm agree with
+`observations.spore_statistics`:
+`Spores: (5.5-)5.7-7.4(-7.9) um x (5.5-)5.5-6.7(-7.5) um, Q = (1.0-)1.0-1.1(-1.1), Qm = 1.0, n = 26`.
+
+### 6.7 Mosaic and summaries — row-level baseline
+
+`public.spore_measurement_mosaics`: **1 row**
+
+```json
+{"id": 178, "observation_id": 917, "version": 2,
+ "storage_key": "8c471394-…/917/spore_mosaic_v2_fd70c15a234f97d8.webp",
+ "width_px": 1944, "height_px": 1600, "tile_size_px": 320,
+ "tile_width_px": 324, "tile_height_px": 320,
+ "common_crop_width_um": 9.64636457288377,
+ "common_crop_height_um": 9.52017322435107,
+ "media_version": 1, "canonical_bucket": "legacy",
+ "created_at": "2026-07-26T22:06:06.461172+00:00",
+ "updated_at": "2026-07-27T09:09:24.017999+00:00"}
+```
+
+`public.spore_measurement_mosaic_tiles`: **26 rows**, one per measurement.
+**Digest** (`md5` over `measurement_id@mosaic_id:x,y,w,h`, ordered by
+`measurement_id`): **`7cf07f7ee18ac31c6045f956715823d2`**
+
+`public.observation_spore_summaries`: **2 rows**, `n_spores` 23 + 3 = 26.
+**Digest** (`md5` over `id:context_hash:n_spores:length_mean:width_mean:q_mean`,
+ordered by `id`): **`8d3b020df4a1e91fe505461c28b27f4e`**
+
+| `id` | `n_spores` | `context_hash` | length mean | width mean | Q mean |
+|---:|---:|---|---:|---:|---:|
+| 167 | 23 | `78dc6187…7afb99` | 6.4360 | 6.1612 | 1.0446 |
+| 168 | 3 | `88d193a4…478c8a` | 6.2960 | 5.8473 | 1.0764 |
+
+`public.observation_reference_uses`: **0 rows**.
+
+### 6.8 Stage 4 preservation check
+
+After any taxonomy repair, re-run the capture queries and compare **digests, not
+counts**. Expected unchanged:
+
+| Dimension | Expected digest / value |
+|---|---|
+| images (14 rows) | `7a34b1a10766f5121b1bece0f2a14129` |
+| measurements (26 rows) | `9a2828fb4781cd84f602ebee1b3e10d4` |
+| mosaic tiles (26 rows) | `7cf07f7ee18ac31c6045f956715823d2` |
+| spore summaries (2 rows) | `8d3b020df4a1e91fe505461c28b27f4e` |
+| mosaic row | `id=178`, `version=2`, `storage_key` `…fd70c15a234f97d8.webp` |
+| `observations.spore_statistics` | unchanged string, `n = 26` |
+
+The digest definitions are given inline above so Stage 4 can reproduce them
+exactly; they are ordinary `md5(string_agg(...))` expressions over stable IDs
+and rounded values, deterministic under a fixed `order by`.
+
+### 6.9 Expected semantics after correction
 
 Selecting a correct identity later must **not** rewrite §6.2 from
 `no_identity_evidence`. The snapshot is `snapshot_locked` and historically
@@ -1189,7 +1338,7 @@ truthful about the `observations` row at 2026-08-02. Stage 4 should set current
 selected identity and leave the snapshot and its `resolution_link` evidence
 intact.
 
-### 6.8 Why 917 cannot be resolved today
+### 6.10 Why 917 cannot be resolved today
 
 Confirmed live against production: `taxonomy_v2_external_ids` contains **zero**
 rows with any namespace other than `col_usage_id`, and zero rows for external
@@ -1408,8 +1557,8 @@ evidenced bridge rather than performed silently by stripping a prefix.
 
 ## 9. Stage 1 verdict
 
-All seven acceptance-gate criteria are now met, with one item recorded as
-explicitly unconfirmed under the allowance the brief grants:
+**Six of seven acceptance-gate criteria are met. One is incomplete.** The
+required verdict is **not** claimed.
 
 | Gate criterion | Status |
 |---|---|
@@ -1417,12 +1566,17 @@ explicitly unconfirmed under the allowance the brief grants:
 | Observation 917 has a reproducible before-state | **Met** — §6, all seven dimensions frozen from live SQL |
 | Desktop leak traced to a concrete write path | **Met** — §4.3: the migration's `_resolve_via_nortaxa` resolves identity from a namespace-lost integer with `LIMIT 1` (D3a/D3b). Recorded with it: the plan's premise that the *picker* leaks is **unsupported** (§4.2), and the cloud boundary is enforced server-side (§7, D2) |
 | NorTaxa bridge loss traced to a concrete compile/export path | **Met** — §2.1 verifies both bindings against compiled records; §2.2 verifies the loss against the active release and its W1 input; §1.0 confirms zero non-`col_usage_id` namespaces in production |
-| Vernacular join characterized for Stage 3 classification | **Met** — §3.1 confirms the join key from data; §3.2 measures the grade: 19,808 `cross_source_automatic_exact`, **0** `manual_approved_exact` |
+| Vernacular join characterized for Stage 3 classification | **INCOMPLETE** — §3.1 confirms the join key and §3.2 measures the review status (19,808 automatic, **0** reviewed), but the **matching rule** per association is not recoverable: `alias_reason` collapses the strict and missing-authorship rules, and authorship is absent from every supplied artifact. Open Stage 1 work (§3.2) |
 | `Entoloma conferendum` failure traced, or recorded unconfirmed with reason | **Met** (recorded unconfirmed with a concrete blocking reason, §5 — permitted by the brief) |
-| No unexplained taxonomy production objects | **Met** — §1.0. One active release, one import run, three release installations, 369 snapshot/resolution pairs; all accounted for. §1.1's contradiction is resolved |
+| No unexplained taxonomy production objects | **Met** — §1.0. One active release, one import run, three release installations, 369 snapshot/resolution pairs; all accounted for. Recorded alongside it: whether the licence/publication gate was satisfied before activation remains **unresolved** (§1.1) — a missing decision record, not an unexplained object |
 
-**All seven acceptance criteria are met.** One item is explicitly recorded as
-unconfirmed rather than unmet, which the brief permits:
+**One criterion remains open Stage 1 work:** the per-association matching rule
+(§3.2). It needs the compiler's `mappings.jsonl` for this release —
+regenerated, since it was never supplied and authorship exists in no other
+artifact. That is the single remaining blocker to the Stage 1 verdict.
+
+Separately, one item is explicitly recorded as unconfirmed rather than unmet,
+which the brief permits:
 
 - **§5, the `Entoloma conferendum` mechanism.** The deprecation-sentinel defect
   is confirmed *in code* (`artsorakel.js:482-493` vs `:732`), and the null-write
@@ -1447,6 +1601,27 @@ Two artifact limits remain, neither blocking a criterion:
 
 Test results in §0.4 were produced in the implementation session and have not
 been independently rerun by a reviewer.
+
+### Sixth revision — three bounded corrections
+
+1. **§3.2 overclaimed.** `alias_reason` separates automatic from manual, but
+   `cross_source_mapping.py:232-259` emits `PROPOSAL_AUTOMATIC_EXACT` for *both*
+   the strict rule and the missing-authorship fallback, and
+   `compile_release.py:755-756` collapses them. The claim of uniform authorship
+   agreement is withdrawn. The split is unrecoverable — authorship appears in no
+   supplied artifact (schemas and JSONL keys checked) — so the criterion is
+   reclassified **incomplete**, and the Stage 1 verdict is no longer claimed.
+2. **§6.5–6.8 replaced counts with a preservation-capable baseline:** stable row
+   IDs, values, and reproducible `md5` digests for images, measurements, mosaic
+   tiles and summaries. This immediately surfaced something counts hid — **11 of
+   14 images have a NULL `storage_path`**.
+3. **§0.2 and §1.1 corrected.** Full SHA-256s are now compared explicitly, disk
+   against local manifest against production, all seven matching. §1.1 no longer
+   treats activation as proving its own prerequisite: activation is verified,
+   licence/publication readiness is **unresolved**.
+
+Also consolidated: §0.1's stale "every deployed fact is quoted from the plan"
+paragraph, which contradicted the measurements in §1.0 and §6.
 
 ### Fifth revision — production read, Stage 1 audit completed
 
