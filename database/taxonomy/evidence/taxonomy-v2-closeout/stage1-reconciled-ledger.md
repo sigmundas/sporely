@@ -18,21 +18,35 @@ deliverable. Three required inputs were unavailable in this session.
 
 ### 0.1 Live SQL is blocked — deployed state is unverified
 
-Two different blockers were observed, and the distinction matters for how it
-gets unblocked:
+**Three distinct blockers have now been observed in sequence.** Each was
+resolved and revealed the next, so the distinction matters:
 
-- **In the implementation session:** the Supabase MCP server was present but
-  **unauthenticated**, and the session was non-interactive, so no OAuth flow
-  could run. No Supabase tool was callable at all.
-- **In the review session:** Supabase **project discovery succeeded**, so the
-  connection itself is usable. The blocker there was that the read-only SQL
-  query was **rejected by automatic approval review, because the approval policy
-  is set to `never`.**
+1. **MCP unauthenticated** (first implementation session) — the Supabase server
+   was present but not authorized, and the session was non-interactive, so no
+   OAuth flow could run. No Supabase tool was callable. **Resolved.**
+2. **Approval policy `never`** (review session) — project discovery succeeded,
+   so the connection was usable, but the read-only SQL query was rejected by
+   automatic approval review. **Reported as resolved by the operator.**
+3. **Harness permission grant not available** (current session, 2026-09-22) —
+   `mcp__supabase__execute_sql` and `mcp__supabase__list_tables` are now
+   *loaded and callable*, and the server is authenticated, but every invocation
+   returns:
 
-So the deployed state is not blocked merely by missing credentials. **Even with a
-working connection, no SQL will execute until the approval policy is changed**
-for this project. Both must be resolved: an authorized session *and* an approval
-policy that permits read-only SQL.
+   ```
+   Claude requested permissions to use mcp__supabase__execute_sql,
+   but you haven't granted it yet.
+   ```
+
+   This is neither an authentication failure nor the Supabase approval policy;
+   it is the agent harness's own tool-permission gate, which a non-interactive
+   session cannot satisfy. Two calls were attempted — a trivial
+   `select current_database()` and the observation 917 read — both refused
+   identically.
+
+**What would unblock it:** running this stage in an interactive session where
+the MCP tool permission can be approved, or pre-granting
+`mcp__supabase__execute_sql` in the project's permission settings. Supplying
+credentials again will not help; the connection is already working.
 
 Consequently **every deployed fact in this ledger is quoted from the closeout
 plan's recorded baseline, not independently re-measured.** Specifically, the
@@ -60,13 +74,31 @@ That directory **does not exist in this worktree** and is gitignored
 (`.gitignore:70` — `database/reference_data/generated/taxonomy_v2/*`). Only
 `tax-2026.07.30-02.sqlite3.gz` and a `manifest.json` are present.
 
-**The `07.30-02` artifact *was* inspected** — see §2.1. It is the
-`build_sqlite_candidate.py` output for the full unscoped build and it carries
-the compiler's actual bindings, which is enough to verify §2's binding claims
-and §3's join key from data. What it does **not** carry is the compiler's
-`mappings.jsonl` provenance (no mapping table exists in the schema), nor the
-scoped active release. So §3's evidence grading and all `08.01-01`-specific
-counts remain blocked on the missing artifacts.
+**Update 2026-09-22 — the artifacts were supplied and have been measured.**
+They are in the **primary checkout**, not this worktree:
+
+```
+/Users/sigmundas/Documents/Code/sporely/sporely-py/database/reference_data/
+  generated/taxonomy_v2/global_macrofungi_tax-2026.08.01-01/   ← active release
+  generated/taxonomy_v2/cloud_export_tax-2026.07.30-02/        ← its W1 input
+```
+
+Generated artifacts are gitignored, so they exist in exactly one checkout; this
+ledger reads them there deliberately and records the path for reproducibility.
+The `07.30-02` SQLite was likewise inspected (§2.1). Results: §2.2 and §3.1.
+
+**Lineage check.** `global_macrofungi_tax-2026.08.01-01` is dated 2026-08-01 and
+`cloud_export_tax-2026.07.30-02` 2026-07-31, consistent with the latter being
+the former's `w1_dir`. The release's own `taxonomy_release.jsonl` and
+`taxonomy_export_manifest.json` are present, and every row count matches the
+closeout plan's recorded baseline exactly (§2.2) — so the supplied artifacts are
+the ones the plan measured.
+
+**Still absent: the compiler provenance outputs.** `mappings.jsonl` and
+`source_usages.jsonl` do not exist anywhere under `sporely-py` (searched). The
+`07.30-02` SQLite carries no mapping table either. These are what carry `kind`,
+`review_status` and `evidence.reason`, so **§3's evidence grading remains
+blocked** — it is the one artifact-dependent criterion still outstanding.
 
 The counts 52,917 / 57,769 / 3,923 / 52,881 / 2,041 are therefore **not
 independently reproducible here**. They are treated in this ledger as recorded
@@ -175,6 +207,16 @@ safety rules assume a known, reviewed activation state.
 ---
 
 ## 2. Where the NorTaxa bridge is actually lost
+
+> **Superseded by §2.2.** The argument in this subsection — that an identical
+> scope filter cannot produce an asymmetric result, so Gate 1 (namespace
+> routing) must be the cause — reached the wrong conclusion. Measurement against
+> the active release and its W1 input (§2.2) shows the filter *is* identical but
+> the two datasets are keyed to **disjoint `taxon_id` populations**, which is
+> what produces the asymmetry. Gate 1 is real but is **not** the operative cause,
+> because the derived-row branch bypasses it. The gate mechanics below remain
+> accurate as descriptions of the code; their attribution does not. Read §2.2
+> for the verified account.
 
 **The plan states one mechanism; there are three, and the plan's account is
 correct for only one of the two named regressions.**
@@ -410,6 +452,82 @@ active release still requires its artifacts (§0.2).
 A Stage 3 mechanism that only relaxes Gate 2 fixes `53482` and does **not** fix
 `52369`; one that only admits Phase 2d anchors into scope fixes `52369` by
 reintroducing exactly the duplicate-concept behavior the plan forbids.
+
+### 2.2 Verified account, measured against the active release
+
+The pinned artifacts were supplied (§0.2) and measured. This supersedes the
+attribution in §2 and confirms the plan's own framing more closely than earlier
+drafts of this ledger did.
+
+**Active release `tax-2026.08.01-01` — every plan baseline figure confirmed
+exactly:**
+
+| Dataset | Measured | Plan | Composition |
+|---|---:|---:|---|
+| `taxon.jsonl` | 52,917 | 52,917 | **all** `col_xr`; `norwegian_taxon_id` non-null: **0** |
+| `scientific_name.jsonl` | 57,769 | 57,769 | — |
+| `vernacular.jsonl` | 3,923 | 3,923 | **all** `source=nortaxa`, **2,041** distinct taxa |
+| `taxon_external_id.jsonl` | 52,881 | 52,881 | **all** `(col_xr, col_usage_id)`; zero NorTaxa |
+| `taxon_redlist.jsonl` | 2,262 | 2,262 | — |
+| `taxon_external_id_legacy_integer.jsonl` | **0 bytes** | — | D7 confirmed directly |
+
+Taxon `7821` is in the release and carries all four NorTaxa vernaculars
+(`stjernesporet rødspore` nb/preferred, `stjernespora raudspore` nn/preferred,
+plus the two non-preferred `…skivesopp` variants). `83668` is present;
+`624680` is **absent**.
+
+**The W1 input is the decisive measurement.** The macrofungi build's `w1_dir` is
+`cloud_export_tax-2026.07.30-02`. Its `taxon_external_id.jsonl` holds 634,894
+rows: 620,975 `(col_xr, col_usage_id)` **and 13,919 `(nortaxa,
+nortaxa_taxon_id)`**.
+
+So the authoritative NorTaxa identifiers **were emitted by the W1 exporter** and
+then lost downstream. Gate 1 does not stop them — the derived-row branch
+(`cloud_export.py:696-704`) writes them into the authoritative text file
+regardless of the integer routing. **This retracts Gate 1 as the operative
+cause.**
+
+**Why all 13,919 die at the scope filter:**
+
+- they sit on exactly 13,919 distinct `taxon_id`s, spanning **620,977 – 634,895**
+  — entirely inside the NorTaxa anchor block;
+- **zero** of them sit on a COL-range `taxon_id` (`< 620,977`);
+- **zero** of them survive into the active release scope.
+
+This is structural, not incidental. Gate 2 emits a NorTaxa identifier *only* for
+an anchor (`norwegian_taxon_id IS NOT NULL`, which only anchors have), and an
+anchor is by construction a NorTaxa-sourced concept — precisely the population
+the COL-only scope universe removes. **Gate 2 places every NorTaxa identifier on
+exactly the concepts the scope filter deletes.** The two mechanisms compose;
+neither alone explains the zero.
+
+**The two regression cases, measured:**
+
+- **`52369`** is present in W1 as
+  `{taxon_id: 624680, source_system: nortaxa, namespace: nortaxa_taxon_id,
+  external_id: "52369", is_preferred: true, note:
+  "derived_from_taxon_min.norwegian_taxon_id"}` — emitted by Gate 2's derived
+  branch, then dropped by the scope filter because `624680` is not a COL
+  concept. **The plan's COL-retention framing is correct for this case.**
+- **`53482` is absent from W1's authoritative external IDs entirely.** Its alias
+  binding on `7821` has `is_preferred = 0`, so Gate 2 never emitted a row for
+  it. It is lost **one step earlier** than `52369`, at the anchor gate, and
+  never reaches the scope filter at all. **The plan's "computed and then
+  half-materialized" framing is correct for this case** — the vernaculars
+  attached to `7821` prove the association was derived; the identifier was not
+  materialized.
+
+**Why the vernacular join survives.** `vernacular_min` is keyed on `taxon_id`
+with no anchor requirement, so an alias-bound NorTaxa vernacular lands on the
+**COL** concept (`7821`) and passes the scope filter with it. The identifiers
+land on **NorTaxa** concepts and do not. Same filter, disjoint key populations —
+which is exactly the asymmetry, and the reason the earlier "identical filter"
+argument in §2 drew the wrong conclusion.
+
+**D3a confirmed in the export too:** W1's
+`taxon_external_id_legacy_integer.jsonl` carries 61,583 rows, all
+`source_system = artsdatabanken` with **`namespace: null`** — the namespace loss
+is materialized in the exported artifact, not merely internal to the SQLite.
 
 ---
 
@@ -958,36 +1076,51 @@ The bindings this rests on are measured (§2.1). What remains conditional is the
 as: *this is the shape of the fix; which bindings are eligible to flow through it
 is decided by the §3 audit, which Stage 1 must still complete.*
 
-**Single change, at the routing decision** —
-`build_sqlite_candidate.py:473-490`. A NorTaxa identifier that the §3 audit
-grades as a reviewed bridge is emitted to `external_text_rows`
-(`taxon_external_id_text_min`) with `source_system`, `namespace` and its
-identifier as text. `is_preferred` then records anchor-vs-alias status rather
-than gating emission.
+**Single change: emit the alias binding's identifier onto its COL host
+concept.** §2.2 shows the identifiers are already emitted — they are simply
+attached to NorTaxa anchor concepts that the scope deletes. The fix is therefore
+not about routing or about the scope filter; it is about **which `taxon_id` the
+identifier is written against**.
 
-This is one change, not two. It addresses Gate 1 directly, and it makes Gate 2's
-derived `norwegian_taxon_id` branch (`cloud_export.py:696-704`) **redundant
-rather than something to also modify** — that branch exists only to reconstruct
-an identifier routing had discarded. An earlier draft of this section prescribed
-changing both gates, which contradicted §8's own desktop subsection; the
-single-route version is the consistent one. Gate 2 should be *retired* once the
-text route carries NorTaxa, not relaxed to accept aliases.
+For a NorTaxa source usage that the §3 audit grades as a reviewed bridge and
+that is alias-bound to a COL concept, emit
+`(source_system=nortaxa, namespace=nortaxa_taxon_id, external_id=<taxonID>)`
+against the **COL host `taxon_id`**, into the authoritative text table
+(`taxon_external_id_text_min`, which already has the right shape — §8's desktop
+subsection). Those rows then sit on retained concepts and survive the scope
+filter untouched.
+
+This supersedes an earlier draft that aimed the change at the Gate 1 routing
+decision. That draft assumed Gate 1 was blocking emission; §2.2 measured 13,919
+NorTaxa rows in the W1 export, so it was not. Gate 2's derived
+`norwegian_taxon_id` branch (`cloud_export.py:696-704`) becomes redundant once
+aliases are emitted directly and should be **retired**, not relaxed — it exists
+only to reconstruct an anchor identifier and is the reason every identifier
+lands on a doomed concept.
+
+Two properties worth noting: the change is **additive to retained concepts**, so
+it cannot resurrect the duplicate-concept block (no NorTaxa concept is admitted
+to scope); and it leaves the COL backbone's canonical presentation untouched,
+since only an external-ID row is added.
 
 Eligibility is the audit's output, not namespace membership: emitting every
 NorTaxa alias because it is a NorTaxa alias would infer authoritative identity
 from an automatic name+rank match, which §3 shows the evidence does not support.
 
 **Entry point A — `53482`.** Already alias-bound to `7821` (`is_preferred=0`,
-§2.1). If the §3 audit grades that binding as a reviewed bridge, the routing
-change alone emits it. No new relationship is created.
+§2.1) and confirmed absent from the W1 authoritative export (§2.2). If the §3
+audit grades that binding as a reviewed bridge, the change above emits it
+against `7821` — a retained concept — and it survives. No new relationship is
+created.
 
-**Entry point B — `52369`.** Anchored as its own concept `624680` (§2.1) and
-excluded by the COL-only scope universe (`macrofungi_scope.py:105-108`), so the
-routing change does **not** reach it. It needs an **approved manual bridge entry**
-so it is alias-bound onto `83668` in Phase 2b/2c instead of anchored in 2d —
-touching the manual-mappings input, not the emitter. That is a human decision no
-automatic rule can supply, which is the correct outcome given that the sources
-genuinely disagree on the accepted name.
+**Entry point B — `52369`.** Anchored as its own concept `624680` (§2.1), whose
+identifier *is* emitted in W1 but against `624680`, which the scope deletes
+(§2.2). It has no alias binding, so the change above has nothing to attach to a
+retained concept. It needs an **approved manual bridge entry** so it is
+alias-bound onto `83668` in Phase 2b/2c instead of anchored in 2d — touching the
+manual-mappings input, not the emitter. That is a human decision no automatic
+rule can supply, which is the correct outcome given that the sources genuinely
+disagree on the accepted name.
 
 Rejected alternative: admitting Phase 2d anchors into scope. §2.1 confirms that
 is what produced the `tax-2026.07.30-02` duplicate block (2,000 null-parent
@@ -1026,8 +1159,8 @@ correction` is NOT claimed.** Three acceptance-gate criteria are unmet:
 | Deployed and repository state agree with the ledger | **Unmet** — deployed side unverifiable (§0.1) |
 | Observation 917 has a reproducible before-state | **Unmet** — not readable (§6) |
 | Desktop leak traced to a concrete write path | **Partially met** — the only demonstrated converter is the migration (§4.3, D3a/D3b). The plan's premise that the *picker* leaks is **unsupported** (§4.2) |
-| NorTaxa bridge loss traced to a concrete compile/export path | **Met for the compiler bindings** — §2.1 verifies both cases against compiled records (`52369` → anchor `624680`; `53482` → alias on `7821`, `is_preferred=0`), plus the duplicate block. Confirmation against the *active* release remains outstanding (§0.2) |
-| Vernacular join characterized for Stage 3 classification | **Partially met** — the join key is now confirmed from data (§3.1: vernacular-joined taxa are a strict subset of alias-bound taxa), but the evidence **grading** is unmeasured. **Unfinished Stage 1 work**, not deferrable to Stage 3 (§3) |
+| NorTaxa bridge loss traced to a concrete compile/export path | **Met** — §2.1 verifies both bindings against compiled records; §2.2 verifies the loss against the active release and its W1 input, including all 13,919 identifiers landing on concepts the scope deletes, and `53482` never being emitted at all |
+| Vernacular join characterized for Stage 3 classification | **Partially met** — the join key is confirmed from data (§3.1) and the 2,041 population is confirmed (§2.2), but the evidence **grading** is unmeasured because `mappings.jsonl` was not supplied. **Unfinished Stage 1 work**, not deferrable to Stage 3 (§3) |
 | `Entoloma conferendum` failure traced, or recorded unconfirmed with reason | **Met** (recorded unconfirmed, §5) |
 | No unexplained taxonomy production objects | **Unmet** — §1.1 activation/publication contradiction |
 
@@ -1035,22 +1168,44 @@ The **code-reading** investigation is complete to the limit of the artifacts
 present; the **measurement** work is not. Stage 1 has outstanding work of its
 own, blocked on two external dependencies:
 
-1. **an authorized Supabase session *and* an approval policy permitting
-   read-only SQL** (§0.1) — for observation 917's seven-part baseline, the
-   deployed reconciliation, and the §1.1 activation contradiction. Note that
-   authentication alone does not resolve this: the review session had a working
-   connection and was still refused under approval policy `never`;
-2. **the pinned release and compiler artifacts** (§0.2, §0.3) — for the evidence
-   **grading** of the alias population (§3, a Stage 1 deliverable) and for
-   confirming §2.1's bindings against the *active* release. The compiled-record
-   bindings and the duplicate-block question are **no longer blocked**: both were
-   resolved in §2.1 from the locally present `tax-2026.07.30-02` artifact;
+1. **an interactive session that can grant the MCP tool permission** (§0.1) —
+   for observation 917's seven-part baseline, the deployed reconciliation, and
+   the §1.1 activation contradiction. The server is authenticated and the tools
+   are loaded; the refusal is the harness permission gate, so supplying
+   credentials or changing the Supabase approval policy again will not help;
+2. **the compiler provenance outputs** `mappings.jsonl` and `source_usages.jsonl`
+   (§0.2) — for the evidence **grading** of the alias population (§3, a Stage 1
+   deliverable). The release and W1 artifacts were supplied and are no longer
+   blocking: the baseline counts, both regression bindings, the duplicate block
+   and the full loss mechanism are now measured (§2.1, §2.2, §3.1);
 
 plus capturing one raw Artsorakel response for §5, which remains unavailable, so
 the Part B mechanism stays unconfirmed.
 
 Test results in §0.4 were produced in the implementation session and have not
 been independently rerun by a reviewer.
+
+### Fourth revision — artifacts supplied, §2 attribution corrected
+
+The operator supplied MCP access and the pinned artifacts. Acting on that:
+
+1. **The artifacts were measured** (§2.2). Every plan baseline figure is
+   confirmed exactly (52,917 / 57,769 / 3,923 / 2,041 / 52,881 / 2,262), and
+   `taxon_external_id_legacy_integer.jsonl` is confirmed 0 bytes (D7).
+2. **§2's attribution is retracted.** The W1 input contains **13,919
+   `(nortaxa, nortaxa_taxon_id)` rows**, so Gate 1 was never blocking emission.
+   The operative mechanism is Gate 2 composing with the COL-only scope: Gate 2
+   emits identifiers only for anchors, anchors are NorTaxa concepts, and the
+   scope deletes exactly those — all 13,919 sit on `taxon_id` 620,977–634,895
+   and none survive. `53482` is absent from W1 entirely, lost one step earlier
+   at the anchor gate.
+3. **§8 re-aimed accordingly.** The fix is not routing and not the scope filter:
+   it is emitting the alias binding's identifier against its **COL host
+   `taxon_id`**, so it lands on a retained concept.
+4. **Still blocked:** SQL execution, now by a third distinct cause — the harness
+   tool-permission gate, not authentication and not the Supabase approval policy
+   (§0.1) — and §3's grading, because `mappings.jsonl` / `source_usages.jsonl`
+   were not among the supplied artifacts (§0.2).
 
 ### Corrections applied after third review
 
