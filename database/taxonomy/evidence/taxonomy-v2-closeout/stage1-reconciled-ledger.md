@@ -302,21 +302,44 @@ wrong; Phase 2d binds it as an anchor. For `52369` specifically, the closeout
 plan's original framing — loss by COL-retention filtering — is **correct**, and
 my Gate 1 / Gate 2 analysis does not apply to it.
 
-**Three distinct loss mechanisms, not one:**
+**Three distinct loss mechanisms, not one** — stated as **conditional code-path
+explanations, not verified release facts.** No compiled record for either taxon
+was inspected (§0.2): what follows is what the code *must* do given the inputs
+each case implies, not a measurement of what it *did*.
 
-| Case | Binding | Lost at |
+| Case | Binding (inferred) | Lost at (inferred) |
 |---|---|---|
-| `53482` (agreeing names) | alias onto COL concept `7821` (Phase 2c) | Gate 1 (namespace routing) and Gate 2 (anchor-only derivation) |
-| `52369` (divergent names) | **own anchor concept** (Phase 2d) | the COL-only scope universe, `macrofungi_scope.py:105-108` |
+| `53482` (agreeing names) | alias onto COL concept `7821` (Phase 2c) — **assumes** the strict or fallback exact rule was satisfied | Gate 1 (namespace routing) and Gate 2 (anchor-only derivation) |
+| `52369` (divergent names) | **own anchor concept** (Phase 2d) — **assumes** it is an accepted bridge record with no approved manual mapping | the COL-only scope universe, `macrofungi_scope.py:105-108` |
 | — | — | Gate 1 also silently empties the legacy-integer file (D7) |
 
-This also explains the earlier `cloud_export_tax-2026.07.30-02` failure the plan
-describes: that release's un-deduplicated NorTaxa id block (625xxx–626xxx) with
-`parent_taxon_id = null` is precisely the set of **Phase 2d anchors**, admitted
-without the COL scope filter. Their parents are NorTaxa concepts that the COL
-backbone does not contain, hence the null parents. The two releases are the two
-ways of handling the same Phase 2d output: admit it wholesale (duplicates) or
-filter it entirely (bridge loss).
+**What would falsify each row.** For `53482`: an approved manual mapping, a
+`PROPOSAL_AMBIGUOUS` outcome from a competing homonym, or an authorship mismatch
+would each route it differently. For `52369`: an approved manual bridge would
+alias it in Phase 2b/2c instead of anchoring it in 2d, and a non-accepted
+`taxonomic_status` would exclude it from `accepted_bridge_records` altogether.
+Stage 3 must read the compiled `mappings.jsonl` / `source_usages.jsonl` records
+for both before relying on either row.
+
+The plan's claim that the `53482` bridge "was demonstrably computed during the
+build" rests on the vernacular join, which is itself an inference from the
+recorded 3,923/2,041 counts (§0.2) rather than a record this stage inspected.
+
+**A conditional reading of the `tax-2026.07.30-02` duplicate block.** The plan
+describes an un-deduplicated NorTaxa id block (625xxx–626xxx) with
+`parent_taxon_id = null`. Phase 2d anchors admitted without the COL scope filter
+**would** have exactly that shape — NorTaxa-anchored concepts whose parents the
+COL backbone does not contain, hence null parents. That makes Phase 2d a strong
+candidate explanation, and it would mean the two releases are two ways of
+handling the same Phase 2d output: admit it wholesale (duplicates) or filter it
+entirely (bridge loss).
+
+**This is a hypothesis, not an identification.** Stage 1 did not inspect that
+release's rows and cannot claim the block *is* the Phase 2d set, nor that it is
+the block's only contributor. Confirming it requires reading
+`tax-2026.07.30-02` (present locally as a 65 MB gzip, not opened in this stage)
+and comparing its NorTaxa-sourced ids against the compiler's registry
+allocations.
 
 **Testable predictions for Stage 3** (neither executed here — see §0.2):
 
@@ -430,10 +453,23 @@ whether any arrived by a path not enumerated here.
 
 The acceptance-gate criterion "the evidence behind the NorTaxa vernacular join
 is characterized well enough for Stage 3 to classify associations" is therefore
-**partially met**: the rules are identified and the "name-level, not reviewed
-identity" verdict holds for the auto path, but the actual population is
-uninspected. Stage 3 must rebuild a candidate release, confirm these fields are
-populated as read here, and produce the counts before emitting any mapping.
+**not met**.
+
+**This remains unfinished Stage 1 work and must not be handed to Stage 3.** An
+earlier draft assigned the measurement to Stage 3; that was wrong. The stage
+brief is explicit that this is Stage 1's deliverable and that "Stage 3 cannot
+classify associations that Stage 1 has not characterized". Deferring it would
+invert the dependency the plan was written to enforce — and would leave Stage 3
+free to emit mappings against a standard nobody had measured, which is precisely
+the special-casing risk the coverage requirement exists to prevent.
+
+**To complete this criterion, Stage 1 needs** the pinned artifacts from §0.2 —
+a rebuilt or recovered `global_macrofungi_tax-2026.08.01-01/` plus the
+compiler's `mappings.jsonl` and `source_usages.jsonl` — and then must report,
+for the 2,041 taxa: the count per `review_status`, the split between
+`kind=manual` and `kind=cross_source_proposal`, the split between the strict
+exact rule and the missing-authorship fallback, and any association reaching a
+vernacular join by a path not enumerated above.
 
 ---
 
@@ -606,6 +642,31 @@ that `taxonomySelectionForTaxon({ taxonId: 'NBIC:56449', scientificName:
 outstanding and confirms the plan's "expected test-expectation flip" as a valid
 Stage 2/3 signal.
 
+**Contract disagreement to resolve before Stage 2 Part B implements this.** The
+plan requires the client to normalize `NBIC:53482` to
+`(source_system = nortaxa, namespace = nortaxa_taxon_id, external_id = 53482)`.
+The accepted identity contract assigns a different home to that value
+(`identity-contract.md:31-49`): an Artsorakel `NBIC:` ID is
+`source = artsorakel`, `namespace = nbic_scientific_name_id`, and the contract
+states that "`NBIC:54995` must be retained as the raw external value; any match
+on its numeric component is valid only under an explicit, evidenced namespace
+bridge."
+
+The plan's target tuple is **reachable but not direct**. `identity-contract.md:71-79`
+declares that NorTaxa's `dwc:taxonID` values *are* Artsnavnebase
+scientific-name IDs, so `nortaxa_taxon_id` may be bridged to
+`artsnavnebase_scientific_name_id` — the same registry Artsorakel's `NBIC:`
+prefix returns. The plan therefore skips a declared namespace hop rather than
+contradicting the contract outright.
+
+Two obligations follow that the plan's wording omits: the raw `NBIC:53482`
+value must be **retained**, not replaced by the stripped integer; and the hop to
+`nortaxa_taxon_id` must be recorded as an evidenced namespace bridge. The
+contract also warns that `artsdatabanken_taxon_concept_id` is a *different*
+registry whose numeric equality with a name ID is coincidence — so a Part B
+implementation that simply strips `NBIC:` and stores an integer would be one
+registry-confusion away from the exact defect this closeout is about.
+
 ### 4.6 Web — the null-write path
 
 `src/screens/find_detail.js:1059-1072` builds the AI-selection patch:
@@ -699,13 +760,13 @@ an evidence artifact alongside this file.
 
 | ID | Defect | Location | Severity |
 |---|---|---|---|
-| **D3a** | **Namespace is destroyed at write time.** All four NorTaxa integer namespaces collapse into one undifferentiated `source_system='artsdatabanken'` space; `taxon_external_id_min` has no namespace column | `build_sqlite_candidate.py:158-168`, `:488-490` | **High — root cause of D3b** |
+| **D3a** | **NorTaxa identifiers are routed into the legacy store, losing their namespace.** `INTEGER_NAMESPACES` membership sends all four NorTaxa namespaces to `taxon_external_id_min`, which by contract carries no namespace column, collapsing them into one `artsdatabanken` integer space — while the authoritative `taxon_external_id_text_min` (with `namespace TEXT NOT NULL`) sits unused for them. The defect is the routing, not the legacy table's shape | `build_sqlite_candidate.py:473-490` (routing), `:170-181` (unused text table) | **High — root cause of D3b** |
 | **D3b** | `_resolve_via_nortaxa` resolves identity from a namespace-lost integer, with `LIMIT 1` silently swallowing ambiguity | `migrate_observations_sporely_id.py:73-80` | **High** |
 | D3c | Migration step 4 resolves identity by unique scientific-name match | `migrate_observations_sporely_id.py:177-190` | High |
 | D2 | Cloud sync's entire proof standard for a Sporely identity is `> 0`; cannot detect a value contaminated by D3b | `utils/cloud_sync.py:16124-16132` | Medium — a gate weakness, not a leak source |
 | D1 | Committed snapshot stores no source/namespace/external ID; `canonical_source_system` is rendered then dropped | `ui/taxon_input_controller.py:50-53` vs `:1028-1036` | Medium — provenance-completeness gap; **not** evidence of contamination |
 | D8 | `resolve_manual_scientific` breaks a `col_xr`/`nortaxa` exact-name tie by source preference — identity selection by name | `database/taxon_lookup.py:726-733` | Medium |
-| D9 | The identity contract documented at `build_sqlite_candidate.py:12-14` claims an explicit `(source_system, id_role)` namespace; `id_role` is a taxonomic status, not a namespace. The contract is not upheld by its own schema | `build_sqlite_candidate.py:12-14` vs `:158-168` | Medium — doc/schema divergence hiding D3a |
+| D9 | Module docstring claims every external identifier is stored under an explicit `(source_system, id_role)` namespace. `id_role` holds `accepted`/`synonym` — a taxonomic status, not a namespace. The real namespace lives in `taxon_external_id_text_min.namespace`, so the docstring misdescribes the module's own schema and obscures D3a | `build_sqlite_candidate.py:12-14` vs `:170-181` | Low — documentation defect |
 | D5 | W2D/supplement tests depend on a gitignored absent build output; 32 tests cannot run in a clean checkout | `tests/taxonomy/test_w2d_reconciliation.py`, `tests/taxonomy/test_supplement_loader.py` | Medium — makes "W3 is done" unfalsifiable |
 | D6 | July plan's publication gate contradicts the recorded active production release | §1.1 | Medium — unresolved, blocks Stage 3 release safety |
 | D7 | `taxon_external_id_legacy_integer.jsonl` is written unconditionally empty, silently discarding every integer-namespace external ID | `macrofungi_scope.py:480` | Medium — data loss with no diagnostic |
@@ -729,19 +790,52 @@ Stage 1 found **no live UI path** converting an external integer into
 `sporely_taxon_id`. The single demonstrated converter is the migration. The
 smallest surface that fixes a *demonstrated* defect is therefore:
 
-1. `database/taxonomy/scripts/build_sqlite_candidate.py` — **stop destroying the
-   namespace** (D3a). Add a `namespace` column to `taxon_external_id_min` and
-   carry `ns` through the insert at `:488-490`. Nothing downstream can be made
-   namespace-safe until this exists.
-2. `database/migrate_observations_sporely_id.py:73-80` — filter on
-   `namespace='nortaxa_taxon_id'` and return ambiguity instead of `LIMIT 1`
-   (D3b); demote step 4's name matching to a reported, non-repairing
-   classification (D3c).
+1. `database/taxonomy/scripts/build_sqlite_candidate.py` — route reviewed
+   NorTaxa bridges to the **existing authoritative text path** (D3a).
+2. `database/migrate_observations_sporely_id.py:73-80` — resolve against
+   `taxon_external_id_text_min` with an explicit `namespace` predicate, and
+   return ambiguity instead of `LIMIT 1` (D3b); demote step 4's name matching to
+   a reported, non-repairing classification (D3c).
 3. `utils/cloud_sync.py:16124` — require proven provenance before the RPC;
    retain and skip otherwise rather than erasing (D2).
 
-Item 1 is a schema change to a generated artifact and should be sequenced before
-2, since 2 depends on the column existing.
+**Correction to an earlier draft of this section.** It proposed adding a
+`namespace` column to `taxon_external_id_min` and claimed "nothing downstream
+can be made namespace-safe until this exists". Both parts were wrong, and the
+proposal conflicted with the accepted contract:
+
+- `taxon_external_id_text_min` **already exists** with exactly the needed shape
+  (`build_sqlite_candidate.py:170-181`): `source_system TEXT NOT NULL`,
+  `namespace TEXT NOT NULL`, `external_id TEXT NOT NULL`. The authoritative
+  namespaced path is present; nothing new needs inventing.
+- `identity-contract.md:27` requires that "every external identifier is stored
+  as text with both `source` and `namespace`" — so namespaced text *is* the
+  contract, and the text table is where an authoritative identifier belongs.
+- `cloud-export-contract.md` reserves the integer table for legacy evidence and
+  records its namespace loss as a known property, not a defect to repair:
+  `taxon_external_id_legacy_integer.jsonl` is documented at `:416` as
+  "61,583 (all `artsdatabanken` source; namespace lost)".
+
+Adding a namespace column to the integer table would therefore have promoted a
+deliberately legacy, audit-only store into a **second identity authority**
+alongside the text table — creating exactly the competing-source-of-truth
+problem this closeout exists to remove. The contract is not the obstacle here;
+it already describes the right destination.
+
+So the correct minimal change is at the **routing** decision
+(`build_sqlite_candidate.py:473-490`): a reviewed NorTaxa bridge should be
+emitted to `external_text_rows` with its namespace intact, rather than being
+funnelled into `external_int_rows` by membership in `INTEGER_NAMESPACES`. That
+single change addresses Gate 1 directly, and it makes Gate 2's derived
+`norwegian_taxon_id` branch (`cloud_export.py:696-704`) redundant rather than
+requiring a second fix — the derived branch exists only to reconstruct an
+identifier that routing had discarded.
+
+Two consequences worth stating: the change must be driven by *reviewed bridge
+evidence*, not by namespace membership alone (otherwise every NorTaxa DwC row
+becomes authoritative, which §3 shows the evidence does not support); and it
+does **not** require touching `taxon_external_id_min`, whose legacy contents and
+contract stay as they are.
 
 **Deliberately deferred, with reason:** adding `source_system` / `namespace` /
 `external_id` to the committed picker snapshot (D1). It is likely still correct
@@ -803,20 +897,51 @@ correction` is NOT claimed.** Three acceptance-gate criteria are unmet:
 | Deployed and repository state agree with the ledger | **Unmet** — deployed side unverifiable (§0.1) |
 | Observation 917 has a reproducible before-state | **Unmet** — not readable (§6) |
 | Desktop leak traced to a concrete write path | **Partially met** — the only demonstrated converter is the migration (§4.3, D3a/D3b). The plan's premise that the *picker* leaks is **unsupported** (§4.2) |
-| NorTaxa bridge loss traced to a concrete compile/export path | **Met** — §2. Three mechanisms located: Gates 1 and 2 for `53482`, the COL-only scope universe for `52369` |
-| Vernacular join characterized for Stage 3 classification | **Partially met** — rules identified and verdict reached, but the 2,041 associations are uninspected (§3) |
+| NorTaxa bridge loss traced to a concrete compile/export path | **Partially verified** — §2. Three mechanisms located in code (Gates 1 and 2; the COL-only scope universe), but the per-case bindings are inferred, not read from compiled records |
+| Vernacular join characterized for Stage 3 classification | **Unmet** — rules identified and a verdict reached, but the 2,041 associations are uninspected. **Unfinished Stage 1 work**, not deferrable to Stage 3 (§3) |
 | `Entoloma conferendum` failure traced, or recorded unconfirmed with reason | **Met** (recorded unconfirmed, §5) |
 | No unexplained taxonomy production objects | **Unmet** — §1.1 activation/publication contradiction |
 
-The repository-side investigation is complete to the limit of the artifacts
-present. The unmet and partially-met criteria reduce to two external blockers:
+The **code-reading** investigation is complete to the limit of the artifacts
+present; the **measurement** work is not. Stage 1 has outstanding work of its
+own, blocked on two external dependencies:
 
 1. **an authorized Supabase session *and* an approval policy permitting
-   read-only SQL** (§0.1) — for 917, the deployed reconciliation, and §1.1;
+   read-only SQL** (§0.1) — for observation 917's seven-part baseline, the
+   deployed reconciliation, and the §1.1 activation contradiction. Note that
+   authentication alone does not resolve this: the review session had a working
+   connection and was still refused under approval policy `never`;
 2. **the pinned release and source artifacts** (§0.2, §0.3) — for the 2,041
-   coverage counts and the `52369`/`53482` compiled-record confirmations;
+   coverage counts (§3, a Stage 1 deliverable), the `52369`/`53482`
+   compiled-record confirmations (§2), and optionally the `tax-2026.07.30-02`
+   duplicate-block hypothesis;
 
-plus capturing one raw Artsorakel response for §5.
+plus capturing one raw Artsorakel response for §5, which remains unavailable, so
+the Part B mechanism stays unconfirmed.
+
+Test results in §0.4 were produced in the implementation session and have not
+been independently rerun by a reviewer.
+
+### Corrections applied after second review
+
+1. **§2 stated the two cases' bindings as fact.** They are conditional code-path
+   explanations; no compiled record was inspected. Marked as inferred, with
+   explicit falsifiers, and the bridge-loss gate criterion changed from Met to
+   partially verified. The `625xxx–626xxx` attribution is downgraded from an
+   identification to a hypothesis.
+2. **§8 proposed adding a `namespace` column to the legacy integer table.**
+   Contract-violating and unnecessary: `taxon_external_id_text_min` already has
+   that shape, `identity-contract.md:27` requires namespaced text, and
+   `cloud-export-contract.md:416` reserves the integer table as legacy with
+   namespace loss as a known property. The proposal would have created a second
+   identity authority. Re-aimed at the routing decision instead.
+3. **§3/§9 deferred the 2,041 characterization to Stage 3.** It is Stage 1's
+   deliverable by the brief's own wording; deferring inverts the dependency the
+   plan enforces. Reclassified as unmet, unfinished Stage 1 work, with the
+   required counts specified.
+
+Also added: a contract disagreement affecting Stage 2 Part B's `NBIC:`
+normalization (§4.5), found while checking the identity contract for item 2.
 
 ### Corrections applied after first review
 
