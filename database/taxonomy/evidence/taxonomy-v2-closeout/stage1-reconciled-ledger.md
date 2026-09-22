@@ -923,6 +923,65 @@ every vernacular-joined taxon does carry an alias binding.
 `(Britzelm.) Noordel.`, identical. `52369` has **no** row here, consistent with
 §2.2: it is anchored, never aliased.
 
+### 3.3.1 Committed per-association audit
+
+Totals alone would force Stage 3 to repeat this investigation, so the
+classification is committed per association, alongside the helper that produced
+it:
+
+| Artifact | Contents |
+|---|---|
+| `recover_bridge_matching_rule.py` | the read-only helper; rationale, inputs and method in its docstring |
+| `nortaxa-bridge-association-audit.json` | **all 19,808 associations**, one row each |
+| `nortaxa-bridge-association-audit.summary.json` | reconciliation counts **and the 40 scoped fallback taxa by ID** |
+
+Row schema (array-of-arrays under `columns`, to keep 19,808 rows compact):
+
+```
+["sporely_taxon_id", "nortaxa_taxon_id", "col_usage_id",
+ "matching_rule", "in_active_release_vernacular_2041"]
+
+[7821, "53482", "39ZCL", "strict", 1]
+```
+
+Reproduce with:
+
+```
+/Users/sigmundas/Documents/Code/sporely/sporely-py/.venv/bin/python \
+  database/taxonomy/evidence/taxonomy-v2-closeout/recover_bridge_matching_rule.py
+```
+
+It defaults to the primary checkout for the pinned inputs (generated artifacts
+and acquired archives are gitignored, so they exist in exactly one checkout);
+`--generated`, `--sources` and `--out-dir` override.
+
+**Reconciliation** — the committed rows re-aggregate to the §3.3 totals, and the
+helper reports zero unresolved identifiers on both sides:
+
+| Check | Value |
+|---|---:|
+| `row_count` | 19,808 |
+| rows by rule | strict 17,675 · fallback 2,133 |
+| rows by rule, `in_…_2041 = 1` | strict 2,001 · fallback 40 |
+| `distinct_sporely_concepts_bound` | 19,808 (one bridge per concept) |
+| `unresolved_nortaxa_ids` / `unresolved_col_usage_ids` | 0 / 0 |
+| `scoped_without_any_bridge_binding` | 0 |
+
+**The 40 scoped fallback taxa**, listed in the summary as
+`scoped_taxa_with_fallback_binding` — these are the Sporely concepts inside the
+required 2,041 population whose bridge rests on the weaker rule:
+
+```
+995, 6627, 7411, 8963, 9114, 9270, 16208, 17332, 23080, 23554,
+25517, 29515, 38554, 66849, 69191, 70046, 83923, 83928, 83942, 83951,
+83996, 83998, 84941, 85409, 86867, 87119, 87248, 118994, 123882, 129442,
+130645, 152494, 153152, 163145, 166713, 171662, 607513, 612639, 616140, 620793
+```
+
+Note the audit was emitted as JSON, not CSV: the repository ignores `*.csv`
+(`.gitignore:77`) and the surrounding evidence directory is JSON/Markdown, so
+JSON respects both rather than force-adding against the ignore rule.
+
 ### The characterization, complete
 
 Every one of the 19,808 associations now has both a review status and a matching
@@ -950,16 +1009,33 @@ indeed wrong — but the non-uniformity is bounded and identified. For Stage 3:
 The recovery used the same pinned inputs as the audited release; the chain is
 hash-verified end to end:
 
-| Link | Evidence |
-|---|---|
-| COL source pin | release `taxonomy_release.jsonl` declares `source_release = 2026-07-17-XR`; the archive read is `sources/col_xr/2026-07-17-XR/archive.zip` |
-| NorTaxa source pin | `sources/nortaxa/1.284/archive.zip`, the version compiled into this lineage |
-| SQLite ← compiler | `sha256(tax-2026.07.30-02.sqlite3.gz)` = `fb7660c613d0909c22591abe90768a9ae3c0ea88a8b8d5b2ee2bdf6c69cb8938` = the active release manifest's `source_hashes.sqlite_gz_sha256` ✓ |
-| W1 export ← SQLite | `sha256(cloud_export_tax-2026.07.30-02/taxonomy_export_manifest.json)` = `096beb0b9363e69b31ced728d5ce55f7024e33c81b9a416ca1beefd0903e2d95` = the active release manifest's `source_hashes.w1_manifest_sha256` ✓ |
-| active release ← W1 | all seven dataset hashes match disk, manifest and production (§0.2) ✓ |
+Every link was **recomputed in this stage** and compared against the pinned
+declaration; none is asserted from a path name or read back from the manifest
+it is being checked against.
 
-Both hash links were recomputed in this stage, not read from the manifest. The
-bridge triples therefore belong to the audited release's own lineage.
+| Link | Recomputed | Declared in | Match |
+|---|---|---|---|
+| COL XR archive | `sha256(sources/col_xr/2026-07-17-XR/archive.zip)` = `397d701c8eb269bf78d6ac7b03149915b0d9e2a2c18694be2c91445b807814f9` | that directory's `manifest.json` → `.download.sha256` **and** `.promotion.sha256` | ✓ |
+| NorTaxa archive | `sha256(sources/nortaxa/1.284/archive.zip)` = `29c11c54d955dc44e4e5a38944dd7932989a256d1b173777579b9f33abd2fe22` | that directory's `manifest.json` → `.download.archive_sha256`, `.validation.archive.sha256`, and all three `execution_attempts[*].archive_sha256` | ✓ |
+| COL release identity | archive `manifest.json` → `.release` = `{dataset_key: 315834, release_label: "2026-07-17 XR", issued_date: "2026-07-17", archive_format: "ColDP", doi: "10.48580/dgykv"}` | active release `taxonomy_release.jsonl` declares `source_release = "2026-07-17-XR"`, `source_dataset_key = 315834` | ✓ |
+| NorTaxa release identity | archive `manifest.json` → `.release` = `{version: "1.284", issued_date: "2026-07-17"}` | the compiled national source is `nortaxa/1.284` | ✓ |
+| SQLite ← compiler | `sha256(tax-2026.07.30-02.sqlite3.gz)` = `fb7660c613d0909c22591abe90768a9ae3c0ea88a8b8d5b2ee2bdf6c69cb8938` | active release manifest `source_hashes.sqlite_gz_sha256` | ✓ |
+| W1 export ← SQLite | `sha256(cloud_export_tax-2026.07.30-02/taxonomy_export_manifest.json)` = `096beb0b9363e69b31ced728d5ce55f7024e33c81b9a416ca1beefd0903e2d95` | active release manifest `source_hashes.w1_manifest_sha256` | ✓ |
+| active release ← W1 | all seven dataset file hashes | local manifest **and** production `taxonomy_v2_releases.source_manifest` (§0.2) | ✓ |
+
+The chain is therefore closed end to end: **pinned source archives →
+compiled SQLite → W1 export → active release → deployed production rows.** The
+bridge triples in §3.3.1 are read from the SQLite link of that chain, so they
+belong to the audited release's own lineage rather than to a coincidentally
+similar build.
+
+One honest limit: the COL and NorTaxa archive hashes prove the archives on disk
+are the ones their acquisition manifests approved, and the release declares the
+matching release label and dataset key. The compiler does **not** record a
+source-archive SHA-256 in `taxonomy_release.jsonl` — it records
+`source_gz_sha256` of the compiled SQLite instead — so the archive-to-release
+link rests on the declared release identity plus the unbroken hash chain below
+it, not on a single hash the release itself pins to the archive.
 
 What §3 now delivers is a *classification scheme*, a *verdict on the strongest
 available rule*, and the *population structure* (§3.1). What it does not deliver
@@ -1749,6 +1825,27 @@ in the primary checkout rather than needing to be supplied (§0.3).
 
 Test results in §0.4 were produced in the implementation session and have not
 been independently rerun by a reviewer.
+
+### Eighth revision — per-association evidence packaged; source hashes verified
+
+1. **§3.3.1 commits the per-association audit** rather than aggregates:
+   `nortaxa-bridge-association-audit.json` (all 19,808 rows: Sporely ID,
+   NorTaxa ID, COL usage ID, matching rule, 2,041 membership), a summary with
+   reconciliation counts **and the 40 scoped fallback taxa by ID**, and the
+   read-only helper `recover_bridge_matching_rule.py` that regenerates both.
+   Stage 3 can now consume the classification without repeating the work.
+2. **§3.4 completes the source lineage.** Both archive SHA-256s were recomputed
+   and matched against their acquisition manifests' declarations
+   (COL `397d701c…`, NorTaxa `29c11c54…`), and release identity was checked
+   against `taxonomy_release.jsonl`'s `source_release` / `source_dataset_key`.
+   The previous version cited versioned paths, which is not a hash comparison.
+   The section also now states the one limit: the release pins the compiled
+   SQLite, not the source archive, so that link rests on declared release
+   identity plus the unbroken chain beneath it.
+
+The audit is JSON rather than CSV because `.gitignore:77` ignores `*.csv`;
+JSON matches the evidence directory's existing convention and avoids
+force-adding against a deliberate repository rule.
 
 ### Seventh revision — matching rule recovered; digest SQL committed
 
