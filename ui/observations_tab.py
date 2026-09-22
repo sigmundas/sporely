@@ -10546,26 +10546,19 @@ class ObservationsTab(QWidget):
             for row in image_rows_list
             if row.get("id") is not None
         }
-        excluded_image_ids: set[int] = set()
-        exclusion_getter = getattr(self, "_publish_excluded_image_ids", None)
-        if callable(exclusion_getter):
-            try:
-                excluded_image_ids = {
-                    int(image_id)
-                    for image_id in exclusion_getter(observation_id)
-                }
-            except Exception:
-                excluded_image_ids = set()
-        source_measurements = []
-        for measurement in MeasurementDB.get_measurements_for_observation(
+        # Do not filter these measurements with _publish_excluded_image_ids().
+        # `artsobs_publish_excluded_image_ids_<obs>` decides which source image
+        # *files* are uploaded to an external target.  The spore mosaic is an
+        # observation-level analytical summary: it must be built from every
+        # eligible measurement of the observation, whether or not the
+        # microscope image a spore happens to sit on was ticked for upload.
+        # Reusing the exclusion set here silently collapsed a 61-spore mosaic
+        # to the 3 spores that lived on the single selected source image.
+        # Narrowing the mosaic requires separate, explicit measurement or
+        # category state — never the source-image publication selection.
+        source_measurements = MeasurementDB.get_measurements_for_observation(
             observation_id
-        ):
-            try:
-                measurement_image_id = int(measurement.get("image_id") or 0)
-            except (TypeError, ValueError):
-                measurement_image_id = 0
-            if measurement_image_id not in excluded_image_ids:
-                source_measurements.append(measurement)
+        )
         measurements = prepare_ordered_mosaic_inputs(
             source_measurements,
             category=category,

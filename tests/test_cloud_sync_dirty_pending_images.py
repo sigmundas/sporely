@@ -192,6 +192,62 @@ def test_pending_image_repair_scan_cadence(monkeypatch):
     )
 
 
+def test_pending_image_repair_generation_bump_forces_one_rescan(monkeypatch):
+    """An installation that already recorded the previous repair generation
+    must rescan once, then fall back to ordinary interval throttling.
+
+    The mosaic fix changed which stranded observations the scan can rescue, so
+    a fresh watermark from the old generation is not evidence that the
+    installation has been repaired.
+    """
+    assert cloud_sync._CLOUD_PENDING_IMAGE_REPAIR_VERSION > 1, (
+        "The recovery pass relies on a generation bump; version 1 would let "
+        "already-watermarked installations skip the rescan entirely."
+    )
+    previous_version = cloud_sync._CLOUD_PENDING_IMAGE_REPAIR_VERSION - 1
+
+    now = datetime(2026, 9, 22, 12, 0, tzinfo=timezone.utc)
+    settings: dict[str, str] = {
+        cloud_sync._CLOUD_PENDING_IMAGE_REPAIR_VERSION_SETTING: str(previous_version),
+        # Watermark is fresh — under the old generation this would be skipped.
+        cloud_sync._CLOUD_PENDING_IMAGE_REPAIR_AT_SETTING: (
+            now - timedelta(hours=1)
+        ).isoformat(),
+    }
+    monkeypatch.setattr(
+        cloud_sync.SettingsDB,
+        "get_setting",
+        lambda key, default=None: settings.get(key, default),
+    )
+    monkeypatch.setattr(
+        cloud_sync.SettingsDB,
+        "set_setting",
+        lambda key, value: settings.__setitem__(key, str(value)),
+    )
+
+    assert cloud_sync._cloud_pending_image_repair_scan_due(now) == (
+        True,
+        f"version_{previous_version}_to_{cloud_sync._CLOUD_PENDING_IMAGE_REPAIR_VERSION}",
+    )
+
+    assert cloud_sync._record_cloud_pending_image_repair_scan_complete() is True
+    assert settings[cloud_sync._CLOUD_PENDING_IMAGE_REPAIR_VERSION_SETTING] == str(
+        cloud_sync._CLOUD_PENDING_IMAGE_REPAIR_VERSION
+    )
+
+    # Generation transition is spent: throttling governs again, unchanged.
+    recorded_at = cloud_sync._parse_sync_timestamp(
+        settings[cloud_sync._CLOUD_PENDING_IMAGE_REPAIR_AT_SETTING]
+    )
+    assert recorded_at is not None
+    assert cloud_sync._cloud_pending_image_repair_scan_due(
+        recorded_at + timedelta(hours=1)
+    ) == (False, "fresh_watermark")
+    assert cloud_sync._cloud_pending_image_repair_scan_due(
+        recorded_at + timedelta(hours=25)
+    ) == (True, "stale_watermark")
+
+
 def test_push_all_skips_pending_image_repair_scan_with_fresh_watermark(
     tmp_path,
     monkeypatch,

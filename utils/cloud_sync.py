@@ -170,7 +170,16 @@ _CLOUD_MEASUREMENT_RECONCILE_AT_SETTING = 'cloud_measurement_reconcile_at'
 _CLOUD_MEASUREMENT_RECONCILE_VERSION = 1
 _CLOUD_PENDING_IMAGE_REPAIR_VERSION_SETTING = 'cloud_pending_image_repair_version'
 _CLOUD_PENDING_IMAGE_REPAIR_AT_SETTING = 'cloud_pending_image_repair_at'
-_CLOUD_PENDING_IMAGE_REPAIR_VERSION = 1
+# Repair generation. Bump this when a fix changes which observations the
+# pending-image scan can actually rescue, so installations that already hold a
+# fresh watermark still perform one new scan on their next explicit
+# sync_images=True synchronization. After that transition the ordinary
+# interval throttling below resumes.
+# v1: original versioned pending-image repair scan.
+# v2: mosaic fix — an unchanged local render signature no longer implies the
+#     media was uploaded, so already-synced observations stranded with
+#     cloud_id IS NULL media become recoverable.
+_CLOUD_PENDING_IMAGE_REPAIR_VERSION = 2
 _CLOUD_PENDING_IMAGE_REPAIR_INTERVAL_HOURS = 24
 _CLOUD_CHILD_CHANGE_CURSOR_SETTING = 'cloud_child_change_cursor'
 # Version must be bumped whenever the image cursor semantics change.
@@ -19458,6 +19467,63 @@ def push_all(
                         )
 
 
+                # Upload completeness is NOT render-signature equality.
+                #
+                # The local media signature describes whether local *render
+                # inputs* changed. It deliberately carries no cloud_id and no
+                # storage intent, so it cannot prove that the cloud identity
+                # or the bytes for the user's selected media actually exist.
+                # An observation whose render inputs never changed but whose
+                # selected images were never uploaded would take an image-prep
+                # fast path forever (the stranded-media state). Establish
+                # upload completeness separately, from the canonical per-image
+                # storage-intent ledger plus cloud-link state, and let it veto
+                # every image-prep fast path.
+                #
+                # Only for `sync_images=True` against an observation that
+                # already exists in cloud. Refresh/background sync
+                # (`sync_images=False`) never reaches this block.
+                pending_cloud_image_ids: list[int] = []
+                pending_image_uploads_complete = True
+                if had_existing_cloud and local_obs_id > 0:
+                    try:
+                        # Intent seeding must run BEFORE desiredness is read:
+                        # an unseeded ledger makes every row "uninitialized"
+                        # (never pending), and an unseeded excluded set makes
+                        # every row look desired. The initializer is
+                        # incremental, idempotent and local-only; it is run
+                        # again inside `_push_images_for_observation`.
+                        # Seeding here is strictly conservative relative to
+                        # that later call: the only rows it can decide
+                        # differently are cloud-identified rows carrying an
+                        # active tombstone, which are never pending anyway.
+                        _ensure_cloud_image_storage_intent_initialized(local_obs_id)
+                        pending_cloud_image_ids = _pending_cloud_pushable_image_ids(
+                            local_obs_id
+                        )
+                    except Exception as exc:
+                        # Fail closed. An unknown pending state must not buy a
+                        # fast path; full image preparation is the pre-existing
+                        # default whenever completeness cannot be established.
+                        print(
+                            f'[cloud_sync] Observation {obs["id"]}: could not establish '
+                            f'cloud image upload completeness '
+                            f'({type(exc).__name__}: {exc}); running full image prep',
+                            flush=True,
+                        )
+                        pending_image_uploads_complete = False
+                    else:
+                        pending_image_uploads_complete = not pending_cloud_image_ids
+                        if pending_cloud_image_ids:
+                            print(
+                                f'[cloud_sync] Observation {obs["id"]}: '
+                                f'{len(pending_cloud_image_ids)} selected cloud image(s) '
+                                f'still pending upload '
+                                f'(image_ids={sorted(pending_cloud_image_ids)}); '
+                                f'image-prep fast paths disabled',
+                                flush=True,
+                            )
+
                 stored_local_media_signature = (
                     _load_local_cloud_media_signature(local_obs_id)
                     if had_existing_cloud and local_obs_id > 0
@@ -19467,7 +19533,8 @@ def push_all(
                 if had_existing_cloud and local_obs_id > 0 and stored_local_media_signature:
                     current_local_image_signature = _local_cloud_image_media_signature(local_obs_id)
                 image_render_unchanged = (
-                    had_existing_cloud
+                    pending_image_uploads_complete
+                    and had_existing_cloud
                     and local_obs_id > 0
                     and stored_local_media_signature
                     and current_local_image_signature
@@ -19478,7 +19545,8 @@ def push_all(
                     )
                 )
                 tombstone_cleanup_only = (
-                    not image_render_unchanged
+                    pending_image_uploads_complete
+                    and not image_render_unchanged
                     and had_existing_cloud
                     and local_obs_id > 0
                     and stored_local_media_signature
@@ -19501,7 +19569,8 @@ def push_all(
                     else None
                 )
                 metadata_only_image_sync = bool(
-                    prep_diagnostics
+                    pending_image_uploads_complete
+                    and prep_diagnostics
                     and not image_render_unchanged
                     and not tombstone_cleanup_only
                     and prep_diagnostics.get('only_metadata_fields_changed')
@@ -19529,6 +19598,8 @@ def push_all(
                             f'image_file_signature_changed={prep_diagnostics["any_image_file_signature_changed"]} '
                             f'render_affecting_field_changed={prep_diagnostics["any_render_affecting_field_changed"]} '
                             f'only_metadata_fields_changed={prep_diagnostics["only_metadata_fields_changed"]} '
+                            f'pending_cloud_image_uploads={len(pending_cloud_image_ids)} '
+                            f'image_uploads_complete={pending_image_uploads_complete} '
                             f'decision={prep_decision} '
                             f'changed_keys={_format_local_media_prep_diagnostic_keys(prep_diagnostics["changed_keys"])}'
                         ),

@@ -382,6 +382,81 @@ When an active row points to missing bytes:
 
 Changing image order (`sort_order`) is metadata only and cannot imply creation or deletion.
 
+### Image-prep fast paths require upload completeness
+
+> **Invariant.** Local media signatures describe local input/render state.
+> They never prove remote upload completeness. Required cloud-media work is
+> determined from per-image storage intent and cloud/link state.
+
+A local media/render signature describes whether local *render inputs*
+changed. It carries neither `cloud_id` nor cloud-storage intent, so it never
+proves that the cloud identity or the bytes for the user's selected media
+exist. Do not add either to the signature — that would make every cloud link
+repair look like a local render change.
+
+Consequence for `push_all` when `sync_images=True` and the observation already
+exists in cloud: before any image-preparation fast path
+(`image_render_unchanged` skip, tombstone-cleanup-only, metadata-only image
+sync) may be taken, upload completeness is established separately:
+
+1. `_ensure_cloud_image_storage_intent_initialized` seeds per-image storage
+   intent — it must run *before* desiredness is read, because an unseeded
+   ledger makes every row look uninitialized and an unseeded excluded set
+   makes every row look desired;
+2. `_pending_cloud_pushable_image_ids` computes the canonical pending set once
+   for the observation;
+3. a non-empty pending set vetoes all three fast paths and the existing full
+   image-preparation/upload path runs instead;
+4. if completeness cannot be established (any error), the sync fails closed
+   into full image preparation.
+
+There is exactly one pending-image predicate. Rows the upload path would skip
+anyway — user-excluded, missing file, duplicate path, not-yet-initialized
+intent — are not pending and therefore cannot cause a dirty loop.
+
+`sync_images=False` (Refresh / background sync) never evaluates upload
+completeness: it cannot upload bytes, so it must not be re-dirtied by them.
+
+Without this gate an observation whose render inputs never changed but whose
+selected images were never uploaded stays permanently stranded: dirty on every
+sync, bytes never sent (`tests/test_cloud_sync_upload_completeness.py`).
+
+The repaired run must converge along the whole chain, not merely send bytes:
+one cloud image identity per local image (no duplicate row, no re-upload on
+the next sync), measurement synchronization against that identity, and the
+mosaic pusher receiving the resulting cloud-linked measurements
+(`tests/test_cloud_media_measurement_mosaic_chain.py`).
+
+Byte-storage state and measurement/mosaic participation stay independent, in
+both directions. A microscope image the user excluded from cloud image storage
+keeps no cloud bytes, yet its metadata-only anchor still carries its public
+spore measurements to cloud and into the mosaic. A stranded-media incident is
+therefore never repaired by requiring measured microscope source images to
+upload their bytes — the byte-storage predicate governs bytes only.
+
+### Recovering already-stranded observations
+
+Installations stranded by an earlier defect are recovered through the existing
+scanner, not a second one. `_mark_cloud_observations_dirty_for_pending_local_images`
+is the only pending-image dirty scan, it only runs under `sync_images=True`,
+and its cadence is owned by `_cloud_pending_image_repair_scan_due`: a versioned
+repair generation (`cloud_pending_image_repair_version`) plus a 24-hour
+watermark (`cloud_pending_image_repair_at`).
+
+When a fix changes which observations the scan can actually rescue, bump
+`_CLOUD_PENDING_IMAGE_REPAIR_VERSION`. An installation holding the previous
+generation then performs exactly one rescan on its next explicit
+`sync_images=True` synchronization, however fresh its watermark, and returns to
+ordinary interval throttling afterwards. Do not recover stranded data by
+widening the scan to Refresh/background sync, by removing the throttle, or by
+adding a permanent broad scan.
+
+Generation 2 covers the mosaic fix: an unchanged local render signature no
+longer implies the selected media reached the cloud, so `synced` observations
+holding desired, uploadable `cloud_id IS NULL` media become discoverable again
+(`tests/test_cloud_sync_dirty_pending_images.py`,
+`tests/test_cloud_sync_pending_image_repair.py`).
+
 ## Desired deletion flow
 
 ### Delete image everywhere

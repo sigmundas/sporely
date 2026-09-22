@@ -246,6 +246,12 @@ Inside `push_all` / `pull_all`:
 - Push: `_push_images_for_observation` (desired-state init → identity repair
   → tombstone-safe candidate filtering → `upload_image_file` /
   `upload_original_image_file` → `push_image_metadata`).
+- Push fast-path gate (in `push_all`, `sync_images=True` only): storage-intent
+  init + `_pending_cloud_pushable_image_ids` decide *upload completeness*,
+  which is separate from render-signature equality and vetoes the
+  `image_render_unchanged` / tombstone-only / metadata-only image-prep
+  branches. See "Image-prep fast paths require upload completeness" in
+  `docs/supabase-sync-contract.md`.
 - Pull/materialize: bulk metadata via `pull_bulk_image_metadata` (L15865),
   byte download via `download_image_file` (L16127), local application /
   materialization helpers around L10168–L10513.
@@ -796,6 +802,7 @@ High-value safety tests by invariant (not an exhaustive listing):
 | Shared-reference policy | `tests/test_cloud_sync_auth_refresh.py::test_cloud_client_retries_429_using_retry_after_without_losing_request`; `tests/test_curated_reference_forks.py::test_shared_catalogue_uses_approved_default_and_maximum_page_size`; cross-repository policy assertions in `tests/test_stage6l_cross_repository_contract.py` |
 | Cloud deletion safety | `test_image_tombstones.py` (soft-delete ordering, hard-delete + tombstone ordering); `test_cloud_conflict_plan_execution.py::test_no_media_deletion_api_reachable_from_plan` |
 | Fast path / no-op contract | `tests/test_cloud_sync_fast_path.py` |
+| Upload completeness vs render signature | `tests/test_cloud_sync_upload_completeness.py` (fast-path veto, intent-init ordering, non-pushable rows, cache-row identity repair without bytes, `sync_images=False` isolation); `tests/test_cloud_media_measurement_mosaic_chain.py` (image → measurement → mosaic convergence, and byte selection independent of measurement/mosaic participation) |
 | Measurements | `tests/test_cloud_measurement_sync_v1.py` |
 | Calibrations | `tests/test_cloud_calibration_sync.py` |
 | Media recovery / audit | `tests/test_cloud_media_recovery.py`, `tests/test_cloud_media_audit.py`, `tests/test_cloud_original_sync_recovery.py`, `tests/test_cloud_media_pull_retry.py` |
