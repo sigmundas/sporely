@@ -382,6 +382,41 @@ When an active row points to missing bytes:
 
 Changing image order (`sort_order`) is metadata only and cannot imply creation or deletion.
 
+### Image-prep fast paths require upload completeness
+
+A local media/render signature describes whether local *render inputs*
+changed. It carries neither `cloud_id` nor cloud-storage intent, so it never
+proves that the cloud identity or the bytes for the user's selected media
+exist. Do not add either to the signature — that would make every cloud link
+repair look like a local render change.
+
+Consequence for `push_all` when `sync_images=True` and the observation already
+exists in cloud: before any image-preparation fast path
+(`image_render_unchanged` skip, tombstone-cleanup-only, metadata-only image
+sync) may be taken, upload completeness is established separately:
+
+1. `_ensure_cloud_image_storage_intent_initialized` seeds per-image storage
+   intent — it must run *before* desiredness is read, because an unseeded
+   ledger makes every row look uninitialized and an unseeded excluded set
+   makes every row look desired;
+2. `_pending_cloud_pushable_image_ids` computes the canonical pending set once
+   for the observation;
+3. a non-empty pending set vetoes all three fast paths and the existing full
+   image-preparation/upload path runs instead;
+4. if completeness cannot be established (any error), the sync fails closed
+   into full image preparation.
+
+There is exactly one pending-image predicate. Rows the upload path would skip
+anyway — user-excluded, missing file, duplicate path, not-yet-initialized
+intent — are not pending and therefore cannot cause a dirty loop.
+
+`sync_images=False` (Refresh / background sync) never evaluates upload
+completeness: it cannot upload bytes, so it must not be re-dirtied by them.
+
+Without this gate an observation whose render inputs never changed but whose
+selected images were never uploaded stays permanently stranded: dirty on every
+sync, bytes never sent (`tests/test_cloud_sync_upload_completeness.py`).
+
 ## Desired deletion flow
 
 ### Delete image everywhere

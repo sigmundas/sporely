@@ -246,6 +246,12 @@ Inside `push_all` / `pull_all`:
 - Push: `_push_images_for_observation` (desired-state init → identity repair
   → tombstone-safe candidate filtering → `upload_image_file` /
   `upload_original_image_file` → `push_image_metadata`).
+- Push fast-path gate (in `push_all`, `sync_images=True` only): storage-intent
+  init + `_pending_cloud_pushable_image_ids` decide *upload completeness*,
+  which is separate from render-signature equality and vetoes the
+  `image_render_unchanged` / tombstone-only / metadata-only image-prep
+  branches. See "Image-prep fast paths require upload completeness" in
+  `docs/supabase-sync-contract.md`.
 - Pull/materialize: bulk metadata via `pull_bulk_image_metadata` (L15865),
   byte download via `download_image_file` (L16127), local application /
   materialization helpers around L10168–L10513.
