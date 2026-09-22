@@ -170,7 +170,16 @@ _CLOUD_MEASUREMENT_RECONCILE_AT_SETTING = 'cloud_measurement_reconcile_at'
 _CLOUD_MEASUREMENT_RECONCILE_VERSION = 1
 _CLOUD_PENDING_IMAGE_REPAIR_VERSION_SETTING = 'cloud_pending_image_repair_version'
 _CLOUD_PENDING_IMAGE_REPAIR_AT_SETTING = 'cloud_pending_image_repair_at'
-_CLOUD_PENDING_IMAGE_REPAIR_VERSION = 1
+# Repair generation. Bump this when a fix changes which observations the
+# pending-image scan can actually rescue, so installations that already hold a
+# fresh watermark still perform one new scan on their next explicit
+# sync_images=True synchronization. After that transition the ordinary
+# interval throttling below resumes.
+# v1: original versioned pending-image repair scan.
+# v2: mosaic fix — an unchanged local render signature no longer implies the
+#     media was uploaded, so already-synced observations stranded with
+#     cloud_id IS NULL media become recoverable.
+_CLOUD_PENDING_IMAGE_REPAIR_VERSION = 2
 _CLOUD_PENDING_IMAGE_REPAIR_INTERVAL_HOURS = 24
 _CLOUD_CHILD_CHANGE_CURSOR_SETTING = 'cloud_child_change_cursor'
 # Version must be bumped whenever the image cursor semantics change.

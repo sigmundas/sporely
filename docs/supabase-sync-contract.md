@@ -417,6 +417,29 @@ Without this gate an observation whose render inputs never changed but whose
 selected images were never uploaded stays permanently stranded: dirty on every
 sync, bytes never sent (`tests/test_cloud_sync_upload_completeness.py`).
 
+### Recovering already-stranded observations
+
+Installations stranded by an earlier defect are recovered through the existing
+scanner, not a second one. `_mark_cloud_observations_dirty_for_pending_local_images`
+is the only pending-image dirty scan, it only runs under `sync_images=True`,
+and its cadence is owned by `_cloud_pending_image_repair_scan_due`: a versioned
+repair generation (`cloud_pending_image_repair_version`) plus a 24-hour
+watermark (`cloud_pending_image_repair_at`).
+
+When a fix changes which observations the scan can actually rescue, bump
+`_CLOUD_PENDING_IMAGE_REPAIR_VERSION`. An installation holding the previous
+generation then performs exactly one rescan on its next explicit
+`sync_images=True` synchronization, however fresh its watermark, and returns to
+ordinary interval throttling afterwards. Do not recover stranded data by
+widening the scan to Refresh/background sync, by removing the throttle, or by
+adding a permanent broad scan.
+
+Generation 2 covers the mosaic fix: an unchanged local render signature no
+longer implies the selected media reached the cloud, so `synced` observations
+holding desired, uploadable `cloud_id IS NULL` media become discoverable again
+(`tests/test_cloud_sync_dirty_pending_images.py`,
+`tests/test_cloud_sync_pending_image_repair.py`).
+
 ## Desired deletion flow
 
 ### Delete image everywhere

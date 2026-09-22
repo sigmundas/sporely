@@ -796,3 +796,101 @@ def test_metadata_only_path_does_not_log_actual_upload(tmp_path, monkeypatch, ca
     assert client.upload_image_calls == []
     assert "actual_upload=True" not in output
     assert "Uploading cloud image request" not in output
+
+
+def _set_sync_status(db_path: Path, observation_id: int, status: str) -> None:
+    conn = sqlite3.connect(db_path)
+    try:
+        conn.execute(
+            "UPDATE observations SET sync_status = ? WHERE id = ?",
+            (status, observation_id),
+        )
+        conn.commit()
+    finally:
+        conn.close()
+
+
+def _setting(db_path: Path, key: str) -> str | None:
+    conn = sqlite3.connect(db_path)
+    try:
+        row = conn.execute("SELECT value FROM settings WHERE key = ?", (key,)).fetchone()
+    finally:
+        conn.close()
+    return None if row is None else row[0]
+
+
+def test_repair_generation_rescues_stranded_microscope_media_once(tmp_path, monkeypatch):
+    """The 604-shaped case: a `synced` observation whose desired microscope
+    media never reached the cloud must be re-dirtied by the repair scan, and
+    must settle once the upload lands.
+
+    The same fixture pins the opposite direction: the excluded sibling in the
+    magnification group must never re-dirty the observation, however often the
+    scan runs.
+    """
+    db_path = _create_sync_db(tmp_path)
+    keeper_file = tmp_path / "micro-keeper.jpg"
+    keeper_file.write_bytes(b"micro-keeper")
+    excluded_file = tmp_path / "micro-excluded.jpg"
+    excluded_file.write_bytes(b"micro-excluded")
+
+    conn = sqlite3.connect(db_path)
+    try:
+        conn.execute(
+            "INSERT INTO observations (id, cloud_id, sync_status, synced_at) VALUES (?, ?, ?, ?)",
+            (604, "cloud-obs-604", "synced", "2026-05-01T00:00:00Z"),
+        )
+        conn.commit()
+    finally:
+        conn.close()
+
+    # Two uninitialized microscope rows in the same (unknown-objective) group:
+    # the initializer keeps the first by (sort_order, id) and excludes the rest.
+    _insert_image(
+        db_path, id=1, observation_id=604, cloud_id=None, filepath=str(keeper_file),
+        source_role="local_canonical", file_purpose="microscope", image_type="microscope",
+        sort_order=0,
+    )
+    _insert_image(
+        db_path, id=2, observation_id=604, cloud_id=None, filepath=str(excluded_file),
+        source_role="local_canonical", file_purpose="microscope", image_type="microscope",
+        sort_order=1,
+    )
+
+    _patch_db_connections(monkeypatch, db_path)
+
+    # ── The repair generation's scan finds the stranded desired image ──────
+    assert cloud_sync._mark_cloud_observations_dirty_for_pending_local_images(
+        include_pending_local_media_uploads=True,
+    ) is True
+    assert _sync_status(db_path, 604) == "dirty", (
+        "Image 1 is the initialized, desired, uploadable microscope keeper "
+        "with cloud_id IS NULL — the repair scan must re-dirty observation 604."
+    )
+    assert _setting(db_path, "sporely_cloud_image_storage_intent_ids_604") == "[1, 2]"
+    assert json.loads(
+        _setting(db_path, "sporely_cloud_image_storage_excluded_ids_604") or "[]"
+    ) == [2]
+
+    # ── The upload lands: the scan must settle, not re-dirty forever ───────
+    conn = sqlite3.connect(db_path)
+    try:
+        conn.execute("UPDATE images SET cloud_id = ? WHERE id = ?", ("cloud-image-1", 1))
+        conn.commit()
+    finally:
+        conn.close()
+    _set_sync_status(db_path, 604, "synced")
+
+    assert cloud_sync._mark_cloud_observations_dirty_for_pending_local_images(
+        include_pending_local_media_uploads=True,
+    ) is True
+    assert _sync_status(db_path, 604) == "synced", (
+        "Once the keeper carries a cloud_id, only the excluded local-only "
+        "sibling remains cloud_id-null; that must not count as pending."
+    )
+
+    # A further scan must also be inert — the excluded row is not a backlog.
+    assert cloud_sync._mark_cloud_observations_dirty_for_pending_local_images(
+        include_pending_local_media_uploads=True,
+    ) is True
+    assert _sync_status(db_path, 604) == "synced"
