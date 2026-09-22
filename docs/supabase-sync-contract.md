@@ -384,6 +384,10 @@ Changing image order (`sort_order`) is metadata only and cannot imply creation o
 
 ### Image-prep fast paths require upload completeness
 
+> **Invariant.** Local media signatures describe local input/render state.
+> They never prove remote upload completeness. Required cloud-media work is
+> determined from per-image storage intent and cloud/link state.
+
 A local media/render signature describes whether local *render inputs*
 changed. It carries neither `cloud_id` nor cloud-storage intent, so it never
 proves that the cloud identity or the bytes for the user's selected media
@@ -416,6 +420,19 @@ completeness: it cannot upload bytes, so it must not be re-dirtied by them.
 Without this gate an observation whose render inputs never changed but whose
 selected images were never uploaded stays permanently stranded: dirty on every
 sync, bytes never sent (`tests/test_cloud_sync_upload_completeness.py`).
+
+The repaired run must converge along the whole chain, not merely send bytes:
+one cloud image identity per local image (no duplicate row, no re-upload on
+the next sync), measurement synchronization against that identity, and the
+mosaic pusher receiving the resulting cloud-linked measurements
+(`tests/test_cloud_media_measurement_mosaic_chain.py`).
+
+Byte-storage state and measurement/mosaic participation stay independent, in
+both directions. A microscope image the user excluded from cloud image storage
+keeps no cloud bytes, yet its metadata-only anchor still carries its public
+spore measurements to cloud and into the mosaic. A stranded-media incident is
+therefore never repaired by requiring measured microscope source images to
+upload their bytes — the byte-storage predicate governs bytes only.
 
 ### Recovering already-stranded observations
 
