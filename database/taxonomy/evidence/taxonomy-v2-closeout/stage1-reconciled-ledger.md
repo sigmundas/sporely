@@ -16,12 +16,27 @@ execution ledger for the taxonomy v2 programme.
 Stage 1 is an evidence stage, so the limits of the evidence are part of the
 deliverable. Three required inputs were unavailable in this session.
 
-### 0.1 Supabase MCP is not authorized — deployed state is unverified
+### 0.1 Live SQL is blocked — deployed state is unverified
 
-The Supabase MCP server is present but unauthenticated, and this session is
-non-interactive, so no OAuth flow can run here. Consequently **every deployed
-fact in this ledger is quoted from the closeout plan's recorded baseline, not
-independently re-measured.** Specifically, the following were NOT verified:
+Two different blockers were observed, and the distinction matters for how it
+gets unblocked:
+
+- **In the implementation session:** the Supabase MCP server was present but
+  **unauthenticated**, and the session was non-interactive, so no OAuth flow
+  could run. No Supabase tool was callable at all.
+- **In the review session:** Supabase **project discovery succeeded**, so the
+  connection itself is usable. The blocker there was that the read-only SQL
+  query was **rejected by automatic approval review, because the approval policy
+  is set to `never`.**
+
+So the deployed state is not blocked merely by missing credentials. **Even with a
+working connection, no SQL will execute until the approval policy is changed**
+for this project. Both must be resolved: an authorized session *and* an approval
+policy that permits read-only SQL.
+
+Consequently **every deployed fact in this ledger is quoted from the closeout
+plan's recorded baseline, not independently re-measured.** Specifically, the
+following were NOT verified:
 
 - the active release identity `tax-2026.08.01-01` and its row counts;
 - the production `taxonomy_v3.identification_snapshot` / `resolution_link` counts;
@@ -63,12 +78,19 @@ the `stjernesporet rødspore` vernaculars) could not be checked against real dat
 
 ### 0.4 Taxonomy test suite baseline
 
-Command (from the worktree root):
+This worktree has no local `.venv`; `AGENTS.md` requires the absolute
+interpreter path from the primary checkout. The command actually run, from this
+worktree root:
 
 ```
-.venv/bin/pytest database/taxonomy/tests tests/taxonomy -q
-→ 13 failed, 771 passed, 2 skipped, 19 errors in 52.08s
+/Users/sigmundas/Documents/Code/sporely/sporely-py/.venv/bin/pytest \
+    database/taxonomy/tests tests/taxonomy -q
+→ 13 failed, 771 passed, 2 skipped, 1 warning, 19 errors in 52.08s
 ```
+
+Root causes were isolated with two follow-up runs scoped to
+`tests/taxonomy/test_w2d_reconciliation.py` and
+`tests/taxonomy/test_supplement_loader.py` using the same interpreter.
 
 **All 32 failures/errors share one root cause** — the missing generated release
 directory from §0.2:
@@ -91,8 +113,15 @@ that "W3 is done because tests pass" is currently unfalsifiable.
 
 ## 1. Reconciled programme ledger
 
-Classification of the July plan's §2 status table. "Deployed" claims are
-inherited from the closeout plan's baseline per §0.1, not re-measured.
+Classification of the July plan's §2 status table.
+
+**Every "deployed" classification below is PROVISIONAL.** No deployed object was
+queried (§0.1); "deployed" is inherited from the closeout plan's recorded
+baseline. What this ledger verifies directly is the *repository* side: that the
+code and commits exist, which is a claim about implementation, not deployment.
+Per the stage's own sparring challenge, the presence of code is not evidence
+that a stage is done — so W3A/W3B are recorded as implemented-and-merged with
+their deployment status carried over unverified, and W4/W5 remain open.
 
 | July stage | July marker | Reconciled classification | Evidence |
 |---|---|---|---|
@@ -139,11 +168,14 @@ safety rules assume a known, reviewed activation state.
 
 ## 2. Where the NorTaxa bridge is actually lost
 
-**The plan's stated mechanism is wrong, and the correction matters.**
+**The plan states one mechanism; there are three, and the plan's account is
+correct for only one of the two named regressions.**
 
 The closeout plan (lines 83-85) says the loss happens because "the global
 macrofungi builder ... filters exported enrichment/mappings by retained COL
-taxon IDs". That is not the cause. In `macrofungi_scope.py:473-479`,
+taxon IDs". For `52369` that is essentially right (see "the two regression
+cases" below). For `53482` — the case where the mapping demonstrably *was*
+computed — it is not the cause. In `macrofungi_scope.py:473-479`,
 `vernacular.jsonl` and `taxon_external_id.jsonl` are passed through the **same
 function with the same argument**:
 
@@ -153,9 +185,11 @@ for filename in ("scientific_name.jsonl", "vernacular.jsonl", "taxon_external_id
     rows = _iter_jsonl(w1_dir / filename, included)
 ```
 
-An identical filter cannot produce an asymmetric result. The vernaculars
-survive and the external IDs do not **because the two datasets already differ
-before the scope filter runs.** The loss is upstream, at two distinct gates.
+An identical filter cannot produce an asymmetric result. For a taxon that *is*
+in scope — such as `7821` — the vernaculars survive and the external IDs do not
+**because the two datasets already differ before the scope filter runs.** That
+loss is upstream, at the two gates below. A third mechanism, the COL-only scope
+universe, removes `52369`'s concept wholesale and is described afterwards.
 
 ### Gate 1 — namespace routing sends NorTaxa IDs to the legacy-integer table
 
@@ -230,15 +264,71 @@ This is the most consequential correction in this ledger. The plan treats
   **alias** on Sporely `7821`. Vernaculars attached (via the ungated path); the
   external ID was dropped at **Gate 2** (alias, not anchor).
 - **`52369` / `Pholiotina rugosa` (divergent names)** — the names differ, so the
-  classifier finds no backbone candidate at all and returns
-  `PROPOSAL_NATIONAL_ONLY` / `review_status="unreviewed"` /
-  `reason="no_backbone_match"` (`cross_source_mapping.py:213-219`). No binding is
-  ever created, so this case fails **before** Gate 1 or Gate 2 — and it should
-  carry **no** vernacular join either.
+  classifier finds no backbone candidate and returns `PROPOSAL_NATIONAL_ONLY` /
+  `review_status="unreviewed"` / `reason="no_backbone_match"`
+  (`cross_source_mapping.py:213-219`). It is therefore **not** alias-bound in
+  Phase 2c. But it is **not unbound** either: Phase 2d
+  (`compile_release.py:681-692`) allocates a registry **anchor** for every
+  accepted bridge record that has no registry entry yet:
 
-**Testable prediction for Stage 3:** taxon `7821` appears among the 2,041
-vernacular-joined taxa; the `52369` concept does not appear at all. A Stage 3
-mechanism that only relaxes Gate 2 fixes `53482` and does **not** fix `52369`.
+  ```python
+  # ----- Phase 2d: allocate remaining accepted bridge anchors ------------
+  for record in sorted(accepted_bridge_records, ...):
+      key = (record.source_code, record.taxon_id_namespace, record.taxon_id_value)
+      if registry.lookup(*key) is not None:
+          continue
+      registry.allocate(source=key[0], namespace=key[1], identifier=key[2], ...)
+  ```
+
+  So `52369` receives **its own distinct Sporely concept**, anchored on
+  `(nortaxa, nortaxa_taxon_id, 52369)`. Being an anchor, it would even satisfy
+  Gate 2's `is_preferred == 1` test.
+
+  It disappears at a **third, separate point**: the macrofungi scope universe is
+  COL-only. `macrofungi_scope.py:105-108`:
+
+  ```sql
+  select taxon_id, canonical_external_id, ... from taxon_min
+   where source_system='col_xr'
+  ```
+
+  A NorTaxa-anchored concept never enters `taxa`, so it can never be `included`,
+  so `_iter_jsonl(..., included)` drops it **and everything keyed to it** —
+  including its vernaculars.
+
+**Correction to this ledger's earlier draft:** an earlier version asserted that
+`52369` receives no binding at all and fails before Gates 1 and 2. That was
+wrong; Phase 2d binds it as an anchor. For `52369` specifically, the closeout
+plan's original framing — loss by COL-retention filtering — is **correct**, and
+my Gate 1 / Gate 2 analysis does not apply to it.
+
+**Three distinct loss mechanisms, not one:**
+
+| Case | Binding | Lost at |
+|---|---|---|
+| `53482` (agreeing names) | alias onto COL concept `7821` (Phase 2c) | Gate 1 (namespace routing) and Gate 2 (anchor-only derivation) |
+| `52369` (divergent names) | **own anchor concept** (Phase 2d) | the COL-only scope universe, `macrofungi_scope.py:105-108` |
+| — | — | Gate 1 also silently empties the legacy-integer file (D7) |
+
+This also explains the earlier `cloud_export_tax-2026.07.30-02` failure the plan
+describes: that release's un-deduplicated NorTaxa id block (625xxx–626xxx) with
+`parent_taxon_id = null` is precisely the set of **Phase 2d anchors**, admitted
+without the COL scope filter. Their parents are NorTaxa concepts that the COL
+backbone does not contain, hence the null parents. The two releases are the two
+ways of handling the same Phase 2d output: admit it wholesale (duplicates) or
+filter it entirely (bridge loss).
+
+**Testable predictions for Stage 3** (neither executed here — see §0.2):
+
+1. taxon `7821` appears among the 2,041 vernacular-joined taxa;
+2. the `52369` anchor concept exists in the compiler registry and in
+   `tax-2026.07.30-02`, but is absent from `tax-2026.08.01-01` entirely;
+3. `52369` carries **no** vernacular join in the active release, because its
+   vernaculars are keyed to the dropped anchor concept, not to a COL concept.
+
+A Stage 3 mechanism that only relaxes Gate 2 fixes `53482` and does **not** fix
+`52369`; one that only admits Phase 2d anchors into scope fixes `52369` by
+reintroducing exactly the duplicate-concept behavior the plan forbids.
 
 ---
 
@@ -325,9 +415,25 @@ separates "full agreement" from "agreed because authorship was missing on one
 side" — the latter is the weakest class and should be expected to fail an
 authoritative-bridge standard.
 
-**Caveat:** this scheme is derived from compiler source, not executed, because
-the release artifacts are absent (§0.2). Stage 3 must rebuild a candidate
-release and confirm the fields are actually populated as read here.
+### This criterion is INCOMPLETE
+
+To be explicit about what §3 is and is not: **everything above is read off the
+compiler source, not measured against the 2,041 actual associations.** The
+release artifacts are absent (§0.2), so no `mappings.jsonl` or
+`source_usages.jsonl` was inspected and no association was classified.
+
+What §3 delivers is a *classification scheme* and a *verdict on the strongest
+available rule*. What it does not deliver is the distribution — how many of the
+2,041 are `policy_auto_approved` under the strict rule, how many rest on the
+missing-authorship fallback, how many came from reviewed manual mappings, and
+whether any arrived by a path not enumerated here.
+
+The acceptance-gate criterion "the evidence behind the NorTaxa vernacular join
+is characterized well enough for Stage 3 to classify associations" is therefore
+**partially met**: the rules are identified and the "name-level, not reviewed
+identity" verdict holds for the auto path, but the actual population is
+uninspected. Stage 3 must rebuild a candidate release, confirm these fields are
+populated as read here, and produce the counts before emitting any mapping.
 
 ---
 
@@ -354,51 +460,143 @@ but the committed snapshot at `:1028-1036` stores only `genus`, `species`,
 `canonical_scientific_name`, `canonical_rank`. There is **no `source_system`,
 no `namespace`, no `external_id`.**
 
-This is precisely the Stage 2 sparring target "UI code that displays source
-provenance but drops it on save". Once committed, the snapshot is
-indistinguishable from any other integer — the provenance needed to *prove* the
-ID is Sporely-owned exists at render time and is destroyed at commit time.
+This matches the Stage 2 sparring target "UI code that displays source
+provenance but drops it on save".
 
-### 4.2 Desktop — the concrete leak write path
+**Two qualifications, both material.** First, `canonical_source_system` records
+which source backs the *concept* (COL vs NorTaxa canonical presentation). That is
+a **different axis** from the *identifier namespace* that Stage 2 Part A is about.
+Preserving it would not, by itself, tell you whether an integer is a Sporely ID —
+it tells you which source authored the name. Conflating the two would lead
+Stage 2 to add the wrong field.
 
-Three hops, no validation at any of them:
+Second, and more importantly: **dropping this field does not demonstrate that any
+external integer ever becomes `sporely_taxon_id` here.** It is a
+provenance-completeness gap, not proof of contamination. See §4.2 for what the
+evidence actually supports.
 
-1. `ui/observations_tab.py:17934-17942` — `snapshot['sporely_taxon_id']` is
-   coerced with a bare `int()` into the local column. The only guard is a
-   `TypeError/ValueError` catch; there is no check that the value is a Sporely ID.
-2. `utils/cloud_sync.py:16124` — `taxon_id = _normalize_observation_int_value(obs.get('sporely_taxon_id'))`, guarded only by `taxon_id is None or taxon_id <= 0`.
-3. `utils/cloud_sync.py:16132` → `:16135-16142` —
-   `set_observation_selected_taxon(cloud_id, taxon_id)` passes it to
-   `set_observation_selected_taxon_v2` as `'p_sporely_taxon_id': int(sporely_taxon_id)`.
+### 4.2 Desktop — the plan's premise is NOT supported for the live UI
 
-**The leak boundary is `utils/cloud_sync.py:16124`.** Sign and non-nullity are
-the *entire* proof standard applied before an integer is asserted to the cloud
-as an owner-selected Sporely identity. Because §4.1 destroyed the provenance
-upstream, cloud sync has nothing better available to check — the two defects
-compose. Fixing sync alone is insufficient; the snapshot must carry provenance.
+The closeout plan asserts (failure 1) that "a taxonomy picker can currently
+surface an integer `taxon_id` and commit it as `sporely_taxon_id`". **Stage 1
+could not substantiate that for either live producer.**
+
+There are exactly two paths that write `sporely_taxon_id` into a committed
+snapshot, and both read an artifact-proven ID:
+
+1. **Picker** — `ui/taxon_input_controller.py:1013`, `sporely_id =
+   suggestion.get("sporely_taxon_id")`. The suggestion comes from the taxonomy-v2
+   search pack, whose `taxon_id` **is** the Sporely ID by the compiler's identity
+   contract (`build_sqlite_candidate.py:11` — "`taxon_min.taxon_id` =
+   `sporely_taxon_id`").
+2. **Manual editing-finished resolve** — `ui/observations_tab.py:19502-19547`
+   calls `resolve_manual_scientific(genus, species)`
+   (`database/taxon_lookup.py:710`), which resolves typed text against the same
+   taxonomy DB and returns `None` for empty, unknown or ambiguous pairs.
+
+Neither converts an external integer. This is a **negative finding that Stage 2
+must account for**: if the desktop leak is to be fixed, the fix cannot be aimed
+at the v2 picker, because no evidence here shows the v2 picker leaking.
+
+Two caveats that keep this from being a clean bill of health:
+
+- `resolve_manual_scientific` has a documented **source-system preference
+  fallback** (`taxon_lookup.py:726-733`): when strict resolution returns `None`
+  because a `col_xr` and a `nortaxa` canonical share an exact scientific name, it
+  prefers the COL row. That is a name-collision tie-break establishing identity.
+  It yields an artifact ID, so it is not namespace contamination — but it *is*
+  identity selection by name, which the accepted architecture restricts.
+- Legacy observation rows predating taxonomy v2 were not inspected; their
+  `sporely_taxon_id` values may have been written by the migration in §4.3.
+
+### 4.3 Desktop — the actual contaminating producer is the migration
+
+`database/migrate_observations_sporely_id.py` is the only code found that
+converts an **external** identifier into `sporely_taxon_id`. Its resolver is
+`:73-80`:
+
+```python
+def _resolve_via_nortaxa(conn, value: int) -> int | None:
+    row = conn.execute(
+        "SELECT taxon_id FROM taxon_external_id_min "
+        "WHERE source_system='artsdatabanken' AND external_id=? LIMIT 1",
+        (int(value),),
+    ).fetchone()
+```
+
+This is **not** an authoritative namespaced lookup, and an earlier draft of this
+ledger was wrong to call it one. Two defects:
+
+**(a) The namespace does not exist to filter on.** `taxon_external_id_min`
+(`build_sqlite_candidate.py:158-168`) has columns `taxon_id`, `source_system`,
+`external_id`, `id_role`, `is_preferred`, `external_name`, `note` — **no
+namespace column**. The namespace is discarded at write time
+(`:488-490`), where `ns` is simply absent from the inserted tuple:
+
+```python
+external_int_rows.append((
+    sporely_id, source_system, numeric, id_role,
+    is_preferred, external_name, note,
+))
+```
+
+All four `INTEGER_NAMESPACES` — `nortaxa_dwc_id`, `nortaxa_taxon_id`,
+`nortaxa_accepted_name_usage_id`, `nortaxa_parent_name_usage_id` — collapse into
+a single undifferentiated `source_system='artsdatabanken'` integer space. A
+NorTaxa `taxonID` can therefore silently match a row that was actually a
+`nortaxa_dwc_id` or a `parent_name_usage_id`.
+
+These are exactly the "namespace-lost integers" that the accepted architecture
+designates **legacy/audit evidence only**. The migration uses them as resolution
+evidence.
+
+**(b) `LIMIT 1` swallows ambiguity.** Where the collapsed space produces multiple
+matches, the query silently returns whichever row SQLite yields first, with no
+ambiguity signal — contradicting the accepted rule that resolvers "return
+ambiguity; they never collapse".
+
+The module docstring at `build_sqlite_candidate.py:12-14` claims every external
+identifier "is stored under an explicit `(source_system, id_role)` namespace".
+`id_role` holds `accepted`/`synonym`, which is a **taxonomic status, not a
+namespace**. The stated identity contract is not upheld by the schema it
+describes.
+
+**Step 4 (`:177-190`) additionally resolves by unique scientific-name / synonym
+alias** — direct name-based identity inference.
+
+**Correction to D3/D4:** an earlier draft claimed the NorTaxa steps were "dead
+code in production" because the active *release* contains zero NorTaxa mappings,
+making name matching "the only live path". That inference was unsound. The
+migration reads the **desktop SQLite** (`taxon_min` / `taxon_external_id_min`,
+the `build_sqlite_candidate.py` schema), which is a separately supplied artifact
+and is **not** the cloud export whose namespace counts the plan measured. Absence
+of NorTaxa mappings in the cloud export does not prove their absence in the
+desktop DB. Stage 1 did not inspect a desktop DB (none is present — §0.2), so the
+population of `taxon_external_id_min` is **unknown**. Steps 2-3 should be
+presumed **live and namespace-unsafe**, which is worse than dead.
+
+### 4.4 Desktop — cloud sync is a weak gate, not a producer
+
+Three hops carry the value to the cloud:
+
+1. `ui/observations_tab.py:17934-17942` — `snapshot['sporely_taxon_id']` coerced
+   with a bare `int()` into the local column.
+2. `utils/cloud_sync.py:16124` — `_normalize_observation_int_value(...)`, guarded
+   only by `taxon_id is None or taxon_id <= 0`.
+3. `utils/cloud_sync.py:16132` → `:16135-16142` — forwarded to
+   `set_observation_selected_taxon_v2` as `'p_sporely_taxon_id'`.
+
+Sign and non-nullity are the entire proof standard applied before an integer is
+asserted to the cloud as an owner-selected Sporely identity. **This is a gate
+weakness, not a leak source**: sync does not create a contaminated value, it
+fails to detect one. Given §4.3, a value contaminated by the migration would pass
+this gate unchallenged and reach production.
 
 Credit where due: `_sync_observation_selected_taxon` is careful in two respects
 the plan cares about — it does not infer identity from genus/species text, and a
 missing local value does not erase cloud identity (`:16118-16123`).
 
-### 4.3 Desktop — a name-based resolution path in migration
-
-`database/migrate_observations_sporely_id.py` resolves legacy identity in four
-steps (`:132-190`). Steps 1-3 are sound: an existing `sporely_taxon_id` is
-validated against `valid_ids` and **cleared if invalid** (`:148-153`); NBIC-style
-`ai_selected_taxon_id` and `artsdata_id` are resolved through
-`_resolve_via_nortaxa`, an authoritative namespaced lookup.
-
-**Step 4 (`:177-190`) resolves by unique scientific-name / synonym alias.** That
-is name-based identity inference, which the accepted architecture forbids.
-
-This compounds badly with §2: because the active release contains **zero**
-NorTaxa mappings, `_resolve_via_nortaxa` cannot match anything, so steps 2 and 3
-are dead code in production and **step 4 is the de-facto primary resolution
-path**. The bridge loss silently promoted name matching to the main mechanism.
-Stage 4's audit must treat rows resolved this way as unproven.
-
-### 4.4 Web — `NBIC:` identifiers are dropped unparsed
+### 4.5 Web — `NBIC:` identifiers are dropped unparsed
 
 `src/taxonomy-v2.js:129-134`: `taxonomySelectionForTaxon()` requires
 `taxon.sporelyTaxonId`; there is no parsing of the `NBIC:` prefix anywhere. The
@@ -408,7 +606,7 @@ that `taxonomySelectionForTaxon({ taxonId: 'NBIC:56449', scientificName:
 outstanding and confirms the plan's "expected test-expectation flip" as a valid
 Stage 2/3 signal.
 
-### 4.5 Web — the null-write path
+### 4.6 Web — the null-write path
 
 `src/screens/find_detail.js:1059-1072` builds the AI-selection patch:
 `genus`/`species` from `splitScientificName(selectedPrediction?.scientificName || '')`,
@@ -501,13 +699,21 @@ an evidence artifact alongside this file.
 
 | ID | Defect | Location | Severity |
 |---|---|---|---|
-| D1 | Picker renders `canonical_source_system` but the committed snapshot stores no source/namespace/external ID | `ui/taxon_input_controller.py:50-53` vs `:1028-1036` | High — the root enabler of the desktop leak |
-| D2 | Cloud sync's entire proof standard for a Sporely identity is `> 0` | `utils/cloud_sync.py:16124-16132` | High |
-| D3 | Migration step 4 resolves identity by unique scientific-name match | `database/migrate_observations_sporely_id.py:177-190` | High — and currently the *only live* path, since D4 kills steps 2-3 |
-| D4 | Zero NorTaxa mappings in the active release make `_resolve_via_nortaxa` unmatchable, silently promoting D3 | §2 + `migrate_observations_sporely_id.py:156-175` | High (compounding) |
+| **D3a** | **Namespace is destroyed at write time.** All four NorTaxa integer namespaces collapse into one undifferentiated `source_system='artsdatabanken'` space; `taxon_external_id_min` has no namespace column | `build_sqlite_candidate.py:158-168`, `:488-490` | **High — root cause of D3b** |
+| **D3b** | `_resolve_via_nortaxa` resolves identity from a namespace-lost integer, with `LIMIT 1` silently swallowing ambiguity | `migrate_observations_sporely_id.py:73-80` | **High** |
+| D3c | Migration step 4 resolves identity by unique scientific-name match | `migrate_observations_sporely_id.py:177-190` | High |
+| D2 | Cloud sync's entire proof standard for a Sporely identity is `> 0`; cannot detect a value contaminated by D3b | `utils/cloud_sync.py:16124-16132` | Medium — a gate weakness, not a leak source |
+| D1 | Committed snapshot stores no source/namespace/external ID; `canonical_source_system` is rendered then dropped | `ui/taxon_input_controller.py:50-53` vs `:1028-1036` | Medium — provenance-completeness gap; **not** evidence of contamination |
+| D8 | `resolve_manual_scientific` breaks a `col_xr`/`nortaxa` exact-name tie by source preference — identity selection by name | `database/taxon_lookup.py:726-733` | Medium |
+| D9 | The identity contract documented at `build_sqlite_candidate.py:12-14` claims an explicit `(source_system, id_role)` namespace; `id_role` is a taxonomic status, not a namespace. The contract is not upheld by its own schema | `build_sqlite_candidate.py:12-14` vs `:158-168` | Medium — doc/schema divergence hiding D3a |
 | D5 | W2D/supplement tests depend on a gitignored absent build output; 32 tests cannot run in a clean checkout | `tests/taxonomy/test_w2d_reconciliation.py`, `tests/taxonomy/test_supplement_loader.py` | Medium — makes "W3 is done" unfalsifiable |
 | D6 | July plan's publication gate contradicts the recorded active production release | §1.1 | Medium — unresolved, blocks Stage 3 release safety |
 | D7 | `taxon_external_id_legacy_integer.jsonl` is written unconditionally empty, silently discarding every integer-namespace external ID | `macrofungi_scope.py:480` | Medium — data loss with no diagnostic |
+
+**Withdrawn:** the earlier D4 ("zero NorTaxa mappings make `_resolve_via_nortaxa`
+unmatchable, so name matching is the only live path") is retracted. It inferred
+the contents of the desktop SQLite from cloud-export measurements; those are
+separate artifacts. See §4.3.
 
 D7 deserves emphasis: the file is emitted with a correct row count and hash, so
 every determinism and manifest check passes while the content is empty by
@@ -517,18 +723,32 @@ construction. Release validation cannot detect this class of loss.
 
 ## 8. Proposed smallest Stage 2 and Stage 3 surfaces
 
-### Stage 2 Part A (desktop) — 3 files
+### Stage 2 Part A (desktop) — re-aimed by the §4.2 negative finding
 
-1. `ui/taxon_input_controller.py` — add `source_system` / `namespace` /
-   `external_id` to the committed snapshot (§4.1). The values are already in the
-   suggestion; this is a widening of the dict literal at `:1028-1036` plus
-   `load_committed_snapshot` at `:822-828` for round-trip.
-2. `ui/observations_tab.py` + persistence — carry the three fields through
-   save/load so provenance survives restart.
-3. `utils/cloud_sync.py:16124` — require proven Sporely provenance before
-   calling the RPC; retain and skip otherwise rather than erasing.
+Stage 1 found **no live UI path** converting an external integer into
+`sporely_taxon_id`. The single demonstrated converter is the migration. The
+smallest surface that fixes a *demonstrated* defect is therefore:
 
-Do **not** change the v2 search-pack path itself; its IDs are artifact-proven.
+1. `database/taxonomy/scripts/build_sqlite_candidate.py` — **stop destroying the
+   namespace** (D3a). Add a `namespace` column to `taxon_external_id_min` and
+   carry `ns` through the insert at `:488-490`. Nothing downstream can be made
+   namespace-safe until this exists.
+2. `database/migrate_observations_sporely_id.py:73-80` — filter on
+   `namespace='nortaxa_taxon_id'` and return ambiguity instead of `LIMIT 1`
+   (D3b); demote step 4's name matching to a reported, non-repairing
+   classification (D3c).
+3. `utils/cloud_sync.py:16124` — require proven provenance before the RPC;
+   retain and skip otherwise rather than erasing (D2).
+
+Item 1 is a schema change to a generated artifact and should be sequenced before
+2, since 2 depends on the column existing.
+
+**Deliberately deferred, with reason:** adding `source_system` / `namespace` /
+`external_id` to the committed picker snapshot (D1). It is likely still correct
+for Part B interop — the web client will need to persist a preserved external
+identifier — but Stage 1 produced **no evidence** that the desktop picker leaks,
+so it should not be justified as a leak fix. Decide it on Part B's requirements.
+Do **not** change the v2 search-pack resolution path; its IDs are artifact-proven.
 
 ### Stage 2 Part B (web) — 3 files
 
@@ -552,11 +772,24 @@ Do **not** change the v2 search-pack path itself; its IDs are artifact-proven.
 2. `database/taxonomy/macrofungi_scope.py:480` — stop unconditionally emptying
    the legacy-integer file, or make the emptying explicit and validated (D7).
 
-`52369` needs more than this: it has no binding at all
-(`PROPOSAL_NATIONAL_ONLY`). It requires a reviewed manual-mapping entry creating
-the alias in the first place — i.e. the manual-mappings input, not the emitter.
+`52369` is not fixed by either of those. It is anchored as its **own** NorTaxa
+concept (Phase 2d) and excluded by the COL-only scope universe
+(`macrofungi_scope.py:105-108`). Two candidate approaches, both needing review:
+
+- **Reviewed manual mapping** — add an approved manual bridge entry so `52369`
+  is alias-bound onto the retained COL concept in Phase 2b/2c instead of being
+  anchored in 2d. This is the approach consistent with the plan's
+  "reviewed cross-source bridge" language, and it touches the manual-mappings
+  input rather than the emitter.
+- **Admit selected Phase 2d anchors into scope** — rejected: this is exactly
+  what produced the `tax-2026.07.30-02` duplicate-concept block the plan forbids.
+
 **That is why the two regressions need two different mechanisms**, and why a
-Stage 3 candidate should be rejected if it fixes only one.
+Stage 3 candidate should be rejected if it fixes only one. Note the asymmetry in
+review burden: `53482` needs an *emitter* change over an association the compiler
+already derived, while `52369` needs a *human decision* that no automatic rule
+can supply — which is the correct outcome, since its two sources genuinely
+disagree about the accepted name.
 
 ---
 
@@ -569,12 +802,36 @@ correction` is NOT claimed.** Three acceptance-gate criteria are unmet:
 |---|---|
 | Deployed and repository state agree with the ledger | **Unmet** — deployed side unverifiable (§0.1) |
 | Observation 917 has a reproducible before-state | **Unmet** — not readable (§6) |
-| Desktop leak traced to a concrete write path | **Met** — §4.2 |
-| NorTaxa bridge loss traced to a concrete compile/export path | **Met** — §2, two gates, both located |
-| Vernacular join characterized for Stage 3 classification | **Met** — §3, with the caveat in §3 |
+| Desktop leak traced to a concrete write path | **Partially met** — the only demonstrated converter is the migration (§4.3, D3a/D3b). The plan's premise that the *picker* leaks is **unsupported** (§4.2) |
+| NorTaxa bridge loss traced to a concrete compile/export path | **Met** — §2. Three mechanisms located: Gates 1 and 2 for `53482`, the COL-only scope universe for `52369` |
+| Vernacular join characterized for Stage 3 classification | **Partially met** — rules identified and verdict reached, but the 2,041 associations are uninspected (§3) |
 | `Entoloma conferendum` failure traced, or recorded unconfirmed with reason | **Met** (recorded unconfirmed, §5) |
 | No unexplained taxonomy production objects | **Unmet** — §1.1 activation/publication contradiction |
 
-The repository-side investigation is complete. The three unmet criteria all
-reduce to one external blocker — **an authorized Supabase MCP session** — plus
-capturing one raw Artsorakel response.
+The repository-side investigation is complete to the limit of the artifacts
+present. The unmet and partially-met criteria reduce to two external blockers:
+
+1. **an authorized Supabase session *and* an approval policy permitting
+   read-only SQL** (§0.1) — for 917, the deployed reconciliation, and §1.1;
+2. **the pinned release and source artifacts** (§0.2, §0.3) — for the 2,041
+   coverage counts and the `52369`/`53482` compiled-record confirmations;
+
+plus capturing one raw Artsorakel response for §5.
+
+### Corrections applied after first review
+
+This revision retracts four claims from the first candidate. They are recorded
+rather than silently edited, because each changed a Stage 2 or Stage 3
+conclusion:
+
+1. **`52369` "has no binding at all"** — wrong. Phase 2d anchors it
+   (`compile_release.py:681-692`); it is lost to the COL-only scope filter. §2.
+2. **`_resolve_via_nortaxa` is "an authoritative namespaced lookup"** — wrong.
+   It has no namespace filter because the namespace column does not exist, and
+   `LIMIT 1` hides ambiguity. §4.3, D3a/D3b.
+3. **"Name matching is the only live path" (old D4)** — withdrawn. It inferred
+   desktop SQLite contents from cloud-export measurements; separate artifacts. §7.
+4. **"The desktop leak boundary is `cloud_sync.py:16124`"** — downgraded. That is
+   a weak *gate*, not a producer; dropping `canonical_source_system` does not
+   demonstrate identifier contamination, and concept provenance is a different
+   axis from identifier namespace. §4.1, §4.2, §4.4.
