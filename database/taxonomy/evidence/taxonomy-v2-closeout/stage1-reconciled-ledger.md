@@ -138,7 +138,31 @@ plan's accepted decision that the generated export is reproducible and not
 committed to Git — but it means the release cannot be audited from a clean
 checkout without first rebuilding it.
 
-### 0.3 The NorTaxa source data cited by the plan is absent
+### 0.3 The NorTaxa source data — present after all (corrected)
+
+> **Corrected 2026-09-22.** The finding below is **wrong**, and the error was
+> consequential: it scoped the search to this worktree only. The pinned source
+> archives are in the **primary checkout**, exactly where the acquisition
+> scripts place them:
+>
+> ```
+> sporely-py/database/taxonomy/sources/col_xr/2026-07-17-XR/archive.zip   (1.38 GB, ColDP)
+> sporely-py/database/taxonomy/sources/nortaxa/1.284/archive.zip          (8.4 MB, DwC-A)
+> sporely-py/database/reference_data/sources/taxon.txt                    (44 MB)
+> sporely-py/database/reference_data/sources/vernacularname.txt           (1.9 MB)
+> ```
+>
+> Both archives were read in this stage (§3.3) and their lineage to the audited
+> release is hash-verified (§3.4). The NorTaxa DwC archive contains
+> `taxon.txt`, `vernacularname.txt`, `distribution.txt`, `meta.xml`, `eml.xml`.
+>
+> The synthetic fixture noted below is a test fixture that sits *alongside* the
+> real archive, not a substitute for it. Concluding "absent" from its presence
+> was a mistake — and it was this mistake that led §3.2 to declare the matching
+> rule unrecoverable. The original text is retained below as the record of what
+> was wrongly concluded.
+
+#### Original finding (superseded)
 
 The plan cites `database/reference_data/sources/taxon.txt` for the NorTaxa
 `53482` source evidence. **That path does not exist**; neither does
@@ -837,25 +861,105 @@ the two rules that both emit `PROPOSAL_AUTOMATIC_EXACT`
 overclaimed** — an unknown share of the 19,808 may rest on the weaker fallback,
 which fires precisely when authorship was *absent* on one or both sides.
 
-**The split is not recoverable from any supplied artifact.** Authorship is
-absent from everything available: `taxon_min` and `scientific_name_min` have no
-authorship column (schema inspected), and neither `taxon.jsonl` nor
-`scientific_name.jsonl` in the active release carries an authorship field (keys
-enumerated; `grep -c authorship taxon.jsonl` → 0). The compiler's `taxa.jsonl`
-and `source_usages.jsonl` carry it, and were never supplied (§0.2).
+The split is absent from the *downstream* artifacts — `taxon_min` and
+`scientific_name_min` have no authorship column, and neither `taxon.jsonl` nor
+`scientific_name.jsonl` carries an authorship field. But that only made those
+artifacts insufficient; it did not make the rule unrecoverable. **It was
+recovered from the pinned source archives** — §3.3.
 
-### This criterion is therefore INCOMPLETE
+### 3.3 Matching rule per association — RECOVERED and measured
 
-The acceptance gate asks for the **matching rule** behind each association.
-Stage 1 has established the review status (uniformly automatic, zero reviewed)
-but not the rule. Completing it requires regenerating the compiler outputs for
-this release and reading `evidence.reason` per association.
+An earlier draft concluded this was unrecoverable and needed `mappings.jsonl`
+regenerated. That was wrong: the classification is a deterministic function of
+the two sides' authorship, and both pinned source archives are present.
 
-Until then, **Stage 3 must not assume uniform strict-rule strength.** Its
-coverage audit needs the strict/fallback split, because the fallback is the
-weaker class: an association matched despite missing authorship is materially
-worse evidence for concept identity than one matched with authorship agreement,
-and the two should not be promoted on the same terms.
+**Method.** The strict rule requires authorship agreement; the fallback fires
+*only* when the strict rule failed **exclusively** because one or both
+authorships were missing, and **never** on mismatch
+(`cross_source_mapping.py:240-247`). For an alias that was actually applied, the
+classification is therefore decidable from authorship presence alone:
+
+- both sides present → the strict rule is what admitted it (a mismatch would
+  have produced no alias at all, so presence + applied ⇒ agreement);
+- either side absent → the missing-authorship fallback admitted it.
+
+**Inputs** (both hash-pinned, §3.4):
+
+- NorTaxa `scientificNameAuthorship` per `taxonID`, from `taxon.txt` inside
+  `database/taxonomy/sources/nortaxa/1.284/archive.zip` (229,018 rows indexed);
+- COL `col:authorship` per `col:ID`, streamed from `NameUsage.tsv` (2.93 GB)
+  inside `database/taxonomy/sources/col_xr/2026-07-17-XR/archive.zip`
+  (7,848,305 rows scanned; **all 19,808** sought usage IDs resolved, zero
+  unresolved);
+- the 19,808 `(nortaxa_external_id, sporely_taxon_id, col_usage_id)` bridge
+  triples, from `taxon_external_id_min` where `note =
+  'cross_source_automatic_exact'`.
+
+**Result — full bridge population:**
+
+| Matching rule | Bindings | Share |
+|---|---:|---:|
+| **strict** — `conservative_exact_rule_satisfied` (both authorships present and agreeing) | **17,675** | 89.2% |
+| **missing-authorship fallback** — `missing_authorship_classification_rule_satisfied` | **2,133** | 10.8% |
+|   … NorTaxa authorship absent only | 1,138 | |
+|   … COL authorship absent only | 78 | |
+|   … both absent | 917 | |
+| **total** | **19,808** | 100% |
+
+**Result — the required 2,041-taxon population** (the active release's
+vernacular-joined taxa):
+
+| Class | Taxa |
+|---|---:|
+| all cross-source bindings strict | **2,001** |
+| at least one missing-authorship fallback binding | **40** |
+| **no cross-source alias binding at all** | **0** |
+| total | **2,041** |
+
+The zero in the third row independently confirms §3.1's subset claim from data:
+every vernacular-joined taxon does carry an alias binding.
+
+**The two named regressions:** `53482` is **strict** — both sides give
+`(Britzelm.) Noordel.`, identical. `52369` has **no** row here, consistent with
+§2.2: it is anchored, never aliased.
+
+### The characterization, complete
+
+Every one of the 19,808 associations now has both a review status and a matching
+rule:
+
+- **review status:** uniformly automatic. Zero `manual_approved_exact`. No
+  association in this release is human-reviewed.
+- **matching rule:** 89.2% strict authorship agreement, **10.8% admitted despite
+  absent authorship**.
+
+So the population is not uniform, and the earlier "uniformly strict" claim was
+indeed wrong — but the non-uniformity is bounded and identified. For Stage 3:
+
+1. The 2,133 fallback bindings are the weaker class and should be treated as a
+   distinct tier; 40 of them fall inside the 2,041 scoped population.
+2. Neither tier is human-reviewed, so Stage 3 still cannot partition by review
+   status — it must decide explicitly whether `cross_source_automatic_exact`
+   meets its authoritative-bridge standard, and if so whether the fallback tier
+   qualifies on the same terms.
+3. `53482` sits in the stronger tier, so admitting it does not require admitting
+   the fallback tier.
+
+### 3.4 Lineage of the recovery inputs
+
+The recovery used the same pinned inputs as the audited release; the chain is
+hash-verified end to end:
+
+| Link | Evidence |
+|---|---|
+| COL source pin | release `taxonomy_release.jsonl` declares `source_release = 2026-07-17-XR`; the archive read is `sources/col_xr/2026-07-17-XR/archive.zip` |
+| NorTaxa source pin | `sources/nortaxa/1.284/archive.zip`, the version compiled into this lineage |
+| SQLite ← compiler | `sha256(tax-2026.07.30-02.sqlite3.gz)` = `fb7660c613d0909c22591abe90768a9ae3c0ea88a8b8d5b2ee2bdf6c69cb8938` = the active release manifest's `source_hashes.sqlite_gz_sha256` ✓ |
+| W1 export ← SQLite | `sha256(cloud_export_tax-2026.07.30-02/taxonomy_export_manifest.json)` = `096beb0b9363e69b31ced728d5ce55f7024e33c81b9a416ca1beefd0903e2d95` = the active release manifest's `source_hashes.w1_manifest_sha256` ✓ |
+| active release ← W1 | all seven dataset hashes match disk, manifest and production (§0.2) ✓ |
+
+Both hash links were recomputed in this stage, not read from the manifest. The
+bridge triples therefore belong to the audited release's own lineage.
 
 What §3 now delivers is a *classification scheme*, a *verdict on the strongest
 available rule*, and the *population structure* (§3.1). What it does not deliver
@@ -864,12 +968,11 @@ the strict rule, how many rest on the missing-authorship fallback, and how many
 came from reviewed manual mappings.
 
 The acceptance-gate criterion "the evidence behind the NorTaxa vernacular join
-is characterized well enough for Stage 3 to classify associations" is
-**partially met and remains open Stage 1 work**. The join key is confirmed from
-data (§3.1), the population is bounded (19,808 bindings, of which 2,041 scoped
-taxa carry vernaculars), and the review status is measured (§3.2: zero
-reviewed). The **matching rule** per association is not, and is unrecoverable
-from supplied artifacts.
+is characterized well enough for Stage 3 to classify associations" is **met**.
+The join key is confirmed from data (§3.1), the population is bounded (19,808
+bindings, of which 2,041 scoped taxa carry vernaculars), the review status is
+measured (§3.2: zero reviewed), and the matching rule is measured per
+association (§3.3: 17,675 strict / 2,133 fallback; 2,001 / 40 within the 2,041).
 
 Stage 3 should report its coverage **over the alias-binding population, not the
 vernacular-joined subset** (§3.1), so that bindings deliberately left unemitted
@@ -1326,9 +1429,57 @@ counts**. Expected unchanged:
 | mosaic row | `id=178`, `version=2`, `storage_key` `…fd70c15a234f97d8.webp` |
 | `observations.spore_statistics` | unchanged string, `n = 26` |
 
-The digest definitions are given inline above so Stage 4 can reproduce them
-exactly; they are ordinary `md5(string_agg(...))` expressions over stable IDs
-and rounded values, deterministic under a fixed `order by`.
+**Exact capture query.** This is the verbatim read-only SQL that produced the
+four digests. It was re-executed against production on 2026-09-22 and reproduced
+all four values identically. Separator `'|'`; NULLs rendered as the literal
+`NULL` via `coalesce`; numerics rounded to 4 decimal places then cast to `text`;
+ordering fixed by primary key:
+
+```sql
+select
+  (select md5(string_agg(
+       i.id::text||':'||coalesce(i.storage_path,'NULL')||':'||i.sort_order::text||':'||i.image_type
+       ||':'||coalesce(i.scale_microns_per_pixel::text,'NULL')||':'||coalesce(i.calibration_uuid::text,'NULL')
+       ||':'||coalesce(i.deleted_at::text,'NULL'), '|' order by i.id))
+     from public.observation_images i where i.observation_id = 917) as images_md5,
+  (select md5(string_agg(
+       m.id::text||':'||m.image_id::text||':'||coalesce(m.measurement_type,'')
+       ||':'||round(m.length_um::numeric,4)::text||'x'||round(m.width_um::numeric,4)::text, '|' order by m.id))
+     from public.spore_measurements m
+     join public.observation_images i2 on i2.id = m.image_id
+    where i2.observation_id = 917) as measurements_md5,
+  (select md5(string_agg(
+       t.measurement_id::text||'@'||t.mosaic_id::text||':'||t.x_px::text||','||t.y_px::text
+       ||','||t.w_px::text||','||t.h_px::text, '|' order by t.measurement_id))
+     from public.spore_measurement_mosaic_tiles t
+     join public.spore_measurement_mosaics mo on mo.id = t.mosaic_id
+    where mo.observation_id = 917) as tiles_md5,
+  (select md5(string_agg(
+       s.id::text||':'||s.context_hash||':'||s.n_spores::text
+       ||':'||round(s.length_mean_um::numeric,4)::text
+       ||':'||round(s.width_mean_um::numeric,4)::text
+       ||':'||round(s.q_mean::numeric,4)::text, '|' order by s.id))
+     from public.observation_spore_summaries s where s.observation_id = 917) as summaries_md5;
+```
+
+Verified output (2026-09-22):
+
+```
+images_md5       | 7a34b1a10766f5121b1bece0f2a14129
+measurements_md5 | 9a2828fb4781cd84f602ebee1b3e10d4
+tiles_md5        | 7cf07f7ee18ac31c6045f956715823d2
+summaries_md5    | 8d3b020df4a1e91fe505461c28b27f4e
+```
+
+Two notes for whoever re-runs it. `spore_measurements` has **no
+`observation_id` column**; it joins through `image_id` → `observation_images.id`,
+which the query does explicitly — a naive `where observation_id = 917` fails with
+`42703`. And `measurement_type` uses `coalesce(...,'')`, not `'NULL'`, matching
+the original capture; changing that alters the digest without any data having
+changed.
+
+The row-level listings in §6.5–6.7 were captured by the corresponding
+`jsonb_agg` / `to_jsonb` selects over the same predicates.
 
 ### 6.9 Expected semantics after correction
 
@@ -1557,8 +1708,8 @@ evidenced bridge rather than performed silently by stripping a prefix.
 
 ## 9. Stage 1 verdict
 
-**Six of seven acceptance-gate criteria are met. One is incomplete.** The
-required verdict is **not** claimed.
+**All seven acceptance-gate criteria are met**, with one item recorded as
+explicitly unconfirmed under the allowance the brief grants.
 
 | Gate criterion | Status |
 |---|---|
@@ -1566,17 +1717,12 @@ required verdict is **not** claimed.
 | Observation 917 has a reproducible before-state | **Met** — §6, all seven dimensions frozen from live SQL |
 | Desktop leak traced to a concrete write path | **Met** — §4.3: the migration's `_resolve_via_nortaxa` resolves identity from a namespace-lost integer with `LIMIT 1` (D3a/D3b). Recorded with it: the plan's premise that the *picker* leaks is **unsupported** (§4.2), and the cloud boundary is enforced server-side (§7, D2) |
 | NorTaxa bridge loss traced to a concrete compile/export path | **Met** — §2.1 verifies both bindings against compiled records; §2.2 verifies the loss against the active release and its W1 input; §1.0 confirms zero non-`col_usage_id` namespaces in production |
-| Vernacular join characterized for Stage 3 classification | **INCOMPLETE** — §3.1 confirms the join key and §3.2 measures the review status (19,808 automatic, **0** reviewed), but the **matching rule** per association is not recoverable: `alias_reason` collapses the strict and missing-authorship rules, and authorship is absent from every supplied artifact. Open Stage 1 work (§3.2) |
+| Vernacular join characterized for Stage 3 classification | **Met** — §3.1 confirms the join key from data; §3.2 measures review status (19,808 automatic, **0** reviewed); §3.3 measures the matching rule per association from the pinned source archives (17,675 strict / 2,133 missing-authorship fallback; within the 2,041: 2,001 / 40 / 0 unbound), with lineage hash-verified in §3.4 |
 | `Entoloma conferendum` failure traced, or recorded unconfirmed with reason | **Met** (recorded unconfirmed with a concrete blocking reason, §5 — permitted by the brief) |
 | No unexplained taxonomy production objects | **Met** — §1.0. One active release, one import run, three release installations, 369 snapshot/resolution pairs; all accounted for. Recorded alongside it: whether the licence/publication gate was satisfied before activation remains **unresolved** (§1.1) — a missing decision record, not an unexplained object |
 
-**One criterion remains open Stage 1 work:** the per-association matching rule
-(§3.2). It needs the compiler's `mappings.jsonl` for this release —
-regenerated, since it was never supplied and authorship exists in no other
-artifact. That is the single remaining blocker to the Stage 1 verdict.
-
-Separately, one item is explicitly recorded as unconfirmed rather than unmet,
-which the brief permits:
+One item is explicitly recorded as unconfirmed rather than unmet, which the
+brief permits:
 
 - **§5, the `Entoloma conferendum` mechanism.** The deprecation-sentinel defect
   is confirmed *in code* (`artsorakel.js:482-493` vs `:732`), and the null-write
@@ -1588,19 +1734,38 @@ which the brief permits:
   reason. Part B's required-behavior list stands regardless, and §6.4 notes a
   competing explanation that is not excluded.
 
-Two artifact limits remain, neither blocking a criterion:
+One artifact limit remains, no longer blocking any criterion:
 
 - `mappings.jsonl` / `source_usages.jsonl` were never supplied and do not exist.
-  §3.2 obtained the grading from the compiler's `alias_reason`, carried into
-  `taxon_external_id_min.note`, instead. If those files are ever regenerated,
-  they would additionally separate the strict exact rule from the
-  missing-authorship fallback, which `alias_reason` does not distinguish.
-- The real NorTaxa source archive (§0.3) is still absent, so `53482`'s
-  source-side children and vernaculars were verified from the compiled release
-  (§2.1) rather than from the Darwin Core archive.
+  Both facts they would have carried were obtained otherwise: review status from
+  `alias_reason` in `taxon_external_id_min.note` (§3.2), and the matching rule
+  by recomputing it from the pinned source archives' authorship (§3.3).
+  Regenerating them would let the two be read directly rather than derived, and
+  would carry `evidence.reason` verbatim — useful corroboration, not a gap.
+
+**Nothing further is requested from the operator.** Both previously reported
+blockers are discharged: SQL access works, and the source archives were located
+in the primary checkout rather than needing to be supplied (§0.3).
 
 Test results in §0.4 were produced in the implementation session and have not
 been independently rerun by a reviewer.
+
+### Seventh revision — matching rule recovered; digest SQL committed
+
+1. **§3.3 recovers the per-association matching rule**, which the sixth revision
+   wrongly declared unrecoverable. Showing authorship absent from the downstream
+   SQLite and export proved only that *those* artifacts were insufficient. The
+   pinned source archives were present all along in the primary checkout
+   (§0.3 corrected), and the classification is decidable from them: 17,675
+   strict / 2,133 missing-authorship fallback across the bridge population, and
+   2,001 / 40 / 0-unbound within the required 2,041. `53482` is strict.
+   §3.4 hash-verifies the recovery inputs against the audited release.
+2. **§6.8 now carries the verbatim capture SQL**, re-executed and confirmed to
+   reproduce all four digests, including the `image_id` join and the NULL /
+   rounding / separator conventions that a description alone could not pin down.
+3. **§9 corrected** — the statement that the missing compiler artifacts blocked
+   no criterion has been removed; it contradicted the sixth revision's own
+   verdict. With §3.3 complete the criterion is met on its own evidence.
 
 ### Sixth revision — three bounded corrections
 
