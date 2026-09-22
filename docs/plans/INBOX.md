@@ -124,3 +124,8 @@ Source: former `PLAN.md`.
 - Verify whether the earlier AI crop backlog has already been completed before promoting any item.
 
 Source: former `PLAN.md`; status could not be established safely from this repository alone.
+
+
+## Cloud media recovery: handle local image whose matching cloud image is soft-deleted
+
+Reproduce with observation 604 / local image 3258 / cloud image 3694. Determine when recovery should explicitly restore the existing cloud identity versus preserve deletion and report a conflict. Do not silently create a duplicate image.
