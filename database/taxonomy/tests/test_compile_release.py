@@ -68,6 +68,9 @@ def _write_normalized_source(
                     "phylum": "", "class": "", "order": "",
                     "family": "", "genus": "",
                     "specific_epithet": "", "infraspecific_epithet": "",
+                    # Rows may populate Linnean levels; rules that compare
+                    # classification chains need them to be non-empty.
+                    **(row.get("classification") or {}),
                 },
                 "provenance": {
                     "source_code": source_code,

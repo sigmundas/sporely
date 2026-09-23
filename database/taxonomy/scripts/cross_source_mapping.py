@@ -53,6 +53,39 @@ PROPOSAL_AMBIGUOUS = "ambiguous"
 PROPOSAL_NATIONAL_ONLY = "national_only"
 PROPOSAL_REJECTED = "rejected"
 
+# ``evidence.reason`` tokens. Both automatic rules emit
+# ``PROPOSAL_AUTOMATIC_EXACT``, so the reason is the only thing that separates
+# them, and downstream consumers must be able to tell them apart without
+# re-implementing the rules.
+REASON_CONSERVATIVE_EXACT = "conservative_exact_rule_satisfied"
+REASON_MISSING_AUTHORSHIP = "missing_authorship_classification_rule_satisfied"
+
+# Stable evidence-class tokens for one binding's cross-source identity
+# evidence. These are the vocabulary
+# ``policies/mapping_policy.yml.authoritative_bridge_emission`` grades, and
+# they are recorded per binding in ``source_usages.jsonl`` as
+# ``bridge_evidence_class`` so a projection can apply that policy without
+# reclassifying anything.
+EVIDENCE_CLASS_CROSS_SOURCE_STRICT = "cross_source_automatic_exact_strict"
+EVIDENCE_CLASS_CROSS_SOURCE_MISSING_AUTHORSHIP = (
+    "cross_source_automatic_exact_missing_authorship"
+)
+
+_EVIDENCE_CLASS_BY_REASON = {
+    REASON_CONSERVATIVE_EXACT: EVIDENCE_CLASS_CROSS_SOURCE_STRICT,
+    REASON_MISSING_AUTHORSHIP: EVIDENCE_CLASS_CROSS_SOURCE_MISSING_AUTHORSHIP,
+}
+
+
+def evidence_class_for_reason(reason: str) -> str:
+    """Map an ``evidence.reason`` to its stable evidence-class token.
+
+    Returns ``""`` for a reason that is not an automatic-exact rule. An empty
+    class is never eligible for authoritative emission, so an unrecognised
+    reason fails closed rather than inheriting another class's grade.
+    """
+    return _EVIDENCE_CLASS_BY_REASON.get(str(reason or ""), "")
+
 # Equivalent "concept is currently accepted" tokens across supported codes.
 # COL (zoological/CoL practice) publishes "accepted" and "provisionally
 # accepted". NorTaxa follows the ICN mycological practice of publishing
@@ -234,7 +267,7 @@ def classify_bridge_records(
                     bridge=bridge, candidates=candidates,
                     proposal_class=PROPOSAL_AUTOMATIC_EXACT,
                     relationship="exact", review_status="policy_auto_approved",
-                    evidence={"reason": "conservative_exact_rule_satisfied",
+                    evidence={"reason": REASON_CONSERVATIVE_EXACT,
                               **evidence},
                 ))
             else:
@@ -253,7 +286,7 @@ def classify_bridge_records(
                         relationship="exact",
                         review_status="policy_auto_approved",
                         evidence={
-                            "reason": "missing_authorship_classification_rule_satisfied",
+                            "reason": REASON_MISSING_AUTHORSHIP,
                             **fallback_ev,
                         },
                     ))

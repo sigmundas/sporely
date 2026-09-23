@@ -1,0 +1,80 @@
+{
+  "active_release": "global_macrofungi_tax-2026.08.01-01",
+  "active_release_external_id_namespaces": {
+    "col_xr/col_usage_id": 52881
+  },
+  "active_release_retained_concepts": 52881,
+  "active_release_vernacular_joined_taxa": 2041,
+  "candidate_sqlite": "tax-2026.07.30-02.sqlite3",
+  "coverage": {
+    "all_bridge_bindings": {
+      "bindings": 19808,
+      "distinct_taxa": 19808,
+      "emitted_by_evidence_class": {
+        "cross_source_automatic_exact_strict": 17675
+      },
+      "emitted_total": 17675,
+      "not_graded_by_stage_1_audit": 0,
+      "rejected_by_evidence_class_and_reason": {
+        "cross_source_automatic_exact_missing_authorship|admitted by the missing-authorship fallback, which fires precisely when authorship is absent on one or both sides. Without authorship the nomenclatural act is unpinned and the homonym guard is unverified, so the binding is name-level enrichment rather than authoritative concept identity.": 2133
+      },
+      "rejected_total": 2133
+    },
+    "scoped_bridge_bindings": {
+      "bindings": 7082,
+      "distinct_taxa": 7082,
+      "emitted_by_evidence_class": {
+        "cross_source_automatic_exact_strict": 6878
+      },
+      "emitted_total": 6878,
+      "not_graded_by_stage_1_audit": 0,
+      "rejected_by_evidence_class_and_reason": {
+        "cross_source_automatic_exact_missing_authorship|admitted by the missing-authorship fallback, which fires precisely when authorship is absent on one or both sides. Without authorship the nomenclatural act is unpinned and the homonym guard is unverified, so the binding is name-level enrichment rather than authoritative concept identity.": 204
+      },
+      "rejected_total": 204
+    },
+    "scoped_vernacular_joined_subset": {
+      "bindings": 2041,
+      "distinct_taxa": 2041,
+      "emitted_by_evidence_class": {
+        "cross_source_automatic_exact_strict": 2001
+      },
+      "emitted_total": 2001,
+      "not_graded_by_stage_1_audit": 0,
+      "rejected_by_evidence_class_and_reason": {
+        "cross_source_automatic_exact_missing_authorship|admitted by the missing-authorship fallback, which fires precisely when authorship is absent on one or both sides. Without authorship the nomenclatural act is unpinned and the homonym guard is unverified, so the binding is name-level enrichment rather than authoritative concept identity.": 40
+      },
+      "rejected_total": 40
+    }
+  },
+  "eligible_evidence_classes": [
+    "cross_source_automatic_exact_strict",
+    "manual_approved_exact"
+  ],
+  "policy_sha256": "39328eb5199bd47668e2a3d67d530fb4599244f9a604f52c905e10678127c7e8",
+  "projected_active_release_external_id_rows": {
+    "added_by_bridge_emission": 6878,
+    "after": 59759,
+    "before": 52881
+  },
+  "regressions": {
+    "52369": {
+      "case": "divergent accepted names",
+      "emitted_by_standard": false,
+      "evidence_class": null,
+      "has_cross_source_bridge_binding": false,
+      "host_retained_in_active_release": false,
+      "host_sporely_taxon_id": null,
+      "matching_rule": null
+    },
+    "53482": {
+      "case": "agreeing names",
+      "emitted_by_standard": true,
+      "evidence_class": "cross_source_automatic_exact_strict",
+      "has_cross_source_bridge_binding": true,
+      "host_retained_in_active_release": true,
+      "host_sporely_taxon_id": 7821,
+      "matching_rule": "strict"
+    }
+  }
+}

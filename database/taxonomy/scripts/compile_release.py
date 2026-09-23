@@ -59,14 +59,22 @@ _THIS_DIR = Path(__file__).resolve().parent
 if str(_THIS_DIR) not in sys.path:
     sys.path.insert(0, str(_THIS_DIR))
 
+from bridge_emission import (  # noqa: E402
+    EVIDENCE_CLASS_INTRA_SOURCE_SYNONYM,
+    EVIDENCE_CLASS_MANUAL_APPROVED_EXACT,
+    EVIDENCE_CLASS_NONE,
+)
 from cross_source_mapping import (  # noqa: E402
     BackboneIndex,
+    EVIDENCE_CLASS_CROSS_SOURCE_MISSING_AUTHORSHIP,
+    EVIDENCE_CLASS_CROSS_SOURCE_STRICT,
     PROPOSAL_AMBIGUOUS,
     PROPOSAL_AUTOMATIC_EXACT,
     PROPOSAL_NATIONAL_ONLY,
     PROPOSAL_REJECTED,
     PROPOSAL_REVIEW_PROPOSED,
     classify_bridge_records,
+    evidence_class_for_reason,
     proposal_to_json,
     summarize as summarize_proposals,
 )
@@ -652,7 +660,11 @@ def compile_release(
     )
 
     # ----- Phase 2c: apply automatic-exact aliases to registry -------------
-    auto_alias_applied: set[tuple[str, str, str]] = set()
+    # Maps the bridge source usage to the evidence class that admitted it.
+    # Both automatic rules produce PROPOSAL_AUTOMATIC_EXACT, so the class — not
+    # the proposal class — is what a projection needs in order to apply
+    # `mapping_policy.authoritative_bridge_emission` without reclassifying.
+    auto_alias_applied: dict[tuple[str, str, str], str] = {}
     for proposal in sorted(cross_source_proposals,
                            key=lambda p: p.source_usage):
         if proposal.proposal_class != PROPOSAL_AUTOMATIC_EXACT:
@@ -676,7 +688,9 @@ def compile_release(
             )
         except RegistryError as exc:
             raise CompilerError(str(exc)) from exc
-        auto_alias_applied.add(bridge_su)
+        auto_alias_applied[bridge_su] = evidence_class_for_reason(
+            proposal.evidence.get("reason", "")
+        )
 
     # ----- Phase 2d: allocate remaining accepted bridge anchors ------------
     for record in sorted(accepted_bridge_records,
@@ -744,9 +758,17 @@ def compile_release(
         )
         record = usage_index.get(binding_source_usage)
         alias_reason = ""
+        # The evidence class that admitted this binding, graded by
+        # `policies/mapping_policy.yml.authoritative_bridge_emission` when the
+        # release is projected. `alias_reason` is kept at its established
+        # vocabulary — it is load-bearing for existing consumers and for the
+        # committed Stage 1 audit — so the finer automatic-rule distinction is
+        # recorded here rather than by widening `alias_reason`.
+        bridge_evidence_class = EVIDENCE_CLASS_NONE
         accepted_ref: dict | None = None
         if binding_source_usage in synonym_to_accepted:
             alias_reason = "synonym_of_accepted"
+            bridge_evidence_class = EVIDENCE_CLASS_INTRA_SOURCE_SYNONYM
             accepted_key = synonym_to_accepted[binding_source_usage]
             accepted_ref = {
                 "source": accepted_key[0],
@@ -755,8 +777,10 @@ def compile_release(
             }
         elif binding_source_usage in auto_alias_applied:
             alias_reason = "cross_source_automatic_exact"
+            bridge_evidence_class = auto_alias_applied[binding_source_usage]
         elif binding_source_usage in approved_manual_bridge_usages:
             alias_reason = "manual_approved_exact"
+            bridge_evidence_class = EVIDENCE_CLASS_MANUAL_APPROVED_EXACT
         source_usages.append({
             "sporely_taxon_id": allocation.sporely_taxon_id,
             "source_code": allocation.source,
@@ -781,6 +805,7 @@ def compile_release(
             "external_ids": record.external_ids if record else {},
             "identity_binding": allocation.kind,
             "alias_reason": alias_reason,
+            "bridge_evidence_class": bridge_evidence_class,
             "accepted_source_usage": accepted_ref,
             "inclusion_reason": record.inclusion_reason if record else "",
             # A synonym usage is preserved as a searchable name alias.
@@ -1592,16 +1617,41 @@ def _compile_redlist(
 
 
 def _count_auto_exact_by_rule(proposals) -> dict[str, int]:
-    counts = {"strict": 0, "missing_authorship_classification": 0}
+    """Count automatic-exact proposals by the rule that admitted them.
+
+    Derived from the shared evidence-class vocabulary so this census and the
+    per-binding ``bridge_evidence_class`` can never drift apart.
+    """
+    by_class = {
+        EVIDENCE_CLASS_CROSS_SOURCE_STRICT: "strict",
+        EVIDENCE_CLASS_CROSS_SOURCE_MISSING_AUTHORSHIP:
+            "missing_authorship_classification",
+    }
+    counts = {label: 0 for label in by_class.values()}
     for p in proposals:
         if p.proposal_class != PROPOSAL_AUTOMATIC_EXACT:
             continue
-        reason = p.evidence.get("reason", "")
-        if reason == "conservative_exact_rule_satisfied":
-            counts["strict"] += 1
-        elif reason == "missing_authorship_classification_rule_satisfied":
-            counts["missing_authorship_classification"] += 1
+        label = by_class.get(
+            evidence_class_for_reason(p.evidence.get("reason", ""))
+        )
+        if label is not None:
+            counts[label] += 1
     return counts
+
+
+def _count_bridge_evidence_classes(source_usages: list[dict]) -> dict[str, int]:
+    """Census of ``bridge_evidence_class`` over every emitted binding.
+
+    This is the population the coverage audit grades: it counts *bindings*,
+    not the vernacular joins that happen to ride on some of them.
+    """
+    counts: dict[str, int] = {}
+    for usage in source_usages:
+        key = str(usage.get("bridge_evidence_class") or "")
+        counts[key or "(anchor_or_no_bridge_evidence)"] = (
+            counts.get(key or "(anchor_or_no_bridge_evidence)", 0) + 1
+        )
+    return dict(sorted(counts.items()))
 
 
 def _apply_bridge_fungal_scope(
@@ -2019,6 +2069,9 @@ def _build_diagnostics(
                 "automatic_exact", 0),
             "cross_source_automatic_exact_by_rule": _count_auto_exact_by_rule(
                 cross_source_proposals
+            ),
+            "bridge_evidence_class_counts": _count_bridge_evidence_classes(
+                source_usages
             ),
             "source_synonym_resolved": synonym_alias_count,
             "review_proposed": cross_source_proposal_counts.get(

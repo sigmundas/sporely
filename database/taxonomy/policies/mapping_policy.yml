@@ -30,6 +30,42 @@
     {"event": "unresolved_supported_source_taxon", "action": "create_provisional_sporely_concept", "review": "required"},
     {"event": "manual_override", "action": "apply_reviewed_mapping_before_automation", "review": "approved_required"}
   ],
+  "authoritative_bridge_emission": {
+    "purpose": "Decides which cross-source identity bindings may be projected as authoritative external identifiers under a declared namespace, per docs/identity-contract.md. A binding that is not eligible here stays an internal identity binding: it is never emitted as a resolvable (source, namespace, external_id) tuple.",
+    "projection_path": "source_usages.jsonl.bridge_evidence_class -> taxon_external_id_text_min -> taxon_external_id.jsonl -> desktop external_mapping / cloud taxonomy_v2_external_ids",
+    "emitted_rows_are_never_preferred": true,
+    "emitted_rows_never_change_backbone_presentation": true,
+    "fail_closed": "An evidence class absent from both lists below is ineligible and must be counted as 'unclassified_evidence_class'.",
+    "eligible": [
+      {
+        "evidence_class": "manual_approved_exact",
+        "tier": "reviewed_manual",
+        "basis": "a per-association human decision recorded in manual_mappings.yml with reviewer, rationale and evidence_references, and review_status=approved",
+        "review": "per_association"
+      },
+      {
+        "evidence_class": "cross_source_automatic_exact_strict",
+        "tier": "policy_reviewed_rule",
+        "basis": "the conservative exact rule of scripts/cross_source_mapping.py: exactly one backbone candidate at (canonical scientific name, rank), kingdom Fungi declared on both sides, taxonomic status accepted on both sides, BOTH authorship fields present and equal after NFC/whitespace normalization, and no competing homonym in the name/rank bucket",
+        "review": "the rule is reviewed here, not each association",
+        "why_this_is_not_canonical_name_equality": "automatic_identity.forbidden_evidence_alone forbids canonical_name_equality as evidence. This rule is not that: agreement on the authorship string pins the nomenclatural act, not merely the name string, and the homonym guard plus rank, kingdom and status agreement exclude the same-name-different-concept cases that name equality alone admits."
+      }
+    ],
+    "rejected": [
+      {
+        "evidence_class": "cross_source_automatic_exact_missing_authorship",
+        "reason": "admitted by the missing-authorship fallback, which fires precisely when authorship is absent on one or both sides. Without authorship the nomenclatural act is unpinned and the homonym guard is unverified, so the binding is name-level enrichment rather than authoritative concept identity."
+      },
+      {
+        "evidence_class": "intra_source_synonym",
+        "reason": "a synonym usage bound to its own accepted concept inside one source. Its relation to the backbone concept is transitive on the accepted usage's binding and has not been graded on its own evidence; admitting it would emit an identifier whose evidence was never evaluated."
+      },
+      {
+        "evidence_class": "",
+        "reason": "an anchor binding, or a binding with no cross-source evidence. An anchor's identifier is already authoritative through its own native namespace and needs no bridge."
+      }
+    ]
+  },
   "manual_precedence": {
     "approved_overrides_automation": true,
     "rejected_is_retained": true,

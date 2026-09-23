@@ -419,6 +419,84 @@ def _iter_jsonl(path: Path, allowed: set[int]) -> Iterable[dict[str, Any]]:
                 yield row
 
 
+def suppress_legacy_integer_ids(
+    *, w1_dir: Path, output_dir: Path, included: set[int],
+) -> dict[str, Any]:
+    """Emit an empty legacy-integer dataset, but account for what it drops.
+
+    `taxon_external_id_min` loses the originating namespace, so a row there
+    cannot be resolved as `(source, namespace, external_id)`. The scoped
+    release therefore does not carry that channel — and the desktop pack has
+    no table for it. Emptying it is the right outcome, but emptying it
+    *unconditionally and silently* means a genuine identity loss looks exactly
+    like a correct suppression, which is the defect this function removes.
+
+    Every in-scope legacy row is now classified against what the scoped
+    release actually publishes:
+
+    * ``represented_authoritatively`` — the same ``(taxon_id, external_id)``
+      appears in ``taxon_external_id.jsonl`` under a declared namespace, so
+      the legacy copy is redundant and nothing is lost.
+    * ``suppressed_not_authoritative`` — no authoritative row exists. Because
+      the projection emits every binding the reviewed bridge standard admits,
+      a binding absent from the authoritative file is one that standard
+      refused. The legacy copy is dropped rather than promoted, which is what
+      the standard requires.
+
+    Raises :class:`ScopeError` on a row whose ``note`` is unambiguously an
+    approved manual bridge yet which is missing authoritatively: that
+    combination cannot arise from the policy and means the projection lost a
+    reviewed relationship.
+
+    A limitation worth stating rather than hiding: `note` carries the coarse
+    ``alias_reason``, which collapses the strict and missing-authorship
+    automatic rules into one token. This function therefore cannot split the
+    second bucket by rule. The per-binding split lives in the compiled
+    release's ``source_usages.jsonl`` as ``bridge_evidence_class``, and the
+    candidate build reports it under ``authoritative_bridge_emission``.
+    """
+    legacy_path = w1_dir / "taxon_external_id_legacy_integer.jsonl"
+    authoritative_path = output_dir / "taxon_external_id.jsonl"
+    authoritative: set[tuple[Any, str]] = set()
+    if authoritative_path.exists():
+        with authoritative_path.open("r", encoding="utf-8") as handle:
+            for raw in handle:
+                row = json.loads(raw)
+                authoritative.add((row.get("taxon_id"), str(row.get("external_id"))))
+
+    census: dict[str, int] = {
+        "in_scope_rows": 0,
+        "represented_authoritatively": 0,
+        "suppressed_not_authoritative": 0,
+    }
+    by_note: Counter[str] = Counter()
+    if legacy_path.exists():
+        for row in _iter_jsonl(legacy_path, included):
+            census["in_scope_rows"] += 1
+            note = str(row.get("note") or "")
+            key = (row.get("taxon_id"), str(row.get("external_id")))
+            if key in authoritative:
+                census["represented_authoritatively"] += 1
+                continue
+            if note == "manual_approved_exact":
+                raise ScopeError(
+                    "reviewed manual bridge lost in projection: legacy row "
+                    f"taxon_id={row.get('taxon_id')} "
+                    f"external_id={row.get('external_id')!r} carries "
+                    f"note={note!r} but has no authoritative namespaced row"
+                )
+            census["suppressed_not_authoritative"] += 1
+            by_note[note or "(null)"] += 1
+
+    written = _write_jsonl(output_dir / "taxon_external_id_legacy_integer.jsonl", [])
+    return {
+        "written": written,
+        "census": census,
+        "suppressed_by_note": dict(sorted(by_note.items())),
+        "legacy_input_present": legacy_path.exists(),
+    }
+
+
 def build_export(
     w1_dir: Path,
     output_dir: Path,
@@ -477,7 +555,10 @@ def build_export(
             rows = _iter_jsonl(w1_dir / filename, included)
         count, size, digest = _write_jsonl(output_dir / filename, rows)
         files.append({"name": filename, "row_count": count, "bytes": size, "sha256": digest})
-    count, size, digest = _write_jsonl(output_dir / "taxon_external_id_legacy_integer.jsonl", [])
+    legacy_suppression = suppress_legacy_integer_ids(
+        w1_dir=w1_dir, output_dir=output_dir, included=included,
+    )
+    count, size, digest = legacy_suppression["written"]
     files.insert(-1, {"name": "taxon_external_id_legacy_integer.jsonl", "row_count": count, "bytes": size, "sha256": digest})
 
     semantic = {
@@ -492,6 +573,11 @@ def build_export(
         "winning_rule_by_taxon": [
             {"taxon_id": taxon_id, **results[taxon_id]} for taxon_id in sorted(results)
         ],
+        "legacy_integer_suppression": {
+            "census": legacy_suppression["census"],
+            "suppressed_by_note": legacy_suppression["suppressed_by_note"],
+            "legacy_input_present": legacy_suppression["legacy_input_present"],
+        },
         "unresolved_rules": [rule.code for rule in rules if rule.state == "review"],
         "aggregate_counts": {
             "included": len(included),
