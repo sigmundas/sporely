@@ -80,9 +80,34 @@ _NORTAXA_RELEASE = {"version": "1.284", "issued_date": "2026-07-17"}
 # --------------------------------------------------------------- fixture ---
 
 
+def _resolvable_parents(source_dir: Path, source_code: str) -> Path:
+    """Point parent references at the namespace parent resolution looks up.
+
+    ``build_sqlite_candidate._resolve_parent_sporely_id`` keys the parent
+    lookup on ``(source, parent_ref.namespace, parent_ref.value)`` against the
+    *taxon_id* index, but the shared test helper writes parent references under
+    a ``*_parent_name_usage_id`` namespace. Left alone, every fixture concept
+    gets a NULL parent, becomes an orphan, and falls out of the cloud export's
+    descendant walk — which would quietly make an export test pass on an empty
+    scope. Rewrite the namespace so the fixture has a real hierarchy.
+    """
+    taxa_path = source_dir / "taxa.jsonl"
+    lines = []
+    for raw in taxa_path.read_text(encoding="utf-8").splitlines():
+        if not raw.strip():
+            continue
+        record = json.loads(raw)
+        parent = record.get("parent_name_usage_id")
+        if parent:
+            parent["namespace"] = f"{source_code}_taxon_id"
+        lines.append(json.dumps(record, ensure_ascii=False, sort_keys=True))
+    taxa_path.write_text("\n".join(lines) + "\n", encoding="utf-8")
+    return source_dir
+
+
 def _col_source(root: Path) -> Path:
     """Backbone. Authorship strings are the real COL values for these taxa."""
-    return _write_normalized_source(
+    return _resolvable_parents(_write_normalized_source(
         root / "col_xr",
         source_code="col_xr",
         source_release=_COL_RELEASE,
@@ -117,12 +142,12 @@ def _col_source(root: Path) -> Path:
              "scientific_name": "Mycena absentia", "authorship": "",
              "classification": {"family": "Mycenaceae"}},
         ],
-    )
+    ), "col_xr")
 
 
 def _nortaxa_source(root: Path) -> Path:
     """Bridge source, with a vernacular extension so enrichment is observable."""
-    source_dir = _write_normalized_source(
+    source_dir = _resolvable_parents(_write_normalized_source(
         root / "nortaxa",
         source_code="nortaxa",
         source_release=_NORTAXA_RELEASE,
@@ -159,7 +184,7 @@ def _nortaxa_source(root: Path) -> Path:
              "authorship": "Fr.", "status": "valid",
              "classification": {"family": "Mycenaceae"}},
         ],
-    )
+    ), "nortaxa")
     vernaculars = [
         # The real NorTaxa names for 53482, including non-preferred variants.
         ("row-53482", "nb", "stjernesporet rødspore", True),
@@ -909,3 +934,143 @@ def test_coverage_is_complete_every_binding_emitted_or_explained(
     assert audit["emitted_total"] == expected_emitted
     # And the emitted set is exactly the eligible set — not a subset.
     assert sum(audit["emitted_by_evidence_class"].values()) == expected_emitted
+
+
+# ------------------------------------------ survival past the SQLite candidate ---
+
+
+def _export_and_scope(tmp_path: Path, release_dir: Path) -> tuple[Path, Path]:
+    """Run the real cloud export over a candidate built from ``release_dir``.
+
+    Verifying the candidate alone would not answer the question that matters:
+    a bridge row that exists in desktop SQLite but is dropped by the exporter
+    is worthless, and so is one the scoped projection discards. This drives
+    ``cloud_export.run_export`` over a genuinely compiled candidate.
+    """
+    import gzip
+    import sys as _sys
+
+    _root = _TAXONOMY.parents[1]
+    if str(_root) not in _sys.path:
+        _sys.path.insert(0, str(_root))
+    from database.taxonomy import cloud_export as ce
+
+    release_id = json.loads(
+        (release_dir / "manifest.json").read_text(encoding="utf-8")
+    )["content_release_id"]
+    art_dir = tmp_path / "artifact"
+    art_dir.mkdir(exist_ok=True)
+    sqlite_path = art_dir / f"{release_id}.sqlite3"
+    build_candidate(
+        release_dir=release_dir,
+        registry_path=tmp_path / "registry.jsonl",
+        output_db=sqlite_path,
+    )
+    gz_path = art_dir / f"{release_id}.sqlite3.gz"
+    with sqlite_path.open("rb") as src, gz_path.open("wb") as raw:
+        with gzip.GzipFile(fileobj=raw, mode="wb", mtime=0) as gz:
+            while chunk := src.read(1 << 16):
+                gz.write(chunk)
+    manifest_path = art_dir / "manifest.json"
+    manifest_path.write_text(json.dumps({
+        "manifest_schema_version": 1,
+        "taxonomy_schema_version": 2,
+        "content_release_id": release_id,
+        "state": "candidate",
+        "publication": "none",
+        "gz_artifact": gz_path.name,
+        "gz_sha256": ce.sha256_file(gz_path),
+        "gz_bytes": gz_path.stat().st_size,
+        "sqlite_sha256": ce.sha256_file(sqlite_path),
+        "sqlite_bytes": sqlite_path.stat().st_size,
+    }, indent=2), encoding="utf-8")
+    sqlite_path.unlink()
+    policies = tmp_path / "policies"
+    policies.mkdir(exist_ok=True)
+    for name in ce.POLICY_HASH_TARGETS[:2]:
+        (policies / name).write_text(f"# stub {name}\n", encoding="utf-8")
+    out = tmp_path / "cloud_export"
+    ce.run_export(
+        artifact_gz=gz_path, manifest=manifest_path, output_dir=out,
+        policy_dir=policies, generated_at="2099-01-01T00:00:00Z",
+    )
+    return out, gz_path
+
+
+def test_reviewed_bridge_survives_cloud_export(tmp_path: Path) -> None:
+    """The emitted identity must reach the cloud export, not stop at SQLite."""
+    release = _compile(tmp_path, manual=[_REVIEWED_53482])
+    export_dir, _gz = _export_and_scope(tmp_path, release)
+
+    rows = [
+        json.loads(line)
+        for line in (export_dir / "taxon_external_id.jsonl").read_text(
+            encoding="utf-8").splitlines() if line.strip()
+    ]
+    bridge = [r for r in rows if r["source_system"] == "nortaxa"
+              and r["external_id"] == "53482"]
+    assert len(bridge) == 1
+    assert bridge[0]["namespace"] == "nortaxa_taxon_id"
+    assert bridge[0]["note"] == "authoritative_bridge:manual_approved_exact"
+    assert bridge[0]["is_preferred"] is False
+    # The backbone identifier is still there and still preferred, so the
+    # export gained a mapping rather than replacing one.
+    backbone = [r for r in rows if r["taxon_id"] == bridge[0]["taxon_id"]
+                and r["source_system"] == "col_xr"]
+    assert backbone and backbone[0]["is_preferred"] is True
+
+
+def test_legacy_suppression_accounts_for_every_in_scope_row(
+    tmp_path: Path,
+) -> None:
+    """D7: the emptied legacy dataset must explain what it dropped."""
+    import sys as _sys
+    _root = _TAXONOMY.parents[1]
+    if str(_root) not in _sys.path:
+        _sys.path.insert(0, str(_root))
+    from database.taxonomy.macrofungi_scope import (
+        ScopeError, suppress_legacy_integer_ids,
+    )
+
+    release = _compile(tmp_path, manual=[_REVIEWED_53482])
+    export_dir, _gz = _export_and_scope(tmp_path, release)
+    scoped = tmp_path / "scoped"
+    scoped.mkdir()
+    # The scoped projection republishes the authoritative dataset verbatim for
+    # the retained concepts; mirror that so the census has something to match.
+    authoritative = (export_dir / "taxon_external_id.jsonl").read_text(
+        encoding="utf-8")
+    (scoped / "taxon_external_id.jsonl").write_text(authoritative,
+                                                    encoding="utf-8")
+    included = {
+        json.loads(line)["taxon_id"]
+        for line in authoritative.splitlines() if line.strip()
+    }
+
+    result = suppress_legacy_integer_ids(
+        w1_dir=export_dir, output_dir=scoped, included=included,
+    )
+    census = result["census"]
+    # Emptied, but accounted for: nothing is dropped without a classification.
+    assert result["written"][0] == 0
+    assert census["in_scope_rows"] == (
+        census["represented_authoritatively"]
+        + census["suppressed_not_authoritative"]
+    )
+    assert census["in_scope_rows"] > 0
+    assert census["represented_authoritatively"] >= 1
+
+    # A reviewed bridge present only in the legacy channel is a real loss and
+    # must fail the build rather than look like a correct suppression.
+    (export_dir / "taxon_external_id_legacy_integer.jsonl").write_text(
+        json.dumps({"taxon_id": sorted(included)[0], "source_system":
+                    "artsdatabanken", "external_id": "999999",
+                    "id_role": "accepted", "is_preferred": 0,
+                    "external_name": "Lost Bridge",
+                    "note": "manual_approved_exact"}) + "\n",
+        encoding="utf-8",
+    )
+    with pytest.raises(ScopeError, match="reviewed manual bridge lost"):
+        suppress_legacy_integer_ids(
+            w1_dir=export_dir, output_dir=scoped, included=included,
+        )
