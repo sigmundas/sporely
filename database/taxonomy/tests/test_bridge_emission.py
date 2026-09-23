@@ -10,16 +10,17 @@ The fixture deliberately mixes four populations in one release, because the
 mechanism is only correct if it separates them in a single pass:
 
 ``53482`` / ``Entoloma conferendum``
-    The agreeing-name regression. Both sources publish the same name *and the
-    same authorship*, so the conservative exact rule admits the binding and it
-    must be emitted authoritatively.
+    The agreeing-name regression. Both sources publish the same accepted name
+    and authorship, so the automatic classifier binds them — and that binding
+    alone must NOT publish identity, because a name match is not a
+    cross-reference. An approved ``manual_mappings.yml`` record supplies the
+    reviewed relationship, and then it resolves.
 
 ``52369`` / ``Pholiotina rugosa``
-    The divergent-name regression. The sources disagree on the accepted name,
-    so no automatic rule matches and the bridge source is anchored as its own
-    concept. This test pins the *fail-closed* behaviour that blocks a manual
-    bridge from rebinding an already-allocated anchor — see the module note at
-    the bottom of this file.
+    The divergent-name regression, which is also a *merge*: the sources
+    disagree about the accepted name, so the bridge source was allocated its
+    own concept. An approved ``concept_supersessions.yml`` record selects the
+    backbone concept as current without rewriting the append-only registry.
 
 ``Inocybe ambigua``
     The control. Two equal-looking names that must stay distinct: the backbone
@@ -56,6 +57,7 @@ from bridge_emission import (  # noqa: E402
 )
 from build_sqlite_candidate import build_candidate  # noqa: E402
 from compile_release import CompilerError, compile_release  # noqa: E402
+from identity_registry import IdentityRegistry  # noqa: E402
 from cross_source_mapping import (  # noqa: E402
     EVIDENCE_CLASS_CROSS_SOURCE_MISSING_AUTHORSHIP,
     EVIDENCE_CLASS_CROSS_SOURCE_STRICT,
@@ -248,24 +250,54 @@ def _resolve(conn: sqlite3.Connection, source: str, namespace: str,
 # ------------------------------------------------------- the policy itself ---
 
 
-def test_repository_policy_grades_both_automatic_rules_apart() -> None:
-    """The shipped standard must decide the two automatic rules differently.
+def test_no_automatic_class_is_eligible() -> None:
+    """Only reviewed relationships may be published as identity.
 
-    Stage 1 measured that 10.8% of the bridge population rests on the
-    missing-authorship fallback. A standard that graded both rules the same
-    would either lose every strict bridge or promote every weak one.
+    `automatic_identity.requirements` admits an automatic bridge on continuous
+    source identity or an authoritative explicit cross-reference. Every
+    classifier in this repository derives its match from a canonical-name and
+    rank lookup, which `continuity_rules.canonical_name_only` sends to review.
+    Strengthening that match with authorship does not turn it into a
+    cross-reference, and declaring the rule reviewed in the policy file would
+    not supply the relationship evidence it lacks. This test exists so no
+    future change can quietly re-admit an automatic class.
     """
     policy = BridgeEmissionPolicy.load(_POLICY_PATH)
-    assert policy.is_eligible(EVIDENCE_CLASS_CROSS_SOURCE_STRICT)
-    assert not policy.is_eligible(
-        EVIDENCE_CLASS_CROSS_SOURCE_MISSING_AUTHORSHIP)
-    assert not policy.is_eligible("intra_source_synonym")
-    assert not policy.is_eligible("")
-    # Every refusal is explained, so a coverage audit can account for it.
-    for evidence_class in (EVIDENCE_CLASS_CROSS_SOURCE_MISSING_AUTHORSHIP,
+    assert policy.eligible == frozenset({
+        "manual_approved_exact", "reviewed_supersession"})
+    for evidence_class in (EVIDENCE_CLASS_CROSS_SOURCE_STRICT,
+                           EVIDENCE_CLASS_CROSS_SOURCE_MISSING_AUTHORSHIP,
                            "intra_source_synonym", ""):
+        assert not policy.is_eligible(evidence_class)
+        # Every refusal is explained, so a coverage audit can account for it.
         assert policy.rejection_reason(evidence_class) != UNCLASSIFIED_REASON
         assert policy.rejection_reason(evidence_class).strip()
+
+
+def test_shipped_reviewed_records_are_not_yet_approved() -> None:
+    """The two regression records await a human decision.
+
+    Both ledger entries carry the assembled cross-reference evidence but
+    `review_status = needs_review`, so the compiler ignores them. This test
+    pins that state deliberately: it fails the moment someone approves a
+    record, which is the point at which the production candidate must be
+    rebuilt and re-verified. It is not asserting that the records should stay
+    unapproved forever.
+    """
+    mappings = json.loads(
+        (_TAXONOMY / "policies" / "manual_mappings.yml").read_text(
+            encoding="utf-8"))
+    supersessions = json.loads(
+        (_TAXONOMY / "policies" / "concept_supersessions.yml").read_text(
+            encoding="utf-8"))
+    entries = mappings["mappings"] + supersessions["supersessions"]
+    assert entries, "the regression records must be present to be reviewable"
+    for entry in entries:
+        assert entry["review_status"] == "needs_review"
+        assert not entry["reviewer"]
+        # Evidence must be citable, or the review has nothing to stand on.
+        assert entry["evidence_references"]
+        assert entry["rationale"].strip()
 
 
 def test_unknown_evidence_class_fails_closed() -> None:
@@ -316,16 +348,59 @@ def test_rejected_class_without_a_reason_is_refused(tmp_path: Path) -> None:
 # ------------------------------------------------- the agreeing-name case ---
 
 
-def test_agreeing_name_bridge_resolves_to_the_backbone_concept(
+def test_derived_association_alone_does_not_publish_identity(
     tmp_path: Path,
 ) -> None:
-    """The 53482 regression: derived, and now emitted instead of discarded."""
+    """53482 is derived and bound, and that is not sufficient on its own.
+
+    This is the distinction the stage turns on. The compiler matched the two
+    concepts and used the binding to attach NorTaxa's Norwegian names, so the
+    association is real. But it was produced by a name-and-authorship match,
+    not by a cross-reference either source published, so it may not be
+    republished as concept identity without a reviewed decision.
+    """
     release = _compile(tmp_path)
     usage = _usages(release)[("nortaxa", "53482")]
-    # The compiler already derived this relationship; it is an alias on the
-    # backbone concept, graded strict.
     assert usage["identity_binding"] == "alias"
     assert usage["bridge_evidence_class"] == EVIDENCE_CLASS_CROSS_SOURCE_STRICT
+
+    conn, summary = _candidate(tmp_path, release)
+    assert _resolve(conn, "nortaxa", "nortaxa_taxon_id", "53482") == []
+    rejected = summary["authoritative_bridge_emission"][
+        "rejected_by_evidence_class_and_reason"]
+    assert any(key.startswith(EVIDENCE_CLASS_CROSS_SOURCE_STRICT + "|")
+               for key in rejected)
+    # The enrichment it carried is untouched by the refusal.
+    host = int(conn.execute(
+        "SELECT taxon_id FROM taxon_min "
+        "WHERE canonical_scientific_name = 'Entoloma conferendum'"
+    ).fetchone()[0])
+    assert conn.execute(
+        "SELECT COUNT(*) FROM vernacular_min WHERE taxon_id = ?",
+        (host,)).fetchone()[0] == 4
+    conn.close()
+
+
+_REVIEWED_53482 = {
+    "mapping_id": "nortaxa-53482-to-col-39ZCL",
+    "source_usage": {"source": "nortaxa", "namespace": "nortaxa_taxon_id",
+                     "identifier": "53482"},
+    "target": {"source_usage": {"source": "col_xr",
+                                "namespace": "col_xr_taxon_id",
+                                "identifier": "39ZCL"}},
+    "relationship": "exact",
+    "review_status": "approved",
+}
+
+
+def test_reviewed_agreeing_name_bridge_resolves_to_the_backbone_concept(
+    tmp_path: Path,
+) -> None:
+    """The 53482 regression, once the reviewed relationship exists."""
+    release = _compile(tmp_path, manual=[_REVIEWED_53482])
+    usage = _usages(release)[("nortaxa", "53482")]
+    assert usage["identity_binding"] == "alias"
+    assert usage["bridge_evidence_class"] == "manual_approved_exact"
 
     conn, summary = _candidate(tmp_path, release)
     host = [int(r["taxon_id"]) for r in conn.execute(
@@ -339,8 +414,7 @@ def test_agreeing_name_bridge_resolves_to_the_backbone_concept(
         "SELECT * FROM taxon_external_id_text_min WHERE source_system='nortaxa' "
         "AND namespace='nortaxa_taxon_id' AND external_id='53482'").fetchone()
     # Enough metadata to explain which source and standard matched.
-    assert row["note"] == \
-        f"authoritative_bridge:{EVIDENCE_CLASS_CROSS_SOURCE_STRICT}"
+    assert row["note"] == "authoritative_bridge:manual_approved_exact"
     assert row["external_name"] == "Entoloma conferendum"
     assert row["id_role"] == "accepted"
     # The bridge never outranks the backbone's own identifier.
@@ -351,13 +425,13 @@ def test_agreeing_name_bridge_resolves_to_the_backbone_concept(
     assert [r["external_id"] for r in preferred] == ["39ZCL"]
 
     assert summary["authoritative_bridge_emission"]["emitted_by_evidence_class"] \
-        == {EVIDENCE_CLASS_CROSS_SOURCE_STRICT: 1}
+        == {"manual_approved_exact": 1}
     conn.close()
 
 
 def test_agreeing_name_vernaculars_and_search_survive(tmp_path: Path) -> None:
     """Vernacular enrichment and both name treatments stay on the concept."""
-    conn, _ = _candidate(tmp_path, _compile(tmp_path))
+    conn, _ = _candidate(tmp_path, _compile(tmp_path, manual=[_REVIEWED_53482]))
     host = _resolve(conn, "nortaxa", "nortaxa_taxon_id", "53482")[0]
 
     names = {(r["vernacular_name"], r["language_code"], r["is_preferred_name"])
@@ -570,6 +644,165 @@ def test_approved_manual_bridge_emits_on_a_fresh_registry(
         "WHERE canonical_scientific_name IN "
         "('Conocybe rugosa', 'Pholiotina rugosa')").fetchone()[0] == 1
     conn.close()
+
+
+def _write_supersessions(path: Path, entries: list[dict]) -> Path:
+    path.write_text(
+        json.dumps({
+            "format": "sporely-taxonomy-concept-supersessions-v1",
+            "schema": {},
+            "supersessions": entries,
+        }, ensure_ascii=False, indent=2, sort_keys=True) + "\n",
+        encoding="utf-8",
+    )
+    return path
+
+
+def test_reviewed_supersession_resolves_the_divergent_name_case(
+    tmp_path: Path,
+) -> None:
+    """The 52369 regression against identity that is already allocated.
+
+    First compile allocates 52369 its own concept, exactly as the production
+    registry did in tax-2026.07.29-01. A reviewed supersession then selects the
+    backbone concept as current, without rewriting that allocation.
+    """
+    first = _compile(tmp_path, release_id="tax-2026.09.23-01")
+    own_id = _usages(first)[("nortaxa", "52369")]["sporely_taxon_id"]
+    backbone_id = _usages(first)[("col_xr", "5ZT3G")]["sporely_taxon_id"]
+    assert own_id != backbone_id
+
+    release = tmp_path / "release2"
+    compile_release(
+        normalized_source_dirs=[tmp_path / "sources" / "col_xr",
+                                tmp_path / "sources" / "nortaxa"],
+        manual_mappings_path=_write_manual_mappings(tmp_path / "m2.yml", []),
+        mapping_policy_path=_POLICY_PATH,
+        registry_path=tmp_path / "registry.jsonl",
+        output_dir=release,
+        release_id="tax-2026.09.23-02",
+        concept_supersessions_path=_write_supersessions(
+            tmp_path / "supersessions.yml", [{
+                "supersession_id": "supersede-52369",
+                "superseded_sporely_taxon_id": own_id,
+                "current_source_usage": {"source": "col_xr",
+                                         "namespace": "col_xr_taxon_id",
+                                         "identifier": "5ZT3G"},
+                "relationship": "exact",
+                "review_status": "approved",
+            }]),
+    )
+
+    # The registry still records the original allocation verbatim.
+    registry = IdentityRegistry(tmp_path / "registry.jsonl")
+    registry.load()
+    assert registry.lookup(
+        "nortaxa", "nortaxa_taxon_id", "52369").sporely_taxon_id == own_id
+
+    usage = _usages(release)[("nortaxa", "52369")]
+    assert usage["sporely_taxon_id"] == backbone_id
+    assert usage["identity_binding"] == "alias"
+    assert usage["bridge_evidence_class"] == "reviewed_supersession"
+    assert usage["superseded_from_sporely_taxon_id"] == own_id
+
+    conn, _summary = _candidate(tmp_path, release, "superseded.sqlite3")
+    try:
+        assert _resolve(conn, "nortaxa", "nortaxa_taxon_id", "52369") == \
+            [backbone_id]
+        row = conn.execute(
+            "SELECT * FROM taxon_external_id_text_min "
+            "WHERE source_system='nortaxa' AND external_id='52369'").fetchone()
+        assert row["note"] == "authoritative_bridge:reviewed_supersession"
+        # NorTaxa's accepted-name treatment is preserved, not flattened.
+        assert row["external_name"] == "Pholiotina rugosa"
+        assert row["is_preferred"] == 0
+
+        # No duplicate concept for the species either source describes.
+        assert conn.execute(
+            "SELECT COUNT(*) FROM taxon_min WHERE canonical_scientific_name "
+            "IN ('Conocybe rugosa', 'Pholiotina rugosa')").fetchone()[0] == 1
+        assert conn.execute(
+            "SELECT COUNT(*) FROM taxon_min WHERE taxon_id = ?",
+            (own_id,)).fetchone()[0] == 0
+
+        # Both treatments searchable; the backbone keeps its preferred name.
+        names = {(r["scientific_name"], r["is_preferred_name"], r["source"])
+                 for r in conn.execute(
+                     "SELECT * FROM scientific_name_min WHERE taxon_id = ?",
+                     (backbone_id,))}
+        assert ("Conocybe rugosa", 1, "col_xr") in names
+        assert ("Pholiotina rugosa", 0, "nortaxa") in names
+
+        # The Norwegian name follows the identity onto the retained concept.
+        vern = {r["vernacular_name"] for r in conn.execute(
+            "SELECT * FROM vernacular_min WHERE taxon_id = ?", (backbone_id,))}
+        assert "slank ringkjeglesopp" in vern
+        assert conn.execute(
+            "SELECT COUNT(*) FROM vernacular_min WHERE taxon_id = ?",
+            (own_id,)).fetchone()[0] == 0
+    finally:
+        conn.close()
+
+
+def test_supersession_chain_is_refused(tmp_path: Path) -> None:
+    """A two-step supersession needs its own decision, not inference."""
+    first = _compile(tmp_path, release_id="tax-2026.09.23-01")
+    own_id = _usages(first)[("nortaxa", "52369")]["sporely_taxon_id"]
+    backbone_id = _usages(first)[("col_xr", "5ZT3G")]["sporely_taxon_id"]
+    with pytest.raises(CompilerError, match="supersession chain"):
+        compile_release(
+            normalized_source_dirs=[tmp_path / "sources" / "col_xr",
+                                    tmp_path / "sources" / "nortaxa"],
+            manual_mappings_path=_write_manual_mappings(tmp_path / "m3.yml", []),
+            mapping_policy_path=_POLICY_PATH,
+            registry_path=tmp_path / "registry.jsonl",
+            output_dir=tmp_path / "release3",
+            release_id="tax-2026.09.23-03",
+            concept_supersessions_path=_write_supersessions(
+                tmp_path / "chain.yml", [
+                    {"supersession_id": "a", "superseded_sporely_taxon_id": own_id,
+                     "current_source_usage": {"source": "col_xr",
+                                              "namespace": "col_xr_taxon_id",
+                                              "identifier": "5ZT3G"},
+                     "relationship": "exact", "review_status": "approved"},
+                    {"supersession_id": "b",
+                     "superseded_sporely_taxon_id": backbone_id,
+                     "current_source_usage": {"source": "col_xr",
+                                              "namespace": "col_xr_taxon_id",
+                                              "identifier": "39ZCL"},
+                     "relationship": "exact", "review_status": "approved"},
+                ]),
+        )
+
+
+def test_unapproved_supersession_is_ignored(tmp_path: Path) -> None:
+    """A record awaiting review must change nothing."""
+    first = _compile(tmp_path, release_id="tax-2026.09.23-01")
+    own_id = _usages(first)[("nortaxa", "52369")]["sporely_taxon_id"]
+    release = tmp_path / "release2"
+    compile_release(
+        normalized_source_dirs=[tmp_path / "sources" / "col_xr",
+                                tmp_path / "sources" / "nortaxa"],
+        manual_mappings_path=_write_manual_mappings(tmp_path / "m4.yml", []),
+        mapping_policy_path=_POLICY_PATH,
+        registry_path=tmp_path / "registry.jsonl",
+        output_dir=release,
+        release_id="tax-2026.09.23-02",
+        concept_supersessions_path=_write_supersessions(
+            tmp_path / "pending.yml", [{
+                "supersession_id": "pending",
+                "superseded_sporely_taxon_id": own_id,
+                "current_source_usage": {"source": "col_xr",
+                                         "namespace": "col_xr_taxon_id",
+                                         "identifier": "5ZT3G"},
+                "relationship": "exact",
+                "review_status": "needs_review",
+            }]),
+    )
+    usage = _usages(release)[("nortaxa", "52369")]
+    assert usage["sporely_taxon_id"] == own_id
+    assert usage["identity_binding"] == "anchor"
+    assert usage["superseded_from_sporely_taxon_id"] is None
 
 
 def test_manual_bridge_onto_an_already_allocated_anchor_fails_closed(

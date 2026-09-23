@@ -63,6 +63,7 @@ from bridge_emission import (  # noqa: E402
     EVIDENCE_CLASS_INTRA_SOURCE_SYNONYM,
     EVIDENCE_CLASS_MANUAL_APPROVED_EXACT,
     EVIDENCE_CLASS_NONE,
+    EVIDENCE_CLASS_REVIEWED_SUPERSESSION,
 )
 from cross_source_mapping import (  # noqa: E402
     BackboneIndex,
@@ -290,6 +291,74 @@ class ManualMapping:
     review_status: str
 
 
+@dataclass(frozen=True)
+class ConceptSupersession:
+    """A reviewed selection of a current concept for an allocated one."""
+
+    supersession_id: str
+    superseded_sporely_taxon_id: int
+    current_source_usage: tuple[str, str, str]
+    relationship: str
+    review_status: str
+
+
+def _load_concept_supersessions(path: Path | None) -> list[ConceptSupersession]:
+    """Load approved concept supersessions, or none when the ledger is absent.
+
+    The ledger is optional so that releases compiled before it existed, and
+    fixtures that do not need it, behave exactly as before.
+    """
+    if path is None:
+        return []
+    if not path.exists():
+        raise CompilerError(f"concept-supersessions file not found: {path}")
+    try:
+        doc = json.loads(path.read_text(encoding="utf-8"))
+    except json.JSONDecodeError as exc:
+        raise CompilerError(f"{path}: malformed JSON: {exc}") from exc
+    if not isinstance(doc, dict) or "supersessions" not in doc:
+        raise CompilerError(f"{path}: expected object with 'supersessions' key")
+    out: list[ConceptSupersession] = []
+    seen: set[int] = set()
+    for index, entry in enumerate(doc.get("supersessions") or []):
+        if not isinstance(entry, dict):
+            raise CompilerError(f"{path}: supersession {index} is not an object")
+        supersession_id = str(entry.get("supersession_id") or f"supersession-{index}")
+        try:
+            superseded = int(entry["superseded_sporely_taxon_id"])
+        except (KeyError, TypeError, ValueError) as exc:
+            raise CompilerError(
+                f"{path}: supersession {supersession_id!r} needs an integer "
+                f"'superseded_sporely_taxon_id'"
+            ) from exc
+        current = entry.get("current_source_usage") or {}
+        try:
+            current_usage = (
+                str(current["source"]), str(current["namespace"]),
+                str(current["identifier"]),
+            )
+        except KeyError as exc:
+            raise CompilerError(
+                f"{path}: supersession {supersession_id!r}: "
+                f"current_source_usage missing {exc}"
+            ) from exc
+        if superseded in seen:
+            raise CompilerError(
+                f"{path}: sporely_taxon_id={superseded} is superseded more "
+                f"than once; the current concept would be ambiguous"
+            )
+        seen.add(superseded)
+        out.append(ConceptSupersession(
+            supersession_id=supersession_id,
+            superseded_sporely_taxon_id=superseded,
+            current_source_usage=current_usage,
+            relationship=str(entry.get("relationship", "")),
+            review_status=str(entry.get("review_status", "")),
+        ))
+    out.sort(key=lambda s: s.superseded_sporely_taxon_id)
+    return out
+
+
 def _load_manual_mappings(path: Path) -> list[ManualMapping]:
     if not path.exists():
         raise CompilerError(f"manual-mappings file not found: {path}")
@@ -402,6 +471,7 @@ def compile_release(
     source_release_manifests: dict[str, Path] | None = None,
     legacy_enrichment_path: Path | None = None,
     redlist_dir: Path | None = None,
+    concept_supersessions_path: Path | None = None,
 ) -> dict:
     """Compile a deterministic candidate release into ``output_dir``.
 
@@ -422,6 +492,7 @@ def compile_release(
     # ----- Load everything up front so we fail fast and deterministically. --
     _load_mapping_policy(mapping_policy_path)  # validated for parsability only
     manual_mappings = _load_manual_mappings(manual_mappings_path)
+    concept_supersessions = _load_concept_supersessions(concept_supersessions_path)
 
     source_reports: dict[str, NormalizedSourceReport] = {}
     for source_dir in normalized_source_dirs:
@@ -744,6 +815,56 @@ def compile_release(
     except RegistryError as exc:
         raise CompilerError(f"registry flush failed: {exc}") from exc
 
+    # ----- Phase 2f: resolve reviewed concept supersessions -----------------
+    # A merge cannot be expressed by rebinding, because the registry is
+    # append-only: `bind_alias` refuses a key already anchored elsewhere, and
+    # that refusal is correct — the allocation happened and rewriting it would
+    # destroy history. A supersession instead *selects* which concept is
+    # current, per `mapping_policy.continuity_rules.merge`. The registry above
+    # is already flushed and untouched by anything below.
+    superseded_to_current: dict[int, int] = {}
+    for supersession in concept_supersessions:
+        if supersession.review_status != "approved":
+            continue
+        if supersession.relationship not in ("exact", "synonym"):
+            raise CompilerError(
+                f"supersession {supersession.supersession_id!r} has "
+                f"relationship {supersession.relationship!r}; only an exact or "
+                f"synonym relationship may select a current concept"
+            )
+        superseded_id = supersession.superseded_sporely_taxon_id
+        superseded_anchor = registry.get_anchor(superseded_id)
+        if superseded_anchor is None:
+            raise CompilerError(
+                f"supersession {supersession.supersession_id!r} supersedes "
+                f"sporely_taxon_id={superseded_id}, which holds no registry "
+                f"anchor in this release"
+            )
+        current_allocation = registry.lookup(*supersession.current_source_usage)
+        if current_allocation is None:
+            raise CompilerError(
+                f"supersession {supersession.supersession_id!r} selects source "
+                f"usage {supersession.current_source_usage!r}, which has no "
+                f"registry allocation"
+            )
+        current_id = current_allocation.sporely_taxon_id
+        if current_id == superseded_id:
+            raise CompilerError(
+                f"supersession {supersession.supersession_id!r} selects the "
+                f"concept it supersedes (sporely_taxon_id={current_id})"
+            )
+        superseded_to_current[superseded_id] = current_id
+    # Refuse chains rather than silently collapsing them: A superseded by B
+    # while B is superseded by C is a two-step judgement no rule can make.
+    for superseded_id, current_id in sorted(superseded_to_current.items()):
+        if current_id in superseded_to_current:
+            raise CompilerError(
+                f"supersession chain: sporely_taxon_id={superseded_id} selects "
+                f"{current_id}, which is itself superseded by "
+                f"{superseded_to_current[current_id]}. Resolving a chain "
+                f"requires its own reviewed decision."
+            )
+
     # ----- Build canonical taxa + source_usages listings --------------------
     # ONE canonical taxon record per sporely_taxon_id, sourced from the
     # registry anchor's normalized record. Separate source_usages.jsonl
@@ -781,8 +902,25 @@ def compile_release(
         elif binding_source_usage in approved_manual_bridge_usages:
             alias_reason = "manual_approved_exact"
             bridge_evidence_class = EVIDENCE_CLASS_MANUAL_APPROVED_EXACT
+
+        # A reviewed supersession re-keys every binding of the superseded
+        # concept onto the current one. The binding becomes an alias there
+        # regardless of what it was before, because the concept it anchored is
+        # no longer the current concept. Its own name, authorship, status and
+        # identifier travel with it, which is what preserves the superseding
+        # source's accepted-name treatment instead of flattening it.
+        emitted_sporely_id = allocation.sporely_taxon_id
+        emitted_binding = allocation.kind
+        superseded_from: int | None = None
+        if allocation.sporely_taxon_id in superseded_to_current:
+            superseded_from = allocation.sporely_taxon_id
+            emitted_sporely_id = superseded_to_current[superseded_from]
+            emitted_binding = "alias"
+            bridge_evidence_class = EVIDENCE_CLASS_REVIEWED_SUPERSESSION
+            if not alias_reason:
+                alias_reason = "reviewed_supersession"
         source_usages.append({
-            "sporely_taxon_id": allocation.sporely_taxon_id,
+            "sporely_taxon_id": emitted_sporely_id,
             "source_code": allocation.source,
             "source_release": (
                 record.source_release if record else
@@ -803,9 +941,13 @@ def compile_release(
             "rank": record.rank if record else "",
             "taxonomic_status": record.taxonomic_status if record else "",
             "external_ids": record.external_ids if record else {},
-            "identity_binding": allocation.kind,
+            "identity_binding": emitted_binding,
             "alias_reason": alias_reason,
             "bridge_evidence_class": bridge_evidence_class,
+            # Provenance for a re-keyed binding: the concept it was allocated
+            # to before review selected a current one. The registry still
+            # records that allocation; this names it in the release.
+            "superseded_from_sporely_taxon_id": superseded_from,
             "accepted_source_usage": accepted_ref,
             "inclusion_reason": record.inclusion_reason if record else "",
             # A synonym usage is preserved as a searchable name alias.
@@ -815,6 +957,12 @@ def compile_release(
             ),
         })
         if allocation.kind != "anchor" or record is None:
+            continue
+        # A superseded concept publishes no canonical taxon row. This is what
+        # keeps the fix additive: the taxon both sources describe keeps
+        # exactly one concept, so the duplicate-block shape that the
+        # cloud_export_tax-2026.07.30-02 approach produced cannot recur.
+        if superseded_from is not None:
             continue
         if allocation.sporely_taxon_id in seen_sporely_ids:
             continue
@@ -1149,6 +1297,7 @@ def compile_release(
             synonym_alias_count=len(synonym_alias_applied),
             cross_source_proposals=cross_source_proposals,
             legacy_enrichment_counts=legacy_counts,
+            superseded_to_current=superseded_to_current,
         )
         diagnostics_out.write_text(
             json.dumps(diagnostics, ensure_ascii=False, indent=2, sort_keys=True) + "\n",
@@ -1187,6 +1336,12 @@ def compile_release(
             "publication": "none",
             "source_bindings": source_bindings,
             "manual_mappings_sha256": _sha256_file(manual_mappings_path),
+            # A release that re-keys identity must bind the reviewed ledger
+            # that authorised it, or the supersession cannot be attributed.
+            "concept_supersessions_sha256": (
+                _sha256_file(concept_supersessions_path)
+                if concept_supersessions_path is not None else ""
+            ),
             "mapping_policy_sha256": _sha256_file(mapping_policy_path),
             "registry_sha256": _sha256_file(registry_path),
             "outputs": {
@@ -2023,7 +2178,9 @@ def _build_diagnostics(
     synonym_alias_count: int,
     cross_source_proposals: list,
     legacy_enrichment_counts: dict | None = None,
+    superseded_to_current: dict[int, int] | None = None,
 ) -> dict:
+    superseded_to_current = superseded_to_current or {}
     per_source_usage_count: dict[str, int] = {}
     per_source_unresolved_parents: dict[str, int] = {}
     unresolved_parent_count = 0
@@ -2073,6 +2230,12 @@ def _build_diagnostics(
             "bridge_evidence_class_counts": _count_bridge_evidence_classes(
                 source_usages
             ),
+            "concept_supersessions_applied": len(superseded_to_current),
+            "concept_supersessions": [
+                {"superseded_sporely_taxon_id": superseded,
+                 "current_sporely_taxon_id": current}
+                for superseded, current in sorted(superseded_to_current.items())
+            ],
             "source_synonym_resolved": synonym_alias_count,
             "review_proposed": cross_source_proposal_counts.get(
                 "review_proposed", 0),
@@ -2111,6 +2274,12 @@ def build_parser() -> argparse.ArgumentParser:
                         dest="sources",
                         help="normalized-source directory (repeatable)")
     parser.add_argument("--manual-mappings", type=Path, required=True)
+    parser.add_argument("--concept-supersessions", type=Path, default=None,
+                        help="reviewed concept-supersession ledger "
+                             "(policies/concept_supersessions.yml). Selects a "
+                             "current concept for an already-allocated one "
+                             "under mapping_policy.continuity_rules.merge. "
+                             "Omit to compile with no supersessions.")
     parser.add_argument("--mapping-policy", type=Path, required=True)
     parser.add_argument("--registry", type=Path, required=True)
     parser.add_argument("--output", type=Path, required=True)
@@ -2155,6 +2324,7 @@ def main(argv: Iterable[str] | None = None) -> int:
             source_release_manifests=manifests,
             legacy_enrichment_path=args.legacy_enrichment_input,
             redlist_dir=args.redlist,
+            concept_supersessions_path=args.concept_supersessions,
         )
     except CompilerError as exc:
         print(f"error: {exc}", file=sys.stderr)

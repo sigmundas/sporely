@@ -64,6 +64,18 @@ _RULE_TO_EVIDENCE_CLASS = {
     "missing_authorship_fallback": EVIDENCE_CLASS_CROSS_SOURCE_MISSING_AUTHORSHIP,
 }
 
+#: Published cross-reference evidence per association, from
+#: ``scripts/cross_reference_evidence.py``. This is the second axis of the
+#: audit: the matching rule says how the compiler derived the association, and
+#: this says whether either source ever published a statement connecting the
+#: two concepts.
+XREF_EVIDENCE = Path(__file__).parent / "stage3-cross-reference-evidence.json"
+XREF_REVIEWABLE = frozenset({
+    "reciprocal_accepted_synonymy",
+    "one_directional_accepted_synonymy",
+    "shared_synonymy",
+})
+
 #: The plan's two mandatory regression cases.
 REGRESSIONS = {"52369": "divergent accepted names", "53482": "agreeing names"}
 
@@ -124,6 +136,58 @@ def _matching_rules() -> dict[tuple[int, str], str]:
     }
 
 
+DISPOSITION_EMITTED = "emitted_reviewed_relationship"
+DISPOSITION_PENDING = "reviewable_awaiting_human_decision"
+DISPOSITION_REJECTED = "rejected_no_published_cross_reference"
+
+
+def _cross_reference_evidence() -> dict[str, str]:
+    """``{nortaxa_taxon_id: published cross-reference evidence class}``."""
+    document = json.loads(XREF_EVIDENCE.read_text(encoding="utf-8"))
+    columns = document["columns"]
+    nortaxa = columns.index("nortaxa_taxon_id")
+    evidence = columns.index("evidence_class")
+    return {str(row[nortaxa]): str(row[evidence]) for row in document["rows"]}
+
+
+def _approved_reviewed_usages() -> set[str]:
+    """NorTaxa identifiers carrying an approved reviewed relationship.
+
+    Reads both reviewed ledgers. A record awaiting review contributes nothing,
+    which is why the emitted column is currently empty: the mechanism is in
+    place and the decisions have not been made.
+    """
+    approved: set[str] = set()
+    mappings = json.loads(
+        (_TAXONOMY / "policies" / "manual_mappings.yml").read_text(
+            encoding="utf-8"))
+    for entry in mappings.get("mappings", []):
+        if entry.get("review_status") != "approved":
+            continue
+        usage = entry.get("source_usage") or {}
+        if usage.get("source") == "nortaxa":
+            approved.add(str(usage.get("identifier")))
+    supersessions_path = _TAXONOMY / "policies" / "concept_supersessions.yml"
+    if supersessions_path.exists():
+        document = json.loads(supersessions_path.read_text(encoding="utf-8"))
+        for entry in document.get("supersessions", []):
+            if entry.get("review_status") != "approved":
+                continue
+            # A supersession is keyed by Sporely id, not by source usage; the
+            # identifiers it publishes are resolved by the compiler. Recorded
+            # here so the audit can report it rather than silently omit it.
+            approved.add(f"sporely:{entry.get('superseded_sporely_taxon_id')}")
+    return approved
+
+
+def _disposition(external_id: str, evidence: str, approved: set[str]) -> str:
+    if external_id in approved:
+        return DISPOSITION_EMITTED
+    if evidence in XREF_REVIEWABLE:
+        return DISPOSITION_PENDING
+    return DISPOSITION_REJECTED
+
+
 def audit(generated: Path) -> dict:
     policy = BridgeEmissionPolicy.load(POLICY_PATH)
     retained, vernacular_joined = _scoped_taxa(generated)
@@ -136,35 +200,35 @@ def audit(generated: Path) -> dict:
         "scoped_vernacular_joined_subset":
             lambda taxon_id: taxon_id in retained and taxon_id in vernacular_joined,
     }
+    xref = _cross_reference_evidence()
+    approved = _approved_reviewed_usages()
+
     report: dict[str, dict] = {}
     for label, predicate in populations.items():
-        emitted: collections.Counter[str] = collections.Counter()
-        rejected: collections.Counter[str] = collections.Counter()
-        unknown = 0
+        dispositions: collections.Counter[str] = collections.Counter()
+        matching_rules: collections.Counter[str] = collections.Counter()
+        xref_classes: collections.Counter[str] = collections.Counter()
         taxa: set[int] = set()
         for taxon_id, external_id in bindings:
             if not predicate(taxon_id):
                 continue
             taxa.add(taxon_id)
-            rule = rules.get((taxon_id, external_id))
-            if rule is None:
-                unknown += 1
-                continue
-            evidence_class = _RULE_TO_EVIDENCE_CLASS.get(rule, "")
-            if policy.is_eligible(evidence_class):
-                emitted[evidence_class] += 1
-            else:
-                rejected[
-                    f"{evidence_class}|{policy.rejection_reason(evidence_class)}"
-                ] += 1
+            rule = rules.get((taxon_id, external_id), "not_graded_by_stage_1")
+            matching_rules[rule] += 1
+            evidence = xref.get(external_id, "not_graded_for_cross_reference")
+            xref_classes[evidence] += 1
+            dispositions[_disposition(external_id, evidence, approved)] += 1
         report[label] = {
-            "bindings": sum(emitted.values()) + sum(rejected.values()) + unknown,
+            "bindings": sum(dispositions.values()),
             "distinct_taxa": len(taxa),
-            "emitted_total": sum(emitted.values()),
-            "emitted_by_evidence_class": dict(sorted(emitted.items())),
-            "rejected_total": sum(rejected.values()),
-            "rejected_by_evidence_class_and_reason": dict(sorted(rejected.items())),
-            "not_graded_by_stage_1_audit": unknown,
+            "disposition": dict(sorted(dispositions.items())),
+            "emitted_total": dispositions[DISPOSITION_EMITTED],
+            "unemitted_total": (
+                sum(dispositions.values()) - dispositions[DISPOSITION_EMITTED]
+            ),
+            "by_compiler_matching_rule": dict(sorted(matching_rules.items())),
+            "by_published_cross_reference_evidence": dict(
+                sorted(xref_classes.items())),
         }
 
     by_external = {external_id: taxon_id for taxon_id, external_id in bindings}
@@ -172,7 +236,7 @@ def audit(generated: Path) -> dict:
     for external_id, description in REGRESSIONS.items():
         taxon_id = by_external.get(external_id)
         rule = rules.get((taxon_id, external_id)) if taxon_id else None
-        evidence_class = _RULE_TO_EVIDENCE_CLASS.get(rule or "", "")
+        evidence = xref.get(external_id, "not_graded_for_cross_reference")
         regressions[external_id] = {
             "case": description,
             "has_cross_source_bridge_binding": taxon_id is not None,
@@ -180,11 +244,10 @@ def audit(generated: Path) -> dict:
             "host_retained_in_active_release": (
                 taxon_id in retained if taxon_id is not None else False
             ),
-            "matching_rule": rule,
-            "evidence_class": evidence_class or None,
-            "emitted_by_standard": bool(
-                taxon_id is not None and policy.is_eligible(evidence_class)
-            ),
+            "compiler_matching_rule": rule,
+            "published_cross_reference_evidence": evidence,
+            "reviewable": evidence in XREF_REVIEWABLE,
+            "disposition": _disposition(external_id, evidence, approved),
         }
 
     active_namespaces = _active_namespaces(generated)
@@ -197,12 +260,17 @@ def audit(generated: Path) -> dict:
         "active_release_retained_concepts": len(retained),
         "active_release_vernacular_joined_taxa": len(vernacular_joined),
         "active_release_external_id_namespaces": active_namespaces,
+        "approved_reviewed_relationships": sorted(approved),
+        "cross_reference_evidence_source": str(XREF_EVIDENCE.name),
         "coverage": report,
         "regressions": regressions,
         "projected_active_release_external_id_rows": {
             "before": sum(active_namespaces.values()),
-            "added_by_bridge_emission": scoped["emitted_total"],
+            "added_by_emitted_reviewed_relationships": scoped["emitted_total"],
             "after": sum(active_namespaces.values()) + scoped["emitted_total"],
+            "note": "Only approved reviewed relationships add rows. The "
+                    "reviewable-pending count is what a completed review "
+                    "could add, not what this projection emits.",
         },
     }
 

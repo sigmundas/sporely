@@ -38,6 +38,11 @@ POLICY_KEY = "authoritative_bridge_emission"
 #: entry — the only class backed by a per-association human decision.
 EVIDENCE_CLASS_MANUAL_APPROVED_EXACT = "manual_approved_exact"
 
+#: Evidence class for a binding re-keyed by an approved concept supersession —
+#: the reviewed merge case, where a concept that was already allocated its own
+#: Sporely identity is superseded by a current concept.
+EVIDENCE_CLASS_REVIEWED_SUPERSESSION = "reviewed_supersession"
+
 #: Evidence class for a synonym usage bound to its accepted concept inside one
 #: source. Intra-source, so not a cross-source bridge.
 EVIDENCE_CLASS_INTRA_SOURCE_SYNONYM = "intra_source_synonym"

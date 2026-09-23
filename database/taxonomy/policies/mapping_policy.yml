@@ -36,6 +36,7 @@
     "emitted_rows_are_never_preferred": true,
     "emitted_rows_never_change_backbone_presentation": true,
     "fail_closed": "An evidence class absent from both lists below is ineligible and must be counted as 'unclassified_evidence_class'.",
+    "only_reviewed_relationships_are_eligible": "automatic_identity.requirements admits an automatic bridge only on continuous source identity or an authoritative explicit cross-reference. No cross-source classifier in this repository produces either: every automatic class is derived from a canonical-name/rank lookup, which continuity_rules classifies as canonical_name_only -> review required. Declaring such a rule reviewed in this file would not supply the relationship evidence it lacks. Eligibility is therefore per-association human review, and nothing else.",
     "eligible": [
       {
         "evidence_class": "manual_approved_exact",
@@ -44,17 +45,20 @@
         "review": "per_association"
       },
       {
-        "evidence_class": "cross_source_automatic_exact_strict",
-        "tier": "policy_reviewed_rule",
-        "basis": "the conservative exact rule of scripts/cross_source_mapping.py: exactly one backbone candidate at (canonical scientific name, rank), kingdom Fungi declared on both sides, taxonomic status accepted on both sides, BOTH authorship fields present and equal after NFC/whitespace normalization, and no competing homonym in the name/rank bucket",
-        "review": "the rule is reviewed here, not each association",
-        "why_this_is_not_canonical_name_equality": "automatic_identity.forbidden_evidence_alone forbids canonical_name_equality as evidence. This rule is not that: agreement on the authorship string pins the nomenclatural act, not merely the name string, and the homonym guard plus rank, kingdom and status agreement exclude the same-name-different-concept cases that name equality alone admits."
+        "evidence_class": "reviewed_supersession",
+        "tier": "reviewed_manual",
+        "basis": "a per-association human decision recorded in concept_supersessions.yml with review_status=approved, selecting a current concept for an already-allocated concept under continuity_rules.merge",
+        "review": "per_association"
       }
     ],
     "rejected": [
       {
+        "evidence_class": "cross_source_automatic_exact_strict",
+        "reason": "the conservative exact rule matches on canonical name and rank and then strengthens the match with authorship, status and kingdom agreement plus a homonym guard. That is a stronger name match, but it is still a name match: neither source published a cross-reference asserting the two concepts are the same. continuity_rules.canonical_name_only requires review for exactly this evidence, so the binding enriches names and must not be published as concept identity. Reviewable candidates are identified by scripts/cross_reference_evidence.py, which reports the sources' own synonymy assertions; a human decision on that evidence is what promotes an association, one at a time."
+      },
+      {
         "evidence_class": "cross_source_automatic_exact_missing_authorship",
-        "reason": "admitted by the missing-authorship fallback, which fires precisely when authorship is absent on one or both sides. Without authorship the nomenclatural act is unpinned and the homonym guard is unverified, so the binding is name-level enrichment rather than authoritative concept identity."
+        "reason": "admitted by the missing-authorship fallback, which fires precisely when authorship is absent on one or both sides. Weaker still than the strict rule, and rejected for the same reason plus an unverified homonym guard."
       },
       {
         "evidence_class": "intra_source_synonym",
