@@ -1217,29 +1217,43 @@ def test_shipped_policies_validate() -> None:
 # ------------------------------------------- supersession + legacy enrichment ---
 
 
-def test_legacy_enrichment_follows_the_supersession(tmp_path: Path) -> None:
-    """Legacy rows must not attach to a concept the release does not emit.
+#: A legacy vernacular row, in the schema `export_legacy_enrichment.py` emits.
+_LEGACY_VERNACULAR = {
+    "kind": "vernacular", "nortaxa_taxon_id": "52369",
+    "provider": "legacy_sporely", "language": "sv",
+    "vernacular_name": "slank ringhätta",
+}
 
-    The registry is deliberately not rewritten by a supersession, so a NorTaxa
-    identifier still resolves to the concept it was allocated. Phase 2f
-    suppresses that concept's canonical row, so a legacy vernacular resolved
-    straight off the allocation would land on a concept with no taxon row —
-    an orphan pointing at nothing.
+#: A legacy external identifier. `kind` must be exactly
+#: ``external_identifier`` and ``source_system`` must be non-empty, or
+#: `compile_release` skips the row — in which case any assertion about the
+#: output file holds vacuously over an empty file.
+_LEGACY_EXTERNAL_ID = {
+    "kind": "external_identifier", "nortaxa_taxon_id": "52369",
+    "provider": "artportalen", "source_system": "artportalen",
+    "external_id": "12345", "external_id_kind": "integer",
+}
+
+
+def _compile_with_legacy_under_supersession(
+    tmp_path: Path, legacy_rows: list[dict],
+) -> tuple[Path, int, int]:
+    """Compile a release where 52369's concept is superseded.
+
+    Returns ``(release_dir, superseded_id, current_id)``. The two legacy kinds
+    are exercised by separate tests: they are separate code paths that each
+    resolve their own ``sporely_taxon_id``, so a combined test would stop at
+    whichever assertion came first and leave the other branch unproven.
     """
     first = _compile(tmp_path, release_id="tax-2026.09.23-01")
     own_id = _usages(first)[("nortaxa", "52369")]["sporely_taxon_id"]
     backbone_id = _usages(first)[("col_xr", "5ZT3G")]["sporely_taxon_id"]
 
     legacy = tmp_path / "legacy.jsonl"
-    legacy.write_text("\n".join([
-        json.dumps({"kind": "vernacular", "nortaxa_taxon_id": "52369",
-                    "provider": "legacy_sporely", "language": "sv",
-                    "vernacular_name": "slank ringhätta"}),
-        json.dumps({"kind": "external_id", "nortaxa_taxon_id": "52369",
-                    "provider": "artportalen", "external_id": "12345",
-                    "external_id_kind": "integer"}),
-    ]) + "\n", encoding="utf-8")
-
+    legacy.write_text(
+        "\n".join(json.dumps(row) for row in legacy_rows) + "\n",
+        encoding="utf-8",
+    )
     release = tmp_path / "release2"
     compile_release(
         normalized_source_dirs=[tmp_path / "sources" / "col_xr",
@@ -1261,29 +1275,59 @@ def test_legacy_enrichment_follows_the_supersession(tmp_path: Path) -> None:
                 "review_status": "approved",
             }]),
     )
+    return release, own_id, backbone_id
 
-    emitted_taxa = {
-        json.loads(line)["sporely_taxon_id"]
-        for line in (release / "taxa.jsonl").read_text(
-            encoding="utf-8").splitlines() if line.strip()
-    }
-    assert own_id not in emitted_taxa
 
-    vern = [
-        json.loads(line)
-        for line in (release / "vernacular.jsonl").read_text(
-            encoding="utf-8").splitlines() if line.strip()
-    ]
-    legacy_rows = [v for v in vern if v["vernacular_name"] == "slank ringhätta"]
-    assert len(legacy_rows) == 1
-    assert legacy_rows[0]["sporely_taxon_id"] == backbone_id
+def _release_rows(release: Path, name: str) -> list[dict]:
+    path = release / name
+    assert path.exists(), f"{name} must exist for the assertion to mean anything"
+    return [json.loads(line) for line
+            in path.read_text(encoding="utf-8").splitlines() if line.strip()]
 
-    # And nothing at all was written against the suppressed concept.
+
+def test_legacy_vernacular_follows_the_supersession(tmp_path: Path) -> None:
+    """A legacy vernacular must not land on a concept the release suppresses.
+
+    The registry is deliberately not rewritten by a supersession, so a NorTaxa
+    identifier still resolves to the concept it was allocated. Phase 2f
+    suppresses that concept's canonical row, so resolving straight off the
+    allocation would attach the name to a concept with no taxon row.
+    """
+    release, own_id, backbone_id = _compile_with_legacy_under_supersession(
+        tmp_path, [_LEGACY_VERNACULAR])
+
+    # No input row may have been skipped, or the rest holds vacuously.
+    assert _release_rows(release, "legacy_enrichment_skips.jsonl") == []
+    assert own_id not in {
+        r["sporely_taxon_id"] for r in _release_rows(release, "taxa.jsonl")}
+
+    vern = _release_rows(release, "vernacular.jsonl")
+    legacy_vern = [v for v in vern if v["vernacular_name"] == "slank ringhätta"]
+    assert len(legacy_vern) == 1
+    assert legacy_vern[0]["sporely_taxon_id"] == backbone_id
     assert not [v for v in vern if v["sporely_taxon_id"] == own_id]
-    for name in ("vernacular.jsonl", "legacy_external_ids.jsonl"):
-        path = release / name
-        if not path.exists():
-            continue
-        for line in path.read_text(encoding="utf-8").splitlines():
-            if line.strip():
-                assert json.loads(line)["sporely_taxon_id"] != own_id
+
+
+def test_legacy_external_identifier_follows_the_supersession(
+    tmp_path: Path,
+) -> None:
+    """The external-identifier branch, proven on its own.
+
+    This is a separate code path from the vernacular one, and the first
+    version of this test asserted over a file that was never written because
+    the fixture used the wrong ``kind`` and omitted ``source_system``.
+    """
+    release, own_id, backbone_id = _compile_with_legacy_under_supersession(
+        tmp_path, [_LEGACY_EXTERNAL_ID])
+
+    assert _release_rows(release, "legacy_enrichment_skips.jsonl") == []
+    assert own_id not in {
+        r["sporely_taxon_id"] for r in _release_rows(release, "taxa.jsonl")}
+
+    external = _release_rows(release, "legacy_external_ids.jsonl")
+    artportalen = [e for e in external if e["external_id"] == "12345"]
+    assert len(artportalen) == 1
+    assert artportalen[0]["sporely_taxon_id"] == backbone_id
+    assert artportalen[0]["source_system"] == "artportalen"
+    assert artportalen[0]["resolved_via_nortaxa_taxon_id"] == "52369"
+    assert not [e for e in external if e["sporely_taxon_id"] == own_id]
