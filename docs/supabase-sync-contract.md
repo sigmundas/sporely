@@ -132,6 +132,104 @@ Plain English comes first; technical terms are in parentheses.
     intent and positive CAS tokens; a confirmed parent-observation delete is an
     authoritative terminal acknowledgement for its child-use tombstones.
 
+28. **A Sporely taxon identity may be asserted only with recorded proof of its
+    producer.** `set_observation_selected_taxon_v2` accepts a Sporely-owned
+    `sporely_taxon_id`; a positive integer is not evidence that a value IS one.
+    Every client must carry the identity as
+    `(state, proof, source_system, namespace, external_id, raw_external_id)`
+    alongside the integer, and may emit the integer only when the proof is
+    either "the value came from a compiled taxonomy-v2 artifact whose identity
+    contract states its `taxon_id` is the Sporely ID" or "a namespaced external
+    identifier resolved through an authoritative mapping to exactly one
+    concept". A pre-provenance legacy integer is *unverified*, not proven, and
+    is withheld until re-verified against the taxonomy artifact.
+
+    The deployed RPC does validate active-release membership, so an arbitrary
+    external integer is rejected server-side — but it cannot distinguish an
+    external integer that numerically COLLIDES with a real Sporely ID in the
+    active release, and no server-side check ever could. That residual case is
+    why the proof standard is client-side.
+
+    Refusing to emit is a skip, never a clear: an unproven or unresolved local
+    identity is not evidence that the cloud's identity is wrong. Both the source
+    evidence and any existing cloud selection survive. Equally, a failure to
+    resolve an external identifier must not destroy the source prediction — an
+    unresolved external identity is a STATE (`external_unresolved`) that is
+    persisted with the observation, is still displayed by its name, and must
+    never render as unidentified. "Unidentified" is reserved for an observation
+    that carries no name at all. Identity-provenance columns are never pushed as
+    ordinary observation fields; the guarded RPC stays the only identity channel.
+
+    Namespace-lost integers are legacy/audit evidence only. Stripping a
+    provider prefix (`NBIC:53482`) does not convert a scientific-name id into a
+    taxon id: the raw provider value must be retained, and any namespace hop
+    must be a bridge declared in `database/taxonomy/docs/identity-contract.md`.
+
+    **The persistence API accepts one complete typed identity transition.**
+    The identity spans several columns but is a single value, and treating
+    those columns as independently writable produces rows that contradict
+    themselves: replacing a proven integer while supplying only one provenance
+    field leaves the old proof attached to the new integer, and switching the
+    state without naming the integer strands the old integer beside the new
+    state. So a write that touches ANY identity field rewrites ALL of them —
+    the supplied fields are the complete new identity and everything else is
+    cleared. Nothing is inherited from the previous row, because inheritance is
+    what makes a partial write look proven. The result is normalized through
+    the same typed value readers use, so a write cannot produce a state a
+    reader would reject.
+
+    **An unqualified integer is refused at the write boundary, not merely
+    gated downstream.** Storing a bare integer and relying on every consumer to
+    check provenance requires every consumer to be correct forever; three
+    separate consumers (cloud sync, normalized reference attachment, the Red
+    List lookup) each had to be fixed for exactly this reason. A bare integer
+    with no accompanying provenance is therefore dropped. Rows written before
+    this rule keep their integers, are read as legacy-unverified, and are
+    re-verified against the taxonomy artifact by the backfill — which is the
+    only supported way an existing integer becomes proven.
+
+    **The guarded RPC owns the id/state transition.** `taxon_identity_state`
+    and `selected_sporely_taxon_id` must move in ONE statement, because the
+    database constraint forbidding a bound id under `external_unresolved` is
+    evaluated per statement. Splitting the write between client and RPC
+    deadlocks every later binding attempt on an already-unresolved row —
+    resolution, native-picker selection, and desktop-originated RPC writes
+    alike. `set_observation_selected_taxon_v2` therefore sets the state
+    alongside the id and leaves the preserved
+    `(source_system, namespace, external_id, raw_external_id)` evidence intact,
+    so a resolution stays auditable.
+
+    **Selecting a new candidate is a change of identification.** When a client
+    preserves an external identifier that does not resolve, it must also clear
+    any previously bound concept — otherwise the row's name says one thing and
+    its identity says another. Clearing first also keeps the constraint
+    satisfied at every step. Manual free text remains the explicit way to clear
+    an identification outright.
+
+    **The identification is ONE write, and `set_observation_identification_v2`
+    is its authoritative writer.** The bound concept, the identity provenance
+    and the accepted `genus`/`species`/`common_name` are a single coupled
+    change. Writing them in separate statements leaves a boundary at every join
+    where the row can describe one taxon by name and another by identity, and
+    no client ordering closes it: identity-first leaves a bound concept beside
+    the old name when the name write fails, name-first leaves the new name
+    beside the old concept when the guarded RPC rejects, and compensation is
+    itself a write that can fail — narrowing the split rather than removing it,
+    and potentially leaving it unreported. The RPC therefore writes all of them
+    in one statement. `ai_selected_*` is provider history, is explicitly not an
+    accepted identification, and stays outside the coupled set.
+
+    **Deployment prerequisite, and fail-closed until it is met.** That function
+    ships in its own migration, separate from the `taxon_identity_*` columns.
+    A backend can have the columns without the function, and PostgREST's schema
+    cache can lag a deployed function, so a client must infer NOTHING about
+    column availability from the function's absence. When the function is
+    unavailable a client must refuse the coupled change outright and leave the
+    observation unmodified — it must not fall back to the narrower
+    selected-taxon RPC, must not write the accepted name independently, and
+    must not persist a reduced identity-only shape. Refusing is the only
+    outcome that cannot corrupt the row.
+
 ## Normalized reference graph
 
 The owner graph is ordered work → taxon treatment → measurement set →

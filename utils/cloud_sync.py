@@ -81,6 +81,10 @@ from utils.original_sync_policy import (
 )
 from utils.publish_targets import normalize_publish_target
 from utils.taxon_text import resolve_observation_taxon_fields
+from utils.taxon_identity import (
+    IDENTITY_COLUMNS as _TAXON_IDENTITY_COLUMNS,
+    TaxonIdentity,
+)
 from utils.r2_storage import (
     CloudflareR2Client,
     CloudflareMediaWorkerClient,
@@ -243,8 +247,15 @@ _OBS_PUSH_COLS = [
 # Stage 3B.2/3B.3: local-only taxonomy-v2 fields — not pushed to Supabase
 # until a separate cloud-schema migration is authored. Regression test
 # `tests/test_stage_3b_3_cloud_isolation.py` asserts these stay out.
+#
+# Taxonomy-v2 closeout Stage 2 adds the identity-provenance columns to the
+# same set. The cloud learns a desktop identity only through the guarded
+# ``set_observation_selected_taxon_v2`` RPC, and that RPC accepts a proven
+# Sporely ID only — so pushing provenance columns as ordinary observation
+# fields would create a second, ungated identity channel.
 _STAGE_3B_LOCAL_ONLY_OBS_FIELDS = frozenset(
     {"sporely_taxon_id", "scientific_name_snapshot", "taxon_rank_snapshot"}
+    | set(_TAXON_IDENTITY_COLUMNS)
 )
 assert not (set(_OBS_PUSH_COLS) & _STAGE_3B_LOCAL_ONLY_OBS_FIELDS), (
     "Stage 3B taxonomy fields must never appear in _OBS_PUSH_COLS. "
@@ -16120,10 +16131,39 @@ class SporelyCloudClient:
         A missing local value is deliberately not inferred from genus/species
         text and does not erase cloud identity.  The RPC is skipped when the
         remote row already carries the same exact selection.
+
+        Taxonomy-v2 closeout Stage 2: the proof standard is provenance, not
+        sign. Previously any positive integer in ``sporely_taxon_id`` was
+        asserted to the cloud as an owner-selected Sporely identity. The
+        deployed RPC does validate active-release membership, so an arbitrary
+        external integer is rejected server-side — but it cannot distinguish
+        an external integer that *numerically collides* with a real Sporely ID
+        in the active release, and no server-side check ever could. That
+        residual case is closed here, by refusing to emit anything whose
+        producer is not recorded as proof.
+
+        Refusing is deliberately a skip, not a clear: an unproven or
+        unresolved local identity is not evidence that the cloud's identity is
+        wrong, so the source evidence and any existing cloud selection both
+        survive.
         """
-        taxon_id = _normalize_observation_int_value(obs.get('sporely_taxon_id'))
-        if taxon_id is None or taxon_id <= 0:
+        identity = TaxonIdentity.from_row(obs)
+        if not identity.is_proven_sporely:
+            if identity.sporely_taxon_id is not None or identity.has_external_evidence:
+                logger.info(
+                    "cloud sync: skipping taxonomy identity for observation %s — "
+                    "state=%s proof=%s source=%s namespace=%s external_id=%s; "
+                    "only a proven Sporely identity may reach "
+                    "set_observation_selected_taxon_v2",
+                    obs.get('id'),
+                    identity.state,
+                    identity.identity_proof,
+                    identity.source_system,
+                    identity.namespace,
+                    identity.external_id,
+                )
             return
+        taxon_id = identity.sporely_taxon_id
         remote_taxon_id = _normalize_observation_int_value(
             (remote_obs or {}).get('selected_sporely_taxon_id')
         )

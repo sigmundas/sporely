@@ -43,6 +43,7 @@ if str(_ROOT) not in sys.path:
 
 import ui.observations_tab as observations_tab
 from ui.image_import_dialog import ImageImportResult
+from utils.taxon_identity import STATE_NONE, TaxonIdentity, proven_sporely_taxon_id
 
 
 @pytest.fixture(scope="module")
@@ -349,23 +350,31 @@ def _apply_artsorakel_source_snapshot(
         dialog.scientific_name_input.setText("Amanita muscaria")
 
 
-def test_manual_cantharellus_cibarius_binds_col_and_surfaces_lc_via_overlay(
+def test_manual_cantharellus_cibarius_stays_unbound_and_shows_no_badge(
     monkeypatch, qapp, tmp_path: Path,
 ) -> None:
-    """Bug 2 reproduction: with a location resolved to Norway, apply an
-    Artsorakel-like source snapshot, then clear the taxonomy text and
-    manually type ``Cantharellus`` / ``cibarius``. On editingFinished:
+    """EXPECTATION FLIP — taxonomy-v2 closeout Stage 2 Part A.
 
-    * Identity binds to the COL canonical (``sporely_taxon_id = 168873``).
-      The manual resolver's source-system preference selects COL because
-      it is the source-system authority for species concepts; Red List
-      presence is NOT allowed to influence identity.
+    With a location resolved to Norway, apply an Artsorakel-like source
+    snapshot, then clear the taxonomy text and manually type
+    ``Cantharellus`` / ``cibarius``. On editingFinished nothing binds.
 
-    * The Red List badge still shows ``LC`` — the dialog now calls the
-      overlay-aware entrypoint ``get_redlist_lookup_with_overlay``,
-      which sees the primary bound COL identity has no assessment and
-      surfaces the assessment from the unique NorTaxa counterpart
-      (``taxon_id = 626243``) with the same exact canonical name.
+    This test previously asserted that identity binds to the COL canonical
+    (``sporely_taxon_id = 168873``) via the manual resolver's source-system
+    preference, and that the Red List badge still showed ``LC`` through the
+    NorTaxa overlay. Stage 2 removed that preference: the seeded DB has two
+    species-rank rows sharing the exact canonical name ``Cantharellus
+    cibarius`` — one ``col_xr``, one ``nortaxa`` — and
+    ``identity-contract.md`` states that scientific-name equality is not
+    sufficient identity evidence and that distinct concepts must not be merged
+    because their strings resemble each other. Two such rows are two concepts,
+    and choosing between them by source preference is a policy, not evidence.
+
+    The user-visible consequence is deliberate and recorded: for a genuinely
+    ambiguous name the badge no longer refreshes from a manual edit. The
+    observer must pick explicitly in the scientific-name completer, which is
+    the only action allowed to bind identity. An unbound badge is preferable
+    to a silently mis-bound concept.
 
     The taxonomy DB seeded here mirrors the exact real-DB duplication:
     two variety rows share ``(Cantharellus, cibarius)``, two species
@@ -403,20 +412,20 @@ def test_manual_cantharellus_cibarius_binds_col_and_surfaces_lc_via_overlay(
         dialog.species_input.editingFinished.emit()
         qapp.processEvents()
 
-        # Identity bound to the COL canonical, NOT the NorTaxa row that
-        # happens to carry the Red List assessment.
-        snap = dialog._taxon_controller.committed_snapshot()
-        assert snap is not None
-        assert snap["sporely_taxon_id"] == 168873
-        assert snap["scientific_name"] == "Cantharellus cibarius"
+        # Nothing binds: the name is ambiguous between a COL and a NorTaxa
+        # concept, so the manual resolver returns no resolution at all.
+        assert dialog._taxon_controller.committed_snapshot() is None
 
-        # Deferred badge apply must have run. It is a 0-ms QTimer;
-        # ``processEvents`` on the app drains it. The badge shows LC —
-        # surfaced by the NorTaxa Red List overlay while identity
-        # remains on the COL row.
+        # The user's typed text is untouched — invalidating identity must not
+        # delete observation content.
+        assert dialog.genus_input.text() == "Cantharellus"
+        assert dialog.species_input.text() == "cibarius"
+
+        # No identity means no Red List badge. Drain the deferred 0-ms QTimer
+        # apply to prove it does not arrive late either.
         qapp.processEvents()
         qapp.processEvents()
-        assert dialog._red_list_category == "LC"
+        assert not dialog._red_list_category
     finally:
         dialog._cleanup_dialog_threads()
         dialog.deleteLater()
@@ -464,6 +473,275 @@ def test_manual_editing_finished_preserves_prior_picker_snapshot(
         # Prior explicit choice preserved — the manual resolver's
         # snapshot-present guard skipped the overwrite.
         assert snap["sporely_taxon_id"] == 626243
+    finally:
+        dialog._cleanup_dialog_threads()
+        dialog.deleteLater()
+
+
+# ── Taxonomy-v2 closeout Stage 2: editingFinished must not bind identity ────
+#
+# These exercise the REAL signal wiring on a real dialog
+# (``genus_input`` / ``species_input`` editingFinished →
+# ``_on_taxon_manual_editing_finished``), not a mirror of the handler.
+
+
+def _seed_unique_taxonomy_db(db_path: Path) -> None:
+    """Same schema as ``_seed_manual_taxonomy_db`` but with ONE unambiguous
+    species concept, so the manual resolver genuinely resolves."""
+    _seed_manual_taxonomy_db(db_path)
+    with sqlite3.connect(str(db_path)) as conn:
+        # Remove the duplicate/variety noise and keep a single assessed
+        # concept under a distinct name.
+        conn.execute("DELETE FROM taxon_min")
+        conn.execute("DELETE FROM scientific_name_min")
+        conn.execute("DELETE FROM taxon_redlist_min")
+        conn.execute(
+            "INSERT INTO taxon_min VALUES (83668, 'Conocybe', 'rugosa', "
+            "'Bolbitiaceae', 'Conocybe rugosa', 'species', 'col_xr', 'accepted')"
+        )
+        conn.execute(
+            "INSERT INTO scientific_name_min "
+            "(taxon_id, language_code, scientific_name, is_preferred_name, source) "
+            "VALUES (83668, 'sci', 'Conocybe rugosa', 1, 'col_xr')"
+        )
+        conn.execute(
+            "INSERT INTO taxon_redlist_min VALUES (83668, 'artsdatabanken', "
+            "'2021', 'Norge', '83668-N', 'VU', 'VU', 0, NULL, NULL, NULL, "
+            "'Conocybe rugosa', NULL, 'species', 'artsdatabanken', "
+            "'artsnavnebase', '83668-N')"
+        )
+        conn.commit()
+
+
+def test_editing_finished_refreshes_badge_without_binding_identity(
+    monkeypatch, qapp, tmp_path: Path,
+) -> None:
+    """Typed text may refresh the Red List badge; it may NOT create identity.
+
+    The handler used to call ``commit_manual_resolution``, which asserted a
+    ``sporely_taxon_id``. Stage 2 forbids inferring identity from
+    genus/species equality alone, so the resolution now goes through the
+    display-only channel: the badge appears, and nothing identity-bearing is
+    committed or saved.
+    """
+    tax_db = tmp_path / "taxonomy_v2.sqlite3"
+    _seed_unique_taxonomy_db(tax_db)
+    dialog = _build_dialog(
+        monkeypatch, qapp, tmp_path=tmp_path, taxonomy_db_path=tax_db,
+    )
+    try:
+        dialog._location_country_code = "no"
+        dialog.genus_input.setText("Conocybe")
+        dialog.species_input.setText("rugosa")
+        qapp.processEvents()
+
+        dialog.species_input.editingFinished.emit()
+        qapp.processEvents()
+        qapp.processEvents()
+
+        # The badge refreshed — the feature this hook exists for survives.
+        assert dialog._red_list_category == "VU"
+
+        # But NO identity was created.
+        controller = dialog._taxon_controller
+        assert controller.committed_snapshot() is None
+        assert controller.committed_identity().state == STATE_NONE
+        assert controller.committed_identity().is_proven_sporely is False
+        # The resolved id lives only on the display-only channel.
+        assert controller.display_only_name_match() == 83668
+
+        # And the save payload asserts no identity at all.
+        data = dialog.get_data()
+        assert data["sporely_taxon_id"] is None
+        assert data["taxon_identity_state"] == STATE_NONE
+        assert data["scientific_name_snapshot"] is None
+        assert proven_sporely_taxon_id(data) is None
+        # The observer's typed text is still saved as an identification.
+        assert data["genus"] == "Conocybe"
+        assert data["species"] == "rugosa"
+    finally:
+        dialog._cleanup_dialog_threads()
+        dialog.deleteLater()
+
+
+def test_editing_finished_does_not_rebind_after_an_edit_invalidates_identity(
+    monkeypatch, qapp, tmp_path: Path,
+) -> None:
+    """The rebinding path the sparrer identified, closed.
+
+    Sequence: commit a real selection, edit the species text (which
+    invalidates it), then tab away. Because the snapshot is now None, the old
+    handler would resolve the typed pair and bind identity again — "do not
+    rebind from name text after the user edits a committed selection".
+    """
+    tax_db = tmp_path / "taxonomy_v2.sqlite3"
+    _seed_unique_taxonomy_db(tax_db)
+    dialog = _build_dialog(
+        monkeypatch, qapp, tmp_path=tmp_path, taxonomy_db_path=tax_db,
+    )
+    try:
+        dialog._location_country_code = "no"
+        controller = dialog._taxon_controller
+        with controller._suspended():
+            dialog.genus_input.setText("Conocybe")
+            dialog.species_input.setText("rugosa")
+            dialog.scientific_name_input.setText("Conocybe rugosa")
+        # An explicit selection, as the picker would commit it.
+        # An explicit selection, as the picker commits it.
+        # `commit_manual_resolution` was removed by Stage 2 — it minted
+        # artifact proof from a NAME match — so a committed selection is now
+        # represented by its already-typed identity.
+        controller.load_committed_snapshot({
+            "genus": "Conocybe",
+            "species": "rugosa",
+            "scientific_name": "Conocybe rugosa",
+            "taxon_rank_snapshot": "species",
+            **TaxonIdentity.from_taxonomy_v2_artifact(83668).to_row(),
+        })
+        assert controller.committed_identity().is_proven_sporely is True
+
+        # The observer edits the species text, then edits it back.
+        dialog.species_input.setText("rugosax")
+        qapp.processEvents()
+        assert controller.committed_snapshot() is None, "edit must invalidate"
+        dialog.species_input.setText("rugosa")
+        qapp.processEvents()
+
+        # Tabbing away must NOT resurrect identity from the identical text.
+        dialog.species_input.editingFinished.emit()
+        qapp.processEvents()
+        qapp.processEvents()
+
+        assert controller.committed_snapshot() is None
+        assert controller.committed_identity().is_proven_sporely is False
+        data = dialog.get_data()
+        assert data["sporely_taxon_id"] is None
+        assert data["taxon_identity_state"] == STATE_NONE
+    finally:
+        dialog._cleanup_dialog_threads()
+        dialog.deleteLater()
+
+
+def test_editing_finished_never_shadows_a_committed_selection(
+    monkeypatch, qapp, tmp_path: Path,
+) -> None:
+    """A real selection wins; the display-only channel stays empty."""
+    tax_db = tmp_path / "taxonomy_v2.sqlite3"
+    _seed_unique_taxonomy_db(tax_db)
+    dialog = _build_dialog(
+        monkeypatch, qapp, tmp_path=tmp_path, taxonomy_db_path=tax_db,
+    )
+    try:
+        controller = dialog._taxon_controller
+        with controller._suspended():
+            dialog.genus_input.setText("Conocybe")
+            dialog.species_input.setText("rugosa")
+            dialog.scientific_name_input.setText("Conocybe rugosa")
+        # An explicit selection, as the picker commits it.
+        # `commit_manual_resolution` was removed by Stage 2 — it minted
+        # artifact proof from a NAME match — so a committed selection is now
+        # represented by its already-typed identity.
+        controller.load_committed_snapshot({
+            "genus": "Conocybe",
+            "species": "rugosa",
+            "scientific_name": "Conocybe rugosa",
+            "taxon_rank_snapshot": "species",
+            **TaxonIdentity.from_taxonomy_v2_artifact(83668).to_row(),
+        })
+
+        dialog.species_input.editingFinished.emit()
+        qapp.processEvents()
+
+        assert controller.display_only_name_match() is None
+        identity = controller.committed_identity()
+        assert identity.is_proven_sporely is True
+        assert identity.sporely_taxon_id == 83668
+    finally:
+        dialog._cleanup_dialog_threads()
+        dialog.deleteLater()
+
+
+@pytest.mark.parametrize(
+    "next_genus,next_species,label",
+    [
+        ("Cantharellus", "cibarius", "ambiguous"),
+        ("Zzzz", "zzzz", "unknown"),
+        ("Conocybe", "", "empty species"),
+        ("", "", "empty pair"),
+    ],
+)
+def test_display_only_match_does_not_survive_a_later_edit(
+    monkeypatch, qapp, tmp_path: Path, next_genus, next_species, label,
+) -> None:
+    """A display-only match is derived from the text, so an edit makes it stale.
+
+    Taxonomy-v2 closeout Stage 2 regression. The controller's
+    ``_on_structured_text_changed`` returns early when no snapshot is
+    committed — which is exactly the state a display-only match lives in — so
+    an earlier draft left the PREVIOUS taxon's resolved id available to the
+    deferred Red List resolve. ``_on_taxon_manual_editing_finished`` likewise
+    returned without clearing when the new text was empty, unknown or
+    ambiguous.
+
+    The badge must not carry over to a different name, and no identity is ever
+    created on any of these paths.
+    """
+    tax_db = tmp_path / "taxonomy_v2.sqlite3"
+    # Both the unique assessed concept AND the ambiguous Cantharellus pair.
+    _seed_manual_taxonomy_db(tax_db)
+    with sqlite3.connect(str(tax_db)) as conn:
+        conn.execute(
+            "INSERT INTO taxon_min VALUES (83668, 'Conocybe', 'rugosa', "
+            "'Bolbitiaceae', 'Conocybe rugosa', 'species', 'col_xr', 'accepted')"
+        )
+        conn.execute(
+            "INSERT INTO scientific_name_min "
+            "(taxon_id, language_code, scientific_name, is_preferred_name, source) "
+            "VALUES (83668, 'sci', 'Conocybe rugosa', 1, 'col_xr')"
+        )
+        conn.execute(
+            "INSERT INTO taxon_redlist_min VALUES (83668, 'artsdatabanken', "
+            "'2021', 'Norge', '83668-N', 'VU', 'VU', 0, NULL, NULL, NULL, "
+            "'Conocybe rugosa', NULL, 'species', 'artsdatabanken', "
+            "'artsnavnebase', '83668-N')"
+        )
+        conn.commit()
+
+    dialog = _build_dialog(
+        monkeypatch, qapp, tmp_path=tmp_path, taxonomy_db_path=tax_db,
+    )
+    try:
+        dialog._location_country_code = "no"
+        controller = dialog._taxon_controller
+
+        # 1. A unique name resolves for display and the badge appears.
+        dialog.genus_input.setText("Conocybe")
+        dialog.species_input.setText("rugosa")
+        qapp.processEvents()
+        dialog.species_input.editingFinished.emit()
+        qapp.processEvents()
+        qapp.processEvents()
+        assert controller.display_only_name_match() == 83668
+        assert dialog._red_list_category == "VU"
+
+        # 2. The observer edits to something that does not resolve.
+        dialog.genus_input.setText(next_genus)
+        dialog.species_input.setText(next_species)
+        qapp.processEvents()
+        # The text change alone must already have dropped the stale match.
+        assert controller.display_only_name_match() is None, f"{label}: stale after edit"
+
+        dialog.species_input.editingFinished.emit()
+        qapp.processEvents()
+        qapp.processEvents()
+
+        # 3. No carried-over match, no carried-over badge, no identity.
+        assert controller.display_only_name_match() is None, f"{label}: stale after resolve"
+        assert not dialog._red_list_category, f"{label}: badge carried over"
+        assert controller.committed_snapshot() is None
+        data = dialog.get_data()
+        assert data["sporely_taxon_id"] is None
+        assert data["taxon_identity_state"] == STATE_NONE
     finally:
         dialog._cleanup_dialog_threads()
         dialog.deleteLater()

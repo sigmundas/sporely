@@ -540,6 +540,29 @@ class AIGuessWorker(QThread):
         )
 
     @staticmethod
+    def _is_deprecated_artsorakel_candidate(candidate: dict | None) -> bool:
+        """Whether an Artsorakel candidate is a superseded record.
+
+        Checks the sentinel at BOTH nesting levels. The previous single-level
+        check (``item["taxon"]["vernacularName"]``) matches the shape this
+        repository's own fixture uses, but ``sporely-web``'s fixtures show
+        flattened ``taxa.items[]`` candidates that carry the vernacular bare
+        at the top level — and for those the nested lookup silently yields
+        nothing, so a deprecated record survives. Taxonomy-v2 closeout
+        Stage 2 hardens both clients against both shapes.
+        """
+        if not isinstance(candidate, dict):
+            return False
+        nested = candidate.get("taxon")
+        sources = [candidate, nested if isinstance(nested, dict) else {}]
+        for source in sources:
+            for key in ("vernacularName", "vernacular_name"):
+                value = str(source.get(key) or "").strip()
+                if value == AIGuessWorker._ARTSORAKEL_OUTDATED_SENTINEL:
+                    return True
+        return False
+
+    @staticmethod
     def _flatten_artsorakel_predictions(payload: dict | None) -> list[dict]:
         flattened: list[dict] = []
         raw_predictions = payload.get("predictions", []) if isinstance(payload, dict) else []
@@ -555,7 +578,7 @@ class AIGuessWorker(QThread):
                 for item in items:
                     if not isinstance(item, dict):
                         continue
-                    if str(item.get("taxon", {}).get("vernacularName", "")).strip() == AIGuessWorker._ARTSORAKEL_OUTDATED_SENTINEL:
+                    if AIGuessWorker._is_deprecated_artsorakel_candidate(item):
                         continue
                     scientific_id = str(
                         item.get("scientific_name_id")
@@ -573,7 +596,7 @@ class AIGuessWorker(QThread):
                 continue
 
             fallback = dict(prediction)
-            if str(fallback.get("taxon", {}).get("vernacularName", "")).strip() == AIGuessWorker._ARTSORAKEL_OUTDATED_SENTINEL:
+            if AIGuessWorker._is_deprecated_artsorakel_candidate(fallback):
                 continue
             scientific_name = str(
                 fallback.get("scientificName")

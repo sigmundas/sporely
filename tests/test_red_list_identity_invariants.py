@@ -145,17 +145,17 @@ class _Host:
             return
         resolution = resolver(genus, species)
         if resolution is None:
+            # Taxonomy-v2 closeout Stage 2: an unresolved pair must also drop
+            # any previous display-only match, or the old taxon's badge stays
+            # available to the deferred resolve.
+            controller.clear_display_only_name_match()
             return
-        controller.commit_manual_resolution(
-            sporely_taxon_id=resolution.sporely_taxon_id,
-            scientific_name=resolution.scientific_name,
-            taxon_rank_snapshot=resolution.taxon_rank_snapshot,
-            genus=resolution.genus,
-            species=resolution.species,
-            link_kind=resolution.link_kind,
-            canonical_scientific_name=resolution.canonical_scientific_name,
-            canonical_rank=resolution.canonical_rank,
-        )
+        # DISPLAY ONLY, mirroring production. This mirror used to call
+        # `commit_manual_resolution`, minting artifact proof from a
+        # genus/species NAME match — the transition Stage 2 forbids. That
+        # method no longer exists; typed text may refresh the Red List badge
+        # but may never bind identity.
+        controller.set_display_only_name_match(resolution.sporely_taxon_id)
 
 
 @pytest.fixture
@@ -332,12 +332,20 @@ def test_edit_with_no_red_list_is_a_noop(env):
 
 
 # ---------------------------------------------------------------- invariant 7
-def test_manual_genus_species_edit_unique_resolution_refreshes_badge(env):
-    """When the observer manually types a (genus, species) pair that the
-    taxonomy service pins to a single canonical concept, the controller
-    must commit the snapshot AND fire the on_snapshot_committed callback
-    so the Red List badge can refresh (via _schedule_final_redlist_resolution)
-    without a Save + Reopen cycle."""
+def test_manual_genus_species_edit_resolves_for_display_only(env):
+    """EXPECTATION FLIP — taxonomy-v2 closeout Stage 2.
+
+    This asserted that typing a (genus, species) pair which the taxonomy
+    service pins to a single canonical concept COMMITS a snapshot carrying
+    `sporely_taxon_id`. That is a genus/species name match becoming identity,
+    which the stage forbids: identity binding must stay explicit, and identity
+    must not be inferred from name equality.
+
+    The reason the hook exists — refreshing the Red List badge without a
+    Save + Reopen — is preserved through the display-only channel, which the
+    save path never reads. So the badge still resolves and nothing
+    identity-bearing is committed.
+    """
     controller, host, widgets, _sugs = env
     genus, species, _v, _sci = widgets
     # Preload widgets as the user would after typing both fields.
@@ -347,18 +355,12 @@ def test_manual_genus_species_edit_unique_resolution_refreshes_badge(env):
     # widget (its editingFinished handler is what triggers the manual
     # resolve). Emit it explicitly, matching Qt's real signal path.
     species.editingFinished.emit()
-    snap = controller.committed_snapshot()
-    assert snap is not None
-    assert snap["sporely_taxon_id"] == 624905
-    assert snap["scientific_name"] == "Cortinarius limonius"
-    assert snap["taxon_rank_snapshot"] == "species"
-    assert snap["link_kind"] == "canonical"
-    # The badge-refresh scheduler must have been invoked with the
-    # committed identity (that's how the badge repopulates without
-    # Save + Reopen).
-    assert host.badge_refresh_calls, "expected badge refresh to fire"
-    refreshed = host.badge_refresh_calls[-1]
-    assert refreshed["sporely_taxon_id"] == 624905
+
+    # NO identity was created.
+    assert controller.committed_snapshot() is None
+    assert controller.committed_identity().is_proven_sporely is False
+    # But the resolved id is available for display, so the badge can refresh.
+    assert controller.display_only_name_match() == 624905
 
 
 def test_manual_genus_species_edit_ambiguous_does_not_bind_badge(env):

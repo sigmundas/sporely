@@ -102,7 +102,15 @@ def _fake_v2_sqlite(path: Path) -> str:
         "INSERT INTO taxon_external_id_text_min "
         "(external_id_row_id, taxon_id, source_system, namespace, external_id, "
         "id_role, is_preferred) VALUES (?, ?, ?, ?, ?, ?, ?)",
-        [(1, 133345, "col_xr", "col_usage_id", "9Z2GC", "accepted", 1)],
+        [
+            (1, 133345, "col_xr", "col_usage_id", "9Z2GC", "accepted", 1),
+            # Taxonomy-v2 closeout Stage 2: the authoritative namespaced
+            # mapping the observation backfill now resolves against. The
+            # ``taxon_external_id_min`` rows above stay in place deliberately,
+            # so the backfill tests prove the namespace-lost integer table is
+            # no longer consulted.
+            (2, 133345, "nortaxa", "nortaxa_taxon_id", "54995", "accepted", 1),
+        ],
     )
     conn.executemany("INSERT INTO taxonomy_meta VALUES (?, ?)", [
         ("taxonomy_schema_version", "2"),
@@ -473,7 +481,16 @@ def _make_observations_db(path: Path, rows: list[dict]) -> None:
             artsdata_id INTEGER,
             ai_selected_taxon_id TEXT,
             ai_selected_scientific_name TEXT,
-            sporely_taxon_id INTEGER
+            sporely_taxon_id INTEGER,
+            -- Taxonomy-v2 closeout Stage 2 provenance columns, mirroring
+            -- database/schema.py.
+            taxon_identity_state TEXT,
+            taxon_identity_proof TEXT,
+            taxon_identity_source_system TEXT,
+            taxon_identity_namespace TEXT,
+            taxon_identity_external_id TEXT,
+            taxon_identity_raw_external_id TEXT,
+            taxon_identity_provenance TEXT
         );
         """
     )
@@ -504,15 +521,16 @@ def test_backfill_precedence_and_ambiguity(tmp_path: Path) -> None:
     c.commit(); c.close()
     obs = tmp_path / "obs.sqlite3"
     _make_observations_db(obs, [
-        # already-valid sporely_id → kept
+        # already-valid sporely_id → kept, promoted to artifact-proven
         {"sporely_taxon_id": 133345},
         # invalid sporely id → cleared to NULL
         {"sporely_taxon_id": 9999},
-        # NBIC-style ai_selected_taxon_id → resolved via artsdatabanken 54995
+        # NBIC-prefixed ai_selected_taxon_id → resolved through the
+        # authoritative (nortaxa, nortaxa_taxon_id, 54995) mapping
         {"ai_selected_taxon_id": "NBIC:54995"},
-        # bare artsdata_id 300190
+        # bare artsdata_id 300190 → reported, NEVER resolved (Stage 2)
         {"artsdata_id": 300190},
-        # unique scientific name via ai snapshot
+        # unique scientific name via ai snapshot → reported, never resolved
         {"ai_selected_scientific_name": "Candolleomyces candolleanus"},
         # ambiguous scientific name → left NULL
         {"genus": "Ambig", "species": "ambi"},
@@ -523,16 +541,95 @@ def test_backfill_precedence_and_ambiguity(tmp_path: Path) -> None:
     assert stats.already_populated_kept == 1
     assert stats.already_populated_rejected == 1
     assert stats.resolved_by_explicit_nbic == 1
-    assert stats.resolved_by_artsdata_id == 1
-    assert stats.resolved_by_unique_scientific_name == 1
+    # Stage 2 flips both of these from "resolved" to "reported only": an
+    # Artsobservasjoner sighting id and a scientific-name match are not
+    # identity evidence, so neither may write sporely_taxon_id.
+    assert stats.artsdata_id_not_resolved == 1
+    assert stats.unique_scientific_name_not_resolved == 1
     assert stats.ambiguous_scientific_name_left_null == 1
-    assert stats.unresolved_left_null == 1
-    # Preserve snapshots — spot-check.
+    # Four rows end with no identity: the artsdata_id row, the unique-name
+    # row, the ambiguous-name row and the unresolvable row. The step-3/4
+    # counters above report evidence shape; this one reports the outcome.
+    assert stats.unresolved_left_null == 4
     conn = sqlite3.connect(str(obs))
+    # The resolved row keeps its provider snapshot AND records how the
+    # identity was proven, including the verbatim NBIC value.
     row = conn.execute(
-        "SELECT sporely_taxon_id, ai_selected_taxon_id "
+        "SELECT sporely_taxon_id, ai_selected_taxon_id, taxon_identity_state, "
+        "       taxon_identity_proof, taxon_identity_source_system, "
+        "       taxon_identity_namespace, taxon_identity_external_id, "
+        "       taxon_identity_raw_external_id, "
+        "       taxon_identity_provenance "
         "FROM observations WHERE ai_selected_taxon_id='NBIC:54995'").fetchone()
-    assert row == (133345, "NBIC:54995")
+    assert row == (
+        133345, "NBIC:54995", "sporely_v2", "external_id_resolution",
+        "nortaxa", "nortaxa_taxon_id", "54995", "NBIC:54995",
+        # The release the resolution was performed against, taken from the
+        # candidate's `content_release_id`, so the proof names its artifact.
+        "sporely_taxonomy_v2_backfill:tax-2026.07.29-01",
+    )
+    # The artsdata_id and unique-name rows are left without identity.
+    assert conn.execute(
+        "SELECT sporely_taxon_id, taxon_identity_state FROM observations "
+        "WHERE artsdata_id = 300190").fetchone() == (None, None)
+    assert conn.execute(
+        "SELECT sporely_taxon_id, taxon_identity_state FROM observations "
+        "WHERE ai_selected_scientific_name = 'Candolleomyces candolleanus'"
+    ).fetchone() == (None, None)
+    conn.close()
+
+
+def test_backfill_never_resolves_a_namespace_lost_integer(tmp_path: Path) -> None:
+    """A bare integer carries no namespace, so it cannot resolve.
+
+    Taxonomy-v2 closeout Stage 2 regression. ``54995`` is simultaneously a
+    valid Sporely ``taxon_id`` in this fixture and the external identifier
+    mapped to Sporely ``133345`` — exactly the numeric collision the plan
+    requires the client to survive. Neither reading may be applied to a bare
+    integer: the old code accepted one as an NBIC id, and the deployed
+    server-side release-membership check cannot catch a collision like this.
+    """
+    from database.migrate_observations_sporely_id import backfill
+    tax = tmp_path / "tax.sqlite3"
+    _fake_v2_sqlite(tax)
+    obs = tmp_path / "obs.sqlite3"
+    _make_observations_db(obs, [
+        {"ai_selected_taxon_id": "54995"},
+        {"ai_selected_taxon_id": "ZZZZ:54995"},
+    ])
+    stats = backfill(observation_db_path=obs, taxonomy_db_path=tax)
+    assert stats.resolved_by_explicit_nbic == 0
+    assert stats.unresolved_left_null == 2
+    conn = sqlite3.connect(str(obs))
+    assert conn.execute(
+        "SELECT DISTINCT sporely_taxon_id, taxon_identity_state "
+        "FROM observations").fetchall() == [(None, None)]
+    conn.close()
+
+
+def test_backfill_leaves_ambiguous_external_identifier_null(tmp_path: Path) -> None:
+    """Stage 2: resolvers return ambiguity; they never collapse it."""
+    from database.migrate_observations_sporely_id import backfill
+    tax = tmp_path / "tax.sqlite3"
+    _fake_v2_sqlite(tax)
+    c = sqlite3.connect(str(tax))
+    # A second concept claiming the same namespaced identifier.
+    c.execute(
+        "INSERT INTO taxon_external_id_text_min "
+        "(external_id_row_id, taxon_id, source_system, namespace, external_id, "
+        "id_role, is_preferred) VALUES (?, ?, ?, ?, ?, ?, ?)",
+        (99, 54995, "nortaxa", "nortaxa_taxon_id", "54995", "synonym", 0),
+    )
+    c.commit(); c.close()
+    obs = tmp_path / "obs.sqlite3"
+    _make_observations_db(obs, [{"ai_selected_taxon_id": "NBIC:54995"}])
+    stats = backfill(observation_db_path=obs, taxonomy_db_path=tax)
+    assert stats.resolved_by_explicit_nbic == 0
+    assert stats.ambiguous_external_identifier_left_null == 1
+    conn = sqlite3.connect(str(obs))
+    assert conn.execute(
+        "SELECT sporely_taxon_id FROM observations").fetchone() == (None,)
+    conn.close()
 
 
 def test_backfill_is_idempotent(tmp_path: Path) -> None:
@@ -542,13 +639,16 @@ def test_backfill_is_idempotent(tmp_path: Path) -> None:
     obs = tmp_path / "obs.sqlite3"
     _make_observations_db(obs, [
         {"ai_selected_taxon_id": "NBIC:54995"},
+        # Stage 2: this row no longer resolves at all, so only one row is
+        # touched by the first pass.
         {"artsdata_id": 300190},
     ])
     stats_a = backfill(observation_db_path=obs, taxonomy_db_path=tax)
     stats_b = backfill(observation_db_path=obs, taxonomy_db_path=tax)
-    assert stats_a.rows_touched == 2
-    # Second run: both already have valid sporely ids → kept.
-    assert stats_b.already_populated_kept == 2
+    assert stats_a.rows_touched == 1
+    assert stats_b.already_populated_kept == 1
+    # Already-proven rows are skipped entirely, so a second pass writes
+    # nothing — including no provenance churn.
     assert stats_b.rows_touched == 0
 
 
@@ -570,3 +670,119 @@ def test_regression_corpus_v2_shape_is_valid() -> None:
     missing = [r for r in corpus["groups"]["missing"]
                if r.get("query") == "Candolleomyces candolleanus"]
     assert not missing
+
+
+def test_backfill_does_not_promote_a_colliding_legacy_integer(tmp_path: Path) -> None:
+    """Membership in ``taxon_min`` is existence, not origin.
+
+    Taxonomy-v2 closeout Stage 2 regression, backfill→sync. ``54995`` is a
+    real Sporely ``taxon_id`` in this fixture AND, separately, the NorTaxa
+    external identifier mapped to Sporely ``133345``. A pre-Stage-2 row whose
+    ``sporely_taxon_id`` holds ``54995`` because some legacy path copied an
+    external integer therefore LOOKS valid to a membership check.
+
+    An earlier draft of this module promoted exactly that to
+    ``taxonomy_v2_artifact`` proof, which handed the collision a proof token
+    and would have waved it through the cloud gate — the one residual risk the
+    deployed release-membership check in ``set_observation_selected_taxon_v2``
+    cannot catch either, since ``54995`` genuinely is in the active release.
+
+    The row must stay legacy-unverified: the integer is kept (it is real
+    persisted data) but no proof is written, so cloud sync keeps refusing it.
+    """
+    from database.migrate_observations_sporely_id import backfill
+    from utils.cloud_sync import SporelyCloudClient
+    from utils.taxon_identity import TaxonIdentity, proven_sporely_taxon_id
+
+    tax = tmp_path / "tax.sqlite3"
+    _fake_v2_sqlite(tax)
+    obs = tmp_path / "obs.sqlite3"
+    # No provider identifier to re-derive from — the ONLY sound promotion
+    # path is unavailable, which is the realistic legacy shape.
+    _make_observations_db(obs, [{"sporely_taxon_id": 54995}])
+
+    stats = backfill(observation_db_path=obs, taxonomy_db_path=tax)
+    assert stats.already_populated_kept == 1
+    assert stats.already_populated_rejected == 0
+    assert stats.legacy_kept_unverified == 1
+    assert stats.legacy_promoted_by_namespaced_resolution == 0
+    assert stats.rows_touched == 0
+
+    conn = sqlite3.connect(str(obs))
+    conn.row_factory = sqlite3.Row
+    row = dict(conn.execute("SELECT * FROM observations").fetchone())
+    conn.close()
+    # The integer survives — the backfill does not destroy persisted data.
+    assert row["sporely_taxon_id"] == 54995
+    # But nothing claims it is proven.
+    assert row["taxon_identity_state"] is None
+    assert row["taxon_identity_proof"] is None
+    identity = TaxonIdentity.from_row(row)
+    assert identity.is_legacy_unverified is True
+    assert identity.is_proven_sporely is False
+    assert proven_sporely_taxon_id(row) is None
+
+    # End-to-end: the cloud gate refuses to emit it.
+    client = object.__new__(SporelyCloudClient)
+    client.user_id = "00000000-0000-4000-8000-000000000001"
+    client._resolve_existing_observation_for_push = lambda _obs, remote_obs=None: "1184"
+    client._patch = lambda *_a, **_k: None
+    calls: list = []
+    client._rpc = lambda name, payload: calls.append((name, payload))
+    remote = {"id": 1184, "selected_sporely_taxon_id": None}
+    client.push_observation(
+        {"id": 1, "cloud_id": "1184", **row}, remote_obs=remote,
+    )
+    assert calls == []
+
+
+def test_backfill_promotes_only_when_the_provider_identifier_agrees(tmp_path: Path) -> None:
+    """The one sound promotion, and its disagreement case.
+
+    A pre-Stage-2 integer becomes proven only when the row's own namespaced
+    provider identifier independently resolves to the SAME value. When the
+    authoritative resolution disagrees with the stored integer, the stored
+    value is kept but stays unverified rather than being silently rewritten.
+    """
+    from database.migrate_observations_sporely_id import backfill
+    from utils.taxon_identity import TaxonIdentity
+
+    tax = tmp_path / "tax.sqlite3"
+    _fake_v2_sqlite(tax)
+    obs = tmp_path / "obs.sqlite3"
+    _make_observations_db(obs, [
+        # Agrees: NBIC:54995 → (nortaxa, nortaxa_taxon_id, 54995) → 133345.
+        {"sporely_taxon_id": 133345, "ai_selected_taxon_id": "NBIC:54995"},
+        # Disagrees: the stored integer is not what the identifier resolves to.
+        {"sporely_taxon_id": 54995, "ai_selected_taxon_id": "NBIC:54995"},
+    ])
+
+    stats = backfill(observation_db_path=obs, taxonomy_db_path=tax)
+    assert stats.already_populated_kept == 2
+    assert stats.legacy_promoted_by_namespaced_resolution == 1
+    assert stats.legacy_kept_unverified == 1
+
+    conn = sqlite3.connect(str(obs))
+    conn.row_factory = sqlite3.Row
+    rows = [dict(r) for r in conn.execute(
+        "SELECT * FROM observations ORDER BY id").fetchall()]
+    conn.close()
+
+    agreed, disagreed = rows
+    assert agreed["taxon_identity_state"] == "sporely_v2"
+    assert agreed["taxon_identity_proof"] == "external_id_resolution"
+    assert agreed["taxon_identity_namespace"] == "nortaxa_taxon_id"
+    assert agreed["taxon_identity_raw_external_id"] == "NBIC:54995"
+    assert TaxonIdentity.from_row(agreed).is_proven_sporely is True
+    # A promoted row must record WHICH taxonomy release re-verified it;
+    # "artifact-proven" with no release is an unfalsifiable claim.
+    assert agreed["taxon_identity_provenance"].startswith(
+        "sporely_taxonomy_v2_backfill"
+    )
+
+    # A cleared row keeps no provenance from the identity it lost.
+    assert disagreed["taxon_identity_provenance"] is None
+
+    assert disagreed["sporely_taxon_id"] == 54995
+    assert disagreed["taxon_identity_state"] is None
+    assert TaxonIdentity.from_row(disagreed).is_proven_sporely is False
