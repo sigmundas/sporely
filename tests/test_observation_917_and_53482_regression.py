@@ -39,10 +39,22 @@ if str(_ROOT) not in sys.path:
     sys.path.insert(0, str(_ROOT))
 
 from database.audit_observation_identity import (
+    ProductionMigrationGate,
     TaxonomyArtifact,
     apply_repairs,
     audit,
     read_desktop_rows,
+)
+
+#: The Part B gate, asserted by these tests so the repair can run at all.
+#: ``apply_repairs`` enforces it itself, so nothing here can write without it.
+_OPEN_GATE = ProductionMigrationGate(
+    dry_run_artifact_reviewed=True,
+    counts_reconcile=True,
+    candidate_release_validated=True,
+    rollback_procedure_documented=True,
+    integrity_checks_defined=True,
+    evidence=("stage4 regression",),
 )
 from utils.taxon_identity import (
     IDENTITY_COLUMNS,
@@ -275,7 +287,7 @@ def test_917_repair_binds_the_bridged_identity_and_restores_the_name(
     assert record.preserved_raw_external_id == "NBIC:53482"
 
     apply_repairs(
-        report, observation_db_path=db_path, release_id=artifact.release_id
+        report, observation_db_path=db_path, release_id=artifact.release_id, gate=_OPEN_GATE
     )
 
     row = _observation_row(db_path, obs_id)
@@ -302,7 +314,7 @@ def test_917_repair_changes_nothing_but_taxonomy(tmp_path, monkeypatch, artifact
 
     report = audit(read_desktop_rows(db_path), artifact, origin="desktop")
     apply_repairs(
-        report, observation_db_path=db_path, release_id=artifact.release_id
+        report, observation_db_path=db_path, release_id=artifact.release_id, gate=_OPEN_GATE
     )
 
     after_tables = _table_digests(db_path, exclude={"observations"})
@@ -336,7 +348,7 @@ def test_917_visibility_is_not_touched_by_an_identity_repair(
     db_path = _fresh_db(tmp_path, monkeypatch)
     obs_id = _build_917(db_path)
     report = audit(read_desktop_rows(db_path), artifact, origin="desktop")
-    apply_repairs(report, observation_db_path=db_path, release_id=None)
+    apply_repairs(report, observation_db_path=db_path, release_id=None, gate=_OPEN_GATE)
     row = _observation_row(db_path, obs_id)
     assert row["spore_data_visibility"] == "private"
     assert row["sharing_scope"] == "private"
@@ -346,7 +358,7 @@ def test_917_survives_save_and_reload(tmp_path, monkeypatch, artifact):
     db_path = _fresh_db(tmp_path, monkeypatch)
     obs_id = _build_917(db_path)
     report = audit(read_desktop_rows(db_path), artifact, origin="desktop")
-    apply_repairs(report, observation_db_path=db_path, release_id=None)
+    apply_repairs(report, observation_db_path=db_path, release_id=None, gate=_OPEN_GATE)
 
     from database.models import ObservationDB
 
@@ -366,7 +378,7 @@ def test_917_pushes_the_proven_identity_and_nothing_else(tmp_path, monkeypatch, 
     db_path = _fresh_db(tmp_path, monkeypatch)
     obs_id = _build_917(db_path)
     report = audit(read_desktop_rows(db_path), artifact, origin="desktop")
-    apply_repairs(report, observation_db_path=db_path, release_id=None)
+    apply_repairs(report, observation_db_path=db_path, release_id=None, gate=_OPEN_GATE)
     row = _observation_row(db_path, obs_id)
     row["cloud_id"] = "917"
 
@@ -408,7 +420,7 @@ def test_917_survives_the_pull_that_follows_the_push(tmp_path, monkeypatch, arti
     db_path = _fresh_db(tmp_path, monkeypatch)
     obs_id = _build_917(db_path)
     report = audit(read_desktop_rows(db_path), artifact, origin="desktop")
-    apply_repairs(report, observation_db_path=db_path, release_id=None)
+    apply_repairs(report, observation_db_path=db_path, release_id=None, gate=_OPEN_GATE)
 
     before_tables = _table_digests(db_path, exclude={"observations"})
     before_row = _observation_row(db_path, obs_id)
@@ -482,7 +494,7 @@ def test_a_later_correct_selection_does_not_rewrite_the_historical_snapshot(
     db_path = _fresh_db(tmp_path, monkeypatch)
     obs_id = _build_917(db_path)
     report = audit(read_desktop_rows(db_path), artifact, origin="desktop")
-    apply_repairs(report, observation_db_path=db_path, release_id=None)
+    apply_repairs(report, observation_db_path=db_path, release_id=None, gate=_OPEN_GATE)
     row = _observation_row(db_path, obs_id)
     row["cloud_id"] = "917"
 
@@ -541,7 +553,7 @@ def test_the_saved_observation_carries_the_real_binomial(
     db_path = _fresh_db(tmp_path, monkeypatch)
     obs_id = _build_917(db_path)
     report = audit(read_desktop_rows(db_path), artifact, origin="desktop")
-    apply_repairs(report, observation_db_path=db_path, release_id=None)
+    apply_repairs(report, observation_db_path=db_path, release_id=None, gate=_OPEN_GATE)
     row = _observation_row(db_path, obs_id)
     assert row["genus"] == "Entoloma"
     assert row["species"] == "conferendum"
@@ -670,7 +682,7 @@ def test_53482_round_trips_through_repair_push_and_pull(
     obs_id = _build_917(db_path)
 
     report = audit(read_desktop_rows(db_path), artifact, origin="desktop")
-    apply_repairs(report, observation_db_path=db_path, release_id=None)
+    apply_repairs(report, observation_db_path=db_path, release_id=None, gate=_OPEN_GATE)
 
     row = _observation_row(db_path, obs_id)
     row["cloud_id"] = "917"

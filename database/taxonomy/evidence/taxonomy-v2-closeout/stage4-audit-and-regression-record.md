@@ -17,6 +17,17 @@ The repair writes ten columns and no others: `genus`, `species`,
 `sporely_taxon_id` and the seven `taxon_identity_*` columns. No other table is
 reachable from it.
 
+## Corrections applied after the first sparring review
+
+Candidate `8021424` was sent back with three bounded safety defects. All three
+are fixed; each has a test that fails against the old behaviour.
+
+| Defect | Fix |
+|---|---|
+| The Part B gate was consulted only by tests — CLI `--apply` called `apply_repairs` directly, bypassing all five conditions | `gate` is now a required argument of `apply_repairs`, which calls `require_open_gate` itself before touching the database. The CLI exposes one flag per condition and defaults closed. `counts_reconcile` is additionally re-checked against the report rather than taken on assertion. |
+| The identity write's `WHERE` clause checked only the observation id, so a newer valid identity chosen between audit and apply could be silently overwritten | The update now matches the full pre-image the audit recorded, using `IS` so NULL compares as a value. A mismatch raises `StaleAuditArtifact` and aborts the whole transaction, because the artifact is also the rollback pre-image. Name restoration keeps its `IS NULL` guard and skips instead of aborting — filling a null destroys nothing — but the skip is now counted in `names_skipped_changed_since_audit` rather than silent. |
+| `_classify_name` required only `genus` and `species` null, while the stage defines the population as `genus`, `species` **and** `common_name` all null, so proposed writes exceeded the specified population | All three fields must now be null. A row that kept its common name is classified `partial_name_loss_reported` — reported, never repaired — so it is neither repaired out of scope nor hidden inside `name_intact`. The test that previously supplied a non-null `common_name` while permitting repair now asserts the row is reported and its binomial left null. |
+
 ## Verified against the real Stage 3 candidate
 
 `desktop-tax-2026.09.23-01.sqlite3`, release `tax-2026.09.23-01`, from the

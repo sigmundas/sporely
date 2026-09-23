@@ -32,9 +32,12 @@ from database.audit_observation_identity import (
     NAME_LOSS_CLASSES,
     ProductionMigrationGate,
     ProductionWriteRefused,
+    StaleAuditArtifact,
     TaxonomyArtifact,
     apply_repairs,
     audit,
+    build_parser,
+    gate_from_args,
     read_cloud_rows,
     read_desktop_rows,
     require_open_gate,
@@ -44,6 +47,19 @@ from utils.taxon_identity import (
     PROOF_TAXONOMY_V2_ARTIFACT,
     STATE_SPORELY,
     TaxonIdentity,
+)
+
+
+#: A gate whose five conditions an operator has asserted. Every repair test
+#: has to supply one, which is the point: ``apply_repairs`` enforces the gate
+#: itself, so there is no way to exercise a write without going through it.
+_OPEN_GATE = ProductionMigrationGate(
+    dry_run_artifact_reviewed=True,
+    counts_reconcile=True,
+    candidate_release_validated=True,
+    rollback_procedure_documented=True,
+    integrity_checks_defined=True,
+    evidence=("test",),
 )
 
 
@@ -221,6 +237,11 @@ _POPULATION = [
     },
     # 10 — NAME LOSS, unrepairable: the provider string is not a binomial.
     {"id": 10, "ai_selected_scientific_name": "Entoloma"},
+    # 13 — OUTSIDE the defined population: genus and species are null but a
+    #      common name survived, so this is not the null-genus/species/
+    #      common_name shape the stage specifies. Reported, never repaired.
+    {"id": 13, "common_name": "stjernesporet rødspore",
+     "ai_selected_scientific_name": "Entoloma conferendum"},
     # 11 — proven against a release this artifact is not. Not a repair.
     {
         "id": 11,
@@ -281,6 +302,30 @@ def test_every_required_class_is_produced_by_evidence(artifact, population_db):
     assert records[9].name_class == "name_loss_repairable_from_row"
     assert records[10].name_class == "name_loss_unrepairable_from_row"
     assert records[1].name_class == "name_intact"
+    assert records[13].name_class == "partial_name_loss_reported"
+
+
+def test_a_surviving_common_name_is_outside_the_repairable_population(
+    artifact, population_db
+):
+    """The stage defines the population as all THREE name fields null.
+
+    A row that kept its common name is not that shape. Repairing it would put
+    production writes outside what was specified and reviewed, so it is
+    reported and its binomial is left null.
+    """
+    record = _by_id(
+        audit(read_desktop_rows(population_db), artifact, origin="desktop")
+    )[13]
+    assert record.name_class == "partial_name_loss_reported"
+    assert record.proposed_action == "report_only"
+    assert record.restored_genus is None
+    assert record.restored_species is None
+    # And it is excluded from the population the acceptance gate counts.
+    census = audit(
+        read_desktop_rows(population_db), artifact, origin="desktop"
+    ).counts()
+    assert census["name_loss_population"] == 2
 
 
 def test_the_collision_is_refused_with_a_stated_reason(artifact, population_db):
@@ -375,7 +420,7 @@ def test_repair_binds_only_proven_rows_and_leaves_the_rest_alone(
     before = {row["id"]: row for row in _snapshot(population_db)}
     report = audit(read_desktop_rows(population_db), artifact, origin="desktop")
     stats = apply_repairs(
-        report, observation_db_path=population_db, release_id=artifact.release_id
+        report, observation_db_path=population_db, release_id=artifact.release_id, gate=_OPEN_GATE
     )
     after = {row["id"]: row for row in _snapshot(population_db)}
 
@@ -390,7 +435,7 @@ def test_repair_binds_only_proven_rows_and_leaves_the_rest_alone(
     assert after[9]["genus"] == "Entoloma"
     assert after[9]["species"] == "conferendum"
 
-    untouched = {1, 3, 4, 5, 6, 7, 10, 11, 12}
+    untouched = {1, 3, 4, 5, 6, 7, 10, 11, 12, 13}
     for obs_id in untouched:
         assert after[obs_id] == before[obs_id], obs_id
 
@@ -398,18 +443,19 @@ def test_repair_binds_only_proven_rows_and_leaves_the_rest_alone(
 def test_a_second_run_proposes_nothing_and_writes_nothing(artifact, population_db):
     report = audit(read_desktop_rows(population_db), artifact, origin="desktop")
     apply_repairs(
-        report, observation_db_path=population_db, release_id=artifact.release_id
+        report, observation_db_path=population_db, release_id=artifact.release_id, gate=_OPEN_GATE
     )
     settled = _snapshot(population_db)
 
     second = audit(read_desktop_rows(population_db), artifact, origin="desktop")
     assert second.repairable() == []
     stats = apply_repairs(
-        second, observation_db_path=population_db, release_id=artifact.release_id
+        second, observation_db_path=population_db, release_id=artifact.release_id, gate=_OPEN_GATE
     )
     assert stats.as_dict() == {
         "identities_bound": 0,
         "names_restored": 0,
+        "names_skipped_changed_since_audit": 0,
         "rows_written": 0,
     }
     assert _snapshot(population_db) == settled
@@ -436,9 +482,12 @@ def test_name_restore_can_only_fill_a_null_never_replace(artifact, tmp_path):
     conn.commit()
     conn.close()
 
-    stats = apply_repairs(report, observation_db_path=db, release_id=None)
+    stats = apply_repairs(report, observation_db_path=db, release_id=None, gate=_OPEN_GATE)
 
     assert stats.names_restored == 0
+    # Skipped, and counted: a silent skip would make the applied result
+    # differ from the reviewed artifact with nothing recording that it did.
+    assert stats.names_skipped_changed_since_audit == 1
     row = _snapshot(db)[0]
     assert (row["genus"], row["species"]) == ("Amanita", "muscaria")
 
@@ -451,8 +500,13 @@ def test_a_repair_touches_no_unrelated_observation_content(artifact, tmp_path):
          "ai_selected_scientific_name": "Entoloma conferendum"},
     ])
     report = audit(read_desktop_rows(db), artifact, origin="desktop")
-    apply_repairs(report, observation_db_path=db, release_id=None)
+    # A surviving common name puts this row outside the name-loss population,
+    # so only its identity is repaired.
+    assert report.records[0].name_class == "partial_name_loss_reported"
+    apply_repairs(report, observation_db_path=db, release_id=None, gate=_OPEN_GATE)
     row = _snapshot(db)[0]
+    assert row["genus"] is None
+    assert row["species"] is None
     assert row["notes"] == "under bjørk"
     assert row["location"] == "Trondheim"
     assert row["common_name"] == "stjernesporet rødspore"
@@ -487,7 +541,7 @@ def test_a_failure_part_way_through_leaves_nothing_applied(artifact, tmp_path):
     )
 
     with pytest.raises(RuntimeError):
-        apply_repairs(report, observation_db_path=db, release_id=None)
+        apply_repairs(report, observation_db_path=db, release_id=None, gate=_OPEN_GATE)
 
     assert _snapshot(db) == before
 
@@ -516,6 +570,184 @@ def test_cloud_rows_are_audited_through_the_same_classifier(artifact, tmp_path):
     assert records[917].name_class == "name_loss_repairable_from_row"
     assert records[918].identity_class == "proven_sporely_identity"
     assert report.reconciles() is True
+
+
+# ── The gate guards the write path, not just the tests ──────────────────────
+
+
+def test_apply_refuses_every_closed_gate(artifact, population_db):
+    """A gate only the caller consults protects only well-behaved callers."""
+    report = audit(read_desktop_rows(population_db), artifact, origin="desktop")
+    before = _snapshot(population_db)
+
+    with pytest.raises(ProductionWriteRefused) as excinfo:
+        apply_repairs(
+            report,
+            observation_db_path=population_db,
+            release_id=None,
+            gate=ProductionMigrationGate(),
+        )
+    assert "NEEDS_YOU" in str(excinfo.value)
+    assert _snapshot(population_db) == before
+
+    # And one missing condition is still closed.
+    with pytest.raises(ProductionWriteRefused):
+        apply_repairs(
+            report,
+            observation_db_path=population_db,
+            release_id=None,
+            gate=ProductionMigrationGate(
+                dry_run_artifact_reviewed=True,
+                counts_reconcile=True,
+                candidate_release_validated=True,
+                rollback_procedure_documented=True,
+            ),
+        )
+    assert _snapshot(population_db) == before
+
+
+def test_the_cli_apply_flag_carries_the_gate_and_defaults_closed(tmp_path):
+    """``--apply`` alone cannot write: the five flags are separate assertions."""
+    parser = build_parser()
+    bare = parser.parse_args([
+        "--taxonomy", "x", "--observations", "y", "--apply",
+    ])
+    assert gate_from_args(bare).is_open is False
+    assert len(gate_from_args(bare).blocking_reasons()) == 5
+
+    asserted = parser.parse_args([
+        "--taxonomy", "x", "--observations", "y", "--apply",
+        "--gate-dry-run-reviewed", "--gate-counts-reconcile",
+        "--gate-release-validated", "--gate-rollback-documented",
+        "--gate-integrity-checks-defined",
+        "--gate-evidence", "stage4-audit.json",
+    ])
+    gate = gate_from_args(asserted)
+    assert gate.is_open is True
+    assert gate.evidence == ("stage4-audit.json",)
+
+
+def test_an_unreconciled_report_is_refused_even_with_an_open_gate(
+    artifact, population_db
+):
+    """``counts_reconcile`` is machine-checked, not taken on assertion."""
+    report = audit(read_desktop_rows(population_db), artifact, origin="desktop")
+    before = _snapshot(population_db)
+    report.records.pop()  # the census no longer describes the audited rows
+    object.__setattr__(report, "records", report.records)
+    # Force a genuine mismatch between the total and the axes.
+    report.counts = lambda: {
+        "total_observations": len(report.records) + 1,
+        "identity_class": {name: 0 for name in IDENTITY_CLASSES},
+        "name_class": {name: 0 for name in NAME_CLASSES},
+        "proposed_action": {name: 0 for name in ACTIONS},
+        "name_loss_population": 0,
+    }
+    assert report.reconciles() is False
+
+    with pytest.raises(ProductionWriteRefused):
+        apply_repairs(
+            report,
+            observation_db_path=population_db,
+            release_id=None,
+            gate=_OPEN_GATE,
+        )
+    assert _snapshot(population_db) == before
+
+
+# ── A stale artifact must not overwrite a newer identity ────────────────────
+
+
+def test_a_newer_identity_chosen_after_the_dry_run_is_never_overwritten(
+    artifact, tmp_path
+):
+    """The window between review and apply is where a user keeps working.
+
+    Someone selects a better concept in that window. The archived artifact
+    still says "this row has no identity", so a write keyed on the id alone
+    would silently discard their choice. Nothing is applied instead — the
+    artifact is also the rollback pre-image, so once it stops describing the
+    database it must not be used at all.
+    """
+    db = _observations_db(tmp_path, [
+        {"id": 1, "genus": "Entoloma", "species": "conferendum",
+         **TaxonIdentity.from_prefixed_external_id("NBIC:53482").to_row()},
+        {"id": 2, "genus": "Conocybe", "species": "rugosa",
+         **TaxonIdentity.from_prefixed_external_id("NBIC:52369").to_row()},
+    ])
+    report = audit(read_desktop_rows(db), artifact, origin="desktop")
+    assert len(report.repairable()) == 2
+
+    # The user picks a concept for observation 2 after the review.
+    chosen = TaxonIdentity.from_taxonomy_v2_artifact(53482).to_row()
+    conn = sqlite3.connect(db)
+    conn.execute(
+        "UPDATE observations SET "
+        + ", ".join(f"{name} = ?" for name in chosen)
+        + " WHERE id = 2",
+        tuple(chosen.values()),
+    )
+    conn.commit()
+    conn.close()
+    interrupted = _snapshot(db)
+
+    with pytest.raises(StaleAuditArtifact) as excinfo:
+        apply_repairs(
+            report, observation_db_path=db, release_id=None, gate=_OPEN_GATE
+        )
+    assert "changed after the dry run" in str(excinfo.value)
+
+    # Their choice survives, and observation 1 was rolled back with it.
+    assert _snapshot(db) == interrupted
+    surviving = TaxonIdentity.from_row(
+        next(row for row in _snapshot(db) if row["id"] == 2)
+    )
+    assert surviving.sporely_taxon_id == 53482
+
+
+def test_replaying_the_same_artifact_is_refused_rather_than_reapplied(
+    artifact, population_db
+):
+    """Idempotence has two halves, and this is the one easy to get wrong.
+
+    A fresh audit over a repaired database proposes nothing. Replaying the
+    *already-applied* artifact is a different act, and the pre-image guard
+    refuses it — an operator who re-runs the apply step by accident gets an
+    error, not a silent second write.
+    """
+    report = audit(read_desktop_rows(population_db), artifact, origin="desktop")
+    apply_repairs(
+        report, observation_db_path=population_db, release_id=None, gate=_OPEN_GATE
+    )
+    settled = _snapshot(population_db)
+
+    with pytest.raises(StaleAuditArtifact):
+        apply_repairs(
+            report, observation_db_path=population_db, release_id=None,
+            gate=_OPEN_GATE,
+        )
+    assert _snapshot(population_db) == settled
+
+
+def test_a_null_identity_pre_image_still_matches(artifact, tmp_path):
+    """Regression guard for the guard: ``= NULL`` is never true.
+
+    Almost every repairable row has NULL in most identity columns, so a
+    pre-image check written with ``=`` instead of ``IS`` would abort the
+    entire repair population rather than protect it.
+    """
+    db = _observations_db(tmp_path, [
+        {"id": 1, "ai_selected_taxon_id": "NBIC:53482",
+         "ai_selected_scientific_name": "Entoloma conferendum"},
+    ])
+    report = audit(read_desktop_rows(db), artifact, origin="desktop")
+    assert all(
+        value is None for value in report.records[0].stored_identity.values()
+    )
+    stats = apply_repairs(
+        report, observation_db_path=db, release_id=None, gate=_OPEN_GATE
+    )
+    assert stats.identities_bound == 1
 
 
 # ── Part B gate ─────────────────────────────────────────────────────────────

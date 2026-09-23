@@ -62,12 +62,19 @@ retag the observation as a different species.
 
 | Class | Meaning | Repairable |
 |---|---|---|
-| `name_intact` | the observation has a name, or never had a provider candidate | no |
-| `name_loss_repairable_from_row` | null `genus` and `species` beside a splittable `ai_selected_scientific_name` | **yes** |
+| `name_intact` | the observation has a binomial, or never had a provider candidate | no |
+| `name_loss_repairable_from_row` | `genus`, `species` **and** `common_name` all null, beside a splittable `ai_selected_scientific_name` | **yes** |
 | `name_loss_unrepairable_from_row` | the same, but the provider string does not split into a binomial | no |
+| `partial_name_loss_reported` | `genus` and `species` null but a `common_name` survived | no |
 
-The name-loss population is counted separately from the identity-leak
-population because it is a different defect with a different repair. Name
+All three name fields must be null. A row that kept its common name is not the
+population the closeout specified, so repairing it would put production writes
+outside what a reviewer approved; it gets its own class so it is still visible
+rather than folded into `name_intact`.
+
+The name-loss population — the two `name_loss_*` classes, and only those — is
+counted separately from the identity-leak population because it is a different
+defect with a different repair. Name
 repair infers no identity: it writes back a string the same row already
 carries, using `utils.taxon_text.split_scientific_name_text` — the same rule
 the desktop cloud-pull path already applies to this field. A desktop client
@@ -121,12 +128,28 @@ Production mutation is a separate reviewed operation. `--apply` writes only to
 a local `--observations` database; passing it alongside `--cloud-rows` is
 refused outright.
 
+The gate is enforced by `apply_repairs` itself, not by its callers, so every
+write path goes through it — including the name-loss repair, which is still a
+production write. On the command line each condition is its own flag, because
+collapsing them into a single `--force` would let four be satisfied by
+remembering the fifth:
+
+```
+python -m database.audit_observation_identity \
+  --taxonomy <candidate>.sqlite3 --observations <db>.sqlite3 --apply \
+  --gate-dry-run-reviewed --gate-counts-reconcile --gate-release-validated \
+  --gate-rollback-documented --gate-integrity-checks-defined \
+  --gate-evidence stage4-observation-identity-audit.json
+```
+
 Five conditions, encoded as `ProductionMigrationGate` so they fail closed:
 
 1. **`dry_run_artifact_reviewed`** — a named, archived audit JSON has been read
    by a reviewer, row by row for every row whose `proposed_action` writes.
 2. **`counts_reconcile`** — `AuditReport.reconciles()` is true and the three
-   axes each sum to the row count. Check it in the artifact, not by eye.
+   axes each sum to the row count. Also re-checked by `apply_repairs`
+   regardless of what the flag asserts: a report that does not account for
+   every row cannot have been fully reviewed.
 3. **`candidate_release_validated`** — the taxonomy release the repair resolves
    against is validated and identified by `content_release_id`. For this
    closeout that is `tax-2026.09.23-01`, whose build, determinism and coverage
@@ -177,6 +200,23 @@ loses unrelated work done since.
 The repair runs in one transaction and rolls back on any error, so a failed run
 leaves nothing partially applied.
 
+### If the database moved under the artifact
+
+The identity write matches the full pre-image the audit recorded, not just the
+observation id. If anything about a row's identity changed after the dry run —
+a user selecting a better concept, another repair run, a pull — the write
+matches no row and the whole apply aborts with `StaleAuditArtifact`, leaving
+nothing applied. This is deliberate rather than a per-row skip: the archived
+artifact is also the rollback pre-image, so once it stops describing the
+database it is not safe to apply any part of it. Re-run the dry run and have
+it reviewed again.
+
+Name restoration is the exception. Its `IS NULL` guard means a row that gained
+a name in between is skipped rather than aborting the run, because filling a
+null cannot destroy anything. Those rows are counted in
+`names_skipped_changed_since_audit`, so the applied result never differs from
+the reviewed artifact without saying so.
+
 ## Integrity checks
 
 Run before and after; every one must be unchanged.
@@ -212,10 +252,11 @@ new choice is recorded as the current selected identity beside it.
 
 A second run over a repaired database proposes nothing and writes nothing: a
 bound row now classifies as `proven_sporely_identity`, a restored name as
-`name_intact`. The name write additionally carries its own `IS NULL` guard, so
-even a stale audit artifact cannot overwrite a name that appeared between the
-dry run and the apply. Rows that were already correct before the first run are
-never touched by any run.
+`name_intact`. Rows that were already correct before the first run are never
+touched by any run. Re-applying the *same* artifact a second time is refused by
+the pre-image guard as soon as it contains an identity write, rather than
+becoming a second write; the correct way to re-verify an apply is a fresh dry
+run, whose counts are the post-condition.
 
 Re-running is therefore safe, and re-running is the recommended way to verify
 an apply: the second audit's counts are the post-condition.

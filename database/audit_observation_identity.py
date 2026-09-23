@@ -59,6 +59,16 @@ reclassifies the repaired rows — a bound identity now reads as
 ``proven_sporely_identity``, a restored name as ``name_intact`` — so it
 proposes nothing and writes nothing. Rows that were already correct before the
 first run are never touched by either run.
+
+The write boundary
+------------------
+
+Every write goes through :func:`apply_repairs`, which enforces the Part B
+:class:`ProductionMigrationGate` itself rather than trusting its caller, and
+which refuses an audit artifact that no longer describes the rows it
+classified. Those two checks are what make "the dry run was reviewed" a
+property of the applied result rather than of the reviewer's intent: a gate
+only the tests consult protects only the tests.
 """
 from __future__ import annotations
 
@@ -104,10 +114,18 @@ NAME_CLASSES = (
     "name_intact",
     "name_loss_repairable_from_row",
     "name_loss_unrepairable_from_row",
+    # Genus and species are null but a common name survived, so this row is
+    # NOT the population the stage defines and is never repaired. It is still
+    # given its own class rather than being folded into ``name_intact``,
+    # because a row with no binomial is a real gap an operator should see.
+    "partial_name_loss_reported",
 )
 
 #: The name-loss population the acceptance gate asks to be counted is the sum
-#: of these two classes.
+#: of these two classes, and only these two. The stage defines that population
+#: as null ``genus`` AND null ``species`` AND null ``common_name`` beside a
+#: non-null ``ai_selected_scientific_name``; widening it would make the
+#: proposed production writes exceed what was specified and reviewed.
 NAME_LOSS_CLASSES = (
     "name_loss_repairable_from_row",
     "name_loss_unrepairable_from_row",
@@ -388,19 +406,28 @@ def _split_binomial(name: object) -> tuple[str, str] | None:
 def _classify_name(row: dict) -> tuple[str, tuple[str, str] | None]:
     """The name axis: did the save boundary destroy a usable name?
 
-    The signal is the one the plan names — null ``genus`` and ``species``
-    beside a non-null ``ai_selected_scientific_name``. That combination is only
+    The signal is the one the stage names, and all four parts of it are
+    required: null ``genus``, null ``species``, null ``common_name``, beside a
+    non-null ``ai_selected_scientific_name``. That combination is only
     reachable after the user copied a provider candidate into the
     identification (``ui/observations_tab.py``'s
     ``_preserve_ai_external_taxon_identity`` call site writes ``ai_selected_*``
     at exactly that moment), so it records an identification the user accepted
     and the save path then nulled out.
+
+    A surviving ``common_name`` is deliberately disqualifying. The row is
+    outside the defined population, so repairing it would propose production
+    writes beyond what the stage specified and a reviewer approved. It is
+    reported as ``partial_name_loss_reported`` instead of being repaired or
+    hidden.
     """
     provider_name = _text(row.get("ai_selected_scientific_name"))
     if provider_name is None:
         return "name_intact", None
     if _text(row.get("genus")) is not None or _text(row.get("species")) is not None:
         return "name_intact", None
+    if _text(row.get("common_name")) is not None:
+        return "partial_name_loss_reported", None
     binomial = _split_binomial(provider_name)
     if binomial is None:
         return "name_loss_unrepairable_from_row", None
@@ -729,10 +756,33 @@ def audit(
 class RepairStats:
     identities_bound: int = 0
     names_restored: int = 0
+    #: Rows whose name was already filled in between the audit and the apply.
+    #: Filling a null cannot destroy anything, so these are skipped rather
+    #: than aborted — but they are counted, because a silent skip would make
+    #: the applied result differ from the reviewed artifact with no trace.
+    names_skipped_changed_since_audit: int = 0
     rows_written: int = 0
 
     def as_dict(self) -> dict:
         return self.__dict__.copy()
+
+
+class StaleAuditArtifact(RuntimeError):
+    """An observation's identity moved between the dry run and the apply."""
+
+
+#: The columns whose pre-image must still match for an identity write to be
+#: allowed. This is exactly what the audit recorded in ``stored_identity``.
+_IDENTITY_PRE_IMAGE_COLUMNS = (
+    "sporely_taxon_id",
+    "taxon_identity_state",
+    "taxon_identity_proof",
+    "taxon_identity_source_system",
+    "taxon_identity_namespace",
+    "taxon_identity_external_id",
+    "taxon_identity_raw_external_id",
+    "taxon_identity_provenance",
+)
 
 
 def apply_repairs(
@@ -740,24 +790,51 @@ def apply_repairs(
     *,
     observation_db_path: Path,
     release_id: str | None,
+    gate: ProductionMigrationGate,
 ) -> RepairStats:
     """Write only the repairs the audit proved, in one transaction.
 
-    Two properties this function must keep, because the acceptance gate rests
-    on them:
+    ``gate`` is required and is enforced here rather than by the caller.
+    A gate that only the tests consult protects only the tests: every path
+    that writes — the CLI, a future script, an operator at a REPL — has to
+    pass through the same five conditions, so the check belongs at the write
+    boundary. The name-loss repair is included in that, because restoring a
+    name is still a production write.
+
+    Three properties this function must keep, because the acceptance gate
+    rests on them:
 
     * **Only proven rows are written.** The record's ``proposed_action`` is the
       only thing consulted, and that action is derived solely from evidence.
+    * **A stale artifact cannot overwrite a newer identity.** The identity
+      update matches the full pre-image the audit recorded, not just the
+      observation id. If anything about the row's identity moved in between —
+      a user selecting a better concept, another repair run, a pull — the
+      write matches nothing and the whole apply aborts with
+      :class:`StaleAuditArtifact`. Aborting rather than skipping is the point:
+      the archived dry run is also the rollback pre-image, so once it stops
+      describing the database it must not be applied at all. Re-run the dry
+      run and have it reviewed again.
     * **A name is filled, never replaced.** The ``genus``/``species`` update
-      carries its own ``IS NULL`` guard, so even if a record were somehow
-      stale relative to the database, the write cannot destroy a name that
-      appeared in between.
+      carries its own ``IS NULL`` guard. Filling a null cannot destroy
+      anything, so a row that gained a name in between is skipped and counted
+      rather than aborting the run.
 
     Identity is written as one coherent set of columns through
     :class:`~utils.taxon_identity.TaxonIdentity`, so a repaired row can never
     be the self-contradicting shape (new integer, old proof) that
     ``database.models.coherent_identity_columns`` exists to prevent.
     """
+    require_open_gate(gate)
+    # Machine-checkable regardless of what the operator asserted: a report
+    # whose axes do not account for every row has not been fully classified,
+    # and a reviewer cannot have reviewed what it does not describe.
+    if not report.reconciles():
+        raise ProductionWriteRefused(
+            "NEEDS_YOU — audit counts do not reconcile; the report does not "
+            "account for every row exactly once on every axis"
+        )
+
     stats = RepairStats()
     repairs = report.repairable()
     if not repairs:
@@ -791,12 +868,30 @@ def apply_repairs(
                         f"observation {record.observation_id}"
                     )
                 columns = identity.to_row()
-                conn.execute(
+                # ``IS`` rather than ``=`` so a NULL pre-image compares as a
+                # value; ``= NULL`` is never true and would abort every row
+                # that had no identity, which is most of them.
+                pre_image = [
+                    record.stored_identity.get(name)
+                    for name in _IDENTITY_PRE_IMAGE_COLUMNS
+                ]
+                cursor = conn.execute(
                     "UPDATE observations SET "
                     + ", ".join(f"{name} = ?" for name in columns)
-                    + " WHERE id = ?",
-                    (*columns.values(), record.observation_id),
+                    + " WHERE id = ? AND "
+                    + " AND ".join(
+                        f"{name} IS ?" for name in _IDENTITY_PRE_IMAGE_COLUMNS
+                    ),
+                    (*columns.values(), record.observation_id, *pre_image),
                 )
+                if not cursor.rowcount:
+                    raise StaleAuditArtifact(
+                        f"observation {record.observation_id}: its identity "
+                        "changed after the dry run, so this audit artifact no "
+                        "longer describes the database and is no longer a "
+                        "valid rollback pre-image. Re-run the dry run and have "
+                        "it reviewed before applying."
+                    )
                 stats.identities_bound += 1
                 wrote = True
             if record.restored_genus and record.restored_species:
@@ -812,6 +907,8 @@ def apply_repairs(
                 if cursor.rowcount:
                     stats.names_restored += 1
                     wrote = True
+                else:
+                    stats.names_skipped_changed_since_audit += 1
             if wrote:
                 stats.rows_written += 1
         conn.execute("COMMIT")
@@ -895,7 +992,37 @@ def build_parser() -> argparse.ArgumentParser:
         action="store_true",
         help="apply the proven repairs to --observations (never to cloud rows)",
     )
+    # The Part B gate, one flag per condition. Deliberately not a single
+    # --force: each condition is a separate assertion an operator is making,
+    # and collapsing them into one switch would let four be satisfied by
+    # remembering the fifth.
+    gate_group = parser.add_argument_group(
+        "Part B migration gate (all required with --apply)"
+    )
+    gate_group.add_argument("--gate-dry-run-reviewed", action="store_true")
+    gate_group.add_argument("--gate-counts-reconcile", action="store_true")
+    gate_group.add_argument("--gate-release-validated", action="store_true")
+    gate_group.add_argument("--gate-rollback-documented", action="store_true")
+    gate_group.add_argument("--gate-integrity-checks-defined", action="store_true")
+    gate_group.add_argument(
+        "--gate-evidence",
+        action="append",
+        default=[],
+        metavar="POINTER",
+        help="evidence for the assertions above; repeatable",
+    )
     return parser
+
+
+def gate_from_args(args) -> ProductionMigrationGate:
+    return ProductionMigrationGate(
+        dry_run_artifact_reviewed=args.gate_dry_run_reviewed,
+        counts_reconcile=args.gate_counts_reconcile,
+        candidate_release_validated=args.gate_release_validated,
+        rollback_procedure_documented=args.gate_rollback_documented,
+        integrity_checks_defined=args.gate_integrity_checks_defined,
+        evidence=tuple(args.gate_evidence),
+    )
 
 
 def main(argv: Iterable[str] | None = None) -> int:
@@ -917,10 +1044,17 @@ def main(argv: Iterable[str] | None = None) -> int:
                     "Production mutation is a separate reviewed operation "
                     "behind the Part B gate."
                 )
+            gate = gate_from_args(args)
+            payload["gate"] = {
+                "is_open": gate.is_open,
+                "blocking_reasons": gate.blocking_reasons(),
+                "evidence": list(gate.evidence),
+            }
             payload["repair"] = apply_repairs(
                 report,
                 observation_db_path=args.observations,
                 release_id=artifact.release_id,
+                gate=gate,
             ).as_dict()
         text = json.dumps(payload, indent=2, sort_keys=True, ensure_ascii=False)
         if args.output:
