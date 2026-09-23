@@ -66,13 +66,26 @@ The write boundary
 Every write goes through :func:`apply_repairs`, which enforces the Part B
 :class:`ProductionMigrationGate` itself rather than trusting its caller, and
 which refuses an audit artifact that no longer describes the rows it
-classified. Those two checks are what make "the dry run was reviewed" a
-property of the applied result rather than of the reviewer's intent: a gate
-only the tests consult protects only the tests.
+classified. A gate only the tests consult protects only the tests.
+
+Applying is a different operation from auditing, and takes the reviewed file
+as its input: ``--apply <artifact.json>``. Three things bind the write to that
+file, because each catches something the others cannot:
+
+* the artifact's own ``digest`` — catches the file being edited after review;
+* :func:`require_artifact_still_describes` — re-audits the live rows and
+  requires the reviewed artifact to be reproduced exactly, which is what
+  catches rows *added* since the review, invisible to any per-row check;
+* the per-row pre-image in :func:`apply_repairs` — catches a row changing
+  between that re-audit and the write itself.
+
+Together they make "the dry run was reviewed" a property of the applied result
+rather than of the reviewer's intent.
 """
 from __future__ import annotations
 
 import argparse
+import hashlib
 import json
 import sqlite3
 from dataclasses import dataclass, field
@@ -310,6 +323,33 @@ class AuditRecord:
             "restored_species": self.restored_species,
         }
 
+    @classmethod
+    def from_dict(cls, data: dict) -> "AuditRecord":
+        """Rebuild a record from an archived artifact.
+
+        The apply path reads its pre-images from the reviewed file rather than
+        from a freshly computed report, so this is the boundary that makes the
+        archived artifact the thing actually applied.
+        """
+        return cls(
+            observation_id=int(data["observation_id"]),
+            origin=str(data["origin"]),
+            identity_class=str(data["identity_class"]),
+            name_class=str(data["name_class"]),
+            proposed_action=str(data["proposed_action"]),
+            stored_identity=dict(data.get("stored_identity") or {}),
+            stored_names=dict(data.get("stored_names") or {}),
+            preserved_source_system=data.get("preserved_source_system"),
+            preserved_namespace=data.get("preserved_namespace"),
+            preserved_external_id=data.get("preserved_external_id"),
+            preserved_raw_external_id=data.get("preserved_raw_external_id"),
+            candidate_sporely_taxon_id=data.get("candidate_sporely_taxon_id"),
+            evidence=data.get("evidence"),
+            refusal_reason=data.get("refusal_reason"),
+            restored_genus=data.get("restored_genus"),
+            restored_species=data.get("restored_species"),
+        )
+
 
 @dataclass
 class AuditReport:
@@ -361,7 +401,7 @@ class AuditReport:
             and record.proposed_action != "report_only"
         ]
 
-    def as_dict(self) -> dict:
+    def _body(self) -> dict:
         return {
             "artifact": self.artifact,
             "release_id": self.release_id,
@@ -370,6 +410,35 @@ class AuditReport:
             "reconciles": self.reconciles(),
             "observations": [record.as_dict() for record in self.records],
         }
+
+    def digest(self) -> str:
+        """sha256 over the canonical body, excluding the digest itself.
+
+        This is what binds an apply to the artifact a reviewer signed. Two
+        different things can go wrong between review and apply — the file can
+        be edited, and the database can move — and this catches the first.
+        :func:`load_reviewed_artifact` catches it on read;
+        :func:`require_artifact_still_describes` catches the second.
+        """
+        canonical = json.dumps(
+            self._body(), sort_keys=True, ensure_ascii=False, separators=(",", ":")
+        )
+        return hashlib.sha256(canonical.encode("utf-8")).hexdigest()
+
+    def as_dict(self) -> dict:
+        return {**self._body(), "digest": self.digest()}
+
+    @classmethod
+    def from_dict(cls, data: dict) -> "AuditReport":
+        return cls(
+            release_id=data.get("release_id"),
+            artifact=str(data.get("artifact") or ""),
+            origin=str(data.get("origin") or ""),
+            records=[
+                AuditRecord.from_dict(entry)
+                for entry in (data.get("observations") or [])
+            ],
+        )
 
 
 # ── Classification ──────────────────────────────────────────────────────────
@@ -756,10 +825,12 @@ def audit(
 class RepairStats:
     identities_bound: int = 0
     names_restored: int = 0
-    #: Rows whose name was already filled in between the audit and the apply.
-    #: Filling a null cannot destroy anything, so these are skipped rather
-    #: than aborted — but they are counted, because a silent skip would make
-    #: the applied result differ from the reviewed artifact with no trace.
+    #: Name-only repairs whose name was already filled in between the audit
+    #: and the apply. Filling a null cannot destroy anything, so these are
+    #: skipped rather than aborted — but they are counted, because a silent
+    #: skip would make the applied result differ from the reviewed artifact
+    #: with no trace. A coupled bind-and-restore record cannot land here: its
+    #: identity pre-image includes the name columns and aborts first.
     names_skipped_changed_since_audit: int = 0
     rows_written: int = 0
 
@@ -768,11 +839,89 @@ class RepairStats:
 
 
 class StaleAuditArtifact(RuntimeError):
-    """An observation's identity moved between the dry run and the apply."""
+    """The database no longer matches the artifact that was reviewed."""
 
 
-#: The columns whose pre-image must still match for an identity write to be
-#: allowed. This is exactly what the audit recorded in ``stored_identity``.
+class TamperedAuditArtifact(RuntimeError):
+    """An archived artifact's contents do not match its recorded digest."""
+
+
+def load_reviewed_artifact(path: Path) -> AuditReport:
+    """Read an archived audit JSON and verify it is the file that was written.
+
+    An apply that recomputes its own report is not bound to anything a
+    reviewer saw: a row added or edited after the review would be classified
+    and repaired in the same breath, and the pre-image guard would pass
+    trivially because the pre-image came from that same run. So the apply path
+    reads the reviewed file instead, and this function is where that file is
+    checked for having been edited since it was written.
+    """
+    path = Path(path)
+    if not path.exists():
+        raise SystemExit(f"reviewed audit artifact not found: {path}")
+    data = json.loads(path.read_text(encoding="utf-8"))
+    recorded = str(data.get("digest") or "")
+    if not recorded:
+        raise TamperedAuditArtifact(
+            f"{path} carries no digest; it was not written by this tool and "
+            "cannot be bound to a review"
+        )
+    report = AuditReport.from_dict(data)
+    if report.digest() != recorded:
+        raise TamperedAuditArtifact(
+            f"{path} does not match its own digest — the file was edited "
+            f"after it was written (recorded {recorded[:12]}…, "
+            f"recomputed {report.digest()[:12]}…)"
+        )
+    return report
+
+
+def require_artifact_still_describes(
+    reviewed: AuditReport, rows: Iterable[dict], artifact: TaxonomyArtifact
+) -> None:
+    """Refuse unless re-auditing the live rows reproduces the reviewed file.
+
+    Classification is deterministic, so a fresh audit over unchanged rows
+    against the same release must reproduce the reviewed artifact exactly. Any
+    difference — a new observation, an edited one, a different taxonomy
+    release — means the reviewed file no longer describes this database, and
+    therefore is neither a reviewed plan for it nor a valid rollback
+    pre-image.
+
+    This is the check the per-row pre-image guard cannot make: that guard only
+    sees rows the artifact already lists, so on its own it would happily apply
+    a reviewed plan to a database that has grown new unreviewed rows.
+    """
+    current = audit(rows, artifact, origin=reviewed.origin)
+    if current.digest() == reviewed.digest():
+        return
+    reviewed_ids = {record.observation_id for record in reviewed.records}
+    current_ids = {record.observation_id for record in current.records}
+    added = sorted(current_ids - reviewed_ids)
+    removed = sorted(reviewed_ids - current_ids)
+    reviewed_by_id = {r.observation_id: r.as_dict() for r in reviewed.records}
+    changed = sorted(
+        record.observation_id
+        for record in current.records
+        if record.observation_id in reviewed_by_id
+        and record.as_dict() != reviewed_by_id[record.observation_id]
+    )
+    raise StaleAuditArtifact(
+        "the reviewed audit artifact no longer describes this database — "
+        f"added observations {added or 'none'}, removed {removed or 'none'}, "
+        f"changed {changed or 'none'}"
+        + (
+            ""
+            if (added or removed or changed)
+            else f"; release changed ({reviewed.release_id!r} → "
+            f"{current.release_id!r})"
+        )
+        + ". Re-run the dry run and have it reviewed before applying."
+    )
+
+
+#: The identity columns whose pre-image must still match for an identity write
+#: to be allowed. Exactly what the audit recorded in ``stored_identity``.
 _IDENTITY_PRE_IMAGE_COLUMNS = (
     "sporely_taxon_id",
     "taxon_identity_state",
@@ -783,6 +932,20 @@ _IDENTITY_PRE_IMAGE_COLUMNS = (
     "taxon_identity_raw_external_id",
     "taxon_identity_provenance",
 )
+
+#: The accepted-name columns, which are part of the SAME pre-image.
+#:
+#: ``docs/supabase-sync-contract.md`` states that the bound concept and the
+#: accepted ``genus``/``species``/``common_name`` are a single coupled change,
+#: because a row whose name says one taxon and whose identity says another is
+#: incoherent regardless of which half is right. So a name that moved after
+#: the review disqualifies the identity write too: binding concept 7821
+#: (*Entoloma conferendum*) onto a row someone has since renamed *Amanita
+#: muscaria* would commit exactly that mismatch, even though the identity
+#: columns themselves are untouched.
+#:
+#: Recorded by the audit in ``stored_names``.
+_NAME_PRE_IMAGE_COLUMNS = ("genus", "species", "common_name")
 
 
 def apply_repairs(
@@ -818,7 +981,10 @@ def apply_repairs(
     * **A name is filled, never replaced.** The ``genus``/``species`` update
       carries its own ``IS NULL`` guard. Filling a null cannot destroy
       anything, so a row that gained a name in between is skipped and counted
-      rather than aborting the run.
+      rather than aborting the run. That skip can only happen on a
+      *name-only* repair: when the same record also binds an identity, the
+      name columns are part of the identity pre-image above, so a changed name
+      aborts instead of committing a name/identity mismatch.
 
     Identity is written as one coherent set of columns through
     :class:`~utils.taxon_identity.TaxonIdentity`, so a repaired row can never
@@ -874,23 +1040,26 @@ def apply_repairs(
                 pre_image = [
                     record.stored_identity.get(name)
                     for name in _IDENTITY_PRE_IMAGE_COLUMNS
+                ] + [
+                    record.stored_names.get(name)
+                    for name in _NAME_PRE_IMAGE_COLUMNS
                 ]
+                guarded = _IDENTITY_PRE_IMAGE_COLUMNS + _NAME_PRE_IMAGE_COLUMNS
                 cursor = conn.execute(
                     "UPDATE observations SET "
                     + ", ".join(f"{name} = ?" for name in columns)
                     + " WHERE id = ? AND "
-                    + " AND ".join(
-                        f"{name} IS ?" for name in _IDENTITY_PRE_IMAGE_COLUMNS
-                    ),
+                    + " AND ".join(f"{name} IS ?" for name in guarded),
                     (*columns.values(), record.observation_id, *pre_image),
                 )
                 if not cursor.rowcount:
                     raise StaleAuditArtifact(
-                        f"observation {record.observation_id}: its identity "
-                        "changed after the dry run, so this audit artifact no "
-                        "longer describes the database and is no longer a "
-                        "valid rollback pre-image. Re-run the dry run and have "
-                        "it reviewed before applying."
+                        f"observation {record.observation_id}: its identity or "
+                        "its accepted name changed after the dry run. The two "
+                        "are a single coupled value, so binding the reviewed "
+                        "concept now could leave the row naming one taxon and "
+                        "identifying another. Re-run the dry run and have it "
+                        "reviewed before applying."
                     )
                 stats.identities_bound += 1
                 wrote = True
@@ -989,8 +1158,14 @@ def build_parser() -> argparse.ArgumentParser:
     parser.add_argument("--output", type=Path, help="write the audit JSON here")
     parser.add_argument(
         "--apply",
-        action="store_true",
-        help="apply the proven repairs to --observations (never to cloud rows)",
+        type=Path,
+        metavar="REVIEWED_ARTIFACT",
+        help=(
+            "apply the repairs recorded in a previously written and reviewed "
+            "audit JSON to --observations (never to cloud rows). The file is "
+            "what gets applied; this command does not repair a report it "
+            "computed itself"
+        ),
     )
     # The Part B gate, one flag per condition. Deliberately not a single
     # --force: each condition is a separate assertion an operator is making,
@@ -1035,27 +1210,51 @@ def main(argv: Iterable[str] | None = None) -> int:
         else:
             rows = read_cloud_rows(args.cloud_rows)
             origin = "cloud"
-        report = audit(rows, artifact, origin=origin)
-        payload = report.as_dict()
-        if args.apply:
+        if args.apply is None:
+            # Dry run: classify and report. This is the artifact a reviewer
+            # reads and archives, and the only thing --apply will accept later.
+            payload = audit(rows, artifact, origin=origin).as_dict()
+        else:
             if origin != "desktop":
                 raise ProductionWriteRefused(
                     "NEEDS_YOU — cloud rows are audited, never written. "
                     "Production mutation is a separate reviewed operation "
                     "behind the Part B gate."
                 )
+            # Gate first, so an operator who forgot a condition gets
+            # NEEDS_YOU rather than an error about a file they were never
+            # going to be allowed to apply.
             gate = gate_from_args(args)
+            require_open_gate(gate)
+            # The reviewed file is what gets applied. Recomputing a report
+            # here and repairing that would mean applying a plan nobody read:
+            # a row added or edited since the review would be classified and
+            # written in the same breath, and every per-row pre-image would
+            # match trivially because it came from this very run.
+            try:
+                reviewed = load_reviewed_artifact(args.apply)
+                require_artifact_still_describes(reviewed, rows, artifact)
+            except (StaleAuditArtifact, TamperedAuditArtifact) as exc:
+                # Condition 1 of the gate — "the dry-run artifact has been
+                # reviewed" — is false in substance whatever the flag says.
+                raise ProductionWriteRefused(f"NEEDS_YOU — {exc}") from exc
+            payload = reviewed.as_dict()
             payload["gate"] = {
                 "is_open": gate.is_open,
                 "blocking_reasons": gate.blocking_reasons(),
                 "evidence": list(gate.evidence),
+                "reviewed_artifact": str(args.apply),
+                "reviewed_artifact_digest": reviewed.digest(),
             }
-            payload["repair"] = apply_repairs(
-                report,
-                observation_db_path=args.observations,
-                release_id=artifact.release_id,
-                gate=gate,
-            ).as_dict()
+            try:
+                payload["repair"] = apply_repairs(
+                    reviewed,
+                    observation_db_path=args.observations,
+                    release_id=artifact.release_id,
+                    gate=gate,
+                ).as_dict()
+            except StaleAuditArtifact as exc:
+                raise ProductionWriteRefused(f"NEEDS_YOU — {exc}") from exc
         text = json.dumps(payload, indent=2, sort_keys=True, ensure_ascii=False)
         if args.output:
             args.output.write_text(text + "\n", encoding="utf-8")

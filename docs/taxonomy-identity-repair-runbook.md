@@ -132,15 +132,33 @@ The gate is enforced by `apply_repairs` itself, not by its callers, so every
 write path goes through it — including the name-loss repair, which is still a
 production write. On the command line each condition is its own flag, because
 collapsing them into a single `--force` would let four be satisfied by
-remembering the fifth:
+remembering the fifth.
+
+**`--apply` takes the reviewed artifact and applies that file.** It does not
+repair a report it computed itself: recomputing would mean applying a plan
+nobody read, because a row added or edited since the review would be
+classified and written in the same breath, and every per-row pre-image would
+match trivially for having come from that same run.
 
 ```
 python -m database.audit_observation_identity \
-  --taxonomy <candidate>.sqlite3 --observations <db>.sqlite3 --apply \
+  --taxonomy <candidate>.sqlite3 --observations <db>.sqlite3 \
+  --apply stage4-observation-identity-audit.json \
   --gate-dry-run-reviewed --gate-counts-reconcile --gate-release-validated \
   --gate-rollback-documented --gate-integrity-checks-defined \
-  --gate-evidence stage4-observation-identity-audit.json
+  --gate-evidence "reviewed by <name> 2026-09-23"
 ```
+
+Three independent checks bind the write to that file, because each catches
+something the others structurally cannot:
+
+| Check | Catches |
+|---|---|
+| the artifact's own `digest` | the JSON being edited after review — for example widening a refused collision into a repair |
+| `require_artifact_still_describes` | observations **added** since the review, which no per-row check ever looks at, plus any changed row or a different taxonomy release |
+| the per-row pre-image in `apply_repairs` | a row changing between that re-audit and the write |
+
+Any of them failing stops the whole run with `NEEDS_YOU` and writes nothing.
 
 Five conditions, encoded as `ProductionMigrationGate` so they fail closed:
 
@@ -188,10 +206,11 @@ Before applying:
 
 1. take a full copy of the database (`VACUUM INTO 'pre-stage4.sqlite3'` locally;
    a point-in-time-recovery marker plus a table snapshot for production);
-2. record the pre-image of exactly the repairable rows, keyed by observation id,
-   from the dry-run artifact's own `stored_identity` and `stored_names` blocks —
-   the artifact **is** the pre-image, which is why it must be archived rather
-   than regenerated.
+2. keep the dry-run artifact. Its `stored_identity` and `stored_names` blocks
+   are the pre-image of exactly the repairable rows, keyed by observation id,
+   and `--apply` reads its write values from that same file — so the artifact
+   **is** both the applied plan and the rollback pre-image, which is why it
+   must be archived rather than regenerated.
 
 To roll back, restore those ten columns for the listed observation ids from the
 archived artifact. Restoring the whole database is also safe but unnecessary and
@@ -203,19 +222,23 @@ leaves nothing partially applied.
 ### If the database moved under the artifact
 
 The identity write matches the full pre-image the audit recorded, not just the
-observation id. If anything about a row's identity changed after the dry run —
-a user selecting a better concept, another repair run, a pull — the write
-matches no row and the whole apply aborts with `StaleAuditArtifact`, leaving
-nothing applied. This is deliberate rather than a per-row skip: the archived
-artifact is also the rollback pre-image, so once it stops describing the
-database it is not safe to apply any part of it. Re-run the dry run and have
-it reviewed again.
+observation id. That pre-image is **both** the eight identity columns and the
+accepted `genus`, `species` and `common_name`: the sync contract makes the
+bound concept and the accepted name a single coupled value, so binding the
+reviewed concept onto a row someone has since renamed would commit a row that
+names one taxon and identifies another. A mismatch aborts the whole apply with
+`StaleAuditArtifact`, leaving nothing applied — deliberately, rather than
+skipping the row, because the archived artifact is also the rollback
+pre-image. Re-run the dry run and have it reviewed again.
 
-Name restoration is the exception. Its `IS NULL` guard means a row that gained
-a name in between is skipped rather than aborting the run, because filling a
-null cannot destroy anything. Those rows are counted in
-`names_skipped_changed_since_audit`, so the applied result never differs from
-the reviewed artifact without saying so.
+Name restoration is the one exception, and only for a **name-only** repair.
+Its `IS NULL` guard means a row that gained a name in between is skipped
+rather than aborting, because filling a null cannot destroy anything; those
+rows are counted in `names_skipped_changed_since_audit`, so the applied result
+never differs from the reviewed artifact without saying so. When the same
+record also binds an identity, the name columns are part of the identity
+pre-image above and the run aborts instead — a coupled repair can never
+half-apply.
 
 ## Integrity checks
 

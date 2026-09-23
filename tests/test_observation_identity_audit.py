@@ -33,13 +33,16 @@ from database.audit_observation_identity import (
     ProductionMigrationGate,
     ProductionWriteRefused,
     StaleAuditArtifact,
+    TamperedAuditArtifact,
     TaxonomyArtifact,
     apply_repairs,
     audit,
     build_parser,
     gate_from_args,
+    load_reviewed_artifact,
     read_cloud_rows,
     read_desktop_rows,
+    require_artifact_still_describes,
     require_open_gate,
 )
 from utils.taxon_identity import (
@@ -467,13 +470,21 @@ def test_a_second_run_proposes_nothing_and_writes_nothing(artifact, population_d
     assert identity.sporely_taxon_id == 7821
 
 
-def test_name_restore_can_only_fill_a_null_never_replace(artifact, tmp_path):
-    """The write carries its own IS NULL guard, not just a classification."""
+def test_a_name_only_repair_skips_rather_than_replacing(artifact, tmp_path):
+    """The write carries its own IS NULL guard, not just a classification.
+
+    This row has a name to restore and no resolvable identifier, so the repair
+    is name-only. Filling a null cannot destroy anything, so a name that
+    appeared in between is skipped — and counted, because a silent skip would
+    make the applied result differ from the reviewed artifact with nothing
+    recording that it did.
+    """
     db = _observations_db(tmp_path, [
-        {"id": 1, "ai_selected_scientific_name": "Entoloma conferendum",
-         "ai_selected_taxon_id": "NBIC:53482"},
+        {"id": 1, "ai_selected_scientific_name": "Entoloma conferendum"},
     ])
     report = audit(read_desktop_rows(db), artifact, origin="desktop")
+    assert report.records[0].proposed_action == "restore_lost_names"
+
     # Someone identifies the observation in between the dry run and the apply.
     conn = sqlite3.connect(db)
     conn.execute(
@@ -482,14 +493,78 @@ def test_name_restore_can_only_fill_a_null_never_replace(artifact, tmp_path):
     conn.commit()
     conn.close()
 
-    stats = apply_repairs(report, observation_db_path=db, release_id=None, gate=_OPEN_GATE)
+    stats = apply_repairs(
+        report, observation_db_path=db, release_id=None, gate=_OPEN_GATE
+    )
 
     assert stats.names_restored == 0
-    # Skipped, and counted: a silent skip would make the applied result
-    # differ from the reviewed artifact with nothing recording that it did.
     assert stats.names_skipped_changed_since_audit == 1
     row = _snapshot(db)[0]
     assert (row["genus"], row["species"]) == ("Amanita", "muscaria")
+
+
+def test_a_changed_name_aborts_a_coupled_bind_instead_of_mismatching(
+    artifact, tmp_path
+):
+    """The bound concept and the accepted name are ONE value.
+
+    This record both binds 7821 (*Entoloma conferendum*) and restores its
+    name. Someone renames the row *Amanita muscaria* in between. Skipping only
+    the name write would commit 7821 beside "Amanita muscaria" — a row naming
+    one taxon and identifying another, which is precisely what the sync
+    contract couples these fields to prevent. The identity pre-image includes
+    the name columns, so the run aborts instead.
+    """
+    db = _observations_db(tmp_path, [
+        {"id": 1, "ai_selected_scientific_name": "Entoloma conferendum",
+         "ai_selected_taxon_id": "NBIC:53482"},
+    ])
+    report = audit(read_desktop_rows(db), artifact, origin="desktop")
+    assert report.records[0].proposed_action == (
+        "bind_sporely_identity_and_restore_lost_names"
+    )
+
+    conn = sqlite3.connect(db)
+    conn.execute(
+        "UPDATE observations SET genus = 'Amanita', species = 'muscaria' WHERE id = 1"
+    )
+    conn.commit()
+    conn.close()
+    renamed = _snapshot(db)
+
+    with pytest.raises(StaleAuditArtifact) as excinfo:
+        apply_repairs(
+            report, observation_db_path=db, release_id=None, gate=_OPEN_GATE
+        )
+    assert "accepted name changed" in str(excinfo.value)
+
+    # Nothing bound, nothing renamed: no mismatched row was committed.
+    assert _snapshot(db) == renamed
+    assert renamed[0]["sporely_taxon_id"] is None
+
+
+def test_a_changed_common_name_alone_also_aborts_a_coupled_bind(
+    artifact, tmp_path
+):
+    """``common_name`` is part of the coupled value too, not decoration."""
+    db = _observations_db(tmp_path, [
+        {"id": 1, "genus": "Entoloma", "species": "conferendum",
+         **TaxonIdentity.from_prefixed_external_id("NBIC:53482").to_row()},
+    ])
+    report = audit(read_desktop_rows(db), artifact, origin="desktop")
+    conn = sqlite3.connect(db)
+    conn.execute(
+        "UPDATE observations SET common_name = 'flueusopp' WHERE id = 1"
+    )
+    conn.commit()
+    conn.close()
+    before = _snapshot(db)
+
+    with pytest.raises(StaleAuditArtifact):
+        apply_repairs(
+            report, observation_db_path=db, release_id=None, gate=_OPEN_GATE
+        )
+    assert _snapshot(db) == before
 
 
 def test_a_repair_touches_no_unrelated_observation_content(artifact, tmp_path):
@@ -610,13 +685,13 @@ def test_the_cli_apply_flag_carries_the_gate_and_defaults_closed(tmp_path):
     """``--apply`` alone cannot write: the five flags are separate assertions."""
     parser = build_parser()
     bare = parser.parse_args([
-        "--taxonomy", "x", "--observations", "y", "--apply",
+        "--taxonomy", "x", "--observations", "y", "--apply", "reviewed.json",
     ])
     assert gate_from_args(bare).is_open is False
     assert len(gate_from_args(bare).blocking_reasons()) == 5
 
     asserted = parser.parse_args([
-        "--taxonomy", "x", "--observations", "y", "--apply",
+        "--taxonomy", "x", "--observations", "y", "--apply", "reviewed.json",
         "--gate-dry-run-reviewed", "--gate-counts-reconcile",
         "--gate-release-validated", "--gate-rollback-documented",
         "--gate-integrity-checks-defined",
@@ -625,6 +700,136 @@ def test_the_cli_apply_flag_carries_the_gate_and_defaults_closed(tmp_path):
     gate = gate_from_args(asserted)
     assert gate.is_open is True
     assert gate.evidence == ("stage4-audit.json",)
+
+
+def test_apply_requires_a_reviewed_artifact_to_apply(tmp_path):
+    """``--apply`` takes the reviewed file; there is no report-free form."""
+    parser = build_parser()
+    with pytest.raises(SystemExit):
+        parser.parse_args([
+            "--taxonomy", "x", "--observations", "y", "--apply",
+        ])
+
+
+# ── The apply is bound to the artifact that was reviewed ────────────────────
+
+
+def _write_artifact(path: Path, report) -> Path:
+    path.write_text(
+        json.dumps(report.as_dict(), indent=2, sort_keys=True, ensure_ascii=False),
+        encoding="utf-8",
+    )
+    return path
+
+
+def test_a_reviewed_artifact_round_trips_and_carries_its_own_digest(
+    artifact, population_db, tmp_path
+):
+    report = audit(read_desktop_rows(population_db), artifact, origin="desktop")
+    path = _write_artifact(tmp_path / "reviewed.json", report)
+
+    loaded = load_reviewed_artifact(path)
+
+    assert loaded.digest() == report.digest()
+    assert [r.as_dict() for r in loaded.records] == [
+        r.as_dict() for r in report.records
+    ]
+    # The pre-images the apply will use came from the file, not from a rerun.
+    assert loaded.repairable()[0].stored_identity == (
+        report.repairable()[0].stored_identity
+    )
+
+
+def test_an_edited_artifact_is_refused(artifact, population_db, tmp_path):
+    """The digest is what stops a reviewed plan being rewritten after review.
+
+    The edit here is the one that matters: widening a refusal into a repair.
+    """
+    report = audit(read_desktop_rows(population_db), artifact, origin="desktop")
+    path = _write_artifact(tmp_path / "reviewed.json", report)
+
+    data = json.loads(path.read_text(encoding="utf-8"))
+    collision = next(
+        entry for entry in data["observations"]
+        if entry["identity_class"] == "suspicious_numeric_collision"
+    )
+    collision["proposed_action"] = "bind_sporely_identity"
+    collision["candidate_sporely_taxon_id"] = 7821
+    path.write_text(json.dumps(data, indent=2), encoding="utf-8")
+
+    with pytest.raises(TamperedAuditArtifact) as excinfo:
+        load_reviewed_artifact(path)
+    assert "edited after it was written" in str(excinfo.value)
+
+
+def test_an_artifact_without_a_digest_is_refused(tmp_path):
+    path = tmp_path / "hand-written.json"
+    path.write_text(json.dumps({"observations": []}), encoding="utf-8")
+    with pytest.raises(TamperedAuditArtifact):
+        load_reviewed_artifact(path)
+
+
+def test_a_row_added_after_the_review_blocks_the_whole_apply(
+    artifact, population_db, tmp_path
+):
+    """The failure the per-row pre-image guard structurally cannot catch.
+
+    A new observation is not in the artifact, so no per-row check ever looks
+    at it. Only re-auditing the live rows and requiring the reviewed artifact
+    to be reproduced exactly notices that the reviewed plan is no longer a
+    plan for this database.
+    """
+    report = audit(read_desktop_rows(population_db), artifact, origin="desktop")
+    path = _write_artifact(tmp_path / "reviewed.json", report)
+    reviewed = load_reviewed_artifact(path)
+
+    conn = sqlite3.connect(population_db)
+    conn.execute(
+        "INSERT INTO observations (id, ai_selected_taxon_id, "
+        "ai_selected_scientific_name) VALUES (99, 'NBIC:53482', "
+        "'Entoloma conferendum')"
+    )
+    conn.commit()
+    conn.close()
+
+    with pytest.raises(StaleAuditArtifact) as excinfo:
+        require_artifact_still_describes(
+            reviewed, read_desktop_rows(population_db), artifact
+        )
+    assert "added observations [99]" in str(excinfo.value)
+
+
+def test_a_row_changed_after_the_review_blocks_the_whole_apply(
+    artifact, population_db, tmp_path
+):
+    report = audit(read_desktop_rows(population_db), artifact, origin="desktop")
+    reviewed = load_reviewed_artifact(
+        _write_artifact(tmp_path / "reviewed.json", report)
+    )
+
+    conn = sqlite3.connect(population_db)
+    conn.execute("UPDATE observations SET genus = 'Amanita' WHERE id = 5")
+    conn.commit()
+    conn.close()
+
+    with pytest.raises(StaleAuditArtifact) as excinfo:
+        require_artifact_still_describes(
+            reviewed, read_desktop_rows(population_db), artifact
+        )
+    assert "changed [5]" in str(excinfo.value)
+
+
+def test_an_unchanged_database_reproduces_the_reviewed_artifact(
+    artifact, population_db, tmp_path
+):
+    """The check has to pass in the ordinary case, or it is just an outage."""
+    report = audit(read_desktop_rows(population_db), artifact, origin="desktop")
+    reviewed = load_reviewed_artifact(
+        _write_artifact(tmp_path / "reviewed.json", report)
+    )
+    require_artifact_still_describes(
+        reviewed, read_desktop_rows(population_db), artifact
+    )
 
 
 def test_an_unreconciled_report_is_refused_even_with_an_open_gate(

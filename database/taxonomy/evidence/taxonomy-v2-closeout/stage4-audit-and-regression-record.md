@@ -50,6 +50,26 @@ classifies it `proven_external_with_unique_bridge` +
 `name_loss_repairable_from_row`, candidate `7821`, evidence
 `provider_snapshot_identifier: nortaxa/nortaxa_taxon_id/53482`.
 
+## Corrections applied after the second sparring review
+
+Candidate `06a80a7` was sent back with two further defects. Both are fixed.
+
+| Defect | Fix |
+|---|---|
+| The CLI regenerated a fresh report and applied that; `--gate-evidence` was an unchecked string, so the reviewed artifact was never loaded or compared. A row added after review could be classified and repaired unreviewed, and the per-row guard passed trivially because its pre-image came from the same invocation. | `--apply` now **takes the reviewed artifact** and applies that file. Three independent checks bind the write to it: the artifact's own `digest` (catches post-review edits), `require_artifact_still_describes` (re-audits the live rows and demands the reviewed artifact be reproduced exactly — the only check that can see *added* rows), and the per-row pre-image (catches a change between that re-audit and the write). |
+| The stale-name test let a record bind concept 7821 while its name had become *Amanita muscaria*, committing a name/identity mismatch. | The identity pre-image now includes `genus`, `species` and `common_name`, which `docs/supabase-sync-contract.md` couples to the bound concept. A coupled bind-and-restore record whose name moved aborts; a name-only repair still skips, which is safe because filling a null destroys nothing. The old test is split into the two cases. |
+
+Verified end to end through the CLI against the real Stage 3 artifact:
+
+| Scenario | Result |
+|---|---|
+| dry run | artifact written, digest `ee15b5c734bae162` |
+| row 918 added after review, then apply | `NEEDS_YOU — … added observations [918]`, exit 1, both rows untouched |
+| reviewed state restored, gated apply | `identities_bound: 1, names_restored: 1`; 917 → `Entoloma conferendum` / `7821` / `external_id_resolution` |
+| replay the same artifact | `NEEDS_YOU — … changed [917]` |
+| artifact edited to widen a refusal into a repair | `NEEDS_YOU — … does not match its own digest` |
+| apply without the gate flags | `NEEDS_YOU — production migration gate is closed` (checked before the artifact is even read) |
+
 ## Part C — observation 917
 
 Built on the real schema (`database.schema.init_database`) with a field image,
