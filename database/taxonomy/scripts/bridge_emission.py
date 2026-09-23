@@ -52,6 +52,43 @@ EVIDENCE_CLASS_NONE = ""
 
 UNCLASSIFIED_REASON = "unclassified_evidence_class"
 
+#: What an *approved* reviewed relationship must carry, non-empty, before any
+#: compiler applies it.
+#:
+#: The whole eligibility standard rests on the claim that a published
+#: relationship was reviewed by a person. If flipping ``review_status`` to
+#: ``approved`` were enough on its own, that claim would be unfalsifiable: a
+#: record could activate a concept merge while naming no reviewer, giving no
+#: rationale, and citing no evidence. Requiring the provenance is what makes
+#: "reviewed" mean something a later reader can check and, if necessary,
+#: dispute.
+REVIEW_PROVENANCE_FIELDS = ("reviewer", "rationale", "evidence_references")
+
+APPROVED_REVIEW_STATUS = "approved"
+
+
+def missing_review_provenance(entry: dict) -> list[str]:
+    """Return the provenance fields an approved record leaves empty.
+
+    Presence is not enough — a field present but blank carries no provenance.
+    ``evidence_references`` must be a list holding at least one non-blank
+    reference. Returns ``[]`` for a record that is not approved, because only
+    an applied record makes a review claim.
+    """
+    if str(entry.get("review_status") or "") != APPROVED_REVIEW_STATUS:
+        return []
+    missing: list[str] = []
+    for field in REVIEW_PROVENANCE_FIELDS:
+        value = entry.get(field)
+        if field == "evidence_references":
+            if not isinstance(value, list) or not [
+                item for item in value if str(item or "").strip()
+            ]:
+                missing.append(field)
+        elif not str(value or "").strip():
+            missing.append(field)
+    return missing
+
 
 class BridgeEmissionError(ValueError):
     """Raised when the emission policy is missing, malformed, or ambiguous."""

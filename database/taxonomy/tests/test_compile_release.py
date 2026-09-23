@@ -109,11 +109,34 @@ def _write_normalized_source(
     return root
 
 
+#: Placeholder review provenance for fixtures. The compiler refuses an
+#: approved record that names no reviewer, gives no rationale or cites no
+#: evidence, so every approved fixture needs these. Filled in here only when a
+#: fixture does not supply its own, to keep the fixtures about the behaviour
+#: under test. The refusal itself is covered directly by
+#: `test_bridge_emission.py`, which builds records without going through this
+#: helper — do not rely on this default to exercise it.
+_FIXTURE_REVIEW_PROVENANCE = {
+    "reviewer": "fixture-reviewer",
+    "rationale": "fixture rationale",
+    "evidence_references": ["fixture-evidence"],
+}
+
+
+def _with_fixture_provenance(entries: list[dict]) -> list[dict]:
+    out = []
+    for entry in entries:
+        if entry.get("review_status") == "approved":
+            entry = {**_FIXTURE_REVIEW_PROVENANCE, **entry}
+        out.append(entry)
+    return out
+
+
 def _write_manual_mappings(path: Path, mappings: list[dict]) -> Path:
     payload = {
         "format": "sporely-taxonomy-manual-mappings-v1",
         "schema": {},
-        "mappings": mappings,
+        "mappings": _with_fixture_provenance(mappings),
     }
     path.write_text(
         json.dumps(payload, ensure_ascii=False, indent=2, sort_keys=True) + "\n",
@@ -268,7 +291,10 @@ def test_manual_exact_mapping_shares_identity(tmp_path: Path) -> None:
             "review_status": "approved",
             "reviewer": "test",
             "rationale": "test",
-            "evidence_references": [],
+            # An approved mapping must cite at least one reference; the empty
+            # list this fixture used to carry satisfied field presence but
+            # carried no provenance, which the compiler now refuses.
+            "evidence_references": ["test-evidence"],
             "created_at": "2026-07-28T00:00:00Z",
             "updated_at": "2026-07-28T00:00:00Z",
             "source_release_range": {"first": "1.284", "last": "1.284"},

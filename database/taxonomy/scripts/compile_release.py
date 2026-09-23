@@ -64,6 +64,7 @@ from bridge_emission import (  # noqa: E402
     EVIDENCE_CLASS_MANUAL_APPROVED_EXACT,
     EVIDENCE_CLASS_NONE,
     EVIDENCE_CLASS_REVIEWED_SUPERSESSION,
+    missing_review_provenance,
 )
 from cross_source_mapping import (  # noqa: E402
     BackboneIndex,
@@ -348,6 +349,14 @@ def _load_concept_supersessions(path: Path | None) -> list[ConceptSupersession]:
                 f"than once; the current concept would be ambiguous"
             )
         seen.add(superseded)
+        absent = missing_review_provenance(entry)
+        if absent:
+            raise CompilerError(
+                f"{path}: supersession {supersession_id!r} is approved but "
+                f"carries no {', '.join(absent)}. An approved record merges "
+                f"an allocated concept, so flipping review_status alone must "
+                f"not activate it."
+            )
         out.append(ConceptSupersession(
             supersession_id=supersession_id,
             superseded_sporely_taxon_id=superseded,
@@ -400,6 +409,14 @@ def _load_manual_mappings(path: Path) -> list[ManualMapping]:
             )
         relationship = str(entry.get("relationship", ""))
         review_status = str(entry.get("review_status", ""))
+        absent = missing_review_provenance(entry)
+        if absent:
+            raise CompilerError(
+                f"{path}: mapping {mapping_id!r} is approved but carries no "
+                f"{', '.join(absent)}. An approved mapping overrides "
+                f"automation, so flipping review_status alone must not "
+                f"activate it."
+            )
         mapping = ManualMapping(
             mapping_id=mapping_id,
             source_usage=source_usage,
@@ -1154,7 +1171,16 @@ def compile_release(
                         "nortaxa_taxon_id_not_in_registry"})
                     legacy_counts["unresolved_nortaxa_taxonid"] += 1
                     continue
-                sporely_id = alloc.sporely_taxon_id
+                # The registry is deliberately not rewritten by a
+                # supersession, so a NorTaxa identifier still resolves to the
+                # concept it was allocated. Phase 2f suppressed that concept's
+                # canonical row, so using the allocation directly would attach
+                # legacy vernaculars and external IDs to a concept the release
+                # does not emit — orphan rows pointing at nothing. Follow the
+                # same selection every other consumer follows.
+                sporely_id = superseded_to_current.get(
+                    alloc.sporely_taxon_id, alloc.sporely_taxon_id,
+                )
                 kind = entry.get("kind")
                 if kind == "vernacular":
                     provider = entry.get("provider") or "legacy_sporely"

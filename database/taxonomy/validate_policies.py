@@ -6,8 +6,17 @@ from __future__ import annotations
 import argparse
 import json
 import re
+import sys
 from pathlib import Path
 from typing import Any
+
+_SCRIPTS = Path(__file__).resolve().parent / "scripts"
+if str(_SCRIPTS) not in sys.path:
+    sys.path.insert(0, str(_SCRIPTS))
+
+# One definition of what an approved reviewed relationship must carry, shared
+# with the compiler so the validator and the thing it validates cannot drift.
+from bridge_emission import missing_review_provenance  # noqa: E402
 
 
 POLICY_DIR = Path(__file__).resolve().parent / "policies"
@@ -18,6 +27,7 @@ REQUIRED_FILES = {
     "mapping_policy": "mapping_policy.yml",
     "release_thresholds": "release_thresholds.yml",
     "manual_mappings": "manual_mappings.yml",
+    "concept_supersessions": "concept_supersessions.yml",
     "release_contract": "release_contract.yml",
 }
 RELATIONSHIPS = {"exact", "likely_exact", "broader", "narrower", "overlapping", "synonym", "unresolved"}
@@ -155,6 +165,55 @@ def validate(policy_dir: Path = POLICY_DIR) -> dict[str, Any]:
         target = entry.get("target", {})
         if ("source_usage" in target) == ("sporely_taxon_id" in target):
             raise PolicyError("manual mapping target must contain exactly one target kind")
+        absent = missing_review_provenance(entry)
+        if absent:
+            raise PolicyError(
+                f"approved manual mapping {entry.get('mapping_id')!r} carries "
+                f"no {', '.join(absent)}"
+            )
+
+    supersessions = policies["concept_supersessions"]
+    required = set(supersessions.get("schema", {}).get("required", []))
+    seen_superseded: set[int] = set()
+    for entry in supersessions.get("supersessions", []):
+        missing_fields = sorted(required - set(entry))
+        if missing_fields:
+            raise PolicyError(
+                f"concept supersession missing fields: {', '.join(missing_fields)}"
+            )
+        if entry.get("relationship") not in RELATIONSHIPS:
+            raise PolicyError(
+                f"invalid supersession relationship: {entry.get('relationship')}"
+            )
+        if entry.get("review_status") not in REVIEW_STATES:
+            raise PolicyError(
+                f"invalid supersession review status: {entry.get('review_status')}"
+            )
+        current = entry.get("current_source_usage", {})
+        if current.get("source") not in source_set:
+            raise PolicyError(
+                f"unknown source in supersession: {current.get('source')}"
+            )
+        key = f"{current.get('source')}:{current.get('namespace')}"
+        if key not in set(namespace_keys):
+            raise PolicyError(f"unknown namespace in supersession: {key}")
+        superseded = entry.get("superseded_sporely_taxon_id")
+        if not isinstance(superseded, int) or superseded <= 0:
+            raise PolicyError(
+                f"supersession superseded_sporely_taxon_id must be a positive "
+                f"integer, got {superseded!r}"
+            )
+        if superseded in seen_superseded:
+            raise PolicyError(
+                f"sporely_taxon_id={superseded} is superseded more than once"
+            )
+        seen_superseded.add(superseded)
+        absent = missing_review_provenance(entry)
+        if absent:
+            raise PolicyError(
+                f"approved supersession {entry.get('supersession_id')!r} "
+                f"carries no {', '.join(absent)}"
+            )
 
     return policies
 

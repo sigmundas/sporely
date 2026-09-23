@@ -67,6 +67,7 @@ from cross_source_mapping import (  # noqa: E402
 )
 
 from test_compile_release import (  # noqa: E402
+    _with_fixture_provenance,
     _write_manual_mappings,
     _write_normalized_source,
 )
@@ -672,11 +673,17 @@ def test_approved_manual_bridge_emits_on_a_fresh_registry(
 
 
 def _write_supersessions(path: Path, entries: list[dict]) -> Path:
+    """Write a supersession ledger, filling fixture review provenance.
+
+    As with manual mappings, an approved record must name a reviewer, give a
+    rationale and cite evidence or the compiler refuses it. That refusal is
+    tested directly below rather than through this helper.
+    """
     path.write_text(
         json.dumps({
             "format": "sporely-taxonomy-concept-supersessions-v1",
             "schema": {},
-            "supersessions": entries,
+            "supersessions": _with_fixture_provenance(entries),
         }, ensure_ascii=False, indent=2, sort_keys=True) + "\n",
         encoding="utf-8",
     )
@@ -1074,3 +1081,209 @@ def test_legacy_suppression_accounts_for_every_in_scope_row(
         suppress_legacy_integer_ids(
             w1_dir=export_dir, output_dir=scoped, included=included,
         )
+
+
+# ------------------------------------------------- review provenance gate ---
+
+
+def _raw_ledger(path: Path, key: str, entries: list[dict]) -> Path:
+    """Write a ledger verbatim, bypassing fixture provenance defaults."""
+    path.write_text(json.dumps({"format": "raw", "schema": {}, key: entries},
+                               ensure_ascii=False, sort_keys=True) + "\n",
+                    encoding="utf-8")
+    return path
+
+
+_APPROVED_MAPPING_SHAPE = {
+    "mapping_id": "provenance-probe",
+    "source_usage": {"source": "nortaxa", "namespace": "nortaxa_taxon_id",
+                     "identifier": "53482"},
+    "target": {"source_usage": {"source": "col_xr",
+                                "namespace": "col_xr_taxon_id",
+                                "identifier": "39ZCL"}},
+    "relationship": "exact",
+    "review_status": "approved",
+    "reviewer": "someone",
+    "rationale": "because",
+    "evidence_references": ["ref"],
+}
+
+
+@pytest.mark.parametrize("blanked,expected", [
+    ("reviewer", "reviewer"),
+    ("rationale", "rationale"),
+    ("evidence_references", "evidence_references"),
+])
+def test_approved_mapping_without_provenance_is_refused(
+    tmp_path: Path, blanked: str, expected: str,
+) -> None:
+    """Flipping review_status alone must not activate a relationship.
+
+    The entire eligibility standard rests on a person having reviewed the
+    relationship. If an approved record could name no reviewer, give no
+    rationale or cite no evidence, that claim would be unfalsifiable — and the
+    two shipped regression records would activate the moment someone edited
+    one field.
+    """
+    entry = dict(_APPROVED_MAPPING_SHAPE)
+    entry[blanked] = [] if blanked == "evidence_references" else "   "
+    with pytest.raises(CompilerError, match=expected):
+        compile_release(
+            normalized_source_dirs=[_col_source(tmp_path / "sources"),
+                                    _nortaxa_source(tmp_path / "sources")],
+            manual_mappings_path=_raw_ledger(
+                tmp_path / "raw.yml", "mappings", [entry]),
+            mapping_policy_path=_POLICY_PATH,
+            registry_path=tmp_path / "registry.jsonl",
+            output_dir=tmp_path / "release",
+            release_id="tax-2026.09.23-01",
+        )
+
+
+def test_approved_supersession_without_provenance_is_refused(
+    tmp_path: Path,
+) -> None:
+    """The same gate on the heavier operation: a concept merge."""
+    first = _compile(tmp_path, release_id="tax-2026.09.23-01")
+    own_id = _usages(first)[("nortaxa", "52369")]["sporely_taxon_id"]
+    with pytest.raises(CompilerError, match="reviewer"):
+        compile_release(
+            normalized_source_dirs=[tmp_path / "sources" / "col_xr",
+                                    tmp_path / "sources" / "nortaxa"],
+            manual_mappings_path=_write_manual_mappings(tmp_path / "m.yml", []),
+            mapping_policy_path=_POLICY_PATH,
+            registry_path=tmp_path / "registry.jsonl",
+            output_dir=tmp_path / "release2",
+            release_id="tax-2026.09.23-02",
+            concept_supersessions_path=_raw_ledger(
+                tmp_path / "raw_sup.yml", "supersessions", [{
+                    "supersession_id": "no-provenance",
+                    "superseded_sporely_taxon_id": own_id,
+                    "current_source_usage": {"source": "col_xr",
+                                             "namespace": "col_xr_taxon_id",
+                                             "identifier": "5ZT3G"},
+                    "relationship": "exact",
+                    "review_status": "approved",
+                    "reviewer": "",
+                    "rationale": "r",
+                    "evidence_references": ["e"],
+                }]),
+        )
+
+
+def test_unapproved_record_needs_no_provenance(tmp_path: Path) -> None:
+    """The gate applies to applied records only.
+
+    The two shipped records sit at needs_review with an empty reviewer. That
+    must stay loadable — otherwise a record could not be staged for review at
+    all.
+    """
+    entry = dict(_APPROVED_MAPPING_SHAPE)
+    entry.update(review_status="needs_review", reviewer="",
+                 rationale="", evidence_references=[])
+    release = tmp_path / "release"
+    compile_release(
+        normalized_source_dirs=[_col_source(tmp_path / "sources"),
+                                _nortaxa_source(tmp_path / "sources")],
+        manual_mappings_path=_raw_ledger(
+            tmp_path / "raw.yml", "mappings", [entry]),
+        mapping_policy_path=_POLICY_PATH,
+        registry_path=tmp_path / "registry.jsonl",
+        output_dir=release,
+        release_id="tax-2026.09.23-01",
+    )
+    # Loaded, and not applied.
+    assert _usages(release)[("nortaxa", "53482")]["bridge_evidence_class"] == \
+        EVIDENCE_CLASS_CROSS_SOURCE_STRICT
+
+
+def test_shipped_policies_validate() -> None:
+    """The committed ledgers must pass the offline validator.
+
+    `validate_policies.py` now loads the supersession ledger too, so a record
+    that would be refused at compile time is caught before a build starts.
+    """
+    import sys as _sys
+    _root = _TAXONOMY.parents[1]
+    if str(_root) not in _sys.path:
+        _sys.path.insert(0, str(_root))
+    from database.taxonomy.validate_policies import validate
+
+    policies = validate()
+    assert "concept_supersessions" in policies
+    assert policies["concept_supersessions"]["supersessions"]
+
+
+# ------------------------------------------- supersession + legacy enrichment ---
+
+
+def test_legacy_enrichment_follows_the_supersession(tmp_path: Path) -> None:
+    """Legacy rows must not attach to a concept the release does not emit.
+
+    The registry is deliberately not rewritten by a supersession, so a NorTaxa
+    identifier still resolves to the concept it was allocated. Phase 2f
+    suppresses that concept's canonical row, so a legacy vernacular resolved
+    straight off the allocation would land on a concept with no taxon row —
+    an orphan pointing at nothing.
+    """
+    first = _compile(tmp_path, release_id="tax-2026.09.23-01")
+    own_id = _usages(first)[("nortaxa", "52369")]["sporely_taxon_id"]
+    backbone_id = _usages(first)[("col_xr", "5ZT3G")]["sporely_taxon_id"]
+
+    legacy = tmp_path / "legacy.jsonl"
+    legacy.write_text("\n".join([
+        json.dumps({"kind": "vernacular", "nortaxa_taxon_id": "52369",
+                    "provider": "legacy_sporely", "language": "sv",
+                    "vernacular_name": "slank ringhätta"}),
+        json.dumps({"kind": "external_id", "nortaxa_taxon_id": "52369",
+                    "provider": "artportalen", "external_id": "12345",
+                    "external_id_kind": "integer"}),
+    ]) + "\n", encoding="utf-8")
+
+    release = tmp_path / "release2"
+    compile_release(
+        normalized_source_dirs=[tmp_path / "sources" / "col_xr",
+                                tmp_path / "sources" / "nortaxa"],
+        manual_mappings_path=_write_manual_mappings(tmp_path / "m5.yml", []),
+        mapping_policy_path=_POLICY_PATH,
+        registry_path=tmp_path / "registry.jsonl",
+        output_dir=release,
+        release_id="tax-2026.09.23-02",
+        legacy_enrichment_path=legacy,
+        concept_supersessions_path=_write_supersessions(
+            tmp_path / "sup.yml", [{
+                "supersession_id": "supersede-52369",
+                "superseded_sporely_taxon_id": own_id,
+                "current_source_usage": {"source": "col_xr",
+                                         "namespace": "col_xr_taxon_id",
+                                         "identifier": "5ZT3G"},
+                "relationship": "exact",
+                "review_status": "approved",
+            }]),
+    )
+
+    emitted_taxa = {
+        json.loads(line)["sporely_taxon_id"]
+        for line in (release / "taxa.jsonl").read_text(
+            encoding="utf-8").splitlines() if line.strip()
+    }
+    assert own_id not in emitted_taxa
+
+    vern = [
+        json.loads(line)
+        for line in (release / "vernacular.jsonl").read_text(
+            encoding="utf-8").splitlines() if line.strip()
+    ]
+    legacy_rows = [v for v in vern if v["vernacular_name"] == "slank ringhätta"]
+    assert len(legacy_rows) == 1
+    assert legacy_rows[0]["sporely_taxon_id"] == backbone_id
+
+    # And nothing at all was written against the suppressed concept.
+    assert not [v for v in vern if v["sporely_taxon_id"] == own_id]
+    for name in ("vernacular.jsonl", "legacy_external_ids.jsonl"):
+        path = release / name
+        if not path.exists():
+            continue
+        for line in path.read_text(encoding="utf-8").splitlines():
+            if line.strip():
+                assert json.loads(line)["sporely_taxon_id"] != own_id
