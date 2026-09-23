@@ -54,6 +54,7 @@ from bridge_emission import (  # noqa: E402
     UNCLASSIFIED_REASON,
     BridgeEmissionError,
     BridgeEmissionPolicy,
+    missing_review_provenance,
 )
 from build_sqlite_candidate import build_candidate  # noqa: E402
 from compile_release import CompilerError, compile_release  # noqa: E402
@@ -300,15 +301,14 @@ def test_no_automatic_class_is_eligible() -> None:
         assert policy.rejection_reason(evidence_class).strip()
 
 
-def test_shipped_reviewed_records_are_not_yet_approved() -> None:
-    """The two regression records await a human decision.
+def test_shipped_reviewed_records_carry_full_review_provenance() -> None:
+    """The two regression records are approved and fully attributed.
 
-    Both ledger entries carry the assembled cross-reference evidence but
-    `review_status = needs_review`, so the compiler ignores them. This test
-    pins that state deliberately: it fails the moment someone approves a
-    record, which is the point at which the production candidate must be
-    rebuilt and re-verified. It is not asserting that the records should stay
-    unapproved forever.
+    Both were approved on 2026-09-23 by Sigmund Ås against recorded
+    manual-verification checks. This replaces an earlier test that pinned the
+    pending state; what matters now is that an applied record names its
+    reviewer, gives a rationale and cites evidence, so the review claim stays
+    checkable by a later reader.
     """
     mappings = json.loads(
         (_TAXONOMY / "policies" / "manual_mappings.yml").read_text(
@@ -317,13 +317,13 @@ def test_shipped_reviewed_records_are_not_yet_approved() -> None:
         (_TAXONOMY / "policies" / "concept_supersessions.yml").read_text(
             encoding="utf-8"))
     entries = mappings["mappings"] + supersessions["supersessions"]
-    assert entries, "the regression records must be present to be reviewable"
+    assert entries, "the regression records must be present"
     for entry in entries:
-        assert entry["review_status"] == "needs_review"
-        assert not entry["reviewer"]
-        # Evidence must be citable, or the review has nothing to stand on.
-        assert entry["evidence_references"]
+        assert entry["review_status"] == "approved"
+        assert entry["reviewer"].strip()
+        assert not missing_review_provenance(entry)
         assert entry["rationale"].strip()
+        assert entry["evidence_references"]
 
 
 def test_unknown_evidence_class_fails_closed() -> None:

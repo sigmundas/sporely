@@ -1,0 +1,841 @@
+{
+  "build_dir": "/Users/sigmundas/Documents/Code/sporely/.stage3-build/2026-09-23-taxonomy-v2",
+  "cloud_export": {
+    "files": {
+      "scientific_name.jsonl": 662648,
+      "taxon.jsonl": 634893,
+      "taxon_external_id.jsonl": 634896,
+      "taxon_external_id_legacy_integer.jsonl": 61583,
+      "taxon_redlist.jsonl": 7866,
+      "taxonomy_release.jsonl": 1,
+      "vernacular.jsonl": 10294
+    }
+  },
+  "determinism": {
+    "compile_artifacts": {
+      "legacy_external_ids.jsonl": {
+        "identical": true,
+        "sha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855"
+      },
+      "mappings.jsonl": {
+        "identical": true,
+        "sha256": "5d041d63686cdcdfc399182272e57aa208245b624cadc6ac8049d736a31838c2"
+      },
+      "redlist_no.jsonl": {
+        "identical": true,
+        "sha256": "43ff7ed1bc7c4677acb60832c437ec76af20910cb9c28829036f0e07eed62ca9"
+      },
+      "source_usages.jsonl": {
+        "identical": true,
+        "sha256": "9f92f5002a652190277fc24fd54917bf212498e625ad6a6e7fb97f2a91075255"
+      },
+      "taxa.jsonl": {
+        "identical": true,
+        "sha256": "aa2a0d12dd42fd4b4a7e54d66a0cc3671f8f789d4580e8c5bd6c04595a56bcf9"
+      },
+      "vernacular.jsonl": {
+        "identical": true,
+        "sha256": "8d8ab69709ee4b056747f0b50b66a9fc01c4bbf2a73a613d9968c423838ff5a2"
+      }
+    },
+    "mismatches": [],
+    "registry_after_compile": {
+      "identical": true,
+      "sha256": "21b5d39d257799fdd4ea758d857fec4d29758b83dd7ea91bf3ecd24e3d1d3077"
+    }
+  },
+  "inputs": {
+    "col_taxa_rows": 620976,
+    "nortaxa_taxa_rows": 229018,
+    "nortaxa_vernacular_rows": 58773,
+    "redlist_rows": 34171,
+    "registry_base_sha256": "21b5d39d257799fdd4ea758d857fec4d29758b83dd7ea91bf3ecd24e3d1d3077"
+  },
+  "release_id": "tax-2026.09.23-01",
+  "scope_evidence": {
+    "all_winning_rule_counts": {
+      "default_exclude": 84392,
+      "exclude_pucciniomycetes": 9043,
+      "exclude_unite_sequence_clusters": 430621,
+      "exclude_ustilaginomycetes": 1619,
+      "include_agaricomycetes": 46815,
+      "include_annulohypoxylon": 75,
+      "include_ascocoryne": 12,
+      "include_bulgaria": 10,
+      "include_chlorociboria": 31,
+      "include_cordyceps": 225,
+      "include_cudonia": 14,
+      "include_cyttaria": 14,
+      "include_dacrymycetes": 250,
+      "include_daldinia": 58,
+      "include_elaphomycetaceae": 110,
+      "include_geoglossomycetes": 130,
+      "include_gymnosporangium": 81,
+      "include_hypoxylon": 269,
+      "include_kretzschmaria": 36,
+      "include_leotia": 25,
+      "include_microglossum": 29,
+      "include_mycosarcoma_maydis": 1,
+      "include_naematelia": 7,
+      "include_neolectomycetes": 10,
+      "include_ophiocordyceps": 304,
+      "include_pezizomycetes": 3666,
+      "include_phaeotremella": 18,
+      "include_podostroma": 8,
+      "include_sirobasidium": 12,
+      "include_spathularia": 9,
+      "include_tremella": 263,
+      "include_xylaria": 399,
+      "review_atractiellomycetes": 97,
+      "review_diatrypaceae": 778,
+      "review_hypoxylaceae": 147,
+      "review_leotiomycetes": 11898,
+      "review_sordariomycetes": 27114,
+      "review_tolypocladium": 52,
+      "review_tremellomycetes": 755,
+      "review_trichoderma": 484,
+      "review_xylariaceae": 1095
+    },
+    "correctness_probes": {
+      "Amanita muscaria": {
+        "actual": "include",
+        "col_concept_id": "5TYZ9",
+        "expected": "include",
+        "winning_rule": "include_agaricomycetes"
+      },
+      "Aspergillus fumigatus": {
+        "actual": "exclude",
+        "col_concept_id": "HC3H",
+        "expected": "exclude",
+        "winning_rule": "default_exclude"
+      },
+      "Cladonia rangiferina": {
+        "actual": "exclude",
+        "col_concept_id": "9XK8W",
+        "expected": "exclude",
+        "winning_rule": "default_exclude"
+      },
+      "Geoglossum fallax": {
+        "actual": "include",
+        "col_concept_id": "6KBJR",
+        "expected": "include",
+        "winning_rule": "include_geoglossomycetes"
+      },
+      "Gymnosporangium": {
+        "actual": "include",
+        "col_concept_id": "4RXL",
+        "expected": "include",
+        "winning_rule": "include_gymnosporangium"
+      },
+      "Morchella esculenta": {
+        "actual": "include",
+        "col_concept_id": "44CPR",
+        "expected": "include",
+        "winning_rule": "include_pezizomycetes"
+      },
+      "Mycosarcoma maydis": {
+        "actual": "include",
+        "col_concept_id": "B24TM",
+        "expected": "include",
+        "winning_rule": "include_mycosarcoma_maydis"
+      },
+      "Puccinia abchazica": {
+        "actual": "exclude",
+        "col_concept_id": "78MLW",
+        "expected": "exclude",
+        "winning_rule": "exclude_pucciniomycetes"
+      },
+      "Saccharomyces cerevisiae": {
+        "actual": "exclude",
+        "col_concept_id": "4TWCR",
+        "expected": "exclude",
+        "winning_rule": "default_exclude"
+      },
+      "Tuber melanosporum": {
+        "actual": "include",
+        "col_concept_id": "59HZX",
+        "expected": "include",
+        "winning_rule": "include_pezizomycetes"
+      },
+      "Ustilago abaconensis": {
+        "actual": "exclude",
+        "col_concept_id": "7F2TK",
+        "expected": "exclude",
+        "winning_rule": "exclude_ustilaginomycetes"
+      },
+      "Xylaria hypoxylon": {
+        "actual": "include",
+        "col_concept_id": "5CH3N",
+        "expected": "include",
+        "winning_rule": "include_xylaria"
+      }
+    },
+    "desktop_candidate": {
+      "build_seconds": 1.86184,
+      "compressed_bytes": 5599936,
+      "index_sizes": {
+        "external_mapping_lookup": 1777664,
+        "scientific_name_prefix": 1683456,
+        "sqlite_autoindex_external_mapping_1": 1982464,
+        "sqlite_autoindex_metadata_1": 4096,
+        "sqlite_autoindex_scientific_name_1": 1904640,
+        "sqlite_autoindex_taxon_1": 729088,
+        "sqlite_autoindex_vernacular_name_1": 122880,
+        "taxon_name_prefix": 1560576,
+        "vernacular_name_prefix": 110592
+      },
+      "lookup_timings": {
+        "alias_prefix": {
+          "max_ms": 0.011833,
+          "min_ms": 0.006875,
+          "p50_ms": 0.007083,
+          "p95_ms": 0.011833,
+          "query_plan": [
+            "SEARCH scientific_name USING INDEX scientific_name_prefix (name>? AND name<?)"
+          ],
+          "rows": 1
+        },
+        "canonical_exact": {
+          "max_ms": 0.024167,
+          "min_ms": 0.005375,
+          "p50_ms": 0.005542,
+          "p95_ms": 0.024167,
+          "query_plan": [
+            "SEARCH taxon USING INDEX taxon_name_prefix (scientific_name=?)"
+          ],
+          "rows": 1
+        },
+        "canonical_prefix": {
+          "max_ms": 0.0245,
+          "min_ms": 0.009375,
+          "p50_ms": 0.009542,
+          "p95_ms": 0.0245,
+          "query_plan": [
+            "SEARCH taxon USING INDEX taxon_name_prefix (scientific_name>? AND scientific_name<?)"
+          ],
+          "rows": 20
+        },
+        "external_resolution": {
+          "max_ms": 0.019209,
+          "min_ms": 0.009208,
+          "p50_ms": 0.009458,
+          "p95_ms": 0.019209,
+          "query_plan": [
+            "SEARCH external_mapping USING COVERING INDEX sqlite_autoindex_external_mapping_1 (source_system=? AND namespace=? AND external_id=?)"
+          ],
+          "rows": 1
+        },
+        "genus_autocomplete": {
+          "max_ms": 0.172375,
+          "min_ms": 0.111625,
+          "p50_ms": 0.112875,
+          "p95_ms": 0.172375,
+          "query_plan": [
+            "SEARCH taxon USING INDEX taxon_name_prefix (scientific_name>? AND scientific_name<?)"
+          ],
+          "rows": 1
+        },
+        "synonym_exact": {
+          "max_ms": 0.012375,
+          "min_ms": 0.004833,
+          "p50_ms": 0.004958,
+          "p95_ms": 0.012375,
+          "query_plan": [
+            "SEARCH scientific_name USING INDEX scientific_name_prefix (name=?)"
+          ],
+          "rows": 1
+        },
+        "vernacular_exact": {
+          "max_ms": 0.014125,
+          "min_ms": 0.00725,
+          "p50_ms": 0.007458,
+          "p95_ms": 0.014125,
+          "query_plan": [
+            "SEARCH vernacular_name USING INDEX vernacular_name_prefix (language=? AND name=?)"
+          ],
+          "rows": 1
+        },
+        "vernacular_prefix": {
+          "max_ms": 0.015709,
+          "min_ms": 0.010041,
+          "p50_ms": 0.010125,
+          "p95_ms": 0.015709,
+          "query_plan": [
+            "SEARCH vernacular_name USING INDEX vernacular_name_prefix (language=? AND name>? AND name<?)"
+          ],
+          "rows": 1
+        }
+      },
+      "sha256": "6a1aff4690c7173df7670837138961b9b126dc941c8c4a07e6747febc61170eb",
+      "sqlite_bytes": 19001344,
+      "table_counts": {
+        "external_mapping": 52884,
+        "scientific_name": 57770,
+        "taxon": 52917,
+        "vernacular_name": 3925
+      }
+    },
+    "export_contract_validation": {
+      "dataset_files": 7,
+      "status": "passed",
+      "taxon_rows": 52917
+    },
+    "export_files": [
+      {
+        "bytes": 352,
+        "name": "taxonomy_release.jsonl",
+        "row_count": 1,
+        "sha256": "9936affce4b7bd4f8b0f55f4bf08142066fa163dfb2b2c1008e402fe06ee99a4"
+      },
+      {
+        "bytes": 32567396,
+        "name": "taxon.jsonl",
+        "row_count": 52917,
+        "sha256": "59773f222ac7f5e2d9e06b42fd974523b6f153122c10d1634ede5fa16af371e3"
+      },
+      {
+        "bytes": 8051690,
+        "name": "scientific_name.jsonl",
+        "row_count": 57770,
+        "sha256": "2e8b3e5c14336fc2517ba1fa905ae31341abc13ce998c84492e7f257938625ae"
+      },
+      {
+        "bytes": 474109,
+        "name": "vernacular.jsonl",
+        "row_count": 3925,
+        "sha256": "945b96a65bbfcc77afd3c7ce245646b6bca1ea511c4f8a4e6faa182014329267"
+      },
+      {
+        "bytes": 9813418,
+        "name": "taxon_external_id.jsonl",
+        "row_count": 52884,
+        "sha256": "3f8df59ec28e2460d179f4b8497947c51c7713af8b7d7a540cf60bad85c0a0fa"
+      },
+      {
+        "bytes": 0,
+        "name": "taxon_external_id_legacy_integer.jsonl",
+        "row_count": 0,
+        "sha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855"
+      },
+      {
+        "bytes": 1309179,
+        "name": "taxon_redlist.jsonl",
+        "row_count": 2262,
+        "sha256": "71ef145c818cd760a5d2729e3b60f0ab0b548e3f0bc33b64cba78257b8538981"
+      }
+    ],
+    "export_summary": {
+      "accepted_species": 49557,
+      "compressed_dataset_bytes": 2688427,
+      "compressed_dataset_sha256": "be0f00c7f70b67486d5db82f4993f06b94a6a51fee98fcbbda4bf1a865002b11",
+      "external_mappings": 52884,
+      "genera": 2478,
+      "included_concepts": 52881,
+      "scientific_aliases": 4889,
+      "scientific_name_rows": 57770,
+      "uncompressed_dataset_bytes": 52216144,
+      "vernacular_names": 3925
+    },
+    "format": "sporely-global-macrofungi-evidence-v1",
+    "historical_compatibility": {
+      "inside_new_macrofungi_scope": 0,
+      "manual_name_without_resolved_identity": 0,
+      "no_identity_evidence": 0,
+      "observations_total": 0,
+      "outside_scope_but_historically_required": 0,
+      "representative_manual": [],
+      "representative_unresolved_legacy": [],
+      "unresolved_legacy_identity": 0
+    },
+    "included_rank_counts": {
+      "class": 5,
+      "family": 228,
+      "form": 132,
+      "genus": 2478,
+      "order": 28,
+      "species": 49557,
+      "subspecies": 25,
+      "variety": 428
+    },
+    "pinned_col_release": "2026-07-17-XR",
+    "policy_sha256": "e4e796286df93b5372264c702c824eea746f680b3b4e8d6467621c99e5b64ea6",
+    "release_id": "tax-2026.09.23-01",
+    "safety": {
+      "desktop_activation_performed": false,
+      "production_writes_performed": false
+    },
+    "scope_audit": {
+      "candidate": {
+        "included_ascomycota": 5434,
+        "included_basidiomycota": 47447,
+        "included_concepts": 52881,
+        "included_other_fungal_phyla": 0
+      },
+      "rejected_w1_col_scope": {
+        "ascomycota": 329139,
+        "basidiomycota": 221099,
+        "external_mappings": 634894,
+        "genera": 14486,
+        "nortaxa_additional_concepts": 13919,
+        "other_fungal_phyla": 70737,
+        "other_ranks": 433938,
+        "scientific_aliases": 27755,
+        "species": 172551,
+        "total_col_concepts": 620975,
+        "total_w1_export_concepts": 634894,
+        "vernacular_names": 10294
+      }
+    },
+    "scope_counts": {
+      "exclude": 525675,
+      "include": 52881,
+      "review": 42420
+    },
+    "scope_manifest_sha256": "79a3c88c7d58fa7eea541b54e42dee43d631b5ff92527d7e920f9c0d6cd51cae",
+    "selectable_validation": {
+      "animals": 0,
+      "non_fungi": 0,
+      "plants": 0
+    },
+    "source_hashes": {
+      "sqlite_gz_sha256": "22c7886091677237f185b9e1c1d00d140263e2b52cbb2200555767323681de54",
+      "w1_manifest_sha256": "ab8422ea322db22f8be48d989554d2fb6933d354d6ab9c22b65aec6c51b03697"
+    },
+    "starting_revision": "150e9eb",
+    "unresolved_clade_decisions": [
+      "review_tremellomycetes",
+      "review_atractiellomycetes",
+      "review_leotiomycetes",
+      "review_sordariomycetes",
+      "review_xylariaceae",
+      "review_hypoxylaceae",
+      "review_diatrypaceae",
+      "review_tolypocladium",
+      "review_trichoderma"
+    ],
+    "winning_rule_counts": {
+      "exclude_pucciniomycetes": {
+        "col_concept_id": "H7",
+        "concept_count": 9043,
+        "genus_count": 258,
+        "name": "Pucciniomycetes",
+        "rank": "class",
+        "reason": "default_non_macrofungi_exclusion",
+        "species_count": 8680,
+        "state": "exclude"
+      },
+      "exclude_ustilaginomycetes": {
+        "col_concept_id": "K9",
+        "concept_count": 1619,
+        "genus_count": 88,
+        "name": "Ustilaginomycetes",
+        "rank": "class",
+        "reason": "default_non_macrofungi_exclusion",
+        "species_count": 1503,
+        "state": "exclude"
+      },
+      "include_agaricomycetes": {
+        "col_concept_id": "7C",
+        "concept_count": 46815,
+        "genus_count": 2086,
+        "name": "Agaricomycetes",
+        "rank": "class",
+        "reason": "macrofruitbody_class",
+        "species_count": 44003,
+        "state": "include"
+      },
+      "include_annulohypoxylon": {
+        "col_concept_id": "62BHR",
+        "concept_count": 75,
+        "genus_count": 1,
+        "name": "Annulohypoxylon",
+        "rank": "genus",
+        "reason": "macrofruitbody_genus",
+        "species_count": 72,
+        "state": "include"
+      },
+      "include_ascocoryne": {
+        "col_concept_id": "33Q9",
+        "concept_count": 12,
+        "genus_count": 1,
+        "name": "Ascocoryne",
+        "rank": "genus",
+        "reason": "macrofruitbody_genus",
+        "species_count": 10,
+        "state": "include"
+      },
+      "include_bulgaria": {
+        "col_concept_id": "3DYC",
+        "concept_count": 10,
+        "genus_count": 1,
+        "name": "Bulgaria",
+        "rank": "genus",
+        "reason": "macrofruitbody_genus",
+        "species_count": 9,
+        "state": "include"
+      },
+      "include_chlorociboria": {
+        "col_concept_id": "3NMK",
+        "concept_count": 31,
+        "genus_count": 1,
+        "name": "Chlorociboria",
+        "rank": "genus",
+        "reason": "macrofruitbody_genus",
+        "species_count": 29,
+        "state": "include"
+      },
+      "include_cordyceps": {
+        "col_concept_id": "62MKV",
+        "concept_count": 225,
+        "genus_count": 1,
+        "name": "Cordyceps",
+        "rank": "genus",
+        "reason": "macrofruitbody_genus",
+        "species_count": 223,
+        "state": "include"
+      },
+      "include_cudonia": {
+        "col_concept_id": "3X9B",
+        "concept_count": 14,
+        "genus_count": 1,
+        "name": "Cudonia",
+        "rank": "genus",
+        "reason": "macrofruitbody_genus",
+        "species_count": 13,
+        "state": "include"
+      },
+      "include_cyttaria": {
+        "col_concept_id": "3Z7D",
+        "concept_count": 14,
+        "genus_count": 1,
+        "name": "Cyttaria",
+        "rank": "genus",
+        "reason": "macrofruitbody_genus",
+        "species_count": 13,
+        "state": "include"
+      },
+      "include_dacrymycetes": {
+        "col_concept_id": "622DM",
+        "concept_count": 250,
+        "genus_count": 15,
+        "name": "Dacrymycetes",
+        "rank": "class",
+        "reason": "macrofruitbody_class",
+        "species_count": 228,
+        "state": "include"
+      },
+      "include_daldinia": {
+        "col_concept_id": "3ZK8",
+        "concept_count": 58,
+        "genus_count": 1,
+        "name": "Daldinia",
+        "rank": "genus",
+        "reason": "macrofruitbody_genus",
+        "species_count": 57,
+        "state": "include"
+      },
+      "include_elaphomycetaceae": {
+        "col_concept_id": "9LN",
+        "concept_count": 110,
+        "genus_count": 2,
+        "name": "Elaphomycetaceae",
+        "rank": "family",
+        "reason": "macrofruitbody_family",
+        "species_count": 104,
+        "state": "include"
+      },
+      "include_geoglossomycetes": {
+        "col_concept_id": "BS",
+        "concept_count": 130,
+        "genus_count": 14,
+        "name": "Geoglossomycetes",
+        "rank": "class",
+        "reason": "macrofruitbody_class",
+        "species_count": 111,
+        "state": "include"
+      },
+      "include_gymnosporangium": {
+        "col_concept_id": "4RXL",
+        "concept_count": 81,
+        "genus_count": 1,
+        "name": "Gymnosporangium",
+        "rank": "genus",
+        "reason": "field_recordable_exception",
+        "species_count": 80,
+        "state": "include"
+      },
+      "include_hypoxylon": {
+        "col_concept_id": "52YD",
+        "concept_count": 269,
+        "genus_count": 1,
+        "name": "Hypoxylon",
+        "rank": "genus",
+        "reason": "macrofruitbody_genus",
+        "species_count": 267,
+        "state": "include"
+      },
+      "include_kretzschmaria": {
+        "col_concept_id": "595N",
+        "concept_count": 36,
+        "genus_count": 1,
+        "name": "Kretzschmaria",
+        "rank": "genus",
+        "reason": "macrofruitbody_genus",
+        "species_count": 35,
+        "state": "include"
+      },
+      "include_leotia": {
+        "col_concept_id": "5CCM",
+        "concept_count": 25,
+        "genus_count": 1,
+        "name": "Leotia",
+        "rank": "genus",
+        "reason": "macrofruitbody_genus",
+        "species_count": 24,
+        "state": "include"
+      },
+      "include_microglossum": {
+        "col_concept_id": "63B48",
+        "concept_count": 29,
+        "genus_count": 1,
+        "name": "Microglossum",
+        "rank": "genus",
+        "reason": "macrofruitbody_genus",
+        "species_count": 28,
+        "state": "include"
+      },
+      "include_mycosarcoma_maydis": {
+        "col_concept_id": "B24TM",
+        "concept_count": 1,
+        "genus_count": 0,
+        "name": "Mycosarcoma maydis",
+        "rank": "species",
+        "reason": "field_recordable_exception",
+        "species_count": 1,
+        "state": "include"
+      },
+      "include_naematelia": {
+        "col_concept_id": "5X2M",
+        "concept_count": 7,
+        "genus_count": 1,
+        "name": "Naematelia",
+        "rank": "genus",
+        "reason": "macrofruitbody_genus",
+        "species_count": 6,
+        "state": "include"
+      },
+      "include_neolectomycetes": {
+        "col_concept_id": "F9",
+        "concept_count": 10,
+        "genus_count": 2,
+        "name": "Neolectomycetes",
+        "rank": "class",
+        "reason": "macrofruitbody_class",
+        "species_count": 5,
+        "state": "include"
+      },
+      "include_ophiocordyceps": {
+        "col_concept_id": "68RT",
+        "concept_count": 304,
+        "genus_count": 1,
+        "name": "Ophiocordyceps",
+        "rank": "genus",
+        "reason": "macrofruitbody_genus",
+        "species_count": 303,
+        "state": "include"
+      },
+      "include_pezizomycetes": {
+        "col_concept_id": "G4",
+        "concept_count": 3666,
+        "genus_count": 338,
+        "name": "Pezizomycetes",
+        "rank": "class",
+        "reason": "macrofruitbody_class",
+        "species_count": 3238,
+        "state": "include"
+      },
+      "include_phaeotremella": {
+        "col_concept_id": "6MLH",
+        "concept_count": 18,
+        "genus_count": 1,
+        "name": "Phaeotremella",
+        "rank": "genus",
+        "reason": "macrofruitbody_genus",
+        "species_count": 17,
+        "state": "include"
+      },
+      "include_podostroma": {
+        "col_concept_id": "6TFF",
+        "concept_count": 8,
+        "genus_count": 1,
+        "name": "Podostroma",
+        "rank": "genus",
+        "reason": "macrofruitbody_genus",
+        "species_count": 7,
+        "state": "include"
+      },
+      "include_sirobasidium": {
+        "col_concept_id": "7HSB",
+        "concept_count": 12,
+        "genus_count": 1,
+        "name": "Sirobasidium",
+        "rank": "genus",
+        "reason": "macrofruitbody_genus",
+        "species_count": 11,
+        "state": "include"
+      },
+      "include_spathularia": {
+        "col_concept_id": "7K4J",
+        "concept_count": 9,
+        "genus_count": 1,
+        "name": "Spathularia",
+        "rank": "genus",
+        "reason": "macrofruitbody_genus",
+        "species_count": 8,
+        "state": "include"
+      },
+      "include_tremella": {
+        "col_concept_id": "7YQS",
+        "concept_count": 263,
+        "genus_count": 1,
+        "name": "Tremella",
+        "rank": "genus",
+        "reason": "macrofruitbody_genus",
+        "species_count": 259,
+        "state": "include"
+      },
+      "include_xylaria": {
+        "col_concept_id": "63XB2",
+        "concept_count": 399,
+        "genus_count": 1,
+        "name": "Xylaria",
+        "rank": "genus",
+        "reason": "macrofruitbody_genus",
+        "species_count": 396,
+        "state": "include"
+      },
+      "review_atractiellomycetes": {
+        "col_concept_id": "87",
+        "concept_count": 97,
+        "genus_count": 15,
+        "name": "Atractiellomycetes",
+        "rank": "class",
+        "reason": "review_required",
+        "species_count": 75,
+        "state": "review"
+      },
+      "review_diatrypaceae": {
+        "col_concept_id": "977",
+        "concept_count": 778,
+        "genus_count": 47,
+        "name": "Diatrypaceae",
+        "rank": "family",
+        "reason": "review_required",
+        "species_count": 726,
+        "state": "review"
+      },
+      "review_hypoxylaceae": {
+        "col_concept_id": "624W7",
+        "concept_count": 147,
+        "genus_count": 20,
+        "name": "Hypoxylaceae",
+        "rank": "family",
+        "reason": "review_required",
+        "species_count": 125,
+        "state": "review"
+      },
+      "review_leotiomycetes": {
+        "col_concept_id": "DQ",
+        "concept_count": 11898,
+        "genus_count": 1076,
+        "name": "Leotiomycetes",
+        "rank": "class",
+        "reason": "review_required",
+        "species_count": 10630,
+        "state": "review"
+      },
+      "review_sordariomycetes": {
+        "col_concept_id": "J2",
+        "concept_count": 27114,
+        "genus_count": 2371,
+        "name": "Sordariomycetes",
+        "rank": "class",
+        "reason": "review_required",
+        "species_count": 24356,
+        "state": "review"
+      },
+      "review_tolypocladium": {
+        "col_concept_id": "7XJJ",
+        "concept_count": 52,
+        "genus_count": 1,
+        "name": "Tolypocladium",
+        "rank": "genus",
+        "reason": "review_required",
+        "species_count": 50,
+        "state": "review"
+      },
+      "review_tremellomycetes": {
+        "col_concept_id": "JX",
+        "concept_count": 755,
+        "genus_count": 87,
+        "name": "Tremellomycetes",
+        "rank": "class",
+        "reason": "review_required",
+        "species_count": 626,
+        "state": "review"
+      },
+      "review_trichoderma": {
+        "col_concept_id": "63W3K",
+        "concept_count": 484,
+        "genus_count": 1,
+        "name": "Trichoderma",
+        "rank": "genus",
+        "reason": "review_required",
+        "species_count": 483,
+        "state": "review"
+      },
+      "review_xylariaceae": {
+        "col_concept_id": "HYK",
+        "concept_count": 1095,
+        "genus_count": 111,
+        "name": "Xylariaceae",
+        "rank": "family",
+        "reason": "review_required",
+        "species_count": 976,
+        "state": "review"
+      }
+    }
+  },
+  "sqlite": {
+    "A_counts": {
+      "scientific_name_min": 662649,
+      "taxon_external_id_min": 61583,
+      "taxon_external_id_text_min": 620979,
+      "taxon_min": 634894,
+      "taxon_redlist_min": 34171,
+      "taxonomy_meta": 13,
+      "vernacular_min": 10294
+    },
+    "A_sha256": "2d128d083baad14e05848462ce22aff7ee72f0fd1ff1628cc001832101b2a8a7",
+    "B_sha256": "2d128d083baad14e05848462ce22aff7ee72f0fd1ff1628cc001832101b2a8a7",
+    "authoritative_bridge_emission": {
+      "eligible_evidence_classes": [
+        "manual_approved_exact",
+        "reviewed_supersession"
+      ],
+      "emitted_by_evidence_class": {
+        "manual_approved_exact": 1,
+        "reviewed_supersession": 2
+      },
+      "emitted_total": 3,
+      "policy_sha256": "a5a329848c45fcd030165a51ad1193944dffe7573ddb2a9c69441f0d76ae4afb",
+      "rejected_by_evidence_class_and_reason": {
+        "cross_source_automatic_exact_missing_authorship|admitted by the missing-authorship fallback, which fires precisely when authorship is absent on one or both sides. Weaker still than the strict rule, and rejected for the same reason plus an unverified homonym guard.": 2133,
+        "cross_source_automatic_exact_strict|the conservative exact rule matches on canonical name and rank and then strengthens the match with authorship, status and kingdom agreement plus a homonym guard. That is a stronger name match, but it is still a name match: neither source published a cross-reference asserting the two concepts are the same. continuity_rules.canonical_name_only requires review for exactly this evidence, so the binding enriches names and must not be published as concept identity. Reviewable candidates are identified by scripts/cross_reference_evidence.py, which reports the sources' own synonymy assertions; a human decision on that evidence is what promotes an association, one at a time.": 17674,
+        "intra_source_synonym|a synonym usage bound to its own accepted concept inside one source. Its relation to the backbone concept is transitive on the accepted usage's binding and has not been graded on its own evidence; admitting it would emit an identifier whose evidence was never evaluated.": 27855
+      },
+      "rejected_total": 47662
+    },
+    "identical": true
+  }
+}

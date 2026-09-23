@@ -170,14 +170,39 @@ def _approved_reviewed_usages() -> set[str]:
     supersessions_path = _TAXONOMY / "policies" / "concept_supersessions.yml"
     if supersessions_path.exists():
         document = json.loads(supersessions_path.read_text(encoding="utf-8"))
-        for entry in document.get("supersessions", []):
-            if entry.get("review_status") != "approved":
-                continue
-            # A supersession is keyed by Sporely id, not by source usage; the
-            # identifiers it publishes are resolved by the compiler. Recorded
-            # here so the audit can report it rather than silently omit it.
-            approved.add(f"sporely:{entry.get('superseded_sporely_taxon_id')}")
+        superseded = {
+            int(entry["superseded_sporely_taxon_id"])
+            for entry in document.get("supersessions", [])
+            if entry.get("review_status") == "approved"
+        }
+        if superseded:
+            # A supersession is keyed by Sporely id, but this audit is keyed by
+            # NorTaxa identifier, so resolve the concept back to every NorTaxa
+            # usage allocated to it. Without this the audit reports an emitted
+            # relationship as still awaiting review — which it did for 52369,
+            # whose usage is an anchor rather than a bridge binding and so
+            # never appears in the binding list at all.
+            approved.update(_nortaxa_identifiers_for(superseded))
     return approved
+
+
+def _nortaxa_identifiers_for(sporely_ids: set[int]) -> set[str]:
+    """Every NorTaxa identifier the registry allocated to these concepts."""
+    out: set[str] = set()
+    registry_dir = _TAXONOMY / "registry" / "canonical"
+    for shard in sorted(registry_dir.glob("part-*.jsonl")):
+        with shard.open(encoding="utf-8") as handle:
+            for raw in handle:
+                if '"nortaxa"' not in raw:
+                    continue
+                entry = json.loads(raw)
+                if entry.get("__registry_header__"):
+                    continue
+                if entry.get("source") != "nortaxa":
+                    continue
+                if int(entry["sporely_taxon_id"]) in sporely_ids:
+                    out.add(str(entry["identifier"]))
+    return out
 
 
 def _disposition(external_id: str, evidence: str, approved: set[str]) -> str:
