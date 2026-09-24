@@ -17722,16 +17722,28 @@ class ObservationDetailsDialog(GeometryMixin, QDialog):
         if getattr(self, "_loading_form", False):
             self._deferred_location_lookup_pending = True
             return
-        # Coordinates just changed — any previously-cached country/region are
-        # associated with the OLD point. Drop region_id (never invented) and
-        # clear the country_code until the new geocode returns. This is what
-        # makes the save path emit an explicit clear when a lookup ultimately
-        # fails after a coordinate change.
-        self._location_country_code = ""
-        self._location_country_name = ""
-        self._location_region_id = None
-        self._location_country_coords = None
-        self._refresh_location_reporting_summary()
+        # Clear cached geography only when the coordinates really moved away
+        # from the point it belongs to. The dialog also runs this deferred on
+        # open, after `_load_observation_values` has restored the stored
+        # country for the stored coordinates; treating that load as a change
+        # erased a valid country whenever the refresh geocode could not
+        # complete (offline), and an unrelated edit then saved NULL.
+        cached_coords = getattr(self, "_location_country_coords", None)
+        coords_moved = cached_coords is None or ObservationsTab._coords_meaningfully_changed(
+            cached_coords[0], cached_coords[1],
+            self.lat_input.value(), self.lon_input.value(),
+        )
+        if coords_moved:
+            # Coordinates changed — any previously-cached country/region are
+            # associated with the OLD point. Drop region_id (never invented)
+            # and clear the country_code until the new geocode returns. This
+            # is what makes the save path emit an explicit clear when a
+            # lookup ultimately fails after a coordinate change.
+            self._location_country_code = ""
+            self._location_country_name = ""
+            self._location_region_id = None
+            self._location_country_coords = None
+            self._refresh_location_reporting_summary()
         self._location_lookup_timer.start()
 
     def _do_location_lookup(self):

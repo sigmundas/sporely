@@ -760,3 +760,141 @@ def test_serialization_noise_in_coords_does_not_erase_geography(monkeypatch):
     _, payload = client.patches[0]
     assert "country_code" not in payload
     assert "region_id" not in payload
+
+
+# ---------------------------------------------------------------------------
+# Open-time deferred lookup must not erase a stored country (917 integrity)
+# ---------------------------------------------------------------------------
+#
+# Observation 917 kept `country_code = 'NO'` for coordinates that never moved,
+# yet an unrelated save (a taxonomy correction) wrote NULL. Mechanism: the
+# dialog opens with `_loading_form` set, so the coordinate `valueChanged`
+# only defers `_schedule_location_lookup`; `_load_observation_values` then
+# restores the stored country for the stored coordinates; after loading the
+# deferred call ran and treated "coordinates loaded" as "coordinates changed",
+# clearing the country until a refresh geocode returned. Offline it never
+# returned, and `get_data()` saved NULL.
+
+
+class _CoordInputStub:
+    def __init__(self, value):
+        self._value = value
+
+    def value(self):
+        return self._value
+
+    def minimum(self):
+        return -1000.0
+
+
+class _TimerStub:
+    def __init__(self):
+        self.starts = 0
+
+    def start(self):
+        self.starts += 1
+
+
+def _dialog_after_loading_stored_geography(lat, lon, country="NO", region="r-1"):
+    """An ObservationDetailsDialog in exactly the state `_load_observation_values`
+    leaves it in: stored country and region restored for the stored coordinates."""
+    from ui.observations_tab import ObservationDetailsDialog
+
+    dialog = ObservationDetailsDialog.__new__(ObservationDetailsDialog)
+    dialog._loading_form = False
+    dialog.lat_input = _CoordInputStub(lat)
+    dialog.lon_input = _CoordInputStub(lon)
+    dialog._location_lookup_timer = _TimerStub()
+    dialog._refresh_location_reporting_summary = lambda: None
+    dialog._location_country_code = country
+    dialog._location_country_name = ""
+    dialog._location_region_id = region
+    dialog._location_country_coords = (lat, lon)
+    return dialog
+
+
+def _geography_get_data_would_save(dialog):
+    """The two expressions `get_data()` uses for the saved geography."""
+    from ui.observations_tab import ObservationDetailsDialog
+
+    lat, lon = dialog.lat_input.value(), dialog.lon_input.value()
+    country = ObservationDetailsDialog._resolved_country_code_for_current_coords(dialog, lat, lon)
+    region = dialog._location_region_id if dialog._location_country_coords else None
+    return country, region
+
+
+def test_open_time_deferred_lookup_keeps_stored_country_when_geocode_never_returns():
+    """An unrelated edit cannot erase a stored country when no replacement
+    geocode succeeds: the deferred open-time lookup leaves it intact."""
+    from ui.observations_tab import ObservationDetailsDialog
+
+    dialog = _dialog_after_loading_stored_geography(63.416128, 10.404458)
+
+    # What the dialog's deferred-initialisation step runs after loading.
+    ObservationDetailsDialog._schedule_location_lookup(dialog)
+    # ...and no geocode result ever arrives (offline): nothing else runs.
+
+    assert _geography_get_data_would_save(dialog) == ("NO", "r-1")
+    assert dialog._location_lookup_timer.starts == 1, "the refresh lookup is still attempted"
+
+
+def test_full_open_sequence_defers_then_keeps_the_restored_country():
+    """The real ordering: the coordinate signal during loading only defers;
+    the stored country is restored; the deferred call then runs."""
+    from ui.observations_tab import ObservationDetailsDialog
+
+    dialog = _dialog_after_loading_stored_geography(63.416128, 10.404458)
+    dialog._loading_form = True
+    dialog._location_country_code = ""          # nothing restored yet
+    dialog._location_country_coords = None
+    ObservationDetailsDialog._schedule_location_lookup(dialog)   # valueChanged during load
+    assert dialog._deferred_location_lookup_pending is True
+    assert dialog._location_lookup_timer.starts == 0
+
+    dialog._location_country_code = "NO"        # _load_observation_values restores
+    dialog._location_country_coords = (63.416128, 10.404458)
+    dialog._loading_form = False
+    ObservationDetailsDialog._schedule_location_lookup(dialog)   # deferred step
+
+    assert _geography_get_data_would_save(dialog) == ("NO", "r-1")
+
+
+def test_sub_tolerance_coordinate_noise_is_not_a_move():
+    """Float noise below the save resolver's 1e-6 tolerance keeps the country,
+    so the lookup and the save agree on what "unchanged" means."""
+    from ui.observations_tab import ObservationDetailsDialog
+
+    dialog = _dialog_after_loading_stored_geography(63.416128, 10.404458)
+    dialog.lat_input = _CoordInputStub(63.416128 + 4e-7)
+
+    ObservationDetailsDialog._schedule_location_lookup(dialog)
+
+    assert dialog._location_country_code == "NO"
+
+
+def test_genuine_coordinate_change_still_clears_country_until_a_geocode_returns():
+    """Existing intended behaviour is preserved: moving the point drops the old
+    country, so a failed lookup after a real move saves an explicit clear."""
+    from ui.observations_tab import ObservationDetailsDialog
+
+    dialog = _dialog_after_loading_stored_geography(63.416128, 10.404458)
+    dialog.lat_input = _CoordInputStub(59.9)
+    dialog.lon_input = _CoordInputStub(10.7)
+
+    ObservationDetailsDialog._schedule_location_lookup(dialog)
+
+    assert _geography_get_data_would_save(dialog) == (None, None)
+    assert dialog._location_lookup_timer.starts == 1
+
+
+def test_no_cached_coordinates_is_treated_as_a_move():
+    """With no record of which point the cached country belongs to, the old
+    conservative behaviour applies and the country is cleared."""
+    from ui.observations_tab import ObservationDetailsDialog
+
+    dialog = _dialog_after_loading_stored_geography(63.416128, 10.404458)
+    dialog._location_country_coords = None
+
+    ObservationDetailsDialog._schedule_location_lookup(dialog)
+
+    assert dialog._location_country_code == ""
