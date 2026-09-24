@@ -638,6 +638,33 @@ Deletion should proceed as:
 
 An interruption after any step must be recoverable by repeating sync.
 
+## Mosaic signature survives the sync's own working-file swap
+
+The local mosaic signature (`_local_spore_mosaic_signature`) fingerprints each
+source image by resolved path, size and mtime, so a genuine local file
+replacement re-renders the mosaic. Pull-side materialization
+(`_sync_existing_remote_image_to_local`) may itself replace a microscope
+working file with the cloud copy — for example `P9150704.jpg` →
+`P9150704.webp` on the same pixel grid. That swap is the sync's own
+write-back, not a user edit, and must not make the next push re-render and
+re-key an unchanged mosaic (the no-op fast-path contract).
+
+- When the stored signature was **current immediately before** the swap, the
+  swap re-stamps it from the post-swap inputs, exactly as the same function
+  already re-stamps the image file signature.
+- A signature that was already stale is left alone, so an out-of-date mosaic
+  is still rebuilt. A file replaced outside sync still changes the signature.
+- Float write-backs from the pull do not trigger rebuilds: the signature
+  canonicalises floats to 6 decimal places.
+- The pusher and `_current_local_mosaic_signature` share one eligibility query
+  (`_load_spore_mosaic_eligible_rows`), so the rows a signature covers cannot
+  drift from the rows the mosaic is rendered from.
+
+Regression: `tests/test_cloud_spore_mosaic_signature.py`
+(`test_sync_swap_of_microscope_working_file_carries_a_current_mosaic_signature_forward`
+and its guards). Found in the taxonomy-v2 closeout observation-917 integrity
+round-trip, where the swap was proven to be the sole trigger.
+
 ## Public spore mosaic after conflict resolution
 
 Normal `push_all` and the legacy whole-observation `resolve_conflict_keep_local`

@@ -11120,6 +11120,21 @@ def _sync_existing_remote_image_to_local(
                     gps_accuracy=img_acc,
                 )
 
+        # Replacing a microscope working file with the cloud copy is this
+        # sync's own write-back, not a user edit. The mosaic signature
+        # fingerprints each source image by path, size and mtime, so without
+        # this the swap would make the next push re-render and re-key an
+        # unchanged mosaic, breaking the no-op fast-path contract. Record
+        # whether the signature was current BEFORE the swap; it is carried
+        # forward below only in that case.
+        obs_local_id = int(local_image.get('observation_id') or 0)
+        mosaic_current_before_swap = bool(
+            image_type == 'microscope'
+            and existing_path
+            and not local_is_larger
+            and _local_mosaic_signature_is_current(obs_local_id)
+        )
+
         if existing_path and not local_is_larger:
             detected_ext = _detected_image_extension(temp_path)
             if detected_ext and target_path.suffix.lower() != detected_ext:
@@ -11177,6 +11192,10 @@ def _sync_existing_remote_image_to_local(
                 _store_cloud_image_file_signature(int(local_image.get('observation_id') or 0), image_id, file_sig)
         except Exception:
             pass
+        # Same principle as the image file signature just above: a swap this
+        # sync performed re-stamps its own change detector.
+        if mosaic_current_before_swap:
+            _carry_forward_local_mosaic_signature(obs_local_id)
         _increment_sync_summary(_cloud_sync_current_summary(), 'remote_media_materializations')
     finally:
         shutil.rmtree(temp_dir, ignore_errors=True)
@@ -22885,6 +22904,100 @@ def _local_spore_mosaic_signature(
     return hashlib.sha1(canonical.encode('utf-8')).hexdigest()
 
 
+def _load_spore_mosaic_eligible_rows(cursor, obs_local_id: int) -> list[dict]:
+    """The measurement rows that feed the public spore mosaic.
+
+    Single source of the eligibility query, shared by the mosaic pusher and by
+    `_current_local_mosaic_signature`, so the rows a signature is computed over
+    can never drift from the rows the mosaic is rendered from. The cursor's
+    connection must use `sqlite3.Row`.
+    """
+    cursor.execute(
+        '''
+        SELECT m.id, m.image_id, m.length_um, m.width_um, m.measurement_type,
+               m.p1_x, m.p1_y, m.p2_x, m.p2_y,
+               m.p3_x, m.p3_y, m.p4_x, m.p4_y,
+               m.gallery_rotation, m.cloud_id,
+               i.cloud_id                 AS image_cloud_id,
+               i.filepath                 AS image_filepath,
+               i.scale_microns_per_pixel  AS scale_microns_per_pixel,
+               i.resample_scale_factor    AS resample_scale_factor
+        FROM spore_measurements m
+        JOIN images i ON i.id = m.image_id
+        WHERE i.observation_id = ?
+          AND i.image_type = 'microscope'
+          AND i.cloud_id IS NOT NULL
+          AND m.cloud_id IS NOT NULL
+          AND m.length_um IS NOT NULL
+          AND m.width_um  IS NOT NULL
+          AND m.p1_x IS NOT NULL AND m.p1_y IS NOT NULL
+          AND m.p2_x IS NOT NULL AND m.p2_y IS NOT NULL
+          AND (
+            m.measurement_type IS NULL
+            OR m.measurement_type = ''
+            OR lower(m.measurement_type) IN ('manual', 'spore', 'spores')
+          )
+        ORDER BY m.id
+        ''',
+        (obs_local_id,),
+    )
+    return [dict(r) for r in cursor.fetchall()]
+
+
+def _current_local_mosaic_signature(obs_local_id: int) -> str:
+    """The mosaic signature the pusher would compute right now, or ''.
+
+    Mirrors the pusher's own gates: a non-public observation or one with no
+    eligible measurements has no mosaic, hence no signature.
+    """
+    if obs_local_id <= 0:
+        return ''
+    conn = get_connection()
+    conn.row_factory = sqlite3.Row
+    try:
+        cursor = conn.cursor()
+        cursor.execute(
+            'SELECT spore_data_visibility FROM observations WHERE id = ?',
+            (obs_local_id,),
+        )
+        obs_row = cursor.fetchone()
+        if obs_row is None:
+            return ''
+        observation_row = dict(obs_row)
+        visibility = str(observation_row.get('spore_data_visibility') or 'public').strip().lower()
+        if visibility != 'public':
+            return ''
+        rows = _load_spore_mosaic_eligible_rows(cursor, obs_local_id)
+    finally:
+        conn.close()
+    if not rows:
+        return ''
+    return _local_spore_mosaic_signature(obs_local_id, rows, observation_row)
+
+
+def _local_mosaic_signature_is_current(obs_local_id: int) -> bool:
+    """True when the stored mosaic signature matches the current inputs."""
+    try:
+        stored = _load_local_mosaic_signature(obs_local_id)
+        return bool(stored) and _current_local_mosaic_signature(obs_local_id) == stored
+    except Exception:
+        return False
+
+
+def _carry_forward_local_mosaic_signature(obs_local_id: int) -> None:
+    """Re-stamp the stored mosaic signature after a sync-originated file swap.
+
+    Only called when the signature was current immediately before the swap,
+    so a mosaic that was already out of date is never masked.
+    """
+    try:
+        signature = _current_local_mosaic_signature(obs_local_id)
+        if signature:
+            _store_local_mosaic_signature(obs_local_id, signature)
+    except Exception:
+        pass
+
+
 def _load_local_mosaic_signature(obs_local_id: int) -> str:
     """Read the cached signature from `observations.mosaic_signature`.
 
@@ -23295,36 +23408,7 @@ def _push_spore_mosaic_for_observation(
             )
             return MOSAIC_STATUS_SKIP_NO_PUBLIC_SPORE_DATA
 
-        cursor.execute(
-            '''
-            SELECT m.id, m.image_id, m.length_um, m.width_um, m.measurement_type,
-                   m.p1_x, m.p1_y, m.p2_x, m.p2_y,
-                   m.p3_x, m.p3_y, m.p4_x, m.p4_y,
-                   m.gallery_rotation, m.cloud_id,
-                   i.cloud_id                 AS image_cloud_id,
-                   i.filepath                 AS image_filepath,
-                   i.scale_microns_per_pixel  AS scale_microns_per_pixel,
-                   i.resample_scale_factor    AS resample_scale_factor
-            FROM spore_measurements m
-            JOIN images i ON i.id = m.image_id
-            WHERE i.observation_id = ?
-              AND i.image_type = 'microscope'
-              AND i.cloud_id IS NOT NULL
-              AND m.cloud_id IS NOT NULL
-              AND m.length_um IS NOT NULL
-              AND m.width_um  IS NOT NULL
-              AND m.p1_x IS NOT NULL AND m.p1_y IS NOT NULL
-              AND m.p2_x IS NOT NULL AND m.p2_y IS NOT NULL
-              AND (
-                m.measurement_type IS NULL
-                OR m.measurement_type = ''
-                OR lower(m.measurement_type) IN ('manual', 'spore', 'spores')
-              )
-            ORDER BY m.id
-            ''',
-            (obs_local_id,),
-        )
-        rows = [dict(r) for r in cursor.fetchall()]
+        rows = _load_spore_mosaic_eligible_rows(cursor, obs_local_id)
     finally:
         conn.close()
 

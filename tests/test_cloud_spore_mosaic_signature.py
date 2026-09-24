@@ -964,3 +964,155 @@ def test_backfill_bypasses_signature_and_rebuilds(tmp_path, db, monkeypatch):
     result = cloud_sync.backfill_public_spore_mosaics(type('C', (), {'user_id': 'u'})())
     assert calls == [obs_cloud]
     assert result['generated'] == 1
+
+
+# ── Sync-originated working-file swap must not re-key an unchanged mosaic ────
+#
+# Observation 917 (taxonomy-v2 closeout integrity round-trip): the first sync
+# uploaded microscope images, then `_sync_existing_remote_image_to_local`
+# replaced each local working file with the cloud copy (P9150704.jpg ->
+# P9150704.webp, same pixel grid). The mosaic signature fingerprints every
+# source image by resolved path, size and mtime, so the next push saw
+# different inputs and re-rendered, re-uploaded and re-keyed a mosaic whose
+# measurements and geometry had not changed. Reconstruction with the real
+# signature function proved the path swap was the sole trigger: 1,150 float
+# write-backs were all absorbed by the 6-dp canonicalisation.
+
+
+class _SwapClient:
+    """Stands in for the media download: writes the 'cloud copy' bytes."""
+
+    def __init__(self, payload: bytes):
+        self.payload = payload
+        self.downloads = []
+
+    def download_image_file(self, storage_path, target):
+        self.downloads.append(storage_path)
+        Path(target).write_bytes(self.payload)
+
+
+@pytest.fixture
+def swap_env(tmp_path, db, monkeypatch):
+    """The fixture DB plus the pull-side collaborators stubbed at their seams.
+
+    `ImageDB` and `SettingsDB` write through `database.models` connections, so
+    they are replaced with writers bound to the fixture DB — nothing here can
+    reach a real user database.
+    """
+    conn = sqlite3.connect(db)
+    conn.execute("ALTER TABLE images ADD COLUMN synced_at TEXT")
+    conn.commit()
+    conn.close()
+
+    def _update_image(image_id, **kw):
+        c = sqlite3.connect(db)
+        try:
+            if 'filepath' in kw:
+                c.execute('UPDATE images SET filepath = ? WHERE id = ?', (kw['filepath'], image_id))
+            if kw.get('scale') is not None:
+                c.execute('UPDATE images SET scale_microns_per_pixel = ? WHERE id = ?', (kw['scale'], image_id))
+            c.commit()
+        finally:
+            c.close()
+
+    monkeypatch.setattr(cloud_sync.ImageDB, 'update_image', staticmethod(_update_image))
+    monkeypatch.setattr(cloud_sync, '_remote_image_bytes_match_local', lambda *_a, **_k: False)
+    monkeypatch.setattr(cloud_sync, '_rename_to_detected_image_extension',
+                        lambda p: Path(p).rename(Path(p).with_suffix('.webp')) or Path(p).with_suffix('.webp'))
+    monkeypatch.setattr(cloud_sync, '_detected_image_extension', lambda _p: '.webp')
+    monkeypatch.setattr(cloud_sync, '_local_calibration_id_for_image', lambda _r: None)
+    monkeypatch.setattr(cloud_sync, '_update_image_columns_without_touching_observation', lambda *_a, **_k: None)
+    monkeypatch.setattr(cloud_sync, '_profile_generate_all_sizes', lambda *_a, **_k: None)
+    monkeypatch.setattr(cloud_sync, '_store_cloud_image_file_signature', lambda *_a, **_k: None)
+    return db
+
+
+def _seed_measured_microscope_image(tmp_path, db_path):
+    """A public observation with one synced microscope image and one
+    cloud-linked spore measurement — the shape the mosaic pusher consumes."""
+    obs = _insert_obs(db_path, cloud_id='c-obs')
+    working = _touch(tmp_path / 'P9150704.jpg', b'J' * 8192)   # desktop working file
+    img = _insert_image(db_path, observation_id=obs, filepath=str(working), cloud_id='c-img',
+                        image_type='microscope', scale_microns_per_pixel=0.0534937320902084,
+                        resample_scale_factor=1.0)
+    _insert_meas(db_path, image_id=img, cloud_id='c-m', length_um=11.07, width_um=5.13,
+                 measurement_type='spores', gallery_rotation=0,
+                 p1_x=2677.96, p1_y=2471.76, p2_x=2572.16, p2_y=2471.0)
+    return obs, img, working
+
+
+def _remote_microscope_row(img_cloud_id='c-img'):
+    return {'id': img_cloud_id, 'storage_path': 'u/1/8_1.webp', 'image_type': 'microscope',
+            'original_filename': 'P9150704.webp', 'scale_microns_per_pixel': 0.0534937320902084,
+            'resample_scale_factor': 1.0}
+
+
+def _local_image_row(db_path, image_id):
+    c = sqlite3.connect(db_path)
+    c.row_factory = sqlite3.Row
+    try:
+        return dict(c.execute('SELECT * FROM images WHERE id = ?', (image_id,)).fetchone())
+    finally:
+        c.close()
+
+
+def test_sync_swap_of_microscope_working_file_carries_a_current_mosaic_signature_forward(tmp_path, swap_env):
+    db_path = swap_env
+    obs, img, working = _seed_measured_microscope_image(tmp_path, db_path)
+    # The pusher just uploaded the mosaic and stored the signature of its inputs.
+    cloud_sync._store_local_mosaic_signature(obs, cloud_sync._current_local_mosaic_signature(obs))
+    signature_before = _read_signature(db_path, obs)
+
+    cloud_sync._sync_existing_remote_image_to_local(
+        _SwapClient(b'W' * 1024), _local_image_row(db_path, img), _remote_microscope_row())
+
+    swapped = _local_image_row(db_path, img)['filepath']
+    assert swapped.endswith('P9150704.webp'), 'the pull performed its working-file swap'
+    assert working.exists(), 'the desktop JPG is left on disk'
+    assert cloud_sync._current_local_mosaic_signature(obs) != signature_before, \
+        'the swap really changed the signature inputs (path, size, mtime)'
+    assert cloud_sync._local_mosaic_signature_is_current(obs), \
+        'the sync re-stamped its own change detector, so the next push will not re-render'
+
+
+def test_sync_swap_does_not_mask_an_already_stale_mosaic_signature(tmp_path, swap_env):
+    db_path = swap_env
+    obs, img, _ = _seed_measured_microscope_image(tmp_path, db_path)
+    cloud_sync._store_local_mosaic_signature(obs, 'stale-signature-from-an-older-mosaic')
+
+    cloud_sync._sync_existing_remote_image_to_local(
+        _SwapClient(b'W' * 1024), _local_image_row(db_path, img), _remote_microscope_row())
+
+    assert _read_signature(db_path, obs) == 'stale-signature-from-an-older-mosaic'
+    assert not cloud_sync._local_mosaic_signature_is_current(obs), \
+        'an out-of-date mosaic must still be rebuilt on the next push'
+
+
+def test_user_replacing_a_working_file_outside_sync_still_invalidates_the_signature(tmp_path, swap_env):
+    """Bytes-swap detection for genuine local edits is preserved."""
+    db_path = swap_env
+    obs, _img, working = _seed_measured_microscope_image(tmp_path, db_path)
+    cloud_sync._store_local_mosaic_signature(obs, cloud_sync._current_local_mosaic_signature(obs))
+
+    working.write_bytes(b'R' * 20000)   # replaced by the user, not by sync
+
+    assert not cloud_sync._local_mosaic_signature_is_current(obs)
+
+
+def test_sync_swap_without_a_stored_signature_stores_nothing(tmp_path, swap_env):
+    """No mosaic was ever pushed, so there is nothing to carry forward."""
+    db_path = swap_env
+    obs, img, _ = _seed_measured_microscope_image(tmp_path, db_path)
+
+    cloud_sync._sync_existing_remote_image_to_local(
+        _SwapClient(b'W' * 1024), _local_image_row(db_path, img), _remote_microscope_row())
+
+    assert not _read_signature(db_path, obs)
+
+
+def test_current_signature_follows_the_pushers_gates(tmp_path, db):
+    private = _insert_obs(db, cloud_id='c-p', spore_data_visibility='private')
+    assert cloud_sync._current_local_mosaic_signature(private) == ''
+    empty = _insert_obs(db, cloud_id='c-e')
+    assert cloud_sync._current_local_mosaic_signature(empty) == ''
+    assert cloud_sync._current_local_mosaic_signature(0) == ''
