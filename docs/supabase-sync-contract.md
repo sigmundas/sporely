@@ -268,6 +268,50 @@ Plain English comes first; technical terms are in parentheses.
     baseline at all, nothing is inferred and the identity is left alone (the
     existing fail-closed rule for an unknown baseline).
 
+    **Condition (4) also fails closed the other way: a clear is withheld,
+    never silently issued, when the cloud's current identity is a THIRD value
+    the desktop never agreed to.** The clear may proceed only when the
+    cloud's current selected identity is empty or still equals the baseline;
+    a value that moved to something else since (another client, the web)
+    means this desktop's baseline is stale, not that the newer cloud value is
+    wrong. `_maybe_clear_stale_cloud_identity` logs and withholds in that
+    case. In the ordinary desktop flow this is already unreachable — a
+    genuine local identification change together with an independent remote
+    identity change is a three-way `conflict` that blocks the whole
+    observation push before this point — but the check is independent of
+    that upstream block, not a substitute for it.
+
+    **A non-claiming local row whose plain names already contradict a cloud
+    row's bound identity, with no usable baseline at all, is a THIRD case
+    ("Case F") distinct from both the explicit clear above and the
+    proven-vs-proven no-baseline disagreement.** "No usable baseline" means
+    no stored snapshot, or one that predates identity joining change
+    detection. Unlike a proven/claimed local identity disagreeing with the
+    cloud (which already fails closed via
+    `_classify_identity_sync_change`'s `conflict` classification, with
+    ordinary fields still permitted to push per the accepted partial-push
+    policy — see `tests/test_cloud_identity_fail_closed.py::
+    test_no_baseline_disagreement_stays_under_review_and_blocks_the_next_push`),
+    a row with NO identity claim at all was previously adopted-by-default:
+    nothing stopped its own genus/species from silently overwriting the
+    cloud's committed name while the cloud's bound identity stayed attached,
+    and the following pull silently bound that identity onto the desktop's
+    unrelated names in turn. Both directions now fail closed together,
+    through the same conflict-review mechanism (never a second one): when the
+    cloud holds a non-empty identity, the local row makes no claim to any
+    identity, and the committed identification differs between the two sides,
+    the WHOLE observation is blocked — push before any cloud mutation,
+    pull-apply before any local mutation — kept dirty, and surfaced as
+    "needs review", exactly like other conflicts. Because the contradiction
+    IS the identification itself, this is stricter than the claim-vs-claim
+    case: no field on the observation partially goes through. It clears only
+    through an explicit picker resolution (to the cloud's own concept, which
+    matches and proceeds normally, or to a different proven concept, which
+    then falls into the ordinary claim-vs-claim no-baseline review policy);
+    a further manual free-text rename to yet another name does not clear it,
+    since the explicit-clear condition above requires a known baseline that
+    Case F lacks by definition.
+
 ## Normalized reference graph
 
 The owner graph is ordered work → taxon treatment → measurement set →

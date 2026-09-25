@@ -20281,6 +20281,67 @@ def push_all(
             # below clears any prior review-pending marker as part of the
             # normal `dirty→synced` transition.
 
+            # Sync-integrity follow-up 4, Case F: with no usable identity
+            # baseline (no stored snapshot, or a stored snapshot that predates
+            # identity joining change detection), a committed local
+            # identification that CONTRADICTS the cloud's currently bound
+            # identity — different genus/species, and the local row makes no
+            # claim to any identity at all — must never partially push. The
+            # ordinary field-level preflight above only runs when a baseline
+            # exists, so without one nothing stops the local names from
+            # PATCHing over the cloud row while its bound identity stays
+            # untouched, leaving the exact stale/contradictory row Stage C
+            # fixes on the other side (new names, old identity). This blocks
+            # the WHOLE observation push before any cloud mutation, through
+            # the same conflict-review mechanism the known-baseline preflight
+            # uses (`_format_review_needed_error`,
+            # `_set_observation_conflict_review_pending`), rather than the
+            # narrower "withhold identity only" handling below — that one
+            # covers a local row that already CLAIMS an identity (proven or a
+            # preserved external tuple) which disagrees with the cloud's, and
+            # deliberately still lets independent ordinary fields (e.g. notes)
+            # go out while the identity itself stays under review (see
+            # tests/test_cloud_identity_fail_closed.py::
+            # test_no_baseline_disagreement_stays_under_review_and_blocks_the_next_push).
+            # A non-claiming local with contradicting names is a different,
+            # narrower case: the contradiction IS the identification itself,
+            # so nothing about this observation is safe to push.
+            baseline_identity_unknown = (
+                identity_baseline_obs is None
+                or _baseline_identity_key(identity_baseline_obs) is _IDENTITY_BASELINE_UNKNOWN
+            )
+            if baseline_identity_unknown and cloud_id and remote:
+                remote_claim_for_contradiction = _remote_identity_claim(remote)
+                if (
+                    remote_claim_for_contradiction is not None
+                    and remote_claim_for_contradiction.key
+                    and not _local_identity_is_claim(push_payload)
+                    and _identification_key(push_payload) != _identification_key(dict(remote or {}))
+                ):
+                    obs_local_id_for_block = _safe_int(obs.get('id'))
+                    errors.append(_format_review_needed_error(
+                        obs_local_id_for_block, cloud_id,
+                        ['push_blocked', _format_observation_metadata_field_label(TAXON_IDENTITY_SYNC_FIELD)],
+                    ))
+                    if obs_local_id_for_block > 0:
+                        _set_observation_conflict_review_pending(obs_local_id_for_block)
+                    print(
+                        f"[cloud_sync] conflict push blocked: obs={obs_local_id_for_block} "
+                        f"categories=['taxon_identity_no_baseline_contradiction'] "
+                        f"action=review_required",
+                        flush=True,
+                    )
+                    _advance_progress(progress_state, 1)
+                    _emit_progress(
+                        progress_cb,
+                        _format_cloud_sync_observation_status(
+                            obs,
+                            f"Observation {i + 1}/{max(1, total)} needs review before syncing",
+                        ),
+                        progress_state,
+                    )
+                    continue
+
             # No baseline: an identity disagreement is a review, never an
             # RPC overwrite (the pull side applies the same rule).
             identity_review_pending = bool(
@@ -25792,7 +25853,42 @@ def pull_all(
                 # baseline stays "unknown" and every later pull and push
                 # classifies the same disagreement as a conflict.
                 snapshot_remote = remote
-                if remote_changed and not stored_snapshot:
+                # Sync-integrity follow-up 4, Case F (pull side): with no
+                # stored baseline, `_apply_remote_observation_fields` below
+                # applies ALL ordinary fields unconditionally — its
+                # `identity_fail_closed` guard only withholds the identity
+                # columns, for a local row that already CLAIMS its own
+                # identity. A local row with NO identity claim at all, whose
+                # own committed genus/species already contradict a cloud row
+                # that DOES carry a bound identity, is a different case: the
+                # contradiction is the identification itself, so silently
+                # overwriting it (as "cloud wins, nothing local to protect")
+                # would adopt the cloud's bound concept next to names that
+                # never agreed with it. Detected the same way as the mirrored
+                # push-side guard: block this observation's whole pull apply
+                # (fields, images, measurements) and surface it through the
+                # existing conflict-review mechanism instead.
+                remote_claim_for_pull_contradiction = (
+                    _remote_identity_claim(remote) if remote_changed and not stored_snapshot else None
+                )
+                pull_contradicts_bound_identity = bool(
+                    remote_claim_for_pull_contradiction is not None
+                    and remote_claim_for_pull_contradiction.key
+                    and not _local_identity_is_claim(local_obs)
+                    and _identification_key(local_obs) != _identification_key(dict(remote or {}))
+                )
+                if pull_contradicts_bound_identity:
+                    errors.append(_format_review_needed_error(
+                        local_id, cloud_id,
+                        ['pull_blocked', _format_observation_metadata_field_label(TAXON_IDENTITY_SYNC_FIELD)],
+                    ))
+                    # `_set_observation_conflict_review_pending` already marks
+                    # the row dirty; a separate `_set_observation_sync_state`
+                    # call here would clear the marker right back out via its
+                    # `clear_sync_error_state=True`.
+                    _set_observation_conflict_review_pending(local_id)
+                    should_store_snapshot = False
+                elif remote_changed and not stored_snapshot:
                     _emit_progress(
                         progress_cb,
                         _format_cloud_sync_observation_status(

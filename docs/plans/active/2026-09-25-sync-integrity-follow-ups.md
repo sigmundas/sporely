@@ -180,6 +180,44 @@ convergence). Focused identity/conflict/Stage-B suites and the full desktop
 suite pass with the same 33 pre-existing failures and 54 pre-existing errors
 as the `53f94b2` baseline (unrelated Qt/GUI fixture issues). Awaiting review.
 
+**Round 2 (2026-09-25, `feature/stage-c-identity-clear-v2` after Stage B
+merged to main at `53f94b2`).** Two follow-ups on the reviewed candidate,
+neither changing the production diff carried over from round 1 (identical
+`utils/cloud_sync.py` diff before and after the rebase, confirmed byte for
+byte):
+1. `_maybe_clear_stale_cloud_identity` now fails closed when the cloud's
+   CURRENT selected identity is neither empty nor still the baseline (a third
+   concept C moved in since) — logs and withholds the clear instead of
+   wiping C's name/identity/shared-reference contributions. Confirmed at
+   runtime that push_all's existing preflight conflict classification already
+   intercepts this exact scenario before `push_observation` is reached; the
+   new check is a second, independent fail-closed layer, not dead code
+   reachable only in theory.
+2. **Case F closed**: no usable identity baseline (no stored snapshot, or one
+   that predates identity tracking), cloud holds identity A, local's own
+   committed genus/species (no identity claim) contradict A. Runtime-proven
+   defect: the existing no-baseline identity check only fires for a local row
+   that already CLAIMS a conflicting identity, so a non-claiming local's
+   genus/species PATCHed onto the cloud unconditionally while
+   `selected_sporely_taxon_id` stayed A; the following pull then adopted A
+   locally too (its own `identity_fail_closed` guard has the same gap). Fixed
+   with two symmetric guards (`push_all`, `pull_all`'s missing-snapshot
+   branch) using the SAME existing conflict-review mechanism
+   (`_format_review_needed_error`, `_set_observation_conflict_review_pending`,
+   `CONFLICT_REVIEW_PENDING_MARKER`) — no new conflict system. Regression:
+   `tests/test_cloud_sync_no_baseline_identity_contradiction.py` (6 cases, all
+   fail on pre-fix); confirms the cloud row is byte-for-byte unchanged, an
+   unrelated field on the same observation is also blocked (contrasted with
+   the already-accepted partial-push policy for the claim-vs-claim case,
+   cited in the test), an explicit picker resolution to the cloud's own
+   concept clears the conflict and syncs normally, resolving to a genuinely
+   different concept instead falls into that pre-existing claim-vs-claim
+   review policy (ordinary fields go out, identity withheld) rather than
+   silently binding or clearing, and a further manual free-text rename does
+   NOT clear the conflict (Stage C's explicit-clear condition requires a
+   known baseline, which Case F lacks by definition — only a picker
+   resolution clears it).
+
 ---
 
 ## 5. Community/stats functions hard-code the spore type set
