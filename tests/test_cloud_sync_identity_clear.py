@@ -335,6 +335,52 @@ def test_unrelated_edit_keeps_identity_and_issues_no_clear(env):
     assert local["notes"] == "notes A2"
 
 
+# ── C2: cloud identity moved to a THIRD concept since the baseline ──────────
+#
+# Baseline A (83668), cloud now C (a different concept the web or another
+# client selected after the last sync), and the desktop separately renamed
+# the observation to no_identity_evidence. A stale local baseline must never
+# be used to clear a cloud identity that has already moved on to something
+# else — that would silently wipe the other write's name/identity and
+# withdraw ITS shared-reference contributions. This is normally intercepted
+# earlier (a genuine local identification change together with a remote
+# identity change classifies as a push conflict and blocks the whole
+# observation push before `push_observation` runs), but
+# `_maybe_clear_stale_cloud_identity` also fails closed on its own so the
+# same guarantee holds even if reached some other way.
+
+
+def test_cloud_identity_moved_to_a_different_concept_is_never_cleared(env):
+    cloud, local_id, cloud_id = env
+    _establish_proven_identity(cloud, local_id, cloud_id)  # baseline: sporely:83668
+
+    # Someone/something else (the web, another client) rebinds the cloud
+    # concept to C = 99001, out of band from this desktop's own sync.
+    cloud.edit_from_other_device(cloud_id, selected_sporely_taxon_id=99001, taxon_identity_state="sporely_v2")
+    rpcs_before = len(cloud.rpcs)
+
+    _edit_locally(
+        local_id,
+        genus="Funny", species="brown mushroom", common_name=None,
+        sporely_taxon_id=None, taxon_identity_state="no_identity_evidence",
+        taxon_identity_proof=None, taxon_identity_source_system=None,
+        taxon_identity_namespace=None, taxon_identity_external_id=None,
+        taxon_identity_raw_external_id=None,
+        scientific_name_snapshot=None, taxon_rank_snapshot=None,
+        allow_nulls=True,
+    )
+
+    result = _sync(cloud)
+
+    assert cloud.rpcs[rpcs_before:] == [], "a stale baseline must never clear a cloud identity it disagrees with"
+    row = cloud.rows[cloud_id]
+    assert row["selected_sporely_taxon_id"] == 99001, "the cloud keeps the concept the other write selected"
+    # This is expected to surface as a review-needed conflict rather than a
+    # silent success; either is acceptable here as long as nothing was
+    # cleared or overwritten.
+    assert result is not None
+
+
 # ── D: picker A -> B stays the ordinary identity RPC, never a clear ─────────
 
 
@@ -405,6 +451,14 @@ def test_contradictory_cloud_identity_is_not_silently_adopted(env):
                 and local.get("genus") == "Contradictory"), (
         "must never bind a contradictory cloud concept onto the preserved names"
     )
+    # Tightened per Stage C review follow-up: rule out force-renaming the
+    # preserved local names to match the cloud concept, and rule out binding
+    # 83668 onto them as cloud_selected_unverified specifically.
+    assert (local.get("genus"), local.get("species")) == ("Contradictory", "name"), (
+        "the desktop's own committed names must never be force-renamed to "
+        "match a contradictory cloud concept"
+    )
+    assert not (identity.is_cloud_selected_unverified and identity.sporely_taxon_id == 83668)
 
 
 # ── G: external-unresolved identity is unaffected ───────────────────────────

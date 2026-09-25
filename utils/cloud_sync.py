@@ -16873,7 +16873,12 @@ class SporelyCloudClient:
            to that same baseline;
         4. that change is a real identification edit, not bookkeeping — (3)
            already establishes that by comparing the fields that name the
-           taxon, not an unrelated field.
+           taxon, not an unrelated field;
+        5. the cloud's CURRENT selected identity is either empty or still
+           equals that same baseline — never a third value. A cloud identity
+           that moved to something else since the baseline is not this
+           desktop's stale value to overwrite; the clear is withheld and the
+           disagreement logged (see the fail-closed branch below).
 
         With no baseline (``baseline_obs`` is ``None``, or the stored snapshot
         predates identity joining change detection), nothing is inferred: a
@@ -16900,6 +16905,30 @@ class SporelyCloudClient:
             # The cloud already has no identity (e.g. a previous clear
             # already landed): nothing left to do, and definitely not a
             # repeated RPC call on every subsequent sync.
+            return True
+        if remote_claim is not None and remote_claim.key and remote_claim.key != baseline_key:
+            # The cloud's CURRENT selected identity is neither empty nor the
+            # baseline this desktop last synced — something else (another
+            # client, the web) rebound the concept since. Clearing it would
+            # wipe that other write's name/identity and withdraw ITS shared
+            # reference contributions on the strength of a local rename this
+            # desktop made against a now-stale baseline. Ordinarily this
+            # exact case is already intercepted upstream: a genuine local
+            # identification change together with a remote identity change
+            # classifies as `_classify_identity_sync_change(...) ==
+            # 'conflict'`, which blocks the whole observation push before
+            # `push_observation` is ever reached (see push_all). This check
+            # is a second, independent fail-closed gate in case that
+            # upstream block is bypassed or this method is ever reached from
+            # a different caller, so a stale local baseline can never
+            # overwrite a cloud identity it never agreed with.
+            logger.warning(
+                "cloud sync: identity clear withheld for observation %s — "
+                "cloud selected %s does not match the sync baseline %s; "
+                "fail closed instead of overwriting a possibly newer remote "
+                "selection (or its shared-reference contributions)",
+                obs.get('id'), remote_claim.key, baseline_key,
+            )
             return True
         genus = str(obs.get('genus') or '').strip() or None
         species = str(obs.get('species') or '').strip() or None
