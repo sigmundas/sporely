@@ -46,6 +46,7 @@ from utils.taxon_identity import TaxonIdentity
 
 from tests.test_cloud_sync_identity_clear import (  # noqa: F401  reuse the harness
     _FakeCloud,
+    _FakeConcept,
     _sync,
     _local,
     _edit_locally,
@@ -61,7 +62,18 @@ def env(tmp_path, monkeypatch):
     monkeypatch.setattr(schema, "_migrate_reference_values", lambda *a, **k: None)
     monkeypatch.setattr(schema, "_migrate_reference_mounts_and_stains", lambda *a, **k: None)
     schema.init_database()
-    monkeypatch.setattr(cloud_sync, "_installed_taxon_concept", lambda sid: None)
+
+    # Route the cloud->local artifact lookup for `83668` to a fixed
+    # "Conocybe rugosa" concept, exactly like tests/test_cloud_sync_identity_clear.py,
+    # so the compatible/incomplete-name cases below adopt through the real
+    # cloud_selected_unverified rules instead of the unresolved-external
+    # fallback.
+    def _fake_installed_concept(sporely_taxon_id):
+        if int(sporely_taxon_id) == 83668:
+            return _FakeConcept(release_id=1, scientific_name="Conocybe rugosa", rank="species")
+        return None
+
+    monkeypatch.setattr(cloud_sync, "_installed_taxon_concept", _fake_installed_concept)
     app_settings: dict = {}
     monkeypatch.setattr(cloud_sync, "get_app_settings", lambda: dict(app_settings))
     monkeypatch.setattr(cloud_sync, "update_app_settings", lambda values: app_settings.update(values))
@@ -99,6 +111,116 @@ def _seed_contradictory_observation(cloud, *, notes="notes A"):
     # local identity claim at all.
     _edit_locally(local_id, genus="Something", species="different")
     return local_id, cloud_id
+
+
+def _seed_partial_local_identification(cloud, *, local_genus, local_species):
+    """Cloud binds identity A = 83668 / "Conocybe rugosa"; the local row's
+    own committed genus/species are set to whatever the caller wants
+    (blank, matching, or contradicting), with no usable baseline and no
+    local identity claim of its own."""
+    local_id = models.ObservationDB.create_observation(
+        date="2026-09-20", genus="Conocybe", species="rugosa", notes="notes A",
+    )
+    _sync(cloud)
+    obs = models.ObservationDB.get_observation(local_id)
+    cloud_id = obs["cloud_id"]
+    cloud.rows[cloud_id]["selected_sporely_taxon_id"] = 83668
+    cloud.rows[cloud_id]["taxon_identity_state"] = "sporely_v2"
+    SettingsDB.set_setting(cloud_sync._cloud_observation_snapshot_key(cloud_id), '')
+    _edit_locally(local_id, genus=local_genus, species=local_species)
+    return local_id, cloud_id
+
+
+# ── Incomplete names are compatible, not contradictory ──────────────────────
+#
+# Stage C review round 2, item 1. A blank/missing local genus or species is
+# UNKNOWN, not a claim that disagrees with the cloud. This is the known
+# production shape found by the read-only audit: a real row can carry a
+# selected Sporely concept with no local genus/species at all. Only a
+# POPULATED local component that differs from the cloud's, case/whitespace-
+# insensitively, is a genuine contradiction.
+
+
+def test_both_names_blank_is_compatible_and_adopts_the_cloud_identity(env):
+    cloud = env
+    local_id, cloud_id = _seed_partial_local_identification(cloud, local_genus="", local_species="")
+
+    cloud_before = dict(cloud.rows[cloud_id])
+    result = _sync(cloud)
+
+    assert not any("needs review" in str(e).lower() for e in result.get("errors") or []), result["errors"]
+    # The cloud's canonical name/identity must not be blanked out by pushing
+    # the (merely unknown, not contradictory) local blanks.
+    assert cloud.rows[cloud_id]["genus"] == "Conocybe"
+    assert cloud.rows[cloud_id]["species"] == "rugosa"
+    assert cloud.rows[cloud_id]["selected_sporely_taxon_id"] == 83668
+    assert cloud.patches == [] or all(
+        p.get("genus") in (None, "Conocybe") and p.get("species") in (None, "rugosa")
+        for p in cloud.patches
+    ), "no patch may push blank names over the cloud's canonical ones"
+
+    # Adopted locally under the existing cloud_selected_unverified rules —
+    # not blocked, not left blank, and not silently proven.
+    local = _local(local_id)
+    assert (local["genus"], local["species"]) == ("Conocybe", "rugosa")
+    identity = TaxonIdentity.from_row(local)
+    assert identity.is_cloud_selected_unverified and identity.sporely_taxon_id == 83668
+    assert not identity.is_proven_sporely
+    assert local["sync_status"] == "synced"
+    assert local["sync_blocked_reason"] is None
+
+
+def test_genus_matches_species_blank_is_compatible_and_completes_species(env):
+    cloud = env
+    local_id, cloud_id = _seed_partial_local_identification(cloud, local_genus="Conocybe", local_species="")
+
+    result = _sync(cloud)
+
+    assert not any("needs review" in str(e).lower() for e in result.get("errors") or []), result["errors"]
+    assert cloud.rows[cloud_id]["genus"] == "Conocybe"
+    assert cloud.rows[cloud_id]["species"] == "rugosa"
+    assert cloud.rows[cloud_id]["selected_sporely_taxon_id"] == 83668
+
+    local = _local(local_id)
+    assert (local["genus"], local["species"]) == ("Conocybe", "rugosa")
+    identity = TaxonIdentity.from_row(local)
+    assert identity.is_cloud_selected_unverified and identity.sporely_taxon_id == 83668
+    assert local["sync_status"] == "synced"
+    assert local["sync_blocked_reason"] is None
+
+
+def test_genus_differs_is_still_a_true_contradiction_and_blocks(env):
+    cloud = env
+    local_id, cloud_id = _seed_partial_local_identification(cloud, local_genus="Amanita", local_species="")
+
+    cloud_before = dict(cloud.rows[cloud_id])
+    result = _sync(cloud)
+    cloud_after = dict(cloud.rows[cloud_id])
+
+    assert cloud_after == cloud_before, "a genuinely differing genus must still block, cloud unchanged"
+    assert cloud.patches == []
+    local = _local(local_id)
+    assert local["genus"] == "Amanita"
+    assert local["sync_status"] == "dirty"
+    assert local["sync_blocked_reason"] == cloud_sync.CONFLICT_REVIEW_PENDING_MARKER
+    assert any("needs review" in str(e).lower() for e in result.get("errors") or [])
+
+
+def test_genus_matches_species_differs_is_still_a_true_contradiction_and_blocks(env):
+    cloud = env
+    local_id, cloud_id = _seed_partial_local_identification(cloud, local_genus="Conocybe", local_species="albipes")
+
+    cloud_before = dict(cloud.rows[cloud_id])
+    result = _sync(cloud)
+    cloud_after = dict(cloud.rows[cloud_id])
+
+    assert cloud_after == cloud_before, "a genuinely differing species must still block, cloud unchanged"
+    assert cloud.patches == []
+    local = _local(local_id)
+    assert (local["genus"], local["species"]) == ("Conocybe", "albipes")
+    assert local["sync_status"] == "dirty"
+    assert local["sync_blocked_reason"] == cloud_sync.CONFLICT_REVIEW_PENDING_MARKER
+    assert any("needs review" in str(e).lower() for e in result.get("errors") or [])
 
 
 def test_contradiction_blocks_the_push_before_any_cloud_mutation(env):
@@ -277,6 +399,73 @@ def test_manual_free_text_rename_does_not_clear_a_no_baseline_contradiction(env)
     assert cloud_after == cloud_before, "a further manual rename must not clear the conflict either"
     local = _local(local_id)
     assert (local["genus"], local["species"]) == ("Yet", "another name")
+    assert local["sync_status"] == "dirty"
+    assert local["sync_blocked_reason"] == cloud_sync.CONFLICT_REVIEW_PENDING_MARKER
+    assert any("needs review" in str(e).lower() for e in result.get("errors") or [])
+
+
+# ── Privacy while blocked (Stage C review round 2, item 2) ──────────────────
+#
+# A true Case F contradiction blocks the WHOLE push, including ordinary
+# fields — but a strictly MORE restrictive visibility change (narrowing) is
+# a release-blocking exception: without it, a user who marks a contradictory
+# observation private while it awaits review would have that choice silently
+# never reach the cloud, leaving it public. The exception carries ONLY the
+# visibility column; identification, names, and everything else stay
+# blocked, and the observation stays dirty/under review afterwards.
+
+
+def test_public_to_private_narrowing_propagates_while_blocked(env):
+    cloud = env
+    local_id, cloud_id = _seed_contradictory_observation(cloud)
+    cloud.rows[cloud_id]["visibility"] = "public"
+    result = _sync(cloud)  # establishes the blocked state
+    assert cloud.rows[cloud_id]["visibility"] == "public"
+    assert _local(local_id)["sync_blocked_reason"] == cloud_sync.CONFLICT_REVIEW_PENDING_MARKER
+
+    patches_before = len(cloud.patches)
+    _edit_locally(local_id, sharing_scope="private")
+    result = _sync(cloud)
+
+    row = cloud.rows[cloud_id]
+    assert row["visibility"] == "private", "the narrowing choice must reach the cloud even while blocked"
+    # Nothing else moved: identification/name/identity stay exactly as they
+    # were before the privacy change.
+    assert (row["genus"], row["species"]) == ("Conocybe", "rugosa")
+    assert row["selected_sporely_taxon_id"] == 83668
+    new_patches = cloud.patches[patches_before:]
+    assert new_patches, "the visibility PATCH must have been issued"
+    assert all(set(p.keys()) <= {"visibility"} for p in new_patches), (
+        "the privacy exception must carry ONLY the visibility column, nothing else"
+    )
+    assert cloud.rpcs == [], "no identity RPC piggybacks on the privacy exception"
+
+    # The observation stays under review: the conflict marker is not
+    # cleared and no baseline is falsely stored by the visibility PATCH.
+    local = _local(local_id)
+    assert local["sync_status"] == "dirty"
+    assert local["sync_blocked_reason"] == cloud_sync.CONFLICT_REVIEW_PENDING_MARKER
+    assert cloud_sync._load_cloud_observation_snapshot(cloud_id) == "", (
+        "no baseline may be stored while the observation is still blocked"
+    )
+    assert any("needs review" in str(e).lower() for e in result.get("errors") or [])
+
+
+def test_private_to_public_widening_stays_blocked(env):
+    cloud = env
+    local_id, cloud_id = _seed_contradictory_observation(cloud)
+    cloud.rows[cloud_id]["visibility"] = "private"
+    _sync(cloud)  # establishes the blocked state
+    assert cloud.rows[cloud_id]["visibility"] == "private"
+
+    patches_before = len(cloud.patches)
+    _edit_locally(local_id, sharing_scope="public")
+    result = _sync(cloud)
+
+    row = cloud.rows[cloud_id]
+    assert row["visibility"] == "private", "a WIDENING change must never propagate while blocked"
+    assert cloud.patches[patches_before:] == [], "no PATCH at all for a widening change"
+    local = _local(local_id)
     assert local["sync_status"] == "dirty"
     assert local["sync_blocked_reason"] == cloud_sync.CONFLICT_REVIEW_PENDING_MARKER
     assert any("needs review" in str(e).lower() for e in result.get("errors") or [])

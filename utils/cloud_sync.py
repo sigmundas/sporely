@@ -293,6 +293,62 @@ def _cloud_visibility_to_sharing_scope(value: str | None, fallback: str = 'priva
     return _normalize_sharing_scope(value, fallback=fallback)
 
 
+#: Restrictiveness order for the visibility enum, least to most exposed.
+#: A "narrower" change moves to a strictly LOWER rank (more restrictive,
+#: e.g. public -> private); a "wider" change moves to a strictly HIGHER
+#: rank. Used only by the blocked-observation privacy exception below —
+#: never a general merge/precedence rule for the field.
+_VISIBILITY_RESTRICTIVENESS_RANK = {'private': 0, 'friends': 1, 'public': 2}
+
+
+def _is_strictly_narrower_visibility(new_value: str, current_value: str) -> bool:
+    new_rank = _VISIBILITY_RESTRICTIVENESS_RANK.get(new_value)
+    current_rank = _VISIBILITY_RESTRICTIVENESS_RANK.get(current_value)
+    if new_rank is None or current_rank is None:
+        return False
+    return new_rank < current_rank
+
+
+def _push_narrower_visibility_while_blocked(
+    client: 'SporelyCloudClient',
+    cloud_id: str,
+    local_obs: dict,
+    remote: dict | None,
+) -> None:
+    """Let a strictly more restrictive visibility change through a blocked
+    observation, and NOTHING else.
+
+    Used only from the Case F no-baseline-identity-contradiction block: the
+    rest of the observation (identification, names, any other field) stays
+    blocked, un-synced and un-snapshotted, exactly as before. This function
+    never marks the observation synced, never clears the conflict-review
+    marker, and never stores a baseline — it is a single scoped PATCH of the
+    ``visibility`` column alone, so the desktop's own narrowing choice
+    cannot be silently lost while the rest of the row awaits review.
+    """
+    local_visibility = _sharing_scope_to_cloud_visibility(local_obs.get('sharing_scope'))
+    remote_visibility = _cloud_visibility_to_sharing_scope(
+        (remote or {}).get('visibility') or (remote or {}).get('sharing_scope')
+    )
+    if not _is_strictly_narrower_visibility(local_visibility, remote_visibility):
+        return
+    try:
+        client._patch(f'observations?id=eq.{cloud_id}', {'visibility': local_visibility})
+        print(
+            f"[cloud_sync] blocked-observation privacy exception: cloud {cloud_id} "
+            f"visibility {remote_visibility!r} -> {local_visibility!r} (narrowing only; "
+            f"identification stays under review)",
+            flush=True,
+        )
+    except Exception as exc:
+        # Best-effort: a failure here must not interfere with (or be
+        # mistaken for) the identity conflict-review flow already recorded.
+        logger.warning(
+            "cloud sync: blocked-observation privacy exception failed for cloud %s: %s",
+            cloud_id, exc,
+        )
+
+
 _OBSERVATION_BOOL_FIELDS = {
     'location_public',
     'uncertain',
@@ -10020,6 +10076,28 @@ def _identification_key(row: dict) -> tuple[str, str]:
     return tuple(
         ' '.join(str(row.get(field) or '').split()).casefold()
         for field in ('genus', 'species')
+    )
+
+
+def _identification_contradicts_remote(local_row: dict, remote_row: dict) -> bool:
+    """Whether the local row's OWN committed identification positively
+    contradicts the remote row's, component by component.
+
+    A blank/missing local ``genus`` or ``species`` is unknown, not
+    contradictory — the known production shape is a cloud row with a bound
+    concept and no local genus/species at all (see sync-integrity follow-up 4
+    and the read-only production audit it cites). Only a POPULATED local
+    component that differs, case/whitespace-insensitively, from the
+    corresponding remote component counts as a contradiction. Compatible
+    partial information (blank, or matching) is left to the existing
+    adoption path (``cloud_selected_unverified`` etc.) — this function only
+    decides whether the Case F block applies, never whether to adopt.
+    """
+    local_key = _identification_key(local_row)
+    remote_key = _identification_key(remote_row)
+    return any(
+        local_component and local_component != remote_component
+        for local_component, remote_component in zip(local_key, remote_key)
     )
 
 
@@ -20312,11 +20390,13 @@ def push_all(
             )
             if baseline_identity_unknown and cloud_id and remote:
                 remote_claim_for_contradiction = _remote_identity_claim(remote)
-                if (
+                no_baseline_no_claim_vs_remote_identity = bool(
                     remote_claim_for_contradiction is not None
                     and remote_claim_for_contradiction.key
                     and not _local_identity_is_claim(push_payload)
-                    and _identification_key(push_payload) != _identification_key(dict(remote or {}))
+                )
+                if no_baseline_no_claim_vs_remote_identity and _identification_contradicts_remote(
+                    push_payload, dict(remote or {}),
                 ):
                     obs_local_id_for_block = _safe_int(obs.get('id'))
                     errors.append(_format_review_needed_error(
@@ -20325,6 +20405,22 @@ def push_all(
                     ))
                     if obs_local_id_for_block > 0:
                         _set_observation_conflict_review_pending(obs_local_id_for_block)
+                    # Privacy exception (Stage C review round 2, item 2): a
+                    # strictly MORE restrictive visibility change (narrowing,
+                    # e.g. public -> private) may still reach the cloud while
+                    # the observation is blocked for review — otherwise the
+                    # owner's own narrowing choice silently never propagates,
+                    # which is a privacy release blocker, not a sync nicety.
+                    # This is the ONLY field the exception ever touches: it
+                    # never carries identification/name/any other field, and
+                    # never marks the observation synced, clears the
+                    # conflict marker, or stores a baseline snapshot — the
+                    # conflict-review-pending write above already ran and
+                    # this does not repeat or undo it. A WIDENING change
+                    # (e.g. private -> public) stays blocked like everything
+                    # else on the observation; publishing more broadly is
+                    # never done implicitly.
+                    _push_narrower_visibility_while_blocked(client, cloud_id, push_payload, remote)
                     print(
                         f"[cloud_sync] conflict push blocked: obs={obs_local_id_for_block} "
                         f"categories=['taxon_identity_no_baseline_contradiction'] "
@@ -20341,6 +20437,23 @@ def push_all(
                         progress_state,
                     )
                     continue
+                if no_baseline_no_claim_vs_remote_identity:
+                    # Compatible partial information (blank, or matching):
+                    # not a contradiction, so adopt the cloud's fields and
+                    # identity onto local FIRST, through the existing
+                    # adoption path (identity_fail_closed=True is safe here —
+                    # local makes no claim of its own), exactly as the pull
+                    # side already does for this same "no stored snapshot"
+                    # shape. Without this, pushing the still-blank/partial
+                    # local payload would PATCH the cloud's canonical name
+                    # down to blank/partial, which is the known production
+                    # shape (a bound concept with no local genus/species)
+                    # going the wrong direction.
+                    _apply_remote_observation_fields(
+                        int(obs['id']), remote, identity_fail_closed=True,
+                    )
+                    adopted_obs = ObservationDB.get_observation(int(obs['id'])) or {}
+                    push_payload.update(adopted_obs)
 
             # No baseline: an identity disagreement is a review, never an
             # RPC overwrite (the pull side applies the same rule).
@@ -25875,7 +25988,7 @@ def pull_all(
                     remote_claim_for_pull_contradiction is not None
                     and remote_claim_for_pull_contradiction.key
                     and not _local_identity_is_claim(local_obs)
-                    and _identification_key(local_obs) != _identification_key(dict(remote or {}))
+                    and _identification_contradicts_remote(local_obs, dict(remote or {}))
                 )
                 if pull_contradicts_bound_identity:
                     errors.append(_format_review_needed_error(
