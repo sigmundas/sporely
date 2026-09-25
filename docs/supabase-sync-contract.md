@@ -512,11 +512,14 @@ change plus an owner-intent change of the marker.
   the desktop keeps the old public-spore-only behaviour, so an older server
   whose public RPCs would expose such a row never receives one. The probe and
   the targeted purpose read run only after local checks show an image needs
-  an owner-sync parent (or is a recorded retirement candidate), so other
-  observations issue no extra request. A public-spore parent carries
-  `public_microscopy` when the capability is already known in that sync;
-  otherwise it stays NULL (not public on the marker-gated surfaces; sporePoints
-  and mosaics are unaffected) until a later sync marks it.
+  a no-byte parent (owner-sync, or a public-spore parent being created or
+  linked) or is a recorded retirement candidate, so observations with only
+  byte-backed images issue no extra request. A public-spore parent always
+  carries `public_microscopy` on a capable server: NULL fails closed on every
+  marker-gated public surface, sporePoints and spore summaries included.
+  Parents created by desktop builds older than this rule carry NULL and are
+  not public until re-marked; the server backfill covers rows that existed
+  when the migration ran.
 - An image whose bytes are kept in the cloud gets its row from the ordinary
   upload, not a metadata-only parent.
 - The purpose of an existing parent is corrected only when the remote value is

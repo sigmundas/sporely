@@ -9238,16 +9238,6 @@ def _owner_sync_parents_supported(client) -> bool:
         return False
 
 
-def _owner_sync_capability_known(client) -> bool:
-    """The capability, but only if already probed — never a new request.
-
-    Lets a public-spore parent carry its `public_microscopy` marker whenever
-    the server is known to have the column, without adding a probe to every
-    public-spore observation's sync.
-    """
-    return bool(getattr(client, '_metadata_purpose_supported', False))
-
-
 def _remote_metadata_purpose(client, remote_row: dict) -> str | None:
     """A parent's stored purpose: from the row if read, else a targeted read."""
     if 'metadata_purpose' in remote_row:
@@ -9259,19 +9249,6 @@ def _remote_metadata_purpose(client, remote_row: dict) -> str | None:
     purpose = fetch(cloud_image_id)
     remote_row['metadata_purpose'] = purpose
     return purpose
-
-
-def _desired_metadata_parent_purpose(local_image_id: int) -> str:
-    """The purpose a metadata-only parent should carry.
-
-    `public_microscopy` records today's only owner consent to publish
-    microscopy data (a spore measurement on an observation whose spore data
-    is public); everything else is `owner_sync`. The server still verifies
-    public child data before exposing anything — this is intent, not proof.
-    """
-    if microscope_image_requires_public_spore_anchor(local_image_id):
-        return METADATA_PURPOSE_PUBLIC_MICROSCOPY
-    return METADATA_PURPOSE_OWNER_SYNC
 
 
 METADATA_PURPOSE_OWNER_SYNC = 'owner_sync'
@@ -22195,7 +22172,7 @@ def _ensure_metadata_only_microscope_image_for_public_spores(
         and microscope_image_requires_owner_sync_anchor(local_image_id)
         and not (cloud_image_bytes_desired(obs_local_id, local_image_id, row) and not row.get('cloud_id'))
         and _owner_sync_parents_supported(client)
-    ) or bool(public_required and _owner_sync_capability_known(client))
+    )
     if not public_required:
         if not owner_sync_supported:
             print(
@@ -22221,9 +22198,10 @@ def _ensure_metadata_only_microscope_image_for_public_spores(
                 flush=True,
             )
             return None
-    desired_purpose = (
-        _desired_metadata_parent_purpose(local_image_id) if owner_sync_supported else None
-    )
+    # For an owner-sync parent the capability is already confirmed. For a
+    # public-spore parent it is resolved below, once we know whether a
+    # no-byte row is involved at all.
+    desired_purpose = METADATA_PURPOSE_OWNER_SYNC if owner_sync_supported else None
 
     # Missing local source file is informational, not a hard skip: we
     # still want the metadata row so the measurement lands in public
@@ -22309,6 +22287,16 @@ def _ensure_metadata_only_microscope_image_for_public_spores(
     )
     if portable_identity_pending:
         payload.pop('desktop_id', None)
+    # A public-spore parent needs its `public_microscopy` marker on a server
+    # with the capability, or that server treats it as not public (NULL fails
+    # closed, sporePoints included). Probe (cached per client) only when a
+    # no-byte row is being created or already exists; byte-backed rows ignore
+    # the marker.
+    if public_required and (
+        remote_row is None
+        or not _normalize_cloud_media_key(remote_row.get('storage_path'))
+    ) and _owner_sync_parents_supported(client):
+        desired_purpose = METADATA_PURPOSE_PUBLIC_MICROSCOPY
     if desired_purpose:
         payload['metadata_purpose'] = desired_purpose
     if remote_row:

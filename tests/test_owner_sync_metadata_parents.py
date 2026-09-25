@@ -58,9 +58,6 @@ class _OwnerSyncChainClient(_ChainClient):
     def __init__(self, *args, capability: bool = True, **kwargs):
         super().__init__(*args, **kwargs)
         self.capability = capability
-        # A probed server: the production client caches its probe result
-        # here (`_observation_images_support_metadata_purpose`).
-        self._metadata_purpose_supported = capability
         self.patches: list[tuple[str, dict]] = []
         self.soft_deleted: list[str] = []
 
@@ -470,3 +467,24 @@ def test_observation_without_owner_sync_candidates_issues_no_probe(db, monkeypat
     )
     harness.run()
     assert probes == []
+
+
+def test_public_spore_only_parent_is_marked_without_any_prior_probe(db, monkeypatch):
+    """Independent review B3: a user whose excluded microscope images carry
+    only public spores never triggered the capability probe, so their new
+    parents stayed NULL — and NULL fails closed on the server, sporePoints
+    included."""
+    db_path, tmp_path = db
+    source = _write_microscope_source(tmp_path / "spores.png")
+    _add_microscope_image(db_path, image_id=12, filepath=source)
+    _add_measurements(db_path, image_id=12, rows=[(801, 10.0, 6.0, 100.0, 140.0)], measurement_type="spores")
+    cloud_sync._set_cloud_image_storage_intent_initialized_ids(1, {11, 12})
+    cloud_sync._set_cloud_image_storage_excluded_image_ids(1, {12})
+
+    harness = _harness(monkeypatch, db_path, tmp_path)
+    assert getattr(harness.client, "_metadata_purpose_supported", None) is None
+    harness.run()
+
+    [parent] = harness.client.rows_for_desktop_id(12)
+    assert parent.get("storage_path") in (None, "")
+    assert parent["metadata_purpose"] == cloud_sync.METADATA_PURPOSE_PUBLIC_MICROSCOPY
