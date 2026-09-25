@@ -131,7 +131,7 @@ class _RecordingClient:
     def list_remote_calibrations(self):
         return []
 
-    def push_observation(self, obs, remote_obs=None):
+    def push_observation(self, obs, remote_obs=None, **kwargs):
         self.pushed.append(dict(obs))
         return str(obs.get("cloud_id") or "cloud-generated")
 

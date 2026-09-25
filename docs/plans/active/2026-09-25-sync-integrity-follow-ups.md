@@ -157,6 +157,29 @@ expects the previous concept to be cleared.
 
 **Review.** `sporely-reviewer`; `sporely-security-reviewer` (identity RPC).
 
+**Status (2026-09-25, Stage C candidate on `feature/stage-c-identity-clear`,
+based on the Stage B candidate `feature/sync-persist-remote-only-fields` at
+`53f94b2`).** Reproduced end to end through the real `sync_all` (push, then
+pull) with real snapshot bookkeeping: a manual free-text rename or a
+genus/species dropdown change away from a proven cloud identity pushed the new
+name while leaving the stale `selected_sporely_taxon_id`, and a fresh device's
+next pull preserved it as `cloud_selected_unverified` beside the contradictory
+name. Fix: `_sync_observation_selected_taxon` now issues an explicit clear
+through the atomic `set_observation_identification_v2` RPC (never a bare PATCH)
+when the local identity reads `no_identity_evidence`, the stored sync baseline
+proves this desktop last synced a proven Sporely identity, and the committed
+genus/species has changed against that same baseline; an unrelated edit, a
+picker re-selection, a legacy/no-baseline row and a preserved
+`external_unresolved` identity are all left alone. `push_all` now threads the
+stored baseline into `push_observation` unconditionally (not only when the
+cloud has diverged), since the clear is triggered by a local change against
+the baseline, not a remote one. Regression:
+`tests/test_cloud_sync_identity_clear.py` (9 cases; 4 fail on pre-fix
+`53f94b2`: manual rename, dropdown change, fresh-device download, second-sync
+convergence). Focused identity/conflict/Stage-B suites and the full desktop
+suite pass with the same 33 pre-existing failures and 54 pre-existing errors
+as the `53f94b2` baseline (unrelated Qt/GUI fixture issues). Awaiting review.
+
 ---
 
 ## 5. Community/stats functions hard-code the spore type set

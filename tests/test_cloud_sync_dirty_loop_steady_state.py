@@ -341,7 +341,7 @@ def test_push_all_metadata_only_refreshes_signature_after_stamp(tmp_path, monkey
     class _FakeClient:
         user_id = "user-123"
 
-        def push_observation(self, obs, remote_obs=None):
+        def push_observation(self, obs, remote_obs=None, **kwargs):
             return str(obs.get("cloud_id") or "cloud-777")
 
         def get_observation(self, cloud_id):
@@ -476,7 +476,7 @@ def test_push_all_metadata_only_logs_dirty_to_synced_transition(tmp_path, monkey
     class _FakeClient:
         user_id = "user-123"
 
-        def push_observation(self, obs, remote_obs=None):
+        def push_observation(self, obs, remote_obs=None, **kwargs):
             return "cloud-777"
 
         def get_observation(self, cloud_id):
@@ -619,7 +619,7 @@ def test_metadata_only_refresh_patches_image_metadata_on_existing_cloud_rows(tmp
     class _RecordingClient:
         user_id = "user-obs-631"
 
-        def push_observation(self, obs, remote_obs=None):
+        def push_observation(self, obs, remote_obs=None, **kwargs):
             return str(obs.get("cloud_id") or "cloud-631")
 
         def get_observation(self, cloud_id):
@@ -878,7 +878,7 @@ def test_metadata_only_refresh_excludes_field_images_from_patch(
     class _RecordingClient:
         user_id = "user-obs-389"
 
-        def push_observation(self, obs, remote_obs=None):
+        def push_observation(self, obs, remote_obs=None, **kwargs):
             return str(obs.get("cloud_id") or "cloud-obs-389")
 
         def get_observation(self, cloud_id):
