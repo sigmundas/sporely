@@ -20013,13 +20013,6 @@ def push_all(
                     snapshot_data = _parse_cloud_observation_snapshot(stored_snapshot)
                     baseline_obs = _baseline_observation_compare_payload(snapshot_data.get('observation') or {})
                     field_changes = _analyze_observation_field_changes(obs, remote, baseline_obs)
-                    remote_update_kwargs = _remote_observation_update_kwargs(remote)
-                    for field in {
-                        _normalize_observation_sync_field(field)
-                        for field in (field_changes.get('remote_only_fields') or [])
-                    }:
-                        if field in remote_update_kwargs:
-                            push_payload[field] = remote_update_kwargs[field]
                     # A cloud-only identity change is adopted locally now, exactly
                     # as the pull would. Merely withholding it from this push is
                     # not enough: the post-push snapshot records the cloud value
@@ -20093,6 +20086,28 @@ def push_all(
                             progress_state,
                         )
                         continue
+
+                    # Cloud-only ordinary field edits are adopted locally, through
+                    # the pull's field-apply path, before the push — for the same
+                    # reason as the identity above: the post-push snapshot records
+                    # the cloud value as baseline, so a stale local value would
+                    # later read as a local change and overwrite the cloud edit.
+                    # Adopting before the cloud write means any later failure
+                    # leaves local == cloud (a shared value), never the reverse.
+                    # The payload takes the adopted local values, so what is
+                    # pushed and what is stored locally cannot diverge.
+                    ordinary_remote_only_fields = {
+                        _normalize_observation_sync_field(field)
+                        for field in (field_changes.get('remote_only_fields') or [])
+                    } - {TAXON_IDENTITY_SYNC_FIELD}
+                    if ordinary_remote_only_fields:
+                        _apply_remote_observation_fields(
+                            int(obs['id']), remote, fields=ordinary_remote_only_fields,
+                        )
+                        adopted = ObservationDB.get_observation(int(obs['id'])) or {}
+                        for field in ordinary_remote_only_fields:
+                            if field in adopted:
+                                push_payload[field] = adopted[field]
 
             # If the preflight ran and reported no conflict (or the fast path
             # short-circuited above), the observation is safe to push. The

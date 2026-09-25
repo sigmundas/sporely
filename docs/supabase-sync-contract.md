@@ -430,6 +430,18 @@ Canonical desktop image states are `NONE`, `UPLOADED`, `DELETE_PENDING`, and `DE
 - Compare local, cloud, and baseline.
 - Patch only shared fields that changed.
 - Preserve cloud-only and local-only fields.
+- A push (which runs before the pull) that keeps a cloud-only observation
+  field edit also writes it to the local row, through
+  `_apply_remote_observation_fields`, after the conflict preflight passes and
+  before the cloud write; the outgoing payload carries the adopted local value.
+  The post-push baseline records the cloud value, so a local row left at the
+  old value would read as a local change and a later unrelated edit would push
+  it back over the cloud edit — the pull cannot repair that, because baseline
+  and cloud already agree. After a successful sync, local, cloud and baseline
+  hold the same value for every adopted field. If the cloud write then fails,
+  local and cloud already agree on it, which the next three-way comparison
+  reads as shared. A blocked (conflicting) push adopts nothing. The virtual
+  taxon identity field keeps its own adoption rule (see Taxonomy identity).
 - Refresh the baseline after success.
 
 ### Both sides changed

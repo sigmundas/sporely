@@ -120,6 +120,20 @@ no-no-op-write rule.
 
 **Review.** `sporely-reviewer`.
 
+**Status (2026-09-25, Stage B candidate on `feature/sync-persist-remote-only-fields`).**
+The revert is now reproduced end to end through the real `sync_all` (push,
+then pull) with real snapshot bookkeeping, for `notes` and `location`: after
+Sync the local row kept A while cloud and baseline held B, an idle Sync did
+not repair it, and the next unrelated local edit pushed A back to the cloud.
+The same probe showed a worse case for fields outside
+`_remote_observation_update_kwargs` (`inaturalist_id`, `author`, …): they
+were not even kept in the payload, so the same push overwrote the cloud edit.
+Fix: after the conflict preflight passes, `push_all` adopts the ordinary
+remote-only fields through `_apply_remote_observation_fields` and builds the
+payload from the adopted local row; identity adoption is unchanged.
+Regression: `tests/test_cloud_sync_remote_only_adoption.py`. Awaiting review;
+Stage C (item 4) not started.
+
 ---
 
 ## 4. Manual desktop rename does not clear cloud identity (taxonomy correctness)

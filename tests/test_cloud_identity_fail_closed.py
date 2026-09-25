@@ -156,7 +156,10 @@ class _SnapshotStore:
 def _push_env(monkeypatch, tmp_path, *, baseline_selected, remote_selected, with_snapshot=True):
     db_path = _init_db(tmp_path)
     _patch_connections(monkeypatch, db_path)
-    image_path = tmp_path / "image.jpg"
+    # Not beside the database: adopting a cloud genus renames the
+    # observation folder inferred from this path, as a real pull would.
+    image_path = tmp_path / "media" / "image.jpg"
+    image_path.parent.mkdir()
     image_path.write_bytes(b"bytes")
     _seed_observation(db_path, image_path)
     _add_identity_columns(db_path, _proven(83668))
@@ -208,6 +211,10 @@ def test_cloud_only_identity_change_is_adopted_and_never_reverted_by_a_later_pus
     local = _local_identity(db_path)
     assert (local.source_system, local.external_id) == ("sporely", "99"), "adopted from the cloud"
     assert local.sporely_taxon_id is None, "99 is not in the (absent) local artifact: preserved, not bound"
+    conn = sqlite3.connect(db_path)
+    assert conn.execute("SELECT genus FROM observations WHERE id = 1").fetchone() == ("Pholiotina",), \
+        "the cloud-only genus is adopted with the identity"
+    conn.close()
 
     _edit_and_push(db_path, client, live, "second local edit")
     second = client.push_observation_calls[-1]
