@@ -1712,6 +1712,7 @@ _CONFLICT_FIELD_LABELS = {
     'is_draft': 'Draft state',
     'location_precision': 'Location precision',
     'spore_statistics': 'Spore statistics',
+    'taxon_identity': 'Taxon identity',
 }
 
 ProgressCallback = Callable[[str, int, int], None]
@@ -3579,6 +3580,13 @@ def _observation_compare_payload(record: dict | None, *, local: bool) -> dict:
     derived_guess = f'{genus} {species}'.strip() if genus and species else ''
     if species_guess and derived_guess and species_guess == derived_guess:
         payload['species_guess'] = None
+    # The virtual identity field (never pushed as a column): what each side
+    # holds, in one vocabulary. A remote row without identity columns has none.
+    if local:
+        payload[TAXON_IDENTITY_SYNC_FIELD] = _local_identity_sync_key(row)
+    else:
+        claim = _remote_identity_claim(row)
+        payload[TAXON_IDENTITY_SYNC_FIELD] = claim.key if claim is not None else None
     return payload
 
 
@@ -3599,6 +3607,10 @@ def _baseline_observation_compare_payload(record: dict | None) -> dict:
     derived_guess = f'{genus} {species}'.strip() if genus and species else ''
     if species_guess and derived_guess and species_guess == derived_guess:
         payload['species_guess'] = None
+    # Preserve whether the snapshot recorded an identity at all: a snapshot
+    # from before identity joined change detection must stay "unknown".
+    if TAXON_IDENTITY_SYNC_FIELD in row:
+        payload[TAXON_IDENTITY_SYNC_FIELD] = str(row.get(TAXON_IDENTITY_SYNC_FIELD) or '')
     return payload
 
 
@@ -4073,6 +4085,7 @@ def _format_observation_metadata_field_label(field: str) -> str:
         'spore_data_visibility': 'spore visibility',
         'visibility': 'visibility',
         'sharing_scope': 'sharing scope',
+        'taxon_identity': 'taxon identity',
     }
     normalized = str(field or '').strip()
     return labels.get(normalized, normalized.replace('_', ' '))
@@ -4104,6 +4117,21 @@ def _analyze_observation_field_changes(local_obs: dict | None, remote_obs: dict 
             local_only_fields.append(field)
         elif remote_changed:
             remote_only_fields.append(field)
+
+    identity_change = _classify_identity_sync_change(
+        local_obs, remote_obs, baseline_obs,
+        identification_locally_owned=bool(
+            {'genus', 'species'} & (set(local_only_fields) | set(conflict_fields))
+        ),
+    )
+    if identity_change == 'remote_only':
+        remote_only_fields.append(TAXON_IDENTITY_SYNC_FIELD)
+    elif identity_change == 'local_only':
+        local_only_fields.append(TAXON_IDENTITY_SYNC_FIELD)
+    elif identity_change == 'conflict':
+        conflict_fields.append(TAXON_IDENTITY_SYNC_FIELD)
+    elif identity_change == 'shared':
+        shared_same_fields.append(TAXON_IDENTITY_SYNC_FIELD)
 
     return {
         'local_payload': local_payload,
@@ -4433,6 +4461,15 @@ def _local_has_real_changes_since_snapshot(local_obs: dict, cloud_id: str | None
         if field in {'id', 'desktop_id'}:
             continue
         if not _observation_field_values_match(field, local_payload.get(field), baseline_obs.get(field)):
+            return True
+    # A proven identity is the one local identity push can assert (through
+    # the RPC); if the baseline does not record it, it still has to go out.
+    if TaxonIdentity.from_row(local_obs).is_proven_sporely:
+        baseline_identity = _baseline_identity_key(baseline_obs)
+        if (
+            baseline_identity is _IDENTITY_BASELINE_UNKNOWN
+            or baseline_identity != local_payload.get(TAXON_IDENTITY_SYNC_FIELD)
+        ):
             return True
 
     local_id = _safe_int(local_obs.get('id'))
@@ -5271,6 +5308,9 @@ def _cloud_observation_snapshot(
         field: _normalize_snapshot_value((remote or {}).get(field))
         for field in _SNAPSHOT_OBS_FIELDS
     }
+    identity_claim = _remote_identity_claim(remote)
+    if identity_claim is not None:
+        obs_part[TAXON_IDENTITY_SYNC_FIELD] = identity_claim.key
     payload: dict = {
         'schema_version': _CLOUD_OBSERVATION_SNAPSHOT_SCHEMA_VERSION,
         'observation': obs_part,
@@ -9706,6 +9746,8 @@ def _remote_snapshot_has_meaningful_changes(
             continue
         if not _observation_field_values_match(field, remote_payload.get(field), baseline_obs.get(field)):
             return True
+    if _remote_identity_changed_since(remote, baseline_obs):
+        return True
     baseline_images = [dict(row or {}) for row in (snapshot.get('images') or [])]
     remote_image_payloads = [_remote_image_payload(img) for img in (remote_images or [])]
     remote_image_changes = _analyze_image_changes(remote_image_payloads, baseline_images)
@@ -10512,6 +10554,107 @@ def _local_identity_sync_key(local_obs: dict | None) -> str:
             identity.source_system, identity.namespace, identity.external_id,
         )
     return ''
+
+
+#: Returned by `_baseline_identity_key` for a snapshot stored before identity
+#: joined change detection. Nothing records what the cloud identity was then.
+_IDENTITY_BASELINE_UNKNOWN = object()
+
+
+def _baseline_identity_key(baseline_obs: dict | None):
+    row = dict(baseline_obs or {})
+    if TAXON_IDENTITY_SYNC_FIELD not in row:
+        return _IDENTITY_BASELINE_UNKNOWN
+    return str(row.get(TAXON_IDENTITY_SYNC_FIELD) or '')
+
+
+def _remote_identity_changed_since(remote: dict | None, baseline_obs: dict | None) -> bool:
+    """Whether the cloud identity differs from the stored sync baseline.
+
+    With an unknown baseline, any cloud identity counts as a change worth
+    reconciling once; after that the snapshot records it.
+    """
+    claim = _remote_identity_claim(remote)
+    if claim is None:
+        return False
+    baseline = _baseline_identity_key(baseline_obs)
+    if baseline is _IDENTITY_BASELINE_UNKNOWN:
+        return claim.key != ''
+    return claim.key != baseline
+
+
+def _local_identity_is_claim(local_obs: dict | None) -> bool:
+    """A local identity that is the desktop's own evidence, not cloud-derived.
+
+    Proven Sporely identities and preserved non-Sporely external identifiers
+    are claims; legacy integers, cloud-selected tokens, unconfirmable cloud
+    Sporely IDs, manual text and no identity are not.
+    """
+    identity = TaxonIdentity.from_row(local_obs)
+    if identity.is_proven_sporely:
+        return True
+    return (
+        identity.state == 'external_unresolved'
+        and identity.has_external_evidence
+        and (identity.source_system, identity.namespace) != ('sporely', 'sporely_taxon_id')
+    )
+
+
+def _classify_identity_sync_change(
+    local_obs: dict | None,
+    remote_obs: dict | None,
+    baseline_obs: dict | None,
+    *,
+    identification_locally_owned: bool,
+) -> str | None:
+    """Three-way classification of the taxonomy identity for one observation.
+
+    Returns ``'remote_only'`` (adopt the cloud identity), ``'local_only'``
+    (push it — only a proven identity, the one kind the RPC gate accepts),
+    ``'conflict'`` (fail closed: review required, nothing applied),
+    ``'shared'`` (both sides moved to the same identity) or ``None``.
+
+    ``identification_locally_owned`` is True when genus/species changed
+    locally or conflict: identity follows the identification it names, so a
+    remote identity change against a locally edited identification is a
+    conflict, never a silent adoption.
+
+    See docs/supabase-sync-contract.md "Identity in change detection".
+    """
+    claim = _remote_identity_claim(remote_obs)
+    if claim is None:
+        return None
+    remote_key = claim.key
+    local_key = _local_identity_sync_key(local_obs)
+    baseline = _baseline_identity_key(baseline_obs)
+    if local_key == remote_key:
+        if baseline is not _IDENTITY_BASELINE_UNKNOWN and baseline != remote_key:
+            return 'shared'
+        return None
+    local_is_claim = _local_identity_is_claim(local_obs)
+    local_is_proven = TaxonIdentity.from_row(local_obs).is_proven_sporely
+    if baseline is _IDENTITY_BASELINE_UNKNOWN:
+        # Nothing says who changed. Two different claims disagree: fail
+        # closed. A proven local identity with nothing in the cloud is the
+        # desktop's own pick awaiting the RPC. A non-claim local takes the
+        # cloud identity unless the identification itself is being edited
+        # locally.
+        if local_is_claim:
+            if remote_key:
+                return 'conflict'
+            return 'local_only' if local_is_proven else None
+        if not remote_key or identification_locally_owned:
+            return None
+        return 'remote_only'
+    remote_changed = remote_key != baseline
+    local_changed = local_is_claim and local_key != baseline
+    if remote_changed and (local_changed or identification_locally_owned):
+        return 'conflict'
+    if remote_changed:
+        return 'remote_only'
+    if local_changed and local_is_proven:
+        return 'local_only'
+    return None
 
 
 def _installed_taxon_concept(sporely_taxon_id: int):
@@ -14507,9 +14650,17 @@ def resolve_conflict_plan(
                     'visibility' if field in {'visibility', 'sharing_scope'} else field
                 )
                 for field in local_field_names
+                if field != TAXON_IDENTITY_SYNC_FIELD
             }
             if patch_payload:
                 client._patch(f'observations?id=eq.{resolved_cloud_id}', patch_payload)
+            # "Keep this device's identity": the guarded RPC is the only
+            # desktop → cloud identity channel, and it accepts only a proven
+            # identity (anything else is a skip, never a clear).
+            if TAXON_IDENTITY_SYNC_FIELD in local_field_names:
+                client._sync_observation_selected_taxon(
+                    resolved_cloud_id, refreshed_local, remote_obs=remote_obs,
+                )
         except Exception as exc:
             raise _partial_error(
                 f'Could not push local fields to cloud: {exc}',
@@ -14517,15 +14668,25 @@ def resolve_conflict_plan(
                 cause=exc,
             )
         for f in sorted(local_field_names):
+            expected_value = _normalize_observation_field_for_baseline(
+                refreshed_local, f, local=True,
+            )
+            if (
+                f == TAXON_IDENTITY_SYNC_FIELD
+                and not TaxonIdentity.from_row(refreshed_local).is_proven_sporely
+            ):
+                # The RPC gate skipped an unproven identity: the cloud keeps
+                # what it had, and that is the verified effect.
+                expected_value = _normalize_observation_field_for_baseline(
+                    remote_obs, f, local=False,
+                )
             executed.append({
                 'op': 'push_field', 'field': f, 'status': 'completed',
                 'stable_identity': {'field': f, 'side': 'cloud'},
                 'expected_after': {
                     'side': 'cloud',
                     'field': f,
-                    'value': _normalize_observation_field_for_baseline(
-                        refreshed_local, f, local=True,
-                    ),
+                    'value': expected_value,
                 },
             })
 
@@ -18618,6 +18779,40 @@ def get_conflict_detail(client: "SporelyCloudClient", local_id: int, cloud_id: s
             'label': _CONFLICT_FIELD_LABELS.get(field, field.replace('_', ' ').title()),
             'baseline': b_val, 'local': l_val, 'remote': r_val,
             'local_changed': local_changed, 'remote_changed': remote_changed,
+        })
+
+    # The taxonomy identity is classified by its own three-way rule, never by
+    # plain equality: a cloud-derived local token is not a local edit, and an
+    # identity follows the identification (genus/species) it names.
+    identity_change = _classify_identity_sync_change(
+        local_obs, remote_obs, baseline_obs,
+        identification_locally_owned=any(
+            row['field'] in {'genus', 'species'} for row in field_rows
+        ) or any(
+            entry['field'] in {'genus', 'species'} and entry['action'] == 'push_local'
+            for entry in automatic_field_decisions
+        ),
+    )
+    identity_values = {
+        'local': local_payload.get(TAXON_IDENTITY_SYNC_FIELD),
+        'remote': remote_payload.get(TAXON_IDENTITY_SYNC_FIELD),
+        'baseline': baseline_obs.get(TAXON_IDENTITY_SYNC_FIELD),
+    }
+    if identity_change == 'local_only':
+        automatic_field_decisions.append({
+            'field': TAXON_IDENTITY_SYNC_FIELD, 'action': 'push_local', **identity_values,
+        })
+    elif identity_change == 'remote_only':
+        automatic_field_decisions.append({
+            'field': TAXON_IDENTITY_SYNC_FIELD, 'action': 'pull_cloud', **identity_values,
+        })
+    elif identity_change == 'conflict':
+        field_rows.append({
+            'field': TAXON_IDENTITY_SYNC_FIELD,
+            'label': _CONFLICT_FIELD_LABELS[TAXON_IDENTITY_SYNC_FIELD],
+            **identity_values,
+            'local_changed': _local_identity_is_claim(local_obs),
+            'remote_changed': _remote_identity_changed_since(remote_obs, baseline_obs),
         })
 
     # 2. Detailed Image Differences
@@ -24821,7 +25016,7 @@ def pull_all(
                     )
                     for field in _SNAPSHOT_OBS_FIELDS
                     if field not in {'id', 'desktop_id'}
-                )
+                ) and not _remote_identity_changed_since(remote, snapshot_obs)
                 local_status = str((local_obs or {}).get('sync_status') or '').strip().lower()
                 if observation_fields_match and local_status != 'dirty':
                     # Converge without deep fetch: stamp synced + refresh

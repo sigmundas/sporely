@@ -681,6 +681,60 @@ Creation (`_create_local_from_remote`) and the "cloud wins" full applies
 (no-snapshot apply, keep-cloud resolution) adopt the cloud identity. The
 three-way reconciliation of existing rows is described in the next section.
 
+## Identity in change detection
+
+The identity is the virtual observation field `taxon_identity`. It is never a
+cloud column and never PATCHed: pushing it means the guarded RPC, which
+accepts only a proven identity. All sides use one key vocabulary
+(`sporely:<id>`, `external:<source>:<namespace>:<id>`, `""` for none):
+
+- **remote** — `selected_sporely_taxon_id`, else a complete
+  `external_unresolved` tuple, else `""`; a row without identity columns has
+  no key and is ignored by every rule below;
+- **baseline** — the key recorded in the stored snapshot; a snapshot stored
+  before this rule has none (**unknown**, distinct from `""`);
+- **local** — proven and `cloud_selected_unverified` IDs as `sporely:<id>`; an
+  unconfirmable cloud Sporely ID preserved as `(sporely, sporely_taxon_id, id)`
+  also as `sporely:<id>` (so holding it is no perpetual difference); other
+  external tuples as `external:…`; a legacy integer as `legacy:<id>` (never
+  equal to a cloud value).
+
+A local **claim** is a proven identity or a preserved non-Sporely external
+tuple; everything else (legacy, cloud-derived, manual text, none) is not the
+desktop's own evidence. "Identification edited locally" means genus or species
+is a local-only or conflicting field.
+
+`_classify_identity_sync_change`, in order:
+
+1. Local key equals remote key → nothing (`shared` if both moved from the
+   baseline).
+2. Unknown baseline:
+   - local claim and a remote identity that differs → **conflict**;
+   - proven local, nothing in the cloud → **local-only** (the RPC asserts it);
+   - otherwise a non-claim local adopts a non-empty remote identity
+     (**remote-only**) unless the identification is edited locally.
+3. Known baseline: remote changed = remote ≠ baseline; local changed = local
+   claim ≠ baseline.
+   - remote changed and (local changed or identification edited locally) →
+     **conflict**;
+   - remote changed → **remote-only** (adopt, per the mapping above);
+   - local changed and proven → **local-only**; an unpushable local claim is
+     left alone, so it never keeps a row dirty.
+
+Consequences in the existing machinery: remote-only applies through
+`_apply_remote_observation_fields(fields={'taxon_identity'})`; a conflict
+blocks the snapshot advance, keeps the row dirty and blocks push until the
+review (`get_conflict_detail` shows a "Taxon identity" row; "this device"
+resolves through the RPC gate, "Sporely Cloud" through the pull mapping);
+`_remote_snapshot_has_meaningful_changes` and the converge fast path treat an
+identity-only cloud change as a change; `_local_has_real_changes_since_snapshot`
+counts a proven identity the baseline does not record, so a desktop pick is
+never cleared as "no real change" before the RPC runs. A pre-identity snapshot
+reconciles once and is then recorded.
+
+Regression: `tests/test_cloud_identity_change_detection.py`,
+`tests/test_cloud_identity_pull.py`.
+
 ## Red List follows the identification it assesses
 
 A Red List category is an assessment of one taxon. It must never become the
