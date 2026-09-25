@@ -83,6 +83,7 @@ from utils.publish_targets import normalize_publish_target
 from utils.taxon_text import resolve_observation_taxon_fields
 from utils.taxon_identity import (
     IDENTITY_COLUMNS as _TAXON_IDENTITY_COLUMNS,
+    STATE_NONE,
     TaxonIdentity,
 )
 from utils.r2_storage import (
@@ -2132,7 +2133,7 @@ _PULL_ONLY_BLOCKED_CLIENT_METHODS = frozenset({
     'push_observation', 'push_image_metadata', 'push_measurement',
     'upload_image_file', 'upload_original_image_file',
     'set_image_storage_path', 'set_image_desktop_id', 'set_desktop_id',
-    'set_observation_selected_taxon',
+    'set_observation_selected_taxon', 'clear_observation_selected_taxon',
     'set_measurement_desktop_id', 'set_image_original_storage_path',
     'reserve_image_storage_path_for_promotion',
     'release_image_storage_path_reservation',
@@ -16729,8 +16730,19 @@ class SporelyCloudClient:
         remote_obs: dict | None = None,
         *,
         sync_summary: dict[str, int] | None = None,
+        baseline_obs: dict | None = None,
     ) -> str:
-        """Upsert observation to cloud. Returns cloud UUID."""
+        """Upsert observation to cloud. Returns cloud UUID.
+
+        ``baseline_obs`` is the stored sync baseline (the same shape
+        ``_baseline_observation_compare_payload`` produces), when the caller
+        has one. It is used only by the explicit-clear check in
+        ``_sync_observation_selected_taxon`` — an unproven local identity
+        never re-asserts the old identity, but it may explicitly clear a
+        stale one when the baseline proves the desktop deliberately changed
+        the identification away from it. ``None`` means "no baseline
+        available", which keeps the prior skip-only behaviour.
+        """
         summary = sync_summary or _cloud_sync_current_summary()
         payload = _observation_push_payload(obs, local=True)
         payload['user_id'] = self.user_id
@@ -16749,6 +16761,7 @@ class SporelyCloudClient:
                         existing_id,
                         obs,
                         remote_obs=remote_obs,
+                        baseline_obs=baseline_obs,
                     )
                     return existing_id
             # Coord-change / preserve-only geography rules — see §4 in the spec.
@@ -16759,6 +16772,7 @@ class SporelyCloudClient:
                 existing_id,
                 obs,
                 remote_obs=remote_obs,
+                baseline_obs=baseline_obs,
             )
             return existing_id
         # New observation: never invent a region_id.
@@ -16775,6 +16789,7 @@ class SporelyCloudClient:
         obs: dict,
         *,
         remote_obs: dict | None,
+        baseline_obs: dict | None = None,
     ) -> None:
         """Forward an authoritative desktop selection through the guarded RPC.
 
@@ -16792,13 +16807,26 @@ class SporelyCloudClient:
         residual case is closed here, by refusing to emit anything whose
         producer is not recorded as proof.
 
-        Refusing is deliberately a skip, not a clear: an unproven or
-        unresolved local identity is not evidence that the cloud's identity is
+        Refusing is normally a skip, not a clear: an unproven or unresolved
+        local identity is not by itself evidence that the cloud's identity is
         wrong, so the source evidence and any existing cloud selection both
-        survive.
+        survive. Sync-integrity follow-up 4
+        (docs/plans/active/2026-09-25-sync-integrity-follow-ups.md) adds one
+        narrow exception: when ``baseline_obs`` proves the desktop itself last
+        synced a proven Sporely identity for this observation, and the
+        committed identification has since changed locally away from it, the
+        absence of a current local identity is the desktop's own evidence that
+        the user deliberately abandoned that identity — not merely unproven
+        state. That case issues an explicit clear through the same atomic RPC
+        the web uses for a coupled identity+name change, never a bare PATCH of
+        taxonomy columns.
         """
         identity = TaxonIdentity.from_row(obs)
         if not identity.is_proven_sporely:
+            if identity.state == STATE_NONE and self._maybe_clear_stale_cloud_identity(
+                cloud_id, obs, remote_obs=remote_obs, baseline_obs=baseline_obs,
+            ):
+                return
             if identity.sporely_taxon_id is not None or identity.has_external_evidence:
                 logger.info(
                     "cloud sync: skipping taxonomy identity for observation %s — "
@@ -16820,6 +16848,102 @@ class SporelyCloudClient:
         if remote_taxon_id == taxon_id:
             return
         self.set_observation_selected_taxon(cloud_id, taxon_id)
+
+    def _maybe_clear_stale_cloud_identity(
+        self,
+        cloud_id: str,
+        obs: dict,
+        *,
+        remote_obs: dict | None,
+        baseline_obs: dict | None,
+    ) -> bool:
+        """Explicit-clear check for a local identity that reads as none.
+
+        All of these must hold, mirroring
+        docs/plans/active/2026-09-25-sync-integrity-follow-ups.md item 4:
+
+        1. the current local committed identity is none (caller already
+           checked ``identity.state == STATE_NONE``);
+        2. the stored sync baseline shows the previously synchronized
+           observation held a non-empty *selected Sporely* identity — not any
+           identity: a baseline external/legacy value is not something this
+           desktop ever asserted through the guarded RPC, so it is not this
+           desktop's claim to withdraw;
+        3. the committed identification (genus/species) has changed relative
+           to that same baseline;
+        4. that change is a real identification edit, not bookkeeping — (3)
+           already establishes that by comparing the fields that name the
+           taxon, not an unrelated field.
+
+        With no baseline (``baseline_obs`` is ``None``, or the stored snapshot
+        predates identity joining change detection), nothing is inferred: a
+        legacy/no-identity row with no proof of a prior selection is left
+        alone, per the fail-closed rule.
+
+        Returns ``True`` once the situation is handled (either a clear was
+        issued, or the cloud already agrees), so the caller does not fall
+        through to the ordinary "skip and log" path for what is actually a
+        deliberate clear.
+        """
+        if baseline_obs is None:
+            return False
+        baseline_key = _baseline_identity_key(baseline_obs)
+        if baseline_key is _IDENTITY_BASELINE_UNKNOWN or not baseline_key.startswith('sporely:'):
+            return False
+        if _identification_key(obs) == _identification_key(dict(baseline_obs or {})):
+            # Nothing about the committed identification changed locally —
+            # an unrelated edit (notes, location, habitat, …) must never
+            # clear a cloud identity the user never touched.
+            return False
+        remote_claim = _remote_identity_claim(remote_obs)
+        if remote_claim is not None and remote_claim.key == '':
+            # The cloud already has no identity (e.g. a previous clear
+            # already landed): nothing left to do, and definitely not a
+            # repeated RPC call on every subsequent sync.
+            return True
+        genus = str(obs.get('genus') or '').strip() or None
+        species = str(obs.get('species') or '').strip() or None
+        common_name = str(obs.get('common_name') or '').strip() or None
+        logger.info(
+            "cloud sync: explicit identity clear for observation %s — "
+            "baseline=%s committed identification changed locally; "
+            "clearing via set_observation_identification_v2",
+            obs.get('id'), baseline_key,
+        )
+        self.clear_observation_selected_taxon(
+            cloud_id, genus=genus, species=species, common_name=common_name,
+        )
+        return True
+
+    def clear_observation_selected_taxon(
+        self,
+        cloud_id: str,
+        *,
+        genus: str | None,
+        species: str | None,
+        common_name: str | None,
+    ) -> None:
+        """Atomically clear a stale cloud identity and commit the new name.
+
+        Uses the same atomic RPC the web uses for a coupled identity+name
+        change (``set_observation_identification_v2``,
+        sporely-web migration 20260922140000): identity and its dependent
+        server state (shared-reference contributions) change together, never
+        a bare PATCH of taxonomy columns from the desktop.
+        """
+        self._rpc('set_observation_identification_v2', {
+            'p_observation_id': int(cloud_id),
+            'p_sporely_taxon_id': None,
+            'p_identity_state': None,
+            'p_source_system': None,
+            'p_namespace': None,
+            'p_external_id': None,
+            'p_raw_external_id': None,
+            'p_write_name': True,
+            'p_genus': genus,
+            'p_species': species,
+            'p_common_name': common_name,
+        })
 
     def set_observation_selected_taxon(
         self,
@@ -19969,6 +20093,19 @@ def push_all(
             cloud_id = str(obs.get('cloud_id') or '').strip()
             had_existing_cloud = bool(cloud_id)
             stored_snapshot = _load_cloud_observation_snapshot(cloud_id) if cloud_id else ''
+            # The stored sync baseline, independent of whether the cloud has
+            # diverged from it. Needed even on the no-cloud-change fast path:
+            # an explicit identity clear (sync-integrity follow-up 4) is
+            # triggered by a LOCAL identification change against this
+            # baseline, not by any remote divergence.
+            identity_baseline_obs = None
+            if stored_snapshot:
+                try:
+                    identity_baseline_obs = _baseline_observation_compare_payload(
+                        _parse_cloud_observation_snapshot(stored_snapshot).get('observation') or {}
+                    )
+                except Exception:
+                    identity_baseline_obs = None
             remote = remote_lookup.get(cloud_id) if cloud_id else None
             if cloud_id and remote is None:
                 _advance_progress(progress_state, 1)
@@ -20132,6 +20269,7 @@ def push_all(
             cloud_id = client.push_observation(
                 merged_payload,
                 remote_obs=remote,
+                baseline_obs=identity_baseline_obs,
             )
             _adopt_merge_filled_ai_fields_locally(obs.get('id'), push_payload, merged_payload)
 

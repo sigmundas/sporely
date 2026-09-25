@@ -243,6 +243,31 @@ Plain English comes first; technical terms are in parentheses.
     must not persist a reduced identity-only shape. Refusing is the only
     outcome that cannot corrupt the row.
 
+    **A desktop's own abandoned identity is an explicit clear, never a
+    silent skip, when the desktop can prove it deliberately changed the
+    identification.** "No local identity" is not by itself an instruction to
+    clear the cloud: legacy rows, unresolved identities, incomplete local
+    state and older-client data all legitimately read as
+    `no_identity_evidence` without the cloud ever being wrong. The push gate
+    (`_sync_observation_selected_taxon` / `_maybe_clear_stale_cloud_identity`
+    in `utils/cloud_sync.py`) issues an explicit clear through
+    `set_observation_identification_v2` (never a bare PATCH of taxonomy
+    columns) only when ALL of: (1) the current local committed identity is
+    `no_identity_evidence`; (2) the stored sync baseline records that this
+    same observation last synced with a non-empty *selected Sporely* identity
+    (a baseline external/legacy value is not this desktop's RPC-asserted
+    claim, so it is not this desktop's claim to withdraw); (3) the committed
+    identification (`genus`/`species`) differs from that same baseline; (4)
+    the cloud does not already agree (nothing to clear twice). Manual
+    free-text renames and genus/species dropdown changes that invalidate a
+    previously proven identity satisfy this; an unrelated field edit, a
+    picker re-selection to a new proven concept, a legacy row with no prior
+    baseline proof, and a preserved `external_unresolved` identity do not —
+    the first two never change the committed identification key against the
+    baseline, and the last two never establish condition (2). With no stored
+    baseline at all, nothing is inferred and the identity is left alone (the
+    existing fail-closed rule for an unknown baseline).
+
 ## Normalized reference graph
 
 The owner graph is ordered work → taxon treatment → measurement set →
