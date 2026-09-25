@@ -117,3 +117,11 @@ The unblocking steps are in the runbook.
 repository and is out of this worktree's scope. The desktop-side contract it
 must honour — unresolved identity is a displayed state, not an absence — is
 pinned here.
+
+## Clarification (2026-09-25): where the accepted 917 round trip ran
+
+The accepted observation-917 integrity round trip was performed against the
+isolated local, non-production Supabase harness. Production was never used for
+that test. The accepted creation of an `owner_sync` parent for microscope
+image 7305 therefore does not imply that such a row should exist in production
+before the new desktop is released.
