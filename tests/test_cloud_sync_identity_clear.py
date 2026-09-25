@@ -97,6 +97,35 @@ class _FakeCloud(cloud_sync.SporelyCloudClient):
         row.update({k: v for k, v in payload.items() if k != "user_id"})
         row["updated_at"] = _now_text()
 
+    def _patch_with_precondition(self, path, payload):
+        """Real-shaped equivalent of a PostgREST precondition PATCH with
+        `Prefer: return=representation`: every `field=eq.value` filter in
+        the query string (besides `id`) must match the row's CURRENT value
+        or nothing is written and an empty list is returned — exactly like
+        a concurrent write moving the column since an earlier fetch."""
+        query = path.split("?", 1)[1] if "?" in path else path
+        filters: dict[str, str] = {}
+        for part in query.split("&"):
+            if "=eq." not in part:
+                continue
+            field, _, value = part.partition("=eq.")
+            filters[field] = value
+        cloud_id = filters.get("id")
+        row = self.rows.get(cloud_id) if cloud_id else None
+        if row is None:
+            return []
+        for field, expected in filters.items():
+            if field == "id":
+                continue
+            current = row.get(field)
+            current_text = "" if current is None else str(current)
+            if current_text != expected:
+                return []  # precondition mismatch -> lost race, no write
+        self.patches.append(copy.deepcopy(payload))
+        row.update({k: v for k, v in payload.items() if k != "user_id"})
+        row["updated_at"] = _now_text()
+        return [copy.deepcopy(row)]
+
     def _post(self, path, payload):
         assert path == "observations", path
         self.posts.append(copy.deepcopy(payload))

@@ -314,7 +314,7 @@ def _push_narrower_visibility_while_blocked(
     cloud_id: str,
     local_obs: dict,
     remote: dict | None,
-) -> None:
+) -> str | None:
     """Let a strictly more restrictive visibility change through a blocked
     observation, and NOTHING else.
 
@@ -325,28 +325,65 @@ def _push_narrower_visibility_while_blocked(
     marker, and never stores a baseline — it is a single scoped PATCH of the
     ``visibility`` column alone, so the desktop's own narrowing choice
     cannot be silently lost while the rest of the row awaits review.
+
+    Returns ``None`` when no narrowing change was needed (nothing to do),
+    or one of:
+
+    - ``'patched'`` — the narrowing reached the cloud.
+    - ``'lost_race'`` — Stage C review round 3: ``remote`` is a snapshot
+      fetched early in this sync cycle (``push_all``'s bulk
+      ``remote_lookup``), not immediately before this write. The PATCH
+      carries an equality precondition on the SAME column
+      (``visibility=eq.<remote_visibility>``); a concurrent write that
+      changed the column since that earlier fetch makes the precondition
+      match zero rows, which PostgREST reports as an ordinary success with
+      an empty body, never an error. Zero rows means nothing was
+      overwritten — the concurrent value stands.
+    - ``'failed'`` — the PATCH itself was rejected (e.g. a privacy-slot
+      quota check).
+
+    The caller MUST treat anything other than ``'patched'`` as "the
+    narrowing did not reach the cloud" and must not advance sync/baseline
+    state as if it had.
     """
     local_visibility = _sharing_scope_to_cloud_visibility(local_obs.get('sharing_scope'))
     remote_visibility = _cloud_visibility_to_sharing_scope(
         (remote or {}).get('visibility') or (remote or {}).get('sharing_scope')
     )
     if not _is_strictly_narrower_visibility(local_visibility, remote_visibility):
-        return
+        return None
     try:
-        client._patch(f'observations?id=eq.{cloud_id}', {'visibility': local_visibility})
-        print(
-            f"[cloud_sync] blocked-observation privacy exception: cloud {cloud_id} "
-            f"visibility {remote_visibility!r} -> {local_visibility!r} (narrowing only; "
-            f"identification stays under review)",
-            flush=True,
+        updated_rows = client._patch_with_precondition(
+            f'observations?id=eq.{cloud_id}&visibility=eq.{remote_visibility}',
+            {'visibility': local_visibility},
         )
     except Exception as exc:
-        # Best-effort: a failure here must not interfere with (or be
-        # mistaken for) the identity conflict-review flow already recorded.
+        # The scoped narrowing PATCH itself was rejected (e.g. a
+        # privacy-slot-limit quota check). This must not be mistaken for —
+        # or interfere with — the identity conflict-review flow already
+        # recorded for this observation; the caller records the failure
+        # through the error-detail-only path so it stays visible instead
+        # of only a log line.
         logger.warning(
             "cloud sync: blocked-observation privacy exception failed for cloud %s: %s",
             cloud_id, exc,
         )
+        return 'failed'
+    if not updated_rows:
+        logger.warning(
+            "cloud sync: blocked-observation privacy exception lost a race for "
+            "cloud %s — visibility changed since this sync cycle fetched it "
+            "(expected %r); not overwriting the concurrent value",
+            cloud_id, remote_visibility,
+        )
+        return 'lost_race'
+    print(
+        f"[cloud_sync] blocked-observation privacy exception: cloud {cloud_id} "
+        f"visibility {remote_visibility!r} -> {local_visibility!r} (narrowing only; "
+        f"identification stays under review)",
+        flush=True,
+    )
+    return 'patched'
 
 
 _OBSERVATION_BOOL_FIELDS = {
@@ -9955,6 +9992,30 @@ def _set_observation_sync_blocked(local_id: int, raw_error: str, blocked_reason:
     return blocked_reason
 
 
+def _set_observation_sync_error_detail_only(local_id: int, message: str, *, error_code: str) -> None:
+    """Record an error code/message without disturbing sync_status or the
+    blocked-reason marker.
+
+    Used when a secondary problem occurs on an observation some other,
+    more specific mechanism already blocked for a different reason (e.g.
+    the Case F conflict-review marker) — this must never overwrite or
+    clear that primary marker, only make the secondary failure visible
+    instead of a log line alone (Stage C review round 3, finding 1).
+    """
+    conn = get_connection()
+    try:
+        cursor = conn.cursor()
+        update_observation_sync_state(
+            cursor,
+            int(local_id),
+            sync_error_code=error_code,
+            sync_error_message=message,
+        )
+        conn.commit()
+    finally:
+        conn.close()
+
+
 def _set_observation_privacy_blocked(local_id: int, raw_error: str) -> str:
     return _set_observation_sync_blocked(
         local_id,
@@ -16475,6 +16536,37 @@ class SporelyCloudClient:
         if not resp.ok:
             raise CloudSyncError(f'PATCH {path}: {resp.text}')
 
+    def _patch_with_precondition(self, path: str, payload: dict) -> list[dict]:
+        """Like ``_patch``, but for a PATCH whose ``path`` already carries an
+        equality-filter precondition (e.g. ``...&visibility=eq.<expected>``)
+        on a column the caller's decision was based on.
+
+        Requests ``Prefer: return=representation`` and returns the rows
+        PostgREST reports as updated. PostgREST reports a precondition that
+        matched zero rows as an ordinary 200 response with an empty array —
+        never an error — so a caller basing a write on a value it fetched
+        earlier in the sync cycle (Stage C review round 3: a bulk
+        ``remote_lookup`` built once before the per-observation push loop)
+        MUST inspect the returned rows to tell a lost race (the column
+        changed concurrently since that earlier fetch) apart from a normal
+        successful update; treating an empty result as success would
+        silently overwrite or ignore a concurrent write to the same column.
+        """
+        resp = self._request_with_refresh(
+            'PATCH',
+            f'{SUPABASE_URL}/rest/v1/{path}',
+            json=payload,
+            headers={'Prefer': 'return=representation'},
+            timeout=_SUPABASE_REST_TIMEOUT,
+        )
+        if not resp.ok:
+            raise CloudSyncError(f'PATCH {path}: {resp.text}')
+        try:
+            rows = resp.json()
+        except Exception:
+            rows = []
+        return rows if isinstance(rows, list) else []
+
     def _delete(self, path: str) -> None:
         resp = self._request_with_refresh(
             'DELETE',
@@ -17089,13 +17181,38 @@ class SporelyCloudClient:
         treated exactly like one — fail closed (``CloudSyncError``, caught by
         the same per-observation handling every other push failure uses),
         never advance sync state or a baseline as if the clear had landed.
+
+        Stage C review round 3, finding 3 broadens the same fail-closed
+        standard to the read-back call itself, not just its result:
+
+        - A transport failure while reading back (network error, non-2xx,
+          decode failure) is indistinguishable from "the clear may or may
+          not have landed" — it must fail closed exactly like a confirmed
+          still-attached identity, not silently pass through.
+        - A malformed or empty response for a row that MUST exist (the RPC
+          just ran against this exact ``cloud_id`` without raising) is
+          never treated as "confirmed cleared" — only a well-formed row
+          that explicitly reports ``selected_sporely_taxon_id`` as empty
+          counts as a confirmed clear. A response missing that key
+          entirely (or not shaped like a row at all) fails closed too,
+          the same as a genuine concurrency loss (e.g. the row was
+          deleted between the RPC and this read-back).
         """
-        verified = self.get_observation(cloud_id)
-        if verified is None:
-            # Could not verify at all (deleted/inaccessible) — a different,
-            # pre-existing failure mode the caller already handles; nothing
-            # extra to enforce here.
-            return
+        try:
+            verified = self.get_observation(cloud_id)
+        except Exception as exc:
+            raise CloudSyncError(
+                f'cloud {cloud_id}: identity clear did not take effect — could '
+                f'not verify the cloud row after set_observation_identification_v2 '
+                f'({exc}). Refusing to advance sync state as if it succeeded.'
+            ) from exc
+        if not isinstance(verified, dict) or 'selected_sporely_taxon_id' not in verified:
+            raise CloudSyncError(
+                f'cloud {cloud_id}: identity clear did not take effect — the '
+                f'read-back after set_observation_identification_v2 returned an '
+                f'empty or malformed row ({verified!r}). Refusing to advance '
+                f'sync state as if the clear succeeded.'
+            )
         still_selected = _normalize_observation_int_value(verified.get('selected_sporely_taxon_id'))
         if still_selected is not None:
             raise CloudSyncError(
@@ -20475,7 +20592,33 @@ def push_all(
                     # (e.g. private -> public) stays blocked like everything
                     # else on the observation; publishing more broadly is
                     # never done implicitly.
-                    _push_narrower_visibility_while_blocked(client, cloud_id, push_payload, remote)
+                    narrowing_outcome = _push_narrower_visibility_while_blocked(
+                        client, cloud_id, push_payload, remote,
+                    )
+                    if narrowing_outcome in ('failed', 'lost_race'):
+                        # Stage C review round 3, findings 1 & 2: neither a
+                        # rejected narrowing PATCH nor a lost precondition
+                        # race may be silently absorbed by a log line —
+                        # record it via the SAME sync-error machinery every
+                        # other push failure uses, without touching
+                        # sync_status/sync_blocked_reason (the
+                        # conflict-review-pending write above already set
+                        # those and must stay authoritative). Cloud
+                        # visibility is left exactly where it was; no
+                        # baseline is stored recording the narrowing as if
+                        # it had landed.
+                        narrowing_detail = (
+                            f"obs {obs_local_id_for_block}: privacy narrowing while "
+                            f"blocked did not reach the cloud ({narrowing_outcome}); "
+                            f"cloud visibility left unchanged, identification stays "
+                            f"under review"
+                        )
+                        errors.append(narrowing_detail)
+                        if obs_local_id_for_block > 0:
+                            _set_observation_sync_error_detail_only(
+                                obs_local_id_for_block, narrowing_detail,
+                                error_code=f'privacy_narrowing_{narrowing_outcome}',
+                            )
                     print(
                         f"[cloud_sync] conflict push blocked: obs={obs_local_id_for_block} "
                         f"categories=['taxon_identity_no_baseline_contradiction'] "

@@ -261,6 +261,43 @@ byte):
    defence-in-depth for a theoretical silent-suppression case the runtime
    proof did not actually exhibit.
 
+**Round 4 (2026-09-25, same branch).** Three more follow-ups on the round-3
+mechanisms:
+1. **Rejected narrowing-while-blocked must fail closed.** The Case F
+   privacy-while-blocked exception (`_push_narrower_visibility_while_blocked`)
+   issued its scoped visibility-only PATCH and, on any failure (e.g. a
+   privacy-slot-limit quota rejection), only logged a warning — nothing
+   recorded the failure anywhere a caller or a later sync could see. Fixed:
+   the function now returns an outcome (`'patched'` / `'lost_race'` /
+   `'failed'` / `None`), and the caller records a failure through
+   `_set_observation_sync_error_detail_only` (sets `sync_error_code`/
+   `sync_error_message` only, leaving `sync_status`/`sync_blocked_reason`
+   untouched so the Case F conflict-review marker stays authoritative) and
+   appends to `errors`, instead of only a log line.
+2. **Narrowing must use fresh state.** `remote` is a snapshot fetched once,
+   early in the sync cycle (`push_all`'s bulk `remote_lookup`), not
+   immediately before the write — a concurrent write to the SAME
+   `visibility` column in between could have been silently overwritten by
+   a blind PATCH. Fixed with a PostgREST equality precondition
+   (`visibility=eq.<expected>`, `Prefer: return=representation`, via the
+   new `SporelyCloudClient._patch_with_precondition`): a lost race reports
+   success with an empty body, never an error, so the caller inspects the
+   returned rows and treats zero rows as "did not take effect" (never
+   overwriting the concurrent value, never advancing sync/baseline state).
+3. **Failed identity-clear read-back must fail closed for every failure
+   shape.** `_verify_identity_clear_landed` already failed closed when the
+   read-back explicitly showed the identity still attached. It did not
+   fail closed when the read-back call itself raised (transport failure —
+   previously uncaught, would have crashed the whole `push_all` loop
+   instead of failing just this observation), nor when it returned a
+   malformed/incomplete row (missing `selected_sporely_taxon_id` entirely)
+   or `None` for a row that must exist (the RPC just ran against this
+   exact `cloud_id` without raising) — those were previously treated as
+   "nothing to enforce" and silently let the clear count as confirmed. All
+   three now raise the same `CloudSyncError`, distinguished from a
+   genuinely confirmed-empty read-back (a well-formed row explicitly
+   reporting no selected identity), which still counts as success.
+
 ---
 
 ## 5. Community/stats functions hard-code the spore type set
