@@ -21344,29 +21344,14 @@ class ObservationDetailsDialog(GeometryMixin, QDialog):
                 red_categories = None
         red_code = obs.get("red_list_category")
 
-        # Cloud-synced observations may carry the selected Artsorakel
-        # Red List value only inside the selected prediction.
-        if not red_code:
-            for selected_pred in (self._ai_selected_by_index or {}).values():
-                if not isinstance(selected_pred, dict):
-                    continue
-                taxon = (
-                    selected_pred.get("taxon")
-                    if isinstance(selected_pred.get("taxon"), dict)
-                    else {}
-                )
-                fallback_code = (
-                    self._read_red_list_code(taxon)
-                    or self._read_red_list_code(selected_pred)
-                )
-                if fallback_code:
-                    red_code = fallback_code
-                    if red_categories is None:
-                        red_categories = (
-                            self._read_red_list_categories(taxon)
-                            or self._read_red_list_categories(selected_pred)
-                        )
-                    break
+        # The Red List restored on load comes ONLY from the persisted
+        # columns. ``ai_state_json`` is provider/UI history — the per-image
+        # prediction a user highlighted — not the committed identity, so its
+        # assessment may belong to a different taxon. Borrowing it here let
+        # an unrelated save persist that taxon's category onto the
+        # observation. No assessment beats someone else's assessment; the
+        # identity-gated lookup (`_resolve_and_apply_redlist`) is what
+        # derives a category for the committed concept.
 
         # Preserve raw degree-marked values such as VU°.
         self._set_red_list_category_raw(
