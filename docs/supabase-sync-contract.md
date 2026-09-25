@@ -481,6 +481,65 @@ A measurement-only record (`metadata-only anchor`) is valid only when:
 
 It must not be created from an external-publication choice. Owner-facing UI must distinguish deliberate measurement-only state from a broken or deleted image.
 
+### Owner-sync and public-microscopy metadata parents
+
+A metadata-only microscope parent (no bytes) exists for one of two separate
+intents, and the desktop records which in `observation_images.metadata_purpose`
+(sporely-web migration 20260925120000):
+
+- `owner_sync` — carries the owner's own measurements of ANY type between the
+  owner's devices when the image's bytes are deliberately excluded from cloud
+  storage (`microscope_image_requires_owner_sync_anchor`: a microscope image
+  with at least one measurement, independent of observation visibility and
+  measurement type — the measurement pusher's own eligibility). Never public.
+- `public_microscopy` — today's only owner consent to publish microscopy data
+  (`microscope_image_requires_public_spore_anchor`: a spore measurement on an
+  observation whose spore data is public).
+
+The marker is intent, never authorization: the server exposes a no-byte
+parent publicly only when it is marked `public_microscopy` AND it verifies
+public child data itself (observation public and not a draft, spore data
+public, a child measurement of a type in the single server-side
+`public.is_public_microscopy_measurement_type` definition). NULL fails closed.
+Rows with bytes follow ordinary image visibility. The desktop never infers
+privacy from "not a spore": publishing cystidia later is a server type-set
+change plus an owner-intent change of the marker.
+
+- Owner-sync parents are created only when the server confirms the capability
+  (`SporelyCloudClient._observation_images_support_metadata_purpose`: one
+  user-scoped probe of the column, cached per client; a missing column is
+  remembered as unsupported, any other error fails closed uncached); otherwise
+  the desktop keeps the old public-spore-only behaviour, so an older server
+  whose public RPCs would expose such a row never receives one. The probe and
+  the targeted purpose read run only after local checks show an image needs
+  an owner-sync parent (or is a recorded retirement candidate), so other
+  observations issue no extra request. A public-spore parent carries
+  `public_microscopy` when the capability is already known in that sync;
+  otherwise it stays NULL (not public on the marker-gated surfaces; sporePoints
+  and mosaics are unaffected) until a later sync marks it.
+- An image whose bytes are kept in the cloud gets its row from the ordinary
+  upload, not a metadata-only parent.
+- The purpose of an existing parent is corrected only when the remote value is
+  known and differs (no no-op writes).
+- An explicit cloud tombstone for an image whose owner measurements need the
+  parent is cancelled, as for public spore anchors.
+- Retirement: an `owner_sync` parent with no bytes, no byte-storage intent,
+  no local measurements AND no cloud measurements is retired through a
+  cloud-copy tombstone (`_retire_unneeded_owner_sync_parent`); the canonical
+  tombstone push soft-deletes it on the next sync. A device that has not yet
+  downloaded the measurements (zero local rows, cloud rows present) never
+  retires it. Public-microscopy and legacy parents keep their existing
+  lifecycle.
+- Pull needs no special case: measurement import already attaches to any
+  microscope parent regardless of type.
+
+Known limitation, separate follow-up: deleting an individual measurement on
+the desktop records no cloud deletion intent, so a deletion does not
+propagate and retirement rarely becomes reachable until it does.
+
+Regression: `tests/test_owner_sync_metadata_parents.py` (observation-917
+shape: excluded image, three cheilocystidia, no spores).
+
 ### Missing cloud file
 
 When an active row points to missing bytes:

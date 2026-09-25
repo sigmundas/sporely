@@ -6195,9 +6195,12 @@ def _push_pending_image_tombstones(client: "SporelyCloudClient") -> list[str]:
         if not cloud_image_id:
             continue
         local_image_id = _safe_int(tombstone.get('local_image_id'))
-        if (
-            local_image_id > 0
-            and microscope_image_requires_public_spore_anchor(local_image_id)
+        if local_image_id > 0 and (
+            microscope_image_requires_public_spore_anchor(local_image_id)
+            or (
+                microscope_image_requires_owner_sync_anchor(local_image_id)
+                and _owner_sync_parents_supported(client)
+            )
         ):
             try:
                 ImageDB.clear_image_tombstone_by_deleted_cloud_id(cloud_image_id)
@@ -9183,6 +9186,96 @@ def microscope_image_requires_public_spore_anchor(image_id: int | None) -> bool:
         )
     finally:
         conn.close()
+
+
+def microscope_image_requires_owner_sync_anchor(image_id: int | None) -> bool:
+    """Whether one local microscope image must have a cloud parent for its
+    owner's own measurements to sync between the owner's devices.
+
+    Deliberately independent of `microscope_image_requires_public_spore_anchor`:
+    it ignores observation visibility and measurement type, because
+    cross-device sync of the owner's data is not publication. It mirrors the
+    measurement pusher's own eligibility — every measurement row on a
+    microscope image with a cloud parent is pushed — so no measurement is
+    left without a parent. Whether such a parent may ever be public is decided
+    by the server (`metadata_purpose` + verified public child data), never by
+    this predicate.
+    """
+    local_image_id = _safe_int(image_id)
+    if local_image_id <= 0:
+        return False
+    conn = get_connection()
+    try:
+        row = conn.execute(
+            """
+            SELECT i.image_type,
+                   EXISTS (SELECT 1 FROM spore_measurements m WHERE m.image_id = i.id)
+            FROM images i
+            WHERE i.id = ?
+            """,
+            (local_image_id,),
+        ).fetchone()
+    except sqlite3.OperationalError:
+        row = None
+    finally:
+        conn.close()
+    return bool(row) and str(row[0] or '') == 'microscope' and bool(row[1])
+
+
+def _owner_sync_parents_supported(client) -> bool:
+    """True only when the server confirms the owner-sync parent capability.
+
+    Fails closed: a client without the probe, or any probe failure, means no
+    owner-sync parent is created, so an older server can never receive a
+    metadata-only row its public RPCs would expose.
+    """
+    probe = getattr(client, '_observation_images_support_metadata_purpose', None)
+    if not callable(probe):
+        return False
+    try:
+        return bool(probe())
+    except Exception:
+        return False
+
+
+def _owner_sync_capability_known(client) -> bool:
+    """The capability, but only if already probed — never a new request.
+
+    Lets a public-spore parent carry its `public_microscopy` marker whenever
+    the server is known to have the column, without adding a probe to every
+    public-spore observation's sync.
+    """
+    return bool(getattr(client, '_metadata_purpose_supported', False))
+
+
+def _remote_metadata_purpose(client, remote_row: dict) -> str | None:
+    """A parent's stored purpose: from the row if read, else a targeted read."""
+    if 'metadata_purpose' in remote_row:
+        return str(remote_row.get('metadata_purpose') or '') or None
+    fetch = getattr(client, 'fetch_image_metadata_purpose', None)
+    cloud_image_id = str(remote_row.get('id') or '').strip()
+    if not callable(fetch) or not cloud_image_id:
+        return None
+    purpose = fetch(cloud_image_id)
+    remote_row['metadata_purpose'] = purpose
+    return purpose
+
+
+def _desired_metadata_parent_purpose(local_image_id: int) -> str:
+    """The purpose a metadata-only parent should carry.
+
+    `public_microscopy` records today's only owner consent to publish
+    microscopy data (a spore measurement on an observation whose spore data
+    is public); everything else is `owner_sync`. The server still verifies
+    public child data before exposing anything — this is intent, not proof.
+    """
+    if microscope_image_requires_public_spore_anchor(local_image_id):
+        return METADATA_PURPOSE_PUBLIC_MICROSCOPY
+    return METADATA_PURPOSE_OWNER_SYNC
+
+
+METADATA_PURPOSE_OWNER_SYNC = 'owner_sync'
+METADATA_PURPOSE_PUBLIC_MICROSCOPY = 'public_microscopy'
 
 
 def measurement_qualifies_for_public_spore_anchor(measurement: dict | None) -> bool:
@@ -15689,6 +15782,43 @@ class SporelyCloudClient:
     def _observation_images_support_ai_crop_custom(self) -> bool:
         return self._has_column('observation_images', 'ai_crop_is_custom')
 
+    def _observation_images_support_metadata_purpose(self) -> bool:
+        """Whether the server has the owner-sync metadata-parent capability.
+
+        sporely-web migration 20260925120000 adds
+        `observation_images.metadata_purpose` together with the public-RPC
+        predicates that keep owner-sync parents out of every public surface,
+        so the column's presence is the signal that owner-sync parents are
+        safe to create. See `_owner_sync_parents_supported`.
+        """
+        cached = getattr(self, '_metadata_purpose_supported', None)
+        if cached is not None:
+            return cached
+        try:
+            self._get(
+                f'observation_images?user_id=eq.{self.user_id}'
+                f'&select=metadata_purpose&limit=1'
+            )
+            supported = True
+        except CloudSyncError as exc:
+            text = str(exc or '').lower()
+            if not (
+                re.search(r"column \S*metadata_purpose does not exist", text)
+                or re.search(r"could not find the '?metadata_purpose'? column", text)
+            ):
+                raise
+            supported = False
+        self._metadata_purpose_supported = supported
+        return supported
+
+    def fetch_image_metadata_purpose(self, cloud_image_id: str) -> str | None:
+        """The stored `metadata_purpose` of one owned image row, or None."""
+        rows = self._get(
+            f'observation_images?id=eq.{cloud_image_id}&user_id=eq.{self.user_id}'
+            f'&select=id,metadata_purpose'
+        )
+        return str((rows or [{}])[0].get('metadata_purpose') or '') or None if rows else None
+
     def _observation_images_support_upload_metadata(self) -> bool:
         return self._has_column('observation_images', 'upload_mode') or self._has_column('observation_images', 'stored_bytes')
 
@@ -22054,13 +22184,46 @@ def _ensure_metadata_only_microscope_image_for_public_spores(
         )
         return None
 
-    if not microscope_image_requires_public_spore_anchor(local_image_id):
-        print(
-            f'[cloud_sync] Mosaic image metadata: skip '
-            f'local_image={local_image_id} reason=no_public_spore_measurements',
-            flush=True,
-        )
-        return None
+    # Two separate intents may require a parent: public spore data, and —
+    # only on a server with the owner-sync capability — the owner's own
+    # cross-device measurements of any type.
+    public_required = microscope_image_requires_public_spore_anchor(local_image_id)
+    # Probe the server only when this image actually needs an owner-sync
+    # parent: observations without such images issue no extra request.
+    owner_sync_supported = bool(
+        not public_required
+        and microscope_image_requires_owner_sync_anchor(local_image_id)
+        and not (cloud_image_bytes_desired(obs_local_id, local_image_id, row) and not row.get('cloud_id'))
+        and _owner_sync_parents_supported(client)
+    ) or bool(public_required and _owner_sync_capability_known(client))
+    if not public_required:
+        if not owner_sync_supported:
+            print(
+                f'[cloud_sync] Mosaic image metadata: skip '
+                f'local_image={local_image_id} reason=no_public_spore_measurements',
+                flush=True,
+            )
+            return None
+        if not microscope_image_requires_owner_sync_anchor(local_image_id):
+            print(
+                f'[cloud_sync] Mosaic image metadata: skip '
+                f'local_image={local_image_id} reason=no_measurements',
+                flush=True,
+            )
+            return None
+        # An image whose bytes the owner keeps in the cloud gets its cloud row
+        # from the ordinary upload; a metadata-only parent is for images whose
+        # bytes are deliberately excluded (observation 917, image 7305).
+        if cloud_image_bytes_desired(obs_local_id, local_image_id, row) and not row.get('cloud_id'):
+            print(
+                f'[cloud_sync] Mosaic image metadata: skip '
+                f'local_image={local_image_id} reason=bytes_upload_provides_parent',
+                flush=True,
+            )
+            return None
+    desired_purpose = (
+        _desired_metadata_parent_purpose(local_image_id) if owner_sync_supported else None
+    )
 
     # Missing local source file is informational, not a hard skip: we
     # still want the metadata row so the measurement lands in public
@@ -22146,8 +22309,23 @@ def _ensure_metadata_only_microscope_image_for_public_spores(
     )
     if portable_identity_pending:
         payload.pop('desktop_id', None)
+    if desired_purpose:
+        payload['metadata_purpose'] = desired_purpose
     if remote_row:
         remote_cloud_id = str(remote_row.get('id') or '').strip()
+        # Keep an existing metadata-only parent's purpose current (a spore
+        # added or removed changes it). Bytes present: the marker is
+        # irrelevant and left alone. Unchanged: no write.
+        if (
+            desired_purpose
+            and not _normalize_cloud_media_key(remote_row.get('storage_path'))
+            and _remote_metadata_purpose(client, remote_row) != desired_purpose
+        ):
+            client._patch(
+                f'observation_images?id=eq.{remote_cloud_id}'
+                f'&user_id=eq.{client.user_id}',
+                {'metadata_purpose': desired_purpose},
+            )
         _cancel_microscope_anchor_tombstones(
             local_image_id, existing_local_cloud_id, remote_cloud_id,
         )
@@ -22346,8 +22524,107 @@ def _ensure_metadata_only_microscope_images_for_observation(
                 counters['metadata_only_cloud_ids'].append(str(result))
         else:
             counters['skipped'] += 1
+            if _retire_unneeded_owner_sync_parent(
+                client, obs_local_id, image_row, remote_images,
+            ):
+                counters.setdefault('retired_cloud_ids', []).append(
+                    str(image_row.get('cloud_id') or '')
+                )
 
     return counters
+
+
+def _observation_has_owner_sync_candidates(obs_local_id: int) -> bool:
+    """Local-only check: any measured microscope image whose bytes are
+    excluded, or any recorded metadata-only parent (a retirement candidate)."""
+    conn = get_connection()
+    try:
+        image_ids = [
+            int(row[0]) for row in conn.execute(
+                """
+                SELECT DISTINCT i.id FROM images i
+                JOIN spore_measurements m ON m.image_id = i.id
+                WHERE i.observation_id = ? AND i.image_type = 'microscope'
+                """,
+                (int(obs_local_id),),
+            ).fetchall()
+        ]
+    except sqlite3.OperationalError:
+        # No measurement/image tables (a partial database): nothing to sync.
+        image_ids = []
+    finally:
+        conn.close()
+    excluded = _cloud_image_storage_excluded_image_ids(obs_local_id)
+    return bool(set(image_ids) & excluded) or bool(_cloud_metadata_only_image_ids(obs_local_id))
+
+
+def _retire_unneeded_owner_sync_parent(
+    client: 'SporelyCloudClient',
+    obs_local_id: int,
+    image_row: dict,
+    remote_images: list[dict],
+) -> bool:
+    """Queue a cloud-copy tombstone for an owner-sync parent nothing needs.
+
+    Called only for images neither parent intent requires. Retires the
+    parent only when it is provably unnecessary everywhere:
+
+    * the server has the capability and marks the row ``owner_sync`` (a
+      legacy or public-microscopy parent keeps its existing lifecycle);
+    * it is a live metadata-only row (no bytes) and the owner has not asked
+      for the image's bytes to be kept in the cloud;
+    * the image has no local measurements AND the cloud has none on it — a
+      device that simply has not downloaded the measurements yet must never
+      retire the parent that carries them.
+
+    It only queues a cloud-copy tombstone; the canonical tombstone push
+    (`_push_pending_image_tombstones`) performs the soft delete on the next
+    sync that runs it (in the normal chain the tombstone push precedes the
+    parent pass, so retirement converges over two syncs). A later
+    measurement revives the parent through `_cancel_microscope_anchor_tombstones`.
+    """
+    local_image_id = _safe_int(image_row.get('id'))
+    cloud_image_id = str(image_row.get('cloud_id') or '').strip()
+    if local_image_id <= 0 or not cloud_image_id:
+        return False
+    # Cheap local checks first: no request unless this is a recorded
+    # metadata-only parent that nothing local needs any more.
+    if local_image_id not in _cloud_metadata_only_image_ids(obs_local_id):
+        return False
+    if cloud_image_bytes_desired(obs_local_id, local_image_id, image_row):
+        return False
+    if microscope_image_requires_owner_sync_anchor(local_image_id):
+        return False
+    remote = next(
+        (dict(r) for r in (remote_images or []) if str(r.get('id') or '').strip() == cloud_image_id),
+        None,
+    )
+    if (
+        remote is None
+        or _normalize_cloud_media_key(remote.get('storage_path'))
+        or str(remote.get('deleted_at') or '').strip()
+    ):
+        return False
+    if not _owner_sync_parents_supported(client):
+        return False
+    if _remote_metadata_purpose(client, remote) != METADATA_PURPOSE_OWNER_SYNC:
+        return False
+    try:
+        remote_measurements = client.pull_measurements_for_images([cloud_image_id]) or []
+    except Exception as exc:
+        if is_cloud_auth_error(exc) or is_cloud_temporary_unavailable_error(exc):
+            raise
+        return False
+    if remote_measurements:
+        return False
+    queued = ImageDB.queue_image_tombstone_for_local_image(local_image_id)
+    if queued:
+        print(
+            f'[cloud_sync] Owner-sync parent retired: local_image={local_image_id} '
+            f'cloud_image={cloud_image_id} (no measurements on any device)',
+            flush=True,
+        )
+    return bool(queued)
 
 
 def _ensure_metadata_anchors_for_public_spore_observation(
@@ -22381,7 +22658,13 @@ def _ensure_metadata_anchors_for_public_spore_observation(
     visibility = str(
         (obs or {}).get('spore_data_visibility') or 'public'
     ).strip().lower()
-    if visibility != 'public':
+    # Owner cross-device sync does not depend on publication: with the
+    # owner-sync capability every observation's measured microscope images
+    # get a parent. Without it, only public spore data needs one.
+    if visibility != 'public' and not (
+        _observation_has_owner_sync_candidates(obs_local_id)
+        and _owner_sync_parents_supported(client)
+    ):
         return empty
     try:
         result = _ensure_metadata_only_microscope_images_for_observation(
