@@ -1157,12 +1157,14 @@ def test_release_id_regex_guard(tmp_path):
 # ---------- pinned-release regression ----------------------------------
 
 
-_PINNED_GZ = Path(
-    "database/reference_data/generated/taxonomy_v2/tax-2026.07.30-02.sqlite3.gz"
-)
 _PINNED_MANIFEST = Path(
     "database/reference_data/generated/taxonomy_v2/manifest.json"
 )
+# The bundled artifact, named by the manifest so a promotion cannot leave
+# these tests silently skipping on a stale filename.
+_PINNED_GZ = _PINNED_MANIFEST.parent / json.loads(
+    (_REPO / _PINNED_MANIFEST).read_text(encoding="utf-8")
+)["gz_artifact"]
 
 
 @pytest.mark.skipif(
@@ -1173,7 +1175,7 @@ def test_pinned_release_regression_counts(tmp_path):
     result = ce.run_export(
         artifact_gz=_REPO / _PINNED_GZ,
         manifest=_REPO / _PINNED_MANIFEST,
-        output_dir=tmp_path / "cloud_export_tax-2026.07.30-02",
+        output_dir=tmp_path / "cloud_export_pinned",
         policy_dir=_REPO / "database" / "taxonomy" / "policies",
         generated_at="2026-07-31T00:00:00Z",
     )

@@ -442,17 +442,23 @@ def _verify_required_schema(conn: sqlite3.Connection) -> None:
 # ---------- scope construction -----------------------------------------
 
 
+# The release the desktop bundles (database/reference_data/generated/
+# taxonomy_v2/manifest.json). Counts match the reviewed Stage 3 cloud export
+# of tax-2026.09.23-01 (stage3-candidate-verification.md); the previous pin,
+# tax-2026.07.30-02, is no longer packaged.
 PINNED_RELEASE_EXPECTATIONS = {
-    "content_release_id": "tax-2026.07.30-02",
-    "concepts_included": 634894,
+    "content_release_id": "tax-2026.09.23-01",
+    "concepts_included": 634893,
     "concepts_excluded": 1,
-    "scientific_name_rows": 662649,
+    "scientific_name_rows": 662648,
     "vernacular_rows": 10294,
     "vernacular_by_lang": {"nb": 6240, "nn": 3975, "se": 79},
     # Authoritative external IDs split by source_system:
     "external_authoritative_col_rows": 620975,   # from taxon_external_id_text_min
-    "external_authoritative_nortaxa_rows": 13919,  # derived from taxon_min.norwegian_taxon_id
-    "external_authoritative_total_rows": 634894,   # = 620975 + 13919
+    # derived from taxon_min.norwegian_taxon_id, plus the reviewed
+    # nortaxa/nortaxa_taxon_id bridges emitted into taxon_external_id_text_min
+    "external_authoritative_nortaxa_rows": 13921,
+    "external_authoritative_total_rows": 634896,   # = 620975 + 13921
     # Legacy namespace-lost integer rows:
     "external_legacy_int_rows": 61583,
     "redlist_rows": 7866,
