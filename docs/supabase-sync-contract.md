@@ -638,6 +638,26 @@ Deletion should proceed as:
 
 An interruption after any step must be recoverable by repeating sync.
 
+## Red List follows the identification it assesses
+
+A Red List category is an assessment of one taxon. It must never become the
+current value of an observation whose committed identification is a
+different taxon.
+
+- The observation dialog restores the Red List only from the persisted
+  columns. `ai_state_json` is provider/UI history (the per-image prediction a
+  user highlighted), not the committed identity, and its category is never
+  borrowed. Regression: `tests/test_red_list_ai_history_not_promoted.py`.
+- Before a push, `_merge_cloud_selected_ai_fields` gap-fills local NULL Red
+  List columns from the cloud row (a row that never pulled them must not wipe
+  the cloud value). It does so only while both rows name the same
+  genus/species: after a desktop re-identification the local NULL is an
+  explicit "no assessment for the new taxon", and filling it would copy the
+  previous taxon's category onto the new identification and adopt it locally.
+  Regression: `tests/test_red_list_push_merge_follows_identification.py`.
+
+Found in the taxonomy-v2 closeout observation-917 integrity round-trip.
+
 ## Mosaic signature survives the sync's own working-file swap
 
 The local mosaic signature (`_local_spore_mosaic_signature`) fingerprints each

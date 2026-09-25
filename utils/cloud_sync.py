@@ -9899,6 +9899,17 @@ _MERGE_PROTECTED_AI_FIELDS = (
 )
 
 
+_RED_LIST_FIELDS = frozenset({'red_list_category', 'red_list_categories_json'})
+
+
+def _identification_key(row: dict) -> tuple[str, str]:
+    """Case/whitespace-insensitive (genus, species) of an observation row."""
+    return tuple(
+        ' '.join(str(row.get(field) or '').split()).casefold()
+        for field in ('genus', 'species')
+    )
+
+
 def _merge_cloud_selected_ai_fields(local_obs: dict | None, remote_obs: dict | None) -> dict:
     """Preserve cloud-side selected AI values for an existing identification.
 
@@ -9926,11 +9937,25 @@ def _merge_cloud_selected_ai_fields(local_obs: dict | None, remote_obs: dict | N
             for field in identification_fields
         )
     )
+    # A cloud Red List is an assessment of the cloud's identification. After a
+    # desktop re-identification the dialog clears the Red List, so a local
+    # NULL means "the new taxon has no stored assessment" — filling it from
+    # the cloud would copy the previous taxon's category onto the new one
+    # (taxonomy-v2 closeout, observation 917). Skip the gap-fill only when
+    # both sides carry genus/species and they differ; a partial row without
+    # them is no evidence of a different taxon and keeps the original
+    # gap-filling behaviour.
+    red_list_describes_other_taxon = (
+        all(field in row for row in (merged, remote) for field in ('genus', 'species'))
+        and _identification_key(merged) != _identification_key(remote)
+    )
     for field in _MERGE_PROTECTED_AI_FIELDS:
         # An empty local identification is an explicit tombstone when the row
         # is pushed. Preserve raw observation_identifications separately, but
         # do not resurrect the previously selected AI taxon or red-list data.
         if identification_is_empty:
+            continue
+        if field in _RED_LIST_FIELDS and red_list_describes_other_taxon:
             continue
         local_value = merged.get(field)
         if local_value not in (None, ''):
