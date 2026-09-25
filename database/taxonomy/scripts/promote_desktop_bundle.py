@@ -36,6 +36,7 @@ import gzip
 import hashlib
 import json
 import os
+import re
 import shutil
 import sqlite3
 import sys
@@ -48,6 +49,7 @@ DEFAULT_REGISTRY_MANIFEST = REPO_ROOT / "database/taxonomy/registry/canonical/ma
 DEFAULT_COMPATIBILITY = REPO_ROOT / "database/taxonomy/desktop-compatibility.json"
 
 MANIFEST_SCHEMA_VERSION = 1
+RELEASE_ID_RE = re.compile(r"^tax-\d{4}\.\d{2}\.\d{2}-\d{2}$")
 SUPPORTED_TAXONOMY_SCHEMA = 2
 
 # The compiler's per-row reason tokens → the bundle manifest's vocabulary.
@@ -203,7 +205,8 @@ def promote(
     registry_manifest = _read_json(registry_manifest_path)
 
     release_id = meta.get("content_release_id", "")
-    _require(bool(release_id), "artifact taxonomy_meta has no content_release_id")
+    _require(bool(RELEASE_ID_RE.fullmatch(release_id)),
+             f"artifact content_release_id {release_id!r} is not tax-YYYY.MM.DD-NN")
     _require(meta.get("taxonomy_schema_version") == str(SUPPORTED_TAXONOMY_SCHEMA),
              f"unsupported taxonomy_schema_version {meta.get('taxonomy_schema_version')!r}")
     _require(compiler_manifest.get("content_release_id") == release_id,
@@ -216,6 +219,16 @@ def promote(
              and compiler_manifest.get("registry_sha256") == registry_sha,
              "artifact was not compiled against the committed registry")
     _require(bool(previous.get("install_target_name")), "previous manifest has no install_target_name")
+    # File names that reach the filesystem pass the installer's own path-safety
+    # rule (bare *.sqlite3.gz beside the manifest), checked before any write.
+    from utils.taxonomy_v2 import TaxonomyV2InstallError, _safe_manifest_artifact_name
+    previous_gz = previous.get("gz_artifact")
+    try:
+        if previous_gz:
+            _safe_manifest_artifact_name(previous_gz)
+        _safe_manifest_artifact_name(f"{release_id}.sqlite3.gz")
+    except TaxonomyV2InstallError as exc:
+        raise PromotionError(str(exc)) from exc
 
     redlist_block = build_redlist_block(
         compiler_manifest=compiler_manifest,
@@ -244,9 +257,8 @@ def promote(
         "install_target_name": previous["install_target_name"],
         "redlist_no": redlist_block,
     }
-    previous_gz = previous.get("gz_artifact")
     previous_path.write_text(_dump_json(manifest), encoding="utf-8")
-    if previous_gz and previous_gz != gz_path.name and "/" not in previous_gz:
+    if previous_gz and previous_gz != gz_path.name:
         (bundle_dir / previous_gz).unlink(missing_ok=True)
 
     if compatibility_path is not None and compatibility_path.exists():

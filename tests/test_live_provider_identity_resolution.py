@@ -257,3 +257,51 @@ def test_live_artsorakel_copy_without_a_bridge_stays_unresolved(
     finally:
         dialog._cleanup_dialog_threads()
         dialog.deleteLater()
+
+
+# ── Sync consequence of a live resolution ────────────────────────────────────
+
+
+def _push_client():
+    """A real SporelyCloudClient with its network surface captured."""
+    from utils.cloud_sync import SporelyCloudClient
+
+    client = object.__new__(SporelyCloudClient)
+    client.user_id = "00000000-0000-4000-8000-000000000001"
+    client._resolve_existing_observation_for_push = lambda _obs, remote_obs=None: "917"
+    client.patches, client.rpcs = [], []
+    client._patch = lambda path, payload, *a, **k: client.patches.append((path, dict(payload or {})))
+    client._rpc = lambda name, payload: client.rpcs.append((name, dict(payload)))
+    return client
+
+
+def test_an_ai_resolved_identity_replaces_a_different_cloud_concept_only_through_the_rpc():
+    """A live Artsorakel copy that resolves to concept B on a row whose cloud
+    identity is concept A is a deliberate re-identification, exactly like a
+    picker selection: it reaches the cloud through
+    set_observation_selected_taxon_v2 once, and no PATCH carries taxonomy
+    identity columns."""
+    resolved = _provider("NBIC:53482", "Entoloma conferendum").resolved_to(
+        7821, provenance="taxonomy_v2:tax-2026.09.23-01:taxon_external_id_text_min")
+    row = {"id": 1, "cloud_id": "917", "date": "2026-09-25", "genus": "Entoloma",
+           "species": "conferendum", **resolved.to_row()}
+    remote = {"id": 917, "genus": "Conocybe", "species": "rugosa",
+              "selected_sporely_taxon_id": 83668, "taxon_identity_state": "sporely_v2"}
+    client = _push_client()
+    client.push_observation(row, remote_obs=remote)
+    assert client.rpcs == [("set_observation_selected_taxon_v2",
+                            {"p_observation_id": 917, "p_sporely_taxon_id": 7821})]
+    identity_columns = {"selected_sporely_taxon_id", "taxon_identity_state", "taxon_identity_source_system",
+                        "taxon_identity_namespace", "taxon_identity_external_id"}
+    assert not any(identity_columns & set(payload) for _path, payload in client.patches)
+
+
+def test_an_unresolved_provider_identity_never_touches_the_cloud_concept():
+    unresolved = _provider("NBIC:987654321", "Entoloma imaginarium")
+    row = {"id": 1, "cloud_id": "917", "date": "2026-09-25", "genus": "Entoloma",
+           "species": "imaginarium", **unresolved.to_row()}
+    remote = {"id": 917, "genus": "Conocybe", "species": "rugosa",
+              "selected_sporely_taxon_id": 83668, "taxon_identity_state": "sporely_v2"}
+    client = _push_client()
+    client.push_observation(row, remote_obs=remote)
+    assert client.rpcs == []

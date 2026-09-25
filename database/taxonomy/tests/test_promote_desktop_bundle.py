@@ -139,6 +139,9 @@ def test_promotion_writes_a_loadable_deterministic_bundle(build, tmp_path):
     ("registry", "committed registry"),
     ("workbook", "not the workbook this build consumed"),
     ("previous_workbook", "curated"),
+    ("previous_gz_is_manifest", "invalid gzip artifact suffix"),
+    ("previous_gz_traversal", "invalid gzip artifact name"),
+    ("release_id_traversal", "is not tax-YYYY.MM.DD-NN"),
 ])
 def test_promotion_refuses_unproven_inputs(build, breakage, message):
     if breakage == "compiler_manifest":
@@ -153,6 +156,16 @@ def test_promotion_refuses_unproven_inputs(build, breakage, message):
         previous = json.loads(path.read_text(encoding="utf-8"))
         previous["redlist_no"]["workbook_sha256"] = "00" * 32
         path.write_text(json.dumps(previous), encoding="utf-8")
+    elif breakage in ("previous_gz_is_manifest", "previous_gz_traversal"):
+        path = build["bundle_dir"] / "manifest.json"
+        previous = json.loads(path.read_text(encoding="utf-8"))
+        previous["gz_artifact"] = "manifest.json" if breakage == "previous_gz_is_manifest" else "..\\evil.sqlite3.gz"
+        path.write_text(json.dumps(previous), encoding="utf-8")
+    elif breakage == "release_id_traversal":
+        conn = sqlite3.connect(build["sqlite_path"])
+        conn.execute("UPDATE taxonomy_meta SET value = '../escape' WHERE key = 'content_release_id'")
+        conn.commit()
+        conn.close()
     before = {p.name: p.read_bytes() for p in build["bundle_dir"].iterdir()}
     with pytest.raises(promote.PromotionError, match=message):
         promote.promote(**build)
