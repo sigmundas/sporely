@@ -400,13 +400,31 @@ def test_first_install_writes_receipt_and_second_call_takes_fast_path(
 def test_activation_env_and_settings_gate(tmp_path: Path, monkeypatch) -> None:
     from utils.taxonomy_v2 import is_activation_enabled
     monkeypatch.delenv("SPORELY_TAXONOMY_V2", raising=False)
-    assert is_activation_enabled(tmp_path) is False
-    (tmp_path / "app_settings.json").write_text(
-        json.dumps({"taxonomy_v2_activation": True}))
+    # Stock default (0.9.23): no settings file at all → ON.
     assert is_activation_enabled(tmp_path) is True
-    # Env var wins over settings.
+    settings = tmp_path / "app_settings.json"
+    # A settings file without the key is still the stock default → ON.
+    settings.write_text(json.dumps({"ui_language": "nb_NO"}))
+    assert is_activation_enabled(tmp_path) is True
+    # Unreadable settings are treated like absent settings → ON.
+    settings.write_text("{not json")
+    assert is_activation_enabled(tmp_path) is True
+    # An explicit setting decides.
+    settings.write_text(json.dumps({"taxonomy_v2_activation": False}))
+    assert is_activation_enabled(tmp_path) is False
+    settings.write_text(json.dumps({"taxonomy_v2_activation": True}))
+    assert is_activation_enabled(tmp_path) is True
+    # Env var wins over settings, in both directions.
     monkeypatch.setenv("SPORELY_TAXONOMY_V2", "0")
     assert is_activation_enabled(tmp_path) is False
+    settings.write_text(json.dumps({"taxonomy_v2_activation": False}))
+    monkeypatch.setenv("SPORELY_TAXONOMY_V2", "1")
+    assert is_activation_enabled(tmp_path) is True
+    # An unrecognised env value is ignored, not treated as off.
+    monkeypatch.setenv("SPORELY_TAXONOMY_V2", "maybe")
+    assert is_activation_enabled(tmp_path) is False  # the explicit setting
+    settings.unlink()
+    assert is_activation_enabled(tmp_path) is True  # the stock default
 
 
 # ---------------- lookup fan-out -----------------------------------------

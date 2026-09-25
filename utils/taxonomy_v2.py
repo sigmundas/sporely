@@ -11,11 +11,11 @@ Behavior:
 * Never overwrites an existing valid install; extraction failures leave the
   previous file intact so rollback is trivial (delete the activation flag).
 
-Activation is intentionally developer-only at this stage. It is gated by
-either (a) the ``taxonomy_v2_activation`` key in ``app_settings.json`` or
-(b) the ``SPORELY_TAXONOMY_V2`` environment variable. If activation fails
-for any reason, callers fall back to the currently bundled taxonomy DB and
-the failure is logged.
+Activation is ON by default (0.9.23). It can be turned off explicitly by
+(a) ``taxonomy_v2_activation: false`` in ``app_settings.json`` or (b) a falsy
+``SPORELY_TAXONOMY_V2`` environment variable, which takes precedence over the
+setting. If activation fails for any reason, callers fall back to the
+currently bundled taxonomy DB and the failure is logged.
 """
 from __future__ import annotations
 
@@ -152,10 +152,13 @@ def _safe_manifest_artifact_name(name: str) -> str:
 
 
 def is_activation_enabled(app_data_dir: Path) -> bool:
-    """Developer-only activation gate.
+    """Activation gate: ON unless explicitly turned off.
 
-    Truthy environment variable ``SPORELY_TAXONOMY_V2`` overrides settings.
-    Otherwise reads ``app_settings.json[taxonomy_v2_activation]``.
+    A recognised ``SPORELY_TAXONOMY_V2`` value (``1/true/yes/on`` or
+    ``0/false/no/off``) overrides settings. Otherwise an explicit
+    ``app_settings.json[taxonomy_v2_activation]`` value decides. A missing
+    or unreadable settings file, or a missing key, means the stock default:
+    ON.
     """
     env_value = os.environ.get(ACTIVATION_ENV_VAR, "").strip().lower()
     if env_value in {"1", "true", "yes", "on"}:
@@ -164,12 +167,14 @@ def is_activation_enabled(app_data_dir: Path) -> bool:
         return False
     settings_path = app_data_dir / "app_settings.json"
     if not settings_path.exists():
-        return False
+        return True
     try:
         settings = json.loads(settings_path.read_text(encoding="utf-8"))
     except (OSError, json.JSONDecodeError):
-        return False
-    return bool(settings.get(ACTIVATION_SETTINGS_KEY))
+        return True
+    if not isinstance(settings, dict) or ACTIVATION_SETTINGS_KEY not in settings:
+        return True
+    return bool(settings[ACTIVATION_SETTINGS_KEY])
 
 
 def _install_target(app_data_dir: Path, manifest: TaxonomyV2Manifest) -> Path:

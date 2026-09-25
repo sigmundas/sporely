@@ -61,3 +61,25 @@ def test_compatibility_pins_follow_the_bundle():
     assert (ROOT / "database/taxonomy/registry/canonical/manifest.json").exists()
     registry = json.loads((ROOT / "database/taxonomy/registry/canonical/manifest.json").read_text(encoding="utf-8"))
     assert registry["concatenated_sha256"] == manifest["registry_concatenated_sha256"]
+
+
+def test_a_fresh_default_profile_runs_taxonomy_v2_from_the_bundle(tmp_path, monkeypatch):
+    """0.9.23 stock behavior: no env var, no setting → the bundled release is
+    installed, verified and active."""
+    monkeypatch.delenv(taxonomy_v2.ACTIVATION_ENV_VAR, raising=False)
+    monkeypatch.delenv(taxonomy_v2.VERIFY_ENV_VAR, raising=False)
+    assert taxonomy_v2.is_activation_enabled(tmp_path) is True
+    path = taxonomy_v2.resolve_active_taxonomy_v2_path(tmp_path, force_reresolve=True)
+    assert path is not None and path.parent == tmp_path / "taxonomy_v2"
+    conn, meta = taxonomy_v2.open_taxonomy_v2_readonly(path)
+    conn.close()
+    assert meta["content_release_id"] == SHIPPED_RELEASE
+    receipt = json.loads((path.parent / taxonomy_v2.INSTALL_RECEIPT_FILENAME).read_text(encoding="utf-8"))
+    assert receipt["content_release_id"] == SHIPPED_RELEASE
+
+
+def test_an_explicit_off_setting_keeps_the_legacy_path(tmp_path, monkeypatch):
+    monkeypatch.delenv(taxonomy_v2.ACTIVATION_ENV_VAR, raising=False)
+    (tmp_path / "app_settings.json").write_text(json.dumps({"taxonomy_v2_activation": False}))
+    assert taxonomy_v2.resolve_active_taxonomy_v2_path(tmp_path, force_reresolve=True) is None
+    assert not (tmp_path / "taxonomy_v2").exists()

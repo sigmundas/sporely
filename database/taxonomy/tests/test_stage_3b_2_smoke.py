@@ -273,16 +273,17 @@ def test_legacy_db_still_matches_umbrella_no(tmp_path: Path) -> None:
 
 
 def test_v2_activation_off_returns_legacy_path(tmp_path: Path, monkeypatch) -> None:
-    """When the developer activation gate is closed and no v2 install
+    """When the activation gate is explicitly closed and no v2 install
     exists, ``resolve_vernacular_db_path`` returns the legacy multilang
     DB path (or None). We verify the resolver's activation guard doesn't
-    leak a v2 path when nothing is enabled."""
+    leak a v2 path when activation is turned off."""
     from utils.taxonomy_v2 import (
         ACTIVATION_ENV_VAR, is_activation_enabled,
     )
     monkeypatch.delenv(ACTIVATION_ENV_VAR, raising=False)
-    assert is_activation_enabled(tmp_path) is False
-    # And an explicit off env var overrides settings.
+    # Stock default is ON; only an explicit off closes the gate.
+    assert is_activation_enabled(tmp_path) is True
+    # An explicit off env var overrides settings.
     monkeypatch.setenv(ACTIVATION_ENV_VAR, "0")
     (tmp_path / "app_settings.json").write_text('{"taxonomy_v2_activation": true}')
     assert is_activation_enabled(tmp_path) is False
