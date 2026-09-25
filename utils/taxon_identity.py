@@ -79,12 +79,35 @@ PROOF_EXTERNAL_ID_RESOLUTION = "external_id_resolution"
 #: ``taxon_min``, and clears the rest.
 PROOF_LEGACY_UNVERIFIED = "legacy_unverified"
 
+#: The integer was received from the cloud's ``selected_sporely_taxon_id``
+#: (state ``sporely_v2``) during a pull, and the receiving desktop confirmed
+#: only that the concept is present in its installed taxonomy artifact.
+#:
+#: That is weaker than either proven producer. The server validates
+#: active-release membership at write time but cannot detect a numeric
+#: collision, and pre-Stage-2 desktops asserted unproven integers through the
+#: same RPC, so the cloud value is only as trustworthy as the weakest client
+#: that ever wrote it — and local membership is not proof of origin either.
+#: The value is kept (displayed, restored, preserved across saves) but never
+#: re-asserted to the cloud and never drives identity-gated lookups. An
+#: explicit picker selection replaces it with :data:`PROOF_TAXONOMY_V2_ARTIFACT`.
+PROOF_CLOUD_SELECTED_UNVERIFIED = "cloud_selected_unverified"
+
 #: Proof tokens that permit asserting a Sporely-owned identity. Deliberately
 #: excludes :data:`PROOF_LEGACY_UNVERIFIED` — a gate that grandfathers every
-#: pre-existing value enforces nothing.
+#: pre-existing value enforces nothing — and
+#: :data:`PROOF_CLOUD_SELECTED_UNVERIFIED`, for the reasons given there.
 PROVEN_SPORELY_PROOFS = frozenset({
     PROOF_TAXONOMY_V2_ARTIFACT,
     PROOF_EXTERNAL_ID_RESOLUTION,
+})
+
+#: Proof tokens that keep their integer through persistence without being
+#: proven. Each records a real producer that could not be verified as a
+#: Sporely-namespace source.
+UNPROVEN_SPORELY_PROOFS = frozenset({
+    PROOF_LEGACY_UNVERIFIED,
+    PROOF_CLOUD_SELECTED_UNVERIFIED,
 })
 
 
@@ -268,6 +291,19 @@ class TaxonIdentity:
             and self.identity_proof == PROOF_LEGACY_UNVERIFIED
         )
 
+    @property
+    def is_cloud_selected_unverified(self) -> bool:
+        """A cloud-selected Sporely ID present in the local artifact, unproven.
+
+        See :data:`PROOF_CLOUD_SELECTED_UNVERIFIED`.
+        """
+        return (
+            self.state == STATE_SPORELY
+            and isinstance(self.sporely_taxon_id, int)
+            and self.sporely_taxon_id > 0
+            and self.identity_proof == PROOF_CLOUD_SELECTED_UNVERIFIED
+        )
+
     # ── Constructors ───────────────────────────────────────────────────────
 
     @classmethod
@@ -302,6 +338,43 @@ class TaxonIdentity:
             scientific_name=_clean(scientific_name),
             rank=_clean(rank),
             provenance=_clean(provenance),
+        )
+
+    @classmethod
+    def from_cloud_selection(
+        cls,
+        sporely_taxon_id: object,
+        *,
+        local_release_id: object,
+        scientific_name: object = None,
+        rank: object = None,
+    ) -> "TaxonIdentity":
+        """The cloud's selected Sporely ID, confirmed present locally.
+
+        The caller must already have confirmed that ``sporely_taxon_id`` is a
+        concept of the installed taxonomy artifact identified by
+        ``local_release_id``; ``scientific_name``/``rank`` should be that
+        artifact's canonical values. Degrades to :meth:`none` without a
+        positive integer or a release id — an adoption that cannot say which
+        artifact it was checked against has not been checked.
+        """
+        sporely_id = _positive_int(sporely_taxon_id)
+        release = _clean(local_release_id)
+        if sporely_id is None or release is None:
+            return cls.none()
+        return cls(
+            state=STATE_SPORELY,
+            sporely_taxon_id=sporely_id,
+            identity_proof=PROOF_CLOUD_SELECTED_UNVERIFIED,
+            source_system=SPORELY_SOURCE_SYSTEM,
+            namespace=SPORELY_NAMESPACE,
+            external_id=str(sporely_id),
+            scientific_name=_clean(scientific_name),
+            rank=_clean(rank),
+            provenance=(
+                "cloud:observations.selected_sporely_taxon_id; "
+                f"present_in_local_release={release}"
+            ),
         )
 
     @classmethod
@@ -433,7 +506,14 @@ class TaxonIdentity:
         # would destroy evidence rather than gate it. The cloud gate reads
         # ``is_proven_sporely``, not the column, so withholding it here is
         # unnecessary.
-        keep_integer = self.is_proven_sporely or self.is_legacy_unverified
+        # A cloud-selected unverified integer is kept for the same reason: it
+        # is the cloud's identity, restored for display and preserved across
+        # saves, and the cloud gate still refuses it.
+        keep_integer = (
+            self.is_proven_sporely
+            or self.is_legacy_unverified
+            or self.is_cloud_selected_unverified
+        )
         return {
             "sporely_taxon_id": self.sporely_taxon_id if keep_integer else None,
             "taxon_identity_state": self.state,
@@ -486,7 +566,7 @@ class TaxonIdentity:
         if state not in ALL_STATES:
             return cls.none()
         if state == STATE_SPORELY:
-            known_proofs = PROVEN_SPORELY_PROOFS | {PROOF_LEGACY_UNVERIFIED}
+            known_proofs = PROVEN_SPORELY_PROOFS | UNPROVEN_SPORELY_PROOFS
             if sporely_id is None or proof not in known_proofs:
                 # A Sporely state without a proven integer is corrupt rather
                 # than authoritative. Fall back to whatever source evidence

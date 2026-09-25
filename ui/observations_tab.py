@@ -21319,6 +21319,7 @@ class ObservationDetailsDialog(GeometryMixin, QDialog):
             has_identity = (
                 restored_identity.is_proven_sporely
                 or restored_identity.is_legacy_unverified
+                or restored_identity.is_cloud_selected_unverified
                 or restored_identity.has_external_evidence
             )
             if snapshot_name and rank_snapshot and has_identity:

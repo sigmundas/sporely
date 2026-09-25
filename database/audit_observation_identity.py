@@ -118,6 +118,12 @@ IDENTITY_CLASSES = (
     # does not contain. Both are real and neither is any of the six above.
     "legacy_unverified_identity",
     "stale_sporely_identity",
+    # A Sporely ID adopted from the cloud's selection on pull. Kept on the
+    # row, never proven (see PROOF_CLOUD_SELECTED_UNVERIFIED): its own
+    # Sporely-namespace tuple is not independent evidence, so it must not
+    # fall through to the external-bridge ladder and be "re-derived" from
+    # itself. Report only.
+    "cloud_selected_unverified_identity",
 )
 
 #: Exactly one applies to every audited row. Counted separately from
@@ -639,6 +645,19 @@ def _classify_identity(
             "refusal_reason": (
                 f"{stored_id} has no recorded producer and the row carries no "
                 "namespaced identifier to re-derive it from"
+            ),
+        }
+
+    # ── A cloud-selected Sporely ID adopted on pull ─────────────────────────
+    if identity.is_cloud_selected_unverified:
+        stored_id = int(identity.sporely_taxon_id)
+        return "cloud_selected_unverified_identity", {
+            "refusal_reason": (
+                f"Sporely concept {stored_id} came from the cloud selection "
+                f"({identity.provenance}); the cloud cannot prove its producer "
+                "and its own Sporely-namespace tuple is not independent evidence"
+                + ("" if artifact.contains(stored_id) else
+                   "; it is also absent from this artifact")
             ),
         }
 

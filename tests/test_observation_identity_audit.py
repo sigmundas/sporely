@@ -1000,3 +1000,23 @@ def test_a_fully_satisfied_gate_opens():
     )
     assert gate.is_open is True
     require_open_gate(gate)
+
+
+def test_cloud_selected_unverified_identity_is_its_own_report_only_class(artifact, tmp_path):
+    """A Sporely ID adopted from the cloud selection on pull carries its own
+    Sporely-namespace tuple. That tuple is not independent evidence, so the
+    audit must not run it through the external-bridge ladder and "re-derive"
+    a proven identity from the value itself."""
+    rows = [{
+        "id": 1, "genus": "Conocybe", "species": "rugosa",
+        "scientific_name_snapshot": "Conocybe rugosa", "taxon_rank_snapshot": "species",
+        **TaxonIdentity.from_cloud_selection(
+            83668, local_release_id="tax-2026.09.23-01",
+            scientific_name="Conocybe rugosa", rank="species",
+        ).to_row(),
+    }]
+    db = _observations_db(tmp_path, rows)
+    [record] = audit(read_desktop_rows(db), artifact, origin="desktop").records
+    assert record.identity_class == "cloud_selected_unverified_identity"
+    assert record.candidate_sporely_taxon_id is None
+    assert record.proposed_action == "report_only"

@@ -25,6 +25,7 @@ classification below is a judgement about which one a row was written under.
 | Failure to resolve | indistinguishable from "no identification" | the explicit state `external_unresolved`, which still displays its name |
 | Name equality | usable evidence for binding a concept | not identity evidence under any circumstances |
 | A pre-existing integer | authoritative | `legacy_unverified` — real persisted data, not proof, never asserted to the cloud |
+| A cloud `selected_sporely_taxon_id` received on pull | not pulled | `cloud_selected_unverified` — kept only when the installed artifact contains the concept; provenance names the cloud and the local release; not proof, never re-asserted, upgraded to `taxonomy_v2_artifact` only by an explicit picker selection |
 
 The consequence that matters operationally: **a row written under the old
 semantics cannot be upgraded by inspection.** Nothing in the row records which
@@ -50,6 +51,7 @@ independently sums to the row count.
 | `suspicious_numeric_collision` | the stored integer is contradicted by, or collides with, a real external identifier | no |
 | `legacy_unverified_identity` | a pre-Stage-2 integer with nothing to re-derive it from | no |
 | `stale_sporely_identity` | proven, but names a concept this artifact does not contain | no |
+| `cloud_selected_unverified_identity` | a Sporely ID adopted from the cloud selection on pull; its own Sporely-namespace tuple is not independent evidence | no |
 
 `suspicious_numeric_collision` is the class the whole stage exists for. It
 fires on evidence, not on how the number looks: either the row's own provider

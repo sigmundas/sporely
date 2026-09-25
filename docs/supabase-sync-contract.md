@@ -165,6 +165,19 @@ Plain English comes first; technical terms are in parentheses.
     taxon id: the raw provider value must be retained, and any namespace hop
     must be a bridge declared in `database/taxonomy/docs/identity-contract.md`.
 
+    **A cloud identity received on pull is kept, never proven.** The server
+    guarantees only that `selected_sporely_taxon_id` was in the active release
+    when it was written; it records no producer and no release, and
+    pre-Stage-2 desktops asserted unproven integers through the same RPC. A
+    desktop therefore stores a pulled Sporely ID as `sporely_v2` with proof
+    `cloud_selected_unverified` — only when its installed taxonomy artifact
+    contains the concept, with the artifact's canonical name/rank as the
+    snapshot and provenance naming the cloud and the local release. That
+    proof is outside the proven set: the value is displayed, restored and
+    preserved across saves, but never re-asserted through the RPC and never
+    used by identity-gated lookups (Red List, reference attachment). An
+    explicit picker selection replaces it with `taxonomy_v2_artifact`.
+
     **The persistence API accepts one complete typed identity transition.**
     The identity spans several columns but is a single value, and treating
     those columns as independently writable produces rows that contradict
