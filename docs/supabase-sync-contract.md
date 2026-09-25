@@ -727,12 +727,20 @@ is a local-only or conflicting field.
    - local changed and proven → **local-only**; an unpushable local claim is
      left alone, so it never keeps a row dirty.
 
-Push (`push_all`, which runs before pull) obeys the same classification:
-when the identity is remote-only the push withholds the local identity so the
-RPC gate skips rather than re-asserting the stale value over the cloud change;
-with no stored snapshot, a disagreement that would be a conflict is withheld
-and reported for review. A proven desktop pick the cloud lacks is still
-asserted.
+Push (`push_all`, which runs before pull) obeys the same classification.
+When the identity is remote-only the push ADOPTS the cloud identity locally
+(as the pull would) before pushing — withholding alone is not enough, because
+the post-push snapshot records the cloud value as baseline and a stale local
+identity would then read as a local change for the next push to re-assert.
+With no stored snapshot, a disagreement that would be a conflict is withheld,
+reported, and left pending: the row stays dirty with the review marker and the
+post-push snapshot is stored without identity, so the next preflight blocks.
+A proven desktop pick the cloud lacks is still asserted.
+
+A cloud row without identity clears local identity when three-way
+reconciliation (or the owner's explicit choice) says the cloud cleared it
+since the baseline; only the baseline-less full apply treats absence as "no
+evidence" while genus/species are unchanged.
 
 Consequences in the existing machinery: remote-only applies through
 `_apply_remote_observation_fields(fields={'taxon_identity'})`; a conflict

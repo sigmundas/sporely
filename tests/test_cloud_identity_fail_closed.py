@@ -115,7 +115,11 @@ def test_snapshot_after_a_no_baseline_conflict_keeps_the_disagreement_detectable
 def _add_identity_columns(db_path, identity: TaxonIdentity):
     conn = sqlite3.connect(db_path)
     try:
-        for column in ("sporely_taxon_id INTEGER", *(f"{c} TEXT" for c in cloud_sync._TAXON_IDENTITY_COLUMNS)):
+        # The real schema's identity + snapshot columns; the preflight
+        # harness schema predates them.
+        for column in ("sporely_taxon_id INTEGER", "scientific_name_snapshot TEXT",
+                       "taxon_rank_snapshot TEXT", "updated_at TEXT",
+                       *(f"{c} TEXT" for c in cloud_sync._TAXON_IDENTITY_COLUMNS)):
             conn.execute(f"ALTER TABLE observations ADD COLUMN {column}")
         row = identity.to_row()
         conn.execute(
@@ -127,7 +131,29 @@ def _add_identity_columns(db_path, identity: TaxonIdentity):
         conn.close()
 
 
-def _push_setup(monkeypatch, tmp_path, *, stored_identity_selected, remote_selected, with_snapshot=True):
+class _SnapshotStore:
+    """The real snapshot bookkeeping, held in memory.
+
+    The preflight harness stubs `_store_remote_snapshot` to a no-op, which is
+    exactly why the first fix looked sufficient: what the post-push snapshot
+    records as baseline decides what the NEXT sync does.
+    """
+
+    def __init__(self, initial: str):
+        self.value = initial
+
+    def install(self, monkeypatch):
+        monkeypatch.setattr(cloud_sync, "_load_cloud_observation_snapshot", lambda _cid: self.value)
+
+        def _store(client, cloud_id, remote=None, remote_images=None, remote_measurements=None, **_kw):
+            remote_row = remote or client.get_observation(cloud_id)
+            images = remote_images if remote_images is not None else client.pull_image_metadata(cloud_id)
+            self.value = cloud_sync._cloud_observation_snapshot(remote_row, images, remote_measurements or [])
+
+        monkeypatch.setattr(cloud_sync, "_store_remote_snapshot", _store)
+
+
+def _push_env(monkeypatch, tmp_path, *, baseline_selected, remote_selected, with_snapshot=True):
     db_path = _init_db(tmp_path)
     _patch_connections(monkeypatch, db_path)
     image_path = tmp_path / "image.jpg"
@@ -135,60 +161,101 @@ def _push_setup(monkeypatch, tmp_path, *, stored_identity_selected, remote_selec
     _seed_observation(db_path, image_path)
     _add_identity_columns(db_path, _proven(83668))
 
-    baseline_remote = {**_baseline_remote_obs(), "selected_sporely_taxon_id": stored_identity_selected,
-                       "taxon_identity_state": "sporely_v2"}
     image = _remote_image_row()
-    stored_snapshot = _snapshot(baseline_remote, [image]) if with_snapshot else ""
+    baseline_remote = {**_baseline_remote_obs(), "selected_sporely_taxon_id": baseline_selected,
+                       "taxon_identity_state": "sporely_v2" if baseline_selected else None}
     signature = cloud_sync._local_cloud_media_signature(1)
+    _stub_snapshot_and_signature(monkeypatch, stored_snapshot="", baseline_signature=signature)
+    store = _SnapshotStore(_snapshot(baseline_remote, [image]) if with_snapshot else "")
+    store.install(monkeypatch)
+    _track_push_calls(monkeypatch)
+    live_remote = {**_baseline_remote_obs(), "genus": "Pholiotina" if remote_selected != baseline_selected else "Amanita",
+                   "selected_sporely_taxon_id": remote_selected,
+                   "taxon_identity_state": "sporely_v2" if remote_selected else None}
+    client = _StubClient(live_remote, [image])
+    return db_path, client, live_remote, store
 
+
+def _edit_and_push(db_path, client, live_remote, notes):
     conn = sqlite3.connect(db_path)
-    conn.execute("UPDATE observations SET notes = 'local edit' WHERE id = 1")
+    conn.execute("UPDATE observations SET notes = ? WHERE id = 1", (notes,))
     conn.commit()
     conn.close()
     _mark_observation_dirty(db_path)
-
-    live_remote = {**_baseline_remote_obs(), "genus": "Pholiotina",
-                   "selected_sporely_taxon_id": remote_selected, "taxon_identity_state": "sporely_v2"}
-    _stub_snapshot_and_signature(monkeypatch, stored_snapshot=stored_snapshot, baseline_signature=signature)
-    _track_push_calls(monkeypatch)
-    client = _StubClient(live_remote, [image])
-    result = cloud_sync.push_all(
+    return cloud_sync.push_all(
         client, remote_obs=[dict(live_remote)], sync_images=True, sync_calibrations=False,
         prepare_images_cb=lambda obs, progress_cb: ([], None, []),
     )
-    return client, result
 
 
-def test_push_does_not_reassert_a_stale_identity_over_a_cloud_only_change(monkeypatch, tmp_path):
-    """Web re-identified 83668 → 99 (and Amanita → Pholiotina); the desktop
-    only edited notes. The push must not carry 83668 to the RPC."""
-    client, result = _push_setup(monkeypatch, tmp_path, stored_identity_selected=83668, remote_selected=99)
-    assert client.push_observation_calls, "the unrelated local edit is still pushed"
-    pushed = client.push_observation_calls[0]
-    assert pushed["notes"] == "local edit"
-    assert pushed["genus"] == "Pholiotina"
-    assert TaxonIdentity.from_row(pushed).is_proven_sporely is False, \
-        "no identity reaches set_observation_selected_taxon_v2"
-    assert not [e for e in result.get("errors") or [] if "needs review" in str(e)]
+def _local_identity(db_path) -> TaxonIdentity:
+    conn = sqlite3.connect(db_path)
+    conn.row_factory = sqlite3.Row
+    try:
+        return TaxonIdentity.from_row(dict(conn.execute("SELECT * FROM observations WHERE id = 1").fetchone()))
+    finally:
+        conn.close()
 
 
-def test_push_without_a_baseline_withholds_a_disagreeing_identity(monkeypatch, tmp_path):
-    client, result = _push_setup(
-        monkeypatch, tmp_path, stored_identity_selected=None, remote_selected=99, with_snapshot=False,
+def test_cloud_only_identity_change_is_adopted_and_never_reverted_by_a_later_push(monkeypatch, tmp_path):
+    """Web re-identified 83668 → 99; the desktop only edits notes, twice."""
+    db_path, client, live, store = _push_env(monkeypatch, tmp_path, baseline_selected=83668, remote_selected=99)
+
+    _edit_and_push(db_path, client, live, "first local edit")
+    first = client.push_observation_calls[-1]
+    assert first["notes"] == "first local edit"
+    assert TaxonIdentity.from_row(first).is_proven_sporely is False, "no RPC for the stale 83668"
+    local = _local_identity(db_path)
+    assert (local.source_system, local.external_id) == ("sporely", "99"), "adopted from the cloud"
+    assert local.sporely_taxon_id is None, "99 is not in the (absent) local artifact: preserved, not bound"
+
+    _edit_and_push(db_path, client, live, "second local edit")
+    second = client.push_observation_calls[-1]
+    assert second["notes"] == "second local edit"
+    assert TaxonIdentity.from_row(second).is_proven_sporely is False, \
+        "the next push must not re-assert 83668 either"
+
+
+def test_no_baseline_disagreement_stays_under_review_and_blocks_the_next_push(monkeypatch, tmp_path):
+    db_path, client, live, store = _push_env(
+        monkeypatch, tmp_path, baseline_selected=None, remote_selected=99, with_snapshot=False,
     )
-    pushed = client.push_observation_calls[0]
-    assert TaxonIdentity.from_row(pushed).is_proven_sporely is False
+    result = _edit_and_push(db_path, client, live, "first local edit")
+    first = client.push_observation_calls[-1]
+    assert TaxonIdentity.from_row(first).is_proven_sporely is False
     assert any("taxon identity" in str(e) for e in result.get("errors") or [])
+    assert _local_identity(db_path).sporely_taxon_id == 83668, "local claim untouched"
+    conn = sqlite3.connect(db_path)
+    status, reason = conn.execute("SELECT sync_status, sync_blocked_reason FROM observations WHERE id = 1").fetchone()
+    conn.close()
+    assert status == "dirty" and reason == cloud_sync.CONFLICT_REVIEW_PENDING_MARKER
+    assert F not in json.loads(store.value)["observation"], "baseline identity stays unknown"
+
+    calls_before = len(client.push_observation_calls)
+    result = _edit_and_push(db_path, client, live, "second local edit")
+    assert len(client.push_observation_calls) == calls_before, "the preflight blocks the push"
+    assert any("needs review" in str(e) for e in result.get("errors") or [])
 
 
 def test_push_still_asserts_a_desktop_pick_the_cloud_lacks(monkeypatch, tmp_path):
     """The 917 case: proven local pick, cloud has no identity yet."""
-    client, result = _push_setup(
-        monkeypatch, tmp_path, stored_identity_selected=None, remote_selected=None,
-    )
-    pushed = client.push_observation_calls[0]
-    assert TaxonIdentity.from_row(pushed).sporely_taxon_id == 83668
+    db_path, client, live, store = _push_env(monkeypatch, tmp_path, baseline_selected=None, remote_selected=None)
+    _edit_and_push(db_path, client, live, "local edit")
+    pushed = client.push_observation_calls[-1]
     assert TaxonIdentity.from_row(pushed).is_proven_sporely
+    assert TaxonIdentity.from_row(pushed).sporely_taxon_id == 83668
+
+
+def test_three_way_cloud_clear_is_adopted_not_reasserted(real_db):
+    """Baseline 83668, cloud now none, same names: the clear is evidence."""
+    local_id = models.ObservationDB.create_observation(
+        date="2026-09-15", genus="Conocybe", species="rugosa",
+        **TaxonIdentity.from_cloud_selection(83668, local_release_id="r").to_row(),
+    )
+    cloud_sync._apply_remote_observation_fields(
+        local_id, _remote(None, taxon_identity_state=None), fields={F},
+    )
+    assert TaxonIdentity.from_row(models.ObservationDB.get_observation(local_id)).sporely_taxon_id is None
 
 
 def test_missing_column_fallback_ignores_the_echoed_select_list():

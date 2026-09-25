@@ -10770,6 +10770,7 @@ def _apply_remote_identity_to_local(
     *,
     local_before: dict | None = None,
     fail_closed_on_local_claim: bool = False,
+    absence_is_evidence: bool = False,
 ) -> str:
     """Write the cloud row's identity onto a local observation.
 
@@ -10782,6 +10783,10 @@ def _apply_remote_identity_to_local(
     so a disagreement is a review, never an overwrite. ``local_before`` is the
     local row as it was before this pull applied any other field. Uses the
     persistence API's one-coherent-transition write.
+
+    ``absence_is_evidence`` is set when three-way reconciliation established
+    that the cloud CLEARED its identity since the baseline; otherwise a cloud
+    row without identity clears local identity only when genus/species changed.
     """
     claim = _remote_identity_claim(remote)
     if claim is None:
@@ -10797,7 +10802,11 @@ def _apply_remote_identity_to_local(
     # A cloud row with no identity is not evidence that local evidence is
     # wrong while both still name the same taxon — the push rule, mirrored.
     # It clears local identity only when the identification itself changed.
-    if claim.kind == 'none' and _identification_key(local_row) == _identification_key(dict(remote or {})):
+    if (
+        claim.kind == 'none'
+        and not absence_is_evidence
+        and _identification_key(local_row) == _identification_key(dict(remote or {}))
+    ):
         return IDENTITY_APPLY_UNCHANGED
     columns = _local_identity_columns_for_remote_claim(claim, remote)
     ObservationDB.update_observation(int(local_id), allow_nulls=True, **columns)
@@ -10853,6 +10862,10 @@ def _apply_remote_observation_fields(
             int(local_id), remote,
             local_before=local_before,
             fail_closed_on_local_claim=identity_fail_closed,
+            # An explicit request for the identity field comes from a
+            # three-way decision (or the owner's choice) that the cloud's
+            # current identity — including "none" — is the one to take.
+            absence_is_evidence=fields is not None,
         )
 
     extra_values = _remote_observation_extra_values(remote)
@@ -19900,10 +19913,23 @@ def push_all(
                     }:
                         if field in remote_update_kwargs:
                             push_payload[field] = remote_update_kwargs[field]
-                    # A cloud-only identity change is the pull's to adopt; the
-                    # RPC must not re-assert the stale local identity over it.
+                    # A cloud-only identity change is adopted locally now, exactly
+                    # as the pull would. Merely withholding it from this push is
+                    # not enough: the post-push snapshot records the cloud value
+                    # as baseline, and a stale local identity would then read as
+                    # a local change and be re-asserted by the next push.
                     if TAXON_IDENTITY_SYNC_FIELD in (field_changes.get('remote_only_fields') or []):
-                        _withhold_identity_from_push(push_payload)
+                        _apply_remote_observation_fields(
+                            int(obs['id']), remote, fields={TAXON_IDENTITY_SYNC_FIELD},
+                        )
+                        adopted = ObservationDB.get_observation(int(obs['id'])) or {}
+                        for column in ('sporely_taxon_id', 'scientific_name_snapshot',
+                                       'taxon_rank_snapshot', *_TAXON_IDENTITY_COLUMNS):
+                            push_payload[column] = adopted.get(column)
+                        if TaxonIdentity.from_row(push_payload).is_proven_sporely:
+                            # Cannot happen (adoption never yields proof); never
+                            # let a remote-only change become an RPC write.
+                            _withhold_identity_from_push(push_payload)
 
                     # Preflight: mirror pull_all's review-needed contract. If
                     # metadata, images, or measurements diverged on both
@@ -19969,9 +19995,12 @@ def push_all(
 
             # No baseline: an identity disagreement is a review, never an
             # RPC overwrite (the pull side applies the same rule).
-            if cloud_id and remote and not stored_snapshot and _classify_identity_sync_change(
-                push_payload, remote, {}, identification_locally_owned=False,
-            ) == 'conflict':
+            identity_review_pending = bool(
+                cloud_id and remote and not stored_snapshot and _classify_identity_sync_change(
+                    push_payload, remote, {}, identification_locally_owned=False,
+                ) == 'conflict'
+            )
+            if identity_review_pending:
                 _withhold_identity_from_push(push_payload)
                 errors.append(_format_review_needed_error(
                     _safe_int(obs.get('id')), cloud_id,
@@ -19998,6 +20027,11 @@ def push_all(
             )
             conn2.commit()
             conn2.close()
+            if identity_review_pending:
+                # The other fields went out; the identity disagreement did
+                # not, and must stay visible until the owner resolves it.
+                _set_observation_sync_state(int(obs['id']), cloud_id, dirty=True, synced_at=None)
+                _set_observation_conflict_review_pending(int(obs['id']))
             if previous_status == 'dirty':
                 print(
                     f"[cloud_sync] sync_status transition obs {obs['id']}: dirty→synced "
@@ -20453,7 +20487,18 @@ def push_all(
                     errors=errors,
                 )
 
-            _store_remote_snapshot(client, cloud_id)
+            if identity_review_pending:
+                # Baseline without identity: it stays "unknown", so the next
+                # push preflight and pull classify the disagreement as a
+                # conflict instead of a local change for the RPC to push.
+                refreshed_remote = client.get_observation(cloud_id)
+                if refreshed_remote:
+                    _store_remote_snapshot(
+                        client, cloud_id,
+                        remote=_remote_row_without_identity(refreshed_remote),
+                    )
+            else:
+                _store_remote_snapshot(client, cloud_id)
 
             pushed += 1
         except CloudSyncError as e:
