@@ -1216,8 +1216,68 @@ def determine_redlist_area(country_code: str | None) -> str | None:
     return None
 
 
+@dataclass(frozen=True)
+class InstalledTaxonConcept:
+    """One concept of an installed taxonomy-v2 artifact, with its release."""
+
+    sporely_taxon_id: int
+    release_id: str
+    scientific_name: str | None
+    rank: str | None
+
+
+def installed_taxon_concept(db_path, sporely_taxon_id: object) -> InstalledTaxonConcept | None:
+    """Look ``sporely_taxon_id`` up in the taxonomy-v2 artifact at ``db_path``.
+
+    Returns ``None`` unless the file opens read-only as a taxonomy-v2 artifact
+    (``taxonomy_meta`` schema version 2 with a ``content_release_id``) AND
+    ``taxon_min`` contains the concept. A pre-v2 vernacular database has no
+    release to verify against, so nothing can be confirmed from it.
+
+    Membership is all this proves: that the installed release knows the
+    concept, not which producer chose the integer.
+    """
+    try:
+        sporely_id = int(sporely_taxon_id)
+    except (TypeError, ValueError):
+        return None
+    if sporely_id <= 0 or not db_path:
+        return None
+    try:
+        conn = sqlite3.connect(f"file:{db_path}?mode=ro", uri=True)
+    except sqlite3.Error:
+        return None
+    try:
+        meta = dict(conn.execute(
+            "SELECT key, value FROM taxonomy_meta "
+            "WHERE key IN ('taxonomy_schema_version', 'content_release_id')"
+        ))
+        release_id = _normalize_text(meta.get("content_release_id"))
+        if str(meta.get("taxonomy_schema_version") or "") != "2" or not release_id:
+            return None
+        row = conn.execute(
+            "SELECT canonical_scientific_name, taxon_rank FROM taxon_min "
+            "WHERE taxon_id = ? LIMIT 1",
+            (sporely_id,),
+        ).fetchone()
+    except sqlite3.Error:
+        return None
+    finally:
+        conn.close()
+    if row is None:
+        return None
+    return InstalledTaxonConcept(
+        sporely_taxon_id=sporely_id,
+        release_id=release_id,
+        scientific_name=_normalize_text(row[0]) or None,
+        rank=(_normalize_text(row[1]) or "").lower() or None,
+    )
+
+
 __all__ = [
     "TAXON_COMPLETER_LIMIT",
+    "InstalledTaxonConcept",
+    "installed_taxon_concept",
     "ManualScientificResolution",
     "TaxonChoice",
     "TaxonLookupService",

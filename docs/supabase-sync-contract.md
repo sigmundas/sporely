@@ -651,6 +651,36 @@ Deletion should proceed as:
 
 An interruption after any step must be recoverable by repeating sync.
 
+## Cloud → desktop taxonomy identity
+
+The pull reads the cloud identity (`selected_sporely_taxon_id`, and
+`taxon_identity_state` plus the preserved external tuple where the server has
+the provenance columns; a server without them costs one retried read, once per
+client) and maps it to ONE coherent local identity
+(`_local_identity_columns_for_remote_claim`):
+
+| Cloud row | Local identity written |
+|---|---|
+| selected Sporely ID present in the installed taxonomy-v2 artifact | `sporely_v2` / `cloud_selected_unverified`, artifact canonical name and rank as snapshot, provenance naming the cloud state and the local release |
+| selected Sporely ID absent from the installed artifact (release mismatch, pre-v2 install) | `external_unresolved` `(sporely, sporely_taxon_id, <id>)` — preserved, never a bound integer |
+| `external_unresolved` with a complete tuple | the same tuple as `external_unresolved` |
+| no identity | no identity |
+| identity columns absent from the row | nothing — local identity untouched |
+
+Rules common to every write path:
+
+- The local row already holding the same identity is never rewritten, so a
+  picker-proven identity is not downgraded to the cloud token for the same
+  concept.
+- A cloud row without identity clears local identity only when the
+  identification (genus/species) changed; absence is not evidence against
+  local evidence for the same taxon.
+- A bare integer is never stored (the persistence write boundary refuses it).
+
+Creation (`_create_local_from_remote`) and the "cloud wins" full applies
+(no-snapshot apply, keep-cloud resolution) adopt the cloud identity. The
+three-way reconciliation of existing rows is described in the next section.
+
 ## Red List follows the identification it assesses
 
 A Red List category is an assessment of one taxon. It must never become the

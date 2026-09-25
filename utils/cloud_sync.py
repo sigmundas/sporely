@@ -10401,6 +10401,237 @@ def build_cloud_ai_state_from_observation_identifications(
     return state
 
 
+# ── Cloud → desktop taxonomy identity ────────────────────────────────────────
+#
+# The cloud describes an observation's identity with `selected_sporely_taxon_id`
+# (writable only through the guarded RPCs) plus, once the provenance migration
+# is deployed, `taxon_identity_state` and the preserved external tuple. A
+# desktop never trusts that as proof: a Sporely ID is kept only when the
+# installed artifact contains the concept, and then only as
+# `cloud_selected_unverified` (see utils/taxon_identity.py). Contract:
+# docs/supabase-sync-contract.md §28.
+
+#: The virtual observation field under which the taxonomy identity takes part
+#: in snapshots, change detection, conflict reporting and field resolution. It
+#: is never a cloud column and never pushed: the guarded RPC stays the only
+#: desktop → cloud identity channel.
+TAXON_IDENTITY_SYNC_FIELD = 'taxon_identity'
+
+#: Cloud identity-provenance columns (sporely-web migration 20260922120000).
+#: Selected only when the server has them — see
+#: `SporelyCloudClient._observation_select_columns`.
+_OBSERVATION_IDENTITY_SELECT_COLUMNS = (
+    'taxon_identity_state',
+    'taxon_identity_source_system',
+    'taxon_identity_namespace',
+    'taxon_identity_external_id',
+    'taxon_identity_raw_external_id',
+)
+
+
+@dataclass(frozen=True)
+class _RemoteIdentityClaim:
+    """What one cloud observation row says about its taxonomy identity."""
+
+    kind: str  # 'none' | 'sporely' | 'external'
+    sporely_taxon_id: int | None = None
+    cloud_state: str | None = None
+    source_system: str | None = None
+    namespace: str | None = None
+    external_id: str | None = None
+    raw_external_id: str | None = None
+
+    @property
+    def key(self) -> str:
+        return _identity_sync_key(
+            self.kind, self.sporely_taxon_id,
+            self.source_system, self.namespace, self.external_id,
+        )
+
+
+def _identity_sync_key(kind, sporely_taxon_id, source_system, namespace, external_id) -> str:
+    """Canonical comparison value shared by local, remote and baseline sides."""
+    if kind == 'sporely' and sporely_taxon_id:
+        return f'sporely:{int(sporely_taxon_id)}'
+    if kind == 'external' and source_system and namespace and external_id:
+        return f'external:{source_system}:{namespace}:{external_id}'
+    return ''
+
+
+def _remote_identity_claim(remote: dict | None) -> _RemoteIdentityClaim | None:
+    """Read the cloud row's identity, or ``None`` when it carries none at all.
+
+    ``None`` means the row did not include the identity columns (an older
+    server, or a partial row) — which is "no information", distinct from a
+    row that explicitly has no identity. Callers leave local identity alone.
+    """
+    row = dict(remote or {})
+    if 'selected_sporely_taxon_id' not in row and 'taxon_identity_state' not in row:
+        return None
+    state = str(row.get('taxon_identity_state') or '').strip() or None
+    selected = _normalize_observation_int_value(row.get('selected_sporely_taxon_id'))
+    if selected is not None and selected > 0:
+        return _RemoteIdentityClaim(kind='sporely', sporely_taxon_id=selected, cloud_state=state)
+    tuple_values = tuple(
+        str(row.get(column) or '').strip() or None
+        for column in (
+            'taxon_identity_source_system',
+            'taxon_identity_namespace',
+            'taxon_identity_external_id',
+            'taxon_identity_raw_external_id',
+        )
+    )
+    if state == 'external_unresolved' and all(tuple_values[:3]):
+        return _RemoteIdentityClaim(
+            kind='external', cloud_state=state,
+            source_system=tuple_values[0], namespace=tuple_values[1],
+            external_id=tuple_values[2], raw_external_id=tuple_values[3],
+        )
+    return _RemoteIdentityClaim(kind='none', cloud_state=state)
+
+
+def _local_identity_sync_key(local_obs: dict | None) -> str:
+    """The local row's identity in the same vocabulary as `_RemoteIdentityClaim.key`.
+
+    A Sporely-namespace external identity (a cloud ID the local artifact could
+    not confirm) compares as the Sporely ID it preserves, so holding it is not
+    a perpetual difference from the cloud. A legacy-unverified integer never
+    equals a cloud value: nothing records what it is.
+    """
+    identity = TaxonIdentity.from_row(local_obs)
+    if identity.is_proven_sporely or identity.is_cloud_selected_unverified:
+        return _identity_sync_key('sporely', identity.sporely_taxon_id, None, None, None)
+    if identity.is_legacy_unverified:
+        return f'legacy:{identity.sporely_taxon_id}'
+    if identity.state == 'external_unresolved' and identity.has_external_evidence:
+        if (identity.source_system, identity.namespace) == ('sporely', 'sporely_taxon_id'):
+            sporely_id = _normalize_observation_int_value(identity.external_id)
+            return _identity_sync_key('sporely', sporely_id, None, None, None)
+        return _identity_sync_key(
+            'external', None,
+            identity.source_system, identity.namespace, identity.external_id,
+        )
+    return ''
+
+
+def _installed_taxon_concept(sporely_taxon_id: int):
+    """The installed taxonomy-v2 artifact's record for one Sporely ID, or None."""
+    try:
+        from database.taxon_lookup import installed_taxon_concept
+        from utils.vernacular_utils import resolve_vernacular_db_path
+        return installed_taxon_concept(resolve_vernacular_db_path(), sporely_taxon_id)
+    except Exception:
+        return None
+
+
+def _remote_name_snapshot(remote: dict) -> tuple[str | None, str | None]:
+    genus = str(remote.get('genus') or '').strip()
+    species = str(remote.get('species') or '').strip()
+    name = ' '.join(part for part in (genus, species) if part) or None
+    rank = 'species' if genus and species else ('genus' if genus else None)
+    return name, rank
+
+
+def _local_identity_columns_for_remote_claim(
+    claim: _RemoteIdentityClaim,
+    remote: dict,
+) -> dict:
+    """The complete local identity (+ name/rank snapshot) a claim maps to.
+
+    * ``sporely`` present in the installed artifact → ``cloud_selected_unverified``
+      with the artifact's canonical name and rank;
+    * ``sporely`` absent locally → preserved as an unresolved Sporely-namespace
+      external identity, never a bound integer;
+    * ``external`` → the cloud's preserved tuple as ``external_unresolved``;
+    * ``none`` → no identity.
+    """
+    remote_name, remote_rank = _remote_name_snapshot(dict(remote or {}))
+    if claim.kind == 'sporely':
+        concept = _installed_taxon_concept(int(claim.sporely_taxon_id))
+        if concept is not None:
+            identity = TaxonIdentity.from_cloud_selection(
+                claim.sporely_taxon_id,
+                local_release_id=concept.release_id,
+                scientific_name=concept.scientific_name,
+                rank=concept.rank,
+                cloud_state=claim.cloud_state,
+            )
+            name, rank = concept.scientific_name or remote_name, concept.rank or remote_rank
+        else:
+            identity = TaxonIdentity.unresolved_external(
+                source_system='sporely',
+                namespace='sporely_taxon_id',
+                external_id=str(claim.sporely_taxon_id),
+                scientific_name=remote_name,
+                rank=remote_rank,
+                provenance=(
+                    'cloud:observations.selected_sporely_taxon_id; '
+                    f"cloud_state={claim.cloud_state or 'null'}; "
+                    'absent_from_local_release'
+                ),
+            )
+            name, rank = remote_name, remote_rank
+    elif claim.kind == 'external':
+        identity = TaxonIdentity.unresolved_external(
+            source_system=claim.source_system,
+            namespace=claim.namespace,
+            external_id=claim.external_id,
+            raw_external_id=claim.raw_external_id,
+            scientific_name=remote_name,
+            rank=remote_rank,
+            provenance='cloud:observations.taxon_identity_*',
+        )
+        name, rank = remote_name, remote_rank
+    else:
+        identity = TaxonIdentity.none()
+        name, rank = None, None
+    return {
+        **identity.to_row(),
+        'scientific_name_snapshot': name if identity.state != 'no_identity_evidence' else None,
+        'taxon_rank_snapshot': rank if identity.state != 'no_identity_evidence' else None,
+    }
+
+
+def _apply_remote_identity_to_local(
+    local_id: int,
+    remote: dict,
+    *,
+    local_before: dict | None = None,
+) -> bool:
+    """Write the cloud row's identity onto a local observation.
+
+    Returns False without writing when the row carries no identity
+    information, or when nothing would change. ``local_before`` is the local
+    row as it was before this pull applied any other field — the caller
+    passes it when names were written first. Uses the persistence API's
+    one-coherent-transition write.
+    """
+    claim = _remote_identity_claim(remote)
+    if claim is None:
+        return False
+    # The local row already holds this identity. Rewriting it would replace a
+    # stronger local proof (a picker-proven 83668) with the weaker
+    # cloud-derived one for the very same concept.
+    local_row = dict(local_before or ObservationDB.get_observation(int(local_id)) or {})
+    if _local_identity_sync_key(local_row) == claim.key:
+        return False
+    # A cloud row with no identity is not evidence that local evidence is
+    # wrong while both still name the same taxon — the push rule, mirrored.
+    # It clears local identity only when the identification itself changed.
+    if claim.kind == 'none' and _identification_key(local_row) == _identification_key(dict(remote or {})):
+        return False
+    columns = _local_identity_columns_for_remote_claim(claim, remote)
+    ObservationDB.update_observation(int(local_id), allow_nulls=True, **columns)
+    if claim.kind == 'sporely' and columns.get('sporely_taxon_id') is None:
+        print(
+            f'[cloud_sync] identity pull: obs {local_id} cloud Sporely '
+            f'{claim.sporely_taxon_id} is absent from the installed taxonomy '
+            'artifact; preserved unresolved, not bound',
+            flush=True,
+        )
+    return True
+
+
 def _apply_remote_observation_fields(
     local_id: int,
     remote: dict,
@@ -10419,6 +10650,8 @@ def _apply_remote_observation_fields(
         'sharing_scope' if field in {'visibility', 'sharing_scope'} else field
         for field in requested_fields
     }
+    applies_identity = fields is None or TAXON_IDENTITY_SYNC_FIELD in normalized_fields
+    local_before = ObservationDB.get_observation(int(local_id)) if applies_identity else None
     update_kwargs = _remote_observation_update_kwargs(remote)
     partial_kwargs = {
         key: value
@@ -10427,6 +10660,11 @@ def _apply_remote_observation_fields(
     }
     if len(partial_kwargs) > 1:
         ObservationDB.update_observation(int(local_id), **partial_kwargs)
+
+    # Identity travels as one virtual field: a full apply ("cloud wins") or an
+    # explicit request for it. Three-way reconciliation decides when to ask.
+    if applies_identity:
+        _apply_remote_identity_to_local(int(local_id), remote, local_before=local_before)
 
     extra_values = _remote_observation_extra_values(remote)
     extra_updates = {
@@ -15185,6 +15423,40 @@ class SporelyCloudClient:
         self._column_support_cache[cache_key] = supported
         return supported
 
+    def _observation_select_columns(self) -> str:
+        """The observation read columns, with identity provenance unless absent.
+
+        The cloud's `taxon_identity_*` columns come from sporely-web migration
+        20260922120000. Selecting a column the server lacks fails the whole
+        read, so `_read_observation_rows` drops them after the first such
+        failure; without them `selected_sporely_taxon_id` alone still
+        describes a bound identity.
+        """
+        if getattr(self, '_observation_identity_columns_unsupported', False):
+            return _OBSERVATION_SELECT_COLUMNS
+        return _join_select_columns(
+            _OBSERVATION_SELECT_COLUMNS, *_OBSERVATION_IDENTITY_SELECT_COLUMNS,
+        )
+
+    def _read_observation_rows(self, read, path_for):
+        """``read(path_for(select))``, retried once without identity columns.
+
+        No extra probe request: the normal read carries the columns, and only
+        a server that rejects them costs one retry, once per client.
+        """
+        try:
+            return read(path_for(self._observation_select_columns()))
+        except CloudSyncError as exc:
+            text = str(exc or '').lower()
+            if (
+                getattr(self, '_observation_identity_columns_unsupported', False)
+                or 'taxon_identity' not in text
+                or not ('does not exist' in text or 'could not find' in text)
+            ):
+                raise
+            self._observation_identity_columns_unsupported = True
+            return read(path_for(_OBSERVATION_SELECT_COLUMNS))
+
     def _observation_supports_media_keys(self) -> bool:
         return self._has_column('observations', 'image_key') or self._has_column('observations', 'thumb_key')
 
@@ -15908,15 +16180,19 @@ class SporelyCloudClient:
         cloud_value = str(cloud_id or '').strip()
         if not cloud_value:
             return None
-        rows = self._get(
-            f'observations?id=eq.{cloud_value}&user_id=eq.{self.user_id}&select={_OBSERVATION_SELECT_COLUMNS}'
+        rows = self._read_observation_rows(
+            self._get,
+            lambda select: f'observations?id=eq.{cloud_value}&user_id=eq.{self.user_id}&select={select}',
         )
         return rows[0] if rows else None
 
     def list_remote_observations(self) -> list[dict]:
-        return self._get_paginated(
-            f'observations?user_id=eq.{self.user_id}'
-            f'&order=created_at.asc,id.asc&select={_OBSERVATION_SELECT_COLUMNS}'
+        return self._read_observation_rows(
+            self._get_paginated,
+            lambda select: (
+                f'observations?user_id=eq.{self.user_id}'
+                f'&order=created_at.asc,id.asc&select={select}'
+            ),
         )
 
     def count_remote_privacy_slots(self) -> int:
@@ -17072,13 +17348,16 @@ class SporelyCloudClient:
 
     def pull_web_observations(self, after_iso: str | None = None) -> list[dict]:
         """Fetch observations created on mobile/web (desktop_id IS NULL)."""
-        qs = (
-            f'observations?desktop_id=is.null&user_id=eq.{self.user_id}'
-            f'&order=created_at.asc,id.asc&select={_OBSERVATION_SELECT_COLUMNS}'
-        )
-        if after_iso:
-            qs += f'&created_at=gt.{_encode_postgrest_filter_value(after_iso)}'
-        return self._get_paginated(qs)
+        def _path(select: str) -> str:
+            qs = (
+                f'observations?desktop_id=is.null&user_id=eq.{self.user_id}'
+                f'&order=created_at.asc,id.asc&select={select}'
+            )
+            if after_iso:
+                qs += f'&created_at=gt.{_encode_postgrest_filter_value(after_iso)}'
+            return qs
+
+        return self._read_observation_rows(self._get_paginated, _path)
 
     def set_desktop_id(self, cloud_id: str, desktop_id: int) -> None:
         """Write the local SQLite ID back to the cloud row for future dedup."""
@@ -25132,6 +25411,11 @@ def _create_local_from_remote(
         country_code=normalize_country_code(remote.get('country_code')),
         region_id=_normalize_observation_field_value('region_id', remote.get('region_id')),
     )
+    # The cloud identity arrives with the row, conservatively: see
+    # `_local_identity_columns_for_remote_claim`.
+    identity_claim = _remote_identity_claim(remote)
+    if identity_claim is not None:
+        kwargs.update(_local_identity_columns_for_remote_claim(identity_claim, remote))
     local_id = ObservationDB.create_observation(**kwargs)
 
     # Bind the cloud row immediately, but keep the observation pending until

@@ -443,8 +443,9 @@ def test_917_survives_the_pull_that_follows_the_push(tmp_path, monkeypatch, arti
         "ai_selected_scientific_name": "Entoloma conferendum",
         "ai_selected_probability": 0.93,
         "ai_selected_at": "2026-09-14 10:35",
-        # The cloud's own selection, which the pull does not write into the
-        # client's identity columns — identity is client-proven, not adopted.
+        # The cloud's own selection. It equals the local proven identity, so
+        # the pull leaves the stronger local proof untouched rather than
+        # replacing it with the weaker cloud_selected_unverified token.
         "selected_sporely_taxon_id": 7821,
     })
 
@@ -466,11 +467,13 @@ def test_917_survives_the_pull_that_follows_the_push(tmp_path, monkeypatch, arti
 
 
 def test_the_pull_path_cannot_reach_an_identity_column():
-    """Structural: identity is absent from the pulled observation snapshot.
+    """Structural: identity columns are never generic pulled snapshot fields.
 
     Asserted against the field list itself rather than only through one
     applied row, because a future field added to the snapshot would silently
-    open this door again.
+    open this door again. The pull reaches identity only through its
+    dedicated conservative channel (`_apply_remote_identity_to_local`,
+    `cloud_selected_unverified`), never as a raw column copy.
     """
     from utils import cloud_sync
 

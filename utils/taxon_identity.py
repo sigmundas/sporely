@@ -348,13 +348,17 @@ class TaxonIdentity:
         local_release_id: object,
         scientific_name: object = None,
         rank: object = None,
+        cloud_state: object = None,
     ) -> "TaxonIdentity":
         """The cloud's selected Sporely ID, confirmed present locally.
 
         The caller must already have confirmed that ``sporely_taxon_id`` is a
         concept of the installed taxonomy artifact identified by
         ``local_release_id``; ``scientific_name``/``rank`` should be that
-        artifact's canonical values. Degrades to :meth:`none` without a
+        artifact's canonical values. ``cloud_state`` is the cloud row's own
+        ``taxon_identity_state`` (``sporely_v2``, or ``None`` for a row bound
+        before the cloud recorded provenance) and is kept in provenance.
+        Degrades to :meth:`none` without a
         positive integer or a release id — an adoption that cannot say which
         artifact it was checked against has not been checked.
         """
@@ -373,6 +377,7 @@ class TaxonIdentity:
             rank=_clean(rank),
             provenance=(
                 "cloud:observations.selected_sporely_taxon_id; "
+                f"cloud_state={_clean(cloud_state) or 'null'}; "
                 f"present_in_local_release={release}"
             ),
         )
