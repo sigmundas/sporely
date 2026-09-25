@@ -157,6 +157,7 @@ Review plots and compare to references:
 - [Microscopy workflow](docs/microscopy-workflow.md)
 - [Spore measurements](docs/spore-measurements.md)
 - [Taxonomy integration](docs/taxonomy-integration.md)
+- [Taxonomy identity repair runbook](docs/taxonomy-identity-repair-runbook.md) — observation identity audit, migration gate and rollback
 - [Database structure](docs/database-structure.md)
 - [Changelog](CHANGELOG.md) — user-facing notable release changes
 

@@ -723,17 +723,19 @@ class TaxonLookupService:
         that helper already returns ``None`` for zero-hit or multi-hit
         pairs and breaks preferred-alias ties conservatively.
 
-        Source-system preference fallback: when the strict resolver
-        returns ``None`` because multiple canonical rows share the pair
-        (e.g. a ``col_xr`` canonical alongside a ``nortaxa`` canonical
-        that carry the same exact scientific name), fall back to
-        :meth:`_resolve_manual_via_source_system_preference`. That
-        fallback prefers the COL row because COL is the source-system
-        authority for species concepts in the compiled DB. It never
-        binds identity based on Red List presence — the national Red
-        List is treated as a separate overlay by
-        :meth:`get_redlist_lookup_with_overlay`, and identity is
-        selected purely from source-system canonical evidence.
+        Secondary fallback: when the strict resolver returns ``None``
+        because several canonical rows share the pair, fall back to
+        :meth:`_resolve_manual_via_source_system_preference`, which binds
+        only when its exact-canonical-name and rank filters leave a single
+        candidate. It never binds identity based on Red List presence — the
+        national Red List is treated as a separate overlay by
+        :meth:`get_redlist_lookup_with_overlay`.
+
+        Taxonomy-v2 closeout Stage 2: a resolution reaching here is proven by
+        the compiled taxonomy-v2 artifact, so the controller records it as
+        :data:`~utils.taxon_identity.PROOF_TAXONOMY_V2_ARTIFACT`. A genuinely
+        ambiguous pair stays unresolved rather than being decided by source
+        preference.
         """
         genus_display = _normalize_genus_display(genus)
         species_display = _normalize_species_display(species)
@@ -796,8 +798,8 @@ class TaxonLookupService:
     def _resolve_manual_via_source_system_preference(
         self, genus_display: str, species_display: str,
     ) -> int | None:
-        """Prefer the COL canonical concept when a ``(genus, species)``
-        pair matches multiple canonical rows in ``taxon_min``.
+        """Bind a ``(genus, species)`` pair only when the artifact leaves one
+        candidate after exact-canonical and rank filtering.
 
         Called only when the strict
         :meth:`~database.vernacular_db.VernacularDB.taxon_id_from_scientific`
@@ -812,16 +814,14 @@ class TaxonLookupService:
         2. Consider only rows on the picker rank whitelist
            (``species``, ``subspecies``, ``variety``, ``form``).
 
-        Then apply the source-system preference:
+        Then:
 
-        * If exactly one surviving candidate has
-          ``canonical_source_system = 'col_xr'`` → bind that
-          ``taxon_id`` (COL is the source-system authority for species
-          concepts in this DB).
-        * If zero COL candidates survive AND exactly one NorTaxa
-          candidate (``canonical_source_system = 'nortaxa'``)
-          survives → bind that ``taxon_id`` (no ambiguity to resolve).
-        * Otherwise → ``None``. The observer must use the picker.
+        * exactly one surviving candidate → bind that ``taxon_id``;
+        * otherwise → ``None``. The observer must use the picker.
+
+        Taxonomy-v2 closeout Stage 2 removed a source-system tie-break that
+        used to pick the ``col_xr`` row when a COL and a NorTaxa canonical
+        shared an exact scientific name. See the inline comment below.
 
         The Norwegian Red List is deliberately NOT used to influence
         identity here — it is a national overlay handled separately by
@@ -864,13 +864,28 @@ class TaxonLookupService:
         ]
         if not filtered:
             return None
-        col_ids = [tid for tid, source in filtered if source == "col_xr"]
-        if len(col_ids) == 1:
-            return col_ids[0]
-        if not col_ids:
-            nortaxa_ids = [tid for tid, source in filtered if source == "nortaxa"]
-            if len(nortaxa_ids) == 1:
-                return nortaxa_ids[0]
+        # Taxonomy-v2 closeout Stage 2: bind only when the exact-canonical +
+        # rank filters leave exactly ONE candidate. That is a unique match in
+        # the compiled artifact, which is identity evidence.
+        #
+        # The previous source-system tie-break — prefer the single ``col_xr``
+        # row when a ``col_xr`` and a ``nortaxa`` canonical share the exact
+        # scientific name — is removed. Two concepts sharing a name are, by
+        # ``identity-contract.md``, distinct concepts ("scientific-name
+        # equality is not sufficient identity evidence"; "distinct concepts
+        # must not be merged because strings resemble each other"). Choosing
+        # between them by source preference is a policy, not evidence, and
+        # Stage 2 forbids inferring identity from genus/species equality
+        # alone. Such a pair now stays unresolved and the observer must pick
+        # explicitly in the scientific-name completer, which is what the rest
+        # of this method's contract already said for the harder cases.
+        #
+        # Consequence worth knowing: for a genuinely ambiguous name the Red
+        # List badge no longer appears from an ``editingFinished`` edit until
+        # the user makes an explicit selection. That is the intended trade —
+        # an unbound badge is preferable to a silently mis-bound concept.
+        if len(filtered) == 1:
+            return filtered[0][0]
         return None
 
     def _fetch_redlist_rows(
@@ -1201,8 +1216,68 @@ def determine_redlist_area(country_code: str | None) -> str | None:
     return None
 
 
+@dataclass(frozen=True)
+class InstalledTaxonConcept:
+    """One concept of an installed taxonomy-v2 artifact, with its release."""
+
+    sporely_taxon_id: int
+    release_id: str
+    scientific_name: str | None
+    rank: str | None
+
+
+def installed_taxon_concept(db_path, sporely_taxon_id: object) -> InstalledTaxonConcept | None:
+    """Look ``sporely_taxon_id`` up in the taxonomy-v2 artifact at ``db_path``.
+
+    Returns ``None`` unless the file opens read-only as a taxonomy-v2 artifact
+    (``taxonomy_meta`` schema version 2 with a ``content_release_id``) AND
+    ``taxon_min`` contains the concept. A pre-v2 vernacular database has no
+    release to verify against, so nothing can be confirmed from it.
+
+    Membership is all this proves: that the installed release knows the
+    concept, not which producer chose the integer.
+    """
+    try:
+        sporely_id = int(sporely_taxon_id)
+    except (TypeError, ValueError):
+        return None
+    if sporely_id <= 0 or not db_path:
+        return None
+    try:
+        conn = sqlite3.connect(f"file:{db_path}?mode=ro", uri=True)
+    except sqlite3.Error:
+        return None
+    try:
+        meta = dict(conn.execute(
+            "SELECT key, value FROM taxonomy_meta "
+            "WHERE key IN ('taxonomy_schema_version', 'content_release_id')"
+        ))
+        release_id = _normalize_text(meta.get("content_release_id"))
+        if str(meta.get("taxonomy_schema_version") or "") != "2" or not release_id:
+            return None
+        row = conn.execute(
+            "SELECT canonical_scientific_name, taxon_rank FROM taxon_min "
+            "WHERE taxon_id = ? LIMIT 1",
+            (sporely_id,),
+        ).fetchone()
+    except sqlite3.Error:
+        return None
+    finally:
+        conn.close()
+    if row is None:
+        return None
+    return InstalledTaxonConcept(
+        sporely_taxon_id=sporely_id,
+        release_id=release_id,
+        scientific_name=_normalize_text(row[0]) or None,
+        rank=(_normalize_text(row[1]) or "").lower() or None,
+    )
+
+
 __all__ = [
     "TAXON_COMPLETER_LIMIT",
+    "InstalledTaxonConcept",
+    "installed_taxon_concept",
     "ManualScientificResolution",
     "TaxonChoice",
     "TaxonLookupService",

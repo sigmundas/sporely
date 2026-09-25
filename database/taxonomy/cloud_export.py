@@ -661,6 +661,15 @@ def emit_taxon_external_id_authoritative(
     1. `taxon_external_id_text_min` — every scoped row, namespace declared
        by the compiler per `policies/source_priority.yml.identifier_namespaces`.
 
+       This includes the reviewed cross-source bridge rows written by
+       `build_sqlite_candidate.py`: a bridge source's own identifier for a
+       concept anchored by the backbone, emitted only where
+       `policies/mapping_policy.yml.authoritative_bridge_emission` grades its
+       evidence as authoritative. Those rows always carry `is_preferred = 0`
+       and a `note` of `authoritative_bridge:<evidence_class>`, so a consumer
+       can tell which standard admitted them and never mistakes one for the
+       concept's preferred identifier.
+
     2. `taxon_min.norwegian_taxon_id` — derived authoritative NorTaxa row.
        The compiler establishes `taxon_min.norwegian_taxon_id` only from a
        unique preferred source usage whose original namespace is

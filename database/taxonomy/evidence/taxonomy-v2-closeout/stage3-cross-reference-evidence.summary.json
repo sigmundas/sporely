@@ -1,0 +1,61 @@
+{
+  "evidence_class_counts": {
+    "no_published_cross_reference": 14945,
+    "one_directional_accepted_synonymy": 1,
+    "reciprocal_accepted_synonymy": 1,
+    "shared_synonymy": 4862
+  },
+  "not_reviewable_total": 14945,
+  "pair_count": 19809,
+  "regression_detail": {
+    "52369": {
+      "accepted_names_agree": false,
+      "backbone_accepted_name": "Conocybe rugosa (Peck) Watling",
+      "backbone_lists_bridge_accepted_name_as_synonym": true,
+      "backbone_synonym_count": 3,
+      "bridge_accepted_name": "Pholiotina rugosa (Peck) Singer",
+      "bridge_lists_backbone_accepted_name_as_synonym": true,
+      "bridge_synonym_count": 1,
+      "col_usage_id": "5ZT3G",
+      "evidence_class": "reciprocal_accepted_synonymy",
+      "nortaxa_taxon_id": "52369",
+      "review_status": "needs_review",
+      "shared_synonym_count": 0,
+      "shared_synonyms": []
+    },
+    "53482": {
+      "accepted_names_agree": true,
+      "backbone_accepted_name": "Entoloma conferendum (Britzelm.) Noordel.",
+      "backbone_lists_bridge_accepted_name_as_synonym": false,
+      "backbone_synonym_count": 35,
+      "bridge_accepted_name": "Entoloma conferendum (Britzelm.) Noordel.",
+      "bridge_lists_backbone_accepted_name_as_synonym": false,
+      "bridge_synonym_count": 7,
+      "col_usage_id": "39ZCL",
+      "evidence_class": "shared_synonymy",
+      "nortaxa_taxon_id": "53482",
+      "review_status": "needs_review",
+      "shared_synonym_count": 7,
+      "shared_synonyms": [
+        "entoloma rickenii (Romagn.) Courtec.",
+        "entoloma staurosporum (Bres.) E. Horak",
+        "nolanea conferenda (Britzelm.) Sacc.",
+        "nolanea staurospora Bres.",
+        "rhodophyllus rickenii Romagn.",
+        "rhodophyllus staurosporus (Bres.) J.E. Lange",
+        "rhodophyllus staurosporus var. platyphyllus Romagn. & J. Favre"
+      ]
+    }
+  },
+  "reviewable_total": 4864,
+  "source_archives": {
+    "col_xr": {
+      "path": "/Users/sigmundas/Documents/Code/sporely/sporely-py/database/taxonomy/sources/col_xr/2026-07-17-XR/archive.zip",
+      "sha256": "397d701c8eb269bf78d6ac7b03149915b0d9e2a2c18694be2c91445b807814f9"
+    },
+    "nortaxa": {
+      "path": "/Users/sigmundas/Documents/Code/sporely/sporely-py/database/taxonomy/sources/nortaxa/1.284/archive.zip",
+      "sha256": "29c11c54d955dc44e4e5a38944dd7932989a256d1b173777579b9f33abd2fe22"
+    }
+  }
+}

@@ -196,6 +196,7 @@ from references.reference_plotting import (
     translate_observation_reference_use,
 )
 from utils.annotation_capture import save_spore_annotation
+from utils.taxon_identity import proven_sporely_taxon_id
 from utils.image_metadata_merge import merge_image_lab_metadata
 from utils.thumbnail_generator import generate_all_sizes
 from utils.image_utils import cleanup_import_temp_file, load_oriented_pixmap
@@ -11557,14 +11558,12 @@ class MainWindow(GeometryMixin, QMainWindow):
                 return None
         if not obs:
             return None
-        raw = obs.get("sporely_taxon_id")
-        if raw in (None, "", "None"):
-            return None
-        try:
-            candidate = int(raw)
-        except (TypeError, ValueError):
-            return None
-        return candidate if candidate > 0 else None
+        # Taxonomy-v2 closeout Stage 2: gate on PROVEN provenance, not on the
+        # raw column. This value drives normalized measurement-set attachment,
+        # so a legacy-unverified integer — including one that numerically
+        # collides with a real Sporely concept — must not reach it. Reading
+        # the column directly is exactly the leak this stage closes elsewhere.
+        return proven_sporely_taxon_id(obs)
 
     def _persist_normalized_reference_from_dialog(
         self,

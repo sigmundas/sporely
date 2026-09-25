@@ -22,5 +22,35 @@
     "allowed_relationships_ref": "mapping_policy.relationships",
     "allowed_review_states_ref": "mapping_policy.review_states"
   },
-  "mappings": []
+  "mappings": [
+    {
+      "mapping_id": "nortaxa-53482-entoloma-conferendum-to-col-39ZCL",
+      "source_usage": {
+        "source": "nortaxa",
+        "namespace": "nortaxa_taxon_id",
+        "identifier": "53482"
+      },
+      "target": {
+        "source_usage": {
+          "source": "col_xr",
+          "namespace": "col_usage_id",
+          "identifier": "39ZCL"
+        }
+      },
+      "relationship": "exact",
+      "review_status": "approved",
+      "reviewer": "Sigmund Ås",
+      "rationale": "Agreeing-accepted-name bridge. Both sources publish the accepted name 'Entoloma conferendum (Britzelm.) Noordel.', but agreement on an accepted name is not identity evidence under mapping_policy.continuity_rules.canonical_name_only. The evidence offered for review is instead each source's own published synonymy: NorTaxa places 7 synonym names under taxonID 53482, and COL places all 7 of those same names, with byte-identical authorship, under usage 39ZCL. Both sources therefore independently assert that 'Nolanea conferenda (Britzelm.) Sacc.', 'Rhodophyllus staurosporus (Bres.) J.E. Lange', 'Entoloma rickenii (Romagn.) Courtec.', 'Entoloma staurosporum (Bres.) E. Horak', 'Nolanea staurospora Bres.', 'Rhodophyllus rickenii Romagn.' and 'Rhodophyllus staurosporus var. platyphyllus Romagn. & J. Favre' belong to their accepted concept. The two concepts are linked through those third published names, not through the spelling of the accepted name. The registry already binds this usage to sporely_taxon_id 7821, so approving this record changes no allocation; it supplies the reviewed relationship that lets the identifier be published as authoritative identity.",
+      "evidence_references": [
+        "database/taxonomy/evidence/taxonomy-v2-closeout/stage3-cross-reference-evidence.summary.json#regression_detail.53482",
+        "sources/nortaxa/1.284/archive.zip!taxon.txt sha256=29c11c54d955dc44e4e5a38944dd7932989a256d1b173777579b9f33abd2fe22",
+        "sources/col_xr/2026-07-17-XR/archive.zip!NameUsage.tsv sha256=397d701c8eb269bf78d6ac7b03149915b0d9e2a2c18694be2c91445b807814f9"
+      ],
+      "created_at": "2026-09-23T00:00:00Z",
+      "updated_at": "2026-09-23T12:00:00Z",
+      "source_release_range": {"first": "1.284", "last": "1.284"},
+      "supersedes": null,
+      "review_note": "Approved 2026-09-23 by Sigmund Ås, recorded against manual-verification check 'review-nortaxa-53482-bridge' (gate f0c45157058d4fedab2c13719c6cf548). Reviewer's decision as given: 'I approve the reviewed mapping of NorTaxa 53482 (Entoloma conferendum) to COL 39ZCL as representing the same taxonomic concept.' The registry already bound this usage to sporely_taxon_id 7821, so the approval changes no allocation; it supplies the reviewed relationship that permits the identifier to be published as authoritative identity."
+    }
+  ]
 }

@@ -17,6 +17,7 @@ _ROOT = Path(__file__).resolve().parents[1]
 if str(_ROOT) not in sys.path:
     sys.path.insert(0, str(_ROOT))
 
+from utils.taxon_identity import TaxonIdentity
 from database.taxon_lookup import (
     RedlistAssessment,
     RedlistLookupResult,
@@ -401,14 +402,26 @@ def _read_sporely_id(db_path: Path, obs_id: int) -> int | None:
 
 
 def test_create_observation_persists_sporely_taxon_id(tmp_path, monkeypatch):
+    """EXPECTATION FLIP — taxonomy-v2 closeout Stage 2.
+
+    This wrote a bare ``sporely_taxon_id=42`` and asserted it persisted. An
+    unqualified integer can no longer become ``sporely_taxon_id``: the write
+    boundary refuses it outright rather than storing it and relying on every
+    downstream gate. The column persists only alongside the provenance that
+    proves it.
+    """
     db, path = _fresh_db(tmp_path, monkeypatch)
-    obs_id = db.create_observation(
-        date="2026-07-01 12:00",
-        genus="Amanita",
-        species="muscaria",
+    bare = db.create_observation(
+        date="2026-07-01 12:00", genus="Amanita", species="muscaria",
         sporely_taxon_id=42,
     )
-    assert _read_sporely_id(path, obs_id) == 42
+    assert _read_sporely_id(path, bare) is None
+
+    proven = db.create_observation(
+        date="2026-07-01 12:00", genus="Amanita", species="muscaria",
+        **TaxonIdentity.from_taxonomy_v2_artifact(42).to_row(),
+    )
+    assert _read_sporely_id(path, proven) == 42
 
 
 def test_create_observation_sanitizes_invalid_sporely_taxon_id(tmp_path, monkeypatch):
@@ -430,23 +443,33 @@ def test_create_observation_sanitizes_invalid_sporely_taxon_id(tmp_path, monkeyp
 
 
 def test_update_observation_preserves_and_changes_sporely_taxon_id(tmp_path, monkeypatch):
+    """EXPECTATION FLIP — taxonomy-v2 closeout Stage 2.
+
+    The identity is one typed value, so a bare integer no longer sets it and
+    a partial write no longer inherits the previous row's proof. What is
+    preserved is the property this test was really about: an unrelated update
+    leaves the identity alone.
+    """
     db, path = _fresh_db(tmp_path, monkeypatch)
     obs_id = db.create_observation(
-        date="2026-07-01 12:00",
-        genus="Amanita",
-        species="muscaria",
-        sporely_taxon_id=42,
+        date="2026-07-01 12:00", genus="Amanita", species="muscaria",
+        **TaxonIdentity.from_taxonomy_v2_artifact(42).to_row(),
     )
-    # Update with the field omitted (default _UNSET) — the value stays 42.
+    # An unrelated update leaves the identity untouched.
     db.update_observation(obs_id, common_name="Fly agaric", allow_nulls=True)
     assert _read_sporely_id(path, obs_id) == 42
 
-    # Update with sporely_taxon_id=None and allow_nulls=True → NULL.
+    # An explicit clear still clears.
     db.update_observation(obs_id, sporely_taxon_id=None, allow_nulls=True)
     assert _read_sporely_id(path, obs_id) is None
 
-    # Update with a new positive value.
+    # A bare new integer is refused; the same integer with its proof is kept.
     db.update_observation(obs_id, sporely_taxon_id=99)
+    assert _read_sporely_id(path, obs_id) is None
+    db.update_observation(
+        obs_id, allow_nulls=True,
+        **TaxonIdentity.from_taxonomy_v2_artifact(99).to_row(),
+    )
     assert _read_sporely_id(path, obs_id) == 99
 
 
@@ -484,7 +507,7 @@ def test_load_and_reload_restores_sporely_taxon_id(tmp_path, monkeypatch):
         date="2026-07-01 12:00",
         genus="Amanita",
         species="muscaria",
-        sporely_taxon_id=42,
+        **TaxonIdentity.from_taxonomy_v2_artifact(42).to_row(),
     )
     # Direct SQL SELECT — the model layer does not add a dedicated getter;
     # the existing observation reads select all columns.
@@ -1052,33 +1075,30 @@ def _svc_for_db(db_path: Path) -> TaxonLookupService:
     )
 
 
-def test_manual_resolver_prefers_col_canonical_over_nortaxa_when_ambiguous(tmp_path: Path):
-    """When multiple canonical rows share the exact ``Genus species``
-    canonical, identity binds to the COL row — COL is the source-system
-    authority for species concepts in this DB. Red List presence is
-    deliberately NOT considered here; the bound identity stays 168873
-    even though 626243 carries the LC assessment.
+def test_manual_resolver_does_not_break_exact_name_tie_by_source_preference(tmp_path: Path):
+    """An exact-name COL/NorTaxa pair stays UNRESOLVED.
 
-    Regression pattern for the real ``Cantharellus cibarius`` case:
-    without this fix the strict resolver refused to bind and the badge
-    would not refresh; with the fix the badge refreshes (via the
-    separate NorTaxa Red List overlay) while identity stays on COL.
+    Taxonomy-v2 closeout Stage 2 expectation flip. This test previously
+    asserted that identity binds to the ``col_xr`` row (168873) because COL
+    is the source-system authority for species concepts. That is a policy
+    preference, not identity evidence: ``identity-contract.md`` states that
+    scientific-name equality is not sufficient identity evidence and that
+    distinct concepts must not be merged because their strings resemble each
+    other. Two canonical rows sharing the exact name are two concepts, and
+    Stage 2 forbids the client inferring identity from genus/species equality
+    alone.
+
+    So the real ``Cantharellus cibarius`` shape — a ``col_xr`` concept
+    (168873) and a ``nortaxa`` concept (626243) carrying the identical
+    canonical name, with only the NorTaxa row assessed — now resolves to
+    nothing. The observer must pick explicitly in the scientific-name
+    completer, and the Red List badge does not refresh from an
+    ``editingFinished`` edit for such a name.
     """
     db_path = tmp_path / "col_pref.sqlite3"
     _seed_taxonomy_db_col_plus_nortaxa(db_path)
     svc = _svc_for_db(db_path)
-    res = svc.resolve_manual_scientific("Cantharellus", "cibarius")
-    assert res is not None
-    # COL id, NOT the NorTaxa id with the assessment.
-    assert res.sporely_taxon_id == 168873
-    assert res.scientific_name == "Cantharellus cibarius"
-    assert res.taxon_rank_snapshot == "species"
-    assert res.canonical_scientific_name == "Cantharellus cibarius"
-    # Primary Red List lookup for the COL identity: no assessment.
-    primary = svc.get_redlist_lookup(
-        res.sporely_taxon_id, area="Norge", source_release="2021",
-    )
-    assert primary.status == "none"
+    assert svc.resolve_manual_scientific("Cantharellus", "cibarius") is None
 
 
 def test_manual_resolver_binds_nortaxa_when_only_nortaxa_candidate_exists(tmp_path: Path):

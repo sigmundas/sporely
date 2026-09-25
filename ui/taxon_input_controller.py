@@ -8,6 +8,7 @@ from PySide6.QtGui import QStandardItem, QStandardItemModel
 from PySide6.QtWidgets import QCompleter, QLineEdit
 
 from database.taxon_lookup import TAXON_COMPLETER_LIMIT, TaxonChoice, TaxonLookupService
+from utils.taxon_identity import IDENTITY_COLUMNS, TaxonIdentity
 
 
 ROLE_TAXON_CHOICE = Qt.UserRole + 4
@@ -15,6 +16,17 @@ ROLE_TAXON_CHOICE = Qt.UserRole + 4
 
 def format_species_choice_display(choice: TaxonChoice) -> str:
     return str(choice.species or "").strip()
+
+
+def _identity_snapshot_fields(identity: TaxonIdentity) -> dict:
+    """Flatten a :class:`TaxonIdentity` into committed-snapshot keys.
+
+    Uses the same key names as the ``observations`` columns so the dialog's
+    save path can pass them straight through without a second mapping to keep
+    in sync.
+    """
+    row = identity.to_row()
+    return {key: row.get(key) for key in ("sporely_taxon_id", *IDENTITY_COLUMNS)}
 
 
 _VERNACULAR_DISPLAY_ANNOTATED_LANGUAGES = frozenset({
@@ -174,6 +186,9 @@ class TaxonInputController(QObject):
         # are all cleared. Retyping the identical string does NOT restore
         # identity — only another explicit suggestion selection can.
         self._committed_snapshot: dict | None = None
+        # Taxonomy-v2 closeout Stage 2: a taxon id resolved from typed text
+        # for DISPLAY only (Red List badge). Never identity, never persisted.
+        self._display_only_name_match: int | None = None
         # Suspend depth handles reentry AND load-time programmatic writes.
         self._suspend_depth = 0
         self._last_genus_signature: tuple[str, ...] = ()
@@ -806,6 +821,60 @@ class TaxonInputController(QObject):
         """
         return dict(self._committed_snapshot) if self._committed_snapshot else None
 
+    def committed_identity(self) -> TaxonIdentity:
+        """The typed identity behind the committed snapshot.
+
+        Taxonomy-v2 closeout Stage 2: the snapshot dict carries provenance as
+        flat columns so it can go straight into the observation row, but every
+        *decision* about that provenance goes through this object. Callers must
+        never read ``snapshot['sporely_taxon_id']`` to decide whether a Sporely
+        ID may be asserted — ask :attr:`TaxonIdentity.is_proven_sporely`.
+        """
+        return TaxonIdentity.from_row(self._committed_snapshot)
+
+    # ------------------------------------------------------------------
+    # Display-only name resolution (taxonomy-v2 closeout Stage 2)
+    # ------------------------------------------------------------------
+    #
+    # Resolving typed genus/species text against the taxonomy artifact is
+    # useful for *showing* things — the Red List badge refreshes without the
+    # observer having to open the completer. It is NOT identity: the observer
+    # typed a name, they did not choose a concept, and Stage 2 forbids
+    # inferring identity from genus/species equality alone or rebinding from
+    # name text after a committed selection was edited.
+    #
+    # This channel is therefore deliberately separate from
+    # ``_committed_snapshot``. It is never read by the dialog's save path, so
+    # it cannot reach ``observations.sporely_taxon_id`` or the cloud RPC.
+
+    def set_display_only_name_match(self, sporely_taxon_id: object) -> bool:
+        """Record a name-resolved taxon id for display purposes only.
+
+        Refused while a real selection is committed: that selection is the
+        better information and must not be shadowed.
+        """
+        if self._committed_snapshot is not None:
+            return False
+        try:
+            candidate = int(sporely_taxon_id)
+        except (TypeError, ValueError):
+            return False
+        if candidate <= 0:
+            return False
+        self._display_only_name_match = candidate
+        return True
+
+    def display_only_name_match(self) -> int | None:
+        """The name-resolved taxon id for display, or ``None``.
+
+        Callers MUST NOT persist this value or forward it to the cloud. Use
+        :meth:`committed_identity` for anything identity-bearing.
+        """
+        return self._display_only_name_match
+
+    def clear_display_only_name_match(self) -> None:
+        self._display_only_name_match = None
+
     def load_committed_snapshot(self, snapshot: dict | None) -> None:
         """Programmatically restore a snapshot when loading an observation.
 
@@ -814,21 +883,70 @@ class TaxonInputController(QObject):
         does not fire invalidation. This method itself does not touch the
         widgets — the dialog owns their state.
         """
+        self._display_only_name_match = None
         if not snapshot:
             self._committed_snapshot = None
             return
         # Coerce into a plain dict with the exact keys the controller uses.
         canon = str(snapshot.get("canonical_scientific_name") or "").strip()
+        # Taxonomy-v2 closeout Stage 2: rebuild the identity through the typed
+        # object rather than copying the raw columns. A persisted row whose
+        # provenance is missing or inconsistent is normalised here (a legacy
+        # bare integer becomes legacy-unverified; a Sporely state with no
+        # proof falls back to whatever source evidence survived) instead of
+        # being trusted as-is on the strength of the integer alone.
+        identity = TaxonIdentity.from_row(snapshot)
         self._committed_snapshot = {
             "genus": str(snapshot.get("genus") or "").strip(),
             "species": str(snapshot.get("species") or "").strip(),
             "scientific_name": str(snapshot.get("scientific_name") or "").strip(),
             "taxon_rank_snapshot": snapshot.get("taxon_rank_snapshot"),
-            "sporely_taxon_id": snapshot.get("sporely_taxon_id"),
             "link_kind": snapshot.get("link_kind"),
             "canonical_scientific_name": canon,
             "canonical_rank": str(snapshot.get("canonical_rank") or "").strip() or None,
+            **_identity_snapshot_fields(identity),
         }
+
+    def commit_external_identity(
+        self,
+        identity: TaxonIdentity,
+        *,
+        genus: str = "",
+        species: str = "",
+    ) -> bool:
+        """Commit an unresolved external identity as the current selection.
+
+        The desktop counterpart of the web client's preserved-provider-ID
+        path: a namespaced external identifier the client holds but has not
+        resolved. The snapshot keeps ``(source_system, namespace,
+        external_id)`` and the verbatim provider string, and deliberately
+        carries no ``sporely_taxon_id`` — an unresolved identifier has no
+        Sporely identity no matter what its digits equal.
+
+        Refuses a proven-Sporely identity: that must go through the picker or
+        the manual-resolve path so the artifact proof is recorded at source.
+        """
+        if not isinstance(identity, TaxonIdentity) or identity.is_proven_sporely:
+            return False
+        if not identity.has_external_evidence:
+            return False
+        scientific_name = identity.scientific_name or ""
+        self._committed_snapshot = {
+            "genus": str(genus or "").strip(),
+            "species": str(species or "").strip(),
+            "scientific_name": scientific_name,
+            "taxon_rank_snapshot": identity.rank,
+            "link_kind": None,
+            "canonical_scientific_name": "",
+            "canonical_rank": None,
+            **_identity_snapshot_fields(identity),
+        }
+        if self._on_snapshot_committed is not None:
+            try:
+                self._on_snapshot_committed(dict(self._committed_snapshot))
+            except Exception:
+                pass
+        return True
 
     def _invalidate_snapshot(self, *, reason: str) -> None:
         """Clear the committed snapshot and blank the scientific-name input
@@ -845,6 +963,9 @@ class TaxonInputController(QObject):
         if self._committed_snapshot is None:
             return
         self._committed_snapshot = None
+        # A display-only name match belongs to the identity that just went
+        # away; leaving it would keep a stale Red List badge alive.
+        self._display_only_name_match = None
         # Clear the scientific-name field only when the invalidation came
         # from a genus/species divergence — the scientific-name field
         # itself already reflects what the user is typing. Leaving it as
@@ -862,6 +983,13 @@ class TaxonInputController(QObject):
     def _on_structured_text_changed(self, _text: str) -> None:
         if self._is_suspended():
             return
+        # Taxonomy-v2 closeout Stage 2: a display-only name match was derived
+        # from the text as it was, so ANY edit makes it stale. It must be
+        # cleared here, not only via `_invalidate_snapshot` — a display-only
+        # match lives precisely in the state where no snapshot exists, so the
+        # early return below would otherwise leave the previous taxon's
+        # evidence available to the deferred Red List resolve.
+        self._display_only_name_match = None
         if self._committed_snapshot is None:
             return
         current_genus = self._current_genus()
@@ -881,6 +1009,8 @@ class TaxonInputController(QObject):
         if self._committed_snapshot is not None \
                 and cleaned == self._committed_snapshot["scientific_name"]:
             return
+        # Same staleness rule as `_on_structured_text_changed`.
+        self._display_only_name_match = None
         # Every character divergence from the committed snapshot triggers
         # invalidation (rule 4 — no text-based rebinding). We do NOT try
         # to match against arbitrary DB rows here; only an explicit
@@ -924,81 +1054,20 @@ class TaxonInputController(QObject):
             return ""
         return " ".join(str(self.scientific_name_input.text() or "").strip().split())
 
-    def commit_manual_resolution(
-        self,
-        *,
-        sporely_taxon_id: int,
-        scientific_name: str,
-        taxon_rank_snapshot: str,
-        genus: str | None = None,
-        species: str | None = None,
-        link_kind: str = "canonical",
-        canonical_scientific_name: str | None = None,
-        canonical_rank: str | None = None,
-    ) -> bool:
-        """Programmatically commit a snapshot for an identity resolved
-        outside the completer picker (e.g. manual genus/species entry
-        that the lookup service pins to a single canonical concept).
-
-        Preserves the strict "identity binds only via explicit action"
-        contract — the caller is responsible for having verified the
-        resolution is unambiguous (see
-        :meth:`TaxonLookupService.resolve_manual_scientific`). Returns
-        ``True`` when a new snapshot was committed; ``False`` when the
-        controller already holds the same identity, when the arguments
-        are incomplete, or when the current text no longer matches the
-        supplied genus/species (guarding against races between the
-        editing_finished trigger and later user edits).
-        """
-        try:
-            sporely_id_int = int(sporely_taxon_id)
-        except (TypeError, ValueError):
-            return False
-        cleaned_sci = " ".join(str(scientific_name or "").strip().split())
-        cleaned_rank = str(taxon_rank_snapshot or "").strip()
-        if not cleaned_sci or not cleaned_rank:
-            return False
-        genus_text = self._clean_genus_text(genus if genus is not None else self._current_genus())
-        species_text = self._clean_species_text(species if species is not None else self._current_species())
-        if not genus_text or not species_text:
-            return False
-        # Guard against a race: the widgets must still hold the pair the
-        # caller resolved. If the user has kept typing, the queued
-        # editingFinished-driven resolution is stale and MUST NOT bind.
-        current_genus = self._current_genus()
-        current_species = self._current_species()
-        if current_genus.casefold() != genus_text.casefold() \
-                or current_species.casefold() != species_text.casefold():
-            return False
-        # No-op when the existing snapshot already pins this identity.
-        existing = self._committed_snapshot
-        if existing is not None \
-                and int(existing.get("sporely_taxon_id") or 0) == sporely_id_int \
-                and (existing.get("scientific_name") or "").strip() == cleaned_sci:
-            return False
-        self._committed_snapshot = {
-            "genus": genus_text,
-            "species": species_text,
-            "scientific_name": cleaned_sci,
-            "taxon_rank_snapshot": cleaned_rank,
-            "sporely_taxon_id": sporely_id_int,
-            "link_kind": link_kind or "canonical",
-            "canonical_scientific_name": str(canonical_scientific_name or "").strip(),
-            "canonical_rank": str(canonical_rank or "").strip() or None,
-        }
-        # Keep the scientific-name text widget in sync when it exists —
-        # mirrors the on_scientific_name_selected code path. Wrapped in
-        # suspension so this does not itself trigger invalidation.
-        if self.scientific_name_input is not None \
-                and self._current_scientific_text() != cleaned_sci:
-            with self._suspended():
-                self._set_text(self.scientific_name_input, cleaned_sci)
-        if self._on_snapshot_committed is not None:
-            try:
-                self._on_snapshot_committed(dict(self._committed_snapshot))
-            except Exception:
-                pass
-        return True
+    # `commit_manual_resolution` was REMOVED by taxonomy-v2 closeout Stage 2.
+    #
+    # It took a bare `sporely_taxon_id: int` produced by a genus/species NAME
+    # match and stamped `PROOF_TAXONOMY_V2_ARTIFACT` on it — the exact
+    # name-to-identity transition the stage forbids. The editing-finished
+    # handler stopped calling it, but leaving the callable boundary in place
+    # kept the forbidden transition one call away and several tests still
+    # encoded it.
+    #
+    # The only path that may bind identity is an explicit selection:
+    # `on_scientific_name_selected` for the picker, or
+    # `load_committed_snapshot` with an already-typed proven identity when
+    # restoring a saved row. Typed text may only reach
+    # `set_display_only_name_match`, which nothing persistent reads.
 
     def on_scientific_name_selected(self, index: QModelIndex) -> None:
         if self._is_suspended() or not index.isValid():
@@ -1025,15 +1094,25 @@ class TaxonInputController(QObject):
             self._set_text(self.genus_input, genus)
             self._set_text(self.species_input, species or "")
             self._set_text(self.scientific_name_input, scientific_name)
+        # The suggestion came out of the compiled taxonomy-v2 search pack,
+        # whose identity contract states its ``taxon_id`` IS the Sporely ID
+        # (build_sqlite_candidate.py: ``taxon_min.taxon_id`` =
+        # ``sporely_taxon_id``). That artifact is the proof; record it so
+        # nothing downstream has to assume it.
+        identity = TaxonIdentity.from_taxonomy_v2_artifact(
+            sporely_id,
+            scientific_name=scientific_name,
+            rank=rank_snapshot,
+        )
         self._committed_snapshot = {
             "genus": genus,
             "species": species or "",
             "scientific_name": scientific_name,
             "taxon_rank_snapshot": rank_snapshot,
-            "sporely_taxon_id": int(sporely_id),
             "link_kind": suggestion.get("link_kind"),
             "canonical_scientific_name": str(suggestion.get("canonical_scientific_name") or "").strip(),
             "canonical_rank": str(suggestion.get("canonical_rank") or "").strip() or None,
+            **_identity_snapshot_fields(identity),
         }
         if self._on_snapshot_committed is not None:
             try:

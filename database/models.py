@@ -29,6 +29,7 @@ from utils.publish_targets import (
     infer_publish_target_from_coords,
 )
 from database.reverse_location_lookup import normalize_country_code
+from utils.taxon_identity import STATE_NONE, STATE_SPORELY, TaxonIdentity
 
 _UNSET = object()
 
@@ -95,6 +96,104 @@ def _sanitize_scientific_name_snapshot(value):
     reject empty. ``_UNSET`` passes through untouched."""
     if value is _UNSET or value is None:
         return value
+    text = str(value).strip()
+    return text or None
+
+
+def coherent_identity_columns(
+    *,
+    sporely_taxon_id=_UNSET,
+    taxon_identity_state=_UNSET,
+    taxon_identity_proof=_UNSET,
+    taxon_identity_source_system=_UNSET,
+    taxon_identity_namespace=_UNSET,
+    taxon_identity_external_id=_UNSET,
+    taxon_identity_raw_external_id=_UNSET,
+    taxon_identity_provenance=_UNSET,
+):
+    """Resolve an identity write into ONE coherent set of columns, or ``None``.
+
+    Taxonomy-v2 closeout Stage 2. An observation's taxonomy identity is a
+    single typed value spread over seven columns, and treating those columns
+    as independently-writable fields produced incoherent rows:
+
+    * replacing a proven integer while supplying only ONE provenance field
+      (say ``taxon_identity_raw_external_id``) left the previous
+      ``sporely_v2`` state and ``taxonomy_v2_artifact`` proof in place, so the
+      replacement integer read back as proven — reproduced as
+      ``integer 99 / sporely_v2 / taxonomy_v2_artifact``;
+    * switching provenance to ``external_unresolved`` without naming the
+      integer left the old integer AND the old proof behind — reproduced as
+      ``integer 83668 / external_unresolved / taxonomy_v2_artifact``, a row
+      that contradicts itself.
+
+    So a write that touches ANY identity field rewrites ALL of them: the
+    supplied fields are the complete new identity and everything unsupplied is
+    NULL. Nothing is inherited from the previous row, because inheritance is
+    what made a partial write look proven.
+
+    The result is normalized through :class:`~utils.taxon_identity.TaxonIdentity`,
+    which is the same type every reader uses, so a write cannot produce a state
+    a reader would reject.
+
+    A bare positive integer with no provenance is REFUSED — the integer is
+    dropped. "Make it impossible for the desktop client to assign
+    ``sporely_taxon_id`` from an unqualified integer" is the stage's objective,
+    and storing it unverified would still be assigning it. Pre-existing legacy
+    rows are untouched by this: they are read as legacy-unverified, and
+    ``database/migrate_observations_sporely_id.py`` is what re-verifies them.
+
+    Returns ``None`` when no identity field was supplied, so an unrelated
+    update leaves the identity completely alone.
+    """
+    supplied = {
+        'sporely_taxon_id': sporely_taxon_id,
+        'taxon_identity_state': taxon_identity_state,
+        'taxon_identity_proof': taxon_identity_proof,
+        'taxon_identity_source_system': taxon_identity_source_system,
+        'taxon_identity_namespace': taxon_identity_namespace,
+        'taxon_identity_external_id': taxon_identity_external_id,
+        'taxon_identity_raw_external_id': taxon_identity_raw_external_id,
+        'taxon_identity_provenance': taxon_identity_provenance,
+    }
+    if all(value is _UNSET for value in supplied.values()):
+        return None
+
+    candidate = {
+        key: (None if value is _UNSET else value)
+        for key, value in supplied.items()
+    }
+    candidate['sporely_taxon_id'] = _sanitize_sporely_taxon_id(
+        candidate['sporely_taxon_id']
+    )
+    for key in tuple(candidate):
+        if key != 'sporely_taxon_id':
+            candidate[key] = _sanitize_identity_text(candidate[key])
+
+    identity = TaxonIdentity.from_row(candidate)
+    if identity.is_legacy_unverified:
+        # A bare integer arriving through this API is unqualified by
+        # definition — nothing accompanying it says where it came from.
+        return {key: None for key in supplied}
+    if identity.state == STATE_NONE:
+        # "No identity" is stored as NULL rather than the explicit
+        # `no_identity_evidence` token. Both read back as STATE_NONE, and NULL
+        # keeps the desktop columns consistent with `sporely-web`, whose CHECK
+        # constraint admits only NULL or the two identity-bearing states.
+        return {key: None for key in supplied}
+    return identity.to_row()
+
+
+def _sanitize_identity_text(value):
+    """Coerce a taxonomy-identity provenance column into ``None`` or text.
+
+    ``_UNSET`` passes through untouched. Values are stored verbatim apart
+    from whitespace trimming: the raw provider identifier in particular must
+    survive unchanged (``NBIC:53482``), so nothing here strips prefixes or
+    reinterprets digits.
+    """
+    if value is _UNSET or value is None:
+        return value if value is _UNSET else None
     text = str(value).strip()
     return text or None
 
@@ -1239,15 +1338,44 @@ class ObservationDB:
                           region_id: str | None = None,
                           scientific_name_snapshot: str | None = None,
                           taxon_rank_snapshot: str | None = None,
-                          sporely_taxon_id: int | None = None) -> int:
+                          sporely_taxon_id: int | None = None,
+                          taxon_identity_state: str | None = None,
+                          taxon_identity_proof: str | None = None,
+                          taxon_identity_source_system: str | None = None,
+                          taxon_identity_namespace: str | None = None,
+                          taxon_identity_external_id: str | None = None,
+                          taxon_identity_raw_external_id: str | None = None,
+                          taxon_identity_provenance: str | None = None) -> int:
         """Create a new observation and return its ID"""
         conn = get_connection()
         cursor = conn.cursor()
         # Stage 3B.3: whitelist the rank_snapshot at write time.
         taxon_rank_snapshot = _sanitize_taxon_rank_snapshot(taxon_rank_snapshot)
         scientific_name_snapshot = _sanitize_scientific_name_snapshot(scientific_name_snapshot)
-        # Stage 3B.5: sanitize the taxonomy v2 identity column at write time.
-        sporely_taxon_id = _sanitize_sporely_taxon_id(sporely_taxon_id)
+        # Taxonomy-v2 closeout Stage 2: resolve the identity as ONE coherent
+        # value, exactly as `update_observation` does. A bare positive integer
+        # with no provenance is refused rather than stored: the stage's
+        # objective is that an unqualified integer cannot become
+        # `sporely_taxon_id`, and storing it unverified would still be
+        # assigning it.
+        _identity = coherent_identity_columns(
+            sporely_taxon_id=sporely_taxon_id,
+            taxon_identity_state=taxon_identity_state,
+            taxon_identity_proof=taxon_identity_proof,
+            taxon_identity_source_system=taxon_identity_source_system,
+            taxon_identity_namespace=taxon_identity_namespace,
+            taxon_identity_external_id=taxon_identity_external_id,
+            taxon_identity_raw_external_id=taxon_identity_raw_external_id,
+            taxon_identity_provenance=taxon_identity_provenance,
+        ) or {}
+        sporely_taxon_id = _identity.get('sporely_taxon_id')
+        taxon_identity_state = _identity.get('taxon_identity_state')
+        taxon_identity_proof = _identity.get('taxon_identity_proof')
+        taxon_identity_source_system = _identity.get('taxon_identity_source_system')
+        taxon_identity_namespace = _identity.get('taxon_identity_namespace')
+        taxon_identity_external_id = _identity.get('taxon_identity_external_id')
+        taxon_identity_raw_external_id = _identity.get('taxon_identity_raw_external_id')
+        taxon_identity_provenance = _identity.get('taxon_identity_provenance')
 
         # Build species_guess from genus/species if not provided
         if not species_guess and (genus or species):
@@ -1302,8 +1430,12 @@ class ObservationDB:
                                      ai_selected_service, ai_selected_taxon_id, ai_selected_scientific_name,
                                      ai_selected_probability, ai_selected_at,
                                      country_code, region_id,
-                                     scientific_name_snapshot, taxon_rank_snapshot, sporely_taxon_id)
-            VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+                                     scientific_name_snapshot, taxon_rank_snapshot, sporely_taxon_id,
+                                     taxon_identity_state, taxon_identity_proof,
+                                     taxon_identity_source_system, taxon_identity_namespace,
+                                     taxon_identity_external_id, taxon_identity_raw_external_id,
+                                     taxon_identity_provenance)
+            VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
         ''', (date, genus, species, common_name, location, habitat, artsdata_id,
               artportalen_id, resolved_publish_target, species_guess, notes, 1 if uncertain else 0, 1 if unspontaneous else 0,
               1 if resolved_is_draft else 0, resolved_sharing_scope, 1 if resolved_location_public else 0,
@@ -1320,7 +1452,14 @@ class ObservationDB:
               ai_selected_service, ai_selected_taxon_id, ai_selected_scientific_name,
               ai_selected_probability, ai_selected_at,
               resolved_country_code, resolved_region_id,
-              scientific_name_snapshot, taxon_rank_snapshot, sporely_taxon_id))
+              scientific_name_snapshot, taxon_rank_snapshot, sporely_taxon_id,
+              _sanitize_identity_text(taxon_identity_state),
+              _sanitize_identity_text(taxon_identity_proof),
+              _sanitize_identity_text(taxon_identity_source_system),
+              _sanitize_identity_text(taxon_identity_namespace),
+              _sanitize_identity_text(taxon_identity_external_id),
+              _sanitize_identity_text(taxon_identity_raw_external_id),
+              _sanitize_identity_text(taxon_identity_provenance)))
 
         obs_id = cursor.lastrowid
         conn.commit()
@@ -1365,7 +1504,14 @@ class ObservationDB:
                            region_id: str | None | object = _UNSET,
                            scientific_name_snapshot: str | None | object = _UNSET,
                            taxon_rank_snapshot: str | None | object = _UNSET,
-                           sporely_taxon_id: int | None | object = _UNSET) -> Optional[str]:
+                           sporely_taxon_id: int | None | object = _UNSET,
+                           taxon_identity_state: str | None | object = _UNSET,
+                           taxon_identity_proof: str | None | object = _UNSET,
+                           taxon_identity_source_system: str | None | object = _UNSET,
+                           taxon_identity_namespace: str | None | object = _UNSET,
+                           taxon_identity_external_id: str | None | object = _UNSET,
+                           taxon_identity_raw_external_id: str | None | object = _UNSET,
+                           taxon_identity_provenance: str | None | object = _UNSET) -> Optional[str]:
         """Update an observation. Returns new folder path if genus/species changed."""
         conn = get_connection()
         conn.row_factory = sqlite3.Row
@@ -1577,12 +1723,26 @@ class ObservationDB:
                 updates.append('taxon_rank_snapshot = ?')
                 values.append(_sanitize_taxon_rank_snapshot(taxon_rank_snapshot))
 
-            # Stage 3B.5: persist the taxonomy-v2 identity alongside snapshots.
-            if sporely_taxon_id is not _UNSET and (
-                allow_nulls or sporely_taxon_id is not None
-            ):
-                updates.append('sporely_taxon_id = ?')
-                values.append(_sanitize_sporely_taxon_id(sporely_taxon_id))
+            # Taxonomy-v2 closeout Stage 2: the identity is ONE value.
+            # `coherent_identity_columns` rewrites all seven columns together
+            # whenever any of them is touched, so a partial write cannot leave
+            # a replacement integer wearing the previous row's proof, and a
+            # provenance-only write cannot strand the previous integer.
+            _identity = coherent_identity_columns(
+                sporely_taxon_id=sporely_taxon_id,
+                taxon_identity_state=taxon_identity_state,
+                taxon_identity_proof=taxon_identity_proof,
+                taxon_identity_source_system=taxon_identity_source_system,
+                taxon_identity_namespace=taxon_identity_namespace,
+                taxon_identity_external_id=taxon_identity_external_id,
+                taxon_identity_raw_external_id=taxon_identity_raw_external_id,
+                taxon_identity_provenance=taxon_identity_provenance,
+            )
+            if _identity is not None:
+                for _column, _value in _identity.items():
+                    updates.append(f'{_column} = ?')
+                    values.append(_value)
+
             if new_folder_path:
                 updates.append('folder_path = ?')
                 values.append(new_folder_path)
@@ -1626,8 +1786,24 @@ class ObservationDB:
         ``ai_state_json`` is intentionally not cleared: it contains the raw AI
         candidates that may still be useful after an incorrect selection is
         removed.
+
+        Taxonomy-v2 closeout Stage 2 also clears the identity and its
+        provenance. An explicit "unidentified" is a decision by the observer,
+        not a failure to resolve, so leaving a preserved external identifier
+        behind would leave the row claiming an identity question that the
+        observer has just answered.
         """
         identification_fields = {
+            'sporely_taxon_id': None,
+            'scientific_name_snapshot': None,
+            'taxon_rank_snapshot': None,
+            'taxon_identity_state': None,
+            'taxon_identity_proof': None,
+            'taxon_identity_source_system': None,
+            'taxon_identity_namespace': None,
+            'taxon_identity_external_id': None,
+            'taxon_identity_raw_external_id': None,
+            'taxon_identity_provenance': None,
             'genus': None,
             'species': None,
             'common_name': None,

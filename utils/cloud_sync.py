@@ -81,6 +81,10 @@ from utils.original_sync_policy import (
 )
 from utils.publish_targets import normalize_publish_target
 from utils.taxon_text import resolve_observation_taxon_fields
+from utils.taxon_identity import (
+    IDENTITY_COLUMNS as _TAXON_IDENTITY_COLUMNS,
+    TaxonIdentity,
+)
 from utils.r2_storage import (
     CloudflareR2Client,
     CloudflareMediaWorkerClient,
@@ -243,8 +247,15 @@ _OBS_PUSH_COLS = [
 # Stage 3B.2/3B.3: local-only taxonomy-v2 fields — not pushed to Supabase
 # until a separate cloud-schema migration is authored. Regression test
 # `tests/test_stage_3b_3_cloud_isolation.py` asserts these stay out.
+#
+# Taxonomy-v2 closeout Stage 2 adds the identity-provenance columns to the
+# same set. The cloud learns a desktop identity only through the guarded
+# ``set_observation_selected_taxon_v2`` RPC, and that RPC accepts a proven
+# Sporely ID only — so pushing provenance columns as ordinary observation
+# fields would create a second, ungated identity channel.
 _STAGE_3B_LOCAL_ONLY_OBS_FIELDS = frozenset(
     {"sporely_taxon_id", "scientific_name_snapshot", "taxon_rank_snapshot"}
+    | set(_TAXON_IDENTITY_COLUMNS)
 )
 assert not (set(_OBS_PUSH_COLS) & _STAGE_3B_LOCAL_ONLY_OBS_FIELDS), (
     "Stage 3B taxonomy fields must never appear in _OBS_PUSH_COLS. "
@@ -1701,6 +1712,7 @@ _CONFLICT_FIELD_LABELS = {
     'is_draft': 'Draft state',
     'location_precision': 'Location precision',
     'spore_statistics': 'Spore statistics',
+    'taxon_identity': 'Taxon identity',
 }
 
 ProgressCallback = Callable[[str, int, int], None]
@@ -3568,6 +3580,13 @@ def _observation_compare_payload(record: dict | None, *, local: bool) -> dict:
     derived_guess = f'{genus} {species}'.strip() if genus and species else ''
     if species_guess and derived_guess and species_guess == derived_guess:
         payload['species_guess'] = None
+    # The virtual identity field (never pushed as a column): what each side
+    # holds, in one vocabulary. A remote row without identity columns has none.
+    if local:
+        payload[TAXON_IDENTITY_SYNC_FIELD] = _local_identity_sync_key(row)
+    else:
+        claim = _remote_identity_claim(row)
+        payload[TAXON_IDENTITY_SYNC_FIELD] = claim.key if claim is not None else None
     return payload
 
 
@@ -3588,6 +3607,10 @@ def _baseline_observation_compare_payload(record: dict | None) -> dict:
     derived_guess = f'{genus} {species}'.strip() if genus and species else ''
     if species_guess and derived_guess and species_guess == derived_guess:
         payload['species_guess'] = None
+    # Preserve whether the snapshot recorded an identity at all: a snapshot
+    # from before identity joined change detection must stay "unknown".
+    if TAXON_IDENTITY_SYNC_FIELD in row:
+        payload[TAXON_IDENTITY_SYNC_FIELD] = str(row.get(TAXON_IDENTITY_SYNC_FIELD) or '')
     return payload
 
 
@@ -4062,6 +4085,7 @@ def _format_observation_metadata_field_label(field: str) -> str:
         'spore_data_visibility': 'spore visibility',
         'visibility': 'visibility',
         'sharing_scope': 'sharing scope',
+        'taxon_identity': 'taxon identity',
     }
     normalized = str(field or '').strip()
     return labels.get(normalized, normalized.replace('_', ' '))
@@ -4093,6 +4117,21 @@ def _analyze_observation_field_changes(local_obs: dict | None, remote_obs: dict 
             local_only_fields.append(field)
         elif remote_changed:
             remote_only_fields.append(field)
+
+    identity_change = _classify_identity_sync_change(
+        local_obs, remote_obs, baseline_obs,
+        identification_locally_owned=bool(
+            {'genus', 'species'} & (set(local_only_fields) | set(conflict_fields))
+        ),
+    )
+    if identity_change == 'remote_only':
+        remote_only_fields.append(TAXON_IDENTITY_SYNC_FIELD)
+    elif identity_change == 'local_only':
+        local_only_fields.append(TAXON_IDENTITY_SYNC_FIELD)
+    elif identity_change == 'conflict':
+        conflict_fields.append(TAXON_IDENTITY_SYNC_FIELD)
+    elif identity_change == 'shared':
+        shared_same_fields.append(TAXON_IDENTITY_SYNC_FIELD)
 
     return {
         'local_payload': local_payload,
@@ -4422,6 +4461,15 @@ def _local_has_real_changes_since_snapshot(local_obs: dict, cloud_id: str | None
         if field in {'id', 'desktop_id'}:
             continue
         if not _observation_field_values_match(field, local_payload.get(field), baseline_obs.get(field)):
+            return True
+    # A proven identity is the one local identity push can assert (through
+    # the RPC); if the baseline does not record it, it still has to go out.
+    if TaxonIdentity.from_row(local_obs).is_proven_sporely:
+        baseline_identity = _baseline_identity_key(baseline_obs)
+        if (
+            baseline_identity is _IDENTITY_BASELINE_UNKNOWN
+            or baseline_identity != local_payload.get(TAXON_IDENTITY_SYNC_FIELD)
+        ):
             return True
 
     local_id = _safe_int(local_obs.get('id'))
@@ -5260,6 +5308,9 @@ def _cloud_observation_snapshot(
         field: _normalize_snapshot_value((remote or {}).get(field))
         for field in _SNAPSHOT_OBS_FIELDS
     }
+    identity_claim = _remote_identity_claim(remote)
+    if identity_claim is not None:
+        obs_part[TAXON_IDENTITY_SYNC_FIELD] = identity_claim.key
     payload: dict = {
         'schema_version': _CLOUD_OBSERVATION_SNAPSHOT_SCHEMA_VERSION,
         'observation': obs_part,
@@ -6144,9 +6195,12 @@ def _push_pending_image_tombstones(client: "SporelyCloudClient") -> list[str]:
         if not cloud_image_id:
             continue
         local_image_id = _safe_int(tombstone.get('local_image_id'))
-        if (
-            local_image_id > 0
-            and microscope_image_requires_public_spore_anchor(local_image_id)
+        if local_image_id > 0 and (
+            microscope_image_requires_public_spore_anchor(local_image_id)
+            or (
+                microscope_image_requires_owner_sync_anchor(local_image_id)
+                and _owner_sync_parents_supported(client)
+            )
         ):
             try:
                 ImageDB.clear_image_tombstone_by_deleted_cloud_id(cloud_image_id)
@@ -9134,6 +9188,73 @@ def microscope_image_requires_public_spore_anchor(image_id: int | None) -> bool:
         conn.close()
 
 
+def microscope_image_requires_owner_sync_anchor(image_id: int | None) -> bool:
+    """Whether one local microscope image must have a cloud parent for its
+    owner's own measurements to sync between the owner's devices.
+
+    Deliberately independent of `microscope_image_requires_public_spore_anchor`:
+    it ignores observation visibility and measurement type, because
+    cross-device sync of the owner's data is not publication. It mirrors the
+    measurement pusher's own eligibility — every measurement row on a
+    microscope image with a cloud parent is pushed — so no measurement is
+    left without a parent. Whether such a parent may ever be public is decided
+    by the server (`metadata_purpose` + verified public child data), never by
+    this predicate.
+    """
+    local_image_id = _safe_int(image_id)
+    if local_image_id <= 0:
+        return False
+    conn = get_connection()
+    try:
+        row = conn.execute(
+            """
+            SELECT i.image_type,
+                   EXISTS (SELECT 1 FROM spore_measurements m WHERE m.image_id = i.id)
+            FROM images i
+            WHERE i.id = ?
+            """,
+            (local_image_id,),
+        ).fetchone()
+    except sqlite3.OperationalError:
+        row = None
+    finally:
+        conn.close()
+    return bool(row) and str(row[0] or '') == 'microscope' and bool(row[1])
+
+
+def _owner_sync_parents_supported(client) -> bool:
+    """True only when the server confirms the owner-sync parent capability.
+
+    Fails closed: a client without the probe, or any probe failure, means no
+    owner-sync parent is created, so an older server can never receive a
+    metadata-only row its public RPCs would expose.
+    """
+    probe = getattr(client, '_observation_images_support_metadata_purpose', None)
+    if not callable(probe):
+        return False
+    try:
+        return bool(probe())
+    except Exception:
+        return False
+
+
+def _remote_metadata_purpose(client, remote_row: dict) -> str | None:
+    """A parent's stored purpose: from the row if read, else a targeted read."""
+    if 'metadata_purpose' in remote_row:
+        return str(remote_row.get('metadata_purpose') or '') or None
+    fetch = getattr(client, 'fetch_image_metadata_purpose', None)
+    cloud_image_id = str(remote_row.get('id') or '').strip()
+    if not callable(fetch) or not cloud_image_id:
+        return None
+    purpose = fetch(cloud_image_id)
+    remote_row['metadata_purpose'] = purpose
+    return purpose
+
+
+METADATA_PURPOSE_OWNER_SYNC = 'owner_sync'
+METADATA_PURPOSE_PUBLIC_MICROSCOPY = 'public_microscopy'
+
+
 def measurement_qualifies_for_public_spore_anchor(measurement: dict | None) -> bool:
     """Pure eligibility predicate shared by sync and read-only incident audit."""
     row = dict(measurement or {})
@@ -9695,6 +9816,8 @@ def _remote_snapshot_has_meaningful_changes(
             continue
         if not _observation_field_values_match(field, remote_payload.get(field), baseline_obs.get(field)):
             return True
+    if _remote_identity_changed_since(remote, baseline_obs):
+        return True
     baseline_images = [dict(row or {}) for row in (snapshot.get('images') or [])]
     remote_image_payloads = [_remote_image_payload(img) for img in (remote_images or [])]
     remote_image_changes = _analyze_image_changes(remote_image_payloads, baseline_images)
@@ -9888,6 +10011,17 @@ _MERGE_PROTECTED_AI_FIELDS = (
 )
 
 
+_RED_LIST_FIELDS = frozenset({'red_list_category', 'red_list_categories_json'})
+
+
+def _identification_key(row: dict) -> tuple[str, str]:
+    """Case/whitespace-insensitive (genus, species) of an observation row."""
+    return tuple(
+        ' '.join(str(row.get(field) or '').split()).casefold()
+        for field in ('genus', 'species')
+    )
+
+
 def _merge_cloud_selected_ai_fields(local_obs: dict | None, remote_obs: dict | None) -> dict:
     """Preserve cloud-side selected AI values for an existing identification.
 
@@ -9915,11 +10049,25 @@ def _merge_cloud_selected_ai_fields(local_obs: dict | None, remote_obs: dict | N
             for field in identification_fields
         )
     )
+    # A cloud Red List is an assessment of the cloud's identification. After a
+    # desktop re-identification the dialog clears the Red List, so a local
+    # NULL means "the new taxon has no stored assessment" — filling it from
+    # the cloud would copy the previous taxon's category onto the new one
+    # (taxonomy-v2 closeout, observation 917). Skip the gap-fill only when
+    # both sides carry genus/species and they differ; a partial row without
+    # them is no evidence of a different taxon and keeps the original
+    # gap-filling behaviour.
+    red_list_describes_other_taxon = (
+        all(field in row for row in (merged, remote) for field in ('genus', 'species'))
+        and _identification_key(merged) != _identification_key(remote)
+    )
     for field in _MERGE_PROTECTED_AI_FIELDS:
         # An empty local identification is an explicit tombstone when the row
         # is pushed. Preserve raw observation_identifications separately, but
         # do not resurrect the previously selected AI taxon or red-list data.
         if identification_is_empty:
+            continue
+        if field in _RED_LIST_FIELDS and red_list_describes_other_taxon:
             continue
         local_value = merged.get(field)
         if local_value not in (None, ''):
@@ -10365,24 +10513,409 @@ def build_cloud_ai_state_from_observation_identifications(
     return state
 
 
+# ── Cloud → desktop taxonomy identity ────────────────────────────────────────
+#
+# The cloud describes an observation's identity with `selected_sporely_taxon_id`
+# (writable only through the guarded RPCs) plus, once the provenance migration
+# is deployed, `taxon_identity_state` and the preserved external tuple. A
+# desktop never trusts that as proof: a Sporely ID is kept only when the
+# installed artifact contains the concept, and then only as
+# `cloud_selected_unverified` (see utils/taxon_identity.py). Contract:
+# docs/supabase-sync-contract.md §28.
+
+#: The virtual observation field under which the taxonomy identity takes part
+#: in snapshots, change detection, conflict reporting and field resolution. It
+#: is never a cloud column and never pushed: the guarded RPC stays the only
+#: desktop → cloud identity channel.
+TAXON_IDENTITY_SYNC_FIELD = 'taxon_identity'
+
+#: Cloud identity-provenance columns (sporely-web migration 20260922120000).
+#: Selected only when the server has them — see
+#: `SporelyCloudClient._observation_select_columns`.
+_OBSERVATION_IDENTITY_SELECT_COLUMNS = (
+    'taxon_identity_state',
+    'taxon_identity_source_system',
+    'taxon_identity_namespace',
+    'taxon_identity_external_id',
+    'taxon_identity_raw_external_id',
+)
+
+
+#: PostgREST's "column observations.taxon_identity_state does not exist" (42703)
+#: and "Could not find the 'taxon_identity_state' column" (PGRST204).
+_MISSING_IDENTITY_COLUMN_PATTERN = re.compile(
+    r"column \S*taxon_identity_\w+ does not exist"
+    r"|could not find the '?taxon_identity_\w+'? column"
+)
+
+
+@dataclass(frozen=True)
+class _RemoteIdentityClaim:
+    """What one cloud observation row says about its taxonomy identity."""
+
+    kind: str  # 'none' | 'sporely' | 'external'
+    sporely_taxon_id: int | None = None
+    cloud_state: str | None = None
+    source_system: str | None = None
+    namespace: str | None = None
+    external_id: str | None = None
+    raw_external_id: str | None = None
+
+    @property
+    def key(self) -> str:
+        return _identity_sync_key(
+            self.kind, self.sporely_taxon_id,
+            self.source_system, self.namespace, self.external_id,
+        )
+
+
+def _identity_sync_key(kind, sporely_taxon_id, source_system, namespace, external_id) -> str:
+    """Canonical comparison value shared by local, remote and baseline sides."""
+    if kind == 'sporely' and sporely_taxon_id:
+        return f'sporely:{int(sporely_taxon_id)}'
+    if kind == 'external' and source_system and namespace and external_id:
+        return f'external:{source_system}:{namespace}:{external_id}'
+    return ''
+
+
+def _remote_identity_claim(remote: dict | None) -> _RemoteIdentityClaim | None:
+    """Read the cloud row's identity, or ``None`` when it carries none at all.
+
+    ``None`` means the row did not include the identity columns (an older
+    server, or a partial row) — which is "no information", distinct from a
+    row that explicitly has no identity. Callers leave local identity alone.
+    """
+    row = dict(remote or {})
+    if 'selected_sporely_taxon_id' not in row and 'taxon_identity_state' not in row:
+        return None
+    state = str(row.get('taxon_identity_state') or '').strip() or None
+    selected = _normalize_observation_int_value(row.get('selected_sporely_taxon_id'))
+    if selected is not None and selected > 0:
+        return _RemoteIdentityClaim(kind='sporely', sporely_taxon_id=selected, cloud_state=state)
+    tuple_values = tuple(
+        str(row.get(column) or '').strip() or None
+        for column in (
+            'taxon_identity_source_system',
+            'taxon_identity_namespace',
+            'taxon_identity_external_id',
+            'taxon_identity_raw_external_id',
+        )
+    )
+    if state == 'external_unresolved' and all(tuple_values[:3]):
+        return _RemoteIdentityClaim(
+            kind='external', cloud_state=state,
+            source_system=tuple_values[0], namespace=tuple_values[1],
+            external_id=tuple_values[2], raw_external_id=tuple_values[3],
+        )
+    return _RemoteIdentityClaim(kind='none', cloud_state=state)
+
+
+def _withhold_identity_from_push(push_payload: dict) -> None:
+    """Make this push carry no identity, so the RPC gate skips it (never clears)."""
+    push_payload['sporely_taxon_id'] = None
+    for column in _TAXON_IDENTITY_COLUMNS:
+        push_payload[column] = None
+
+
+def _remote_row_without_identity(remote: dict | None) -> dict:
+    """The cloud row minus its identity columns ("no identity information")."""
+    return {
+        key: value
+        for key, value in dict(remote or {}).items()
+        if key != 'selected_sporely_taxon_id' and key not in _OBSERVATION_IDENTITY_SELECT_COLUMNS
+    }
+
+
+def _local_identity_sync_key(local_obs: dict | None) -> str:
+    """The local row's identity in the same vocabulary as `_RemoteIdentityClaim.key`.
+
+    A Sporely-namespace external identity (a cloud ID the local artifact could
+    not confirm) compares as the Sporely ID it preserves, so holding it is not
+    a perpetual difference from the cloud. A legacy-unverified integer never
+    equals a cloud value: nothing records what it is.
+    """
+    identity = TaxonIdentity.from_row(local_obs)
+    if identity.is_proven_sporely or identity.is_cloud_selected_unverified:
+        return _identity_sync_key('sporely', identity.sporely_taxon_id, None, None, None)
+    if identity.is_legacy_unverified:
+        return f'legacy:{identity.sporely_taxon_id}'
+    if identity.state == 'external_unresolved' and identity.has_external_evidence:
+        if (identity.source_system, identity.namespace) == ('sporely', 'sporely_taxon_id'):
+            sporely_id = _normalize_observation_int_value(identity.external_id)
+            return _identity_sync_key('sporely', sporely_id, None, None, None)
+        return _identity_sync_key(
+            'external', None,
+            identity.source_system, identity.namespace, identity.external_id,
+        )
+    return ''
+
+
+#: Returned by `_baseline_identity_key` for a snapshot stored before identity
+#: joined change detection. Nothing records what the cloud identity was then.
+_IDENTITY_BASELINE_UNKNOWN = object()
+
+
+def _baseline_identity_key(baseline_obs: dict | None):
+    row = dict(baseline_obs or {})
+    if TAXON_IDENTITY_SYNC_FIELD not in row:
+        return _IDENTITY_BASELINE_UNKNOWN
+    return str(row.get(TAXON_IDENTITY_SYNC_FIELD) or '')
+
+
+def _remote_identity_changed_since(remote: dict | None, baseline_obs: dict | None) -> bool:
+    """Whether the cloud identity differs from the stored sync baseline.
+
+    With an unknown baseline, any cloud identity counts as a change worth
+    reconciling once; after that the snapshot records it.
+    """
+    claim = _remote_identity_claim(remote)
+    if claim is None:
+        return False
+    baseline = _baseline_identity_key(baseline_obs)
+    if baseline is _IDENTITY_BASELINE_UNKNOWN:
+        return claim.key != ''
+    return claim.key != baseline
+
+
+def _local_identity_is_claim(local_obs: dict | None) -> bool:
+    """A local identity that is the desktop's own evidence, not cloud-derived.
+
+    Proven Sporely identities and preserved non-Sporely external identifiers
+    are claims; legacy integers, cloud-selected tokens, unconfirmable cloud
+    Sporely IDs, manual text and no identity are not.
+    """
+    identity = TaxonIdentity.from_row(local_obs)
+    if identity.is_proven_sporely:
+        return True
+    return (
+        identity.state == 'external_unresolved'
+        and identity.has_external_evidence
+        and (identity.source_system, identity.namespace) != ('sporely', 'sporely_taxon_id')
+    )
+
+
+def _classify_identity_sync_change(
+    local_obs: dict | None,
+    remote_obs: dict | None,
+    baseline_obs: dict | None,
+    *,
+    identification_locally_owned: bool,
+) -> str | None:
+    """Three-way classification of the taxonomy identity for one observation.
+
+    Returns ``'remote_only'`` (adopt the cloud identity), ``'local_only'``
+    (push it — only a proven identity, the one kind the RPC gate accepts),
+    ``'conflict'`` (fail closed: review required, nothing applied),
+    ``'shared'`` (both sides moved to the same identity) or ``None``.
+
+    ``identification_locally_owned`` is True when genus/species changed
+    locally or conflict: identity follows the identification it names, so a
+    remote identity change against a locally edited identification is a
+    conflict, never a silent adoption.
+
+    See docs/supabase-sync-contract.md "Identity in change detection".
+    """
+    claim = _remote_identity_claim(remote_obs)
+    if claim is None:
+        return None
+    remote_key = claim.key
+    local_key = _local_identity_sync_key(local_obs)
+    baseline = _baseline_identity_key(baseline_obs)
+    if local_key == remote_key:
+        if baseline is not _IDENTITY_BASELINE_UNKNOWN and baseline != remote_key:
+            return 'shared'
+        return None
+    local_is_claim = _local_identity_is_claim(local_obs)
+    local_is_proven = TaxonIdentity.from_row(local_obs).is_proven_sporely
+    if baseline is _IDENTITY_BASELINE_UNKNOWN:
+        # Nothing says who changed. Two different claims disagree: fail
+        # closed. A proven local identity with nothing in the cloud is the
+        # desktop's own pick awaiting the RPC. A non-claim local takes the
+        # cloud identity unless the identification itself is being edited
+        # locally.
+        if local_is_claim:
+            if remote_key:
+                return 'conflict'
+            return 'local_only' if local_is_proven else None
+        if not remote_key or identification_locally_owned:
+            return None
+        return 'remote_only'
+    remote_changed = remote_key != baseline
+    local_changed = local_is_claim and local_key != baseline
+    if remote_changed and (local_changed or identification_locally_owned):
+        return 'conflict'
+    if remote_changed:
+        return 'remote_only'
+    if local_changed and local_is_proven:
+        return 'local_only'
+    return None
+
+
+def _installed_taxon_concept(sporely_taxon_id: int):
+    """The installed taxonomy-v2 artifact's record for one Sporely ID, or None."""
+    try:
+        from database.taxon_lookup import installed_taxon_concept
+        from utils.vernacular_utils import resolve_vernacular_db_path
+        return installed_taxon_concept(resolve_vernacular_db_path(), sporely_taxon_id)
+    except Exception:
+        return None
+
+
+def _remote_name_snapshot(remote: dict) -> tuple[str | None, str | None]:
+    genus = str(remote.get('genus') or '').strip()
+    species = str(remote.get('species') or '').strip()
+    name = ' '.join(part for part in (genus, species) if part) or None
+    rank = 'species' if genus and species else ('genus' if genus else None)
+    return name, rank
+
+
+def _local_identity_columns_for_remote_claim(
+    claim: _RemoteIdentityClaim,
+    remote: dict,
+) -> dict:
+    """The complete local identity (+ name/rank snapshot) a claim maps to.
+
+    * ``sporely`` present in the installed artifact → ``cloud_selected_unverified``
+      with the artifact's canonical name and rank;
+    * ``sporely`` absent locally → preserved as an unresolved Sporely-namespace
+      external identity, never a bound integer;
+    * ``external`` → the cloud's preserved tuple as ``external_unresolved``;
+    * ``none`` → no identity.
+    """
+    remote_name, remote_rank = _remote_name_snapshot(dict(remote or {}))
+    if claim.kind == 'sporely':
+        concept = _installed_taxon_concept(int(claim.sporely_taxon_id))
+        if concept is not None:
+            identity = TaxonIdentity.from_cloud_selection(
+                claim.sporely_taxon_id,
+                local_release_id=concept.release_id,
+                scientific_name=concept.scientific_name,
+                rank=concept.rank,
+                cloud_state=claim.cloud_state,
+            )
+            name, rank = concept.scientific_name or remote_name, concept.rank or remote_rank
+        else:
+            identity = TaxonIdentity.unresolved_external(
+                source_system='sporely',
+                namespace='sporely_taxon_id',
+                external_id=str(claim.sporely_taxon_id),
+                scientific_name=remote_name,
+                rank=remote_rank,
+                provenance=(
+                    'cloud:observations.selected_sporely_taxon_id; '
+                    f"cloud_state={claim.cloud_state or 'null'}; "
+                    'absent_from_local_release'
+                ),
+            )
+            name, rank = remote_name, remote_rank
+    elif claim.kind == 'external':
+        identity = TaxonIdentity.unresolved_external(
+            source_system=claim.source_system,
+            namespace=claim.namespace,
+            external_id=claim.external_id,
+            raw_external_id=claim.raw_external_id,
+            scientific_name=remote_name,
+            rank=remote_rank,
+            provenance='cloud:observations.taxon_identity_*',
+        )
+        name, rank = remote_name, remote_rank
+    else:
+        identity = TaxonIdentity.none()
+        name, rank = None, None
+    return {
+        **identity.to_row(),
+        'scientific_name_snapshot': name if identity.state != 'no_identity_evidence' else None,
+        'taxon_rank_snapshot': rank if identity.state != 'no_identity_evidence' else None,
+    }
+
+
+IDENTITY_APPLY_APPLIED = 'applied'
+IDENTITY_APPLY_UNCHANGED = 'unchanged'
+IDENTITY_APPLY_CONFLICT = 'conflict'
+
+
+def _apply_remote_identity_to_local(
+    local_id: int,
+    remote: dict,
+    *,
+    local_before: dict | None = None,
+    fail_closed_on_local_claim: bool = False,
+    absence_is_evidence: bool = False,
+) -> str:
+    """Write the cloud row's identity onto a local observation.
+
+    Returns ``'unchanged'`` without writing when the row carries no identity
+    information or nothing would change, ``'applied'`` after a write, and
+    ``'conflict'`` without writing when ``fail_closed_on_local_claim`` is set
+    and the local row holds its own claim (a proven identity or a preserved
+    non-Sporely tuple) that differs from a non-empty cloud identity. Automatic
+    applies with no sync baseline pass it: nothing says which side changed,
+    so a disagreement is a review, never an overwrite. ``local_before`` is the
+    local row as it was before this pull applied any other field. Uses the
+    persistence API's one-coherent-transition write.
+
+    ``absence_is_evidence`` is set when three-way reconciliation established
+    that the cloud CLEARED its identity since the baseline; otherwise a cloud
+    row without identity clears local identity only when genus/species changed.
+    """
+    claim = _remote_identity_claim(remote)
+    if claim is None:
+        return IDENTITY_APPLY_UNCHANGED
+    # The local row already holds this identity. Rewriting it would replace a
+    # stronger local proof (a picker-proven 83668) with the weaker
+    # cloud-derived one for the very same concept.
+    local_row = dict(local_before or ObservationDB.get_observation(int(local_id)) or {})
+    if _local_identity_sync_key(local_row) == claim.key:
+        return IDENTITY_APPLY_UNCHANGED
+    if fail_closed_on_local_claim and claim.key and _local_identity_is_claim(local_row):
+        return IDENTITY_APPLY_CONFLICT
+    # A cloud row with no identity is not evidence that local evidence is
+    # wrong while both still name the same taxon — the push rule, mirrored.
+    # It clears local identity only when the identification itself changed.
+    if (
+        claim.kind == 'none'
+        and not absence_is_evidence
+        and _identification_key(local_row) == _identification_key(dict(remote or {}))
+    ):
+        return IDENTITY_APPLY_UNCHANGED
+    columns = _local_identity_columns_for_remote_claim(claim, remote)
+    ObservationDB.update_observation(int(local_id), allow_nulls=True, **columns)
+    if claim.kind == 'sporely' and columns.get('sporely_taxon_id') is None:
+        print(
+            f'[cloud_sync] identity pull: obs {local_id} cloud Sporely '
+            f'{claim.sporely_taxon_id} is absent from the installed taxonomy '
+            'artifact; preserved unresolved, not bound',
+            flush=True,
+        )
+    return IDENTITY_APPLY_APPLIED
+
+
 def _apply_remote_observation_fields(
     local_id: int,
     remote: dict,
     *,
     fields: set[str] | None = None,
-) -> None:
+    identity_fail_closed: bool = False,
+) -> str:
+    """Apply cloud observation fields locally; returns the identity outcome.
+
+    ``identity_fail_closed`` — see `_apply_remote_identity_to_local`.
+    """
+    identity_outcome = IDENTITY_APPLY_UNCHANGED
     requested_fields = {
         str(field or '').strip()
         for field in (fields or set(_SNAPSHOT_OBS_FIELDS))
         if str(field or '').strip()
     }
     if not requested_fields:
-        return
+        return identity_outcome
 
     normalized_fields = {
         'sharing_scope' if field in {'visibility', 'sharing_scope'} else field
         for field in requested_fields
     }
+    applies_identity = fields is None or TAXON_IDENTITY_SYNC_FIELD in normalized_fields
+    local_before = ObservationDB.get_observation(int(local_id)) if applies_identity else None
     update_kwargs = _remote_observation_update_kwargs(remote)
     partial_kwargs = {
         key: value
@@ -10392,6 +10925,19 @@ def _apply_remote_observation_fields(
     if len(partial_kwargs) > 1:
         ObservationDB.update_observation(int(local_id), **partial_kwargs)
 
+    # Identity travels as one virtual field: a full apply ("cloud wins") or an
+    # explicit request for it. Three-way reconciliation decides when to ask.
+    if applies_identity:
+        identity_outcome = _apply_remote_identity_to_local(
+            int(local_id), remote,
+            local_before=local_before,
+            fail_closed_on_local_claim=identity_fail_closed,
+            # An explicit request for the identity field comes from a
+            # three-way decision (or the owner's choice) that the cloud's
+            # current identity — including "none" — is the one to take.
+            absence_is_evidence=fields is not None,
+        )
+
     extra_values = _remote_observation_extra_values(remote)
     extra_updates = {
         key: value
@@ -10399,7 +10945,7 @@ def _apply_remote_observation_fields(
         if key in normalized_fields
     }
     if not extra_updates:
-        return
+        return identity_outcome
 
     conn = get_connection()
     try:
@@ -10413,6 +10959,7 @@ def _apply_remote_observation_fields(
         conn.commit()
     finally:
         conn.close()
+    return identity_outcome
 
 
 def _inject_obs_exif_into_field_image(
@@ -11109,6 +11656,21 @@ def _sync_existing_remote_image_to_local(
                     gps_accuracy=img_acc,
                 )
 
+        # Replacing a microscope working file with the cloud copy is this
+        # sync's own write-back, not a user edit. The mosaic signature
+        # fingerprints each source image by path, size and mtime, so without
+        # this the swap would make the next push re-render and re-key an
+        # unchanged mosaic, breaking the no-op fast-path contract. Record
+        # whether the signature was current BEFORE the swap; it is carried
+        # forward below only in that case.
+        obs_local_id = int(local_image.get('observation_id') or 0)
+        mosaic_current_before_swap = bool(
+            image_type == 'microscope'
+            and existing_path
+            and not local_is_larger
+            and _local_mosaic_signature_is_current(obs_local_id)
+        )
+
         if existing_path and not local_is_larger:
             detected_ext = _detected_image_extension(temp_path)
             if detected_ext and target_path.suffix.lower() != detected_ext:
@@ -11166,6 +11728,10 @@ def _sync_existing_remote_image_to_local(
                 _store_cloud_image_file_signature(int(local_image.get('observation_id') or 0), image_id, file_sig)
         except Exception:
             pass
+        # Same principle as the image file signature just above: a swap this
+        # sync performed re-stamps its own change detector.
+        if mosaic_current_before_swap:
+            _carry_forward_local_mosaic_signature(obs_local_id)
         _increment_sync_summary(_cloud_sync_current_summary(), 'remote_media_materializations')
     finally:
         shutil.rmtree(temp_dir, ignore_errors=True)
@@ -14214,9 +14780,17 @@ def resolve_conflict_plan(
                     'visibility' if field in {'visibility', 'sharing_scope'} else field
                 )
                 for field in local_field_names
+                if field != TAXON_IDENTITY_SYNC_FIELD
             }
             if patch_payload:
                 client._patch(f'observations?id=eq.{resolved_cloud_id}', patch_payload)
+            # "Keep this device's identity": the guarded RPC is the only
+            # desktop → cloud identity channel, and it accepts only a proven
+            # identity (anything else is a skip, never a clear).
+            if TAXON_IDENTITY_SYNC_FIELD in local_field_names:
+                client._sync_observation_selected_taxon(
+                    resolved_cloud_id, refreshed_local, remote_obs=remote_obs,
+                )
         except Exception as exc:
             raise _partial_error(
                 f'Could not push local fields to cloud: {exc}',
@@ -14224,15 +14798,25 @@ def resolve_conflict_plan(
                 cause=exc,
             )
         for f in sorted(local_field_names):
+            expected_value = _normalize_observation_field_for_baseline(
+                refreshed_local, f, local=True,
+            )
+            if (
+                f == TAXON_IDENTITY_SYNC_FIELD
+                and not TaxonIdentity.from_row(refreshed_local).is_proven_sporely
+            ):
+                # The RPC gate skipped an unproven identity: the cloud keeps
+                # what it had, and that is the verified effect.
+                expected_value = _normalize_observation_field_for_baseline(
+                    remote_obs, f, local=False,
+                )
             executed.append({
                 'op': 'push_field', 'field': f, 'status': 'completed',
                 'stable_identity': {'field': f, 'side': 'cloud'},
                 'expected_after': {
                     'side': 'cloud',
                     'field': f,
-                    'value': _normalize_observation_field_for_baseline(
-                        refreshed_local, f, local=True,
-                    ),
+                    'value': expected_value,
                 },
             })
 
@@ -15130,6 +15714,42 @@ class SporelyCloudClient:
         self._column_support_cache[cache_key] = supported
         return supported
 
+    def _observation_select_columns(self) -> str:
+        """The observation read columns, with identity provenance unless absent.
+
+        The cloud's `taxon_identity_*` columns come from sporely-web migration
+        20260922120000. Selecting a column the server lacks fails the whole
+        read, so `_read_observation_rows` drops them after the first such
+        failure; without them `selected_sporely_taxon_id` alone still
+        describes a bound identity.
+        """
+        if getattr(self, '_observation_identity_columns_unsupported', False):
+            return _OBSERVATION_SELECT_COLUMNS
+        return _join_select_columns(
+            _OBSERVATION_SELECT_COLUMNS, *_OBSERVATION_IDENTITY_SELECT_COLUMNS,
+        )
+
+    def _read_observation_rows(self, read, path_for):
+        """``read(path_for(select))``, retried once without identity columns.
+
+        No extra probe request: the normal read carries the columns, and only
+        a server that rejects them costs one retry, once per client.
+        """
+        try:
+            return read(path_for(self._observation_select_columns()))
+        except CloudSyncError as exc:
+            # The error text echoes the request path (and so the select list),
+            # so match the server's own phrasing about one of THESE columns,
+            # not any "does not exist" that happens to share the message.
+            text = str(exc or '').lower()
+            if (
+                getattr(self, '_observation_identity_columns_unsupported', False)
+                or not _MISSING_IDENTITY_COLUMN_PATTERN.search(text)
+            ):
+                raise
+            self._observation_identity_columns_unsupported = True
+            return read(path_for(_OBSERVATION_SELECT_COLUMNS))
+
     def _observation_supports_media_keys(self) -> bool:
         return self._has_column('observations', 'image_key') or self._has_column('observations', 'thumb_key')
 
@@ -15138,6 +15758,43 @@ class SporelyCloudClient:
 
     def _observation_images_support_ai_crop_custom(self) -> bool:
         return self._has_column('observation_images', 'ai_crop_is_custom')
+
+    def _observation_images_support_metadata_purpose(self) -> bool:
+        """Whether the server has the owner-sync metadata-parent capability.
+
+        sporely-web migration 20260925120000 adds
+        `observation_images.metadata_purpose` together with the public-RPC
+        predicates that keep owner-sync parents out of every public surface,
+        so the column's presence is the signal that owner-sync parents are
+        safe to create. See `_owner_sync_parents_supported`.
+        """
+        cached = getattr(self, '_metadata_purpose_supported', None)
+        if cached is not None:
+            return cached
+        try:
+            self._get(
+                f'observation_images?user_id=eq.{self.user_id}'
+                f'&select=metadata_purpose&limit=1'
+            )
+            supported = True
+        except CloudSyncError as exc:
+            text = str(exc or '').lower()
+            if not (
+                re.search(r"column \S*metadata_purpose does not exist", text)
+                or re.search(r"could not find the '?metadata_purpose'? column", text)
+            ):
+                raise
+            supported = False
+        self._metadata_purpose_supported = supported
+        return supported
+
+    def fetch_image_metadata_purpose(self, cloud_image_id: str) -> str | None:
+        """The stored `metadata_purpose` of one owned image row, or None."""
+        rows = self._get(
+            f'observation_images?id=eq.{cloud_image_id}&user_id=eq.{self.user_id}'
+            f'&select=id,metadata_purpose'
+        )
+        return str((rows or [{}])[0].get('metadata_purpose') or '') or None if rows else None
 
     def _observation_images_support_upload_metadata(self) -> bool:
         return self._has_column('observation_images', 'upload_mode') or self._has_column('observation_images', 'stored_bytes')
@@ -15853,15 +16510,19 @@ class SporelyCloudClient:
         cloud_value = str(cloud_id or '').strip()
         if not cloud_value:
             return None
-        rows = self._get(
-            f'observations?id=eq.{cloud_value}&user_id=eq.{self.user_id}&select={_OBSERVATION_SELECT_COLUMNS}'
+        rows = self._read_observation_rows(
+            self._get,
+            lambda select: f'observations?id=eq.{cloud_value}&user_id=eq.{self.user_id}&select={select}',
         )
         return rows[0] if rows else None
 
     def list_remote_observations(self) -> list[dict]:
-        return self._get_paginated(
-            f'observations?user_id=eq.{self.user_id}'
-            f'&order=created_at.asc,id.asc&select={_OBSERVATION_SELECT_COLUMNS}'
+        return self._read_observation_rows(
+            self._get_paginated,
+            lambda select: (
+                f'observations?user_id=eq.{self.user_id}'
+                f'&order=created_at.asc,id.asc&select={select}'
+            ),
         )
 
     def count_remote_privacy_slots(self) -> int:
@@ -16120,10 +16781,39 @@ class SporelyCloudClient:
         A missing local value is deliberately not inferred from genus/species
         text and does not erase cloud identity.  The RPC is skipped when the
         remote row already carries the same exact selection.
+
+        Taxonomy-v2 closeout Stage 2: the proof standard is provenance, not
+        sign. Previously any positive integer in ``sporely_taxon_id`` was
+        asserted to the cloud as an owner-selected Sporely identity. The
+        deployed RPC does validate active-release membership, so an arbitrary
+        external integer is rejected server-side — but it cannot distinguish
+        an external integer that *numerically collides* with a real Sporely ID
+        in the active release, and no server-side check ever could. That
+        residual case is closed here, by refusing to emit anything whose
+        producer is not recorded as proof.
+
+        Refusing is deliberately a skip, not a clear: an unproven or
+        unresolved local identity is not evidence that the cloud's identity is
+        wrong, so the source evidence and any existing cloud selection both
+        survive.
         """
-        taxon_id = _normalize_observation_int_value(obs.get('sporely_taxon_id'))
-        if taxon_id is None or taxon_id <= 0:
+        identity = TaxonIdentity.from_row(obs)
+        if not identity.is_proven_sporely:
+            if identity.sporely_taxon_id is not None or identity.has_external_evidence:
+                logger.info(
+                    "cloud sync: skipping taxonomy identity for observation %s — "
+                    "state=%s proof=%s source=%s namespace=%s external_id=%s; "
+                    "only a proven Sporely identity may reach "
+                    "set_observation_selected_taxon_v2",
+                    obs.get('id'),
+                    identity.state,
+                    identity.identity_proof,
+                    identity.source_system,
+                    identity.namespace,
+                    identity.external_id,
+                )
             return
+        taxon_id = identity.sporely_taxon_id
         remote_taxon_id = _normalize_observation_int_value(
             (remote_obs or {}).get('selected_sporely_taxon_id')
         )
@@ -16988,13 +17678,16 @@ class SporelyCloudClient:
 
     def pull_web_observations(self, after_iso: str | None = None) -> list[dict]:
         """Fetch observations created on mobile/web (desktop_id IS NULL)."""
-        qs = (
-            f'observations?desktop_id=is.null&user_id=eq.{self.user_id}'
-            f'&order=created_at.asc,id.asc&select={_OBSERVATION_SELECT_COLUMNS}'
-        )
-        if after_iso:
-            qs += f'&created_at=gt.{_encode_postgrest_filter_value(after_iso)}'
-        return self._get_paginated(qs)
+        def _path(select: str) -> str:
+            qs = (
+                f'observations?desktop_id=is.null&user_id=eq.{self.user_id}'
+                f'&order=created_at.asc,id.asc&select={select}'
+            )
+            if after_iso:
+                qs += f'&created_at=gt.{_encode_postgrest_filter_value(after_iso)}'
+            return qs
+
+        return self._read_observation_rows(self._get_paginated, _path)
 
     def set_desktop_id(self, cloud_id: str, desktop_id: int) -> None:
         """Write the local SQLite ID back to the cloud row for future dedup."""
@@ -18257,6 +18950,40 @@ def get_conflict_detail(client: "SporelyCloudClient", local_id: int, cloud_id: s
             'local_changed': local_changed, 'remote_changed': remote_changed,
         })
 
+    # The taxonomy identity is classified by its own three-way rule, never by
+    # plain equality: a cloud-derived local token is not a local edit, and an
+    # identity follows the identification (genus/species) it names.
+    identity_change = _classify_identity_sync_change(
+        local_obs, remote_obs, baseline_obs,
+        identification_locally_owned=any(
+            row['field'] in {'genus', 'species'} for row in field_rows
+        ) or any(
+            entry['field'] in {'genus', 'species'} and entry['action'] == 'push_local'
+            for entry in automatic_field_decisions
+        ),
+    )
+    identity_values = {
+        'local': local_payload.get(TAXON_IDENTITY_SYNC_FIELD),
+        'remote': remote_payload.get(TAXON_IDENTITY_SYNC_FIELD),
+        'baseline': baseline_obs.get(TAXON_IDENTITY_SYNC_FIELD),
+    }
+    if identity_change == 'local_only':
+        automatic_field_decisions.append({
+            'field': TAXON_IDENTITY_SYNC_FIELD, 'action': 'push_local', **identity_values,
+        })
+    elif identity_change == 'remote_only':
+        automatic_field_decisions.append({
+            'field': TAXON_IDENTITY_SYNC_FIELD, 'action': 'pull_cloud', **identity_values,
+        })
+    elif identity_change == 'conflict':
+        field_rows.append({
+            'field': TAXON_IDENTITY_SYNC_FIELD,
+            'label': _CONFLICT_FIELD_LABELS[TAXON_IDENTITY_SYNC_FIELD],
+            **identity_values,
+            'local_changed': _local_identity_is_claim(local_obs),
+            'remote_changed': _remote_identity_changed_since(remote_obs, baseline_obs),
+        })
+
     # 2. Detailed Image Differences
     local_images_raw = ImageDB.get_images_for_observation(int(local_id))
     local_image_payloads = [_local_image_snapshot_payload(img) for img in local_images_raw]
@@ -19293,6 +20020,23 @@ def push_all(
                     }:
                         if field in remote_update_kwargs:
                             push_payload[field] = remote_update_kwargs[field]
+                    # A cloud-only identity change is adopted locally now, exactly
+                    # as the pull would. Merely withholding it from this push is
+                    # not enough: the post-push snapshot records the cloud value
+                    # as baseline, and a stale local identity would then read as
+                    # a local change and be re-asserted by the next push.
+                    if TAXON_IDENTITY_SYNC_FIELD in (field_changes.get('remote_only_fields') or []):
+                        _apply_remote_observation_fields(
+                            int(obs['id']), remote, fields={TAXON_IDENTITY_SYNC_FIELD},
+                        )
+                        adopted = ObservationDB.get_observation(int(obs['id'])) or {}
+                        for column in ('sporely_taxon_id', 'scientific_name_snapshot',
+                                       'taxon_rank_snapshot', *_TAXON_IDENTITY_COLUMNS):
+                            push_payload[column] = adopted.get(column)
+                        if TaxonIdentity.from_row(push_payload).is_proven_sporely:
+                            # Cannot happen (adoption never yields proof); never
+                            # let a remote-only change become an RPC write.
+                            _withhold_identity_from_push(push_payload)
 
                     # Preflight: mirror pull_all's review-needed contract. If
                     # metadata, images, or measurements diverged on both
@@ -19356,6 +20100,19 @@ def push_all(
             # below clears any prior review-pending marker as part of the
             # normal `dirty→synced` transition.
 
+            # No baseline: an identity disagreement is a review, never an
+            # RPC overwrite (the pull side applies the same rule).
+            identity_review_pending = bool(
+                cloud_id and remote and not stored_snapshot and _classify_identity_sync_change(
+                    push_payload, remote, {}, identification_locally_owned=False,
+                ) == 'conflict'
+            )
+            if identity_review_pending:
+                _withhold_identity_from_push(push_payload)
+                errors.append(_format_review_needed_error(
+                    _safe_int(obs.get('id')), cloud_id,
+                    [_format_observation_metadata_field_label(TAXON_IDENTITY_SYNC_FIELD)],
+                ))
             merged_payload = _merge_cloud_selected_ai_fields(push_payload, remote)
             cloud_id = client.push_observation(
                 merged_payload,
@@ -19377,6 +20134,11 @@ def push_all(
             )
             conn2.commit()
             conn2.close()
+            if identity_review_pending:
+                # The other fields went out; the identity disagreement did
+                # not, and must stay visible until the owner resolves it.
+                _set_observation_sync_state(int(obs['id']), cloud_id, dirty=True, synced_at=None)
+                _set_observation_conflict_review_pending(int(obs['id']))
             if previous_status == 'dirty':
                 print(
                     f"[cloud_sync] sync_status transition obs {obs['id']}: dirty→synced "
@@ -19832,7 +20594,18 @@ def push_all(
                     errors=errors,
                 )
 
-            _store_remote_snapshot(client, cloud_id)
+            if identity_review_pending:
+                # Baseline without identity: it stays "unknown", so the next
+                # push preflight and pull classify the disagreement as a
+                # conflict instead of a local change for the RPC to push.
+                refreshed_remote = client.get_observation(cloud_id)
+                if refreshed_remote:
+                    _store_remote_snapshot(
+                        client, cloud_id,
+                        remote=_remote_row_without_identity(refreshed_remote),
+                    )
+            else:
+                _store_remote_snapshot(client, cloud_id)
 
             pushed += 1
         except CloudSyncError as e:
@@ -21388,13 +22161,47 @@ def _ensure_metadata_only_microscope_image_for_public_spores(
         )
         return None
 
-    if not microscope_image_requires_public_spore_anchor(local_image_id):
-        print(
-            f'[cloud_sync] Mosaic image metadata: skip '
-            f'local_image={local_image_id} reason=no_public_spore_measurements',
-            flush=True,
-        )
-        return None
+    # Two separate intents may require a parent: public spore data, and —
+    # only on a server with the owner-sync capability — the owner's own
+    # cross-device measurements of any type.
+    public_required = microscope_image_requires_public_spore_anchor(local_image_id)
+    # Probe the server only when this image actually needs an owner-sync
+    # parent: observations without such images issue no extra request.
+    owner_sync_supported = bool(
+        not public_required
+        and microscope_image_requires_owner_sync_anchor(local_image_id)
+        and not (cloud_image_bytes_desired(obs_local_id, local_image_id, row) and not row.get('cloud_id'))
+        and _owner_sync_parents_supported(client)
+    )
+    if not public_required:
+        if not owner_sync_supported:
+            print(
+                f'[cloud_sync] Mosaic image metadata: skip '
+                f'local_image={local_image_id} reason=no_public_spore_measurements',
+                flush=True,
+            )
+            return None
+        if not microscope_image_requires_owner_sync_anchor(local_image_id):
+            print(
+                f'[cloud_sync] Mosaic image metadata: skip '
+                f'local_image={local_image_id} reason=no_measurements',
+                flush=True,
+            )
+            return None
+        # An image whose bytes the owner keeps in the cloud gets its cloud row
+        # from the ordinary upload; a metadata-only parent is for images whose
+        # bytes are deliberately excluded (observation 917, image 7305).
+        if cloud_image_bytes_desired(obs_local_id, local_image_id, row) and not row.get('cloud_id'):
+            print(
+                f'[cloud_sync] Mosaic image metadata: skip '
+                f'local_image={local_image_id} reason=bytes_upload_provides_parent',
+                flush=True,
+            )
+            return None
+    # For an owner-sync parent the capability is already confirmed. For a
+    # public-spore parent it is resolved below, once we know whether a
+    # no-byte row is involved at all.
+    desired_purpose = METADATA_PURPOSE_OWNER_SYNC if owner_sync_supported else None
 
     # Missing local source file is informational, not a hard skip: we
     # still want the metadata row so the measurement lands in public
@@ -21480,8 +22287,33 @@ def _ensure_metadata_only_microscope_image_for_public_spores(
     )
     if portable_identity_pending:
         payload.pop('desktop_id', None)
+    # A public-spore parent needs its `public_microscopy` marker on a server
+    # with the capability, or that server treats it as not public (NULL fails
+    # closed, sporePoints included). Probe (cached per client) only when a
+    # no-byte row is being created or already exists; byte-backed rows ignore
+    # the marker.
+    if public_required and (
+        remote_row is None
+        or not _normalize_cloud_media_key(remote_row.get('storage_path'))
+    ) and _owner_sync_parents_supported(client):
+        desired_purpose = METADATA_PURPOSE_PUBLIC_MICROSCOPY
+    if desired_purpose:
+        payload['metadata_purpose'] = desired_purpose
     if remote_row:
         remote_cloud_id = str(remote_row.get('id') or '').strip()
+        # Keep an existing metadata-only parent's purpose current (a spore
+        # added or removed changes it). Bytes present: the marker is
+        # irrelevant and left alone. Unchanged: no write.
+        if (
+            desired_purpose
+            and not _normalize_cloud_media_key(remote_row.get('storage_path'))
+            and _remote_metadata_purpose(client, remote_row) != desired_purpose
+        ):
+            client._patch(
+                f'observation_images?id=eq.{remote_cloud_id}'
+                f'&user_id=eq.{client.user_id}',
+                {'metadata_purpose': desired_purpose},
+            )
         _cancel_microscope_anchor_tombstones(
             local_image_id, existing_local_cloud_id, remote_cloud_id,
         )
@@ -21680,8 +22512,107 @@ def _ensure_metadata_only_microscope_images_for_observation(
                 counters['metadata_only_cloud_ids'].append(str(result))
         else:
             counters['skipped'] += 1
+            if _retire_unneeded_owner_sync_parent(
+                client, obs_local_id, image_row, remote_images,
+            ):
+                counters.setdefault('retired_cloud_ids', []).append(
+                    str(image_row.get('cloud_id') or '')
+                )
 
     return counters
+
+
+def _observation_has_owner_sync_candidates(obs_local_id: int) -> bool:
+    """Local-only check: any measured microscope image whose bytes are
+    excluded, or any recorded metadata-only parent (a retirement candidate)."""
+    conn = get_connection()
+    try:
+        image_ids = [
+            int(row[0]) for row in conn.execute(
+                """
+                SELECT DISTINCT i.id FROM images i
+                JOIN spore_measurements m ON m.image_id = i.id
+                WHERE i.observation_id = ? AND i.image_type = 'microscope'
+                """,
+                (int(obs_local_id),),
+            ).fetchall()
+        ]
+    except sqlite3.OperationalError:
+        # No measurement/image tables (a partial database): nothing to sync.
+        image_ids = []
+    finally:
+        conn.close()
+    excluded = _cloud_image_storage_excluded_image_ids(obs_local_id)
+    return bool(set(image_ids) & excluded) or bool(_cloud_metadata_only_image_ids(obs_local_id))
+
+
+def _retire_unneeded_owner_sync_parent(
+    client: 'SporelyCloudClient',
+    obs_local_id: int,
+    image_row: dict,
+    remote_images: list[dict],
+) -> bool:
+    """Queue a cloud-copy tombstone for an owner-sync parent nothing needs.
+
+    Called only for images neither parent intent requires. Retires the
+    parent only when it is provably unnecessary everywhere:
+
+    * the server has the capability and marks the row ``owner_sync`` (a
+      legacy or public-microscopy parent keeps its existing lifecycle);
+    * it is a live metadata-only row (no bytes) and the owner has not asked
+      for the image's bytes to be kept in the cloud;
+    * the image has no local measurements AND the cloud has none on it — a
+      device that simply has not downloaded the measurements yet must never
+      retire the parent that carries them.
+
+    It only queues a cloud-copy tombstone; the canonical tombstone push
+    (`_push_pending_image_tombstones`) performs the soft delete on the next
+    sync that runs it (in the normal chain the tombstone push precedes the
+    parent pass, so retirement converges over two syncs). A later
+    measurement revives the parent through `_cancel_microscope_anchor_tombstones`.
+    """
+    local_image_id = _safe_int(image_row.get('id'))
+    cloud_image_id = str(image_row.get('cloud_id') or '').strip()
+    if local_image_id <= 0 or not cloud_image_id:
+        return False
+    # Cheap local checks first: no request unless this is a recorded
+    # metadata-only parent that nothing local needs any more.
+    if local_image_id not in _cloud_metadata_only_image_ids(obs_local_id):
+        return False
+    if cloud_image_bytes_desired(obs_local_id, local_image_id, image_row):
+        return False
+    if microscope_image_requires_owner_sync_anchor(local_image_id):
+        return False
+    remote = next(
+        (dict(r) for r in (remote_images or []) if str(r.get('id') or '').strip() == cloud_image_id),
+        None,
+    )
+    if (
+        remote is None
+        or _normalize_cloud_media_key(remote.get('storage_path'))
+        or str(remote.get('deleted_at') or '').strip()
+    ):
+        return False
+    if not _owner_sync_parents_supported(client):
+        return False
+    if _remote_metadata_purpose(client, remote) != METADATA_PURPOSE_OWNER_SYNC:
+        return False
+    try:
+        remote_measurements = client.pull_measurements_for_images([cloud_image_id]) or []
+    except Exception as exc:
+        if is_cloud_auth_error(exc) or is_cloud_temporary_unavailable_error(exc):
+            raise
+        return False
+    if remote_measurements:
+        return False
+    queued = ImageDB.queue_image_tombstone_for_local_image(local_image_id)
+    if queued:
+        print(
+            f'[cloud_sync] Owner-sync parent retired: local_image={local_image_id} '
+            f'cloud_image={cloud_image_id} (no measurements on any device)',
+            flush=True,
+        )
+    return bool(queued)
 
 
 def _ensure_metadata_anchors_for_public_spore_observation(
@@ -21715,7 +22646,13 @@ def _ensure_metadata_anchors_for_public_spore_observation(
     visibility = str(
         (obs or {}).get('spore_data_visibility') or 'public'
     ).strip().lower()
-    if visibility != 'public':
+    # Owner cross-device sync does not depend on publication: with the
+    # owner-sync capability every observation's measured microscope images
+    # get a parent. Without it, only public spore data needs one.
+    if visibility != 'public' and not (
+        _observation_has_owner_sync_candidates(obs_local_id)
+        and _owner_sync_parents_supported(client)
+    ):
         return empty
     try:
         result = _ensure_metadata_only_microscope_images_for_observation(
@@ -22845,6 +23782,100 @@ def _local_spore_mosaic_signature(
     return hashlib.sha1(canonical.encode('utf-8')).hexdigest()
 
 
+def _load_spore_mosaic_eligible_rows(cursor, obs_local_id: int) -> list[dict]:
+    """The measurement rows that feed the public spore mosaic.
+
+    Single source of the eligibility query, shared by the mosaic pusher and by
+    `_current_local_mosaic_signature`, so the rows a signature is computed over
+    can never drift from the rows the mosaic is rendered from. The cursor's
+    connection must use `sqlite3.Row`.
+    """
+    cursor.execute(
+        '''
+        SELECT m.id, m.image_id, m.length_um, m.width_um, m.measurement_type,
+               m.p1_x, m.p1_y, m.p2_x, m.p2_y,
+               m.p3_x, m.p3_y, m.p4_x, m.p4_y,
+               m.gallery_rotation, m.cloud_id,
+               i.cloud_id                 AS image_cloud_id,
+               i.filepath                 AS image_filepath,
+               i.scale_microns_per_pixel  AS scale_microns_per_pixel,
+               i.resample_scale_factor    AS resample_scale_factor
+        FROM spore_measurements m
+        JOIN images i ON i.id = m.image_id
+        WHERE i.observation_id = ?
+          AND i.image_type = 'microscope'
+          AND i.cloud_id IS NOT NULL
+          AND m.cloud_id IS NOT NULL
+          AND m.length_um IS NOT NULL
+          AND m.width_um  IS NOT NULL
+          AND m.p1_x IS NOT NULL AND m.p1_y IS NOT NULL
+          AND m.p2_x IS NOT NULL AND m.p2_y IS NOT NULL
+          AND (
+            m.measurement_type IS NULL
+            OR m.measurement_type = ''
+            OR lower(m.measurement_type) IN ('manual', 'spore', 'spores')
+          )
+        ORDER BY m.id
+        ''',
+        (obs_local_id,),
+    )
+    return [dict(r) for r in cursor.fetchall()]
+
+
+def _current_local_mosaic_signature(obs_local_id: int) -> str:
+    """The mosaic signature the pusher would compute right now, or ''.
+
+    Mirrors the pusher's own gates: a non-public observation or one with no
+    eligible measurements has no mosaic, hence no signature.
+    """
+    if obs_local_id <= 0:
+        return ''
+    conn = get_connection()
+    conn.row_factory = sqlite3.Row
+    try:
+        cursor = conn.cursor()
+        cursor.execute(
+            'SELECT spore_data_visibility FROM observations WHERE id = ?',
+            (obs_local_id,),
+        )
+        obs_row = cursor.fetchone()
+        if obs_row is None:
+            return ''
+        observation_row = dict(obs_row)
+        visibility = str(observation_row.get('spore_data_visibility') or 'public').strip().lower()
+        if visibility != 'public':
+            return ''
+        rows = _load_spore_mosaic_eligible_rows(cursor, obs_local_id)
+    finally:
+        conn.close()
+    if not rows:
+        return ''
+    return _local_spore_mosaic_signature(obs_local_id, rows, observation_row)
+
+
+def _local_mosaic_signature_is_current(obs_local_id: int) -> bool:
+    """True when the stored mosaic signature matches the current inputs."""
+    try:
+        stored = _load_local_mosaic_signature(obs_local_id)
+        return bool(stored) and _current_local_mosaic_signature(obs_local_id) == stored
+    except Exception:
+        return False
+
+
+def _carry_forward_local_mosaic_signature(obs_local_id: int) -> None:
+    """Re-stamp the stored mosaic signature after a sync-originated file swap.
+
+    Only called when the signature was current immediately before the swap,
+    so a mosaic that was already out of date is never masked.
+    """
+    try:
+        signature = _current_local_mosaic_signature(obs_local_id)
+        if signature:
+            _store_local_mosaic_signature(obs_local_id, signature)
+    except Exception:
+        pass
+
+
 def _load_local_mosaic_signature(obs_local_id: int) -> str:
     """Read the cached signature from `observations.mosaic_signature`.
 
@@ -23255,36 +24286,7 @@ def _push_spore_mosaic_for_observation(
             )
             return MOSAIC_STATUS_SKIP_NO_PUBLIC_SPORE_DATA
 
-        cursor.execute(
-            '''
-            SELECT m.id, m.image_id, m.length_um, m.width_um, m.measurement_type,
-                   m.p1_x, m.p1_y, m.p2_x, m.p2_y,
-                   m.p3_x, m.p3_y, m.p4_x, m.p4_y,
-                   m.gallery_rotation, m.cloud_id,
-                   i.cloud_id                 AS image_cloud_id,
-                   i.filepath                 AS image_filepath,
-                   i.scale_microns_per_pixel  AS scale_microns_per_pixel,
-                   i.resample_scale_factor    AS resample_scale_factor
-            FROM spore_measurements m
-            JOIN images i ON i.id = m.image_id
-            WHERE i.observation_id = ?
-              AND i.image_type = 'microscope'
-              AND i.cloud_id IS NOT NULL
-              AND m.cloud_id IS NOT NULL
-              AND m.length_um IS NOT NULL
-              AND m.width_um  IS NOT NULL
-              AND m.p1_x IS NOT NULL AND m.p1_y IS NOT NULL
-              AND m.p2_x IS NOT NULL AND m.p2_y IS NOT NULL
-              AND (
-                m.measurement_type IS NULL
-                OR m.measurement_type = ''
-                OR lower(m.measurement_type) IN ('manual', 'spore', 'spores')
-              )
-            ORDER BY m.id
-            ''',
-            (obs_local_id,),
-        )
-        rows = [dict(r) for r in cursor.fetchall()]
+        rows = _load_spore_mosaic_eligible_rows(cursor, obs_local_id)
     finally:
         conn.close()
 
@@ -24393,7 +25395,7 @@ def pull_all(
                     )
                     for field in _SNAPSHOT_OBS_FIELDS
                     if field not in {'id', 'desktop_id'}
-                )
+                ) and not _remote_identity_changed_since(remote, snapshot_obs)
                 local_status = str((local_obs or {}).get('sync_status') or '').strip().lower()
                 if observation_fields_match and local_status != 'dirty':
                     # Converge without deep fetch: stamp synced + refresh
@@ -24603,6 +25605,11 @@ def pull_all(
                 should_store_snapshot = True
                 store_full_snapshot = True
                 local_media_changed = False
+                # The row the snapshot is taken from. An identity disagreement
+                # with no baseline stores it WITHOUT the identity, so the
+                # baseline stays "unknown" and every later pull and push
+                # classifies the same disagreement as a conflict.
+                snapshot_remote = remote
                 if remote_changed and not stored_snapshot:
                     _emit_progress(
                         progress_cb,
@@ -24612,7 +25619,19 @@ def pull_all(
                         ),
                         progress_state,
                     )
-                    _apply_remote_observation_fields(local_id, remote)
+                    # No baseline: nothing says which side changed, so a local
+                    # identity claim that differs from the cloud is a review,
+                    # never an overwrite (identity-in-change-detection rule 2).
+                    identity_outcome = _apply_remote_observation_fields(
+                        local_id, remote, identity_fail_closed=True,
+                    )
+                    identity_conflict = identity_outcome == IDENTITY_APPLY_CONFLICT
+                    if identity_conflict:
+                        errors.append(_format_review_needed_error(
+                            local_id, cloud_id,
+                            [_format_observation_metadata_field_label(TAXON_IDENTITY_SYNC_FIELD)],
+                        ))
+                        snapshot_remote = _remote_row_without_identity(remote)
                     warnings = _apply_remote_images_to_local(
                         client,
                         local_id,
@@ -24636,7 +25655,7 @@ def pull_all(
                         or measurement_result.get('failed')
                     )
                     materialization_failed = bool(materialize_remote_images and remote_media_pending)
-                    if measurement_result.get('conflict') or materialization_failed:
+                    if measurement_result.get('conflict') or materialization_failed or identity_conflict:
                         _set_observation_sync_state(local_id, cloud_id, dirty=True, synced_at=None)
                     else:
                         _stamp_observation_synced(local_id, cloud_id)
@@ -24859,7 +25878,7 @@ def pull_all(
                     _store_remote_snapshot(
                         client,
                         cloud_id,
-                        remote=remote,
+                        remote=snapshot_remote,
                         remote_images=remote_images,
                         remote_measurements=remote_measurements,
                         include_images=store_full_snapshot,
@@ -24983,6 +26002,11 @@ def _create_local_from_remote(
         country_code=normalize_country_code(remote.get('country_code')),
         region_id=_normalize_observation_field_value('region_id', remote.get('region_id')),
     )
+    # The cloud identity arrives with the row, conservatively: see
+    # `_local_identity_columns_for_remote_claim`.
+    identity_claim = _remote_identity_claim(remote)
+    if identity_claim is not None:
+        kwargs.update(_local_identity_columns_for_remote_claim(identity_claim, remote))
     local_id = ObservationDB.create_observation(**kwargs)
 
     # Bind the cloud row immediately, but keep the observation pending until

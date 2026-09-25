@@ -1,0 +1,108 @@
+{
+  "active_release": "global_macrofungi_tax-2026.08.01-01",
+  "active_release_external_id_namespaces": {
+    "col_xr/col_usage_id": 52881
+  },
+  "active_release_retained_concepts": 52881,
+  "active_release_vernacular_joined_taxa": 2041,
+  "approved_reviewed_relationships": [
+    "52369",
+    "53482",
+    "58722"
+  ],
+  "candidate_sqlite": "tax-2026.07.30-02.sqlite3",
+  "coverage": {
+    "all_bridge_bindings": {
+      "bindings": 19808,
+      "by_compiler_matching_rule": {
+        "missing_authorship_fallback": 2133,
+        "strict": 17675
+      },
+      "by_published_cross_reference_evidence": {
+        "no_published_cross_reference": 14945,
+        "one_directional_accepted_synonymy": 1,
+        "shared_synonymy": 4862
+      },
+      "disposition": {
+        "emitted_reviewed_relationship": 1,
+        "rejected_no_published_cross_reference": 14945,
+        "reviewable_awaiting_human_decision": 4862
+      },
+      "distinct_taxa": 19808,
+      "emitted_total": 1,
+      "unemitted_total": 19807
+    },
+    "scoped_bridge_bindings": {
+      "bindings": 7082,
+      "by_compiler_matching_rule": {
+        "missing_authorship_fallback": 204,
+        "strict": 6878
+      },
+      "by_published_cross_reference_evidence": {
+        "no_published_cross_reference": 5193,
+        "shared_synonymy": 1889
+      },
+      "disposition": {
+        "emitted_reviewed_relationship": 1,
+        "rejected_no_published_cross_reference": 5193,
+        "reviewable_awaiting_human_decision": 1888
+      },
+      "distinct_taxa": 7082,
+      "emitted_total": 1,
+      "unemitted_total": 7081
+    },
+    "scoped_vernacular_joined_subset": {
+      "bindings": 2041,
+      "by_compiler_matching_rule": {
+        "missing_authorship_fallback": 40,
+        "strict": 2001
+      },
+      "by_published_cross_reference_evidence": {
+        "no_published_cross_reference": 1191,
+        "shared_synonymy": 850
+      },
+      "disposition": {
+        "emitted_reviewed_relationship": 1,
+        "rejected_no_published_cross_reference": 1191,
+        "reviewable_awaiting_human_decision": 849
+      },
+      "distinct_taxa": 2041,
+      "emitted_total": 1,
+      "unemitted_total": 2040
+    }
+  },
+  "cross_reference_evidence_source": "stage3-cross-reference-evidence.json",
+  "eligible_evidence_classes": [
+    "manual_approved_exact",
+    "reviewed_supersession"
+  ],
+  "policy_sha256": "a5a329848c45fcd030165a51ad1193944dffe7573ddb2a9c69441f0d76ae4afb",
+  "projected_active_release_external_id_rows": {
+    "added_by_emitted_reviewed_relationships": 1,
+    "after": 52882,
+    "before": 52881,
+    "note": "Only approved reviewed relationships add rows. The reviewable-pending count is what a completed review could add, not what this projection emits."
+  },
+  "regressions": {
+    "52369": {
+      "case": "divergent accepted names",
+      "compiler_matching_rule": null,
+      "disposition": "emitted_reviewed_relationship",
+      "has_cross_source_bridge_binding": false,
+      "host_retained_in_active_release": false,
+      "host_sporely_taxon_id": null,
+      "published_cross_reference_evidence": "reciprocal_accepted_synonymy",
+      "reviewable": true
+    },
+    "53482": {
+      "case": "agreeing names",
+      "compiler_matching_rule": "strict",
+      "disposition": "emitted_reviewed_relationship",
+      "has_cross_source_bridge_binding": true,
+      "host_retained_in_active_release": true,
+      "host_sporely_taxon_id": 7821,
+      "published_cross_reference_evidence": "shared_synonymy",
+      "reviewable": true
+    }
+  }
+}

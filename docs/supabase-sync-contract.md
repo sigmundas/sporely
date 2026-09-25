@@ -132,6 +132,117 @@ Plain English comes first; technical terms are in parentheses.
     intent and positive CAS tokens; a confirmed parent-observation delete is an
     authoritative terminal acknowledgement for its child-use tombstones.
 
+28. **A Sporely taxon identity may be asserted only with recorded proof of its
+    producer.** `set_observation_selected_taxon_v2` accepts a Sporely-owned
+    `sporely_taxon_id`; a positive integer is not evidence that a value IS one.
+    Every client must carry the identity as
+    `(state, proof, source_system, namespace, external_id, raw_external_id)`
+    alongside the integer, and may emit the integer only when the proof is
+    either "the value came from a compiled taxonomy-v2 artifact whose identity
+    contract states its `taxon_id` is the Sporely ID" or "a namespaced external
+    identifier resolved through an authoritative mapping to exactly one
+    concept". A pre-provenance legacy integer is *unverified*, not proven, and
+    is withheld until re-verified against the taxonomy artifact.
+
+    The deployed RPC does validate active-release membership, so an arbitrary
+    external integer is rejected server-side — but it cannot distinguish an
+    external integer that numerically COLLIDES with a real Sporely ID in the
+    active release, and no server-side check ever could. That residual case is
+    why the proof standard is client-side.
+
+    Refusing to emit is a skip, never a clear: an unproven or unresolved local
+    identity is not evidence that the cloud's identity is wrong. Both the source
+    evidence and any existing cloud selection survive. Equally, a failure to
+    resolve an external identifier must not destroy the source prediction — an
+    unresolved external identity is a STATE (`external_unresolved`) that is
+    persisted with the observation, is still displayed by its name, and must
+    never render as unidentified. "Unidentified" is reserved for an observation
+    that carries no name at all. Identity-provenance columns are never pushed as
+    ordinary observation fields; the guarded RPC stays the only identity channel.
+
+    Namespace-lost integers are legacy/audit evidence only. Stripping a
+    provider prefix (`NBIC:53482`) does not convert a scientific-name id into a
+    taxon id: the raw provider value must be retained, and any namespace hop
+    must be a bridge declared in `database/taxonomy/docs/identity-contract.md`.
+
+    **A cloud identity received on pull is kept, never proven.** The server
+    guarantees only that `selected_sporely_taxon_id` was in the active release
+    when it was written; it records no producer and no release, and
+    pre-Stage-2 desktops asserted unproven integers through the same RPC. A
+    desktop therefore stores a pulled Sporely ID as `sporely_v2` with proof
+    `cloud_selected_unverified` — only when its installed taxonomy artifact
+    contains the concept, with the artifact's canonical name/rank as the
+    snapshot and provenance naming the cloud and the local release. That
+    proof is outside the proven set: the value is displayed, restored and
+    preserved across saves, but never re-asserted through the RPC and never
+    used by identity-gated lookups (Red List, reference attachment). An
+    explicit picker selection replaces it with `taxonomy_v2_artifact`.
+
+    **The persistence API accepts one complete typed identity transition.**
+    The identity spans several columns but is a single value, and treating
+    those columns as independently writable produces rows that contradict
+    themselves: replacing a proven integer while supplying only one provenance
+    field leaves the old proof attached to the new integer, and switching the
+    state without naming the integer strands the old integer beside the new
+    state. So a write that touches ANY identity field rewrites ALL of them —
+    the supplied fields are the complete new identity and everything else is
+    cleared. Nothing is inherited from the previous row, because inheritance is
+    what makes a partial write look proven. The result is normalized through
+    the same typed value readers use, so a write cannot produce a state a
+    reader would reject.
+
+    **An unqualified integer is refused at the write boundary, not merely
+    gated downstream.** Storing a bare integer and relying on every consumer to
+    check provenance requires every consumer to be correct forever; three
+    separate consumers (cloud sync, normalized reference attachment, the Red
+    List lookup) each had to be fixed for exactly this reason. A bare integer
+    with no accompanying provenance is therefore dropped. Rows written before
+    this rule keep their integers, are read as legacy-unverified, and are
+    re-verified against the taxonomy artifact by the backfill — which is the
+    only supported way an existing integer becomes proven.
+
+    **The guarded RPC owns the id/state transition.** `taxon_identity_state`
+    and `selected_sporely_taxon_id` must move in ONE statement, because the
+    database constraint forbidding a bound id under `external_unresolved` is
+    evaluated per statement. Splitting the write between client and RPC
+    deadlocks every later binding attempt on an already-unresolved row —
+    resolution, native-picker selection, and desktop-originated RPC writes
+    alike. `set_observation_selected_taxon_v2` therefore sets the state
+    alongside the id and leaves the preserved
+    `(source_system, namespace, external_id, raw_external_id)` evidence intact,
+    so a resolution stays auditable.
+
+    **Selecting a new candidate is a change of identification.** When a client
+    preserves an external identifier that does not resolve, it must also clear
+    any previously bound concept — otherwise the row's name says one thing and
+    its identity says another. Clearing first also keeps the constraint
+    satisfied at every step. Manual free text remains the explicit way to clear
+    an identification outright.
+
+    **The identification is ONE write, and `set_observation_identification_v2`
+    is its authoritative writer.** The bound concept, the identity provenance
+    and the accepted `genus`/`species`/`common_name` are a single coupled
+    change. Writing them in separate statements leaves a boundary at every join
+    where the row can describe one taxon by name and another by identity, and
+    no client ordering closes it: identity-first leaves a bound concept beside
+    the old name when the name write fails, name-first leaves the new name
+    beside the old concept when the guarded RPC rejects, and compensation is
+    itself a write that can fail — narrowing the split rather than removing it,
+    and potentially leaving it unreported. The RPC therefore writes all of them
+    in one statement. `ai_selected_*` is provider history, is explicitly not an
+    accepted identification, and stays outside the coupled set.
+
+    **Deployment prerequisite, and fail-closed until it is met.** That function
+    ships in its own migration, separate from the `taxon_identity_*` columns.
+    A backend can have the columns without the function, and PostgREST's schema
+    cache can lag a deployed function, so a client must infer NOTHING about
+    column availability from the function's absence. When the function is
+    unavailable a client must refuse the coupled change outright and leave the
+    observation unmodified — it must not fall back to the narrower
+    selected-taxon RPC, must not write the accepted name independently, and
+    must not persist a reduced identity-only shape. Refusing is the only
+    outcome that cannot corrupt the row.
+
 ## Normalized reference graph
 
 The owner graph is ordered work → taxon treatment → measurement set →
@@ -370,6 +481,68 @@ A measurement-only record (`metadata-only anchor`) is valid only when:
 
 It must not be created from an external-publication choice. Owner-facing UI must distinguish deliberate measurement-only state from a broken or deleted image.
 
+### Owner-sync and public-microscopy metadata parents
+
+A metadata-only microscope parent (no bytes) exists for one of two separate
+intents, and the desktop records which in `observation_images.metadata_purpose`
+(sporely-web migration 20260925120000):
+
+- `owner_sync` — carries the owner's own measurements of ANY type between the
+  owner's devices when the image's bytes are deliberately excluded from cloud
+  storage (`microscope_image_requires_owner_sync_anchor`: a microscope image
+  with at least one measurement, independent of observation visibility and
+  measurement type — the measurement pusher's own eligibility). Never public.
+- `public_microscopy` — today's only owner consent to publish microscopy data
+  (`microscope_image_requires_public_spore_anchor`: a spore measurement on an
+  observation whose spore data is public).
+
+The marker is intent, never authorization: the server exposes a no-byte
+parent publicly only when it is marked `public_microscopy` AND it verifies
+public child data itself (observation public and not a draft, spore data
+public, a child measurement of a type in the single server-side
+`public.is_public_microscopy_measurement_type` definition). NULL fails closed.
+Rows with bytes follow ordinary image visibility. The desktop never infers
+privacy from "not a spore": publishing cystidia later is a server type-set
+change plus an owner-intent change of the marker.
+
+- Owner-sync parents are created only when the server confirms the capability
+  (`SporelyCloudClient._observation_images_support_metadata_purpose`: one
+  user-scoped probe of the column, cached per client; a missing column is
+  remembered as unsupported, any other error fails closed uncached); otherwise
+  the desktop keeps the old public-spore-only behaviour, so an older server
+  whose public RPCs would expose such a row never receives one. The probe and
+  the targeted purpose read run only after local checks show an image needs
+  a no-byte parent (owner-sync, or a public-spore parent being created or
+  linked) or is a recorded retirement candidate, so observations with only
+  byte-backed images issue no extra request. A public-spore parent always
+  carries `public_microscopy` on a capable server: NULL fails closed on every
+  marker-gated public surface, sporePoints and spore summaries included.
+  Parents created by desktop builds older than this rule carry NULL and are
+  not public until re-marked; the server backfill covers rows that existed
+  when the migration ran.
+- An image whose bytes are kept in the cloud gets its row from the ordinary
+  upload, not a metadata-only parent.
+- The purpose of an existing parent is corrected only when the remote value is
+  known and differs (no no-op writes).
+- An explicit cloud tombstone for an image whose owner measurements need the
+  parent is cancelled, as for public spore anchors.
+- Retirement: an `owner_sync` parent with no bytes, no byte-storage intent,
+  no local measurements AND no cloud measurements is retired through a
+  cloud-copy tombstone (`_retire_unneeded_owner_sync_parent`); the canonical
+  tombstone push soft-deletes it on the next sync. A device that has not yet
+  downloaded the measurements (zero local rows, cloud rows present) never
+  retires it. Public-microscopy and legacy parents keep their existing
+  lifecycle.
+- Pull needs no special case: measurement import already attaches to any
+  microscope parent regardless of type.
+
+Known limitation, separate follow-up: deleting an individual measurement on
+the desktop records no cloud deletion intent, so a deletion does not
+propagate and retirement rarely becomes reachable until it does.
+
+Regression: `tests/test_owner_sync_metadata_parents.py` (observation-917
+shape: excluded image, three cheilocystidia, no spores).
+
 ### Missing cloud file
 
 When an active row points to missing bytes:
@@ -539,6 +712,158 @@ Deletion should proceed as:
 5. purge permanently only through deliberate maintenance.
 
 An interruption after any step must be recoverable by repeating sync.
+
+## Cloud → desktop taxonomy identity
+
+The pull reads the cloud identity (`selected_sporely_taxon_id`, and
+`taxon_identity_state` plus the preserved external tuple where the server has
+the provenance columns; a server without them costs one retried read, once per
+client) and maps it to ONE coherent local identity
+(`_local_identity_columns_for_remote_claim`):
+
+| Cloud row | Local identity written |
+|---|---|
+| selected Sporely ID present in the installed taxonomy-v2 artifact | `sporely_v2` / `cloud_selected_unverified`, artifact canonical name and rank as snapshot, provenance naming the cloud state and the local release |
+| selected Sporely ID absent from the installed artifact (release mismatch, pre-v2 install) | `external_unresolved` `(sporely, sporely_taxon_id, <id>)` — preserved, never a bound integer |
+| `external_unresolved` with a complete tuple | the same tuple as `external_unresolved` |
+| no identity | no identity |
+| identity columns absent from the row | nothing — local identity untouched |
+
+Rules common to every write path:
+
+- The local row already holding the same identity is never rewritten, so a
+  picker-proven identity is not downgraded to the cloud token for the same
+  concept.
+- A cloud row without identity clears local identity only when the
+  identification (genus/species) changed; absence is not evidence against
+  local evidence for the same taxon.
+- A bare integer is never stored (the persistence write boundary refuses it).
+
+Creation (`_create_local_from_remote`) adopts the cloud identity. The
+explicit "keep cloud" resolution adopts it too: the owner chose that side.
+The automatic no-snapshot full apply does NOT overwrite a local claim (a
+proven identity or a preserved non-Sporely tuple) that differs from a
+non-empty cloud identity: nothing says which side changed, so it reports a
+"taxon identity" review, keeps the row dirty, and stores the snapshot WITHOUT
+the identity, leaving the identity baseline unknown so every later pull and
+the push preflight keep classifying the disagreement as a conflict. The
+three-way reconciliation of existing rows is described in the next section.
+
+## Identity in change detection
+
+The identity is the virtual observation field `taxon_identity`. It is never a
+cloud column and never PATCHed: pushing it means the guarded RPC, which
+accepts only a proven identity. All sides use one key vocabulary
+(`sporely:<id>`, `external:<source>:<namespace>:<id>`, `""` for none):
+
+- **remote** — `selected_sporely_taxon_id`, else a complete
+  `external_unresolved` tuple, else `""`; a row without identity columns has
+  no key and is ignored by every rule below;
+- **baseline** — the key recorded in the stored snapshot; a snapshot stored
+  before this rule has none (**unknown**, distinct from `""`);
+- **local** — proven and `cloud_selected_unverified` IDs as `sporely:<id>`; an
+  unconfirmable cloud Sporely ID preserved as `(sporely, sporely_taxon_id, id)`
+  also as `sporely:<id>` (so holding it is no perpetual difference); other
+  external tuples as `external:…`; a legacy integer as `legacy:<id>` (never
+  equal to a cloud value).
+
+A local **claim** is a proven identity or a preserved non-Sporely external
+tuple; everything else (legacy, cloud-derived, manual text, none) is not the
+desktop's own evidence. "Identification edited locally" means genus or species
+is a local-only or conflicting field.
+
+`_classify_identity_sync_change`, in order:
+
+1. Local key equals remote key → nothing (`shared` if both moved from the
+   baseline).
+2. Unknown baseline:
+   - local claim and a remote identity that differs → **conflict**;
+   - proven local, nothing in the cloud → **local-only** (the RPC asserts it);
+   - otherwise a non-claim local adopts a non-empty remote identity
+     (**remote-only**) unless the identification is edited locally.
+3. Known baseline: remote changed = remote ≠ baseline; local changed = local
+   claim ≠ baseline.
+   - remote changed and (local changed or identification edited locally) →
+     **conflict**;
+   - remote changed → **remote-only** (adopt, per the mapping above);
+   - local changed and proven → **local-only**; an unpushable local claim is
+     left alone, so it never keeps a row dirty.
+
+Push (`push_all`, which runs before pull) obeys the same classification.
+When the identity is remote-only the push ADOPTS the cloud identity locally
+(as the pull would) before pushing — withholding alone is not enough, because
+the post-push snapshot records the cloud value as baseline and a stale local
+identity would then read as a local change for the next push to re-assert.
+With no stored snapshot, a disagreement that would be a conflict is withheld,
+reported, and left pending: the row stays dirty with the review marker and the
+post-push snapshot is stored without identity, so the next preflight blocks.
+A proven desktop pick the cloud lacks is still asserted.
+
+A cloud row without identity clears local identity when three-way
+reconciliation (or the owner's explicit choice) says the cloud cleared it
+since the baseline; only the baseline-less full apply treats absence as "no
+evidence" while genus/species are unchanged.
+
+Consequences in the existing machinery: remote-only applies through
+`_apply_remote_observation_fields(fields={'taxon_identity'})`; a conflict
+blocks the snapshot advance, keeps the row dirty and blocks push until the
+review (`get_conflict_detail` shows a "Taxon identity" row; "this device"
+resolves through the RPC gate, "Sporely Cloud" through the pull mapping);
+`_remote_snapshot_has_meaningful_changes` and the converge fast path treat an
+identity-only cloud change as a change; `_local_has_real_changes_since_snapshot`
+counts a proven identity the baseline does not record, so a desktop pick is
+never cleared as "no real change" before the RPC runs. A pre-identity snapshot
+reconciles once and is then recorded.
+
+Regression: `tests/test_cloud_identity_change_detection.py`,
+`tests/test_cloud_identity_pull.py`, `tests/test_cloud_identity_fail_closed.py`.
+
+## Red List follows the identification it assesses
+
+A Red List category is an assessment of one taxon. It must never become the
+current value of an observation whose committed identification is a
+different taxon.
+
+- The observation dialog restores the Red List only from the persisted
+  columns. `ai_state_json` is provider/UI history (the per-image prediction a
+  user highlighted), not the committed identity, and its category is never
+  borrowed. Regression: `tests/test_red_list_ai_history_not_promoted.py`.
+- Before a push, `_merge_cloud_selected_ai_fields` gap-fills local NULL Red
+  List columns from the cloud row (a row that never pulled them must not wipe
+  the cloud value). It does so only while both rows name the same
+  genus/species: after a desktop re-identification the local NULL is an
+  explicit "no assessment for the new taxon", and filling it would copy the
+  previous taxon's category onto the new identification and adopt it locally.
+  Regression: `tests/test_red_list_push_merge_follows_identification.py`.
+
+Found in the taxonomy-v2 closeout observation-917 integrity round-trip.
+
+## Mosaic signature survives the sync's own working-file swap
+
+The local mosaic signature (`_local_spore_mosaic_signature`) fingerprints each
+source image by resolved path, size and mtime, so a genuine local file
+replacement re-renders the mosaic. Pull-side materialization
+(`_sync_existing_remote_image_to_local`) may itself replace a microscope
+working file with the cloud copy — for example `P9150704.jpg` →
+`P9150704.webp` on the same pixel grid. That swap is the sync's own
+write-back, not a user edit, and must not make the next push re-render and
+re-key an unchanged mosaic (the no-op fast-path contract).
+
+- When the stored signature was **current immediately before** the swap, the
+  swap re-stamps it from the post-swap inputs, exactly as the same function
+  already re-stamps the image file signature.
+- A signature that was already stale is left alone, so an out-of-date mosaic
+  is still rebuilt. A file replaced outside sync still changes the signature.
+- Float write-backs from the pull do not trigger rebuilds: the signature
+  canonicalises floats to 6 decimal places.
+- The pusher and `_current_local_mosaic_signature` share one eligibility query
+  (`_load_spore_mosaic_eligible_rows`), so the rows a signature covers cannot
+  drift from the rows the mosaic is rendered from.
+
+Regression: `tests/test_cloud_spore_mosaic_signature.py`
+(`test_sync_swap_of_microscope_working_file_carries_a_current_mosaic_signature_forward`
+and its guards). Found in the taxonomy-v2 closeout observation-917 integrity
+round-trip, where the swap was proven to be the sole trigger.
 
 ## Public spore mosaic after conflict resolution
 

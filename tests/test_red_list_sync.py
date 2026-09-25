@@ -442,80 +442,14 @@ def test_ai_suggestions_table_displays_lc_for_lowercase_l_prediction():
     assert display == "LC"
 
 
-def test_load_observation_falls_back_to_ai_selection_when_column_is_null():
-    """sporely-web only writes `observations.red_list_category` in some flows.
-    A cloud-synced observation may arrive with an AI selection but NULL
-    column-level red-list. The dialog must still surface the code the AI
-    table already displays, by pulling it out of the selected prediction."""
-    D = _load_dialog_class()
+# The dialog used to fall back to the Red List inside the selected AI
+# prediction when the observation column was NULL. Three tests here pinned
+# that by re-implementing the load block inline, so they never exercised
+# production code. The fallback was removed deliberately — provider history
+# must not become current Red List data for a different committed taxon
+# (observation 917, taxonomy-v2 closeout). The behaviour is now specified
+# against the real dialog in `tests/test_red_list_ai_history_not_promoted.py`.
 
-    # Reproduce the load block's decision tree using only the classmethod
-    # helpers — no Qt widget required. The full method touches too many
-    # side-effect attributes to instantiate cheaply, but the invariant we
-    # care about is which value flows into `_set_red_list_category`.
-    obs = {
-        "red_list_category": None,
-        "red_list_categories_json": None,
-        "ai_selected_service": "artsorakel",
-        "ai_selected_scientific_name": "Pinus sylvestris",
-    }
-    ai_selected_by_index = {
-        0: {
-            "scientificName": "Pinus sylvestris",
-            "taxon": {"scientificName": "Pinus sylvestris", "redlistCategory": "LC"},
-            "redlist_categories": {"NO": "LC"},
-        }
-    }
-
-    # Inline the same logic used in _load_observation_values.
-    red_code = obs.get("red_list_category")
-    red_categories = None
-    if not red_code:
-        for selected_pred in ai_selected_by_index.values():
-            taxon = selected_pred.get("taxon") if isinstance(selected_pred.get("taxon"), dict) else {}
-            fallback_code = D._read_red_list_code(taxon) or D._read_red_list_code(selected_pred)
-            if fallback_code:
-                red_code = fallback_code
-                red_categories = D._read_red_list_categories(taxon) or D._read_red_list_categories(selected_pred)
-                break
-
-    assert red_code == "LC", (
-        f"Left-panel badge must derive 'LC' from the selected AI prediction "
-        f"when the observation column is NULL; got {red_code!r}"
-    )
-    assert red_categories == {"NO": "LC"}
-
-
-def test_load_observation_prefers_column_over_ai_when_both_present():
-    """The persisted column wins if it's populated — this preserves any
-    manual override the user made after selecting from AI."""
-    D = _load_dialog_class()
-    obs = {"red_list_category": "NT"}
-    ai_selected_by_index = {
-        0: {"taxon": {"redlistCategory": "LC"}},  # differs from the column
-    }
-    red_code = obs.get("red_list_category")
-    if not red_code:
-        for pred in ai_selected_by_index.values():
-            red_code = D._read_red_list_code(pred.get("taxon", {})) or D._read_red_list_code(pred)
-            if red_code:
-                break
-    assert red_code == "NT"
-
-
-def test_load_observation_no_fallback_when_no_ai_selection():
-    """If neither the column nor the AI selection has a red-list, the badge
-    stays empty — no false LC leaks in."""
-    D = _load_dialog_class()
-    obs = {"red_list_category": None}
-    ai_selected_by_index: dict = {}
-    red_code = obs.get("red_list_category")
-    if not red_code:
-        for pred in ai_selected_by_index.values():
-            red_code = D._read_red_list_code(pred.get("taxon", {})) or D._read_red_list_code(pred)
-            if red_code:
-                break
-    assert not red_code
 
 
 def test_load_observation_populates_red_list_from_local_row():

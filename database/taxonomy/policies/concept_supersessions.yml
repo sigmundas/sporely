@@ -1,0 +1,61 @@
+{
+  "format": "sporely-taxonomy-concept-supersessions-v1",
+  "purpose": "Reviewed selection of a current Sporely concept for a concept that already holds its own allocated identity. This is the artifact continuity_rules.merge calls for ('retain_all_historical_usages_select_or_allocate_current_concept'): the identity registry is append-only, so a merge can never be expressed by rewriting an allocation. The registry keeps recording what was allocated; this ledger records which concept is current. Both are true, and the projection applies both, so one identifier still has exactly one answer.",
+  "semantics": {
+    "registry_is_not_rewritten": "The superseded concept's anchor stays in the registry verbatim. Its allocation history is preserved.",
+    "no_canonical_taxon_row": "The superseded concept emits no canonical taxon row, so no duplicate concept is published for a taxon both sources describe.",
+    "usages_are_retained": "Every source usage bound to the superseded concept is re-keyed onto the current concept as an alias, carrying its own scientific name, authorship, taxonomic status and external identifier. The superseding source's accepted-name treatment is therefore preserved and searchable rather than flattened.",
+    "vernaculars_follow_identity": "Vernacular rows on the superseded concept are re-keyed onto the current concept, so national common names survive the supersession.",
+    "presentation_is_unchanged": "The current concept keeps its own canonical name, rank and parent. A supersession never promotes the superseded source's preferred name.",
+    "chains_are_refused": "A current concept that is itself superseded fails the compile. Resolving transitive supersession needs its own review and is not inferred."
+  },
+  "schema": {
+    "required": [
+      "supersession_id",
+      "superseded_sporely_taxon_id",
+      "current_source_usage",
+      "relationship",
+      "review_status",
+      "reviewer",
+      "rationale",
+      "evidence_references",
+      "created_at",
+      "updated_at",
+      "source_release_range",
+      "supersedes"
+    ],
+    "current_source_usage_required": ["source", "namespace", "identifier"],
+    "timestamp_format": "RFC3339",
+    "source_release_range_required": ["first", "last"],
+    "allowed_relationships_ref": "mapping_policy.relationships",
+    "allowed_review_states_ref": "mapping_policy.review_states",
+    "applied_review_status": "approved"
+  },
+  "supersessions": [
+    {
+      "supersession_id": "nortaxa-52369-pholiotina-rugosa-superseded-by-col-5ZT3G",
+      "superseded_sporely_taxon_id": 624680,
+      "current_source_usage": {
+        "source": "col_xr",
+        "namespace": "col_usage_id",
+        "identifier": "5ZT3G"
+      },
+      "relationship": "exact",
+      "review_status": "approved",
+      "reviewer": "Sigmund Ås",
+      "rationale": "Divergent-accepted-name bridge, and a merge. The two sources disagree about which name is correct for one species: NorTaxa accepts 'Pholiotina rugosa (Peck) Singer' (taxonID 52369) while COL accepts 'Conocybe rugosa (Peck) Watling' (usage 5ZT3G). The evidence is reciprocal published synonymy: COL lists 'Pholiotina rugosa (Peck) Singer' as a synonym of 5ZT3G (usage 4GMG5), and NorTaxa lists 'Conocybe rugosa (Peck) Watling' as a synonym of 52369 (taxonID 58722). Authorship is byte-identical on both names in both directions, so each source has explicitly published that the other's accepted name belongs to its own concept. This is the only reciprocal case in the entire 19,809-association population. A supersession rather than a mapping is required because release tax-2026.07.29-01 already allocated sporely_taxon_id 624680 to 52369: the registry is append-only, so the merge must select a current concept instead of rewriting that allocation, per mapping_policy.continuity_rules.merge. Approving this retains 624680's allocation history, publishes no second concept for the species, re-keys 52369's usage and its Norwegian name 'slank ringkjeglesopp' onto 83668, and leaves COL's accepted name preferred there. Verified structurally safe: no concept parents on 624680 and it has no children.",
+      "evidence_references": [
+        "database/taxonomy/evidence/taxonomy-v2-closeout/stage3-cross-reference-evidence.summary.json#regression_detail.52369",
+        "registry/canonical/part-*.jsonl {\"identifier\": \"52369\", \"kind\": \"anchor\", \"sporely_taxon_id\": 624680, \"allocated_in_release\": \"tax-2026.07.29-01\"}",
+        "sources/nortaxa/1.284/archive.zip!taxon.txt sha256=29c11c54d955dc44e4e5a38944dd7932989a256d1b173777579b9f33abd2fe22",
+        "sources/col_xr/2026-07-17-XR/archive.zip!NameUsage.tsv sha256=397d701c8eb269bf78d6ac7b03149915b0d9e2a2c18694be2c91445b807814f9",
+        "shared basionym cited by the reviewer: COL publishes 'Pholiota rugosa Peck' (usage 6VBQK) as a synonym of 5ZT3G, and it is the basionym of both accepted names — NorTaxa's 'Pholiotina rugosa (Peck) Singer' and COL's 'Conocybe rugosa (Peck) Watling' both carry '(Peck)' as the parenthetical basionym author. The two accepted names are therefore recombinations of one original species, which is independent of the reciprocal-synonymy evidence above."
+      ],
+      "created_at": "2026-09-23T00:00:00Z",
+      "updated_at": "2026-09-23T12:00:00Z",
+      "source_release_range": {"first": "1.284", "last": "1.284"},
+      "supersedes": null,
+      "review_note": "Approved 2026-09-23 by Sigmund Ås, recorded against manual-verification check 'review-nortaxa-52369-supersession' (gate f0c45157058d4fedab2c13719c6cf548). Reviewer's decision as given: 'I approve superseding Sporely concept 624680 by 83668 for NorTaxa 52369 / COL 5ZT3G. The evidence supports these as the same taxonomic concept, including reciprocal synonymy and the shared basionym Pholiota rugosa Peck. Historical allocation and source provenance for 624680 must be retained.' That retention condition is what this mechanism implements: the append-only registry keeps 624680's allocation verbatim, and the superseded concept's usages are re-keyed onto 83668 carrying their own name, authorship, status and identifier, with superseded_from_sporely_taxon_id naming the concept they came from."
+    }
+  ]
+}

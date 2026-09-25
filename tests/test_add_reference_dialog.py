@@ -15,6 +15,8 @@ import os
 os.environ.setdefault("QT_QPA_PLATFORM", "offscreen")
 
 import pytest
+
+from utils.taxon_identity import TaxonIdentity
 from PySide6.QtCore import Qt
 from PySide6.QtTest import QTest
 from PySide6.QtWidgets import QApplication, QDialog
@@ -1304,12 +1306,42 @@ def test_switching_to_manual_tab_resyncs_shared_preview_pane():
 # ---------------------------------------------------------------------
 
 
-@pytest.mark.parametrize("observation", [
-    {"genus": "Cortinarius", "species": "limonius", "sporely_taxon_id": 7},
-    {"genus": "Cortinarius", "species": "limonius", "sporely_taxon_id": None},
-    {"genus": "", "species": "", "sporely_taxon_id": None},
+# Taxonomy-v2 closeout Stage 2 changed what `taxon_id` the picker receives.
+# `_active_sporely_taxon_id` drives normalized measurement-set attachment, so
+# it now returns a PROVEN identity only. A bare pre-Stage-2 integer is
+# legacy-unverified — it could be an external identifier that numerically
+# collides with a real Sporely concept — and must not attach. Each case below
+# states the identity it carries and the `taxon_id` that follows from it.
+#
+# Consequence worth knowing: a pre-Stage-2 observation loses normalized
+# reference attachment until the backfill re-verifies its integer against the
+# taxonomy artifact. That is the same gate cloud sync applies.
+@pytest.mark.parametrize("observation,expected_taxon_id", [
+    # Proven by the taxonomy-v2 artifact -> attaches.
+    (
+        {
+            "genus": "Cortinarius", "species": "limonius",
+            **TaxonIdentity.from_taxonomy_v2_artifact(7).to_row(),
+        },
+        7,
+    ),
+    # Bare pre-Stage-2 integer, no provenance -> legacy-unverified, refused.
+    ({"genus": "Cortinarius", "species": "limonius", "sporely_taxon_id": 7}, None),
+    # An unresolved external identifier is never an attachable identity.
+    (
+        {
+            "genus": "Cortinarius", "species": "limonius",
+            **TaxonIdentity.unresolved_external(
+                source_system="nortaxa", namespace="nortaxa_taxon_id",
+                external_id="7",
+            ).to_row(),
+        },
+        None,
+    ),
+    ({"genus": "Cortinarius", "species": "limonius", "sporely_taxon_id": None}, None),
+    ({"genus": "", "species": "", "sporely_taxon_id": None}, None),
 ])
-def test_host_own_target_uses_captured_observation(monkeypatch, observation):
+def test_host_own_target_uses_captured_observation(monkeypatch, observation, expected_taxon_id):
     from types import SimpleNamespace
     from unittest.mock import Mock
     import ui.main_window as host
@@ -1351,7 +1383,7 @@ def test_host_own_target_uses_captured_observation(monkeypatch, observation):
     monkeypatch.setattr(host, "AddReferenceDialog", Dialog)
     host.MainWindow._on_add_reference_clicked(window)
     kwargs = captured[0]
-    assert kwargs["taxon_id"] == observation["sporely_taxon_id"]
+    assert kwargs["taxon_id"] == expected_taxon_id
     assert kwargs["genus"] == observation["genus"]
     assert kwargs["species"] == observation["species"]
     assert kwargs["taxon_label"] == " ".join(

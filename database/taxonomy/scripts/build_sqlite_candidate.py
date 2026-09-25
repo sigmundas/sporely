@@ -40,12 +40,21 @@ _THIS_DIR = Path(__file__).resolve().parent
 if str(_THIS_DIR) not in sys.path:
     sys.path.insert(0, str(_THIS_DIR))
 
+from bridge_emission import (  # noqa: E402
+    BridgeEmissionError,
+    BridgeEmissionPolicy,
+)
 from identity_registry import (  # noqa: E402
     IdentityRegistry,
     RegistryError,
     SHARD_MANIFEST_FILENAME,
     iter_shard_lines,
     load_shard_manifest,
+)
+
+#: The repository's reviewed bridge-emission standard.
+DEFAULT_BRIDGE_EMISSION_POLICY = (
+    _THIS_DIR.parent / "policies" / "mapping_policy.yml"
 )
 
 
@@ -315,11 +324,23 @@ def build_candidate(
     release_dir: Path,
     registry_path: Path,
     output_db: Path,
+    bridge_emission_policy_path: Path | None = None,
 ) -> dict:
     """Transactionally build the SQLite candidate.
 
+    ``bridge_emission_policy_path`` selects the reviewed cross-source bridge
+    standard applied to alias bindings; it defaults to the repository's
+    ``policies/mapping_policy.yml``. The policy's digest is recorded in
+    ``taxonomy_meta`` so a candidate always names the standard it was
+    projected under.
+
     Returns a summary dict with row counts and the file SHA-256.
     """
+    bridge_policy = BridgeEmissionPolicy.load(
+        bridge_emission_policy_path
+        if bridge_emission_policy_path is not None
+        else DEFAULT_BRIDGE_EMISSION_POLICY
+    )
     if output_db.exists() or output_db.is_symlink():
         raise BuildError(f"output already exists: {output_db}")
 
@@ -364,6 +385,7 @@ def build_candidate(
             registry_path=registry_path,
             manifest_path=manifest_path,
             release_dir=release_dir,
+            bridge_policy=bridge_policy,
         )
         os.replace(tmp_db, output_db)
         committed = True
@@ -386,6 +408,7 @@ def _build_into(
     registry_path: Path,
     manifest_path: Path,
     release_dir: Path,
+    bridge_policy: BridgeEmissionPolicy,
 ) -> dict:
     conn = sqlite3.connect(str(tmp_db), isolation_level=None)
     conn.execute("PRAGMA locking_mode = EXCLUSIVE")
@@ -443,6 +466,11 @@ def _build_into(
         scientific_name_rows: list[tuple] = []
         external_int_rows: list[tuple] = []
         external_text_rows: list[tuple] = []
+        # Coverage audit of the reviewed-bridge standard: every alias binding
+        # that could have been published is either emitted or counted with the
+        # reason it was refused. Neither number is a target.
+        bridge_emitted_counts: dict[str, int] = {}
+        bridge_rejected_counts: dict[str, int] = {}
         # Track NorTaxa-taxon-id aliases per Sporely id for the legacy
         # ``norwegian_taxon_id`` column. Only fill when there's exactly one
         # numeric NorTaxa taxonID to preserve the column's UNIQUE constraint
@@ -499,6 +527,44 @@ def _build_into(
                     sporely_id, source_system, ns, identifier, id_role,
                     is_preferred, external_name, note,
                 ))
+
+            # --- Reviewed cross-source bridge emission ---------------------
+            # An alias binding onto another source's concept carries that
+            # source's own identity for the concept. Where the reviewed
+            # standard grades its evidence as authoritative, publish it in the
+            # namespaced table so it is resolvable as
+            # `(source, namespace, external_id)`.
+            #
+            # Three properties make this additive rather than a re-modelling:
+            #  * it attaches to the RETAINED host concept, so no parallel
+            #    concept is emitted for a taxon both sources describe;
+            #  * `is_preferred` is 0 unconditionally, so the backbone's
+            #    preferred identifier and presentation are untouched;
+            #  * `source_system` is the source's contract code (see
+            #    `docs/identity-contract.md`), not the legacy display mapping,
+            #    because that tuple is what resolution is keyed on.
+            #
+            # Bindings whose namespace already routes to the namespaced table
+            # need nothing: they are authoritative there already.
+            bridge_class = str(u.get("bridge_evidence_class") or "")
+            if (
+                u["identity_binding"] != "anchor"
+                and ns not in TEXT_NAMESPACES
+                and bridge_policy.is_eligible(bridge_class)
+            ):
+                bridge_emitted_counts[bridge_class] = (
+                    bridge_emitted_counts.get(bridge_class, 0) + 1
+                )
+                external_text_rows.append((
+                    sporely_id, source_code, ns, identifier, id_role,
+                    0, external_name, f"authoritative_bridge:{bridge_class}",
+                ))
+            elif u["identity_binding"] != "anchor" and ns not in TEXT_NAMESPACES:
+                reason = bridge_policy.rejection_reason(bridge_class)
+                key = f"{bridge_class or '(none)'}|{reason}"
+                bridge_rejected_counts[key] = (
+                    bridge_rejected_counts.get(key, 0) + 1
+                )
 
         # Deduplicate on (taxon_id, language_code, scientific_name).
         # Two source usages that share a canonical scientific name (COL +
@@ -690,6 +756,10 @@ def _build_into(
             ("registry_sha256", _registry_identity_hash(registry_path)),
             ("state", "candidate"),
             ("publication", "none"),
+            # The reviewed bridge standard this projection applied. Without it
+            # a candidate's authoritative bridge rows cannot be attributed to
+            # the standard that admitted them.
+            ("bridge_emission_policy_sha256", bridge_policy.policy_sha256),
         ]
         for binding in manifest.get("source_bindings", []):
             code = binding["source_code"]
@@ -787,7 +857,20 @@ def _build_into(
     conn.execute("VACUUM")
     conn.close()
 
-    return {"counts": counts, "manifest": manifest}
+    return {
+        "counts": counts,
+        "manifest": manifest,
+        "authoritative_bridge_emission": {
+            "policy_sha256": bridge_policy.policy_sha256,
+            "eligible_evidence_classes": sorted(bridge_policy.eligible),
+            "emitted_by_evidence_class": dict(sorted(
+                bridge_emitted_counts.items())),
+            "emitted_total": sum(bridge_emitted_counts.values()),
+            "rejected_by_evidence_class_and_reason": dict(sorted(
+                bridge_rejected_counts.items())),
+            "rejected_total": sum(bridge_rejected_counts.values()),
+        },
+    }
 
 
 # --------------------------------------------------------------- CLI -------
@@ -801,6 +884,9 @@ def build_parser() -> argparse.ArgumentParser:
                         help="canonical shard directory or single JSONL file")
     parser.add_argument("--output", type=Path, required=True,
                         help="destination SQLite path (must not exist)")
+    parser.add_argument("--bridge-emission-policy", type=Path, default=None,
+                        help="reviewed cross-source bridge standard "
+                             "(default: policies/mapping_policy.yml)")
     return parser
 
 
@@ -811,8 +897,9 @@ def main(argv: Iterable[str] | None = None) -> int:
             release_dir=args.release_dir,
             registry_path=args.registry,
             output_db=args.output,
+            bridge_emission_policy_path=args.bridge_emission_policy,
         )
-    except BuildError as exc:
+    except (BuildError, BridgeEmissionError) as exc:
         print(f"error: {exc}", file=sys.stderr)
         return 2
     print(json.dumps(summary, ensure_ascii=False, indent=2, sort_keys=True))

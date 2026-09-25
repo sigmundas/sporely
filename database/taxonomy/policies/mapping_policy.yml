@@ -30,6 +30,46 @@
     {"event": "unresolved_supported_source_taxon", "action": "create_provisional_sporely_concept", "review": "required"},
     {"event": "manual_override", "action": "apply_reviewed_mapping_before_automation", "review": "approved_required"}
   ],
+  "authoritative_bridge_emission": {
+    "purpose": "Decides which cross-source identity bindings may be projected as authoritative external identifiers under a declared namespace, per docs/identity-contract.md. A binding that is not eligible here stays an internal identity binding: it is never emitted as a resolvable (source, namespace, external_id) tuple.",
+    "projection_path": "source_usages.jsonl.bridge_evidence_class -> taxon_external_id_text_min -> taxon_external_id.jsonl -> desktop external_mapping / cloud taxonomy_v2_external_ids",
+    "emitted_rows_are_never_preferred": true,
+    "emitted_rows_never_change_backbone_presentation": true,
+    "fail_closed": "An evidence class absent from both lists below is ineligible and must be counted as 'unclassified_evidence_class'.",
+    "only_reviewed_relationships_are_eligible": "automatic_identity.requirements admits an automatic bridge only on continuous source identity or an authoritative explicit cross-reference. No cross-source classifier in this repository produces either: every automatic class is derived from a canonical-name/rank lookup, which continuity_rules classifies as canonical_name_only -> review required. Declaring such a rule reviewed in this file would not supply the relationship evidence it lacks. Eligibility is therefore per-association human review, and nothing else.",
+    "eligible": [
+      {
+        "evidence_class": "manual_approved_exact",
+        "tier": "reviewed_manual",
+        "basis": "a per-association human decision recorded in manual_mappings.yml with reviewer, rationale and evidence_references, and review_status=approved",
+        "review": "per_association"
+      },
+      {
+        "evidence_class": "reviewed_supersession",
+        "tier": "reviewed_manual",
+        "basis": "a per-association human decision recorded in concept_supersessions.yml with review_status=approved, selecting a current concept for an already-allocated concept under continuity_rules.merge",
+        "review": "per_association"
+      }
+    ],
+    "rejected": [
+      {
+        "evidence_class": "cross_source_automatic_exact_strict",
+        "reason": "the conservative exact rule matches on canonical name and rank and then strengthens the match with authorship, status and kingdom agreement plus a homonym guard. That is a stronger name match, but it is still a name match: neither source published a cross-reference asserting the two concepts are the same. continuity_rules.canonical_name_only requires review for exactly this evidence, so the binding enriches names and must not be published as concept identity. Reviewable candidates are identified by scripts/cross_reference_evidence.py, which reports the sources' own synonymy assertions; a human decision on that evidence is what promotes an association, one at a time."
+      },
+      {
+        "evidence_class": "cross_source_automatic_exact_missing_authorship",
+        "reason": "admitted by the missing-authorship fallback, which fires precisely when authorship is absent on one or both sides. Weaker still than the strict rule, and rejected for the same reason plus an unverified homonym guard."
+      },
+      {
+        "evidence_class": "intra_source_synonym",
+        "reason": "a synonym usage bound to its own accepted concept inside one source. Its relation to the backbone concept is transitive on the accepted usage's binding and has not been graded on its own evidence; admitting it would emit an identifier whose evidence was never evaluated."
+      },
+      {
+        "evidence_class": "",
+        "reason": "an anchor binding, or a binding with no cross-source evidence. An anchor's identifier is already authoritative through its own native namespace and needs no bridge."
+      }
+    ]
+  },
   "manual_precedence": {
     "approved_overrides_automation": true,
     "rejected_is_retained": true,

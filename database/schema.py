@@ -1450,6 +1450,36 @@ def init_database(
         cursor.execute('ALTER TABLE observations ADD COLUMN sporely_taxon_id INTEGER')
     except sqlite3.OperationalError:
         pass  # Column already exists
+    # Taxonomy-v2 closeout Stage 2: provenance for the identity above. The
+    # bare integer cannot say whether it came from a compiled taxonomy-v2
+    # artifact, from an authoritative resolution of a namespaced external
+    # identifier, or from a legacy namespace-lost integer — and only the first
+    # two license asserting a Sporely-owned ID. These columns carry the
+    # ``(source_system, namespace, external_id)`` tuple an unresolved external
+    # selection must keep, so provenance survives an app restart. All
+    # NULLable and additive; see utils/taxon_identity.py for the state machine.
+    for _identity_column, _identity_type in (
+        ('taxon_identity_state', 'TEXT'),
+        ('taxon_identity_proof', 'TEXT'),
+        ('taxon_identity_source_system', 'TEXT'),
+        ('taxon_identity_namespace', 'TEXT'),
+        ('taxon_identity_external_id', 'TEXT'),
+        # The verbatim provider string ("NBIC:53482"). identity-contract.md
+        # requires the raw value to be retained; the stripped numeric
+        # component alone is meaningful only under a declared namespace bridge.
+        ('taxon_identity_raw_external_id', 'TEXT'),
+        # Release/response provenance for the identity: which taxonomy release
+        # or provider response the binding was established against. The stage
+        # requires preserving it "if available", and a value that lives only in
+        # memory does not survive the app restart the stage asks us to audit.
+        ('taxon_identity_provenance', 'TEXT'),
+    ):
+        try:
+            cursor.execute(
+                f'ALTER TABLE observations ADD COLUMN {_identity_column} {_identity_type}'
+            )
+        except sqlite3.OperationalError:
+            pass  # Column already exists
     try:
         # Stage 3B.3: exact scientific-name string the observer selected
         # (e.g. "Hygrocybe conica var. pseudoconica"). Verbatim, no

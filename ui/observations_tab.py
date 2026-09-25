@@ -123,6 +123,11 @@ from utils.image_metadata_merge import merge_image_lab_metadata
 from utils.ml_export import export_coco_format, get_export_summary
 from utils.local_image_ingest import RawRenderingUnavailableError, prepare_local_ingest_image
 from utils.artsdatabanken_link import concept_link_from_name_id
+from utils.taxon_identity import (
+    IDENTITY_COLUMNS,
+    TaxonIdentity,
+    proven_sporely_taxon_id,
+)
 from utils.artsobservasjoner_taxon import (
     ArtsobservasjonerTaxonIdError,
     log_artsobservasjoner_taxon_diagnostic,
@@ -12219,6 +12224,10 @@ class ObservationsTab(QWidget):
                     scientific_name_snapshot=data.get('scientific_name_snapshot'),
                     taxon_rank_snapshot=data.get('taxon_rank_snapshot'),
                     sporely_taxon_id=data.get('sporely_taxon_id'),
+                    # Taxonomy-v2 closeout Stage 2: identity provenance saves
+                    # with the identity it describes, so the two can never
+                    # drift apart across a restart.
+                    **{key: data.get(key) for key in IDENTITY_COLUMNS},
                     allow_nulls=True
                 )
                 if dialog.is_unidentified():
@@ -16763,10 +16772,55 @@ class ObservationDetailsDialog(GeometryMixin, QDialog):
                 "ai_selected_probability": self._ai_prediction_score(selected_pred or {}),
                 "ai_selected_at": _current_utc_timestamp_text(),
             }
+            self._preserve_ai_external_taxon_identity(taxon, genus, species)
             self._update_selected_ai_summary_label(self._current_ai_selected_fields)
             self._set_ai_status(self.tr("Copied to taxonomy."), "#27ae60", source=source)
         self._update_taxonomy_tab_indicators()
         self._persist_ai_state_now()
+
+    def _preserve_ai_external_taxon_identity(
+        self, taxon: dict, genus: str, species: str | None,
+    ) -> bool:
+        """Keep a provider's namespaced identifier when its row is copied in.
+
+        Taxonomy-v2 closeout Stage 2 Part A. Copying an AI suggestion into the
+        identification writes genus/species text, which invalidates any
+        committed snapshot and leaves the observation with no identity record
+        at all — even though the provider handed us a perfectly good
+        namespaced identifier (Artsorakel returns ``NBIC:53482``). That
+        identifier was only kept as ``ai_selected_taxon_id``, which is
+        AI-identification *history* and must not be mistaken for an accepted
+        observation identity.
+
+        The identifier is now preserved as an explicitly unresolved external
+        identity: ``(source_system, namespace, external_id)`` plus the
+        verbatim provider value, and no ``sporely_taxon_id``. It carries no
+        Sporely identity until something resolves it through an authoritative
+        mapping, so the cloud gate still refuses to emit anything for it.
+
+        Returns whether an external identity was committed. iNaturalist and
+        other sources whose ids are bare integers are deliberately not
+        preserved here: a namespace-lost integer is legacy/audit evidence
+        only, and inventing a namespace for it is the defect this stage
+        closes.
+        """
+        controller = getattr(self, "_taxon_controller", None)
+        if controller is None:
+            return False
+        raw_identifier = str(taxon.get("id") or "").strip()
+        parts = [str(genus or "").strip(), str(species or "").strip()]
+        identity = TaxonIdentity.from_prefixed_external_id(
+            raw_identifier,
+            scientific_name=" ".join(p for p in parts if p) or None,
+            rank="species" if species else "genus",
+        )
+        if not identity.has_external_evidence:
+            return False
+        return controller.commit_external_identity(
+            identity,
+            genus=parts[0],
+            species=parts[1],
+        )
 
     def _on_ai_crop_clicked(self) -> None:
         return
@@ -17668,16 +17722,28 @@ class ObservationDetailsDialog(GeometryMixin, QDialog):
         if getattr(self, "_loading_form", False):
             self._deferred_location_lookup_pending = True
             return
-        # Coordinates just changed — any previously-cached country/region are
-        # associated with the OLD point. Drop region_id (never invented) and
-        # clear the country_code until the new geocode returns. This is what
-        # makes the save path emit an explicit clear when a lookup ultimately
-        # fails after a coordinate change.
-        self._location_country_code = ""
-        self._location_country_name = ""
-        self._location_region_id = None
-        self._location_country_coords = None
-        self._refresh_location_reporting_summary()
+        # Clear cached geography only when the coordinates really moved away
+        # from the point it belongs to. The dialog also runs this deferred on
+        # open, after `_load_observation_values` has restored the stored
+        # country for the stored coordinates; treating that load as a change
+        # erased a valid country whenever the refresh geocode could not
+        # complete (offline), and an unrelated edit then saved NULL.
+        cached_coords = getattr(self, "_location_country_coords", None)
+        coords_moved = cached_coords is None or ObservationsTab._coords_meaningfully_changed(
+            cached_coords[0], cached_coords[1],
+            self.lat_input.value(), self.lon_input.value(),
+        )
+        if coords_moved:
+            # Coordinates changed — any previously-cached country/region are
+            # associated with the OLD point. Drop region_id (never invented)
+            # and clear the country_code until the new geocode returns. This
+            # is what makes the save path emit an explicit clear when a
+            # lookup ultimately fails after a coordinate change.
+            self._location_country_code = ""
+            self._location_country_name = ""
+            self._location_region_id = None
+            self._location_country_coords = None
+            self._refresh_location_reporting_summary()
         self._location_lookup_timer.start()
 
     def _do_location_lookup(self):
@@ -17931,15 +17997,18 @@ class ObservationDetailsDialog(GeometryMixin, QDialog):
 
         # Stage 3B.5: persist the exact taxonomy-v2 concept alongside
         # the scientific-name and rank snapshots.
-        raw_sporely_id = (
-            (snapshot or {}).get("sporely_taxon_id") if snapshot else None
-        )
-        try:
-            sporely_taxon_id = (
-                int(raw_sporely_id) if raw_sporely_id is not None else None
-            )
-        except (TypeError, ValueError):
-            sporely_taxon_id = None
+        #
+        # Taxonomy-v2 closeout Stage 2: the integer is no longer read out of
+        # the snapshot with a bare ``int()``. It comes from the typed identity,
+        # which populates it only for a proven Sporely concept (or a legacy
+        # value awaiting re-verification) and otherwise keeps the external
+        # ``(source_system, namespace, external_id)`` evidence instead. All of
+        # it round-trips through the ``taxon_identity_*`` columns so a restart
+        # cannot silently downgrade an unresolved external identity to "no
+        # identification".
+        identity = TaxonIdentity.from_row(snapshot)
+        identity_row = identity.to_row()
+        sporely_taxon_id = identity_row.get("sporely_taxon_id")
         sharing_scope = self._selected_sharing_scope()
         location_precision = self._selected_location_precision()
 
@@ -18049,6 +18118,7 @@ class ObservationDetailsDialog(GeometryMixin, QDialog):
             'scientific_name_snapshot': scientific_name_snapshot,
             'taxon_rank_snapshot': taxon_rank_snapshot,
             'sporely_taxon_id': sporely_taxon_id,
+            **{key: identity_row.get(key) for key in IDENTITY_COLUMNS},
         }
 
     def on_taxonomy_tab_changed(self, index):
@@ -19500,52 +19570,87 @@ class ObservationDetailsDialog(GeometryMixin, QDialog):
             )
 
     def _on_taxon_manual_editing_finished(self) -> None:
-        """Trigger a manual (genus, species) -> sporely_taxon_id resolve
-        when the observer finishes editing either scientific-identity
-        field without going through the completer picker.
+        """Resolve typed genus/species text for DISPLAY only.
 
-        Only commits a snapshot when the taxonomy DB unambiguously pins
-        the pair to a single canonical concept — ambiguity, empty input
-        and unknown pairs stay unresolved (matches the picker's own
-        rule). Skips when a snapshot is already held so a prior explicit
-        picker choice (e.g. a ``synonym_of_accepted`` selection) is
-        never silently overwritten by the same-text canonical.
+        Taxonomy-v2 closeout Stage 2 changed what this handler is allowed to
+        do. It previously called ``commit_manual_resolution``, which asserted
+        a ``sporely_taxon_id`` — so typed text created identity implicitly,
+        and because an edit invalidates the committed snapshot first, the very
+        next ``editingFinished`` re-bound identity from name text. Both are
+        forbidden: identity binding must stay explicit, identity must not be
+        inferred from genus/species equality alone, and a committed selection
+        must not be rebound from text after the observer edits it.
+
+        What survives is the *reason* the hook exists: refreshing the Red List
+        badge without making the observer open the completer. The resolved id
+        is recorded through
+        :meth:`TaxonInputController.set_display_only_name_match`, which the
+        save path never reads, so it can no longer reach
+        ``observations.sporely_taxon_id`` or
+        ``set_observation_selected_taxon_v2``.
+
+        Only an unambiguous single-candidate resolution is used, and only when
+        no real selection is held — a prior explicit picker choice (e.g. a
+        ``synonym_of_accepted`` selection) is never shadowed.
         """
         controller = getattr(self, "_taxon_controller", None)
         if controller is None or controller._is_suspended():
             return
         if controller.committed_snapshot() is not None:
             return
+
+        # Every path out of this handler that does NOT establish a fresh match
+        # must clear the previous one. A display-only match is derived from the
+        # text, so once the text no longer resolves — empty, unknown or
+        # ambiguous — the old taxon's evidence is stale and must not remain
+        # available to the deferred Red List resolve.
+        # The badge itself is already cleared by
+        # ``_on_taxon_identity_field_edited`` on the text change that got us
+        # here; what must also go is the resolved id behind it, so the
+        # deferred resolve cannot re-apply the previous taxon's assessment.
+        def _give_up() -> None:
+            controller.clear_display_only_name_match()
+
         genus_widget = getattr(self, "genus_input", None)
         species_widget = getattr(self, "species_input", None)
         if genus_widget is None or species_widget is None:
+            _give_up()
             return
         genus = str(genus_widget.text() or "").strip()
         species = str(species_widget.text() or "").strip()
         if not genus or not species:
+            _give_up()
             return
         lookup = self._ensure_taxon_lookup()
         if lookup is None:
+            _give_up()
             return
         resolver = getattr(lookup, "resolve_manual_scientific", None)
         if not callable(resolver):
+            _give_up()
             return
         try:
             resolution = resolver(genus, species)
         except Exception:
+            _give_up()
             return
         if resolution is None:
+            # Unknown or ambiguous pair — see the note above.
+            _give_up()
             return
-        controller.commit_manual_resolution(
-            sporely_taxon_id=resolution.sporely_taxon_id,
-            scientific_name=resolution.scientific_name,
-            taxon_rank_snapshot=resolution.taxon_rank_snapshot,
-            genus=resolution.genus,
-            species=resolution.species,
-            link_kind=resolution.link_kind,
-            canonical_scientific_name=resolution.canonical_scientific_name,
-            canonical_rank=resolution.canonical_rank,
-        )
+        # Guard against a stale queued resolve: the widgets must still hold
+        # the pair that was resolved. ``commit_manual_resolution`` used to do
+        # this check itself.
+        if str(genus_widget.text() or "").strip().casefold() != genus.casefold() \
+                or str(species_widget.text() or "").strip().casefold() != species.casefold():
+            _give_up()
+            return
+        # DISPLAY ONLY — deliberately not ``commit_manual_resolution``. See the
+        # docstring: typed text may refresh the badge, never bind identity.
+        if not controller.set_display_only_name_match(resolution.sporely_taxon_id):
+            _give_up()
+            return
+        self._schedule_final_redlist_resolution()
 
     def _on_vernacular_editing_finished_populate_genus(self) -> None:
         """Auto-populate Genus when a typed vernacular resolves to a
@@ -19710,16 +19815,24 @@ class ObservationDetailsDialog(GeometryMixin, QDialog):
             snap = controller.committed_snapshot() if controller else None
         except Exception:
             snap = None
-        sporely_id = (snap or {}).get("sporely_taxon_id") if snap else None
+        sporely_id = proven_sporely_taxon_id(snap) if snap else None
         try:
             sporely_int = int(sporely_id) if sporely_id else 0
         except (TypeError, ValueError):
             sporely_int = 0
+        # Taxonomy-v2 closeout Stage 2: the display-only name match also drives
+        # the badge, so it is an identity *signal* for staleness purposes even
+        # though it is never persisted identity.
+        try:
+            display_match = int(controller.display_only_name_match() or 0) if controller else 0
+        except Exception:
+            display_match = 0
         return (
             id(self),
             sporely_int,
             (snap or {}).get("scientific_name") if snap else None,
             self._location_country_code,
+            display_match,
         )
 
     def _schedule_final_redlist_resolution(self) -> None:
@@ -19794,7 +19907,21 @@ class ObservationDetailsDialog(GeometryMixin, QDialog):
             snap = controller.committed_snapshot() if controller else None
         except Exception:
             snap = None
-        sporely_id = (snap or {}).get("sporely_taxon_id") if snap else None
+        # Taxonomy-v2 closeout Stage 2: only a PROVEN identity may drive the
+        # Red List lookup. A reloaded legacy-unverified row restores its raw
+        # integer into the committed snapshot, so reading the column directly
+        # let a numeric collision resolve somebody else's assessment. The name
+        # still displays; only the identity-bearing lookup is gated.
+        sporely_id = proven_sporely_taxon_id(snap) if snap else None
+        if not sporely_id and controller is not None:
+            # Taxonomy-v2 closeout Stage 2: fall back to the display-only name
+            # match. Typed genus/species text can still refresh the badge, but
+            # that resolution is not identity and is never persisted — see
+            # ``_on_taxon_manual_editing_finished``.
+            try:
+                sporely_id = controller.display_only_name_match()
+            except Exception:
+                sporely_id = None
         if not sporely_id:
             return
         area = determine_redlist_area(self._location_country_code)
@@ -21180,17 +21307,29 @@ class ObservationDetailsDialog(GeometryMixin, QDialog):
         rank_snapshot = (
             obs.get("taxon_rank_snapshot") or ""
         ).strip()
-        sporely_id = obs.get("sporely_taxon_id")
 
+        # Taxonomy-v2 closeout Stage 2: restore the identity from its own
+        # provenance columns, not from the presence of a scientific-name
+        # snapshot plus an integer. An unresolved external identity has a
+        # source tuple and NO Sporely ID, so the old
+        # ``sporely_id is not None`` condition would have discarded exactly
+        # the state this stage exists to preserve.
+        restored_identity = TaxonIdentity.from_row(obs)
         if _controller is not None:
-            if snapshot_name and rank_snapshot and sporely_id is not None:
+            has_identity = (
+                restored_identity.is_proven_sporely
+                or restored_identity.is_legacy_unverified
+                or restored_identity.is_cloud_selected_unverified
+                or restored_identity.has_external_evidence
+            )
+            if snapshot_name and rank_snapshot and has_identity:
                 _controller.load_committed_snapshot({
                     "genus": genus,
                     "species": species,
                     "scientific_name": snapshot_name,
                     "taxon_rank_snapshot": rank_snapshot,
-                    "sporely_taxon_id": int(sporely_id),
                     # Canonical fields are not re-fetched on load.
+                    **restored_identity.to_row(),
                 })
             else:
                 _controller.load_committed_snapshot(None)
@@ -21206,29 +21345,14 @@ class ObservationDetailsDialog(GeometryMixin, QDialog):
                 red_categories = None
         red_code = obs.get("red_list_category")
 
-        # Cloud-synced observations may carry the selected Artsorakel
-        # Red List value only inside the selected prediction.
-        if not red_code:
-            for selected_pred in (self._ai_selected_by_index or {}).values():
-                if not isinstance(selected_pred, dict):
-                    continue
-                taxon = (
-                    selected_pred.get("taxon")
-                    if isinstance(selected_pred.get("taxon"), dict)
-                    else {}
-                )
-                fallback_code = (
-                    self._read_red_list_code(taxon)
-                    or self._read_red_list_code(selected_pred)
-                )
-                if fallback_code:
-                    red_code = fallback_code
-                    if red_categories is None:
-                        red_categories = (
-                            self._read_red_list_categories(taxon)
-                            or self._read_red_list_categories(selected_pred)
-                        )
-                    break
+        # The Red List restored on load comes ONLY from the persisted
+        # columns. ``ai_state_json`` is provider/UI history — the per-image
+        # prediction a user highlighted — not the committed identity, so its
+        # assessment may belong to a different taxon. Borrowing it here let
+        # an unrelated save persist that taxon's category onto the
+        # observation. No assessment beats someone else's assessment; the
+        # identity-gated lookup (`_resolve_and_apply_redlist`) is what
+        # derives a category for the committed concept.
 
         # Preserve raw degree-marked values such as VU°.
         self._set_red_list_category_raw(
