@@ -141,12 +141,13 @@ def _resolve_namespaced_external_id(
     tuple matches several concepts, so the caller can leave the column NULL
     instead of binding an arbitrary one.
     """
+    from database.taxon_lookup import namespaced_external_id_matches
+
     try:
-        rows = conn.execute(
-            "SELECT DISTINCT taxon_id FROM taxon_external_id_text_min "
-            "WHERE source_system = ? AND namespace = ? AND external_id = ?",
-            (source_system, namespace, str(external_id)),
-        ).fetchall()
+        matches = namespaced_external_id_matches(
+            conn, source_system=source_system, namespace=namespace,
+            external_id=str(external_id),
+        )
     except sqlite3.OperationalError:
         # A taxonomy candidate built before the namespaced table existed has
         # no authoritative mapping to offer. That is "unresolved", not a
@@ -156,7 +157,6 @@ def _resolve_namespaced_external_id(
             "no external identifier can be authoritatively resolved",
         )
         return None
-    matches = {int(row[0]) for row in rows}
     if not matches:
         return None
     if len(matches) > 1:

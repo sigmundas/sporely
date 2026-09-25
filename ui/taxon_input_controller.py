@@ -948,6 +948,63 @@ class TaxonInputController(QObject):
                 pass
         return True
 
+    def commit_provider_identity(
+        self,
+        identity: TaxonIdentity,
+        *,
+        genus: str = "",
+        species: str = "",
+    ) -> bool:
+        """Commit a provider's namespaced identity, resolved when a bridge exists.
+
+        The live counterpart of the offline repair: when the installed
+        taxonomy-v2 artifact maps the provider tuple (e.g.
+        ``nortaxa/nortaxa_taxon_id/53482``) to exactly one concept, the
+        identity is committed as that concept with ``external_id_resolution``
+        proof, keeping the provider tuple, the verbatim provider value and the
+        provider's name. Otherwise — no artifact, no mapping, or an ambiguous
+        mapping — it is committed unresolved exactly as
+        :meth:`commit_external_identity` does. The provider's digits are never
+        read as a Sporely id.
+        """
+        if not isinstance(identity, TaxonIdentity) or identity.is_proven_sporely:
+            return False
+        if not identity.has_external_evidence:
+            return False
+        lookup = self.lookup
+        concept = None
+        if lookup is not None and hasattr(lookup, "resolve_external_identity"):
+            try:
+                concept = lookup.resolve_external_identity(identity)
+            except Exception:
+                concept = None
+        if concept is None:
+            return self.commit_external_identity(identity, genus=genus, species=species)
+        resolved = identity.resolved_to(
+            concept.sporely_taxon_id,
+            provenance=(
+                f"taxonomy_v2:{concept.release_id}:taxon_external_id_text_min"
+            ),
+        )
+        if not resolved.is_proven_sporely:
+            return self.commit_external_identity(identity, genus=genus, species=species)
+        self._committed_snapshot = {
+            "genus": str(genus or "").strip(),
+            "species": str(species or "").strip(),
+            "scientific_name": resolved.scientific_name or "",
+            "taxon_rank_snapshot": resolved.rank,
+            "link_kind": None,
+            "canonical_scientific_name": concept.scientific_name or "",
+            "canonical_rank": concept.rank,
+            **_identity_snapshot_fields(resolved),
+        }
+        if self._on_snapshot_committed is not None:
+            try:
+                self._on_snapshot_committed(dict(self._committed_snapshot))
+            except Exception:
+                pass
+        return True
+
     def _invalidate_snapshot(self, *, reason: str) -> None:
         """Clear the committed snapshot and blank the scientific-name input
         + rank + Sporely id. Preserves genus, species, common_name, and

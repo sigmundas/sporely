@@ -16792,11 +16792,13 @@ class ObservationDetailsDialog(GeometryMixin, QDialog):
         AI-identification *history* and must not be mistaken for an accepted
         observation identity.
 
-        The identifier is now preserved as an explicitly unresolved external
-        identity: ``(source_system, namespace, external_id)`` plus the
-        verbatim provider value, and no ``sporely_taxon_id``. It carries no
-        Sporely identity until something resolves it through an authoritative
-        mapping, so the cloud gate still refuses to emit anything for it.
+        The identifier is preserved as ``(source_system, namespace,
+        external_id)`` plus the verbatim provider value. When the installed
+        taxonomy-v2 artifact holds an exact namespaced bridge for it, it is
+        committed as that Sporely concept with ``external_id_resolution``
+        proof (0.9.23); otherwise it stays an explicitly unresolved external
+        identity with no ``sporely_taxon_id``, and the cloud gate refuses to
+        emit anything for it.
 
         Returns whether an external identity was committed. iNaturalist and
         other sources whose ids are bare integers are deliberately not
@@ -16816,7 +16818,9 @@ class ObservationDetailsDialog(GeometryMixin, QDialog):
         )
         if not identity.has_external_evidence:
             return False
-        return controller.commit_external_identity(
+        # Resolved through the installed taxonomy-v2 artifact when an exact
+        # namespaced bridge exists; committed unresolved otherwise.
+        return controller.commit_provider_identity(
             identity,
             genus=parts[0],
             species=parts[1],

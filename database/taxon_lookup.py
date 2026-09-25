@@ -642,6 +642,23 @@ class TaxonLookupService:
         self._suggest_species_cache[cache_key] = tuple(choices)
         return choices
 
+    def resolve_external_identity(self, identity) -> "InstalledTaxonConcept | None":
+        """The installed taxonomy-v2 concept an external identity names, if exact.
+
+        Delegates to :func:`resolve_installed_external_identity` against this
+        service's vernacular DB, which is the installed taxonomy-v2 artifact
+        when taxonomy-v2 is active. A legacy vernacular DB has no namespaced
+        mappings, so nothing resolves.
+        """
+        if self.vernacular_db is None or identity is None:
+            return None
+        return resolve_installed_external_identity(
+            getattr(self.vernacular_db, "db_path", None),
+            source_system=getattr(identity, "source_system", None),
+            namespace=getattr(identity, "namespace", None),
+            external_id=getattr(identity, "external_id", None),
+        )
+
     def suggest_scientific_names(
         self, prefix: str = "", limit: int = TAXON_COMPLETER_LIMIT,
     ) -> list[dict]:
@@ -1274,10 +1291,72 @@ def installed_taxon_concept(db_path, sporely_taxon_id: object) -> InstalledTaxon
     )
 
 
+def namespaced_external_id_matches(
+    conn: sqlite3.Connection,
+    *,
+    source_system: str,
+    namespace: str,
+    external_id: str,
+) -> set[int]:
+    """Concepts an authoritative ``(source, namespace, external_id)`` names.
+
+    Reads the namespaced text table only. The namespace-lost integer table
+    (``taxon_external_id_min``) is never consulted, and the external id is
+    never read as a Sporely id, so a same-number concept cannot be bound by
+    collision. Raises :class:`sqlite3.OperationalError` when the artifact has
+    no namespaced table; callers decide what that means for them.
+    """
+    rows = conn.execute(
+        "SELECT DISTINCT taxon_id FROM taxon_external_id_text_min "
+        "WHERE source_system = ? AND namespace = ? AND external_id = ?",
+        (str(source_system), str(namespace), str(external_id)),
+    ).fetchall()
+    return {int(row[0]) for row in rows}
+
+
+def resolve_installed_external_identity(
+    db_path,
+    *,
+    source_system: object,
+    namespace: object,
+    external_id: object,
+) -> InstalledTaxonConcept | None:
+    """Resolve a namespaced provider identity through an installed artifact.
+
+    Returns the concept only when the tuple names exactly one concept in
+    ``taxon_external_id_text_min`` and that concept is a member of the same
+    taxonomy-v2 release (:func:`installed_taxon_concept`). No match, several
+    matches, a pre-v2 database or any read error all return ``None`` — the
+    caller keeps the identity unresolved rather than guessing.
+    """
+    source = _normalize_text(source_system)
+    ns = _normalize_text(namespace)
+    ext = _normalize_text(external_id)
+    if not (db_path and source and ns and ext):
+        return None
+    try:
+        conn = sqlite3.connect(f"file:{db_path}?mode=ro", uri=True)
+    except sqlite3.Error:
+        return None
+    try:
+        matches = namespaced_external_id_matches(
+            conn, source_system=source, namespace=ns, external_id=ext,
+        )
+    except sqlite3.Error:
+        return None
+    finally:
+        conn.close()
+    if len(matches) != 1:
+        return None
+    return installed_taxon_concept(db_path, next(iter(matches)))
+
+
 __all__ = [
     "TAXON_COMPLETER_LIMIT",
     "InstalledTaxonConcept",
     "installed_taxon_concept",
+    "namespaced_external_id_matches",
+    "resolve_installed_external_identity",
     "ManualScientificResolution",
     "TaxonChoice",
     "TaxonLookupService",
