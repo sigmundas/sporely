@@ -34,8 +34,10 @@ _TICK = itertools.count(1)
 
 
 def _now_text() -> str:
-    base = datetime(2026, 9, 25, 12, 0, tzinfo=timezone.utc)
-    return (base + timedelta(seconds=next(_TICK))).isoformat()
+    # Wall clock, like the server trigger: the pull's fast path compares the
+    # remote `updated_at` with the local `synced_at` (also wall clock). The
+    # tick keeps successive writes strictly increasing.
+    return (datetime.now(timezone.utc) + timedelta(microseconds=next(_TICK))).isoformat()
 
 
 class _FakeCloud(cloud_sync.SporelyCloudClient):
