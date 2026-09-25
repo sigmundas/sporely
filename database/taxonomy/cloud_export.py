@@ -448,6 +448,9 @@ def _verify_required_schema(conn: sqlite3.Connection) -> None:
 # tax-2026.07.30-02, is no longer packaged.
 PINNED_RELEASE_EXPECTATIONS = {
     "content_release_id": "tax-2026.09.23-01",
+    # The pin describes one exact artifact. Keying on the release id alone
+    # would also fire on synthetic fixtures that reuse the name.
+    "sqlite_sha256": "2d128d083baad14e05848462ce22aff7ee72f0fd1ff1628cc001832101b2a8a7",
     "concepts_included": 634893,
     "concepts_excluded": 1,
     "scientific_name_rows": 662648,
@@ -897,14 +900,16 @@ class ExportResult:
 
 def _assert_pinned_counts(
     release_id: str,
+    sqlite_sha256: str,
     scope: ScopeResult,
     datasets: dict[str, DatasetResult],
     lang_counts: dict[str, int],
     area_counts: dict[str, int],
     external_source_table_counts: dict[str, int],
 ) -> None:
-    if release_id != PINNED_RELEASE_EXPECTATIONS["content_release_id"]:
-        return  # only enforce for the pinned regression release
+    if (release_id != PINNED_RELEASE_EXPECTATIONS["content_release_id"]
+            or sqlite_sha256 != PINNED_RELEASE_EXPECTATIONS["sqlite_sha256"]):
+        return  # only enforce for the pinned regression artifact
     exp = PINNED_RELEASE_EXPECTATIONS
     errors: list[str] = []
     if len(scope.concept_ids) != exp["concepts_included"]:
@@ -1454,6 +1459,7 @@ def _stage_and_finalize(
 
         _assert_pinned_counts(
             src.content_release_id,
+            src.sqlite_sha256,
             scope,
             datasets,
             lang_counts,
