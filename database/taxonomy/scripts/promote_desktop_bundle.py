@@ -44,6 +44,8 @@ from collections import Counter
 from pathlib import Path
 
 REPO_ROOT = Path(__file__).resolve().parents[3]
+if str(REPO_ROOT) not in sys.path:  # runnable as a plain script
+    sys.path.insert(0, str(REPO_ROOT))
 DEFAULT_BUNDLE_DIR = REPO_ROOT / "database/reference_data/generated/taxonomy_v2"
 DEFAULT_REGISTRY_MANIFEST = REPO_ROOT / "database/taxonomy/registry/canonical/manifest.json"
 DEFAULT_COMPATIBILITY = REPO_ROOT / "database/taxonomy/desktop-compatibility.json"
