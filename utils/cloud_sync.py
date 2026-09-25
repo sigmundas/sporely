@@ -2924,6 +2924,21 @@ def format_cloud_sync_error_details(error) -> str:
     return " | ".join(parts)
 
 
+#: Distinguishing marker in the CloudSyncError message raised by
+#: `_verify_identity_clear_landed` — see `is_identity_clear_verification_failed_error`.
+_IDENTITY_CLEAR_VERIFICATION_FAILED_MARKER = 'identity clear did not take effect'
+
+
+def is_identity_clear_verification_failed_error(error) -> bool:
+    """Whether *error* is the read-back verification failure raised when a
+    rate-limit (or similar) row-suppression trigger cancelled an identity
+    clear while the RPC call itself did not raise (Stage C review round 2,
+    item 3)."""
+    _code, texts = _collect_sync_error_details(error)
+    haystack = ' '.join(dict.fromkeys(texts)).lower()
+    return _IDENTITY_CLEAR_VERIFICATION_FAILED_MARKER in haystack
+
+
 def is_privacy_slot_limit_error(error) -> bool:
     code, texts = _collect_sync_error_details(error)
     haystack = ' '.join(dict.fromkeys(texts)).lower()
@@ -17051,6 +17066,46 @@ class SporelyCloudClient:
             'p_species': species,
             'p_common_name': common_name,
         })
+        self._verify_identity_clear_landed(cloud_id)
+
+    def _verify_identity_clear_landed(self, cloud_id: str) -> None:
+        """Read back the row and confirm the clear actually took effect.
+
+        Stage C review round 2, item 3: runtime-proven that
+        ``observation_taxon_shared_reference_rate_row_trg``
+        (sporely-web migration 20260830193144) can cancel THIS row's UPDATE
+        of ``selected_sporely_taxon_id`` — a per-user, per-minute rate limit
+        on the same trigger family the reference-library sync RPCs share —
+        while the statement-level guard reports it correctly as HTTP 429.
+        Reproduced end to end: a persistently rate-limited caller gets a real
+        ``CloudTemporarilyUnavailableError`` (never a false success) and the
+        observation stays locally dirty for retry, so the row-suppression
+        itself was never observed to be silently reported as a success by
+        the RPC call. This read-back is the narrow, desktop-side defence for
+        the residual case regardless: if ``set_observation_identification_v2``
+        ever returns without raising while the row's own
+        ``selected_sporely_taxon_id`` still shows a value, that is
+        indistinguishable from a silently dropped clear, so it must be
+        treated exactly like one — fail closed (``CloudSyncError``, caught by
+        the same per-observation handling every other push failure uses),
+        never advance sync state or a baseline as if the clear had landed.
+        """
+        verified = self.get_observation(cloud_id)
+        if verified is None:
+            # Could not verify at all (deleted/inaccessible) — a different,
+            # pre-existing failure mode the caller already handles; nothing
+            # extra to enforce here.
+            return
+        still_selected = _normalize_observation_int_value(verified.get('selected_sporely_taxon_id'))
+        if still_selected is not None:
+            raise CloudSyncError(
+                f'cloud {cloud_id}: identity clear did not take effect — '
+                f'the cloud row still reports selected_sporely_taxon_id='
+                f'{still_selected!r} after set_observation_identification_v2 '
+                f'returned. Refusing to advance sync state as if it succeeded '
+                f'(a rate-limit or similar row-suppression trigger may have '
+                f'cancelled the write).'
+            )
 
     def set_observation_selected_taxon(
         self,
@@ -21003,6 +21058,32 @@ def push_all(
                             f"Observation {i + 1}/{max(1, total)} failed: "
                             f"{WEBP_REQUIRED_FOR_CLOUD_MEDIA_UPLOAD_MESSAGE}"
                         ),
+                    ),
+                    progress_state,
+                )
+            elif is_identity_clear_verification_failed_error(raw_error):
+                # Stage C review round 2, item 3: the read-back after
+                # set_observation_identification_v2 found the identity still
+                # attached — a rate-limit row-suppression trigger (or
+                # anything else that can silently cancel the row's own
+                # UPDATE) may have dropped the clear while the RPC call
+                # itself did not raise. Plain `mark_observation_dirty` is not
+                # enough here: the ordinary genus/species half of the clear
+                # already reached the cloud, so a same-cycle pull would
+                # otherwise see local and remote agreeing on the NEW name and
+                # silently reconverge/re-stamp this observation synced —
+                # exactly the stale identity beside a new name Stage C
+                # exists to prevent, reintroduced through a failed retry
+                # instead of a rename. The conflict-review marker is the
+                # existing signal pull_all's own convergence check honours
+                # (see its `elif remote_changed:` branch) to leave this
+                # observation blocked until a later push actually succeeds.
+                _set_observation_conflict_review_pending(int(obs['id']))
+                _emit_progress(
+                    progress_cb,
+                    _format_cloud_sync_observation_status(
+                        obs,
+                        f"Observation {i + 1}/{max(1, total)} needs review before syncing",
                     ),
                     progress_state,
                 )
@@ -26167,13 +26248,34 @@ def pull_all(
                         or measurement_result.get('failed')
                     )
                     effective_media_changed = local_media_changed if sync_images else False
+                    # Stage C review round 2, item 3: a push-side identity
+                    # clear whose read-back found the identity still
+                    # attached (e.g. a rate-limited row-suppression trigger)
+                    # marks this exact conflict-review reason. Its ordinary
+                    # genus/species half may already have reached the cloud
+                    # by then, which makes local and remote agree at the
+                    # ORDINARY field level — that must never read as
+                    # "nothing left to do" and silently re-stamp this
+                    # observation synced; only a later push that actually
+                    # succeeds resolves it. Remote-only field/image/
+                    # measurement merging above is unaffected — this only
+                    # forces the final dirty/synced decision, the same
+                    # narrow point Stage B's "both sides changed" conflict
+                    # already uses to stay blocked without disabling merge.
+                    identity_clear_verification_pending = (
+                        local_obs.get('sync_blocked_reason') == CONFLICT_REVIEW_PENDING_MARKER
+                    )
                     remaining_local_changes = _remaining_local_changes_after_remote_merge(
                         field_changes,
                         local_media_changed=effective_media_changed,
                     ) or bool(measurement_result.get('conflict')) or bool(
                         materialize_remote_images and remote_media_pending
+                    ) or identity_clear_verification_pending
+                    should_store_snapshot = (
+                        should_store_snapshot
+                        and not bool(conflict_fields)
+                        and not identity_clear_verification_pending
                     )
-                    should_store_snapshot = should_store_snapshot and not bool(conflict_fields)
                     if remaining_local_changes:
                         _set_observation_sync_state(local_id, cloud_id, dirty=True, synced_at=None)
                     else:

@@ -218,6 +218,49 @@ byte):
    known baseline, which Case F lacks by definition — only a picker
    resolution clears it).
 
+**Round 3 (2026-09-25, same branch).** Three more follow-ups:
+1. **Case F compatibility semantics.** A blank/missing local genus or species
+   is UNKNOWN, not contradictory — the known production shape is a bound
+   Sporely concept with no local genus/species. `_identification_contradicts_remote`
+   replaces the plain inequality; a populated, differing component is still a
+   true contradiction and still blocks. When compatible, the push side now
+   adopts the cloud's fields/identity onto local first (mirroring the pull
+   side's existing full apply), so the still-partial local payload never
+   PATCHes the cloud's canonical name down to blank.
+2. **Privacy while blocked.** Runtime-reproduced release blocker: a true
+   Case F contradiction blocked the WHOLE push, including visibility, so
+   marking a blocked observation private never reached the cloud (stayed
+   public). Fixed with the smallest safe rule: a strictly MORE restrictive
+   visibility change (narrowing) may propagate through a single scoped PATCH
+   of only the `visibility` column while blocked; a widening change stays
+   blocked. Never carries identification/name/any other field, never clears
+   the conflict marker, never stores a baseline.
+3. **Rate-limit false success, closed.** Runtime-proven against a real local
+   Supabase: `observation_taxon_shared_reference_rate_row_trg`
+   (sporely-web migration 20260830193144) can cancel the identity RPC's own
+   row update while PostgREST correctly reports HTTP 429 — the existing
+   retry/exception layer either succeeds for real after backoff or raises
+   `CloudTemporarilyUnavailableError` (no false success observed there). The
+   real defect: the ordinary genus/species half of `push_observation`'s
+   payload lands via a separate, unconditional PATCH before the identity RPC
+   runs, so when the identity RPC then fails (rate limit or otherwise), the
+   cloud is left with the NEW name beside the OLD identity — the exact
+   contradiction Stage C exists to prevent, reintroduced through a failed
+   retry. Fixed at the narrowest layer: `clear_observation_selected_taxon`
+   now reads the row back after the RPC and fails closed
+   (`CloudSyncError`) if the identity is still attached, regardless of what
+   the RPC call itself reported; push_all routes that specific failure
+   through the existing conflict-review marker instead of a plain dirty
+   flag, and pull_all's own convergence check (only at the point where it
+   decides synced-vs-dirty, not the field-merge steps before it) now leaves
+   an observation carrying that marker dirty instead of silently
+   re-stamping it synced just because the (already-patched) ordinary fields
+   happen to agree — otherwise the SAME sync cycle's pull immediately undid
+   the push-side fail-closed signal. No server-side/migration change is
+   needed based on what was observed; the desktop read-back is genuine
+   defence-in-depth for a theoretical silent-suppression case the runtime
+   proof did not actually exhibit.
+
 ---
 
 ## 5. Community/stats functions hard-code the spore type set

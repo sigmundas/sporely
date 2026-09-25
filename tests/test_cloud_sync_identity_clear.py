@@ -552,3 +552,77 @@ def test_second_sync_after_clear_issues_no_repeated_clear(env):
     assert result["errors"] == []
     assert len(cloud.rpcs) == rpcs_after_clear, "no repeated clear on a later unrelated sync"
     assert cloud.rows[cloud_id]["selected_sporely_taxon_id"] is None
+
+
+# ── Rate-limit row-suppression fails closed (Stage C review round 2, item 3) ─
+#
+# Runtime-proven against a real local Supabase: the reference-library rate
+# limiter's row-suppression trigger
+# (observation_taxon_shared_reference_rate_row_trg,
+# sporely-web migration 20260830193144) can cancel the identity RPC's own
+# UPDATE while the RPC call itself keeps running. In practice PostgREST
+# correctly surfaces this as HTTP 429 and the client's transient-retry layer
+# either succeeds for real after backoff or raises
+# CloudTemporarilyUnavailableError (never a false success) — but that
+# depends on the HTTP layer behaving exactly as observed. This test proves
+# the DESKTOP's own independent defence: `clear_observation_selected_taxon`
+# reads the row back after the RPC and fails closed if the identity is still
+# there, regardless of what the RPC call itself reported.
+
+
+class _SilentlySuppressedCloud(_FakeCloud):
+    """Simulates the row-suppression trigger: the identification RPC call
+    completes without raising (as it would if some future/edge-case server
+    behaviour reported success), but the row's own identity is left
+    untouched — exactly what the read-back must catch."""
+
+    def _rpc(self, function_name, payload=None):
+        payload = dict(payload or {})
+        self.rpcs.append((function_name, dict(payload)))
+        if function_name == "set_observation_identification_v2":
+            return None  # looks like success; the row is NOT updated
+        return super()._rpc(function_name, payload)
+
+
+def test_silently_suppressed_clear_fails_closed_via_readback(env):
+    cloud = _SilentlySuppressedCloud()
+    # Re-seed using the suppressing cloud in place of the ordinary env fixture's.
+    local_id = models.ObservationDB.create_observation(
+        date="2026-09-20", genus="Conocybe", species="rugosa", notes="notes A",
+    )
+    _sync(cloud)
+    obs = models.ObservationDB.get_observation(local_id)
+    cloud_id = obs["cloud_id"]
+    _establish_proven_identity(cloud, local_id, cloud_id)
+
+    _edit_locally(
+        local_id,
+        genus="Funny", species="brown mushroom", common_name=None,
+        sporely_taxon_id=None, taxon_identity_state="no_identity_evidence",
+        taxon_identity_proof=None, taxon_identity_source_system=None,
+        taxon_identity_namespace=None, taxon_identity_external_id=None,
+        taxon_identity_raw_external_id=None,
+        scientific_name_snapshot=None, taxon_rank_snapshot=None,
+        allow_nulls=True,
+    )
+    result = _sync(cloud)
+
+    # The RPC "succeeded" (no exception from the fake), but the row-suppression
+    # left the cloud's identity untouched — the read-back must have caught it.
+    assert cloud.clear_rpcs_since(0), "the clear RPC was still attempted"
+    row = cloud.rows[cloud_id]
+    assert row["selected_sporely_taxon_id"] == 83668, "the fake never actually cleared it"
+    assert any("did not take effect" in str(e).lower() or "not overwritten" in str(e).lower()
+               or "cloud sync" in str(e).lower() or "identification" in str(e).lower()
+               for e in result.get("errors") or []), result["errors"]
+
+    local = _local(local_id)
+    assert local["sync_status"] == "dirty", "must stay dirty, never advance as if the clear succeeded"
+    # No baseline may be stored recording the (falsely) cleared identity.
+    stored = cloud_sync._load_cloud_observation_snapshot(cloud_id)
+    if stored:
+        import json
+        baseline_obs = json.loads(stored)["observation"]
+        assert baseline_obs.get(cloud_sync.TAXON_IDENTITY_SYNC_FIELD) != "", (
+            "must not falsely record the clear as the new baseline identity"
+        )
