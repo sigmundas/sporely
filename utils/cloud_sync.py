@@ -10471,6 +10471,14 @@ _OBSERVATION_IDENTITY_SELECT_COLUMNS = (
 )
 
 
+#: PostgREST's "column observations.taxon_identity_state does not exist" (42703)
+#: and "Could not find the 'taxon_identity_state' column" (PGRST204).
+_MISSING_IDENTITY_COLUMN_PATTERN = re.compile(
+    r"column \S*taxon_identity_\w+ does not exist"
+    r"|could not find the '?taxon_identity_\w+'? column"
+)
+
+
 @dataclass(frozen=True)
 class _RemoteIdentityClaim:
     """What one cloud observation row says about its taxonomy identity."""
@@ -10530,6 +10538,22 @@ def _remote_identity_claim(remote: dict | None) -> _RemoteIdentityClaim | None:
             external_id=tuple_values[2], raw_external_id=tuple_values[3],
         )
     return _RemoteIdentityClaim(kind='none', cloud_state=state)
+
+
+def _withhold_identity_from_push(push_payload: dict) -> None:
+    """Make this push carry no identity, so the RPC gate skips it (never clears)."""
+    push_payload['sporely_taxon_id'] = None
+    for column in _TAXON_IDENTITY_COLUMNS:
+        push_payload[column] = None
+
+
+def _remote_row_without_identity(remote: dict | None) -> dict:
+    """The cloud row minus its identity columns ("no identity information")."""
+    return {
+        key: value
+        for key, value in dict(remote or {}).items()
+        if key != 'selected_sporely_taxon_id' and key not in _OBSERVATION_IDENTITY_SELECT_COLUMNS
+    }
 
 
 def _local_identity_sync_key(local_obs: dict | None) -> str:
@@ -10735,34 +10759,46 @@ def _local_identity_columns_for_remote_claim(
     }
 
 
+IDENTITY_APPLY_APPLIED = 'applied'
+IDENTITY_APPLY_UNCHANGED = 'unchanged'
+IDENTITY_APPLY_CONFLICT = 'conflict'
+
+
 def _apply_remote_identity_to_local(
     local_id: int,
     remote: dict,
     *,
     local_before: dict | None = None,
-) -> bool:
+    fail_closed_on_local_claim: bool = False,
+) -> str:
     """Write the cloud row's identity onto a local observation.
 
-    Returns False without writing when the row carries no identity
-    information, or when nothing would change. ``local_before`` is the local
-    row as it was before this pull applied any other field — the caller
-    passes it when names were written first. Uses the persistence API's
-    one-coherent-transition write.
+    Returns ``'unchanged'`` without writing when the row carries no identity
+    information or nothing would change, ``'applied'`` after a write, and
+    ``'conflict'`` without writing when ``fail_closed_on_local_claim`` is set
+    and the local row holds its own claim (a proven identity or a preserved
+    non-Sporely tuple) that differs from a non-empty cloud identity. Automatic
+    applies with no sync baseline pass it: nothing says which side changed,
+    so a disagreement is a review, never an overwrite. ``local_before`` is the
+    local row as it was before this pull applied any other field. Uses the
+    persistence API's one-coherent-transition write.
     """
     claim = _remote_identity_claim(remote)
     if claim is None:
-        return False
+        return IDENTITY_APPLY_UNCHANGED
     # The local row already holds this identity. Rewriting it would replace a
     # stronger local proof (a picker-proven 83668) with the weaker
     # cloud-derived one for the very same concept.
     local_row = dict(local_before or ObservationDB.get_observation(int(local_id)) or {})
     if _local_identity_sync_key(local_row) == claim.key:
-        return False
+        return IDENTITY_APPLY_UNCHANGED
+    if fail_closed_on_local_claim and claim.key and _local_identity_is_claim(local_row):
+        return IDENTITY_APPLY_CONFLICT
     # A cloud row with no identity is not evidence that local evidence is
     # wrong while both still name the same taxon — the push rule, mirrored.
     # It clears local identity only when the identification itself changed.
     if claim.kind == 'none' and _identification_key(local_row) == _identification_key(dict(remote or {})):
-        return False
+        return IDENTITY_APPLY_UNCHANGED
     columns = _local_identity_columns_for_remote_claim(claim, remote)
     ObservationDB.update_observation(int(local_id), allow_nulls=True, **columns)
     if claim.kind == 'sporely' and columns.get('sporely_taxon_id') is None:
@@ -10772,7 +10808,7 @@ def _apply_remote_identity_to_local(
             'artifact; preserved unresolved, not bound',
             flush=True,
         )
-    return True
+    return IDENTITY_APPLY_APPLIED
 
 
 def _apply_remote_observation_fields(
@@ -10780,14 +10816,20 @@ def _apply_remote_observation_fields(
     remote: dict,
     *,
     fields: set[str] | None = None,
-) -> None:
+    identity_fail_closed: bool = False,
+) -> str:
+    """Apply cloud observation fields locally; returns the identity outcome.
+
+    ``identity_fail_closed`` — see `_apply_remote_identity_to_local`.
+    """
+    identity_outcome = IDENTITY_APPLY_UNCHANGED
     requested_fields = {
         str(field or '').strip()
         for field in (fields or set(_SNAPSHOT_OBS_FIELDS))
         if str(field or '').strip()
     }
     if not requested_fields:
-        return
+        return identity_outcome
 
     normalized_fields = {
         'sharing_scope' if field in {'visibility', 'sharing_scope'} else field
@@ -10807,7 +10849,11 @@ def _apply_remote_observation_fields(
     # Identity travels as one virtual field: a full apply ("cloud wins") or an
     # explicit request for it. Three-way reconciliation decides when to ask.
     if applies_identity:
-        _apply_remote_identity_to_local(int(local_id), remote, local_before=local_before)
+        identity_outcome = _apply_remote_identity_to_local(
+            int(local_id), remote,
+            local_before=local_before,
+            fail_closed_on_local_claim=identity_fail_closed,
+        )
 
     extra_values = _remote_observation_extra_values(remote)
     extra_updates = {
@@ -10816,7 +10862,7 @@ def _apply_remote_observation_fields(
         if key in normalized_fields
     }
     if not extra_updates:
-        return
+        return identity_outcome
 
     conn = get_connection()
     try:
@@ -10830,6 +10876,7 @@ def _apply_remote_observation_fields(
         conn.commit()
     finally:
         conn.close()
+    return identity_outcome
 
 
 def _inject_obs_exif_into_field_image(
@@ -15608,11 +15655,13 @@ class SporelyCloudClient:
         try:
             return read(path_for(self._observation_select_columns()))
         except CloudSyncError as exc:
+            # The error text echoes the request path (and so the select list),
+            # so match the server's own phrasing about one of THESE columns,
+            # not any "does not exist" that happens to share the message.
             text = str(exc or '').lower()
             if (
                 getattr(self, '_observation_identity_columns_unsupported', False)
-                or 'taxon_identity' not in text
-                or not ('does not exist' in text or 'could not find' in text)
+                or not _MISSING_IDENTITY_COLUMN_PATTERN.search(text)
             ):
                 raise
             self._observation_identity_columns_unsupported = True
@@ -19851,6 +19900,10 @@ def push_all(
                     }:
                         if field in remote_update_kwargs:
                             push_payload[field] = remote_update_kwargs[field]
+                    # A cloud-only identity change is the pull's to adopt; the
+                    # RPC must not re-assert the stale local identity over it.
+                    if TAXON_IDENTITY_SYNC_FIELD in (field_changes.get('remote_only_fields') or []):
+                        _withhold_identity_from_push(push_payload)
 
                     # Preflight: mirror pull_all's review-needed contract. If
                     # metadata, images, or measurements diverged on both
@@ -19914,6 +19967,16 @@ def push_all(
             # below clears any prior review-pending marker as part of the
             # normal `dirty→synced` transition.
 
+            # No baseline: an identity disagreement is a review, never an
+            # RPC overwrite (the pull side applies the same rule).
+            if cloud_id and remote and not stored_snapshot and _classify_identity_sync_change(
+                push_payload, remote, {}, identification_locally_owned=False,
+            ) == 'conflict':
+                _withhold_identity_from_push(push_payload)
+                errors.append(_format_review_needed_error(
+                    _safe_int(obs.get('id')), cloud_id,
+                    [_format_observation_metadata_field_label(TAXON_IDENTITY_SYNC_FIELD)],
+                ))
             merged_payload = _merge_cloud_selected_ai_fields(push_payload, remote)
             cloud_id = client.push_observation(
                 merged_payload,
@@ -25226,6 +25289,11 @@ def pull_all(
                 should_store_snapshot = True
                 store_full_snapshot = True
                 local_media_changed = False
+                # The row the snapshot is taken from. An identity disagreement
+                # with no baseline stores it WITHOUT the identity, so the
+                # baseline stays "unknown" and every later pull and push
+                # classifies the same disagreement as a conflict.
+                snapshot_remote = remote
                 if remote_changed and not stored_snapshot:
                     _emit_progress(
                         progress_cb,
@@ -25235,7 +25303,19 @@ def pull_all(
                         ),
                         progress_state,
                     )
-                    _apply_remote_observation_fields(local_id, remote)
+                    # No baseline: nothing says which side changed, so a local
+                    # identity claim that differs from the cloud is a review,
+                    # never an overwrite (identity-in-change-detection rule 2).
+                    identity_outcome = _apply_remote_observation_fields(
+                        local_id, remote, identity_fail_closed=True,
+                    )
+                    identity_conflict = identity_outcome == IDENTITY_APPLY_CONFLICT
+                    if identity_conflict:
+                        errors.append(_format_review_needed_error(
+                            local_id, cloud_id,
+                            [_format_observation_metadata_field_label(TAXON_IDENTITY_SYNC_FIELD)],
+                        ))
+                        snapshot_remote = _remote_row_without_identity(remote)
                     warnings = _apply_remote_images_to_local(
                         client,
                         local_id,
@@ -25259,7 +25339,7 @@ def pull_all(
                         or measurement_result.get('failed')
                     )
                     materialization_failed = bool(materialize_remote_images and remote_media_pending)
-                    if measurement_result.get('conflict') or materialization_failed:
+                    if measurement_result.get('conflict') or materialization_failed or identity_conflict:
                         _set_observation_sync_state(local_id, cloud_id, dirty=True, synced_at=None)
                     else:
                         _stamp_observation_synced(local_id, cloud_id)
@@ -25482,7 +25562,7 @@ def pull_all(
                     _store_remote_snapshot(
                         client,
                         cloud_id,
-                        remote=remote,
+                        remote=snapshot_remote,
                         remote_images=remote_images,
                         remote_measurements=remote_measurements,
                         include_images=store_full_snapshot,

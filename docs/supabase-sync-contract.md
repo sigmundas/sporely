@@ -677,8 +677,14 @@ Rules common to every write path:
   local evidence for the same taxon.
 - A bare integer is never stored (the persistence write boundary refuses it).
 
-Creation (`_create_local_from_remote`) and the "cloud wins" full applies
-(no-snapshot apply, keep-cloud resolution) adopt the cloud identity. The
+Creation (`_create_local_from_remote`) adopts the cloud identity. The
+explicit "keep cloud" resolution adopts it too: the owner chose that side.
+The automatic no-snapshot full apply does NOT overwrite a local claim (a
+proven identity or a preserved non-Sporely tuple) that differs from a
+non-empty cloud identity: nothing says which side changed, so it reports a
+"taxon identity" review, keeps the row dirty, and stores the snapshot WITHOUT
+the identity, leaving the identity baseline unknown so every later pull and
+the push preflight keep classifying the disagreement as a conflict. The
 three-way reconciliation of existing rows is described in the next section.
 
 ## Identity in change detection
@@ -721,6 +727,13 @@ is a local-only or conflicting field.
    - local changed and proven → **local-only**; an unpushable local claim is
      left alone, so it never keeps a row dirty.
 
+Push (`push_all`, which runs before pull) obeys the same classification:
+when the identity is remote-only the push withholds the local identity so the
+RPC gate skips rather than re-asserting the stale value over the cloud change;
+with no stored snapshot, a disagreement that would be a conflict is withheld
+and reported for review. A proven desktop pick the cloud lacks is still
+asserted.
+
 Consequences in the existing machinery: remote-only applies through
 `_apply_remote_observation_fields(fields={'taxon_identity'})`; a conflict
 blocks the snapshot advance, keeps the row dirty and blocks push until the
@@ -733,7 +746,7 @@ never cleared as "no real change" before the RPC runs. A pre-identity snapshot
 reconciles once and is then recorded.
 
 Regression: `tests/test_cloud_identity_change_detection.py`,
-`tests/test_cloud_identity_pull.py`.
+`tests/test_cloud_identity_pull.py`, `tests/test_cloud_identity_fail_closed.py`.
 
 ## Red List follows the identification it assesses
 
