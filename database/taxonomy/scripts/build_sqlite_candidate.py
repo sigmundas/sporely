@@ -679,15 +679,24 @@ def _build_into(
                     (values[0], sporely_id),
                 )
 
-        # Populate inaturalist_taxon_id where the legacy enrichment gives the
-        # concept exactly one iNaturalist id; ambiguous concepts stay NULL and
-        # keep their ids in taxon_external_id_min.
+        # Populate inaturalist_taxon_id only where the pairing is one-to-one:
+        # the concept has exactly one iNaturalist id and no other concept
+        # claims it. The legacy data attaches some ids to two species (for
+        # example Amanita muscaria's id also on Amanita gemmata); publishing
+        # must not guess, so those concepts stay NULL and keep their ids in
+        # taxon_external_id_min.
+        concepts_per_inaturalist_id: dict[int, int] = {}
+        for values in legacy_inaturalist_ids.values():
+            for value in values:
+                concepts_per_inaturalist_id[value] = concepts_per_inaturalist_id.get(value, 0) + 1
         for sporely_id, values in sorted(legacy_inaturalist_ids.items()):
             if len(values) == 1:
-                conn.execute(
-                    "UPDATE taxon_min SET inaturalist_taxon_id = ? WHERE taxon_id = ?",
-                    (next(iter(values)), sporely_id),
-                )
+                (value,) = values
+                if concepts_per_inaturalist_id[value] == 1:
+                    conn.execute(
+                        "UPDATE taxon_min SET inaturalist_taxon_id = ? WHERE taxon_id = ?",
+                        (value, sporely_id),
+                    )
 
         # --- Pass 4: vernaculars --------------------------------------------
         vern_rows: list[tuple] = []
