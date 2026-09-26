@@ -29,5 +29,15 @@
     "concept_supersessions": "database/taxonomy/policies/concept_supersessions.yml",
     "mapping_policy": "database/taxonomy/policies/mapping_policy.yml"
   },
-  "registry": "database/taxonomy/registry/canonical"
+  "registry": "database/taxonomy/registry/canonical",
+  "publishing_overlays": {
+    "artportalen": {
+      "path": "database/taxonomy/overlays/artportalen-publishing.json",
+      "sha256": "b7758d0f01c7ceec2b1ceb39aecd050a187bbf768da6b77bf18fd82dc5804628"
+    }
+  },
+  "inaturalist_refresh": {
+    "path": "database/taxonomy/sources/inaturalist_refresh/2026-09-26/inaturalist-refresh.json",
+    "sha256": "47266f1e144b2e1944359d4a2ca3f3a6bc39bd6e2024c047d7a0d6b0edbe4f15"
+  }
 }

@@ -18,7 +18,10 @@ accepts an iNaturalist taxon only when all of these hold:
 * its rank equals the concept's rank;
 * its lineage is compatible: it descends from kingdom Fungi, and for a rank
   below genus its genus ancestor has the concept's genus name;
-* no other concept in the candidate already uses the id as its lookup id.
+* no other concept in the candidate already uses the id as its lookup id,
+  and the id is not resolved for more than one concept in this refresh (two
+  concepts can share a scientific name, e.g. a COL concept and an unmapped
+  NorTaxa concept).
 
 Anything else leaves the concept unresolved, with the reason recorded. Every
 request is recorded with its URL, time, HTTP status and response SHA-256, and
@@ -54,6 +57,7 @@ ACCEPTANCE_RULES = (
     "the iNaturalist taxon descends from kingdom Fungi (47170)",
     "below genus, the iNaturalist genus ancestor has the concept's genus name",
     "no other concept in the candidate already uses the id as its lookup id",
+    "the id is not resolved for more than one concept in this refresh",
 )
 
 # (url) -> (http_status, body bytes)
@@ -213,6 +217,34 @@ def refresh(concepts: list[dict], fetch: Fetcher, *, raw_dir: Path | None = None
     return entries
 
 
+def enforce_one_to_one(entries: list[dict]) -> int:
+    """Unresolve every entry whose id would also be resolved for another concept."""
+    by_id: dict[int, list[dict]] = {}
+    for entry in entries:
+        if entry["status"] == "resolved":
+            by_id.setdefault(int(entry["inaturalist"]["taxon_id"]), []).append(entry)
+    changed = 0
+    for group in by_id.values():
+        if len(group) > 1:
+            others = sorted(e["sporely_taxon_id"] for e in group)
+            for entry in group:
+                entry["status"] = "unresolved"
+                entry["reason"] = f"id_resolved_for_multiple_concepts:{','.join(map(str, others))}"
+                changed += 1
+    return changed
+
+
+def _counts(entries: list[dict]) -> dict:
+    resolved = sum(1 for e in entries if e["status"] == "resolved")
+    reasons: dict[str, int] = {}
+    for e in entries:
+        if e["status"] != "resolved":
+            key = e["reason"].split(":")[0]
+            reasons[key] = reasons.get(key, 0) + 1
+    return {"concepts": len(entries), "resolved": resolved, "unresolved": len(entries) - resolved,
+            "unresolved_by_reason": dict(sorted(reasons.items()))}
+
+
 def build_document(entries: list[dict], *, candidate: Path, acquired_on: str) -> dict:
     conn = sqlite3.connect(f"file:{candidate}?mode=ro", uri=True)
     try:
@@ -223,12 +255,7 @@ def build_document(entries: list[dict], *, candidate: Path, acquired_on: str) ->
     with candidate.open("rb") as handle:
         for chunk in iter(lambda: handle.read(1 << 20), b""):
             digest.update(chunk)
-    resolved = sum(1 for e in entries if e["status"] == "resolved")
-    reasons: dict[str, int] = {}
-    for e in entries:
-        if e["status"] != "resolved":
-            key = e["reason"].split(":")[0]
-            reasons[key] = reasons.get(key, 0) + 1
+    enforce_one_to_one(entries)
     return {
         "format": FORMAT,
         "acquired_on": acquired_on,
@@ -242,21 +269,39 @@ def build_document(entries: list[dict], *, candidate: Path, acquired_on: str) ->
             "candidate_sqlite_sha256": digest.hexdigest(),
         },
         "acceptance_rules": list(ACCEPTANCE_RULES),
-        "counts": {"concepts": len(entries), "resolved": resolved, "unresolved": len(entries) - resolved,
-                   "unresolved_by_reason": dict(sorted(reasons.items()))},
+        "counts": _counts(entries),
         "entries": sorted(entries, key=lambda e: e["sporely_taxon_id"]),
     }
 
 
 def main(argv: list[str] | None = None) -> int:
     parser = argparse.ArgumentParser(description=__doc__, formatter_class=argparse.RawDescriptionHelpFormatter)
-    parser.add_argument("--candidate", type=Path, required=True, help="candidate SQLite built by build_release.py")
-    parser.add_argument("--output-dir", type=Path, required=True)
+    parser.add_argument("--candidate", type=Path, help="candidate SQLite built by build_release.py")
+    parser.add_argument("--output-dir", type=Path)
+    parser.add_argument("--recheck", type=Path, metavar="REFRESH_JSON",
+                        help="offline: re-apply the acceptance rules to an existing refresh file's "
+                             "recorded evidence and rewrite it (no network)")
     parser.add_argument("--raw-dir", type=Path, help="keep raw API responses here (not committed)")
     parser.add_argument("--limit", type=int, help="only the first N concepts (for a trial run)")
     parser.add_argument("--list", action="store_true", help="print the selected concepts and exit")
     args = parser.parse_args(argv)
 
+    if args.recheck:
+        document = json.loads(args.recheck.read_text(encoding="utf-8"))
+        if document.get("format") != FORMAT:
+            print(f"error: {args.recheck} is not a {FORMAT} file", file=sys.stderr)
+            return 2
+        changed = enforce_one_to_one(document["entries"])
+        document["acceptance_rules"] = list(ACCEPTANCE_RULES)
+        document["counts"] = _counts(document["entries"])
+        document.setdefault("rechecks", []).append(
+            {"on": dt.date.today().isoformat(), "rule": ACCEPTANCE_RULES[-1], "entries_changed": changed})
+        args.recheck.write_text(json.dumps(document, ensure_ascii=False, indent=2, sort_keys=True) + "\n",
+                                encoding="utf-8")
+        print(json.dumps(document["counts"], indent=2))
+        return 0
+    if not (args.candidate and args.output_dir):
+        parser.error("--candidate and --output-dir are required unless --recheck is given")
     concepts = affected_concepts(args.candidate)
     if args.limit:
         concepts = concepts[:args.limit]

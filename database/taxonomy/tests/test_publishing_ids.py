@@ -272,3 +272,12 @@ def test_refresh_records_evidence_and_provenance(tmp_path):
     assert document["counts"] == {"concepts": 4, "resolved": 2, "unresolved": 2, "unresolved_by_reason": {
         "multiple_active_exact_name_matches": 1, "no_active_exact_name_match": 1}}
     assert [e["sporely_taxon_id"] for e in document["entries"]] == [2, 3, 4, 5]
+
+
+def test_an_id_resolved_for_two_same_named_concepts_is_resolved_for_neither():
+    entry = {"status": "resolved", "inaturalist": {"taxon_id": 711797}}
+    entries = [{**entry, "sporely_taxon_id": 19080}, {**entry, "sporely_taxon_id": 625094},
+               {"status": "resolved", "inaturalist": {"taxon_id": 1}, "sporely_taxon_id": 5}]
+    assert rin.enforce_one_to_one(entries) == 2
+    assert [e["status"] for e in entries] == ["unresolved", "unresolved", "resolved"]
+    assert entries[0]["reason"] == "id_resolved_for_multiple_concepts:19080,625094"
