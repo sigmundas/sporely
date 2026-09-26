@@ -33,7 +33,7 @@
   "publishing_overlays": {
     "artportalen": {
       "path": "database/taxonomy/overlays/artportalen-publishing.json",
-      "sha256": "b7758d0f01c7ceec2b1ceb39aecd050a187bbf768da6b77bf18fd82dc5804628"
+      "sha256": "e1219525f5620d4961a992dcd5e43514b26c54e5667b78079b48f56b4e7e402f"
     }
   },
   "inaturalist_refresh": {
