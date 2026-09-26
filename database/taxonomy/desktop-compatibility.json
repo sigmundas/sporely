@@ -3,9 +3,9 @@
   "consumer": "sporely-py",
   "supported_taxonomy_schema_min": 2,
   "supported_taxonomy_schema_max": 2,
-  "tested_taxonomy_release": "tax-2026.09.23-01",
-  "bundled_sqlite_sha256": "2d128d083baad14e05848462ce22aff7ee72f0fd1ff1628cc001832101b2a8a7",
-  "bundled_gz_sha256": "9242955201ef2c3bce2a6706b5790ca36cc9c02477f47d2e200d8a0f17fc9f63",
+  "tested_taxonomy_release": "tax-2026.09.26-02",
+  "bundled_sqlite_sha256": "9bf71b7e1f9b2915c3b1798743cefdd5db53bdbbfb7edc462aa3d0ad0cf8547d",
+  "bundled_gz_sha256": "4488bb64f4abe18ed269c76264f9be36708d742ff531e931e8d7458791e05d72",
   "registry_concatenated_sha256": "21b5d39d257799fdd4ea758d857fec4d29758b83dd7ea91bf3ecd24e3d1d3077",
   "state": "candidate",
   "publication": "none",
@@ -46,8 +46,8 @@
     ]
   },
   "notes": [
-    "Activation is ON by default (0.9.23); taxonomy_v2_activation: false or SPORELY_TAXONOMY_V2=0 turns it off.",
+    "Activation is ON by default (since 0.9.23); taxonomy_v2_activation: false or SPORELY_TAXONOMY_V2=0 turns it off.",
     "Falls back to the current bundled vernacular_multilanguage.sqlite3 whenever activation or verification fails.",
-    "tax-2026.09.23-01 is the packaged release; it is reproduced from committed inputs and promoted with database/taxonomy/scripts/promote_desktop_bundle.py."
+    "tax-2026.09.26-02 is the packaged release; it is built from database/taxonomy/release-recipe.json with database/taxonomy/scripts/build_release.py (two independent runs, byte-identical) and promoted by its --promote step."
   ]
 }

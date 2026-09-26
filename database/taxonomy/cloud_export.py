@@ -443,27 +443,32 @@ def _verify_required_schema(conn: sqlite3.Connection) -> None:
 
 
 # The release the desktop bundles (database/reference_data/generated/
-# taxonomy_v2/manifest.json). Counts match the reviewed Stage 3 cloud export
-# of tax-2026.09.23-01 (stage3-candidate-verification.md); the previous pin,
-# tax-2026.07.30-02, is no longer packaged.
+# taxonomy_v2/manifest.json), tax-2026.09.26-02, built with build_release.py
+# from release-recipe.json. Against the previous pin (tax-2026.09.23-01) the
+# concept, scientific-name, authoritative external-id and red-list counts are
+# unchanged; vernaculars and legacy integer ids grew by the legacy enrichment,
+# the reviewed Artportalen overlay and the iNaturalist refresh.
 PINNED_RELEASE_EXPECTATIONS = {
-    "content_release_id": "tax-2026.09.23-01",
+    "content_release_id": "tax-2026.09.26-02",
     # The pin describes one exact artifact. Keying on the release id alone
     # would also fire on synthetic fixtures that reuse the name.
-    "sqlite_sha256": "2d128d083baad14e05848462ce22aff7ee72f0fd1ff1628cc001832101b2a8a7",
+    "sqlite_sha256": "9bf71b7e1f9b2915c3b1798743cefdd5db53bdbbfb7edc462aa3d0ad0cf8547d",
     "concepts_included": 634893,
     "concepts_excluded": 1,
     "scientific_name_rows": 662648,
-    "vernacular_rows": 10294,
-    "vernacular_by_lang": {"nb": 6240, "nn": 3975, "se": 79},
+    "vernacular_rows": 29831,
+    "vernacular_by_lang": {"da": 1786, "de": 2198, "en": 3028, "es": 329, "fi": 3116, "fr": 2796,
+                           "it": 89, "nb": 6240, "nn": 3975, "pl": 1304, "pt": 90, "se": 79,
+                           "sv": 4801},
     # Authoritative external IDs split by source_system:
     "external_authoritative_col_rows": 620975,   # from taxon_external_id_text_min
     # derived from taxon_min.norwegian_taxon_id, plus the reviewed
     # nortaxa/nortaxa_taxon_id bridges emitted into taxon_external_id_text_min
     "external_authoritative_nortaxa_rows": 13921,
     "external_authoritative_total_rows": 634896,   # = 620975 + 13921
-    # Legacy namespace-lost integer rows:
-    "external_legacy_int_rows": 61583,
+    # Legacy namespace-lost integer rows: artsdatabanken 61583, artportalen
+    # 9000 (8185 legacy + 815 overlay), inaturalist 8032.
+    "external_legacy_int_rows": 78615,
     "redlist_rows": 7866,
     "redlist_by_area": {"Norge": 7198, "Svalbard": 668},
 }

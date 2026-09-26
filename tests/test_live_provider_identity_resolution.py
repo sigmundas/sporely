@@ -228,7 +228,8 @@ def test_live_artsorakel_copy_of_nbic_53482_binds_entoloma_conferendum(
         assert (data["taxon_identity_source_system"], data["taxon_identity_namespace"],
                 data["taxon_identity_external_id"], data["taxon_identity_raw_external_id"]) == (
             "nortaxa", "nortaxa_taxon_id", "53482", "NBIC:53482")
-        assert "tax-2026.09.23-01" in (data["taxon_identity_provenance"] or "")
+        shipped = taxonomy_v2.load_manifest().content_release_id
+        assert shipped in (data["taxon_identity_provenance"] or "")
         # AI history stays history.
         assert dialog._current_ai_selected_fields["ai_selected_taxon_id"] == "NBIC:53482"
         assert dialog.is_unidentified() is False
