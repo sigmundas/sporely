@@ -221,20 +221,21 @@ def render_markdown(proposals: dict, examples: Iterable[str] = ("Amanita muscari
     lines += [f"| &nbsp;&nbsp;`{c}` | {counts[c]} |" for c in CLASSES[1:]]
     lines += ["", "Nothing here is accepted. Only entries copied into the overlay with "
               "`artportalen_overlay.py accept` are used by a build.", ""]
-    by_name = {e["scientific_name"]: e for e in proposals["entries"]}
     for name in examples:
-        entry = by_name.get(name)
+        matches = [e for e in proposals["entries"] if e["scientific_name"] == name]
         lines.append(f"## {name}")
         lines.append("")
-        if not entry:
+        if not matches:
             lines += ["Not proposed (already has an Artportalen id, or no candidate).", ""]
             continue
-        lines.append(f"Sporely `{entry['sporely_taxon_id']}` — **{entry['classification']}**")
-        lines.append("")
-        for c in entry["candidates"]:
-            lines.append(f"- Artportalen `{c['artportalen_taxon_id']}` {c['artportalen_scientific_name']} "
-                         f"({c['relation']}; attached to {c['attached_to_concepts'] or 'no concept'})")
-        lines.append("")
+        for entry in matches:
+            lines.append(f"Sporely `{entry['sporely_taxon_id']}` ({entry['taxonomic_status']}) — "
+                         f"**{entry['classification']}**")
+            lines.append("")
+            for c in entry["candidates"]:
+                lines.append(f"- Artportalen `{c['artportalen_taxon_id']}` {c['artportalen_scientific_name']} "
+                             f"({c['relation']}; attached to {c['attached_to_concepts'] or 'no concept'})")
+            lines.append("")
     for classification in CLASSES[1:]:
         sample = [e for e in proposals["entries"] if e["classification"] == classification][:10]
         if not sample:

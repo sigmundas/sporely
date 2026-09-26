@@ -20,7 +20,12 @@ Nothing here is accepted. Only entries copied into the overlay with `artportalen
 
 ## Amanita muscaria
 
-Sporely `624588` — **split**
+Sporely `78915` (accepted) — **split**
+
+- Artportalen `2976` Amanita muscaria s.lat. (variant; attached to no concept)
+- Artportalen `236537` Amanita muscaria s.str. (variant; attached to no concept)
+
+Sporely `624588` (valid) — **split**
 
 - Artportalen `2976` Amanita muscaria s.lat. (variant; attached to no concept)
 - Artportalen `236537` Amanita muscaria s.str. (variant; attached to no concept)
