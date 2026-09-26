@@ -47,52 +47,35 @@ the registry maps `(source, namespace, identifier)` to one Sporely ID
 
 ## Building a release
 
-Run from the repository root with the project interpreter. `B` is a scratch
-build directory outside the repository; `REL` is the new release ID.
+What goes into a release is declared in
+[`release-recipe.json`](release-recipe.json): the source releases (each with
+its normalizer), the red-list workbook, legacy enrichment, the policies and
+the registry. Updating a source, or adding one, is a recipe change reviewed
+like code. Then, from the repository root:
 
 ```bash
-PY=.venv/bin/python; T=database/taxonomy; S=$T/scripts
-B=/path/to/build; REL=tax-YYYY.MM.DD-NN
-COL=$T/sources/col_xr/2026-07-17-XR; NOR=$T/sources/nortaxa/1.284
-
-# 1. Normalize each source
-$PY $S/normalize_col_xr.py --archive $COL/archive.zip --output $B/norm/col_xr \
-    --source-release-version 2026-07-17-XR --source-release-issued-date 2026-07-17
-$PY $S/national_source.py normalize --profile $T/national_sources/nortaxa/1.284/source.json \
-    --archive $NOR/archive.zip --output $B/norm/nortaxa
-$PY $S/normalize_redlist_no.py --output $B/norm/redlist_no \
-    --input $T/national_sources/artsdatabanken_redlist/2021/redlist-2021.xlsx
-
-# 2. Registry working copy: concatenate the committed shards
-cat $T/registry/canonical/part-*.jsonl > $B/registry.jsonl
-
-# 3. Compile (add --legacy-enrichment-input to carry legacy languages/IDs, see below)
-$PY $S/compile_release.py --source $B/norm/col_xr --source $B/norm/nortaxa \
-    --redlist $B/norm/redlist_no \
-    --manual-mappings $T/policies/manual_mappings.yml \
-    --concept-supersessions $T/policies/concept_supersessions.yml \
-    --mapping-policy $T/policies/mapping_policy.yml \
-    --registry $B/registry.jsonl --output $B/release --release-id $REL \
-    --source-release-manifest col_xr=$COL/manifest.json \
-    --source-release-manifest nortaxa=$NOR/manifest.json
-
-# 4. SQLite artifact
-$PY $S/build_sqlite_candidate.py --release-dir $B/release \
-    --registry $B/registry.jsonl --output $B/$REL.sqlite3
-
-# 5. Promote into the desktop bundle (writes the deterministic gzip + manifest,
-#    removes the superseded gzip, updates desktop-compatibility.json)
-$PY $S/promote_desktop_bundle.py --sqlite $B/$REL.sqlite3 --release-dir $B/release \
-    --redlist-report $B/norm/redlist_no/report.json \
-    --redlist-workbook $T/national_sources/artsdatabanken_redlist/2021/redlist-2021.xlsx
+.venv/bin/python database/taxonomy/scripts/build_release.py \
+    --release-id tax-YYYY.MM.DD-NN --build-dir /path/to/new/build-dir
 ```
+
+`build_release.py` checks every input against its pinned SHA-256, normalizes
+the sources, compiles and builds the SQLite candidate twice from separate
+registry copies, and compares the results. It writes `build-report.json` to
+the build directory: input hashes, determinism result, registry state, and a
+coverage summary (taxa, vernacular languages, external-ID sources) with its
+difference from the bundled release. A full build takes about seven minutes.
+It changes nothing in the repository until you add `--promote`, which also
+refuses a non-deterministic build or one that allocated new IDs. Promotion
+writes the deterministic gzip and manifest, removes the superseded gzip and
+updates `desktop-compatibility.json`. Use `--archive-root` when the
+gitignored archives live in another checkout.
 
 Rules for a release candidate:
 
-- **Determinism.** Run steps 2–4 twice from separate registry copies; every
-  compile output, the post-compile registry, and the SQLite hash must be
-  identical. `evidence/taxonomy-v2-closeout/stage3-candidate-verification.md`
-  is the record for `tax-2026.09.23-01`.
+- **Determinism.** Every compile output, the post-compile registry and the
+  SQLite hash must be identical across the two builds (`build_release.py`
+  checks this). `evidence/taxonomy-v2-closeout/stage3-candidate-verification.md`
+  is the record for `tax-2026.09.23-01`, which predates the script.
 - **Registry.** Promotion refuses an artifact whose `registry_sha256` differs
   from `registry/canonical/manifest.json`. If the compiler allocated new IDs,
   re-shard the post-compile registry with `identity_registry.shard_registry()`

@@ -1,0 +1,33 @@
+{
+  "format": "sporely-taxonomy-release-recipe-v1",
+  "sources": [
+    {
+      "code": "col_xr",
+      "normalizer": "col_xr",
+      "release_dir": "database/taxonomy/sources/col_xr/2026-07-17-XR",
+      "version": "2026-07-17-XR",
+      "issued_date": "2026-07-17"
+    },
+    {
+      "code": "nortaxa",
+      "normalizer": "national_source",
+      "release_dir": "database/taxonomy/sources/nortaxa/1.284",
+      "profile": "database/taxonomy/national_sources/nortaxa/1.284/source.json"
+    }
+  ],
+  "redlist_no": {
+    "workbook": "database/taxonomy/national_sources/artsdatabanken_redlist/2021/redlist-2021.xlsx",
+    "sha256": "c2fb6a5f4828defe371b1cb9978974bfd64a23101ad37bb715f260bd658bef04"
+  },
+  "legacy_enrichment": {
+    "enabled": true,
+    "bundled_db": "database/reference_data/generated/vernacular_multilanguage.sqlite3",
+    "sha256": "724686455d3f6539fd382e799c6cb43e2f5145942c0f84017a6e206561923c17"
+  },
+  "policies": {
+    "manual_mappings": "database/taxonomy/policies/manual_mappings.yml",
+    "concept_supersessions": "database/taxonomy/policies/concept_supersessions.yml",
+    "mapping_policy": "database/taxonomy/policies/mapping_policy.yml"
+  },
+  "registry": "database/taxonomy/registry/canonical"
+}
