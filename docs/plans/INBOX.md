@@ -55,7 +55,10 @@ Source: former `PLAN.md`; unmatched-image work also appears in `docs/hardware-sy
 ## Taxonomy
 
 - Consider the deferred observer-safe `Help → Taxonomy` menu described in `database/taxonomy/docs/ui-menu-recommendation.md`; keep acquisition, compilation, promotion, mapping edits, and deletion CLI-only.
-- Carry legacy enrichment into the next taxonomy-v2 release (`compile_release.py --legacy-enrichment-input`, see `database/taxonomy/README.md`) or add Dyntaxa as a national source: `tax-2026.09.23-01` has only nb/nn/se names and no Artportalen/iNaturalist IDs, so with v2 active Artportalen publishing cannot resolve a taxon id.
+- Plan the ~7,300 unmerged NorTaxa/COL duplicate concepts (same name, author citation differs, e.g. "Fr." vs "Fr. : Fr."): names and ids sit on the NorTaxa concept while the cloud scope carries only the COL one, so web users find no common name for species such as Cantharellus cibarius. Identity-level; needs a reviewed mapping rule or manual mappings.
+- Review the 448 Artportalen overlay cases left out of `tax-2026.09.26-02` (`database/taxonomy/evidence/artportalen-overlay/`).
+- Decide whether the cloud should carry Artportalen/iNaturalist publishing ids as a namespaced channel; today the scoped export suppresses the legacy integer channel.
+- Consider Dyntaxa as a national source so Swedish names and Artportalen ids stop depending on the frozen legacy database.
 - Decide whether `TaxonChoice` should expose external IDs directly or through a richer match object.
 - Add list-returning iNaturalist and Artportalen ID lookup APIs; both identifier types can map to multiple local concepts.
 - Define accepted-backbone versus Artportalen-only tie-breaking for duplicate scientific names.

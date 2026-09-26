@@ -129,22 +129,35 @@ names and no Artportalen or iNaturalist IDs, so with v2 active the desktop app
 has no Swedish/English/other vernacular names and
 `ObservationDB.resolve_external_taxon_id(..., "artportalen")` returns `None`.
 
-`release-recipe.json` now enables it. `export_legacy_enrichment.py` exports
+`release-recipe.json` enables it. `export_legacy_enrichment.py` exports
 the legacy database's vernaculars in languages NorTaxa does not publish
 (including `sv`) and its Artportalen and iNaturalist IDs. The compiler
 attaches each row to the Sporely concept of its NorTaxa ID and never
-allocates. The SQLite builder also fills `taxon_min.inaturalist_taxon_id`
-where a concept has exactly one iNaturalist ID. A scratch build
-(`tax-2026.09.26-01`, not promoted) adds 4,801 Swedish names, the other
-iNaturalist languages, 8,185 Artportalen IDs and 8,178 iNaturalist IDs, and
-leaves everything else unchanged.
+allocates. The SQLite builder fills `taxon_min.inaturalist_taxon_id` only
+for one-to-one pairings: an id the legacy data gives to two concepts is not
+used. `tax-2026.09.26-02` is the first release built this way.
 
-Still not carried: legacy rows keyed to Artportalen-only concepts (negative
-legacy IDs, for example *Amanita muscaria* s.lat./s.str.), about 1,450
-fungal Artportalen IDs and 400 Swedish names. They have no NorTaxa ID and
-need a reviewed mapping rule. Rows outside the fungal scope (plants,
-animals) are skipped by design. See `releaseA/legacy_enrichment_skips.jsonl`
-in a build directory.
+Two reviewed, committed inputs complete it (`publishing_ids.py`), both pinned
+in the recipe and applied fail-closed:
+
+- **Artportalen overlay** (`overlays/artportalen-publishing.json`). Run
+  `artportalen_overlay.py propose --candidate <built sqlite>` for the review
+  report (`evidence/artportalen-overlay/`), then `accept --class unique_exact`
+  or `accept --entry SPORELY_ID:ARTPORTALEN_ID` for reviewed decisions. The
+  ids are publishing metadata (`id_role` `publishing`), not identity.
+  Splits (`s.lat.`/`s.str.`/`agg.`) and ambiguous cases are never accepted as
+  a class.
+- **iNaturalist refresh** (`sources/inaturalist_refresh/<date>/`). A
+  separate, hand-run network step, `refresh_inaturalist_ids.py --candidate
+  <built sqlite> --output-dir ...`, re-validates the concepts whose legacy id
+  is contradictory and records every request. `--recheck FILE` re-applies the
+  rules offline.
+
+Still not carried: the 448 Artportalen review cases, and legacy rows keyed to
+Artportalen-only concepts that no reviewed decision covers. Rows outside the
+fungal scope (plants, animals) are skipped by design. The cloud copy does not
+carry the legacy integer id channel (`macrofungi_scope.py` suppresses it),
+so publishing ids are desktop-only.
 
 Do not delete the legacy database or its build scripts
 (`database/README.md`) until a release carries this data, or a national

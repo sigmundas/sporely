@@ -44,12 +44,13 @@ It is still needed for three reasons:
 
 1. It is the fallback when taxonomy v2 is switched off or fails to install.
 2. The vernacular-language list is still read from it.
-3. It is the only source of Swedish and iNaturalist-language names and of
-   Artportalen and iNaturalist IDs. Current v2 releases do not carry them; see
-   [Legacy enrichment](taxonomy/README.md#legacy-enrichment).
+3. It is the input for legacy enrichment: v2 releases copy its Swedish and
+   iNaturalist-language names and its Artportalen and iNaturalist IDs from it
+   at build time (see [Legacy enrichment](taxonomy/README.md#legacy-enrichment)).
+   Changing the file changes its pinned hash in `taxonomy/release-recipe.json`.
 
-Retire it only after a v2 release carries that data and the fallback is
-removed (plan: `docs/plans/completed/2026-07-23-taxonomy-v2-integration.md`,
+Retire it only after that data has its own maintained source (for example
+Dyntaxa as a national source) and the fallback is removed (plan: `docs/plans/completed/2026-07-23-taxonomy-v2-integration.md`,
 section 18).
 
 ### Rebuilding it

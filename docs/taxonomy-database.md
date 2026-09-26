@@ -42,6 +42,9 @@ matches species by name alone.
 | **Catalogue of Life**, extended release (COL XR) | Catalogue of Life partnership | The worldwide list of fungi: accepted scientific names, synonyms and classification | 2026-07-17 |
 | **NorTaxa** (Artsnavnebasen) | Artsdatabanken (Norway) | Norwegian species, Norwegian and Sámi common names, and Artsdatabanken species numbers | 1.284 (2026-07-17) |
 | **Norsk rødliste for arter 2021** | Artsdatabanken | Red List categories for Norwegian species | 2021 edition |
+| **Older Sporely names database** | Sporely (from Artportalen and iNaturalist) | Swedish and other common names, Artportalen and iNaturalist species numbers | frozen 2026-05 |
+| **Reviewed Artportalen list** | Sporely maintainers | Artportalen numbers for species the older database had none for, each one approved by a person | 2026-09-26 |
+| **iNaturalist check** | iNaturalist | Species numbers re-checked where the older database was contradictory | fetched 2026-09-26 |
 
 The desktop app contains the full list: every fungus in the Catalogue of Life
 plus the Norwegian NorTaxa species (about 635,000 entries). The web and phone
@@ -54,10 +57,21 @@ same build.
 Before the current database there was an older one, which also held Swedish
 names, Artportalen (Swedish) species numbers, and common names in English,
 German, French, Spanish, Danish, Finnish, Polish, Portuguese and Italian taken
-from iNaturalist. That older database still ships with the desktop app as a
-backup, but **the current database does not yet include those extra languages
-or the Artportalen and iNaturalist species numbers** (see
-[Known gaps](#known-gaps)).
+from iNaturalist. It still ships with the desktop app as a backup, and since
+release `tax-2026.09.26-02` its names and species numbers are copied into the
+current database, attached to the matching species through their Norwegian
+numbers.
+
+Two kinds of species number are handled with extra care:
+
+- **Artportalen numbers** are only used for reporting to Artportalen. Where
+  the older database had none, a person reviewed the proposed match first.
+  When Artportalen splits a species (for example *Amanita muscaria* into a
+  broad and a narrow sense), a person chooses; Sporely never guesses.
+- **iNaturalist numbers** that the older database gave to two different
+  species are not used. For those species the number was checked again
+  against iNaturalist, and used only when iNaturalist has exactly one
+  current species with the same name, rank and genus.
 
 ## Releases
 
@@ -159,21 +173,20 @@ one Sporely number, and the national list is linked to it.
 
 ## Known gaps
 
-- **Swedish and other extra languages.** The current release
-  (`tax-2026.09.23-01`) only has Norwegian Bokmål, Nynorsk and Northern Sámi
-  common names. Swedish, English and the other iNaturalist languages are only
-  in the older names database, which the app no longer reads while the new
-  database is active.
-- **Artportalen and iNaturalist numbers.** For the same reason, Sporely
-  cannot currently look up an Artportalen or iNaturalist species number from
-  the local database. Publishing to Artportalen relies on this lookup.
+- **Duplicate species entries.** About 7,300 Norwegian species were not
+  merged with their worldwide Catalogue of Life entry, usually because the
+  author citation is written differently (for example "Fr." and
+  "Fr. : Fr."). The desktop app shows their names and numbers correctly, but
+  the web and phone app use the Catalogue of Life entry, so species such as
+  *Cantharellus cibarius* (kantarell) have no common name there. Merging them
+  changes species identity and needs a reviewed plan.
+- **Artportalen species still under review.** 448 proposed Artportalen
+  matches (mostly species Artportalen splits, or numbers already used for a
+  differently named species) were left out until they are reviewed.
+- **Publishing numbers are desktop-only.** The web and phone app do not yet
+  receive Artportalen or iNaturalist numbers.
 - **Red List licence.** The licence of the 2021 Red List file has not yet been
   independently confirmed. The citation is recorded.
-
-The builder already has an option to carry the older database's extra
-languages and species numbers into a new release; it was not used for the
-current one. Using it, or adding Sweden's Dyntaxa list as a national source,
-would close the first two gaps.
 
 ## Further reading
 

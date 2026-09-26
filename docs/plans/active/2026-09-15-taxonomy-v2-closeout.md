@@ -22,11 +22,23 @@
   `tax-2026.08.01-01`. Record the activation and its post-checks here, then
   move this plan to `completed/`.
 - The superseded July plan has been moved to `completed/`.
-- Out of scope, carried as follow-ups: `tax-2026.09.23-01` has no
-  Swedish/iNaturalist-language names and no Artportalen/iNaturalist IDs
-  (compiled without `--legacy-enrichment-input`; see
-  `database/taxonomy/README.md`), and legacy retirement (July plan,
+- Out of scope, carried as follow-ups: legacy retirement (July plan,
   section 18).
+
+### Status note 2026-09-26 — data closeout
+
+- `tax-2026.09.26-02` replaces `tax-2026.09.23-01` as the desktop bundle
+  (branch `feature/taxonomy-data-closeout`): legacy enrichment (Swedish and
+  iNaturalist-language names, Artportalen and iNaturalist ids), 815 reviewed
+  Artportalen publishing ids, and 140 re-validated iNaturalist ids; no new
+  Sporely IDs. Built with `build_release.py` in two byte-identical runs.
+- `tax-2026.09.23-01` was never imported to the cloud. The prepared cloud
+  transition is `tax-2026.08.01-01` → `tax-2026.09.26-02` (sporely-web
+  runbook), proven on the local stack; not activated.
+- Desktop 0.9.24 ships the new bundle; not tagged.
+- New follow-ups in `docs/plans/INBOX.md`: unmerged NorTaxa/COL duplicate
+  concepts (cloud lacks their common names), 448 Artportalen review cases,
+  cloud publishing ids, Dyntaxa.
 
 > **Use the existing worktree and branch.** All stages of this plan execute in
 > the worktree and branch named above. Do not create a separate
