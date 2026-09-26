@@ -55,7 +55,7 @@ Source: former `PLAN.md`; unmatched-image work also appears in `docs/hardware-sy
 ## Taxonomy
 
 - Consider the deferred observer-safe `Help → Taxonomy` menu described in `database/taxonomy/docs/ui-menu-recommendation.md`; keep acquisition, compilation, promotion, mapping edits, and deletion CLI-only.
-- Reconcile `docs/taxonomy-lookup-status.md` against current code before implementation; its audit records external-ID, duplicate-binomial, common-name, and case-sensitivity gaps.
+- Carry legacy enrichment into the next taxonomy-v2 release (`compile_release.py --legacy-enrichment-input`, see `database/taxonomy/README.md`) or add Dyntaxa as a national source: `tax-2026.09.23-01` has only nb/nn/se names and no Artportalen/iNaturalist IDs, so with v2 active Artportalen publishing cannot resolve a taxon id.
 - Decide whether `TaxonChoice` should expose external IDs directly or through a richer match object.
 - Add list-returning iNaturalist and Artportalen ID lookup APIs; both identifier types can map to multiple local concepts.
 - Define accepted-backbone versus Artportalen-only tie-breaking for duplicate scientific names.
@@ -63,7 +63,7 @@ Source: former `PLAN.md`; unmatched-image work also appears in `docs/hardware-sy
 - Add an on-demand Artsdatabanken red-list resolver and caching policy.
 - Verify AI Photo ID uses a local iNaturalist ID before name matching and that desktop/web apply compatible lookup rules.
 
-Source: former `PLAN.md` and `docs/taxonomy-lookup-status.md`.
+Source: former `PLAN.md` and the legacy-database lookup audit `docs/taxonomy-lookup-status.md` (removed 2026-09-26; see Git history).
 
 ## AI identification / crop
 

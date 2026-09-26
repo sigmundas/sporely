@@ -1,14 +1,32 @@
 # Sporely Taxonomy v2 Closeout — Execution Plan
 
 **Plan date:** 2026-09-15  
-**Last amended:** 2026-09-19  
-**Status:** Active  
+**Last amended:** 2026-09-26  
+**Status:** Implementation complete — awaiting confirmation of the cloud activation (see status note below)  
 **Primary repository:** `sigmundas/sporely`  
 **Primary local path:** `/Users/sigmundas/Documents/Code/sporely/sporely-py-taxonomy-v2-identity-reconciliation`  
 **Expected branch:** `feature/taxonomy-v2-identity-reconciliation`  
 **Companion repository (required):** `sigmundas/sporely-web` — required for Stage 2 Part B.  
-**Supersedes for execution:** `docs/plans/active/2026-07-23-taxonomy-v2-integration.md`  
+**Supersedes for execution:** `docs/plans/completed/2026-07-23-taxonomy-v2-integration.md`  
 **Historical architecture source:** the superseded plan and `database/taxonomy/docs/**` remain authoritative for accepted architecture decisions unless this plan explicitly changes them.
+
+### Status note 2026-09-26
+
+- Desktop `0.9.23` (`8cc688f`, tag `v0.9.23`) ships `tax-2026.09.23-01`
+  with taxonomy v2 ON by default and runtime resolution of provider
+  identities. `sporely-web` `89754d6` carries the importer `--release-id`
+  and the release-transition runbook section.
+- The cloud activation of `tax-2026.09.23-01` is a human operator step
+  (sporely-web `supabase/taxonomy-v2-production-import-runbook.md`). A
+  read-only check on 2026-09-25 found production still on
+  `tax-2026.08.01-01`. Record the activation and its post-checks here, then
+  move this plan to `completed/`.
+- The superseded July plan has been moved to `completed/`.
+- Out of scope, carried as follow-ups: `tax-2026.09.23-01` has no
+  Swedish/iNaturalist-language names and no Artportalen/iNaturalist IDs
+  (compiled without `--legacy-enrichment-input`; see
+  `database/taxonomy/README.md`), and legacy retirement (July plan,
+  section 18).
 
 > **Use the existing worktree and branch.** All stages of this plan execute in
 > the worktree and branch named above. Do not create a separate
@@ -286,7 +304,7 @@ No taxonomy behavior change belongs in this stage unless a tiny test/audit helpe
 Inspect:
 
 - this plan;
-- `docs/plans/active/2026-07-23-taxonomy-v2-integration.md`;
+- `docs/plans/completed/2026-07-23-taxonomy-v2-integration.md`;
 - `database/taxonomy/docs/**`;
 - accepted W3 evidence and commits, including:
   - `20859a2`

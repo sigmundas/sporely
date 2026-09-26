@@ -156,7 +156,7 @@ Review plots and compare to references:
 - [Field photography](docs/field-photography.md)
 - [Microscopy workflow](docs/microscopy-workflow.md)
 - [Spore measurements](docs/spore-measurements.md)
-- [Taxonomy integration](docs/taxonomy-integration.md)
+- [Species database](docs/taxonomy-database.md) — where species names come from, how releases are updated, adding a country
 - [Taxonomy identity repair runbook](docs/taxonomy-identity-repair-runbook.md) — observation identity audit, migration gate and rollback
 - [Database structure](docs/database-structure.md)
 - [Changelog](CHANGELOG.md) — user-facing notable release changes

@@ -59,4 +59,4 @@ be used with **Restore Sporely Backup…**.
 - [Field photography](./field-photography.md)
 - [Microscopy workflow](./microscopy-workflow.md)
 - [Spore measurements](./spore-measurements.md)
-- [Taxonomy integration](./taxonomy-integration.md)
+- [Species database](./taxonomy-database.md)

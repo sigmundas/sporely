@@ -57,5 +57,5 @@ This calculates a provisional scale. For best accuracy, calibrate against a rule
 
 - [Microscopy workflow](./microscopy-workflow.md)
 - [Spore measurements](./spore-measurements.md)
-- [Taxonomy integration](./taxonomy-integration.md)
+- [Species database](./taxonomy-database.md)
 - [Database structure](./database-structure.md)

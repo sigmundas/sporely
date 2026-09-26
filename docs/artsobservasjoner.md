@@ -47,7 +47,7 @@ If your session expires, Sporely will silently re-authenticate in the background
 
 Sporely only publishes Artsobservasjoner with a verified Artsobservasjoner-compatible taxon id. It does not treat `ai_selected_taxon_id` as interchangeable with Artsobservasjoner, Artportalen, or Artsdatabanken ids. `artsdata_id` is the stored Artsobservasjoner sighting id returned after a successful publish; `artportalen_id` is a separate target-specific publish id. If no verified Artsobservasjoner taxon id can be resolved for the selected name, publishing stops with a clear error instead of guessing.
 
-The verified mapping comes from the local taxonomy database built from the source files under `database/reference_data/sources/`. See [Taxonomy integration](./taxonomy-integration.md) for the lookup pipeline.
+The verified mapping comes from the local species database. See [Species database](./taxonomy-database.md).
 
 ### iNaturalist (awaiting approval)
 
@@ -115,6 +115,6 @@ Sporely Cloud sync runs automatically on startup and when you click **Refresh** 
 ## See also
 
 - [Database structure](./database-structure.md)
-- [Taxonomy integration](./taxonomy-integration.md)
+- [Species database](./taxonomy-database.md)
 - [Field photography](./field-photography.md)
 - [Microscopy workflow](./microscopy-workflow.md)

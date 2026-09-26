@@ -157,5 +157,5 @@ You can also trigger this dialog from the **No Scale Set** prompt when you start
 - [Database Settings](./database-settings.md)
 - [Field photography](./field-photography.md)
 - [Spore measurements](./spore-measurements.md)
-- [Taxonomy integration](./taxonomy-integration.md)
+- [Species database](./taxonomy-database.md)
 - [Database structure](./database-structure.md)

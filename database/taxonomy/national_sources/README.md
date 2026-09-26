@@ -91,16 +91,10 @@ Denmark actually needs it later.
             --output build/denmark
 ```
 
-Once the shared taxonomy compiler exists, that stage will take one or more
-normalized-source directories as input:
-
-```bash
-# Not yet implemented; sketched here so the interface is clear.
-./.venv/bin/python database/taxonomy/scripts/compile_taxonomy.py \
-  --base col_xr \
-  --national-source build/denmark \
-  --output build/taxonomy.sqlite
-```
+The shared compiler, `scripts/compile_release.py`, takes one `--source`
+per normalized-source directory. A new source code must first be registered
+in the compiler; see "Adding a national source" and "Building a release" in
+the [taxonomy README](../README.md).
 
 ## Adding another country
 
@@ -113,18 +107,19 @@ normalized-source directories as input:
    `vernacular.jsonl`, and `report.json`.
 6. Add your archive fixture (or a small synthetic one) plus a focused offline
    test alongside the existing `example/` fixture.
+7. Register the source in the compiler and cloud export, as listed in the
+   [taxonomy README](../README.md#adding-a-national-source).
 
 ## Relationship to Sporely apps
 
-Normalized output eventually feeds two consumers:
+Normalized output feeds two consumers through the compiler:
 
-- `sporely-py` (this repository) — bundled SQLite lookup database.
-- Supabase — cloud taxonomy tables and the `search_taxa` RPC that the web app
-  calls.
+- `sporely-py` (this repository) — the bundled taxonomy-v2 SQLite database.
+- Supabase — the `taxonomy_v2_*` tables and the `search_taxa_v2` /
+  `resolve_taxon_external_id_v2` RPCs that the web app calls.
 
-The adapter interface itself lives in `sporely-py` because this repository
-owns taxonomy compilation. No UI work is required until compiled releases are
-actually published and selectable in the app.
+The adapter interface lives in `sporely-py` because this repository owns
+taxonomy compilation.
 
 ## Example fixture
 
