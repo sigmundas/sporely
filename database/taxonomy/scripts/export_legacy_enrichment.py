@@ -6,10 +6,13 @@ The bundled DB (``database/reference_data/generated/vernacular_multilanguage.sql
 keys everything by the pre-Stage-3A NorTaxa DwC id. This script exports only
 the rows that Stage 3A does NOT already carry:
 
-* Artportalen external identifiers (``source_system == 'artportalen'``);
+* Artportalen and iNaturalist external identifiers (``source_system`` in
+  ``artportalen``, ``inaturalist``);
 * vernacular names in languages that the two Stage 3A authoritative sources
-  do not publish (``fr``, ``fi``, ``da``, ``de``, ``pl``, ``es``, ``en``, ``pt``,
-  ``it``, and the umbrella ``no`` code).
+  do not publish (``sv``, ``fr``, ``fi``, ``da``, ``de``, ``pl``, ``es``, ``en``,
+  ``pt``, ``it``, and the umbrella ``no`` code). NorTaxa 1.284 publishes only
+  ``nb``, ``nn`` and ``se``; Swedish names come from Artportalen and
+  iNaturalist.
 
 Every row is emitted verbatim with its source provider preserved so the
 compiler can resolve NorTaxa → Sporely and route the enrichment to the
@@ -30,10 +33,12 @@ from typing import Iterable
 
 # Languages Stage 3A's COL + NorTaxa 1.284 pipeline does not publish.
 LANGUAGES_NOT_IN_STAGE_3A = frozenset({
-    "fr", "fi", "da", "de", "pl", "es", "en", "pt", "it", "no",
+    "sv", "fr", "fi", "da", "de", "pl", "es", "en", "pt", "it", "no",
 })
-# Non-NorTaxa external-identifier sources that require legacy import.
-EXTERNAL_SOURCES_TO_IMPORT = frozenset({"artportalen"})
+# Non-NorTaxa external-identifier sources that require legacy import. The
+# desktop resolves Artportalen and iNaturalist taxon ids for publishing from
+# these rows.
+EXTERNAL_SOURCES_TO_IMPORT = frozenset({"artportalen", "inaturalist"})
 
 
 def _classify_provider(raw: str | None, fallback: str) -> str:
@@ -101,6 +106,7 @@ def _describe_provenance(source: str | None) -> str:
         "artsdatabanken": "NorTaxa (Artsdatabanken) — already carried by Stage 3A",
         "artportalen": "Artportalen.se reconciled Swedish-species portal (SLU/ArtDatabanken)",
         "inat_csv": "iNaturalist multilingual vernaculars (public API export)",
+        "inaturalist": "iNaturalist taxon ids (public API export)",
         "": "legacy_sporely (provider unknown)",
         None: "legacy_sporely (provider unknown)",
     }.get(source, str(source))

@@ -46,7 +46,7 @@ It is still needed for three reasons:
 2. The vernacular-language list is still read from it.
 3. It is the only source of Swedish and iNaturalist-language names and of
    Artportalen and iNaturalist IDs. Current v2 releases do not carry them; see
-   [Legacy enrichment](taxonomy/README.md#legacy-enrichment-known-gap).
+   [Legacy enrichment](taxonomy/README.md#legacy-enrichment).
 
 Retire it only after a v2 release carries that data and the fallback is
 removed (plan: `docs/plans/completed/2026-07-23-taxonomy-v2-integration.md`,

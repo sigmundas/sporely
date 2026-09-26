@@ -121,21 +121,30 @@ Lookups go through `utils/vernacular_utils.resolve_vernacular_db_path()` and
 resolved at runtime through `taxon_external_id_text_min`
 (`TaxonLookupService.resolve_external_identity`).
 
-## Legacy enrichment (known gap)
+## Legacy enrichment
 
-`tax-2026.07.30-02` and `tax-2026.09.23-01` were compiled without
-`--legacy-enrichment-input`. They carry only `nb`, `nn` and `se` vernacular
+`tax-2026.07.30-02` and `tax-2026.09.23-01` (desktop 0.9.23) were compiled
+without legacy enrichment. They carry only `nb`, `nn` and `se` vernacular
 names and no Artportalen or iNaturalist IDs, so with v2 active the desktop app
 has no Swedish/English/other vernacular names and
 `ObservationDB.resolve_external_taxon_id(..., "artportalen")` returns `None`.
-The legacy database still holds that data. To carry it into the next release:
 
-```bash
-$PY $S/export_legacy_enrichment.py \
-    --bundled-db database/reference_data/generated/vernacular_multilanguage.sqlite3 \
-    --output $B/legacy_enrichment.jsonl
-# then add to step 3:  --legacy-enrichment-input $B/legacy_enrichment.jsonl
-```
+`release-recipe.json` now enables it. `export_legacy_enrichment.py` exports
+the legacy database's vernaculars in languages NorTaxa does not publish
+(including `sv`) and its Artportalen and iNaturalist IDs. The compiler
+attaches each row to the Sporely concept of its NorTaxa ID and never
+allocates. The SQLite builder also fills `taxon_min.inaturalist_taxon_id`
+where a concept has exactly one iNaturalist ID. A scratch build
+(`tax-2026.09.26-01`, not promoted) adds 4,801 Swedish names, the other
+iNaturalist languages, 8,185 Artportalen IDs and 8,178 iNaturalist IDs, and
+leaves everything else unchanged.
+
+Still not carried: legacy rows keyed to Artportalen-only concepts (negative
+legacy IDs, for example *Amanita muscaria* s.lat./s.str.), about 1,450
+fungal Artportalen IDs and 400 Swedish names. They have no NorTaxa ID and
+need a reviewed mapping rule. Rows outside the fungal scope (plants,
+animals) are skipped by design. See `releaseA/legacy_enrichment_skips.jsonl`
+in a build directory.
 
 Do not delete the legacy database or its build scripts
 (`database/README.md`) until a release carries this data, or a national

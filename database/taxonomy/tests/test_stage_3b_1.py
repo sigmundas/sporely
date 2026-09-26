@@ -73,6 +73,7 @@ def _build_synthetic_bundled_db(path: Path) -> None:
         [
             (300190, "fr", "psathyrelle de Candolle", 1, "inat_csv"),
             (300190, "de", "Halbkugeliger Träuschling", 1, "inat_csv"),
+            (300190, "sv", "vit spröding", 1, "artportalen"),  # NorTaxa has no sv
             (300190, "no", "hvit sprøsopp", 1, "artsdatabanken"),  # already stage 3A
             (999999, "fr", "unknown-fr", 0, "inat_csv"),
         ],
@@ -83,6 +84,7 @@ def _build_synthetic_bundled_db(path: Path) -> None:
         "external_name, note) VALUES (?, ?, ?, ?, ?, ?, ?)",
         [
             (300190, "artportalen", 222138, "accepted", 1, "Sprosopp", ""),
+            (300190, "inaturalist", 154000, "accepted", 1, "", ""),
             (999999, "artportalen", 111111, "accepted", 1, "Ghost", ""),
         ],
     )
@@ -236,11 +238,12 @@ def test_compile_routes_legacy_via_nortaxa_to_sporely(tmp_path: Path) -> None:
     )
     diag = json.loads((release_dir / "diagnostics.json").read_text())
     legacy_counts = diag["counts"]["legacy_enrichment"]
-    # NorTaxa 300190 is in scope → its Artportalen id + fr + de vernacular are
-    # added; the "no" vernacular is skipped as already-in-Stage-3A; the
-    # ghost 999999 has no NorTaxa presence → all 2 rows skip.
-    assert legacy_counts["vernacular_added"] == 2  # fr + de
-    assert legacy_counts["external_id_added"] == 1  # Artportalen 222138
+    # NorTaxa 300190 is in scope → its Artportalen and iNaturalist ids and
+    # fr + de + sv vernaculars are added; the "no" vernacular is skipped as
+    # already-in-Stage-3A; the ghost 999999 has no NorTaxa presence → all 2
+    # rows skip.
+    assert legacy_counts["vernacular_added"] == 3  # fr + de + sv
+    assert legacy_counts["external_id_added"] == 2  # Artportalen 222138, iNaturalist 154000
     assert legacy_counts["ignored_reason_already_in_stage3a"] == 1  # 'no' row
     assert legacy_counts["unresolved_nortaxa_taxonid"] == 2  # both 999999 rows
 
@@ -248,15 +251,14 @@ def test_compile_routes_legacy_via_nortaxa_to_sporely(tmp_path: Path) -> None:
     ext_rows = [json.loads(l) for l in
                 (release_dir / "legacy_external_ids.jsonl").read_text().splitlines()
                 if l.strip()]
-    assert len(ext_rows) == 1
-    assert ext_rows[0]["source_system"] == "artportalen"
-    assert ext_rows[0]["external_id"] == "222138"
+    assert sorted((r["source_system"], r["external_id"]) for r in ext_rows) == [
+        ("artportalen", "222138"), ("inaturalist", "154000")]
     # Vernaculars appended to vernacular.jsonl.
     verns = [json.loads(l) for l in
              (release_dir / "vernacular.jsonl").read_text().splitlines()
              if l.strip()]
     langs = {v["language"] for v in verns}
-    assert {"nb", "fr", "de"} <= langs
+    assert {"nb", "fr", "de", "sv"} <= langs
     # Skips file records the two ghost 999999 rows.
     skips = [json.loads(l) for l in
              (release_dir / "legacy_enrichment_skips.jsonl").read_text().splitlines()
@@ -328,6 +330,43 @@ def test_sqlite_build_ingests_legacy_external_ids(tmp_path: Path) -> None:
         "WHERE language_code=? AND vernacular_name=?",
         ("fr", "psathyrelle de Candolle")))
     assert rows == [(sporely_id,)]
+    assert list(conn.execute(
+        "SELECT taxon_id FROM vernacular_min WHERE language_code='sv'")) == [(sporely_id,)]
+    # The iNaturalist id also fills the fast-lookup column the desktop reads.
+    assert conn.execute("SELECT inaturalist_taxon_id FROM taxon_min WHERE taxon_id=?",
+                        (sporely_id,)).fetchone() == (154000,)
+
+
+def test_desktop_resolves_publishing_ids_from_an_enriched_candidate(
+        tmp_path: Path, monkeypatch: pytest.MonkeyPatch) -> None:
+    """The lookups Artportalen and iNaturalist publishing use, run on v2."""
+    bundled = tmp_path / "bundled.sqlite3"
+    _build_synthetic_bundled_db(bundled)
+    legacy = tmp_path / "legacy.jsonl"
+    export_legacy(bundled_db=bundled, output_path=legacy)
+    col, nor = _write_synthetic_release(tmp_path)
+    compile_release(
+        normalized_source_dirs=[col, nor],
+        manual_mappings_path=tmp_path / "mappings.json",
+        mapping_policy_path=_POLICY_PATH,
+        registry_path=tmp_path / "registry.jsonl",
+        output_dir=tmp_path / "release",
+        release_id="tax-2026.07.29-01",
+        legacy_enrichment_path=legacy,
+    )
+    output_db = tmp_path / "candidate.sqlite3"
+    build_candidate(release_dir=tmp_path / "release",
+                    registry_path=tmp_path / "registry.jsonl", output_db=output_db)
+
+    repo = Path(__file__).resolve().parents[3]
+    monkeypatch.syspath_prepend(str(repo))
+    import utils.vernacular_utils as vernacular_utils
+    from database.models import ObservationDB
+    monkeypatch.setattr(vernacular_utils, "resolve_vernacular_db_path",
+                        lambda lang_code=None: output_db)
+    resolve = ObservationDB.resolve_external_taxon_id
+    assert resolve("Candolleomyces", "candolleanus", "artportalen") == 222138
+    assert resolve("Candolleomyces", "candolleanus", "inaturalist") == 154000
 
 
 def test_two_builds_with_legacy_are_deterministic(tmp_path: Path) -> None:

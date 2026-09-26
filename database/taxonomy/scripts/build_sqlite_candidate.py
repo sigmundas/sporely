@@ -591,6 +591,9 @@ def _build_into(
 
         # --- Legacy external identifiers (Stage 3B.1 compatibility) --------
         legacy_external_path = release_dir / "legacy_external_ids.jsonl"
+        # iNaturalist ids per Sporely concept, for the fast-lookup
+        # taxon_min.inaturalist_taxon_id column the desktop reads.
+        legacy_inaturalist_ids: dict[int, set[int]] = {}
         if legacy_external_path.exists():
             int_seen: set[tuple[int, str, int]] = {
                 (r[0], r[1], r[2]) for r in external_int_rows
@@ -627,6 +630,8 @@ def _build_into(
                             id_role, is_preferred, external_name, note,
                         ))
                         continue
+                    if source_system == "inaturalist":
+                        legacy_inaturalist_ids.setdefault(sporely_id, set()).add(numeric)
                     key_i = (sporely_id, source_system, numeric)
                     if key_i in int_seen:
                         continue
@@ -672,6 +677,16 @@ def _build_into(
                 conn.execute(
                     "UPDATE taxon_min SET norwegian_taxon_id = ? WHERE taxon_id = ?",
                     (values[0], sporely_id),
+                )
+
+        # Populate inaturalist_taxon_id where the legacy enrichment gives the
+        # concept exactly one iNaturalist id; ambiguous concepts stay NULL and
+        # keep their ids in taxon_external_id_min.
+        for sporely_id, values in sorted(legacy_inaturalist_ids.items()):
+            if len(values) == 1:
+                conn.execute(
+                    "UPDATE taxon_min SET inaturalist_taxon_id = ? WHERE taxon_id = ?",
+                    (next(iter(values)), sporely_id),
                 )
 
         # --- Pass 4: vernaculars --------------------------------------------
