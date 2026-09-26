@@ -1,4 +1,4 @@
-"""The tracked desktop taxonomy-v2 bundle that 0.9.23 ships.
+"""The tracked desktop taxonomy-v2 bundle that the desktop app ships.
 
 Pins the promoted release so a stale or half-updated bundle (manifest without
 its gzip, gzip not allowed by .gitignore, compatibility pins out of step)

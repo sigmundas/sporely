@@ -2,6 +2,14 @@
 
 All notable changes to Sporely are documented here.
 
+## 2026-09-26 (desktop 0.9.24)
+
+### Changed
+- **Species database `tax-2026.09.26-02`.** Replaces `tax-2026.09.23-01`, which had only Norwegian and Sámi common names and no Artportalen or iNaturalist species numbers, so with taxonomy v2 on (the 0.9.23 default) Swedish/English names were missing and Artportalen publishing could not resolve a taxon id. The new release carries Swedish, English, German, French, Finnish, Danish, Polish, Spanish, Portuguese and Italian names and Artportalen/iNaturalist numbers from the legacy names database; 815 Artportalen numbers accepted after review (including *Amanita muscaria* → 236537 s.str.); and 140 iNaturalist numbers re-validated against iNaturalist where the legacy data gave one number to two species. Contradictory iNaturalist numbers are no longer used. No species identity changed and no Sporely ID was allocated. See [docs/taxonomy-database.md](docs/taxonomy-database.md).
+
+### Added
+- **One-command taxonomy release build** (`database/taxonomy/scripts/build_release.py`) from a committed recipe (`database/taxonomy/release-recipe.json`), with input fingerprint checks, a built-in double build and promotion only after two independent runs agree.
+
 ## 2026-08-24
 
 ### Added
