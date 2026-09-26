@@ -1,0 +1,6 @@
+{
+  "entries": [],
+  "format": "sporely-publishing-id-overlay-v1",
+  "semantics": "Target-specific publishing metadata: the Artportalen taxon id to report for the Sporely concept. Not evidence of Sporely identity.",
+  "target": "artportalen"
+}

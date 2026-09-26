@@ -262,3 +262,29 @@ def test_coverage_delta_shows_what_a_release_gains(tmp_path):
         "vernacular_by_language.sv": {"baseline": None, "candidate": 1},
         "external_ids_by_source.artportalen": {"baseline": None, "candidate": 2},
     }
+
+
+# ------------------------------------------------- publishing-id inputs
+
+def test_recipe_pins_publishing_inputs_and_the_build_passes_them_on(pipeline, tmp_path):
+    overlay = "database/taxonomy/overlays/artportalen-publishing.json"
+    sha = br.sha256_file(br.REPO_ROOT / overlay)
+    recipe = _write_recipe(tmp_path / "recipe.json",
+                           publishing_overlays={"artportalen": {"path": overlay, "sha256": sha}},
+                           inaturalist_refresh={"path": "some/refresh.json", "sha256": "ab" * 32})
+    loaded = br.load_recipe(recipe)
+    assert loaded.artportalen_overlay == {"path": overlay, "sha256": sha}
+    _, runner = pipeline(recipe=recipe)
+    argv = dict(runner.calls)["sqliteA"]
+    assert argv[argv.index("--publishing-overlay") + 1] == overlay
+    assert argv[argv.index("--inaturalist-refresh") + 1] == "some/refresh.json"
+
+
+def test_a_publishing_input_must_match_its_pin():
+    overlay = "database/taxonomy/overlays/artportalen-publishing.json"
+    sha = br.sha256_file(br.REPO_ROOT / overlay)
+    assert br.verify_pinned("artportalen_overlay", {"path": overlay, "sha256": sha}) == sha
+    with pytest.raises(br.BuildError, match="does not match the recipe"):
+        br.verify_pinned("artportalen_overlay", {"path": overlay, "sha256": "00" * 32})
+    with pytest.raises(br.BuildError, match="missing"):
+        br.verify_pinned("inaturalist_refresh", {"path": "no/such.json", "sha256": "00" * 32})

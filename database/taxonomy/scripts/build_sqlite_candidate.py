@@ -44,6 +44,15 @@ from bridge_emission import (  # noqa: E402
     BridgeEmissionError,
     BridgeEmissionPolicy,
 )
+from publishing_ids import (  # noqa: E402
+    InaturalistRefresh,
+    PublishingIdError,
+    apply_artportalen_overlay,
+    apply_inaturalist_refresh_rows,
+    load_artportalen_overlay,
+    load_inaturalist_refresh,
+    set_refreshed_inaturalist_columns,
+)
 from identity_registry import (  # noqa: E402
     IdentityRegistry,
     RegistryError,
@@ -325,6 +334,8 @@ def build_candidate(
     registry_path: Path,
     output_db: Path,
     bridge_emission_policy_path: Path | None = None,
+    publishing_overlay_path: Path | None = None,
+    inaturalist_refresh_path: Path | None = None,
 ) -> dict:
     """Transactionally build the SQLite candidate.
 
@@ -334,8 +345,20 @@ def build_candidate(
     ``taxonomy_meta`` so a candidate always names the standard it was
     projected under.
 
+    ``publishing_overlay_path`` (reviewed Artportalen publishing ids) and
+    ``inaturalist_refresh_path`` (re-validated iNaturalist ids) are optional
+    committed inputs; see ``publishing_ids.py``. Their digests are recorded in
+    ``taxonomy_meta``.
+
     Returns a summary dict with row counts and the file SHA-256.
     """
+    try:
+        overlay_entries = (load_artportalen_overlay(publishing_overlay_path)
+                           if publishing_overlay_path is not None else None)
+        inaturalist_refresh = (load_inaturalist_refresh(inaturalist_refresh_path)
+                               if inaturalist_refresh_path is not None else None)
+    except PublishingIdError as exc:
+        raise BuildError(str(exc)) from exc
     bridge_policy = BridgeEmissionPolicy.load(
         bridge_emission_policy_path
         if bridge_emission_policy_path is not None
@@ -386,6 +409,11 @@ def build_candidate(
             manifest_path=manifest_path,
             release_dir=release_dir,
             bridge_policy=bridge_policy,
+            overlay_entries=overlay_entries,
+            overlay_sha256=_sha256_file(publishing_overlay_path) if publishing_overlay_path else None,
+            inaturalist_refresh=inaturalist_refresh,
+            inaturalist_refresh_sha256=(_sha256_file(inaturalist_refresh_path)
+                                        if inaturalist_refresh_path else None),
         )
         os.replace(tmp_db, output_db)
         committed = True
@@ -409,6 +437,10 @@ def _build_into(
     manifest_path: Path,
     release_dir: Path,
     bridge_policy: BridgeEmissionPolicy,
+    overlay_entries: list[dict] | None = None,
+    overlay_sha256: str | None = None,
+    inaturalist_refresh: InaturalistRefresh | None = None,
+    inaturalist_refresh_sha256: str | None = None,
 ) -> dict:
     conn = sqlite3.connect(str(tmp_db), isolation_level=None)
     conn.execute("PRAGMA locking_mode = EXCLUSIVE")
@@ -652,6 +684,18 @@ def _build_into(
                         id_role, is_preferred, external_name, note,
                     ))
 
+        # Reviewed publishing-id inputs (publishing_ids.py).
+        publishing_counts: dict[str, object] = {}
+        try:
+            if inaturalist_refresh is not None:
+                external_int_rows, publishing_counts["inaturalist_refresh"] = \
+                    apply_inaturalist_refresh_rows(conn, inaturalist_refresh, external_int_rows)
+            if overlay_entries is not None:
+                publishing_counts["artportalen_overlay_rows_added"] = \
+                    apply_artportalen_overlay(conn, overlay_entries, external_int_rows)
+        except PublishingIdError as exc:
+            raise BuildError(str(exc)) from exc
+
         external_int_rows.sort(key=lambda r: (r[0], r[1], r[2]))
         conn.executemany(
             "INSERT INTO taxon_external_id_min "
@@ -697,6 +741,11 @@ def _build_into(
                         "UPDATE taxon_min SET inaturalist_taxon_id = ? WHERE taxon_id = ?",
                         (value, sporely_id),
                     )
+        if inaturalist_refresh is not None:
+            try:
+                set_refreshed_inaturalist_columns(conn, inaturalist_refresh)
+            except PublishingIdError as exc:
+                raise BuildError(str(exc)) from exc
 
         # --- Pass 4: vernaculars --------------------------------------------
         vern_rows: list[tuple] = []
@@ -785,6 +834,10 @@ def _build_into(
             # the standard that admitted them.
             ("bridge_emission_policy_sha256", bridge_policy.policy_sha256),
         ]
+        if overlay_sha256:
+            meta.append(("publishing_overlay[artportalen].sha256", overlay_sha256))
+        if inaturalist_refresh_sha256:
+            meta.append(("inaturalist_refresh.sha256", inaturalist_refresh_sha256))
         for binding in manifest.get("source_bindings", []):
             code = binding["source_code"]
             meta.append((
@@ -883,6 +936,7 @@ def _build_into(
 
     return {
         "counts": counts,
+        "publishing_ids": publishing_counts,
         "manifest": manifest,
         "authoritative_bridge_emission": {
             "policy_sha256": bridge_policy.policy_sha256,
@@ -911,6 +965,10 @@ def build_parser() -> argparse.ArgumentParser:
     parser.add_argument("--bridge-emission-policy", type=Path, default=None,
                         help="reviewed cross-source bridge standard "
                              "(default: policies/mapping_policy.yml)")
+    parser.add_argument("--publishing-overlay", type=Path, default=None,
+                        help="reviewed Artportalen publishing-id overlay")
+    parser.add_argument("--inaturalist-refresh", type=Path, default=None,
+                        help="re-validated iNaturalist id cache")
     return parser
 
 
@@ -922,6 +980,8 @@ def main(argv: Iterable[str] | None = None) -> int:
             registry_path=args.registry,
             output_db=args.output,
             bridge_emission_policy_path=args.bridge_emission_policy,
+            publishing_overlay_path=args.publishing_overlay,
+            inaturalist_refresh_path=args.inaturalist_refresh,
         )
     except (BuildError, BridgeEmissionError) as exc:
         print(f"error: {exc}", file=sys.stderr)

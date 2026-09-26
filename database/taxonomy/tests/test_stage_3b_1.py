@@ -408,6 +408,68 @@ def test_an_inaturalist_id_on_two_concepts_fills_neither_lookup_column(tmp_path:
                         "WHERE source_system='inaturalist' AND external_id=154000").fetchone() == (2,)
 
 
+def test_reviewed_publishing_inputs_reach_the_desktop_lookups(
+        tmp_path: Path, monkeypatch: pytest.MonkeyPatch) -> None:
+    """Overlay + iNaturalist refresh, applied by the builder, used by the desktop."""
+    bundled = tmp_path / "bundled.sqlite3"
+    _build_synthetic_bundled_db(bundled)
+    conn = sqlite3.connect(str(bundled))
+    conn.execute("INSERT INTO taxon_min VALUES (300191, 'Amanita', 'gemmata', 'Amanitaceae', 'Amanita gemmata')")
+    conn.execute("INSERT INTO taxon_external_id_min (taxon_id, source_system, external_id, id_role, "
+                 "is_preferred, external_name, note) VALUES (300191, 'inaturalist', 154000, 'accepted', 1, '', '')")
+    conn.commit()
+    conn.close()
+    legacy = tmp_path / "legacy.jsonl"
+    export_legacy(bundled_db=bundled, output_path=legacy)
+    col, nor = _write_synthetic_release(tmp_path, second_species=True)
+    compile_release(normalized_source_dirs=[col, nor], manual_mappings_path=tmp_path / "mappings.json",
+                    mapping_policy_path=_POLICY_PATH, registry_path=tmp_path / "registry.jsonl",
+                    output_dir=tmp_path / "release", release_id="tax-2026.07.29-01",
+                    legacy_enrichment_path=legacy)
+    first = tmp_path / "first.sqlite3"
+    build_candidate(release_dir=tmp_path / "release", registry_path=tmp_path / "registry.jsonl", output_db=first)
+    ids = dict(sqlite3.connect(first).execute("SELECT canonical_scientific_name, taxon_id FROM taxon_min"))
+    candolleomyces, gemmata = ids["Candolleomyces candolleanus"], ids["Amanita gemmata"]
+
+    overlay = tmp_path / "overlay.json"
+    overlay.write_text(json.dumps({
+        "format": "sporely-publishing-id-overlay-v1", "target": "artportalen", "semantics": "s",
+        "entries": [{"sporely_taxon_id": gemmata, "scientific_name": "Amanita gemmata",
+                     "artportalen_taxon_id": 40, "artportalen_scientific_name": "Amanita gemmata",
+                     "decision": "accepted_unique_exact_name_match", "accepted_by": "t",
+                     "accepted_on": "2099-01-01"}]}))
+    refresh = tmp_path / "refresh.json"
+    refresh.write_text(json.dumps({
+        "format": "sporely-inaturalist-refresh-v1", "acquired_on": "2099-01-01",
+        "entries": sorted([
+            {"sporely_taxon_id": candolleomyces, "scientific_name": "Candolleomyces candolleanus",
+             "status": "resolved", "inaturalist": {"taxon_id": 154000, "name": "Candolleomyces candolleanus"}},
+            {"sporely_taxon_id": gemmata, "scientific_name": "Amanita gemmata", "status": "unresolved",
+             "reason": "no_active_exact_name_match"}], key=lambda e: e["sporely_taxon_id"])}))
+    output_db = tmp_path / "candidate.sqlite3"
+    summary = build_candidate(release_dir=tmp_path / "release", registry_path=tmp_path / "registry.jsonl",
+                              output_db=output_db, publishing_overlay_path=overlay,
+                              inaturalist_refresh_path=refresh)
+    assert summary["publishing_ids"] == {
+        "artportalen_overlay_rows_added": 1,
+        "inaturalist_refresh": {"resolved": 1, "unresolved": 1, "legacy_rows_superseded": 2}}
+    conn = sqlite3.connect(f"file:{output_db}?mode=ro", uri=True)
+    meta = dict(conn.execute("SELECT key, value FROM taxonomy_meta"))
+    assert meta["publishing_overlay[artportalen].sha256"] == hashlib.sha256(overlay.read_bytes()).hexdigest()
+    assert meta["inaturalist_refresh.sha256"] == hashlib.sha256(refresh.read_bytes()).hexdigest()
+    conn.close()
+
+    repo = Path(__file__).resolve().parents[3]
+    monkeypatch.syspath_prepend(str(repo))
+    import utils.vernacular_utils as vernacular_utils
+    from database.models import ObservationDB
+    monkeypatch.setattr(vernacular_utils, "resolve_vernacular_db_path", lambda lang_code=None: output_db)
+    resolve = ObservationDB.resolve_external_taxon_id
+    assert resolve("Candolleomyces", "candolleanus", "inaturalist") == 154000  # refreshed
+    assert resolve("Amanita", "gemmata", "inaturalist") is None  # contradictory legacy id dropped
+    assert resolve("Amanita", "gemmata", "artportalen") == 40  # reviewed overlay
+
+
 def test_two_builds_with_legacy_are_deterministic(tmp_path: Path) -> None:
     bundled = tmp_path / "bundled.sqlite3"
     _build_synthetic_bundled_db(bundled)

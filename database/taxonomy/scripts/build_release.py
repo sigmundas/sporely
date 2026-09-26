@@ -112,6 +112,10 @@ class Recipe:
     legacy_sha256: str | None
     policies: dict[str, str]
     registry: str
+    # Optional committed, fingerprinted publishing-id inputs (publishing_ids.py):
+    # {"path": repo-relative, "sha256": ...}
+    artportalen_overlay: dict | None = None
+    inaturalist_refresh: dict | None = None
 
 
 def load_recipe(path: Path) -> Recipe:
@@ -154,11 +158,23 @@ def load_recipe(path: Path) -> Recipe:
     _require(bool(raw.get("registry")), "recipe registry is required")
     if legacy_enabled:
         _require(bool(legacy.get("bundled_db")), "recipe legacy_enrichment.bundled_db is required")
+    pinned: dict[str, dict | None] = {}
+    for key, raw_entry in (("artportalen_overlay", (raw.get("publishing_overlays") or {}).get("artportalen")),
+                           ("inaturalist_refresh", raw.get("inaturalist_refresh"))):
+        if raw_entry is None:
+            pinned[key] = None
+            continue
+        _require(bool(raw_entry.get("path")), f"recipe {key}.path is required")
+        _require(isinstance(raw_entry.get("sha256"), str) and bool(SHA256_RE.match(raw_entry["sha256"])),
+                 f"recipe {key}.sha256 must be a lowercase SHA-256")
+        pinned[key] = {"path": raw_entry["path"], "sha256": raw_entry["sha256"]}
     return Recipe(sources=tuple(sources), redlist_workbook=redlist["workbook"],
                   redlist_sha256=redlist["sha256"], legacy_enabled=legacy_enabled,
                   legacy_db=legacy.get("bundled_db") if legacy_enabled else None,
                   legacy_sha256=legacy.get("sha256") if legacy_enabled else None,
-                  policies=dict(policies), registry=raw["registry"])
+                  policies=dict(policies), registry=raw["registry"],
+                  artportalen_overlay=pinned["artportalen_overlay"],
+                  inaturalist_refresh=pinned["inaturalist_refresh"])
 
 
 def manifest_archive_sha256(manifest: dict) -> str:
@@ -346,6 +362,10 @@ def preflight(options: Options, recipe: Recipe) -> dict:
 
     for key, rel in recipe.policies.items():
         _require((REPO_ROOT / rel).is_file(), f"missing policy {key}: {rel}")
+    for key, pinned in (("artportalen_overlay", recipe.artportalen_overlay),
+                        ("inaturalist_refresh", recipe.inaturalist_refresh)):
+        if pinned is not None:
+            inputs[f"{key}_sha256"] = verify_pinned(key, pinned)
     return inputs
 
 
@@ -371,6 +391,14 @@ def verify_registry(registry_dir: Path) -> str:
     actual = digest.hexdigest()
     _require(actual == expected, f"registry shards concatenate to {actual}, manifest says {expected}")
     return actual
+
+
+def verify_pinned(key: str, pinned: dict) -> str:
+    """A committed recipe input must exist and match its pinned SHA-256."""
+    path = REPO_ROOT / pinned["path"]
+    _require(path.is_file(), f"missing {key}: {pinned['path']}")
+    _require(sha256_file(path) == pinned["sha256"], f"{key} SHA-256 does not match the recipe")
+    return pinned["sha256"]
 
 
 def assemble_registry(registry_dir: Path, dest: Path) -> str:
@@ -435,10 +463,15 @@ def build(options: Options, run: Runner | None = None, python: str = sys.executa
         if recipe.legacy_enabled:
             argv += ["--legacy-enrichment-input", rel(legacy_jsonl)]
         run(f"compile{name}", argv)
-        stdout = run(f"sqlite{name}", [_script("build_sqlite_candidate.py"),
-                                       "--release-dir", rel(b / f"release{name}"),
-                                       "--registry", rel(registry),
-                                       "--output", rel(b / f"{options.release_id}-{name}.sqlite3")])
+        sqlite_argv = [_script("build_sqlite_candidate.py"),
+                       "--release-dir", rel(b / f"release{name}"),
+                       "--registry", rel(registry),
+                       "--output", rel(b / f"{options.release_id}-{name}.sqlite3")]
+        if recipe.artportalen_overlay:
+            sqlite_argv += ["--publishing-overlay", recipe.artportalen_overlay["path"]]
+        if recipe.inaturalist_refresh:
+            sqlite_argv += ["--inaturalist-refresh", recipe.inaturalist_refresh["path"]]
+        stdout = run(f"sqlite{name}", sqlite_argv)
         sqlite_out[name] = json.loads(stdout)
 
     # 3. Determinism and registry checks.
@@ -487,6 +520,7 @@ def build(options: Options, run: Runner | None = None, python: str = sys.executa
         "determinism": determinism,
         "registry": registry_state,
         "sqlite": {"sha256": sqlite_a, "counts": sqlite_out["A"].get("counts"),
+                   "publishing_ids": sqlite_out["A"].get("publishing_ids"),
                    "authoritative_bridge_emission": sqlite_out["A"].get("authoritative_bridge_emission")},
         "coverage": coverage,
         "promoted": False,
