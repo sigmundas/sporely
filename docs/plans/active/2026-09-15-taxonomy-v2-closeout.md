@@ -2,7 +2,7 @@
 
 **Plan date:** 2026-09-15  
 **Last amended:** 2026-09-26  
-**Status:** Implementation complete — awaiting confirmation of the cloud activation (see status note below)  
+**Status:** Complete: desktop bundle `tax-2026.09.26-02` and cloud activation done; desktop 0.9.24 tag pending (see status notes below)  
 **Primary repository:** `sigmundas/sporely`  
 **Primary local path:** `/Users/sigmundas/Documents/Code/sporely/sporely-py-taxonomy-v2-identity-reconciliation`  
 **Expected branch:** `feature/taxonomy-v2-identity-reconciliation`  
@@ -34,7 +34,13 @@
   Sporely IDs. Built with `build_release.py` in two byte-identical runs.
 - `tax-2026.09.23-01` was never imported to the cloud. The prepared cloud
   transition is `tax-2026.08.01-01` → `tax-2026.09.26-02` (sporely-web
-  runbook), proven on the local stack; not activated.
+  runbook), proven on the local stack. **Activated in production on
+  2026-09-26 at 15:03Z.** The first attempt hit the 2-minute default
+  statement timeout and rolled back; the second, with a session-only
+  timeout, committed. Post-checks: `tax-2026.09.26-02` active,
+  `tax-2026.08.01-01` retired, 53482 → 7821, 52369 → 83668, 52,917
+  concepts, no duplicates, no unfinished runs, deferred snapshot-v2
+  migration absent.
 - Desktop 0.9.24 ships the new bundle; not tagged.
 - New follow-ups in `docs/plans/INBOX.md`: unmerged NorTaxa/COL duplicate
   concepts (cloud lacks their common names), 448 Artportalen review cases,
