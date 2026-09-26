@@ -309,6 +309,8 @@ class Options:
     bundle_dir: Path = DEFAULT_BUNDLE_DIR
     promote: bool = False
     compare_baseline: bool = True
+    # SQLite SHA-256 of an earlier, independent run; promotion requires equality.
+    expect_sqlite_sha256: str | None = None
 
 
 def _script(name: str) -> str:
@@ -527,8 +529,13 @@ def build(options: Options, run: Runner | None = None, python: str = sys.executa
     }
 
     # 5. Promotion, only for a deterministic build that allocated nothing new.
+    if options.expect_sqlite_sha256:
+        report["expected_sqlite_sha256"] = options.expect_sqlite_sha256
+        report["matches_expected"] = sqlite_a == options.expect_sqlite_sha256
     if options.promote:
         _require(determinism["identical"], f"not promoting: builds differ in {mismatches}")
+        _require(report.get("matches_expected", True),
+                 f"not promoting: SQLite {sqlite_a} differs from the earlier run's {options.expect_sqlite_sha256}")
         _require(registry_state["unchanged"],
                  f"not promoting: the compile allocated {registry_state['new_allocations']} new IDs; "
                  "re-shard and commit the registry first (database/taxonomy/README.md)")
@@ -554,6 +561,8 @@ def _print_summary(report: dict) -> None:
     print("external ids: " + ", ".join(f"{k}={v}" for k, v in cov["candidate"].get("external_ids_by_source", {}).items()))
     if "delta" in cov:
         print(f"changes vs bundled {cov['baseline_release_id']}: {len(cov['delta'])} counts differ (see build-report.json)")
+    if "matches_expected" in report:
+        print(f"matches earlier run: {report['matches_expected']}")
     print(f"promoted: {report['promoted']}")
 
 
@@ -568,6 +577,8 @@ def build_parser() -> argparse.ArgumentParser:
                         help="write the candidate into the desktop bundle when every check passes")
     parser.add_argument("--no-baseline", action="store_true",
                         help="skip the comparison with the bundled release")
+    parser.add_argument("--expect-sqlite-sha256",
+                        help="SQLite SHA-256 of an earlier independent run; --promote requires equality")
     return parser
 
 
@@ -575,14 +586,15 @@ def main(argv: list[str] | None = None) -> int:
     args = build_parser().parse_args(argv)
     options = Options(release_id=args.release_id, build_dir=args.build_dir.resolve(),
                       recipe_path=args.recipe.resolve(), archive_root=args.archive_root.resolve(),
-                      promote=args.promote, compare_baseline=not args.no_baseline)
+                      promote=args.promote, compare_baseline=not args.no_baseline,
+                      expect_sqlite_sha256=args.expect_sqlite_sha256)
     try:
         report = build(options)
     except BuildError as exc:
         print(f"error: {exc}", file=sys.stderr)
         return 2
     _print_summary(report)
-    return 0 if report["determinism"]["identical"] else 1
+    return 0 if report["determinism"]["identical"] and report.get("matches_expected", True) else 1
 
 
 if __name__ == "__main__":

@@ -175,11 +175,13 @@ def pipeline(tmp_path, monkeypatch):
 
     counter = iter(range(100))
 
-    def run(*, differ=False, allocate=False, promote=False, recipe=br.DEFAULT_RECIPE, bundle_dir=None):
+    def run(*, differ=False, allocate=False, promote=False, recipe=br.DEFAULT_RECIPE, bundle_dir=None,
+            expect=None):
         build_dir = tmp_path / f"build{next(counter)}"
         runner = FakeRunner(build_dir, differ=differ, allocate=allocate)
         options = br.Options(release_id=RELEASE, build_dir=build_dir, recipe_path=recipe,
-                             bundle_dir=bundle_dir or tmp_path / "no-bundle", promote=promote)
+                             bundle_dir=bundle_dir or tmp_path / "no-bundle", promote=promote,
+                             expect_sqlite_sha256=expect)
         return br.build(options, run=runner), runner
     return run
 
@@ -288,3 +290,11 @@ def test_a_publishing_input_must_match_its_pin():
         br.verify_pinned("artportalen_overlay", {"path": overlay, "sha256": "00" * 32})
     with pytest.raises(br.BuildError, match="missing"):
         br.verify_pinned("inaturalist_refresh", {"path": "no/such.json", "sha256": "00" * 32})
+
+
+def test_promotion_requires_equality_with_an_earlier_independent_run(pipeline):
+    first, _ = pipeline()
+    second, runner = pipeline(promote=True, expect=first["determinism"]["sqlite_sha256"])
+    assert second["matches_expected"] and second["promoted"]
+    with pytest.raises(br.BuildError, match="differs from the earlier run"):
+        pipeline(promote=True, expect="00" * 32)
