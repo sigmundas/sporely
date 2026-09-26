@@ -317,7 +317,7 @@ def preflight(options: Options, recipe: Recipe) -> dict:
                  f"{options.release_id} is the bundled release; releases are immutable, pick a new id")
     _require(not options.build_dir.exists(), f"build dir {options.build_dir} already exists")
 
-    inputs: dict = {"sources": {}}
+    inputs: dict = {"sources": {}, "registry_sha256": verify_registry(REPO_ROOT / recipe.registry)}
     for source in recipe.sources:
         manifest_path = REPO_ROOT / source.manifest
         _require(manifest_path.is_file(), f"{source.code}: missing acquisition manifest {source.manifest}")
@@ -346,21 +346,42 @@ def preflight(options: Options, recipe: Recipe) -> dict:
 
     for key, rel in recipe.policies.items():
         _require((REPO_ROOT / rel).is_file(), f"missing policy {key}: {rel}")
-    registry_manifest = REPO_ROOT / recipe.registry / "manifest.json"
-    _require(registry_manifest.is_file(), f"missing registry manifest {registry_manifest}")
-    inputs["registry_sha256"] = _read_json(registry_manifest).get("concatenated_sha256")
     return inputs
+
+
+def _registry_shards(registry_dir: Path) -> tuple[list[Path], str]:
+    manifest_path = registry_dir / "manifest.json"
+    _require(manifest_path.is_file(), f"missing registry manifest {manifest_path}")
+    manifest = _read_json(manifest_path)
+    shards = [registry_dir / shard["name"] for shard in manifest.get("shards") or []]
+    _require(bool(shards), f"{manifest_path} lists no shards")
+    for shard in shards:
+        _require(shard.is_file(), f"missing registry shard {shard}")
+    return shards, str(manifest.get("concatenated_sha256"))
+
+
+def verify_registry(registry_dir: Path) -> str:
+    """Hash the shards in manifest order; they must reproduce the manifest's hash."""
+    shards, expected = _registry_shards(registry_dir)
+    digest = hashlib.sha256()
+    for shard in shards:
+        with shard.open("rb") as handle:
+            for chunk in iter(lambda: handle.read(1 << 20), b""):
+                digest.update(chunk)
+    actual = digest.hexdigest()
+    _require(actual == expected, f"registry shards concatenate to {actual}, manifest says {expected}")
+    return actual
 
 
 def assemble_registry(registry_dir: Path, dest: Path) -> str:
     """Concatenate the canonical shards in manifest order and verify the result."""
-    manifest = _read_json(registry_dir / "manifest.json")
+    shards, expected = _registry_shards(registry_dir)
     with dest.open("wb") as out:
-        for shard in manifest.get("shards") or []:
-            out.write((registry_dir / shard["name"]).read_bytes())
+        for shard in shards:
+            with shard.open("rb") as handle:
+                shutil.copyfileobj(handle, out, 1 << 20)
     actual = sha256_file(dest)
-    _require(actual == manifest.get("concatenated_sha256"),
-             f"registry shards concatenate to {actual}, manifest says {manifest.get('concatenated_sha256')}")
+    _require(actual == expected, f"registry shards concatenate to {actual}, manifest says {expected}")
     return actual
 
 
@@ -445,10 +466,15 @@ def build(options: Options, run: Runner | None = None, python: str = sys.executa
     if options.compare_baseline and bundled_manifest.exists():
         manifest = _read_json(bundled_manifest)
         baseline_db = b / "baseline.sqlite3"
-        with gzip.open(options.bundle_dir / manifest["gz_artifact"], "rb") as src, baseline_db.open("wb") as dst:
-            shutil.copyfileobj(src, dst, 1 << 20)
+        try:
+            with gzip.open(options.bundle_dir / manifest["gz_artifact"], "rb") as src, \
+                    baseline_db.open("wb") as dst:
+                shutil.copyfileobj(src, dst, 1 << 20)
+            coverage["baseline"] = summarize_sqlite(baseline_db)
+        except (KeyError, OSError, EOFError, sqlite3.DatabaseError) as exc:
+            raise BuildError(f"cannot read the bundled release for comparison ({exc}); "
+                             "rerun with --no-baseline to skip it") from exc
         coverage["baseline_release_id"] = manifest.get("content_release_id")
-        coverage["baseline"] = summarize_sqlite(baseline_db)
         coverage["delta"] = coverage_delta(coverage["baseline"], coverage["candidate"])
         baseline_db.unlink()
 

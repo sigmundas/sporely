@@ -107,6 +107,26 @@ def test_preflight_refuses_the_bundled_release_and_an_existing_build_dir(tmp_pat
         br.preflight(br.Options(release_id=RELEASE, build_dir=tmp_path / "exists"), recipe)
 
 
+def test_preflight_checks_the_registry_before_any_archive(tmp_path):
+    shards = tmp_path / "canonical"
+    shards.mkdir()
+    (shards / "part-0001.jsonl").write_bytes(b'{"a":1}\n')
+    (shards / "manifest.json").write_text(json.dumps(
+        {"shards": [{"name": "part-0001.jsonl"}], "concatenated_sha256": "00" * 32}))
+    import os
+    recipe = _write_recipe(tmp_path / "recipe.json", registry=os.path.relpath(shards, br.REPO_ROOT))
+    options = br.Options(release_id=RELEASE, build_dir=tmp_path / "build",
+                         archive_root=tmp_path / "no-archives")
+    with pytest.raises(br.BuildError, match="registry shards concatenate to"):
+        br.preflight(options, br.load_recipe(recipe))
+
+
+def test_committed_registry_verifies():
+    recipe = br.load_recipe(br.DEFAULT_RECIPE)
+    manifest = json.loads((br.REPO_ROOT / recipe.registry / "manifest.json").read_text())
+    assert br.verify_registry(br.REPO_ROOT / recipe.registry) == manifest["concatenated_sha256"]
+
+
 def test_assemble_registry_verifies_the_concatenation(tmp_path):
     shards = tmp_path / "canonical"
     shards.mkdir()
@@ -155,11 +175,11 @@ def pipeline(tmp_path, monkeypatch):
 
     counter = iter(range(100))
 
-    def run(*, differ=False, allocate=False, promote=False, recipe=br.DEFAULT_RECIPE):
+    def run(*, differ=False, allocate=False, promote=False, recipe=br.DEFAULT_RECIPE, bundle_dir=None):
         build_dir = tmp_path / f"build{next(counter)}"
         runner = FakeRunner(build_dir, differ=differ, allocate=allocate)
         options = br.Options(release_id=RELEASE, build_dir=build_dir, recipe_path=recipe,
-                             bundle_dir=tmp_path / "no-bundle", promote=promote)
+                             bundle_dir=bundle_dir or tmp_path / "no-bundle", promote=promote)
         return br.build(options, run=runner), runner
     return run
 
@@ -205,6 +225,30 @@ def test_promotion_runs_last_for_a_clean_build(pipeline):
     label, argv = runner.calls[-1]
     assert label == "promote" and report["promoted"]
     assert argv[argv.index("--sqlite") + 1].endswith(f"{RELEASE}-A.sqlite3")
+
+
+def test_an_unreadable_bundled_release_is_a_clean_error(pipeline, tmp_path):
+    bundle = tmp_path / "bundle"
+    bundle.mkdir()
+    (bundle / "manifest.json").write_text(json.dumps(
+        {"content_release_id": "tax-old", "gz_artifact": "tax-old.sqlite3.gz"}))
+    (bundle / "tax-old.sqlite3.gz").write_bytes(b"not gzip")
+    with pytest.raises(br.BuildError, match="--no-baseline"):
+        pipeline(bundle_dir=bundle)
+
+
+def test_the_bundled_release_is_the_comparison_baseline(pipeline, tmp_path):
+    import gzip
+    bundle = tmp_path / "bundle"
+    bundle.mkdir()
+    _make_sqlite(tmp_path / "old.sqlite3", languages=("nb", "nn"))
+    (bundle / "tax-old.sqlite3.gz").write_bytes(gzip.compress((tmp_path / "old.sqlite3").read_bytes()))
+    (bundle / "manifest.json").write_text(json.dumps(
+        {"content_release_id": "tax-old", "gz_artifact": "tax-old.sqlite3.gz"}))
+    report, _ = pipeline(bundle_dir=bundle)
+    assert report["coverage"]["baseline_release_id"] == "tax-old"
+    assert report["coverage"]["delta"] == {
+        "vernacular_by_language.nn": {"baseline": 1, "candidate": None}}
 
 
 # -------------------------------------------------------------- coverage
