@@ -292,6 +292,9 @@ def main(argv: list[str] | None = None) -> int:
             print(f"error: {args.recheck} is not a {FORMAT} file", file=sys.stderr)
             return 2
         changed = enforce_one_to_one(document["entries"])
+        if changed == 0 and document.get("acceptance_rules") == list(ACCEPTANCE_RULES):
+            print("no change; file left as is (its pinned SHA-256 still holds)")
+            return 0
         document["acceptance_rules"] = list(ACCEPTANCE_RULES)
         document["counts"] = _counts(document["entries"])
         document.setdefault("rechecks", []).append(
