@@ -172,3 +172,5 @@ sopp.jpg
 # Agent Sparring runtime state
 .sparring/stages/
 .sparring/plans/
+
+.sparring/intake/
