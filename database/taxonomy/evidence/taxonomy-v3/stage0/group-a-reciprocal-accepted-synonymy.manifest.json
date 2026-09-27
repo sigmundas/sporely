@@ -21,6 +21,10 @@
  "members_sha256": "4d8ebec059322d1f01573b87c6800ee573f788cf7c64da939bdec5b6f08dd012",
  "note": "Immutable review input. Membership is pinned to the release and source archives below; it approves nothing and never extends to taxa in a later source release. shared_synonyms lists at most 10 names; shared_synonym_count is exact.",
  "pins": {
+  "bridge_emission_policy": {
+   "path": "database/taxonomy/policies/mapping_policy.yml",
+   "sha256": "a5a329848c45fcd030165a51ad1193944dffe7573ddb2a9c69441f0d76ae4afb"
+  },
   "cloud_scope_policy": {
    "path": "database/taxonomy/policies/global-macrofungi-scope.yml",
    "scope_predicate_id": "global_macrofungi_policy_v1",

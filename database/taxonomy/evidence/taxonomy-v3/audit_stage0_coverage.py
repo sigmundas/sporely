@@ -58,6 +58,10 @@ from cross_reference_evidence import (  # noqa: E402
     read_col,
     read_nortaxa,
 )
+from bridge_emission import (  # noqa: E402
+    EVIDENCE_CLASS_INTRA_SOURCE_SYNONYM,
+    BridgeEmissionPolicy,
+)
 from database.taxonomy import cloud_export, macrofungi_scope  # noqa: E402
 
 EVIDENCE_CLASSES = (EVIDENCE_RECIPROCAL, EVIDENCE_ONE_DIRECTIONAL,
@@ -69,6 +73,11 @@ SCOPE_POLICY = Path("database/taxonomy/policies/global-macrofungi-scope.yml")
 DEFAULT_NORTAXA = Path("database/taxonomy/sources/nortaxa/1.284/archive.zip")
 DEFAULT_COL = Path("database/taxonomy/sources/col_xr/2026-07-17-XR/archive.zip")
 DEFAULT_OUT = Path("database/taxonomy/evidence/taxonomy-v3/stage0")
+MAPPING_POLICY = Path("database/taxonomy/policies/mapping_policy.yml")
+
+#: Raw-row note -> the bridge evidence class the compiler graded it under,
+#: for rows that were not re-keyed by a reviewed supersession.
+_NOTE_EVIDENCE_CLASS = {"synonym_of_accepted": EVIDENCE_CLASS_INTRA_SOURCE_SYNONYM}
 
 #: Reviewed (non-automatic) NorTaxa bridge notes the compiler writes.
 REVIEWED_NOTES = ("manual_approved_exact", "reviewed_supersession")
@@ -216,6 +225,68 @@ def group_b(conn: sqlite3.Connection) -> list[tuple[str, int, str, int]]:
     ]
 
 
+def authoritative_nortaxa_emission(conn: sqlite3.Connection,
+                                   scope: set[int]) -> list[dict]:
+    """NorTaxa identifiers the scoped export publishes as authoritative.
+
+    Mirrors both sources of ``cloud_export.emit_taxon_external_id_authoritative``
+    restricted to NorTaxa: namespaced ``taxon_external_id_text_min`` rows and
+    the derived ``taxon_min.norwegian_taxon_id`` row, each on a scoped concept.
+    """
+    rows = conn.execute(
+        "SELECT external_id, taxon_id, id_role, note "
+        "FROM taxon_external_id_text_min "
+        "WHERE source_system = 'nortaxa' AND namespace = 'nortaxa_taxon_id' "
+        "UNION ALL "
+        "SELECT CAST(norwegian_taxon_id AS TEXT), taxon_id, 'accepted', "
+        "'derived_from_taxon_min.norwegian_taxon_id' FROM taxon_min "
+        "WHERE norwegian_taxon_id IS NOT NULL")
+    return sorted(
+        ({"nortaxa_taxon_id": str(ext), "sporely_taxon_id": int(tid),
+          "id_role": role, "note": note}
+         for ext, tid, role, note in rows if int(tid) in scope),
+        key=lambda r: (r["sporely_taxon_id"], r["nortaxa_taxon_id"]))
+
+
+def reconcile_emitting_hosts(conn: sqlite3.Connection, emitted: list[dict],
+                             policy: BridgeEmissionPolicy) -> list[dict]:
+    """Account for every raw NorTaxa row on a concept that emits a bridge.
+
+    Each raw ``taxon_external_id_min`` row is either published or not; an
+    unpublished row carries the policy's rejection reason for its evidence
+    class. Fails closed on a reviewed row that is not published, or a
+    published identifier with no raw row behind it.
+    """
+    published = {(r["sporely_taxon_id"], r["nortaxa_taxon_id"]): r
+                 for r in emitted}
+    hosts = sorted({r["sporely_taxon_id"] for r in emitted})
+    out, seen = [], set()
+    for host in hosts:
+        for ext, role, note in conn.execute(
+                "SELECT external_id, id_role, note FROM taxon_external_id_min "
+                "WHERE source_system = 'artsdatabanken' AND taxon_id = ? "
+                "ORDER BY external_id", (host,)):
+            key = (host, str(ext))
+            row = {"sporely_taxon_id": host, "nortaxa_taxon_id": str(ext),
+                   "id_role": role, "raw_note": note}
+            if key in published:
+                seen.add(key)
+                row.update(published=True,
+                           authoritative_note=published[key]["note"])
+            else:
+                if note in REVIEWED_NOTES:
+                    raise SystemExit(f"reviewed bridge not published: {key}")
+                evidence_class = _NOTE_EVIDENCE_CLASS.get(note, note)
+                row.update(published=False, evidence_class=evidence_class,
+                           rejection_reason=policy.rejection_reason(
+                               evidence_class))
+            out.append(row)
+    missing = set(published) - seen
+    if missing:
+        raise SystemExit(f"published bridge without raw row: {sorted(missing)}")
+    return out
+
+
 def reviewed_bridges(conn: sqlite3.Connection) -> list[dict]:
     placeholders = ",".join("?" * len(REVIEWED_NOTES))
     return [
@@ -294,7 +365,7 @@ def classify_regressions(a_rows, b_rows, reviewed, scope, extra) -> dict:
         if nortaxa_id in reviewed_by_id:
             r = reviewed_by_id[nortaxa_id]
             placements.append({
-                "population": "reviewed_bridge_emitted",
+                "population": "authoritative_bridge_emitted",
                 "nortaxa_taxon_id": nortaxa_id,
                 "sporely_taxon_id": r["sporely_taxon_id"],
                 "note": r["note"],
@@ -344,6 +415,9 @@ def audit(args: argparse.Namespace) -> dict[str, dict]:
             a_unfiltered = group_a_unfiltered_count(conn)
             b_pairs = group_b(conn)
             reviewed = reviewed_bridges(conn)
+            policy = BridgeEmissionPolicy.load(MAPPING_POLICY)
+            emitted = authoritative_nortaxa_emission(conn, scope)
+            host_rows = reconcile_emitting_hosts(conn, emitted, policy)
             scope_col_canonical = sum(
                 1 for (tid,) in conn.execute(
                     "SELECT taxon_id FROM taxon_min "
@@ -385,6 +459,9 @@ def audit(args: argparse.Namespace) -> dict[str, dict]:
             row["shared_synonym_count"] = 0
 
     pins = {"release": release, "source_archives": archives,
+            "bridge_emission_policy": {
+                "path": str(MAPPING_POLICY),
+                "sha256": policy.policy_sha256},
             "cloud_scope_policy": {
                 "path": str(SCOPE_POLICY),
                 "sha256": _sha256_file(args.scope_policy),
@@ -400,6 +477,17 @@ def audit(args: argparse.Namespace) -> dict[str, dict]:
             "col_canonical_concepts": scope_col_canonical,
         },
         "reviewed_bridges_in_release": reviewed,
+        "authoritative_nortaxa_emission": {
+            "definition": ("NorTaxa rows the scoped export publishes, per "
+                           "cloud_export.emit_taxon_external_id_authoritative "
+                           "on the cloud scope"),
+            "emitted": emitted,
+            "emitted_count": len(emitted),
+            "emitting_host_reconciliation": host_rows,
+            "emitting_host_raw_rows": len(host_rows),
+            "emitting_host_rows_not_published": sum(
+                1 for r in host_rows if not r["published"]),
+        },
         "group_a": {
             "definition": ("taxon_external_id_min rows with source_system "
                            "'artsdatabanken' and note "
@@ -423,7 +511,7 @@ def audit(args: argparse.Namespace) -> dict[str, dict]:
                 1 for r in b_rows if r["nortaxa_in_cloud_scope"]),
         },
         "regressions": classify_regressions(
-            a_rows, b_rows, reviewed, scope, extra),
+            a_rows, b_rows, emitted, scope, extra),
     }
     return {"report": report, "manifests": manifests}
 

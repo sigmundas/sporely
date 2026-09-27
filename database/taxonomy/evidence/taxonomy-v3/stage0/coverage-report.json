@@ -1,4 +1,119 @@
 {
+ "authoritative_nortaxa_emission": {
+  "definition": "NorTaxa rows the scoped export publishes, per cloud_export.emit_taxon_external_id_authoritative on the cloud scope",
+  "emitted": [
+   {
+    "id_role": "accepted",
+    "nortaxa_taxon_id": "53482",
+    "note": "authoritative_bridge:manual_approved_exact",
+    "sporely_taxon_id": 7821
+   },
+   {
+    "id_role": "accepted",
+    "nortaxa_taxon_id": "52369",
+    "note": "authoritative_bridge:reviewed_supersession",
+    "sporely_taxon_id": 83668
+   },
+   {
+    "id_role": "synonym",
+    "nortaxa_taxon_id": "58722",
+    "note": "authoritative_bridge:reviewed_supersession",
+    "sporely_taxon_id": 83668
+   }
+  ],
+  "emitted_count": 3,
+  "emitting_host_raw_rows": 10,
+  "emitting_host_reconciliation": [
+   {
+    "authoritative_note": "authoritative_bridge:manual_approved_exact",
+    "id_role": "accepted",
+    "nortaxa_taxon_id": "53482",
+    "published": true,
+    "raw_note": "manual_approved_exact",
+    "sporely_taxon_id": 7821
+   },
+   {
+    "evidence_class": "intra_source_synonym",
+    "id_role": "synonym",
+    "nortaxa_taxon_id": "59746",
+    "published": false,
+    "raw_note": "synonym_of_accepted",
+    "rejection_reason": "a synonym usage bound to its own accepted concept inside one source. Its relation to the backbone concept is transitive on the accepted usage's binding and has not been graded on its own evidence; admitting it would emit an identifier whose evidence was never evaluated.",
+    "sporely_taxon_id": 7821
+   },
+   {
+    "evidence_class": "intra_source_synonym",
+    "id_role": "synonym",
+    "nortaxa_taxon_id": "59754",
+    "published": false,
+    "raw_note": "synonym_of_accepted",
+    "rejection_reason": "a synonym usage bound to its own accepted concept inside one source. Its relation to the backbone concept is transitive on the accepted usage's binding and has not been graded on its own evidence; admitting it would emit an identifier whose evidence was never evaluated.",
+    "sporely_taxon_id": 7821
+   },
+   {
+    "evidence_class": "intra_source_synonym",
+    "id_role": "synonym",
+    "nortaxa_taxon_id": "59796",
+    "published": false,
+    "raw_note": "synonym_of_accepted",
+    "rejection_reason": "a synonym usage bound to its own accepted concept inside one source. Its relation to the backbone concept is transitive on the accepted usage's binding and has not been graded on its own evidence; admitting it would emit an identifier whose evidence was never evaluated.",
+    "sporely_taxon_id": 7821
+   },
+   {
+    "evidence_class": "intra_source_synonym",
+    "id_role": "synonym",
+    "nortaxa_taxon_id": "59818",
+    "published": false,
+    "raw_note": "synonym_of_accepted",
+    "rejection_reason": "a synonym usage bound to its own accepted concept inside one source. Its relation to the backbone concept is transitive on the accepted usage's binding and has not been graded on its own evidence; admitting it would emit an identifier whose evidence was never evaluated.",
+    "sporely_taxon_id": 7821
+   },
+   {
+    "evidence_class": "intra_source_synonym",
+    "id_role": "synonym",
+    "nortaxa_taxon_id": "59926",
+    "published": false,
+    "raw_note": "synonym_of_accepted",
+    "rejection_reason": "a synonym usage bound to its own accepted concept inside one source. Its relation to the backbone concept is transitive on the accepted usage's binding and has not been graded on its own evidence; admitting it would emit an identifier whose evidence was never evaluated.",
+    "sporely_taxon_id": 7821
+   },
+   {
+    "evidence_class": "intra_source_synonym",
+    "id_role": "synonym",
+    "nortaxa_taxon_id": "59945",
+    "published": false,
+    "raw_note": "synonym_of_accepted",
+    "rejection_reason": "a synonym usage bound to its own accepted concept inside one source. Its relation to the backbone concept is transitive on the accepted usage's binding and has not been graded on its own evidence; admitting it would emit an identifier whose evidence was never evaluated.",
+    "sporely_taxon_id": 7821
+   },
+   {
+    "evidence_class": "intra_source_synonym",
+    "id_role": "synonym",
+    "nortaxa_taxon_id": "59946",
+    "published": false,
+    "raw_note": "synonym_of_accepted",
+    "rejection_reason": "a synonym usage bound to its own accepted concept inside one source. Its relation to the backbone concept is transitive on the accepted usage's binding and has not been graded on its own evidence; admitting it would emit an identifier whose evidence was never evaluated.",
+    "sporely_taxon_id": 7821
+   },
+   {
+    "authoritative_note": "authoritative_bridge:reviewed_supersession",
+    "id_role": "accepted",
+    "nortaxa_taxon_id": "52369",
+    "published": true,
+    "raw_note": "reviewed_supersession",
+    "sporely_taxon_id": 83668
+   },
+   {
+    "authoritative_note": "authoritative_bridge:reviewed_supersession",
+    "id_role": "synonym",
+    "nortaxa_taxon_id": "58722",
+    "published": true,
+    "raw_note": "synonym_of_accepted",
+    "sporely_taxon_id": 83668
+   }
+  ],
+  "emitting_host_rows_not_published": 7
+ },
  "cloud_scope": {
   "col_canonical_concepts": 52917,
   "concepts": 52917
@@ -162,30 +277,34 @@
  "manifests": {
   "group-a-no-published-cross-reference.manifest.json": {
    "evidence_class": "no_published_cross_reference",
-   "file_sha256": "ceced6b27af5c3a5b3ec109d49aa7f5a38802ec6a64a855dad3874068370fbf7",
+   "file_sha256": "a5bf66de2f779974f43fc7a84887cab95f8a4132a6f00261cb5bb2cf2856fcfb",
    "member_count": 14945,
    "members_sha256": "d01eee82f86039caf82e3ef3a321fa74f1736a892759f32f672c7020689f06c9"
   },
   "group-a-one-directional-accepted-synonymy.manifest.json": {
    "evidence_class": "one_directional_accepted_synonymy",
-   "file_sha256": "83ac0c904d88677030491234a9a01239c6c35ba517da09fbcdb9bd731ed51aff",
+   "file_sha256": "06120454673cb0a7b03da35b4db682942830d718e13806cd183abcda8c53d6ab",
    "member_count": 1,
    "members_sha256": "57261b0eaabd9945fe94cf2bd8ad75b66e3870cf25cae772e8d0811764c0e563"
   },
   "group-a-reciprocal-accepted-synonymy.manifest.json": {
    "evidence_class": "reciprocal_accepted_synonymy",
-   "file_sha256": "18a606ebb72245a91f2ed9d233e8953017bf795b45ac224d5edec3507e2cde15",
+   "file_sha256": "72ff500dc223b98c325cb3a32cfeed802398f20c592b52cbd006cdf2e595ebb9",
    "member_count": 0,
    "members_sha256": "4d8ebec059322d1f01573b87c6800ee573f788cf7c64da939bdec5b6f08dd012"
   },
   "group-a-shared-synonymy.manifest.json": {
    "evidence_class": "shared_synonymy",
-   "file_sha256": "98b98da503aa37f21ebd4cae8aadd7a503d32bcce54f1840feb97791dde37f36",
+   "file_sha256": "3fc1f62355b936b485d2468e2ed1581ab6fd69f5414cc15313e7e1e67e5cb2d0",
    "member_count": 4861,
    "members_sha256": "ce48854856fd0a7f6c1d454cc79bfeeb2d57d9c8ff038305156ade8f9a85e3bc"
   }
  },
  "pins": {
+  "bridge_emission_policy": {
+   "path": "database/taxonomy/policies/mapping_policy.yml",
+   "sha256": "a5a329848c45fcd030165a51ad1193944dffe7573ddb2a9c69441f0d76ae4afb"
+  },
   "cloud_scope_policy": {
    "path": "database/taxonomy/policies/global-macrofungi-scope.yml",
    "scope_predicate_id": "global_macrofungi_policy_v1",
@@ -271,8 +390,8 @@
     {
      "in_cloud_scope": true,
      "nortaxa_taxon_id": "53482",
-     "note": "manual_approved_exact",
-     "population": "reviewed_bridge_emitted",
+     "note": "authoritative_bridge:manual_approved_exact",
+     "population": "authoritative_bridge_emitted",
      "sporely_taxon_id": 7821
     }
    ],
@@ -285,8 +404,8 @@
     {
      "in_cloud_scope": true,
      "nortaxa_taxon_id": "52369",
-     "note": "reviewed_supersession",
-     "population": "reviewed_bridge_emitted",
+     "note": "authoritative_bridge:reviewed_supersession",
+     "population": "authoritative_bridge_emitted",
      "sporely_taxon_id": 83668
     }
    ],

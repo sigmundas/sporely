@@ -20,19 +20,33 @@ def _release() -> sqlite3.Connection:
     conn.executescript("""
         CREATE TABLE taxon_min (taxon_id INTEGER PRIMARY KEY,
             canonical_scientific_name TEXT, canonical_source_system TEXT,
-            canonical_external_id TEXT);
+            canonical_external_id TEXT, norwegian_taxon_id INTEGER);
         CREATE TABLE taxon_external_id_min (taxon_id INTEGER,
-            source_system TEXT, external_id INTEGER, note TEXT);
+            source_system TEXT, external_id INTEGER, id_role TEXT, note TEXT);
+        CREATE TABLE taxon_external_id_text_min (taxon_id INTEGER,
+            source_system TEXT, namespace TEXT, external_id TEXT,
+            id_role TEXT, note TEXT);
         INSERT INTO taxon_min VALUES
-            (1, 'Craterellus tubaeformis', 'col_xr', 'Z8TV'),
-            (2, 'Cantharellus cibarius', 'col_xr', 'QMKY'),
-            (3, 'Cantharellus cibarius', 'nortaxa', '56210'),
-            (4, 'Pholiotina vexans', 'nortaxa', '58766'),
-            (5, 'Entoloma conferendum', 'col_xr', '39ZCL');
+            (1, 'Craterellus tubaeformis', 'col_xr', 'Z8TV', NULL),
+            (2, 'Cantharellus cibarius', 'col_xr', 'QMKY', NULL),
+            (3, 'Cantharellus cibarius', 'nortaxa', '56210', 56210),
+            (4, 'Pholiotina vexans', 'nortaxa', '58766', 58766),
+            (5, 'Entoloma conferendum', 'col_xr', '39ZCL', NULL),
+            (6, 'Conocybe rugosa', 'col_xr', '5ZT3G', NULL);
         INSERT INTO taxon_external_id_min VALUES
-            (1, 'artsdatabanken', 56227, 'cross_source_automatic_exact'),
-            (1, 'artsdatabanken', 62407, 'synonym_of_accepted'),
-            (5, 'artsdatabanken', 53482, 'manual_approved_exact');
+            (1, 'artsdatabanken', 56227, 'accepted', 'cross_source_automatic_exact'),
+            (1, 'artsdatabanken', 62407, 'synonym', 'synonym_of_accepted'),
+            (5, 'artsdatabanken', 53482, 'accepted', 'manual_approved_exact'),
+            (5, 'artsdatabanken', 59746, 'synonym', 'synonym_of_accepted'),
+            (6, 'artsdatabanken', 52369, 'accepted', 'reviewed_supersession'),
+            (6, 'artsdatabanken', 58722, 'synonym', 'synonym_of_accepted');
+        INSERT INTO taxon_external_id_text_min VALUES
+            (5, 'nortaxa', 'nortaxa_taxon_id', '53482', 'accepted',
+             'authoritative_bridge:manual_approved_exact'),
+            (6, 'nortaxa', 'nortaxa_taxon_id', '52369', 'accepted',
+             'authoritative_bridge:reviewed_supersession'),
+            (6, 'nortaxa', 'nortaxa_taxon_id', '58722', 'synonym',
+             'authoritative_bridge:reviewed_supersession');
     """)
     return conn
 
@@ -42,9 +56,42 @@ def test_populations_are_separated():
     assert audit.group_a(conn) == [("56227", "Z8TV", 1)]
     # Name equality sizes Group B; a synonym-level duplicate is not in it.
     assert audit.group_b(conn) == [("56210", 3, "QMKY", 2)]
-    assert audit.reviewed_bridges(conn) == [
-        {"nortaxa_taxon_id": "53482", "sporely_taxon_id": 5,
-         "note": "manual_approved_exact"}]
+    assert [r["nortaxa_taxon_id"] for r in audit.reviewed_bridges(conn)] == [
+        "52369", "53482"]
+
+
+class _Policy:
+    def rejection_reason(self, evidence_class):
+        return "rejected:" + evidence_class
+
+
+def test_emission_census_is_scoped_and_reconciles_raw_rows():
+    conn = _release()
+    # NorTaxa-canonical concepts 3 and 4 carry norwegian_taxon_id but are
+    # outside the scope, like every NorTaxa concept in the cloud export.
+    emitted = audit.authoritative_nortaxa_emission(conn, {1, 2, 5, 6})
+    assert [(r["sporely_taxon_id"], r["nortaxa_taxon_id"]) for r in emitted] \
+        == [(5, "53482"), (6, "52369"), (6, "58722")]
+    rows = audit.reconcile_emitting_hosts(conn, emitted, _Policy())
+    unpublished = [r for r in rows if not r["published"]]
+    assert [(r["nortaxa_taxon_id"], r["rejection_reason"]) for r in unpublished] \
+        == [("59746", "rejected:intra_source_synonym")]
+    # A synonym re-keyed by a supersession is published despite its raw note.
+    assert {r["nortaxa_taxon_id"]: r["raw_note"] for r in rows
+            if r["published"]}["58722"] == "synonym_of_accepted"
+
+
+def test_emission_census_fails_closed_on_unpublished_reviewed_row():
+    conn = _release()
+    conn.execute("DELETE FROM taxon_external_id_text_min "
+                 "WHERE external_id = '52369'")
+    emitted = audit.authoritative_nortaxa_emission(conn, {5, 6})
+    try:
+        audit.reconcile_emitting_hosts(conn, emitted, _Policy())
+    except SystemExit as exc:
+        assert "52369" in str(exc)
+    else:
+        raise AssertionError("unpublished reviewed row was accepted")
 
 
 def _row(nortaxa_id, evidence_class, shared):

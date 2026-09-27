@@ -23,8 +23,8 @@ Inputs:
 Outputs are byte-deterministic:
 
 - `coverage-report.json` — Group A and Group B, full release and cloud scope,
-  by evidence class, with shared-synonym-count distributions, reviewed bridges
-  in the release and the regression-species placements;
+  by evidence class, with shared-synonym-count distributions, the
+  authoritative NorTaxa emission census and the regression-species placements;
 - `group-a-<evidence-class>.manifest.json` — one immutable candidate manifest
   per evidence class. `members_sha256` is SHA-256 over the canonical JSON of
   `{"columns", "members"}`; `pins` carries the release and archive
@@ -46,6 +46,13 @@ Headline counts against `tax-2026.09.26-02`:
 
 Group B's cloud column counts pairs whose COL side is in scope; no NorTaxa side
 is. The cloud scope is 52,917 concepts, all COL-canonical.
+
+Authoritative NorTaxa emission on the cloud scope is exactly 53482 → 7821 and
+52369, 58722 → 83668, computed as `cloud_export.emit_taxon_external_id_authoritative`
+does. Every raw NorTaxa row on those two concepts is reconciled: 58722 is
+published because the reviewed supersession re-keyed it, while the seven
+synonym rows on 7821 are `intra_source_synonym`, which
+`mapping_policy.yml.authoritative_bridge_emission` does not admit.
 
 Group A has no reciprocal candidate: the only one in the v2 closeout, 52369,
 is now a reviewed supersession. Conocybe vexans / Pholiotina vexans is not in
