@@ -1,7 +1,7 @@
 # Taxonomy v2 closeout — Stage 1 reconciled ledger and identity-path audit
 
 **Stage:** 1 — Reconcile deployed taxonomy state
-**Plan:** `docs/plans/active/2026-09-15-taxonomy-v2-closeout.md`
+**Plan:** `docs/plans/completed/2026-09-15-taxonomy-v2-closeout.md`
 **Branch:** `feature/taxonomy-v2-identity-reconciliation`
 **Date:** 2026-09-22
 

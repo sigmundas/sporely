@@ -1,0 +1,310 @@
+{
+ "cloud_scope": {
+  "col_canonical_concepts": 52917,
+  "concepts": 52917
+ },
+ "format": "sporely-taxonomy-v3-stage0-coverage-v1",
+ "group_a": {
+  "cloud_scope": {
+   "associations": 7099,
+   "by_evidence_class": {
+    "no_published_cross_reference": 5211,
+    "one_directional_accepted_synonymy": 0,
+    "reciprocal_accepted_synonymy": 0,
+    "shared_synonymy": 1888
+   },
+   "distinct_nortaxa_taxon_ids": 7099,
+   "distinct_sporely_taxa": 7099,
+   "reviewable_total": 1888,
+   "shared_synonym_count_distribution": {
+    "one_directional_accepted_synonymy": {},
+    "reciprocal_accepted_synonymy": {},
+    "shared_synonymy": {
+     "1": 1225,
+     "11": 1,
+     "2": 401,
+     "3": 160,
+     "4": 55,
+     "5": 28,
+     "6": 9,
+     "7": 5,
+     "8": 3,
+     "9": 1
+    }
+   }
+  },
+  "definition": "taxon_external_id_min rows with source_system 'artsdatabanken' and note 'cross_source_automatic_exact'; pair graded is (NorTaxa taxonID, host concept's COL id)",
+  "full_release": {
+   "associations": 19807,
+   "by_evidence_class": {
+    "no_published_cross_reference": 14945,
+    "one_directional_accepted_synonymy": 1,
+    "reciprocal_accepted_synonymy": 0,
+    "shared_synonymy": 4861
+   },
+   "distinct_nortaxa_taxon_ids": 19807,
+   "distinct_sporely_taxa": 19807,
+   "reviewable_total": 4862,
+   "shared_synonym_count_distribution": {
+    "one_directional_accepted_synonymy": {
+     "0": 1
+    },
+    "reciprocal_accepted_synonymy": {},
+    "shared_synonymy": {
+     "1": 3006,
+     "10": 10,
+     "11": 6,
+     "12": 5,
+     "13": 4,
+     "14": 4,
+     "15": 5,
+     "16": 4,
+     "19": 1,
+     "2": 986,
+     "20": 1,
+     "21": 1,
+     "22": 1,
+     "28": 2,
+     "3": 412,
+     "30": 1,
+     "4": 185,
+     "5": 104,
+     "6": 55,
+     "7": 36,
+     "8": 20,
+     "9": 12
+    }
+   }
+  }
+ },
+ "group_b": {
+  "cloud_scope": {
+   "associations": 2132,
+   "by_evidence_class": {
+    "no_published_cross_reference": 1543,
+    "one_directional_accepted_synonymy": 15,
+    "reciprocal_accepted_synonymy": 0,
+    "shared_synonymy": 574
+   },
+   "distinct_nortaxa_taxon_ids": 2113,
+   "distinct_sporely_taxa": 2113,
+   "reviewable_total": 589,
+   "shared_synonym_count_distribution": {
+    "one_directional_accepted_synonymy": {
+     "0": 7,
+     "1": 6,
+     "2": 1,
+     "3": 1
+    },
+    "reciprocal_accepted_synonymy": {},
+    "shared_synonymy": {
+     "1": 308,
+     "2": 166,
+     "3": 62,
+     "4": 17,
+     "5": 15,
+     "6": 2,
+     "7": 3,
+     "9": 1
+    }
+   }
+  },
+  "definition": "NorTaxa-canonical concept and COL-canonical concept with equal canonical_scientific_name; cloud scope counts pairs whose COL side is in scope",
+  "full_release": {
+   "associations": 7423,
+   "by_evidence_class": {
+    "no_published_cross_reference": 5329,
+    "one_directional_accepted_synonymy": 62,
+    "reciprocal_accepted_synonymy": 0,
+    "shared_synonymy": 2032
+   },
+   "distinct_nortaxa_taxon_ids": 7338,
+   "distinct_sporely_taxa": 7338,
+   "reviewable_total": 2094,
+   "shared_synonym_count_distribution": {
+    "one_directional_accepted_synonymy": {
+     "0": 27,
+     "1": 13,
+     "13": 1,
+     "2": 9,
+     "3": 5,
+     "4": 2,
+     "5": 4,
+     "7": 1
+    },
+    "reciprocal_accepted_synonymy": {},
+    "shared_synonymy": {
+     "1": 1025,
+     "10": 5,
+     "11": 5,
+     "12": 6,
+     "13": 1,
+     "15": 2,
+     "16": 2,
+     "17": 2,
+     "18": 1,
+     "19": 3,
+     "2": 467,
+     "21": 3,
+     "23": 1,
+     "3": 228,
+     "4": 109,
+     "5": 73,
+     "6": 45,
+     "7": 27,
+     "8": 13,
+     "9": 14
+    }
+   }
+  },
+  "nortaxa_side_in_cloud_scope": 0
+ },
+ "manifests": {
+  "group-a-no-published-cross-reference.manifest.json": {
+   "evidence_class": "no_published_cross_reference",
+   "file_sha256": "ceced6b27af5c3a5b3ec109d49aa7f5a38802ec6a64a855dad3874068370fbf7",
+   "member_count": 14945,
+   "members_sha256": "d01eee82f86039caf82e3ef3a321fa74f1736a892759f32f672c7020689f06c9"
+  },
+  "group-a-one-directional-accepted-synonymy.manifest.json": {
+   "evidence_class": "one_directional_accepted_synonymy",
+   "file_sha256": "83ac0c904d88677030491234a9a01239c6c35ba517da09fbcdb9bd731ed51aff",
+   "member_count": 1,
+   "members_sha256": "57261b0eaabd9945fe94cf2bd8ad75b66e3870cf25cae772e8d0811764c0e563"
+  },
+  "group-a-reciprocal-accepted-synonymy.manifest.json": {
+   "evidence_class": "reciprocal_accepted_synonymy",
+   "file_sha256": "18a606ebb72245a91f2ed9d233e8953017bf795b45ac224d5edec3507e2cde15",
+   "member_count": 0,
+   "members_sha256": "4d8ebec059322d1f01573b87c6800ee573f788cf7c64da939bdec5b6f08dd012"
+  },
+  "group-a-shared-synonymy.manifest.json": {
+   "evidence_class": "shared_synonymy",
+   "file_sha256": "98b98da503aa37f21ebd4cae8aadd7a503d32bcce54f1840feb97791dde37f36",
+   "member_count": 4861,
+   "members_sha256": "ce48854856fd0a7f6c1d454cc79bfeeb2d57d9c8ff038305156ade8f9a85e3bc"
+  }
+ },
+ "pins": {
+  "cloud_scope_policy": {
+   "path": "database/taxonomy/policies/global-macrofungi-scope.yml",
+   "scope_predicate_id": "global_macrofungi_policy_v1",
+   "sha256": "e4e796286df93b5372264c702c824eea746f680b3b4e8d6467621c99e5b64ea6"
+  },
+  "release": {
+   "content_release_id": "tax-2026.09.26-02",
+   "gz_artifact": "database/reference_data/generated/taxonomy_v2/tax-2026.09.26-02.sqlite3.gz",
+   "gz_sha256": "4488bb64f4abe18ed269c76264f9be36708d742ff531e931e8d7458791e05d72",
+   "sqlite_sha256": "9bf71b7e1f9b2915c3b1798743cefdd5db53bdbbfb7edc462aa3d0ad0cf8547d"
+  },
+  "source_archives": {
+   "col_xr": {
+    "sha256": "397d701c8eb269bf78d6ac7b03149915b0d9e2a2c18694be2c91445b807814f9",
+    "source_release_id": "col_xr:2026-07-17-XR:2026-07-17"
+   },
+   "nortaxa": {
+    "sha256": "29c11c54d955dc44e4e5a38944dd7932989a256d1b173777579b9f33abd2fe22",
+    "source_release_id": "nortaxa:1.284:2026-07-17"
+   }
+  }
+ },
+ "regressions": {
+  "Cantharellus cibarius": {
+   "placements": [
+    {
+     "col_in_cloud_scope": true,
+     "col_sporely_taxon_id": 168873,
+     "col_usage_id": "QMKY",
+     "evidence_class": "shared_synonymy",
+     "nortaxa_sporely_taxon_id": 626243,
+     "nortaxa_taxon_id": "56210",
+     "population": "group_b"
+    }
+   ],
+   "probe": {
+    "sporely_taxon_id": 168873
+   }
+  },
+  "Conocybe vexans / Pholiotina vexans": {
+   "placements": [
+    {
+     "accepted_names_agree": false,
+     "backbone_accepted_name": "Conocybe vexans P.D. Orton",
+     "backbone_lists_bridge_accepted_name_as_synonym": true,
+     "backbone_synonym_count": 1,
+     "bridge_accepted_name": "Pholiotina vexans (P.D. Orton) Bon",
+     "bridge_lists_backbone_accepted_name_as_synonym": true,
+     "bridge_synonym_count": 5,
+     "col_usage_id": "XQZ6",
+     "evidence_class": "reciprocal_accepted_synonymy",
+     "nortaxa_taxon_id": "58766",
+     "population": "explicit_pair_outside_group_b",
+     "shared_synonym_count": 0,
+     "shared_synonyms": []
+    }
+   ],
+   "probe": {
+    "graded_pair": [
+     "58766",
+     "XQZ6"
+    ],
+    "nortaxa_taxon_id": "58766"
+   }
+  },
+  "Craterellus tubaeformis": {
+   "placements": [
+    {
+     "col_usage_id": "Z8TV",
+     "evidence_class": "shared_synonymy",
+     "in_cloud_scope": true,
+     "nortaxa_taxon_id": "56227",
+     "population": "group_a",
+     "sporely_taxon_id": 620306
+    }
+   ],
+   "probe": {
+    "nortaxa_taxon_id": "56227"
+   }
+  },
+  "Entoloma conferendum": {
+   "placements": [
+    {
+     "in_cloud_scope": true,
+     "nortaxa_taxon_id": "53482",
+     "note": "manual_approved_exact",
+     "population": "reviewed_bridge_emitted",
+     "sporely_taxon_id": 7821
+    }
+   ],
+   "probe": {
+    "nortaxa_taxon_id": "53482"
+   }
+  },
+  "Pholiotina rugosa": {
+   "placements": [
+    {
+     "in_cloud_scope": true,
+     "nortaxa_taxon_id": "52369",
+     "note": "reviewed_supersession",
+     "population": "reviewed_bridge_emitted",
+     "sporely_taxon_id": 83668
+    }
+   ],
+   "probe": {
+    "nortaxa_taxon_id": "52369"
+   }
+  }
+ },
+ "reviewed_bridges_in_release": [
+  {
+   "nortaxa_taxon_id": "52369",
+   "note": "reviewed_supersession",
+   "sporely_taxon_id": 83668
+  },
+  {
+   "nortaxa_taxon_id": "53482",
+   "note": "manual_approved_exact",
+   "sporely_taxon_id": 7821
+  }
+ ]
+}

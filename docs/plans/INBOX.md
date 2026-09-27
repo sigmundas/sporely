@@ -55,7 +55,10 @@ Source: former `PLAN.md`; unmatched-image work also appears in `docs/hardware-sy
 ## Taxonomy
 
 - Consider the deferred observer-safe `Help → Taxonomy` menu described in `database/taxonomy/docs/ui-menu-recommendation.md`; keep acquisition, compilation, promotion, mapping edits, and deletion CLI-only.
-- Plan the ~7,300 unmerged NorTaxa/COL duplicate concepts (same name, author citation differs, e.g. "Fr." vs "Fr. : Fr."): names and ids sit on the NorTaxa concept while the cloud scope carries only the COL one, so web users find no common name for species such as Cantharellus cibarius. Identity-level; needs a reviewed mapping rule or manual mappings.
+- Reconcile NorTaxa/COL duplicate candidates (Taxonomy v3 Group B): 7,338 NorTaxa concepts in 7,423 same-name pairs with a separate COL concept in `tax-2026.09.26-02`; the COL side is in the cloud scope for 2,132 pairs, the NorTaxa side never. Names and ids sit on the NorTaxa concept, so web users find no common name for species such as Cantharellus cibarius. Name equality only sizes this; identity needs reviewed evidence. Counts: `database/taxonomy/evidence/taxonomy-v3/stage0/coverage-report.json`.
+- Group-A bridge coverage (Taxonomy v3): 19,807 NorTaxa ids on COL concepts only through automatic exact matches, so production cannot resolve them (7,099 in the cloud scope: 1,888 `shared_synonymy`, 5,211 without a published cross-reference). Review and emit approved bridges from the Stage 0 candidate manifests.
+- National scientific names (Taxonomy v3): show the approved NorTaxa (later Dyntaxa) preferred scientific name alongside canonical COL; search accepts both; identity never changes.
+- Historical unresolved-observation repair (Taxonomy v3): after new Group-A bridges are active, idempotently re-resolve cloud `external_unresolved` observations from preserved source + namespace + external id.
 - Review the 448 Artportalen overlay cases left out of `tax-2026.09.26-02` (`database/taxonomy/evidence/artportalen-overlay/`).
 - Decide whether the cloud should carry Artportalen/iNaturalist publishing ids as a namespaced channel; today the scoped export suppresses the legacy integer channel.
 - Consider Dyntaxa as a national source so Swedish names and Artportalen ids stop depending on the frozen legacy database.

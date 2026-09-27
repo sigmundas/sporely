@@ -1,7 +1,7 @@
 #!/usr/bin/env python3
 """Recover the per-association matching rule for NorTaxa -> Sporely bridges.
 
-Stage 1 audit helper for ``docs/plans/active/2026-09-15-taxonomy-v2-closeout.md``.
+Stage 1 audit helper for ``docs/plans/completed/2026-09-15-taxonomy-v2-closeout.md``.
 Read-only: it opens pinned artifacts and writes a per-association JSON plus a
 counts summary. It does not build, activate or mutate anything.
 
