@@ -1,4 +1,5 @@
 {
+ "cloud_scope_member_count": 0,
  "columns": [
   "nortaxa_taxon_id",
   "col_usage_id",
@@ -14,12 +15,37 @@
   "bridge_synonym_count",
   "backbone_synonym_count"
  ],
- "evidence_class": "one_directional_accepted_synonymy",
- "format": "sporely-taxonomy-v3-candidate-manifest-v1",
- "member_count": 0,
- "members": [],
- "members_sha256": "4d8ebec059322d1f01573b87c6800ee573f788cf7c64da939bdec5b6f08dd012",
- "note": "Immutable review input. Membership is pinned to the release and source archives below; it approves nothing and never extends to taxa in a later source release. shared_synonyms lists at most 10 names; shared_synonym_count is exact.",
+ "evidence_class": "shared_synonymy",
+ "format": "sporely-taxonomy-v3-review-manifest-v1",
+ "member_count": 1,
+ "members": [
+  [
+   "75928",
+   "76VPT",
+   118815,
+   false,
+   "Phaeocalicium polyporaeum (Nyl.) Tibell",
+   "Phaeocalicium polyporaeum (Nyl.) Tibell",
+   true,
+   false,
+   false,
+   2,
+   [
+    "calicium polyporaceum",
+    "phaeocalicium polyporaceum"
+   ],
+   2,
+   4
+  ]
+ ],
+ "members_sha256": "0a001e0c33df1dcca633b15730ba2f416f3fa66c91c4c46da7bbe8af8bc27734",
+ "membership_rule": "every shared synonym is one of the weak kinds above, but not all the same kind",
+ "note": "Immutable review input derived deterministically from the parent shared_synonymy manifest; the review classes partition it. Membership is pinned to the release and source archives below; it approves nothing and never extends to taxa in a later source release. shared_synonyms lists at most 10 names; shared_synonym_count is exact.",
+ "parent_manifest": {
+  "evidence_class": "shared_synonymy",
+  "member_count": 4861,
+  "members_sha256": "ce48854856fd0a7f6c1d454cc79bfeeb2d57d9c8ff038305156ade8f9a85e3bc"
+ },
  "pins": {
   "bridge_emission_policy": {
    "path": "database/taxonomy/policies/mapping_policy.yml",
@@ -48,5 +74,18 @@
   }
  },
  "population": "group_a_automatic_nortaxa_bridge",
+ "review_class": "only_mixed_weak",
+ "review_class_precedence": [
+  "non_species_rank",
+  "infraspecific_rank",
+  "accepted_authorship_disagrees",
+  "only_ined",
+  "only_invalid_name",
+  "only_accepted_name_variant",
+  "only_unauthored",
+  "only_mixed_weak",
+  "single_shared_synonym_low_overlap",
+  "ordinary"
+ ],
  "review_status": "needs_review"
 }

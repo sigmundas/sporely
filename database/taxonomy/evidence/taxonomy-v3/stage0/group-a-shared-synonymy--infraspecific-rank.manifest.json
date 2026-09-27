@@ -1,0 +1,692 @@
+{
+ "cloud_scope_member_count": 6,
+ "columns": [
+  "nortaxa_taxon_id",
+  "col_usage_id",
+  "sporely_taxon_id",
+  "in_cloud_scope",
+  "bridge_accepted_name",
+  "backbone_accepted_name",
+  "accepted_names_agree",
+  "bridge_lists_backbone_accepted_name_as_synonym",
+  "backbone_lists_bridge_accepted_name_as_synonym",
+  "shared_synonym_count",
+  "shared_synonyms",
+  "bridge_synonym_count",
+  "backbone_synonym_count"
+ ],
+ "evidence_class": "shared_synonymy",
+ "format": "sporely-taxonomy-v3-review-manifest-v1",
+ "member_count": 35,
+ "members": [
+  [
+   "122405",
+   "MM69Q",
+   161682,
+   false,
+   "Coleosporium tussilaginis f. pulsatillae Boerema & Verh.",
+   "Coleosporium tussilaginis f. pulsatillae Boerema & Verh.",
+   true,
+   false,
+   false,
+   1,
+   [
+    "coleosporium tussilaginis var. pulsatillae"
+   ],
+   2,
+   6
+  ],
+  [
+   "122445",
+   "QSKCC",
+   169393,
+   false,
+   "Melampsora epitea var. epitea Thüm.",
+   "Melampsora epitea var. epitea Thüm.",
+   true,
+   false,
+   false,
+   3,
+   [
+    "caeoma saxifragae G. Winter",
+    "melampsora epitea subsp. larici-epitea",
+    "melampsora ribesii-purpureae Kleb."
+   ],
+   10,
+   4
+  ],
+  [
+   "122651",
+   "SNFFJ",
+   604227,
+   false,
+   "Puccinia caricina var. caricina DC.",
+   "Puccinia caricina var. caricina DC.",
+   true,
+   false,
+   false,
+   2,
+   [
+    "puccinia ribesii-caricis Kleb.",
+    "puccinia urticae-caricis (Schumach.) Rebent."
+   ],
+   6,
+   4
+  ],
+  [
+   "122697",
+   "SNJPV",
+   604252,
+   false,
+   "Puccinia dioicae var. dioicae Magnus",
+   "Puccinia dioicae var. dioicae Magnus",
+   true,
+   false,
+   false,
+   1,
+   [
+    "puccinia jaceae-capillaris Tranzschel"
+   ],
+   2,
+   2
+  ],
+  [
+   "135408",
+   "5SRD3",
+   78389,
+   false,
+   "Mycoblastus sanguinarius f. sanguinarius (L.) Norman",
+   "Mycoblastus sanguinarius f. sanguinarius (L.) Norman",
+   true,
+   false,
+   false,
+   1,
+   [
+    "oedenocarpum sanguinarium"
+   ],
+   2,
+   2
+  ],
+  [
+   "53174",
+   "QNM7B",
+   169112,
+   true,
+   "Inocybe hirtella var. hirtella Bres.",
+   "Inocybe hirtella var. hirtella Bres.",
+   true,
+   false,
+   false,
+   1,
+   [
+    "inocybe pseudoconfusa Métrod"
+   ],
+   1,
+   2
+  ],
+  [
+   "54190",
+   "NVHZQ",
+   164469,
+   true,
+   "Galerina vittiformis var. vittiformis (Fr.) Singer",
+   "Galerina vittiformis var. vittiformis (Fr.) Singer",
+   true,
+   false,
+   false,
+   1,
+   [
+    "galerina vittaeformis var. vittaeformis (Fr.) Singer"
+   ],
+   2,
+   1
+  ],
+  [
+   "56262",
+   "MPMH5",
+   161942,
+   true,
+   "Clavulina cristata var. nivea Bourdot & Galzin",
+   "Clavulina cristata var. nivea Bourdot & Galzin",
+   true,
+   false,
+   false,
+   1,
+   [
+    "clavaria albida Sacc."
+   ],
+   1,
+   1
+  ],
+  [
+   "57788",
+   "DSJ3Y",
+   151440,
+   true,
+   "Russula maculata subsp. maculata Quél.",
+   "Russula maculata subsp. maculata",
+   false,
+   false,
+   false,
+   1,
+   [
+    "russula maculata var. maculata Quél."
+   ],
+   1,
+   1
+  ],
+  [
+   "65130",
+   "LY6J7",
+   159494,
+   false,
+   "Acarospora bullata var. arctica Magnusson",
+   "Acarospora bullata var. arctica Magnusson",
+   true,
+   false,
+   false,
+   1,
+   [
+    "acarospora arctica Magnusson, ined."
+   ],
+   1,
+   1
+  ],
+  [
+   "67494",
+   "LNKQH",
+   158858,
+   true,
+   "Ascocoryne sarcoides var. pileata (Sommerf.)",
+   "Ascocoryne sarcoides var. pileata (Sommerf.)",
+   true,
+   false,
+   false,
+   1,
+   [
+    "bulgaria sarcoides var. pileata Sommerf."
+   ],
+   1,
+   1
+  ],
+  [
+   "67852",
+   "Q8K5Y",
+   167775,
+   false,
+   "Lasiobelonium nidulum var. subnidulans (Rehm)",
+   "Lasiobelonium nidulum var. subnidulans (Rehm)",
+   true,
+   false,
+   false,
+   1,
+   [
+    "trichopeziza nidulus var. subnidulans (Rehm)"
+   ],
+   1,
+   1
+  ],
+  [
+   "68632",
+   "LSF6D",
+   159140,
+   false,
+   "Arctomia delicatula var. delicatula Th. Fr.",
+   "Arctomia delicatula var. delicatula Th. Fr.",
+   true,
+   false,
+   false,
+   1,
+   [
+    "arctomia delicatula subsp. cisalpina Hulting"
+   ],
+   1,
+   1
+  ],
+  [
+   "69034",
+   "MK85H",
+   161325,
+   false,
+   "Cladonia arbuscula subsp. beringiana Ahti",
+   "Cladonia arbuscula subsp. beringiana Ahti",
+   true,
+   false,
+   false,
+   3,
+   [
+    "cladina arbuscula subsp. beringiana (Ahti) Golubk.",
+    "cladina beringiana (Ahti) Trass",
+    "cladonia beringiana (Ahti) Trass"
+   ],
+   3,
+   3
+  ],
+  [
+   "69196",
+   "MKNGR",
+   161445,
+   false,
+   "Cladonia miniata var. miniata G. Meyer",
+   "Cladonia miniata var. miniata G. Meyer",
+   true,
+   false,
+   false,
+   3,
+   [
+    "cladonia miniata var. sanguinea (Eschweiler) Vainio",
+    "cladonia miniata var. sorediella (Vainio) Zahlbr.",
+    "cladonia sanguinea Martius"
+   ],
+   3,
+   3
+  ],
+  [
+   "69241",
+   "MKQSG",
+   161491,
+   false,
+   "Cladonia portentosa subsp. pacifica (Ahti) Ahti",
+   "Cladonia portentosa subsp. pacifica (Ahti) Ahti",
+   true,
+   false,
+   false,
+   3,
+   [
+    "cladina pacifica (Ahti) Hale & W.L. Culb.",
+    "cladina portentosa subsp. pacifica (Ahti) Ahti",
+    "cladonia pacifica Ahti"
+   ],
+   3,
+   3
+  ],
+  [
+   "69327",
+   "MKVSX",
+   161542,
+   false,
+   "Cladonia subtenuis f. cinerea Ahti",
+   "Cladonia subtenuis f. cinerea Ahti",
+   true,
+   false,
+   false,
+   1,
+   [
+    "cladina subtenuis f. cinerea (Ahti) Ahti"
+   ],
+   1,
+   1
+  ],
+  [
+   "69335",
+   "MKWK5",
+   161551,
+   false,
+   "Cladonia terrae-novae f. cinerescens Ahti",
+   "Cladonia terrae-novae f. cinerescens Ahti",
+   true,
+   false,
+   false,
+   1,
+   [
+    "cladina terrae-novae f. cinerescens (Ahti) Brodo"
+   ],
+   1,
+   1
+  ],
+  [
+   "69844",
+   "PRKJ7",
+   165973,
+   false,
+   "Lecanora caesiorubella subsp. prolifera (Fink in Hedr.) R.C. Harris",
+   "Lecanora caesiorubella subsp. prolifera (Fink in Hedr.) R.C. Harris",
+   true,
+   false,
+   false,
+   1,
+   [
+    "lecanora caesiorubella subsp. lathamii Imsh. & Brodo"
+   ],
+   2,
+   3
+  ],
+  [
+   "69868",
+   "PRLYF",
+   165991,
+   false,
+   "Lecanora celsii var. cinerascens Lynge",
+   "Lecanora celsii var. cinerascens Lynge",
+   true,
+   false,
+   false,
+   1,
+   [
+    "lecanora celsii f. cinerascens (Lynge), comb. ined."
+   ],
+   1,
+   1
+  ],
+  [
+   "69951",
+   "PRVFZ",
+   166037,
+   false,
+   "Lecanora epibryon subsp. broccha (Nyl.) Lumbsch",
+   "Lecanora epibryon subsp. broccha (Nyl.) Lumbsch",
+   true,
+   false,
+   false,
+   2,
+   [
+    "lecanora broccha Nyl.",
+    "lecanora parmelina Zahlbr."
+   ],
+   2,
+   2
+  ],
+  [
+   "70921",
+   "PVVX9",
+   166559,
+   false,
+   "Lecidea tessellata var. caesia (Anzi) Arnold",
+   "Lecidea tessellata var. caesia (Anzi) Arnold",
+   true,
+   false,
+   false,
+   2,
+   [
+    "lecidea azurea Krempelh.",
+    "lecidea casimirii Müll.Arg."
+   ],
+   2,
+   2
+  ],
+  [
+   "71606",
+   "MHJKP",
+   161185,
+   false,
+   "Cetraria islandica subsp. pseudoislandica (Räs.) Kärnef.",
+   "Cetraria islandica subsp. pseudoislandica (Räs.) Kärnef.",
+   true,
+   false,
+   false,
+   2,
+   [
+    "cetraria tenuifolia f. spinosa Räs.",
+    "cetraria tenuifolia var. pseudoislandica Räs."
+   ],
+   2,
+   2
+  ],
+  [
+   "73854",
+   "SCSTM",
+   172664,
+   false,
+   "Pyxine petricola var. convexula (Malme) Kalb",
+   "Pyxine petricola var. convexula (Malme) Kalb",
+   true,
+   false,
+   false,
+   1,
+   [
+    "pyxine petricola var. pallida Swinscow & Krog"
+   ],
+   1,
+   1
+  ],
+  [
+   "73891",
+   "S6JC9",
+   172253,
+   false,
+   "Rinodina beccariana var. beccariana Bagl.",
+   "Rinodina beccariana var. beccariana Bagl.",
+   true,
+   false,
+   false,
+   7,
+   [
+    "rinodina beccariana var. cinerea Bagl.",
+    "rinodina beccariana var. tympanelloides Bagl.",
+    "rinodina bimarginata Zahlbr.",
+    "rinodina confragosa f. dispersa (Harm.) Zahlbr.",
+    "rinodina confragosa f. glaucescens Nyl.",
+    "rinodina confragosa var. fumosa (Weddell) H. Olivier",
+    "rinodina confragosa var. turgida (Weddell) Boistel"
+   ],
+   9,
+   7
+  ],
+  [
+   "73892",
+   "S6JCF",
+   172254,
+   false,
+   "Rinodina beccariana var. lavicola (J. Steiner) Matzer & H. Mayrhofer",
+   "Rinodina beccariana var. lavicola (J. Steiner) Matzer & H. Mayrhofer",
+   true,
+   false,
+   false,
+   1,
+   [
+    "rinodina lavicola J. Steiner"
+   ],
+   1,
+   1
+  ],
+  [
+   "74019",
+   "S6QKY",
+   172339,
+   false,
+   "Rinodina santoriensis var. olivieri (Samp.) H. Mayrhofer & Sattler",
+   "Rinodina santoriensis var. olivieri (Samp.) H. Mayrhofer & Sattler",
+   true,
+   false,
+   false,
+   1,
+   [
+    "rinodina confragosa var. olivieri Samp."
+   ],
+   1,
+   1
+  ],
+  [
+   "74778",
+   "RWYW5",
+   171623,
+   false,
+   "Phyllopsora buettneri var. munda (Malme) Brako",
+   "Phyllopsora buettneri var. munda (Malme) Brako",
+   true,
+   false,
+   false,
+   4,
+   [
+    "lecidea nuda Malme",
+    "lecidea schizophylloides Malme",
+    "phyllopsora munda (Malme) Zahlbr.",
+    "phyllopsora schizophylloides (Malme) Gotth. Schneid."
+   ],
+   4,
+   4
+  ],
+  [
+   "75718",
+   "TKHTG",
+   606875,
+   false,
+   "Thyrea pachyphylla var. laxa (Müll.Arg.) Henssen",
+   "Thyrea pachyphylla var. laxa (Müll.Arg.) Henssen",
+   true,
+   false,
+   false,
+   1,
+   [
+    "omphalaria pulvinata var. laxa Müll.Arg."
+   ],
+   1,
+   1
+  ],
+  [
+   "77296",
+   "NZ4YF",
+   164618,
+   false,
+   "Gyalidea hyalinescens var. mexicana (de Lesd.) Vezda",
+   "Gyalidea hyalinescens var. mexicana (de Lesd.) Vezda",
+   true,
+   false,
+   false,
+   2,
+   [
+    "gyalecta mexicana de Lesd.",
+    "gyalidea mexicana (de Lesd.) Vezda"
+   ],
+   2,
+   2
+  ],
+  [
+   "77300",
+   "NZ528",
+   164621,
+   false,
+   "Gyalidea lecideopsis var. eucarpa (Servít) Vezda",
+   "Gyalidea lecideopsis var. eucarpa (Servít) Vezda",
+   true,
+   false,
+   false,
+   2,
+   [
+    "gyalecta convarians Nyl.",
+    "lopadium cacuminum H. Magn."
+   ],
+   2,
+   2
+  ],
+  [
+   "77301",
+   "VKWB3",
+   612982,
+   false,
+   "Gyalidea lecideopsis var. kurdistanica (Steiner) Vezda",
+   "Gyalidea lecideopsis var. kurdistanica (Steiner) Vezda",
+   true,
+   false,
+   false,
+   2,
+   [
+    "gyalecta albocrenata var. deminuta Servít",
+    "lecidea stigmatoides Nyl."
+   ],
+   2,
+   2
+  ],
+  [
+   "77964",
+   "MMZVQ",
+   161728,
+   false,
+   "Collema conglomeratum var. crassiusculum (Malme) Degel.",
+   "Collema conglomeratum var. crassiusculum (Malme) Degel.",
+   true,
+   false,
+   false,
+   1,
+   [
+    "collema cyrtaspis Tuck."
+   ],
+   3,
+   1
+  ],
+  [
+   "79288",
+   "PC349",
+   165094,
+   true,
+   "Geopora cooperi var. cooperi Harkn.",
+   "Geopora cooperi var. cooperi Harkn.",
+   true,
+   false,
+   false,
+   1,
+   [
+    "geopora schackii Henn."
+   ],
+   1,
+   2
+  ],
+  [
+   "81819",
+   "TYTDK",
+   608343,
+   false,
+   "Xanthoria ulophyllodes var. subsorediosa (Räsänen) Poelt & Petutsching",
+   "Xanthoria ulophyllodes var. subsorediosa (Räsänen) Poelt & Petutsching",
+   true,
+   false,
+   false,
+   1,
+   [
+    "xanthoria substellaris var. subsorediosa Räsänen"
+   ],
+   1,
+   1
+  ]
+ ],
+ "members_sha256": "b35ad08f992cb1f82a17d3231f1e00bb606b1f13ce9b85f5f995fe0b14c61c8b",
+ "membership_rule": "both accepted usages are infraspecific (subspecies, variety, form)",
+ "note": "Immutable review input derived deterministically from the parent shared_synonymy manifest; the review classes partition it. Membership is pinned to the release and source archives below; it approves nothing and never extends to taxa in a later source release. shared_synonyms lists at most 10 names; shared_synonym_count is exact.",
+ "parent_manifest": {
+  "evidence_class": "shared_synonymy",
+  "member_count": 4861,
+  "members_sha256": "ce48854856fd0a7f6c1d454cc79bfeeb2d57d9c8ff038305156ade8f9a85e3bc"
+ },
+ "pins": {
+  "bridge_emission_policy": {
+   "path": "database/taxonomy/policies/mapping_policy.yml",
+   "sha256": "a5a329848c45fcd030165a51ad1193944dffe7573ddb2a9c69441f0d76ae4afb"
+  },
+  "cloud_scope_policy": {
+   "path": "database/taxonomy/policies/global-macrofungi-scope.yml",
+   "scope_predicate_id": "global_macrofungi_policy_v1",
+   "sha256": "e4e796286df93b5372264c702c824eea746f680b3b4e8d6467621c99e5b64ea6"
+  },
+  "release": {
+   "content_release_id": "tax-2026.09.26-02",
+   "gz_artifact": "database/reference_data/generated/taxonomy_v2/tax-2026.09.26-02.sqlite3.gz",
+   "gz_sha256": "4488bb64f4abe18ed269c76264f9be36708d742ff531e931e8d7458791e05d72",
+   "sqlite_sha256": "9bf71b7e1f9b2915c3b1798743cefdd5db53bdbbfb7edc462aa3d0ad0cf8547d"
+  },
+  "source_archives": {
+   "col_xr": {
+    "sha256": "397d701c8eb269bf78d6ac7b03149915b0d9e2a2c18694be2c91445b807814f9",
+    "source_release_id": "col_xr:2026-07-17-XR:2026-07-17"
+   },
+   "nortaxa": {
+    "sha256": "29c11c54d955dc44e4e5a38944dd7932989a256d1b173777579b9f33abd2fe22",
+    "source_release_id": "nortaxa:1.284:2026-07-17"
+   }
+  }
+ },
+ "population": "group_a_automatic_nortaxa_bridge",
+ "review_class": "infraspecific_rank",
+ "review_class_precedence": [
+  "non_species_rank",
+  "infraspecific_rank",
+  "accepted_authorship_disagrees",
+  "only_ined",
+  "only_invalid_name",
+  "only_accepted_name_variant",
+  "only_unauthored",
+  "only_mixed_weak",
+  "single_shared_synonym_low_overlap",
+  "ordinary"
+ ],
+ "review_status": "needs_review"
+}

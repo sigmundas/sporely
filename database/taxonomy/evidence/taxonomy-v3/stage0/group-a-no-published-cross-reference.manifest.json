@@ -16,7 +16,7 @@
  ],
  "evidence_class": "no_published_cross_reference",
  "format": "sporely-taxonomy-v3-candidate-manifest-v1",
- "member_count": 14945,
+ "member_count": 14946,
  "members": [
   [
    "1000",
@@ -77597,6 +77597,21 @@
    [],
    0,
    0
+  ],
+  [
+   "227128",
+   "35YQ2",
+   3841,
+   false,
+   "Didymocyrtis peltigerae (Fuckel) Hafellner",
+   "Didymocyrtis peltigerae (Fuckel) Hafellner",
+   true,
+   false,
+   false,
+   0,
+   [],
+   1,
+   4
   ],
   [
    "227129",
@@ -224194,7 +224209,7 @@
    0
   ]
  ],
- "members_sha256": "d01eee82f86039caf82e3ef3a321fa74f1736a892759f32f672c7020689f06c9",
+ "members_sha256": "9339b876adfda9e70183a0cdc9085e43df7e0e9ca04dead0efd6cf08ced8998d",
  "note": "Immutable review input. Membership is pinned to the release and source archives below; it approves nothing and never extends to taxa in a later source release. shared_synonyms lists at most 10 names; shared_synonym_count is exact.",
  "pins": {
   "bridge_emission_policy": {

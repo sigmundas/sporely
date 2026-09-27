@@ -1,0 +1,175 @@
+{
+ "cloud_scope_member_count": 0,
+ "columns": [
+  "nortaxa_taxon_id",
+  "col_usage_id",
+  "sporely_taxon_id",
+  "in_cloud_scope",
+  "bridge_accepted_name",
+  "backbone_accepted_name",
+  "accepted_names_agree",
+  "bridge_lists_backbone_accepted_name_as_synonym",
+  "backbone_lists_bridge_accepted_name_as_synonym",
+  "shared_synonym_count",
+  "shared_synonyms",
+  "bridge_synonym_count",
+  "backbone_synonym_count"
+ ],
+ "evidence_class": "shared_synonymy",
+ "format": "sporely-taxonomy-v3-review-manifest-v1",
+ "member_count": 6,
+ "members": [
+  [
+   "65603",
+   "B22Q5",
+   137748,
+   false,
+   "Arthonia peltigerae",
+   "Arthonia peltigerae Th. Fr.",
+   false,
+   false,
+   false,
+   1,
+   [
+    "arthonia peltigerea Th. Fr."
+   ],
+   1,
+   9
+  ],
+  [
+   "72417",
+   "RBYNM",
+   170394,
+   false,
+   "Parmotrema latissimum",
+   "Parmotrema latissimum (Fée) Hale",
+   false,
+   false,
+   false,
+   1,
+   [
+    "parmelia latissima Fée"
+   ],
+   1,
+   1
+  ],
+  [
+   "73049",
+   "DSNXM",
+   151803,
+   false,
+   "Xanthoparmelia coreana",
+   "Xanthoparmelia coreana (Gyeln.) Hale",
+   false,
+   false,
+   false,
+   1,
+   [
+    "parmelia coreana"
+   ],
+   1,
+   1
+  ],
+  [
+   "75741",
+   "76FZY",
+   117769,
+   false,
+   "Peltula impressa",
+   "Peltula impressa (Vain.) Swinscow & Krog",
+   false,
+   false,
+   false,
+   1,
+   [
+    "heppia impressa Vain."
+   ],
+   1,
+   1
+  ],
+  [
+   "75920",
+   "4FMD2",
+   43219,
+   false,
+   "Phaeocalicium betulinum",
+   "Phaeocalicium betulinum (Nyl.) Tibell",
+   false,
+   false,
+   false,
+   1,
+   [
+    "calicium betulinum (Nyl.) Zahlbr."
+   ],
+   1,
+   4
+  ],
+  [
+   "80779",
+   "4QSB2",
+   58241,
+   false,
+   "Pyrenula mamillana",
+   "Pyrenula mamillana (Ach.) Trevis.",
+   false,
+   false,
+   false,
+   1,
+   [
+    "verrucaria mamillana Ach."
+   ],
+   1,
+   8
+  ]
+ ],
+ "members_sha256": "96861e56a5e037e5126ae50d946170a4b1ec6e59b434a6093a162dc79071de99",
+ "membership_rule": "the accepted name keys differ (canonical name plus authorship)",
+ "note": "Immutable review input derived deterministically from the parent shared_synonymy manifest; the review classes partition it. Membership is pinned to the release and source archives below; it approves nothing and never extends to taxa in a later source release. shared_synonyms lists at most 10 names; shared_synonym_count is exact.",
+ "parent_manifest": {
+  "evidence_class": "shared_synonymy",
+  "member_count": 4861,
+  "members_sha256": "ce48854856fd0a7f6c1d454cc79bfeeb2d57d9c8ff038305156ade8f9a85e3bc"
+ },
+ "pins": {
+  "bridge_emission_policy": {
+   "path": "database/taxonomy/policies/mapping_policy.yml",
+   "sha256": "a5a329848c45fcd030165a51ad1193944dffe7573ddb2a9c69441f0d76ae4afb"
+  },
+  "cloud_scope_policy": {
+   "path": "database/taxonomy/policies/global-macrofungi-scope.yml",
+   "scope_predicate_id": "global_macrofungi_policy_v1",
+   "sha256": "e4e796286df93b5372264c702c824eea746f680b3b4e8d6467621c99e5b64ea6"
+  },
+  "release": {
+   "content_release_id": "tax-2026.09.26-02",
+   "gz_artifact": "database/reference_data/generated/taxonomy_v2/tax-2026.09.26-02.sqlite3.gz",
+   "gz_sha256": "4488bb64f4abe18ed269c76264f9be36708d742ff531e931e8d7458791e05d72",
+   "sqlite_sha256": "9bf71b7e1f9b2915c3b1798743cefdd5db53bdbbfb7edc462aa3d0ad0cf8547d"
+  },
+  "source_archives": {
+   "col_xr": {
+    "sha256": "397d701c8eb269bf78d6ac7b03149915b0d9e2a2c18694be2c91445b807814f9",
+    "source_release_id": "col_xr:2026-07-17-XR:2026-07-17"
+   },
+   "nortaxa": {
+    "sha256": "29c11c54d955dc44e4e5a38944dd7932989a256d1b173777579b9f33abd2fe22",
+    "source_release_id": "nortaxa:1.284:2026-07-17"
+   }
+  }
+ },
+ "population": "group_a_automatic_nortaxa_bridge",
+ "review_class": "accepted_authorship_disagrees",
+ "review_class_precedence": [
+  "non_species_rank",
+  "infraspecific_rank",
+  "accepted_authorship_disagrees",
+  "only_ined",
+  "only_invalid_name",
+  "only_accepted_name_variant",
+  "only_unauthored",
+  "only_mixed_weak",
+  "single_shared_synonym_low_overlap",
+  "ordinary"
+ ],
+ "review_status": "needs_review"
+}

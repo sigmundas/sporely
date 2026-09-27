@@ -27,6 +27,11 @@ grades the relationship using each source's own accepted/synonym structure:
     Only one side publishes the cross-reference. Still an explicit assertion,
     but unconfirmed by the other source.
 
+    Both accepted-synonymy classes need the accepted names to differ. When they
+    agree, a synonym usage spelled like the accepted name is the source's own
+    duplicate usage (NorTaxa 227128 has one, 226877), not a statement about the
+    other source's concept.
+
 ``shared_synonymy``
     ``B`` and ``C`` place one or more of the *same* published names (matched on
     canonical name **and** authorship) under their respective accepted
@@ -117,7 +122,7 @@ def read_nortaxa(archive: Path, wanted: set[str]) -> dict[str, dict]:
     """
     concepts: dict[str, dict] = {
         taxon_id: {"accepted": None, "synonyms": set(), "scientific_name": "",
-                   "authorship": ""}
+                   "authorship": "", "rank": ""}
         for taxon_id in wanted
     }
     with zipfile.ZipFile(archive) as bundle, bundle.open("taxon.txt") as handle:
@@ -135,6 +140,8 @@ def read_nortaxa(archive: Path, wanted: set[str]) -> dict[str, dict]:
                     "scientificName", "")
                 concepts[taxon_id]["authorship"] = row.get(
                     "scientificNameAuthorship", "")
+                concepts[taxon_id]["rank"] = str(
+                    row.get("taxonRank") or "").casefold()
             if accepted_id in concepts and accepted_id != taxon_id:
                 concepts[accepted_id]["synonyms"].add(key)
     return concepts
@@ -148,7 +155,7 @@ def read_col(archive: Path, wanted: set[str]) -> dict[str, dict]:
     """
     concepts: dict[str, dict] = {
         usage_id: {"accepted": None, "synonyms": set(), "scientific_name": "",
-                   "authorship": ""}
+                   "authorship": "", "rank": ""}
         for usage_id in wanted
     }
     with zipfile.ZipFile(archive) as bundle, bundle.open("NameUsage.tsv") as handle:
@@ -176,12 +183,22 @@ def read_col(archive: Path, wanted: set[str]) -> dict[str, dict]:
                 concepts[usage_id]["scientific_name"] = field(
                     parts, "col:scientificName")
                 concepts[usage_id]["authorship"] = field(parts, "col:authorship")
+                concepts[usage_id]["rank"] = field(parts, "col:rank").casefold()
             if parent_id in concepts and status not in _ACCEPTED_COL:
                 concepts[parent_id]["synonyms"].add(key)
     return concepts
 
 
 # ---------------------------------------------------------------- grading ---
+
+
+def shared_synonym_keys(bridge: dict, backbone: dict) -> list[tuple[str, str]]:
+    """Every name key both concepts publish as a synonym, beyond either
+    accepted name, sorted. ``grade`` reports at most ten of them."""
+    return sorted(
+        (bridge["synonyms"] & backbone["synonyms"])
+        - {bridge["accepted"], backbone["accepted"]}
+    )
 
 
 def grade(bridge: dict | None, backbone: dict | None) -> dict:
@@ -193,12 +210,17 @@ def grade(bridge: dict | None, backbone: dict | None) -> dict:
                           "pinned source"}
     bridge_accepted = bridge["accepted"]
     backbone_accepted = backbone["accepted"]
-    bridge_lists_backbone = backbone_accepted in bridge["synonyms"]
-    backbone_lists_bridge = bridge_accepted in backbone["synonyms"]
-    shared = sorted(
-        (bridge["synonyms"] & backbone["synonyms"])
-        - {bridge_accepted, backbone_accepted}
-    )
+    # A source may publish a synonym usage spelled exactly like its own
+    # accepted name (a duplicate usage). When the accepted names agree, that
+    # row "lists the other side's accepted name" only by coincidence of
+    # spelling: it says nothing about the other source's concept, so it is
+    # never an accepted-synonymy cross-reference.
+    names_differ = bridge_accepted != backbone_accepted
+    bridge_lists_backbone = names_differ and \
+        backbone_accepted in bridge["synonyms"]
+    backbone_lists_bridge = names_differ and \
+        bridge_accepted in backbone["synonyms"]
+    shared = shared_synonym_keys(bridge, backbone)
     detail = {
         "bridge_accepted_name": f"{bridge['scientific_name']} "
                                 f"{bridge['authorship']}".strip(),

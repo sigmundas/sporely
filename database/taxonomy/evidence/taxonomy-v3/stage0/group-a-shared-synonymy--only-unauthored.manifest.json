@@ -1,0 +1,1205 @@
+{
+ "cloud_scope_member_count": 8,
+ "columns": [
+  "nortaxa_taxon_id",
+  "col_usage_id",
+  "sporely_taxon_id",
+  "in_cloud_scope",
+  "bridge_accepted_name",
+  "backbone_accepted_name",
+  "accepted_names_agree",
+  "bridge_lists_backbone_accepted_name_as_synonym",
+  "backbone_lists_bridge_accepted_name_as_synonym",
+  "shared_synonym_count",
+  "shared_synonyms",
+  "bridge_synonym_count",
+  "backbone_synonym_count"
+ ],
+ "evidence_class": "shared_synonymy",
+ "format": "sporely-taxonomy-v3-review-manifest-v1",
+ "member_count": 66,
+ "members": [
+  [
+   "122384",
+   "MM59T",
+   161672,
+   false,
+   "Coleosporium inulae Rabenh.",
+   "Coleosporium inulae Rabenh.",
+   true,
+   false,
+   false,
+   1,
+   [
+    "coleosporium tussilaginis var. inulae"
+   ],
+   1,
+   1
+  ],
+  [
+   "122429",
+   "3Z4YW",
+   28752,
+   false,
+   "Melampsora arctica Rostr.",
+   "Melampsora arctica Rostr.",
+   true,
+   false,
+   false,
+   1,
+   [
+    "melampsora epitea subsp. arctica"
+   ],
+   1,
+   2
+  ],
+  [
+   "145007",
+   "R3BL",
+   169975,
+   false,
+   "Carbonicola myrmecina (Ach.) Bendiksby & Timdal",
+   "Carbonicola myrmecina (Ach.) Bendiksby & Timdal",
+   true,
+   false,
+   false,
+   1,
+   [
+    "lecidea castaneocinerea"
+   ],
+   3,
+   11
+  ],
+  [
+   "204579",
+   "3TGD8",
+   24291,
+   false,
+   "Lepra panyrga (Ach.) Hafellner",
+   "Lepra panyrga (Ach.) Hafellner",
+   true,
+   false,
+   false,
+   2,
+   [
+    "lecanora verrucosa var. panygra",
+    "lecanora verrucosa var. panyrga"
+   ],
+   4,
+   10
+  ],
+  [
+   "213082",
+   "B2MJ9",
+   138495,
+   false,
+   "Blastenia relicta Arup & Vondrák",
+   "Blastenia relicta Arup & Vondrák",
+   true,
+   false,
+   false,
+   3,
+   [
+    "callopisma ferrugineum var. genuinum",
+    "caloplaca ferruginea f. genuina",
+    "caloplaca ferruginea var. genuina"
+   ],
+   10,
+   4
+  ],
+  [
+   "298844",
+   "B332N",
+   143351,
+   false,
+   "Rostania populina (Th. Fr.) A. Košuth., M. Westb. & Wedin",
+   "Rostania populina (Th. Fr.) A. Košuth., M. Westb. & Wedin",
+   true,
+   false,
+   false,
+   1,
+   [
+    "collema microphyllum var. populinum"
+   ],
+   2,
+   5
+  ],
+  [
+   "52814",
+   "YLH7",
+   618892,
+   true,
+   "Cortinarius melleopallens (Fr.) Britzelm.",
+   "Cortinarius melleopallens (Fr.) Britzelm.",
+   true,
+   false,
+   false,
+   1,
+   [
+    "telamonia melleopallens"
+   ],
+   1,
+   7
+  ],
+  [
+   "52827",
+   "MQ5VF",
+   162209,
+   true,
+   "Cortinarius myrtillinus Fr.",
+   "Cortinarius myrtillinus Fr.",
+   true,
+   false,
+   false,
+   1,
+   [
+    "sericeocybe myrtillina"
+   ],
+   1,
+   2
+  ],
+  [
+   "52959",
+   "MQQFY",
+   162416,
+   true,
+   "Cortinarius stemmatus Fr.",
+   "Cortinarius stemmatus Fr.",
+   true,
+   false,
+   false,
+   1,
+   [
+    "telamonia stemmata"
+   ],
+   1,
+   1
+  ],
+  [
+   "53007",
+   "YMXC",
+   619772,
+   true,
+   "Cortinarius uraceus Fr.",
+   "Cortinarius uraceus Fr.",
+   true,
+   false,
+   false,
+   1,
+   [
+    "telamonia uracea"
+   ],
+   2,
+   4
+  ],
+  [
+   "53038",
+   "YN4C",
+   619874,
+   true,
+   "Cortinarius zinziberatus (Scop.) Fr.",
+   "Cortinarius zinziberatus (Scop.) Fr.",
+   true,
+   false,
+   false,
+   1,
+   [
+    "hydrocybe zinziberata"
+   ],
+   1,
+   4
+  ],
+  [
+   "67404",
+   "RNWJ9",
+   171052,
+   false,
+   "Pezicula micula (Fr.)",
+   "Pezicula micula (Fr.)",
+   true,
+   false,
+   false,
+   2,
+   [
+    "dermatea micula",
+    "dermea micula"
+   ],
+   2,
+   2
+  ],
+  [
+   "69068",
+   "VKSRD",
+   612922,
+   false,
+   "Cladonia ceratophyllina (Nyl.) Vainio",
+   "Cladonia ceratophyllina (Nyl.) Vainio",
+   true,
+   false,
+   false,
+   1,
+   [
+    "cladonia degenerans var. ceratophylliformis"
+   ],
+   1,
+   1
+  ],
+  [
+   "69176",
+   "MKMY3",
+   161428,
+   false,
+   "Cladonia macrophyllodes Nyl.",
+   "Cladonia macrophyllodes Nyl.",
+   true,
+   false,
+   false,
+   1,
+   [
+    "cladonia lepidota var. macrophyllodes"
+   ],
+   1,
+   1
+  ],
+  [
+   "69380",
+   "RJ44L",
+   170627,
+   false,
+   "Pilophorus curtulus Kurok. & Shibuichi",
+   "Pilophorus curtulus Kurok. & Shibuichi",
+   true,
+   false,
+   false,
+   1,
+   [
+    "pilophoron curtulum"
+   ],
+   1,
+   1
+  ],
+  [
+   "70194",
+   "3SSWT",
+   23229,
+   false,
+   "Lecanora polytropa (Hoffm.) Rabenh.",
+   "Lecanora polytropa (Hoffm.) Rabenh.",
+   true,
+   false,
+   false,
+   1,
+   [
+    "lecanora polytropa var. vulgaris"
+   ],
+   5,
+   27
+  ],
+  [
+   "71150",
+   "59TTX",
+   74911,
+   false,
+   "Tylophoron protrudens Nyl.",
+   "Tylophoron protrudens Nyl.",
+   true,
+   false,
+   false,
+   4,
+   [
+    "tylophoron annulatum",
+    "tylophoron cupulare",
+    "tylophoron rufocapillatum",
+    "tylophoron simile"
+   ],
+   4,
+   5
+  ],
+  [
+   "71515",
+   "DSMKT",
+   151670,
+   false,
+   "Bryoria motykae",
+   "Bryoria motykae",
+   true,
+   false,
+   false,
+   1,
+   [
+    "alectoria motykae"
+   ],
+   1,
+   1
+  ],
+  [
+   "71640",
+   "T76R",
+   605761,
+   false,
+   "Cetrariopsis wallichiana (Taylor) Kurok.",
+   "Cetrariopsis wallichiana (Taylor) Kurok.",
+   true,
+   false,
+   false,
+   1,
+   [
+    "nephromopsis wallichiana"
+   ],
+   2,
+   7
+  ],
+  [
+   "71838",
+   "PP2FD",
+   165743,
+   false,
+   "Hypotrachyna longiloba (H. Magn.) Hale",
+   "Hypotrachyna longiloba (H. Magn.) Hale",
+   true,
+   false,
+   false,
+   1,
+   [
+    "parmelia longiloba"
+   ],
+   1,
+   1
+  ],
+  [
+   "71839",
+   "PP2FK",
+   165744,
+   false,
+   "Hypotrachyna lopezii Hale",
+   "Hypotrachyna lopezii Hale",
+   true,
+   false,
+   false,
+   1,
+   [
+    "parmelia lopezii"
+   ],
+   1,
+   1
+  ],
+  [
+   "71857",
+   "PP33L",
+   165756,
+   false,
+   "Hypotrachyna polydactyla (Krog & Swinscow) Nash",
+   "Hypotrachyna polydactyla (Krog & Swinscow) Nash",
+   true,
+   false,
+   false,
+   1,
+   [
+    "parmelia polydactyla"
+   ],
+   1,
+   1
+  ],
+  [
+   "71861",
+   "DSMX5",
+   151680,
+   false,
+   "Hypotrachyna protenta",
+   "Hypotrachyna protenta",
+   true,
+   false,
+   false,
+   1,
+   [
+    "parmelia protenta"
+   ],
+   1,
+   1
+  ],
+  [
+   "72327",
+   "RBWYN",
+   170329,
+   false,
+   "Parmotrema abnuens (Nyl.) Hale",
+   "Parmotrema abnuens (Nyl.) Hale",
+   true,
+   false,
+   false,
+   1,
+   [
+    "parmelia abnuens"
+   ],
+   1,
+   1
+  ],
+  [
+   "72353",
+   "RBXM2",
+   170348,
+   false,
+   "Parmotrema compositum (Hale) Hale",
+   "Parmotrema compositum (Hale) Hale",
+   true,
+   false,
+   false,
+   1,
+   [
+    "parmelia composita"
+   ],
+   1,
+   1
+  ],
+  [
+   "72391",
+   "RBY5F",
+   170374,
+   false,
+   "Parmotrema flavescens (Kremp.) Hale",
+   "Parmotrema flavescens (Kremp.) Hale",
+   true,
+   false,
+   false,
+   1,
+   [
+    "parmelia flavescens"
+   ],
+   1,
+   1
+  ],
+  [
+   "72402",
+   "RBYBY",
+   170383,
+   false,
+   "Parmotrema hensseniae Krog",
+   "Parmotrema hensseniae Krog",
+   true,
+   false,
+   false,
+   1,
+   [
+    "parmelia hensseniae"
+   ],
+   1,
+   1
+  ],
+  [
+   "72418",
+   "RBYP2",
+   170395,
+   false,
+   "Parmotrema leonis (Krog & Swinscow) Krog & Swinscow",
+   "Parmotrema leonis (Krog & Swinscow) Krog & Swinscow",
+   true,
+   false,
+   false,
+   1,
+   [
+    "parmelia leonis"
+   ],
+   1,
+   1
+  ],
+  [
+   "72619",
+   "S4CCJ",
+   172135,
+   false,
+   "Punctelia microsticta (Müll. Arg.) Krog",
+   "Punctelia microsticta (Müll. Arg.) Krog",
+   true,
+   false,
+   false,
+   1,
+   [
+    "parmelia microsticta"
+   ],
+   1,
+   1
+  ],
+  [
+   "72647",
+   "4RR59",
+   59693,
+   false,
+   "Relicina relicinula (Müll. Arg.) Hale",
+   "Relicina relicinula (Müll. Arg.) Hale",
+   true,
+   false,
+   false,
+   1,
+   [
+    "parmelia relicina"
+   ],
+   1,
+   2
+  ],
+  [
+   "73270",
+   "TYR95",
+   608301,
+   false,
+   "Xanthoparmelia subdiffluens Hale",
+   "Xanthoparmelia subdiffluens Hale",
+   true,
+   false,
+   false,
+   1,
+   [
+    "parmelia subdiffluens"
+   ],
+   1,
+   1
+  ],
+  [
+   "73314",
+   "TYRDS",
+   608328,
+   false,
+   "Xanthoparmelia vagans (Nyl.) Hale",
+   "Xanthoparmelia vagans (Nyl.) Hale",
+   true,
+   false,
+   false,
+   1,
+   [
+    "parmelia vagans"
+   ],
+   1,
+   1
+  ],
+  [
+   "74054",
+   "S6SFJ",
+   172363,
+   false,
+   "Rinodinella dubyanoides (Hepp) H. Mayrh. & Poelt",
+   "Rinodinella dubyanoides (Hepp) H. Mayrh. & Poelt",
+   true,
+   false,
+   false,
+   1,
+   [
+    "buellia dubyanoides"
+   ],
+   1,
+   1
+  ],
+  [
+   "74412",
+   "SF8B7",
+   172813,
+   false,
+   "Psora saviczii (Tomin) Follm. & Crespo",
+   "Psora saviczii (Tomin) Follm. & Crespo",
+   true,
+   false,
+   false,
+   1,
+   [
+    "lecidea saviczii"
+   ],
+   1,
+   1
+  ],
+  [
+   "74761",
+   "47DV7",
+   38316,
+   false,
+   "Niebla ceruchoides Rundel & Bowler",
+   "Niebla ceruchoides Rundel & Bowler",
+   true,
+   false,
+   false,
+   1,
+   [
+    "ramalina ceruchoides"
+   ],
+   1,
+   2
+  ],
+  [
+   "75009",
+   "4RBHK",
+   58602,
+   false,
+   "Ramalina pollinaria (Westr.) Ach.",
+   "Ramalina pollinaria (Westr.) Ach.",
+   true,
+   false,
+   false,
+   2,
+   [
+    "physcia pollinaria",
+    "ramalina pollinaria f. gracilis"
+   ],
+   2,
+   13
+  ],
+  [
+   "75910",
+   "QZNB2",
+   169833,
+   false,
+   "Mycocalicium ornicolum (Steiner) Nadv.",
+   "Mycocalicium ornicolum (Steiner) Nadv.",
+   true,
+   false,
+   false,
+   1,
+   [
+    "calicium ornicolum"
+   ],
+   1,
+   1
+  ],
+  [
+   "75921",
+   "4FMD3",
+   43220,
+   false,
+   "Phaeocalicium boreale Tibell",
+   "Phaeocalicium boreale Tibell",
+   true,
+   false,
+   false,
+   1,
+   [
+    "calicium boreale"
+   ],
+   1,
+   1
+  ],
+  [
+   "75947",
+   "78R3J",
+   121971,
+   false,
+   "Pyrgidium montellicum (Beltr.) Tibell",
+   "Pyrgidium montellicum (Beltr.) Tibell",
+   true,
+   false,
+   false,
+   1,
+   [
+    "trachylia lecptoconica"
+   ],
+   2,
+   5
+  ],
+  [
+   "76451",
+   "VKZ3R",
+   613039,
+   false,
+   "Tricharia carnea (Müll.Arg.) R. Sant.",
+   "Tricharia carnea (Müll.Arg.) R. Sant.",
+   true,
+   false,
+   false,
+   1,
+   [
+    "lopadium carneum"
+   ],
+   1,
+   1
+  ],
+  [
+   "76627",
+   "44DSV",
+   33709,
+   false,
+   "Moriola resinae Norman",
+   "Moriola resinae Norman",
+   true,
+   false,
+   false,
+   1,
+   [
+    "morioliopsis resinae"
+   ],
+   1,
+   2
+  ],
+  [
+   "77056",
+   "S3DYB",
+   172059,
+   false,
+   "Polyblastiopsis alba (Müll. Arg.) Zahlbr.",
+   "Polyblastiopsis alba (Müll. Arg.) Zahlbr.",
+   true,
+   false,
+   false,
+   1,
+   [
+    "polyblastia alba"
+   ],
+   1,
+   1
+  ],
+  [
+   "77141",
+   "Q85DM",
+   167743,
+   false,
+   "Lasallia sinensis (Wei) Wei",
+   "Lasallia sinensis (Wei) Wei",
+   true,
+   false,
+   false,
+   1,
+   [
+    "umbilicaria sinensis"
+   ],
+   1,
+   2
+  ],
+  [
+   "77173",
+   "VKZ72",
+   613042,
+   false,
+   "Umbilicaria laevis (Schaerer) Frey",
+   "Umbilicaria laevis (Schaerer) Frey",
+   true,
+   false,
+   false,
+   1,
+   [
+    "gyrophora laevis"
+   ],
+   1,
+   1
+  ],
+  [
+   "77178",
+   "VKZ74",
+   613043,
+   false,
+   "Umbilicaria microphylla (Laurer) Massal.",
+   "Umbilicaria microphylla (Laurer) Massal.",
+   true,
+   false,
+   false,
+   2,
+   [
+    "gyrophora anthracina var. microphylla",
+    "gyrophora microphylla"
+   ],
+   2,
+   2
+  ],
+  [
+   "77190",
+   "TR5Y8",
+   607473,
+   false,
+   "Umbilicaria ruebeliana (Du Rietz & Frey) Frey",
+   "Umbilicaria ruebeliana (Du Rietz & Frey) Frey",
+   true,
+   false,
+   false,
+   1,
+   [
+    "gyrophora ruebeliana"
+   ],
+   1,
+   1
+  ],
+  [
+   "77331",
+   "LXTLB",
+   159457,
+   false,
+   "Acanthothecis caesiocarnea (Vainio) Kalb",
+   "Acanthothecis caesiocarnea (Vainio) Kalb",
+   true,
+   false,
+   false,
+   1,
+   [
+    "acanthotheciopsis caesiocarnea"
+   ],
+   1,
+   1
+  ],
+  [
+   "77725",
+   "7C6LN",
+   123977,
+   false,
+   "Thelopsis rubella Nyl.",
+   "Thelopsis rubella Nyl.",
+   true,
+   false,
+   false,
+   1,
+   [
+    "thelopsis rubella f. saxicola"
+   ],
+   1,
+   3
+  ],
+  [
+   "78013",
+   "X34G",
+   615496,
+   false,
+   "Collema subflaccidum Degel.",
+   "Collema subflaccidum Degel.",
+   true,
+   false,
+   false,
+   1,
+   [
+    "collema subfurvum"
+   ],
+   3,
+   2
+  ],
+  [
+   "78050",
+   "QCSLX",
+   168178,
+   false,
+   "Leptogium caespitosum (Taylor) Swinscow & Krog",
+   "Leptogium caespitosum (Taylor) Swinscow & Krog",
+   true,
+   false,
+   false,
+   1,
+   [
+    "collema caespitosum"
+   ],
+   1,
+   1
+  ],
+  [
+   "78518",
+   "SSFJD",
+   604640,
+   false,
+   "Solorina octospora Arnold",
+   "Solorina octospora Arnold",
+   true,
+   false,
+   false,
+   1,
+   [
+    "peltigera octospora"
+   ],
+   1,
+   1
+  ],
+  [
+   "78693",
+   "RKNXC",
+   170825,
+   false,
+   "Pertusaria eitneriana ERICHS.",
+   "Pertusaria eitneriana ERICHS.",
+   true,
+   false,
+   false,
+   1,
+   [
+    "pertusaria polycarpa"
+   ],
+   1,
+   1
+  ],
+  [
+   "79131",
+   "TSM9G",
+   607523,
+   false,
+   "Tromera lignaria P. Karst.",
+   "Tromera lignaria P. Karst.",
+   true,
+   false,
+   false,
+   1,
+   [
+    "biatorella lignaria"
+   ],
+   1,
+   1
+  ],
+  [
+   "79250",
+   "P2H2",
+   164744,
+   true,
+   "Byssonectria obducens P. Karst.",
+   "Byssonectria obducens P. Karst.",
+   true,
+   false,
+   false,
+   1,
+   [
+    "inermisia obducens"
+   ],
+   1,
+   1
+  ],
+  [
+   "79499",
+   "5ZX6Z",
+   83816,
+   true,
+   "Cookeina sulcipes (Berk.) Kuntze",
+   "Cookeina sulcipes (Berk.) Kuntze",
+   true,
+   false,
+   false,
+   1,
+   [
+    "pilocratera engleriana"
+   ],
+   1,
+   5
+  ],
+  [
+   "80058",
+   "3Z97N",
+   29237,
+   false,
+   "Melanomma aspegrenii (Fr.) Fuckel",
+   "Melanomma aspegrenii (Fr.) Fuckel",
+   true,
+   false,
+   false,
+   1,
+   [
+    "teichospora aspegrenii"
+   ],
+   1,
+   7
+  ],
+  [
+   "80112",
+   "LT7K",
+   159167,
+   false,
+   "Bifrontia compactior Norman",
+   "Bifrontia compactior Norman",
+   true,
+   false,
+   false,
+   1,
+   [
+    "naetrocymbe compactior"
+   ],
+   1,
+   1
+  ],
+  [
+   "80113",
+   "LT7L",
+   159168,
+   false,
+   "Bifrontia laxa Norman",
+   "Bifrontia laxa Norman",
+   true,
+   false,
+   false,
+   1,
+   [
+    "naetrocymbe laxa"
+   ],
+   1,
+   1
+  ],
+  [
+   "80401",
+   "4K8NP",
+   49899,
+   false,
+   "Pleospora potentillae (Rostr.) E. Müll.",
+   "Pleospora potentillae (Rostr.) E. Müll.",
+   true,
+   false,
+   false,
+   1,
+   [
+    "leptosphaeria potentillae"
+   ],
+   2,
+   2
+  ],
+  [
+   "80629",
+   "LCPQY",
+   158289,
+   false,
+   "Anisomeridium leucochlorum (Müll.Arg) R.C. Harris",
+   "Anisomeridium leucochlorum (Müll.Arg) R.C. Harris",
+   true,
+   false,
+   false,
+   1,
+   [
+    "arthopyrenia leucochlora"
+   ],
+   1,
+   1
+  ],
+  [
+   "81087",
+   "6QMTM",
+   105989,
+   false,
+   "Lophodermium lacerum Darker",
+   "Lophodermium lacerum Darker",
+   true,
+   false,
+   false,
+   1,
+   [
+    "dermascia lacerum"
+   ],
+   1,
+   1
+  ],
+  [
+   "81623",
+   "MG3VP",
+   161073,
+   false,
+   "Caloplaca oleicola (Steiner) comb. ined.",
+   "Caloplaca oleicola (Steiner) comb. ined.",
+   true,
+   false,
+   false,
+   1,
+   [
+    "blastenia oleicola"
+   ],
+   1,
+   1
+  ],
+  [
+   "81833",
+   "M5Z6G",
+   159964,
+   false,
+   "Blitridium rhois Earle",
+   "Blitridium rhois Earle",
+   true,
+   false,
+   false,
+   1,
+   [
+    "triblidium rhois"
+   ],
+   1,
+   1
+  ],
+  [
+   "82232",
+   "SZBLT",
+   605534,
+   false,
+   "Spheconisca barbata Norman ex Bachmann",
+   "Spheconisca barbata Norman ex Bachmann",
+   true,
+   false,
+   false,
+   1,
+   [
+    "moriola barbata"
+   ],
+   1,
+   1
+  ],
+  [
+   "82250",
+   "SZBPF",
+   605551,
+   false,
+   "Spheconisca rava Norman",
+   "Spheconisca rava Norman",
+   true,
+   false,
+   false,
+   2,
+   [
+    "baeotithis rava",
+    "moriola rava"
+   ],
+   2,
+   2
+  ],
+  [
+   "83088",
+   "5CGXH",
+   76896,
+   true,
+   "Xylaria arbuscula Sacc.",
+   "Xylaria arbuscula Sacc.",
+   true,
+   false,
+   false,
+   1,
+   [
+    "xylosphaera arbuscula"
+   ],
+   1,
+   3
+  ]
+ ],
+ "members_sha256": "21b35ed42203c9eacd7f462c24dc2a29af2057efaf948f855aa1b074ede8d6a7",
+ "membership_rule": "every shared synonym has an empty authorship, so the match is on the name alone",
+ "note": "Immutable review input derived deterministically from the parent shared_synonymy manifest; the review classes partition it. Membership is pinned to the release and source archives below; it approves nothing and never extends to taxa in a later source release. shared_synonyms lists at most 10 names; shared_synonym_count is exact.",
+ "parent_manifest": {
+  "evidence_class": "shared_synonymy",
+  "member_count": 4861,
+  "members_sha256": "ce48854856fd0a7f6c1d454cc79bfeeb2d57d9c8ff038305156ade8f9a85e3bc"
+ },
+ "pins": {
+  "bridge_emission_policy": {
+   "path": "database/taxonomy/policies/mapping_policy.yml",
+   "sha256": "a5a329848c45fcd030165a51ad1193944dffe7573ddb2a9c69441f0d76ae4afb"
+  },
+  "cloud_scope_policy": {
+   "path": "database/taxonomy/policies/global-macrofungi-scope.yml",
+   "scope_predicate_id": "global_macrofungi_policy_v1",
+   "sha256": "e4e796286df93b5372264c702c824eea746f680b3b4e8d6467621c99e5b64ea6"
+  },
+  "release": {
+   "content_release_id": "tax-2026.09.26-02",
+   "gz_artifact": "database/reference_data/generated/taxonomy_v2/tax-2026.09.26-02.sqlite3.gz",
+   "gz_sha256": "4488bb64f4abe18ed269c76264f9be36708d742ff531e931e8d7458791e05d72",
+   "sqlite_sha256": "9bf71b7e1f9b2915c3b1798743cefdd5db53bdbbfb7edc462aa3d0ad0cf8547d"
+  },
+  "source_archives": {
+   "col_xr": {
+    "sha256": "397d701c8eb269bf78d6ac7b03149915b0d9e2a2c18694be2c91445b807814f9",
+    "source_release_id": "col_xr:2026-07-17-XR:2026-07-17"
+   },
+   "nortaxa": {
+    "sha256": "29c11c54d955dc44e4e5a38944dd7932989a256d1b173777579b9f33abd2fe22",
+    "source_release_id": "nortaxa:1.284:2026-07-17"
+   }
+  }
+ },
+ "population": "group_a_automatic_nortaxa_bridge",
+ "review_class": "only_unauthored",
+ "review_class_precedence": [
+  "non_species_rank",
+  "infraspecific_rank",
+  "accepted_authorship_disagrees",
+  "only_ined",
+  "only_invalid_name",
+  "only_accepted_name_variant",
+  "only_unauthored",
+  "only_mixed_weak",
+  "single_shared_synonym_low_overlap",
+  "ordinary"
+ ],
+ "review_status": "needs_review"
+}

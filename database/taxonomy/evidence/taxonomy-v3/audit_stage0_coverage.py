@@ -21,7 +21,11 @@ Every association in both groups is graded by
 Group A is also written out as one immutable candidate manifest per evidence
 class. A manifest lists every association with its evidence detail, is pinned
 to the release and source-archive fingerprints, and carries a SHA-256 over its
-members. Manifests are review inputs: every member is ``needs_review``.
+members. Manifests are review inputs: every member is ``needs_review``. The
+``shared_synonymy`` manifest is further partitioned by the fixed rules in
+``SHARED_REVIEW_CLASSES`` into one review manifest per class, so strong
+evidence can be approved without approving the weak cases with it; the parent
+stays whole for accounting.
 
 Read-only over the release, archives, policies and registry. Fails closed if an
 archive does not match the fingerprint the release records for it. Writes only
@@ -36,6 +40,7 @@ import collections
 import gzip
 import hashlib
 import json
+import re
 import shutil
 import sqlite3
 import sys
@@ -57,6 +62,7 @@ from cross_reference_evidence import (  # noqa: E402
     grade,
     read_col,
     read_nortaxa,
+    shared_synonym_keys,
 )
 from bridge_emission import (  # noqa: E402
     EVIDENCE_CLASS_INTRA_SOURCE_SYNONYM,
@@ -92,7 +98,49 @@ REGRESSIONS = {
     "Conocybe vexans / Pholiotina vexans": {"nortaxa_taxon_id": "58766",
                                             "graded_pair": ["58766", "XQZ6"]},
     "Cantharellus cibarius": {"sporely_taxon_id": 168873},
+    # sporely-web pins NBIC:56449 as an id that does not resolve. It is a real
+    # Group-B taxon (Gloeophyllum odoratum), so it is a temporary fixture: a
+    # Stage 2 reconciliation could make it resolve.
+    "NBIC:56449 (temporary unresolved fixture)": {"nortaxa_taxon_id": "56449"},
 }
+
+#: Review classes that split the ``shared_synonymy`` manifest, in precedence
+#: order: a member belongs to the first class whose rule it meets. The split is
+#: a pure function of the pinned sources, so every class is as immutable as
+#: the parent manifest, and together they partition it exactly.
+SHARED_REVIEW_CLASSES = {
+    "non_species_rank": (
+        "either source's accepted usage has a rank other than species or an "
+        "infraspecific rank (subspecies, variety, form)"),
+    "infraspecific_rank": (
+        "both accepted usages are infraspecific (subspecies, variety, form)"),
+    "accepted_authorship_disagrees": (
+        "the accepted name keys differ (canonical name plus authorship)"),
+    "only_ined": (
+        "every shared synonym's authorship carries the word 'ined'"),
+    "only_invalid_name": (
+        "every shared synonym's authorship carries nom. nud., nom. inval., "
+        "nom. herb. or nom. illeg. (and not 'ined')"),
+    "only_accepted_name_variant": (
+        "every shared synonym is the accepted name itself under another "
+        "authorship or a spelling variant of it: same word count, hyphens "
+        "removed, first word equal (unless uninomial) and every word within "
+        "Levenshtein distance 2 of the accepted name's word"),
+    "only_unauthored": (
+        "every shared synonym has an empty authorship, so the match is on the "
+        "name alone"),
+    "only_mixed_weak": (
+        "every shared synonym is one of the weak kinds above, but not all the "
+        "same kind"),
+    "single_shared_synonym_low_overlap": (
+        "exactly one ordinary shared synonym while each source publishes at "
+        "least 5 synonyms"),
+    "ordinary": (
+        "species rank, agreeing accepted names, and at least one ordinary "
+        "shared synonym (none of the weak kinds above); not low overlap"),
+}
+_INFRASPECIFIC_RANKS = frozenset({"subspecies", "variety", "form"})
+_LOW_OVERLAP_MIN_SYNONYMS = 5
 
 MANIFEST_COLUMNS = [
     "nortaxa_taxon_id",
@@ -350,6 +398,93 @@ def build_manifest(evidence_class: str, rows: list[dict],
     }
 
 
+def _levenshtein(a: str, b: str) -> int:
+    previous = list(range(len(b) + 1))
+    for i, ca in enumerate(a, 1):
+        current = [i]
+        for j, cb in enumerate(b, 1):
+            current.append(min(previous[j] + 1, current[j - 1] + 1,
+                               previous[j - 1] + (ca != cb)))
+        previous = current
+    return previous[-1]
+
+
+def _is_accepted_name_variant(name: str, accepted: str) -> bool:
+    """Same name as ``accepted`` under another authorship, or a spelling
+    variant of it. Both are case-folded canonical names."""
+    words = name.replace("-", "").split()
+    target = accepted.replace("-", "").split()
+    if len(words) != len(target):
+        return False
+    if len(words) > 1 and words[0] != target[0]:
+        return False
+    return all(_levenshtein(w, t) <= 2 for w, t in zip(words, target))
+
+
+def synonym_kind(key: tuple[str, str], accepted_names: set[str]) -> str:
+    """Classify one shared synonym name key; ``ordinary`` unless weak."""
+    name, authorship = key
+    if re.search(r"\bined\b", authorship):
+        return "ined"
+    if re.search(r"\bnom\.\s*(nud|inval|herb|illeg)\b", authorship):
+        return "invalid_name"
+    if any(_is_accepted_name_variant(name, a) for a in accepted_names):
+        return "accepted_name_variant"
+    if not authorship:
+        return "unauthored"
+    return "ordinary"
+
+
+def shared_review_class(row: dict, bridge: dict, backbone: dict) -> str:
+    """The ``SHARED_REVIEW_CLASSES`` member a shared-synonymy row falls in."""
+    ranks = {bridge["rank"], backbone["rank"]}
+    if not ranks <= _INFRASPECIFIC_RANKS | {"species"}:
+        return "non_species_rank"
+    if ranks <= _INFRASPECIFIC_RANKS:
+        return "infraspecific_rank"
+    if not row["accepted_names_agree"]:
+        return "accepted_authorship_disagrees"
+    accepted = {bridge["accepted"][0], backbone["accepted"][0]}
+    kinds = [synonym_kind(key, accepted)
+             for key in shared_synonym_keys(bridge, backbone)]
+    ordinary = kinds.count("ordinary")
+    if not ordinary:
+        weak = set(kinds)
+        return f"only_{weak.pop()}" if len(weak) == 1 else "only_mixed_weak"
+    if ordinary == 1 and min(row["bridge_synonym_count"],
+                             row["backbone_synonym_count"]) \
+            >= _LOW_OVERLAP_MIN_SYNONYMS:
+        return "single_shared_synonym_low_overlap"
+    return "ordinary"
+
+
+def build_review_manifest(review_class: str, rows: list[dict], pins: dict,
+                          parent: dict) -> dict:
+    """One ``shared_synonymy`` review class, derived from ``parent``."""
+    base = build_manifest(EVIDENCE_SHARED_SYNONYMY,
+                          [r for r in rows
+                           if r.get("review_class") == review_class], pins)
+    return {
+        **base,
+        "format": "sporely-taxonomy-v3-review-manifest-v1",
+        "review_class": review_class,
+        "membership_rule": SHARED_REVIEW_CLASSES[review_class],
+        "review_class_precedence": list(SHARED_REVIEW_CLASSES),
+        "parent_manifest": {"evidence_class": EVIDENCE_SHARED_SYNONYMY,
+                            "member_count": parent["member_count"],
+                            "members_sha256": parent["members_sha256"]},
+        "cloud_scope_member_count": sum(
+            1 for m in base["members"] if m[MANIFEST_COLUMNS.index(
+                "in_cloud_scope")]),
+        "note": ("Immutable review input derived deterministically from the "
+                 "parent shared_synonymy manifest; the review classes "
+                 "partition it. Membership is pinned to the release and source "
+                 "archives below; it approves nothing and never extends to "
+                 "taxa in a later source release. shared_synonyms lists at "
+                 "most 10 names; shared_synonym_count is exact."),
+    }
+
+
 def _extra_pairs() -> list[tuple[str, str]]:
     return [tuple(p["graded_pair"]) for p in REGRESSIONS.values()
             if "graded_pair" in p]
@@ -378,7 +513,8 @@ def classify_regressions(a_rows, b_rows, reviewed, scope, extra) -> dict:
                         k: row[k] for k in (
                             "nortaxa_taxon_id", "col_usage_id",
                             "sporely_taxon_id", "in_cloud_scope",
-                            "evidence_class")}})
+                            "evidence_class", "review_class")
+                        if k in row}})
         for row in b_rows:
             if row["nortaxa_taxon_id"] == nortaxa_id or \
                     row["col_sporely_taxon_id"] == sporely_id:
@@ -467,8 +603,20 @@ def audit(args: argparse.Namespace) -> dict[str, dict]:
                 "sha256": _sha256_file(args.scope_policy),
                 "scope_predicate_id": "global_macrofungi_policy_v1"}}
 
+    for row in a_rows:
+        if row["evidence_class"] == EVIDENCE_SHARED_SYNONYMY:
+            row["review_class"] = shared_review_class(
+                row, nortaxa[row["nortaxa_taxon_id"]], col[row["col_usage_id"]])
+
     manifests = {cls: build_manifest(cls, a_rows, pins)
                  for cls in EVIDENCE_CLASSES}
+    parent = manifests[EVIDENCE_SHARED_SYNONYMY]
+    review_manifests = {cls: build_review_manifest(cls, a_rows, pins, parent)
+                        for cls in SHARED_REVIEW_CLASSES}
+    split = sorted(m for rm in review_manifests.values() for m in rm["members"])
+    if split != sorted(parent["members"]):
+        raise SystemExit("shared_synonymy review classes do not partition "
+                         "the parent manifest")
     report = {
         "format": "sporely-taxonomy-v3-stage0-coverage-v1",
         "pins": pins,
@@ -510,10 +658,22 @@ def audit(args: argparse.Namespace) -> dict[str, dict]:
             "nortaxa_side_in_cloud_scope": sum(
                 1 for r in b_rows if r["nortaxa_in_cloud_scope"]),
         },
+        "group_a_shared_synonymy_review_split": {
+            "definition": ("the shared_synonymy manifest partitioned into "
+                           "review classes; a member belongs to the first "
+                           "class, in precedence order, whose rule it meets"),
+            "precedence": list(SHARED_REVIEW_CLASSES),
+            "rules": SHARED_REVIEW_CLASSES,
+            "full_release": {cls: m["member_count"]
+                             for cls, m in review_manifests.items()},
+            "cloud_scope": {cls: m["cloud_scope_member_count"]
+                            for cls, m in review_manifests.items()},
+        },
         "regressions": classify_regressions(
             a_rows, b_rows, emitted, scope, extra),
     }
-    return {"report": report, "manifests": manifests}
+    return {"report": report, "manifests": manifests,
+            "review_manifests": review_manifests}
 
 
 def build_parser() -> argparse.ArgumentParser:
@@ -531,14 +691,23 @@ def main(argv: list[str] | None = None) -> int:
     result = audit(args)
     args.out_dir.mkdir(parents=True, exist_ok=True)
     manifest_files = {}
-    for cls, manifest in result["manifests"].items():
-        name = f"group-a-{cls.replace('_', '-')}.manifest.json"
-        manifest_files[name] = {
-            "evidence_class": cls,
-            "member_count": manifest["member_count"],
-            "members_sha256": manifest["members_sha256"],
-            "file_sha256": _write_json(args.out_dir / name, manifest),
-        }
+    in_scope = MANIFEST_COLUMNS.index("in_cloud_scope")
+    written = [(f"group-a-{cls.replace('_', '-')}.manifest.json", manifest)
+               for cls, manifest in result["manifests"].items()]
+    written += [(f"group-a-shared-synonymy--{cls.replace('_', '-')}"
+                 ".manifest.json", manifest)
+                for cls, manifest in result["review_manifests"].items()]
+    for name, manifest in written:
+        entry = {"evidence_class": manifest["evidence_class"]}
+        if "review_class" in manifest:
+            entry["review_class"] = manifest["review_class"]
+        entry.update(
+            member_count=manifest["member_count"],
+            cloud_scope_member_count=sum(
+                1 for m in manifest["members"] if m[in_scope]),
+            members_sha256=manifest["members_sha256"],
+            file_sha256=_write_json(args.out_dir / name, manifest))
+        manifest_files[name] = entry
     report = {**result["report"], "manifests": manifest_files}
     _write_json(args.out_dir / "coverage-report.json", report)
     summary = {k: report[k] for k in ("cloud_scope", "manifests")}

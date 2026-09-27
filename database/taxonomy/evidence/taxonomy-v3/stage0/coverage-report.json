@@ -152,18 +152,16 @@
   "full_release": {
    "associations": 19807,
    "by_evidence_class": {
-    "no_published_cross_reference": 14945,
-    "one_directional_accepted_synonymy": 1,
+    "no_published_cross_reference": 14946,
+    "one_directional_accepted_synonymy": 0,
     "reciprocal_accepted_synonymy": 0,
     "shared_synonymy": 4861
    },
    "distinct_nortaxa_taxon_ids": 19807,
    "distinct_sporely_taxa": 19807,
-   "reviewable_total": 4862,
+   "reviewable_total": 4861,
    "shared_synonym_count_distribution": {
-    "one_directional_accepted_synonymy": {
-     "0": 1
-    },
+    "one_directional_accepted_synonymy": {},
     "reciprocal_accepted_synonymy": {},
     "shared_synonymy": {
      "1": 3006,
@@ -190,6 +188,57 @@
      "9": 12
     }
    }
+  }
+ },
+ "group_a_shared_synonymy_review_split": {
+  "cloud_scope": {
+   "accepted_authorship_disagrees": 0,
+   "infraspecific_rank": 6,
+   "non_species_rank": 5,
+   "only_accepted_name_variant": 39,
+   "only_ined": 5,
+   "only_invalid_name": 1,
+   "only_mixed_weak": 0,
+   "only_unauthored": 8,
+   "ordinary": 1811,
+   "single_shared_synonym_low_overlap": 13
+  },
+  "definition": "the shared_synonymy manifest partitioned into review classes; a member belongs to the first class, in precedence order, whose rule it meets",
+  "full_release": {
+   "accepted_authorship_disagrees": 6,
+   "infraspecific_rank": 35,
+   "non_species_rank": 12,
+   "only_accepted_name_variant": 62,
+   "only_ined": 15,
+   "only_invalid_name": 7,
+   "only_mixed_weak": 1,
+   "only_unauthored": 66,
+   "ordinary": 4618,
+   "single_shared_synonym_low_overlap": 39
+  },
+  "precedence": [
+   "non_species_rank",
+   "infraspecific_rank",
+   "accepted_authorship_disagrees",
+   "only_ined",
+   "only_invalid_name",
+   "only_accepted_name_variant",
+   "only_unauthored",
+   "only_mixed_weak",
+   "single_shared_synonym_low_overlap",
+   "ordinary"
+  ],
+  "rules": {
+   "accepted_authorship_disagrees": "the accepted name keys differ (canonical name plus authorship)",
+   "infraspecific_rank": "both accepted usages are infraspecific (subspecies, variety, form)",
+   "non_species_rank": "either source's accepted usage has a rank other than species or an infraspecific rank (subspecies, variety, form)",
+   "only_accepted_name_variant": "every shared synonym is the accepted name itself under another authorship or a spelling variant of it: same word count, hyphens removed, first word equal (unless uninomial) and every word within Levenshtein distance 2 of the accepted name's word",
+   "only_ined": "every shared synonym's authorship carries the word 'ined'",
+   "only_invalid_name": "every shared synonym's authorship carries nom. nud., nom. inval., nom. herb. or nom. illeg. (and not 'ined')",
+   "only_mixed_weak": "every shared synonym is one of the weak kinds above, but not all the same kind",
+   "only_unauthored": "every shared synonym has an empty authorship, so the match is on the name alone",
+   "ordinary": "species rank, agreeing accepted names, and at least one ordinary shared synonym (none of the weak kinds above); not low overlap",
+   "single_shared_synonym_low_overlap": "exactly one ordinary shared synonym while each source publishes at least 5 synonyms"
   }
  },
  "group_b": {
@@ -276,24 +325,108 @@
  },
  "manifests": {
   "group-a-no-published-cross-reference.manifest.json": {
+   "cloud_scope_member_count": 5211,
    "evidence_class": "no_published_cross_reference",
-   "file_sha256": "a5bf66de2f779974f43fc7a84887cab95f8a4132a6f00261cb5bb2cf2856fcfb",
-   "member_count": 14945,
-   "members_sha256": "d01eee82f86039caf82e3ef3a321fa74f1736a892759f32f672c7020689f06c9"
+   "file_sha256": "8bd8c3783a14206431020174b3f654f745453dcdcd1a008a09736b020cef91a4",
+   "member_count": 14946,
+   "members_sha256": "9339b876adfda9e70183a0cdc9085e43df7e0e9ca04dead0efd6cf08ced8998d"
   },
   "group-a-one-directional-accepted-synonymy.manifest.json": {
+   "cloud_scope_member_count": 0,
    "evidence_class": "one_directional_accepted_synonymy",
-   "file_sha256": "06120454673cb0a7b03da35b4db682942830d718e13806cd183abcda8c53d6ab",
-   "member_count": 1,
-   "members_sha256": "57261b0eaabd9945fe94cf2bd8ad75b66e3870cf25cae772e8d0811764c0e563"
+   "file_sha256": "4129e588e65b9e630506affa8259021f5e535c94cc62d340e0ae50a72dfcc5d1",
+   "member_count": 0,
+   "members_sha256": "4d8ebec059322d1f01573b87c6800ee573f788cf7c64da939bdec5b6f08dd012"
   },
   "group-a-reciprocal-accepted-synonymy.manifest.json": {
+   "cloud_scope_member_count": 0,
    "evidence_class": "reciprocal_accepted_synonymy",
    "file_sha256": "72ff500dc223b98c325cb3a32cfeed802398f20c592b52cbd006cdf2e595ebb9",
    "member_count": 0,
    "members_sha256": "4d8ebec059322d1f01573b87c6800ee573f788cf7c64da939bdec5b6f08dd012"
   },
+  "group-a-shared-synonymy--accepted-authorship-disagrees.manifest.json": {
+   "cloud_scope_member_count": 0,
+   "evidence_class": "shared_synonymy",
+   "file_sha256": "3ecc415b794aab06387218a077063c81960eddb93f7b5913982aeca96dbc4411",
+   "member_count": 6,
+   "members_sha256": "96861e56a5e037e5126ae50d946170a4b1ec6e59b434a6093a162dc79071de99",
+   "review_class": "accepted_authorship_disagrees"
+  },
+  "group-a-shared-synonymy--infraspecific-rank.manifest.json": {
+   "cloud_scope_member_count": 6,
+   "evidence_class": "shared_synonymy",
+   "file_sha256": "4c0f8aefb78df3cd74332a5355d18680896ff89807b97370b029bf17cbf061cd",
+   "member_count": 35,
+   "members_sha256": "b35ad08f992cb1f82a17d3231f1e00bb606b1f13ce9b85f5f995fe0b14c61c8b",
+   "review_class": "infraspecific_rank"
+  },
+  "group-a-shared-synonymy--non-species-rank.manifest.json": {
+   "cloud_scope_member_count": 5,
+   "evidence_class": "shared_synonymy",
+   "file_sha256": "f60d93d8df42d443edf1c3e12c9a264a973ea1f9663070b22e528234f2f4663e",
+   "member_count": 12,
+   "members_sha256": "9c39c39ae6b694653a2121f721eed01b8d01ffbb8d036be2ef23d70b2534e143",
+   "review_class": "non_species_rank"
+  },
+  "group-a-shared-synonymy--only-accepted-name-variant.manifest.json": {
+   "cloud_scope_member_count": 39,
+   "evidence_class": "shared_synonymy",
+   "file_sha256": "1ef9c040a4a1029c0d9d26fe2445da07c5bce7d4c00ecf68c2ee4fb939eb9ac7",
+   "member_count": 62,
+   "members_sha256": "28775d1500db24f7ff354a72c945c635a5e69ba69d05d900231c935121a7364a",
+   "review_class": "only_accepted_name_variant"
+  },
+  "group-a-shared-synonymy--only-ined.manifest.json": {
+   "cloud_scope_member_count": 5,
+   "evidence_class": "shared_synonymy",
+   "file_sha256": "85acf26a386fda2fdc234282feec335b52f16d8be89fc93acf3f6269f0eec00d",
+   "member_count": 15,
+   "members_sha256": "fbab04d444cb631306640f13dad0b27c8f4ec09c70d447f34651249267ce4116",
+   "review_class": "only_ined"
+  },
+  "group-a-shared-synonymy--only-invalid-name.manifest.json": {
+   "cloud_scope_member_count": 1,
+   "evidence_class": "shared_synonymy",
+   "file_sha256": "da6151372ca06704c9460c442607c90766856495da7a52af0c16c4dc4e2d9493",
+   "member_count": 7,
+   "members_sha256": "59b9a17f9a01f99bba8811dc2817b1fe73c80ba210b3ea8c85909abae69ad58a",
+   "review_class": "only_invalid_name"
+  },
+  "group-a-shared-synonymy--only-mixed-weak.manifest.json": {
+   "cloud_scope_member_count": 0,
+   "evidence_class": "shared_synonymy",
+   "file_sha256": "ddc2b747dca674d36bbe22121811928f63d23fd90d3ee7b1ececd538ce6605fb",
+   "member_count": 1,
+   "members_sha256": "0a001e0c33df1dcca633b15730ba2f416f3fa66c91c4c46da7bbe8af8bc27734",
+   "review_class": "only_mixed_weak"
+  },
+  "group-a-shared-synonymy--only-unauthored.manifest.json": {
+   "cloud_scope_member_count": 8,
+   "evidence_class": "shared_synonymy",
+   "file_sha256": "102229e60defce067bfeb64b110183249167da8f412d5db2129a75c2669abb76",
+   "member_count": 66,
+   "members_sha256": "21b35ed42203c9eacd7f462c24dc2a29af2057efaf948f855aa1b074ede8d6a7",
+   "review_class": "only_unauthored"
+  },
+  "group-a-shared-synonymy--ordinary.manifest.json": {
+   "cloud_scope_member_count": 1811,
+   "evidence_class": "shared_synonymy",
+   "file_sha256": "7f6c841ec8423398531e221f629103108433d28deab3a0a8ba6027950937c565",
+   "member_count": 4618,
+   "members_sha256": "7dc0c318f0e608b0d4856d96bfd72fe1cab7de6042a74edf88843d4afa4daf22",
+   "review_class": "ordinary"
+  },
+  "group-a-shared-synonymy--single-shared-synonym-low-overlap.manifest.json": {
+   "cloud_scope_member_count": 13,
+   "evidence_class": "shared_synonymy",
+   "file_sha256": "426045c8941da4b5f4615243c894abfa4e9d22d25905b02da5f2971388e99f1c",
+   "member_count": 39,
+   "members_sha256": "8f6bcf100d6fdae8f831de65a63db86f9364d91338c13aed841b8c12c154942e",
+   "review_class": "single_shared_synonym_low_overlap"
+  },
   "group-a-shared-synonymy.manifest.json": {
+   "cloud_scope_member_count": 1888,
    "evidence_class": "shared_synonymy",
    "file_sha256": "3fc1f62355b936b485d2468e2ed1581ab6fd69f5414cc15313e7e1e67e5cb2d0",
    "member_count": 4861,
@@ -378,6 +511,7 @@
      "in_cloud_scope": true,
      "nortaxa_taxon_id": "56227",
      "population": "group_a",
+     "review_class": "ordinary",
      "sporely_taxon_id": 620306
     }
    ],
@@ -397,6 +531,22 @@
    ],
    "probe": {
     "nortaxa_taxon_id": "53482"
+   }
+  },
+  "NBIC:56449 (temporary unresolved fixture)": {
+   "placements": [
+    {
+     "col_in_cloud_scope": true,
+     "col_sporely_taxon_id": 11307,
+     "col_usage_id": "3GBK2",
+     "evidence_class": "shared_synonymy",
+     "nortaxa_sporely_taxon_id": 626327,
+     "nortaxa_taxon_id": "56449",
+     "population": "group_b"
+    }
+   ],
+   "probe": {
+    "nortaxa_taxon_id": "56449"
    }
   },
   "Pholiotina rugosa": {

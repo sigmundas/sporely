@@ -1,0 +1,1128 @@
+{
+ "cloud_scope_member_count": 39,
+ "columns": [
+  "nortaxa_taxon_id",
+  "col_usage_id",
+  "sporely_taxon_id",
+  "in_cloud_scope",
+  "bridge_accepted_name",
+  "backbone_accepted_name",
+  "accepted_names_agree",
+  "bridge_lists_backbone_accepted_name_as_synonym",
+  "backbone_lists_bridge_accepted_name_as_synonym",
+  "shared_synonym_count",
+  "shared_synonyms",
+  "bridge_synonym_count",
+  "backbone_synonym_count"
+ ],
+ "evidence_class": "shared_synonymy",
+ "format": "sporely-taxonomy-v3-review-manifest-v1",
+ "member_count": 62,
+ "members": [
+  [
+   "122465",
+   "3Z537",
+   28798,
+   false,
+   "Melampsora laricis-pentandrae Kleb.",
+   "Melampsora laricis-pentandrae Kleb.",
+   true,
+   false,
+   false,
+   1,
+   [
+    "melampsora larici-pentandrae Kleb."
+   ],
+   1,
+   2
+  ],
+  [
+   "122565",
+   "6L7WN",
+   100720,
+   true,
+   "Gymnosporangium clavariiforme (Wulfen) DC.",
+   "Gymnosporangium clavariiforme (Wulfen) DC.",
+   true,
+   false,
+   false,
+   1,
+   [
+    "gymnosporangium clavariaeforme (Jacq.) DC."
+   ],
+   2,
+   26
+  ],
+  [
+   "122795",
+   "78NZB",
+   121758,
+   false,
+   "Puccinia novae-zembliae Jørst.",
+   "Puccinia novae-zembliae Jørst.",
+   true,
+   false,
+   false,
+   1,
+   [
+    "puccinia nova-zembliae"
+   ],
+   1,
+   2
+  ],
+  [
+   "122814",
+   "6WNRQ",
+   111156,
+   false,
+   "Puccinia polemonii Dietel & Holw.",
+   "Puccinia polemonii Dietel & Holw.",
+   true,
+   false,
+   false,
+   1,
+   [
+    "puccinia polemonii F.C.M. Störmer"
+   ],
+   1,
+   4
+  ],
+  [
+   "122874",
+   "4QF7Z",
+   57233,
+   false,
+   "Puccinia striiformis Westend.",
+   "Puccinia striiformis Westend.",
+   true,
+   false,
+   false,
+   1,
+   [
+    "puccinia striaeformis Westend."
+   ],
+   3,
+   13
+  ],
+  [
+   "122935",
+   "7DX9K",
+   127503,
+   false,
+   "Uromyces gentianae Arthur",
+   "Uromyces gentianae Arthur",
+   true,
+   false,
+   false,
+   1,
+   [
+    "uromyces eugentianae Cummins"
+   ],
+   1,
+   3
+  ],
+  [
+   "129012",
+   "QNQ8S",
+   169138,
+   true,
+   "Inocybe mixtilioides Krieglst.",
+   "Inocybe mixtilioides Krieglst.",
+   true,
+   false,
+   false,
+   1,
+   [
+    "inocybe mixtiloides Krieglst."
+   ],
+   1,
+   1
+  ],
+  [
+   "129023",
+   "65LW5",
+   88471,
+   true,
+   "Agaricus bresadolanus Bohus",
+   "Agaricus bresadolanus Bohus",
+   true,
+   false,
+   false,
+   1,
+   [
+    "agaricus bresadolianus Bohus"
+   ],
+   1,
+   12
+  ],
+  [
+   "129032",
+   "N5L4V",
+   163010,
+   true,
+   "Coprinus aphthosus Fr.",
+   "Coprinus aphthosus Fr.",
+   true,
+   false,
+   false,
+   1,
+   [
+    "coprinus apthosus Fr."
+   ],
+   1,
+   1
+  ],
+  [
+   "129068",
+   "4SDC5",
+   60617,
+   true,
+   "Rhizopogon subsalmonius A.H. Sm.",
+   "Rhizopogon subsalmonius A.H. Sm.",
+   true,
+   false,
+   false,
+   1,
+   [
+    "rhizopogon subsalmoneus A.H. Sm."
+   ],
+   1,
+   5
+  ],
+  [
+   "129317",
+   "4FHGS",
+   42908,
+   true,
+   "Peziza saccardoana Cooke",
+   "Peziza saccardoana Cooke",
+   true,
+   false,
+   false,
+   1,
+   [
+    "peziza saccardiana Cooke"
+   ],
+   1,
+   5
+  ],
+  [
+   "133953",
+   "H7T5",
+   154436,
+   false,
+   "Ascochyta sorghi Sacc.",
+   "Ascochyta sorghi Sacc.",
+   true,
+   false,
+   false,
+   1,
+   [
+    "ascochyta sorghina Sacc."
+   ],
+   2,
+   3
+  ],
+  [
+   "135762",
+   "6F9KQ",
+   95732,
+   false,
+   "Endococcus verrucisporus Alstrup",
+   "Endococcus verrucisporus Alstrup",
+   true,
+   false,
+   false,
+   1,
+   [
+    "endococcus verrucosporus Alstrup"
+   ],
+   1,
+   1
+  ],
+  [
+   "139523",
+   "777W3",
+   119322,
+   true,
+   "Peziza bubakii (Velen.) Svrček",
+   "Peziza bubakii (Velen.) Svrček",
+   true,
+   false,
+   false,
+   1,
+   [
+    "peziza bubacii (Velen.) Svrček"
+   ],
+   1,
+   2
+  ],
+  [
+   "142983",
+   "BQN5",
+   146717,
+   true,
+   "Aleurodiscus patelliformis G. Cunn.",
+   "Aleurodiscus patelliformis G. Cunn.",
+   true,
+   false,
+   false,
+   1,
+   [
+    "aleurodiscus patellaeformis G. Cunn."
+   ],
+   1,
+   1
+  ],
+  [
+   "143030",
+   "69LCG",
+   91840,
+   true,
+   "Ceriporia ferrugineocincta (Murrill) Ryvarden",
+   "Ceriporia ferrugineocincta (Murrill) Ryvarden",
+   true,
+   false,
+   false,
+   1,
+   [
+    "ceriporia ferruginicincta (Murrill) Ryvarden"
+   ],
+   1,
+   3
+  ],
+  [
+   "143134",
+   "3JKFX",
+   13401,
+   true,
+   "Hapalopilus phlebiiformis (Berk. ex Cooke) Ryvarden",
+   "Hapalopilus phlebiiformis (Berk. ex Cooke) Ryvarden",
+   true,
+   false,
+   false,
+   1,
+   [
+    "hapalopilus phlebiaeformis (Berk. ex Cooke) Ryvarden"
+   ],
+   1,
+   2
+  ],
+  [
+   "143214",
+   "72539",
+   114392,
+   true,
+   "Leucophellinus irpicoides (Bondartsev ex Pilát) Bondartsev & Singer",
+   "Leucophellinus irpicoides (Bondartsev ex Pilát) Bondartsev & Singer",
+   true,
+   false,
+   false,
+   1,
+   [
+    "leucophellinus irpicioides (Bondartsev ex Pilát) Bondatsev & Singer"
+   ],
+   1,
+   3
+  ],
+  [
+   "143244",
+   "74L46",
+   116805,
+   true,
+   "Oligoporus davidiae (M. Pieri & B. Rivoire) Niemelä",
+   "Oligoporus davidiae (M. Pieri & B. Rivoire) Niemelä",
+   true,
+   false,
+   false,
+   1,
+   [
+    "oligoporus davidae (M. Pieri & B. Rivoire) Niemelä"
+   ],
+   1,
+   3
+  ],
+  [
+   "143310",
+   "4FZHW",
+   44333,
+   true,
+   "Phellinus sarcites (Fr.) Ryvarden",
+   "Phellinus sarcites (Fr.) Ryvarden",
+   true,
+   false,
+   false,
+   1,
+   [
+    "phellinus sarcitus (Fr.) Ryvarden"
+   ],
+   1,
+   8
+  ],
+  [
+   "143329",
+   "4H9ZY",
+   47352,
+   true,
+   "Phylloporia verae-crucis (Berk. ex Sacc.) Ryvarden",
+   "Phylloporia verae-crucis (Berk. ex Sacc.) Ryvarden",
+   true,
+   false,
+   false,
+   1,
+   [
+    "phylloporia veracrucis (Berk. ex Sacc.) Ryvarden"
+   ],
+   1,
+   3
+  ],
+  [
+   "143412",
+   "7DC4T",
+   125240,
+   true,
+   "Tyromyces cinereobrunneus Bitew & Ryvarden",
+   "Tyromyces cinereobrunneus Bitew & Ryvarden",
+   true,
+   false,
+   false,
+   1,
+   [
+    "tyromyces cinerobrunneus Bitew & Ryvarden"
+   ],
+   1,
+   1
+  ],
+  [
+   "144892",
+   "587WJ",
+   72814,
+   true,
+   "Trichaptum bulbocystidiatum Ryvarden",
+   "Trichaptum bulbocystidiatum Ryvarden",
+   true,
+   false,
+   false,
+   1,
+   [
+    "trichaptum bulbocystidium Ryvarden"
+   ],
+   1,
+   1
+  ],
+  [
+   "145000",
+   "MG5N3",
+   161099,
+   false,
+   "Caloplaca spitsbergensis H.Magn.",
+   "Caloplaca spitsbergensis H.Magn.",
+   true,
+   false,
+   false,
+   1,
+   [
+    "caloplaca spitzbergensis H. Magn."
+   ],
+   1,
+   1
+  ],
+  [
+   "145424",
+   "35MQS",
+   3337,
+   true,
+   "Dichomitus ecuadorensis Ryvarden",
+   "Dichomitus ecuadorensis Ryvarden",
+   true,
+   false,
+   false,
+   1,
+   [
+    "dichomitus ecuadoriensis Ryvarden"
+   ],
+   1,
+   1
+  ],
+  [
+   "145485",
+   "CJP7",
+   150154,
+   true,
+   "Amauroderma grandisporum Gulaid & Ryvarden",
+   "Amauroderma grandisporum Gulaid & Ryvarden",
+   true,
+   false,
+   false,
+   1,
+   [
+    "amauroderma grandispora Gulaid & Ryvarden"
+   ],
+   1,
+   1
+  ],
+  [
+   "160554",
+   "7DBT8",
+   125201,
+   true,
+   "Tyromyces navarroi M. Mata & Ryvarden",
+   "Tyromyces navarroi M. Mata & Ryvarden",
+   true,
+   false,
+   false,
+   1,
+   [
+    "tyromyces navarrii M. Mata & Ryvarden"
+   ],
+   1,
+   1
+  ],
+  [
+   "169349",
+   "6G3D4",
+   97437,
+   false,
+   "Epibryon hepaticicola (Racov.) Döbbeler",
+   "Epibryon hepaticicola (Racov.) Döbbeler",
+   true,
+   false,
+   false,
+   1,
+   [
+    "epibryon hepaticola (Racov.) Döbbeler"
+   ],
+   1,
+   3
+  ],
+  [
+   "169555",
+   "68QKD",
+   91116,
+   true,
+   "Botryobasidium robustius Pouzar & Hol.-Jech.",
+   "Botryobasidium robustius Pouzar & Hol.-Jech.",
+   true,
+   false,
+   false,
+   1,
+   [
+    "botryobasidium robustior Pouzar & Hol.-Jech."
+   ],
+   1,
+   1
+  ],
+  [
+   "170865",
+   "BQFV",
+   146664,
+   true,
+   "Aleurocystis hakgallae (Berk. & Broome) G. Cunn.",
+   "Aleurocystis hakgallae (Berk. & Broome) G. Cunn.",
+   true,
+   false,
+   false,
+   1,
+   [
+    "aleurocystis habgallae (Berk. & Broome) G. Cunn."
+   ],
+   1,
+   7
+  ],
+  [
+   "203683",
+   "35MQH",
+   3332,
+   true,
+   "Dichomitus cameroonensis Ryvarden",
+   "Dichomitus cameroonensis Ryvarden",
+   true,
+   false,
+   false,
+   1,
+   [
+    "dichomitus camerooniensis Ryvarden"
+   ],
+   1,
+   1
+  ],
+  [
+   "204553",
+   "4N6J3",
+   52504,
+   false,
+   "Protoparmelia memnonia Hafellner & Türk",
+   "Protoparmelia memnonia Hafellner & Türk",
+   true,
+   false,
+   false,
+   2,
+   [
+    "protoparmelia memnonica Hafellner & Türk",
+    "protoparmelia memnonina Hafellner & Türk"
+   ],
+   4,
+   2
+  ],
+  [
+   "205168",
+   "3H7JD",
+   12223,
+   true,
+   "Grammothele brasiliensis Ryvarden",
+   "Grammothele brasiliensis Ryvarden",
+   true,
+   false,
+   false,
+   1,
+   [
+    "grammothele brasilensis Ryvarden"
+   ],
+   1,
+   1
+  ],
+  [
+   "215857",
+   "4KCWS",
+   50134,
+   true,
+   "Pleurotellus dictyorhizus (DC.) Kühner",
+   "Pleurotellus dictyorhizus (DC.) Kühner",
+   true,
+   false,
+   false,
+   1,
+   [
+    "pleurotellus dictyorhiza (DC. ex Fr.) Gill."
+   ],
+   2,
+   3
+  ],
+  [
+   "220343",
+   "B2PRC",
+   139862,
+   true,
+   "Ceriporiopsis suballantoidea Decock & Ryvarden",
+   "Ceriporiopsis suballantoidea Decock & Ryvarden",
+   true,
+   false,
+   false,
+   1,
+   [
+    "ceriporiopsis suballantoidus Decock & Ryvarden"
+   ],
+   1,
+   1
+  ],
+  [
+   "225857",
+   "7CMKW",
+   124304,
+   true,
+   "Trametes tenuirosea Lloyd",
+   "Trametes tenuirosea Lloyd",
+   true,
+   false,
+   false,
+   1,
+   [
+    "trametes tenuo-rosea Lloyd"
+   ],
+   1,
+   2
+  ],
+  [
+   "226091",
+   "4H9Z3",
+   47330,
+   true,
+   "Phylloporia minutispora Ipulet & Ryvarden",
+   "Phylloporia minutispora Ipulet & Ryvarden",
+   true,
+   false,
+   false,
+   1,
+   [
+    "phylloporia minutospora Ipulet & Ryvarden"
+   ],
+   1,
+   1
+  ],
+  [
+   "297401",
+   "B34Y7",
+   144045,
+   false,
+   "Ceratocystiopsis debeeriana Jankowiak & H. Solheim",
+   "Ceratocystiopsis debeeriana Jankowiak & H. Solheim",
+   true,
+   false,
+   false,
+   1,
+   [
+    "ceratocystiopsis debeeria Jankowiak & H. Solheim"
+   ],
+   1,
+   1
+  ],
+  [
+   "298239",
+   "B3852",
+   145203,
+   false,
+   "Porina thujopsidicola G. Thor, Lücking & Tat. Matsumoto",
+   "Porina thujopsidicola G. Thor, Lücking & Tat. Matsumoto",
+   true,
+   false,
+   false,
+   1,
+   [
+    "porina thujopsicola G. Thor, Lücking & Tat. Matsumoto"
+   ],
+   1,
+   1
+  ],
+  [
+   "52321",
+   "XQYQ",
+   617013,
+   true,
+   "Conocybe tuxtlaensis Singer",
+   "Conocybe tuxtlaensis Singer",
+   true,
+   false,
+   false,
+   1,
+   [
+    "conocybe tuxlaensis Singer"
+   ],
+   1,
+   1
+  ],
+  [
+   "53279",
+   "3PRSL",
+   19310,
+   true,
+   "Inocybe undulatospora Kuyper",
+   "Inocybe undulatospora Kuyper",
+   true,
+   false,
+   false,
+   1,
+   [
+    "inocybe undulatopspora"
+   ],
+   1,
+   1
+  ],
+  [
+   "53747",
+   "44SN7",
+   34092,
+   true,
+   "Mycena aetites (Fr.) Quél.",
+   "Mycena aetites (Fr.) Quél.",
+   true,
+   false,
+   false,
+   1,
+   [
+    "mycena aetitis (Fr.) Quél."
+   ],
+   3,
+   9
+  ],
+  [
+   "53750",
+   "44SNR",
+   34106,
+   true,
+   "Mycena albidolilacea Kühner & Maire",
+   "Mycena albidolilacea Kühner & Maire",
+   true,
+   false,
+   false,
+   1,
+   [
+    "mycena albolilacea Kühner & Maire"
+   ],
+   1,
+   1
+  ],
+  [
+   "55382",
+   "W8KW",
+   614505,
+   true,
+   "Clitocybe gilvaoides Kauffman",
+   "Clitocybe gilvaoides Kauffman",
+   true,
+   false,
+   false,
+   1,
+   [
+    "clitocybe gilvaeoides Kauffman"
+   ],
+   1,
+   1
+  ],
+  [
+   "55519",
+   "58DJ2",
+   73296,
+   true,
+   "Tricholoma bresadolanum Clémençon",
+   "Tricholoma bresadolanum Clémençon",
+   true,
+   false,
+   false,
+   1,
+   [
+    "tricholoma bresadolianum Clémencon"
+   ],
+   1,
+   3
+  ],
+  [
+   "56122",
+   "3Z8H9",
+   28996,
+   true,
+   "Melanogaster broomeanus Berk.",
+   "Melanogaster broomeanus Berk.",
+   true,
+   false,
+   false,
+   1,
+   [
+    "melanogaster broomeianus Berk."
+   ],
+   1,
+   5
+  ],
+  [
+   "56292",
+   "4RSKL",
+   59730,
+   true,
+   "Repetobasidiellum fusisporum J. Erikss. & Hjortstam",
+   "Repetobasidiellum fusisporum J. Erikss. & Hjortstam",
+   true,
+   false,
+   false,
+   1,
+   [
+    "repetobasidiellum fusisporium J. Erikss. & Hjortstam"
+   ],
+   1,
+   1
+  ],
+  [
+   "56350",
+   "59KSF",
+   74730,
+   true,
+   "Tulasnella subglobospora Hjortstam",
+   "Tulasnella subglobospora Hjortstam",
+   true,
+   false,
+   false,
+   1,
+   [
+    "tulasnella subglobispora Hjortstam"
+   ],
+   1,
+   1
+  ],
+  [
+   "66808",
+   "4VMVQ",
+   63310,
+   false,
+   "Scirrhia agrostidis (Fuckel) G. Winter",
+   "Scirrhia agrostidis (Fuckel) G. Winter",
+   true,
+   false,
+   false,
+   1,
+   [
+    "scirrhia agrostis (Fuckel) G. Winter"
+   ],
+   1,
+   5
+  ],
+  [
+   "67682",
+   "7DBQK",
+   125168,
+   false,
+   "Tympanis spermatiospora (Nyl.) Nyl.",
+   "Tympanis spermatiospora (Nyl.) Nyl.",
+   true,
+   false,
+   false,
+   1,
+   [
+    "tympanis spermatiosporum Nyl."
+   ],
+   1,
+   3
+  ],
+  [
+   "73919",
+   "S6KRV",
+   172270,
+   false,
+   "Rinodina corticola (Arnold) Arnold",
+   "Rinodina corticola (Arnold) Arnold",
+   true,
+   false,
+   false,
+   1,
+   [
+    "rinodina corticicola (Arnold) DT & Sarnt."
+   ],
+   1,
+   1
+  ],
+  [
+   "75085",
+   "SJM9F",
+   603880,
+   false,
+   "Ramalina wigginsii Bowler & Rundel",
+   "Ramalina wigginsii Bowler & Rundel",
+   true,
+   false,
+   false,
+   1,
+   [
+    "ramalina wigginsiae"
+   ],
+   1,
+   1
+  ],
+  [
+   "76217",
+   "DK4WP",
+   150899,
+   false,
+   "Acrospermum graminum Lib.",
+   "Acrospermum graminum Lib.",
+   true,
+   false,
+   false,
+   1,
+   [
+    "acrospermum gramineum Lib."
+   ],
+   1,
+   1
+  ],
+  [
+   "77704",
+   "4VDL3",
+   63262,
+   false,
+   "Schizoxylon berkeleyanum (Durieu & Lév.) Fuckel",
+   "Schizoxylon berkeleyanum (Durieu & Lév.) Fuckel",
+   true,
+   false,
+   false,
+   1,
+   [
+    "schizoxylon berkelyanum (Durand & Lév.) Fuckel"
+   ],
+   2,
+   6
+  ],
+  [
+   "77800",
+   "6S3DV",
+   107528,
+   false,
+   "Myriotrema microporum (Mont.) Hale",
+   "Myriotrema microporum (Mont.) Hale",
+   true,
+   false,
+   false,
+   1,
+   [
+    "myriotrema microsporum"
+   ],
+   2,
+   4
+  ],
+  [
+   "79137",
+   "MQZ8",
+   162450,
+   true,
+   "Boudiera acanthospora Dissing & T. Schumach.",
+   "Boudiera acanthospora Dissing & T. Schumach.",
+   true,
+   false,
+   false,
+   1,
+   [
+    "boudiera acanthosporum"
+   ],
+   1,
+   2
+  ],
+  [
+   "79347",
+   "46W5Q",
+   38104,
+   true,
+   "Neottiella aphanodictyon (Kobayasi) Dissing, Korf & Sivertsen",
+   "Neottiella aphanodictyon (Kobayasi) Dissing, Korf & Sivertsen",
+   true,
+   false,
+   false,
+   1,
+   [
+    "neottiella aphanodictya (Kobayasi) Dissing, Korf & Sivertsen"
+   ],
+   2,
+   2
+  ],
+  [
+   "80165",
+   "35XMT",
+   3655,
+   false,
+   "Didymella eupyrena Sacc.",
+   "Didymella eupyrena Sacc.",
+   true,
+   false,
+   false,
+   1,
+   [
+    "didymella eupyrina Sacc."
+   ],
+   1,
+   2
+  ],
+  [
+   "81994",
+   "NDF9N",
+   163381,
+   false,
+   "Dermatocarpon tuzibei Sato",
+   "Dermatocarpon tuzibei Sato",
+   true,
+   false,
+   false,
+   1,
+   [
+    "dermatocarpon tujibei M. Sato"
+   ],
+   1,
+   1
+  ],
+  [
+   "82929",
+   "3P2NW",
+   18052,
+   true,
+   "Hypoxylon petriniae M. Stadler & J. Fourn.",
+   "Hypoxylon petriniae M. Stadler & J. Fourn.",
+   true,
+   false,
+   false,
+   1,
+   [
+    "hypoxylon petrinii M. Stadler & J. Fourn."
+   ],
+   1,
+   1
+  ],
+  [
+   "83259",
+   "54S7L",
+   70161,
+   false,
+   "Taphrina caerulescens (Desm. & Mont.) Tul.",
+   "Taphrina caerulescens (Desm. & Mont.) Tul.",
+   true,
+   false,
+   false,
+   1,
+   [
+    "taphrina coerulescens (Desm. & Mont.) Tul."
+   ],
+   1,
+   6
+  ],
+  [
+   "92227",
+   "SF7HK",
+   172757,
+   false,
+   "Psora elenkinii Rass.",
+   "Psora elenkinii Rass.",
+   true,
+   false,
+   false,
+   1,
+   [
+    "psora elenkii Rass."
+   ],
+   1,
+   1
+  ]
+ ],
+ "members_sha256": "28775d1500db24f7ff354a72c945c635a5e69ba69d05d900231c935121a7364a",
+ "membership_rule": "every shared synonym is the accepted name itself under another authorship or a spelling variant of it: same word count, hyphens removed, first word equal (unless uninomial) and every word within Levenshtein distance 2 of the accepted name's word",
+ "note": "Immutable review input derived deterministically from the parent shared_synonymy manifest; the review classes partition it. Membership is pinned to the release and source archives below; it approves nothing and never extends to taxa in a later source release. shared_synonyms lists at most 10 names; shared_synonym_count is exact.",
+ "parent_manifest": {
+  "evidence_class": "shared_synonymy",
+  "member_count": 4861,
+  "members_sha256": "ce48854856fd0a7f6c1d454cc79bfeeb2d57d9c8ff038305156ade8f9a85e3bc"
+ },
+ "pins": {
+  "bridge_emission_policy": {
+   "path": "database/taxonomy/policies/mapping_policy.yml",
+   "sha256": "a5a329848c45fcd030165a51ad1193944dffe7573ddb2a9c69441f0d76ae4afb"
+  },
+  "cloud_scope_policy": {
+   "path": "database/taxonomy/policies/global-macrofungi-scope.yml",
+   "scope_predicate_id": "global_macrofungi_policy_v1",
+   "sha256": "e4e796286df93b5372264c702c824eea746f680b3b4e8d6467621c99e5b64ea6"
+  },
+  "release": {
+   "content_release_id": "tax-2026.09.26-02",
+   "gz_artifact": "database/reference_data/generated/taxonomy_v2/tax-2026.09.26-02.sqlite3.gz",
+   "gz_sha256": "4488bb64f4abe18ed269c76264f9be36708d742ff531e931e8d7458791e05d72",
+   "sqlite_sha256": "9bf71b7e1f9b2915c3b1798743cefdd5db53bdbbfb7edc462aa3d0ad0cf8547d"
+  },
+  "source_archives": {
+   "col_xr": {
+    "sha256": "397d701c8eb269bf78d6ac7b03149915b0d9e2a2c18694be2c91445b807814f9",
+    "source_release_id": "col_xr:2026-07-17-XR:2026-07-17"
+   },
+   "nortaxa": {
+    "sha256": "29c11c54d955dc44e4e5a38944dd7932989a256d1b173777579b9f33abd2fe22",
+    "source_release_id": "nortaxa:1.284:2026-07-17"
+   }
+  }
+ },
+ "population": "group_a_automatic_nortaxa_bridge",
+ "review_class": "only_accepted_name_variant",
+ "review_class_precedence": [
+  "non_species_rank",
+  "infraspecific_rank",
+  "accepted_authorship_disagrees",
+  "only_ined",
+  "only_invalid_name",
+  "only_accepted_name_variant",
+  "only_unauthored",
+  "only_mixed_weak",
+  "single_shared_synonym_low_overlap",
+  "ordinary"
+ ],
+ "review_status": "needs_review"
+}
