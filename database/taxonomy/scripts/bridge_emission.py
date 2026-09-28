@@ -94,6 +94,147 @@ class BridgeEmissionError(ValueError):
     """Raised when the emission policy is missing, malformed, or ambiguous."""
 
 
+_REPO_ROOT = Path(__file__).resolve().parents[3]
+
+#: What an owner's batch approval of a review manifest must record.
+MANIFEST_APPROVAL_FIELDS = (
+    "path", "file_sha256", "approved_by", "approved_at", "decision_reference",
+)
+
+#: The manifest columns a batch-approved record is checked against.
+MANIFEST_MEMBER_COLUMNS = ("nortaxa_taxon_id", "col_usage_id", "sporely_taxon_id")
+
+
+def verify_manifest_approvals(
+    document: dict, *, repo_root: Path = _REPO_ROOT,
+) -> dict[str, str]:
+    """Check every batch-approved mapping against the manifest it cites.
+
+    An owner may approve an explicitly enumerated, immutable review manifest
+    with one decision (taxonomy-v3 decision 2). That decision is recorded once,
+    in the ledger's ``approved_manifests`` list, bound to the manifest file's
+    SHA-256. It still yields one per-association record per member, and each
+    such record carries ``approved_manifest`` naming the ``file_sha256`` and
+    the member it was generated from.
+
+    The approval is a claim about an exact file, so it is checked against that
+    file: the manifest must exist and hash to the approved ``file_sha256``, and
+    every record citing it must be an approved exact mapping whose source
+    usage, target and Sporely concept are exactly one listed member. A record
+    for a taxon the manifest does not list — a sibling review class, or a new
+    taxon in a later source release — therefore cannot borrow the approval.
+
+    Returns ``mapping_id -> file_sha256`` for the manifest-bound records.
+    Raises :class:`BridgeEmissionError` on any mismatch.
+    """
+    approvals = document.get("approved_manifests") or []
+    if not isinstance(approvals, list):
+        raise BridgeEmissionError("approved_manifests must be a list")
+    members_by_sha: dict[str, set[tuple[str, str, int]]] = {}
+    for index, approval in enumerate(approvals):
+        if not isinstance(approval, dict):
+            raise BridgeEmissionError(
+                f"approved_manifests[{index}] is not an object")
+        absent = [f for f in MANIFEST_APPROVAL_FIELDS
+                  if not str(approval.get(f) or "").strip()]
+        if absent:
+            raise BridgeEmissionError(
+                f"approved_manifests[{index}] carries no {', '.join(absent)}"
+            )
+        expected = str(approval["file_sha256"])
+        if expected in members_by_sha:
+            raise BridgeEmissionError(
+                f"approved_manifests lists file_sha256 {expected} twice")
+        path = Path(str(approval["path"]))
+        if not path.is_absolute():
+            path = repo_root / path
+        if not path.is_file():
+            raise BridgeEmissionError(
+                f"approved manifest not found: {path}. An approval that cannot "
+                f"be checked against its file approves nothing."
+            )
+        raw = path.read_bytes()
+        actual = hashlib.sha256(raw).hexdigest()
+        if actual != expected:
+            raise BridgeEmissionError(
+                f"approved manifest {path} has sha256 {actual}, but the "
+                f"approval names {expected}. A regenerated manifest is not the "
+                f"one that was approved, even with the same members."
+            )
+        manifest = json.loads(raw.decode("utf-8"))
+        columns = list(manifest.get("columns") or [])
+        missing_columns = [c for c in MANIFEST_MEMBER_COLUMNS if c not in columns]
+        if missing_columns:
+            raise BridgeEmissionError(
+                f"approved manifest {path} lacks columns {missing_columns}")
+        positions = [columns.index(c) for c in MANIFEST_MEMBER_COLUMNS]
+        members_by_sha[expected] = {
+            (str(row[positions[0]]), str(row[positions[1]]),
+             int(row[positions[2]]))
+            for row in manifest.get("members") or []
+        }
+
+    bound: dict[str, str] = {}
+    seen_members: set[tuple[str, tuple[str, str, int]]] = set()
+    for index, entry in enumerate(document.get("mappings") or []):
+        if not isinstance(entry, dict) or "approved_manifest" not in entry:
+            continue
+        mapping_id = str(entry.get("mapping_id") or f"mapping-{index}")
+        ref = entry.get("approved_manifest")
+        if not isinstance(ref, dict):
+            raise BridgeEmissionError(
+                f"mapping {mapping_id!r}: approved_manifest is not an object")
+        file_sha256 = str(ref.get("file_sha256") or "")
+        if file_sha256 not in members_by_sha:
+            raise BridgeEmissionError(
+                f"mapping {mapping_id!r} cites manifest {file_sha256!r}, "
+                f"which no approved_manifests entry approves"
+            )
+        if str(entry.get("review_status") or "") != APPROVED_REVIEW_STATUS \
+                or str(entry.get("relationship") or "") != "exact":
+            raise BridgeEmissionError(
+                f"mapping {mapping_id!r}: a manifest approval yields only "
+                f"approved exact mappings"
+            )
+        member = ref.get("member") or {}
+        try:
+            key = (str(member["nortaxa_taxon_id"]), str(member["col_usage_id"]),
+                   int(member["sporely_taxon_id"]))
+        except (KeyError, TypeError, ValueError) as exc:
+            raise BridgeEmissionError(
+                f"mapping {mapping_id!r}: approved_manifest.member needs "
+                f"{', '.join(MANIFEST_MEMBER_COLUMNS)}"
+            ) from exc
+        source_usage = entry.get("source_usage") or {}
+        target = (entry.get("target") or {}).get("source_usage") or {}
+        if (str(source_usage.get("source")), str(source_usage.get("namespace")),
+                str(source_usage.get("identifier"))) \
+                != ("nortaxa", "nortaxa_taxon_id", key[0]) \
+                or str(target.get("source")) != "col_xr" \
+                or str(target.get("identifier")) != key[1]:
+            raise BridgeEmissionError(
+                f"mapping {mapping_id!r}: source usage and target do not match "
+                f"the manifest member it cites ({key[0]} -> {key[1]})"
+            )
+        if key not in members_by_sha[file_sha256]:
+            raise BridgeEmissionError(
+                f"mapping {mapping_id!r}: NorTaxa {key[0]} -> COL {key[1]} -> "
+                f"sporely_taxon_id {key[2]} is not a member of approved "
+                f"manifest {file_sha256}"
+            )
+        if (file_sha256, key) in seen_members:
+            raise BridgeEmissionError(
+                f"mapping {mapping_id!r}: manifest member {key!r} has more "
+                f"than one record"
+            )
+        if mapping_id in bound:
+            raise BridgeEmissionError(
+                f"mapping_id {mapping_id!r} is used by more than one record")
+        seen_members.add((file_sha256, key))
+        bound[mapping_id] = file_sha256
+    return bound
+
+
 @dataclass(frozen=True)
 class BridgeEmissionPolicy:
     """The reviewed standard for projecting a bridge binding as identity."""

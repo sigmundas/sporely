@@ -182,3 +182,33 @@ not resolve, is a real NorTaxa taxon: Gloeophyllum odoratum, NorTaxa-canonical
 Sporely 626327, in Group B with COL 3GBK2 (Sporely 11307, `shared_synonymy`).
 It is a temporary fixture. If Stage 2 reconciles that pair, the test needs a
 synthetic id.
+
+## Stage 1A — reviewed mappings for the approved manifest
+
+The owner approved one manifest, `stage0/group-a-shared-synonymy--ordinary.manifest.json`
+(`file_sha256` `1eda453a…cda4d`, 3,383 members). `generate_stage1a_mappings.py`
+turns that decision into `policies/manual_mappings.yml`:
+
+- `approved_manifests` records the approval once: path, `file_sha256`, pins,
+  approver, date and decision reference;
+- `mappings` gains one approved `exact` record per member, NorTaxa taxonID →
+  COL usage, one line each, each carrying `approved_manifest` (the
+  `file_sha256` and the member it came from).
+
+The generator stops, writing nothing, unless the manifest hashes to the
+approved `file_sha256`, its pins equal the approved pins, and the registry
+already binds every member's NorTaxa usage (alias) and COL usage (anchor) to
+the member's `sporely_taxon_id`. It is idempotent; `--check` verifies the
+committed ledger is current.
+
+    .venv/bin/python database/taxonomy/evidence/taxonomy-v3/generate_stage1a_mappings.py --check
+
+The compiler and `validate_policies.py` both run
+`bridge_emission.verify_manifest_approvals`: a record that claims the approval
+is refused unless the manifest file still hashes to the cited digest and the
+record is exactly one of its members. Emission is unchanged: only
+`manual_approved_exact` bindings are published, so a sibling review class,
+`no_published_cross_reference`, and taxa new in a later NorTaxa release stay
+unemitted. NorTaxa 56227 (Craterellus tubaeformis) stays unresolved.
+Compiled `mappings.jsonl` records carry `approved_manifest_file_sha256`, so an
+emitted bridge traces to its record and the approval inside the release.

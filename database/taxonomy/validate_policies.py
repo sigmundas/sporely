@@ -16,7 +16,11 @@ if str(_SCRIPTS) not in sys.path:
 
 # One definition of what an approved reviewed relationship must carry, shared
 # with the compiler so the validator and the thing it validates cannot drift.
-from bridge_emission import missing_review_provenance  # noqa: E402
+from bridge_emission import (  # noqa: E402
+    BridgeEmissionError,
+    missing_review_provenance,
+    verify_manifest_approvals,
+)
 
 
 POLICY_DIR = Path(__file__).resolve().parent / "policies"
@@ -171,6 +175,10 @@ def validate(policy_dir: Path = POLICY_DIR) -> dict[str, Any]:
                 f"approved manual mapping {entry.get('mapping_id')!r} carries "
                 f"no {', '.join(absent)}"
             )
+    try:
+        verify_manifest_approvals(manual)
+    except BridgeEmissionError as exc:
+        raise PolicyError(f"manual mappings: {exc}") from exc
 
     supersessions = policies["concept_supersessions"]
     required = set(supersessions.get("schema", {}).get("required", []))

@@ -64,7 +64,9 @@ from bridge_emission import (  # noqa: E402
     EVIDENCE_CLASS_MANUAL_APPROVED_EXACT,
     EVIDENCE_CLASS_NONE,
     EVIDENCE_CLASS_REVIEWED_SUPERSESSION,
+    BridgeEmissionError,
     missing_review_provenance,
+    verify_manifest_approvals,
 )
 from cross_source_mapping import (  # noqa: E402
     BackboneIndex,
@@ -290,6 +292,9 @@ class ManualMapping:
     target_sporely_taxon_id: int | None
     relationship: str
     review_status: str
+    #: ``file_sha256`` of the owner-approved review manifest this record was
+    #: generated from, or ``""`` for an individually reviewed record.
+    approved_manifest_file_sha256: str = ""
 
 
 @dataclass(frozen=True)
@@ -377,6 +382,10 @@ def _load_manual_mappings(path: Path) -> list[ManualMapping]:
         raise CompilerError(f"{path}: malformed JSON: {exc}") from exc
     if not isinstance(doc, dict) or "mappings" not in doc:
         raise CompilerError(f"{path}: expected object with 'mappings' key")
+    try:
+        manifest_bound = verify_manifest_approvals(doc)
+    except BridgeEmissionError as exc:
+        raise CompilerError(f"{path}: {exc}") from exc
     out: list[ManualMapping] = []
     seen_source_usages: dict[tuple[str, str, str], str] = {}
     for index, entry in enumerate(doc.get("mappings") or []):
@@ -424,6 +433,7 @@ def _load_manual_mappings(path: Path) -> list[ManualMapping]:
             target_sporely_taxon_id=target_id,
             relationship=relationship,
             review_status=review_status,
+            approved_manifest_file_sha256=manifest_bound.get(mapping_id, ""),
         )
         # Duplicate/conflicting exact mappings against the SAME source usage
         # must fail closed. A source usage may not be pointed at two
@@ -2170,7 +2180,7 @@ def _build_mapping_records(
             anchor = registry.lookup(*mapping.target_source_usage)
             if anchor is not None:
                 target_sporely_taxon_id = anchor.sporely_taxon_id
-        records.append({
+        record = {
             "mapping_id": mapping.mapping_id,
             "source_usage": {
                 "source": mapping.source_usage[0],
@@ -2184,7 +2194,11 @@ def _build_mapping_records(
             "relationship": mapping.relationship,
             "review_status": mapping.review_status,
             "applied_in_release": release_id,
-        })
+        }
+        if mapping.approved_manifest_file_sha256:
+            record["approved_manifest_file_sha256"] = (
+                mapping.approved_manifest_file_sha256)
+        records.append(record)
     return records
 
 
