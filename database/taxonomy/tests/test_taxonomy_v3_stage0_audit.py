@@ -123,15 +123,28 @@ def _key(name, authorship):
 
 def _concept(name, authorship, rank, synonyms):
     """A read_nortaxa/read_col concept. ``synonyms`` entries are
-    ``(name, authorship)`` or ``(name, authorship, {(field, value), ...})``."""
+    ``(name, authorship)``, ``(name, authorship, {(field, value), ...})`` or,
+    for COL, ``(name, authorship, statuses, [usage, ...])`` with usages as
+    ``_usage`` builds them."""
     concept = {"accepted": _key(name, authorship), "rank": rank,
-               "synonyms": set(), "synonym_status": {}}
+               "synonyms": set(), "synonym_status": {}, "synonym_usages": {}}
     for entry in synonyms:
         key = _key(entry[0], entry[1])
         concept["synonyms"].add(key)
         concept["synonym_status"][key] = set(entry[2]) if len(entry) > 2 \
             else set()
+        if len(entry) > 3:
+            concept["synonym_usages"][key] = list(entry[3])
     return concept
+
+
+#: The COL source the pinned archives identify as NorTaxa.
+_NORTAXA_IN_COL = frozenset({"2030"})
+
+
+def _usage(col_id, source_id, merged, remarks="", name_remarks=""):
+    return {"col_usage_id": col_id, "source_id": source_id, "merged": merged,
+            "remarks": remarks, "name_remarks": name_remarks}
 
 
 def _shared_row(bridge, backbone):
@@ -152,11 +165,13 @@ def _review_class(bridge_synonyms, backbone_synonyms, *, name="Inocybe calospora
                                      bridge, backbone)
 
 
-def _kind(name, authorship, *, nortaxa=(), col=(),
+def _kind(name, authorship, *, nortaxa=(), col=(), usages=(),
           accepted=("inocybe undulatospora",)):
     evidence = {"name": name, "authorship": authorship,
                 "status": frozenset({("nortaxa", f, v) for f, v in nortaxa}
                                     | {("col", f, v) for f, v in col}),
+                "col_usages": tuple(usages),
+                "nortaxa_col_sources": _NORTAXA_IN_COL,
                 "accepted": frozenset(accepted)}
     return audit.classify_synonym(evidence)[0]
 
@@ -209,16 +224,72 @@ def test_synonym_kinds():
                  col={("col:nameStatus", "unacceptable")}) == "ordinary"
 
 
+def test_col_remarks_carry_explicit_nomenclatural_warnings():
+    def kind(remarks="", name_remarks=""):
+        return _kind("inocybe carpta", "Bres.", usages=[
+            _usage("U1", "2041", "true", remarks, name_remarks)])
+    # 56896 / 3F9D5: COL RQ6NJ, Polyporus cupreolaccatus Kalchbr.
+    assert kind("Publ.: Kalchbrenner, 1885. Öst. bot. Z. 35, not seen. Nom. "
+                "illeg., acc to Ryvarden (1976). Check legitimacy!") \
+        == "illegitimate"
+    assert kind('"A later homonym to Cantharellus pallidus Yasuda (1917). "') \
+        == "illegitimate"
+    # 204742 / MD6D7 and 74124 / R3ZLN.
+    assert kind('"nom. nud. "') == "not_validly_published"
+    assert kind(name_remarks="nom. nud.") == "not_validly_published"
+    assert kind("Name published without a valid description.") \
+        == "not_validly_published"
+    assert kind(name_remarks="Norman, ined.") == "unpublished"
+    # Other remarks are not evidence either way.
+    for remark in ("Check spelling!", "Erroneous author citation.",
+                   "Publ.: Fries, T.M., 1871, not seen.",
+                   '"non Arthopyrenia subfallax (Nyl.) Müll.Arg. "',
+                   '"är möjligen en egen art "'):
+        assert kind(remark) == "ordinary", remark
+
+
+def test_col_assertions_from_nortaxa_are_not_independent():
+    nortaxa = _usage("QNNBM", "2030", "true")
+    # Only NorTaxa, republished through COL: one source, not two.
+    assert _kind("inocybe carpta", "Bres.", usages=[nortaxa]) \
+        == "nortaxa_derived"
+    # A genuinely independent COL source counts, merged or not.
+    for independent in (_usage("QMNY", "2073", "false"),
+                        _usage("MD6D7", "2041", "true")):
+        assert _kind("inocybe carpta", "Bres.", usages=[independent]) \
+            == "ordinary"
+        assert _kind("inocybe carpta", "Bres.",
+                     usages=[nortaxa, independent]) == "ordinary"
+    # A weak name stays labelled by its nomenclatural kind.
+    assert _kind("inocybe carpta", "ined.", usages=[nortaxa]) == "unpublished"
+
+
+def test_nortaxa_col_source_is_resolved_from_the_pinned_titles():
+    sources = {"2030": {"title": "Nortaxa (Artsnavnebasen)"},
+               "2073": {"title": "Species Fungorum Plus"}}
+    assert audit.nortaxa_col_source("Nortaxa (Artsnavnebasen)", sources)[
+        "col_source_id"] == "2030"
+    for bad in ({"2073": sources["2073"]},
+                {**sources, "9": {"title": "Nortaxa (Artsnavnebasen)"}}):
+        try:
+            audit.nortaxa_col_source("Nortaxa (Artsnavnebasen)", bad)
+        except SystemExit:
+            continue
+        raise AssertionError(f"resolved NorTaxa from {bad}")
+
+
 # Pinned NorTaxa 1.284 / COL XR 2026-07-17 shared synonyms, with the statuses
 # both sources publish on them, for the associations the independent review
 # of the first split named.
 _CRATERELLUS = [
     ("Cantharellus infundibuliformis", "(Scop.) Fr.",
-     _nt("illegitimate"), _col()),
+     _nt("illegitimate"), _col(), [_usage("QMNY", "2073", "false")]),
     ("Merulius cantharelloides", "(Bull.) Purton",
-     _nt("illegitimate"), _col("unacceptable")),
+     _nt("illegitimate"), _col("unacceptable"),
+     [_usage("QNNBM", "2030", "true")]),
     ("Merulius infundibularis", "Kuntze",
-     _nt("illegitimate"), _col("unacceptable")),
+     _nt("illegitimate"), _col("unacceptable"),
+     [_usage("QNPGH", "2030", "true")]),
 ]
 _REVIEWED_CASES = {
     # nortaxa / col: (accepted name, authorship, shared synonyms, class)
@@ -245,24 +316,62 @@ _REVIEWED_CASES = {
     "170703/YLM6": ("Cortinarius nefastus", "Carteret & Reumaux", [
         ("Cortinarius holophaeus", "s. Brandrud et al.", _nt(""), _col())],
         "only_interpretation_qualified"),
+    # One independently corroborated synonym while NorTaxa publishes 7 and
+    # COL 51: the other two reach COL only from NorTaxa.
     "56227/Z8TV": ("Craterellus tubaeformis", "(Fr.) Quél.", _CRATERELLUS,
-                   "ordinary"),
+                   "single_shared_synonym_low_overlap", 7, 51),
+    "56896/3F9D5": ("Ganoderma pfeifferi", "Bres.", [
+        ("Polyporus cupreolaccatus", "Kalchbr.", _nt("illegitimate"),
+         _col("acceptable"), [_usage(
+             "RQ6NJ", "2041", "true",
+             "Publ.: Kalchbrenner, 1885. Öst. bot. Z. 35, not seen. Nom. "
+             "illeg., acc to Ryvarden (1976). Check legitimacy!")])],
+        "only_illegitimate"),
+    # The nom. nud. item is weak, but an independent Species Fungorum Plus
+    # synonym and a Dyntaxa one (merged into COL, still not NorTaxa) remain.
+    "204742/4VPGB": ("Sclerococcum homoclinellum", "(Nyl.) Ertz & Diederich", [
+        ("Buellia procervula", "Norman", _nt("illegitimate"),
+         _col("acceptable"), [_usage("MD6D7", "2041", "true", '"nom. nud. "')]),
+        ("Dactylospora homoclinella", "(Nyl.) Hafellner", {_NT_SYN}, _col(),
+         [_usage("33WS7", "2073", "false")]),
+        ("Karschia homoclinella", "(Nyl.) Arnold", _nt("illegitimate"),
+         _col("acceptable"), [_usage("Q9JLJ", "2041", "true")])],
+        "ordinary", 3, 6),
 }
 
 
-def _pinned_class(name, authorship, shared, *, rank="species",
-                  backbone_rank=None):
+def _pinned_class(name, authorship, shared, bridge_total=0, backbone_total=0,
+                  *, rank="species", backbone_rank=None):
+    """Shared entries are ``(name, authorship, nortaxa statuses, COL
+    statuses[, COL usages])``; each side is padded with unshared synonyms up
+    to its published synonym total."""
     bridge = _concept(name, authorship, rank,
-                      [(n, a, nt) for n, a, nt, _ in shared])
+                      [(e[0], e[1], e[2]) for e in shared]
+                      + [(f"Bridgea s{i}", "X")
+                         for i in range(bridge_total - len(shared))])
     backbone = _concept(name, authorship, backbone_rank or rank,
-                        [(n, a, col) for n, a, _, col in shared])
+                        [(e[0], e[1], e[3], *e[4:]) for e in shared]
+                        + [(f"Colia s{i}", "X")
+                           for i in range(backbone_total - len(shared))])
     return audit.shared_review_class(_shared_row(bridge, backbone),
-                                     bridge, backbone)
+                                     bridge, backbone, _NORTAXA_IN_COL)
 
 
 def test_reviewed_associations_classify_on_structured_status():
-    for case, (name, authorship, shared, expected) in _REVIEWED_CASES.items():
-        assert _pinned_class(name, authorship, shared) == expected, case
+    for case, (name, authorship, shared, expected, *totals) \
+            in _REVIEWED_CASES.items():
+        assert _pinned_class(name, authorship, shared, *totals) == expected, \
+            case
+
+
+def test_craterellus_counts_only_independent_corroboration():
+    name, authorship, shared = "Craterellus tubaeformis", "(Fr.) Quél.", \
+        _CRATERELLUS
+    assert _pinned_class(name, authorship, shared, 7, 51) \
+        == "single_shared_synonym_low_overlap"
+    # Were the two NorTaxa-sourced COL rows independent, it would be ordinary.
+    independent = [e[:4] + ([_usage("X", "2073", "false")],) for e in shared]
+    assert _pinned_class(name, authorship, independent, 7, 51) == "ordinary"
 
 
 def test_rank_mismatch_never_reaches_ordinary():
@@ -409,8 +518,8 @@ def test_tracked_review_manifests_partition_and_obey_their_rules():
             split.append(member[:width])
     assert sorted(split) == sorted(parent["members"])
     assert len(placed) == len(split) == parent["member_count"] == 4861
-    for case, (*_, expected) in _REVIEWED_CASES.items():
-        assert placed[tuple(case.split("/"))] == expected, case
+    for case, entry in _REVIEWED_CASES.items():
+        assert placed[tuple(case.split("/"))] == entry[3], case
 
 
 def test_summary_distributions():

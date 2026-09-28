@@ -68,6 +68,7 @@ import io
 import json
 import sys
 import unicodedata
+import xml.etree.ElementTree as ET
 import zipfile
 from pathlib import Path
 
@@ -162,9 +163,13 @@ def read_col(archive: Path, wanted: set[str]) -> dict[str, dict]:
     COL publishes a synonym as a usage whose ``col:parentID`` is the accepted
     usage, so the synonym set is collected by parent. ``synonym_status`` is as
     for ``read_nortaxa``, from ``col:status`` and ``col:nameStatus``.
+    ``synonym_usages`` maps each synonym key to the COL usages behind it, in
+    file order, each with its provenance (``col:sourceID``, ``clb:merged``)
+    and its free-text ``col:remarks`` and ``col:nameRemarks``.
     """
     concepts: dict[str, dict] = {
         usage_id: {"accepted": None, "synonyms": set(), "synonym_status": {},
+                   "synonym_usages": {},
                    "scientific_name": "", "authorship": "", "rank": ""}
         for usage_id in wanted
     }
@@ -200,7 +205,41 @@ def read_col(archive: Path, wanted: set[str]) -> dict[str, dict]:
                     key, set()).update({
                         ("col:status", status),
                         ("col:nameStatus", field(parts, "col:nameStatus"))})
+                concepts[parent_id]["synonym_usages"].setdefault(
+                    key, []).append({
+                        "col_usage_id": usage_id,
+                        "source_id": field(parts, "col:sourceID"),
+                        "merged": field(parts, "clb:merged"),
+                        "remarks": field(parts, "col:remarks"),
+                        "name_remarks": field(parts, "col:nameRemarks")})
     return concepts
+
+
+def read_nortaxa_title(archive: Path) -> str:
+    """The dataset title the pinned NorTaxa archive's ``eml.xml`` declares."""
+    with zipfile.ZipFile(archive) as bundle, bundle.open("eml.xml") as handle:
+        title = ET.parse(handle).getroot().find("./dataset/title")
+    if title is None or not (title.text or "").strip():
+        raise SystemExit(f"{archive}: eml.xml declares no dataset title")
+    return title.text.strip()
+
+
+def read_col_sources(archive: Path, source_ids: set[str]) -> dict[str, dict]:
+    """``{col:sourceID: {title, alias}}`` from the COL archive's
+    ``source/<id>.yaml`` metadata, for the wanted ids present in it."""
+    import yaml  # the policy loaders already depend on PyYAML
+
+    out = {}
+    with zipfile.ZipFile(archive) as bundle:
+        names = set(bundle.namelist())
+        for source_id in sorted(source_ids):
+            member = f"source/{source_id}.yaml"
+            if member not in names:
+                continue
+            meta = yaml.safe_load(bundle.read(member)) or {}
+            out[source_id] = {"title": str(meta.get("title") or ""),
+                              "alias": str(meta.get("alias") or "")}
+    return out
 
 
 # ---------------------------------------------------------------- grading ---

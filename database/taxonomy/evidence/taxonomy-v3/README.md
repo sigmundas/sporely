@@ -41,34 +41,79 @@ text with the predicate that executes it:
 1. `SYNONYM_KIND_TESTS` gives every shared synonym one kind: the first test
    it meets, most certain evidence first — the sources' structured statuses
    (NorTaxa `nomenclaturalStatus`, COL `col:status` / `col:nameStatus`), then
-   authorship annotations, then exact name comparison, then a spelling
-   heuristic — else `ordinary`. Structured status always wins over a string
-   heuristic.
+   textual annotations (authorship, then a COL usage's `col:remarks` /
+   `col:nameRemarks`), then exact name comparison, then a spelling heuristic,
+   then provenance — else `ordinary`. Structured status always wins over a
+   string heuristic.
 2. `SHARED_REVIEW_CLASS_TESTS` gives the association the first class whose
    rule it meets, stated over those kinds. `ordinary` states its full
    conditions and holds exactly when no earlier rule does.
 
 Each review manifest carries its `membership_rule`, both precedence lists and
-the kind rules, the parent's `members_sha256` and its cloud-scope count. Its
-members are the parent's columns plus `shared_synonym_kind_counts` (exact) and
+the kind rules, the COL source identified as NorTaxa, the parent's
+`members_sha256` and its cloud-scope count. Its members are the parent's
+columns plus `shared_synonym_kind_counts` (exact) and
 `shared_synonym_evidence`: for each listed shared synonym, its kind, the
-evidence that decided it and both sources' structured statuses on it.
+evidence that decided it, both sources' structured statuses on it and the
+source and `clb:merged` flag of each COL usage behind it.
 
 An association is `ordinary` only when both accepted usages are species, the
 accepted name keys agree, and at least one shared synonym is of kind
-`ordinary` — a name both sources publish with an authorship, that neither
-source marks orthographic, manuscript, not validly published or misapplied,
-that COL does not publish as an ambiguous (pro parte) synonym, whose
-authorship carries no `ined.`, `nom. herb.`, `nom. nud.`, `nom. inval.`,
-`nom. illeg.`, sensu-style or `p.p.` qualifier, and that is neither accepted
-name nor almost spelled like one — unless that is its only `ordinary` shared
-synonym while each source publishes at least five. A weak synonym beside an
-`ordinary` one does not demote it.
+`ordinary`, unless that is its only `ordinary` shared synonym while each source
+publishes at least five. A shared synonym is `ordinary` when:
 
-NorTaxa `illegitimate` and COL `unacceptable` are recorded in the evidence but
-do not make a synonym weak: illegitimacy concerns which name is correct, not
-whether a name is established, and NorTaxa sets it on 6,868 of the 8,965
-Group-A shared synonyms, including all three of Craterellus tubaeformis's.
+- both sources publish it with an authorship;
+- neither source's structured status marks it orthographic, manuscript, not
+  validly published or misapplied, and COL does not publish it as an
+  ambiguous (pro parte) synonym;
+- its authorship carries no `ined.`, `nom. herb.`, `nom. nud.`, `nom. inval.`,
+  `nom. illeg.`, sensu-style or `p.p.` qualifier, and no COL usage behind it
+  has a remark or name remark carrying `ined.`, `nom. herb.`, `nom. nud.`,
+  `nom. inval.`, `nom. illeg.`, "later homonym" or "published without a valid
+  description";
+- it is neither accepted name nor almost spelled like one; and
+- at least one COL usage behind it comes from a COL source other than NorTaxa.
+
+A weak synonym beside an `ordinary` one does not demote the association.
+
+### What the pinned evidence establishes
+
+Structured status and textual annotation are separate signals, and each is
+used only as far as the pinned archives support it.
+
+- **NorTaxa structured statuses.** `meta.xml` maps `nomenclaturalStatus` to
+  the Darwin Core term, and `eml.xml` defines no values. `illegitimate` is set
+  on 6,868 of the 8,965 Group-A shared synonyms, including usages that other
+  sources treat as ordinary synonyms or basionyms (Lichen parietinus L.,
+  NorTaxa 89847, is the basionym of Xanthoria parietina in Species Fungorum
+  and COL). Its formal meaning is not established here. It is too broad to
+  reject automatically, so it is recorded but not used. `orthographic`,
+  `notvalidlypublished` and `misapplied` are specific and are used.
+- **COL `col:nameStatus`.** This is a name status separate from
+  `col:status = synonym`. `unacceptable` is not used: some of its values are
+  propagated from NorTaxa, while some independently sourced ones mark real
+  problems such as documented later homonyms. Those problems are caught by
+  the textual warnings instead. `not established` and `manuscript` are used.
+- **Textual annotations.** An explicit invalidity, illegitimacy or homonym
+  warning in an authorship or in a COL remark makes that evidence item weak.
+  Only the narrow phrases above are read. Citations, spelling or
+  author-citation queries and taxonomic doubts are not evidence either way.
+  Four otherwise ordinary items are weak only because of a remark: COL RQ6NJ
+  (Nom. illeg.), M6LB4 (later homonym), R3ZLN and MD6D7 (nom. nud.). Two
+  associations change class because of them: 56896 / 3F9D5 becomes
+  `only_illegitimate`, and 56216 / QMQN, whose only independent synonym is the
+  later homonym, becomes `only_mixed_weak`. 74124 and 204742 keep other
+  independent `ordinary` synonyms.
+- **Provenance.** COL XR merges programmatically integrated sources into the
+  expert-curated base release. A COL usage whose `col:sourceID` is NorTaxa's
+  COL source republishes NorTaxa's own assertion, so it is not independent
+  corroboration of it. That source is identified at run time as the one COL
+  source whose `source/<id>.yaml` title equals the NorTaxa archive's `eml.xml`
+  dataset title, `Nortaxa (Artsnavnebasen)`, which is COL source 2030. The
+  audit fails unless exactly one matches. Other merged sources (Dyntaxa, UKSI,
+  FinBIF and others) are independent sources and still count. Of the 8,966
+  COL usages behind the 8,965 Group-A shared synonyms, 3,316 come from source
+  2030.
 
 `members_sha256` covers only the columns and members, so an empty manifest has
 the same value in every class. `file_sha256` (in `coverage-report.json`) also
@@ -102,15 +147,16 @@ is. The cloud scope is 52,917 concepts, all COL-canonical.
 | `only_orthographic_variant` | 35 | 29 |
 | `only_unpublished` | 20 | 5 |
 | `only_not_validly_published` | 11 | 6 |
-| `only_illegitimate` | 0 | 0 |
+| `only_illegitimate` | 1 | 1 |
 | `only_interpretation_qualified` | 20 | 20 |
 | `only_pro_parte` | 39 | 25 |
 | `only_accepted_name_reauthored` | 1 | 0 |
 | `only_unauthored` | 71 | 9 |
 | `only_name_variant` | 74 | 24 |
-| `only_mixed_weak` | 7 | 3 |
-| `single_shared_synonym_low_overlap` | 41 | 15 |
-| `ordinary` | 4,489 | 1,741 |
+| `only_nortaxa_derived` | 971 | 122 |
+| `only_mixed_weak` | 70 | 16 |
+| `single_shared_synonym_low_overlap` | 112 | 33 |
+| `ordinary` | 3,383 | 1,587 |
 
 The one former `one_directional_accepted_synonymy` member, NorTaxa 227128 /
 COL 35YQ2 (Sporely 3841), was a grading artifact: NorTaxa publishes a synonym

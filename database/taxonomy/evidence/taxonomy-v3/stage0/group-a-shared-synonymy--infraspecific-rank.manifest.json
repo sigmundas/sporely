@@ -41,7 +41,7 @@
     "unauthored": 1
    },
    [
-    "unauthored: empty authorship [col col:nameStatus=unacceptable, col col:status=synonym, nortaxa nomenclaturalStatus=illegitimate, nortaxa taxonomicStatus=synonym]"
+    "unauthored: empty authorship [col col:nameStatus=unacceptable, col col:status=synonym, nortaxa nomenclaturalStatus=illegitimate, nortaxa taxonomicStatus=synonym, col source=2030 merged=true]"
    ]
   ],
   [
@@ -63,13 +63,14 @@
    10,
    4,
    {
-    "ordinary": 2,
+    "nortaxa_derived": 1,
+    "ordinary": 1,
     "unauthored": 1
    },
    [
-    "ordinary: none of the weak kinds [col col:nameStatus=unacceptable, col col:status=synonym, nortaxa nomenclaturalStatus=illegitimate, nortaxa taxonomicStatus=synonym]",
-    "unauthored: empty authorship [col col:nameStatus=unacceptable, col col:status=synonym, nortaxa nomenclaturalStatus=illegitimate, nortaxa taxonomicStatus=synonym]",
-    "ordinary: none of the weak kinds [col col:status=synonym, nortaxa nomenclaturalStatus=illegitimate, nortaxa taxonomicStatus=synonym]"
+    "nortaxa_derived: every COL usage has col:sourceID 2030 (M4QV5, clb:merged=true) [col col:nameStatus=unacceptable, col col:status=synonym, nortaxa nomenclaturalStatus=illegitimate, nortaxa taxonomicStatus=synonym, col source=2030 merged=true]",
+    "unauthored: empty authorship [col col:nameStatus=unacceptable, col col:status=synonym, nortaxa nomenclaturalStatus=illegitimate, nortaxa taxonomicStatus=synonym, col source=2030 merged=true]",
+    "ordinary: none of the weak kinds [col col:status=synonym, nortaxa nomenclaturalStatus=illegitimate, nortaxa taxonomicStatus=synonym, col source=7888 merged=true]"
    ]
   ],
   [
@@ -90,11 +91,11 @@
    6,
    4,
    {
-    "ordinary": 2
+    "nortaxa_derived": 2
    },
    [
-    "ordinary: none of the weak kinds [col col:nameStatus=unacceptable, col col:status=synonym, nortaxa nomenclaturalStatus=illegitimate, nortaxa taxonomicStatus=synonym]",
-    "ordinary: none of the weak kinds [col col:nameStatus=unacceptable, col col:status=synonym, nortaxa nomenclaturalStatus=illegitimate, nortaxa taxonomicStatus=synonym]"
+    "nortaxa_derived: every COL usage has col:sourceID 2030 (SNWTG, clb:merged=true) [col col:nameStatus=unacceptable, col col:status=synonym, nortaxa nomenclaturalStatus=illegitimate, nortaxa taxonomicStatus=synonym, col source=2030 merged=true]",
+    "nortaxa_derived: every COL usage has col:sourceID 2030 (SP2QL, clb:merged=true) [col col:nameStatus=unacceptable, col col:status=synonym, nortaxa nomenclaturalStatus=illegitimate, nortaxa taxonomicStatus=synonym, col source=2030 merged=true]"
    ]
   ],
   [
@@ -114,10 +115,10 @@
    2,
    2,
    {
-    "ordinary": 1
+    "nortaxa_derived": 1
    },
    [
-    "ordinary: none of the weak kinds [col col:nameStatus=unacceptable, col col:status=synonym, nortaxa nomenclaturalStatus=illegitimate, nortaxa taxonomicStatus=synonym]"
+    "nortaxa_derived: every COL usage has col:sourceID 2030 (SNNWD, clb:merged=true) [col col:nameStatus=unacceptable, col col:status=synonym, nortaxa nomenclaturalStatus=illegitimate, nortaxa taxonomicStatus=synonym, col source=2030 merged=true]"
    ]
   ],
   [
@@ -140,7 +141,7 @@
     "unauthored": 1
    },
    [
-    "unauthored: empty authorship [col col:status=synonym, nortaxa taxonomicStatus=synonym]"
+    "unauthored: empty authorship [col col:status=synonym, nortaxa taxonomicStatus=synonym, col source=2030 merged=true]"
    ]
   ],
   [
@@ -160,10 +161,10 @@
    1,
    2,
    {
-    "ordinary": 1
+    "nortaxa_derived": 1
    },
    [
-    "ordinary: none of the weak kinds [col col:nameStatus=unacceptable, col col:status=synonym, nortaxa nomenclaturalStatus=illegitimate, nortaxa taxonomicStatus=synonym]"
+    "nortaxa_derived: every COL usage has col:sourceID 2030 (QNT2L, clb:merged=true) [col col:nameStatus=unacceptable, col col:status=synonym, nortaxa nomenclaturalStatus=illegitimate, nortaxa taxonomicStatus=synonym, col source=2030 merged=true]"
    ]
   ],
   [
@@ -186,7 +187,7 @@
     "name_variant": 1
    },
    [
-    "name_variant: near-spelling of accepted 'galerina vittiformis var. vittiformis' [col col:nameStatus=unacceptable, col col:status=synonym, nortaxa nomenclaturalStatus=illegitimate, nortaxa taxonomicStatus=synonym]"
+    "name_variant: near-spelling of accepted 'galerina vittiformis var. vittiformis' [col col:nameStatus=unacceptable, col col:status=synonym, nortaxa nomenclaturalStatus=illegitimate, nortaxa taxonomicStatus=synonym, col source=2030 merged=true]"
    ]
   ],
   [
@@ -206,10 +207,10 @@
    1,
    1,
    {
-    "ordinary": 1
+    "nortaxa_derived": 1
    },
    [
-    "ordinary: none of the weak kinds [col col:nameStatus=unacceptable, col col:status=synonym, nortaxa nomenclaturalStatus=illegitimate, nortaxa taxonomicStatus=synonym]"
+    "nortaxa_derived: every COL usage has col:sourceID 2030 (MNT2F, clb:merged=true) [col col:nameStatus=unacceptable, col col:status=synonym, nortaxa nomenclaturalStatus=illegitimate, nortaxa taxonomicStatus=synonym, col source=2030 merged=true]"
    ]
   ],
   [
@@ -229,10 +230,10 @@
    1,
    1,
    {
-    "ordinary": 1
+    "nortaxa_derived": 1
    },
    [
-    "ordinary: none of the weak kinds [col col:nameStatus=unacceptable, col col:status=synonym, nortaxa nomenclaturalStatus=illegitimate, nortaxa taxonomicStatus=synonym]"
+    "nortaxa_derived: every COL usage has col:sourceID 2030 (SLW5K, clb:merged=true) [col col:nameStatus=unacceptable, col col:status=synonym, nortaxa nomenclaturalStatus=illegitimate, nortaxa taxonomicStatus=synonym, col source=2030 merged=true]"
    ]
   ],
   [
@@ -255,7 +256,7 @@
     "unpublished": 1
    },
    [
-    "unpublished: authorship 'ined' [col col:nameStatus=unacceptable, col col:status=synonym, nortaxa nomenclaturalStatus=illegitimate, nortaxa taxonomicStatus=synonym]"
+    "unpublished: authorship 'ined' [col col:nameStatus=unacceptable, col col:status=synonym, nortaxa nomenclaturalStatus=illegitimate, nortaxa taxonomicStatus=synonym, col source=2030 merged=true]"
    ]
   ],
   [
@@ -275,10 +276,10 @@
    1,
    1,
    {
-    "ordinary": 1
+    "nortaxa_derived": 1
    },
    [
-    "ordinary: none of the weak kinds [col col:nameStatus=unacceptable, col col:status=synonym, nortaxa nomenclaturalStatus=illegitimate, nortaxa taxonomicStatus=synonym]"
+    "nortaxa_derived: every COL usage has col:sourceID 2030 (MFM3R, clb:merged=true) [col col:nameStatus=unacceptable, col col:status=synonym, nortaxa nomenclaturalStatus=illegitimate, nortaxa taxonomicStatus=synonym, col source=2030 merged=true]"
    ]
   ],
   [
@@ -298,10 +299,10 @@
    1,
    1,
    {
-    "ordinary": 1
+    "nortaxa_derived": 1
    },
    [
-    "ordinary: none of the weak kinds [col col:nameStatus=unacceptable, col col:status=synonym, nortaxa nomenclaturalStatus=illegitimate, nortaxa taxonomicStatus=synonym]"
+    "nortaxa_derived: every COL usage has col:sourceID 2030 (THYD5, clb:merged=true) [col col:nameStatus=unacceptable, col col:status=synonym, nortaxa nomenclaturalStatus=illegitimate, nortaxa taxonomicStatus=synonym, col source=2030 merged=true]"
    ]
   ],
   [
@@ -321,10 +322,10 @@
    1,
    1,
    {
-    "ordinary": 1
+    "nortaxa_derived": 1
    },
    [
-    "ordinary: none of the weak kinds [col col:nameStatus=unacceptable, col col:status=synonym, nortaxa nomenclaturalStatus=illegitimate, nortaxa taxonomicStatus=synonym]"
+    "nortaxa_derived: every COL usage has col:sourceID 2030 (LSF5Z, clb:merged=true) [col col:nameStatus=unacceptable, col col:status=synonym, nortaxa nomenclaturalStatus=illegitimate, nortaxa taxonomicStatus=synonym, col source=2030 merged=true]"
    ]
   ],
   [
@@ -347,12 +348,12 @@
    3,
    {
     "name_variant": 1,
-    "ordinary": 2
+    "nortaxa_derived": 2
    },
    [
-    "name_variant: near-spelling of accepted 'cladonia arbuscula subsp. beringiana' [col col:nameStatus=unacceptable, col col:status=synonym, nortaxa nomenclaturalStatus=illegitimate, nortaxa taxonomicStatus=synonym]",
-    "ordinary: none of the weak kinds [col col:nameStatus=unacceptable, col col:status=synonym, nortaxa nomenclaturalStatus=illegitimate, nortaxa taxonomicStatus=synonym]",
-    "ordinary: none of the weak kinds [col col:nameStatus=unacceptable, col col:status=synonym, nortaxa nomenclaturalStatus=illegitimate, nortaxa taxonomicStatus=synonym]"
+    "name_variant: near-spelling of accepted 'cladonia arbuscula subsp. beringiana' [col col:nameStatus=unacceptable, col col:status=synonym, nortaxa nomenclaturalStatus=illegitimate, nortaxa taxonomicStatus=synonym, col source=2030 merged=true]",
+    "nortaxa_derived: every COL usage has col:sourceID 2030 (MJSJ3, clb:merged=true) [col col:nameStatus=unacceptable, col col:status=synonym, nortaxa nomenclaturalStatus=illegitimate, nortaxa taxonomicStatus=synonym, col source=2030 merged=true]",
+    "nortaxa_derived: every COL usage has col:sourceID 2030 (MK8MG, clb:merged=true) [col col:nameStatus=unacceptable, col col:status=synonym, nortaxa nomenclaturalStatus=illegitimate, nortaxa taxonomicStatus=synonym, col source=2030 merged=true]"
    ]
   ],
   [
@@ -374,12 +375,12 @@
    3,
    3,
    {
-    "ordinary": 3
+    "nortaxa_derived": 3
    },
    [
-    "ordinary: none of the weak kinds [col col:nameStatus=unacceptable, col col:status=synonym, nortaxa nomenclaturalStatus=illegitimate, nortaxa taxonomicStatus=synonym]",
-    "ordinary: none of the weak kinds [col col:nameStatus=unacceptable, col col:status=synonym, nortaxa nomenclaturalStatus=illegitimate, nortaxa taxonomicStatus=synonym]",
-    "ordinary: none of the weak kinds [col col:nameStatus=unacceptable, col col:status=synonym, nortaxa nomenclaturalStatus=illegitimate, nortaxa taxonomicStatus=synonym]"
+    "nortaxa_derived: every COL usage has col:sourceID 2030 (MKNH9, clb:merged=true) [col col:nameStatus=unacceptable, col col:status=synonym, nortaxa nomenclaturalStatus=illegitimate, nortaxa taxonomicStatus=synonym, col source=2030 merged=true]",
+    "nortaxa_derived: every COL usage has col:sourceID 2030 (MKNGZ, clb:merged=true) [col col:nameStatus=unacceptable, col col:status=synonym, nortaxa nomenclaturalStatus=illegitimate, nortaxa taxonomicStatus=synonym, col source=2030 merged=true]",
+    "nortaxa_derived: every COL usage has col:sourceID 2030 (MKSYC, clb:merged=true) [col col:nameStatus=unacceptable, col col:status=synonym, nortaxa nomenclaturalStatus=illegitimate, nortaxa taxonomicStatus=synonym, col source=2030 merged=true]"
    ]
   ],
   [
@@ -402,12 +403,12 @@
    3,
    {
     "name_variant": 1,
-    "ordinary": 2
+    "nortaxa_derived": 2
    },
    [
-    "ordinary: none of the weak kinds [col col:nameStatus=unacceptable, col col:status=synonym, nortaxa nomenclaturalStatus=illegitimate, nortaxa taxonomicStatus=synonym]",
-    "name_variant: near-spelling of accepted 'cladonia portentosa subsp. pacifica' [col col:nameStatus=unacceptable, col col:status=synonym, nortaxa nomenclaturalStatus=illegitimate, nortaxa taxonomicStatus=synonym]",
-    "ordinary: none of the weak kinds [col col:nameStatus=unacceptable, col col:status=synonym, nortaxa nomenclaturalStatus=illegitimate, nortaxa taxonomicStatus=synonym]"
+    "nortaxa_derived: every COL usage has col:sourceID 2030 (MJSRC, clb:merged=true) [col col:nameStatus=unacceptable, col col:status=synonym, nortaxa nomenclaturalStatus=illegitimate, nortaxa taxonomicStatus=synonym, col source=2030 merged=true]",
+    "name_variant: near-spelling of accepted 'cladonia portentosa subsp. pacifica' [col col:nameStatus=unacceptable, col col:status=synonym, nortaxa nomenclaturalStatus=illegitimate, nortaxa taxonomicStatus=synonym, col source=2030 merged=true]",
+    "nortaxa_derived: every COL usage has col:sourceID 2030 (MKPML, clb:merged=true) [col col:nameStatus=unacceptable, col col:status=synonym, nortaxa nomenclaturalStatus=illegitimate, nortaxa taxonomicStatus=synonym, col source=2030 merged=true]"
    ]
   ],
   [
@@ -430,7 +431,7 @@
     "name_variant": 1
    },
    [
-    "name_variant: near-spelling of accepted 'cladonia subtenuis f. cinerea' [col col:nameStatus=unacceptable, col col:status=synonym, nortaxa nomenclaturalStatus=illegitimate, nortaxa taxonomicStatus=synonym]"
+    "name_variant: near-spelling of accepted 'cladonia subtenuis f. cinerea' [col col:nameStatus=unacceptable, col col:status=synonym, nortaxa nomenclaturalStatus=illegitimate, nortaxa taxonomicStatus=synonym, col source=2030 merged=true]"
    ]
   ],
   [
@@ -453,7 +454,7 @@
     "name_variant": 1
    },
    [
-    "name_variant: near-spelling of accepted 'cladonia terrae-novae f. cinerescens' [col col:nameStatus=unacceptable, col col:status=synonym, nortaxa nomenclaturalStatus=illegitimate, nortaxa taxonomicStatus=synonym]"
+    "name_variant: near-spelling of accepted 'cladonia terrae-novae f. cinerescens' [col col:nameStatus=unacceptable, col col:status=synonym, nortaxa nomenclaturalStatus=illegitimate, nortaxa taxonomicStatus=synonym, col source=2030 merged=true]"
    ]
   ],
   [
@@ -473,10 +474,10 @@
    2,
    3,
    {
-    "ordinary": 1
+    "nortaxa_derived": 1
    },
    [
-    "ordinary: none of the weak kinds [col col:nameStatus=unacceptable, col col:status=synonym, nortaxa nomenclaturalStatus=illegitimate, nortaxa taxonomicStatus=synonym]"
+    "nortaxa_derived: every COL usage has col:sourceID 2030 (PRKHY, clb:merged=true) [col col:nameStatus=unacceptable, col col:status=synonym, nortaxa nomenclaturalStatus=illegitimate, nortaxa taxonomicStatus=synonym, col source=2030 merged=true]"
    ]
   ],
   [
@@ -499,7 +500,7 @@
     "unpublished": 1
    },
    [
-    "unpublished: authorship 'ined' [col col:nameStatus=unacceptable, col col:status=synonym, nortaxa nomenclaturalStatus=illegitimate, nortaxa taxonomicStatus=synonym]"
+    "unpublished: authorship 'ined' [col col:nameStatus=unacceptable, col col:status=synonym, nortaxa nomenclaturalStatus=illegitimate, nortaxa taxonomicStatus=synonym, col source=2030 merged=true]"
    ]
   ],
   [
@@ -520,11 +521,11 @@
    2,
    2,
    {
-    "ordinary": 2
+    "nortaxa_derived": 2
    },
    [
-    "ordinary: none of the weak kinds [col col:nameStatus=unacceptable, col col:status=synonym, nortaxa nomenclaturalStatus=illegitimate, nortaxa taxonomicStatus=synonym]",
-    "ordinary: none of the weak kinds [col col:nameStatus=unacceptable, col col:status=synonym, nortaxa nomenclaturalStatus=illegitimate, nortaxa taxonomicStatus=synonym]"
+    "nortaxa_derived: every COL usage has col:sourceID 2030 (PRJYB, clb:merged=true) [col col:nameStatus=unacceptable, col col:status=synonym, nortaxa nomenclaturalStatus=illegitimate, nortaxa taxonomicStatus=synonym, col source=2030 merged=true]",
+    "nortaxa_derived: every COL usage has col:sourceID 2030 (PSC4M, clb:merged=true) [col col:nameStatus=unacceptable, col col:status=synonym, nortaxa nomenclaturalStatus=illegitimate, nortaxa taxonomicStatus=synonym, col source=2030 merged=true]"
    ]
   ],
   [
@@ -545,11 +546,11 @@
    2,
    2,
    {
-    "ordinary": 2
+    "nortaxa_derived": 2
    },
    [
-    "ordinary: none of the weak kinds [col col:nameStatus=unacceptable, col col:status=synonym, nortaxa nomenclaturalStatus=illegitimate, nortaxa taxonomicStatus=synonym]",
-    "ordinary: none of the weak kinds [col col:nameStatus=unacceptable, col col:status=synonym, nortaxa nomenclaturalStatus=illegitimate, nortaxa taxonomicStatus=synonym]"
+    "nortaxa_derived: every COL usage has col:sourceID 2030 (PTF63, clb:merged=true) [col col:nameStatus=unacceptable, col col:status=synonym, nortaxa nomenclaturalStatus=illegitimate, nortaxa taxonomicStatus=synonym, col source=2030 merged=true]",
+    "nortaxa_derived: every COL usage has col:sourceID 2030 (VKTDN, clb:merged=true) [col col:nameStatus=unacceptable, col col:status=synonym, nortaxa nomenclaturalStatus=illegitimate, nortaxa taxonomicStatus=synonym, col source=2030 merged=true]"
    ]
   ],
   [
@@ -570,11 +571,11 @@
    2,
    2,
    {
-    "ordinary": 2
+    "nortaxa_derived": 2
    },
    [
-    "ordinary: none of the weak kinds [col col:nameStatus=unacceptable, col col:status=synonym, nortaxa nomenclaturalStatus=illegitimate, nortaxa taxonomicStatus=synonym]",
-    "ordinary: none of the weak kinds [col col:nameStatus=unacceptable, col col:status=synonym, nortaxa nomenclaturalStatus=illegitimate, nortaxa taxonomicStatus=synonym]"
+    "nortaxa_derived: every COL usage has col:sourceID 2030 (MHKPY, clb:merged=true) [col col:nameStatus=unacceptable, col col:status=synonym, nortaxa nomenclaturalStatus=illegitimate, nortaxa taxonomicStatus=synonym, col source=2030 merged=true]",
+    "nortaxa_derived: every COL usage has col:sourceID 2030 (MHKQK, clb:merged=true) [col col:nameStatus=unacceptable, col col:status=synonym, nortaxa nomenclaturalStatus=illegitimate, nortaxa taxonomicStatus=synonym, col source=2030 merged=true]"
    ]
   ],
   [
@@ -594,10 +595,10 @@
    1,
    1,
    {
-    "ordinary": 1
+    "nortaxa_derived": 1
    },
    [
-    "ordinary: none of the weak kinds [col col:nameStatus=unacceptable, col col:status=synonym, nortaxa nomenclaturalStatus=illegitimate, nortaxa taxonomicStatus=synonym]"
+    "nortaxa_derived: every COL usage has col:sourceID 2030 (SCSTS, clb:merged=true) [col col:nameStatus=unacceptable, col col:status=synonym, nortaxa nomenclaturalStatus=illegitimate, nortaxa taxonomicStatus=synonym, col source=2030 merged=true]"
    ]
   ],
   [
@@ -623,16 +624,16 @@
    9,
    7,
    {
-    "ordinary": 7
+    "nortaxa_derived": 7
    },
    [
-    "ordinary: none of the weak kinds [col col:nameStatus=unacceptable, col col:status=synonym, nortaxa nomenclaturalStatus=illegitimate, nortaxa taxonomicStatus=synonym]",
-    "ordinary: none of the weak kinds [col col:nameStatus=unacceptable, col col:status=synonym, nortaxa nomenclaturalStatus=illegitimate, nortaxa taxonomicStatus=synonym]",
-    "ordinary: none of the weak kinds [col col:nameStatus=unacceptable, col col:status=synonym, nortaxa nomenclaturalStatus=illegitimate, nortaxa taxonomicStatus=synonym]",
-    "ordinary: none of the weak kinds [col col:nameStatus=unacceptable, col col:status=synonym, nortaxa nomenclaturalStatus=illegitimate, nortaxa taxonomicStatus=synonym]",
-    "ordinary: none of the weak kinds [col col:nameStatus=unacceptable, col col:status=synonym, nortaxa nomenclaturalStatus=illegitimate, nortaxa taxonomicStatus=synonym]",
-    "ordinary: none of the weak kinds [col col:nameStatus=unacceptable, col col:status=synonym, nortaxa nomenclaturalStatus=illegitimate, nortaxa taxonomicStatus=synonym]",
-    "ordinary: none of the weak kinds [col col:nameStatus=unacceptable, col col:status=synonym, nortaxa nomenclaturalStatus=illegitimate, nortaxa taxonomicStatus=synonym]"
+    "nortaxa_derived: every COL usage has col:sourceID 2030 (S6JCC, clb:merged=true) [col col:nameStatus=unacceptable, col col:status=synonym, nortaxa nomenclaturalStatus=illegitimate, nortaxa taxonomicStatus=synonym, col source=2030 merged=true]",
+    "nortaxa_derived: every COL usage has col:sourceID 2030 (S6JCJ, clb:merged=true) [col col:nameStatus=unacceptable, col col:status=synonym, nortaxa nomenclaturalStatus=illegitimate, nortaxa taxonomicStatus=synonym, col source=2030 merged=true]",
+    "nortaxa_derived: every COL usage has col:sourceID 2030 (S6JDZ, clb:merged=true) [col col:nameStatus=unacceptable, col col:status=synonym, nortaxa nomenclaturalStatus=illegitimate, nortaxa taxonomicStatus=synonym, col source=2030 merged=true]",
+    "nortaxa_derived: every COL usage has col:sourceID 2030 (S6KD4, clb:merged=true) [col col:nameStatus=unacceptable, col col:status=synonym, nortaxa nomenclaturalStatus=illegitimate, nortaxa taxonomicStatus=synonym, col source=2030 merged=true]",
+    "nortaxa_derived: every COL usage has col:sourceID 2030 (S6KDS, clb:merged=true) [col col:nameStatus=unacceptable, col col:status=synonym, nortaxa nomenclaturalStatus=illegitimate, nortaxa taxonomicStatus=synonym, col source=2030 merged=true]",
+    "nortaxa_derived: every COL usage has col:sourceID 2030 (VKVNQ, clb:merged=true) [col col:nameStatus=unacceptable, col col:status=synonym, nortaxa nomenclaturalStatus=illegitimate, nortaxa taxonomicStatus=synonym, col source=2030 merged=true]",
+    "nortaxa_derived: every COL usage has col:sourceID 2030 (VKVNR, clb:merged=true) [col col:nameStatus=unacceptable, col col:status=synonym, nortaxa nomenclaturalStatus=illegitimate, nortaxa taxonomicStatus=synonym, col source=2030 merged=true]"
    ]
   ],
   [
@@ -652,10 +653,10 @@
    1,
    1,
    {
-    "ordinary": 1
+    "nortaxa_derived": 1
    },
    [
-    "ordinary: none of the weak kinds [col col:nameStatus=unacceptable, col col:status=synonym, nortaxa nomenclaturalStatus=illegitimate, nortaxa taxonomicStatus=synonym]"
+    "nortaxa_derived: every COL usage has col:sourceID 2030 (S6MVF, clb:merged=true) [col col:nameStatus=unacceptable, col col:status=synonym, nortaxa nomenclaturalStatus=illegitimate, nortaxa taxonomicStatus=synonym, col source=2030 merged=true]"
    ]
   ],
   [
@@ -675,10 +676,10 @@
    1,
    1,
    {
-    "ordinary": 1
+    "nortaxa_derived": 1
    },
    [
-    "ordinary: none of the weak kinds [col col:nameStatus=unacceptable, col col:status=synonym, nortaxa nomenclaturalStatus=illegitimate, nortaxa taxonomicStatus=synonym]"
+    "nortaxa_derived: every COL usage has col:sourceID 2030 (S6KFP, clb:merged=true) [col col:nameStatus=unacceptable, col col:status=synonym, nortaxa nomenclaturalStatus=illegitimate, nortaxa taxonomicStatus=synonym, col source=2030 merged=true]"
    ]
   ],
   [
@@ -701,13 +702,13 @@
    4,
    4,
    {
-    "ordinary": 4
+    "nortaxa_derived": 4
    },
    [
-    "ordinary: none of the weak kinds [col col:nameStatus=unacceptable, col col:status=synonym, nortaxa nomenclaturalStatus=illegitimate, nortaxa taxonomicStatus=synonym]",
-    "ordinary: none of the weak kinds [col col:nameStatus=unacceptable, col col:status=synonym, nortaxa nomenclaturalStatus=illegitimate, nortaxa taxonomicStatus=synonym]",
-    "ordinary: none of the weak kinds [col col:nameStatus=unacceptable, col col:status=synonym, nortaxa nomenclaturalStatus=illegitimate, nortaxa taxonomicStatus=synonym]",
-    "ordinary: none of the weak kinds [col col:nameStatus=unacceptable, col col:status=synonym, nortaxa nomenclaturalStatus=illegitimate, nortaxa taxonomicStatus=synonym]"
+    "nortaxa_derived: every COL usage has col:sourceID 2030 (PVFBH, clb:merged=true) [col col:nameStatus=unacceptable, col col:status=synonym, nortaxa nomenclaturalStatus=illegitimate, nortaxa taxonomicStatus=synonym, col source=2030 merged=true]",
+    "nortaxa_derived: every COL usage has col:sourceID 2030 (PVQ39, clb:merged=true) [col col:nameStatus=unacceptable, col col:status=synonym, nortaxa nomenclaturalStatus=illegitimate, nortaxa taxonomicStatus=synonym, col source=2030 merged=true]",
+    "nortaxa_derived: every COL usage has col:sourceID 2030 (RWZMY, clb:merged=true) [col col:nameStatus=unacceptable, col col:status=synonym, nortaxa nomenclaturalStatus=illegitimate, nortaxa taxonomicStatus=synonym, col source=2030 merged=true]",
+    "nortaxa_derived: every COL usage has col:sourceID 2030 (RWZVQ, clb:merged=true) [col col:nameStatus=unacceptable, col col:status=synonym, nortaxa nomenclaturalStatus=illegitimate, nortaxa taxonomicStatus=synonym, col source=2030 merged=true]"
    ]
   ],
   [
@@ -727,10 +728,10 @@
    1,
    1,
    {
-    "ordinary": 1
+    "nortaxa_derived": 1
    },
    [
-    "ordinary: none of the weak kinds [col col:nameStatus=unacceptable, col col:status=synonym, nortaxa nomenclaturalStatus=illegitimate, nortaxa taxonomicStatus=synonym]"
+    "nortaxa_derived: every COL usage has col:sourceID 2030 (RD74R, clb:merged=true) [col col:nameStatus=unacceptable, col col:status=synonym, nortaxa nomenclaturalStatus=illegitimate, nortaxa taxonomicStatus=synonym, col source=2030 merged=true]"
    ]
   ],
   [
@@ -751,11 +752,11 @@
    2,
    2,
    {
-    "ordinary": 2
+    "nortaxa_derived": 2
    },
    [
-    "ordinary: none of the weak kinds [col col:nameStatus=unacceptable, col col:status=synonym, nortaxa nomenclaturalStatus=illegitimate, nortaxa taxonomicStatus=synonym]",
-    "ordinary: none of the weak kinds [col col:nameStatus=unacceptable, col col:status=synonym, nortaxa nomenclaturalStatus=illegitimate, nortaxa taxonomicStatus=synonym]"
+    "nortaxa_derived: every COL usage has col:sourceID 2030 (NZ36P, clb:merged=true) [col col:nameStatus=unacceptable, col col:status=synonym, nortaxa nomenclaturalStatus=illegitimate, nortaxa taxonomicStatus=synonym, col source=2030 merged=true]",
+    "nortaxa_derived: every COL usage has col:sourceID 2030 (NZ54M, clb:merged=true) [col col:nameStatus=unacceptable, col col:status=synonym, nortaxa nomenclaturalStatus=illegitimate, nortaxa taxonomicStatus=synonym, col source=2030 merged=true]"
    ]
   ],
   [
@@ -776,11 +777,11 @@
    2,
    2,
    {
-    "ordinary": 2
+    "nortaxa_derived": 2
    },
    [
-    "ordinary: none of the weak kinds [col col:nameStatus=unacceptable, col col:status=synonym, nortaxa nomenclaturalStatus=illegitimate, nortaxa taxonomicStatus=synonym]",
-    "ordinary: none of the weak kinds [col col:nameStatus=unacceptable, col col:status=synonym, nortaxa nomenclaturalStatus=illegitimate, nortaxa taxonomicStatus=synonym]"
+    "nortaxa_derived: every COL usage has col:sourceID 2030 (NZ2FF, clb:merged=true) [col col:nameStatus=unacceptable, col col:status=synonym, nortaxa nomenclaturalStatus=illegitimate, nortaxa taxonomicStatus=synonym, col source=2030 merged=true]",
+    "nortaxa_derived: every COL usage has col:sourceID 2030 (Q4Z9X, clb:merged=true) [col col:nameStatus=unacceptable, col col:status=synonym, nortaxa nomenclaturalStatus=illegitimate, nortaxa taxonomicStatus=synonym, col source=2030 merged=true]"
    ]
   ],
   [
@@ -801,11 +802,11 @@
    2,
    2,
    {
-    "ordinary": 2
+    "nortaxa_derived": 2
    },
    [
-    "ordinary: none of the weak kinds [col col:nameStatus=unacceptable, col col:status=synonym, nortaxa nomenclaturalStatus=illegitimate, nortaxa taxonomicStatus=synonym]",
-    "ordinary: none of the weak kinds [col col:nameStatus=unacceptable, col col:status=synonym, nortaxa nomenclaturalStatus=illegitimate, nortaxa taxonomicStatus=synonym]"
+    "nortaxa_derived: every COL usage has col:sourceID 2030 (NZ23J, clb:merged=true) [col col:nameStatus=unacceptable, col col:status=synonym, nortaxa nomenclaturalStatus=illegitimate, nortaxa taxonomicStatus=synonym, col source=2030 merged=true]",
+    "nortaxa_derived: every COL usage has col:sourceID 2030 (PVS4P, clb:merged=true) [col col:nameStatus=unacceptable, col col:status=synonym, nortaxa nomenclaturalStatus=illegitimate, nortaxa taxonomicStatus=synonym, col source=2030 merged=true]"
    ]
   ],
   [
@@ -825,10 +826,10 @@
    3,
    1,
    {
-    "ordinary": 1
+    "nortaxa_derived": 1
    },
    [
-    "ordinary: none of the weak kinds [col col:nameStatus=unacceptable, col col:status=synonym, nortaxa nomenclaturalStatus=illegitimate, nortaxa taxonomicStatus=synonym]"
+    "nortaxa_derived: every COL usage has col:sourceID 2030 (MN2B6, clb:merged=true) [col col:nameStatus=unacceptable, col col:status=synonym, nortaxa nomenclaturalStatus=illegitimate, nortaxa taxonomicStatus=synonym, col source=2030 merged=true]"
    ]
   ],
   [
@@ -848,10 +849,10 @@
    1,
    2,
    {
-    "ordinary": 1
+    "nortaxa_derived": 1
    },
    [
-    "ordinary: none of the weak kinds [col col:nameStatus=unacceptable, col col:status=synonym, nortaxa nomenclaturalStatus=illegitimate, nortaxa taxonomicStatus=synonym]"
+    "nortaxa_derived: every COL usage has col:sourceID 2030 (PC3DK, clb:merged=true) [col col:nameStatus=unacceptable, col col:status=synonym, nortaxa nomenclaturalStatus=illegitimate, nortaxa taxonomicStatus=synonym, col source=2030 merged=true]"
    ]
   ],
   [
@@ -871,15 +872,20 @@
    1,
    1,
    {
-    "ordinary": 1
+    "nortaxa_derived": 1
    },
    [
-    "ordinary: none of the weak kinds [col col:nameStatus=unacceptable, col col:status=synonym, nortaxa nomenclaturalStatus=illegitimate, nortaxa taxonomicStatus=synonym]"
+    "nortaxa_derived: every COL usage has col:sourceID 2030 (TYTD6, clb:merged=true) [col col:nameStatus=unacceptable, col col:status=synonym, nortaxa nomenclaturalStatus=illegitimate, nortaxa taxonomicStatus=synonym, col source=2030 merged=true]"
    ]
   ]
  ],
- "members_sha256": "2f50f12007df4f743209dfb9d9f38ab063550f22d25047607421cf01db4f2b30",
+ "members_sha256": "56f2c4bd898e550ef63be105233c3f52cc3c8bd05a71daa9787844881fe4b8b9",
  "membership_rule": "both accepted usages have the same infraspecific rank (subspecies, variety, form)",
+ "nortaxa_col_source": {
+  "col_source_id": "2030",
+  "matched_on": "COL source/<id>.yaml title == NorTaxa eml.xml dataset title",
+  "title": "Nortaxa (Artsnavnebasen)"
+ },
  "note": "Immutable review input derived deterministically from the parent shared_synonymy manifest; the review classes partition it. A member belongs to the first class, in review_class_precedence, whose membership_rule it meets; each shared synonym has the first kind, in synonym_kind_precedence, whose rule it meets. Membership is pinned to the release and source archives below; it approves nothing and never extends to taxa in a later source release. shared_synonyms and shared_synonym_evidence list at most 10 names; shared_synonym_count and shared_synonym_kind_counts are exact.",
  "parent_manifest": {
   "evidence_class": "shared_synonymy",
@@ -929,6 +935,7 @@
   "only_accepted_name_reauthored",
   "only_unauthored",
   "only_name_variant",
+  "only_nortaxa_derived",
   "only_mixed_weak",
   "single_shared_synonym_low_overlap",
   "ordinary"
@@ -944,18 +951,20 @@
   "accepted_name_reauthored",
   "unauthored",
   "name_variant",
+  "nortaxa_derived",
   "ordinary"
  ],
  "synonym_kinds": {
   "accepted_name_reauthored": "the canonical name is either accepted name itself, under another authorship",
-  "illegitimate": "the authorship carries 'nom. illeg.' (the sources' structured illegitimacy statuses, NorTaxa 'illegitimate' and COL 'unacceptable', are not used)",
+  "illegitimate": "an explicit textual warning: the authorship carries 'nom. illeg.', or a COL usage's col:remarks/col:nameRemarks carries 'nom. illeg.' or 'later homonym' (the structured statuses NorTaxa 'illegitimate' and COL 'unacceptable' are not used)",
   "interpretation_qualified": "a misapplied usage (NorTaxa nomenclaturalStatus or COL col:status 'misapplied'), or the authorship carries a sensu-style qualifier ('sensu', 's.', 'ss.', 'auct.')",
   "name_variant": "no structured status applies, but the name is almost spelled like either accepted name: same word count once hyphens are removed, and every word, genus included, within Levenshtein distance 2 (a possible misspelling or a near-identical combination, unconfirmed by the sources)",
-  "not_validly_published": "NorTaxa nomenclaturalStatus 'notvalidlypublished', COL col:nameStatus 'not established', or the authorship carries 'nom. nud.' or 'nom. inval.'",
+  "nortaxa_derived": "otherwise ordinary, but every COL usage behind it comes from the COL source that is NorTaxa (see nortaxa_col_source): COL republishes NorTaxa's assertion, so the two sources do not independently corroborate it",
+  "not_validly_published": "NorTaxa nomenclaturalStatus 'notvalidlypublished', COL col:nameStatus 'not established', the authorship carries 'nom. nud.' or 'nom. inval.', or a COL usage's col:remarks/col:nameRemarks carries 'nom. nud.', 'nom. inval.' or 'published without a valid description'",
   "ordinary": "meets none of the tests above",
   "orthographic_variant": "either source's structured status marks the usage an orthographic variant (NorTaxa nomenclaturalStatus 'orthographic')",
   "pro_parte": "COL col:status 'ambiguous synonym', or the authorship carries 'p.p.' or 'pro parte'",
   "unauthored": "the authorship is empty, so the match is on the name alone",
-  "unpublished": "COL col:nameStatus 'manuscript', or the authorship carries 'ined' or 'nom. herb.'"
+  "unpublished": "COL col:nameStatus 'manuscript', or the authorship or a COL usage's col:remarks/col:nameRemarks carries 'ined' or 'nom. herb.'"
  }
 }

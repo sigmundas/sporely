@@ -62,6 +62,8 @@ from cross_reference_evidence import (  # noqa: E402
     REVIEWABLE,
     grade,
     read_col,
+    read_col_sources,
+    read_nortaxa_title,
     read_nortaxa,
     shared_synonym_keys,
 )
@@ -402,9 +404,14 @@ def _is_near_name(name: str, accepted: str) -> bool:
 
 
 #: Structured source statuses, as ``(source, field, value)``, that make a
-#: shared synonym weak. NorTaxa ``illegitimate`` and COL ``unacceptable`` are
-#: deliberately absent: illegitimacy concerns which name is correct, not
-#: whether the name is established, and NorTaxa sets it on most synonyms.
+#: shared synonym weak. Structured status and textual annotation are separate
+#: signals. NorTaxa ``illegitimate`` and COL ``unacceptable`` are deliberately
+#: absent: the pinned archives define neither (NorTaxa's meta.xml maps the
+#: Darwin Core field, its eml.xml has no glossary), NorTaxa sets it on most
+#: shared synonyms, including basionyms another source accepts, and COL's
+#: value is sometimes propagated from NorTaxa. That is too broad to reject
+#: automatically; an explicit textual illegitimacy or homonym warning is used
+#: instead (``_ANNOTATION_ILLEGITIMATE``, ``_REMARK_ILLEGITIMATE``).
 _STATUS_ORTHOGRAPHIC = frozenset({
     ("nortaxa", "nomenclaturalStatus", "orthographic")})
 _STATUS_UNPUBLISHED = frozenset({("col", "col:nameStatus", "manuscript")})
@@ -422,6 +429,17 @@ _ANNOTATION_ILLEGITIMATE = re.compile(r"\bnom\.\s*illeg\b")
 _ANNOTATION_INTERPRETATION = re.compile(r"\b(sensu|auct|ss?)\.|\bsensu\b")
 _ANNOTATION_PRO_PARTE = re.compile(r"\bp\.\s*p\.|\bpro\s+parte\b")
 
+#: Explicit nomenclatural warnings in a COL usage's ``col:remarks`` or
+#: ``col:nameRemarks``, matched case-insensitively. Only these narrow phrases
+#: are read; other remarks (citations, spelling or author-citation queries,
+#: taxonomic doubt) are not evidence either way.
+_REMARK_UNPUBLISHED = re.compile(r"\bined\b|\bnom\.\s*herb\b", re.I)
+_REMARK_NOT_VALIDLY_PUBLISHED = re.compile(
+    r"\bnom\.\s*(nud|inval)\b|\bpublished without a valid description\b",
+    re.I)
+_REMARK_ILLEGITIMATE = re.compile(r"\bnom\.\s*illeg\b|\blater homonym\b",
+                                  re.I)
+
 
 def _status_basis(evidence: dict, statuses: frozenset) -> str | None:
     hits = sorted(evidence["status"] & statuses)
@@ -432,6 +450,27 @@ def _status_basis(evidence: dict, statuses: frozenset) -> str | None:
 def _annotation_basis(evidence: dict, pattern: re.Pattern) -> str | None:
     match = pattern.search(evidence["authorship"])
     return f"authorship '{match.group(0)}'" if match else None
+
+
+def _remark_basis(evidence: dict, pattern: re.Pattern) -> str | None:
+    for usage in evidence["col_usages"]:
+        for field in ("remarks", "name_remarks"):
+            match = pattern.search(usage[field])
+            if match:
+                return (f"COL {usage['col_usage_id']} "
+                        f"col:{'nameRemarks' if field == 'name_remarks' else 'remarks'}"
+                        f" '{match.group(0)}'")
+    return None
+
+
+def _nortaxa_derived(e: dict) -> str | None:
+    """COL publishes this synonym only through usages NorTaxa supplied."""
+    sources = {u["source_id"] for u in e["col_usages"]}
+    if not sources or not sources <= e["nortaxa_col_sources"]:
+        return None
+    return "every COL usage has col:sourceID " + ", ".join(
+        f"{u['source_id']} ({u['col_usage_id']}, clb:merged={u['merged']})"
+        for u in e["col_usages"])
 
 
 def _first_basis(*bases: str | None) -> str | None:
@@ -450,31 +489,39 @@ def _reauthored(e: dict) -> str | None:
 
 
 #: ``(kind, rule, test)`` in precedence order, most certain evidence first:
-#: the sources' structured statuses, then authorship annotations, then exact
-#: name comparisons, then the spelling heuristic. A test returns the evidence
-#: it found, or None.
+#: the sources' structured statuses, then textual annotations (authorship,
+#: then COL remarks), then exact name comparisons, then the spelling
+#: heuristic. Provenance comes last: it does not make a name weak, it decides
+#: whether an otherwise ordinary synonym is independently corroborated, so a
+#: synonym that is already weak keeps its nomenclatural kind. A test returns
+#: the evidence it found, or None.
 SYNONYM_KIND_TESTS = (
     ("orthographic_variant",
      "either source's structured status marks the usage an orthographic "
      "variant (NorTaxa nomenclaturalStatus 'orthographic')",
      lambda e: _status_basis(e, _STATUS_ORTHOGRAPHIC)),
     ("unpublished",
-     "COL col:nameStatus 'manuscript', or the authorship carries 'ined' or "
-     "'nom. herb.'",
+     "COL col:nameStatus 'manuscript', or the authorship or a COL usage's "
+     "col:remarks/col:nameRemarks carries 'ined' or 'nom. herb.'",
      lambda e: _first_basis(_status_basis(e, _STATUS_UNPUBLISHED),
-                            _annotation_basis(e, _ANNOTATION_UNPUBLISHED))),
+                            _annotation_basis(e, _ANNOTATION_UNPUBLISHED),
+                            _remark_basis(e, _REMARK_UNPUBLISHED))),
     ("not_validly_published",
      "NorTaxa nomenclaturalStatus 'notvalidlypublished', COL col:nameStatus "
-     "'not established', or the authorship carries 'nom. nud.' or "
-     "'nom. inval.'",
+     "'not established', the authorship carries 'nom. nud.' or "
+     "'nom. inval.', or a COL usage's col:remarks/col:nameRemarks carries "
+     "'nom. nud.', 'nom. inval.' or 'published without a valid description'",
      lambda e: _first_basis(
          _status_basis(e, _STATUS_NOT_VALIDLY_PUBLISHED),
-         _annotation_basis(e, _ANNOTATION_NOT_VALIDLY_PUBLISHED))),
+         _annotation_basis(e, _ANNOTATION_NOT_VALIDLY_PUBLISHED),
+         _remark_basis(e, _REMARK_NOT_VALIDLY_PUBLISHED))),
     ("illegitimate",
-     "the authorship carries 'nom. illeg.' (the sources' structured "
-     "illegitimacy statuses, NorTaxa 'illegitimate' and COL 'unacceptable', "
-     "are not used)",
-     lambda e: _annotation_basis(e, _ANNOTATION_ILLEGITIMATE)),
+     "an explicit textual warning: the authorship carries 'nom. illeg.', or a "
+     "COL usage's col:remarks/col:nameRemarks carries 'nom. illeg.' or "
+     "'later homonym' (the structured statuses NorTaxa 'illegitimate' and "
+     "COL 'unacceptable' are not used)",
+     lambda e: _first_basis(_annotation_basis(e, _ANNOTATION_ILLEGITIMATE),
+                            _remark_basis(e, _REMARK_ILLEGITIMATE))),
     ("interpretation_qualified",
      "a misapplied usage (NorTaxa nomenclaturalStatus or COL col:status "
      "'misapplied'), or the authorship carries a sensu-style qualifier "
@@ -498,15 +545,22 @@ SYNONYM_KIND_TESTS = (
      "every word, genus included, within Levenshtein distance 2 (a possible "
      "misspelling or a near-identical combination, unconfirmed by the "
      "sources)", _near_name),
+    ("nortaxa_derived",
+     "otherwise ordinary, but every COL usage behind it comes from the COL "
+     "source that is NorTaxa (see nortaxa_col_source): COL republishes "
+     "NorTaxa's assertion, so the two sources do not independently "
+     "corroborate it", _nortaxa_derived),
 )
 SYNONYM_KIND_ORDINARY = "ordinary"
 WEAK_SYNONYM_KINDS = tuple(kind for kind, _, _ in SYNONYM_KIND_TESTS)
 
 
-def synonym_evidence(key: tuple[str, str], bridge: dict,
-                     backbone: dict) -> dict:
+def synonym_evidence(key: tuple[str, str], bridge: dict, backbone: dict,
+                     nortaxa_col_sources: frozenset = frozenset()) -> dict:
     """What the classifier sees of one shared synonym: its name key, both
-    sources' non-empty structured statuses on it, and both accepted names."""
+    sources' non-empty structured statuses on it, the COL usages behind it
+    (provenance and remarks), the COL source ids that are NorTaxa, and both
+    accepted names."""
     status = {("nortaxa", field, value)
               for field, value in bridge.get("synonym_status", {}).get(key, ())
               if value}
@@ -514,6 +568,9 @@ def synonym_evidence(key: tuple[str, str], bridge: dict,
                for field, value in backbone.get("synonym_status", {}).get(key, ())
                if value}
     return {"name": key[0], "authorship": key[1], "status": frozenset(status),
+            "col_usages": tuple(
+                backbone.get("synonym_usages", {}).get(key, ())),
+            "nortaxa_col_sources": frozenset(nortaxa_col_sources),
             "accepted": frozenset({bridge["accepted"][0],
                                    backbone["accepted"][0]})}
 
@@ -528,14 +585,17 @@ def classify_synonym(evidence: dict) -> tuple[str, str]:
 
 
 def _describe_synonym(evidence: dict, kind: str, basis: str) -> str:
-    status = ", ".join(f"{src} {field}={value}"
-                       for src, field, value in sorted(evidence["status"]))
-    return f"{kind}: {basis}" + (f" [{status}]" if status else "")
+    status = [f"{src} {field}={value}"
+              for src, field, value in sorted(evidence["status"])]
+    status += [f"col source={u['source_id']} merged={u['merged']}"
+               for u in evidence["col_usages"]]
+    return f"{kind}: {basis}" + (f" [{', '.join(status)}]" if status else "")
 
 
-def association_facts(row: dict, bridge: dict, backbone: dict) -> dict:
+def association_facts(row: dict, bridge: dict, backbone: dict,
+                      nortaxa_col_sources: frozenset = frozenset()) -> dict:
     """Everything a review class rule reads, for one shared-synonymy row."""
-    evidence = [synonym_evidence(key, bridge, backbone)
+    evidence = [synonym_evidence(key, bridge, backbone, nortaxa_col_sources)
                 for key in shared_synonym_keys(bridge, backbone)]
     classified = [classify_synonym(e) for e in evidence]
     return {
@@ -624,13 +684,29 @@ def review_class_for(facts: dict) -> str:
     raise SystemExit(f"shared-synonymy row meets no review class: {facts}")
 
 
-def shared_review_class(row: dict, bridge: dict, backbone: dict) -> str:
+def shared_review_class(row: dict, bridge: dict, backbone: dict,
+                        nortaxa_col_sources: frozenset = frozenset()) -> str:
     """The ``SHARED_REVIEW_CLASS_TESTS`` class a shared-synonymy row falls in."""
-    return review_class_for(association_facts(row, bridge, backbone))
+    return review_class_for(
+        association_facts(row, bridge, backbone, nortaxa_col_sources))
+
+
+def nortaxa_col_source(nortaxa_title: str, sources: dict[str, dict]) -> dict:
+    """The one COL source whose metadata title is the pinned NorTaxa archive's
+    EML title. Fails closed unless exactly one of ``sources`` matches."""
+    matches = sorted(sid for sid, meta in sources.items()
+                     if meta["title"] == nortaxa_title)
+    if len(matches) != 1:
+        raise SystemExit(f"expected one COL source titled {nortaxa_title!r}, "
+                         f"found {matches}")
+    return {"col_source_id": matches[0], "title": nortaxa_title,
+            "matched_on": "COL source/<id>.yaml title == NorTaxa eml.xml "
+                          "dataset title"}
 
 
 def build_review_manifest(review_class: str, rows: list[dict], pins: dict,
-                          parent: dict) -> dict:
+                          parent: dict, nortaxa_source: dict | None = None
+                          ) -> dict:
     """One ``shared_synonymy`` review class, derived from ``parent``.
 
     Members are the parent's columns followed by ``REVIEW_EXTRA_COLUMNS``: the
@@ -658,6 +734,7 @@ def build_review_manifest(review_class: str, rows: list[dict], pins: dict,
         "parent_manifest": {"evidence_class": EVIDENCE_SHARED_SYNONYMY,
                             "member_count": parent["member_count"],
                             "members_sha256": parent["members_sha256"]},
+        "nortaxa_col_source": nortaxa_source,
         "pins": pins,
         "columns": columns,
         "member_count": len(members),
@@ -804,18 +881,32 @@ def audit(args: argparse.Namespace) -> dict[str, dict]:
                 "sha256": _sha256_file(args.scope_policy),
                 "scope_predicate_id": "global_macrofungi_policy_v1"}}
 
-    for row in a_rows:
-        if row["evidence_class"] == EVIDENCE_SHARED_SYNONYMY:
-            facts = association_facts(row, nortaxa[row["nortaxa_taxon_id"]],
-                                      col[row["col_usage_id"]])
-            row["review_class"] = review_class_for(facts)
-            row["shared_synonym_kind_counts"] = _histogram(facts["kinds"])
-            row["shared_synonym_evidence"] = facts["descriptions"][:10]
+    shared_rows = [r for r in a_rows
+                   if r["evidence_class"] == EVIDENCE_SHARED_SYNONYMY]
+    provenance = collections.Counter(
+        (usage["source_id"], usage["merged"])
+        for row in shared_rows
+        for key in shared_synonym_keys(nortaxa[row["nortaxa_taxon_id"]],
+                                       col[row["col_usage_id"]])
+        for usage in col[row["col_usage_id"]]["synonym_usages"][key])
+    col_sources = read_col_sources(args.col_archive,
+                                   {sid for sid, _ in provenance})
+    nortaxa_source = nortaxa_col_source(
+        read_nortaxa_title(args.nortaxa_archive), col_sources)
+    nortaxa_sources = frozenset({nortaxa_source["col_source_id"]})
+
+    for row in shared_rows:
+        facts = association_facts(row, nortaxa[row["nortaxa_taxon_id"]],
+                                  col[row["col_usage_id"]], nortaxa_sources)
+        row["review_class"] = review_class_for(facts)
+        row["shared_synonym_kind_counts"] = _histogram(facts["kinds"])
+        row["shared_synonym_evidence"] = facts["descriptions"][:10]
 
     manifests = {cls: build_manifest(cls, a_rows, pins)
                  for cls in EVIDENCE_CLASSES}
     parent = manifests[EVIDENCE_SHARED_SYNONYMY]
-    review_manifests = {cls: build_review_manifest(cls, a_rows, pins, parent)
+    review_manifests = {cls: build_review_manifest(cls, a_rows, pins, parent,
+                                                   nortaxa_source)
                         for cls in SHARED_REVIEW_CLASSES}
     width = len(MANIFEST_COLUMNS)
     split = sorted(m[:width] for rm in review_manifests.values()
@@ -870,6 +961,12 @@ def audit(args: argparse.Namespace) -> dict[str, dict]:
                            "class, in precedence order, whose rule it meets"),
             "precedence": list(SHARED_REVIEW_CLASSES),
             "rules": SHARED_REVIEW_CLASSES,
+            "nortaxa_col_source": nortaxa_source,
+            "shared_synonym_col_provenance": [
+                {"col_source_id": sid, "clb_merged": merged,
+                 "title": col_sources.get(sid, {}).get("title", ""),
+                 "col_usages": count}
+                for (sid, merged), count in sorted(provenance.items())],
             "synonym_kind_precedence": list(SYNONYM_KINDS),
             "synonym_kinds": SYNONYM_KINDS,
             "shared_synonym_kind_totals": {

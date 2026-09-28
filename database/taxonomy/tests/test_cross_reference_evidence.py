@@ -135,3 +135,48 @@ def test_readers_record_structured_synonym_status(tmp_path):
     # Recording status changes no grade.
     assert xref.grade(nortaxa["59001"], col["YKPL"])["evidence_class"] \
         == xref.EVIDENCE_SHARED_SYNONYMY
+
+
+def test_col_reader_keeps_usage_provenance_and_remarks(tmp_path):
+    # COL XR 2026-07-17 rows under Craterellus tubaeformis Z8TV, plus
+    # RQ6NJ's remark (it sits under Ganoderma pfeifferi 3F9D5).
+    columns = _COL_COLUMNS + ["col:sourceID", "clb:merged", "col:remarks",
+                              "col:nameRemarks"]
+    col = xref.read_col(_archive(tmp_path / "c.zip", "NameUsage.tsv", columns, [
+        ["Z8TV", "P", "accepted", "species", "Craterellus tubaeformis",
+         "(Fr.) Quél.", "2073", "false", "", ""],
+        ["QMNY", "Z8TV", "synonym", "species",
+         "Cantharellus infundibuliformis", "(Scop.) Fr.", "2073", "false",
+         "", ""],
+        ["QNNBM", "Z8TV", "synonym", "species", "Merulius cantharelloides",
+         "(Bull.) Purton", "2030", "true", "", ""],
+        ["RQ6NJ", "Z8TV", "synonym", "species", "Polyporus cupreolaccatus",
+         "Kalchbr.", "2041", "true", "Nom. illeg., acc to Ryvarden (1976).",
+         ""]]), {"Z8TV"})["Z8TV"]
+    usages = col["synonym_usages"]
+    assert usages[("merulius cantharelloides", "(Bull.) Purton")] == [{
+        "col_usage_id": "QNNBM", "source_id": "2030", "merged": "true",
+        "remarks": "", "name_remarks": ""}]
+    assert usages[("cantharellus infundibuliformis", "(Scop.) Fr.")][0][
+        "source_id"] == "2073"
+    assert usages[("polyporus cupreolaccatus", "Kalchbr.")][0]["remarks"] \
+        == "Nom. illeg., acc to Ryvarden (1976)."
+
+
+def test_source_metadata_readers(tmp_path):
+    with zipfile.ZipFile(tmp_path / "col.zip", "w") as bundle:
+        bundle.writestr("source/2030.yaml", "---\nkey: 2030\ntitle: Nortaxa "
+                        "(Artsnavnebasen)\nalias: Artsnavnebasen\n")
+        bundle.writestr("source/2073.yaml",
+                        "---\nkey: 2073\ntitle: Species Fungorum Plus\n")
+    with zipfile.ZipFile(tmp_path / "nortaxa.zip", "w") as bundle:
+        bundle.writestr("eml.xml", '<eml:eml xmlns:eml="eml://x"><dataset>'
+                        '<title xml:lang="eng">Nortaxa (Artsnavnebasen)'
+                        '</title></dataset></eml:eml>')
+    assert xref.read_col_sources(tmp_path / "col.zip",
+                                 {"2030", "2073", "404"}) == {
+        "2030": {"title": "Nortaxa (Artsnavnebasen)",
+                 "alias": "Artsnavnebasen"},
+        "2073": {"title": "Species Fungorum Plus", "alias": ""}}
+    assert xref.read_nortaxa_title(tmp_path / "nortaxa.zip") \
+        == "Nortaxa (Artsnavnebasen)"

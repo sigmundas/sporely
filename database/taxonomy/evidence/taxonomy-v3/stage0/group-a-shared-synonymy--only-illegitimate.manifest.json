@@ -1,5 +1,5 @@
 {
- "cloud_scope_member_count": 0,
+ "cloud_scope_member_count": 1,
  "columns": [
   "nortaxa_taxon_id",
   "col_usage_id",
@@ -19,10 +19,39 @@
  ],
  "evidence_class": "shared_synonymy",
  "format": "sporely-taxonomy-v3-review-manifest-v2",
- "member_count": 0,
- "members": [],
- "members_sha256": "ee6ac95e2c7591af7befba25ec799638ee87aea7a2036c89115f48ebb485c51f",
+ "member_count": 1,
+ "members": [
+  [
+   "56896",
+   "3F9D5",
+   10408,
+   true,
+   "Ganoderma pfeifferi Bres.",
+   "Ganoderma pfeifferi Bres.",
+   true,
+   false,
+   false,
+   1,
+   [
+    "polyporus cupreolaccatus Kalchbr."
+   ],
+   2,
+   14,
+   {
+    "illegitimate": 1
+   },
+   [
+    "illegitimate: COL RQ6NJ col:remarks 'Nom. illeg' [col col:nameStatus=acceptable, col col:status=synonym, nortaxa nomenclaturalStatus=illegitimate, nortaxa taxonomicStatus=synonym, col source=2041 merged=true]"
+   ]
+  ]
+ ],
+ "members_sha256": "e07fca738fc44bace5e91f2fe45ad822a42da85cef97bdb1965fc6023a6c5fdc",
  "membership_rule": "every shared synonym is of kind 'illegitimate'",
+ "nortaxa_col_source": {
+  "col_source_id": "2030",
+  "matched_on": "COL source/<id>.yaml title == NorTaxa eml.xml dataset title",
+  "title": "Nortaxa (Artsnavnebasen)"
+ },
  "note": "Immutable review input derived deterministically from the parent shared_synonymy manifest; the review classes partition it. A member belongs to the first class, in review_class_precedence, whose membership_rule it meets; each shared synonym has the first kind, in synonym_kind_precedence, whose rule it meets. Membership is pinned to the release and source archives below; it approves nothing and never extends to taxa in a later source release. shared_synonyms and shared_synonym_evidence list at most 10 names; shared_synonym_count and shared_synonym_kind_counts are exact.",
  "parent_manifest": {
   "evidence_class": "shared_synonymy",
@@ -72,6 +101,7 @@
   "only_accepted_name_reauthored",
   "only_unauthored",
   "only_name_variant",
+  "only_nortaxa_derived",
   "only_mixed_weak",
   "single_shared_synonym_low_overlap",
   "ordinary"
@@ -87,18 +117,20 @@
   "accepted_name_reauthored",
   "unauthored",
   "name_variant",
+  "nortaxa_derived",
   "ordinary"
  ],
  "synonym_kinds": {
   "accepted_name_reauthored": "the canonical name is either accepted name itself, under another authorship",
-  "illegitimate": "the authorship carries 'nom. illeg.' (the sources' structured illegitimacy statuses, NorTaxa 'illegitimate' and COL 'unacceptable', are not used)",
+  "illegitimate": "an explicit textual warning: the authorship carries 'nom. illeg.', or a COL usage's col:remarks/col:nameRemarks carries 'nom. illeg.' or 'later homonym' (the structured statuses NorTaxa 'illegitimate' and COL 'unacceptable' are not used)",
   "interpretation_qualified": "a misapplied usage (NorTaxa nomenclaturalStatus or COL col:status 'misapplied'), or the authorship carries a sensu-style qualifier ('sensu', 's.', 'ss.', 'auct.')",
   "name_variant": "no structured status applies, but the name is almost spelled like either accepted name: same word count once hyphens are removed, and every word, genus included, within Levenshtein distance 2 (a possible misspelling or a near-identical combination, unconfirmed by the sources)",
-  "not_validly_published": "NorTaxa nomenclaturalStatus 'notvalidlypublished', COL col:nameStatus 'not established', or the authorship carries 'nom. nud.' or 'nom. inval.'",
+  "nortaxa_derived": "otherwise ordinary, but every COL usage behind it comes from the COL source that is NorTaxa (see nortaxa_col_source): COL republishes NorTaxa's assertion, so the two sources do not independently corroborate it",
+  "not_validly_published": "NorTaxa nomenclaturalStatus 'notvalidlypublished', COL col:nameStatus 'not established', the authorship carries 'nom. nud.' or 'nom. inval.', or a COL usage's col:remarks/col:nameRemarks carries 'nom. nud.', 'nom. inval.' or 'published without a valid description'",
   "ordinary": "meets none of the tests above",
   "orthographic_variant": "either source's structured status marks the usage an orthographic variant (NorTaxa nomenclaturalStatus 'orthographic')",
   "pro_parte": "COL col:status 'ambiguous synonym', or the authorship carries 'p.p.' or 'pro parte'",
   "unauthored": "the authorship is empty, so the match is on the name alone",
-  "unpublished": "COL col:nameStatus 'manuscript', or the authorship carries 'ined' or 'nom. herb.'"
+  "unpublished": "COL col:nameStatus 'manuscript', or the authorship or a COL usage's col:remarks/col:nameRemarks carries 'ined' or 'nom. herb.'"
  }
 }
