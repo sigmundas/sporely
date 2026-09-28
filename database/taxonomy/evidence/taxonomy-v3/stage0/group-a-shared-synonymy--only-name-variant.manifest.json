@@ -1,0 +1,1807 @@
+{
+ "cloud_scope_member_count": 24,
+ "columns": [
+  "nortaxa_taxon_id",
+  "col_usage_id",
+  "sporely_taxon_id",
+  "in_cloud_scope",
+  "bridge_accepted_name",
+  "backbone_accepted_name",
+  "accepted_names_agree",
+  "bridge_lists_backbone_accepted_name_as_synonym",
+  "backbone_lists_bridge_accepted_name_as_synonym",
+  "shared_synonym_count",
+  "shared_synonyms",
+  "bridge_synonym_count",
+  "backbone_synonym_count",
+  "shared_synonym_kind_counts",
+  "shared_synonym_evidence"
+ ],
+ "evidence_class": "shared_synonymy",
+ "format": "sporely-taxonomy-v3-review-manifest-v2",
+ "member_count": 74,
+ "members": [
+  [
+   "122465",
+   "3Z537",
+   28798,
+   false,
+   "Melampsora laricis-pentandrae Kleb.",
+   "Melampsora laricis-pentandrae Kleb.",
+   true,
+   false,
+   false,
+   1,
+   [
+    "melampsora larici-pentandrae Kleb."
+   ],
+   1,
+   2,
+   {
+    "name_variant": 1
+   },
+   [
+    "name_variant: near-spelling of accepted 'melampsora laricis-pentandrae' [col col:status=synonym, nortaxa nomenclaturalStatus=illegitimate, nortaxa taxonomicStatus=synonym]"
+   ]
+  ],
+  [
+   "122565",
+   "6L7WN",
+   100720,
+   true,
+   "Gymnosporangium clavariiforme (Wulfen) DC.",
+   "Gymnosporangium clavariiforme (Wulfen) DC.",
+   true,
+   false,
+   false,
+   1,
+   [
+    "gymnosporangium clavariaeforme (Jacq.) DC."
+   ],
+   2,
+   26,
+   {
+    "name_variant": 1
+   },
+   [
+    "name_variant: near-spelling of accepted 'gymnosporangium clavariiforme' [col col:nameStatus=unacceptable, col col:status=synonym, nortaxa nomenclaturalStatus=illegitimate, nortaxa taxonomicStatus=synonym]"
+   ]
+  ],
+  [
+   "122935",
+   "7DX9K",
+   127503,
+   false,
+   "Uromyces gentianae Arthur",
+   "Uromyces gentianae Arthur",
+   true,
+   false,
+   false,
+   1,
+   [
+    "uromyces eugentianae Cummins"
+   ],
+   1,
+   3,
+   {
+    "name_variant": 1
+   },
+   [
+    "name_variant: near-spelling of accepted 'uromyces gentianae' [col col:status=synonym, nortaxa nomenclaturalStatus=illegitimate, nortaxa taxonomicStatus=synonym]"
+   ]
+  ],
+  [
+   "123033",
+   "43C8C",
+   32748,
+   false,
+   "Milesina kriegeriana (Magnus) Magnus",
+   "Milesina kriegeriana (Magnus) Magnus",
+   true,
+   false,
+   false,
+   1,
+   [
+    "milesia kriegeriana (Magnus) Arthur"
+   ],
+   1,
+   4,
+   {
+    "name_variant": 1
+   },
+   [
+    "name_variant: near-spelling of accepted 'milesina kriegeriana' [col col:status=synonym, nortaxa nomenclaturalStatus=illegitimate, nortaxa taxonomicStatus=synonym]"
+   ]
+  ],
+  [
+   "129068",
+   "4SDC5",
+   60617,
+   true,
+   "Rhizopogon subsalmonius A.H. Sm.",
+   "Rhizopogon subsalmonius A.H. Sm.",
+   true,
+   false,
+   false,
+   1,
+   [
+    "rhizopogon subsalmoneus A.H. Sm."
+   ],
+   1,
+   5,
+   {
+    "name_variant": 1
+   },
+   [
+    "name_variant: near-spelling of accepted 'rhizopogon subsalmonius' [col col:status=synonym, nortaxa taxonomicStatus=synonym]"
+   ]
+  ],
+  [
+   "131459",
+   "6S55P",
+   107617,
+   false,
+   "Mytilinidion gemmigenum Fuckel",
+   "Mytilinidion gemmigenum Fuckel",
+   true,
+   false,
+   false,
+   1,
+   [
+    "mytilidion gemmigenum Fuckel"
+   ],
+   1,
+   3,
+   {
+    "name_variant": 1
+   },
+   [
+    "name_variant: near-spelling of accepted 'mytilinidion gemmigenum' [col col:status=synonym, nortaxa taxonomicStatus=synonym]"
+   ]
+  ],
+  [
+   "133953",
+   "H7T5",
+   154436,
+   false,
+   "Ascochyta sorghi Sacc.",
+   "Ascochyta sorghi Sacc.",
+   true,
+   false,
+   false,
+   1,
+   [
+    "ascochyta sorghina Sacc."
+   ],
+   2,
+   3,
+   {
+    "name_variant": 1
+   },
+   [
+    "name_variant: near-spelling of accepted 'ascochyta sorghi' [col col:status=synonym, nortaxa taxonomicStatus=synonym]"
+   ]
+  ],
+  [
+   "137381",
+   "3Y9JL",
+   28234,
+   false,
+   "Marssonina chamerionis (Rostr.) Magnus",
+   "Marssonina chamerionis (Rostr.) Magnus",
+   true,
+   false,
+   false,
+   1,
+   [
+    "marssonia chamerionis Rostr."
+   ],
+   2,
+   3,
+   {
+    "name_variant": 1
+   },
+   [
+    "name_variant: near-spelling of accepted 'marssonina chamerionis' [col col:status=synonym, nortaxa taxonomicStatus=synonym]"
+   ]
+  ],
+  [
+   "142983",
+   "BQN5",
+   146717,
+   true,
+   "Aleurodiscus patelliformis G. Cunn.",
+   "Aleurodiscus patelliformis G. Cunn.",
+   true,
+   false,
+   false,
+   1,
+   [
+    "aleurodiscus patellaeformis G. Cunn."
+   ],
+   1,
+   1,
+   {
+    "name_variant": 1
+   },
+   [
+    "name_variant: near-spelling of accepted 'aleurodiscus patelliformis' [col col:status=synonym, nortaxa taxonomicStatus=synonym]"
+   ]
+  ],
+  [
+   "143134",
+   "3JKFX",
+   13401,
+   true,
+   "Hapalopilus phlebiiformis (Berk. ex Cooke) Ryvarden",
+   "Hapalopilus phlebiiformis (Berk. ex Cooke) Ryvarden",
+   true,
+   false,
+   false,
+   1,
+   [
+    "hapalopilus phlebiaeformis (Berk. ex Cooke) Ryvarden"
+   ],
+   1,
+   2,
+   {
+    "name_variant": 1
+   },
+   [
+    "name_variant: near-spelling of accepted 'hapalopilus phlebiiformis' [col col:status=synonym, nortaxa taxonomicStatus=synonym]"
+   ]
+  ],
+  [
+   "143206",
+   "3T5L3",
+   23793,
+   true,
+   "Lentinula boryana (Berk. & Mont.) Pegler",
+   "Lentinula boryana (Berk. & Mont.) Pegler",
+   true,
+   false,
+   false,
+   1,
+   [
+    "lentinus boryanus (Berk. & Mont.) Singer"
+   ],
+   1,
+   20,
+   {
+    "name_variant": 1
+   },
+   [
+    "name_variant: near-spelling of accepted 'lentinula boryana' [col col:status=synonym, nortaxa taxonomicStatus=synonym]"
+   ]
+  ],
+  [
+   "145000",
+   "MG5N3",
+   161099,
+   false,
+   "Caloplaca spitsbergensis H.Magn.",
+   "Caloplaca spitsbergensis H.Magn.",
+   true,
+   false,
+   false,
+   1,
+   [
+    "caloplaca spitzbergensis H. Magn."
+   ],
+   1,
+   1,
+   {
+    "name_variant": 1
+   },
+   [
+    "name_variant: near-spelling of accepted 'caloplaca spitsbergensis' [col col:status=synonym, nortaxa taxonomicStatus=synonym]"
+   ]
+  ],
+  [
+   "172782",
+   "3NJGK",
+   16965,
+   true,
+   "Hymenochaete resupinata (Sw.) Parmasto",
+   "Hymenochaete resupinata (Sw.) Parmasto",
+   true,
+   false,
+   false,
+   1,
+   [
+    "hydnochaete resupinata (Sw.) Ryvarden"
+   ],
+   3,
+   5,
+   {
+    "name_variant": 1
+   },
+   [
+    "name_variant: near-spelling of accepted 'hymenochaete resupinata' [col col:status=synonym, nortaxa taxonomicStatus=synonym]"
+   ]
+  ],
+  [
+   "173459",
+   "6KY2N",
+   100405,
+   false,
+   "Halecania pepegospora (H. Magn.) van den Boom",
+   "Halecania pepegospora (H. Magn.) van den Boom",
+   true,
+   false,
+   false,
+   1,
+   [
+    "lecania pepegospora H. Magn."
+   ],
+   1,
+   1,
+   {
+    "name_variant": 1
+   },
+   [
+    "name_variant: near-spelling of accepted 'halecania pepegospora' [col col:status=synonym, nortaxa taxonomicStatus=synonym]"
+   ]
+  ],
+  [
+   "173553",
+   "3NJCR",
+   16912,
+   true,
+   "Hymenochaete duportii (Pat.) T. Wagner & M. Fisch.",
+   "Hymenochaete duportii (Pat.) T. Wagner & M. Fisch.",
+   true,
+   false,
+   false,
+   1,
+   [
+    "hydnochaete duportii Pat."
+   ],
+   1,
+   1,
+   {
+    "name_variant": 1
+   },
+   [
+    "name_variant: near-spelling of accepted 'hymenochaete duportii' [col col:status=synonym, nortaxa taxonomicStatus=synonym]"
+   ]
+  ],
+  [
+   "204750",
+   "6C8X7",
+   94041,
+   false,
+   "Cyphobasidium hypogymniicola (Diederich & Ahti) Millanes, Diederich & Wedin",
+   "Cyphobasidium hypogymniicola (Diederich & Ahti) Millanes, Diederich & Wedin",
+   true,
+   false,
+   false,
+   1,
+   [
+    "cystobasidium hypogymniicola Diederich & Ahti"
+   ],
+   1,
+   1,
+   {
+    "name_variant": 1
+   },
+   [
+    "name_variant: near-spelling of accepted 'cyphobasidium hypogymniicola' [col col:status=synonym, nortaxa taxonomicStatus=synonym]"
+   ]
+  ],
+  [
+   "205878",
+   "4DPM4",
+   41499,
+   false,
+   "Parmelina atricha (Nyl.) P. Clerc",
+   "Parmelina atricha (Nyl.) P. Clerc",
+   true,
+   false,
+   false,
+   1,
+   [
+    "parmelia atricha Nyl."
+   ],
+   1,
+   3,
+   {
+    "name_variant": 1
+   },
+   [
+    "name_variant: near-spelling of accepted 'parmelina atricha' [col col:status=synonym, nortaxa nomenclaturalStatus=illegitimate, nortaxa taxonomicStatus=synonym]"
+   ]
+  ],
+  [
+   "213222",
+   "4BTPG",
+   40508,
+   true,
+   "Pachyphlodes citrina (Berk. & Broome) Doweld",
+   "Pachyphlodes citrina (Berk. & Broome) Doweld",
+   true,
+   false,
+   false,
+   1,
+   [
+    "pachyphloeus citrinus Berk. & Broome"
+   ],
+   2,
+   3,
+   {
+    "name_variant": 1
+   },
+   [
+    "name_variant: near-spelling of accepted 'pachyphlodes citrina' [col col:status=synonym, nortaxa taxonomicStatus=synonym]"
+   ]
+  ],
+  [
+   "213223",
+   "4BTPH",
+   40509,
+   true,
+   "Pachyphlodes conglomerata (Berk. & Broome) Doweld",
+   "Pachyphlodes conglomerata (Berk. & Broome) Doweld",
+   true,
+   false,
+   false,
+   1,
+   [
+    "pachyphloeus conglomeratus Berk. & Broome"
+   ],
+   2,
+   2,
+   {
+    "name_variant": 1
+   },
+   [
+    "name_variant: near-spelling of accepted 'pachyphlodes conglomerata' [col col:status=synonym, nortaxa taxonomicStatus=synonym]"
+   ]
+  ],
+  [
+   "213224",
+   "4BTPP",
+   40514,
+   true,
+   "Pachyphlodes melanoxantha (Tul. & C. Tul. ex Berk.) Doweld",
+   "Pachyphlodes melanoxantha (Tul. & C. Tul. ex Berk.) Doweld",
+   true,
+   false,
+   false,
+   1,
+   [
+    "pachyphloeus melanoxanthus (Tul. & C. Tul. ex Berk.) Tul. & C. Tul."
+   ],
+   2,
+   5,
+   {
+    "name_variant": 1
+   },
+   [
+    "name_variant: near-spelling of accepted 'pachyphlodes melanoxantha' [col col:status=synonym, nortaxa taxonomicStatus=synonym]"
+   ]
+  ],
+  [
+   "215857",
+   "4KCWS",
+   50134,
+   true,
+   "Pleurotellus dictyorhizus (DC.) Kühner",
+   "Pleurotellus dictyorhizus (DC.) Kühner",
+   true,
+   false,
+   false,
+   1,
+   [
+    "pleurotellus dictyorhiza (DC. ex Fr.) Gill."
+   ],
+   2,
+   3,
+   {
+    "name_variant": 1
+   },
+   [
+    "name_variant: near-spelling of accepted 'pleurotellus dictyorhizus' [col col:nameStatus=unacceptable, col col:status=synonym, nortaxa nomenclaturalStatus=illegitimate, nortaxa taxonomicStatus=synonym]"
+   ]
+  ],
+  [
+   "220343",
+   "B2PRC",
+   139862,
+   true,
+   "Ceriporiopsis suballantoidea Decock & Ryvarden",
+   "Ceriporiopsis suballantoidea Decock & Ryvarden",
+   true,
+   false,
+   false,
+   1,
+   [
+    "ceriporiopsis suballantoidus Decock & Ryvarden"
+   ],
+   1,
+   1,
+   {
+    "name_variant": 1
+   },
+   [
+    "name_variant: near-spelling of accepted 'ceriporiopsis suballantoidea' [col col:status=synonym, nortaxa taxonomicStatus=synonym]"
+   ]
+  ],
+  [
+   "223955",
+   "K8JF",
+   157313,
+   false,
+   "Bacidina saxenii (Erichsen) M. Hauck & V. Wirth",
+   "Bacidina saxenii (Erichsen) M. Hauck & V. Wirth",
+   true,
+   false,
+   false,
+   1,
+   [
+    "bacidia saxenii Erichsen"
+   ],
+   1,
+   1,
+   {
+    "name_variant": 1
+   },
+   [
+    "name_variant: near-spelling of accepted 'bacidina saxenii' [col col:status=synonym, nortaxa taxonomicStatus=synonym]"
+   ]
+  ],
+  [
+   "227081",
+   "6C98V",
+   94042,
+   false,
+   "Cyphobasidium usneicola (Diederich & Alstrup) Millanes, Diederich & Wedin",
+   "Cyphobasidium usneicola (Diederich & Alstrup) Millanes, Diederich & Wedin",
+   true,
+   false,
+   false,
+   1,
+   [
+    "cystobasidium usneicola Diederich & Alstrup"
+   ],
+   1,
+   1,
+   {
+    "name_variant": 1
+   },
+   [
+    "name_variant: near-spelling of accepted 'cyphobasidium usneicola' [col col:status=synonym, nortaxa taxonomicStatus=synonym]"
+   ]
+  ],
+  [
+   "297401",
+   "B34Y7",
+   144045,
+   false,
+   "Ceratocystiopsis debeeriana Jankowiak & H. Solheim",
+   "Ceratocystiopsis debeeriana Jankowiak & H. Solheim",
+   true,
+   false,
+   false,
+   1,
+   [
+    "ceratocystiopsis debeeria Jankowiak & H. Solheim"
+   ],
+   1,
+   1,
+   {
+    "name_variant": 1
+   },
+   [
+    "name_variant: near-spelling of accepted 'ceratocystiopsis debeeriana' [col col:status=synonym, nortaxa taxonomicStatus=synonym]"
+   ]
+  ],
+  [
+   "298239",
+   "B3852",
+   145203,
+   false,
+   "Porina thujopsidicola G. Thor, Lücking & Tat. Matsumoto",
+   "Porina thujopsidicola G. Thor, Lücking & Tat. Matsumoto",
+   true,
+   false,
+   false,
+   1,
+   [
+    "porina thujopsicola G. Thor, Lücking & Tat. Matsumoto"
+   ],
+   1,
+   1,
+   {
+    "name_variant": 1
+   },
+   [
+    "name_variant: near-spelling of accepted 'porina thujopsidicola' [col col:status=synonym, nortaxa taxonomicStatus=synonym]"
+   ]
+  ],
+  [
+   "53747",
+   "44SN7",
+   34092,
+   true,
+   "Mycena aetites (Fr.) Quél.",
+   "Mycena aetites (Fr.) Quél.",
+   true,
+   false,
+   false,
+   1,
+   [
+    "mycena aetitis (Fr.) Quél."
+   ],
+   3,
+   9,
+   {
+    "name_variant": 1
+   },
+   [
+    "name_variant: near-spelling of accepted 'mycena aetites' [col col:nameStatus=acceptable, col col:status=synonym, nortaxa nomenclaturalStatus=illegitimate, nortaxa taxonomicStatus=synonym]"
+   ]
+  ],
+  [
+   "54105",
+   "3F4CB",
+   9995,
+   true,
+   "Galerina aquatilis (Fr.) S. Lundell",
+   "Galerina aquatilis (Fr.) S. Lundell",
+   true,
+   false,
+   false,
+   1,
+   [
+    "galera aquatilis (Fr.) Gillet"
+   ],
+   1,
+   4,
+   {
+    "name_variant": 1
+   },
+   [
+    "name_variant: near-spelling of accepted 'galerina aquatilis' [col col:status=synonym, nortaxa taxonomicStatus=synonym]"
+   ]
+  ],
+  [
+   "54125",
+   "3F4DP",
+   10031,
+   true,
+   "Galerina clavata (Velen.) Kühner",
+   "Galerina clavata (Velen.) Kühner",
+   true,
+   false,
+   false,
+   1,
+   [
+    "galera clavata (Velen.) Kühner"
+   ],
+   3,
+   3,
+   {
+    "name_variant": 1
+   },
+   [
+    "name_variant: near-spelling of accepted 'galerina clavata' [col col:nameStatus=unacceptable, col col:status=synonym, nortaxa nomenclaturalStatus=illegitimate, nortaxa taxonomicStatus=synonym]"
+   ]
+  ],
+  [
+   "54156",
+   "3F4J7",
+   10123,
+   true,
+   "Galerina paludosa (Fr.) Kühner",
+   "Galerina paludosa (Fr.) Kühner",
+   true,
+   false,
+   false,
+   1,
+   [
+    "galera paludosa (Fr.) P. Kumm."
+   ],
+   1,
+   8,
+   {
+    "name_variant": 1
+   },
+   [
+    "name_variant: near-spelling of accepted 'galerina paludosa' [col col:status=synonym, nortaxa nomenclaturalStatus=illegitimate, nortaxa taxonomicStatus=synonym]"
+   ]
+  ],
+  [
+   "54646",
+   "3T5L6",
+   23794,
+   true,
+   "Lentinula edodes (Berk.) Pegler",
+   "Lentinula edodes (Berk.) Pegler",
+   true,
+   false,
+   false,
+   1,
+   [
+    "lentinus edodes (Berk.) Singer"
+   ],
+   1,
+   15,
+   {
+    "name_variant": 1
+   },
+   [
+    "name_variant: near-spelling of accepted 'lentinula edodes' [col col:status=synonym, nortaxa nomenclaturalStatus=illegitimate, nortaxa taxonomicStatus=synonym]"
+   ]
+  ],
+  [
+   "55097",
+   "YH73",
+   617752,
+   true,
+   "Coronicium alboglaucum (Bourdot & Galzin) Jülich",
+   "Coronicium alboglaucum (Bourdot & Galzin) Jülich",
+   true,
+   false,
+   false,
+   1,
+   [
+    "corticium alboglaucum Bourdot & Galzin"
+   ],
+   2,
+   4,
+   {
+    "name_variant": 1
+   },
+   [
+    "name_variant: near-spelling of accepted 'coronicium alboglaucum' [col col:status=synonym, nortaxa nomenclaturalStatus=illegitimate, nortaxa taxonomicStatus=synonym]"
+   ]
+  ],
+  [
+   "55098",
+   "YH74",
+   617753,
+   true,
+   "Coronicium gemmiferum (Bourdot & Galzin) J. Erikss. & Ryvarden",
+   "Coronicium gemmiferum (Bourdot & Galzin) J. Erikss. & Ryvarden",
+   true,
+   false,
+   false,
+   1,
+   [
+    "corticium gemmiferum Bourdot & Galzin"
+   ],
+   1,
+   2,
+   {
+    "name_variant": 1
+   },
+   [
+    "name_variant: near-spelling of accepted 'coronicium gemmiferum' [col col:status=synonym, nortaxa nomenclaturalStatus=illegitimate, nortaxa taxonomicStatus=synonym]"
+   ]
+  ],
+  [
+   "55519",
+   "58DJ2",
+   73296,
+   true,
+   "Tricholoma bresadolanum Clémençon",
+   "Tricholoma bresadolanum Clémençon",
+   true,
+   false,
+   false,
+   1,
+   [
+    "tricholoma bresadolianum Clémencon"
+   ],
+   1,
+   3,
+   {
+    "name_variant": 1
+   },
+   [
+    "name_variant: near-spelling of accepted 'tricholoma bresadolanum' [col col:status=synonym, nortaxa taxonomicStatus=synonym]"
+   ]
+  ],
+  [
+   "56122",
+   "3Z8H9",
+   28996,
+   true,
+   "Melanogaster broomeanus Berk.",
+   "Melanogaster broomeanus Berk.",
+   true,
+   false,
+   false,
+   1,
+   [
+    "melanogaster broomeianus Berk."
+   ],
+   1,
+   5,
+   {
+    "name_variant": 1
+   },
+   [
+    "name_variant: near-spelling of accepted 'melanogaster broomeanus' [col col:status=synonym, nortaxa nomenclaturalStatus=illegitimate, nortaxa taxonomicStatus=synonym]"
+   ]
+  ],
+  [
+   "56350",
+   "59KSF",
+   74730,
+   true,
+   "Tulasnella subglobospora Hjortstam",
+   "Tulasnella subglobospora Hjortstam",
+   true,
+   false,
+   false,
+   1,
+   [
+    "tulasnella subglobispora Hjortstam"
+   ],
+   1,
+   1,
+   {
+    "name_variant": 1
+   },
+   [
+    "name_variant: near-spelling of accepted 'tulasnella subglobospora' [col col:status=synonym, nortaxa nomenclaturalStatus=illegitimate, nortaxa taxonomicStatus=synonym]"
+   ]
+  ],
+  [
+   "65024",
+   "33TDJ",
+   1531,
+   true,
+   "Dacrymyces lacrymalis (Pers.) Nees",
+   "Dacrymyces lacrymalis (Pers.) Nees",
+   true,
+   false,
+   false,
+   1,
+   [
+    "dacryomyces lacrymalis (Pers.) Sommerf."
+   ],
+   2,
+   7,
+   {
+    "name_variant": 1
+   },
+   [
+    "name_variant: near-spelling of accepted 'dacrymyces lacrymalis' [col col:status=synonym, nortaxa taxonomicStatus=synonym]"
+   ]
+  ],
+  [
+   "65028",
+   "33TDY",
+   1539,
+   true,
+   "Dacrymyces ovisporus Bref.",
+   "Dacrymyces ovisporus Bref.",
+   true,
+   false,
+   false,
+   1,
+   [
+    "dacryomyces ovisporus Bref."
+   ],
+   1,
+   1,
+   {
+    "name_variant": 1
+   },
+   [
+    "name_variant: near-spelling of accepted 'dacrymyces ovisporus' [col col:status=synonym, nortaxa taxonomicStatus=synonym]"
+   ]
+  ],
+  [
+   "66808",
+   "4VMVQ",
+   63310,
+   false,
+   "Scirrhia agrostidis (Fuckel) G. Winter",
+   "Scirrhia agrostidis (Fuckel) G. Winter",
+   true,
+   false,
+   false,
+   1,
+   [
+    "scirrhia agrostis (Fuckel) G. Winter"
+   ],
+   1,
+   5,
+   {
+    "name_variant": 1
+   },
+   [
+    "name_variant: near-spelling of accepted 'scirrhia agrostidis' [col col:nameStatus=unacceptable, col col:status=synonym, nortaxa nomenclaturalStatus=illegitimate, nortaxa taxonomicStatus=synonym]"
+   ]
+  ],
+  [
+   "67383",
+   "6RSGL",
+   107181,
+   false,
+   "Naevala vleugelii (Rehm) B. Hein",
+   "Naevala vleugelii (Rehm) B. Hein",
+   true,
+   false,
+   false,
+   1,
+   [
+    "naevia vleugelii (Rehm) Nannf."
+   ],
+   2,
+   2,
+   {
+    "name_variant": 1
+   },
+   [
+    "name_variant: near-spelling of accepted 'naevala vleugelii' [col col:status=synonym, nortaxa nomenclaturalStatus=illegitimate, nortaxa taxonomicStatus=synonym]"
+   ]
+  ],
+  [
+   "67682",
+   "7DBQK",
+   125168,
+   false,
+   "Tympanis spermatiospora (Nyl.) Nyl.",
+   "Tympanis spermatiospora (Nyl.) Nyl.",
+   true,
+   false,
+   false,
+   1,
+   [
+    "tympanis spermatiosporum Nyl."
+   ],
+   1,
+   3,
+   {
+    "name_variant": 1
+   },
+   [
+    "name_variant: near-spelling of accepted 'tympanis spermatiospora' [col col:status=synonym, nortaxa nomenclaturalStatus=illegitimate, nortaxa taxonomicStatus=synonym]"
+   ]
+  ],
+  [
+   "68419",
+   "6RT62",
+   107194,
+   false,
+   "Mytilinidion acicola G. Winter",
+   "Mytilinidion acicola G. Winter",
+   true,
+   false,
+   false,
+   1,
+   [
+    "mytilidion acicola G. Winter"
+   ],
+   1,
+   2,
+   {
+    "name_variant": 1
+   },
+   [
+    "name_variant: near-spelling of accepted 'mytilinidion acicola' [col col:nameStatus=unacceptable, col col:status=synonym, nortaxa nomenclaturalStatus=illegitimate, nortaxa taxonomicStatus=synonym]"
+   ]
+  ],
+  [
+   "69014",
+   "5YWLB",
+   82372,
+   false,
+   "Cladia schizopora (Nyl.) Nyl.",
+   "Cladia schizopora (Nyl.) Nyl.",
+   true,
+   false,
+   false,
+   1,
+   [
+    "cladonia schizopora Nyl."
+   ],
+   1,
+   4,
+   {
+    "name_variant": 1
+   },
+   [
+    "name_variant: near-spelling of accepted 'cladia schizopora' [col col:status=synonym, nortaxa nomenclaturalStatus=illegitimate, nortaxa taxonomicStatus=synonym]"
+   ]
+  ],
+  [
+   "69098",
+   "VKSS2",
+   612923,
+   false,
+   "Cladonia dendroides (Des Abb.) Ahti",
+   "Cladonia dendroides (Des Abb.) Ahti",
+   true,
+   false,
+   false,
+   1,
+   [
+    "cladina dendroides (Des Abb.) Ahti"
+   ],
+   1,
+   1,
+   {
+    "name_variant": 1
+   },
+   [
+    "name_variant: near-spelling of accepted 'cladonia dendroides' [col col:nameStatus=unacceptable, col col:status=synonym, nortaxa nomenclaturalStatus=illegitimate, nortaxa taxonomicStatus=synonym]"
+   ]
+  ],
+  [
+   "69112",
+   "MKGB4",
+   161387,
+   false,
+   "Cladonia evansii des Abb.",
+   "Cladonia evansii des Abb.",
+   true,
+   false,
+   false,
+   1,
+   [
+    "cladina evansii (des Abb.) Hale & W.L. Culb."
+   ],
+   1,
+   1,
+   {
+    "name_variant": 1
+   },
+   [
+    "name_variant: near-spelling of accepted 'cladonia evansii' [col col:nameStatus=unacceptable, col col:status=synonym, nortaxa nomenclaturalStatus=illegitimate, nortaxa taxonomicStatus=synonym]"
+   ]
+  ],
+  [
+   "69163",
+   "MKLZN",
+   161414,
+   false,
+   "Cladonia laevigata (Vainio) Gyelnik",
+   "Cladonia laevigata (Vainio) Gyelnik",
+   true,
+   false,
+   false,
+   1,
+   [
+    "cladina laevigata (Vainio) Dodge"
+   ],
+   1,
+   1,
+   {
+    "name_variant": 1
+   },
+   [
+    "name_variant: near-spelling of accepted 'cladonia laevigata' [col col:nameStatus=unacceptable, col col:status=synonym, nortaxa nomenclaturalStatus=illegitimate, nortaxa taxonomicStatus=synonym]"
+   ]
+  ],
+  [
+   "69172",
+   "MKMFF",
+   161424,
+   false,
+   "Cladonia macaronesica Ahti",
+   "Cladonia macaronesica Ahti",
+   true,
+   false,
+   false,
+   1,
+   [
+    "cladina macaronesica (Ahti) Follm. & Hern.-Padr."
+   ],
+   1,
+   1,
+   {
+    "name_variant": 1
+   },
+   [
+    "name_variant: near-spelling of accepted 'cladonia macaronesica' [col col:nameStatus=unacceptable, col col:status=synonym, nortaxa nomenclaturalStatus=illegitimate, nortaxa taxonomicStatus=synonym]"
+   ]
+  ],
+  [
+   "69248",
+   "MKQXX",
+   161497,
+   false,
+   "Cladonia pseudoevansii Asah.",
+   "Cladonia pseudoevansii Asah.",
+   true,
+   false,
+   false,
+   1,
+   [
+    "cladina pseudoevansii (Asah.) Hale & W.L. Culb."
+   ],
+   1,
+   1,
+   {
+    "name_variant": 1
+   },
+   [
+    "name_variant: near-spelling of accepted 'cladonia pseudoevansii' [col col:nameStatus=unacceptable, col col:status=synonym, nortaxa nomenclaturalStatus=illegitimate, nortaxa taxonomicStatus=synonym]"
+   ]
+  ],
+  [
+   "69275",
+   "MKSXG",
+   161516,
+   false,
+   "Cladonia sandstedei des Abb.",
+   "Cladonia sandstedei des Abb.",
+   true,
+   false,
+   false,
+   1,
+   [
+    "cladina sandstedei (des Abb.) Ahti"
+   ],
+   1,
+   1,
+   {
+    "name_variant": 1
+   },
+   [
+    "name_variant: near-spelling of accepted 'cladonia sandstedei' [col col:nameStatus=unacceptable, col col:status=synonym, nortaxa nomenclaturalStatus=illegitimate, nortaxa taxonomicStatus=synonym]"
+   ]
+  ],
+  [
+   "69284",
+   "VKSV8",
+   612931,
+   false,
+   "Cladonia skottsbergii Magnusson",
+   "Cladonia skottsbergii Magnusson",
+   true,
+   false,
+   false,
+   1,
+   [
+    "cladina skottsbergii (Magnusson) Follm."
+   ],
+   1,
+   1,
+   {
+    "name_variant": 1
+   },
+   [
+    "name_variant: near-spelling of accepted 'cladonia skottsbergii' [col col:nameStatus=unacceptable, col col:status=synonym, nortaxa nomenclaturalStatus=illegitimate, nortaxa taxonomicStatus=synonym]"
+   ]
+  ],
+  [
+   "69293",
+   "MKTL9",
+   161527,
+   false,
+   "Cladonia sprucei Ahti",
+   "Cladonia sprucei Ahti",
+   true,
+   false,
+   false,
+   1,
+   [
+    "cladina sprucei (Ahti) Ahti"
+   ],
+   1,
+   1,
+   {
+    "name_variant": 1
+   },
+   [
+    "name_variant: near-spelling of accepted 'cladonia sprucei' [col col:nameStatus=unacceptable, col col:status=synonym, nortaxa nomenclaturalStatus=illegitimate, nortaxa taxonomicStatus=synonym]"
+   ]
+  ],
+  [
+   "69316",
+   "MKVKP",
+   161536,
+   false,
+   "Cladonia submitis A. Evans",
+   "Cladonia submitis A. Evans",
+   true,
+   false,
+   false,
+   1,
+   [
+    "cladina submitis (A. Evans) Hale & W.L. Culb."
+   ],
+   1,
+   1,
+   {
+    "name_variant": 1
+   },
+   [
+    "name_variant: near-spelling of accepted 'cladonia submitis' [col col:nameStatus=unacceptable, col col:status=synonym, nortaxa nomenclaturalStatus=illegitimate, nortaxa taxonomicStatus=synonym]"
+   ]
+  ],
+  [
+   "69326",
+   "VKSVS",
+   612933,
+   false,
+   "Cladonia subtenuis (des Abb.) A. Evans",
+   "Cladonia subtenuis (des Abb.) A. Evans",
+   true,
+   false,
+   false,
+   1,
+   [
+    "cladina subtenuis (des Abb.) Hale & W.L. Culb."
+   ],
+   1,
+   1,
+   {
+    "name_variant": 1
+   },
+   [
+    "name_variant: near-spelling of accepted 'cladonia subtenuis' [col col:nameStatus=unacceptable, col col:status=synonym, nortaxa nomenclaturalStatus=illegitimate, nortaxa taxonomicStatus=synonym]"
+   ]
+  ],
+  [
+   "69334",
+   "MKWJX",
+   161549,
+   false,
+   "Cladonia terrae-novae Ahti",
+   "Cladonia terrae-novae Ahti",
+   true,
+   false,
+   false,
+   1,
+   [
+    "cladina terrae-novae (Ahti) Hale & W.L. Culb."
+   ],
+   1,
+   1,
+   {
+    "name_variant": 1
+   },
+   [
+    "name_variant: near-spelling of accepted 'cladonia terrae-novae' [col col:nameStatus=unacceptable, col col:status=synonym, nortaxa nomenclaturalStatus=illegitimate, nortaxa taxonomicStatus=synonym]"
+   ]
+  ],
+  [
+   "69341",
+   "MKWNB",
+   161557,
+   false,
+   "Cladonia transindica Ahti",
+   "Cladonia transindica Ahti",
+   true,
+   false,
+   false,
+   1,
+   [
+    "cladina transindica (Ahti) Ahti"
+   ],
+   1,
+   1,
+   {
+    "name_variant": 1
+   },
+   [
+    "name_variant: near-spelling of accepted 'cladonia transindica' [col col:nameStatus=unacceptable, col col:status=synonym, nortaxa nomenclaturalStatus=illegitimate, nortaxa taxonomicStatus=synonym]"
+   ]
+  ],
+  [
+   "70384",
+   "PW2CT",
+   166595,
+   false,
+   "Lecidella granulata (H. Magn.) R.C. Harris",
+   "Lecidella granulata (H. Magn.) R.C. Harris",
+   true,
+   false,
+   false,
+   1,
+   [
+    "lecidea granulata H. Magn."
+   ],
+   1,
+   1,
+   {
+    "name_variant": 1
+   },
+   [
+    "name_variant: near-spelling of accepted 'lecidella granulata' [col col:nameStatus=unacceptable, col col:status=synonym, nortaxa nomenclaturalStatus=illegitimate, nortaxa taxonomicStatus=synonym]"
+   ]
+  ],
+  [
+   "70385",
+   "VKT6G",
+   612942,
+   false,
+   "Lecidella lacteola (Nyl.) Hertel & Leukert",
+   "Lecidella lacteola (Nyl.) Hertel & Leukert",
+   true,
+   false,
+   false,
+   1,
+   [
+    "lecidea lacteola Nyl."
+   ],
+   1,
+   1,
+   {
+    "name_variant": 1
+   },
+   [
+    "name_variant: near-spelling of accepted 'lecidella lacteola' [col col:nameStatus=unacceptable, col col:status=synonym, nortaxa nomenclaturalStatus=illegitimate, nortaxa taxonomicStatus=synonym]"
+   ]
+  ],
+  [
+   "70392",
+   "PW32M",
+   166606,
+   false,
+   "Lecidella schistiseda (Zahlbr.) Hertel",
+   "Lecidella schistiseda (Zahlbr.) Hertel",
+   true,
+   false,
+   false,
+   1,
+   [
+    "lecidea schistiseda Zahlbr."
+   ],
+   1,
+   1,
+   {
+    "name_variant": 1
+   },
+   [
+    "name_variant: near-spelling of accepted 'lecidella schistiseda' [col col:nameStatus=unacceptable, col col:status=synonym, nortaxa nomenclaturalStatus=illegitimate, nortaxa taxonomicStatus=synonym]"
+   ]
+  ],
+  [
+   "72292",
+   "RBRZS",
+   170307,
+   false,
+   "Parmelina entotheiochroa (Hue) Hale",
+   "Parmelina entotheiochroa (Hue) Hale",
+   true,
+   false,
+   false,
+   1,
+   [
+    "parmelia entotheiochroa Hue"
+   ],
+   1,
+   1,
+   {
+    "name_variant": 1
+   },
+   [
+    "name_variant: near-spelling of accepted 'parmelina entotheiochroa' [col col:nameStatus=unacceptable, col col:status=synonym, nortaxa nomenclaturalStatus=illegitimate, nortaxa taxonomicStatus=synonym]"
+   ]
+  ],
+  [
+   "72298",
+   "RBS4F",
+   170308,
+   false,
+   "Parmelina leucotyliza (Nyl.) Hale",
+   "Parmelina leucotyliza (Nyl.) Hale",
+   true,
+   false,
+   false,
+   1,
+   [
+    "parmelia leucotyliza Nyl."
+   ],
+   1,
+   3,
+   {
+    "name_variant": 1
+   },
+   [
+    "name_variant: near-spelling of accepted 'parmelina leucotyliza' [col col:nameStatus=unacceptable, col col:status=synonym, nortaxa nomenclaturalStatus=illegitimate, nortaxa taxonomicStatus=synonym]"
+   ]
+  ],
+  [
+   "72306",
+   "RBSBR",
+   170309,
+   false,
+   "Parmelina subaurulenta (Nyl.) Hale",
+   "Parmelina subaurulenta (Nyl.) Hale",
+   true,
+   false,
+   false,
+   1,
+   [
+    "parmelia subaurulenta Nyl."
+   ],
+   1,
+   2,
+   {
+    "name_variant": 1
+   },
+   [
+    "name_variant: near-spelling of accepted 'parmelina subaurulenta' [col col:nameStatus=unacceptable, col col:status=synonym, nortaxa nomenclaturalStatus=illegitimate, nortaxa taxonomicStatus=synonym]"
+   ]
+  ],
+  [
+   "73802",
+   "S2SY4",
+   171965,
+   false,
+   "Physconia isidiigera Essl.",
+   "Physconia isidiigera Essl.",
+   true,
+   false,
+   false,
+   1,
+   [
+    "physcia isidiigera (Zahlbr.) Fink"
+   ],
+   1,
+   1,
+   {
+    "name_variant": 1
+   },
+   [
+    "name_variant: near-spelling of accepted 'physconia isidiigera' [col col:nameStatus=unacceptable, col col:status=synonym, nortaxa nomenclaturalStatus=illegitimate, nortaxa taxonomicStatus=synonym]"
+   ]
+  ],
+  [
+   "73919",
+   "S6KRV",
+   172270,
+   false,
+   "Rinodina corticola (Arnold) Arnold",
+   "Rinodina corticola (Arnold) Arnold",
+   true,
+   false,
+   false,
+   1,
+   [
+    "rinodina corticicola (Arnold) DT & Sarnt."
+   ],
+   1,
+   1,
+   {
+    "name_variant": 1
+   },
+   [
+    "name_variant: near-spelling of accepted 'rinodina corticola' [col col:nameStatus=unacceptable, col col:status=synonym, nortaxa nomenclaturalStatus=illegitimate, nortaxa taxonomicStatus=synonym]"
+   ]
+  ],
+  [
+   "74607",
+   "MF9JV",
+   160962,
+   false,
+   "Bacidina neglecta (Vezda) Vezda",
+   "Bacidina neglecta (Vezda) Vezda",
+   true,
+   false,
+   false,
+   1,
+   [
+    "bacidia neglecta Vezda"
+   ],
+   1,
+   1,
+   {
+    "name_variant": 1
+   },
+   [
+    "name_variant: near-spelling of accepted 'bacidina neglecta' [col col:nameStatus=unacceptable, col col:status=synonym, nortaxa nomenclaturalStatus=illegitimate, nortaxa taxonomicStatus=synonym]"
+   ]
+  ],
+  [
+   "74614",
+   "MF9S2",
+   160967,
+   false,
+   "Bacidina vasakii (Vezda) Vezda",
+   "Bacidina vasakii (Vezda) Vezda",
+   true,
+   false,
+   false,
+   1,
+   [
+    "bacidia vasakii Vezda"
+   ],
+   1,
+   1,
+   {
+    "name_variant": 1
+   },
+   [
+    "name_variant: near-spelling of accepted 'bacidina vasakii' [col col:nameStatus=unacceptable, col col:status=synonym, nortaxa nomenclaturalStatus=illegitimate, nortaxa taxonomicStatus=synonym]"
+   ]
+  ],
+  [
+   "74615",
+   "MF9SS",
+   160969,
+   false,
+   "Bacidina ziamensis (Vezda) Vezda",
+   "Bacidina ziamensis (Vezda) Vezda",
+   true,
+   false,
+   false,
+   1,
+   [
+    "bacidia ziamensis Vezda"
+   ],
+   1,
+   1,
+   {
+    "name_variant": 1
+   },
+   [
+    "name_variant: near-spelling of accepted 'bacidina ziamensis' [col col:nameStatus=unacceptable, col col:status=synonym, nortaxa nomenclaturalStatus=illegitimate, nortaxa taxonomicStatus=synonym]"
+   ]
+  ],
+  [
+   "77704",
+   "4VDL3",
+   63262,
+   false,
+   "Schizoxylon berkeleyanum (Durieu & Lév.) Fuckel",
+   "Schizoxylon berkeleyanum (Durieu & Lév.) Fuckel",
+   true,
+   false,
+   false,
+   1,
+   [
+    "schizoxylon berkelyanum (Durand & Lév.) Fuckel"
+   ],
+   2,
+   6,
+   {
+    "name_variant": 1
+   },
+   [
+    "name_variant: near-spelling of accepted 'schizoxylon berkeleyanum' [col col:nameStatus=unacceptable, col col:status=synonym, nortaxa nomenclaturalStatus=illegitimate, nortaxa taxonomicStatus=synonym]"
+   ]
+  ],
+  [
+   "78390",
+   "TD7PB",
+   606469,
+   false,
+   "Sticta longipes (Müll.Arg.) Malme",
+   "Sticta longipes (Müll.Arg.) Malme",
+   true,
+   false,
+   false,
+   1,
+   [
+    "stictina longipes Müll. Arg."
+   ],
+   1,
+   1,
+   {
+    "name_variant": 1
+   },
+   [
+    "name_variant: near-spelling of accepted 'sticta longipes' [col col:nameStatus=unacceptable, col col:status=synonym, nortaxa nomenclaturalStatus=illegitimate, nortaxa taxonomicStatus=synonym]"
+   ]
+  ],
+  [
+   "78393",
+   "TD7VF",
+   606475,
+   false,
+   "Sticta neocaledonica (Müll.Arg.) Hue",
+   "Sticta neocaledonica (Müll.Arg.) Hue",
+   true,
+   false,
+   false,
+   1,
+   [
+    "stictina neocaledonica Müll. Arg."
+   ],
+   1,
+   1,
+   {
+    "name_variant": 1
+   },
+   [
+    "name_variant: near-spelling of accepted 'sticta neocaledonica' [col col:nameStatus=unacceptable, col col:status=synonym, nortaxa nomenclaturalStatus=illegitimate, nortaxa taxonomicStatus=synonym]"
+   ]
+  ],
+  [
+   "80031",
+   "3YBZP",
+   28420,
+   false,
+   "Massarina eburnea (Tul. & C. Tul.) Sacc.",
+   "Massarina eburnea (Tul. & C. Tul.) Sacc.",
+   true,
+   false,
+   false,
+   1,
+   [
+    "massaria eburnea Tul. & C. Tul."
+   ],
+   1,
+   3,
+   {
+    "name_variant": 1
+   },
+   [
+    "name_variant: near-spelling of accepted 'massarina eburnea' [col col:status=synonym, nortaxa nomenclaturalStatus=illegitimate, nortaxa taxonomicStatus=synonym]"
+   ]
+  ],
+  [
+   "80165",
+   "35XMT",
+   3655,
+   false,
+   "Didymella eupyrena Sacc.",
+   "Didymella eupyrena Sacc.",
+   true,
+   false,
+   false,
+   1,
+   [
+    "didymella eupyrina Sacc."
+   ],
+   1,
+   2,
+   {
+    "name_variant": 1
+   },
+   [
+    "name_variant: near-spelling of accepted 'didymella eupyrena' [col col:nameStatus=unacceptable, col col:status=synonym, nortaxa nomenclaturalStatus=illegitimate, nortaxa taxonomicStatus=synonym]"
+   ]
+  ],
+  [
+   "81994",
+   "NDF9N",
+   163381,
+   false,
+   "Dermatocarpon tuzibei Sato",
+   "Dermatocarpon tuzibei Sato",
+   true,
+   false,
+   false,
+   1,
+   [
+    "dermatocarpon tujibei M. Sato"
+   ],
+   1,
+   1,
+   {
+    "name_variant": 1
+   },
+   [
+    "name_variant: near-spelling of accepted 'dermatocarpon tuzibei' [col col:nameStatus=unacceptable, col col:status=synonym, nortaxa nomenclaturalStatus=illegitimate, nortaxa taxonomicStatus=synonym]"
+   ]
+  ],
+  [
+   "83229",
+   "4TWJK",
+   62887,
+   false,
+   "Saccharomycodes ludwigii (E.C. Hansen) E.C. Hansen",
+   "Saccharomycodes ludwigii (E.C. Hansen) E.C. Hansen",
+   true,
+   false,
+   false,
+   1,
+   [
+    "saccharomyces ludwigii E.C. Hansen"
+   ],
+   1,
+   7,
+   {
+    "name_variant": 1
+   },
+   [
+    "name_variant: near-spelling of accepted 'saccharomycodes ludwigii' [col col:status=synonym, nortaxa nomenclaturalStatus=illegitimate, nortaxa taxonomicStatus=synonym]"
+   ]
+  ],
+  [
+   "92227",
+   "SF7HK",
+   172757,
+   false,
+   "Psora elenkinii Rass.",
+   "Psora elenkinii Rass.",
+   true,
+   false,
+   false,
+   1,
+   [
+    "psora elenkii Rass."
+   ],
+   1,
+   1,
+   {
+    "name_variant": 1
+   },
+   [
+    "name_variant: near-spelling of accepted 'psora elenkinii' [col col:nameStatus=unacceptable, col col:status=synonym, nortaxa nomenclaturalStatus=illegitimate, nortaxa taxonomicStatus=synonym]"
+   ]
+  ]
+ ],
+ "members_sha256": "6485a0de92fea0196b054fc30fcd9d4248aa11bc3a540dfce5223fbeb6146681",
+ "membership_rule": "every shared synonym is of kind 'name_variant'",
+ "note": "Immutable review input derived deterministically from the parent shared_synonymy manifest; the review classes partition it. A member belongs to the first class, in review_class_precedence, whose membership_rule it meets; each shared synonym has the first kind, in synonym_kind_precedence, whose rule it meets. Membership is pinned to the release and source archives below; it approves nothing and never extends to taxa in a later source release. shared_synonyms and shared_synonym_evidence list at most 10 names; shared_synonym_count and shared_synonym_kind_counts are exact.",
+ "parent_manifest": {
+  "evidence_class": "shared_synonymy",
+  "member_count": 4861,
+  "members_sha256": "ce48854856fd0a7f6c1d454cc79bfeeb2d57d9c8ff038305156ade8f9a85e3bc"
+ },
+ "pins": {
+  "bridge_emission_policy": {
+   "path": "database/taxonomy/policies/mapping_policy.yml",
+   "sha256": "a5a329848c45fcd030165a51ad1193944dffe7573ddb2a9c69441f0d76ae4afb"
+  },
+  "cloud_scope_policy": {
+   "path": "database/taxonomy/policies/global-macrofungi-scope.yml",
+   "scope_predicate_id": "global_macrofungi_policy_v1",
+   "sha256": "e4e796286df93b5372264c702c824eea746f680b3b4e8d6467621c99e5b64ea6"
+  },
+  "release": {
+   "content_release_id": "tax-2026.09.26-02",
+   "gz_artifact": "database/reference_data/generated/taxonomy_v2/tax-2026.09.26-02.sqlite3.gz",
+   "gz_sha256": "4488bb64f4abe18ed269c76264f9be36708d742ff531e931e8d7458791e05d72",
+   "sqlite_sha256": "9bf71b7e1f9b2915c3b1798743cefdd5db53bdbbfb7edc462aa3d0ad0cf8547d"
+  },
+  "source_archives": {
+   "col_xr": {
+    "sha256": "397d701c8eb269bf78d6ac7b03149915b0d9e2a2c18694be2c91445b807814f9",
+    "source_release_id": "col_xr:2026-07-17-XR:2026-07-17"
+   },
+   "nortaxa": {
+    "sha256": "29c11c54d955dc44e4e5a38944dd7932989a256d1b173777579b9f33abd2fe22",
+    "source_release_id": "nortaxa:1.284:2026-07-17"
+   }
+  }
+ },
+ "population": "group_a_automatic_nortaxa_bridge",
+ "review_class": "only_name_variant",
+ "review_class_precedence": [
+  "non_species_rank",
+  "rank_mismatch",
+  "infraspecific_rank",
+  "accepted_authorship_disagrees",
+  "only_orthographic_variant",
+  "only_unpublished",
+  "only_not_validly_published",
+  "only_illegitimate",
+  "only_interpretation_qualified",
+  "only_pro_parte",
+  "only_accepted_name_reauthored",
+  "only_unauthored",
+  "only_name_variant",
+  "only_mixed_weak",
+  "single_shared_synonym_low_overlap",
+  "ordinary"
+ ],
+ "review_status": "needs_review",
+ "synonym_kind_precedence": [
+  "orthographic_variant",
+  "unpublished",
+  "not_validly_published",
+  "illegitimate",
+  "interpretation_qualified",
+  "pro_parte",
+  "accepted_name_reauthored",
+  "unauthored",
+  "name_variant",
+  "ordinary"
+ ],
+ "synonym_kinds": {
+  "accepted_name_reauthored": "the canonical name is either accepted name itself, under another authorship",
+  "illegitimate": "the authorship carries 'nom. illeg.' (the sources' structured illegitimacy statuses, NorTaxa 'illegitimate' and COL 'unacceptable', are not used)",
+  "interpretation_qualified": "a misapplied usage (NorTaxa nomenclaturalStatus or COL col:status 'misapplied'), or the authorship carries a sensu-style qualifier ('sensu', 's.', 'ss.', 'auct.')",
+  "name_variant": "no structured status applies, but the name is almost spelled like either accepted name: same word count once hyphens are removed, and every word, genus included, within Levenshtein distance 2 (a possible misspelling or a near-identical combination, unconfirmed by the sources)",
+  "not_validly_published": "NorTaxa nomenclaturalStatus 'notvalidlypublished', COL col:nameStatus 'not established', or the authorship carries 'nom. nud.' or 'nom. inval.'",
+  "ordinary": "meets none of the tests above",
+  "orthographic_variant": "either source's structured status marks the usage an orthographic variant (NorTaxa nomenclaturalStatus 'orthographic')",
+  "pro_parte": "COL col:status 'ambiguous synonym', or the authorship carries 'p.p.' or 'pro parte'",
+  "unauthored": "the authorship is empty, so the match is on the name alone",
+  "unpublished": "COL col:nameStatus 'manuscript', or the authorship carries 'ined' or 'nom. herb.'"
+ }
+}

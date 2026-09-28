@@ -1,5 +1,5 @@
 {
- "cloud_scope_member_count": 3,
+ "cloud_scope_member_count": 6,
  "columns": [
   "nortaxa_taxon_id",
   "col_usage_id",
@@ -19,193 +19,264 @@
  ],
  "evidence_class": "shared_synonymy",
  "format": "sporely-taxonomy-v3-review-manifest-v2",
- "member_count": 7,
+ "member_count": 11,
  "members": [
   [
-   "122467",
-   "3Z538",
-   28799,
-   false,
-   "Melampsora laricis-populina Kleb.",
-   "Melampsora laricis-populina Kleb.",
+   "173563",
+   "3KJW8",
+   14529,
+   true,
+   "Helvella calycina Skrede, T.A. Carlsen & T. Schumach.",
+   "Helvella calycina Skrede, T.A. Carlsen & T. Schumach.",
    true,
    false,
    false,
-   2,
+   1,
    [
-    "melampsora larici-populina Kleb.",
-    "phoma populi (Sowerby) Fr."
+    "boletus calyciformis Battarra"
+   ],
+   1,
+   3,
+   {
+    "not_validly_published": 1
+   },
+   [
+    "not_validly_published: col col:nameStatus=not established [col col:nameStatus=not established, col col:status=synonym, nortaxa taxonomicStatus=synonym]"
+   ]
+  ],
+  [
+   "174063",
+   "6WV5H",
+   111655,
+   true,
+   "Rhizocybe pruinosa (P. Kumm.) Vizzini, P. Alvarado & G. Moreno",
+   "Rhizocybe pruinosa (P. Kumm.) Vizzini, P. Alvarado & G. Moreno",
+   true,
+   false,
+   false,
+   1,
+   [
+    "clitocybe radicellata Gillet"
    ],
    3,
+   8,
+   {
+    "not_validly_published": 1
+   },
+   [
+    "not_validly_published: col col:nameStatus=not established [col col:nameStatus=not established, col col:status=synonym, nortaxa nomenclaturalStatus=illegitimate, nortaxa taxonomicStatus=synonym]"
+   ]
+  ],
+  [
+   "57750",
+   "4TRYL",
+   62015,
+   true,
+   "Russula fusconigra M.M. Moser",
+   "Russula fusconigra M.M. Moser",
+   true,
+   false,
+   false,
+   1,
+   [
+    "russula fuscomaculata Romagn. nom. inval."
+   ],
+   1,
+   1,
+   {
+    "not_validly_published": 1
+   },
+   [
+    "not_validly_published: authorship 'nom. inval' [col col:nameStatus=unacceptable, col col:status=synonym, nortaxa nomenclaturalStatus=illegitimate, nortaxa taxonomicStatus=synonym]"
+   ]
+  ],
+  [
+   "59001",
+   "YKPL",
+   618400,
+   true,
+   "Cortinarius diosmus Kühner",
+   "Cortinarius diosmus Kühner",
+   true,
+   false,
+   false,
+   1,
+   [
+    "cortinarius argillaceosericeus Kytöv., Niskanen & Liimat."
+   ],
+   1,
+   2,
+   {
+    "not_validly_published": 1
+   },
+   [
+    "not_validly_published: col col:nameStatus=not established; nortaxa nomenclaturalStatus=notvalidlypublished [col col:nameStatus=not established, col col:status=synonym, nortaxa nomenclaturalStatus=notvalidlypublished, nortaxa taxonomicStatus=synonym]"
+   ]
+  ],
+  [
+   "62374",
+   "5WY75",
+   80976,
+   true,
+   "Cantharellus borealis R.H. Petersen & Ryvarden",
+   "Cantharellus borealis R.H. Petersen & Ryvarden",
+   true,
+   false,
+   false,
+   1,
+   [
+    "craterellus ryvardenii (R.H. Petersen & Ryvarden)"
+   ],
+   1,
+   2,
+   {
+    "not_validly_published": 1
+   },
+   [
+    "not_validly_published: nortaxa nomenclaturalStatus=notvalidlypublished [col col:status=synonym, nortaxa nomenclaturalStatus=notvalidlypublished, nortaxa taxonomicStatus=synonym]"
+   ]
+  ],
+  [
+   "67810",
+   "3RPL4",
+   21427,
+   false,
+   "Lachnellula fuscosanguinea (Rehm) Dennis",
+   "Lachnellula fuscosanguinea (Rehm) Dennis",
+   true,
+   false,
+   false,
+   1,
+   [
+    "dasyscypha fuscosanguinea Rehm"
+   ],
+   3,
+   8,
+   {
+    "not_validly_published": 1
+   },
+   [
+    "not_validly_published: col col:nameStatus=not established [col col:nameStatus=not established, col col:status=synonym, nortaxa nomenclaturalStatus=illegitimate, nortaxa taxonomicStatus=synonym]"
+   ]
+  ],
+  [
+   "69572",
+   "LR5X5",
+   159031,
+   false,
+   "Aspicilia arctica (Lynge) Oxner",
+   "Aspicilia arctica (Lynge) Oxner",
+   true,
+   false,
+   false,
+   1,
+   [
+    "lecanora arctica Lynge"
+   ],
+   1,
+   1,
+   {
+    "not_validly_published": 1
+   },
+   [
+    "not_validly_published: col col:nameStatus=not established [col col:nameStatus=not established, col col:status=synonym, nortaxa nomenclaturalStatus=illegitimate, nortaxa taxonomicStatus=synonym]"
+   ]
+  ],
+  [
+   "78487",
+   "RTRR2",
+   171484,
+   false,
+   "Peltigera lyngei Gyeln.",
+   "Peltigera lyngei Gyeln.",
+   true,
+   false,
+   false,
+   1,
+   [
+    "peltigera malacea var. lyngei (Gyel.) Poelt, nom. inval."
+   ],
+   1,
+   1,
+   {
+    "not_validly_published": 1
+   },
+   [
+    "not_validly_published: authorship 'nom. inval' [col col:nameStatus=unacceptable, col col:status=synonym, nortaxa nomenclaturalStatus=illegitimate, nortaxa taxonomicStatus=synonym]"
+   ]
+  ],
+  [
+   "79347",
+   "46W5Q",
+   38104,
+   true,
+   "Neottiella aphanodictyon (Kobayasi) Dissing, Korf & Sivertsen",
+   "Neottiella aphanodictyon (Kobayasi) Dissing, Korf & Sivertsen",
+   true,
+   false,
+   false,
+   1,
+   [
+    "neottiella aphanodictya (Kobayasi) Dissing, Korf & Sivertsen"
+   ],
+   2,
+   2,
+   {
+    "not_validly_published": 1
+   },
+   [
+    "not_validly_published: col col:nameStatus=not established [col col:nameStatus=not established, col col:status=synonym, nortaxa nomenclaturalStatus=illegitimate, nortaxa taxonomicStatus=synonym]"
+   ]
+  ],
+  [
+   "80373",
+   "4K8G2",
+   49773,
+   false,
+   "Pleospora gigantasca Rostr.",
+   "Pleospora gigantasca Rostr.",
+   true,
+   false,
+   false,
+   1,
+   [
+    "pleospora longispora Pass."
+   ],
+   1,
+   1,
+   {
+    "not_validly_published": 1
+   },
+   [
+    "not_validly_published: col col:nameStatus=not established [col col:nameStatus=not established, col col:status=misapplied, nortaxa taxonomicStatus=synonym]"
+   ]
+  ],
+  [
+   "83259",
+   "54S7L",
+   70161,
+   false,
+   "Taphrina caerulescens (Desm. & Mont.) Tul.",
+   "Taphrina caerulescens (Desm. & Mont.) Tul.",
+   true,
+   false,
+   false,
+   1,
+   [
+    "taphrina coerulescens (Desm. & Mont.) Tul."
+   ],
+   1,
    6,
    {
-    "name_variant": 1,
-    "pro_parte": 1
-   },
-   [
-    "name_variant: near-spelling of accepted 'melampsora laricis-populina' [col col:status=synonym, nortaxa nomenclaturalStatus=illegitimate, nortaxa taxonomicStatus=synonym]",
-    "pro_parte: col col:status=ambiguous synonym [col col:status=ambiguous synonym, nortaxa taxonomicStatus=synonym]"
-   ]
-  ],
-  [
-   "204553",
-   "4N6J3",
-   52504,
-   false,
-   "Protoparmelia memnonia Hafellner & Türk",
-   "Protoparmelia memnonia Hafellner & Türk",
-   true,
-   false,
-   false,
-   2,
-   [
-    "protoparmelia memnonica Hafellner & Türk",
-    "protoparmelia memnonina Hafellner & Türk"
-   ],
-   4,
-   2,
-   {
-    "name_variant": 1,
     "not_validly_published": 1
    },
    [
-    "not_validly_published: col col:nameStatus=not established [col col:nameStatus=not established, col col:status=synonym, nortaxa taxonomicStatus=synonym]",
-    "name_variant: near-spelling of accepted 'protoparmelia memnonia' [col col:status=synonym, nortaxa taxonomicStatus=synonym]"
-   ]
-  ],
-  [
-   "53005",
-   "YMWW",
-   619761,
-   true,
-   "Cortinarius umbrinolens P.D. Orton",
-   "Cortinarius umbrinolens P.D. Orton",
-   true,
-   false,
-   false,
-   2,
-   [
-    "cortinarius rigidus s. Lange",
-    "telamonia umbrinolens"
-   ],
-   3,
-   3,
-   {
-    "interpretation_qualified": 1,
-    "unauthored": 1
-   },
-   [
-    "interpretation_qualified: authorship 's.' [col col:status=synonym, nortaxa taxonomicStatus=synonym]",
-    "unauthored: empty authorship [col col:nameStatus=unacceptable, col col:status=synonym, nortaxa nomenclaturalStatus=illegitimate, nortaxa taxonomicStatus=synonym]"
-   ]
-  ],
-  [
-   "60677",
-   "55CGQ",
-   70426,
-   true,
-   "Tephrocybe striipilea (Fr.) Donk",
-   "Tephrocybe striipilea (Fr.) Donk",
-   true,
-   false,
-   false,
-   2,
-   [
-    "lyophyllum striaepileum (Fr.) Kalamees",
-    "tephrocybe striaepilea (Fr.) Donk"
-   ],
-   4,
-   16,
-   {
-    "name_variant": 1,
-    "not_validly_published": 1
-   },
-   [
-    "not_validly_published: col col:nameStatus=not established [col col:nameStatus=not established, col col:status=synonym, nortaxa taxonomicStatus=synonym]",
-    "name_variant: near-spelling of accepted 'tephrocybe striipilea' [col col:status=synonym, nortaxa nomenclaturalStatus=illegitimate, nortaxa taxonomicStatus=synonym]"
-   ]
-  ],
-  [
-   "65021",
-   "33TCJ",
-   1510,
-   true,
-   "Dacrymyces chrysospermus Berk. & M.A. Curtis",
-   "Dacrymyces chrysospermus Berk. & M.A. Curtis",
-   true,
-   false,
-   false,
-   2,
-   [
-    "dacryomyces chrysospermus Berk. & M.A. Curtis",
-    "tremella palmata Schwein."
-   ],
-   3,
-   9,
-   {
-    "name_variant": 1,
-    "pro_parte": 1
-   },
-   [
-    "name_variant: near-spelling of accepted 'dacrymyces chrysospermus' [col col:status=synonym, nortaxa taxonomicStatus=synonym]",
-    "pro_parte: col col:status=ambiguous synonym [col col:status=ambiguous synonym, nortaxa nomenclaturalStatus=illegitimate, nortaxa taxonomicStatus=synonym]"
-   ]
-  ],
-  [
-   "69198",
-   "VPJ2",
-   613446,
-   false,
-   "Cladonia mitis Sandst.",
-   "Cladonia mitis Sandst.",
-   true,
-   false,
-   false,
-   2,
-   [
-    "cladina mitis (Sandst.) Hustich",
-    "cladonia mitis var. divaricata"
-   ],
-   4,
-   10,
-   {
-    "name_variant": 1,
-    "unauthored": 1
-   },
-   [
-    "name_variant: near-spelling of accepted 'cladonia mitis' [col col:nameStatus=unacceptable, col col:status=synonym, nortaxa nomenclaturalStatus=illegitimate, nortaxa taxonomicStatus=synonym]",
-    "unauthored: empty authorship [col col:nameStatus=unacceptable, col col:status=synonym, nortaxa nomenclaturalStatus=illegitimate, nortaxa taxonomicStatus=synonym]"
-   ]
-  ],
-  [
-   "69384",
-   "77K4K",
-   120100,
-   false,
-   "Pilophorus robustus Th. Fr.",
-   "Pilophorus robustus Th. Fr.",
-   true,
-   false,
-   false,
-   2,
-   [
-    "cladonia umbellata Sommerf., ined.",
-    "pilophoron robustum Th. Fr."
-   ],
-   2,
-   4,
-   {
-    "name_variant": 1,
-    "unpublished": 1
-   },
-   [
-    "unpublished: authorship 'ined' [col col:nameStatus=unacceptable, col col:status=synonym, nortaxa nomenclaturalStatus=illegitimate, nortaxa taxonomicStatus=synonym]",
-    "name_variant: near-spelling of accepted 'pilophorus robustus' [col col:nameStatus=unacceptable, col col:status=synonym, nortaxa nomenclaturalStatus=illegitimate, nortaxa taxonomicStatus=synonym]"
+    "not_validly_published: col col:nameStatus=not established [col col:nameStatus=not established, col col:status=synonym, nortaxa nomenclaturalStatus=illegitimate, nortaxa taxonomicStatus=synonym]"
    ]
   ]
  ],
- "members_sha256": "eda5e1ded08e24d6267145b43908e2f233a5ed6c3de315d3df88a75e1d93dbf8",
- "membership_rule": "no shared synonym is of kind 'ordinary', and they are not all of one kind",
+ "members_sha256": "7fcba77c73eac105cee37f5adc351a1ffcf233881944c008607eaa526155530c",
+ "membership_rule": "every shared synonym is of kind 'not_validly_published'",
  "note": "Immutable review input derived deterministically from the parent shared_synonymy manifest; the review classes partition it. A member belongs to the first class, in review_class_precedence, whose membership_rule it meets; each shared synonym has the first kind, in synonym_kind_precedence, whose rule it meets. Membership is pinned to the release and source archives below; it approves nothing and never extends to taxa in a later source release. shared_synonyms and shared_synonym_evidence list at most 10 names; shared_synonym_count and shared_synonym_kind_counts are exact.",
  "parent_manifest": {
   "evidence_class": "shared_synonymy",
@@ -240,7 +311,7 @@
   }
  },
  "population": "group_a_automatic_nortaxa_bridge",
- "review_class": "only_mixed_weak",
+ "review_class": "only_not_validly_published",
  "review_class_precedence": [
   "non_species_rank",
   "rank_mismatch",

@@ -116,11 +116,22 @@ def test_manifest_is_order_independent_and_class_scoped():
     assert first["review_status"] == "needs_review"
 
 
-def _concept(name, authorship, rank, synonyms):
+def _key(name, authorship):
     import cross_reference_evidence  # on sys.path once the audit is loaded
-    key = cross_reference_evidence._name_key
-    return {"accepted": key(name, authorship), "rank": rank,
-            "synonyms": {key(n, a) for n, a in synonyms}}
+    return cross_reference_evidence._name_key(name, authorship)
+
+
+def _concept(name, authorship, rank, synonyms):
+    """A read_nortaxa/read_col concept. ``synonyms`` entries are
+    ``(name, authorship)`` or ``(name, authorship, {(field, value), ...})``."""
+    concept = {"accepted": _key(name, authorship), "rank": rank,
+               "synonyms": set(), "synonym_status": {}}
+    for entry in synonyms:
+        key = _key(entry[0], entry[1])
+        concept["synonyms"].add(key)
+        concept["synonym_status"][key] = set(entry[2]) if len(entry) > 2 \
+            else set()
+    return concept
 
 
 def _shared_row(bridge, backbone):
@@ -130,33 +141,145 @@ def _shared_row(bridge, backbone):
 
 
 def _review_class(bridge_synonyms, backbone_synonyms, *, name="Inocybe calospora",
-                  authorship="Quél.", rank="species", backbone_authorship=None):
+                  authorship="Quél.", rank="species", backbone_rank=None,
+                  backbone_authorship=None):
     bridge = _concept(name, authorship, rank, bridge_synonyms)
     backbone = _concept(name, authorship if backbone_authorship is None
-                        else backbone_authorship, rank, backbone_synonyms)
+                        else backbone_authorship,
+                        rank if backbone_rank is None else backbone_rank,
+                        backbone_synonyms)
     return audit.shared_review_class(_shared_row(bridge, backbone),
                                      bridge, backbone)
 
 
+def _kind(name, authorship, *, nortaxa=(), col=(),
+          accepted=("inocybe undulatospora",)):
+    evidence = {"name": name, "authorship": authorship,
+                "status": frozenset({("nortaxa", f, v) for f, v in nortaxa}
+                                    | {("col", f, v) for f, v in col}),
+                "accepted": frozenset(accepted)}
+    return audit.classify_synonym(evidence)[0]
+
+
+_NT_SYN = ("taxonomicStatus", "synonym")
+_COL_SYN = ("col:status", "synonym")
+
+
+def _nt(status):
+    return {_NT_SYN, ("nomenclaturalStatus", status)}
+
+
+def _col(name_status="", status="synonym"):
+    return {("col:status", status), ("col:nameStatus", name_status)}
+
+
 def test_synonym_kinds():
-    accepted = {"inocybe undulatospora"}
-    kind = audit.synonym_kind
-    assert kind(("hyphoderma patricium", "ined."), accepted) == "ined"
-    assert kind(("trichaptum prosector", "comb. ined."), accepted) == "ined"
-    assert kind(("lecidea leprosa", "nom. herb."), accepted) == "invalid_name"
-    assert kind(("inocybe undulatopspora", ""), accepted) \
-        == "accepted_name_variant"
-    assert kind(("inocybe undulatospora", "Kuyper ex X"), accepted) \
-        == "accepted_name_variant"
-    assert kind(("telamonia undulatospora", ""), accepted) == "unauthored"
-    assert kind(("inocybe carpta", "Bres."), accepted) == "ordinary"
+    assert _kind("hyphoderma patricium", "ined.") == "unpublished"
+    assert _kind("trichaptum prosector", "comb. ined.") == "unpublished"
+    assert _kind("lecidea leprosa", "nom. herb.") == "unpublished"
+    assert _kind("x y", "Z", col={("col:nameStatus", "manuscript")}) \
+        == "unpublished"
+    assert _kind("x y", "Lynge nom.nud.") == "not_validly_published"
+    assert _kind("x y", "Motyka, nom. inval.") == "not_validly_published"
+    assert _kind("x y", "Flagey, nom. illeg.") == "illegitimate"
+    assert _kind("x y", "Fr. ss. Bres.") == "interpretation_qualified"
+    assert _kind("x y", "s. Brandrud et al.") == "interpretation_qualified"
+    assert _kind("x y", "auct. non Fr.") == "interpretation_qualified"
+    assert _kind("x y", "Malme", col={("col:status", "misapplied")}) \
+        == "interpretation_qualified"
+    assert _kind("x y", "Fr.", col={("col:status", "ambiguous synonym")}) \
+        == "pro_parte"
+    assert _kind("x y", "Fr. p.p.") == "pro_parte"
+    assert _kind("inocybe undulatospora", "Kuyper ex X") \
+        == "accepted_name_reauthored"
+    assert _kind("telamonia undulatospora", "") == "unauthored"
+    # An unauthored near-spelling is unauthored: exact facts before heuristics.
+    assert _kind("inocybe undulatopspora", "") == "unauthored"
+    assert _kind("inocybe undulatopspora", "Kuyper") == "name_variant"
+    # The heuristic no longer needs the genus to match ...
+    assert _kind("inocyba undulatospora", "Kuyper") == "name_variant"
+    # ... and a structured status beats any string heuristic.
+    assert _kind("inocyba undulatospora", "Kuyper",
+                 nortaxa={("nomenclaturalStatus", "orthographic")}) \
+        == "orthographic_variant"
+    assert _kind("inocybe carpta", "Bres.") == "ordinary"
+    # Illegitimacy statuses are recorded but do not make a synonym weak.
+    assert _kind("inocybe carpta", "Bres.",
+                 nortaxa={("nomenclaturalStatus", "illegitimate")},
+                 col={("col:nameStatus", "unacceptable")}) == "ordinary"
+
+
+# Pinned NorTaxa 1.284 / COL XR 2026-07-17 shared synonyms, with the statuses
+# both sources publish on them, for the associations the independent review
+# of the first split named.
+_CRATERELLUS = [
+    ("Cantharellus infundibuliformis", "(Scop.) Fr.",
+     _nt("illegitimate"), _col()),
+    ("Merulius cantharelloides", "(Bull.) Purton",
+     _nt("illegitimate"), _col("unacceptable")),
+    ("Merulius infundibularis", "Kuntze",
+     _nt("illegitimate"), _col("unacceptable")),
+]
+_REVIEWED_CASES = {
+    # nortaxa / col: (accepted name, authorship, shared synonyms, class)
+    "59001/YKPL": ("Cortinarius diosmus", "Kühner", [
+        ("Cortinarius argillaceosericeus", "Kytöv., Niskanen & Liimat.",
+         _nt("notvalidlypublished"), _col("not established"))],
+        "only_not_validly_published"),
+    "62374/5WY75": ("Cantharellus borealis", "R.H. Petersen & Ryvarden", [
+        ("Craterellus ryvardenii", "(R.H. Petersen & Ryvarden)",
+         _nt("notvalidlypublished"), _col())],
+        "only_not_validly_published"),
+    "128412/STJ62": ("Scolicosporium betulae", "Rostr.", [
+        ("Scolecosporium betulae", "Rostr.",
+         _nt("orthographic"), _col("not established"))],
+        "only_orthographic_variant"),
+    "56689/4RSKZ": ("Repetobasidium vestitum", "J. Erikss. & Hjortstam", [
+        ("Repetobasidiellum vestitum", "J. Erikss. & Hjortstam",
+         _nt("orthographic"), _col("not established"))],
+        "only_orthographic_variant"),
+    "75928/76VPT": ("Phaeocalicium polyporaeum", "(Nyl.) Tibell", [
+        ("Calicium polyporaceum", "", _nt(""), _col()),
+        ("Phaeocalicium polyporaceum", "", _nt(""), _col())],
+        "only_unauthored"),
+    "170703/YLM6": ("Cortinarius nefastus", "Carteret & Reumaux", [
+        ("Cortinarius holophaeus", "s. Brandrud et al.", _nt(""), _col())],
+        "only_interpretation_qualified"),
+    "56227/Z8TV": ("Craterellus tubaeformis", "(Fr.) Quél.", _CRATERELLUS,
+                   "ordinary"),
+}
+
+
+def _pinned_class(name, authorship, shared, *, rank="species",
+                  backbone_rank=None):
+    bridge = _concept(name, authorship, rank,
+                      [(n, a, nt) for n, a, nt, _ in shared])
+    backbone = _concept(name, authorship, backbone_rank or rank,
+                        [(n, a, col) for n, a, _, col in shared])
+    return audit.shared_review_class(_shared_row(bridge, backbone),
+                                     bridge, backbone)
+
+
+def test_reviewed_associations_classify_on_structured_status():
+    for case, (name, authorship, shared, expected) in _REVIEWED_CASES.items():
+        assert _pinned_class(name, authorship, shared) == expected, case
+
+
+def test_rank_mismatch_never_reaches_ordinary():
+    assert _pinned_class("Craterellus tubaeformis", "(Fr.) Quél.",
+                         _CRATERELLUS, backbone_rank="variety") \
+        == "rank_mismatch"
+    assert _pinned_class("Craterellus tubaeformis", "(Fr.) Quél.",
+                         _CRATERELLUS, rank="variety",
+                         backbone_rank="form") == "rank_mismatch"
+    assert _pinned_class("Craterellus tubaeformis", "(Fr.) Quél.",
+                         _CRATERELLUS, rank="variety") == "infraspecific_rank"
 
 
 def test_shared_review_class_precedence():
     shared = [("Cantharellus infundibuliformis", "(Scop.) Fr."),
               ("Merulius cantharelloides", "(Bull.) Purton"),
               ("Merulius infundibularis", "Kuntze")]
-    # Craterellus tubaeformis (NorTaxa 56227): three ordinary shared synonyms.
     assert _review_class(shared, shared + [("X y", "Z")] * 1,
                          name="Craterellus tubaeformis",
                          authorship="(Fr.) Quél.") == "ordinary"
@@ -165,14 +288,15 @@ def test_shared_review_class_precedence():
     assert _review_class(shared, shared, backbone_authorship="") \
         == "accepted_authorship_disagrees"
     assert _review_class([("Hyphoderma patricium", "ined.")],
-                         [("Hyphoderma patricium", "ined.")]) == "only_ined"
+                         [("Hyphoderma patricium", "ined.")]) \
+        == "only_unpublished"
     assert _review_class([("Inocybe calosporra", "Quél.")],
                          [("Inocybe calosporra", "Quél.")]) \
-        == "only_accepted_name_variant"
+        == "only_name_variant"
     assert _review_class([("Inocybella calospora", ""),
-                          ("Inocybe calosporra", "")],
+                          ("Inocybe calosporra", "Quél.")],
                          [("Inocybella calospora", ""),
-                          ("Inocybe calosporra", "")]) == "only_mixed_weak"
+                          ("Inocybe calosporra", "Quél.")]) == "only_mixed_weak"
     many = [(f"Agaricus s{i}", "Fr.") for i in range(5)]
     assert _review_class(shared[:1] + many,
                          shared[:1] + [(f"Agaricus t{i}", "Fr.")
@@ -181,29 +305,112 @@ def test_shared_review_class_precedence():
     # A weak synonym beside an ordinary one does not demote the association.
     assert _review_class(shared[:2] + [("Hyphoderma x", "ined.")],
                          shared[:2] + [("Hyphoderma x", "ined.")]) == "ordinary"
+    assert _review_class(shared[:2] + [("Inocybe x", "ss. Lange")],
+                         shared[:2] + [("Inocybe x", "ss. Lange")]) \
+        == "ordinary"
+
+
+def test_published_rules_are_the_executed_rules():
+    tests = audit.SHARED_REVIEW_CLASS_TESTS
+    assert audit.SHARED_REVIEW_CLASSES == {n: r for n, r, _ in tests}
+    assert audit.SYNONYM_KINDS == {
+        **{k: r for k, r, _ in audit.SYNONYM_KIND_TESTS},
+        "ordinary": "meets none of the tests above"}
+    for kind in audit.WEAK_SYNONYM_KINDS:
+        assert audit.SHARED_REVIEW_CLASSES[f"only_{kind}"] \
+            == f"every shared synonym is of kind '{kind}'"
+    # Every combination of the facts a rule reads lands in the first class
+    # whose predicate holds, and the ordinary rule is complete on its own:
+    # it holds exactly when no earlier rule does.
+    import itertools
+    kind_sets = [[k] for k in audit.SYNONYM_KINDS] + [
+        list(p) for p in itertools.combinations(audit.SYNONYM_KINDS, 2)] + [
+        ["ordinary", "ordinary"], ["unauthored", "unauthored"]]
+    for ranks, agree, kinds, low in itertools.product(
+            [("species", "species"), ("species", "variety"),
+             ("variety", "variety"), ("genus", "species")],
+            (True, False), kind_sets, (True, False)):
+        facts = {"bridge_rank": ranks[0], "backbone_rank": ranks[1],
+                 "accepted_names_agree": agree, "kinds": kinds,
+                 "bridge_synonym_count": 9 if low else 1,
+                 "backbone_synonym_count": 9 if low else 1}
+        name = audit.review_class_for(facts)
+        first = next(n for n, _, pred in tests if pred(facts))
+        assert name == first
+        ordinary = dict((n, p) for n, _, p in tests)["ordinary"]
+        assert ordinary(facts) == (name == "ordinary"), facts
+        if name == "ordinary":
+            assert ranks == ("species", "species") and agree \
+                and "ordinary" in kinds
 
 
 def test_review_manifests_partition_the_parent():
     rows = [_row("1", audit.EVIDENCE_SHARED_SYNONYMY, 3),
             _row("2", audit.EVIDENCE_SHARED_SYNONYMY, 1),
             _row("3", audit.EVIDENCE_NONE, 0)]
-    rows[0]["review_class"], rows[1]["review_class"] = "ordinary", "only_ined"
+    rows[0]["review_class"], rows[1]["review_class"] = "ordinary", \
+        "only_unpublished"
+    for row in rows[:2]:
+        row["shared_synonym_kind_counts"] = {"ordinary": 1}
+        row["shared_synonym_evidence"] = ["ordinary: none of the weak kinds"]
     rows[1]["in_cloud_scope"] = False
     pins = {"release": {"sqlite_sha256": "x"}}
     parent = audit.build_manifest(audit.EVIDENCE_SHARED_SYNONYMY, rows, pins)
     split = {cls: audit.build_review_manifest(cls, rows, pins, parent)
              for cls in audit.SHARED_REVIEW_CLASSES}
     assert [m[0] for m in split["ordinary"]["members"]] == ["1"]
-    assert [m[0] for m in split["only_ined"]["members"]] == ["2"]
-    assert split["only_ined"]["cloud_scope_member_count"] == 0
+    assert [m[0] for m in split["only_unpublished"]["members"]] == ["2"]
+    assert split["only_unpublished"]["cloud_scope_member_count"] == 0
     assert split["ordinary"]["parent_manifest"]["members_sha256"] \
         == parent["members_sha256"]
-    assert sum(m["member_count"] for m in split.values()) \
-        == parent["member_count"]
+    width = len(audit.MANIFEST_COLUMNS)
+    assert sorted(m[:width] for s in split.values() for m in s["members"]) \
+        == sorted(parent["members"])
+    assert split["ordinary"]["columns"][width:] == audit.REVIEW_EXTRA_COLUMNS
     # Distinct classes never share a members fingerprint unless both are empty.
     assert split["ordinary"]["members_sha256"] \
-        != split["only_ined"]["members_sha256"]
+        != split["only_unpublished"]["members_sha256"]
     assert split["ordinary"]["review_status"] == "needs_review"
+    assert split["ordinary"]["membership_rule"] \
+        == audit.SHARED_REVIEW_CLASSES["ordinary"]
+
+
+_STAGE0 = _SCRIPT.parent / "stage0"
+
+
+def _tracked(name):
+    import json
+    return json.loads((_STAGE0 / name).read_text(encoding="utf-8"))
+
+
+def test_tracked_review_manifests_partition_and_obey_their_rules():
+    """The committed Stage 0 split, checked against its own parent and the
+    rules it publishes. Needs only tracked files."""
+    parent = _tracked("group-a-shared-synonymy.manifest.json")
+    width = len(parent["columns"])
+    placed, split = {}, []
+    for cls in audit.SHARED_REVIEW_CLASSES:
+        manifest = _tracked(f"group-a-shared-synonymy--"
+                            f"{cls.replace('_', '-')}.manifest.json")
+        assert manifest["membership_rule"] == audit.SHARED_REVIEW_CLASSES[cls]
+        assert manifest["review_status"] == "needs_review"
+        assert manifest["parent_manifest"]["members_sha256"] \
+            == parent["members_sha256"]
+        counts = manifest["columns"].index("shared_synonym_kind_counts")
+        for member in manifest["members"]:
+            kinds = member[counts]
+            if cls.startswith("only_") and cls != "only_mixed_weak":
+                assert set(kinds) == {cls[len("only_"):]}, member[:3]
+            if cls == "ordinary":
+                assert kinds.get("ordinary", 0) >= 1, member[:3]
+            if cls == "only_mixed_weak":
+                assert "ordinary" not in kinds and len(kinds) > 1
+            placed[(member[0], member[1])] = cls
+            split.append(member[:width])
+    assert sorted(split) == sorted(parent["members"])
+    assert len(placed) == len(split) == parent["member_count"] == 4861
+    for case, (*_, expected) in _REVIEWED_CASES.items():
+        assert placed[tuple(case.split("/"))] == expected, case
 
 
 def test_summary_distributions():

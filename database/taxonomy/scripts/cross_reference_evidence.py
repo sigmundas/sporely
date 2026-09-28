@@ -118,11 +118,14 @@ def read_nortaxa(archive: Path, wanted: set[str]) -> dict[str, dict]:
     """Return ``{taxonID: {accepted, synonyms}}`` for the wanted concepts.
 
     ``accepted`` is the concept's own name key; ``synonyms`` is the set of name
-    keys NorTaxa publishes under it.
+    keys NorTaxa publishes under it. ``synonym_status`` maps each synonym key
+    to the structured statuses NorTaxa publishes on its usages, as
+    ``(field, value)`` pairs from ``taxonomicStatus`` and
+    ``nomenclaturalStatus`` (empty values kept, so "no status" is explicit).
     """
     concepts: dict[str, dict] = {
-        taxon_id: {"accepted": None, "synonyms": set(), "scientific_name": "",
-                   "authorship": "", "rank": ""}
+        taxon_id: {"accepted": None, "synonyms": set(), "synonym_status": {},
+                   "scientific_name": "", "authorship": "", "rank": ""}
         for taxon_id in wanted
     }
     with zipfile.ZipFile(archive) as bundle, bundle.open("taxon.txt") as handle:
@@ -144,6 +147,12 @@ def read_nortaxa(archive: Path, wanted: set[str]) -> dict[str, dict]:
                     row.get("taxonRank") or "").casefold()
             if accepted_id in concepts and accepted_id != taxon_id:
                 concepts[accepted_id]["synonyms"].add(key)
+                concepts[accepted_id]["synonym_status"].setdefault(
+                    key, set()).update({
+                        ("taxonomicStatus",
+                         str(row.get("taxonomicStatus") or "")),
+                        ("nomenclaturalStatus",
+                         str(row.get("nomenclaturalStatus") or ""))})
     return concepts
 
 
@@ -151,11 +160,12 @@ def read_col(archive: Path, wanted: set[str]) -> dict[str, dict]:
     """Return ``{col:ID: {accepted, synonyms}}`` for the wanted concepts.
 
     COL publishes a synonym as a usage whose ``col:parentID`` is the accepted
-    usage, so the synonym set is collected by parent.
+    usage, so the synonym set is collected by parent. ``synonym_status`` is as
+    for ``read_nortaxa``, from ``col:status`` and ``col:nameStatus``.
     """
     concepts: dict[str, dict] = {
-        usage_id: {"accepted": None, "synonyms": set(), "scientific_name": "",
-                   "authorship": "", "rank": ""}
+        usage_id: {"accepted": None, "synonyms": set(), "synonym_status": {},
+                   "scientific_name": "", "authorship": "", "rank": ""}
         for usage_id in wanted
     }
     with zipfile.ZipFile(archive) as bundle, bundle.open("NameUsage.tsv") as handle:
@@ -186,6 +196,10 @@ def read_col(archive: Path, wanted: set[str]) -> dict[str, dict]:
                 concepts[usage_id]["rank"] = field(parts, "col:rank").casefold()
             if parent_id in concepts and status not in _ACCEPTED_COL:
                 concepts[parent_id]["synonyms"].add(key)
+                concepts[parent_id]["synonym_status"].setdefault(
+                    key, set()).update({
+                        ("col:status", status),
+                        ("col:nameStatus", field(parts, "col:nameStatus"))})
     return concepts
 
 

@@ -1,0 +1,1002 @@
+{
+ "cloud_scope_member_count": 25,
+ "columns": [
+  "nortaxa_taxon_id",
+  "col_usage_id",
+  "sporely_taxon_id",
+  "in_cloud_scope",
+  "bridge_accepted_name",
+  "backbone_accepted_name",
+  "accepted_names_agree",
+  "bridge_lists_backbone_accepted_name_as_synonym",
+  "backbone_lists_bridge_accepted_name_as_synonym",
+  "shared_synonym_count",
+  "shared_synonyms",
+  "bridge_synonym_count",
+  "backbone_synonym_count",
+  "shared_synonym_kind_counts",
+  "shared_synonym_evidence"
+ ],
+ "evidence_class": "shared_synonymy",
+ "format": "sporely-taxonomy-v3-review-manifest-v2",
+ "member_count": 39,
+ "members": [
+  [
+   "123004",
+   "6MGL4",
+   101964,
+   false,
+   "Hyalopsora polypodii (Pers.) Magnus",
+   "Hyalopsora polypodii (Pers.) Magnus",
+   true,
+   false,
+   false,
+   1,
+   [
+    "uredo polypodii (Pers.) DC."
+   ],
+   2,
+   5,
+   {
+    "pro_parte": 1
+   },
+   [
+    "pro_parte: col col:status=ambiguous synonym [col col:status=ambiguous synonym, nortaxa nomenclaturalStatus=illegitimate, nortaxa taxonomicStatus=synonym]"
+   ]
+  ],
+  [
+   "123166",
+   "6FHSJ",
+   97129,
+   false,
+   "Entyloma ficariae A.A. Fisch. Waldh.",
+   "Entyloma ficariae A.A. Fisch. Waldh.",
+   true,
+   false,
+   false,
+   1,
+   [
+    "entyloma ranunculi (Bonord.) J. Schröt."
+   ],
+   1,
+   13,
+   {
+    "pro_parte": 1
+   },
+   [
+    "pro_parte: col col:status=ambiguous synonym [col col:status=ambiguous synonym, nortaxa taxonomicStatus=synonym]"
+   ]
+  ],
+  [
+   "128324",
+   "4DXDF",
+   42013,
+   false,
+   "Passalora montana (Speg.) U. Braun & Crous",
+   "Passalora montana (Speg.) U. Braun & Crous",
+   true,
+   false,
+   false,
+   1,
+   [
+    "ramularia montana Speg."
+   ],
+   1,
+   16,
+   {
+    "pro_parte": 1
+   },
+   [
+    "pro_parte: col col:status=ambiguous synonym [col col:status=ambiguous synonym, nortaxa taxonomicStatus=synonym]"
+   ]
+  ],
+  [
+   "128325",
+   "4DXGX",
+   42075,
+   false,
+   "Passalora rosae (Fuckel) U. Braun",
+   "Passalora rosae (Fuckel) U. Braun",
+   true,
+   false,
+   false,
+   1,
+   [
+    "cercospora rosae (Fuckel) Höhn."
+   ],
+   1,
+   2,
+   {
+    "pro_parte": 1
+   },
+   [
+    "pro_parte: col col:status=ambiguous synonym [col col:status=ambiguous synonym, nortaxa taxonomicStatus=synonym]"
+   ]
+  ],
+  [
+   "133934",
+   "4FH9B",
+   42891,
+   true,
+   "Peziza paludicola (Boud.) Sacc. & Traverso",
+   "Peziza paludicola (Boud.) Sacc. & Traverso",
+   true,
+   false,
+   false,
+   1,
+   [
+    "peziza crassipes Quél."
+   ],
+   1,
+   8,
+   {
+    "pro_parte": 1
+   },
+   [
+    "pro_parte: col col:status=ambiguous synonym [col col:status=ambiguous synonym, nortaxa taxonomicStatus=synonym]"
+   ]
+  ],
+  [
+   "137202",
+   "4RCSR",
+   59154,
+   false,
+   "Ramularia heraclei (Oudem.) Sacc.",
+   "Ramularia heraclei (Oudem.) Sacc.",
+   true,
+   false,
+   false,
+   1,
+   [
+    "cylindrosporium heraclei Oudem."
+   ],
+   1,
+   6,
+   {
+    "pro_parte": 1
+   },
+   [
+    "pro_parte: col col:status=ambiguous synonym [col col:status=ambiguous synonym, nortaxa taxonomicStatus=synonym]"
+   ]
+  ],
+  [
+   "137880",
+   "56Z75",
+   71777,
+   true,
+   "Timgrovea reticulata (G. Cunn.) Bougher & Castellano",
+   "Timgrovea reticulata (G. Cunn.) Bougher & Castellano",
+   true,
+   false,
+   false,
+   1,
+   [
+    "hymenogaster reticulatus G. Cunn."
+   ],
+   1,
+   1,
+   {
+    "pro_parte": 1
+   },
+   [
+    "pro_parte: col col:status=ambiguous synonym [col col:status=ambiguous synonym, nortaxa taxonomicStatus=synonym]"
+   ]
+  ],
+  [
+   "143076",
+   "33XZJ",
+   1764,
+   true,
+   "Daedaleopsis sinensis (Lloyd) Y.C. Dai",
+   "Daedaleopsis sinensis (Lloyd) Y.C. Dai",
+   true,
+   false,
+   false,
+   1,
+   [
+    "trametes sinensis (Lloyd) Ryvarden"
+   ],
+   1,
+   2,
+   {
+    "pro_parte": 1
+   },
+   [
+    "pro_parte: col col:status=ambiguous synonym [col col:status=ambiguous synonym, nortaxa taxonomicStatus=synonym]"
+   ]
+  ],
+  [
+   "143190",
+   "3Q52S",
+   19809,
+   true,
+   "Ischnoderma rosulatum (G. Cunn.) P.K. Buchanan & Ryvarden",
+   "Ischnoderma rosulatum (G. Cunn.) P.K. Buchanan & Ryvarden",
+   true,
+   false,
+   false,
+   1,
+   [
+    "polyporus rosulatus G. Cunn."
+   ],
+   2,
+   2,
+   {
+    "pro_parte": 1
+   },
+   [
+    "pro_parte: col col:status=ambiguous synonym [col col:status=ambiguous synonym, nortaxa taxonomicStatus=synonym]"
+   ]
+  ],
+  [
+   "143248",
+   "4BJG9",
+   40340,
+   true,
+   "Oxyporus cuneatus (Murrill) Aoshima",
+   "Oxyporus cuneatus (Murrill) Aoshima",
+   true,
+   false,
+   false,
+   1,
+   [
+    "polyporus cuneatus (Murrill) Murrill"
+   ],
+   1,
+   8,
+   {
+    "pro_parte": 1
+   },
+   [
+    "pro_parte: col col:status=ambiguous synonym [col col:status=ambiguous synonym, nortaxa taxonomicStatus=synonym]"
+   ]
+  ],
+  [
+   "144778",
+   "4MYL8",
+   52399,
+   false,
+   "Prosthecium pyriforme Jaklitsch & Voglmayr",
+   "Prosthecium pyriforme Jaklitsch & Voglmayr",
+   true,
+   false,
+   false,
+   1,
+   [
+    "stilbospora pyriformis Hoffm."
+   ],
+   2,
+   6,
+   {
+    "pro_parte": 1
+   },
+   [
+    "pro_parte: col col:status=ambiguous synonym [col col:status=ambiguous synonym, nortaxa taxonomicStatus=synonym]"
+   ]
+  ],
+  [
+   "152948",
+   "39Z7V",
+   7717,
+   true,
+   "Entoloma bryorum Romagn.",
+   "Entoloma bryorum Romagn.",
+   true,
+   false,
+   false,
+   1,
+   [
+    "entoloma muscorum Romagn."
+   ],
+   1,
+   2,
+   {
+    "pro_parte": 1
+   },
+   [
+    "pro_parte: col col:status=ambiguous synonym [col col:status=ambiguous synonym, nortaxa taxonomicStatus=synonym]"
+   ]
+  ],
+  [
+   "171248",
+   "6J9JW",
+   98401,
+   true,
+   "Flavodon flavus (Klotzsch) Ryvarden",
+   "Flavodon flavus (Klotzsch) Ryvarden",
+   true,
+   false,
+   false,
+   1,
+   [
+    "irpex flavus Klotzsch"
+   ],
+   1,
+   7,
+   {
+    "pro_parte": 1
+   },
+   [
+    "pro_parte: col col:status=ambiguous synonym [col col:status=ambiguous synonym, nortaxa taxonomicStatus=synonym]"
+   ]
+  ],
+  [
+   "172930",
+   "S424",
+   172095,
+   true,
+   "Cellulariella acuta (Berk.) Zmitr. & Malysheva",
+   "Cellulariella acuta (Berk.) Zmitr. & Malysheva",
+   true,
+   false,
+   false,
+   1,
+   [
+    "trametes acuta (Berk.) Imazeki"
+   ],
+   1,
+   4,
+   {
+    "pro_parte": 1
+   },
+   [
+    "pro_parte: col col:status=ambiguous synonym [col col:status=ambiguous synonym, nortaxa taxonomicStatus=synonym]"
+   ]
+  ],
+  [
+   "172933",
+   "T4SQ",
+   605681,
+   true,
+   "Cerrena drummondii (Klotzsch) Zmitr.",
+   "Cerrena drummondii (Klotzsch) Zmitr.",
+   true,
+   false,
+   false,
+   1,
+   [
+    "trametes drummondii (Klotzsch) Ryvarden"
+   ],
+   1,
+   5,
+   {
+    "pro_parte": 1
+   },
+   [
+    "pro_parte: col col:status=ambiguous synonym [col col:status=ambiguous synonym, nortaxa taxonomicStatus=synonym]"
+   ]
+  ],
+  [
+   "173983",
+   "6V4VC",
+   108725,
+   true,
+   "Perenniporia afrominuta Ryvarden",
+   "Perenniporia afrominuta Ryvarden",
+   true,
+   false,
+   false,
+   1,
+   [
+    "perenniporia minutissima Ryvarden"
+   ],
+   1,
+   1,
+   {
+    "pro_parte": 1
+   },
+   [
+    "pro_parte: col col:status=ambiguous synonym [col col:status=ambiguous synonym, nortaxa taxonomicStatus=synonym]"
+   ]
+  ],
+  [
+   "203653",
+   "59Z8J",
+   75096,
+   true,
+   "Tyromyces afrochioneus Ryvarden",
+   "Tyromyces afrochioneus Ryvarden",
+   true,
+   false,
+   false,
+   1,
+   [
+    "tyromyces subchioneus Ryvarden"
+   ],
+   1,
+   1,
+   {
+    "pro_parte": 1
+   },
+   [
+    "pro_parte: col col:status=ambiguous synonym [col col:status=ambiguous synonym, nortaxa taxonomicStatus=synonym]"
+   ]
+  ],
+  [
+   "204886",
+   "5C3R8",
+   76049,
+   true,
+   "Wrightoporia microporella Ryvarden",
+   "Wrightoporia microporella Ryvarden",
+   true,
+   false,
+   false,
+   1,
+   [
+    "wrightoporia micropora Aime & Ryvarden"
+   ],
+   1,
+   2,
+   {
+    "pro_parte": 1
+   },
+   [
+    "pro_parte: col col:status=ambiguous synonym [col col:status=ambiguous synonym, nortaxa taxonomicStatus=synonym]"
+   ]
+  ],
+  [
+   "216585",
+   "3XNWM",
+   26977,
+   true,
+   "Mallocybe fibrillosa (Peck) Matheny & Esteve-Rav.",
+   "Mallocybe fibrillosa (Peck) Matheny & Esteve-Rav.",
+   true,
+   false,
+   false,
+   1,
+   [
+    "inocybe fibrillosa Peck"
+   ],
+   1,
+   1,
+   {
+    "pro_parte": 1
+   },
+   [
+    "pro_parte: col col:status=ambiguous synonym [col col:status=ambiguous synonym, nortaxa taxonomicStatus=synonym]"
+   ]
+  ],
+  [
+   "225940",
+   "59Z8K",
+   75097,
+   true,
+   "Tyromyces afrospatulatus Ryvarden",
+   "Tyromyces afrospatulatus Ryvarden",
+   true,
+   false,
+   false,
+   1,
+   [
+    "tyromyces spatulatus Ryvarden"
+   ],
+   1,
+   1,
+   {
+    "pro_parte": 1
+   },
+   [
+    "pro_parte: col col:status=ambiguous synonym [col col:status=ambiguous synonym, nortaxa taxonomicStatus=synonym]"
+   ]
+  ],
+  [
+   "226575",
+   "4LJ6F",
+   51441,
+   true,
+   "Polyporus distinguendus Sacc. & Trotter",
+   "Polyporus distinguendus Sacc. & Trotter",
+   true,
+   false,
+   false,
+   1,
+   [
+    "polyporus rickianus Bres."
+   ],
+   1,
+   1,
+   {
+    "pro_parte": 1
+   },
+   [
+    "pro_parte: col col:status=ambiguous synonym [col col:status=ambiguous synonym, nortaxa taxonomicStatus=synonym]"
+   ]
+  ],
+  [
+   "228338",
+   "3T5WQ",
+   23881,
+   true,
+   "Lentinus substrictus (Bolton) Zmitr. & Kovalenko",
+   "Lentinus substrictus (Bolton) Zmitr. & Kovalenko",
+   true,
+   false,
+   false,
+   1,
+   [
+    "lentinus ciliatus (Fr.) Zmitr."
+   ],
+   5,
+   23,
+   {
+    "pro_parte": 1
+   },
+   [
+    "pro_parte: col col:status=ambiguous synonym [col col:status=ambiguous synonym, nortaxa taxonomicStatus=synonym]"
+   ]
+  ],
+  [
+   "52013",
+   "33PVD",
+   1075,
+   true,
+   "Cystolepiota hetieri (Boud.) Singer",
+   "Cystolepiota hetieri (Boud.) Singer",
+   true,
+   false,
+   false,
+   1,
+   [
+    "lepiota rufescens (Berk. & Broome) J.E. Lange"
+   ],
+   1,
+   8,
+   {
+    "pro_parte": 1
+   },
+   [
+    "pro_parte: col col:status=ambiguous synonym [col col:status=ambiguous synonym, nortaxa nomenclaturalStatus=illegitimate, nortaxa taxonomicStatus=synonym]"
+   ]
+  ],
+  [
+   "52825",
+   "YLKJ",
+   618945,
+   true,
+   "Cortinarius multiformium Consiglio & Moënne-Locc.",
+   "Cortinarius multiformium Consiglio & Moënne-Locc.",
+   true,
+   false,
+   false,
+   1,
+   [
+    "cortinarius proteus Consiglio & Moënne-Locc."
+   ],
+   1,
+   2,
+   {
+    "pro_parte": 1
+   },
+   [
+    "pro_parte: col col:status=ambiguous synonym [col col:status=ambiguous synonym, nortaxa nomenclaturalStatus=illegitimate, nortaxa taxonomicStatus=synonym]"
+   ]
+  ],
+  [
+   "53851",
+   "44TRQ",
+   34912,
+   true,
+   "Mycena renati Quél.",
+   "Mycena renati Quél.",
+   true,
+   false,
+   false,
+   1,
+   [
+    "mycena flavipes Quél."
+   ],
+   2,
+   3,
+   {
+    "pro_parte": 1
+   },
+   [
+    "pro_parte: col col:status=ambiguous synonym [col col:status=ambiguous synonym, nortaxa nomenclaturalStatus=illegitimate, nortaxa taxonomicStatus=synonym]"
+   ]
+  ],
+  [
+   "56584",
+   "3PS3N",
+   19401,
+   true,
+   "Inonotus obliquus (Fr.) Pilát",
+   "Inonotus obliquus (Fr.) Pilát",
+   true,
+   false,
+   false,
+   1,
+   [
+    "polyporus obliquus Fr."
+   ],
+   3,
+   16,
+   {
+    "pro_parte": 1
+   },
+   [
+    "pro_parte: col col:status=ambiguous synonym [col col:status=ambiguous synonym, nortaxa nomenclaturalStatus=illegitimate, nortaxa taxonomicStatus=synonym]"
+   ]
+  ],
+  [
+   "56613",
+   "778FW",
+   119379,
+   true,
+   "Phellinus laevigatus (P. Karst.) Bourdot & Galzin",
+   "Phellinus laevigatus (P. Karst.) Bourdot & Galzin",
+   true,
+   false,
+   false,
+   1,
+   [
+    "polyporus laevigatus Fr."
+   ],
+   6,
+   11,
+   {
+    "pro_parte": 1
+   },
+   [
+    "pro_parte: col col:status=ambiguous synonym [col col:status=ambiguous synonym, nortaxa nomenclaturalStatus=illegitimate, nortaxa taxonomicStatus=synonym]"
+   ]
+  ],
+  [
+   "56996",
+   "6MQ83",
+   102444,
+   true,
+   "Hypochnicium lundellii (Bourdot) J. Erikss.",
+   "Hypochnicium lundellii (Bourdot) J. Erikss.",
+   true,
+   false,
+   false,
+   1,
+   [
+    "corticium lundellii Bourdot"
+   ],
+   1,
+   1,
+   {
+    "pro_parte": 1
+   },
+   [
+    "pro_parte: col col:status=ambiguous synonym [col col:status=ambiguous synonym, nortaxa nomenclaturalStatus=illegitimate, nortaxa taxonomicStatus=synonym]"
+   ]
+  ],
+  [
+   "57347",
+   "57WZQ",
+   72221,
+   true,
+   "Trametes cingulata Berk.",
+   "Trametes cingulata Berk.",
+   true,
+   false,
+   false,
+   1,
+   [
+    "polyporus griseus Bres."
+   ],
+   1,
+   17,
+   {
+    "pro_parte": 1
+   },
+   [
+    "pro_parte: col col:status=ambiguous synonym [col col:status=ambiguous synonym, nortaxa nomenclaturalStatus=illegitimate, nortaxa taxonomicStatus=synonym]"
+   ]
+  ],
+  [
+   "64561",
+   "3RS88",
+   22152,
+   true,
+   "Lactarius salicis-reticulatae Kühner",
+   "Lactarius salicis-reticulatae Kühner",
+   true,
+   false,
+   false,
+   1,
+   [
+    "lactarius aspideoides Kühner"
+   ],
+   2,
+   1,
+   {
+    "pro_parte": 1
+   },
+   [
+    "pro_parte: col col:status=ambiguous synonym [col col:status=ambiguous synonym, nortaxa nomenclaturalStatus=illegitimate, nortaxa taxonomicStatus=synonym]"
+   ]
+  ],
+  [
+   "67359",
+   "3TYPC",
+   25343,
+   false,
+   "Leptotrochila ranunculi (Fr.) Schüepp",
+   "Leptotrochila ranunculi (Fr.) Schüepp",
+   true,
+   false,
+   false,
+   1,
+   [
+    "fabraea ranunculi (Fr.) Rehm"
+   ],
+   3,
+   12,
+   {
+    "pro_parte": 1
+   },
+   [
+    "pro_parte: col col:status=ambiguous synonym [col col:status=ambiguous synonym, nortaxa nomenclaturalStatus=illegitimate, nortaxa taxonomicStatus=synonym]"
+   ]
+  ],
+  [
+   "67679",
+   "7DBP3",
+   125154,
+   false,
+   "Tympanis conspersa (Fr.) Fr.",
+   "Tympanis conspersa (Fr.) Fr.",
+   true,
+   false,
+   false,
+   1,
+   [
+    "sphaeria conspersa Fr."
+   ],
+   1,
+   21,
+   {
+    "pro_parte": 1
+   },
+   [
+    "pro_parte: col col:status=ambiguous synonym [col col:status=ambiguous synonym, nortaxa nomenclaturalStatus=illegitimate, nortaxa taxonomicStatus=synonym]"
+   ]
+  ],
+  [
+   "69725",
+   "7CPPF",
+   124369,
+   false,
+   "Tremolecia atrata (Ach.) Hertel",
+   "Tremolecia atrata (Ach.) Hertel",
+   true,
+   false,
+   false,
+   1,
+   [
+    "lecidea atrata (Ach.) Wahlenb."
+   ],
+   8,
+   14,
+   {
+    "pro_parte": 1
+   },
+   [
+    "pro_parte: col col:status=ambiguous synonym [col col:status=ambiguous synonym, nortaxa nomenclaturalStatus=illegitimate, nortaxa taxonomicStatus=synonym]"
+   ]
+  ],
+  [
+   "72126",
+   "4CFZ9",
+   40877,
+   false,
+   "Pannoparmelia angustata (Pers.) Zahlbr.",
+   "Pannoparmelia angustata (Pers.) Zahlbr.",
+   true,
+   false,
+   false,
+   1,
+   [
+    "parmelia angustata Pers."
+   ],
+   2,
+   6,
+   {
+    "pro_parte": 1
+   },
+   [
+    "pro_parte: col col:status=ambiguous synonym [col col:status=ambiguous synonym, nortaxa nomenclaturalStatus=illegitimate, nortaxa taxonomicStatus=synonym]"
+   ]
+  ],
+  [
+   "73047",
+   "5C6MJ",
+   76219,
+   false,
+   "Xanthoparmelia convoluta (Kremp.) Hale",
+   "Xanthoparmelia convoluta (Kremp.) Hale",
+   true,
+   false,
+   false,
+   1,
+   [
+    "parmelia convoluta Kremp."
+   ],
+   2,
+   4,
+   {
+    "pro_parte": 1
+   },
+   [
+    "pro_parte: col col:status=ambiguous synonym [col col:status=ambiguous synonym, nortaxa nomenclaturalStatus=illegitimate, nortaxa taxonomicStatus=synonym]"
+   ]
+  ],
+  [
+   "75320",
+   "4YRD2",
+   66521,
+   false,
+   "Sphaerophorus fragilis (L.) Pers.",
+   "Sphaerophorus fragilis (L.) Pers.",
+   true,
+   false,
+   false,
+   1,
+   [
+    "lichen fragilis L."
+   ],
+   1,
+   16,
+   {
+    "pro_parte": 1
+   },
+   [
+    "pro_parte: col col:status=ambiguous synonym [col col:status=ambiguous synonym, nortaxa nomenclaturalStatus=illegitimate, nortaxa taxonomicStatus=synonym]"
+   ]
+  ],
+  [
+   "76034",
+   "44YC5",
+   35722,
+   false,
+   "Mycosphaerella holmii O.E. Erikss.",
+   "Mycosphaerella holmii O.E. Erikss.",
+   true,
+   false,
+   false,
+   1,
+   [
+    "mycosphaerella chamaemori L. Holm & K. Holm"
+   ],
+   1,
+   1,
+   {
+    "pro_parte": 1
+   },
+   [
+    "pro_parte: col col:status=ambiguous synonym [col col:status=ambiguous synonym, nortaxa nomenclaturalStatus=illegitimate, nortaxa taxonomicStatus=synonym]"
+   ]
+  ],
+  [
+   "80302",
+   "HTSD",
+   156303,
+   false,
+   "Asteromassaria macrospora (Desm.) Höhn.",
+   "Asteromassaria macrospora (Desm.) Höhn.",
+   true,
+   false,
+   false,
+   1,
+   [
+    "massaria macrospora (Desm.) Sacc."
+   ],
+   1,
+   15,
+   {
+    "pro_parte": 1
+   },
+   [
+    "pro_parte: col col:status=ambiguous synonym [col col:status=ambiguous synonym, nortaxa nomenclaturalStatus=illegitimate, nortaxa taxonomicStatus=synonym]"
+   ]
+  ],
+  [
+   "82902",
+   "3P2FP",
+   17973,
+   true,
+   "Hypoxylon fraxinophilum Pouzar",
+   "Hypoxylon fraxinophilum Pouzar",
+   true,
+   false,
+   false,
+   1,
+   [
+    "hypoxylon argillaceum (Pers.) Nitschke"
+   ],
+   2,
+   10,
+   {
+    "pro_parte": 1
+   },
+   [
+    "pro_parte: col col:status=ambiguous synonym [col col:status=ambiguous synonym, nortaxa nomenclaturalStatus=illegitimate, nortaxa taxonomicStatus=synonym]"
+   ]
+  ]
+ ],
+ "members_sha256": "0b80fd27c5e9e69e030291ddc5f96236c94cd9edf545b786d5774f04af7ecac2",
+ "membership_rule": "every shared synonym is of kind 'pro_parte'",
+ "note": "Immutable review input derived deterministically from the parent shared_synonymy manifest; the review classes partition it. A member belongs to the first class, in review_class_precedence, whose membership_rule it meets; each shared synonym has the first kind, in synonym_kind_precedence, whose rule it meets. Membership is pinned to the release and source archives below; it approves nothing and never extends to taxa in a later source release. shared_synonyms and shared_synonym_evidence list at most 10 names; shared_synonym_count and shared_synonym_kind_counts are exact.",
+ "parent_manifest": {
+  "evidence_class": "shared_synonymy",
+  "member_count": 4861,
+  "members_sha256": "ce48854856fd0a7f6c1d454cc79bfeeb2d57d9c8ff038305156ade8f9a85e3bc"
+ },
+ "pins": {
+  "bridge_emission_policy": {
+   "path": "database/taxonomy/policies/mapping_policy.yml",
+   "sha256": "a5a329848c45fcd030165a51ad1193944dffe7573ddb2a9c69441f0d76ae4afb"
+  },
+  "cloud_scope_policy": {
+   "path": "database/taxonomy/policies/global-macrofungi-scope.yml",
+   "scope_predicate_id": "global_macrofungi_policy_v1",
+   "sha256": "e4e796286df93b5372264c702c824eea746f680b3b4e8d6467621c99e5b64ea6"
+  },
+  "release": {
+   "content_release_id": "tax-2026.09.26-02",
+   "gz_artifact": "database/reference_data/generated/taxonomy_v2/tax-2026.09.26-02.sqlite3.gz",
+   "gz_sha256": "4488bb64f4abe18ed269c76264f9be36708d742ff531e931e8d7458791e05d72",
+   "sqlite_sha256": "9bf71b7e1f9b2915c3b1798743cefdd5db53bdbbfb7edc462aa3d0ad0cf8547d"
+  },
+  "source_archives": {
+   "col_xr": {
+    "sha256": "397d701c8eb269bf78d6ac7b03149915b0d9e2a2c18694be2c91445b807814f9",
+    "source_release_id": "col_xr:2026-07-17-XR:2026-07-17"
+   },
+   "nortaxa": {
+    "sha256": "29c11c54d955dc44e4e5a38944dd7932989a256d1b173777579b9f33abd2fe22",
+    "source_release_id": "nortaxa:1.284:2026-07-17"
+   }
+  }
+ },
+ "population": "group_a_automatic_nortaxa_bridge",
+ "review_class": "only_pro_parte",
+ "review_class_precedence": [
+  "non_species_rank",
+  "rank_mismatch",
+  "infraspecific_rank",
+  "accepted_authorship_disagrees",
+  "only_orthographic_variant",
+  "only_unpublished",
+  "only_not_validly_published",
+  "only_illegitimate",
+  "only_interpretation_qualified",
+  "only_pro_parte",
+  "only_accepted_name_reauthored",
+  "only_unauthored",
+  "only_name_variant",
+  "only_mixed_weak",
+  "single_shared_synonym_low_overlap",
+  "ordinary"
+ ],
+ "review_status": "needs_review",
+ "synonym_kind_precedence": [
+  "orthographic_variant",
+  "unpublished",
+  "not_validly_published",
+  "illegitimate",
+  "interpretation_qualified",
+  "pro_parte",
+  "accepted_name_reauthored",
+  "unauthored",
+  "name_variant",
+  "ordinary"
+ ],
+ "synonym_kinds": {
+  "accepted_name_reauthored": "the canonical name is either accepted name itself, under another authorship",
+  "illegitimate": "the authorship carries 'nom. illeg.' (the sources' structured illegitimacy statuses, NorTaxa 'illegitimate' and COL 'unacceptable', are not used)",
+  "interpretation_qualified": "a misapplied usage (NorTaxa nomenclaturalStatus or COL col:status 'misapplied'), or the authorship carries a sensu-style qualifier ('sensu', 's.', 'ss.', 'auct.')",
+  "name_variant": "no structured status applies, but the name is almost spelled like either accepted name: same word count once hyphens are removed, and every word, genus included, within Levenshtein distance 2 (a possible misspelling or a near-identical combination, unconfirmed by the sources)",
+  "not_validly_published": "NorTaxa nomenclaturalStatus 'notvalidlypublished', COL col:nameStatus 'not established', or the authorship carries 'nom. nud.' or 'nom. inval.'",
+  "ordinary": "meets none of the tests above",
+  "orthographic_variant": "either source's structured status marks the usage an orthographic variant (NorTaxa nomenclaturalStatus 'orthographic')",
+  "pro_parte": "COL col:status 'ambiguous synonym', or the authorship carries 'p.p.' or 'pro parte'",
+  "unauthored": "the authorship is empty, so the match is on the name alone",
+  "unpublished": "COL col:nameStatus 'manuscript', or the authorship carries 'ined' or 'nom. herb.'"
+ }
+}

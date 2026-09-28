@@ -19,149 +19,10 @@
  ],
  "evidence_class": "shared_synonymy",
  "format": "sporely-taxonomy-v3-review-manifest-v2",
- "member_count": 6,
- "members": [
-  [
-   "65603",
-   "B22Q5",
-   137748,
-   false,
-   "Arthonia peltigerae",
-   "Arthonia peltigerae Th. Fr.",
-   false,
-   false,
-   false,
-   1,
-   [
-    "arthonia peltigerea Th. Fr."
-   ],
-   1,
-   9,
-   {
-    "name_variant": 1
-   },
-   [
-    "name_variant: near-spelling of accepted 'arthonia peltigerae' [col col:status=synonym, nortaxa nomenclaturalStatus=illegitimate, nortaxa taxonomicStatus=synonym]"
-   ]
-  ],
-  [
-   "72417",
-   "RBYNM",
-   170394,
-   false,
-   "Parmotrema latissimum",
-   "Parmotrema latissimum (Fée) Hale",
-   false,
-   false,
-   false,
-   1,
-   [
-    "parmelia latissima Fée"
-   ],
-   1,
-   1,
-   {
-    "ordinary": 1
-   },
-   [
-    "ordinary: none of the weak kinds [col col:nameStatus=unacceptable, col col:status=synonym, nortaxa nomenclaturalStatus=illegitimate, nortaxa taxonomicStatus=synonym]"
-   ]
-  ],
-  [
-   "73049",
-   "DSNXM",
-   151803,
-   false,
-   "Xanthoparmelia coreana",
-   "Xanthoparmelia coreana (Gyeln.) Hale",
-   false,
-   false,
-   false,
-   1,
-   [
-    "parmelia coreana"
-   ],
-   1,
-   1,
-   {
-    "unauthored": 1
-   },
-   [
-    "unauthored: empty authorship [col col:nameStatus=unacceptable, col col:status=synonym, nortaxa nomenclaturalStatus=illegitimate, nortaxa taxonomicStatus=synonym]"
-   ]
-  ],
-  [
-   "75741",
-   "76FZY",
-   117769,
-   false,
-   "Peltula impressa",
-   "Peltula impressa (Vain.) Swinscow & Krog",
-   false,
-   false,
-   false,
-   1,
-   [
-    "heppia impressa Vain."
-   ],
-   1,
-   1,
-   {
-    "ordinary": 1
-   },
-   [
-    "ordinary: none of the weak kinds [col col:status=synonym, nortaxa nomenclaturalStatus=illegitimate, nortaxa taxonomicStatus=synonym]"
-   ]
-  ],
-  [
-   "75920",
-   "4FMD2",
-   43219,
-   false,
-   "Phaeocalicium betulinum",
-   "Phaeocalicium betulinum (Nyl.) Tibell",
-   false,
-   false,
-   false,
-   1,
-   [
-    "calicium betulinum (Nyl.) Zahlbr."
-   ],
-   1,
-   4,
-   {
-    "ordinary": 1
-   },
-   [
-    "ordinary: none of the weak kinds [col col:status=synonym, nortaxa nomenclaturalStatus=illegitimate, nortaxa taxonomicStatus=synonym]"
-   ]
-  ],
-  [
-   "80779",
-   "4QSB2",
-   58241,
-   false,
-   "Pyrenula mamillana",
-   "Pyrenula mamillana (Ach.) Trevis.",
-   false,
-   false,
-   false,
-   1,
-   [
-    "verrucaria mamillana Ach."
-   ],
-   1,
-   8,
-   {
-    "ordinary": 1
-   },
-   [
-    "ordinary: none of the weak kinds [col col:status=synonym, nortaxa nomenclaturalStatus=illegitimate, nortaxa taxonomicStatus=synonym]"
-   ]
-  ]
- ],
- "members_sha256": "940db1acddd3211e446587fb39a690cf9294d14e9071d934724b1fb7cabe800a",
- "membership_rule": "the accepted name keys differ (canonical name plus authorship)",
+ "member_count": 0,
+ "members": [],
+ "members_sha256": "ee6ac95e2c7591af7befba25ec799638ee87aea7a2036c89115f48ebb485c51f",
+ "membership_rule": "the two accepted usages have different ranks (for example species and variety)",
  "note": "Immutable review input derived deterministically from the parent shared_synonymy manifest; the review classes partition it. A member belongs to the first class, in review_class_precedence, whose membership_rule it meets; each shared synonym has the first kind, in synonym_kind_precedence, whose rule it meets. Membership is pinned to the release and source archives below; it approves nothing and never extends to taxa in a later source release. shared_synonyms and shared_synonym_evidence list at most 10 names; shared_synonym_count and shared_synonym_kind_counts are exact.",
  "parent_manifest": {
   "evidence_class": "shared_synonymy",
@@ -196,7 +57,7 @@
   }
  },
  "population": "group_a_automatic_nortaxa_bridge",
- "review_class": "accepted_authorship_disagrees",
+ "review_class": "rank_mismatch",
  "review_class_precedence": [
   "non_species_rank",
   "rank_mismatch",

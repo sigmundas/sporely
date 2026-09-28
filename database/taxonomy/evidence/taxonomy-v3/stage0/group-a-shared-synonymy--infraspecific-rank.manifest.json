@@ -13,10 +13,12 @@
   "shared_synonym_count",
   "shared_synonyms",
   "bridge_synonym_count",
-  "backbone_synonym_count"
+  "backbone_synonym_count",
+  "shared_synonym_kind_counts",
+  "shared_synonym_evidence"
  ],
  "evidence_class": "shared_synonymy",
- "format": "sporely-taxonomy-v3-review-manifest-v1",
+ "format": "sporely-taxonomy-v3-review-manifest-v2",
  "member_count": 35,
  "members": [
   [
@@ -34,7 +36,13 @@
     "coleosporium tussilaginis var. pulsatillae"
    ],
    2,
-   6
+   6,
+   {
+    "unauthored": 1
+   },
+   [
+    "unauthored: empty authorship [col col:nameStatus=unacceptable, col col:status=synonym, nortaxa nomenclaturalStatus=illegitimate, nortaxa taxonomicStatus=synonym]"
+   ]
   ],
   [
    "122445",
@@ -53,7 +61,16 @@
     "melampsora ribesii-purpureae Kleb."
    ],
    10,
-   4
+   4,
+   {
+    "ordinary": 2,
+    "unauthored": 1
+   },
+   [
+    "ordinary: none of the weak kinds [col col:nameStatus=unacceptable, col col:status=synonym, nortaxa nomenclaturalStatus=illegitimate, nortaxa taxonomicStatus=synonym]",
+    "unauthored: empty authorship [col col:nameStatus=unacceptable, col col:status=synonym, nortaxa nomenclaturalStatus=illegitimate, nortaxa taxonomicStatus=synonym]",
+    "ordinary: none of the weak kinds [col col:status=synonym, nortaxa nomenclaturalStatus=illegitimate, nortaxa taxonomicStatus=synonym]"
+   ]
   ],
   [
    "122651",
@@ -71,7 +88,14 @@
     "puccinia urticae-caricis (Schumach.) Rebent."
    ],
    6,
-   4
+   4,
+   {
+    "ordinary": 2
+   },
+   [
+    "ordinary: none of the weak kinds [col col:nameStatus=unacceptable, col col:status=synonym, nortaxa nomenclaturalStatus=illegitimate, nortaxa taxonomicStatus=synonym]",
+    "ordinary: none of the weak kinds [col col:nameStatus=unacceptable, col col:status=synonym, nortaxa nomenclaturalStatus=illegitimate, nortaxa taxonomicStatus=synonym]"
+   ]
   ],
   [
    "122697",
@@ -88,7 +112,13 @@
     "puccinia jaceae-capillaris Tranzschel"
    ],
    2,
-   2
+   2,
+   {
+    "ordinary": 1
+   },
+   [
+    "ordinary: none of the weak kinds [col col:nameStatus=unacceptable, col col:status=synonym, nortaxa nomenclaturalStatus=illegitimate, nortaxa taxonomicStatus=synonym]"
+   ]
   ],
   [
    "135408",
@@ -105,7 +135,13 @@
     "oedenocarpum sanguinarium"
    ],
    2,
-   2
+   2,
+   {
+    "unauthored": 1
+   },
+   [
+    "unauthored: empty authorship [col col:status=synonym, nortaxa taxonomicStatus=synonym]"
+   ]
   ],
   [
    "53174",
@@ -122,7 +158,13 @@
     "inocybe pseudoconfusa Métrod"
    ],
    1,
-   2
+   2,
+   {
+    "ordinary": 1
+   },
+   [
+    "ordinary: none of the weak kinds [col col:nameStatus=unacceptable, col col:status=synonym, nortaxa nomenclaturalStatus=illegitimate, nortaxa taxonomicStatus=synonym]"
+   ]
   ],
   [
    "54190",
@@ -139,7 +181,13 @@
     "galerina vittaeformis var. vittaeformis (Fr.) Singer"
    ],
    2,
-   1
+   1,
+   {
+    "name_variant": 1
+   },
+   [
+    "name_variant: near-spelling of accepted 'galerina vittiformis var. vittiformis' [col col:nameStatus=unacceptable, col col:status=synonym, nortaxa nomenclaturalStatus=illegitimate, nortaxa taxonomicStatus=synonym]"
+   ]
   ],
   [
    "56262",
@@ -156,7 +204,13 @@
     "clavaria albida Sacc."
    ],
    1,
-   1
+   1,
+   {
+    "ordinary": 1
+   },
+   [
+    "ordinary: none of the weak kinds [col col:nameStatus=unacceptable, col col:status=synonym, nortaxa nomenclaturalStatus=illegitimate, nortaxa taxonomicStatus=synonym]"
+   ]
   ],
   [
    "57788",
@@ -173,7 +227,13 @@
     "russula maculata var. maculata Quél."
    ],
    1,
-   1
+   1,
+   {
+    "ordinary": 1
+   },
+   [
+    "ordinary: none of the weak kinds [col col:nameStatus=unacceptable, col col:status=synonym, nortaxa nomenclaturalStatus=illegitimate, nortaxa taxonomicStatus=synonym]"
+   ]
   ],
   [
    "65130",
@@ -190,7 +250,13 @@
     "acarospora arctica Magnusson, ined."
    ],
    1,
-   1
+   1,
+   {
+    "unpublished": 1
+   },
+   [
+    "unpublished: authorship 'ined' [col col:nameStatus=unacceptable, col col:status=synonym, nortaxa nomenclaturalStatus=illegitimate, nortaxa taxonomicStatus=synonym]"
+   ]
   ],
   [
    "67494",
@@ -207,7 +273,13 @@
     "bulgaria sarcoides var. pileata Sommerf."
    ],
    1,
-   1
+   1,
+   {
+    "ordinary": 1
+   },
+   [
+    "ordinary: none of the weak kinds [col col:nameStatus=unacceptable, col col:status=synonym, nortaxa nomenclaturalStatus=illegitimate, nortaxa taxonomicStatus=synonym]"
+   ]
   ],
   [
    "67852",
@@ -224,7 +296,13 @@
     "trichopeziza nidulus var. subnidulans (Rehm)"
    ],
    1,
-   1
+   1,
+   {
+    "ordinary": 1
+   },
+   [
+    "ordinary: none of the weak kinds [col col:nameStatus=unacceptable, col col:status=synonym, nortaxa nomenclaturalStatus=illegitimate, nortaxa taxonomicStatus=synonym]"
+   ]
   ],
   [
    "68632",
@@ -241,7 +319,13 @@
     "arctomia delicatula subsp. cisalpina Hulting"
    ],
    1,
-   1
+   1,
+   {
+    "ordinary": 1
+   },
+   [
+    "ordinary: none of the weak kinds [col col:nameStatus=unacceptable, col col:status=synonym, nortaxa nomenclaturalStatus=illegitimate, nortaxa taxonomicStatus=synonym]"
+   ]
   ],
   [
    "69034",
@@ -260,7 +344,16 @@
     "cladonia beringiana (Ahti) Trass"
    ],
    3,
-   3
+   3,
+   {
+    "name_variant": 1,
+    "ordinary": 2
+   },
+   [
+    "name_variant: near-spelling of accepted 'cladonia arbuscula subsp. beringiana' [col col:nameStatus=unacceptable, col col:status=synonym, nortaxa nomenclaturalStatus=illegitimate, nortaxa taxonomicStatus=synonym]",
+    "ordinary: none of the weak kinds [col col:nameStatus=unacceptable, col col:status=synonym, nortaxa nomenclaturalStatus=illegitimate, nortaxa taxonomicStatus=synonym]",
+    "ordinary: none of the weak kinds [col col:nameStatus=unacceptable, col col:status=synonym, nortaxa nomenclaturalStatus=illegitimate, nortaxa taxonomicStatus=synonym]"
+   ]
   ],
   [
    "69196",
@@ -279,7 +372,15 @@
     "cladonia sanguinea Martius"
    ],
    3,
-   3
+   3,
+   {
+    "ordinary": 3
+   },
+   [
+    "ordinary: none of the weak kinds [col col:nameStatus=unacceptable, col col:status=synonym, nortaxa nomenclaturalStatus=illegitimate, nortaxa taxonomicStatus=synonym]",
+    "ordinary: none of the weak kinds [col col:nameStatus=unacceptable, col col:status=synonym, nortaxa nomenclaturalStatus=illegitimate, nortaxa taxonomicStatus=synonym]",
+    "ordinary: none of the weak kinds [col col:nameStatus=unacceptable, col col:status=synonym, nortaxa nomenclaturalStatus=illegitimate, nortaxa taxonomicStatus=synonym]"
+   ]
   ],
   [
    "69241",
@@ -298,7 +399,16 @@
     "cladonia pacifica Ahti"
    ],
    3,
-   3
+   3,
+   {
+    "name_variant": 1,
+    "ordinary": 2
+   },
+   [
+    "ordinary: none of the weak kinds [col col:nameStatus=unacceptable, col col:status=synonym, nortaxa nomenclaturalStatus=illegitimate, nortaxa taxonomicStatus=synonym]",
+    "name_variant: near-spelling of accepted 'cladonia portentosa subsp. pacifica' [col col:nameStatus=unacceptable, col col:status=synonym, nortaxa nomenclaturalStatus=illegitimate, nortaxa taxonomicStatus=synonym]",
+    "ordinary: none of the weak kinds [col col:nameStatus=unacceptable, col col:status=synonym, nortaxa nomenclaturalStatus=illegitimate, nortaxa taxonomicStatus=synonym]"
+   ]
   ],
   [
    "69327",
@@ -315,7 +425,13 @@
     "cladina subtenuis f. cinerea (Ahti) Ahti"
    ],
    1,
-   1
+   1,
+   {
+    "name_variant": 1
+   },
+   [
+    "name_variant: near-spelling of accepted 'cladonia subtenuis f. cinerea' [col col:nameStatus=unacceptable, col col:status=synonym, nortaxa nomenclaturalStatus=illegitimate, nortaxa taxonomicStatus=synonym]"
+   ]
   ],
   [
    "69335",
@@ -332,7 +448,13 @@
     "cladina terrae-novae f. cinerescens (Ahti) Brodo"
    ],
    1,
-   1
+   1,
+   {
+    "name_variant": 1
+   },
+   [
+    "name_variant: near-spelling of accepted 'cladonia terrae-novae f. cinerescens' [col col:nameStatus=unacceptable, col col:status=synonym, nortaxa nomenclaturalStatus=illegitimate, nortaxa taxonomicStatus=synonym]"
+   ]
   ],
   [
    "69844",
@@ -349,7 +471,13 @@
     "lecanora caesiorubella subsp. lathamii Imsh. & Brodo"
    ],
    2,
-   3
+   3,
+   {
+    "ordinary": 1
+   },
+   [
+    "ordinary: none of the weak kinds [col col:nameStatus=unacceptable, col col:status=synonym, nortaxa nomenclaturalStatus=illegitimate, nortaxa taxonomicStatus=synonym]"
+   ]
   ],
   [
    "69868",
@@ -366,7 +494,13 @@
     "lecanora celsii f. cinerascens (Lynge), comb. ined."
    ],
    1,
-   1
+   1,
+   {
+    "unpublished": 1
+   },
+   [
+    "unpublished: authorship 'ined' [col col:nameStatus=unacceptable, col col:status=synonym, nortaxa nomenclaturalStatus=illegitimate, nortaxa taxonomicStatus=synonym]"
+   ]
   ],
   [
    "69951",
@@ -384,7 +518,14 @@
     "lecanora parmelina Zahlbr."
    ],
    2,
-   2
+   2,
+   {
+    "ordinary": 2
+   },
+   [
+    "ordinary: none of the weak kinds [col col:nameStatus=unacceptable, col col:status=synonym, nortaxa nomenclaturalStatus=illegitimate, nortaxa taxonomicStatus=synonym]",
+    "ordinary: none of the weak kinds [col col:nameStatus=unacceptable, col col:status=synonym, nortaxa nomenclaturalStatus=illegitimate, nortaxa taxonomicStatus=synonym]"
+   ]
   ],
   [
    "70921",
@@ -402,7 +543,14 @@
     "lecidea casimirii Müll.Arg."
    ],
    2,
-   2
+   2,
+   {
+    "ordinary": 2
+   },
+   [
+    "ordinary: none of the weak kinds [col col:nameStatus=unacceptable, col col:status=synonym, nortaxa nomenclaturalStatus=illegitimate, nortaxa taxonomicStatus=synonym]",
+    "ordinary: none of the weak kinds [col col:nameStatus=unacceptable, col col:status=synonym, nortaxa nomenclaturalStatus=illegitimate, nortaxa taxonomicStatus=synonym]"
+   ]
   ],
   [
    "71606",
@@ -420,7 +568,14 @@
     "cetraria tenuifolia var. pseudoislandica Räs."
    ],
    2,
-   2
+   2,
+   {
+    "ordinary": 2
+   },
+   [
+    "ordinary: none of the weak kinds [col col:nameStatus=unacceptable, col col:status=synonym, nortaxa nomenclaturalStatus=illegitimate, nortaxa taxonomicStatus=synonym]",
+    "ordinary: none of the weak kinds [col col:nameStatus=unacceptable, col col:status=synonym, nortaxa nomenclaturalStatus=illegitimate, nortaxa taxonomicStatus=synonym]"
+   ]
   ],
   [
    "73854",
@@ -437,7 +592,13 @@
     "pyxine petricola var. pallida Swinscow & Krog"
    ],
    1,
-   1
+   1,
+   {
+    "ordinary": 1
+   },
+   [
+    "ordinary: none of the weak kinds [col col:nameStatus=unacceptable, col col:status=synonym, nortaxa nomenclaturalStatus=illegitimate, nortaxa taxonomicStatus=synonym]"
+   ]
   ],
   [
    "73891",
@@ -460,7 +621,19 @@
     "rinodina confragosa var. turgida (Weddell) Boistel"
    ],
    9,
-   7
+   7,
+   {
+    "ordinary": 7
+   },
+   [
+    "ordinary: none of the weak kinds [col col:nameStatus=unacceptable, col col:status=synonym, nortaxa nomenclaturalStatus=illegitimate, nortaxa taxonomicStatus=synonym]",
+    "ordinary: none of the weak kinds [col col:nameStatus=unacceptable, col col:status=synonym, nortaxa nomenclaturalStatus=illegitimate, nortaxa taxonomicStatus=synonym]",
+    "ordinary: none of the weak kinds [col col:nameStatus=unacceptable, col col:status=synonym, nortaxa nomenclaturalStatus=illegitimate, nortaxa taxonomicStatus=synonym]",
+    "ordinary: none of the weak kinds [col col:nameStatus=unacceptable, col col:status=synonym, nortaxa nomenclaturalStatus=illegitimate, nortaxa taxonomicStatus=synonym]",
+    "ordinary: none of the weak kinds [col col:nameStatus=unacceptable, col col:status=synonym, nortaxa nomenclaturalStatus=illegitimate, nortaxa taxonomicStatus=synonym]",
+    "ordinary: none of the weak kinds [col col:nameStatus=unacceptable, col col:status=synonym, nortaxa nomenclaturalStatus=illegitimate, nortaxa taxonomicStatus=synonym]",
+    "ordinary: none of the weak kinds [col col:nameStatus=unacceptable, col col:status=synonym, nortaxa nomenclaturalStatus=illegitimate, nortaxa taxonomicStatus=synonym]"
+   ]
   ],
   [
    "73892",
@@ -477,7 +650,13 @@
     "rinodina lavicola J. Steiner"
    ],
    1,
-   1
+   1,
+   {
+    "ordinary": 1
+   },
+   [
+    "ordinary: none of the weak kinds [col col:nameStatus=unacceptable, col col:status=synonym, nortaxa nomenclaturalStatus=illegitimate, nortaxa taxonomicStatus=synonym]"
+   ]
   ],
   [
    "74019",
@@ -494,7 +673,13 @@
     "rinodina confragosa var. olivieri Samp."
    ],
    1,
-   1
+   1,
+   {
+    "ordinary": 1
+   },
+   [
+    "ordinary: none of the weak kinds [col col:nameStatus=unacceptable, col col:status=synonym, nortaxa nomenclaturalStatus=illegitimate, nortaxa taxonomicStatus=synonym]"
+   ]
   ],
   [
    "74778",
@@ -514,7 +699,16 @@
     "phyllopsora schizophylloides (Malme) Gotth. Schneid."
    ],
    4,
-   4
+   4,
+   {
+    "ordinary": 4
+   },
+   [
+    "ordinary: none of the weak kinds [col col:nameStatus=unacceptable, col col:status=synonym, nortaxa nomenclaturalStatus=illegitimate, nortaxa taxonomicStatus=synonym]",
+    "ordinary: none of the weak kinds [col col:nameStatus=unacceptable, col col:status=synonym, nortaxa nomenclaturalStatus=illegitimate, nortaxa taxonomicStatus=synonym]",
+    "ordinary: none of the weak kinds [col col:nameStatus=unacceptable, col col:status=synonym, nortaxa nomenclaturalStatus=illegitimate, nortaxa taxonomicStatus=synonym]",
+    "ordinary: none of the weak kinds [col col:nameStatus=unacceptable, col col:status=synonym, nortaxa nomenclaturalStatus=illegitimate, nortaxa taxonomicStatus=synonym]"
+   ]
   ],
   [
    "75718",
@@ -531,7 +725,13 @@
     "omphalaria pulvinata var. laxa Müll.Arg."
    ],
    1,
-   1
+   1,
+   {
+    "ordinary": 1
+   },
+   [
+    "ordinary: none of the weak kinds [col col:nameStatus=unacceptable, col col:status=synonym, nortaxa nomenclaturalStatus=illegitimate, nortaxa taxonomicStatus=synonym]"
+   ]
   ],
   [
    "77296",
@@ -549,7 +749,14 @@
     "gyalidea mexicana (de Lesd.) Vezda"
    ],
    2,
-   2
+   2,
+   {
+    "ordinary": 2
+   },
+   [
+    "ordinary: none of the weak kinds [col col:nameStatus=unacceptable, col col:status=synonym, nortaxa nomenclaturalStatus=illegitimate, nortaxa taxonomicStatus=synonym]",
+    "ordinary: none of the weak kinds [col col:nameStatus=unacceptable, col col:status=synonym, nortaxa nomenclaturalStatus=illegitimate, nortaxa taxonomicStatus=synonym]"
+   ]
   ],
   [
    "77300",
@@ -567,7 +774,14 @@
     "lopadium cacuminum H. Magn."
    ],
    2,
-   2
+   2,
+   {
+    "ordinary": 2
+   },
+   [
+    "ordinary: none of the weak kinds [col col:nameStatus=unacceptable, col col:status=synonym, nortaxa nomenclaturalStatus=illegitimate, nortaxa taxonomicStatus=synonym]",
+    "ordinary: none of the weak kinds [col col:nameStatus=unacceptable, col col:status=synonym, nortaxa nomenclaturalStatus=illegitimate, nortaxa taxonomicStatus=synonym]"
+   ]
   ],
   [
    "77301",
@@ -585,7 +799,14 @@
     "lecidea stigmatoides Nyl."
    ],
    2,
-   2
+   2,
+   {
+    "ordinary": 2
+   },
+   [
+    "ordinary: none of the weak kinds [col col:nameStatus=unacceptable, col col:status=synonym, nortaxa nomenclaturalStatus=illegitimate, nortaxa taxonomicStatus=synonym]",
+    "ordinary: none of the weak kinds [col col:nameStatus=unacceptable, col col:status=synonym, nortaxa nomenclaturalStatus=illegitimate, nortaxa taxonomicStatus=synonym]"
+   ]
   ],
   [
    "77964",
@@ -602,7 +823,13 @@
     "collema cyrtaspis Tuck."
    ],
    3,
-   1
+   1,
+   {
+    "ordinary": 1
+   },
+   [
+    "ordinary: none of the weak kinds [col col:nameStatus=unacceptable, col col:status=synonym, nortaxa nomenclaturalStatus=illegitimate, nortaxa taxonomicStatus=synonym]"
+   ]
   ],
   [
    "79288",
@@ -619,7 +846,13 @@
     "geopora schackii Henn."
    ],
    1,
-   2
+   2,
+   {
+    "ordinary": 1
+   },
+   [
+    "ordinary: none of the weak kinds [col col:nameStatus=unacceptable, col col:status=synonym, nortaxa nomenclaturalStatus=illegitimate, nortaxa taxonomicStatus=synonym]"
+   ]
   ],
   [
    "81819",
@@ -636,12 +869,18 @@
     "xanthoria substellaris var. subsorediosa Räsänen"
    ],
    1,
-   1
+   1,
+   {
+    "ordinary": 1
+   },
+   [
+    "ordinary: none of the weak kinds [col col:nameStatus=unacceptable, col col:status=synonym, nortaxa nomenclaturalStatus=illegitimate, nortaxa taxonomicStatus=synonym]"
+   ]
   ]
  ],
- "members_sha256": "b35ad08f992cb1f82a17d3231f1e00bb606b1f13ce9b85f5f995fe0b14c61c8b",
- "membership_rule": "both accepted usages are infraspecific (subspecies, variety, form)",
- "note": "Immutable review input derived deterministically from the parent shared_synonymy manifest; the review classes partition it. Membership is pinned to the release and source archives below; it approves nothing and never extends to taxa in a later source release. shared_synonyms lists at most 10 names; shared_synonym_count is exact.",
+ "members_sha256": "2f50f12007df4f743209dfb9d9f38ab063550f22d25047607421cf01db4f2b30",
+ "membership_rule": "both accepted usages have the same infraspecific rank (subspecies, variety, form)",
+ "note": "Immutable review input derived deterministically from the parent shared_synonymy manifest; the review classes partition it. A member belongs to the first class, in review_class_precedence, whose membership_rule it meets; each shared synonym has the first kind, in synonym_kind_precedence, whose rule it meets. Membership is pinned to the release and source archives below; it approves nothing and never extends to taxa in a later source release. shared_synonyms and shared_synonym_evidence list at most 10 names; shared_synonym_count and shared_synonym_kind_counts are exact.",
  "parent_manifest": {
   "evidence_class": "shared_synonymy",
   "member_count": 4861,
@@ -678,15 +917,45 @@
  "review_class": "infraspecific_rank",
  "review_class_precedence": [
   "non_species_rank",
+  "rank_mismatch",
   "infraspecific_rank",
   "accepted_authorship_disagrees",
-  "only_ined",
-  "only_invalid_name",
-  "only_accepted_name_variant",
+  "only_orthographic_variant",
+  "only_unpublished",
+  "only_not_validly_published",
+  "only_illegitimate",
+  "only_interpretation_qualified",
+  "only_pro_parte",
+  "only_accepted_name_reauthored",
   "only_unauthored",
+  "only_name_variant",
   "only_mixed_weak",
   "single_shared_synonym_low_overlap",
   "ordinary"
  ],
- "review_status": "needs_review"
+ "review_status": "needs_review",
+ "synonym_kind_precedence": [
+  "orthographic_variant",
+  "unpublished",
+  "not_validly_published",
+  "illegitimate",
+  "interpretation_qualified",
+  "pro_parte",
+  "accepted_name_reauthored",
+  "unauthored",
+  "name_variant",
+  "ordinary"
+ ],
+ "synonym_kinds": {
+  "accepted_name_reauthored": "the canonical name is either accepted name itself, under another authorship",
+  "illegitimate": "the authorship carries 'nom. illeg.' (the sources' structured illegitimacy statuses, NorTaxa 'illegitimate' and COL 'unacceptable', are not used)",
+  "interpretation_qualified": "a misapplied usage (NorTaxa nomenclaturalStatus or COL col:status 'misapplied'), or the authorship carries a sensu-style qualifier ('sensu', 's.', 'ss.', 'auct.')",
+  "name_variant": "no structured status applies, but the name is almost spelled like either accepted name: same word count once hyphens are removed, and every word, genus included, within Levenshtein distance 2 (a possible misspelling or a near-identical combination, unconfirmed by the sources)",
+  "not_validly_published": "NorTaxa nomenclaturalStatus 'notvalidlypublished', COL col:nameStatus 'not established', or the authorship carries 'nom. nud.' or 'nom. inval.'",
+  "ordinary": "meets none of the tests above",
+  "orthographic_variant": "either source's structured status marks the usage an orthographic variant (NorTaxa nomenclaturalStatus 'orthographic')",
+  "pro_parte": "COL col:status 'ambiguous synonym', or the authorship carries 'p.p.' or 'pro parte'",
+  "unauthored": "the authorship is empty, so the match is on the name alone",
+  "unpublished": "COL col:nameStatus 'manuscript', or the authorship carries 'ined' or 'nom. herb.'"
+ }
 }

@@ -104,3 +104,34 @@ def test_readers_record_the_accepted_usage_rank(tmp_path):
         _archive(tmp_path / "c.zip", "NameUsage.tsv", _COL_COLUMNS,
                  _DIDYMOCYRTIS_COL), {"35YQ2"})
     assert nortaxa["227128"]["rank"] == col["35YQ2"]["rank"] == "species"
+
+
+def test_readers_record_structured_synonym_status(tmp_path):
+    # NorTaxa 1.284 / COL XR 2026-07-17 rows for Cortinarius diosmus, NorTaxa
+    # 59001 / COL YKPL: its only shared synonym is not validly published.
+    nortaxa = xref.read_nortaxa(
+        _archive(tmp_path / "n.zip", "taxon.txt",
+                 _NORTAXA_COLUMNS + ["nomenclaturalStatus"], [
+                     ["59001", "59001", "Cortinarius diosmus", "Kühner",
+                      "valid", "species", ""],
+                     ["N1", "59001", "Cortinarius argillaceosericeus",
+                      "Kytöv., Niskanen & Liimat.", "synonym", "species",
+                      "notvalidlypublished"]]), {"59001"})
+    col = xref.read_col(
+        _archive(tmp_path / "c.zip", "NameUsage.tsv",
+                 _COL_COLUMNS + ["col:nameStatus"], [
+                     ["YKPL", "P", "accepted", "species",
+                      "Cortinarius diosmus", "Kühner", ""],
+                     ["C1", "YKPL", "synonym", "species",
+                      "Cortinarius argillaceosericeus",
+                      "Kytöv., Niskanen & Liimat.", "not established"]]),
+        {"YKPL"})
+    key = ("cortinarius argillaceosericeus", "Kytöv., Niskanen & Liimat.")
+    assert nortaxa["59001"]["synonym_status"][key] == {
+        ("taxonomicStatus", "synonym"),
+        ("nomenclaturalStatus", "notvalidlypublished")}
+    assert col["YKPL"]["synonym_status"][key] == {
+        ("col:status", "synonym"), ("col:nameStatus", "not established")}
+    # Recording status changes no grade.
+    assert xref.grade(nortaxa["59001"], col["YKPL"])["evidence_class"] \
+        == xref.EVIDENCE_SHARED_SYNONYMY

@@ -23,9 +23,10 @@ class. A manifest lists every association with its evidence detail, is pinned
 to the release and source-archive fingerprints, and carries a SHA-256 over its
 members. Manifests are review inputs: every member is ``needs_review``. The
 ``shared_synonymy`` manifest is further partitioned by the fixed rules in
-``SHARED_REVIEW_CLASSES`` into one review manifest per class, so strong
-evidence can be approved without approving the weak cases with it; the parent
-stays whole for accounting.
+``SHARED_REVIEW_CLASS_TESTS``, stated over the per-synonym kinds of
+``SYNONYM_KIND_TESTS``, into one review manifest per class, so strong evidence
+can be approved without approving the weak cases with it; the parent stays
+whole for accounting.
 
 Read-only over the release, archives, policies and registry. Fails closed if an
 archive does not match the fingerprint the release records for it. Writes only
@@ -104,41 +105,7 @@ REGRESSIONS = {
     "NBIC:56449 (temporary unresolved fixture)": {"nortaxa_taxon_id": "56449"},
 }
 
-#: Review classes that split the ``shared_synonymy`` manifest, in precedence
-#: order: a member belongs to the first class whose rule it meets. The split is
-#: a pure function of the pinned sources, so every class is as immutable as
-#: the parent manifest, and together they partition it exactly.
-SHARED_REVIEW_CLASSES = {
-    "non_species_rank": (
-        "either source's accepted usage has a rank other than species or an "
-        "infraspecific rank (subspecies, variety, form)"),
-    "infraspecific_rank": (
-        "both accepted usages are infraspecific (subspecies, variety, form)"),
-    "accepted_authorship_disagrees": (
-        "the accepted name keys differ (canonical name plus authorship)"),
-    "only_ined": (
-        "every shared synonym's authorship carries the word 'ined'"),
-    "only_invalid_name": (
-        "every shared synonym's authorship carries nom. nud., nom. inval., "
-        "nom. herb. or nom. illeg. (and not 'ined')"),
-    "only_accepted_name_variant": (
-        "every shared synonym is the accepted name itself under another "
-        "authorship or a spelling variant of it: same word count, hyphens "
-        "removed, first word equal (unless uninomial) and every word within "
-        "Levenshtein distance 2 of the accepted name's word"),
-    "only_unauthored": (
-        "every shared synonym has an empty authorship, so the match is on the "
-        "name alone"),
-    "only_mixed_weak": (
-        "every shared synonym is one of the weak kinds above, but not all the "
-        "same kind"),
-    "single_shared_synonym_low_overlap": (
-        "exactly one ordinary shared synonym while each source publishes at "
-        "least 5 synonyms"),
-    "ordinary": (
-        "species rank, agreeing accepted names, and at least one ordinary "
-        "shared synonym (none of the weak kinds above); not low overlap"),
-}
+_SPECIES_RANK = "species"
 _INFRASPECIFIC_RANKS = frozenset({"subspecies", "variety", "form"})
 _LOW_OVERLAP_MIN_SYNONYMS = 5
 
@@ -398,6 +365,18 @@ def build_manifest(evidence_class: str, rows: list[dict],
     }
 
 
+# ------------------------------------------------- shared-synonymy review ---
+#
+# The ``shared_synonymy`` manifest is split for review in two steps, each a
+# fixed, ordered table whose rule text and predicate sit side by side, so the
+# rules published in the manifests are the rules executed:
+#
+# 1. every shared synonym gets one kind from ``SYNONYM_KIND_TESTS`` — the first
+#    test it meets, else ``ordinary`` — plus the evidence that decided it;
+# 2. the association gets the first class in ``SHARED_REVIEW_CLASS_TESTS``
+#    whose rule it meets, stated over those kinds.
+
+
 def _levenshtein(a: str, b: str) -> int:
     previous = list(range(len(b) + 1))
     for i, ca in enumerate(a, 1):
@@ -409,80 +388,302 @@ def _levenshtein(a: str, b: str) -> int:
     return previous[-1]
 
 
-def _is_accepted_name_variant(name: str, accepted: str) -> bool:
-    """Same name as ``accepted`` under another authorship, or a spelling
-    variant of it. Both are case-folded canonical names."""
+def _is_near_name(name: str, accepted: str) -> bool:
+    """A name almost spelled like ``accepted``: same word count once hyphens
+    are removed, and every word, the genus included, within Levenshtein
+    distance 2 of the accepted name's word. Both are case-folded canonical
+    names. Spelling alone cannot tell a misspelling (Scolecosporium) from a
+    different genus (Cladina, Parmelina), so a match is only a name variant."""
     words = name.replace("-", "").split()
     target = accepted.replace("-", "").split()
-    if len(words) != len(target):
-        return False
-    if len(words) > 1 and words[0] != target[0]:
+    if name == accepted or len(words) != len(target):
         return False
     return all(_levenshtein(w, t) <= 2 for w, t in zip(words, target))
 
 
-def synonym_kind(key: tuple[str, str], accepted_names: set[str]) -> str:
-    """Classify one shared synonym name key; ``ordinary`` unless weak."""
-    name, authorship = key
-    if re.search(r"\bined\b", authorship):
-        return "ined"
-    if re.search(r"\bnom\.\s*(nud|inval|herb|illeg)\b", authorship):
-        return "invalid_name"
-    if any(_is_accepted_name_variant(name, a) for a in accepted_names):
-        return "accepted_name_variant"
-    if not authorship:
-        return "unauthored"
-    return "ordinary"
+#: Structured source statuses, as ``(source, field, value)``, that make a
+#: shared synonym weak. NorTaxa ``illegitimate`` and COL ``unacceptable`` are
+#: deliberately absent: illegitimacy concerns which name is correct, not
+#: whether the name is established, and NorTaxa sets it on most synonyms.
+_STATUS_ORTHOGRAPHIC = frozenset({
+    ("nortaxa", "nomenclaturalStatus", "orthographic")})
+_STATUS_UNPUBLISHED = frozenset({("col", "col:nameStatus", "manuscript")})
+_STATUS_NOT_VALIDLY_PUBLISHED = frozenset({
+    ("nortaxa", "nomenclaturalStatus", "notvalidlypublished"),
+    ("col", "col:nameStatus", "not established")})
+_STATUS_MISAPPLIED = frozenset({
+    ("nortaxa", "nomenclaturalStatus", "misapplied"),
+    ("col", "col:status", "misapplied")})
+_STATUS_PRO_PARTE = frozenset({("col", "col:status", "ambiguous synonym")})
+
+_ANNOTATION_UNPUBLISHED = re.compile(r"\bined\b|\bnom\.\s*herb\b")
+_ANNOTATION_NOT_VALIDLY_PUBLISHED = re.compile(r"\bnom\.\s*(nud|inval)\b")
+_ANNOTATION_ILLEGITIMATE = re.compile(r"\bnom\.\s*illeg\b")
+_ANNOTATION_INTERPRETATION = re.compile(r"\b(sensu|auct|ss?)\.|\bsensu\b")
+_ANNOTATION_PRO_PARTE = re.compile(r"\bp\.\s*p\.|\bpro\s+parte\b")
+
+
+def _status_basis(evidence: dict, statuses: frozenset) -> str | None:
+    hits = sorted(evidence["status"] & statuses)
+    return "; ".join(f"{src} {field}={value}" for src, field, value in hits) \
+        or None
+
+
+def _annotation_basis(evidence: dict, pattern: re.Pattern) -> str | None:
+    match = pattern.search(evidence["authorship"])
+    return f"authorship '{match.group(0)}'" if match else None
+
+
+def _first_basis(*bases: str | None) -> str | None:
+    return next((basis for basis in bases if basis), None)
+
+
+def _near_name(e: dict) -> str | None:
+    return next((f"near-spelling of accepted '{a}'"
+                 for a in sorted(e["accepted"]) if _is_near_name(e["name"], a)),
+                None)
+
+
+def _reauthored(e: dict) -> str | None:
+    return "accepted name under another authorship" \
+        if e["name"] in e["accepted"] else None
+
+
+#: ``(kind, rule, test)`` in precedence order, most certain evidence first:
+#: the sources' structured statuses, then authorship annotations, then exact
+#: name comparisons, then the spelling heuristic. A test returns the evidence
+#: it found, or None.
+SYNONYM_KIND_TESTS = (
+    ("orthographic_variant",
+     "either source's structured status marks the usage an orthographic "
+     "variant (NorTaxa nomenclaturalStatus 'orthographic')",
+     lambda e: _status_basis(e, _STATUS_ORTHOGRAPHIC)),
+    ("unpublished",
+     "COL col:nameStatus 'manuscript', or the authorship carries 'ined' or "
+     "'nom. herb.'",
+     lambda e: _first_basis(_status_basis(e, _STATUS_UNPUBLISHED),
+                            _annotation_basis(e, _ANNOTATION_UNPUBLISHED))),
+    ("not_validly_published",
+     "NorTaxa nomenclaturalStatus 'notvalidlypublished', COL col:nameStatus "
+     "'not established', or the authorship carries 'nom. nud.' or "
+     "'nom. inval.'",
+     lambda e: _first_basis(
+         _status_basis(e, _STATUS_NOT_VALIDLY_PUBLISHED),
+         _annotation_basis(e, _ANNOTATION_NOT_VALIDLY_PUBLISHED))),
+    ("illegitimate",
+     "the authorship carries 'nom. illeg.' (the sources' structured "
+     "illegitimacy statuses, NorTaxa 'illegitimate' and COL 'unacceptable', "
+     "are not used)",
+     lambda e: _annotation_basis(e, _ANNOTATION_ILLEGITIMATE)),
+    ("interpretation_qualified",
+     "a misapplied usage (NorTaxa nomenclaturalStatus or COL col:status "
+     "'misapplied'), or the authorship carries a sensu-style qualifier "
+     "('sensu', 's.', 'ss.', 'auct.')",
+     lambda e: _first_basis(_status_basis(e, _STATUS_MISAPPLIED),
+                            _annotation_basis(e, _ANNOTATION_INTERPRETATION))),
+    ("pro_parte",
+     "COL col:status 'ambiguous synonym', or the authorship carries 'p.p.' or "
+     "'pro parte'",
+     lambda e: _first_basis(_status_basis(e, _STATUS_PRO_PARTE),
+                            _annotation_basis(e, _ANNOTATION_PRO_PARTE))),
+    ("accepted_name_reauthored",
+     "the canonical name is either accepted name itself, under another "
+     "authorship", _reauthored),
+    ("unauthored",
+     "the authorship is empty, so the match is on the name alone",
+     lambda e: "empty authorship" if not e["authorship"] else None),
+    ("name_variant",
+     "no structured status applies, but the name is almost spelled like "
+     "either accepted name: same word count once hyphens are removed, and "
+     "every word, genus included, within Levenshtein distance 2 (a possible "
+     "misspelling or a near-identical combination, unconfirmed by the "
+     "sources)", _near_name),
+)
+SYNONYM_KIND_ORDINARY = "ordinary"
+WEAK_SYNONYM_KINDS = tuple(kind for kind, _, _ in SYNONYM_KIND_TESTS)
+
+
+def synonym_evidence(key: tuple[str, str], bridge: dict,
+                     backbone: dict) -> dict:
+    """What the classifier sees of one shared synonym: its name key, both
+    sources' non-empty structured statuses on it, and both accepted names."""
+    status = {("nortaxa", field, value)
+              for field, value in bridge.get("synonym_status", {}).get(key, ())
+              if value}
+    status |= {("col", field, value)
+               for field, value in backbone.get("synonym_status", {}).get(key, ())
+               if value}
+    return {"name": key[0], "authorship": key[1], "status": frozenset(status),
+            "accepted": frozenset({bridge["accepted"][0],
+                                   backbone["accepted"][0]})}
+
+
+def classify_synonym(evidence: dict) -> tuple[str, str]:
+    """``(kind, basis)`` of the first ``SYNONYM_KIND_TESTS`` entry met."""
+    for kind, _, test in SYNONYM_KIND_TESTS:
+        basis = test(evidence)
+        if basis:
+            return kind, basis
+    return SYNONYM_KIND_ORDINARY, "none of the weak kinds"
+
+
+def _describe_synonym(evidence: dict, kind: str, basis: str) -> str:
+    status = ", ".join(f"{src} {field}={value}"
+                       for src, field, value in sorted(evidence["status"]))
+    return f"{kind}: {basis}" + (f" [{status}]" if status else "")
+
+
+def association_facts(row: dict, bridge: dict, backbone: dict) -> dict:
+    """Everything a review class rule reads, for one shared-synonymy row."""
+    evidence = [synonym_evidence(key, bridge, backbone)
+                for key in shared_synonym_keys(bridge, backbone)]
+    classified = [classify_synonym(e) for e in evidence]
+    return {
+        "bridge_rank": bridge["rank"],
+        "backbone_rank": backbone["rank"],
+        "accepted_names_agree": row["accepted_names_agree"],
+        "kinds": [kind for kind, _ in classified],
+        "descriptions": [_describe_synonym(e, kind, basis)
+                         for e, (kind, basis) in zip(evidence, classified)],
+        "bridge_synonym_count": row["bridge_synonym_count"],
+        "backbone_synonym_count": row["backbone_synonym_count"],
+    }
+
+
+def _ranks(f: dict) -> set[str]:
+    return {f["bridge_rank"], f["backbone_rank"]}
+
+
+def _low_overlap(f: dict) -> bool:
+    return min(f["bridge_synonym_count"], f["backbone_synonym_count"]) \
+        >= _LOW_OVERLAP_MIN_SYNONYMS
+
+
+def _only(kind: str):
+    return lambda f: bool(f["kinds"]) and all(k == kind for k in f["kinds"])
+
+
+#: ``(review_class, rule, predicate)`` in precedence order: a member belongs to
+#: the first class whose rule it meets. Every rule is complete on its own, so
+#: precedence only settles overlaps; ``ordinary`` states its full conditions
+#: and a row meeting no rule fails the audit.
+SHARED_REVIEW_CLASS_TESTS = (
+    ("non_species_rank",
+     "either source's accepted usage has a rank other than species or an "
+     "infraspecific rank (subspecies, variety, form)",
+     lambda f: not _ranks(f) <= _INFRASPECIFIC_RANKS | {_SPECIES_RANK}),
+    ("rank_mismatch",
+     "the two accepted usages have different ranks (for example species and "
+     "variety)",
+     lambda f: f["bridge_rank"] != f["backbone_rank"]),
+    ("infraspecific_rank",
+     "both accepted usages have the same infraspecific rank (subspecies, "
+     "variety, form)",
+     lambda f: _ranks(f) <= _INFRASPECIFIC_RANKS),
+    ("accepted_authorship_disagrees",
+     "the accepted name keys differ (canonical name plus authorship)",
+     lambda f: not f["accepted_names_agree"]),
+    *((f"only_{kind}",
+       f"every shared synonym is of kind '{kind}'", _only(kind))
+      for kind in WEAK_SYNONYM_KINDS),
+    ("only_mixed_weak",
+     "no shared synonym is of kind 'ordinary', and they are not all of one "
+     "kind",
+     lambda f: SYNONYM_KIND_ORDINARY not in f["kinds"]
+     and len(set(f["kinds"])) > 1),
+    ("single_shared_synonym_low_overlap",
+     f"exactly one shared synonym is of kind 'ordinary' while each source "
+     f"publishes at least {_LOW_OVERLAP_MIN_SYNONYMS} synonyms",
+     lambda f: f["kinds"].count(SYNONYM_KIND_ORDINARY) == 1
+     and _low_overlap(f)),
+    ("ordinary",
+     "both accepted usages are species, the accepted name keys (canonical "
+     "name plus authorship) agree, at least one shared synonym is of kind "
+     "'ordinary', and not low overlap (a single 'ordinary' shared synonym "
+     f"while each source publishes at least {_LOW_OVERLAP_MIN_SYNONYMS} "
+     "synonyms)",
+     lambda f: f["bridge_rank"] == f["backbone_rank"] == _SPECIES_RANK
+     and f["accepted_names_agree"]
+     and (f["kinds"].count(SYNONYM_KIND_ORDINARY) > 1
+          or (SYNONYM_KIND_ORDINARY in f["kinds"] and not _low_overlap(f)))),
+)
+SHARED_REVIEW_CLASSES = {name: rule
+                         for name, rule, _ in SHARED_REVIEW_CLASS_TESTS}
+SYNONYM_KINDS = {**{kind: rule for kind, rule, _ in SYNONYM_KIND_TESTS},
+                 SYNONYM_KIND_ORDINARY: "meets none of the tests above"}
+
+#: Review manifests append these to the parent's columns.
+REVIEW_EXTRA_COLUMNS = ["shared_synonym_kind_counts",
+                        "shared_synonym_evidence"]
+
+
+def review_class_for(facts: dict) -> str:
+    for name, _, predicate in SHARED_REVIEW_CLASS_TESTS:
+        if predicate(facts):
+            return name
+    raise SystemExit(f"shared-synonymy row meets no review class: {facts}")
 
 
 def shared_review_class(row: dict, bridge: dict, backbone: dict) -> str:
-    """The ``SHARED_REVIEW_CLASSES`` member a shared-synonymy row falls in."""
-    ranks = {bridge["rank"], backbone["rank"]}
-    if not ranks <= _INFRASPECIFIC_RANKS | {"species"}:
-        return "non_species_rank"
-    if ranks <= _INFRASPECIFIC_RANKS:
-        return "infraspecific_rank"
-    if not row["accepted_names_agree"]:
-        return "accepted_authorship_disagrees"
-    accepted = {bridge["accepted"][0], backbone["accepted"][0]}
-    kinds = [synonym_kind(key, accepted)
-             for key in shared_synonym_keys(bridge, backbone)]
-    ordinary = kinds.count("ordinary")
-    if not ordinary:
-        weak = set(kinds)
-        return f"only_{weak.pop()}" if len(weak) == 1 else "only_mixed_weak"
-    if ordinary == 1 and min(row["bridge_synonym_count"],
-                             row["backbone_synonym_count"]) \
-            >= _LOW_OVERLAP_MIN_SYNONYMS:
-        return "single_shared_synonym_low_overlap"
-    return "ordinary"
+    """The ``SHARED_REVIEW_CLASS_TESTS`` class a shared-synonymy row falls in."""
+    return review_class_for(association_facts(row, bridge, backbone))
 
 
 def build_review_manifest(review_class: str, rows: list[dict], pins: dict,
                           parent: dict) -> dict:
-    """One ``shared_synonymy`` review class, derived from ``parent``."""
-    base = build_manifest(EVIDENCE_SHARED_SYNONYMY,
-                          [r for r in rows
-                           if r.get("review_class") == review_class], pins)
+    """One ``shared_synonymy`` review class, derived from ``parent``.
+
+    Members are the parent's columns followed by ``REVIEW_EXTRA_COLUMNS``: the
+    exact count of shared synonyms per kind, and a description of each listed
+    shared synonym, in ``shared_synonyms`` order, giving its kind, the evidence
+    that decided it and the sources' structured statuses on it.
+    """
+    columns = MANIFEST_COLUMNS + REVIEW_EXTRA_COLUMNS
+    members = sorted(
+        ([row[column] for column in columns] for row in rows
+         if row["evidence_class"] == EVIDENCE_SHARED_SYNONYMY
+         and row.get("review_class") == review_class),
+        key=lambda m: (m[0], m[1], m[2]))
+    in_scope = MANIFEST_COLUMNS.index("in_cloud_scope")
     return {
-        **base,
-        "format": "sporely-taxonomy-v3-review-manifest-v1",
+        "format": "sporely-taxonomy-v3-review-manifest-v2",
+        "population": "group_a_automatic_nortaxa_bridge",
+        "evidence_class": EVIDENCE_SHARED_SYNONYMY,
         "review_class": review_class,
+        "review_status": "needs_review",
         "membership_rule": SHARED_REVIEW_CLASSES[review_class],
         "review_class_precedence": list(SHARED_REVIEW_CLASSES),
+        "synonym_kinds": SYNONYM_KINDS,
+        "synonym_kind_precedence": list(SYNONYM_KINDS),
         "parent_manifest": {"evidence_class": EVIDENCE_SHARED_SYNONYMY,
                             "member_count": parent["member_count"],
                             "members_sha256": parent["members_sha256"]},
-        "cloud_scope_member_count": sum(
-            1 for m in base["members"] if m[MANIFEST_COLUMNS.index(
-                "in_cloud_scope")]),
+        "pins": pins,
+        "columns": columns,
+        "member_count": len(members),
+        "cloud_scope_member_count": sum(1 for m in members if m[in_scope]),
+        "members_sha256": hashlib.sha256(
+            _canonical({"columns": columns, "members": members})).hexdigest(),
+        "members": members,
         "note": ("Immutable review input derived deterministically from the "
                  "parent shared_synonymy manifest; the review classes "
-                 "partition it. Membership is pinned to the release and source "
-                 "archives below; it approves nothing and never extends to "
-                 "taxa in a later source release. shared_synonyms lists at "
-                 "most 10 names; shared_synonym_count is exact."),
+                 "partition it. A member belongs to the first class, in "
+                 "review_class_precedence, whose membership_rule it meets; "
+                 "each shared synonym has the first kind, in "
+                 "synonym_kind_precedence, whose rule it meets. Membership is "
+                 "pinned to the release and source archives below; it "
+                 "approves nothing and never extends to taxa in a later "
+                 "source release. shared_synonyms and shared_synonym_evidence "
+                 "list at most 10 names; shared_synonym_count and "
+                 "shared_synonym_kind_counts are exact."),
     }
+
+
+def _kind_totals(rows: list[dict]) -> dict[str, int]:
+    totals = collections.Counter()
+    for row in rows:
+        totals.update(row.get("shared_synonym_kind_counts") or {})
+    return {kind: totals[kind] for kind in SYNONYM_KINDS}
 
 
 def _extra_pairs() -> list[tuple[str, str]]:
@@ -605,15 +806,20 @@ def audit(args: argparse.Namespace) -> dict[str, dict]:
 
     for row in a_rows:
         if row["evidence_class"] == EVIDENCE_SHARED_SYNONYMY:
-            row["review_class"] = shared_review_class(
-                row, nortaxa[row["nortaxa_taxon_id"]], col[row["col_usage_id"]])
+            facts = association_facts(row, nortaxa[row["nortaxa_taxon_id"]],
+                                      col[row["col_usage_id"]])
+            row["review_class"] = review_class_for(facts)
+            row["shared_synonym_kind_counts"] = _histogram(facts["kinds"])
+            row["shared_synonym_evidence"] = facts["descriptions"][:10]
 
     manifests = {cls: build_manifest(cls, a_rows, pins)
                  for cls in EVIDENCE_CLASSES}
     parent = manifests[EVIDENCE_SHARED_SYNONYMY]
     review_manifests = {cls: build_review_manifest(cls, a_rows, pins, parent)
                         for cls in SHARED_REVIEW_CLASSES}
-    split = sorted(m for rm in review_manifests.values() for m in rm["members"])
+    width = len(MANIFEST_COLUMNS)
+    split = sorted(m[:width] for rm in review_manifests.values()
+                   for m in rm["members"])
     if split != sorted(parent["members"]):
         raise SystemExit("shared_synonymy review classes do not partition "
                          "the parent manifest")
@@ -664,6 +870,12 @@ def audit(args: argparse.Namespace) -> dict[str, dict]:
                            "class, in precedence order, whose rule it meets"),
             "precedence": list(SHARED_REVIEW_CLASSES),
             "rules": SHARED_REVIEW_CLASSES,
+            "synonym_kind_precedence": list(SYNONYM_KINDS),
+            "synonym_kinds": SYNONYM_KINDS,
+            "shared_synonym_kind_totals": {
+                "full_release": _kind_totals(a_rows),
+                "cloud_scope": _kind_totals(
+                    [r for r in a_rows if r["in_cloud_scope"]])},
             "full_release": {cls: m["member_count"]
                              for cls, m in review_manifests.items()},
             "cloud_scope": {cls: m["cloud_scope_member_count"]

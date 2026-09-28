@@ -30,12 +30,45 @@ Outputs are byte-deterministic:
   `{"columns", "members"}`; `pins` carries the release and archive
   fingerprints. Every member is `needs_review`.
 - `group-a-shared-synonymy--<review-class>.manifest.json` — the
-  `shared_synonymy` manifest partitioned by the fixed, precedence-ordered rules
-  in `SHARED_REVIEW_CLASSES`, so strong evidence can be approved by
-  fingerprint without approving weak cases with it. Each review manifest
-  carries its `membership_rule`, the precedence list, the parent's
-  `members_sha256` and its cloud-scope count; the audit fails unless the
-  classes partition the parent exactly. The parent stays whole for accounting.
+  `shared_synonymy` manifest partitioned for review, so strong evidence can be
+  approved by fingerprint without approving weak cases with it. The parent
+  stays whole for accounting; the audit fails unless the classes partition it
+  exactly.
+
+The split is two fixed tables in the script, each pairing a rule's published
+text with the predicate that executes it:
+
+1. `SYNONYM_KIND_TESTS` gives every shared synonym one kind: the first test
+   it meets, most certain evidence first — the sources' structured statuses
+   (NorTaxa `nomenclaturalStatus`, COL `col:status` / `col:nameStatus`), then
+   authorship annotations, then exact name comparison, then a spelling
+   heuristic — else `ordinary`. Structured status always wins over a string
+   heuristic.
+2. `SHARED_REVIEW_CLASS_TESTS` gives the association the first class whose
+   rule it meets, stated over those kinds. `ordinary` states its full
+   conditions and holds exactly when no earlier rule does.
+
+Each review manifest carries its `membership_rule`, both precedence lists and
+the kind rules, the parent's `members_sha256` and its cloud-scope count. Its
+members are the parent's columns plus `shared_synonym_kind_counts` (exact) and
+`shared_synonym_evidence`: for each listed shared synonym, its kind, the
+evidence that decided it and both sources' structured statuses on it.
+
+An association is `ordinary` only when both accepted usages are species, the
+accepted name keys agree, and at least one shared synonym is of kind
+`ordinary` — a name both sources publish with an authorship, that neither
+source marks orthographic, manuscript, not validly published or misapplied,
+that COL does not publish as an ambiguous (pro parte) synonym, whose
+authorship carries no `ined.`, `nom. herb.`, `nom. nud.`, `nom. inval.`,
+`nom. illeg.`, sensu-style or `p.p.` qualifier, and that is neither accepted
+name nor almost spelled like one — unless that is its only `ordinary` shared
+synonym while each source publishes at least five. A weak synonym beside an
+`ordinary` one does not demote it.
+
+NorTaxa `illegitimate` and COL `unacceptable` are recorded in the evidence but
+do not make a synonym weak: illegitimacy concerns which name is correct, not
+whether a name is established, and NorTaxa sets it on 6,868 of the 8,965
+Group-A shared synonyms, including all three of Craterellus tubaeformis's.
 
 `members_sha256` covers only the columns and members, so an empty manifest has
 the same value in every class. `file_sha256` (in `coverage-report.json`) also
@@ -50,28 +83,6 @@ Headline counts against `tax-2026.09.26-02`:
 | — `one_directional_accepted_synonymy` | 0 | 0 |
 | — `shared_synonymy` | 4,861 | 1,888 |
 | — `no_published_cross_reference` | 14,946 | 5,211 |
-
-`shared_synonymy` review classes, in precedence order:
-
-| Review class | Full release | Cloud scope |
-|---|---:|---:|
-| `non_species_rank` | 12 | 5 |
-| `infraspecific_rank` | 35 | 6 |
-| `accepted_authorship_disagrees` | 6 | 0 |
-| `only_ined` | 15 | 5 |
-| `only_invalid_name` | 7 | 1 |
-| `only_accepted_name_variant` | 62 | 39 |
-| `only_unauthored` | 66 | 8 |
-| `only_mixed_weak` | 1 | 0 |
-| `single_shared_synonym_low_overlap` | 39 | 13 |
-| `ordinary` | 4,618 | 1,811 |
-
-The one former `one_directional_accepted_synonymy` member, NorTaxa 227128 /
-COL 35YQ2 (Sporely 3841), was a grading artifact: NorTaxa publishes a synonym
-usage (226877) spelled exactly like its own accepted name, which
-`cross_reference_evidence.grade` used to count as listing COL's identical
-accepted name. It now grades `no_published_cross_reference`. No Group-B pair
-changed class.
 | Group B pairs (NorTaxa concepts) | 7,423 (7,338) | 2,132 (2,113) |
 | — `one_directional_accepted_synonymy` | 62 | 15 |
 | — `shared_synonymy` | 2,032 | 574 |
@@ -79,6 +90,34 @@ changed class.
 
 Group B's cloud column counts pairs whose COL side is in scope; no NorTaxa side
 is. The cloud scope is 52,917 concepts, all COL-canonical.
+
+`shared_synonymy` review classes, in precedence order:
+
+| Review class | Full release | Cloud scope |
+|---|---:|---:|
+| `non_species_rank` | 12 | 5 |
+| `rank_mismatch` | 0 | 0 |
+| `infraspecific_rank` | 35 | 6 |
+| `accepted_authorship_disagrees` | 6 | 0 |
+| `only_orthographic_variant` | 35 | 29 |
+| `only_unpublished` | 20 | 5 |
+| `only_not_validly_published` | 11 | 6 |
+| `only_illegitimate` | 0 | 0 |
+| `only_interpretation_qualified` | 20 | 20 |
+| `only_pro_parte` | 39 | 25 |
+| `only_accepted_name_reauthored` | 1 | 0 |
+| `only_unauthored` | 71 | 9 |
+| `only_name_variant` | 74 | 24 |
+| `only_mixed_weak` | 7 | 3 |
+| `single_shared_synonym_low_overlap` | 41 | 15 |
+| `ordinary` | 4,489 | 1,741 |
+
+The one former `one_directional_accepted_synonymy` member, NorTaxa 227128 /
+COL 35YQ2 (Sporely 3841), was a grading artifact: NorTaxa publishes a synonym
+usage (226877) spelled exactly like its own accepted name, which
+`cross_reference_evidence.grade` used to count as listing COL's identical
+accepted name. It now grades `no_published_cross_reference`. No Group-B pair
+changed class.
 
 Authoritative NorTaxa emission on the cloud scope is exactly 53482 → 7821 and
 52369, 58722 → 83668, computed as `cloud_export.emit_taxon_external_id_authoritative`

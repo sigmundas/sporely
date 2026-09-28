@@ -195,50 +195,124 @@
    "accepted_authorship_disagrees": 0,
    "infraspecific_rank": 6,
    "non_species_rank": 5,
-   "only_accepted_name_variant": 39,
-   "only_ined": 5,
-   "only_invalid_name": 1,
-   "only_mixed_weak": 0,
-   "only_unauthored": 8,
-   "ordinary": 1811,
-   "single_shared_synonym_low_overlap": 13
+   "only_accepted_name_reauthored": 0,
+   "only_illegitimate": 0,
+   "only_interpretation_qualified": 20,
+   "only_mixed_weak": 3,
+   "only_name_variant": 24,
+   "only_not_validly_published": 6,
+   "only_orthographic_variant": 29,
+   "only_pro_parte": 25,
+   "only_unauthored": 9,
+   "only_unpublished": 5,
+   "ordinary": 1741,
+   "rank_mismatch": 0,
+   "single_shared_synonym_low_overlap": 15
   },
   "definition": "the shared_synonymy manifest partitioned into review classes; a member belongs to the first class, in precedence order, whose rule it meets",
   "full_release": {
    "accepted_authorship_disagrees": 6,
    "infraspecific_rank": 35,
    "non_species_rank": 12,
-   "only_accepted_name_variant": 62,
-   "only_ined": 15,
-   "only_invalid_name": 7,
-   "only_mixed_weak": 1,
-   "only_unauthored": 66,
-   "ordinary": 4618,
-   "single_shared_synonym_low_overlap": 39
+   "only_accepted_name_reauthored": 1,
+   "only_illegitimate": 0,
+   "only_interpretation_qualified": 20,
+   "only_mixed_weak": 7,
+   "only_name_variant": 74,
+   "only_not_validly_published": 11,
+   "only_orthographic_variant": 35,
+   "only_pro_parte": 39,
+   "only_unauthored": 71,
+   "only_unpublished": 20,
+   "ordinary": 4489,
+   "rank_mismatch": 0,
+   "single_shared_synonym_low_overlap": 41
   },
   "precedence": [
    "non_species_rank",
+   "rank_mismatch",
    "infraspecific_rank",
    "accepted_authorship_disagrees",
-   "only_ined",
-   "only_invalid_name",
-   "only_accepted_name_variant",
+   "only_orthographic_variant",
+   "only_unpublished",
+   "only_not_validly_published",
+   "only_illegitimate",
+   "only_interpretation_qualified",
+   "only_pro_parte",
+   "only_accepted_name_reauthored",
    "only_unauthored",
+   "only_name_variant",
    "only_mixed_weak",
    "single_shared_synonym_low_overlap",
    "ordinary"
   ],
   "rules": {
    "accepted_authorship_disagrees": "the accepted name keys differ (canonical name plus authorship)",
-   "infraspecific_rank": "both accepted usages are infraspecific (subspecies, variety, form)",
+   "infraspecific_rank": "both accepted usages have the same infraspecific rank (subspecies, variety, form)",
    "non_species_rank": "either source's accepted usage has a rank other than species or an infraspecific rank (subspecies, variety, form)",
-   "only_accepted_name_variant": "every shared synonym is the accepted name itself under another authorship or a spelling variant of it: same word count, hyphens removed, first word equal (unless uninomial) and every word within Levenshtein distance 2 of the accepted name's word",
-   "only_ined": "every shared synonym's authorship carries the word 'ined'",
-   "only_invalid_name": "every shared synonym's authorship carries nom. nud., nom. inval., nom. herb. or nom. illeg. (and not 'ined')",
-   "only_mixed_weak": "every shared synonym is one of the weak kinds above, but not all the same kind",
-   "only_unauthored": "every shared synonym has an empty authorship, so the match is on the name alone",
-   "ordinary": "species rank, agreeing accepted names, and at least one ordinary shared synonym (none of the weak kinds above); not low overlap",
-   "single_shared_synonym_low_overlap": "exactly one ordinary shared synonym while each source publishes at least 5 synonyms"
+   "only_accepted_name_reauthored": "every shared synonym is of kind 'accepted_name_reauthored'",
+   "only_illegitimate": "every shared synonym is of kind 'illegitimate'",
+   "only_interpretation_qualified": "every shared synonym is of kind 'interpretation_qualified'",
+   "only_mixed_weak": "no shared synonym is of kind 'ordinary', and they are not all of one kind",
+   "only_name_variant": "every shared synonym is of kind 'name_variant'",
+   "only_not_validly_published": "every shared synonym is of kind 'not_validly_published'",
+   "only_orthographic_variant": "every shared synonym is of kind 'orthographic_variant'",
+   "only_pro_parte": "every shared synonym is of kind 'pro_parte'",
+   "only_unauthored": "every shared synonym is of kind 'unauthored'",
+   "only_unpublished": "every shared synonym is of kind 'unpublished'",
+   "ordinary": "both accepted usages are species, the accepted name keys (canonical name plus authorship) agree, at least one shared synonym is of kind 'ordinary', and not low overlap (a single 'ordinary' shared synonym while each source publishes at least 5 synonyms)",
+   "rank_mismatch": "the two accepted usages have different ranks (for example species and variety)",
+   "single_shared_synonym_low_overlap": "exactly one shared synonym is of kind 'ordinary' while each source publishes at least 5 synonyms"
+  },
+  "shared_synonym_kind_totals": {
+   "cloud_scope": {
+    "accepted_name_reauthored": 2,
+    "illegitimate": 0,
+    "interpretation_qualified": 40,
+    "name_variant": 45,
+    "not_validly_published": 22,
+    "ordinary": 2757,
+    "orthographic_variant": 47,
+    "pro_parte": 59,
+    "unauthored": 17,
+    "unpublished": 11
+   },
+   "full_release": {
+    "accepted_name_reauthored": 3,
+    "illegitimate": 2,
+    "interpretation_qualified": 44,
+    "name_variant": 145,
+    "not_validly_published": 47,
+    "ordinary": 8106,
+    "orthographic_variant": 67,
+    "pro_parte": 109,
+    "unauthored": 389,
+    "unpublished": 53
+   }
+  },
+  "synonym_kind_precedence": [
+   "orthographic_variant",
+   "unpublished",
+   "not_validly_published",
+   "illegitimate",
+   "interpretation_qualified",
+   "pro_parte",
+   "accepted_name_reauthored",
+   "unauthored",
+   "name_variant",
+   "ordinary"
+  ],
+  "synonym_kinds": {
+   "accepted_name_reauthored": "the canonical name is either accepted name itself, under another authorship",
+   "illegitimate": "the authorship carries 'nom. illeg.' (the sources' structured illegitimacy statuses, NorTaxa 'illegitimate' and COL 'unacceptable', are not used)",
+   "interpretation_qualified": "a misapplied usage (NorTaxa nomenclaturalStatus or COL col:status 'misapplied'), or the authorship carries a sensu-style qualifier ('sensu', 's.', 'ss.', 'auct.')",
+   "name_variant": "no structured status applies, but the name is almost spelled like either accepted name: same word count once hyphens are removed, and every word, genus included, within Levenshtein distance 2 (a possible misspelling or a near-identical combination, unconfirmed by the sources)",
+   "not_validly_published": "NorTaxa nomenclaturalStatus 'notvalidlypublished', COL col:nameStatus 'not established', or the authorship carries 'nom. nud.' or 'nom. inval.'",
+   "ordinary": "meets none of the tests above",
+   "orthographic_variant": "either source's structured status marks the usage an orthographic variant (NorTaxa nomenclaturalStatus 'orthographic')",
+   "pro_parte": "COL col:status 'ambiguous synonym', or the authorship carries 'p.p.' or 'pro parte'",
+   "unauthored": "the authorship is empty, so the match is on the name alone",
+   "unpublished": "COL col:nameStatus 'manuscript', or the authorship carries 'ined' or 'nom. herb.'"
   }
  },
  "group_b": {
@@ -348,81 +422,129 @@
   "group-a-shared-synonymy--accepted-authorship-disagrees.manifest.json": {
    "cloud_scope_member_count": 0,
    "evidence_class": "shared_synonymy",
-   "file_sha256": "3ecc415b794aab06387218a077063c81960eddb93f7b5913982aeca96dbc4411",
+   "file_sha256": "1aaef8a329a292831a58da8173789d83e2daef3ab6f1f1ac7cff7202f4813325",
    "member_count": 6,
-   "members_sha256": "96861e56a5e037e5126ae50d946170a4b1ec6e59b434a6093a162dc79071de99",
+   "members_sha256": "940db1acddd3211e446587fb39a690cf9294d14e9071d934724b1fb7cabe800a",
    "review_class": "accepted_authorship_disagrees"
   },
   "group-a-shared-synonymy--infraspecific-rank.manifest.json": {
    "cloud_scope_member_count": 6,
    "evidence_class": "shared_synonymy",
-   "file_sha256": "4c0f8aefb78df3cd74332a5355d18680896ff89807b97370b029bf17cbf061cd",
+   "file_sha256": "948871e1ecdd85bf4d03cb15addec525207076f8ff427aae7591c83f2380b290",
    "member_count": 35,
-   "members_sha256": "b35ad08f992cb1f82a17d3231f1e00bb606b1f13ce9b85f5f995fe0b14c61c8b",
+   "members_sha256": "2f50f12007df4f743209dfb9d9f38ab063550f22d25047607421cf01db4f2b30",
    "review_class": "infraspecific_rank"
   },
   "group-a-shared-synonymy--non-species-rank.manifest.json": {
    "cloud_scope_member_count": 5,
    "evidence_class": "shared_synonymy",
-   "file_sha256": "f60d93d8df42d443edf1c3e12c9a264a973ea1f9663070b22e528234f2f4663e",
+   "file_sha256": "22872fc160951747188d8119c3a21bb65eb444d85594658fe43c44346095236a",
    "member_count": 12,
-   "members_sha256": "9c39c39ae6b694653a2121f721eed01b8d01ffbb8d036be2ef23d70b2534e143",
+   "members_sha256": "7ea4fa14b909488872210a44b24ce3f1f3ede7e457c1022fbbc5221b5416948d",
    "review_class": "non_species_rank"
   },
-  "group-a-shared-synonymy--only-accepted-name-variant.manifest.json": {
-   "cloud_scope_member_count": 39,
-   "evidence_class": "shared_synonymy",
-   "file_sha256": "1ef9c040a4a1029c0d9d26fe2445da07c5bce7d4c00ecf68c2ee4fb939eb9ac7",
-   "member_count": 62,
-   "members_sha256": "28775d1500db24f7ff354a72c945c635a5e69ba69d05d900231c935121a7364a",
-   "review_class": "only_accepted_name_variant"
-  },
-  "group-a-shared-synonymy--only-ined.manifest.json": {
-   "cloud_scope_member_count": 5,
-   "evidence_class": "shared_synonymy",
-   "file_sha256": "85acf26a386fda2fdc234282feec335b52f16d8be89fc93acf3f6269f0eec00d",
-   "member_count": 15,
-   "members_sha256": "fbab04d444cb631306640f13dad0b27c8f4ec09c70d447f34651249267ce4116",
-   "review_class": "only_ined"
-  },
-  "group-a-shared-synonymy--only-invalid-name.manifest.json": {
-   "cloud_scope_member_count": 1,
-   "evidence_class": "shared_synonymy",
-   "file_sha256": "da6151372ca06704c9460c442607c90766856495da7a52af0c16c4dc4e2d9493",
-   "member_count": 7,
-   "members_sha256": "59b9a17f9a01f99bba8811dc2817b1fe73c80ba210b3ea8c85909abae69ad58a",
-   "review_class": "only_invalid_name"
-  },
-  "group-a-shared-synonymy--only-mixed-weak.manifest.json": {
+  "group-a-shared-synonymy--only-accepted-name-reauthored.manifest.json": {
    "cloud_scope_member_count": 0,
    "evidence_class": "shared_synonymy",
-   "file_sha256": "ddc2b747dca674d36bbe22121811928f63d23fd90d3ee7b1ececd538ce6605fb",
+   "file_sha256": "a2b90180ec027df611314d617ece26aea8e6a8595ea69a4ba5b961cca03c19a9",
    "member_count": 1,
-   "members_sha256": "0a001e0c33df1dcca633b15730ba2f416f3fa66c91c4c46da7bbe8af8bc27734",
+   "members_sha256": "8c11bb4de926b5856b07b79c564c24b7cf6188b9c4c9eb90df0c3004b8db2948",
+   "review_class": "only_accepted_name_reauthored"
+  },
+  "group-a-shared-synonymy--only-illegitimate.manifest.json": {
+   "cloud_scope_member_count": 0,
+   "evidence_class": "shared_synonymy",
+   "file_sha256": "2b2cf335173022d5f7a7bf61c756ffaed4e3fbe5df754b1d7b69268adf7d733f",
+   "member_count": 0,
+   "members_sha256": "ee6ac95e2c7591af7befba25ec799638ee87aea7a2036c89115f48ebb485c51f",
+   "review_class": "only_illegitimate"
+  },
+  "group-a-shared-synonymy--only-interpretation-qualified.manifest.json": {
+   "cloud_scope_member_count": 20,
+   "evidence_class": "shared_synonymy",
+   "file_sha256": "f921af2fb8b07ab3226354e397ed56a1619d8c3675fd317da759aa9177b9fb58",
+   "member_count": 20,
+   "members_sha256": "aa0001e493ec3b9541a259152b9b0974fd3bca2c9fd9e68090e3856deee06cfb",
+   "review_class": "only_interpretation_qualified"
+  },
+  "group-a-shared-synonymy--only-mixed-weak.manifest.json": {
+   "cloud_scope_member_count": 3,
+   "evidence_class": "shared_synonymy",
+   "file_sha256": "46472837929ae003c650c090272f9040577f8e977612d660ce6dd419a06b236a",
+   "member_count": 7,
+   "members_sha256": "eda5e1ded08e24d6267145b43908e2f233a5ed6c3de315d3df88a75e1d93dbf8",
    "review_class": "only_mixed_weak"
   },
-  "group-a-shared-synonymy--only-unauthored.manifest.json": {
-   "cloud_scope_member_count": 8,
+  "group-a-shared-synonymy--only-name-variant.manifest.json": {
+   "cloud_scope_member_count": 24,
    "evidence_class": "shared_synonymy",
-   "file_sha256": "102229e60defce067bfeb64b110183249167da8f412d5db2129a75c2669abb76",
-   "member_count": 66,
-   "members_sha256": "21b35ed42203c9eacd7f462c24dc2a29af2057efaf948f855aa1b074ede8d6a7",
+   "file_sha256": "4c0b2c8048bff4560fb5ee120b0d5d203237abf622138da2998f535b7ff01668",
+   "member_count": 74,
+   "members_sha256": "6485a0de92fea0196b054fc30fcd9d4248aa11bc3a540dfce5223fbeb6146681",
+   "review_class": "only_name_variant"
+  },
+  "group-a-shared-synonymy--only-not-validly-published.manifest.json": {
+   "cloud_scope_member_count": 6,
+   "evidence_class": "shared_synonymy",
+   "file_sha256": "92dd39e6fe7109af9b24c25becf15fdc1b4496626859be7ffafc34187465bdc9",
+   "member_count": 11,
+   "members_sha256": "7fcba77c73eac105cee37f5adc351a1ffcf233881944c008607eaa526155530c",
+   "review_class": "only_not_validly_published"
+  },
+  "group-a-shared-synonymy--only-orthographic-variant.manifest.json": {
+   "cloud_scope_member_count": 29,
+   "evidence_class": "shared_synonymy",
+   "file_sha256": "9ba47320e102e56c0c36dae36ccf66822370db42013dabeca0d1c173f9d161f0",
+   "member_count": 35,
+   "members_sha256": "95fb1c919bbfa780b27bc35db194abb833f9ccccb32bd392accd302e9e01663c",
+   "review_class": "only_orthographic_variant"
+  },
+  "group-a-shared-synonymy--only-pro-parte.manifest.json": {
+   "cloud_scope_member_count": 25,
+   "evidence_class": "shared_synonymy",
+   "file_sha256": "1b1bc08d85aa158f7d1049a476697a29fc0f02da1680584dbe5b6e01816a7fba",
+   "member_count": 39,
+   "members_sha256": "0b80fd27c5e9e69e030291ddc5f96236c94cd9edf545b786d5774f04af7ecac2",
+   "review_class": "only_pro_parte"
+  },
+  "group-a-shared-synonymy--only-unauthored.manifest.json": {
+   "cloud_scope_member_count": 9,
+   "evidence_class": "shared_synonymy",
+   "file_sha256": "a5b2100eead72e1feb246d488c4684aff89f98072713da3dadc8f8af93bd1b11",
+   "member_count": 71,
+   "members_sha256": "fe8beb70d90e36aad4b3f7f958a6174a7042b4d4cdab5a960bf3a33e2285963a",
    "review_class": "only_unauthored"
   },
-  "group-a-shared-synonymy--ordinary.manifest.json": {
-   "cloud_scope_member_count": 1811,
+  "group-a-shared-synonymy--only-unpublished.manifest.json": {
+   "cloud_scope_member_count": 5,
    "evidence_class": "shared_synonymy",
-   "file_sha256": "7f6c841ec8423398531e221f629103108433d28deab3a0a8ba6027950937c565",
-   "member_count": 4618,
-   "members_sha256": "7dc0c318f0e608b0d4856d96bfd72fe1cab7de6042a74edf88843d4afa4daf22",
+   "file_sha256": "0b7236fcb3ab2737c03065c8f63e4d4dc2382cd958fd80ce0812b44f09361e73",
+   "member_count": 20,
+   "members_sha256": "1d1a4fff499f4d2029abc2c25fe8f1da16082ce7f01a4d414b22a82b2c0650d7",
+   "review_class": "only_unpublished"
+  },
+  "group-a-shared-synonymy--ordinary.manifest.json": {
+   "cloud_scope_member_count": 1741,
+   "evidence_class": "shared_synonymy",
+   "file_sha256": "cd02df9b41c88cc6d51d745182df4e2d9cdbf26374a4808498e570f77a4698dd",
+   "member_count": 4489,
+   "members_sha256": "fb5bbc72c7e9670360a8a48d5882c1e37d17a158268e09c6d886819b838e0d67",
    "review_class": "ordinary"
   },
-  "group-a-shared-synonymy--single-shared-synonym-low-overlap.manifest.json": {
-   "cloud_scope_member_count": 13,
+  "group-a-shared-synonymy--rank-mismatch.manifest.json": {
+   "cloud_scope_member_count": 0,
    "evidence_class": "shared_synonymy",
-   "file_sha256": "426045c8941da4b5f4615243c894abfa4e9d22d25905b02da5f2971388e99f1c",
-   "member_count": 39,
-   "members_sha256": "8f6bcf100d6fdae8f831de65a63db86f9364d91338c13aed841b8c12c154942e",
+   "file_sha256": "5f667b960a342408667ebf60a3cac5580de0c4285606048ca456bc89eae0c153",
+   "member_count": 0,
+   "members_sha256": "ee6ac95e2c7591af7befba25ec799638ee87aea7a2036c89115f48ebb485c51f",
+   "review_class": "rank_mismatch"
+  },
+  "group-a-shared-synonymy--single-shared-synonym-low-overlap.manifest.json": {
+   "cloud_scope_member_count": 15,
+   "evidence_class": "shared_synonymy",
+   "file_sha256": "ffe204743a31bf00756c37c6d310c1c3c05fdc2bb1cbe84cb2de7d4133ec6b1a",
+   "member_count": 41,
+   "members_sha256": "c37d9c24841b26a0fa26f63ae4e1cfea61c45f19d52cff9c9b447fd529d79884",
    "review_class": "single_shared_synonym_low_overlap"
   },
   "group-a-shared-synonymy.manifest.json": {

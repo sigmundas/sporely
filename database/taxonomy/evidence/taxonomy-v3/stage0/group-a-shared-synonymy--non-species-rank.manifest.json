@@ -13,10 +13,12 @@
   "shared_synonym_count",
   "shared_synonyms",
   "bridge_synonym_count",
-  "backbone_synonym_count"
+  "backbone_synonym_count",
+  "shared_synonym_kind_counts",
+  "shared_synonym_evidence"
  ],
  "evidence_class": "shared_synonymy",
- "format": "sporely-taxonomy-v3-review-manifest-v1",
+ "format": "sporely-taxonomy-v3-review-manifest-v2",
  "member_count": 12,
  "members": [
   [
@@ -34,7 +36,13 @@
     "bauhinus R.T. Moore"
    ],
    1,
-   1
+   1,
+   {
+    "ordinary": 1
+   },
+   [
+    "ordinary: none of the weak kinds [col col:status=synonym, nortaxa nomenclaturalStatus=illegitimate, nortaxa taxonomicStatus=synonym]"
+   ]
   ],
   [
    "131707",
@@ -51,7 +59,13 @@
     "lindnera Kurtzman, Robnett & Bas.-Powers"
    ],
    1,
-   1
+   1,
+   {
+    "ordinary": 1
+   },
+   [
+    "ordinary: none of the weak kinds [col col:status=synonym, nortaxa nomenclaturalStatus=illegitimate, nortaxa taxonomicStatus=synonym]"
+   ]
   ],
   [
    "135406",
@@ -68,7 +82,13 @@
     "oedenocarpum"
    ],
    1,
-   1
+   1,
+   {
+    "unauthored": 1
+   },
+   [
+    "unauthored: empty authorship [col col:status=synonym, nortaxa taxonomicStatus=synonym]"
+   ]
   ],
   [
    "293994",
@@ -85,7 +105,13 @@
     "pyrigemmula D. Magyar & R. Shoemaker"
    ],
    3,
-   1
+   1,
+   {
+    "ordinary": 1
+   },
+   [
+    "ordinary: none of the weak kinds [col col:status=synonym, nortaxa taxonomicStatus=synonym]"
+   ]
   ],
   [
    "55781",
@@ -102,7 +128,13 @@
     "atheliopsis"
    ],
    1,
-   1
+   1,
+   {
+    "unauthored": 1
+   },
+   [
+    "unauthored: empty authorship [col col:status=synonym, nortaxa nomenclaturalStatus=illegitimate, nortaxa taxonomicStatus=synonym]"
+   ]
   ],
   [
    "55843",
@@ -119,7 +151,13 @@
     "ulocolla Bref."
    ],
    1,
-   1
+   1,
+   {
+    "ordinary": 1
+   },
+   [
+    "ordinary: none of the weak kinds [col col:status=synonym, nortaxa nomenclaturalStatus=illegitimate, nortaxa taxonomicStatus=synonym]"
+   ]
   ],
   [
    "56467",
@@ -136,7 +174,13 @@
     "ramariaceae Corner"
    ],
    1,
-   2
+   2,
+   {
+    "ordinary": 1
+   },
+   [
+    "ordinary: none of the weak kinds [col col:status=synonym, nortaxa nomenclaturalStatus=illegitimate, nortaxa taxonomicStatus=synonym]"
+   ]
   ],
   [
    "56657",
@@ -153,7 +197,13 @@
     "granulocystis Hjortstam"
    ],
    1,
-   1
+   1,
+   {
+    "not_validly_published": 1
+   },
+   [
+    "not_validly_published: col col:nameStatus=not established [col col:nameStatus=not established, col col:status=synonym, nortaxa nomenclaturalStatus=illegitimate, nortaxa taxonomicStatus=synonym]"
+   ]
   ],
   [
    "57181",
@@ -170,7 +220,13 @@
     "aurantioporus Murrill"
    ],
    1,
-   1
+   1,
+   {
+    "orthographic_variant": 1
+   },
+   [
+    "orthographic_variant: nortaxa nomenclaturalStatus=orthographic [col col:status=synonym, nortaxa nomenclaturalStatus=orthographic, nortaxa taxonomicStatus=synonym]"
+   ]
   ],
   [
    "58201",
@@ -188,7 +244,14 @@
     "syzygosporaceae Jülich"
    ],
    2,
-   2
+   2,
+   {
+    "ordinary": 2
+   },
+   [
+    "ordinary: none of the weak kinds [col col:status=synonym, nortaxa nomenclaturalStatus=illegitimate, nortaxa taxonomicStatus=synonym]",
+    "ordinary: none of the weak kinds [col col:status=synonym, nortaxa nomenclaturalStatus=illegitimate, nortaxa taxonomicStatus=synonym]"
+   ]
   ],
   [
    "66608",
@@ -205,7 +268,13 @@
     "actinonemella Höhn."
    ],
    2,
-   1
+   1,
+   {
+    "ordinary": 1
+   },
+   [
+    "ordinary: none of the weak kinds [col col:status=synonym, nortaxa taxonomicStatus=synonym]"
+   ]
   ],
   [
    "77937",
@@ -222,12 +291,18 @@
     "rhaphiospora"
    ],
    1,
-   1
+   1,
+   {
+    "orthographic_variant": 1
+   },
+   [
+    "orthographic_variant: nortaxa nomenclaturalStatus=orthographic [col col:nameStatus=not established, col col:status=synonym, nortaxa nomenclaturalStatus=orthographic, nortaxa taxonomicStatus=synonym]"
+   ]
   ]
  ],
- "members_sha256": "9c39c39ae6b694653a2121f721eed01b8d01ffbb8d036be2ef23d70b2534e143",
+ "members_sha256": "7ea4fa14b909488872210a44b24ce3f1f3ede7e457c1022fbbc5221b5416948d",
  "membership_rule": "either source's accepted usage has a rank other than species or an infraspecific rank (subspecies, variety, form)",
- "note": "Immutable review input derived deterministically from the parent shared_synonymy manifest; the review classes partition it. Membership is pinned to the release and source archives below; it approves nothing and never extends to taxa in a later source release. shared_synonyms lists at most 10 names; shared_synonym_count is exact.",
+ "note": "Immutable review input derived deterministically from the parent shared_synonymy manifest; the review classes partition it. A member belongs to the first class, in review_class_precedence, whose membership_rule it meets; each shared synonym has the first kind, in synonym_kind_precedence, whose rule it meets. Membership is pinned to the release and source archives below; it approves nothing and never extends to taxa in a later source release. shared_synonyms and shared_synonym_evidence list at most 10 names; shared_synonym_count and shared_synonym_kind_counts are exact.",
  "parent_manifest": {
   "evidence_class": "shared_synonymy",
   "member_count": 4861,
@@ -264,15 +339,45 @@
  "review_class": "non_species_rank",
  "review_class_precedence": [
   "non_species_rank",
+  "rank_mismatch",
   "infraspecific_rank",
   "accepted_authorship_disagrees",
-  "only_ined",
-  "only_invalid_name",
-  "only_accepted_name_variant",
+  "only_orthographic_variant",
+  "only_unpublished",
+  "only_not_validly_published",
+  "only_illegitimate",
+  "only_interpretation_qualified",
+  "only_pro_parte",
+  "only_accepted_name_reauthored",
   "only_unauthored",
+  "only_name_variant",
   "only_mixed_weak",
   "single_shared_synonym_low_overlap",
   "ordinary"
  ],
- "review_status": "needs_review"
+ "review_status": "needs_review",
+ "synonym_kind_precedence": [
+  "orthographic_variant",
+  "unpublished",
+  "not_validly_published",
+  "illegitimate",
+  "interpretation_qualified",
+  "pro_parte",
+  "accepted_name_reauthored",
+  "unauthored",
+  "name_variant",
+  "ordinary"
+ ],
+ "synonym_kinds": {
+  "accepted_name_reauthored": "the canonical name is either accepted name itself, under another authorship",
+  "illegitimate": "the authorship carries 'nom. illeg.' (the sources' structured illegitimacy statuses, NorTaxa 'illegitimate' and COL 'unacceptable', are not used)",
+  "interpretation_qualified": "a misapplied usage (NorTaxa nomenclaturalStatus or COL col:status 'misapplied'), or the authorship carries a sensu-style qualifier ('sensu', 's.', 'ss.', 'auct.')",
+  "name_variant": "no structured status applies, but the name is almost spelled like either accepted name: same word count once hyphens are removed, and every word, genus included, within Levenshtein distance 2 (a possible misspelling or a near-identical combination, unconfirmed by the sources)",
+  "not_validly_published": "NorTaxa nomenclaturalStatus 'notvalidlypublished', COL col:nameStatus 'not established', or the authorship carries 'nom. nud.' or 'nom. inval.'",
+  "ordinary": "meets none of the tests above",
+  "orthographic_variant": "either source's structured status marks the usage an orthographic variant (NorTaxa nomenclaturalStatus 'orthographic')",
+  "pro_parte": "COL col:status 'ambiguous synonym', or the authorship carries 'p.p.' or 'pro parte'",
+  "unauthored": "the authorship is empty, so the match is on the name alone",
+  "unpublished": "COL col:nameStatus 'manuscript', or the authorship carries 'ined' or 'nom. herb.'"
+ }
 }

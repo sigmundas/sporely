@@ -1,5 +1,5 @@
 {
- "cloud_scope_member_count": 8,
+ "cloud_scope_member_count": 9,
  "columns": [
   "nortaxa_taxon_id",
   "col_usage_id",
@@ -13,11 +13,13 @@
   "shared_synonym_count",
   "shared_synonyms",
   "bridge_synonym_count",
-  "backbone_synonym_count"
+  "backbone_synonym_count",
+  "shared_synonym_kind_counts",
+  "shared_synonym_evidence"
  ],
  "evidence_class": "shared_synonymy",
- "format": "sporely-taxonomy-v3-review-manifest-v1",
- "member_count": 66,
+ "format": "sporely-taxonomy-v3-review-manifest-v2",
+ "member_count": 71,
  "members": [
   [
    "122384",
@@ -34,7 +36,13 @@
     "coleosporium tussilaginis var. inulae"
    ],
    1,
-   1
+   1,
+   {
+    "unauthored": 1
+   },
+   [
+    "unauthored: empty authorship [col col:nameStatus=unacceptable, col col:status=synonym, nortaxa nomenclaturalStatus=illegitimate, nortaxa taxonomicStatus=synonym]"
+   ]
   ],
   [
    "122429",
@@ -51,7 +59,36 @@
     "melampsora epitea subsp. arctica"
    ],
    1,
-   2
+   2,
+   {
+    "unauthored": 1
+   },
+   [
+    "unauthored: empty authorship [col col:nameStatus=unacceptable, col col:status=synonym, nortaxa nomenclaturalStatus=illegitimate, nortaxa taxonomicStatus=synonym]"
+   ]
+  ],
+  [
+   "122795",
+   "78NZB",
+   121758,
+   false,
+   "Puccinia novae-zembliae Jørst.",
+   "Puccinia novae-zembliae Jørst.",
+   true,
+   false,
+   false,
+   1,
+   [
+    "puccinia nova-zembliae"
+   ],
+   1,
+   2,
+   {
+    "unauthored": 1
+   },
+   [
+    "unauthored: empty authorship [col col:nameStatus=unacceptable, col col:status=synonym, nortaxa nomenclaturalStatus=illegitimate, nortaxa taxonomicStatus=synonym]"
+   ]
   ],
   [
    "145007",
@@ -68,7 +105,13 @@
     "lecidea castaneocinerea"
    ],
    3,
-   11
+   11,
+   {
+    "unauthored": 1
+   },
+   [
+    "unauthored: empty authorship [col col:nameStatus=unacceptable, col col:status=synonym, nortaxa nomenclaturalStatus=illegitimate, nortaxa taxonomicStatus=synonym]"
+   ]
   ],
   [
    "204579",
@@ -86,7 +129,14 @@
     "lecanora verrucosa var. panyrga"
    ],
    4,
-   10
+   10,
+   {
+    "unauthored": 2
+   },
+   [
+    "unauthored: empty authorship [col col:nameStatus=unacceptable, col col:status=synonym, nortaxa nomenclaturalStatus=illegitimate, nortaxa taxonomicStatus=synonym]",
+    "unauthored: empty authorship [col col:nameStatus=unacceptable, col col:status=synonym, nortaxa nomenclaturalStatus=illegitimate, nortaxa taxonomicStatus=synonym]"
+   ]
   ],
   [
    "213082",
@@ -105,7 +155,15 @@
     "caloplaca ferruginea var. genuina"
    ],
    10,
-   4
+   4,
+   {
+    "unauthored": 3
+   },
+   [
+    "unauthored: empty authorship [col col:nameStatus=unacceptable, col col:status=synonym, nortaxa nomenclaturalStatus=illegitimate, nortaxa taxonomicStatus=synonym]",
+    "unauthored: empty authorship [col col:nameStatus=unacceptable, col col:status=synonym, nortaxa nomenclaturalStatus=illegitimate, nortaxa taxonomicStatus=synonym]",
+    "unauthored: empty authorship [col col:nameStatus=unacceptable, col col:status=synonym, nortaxa nomenclaturalStatus=illegitimate, nortaxa taxonomicStatus=synonym]"
+   ]
   ],
   [
    "298844",
@@ -122,7 +180,13 @@
     "collema microphyllum var. populinum"
    ],
    2,
-   5
+   5,
+   {
+    "unauthored": 1
+   },
+   [
+    "unauthored: empty authorship [col col:nameStatus=unacceptable, col col:status=synonym, nortaxa nomenclaturalStatus=illegitimate, nortaxa taxonomicStatus=synonym]"
+   ]
   ],
   [
    "52814",
@@ -139,7 +203,13 @@
     "telamonia melleopallens"
    ],
    1,
-   7
+   7,
+   {
+    "unauthored": 1
+   },
+   [
+    "unauthored: empty authorship [col col:nameStatus=unacceptable, col col:status=synonym, nortaxa nomenclaturalStatus=illegitimate, nortaxa taxonomicStatus=synonym]"
+   ]
   ],
   [
    "52827",
@@ -156,7 +226,13 @@
     "sericeocybe myrtillina"
    ],
    1,
-   2
+   2,
+   {
+    "unauthored": 1
+   },
+   [
+    "unauthored: empty authorship [col col:nameStatus=unacceptable, col col:status=synonym, nortaxa nomenclaturalStatus=illegitimate, nortaxa taxonomicStatus=synonym]"
+   ]
   ],
   [
    "52959",
@@ -173,7 +249,13 @@
     "telamonia stemmata"
    ],
    1,
-   1
+   1,
+   {
+    "unauthored": 1
+   },
+   [
+    "unauthored: empty authorship [col col:nameStatus=unacceptable, col col:status=synonym, nortaxa nomenclaturalStatus=illegitimate, nortaxa taxonomicStatus=synonym]"
+   ]
   ],
   [
    "53007",
@@ -190,7 +272,13 @@
     "telamonia uracea"
    ],
    2,
-   4
+   4,
+   {
+    "unauthored": 1
+   },
+   [
+    "unauthored: empty authorship [col col:nameStatus=unacceptable, col col:status=synonym, nortaxa nomenclaturalStatus=illegitimate, nortaxa taxonomicStatus=synonym]"
+   ]
   ],
   [
    "53038",
@@ -207,7 +295,36 @@
     "hydrocybe zinziberata"
    ],
    1,
-   4
+   4,
+   {
+    "unauthored": 1
+   },
+   [
+    "unauthored: empty authorship [col col:nameStatus=unacceptable, col col:status=synonym, nortaxa nomenclaturalStatus=illegitimate, nortaxa taxonomicStatus=synonym]"
+   ]
+  ],
+  [
+   "53279",
+   "3PRSL",
+   19310,
+   true,
+   "Inocybe undulatospora Kuyper",
+   "Inocybe undulatospora Kuyper",
+   true,
+   false,
+   false,
+   1,
+   [
+    "inocybe undulatopspora"
+   ],
+   1,
+   1,
+   {
+    "unauthored": 1
+   },
+   [
+    "unauthored: empty authorship [col col:nameStatus=unacceptable, col col:status=synonym, nortaxa nomenclaturalStatus=illegitimate, nortaxa taxonomicStatus=synonym]"
+   ]
   ],
   [
    "67404",
@@ -225,7 +342,14 @@
     "dermea micula"
    ],
    2,
-   2
+   2,
+   {
+    "unauthored": 2
+   },
+   [
+    "unauthored: empty authorship [col col:nameStatus=unacceptable, col col:status=synonym, nortaxa nomenclaturalStatus=illegitimate, nortaxa taxonomicStatus=synonym]",
+    "unauthored: empty authorship [col col:nameStatus=unacceptable, col col:status=synonym, nortaxa nomenclaturalStatus=illegitimate, nortaxa taxonomicStatus=synonym]"
+   ]
   ],
   [
    "69068",
@@ -242,7 +366,13 @@
     "cladonia degenerans var. ceratophylliformis"
    ],
    1,
-   1
+   1,
+   {
+    "unauthored": 1
+   },
+   [
+    "unauthored: empty authorship [col col:nameStatus=unacceptable, col col:status=synonym, nortaxa nomenclaturalStatus=illegitimate, nortaxa taxonomicStatus=synonym]"
+   ]
   ],
   [
    "69176",
@@ -259,7 +389,13 @@
     "cladonia lepidota var. macrophyllodes"
    ],
    1,
-   1
+   1,
+   {
+    "unauthored": 1
+   },
+   [
+    "unauthored: empty authorship [col col:nameStatus=unacceptable, col col:status=synonym, nortaxa nomenclaturalStatus=illegitimate, nortaxa taxonomicStatus=synonym]"
+   ]
   ],
   [
    "69380",
@@ -276,7 +412,13 @@
     "pilophoron curtulum"
    ],
    1,
-   1
+   1,
+   {
+    "unauthored": 1
+   },
+   [
+    "unauthored: empty authorship [col col:nameStatus=unacceptable, col col:status=synonym, nortaxa nomenclaturalStatus=illegitimate, nortaxa taxonomicStatus=synonym]"
+   ]
   ],
   [
    "70194",
@@ -293,7 +435,13 @@
     "lecanora polytropa var. vulgaris"
    ],
    5,
-   27
+   27,
+   {
+    "unauthored": 1
+   },
+   [
+    "unauthored: empty authorship [col col:nameStatus=unacceptable, col col:status=synonym, nortaxa nomenclaturalStatus=illegitimate, nortaxa taxonomicStatus=synonym]"
+   ]
   ],
   [
    "71150",
@@ -313,7 +461,16 @@
     "tylophoron simile"
    ],
    4,
-   5
+   5,
+   {
+    "unauthored": 4
+   },
+   [
+    "unauthored: empty authorship [col col:nameStatus=unacceptable, col col:status=synonym, nortaxa nomenclaturalStatus=illegitimate, nortaxa taxonomicStatus=synonym]",
+    "unauthored: empty authorship [col col:nameStatus=unacceptable, col col:status=synonym, nortaxa nomenclaturalStatus=illegitimate, nortaxa taxonomicStatus=synonym]",
+    "unauthored: empty authorship [col col:nameStatus=unacceptable, col col:status=synonym, nortaxa nomenclaturalStatus=illegitimate, nortaxa taxonomicStatus=synonym]",
+    "unauthored: empty authorship [col col:nameStatus=unacceptable, col col:status=synonym, nortaxa nomenclaturalStatus=illegitimate, nortaxa taxonomicStatus=synonym]"
+   ]
   ],
   [
    "71515",
@@ -330,7 +487,13 @@
     "alectoria motykae"
    ],
    1,
-   1
+   1,
+   {
+    "unauthored": 1
+   },
+   [
+    "unauthored: empty authorship [col col:nameStatus=unacceptable, col col:status=synonym, nortaxa nomenclaturalStatus=illegitimate, nortaxa taxonomicStatus=synonym]"
+   ]
   ],
   [
    "71640",
@@ -347,7 +510,13 @@
     "nephromopsis wallichiana"
    ],
    2,
-   7
+   7,
+   {
+    "unauthored": 1
+   },
+   [
+    "unauthored: empty authorship [col col:nameStatus=unacceptable, col col:status=synonym, nortaxa nomenclaturalStatus=illegitimate, nortaxa taxonomicStatus=synonym]"
+   ]
   ],
   [
    "71838",
@@ -364,7 +533,13 @@
     "parmelia longiloba"
    ],
    1,
-   1
+   1,
+   {
+    "unauthored": 1
+   },
+   [
+    "unauthored: empty authorship [col col:status=synonym, nortaxa taxonomicStatus=synonym]"
+   ]
   ],
   [
    "71839",
@@ -381,7 +556,13 @@
     "parmelia lopezii"
    ],
    1,
-   1
+   1,
+   {
+    "unauthored": 1
+   },
+   [
+    "unauthored: empty authorship [col col:nameStatus=unacceptable, col col:status=synonym, nortaxa nomenclaturalStatus=illegitimate, nortaxa taxonomicStatus=synonym]"
+   ]
   ],
   [
    "71857",
@@ -398,7 +579,13 @@
     "parmelia polydactyla"
    ],
    1,
-   1
+   1,
+   {
+    "unauthored": 1
+   },
+   [
+    "unauthored: empty authorship [col col:nameStatus=unacceptable, col col:status=synonym, nortaxa nomenclaturalStatus=illegitimate, nortaxa taxonomicStatus=synonym]"
+   ]
   ],
   [
    "71861",
@@ -415,7 +602,13 @@
     "parmelia protenta"
    ],
    1,
-   1
+   1,
+   {
+    "unauthored": 1
+   },
+   [
+    "unauthored: empty authorship [col col:nameStatus=unacceptable, col col:status=synonym, nortaxa nomenclaturalStatus=illegitimate, nortaxa taxonomicStatus=synonym]"
+   ]
   ],
   [
    "72327",
@@ -432,7 +625,13 @@
     "parmelia abnuens"
    ],
    1,
-   1
+   1,
+   {
+    "unauthored": 1
+   },
+   [
+    "unauthored: empty authorship [col col:nameStatus=unacceptable, col col:status=synonym, nortaxa nomenclaturalStatus=illegitimate, nortaxa taxonomicStatus=synonym]"
+   ]
   ],
   [
    "72353",
@@ -449,7 +648,13 @@
     "parmelia composita"
    ],
    1,
-   1
+   1,
+   {
+    "unauthored": 1
+   },
+   [
+    "unauthored: empty authorship [col col:nameStatus=unacceptable, col col:status=synonym, nortaxa nomenclaturalStatus=illegitimate, nortaxa taxonomicStatus=synonym]"
+   ]
   ],
   [
    "72391",
@@ -466,7 +671,13 @@
     "parmelia flavescens"
    ],
    1,
-   1
+   1,
+   {
+    "unauthored": 1
+   },
+   [
+    "unauthored: empty authorship [col col:nameStatus=unacceptable, col col:status=synonym, nortaxa nomenclaturalStatus=illegitimate, nortaxa taxonomicStatus=synonym]"
+   ]
   ],
   [
    "72402",
@@ -483,7 +694,13 @@
     "parmelia hensseniae"
    ],
    1,
-   1
+   1,
+   {
+    "unauthored": 1
+   },
+   [
+    "unauthored: empty authorship [col col:nameStatus=unacceptable, col col:status=synonym, nortaxa nomenclaturalStatus=illegitimate, nortaxa taxonomicStatus=synonym]"
+   ]
   ],
   [
    "72418",
@@ -500,7 +717,13 @@
     "parmelia leonis"
    ],
    1,
-   1
+   1,
+   {
+    "unauthored": 1
+   },
+   [
+    "unauthored: empty authorship [col col:nameStatus=unacceptable, col col:status=synonym, nortaxa nomenclaturalStatus=illegitimate, nortaxa taxonomicStatus=synonym]"
+   ]
   ],
   [
    "72619",
@@ -517,7 +740,13 @@
     "parmelia microsticta"
    ],
    1,
-   1
+   1,
+   {
+    "unauthored": 1
+   },
+   [
+    "unauthored: empty authorship [col col:nameStatus=unacceptable, col col:status=synonym, nortaxa nomenclaturalStatus=illegitimate, nortaxa taxonomicStatus=synonym]"
+   ]
   ],
   [
    "72647",
@@ -534,7 +763,13 @@
     "parmelia relicina"
    ],
    1,
-   2
+   2,
+   {
+    "unauthored": 1
+   },
+   [
+    "unauthored: empty authorship [col col:nameStatus=unacceptable, col col:status=synonym, nortaxa nomenclaturalStatus=illegitimate, nortaxa taxonomicStatus=synonym]"
+   ]
   ],
   [
    "73270",
@@ -551,7 +786,13 @@
     "parmelia subdiffluens"
    ],
    1,
-   1
+   1,
+   {
+    "unauthored": 1
+   },
+   [
+    "unauthored: empty authorship [col col:nameStatus=unacceptable, col col:status=synonym, nortaxa nomenclaturalStatus=illegitimate, nortaxa taxonomicStatus=synonym]"
+   ]
   ],
   [
    "73314",
@@ -568,7 +809,13 @@
     "parmelia vagans"
    ],
    1,
-   1
+   1,
+   {
+    "unauthored": 1
+   },
+   [
+    "unauthored: empty authorship [col col:nameStatus=unacceptable, col col:status=synonym, nortaxa nomenclaturalStatus=illegitimate, nortaxa taxonomicStatus=synonym]"
+   ]
   ],
   [
    "74054",
@@ -585,7 +832,13 @@
     "buellia dubyanoides"
    ],
    1,
-   1
+   1,
+   {
+    "unauthored": 1
+   },
+   [
+    "unauthored: empty authorship [col col:nameStatus=unacceptable, col col:status=synonym, nortaxa nomenclaturalStatus=illegitimate, nortaxa taxonomicStatus=synonym]"
+   ]
   ],
   [
    "74412",
@@ -602,7 +855,13 @@
     "lecidea saviczii"
    ],
    1,
-   1
+   1,
+   {
+    "unauthored": 1
+   },
+   [
+    "unauthored: empty authorship [col col:nameStatus=unacceptable, col col:status=synonym, nortaxa nomenclaturalStatus=illegitimate, nortaxa taxonomicStatus=synonym]"
+   ]
   ],
   [
    "74761",
@@ -619,7 +878,13 @@
     "ramalina ceruchoides"
    ],
    1,
-   2
+   2,
+   {
+    "unauthored": 1
+   },
+   [
+    "unauthored: empty authorship [col col:nameStatus=unacceptable, col col:status=synonym, nortaxa nomenclaturalStatus=illegitimate, nortaxa taxonomicStatus=synonym]"
+   ]
   ],
   [
    "75009",
@@ -637,7 +902,37 @@
     "ramalina pollinaria f. gracilis"
    ],
    2,
-   13
+   13,
+   {
+    "unauthored": 2
+   },
+   [
+    "unauthored: empty authorship [col col:nameStatus=unacceptable, col col:status=synonym, nortaxa nomenclaturalStatus=illegitimate, nortaxa taxonomicStatus=synonym]",
+    "unauthored: empty authorship [col col:nameStatus=unacceptable, col col:status=synonym, nortaxa nomenclaturalStatus=illegitimate, nortaxa taxonomicStatus=synonym]"
+   ]
+  ],
+  [
+   "75085",
+   "SJM9F",
+   603880,
+   false,
+   "Ramalina wigginsii Bowler & Rundel",
+   "Ramalina wigginsii Bowler & Rundel",
+   true,
+   false,
+   false,
+   1,
+   [
+    "ramalina wigginsiae"
+   ],
+   1,
+   1,
+   {
+    "unauthored": 1
+   },
+   [
+    "unauthored: empty authorship [col col:nameStatus=unacceptable, col col:status=synonym, nortaxa nomenclaturalStatus=illegitimate, nortaxa taxonomicStatus=synonym]"
+   ]
   ],
   [
    "75910",
@@ -654,7 +949,13 @@
     "calicium ornicolum"
    ],
    1,
-   1
+   1,
+   {
+    "unauthored": 1
+   },
+   [
+    "unauthored: empty authorship [col col:nameStatus=unacceptable, col col:status=synonym, nortaxa nomenclaturalStatus=illegitimate, nortaxa taxonomicStatus=synonym]"
+   ]
   ],
   [
    "75921",
@@ -671,7 +972,38 @@
     "calicium boreale"
    ],
    1,
-   1
+   1,
+   {
+    "unauthored": 1
+   },
+   [
+    "unauthored: empty authorship [col col:nameStatus=unacceptable, col col:status=synonym, nortaxa nomenclaturalStatus=illegitimate, nortaxa taxonomicStatus=synonym]"
+   ]
+  ],
+  [
+   "75928",
+   "76VPT",
+   118815,
+   false,
+   "Phaeocalicium polyporaeum (Nyl.) Tibell",
+   "Phaeocalicium polyporaeum (Nyl.) Tibell",
+   true,
+   false,
+   false,
+   2,
+   [
+    "calicium polyporaceum",
+    "phaeocalicium polyporaceum"
+   ],
+   2,
+   4,
+   {
+    "unauthored": 2
+   },
+   [
+    "unauthored: empty authorship [col col:status=synonym, nortaxa taxonomicStatus=synonym]",
+    "unauthored: empty authorship [col col:status=synonym, nortaxa taxonomicStatus=synonym]"
+   ]
   ],
   [
    "75947",
@@ -688,7 +1020,13 @@
     "trachylia lecptoconica"
    ],
    2,
-   5
+   5,
+   {
+    "unauthored": 1
+   },
+   [
+    "unauthored: empty authorship [col col:nameStatus=unacceptable, col col:status=synonym, nortaxa nomenclaturalStatus=illegitimate, nortaxa taxonomicStatus=synonym]"
+   ]
   ],
   [
    "76451",
@@ -705,7 +1043,13 @@
     "lopadium carneum"
    ],
    1,
-   1
+   1,
+   {
+    "unauthored": 1
+   },
+   [
+    "unauthored: empty authorship [col col:nameStatus=unacceptable, col col:status=synonym, nortaxa nomenclaturalStatus=illegitimate, nortaxa taxonomicStatus=synonym]"
+   ]
   ],
   [
    "76627",
@@ -722,7 +1066,13 @@
     "morioliopsis resinae"
    ],
    1,
-   2
+   2,
+   {
+    "unauthored": 1
+   },
+   [
+    "unauthored: empty authorship [col col:nameStatus=unacceptable, col col:status=synonym, nortaxa nomenclaturalStatus=illegitimate, nortaxa taxonomicStatus=synonym]"
+   ]
   ],
   [
    "77056",
@@ -739,7 +1089,13 @@
     "polyblastia alba"
    ],
    1,
-   1
+   1,
+   {
+    "unauthored": 1
+   },
+   [
+    "unauthored: empty authorship [col col:nameStatus=unacceptable, col col:status=synonym, nortaxa nomenclaturalStatus=illegitimate, nortaxa taxonomicStatus=synonym]"
+   ]
   ],
   [
    "77141",
@@ -756,7 +1112,13 @@
     "umbilicaria sinensis"
    ],
    1,
-   2
+   2,
+   {
+    "unauthored": 1
+   },
+   [
+    "unauthored: empty authorship [col col:nameStatus=unacceptable, col col:status=synonym, nortaxa nomenclaturalStatus=illegitimate, nortaxa taxonomicStatus=synonym]"
+   ]
   ],
   [
    "77173",
@@ -773,7 +1135,13 @@
     "gyrophora laevis"
    ],
    1,
-   1
+   1,
+   {
+    "unauthored": 1
+   },
+   [
+    "unauthored: empty authorship [col col:nameStatus=unacceptable, col col:status=synonym, nortaxa nomenclaturalStatus=illegitimate, nortaxa taxonomicStatus=synonym]"
+   ]
   ],
   [
    "77178",
@@ -791,7 +1159,14 @@
     "gyrophora microphylla"
    ],
    2,
-   2
+   2,
+   {
+    "unauthored": 2
+   },
+   [
+    "unauthored: empty authorship [col col:nameStatus=unacceptable, col col:status=synonym, nortaxa nomenclaturalStatus=illegitimate, nortaxa taxonomicStatus=synonym]",
+    "unauthored: empty authorship [col col:nameStatus=unacceptable, col col:status=synonym, nortaxa nomenclaturalStatus=illegitimate, nortaxa taxonomicStatus=synonym]"
+   ]
   ],
   [
    "77190",
@@ -808,7 +1183,13 @@
     "gyrophora ruebeliana"
    ],
    1,
-   1
+   1,
+   {
+    "unauthored": 1
+   },
+   [
+    "unauthored: empty authorship [col col:nameStatus=unacceptable, col col:status=synonym, nortaxa nomenclaturalStatus=illegitimate, nortaxa taxonomicStatus=synonym]"
+   ]
   ],
   [
    "77331",
@@ -825,7 +1206,13 @@
     "acanthotheciopsis caesiocarnea"
    ],
    1,
-   1
+   1,
+   {
+    "unauthored": 1
+   },
+   [
+    "unauthored: empty authorship [col col:nameStatus=unacceptable, col col:status=synonym, nortaxa nomenclaturalStatus=illegitimate, nortaxa taxonomicStatus=synonym]"
+   ]
   ],
   [
    "77725",
@@ -842,7 +1229,36 @@
     "thelopsis rubella f. saxicola"
    ],
    1,
-   3
+   3,
+   {
+    "unauthored": 1
+   },
+   [
+    "unauthored: empty authorship [col col:nameStatus=unacceptable, col col:status=synonym, nortaxa nomenclaturalStatus=illegitimate, nortaxa taxonomicStatus=synonym]"
+   ]
+  ],
+  [
+   "77800",
+   "6S3DV",
+   107528,
+   false,
+   "Myriotrema microporum (Mont.) Hale",
+   "Myriotrema microporum (Mont.) Hale",
+   true,
+   false,
+   false,
+   1,
+   [
+    "myriotrema microsporum"
+   ],
+   2,
+   4,
+   {
+    "unauthored": 1
+   },
+   [
+    "unauthored: empty authorship [col col:nameStatus=unacceptable, col col:status=synonym, nortaxa nomenclaturalStatus=illegitimate, nortaxa taxonomicStatus=synonym]"
+   ]
   ],
   [
    "78013",
@@ -859,7 +1275,13 @@
     "collema subfurvum"
    ],
    3,
-   2
+   2,
+   {
+    "unauthored": 1
+   },
+   [
+    "unauthored: empty authorship [col col:status=synonym, nortaxa nomenclaturalStatus=illegitimate, nortaxa taxonomicStatus=synonym]"
+   ]
   ],
   [
    "78050",
@@ -876,7 +1298,13 @@
     "collema caespitosum"
    ],
    1,
-   1
+   1,
+   {
+    "unauthored": 1
+   },
+   [
+    "unauthored: empty authorship [col col:nameStatus=unacceptable, col col:status=synonym, nortaxa nomenclaturalStatus=illegitimate, nortaxa taxonomicStatus=synonym]"
+   ]
   ],
   [
    "78518",
@@ -893,7 +1321,13 @@
     "peltigera octospora"
    ],
    1,
-   1
+   1,
+   {
+    "unauthored": 1
+   },
+   [
+    "unauthored: empty authorship [col col:nameStatus=unacceptable, col col:status=synonym, nortaxa nomenclaturalStatus=illegitimate, nortaxa taxonomicStatus=synonym]"
+   ]
   ],
   [
    "78693",
@@ -910,7 +1344,13 @@
     "pertusaria polycarpa"
    ],
    1,
-   1
+   1,
+   {
+    "unauthored": 1
+   },
+   [
+    "unauthored: empty authorship [col col:nameStatus=unacceptable, col col:status=synonym, nortaxa nomenclaturalStatus=illegitimate, nortaxa taxonomicStatus=synonym]"
+   ]
   ],
   [
    "79131",
@@ -927,7 +1367,13 @@
     "biatorella lignaria"
    ],
    1,
-   1
+   1,
+   {
+    "unauthored": 1
+   },
+   [
+    "unauthored: empty authorship [col col:nameStatus=unacceptable, col col:status=synonym, nortaxa nomenclaturalStatus=illegitimate, nortaxa taxonomicStatus=synonym]"
+   ]
   ],
   [
    "79250",
@@ -944,7 +1390,13 @@
     "inermisia obducens"
    ],
    1,
-   1
+   1,
+   {
+    "unauthored": 1
+   },
+   [
+    "unauthored: empty authorship [col col:nameStatus=unacceptable, col col:status=synonym, nortaxa nomenclaturalStatus=illegitimate, nortaxa taxonomicStatus=synonym]"
+   ]
   ],
   [
    "79499",
@@ -961,7 +1413,13 @@
     "pilocratera engleriana"
    ],
    1,
-   5
+   5,
+   {
+    "unauthored": 1
+   },
+   [
+    "unauthored: empty authorship [col col:nameStatus=unacceptable, col col:status=synonym, nortaxa nomenclaturalStatus=illegitimate, nortaxa taxonomicStatus=synonym]"
+   ]
   ],
   [
    "80058",
@@ -978,7 +1436,13 @@
     "teichospora aspegrenii"
    ],
    1,
-   7
+   7,
+   {
+    "unauthored": 1
+   },
+   [
+    "unauthored: empty authorship [col col:nameStatus=unacceptable, col col:status=synonym, nortaxa nomenclaturalStatus=illegitimate, nortaxa taxonomicStatus=synonym]"
+   ]
   ],
   [
    "80112",
@@ -995,7 +1459,13 @@
     "naetrocymbe compactior"
    ],
    1,
-   1
+   1,
+   {
+    "unauthored": 1
+   },
+   [
+    "unauthored: empty authorship [col col:nameStatus=unacceptable, col col:status=synonym, nortaxa nomenclaturalStatus=illegitimate, nortaxa taxonomicStatus=synonym]"
+   ]
   ],
   [
    "80113",
@@ -1012,7 +1482,13 @@
     "naetrocymbe laxa"
    ],
    1,
-   1
+   1,
+   {
+    "unauthored": 1
+   },
+   [
+    "unauthored: empty authorship [col col:nameStatus=unacceptable, col col:status=synonym, nortaxa nomenclaturalStatus=illegitimate, nortaxa taxonomicStatus=synonym]"
+   ]
   ],
   [
    "80401",
@@ -1029,7 +1505,13 @@
     "leptosphaeria potentillae"
    ],
    2,
-   2
+   2,
+   {
+    "unauthored": 1
+   },
+   [
+    "unauthored: empty authorship [col col:nameStatus=unacceptable, col col:status=synonym, nortaxa nomenclaturalStatus=illegitimate, nortaxa taxonomicStatus=synonym]"
+   ]
   ],
   [
    "80629",
@@ -1046,7 +1528,13 @@
     "arthopyrenia leucochlora"
    ],
    1,
-   1
+   1,
+   {
+    "unauthored": 1
+   },
+   [
+    "unauthored: empty authorship [col col:nameStatus=unacceptable, col col:status=synonym, nortaxa nomenclaturalStatus=illegitimate, nortaxa taxonomicStatus=synonym]"
+   ]
   ],
   [
    "81087",
@@ -1063,7 +1551,13 @@
     "dermascia lacerum"
    ],
    1,
-   1
+   1,
+   {
+    "unauthored": 1
+   },
+   [
+    "unauthored: empty authorship [col col:nameStatus=unacceptable, col col:status=synonym, nortaxa nomenclaturalStatus=illegitimate, nortaxa taxonomicStatus=synonym]"
+   ]
   ],
   [
    "81623",
@@ -1080,7 +1574,13 @@
     "blastenia oleicola"
    ],
    1,
-   1
+   1,
+   {
+    "unauthored": 1
+   },
+   [
+    "unauthored: empty authorship [col col:nameStatus=unacceptable, col col:status=synonym, nortaxa nomenclaturalStatus=illegitimate, nortaxa taxonomicStatus=synonym]"
+   ]
   ],
   [
    "81833",
@@ -1097,7 +1597,13 @@
     "triblidium rhois"
    ],
    1,
-   1
+   1,
+   {
+    "unauthored": 1
+   },
+   [
+    "unauthored: empty authorship [col col:nameStatus=unacceptable, col col:status=synonym, nortaxa nomenclaturalStatus=illegitimate, nortaxa taxonomicStatus=synonym]"
+   ]
   ],
   [
    "82232",
@@ -1114,7 +1620,13 @@
     "moriola barbata"
    ],
    1,
-   1
+   1,
+   {
+    "unauthored": 1
+   },
+   [
+    "unauthored: empty authorship [col col:nameStatus=unacceptable, col col:status=synonym, nortaxa nomenclaturalStatus=illegitimate, nortaxa taxonomicStatus=synonym]"
+   ]
   ],
   [
    "82250",
@@ -1132,7 +1644,14 @@
     "moriola rava"
    ],
    2,
-   2
+   2,
+   {
+    "unauthored": 2
+   },
+   [
+    "unauthored: empty authorship [col col:nameStatus=unacceptable, col col:status=synonym, nortaxa nomenclaturalStatus=illegitimate, nortaxa taxonomicStatus=synonym]",
+    "unauthored: empty authorship [col col:nameStatus=unacceptable, col col:status=synonym, nortaxa nomenclaturalStatus=illegitimate, nortaxa taxonomicStatus=synonym]"
+   ]
   ],
   [
    "83088",
@@ -1149,12 +1668,18 @@
     "xylosphaera arbuscula"
    ],
    1,
-   3
+   3,
+   {
+    "unauthored": 1
+   },
+   [
+    "unauthored: empty authorship [col col:nameStatus=unacceptable, col col:status=synonym, nortaxa nomenclaturalStatus=illegitimate, nortaxa taxonomicStatus=synonym]"
+   ]
   ]
  ],
- "members_sha256": "21b35ed42203c9eacd7f462c24dc2a29af2057efaf948f855aa1b074ede8d6a7",
- "membership_rule": "every shared synonym has an empty authorship, so the match is on the name alone",
- "note": "Immutable review input derived deterministically from the parent shared_synonymy manifest; the review classes partition it. Membership is pinned to the release and source archives below; it approves nothing and never extends to taxa in a later source release. shared_synonyms lists at most 10 names; shared_synonym_count is exact.",
+ "members_sha256": "fe8beb70d90e36aad4b3f7f958a6174a7042b4d4cdab5a960bf3a33e2285963a",
+ "membership_rule": "every shared synonym is of kind 'unauthored'",
+ "note": "Immutable review input derived deterministically from the parent shared_synonymy manifest; the review classes partition it. A member belongs to the first class, in review_class_precedence, whose membership_rule it meets; each shared synonym has the first kind, in synonym_kind_precedence, whose rule it meets. Membership is pinned to the release and source archives below; it approves nothing and never extends to taxa in a later source release. shared_synonyms and shared_synonym_evidence list at most 10 names; shared_synonym_count and shared_synonym_kind_counts are exact.",
  "parent_manifest": {
   "evidence_class": "shared_synonymy",
   "member_count": 4861,
@@ -1191,15 +1716,45 @@
  "review_class": "only_unauthored",
  "review_class_precedence": [
   "non_species_rank",
+  "rank_mismatch",
   "infraspecific_rank",
   "accepted_authorship_disagrees",
-  "only_ined",
-  "only_invalid_name",
-  "only_accepted_name_variant",
+  "only_orthographic_variant",
+  "only_unpublished",
+  "only_not_validly_published",
+  "only_illegitimate",
+  "only_interpretation_qualified",
+  "only_pro_parte",
+  "only_accepted_name_reauthored",
   "only_unauthored",
+  "only_name_variant",
   "only_mixed_weak",
   "single_shared_synonym_low_overlap",
   "ordinary"
  ],
- "review_status": "needs_review"
+ "review_status": "needs_review",
+ "synonym_kind_precedence": [
+  "orthographic_variant",
+  "unpublished",
+  "not_validly_published",
+  "illegitimate",
+  "interpretation_qualified",
+  "pro_parte",
+  "accepted_name_reauthored",
+  "unauthored",
+  "name_variant",
+  "ordinary"
+ ],
+ "synonym_kinds": {
+  "accepted_name_reauthored": "the canonical name is either accepted name itself, under another authorship",
+  "illegitimate": "the authorship carries 'nom. illeg.' (the sources' structured illegitimacy statuses, NorTaxa 'illegitimate' and COL 'unacceptable', are not used)",
+  "interpretation_qualified": "a misapplied usage (NorTaxa nomenclaturalStatus or COL col:status 'misapplied'), or the authorship carries a sensu-style qualifier ('sensu', 's.', 'ss.', 'auct.')",
+  "name_variant": "no structured status applies, but the name is almost spelled like either accepted name: same word count once hyphens are removed, and every word, genus included, within Levenshtein distance 2 (a possible misspelling or a near-identical combination, unconfirmed by the sources)",
+  "not_validly_published": "NorTaxa nomenclaturalStatus 'notvalidlypublished', COL col:nameStatus 'not established', or the authorship carries 'nom. nud.' or 'nom. inval.'",
+  "ordinary": "meets none of the tests above",
+  "orthographic_variant": "either source's structured status marks the usage an orthographic variant (NorTaxa nomenclaturalStatus 'orthographic')",
+  "pro_parte": "COL col:status 'ambiguous synonym', or the authorship carries 'p.p.' or 'pro parte'",
+  "unauthored": "the authorship is empty, so the match is on the name alone",
+  "unpublished": "COL col:nameStatus 'manuscript', or the authorship carries 'ined' or 'nom. herb.'"
+ }
 }

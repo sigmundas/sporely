@@ -1,0 +1,565 @@
+{
+ "cloud_scope_member_count": 5,
+ "columns": [
+  "nortaxa_taxon_id",
+  "col_usage_id",
+  "sporely_taxon_id",
+  "in_cloud_scope",
+  "bridge_accepted_name",
+  "backbone_accepted_name",
+  "accepted_names_agree",
+  "bridge_lists_backbone_accepted_name_as_synonym",
+  "backbone_lists_bridge_accepted_name_as_synonym",
+  "shared_synonym_count",
+  "shared_synonyms",
+  "bridge_synonym_count",
+  "backbone_synonym_count",
+  "shared_synonym_kind_counts",
+  "shared_synonym_evidence"
+ ],
+ "evidence_class": "shared_synonymy",
+ "format": "sporely-taxonomy-v3-review-manifest-v2",
+ "member_count": 20,
+ "members": [
+  [
+   "143061",
+   "ZS5S",
+   620744,
+   true,
+   "Crustoderma patricium (G. Cunn.) Nakasone",
+   "Crustoderma patricium (G. Cunn.) Nakasone",
+   true,
+   false,
+   false,
+   1,
+   [
+    "hyphoderma patricium ined."
+   ],
+   1,
+   2,
+   {
+    "unpublished": 1
+   },
+   [
+    "unpublished: col col:nameStatus=manuscript [col col:nameStatus=manuscript, col col:status=synonym, nortaxa taxonomicStatus=synonym]"
+   ]
+  ],
+  [
+   "143346",
+   "RSQB3",
+   171366,
+   true,
+   "Polystictus prosector Lloyd",
+   "Polystictus prosector Lloyd",
+   true,
+   false,
+   false,
+   1,
+   [
+    "trichaptum prosector comb. ined."
+   ],
+   1,
+   1,
+   {
+    "unpublished": 1
+   },
+   [
+    "unpublished: col col:nameStatus=manuscript [col col:nameStatus=manuscript, col col:status=synonym, nortaxa taxonomicStatus=synonym]"
+   ]
+  ],
+  [
+   "143411",
+   "7DBSF",
+   125191,
+   true,
+   "Tyromyces catervatus (Berk.) G. Cunn.",
+   "Tyromyces catervatus (Berk.) G. Cunn.",
+   true,
+   false,
+   false,
+   1,
+   [
+    "oligoporus catervatus (Berk.) Ryvarden comb. ined."
+   ],
+   1,
+   5,
+   {
+    "unpublished": 1
+   },
+   [
+    "unpublished: col col:nameStatus=manuscript [col col:nameStatus=manuscript, col col:status=synonym, nortaxa taxonomicStatus=synonym]"
+   ]
+  ],
+  [
+   "171106",
+   "ZJ4X",
+   620569,
+   true,
+   "Cristella hypogeton Maas Geest.",
+   "Cristella hypogeton Maas Geest.",
+   true,
+   false,
+   false,
+   1,
+   [
+    "trechispora hypogeton ined."
+   ],
+   1,
+   1,
+   {
+    "unpublished": 1
+   },
+   [
+    "unpublished: col col:nameStatus=manuscript [col col:nameStatus=manuscript, col col:status=synonym, nortaxa taxonomicStatus=synonym]"
+   ]
+  ],
+  [
+   "52170",
+   "65Z3R",
+   89092,
+   true,
+   "Amanita submembranacea (Bon) Gröger",
+   "Amanita submembranacea (Bon) Gröger",
+   true,
+   false,
+   false,
+   1,
+   [
+    "amanita subalpina M.M. Moser ined."
+   ],
+   1,
+   6,
+   {
+    "unpublished": 1
+   },
+   [
+    "unpublished: authorship 'ined' [col col:nameStatus=unacceptable, col col:status=synonym, nortaxa nomenclaturalStatus=illegitimate, nortaxa taxonomicStatus=synonym]"
+   ]
+  ],
+  [
+   "65118",
+   "LY6D4",
+   159485,
+   false,
+   "Acarospora atomariospora Magnusson",
+   "Acarospora atomariospora Magnusson",
+   true,
+   false,
+   false,
+   1,
+   [
+    "acarospora atonaria Magnusson, ined."
+   ],
+   1,
+   1,
+   {
+    "unpublished": 1
+   },
+   [
+    "unpublished: authorship 'ined' [col col:nameStatus=unacceptable, col col:status=synonym, nortaxa nomenclaturalStatus=illegitimate, nortaxa taxonomicStatus=synonym]"
+   ]
+  ],
+  [
+   "70518",
+   "3NTHZ",
+   17557,
+   false,
+   "Hypocenomyce australis Timdal",
+   "Hypocenomyce australis Timdal",
+   true,
+   false,
+   false,
+   1,
+   [
+    "lecidea australis (Timdal) comb. ined."
+   ],
+   1,
+   1,
+   {
+    "unpublished": 1
+   },
+   [
+    "unpublished: authorship 'ined' [col col:nameStatus=unacceptable, col col:status=synonym, nortaxa nomenclaturalStatus=illegitimate, nortaxa taxonomicStatus=synonym]"
+   ]
+  ],
+  [
+   "71079",
+   "4PHLY",
+   55436,
+   false,
+   "Psilolechia leprosa Coppins & Purvis",
+   "Psilolechia leprosa Coppins & Purvis",
+   true,
+   false,
+   false,
+   1,
+   [
+    "lecidea leprosa nom. herb."
+   ],
+   1,
+   1,
+   {
+    "unpublished": 1
+   },
+   [
+    "unpublished: authorship 'nom. herb' [col col:nameStatus=unacceptable, col col:status=synonym, nortaxa nomenclaturalStatus=illegitimate, nortaxa taxonomicStatus=synonym]"
+   ]
+  ],
+  [
+   "71595",
+   "MHHHN",
+   161175,
+   false,
+   "Cetraria arenaria Kärnef.",
+   "Cetraria arenaria Kärnef.",
+   true,
+   false,
+   false,
+   1,
+   [
+    "cetraria islandica f. campestris Tuck. ined."
+   ],
+   1,
+   1,
+   {
+    "unpublished": 1
+   },
+   [
+    "unpublished: authorship 'ined' [col col:nameStatus=unacceptable, col col:status=synonym, nortaxa nomenclaturalStatus=illegitimate, nortaxa taxonomicStatus=synonym]"
+   ]
+  ],
+  [
+   "71774",
+   "PLQ2P",
+   165618,
+   false,
+   "Hypogymnia laminisorediata D. Hawksw. & Poelt",
+   "Hypogymnia laminisorediata D. Hawksw. & Poelt",
+   true,
+   false,
+   false,
+   1,
+   [
+    "parmelia laminisorediata nom. herb."
+   ],
+   1,
+   1,
+   {
+    "unpublished": 1
+   },
+   [
+    "unpublished: authorship 'nom. herb' [col col:nameStatus=unacceptable, col col:status=synonym, nortaxa nomenclaturalStatus=illegitimate, nortaxa taxonomicStatus=synonym]"
+   ]
+  ],
+  [
+   "72372",
+   "763C7",
+   117491,
+   false,
+   "Parmotrema demethylmicrophyllinicum Elix",
+   "Parmotrema demethylmicrophyllinicum Elix",
+   true,
+   false,
+   false,
+   1,
+   [
+    "parmelia demethylmicrophyllinica nom. herb. O"
+   ],
+   1,
+   1,
+   {
+    "unpublished": 1
+   },
+   [
+    "unpublished: authorship 'nom. herb' [col col:nameStatus=unacceptable, col col:status=synonym, nortaxa nomenclaturalStatus=illegitimate, nortaxa taxonomicStatus=synonym]"
+   ]
+  ],
+  [
+   "72617",
+   "S4C8F",
+   172130,
+   false,
+   "Punctelia constantimontium Sérus.",
+   "Punctelia constantimontium Sérus.",
+   true,
+   false,
+   false,
+   1,
+   [
+    "parmelia constantimontium (Sérus.) comb. ined."
+   ],
+   1,
+   1,
+   {
+    "unpublished": 1
+   },
+   [
+    "unpublished: authorship 'ined' [col col:nameStatus=unacceptable, col col:status=synonym, nortaxa nomenclaturalStatus=illegitimate, nortaxa taxonomicStatus=synonym]"
+   ]
+  ],
+  [
+   "72637",
+   "4RR4J",
+   59672,
+   false,
+   "Relicina amphithrix Hale",
+   "Relicina amphithrix Hale",
+   true,
+   false,
+   false,
+   1,
+   [
+    "parmelia amphithrix (Hale) comb. ined."
+   ],
+   1,
+   1,
+   {
+    "unpublished": 1
+   },
+   [
+    "unpublished: authorship 'ined' [col col:nameStatus=unacceptable, col col:status=synonym, nortaxa nomenclaturalStatus=illegitimate, nortaxa taxonomicStatus=synonym]"
+   ]
+  ],
+  [
+   "72642",
+   "4RR4T",
+   59680,
+   false,
+   "Relicina demethylbarbatica Elix & J. Johnst.",
+   "Relicina demethylbarbatica Elix & J. Johnst.",
+   true,
+   false,
+   false,
+   1,
+   [
+    "parmelia demethylbarbatica nom. herb. O"
+   ],
+   1,
+   1,
+   {
+    "unpublished": 1
+   },
+   [
+    "unpublished: authorship 'nom. herb' [col col:nameStatus=unacceptable, col col:status=synonym, nortaxa nomenclaturalStatus=illegitimate, nortaxa taxonomicStatus=synonym]"
+   ]
+  ],
+  [
+   "73191",
+   "TYQVD",
+   608249,
+   false,
+   "Xanthoparmelia norchlorochroa Hale",
+   "Xanthoparmelia norchlorochroa Hale",
+   true,
+   false,
+   false,
+   1,
+   [
+    "parmelia norchlorochroa (Hale) nom. herb."
+   ],
+   1,
+   1,
+   {
+    "unpublished": 1
+   },
+   [
+    "unpublished: authorship 'nom. herb' [col col:nameStatus=unacceptable, col col:status=synonym, nortaxa nomenclaturalStatus=illegitimate, nortaxa taxonomicStatus=synonym]"
+   ]
+  ],
+  [
+   "74179",
+   "RZZKY",
+   171897,
+   false,
+   "Porpidia carlottiana Gowan",
+   "Porpidia carlottiana Gowan",
+   true,
+   false,
+   false,
+   1,
+   [
+    "lecidea carlottiana (Gowan) comb. ined."
+   ],
+   1,
+   1,
+   {
+    "unpublished": 1
+   },
+   [
+    "unpublished: authorship 'ined' [col col:nameStatus=unacceptable, col col:status=synonym, nortaxa nomenclaturalStatus=illegitimate, nortaxa taxonomicStatus=synonym]"
+   ]
+  ],
+  [
+   "74196",
+   "RZZWV",
+   171899,
+   false,
+   "Porpidia pseudocrustulata Hertel",
+   "Porpidia pseudocrustulata Hertel",
+   true,
+   false,
+   false,
+   1,
+   [
+    "huilia pseudocrustulata (Hertel) ined."
+   ],
+   1,
+   1,
+   {
+    "unpublished": 1
+   },
+   [
+    "unpublished: authorship 'ined' [col col:nameStatus=unacceptable, col col:status=synonym, nortaxa nomenclaturalStatus=illegitimate, nortaxa taxonomicStatus=synonym]"
+   ]
+  ],
+  [
+   "81893",
+   "SJ97J",
+   603744,
+   false,
+   "Sagediopsis fissurisedens Hafellner",
+   "Sagediopsis fissurisedens Hafellner",
+   true,
+   false,
+   false,
+   1,
+   [
+    "hawksworthiella fissurisedens Kalb & Poelt, ined."
+   ],
+   1,
+   2,
+   {
+    "unpublished": 1
+   },
+   [
+    "unpublished: authorship 'ined' [col col:nameStatus=unacceptable, col col:status=synonym, nortaxa nomenclaturalStatus=illegitimate, nortaxa taxonomicStatus=synonym]"
+   ]
+  ],
+  [
+   "82234",
+   "SZBLY",
+   605535,
+   false,
+   "Spheconisca confusa Norman",
+   "Spheconisca confusa Norman",
+   true,
+   false,
+   false,
+   1,
+   [
+    "moriola confusa Norman ined."
+   ],
+   1,
+   1,
+   {
+    "unpublished": 1
+   },
+   [
+    "unpublished: authorship 'ined' [col col:nameStatus=unacceptable, col col:status=synonym, nortaxa nomenclaturalStatus=illegitimate, nortaxa taxonomicStatus=synonym]"
+   ]
+  ],
+  [
+   "82236",
+   "SZBM3",
+   605536,
+   false,
+   "Spheconisca conjungens Norman",
+   "Spheconisca conjungens Norman",
+   true,
+   false,
+   false,
+   1,
+   [
+    "moriola conjugens Norman ined."
+   ],
+   1,
+   1,
+   {
+    "unpublished": 1
+   },
+   [
+    "unpublished: authorship 'ined' [col col:nameStatus=unacceptable, col col:status=synonym, nortaxa nomenclaturalStatus=illegitimate, nortaxa taxonomicStatus=synonym]"
+   ]
+  ]
+ ],
+ "members_sha256": "1d1a4fff499f4d2029abc2c25fe8f1da16082ce7f01a4d414b22a82b2c0650d7",
+ "membership_rule": "every shared synonym is of kind 'unpublished'",
+ "note": "Immutable review input derived deterministically from the parent shared_synonymy manifest; the review classes partition it. A member belongs to the first class, in review_class_precedence, whose membership_rule it meets; each shared synonym has the first kind, in synonym_kind_precedence, whose rule it meets. Membership is pinned to the release and source archives below; it approves nothing and never extends to taxa in a later source release. shared_synonyms and shared_synonym_evidence list at most 10 names; shared_synonym_count and shared_synonym_kind_counts are exact.",
+ "parent_manifest": {
+  "evidence_class": "shared_synonymy",
+  "member_count": 4861,
+  "members_sha256": "ce48854856fd0a7f6c1d454cc79bfeeb2d57d9c8ff038305156ade8f9a85e3bc"
+ },
+ "pins": {
+  "bridge_emission_policy": {
+   "path": "database/taxonomy/policies/mapping_policy.yml",
+   "sha256": "a5a329848c45fcd030165a51ad1193944dffe7573ddb2a9c69441f0d76ae4afb"
+  },
+  "cloud_scope_policy": {
+   "path": "database/taxonomy/policies/global-macrofungi-scope.yml",
+   "scope_predicate_id": "global_macrofungi_policy_v1",
+   "sha256": "e4e796286df93b5372264c702c824eea746f680b3b4e8d6467621c99e5b64ea6"
+  },
+  "release": {
+   "content_release_id": "tax-2026.09.26-02",
+   "gz_artifact": "database/reference_data/generated/taxonomy_v2/tax-2026.09.26-02.sqlite3.gz",
+   "gz_sha256": "4488bb64f4abe18ed269c76264f9be36708d742ff531e931e8d7458791e05d72",
+   "sqlite_sha256": "9bf71b7e1f9b2915c3b1798743cefdd5db53bdbbfb7edc462aa3d0ad0cf8547d"
+  },
+  "source_archives": {
+   "col_xr": {
+    "sha256": "397d701c8eb269bf78d6ac7b03149915b0d9e2a2c18694be2c91445b807814f9",
+    "source_release_id": "col_xr:2026-07-17-XR:2026-07-17"
+   },
+   "nortaxa": {
+    "sha256": "29c11c54d955dc44e4e5a38944dd7932989a256d1b173777579b9f33abd2fe22",
+    "source_release_id": "nortaxa:1.284:2026-07-17"
+   }
+  }
+ },
+ "population": "group_a_automatic_nortaxa_bridge",
+ "review_class": "only_unpublished",
+ "review_class_precedence": [
+  "non_species_rank",
+  "rank_mismatch",
+  "infraspecific_rank",
+  "accepted_authorship_disagrees",
+  "only_orthographic_variant",
+  "only_unpublished",
+  "only_not_validly_published",
+  "only_illegitimate",
+  "only_interpretation_qualified",
+  "only_pro_parte",
+  "only_accepted_name_reauthored",
+  "only_unauthored",
+  "only_name_variant",
+  "only_mixed_weak",
+  "single_shared_synonym_low_overlap",
+  "ordinary"
+ ],
+ "review_status": "needs_review",
+ "synonym_kind_precedence": [
+  "orthographic_variant",
+  "unpublished",
+  "not_validly_published",
+  "illegitimate",
+  "interpretation_qualified",
+  "pro_parte",
+  "accepted_name_reauthored",
+  "unauthored",
+  "name_variant",
+  "ordinary"
+ ],
+ "synonym_kinds": {
+  "accepted_name_reauthored": "the canonical name is either accepted name itself, under another authorship",
+  "illegitimate": "the authorship carries 'nom. illeg.' (the sources' structured illegitimacy statuses, NorTaxa 'illegitimate' and COL 'unacceptable', are not used)",
+  "interpretation_qualified": "a misapplied usage (NorTaxa nomenclaturalStatus or COL col:status 'misapplied'), or the authorship carries a sensu-style qualifier ('sensu', 's.', 'ss.', 'auct.')",
+  "name_variant": "no structured status applies, but the name is almost spelled like either accepted name: same word count once hyphens are removed, and every word, genus included, within Levenshtein distance 2 (a possible misspelling or a near-identical combination, unconfirmed by the sources)",
+  "not_validly_published": "NorTaxa nomenclaturalStatus 'notvalidlypublished', COL col:nameStatus 'not established', or the authorship carries 'nom. nud.' or 'nom. inval.'",
+  "ordinary": "meets none of the tests above",
+  "orthographic_variant": "either source's structured status marks the usage an orthographic variant (NorTaxa nomenclaturalStatus 'orthographic')",
+  "pro_parte": "COL col:status 'ambiguous synonym', or the authorship carries 'p.p.' or 'pro parte'",
+  "unauthored": "the authorship is empty, so the match is on the name alone",
+  "unpublished": "COL col:nameStatus 'manuscript', or the authorship carries 'ined' or 'nom. herb.'"
+ }
+}
