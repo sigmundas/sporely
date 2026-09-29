@@ -47,10 +47,14 @@ from bridge_emission import (  # noqa: E402
 from publishing_ids import (  # noqa: E402
     InaturalistRefresh,
     PublishingIdError,
+    Supersession,
     apply_artportalen_overlay,
     apply_inaturalist_refresh_rows,
+    load_approved_supersessions,
     load_artportalen_overlay,
     load_inaturalist_refresh,
+    rekey_artportalen_overlay,
+    rekey_inaturalist_refresh,
     set_refreshed_inaturalist_columns,
 )
 from identity_registry import (  # noqa: E402
@@ -352,6 +356,32 @@ def _resolve_parent_sporely_id(
     return source_usage_index.get(key)
 
 
+def _release_supersessions(manifest: dict, ledger_path: Path) -> dict[int, Supersession]:
+    """The supersessions this release applied, keyed by retired concept.
+
+    The ledger must be the one the compiler bound (its SHA-256 is in the
+    compiler manifest), and the surviving concept is taken from the
+    compiler's own record of what it applied, so the builder cannot re-key an
+    entry anywhere the compiled release did not move that concept.
+    """
+    recorded = manifest.get("concept_supersessions_sha256") or ""
+    actual = _sha256_file(ledger_path)
+    if actual != recorded:
+        raise BuildError(f"concept supersessions {ledger_path} hash to {actual}, but the release "
+                         f"was compiled with {recorded or 'no ledger'}")
+    try:
+        approved = load_approved_supersessions(ledger_path)
+    except PublishingIdError as exc:
+        raise BuildError(str(exc)) from exc
+    applied = {int(pair["superseded_sporely_taxon_id"]): int(pair["current_sporely_taxon_id"])
+               for pair in (manifest.get("counts") or {}).get("concept_supersessions") or []}
+    if set(applied) != set(approved):
+        raise BuildError("the release's applied concept supersessions differ from the approved "
+                         f"records of {ledger_path}")
+    return {retired: Supersession(approved[retired][0], current)
+            for retired, current in applied.items()}
+
+
 def build_candidate(
     *,
     release_dir: Path,
@@ -360,6 +390,7 @@ def build_candidate(
     bridge_emission_policy_path: Path | None = None,
     publishing_overlay_path: Path | None = None,
     inaturalist_refresh_path: Path | None = None,
+    concept_supersessions_path: Path | None = None,
 ) -> dict:
     """Transactionally build the SQLite candidate.
 
@@ -372,7 +403,10 @@ def build_candidate(
     ``publishing_overlay_path`` (reviewed Artportalen publishing ids) and
     ``inaturalist_refresh_path`` (re-validated iNaturalist ids) are optional
     committed inputs; see ``publishing_ids.py``. Their digests are recorded in
-    ``taxonomy_meta``.
+    ``taxonomy_meta``. ``concept_supersessions_path`` is the supersession
+    ledger the release was compiled with; entries of those inputs keyed to a
+    concept it retired are re-keyed to the surviving concept. Without it such
+    an entry fails as a concept that is not in this release.
 
     Returns a summary dict with row counts and the file SHA-256.
     """
@@ -407,6 +441,19 @@ def build_candidate(
     if manifest.get("state") != "candidate":
         raise BuildError(f"unexpected release state: {manifest.get('state')}")
 
+    superseded_rekeys: dict[str, list[dict]] = {}
+    if concept_supersessions_path is not None:
+        supersessions = _release_supersessions(manifest, concept_supersessions_path)
+        try:
+            if inaturalist_refresh is not None:
+                inaturalist_refresh, superseded_rekeys["inaturalist_refresh"] = \
+                    rekey_inaturalist_refresh(inaturalist_refresh, supersessions)
+            if overlay_entries is not None:
+                overlay_entries, superseded_rekeys["artportalen_overlay"] = \
+                    rekey_artportalen_overlay(overlay_entries, supersessions)
+        except PublishingIdError as exc:
+            raise BuildError(str(exc)) from exc
+
     # Registry sanity: it must load, and its concatenated SHA must line up
     # with what the manifest records.
     registry = IdentityRegistry(registry_path)
@@ -438,6 +485,7 @@ def build_candidate(
             inaturalist_refresh=inaturalist_refresh,
             inaturalist_refresh_sha256=(_sha256_file(inaturalist_refresh_path)
                                         if inaturalist_refresh_path else None),
+            superseded_rekeys=superseded_rekeys if concept_supersessions_path is not None else None,
         )
         os.replace(tmp_db, output_db)
         committed = True
@@ -465,6 +513,7 @@ def _build_into(
     overlay_sha256: str | None = None,
     inaturalist_refresh: InaturalistRefresh | None = None,
     inaturalist_refresh_sha256: str | None = None,
+    superseded_rekeys: dict[str, list[dict]] | None = None,
 ) -> dict:
     conn = sqlite3.connect(str(tmp_db), isolation_level=None)
     conn.execute("PRAGMA locking_mode = EXCLUSIVE")
@@ -724,6 +773,8 @@ def _build_into(
 
         # Reviewed publishing-id inputs (publishing_ids.py).
         publishing_counts: dict[str, object] = {}
+        if superseded_rekeys is not None:
+            publishing_counts["superseded_rekeys"] = superseded_rekeys
         try:
             if inaturalist_refresh is not None:
                 external_int_rows, publishing_counts["inaturalist_refresh"] = \
@@ -1069,6 +1120,9 @@ def build_parser() -> argparse.ArgumentParser:
                         help="reviewed Artportalen publishing-id overlay")
     parser.add_argument("--inaturalist-refresh", type=Path, default=None,
                         help="re-validated iNaturalist id cache")
+    parser.add_argument("--concept-supersessions", type=Path, default=None,
+                        help="the supersession ledger the release was compiled with; re-keys "
+                             "publishing-id entries of retired concepts to their survivor")
     return parser
 
 
@@ -1082,6 +1136,7 @@ def main(argv: Iterable[str] | None = None) -> int:
             bridge_emission_policy_path=args.bridge_emission_policy,
             publishing_overlay_path=args.publishing_overlay,
             inaturalist_refresh_path=args.inaturalist_refresh,
+            concept_supersessions_path=args.concept_supersessions,
         )
     except (BuildError, BridgeEmissionError) as exc:
         print(f"error: {exc}", file=sys.stderr)

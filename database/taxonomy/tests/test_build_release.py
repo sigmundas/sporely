@@ -280,6 +280,8 @@ def test_recipe_pins_publishing_inputs_and_the_build_passes_them_on(pipeline, tm
     argv = dict(runner.calls)["sqliteA"]
     assert argv[argv.index("--publishing-overlay") + 1] == overlay
     assert argv[argv.index("--inaturalist-refresh") + 1] == "some/refresh.json"
+    # The builder re-keys entries of retired concepts with the compiled ledger.
+    assert argv[argv.index("--concept-supersessions") + 1] == loaded.policies["concept_supersessions"]
 
 
 def test_a_publishing_input_must_match_its_pin():

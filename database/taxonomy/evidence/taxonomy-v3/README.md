@@ -402,3 +402,20 @@ Before any of these supersessions ships:
   <candidate.sqlite3> --observations <desktop database>` against the
   candidate compiled with this ledger. The retiring set is every
   `superseded_sporely_taxon_id` in the ledger.
+
+## Stage 3R — release-build inputs follow concept supersessions (`stage3r/`)
+
+`superseded-references.json` records the recount of pinned publishing-id
+entries keyed to a concept a reviewed supersession retired, taken from the
+committed inputs by the `build_release.py` preflight
+(`check_superseded_references`): 1 Artportalen overlay entry and 20
+iNaturalist refresh entries, none colliding, none unresolvable. It also
+records the scratch `build_release.py` run over the committed recipe
+(deterministic, no new allocations, not promoted) and a control build that
+shows the only output difference is the re-keying of those entries. The pinned
+inputs are unchanged; the re-keying happens at build time. Reproduce the
+recount with:
+
+```sh
+.venv/bin/python -c "import sys; sys.path.insert(0, 'database/taxonomy/scripts'); import build_release as br, json; print(json.dumps(br.check_superseded_references(br.load_recipe(br.DEFAULT_RECIPE)), indent=2))"
+```

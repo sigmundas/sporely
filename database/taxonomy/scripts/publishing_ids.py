@@ -13,6 +13,14 @@ Both are applied fail-closed: an entry whose concept is missing or whose
 scientific name no longer matches the release stops the build, so a rename or
 split forces a new review instead of silently attaching an id to the wrong
 concept. Neither input allocates or changes Sporely identity.
+
+An entry keyed to a concept that a reviewed supersession
+(``policies/concept_supersessions.yml``) retired is re-keyed at build time to
+the concept the supersession selected, carrying the retired id and the
+``supersession_id`` as provenance. The committed inputs are never rewritten
+and no external identifier is reinterpreted; the re-keyed entry must still
+match the surviving concept's canonical name, and an entry that would land on
+a concept already holding one of the same input's entries stops the build.
 """
 from __future__ import annotations
 
@@ -38,12 +46,115 @@ class RefreshEntry:
     scientific_name: str
     inaturalist_taxon_id: int | None
     inaturalist_name: str | None
+    #: Set when the entry was re-keyed off a retired concept (see rekey_entries).
+    superseded_from_sporely_taxon_id: int | None = None
+    supersession_id: str | None = None
 
 
 @dataclass(frozen=True)
 class InaturalistRefresh:
     acquired_on: str
     entries: tuple[RefreshEntry, ...]
+
+
+@dataclass(frozen=True)
+class Supersession:
+    """An approved concept supersession, resolved to the surviving concept."""
+    supersession_id: str
+    current_sporely_taxon_id: int
+
+
+def load_approved_supersessions(path: Path) -> dict[int, tuple[str, tuple[str, str, str]]]:
+    """Approved records of the supersession ledger.
+
+    Returns ``{retired sporely_taxon_id: (supersession_id, current_source_usage)}``.
+    Only approved records are returned, as only those are applied by the
+    compiler; the ledger's full validation is the compiler's.
+    """
+    try:
+        doc = json.loads(path.read_text(encoding="utf-8"))
+    except (OSError, ValueError) as exc:
+        raise PublishingIdError(f"cannot read concept supersessions {path}: {exc}") from exc
+    out: dict[int, tuple[str, tuple[str, str, str]]] = {}
+    for raw in doc.get("supersessions") or []:
+        if raw.get("review_status") != "approved":
+            continue
+        retired = int(raw["superseded_sporely_taxon_id"])
+        if retired in out:
+            raise PublishingIdError(f"{path}: concept {retired} is superseded more than once")
+        usage = raw["current_source_usage"]
+        out[retired] = (str(raw["supersession_id"]),
+                        (str(usage["source"]), str(usage["namespace"]), str(usage["identifier"])))
+    return out
+
+
+def rekey_entries(label: str, taxon_ids: list[int],
+                  supersessions: dict[int, Supersession]) -> dict[int, Supersession]:
+    """Decide the re-keying of one input's concept references.
+
+    Returns ``{index into taxon_ids: supersession}`` for every reference to a
+    retired concept. Fails when a surviving concept would end up with two of
+    the input's entries -- its own and a retired one's, or two retired ones'.
+    Deciding which of two entries holds is a review, not a build step.
+    """
+    moved: dict[int, Supersession] = {}
+    holders: dict[int, list[int]] = {}
+    for index, taxon_id in enumerate(taxon_ids):
+        supersession = supersessions.get(taxon_id)
+        if supersession is not None:
+            moved[index] = supersession
+            taxon_id = supersession.current_sporely_taxon_id
+        holders.setdefault(taxon_id, []).append(index)
+    for current, indexes in sorted(holders.items()):
+        if len(indexes) > 1:
+            sources = sorted(taxon_ids[i] for i in indexes)
+            raise PublishingIdError(
+                f"{label}: entries for concepts {sources} all belong to concept {current} after "
+                f"concept supersession; review them into one entry")
+    return moved
+
+
+def rekey_inaturalist_refresh(refresh: InaturalistRefresh, supersessions: dict[int, Supersession]
+                              ) -> tuple[InaturalistRefresh, list[dict]]:
+    moved = rekey_entries("iNaturalist refresh", [e.sporely_taxon_id for e in refresh.entries],
+                          supersessions)
+    entries = list(refresh.entries)
+    for index, supersession in moved.items():
+        e = entries[index]
+        entries[index] = RefreshEntry(supersession.current_sporely_taxon_id, e.scientific_name,
+                                      e.inaturalist_taxon_id, e.inaturalist_name,
+                                      e.sporely_taxon_id, supersession.supersession_id)
+    entries.sort(key=lambda e: e.sporely_taxon_id)
+    return (InaturalistRefresh(refresh.acquired_on, tuple(entries)),
+            [_rekey_report(refresh.entries[i].sporely_taxon_id, refresh.entries[i].scientific_name, s)
+             for i, s in sorted(moved.items())])
+
+
+def rekey_artportalen_overlay(entries: list[dict], supersessions: dict[int, Supersession]
+                              ) -> tuple[list[dict], list[dict]]:
+    moved = rekey_entries("Artportalen overlay", [int(e["sporely_taxon_id"]) for e in entries],
+                          supersessions)
+    out = [dict(e) for e in entries]
+    for index, supersession in moved.items():
+        out[index].update(sporely_taxon_id=supersession.current_sporely_taxon_id,
+                          superseded_from_sporely_taxon_id=int(entries[index]["sporely_taxon_id"]),
+                          supersession_id=supersession.supersession_id)
+    out.sort(key=lambda e: int(e["sporely_taxon_id"]))
+    return out, [_rekey_report(int(entries[i]["sporely_taxon_id"]), entries[i]["scientific_name"], s)
+                 for i, s in sorted(moved.items())]
+
+
+def _rekey_report(retired: int, name: str, supersession: Supersession) -> dict:
+    return {"superseded_from_sporely_taxon_id": retired,
+            "sporely_taxon_id": supersession.current_sporely_taxon_id,
+            "supersession_id": supersession.supersession_id,
+            "scientific_name": name}
+
+
+def _rekey_note(note: str, retired: int | None, supersession_id: str | None) -> str:
+    if retired is None:
+        return note
+    return f"{note};superseded_from:{retired};supersession:{supersession_id}"
 
 
 def load_artportalen_overlay(path: Path) -> list[dict]:
@@ -122,7 +233,9 @@ def apply_artportalen_overlay(conn, entries: list[dict], rows: list[IntRow]) -> 
                                     f"Artportalen id in this release")
         rows.append((concept, "artportalen", target_id, "publishing", 1,
                      entry["artportalen_scientific_name"],
-                     f"reviewed_publishing_overlay:{entry['decision']}"))
+                     _rekey_note(f"reviewed_publishing_overlay:{entry['decision']}",
+                                 entry.get("superseded_from_sporely_taxon_id"),
+                                 entry.get("supersession_id"))))
         added += 1
     return added
 
@@ -148,7 +261,9 @@ def apply_inaturalist_refresh_rows(conn, refresh: InaturalistRefresh, rows: list
         kept.append(row)
     for e in resolved:
         kept.append((e.sporely_taxon_id, "inaturalist", e.inaturalist_taxon_id, "accepted", 1,
-                     e.inaturalist_name, f"inaturalist_refresh:{refresh.acquired_on}"))
+                     e.inaturalist_name,
+                     _rekey_note(f"inaturalist_refresh:{refresh.acquired_on}",
+                                 e.superseded_from_sporely_taxon_id, e.supersession_id)))
     return kept, {"resolved": len(resolved), "unresolved": len(refresh.entries) - len(resolved),
                   "legacy_rows_superseded": dropped}
 

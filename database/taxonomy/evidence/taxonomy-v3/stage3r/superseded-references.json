@@ -1,0 +1,201 @@
+{
+  "base_commit": "ff77f23",
+  "control_comparison": {
+    "method": "Same compiled releaseA and registry, rebuilt with scratch copies of both pinned inputs minus the 21 superseded entries and without the ledger; table-by-table EXCEPT diff against the candidate.",
+    "other_tables": "no differences apart from sqlite_stat1/sqlite_stat4 index statistics of taxon_external_id_min",
+    "taxon_external_id_min": "15 rows added (14 iNaturalist refresh rows + 1 Artportalen overlay row), all on re-keyed survivors and all carrying ';superseded_from:<retired>;supersession:<id>' in note; 28 rows removed: 15 legacy iNaturalist rows on those survivors and 13 legacy iNaturalist rows elsewhere carrying a freshly validated id, both by the refresh's existing replacement rule",
+    "taxon_min": "14 rows differ, all on re-keyed survivors (inaturalist_taxon_id set from the re-keyed refresh entries)",
+    "taxonomy_meta": "only the two scratch-input SHA-256 values differ (the candidate records the committed inputs' pinned hashes)"
+  },
+  "format": "sporely-taxonomy-v3-stage3r-evidence-v1",
+  "recount_from_committed_inputs": {
+    "collisions": 0,
+    "concept_supersessions_sha256": "04a77c05c694c97b599aae63c5852d7d2ba411a440c42cfa5104cc78a2e47033",
+    "method": "build_release.check_superseded_references over the committed release-recipe.json (approved records of concept_supersessions.yml, survivors from the committed registry shards)",
+    "pinned_inputs": {
+      "database/taxonomy/overlays/artportalen-publishing.json": {
+        "sha256": "e1219525f5620d4961a992dcd5e43514b26c54e5667b78079b48f56b4e7e402f",
+        "superseded_references": 1
+      },
+      "database/taxonomy/sources/inaturalist_refresh/2026-09-26/inaturalist-refresh.json": {
+        "sha256": "47266f1e144b2e1944359d4a2ca3f3a6bc39bd6e2024c047d7a0d6b0edbe4f15",
+        "superseded_references": 20
+      }
+    },
+    "references": {
+      "artportalen_overlay": [
+        {
+          "scientific_name": "Amanita muscaria",
+          "sporely_taxon_id": 78915,
+          "superseded_from_sporely_taxon_id": 624588,
+          "supersession_id": "taxonomy-v3-2-nortaxa-52147-superseded-by-col-5TYZ9"
+        }
+      ],
+      "inaturalist_refresh": [
+        {
+          "scientific_name": "Hymenochaete mougeotii",
+          "sporely_taxon_id": 102371,
+          "superseded_from_sporely_taxon_id": 622141,
+          "supersession_id": "taxonomy-v3-2-nortaxa-143150-superseded-by-col-6MPDS"
+        },
+        {
+          "scientific_name": "Lepraria alpina",
+          "sporely_taxon_id": 104975,
+          "superseded_from_sporely_taxon_id": 622481,
+          "supersession_id": "taxonomy-v3-2-nortaxa-145064-superseded-by-col-6PDYN"
+        },
+        {
+          "scientific_name": "Phaeoclavulina abietina",
+          "sporely_taxon_id": 43260,
+          "superseded_from_sporely_taxon_id": 623086,
+          "supersession_id": "taxonomy-v3-2-nortaxa-172827-superseded-by-col-4FMNZ"
+        },
+        {
+          "scientific_name": "Amanita muscaria",
+          "sporely_taxon_id": 78915,
+          "superseded_from_sporely_taxon_id": 624588,
+          "supersession_id": "taxonomy-v3-2-nortaxa-52147-superseded-by-col-5TYZ9"
+        },
+        {
+          "scientific_name": "Conocybe apala",
+          "sporely_taxon_id": 616843,
+          "superseded_from_sporely_taxon_id": 624630,
+          "supersession_id": "taxonomy-v3-2-nortaxa-52239-superseded-by-col-XQQT"
+        },
+        {
+          "scientific_name": "Entoloma mougeotii",
+          "sporely_taxon_id": 96064,
+          "superseded_from_sporely_taxon_id": 625244,
+          "supersession_id": "taxonomy-v3-2-nortaxa-53586-superseded-by-col-6FCYY"
+        },
+        {
+          "scientific_name": "Entoloma sordidulum",
+          "sporely_taxon_id": 96345,
+          "superseded_from_sporely_taxon_id": 625273,
+          "supersession_id": "taxonomy-v3-2-nortaxa-53675-superseded-by-col-6FDPT"
+        },
+        {
+          "scientific_name": "Entoloma subradiatum",
+          "sporely_taxon_id": 96420,
+          "superseded_from_sporely_taxon_id": 625276,
+          "supersession_id": "taxonomy-v3-2-nortaxa-53681-superseded-by-col-6FDSK"
+        },
+        {
+          "scientific_name": "Melanoleuca strictipes",
+          "sporely_taxon_id": 29183,
+          "superseded_from_sporely_taxon_id": 625575,
+          "supersession_id": "taxonomy-v3-2-nortaxa-54595-superseded-by-col-3Z8X3"
+        },
+        {
+          "scientific_name": "Melanoleuca subpulverulenta",
+          "sporely_taxon_id": 29198,
+          "superseded_from_sporely_taxon_id": 625578,
+          "supersession_id": "taxonomy-v3-2-nortaxa-54599-superseded-by-col-3Z8XT"
+        },
+        {
+          "scientific_name": "Agrocybe pediades",
+          "sporely_taxon_id": 146432,
+          "superseded_from_sporely_taxon_id": 625847,
+          "supersession_id": "taxonomy-v3-2-nortaxa-55206-superseded-by-col-B86C"
+        },
+        {
+          "scientific_name": "Psilocybe strictipes",
+          "sporely_taxon_id": 55384,
+          "superseded_from_sporely_taxon_id": 625894,
+          "supersession_id": "taxonomy-v3-2-nortaxa-55314-superseded-by-col-4PHCW"
+        },
+        {
+          "scientific_name": "Collybia cirrhata",
+          "sporely_taxon_id": 615902,
+          "superseded_from_sporely_taxon_id": 625932,
+          "supersession_id": "taxonomy-v3-2-nortaxa-55431-superseded-by-col-X53M"
+        },
+        {
+          "scientific_name": "Exidia glandulosa",
+          "sporely_taxon_id": 9309,
+          "superseded_from_sporely_taxon_id": 626107,
+          "supersession_id": "taxonomy-v3-2-nortaxa-55847-superseded-by-col-3DL2M"
+        },
+        {
+          "scientific_name": "Boletus edulis",
+          "sporely_taxon_id": 160491,
+          "superseded_from_sporely_taxon_id": 626145,
+          "supersession_id": "taxonomy-v3-2-nortaxa-55943-superseded-by-col-MCH9"
+        },
+        {
+          "scientific_name": "Leccinum scabrum",
+          "sporely_taxon_id": 23371,
+          "superseded_from_sporely_taxon_id": 626159,
+          "supersession_id": "taxonomy-v3-2-nortaxa-55999-superseded-by-col-3STFC"
+        },
+        {
+          "scientific_name": "Ramaria formosa",
+          "sporely_taxon_id": 58737,
+          "superseded_from_sporely_taxon_id": 626345,
+          "supersession_id": "taxonomy-v3-2-nortaxa-56510-superseded-by-col-4RBQN"
+        },
+        {
+          "scientific_name": "Cerrena hydnoides",
+          "sporely_taxon_id": 605683,
+          "superseded_from_sporely_taxon_id": 626614,
+          "supersession_id": "taxonomy-v3-2-nortaxa-57184-superseded-by-col-T4ST"
+        },
+        {
+          "scientific_name": "Phlebiopsis gigantea",
+          "sporely_taxon_id": 119413,
+          "superseded_from_sporely_taxon_id": 627144,
+          "supersession_id": "taxonomy-v3-2-nortaxa-63527-superseded-by-col-77B32"
+        },
+        {
+          "scientific_name": "Rinodina turfacea",
+          "sporely_taxon_id": 61288,
+          "superseded_from_sporely_taxon_id": 630866,
+          "supersession_id": "taxonomy-v3-2-nortaxa-74045-superseded-by-col-4T45G"
+        }
+      ]
+    },
+    "unresolvable": 0
+  },
+  "release_probes_against_candidate": "tests/test_taxonomy_release_probes.py with SPORELY_TAXONOMY_PROBE_DB: 8 passed (Amanita muscaria note probe widened to accept the Stage 3R provenance suffix)",
+  "scratch_build": {
+    "command": "database/taxonomy/scripts/build_release.py --release-id tax-2026.09.29-90 --build-dir <scratch>  (no --promote)",
+    "coverage_delta_vs_bundled_tax-2026.09.26-02": {
+      "content_release_id": {
+        "baseline": "tax-2026.09.26-02",
+        "candidate": "tax-2026.09.29-90"
+      },
+      "national_preferred_scientific_names.preferred_scientific_name_no": {
+        "baseline": 0,
+        "candidate": 4737
+      },
+      "taxa": {
+        "baseline": 634894,
+        "candidate": 633542
+      },
+      "taxa_by_source_status.nortaxa/valid": {
+        "baseline": 13918,
+        "candidate": 12566
+      },
+      "taxon_id_columns.norwegian_taxon_id": {
+        "baseline": 13918,
+        "candidate": 12566
+      },
+      "text_external_ids_by_namespace.nortaxa/nortaxa_taxon_id": {
+        "baseline": 3,
+        "candidate": 9516
+      }
+    },
+    "deterministic": true,
+    "new_allocations": 0,
+    "promoted": false,
+    "recipe_sha256": "3391d28b3aca5ecfd01860399136e7fcc125a4b9d9032017dd082e9fb6915839",
+    "registry_unchanged": true,
+    "release_id": "tax-2026.09.29-90 (scratch id; not promoted, not bundled)",
+    "sqlite_sha256": "27f17fdce9dbc9eabfbd7474eba30fb14809f04fe00d07eb85d6f6f66de91e78",
+    "superseded_rekeys_applied_by_builder": {
+      "artportalen_overlay": 1,
+      "inaturalist_refresh": 20
+    }
+  },
+  "stage": "Taxonomy v3 Stage 3R: release-build inputs follow concept supersessions"
+}

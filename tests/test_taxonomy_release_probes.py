@@ -90,7 +90,12 @@ def test_amanita_muscaria_inaturalist_id_comes_from_fresh_validation(resolve, re
     notes = [note for (note,) in sqlite3.connect(release_db).execute(
         "SELECT e.note FROM taxon_external_id_min e JOIN taxon_min t ON t.taxon_id = e.taxon_id "
         "WHERE t.canonical_scientific_name = 'Amanita muscaria' AND e.source_system = 'inaturalist'")]
-    assert notes == [f"inaturalist_refresh:{_refresh_document()['acquired_on']}"]
+    # Since Stage 3R the entry, reviewed on a concept a supersession retired,
+    # is re-keyed onto the surviving concept, and the note keeps the retired
+    # id and the supersession as provenance.
+    refresh_note = f"inaturalist_refresh:{_refresh_document()['acquired_on']}"
+    assert len(notes) == 1
+    assert notes[0] == refresh_note or notes[0].startswith(refresh_note + ";superseded_from:")
     # The other holder of the legacy id did not validate and gets nothing.
     assert _refresh()["Amanita gemmata"]["status"] == "unresolved"
     assert resolve("Amanita", "gemmata", "inaturalist") is None

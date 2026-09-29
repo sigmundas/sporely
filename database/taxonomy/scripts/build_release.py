@@ -6,7 +6,9 @@ hand-typed steps:
 
 1. preflight — recipe, release ID, source archives and the red-list workbook
    checked against their pinned SHA-256 values, registry shards against
-   ``registry/canonical/manifest.json``;
+   ``registry/canonical/manifest.json``, and every pinned publishing-id entry
+   keyed to a concept a reviewed supersession retired resolved to its
+   surviving concept (``publishing_ids.py``);
 2. normalize every recipe source, the red-list workbook and (when enabled) the
    legacy-enrichment export of the bundled legacy database;
 3. compile twice from separate registry copies and build two SQLite
@@ -45,6 +47,21 @@ from pathlib import Path
 from typing import Callable
 
 REPO_ROOT = Path(__file__).resolve().parents[3]
+_THIS_DIR = Path(__file__).resolve().parent
+if str(_THIS_DIR) not in sys.path:
+    sys.path.insert(0, str(_THIS_DIR))
+
+from identity_registry import IdentityRegistry, RegistryError  # noqa: E402
+from publishing_ids import (  # noqa: E402
+    PublishingIdError,
+    Supersession,
+    load_approved_supersessions,
+    load_artportalen_overlay,
+    load_inaturalist_refresh,
+    rekey_artportalen_overlay,
+    rekey_inaturalist_refresh,
+)
+
 SCRIPTS_REL = Path("database/taxonomy/scripts")
 DEFAULT_RECIPE = REPO_ROOT / "database/taxonomy/release-recipe.json"
 DEFAULT_BUNDLE_DIR = REPO_ROOT / "database/reference_data/generated/taxonomy_v2"
@@ -373,7 +390,69 @@ def preflight(options: Options, recipe: Recipe) -> dict:
                         ("inaturalist_refresh", recipe.inaturalist_refresh)):
         if pinned is not None:
             inputs[f"{key}_sha256"] = verify_pinned(key, pinned)
+    inputs["superseded_references"] = check_superseded_references(recipe)
     return inputs
+
+
+def check_superseded_references(recipe: Recipe) -> dict[str, list[dict]]:
+    """Every pinned-input entry keyed to a retired concept, with its survivor.
+
+    The survivor is the committed registry's allocation of the supersession's
+    current source usage. Fails, listing every case, when a referenced
+    supersession cannot be resolved: its current usage has no allocation, or
+    the survivor is itself superseded (the compiler refuses chains). Fails too
+    when re-keying would give a concept two entries of one input. The
+    builder applies the same re-keying after the compile, against the
+    compiler's own record of the supersessions it applied.
+    """
+    pinned = {key: value for key, value in (("artportalen_overlay", recipe.artportalen_overlay),
+                                            ("inaturalist_refresh", recipe.inaturalist_refresh))
+              if value is not None}
+    if not pinned:
+        return {}
+    try:
+        ledger = load_approved_supersessions(REPO_ROOT / recipe.policies["concept_supersessions"])
+        overlay = (load_artportalen_overlay(REPO_ROOT / pinned["artportalen_overlay"]["path"])
+                   if "artportalen_overlay" in pinned else None)
+        refresh = (load_inaturalist_refresh(REPO_ROOT / pinned["inaturalist_refresh"]["path"])
+                   if "inaturalist_refresh" in pinned else None)
+    except PublishingIdError as exc:
+        raise BuildError(str(exc)) from exc
+    referenced = sorted(({int(e["sporely_taxon_id"]) for e in overlay or ()}
+                         | {e.sporely_taxon_id for e in (refresh.entries if refresh else ())})
+                        & set(ledger))
+    if not referenced:
+        return {key: [] for key in pinned}
+
+    registry = IdentityRegistry(REPO_ROOT / recipe.registry)
+    try:
+        registry.load()
+    except RegistryError as exc:
+        raise BuildError(f"registry load failed: {exc}") from exc
+    supersessions: dict[int, Supersession] = {}
+    problems: list[str] = []
+    for retired in referenced:
+        supersession_id, usage = ledger[retired]
+        allocation = registry.lookup(*usage)
+        if allocation is None:
+            problems.append(f"{retired}: supersession {supersession_id!r} selects {usage}, "
+                            "which has no registry allocation")
+        elif allocation.sporely_taxon_id in ledger:
+            problems.append(f"{retired}: supersession {supersession_id!r} selects "
+                            f"{allocation.sporely_taxon_id}, which is itself superseded")
+        else:
+            supersessions[retired] = Supersession(supersession_id, allocation.sporely_taxon_id)
+    _require(not problems, "pinned inputs reference superseded concepts that cannot be resolved: "
+             + "; ".join(problems))
+    report: dict[str, list[dict]] = {}
+    try:
+        if overlay is not None:
+            report["artportalen_overlay"] = rekey_artportalen_overlay(overlay, supersessions)[1]
+        if refresh is not None:
+            report["inaturalist_refresh"] = rekey_inaturalist_refresh(refresh, supersessions)[1]
+    except PublishingIdError as exc:
+        raise BuildError(str(exc)) from exc
+    return report
 
 
 def _registry_shards(registry_dir: Path) -> tuple[list[Path], str]:
@@ -473,7 +552,8 @@ def build(options: Options, run: Runner | None = None, python: str = sys.executa
         sqlite_argv = [_script("build_sqlite_candidate.py"),
                        "--release-dir", rel(b / f"release{name}"),
                        "--registry", rel(registry),
-                       "--output", rel(b / f"{options.release_id}-{name}.sqlite3")]
+                       "--output", rel(b / f"{options.release_id}-{name}.sqlite3"),
+                       "--concept-supersessions", recipe.policies["concept_supersessions"]]
         if recipe.artportalen_overlay:
             sqlite_argv += ["--publishing-overlay", recipe.artportalen_overlay["path"]]
         if recipe.inaturalist_refresh:

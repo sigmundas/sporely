@@ -153,6 +153,15 @@ in the recipe and applied fail-closed:
   is contradictory and records every request. `--recheck FILE` re-applies the
   rules offline.
 
+An entry of either input keyed to a concept that `concept_supersessions.yml`
+retired is re-keyed at build time to the surviving concept; the input files
+stay byte-identical. `build_release.py` lists every such reference in the
+preflight (`inputs.superseded_references` in `build-report.json`) and stops on
+one it cannot resolve. The SQLite row's `note` keeps the retired id and the
+`supersession_id` (`...;superseded_from:<id>;supersession:<id>`). An entry
+that would give the survivor a second entry of the same input, or whose name
+no longer matches the survivor's canonical name, stops the build for review.
+
 Still not carried: the 448 Artportalen review cases, and legacy rows keyed to
 Artportalen-only concepts that no reviewed decision covers. Rows outside the
 fungal scope (plants, animals) are skipped by design. The cloud copy does not
