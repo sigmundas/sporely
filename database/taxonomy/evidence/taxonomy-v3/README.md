@@ -302,24 +302,102 @@ so no batch decision covers such a pair. All 217 are listed in the report:
 - 6 `shared_synonymy` pairs are routed out of their review classes into
   `group-b-not-one-to-one.manifest.json`, which is `individual`.
 
-**Decision status.** No Group-B manifest or pair has an owner decision.
-Nothing is approved, and no supersession or mapping was generated.
-`concept_supersessions.yml` still holds only 52369's record.
+### Owner decisions and supersessions
+
+On 2026-09-29 the owner recorded two decisions (manual verification, gate
+`fbeea497a1cb45c8a94baae48be43acc`):
+
+- **`group-b-authorship-partition`:** the owner accepted the
+  `typography_only` / `sanctioning_citation` / `different_authorship` split.
+- **`group-b-owner-decisions`:** the owner approved three decision manifests
+  by `file_sha256`, and three pairs individually.
+
+Approved manifests:
+
+| Sub-class manifest | `file_sha256` | Members |
+|---|---|---:|
+| `typography_only--ordinary` | `dd7a7bd0dcb6b57e0f147b5a7f27f91eb1e513f640bdcf126dc72c5485808e42` | 179 |
+| `sanctioning_citation--ordinary` | `b49338db18c097689fb0239bf68adc5640409604ad6816cad74967c20c9fdcba` | 336 |
+| `different_authorship--ordinary` | `7edfb0f253bd278af6c4d5e3f7462cc69c7fa6f9aac1c95b71840a4271bd8653` | 836 |
+
+Individually approved pairs:
+
+- Cantharellus cibarius (NorTaxa 56210 ↔ COL QMKY);
+- Gloeophyllum odoratum (NorTaxa 56449 ↔ COL 3GBK2);
+- Conocybe vexans / Pholiotina vexans (NorTaxa 58766 ↔ COL XQZ6).
+
+The first two are also members of the sanctioning-citation manifest. Every
+other candidate stays open, including:
+
+- not-one-to-one pairs;
+- the weak-evidence classes;
+- one-directional pairs;
+- pairs with no published cross-reference.
+
+In a Group-B pair both concepts already hold an allocated `sporely_taxon_id`.
+An approved relationship is therefore a concept supersession, as 52369 → 83668
+was. `generate_stage2_supersessions.py` writes the approvals into
+`policies/concept_supersessions.yml`:
+
+- each manifest approval is recorded once in `approved_manifests`, with its
+  path, `file_sha256`, pins, approver, date and decision reference;
+- each member gets its own approved `exact` supersession, carrying
+  `approved_manifest` (the `file_sha256` and the member);
+- Conocybe vexans gets an individually reviewed record.
+
+Together with 52369's record, the ledger now holds 1,353 supersessions: 1,351
+manifest members, Conocybe vexans and 52369.
+
+    .venv/bin/python database/taxonomy/evidence/taxonomy-v3/generate_stage2_supersessions.py --check
+
+The generator stops, writing nothing, unless:
+
+- every manifest hashes to its approved digest, carries the approved pins,
+  and is a `batch_by_file_sha256` leaf of one-to-one pairs;
+- the registry anchors both usages of every pair at the pair's two concepts;
+- the retiring concepts are distinct and none of them is a survivor.
+
+The compiler and `validate_policies.py` re-check every manifest-bound record
+with `bridge_emission.verify_supersession_manifest_approvals`. It refuses a
+tampered manifest, different pins, a non-batch or not-one-to-one manifest, a
+record for a non-member, and a duplicate. The registry is not written, so
+every retired concept keeps its anchor and its allocation history. The
+compiler re-keys the retired concept's usages, vernaculars and external ids
+onto the survivor and emits no row for the retired concept.
+
+Checks against `tax-2026.09.26-02`:
+
+- no retiring concept has child concepts;
+- no survivor already carries a NorTaxa id;
+- no retiring NorTaxa concept is in the cloud scope.
+
+The manifests stay immutable `needs_review` inputs. Re-running the audit
+after the decision changed only `group-b-report.json`, which records the
+decision and the outcomes below.
 
 Regression outcomes, which the audit re-derives and refuses if they change:
 
 - Cantharellus cibarius (NorTaxa 56210 / COL QMKY):
-  `sanctioning_citation--ordinary`, left open. COL 168873 has no vernaculars
-  and does not gain "kantarell". That name stays on NorTaxa concept 626243.
+  `sanctioning_citation--ordinary`, **approved**. NorTaxa concept 626243 is
+  superseded by 168873, so "kantarell" reaches 168873 only through that
+  approved relationship.
 - Conocybe vexans / Pholiotina vexans (NorTaxa 58766 / COL XQZ6): outside
-  Group B, `reciprocal_accepted_synonymy`, left open. The evidence has the
-  same shape as the approved 52369 supersession, but superseding 627000 by
-  617026 needs the owner's own decision. NBIC:58766 stays unresolved.
+  Group B, `reciprocal_accepted_synonymy`, **approved** individually. 627000
+  is superseded by 617026, and NBIC:58766 resolves to 617026.
 - Gloeophyllum odoratum (NorTaxa 56449 / COL 3GBK2):
-  `sanctioning_citation--ordinary`, not reconciled. NBIC:56449 did not become
-  resolvable, so sporely-web's temporary fixture stays valid.
+  `sanctioning_citation--ordinary`, **reconciled**. 626327 is superseded by
+  11307, so NBIC:56449 becomes resolvable. sporely-web's temporary
+  unresolved fixture then needs a synthetic id, which Stage 5 owns.
 
-Before any Group-B supersession ships, the read-only check that no cloud
-observation references a retiring concept must run (deferred to its external
-gate). Desktop observations are checked with
-`database/audit_observation_identity.py`.
+These take effect in a release compiled with the updated ledger. No release
+is built or published by this stage.
+
+Before any of these supersessions ships:
+
+- **Cloud:** the read-only check that no cloud observation references a
+  retiring concept must run. It is deferred to its external gate and repeated
+  before production activation.
+- **Desktop:** run `database/audit_observation_identity.py --taxonomy
+  <candidate.sqlite3> --observations <desktop database>` against the
+  candidate compiled with this ledger. The retiring set is every
+  `superseded_sporely_taxon_id` in the ledger.

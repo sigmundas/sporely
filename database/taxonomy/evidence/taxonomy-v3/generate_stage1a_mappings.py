@@ -262,7 +262,7 @@ def _dump(value, indent: int = 0, *, compact_records: bool = False) -> str:
     if isinstance(value, dict):
         items = [
             f"{pad}{json.dumps(key, ensure_ascii=False)}: "
-            f"{_dump(child, indent + 1, compact_records=key == 'mappings')}"
+            f"{_dump(child, indent + 1, compact_records=key in ('mappings', 'supersessions'))}"
             for key, child in value.items()
         ]
         return "{\n" + ",\n".join(items) + "\n" + "  " * indent + "}"

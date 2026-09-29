@@ -20,6 +20,7 @@ from bridge_emission import (  # noqa: E402
     BridgeEmissionError,
     missing_review_provenance,
     verify_manifest_approvals,
+    verify_supersession_manifest_approvals,
 )
 
 
@@ -222,6 +223,10 @@ def validate(policy_dir: Path = POLICY_DIR) -> dict[str, Any]:
                 f"approved supersession {entry.get('supersession_id')!r} "
                 f"carries no {', '.join(absent)}"
             )
+    try:
+        verify_supersession_manifest_approvals(supersessions)
+    except BridgeEmissionError as exc:
+        raise PolicyError(f"concept supersessions: {exc}") from exc
 
     return policies
 

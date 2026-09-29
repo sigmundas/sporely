@@ -207,45 +207,51 @@ GRADE_COLUMNS = MANIFEST_COLUMNS[4:]
 B_COLUMNS = PAIR_COLUMNS + GRADE_COLUMNS
 REVIEW_EXTRA_COLUMNS = stage0.REVIEW_EXTRA_COLUMNS
 
-#: Stage 2's recorded outcome for each regression species. No Group-B
-#: relationship has an owner decision yet, so every pair stays open. The
+#: Stage 2's recorded outcome for each regression species, as the owner
+#: decided it on 2026-09-29 (manual verification, check
+#: 'group-b-owner-decisions', gate fbeea497a1cb45c8a94baae48be43acc). The
 #: evidence each outcome cites is recomputed into the report, and the audit
-#: fails if it no longer holds.
+#: fails if it no longer holds. The supersessions themselves are in
+#: policies/concept_supersessions.yml (generate_stage2_supersessions.py).
 REGRESSION_OUTCOMES = {
     "Cantharellus cibarius": {
         "pair": ("56210", "QMKY"),
         "expect": (EVIDENCE_SHARED_SYNONYMY, "sanctioning_citation--ordinary"),
-        "outcome": "left_open",
+        "outcome": "approved",
         "reason": (
             "Group B, shared_synonymy, sub-class "
-            "sanctioning_citation--ordinary. No owner decision names this pair or "
-            "its review manifest, so no relationship is approved and COL "
-            "168873 does not gain 'kantarell'; NorTaxa concept 626243 keeps "
-            "it. It becomes eligible only through an approved supersession."),
+            "sanctioning_citation--ordinary. Approved by the owner both "
+            "individually and as a member of the approved "
+            "sanctioning_citation--ordinary manifest. NorTaxa concept 626243 "
+            "is superseded by COL 168873, so 'kantarell' reaches 168873 "
+            "through that approved relationship and no other way."),
     },
     "Conocybe vexans / Pholiotina vexans": {
         "pair": ("58766", "XQZ6"),
         "expect": (EVIDENCE_RECIPROCAL, None),
-        "outcome": "left_open",
+        "outcome": "approved",
         "reason": (
             "Not Group B (the canonical names differ); graded explicitly as "
             "reciprocal_accepted_synonymy: NorTaxa 58766 lists 'Conocybe "
             "vexans P.D. Orton' as a synonym and COL XQZ6 lists 'Pholiotina "
-            "vexans (P.D. Orton) Bon'. This is the strongest kind of "
-            "evidence and the same shape as the approved 52369 -> 83668 "
-            "supersession, but a supersession of NorTaxa concept 627000 by "
-            "COL 617026 needs the owner's own decision, as 52369 did. Until "
-            "then NBIC:58766 stays unresolved."),
+            "vexans (P.D. Orton) Bon'. Approved individually by the owner, "
+            "the same shape as the approved 52369 -> 83668 supersession: "
+            "NorTaxa concept 627000 is superseded by COL 617026, so "
+            "NBIC:58766 resolves to 617026 once a release compiled with the "
+            "ledger ships."),
     },
     "Gloeophyllum odoratum (NBIC:56449)": {
         "pair": ("56449", "3GBK2"),
         "expect": (EVIDENCE_SHARED_SYNONYMY, "sanctioning_citation--ordinary"),
-        "outcome": "not_reconciled",
+        "outcome": "reconciled",
         "reason": (
             "Group B, shared_synonymy, sub-class "
-            "sanctioning_citation--ordinary; no owner decision. NBIC:56449 did not "
-            "become resolvable in Stage 2, so sporely-web's temporary "
-            "unresolved fixture stays valid (Stage 5 owns any replacement)."),
+            "sanctioning_citation--ordinary. Approved by the owner both "
+            "individually and as a manifest member: NorTaxa concept 626327 is "
+            "superseded by COL 11307, so NBIC:56449 becomes resolvable once "
+            "a release compiled with the ledger ships. sporely-web's "
+            "temporary unresolved fixture then needs a synthetic id; Stage 5 "
+            "owns that replacement."),
     },
 }
 
@@ -755,9 +761,15 @@ def audit(args: argparse.Namespace) -> dict:
                        "query, not evidence); graded by the sources' "
                        "published synonymy; cloud scope counts pairs whose "
                        "COL side is in scope — no NorTaxa side is"),
-        "decision_status": ("no Group-B manifest or pair has an owner "
-                            "decision; nothing is approved and no "
-                            "supersession or mapping is generated"),
+        "decision_status": (
+            "owner decision 2026-09-29 (check 'group-b-owner-decisions', gate "
+            "fbeea497a1cb45c8a94baae48be43acc): approved the "
+            "typography_only--ordinary, sanctioning_citation--ordinary and "
+            "different_authorship--ordinary manifests by file_sha256, and the "
+            "pairs 56210/QMKY, 56449/3GBK2 and 58766/XQZ6; every other "
+            "candidate stays open. The supersessions are in "
+            "policies/concept_supersessions.yml. The manifests themselves "
+            "stay needs_review inputs and are not rewritten by a decision."),
         "nortaxa_col_source": nortaxa_source,
         "authorship_difference_precedence": list(AUTHORSHIP_DIFFERENCES),
         "authorship_differences": AUTHORSHIP_DIFFERENCES,

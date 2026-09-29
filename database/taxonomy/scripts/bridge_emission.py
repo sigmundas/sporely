@@ -235,6 +235,154 @@ def verify_manifest_approvals(
     return bound
 
 
+#: The Group-B manifest columns a batch-approved supersession is checked
+#: against: the retiring NorTaxa concept and the surviving COL concept.
+SUPERSESSION_MEMBER_COLUMNS = (
+    "nortaxa_taxon_id", "nortaxa_sporely_taxon_id",
+    "col_usage_id", "col_sporely_taxon_id",
+)
+#: The only manifest approval mode a batch supersession approval may cite.
+BATCH_APPROVAL_MODE = "batch_by_file_sha256"
+
+
+def verify_supersession_manifest_approvals(
+    document: dict, *, repo_root: Path = _REPO_ROOT,
+) -> dict[str, str]:
+    """Check every batch-approved supersession against the manifest it cites.
+
+    The concept-supersession counterpart of :func:`verify_manifest_approvals`.
+    An owner approval of a Group-B decision manifest is recorded once in the
+    ledger's ``approved_manifests``. Each member still has its own record
+    carrying ``approved_manifest`` naming the ``file_sha256`` and the member.
+
+    The manifest must exist, hash to the approved ``file_sha256``, carry the
+    pins the approval records, and be a batch leaf (``approval_mode``
+    ``batch_by_file_sha256``) of one-to-one pairs only. Every citing record
+    must be an approved exact supersession that retires exactly one member's
+    NorTaxa concept in favour of that member's COL usage. A record for any
+    other pair cannot borrow the approval.
+
+    Returns ``supersession_id -> file_sha256`` for the manifest-bound records.
+    Raises :class:`BridgeEmissionError` on any mismatch.
+    """
+    approvals = document.get("approved_manifests") or []
+    if not isinstance(approvals, list):
+        raise BridgeEmissionError("approved_manifests must be a list")
+    members_by_sha: dict[str, set[tuple[str, int, str, int]]] = {}
+    for index, approval in enumerate(approvals):
+        if not isinstance(approval, dict):
+            raise BridgeEmissionError(
+                f"approved_manifests[{index}] is not an object")
+        absent = [f for f in MANIFEST_APPROVAL_FIELDS
+                  if not str(approval.get(f) or "").strip()]
+        if not isinstance(approval.get("pins"), dict) or not approval["pins"]:
+            absent.append("pins")
+        if absent:
+            raise BridgeEmissionError(
+                f"approved_manifests[{index}] carries no {', '.join(absent)}")
+        expected = str(approval["file_sha256"])
+        if expected in members_by_sha:
+            raise BridgeEmissionError(
+                f"approved_manifests lists file_sha256 {expected} twice")
+        path = Path(str(approval["path"]))
+        if not path.is_absolute():
+            path = repo_root / path
+        if not path.is_file():
+            raise BridgeEmissionError(
+                f"approved manifest not found: {path}. An approval that cannot "
+                f"be checked against its file approves nothing.")
+        raw = path.read_bytes()
+        actual = hashlib.sha256(raw).hexdigest()
+        if actual != expected:
+            raise BridgeEmissionError(
+                f"approved manifest {path} has sha256 {actual}, but the "
+                f"approval names {expected}. A regenerated manifest is not the "
+                f"one that was approved, even with the same members.")
+        manifest = json.loads(raw.decode("utf-8"))
+        if manifest.get("pins") != approval["pins"]:
+            raise BridgeEmissionError(
+                f"approved manifest {path} pins differ from the pins its "
+                f"approval is bound to")
+        if manifest.get("approval_mode") != BATCH_APPROVAL_MODE:
+            raise BridgeEmissionError(
+                f"approved manifest {path} has approval_mode "
+                f"{manifest.get('approval_mode')!r}; only a "
+                f"{BATCH_APPROVAL_MODE} manifest can be approved as a batch")
+        columns = list(manifest.get("columns") or [])
+        missing_columns = [c for c in (*SUPERSESSION_MEMBER_COLUMNS, "one_to_one")
+                           if c not in columns]
+        if missing_columns:
+            raise BridgeEmissionError(
+                f"approved manifest {path} lacks columns {missing_columns}")
+        rows = [dict(zip(columns, row)) for row in manifest.get("members") or []]
+        if not all(row["one_to_one"] is True for row in rows):
+            raise BridgeEmissionError(
+                f"approved manifest {path} holds a pair that is not one-to-one")
+        members_by_sha[expected] = {
+            (str(row["nortaxa_taxon_id"]), int(row["nortaxa_sporely_taxon_id"]),
+             str(row["col_usage_id"]), int(row["col_sporely_taxon_id"]))
+            for row in rows
+        }
+
+    bound: dict[str, str] = {}
+    seen_members: set[tuple[str, tuple]] = set()
+    for index, entry in enumerate(document.get("supersessions") or []):
+        if not isinstance(entry, dict) or "approved_manifest" not in entry:
+            continue
+        supersession_id = str(entry.get("supersession_id")
+                              or f"supersession-{index}")
+        ref = entry.get("approved_manifest")
+        if not isinstance(ref, dict):
+            raise BridgeEmissionError(
+                f"supersession {supersession_id!r}: approved_manifest is not "
+                f"an object")
+        file_sha256 = str(ref.get("file_sha256") or "")
+        if file_sha256 not in members_by_sha:
+            raise BridgeEmissionError(
+                f"supersession {supersession_id!r} cites manifest "
+                f"{file_sha256!r}, which no approved_manifests entry approves")
+        if str(entry.get("review_status") or "") != APPROVED_REVIEW_STATUS \
+                or str(entry.get("relationship") or "") != "exact":
+            raise BridgeEmissionError(
+                f"supersession {supersession_id!r}: a manifest approval yields "
+                f"only approved exact supersessions")
+        member = ref.get("member") or {}
+        try:
+            key = (str(member["nortaxa_taxon_id"]),
+                   int(member["nortaxa_sporely_taxon_id"]),
+                   str(member["col_usage_id"]),
+                   int(member["col_sporely_taxon_id"]))
+        except (KeyError, TypeError, ValueError) as exc:
+            raise BridgeEmissionError(
+                f"supersession {supersession_id!r}: approved_manifest.member "
+                f"needs {', '.join(SUPERSESSION_MEMBER_COLUMNS)}") from exc
+        current = entry.get("current_source_usage") or {}
+        if entry.get("superseded_sporely_taxon_id") != key[1] \
+                or str(current.get("source")) != "col_xr" \
+                or str(current.get("identifier")) != key[2]:
+            raise BridgeEmissionError(
+                f"supersession {supersession_id!r}: superseded concept and "
+                f"current usage do not match the manifest member it cites "
+                f"({key[1]} -> COL {key[2]})")
+        if key not in members_by_sha[file_sha256]:
+            raise BridgeEmissionError(
+                f"supersession {supersession_id!r}: NorTaxa {key[0]} "
+                f"(sporely_taxon_id {key[1]}) -> COL {key[2]} "
+                f"(sporely_taxon_id {key[3]}) is not a member of approved "
+                f"manifest {file_sha256}")
+        if (file_sha256, key) in seen_members:
+            raise BridgeEmissionError(
+                f"supersession {supersession_id!r}: manifest member {key!r} "
+                f"has more than one record")
+        if supersession_id in bound:
+            raise BridgeEmissionError(
+                f"supersession_id {supersession_id!r} is used by more than "
+                f"one record")
+        seen_members.add((file_sha256, key))
+        bound[supersession_id] = file_sha256
+    return bound
+
+
 @dataclass(frozen=True)
 class BridgeEmissionPolicy:
     """The reviewed standard for projecting a bridge binding as identity."""

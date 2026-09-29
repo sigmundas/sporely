@@ -421,7 +421,7 @@
    "member_count": 1
   }
  ],
- "decision_status": "no Group-B manifest or pair has an owner decision; nothing is approved and no supersession or mapping is generated",
+ "decision_status": "owner decision 2026-09-29 (check 'group-b-owner-decisions', gate fbeea497a1cb45c8a94baae48be43acc): approved the typography_only--ordinary, sanctioning_citation--ordinary and different_authorship--ordinary manifests by file_sha256, and the pairs 56210/QMKY, 56449/3GBK2 and 58766/XQZ6; every other candidate stays open. The supersessions are in policies/concept_supersessions.yml. The manifests themselves stay needs_review inputs and are not rewritten by a decision.",
  "definition": "NorTaxa-canonical concept and COL-canonical concept with equal canonical_scientific_name (a finding query, not evidence); graded by the sources' published synonymy; cloud scope counts pairs whose COL side is in scope — no NorTaxa side is",
  "format": "sporely-taxonomy-v3-stage2-group-b-v1",
  "full_release": {
@@ -38865,9 +38865,9 @@
     "se",
     "sv"
    ],
-   "outcome": "left_open",
+   "outcome": "approved",
    "population": "group_b",
-   "reason": "Group B, shared_synonymy, sub-class sanctioning_citation--ordinary. No owner decision names this pair or its review manifest, so no relationship is approved and COL 168873 does not gain 'kantarell'; NorTaxa concept 626243 keeps it. It becomes eligible only through an approved supersession.",
+   "reason": "Group B, shared_synonymy, sub-class sanctioning_citation--ordinary. Approved by the owner both individually and as a member of the approved sanctioning_citation--ordinary manifest. NorTaxa concept 626243 is superseded by COL 168873, so 'kantarell' reaches 168873 through that approved relationship and no other way.",
    "review_class": "accepted_authorship_disagrees",
    "review_manifest": "group-b-shared-synonymy--accepted-authorship-disagrees--sanctioning-citation--ordinary.manifest.json"
   },
@@ -38888,9 +38888,9 @@
     "nn",
     "sv"
    ],
-   "outcome": "left_open",
+   "outcome": "approved",
    "population": "explicit_pair_outside_group_b",
-   "reason": "Not Group B (the canonical names differ); graded explicitly as reciprocal_accepted_synonymy: NorTaxa 58766 lists 'Conocybe vexans P.D. Orton' as a synonym and COL XQZ6 lists 'Pholiotina vexans (P.D. Orton) Bon'. This is the strongest kind of evidence and the same shape as the approved 52369 -> 83668 supersession, but a supersession of NorTaxa concept 627000 by COL 617026 needs the owner's own decision, as 52369 did. Until then NBIC:58766 stays unresolved.",
+   "reason": "Not Group B (the canonical names differ); graded explicitly as reciprocal_accepted_synonymy: NorTaxa 58766 lists 'Conocybe vexans P.D. Orton' as a synonym and COL XQZ6 lists 'Pholiotina vexans (P.D. Orton) Bon'. Approved individually by the owner, the same shape as the approved 52369 -> 83668 supersession: NorTaxa concept 627000 is superseded by COL 617026, so NBIC:58766 resolves to 617026 once a release compiled with the ledger ships.",
    "review_class": null,
    "review_manifest": null
   },
@@ -38915,9 +38915,9 @@
     "pl",
     "sv"
    ],
-   "outcome": "not_reconciled",
+   "outcome": "reconciled",
    "population": "group_b",
-   "reason": "Group B, shared_synonymy, sub-class sanctioning_citation--ordinary; no owner decision. NBIC:56449 did not become resolvable in Stage 2, so sporely-web's temporary unresolved fixture stays valid (Stage 5 owns any replacement).",
+   "reason": "Group B, shared_synonymy, sub-class sanctioning_citation--ordinary. Approved by the owner both individually and as a manifest member: NorTaxa concept 626327 is superseded by COL 11307, so NBIC:56449 becomes resolvable once a release compiled with the ledger ships. sporely-web's temporary unresolved fixture then needs a synthetic id; Stage 5 owns that replacement.",
    "review_class": "accepted_authorship_disagrees",
    "review_manifest": "group-b-shared-synonymy--accepted-authorship-disagrees--sanctioning-citation--ordinary.manifest.json"
   }

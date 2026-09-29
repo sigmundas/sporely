@@ -67,6 +67,7 @@ from bridge_emission import (  # noqa: E402
     BridgeEmissionError,
     missing_review_provenance,
     verify_manifest_approvals,
+    verify_supersession_manifest_approvals,
 )
 from cross_source_mapping import (  # noqa: E402
     BackboneIndex,
@@ -324,6 +325,10 @@ def _load_concept_supersessions(path: Path | None) -> list[ConceptSupersession]:
         raise CompilerError(f"{path}: malformed JSON: {exc}") from exc
     if not isinstance(doc, dict) or "supersessions" not in doc:
         raise CompilerError(f"{path}: expected object with 'supersessions' key")
+    try:
+        verify_supersession_manifest_approvals(doc)
+    except BridgeEmissionError as exc:
+        raise CompilerError(f"{path}: {exc}") from exc
     out: list[ConceptSupersession] = []
     seen: set[int] = set()
     for index, entry in enumerate(doc.get("supersessions") or []):
