@@ -87,6 +87,22 @@ TEXT_NAMESPACES = frozenset({
     "col_usage_id",
 })
 
+#: National preferred scientific names (taxonomy-v3 Stage 3P). A national
+#: checklist's accepted name is display and search metadata on a concept,
+#: never identity, and is filled only where that checklist's own identifier is
+#: published on the concept as an authoritative reviewed bridge — never from an
+#: automatic match or a shared name. Keyed by the bridged
+#: ``(source_code, namespace)``; the value is the country suffix of the
+#: ``taxon_min.preferred_scientific_name_<country>`` column group it fills.
+#: Dyntaxa joins as ``"sv"`` in Stage 4P without a new shape.
+NATIONAL_PREFERRED_NAME_SOURCES = {
+    ("nortaxa", "nortaxa_taxon_id"): "no",
+}
+NATIONAL_NAME_COUNTRIES = ("no", "sv")
+#: Provenance kept beside each national name: the bridged identity it came
+#: from, which is also an authoritative row in ``taxon_external_id_text_min``.
+NATIONAL_NAME_PROVENANCE_SUFFIXES = ("source_system", "namespace", "external_id")
+
 
 class BuildError(Exception):
     """Raised on any candidate-build precondition or invariant failure."""
@@ -149,6 +165,14 @@ CREATE TABLE taxon_min (
     sporely_content_release_id   TEXT,
     canonical_source_system      TEXT NOT NULL,
     canonical_external_id        TEXT NOT NULL,
+    -- Provenance of preferred_scientific_name_<country>: the reviewed bridge
+    -- identity it was taken from. All NULL exactly when the name is NULL.
+    preferred_scientific_name_no_source_system TEXT,
+    preferred_scientific_name_no_namespace     TEXT,
+    preferred_scientific_name_no_external_id   TEXT,
+    preferred_scientific_name_sv_source_system TEXT,
+    preferred_scientific_name_sv_namespace     TEXT,
+    preferred_scientific_name_sv_external_id   TEXT,
     FOREIGN KEY (parent_taxon_id) REFERENCES taxon_min(taxon_id)
 );
 
@@ -480,7 +504,7 @@ def _build_into(
                 row.get("rank") or None,
                 row.get("taxonomic_status") or None,
                 row.get("canonical_source_code") or None,
-                None,   # preferred_scientific_name_no, filled in pass 4
+                None,   # preferred_scientific_name_no, filled after pass 3
                 None,   # preferred_scientific_name_sv
                 release_id,
                 canonical_source_usage["source"],
@@ -489,8 +513,13 @@ def _build_into(
         # Insert in ascending sporely_taxon_id order for determinism.
         taxa_rows.sort(key=lambda r: r[0])
         conn.executemany(
-            "INSERT INTO taxon_min VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, "
-            "?, ?, ?, ?, ?, ?, ?)",
+            "INSERT INTO taxon_min (taxon_id, parent_taxon_id, genus, "
+            "specific_epithet, family, norwegian_taxon_id, swedish_taxon_id, "
+            "inaturalist_taxon_id, canonical_scientific_name, taxon_rank, "
+            "taxonomic_status, source_system, preferred_scientific_name_no, "
+            "preferred_scientific_name_sv, sporely_content_release_id, "
+            "canonical_source_system, canonical_external_id) "
+            "VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)",
             taxa_rows,
         )
 
@@ -503,6 +532,10 @@ def _build_into(
         # reason it was refused. Neither number is a target.
         bridge_emitted_counts: dict[str, int] = {}
         bridge_rejected_counts: dict[str, int] = {}
+        # National preferred-name candidates per (Sporely id, country), taken
+        # only from emitted reviewed bridges of an accepted national usage.
+        national_name_candidates: dict[
+            tuple[int, str], set[tuple[str, str, str, str]]] = {}
         # Track NorTaxa-taxon-id aliases per Sporely id for the legacy
         # ``norwegian_taxon_id`` column. Only fill when there's exactly one
         # numeric NorTaxa taxonID to preserve the column's UNIQUE constraint
@@ -591,6 +624,11 @@ def _build_into(
                     sporely_id, source_code, ns, identifier, id_role,
                     0, external_name, f"authoritative_bridge:{bridge_class}",
                 ))
+                country = NATIONAL_PREFERRED_NAME_SOURCES.get((source_code, ns))
+                if country and id_role == "accepted" and sci_name:
+                    national_name_candidates.setdefault(
+                        (sporely_id, country), set()
+                    ).add((sci_name, source_code, ns, str(identifier)))
             elif u["identity_binding"] != "anchor" and ns not in TEXT_NAMESPACES:
                 reason = bridge_policy.rejection_reason(bridge_class)
                 key = f"{bridge_class or '(none)'}|{reason}"
@@ -714,6 +752,29 @@ def _build_into(
             "VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)",
             [(i + 1, *row) for i, row in enumerate(external_text_rows)],
         )
+
+        # National preferred scientific names. Exactly one reviewed accepted
+        # national identity on a concept fills the name and its provenance;
+        # two or more leave it NULL rather than choosing one, and the concept
+        # displays its canonical name.
+        national_name_counts = {
+            country: {"filled": 0, "ambiguous_left_null": 0}
+            for country in NATIONAL_NAME_COUNTRIES
+        }
+        for (sporely_id, country), candidates in sorted(
+                national_name_candidates.items()):
+            if len(candidates) != 1:
+                national_name_counts[country]["ambiguous_left_null"] += 1
+                continue
+            ((name, source, namespace, external_id),) = candidates
+            prefix = f"preferred_scientific_name_{country}"
+            conn.execute(
+                f"UPDATE taxon_min SET {prefix} = ?, {prefix}_source_system = ?, "
+                f"{prefix}_namespace = ?, {prefix}_external_id = ? "
+                "WHERE taxon_id = ?",
+                (name, source, namespace, external_id, sporely_id),
+            )
+            national_name_counts[country]["filled"] += 1
 
         # Populate legacy norwegian_taxon_id where a UNIQUE anchor exists.
         for sporely_id, values in taxon_ids_with_norwegian.items():
@@ -921,6 +982,44 @@ def _build_into(
     if orphans[0][0]:
         raise BuildError(f"taxon_redlist_min orphans: {orphans[0][0]}")
 
+    # --- National preferred names are provenanced and searchable -----------
+    # Each one must trace to an authoritative reviewed bridge row carrying the
+    # same name, and must be a scientific name of its concept so a search for
+    # it finds the concept through the ordinary alias path.
+    for country in NATIONAL_NAME_COUNTRIES:
+        prefix = f"preferred_scientific_name_{country}"
+        provenance = [f"{prefix}_{s}" for s in NATIONAL_NAME_PROVENANCE_SUFFIXES]
+        partial = conn.execute(
+            f"SELECT COUNT(*) FROM taxon_min WHERE "
+            + " OR ".join(f"(({prefix} IS NULL) <> ({c} IS NULL))"
+                          for c in provenance)
+        ).fetchone()[0]
+        if partial:
+            raise BuildError(f"{prefix}: {partial} rows with partial provenance")
+        untraced = conn.execute(
+            f"SELECT COUNT(*) FROM taxon_min t WHERE t.{prefix} IS NOT NULL "
+            "AND NOT EXISTS (SELECT 1 FROM taxon_external_id_text_min e "
+            "WHERE e.taxon_id = t.taxon_id "
+            f"AND e.source_system = t.{prefix}_source_system "
+            f"AND e.namespace = t.{prefix}_namespace "
+            f"AND e.external_id = t.{prefix}_external_id "
+            f"AND e.external_name = t.{prefix} "
+            "AND e.id_role = 'accepted' "
+            "AND e.note LIKE 'authoritative_bridge:%')"
+        ).fetchone()[0]
+        if untraced:
+            raise BuildError(
+                f"{prefix}: {untraced} names without an authoritative bridge")
+        unsearchable = conn.execute(
+            f"SELECT COUNT(*) FROM taxon_min t WHERE t.{prefix} IS NOT NULL "
+            "AND NOT EXISTS (SELECT 1 FROM scientific_name_min s "
+            "WHERE s.taxon_id = t.taxon_id AND s.language_code = 'sci' "
+            f"AND s.scientific_name = t.{prefix})"
+        ).fetchone()[0]
+        if unsearchable:
+            raise BuildError(
+                f"{prefix}: {unsearchable} names absent from scientific_name_min")
+
     counts = {
         table: conn.execute(f"SELECT COUNT(*) FROM {table}").fetchone()[0]
         for table in (
@@ -948,6 +1047,7 @@ def _build_into(
                 bridge_rejected_counts.items())),
             "rejected_total": sum(bridge_rejected_counts.values()),
         },
+        "national_preferred_scientific_names": national_name_counts,
     }
 
 

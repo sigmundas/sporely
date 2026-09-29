@@ -10,6 +10,28 @@ from utils.vernacular_utils import (
 )
 
 
+#: National preferred scientific-name column per name language (taxonomy-v3
+#: Stage 3P). The national checklist of the language's country supplies it:
+#: NorTaxa for Norwegian, Dyntaxa for Swedish (filled from Stage 4P).
+_NATIONAL_SCIENTIFIC_NAME_COLUMNS = {
+    "no": "preferred_scientific_name_no",
+    "nb": "preferred_scientific_name_no",
+    "nn": "preferred_scientific_name_no",
+    "sv": "preferred_scientific_name_sv",
+}
+
+
+def national_scientific_name_column(language_code: str | None) -> str | None:
+    """Return the ``taxon_min`` national-name column for a name language.
+
+    ``None`` for a language without a national checklist; such a language
+    displays the canonical (COL) name. The national name is display and
+    search metadata only — never identity.
+    """
+    code = (language_code or "").strip().lower().replace("-", "_").split("_", 1)[0]
+    return _NATIONAL_SCIENTIFIC_NAME_COLUMNS.get(code)
+
+
 class VernacularDB:
     """Simple helper for vernacular name lookup."""
 
@@ -731,20 +753,29 @@ def _suggest_scientific_names(
     hi = _prefix_upper_bound(prefix)
 
     with self._connect() as conn:
+        # The concept's display name in this language: its national preferred
+        # name when the release carries one, else the canonical name. The
+        # national name is always one of the concept's scientific_name_min
+        # aliases (the compiler guarantees it), so the alias scan below
+        # already finds a concept by it.
+        national = national_scientific_name_column(self.language_code)
+        taxon_columns = {row[1] for row in conn.execute("PRAGMA table_info(taxon_min)")}
+        national_expr = f"t.{national}" if national in taxon_columns else "NULL"
         # taxon_min canonical rows — structured rank from the DB.
         canonical_rows = list(conn.execute(
-            "SELECT taxon_id, canonical_scientific_name, taxon_rank, "
-            "       taxonomic_status, family, canonical_source_system "
-            "FROM taxon_min "
-            "WHERE canonical_scientific_name >= ? AND canonical_scientific_name < ? "
-            "ORDER BY canonical_scientific_name LIMIT ?",
+            "SELECT t.taxon_id, t.canonical_scientific_name, t.taxon_rank, "
+            "       t.taxonomic_status, t.family, t.canonical_source_system, "
+            f"      {national_expr} "
+            "FROM taxon_min t "
+            "WHERE t.canonical_scientific_name >= ? AND t.canonical_scientific_name < ? "
+            "ORDER BY t.canonical_scientific_name LIMIT ?",
             (lo, hi, int(limit) * 2),
         ))
         # scientific_name_min alias rows — rank parsed from the string.
         alias_rows = list(conn.execute(
             "SELECT s.taxon_id, s.scientific_name, s.is_preferred_name, "
             "       t.canonical_scientific_name, t.taxon_rank, t.taxonomic_status, "
-            "       t.family, t.canonical_source_system "
+            f"      t.family, t.canonical_source_system, {national_expr} "
             "FROM scientific_name_min s "
             "JOIN taxon_min t ON t.taxon_id = s.taxon_id "
             "WHERE s.language_code = 'sci' "
@@ -765,7 +796,7 @@ def _suggest_scientific_names(
             return structured_rank
         return None
 
-    for taxon_id, name, rank, status, family, source in canonical_rows:
+    for taxon_id, name, rank, status, family, source, national_name in canonical_rows:
         if not name or "(" in name:
             continue
         if name in _PICKER_EXCLUDED_NAMES:
@@ -787,6 +818,7 @@ def _suggest_scientific_names(
             "canonical_taxonomic_status": str(status or ""),
             "family": str(family or "") or None,
             "canonical_source_system": str(source or "") or None,
+            "display_scientific_name": str(national_name or "") or str(name),
             "authorship": None,
             # For canonical rows the link kind is "canonical" — the
             # observer picks the accepted concept directly.
@@ -794,7 +826,7 @@ def _suggest_scientific_names(
         })
 
     for (taxon_id, name, is_pref, canonical_name, rank,
-         status, family, source) in alias_rows:
+         status, family, source, national_name) in alias_rows:
         if not name or "(" in name:
             continue
         if name in _PICKER_EXCLUDED_NAMES:
@@ -832,6 +864,7 @@ def _suggest_scientific_names(
             "canonical_taxonomic_status": str(status or ""),
             "family": str(family or "") or None,
             "canonical_source_system": str(source or "") or None,
+            "display_scientific_name": str(national_name or "") or str(canonical_name or ""),
             "authorship": None,
             "link_kind": link_kind,
         })
@@ -850,4 +883,4 @@ def _suggest_scientific_names(
 VernacularDB.suggest_scientific_names = _suggest_scientific_names  # type: ignore[attr-defined]
 
 
-__all__ = ["VernacularDB", "parse_scientific_name_snapshot"]
+__all__ = ["VernacularDB", "national_scientific_name_column", "parse_scientific_name_snapshot"]

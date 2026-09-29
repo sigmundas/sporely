@@ -92,9 +92,72 @@ preferred_scientific_name_sv      string | null
 sporely_content_release_id        string | null
 canonical_source_system           string
 canonical_external_id             string
+preferred_scientific_name_no_source_system   string | null
+preferred_scientific_name_no_namespace       string | null
+preferred_scientific_name_no_external_id     string | null
+preferred_scientific_name_sv_source_system   string | null
+preferred_scientific_name_sv_namespace       string | null
+preferred_scientific_name_sv_external_id     string | null
 ```
 
 Sort: `taxon_id ASC`.
+
+#### National preferred scientific names (taxonomy-v3 Stage 3P)
+
+`preferred_scientific_name_<country>` (`no`, `sv`) is optional display and
+search metadata beside `canonical_scientific_name`. It is never identity:
+`taxon_id`, `canonical_scientific_name` and every identifier are unchanged by
+it, and nothing may resolve an observation or bind a concept from it.
+
+Fill rule (compiler, `build_sqlite_candidate.py`):
+
+* `no` is NorTaxa's accepted scientific name for the concept, taken from a
+  NorTaxa usage whose `nortaxa/nortaxa_taxon_id` identity is emitted as an
+  authoritative reviewed bridge on the concept
+  (`policies/mapping_policy.yml.authoritative_bridge_emission`: an approved
+  manual mapping or concept supersession). Automatic matches, shared names and
+  synonym usages never fill it.
+* `sv` has the same rule for Dyntaxa and stays null until Stage 4P adds that
+  source. No second shape is needed.
+* A concept with two or more such accepted national identities is left null
+  (counted in the build summary as `ambiguous_left_null`) — never chosen.
+* A NorTaxa-canonical concept carries no override: its canonical name already
+  is NorTaxa's.
+
+Provenance: the three `preferred_scientific_name_<country>_*` fields name the
+reviewed bridge identity the name came from. They are all null exactly when the
+name is null. When set, `(taxon_id, source_system, namespace, external_id)`
+with `external_name` equal to the name and `id_role = "accepted"` is a row of
+`taxon_external_id.jsonl` whose `note` starts with `authoritative_bridge:`
+(the note names the reviewed evidence class). The source *release* is
+release-level provenance in `taxonomy_release.jsonl`
+(`source_release_nortaxa_id`). The exporter refuses a name without complete,
+traceable provenance, and the scoped (`global_macrofungi_policy_v1`) export
+refuses one whose bridge row it does not also publish. A release compiled
+before Stage 3P has no provenance columns; its six fields are emitted as null,
+which the exporter accepts only because such a release carries no national
+name.
+
+Search: every national name is also a `scientific_name.jsonl` row of the same
+concept (the compiler fails the build otherwise), so a name search that covers
+`scientific_name.jsonl` already finds the concept by either name.
+
+Consumer rule (desktop now; web in Stage 3W): show
+`preferred_scientific_name_no` when the name language is Norwegian (`no`, `nb`,
+`nn`) and `preferred_scientific_name_sv` when it is Swedish, falling back to
+`canonical_scientific_name` when the field is null or for any other language.
+A label with a vernacular reads `<vernacular> (<display scientific name>)`,
+e.g. Sporely 83668 is `slank ringkjeglesopp (Pholiotina rugosa)` in Norwegian
+and `Conocybe rugosa` in Swedish.
+
+Why columns, not a keyed table: at most one national name exists per
+(concept, country), so it is a functional attribute of the concept that a label
+or `search_taxa_v2` reads in the same row as `canonical_scientific_name`; the
+value fields were already part of this file; and the change is additive —
+consumers select named fields, so `export_schema_version` stays 1 and the
+dataset list, order and whole-export hash definition are unchanged. Norwegian
+and Swedish are both covered now; another country would add one
+value-plus-provenance column group.
 
 ### `scientific_name.jsonl` (source: `scientific_name_min`)
 

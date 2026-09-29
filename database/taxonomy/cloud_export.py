@@ -47,9 +47,11 @@ from typing import Iterable, Iterator, Optional
 
 TAXONOMY_SCHEMA_VERSION = 2
 
+# Additive `taxon.jsonl` fields (national-name provenance) keep schema 1:
+# consumers select named fields, and none is removed or retyped.
 EXPORT_SCHEMA_VERSION = 1
 MANIFEST_SCHEMA_VERSION = 1
-EXPORTER_VERSION = "1.0.0"
+EXPORTER_VERSION = "1.1.0"
 SCOPE_PREDICATE_ID = "fungi_closure_union_nortaxa_v1"
 
 MANIFEST_FILENAME = "taxonomy_export_manifest.json"
@@ -93,6 +95,19 @@ TAXON_MIN_ALLOWLIST = (
     "canonical_source_system",
     "canonical_external_id",
 )
+# Provenance of the national preferred scientific names (taxonomy-v3 Stage
+# 3P): the reviewed bridge identity each name was taken from. Emitted on every
+# `taxon.jsonl` row, after the columns above. A release compiled before Stage
+# 3P has no such columns; they are emitted as null there, which is only valid
+# because such a release also carries no national name (checked below).
+NATIONAL_NAME_COUNTRIES = ("no", "sv")
+NATIONAL_NAME_PROVENANCE_SUFFIXES = ("source_system", "namespace", "external_id")
+TAXON_MIN_NATIONAL_NAME_PROVENANCE = tuple(
+    f"preferred_scientific_name_{country}_{suffix}"
+    for country in NATIONAL_NAME_COUNTRIES
+    for suffix in NATIONAL_NAME_PROVENANCE_SUFFIXES
+)
+TAXON_JSONL_FIELDS = TAXON_MIN_ALLOWLIST + TAXON_MIN_NATIONAL_NAME_PROVENANCE
 SCIENTIFIC_NAME_MIN_ALLOWLIST = (
     "taxon_id",
     "language_code",
@@ -608,10 +623,62 @@ def _finalize_dataset(path: Path, filename: str, row_count: int, bytes_written: 
     )
 
 
+def _validate_national_names(conn: sqlite3.Connection, present: set[str]) -> None:
+    """Refuse a national preferred name the export cannot attribute.
+
+    Each scoped `preferred_scientific_name_<country>` must carry its complete
+    provenance, and that provenance must be an accepted authoritative bridge
+    row of the same concept with the same name — i.e. a row this export also
+    publishes in `taxon_external_id.jsonl`. Provenance without a name is
+    refused as well.
+    """
+    for country in NATIONAL_NAME_COUNTRIES:
+        name_col = f"preferred_scientific_name_{country}"
+        provenance = [f"{name_col}_{s}" for s in NATIONAL_NAME_PROVENANCE_SUFFIXES]
+        scoped = "t.taxon_id IN (SELECT taxon_id FROM _cloud_export_scope)"
+        if not all(c in present for c in provenance):
+            named = conn.execute(
+                f"SELECT COUNT(*) FROM taxon_min t WHERE {scoped} "
+                f"AND t.{name_col} IS NOT NULL"
+            ).fetchone()[0]
+            if named:
+                raise ExportError(
+                    f"{name_col}: {named} scoped names but the artifact has no "
+                    "provenance columns")
+            continue
+        partial = conn.execute(
+            f"SELECT COUNT(*) FROM taxon_min t WHERE {scoped} AND ("
+            + " OR ".join(f"((t.{name_col} IS NULL) <> (t.{c} IS NULL))"
+                          for c in provenance)
+            + ")"
+        ).fetchone()[0]
+        if partial:
+            raise ExportError(f"{name_col}: {partial} rows with partial provenance")
+        untraced = conn.execute(
+            f"SELECT COUNT(*) FROM taxon_min t WHERE {scoped} "
+            f"AND t.{name_col} IS NOT NULL "
+            "AND NOT EXISTS (SELECT 1 FROM taxon_external_id_text_min e "
+            "WHERE e.taxon_id = t.taxon_id "
+            f"AND e.source_system = t.{name_col}_source_system "
+            f"AND e.namespace = t.{name_col}_namespace "
+            f"AND e.external_id = t.{name_col}_external_id "
+            f"AND e.external_name = t.{name_col} "
+            "AND e.id_role = 'accepted' "
+            "AND e.note LIKE 'authoritative_bridge:%')"
+        ).fetchone()[0]
+        if untraced:
+            raise ExportError(
+                f"{name_col}: {untraced} names without an authoritative bridge row")
+
+
 def emit_taxon(conn: sqlite3.Connection, out_path: Path) -> DatasetResult:
     filename = "taxon.jsonl"
-    cols = TAXON_MIN_ALLOWLIST
-    select = ", ".join(cols)
+    present = {r["name"] for r in conn.execute("PRAGMA table_info(taxon_min)")}
+    _validate_national_names(conn, present)
+    cols = TAXON_JSONL_FIELDS
+    select = ", ".join(
+        c if c in present else f"NULL AS {c}" for c in cols
+    )
     sql = (
         f"SELECT {select} FROM taxon_min t "
         "WHERE t.taxon_id IN (SELECT taxon_id FROM _cloud_export_scope) "

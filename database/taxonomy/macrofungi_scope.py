@@ -644,7 +644,51 @@ def validate_export(output_dir: Path, manifest: dict[str, Any]) -> dict[str, Any
                 taxon_id = json.loads(raw).get("taxon_id")
                 if taxon_id is not None and taxon_id not in taxon_ids:
                     raise ScopeError(f"{filename} references absent taxon {taxon_id}")
-    return {"status": "passed", "dataset_files": len(expected_order), "taxon_rows": len(taxon_ids)}
+    national_names = validate_national_names(output_dir)
+    return {"status": "passed", "dataset_files": len(expected_order), "taxon_rows": len(taxon_ids),
+            "national_preferred_scientific_names": national_names}
+
+
+NATIONAL_NAME_COUNTRIES = ("no", "sv")
+
+
+def validate_national_names(output_dir: Path) -> dict[str, int]:
+    """Every national preferred name must cite a bridge this export publishes.
+
+    A ``preferred_scientific_name_<country>`` on a ``taxon.jsonl`` row is
+    display metadata whose provenance is a reviewed bridge identity. The
+    scoped export publishes external ids only for included concepts, so the
+    cited ``(source_system, namespace, external_id)`` must be an accepted
+    authoritative bridge row of the same concept, with the same name, in this
+    export's ``taxon_external_id.jsonl``. Anything else is refused rather
+    than published with provenance a consumer could not resolve.
+    """
+    bridges: set[tuple[int, str, str, str, str]] = set()
+    with (output_dir / "taxon_external_id.jsonl").open(encoding="utf-8") as handle:
+        for raw in handle:
+            row = json.loads(raw)
+            if row.get("id_role") == "accepted" and \
+                    str(row.get("note") or "").startswith("authoritative_bridge:"):
+                bridges.add((row["taxon_id"], row["source_system"], row["namespace"],
+                             str(row["external_id"]), row.get("external_name") or ""))
+    counts = {country: 0 for country in NATIONAL_NAME_COUNTRIES}
+    with (output_dir / "taxon.jsonl").open(encoding="utf-8") as handle:
+        for raw in handle:
+            row = json.loads(raw)
+            for country in NATIONAL_NAME_COUNTRIES:
+                prefix = f"preferred_scientific_name_{country}"
+                name = row.get(prefix)
+                provenance = (row.get(f"{prefix}_source_system"), row.get(f"{prefix}_namespace"),
+                              row.get(f"{prefix}_external_id"))
+                if name is None:
+                    if any(value is not None for value in provenance):
+                        raise ScopeError(f"{prefix}: provenance without a name on taxon {row['taxon_id']}")
+                    continue
+                if any(value is None for value in provenance) or \
+                        (row["taxon_id"], *provenance, name) not in bridges:
+                    raise ScopeError(f"{prefix}: taxon {row['taxon_id']} cites no published reviewed bridge")
+                counts[country] += 1
+    return counts
 
 
 def build_desktop(export_dir: Path, target: Path, release_id: str) -> dict[str, Any]:

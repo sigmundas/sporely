@@ -54,6 +54,7 @@ SHA256_RE = re.compile(r"^[0-9a-f]{64}$")
 SOURCE_CODE_RE = re.compile(r"^[a-z][a-z0-9_]{1,31}$")
 NORMALIZERS = ("col_xr", "national_source")
 TAXON_ID_COLUMNS = ("norwegian_taxon_id", "swedish_taxon_id", "inaturalist_taxon_id")
+NATIONAL_NAME_COLUMNS = ("preferred_scientific_name_no", "preferred_scientific_name_sv")
 
 
 class BuildError(Exception):
@@ -212,6 +213,10 @@ def summarize_sqlite(path: Path) -> dict:
             "taxon_id_columns": {
                 column: conn.execute(f"SELECT COUNT({column}) FROM taxon_min").fetchone()[0]
                 for column in TAXON_ID_COLUMNS if column in columns
+            },
+            "national_preferred_scientific_names": {
+                column: conn.execute(f"SELECT COUNT({column}) FROM taxon_min").fetchone()[0]
+                for column in NATIONAL_NAME_COLUMNS if column in columns
             },
         }
         if "taxon_external_id_min" in tables:
@@ -523,7 +528,9 @@ def build(options: Options, run: Runner | None = None, python: str = sys.executa
         "registry": registry_state,
         "sqlite": {"sha256": sqlite_a, "counts": sqlite_out["A"].get("counts"),
                    "publishing_ids": sqlite_out["A"].get("publishing_ids"),
-                   "authoritative_bridge_emission": sqlite_out["A"].get("authoritative_bridge_emission")},
+                   "authoritative_bridge_emission": sqlite_out["A"].get("authoritative_bridge_emission"),
+                   "national_preferred_scientific_names":
+                       sqlite_out["A"].get("national_preferred_scientific_names")},
         "coverage": coverage,
         "promoted": False,
     }

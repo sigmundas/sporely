@@ -52,12 +52,19 @@ def _format_scientific_choice_display(suggestion: dict) -> str:
     if authorship:
         parts.append(authorship)
     link_kind = suggestion.get("link_kind")
-    canonical = str(suggestion.get("canonical_scientific_name") or "").strip()
-    # 2. Alias / linked relation: show the canonical concept.
-    if link_kind == "synonym_of_accepted" and canonical and canonical != name:
-        parts.append(f"→ {canonical}")
-    elif link_kind == "linked" and canonical and canonical != name:
-        parts.append(f"↦ {canonical}")
+    # The concept's name in the current language: its national preferred
+    # scientific name where one exists (taxonomy-v3 Stage 3P), else the
+    # canonical name. Selection still writes the row's own name.
+    concept_name = (
+        str(suggestion.get("display_scientific_name") or "").strip()
+        or str(suggestion.get("canonical_scientific_name") or "").strip()
+    )
+    # 2. Alias / linked relation: show the concept's display name. A
+    # canonical row whose concept displays a national name points to it too.
+    if link_kind in ("synonym_of_accepted", "canonical") and concept_name and concept_name != name:
+        parts.append(f"→ {concept_name}")
+    elif link_kind == "linked" and concept_name and concept_name != name:
+        parts.append(f"↦ {concept_name}")
     # 3. Source system when neither authorship nor alias disambiguates.
     source = str(suggestion.get("canonical_source_system") or "").strip()
     if len(parts) == 1 and source and source != "col_xr":

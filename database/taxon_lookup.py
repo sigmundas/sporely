@@ -36,7 +36,7 @@ from dataclasses import dataclass, replace as _dc_replace
 import sqlite3
 from typing import Any
 
-from database.vernacular_db import VernacularDB
+from database.vernacular_db import VernacularDB, national_scientific_name_column
 from utils.vernacular_utils import normalize_vernacular_language
 
 
@@ -486,6 +486,7 @@ class TaxonLookupService:
         name: str | None = None,
         genus: str | None = None,
         species: str | None = None,
+        taxon_id: int | None = None,
         limit: int | None = None,
     ) -> list[sqlite3.Row]:
         if not self.vernacular_db:
@@ -525,6 +526,10 @@ class TaxonLookupService:
                 return []
             filters.append("v.vernacular_name LIKE ? || '%'")
             params.append(prefix)
+
+        if taxon_id is not None:
+            filters.append("t.taxon_id = ?")
+            params.append(int(taxon_id))
 
         if genus is not None or species is not None:
             resolved = self._local_taxon_record(genus or "", species or "") if genus and species else None
@@ -1162,25 +1167,61 @@ class TaxonLookupService:
     def common_names_for_taxon(self, genus: str, species: str, limit: int = TAXON_COMPLETER_LIMIT) -> list[TaxonChoice]:
         return self.suggest_common_names(prefix="", genus=genus, species=species, limit=limit)
 
-    def best_common_name_for_taxon(self, genus: str, species: str) -> TaxonChoice | None:
-        key = (_normalize_genus_display(genus).casefold(), _normalize_species_display(species).casefold())
-        if key in self._best_common_name_cache:
-            return self._best_common_name_cache[key]
-        rows = self._local_common_name_rows(genus=genus, species=species)
+    def display_scientific_name(self, sporely_taxon_id: object) -> str | None:
+        """The scientific name to show for a concept in the lookup's language.
+
+        The concept's national preferred scientific name for that language
+        (NorTaxa's accepted name in Norwegian; Dyntaxa's in Swedish once
+        Stage 4P fills it) when the installed release carries one — the
+        compiler sets it only on concepts with a reviewed national identity —
+        otherwise the canonical (COL) name. Display only: identity and
+        ``canonical_scientific_name`` are unchanged.
+        """
+        try:
+            taxon_id = int(sporely_taxon_id)
+        except (TypeError, ValueError):
+            return None
+        taxon_columns = self._local_columns("taxon_min")
+        if "canonical_scientific_name" not in taxon_columns:
+            return None
+        national = national_scientific_name_column(self.language_code)
+        national_expr = national if national in taxon_columns else "NULL"
+        rows = self._fetch_local_rows(
+            f"SELECT {national_expr} AS national_name, canonical_scientific_name "
+            "FROM taxon_min WHERE taxon_id = ?",
+            (taxon_id,),
+        )
         if not rows:
-            self._best_common_name_cache[key] = None
+            return None
+        return (
+            _normalize_text(rows[0]["national_name"])
+            or _normalize_text(rows[0]["canonical_scientific_name"])
+            or None
+        )
+
+    def taxon_display_label(self, sporely_taxon_id: object) -> str | None:
+        """``"<vernacular> (<display scientific name>)"`` for a concept.
+
+        The vernacular is the best one in the lookup's language; without one
+        the label is the display scientific name alone. See
+        :meth:`display_scientific_name` for which scientific name is shown.
+        """
+        scientific = self.display_scientific_name(sporely_taxon_id)
+        if not scientific:
+            return None
+        rows = self._local_common_name_rows(taxon_id=int(sporely_taxon_id))
+        best = self._best_common_name_row(rows)
+        vernacular = _normalize_text(best["common_name"]) if best is not None else ""
+        return f"{vernacular} ({scientific})" if vernacular else scientific
+
+    def _best_common_name_row(self, rows: list[sqlite3.Row]) -> sqlite3.Row | None:
+        if not rows:
             return None
         if len(rows) == 1:
-            choice = self._row_to_choice(rows[0], "taxonomy")
-            self._best_common_name_cache[key] = choice
-            return choice
-
+            return rows[0]
         preferred_rows = [row for row in rows if bool(row["is_preferred_name"])]
         if len(preferred_rows) == 1:
-            choice = self._row_to_choice(preferred_rows[0], "taxonomy")
-            self._best_common_name_cache[key] = choice
-            return choice
-
+            return preferred_rows[0]
         # Multiple preferred rows — pick deterministically by the language
         # fan-out order derived from the caller's requested language. This
         # preserves the Norwegian display for taxa like `Laccaria laccata`
@@ -1202,8 +1243,15 @@ class TaxonLookupService:
                 lang,
                 str(row["common_name"] or "").casefold(),
             )
-        candidates_sorted = sorted(candidates, key=sort_key)
-        choice = self._row_to_choice(candidates_sorted[0], "taxonomy")
+        return sorted(candidates, key=sort_key)[0]
+
+    def best_common_name_for_taxon(self, genus: str, species: str) -> TaxonChoice | None:
+        key = (_normalize_genus_display(genus).casefold(), _normalize_species_display(species).casefold())
+        if key in self._best_common_name_cache:
+            return self._best_common_name_cache[key]
+        rows = self._local_common_name_rows(genus=genus, species=species)
+        best = self._best_common_name_row(rows)
+        choice = self._row_to_choice(best, "taxonomy") if best is not None else None
         self._best_common_name_cache[key] = choice
         return choice
 
