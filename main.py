@@ -75,6 +75,7 @@ from app_identity import (
 )
 from database.schema import init_database, get_app_settings, update_app_settings
 from database.models import SettingsDB
+from utils.ui_language import set_running_ui_language
 from ui.main_window import MainWindow
 from ui.styles import cache_system_dark, _is_dark
 
@@ -332,6 +333,7 @@ def main():
         lang_code = _canonical_ui_language(QLocale.system().name()) or "en"
         update_app_settings({"ui_language": lang_code})
         SettingsDB.set_setting("ui_language", lang_code)
+    set_running_ui_language(app, lang_code)
     if lang_code != "en":
         qm_dir = Path(__file__).parent / "i18n"
         qm_path = qm_dir / f"Sporely_{lang_code}.qm"

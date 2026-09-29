@@ -346,15 +346,20 @@ def test_scoped_export_requires_the_cited_bridge(tmp_path: Path) -> None:
 
 
 # -------------------------------------------------------------- desktop ---
+#
+# The national name follows the UI language (``display_language_code``, which
+# ``VernacularDB`` defaults to the running application's language); the
+# vernacular follows the separate vernacular-language setting.
 
 
-def _lookup(db_path: Path, language: str):
+def _lookup(db_path: Path, ui_language: str, vernacular_language: str = "no"):
     from database.taxon_lookup import TaxonLookupService
     from database.vernacular_db import VernacularDB
 
     return TaxonLookupService(
-        vernacular_db=VernacularDB(db_path, language_code=language),
-        language_code=language,
+        vernacular_db=VernacularDB(db_path, language_code=vernacular_language,
+                                   display_language_code=ui_language),
+        language_code=vernacular_language,
         include_reference_data=False,
     )
 
@@ -366,19 +371,84 @@ def superseded_db(tmp_path: Path) -> tuple[Path, int]:
     return db_path, host_id
 
 
-def test_desktop_label_uses_the_national_name_in_norwegian(superseded_db) -> None:
-    db_path, host = superseded_db
-    lookup = _lookup(db_path, "no")
-    assert lookup.display_scientific_name(host) == "Pholiotina rugosa"
-    assert lookup.taxon_display_label(host) == "slank ringkjeglesopp (Pholiotina rugosa)"
+def _observation(host: int, **fields) -> dict:
+    """A local observation row proven bound to ``host``, as the picker saves it."""
+    row = {
+        "id": 1, "genus": "Conocybe", "species": "rugosa",
+        "scientific_name_snapshot": "Conocybe rugosa",
+        "sporely_taxon_id": host,
+        "taxon_identity_state": "sporely_v2",
+        "taxon_identity_proof": "taxonomy_v2_artifact",
+    }
+    row.update(fields)
+    return row
 
 
-def test_desktop_label_falls_back_to_col_in_swedish(superseded_db) -> None:
+def _list_label(db_path: Path, observation: dict, ui_language: str,
+                vernacular_language: str) -> str:
+    """The observation table's name cell, built as the row builders build it."""
+    from database.vernacular_db import VernacularDB
+    from ui.observations_tab import (
+        _format_observation_display_label,
+        _national_display_scientific_name,
+    )
+
+    db = VernacularDB(db_path, language_code=vernacular_language,
+                      display_language_code=ui_language)
+    names = db.display_scientific_names([observation["sporely_taxon_id"]])
+    common = db.vernacular_from_taxon(observation["genus"], observation["species"])
+    scientific = _national_display_scientific_name(
+        observation, observation["genus"], observation["species"], names,
+    ) or observation.get("scientific_name_snapshot")
+    return _format_observation_display_label(
+        common, observation["genus"], observation["species"],
+        scientific_name_snapshot=scientific,
+    )
+
+
+def test_desktop_display_name_uses_the_national_name_in_norwegian(superseded_db) -> None:
     db_path, host = superseded_db
-    lookup = _lookup(db_path, "sv")
-    assert lookup.display_scientific_name(host) == "Conocybe rugosa"
-    assert lookup.taxon_display_label(host) == "Conocybe rugosa"
+    assert _lookup(db_path, "nb_NO").display_scientific_name(host) == "Pholiotina rugosa"
+
+
+def test_desktop_display_name_falls_back_to_col_in_swedish(superseded_db) -> None:
+    db_path, host = superseded_db
+    assert _lookup(db_path, "sv_SE").display_scientific_name(host) == "Conocybe rugosa"
     assert _lookup(db_path, "en").display_scientific_name(host) == "Conocybe rugosa"
+
+
+def test_desktop_display_follows_ui_language_not_vernacular_language(superseded_db) -> None:
+    """A Swedish UI with Norwegian vernaculars shows no Norwegian checklist name."""
+    db_path, host = superseded_db
+    assert _lookup(db_path, "sv_SE", "no").display_scientific_name(host) == "Conocybe rugosa"
+    assert _lookup(db_path, "nb_NO", "sv").display_scientific_name(host) == "Pholiotina rugosa"
+
+
+def test_observation_list_shows_the_national_name(superseded_db) -> None:
+    """Sporely 83668 in the observation table's name cell."""
+    db_path, host = superseded_db
+    observation = _observation(host)
+    assert _list_label(db_path, observation, "nb_NO", "no") == \
+        "Slank ringkjeglesopp\nPholiotina rugosa"
+    # Swedish UI: no Swedish vernacular and no Swedish checklist name yet.
+    assert _list_label(db_path, observation, "sv_SE", "sv") == "Conocybe rugosa"
+    # The stored snapshot is never rewritten.
+    assert observation["scientific_name_snapshot"] == "Conocybe rugosa"
+
+
+def test_observation_list_keeps_an_unproven_or_observer_chosen_name(superseded_db) -> None:
+    from ui.observations_tab import _national_display_scientific_name
+
+    db_path, host = superseded_db
+    from database.vernacular_db import VernacularDB
+    names = VernacularDB(db_path, display_language_code="nb_NO").display_scientific_names([host])
+    # A bare integer without proof is not an identity to display from.
+    unproven = _observation(host, taxon_identity_state=None, taxon_identity_proof=None,
+                            sporely_taxon_id=None)
+    assert _national_display_scientific_name(unproven, "Conocybe", "rugosa", names) is None
+    # An observer's own choice of a different name stays as recorded.
+    variety = _observation(host, scientific_name_snapshot="Conocybe rugosa var. alba")
+    assert _national_display_scientific_name(variety, "Conocybe", "rugosa", names) is None
 
 
 def test_desktop_concept_without_approved_identity_shows_col(tmp_path: Path) -> None:
@@ -386,19 +456,21 @@ def test_desktop_concept_without_approved_identity_shows_col(tmp_path: Path) -> 
     host = _usages(release)[("col_xr", "5ZT3G")]["sporely_taxon_id"]
     mycena = _usages(release)[("col_xr", "NOAUT")]["sporely_taxon_id"]
     db_path, _summary = _build(tmp_path, release)
-    lookup = _lookup(db_path, "no")
+    lookup = _lookup(db_path, "nb_NO")
     assert lookup.display_scientific_name(host) == "Conocybe rugosa"
     # Bound by an automatic rule only: still the COL name.
     assert lookup.display_scientific_name(mycena) == "Mycena absentia"
+    # Without a bridge the NorTaxa vernacular stays on NorTaxa's own concept.
+    assert _list_label(db_path, _observation(host), "nb_NO", "no") == "Conocybe rugosa"
 
 
-@pytest.mark.parametrize("language", ["no", "sv"])
+@pytest.mark.parametrize("ui_language", ["nb_NO", "sv_SE"])
 @pytest.mark.parametrize("prefix", ["Pholiotina rug", "Conocybe rug"])
 def test_desktop_search_finds_the_concept_by_either_name(
-    superseded_db, language: str, prefix: str,
+    superseded_db, ui_language: str, prefix: str,
 ) -> None:
     db_path, host = superseded_db
-    suggestions = _lookup(db_path, language).suggest_scientific_names(prefix)
+    suggestions = _lookup(db_path, ui_language).suggest_scientific_names(prefix)
     assert host in {s["sporely_taxon_id"] for s in suggestions}
 
 
@@ -407,15 +479,106 @@ def test_desktop_completer_label_names_the_display_concept(superseded_db) -> Non
 
     db_path, host = superseded_db
 
-    def labels(language: str) -> dict[str, str]:
+    def labels(ui_language: str) -> dict[str, str]:
         rows = [s for prefix in ("Pholiotina rug", "Conocybe rug")
-                for s in _lookup(db_path, language).suggest_scientific_names(prefix)
+                for s in _lookup(db_path, ui_language).suggest_scientific_names(prefix)
                 if s["sporely_taxon_id"] == host]
         return {s["scientific_name"]: _format_scientific_choice_display(s) for s in rows}
 
-    norwegian = labels("no")
+    norwegian = labels("nb_NO")
     assert norwegian["Pholiotina rugosa"] == "Pholiotina rugosa"
     assert norwegian["Conocybe rugosa"] == "Conocybe rugosa  ·  → Pholiotina rugosa"
-    swedish = labels("sv")
+    swedish = labels("sv_SE")
     assert swedish["Conocybe rugosa"] == "Conocybe rugosa"
     assert swedish["Pholiotina rugosa"] == "Pholiotina rugosa  ·  → Conocybe rugosa"
+
+
+def test_running_ui_language_is_the_default_display_language(superseded_db) -> None:
+    from PySide6.QtCore import QCoreApplication
+
+    from database.vernacular_db import VernacularDB
+    from utils.ui_language import APP_PROPERTY, set_running_ui_language
+
+    app = QCoreApplication.instance() or QCoreApplication([])
+    previous = app.property(APP_PROPERTY)
+    db_path, host = superseded_db
+    try:
+        set_running_ui_language(app, "nb_NO")
+        assert VernacularDB(db_path, language_code="sv").display_scientific_names(
+            [host])[host][1] == "Pholiotina rugosa"
+        set_running_ui_language(app, "sv_SE")
+        assert VernacularDB(db_path, language_code="no").display_scientific_names(
+            [host])[host][1] == "Conocybe rugosa"
+    finally:
+        app.setProperty(APP_PROPERTY, previous)
+
+
+def _cloud_rows_cache(db_path: Path, remote_rows: list[dict], ui_language: str) -> list[dict]:
+    """Run the real cloud-row builder over the cloud row shape."""
+    from types import MethodType, SimpleNamespace
+
+    from database.vernacular_db import VernacularDB
+    from ui import observations_tab
+
+    fake_tab = SimpleNamespace(
+        _observation_publish_target=lambda obs: obs.get("publish_target"),
+        _table_vernacular_db=VernacularDB(db_path, language_code="no",
+                                          display_language_code=ui_language),
+    )
+    fake_tab._observation_taxon_fields = MethodType(
+        observations_tab.ObservationsTab._observation_taxon_fields, fake_tab,
+    )
+    return observations_tab.ObservationsTab._build_cloud_observation_table_rows_cache(
+        fake_tab, remote_rows)
+
+
+def _cloud_row(host: int, **fields) -> dict:
+    """A pulled cloud observation: ``selected_sporely_taxon_id``, no local proof."""
+    row = {
+        "id": 748, "genus": "Conocybe", "species": "rugosa", "species_guess": "",
+        "scientific_name_snapshot": "Conocybe rugosa",
+        "common_name": "slank ringkjeglesopp",
+        "selected_sporely_taxon_id": host, "taxon_identity_state": "sporely_v2",
+        "date": "2026-06-25 07:41:23", "created_at": "2026-06-25T13:58:52",
+        "location": "Bakke kirke", "sharing_scope": "public", "visibility": "public",
+        "is_draft": 0, "publish_target": None,
+    }
+    row.update(fields)
+    return row
+
+
+def test_cloud_observation_row_shows_the_national_name(superseded_db) -> None:
+    db_path, host = superseded_db
+    [norwegian] = _cloud_rows_cache(db_path, [_cloud_row(host)], "nb_NO")
+    assert norwegian["common_name"] == "Slank ringkjeglesopp\nPholiotina rugosa"
+    [swedish] = _cloud_rows_cache(db_path, [_cloud_row(host)], "sv_SE")
+    assert swedish["common_name"] == "Slank ringkjeglesopp\nConocybe rugosa"
+    # Without a vernacular the fallback form carries the display name too.
+    [bare] = _cloud_rows_cache(db_path, [_cloud_row(host, common_name="")], "nb_NO")
+    assert bare["common_name"] == "- (Pholiotina rugosa)"
+
+
+def test_cloud_row_id_never_relabels_a_different_recorded_name(superseded_db) -> None:
+    """A colliding or stale integer cannot put the national name on another taxon."""
+    db_path, host = superseded_db
+    [row] = _cloud_rows_cache(db_path, [_cloud_row(
+        host, genus="Mycena", species="pura",
+        scientific_name_snapshot="Mycena pura", common_name="")], "nb_NO")
+    assert row["common_name"] == "- (Mycena pura)"
+    # An id absent from the installed taxonomy displays the recorded name.
+    [absent] = _cloud_rows_cache(db_path, [_cloud_row(999999999, common_name="")], "nb_NO")
+    assert absent["common_name"] == "- (Conocybe rugosa)"
+
+
+def test_local_cloud_selected_and_legacy_identities(superseded_db) -> None:
+    from database.vernacular_db import VernacularDB
+    from ui.observations_tab import _national_display_scientific_name
+
+    db_path, host = superseded_db
+    names = VernacularDB(db_path, display_language_code="nb_NO").display_scientific_names([host])
+    pulled = _observation(host, taxon_identity_proof="cloud_selected_unverified")
+    assert _national_display_scientific_name(
+        pulled, "Conocybe", "rugosa", names) == "Pholiotina rugosa"
+    # A legacy-unverified integer records nothing about what it is: not shown.
+    legacy = _observation(host, taxon_identity_proof="legacy_unverified")
+    assert _national_display_scientific_name(legacy, "Conocybe", "rugosa", names) is None

@@ -10,7 +10,7 @@ from utils.vernacular_utils import (
 )
 
 
-#: National preferred scientific-name column per name language (taxonomy-v3
+#: National preferred scientific-name column per UI language (taxonomy-v3
 #: Stage 3P). The national checklist of the language's country supplies it:
 #: NorTaxa for Norwegian, Dyntaxa for Swedish (filled from Stage 4P).
 _NATIONAL_SCIENTIFIC_NAME_COLUMNS = {
@@ -22,7 +22,8 @@ _NATIONAL_SCIENTIFIC_NAME_COLUMNS = {
 
 
 def national_scientific_name_column(language_code: str | None) -> str | None:
-    """Return the ``taxon_min`` national-name column for a name language.
+    """Return the ``taxon_min`` national-name column for a UI language
+    (``nb_NO``, ``sv_SE``, bare ``nb``/``nn``/``no``/``sv``).
 
     ``None`` for a language without a national checklist; such a language
     displays the canonical (COL) name. The national name is display and
@@ -35,15 +36,68 @@ def national_scientific_name_column(language_code: str | None) -> str | None:
 class VernacularDB:
     """Simple helper for vernacular name lookup."""
 
-    def __init__(self, db_path: Path, language_code: str | None = None):
+    def __init__(
+        self,
+        db_path: Path,
+        language_code: str | None = None,
+        display_language_code: str | None = None,
+    ):
         self.db_path = db_path
         # Preserve `nb`/`nn`/Sámi codes verbatim — the taxonomy v2 identity
         # contract keeps them distinct. `resolve_query_language_codes` in
         # `_language_clause` handles the umbrella `no` → `('no','nb','nn')`
         # fan-out.
         self.language_code = language_code.strip() if language_code else None
+        # The UI language, which chooses the national scientific name shown
+        # (taxonomy-v3 Stage 3P). Separate from the vernacular language: a
+        # Swedish UI with Norwegian vernaculars shows Swedish-checklist
+        # scientific names. Defaults to the running application's language.
+        if display_language_code is None:
+            from utils.ui_language import running_ui_language
+            display_language_code = running_ui_language()
+        self.display_language_code = display_language_code or None
         self._has_language_column = None
         self._tables: set[str] | None = None
+        self._taxon_min_columns: set[str] | None = None
+
+    def _national_name_expr(self, conn: sqlite3.Connection, alias: str = "t") -> str:
+        """SQL for the display language's national-name column, or ``NULL``."""
+        column = national_scientific_name_column(self.display_language_code)
+        if column is None:
+            return "NULL"
+        if self._taxon_min_columns is None:
+            self._taxon_min_columns = {
+                str(row[1]) for row in conn.execute("PRAGMA table_info(taxon_min)")
+            }
+        return f"{alias}.{column}" if column in self._taxon_min_columns else "NULL"
+
+    def display_scientific_names(self, taxon_ids) -> dict[int, tuple[str, str]]:
+        """``taxon_id -> (canonical name, display name)`` for known concepts.
+
+        The display name is the concept's national preferred scientific name
+        for the display language when the release carries one — the compiler
+        sets it only on concepts with a reviewed national identity — else the
+        canonical (COL) name. Display only; identity is untouched.
+        """
+        ids = sorted({int(t) for t in taxon_ids if t is not None})
+        if not ids or "taxon_min" not in self._table_names():
+            return {}
+        out: dict[int, tuple[str, str]] = {}
+        with self._connect() as conn:
+            national = self._national_name_expr(conn)
+            for start in range(0, len(ids), 500):
+                chunk = ids[start:start + 500]
+                placeholders = ",".join("?" for _ in chunk)
+                for taxon_id, canonical, national_name in conn.execute(
+                    f"SELECT t.taxon_id, t.canonical_scientific_name, {national} "
+                    f"FROM taxon_min t WHERE t.taxon_id IN ({placeholders})",
+                    chunk,
+                ):
+                    canonical_text = str(canonical or "").strip()
+                    display = str(national_name or "").strip() or canonical_text
+                    if display:
+                        out[int(taxon_id)] = (canonical_text, display)
+        return out
 
     def _connect(self) -> sqlite3.Connection:
         return sqlite3.connect(self.db_path)
@@ -758,9 +812,7 @@ def _suggest_scientific_names(
         # national name is always one of the concept's scientific_name_min
         # aliases (the compiler guarantees it), so the alias scan below
         # already finds a concept by it.
-        national = national_scientific_name_column(self.language_code)
-        taxon_columns = {row[1] for row in conn.execute("PRAGMA table_info(taxon_min)")}
-        national_expr = f"t.{national}" if national in taxon_columns else "NULL"
+        national_expr = self._national_name_expr(conn)
         # taxon_min canonical rows — structured rank from the DB.
         canonical_rows = list(conn.execute(
             "SELECT t.taxon_id, t.canonical_scientific_name, t.taxon_rank, "

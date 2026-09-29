@@ -143,9 +143,11 @@ concept (the compiler fails the build otherwise), so a name search that covers
 `scientific_name.jsonl` already finds the concept by either name.
 
 Consumer rule (desktop now; web in Stage 3W): show
-`preferred_scientific_name_no` when the name language is Norwegian (`no`, `nb`,
-`nn`) and `preferred_scientific_name_sv` when it is Swedish, falling back to
-`canonical_scientific_name` when the field is null or for any other language.
+`preferred_scientific_name_no` when the UI language is Norwegian (`nb_NO`, or
+bare `no`/`nb`/`nn`) and `preferred_scientific_name_sv` when it is Swedish,
+falling back to `canonical_scientific_name` when the field is null or for any
+other language. The UI language, not the vernacular-name language, chooses
+it: a Swedish UI with Norwegian vernaculars shows no NorTaxa name.
 A label with a vernacular reads `<vernacular> (<display scientific name>)`,
 e.g. Sporely 83668 is `slank ringkjeglesopp (Pholiotina rugosa)` in Norwegian
 and `Conocybe rugosa` in Swedish.

@@ -904,6 +904,81 @@ def _format_observation_display_label(
     return "-"
 
 
+def _display_taxon_id(observation: dict | None) -> int | None:
+    """The concept an observation row names, for choosing display text only.
+
+    Accepts a proven local identity, a local ``cloud_selected_unverified`` one
+    (whose contract allows display), and a cloud row's
+    ``selected_sporely_taxon_id``. None of these is treated as identity here:
+    the result only picks which scientific name to show, and
+    :func:`_national_display_scientific_name` shows a national name only when
+    the concept is in the installed taxonomy AND the row's recorded name is
+    that concept's canonical name, so a colliding integer cannot relabel a
+    row. Nothing is written or asserted from it.
+    """
+    from utils.taxon_identity import TaxonIdentity
+
+    identity = TaxonIdentity.from_row(observation)
+    if identity.is_proven_sporely or identity.is_cloud_selected_unverified:
+        return identity.sporely_taxon_id
+    try:
+        selected = int((observation or {}).get("selected_sporely_taxon_id"))
+    except (TypeError, ValueError):
+        return None
+    return selected if selected > 0 else None
+
+
+def _national_display_scientific_name(
+    observation: dict | None,
+    genus: str | None,
+    species: str | None,
+    display_names: dict[int, tuple[str, str]],
+) -> str | None:
+    """The national scientific name to show instead of the recorded one.
+
+    Taxonomy-v3 Stage 3P: in a Norwegian (later Swedish) UI a concept with a
+    reviewed national identity displays that checklist's accepted name. Only
+    when the row names the concept (see :func:`_display_taxon_id`) AND the
+    recorded name is the concept's canonical name — an observer's own choice
+    of a synonym, variety or aggregate stays as recorded. Display only: the
+    stored snapshot and identity are never changed. ``display_names`` is
+    ``VernacularDB.display_scientific_names`` output, which holds only
+    concepts present in the installed taxonomy.
+    """
+    taxon_id = _display_taxon_id(observation)
+    if taxon_id is None:
+        return None
+    entry = display_names.get(taxon_id)
+    if not entry:
+        return None
+    canonical, display = entry
+    if not display or display == canonical:
+        return None
+    recorded = (
+        str((observation or {}).get("scientific_name_snapshot") or "").strip()
+        or f"{(genus or '').strip()} {(species or '').strip()}".strip()
+    )
+    return display if recorded == canonical else None
+
+
+def _build_display_scientific_name_map(
+    vernacular_db, observations: list[dict],
+) -> dict[int, tuple[str, str]]:
+    """Batch the concepts' display names for the table's name column."""
+    if vernacular_db is None or not hasattr(vernacular_db, "display_scientific_names"):
+        return {}
+    ids = {
+        taxon_id for taxon_id in (_display_taxon_id(obs) for obs in observations or [])
+        if taxon_id is not None
+    }
+    if not ids:
+        return {}
+    try:
+        return vernacular_db.display_scientific_names(ids)
+    except Exception:
+        return {}
+
+
 def _spore_count_for_observation_row(observation: dict | None) -> str | None:
     if not isinstance(observation, dict):
         return None
@@ -3029,6 +3104,9 @@ class ObservationsTab(QWidget):
 
     def _build_cloud_observation_table_rows_cache(self, remote_rows: list[dict]) -> list[dict]:
         rows: list[dict] = []
+        display_name_map = _build_display_scientific_name_map(
+            getattr(self, "_table_vernacular_db", None), remote_rows or [],
+        )
         for obs in remote_rows or []:
             genus_raw, species_raw, species_guess = resolve_observation_taxon_fields(
                 obs.get("genus"),
@@ -3040,16 +3118,19 @@ class ObservationsTab(QWidget):
             species_raw = species_raw or ""
             species_guess = species_guess or ""
             common_name_value = (obs.get("common_name") or "").strip()
+            display_scientific = _national_display_scientific_name(
+                obs, genus_raw, species_raw, display_name_map,
+            ) or obs.get("scientific_name_snapshot")
             common_name = _format_observation_display_label(
                 common_name_value,
                 genus_raw,
                 species_raw,
                 species_guess_fallback=species_guess,
-                scientific_name_snapshot=obs.get("scientific_name_snapshot"),
+                scientific_name_snapshot=display_scientific,
             )
             if not common_name_value:
                 fallback_scientific = (
-                    (obs.get("scientific_name_snapshot") or "").strip()
+                    (display_scientific or "").strip()
                     or f"{genus_raw} {species_raw}".strip()
                     or species_guess
                 )
@@ -5805,6 +5886,9 @@ class ObservationsTab(QWidget):
 
     def _build_observation_table_rows_cache(self, observations: list[dict]) -> list[dict]:
         common_name_map = self._build_common_name_map(observations)
+        display_name_map = _build_display_scientific_name_map(
+            getattr(self, "_table_vernacular_db", None), observations,
+        )
         recent_cloud_ids = self._recent_cloud_import_ids()
         observation_ids: list[int] = []
         for obs in observations:
@@ -5841,16 +5925,19 @@ class ObservationsTab(QWidget):
             species_display = species_raw or species_guess or "sp."
 
             common_name = self._lookup_common_name(obs, common_name_map)
+            display_scientific = _national_display_scientific_name(
+                obs, genus_raw, species_raw, display_name_map,
+            ) or obs.get("scientific_name_snapshot")
             common_name_display = _format_observation_display_label(
                 common_name,
                 genus_raw,
                 species_raw,
                 species_guess_fallback=species_guess,
-                scientific_name_snapshot=obs.get("scientific_name_snapshot"),
+                scientific_name_snapshot=display_scientific,
             )
             if not common_name:
                 fallback_scientific = (
-                    (obs.get("scientific_name_snapshot") or "").strip()
+                    (display_scientific or "").strip()
                     or f"{genus_raw} {species_raw}".strip()
                     or species_guess
                 )
@@ -19761,11 +19848,23 @@ class ObservationDetailsDialog(GeometryMixin, QDialog):
             return
         link_kind = (snapshot or {}).get("link_kind") or ""
         canonical = (snapshot or {}).get("canonical_scientific_name") or ""
-        if link_kind == "synonym_of_accepted" and canonical:
-            label.setText(self.tr("Accepted concept: {name}").format(name=canonical))
+        picked = str((snapshot or {}).get("scientific_name") or "").strip()
+        # Name the concept as it is displayed in the UI language: its
+        # national preferred scientific name where one exists (taxonomy-v3
+        # Stage 3P), else the canonical name. Display only.
+        concept = canonical
+        try:
+            display = self._ensure_taxon_lookup().display_scientific_name(
+                (snapshot or {}).get("sporely_taxon_id"))
+        except Exception:
+            display = None
+        if display:
+            concept = display
+        if link_kind in ("synonym_of_accepted", "canonical") and concept and concept != picked:
+            label.setText(self.tr("Accepted concept: {name}").format(name=concept))
             label.setVisible(True)
-        elif link_kind == "linked" and canonical:
-            label.setText(self.tr("Linked concept: {name}").format(name=canonical))
+        elif link_kind == "linked" and concept and concept != picked:
+            label.setText(self.tr("Linked concept: {name}").format(name=concept))
             label.setVisible(True)
         else:
             label.setText("")
