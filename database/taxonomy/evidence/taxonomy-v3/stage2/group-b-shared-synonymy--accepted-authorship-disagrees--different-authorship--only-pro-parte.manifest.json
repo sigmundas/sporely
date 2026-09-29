@@ -27,6 +27,7 @@
   "col_vernacular_languages",
   "col_twins_of_nortaxa_concept",
   "nortaxa_twins_of_col_concept",
+  "one_to_one",
   "accepted_authorship_difference",
   "bridge_accepted_name",
   "backbone_accepted_name",
@@ -39,6 +40,7 @@
   "backbone_synonym_count",
   "shared_synonym_kind_counts",
   "shared_synonym_evidence",
+  "review_class",
   "authorship_sub_class"
  ],
  "evidence_class": "shared_synonymy",
@@ -62,6 +64,7 @@
    [],
    1,
    1,
+   true,
    "different_authorship",
    "Inocybe vulpinella Bruylants",
    "Inocybe vulpinella Bruyl.",
@@ -80,6 +83,7 @@
    [
     "pro_parte: col col:status=ambiguous synonym [col col:status=ambiguous synonym, nortaxa nomenclaturalStatus=illegitimate, nortaxa taxonomicStatus=synonym, col source=2073 merged=false]"
    ],
+   "accepted_authorship_disagrees",
    "different_authorship--only_pro_parte"
   ],
   [
@@ -102,6 +106,7 @@
    [],
    1,
    1,
+   true,
    "different_authorship",
    "Tricholoma batschii Mort. Chr. & Noordel.",
    "Tricholoma batschii Gulden ex Mort. Chr. & Noordel.",
@@ -120,6 +125,7 @@
    [
     "pro_parte: col col:status=ambiguous synonym [col col:status=ambiguous synonym, nortaxa nomenclaturalStatus=illegitimate, nortaxa taxonomicStatus=synonym, col source=2073 merged=false]"
    ],
+   "accepted_authorship_disagrees",
    "different_authorship--only_pro_parte"
   ],
   [
@@ -138,6 +144,7 @@
    [],
    1,
    1,
+   true,
    "different_authorship",
    "Xenasma pulverulentum (Litsch.) Donk",
    "Xenasma pulverulentum (H.S. Jacks.) Donk",
@@ -156,6 +163,7 @@
    [
     "pro_parte: col col:status=ambiguous synonym [col col:status=ambiguous synonym, nortaxa nomenclaturalStatus=illegitimate, nortaxa taxonomicStatus=synonym, col source=2073 merged=false]"
    ],
+   "accepted_authorship_disagrees",
    "different_authorship--only_pro_parte"
   ],
   [
@@ -173,6 +181,7 @@
    [],
    1,
    1,
+   true,
    "different_authorship",
    "Scytinium schraderi (Bernh.) Otálora et al.",
    "Scytinium schraderi (Ach.) Otálora, P.M. Jørg. & Wedin",
@@ -191,6 +200,7 @@
    [
     "pro_parte: col col:status=ambiguous synonym [col col:status=ambiguous synonym, nortaxa nomenclaturalStatus=illegitimate, nortaxa taxonomicStatus=synonym, col source=2073 merged=false]"
    ],
+   "accepted_authorship_disagrees",
    "different_authorship--only_pro_parte"
   ],
   [
@@ -211,6 +221,7 @@
    [],
    1,
    1,
+   true,
    "different_authorship",
    "Ephebe lanata (L.) Vainio",
    "Ephebe lanata (L.) Vain.",
@@ -229,6 +240,7 @@
    [
     "pro_parte: col col:status=ambiguous synonym [col col:status=ambiguous synonym, nortaxa nomenclaturalStatus=illegitimate, nortaxa taxonomicStatus=synonym, col source=2073 merged=false]"
    ],
+   "accepted_authorship_disagrees",
    "different_authorship--only_pro_parte"
   ],
   [
@@ -247,6 +259,7 @@
    [],
    1,
    1,
+   true,
    "different_authorship",
    "Polystigma fulvum DC.: Fr.",
    "Polystigma fulvum Pers. ex DC.",
@@ -265,6 +278,7 @@
    [
     "pro_parte: col col:status=ambiguous synonym [col col:status=ambiguous synonym, nortaxa nomenclaturalStatus=illegitimate, nortaxa taxonomicStatus=synonym, col source=2073 merged=false]"
    ],
+   "accepted_authorship_disagrees",
    "different_authorship--only_pro_parte"
   ],
   [
@@ -278,6 +292,7 @@
    [],
    1,
    1,
+   true,
    "different_authorship",
    "Paraleptosphaeria macrospora (Thüm.) Gruyter, Aveskamp & Verkley",
    "Paraleptosphaeria macrospora (Morthier) Gruyter, Aveskamp & Verkley",
@@ -296,6 +311,7 @@
    [
     "pro_parte: col col:status=ambiguous synonym [col col:status=ambiguous synonym, nortaxa nomenclaturalStatus=illegitimate, nortaxa taxonomicStatus=synonym, col source=2073 merged=false]"
    ],
+   "accepted_authorship_disagrees",
    "different_authorship--only_pro_parte"
   ],
   [
@@ -309,6 +325,7 @@
    [],
    1,
    1,
+   true,
    "different_authorship",
    "Xanthoparmelia eilifii Elix & Jen Johnston",
    "Xanthoparmelia eilifii Elix & J. Johnst.",
@@ -327,6 +344,7 @@
    [
     "pro_parte: col col:status=ambiguous synonym [col col:status=ambiguous synonym, nortaxa nomenclaturalStatus=illegitimate, nortaxa taxonomicStatus=synonym, col source=2073 merged=false]"
    ],
+   "accepted_authorship_disagrees",
    "different_authorship--only_pro_parte"
   ],
   [
@@ -340,6 +358,7 @@
    [],
    1,
    1,
+   true,
    "different_authorship",
    "Venturia aucupariae (Lasch) O. Rostr.",
    "Venturia aucupariae (Plowr.) Rostr.",
@@ -358,11 +377,12 @@
    [
     "pro_parte: col col:status=ambiguous synonym [col col:status=ambiguous synonym, nortaxa nomenclaturalStatus=illegitimate, nortaxa taxonomicStatus=synonym, col source=2073 merged=false]"
    ],
+   "accepted_authorship_disagrees",
    "different_authorship--only_pro_parte"
   ]
  ],
- "members_sha256": "223ebc9b2b6f5cda7baf1cfb372f81333f1f99b6b3447c9af6299fa1935c75f4",
- "membership_rule": "review class 'accepted_authorship_disagrees'; authorship difference 'different_authorship': none of the above: the accepted authorships name different authors or differ in a way no rule above reads (for example an abbreviation); and, read as if the accepted name keys agreed, review class 'only_pro_parte': every shared synonym is of kind 'pro_parte'",
+ "members_sha256": "13f39a56e142e2874090b1b3973075438a3490c1ec6ab9a7f5125a5c72900fc1",
+ "membership_rule": "review class 'accepted_authorship_disagrees'; authorship difference 'different_authorship': none of the above: the accepted authorships name different authors or differ in a way no rule above reads (for example an abbreviation); and, read as if the accepted name keys agreed, review class 'only_pro_parte': every shared synonym is of kind 'pro_parte'; and the pair is one-to-one (neither concept shares its name with another concept on the other side)",
  "nortaxa_col_source": {
   "col_source_id": "2030",
   "matched_on": "COL source/<id>.yaml title == NorTaxa eml.xml dataset title",
@@ -372,7 +392,7 @@
  "parent_manifest": {
   "evidence_class": "shared_synonymy",
   "member_count": 2032,
-  "members_sha256": "19083142abcfdb037e9372b7271cd9beb2749a01cc64a1490a19b60ddea9acd9"
+  "members_sha256": "85175ef8089819a66a4dadaa25b24354aef519990deee342d41707b2efa68fd2"
  },
  "pins": {
   "bridge_emission_policy": {

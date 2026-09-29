@@ -27,6 +27,7 @@
   "col_vernacular_languages",
   "col_twins_of_nortaxa_concept",
   "nortaxa_twins_of_col_concept",
+  "one_to_one",
   "accepted_authorship_difference",
   "bridge_accepted_name",
   "backbone_accepted_name",
@@ -39,6 +40,7 @@
   "backbone_synonym_count",
   "shared_synonym_kind_counts",
   "shared_synonym_evidence",
+  "review_class",
   "authorship_sub_class"
  ],
  "evidence_class": "shared_synonymy",
@@ -62,6 +64,7 @@
    [],
    1,
    1,
+   true,
    "sanctioning_citation",
    "Galerina mniophila (Lasch : Fr.) Kühner",
    "Galerina mniophila (Lasch) Kühner",
@@ -80,6 +83,7 @@
    [
     "name_variant: near-spelling of accepted 'galerina mniophila' [col col:nameStatus=unacceptable, col col:status=synonym, nortaxa nomenclaturalStatus=illegitimate, nortaxa taxonomicStatus=synonym, col source=2030 merged=true]"
    ],
+   "accepted_authorship_disagrees",
    "sanctioning_citation--only_name_variant"
   ],
   [
@@ -101,6 +105,7 @@
    [],
    1,
    1,
+   true,
    "sanctioning_citation",
    "Galerina sphagnorum (Pers. : Fr.) Kühner",
    "Galerina sphagnorum (Pers.) Kühner",
@@ -119,6 +124,7 @@
    [
     "name_variant: near-spelling of accepted 'galerina sphagnorum' [col col:nameStatus=unacceptable, col col:status=synonym, nortaxa nomenclaturalStatus=illegitimate, nortaxa taxonomicStatus=synonym, col source=2030 merged=true]"
    ],
+   "accepted_authorship_disagrees",
    "sanctioning_citation--only_name_variant"
   ],
   [
@@ -135,6 +141,7 @@
    [],
    1,
    1,
+   true,
    "sanctioning_citation",
    "Sphaerosporella brunnea (Alb. & Schwein. : Fr.) Svrček & Kubička",
    "Sphaerosporella brunnea (Alb. & Schwein.) Svrček & Kubička",
@@ -153,11 +160,12 @@
    [
     "name_variant: near-spelling of accepted 'sphaerosporella brunnea' [col col:nameStatus=unacceptable, col col:status=synonym, nortaxa nomenclaturalStatus=illegitimate, nortaxa taxonomicStatus=synonym, col source=2030 merged=true]"
    ],
+   "accepted_authorship_disagrees",
    "sanctioning_citation--only_name_variant"
   ]
  ],
- "members_sha256": "281ab3230cfc846818aaf1ec261a9f480be84e488f34d33b66a6ef78bdb616af",
- "membership_rule": "review class 'accepted_authorship_disagrees'; authorship difference 'sanctioning_citation': the accepted authorships are equal after also removing a sanctioning citation (':' and the author after it, before a closing parenthesis or at the end), as in '(Pers. : Fr.) Boud.' against '(Pers.) Boud.'; and, read as if the accepted name keys agreed, review class 'only_name_variant': every shared synonym is of kind 'name_variant'",
+ "members_sha256": "6589aa495d7baeb0e71582d696e365dce768cc6d07a7ebe82af2460425235deb",
+ "membership_rule": "review class 'accepted_authorship_disagrees'; authorship difference 'sanctioning_citation': the accepted authorships are equal after also removing a sanctioning citation (':' and the author after it, before a closing parenthesis or at the end), as in '(Pers. : Fr.) Boud.' against '(Pers.) Boud.'; and, read as if the accepted name keys agreed, review class 'only_name_variant': every shared synonym is of kind 'name_variant'; and the pair is one-to-one (neither concept shares its name with another concept on the other side)",
  "nortaxa_col_source": {
   "col_source_id": "2030",
   "matched_on": "COL source/<id>.yaml title == NorTaxa eml.xml dataset title",
@@ -167,7 +175,7 @@
  "parent_manifest": {
   "evidence_class": "shared_synonymy",
   "member_count": 2032,
-  "members_sha256": "19083142abcfdb037e9372b7271cd9beb2749a01cc64a1490a19b60ddea9acd9"
+  "members_sha256": "85175ef8089819a66a4dadaa25b24354aef519990deee342d41707b2efa68fd2"
  },
  "pins": {
   "bridge_emission_policy": {

@@ -27,6 +27,7 @@
   "col_vernacular_languages",
   "col_twins_of_nortaxa_concept",
   "nortaxa_twins_of_col_concept",
+  "one_to_one",
   "accepted_authorship_difference",
   "bridge_accepted_name",
   "backbone_accepted_name",
@@ -39,6 +40,7 @@
   "backbone_synonym_count",
   "shared_synonym_kind_counts",
   "shared_synonym_evidence",
+  "review_class",
   "authorship_sub_class"
  ],
  "evidence_class": "shared_synonymy",
@@ -63,6 +65,7 @@
    [],
    1,
    1,
+   true,
    "different_authorship",
    "Geoglossum cookeanum Nannf.",
    "Geoglossum cookeanum Nannf. ex Minter & P.F. Cannon",
@@ -81,6 +84,7 @@
    [
     "not_validly_published: col col:nameStatus=not established [col col:nameStatus=not established, col col:status=synonym, nortaxa nomenclaturalStatus=illegitimate, nortaxa taxonomicStatus=synonym, col source=2041 merged=true]"
    ],
+   "accepted_authorship_disagrees",
    "different_authorship--only_not_validly_published"
   ],
   [
@@ -104,6 +108,7 @@
    [],
    1,
    1,
+   true,
    "different_authorship",
    "Sarcoscypha austriaca (O. Beck ex Sacc.) Boud.",
    "Sarcoscypha austriaca (Beck ex Sacc.) Boud.",
@@ -122,6 +127,7 @@
    [
     "not_validly_published: nortaxa nomenclaturalStatus=notvalidlypublished [col col:status=synonym, nortaxa nomenclaturalStatus=notvalidlypublished, nortaxa taxonomicStatus=synonym, col source=2030 merged=true]"
    ],
+   "accepted_authorship_disagrees",
    "different_authorship--only_not_validly_published"
   ],
   [
@@ -135,6 +141,7 @@
    [],
    1,
    1,
+   true,
    "different_authorship",
    "Bryoria cervinula Brodo & D. Hawksw.",
    "Bryoria cervinula Motyka ex Brodo & D. Hawksw.",
@@ -155,11 +162,12 @@
     "not_validly_published: authorship 'nom. inval' [col col:nameStatus=unacceptable, col col:status=synonym, nortaxa nomenclaturalStatus=illegitimate, nortaxa taxonomicStatus=synonym, col source=2030 merged=true]",
     "not_validly_published: authorship 'nom. inval' [col col:nameStatus=unacceptable, col col:status=synonym, nortaxa nomenclaturalStatus=illegitimate, nortaxa taxonomicStatus=synonym, col source=2030 merged=true]"
    ],
+   "accepted_authorship_disagrees",
    "different_authorship--only_not_validly_published"
   ]
  ],
- "members_sha256": "b386715261c1603e8160d2e1444f56cc12465d578bfef6b50218f2100662e941",
- "membership_rule": "review class 'accepted_authorship_disagrees'; authorship difference 'different_authorship': none of the above: the accepted authorships name different authors or differ in a way no rule above reads (for example an abbreviation); and, read as if the accepted name keys agreed, review class 'only_not_validly_published': every shared synonym is of kind 'not_validly_published'",
+ "members_sha256": "e640ff2566d15b9d9f7194bdfea751e48cfb9a4460ebf44a13db845ef102b81c",
+ "membership_rule": "review class 'accepted_authorship_disagrees'; authorship difference 'different_authorship': none of the above: the accepted authorships name different authors or differ in a way no rule above reads (for example an abbreviation); and, read as if the accepted name keys agreed, review class 'only_not_validly_published': every shared synonym is of kind 'not_validly_published'; and the pair is one-to-one (neither concept shares its name with another concept on the other side)",
  "nortaxa_col_source": {
   "col_source_id": "2030",
   "matched_on": "COL source/<id>.yaml title == NorTaxa eml.xml dataset title",
@@ -169,7 +177,7 @@
  "parent_manifest": {
   "evidence_class": "shared_synonymy",
   "member_count": 2032,
-  "members_sha256": "19083142abcfdb037e9372b7271cd9beb2749a01cc64a1490a19b60ddea9acd9"
+  "members_sha256": "85175ef8089819a66a4dadaa25b24354aef519990deee342d41707b2efa68fd2"
  },
  "pins": {
   "bridge_emission_policy": {

@@ -27,6 +27,7 @@
   "col_vernacular_languages",
   "col_twins_of_nortaxa_concept",
   "nortaxa_twins_of_col_concept",
+  "one_to_one",
   "accepted_authorship_difference",
   "bridge_accepted_name",
   "backbone_accepted_name",
@@ -39,6 +40,7 @@
   "backbone_synonym_count",
   "shared_synonym_kind_counts",
   "shared_synonym_evidence",
+  "review_class",
   "authorship_sub_class"
  ],
  "evidence_class": "shared_synonymy",
@@ -63,6 +65,7 @@
    [],
    1,
    1,
+   true,
    "sanctioning_citation",
    "Hohenbuehelia atrocoerulea (Fr. : Fr.) Singer",
    "Hohenbuehelia atrocoerulea (Fr.) Singer",
@@ -84,6 +87,7 @@
     "interpretation_qualified: authorship 'ss.' [col col:nameStatus=unacceptable, col col:status=synonym, nortaxa nomenclaturalStatus=illegitimate, nortaxa taxonomicStatus=synonym, col source=2030 merged=true]",
     "nortaxa_derived: every COL usage has col:sourceID 2030 (RPMJX, clb:merged=true) [col col:nameStatus=unacceptable, col col:status=synonym, nortaxa nomenclaturalStatus=illegitimate, nortaxa taxonomicStatus=synonym, col source=2030 merged=true]"
    ],
+   "accepted_authorship_disagrees",
    "sanctioning_citation--only_mixed_weak"
   ],
   [
@@ -104,6 +108,7 @@
    [],
    1,
    1,
+   true,
    "sanctioning_citation",
    "Corticium roseum Pers. : Fr.",
    "Corticium roseum Pers.",
@@ -125,6 +130,7 @@
     "pro_parte: col col:status=ambiguous synonym [col col:status=ambiguous synonym, nortaxa nomenclaturalStatus=illegitimate, nortaxa taxonomicStatus=synonym, col source=2073 merged=false]",
     "nortaxa_derived: every COL usage has col:sourceID 2030 (TCJ3V, clb:merged=true) [col col:nameStatus=unacceptable, col col:status=synonym, nortaxa nomenclaturalStatus=illegitimate, nortaxa taxonomicStatus=synonym, col source=2030 merged=true]"
    ],
+   "accepted_authorship_disagrees",
    "sanctioning_citation--only_mixed_weak"
   ],
   [
@@ -148,6 +154,7 @@
    [],
    1,
    1,
+   true,
    "sanctioning_citation",
    "Trametes suaveolens (L. : Fr.) Fr.",
    "Trametes suaveolens (L.) Fr.",
@@ -171,6 +178,7 @@
     "nortaxa_derived: every COL usage has col:sourceID 2030 (RQQYS, clb:merged=true) [col col:nameStatus=unacceptable, col col:status=synonym, nortaxa nomenclaturalStatus=illegitimate, nortaxa taxonomicStatus=synonym, col source=2030 merged=true]",
     "nortaxa_derived: every COL usage has col:sourceID 2030 (RSKD6, clb:merged=true) [col col:nameStatus=unacceptable, col col:status=synonym, nortaxa nomenclaturalStatus=illegitimate, nortaxa taxonomicStatus=synonym, col source=2030 merged=true]"
    ],
+   "accepted_authorship_disagrees",
    "sanctioning_citation--only_mixed_weak"
   ],
   [
@@ -188,6 +196,7 @@
    [],
    1,
    1,
+   true,
    "sanctioning_citation",
    "Trametes versicolor (L. : Fr.) Lloyd",
    "Trametes versicolor (L.) Lloyd",
@@ -209,6 +218,7 @@
     "pro_parte: col col:status=ambiguous synonym [col col:status=ambiguous synonym, nortaxa taxonomicStatus=synonym, col source=2073 merged=false]",
     "nortaxa_derived: every COL usage has col:sourceID 2030 (RSKDL, clb:merged=true) [col col:nameStatus=unacceptable, col col:status=synonym, nortaxa nomenclaturalStatus=illegitimate, nortaxa taxonomicStatus=synonym, col source=2030 merged=true]"
    ],
+   "accepted_authorship_disagrees",
    "sanctioning_citation--only_mixed_weak"
   ],
   [
@@ -231,6 +241,7 @@
    [],
    1,
    1,
+   true,
    "sanctioning_citation",
    "Peziza varia (Hedw.: Fr.) Alb. & Schwein.",
    "Peziza varia (Hedw.) Alb. & Schwein.",
@@ -254,6 +265,7 @@
     "nortaxa_derived: every COL usage has col:sourceID 2030 (VKYX8, clb:merged=true) [col col:nameStatus=unacceptable, col col:status=synonym, nortaxa nomenclaturalStatus=illegitimate, nortaxa taxonomicStatus=synonym, col source=2030 merged=true]",
     "unauthored: empty authorship [col col:nameStatus=unacceptable, col col:status=synonym, nortaxa nomenclaturalStatus=illegitimate, nortaxa taxonomicStatus=synonym, col source=2030 merged=true]"
    ],
+   "accepted_authorship_disagrees",
    "sanctioning_citation--only_mixed_weak"
   ],
   [
@@ -277,6 +289,7 @@
    [],
    1,
    1,
+   true,
    "sanctioning_citation",
    "Scutellinia scutellata (L. : Fr.) Lambotte",
    "Scutellinia scutellata (L.) Lambotte",
@@ -298,6 +311,7 @@
     "unauthored: empty authorship [col col:nameStatus=unacceptable, col col:status=synonym, nortaxa nomenclaturalStatus=illegitimate, nortaxa taxonomicStatus=synonym, col source=2030 merged=true]",
     "pro_parte: col col:status=ambiguous synonym [col col:status=ambiguous synonym, nortaxa nomenclaturalStatus=illegitimate, nortaxa taxonomicStatus=synonym, col source=2073 merged=false]"
    ],
+   "accepted_authorship_disagrees",
    "sanctioning_citation--only_mixed_weak"
   ],
   [
@@ -311,6 +325,7 @@
    [],
    1,
    1,
+   true,
    "sanctioning_citation",
    "Gnomoniella tubaeformis (Tode: Fr.) Sacc.",
    "Gnomoniella tubaeformis (Tode) Sacc.",
@@ -332,11 +347,12 @@
     "nortaxa_derived: every COL usage has col:sourceID 2030 (NGX4Q, clb:merged=true) [col col:nameStatus=unacceptable, col col:status=synonym, nortaxa nomenclaturalStatus=illegitimate, nortaxa taxonomicStatus=synonym, col source=2030 merged=true]",
     "orthographic_variant: nortaxa nomenclaturalStatus=orthographic [col col:nameStatus=not established, col col:status=synonym, nortaxa nomenclaturalStatus=orthographic, nortaxa taxonomicStatus=synonym, col source=2030 merged=true]"
    ],
+   "accepted_authorship_disagrees",
    "sanctioning_citation--only_mixed_weak"
   ]
  ],
- "members_sha256": "039b04a35606f586727a0924c7f58dd3d21713a7b59e62ec9e4cc0df396ca413",
- "membership_rule": "review class 'accepted_authorship_disagrees'; authorship difference 'sanctioning_citation': the accepted authorships are equal after also removing a sanctioning citation (':' and the author after it, before a closing parenthesis or at the end), as in '(Pers. : Fr.) Boud.' against '(Pers.) Boud.'; and, read as if the accepted name keys agreed, review class 'only_mixed_weak': no shared synonym is of kind 'ordinary', and they are not all of one kind",
+ "members_sha256": "5716d8be657475416ecee409e0fc3ec41f6d88ab2b08d466062004e230043263",
+ "membership_rule": "review class 'accepted_authorship_disagrees'; authorship difference 'sanctioning_citation': the accepted authorships are equal after also removing a sanctioning citation (':' and the author after it, before a closing parenthesis or at the end), as in '(Pers. : Fr.) Boud.' against '(Pers.) Boud.'; and, read as if the accepted name keys agreed, review class 'only_mixed_weak': no shared synonym is of kind 'ordinary', and they are not all of one kind; and the pair is one-to-one (neither concept shares its name with another concept on the other side)",
  "nortaxa_col_source": {
   "col_source_id": "2030",
   "matched_on": "COL source/<id>.yaml title == NorTaxa eml.xml dataset title",
@@ -346,7 +362,7 @@
  "parent_manifest": {
   "evidence_class": "shared_synonymy",
   "member_count": 2032,
-  "members_sha256": "19083142abcfdb037e9372b7271cd9beb2749a01cc64a1490a19b60ddea9acd9"
+  "members_sha256": "85175ef8089819a66a4dadaa25b24354aef519990deee342d41707b2efa68fd2"
  },
  "pins": {
   "bridge_emission_policy": {

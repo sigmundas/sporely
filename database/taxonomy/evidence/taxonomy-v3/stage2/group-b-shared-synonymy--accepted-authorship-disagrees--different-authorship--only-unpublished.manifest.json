@@ -27,6 +27,7 @@
   "col_vernacular_languages",
   "col_twins_of_nortaxa_concept",
   "nortaxa_twins_of_col_concept",
+  "one_to_one",
   "accepted_authorship_difference",
   "bridge_accepted_name",
   "backbone_accepted_name",
@@ -39,6 +40,7 @@
   "backbone_synonym_count",
   "shared_synonym_kind_counts",
   "shared_synonym_evidence",
+  "review_class",
   "authorship_sub_class"
  ],
  "evidence_class": "shared_synonymy",
@@ -62,6 +64,7 @@
    [],
    1,
    1,
+   true,
    "different_authorship",
    "Nephroma bellum (Sprengel) Tuck.",
    "Nephroma bellum (Spreng.) Tuck.",
@@ -80,6 +83,7 @@
    [
     "unpublished: authorship 'ined' [col col:nameStatus=unacceptable, col col:status=synonym, nortaxa nomenclaturalStatus=illegitimate, nortaxa taxonomicStatus=synonym, col source=2030 merged=true]"
    ],
+   "accepted_authorship_disagrees",
    "different_authorship--only_unpublished"
   ],
   [
@@ -95,6 +99,7 @@
    [],
    1,
    1,
+   true,
    "different_authorship",
    "Caloplaca ahtii Söchting",
    "Caloplaca ahtii Søchting",
@@ -113,6 +118,7 @@
    [
     "unpublished: col col:nameStatus=manuscript [col col:nameStatus=manuscript, col col:status=synonym, nortaxa taxonomicStatus=synonym, col source=2030 merged=true]"
    ],
+   "accepted_authorship_disagrees",
    "different_authorship--only_unpublished"
   ],
   [
@@ -126,6 +132,7 @@
    [],
    1,
    1,
+   true,
    "different_authorship",
    "Cetraria australiensis Kärnef.",
    "Cetraria australiensis W.A. Weber ex Kärnefelt",
@@ -144,6 +151,7 @@
    [
     "unpublished: authorship 'ined' [col col:nameStatus=unacceptable, col col:status=synonym, nortaxa nomenclaturalStatus=illegitimate, nortaxa taxonomicStatus=synonym, col source=2030 merged=true]"
    ],
+   "accepted_authorship_disagrees",
    "different_authorship--only_unpublished"
   ],
   [
@@ -157,6 +165,7 @@
    [],
    1,
    1,
+   true,
    "different_authorship",
    "Flavoparmelia secalonica Elix & Johnston",
    "Flavoparmelia secalonica Elix & J. Johnst.",
@@ -175,6 +184,7 @@
    [
     "unpublished: authorship 'nom. herb' [col col:nameStatus=unacceptable, col col:status=synonym, nortaxa nomenclaturalStatus=illegitimate, nortaxa taxonomicStatus=synonym, col source=2030 merged=true]"
    ],
+   "accepted_authorship_disagrees",
    "different_authorship--only_unpublished"
   ],
   [
@@ -188,6 +198,7 @@
    [],
    1,
    1,
+   true,
    "different_authorship",
    "Pseudocyphellaria dissimilis (Nyl.) D. Galloway & James",
    "Pseudocyphellaria dissimilis (Nyl.) D.J. Galloway & P. James",
@@ -206,11 +217,12 @@
    [
     "unpublished: authorship 'ined' [col col:nameStatus=unacceptable, col col:status=synonym, nortaxa nomenclaturalStatus=illegitimate, nortaxa taxonomicStatus=synonym, col source=2030 merged=true]"
    ],
+   "accepted_authorship_disagrees",
    "different_authorship--only_unpublished"
   ]
  ],
- "members_sha256": "39670e16133cab5eda0c5a3d3e1c2268810d8bee8f22aa5163a4740ec9f4266e",
- "membership_rule": "review class 'accepted_authorship_disagrees'; authorship difference 'different_authorship': none of the above: the accepted authorships name different authors or differ in a way no rule above reads (for example an abbreviation); and, read as if the accepted name keys agreed, review class 'only_unpublished': every shared synonym is of kind 'unpublished'",
+ "members_sha256": "0c3c2f65a1773ecb2a6e938e4a4a067243bdc7b07a2d32bd66dc53b0c83c7d7e",
+ "membership_rule": "review class 'accepted_authorship_disagrees'; authorship difference 'different_authorship': none of the above: the accepted authorships name different authors or differ in a way no rule above reads (for example an abbreviation); and, read as if the accepted name keys agreed, review class 'only_unpublished': every shared synonym is of kind 'unpublished'; and the pair is one-to-one (neither concept shares its name with another concept on the other side)",
  "nortaxa_col_source": {
   "col_source_id": "2030",
   "matched_on": "COL source/<id>.yaml title == NorTaxa eml.xml dataset title",
@@ -220,7 +232,7 @@
  "parent_manifest": {
   "evidence_class": "shared_synonymy",
   "member_count": 2032,
-  "members_sha256": "19083142abcfdb037e9372b7271cd9beb2749a01cc64a1490a19b60ddea9acd9"
+  "members_sha256": "85175ef8089819a66a4dadaa25b24354aef519990deee342d41707b2efa68fd2"
  },
  "pins": {
   "bridge_emission_policy": {

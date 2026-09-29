@@ -27,6 +27,7 @@
   "col_vernacular_languages",
   "col_twins_of_nortaxa_concept",
   "nortaxa_twins_of_col_concept",
+  "one_to_one",
   "accepted_authorship_difference",
   "bridge_accepted_name",
   "backbone_accepted_name",
@@ -39,6 +40,7 @@
   "backbone_synonym_count",
   "shared_synonym_kind_counts",
   "shared_synonym_evidence",
+  "review_class",
   "authorship_sub_class"
  ],
  "evidence_class": "shared_synonymy",
@@ -58,6 +60,7 @@
    [],
    1,
    1,
+   true,
    "sanctioning_citation",
    "Cortinarius subferrugineus (Batsch : Fr.) Fr.",
    "Cortinarius subferrugineus (Batsch) Fr.",
@@ -76,6 +79,7 @@
    [
     "unauthored: empty authorship [col col:nameStatus=unacceptable, col col:status=synonym, nortaxa nomenclaturalStatus=illegitimate, nortaxa taxonomicStatus=synonym, col source=2030 merged=true]"
    ],
+   "accepted_authorship_disagrees",
    "sanctioning_citation--only_unauthored"
   ],
   [
@@ -94,6 +98,7 @@
    [],
    1,
    1,
+   true,
    "sanctioning_citation",
    "Entoloma elodes (Fr. : Fr.) P. Kumm.",
    "Entoloma elodes (Fr.) P. Kumm.",
@@ -112,6 +117,7 @@
    [
     "unauthored: empty authorship [col col:nameStatus=unacceptable, col col:status=synonym, nortaxa nomenclaturalStatus=illegitimate, nortaxa taxonomicStatus=synonym, col source=2030 merged=true]"
    ],
+   "accepted_authorship_disagrees",
    "sanctioning_citation--only_unauthored"
   ],
   [
@@ -135,6 +141,7 @@
    [],
    1,
    1,
+   true,
    "sanctioning_citation",
    "Mycena haematopus (Pers. : Fr.) P. Kumm.",
    "Mycena haematopus (Pers.) P. Kumm.",
@@ -153,6 +160,7 @@
    [
     "unauthored: empty authorship [col col:nameStatus=unacceptable, col col:status=synonym, nortaxa nomenclaturalStatus=illegitimate, nortaxa taxonomicStatus=synonym, col source=2030 merged=true]"
    ],
+   "accepted_authorship_disagrees",
    "sanctioning_citation--only_unauthored"
   ],
   [
@@ -176,6 +184,7 @@
    [],
    1,
    1,
+   true,
    "sanctioning_citation",
    "Xylobolus frustulatus (Pers. : Fr.) P. Karst.",
    "Xylobolus frustulatus (Pers.) P. Karst.",
@@ -194,6 +203,7 @@
    [
     "unauthored: empty authorship [col col:nameStatus=unacceptable, col col:status=synonym, nortaxa nomenclaturalStatus=illegitimate, nortaxa taxonomicStatus=synonym, col source=2030 merged=true]"
    ],
+   "accepted_authorship_disagrees",
    "sanctioning_citation--only_unauthored"
   ],
   [
@@ -207,6 +217,7 @@
    [],
    1,
    1,
+   true,
    "sanctioning_citation",
    "Eutypella extensa (Fr. : Fr.) Sacc.",
    "Eutypella extensa (Fr.) Sacc.",
@@ -225,11 +236,12 @@
    [
     "unauthored: empty authorship [col col:nameStatus=unacceptable, col col:status=synonym, nortaxa nomenclaturalStatus=illegitimate, nortaxa taxonomicStatus=synonym, col source=2030 merged=true]"
    ],
+   "accepted_authorship_disagrees",
    "sanctioning_citation--only_unauthored"
   ]
  ],
- "members_sha256": "caa2ada868b924bb6dd649aafadb637134f6bb3dc7826a33aacc931a5a8f92a9",
- "membership_rule": "review class 'accepted_authorship_disagrees'; authorship difference 'sanctioning_citation': the accepted authorships are equal after also removing a sanctioning citation (':' and the author after it, before a closing parenthesis or at the end), as in '(Pers. : Fr.) Boud.' against '(Pers.) Boud.'; and, read as if the accepted name keys agreed, review class 'only_unauthored': every shared synonym is of kind 'unauthored'",
+ "members_sha256": "db99c1e8df6a8fcb1941e3c5b9b9f9fd3bced29af7e4d25db3a9f4561cc879ef",
+ "membership_rule": "review class 'accepted_authorship_disagrees'; authorship difference 'sanctioning_citation': the accepted authorships are equal after also removing a sanctioning citation (':' and the author after it, before a closing parenthesis or at the end), as in '(Pers. : Fr.) Boud.' against '(Pers.) Boud.'; and, read as if the accepted name keys agreed, review class 'only_unauthored': every shared synonym is of kind 'unauthored'; and the pair is one-to-one (neither concept shares its name with another concept on the other side)",
  "nortaxa_col_source": {
   "col_source_id": "2030",
   "matched_on": "COL source/<id>.yaml title == NorTaxa eml.xml dataset title",
@@ -239,7 +251,7 @@
  "parent_manifest": {
   "evidence_class": "shared_synonymy",
   "member_count": 2032,
-  "members_sha256": "19083142abcfdb037e9372b7271cd9beb2749a01cc64a1490a19b60ddea9acd9"
+  "members_sha256": "85175ef8089819a66a4dadaa25b24354aef519990deee342d41707b2efa68fd2"
  },
  "pins": {
   "bridge_emission_policy": {

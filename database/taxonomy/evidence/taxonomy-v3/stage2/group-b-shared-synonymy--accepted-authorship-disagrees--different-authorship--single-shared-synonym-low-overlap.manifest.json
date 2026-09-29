@@ -27,6 +27,7 @@
   "col_vernacular_languages",
   "col_twins_of_nortaxa_concept",
   "nortaxa_twins_of_col_concept",
+  "one_to_one",
   "accepted_authorship_difference",
   "bridge_accepted_name",
   "backbone_accepted_name",
@@ -39,6 +40,7 @@
   "backbone_synonym_count",
   "shared_synonym_kind_counts",
   "shared_synonym_evidence",
+  "review_class",
   "authorship_sub_class"
  ],
  "evidence_class": "shared_synonymy",
@@ -66,6 +68,7 @@
    [],
    1,
    1,
+   true,
    "different_authorship",
    "Leccinellum crocipodium (Letell.) Della Maggiora & Trassinelli",
    "Leccinellum crocipodium (Letell.) Della Magg. & Trassin.",
@@ -87,6 +90,7 @@
     "ordinary: none of the weak kinds [col col:status=synonym, nortaxa nomenclaturalStatus=illegitimate, nortaxa taxonomicStatus=synonym, col source=2073 merged=false]",
     "nortaxa_derived: every COL usage has col:sourceID 2030 (PT3GD, clb:merged=true) [col col:nameStatus=unacceptable, col col:status=synonym, nortaxa nomenclaturalStatus=illegitimate, nortaxa taxonomicStatus=synonym, col source=2030 merged=true]"
    ],
+   "accepted_authorship_disagrees",
    "different_authorship--single_shared_synonym_low_overlap"
   ],
   [
@@ -105,6 +109,7 @@
    [],
    1,
    1,
+   true,
    "different_authorship",
    "Sagaranella tylicolor (Fr.) V. Hofst., Clémençon, Moncalvo & Redhead.",
    "Sagaranella tylicolor (Fr.) V. Hofst., Clémençon, Moncalvo & Redhead",
@@ -126,6 +131,7 @@
     "nortaxa_derived: every COL usage has col:sourceID 2030 (MPLFW, clb:merged=true) [col col:nameStatus=unacceptable, col col:status=synonym, nortaxa nomenclaturalStatus=illegitimate, nortaxa taxonomicStatus=synonym, col source=2030 merged=true]",
     "ordinary: none of the weak kinds [col col:status=synonym, nortaxa nomenclaturalStatus=illegitimate, nortaxa taxonomicStatus=synonym, col source=2073 merged=false]"
    ],
+   "accepted_authorship_disagrees",
    "different_authorship--single_shared_synonym_low_overlap"
   ],
   [
@@ -148,6 +154,7 @@
    [],
    1,
    1,
+   true,
    "different_authorship",
    "Panaeolus semiovatus (Sowerby : Fr.) S. Lundell",
    "Panaeolus semiovatus (Sowerby) S. Lundell & Nannf.",
@@ -166,6 +173,7 @@
    [
     "ordinary: none of the weak kinds [col col:status=synonym, nortaxa nomenclaturalStatus=illegitimate, nortaxa taxonomicStatus=synonym, col source=2073 merged=false]"
    ],
+   "accepted_authorship_disagrees",
    "different_authorship--single_shared_synonym_low_overlap"
   ],
   [
@@ -192,6 +200,7 @@
    ],
    1,
    1,
+   true,
    "different_authorship",
    "Entoloma sericellum (Fr. : Fr.) P. Kumm. agg.",
    "Entoloma sericellum (Fr.) P. Kumm.",
@@ -213,6 +222,7 @@
     "nortaxa_derived: every COL usage has col:sourceID 2030 (NH6D4, clb:merged=true) [col col:nameStatus=unacceptable, col col:status=synonym, nortaxa nomenclaturalStatus=illegitimate, nortaxa taxonomicStatus=synonym, col source=2030 merged=true]",
     "ordinary: none of the weak kinds [col col:status=synonym, nortaxa nomenclaturalStatus=illegitimate, nortaxa taxonomicStatus=synonym, col source=2073 merged=false]"
    ],
+   "accepted_authorship_disagrees",
    "different_authorship--single_shared_synonym_low_overlap"
   ],
   [
@@ -233,6 +243,7 @@
    [],
    1,
    1,
+   true,
    "different_authorship",
    "Entoloma undatum (Fr.) M.M. Moser",
    "Entoloma undatum (Gillet) M.M. Moser",
@@ -254,6 +265,7 @@
     "nortaxa_derived: every COL usage has col:sourceID 2030 (N8TQW, clb:merged=true) [col col:nameStatus=unacceptable, col col:status=synonym, nortaxa nomenclaturalStatus=illegitimate, nortaxa taxonomicStatus=synonym, col source=2030 merged=true]",
     "ordinary: none of the weak kinds [col col:status=synonym, nortaxa nomenclaturalStatus=illegitimate, nortaxa taxonomicStatus=synonym, col source=2073 merged=false]"
    ],
+   "accepted_authorship_disagrees",
    "different_authorship--single_shared_synonym_low_overlap"
   ],
   [
@@ -278,6 +290,7 @@
    [],
    1,
    1,
+   true,
    "different_authorship",
    "Craterellus lutescens (Pers. : Fr.) Fr.",
    "Craterellus lutescens (Fr.) Fr.",
@@ -299,6 +312,7 @@
     "ordinary: none of the weak kinds [col col:status=synonym, nortaxa nomenclaturalStatus=illegitimate, nortaxa taxonomicStatus=synonym, col source=2073 merged=false]",
     "nortaxa_derived: every COL usage has col:sourceID 2030 (QNPPV, clb:merged=true) [col col:nameStatus=unacceptable, col col:status=synonym, nortaxa nomenclaturalStatus=illegitimate, nortaxa taxonomicStatus=synonym, col source=2030 merged=true]"
    ],
+   "accepted_authorship_disagrees",
    "different_authorship--single_shared_synonym_low_overlap"
   ],
   [
@@ -323,6 +337,7 @@
    [],
    1,
    1,
+   true,
    "different_authorship",
    "Tremella mesenterica Retz. : Fr.",
    "Tremella mesenterica (Schaeff.) Pers.",
@@ -341,6 +356,7 @@
    [
     "ordinary: none of the weak kinds [col col:status=synonym, nortaxa nomenclaturalStatus=illegitimate, nortaxa taxonomicStatus=synonym, col source=2073 merged=false]"
    ],
+   "accepted_authorship_disagrees",
    "different_authorship--single_shared_synonym_low_overlap"
   ],
   [
@@ -358,6 +374,7 @@
    [],
    1,
    1,
+   true,
    "different_authorship",
    "Bryobilimbia hypnorum (Lib.) Fryday et al.",
    "Bryobilimbia hypnorum (Lib.) Fryday, Printzen & S. Ekman",
@@ -388,6 +405,7 @@
     "unauthored: empty authorship [col col:status=synonym, nortaxa nomenclaturalStatus=illegitimate, nortaxa taxonomicStatus=synonym, col source=7888 merged=true]",
     "ordinary: none of the weak kinds [col col:status=synonym, nortaxa nomenclaturalStatus=illegitimate, nortaxa taxonomicStatus=synonym, col source=2073 merged=false]"
    ],
+   "accepted_authorship_disagrees",
    "different_authorship--single_shared_synonym_low_overlap"
   ],
   [
@@ -407,6 +425,7 @@
    [],
    1,
    1,
+   true,
    "different_authorship",
    "Bryoplaca jungermanniae (Vahl) Søchting et al.",
    "Bryoplaca jungermanniae (Vahl) Søchting, Frödén & Arup",
@@ -433,6 +452,7 @@
     "nortaxa_derived: every COL usage has col:sourceID 2030 (PRXKL, clb:merged=true) [col col:nameStatus=unacceptable, col col:status=synonym, nortaxa nomenclaturalStatus=illegitimate, nortaxa taxonomicStatus=synonym, col source=2030 merged=true]",
     "unauthored: empty authorship [col col:nameStatus=unacceptable, col col:status=synonym, nortaxa nomenclaturalStatus=illegitimate, nortaxa taxonomicStatus=synonym, col source=2030 merged=true]"
    ],
+   "accepted_authorship_disagrees",
    "different_authorship--single_shared_synonym_low_overlap"
   ],
   [
@@ -448,6 +468,7 @@
    [],
    1,
    1,
+   true,
    "different_authorship",
    "Circinaria caesiocinerea (Nyl. ex Malbr.) A.Nordin et al.",
    "Circinaria caesiocinerea (Nyl. ex Malbr.) A. Nordin, Savić & Tibell",
@@ -474,6 +495,7 @@
     "unauthored: empty authorship [col col:nameStatus=unacceptable, col col:status=synonym, nortaxa nomenclaturalStatus=illegitimate, nortaxa taxonomicStatus=synonym, col source=2030 merged=true]",
     "ordinary: none of the weak kinds [col col:nameStatus=acceptable, col col:status=synonym, nortaxa taxonomicStatus=synonym, col source=2041 merged=true]"
    ],
+   "accepted_authorship_disagrees",
    "different_authorship--single_shared_synonym_low_overlap"
   ],
   [
@@ -492,6 +514,7 @@
    [],
    1,
    1,
+   true,
    "different_authorship",
    "Lathagrium fuscovirens (With.) Otálora et al.",
    "Lathagrium fuscovirens (With.) Otálora, P.M. Jørg. & Wedin",
@@ -516,6 +539,7 @@
     "nortaxa_derived: every COL usage has col:sourceID 2030 (MN3BV, clb:merged=true) [col col:nameStatus=unacceptable, col col:status=synonym, nortaxa nomenclaturalStatus=illegitimate, nortaxa taxonomicStatus=synonym, col source=2030 merged=true]",
     "ordinary: none of the weak kinds [col col:status=synonym, nortaxa nomenclaturalStatus=illegitimate, nortaxa taxonomicStatus=synonym, col source=2073 merged=false]"
    ],
+   "accepted_authorship_disagrees",
    "different_authorship--single_shared_synonym_low_overlap"
   ],
   [
@@ -535,6 +559,7 @@
    [],
    1,
    1,
+   true,
    "different_authorship",
    "Scytinium tenuissimum (Dicks.) Otálora et al.",
    "Scytinium tenuissimum (Dicks.) Otálora, P.M. Jørg. & Wedin",
@@ -561,6 +586,7 @@
     "nortaxa_derived: every COL usage has col:sourceID 2030 (QCV3X, clb:merged=true) [col col:nameStatus=unacceptable, col col:status=synonym, nortaxa nomenclaturalStatus=illegitimate, nortaxa taxonomicStatus=synonym, col source=2030 merged=true]",
     "nortaxa_derived: every COL usage has col:sourceID 2030 (QCVW4, clb:merged=true) [col col:nameStatus=unacceptable, col col:status=synonym, nortaxa nomenclaturalStatus=illegitimate, nortaxa taxonomicStatus=synonym, col source=2030 merged=true]"
    ],
+   "accepted_authorship_disagrees",
    "different_authorship--single_shared_synonym_low_overlap"
   ],
   [
@@ -580,6 +606,7 @@
    [],
    1,
    1,
+   true,
    "different_authorship",
    "Variospora flavescens (Huds.) Arup et al.",
    "Variospora flavescens (Huds.) Arup, Frödén & Søchting",
@@ -603,6 +630,7 @@
     "nortaxa_derived: every COL usage has col:sourceID 2030 (S2KBG, clb:merged=true) [col col:nameStatus=unacceptable, col col:status=synonym, nortaxa nomenclaturalStatus=illegitimate, nortaxa taxonomicStatus=synonym, col source=2030 merged=true]",
     "ordinary: none of the weak kinds [col col:status=synonym, nortaxa nomenclaturalStatus=illegitimate, nortaxa taxonomicStatus=synonym, col source=2073 merged=false]"
    ],
+   "accepted_authorship_disagrees",
    "different_authorship--single_shared_synonym_low_overlap"
   ],
   [
@@ -619,6 +647,7 @@
    [],
    1,
    1,
+   true,
    "different_authorship",
    "Xylopsora caradocensis (Nyl.) Bendiksby & Timdal",
    "Xylopsora caradocensis (Leight. ex Nyl.) Bendiksby & Timdal",
@@ -640,6 +669,7 @@
     "ordinary: none of the weak kinds [col col:status=synonym, nortaxa nomenclaturalStatus=illegitimate, nortaxa taxonomicStatus=synonym, col source=2073 merged=false]",
     "unauthored: empty authorship [col col:nameStatus=unacceptable, col col:status=synonym, nortaxa nomenclaturalStatus=illegitimate, nortaxa taxonomicStatus=synonym, col source=2030 merged=true]"
    ],
+   "accepted_authorship_disagrees",
    "different_authorship--single_shared_synonym_low_overlap"
   ],
   [
@@ -655,6 +685,7 @@
    [],
    1,
    1,
+   true,
    "different_authorship",
    "Circinaria contorta (Hoffm.) A.Nordin et al.",
    "Circinaria contorta (Hoffm.) A. Nordin, Savić & Tibell",
@@ -676,6 +707,7 @@
     "nortaxa_derived: every COL usage has col:sourceID 2030 (PRNL8, clb:merged=true) [col col:nameStatus=unacceptable, col col:status=synonym, nortaxa nomenclaturalStatus=illegitimate, nortaxa taxonomicStatus=synonym, col source=2030 merged=true]",
     "ordinary: none of the weak kinds [col col:status=synonym, nortaxa nomenclaturalStatus=illegitimate, nortaxa taxonomicStatus=synonym, col source=2073 merged=false]"
    ],
+   "accepted_authorship_disagrees",
    "different_authorship--single_shared_synonym_low_overlap"
   ],
   [
@@ -691,6 +723,7 @@
    [],
    1,
    1,
+   true,
    "different_authorship",
    "Kiliasia pennina (Schaer.) Kistenich et al.",
    "Kiliasia pennina (Schaer.) Kistenich, Timdal, Bendiksby & S. Ekman",
@@ -722,6 +755,7 @@
     "ordinary: none of the weak kinds [col col:status=synonym, nortaxa taxonomicStatus=synonym, col source=2073 merged=false]",
     "unpublished: authorship 'nom. herb' [col col:nameStatus=unacceptable, col col:status=synonym, nortaxa nomenclaturalStatus=illegitimate, nortaxa taxonomicStatus=synonym, col source=2030 merged=true]"
    ],
+   "accepted_authorship_disagrees",
    "different_authorship--single_shared_synonym_low_overlap"
   ],
   [
@@ -737,6 +771,7 @@
    [],
    1,
    1,
+   true,
    "different_authorship",
    "Acarospora privigna (Ach.) Gotth. Schneid.",
    "Acarospora privigna (Ach.) A. Schneid.",
@@ -758,6 +793,7 @@
     "ordinary: none of the weak kinds [col col:status=synonym, nortaxa nomenclaturalStatus=illegitimate, nortaxa taxonomicStatus=synonym, col source=2073 merged=false]",
     "nortaxa_derived: every COL usage has col:sourceID 2030 (LYJVJ, clb:merged=true) [col col:nameStatus=unacceptable, col col:status=synonym, nortaxa nomenclaturalStatus=illegitimate, nortaxa taxonomicStatus=synonym, col source=2030 merged=true]"
    ],
+   "accepted_authorship_disagrees",
    "different_authorship--single_shared_synonym_low_overlap"
   ],
   [
@@ -778,6 +814,7 @@
    [],
    1,
    1,
+   true,
    "different_authorship",
    "Acarospora glaucocarpa (Ach.) Körber",
    "Acarospora glaucocarpa (Ach.) Arnold",
@@ -807,6 +844,7 @@
     "nortaxa_derived: every COL usage has col:sourceID 2030 (LY7RW, clb:merged=true) [col col:nameStatus=unacceptable, col col:status=synonym, nortaxa nomenclaturalStatus=illegitimate, nortaxa taxonomicStatus=synonym, col source=2030 merged=true]",
     "ordinary: none of the weak kinds [col col:status=synonym, nortaxa nomenclaturalStatus=illegitimate, nortaxa taxonomicStatus=synonym, col source=2073 merged=false]"
    ],
+   "accepted_authorship_disagrees",
    "different_authorship--single_shared_synonym_low_overlap"
   ],
   [
@@ -824,6 +862,7 @@
    [],
    1,
    1,
+   true,
    "different_authorship",
    "Placopsis gelida (L.) Lindsay",
    "Placopsis gelida (L.) Linds.",
@@ -850,6 +889,7 @@
     "nortaxa_derived: every COL usage has col:sourceID 2030 (RTTJS, clb:merged=true) [col col:nameStatus=unacceptable, col col:status=synonym, nortaxa nomenclaturalStatus=illegitimate, nortaxa taxonomicStatus=synonym, col source=2030 merged=true]",
     "unauthored: empty authorship [col col:nameStatus=unacceptable, col col:status=synonym, nortaxa nomenclaturalStatus=illegitimate, nortaxa taxonomicStatus=synonym, col source=2030 merged=true]"
    ],
+   "accepted_authorship_disagrees",
    "different_authorship--single_shared_synonym_low_overlap"
   ],
   [
@@ -869,6 +909,7 @@
    [],
    1,
    1,
+   true,
    "different_authorship",
    "Arthonia vinosa Leighton",
    "Arthonia vinosa Leight.",
@@ -887,6 +928,7 @@
    [
     "ordinary: none of the weak kinds [col col:status=synonym, nortaxa nomenclaturalStatus=illegitimate, nortaxa taxonomicStatus=synonym, col source=2073 merged=false]"
    ],
+   "accepted_authorship_disagrees",
    "different_authorship--single_shared_synonym_low_overlap"
   ],
   [
@@ -902,6 +944,7 @@
    [],
    1,
    1,
+   true,
    "different_authorship",
    "Opegrapha vulgata Ach.",
    "Opegrapha vulgata (Ach.) Ach., 1803",
@@ -926,6 +969,7 @@
     "name_variant: near-spelling of accepted 'opegrapha vulgata' [col col:status=synonym, nortaxa nomenclaturalStatus=illegitimate, nortaxa taxonomicStatus=synonym, col source=7888 merged=true]",
     "ordinary: none of the weak kinds [col col:status=synonym, nortaxa nomenclaturalStatus=illegitimate, nortaxa taxonomicStatus=synonym, col source=7888 merged=true]"
    ],
+   "accepted_authorship_disagrees",
    "different_authorship--single_shared_synonym_low_overlap"
   ],
   [
@@ -941,6 +985,7 @@
    [],
    1,
    1,
+   true,
    "different_authorship",
    "Schismatomma graphidioides (Leighton) Zahlbr.",
    "Schismatomma graphidioides (Leight. ex Lettau) Zahlbr.",
@@ -966,6 +1011,7 @@
     "nortaxa_derived: every COL usage has col:sourceID 2030 (VKXZ7, clb:merged=true) [col col:nameStatus=unacceptable, col col:status=synonym, nortaxa nomenclaturalStatus=illegitimate, nortaxa taxonomicStatus=synonym, col source=2030 merged=true]",
     "ordinary: none of the weak kinds [col col:status=synonym, nortaxa nomenclaturalStatus=illegitimate, nortaxa taxonomicStatus=synonym, col source=2073 merged=false]"
    ],
+   "accepted_authorship_disagrees",
    "different_authorship--single_shared_synonym_low_overlap"
   ],
   [
@@ -981,6 +1027,7 @@
    [],
    1,
    1,
+   true,
    "different_authorship",
    "Sporastatia polyspora (Nyl.) Grumm.",
    "Sporastatia polyspora (Nyl.) Grummann",
@@ -1015,6 +1062,7 @@
     "nortaxa_derived: every COL usage has col:sourceID 2030 (SY4VR, clb:merged=true) [col col:nameStatus=unacceptable, col col:status=synonym, nortaxa nomenclaturalStatus=illegitimate, nortaxa taxonomicStatus=synonym, col source=2030 merged=true]",
     "nortaxa_derived: every COL usage has col:sourceID 2030 (SY4WR, clb:merged=true) [col col:nameStatus=unacceptable, col col:status=synonym, nortaxa nomenclaturalStatus=illegitimate, nortaxa taxonomicStatus=synonym, col source=2030 merged=true]"
    ],
+   "accepted_authorship_disagrees",
    "different_authorship--single_shared_synonym_low_overlap"
   ],
   [
@@ -1034,6 +1082,7 @@
    [],
    1,
    1,
+   true,
    "different_authorship",
    "Sporastatia testudinea (Ach.) Massal.",
    "Sporastatia testudinea (Ach.) A. Massal.",
@@ -1055,6 +1104,7 @@
     "ordinary: none of the weak kinds [col col:status=synonym, nortaxa nomenclaturalStatus=illegitimate, nortaxa taxonomicStatus=synonym, col source=2073 merged=false]",
     "nortaxa_derived: every COL usage has col:sourceID 2030 (SY4XP, clb:merged=true) [col col:nameStatus=unacceptable, col col:status=synonym, nortaxa nomenclaturalStatus=illegitimate, nortaxa taxonomicStatus=synonym, col source=2030 merged=true]"
    ],
+   "accepted_authorship_disagrees",
    "different_authorship--single_shared_synonym_low_overlap"
   ],
   [
@@ -1073,6 +1123,7 @@
    [],
    1,
    1,
+   true,
    "different_authorship",
    "Cladonia chlorophaea (Sommerf.) Sprengel",
    "Cladonia chlorophaea (Flörke ex Sommerf.) Spreng.",
@@ -1099,6 +1150,7 @@
     "nortaxa_derived: every COL usage has col:sourceID 2030 (MK9ZT, clb:merged=true) [col col:nameStatus=unacceptable, col col:status=synonym, nortaxa nomenclaturalStatus=illegitimate, nortaxa taxonomicStatus=synonym, col source=2030 merged=true]",
     "unauthored: empty authorship [col col:nameStatus=unacceptable, col col:status=synonym, nortaxa nomenclaturalStatus=illegitimate, nortaxa taxonomicStatus=synonym, col source=2030 merged=true]"
    ],
+   "accepted_authorship_disagrees",
    "different_authorship--single_shared_synonym_low_overlap"
   ],
   [
@@ -1121,6 +1173,7 @@
    [],
    1,
    1,
+   true,
    "different_authorship",
    "Cladonia cornuta (L.) Hoffm.",
    "Cladonia cornuta (L.) Baumg.",
@@ -1145,6 +1198,7 @@
     "nortaxa_derived: every COL usage has col:sourceID 2030 (MKCD3, clb:merged=true) [col col:nameStatus=unacceptable, col col:status=synonym, nortaxa nomenclaturalStatus=illegitimate, nortaxa taxonomicStatus=synonym, col source=2030 merged=true]",
     "ordinary: none of the weak kinds [col col:status=synonym, nortaxa nomenclaturalStatus=illegitimate, nortaxa taxonomicStatus=synonym, col source=2073 merged=false]"
    ],
+   "accepted_authorship_disagrees",
    "different_authorship--single_shared_synonym_low_overlap"
   ],
   [
@@ -1165,6 +1219,7 @@
    [],
    1,
    1,
+   true,
    "different_authorship",
    "Cladonia ecmocyna Leighton",
    "Cladonia ecmocyna (Ach.) Leight.",
@@ -1189,6 +1244,7 @@
     "unauthored: empty authorship [col col:nameStatus=unacceptable, col col:status=synonym, nortaxa nomenclaturalStatus=illegitimate, nortaxa taxonomicStatus=synonym, col source=2030 merged=true]",
     "ordinary: none of the weak kinds [col col:status=synonym, nortaxa nomenclaturalStatus=illegitimate, nortaxa taxonomicStatus=synonym, col source=2073 merged=false]"
    ],
+   "accepted_authorship_disagrees",
    "different_authorship--single_shared_synonym_low_overlap"
   ],
   [
@@ -1208,6 +1264,7 @@
    [],
    1,
    1,
+   true,
    "different_authorship",
    "Cladonia macrophylla (Schaerer) Stenham.",
    "Cladonia macrophylla (Schaer.) Stenh.",
@@ -1229,6 +1286,7 @@
     "ordinary: none of the weak kinds [col col:status=synonym, nortaxa nomenclaturalStatus=illegitimate, nortaxa taxonomicStatus=synonym, col source=2073 merged=false]",
     "nortaxa_derived: every COL usage has col:sourceID 2030 (MKC6B, clb:merged=true) [col col:nameStatus=unacceptable, col col:status=synonym, nortaxa nomenclaturalStatus=illegitimate, nortaxa taxonomicStatus=synonym, col source=2030 merged=true]"
    ],
+   "accepted_authorship_disagrees",
    "different_authorship--single_shared_synonym_low_overlap"
   ],
   [
@@ -1251,6 +1309,7 @@
    [],
    1,
    1,
+   true,
    "different_authorship",
    "Cladonia pleurota (Flörke) Schaerer",
    "Cladonia pleurota (Flörke) Schaer.",
@@ -1281,6 +1340,7 @@
     "nortaxa_derived: every COL usage has col:sourceID 2030 (MKJ25, clb:merged=true) [col col:nameStatus=unacceptable, col col:status=synonym, nortaxa nomenclaturalStatus=illegitimate, nortaxa taxonomicStatus=synonym, col source=2030 merged=true]",
     "nortaxa_derived: every COL usage has col:sourceID 2030 (MKQFK, clb:merged=true) [col col:nameStatus=unacceptable, col col:status=synonym, nortaxa nomenclaturalStatus=illegitimate, nortaxa taxonomicStatus=synonym, col source=2030 merged=true]"
    ],
+   "accepted_authorship_disagrees",
    "different_authorship--single_shared_synonym_low_overlap"
   ],
   [
@@ -1300,6 +1360,7 @@
    [],
    1,
    1,
+   true,
    "different_authorship",
    "Pycnothelia papillaria (Ehrh.) Duf.",
    "Pycnothelia papillaria Dufour",
@@ -1321,6 +1382,7 @@
     "unauthored: empty authorship [col col:nameStatus=unacceptable, col col:status=synonym, nortaxa nomenclaturalStatus=illegitimate, nortaxa taxonomicStatus=synonym, col source=2030 merged=true]",
     "ordinary: none of the weak kinds [col col:status=synonym, nortaxa nomenclaturalStatus=illegitimate, nortaxa taxonomicStatus=synonym, col source=2073 merged=false]"
    ],
+   "accepted_authorship_disagrees",
    "different_authorship--single_shared_synonym_low_overlap"
   ],
   [
@@ -1342,6 +1404,7 @@
    [],
    1,
    1,
+   true,
    "different_authorship",
    "Lecanora argentata (Ach.) Malme",
    "Lecanora argentata (Röhl.) Malme",
@@ -1367,6 +1430,7 @@
     "nortaxa_derived: every COL usage has col:sourceID 2030 (PSNGZ, clb:merged=true) [col col:nameStatus=unacceptable, col col:status=synonym, nortaxa nomenclaturalStatus=illegitimate, nortaxa taxonomicStatus=synonym, col source=2030 merged=true]",
     "ordinary: none of the weak kinds [col col:status=synonym, nortaxa nomenclaturalStatus=illegitimate, nortaxa taxonomicStatus=synonym, col source=2073 merged=false]"
    ],
+   "accepted_authorship_disagrees",
    "different_authorship--single_shared_synonym_low_overlap"
   ],
   [
@@ -1385,6 +1449,7 @@
    [],
    1,
    1,
+   true,
    "different_authorship",
    "Psoroma hypnorum (Vahl) S.F. Gray",
    "Psoroma hypnorum (Vahl) Gray",
@@ -1424,6 +1489,7 @@
     "nortaxa_derived: every COL usage has col:sourceID 2030 (SFDP2, clb:merged=true) [col col:nameStatus=unacceptable, col col:status=synonym, nortaxa nomenclaturalStatus=illegitimate, nortaxa taxonomicStatus=synonym, col source=2030 merged=true]",
     "nortaxa_derived: every COL usage has col:sourceID 2030 (SFDPF, clb:merged=true) [col col:nameStatus=unacceptable, col col:status=synonym, nortaxa nomenclaturalStatus=illegitimate, nortaxa taxonomicStatus=synonym, col source=2030 merged=true]"
    ],
+   "accepted_authorship_disagrees",
    "different_authorship--single_shared_synonym_low_overlap"
   ],
   [
@@ -1443,6 +1509,7 @@
    [],
    1,
    1,
+   true,
    "different_authorship",
    "Bryoria bicolor (Ehrh.) Brodo & D. Hawksw.",
    "Bryoria bicolor (Hoffm.) Brodo & D. Hawksw.",
@@ -1466,6 +1533,7 @@
     "unauthored: empty authorship [col col:nameStatus=unacceptable, col col:status=synonym, nortaxa nomenclaturalStatus=illegitimate, nortaxa taxonomicStatus=synonym, col source=2030 merged=true]",
     "ordinary: none of the weak kinds [col col:status=synonym, nortaxa nomenclaturalStatus=illegitimate, nortaxa taxonomicStatus=synonym, col source=2073 merged=false]"
    ],
+   "accepted_authorship_disagrees",
    "different_authorship--single_shared_synonym_low_overlap"
   ],
   [
@@ -1486,6 +1554,7 @@
    [],
    1,
    1,
+   true,
    "different_authorship",
    "Bryoria fuscescens (Gyelnik) Brodo & D. Hawksw.",
    "Bryoria fuscescens (Gyeln.) Brodo & D. Hawksw.",
@@ -1515,6 +1584,7 @@
     "nortaxa_derived: every COL usage has col:sourceID 2030 (MB37C, clb:merged=true) [col col:nameStatus=unacceptable, col col:status=synonym, nortaxa nomenclaturalStatus=illegitimate, nortaxa taxonomicStatus=synonym, col source=2030 merged=true]",
     "nortaxa_derived: every COL usage has col:sourceID 2030 (MB3FS, clb:merged=true) [col col:nameStatus=unacceptable, col col:status=synonym, nortaxa nomenclaturalStatus=illegitimate, nortaxa taxonomicStatus=synonym, col source=2030 merged=true]"
    ],
+   "accepted_authorship_disagrees",
    "different_authorship--single_shared_synonym_low_overlap"
   ],
   [
@@ -1535,6 +1605,7 @@
    [],
    1,
    1,
+   true,
    "different_authorship",
    "Bryoria simplicior (Vainio) Brodo & D. Hawksw.",
    "Bryoria simplicior (Vain.) Brodo & D. Hawksw.",
@@ -1574,6 +1645,7 @@
     "nortaxa_derived: every COL usage has col:sourceID 2030 (MB2Y2, clb:merged=true) [col col:nameStatus=unacceptable, col col:status=synonym, nortaxa nomenclaturalStatus=illegitimate, nortaxa taxonomicStatus=synonym, col source=2030 merged=true]",
     "nortaxa_derived: every COL usage has col:sourceID 2030 (MB39N, clb:merged=true) [col col:nameStatus=unacceptable, col col:status=synonym, nortaxa nomenclaturalStatus=illegitimate, nortaxa taxonomicStatus=synonym, col source=2030 merged=true]"
    ],
+   "accepted_authorship_disagrees",
    "different_authorship--single_shared_synonym_low_overlap"
   ],
   [
@@ -1593,6 +1665,7 @@
    [],
    1,
    1,
+   true,
    "different_authorship",
    "Cetrelia olivetorum (Nyl.) W. Culb. & C. Culb.",
    "Cetrelia olivetorum (Nyl.) W.L. Culb. & C.F. Culb.",
@@ -1611,6 +1684,7 @@
    [
     "ordinary: none of the weak kinds [col col:status=synonym, nortaxa nomenclaturalStatus=illegitimate, nortaxa taxonomicStatus=synonym, col source=2073 merged=false]"
    ],
+   "accepted_authorship_disagrees",
    "different_authorship--single_shared_synonym_low_overlap"
   ],
   [
@@ -1631,6 +1705,7 @@
    [],
    1,
    1,
+   true,
    "different_authorship",
    "Melanelixia fuliginosa (Fr. ex Duby) O. Blanco et al.",
    "Melanelixia fuliginosa (Fr. ex Duby) O. Blanco, A. Crespo, Divakar, Essl., D. Hawksw. & Lumbsch",
@@ -1652,6 +1727,7 @@
     "name_variant: near-spelling of accepted 'melanelixia fuliginosa' [col col:status=synonym, nortaxa nomenclaturalStatus=illegitimate, nortaxa taxonomicStatus=synonym, col source=2073 merged=false]",
     "ordinary: none of the weak kinds [col col:status=synonym, nortaxa nomenclaturalStatus=illegitimate, nortaxa taxonomicStatus=synonym, col source=2073 merged=false]"
    ],
+   "accepted_authorship_disagrees",
    "different_authorship--single_shared_synonym_low_overlap"
   ],
   [
@@ -1671,6 +1747,7 @@
    [],
    1,
    1,
+   true,
    "different_authorship",
    "Melanelixia subargentifera (Nyl.) O. Blanco et al.",
    "Melanelixia subargentifera (Nyl.) O. Blanco, A. Crespo, Divakar, Essl., D. Hawksw. & Lumbsch",
@@ -1695,6 +1772,7 @@
     "ordinary: none of the weak kinds [col col:status=synonym, nortaxa nomenclaturalStatus=illegitimate, nortaxa taxonomicStatus=synonym, col source=2073 merged=false]",
     "unauthored: empty authorship [col col:nameStatus=unacceptable, col col:status=synonym, nortaxa nomenclaturalStatus=illegitimate, nortaxa taxonomicStatus=synonym, col source=2030 merged=true]"
    ],
+   "accepted_authorship_disagrees",
    "different_authorship--single_shared_synonym_low_overlap"
   ],
   [
@@ -1714,6 +1792,7 @@
    [],
    1,
    1,
+   true,
    "different_authorship",
    "Menegazzia terebrata (Hoffm.) Massal.",
    "Menegazzia terebrata (Hoffm.) A. Massal.",
@@ -1735,6 +1814,7 @@
     "ordinary: none of the weak kinds [col col:status=synonym, nortaxa nomenclaturalStatus=illegitimate, nortaxa taxonomicStatus=synonym, col source=2073 merged=false]",
     "nortaxa_derived: every COL usage has col:sourceID 2030 (RBJ2X, clb:merged=true) [col col:nameStatus=unacceptable, col col:status=synonym, nortaxa nomenclaturalStatus=illegitimate, nortaxa taxonomicStatus=synonym, col source=2030 merged=true]"
    ],
+   "accepted_authorship_disagrees",
    "different_authorship--single_shared_synonym_low_overlap"
   ],
   [
@@ -1754,6 +1834,7 @@
    [],
    1,
    1,
+   true,
    "different_authorship",
    "Buellia griseovirens (Sm.) Almb.",
    "Buellia griseovirens (Turner & Borrer ex Sm.) Almb.",
@@ -1779,6 +1860,7 @@
     "nortaxa_derived: every COL usage has col:sourceID 2030 (Q4Z7Z, clb:merged=true) [col col:nameStatus=unacceptable, col col:status=synonym, nortaxa nomenclaturalStatus=illegitimate, nortaxa taxonomicStatus=synonym, col source=2030 merged=true]",
     "ordinary: none of the weak kinds [col col:nameStatus=acceptable, col col:status=synonym, nortaxa nomenclaturalStatus=illegitimate, nortaxa taxonomicStatus=synonym, col source=2041 merged=true]"
    ],
+   "accepted_authorship_disagrees",
    "different_authorship--single_shared_synonym_low_overlap"
   ],
   [
@@ -1801,6 +1883,7 @@
    [],
    1,
    1,
+   true,
    "different_authorship",
    "Physcia adscendens (Fr.) H. Olivier",
    "Physcia adscendens H. Olivier",
@@ -1822,6 +1905,7 @@
     "nortaxa_derived: every COL usage has col:sourceID 2030 (PXZXG, clb:merged=true) [col col:nameStatus=unacceptable, col col:status=synonym, nortaxa nomenclaturalStatus=illegitimate, nortaxa taxonomicStatus=synonym, col source=2030 merged=true]",
     "ordinary: none of the weak kinds [col col:status=synonym, nortaxa nomenclaturalStatus=illegitimate, nortaxa taxonomicStatus=synonym, col source=7888 merged=true]"
    ],
+   "accepted_authorship_disagrees",
    "different_authorship--single_shared_synonym_low_overlap"
   ],
   [
@@ -1843,6 +1927,7 @@
    [],
    1,
    1,
+   true,
    "different_authorship",
    "Bacidia rubella (Hoffm.) Massal.",
    "Bacidia rubella (Hoffm.) A. Massal.",
@@ -1873,6 +1958,7 @@
     "nortaxa_derived: every COL usage has col:sourceID 2030 (Q3HR6, clb:merged=true) [col col:nameStatus=unacceptable, col col:status=synonym, nortaxa nomenclaturalStatus=illegitimate, nortaxa taxonomicStatus=synonym, col source=2030 merged=true]",
     "pro_parte: col col:status=ambiguous synonym [col col:status=ambiguous synonym, nortaxa nomenclaturalStatus=illegitimate, nortaxa taxonomicStatus=synonym, col source=2073 merged=false]"
    ],
+   "accepted_authorship_disagrees",
    "different_authorship--single_shared_synonym_low_overlap"
   ],
   [
@@ -1893,6 +1979,7 @@
    [],
    1,
    1,
+   true,
    "different_authorship",
    "Catolechia wahlenbergii (Ach.) Körber",
    "Catolechia wahlenbergii (Ach.) Körb.",
@@ -1919,6 +2006,7 @@
     "nortaxa_derived: every COL usage has col:sourceID 2030 (PTXDQ, clb:merged=true) [col col:status=synonym, nortaxa taxonomicStatus=synonym, col source=2030 merged=true]",
     "unauthored: empty authorship [col col:nameStatus=unacceptable, col col:status=synonym, nortaxa nomenclaturalStatus=illegitimate, nortaxa taxonomicStatus=synonym, col source=2030 merged=true]"
    ],
+   "accepted_authorship_disagrees",
    "different_authorship--single_shared_synonym_low_overlap"
   ],
   [
@@ -1935,6 +2023,7 @@
    [],
    1,
    1,
+   true,
    "different_authorship",
    "Rhizocarpon copelandii (Körber) Th. Fr.",
    "Rhizocarpon copelandii (Körb.) Th. Fr.",
@@ -1960,6 +2049,7 @@
     "nortaxa_derived: every COL usage has col:sourceID 2030 (4SC4J, clb:merged=true) [col col:nameStatus=unacceptable, col col:status=synonym, nortaxa nomenclaturalStatus=illegitimate, nortaxa taxonomicStatus=synonym, col source=2030 merged=true]",
     "ordinary: none of the weak kinds [col col:nameStatus=acceptable, col col:status=synonym, nortaxa nomenclaturalStatus=illegitimate, nortaxa taxonomicStatus=synonym, col source=2041 merged=true]"
    ],
+   "accepted_authorship_disagrees",
    "different_authorship--single_shared_synonym_low_overlap"
   ],
   [
@@ -1975,6 +2065,7 @@
    [],
    1,
    1,
+   true,
    "different_authorship",
    "Heppia adglutinata (Kremp.) A. Massal.",
    "Heppia adglutinata A. Massal.",
@@ -2003,6 +2094,7 @@
     "nortaxa_derived: every COL usage has col:sourceID 2030 (QQFNG, clb:merged=true) [col col:nameStatus=unacceptable, col col:status=synonym, nortaxa nomenclaturalStatus=illegitimate, nortaxa taxonomicStatus=synonym, col source=2030 merged=true]",
     "nortaxa_derived: every COL usage has col:sourceID 2030 (SSFLX, clb:merged=true) [col col:nameStatus=unacceptable, col col:status=synonym, nortaxa nomenclaturalStatus=illegitimate, nortaxa taxonomicStatus=synonym, col source=2030 merged=true]"
    ],
+   "accepted_authorship_disagrees",
    "different_authorship--single_shared_synonym_low_overlap"
   ],
   [
@@ -2025,6 +2117,7 @@
    [],
    1,
    1,
+   true,
    "different_authorship",
    "Baeomyces rufus (Hudson) Rebent.",
    "Baeomyces rufus (Huds.) Rebent.",
@@ -2043,6 +2136,7 @@
    [
     "ordinary: none of the weak kinds [col col:nameStatus=acceptable, col col:status=synonym, nortaxa nomenclaturalStatus=illegitimate, nortaxa taxonomicStatus=synonym, col source=2041 merged=true]"
    ],
+   "accepted_authorship_disagrees",
    "different_authorship--single_shared_synonym_low_overlap"
   ],
   [
@@ -2065,6 +2159,7 @@
    [],
    1,
    1,
+   true,
    "different_authorship",
    "Thamnolia vermicularis (Sw.) Schaerer",
    "Thamnolia vermicularis (Sw.) Schaer.",
@@ -2083,6 +2178,7 @@
    [
     "ordinary: none of the weak kinds [col col:status=synonym, nortaxa nomenclaturalStatus=illegitimate, nortaxa taxonomicStatus=synonym, col source=290762 merged=true]"
    ],
+   "accepted_authorship_disagrees",
    "different_authorship--single_shared_synonym_low_overlap"
   ],
   [
@@ -2102,6 +2198,7 @@
    [],
    1,
    1,
+   true,
    "different_authorship",
    "Umbilicaria proboscidea (L.) Schrader",
    "Umbilicaria proboscidea (L.) Schrad.",
@@ -2138,6 +2235,7 @@
     "nortaxa_derived: every COL usage has col:sourceID 2030 (TR5QW, clb:merged=true) [col col:nameStatus=unacceptable, col col:status=synonym, nortaxa nomenclaturalStatus=illegitimate, nortaxa taxonomicStatus=synonym, col source=2030 merged=true]",
     "nortaxa_derived: every COL usage has col:sourceID 2030 (TR5QX, clb:merged=true) [col col:nameStatus=unacceptable, col col:status=synonym, nortaxa nomenclaturalStatus=illegitimate, nortaxa taxonomicStatus=synonym, col source=2030 merged=true]"
    ],
+   "accepted_authorship_disagrees",
    "different_authorship--single_shared_synonym_low_overlap"
   ],
   [
@@ -2156,6 +2254,7 @@
    [],
    1,
    1,
+   true,
    "different_authorship",
    "Umbilicaria torrefacta (Lightf.) Schrader",
    "Umbilicaria torrefacta (Lightf.) Schrad.",
@@ -2186,6 +2285,7 @@
     "ordinary: none of the weak kinds [col col:status=synonym, nortaxa nomenclaturalStatus=illegitimate, nortaxa taxonomicStatus=synonym, col source=7888 merged=true]",
     "unauthored: empty authorship [col col:nameStatus=unacceptable, col col:status=synonym, nortaxa nomenclaturalStatus=illegitimate, nortaxa taxonomicStatus=synonym, col source=2030 merged=true]"
    ],
+   "accepted_authorship_disagrees",
    "different_authorship--single_shared_synonym_low_overlap"
   ],
   [
@@ -2202,6 +2302,7 @@
    [],
    1,
    1,
+   true,
    "different_authorship",
    "Gyalecta derivata H. Olivier",
    "Gyalecta derivata (Nyl.) Vain.",
@@ -2223,6 +2324,7 @@
     "nortaxa_derived: every COL usage has col:sourceID 2030 (NZ3WH, clb:merged=true) [col col:nameStatus=unacceptable, col col:status=synonym, nortaxa nomenclaturalStatus=illegitimate, nortaxa taxonomicStatus=synonym, col source=2030 merged=true]",
     "ordinary: none of the weak kinds [col col:status=synonym, nortaxa nomenclaturalStatus=illegitimate, nortaxa taxonomicStatus=synonym, col source=2073 merged=false]"
    ],
+   "accepted_authorship_disagrees",
    "different_authorship--single_shared_synonym_low_overlap"
   ],
   [
@@ -2238,6 +2340,7 @@
    [],
    1,
    1,
+   true,
    "different_authorship",
    "Pseudocyphellaria intricata (Del.) Vainio",
    "Pseudocyphellaria intricata (Delise) Vain.",
@@ -2265,6 +2368,7 @@
     "nortaxa_derived: every COL usage has col:sourceID 2030 (TDBSW, clb:merged=true) [col col:nameStatus=unacceptable, col col:status=synonym, nortaxa nomenclaturalStatus=illegitimate, nortaxa taxonomicStatus=synonym, col source=2030 merged=true]",
     "nortaxa_derived: every COL usage has col:sourceID 2030 (TDBSX, clb:merged=true) [col col:nameStatus=unacceptable, col col:status=synonym, nortaxa nomenclaturalStatus=illegitimate, nortaxa taxonomicStatus=synonym, col source=2030 merged=true]"
    ],
+   "accepted_authorship_disagrees",
    "different_authorship--single_shared_synonym_low_overlap"
   ],
   [
@@ -2280,6 +2384,7 @@
    [],
    1,
    1,
+   true,
    "different_authorship",
    "Pseudocyphellaria norvegica (Gyelnik) P. James",
    "Pseudocyphellaria norvegica (Gyeln.) P. James",
@@ -2303,6 +2408,7 @@
     "nortaxa_derived: every COL usage has col:sourceID 2030 (TD7VV, clb:merged=true) [col col:nameStatus=unacceptable, col col:status=synonym, nortaxa nomenclaturalStatus=illegitimate, nortaxa taxonomicStatus=synonym, col source=2030 merged=true]",
     "ordinary: none of the weak kinds [col col:status=synonym, nortaxa nomenclaturalStatus=illegitimate, nortaxa taxonomicStatus=synonym, col source=2073 merged=false]"
    ],
+   "accepted_authorship_disagrees",
    "different_authorship--single_shared_synonym_low_overlap"
   ],
   [
@@ -2322,6 +2428,7 @@
    [],
    1,
    1,
+   true,
    "different_authorship",
    "Peltigera elisabethae Gyelnik",
    "Peltigera elisabethae Gyeln.",
@@ -2357,6 +2464,7 @@
     "nortaxa_derived: every COL usage has col:sourceID 2030 (RTSMS, clb:merged=true) [col col:nameStatus=unacceptable, col col:status=synonym, nortaxa nomenclaturalStatus=illegitimate, nortaxa taxonomicStatus=synonym, col source=2030 merged=true]",
     "nortaxa_derived: every COL usage has col:sourceID 2030 (RTSMT, clb:merged=true) [col col:nameStatus=unacceptable, col col:status=synonym, nortaxa nomenclaturalStatus=illegitimate, nortaxa taxonomicStatus=synonym, col source=2030 merged=true]"
    ],
+   "accepted_authorship_disagrees",
    "different_authorship--single_shared_synonym_low_overlap"
   ],
   [
@@ -2379,6 +2487,7 @@
    [],
    1,
    1,
+   true,
    "different_authorship",
    "Peltigera horizontalis (Hudson) Baumg.",
    "Peltigera horizontalis (Huds.) Baumg.",
@@ -2416,6 +2525,7 @@
     "nortaxa_derived: every COL usage has col:sourceID 2030 (RTWKF, clb:merged=true) [col col:nameStatus=unacceptable, col col:status=synonym, nortaxa nomenclaturalStatus=illegitimate, nortaxa taxonomicStatus=synonym, col source=2030 merged=true]",
     "nortaxa_derived: every COL usage has col:sourceID 2030 (RTWKN, clb:merged=true) [col col:nameStatus=unacceptable, col col:status=synonym, nortaxa nomenclaturalStatus=illegitimate, nortaxa taxonomicStatus=synonym, col source=2030 merged=true]"
    ],
+   "accepted_authorship_disagrees",
    "different_authorship--single_shared_synonym_low_overlap"
   ],
   [
@@ -2434,6 +2544,7 @@
    [],
    1,
    1,
+   true,
    "different_authorship",
    "Peltigera lepidophora (Nyl.) Bitter",
    "Peltigera lepidophora (Vain.) Bitter",
@@ -2461,6 +2572,7 @@
     "nortaxa_derived: every COL usage has col:sourceID 2030 (RTRL5, clb:merged=true) [col col:nameStatus=unacceptable, col col:status=synonym, nortaxa nomenclaturalStatus=illegitimate, nortaxa taxonomicStatus=synonym, col source=2030 merged=true]",
     "nortaxa_derived: every COL usage has col:sourceID 2030 (RTRKQ, clb:merged=true) [col col:nameStatus=unacceptable, col col:status=synonym, nortaxa nomenclaturalStatus=illegitimate, nortaxa taxonomicStatus=synonym, col source=2030 merged=true]"
    ],
+   "accepted_authorship_disagrees",
    "different_authorship--single_shared_synonym_low_overlap"
   ],
   [
@@ -2481,6 +2593,7 @@
    [],
    1,
    1,
+   true,
    "different_authorship",
    "Peltigera neckeri Müll. Arg.",
    "Peltigera neckeri Hepp ex Müll. Arg.",
@@ -2510,6 +2623,7 @@
     "nortaxa_derived: every COL usage has col:sourceID 2030 (RTSYM, clb:merged=true) [col col:nameStatus=unacceptable, col col:status=synonym, nortaxa nomenclaturalStatus=illegitimate, nortaxa taxonomicStatus=synonym, col source=2030 merged=true]",
     "nortaxa_derived: every COL usage has col:sourceID 2030 (RTT2T, clb:merged=true) [col col:nameStatus=unacceptable, col col:status=synonym, nortaxa nomenclaturalStatus=illegitimate, nortaxa taxonomicStatus=synonym, col source=2030 merged=true]"
    ],
+   "accepted_authorship_disagrees",
    "different_authorship--single_shared_synonym_low_overlap"
   ],
   [
@@ -2529,6 +2643,7 @@
    [],
    1,
    1,
+   true,
    "different_authorship",
    "Caloplaca cerina (Hedwig) Th. Fr.",
    "Caloplaca cerina (Hedw.) Th. Fr.",
@@ -2561,6 +2676,7 @@
     "ordinary: none of the weak kinds [col col:nameStatus=acceptable, col col:status=synonym, nortaxa nomenclaturalStatus=illegitimate, nortaxa taxonomicStatus=synonym, col source=2041 merged=true]",
     "nortaxa_derived: every COL usage has col:sourceID 2030 (MG6VG, clb:merged=true) [col col:nameStatus=unacceptable, col col:status=synonym, nortaxa nomenclaturalStatus=illegitimate, nortaxa taxonomicStatus=synonym, col source=2030 merged=true]"
    ],
+   "accepted_authorship_disagrees",
    "different_authorship--single_shared_synonym_low_overlap"
   ],
   [
@@ -2579,6 +2695,7 @@
    [],
    1,
    1,
+   true,
    "different_authorship",
    "Caloplaca chlorina (Flotow) H. Olivier",
    "Caloplaca chlorina (Flot.) Sandst.",
@@ -2600,6 +2717,7 @@
     "nortaxa_derived: every COL usage has col:sourceID 2030 (MFWF3, clb:merged=true) [col col:nameStatus=unacceptable, col col:status=synonym, nortaxa nomenclaturalStatus=illegitimate, nortaxa taxonomicStatus=synonym, col source=2030 merged=true]",
     "ordinary: none of the weak kinds [col col:status=synonym, nortaxa nomenclaturalStatus=illegitimate, nortaxa taxonomicStatus=synonym, col source=2073 merged=false]"
    ],
+   "accepted_authorship_disagrees",
    "different_authorship--single_shared_synonym_low_overlap"
   ],
   [
@@ -2613,6 +2731,7 @@
    [],
    1,
    1,
+   true,
    "different_authorship",
    "Bibbya bullata (Meyen & Flot.) Kistenich & al.",
    "Bibbya bullata (Meyen & Flot.) Kistenich, Timdal, Bendiksby & S. Ekman",
@@ -2634,6 +2753,7 @@
     "ordinary: none of the weak kinds [col col:status=synonym, nortaxa nomenclaturalStatus=illegitimate, nortaxa taxonomicStatus=synonym, col source=2073 merged=false]",
     "nortaxa_derived: every COL usage has col:sourceID 2030 (TCB7V, clb:merged=true) [col col:nameStatus=unacceptable, col col:status=synonym, nortaxa nomenclaturalStatus=illegitimate, nortaxa taxonomicStatus=synonym, col source=2030 merged=true]"
    ],
+   "accepted_authorship_disagrees",
    "different_authorship--single_shared_synonym_low_overlap"
   ],
   [
@@ -2647,6 +2767,7 @@
    [],
    1,
    1,
+   true,
    "different_authorship",
    "Acarospora nitrophila Magnusson",
    "Acarospora nitrophila H. Magn.",
@@ -2670,6 +2791,7 @@
     "nortaxa_derived: every COL usage has col:sourceID 2030 (LY8TV, clb:merged=true) [col col:nameStatus=unacceptable, col col:status=synonym, nortaxa nomenclaturalStatus=illegitimate, nortaxa taxonomicStatus=synonym, col source=2030 merged=true]",
     "nortaxa_derived: every COL usage has col:sourceID 2030 (LY8TJ, clb:merged=true) [col col:nameStatus=unacceptable, col col:status=synonym, nortaxa nomenclaturalStatus=illegitimate, nortaxa taxonomicStatus=synonym, col source=2030 merged=true]"
    ],
+   "accepted_authorship_disagrees",
    "different_authorship--single_shared_synonym_low_overlap"
   ],
   [
@@ -2683,6 +2805,7 @@
    [],
    1,
    1,
+   true,
    "different_authorship",
    "Rimularia gibbosa (Ach.) Coppins, Herte",
    "Rimularia gibbosa (Ach.) Coppins, Hertel & Rambold",
@@ -2701,6 +2824,7 @@
    [
     "ordinary: none of the weak kinds [col col:status=synonym, nortaxa nomenclaturalStatus=illegitimate, nortaxa taxonomicStatus=synonym, col source=2073 merged=false]"
    ],
+   "accepted_authorship_disagrees",
    "different_authorship--single_shared_synonym_low_overlap"
   ],
   [
@@ -2714,6 +2838,7 @@
    [],
    1,
    1,
+   true,
    "different_authorship",
    "Candelariella arctica (Körber) R. Sant.",
    "Candelariella arctica (Körb.) R. Sant.",
@@ -2737,6 +2862,7 @@
     "nortaxa_derived: every COL usage has col:sourceID 2030 (M5KNJ, clb:merged=true) [col col:nameStatus=unacceptable, col col:status=synonym, nortaxa nomenclaturalStatus=illegitimate, nortaxa taxonomicStatus=synonym, col source=2030 merged=true]",
     "ordinary: none of the weak kinds [col col:status=synonym, nortaxa nomenclaturalStatus=illegitimate, nortaxa taxonomicStatus=synonym, col source=2073 merged=false]"
    ],
+   "accepted_authorship_disagrees",
    "different_authorship--single_shared_synonym_low_overlap"
   ],
   [
@@ -2750,6 +2876,7 @@
    [],
    1,
    1,
+   true,
    "different_authorship",
    "Lecanora campestris (Schaerer) Hue",
    "Lecanora campestris (Schaer.) Hue",
@@ -2781,6 +2908,7 @@
     "nortaxa_derived: every COL usage has col:sourceID 2030 (PSPRP, clb:merged=true) [col col:nameStatus=unacceptable, col col:status=synonym, nortaxa nomenclaturalStatus=illegitimate, nortaxa taxonomicStatus=synonym, col source=2030 merged=true]",
     "nortaxa_derived: every COL usage has col:sourceID 2030 (PSVJN, clb:merged=true) [col col:nameStatus=unacceptable, col col:status=synonym, nortaxa nomenclaturalStatus=illegitimate, nortaxa taxonomicStatus=synonym, col source=2030 merged=true]"
    ],
+   "accepted_authorship_disagrees",
    "different_authorship--single_shared_synonym_low_overlap"
   ],
   [
@@ -2794,6 +2922,7 @@
    [],
    1,
    1,
+   true,
    "different_authorship",
    "Leioderma duplicatum (Müll. Arg.) D. Galloway & P.M. Jørg.",
    "Leioderma duplicatum (Müll. Arg.) D.J. Galloway & P.M. Jørg.",
@@ -2825,6 +2954,7 @@
     "ordinary: none of the weak kinds [col col:status=synonym, nortaxa nomenclaturalStatus=illegitimate, nortaxa taxonomicStatus=synonym, col source=2073 merged=false]",
     "nortaxa_derived: every COL usage has col:sourceID 2030 (RBRSP, clb:merged=true) [col col:nameStatus=unacceptable, col col:status=synonym, nortaxa nomenclaturalStatus=illegitimate, nortaxa taxonomicStatus=synonym, col source=2030 merged=true]"
    ],
+   "accepted_authorship_disagrees",
    "different_authorship--single_shared_synonym_low_overlap"
   ],
   [
@@ -2838,6 +2968,7 @@
    [],
    1,
    1,
+   true,
    "different_authorship",
    "Xanthoparmelia mougeotina (Nyl.) D. Galloway",
    "Xanthoparmelia mougeotina (Nyl.) D.J. Galloway",
@@ -2859,6 +2990,7 @@
     "ordinary: none of the weak kinds [col col:status=synonym, nortaxa nomenclaturalStatus=illegitimate, nortaxa taxonomicStatus=synonym, col source=2073 merged=false]",
     "nortaxa_derived: every COL usage has col:sourceID 2030 (RBB3T, clb:merged=true) [col col:nameStatus=unacceptable, col col:status=synonym, nortaxa nomenclaturalStatus=illegitimate, nortaxa taxonomicStatus=synonym, col source=2030 merged=true]"
    ],
+   "accepted_authorship_disagrees",
    "different_authorship--single_shared_synonym_low_overlap"
   ],
   [
@@ -2872,6 +3004,7 @@
    [],
    1,
    1,
+   true,
    "different_authorship",
    "Tornabea scutellifera (With.) Laundon",
    "Tornabea scutellifera (With.) J.R. Laundon",
@@ -2895,6 +3028,7 @@
     "ordinary: none of the weak kinds [col col:status=synonym, nortaxa nomenclaturalStatus=illegitimate, nortaxa taxonomicStatus=synonym, col source=2073 merged=false]",
     "nortaxa_derived: every COL usage has col:sourceID 2030 (TCPZB, clb:merged=true) [col col:nameStatus=unacceptable, col col:status=synonym, nortaxa nomenclaturalStatus=illegitimate, nortaxa taxonomicStatus=synonym, col source=2030 merged=true]"
    ],
+   "accepted_authorship_disagrees",
    "different_authorship--single_shared_synonym_low_overlap"
   ],
   [
@@ -2908,6 +3042,7 @@
    [],
    1,
    1,
+   true,
    "different_authorship",
    "Physcidia wrightii Tuck.",
    "Physcidia wrightii (Tuck.) Tuck.",
@@ -2938,6 +3073,7 @@
     "name_variant: near-spelling of accepted 'physcidia wrightii' [col col:status=synonym, nortaxa nomenclaturalStatus=illegitimate, nortaxa taxonomicStatus=synonym, col source=2073 merged=false]",
     "nortaxa_derived: every COL usage has col:sourceID 2030 (4PLW6, clb:merged=true) [col col:nameStatus=unacceptable, col col:status=synonym, nortaxa nomenclaturalStatus=illegitimate, nortaxa taxonomicStatus=synonym, col source=2030 merged=true]"
    ],
+   "accepted_authorship_disagrees",
    "different_authorship--single_shared_synonym_low_overlap"
   ],
   [
@@ -2951,6 +3087,7 @@
    [],
    1,
    1,
+   true,
    "different_authorship",
    "Ramalina celastri (Spreng.) Krog & Swinscow",
    "Ramalina celastri (Spreng.) A. Massal.",
@@ -2982,6 +3119,7 @@
     "nortaxa_derived: every COL usage has col:sourceID 2030 (SJLHP, clb:merged=true) [col col:nameStatus=unacceptable, col col:status=synonym, nortaxa nomenclaturalStatus=illegitimate, nortaxa taxonomicStatus=synonym, col source=2030 merged=true]",
     "nortaxa_derived: every COL usage has col:sourceID 2030 (SJMB3, clb:merged=true) [col col:nameStatus=unacceptable, col col:status=synonym, nortaxa nomenclaturalStatus=illegitimate, nortaxa taxonomicStatus=synonym, col source=2030 merged=true]"
    ],
+   "accepted_authorship_disagrees",
    "different_authorship--single_shared_synonym_low_overlap"
   ],
   [
@@ -2995,6 +3133,7 @@
    [],
    1,
    1,
+   true,
    "different_authorship",
    "Pseudocyphellaria carpoloma (Delise) Vainio D. Galloway",
    "Pseudocyphellaria carpoloma (Delise) Vain.",
@@ -3029,6 +3168,7 @@
     "nortaxa_derived: every COL usage has col:sourceID 2030 (TD79H, clb:merged=true) [col col:nameStatus=unacceptable, col col:status=synonym, nortaxa nomenclaturalStatus=illegitimate, nortaxa taxonomicStatus=synonym, col source=2030 merged=true]",
     "nortaxa_derived: every COL usage has col:sourceID 2030 (TD7FY, clb:merged=true) [col col:nameStatus=unacceptable, col col:status=synonym, nortaxa nomenclaturalStatus=illegitimate, nortaxa taxonomicStatus=synonym, col source=2030 merged=true]"
    ],
+   "accepted_authorship_disagrees",
    "different_authorship--single_shared_synonym_low_overlap"
   ],
   [
@@ -3042,6 +3182,7 @@
    [],
    1,
    1,
+   true,
    "different_authorship",
    "Leptosphaeria aggregata (Lasch) O.E. Erikss.",
    "Leptosphaeria aggregata (Fuckel) O.E. Erikss.",
@@ -3063,6 +3204,7 @@
     "nortaxa_derived: every COL usage has col:sourceID 2030 (N6WFB, clb:merged=true) [col col:nameStatus=unacceptable, col col:status=synonym, nortaxa nomenclaturalStatus=illegitimate, nortaxa taxonomicStatus=synonym, col source=2030 merged=true]",
     "ordinary: none of the weak kinds [col col:status=synonym, nortaxa nomenclaturalStatus=illegitimate, nortaxa taxonomicStatus=synonym, col source=7888 merged=true]"
    ],
+   "accepted_authorship_disagrees",
    "different_authorship--single_shared_synonym_low_overlap"
   ],
   [
@@ -3076,6 +3218,7 @@
    [],
    1,
    1,
+   true,
    "different_authorship",
    "Pyrgillus javanicus (Mont. & Van den Bosch) Nyl.",
    "Pyrgillus javanicus (Mont. & Bosch) Nyl.",
@@ -3099,6 +3242,7 @@
     "nortaxa_derived: every COL usage has col:sourceID 2030 (S9CK7, clb:merged=true) [col col:nameStatus=unacceptable, col col:status=synonym, nortaxa nomenclaturalStatus=illegitimate, nortaxa taxonomicStatus=synonym, col source=2030 merged=true]",
     "nortaxa_derived: every COL usage has col:sourceID 2030 (S9CLP, clb:merged=true) [col col:nameStatus=unacceptable, col col:status=synonym, nortaxa nomenclaturalStatus=illegitimate, nortaxa taxonomicStatus=synonym, col source=2030 merged=true]"
    ],
+   "accepted_authorship_disagrees",
    "different_authorship--single_shared_synonym_low_overlap"
   ],
   [
@@ -3112,6 +3256,7 @@
    [],
    1,
    1,
+   true,
    "different_authorship",
    "Verrucaria aethiobola Wahlenb.",
    "Verrucaria aethiobola Wahlenb. ex Ach.",
@@ -3133,11 +3278,12 @@
     "ordinary: none of the weak kinds [col col:status=synonym, nortaxa nomenclaturalStatus=illegitimate, nortaxa taxonomicStatus=synonym, col source=2073 merged=false]",
     "nortaxa_derived: every COL usage has col:sourceID 2030 (TP974, clb:merged=true) [col col:nameStatus=unacceptable, col col:status=synonym, nortaxa nomenclaturalStatus=illegitimate, nortaxa taxonomicStatus=synonym, col source=2030 merged=true]"
    ],
+   "accepted_authorship_disagrees",
    "different_authorship--single_shared_synonym_low_overlap"
   ]
  ],
- "members_sha256": "839f52cd102c99d4145663387e78ec05b949a540fa5aa33939d5eb6e6e731f46",
- "membership_rule": "review class 'accepted_authorship_disagrees'; authorship difference 'different_authorship': none of the above: the accepted authorships name different authors or differ in a way no rule above reads (for example an abbreviation); and, read as if the accepted name keys agreed, review class 'single_shared_synonym_low_overlap': exactly one shared synonym is of kind 'ordinary' while each source publishes at least 5 synonyms",
+ "members_sha256": "057f80f9dbbaaffaa1fd3ea68193bf71ba4d45e5fa9996b5c1559eeb2331edcc",
+ "membership_rule": "review class 'accepted_authorship_disagrees'; authorship difference 'different_authorship': none of the above: the accepted authorships name different authors or differ in a way no rule above reads (for example an abbreviation); and, read as if the accepted name keys agreed, review class 'single_shared_synonym_low_overlap': exactly one shared synonym is of kind 'ordinary' while each source publishes at least 5 synonyms; and the pair is one-to-one (neither concept shares its name with another concept on the other side)",
  "nortaxa_col_source": {
   "col_source_id": "2030",
   "matched_on": "COL source/<id>.yaml title == NorTaxa eml.xml dataset title",
@@ -3147,7 +3293,7 @@
  "parent_manifest": {
   "evidence_class": "shared_synonymy",
   "member_count": 2032,
-  "members_sha256": "19083142abcfdb037e9372b7271cd9beb2749a01cc64a1490a19b60ddea9acd9"
+  "members_sha256": "85175ef8089819a66a4dadaa25b24354aef519990deee342d41707b2efa68fd2"
  },
  "pins": {
   "bridge_emission_policy": {

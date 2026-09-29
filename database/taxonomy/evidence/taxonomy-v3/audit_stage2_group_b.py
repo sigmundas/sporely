@@ -22,15 +22,21 @@ The output is review input under plan decision 2, never a decision:
   ``shared_synonymy``, is partitioned again by how the accepted authorships
   differ (``AUTHORSHIP_DIFFERENCE_TESTS``) and by the review class its shared
   synonyms would give it if the accepted keys agreed;
+* a pair that is not one-to-one (its NorTaxa concept shares its name with
+  several COL concepts, or the reverse) is never in a batch manifest: a
+  supersession names one current concept, so reciprocal and
+  ``shared_synonymy`` such pairs go to ``group-b-not-one-to-one`` for
+  individual decision;
 * each manifest states how decision 2 lets it be decided:
-  ``batch_by_file_sha256`` (reciprocal, and a leaf ``shared_synonymy`` review
-  class or sub-class), ``individual`` (one-directional),
+  ``batch_by_file_sha256`` (a one-to-one reciprocal or ``shared_synonymy``
+  leaf), ``individual`` (one-directional, and not-one-to-one),
   ``decided_through_its_partition`` (a parent kept whole for accounting) or
-  ``not_approvable`` (``no_published_cross_reference`` stays unresolved);
-* ``group-b-report.json`` — counts, the review queue in cloud-impact order,
-  pairs that are not one-to-one (a NorTaxa concept named like several COL
-  concepts, or the reverse, cannot become one supersession without choosing),
-  and the recorded Stage 2 outcome for each regression species.
+  ``not_approvable`` (``no_published_cross_reference`` stays unresolved).
+  Every pair is in exactly one decision leaf;
+* ``group-b-report.json`` — counts, ``pair_review_queue`` (every decidable
+  pair in one global cloud-impact order, each naming its decision manifest
+  and ``file_sha256``), the enumerated not-one-to-one pairs, and the
+  recorded Stage 2 outcome for each regression species.
 
 A supersession needs an explicit owner decision naming a manifest's
 ``file_sha256`` (or, for individual review, the pair) recorded in the plan.
@@ -93,7 +99,8 @@ APPROVAL_NONE = "not_approvable"
 #: A parent kept whole for accounting; its partition is what a decision names.
 APPROVAL_VIA_PARTITION = "decided_through_its_partition"
 APPROVAL_MODE = {
-    EVIDENCE_RECIPROCAL: APPROVAL_BATCH,
+    # Split into one-to-one pairs (batch) and the rest (individual).
+    EVIDENCE_RECIPROCAL: APPROVAL_VIA_PARTITION,
     EVIDENCE_ONE_DIRECTIONAL: APPROVAL_INDIVIDUAL,
     EVIDENCE_SHARED_SYNONYMY: APPROVAL_VIA_PARTITION,
     EVIDENCE_NONE: APPROVAL_NONE,
@@ -193,6 +200,7 @@ PAIR_COLUMNS = [
     "col_vernacular_languages",
     "col_twins_of_nortaxa_concept",
     "nortaxa_twins_of_col_concept",
+    "one_to_one",
     "accepted_authorship_difference",
 ]
 GRADE_COLUMNS = MANIFEST_COLUMNS[4:]
@@ -279,6 +287,8 @@ def pair_rows(b_pairs, scope, vernaculars, names) -> list[dict]:
         "col_vernacular_languages": vernaculars.get(c_taxon, []),
         "col_twins_of_nortaxa_concept": col_twins[nortaxa_id],
         "nortaxa_twins_of_col_concept": nortaxa_twins[col_id],
+        "one_to_one": col_twins[nortaxa_id] == 1
+        and nortaxa_twins[col_id] == 1,
     } for nortaxa_id, n_taxon, col_id, c_taxon in b_pairs]
 
 
@@ -338,32 +348,40 @@ def build_manifest(evidence_class: str, rows: list[dict], pins: dict) -> dict:
     }
 
 
-#: Review manifests append these, then the sub-class, to the pair columns.
+#: Review manifests append these, then the review class and sub-class, to
+#: the pair columns.
 SUB_CLASS_COLUMN = "authorship_sub_class"
 AUTHORSHIP_DISAGREES = "accepted_authorship_disagrees"
+DECISION_COLUMNS = (B_COLUMNS + REVIEW_EXTRA_COLUMNS
+                    + ["review_class", SUB_CLASS_COLUMN])
 
 
 def build_review_manifest(review_class: str, rows: list[dict], pins: dict,
                           parent: dict, nortaxa_source: dict,
                           sub_class: str | None = None) -> dict:
     """One ``shared_synonymy`` review class, or one sub-class of
-    ``accepted_authorship_disagrees`` when ``sub_class`` is given."""
-    columns = B_COLUMNS + REVIEW_EXTRA_COLUMNS + [SUB_CLASS_COLUMN]
+    ``accepted_authorship_disagrees`` when ``sub_class`` is given.
+
+    A batch leaf holds only one-to-one pairs; the rest of its class is in
+    ``NOT_ONE_TO_ONE_MANIFEST``. ``accepted_authorship_disagrees`` itself is
+    a parent kept whole for accounting."""
+    is_parent = review_class == AUTHORSHIP_DISAGREES and sub_class is None
     members = _members([r for r in rows
                         if r["evidence_class"] == EVIDENCE_SHARED_SYNONYMY
                         and r.get("review_class") == review_class
-                        and sub_class in (None, r.get(SUB_CLASS_COLUMN))],
-                       columns)
+                        and sub_class in (None, r.get(SUB_CLASS_COLUMN))
+                        and (is_parent or r["one_to_one"])],
+                       DECISION_COLUMNS)
     manifest = {
         "format": "sporely-taxonomy-v3-group-b-review-manifest-v1",
         "population": "group_b_name_equal_duplicate_candidates",
         "evidence_class": EVIDENCE_SHARED_SYNONYMY,
         "review_class": review_class,
-        "approval_mode": (APPROVAL_VIA_PARTITION
-                          if review_class == AUTHORSHIP_DISAGREES
-                          and sub_class is None else APPROVAL_BATCH),
+        "approval_mode": (APPROVAL_VIA_PARTITION if is_parent
+                          else APPROVAL_BATCH),
         "review_status": "needs_review",
-        "membership_rule": SHARED_REVIEW_CLASSES[review_class],
+        "membership_rule": SHARED_REVIEW_CLASSES[review_class]
+        + ("" if is_parent else _ONE_TO_ONE_RULE),
         "review_class_precedence": list(SHARED_REVIEW_CLASSES),
         "synonym_kinds": SYNONYM_KINDS,
         "synonym_kind_precedence": list(SYNONYM_KINDS),
@@ -373,7 +391,7 @@ def build_review_manifest(review_class: str, rows: list[dict], pins: dict,
         "nortaxa_col_source": nortaxa_source,
         "note": _NOTE,
         "pins": pins,
-        **_manifest_body(columns, members),
+        **_manifest_body(DECISION_COLUMNS, members),
     }
     if review_class == AUTHORSHIP_DISAGREES:
         manifest["authorship_differences"] = AUTHORSHIP_DIFFERENCES
@@ -381,55 +399,129 @@ def build_review_manifest(review_class: str, rows: list[dict], pins: dict,
             AUTHORSHIP_DIFFERENCES)
     if sub_class is not None:
         manifest["sub_class"] = sub_class
-        manifest["membership_rule"] = _sub_class_rule(sub_class)
+        manifest["membership_rule"] = _sub_class_rule(sub_class) \
+            + _ONE_TO_ONE_RULE
     return manifest
 
 
-def not_one_to_one(rows: list[dict]) -> dict:
-    """Pairs a single supersession cannot express without a choice."""
-    many_col = sorted({(r["nortaxa_taxon_id"], r["col_usage_id"])
-                       for r in rows if r["col_twins_of_nortaxa_concept"] > 1})
-    many_nortaxa = sorted({(r["nortaxa_taxon_id"], r["col_usage_id"])
-                           for r in rows
-                           if r["nortaxa_twins_of_col_concept"] > 1})
+_ONE_TO_ONE_RULE = ("; and the pair is one-to-one (neither concept shares its "
+                    "name with another concept on the other side)")
+RECIPROCAL_ONE_TO_ONE_MANIFEST = \
+    "group-b-reciprocal-accepted-synonymy--one-to-one.manifest.json"
+NOT_ONE_TO_ONE_MANIFEST = "group-b-not-one-to-one.manifest.json"
+NOT_ONE_TO_ONE_RULE = (
+    "evidence class reciprocal_accepted_synonymy or shared_synonymy, and the "
+    "pair is not one-to-one: its NorTaxa concept shares its name with more "
+    "than one COL concept, or its COL concept with more than one NorTaxa "
+    "concept. A supersession names one current concept, so each such pair is "
+    "decided individually and no batch decision covers it.")
+
+
+def build_decision_manifest(name: str, rows: list[dict], pins: dict,
+                            evidence_classes: tuple[str, ...], one_to_one: bool,
+                            approval_mode: str, rule: str,
+                            nortaxa_source: dict) -> dict:
+    """A decision leaf outside the shared-synonymy review classes."""
+    members = _members([r for r in rows
+                        if r["evidence_class"] in evidence_classes
+                        and r["one_to_one"] == one_to_one], DECISION_COLUMNS)
     return {
-        "definition": ("a NorTaxa concept named like more than one COL "
-                       "concept, or a COL concept named like more than one "
-                       "NorTaxa concept; supersession needs one current "
-                       "concept, so each such pair needs its own choice even "
-                       "inside an approved batch"),
-        "nortaxa_concepts_with_several_col_twins": len(
-            {n for n, _ in many_col}),
-        "pairs_on_those_concepts": len(many_col),
-        "col_concepts_with_several_nortaxa_twins": len(
-            {c for _, c in many_nortaxa}),
-        "pairs_on_those_col_concepts": len(many_nortaxa),
+        "format": "sporely-taxonomy-v3-group-b-review-manifest-v1",
+        "population": "group_b_name_equal_duplicate_candidates",
+        "evidence_class": (evidence_classes[0] if len(evidence_classes) == 1
+                           else list(evidence_classes)),
+        "decision_leaf": name,
+        "approval_mode": approval_mode,
+        "review_status": "needs_review",
+        "membership_rule": rule,
+        "nortaxa_col_source": nortaxa_source,
+        "note": _NOTE,
+        "pins": pins,
+        **_manifest_body(DECISION_COLUMNS, members),
     }
 
 
-def review_queue(manifests: dict[str, dict], review_manifests: dict[str, dict],
-                 file_sha: dict[str, str]) -> list[dict]:
-    """Decidable manifests, most cloud impact first."""
-    entries = []
-    for name, m in [*manifests.items(), *review_manifests.items()]:
-        if m["approval_mode"] in (APPROVAL_NONE, APPROVAL_VIA_PARTITION) \
-                or not m["member_count"]:
+def not_one_to_one(rows: list[dict], leaf_of: dict) -> dict:
+    """Pairs a single supersession cannot express without a choice,
+    enumerated in cloud-impact order with the manifest that decides each."""
+    pairs = [r for r in rows if not r["one_to_one"]]
+    pairs.sort(key=lambda r: impact_key([r[c] for c in B_COLUMNS], B_COLUMNS))
+    return {
+        "definition": ("a NorTaxa concept named like more than one COL "
+                       "concept, or a COL concept named like more than one "
+                       "NorTaxa concept. Supersession needs one current "
+                       "concept, so no batch decision covers such a pair: "
+                       "reciprocal and shared_synonymy ones are in "
+                       f"{NOT_ONE_TO_ONE_MANIFEST} (individual), "
+                       "one-directional ones are individual anyway, and "
+                       "no_published_cross_reference ones are not approvable"),
+        "nortaxa_concepts_with_several_col_twins": len(
+            {r["nortaxa_taxon_id"] for r in pairs
+             if r["col_twins_of_nortaxa_concept"] > 1}),
+        "col_concepts_with_several_nortaxa_twins": len(
+            {r["col_usage_id"] for r in pairs
+             if r["nortaxa_twins_of_col_concept"] > 1}),
+        "pair_count": len(pairs),
+        "pairs": [{
+            "nortaxa_taxon_id": r["nortaxa_taxon_id"],
+            "col_usage_id": r["col_usage_id"],
+            "canonical_scientific_name": r["canonical_scientific_name"],
+            "col_in_cloud_scope": r["col_in_cloud_scope"],
+            "col_twins_of_nortaxa_concept": r["col_twins_of_nortaxa_concept"],
+            "nortaxa_twins_of_col_concept": r["nortaxa_twins_of_col_concept"],
+            "evidence_class": r["evidence_class"],
+            "decision_manifest": leaf_of[(r["nortaxa_taxon_id"],
+                                          r["col_usage_id"])],
+        } for r in pairs],
+    }
+
+
+def pair_review_queue(rows: list[dict], leaf_of: dict, leaves: dict,
+                      file_sha: dict[str, str]) -> list[dict]:
+    """Every decidable pair in one global cloud-impact order: COL side in the
+    cloud scope, then NorTaxa side with vernaculars, then identifier. Each
+    entry names the manifest (and its file_sha256) a decision on it names."""
+    queue = []
+    for row in sorted(rows, key=lambda r: impact_key(
+            [r[c] for c in B_COLUMNS], B_COLUMNS)):
+        pair = (row["nortaxa_taxon_id"], row["col_usage_id"])
+        leaf = leaf_of[pair]
+        mode = leaves[leaf]["approval_mode"]
+        if mode == APPROVAL_NONE:
             continue
-        entries.append({
-            "manifest": name,
-            "file_sha256": file_sha[name],
-            "evidence_class": m["evidence_class"],
-            "review_class": m.get("review_class"),
-            "sub_class": m.get("sub_class"),
-            "approval_mode": m["approval_mode"],
-            "member_count": m["member_count"],
-            "cloud_scope_member_count": m["cloud_scope_member_count"],
-            "cloud_scope_with_nortaxa_vernaculars_count":
-                m["cloud_scope_with_nortaxa_vernaculars_count"],
+        queue.append({
+            "position": len(queue) + 1,
+            "nortaxa_taxon_id": pair[0],
+            "col_usage_id": pair[1],
+            "nortaxa_sporely_taxon_id": row["nortaxa_sporely_taxon_id"],
+            "col_sporely_taxon_id": row["col_sporely_taxon_id"],
+            "canonical_scientific_name": row["canonical_scientific_name"],
+            "col_in_cloud_scope": row["col_in_cloud_scope"],
+            "nortaxa_has_vernaculars": bool(row["nortaxa_vernacular_languages"]),
+            "one_to_one": row["one_to_one"],
+            "evidence_class": row["evidence_class"],
+            "review_class": row["review_class"],
+            "authorship_sub_class": row[SUB_CLASS_COLUMN],
+            "decision_manifest": leaf,
+            "file_sha256": file_sha[leaf],
+            "approval_mode": mode,
         })
-    entries.sort(key=lambda e: (-e["cloud_scope_with_nortaxa_vernaculars_count"],
-                                -e["cloud_scope_member_count"], e["manifest"]))
-    return entries
+    return queue
+
+
+def decision_manifests(leaves: dict, file_sha: dict[str, str]) -> list[dict]:
+    """Index of the non-empty decidable leaves, by name. The review order is
+    ``pair_review_queue``, not this list."""
+    return [{
+        "manifest": name,
+        "file_sha256": file_sha[name],
+        "approval_mode": m["approval_mode"],
+        "member_count": m["member_count"],
+        "cloud_scope_member_count": m["cloud_scope_member_count"],
+        "cloud_scope_with_nortaxa_vernaculars_count":
+            m["cloud_scope_with_nortaxa_vernaculars_count"],
+    } for name, m in sorted(leaves.items())
+        if m["approval_mode"] != APPROVAL_NONE and m["member_count"]]
 
 
 def regression_outcomes(rows_by_pair: dict, explicit: dict,
@@ -533,6 +625,9 @@ def audit(args: argparse.Namespace) -> dict:
                 nortaxa.get(pair[0]), col.get(pair[1])),
             **grade(nortaxa.get(pair[0]), col.get(pair[1]))}
 
+    for row in rows:
+        row.update(dict.fromkeys(
+            REVIEW_EXTRA_COLUMNS + ["review_class", SUB_CLASS_COLUMN]))
     shared_rows = [r for r in rows
                    if r["evidence_class"] == EVIDENCE_SHARED_SYNONYMY]
     provenance = collections.Counter(
@@ -584,26 +679,49 @@ def audit(args: argparse.Namespace) -> dict:
                               nortaxa_source, sub)
         for sub in sub_classes}
     disagrees["sub_classes"] = sub_classes
-    width = len(B_COLUMNS)
-    split = sorted(m[:width] for rm in review_manifests.values()
-                   for m in rm["members"])
-    if split != sorted(parent["members"]):
-        raise SystemExit("Group-B shared_synonymy review classes do not "
-                         "partition the parent manifest")
-    if sorted(m for sm in sub_manifests.values() for m in sm["members"]) \
-            != sorted(disagrees["members"]):
-        raise SystemExit("authorship sub-classes do not partition "
-                         "accepted_authorship_disagrees")
     review_manifests.update(sub_manifests)
+    review_manifests[RECIPROCAL_ONE_TO_ONE_MANIFEST] = build_decision_manifest(
+        RECIPROCAL_ONE_TO_ONE_MANIFEST, rows, pins, (EVIDENCE_RECIPROCAL,),
+        True, APPROVAL_BATCH,
+        "evidence class reciprocal_accepted_synonymy" + _ONE_TO_ONE_RULE,
+        nortaxa_source)
+    review_manifests[NOT_ONE_TO_ONE_MANIFEST] = build_decision_manifest(
+        NOT_ONE_TO_ONE_MANIFEST, rows, pins,
+        (EVIDENCE_RECIPROCAL, EVIDENCE_SHARED_SYNONYMY), False,
+        APPROVAL_INDIVIDUAL, NOT_ONE_TO_ONE_RULE, nortaxa_source)
+
+    # Every pair is in exactly one decision leaf: the manifests that are not
+    # decided through a partition.
+    leaves = {name: m for name, m in [*manifests.items(),
+                                      *review_manifests.items()]
+              if m["approval_mode"] != APPROVAL_VIA_PARTITION}
+    leaf_of = {}
+    for name, m in leaves.items():
+        for member in m["members"]:
+            pair = (member[0], member[2])
+            if pair in leaf_of:
+                raise SystemExit(f"pair {pair} is in two decision manifests")
+            leaf_of[pair] = name
+    if set(leaf_of) != {(r["nortaxa_taxon_id"], r["col_usage_id"])
+                        for r in rows} or len(leaf_of) != len(rows):
+        raise SystemExit("decision manifests do not partition the pairs")
     if sum(m["member_count"] for m in manifests.values()) != len(rows):
         raise SystemExit("Group-B evidence classes do not partition the pairs")
-
-    placement = {}
-    for name, m in [*manifests.items(), *review_manifests.items()]:
-        if m["approval_mode"] == APPROVAL_VIA_PARTITION:
-            continue
-        for member in m["members"]:
-            placement[(member[0], member[2])] = name
+    width = len(B_COLUMNS)
+    for whole in (parent, disagrees):
+        inside = {(m[0], m[2]): m for m in whole["members"]}
+        parts = sorted(m[:width] for leaf in leaves.values()
+                       for m in leaf["members"] if (m[0], m[2]) in inside)
+        if parts != sorted(m[:width] for m in inside.values()):
+            raise SystemExit("decision leaves do not partition "
+                             f"{whole.get('review_class') or 'shared_synonymy'}")
+    for name, leaf in leaves.items():
+        if leaf["approval_mode"] == APPROVAL_BATCH and not all(
+                dict(zip(leaf["columns"], m))["one_to_one"]
+                for m in leaf["members"]):
+            raise SystemExit(f"batch manifest holds a not-one-to-one pair: "
+                             f"{name}")
+    placement = leaf_of
 
     def counts(subset):
         by_class = collections.Counter(r["evidence_class"] for r in subset)
@@ -647,14 +765,14 @@ def audit(args: argparse.Namespace) -> dict:
         "cloud_scope": counts(cloud_rows),
         "cloud_scope_with_nortaxa_vernaculars": counts(
             [r for r in cloud_rows if r["nortaxa_vernacular_languages"]]),
-        "not_one_to_one": {"full_release": not_one_to_one(rows),
-                           "cloud_scope": not_one_to_one(cloud_rows)},
+        "not_one_to_one": not_one_to_one(rows, leaf_of),
         "regression_outcomes": regression_outcomes(
             {(r["nortaxa_taxon_id"], r["col_usage_id"]): r for r in rows},
             explicit, placement),
     }
     return {"report": report, "manifests": manifests,
-            "review_manifests": review_manifests}
+            "review_manifests": review_manifests, "rows": rows,
+            "leaves": leaves, "leaf_of": leaf_of}
 
 
 def build_parser() -> argparse.ArgumentParser:
@@ -679,15 +797,18 @@ def main(argv: list[str] | None = None) -> int:
             "evidence_class", "approval_mode", "member_count",
             "cloud_scope_member_count",
             "cloud_scope_with_nortaxa_vernaculars_count", "members_sha256")}
-        for key in ("review_class", "sub_class"):
+        for key in ("review_class", "sub_class", "decision_leaf"):
             if key in manifest:
                 entry[key] = manifest[key]
         entry["file_sha256"] = _write_json(args.out_dir / name, manifest)
         files[name] = entry
+    file_sha = {n: e["file_sha256"] for n, e in files.items()}
     report = {**result["report"], "manifests": files,
-              "review_queue": review_queue(
-                  result["manifests"], result["review_manifests"],
-                  {n: e["file_sha256"] for n, e in files.items()})}
+              "decision_manifests": decision_manifests(result["leaves"],
+                                                       file_sha),
+              "pair_review_queue": pair_review_queue(
+                  result["rows"], result["leaf_of"], result["leaves"],
+                  file_sha)}
     _write_json(args.out_dir / "group-b-report.json", report)
     summary = {k: {c: report[k][c] for c in (
         "pairs", "by_evidence_class", "by_accepted_authorship_difference",

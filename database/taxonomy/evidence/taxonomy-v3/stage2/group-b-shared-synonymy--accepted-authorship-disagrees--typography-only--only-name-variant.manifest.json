@@ -27,6 +27,7 @@
   "col_vernacular_languages",
   "col_twins_of_nortaxa_concept",
   "nortaxa_twins_of_col_concept",
+  "one_to_one",
   "accepted_authorship_difference",
   "bridge_accepted_name",
   "backbone_accepted_name",
@@ -39,6 +40,7 @@
   "backbone_synonym_count",
   "shared_synonym_kind_counts",
   "shared_synonym_evidence",
+  "review_class",
   "authorship_sub_class"
  ],
  "evidence_class": "shared_synonymy",
@@ -58,6 +60,7 @@
    [],
    1,
    1,
+   true,
    "typography_only",
    "Dacrymyces microsporus P. Karst.",
    "Dacrymyces microsporus P.Karst.",
@@ -76,6 +79,7 @@
    [
     "name_variant: near-spelling of accepted 'dacrymyces microsporus' [col col:status=synonym, nortaxa taxonomicStatus=synonym, col source=2030 merged=true]"
    ],
+   "accepted_authorship_disagrees",
    "typography_only--only_name_variant"
   ],
   [
@@ -91,6 +95,7 @@
    [],
    1,
    1,
+   true,
    "typography_only",
    "Lecidella flavosorediata (Vezda) Hertel & Leuckert",
    "Lecidella flavosorediata (Vězda) Hertel & Leuckert",
@@ -109,6 +114,7 @@
    [
     "name_variant: near-spelling of accepted 'lecidella flavosorediata' [col col:nameStatus=unacceptable, col col:status=synonym, nortaxa nomenclaturalStatus=illegitimate, nortaxa taxonomicStatus=synonym, col source=2030 merged=true]"
    ],
+   "accepted_authorship_disagrees",
    "typography_only--only_name_variant"
   ],
   [
@@ -122,6 +128,7 @@
    [],
    1,
    1,
+   true,
    "typography_only",
    "Graphina sophistica (Nyl.) Müll.Arg.",
    "Graphina sophistica (Nyl.) Müll. Arg.",
@@ -140,6 +147,7 @@
    [
     "name_variant: near-spelling of accepted 'graphina sophistica' [col col:status=synonym, nortaxa taxonomicStatus=synonym, col source=2073 merged=false]"
    ],
+   "accepted_authorship_disagrees",
    "typography_only--only_name_variant"
   ],
   [
@@ -153,6 +161,7 @@
    [],
    1,
    1,
+   true,
    "typography_only",
    "Cetrelia alaskana (C.F. Culb. & W.L. Culb.) W.L. Culb. & C.F. Culb.",
    "Cetrelia alaskana (C.F.Culb. & W.L.Culb.) W.L.Culb. & C.F.Culb.",
@@ -171,11 +180,12 @@
    [
     "name_variant: near-spelling of accepted 'cetrelia alaskana' [col col:nameStatus=unacceptable, col col:status=synonym, nortaxa nomenclaturalStatus=illegitimate, nortaxa taxonomicStatus=synonym, col source=2030 merged=true]"
    ],
+   "accepted_authorship_disagrees",
    "typography_only--only_name_variant"
   ]
  ],
- "members_sha256": "92d26d0bed14831bdcff0d4f2250a40082e7cb87d15b722b9c2a7d8e6b8802d0",
- "membership_rule": "review class 'accepted_authorship_disagrees'; authorship difference 'typography_only': the accepted authorships are equal after removing whitespace, diacritics and letter case; and, read as if the accepted name keys agreed, review class 'only_name_variant': every shared synonym is of kind 'name_variant'",
+ "members_sha256": "333e88e2defd701382bbf01e6eef0761b61e996f10c8f83ed81c86aca5b1fcd3",
+ "membership_rule": "review class 'accepted_authorship_disagrees'; authorship difference 'typography_only': the accepted authorships are equal after removing whitespace, diacritics and letter case; and, read as if the accepted name keys agreed, review class 'only_name_variant': every shared synonym is of kind 'name_variant'; and the pair is one-to-one (neither concept shares its name with another concept on the other side)",
  "nortaxa_col_source": {
   "col_source_id": "2030",
   "matched_on": "COL source/<id>.yaml title == NorTaxa eml.xml dataset title",
@@ -185,7 +195,7 @@
  "parent_manifest": {
   "evidence_class": "shared_synonymy",
   "member_count": 2032,
-  "members_sha256": "19083142abcfdb037e9372b7271cd9beb2749a01cc64a1490a19b60ddea9acd9"
+  "members_sha256": "85175ef8089819a66a4dadaa25b24354aef519990deee342d41707b2efa68fd2"
  },
  "pins": {
   "bridge_emission_policy": {

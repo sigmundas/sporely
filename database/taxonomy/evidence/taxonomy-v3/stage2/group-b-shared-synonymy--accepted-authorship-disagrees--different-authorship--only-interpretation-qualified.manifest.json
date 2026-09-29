@@ -27,6 +27,7 @@
   "col_vernacular_languages",
   "col_twins_of_nortaxa_concept",
   "nortaxa_twins_of_col_concept",
+  "one_to_one",
   "accepted_authorship_difference",
   "bridge_accepted_name",
   "backbone_accepted_name",
@@ -39,6 +40,7 @@
   "backbone_synonym_count",
   "shared_synonym_kind_counts",
   "shared_synonym_evidence",
+  "review_class",
   "authorship_sub_class"
  ],
  "evidence_class": "shared_synonymy",
@@ -63,6 +65,7 @@
    [],
    1,
    1,
+   true,
    "different_authorship",
    "Cystolepiota adulterina (F. H. Møller) Bon",
    "Cystolepiota adulterina F.H. Møller ex Knudsen",
@@ -81,6 +84,7 @@
    [
     "interpretation_qualified: authorship 'ss.' [col col:nameStatus=unacceptable, col col:status=synonym, nortaxa nomenclaturalStatus=illegitimate, nortaxa taxonomicStatus=synonym, col source=2030 merged=true]"
    ],
+   "accepted_authorship_disagrees",
    "different_authorship--only_interpretation_qualified"
   ],
   [
@@ -100,6 +104,7 @@
    [],
    1,
    1,
+   true,
    "different_authorship",
    "Clavaria amoenoides Corner, Thinad & Anand",
    "Clavaria amoenoides Corner, K.S. Thind & Anand",
@@ -118,6 +123,7 @@
    [
     "interpretation_qualified: authorship 'ss.' [col col:nameStatus=unacceptable, col col:status=synonym, nortaxa nomenclaturalStatus=illegitimate, nortaxa taxonomicStatus=synonym, col source=2030 merged=true]"
    ],
+   "accepted_authorship_disagrees",
    "different_authorship--only_interpretation_qualified"
   ],
   [
@@ -138,6 +144,7 @@
    [],
    1,
    1,
+   true,
    "different_authorship",
    "Cortinarius anthracinus (Fr. : Fr.) Fr.",
    "Cortinarius anthracinus (Fr.) E. Berger",
@@ -156,6 +163,7 @@
    [
     "interpretation_qualified: authorship 'ss.' [col col:nameStatus=unacceptable, col col:status=synonym, nortaxa nomenclaturalStatus=illegitimate, nortaxa taxonomicStatus=synonym, col source=2030 merged=true]"
    ],
+   "accepted_authorship_disagrees",
    "different_authorship--only_interpretation_qualified"
   ],
   [
@@ -171,6 +179,7 @@
    [],
    1,
    1,
+   true,
    "different_authorship",
    "Inocybe pseudodestricta Stangl & Veselský",
    "Inocybe pseudodestricta Stangl & J. Veselský",
@@ -189,6 +198,7 @@
    [
     "interpretation_qualified: authorship 'ss.' [col col:nameStatus=unacceptable, col col:status=synonym, nortaxa nomenclaturalStatus=illegitimate, nortaxa taxonomicStatus=synonym, col source=2030 merged=true]"
    ],
+   "accepted_authorship_disagrees",
    "different_authorship--only_interpretation_qualified"
   ],
   [
@@ -209,6 +219,7 @@
    [],
    1,
    1,
+   true,
    "different_authorship",
    "Mycena pearsoniana Singer sensu auct. eur.",
    "Mycena pearsoniana Dennis ex Singer",
@@ -227,6 +238,7 @@
    [
     "interpretation_qualified: authorship 'ss.' [col col:nameStatus=unacceptable, col col:status=synonym, nortaxa nomenclaturalStatus=illegitimate, nortaxa taxonomicStatus=synonym, col source=2030 merged=true]"
    ],
+   "accepted_authorship_disagrees",
    "different_authorship--only_interpretation_qualified"
   ],
   [
@@ -246,6 +258,7 @@
    [],
    1,
    1,
+   true,
    "different_authorship",
    "Russula cuprea (Krombh.) J. E. Lange",
    "Russula cuprea Krombh.",
@@ -264,6 +277,7 @@
    [
     "interpretation_qualified: authorship 'ss.' [col col:nameStatus=unacceptable, col col:status=synonym, nortaxa nomenclaturalStatus=illegitimate, nortaxa taxonomicStatus=synonym, col source=2030 merged=true]"
    ],
+   "accepted_authorship_disagrees",
    "different_authorship--only_interpretation_qualified"
   ],
   [
@@ -281,6 +295,7 @@
    [],
    1,
    1,
+   true,
    "different_authorship",
    "Bacidia biatorina (Körber) Vainio",
    "Bacidia biatorina (Körb.) Vain.",
@@ -299,6 +314,7 @@
    [
     "interpretation_qualified: col col:status=misapplied [col col:nameStatus=acceptable, col col:status=misapplied, nortaxa taxonomicStatus=synonym, col source=2041 merged=true]"
    ],
+   "accepted_authorship_disagrees",
    "different_authorship--only_interpretation_qualified"
   ],
   [
@@ -312,6 +328,7 @@
    [],
    1,
    1,
+   true,
    "different_authorship",
    "Aspicilia aquatica Körber",
    "Aspicilia aquatica (Fr.) Körb.",
@@ -330,6 +347,7 @@
    [
     "interpretation_qualified: col col:status=misapplied [col col:nameStatus=acceptable, col col:status=misapplied, nortaxa nomenclaturalStatus=illegitimate, nortaxa taxonomicStatus=synonym, col source=2041 merged=true]"
    ],
+   "accepted_authorship_disagrees",
    "different_authorship--only_interpretation_qualified"
   ],
   [
@@ -343,6 +361,7 @@
    [],
    1,
    1,
+   true,
    "different_authorship",
    "Hymenelia melanocarpa (Krempelh.) Lutzoni",
    "Hymenelia melanocarpa (Kremp.) Arnold",
@@ -361,6 +380,7 @@
    [
     "interpretation_qualified: col col:status=misapplied [col col:nameStatus=acceptable, col col:status=misapplied, nortaxa nomenclaturalStatus=illegitimate, nortaxa taxonomicStatus=synonym, col source=2041 merged=true]"
    ],
+   "accepted_authorship_disagrees",
    "different_authorship--only_interpretation_qualified"
   ],
   [
@@ -374,6 +394,7 @@
    [],
    1,
    1,
+   true,
    "different_authorship",
    "Verrucaria latebrosa Körber",
    "Verrucaria latebrosa Körb.",
@@ -392,11 +413,12 @@
    [
     "interpretation_qualified: col col:status=misapplied [col col:nameStatus=acceptable, col col:status=misapplied, nortaxa nomenclaturalStatus=illegitimate, nortaxa taxonomicStatus=synonym, col source=2041 merged=true]"
    ],
+   "accepted_authorship_disagrees",
    "different_authorship--only_interpretation_qualified"
   ]
  ],
- "members_sha256": "41d9294fef43abf4b936b481fda3d0d4ce340e2a4e591f4dfb6c372243fc159a",
- "membership_rule": "review class 'accepted_authorship_disagrees'; authorship difference 'different_authorship': none of the above: the accepted authorships name different authors or differ in a way no rule above reads (for example an abbreviation); and, read as if the accepted name keys agreed, review class 'only_interpretation_qualified': every shared synonym is of kind 'interpretation_qualified'",
+ "members_sha256": "09e24e1932f42cb889e9130c5fc4024ef6a4f9713dbd67a576b45ae1d903c6f2",
+ "membership_rule": "review class 'accepted_authorship_disagrees'; authorship difference 'different_authorship': none of the above: the accepted authorships name different authors or differ in a way no rule above reads (for example an abbreviation); and, read as if the accepted name keys agreed, review class 'only_interpretation_qualified': every shared synonym is of kind 'interpretation_qualified'; and the pair is one-to-one (neither concept shares its name with another concept on the other side)",
  "nortaxa_col_source": {
   "col_source_id": "2030",
   "matched_on": "COL source/<id>.yaml title == NorTaxa eml.xml dataset title",
@@ -406,7 +428,7 @@
  "parent_manifest": {
   "evidence_class": "shared_synonymy",
   "member_count": 2032,
-  "members_sha256": "19083142abcfdb037e9372b7271cd9beb2749a01cc64a1490a19b60ddea9acd9"
+  "members_sha256": "85175ef8089819a66a4dadaa25b24354aef519990deee342d41707b2efa68fd2"
  },
  "pins": {
   "bridge_emission_policy": {

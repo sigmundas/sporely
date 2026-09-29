@@ -1,0 +1,306 @@
+{
+ "approval_mode": "individual",
+ "cloud_scope_member_count": 4,
+ "cloud_scope_with_nortaxa_vernaculars_count": 4,
+ "columns": [
+  "nortaxa_taxon_id",
+  "nortaxa_sporely_taxon_id",
+  "col_usage_id",
+  "col_sporely_taxon_id",
+  "canonical_scientific_name",
+  "col_in_cloud_scope",
+  "nortaxa_vernacular_languages",
+  "col_vernacular_languages",
+  "col_twins_of_nortaxa_concept",
+  "nortaxa_twins_of_col_concept",
+  "one_to_one",
+  "accepted_authorship_difference",
+  "bridge_accepted_name",
+  "backbone_accepted_name",
+  "accepted_names_agree",
+  "bridge_lists_backbone_accepted_name_as_synonym",
+  "backbone_lists_bridge_accepted_name_as_synonym",
+  "shared_synonym_count",
+  "shared_synonyms",
+  "bridge_synonym_count",
+  "backbone_synonym_count",
+  "shared_synonym_kind_counts",
+  "shared_synonym_evidence",
+  "review_class",
+  "authorship_sub_class"
+ ],
+ "decision_leaf": "group-b-not-one-to-one.manifest.json",
+ "evidence_class": [
+  "reciprocal_accepted_synonymy",
+  "shared_synonymy"
+ ],
+ "format": "sporely-taxonomy-v3-group-b-review-manifest-v1",
+ "member_count": 6,
+ "members": [
+  [
+   "52450",
+   624718,
+   "62M9T",
+   84922,
+   "Cortinarius",
+   true,
+   [
+    "nb",
+    "nn"
+   ],
+   [],
+   1,
+   3,
+   false,
+   "different_authorship",
+   "Cortinarius (Pers.) Gray",
+   "Cortinarius (Pers.) Gray, 1821",
+   false,
+   false,
+   false,
+   3,
+   [
+    "inoloma (Fr.) Wünsche",
+    "sericeocybe Rob. Henry",
+    "telamonia (Fr.) Wünsche"
+   ],
+   7,
+   4,
+   {
+    "nortaxa_derived": 1,
+    "ordinary": 2
+   },
+   [
+    "ordinary: none of the weak kinds [col col:status=synonym, nortaxa taxonomicStatus=synonym, col source=7888 merged=true]",
+    "nortaxa_derived: every COL usage has col:sourceID 2030 (V4GQY, clb:merged=true) [col col:status=synonym, nortaxa taxonomicStatus=synonym, col source=2030 merged=true]",
+    "ordinary: none of the weak kinds [col col:status=synonym, nortaxa taxonomicStatus=synonym, col source=7888 merged=true]"
+   ],
+   "non_species_rank",
+   null
+  ],
+  [
+   "53077",
+   625052,
+   "54HL",
+   69871,
+   "Inocybe",
+   true,
+   [
+    "nb",
+    "nn"
+   ],
+   [],
+   1,
+   3,
+   false,
+   "different_authorship",
+   "Inocybe (Fr.) Fr.",
+   "Inocybe (Fr.) Fr., 1863",
+   false,
+   false,
+   false,
+   1,
+   [
+    "inocybella Zerova"
+   ],
+   1,
+   2,
+   {
+    "nortaxa_derived": 1
+   },
+   [
+    "nortaxa_derived: every COL usage has col:sourceID 2030 (QP3DW, clb:merged=true) [col col:status=synonym, nortaxa taxonomicStatus=synonym, col source=2030 merged=true]"
+   ],
+   "non_species_rank",
+   null
+  ],
+  [
+   "56273",
+   626274,
+   "4ZPC",
+   68299,
+   "Hydnum",
+   true,
+   [
+    "nb",
+    "nn"
+   ],
+   [],
+   2,
+   1,
+   false,
+   "sanctioning_citation",
+   "Hydnum L. : Fr.",
+   "Hydnum L.",
+   false,
+   false,
+   false,
+   1,
+   [
+    "dentinum Gray"
+   ],
+   1,
+   1,
+   {
+    "ordinary": 1
+   },
+   [
+    "ordinary: none of the weak kinds [col col:status=synonym, nortaxa taxonomicStatus=synonym, col source=7888 merged=true]"
+   ],
+   "non_species_rank",
+   null
+  ],
+  [
+   "79034",
+   632950,
+   "3KJX6",
+   14541,
+   "Helvella crispa",
+   true,
+   [
+    "da",
+    "de",
+    "en",
+    "es",
+    "fi",
+    "fr",
+    "nb",
+    "nn",
+    "pl"
+   ],
+   [],
+   2,
+   1,
+   false,
+   "different_authorship",
+   "Helvella crispa Scop.: Fr.",
+   "Helvella crispa (Scop.) Fr.",
+   false,
+   false,
+   false,
+   1,
+   [
+    "helvella barlae Boud. & Pat."
+   ],
+   1,
+   25,
+   {
+    "ordinary": 1
+   },
+   [
+    "ordinary: none of the weak kinds [col col:status=synonym, nortaxa nomenclaturalStatus=illegitimate, nortaxa taxonomicStatus=synonym, col source=2073 merged=false]"
+   ],
+   "accepted_authorship_disagrees",
+   "different_authorship--ordinary"
+  ],
+  [
+   "122977",
+   621127,
+   "TVWMN",
+   607698,
+   "Uromyces trifolii",
+   false,
+   [
+    "nb",
+    "nn",
+    "sv"
+   ],
+   [],
+   2,
+   1,
+   false,
+   "different_authorship",
+   "Uromyces trifolii (R. Hedw.) Lév.",
+   "Uromyces trifolii (R. Hedw.) Lév., 1847",
+   false,
+   false,
+   false,
+   2,
+   [
+    "puccinia neurophila Grognot",
+    "uromyces flectens Lagerh."
+   ],
+   4,
+   7,
+   {
+    "ordinary": 2
+   },
+   [
+    "ordinary: none of the weak kinds [col col:status=synonym, nortaxa nomenclaturalStatus=illegitimate, nortaxa taxonomicStatus=synonym, col source=7888 merged=true]",
+    "ordinary: none of the weak kinds [col col:status=synonym, nortaxa nomenclaturalStatus=illegitimate, nortaxa taxonomicStatus=synonym, col source=7888 merged=true]"
+   ],
+   "accepted_authorship_disagrees",
+   "different_authorship--ordinary"
+  ],
+  [
+   "82128",
+   634235,
+   "4FPNG",
+   43963,
+   "Phaeospora rimosicola",
+   false,
+   [],
+   [],
+   1,
+   2,
+   false,
+   "different_authorship",
+   "Phaeospora rimosicola (Mudd) Hepp",
+   "Phaeospora rimosicola (Leight.) Hepp ex Stein",
+   false,
+   false,
+   false,
+   1,
+   [
+    "pyrenulella endococcoidea (Nyl.) Fink"
+   ],
+   2,
+   14,
+   {
+    "ordinary": 1
+   },
+   [
+    "ordinary: none of the weak kinds [col col:status=synonym, nortaxa nomenclaturalStatus=illegitimate, nortaxa taxonomicStatus=synonym, col source=2073 merged=false]"
+   ],
+   "accepted_authorship_disagrees",
+   "different_authorship--ordinary"
+  ]
+ ],
+ "members_sha256": "792405f77732e534b356d0d923a5593e0b7b301ea023e78dd63b6de9c8fc289f",
+ "membership_rule": "evidence class reciprocal_accepted_synonymy or shared_synonymy, and the pair is not one-to-one: its NorTaxa concept shares its name with more than one COL concept, or its COL concept with more than one NorTaxa concept. A supersession names one current concept, so each such pair is decided individually and no batch decision covers it.",
+ "nortaxa_col_source": {
+  "col_source_id": "2030",
+  "matched_on": "COL source/<id>.yaml title == NorTaxa eml.xml dataset title",
+  "title": "Nortaxa (Artsnavnebasen)"
+ },
+ "note": "Immutable review input. It approves nothing: a Group-B pair becomes a supersession or mapping only through an owner decision recorded in the plan that names this file's file_sha256 (batch) or the pair (individual). Membership is pinned to the release and source archives below and never extends to taxa in a later source release. Members are in cloud-impact order (COL side in the cloud scope, then NorTaxa side with vernaculars, then identifier). shared_synonyms and shared_synonym_evidence list at most 10 names; the counts are exact.",
+ "pins": {
+  "bridge_emission_policy": {
+   "path": "database/taxonomy/policies/mapping_policy.yml",
+   "sha256": "a5a329848c45fcd030165a51ad1193944dffe7573ddb2a9c69441f0d76ae4afb"
+  },
+  "cloud_scope_policy": {
+   "path": "database/taxonomy/policies/global-macrofungi-scope.yml",
+   "scope_predicate_id": "global_macrofungi_policy_v1",
+   "sha256": "e4e796286df93b5372264c702c824eea746f680b3b4e8d6467621c99e5b64ea6"
+  },
+  "release": {
+   "content_release_id": "tax-2026.09.26-02",
+   "gz_artifact": "database/reference_data/generated/taxonomy_v2/tax-2026.09.26-02.sqlite3.gz",
+   "gz_sha256": "4488bb64f4abe18ed269c76264f9be36708d742ff531e931e8d7458791e05d72",
+   "sqlite_sha256": "9bf71b7e1f9b2915c3b1798743cefdd5db53bdbbfb7edc462aa3d0ad0cf8547d"
+  },
+  "source_archives": {
+   "col_xr": {
+    "sha256": "397d701c8eb269bf78d6ac7b03149915b0d9e2a2c18694be2c91445b807814f9",
+    "source_release_id": "col_xr:2026-07-17-XR:2026-07-17"
+   },
+   "nortaxa": {
+    "sha256": "29c11c54d955dc44e4e5a38944dd7932989a256d1b173777579b9f33abd2fe22",
+    "source_release_id": "nortaxa:1.284:2026-07-17"
+   }
+  }
+ },
+ "population": "group_b_name_equal_duplicate_candidates",
+ "review_status": "needs_review"
+}

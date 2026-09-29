@@ -27,6 +27,7 @@
   "col_vernacular_languages",
   "col_twins_of_nortaxa_concept",
   "nortaxa_twins_of_col_concept",
+  "one_to_one",
   "accepted_authorship_difference",
   "bridge_accepted_name",
   "backbone_accepted_name",
@@ -39,6 +40,7 @@
   "backbone_synonym_count",
   "shared_synonym_kind_counts",
   "shared_synonym_evidence",
+  "review_class",
   "authorship_sub_class"
  ],
  "evidence_class": "shared_synonymy",
@@ -65,6 +67,7 @@
    [],
    1,
    1,
+   true,
    "sanctioning_citation",
    "Oxyporus populinus (Schumach. : Fr.) Donk",
    "Oxyporus populinus (Schumach.) Donk",
@@ -83,6 +86,7 @@
    [
     "pro_parte: col col:status=ambiguous synonym [col col:status=ambiguous synonym, nortaxa nomenclaturalStatus=illegitimate, nortaxa taxonomicStatus=synonym, col source=2073 merged=false]"
    ],
+   "accepted_authorship_disagrees",
    "sanctioning_citation--only_pro_parte"
   ],
   [
@@ -99,6 +103,7 @@
    [],
    1,
    1,
+   true,
    "sanctioning_citation",
    "Phanerochaete laevis (Fr. : Fr.) J. Erikss. & Ryvarden",
    "Phanerochaete laevis (Fr.) J. Erikss. & Ryvarden",
@@ -117,6 +122,7 @@
    [
     "pro_parte: col col:status=ambiguous synonym [col col:status=ambiguous synonym, nortaxa nomenclaturalStatus=illegitimate, nortaxa taxonomicStatus=synonym, col source=2073 merged=false]"
    ],
+   "accepted_authorship_disagrees",
    "sanctioning_citation--only_pro_parte"
   ],
   [
@@ -141,6 +147,7 @@
    [],
    1,
    1,
+   true,
    "sanctioning_citation",
    "Cerrena unicolor (Bull. : Fr.) Murrill",
    "Cerrena unicolor (Bull.) Murrill",
@@ -159,6 +166,7 @@
    [
     "pro_parte: col col:status=ambiguous synonym [col col:status=ambiguous synonym, nortaxa nomenclaturalStatus=illegitimate, nortaxa taxonomicStatus=synonym, col source=2073 merged=false]"
    ],
+   "accepted_authorship_disagrees",
    "sanctioning_citation--only_pro_parte"
   ],
   [
@@ -174,6 +182,7 @@
    [],
    1,
    1,
+   true,
    "sanctioning_citation",
    "Sarcoscypha coccinea (Jacq. : Fr.) Lambotte",
    "Sarcoscypha coccinea (Jacq.) Lambotte",
@@ -192,6 +201,7 @@
    [
     "pro_parte: col col:status=ambiguous synonym [col col:status=ambiguous synonym, nortaxa nomenclaturalStatus=illegitimate, nortaxa taxonomicStatus=synonym, col source=2073 merged=false]"
    ],
+   "accepted_authorship_disagrees",
    "sanctioning_citation--only_pro_parte"
   ],
   [
@@ -210,6 +220,7 @@
    [],
    1,
    1,
+   true,
    "sanctioning_citation",
    "Tapesia fusca (Pers.: Fr.) Fuckel",
    "Tapesia fusca (Pers.) Fuckel",
@@ -228,6 +239,7 @@
    [
     "pro_parte: col col:status=ambiguous synonym [col col:status=ambiguous synonym, nortaxa nomenclaturalStatus=illegitimate, nortaxa taxonomicStatus=synonym, col source=2073 merged=false]"
    ],
+   "accepted_authorship_disagrees",
    "sanctioning_citation--only_pro_parte"
   ],
   [
@@ -243,6 +255,7 @@
    [],
    1,
    1,
+   true,
    "sanctioning_citation",
    "Polystigma rubrum (Pers.: Fr.) DC.",
    "Polystigma rubrum (Pers.) DC.",
@@ -261,6 +274,7 @@
    [
     "pro_parte: col col:status=ambiguous synonym [col col:status=ambiguous synonym, nortaxa nomenclaturalStatus=illegitimate, nortaxa taxonomicStatus=synonym, col source=2073 merged=false]"
    ],
+   "accepted_authorship_disagrees",
    "sanctioning_citation--only_pro_parte"
   ],
   [
@@ -282,6 +296,7 @@
    [],
    1,
    1,
+   true,
    "sanctioning_citation",
    "Poronia punctata (L.: Fr.) Fr.",
    "Poronia punctata (L.) Fr.",
@@ -300,6 +315,7 @@
    [
     "pro_parte: col col:status=ambiguous synonym [col col:status=ambiguous synonym, nortaxa taxonomicStatus=synonym, col source=2073 merged=false]"
    ],
+   "accepted_authorship_disagrees",
    "sanctioning_citation--only_pro_parte"
   ],
   [
@@ -313,6 +329,7 @@
    [],
    1,
    1,
+   true,
    "sanctioning_citation",
    "Muellerella lichenicola (Sommerf.:Fr.) D. Hawksw.",
    "Muellerella lichenicola (Sommerf.) D. Hawksw.",
@@ -331,11 +348,12 @@
    [
     "pro_parte: col col:status=ambiguous synonym [col col:status=ambiguous synonym, nortaxa nomenclaturalStatus=illegitimate, nortaxa taxonomicStatus=synonym, col source=2073 merged=false]"
    ],
+   "accepted_authorship_disagrees",
    "sanctioning_citation--only_pro_parte"
   ]
  ],
- "members_sha256": "318fab193bc75b6d382652ed8fa13782b4b174d4bd1cc886e0db51582c27f87b",
- "membership_rule": "review class 'accepted_authorship_disagrees'; authorship difference 'sanctioning_citation': the accepted authorships are equal after also removing a sanctioning citation (':' and the author after it, before a closing parenthesis or at the end), as in '(Pers. : Fr.) Boud.' against '(Pers.) Boud.'; and, read as if the accepted name keys agreed, review class 'only_pro_parte': every shared synonym is of kind 'pro_parte'",
+ "members_sha256": "02d8fa881b8fc0dbbf36fa76e97252642f96c934b25a5d3c3f24044e297bc334",
+ "membership_rule": "review class 'accepted_authorship_disagrees'; authorship difference 'sanctioning_citation': the accepted authorships are equal after also removing a sanctioning citation (':' and the author after it, before a closing parenthesis or at the end), as in '(Pers. : Fr.) Boud.' against '(Pers.) Boud.'; and, read as if the accepted name keys agreed, review class 'only_pro_parte': every shared synonym is of kind 'pro_parte'; and the pair is one-to-one (neither concept shares its name with another concept on the other side)",
  "nortaxa_col_source": {
   "col_source_id": "2030",
   "matched_on": "COL source/<id>.yaml title == NorTaxa eml.xml dataset title",
@@ -345,7 +363,7 @@
  "parent_manifest": {
   "evidence_class": "shared_synonymy",
   "member_count": 2032,
-  "members_sha256": "19083142abcfdb037e9372b7271cd9beb2749a01cc64a1490a19b60ddea9acd9"
+  "members_sha256": "85175ef8089819a66a4dadaa25b24354aef519990deee342d41707b2efa68fd2"
  },
  "pins": {
   "bridge_emission_policy": {

@@ -249,15 +249,27 @@ Outputs are byte-deterministic:
 
 - `group-b-<evidence-class>.manifest.json`, `group-b-shared-synonymy--<review-class>.manifest.json`
   and `group-b-shared-synonymy--accepted-authorship-disagrees--<sub-class>.manifest.json`.
-  Every member is `needs_review`. Members are in cloud-impact order: COL side
-  in the cloud scope, then NorTaxa side with vernaculars, then identifier. Each
-  manifest's `approval_mode` says how decision 2 lets it be decided:
-  `batch_by_file_sha256` (a leaf class), `individual` (one-directional),
-  `decided_through_its_partition` (a parent kept for accounting) or
-  `not_approvable` (`no_published_cross_reference`).
-- `group-b-report.json`: counts, `file_sha256` per manifest, the
-  `review_queue` in cloud-impact order, `not_one_to_one` pairs, and the
-  recorded regression outcomes.
+  Also `group-b-reciprocal-accepted-synonymy--one-to-one.manifest.json` and
+  `group-b-not-one-to-one.manifest.json`. Every member is `needs_review`.
+  Members are in cloud-impact order: COL side in the cloud scope, then
+  NorTaxa side with vernaculars, then identifier. Each manifest's
+  `approval_mode` says how decision 2 lets it be decided:
+  - `batch_by_file_sha256`: a one-to-one reciprocal or `shared_synonymy` leaf;
+  - `individual`: one-directional, and not one-to-one;
+  - `decided_through_its_partition`: a parent kept for accounting;
+  - `not_approvable`: `no_published_cross_reference`.
+
+  Every pair is in exactly one decision leaf (a manifest that is not
+  `decided_through_its_partition`).
+- `group-b-report.json` contains:
+  - counts and the `file_sha256` of each manifest;
+  - `pair_review_queue`: all 2,094 decidable pairs in one global cloud-impact
+    order, each naming its decision manifest and that manifest's
+    `file_sha256`;
+  - `not_one_to_one`: every such pair and the manifest that decides it;
+  - `decision_manifests`: an index of the decision leaves, which is not a
+    review order;
+  - the recorded regression outcomes.
 
 | | Full release | Cloud scope |
 |---|---:|---:|
@@ -267,20 +279,28 @@ Outputs are byte-deterministic:
 | — `shared_synonymy` | 2,032 | 574 |
 | — `no_published_cross_reference` | 5,329 | 1,543 |
 
-The head of the review queue:
+The pair queue orders pairs, not manifests: 518 cloud pairs whose NorTaxa
+side has vernaculars come first, then 71 other cloud pairs, then 614 and 891
+non-cloud pairs. The largest decision leaves by cloud pairs with NorTaxa
+vernaculars:
 
-| Sub-class manifest | Members | Cloud | Cloud with vernaculars |
+| `accepted_authorship_disagrees` sub-class | Members | Cloud | Cloud with vernaculars |
 |---|---:|---:|---:|
 | `sanctioning_citation--ordinary` | 336 | 241 | 236 |
-| `different_authorship--ordinary` | 839 | 116 | 78 |
+| `different_authorship--ordinary` | 836 | 115 | 77 |
 | `sanctioning_citation--only_nortaxa_derived` | 63 | 45 | 45 |
 | `sanctioning_citation--single_shared_synonym_low_overlap` | 46 | 41 | 41 |
 | `typography_only--ordinary` | 179 | 46 | 38 |
 
-Not one-to-one: 82 NorTaxa concepts share a name with more than one COL
-concept (167 pairs), and 25 COL concepts with more than one NorTaxa concept
-(54 pairs). A supersession names one current concept, so each such pair needs
-its own choice even inside an approved batch.
+Not one-to-one: 217 pairs. On 82 NorTaxa concepts, one concept shares its
+name with more than one COL concept; on 25 COL concepts, one shares its name
+with more than one NorTaxa concept. A supersession names one current concept,
+so no batch decision covers such a pair. All 217 are listed in the report:
+
+- 211 are `no_published_cross_reference`, so they are not approvable;
+- none is one-directional;
+- 6 `shared_synonymy` pairs are routed out of their review classes into
+  `group-b-not-one-to-one.manifest.json`, which is `individual`.
 
 **Decision status.** No Group-B manifest or pair has an owner decision.
 Nothing is approved, and no supersession or mapping was generated.

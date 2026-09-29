@@ -110,31 +110,87 @@ def test_tracked_manifests_are_pinned_partitioned_and_undecided():
                 for c in audit.EVIDENCE_CLASSES]
     assert sum(m["member_count"] for m in evidence) == 7423
     assert [m["approval_mode"] for m in evidence] == [
-        "batch_by_file_sha256", "individual",
+        "decided_through_its_partition", "individual",
         "decided_through_its_partition", "not_approvable"]
 
+    # Every pair is in exactly one decision leaf, and the leaves partition
+    # each parent kept for accounting.
+    leaves = {n: _tracked(n) for n, e in report["manifests"].items()
+              if e["approval_mode"] != "decided_through_its_partition"}
+    placed = [(m[0], m[2]) for leaf in leaves.values() for m in leaf["members"]]
+    assert len(placed) == len(set(placed)) == 7423
     width = len(audit.B_COLUMNS)
-    parent = _tracked("group-b-shared-synonymy.manifest.json")
-    leaves = [n for n, e in report["manifests"].items()
-              if n.startswith("group-b-shared-synonymy--")
-              and e["approval_mode"] == "batch_by_file_sha256"]
-    split = sorted(m[:width] for n in leaves for m in _tracked(n)["members"])
-    assert split == sorted(parent["members"])
+    for parent_name in ("group-b-shared-synonymy.manifest.json",
+                        "group-b-reciprocal-accepted-synonymy.manifest.json",
+                        "group-b-shared-synonymy--accepted-authorship-"
+                        "disagrees.manifest.json"):
+        parent = {(m[0], m[2]): m[:width]
+                  for m in _tracked(parent_name)["members"]}
+        parts = sorted(m[:width] for leaf in leaves.values()
+                       for m in leaf["members"] if (m[0], m[2]) in parent)
+        assert parts == sorted(parent.values()), parent_name
     sub = audit.SUB_CLASS_COLUMN
-    for name in leaves:
-        manifest = _tracked(name)
-        column = manifest["columns"].index(sub)
-        assert {m[column] for m in manifest["members"]} \
-            <= {manifest.get("sub_class")}, name
+    for name, manifest in leaves.items():
+        if "sub_class" in manifest:
+            column = manifest["columns"].index(sub)
+            assert {m[column] for m in manifest["members"]} \
+                <= {manifest["sub_class"]}, name
+        if manifest["approval_mode"] == "batch_by_file_sha256":
+            one = manifest["columns"].index("one_to_one")
+            assert all(m[one] for m in manifest["members"]), name
 
-    queued = {e["manifest"] for e in report["review_queue"]}
-    assert "group-b-no-published-cross-reference.manifest.json" not in queued
-    assert "group-b-shared-synonymy.manifest.json" not in queued
-    assert ("group-b-shared-synonymy--accepted-authorship-disagrees"
-            ".manifest.json") not in queued
-    order = [(e["cloud_scope_with_nortaxa_vernaculars_count"],
-              e["cloud_scope_member_count"]) for e in report["review_queue"]]
-    assert order == sorted(order, reverse=True)
+
+def test_pair_review_queue_is_one_global_cloud_impact_order():
+    report = _tracked("group-b-report.json")
+    queue = report["pair_review_queue"]
+    assert [e["position"] for e in queue] == list(range(1, len(queue) + 1))
+    # Every pair a decision can reach, and no other, exactly once.
+    assert len(queue) == 62 + 2032
+    assert len({(e["nortaxa_taxon_id"], e["col_usage_id"]) for e in queue}) \
+        == len(queue)
+    assert {e["approval_mode"] for e in queue} \
+        == {"batch_by_file_sha256", "individual"}
+    tiers = [(not e["col_in_cloud_scope"], not e["nortaxa_has_vernaculars"],
+              e["nortaxa_taxon_id"], e["col_usage_id"]) for e in queue]
+    assert tiers == sorted(tiers)
+    # No cloud pair comes after a non-cloud pair, whatever its manifest.
+    first_off_cloud = next(i for i, e in enumerate(queue)
+                           if not e["col_in_cloud_scope"])
+    assert all(not e["col_in_cloud_scope"] for e in queue[first_off_cloud:])
+    for entry in queue:
+        assert report["manifests"][entry["decision_manifest"]]["file_sha256"] \
+            == entry["file_sha256"]
+        member_pairs = {(m[0], m[2]) for m in
+                        _tracked(entry["decision_manifest"])["members"]}
+        assert (entry["nortaxa_taxon_id"], entry["col_usage_id"]) \
+            in member_pairs
+
+
+def test_not_one_to_one_pairs_are_enumerated_and_never_batched():
+    report = _tracked("group-b-report.json")
+    ambiguous = report["not_one_to_one"]
+    assert ambiguous["pair_count"] == len(ambiguous["pairs"]) == 217
+    assert ambiguous["nortaxa_concepts_with_several_col_twins"] == 82
+    assert ambiguous["col_concepts_with_several_nortaxa_twins"] == 25
+    for pair in ambiguous["pairs"]:
+        assert pair["col_twins_of_nortaxa_concept"] > 1 \
+            or pair["nortaxa_twins_of_col_concept"] > 1
+        mode = report["manifests"][pair["decision_manifest"]]["approval_mode"]
+        assert mode in ("individual", "not_approvable"), pair
+    routed = _tracked(audit.NOT_ONE_TO_ONE_MANIFEST)
+    assert routed["approval_mode"] == "individual"
+    assert {(m[0], m[2]) for m in routed["members"]} == {
+        (p["nortaxa_taxon_id"], p["col_usage_id"]) for p in ambiguous["pairs"]
+        if p["decision_manifest"] == audit.NOT_ONE_TO_ONE_MANIFEST}
+    assert routed["member_count"] == 6
+
+
+def test_one_to_one_is_computed_over_both_sides():
+    pairs = [("1", 10, "A", 20), ("1", 10, "B", 21),   # NorTaxa 1 has two twins
+             ("2", 11, "C", 22), ("3", 12, "C", 22),   # COL C has two twins
+             ("4", 13, "D", 23)]
+    rows = audit.pair_rows(pairs, set(), {}, {})
+    assert [r["one_to_one"] for r in rows] == [False, False, False, False, True]
 
 
 def test_regression_outcomes_are_explicit_and_open():

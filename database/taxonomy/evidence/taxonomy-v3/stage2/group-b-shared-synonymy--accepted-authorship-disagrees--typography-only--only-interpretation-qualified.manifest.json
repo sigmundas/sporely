@@ -27,6 +27,7 @@
   "col_vernacular_languages",
   "col_twins_of_nortaxa_concept",
   "nortaxa_twins_of_col_concept",
+  "one_to_one",
   "accepted_authorship_difference",
   "bridge_accepted_name",
   "backbone_accepted_name",
@@ -39,6 +40,7 @@
   "backbone_synonym_count",
   "shared_synonym_kind_counts",
   "shared_synonym_evidence",
+  "review_class",
   "authorship_sub_class"
  ],
  "evidence_class": "shared_synonymy",
@@ -60,6 +62,7 @@
    [],
    1,
    1,
+   true,
    "typography_only",
    "Cortinarius pinisquamulosus Kytöv., Niskanen & Liimat.",
    "Cortinarius pinisquamulosus Kytov., Niskanen & Liimat.",
@@ -78,11 +81,12 @@
    [
     "interpretation_qualified: authorship 's.' [col col:status=synonym, nortaxa taxonomicStatus=synonym, col source=2030 merged=true]"
    ],
+   "accepted_authorship_disagrees",
    "typography_only--only_interpretation_qualified"
   ]
  ],
- "members_sha256": "eb0624adccbaf80ffeb66c81996e9aff575f1204ef4b55be72e4b798fd01b959",
- "membership_rule": "review class 'accepted_authorship_disagrees'; authorship difference 'typography_only': the accepted authorships are equal after removing whitespace, diacritics and letter case; and, read as if the accepted name keys agreed, review class 'only_interpretation_qualified': every shared synonym is of kind 'interpretation_qualified'",
+ "members_sha256": "da32e6b1d008369da75d70f55d16d4d5b3acf862e93b32efef22f8e1c734da89",
+ "membership_rule": "review class 'accepted_authorship_disagrees'; authorship difference 'typography_only': the accepted authorships are equal after removing whitespace, diacritics and letter case; and, read as if the accepted name keys agreed, review class 'only_interpretation_qualified': every shared synonym is of kind 'interpretation_qualified'; and the pair is one-to-one (neither concept shares its name with another concept on the other side)",
  "nortaxa_col_source": {
   "col_source_id": "2030",
   "matched_on": "COL source/<id>.yaml title == NorTaxa eml.xml dataset title",
@@ -92,7 +96,7 @@
  "parent_manifest": {
   "evidence_class": "shared_synonymy",
   "member_count": 2032,
-  "members_sha256": "19083142abcfdb037e9372b7271cd9beb2749a01cc64a1490a19b60ddea9acd9"
+  "members_sha256": "85175ef8089819a66a4dadaa25b24354aef519990deee342d41707b2efa68fd2"
  },
  "pins": {
   "bridge_emission_policy": {

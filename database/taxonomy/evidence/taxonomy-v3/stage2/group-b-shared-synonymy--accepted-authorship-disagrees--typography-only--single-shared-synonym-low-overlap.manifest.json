@@ -27,6 +27,7 @@
   "col_vernacular_languages",
   "col_twins_of_nortaxa_concept",
   "nortaxa_twins_of_col_concept",
+  "one_to_one",
   "accepted_authorship_difference",
   "bridge_accepted_name",
   "backbone_accepted_name",
@@ -39,6 +40,7 @@
   "backbone_synonym_count",
   "shared_synonym_kind_counts",
   "shared_synonym_evidence",
+  "review_class",
   "authorship_sub_class"
  ],
  "evidence_class": "shared_synonymy",
@@ -61,6 +63,7 @@
    [],
    1,
    1,
+   true,
    "typography_only",
    "Cortinarius tubarius Ammirati & A. H. Sm.",
    "Cortinarius tubarius Ammirati & A.H. Sm.",
@@ -90,6 +93,7 @@
     "nortaxa_derived: every COL usage has col:sourceID 2030 (MQW4Q, clb:merged=true) [col col:nameStatus=unacceptable, col col:status=synonym, nortaxa nomenclaturalStatus=illegitimate, nortaxa taxonomicStatus=synonym, col source=2030 merged=true]",
     "unauthored: empty authorship [col col:nameStatus=unacceptable, col col:status=synonym, nortaxa nomenclaturalStatus=illegitimate, nortaxa taxonomicStatus=synonym, col source=2030 merged=true]"
    ],
+   "accepted_authorship_disagrees",
    "typography_only--single_shared_synonym_low_overlap"
   ],
   [
@@ -107,6 +111,7 @@
    [],
    1,
    1,
+   true,
    "typography_only",
    "Bryostigma muscigenum (Th.Fr.) Frisch & G. Thor",
    "Bryostigma muscigenum (Th. Fr.) Frisch & G. Thor",
@@ -131,6 +136,7 @@
     "unpublished: authorship 'ined' [col col:nameStatus=unacceptable, col col:status=synonym, nortaxa nomenclaturalStatus=illegitimate, nortaxa taxonomicStatus=synonym, col source=2030 merged=true]",
     "ordinary: none of the weak kinds [col col:status=synonym, nortaxa taxonomicStatus=synonym, col source=2073 merged=false]"
    ],
+   "accepted_authorship_disagrees",
    "typography_only--single_shared_synonym_low_overlap"
   ],
   [
@@ -146,6 +152,7 @@
    [],
    1,
    1,
+   true,
    "typography_only",
    "Gyalecta incarnata (Th.Fr. & Graewe) Baloch & Lücking",
    "Gyalecta incarnata (Th. Fr. & Graewe) Baloch & Lücking",
@@ -167,6 +174,7 @@
     "nortaxa_derived: every COL usage has col:sourceID 2030 (LSTRL, clb:merged=true) [col col:nameStatus=unacceptable, col col:status=synonym, nortaxa nomenclaturalStatus=illegitimate, nortaxa taxonomicStatus=synonym, col source=2030 merged=true]",
     "ordinary: none of the weak kinds [col col:nameStatus=acceptable, col col:status=synonym, nortaxa nomenclaturalStatus=illegitimate, nortaxa taxonomicStatus=synonym, col source=2041 merged=true]"
    ],
+   "accepted_authorship_disagrees",
    "typography_only--single_shared_synonym_low_overlap"
   ],
   [
@@ -186,6 +194,7 @@
    [],
    1,
    1,
+   true,
    "typography_only",
    "Rusavskia sorediata (Vain.) S.Y.Kondr. & Kärnefelt",
    "Rusavskia sorediata (Vain.) S.Y. Kondr. & Kärnefelt",
@@ -214,6 +223,7 @@
     "not_validly_published: col col:nameStatus=not established [col col:nameStatus=not established, col col:status=synonym, nortaxa nomenclaturalStatus=illegitimate, nortaxa taxonomicStatus=synonym, col source=2041 merged=true]",
     "not_validly_published: col col:nameStatus=not established [col col:nameStatus=not established, col col:status=synonym, nortaxa nomenclaturalStatus=illegitimate, nortaxa taxonomicStatus=synonym, col source=2041 merged=true]"
    ],
+   "accepted_authorship_disagrees",
    "typography_only--single_shared_synonym_low_overlap"
   ],
   [
@@ -229,6 +239,7 @@
    [],
    1,
    1,
+   true,
    "typography_only",
    "Bacidina chloroticula (Nyl.) Vezda & Poelt",
    "Bacidina chloroticula (Nyl.) Vězda & Poelt",
@@ -259,6 +270,7 @@
     "ordinary: none of the weak kinds [col col:status=synonym, nortaxa nomenclaturalStatus=illegitimate, nortaxa taxonomicStatus=synonym, col source=2073 merged=false]",
     "nortaxa_derived: every COL usage has col:sourceID 2030 (PVSGP, clb:merged=true) [col col:nameStatus=unacceptable, col col:status=synonym, nortaxa nomenclaturalStatus=illegitimate, nortaxa taxonomicStatus=synonym, col source=2030 merged=true]"
    ],
+   "accepted_authorship_disagrees",
    "typography_only--single_shared_synonym_low_overlap"
   ],
   [
@@ -276,6 +288,7 @@
    [],
    1,
    1,
+   true,
    "typography_only",
    "Gyalideopsis piceicola (Nyl.) Vezda & Poelt",
    "Gyalideopsis piceicola (Nyl.) Vězda & Poelt",
@@ -302,6 +315,7 @@
     "interpretation_qualified: col col:status=misapplied [col col:nameStatus=acceptable, col col:status=misapplied, nortaxa nomenclaturalStatus=illegitimate, nortaxa taxonomicStatus=synonym, col source=2041 merged=true]",
     "ordinary: none of the weak kinds [col col:nameStatus=acceptable, col col:status=synonym, nortaxa nomenclaturalStatus=illegitimate, nortaxa taxonomicStatus=synonym, col source=2041 merged=true]"
    ],
+   "accepted_authorship_disagrees",
    "typography_only--single_shared_synonym_low_overlap"
   ],
   [
@@ -317,6 +331,7 @@
    [],
    1,
    1,
+   true,
    "typography_only",
    "Protoparmeliopsis achariana (A.L.Sm.) Moberg & R.Sant.",
    "Protoparmeliopsis achariana (A.L. Sm.) Moberg & R. Sant.",
@@ -347,6 +362,7 @@
     "nortaxa_derived: every COL usage has col:sourceID 2030 (RTG2K, clb:merged=true) [col col:nameStatus=unacceptable, col col:status=synonym, nortaxa nomenclaturalStatus=illegitimate, nortaxa taxonomicStatus=synonym, col source=2030 merged=true]",
     "nortaxa_derived: every COL usage has col:sourceID 2030 (RTN8B, clb:merged=true) [col col:nameStatus=unacceptable, col col:status=synonym, nortaxa nomenclaturalStatus=illegitimate, nortaxa taxonomicStatus=synonym, col source=2030 merged=true]"
    ],
+   "accepted_authorship_disagrees",
    "typography_only--single_shared_synonym_low_overlap"
   ],
   [
@@ -360,6 +376,7 @@
    [],
    1,
    1,
+   true,
    "typography_only",
    "Clavascidium lacinulatum (Ach.) M.Prieto",
    "Clavascidium lacinulatum (Ach.) M. Prieto",
@@ -381,6 +398,7 @@
     "ordinary: none of the weak kinds [col col:status=synonym, nortaxa nomenclaturalStatus=illegitimate, nortaxa taxonomicStatus=synonym, col source=2073 merged=false]",
     "nortaxa_derived: every COL usage has col:sourceID 2030 (NB7MC, clb:merged=true) [col col:nameStatus=unacceptable, col col:status=synonym, nortaxa nomenclaturalStatus=illegitimate, nortaxa taxonomicStatus=synonym, col source=2030 merged=true]"
    ],
+   "accepted_authorship_disagrees",
    "typography_only--single_shared_synonym_low_overlap"
   ],
   [
@@ -394,6 +412,7 @@
    [],
    1,
    1,
+   true,
    "typography_only",
    "Miriquidica subplumbea (Anzi) Cl.Roux",
    "Miriquidica subplumbea (Anzi) Cl. Roux",
@@ -415,6 +434,7 @@
     "nortaxa_derived: every COL usage has col:sourceID 2030 (LYFVM, clb:merged=true) [col col:nameStatus=unacceptable, col col:status=synonym, nortaxa nomenclaturalStatus=illegitimate, nortaxa taxonomicStatus=synonym, col source=2030 merged=true]",
     "ordinary: none of the weak kinds [col col:status=synonym, nortaxa nomenclaturalStatus=illegitimate, nortaxa taxonomicStatus=synonym, col source=2073 merged=false]"
    ],
+   "accepted_authorship_disagrees",
    "typography_only--single_shared_synonym_low_overlap"
   ],
   [
@@ -428,6 +448,7 @@
    [],
    1,
    1,
+   true,
    "typography_only",
    "Pyrenodesmia alociza (A.Massal.) Arnold",
    "Pyrenodesmia alociza (A. Massal.) Arnold",
@@ -446,6 +467,7 @@
    [
     "ordinary: none of the weak kinds [col col:status=synonym, nortaxa taxonomicStatus=synonym, col source=7888 merged=true]"
    ],
+   "accepted_authorship_disagrees",
    "typography_only--single_shared_synonym_low_overlap"
   ],
   [
@@ -459,6 +481,7 @@
    [],
    1,
    1,
+   true,
    "typography_only",
    "Phacographa zwackhii (A.Massal. ex Zwackh) Hafellner",
    "Phacographa zwackhii (A. Massal. ex Zwackh) Hafellner",
@@ -480,6 +503,7 @@
     "nortaxa_derived: every COL usage has col:sourceID 2030 (LJWJ9, clb:merged=true) [col col:nameStatus=unacceptable, col col:status=synonym, nortaxa nomenclaturalStatus=illegitimate, nortaxa taxonomicStatus=synonym, col source=2030 merged=true]",
     "ordinary: none of the weak kinds [col col:nameStatus=acceptable, col col:status=synonym, nortaxa nomenclaturalStatus=illegitimate, nortaxa taxonomicStatus=synonym, col source=2041 merged=true]"
    ],
+   "accepted_authorship_disagrees",
    "typography_only--single_shared_synonym_low_overlap"
   ],
   [
@@ -493,6 +517,7 @@
    [],
    1,
    1,
+   true,
    "typography_only",
    "Chiodecton colensoi (A. Massal.) Müll.Arg.",
    "Chiodecton colensoi (A. Massal.) Müll. Arg.",
@@ -526,6 +551,7 @@
     "nortaxa_derived: every COL usage has col:sourceID 2030 (VKXVF, clb:merged=true) [col col:nameStatus=unacceptable, col col:status=synonym, nortaxa nomenclaturalStatus=illegitimate, nortaxa taxonomicStatus=synonym, col source=2030 merged=true]",
     "nortaxa_derived: every COL usage has col:sourceID 2030 (TDVL2, clb:merged=true) [col col:nameStatus=unacceptable, col col:status=synonym, nortaxa nomenclaturalStatus=illegitimate, nortaxa taxonomicStatus=synonym, col source=2030 merged=true]"
    ],
+   "accepted_authorship_disagrees",
    "typography_only--single_shared_synonym_low_overlap"
   ],
   [
@@ -539,6 +565,7 @@
    [],
    1,
    1,
+   true,
    "typography_only",
    "Bacidina egenula (Nyl.) Vezda",
    "Bacidina egenula (Nyl.) Vězda",
@@ -563,6 +590,7 @@
     "nortaxa_derived: every COL usage has col:sourceID 2030 (MF53S, clb:merged=true) [col col:nameStatus=unacceptable, col col:status=synonym, nortaxa nomenclaturalStatus=illegitimate, nortaxa taxonomicStatus=synonym, col source=2030 merged=true]",
     "ordinary: none of the weak kinds [col col:status=synonym, nortaxa nomenclaturalStatus=illegitimate, nortaxa taxonomicStatus=synonym, col source=2073 merged=false]"
    ],
+   "accepted_authorship_disagrees",
    "typography_only--single_shared_synonym_low_overlap"
   ],
   [
@@ -576,6 +604,7 @@
    [],
    1,
    1,
+   true,
    "typography_only",
    "Lithothelium obtectum (Müll.Arg.) Aptroot",
    "Lithothelium obtectum (Müll. Arg.) Aptroot",
@@ -599,6 +628,7 @@
     "nortaxa_derived: every COL usage has col:sourceID 2030 (PW4YM, clb:merged=true) [col col:nameStatus=unacceptable, col col:status=synonym, nortaxa nomenclaturalStatus=illegitimate, nortaxa taxonomicStatus=synonym, col source=2030 merged=true]",
     "ordinary: none of the weak kinds [col col:status=synonym, nortaxa nomenclaturalStatus=illegitimate, nortaxa taxonomicStatus=synonym, col source=2073 merged=false]"
    ],
+   "accepted_authorship_disagrees",
    "typography_only--single_shared_synonym_low_overlap"
   ],
   [
@@ -612,6 +642,7 @@
    [],
    1,
    1,
+   true,
    "typography_only",
    "Sagediopsis barbara (Th.Fr.) R. Sant. & Triebel",
    "Sagediopsis barbara (Th. Fr.) R. Sant. & Triebel",
@@ -637,11 +668,12 @@
     "ordinary: none of the weak kinds [col col:nameStatus=acceptable, col col:status=synonym, nortaxa nomenclaturalStatus=illegitimate, nortaxa taxonomicStatus=synonym, col source=2041 merged=true]",
     "nortaxa_derived: every COL usage has col:sourceID 2030 (QG48S, clb:merged=true) [col col:nameStatus=unacceptable, col col:status=synonym, nortaxa nomenclaturalStatus=illegitimate, nortaxa taxonomicStatus=synonym, col source=2030 merged=true]"
    ],
+   "accepted_authorship_disagrees",
    "typography_only--single_shared_synonym_low_overlap"
   ]
  ],
- "members_sha256": "0dbed1fe7f49c936ee4bcdc4f6001ea72e19ab701663ee864172e6dab4196268",
- "membership_rule": "review class 'accepted_authorship_disagrees'; authorship difference 'typography_only': the accepted authorships are equal after removing whitespace, diacritics and letter case; and, read as if the accepted name keys agreed, review class 'single_shared_synonym_low_overlap': exactly one shared synonym is of kind 'ordinary' while each source publishes at least 5 synonyms",
+ "members_sha256": "732717b60f176563dc4baf2b9ae9fe4bed742424989ea159ae49671cf0f1bdc9",
+ "membership_rule": "review class 'accepted_authorship_disagrees'; authorship difference 'typography_only': the accepted authorships are equal after removing whitespace, diacritics and letter case; and, read as if the accepted name keys agreed, review class 'single_shared_synonym_low_overlap': exactly one shared synonym is of kind 'ordinary' while each source publishes at least 5 synonyms; and the pair is one-to-one (neither concept shares its name with another concept on the other side)",
  "nortaxa_col_source": {
   "col_source_id": "2030",
   "matched_on": "COL source/<id>.yaml title == NorTaxa eml.xml dataset title",
@@ -651,7 +683,7 @@
  "parent_manifest": {
   "evidence_class": "shared_synonymy",
   "member_count": 2032,
-  "members_sha256": "19083142abcfdb037e9372b7271cd9beb2749a01cc64a1490a19b60ddea9acd9"
+  "members_sha256": "85175ef8089819a66a4dadaa25b24354aef519990deee342d41707b2efa68fd2"
  },
  "pins": {
   "bridge_emission_policy": {

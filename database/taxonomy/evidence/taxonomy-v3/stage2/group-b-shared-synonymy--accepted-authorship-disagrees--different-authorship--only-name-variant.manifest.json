@@ -27,6 +27,7 @@
   "col_vernacular_languages",
   "col_twins_of_nortaxa_concept",
   "nortaxa_twins_of_col_concept",
+  "one_to_one",
   "accepted_authorship_difference",
   "bridge_accepted_name",
   "backbone_accepted_name",
@@ -39,6 +40,7 @@
   "backbone_synonym_count",
   "shared_synonym_kind_counts",
   "shared_synonym_evidence",
+  "review_class",
   "authorship_sub_class"
  ],
  "evidence_class": "shared_synonymy",
@@ -59,6 +61,7 @@
    [],
    1,
    1,
+   true,
    "different_authorship",
    "Hohenbuehelia valesiaca (Sacc.) Singer",
    "Hohenbuehelia valesiaca (Ces. ex Sacc.) Singer",
@@ -77,6 +80,7 @@
    [
     "name_variant: near-spelling of accepted 'hohenbuehelia valesiaca' [col col:nameStatus=unacceptable, col col:status=synonym, nortaxa nomenclaturalStatus=illegitimate, nortaxa taxonomicStatus=synonym, col source=2030 merged=true]"
    ],
+   "accepted_authorship_disagrees",
    "different_authorship--only_name_variant"
   ],
   [
@@ -100,6 +104,7 @@
    [],
    1,
    1,
+   true,
    "different_authorship",
    "Sarcosphaera coronaria (Jacq.) Boud.",
    "Sarcosphaera coronaria (Jacq.) J. Schröt.",
@@ -118,6 +123,7 @@
    [
     "name_variant: near-spelling of accepted 'sarcosphaera coronaria' [col col:nameStatus=unacceptable, col col:status=synonym, nortaxa nomenclaturalStatus=illegitimate, nortaxa taxonomicStatus=synonym, col source=2030 merged=true]"
    ],
+   "accepted_authorship_disagrees",
    "different_authorship--only_name_variant"
   ],
   [
@@ -131,6 +137,7 @@
    [],
    1,
    1,
+   true,
    "different_authorship",
    "Dictyonema diducens Nyl.",
    "Dictyonema diducens Nyl. ex Lücking",
@@ -149,6 +156,7 @@
    [
     "name_variant: near-spelling of accepted 'dictyonema diducens' [col col:status=synonym, nortaxa taxonomicStatus=synonym, col source=2030 merged=true]"
    ],
+   "accepted_authorship_disagrees",
    "different_authorship--only_name_variant"
   ],
   [
@@ -171,6 +179,7 @@
    [],
    1,
    1,
+   true,
    "different_authorship",
    "Melanelixia glabratula (Lamy) Sandler & Arup",
    "Melanelixia glabratula (Lamy ex Nyl.) Sandler & Arup",
@@ -189,6 +198,7 @@
    [
     "name_variant: near-spelling of accepted 'melanelixia glabratula' [col col:status=synonym, nortaxa nomenclaturalStatus=illegitimate, nortaxa taxonomicStatus=synonym, col source=2073 merged=false]"
    ],
+   "accepted_authorship_disagrees",
    "different_authorship--only_name_variant"
   ],
   [
@@ -204,6 +214,7 @@
    [],
    1,
    1,
+   true,
    "different_authorship",
    "Lecidella euphorea (Flörke) Hertel",
    "Lecidella euphorea (Flörke) Kremp.",
@@ -222,6 +233,7 @@
    [
     "name_variant: near-spelling of accepted 'lecidella euphorea' [col col:status=synonym, nortaxa nomenclaturalStatus=illegitimate, nortaxa taxonomicStatus=synonym, col source=7888 merged=true]"
    ],
+   "accepted_authorship_disagrees",
    "different_authorship--only_name_variant"
   ],
   [
@@ -237,6 +249,7 @@
    [],
    1,
    1,
+   true,
    "different_authorship",
    "Lecania cyrtellina (Nyl.) Sandst.",
    "Lecania cyrtellina (Nyl.) Zahlbr.",
@@ -255,6 +268,7 @@
    [
     "name_variant: near-spelling of accepted 'lecania cyrtellina' [col col:status=synonym, nortaxa nomenclaturalStatus=illegitimate, nortaxa taxonomicStatus=synonym, col source=2073 merged=false]"
    ],
+   "accepted_authorship_disagrees",
    "different_authorship--only_name_variant"
   ],
   [
@@ -271,6 +285,7 @@
    [],
    1,
    1,
+   true,
    "different_authorship",
    "Lasiosphaeris hirsuta (Alb. & Schwein.: Fr.) A.N. Mill. & Huhndorf",
    "Lasiosphaeris hirsuta (Fr.) A.N. Mill. & Huhndorf",
@@ -289,6 +304,7 @@
    [
     "name_variant: near-spelling of accepted 'lasiosphaeris hirsuta' [col col:status=synonym, nortaxa taxonomicStatus=synonym, col source=2073 merged=false]"
    ],
+   "accepted_authorship_disagrees",
    "different_authorship--only_name_variant"
   ],
   [
@@ -302,6 +318,7 @@
    [],
    1,
    1,
+   true,
    "different_authorship",
    "Milesina feurichii (Magnus) Magnus",
    "Milesina feurichii (Magnus) Grove",
@@ -320,6 +337,7 @@
    [
     "name_variant: near-spelling of accepted 'milesina feurichii' [col col:status=synonym, nortaxa nomenclaturalStatus=illegitimate, nortaxa taxonomicStatus=synonym, col source=2073 merged=false]"
    ],
+   "accepted_authorship_disagrees",
    "different_authorship--only_name_variant"
   ],
   [
@@ -333,6 +351,7 @@
    [],
    1,
    1,
+   true,
    "different_authorship",
    "Marssonina myricariae (Rostr.) Mangnus",
    "Marssonina myricariae (Rostr.) Magnus",
@@ -351,6 +370,7 @@
    [
     "name_variant: near-spelling of accepted 'marssonina myricariae' [col col:status=synonym, nortaxa taxonomicStatus=synonym, col source=2073 merged=false]"
    ],
+   "accepted_authorship_disagrees",
    "different_authorship--only_name_variant"
   ],
   [
@@ -364,6 +384,7 @@
    [],
    1,
    1,
+   true,
    "different_authorship",
    "Marssonina violae (Pass.) Sacc.",
    "Marssonina violae (Pass.) Magnus",
@@ -382,6 +403,7 @@
    [
     "name_variant: near-spelling of accepted 'marssonina violae' [col col:status=synonym, nortaxa taxonomicStatus=synonym, col source=2030 merged=true]"
    ],
+   "accepted_authorship_disagrees",
    "different_authorship--only_name_variant"
   ],
   [
@@ -395,6 +417,7 @@
    [],
    1,
    1,
+   true,
    "different_authorship",
    "Candelaria murrayi (C.W. Dodge) Poelt",
    "Candelaria murrayi Poelt, 1974",
@@ -413,6 +436,7 @@
    [
     "name_variant: near-spelling of accepted 'candelaria murrayi' [col col:status=synonym, nortaxa taxonomicStatus=synonym, col source=2030 merged=true]"
    ],
+   "accepted_authorship_disagrees",
    "different_authorship--only_name_variant"
   ],
   [
@@ -426,6 +450,7 @@
    [],
    1,
    1,
+   true,
    "different_authorship",
    "Dothidea berberidis (Wahlenb.) Fr.",
    "Dothidea berberidis De Not.",
@@ -444,6 +469,7 @@
    [
     "name_variant: near-spelling of accepted 'dothidea berberidis' [col col:nameStatus=unacceptable, col col:status=synonym, nortaxa nomenclaturalStatus=illegitimate, nortaxa taxonomicStatus=synonym, col source=2030 merged=true]"
    ],
+   "accepted_authorship_disagrees",
    "different_authorship--only_name_variant"
   ],
   [
@@ -457,6 +483,7 @@
    [],
    1,
    1,
+   true,
    "different_authorship",
    "Halecania lecanorina (Anzi) M. Mayrh. & Poelt",
    "Halecania lecanorina (Anzi) M. Mayrhofer",
@@ -475,6 +502,7 @@
    [
     "name_variant: near-spelling of accepted 'halecania lecanorina' [col col:status=synonym, nortaxa nomenclaturalStatus=illegitimate, nortaxa taxonomicStatus=synonym, col source=2073 merged=false]"
    ],
+   "accepted_authorship_disagrees",
    "different_authorship--only_name_variant"
   ],
   [
@@ -488,6 +516,7 @@
    [],
    1,
    1,
+   true,
    "different_authorship",
    "Halecania tornensis (H. Magn.) M. Mayrhof",
    "Halecania tornensis (H. Magn.) M. Mayrhofer",
@@ -506,6 +535,7 @@
    [
     "name_variant: near-spelling of accepted 'halecania tornensis' [col col:status=synonym, nortaxa nomenclaturalStatus=illegitimate, nortaxa taxonomicStatus=synonym, col source=2073 merged=false]"
    ],
+   "accepted_authorship_disagrees",
    "different_authorship--only_name_variant"
   ],
   [
@@ -519,6 +549,7 @@
    [],
    1,
    1,
+   true,
    "different_authorship",
    "Cladia aggregata (Swartz) Nyl.",
    "Cladia aggregata (Sw.) Nyl.",
@@ -537,6 +568,7 @@
    [
     "name_variant: near-spelling of accepted 'cladia aggregata' [col col:nameStatus=unacceptable, col col:status=synonym, nortaxa nomenclaturalStatus=illegitimate, nortaxa taxonomicStatus=synonym, col source=2030 merged=true]"
    ],
+   "accepted_authorship_disagrees",
    "different_authorship--only_name_variant"
   ],
   [
@@ -550,6 +582,7 @@
    [],
    1,
    1,
+   true,
    "different_authorship",
    "Cladonia densissima (Ahti) comb. ined.",
    "Cladonia densissima (Ahti) Ahti & DePriest",
@@ -568,6 +601,7 @@
    [
     "name_variant: near-spelling of accepted 'cladonia densissima' [col col:status=synonym, nortaxa nomenclaturalStatus=illegitimate, nortaxa taxonomicStatus=synonym, col source=2073 merged=false]"
    ],
+   "accepted_authorship_disagrees",
    "different_authorship--only_name_variant"
   ],
   [
@@ -581,6 +615,7 @@
    [],
    1,
    1,
+   true,
    "different_authorship",
    "Cladonia halei (Ahti)",
    "Cladonia halei (Ahti) Ahti & DePriest",
@@ -599,6 +634,7 @@
    [
     "name_variant: near-spelling of accepted 'cladonia halei' [col col:status=synonym, nortaxa nomenclaturalStatus=illegitimate, nortaxa taxonomicStatus=synonym, col source=2073 merged=false]"
    ],
+   "accepted_authorship_disagrees",
    "different_authorship--only_name_variant"
   ],
   [
@@ -612,6 +648,7 @@
    [],
    1,
    1,
+   true,
    "different_authorship",
    "Lecidella achristotera (Nyl.) Hertel & Leuck",
    "Lecidella achristotera (Nyl.) Hertel & Leuckert",
@@ -630,6 +667,7 @@
    [
     "name_variant: near-spelling of accepted 'lecidella achristotera' [col col:nameStatus=acceptable, col col:status=synonym, nortaxa nomenclaturalStatus=illegitimate, nortaxa taxonomicStatus=synonym, col source=2041 merged=true]"
    ],
+   "accepted_authorship_disagrees",
    "different_authorship--only_name_variant"
   ],
   [
@@ -643,6 +681,7 @@
    [],
    1,
    1,
+   true,
    "different_authorship",
    "Scutula miliaris (Wallr.) Trevis.",
    "Scutula miliaris (Wallr.) P. Karst.",
@@ -661,6 +700,7 @@
    [
     "name_variant: near-spelling of accepted 'scutula miliaris' [col col:nameStatus=unacceptable, col col:status=synonym, nortaxa nomenclaturalStatus=illegitimate, nortaxa taxonomicStatus=synonym, col source=2030 merged=true]"
    ],
+   "accepted_authorship_disagrees",
    "different_authorship--only_name_variant"
   ],
   [
@@ -674,6 +714,7 @@
    [],
    1,
    1,
+   true,
    "different_authorship",
    "Cetrelia japonica (Zahlbr.) Culb. & Culb.",
    "Cetrelia japonica (Zahlbr.) W. Culb. & C. Culb.",
@@ -692,6 +733,7 @@
    [
     "name_variant: near-spelling of accepted 'cetrelia japonica' [col col:status=synonym, nortaxa nomenclaturalStatus=illegitimate, nortaxa taxonomicStatus=synonym, col source=2010 merged=true]"
    ],
+   "accepted_authorship_disagrees",
    "different_authorship--only_name_variant"
   ],
   [
@@ -705,6 +747,7 @@
    [],
    1,
    1,
+   true,
    "different_authorship",
    "Cetrelia sanguinea (Schaer.) Culb. & Culb.",
    "Cetrelia sanguinea (Schaer.) W.L. Culb. & C.F. Culb.",
@@ -723,6 +766,7 @@
    [
     "name_variant: near-spelling of accepted 'cetrelia sanguinea' [col col:status=synonym, nortaxa nomenclaturalStatus=illegitimate, nortaxa taxonomicStatus=synonym, col source=2073 merged=false]"
    ],
+   "accepted_authorship_disagrees",
    "different_authorship--only_name_variant"
   ],
   [
@@ -736,6 +780,7 @@
    [],
    1,
    1,
+   true,
    "different_authorship",
    "Melanelixia villosella (Essl.) O. Blanco et al.",
    "Melanelixia villosella (Essl.) O. Blanco, A. Crespo, Divakar, Essl., D. Hawksw. & Lumbsch",
@@ -754,6 +799,7 @@
    [
     "name_variant: near-spelling of accepted 'melanelixia villosella' [col col:status=synonym, nortaxa nomenclaturalStatus=illegitimate, nortaxa taxonomicStatus=synonym, col source=2073 merged=false]"
    ],
+   "accepted_authorship_disagrees",
    "different_authorship--only_name_variant"
   ],
   [
@@ -767,6 +813,7 @@
    [],
    1,
    1,
+   true,
    "different_authorship",
    "Parmotrema judithiae Elix & Johnston",
    "Parmotrema judithiae Elix & J. Johnst.",
@@ -785,6 +832,7 @@
    [
     "name_variant: near-spelling of accepted 'parmotrema judithiae' [col col:nameStatus=unacceptable, col col:status=synonym, nortaxa nomenclaturalStatus=illegitimate, nortaxa taxonomicStatus=synonym, col source=2030 merged=true]"
    ],
+   "accepted_authorship_disagrees",
    "different_authorship--only_name_variant"
   ],
   [
@@ -798,6 +846,7 @@
    [],
    1,
    1,
+   true,
    "different_authorship",
    "Parmelina carporrhizans (Taylor) Poelt & Vezda",
    "Parmelina carporrhizans (Taylor) Hale",
@@ -816,11 +865,12 @@
    [
     "name_variant: near-spelling of accepted 'parmelina carporrhizans' [col col:status=synonym, nortaxa nomenclaturalStatus=illegitimate, nortaxa taxonomicStatus=synonym, col source=2073 merged=false]"
    ],
+   "accepted_authorship_disagrees",
    "different_authorship--only_name_variant"
   ]
  ],
- "members_sha256": "4dde17f9742145abbdfa879c11ca8e8cd6791446af8306a3181d356ad229a281",
- "membership_rule": "review class 'accepted_authorship_disagrees'; authorship difference 'different_authorship': none of the above: the accepted authorships name different authors or differ in a way no rule above reads (for example an abbreviation); and, read as if the accepted name keys agreed, review class 'only_name_variant': every shared synonym is of kind 'name_variant'",
+ "members_sha256": "40a335632545c79edd39538dfe2b42bbbe12cdb5af66b6a3eaeaf20388a2cbf9",
+ "membership_rule": "review class 'accepted_authorship_disagrees'; authorship difference 'different_authorship': none of the above: the accepted authorships name different authors or differ in a way no rule above reads (for example an abbreviation); and, read as if the accepted name keys agreed, review class 'only_name_variant': every shared synonym is of kind 'name_variant'; and the pair is one-to-one (neither concept shares its name with another concept on the other side)",
  "nortaxa_col_source": {
   "col_source_id": "2030",
   "matched_on": "COL source/<id>.yaml title == NorTaxa eml.xml dataset title",
@@ -830,7 +880,7 @@
  "parent_manifest": {
   "evidence_class": "shared_synonymy",
   "member_count": 2032,
-  "members_sha256": "19083142abcfdb037e9372b7271cd9beb2749a01cc64a1490a19b60ddea9acd9"
+  "members_sha256": "85175ef8089819a66a4dadaa25b24354aef519990deee342d41707b2efa68fd2"
  },
  "pins": {
   "bridge_emission_policy": {

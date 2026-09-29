@@ -27,6 +27,7 @@
   "col_vernacular_languages",
   "col_twins_of_nortaxa_concept",
   "nortaxa_twins_of_col_concept",
+  "one_to_one",
   "accepted_authorship_difference",
   "bridge_accepted_name",
   "backbone_accepted_name",
@@ -39,6 +40,7 @@
   "backbone_synonym_count",
   "shared_synonym_kind_counts",
   "shared_synonym_evidence",
+  "review_class",
   "authorship_sub_class"
  ],
  "evidence_class": "shared_synonymy",
@@ -65,6 +67,7 @@
    [],
    1,
    1,
+   true,
    "sanctioning_citation",
    "Trichoglossum hirsutum (Pers. : Fr.) Boud.",
    "Trichoglossum hirsutum (Pers.) Boud.",
@@ -83,6 +86,7 @@
    [
     "ordinary: none of the weak kinds [col col:status=synonym, nortaxa nomenclaturalStatus=sanctioned, nortaxa taxonomicStatus=synonym, col source=2073 merged=false]"
    ],
+   "accepted_authorship_disagrees",
    "sanctioning_citation--ordinary"
   ],
   [
@@ -102,6 +106,7 @@
    [],
    1,
    1,
+   true,
    "sanctioning_citation",
    "Sidera vulgaris (Fr. : Fr.) Miettinen",
    "Sidera vulgaris (Fr.) Miettinen",
@@ -127,6 +132,7 @@
     "ordinary: none of the weak kinds [col col:status=synonym, nortaxa nomenclaturalStatus=illegitimate, nortaxa taxonomicStatus=synonym, col source=2073 merged=false]",
     "ordinary: none of the weak kinds [col col:status=synonym, nortaxa nomenclaturalStatus=illegitimate, nortaxa taxonomicStatus=synonym, col source=2073 merged=false]"
    ],
+   "accepted_authorship_disagrees",
    "sanctioning_citation--ordinary"
   ],
   [
@@ -146,6 +152,7 @@
    [],
    1,
    1,
+   true,
    "sanctioning_citation",
    "Deconica merdaria (Fr. : Fr.) Noordel.",
    "Deconica merdaria (Fr.) Noordel.",
@@ -164,6 +171,7 @@
    [
     "ordinary: none of the weak kinds [col col:status=synonym, nortaxa nomenclaturalStatus=illegitimate, nortaxa taxonomicStatus=synonym, col source=2073 merged=false]"
    ],
+   "accepted_authorship_disagrees",
    "sanctioning_citation--ordinary"
   ],
   [
@@ -183,6 +191,7 @@
    [],
    1,
    1,
+   true,
    "sanctioning_citation",
    "Battarrea phalloides (Dicks.: Pers.) Pers.",
    "Battarrea phalloides (Dicks.) Pers.",
@@ -201,6 +210,7 @@
    [
     "ordinary: none of the weak kinds [col col:status=synonym, nortaxa taxonomicStatus=synonym, col source=2073 merged=false]"
    ],
+   "accepted_authorship_disagrees",
    "sanctioning_citation--ordinary"
   ],
   [
@@ -216,6 +226,7 @@
    [],
    1,
    1,
+   true,
    "sanctioning_citation",
    "Gyrodontium sacchari (Spreng. : Fr.) Hjortstam",
    "Gyrodontium sacchari (Spreng.) Hjortstam",
@@ -234,6 +245,7 @@
    [
     "ordinary: none of the weak kinds [col col:status=synonym, nortaxa taxonomicStatus=synonym, col source=2073 merged=false]"
    ],
+   "accepted_authorship_disagrees",
    "sanctioning_citation--ordinary"
   ],
   [
@@ -249,6 +261,7 @@
    [],
    1,
    1,
+   true,
    "sanctioning_citation",
    "Hymenochaete mougeotii (Fr. : Fr.) Cooke",
    "Hymenochaete mougeotii (Fr.) Cooke",
@@ -267,6 +280,7 @@
    [
     "ordinary: none of the weak kinds [col col:status=synonym, nortaxa taxonomicStatus=synonym, col source=2073 merged=false]"
    ],
+   "accepted_authorship_disagrees",
    "sanctioning_citation--ordinary"
   ],
   [
@@ -282,6 +296,7 @@
    [],
    1,
    1,
+   true,
    "sanctioning_citation",
    "Lentinus sajor-caju (Fr. : Fr.) Fr.",
    "Lentinus sajor-caju (Fr.) Fr.",
@@ -300,6 +315,7 @@
    [
     "ordinary: none of the weak kinds [col col:status=synonym, nortaxa taxonomicStatus=synonym, col source=2073 merged=false]"
    ],
+   "accepted_authorship_disagrees",
    "sanctioning_citation--ordinary"
   ],
   [
@@ -315,6 +331,7 @@
    [],
    1,
    1,
+   true,
    "sanctioning_citation",
    "Microporus affinis (Blume & T. Nees : Fr.) Kuntze",
    "Microporus affinis (Blume & T. Nees) Kuntze",
@@ -339,6 +356,7 @@
     "ordinary: none of the weak kinds [col col:status=synonym, nortaxa taxonomicStatus=synonym, col source=2073 merged=false]",
     "ordinary: none of the weak kinds [col col:status=synonym, nortaxa taxonomicStatus=synonym, col source=2073 merged=false]"
    ],
+   "accepted_authorship_disagrees",
    "sanctioning_citation--ordinary"
   ],
   [
@@ -354,6 +372,7 @@
    [],
    1,
    1,
+   true,
    "sanctioning_citation",
    "Trametes villosa (Sw. : Fr.) Kreisel",
    "Trametes villosa (Sw.) Kreisel",
@@ -372,6 +391,7 @@
    [
     "ordinary: none of the weak kinds [col col:status=synonym, nortaxa taxonomicStatus=synonym, col source=2073 merged=false]"
    ],
+   "accepted_authorship_disagrees",
    "sanctioning_citation--ordinary"
   ],
   [
@@ -389,6 +409,7 @@
    [],
    1,
    1,
+   true,
    "sanctioning_citation",
    "Cortinarius flabellus (Fr. : Fr.) Fr.",
    "Cortinarius flabellus (Fr.) Fr.",
@@ -407,6 +428,7 @@
    [
     "ordinary: none of the weak kinds [col col:status=synonym, nortaxa taxonomicStatus=synonym, col source=2073 merged=false]"
    ],
+   "accepted_authorship_disagrees",
    "sanctioning_citation--ordinary"
   ],
   [
@@ -424,6 +446,7 @@
    [],
    1,
    1,
+   true,
    "sanctioning_citation",
    "Phaeotremella foliacea (Pers. : Fr.) Wedin, J.C. Zamora & Millanes",
    "Phaeotremella foliacea (Pers.) Wedin, J.C. Zamora & Millanes",
@@ -455,6 +478,7 @@
     "ordinary: none of the weak kinds [col col:status=synonym, nortaxa nomenclaturalStatus=illegitimate, nortaxa taxonomicStatus=synonym, col source=2073 merged=false]",
     "ordinary: none of the weak kinds [col col:status=synonym, nortaxa nomenclaturalStatus=illegitimate, nortaxa taxonomicStatus=synonym, col source=2073 merged=false]"
    ],
+   "accepted_authorship_disagrees",
    "sanctioning_citation--ordinary"
   ],
   [
@@ -477,6 +501,7 @@
    [],
    1,
    1,
+   true,
    "sanctioning_citation",
    "Phaeoclavulina abietina (Pers. : Fr.) Giachini",
    "Phaeoclavulina abietina (Pers.) Giachini",
@@ -502,6 +527,7 @@
     "ordinary: none of the weak kinds [col col:status=synonym, nortaxa nomenclaturalStatus=illegitimate, nortaxa taxonomicStatus=synonym, col source=2073 merged=false]",
     "ordinary: none of the weak kinds [col col:status=synonym, nortaxa nomenclaturalStatus=illegitimate, nortaxa taxonomicStatus=synonym, col source=2073 merged=false]"
    ],
+   "accepted_authorship_disagrees",
    "sanctioning_citation--ordinary"
   ],
   [
@@ -522,6 +548,7 @@
    [],
    1,
    1,
+   true,
    "sanctioning_citation",
    "Phaeoclavulina flaccida (Fr. : Fr.) Giachini",
    "Phaeoclavulina flaccida (Fr.) Giachini",
@@ -544,6 +571,7 @@
     "ordinary: none of the weak kinds [col col:status=synonym, nortaxa nomenclaturalStatus=illegitimate, nortaxa taxonomicStatus=synonym, col source=2073 merged=false]",
     "ordinary: none of the weak kinds [col col:status=synonym, nortaxa nomenclaturalStatus=illegitimate, nortaxa taxonomicStatus=synonym, col source=2073 merged=false]"
    ],
+   "accepted_authorship_disagrees",
    "sanctioning_citation--ordinary"
   ],
   [
@@ -567,6 +595,7 @@
    [],
    1,
    1,
+   true,
    "sanctioning_citation",
    "Gymnopus foetidus (Sowerby : Fr.) P.M. Kirk",
    "Gymnopus foetidus (Sowerby) P.M. Kirk",
@@ -589,6 +618,7 @@
     "ordinary: none of the weak kinds [col col:status=synonym, nortaxa nomenclaturalStatus=illegitimate, nortaxa taxonomicStatus=synonym, col source=2073 merged=false]",
     "ordinary: none of the weak kinds [col col:status=synonym, nortaxa taxonomicStatus=synonym, col source=2073 merged=false]"
    ],
+   "accepted_authorship_disagrees",
    "sanctioning_citation--ordinary"
   ],
   [
@@ -610,6 +640,7 @@
    [],
    1,
    1,
+   true,
    "sanctioning_citation",
    "Neohygrocybe ovina (Bull. : Fr.) Herink",
    "Neohygrocybe ovina (Bull.) Herink",
@@ -630,6 +661,7 @@
     "ordinary: none of the weak kinds [col col:status=synonym, nortaxa nomenclaturalStatus=illegitimate, nortaxa taxonomicStatus=synonym, col source=2073 merged=false]",
     "ordinary: none of the weak kinds [col col:status=synonym, nortaxa nomenclaturalStatus=illegitimate, nortaxa taxonomicStatus=synonym, col source=2073 merged=false]"
    ],
+   "accepted_authorship_disagrees",
    "sanctioning_citation--ordinary"
   ],
   [
@@ -653,6 +685,7 @@
    [],
    1,
    1,
+   true,
    "sanctioning_citation",
    "Gliophorus irrigatus (Pers. : Fr.) A.M. Ainsw. & P.M. Kirk",
    "Gliophorus irrigatus (Pers.) A.M. Ainsw. & P.M. Kirk",
@@ -673,6 +706,7 @@
     "ordinary: none of the weak kinds [col col:status=synonym, nortaxa nomenclaturalStatus=illegitimate, nortaxa taxonomicStatus=synonym, col source=2073 merged=false]",
     "ordinary: none of the weak kinds [col col:status=synonym, nortaxa nomenclaturalStatus=illegitimate, nortaxa taxonomicStatus=synonym, col source=2073 merged=false]"
    ],
+   "accepted_authorship_disagrees",
    "sanctioning_citation--ordinary"
   ],
   [
@@ -697,6 +731,7 @@
    [],
    1,
    1,
+   true,
    "sanctioning_citation",
    "Suillellus luridus (Schaeff. : Fr.) Murrill",
    "Suillellus luridus (Schaeff.) Murrill",
@@ -715,6 +750,7 @@
    [
     "ordinary: none of the weak kinds [col col:status=synonym, nortaxa taxonomicStatus=synonym, col source=2073 merged=false]"
    ],
+   "accepted_authorship_disagrees",
    "sanctioning_citation--ordinary"
   ],
   [
@@ -730,6 +766,7 @@
    [],
    1,
    1,
+   true,
    "sanctioning_citation",
    "Mycoacia livida (Pers. : Fr.) Zmitr.",
    "Mycoacia livida (Pers.) Zmitr.",
@@ -750,6 +787,7 @@
     "ordinary: none of the weak kinds [col col:status=synonym, nortaxa taxonomicStatus=synonym, col source=2073 merged=false]",
     "ordinary: none of the weak kinds [col col:status=synonym, nortaxa nomenclaturalStatus=illegitimate, nortaxa taxonomicStatus=synonym, col source=2073 merged=false]"
    ],
+   "accepted_authorship_disagrees",
    "sanctioning_citation--ordinary"
   ],
   [
@@ -770,6 +808,7 @@
    [],
    1,
    1,
+   true,
    "sanctioning_citation",
    "Bonomyces sinopicus (Fr. : Fr.) Vizzini",
    "Bonomyces sinopicus (Fr.) Vizzini",
@@ -788,6 +827,7 @@
    [
     "ordinary: none of the weak kinds [col col:status=synonym, nortaxa nomenclaturalStatus=illegitimate, nortaxa taxonomicStatus=synonym, col source=2073 merged=false]"
    ],
+   "accepted_authorship_disagrees",
    "sanctioning_citation--ordinary"
   ],
   [
@@ -811,6 +851,7 @@
    [],
    1,
    1,
+   true,
    "sanctioning_citation",
    "Chroogomphus rutilus (Schaeff. : Fr.) O. K. Mill.",
    "Chroogomphus rutilus (Schaeff.) O.K. Mill.",
@@ -829,6 +870,7 @@
    [
     "ordinary: none of the weak kinds [col col:status=synonym, nortaxa nomenclaturalStatus=illegitimate, nortaxa taxonomicStatus=synonym, col source=2073 merged=false]"
    ],
+   "accepted_authorship_disagrees",
    "sanctioning_citation--ordinary"
   ],
   [
@@ -853,6 +895,7 @@
    [],
    1,
    1,
+   true,
    "sanctioning_citation",
    "Macrolepiota mastoidea (Fr. : Fr.) Singer",
    "Macrolepiota mastoidea (Fr.) Singer",
@@ -876,6 +919,7 @@
     "nortaxa_derived: every COL usage has col:sourceID 2030 (Q7YTH, clb:merged=true) [col col:nameStatus=unacceptable, col col:status=synonym, nortaxa nomenclaturalStatus=illegitimate, nortaxa taxonomicStatus=synonym, col source=2030 merged=true]",
     "ordinary: none of the weak kinds [col col:status=synonym, nortaxa nomenclaturalStatus=illegitimate, nortaxa taxonomicStatus=synonym, col source=2073 merged=false]"
    ],
+   "accepted_authorship_disagrees",
    "sanctioning_citation--ordinary"
   ],
   [
@@ -899,6 +943,7 @@
    [],
    1,
    1,
+   true,
    "sanctioning_citation",
    "Amanita excelsa (Fr. : Fr.) Bertill.",
    "Amanita excelsa (Fr.) Bertill.",
@@ -919,6 +964,7 @@
     "ordinary: none of the weak kinds [col col:status=synonym, nortaxa taxonomicStatus=synonym, col source=7888 merged=true]",
     "ordinary: none of the weak kinds [col col:status=synonym, nortaxa nomenclaturalStatus=illegitimate, nortaxa taxonomicStatus=synonym, col source=2073 merged=false]"
    ],
+   "accepted_authorship_disagrees",
    "sanctioning_citation--ordinary"
   ],
   [
@@ -941,6 +987,7 @@
    [],
    1,
    1,
+   true,
    "sanctioning_citation",
    "Amanita muscaria (L. : Fr.) Lam.",
    "Amanita muscaria (L.) Lam.",
@@ -959,6 +1006,7 @@
    [
     "ordinary: none of the weak kinds [col col:status=synonym, nortaxa taxonomicStatus=synonym, col source=2073 merged=false]"
    ],
+   "accepted_authorship_disagrees",
    "sanctioning_citation--ordinary"
   ],
   [
@@ -981,6 +1029,7 @@
    [],
    1,
    1,
+   true,
    "sanctioning_citation",
    "Conocybe apala (Fr. : Fr.) Arnolds",
    "Conocybe apala (Fr.) Arnolds",
@@ -999,6 +1048,7 @@
    [
     "ordinary: none of the weak kinds [col col:status=synonym, nortaxa nomenclaturalStatus=illegitimate, nortaxa taxonomicStatus=synonym, col source=2073 merged=false]"
    ],
+   "accepted_authorship_disagrees",
    "sanctioning_citation--ordinary"
   ],
   [
@@ -1020,6 +1070,7 @@
    [],
    1,
    1,
+   true,
    "sanctioning_citation",
    "Panaeolus fimicola (Pers. : Fr.) Gillet",
    "Panaeolus fimicola (Pers.) Gillet",
@@ -1038,6 +1089,7 @@
    [
     "ordinary: none of the weak kinds [col col:status=synonym, nortaxa nomenclaturalStatus=illegitimate, nortaxa taxonomicStatus=synonym, col source=2073 merged=false]"
    ],
+   "accepted_authorship_disagrees",
    "sanctioning_citation--ordinary"
   ],
   [
@@ -1055,6 +1107,7 @@
    [],
    1,
    1,
+   true,
    "sanctioning_citation",
    "Panaeolus papilionaceus (Bull. : Fr.) Quél.",
    "Panaeolus papilionaceus (Bull.) Quél.",
@@ -1076,6 +1129,7 @@
     "not_validly_published: col col:nameStatus=not established [col col:nameStatus=not established, col col:status=synonym, nortaxa nomenclaturalStatus=illegitimate, nortaxa taxonomicStatus=synonym, col source=2041 merged=true]",
     "ordinary: none of the weak kinds [col col:status=synonym, nortaxa nomenclaturalStatus=illegitimate, nortaxa taxonomicStatus=synonym, col source=2073 merged=false]"
    ],
+   "accepted_authorship_disagrees",
    "sanctioning_citation--ordinary"
   ],
   [
@@ -1098,6 +1152,7 @@
    [],
    1,
    1,
+   true,
    "sanctioning_citation",
    "Clavulinopsis helvola (Pers. : Fr.) Corner",
    "Clavulinopsis helvola (Pers.) Corner",
@@ -1119,6 +1174,7 @@
     "nortaxa_derived: every COL usage has col:sourceID 2030 (VKR4L, clb:merged=true) [col col:nameStatus=unacceptable, col col:status=synonym, nortaxa nomenclaturalStatus=illegitimate, nortaxa taxonomicStatus=synonym, col source=2030 merged=true]",
     "ordinary: none of the weak kinds [col col:status=synonym, nortaxa nomenclaturalStatus=illegitimate, nortaxa taxonomicStatus=synonym, col source=2073 merged=false]"
    ],
+   "accepted_authorship_disagrees",
    "sanctioning_citation--ordinary"
   ],
   [
@@ -1138,6 +1194,7 @@
    [],
    1,
    1,
+   true,
    "sanctioning_citation",
    "Cortinarius bivelus (Fr. : Fr.) Fr.",
    "Cortinarius bivelus (Fr.) Fr.",
@@ -1158,6 +1215,7 @@
     "ordinary: none of the weak kinds [col col:status=synonym, nortaxa taxonomicStatus=synonym, col source=2073 merged=false]",
     "ordinary: none of the weak kinds [col col:status=synonym, nortaxa taxonomicStatus=synonym, col source=2073 merged=false]"
    ],
+   "accepted_authorship_disagrees",
    "sanctioning_citation--ordinary"
   ],
   [
@@ -1179,6 +1237,7 @@
    [],
    1,
    1,
+   true,
    "sanctioning_citation",
    "Cortinarius caninus (Fr. : Fr.) Fr.",
    "Cortinarius caninus (Fr.) Fr.",
@@ -1197,6 +1256,7 @@
    [
     "ordinary: none of the weak kinds [col col:status=synonym, nortaxa nomenclaturalStatus=illegitimate, nortaxa taxonomicStatus=synonym, col source=2073 merged=false]"
    ],
+   "accepted_authorship_disagrees",
    "sanctioning_citation--ordinary"
   ],
   [
@@ -1218,6 +1278,7 @@
    [],
    1,
    1,
+   true,
    "sanctioning_citation",
    "Cortinarius collinitus (Sowerby : Fr.) Gray",
    "Cortinarius collinitus (Sowerby) Gray",
@@ -1236,6 +1297,7 @@
    [
     "ordinary: none of the weak kinds [col col:status=synonym, nortaxa nomenclaturalStatus=illegitimate, nortaxa taxonomicStatus=synonym, col source=2073 merged=false]"
    ],
+   "accepted_authorship_disagrees",
    "sanctioning_citation--ordinary"
   ],
   [
@@ -1259,6 +1321,7 @@
    [],
    1,
    1,
+   true,
    "sanctioning_citation",
    "Cortinarius croceus (Schaeff. : Fr.) Gray",
    "Cortinarius croceus (Schaeff.) Gray",
@@ -1277,6 +1340,7 @@
    [
     "ordinary: none of the weak kinds [col col:status=synonym, nortaxa nomenclaturalStatus=illegitimate, nortaxa taxonomicStatus=synonym, col source=7888 merged=true]"
    ],
+   "accepted_authorship_disagrees",
    "sanctioning_citation--ordinary"
   ],
   [
@@ -1300,6 +1364,7 @@
    [],
    1,
    1,
+   true,
    "sanctioning_citation",
    "Crepidotus mollis (Schaeff. : Fr.) Staude",
    "Crepidotus mollis (Schaeff.) Staude",
@@ -1318,6 +1383,7 @@
    [
     "ordinary: none of the weak kinds [col col:status=synonym, nortaxa taxonomicStatus=synonym, col source=7888 merged=true]"
    ],
+   "accepted_authorship_disagrees",
    "sanctioning_citation--ordinary"
   ],
   [
@@ -1335,6 +1401,7 @@
    [],
    1,
    1,
+   true,
    "sanctioning_citation",
    "Inocybe cincinnata (Fr. : Fr.) Quél.",
    "Inocybe cincinnata (Fr.) Quél.",
@@ -1353,6 +1420,7 @@
    [
     "ordinary: none of the weak kinds [col col:status=synonym, nortaxa nomenclaturalStatus=illegitimate, nortaxa taxonomicStatus=synonym, col source=2073 merged=false]"
    ],
+   "accepted_authorship_disagrees",
    "sanctioning_citation--ordinary"
   ],
   [
@@ -1376,6 +1444,7 @@
    [],
    1,
    1,
+   true,
    "sanctioning_citation",
    "Inocybe lacera (Fr. : Fr.) P. Kumm.",
    "Inocybe lacera (Fr.) P. Kumm.",
@@ -1398,6 +1467,7 @@
     "ordinary: none of the weak kinds [col col:status=synonym, nortaxa nomenclaturalStatus=illegitimate, nortaxa taxonomicStatus=synonym, col source=2073 merged=false]",
     "ordinary: none of the weak kinds [col col:status=synonym, nortaxa nomenclaturalStatus=illegitimate, nortaxa taxonomicStatus=synonym, col source=2073 merged=false]"
    ],
+   "accepted_authorship_disagrees",
    "sanctioning_citation--ordinary"
   ],
   [
@@ -1418,6 +1488,7 @@
    [],
    1,
    1,
+   true,
    "sanctioning_citation",
    "Simocybe haustellaris (Fr. : Fr.) Watling",
    "Simocybe haustellaris (Fr.) Watling",
@@ -1438,6 +1509,7 @@
     "ordinary: none of the weak kinds [col col:status=synonym, nortaxa nomenclaturalStatus=illegitimate, nortaxa taxonomicStatus=synonym, col source=2073 merged=false]",
     "ordinary: none of the weak kinds [col col:status=synonym, nortaxa nomenclaturalStatus=illegitimate, nortaxa taxonomicStatus=synonym, col source=2073 merged=false]"
    ],
+   "accepted_authorship_disagrees",
    "sanctioning_citation--ordinary"
   ],
   [
@@ -1458,6 +1530,7 @@
    [],
    1,
    1,
+   true,
    "sanctioning_citation",
    "Lachnella alboviolascens (Alb. & Schwein. : Fr.) Fr.",
    "Lachnella alboviolascens (Alb. & Schwein.) Fr.",
@@ -1481,6 +1554,7 @@
     "ordinary: none of the weak kinds [col col:status=synonym, nortaxa taxonomicStatus=synonym, col source=2073 merged=false]",
     "pro_parte: col col:status=ambiguous synonym [col col:status=ambiguous synonym, nortaxa taxonomicStatus=synonym, col source=2073 merged=false]"
    ],
+   "accepted_authorship_disagrees",
    "sanctioning_citation--ordinary"
   ],
   [
@@ -1498,6 +1572,7 @@
    [],
    1,
    1,
+   true,
    "sanctioning_citation",
    "Entoloma anatinum (Lasch : Fr.) Donk",
    "Entoloma anatinum (Lasch) Donk",
@@ -1518,6 +1593,7 @@
     "ordinary: none of the weak kinds [col col:status=synonym, nortaxa nomenclaturalStatus=illegitimate, nortaxa taxonomicStatus=synonym, col source=2073 merged=false]",
     "ordinary: none of the weak kinds [col col:status=synonym, nortaxa nomenclaturalStatus=illegitimate, nortaxa taxonomicStatus=synonym, col source=2073 merged=false]"
    ],
+   "accepted_authorship_disagrees",
    "sanctioning_citation--ordinary"
   ],
   [
@@ -1540,6 +1616,7 @@
    [],
    1,
    1,
+   true,
    "sanctioning_citation",
    "Entoloma asprellum (Fr. : Fr.) Fayod",
    "Entoloma asprellum (Fr.) Fayod",
@@ -1560,6 +1637,7 @@
     "ordinary: none of the weak kinds [col col:status=synonym, nortaxa nomenclaturalStatus=illegitimate, nortaxa taxonomicStatus=synonym, col source=2073 merged=false]",
     "ordinary: none of the weak kinds [col col:status=synonym, nortaxa nomenclaturalStatus=illegitimate, nortaxa taxonomicStatus=synonym, col source=2073 merged=false]"
    ],
+   "accepted_authorship_disagrees",
    "sanctioning_citation--ordinary"
   ],
   [
@@ -1581,6 +1659,7 @@
    [],
    1,
    1,
+   true,
    "sanctioning_citation",
    "Entoloma formosum (Fr. : Fr.) Noordel.",
    "Entoloma formosum (Fr.) Noordel.",
@@ -1601,6 +1680,7 @@
     "ordinary: none of the weak kinds [col col:status=synonym, nortaxa nomenclaturalStatus=illegitimate, nortaxa taxonomicStatus=synonym, col source=2073 merged=false]",
     "ordinary: none of the weak kinds [col col:status=synonym, nortaxa nomenclaturalStatus=illegitimate, nortaxa taxonomicStatus=synonym, col source=2073 merged=false]"
    ],
+   "accepted_authorship_disagrees",
    "sanctioning_citation--ordinary"
   ],
   [
@@ -1620,6 +1700,7 @@
    [],
    1,
    1,
+   true,
    "sanctioning_citation",
    "Entoloma griseocyaneum (Fr. : Fr.) P. Kumm.",
    "Entoloma griseocyaneum (Fr.) P. Kumm.",
@@ -1640,6 +1721,7 @@
     "ordinary: none of the weak kinds [col col:status=synonym, nortaxa nomenclaturalStatus=illegitimate, nortaxa taxonomicStatus=synonym, col source=2073 merged=false]",
     "ordinary: none of the weak kinds [col col:status=synonym, nortaxa nomenclaturalStatus=illegitimate, nortaxa taxonomicStatus=synonym, col source=2073 merged=false]"
    ],
+   "accepted_authorship_disagrees",
    "sanctioning_citation--ordinary"
   ],
   [
@@ -1662,6 +1744,7 @@
    [],
    1,
    1,
+   true,
    "sanctioning_citation",
    "Entoloma incanum (Fr. : Fr.) Hesler",
    "Entoloma incanum (Fr.) Hesler",
@@ -1683,6 +1766,7 @@
     "nortaxa_derived: every COL usage has col:sourceID 2030 (QF649, clb:merged=true) [col col:nameStatus=unacceptable, col col:status=synonym, nortaxa nomenclaturalStatus=illegitimate, nortaxa taxonomicStatus=synonym, col source=2030 merged=true]",
     "ordinary: none of the weak kinds [col col:status=synonym, nortaxa nomenclaturalStatus=illegitimate, nortaxa taxonomicStatus=synonym, col source=2073 merged=false]"
    ],
+   "accepted_authorship_disagrees",
    "sanctioning_citation--ordinary"
   ],
   [
@@ -1704,6 +1788,7 @@
    [],
    1,
    1,
+   true,
    "sanctioning_citation",
    "Entoloma jubatum (Fr. : Fr.) P. Karst.",
    "Entoloma jubatum (Fr.) P. Karst.",
@@ -1722,6 +1807,7 @@
    [
     "ordinary: none of the weak kinds [col col:status=synonym, nortaxa taxonomicStatus=synonym, col source=2073 merged=false]"
    ],
+   "accepted_authorship_disagrees",
    "sanctioning_citation--ordinary"
   ],
   [
@@ -1737,6 +1823,7 @@
    [],
    1,
    1,
+   true,
    "sanctioning_citation",
    "Entoloma linkii (Fr. : Fr.) Noordel.",
    "Entoloma linkii (Fr.) Noordel.",
@@ -1755,6 +1842,7 @@
    [
     "ordinary: none of the weak kinds [col col:status=synonym, nortaxa nomenclaturalStatus=illegitimate, nortaxa taxonomicStatus=synonym, col source=2073 merged=false]"
    ],
+   "accepted_authorship_disagrees",
    "sanctioning_citation--ordinary"
   ],
   [
@@ -1779,6 +1867,7 @@
    [],
    1,
    1,
+   true,
    "sanctioning_citation",
    "Entoloma sinuatum (Bull. : Fr.) P. Kumm.",
    "Entoloma sinuatum (Bull.) P. Kumm.",
@@ -1797,6 +1886,7 @@
    [
     "ordinary: none of the weak kinds [col col:status=synonym, nortaxa nomenclaturalStatus=illegitimate, nortaxa taxonomicStatus=synonym, col source=2073 merged=false]"
    ],
+   "accepted_authorship_disagrees",
    "sanctioning_citation--ordinary"
   ],
   [
@@ -1814,6 +1904,7 @@
    [],
    1,
    1,
+   true,
    "sanctioning_citation",
    "Mycena amicta (Fr. : Fr.) Quél.",
    "Mycena amicta (Fr.) Quél.",
@@ -1832,6 +1923,7 @@
    [
     "ordinary: none of the weak kinds [col col:status=synonym, nortaxa nomenclaturalStatus=illegitimate, nortaxa taxonomicStatus=synonym, col source=2073 merged=false]"
    ],
+   "accepted_authorship_disagrees",
    "sanctioning_citation--ordinary"
   ],
   [
@@ -1855,6 +1947,7 @@
    [],
    1,
    1,
+   true,
    "sanctioning_citation",
    "Mycena filopes (Bull. : Fr.) P. Kumm.",
    "Mycena filopes (Bull.) P. Kumm.",
@@ -1873,6 +1966,7 @@
    [
     "ordinary: none of the weak kinds [col col:status=synonym, nortaxa nomenclaturalStatus=illegitimate, nortaxa taxonomicStatus=synonym, col source=2073 merged=false]"
    ],
+   "accepted_authorship_disagrees",
    "sanctioning_citation--ordinary"
   ],
   [
@@ -1898,6 +1992,7 @@
    [],
    1,
    1,
+   true,
    "sanctioning_citation",
    "Mycena galericulata (Scop. : Fr.) Gray",
    "Mycena galericulata (Scop.) Gray",
@@ -1918,6 +2013,7 @@
     "ordinary: none of the weak kinds [col col:status=synonym, nortaxa nomenclaturalStatus=illegitimate, nortaxa taxonomicStatus=synonym, col source=2073 merged=false]",
     "ordinary: none of the weak kinds [col col:status=synonym, nortaxa nomenclaturalStatus=illegitimate, nortaxa taxonomicStatus=synonym, col source=2073 merged=false]"
    ],
+   "accepted_authorship_disagrees",
    "sanctioning_citation--ordinary"
   ],
   [
@@ -1941,6 +2037,7 @@
    [],
    1,
    1,
+   true,
    "sanctioning_citation",
    "Panellus mitis (Pers. : Fr.) Singer",
    "Panellus mitis (Pers.) Singer",
@@ -1959,6 +2056,7 @@
    [
     "ordinary: none of the weak kinds [col col:status=synonym, nortaxa nomenclaturalStatus=illegitimate, nortaxa taxonomicStatus=synonym, col source=2073 merged=false]"
    ],
+   "accepted_authorship_disagrees",
    "sanctioning_citation--ordinary"
   ],
   [
@@ -1980,6 +2078,7 @@
    [],
    1,
    1,
+   true,
    "sanctioning_citation",
    "Panellus ringens (Fr. : Fr.) Romagn.",
    "Panellus ringens (Fr.) Romagn.",
@@ -2003,6 +2102,7 @@
     "ordinary: none of the weak kinds [col col:status=synonym, nortaxa taxonomicStatus=synonym, col source=2073 merged=false]",
     "ordinary: none of the weak kinds [col col:status=synonym, nortaxa taxonomicStatus=synonym, col source=2073 merged=false]"
    ],
+   "accepted_authorship_disagrees",
    "sanctioning_citation--ordinary"
   ],
   [
@@ -2026,6 +2126,7 @@
    [],
    1,
    1,
+   true,
    "sanctioning_citation",
    "Ampulloclitocybe clavipes (Pers. : Fr.) Redhead, Lutzoni, Moncalvo & Vilgalys",
    "Ampulloclitocybe clavipes (Pers.) Redhead, Lutzoni, Moncalvo & Vilgalys",
@@ -2044,6 +2145,7 @@
    [
     "ordinary: none of the weak kinds [col col:status=synonym, nortaxa taxonomicStatus=synonym, col source=2073 merged=false]"
    ],
+   "accepted_authorship_disagrees",
    "sanctioning_citation--ordinary"
   ],
   [
@@ -2066,6 +2168,7 @@
    [],
    1,
    1,
+   true,
    "sanctioning_citation",
    "Chrysomphalina chrysophylla (Fr. : Fr.) Clémençon",
    "Chrysomphalina chrysophylla (Fr.) Clémençon",
@@ -2084,6 +2187,7 @@
    [
     "ordinary: none of the weak kinds [col col:status=synonym, nortaxa nomenclaturalStatus=illegitimate, nortaxa taxonomicStatus=synonym, col source=2073 merged=false]"
    ],
+   "accepted_authorship_disagrees",
    "sanctioning_citation--ordinary"
   ],
   [
@@ -2107,6 +2211,7 @@
    [],
    1,
    1,
+   true,
    "sanctioning_citation",
    "Hygrocybe chlorophana (Fr. : Fr.) Wünsche",
    "Hygrocybe chlorophana (Fr.) Wünsche",
@@ -2129,6 +2234,7 @@
     "ordinary: none of the weak kinds [col col:status=synonym, nortaxa nomenclaturalStatus=illegitimate, nortaxa taxonomicStatus=synonym, col source=2073 merged=false]",
     "ordinary: none of the weak kinds [col col:status=synonym, nortaxa nomenclaturalStatus=illegitimate, nortaxa taxonomicStatus=synonym, col source=2073 merged=false]"
    ],
+   "accepted_authorship_disagrees",
    "sanctioning_citation--ordinary"
   ],
   [
@@ -2152,6 +2258,7 @@
    [],
    1,
    1,
+   true,
    "sanctioning_citation",
    "Hygrocybe punicea (Fr. : Fr.) P. Kumm.",
    "Hygrocybe punicea (Fr.) P. Kumm.",
@@ -2170,6 +2277,7 @@
    [
     "ordinary: none of the weak kinds [col col:status=synonym, nortaxa nomenclaturalStatus=illegitimate, nortaxa taxonomicStatus=synonym, col source=2073 merged=false]"
    ],
+   "accepted_authorship_disagrees",
    "sanctioning_citation--ordinary"
   ],
   [
@@ -2193,6 +2301,7 @@
    [],
    1,
    1,
+   true,
    "sanctioning_citation",
    "Hygrocybe turunda (Fr. : Fr.) P. Karst.",
    "Hygrocybe turunda (Fr.) P. Karst.",
@@ -2211,6 +2320,7 @@
    [
     "ordinary: none of the weak kinds [col col:status=synonym, nortaxa nomenclaturalStatus=illegitimate, nortaxa taxonomicStatus=synonym, col source=2073 merged=false]"
    ],
+   "accepted_authorship_disagrees",
    "sanctioning_citation--ordinary"
   ],
   [
@@ -2234,6 +2344,7 @@
    [],
    1,
    1,
+   true,
    "sanctioning_citation",
    "Hygrophorus camarophyllus (Alb. & Schwein. : Fr.) Dumée, Grandjean & Maire",
    "Hygrophorus camarophyllus (Alb. & Schwein.) Dumée, Grandjean & Maire",
@@ -2252,6 +2363,7 @@
    [
     "ordinary: none of the weak kinds [col col:status=synonym, nortaxa nomenclaturalStatus=illegitimate, nortaxa taxonomicStatus=synonym, col source=2073 merged=false]"
    ],
+   "accepted_authorship_disagrees",
    "sanctioning_citation--ordinary"
   ],
   [
@@ -2274,6 +2386,7 @@
    [],
    1,
    1,
+   true,
    "sanctioning_citation",
    "Hygrophorus eburneus (Bull. : Fr.) Fr.",
    "Hygrophorus eburneus (Bull.) Fr.",
@@ -2292,6 +2405,7 @@
    [
     "ordinary: none of the weak kinds [col col:status=synonym, nortaxa taxonomicStatus=synonym, col source=2073 merged=false]"
    ],
+   "accepted_authorship_disagrees",
    "sanctioning_citation--ordinary"
   ],
   [
@@ -2314,6 +2428,7 @@
    [],
    1,
    1,
+   true,
    "sanctioning_citation",
    "Flammula alnicola (Fr. : Fr.) P. Kumm.",
    "Flammula alnicola (Fr.) P. Kumm.",
@@ -2336,6 +2451,7 @@
     "ordinary: none of the weak kinds [col col:status=synonym, nortaxa nomenclaturalStatus=illegitimate, nortaxa taxonomicStatus=synonym, col source=2073 merged=false]",
     "ordinary: none of the weak kinds [col col:status=synonym, nortaxa nomenclaturalStatus=illegitimate, nortaxa taxonomicStatus=synonym, col source=2073 merged=false]"
    ],
+   "accepted_authorship_disagrees",
    "sanctioning_citation--ordinary"
   ],
   [
@@ -2360,6 +2476,7 @@
    [],
    1,
    1,
+   true,
    "sanctioning_citation",
    "Lycoperdon echinatum Pers. : Pers.",
    "Lycoperdon echinatum Pers.",
@@ -2378,6 +2495,7 @@
    [
     "ordinary: none of the weak kinds [col col:status=synonym, nortaxa nomenclaturalStatus=illegitimate, nortaxa taxonomicStatus=synonym, col source=290762 merged=true]"
    ],
+   "accepted_authorship_disagrees",
    "sanctioning_citation--ordinary"
   ],
   [
@@ -2402,6 +2520,7 @@
    [],
    1,
    1,
+   true,
    "sanctioning_citation",
    "Asterophora lycoperdoides (Bull. : Fr.) Ditmar",
    "Asterophora lycoperdoides (Bull.) Ditmar",
@@ -2420,6 +2539,7 @@
    [
     "ordinary: none of the weak kinds [col col:status=synonym, nortaxa nomenclaturalStatus=illegitimate, nortaxa taxonomicStatus=synonym, col source=2073 merged=false]"
    ],
+   "accepted_authorship_disagrees",
    "sanctioning_citation--ordinary"
   ],
   [
@@ -2444,6 +2564,7 @@
    [],
    1,
    1,
+   true,
    "sanctioning_citation",
    "Calocybe gambosa (Fr. : Fr.) Donk",
    "Calocybe gambosa (Fr.) Donk",
@@ -2462,6 +2583,7 @@
    [
     "ordinary: none of the weak kinds [col col:status=synonym, nortaxa nomenclaturalStatus=illegitimate, nortaxa taxonomicStatus=synonym, col source=2073 merged=false]"
    ],
+   "accepted_authorship_disagrees",
    "sanctioning_citation--ordinary"
   ],
   [
@@ -2485,6 +2607,7 @@
    [],
    1,
    1,
+   true,
    "sanctioning_citation",
    "Lyophyllum decastes (Fr. : Fr.) Singer",
    "Lyophyllum decastes (Fr.) Singer",
@@ -2506,6 +2629,7 @@
     "nortaxa_derived: every COL usage has col:sourceID 2030 (MTXGK, clb:merged=true) [col col:nameStatus=unacceptable, col col:status=synonym, nortaxa nomenclaturalStatus=illegitimate, nortaxa taxonomicStatus=synonym, col source=2030 merged=true]",
     "ordinary: none of the weak kinds [col col:status=synonym, nortaxa nomenclaturalStatus=illegitimate, nortaxa taxonomicStatus=synonym, col source=2073 merged=false]"
    ],
+   "accepted_authorship_disagrees",
    "sanctioning_citation--ordinary"
   ],
   [
@@ -2526,6 +2650,7 @@
    [],
    1,
    1,
+   true,
    "sanctioning_citation",
    "Calyptella capula (Holmsk. : Fr.) Quél.",
    "Calyptella capula (Holmsk.) Quél.",
@@ -2549,6 +2674,7 @@
     "ordinary: none of the weak kinds [col col:status=synonym, nortaxa nomenclaturalStatus=illegitimate, nortaxa taxonomicStatus=synonym, col source=2073 merged=false]",
     "ordinary: none of the weak kinds [col col:status=synonym, nortaxa taxonomicStatus=synonym, col source=2073 merged=false]"
    ],
+   "accepted_authorship_disagrees",
    "sanctioning_citation--ordinary"
   ],
   [
@@ -2568,6 +2694,7 @@
    [],
    1,
    1,
+   true,
    "sanctioning_citation",
    "Hemimycena cucullata (Pers. : Fr.) Singer",
    "Hemimycena cucullata (Pers.) Singer",
@@ -2588,6 +2715,7 @@
     "ordinary: none of the weak kinds [col col:status=synonym, nortaxa nomenclaturalStatus=illegitimate, nortaxa taxonomicStatus=synonym, col source=2073 merged=false]",
     "ordinary: none of the weak kinds [col col:status=synonym, nortaxa nomenclaturalStatus=illegitimate, nortaxa taxonomicStatus=synonym, col source=2073 merged=false]"
    ],
+   "accepted_authorship_disagrees",
    "sanctioning_citation--ordinary"
   ],
   [
@@ -2608,6 +2736,7 @@
    [],
    1,
    1,
+   true,
    "sanctioning_citation",
    "Infundibulicybe squamulosa (Pers. : Fr.) Harmaja",
    "Infundibulicybe squamulosa (Pers.) Harmaja",
@@ -2626,6 +2755,7 @@
    [
     "ordinary: none of the weak kinds [col col:status=synonym, nortaxa nomenclaturalStatus=illegitimate, nortaxa taxonomicStatus=synonym, col source=2073 merged=false]"
    ],
+   "accepted_authorship_disagrees",
    "sanctioning_citation--ordinary"
   ],
   [
@@ -2647,6 +2777,7 @@
    [],
    1,
    1,
+   true,
    "sanctioning_citation",
    "Melanoleuca brevipes (Bull. : Fr.) Pat.",
    "Melanoleuca brevipes (Bull.) Pat.",
@@ -2665,6 +2796,7 @@
    [
     "ordinary: none of the weak kinds [col col:status=synonym, nortaxa nomenclaturalStatus=illegitimate, nortaxa taxonomicStatus=synonym, col source=2073 merged=false]"
    ],
+   "accepted_authorship_disagrees",
    "sanctioning_citation--ordinary"
   ],
   [
@@ -2684,6 +2816,7 @@
    [],
    1,
    1,
+   true,
    "sanctioning_citation",
    "Melanoleuca exscissa (Fr. : Fr.) Singer",
    "Melanoleuca exscissa (Fr.) Singer",
@@ -2705,6 +2838,7 @@
     "ordinary: none of the weak kinds [col col:status=synonym, nortaxa nomenclaturalStatus=illegitimate, nortaxa taxonomicStatus=synonym, col source=2073 merged=false]",
     "nortaxa_derived: every COL usage has col:sourceID 2030 (TGYXS, clb:merged=true) [col col:nameStatus=unacceptable, col col:status=synonym, nortaxa nomenclaturalStatus=illegitimate, nortaxa taxonomicStatus=synonym, col source=2030 merged=true]"
    ],
+   "accepted_authorship_disagrees",
    "sanctioning_citation--ordinary"
   ],
   [
@@ -2727,6 +2861,7 @@
    [],
    1,
    1,
+   true,
    "sanctioning_citation",
    "Gymnopus dryophilus (Bull. : Fr.) Murrill",
    "Gymnopus dryophilus (Bull.) Murrill",
@@ -2745,6 +2880,7 @@
    [
     "ordinary: none of the weak kinds [col col:status=synonym, nortaxa nomenclaturalStatus=illegitimate, nortaxa taxonomicStatus=synonym, col source=2073 merged=false]"
    ],
+   "accepted_authorship_disagrees",
    "sanctioning_citation--ordinary"
   ],
   [
@@ -2769,6 +2905,7 @@
    [],
    1,
    1,
+   true,
    "sanctioning_citation",
    "Rhodocollybia butyracea (Bull. : Fr.) Lennox",
    "Rhodocollybia butyracea (Bull.) Lennox",
@@ -2787,6 +2924,7 @@
    [
     "ordinary: none of the weak kinds [col col:status=synonym, nortaxa taxonomicStatus=synonym, col source=2073 merged=false]"
    ],
+   "accepted_authorship_disagrees",
    "sanctioning_citation--ordinary"
   ],
   [
@@ -2809,6 +2947,7 @@
    [],
    1,
    1,
+   true,
    "sanctioning_citation",
    "Armillaria mellea (Vahl : Fr.) P. Kumm.",
    "Armillaria mellea (Vahl) P. Kumm.",
@@ -2827,6 +2966,7 @@
    [
     "ordinary: none of the weak kinds [col col:status=synonym, nortaxa nomenclaturalStatus=illegitimate, nortaxa taxonomicStatus=synonym, col source=2073 merged=false]"
    ],
+   "accepted_authorship_disagrees",
    "sanctioning_citation--ordinary"
   ],
   [
@@ -2850,6 +2990,7 @@
    [],
    1,
    1,
+   true,
    "sanctioning_citation",
    "Strobilurus tenacellus (Pers. : Fr.) Singer",
    "Strobilurus tenacellus (Pers.) Singer",
@@ -2871,6 +3012,7 @@
     "ordinary: none of the weak kinds [col col:status=synonym, nortaxa nomenclaturalStatus=illegitimate, nortaxa taxonomicStatus=synonym, col source=2073 merged=false]",
     "nortaxa_derived: every COL usage has col:sourceID 2030 (T75P8, clb:merged=true) [col col:nameStatus=unacceptable, col col:status=synonym, nortaxa nomenclaturalStatus=illegitimate, nortaxa taxonomicStatus=synonym, col source=2030 merged=true]"
    ],
+   "accepted_authorship_disagrees",
    "sanctioning_citation--ordinary"
   ],
   [
@@ -2889,6 +3031,7 @@
    [],
    1,
    1,
+   true,
    "sanctioning_citation",
    "Hohenbuehelia tremula (Schaeff.: Fr.) Thorn & G. L. Barron",
    "Hohenbuehelia tremula (Schaeff.) Thorn & G.L. Barron",
@@ -2907,6 +3050,7 @@
    [
     "ordinary: none of the weak kinds [col col:status=synonym, nortaxa nomenclaturalStatus=illegitimate, nortaxa taxonomicStatus=synonym, col source=2073 merged=false]"
    ],
+   "accepted_authorship_disagrees",
    "sanctioning_citation--ordinary"
   ],
   [
@@ -2930,6 +3074,7 @@
    [],
    1,
    1,
+   true,
    "sanctioning_citation",
    "Pleurotus dryinus (Pers. : Fr.) P. Kumm.",
    "Pleurotus dryinus (Pers.) P. Kumm.",
@@ -2950,6 +3095,7 @@
     "ordinary: none of the weak kinds [col col:status=synonym, nortaxa nomenclaturalStatus=illegitimate, nortaxa taxonomicStatus=synonym, col source=2073 merged=false]",
     "ordinary: none of the weak kinds [col col:status=synonym, nortaxa nomenclaturalStatus=illegitimate, nortaxa taxonomicStatus=synonym, col source=2073 merged=false]"
    ],
+   "accepted_authorship_disagrees",
    "sanctioning_citation--ordinary"
   ],
   [
@@ -2966,6 +3112,7 @@
    [],
    1,
    1,
+   true,
    "sanctioning_citation",
    "Pluteus ephebeus (Fr. : Fr.) Gillet",
    "Pluteus ephebeus (Fr.) Gillet",
@@ -2984,6 +3131,7 @@
    [
     "ordinary: none of the weak kinds [col col:status=synonym, nortaxa nomenclaturalStatus=illegitimate, nortaxa taxonomicStatus=synonym, col source=2073 merged=false]"
    ],
+   "accepted_authorship_disagrees",
    "sanctioning_citation--ordinary"
   ],
   [
@@ -3001,6 +3149,7 @@
    [],
    1,
    1,
+   true,
    "sanctioning_citation",
    "Pluteus nanus (Pers. : Fr.) P. Kumm.",
    "Pluteus nanus (Pers.) P. Kumm.",
@@ -3022,6 +3171,7 @@
     "ordinary: none of the weak kinds [col col:status=synonym, nortaxa nomenclaturalStatus=illegitimate, nortaxa taxonomicStatus=synonym, col source=2073 merged=false]",
     "unauthored: empty authorship [col col:nameStatus=unacceptable, col col:status=synonym, nortaxa nomenclaturalStatus=illegitimate, nortaxa taxonomicStatus=synonym, col source=2030 merged=true]"
    ],
+   "accepted_authorship_disagrees",
    "sanctioning_citation--ordinary"
   ],
   [
@@ -3039,6 +3189,7 @@
    [],
    1,
    1,
+   true,
    "sanctioning_citation",
    "Volvariella pusilla (Pers. : Fr.) Singer",
    "Volvariella pusilla (Pers.) Singer",
@@ -3060,6 +3211,7 @@
     "nortaxa_derived: every COL usage has col:sourceID 2030 (TW4P4, clb:merged=true) [col col:nameStatus=unacceptable, col col:status=synonym, nortaxa nomenclaturalStatus=illegitimate, nortaxa taxonomicStatus=synonym, col source=2030 merged=true]",
     "ordinary: none of the weak kinds [col col:status=synonym, nortaxa nomenclaturalStatus=illegitimate, nortaxa taxonomicStatus=synonym, col source=2073 merged=false]"
    ],
+   "accepted_authorship_disagrees",
    "sanctioning_citation--ordinary"
   ],
   [
@@ -3083,6 +3235,7 @@
    [],
    1,
    1,
+   true,
    "sanctioning_citation",
    "Psathyrella corrugis (Pers. : Fr.) Konrad & Maubl.",
    "Psathyrella corrugis (Pers.) Konrad & Maubl.",
@@ -3105,6 +3258,7 @@
     "ordinary: none of the weak kinds [col col:status=synonym, nortaxa nomenclaturalStatus=illegitimate, nortaxa taxonomicStatus=synonym, col source=2073 merged=false]",
     "ordinary: none of the weak kinds [col col:status=synonym, nortaxa nomenclaturalStatus=illegitimate, nortaxa taxonomicStatus=synonym, col source=7888 merged=true]"
    ],
+   "accepted_authorship_disagrees",
    "sanctioning_citation--ordinary"
   ],
   [
@@ -3128,6 +3282,7 @@
    [],
    1,
    1,
+   true,
    "sanctioning_citation",
    "Phyllotopsis nidulans (Pers. : Fr.) Singer",
    "Phyllotopsis nidulans (Pers.) Singer",
@@ -3151,6 +3306,7 @@
     "ordinary: none of the weak kinds [col col:status=synonym, nortaxa nomenclaturalStatus=illegitimate, nortaxa taxonomicStatus=synonym, col source=2073 merged=false]",
     "ordinary: none of the weak kinds [col col:status=synonym, nortaxa nomenclaturalStatus=illegitimate, nortaxa taxonomicStatus=synonym, col source=2073 merged=false]"
    ],
+   "accepted_authorship_disagrees",
    "sanctioning_citation--ordinary"
   ],
   [
@@ -3172,6 +3328,7 @@
    [],
    1,
    1,
+   true,
    "sanctioning_citation",
    "Radulomyces confluens (Fr. : Fr.) M.P. Christ.",
    "Radulomyces confluens (Fr.) M.P. Christ.",
@@ -3190,6 +3347,7 @@
    [
     "ordinary: none of the weak kinds [col col:status=synonym, nortaxa nomenclaturalStatus=illegitimate, nortaxa taxonomicStatus=synonym, col source=2073 merged=false]"
    ],
+   "accepted_authorship_disagrees",
    "sanctioning_citation--ordinary"
   ],
   [
@@ -3209,6 +3367,7 @@
    [],
    1,
    1,
+   true,
    "sanctioning_citation",
    "Radulomyces molaris (Chaillet ex Fr. : Fr.) M.P. Christ.",
    "Radulomyces molaris (Chaillet ex Fr.) M.P. Christ.",
@@ -3230,6 +3389,7 @@
     "nortaxa_derived: every COL usage has col:sourceID 2030 (PRJKX, clb:merged=true) [col col:nameStatus=unacceptable, col col:status=synonym, nortaxa nomenclaturalStatus=illegitimate, nortaxa taxonomicStatus=synonym, col source=2030 merged=true]",
     "ordinary: none of the weak kinds [col col:status=synonym, nortaxa taxonomicStatus=synonym, col source=2073 merged=false]"
    ],
+   "accepted_authorship_disagrees",
    "sanctioning_citation--ordinary"
   ],
   [
@@ -3254,6 +3414,7 @@
    [],
    1,
    1,
+   true,
    "sanctioning_citation",
    "Fistulina hepatica (Schaeff. : Fr.) With.",
    "Fistulina hepatica (Schaeff.) With.",
@@ -3272,6 +3433,7 @@
    [
     "ordinary: none of the weak kinds [col col:status=synonym, nortaxa nomenclaturalStatus=illegitimate, nortaxa taxonomicStatus=synonym, col source=2073 merged=false]"
    ],
+   "accepted_authorship_disagrees",
    "sanctioning_citation--ordinary"
   ],
   [
@@ -3298,6 +3460,7 @@
    [],
    1,
    1,
+   true,
    "sanctioning_citation",
    "Schizophyllum commune Fr. : Fr.",
    "Schizophyllum commune Fr.",
@@ -3316,6 +3479,7 @@
    [
     "ordinary: none of the weak kinds [col col:status=synonym, nortaxa nomenclaturalStatus=illegitimate, nortaxa taxonomicStatus=synonym, col source=2073 merged=false]"
    ],
+   "accepted_authorship_disagrees",
    "sanctioning_citation--ordinary"
   ],
   [
@@ -3339,6 +3503,7 @@
    [],
    1,
    1,
+   true,
    "sanctioning_citation",
    "Cystoderma amianthinum (Scop. : Fr.) Fayod",
    "Cystoderma amianthinum (Scop.) Fayod",
@@ -3360,6 +3525,7 @@
     "nortaxa_derived: every COL usage has col:sourceID 2030 (L9YG2, clb:merged=true) [col col:nameStatus=unacceptable, col col:status=synonym, nortaxa nomenclaturalStatus=illegitimate, nortaxa taxonomicStatus=synonym, col source=2030 merged=true]",
     "ordinary: none of the weak kinds [col col:status=synonym, nortaxa nomenclaturalStatus=illegitimate, nortaxa taxonomicStatus=synonym, col source=2073 merged=false]"
    ],
+   "accepted_authorship_disagrees",
    "sanctioning_citation--ordinary"
   ],
   [
@@ -3383,6 +3549,7 @@
    [],
    1,
    1,
+   true,
    "sanctioning_citation",
    "Cystoderma carcharias (Pers. : Fr.) Fayod",
    "Cystoderma carcharias (Pers.) Fayod",
@@ -3401,6 +3568,7 @@
    [
     "ordinary: none of the weak kinds [col col:status=synonym, nortaxa nomenclaturalStatus=illegitimate, nortaxa taxonomicStatus=synonym, col source=2073 merged=false]"
    ],
+   "accepted_authorship_disagrees",
    "sanctioning_citation--ordinary"
   ],
   [
@@ -3425,6 +3593,7 @@
    [],
    1,
    1,
+   true,
    "sanctioning_citation",
    "Agrocybe pediades (Fr. : Fr.) Fayod",
    "Agrocybe pediades (Fr.) Fayod",
@@ -3454,6 +3623,7 @@
     "ordinary: none of the weak kinds [col col:status=synonym, nortaxa nomenclaturalStatus=illegitimate, nortaxa taxonomicStatus=synonym, col source=2073 merged=false]",
     "nortaxa_derived: every COL usage has col:sourceID 2030 (QRG8D, clb:merged=true) [col col:nameStatus=unacceptable, col col:status=synonym, nortaxa nomenclaturalStatus=illegitimate, nortaxa taxonomicStatus=synonym, col source=2030 merged=true]"
    ],
+   "accepted_authorship_disagrees",
    "sanctioning_citation--ordinary"
   ],
   [
@@ -3478,6 +3648,7 @@
    [],
    1,
    1,
+   true,
    "sanctioning_citation",
    "Hypholoma capnoides (Fr. : Fr.) P. Kumm.",
    "Hypholoma capnoides (Fr.) P. Kumm.",
@@ -3496,6 +3667,7 @@
    [
     "ordinary: none of the weak kinds [col col:status=synonym, nortaxa nomenclaturalStatus=illegitimate, nortaxa taxonomicStatus=synonym, col source=7888 merged=true]"
    ],
+   "accepted_authorship_disagrees",
    "sanctioning_citation--ordinary"
   ],
   [
@@ -3519,6 +3691,7 @@
    [],
    1,
    1,
+   true,
    "sanctioning_citation",
    "Hypholoma lateritium (Schaeff. : Fr.) P. Kumm.",
    "Hypholoma lateritium (Schaeff.) P. Kumm.",
@@ -3537,6 +3710,7 @@
    [
     "ordinary: none of the weak kinds [col col:status=synonym, nortaxa nomenclaturalStatus=illegitimate, nortaxa taxonomicStatus=synonym, col source=2073 merged=false]"
    ],
+   "accepted_authorship_disagrees",
    "sanctioning_citation--ordinary"
   ],
   [
@@ -3556,6 +3730,7 @@
    [],
    1,
    1,
+   true,
    "sanctioning_citation",
    "Pholiota lubrica (Pers. : Fr.) Singer",
    "Pholiota lubrica (Pers.) Singer",
@@ -3574,6 +3749,7 @@
    [
     "ordinary: none of the weak kinds [col col:status=synonym, nortaxa nomenclaturalStatus=illegitimate, nortaxa taxonomicStatus=synonym, col source=2073 merged=false]"
    ],
+   "accepted_authorship_disagrees",
    "sanctioning_citation--ordinary"
   ],
   [
@@ -3596,6 +3772,7 @@
    [],
    1,
    1,
+   true,
    "sanctioning_citation",
    "Stropharia pseudocyanea (Desm. : Fr.) Morgan",
    "Stropharia pseudocyanea (Desm.) Morgan",
@@ -3616,6 +3793,7 @@
     "ordinary: none of the weak kinds [col col:status=synonym, nortaxa nomenclaturalStatus=illegitimate, nortaxa taxonomicStatus=synonym, col source=2073 merged=false]",
     "ordinary: none of the weak kinds [col col:status=synonym, nortaxa nomenclaturalStatus=illegitimate, nortaxa taxonomicStatus=synonym, col source=2073 merged=false]"
    ],
+   "accepted_authorship_disagrees",
    "sanctioning_citation--ordinary"
   ],
   [
@@ -3640,6 +3818,7 @@
    [],
    1,
    1,
+   true,
    "sanctioning_citation",
    "Clitocybe fragrans (With. : Fr.) P. Kumm.",
    "Clitocybe fragrans (With.) P. Kumm.",
@@ -3658,6 +3837,7 @@
    [
     "ordinary: none of the weak kinds [col col:status=synonym, nortaxa taxonomicStatus=synonym, col source=2073 merged=false]"
    ],
+   "accepted_authorship_disagrees",
    "sanctioning_citation--ordinary"
   ],
   [
@@ -3680,6 +3860,7 @@
    [],
    1,
    1,
+   true,
    "sanctioning_citation",
    "Clitocybe metachroa (Fr. : Fr.) P. Kumm.",
    "Clitocybe metachroa (Fr.) P. Kumm.",
@@ -3698,6 +3879,7 @@
    [
     "ordinary: none of the weak kinds [col col:status=synonym, nortaxa taxonomicStatus=synonym, col source=2073 merged=false]"
    ],
+   "accepted_authorship_disagrees",
    "sanctioning_citation--ordinary"
   ],
   [
@@ -3715,6 +3897,7 @@
    [],
    1,
    1,
+   true,
    "sanctioning_citation",
    "Tubaria furfuracea (Pers. : Fr.) Gillet",
    "Tubaria furfuracea (Pers.) Gillet",
@@ -3733,6 +3916,7 @@
    [
     "ordinary: none of the weak kinds [col col:status=synonym, nortaxa nomenclaturalStatus=illegitimate, nortaxa taxonomicStatus=synonym, col source=2073 merged=false]"
    ],
+   "accepted_authorship_disagrees",
    "sanctioning_citation--ordinary"
   ],
   [
@@ -3754,6 +3938,7 @@
    [],
    1,
    1,
+   true,
    "sanctioning_citation",
    "Arrhenia griseopallida (Desm. : Fr.) Watling",
    "Arrhenia griseopallida (Desm.) Watling",
@@ -3774,6 +3959,7 @@
     "ordinary: none of the weak kinds [col col:status=synonym, nortaxa nomenclaturalStatus=illegitimate, nortaxa taxonomicStatus=synonym, col source=9712 merged=true]",
     "ordinary: none of the weak kinds [col col:status=synonym, nortaxa nomenclaturalStatus=illegitimate, nortaxa taxonomicStatus=synonym, col source=2073 merged=false]"
    ],
+   "accepted_authorship_disagrees",
    "sanctioning_citation--ordinary"
   ],
   [
@@ -3796,6 +3982,7 @@
    [],
    1,
    1,
+   true,
    "sanctioning_citation",
    "Typhula erythropus (Pers. : Fr.) Fr.",
    "Typhula erythropus (Pers.) Fr.",
@@ -3814,6 +4001,7 @@
    [
     "ordinary: none of the weak kinds [col col:status=synonym, nortaxa nomenclaturalStatus=illegitimate, nortaxa taxonomicStatus=synonym, col source=9712 merged=true]"
    ],
+   "accepted_authorship_disagrees",
    "sanctioning_citation--ordinary"
   ],
   [
@@ -3831,6 +4019,7 @@
    [],
    1,
    1,
+   true,
    "sanctioning_citation",
    "Typhula micans (Pers. : Fr.) Berthier",
    "Typhula micans (Pers.) Berthier",
@@ -3861,6 +4050,7 @@
     "ordinary: none of the weak kinds [col col:status=synonym, nortaxa nomenclaturalStatus=illegitimate, nortaxa taxonomicStatus=synonym, col source=2073 merged=false]",
     "ordinary: none of the weak kinds [col col:status=synonym, nortaxa nomenclaturalStatus=illegitimate, nortaxa taxonomicStatus=synonym, col source=2073 merged=false]"
    ],
+   "accepted_authorship_disagrees",
    "sanctioning_citation--ordinary"
   ],
   [
@@ -3879,6 +4069,7 @@
    [],
    1,
    1,
+   true,
    "sanctioning_citation",
    "Typhula quisquiliaris (Fr. : Fr.) Henn.",
    "Typhula quisquiliaris (Fr.) Henn.",
@@ -3899,6 +4090,7 @@
     "ordinary: none of the weak kinds [col col:status=synonym, nortaxa nomenclaturalStatus=illegitimate, nortaxa taxonomicStatus=synonym, col source=2073 merged=false]",
     "ordinary: none of the weak kinds [col col:status=synonym, nortaxa nomenclaturalStatus=illegitimate, nortaxa taxonomicStatus=synonym, col source=2073 merged=false]"
    ],
+   "accepted_authorship_disagrees",
    "sanctioning_citation--ordinary"
   ],
   [
@@ -3918,6 +4110,7 @@
    [],
    1,
    1,
+   true,
    "sanctioning_citation",
    "Amphinema byssoides (Pers. : Fr.) J. Erikss.",
    "Amphinema byssoides (Pers.) J. Erikss.",
@@ -3941,6 +4134,7 @@
     "ordinary: none of the weak kinds [col col:status=synonym, nortaxa nomenclaturalStatus=illegitimate, nortaxa taxonomicStatus=synonym, col source=2073 merged=false]",
     "nortaxa_derived: every COL usage has col:sourceID 2030 (TCFCB, clb:merged=true) [col col:nameStatus=unacceptable, col col:status=synonym, nortaxa nomenclaturalStatus=illegitimate, nortaxa taxonomicStatus=synonym, col source=2030 merged=true]"
    ],
+   "accepted_authorship_disagrees",
    "sanctioning_citation--ordinary"
   ],
   [
@@ -3958,6 +4152,7 @@
    [],
    1,
    1,
+   true,
    "sanctioning_citation",
    "Auricularia auricula-judae (Bull. : Fr.) Quél.",
    "Auricularia auricula-judae (Bull.) Quél.",
@@ -3979,6 +4174,7 @@
     "ordinary: none of the weak kinds [col col:status=synonym, nortaxa nomenclaturalStatus=illegitimate, nortaxa taxonomicStatus=synonym, col source=2073 merged=false]",
     "nortaxa_derived: every COL usage has col:sourceID 2030 (LR64R, clb:merged=true) [col col:nameStatus=unacceptable, col col:status=synonym, nortaxa nomenclaturalStatus=illegitimate, nortaxa taxonomicStatus=synonym, col source=2030 merged=true]"
    ],
+   "accepted_authorship_disagrees",
    "sanctioning_citation--ordinary"
   ],
   [
@@ -3996,6 +4192,7 @@
    [],
    1,
    1,
+   true,
    "sanctioning_citation",
    "Auricularia mesenterica (Dicks. : Fr.) Pers.",
    "Auricularia mesenterica (Dicks.) Pers.",
@@ -4017,6 +4214,7 @@
     "nortaxa_derived: every COL usage has col:sourceID 2030 (PDZ7X, clb:merged=true) [col col:nameStatus=unacceptable, col col:status=synonym, nortaxa nomenclaturalStatus=illegitimate, nortaxa taxonomicStatus=synonym, col source=2030 merged=true]",
     "ordinary: none of the weak kinds [col col:status=synonym, nortaxa taxonomicStatus=synonym, col source=2073 merged=false]"
    ],
+   "accepted_authorship_disagrees",
    "sanctioning_citation--ordinary"
   ],
   [
@@ -4040,6 +4238,7 @@
    [],
    1,
    1,
+   true,
    "sanctioning_citation",
    "Exidia glandulosa (Bull. : Fr.) Fr.",
    "Exidia glandulosa (Bull.) Fr.",
@@ -4061,6 +4260,7 @@
     "nortaxa_derived: every COL usage has col:sourceID 2030 (PDZC6, clb:merged=true) [col col:nameStatus=unacceptable, col col:status=synonym, nortaxa nomenclaturalStatus=illegitimate, nortaxa taxonomicStatus=synonym, col source=2030 merged=true]",
     "ordinary: none of the weak kinds [col col:status=synonym, nortaxa nomenclaturalStatus=illegitimate, nortaxa taxonomicStatus=synonym, col source=2073 merged=false]"
    ],
+   "accepted_authorship_disagrees",
    "sanctioning_citation--ordinary"
   ],
   [
@@ -4085,6 +4285,7 @@
    [],
    1,
    1,
+   true,
    "sanctioning_citation",
    "Boletus edulis Bull. : Fr.",
    "Boletus edulis Bull.",
@@ -4109,6 +4310,7 @@
     "ordinary: none of the weak kinds [col col:status=synonym, nortaxa nomenclaturalStatus=illegitimate, nortaxa taxonomicStatus=synonym, col source=7888 merged=true]",
     "ordinary: none of the weak kinds [col col:status=synonym, nortaxa taxonomicStatus=synonym, col source=2073 merged=false]"
    ],
+   "accepted_authorship_disagrees",
    "sanctioning_citation--ordinary"
   ],
   [
@@ -4132,6 +4334,7 @@
    [],
    1,
    1,
+   true,
    "sanctioning_citation",
    "Leccinum scabrum (Bull. : Fr.) Gray",
    "Leccinum scabrum (Bull.) Gray",
@@ -4155,6 +4358,7 @@
     "interpretation_qualified: authorship 'ss.' [col col:nameStatus=unacceptable, col col:status=synonym, nortaxa nomenclaturalStatus=illegitimate, nortaxa taxonomicStatus=synonym, col source=2030 merged=true]",
     "ordinary: none of the weak kinds [col col:status=synonym, nortaxa taxonomicStatus=synonym, col source=2073 merged=false]"
    ],
+   "accepted_authorship_disagrees",
    "sanctioning_citation--ordinary"
   ],
   [
@@ -4179,6 +4383,7 @@
    [],
    1,
    1,
+   true,
    "sanctioning_citation",
    "Xerocomus subtomentosus (L. : Fr.) Quél.",
    "Xerocomus subtomentosus (L.) Quél.",
@@ -4200,6 +4405,7 @@
     "ordinary: none of the weak kinds [col col:status=synonym, nortaxa nomenclaturalStatus=illegitimate, nortaxa taxonomicStatus=synonym, col source=2073 merged=false]",
     "nortaxa_derived: every COL usage has col:sourceID 2030 (TN8C3, clb:merged=true) [col col:nameStatus=unacceptable, col col:status=synonym, nortaxa nomenclaturalStatus=illegitimate, nortaxa taxonomicStatus=synonym, col source=2030 merged=true]"
    ],
+   "accepted_authorship_disagrees",
    "sanctioning_citation--ordinary"
   ],
   [
@@ -4221,6 +4427,7 @@
    [],
    1,
    1,
+   true,
    "sanctioning_citation",
    "Coniophora arida (Fr. : Fr.) P. Karst.",
    "Coniophora arida (Fr.) P. Karst.",
@@ -4239,6 +4446,7 @@
    [
     "ordinary: none of the weak kinds [col col:status=synonym, nortaxa nomenclaturalStatus=illegitimate, nortaxa taxonomicStatus=synonym, col source=2073 merged=false]"
    ],
+   "accepted_authorship_disagrees",
    "sanctioning_citation--ordinary"
   ],
   [
@@ -4259,6 +4467,7 @@
    [],
    1,
    1,
+   true,
    "sanctioning_citation",
    "Coniophora olivacea (Fr. : Fr.) P. Karst.",
    "Coniophora olivacea (Fr.) P. Karst.",
@@ -4279,6 +4488,7 @@
     "ordinary: none of the weak kinds [col col:status=synonym, nortaxa nomenclaturalStatus=illegitimate, nortaxa taxonomicStatus=synonym, col source=2073 merged=false]",
     "ordinary: none of the weak kinds [col col:status=synonym, nortaxa nomenclaturalStatus=illegitimate, nortaxa taxonomicStatus=synonym, col source=2073 merged=false]"
    ],
+   "accepted_authorship_disagrees",
    "sanctioning_citation--ordinary"
   ],
   [
@@ -4302,6 +4512,7 @@
    [],
    1,
    1,
+   true,
    "sanctioning_citation",
    "Coniophora puteana (Schumach. : Fr.) P. Karst.",
    "Coniophora puteana (Schumach.) P. Karst.",
@@ -4322,6 +4533,7 @@
     "ordinary: none of the weak kinds [col col:status=synonym, nortaxa nomenclaturalStatus=illegitimate, nortaxa taxonomicStatus=synonym, col source=2073 merged=false]",
     "ordinary: none of the weak kinds [col col:status=synonym, nortaxa nomenclaturalStatus=illegitimate, nortaxa taxonomicStatus=synonym, col source=2073 merged=false]"
    ],
+   "accepted_authorship_disagrees",
    "sanctioning_citation--ordinary"
   ],
   [
@@ -4346,6 +4558,7 @@
    [],
    1,
    1,
+   true,
    "sanctioning_citation",
    "Suillus bovinus (L. : Fr.) Roussel",
    "Suillus bovinus (L.) Roussel",
@@ -4364,6 +4577,7 @@
    [
     "ordinary: none of the weak kinds [col col:status=synonym, nortaxa nomenclaturalStatus=illegitimate, nortaxa taxonomicStatus=synonym, col source=7888 merged=true]"
    ],
+   "accepted_authorship_disagrees",
    "sanctioning_citation--ordinary"
   ],
   [
@@ -4383,6 +4597,7 @@
    [],
    1,
    1,
+   true,
    "sanctioning_citation",
    "Suillus collinitus (Fr. : Fr.) Kuntze",
    "Suillus collinitus (Fr.) Kuntze",
@@ -4403,6 +4618,7 @@
     "ordinary: none of the weak kinds [col col:status=synonym, nortaxa nomenclaturalStatus=illegitimate, nortaxa taxonomicStatus=synonym, col source=2073 merged=false]",
     "ordinary: none of the weak kinds [col col:status=synonym, nortaxa nomenclaturalStatus=illegitimate, nortaxa taxonomicStatus=synonym, col source=2073 merged=false]"
    ],
+   "accepted_authorship_disagrees",
    "sanctioning_citation--ordinary"
   ],
   [
@@ -4426,6 +4642,7 @@
    [],
    1,
    1,
+   true,
    "sanctioning_citation",
    "Suillus flavidus (Fr. : Fr.) J. Presl",
    "Suillus flavidus (Fr.) J. Presl",
@@ -4446,6 +4663,7 @@
     "ordinary: none of the weak kinds [col col:status=synonym, nortaxa nomenclaturalStatus=illegitimate, nortaxa taxonomicStatus=synonym, col source=2073 merged=false]",
     "ordinary: none of the weak kinds [col col:status=synonym, nortaxa nomenclaturalStatus=illegitimate, nortaxa taxonomicStatus=synonym, col source=2073 merged=false]"
    ],
+   "accepted_authorship_disagrees",
    "sanctioning_citation--ordinary"
   ],
   [
@@ -4463,6 +4681,7 @@
    [],
    1,
    1,
+   true,
    "sanctioning_citation",
    "Suillus grevillei (Klotzsch : Fr.) Singer",
    "Suillus grevillei (Klotzsch) Singer",
@@ -4483,6 +4702,7 @@
     "ordinary: none of the weak kinds [col col:status=synonym, nortaxa nomenclaturalStatus=illegitimate, nortaxa taxonomicStatus=synonym, col source=7888 merged=true]",
     "ordinary: none of the weak kinds [col col:status=synonym, nortaxa nomenclaturalStatus=illegitimate, nortaxa taxonomicStatus=synonym, col source=2073 merged=false]"
    ],
+   "accepted_authorship_disagrees",
    "sanctioning_citation--ordinary"
   ],
   [
@@ -4505,6 +4725,7 @@
    [],
    1,
    1,
+   true,
    "sanctioning_citation",
    "Serpula himantioides (Fr. : Fr.) P. Karst.",
    "Serpula himantioides (Fr.) P. Karst.",
@@ -4528,6 +4749,7 @@
     "nortaxa_derived: every COL usage has col:sourceID 2030 (QNQ3Z, clb:merged=true) [col col:nameStatus=unacceptable, col col:status=synonym, nortaxa nomenclaturalStatus=illegitimate, nortaxa taxonomicStatus=synonym, col source=2030 merged=true]",
     "ordinary: none of the weak kinds [col col:status=synonym, nortaxa nomenclaturalStatus=illegitimate, nortaxa taxonomicStatus=synonym, col source=2073 merged=false]"
    ],
+   "accepted_authorship_disagrees",
    "sanctioning_citation--ordinary"
   ],
   [
@@ -4544,6 +4766,7 @@
    [],
    1,
    1,
+   true,
    "sanctioning_citation",
    "Serpula lacrymans (Wulfen : Fr.) J. Schröt.",
    "Serpula lacrymans (Wulfen) J. Schröt.",
@@ -4567,6 +4790,7 @@
     "ordinary: none of the weak kinds [col col:status=synonym, nortaxa nomenclaturalStatus=illegitimate, nortaxa taxonomicStatus=synonym, col source=2073 merged=false]",
     "nortaxa_derived: every COL usage has col:sourceID 2030 (QNNVJ, clb:merged=true) [col col:nameStatus=unacceptable, col col:status=synonym, nortaxa nomenclaturalStatus=illegitimate, nortaxa taxonomicStatus=synonym, col source=2030 merged=true]"
    ],
+   "accepted_authorship_disagrees",
    "sanctioning_citation--ordinary"
   ],
   [
@@ -4587,6 +4811,7 @@
    [],
    1,
    1,
+   true,
    "sanctioning_citation",
    "Pseudomerulius aureus (Fr. : Fr.) Jülich",
    "Pseudomerulius aureus (Fr.) Jülich",
@@ -4607,6 +4832,7 @@
     "ordinary: none of the weak kinds [col col:status=synonym, nortaxa nomenclaturalStatus=illegitimate, nortaxa taxonomicStatus=synonym, col source=2073 merged=false]",
     "ordinary: none of the weak kinds [col col:status=synonym, nortaxa nomenclaturalStatus=illegitimate, nortaxa taxonomicStatus=synonym, col source=2073 merged=false]"
    ],
+   "accepted_authorship_disagrees",
    "sanctioning_citation--ordinary"
   ],
   [
@@ -4633,6 +4859,7 @@
    [],
    1,
    1,
+   true,
    "sanctioning_citation",
    "Cantharellus cibarius Fr. : Fr.",
    "Cantharellus cibarius Fr.",
@@ -4651,6 +4878,7 @@
    [
     "ordinary: none of the weak kinds [col col:status=synonym, nortaxa nomenclaturalStatus=illegitimate, nortaxa taxonomicStatus=synonym, col source=2073 merged=false]"
    ],
+   "accepted_authorship_disagrees",
    "sanctioning_citation--ordinary"
   ],
   [
@@ -4676,6 +4904,7 @@
    [],
    1,
    1,
+   true,
    "sanctioning_citation",
    "Craterellus cornucopioides (L. : Fr.) Pers.",
    "Craterellus cornucopioides (L.) Pers.",
@@ -4707,6 +4936,7 @@
     "ordinary: none of the weak kinds [col col:status=synonym, nortaxa nomenclaturalStatus=illegitimate, nortaxa taxonomicStatus=synonym, col source=2073 merged=false]",
     "nortaxa_derived: every COL usage has col:sourceID 2030 (QNQ6W, clb:merged=true) [col col:nameStatus=unacceptable, col col:status=synonym, nortaxa nomenclaturalStatus=illegitimate, nortaxa taxonomicStatus=synonym, col source=2030 merged=true]"
    ],
+   "accepted_authorship_disagrees",
    "sanctioning_citation--ordinary"
   ],
   [
@@ -4727,6 +4957,7 @@
    [],
    1,
    1,
+   true,
    "sanctioning_citation",
    "Cytidia salicina (Fr. : Fr.) Burt",
    "Cytidia salicina (Fr.) Burt",
@@ -4747,6 +4978,7 @@
     "ordinary: none of the weak kinds [col col:status=synonym, nortaxa nomenclaturalStatus=illegitimate, nortaxa taxonomicStatus=synonym, col source=2073 merged=false]",
     "ordinary: none of the weak kinds [col col:status=synonym, nortaxa nomenclaturalStatus=illegitimate, nortaxa taxonomicStatus=synonym, col source=2073 merged=false]"
    ],
+   "accepted_authorship_disagrees",
    "sanctioning_citation--ordinary"
   ],
   [
@@ -4770,6 +5002,7 @@
    [],
    1,
    1,
+   true,
    "sanctioning_citation",
    "Geastrum rufescens Pers. : Pers.",
    "Geastrum rufescens Pers.",
@@ -4795,6 +5028,7 @@
     "ordinary: none of the weak kinds [col col:status=synonym, nortaxa nomenclaturalStatus=illegitimate, nortaxa taxonomicStatus=synonym, col source=2073 merged=false]",
     "ordinary: none of the weak kinds [col col:status=synonym, nortaxa nomenclaturalStatus=illegitimate, nortaxa taxonomicStatus=synonym, col source=2073 merged=false]"
    ],
+   "accepted_authorship_disagrees",
    "sanctioning_citation--ordinary"
   ],
   [
@@ -4818,6 +5052,7 @@
    [],
    1,
    1,
+   true,
    "sanctioning_citation",
    "Gloeophyllum odoratum (Wulfen : Fr.) Imazeki",
    "Gloeophyllum odoratum (Wulfen) Imazeki",
@@ -4841,6 +5076,7 @@
     "nortaxa_derived: every COL usage has col:sourceID 2030 (RQJDZ, clb:merged=true) [col col:nameStatus=unacceptable, col col:status=synonym, nortaxa nomenclaturalStatus=illegitimate, nortaxa taxonomicStatus=synonym, col source=2030 merged=true]",
     "ordinary: none of the weak kinds [col col:status=synonym, nortaxa nomenclaturalStatus=illegitimate, nortaxa taxonomicStatus=synonym, col source=2073 merged=false]"
    ],
+   "accepted_authorship_disagrees",
    "sanctioning_citation--ordinary"
   ],
   [
@@ -4865,6 +5101,7 @@
    [],
    1,
    1,
+   true,
    "sanctioning_citation",
    "Gloeophyllum sepiarium (Wulfen : Fr.) P. Karst.",
    "Gloeophyllum sepiarium (Wulfen) P. Karst.",
@@ -4885,6 +5122,7 @@
     "ordinary: none of the weak kinds [col col:status=synonym, nortaxa nomenclaturalStatus=illegitimate, nortaxa taxonomicStatus=synonym, col source=2073 merged=false]",
     "ordinary: none of the weak kinds [col col:status=synonym, nortaxa nomenclaturalStatus=illegitimate, nortaxa taxonomicStatus=synonym, col source=2073 merged=false]"
    ],
+   "accepted_authorship_disagrees",
    "sanctioning_citation--ordinary"
   ],
   [
@@ -4903,6 +5141,7 @@
    [],
    1,
    1,
+   true,
    "sanctioning_citation",
    "Veluticeps abietina (Pers. : Fr.) Hjortstam & Tellería",
    "Veluticeps abietina (Pers.) Hjortstam & Tellería",
@@ -4926,6 +5165,7 @@
     "ordinary: none of the weak kinds [col col:status=synonym, nortaxa nomenclaturalStatus=illegitimate, nortaxa taxonomicStatus=synonym, col source=2073 merged=false]",
     "nortaxa_derived: every COL usage has col:sourceID 2030 (TCDSM, clb:merged=true) [col col:nameStatus=unacceptable, col col:status=synonym, nortaxa nomenclaturalStatus=illegitimate, nortaxa taxonomicStatus=synonym, col source=2030 merged=true]"
    ],
+   "accepted_authorship_disagrees",
    "sanctioning_citation--ordinary"
   ],
   [
@@ -4949,6 +5189,7 @@
    [],
    1,
    1,
+   true,
    "sanctioning_citation",
    "Gomphus clavatus (Pers. : Fr.) Gray",
    "Gomphus clavatus (Pers.) Gray",
@@ -4971,6 +5212,7 @@
     "ordinary: none of the weak kinds [col col:status=synonym, nortaxa nomenclaturalStatus=illegitimate, nortaxa taxonomicStatus=synonym, col source=2073 merged=false]",
     "ordinary: none of the weak kinds [col col:status=synonym, nortaxa nomenclaturalStatus=illegitimate, nortaxa taxonomicStatus=synonym, col source=2073 merged=false]"
    ],
+   "accepted_authorship_disagrees",
    "sanctioning_citation--ordinary"
   ],
   [
@@ -4993,6 +5235,7 @@
    [],
    1,
    1,
+   true,
    "sanctioning_citation",
    "Ramaria formosa (Pers. : Fr.) Quél.",
    "Ramaria formosa (Pers.) Quél.",
@@ -5011,6 +5254,7 @@
    [
     "ordinary: none of the weak kinds [col col:status=synonym, nortaxa nomenclaturalStatus=illegitimate, nortaxa taxonomicStatus=synonym, col source=7888 merged=true]"
    ],
+   "accepted_authorship_disagrees",
    "sanctioning_citation--ordinary"
   ],
   [
@@ -5029,6 +5273,7 @@
    [],
    1,
    1,
+   true,
    "sanctioning_citation",
    "Ramaria suecica (Fr. : Fr.) Donk",
    "Ramaria suecica (Fr.) Donk",
@@ -5049,6 +5294,7 @@
     "ordinary: none of the weak kinds [col col:status=synonym, nortaxa nomenclaturalStatus=illegitimate, nortaxa taxonomicStatus=synonym, col source=2073 merged=false]",
     "ordinary: none of the weak kinds [col col:status=synonym, nortaxa nomenclaturalStatus=illegitimate, nortaxa taxonomicStatus=synonym, col source=2073 merged=false]"
    ],
+   "accepted_authorship_disagrees",
    "sanctioning_citation--ordinary"
   ],
   [
@@ -5071,6 +5317,7 @@
    [],
    1,
    1,
+   true,
    "sanctioning_citation",
    "Inonotus cuticularis (Bull. : Fr.) P. Karst.",
    "Inonotus cuticularis (Bull.) P. Karst.",
@@ -5089,6 +5336,7 @@
    [
     "ordinary: none of the weak kinds [col col:status=synonym, nortaxa nomenclaturalStatus=illegitimate, nortaxa taxonomicStatus=synonym, col source=2073 merged=false]"
    ],
+   "accepted_authorship_disagrees",
    "sanctioning_citation--ordinary"
   ],
   [
@@ -5112,6 +5360,7 @@
    [],
    1,
    1,
+   true,
    "sanctioning_citation",
    "Phellinus igniarius (L. : Fr.) Quél.",
    "Phellinus igniarius (L.) Quél.",
@@ -5134,6 +5383,7 @@
     "ordinary: none of the weak kinds [col col:status=synonym, nortaxa nomenclaturalStatus=illegitimate, nortaxa taxonomicStatus=synonym, col source=2073 merged=false]",
     "ordinary: none of the weak kinds [col col:status=synonym, nortaxa taxonomicStatus=synonym, col source=2073 merged=false]"
    ],
+   "accepted_authorship_disagrees",
    "sanctioning_citation--ordinary"
   ],
   [
@@ -5152,6 +5402,7 @@
    [],
    1,
    1,
+   true,
    "sanctioning_citation",
    "Phellinus viticola (Schwein. : Fr.) Donk",
    "Phellinus viticola (Schwein.) Donk",
@@ -5179,6 +5430,7 @@
     "ordinary: none of the weak kinds [col col:status=synonym, nortaxa nomenclaturalStatus=illegitimate, nortaxa taxonomicStatus=synonym, col source=2073 merged=false]",
     "ordinary: none of the weak kinds [col col:status=synonym, nortaxa nomenclaturalStatus=illegitimate, nortaxa taxonomicStatus=synonym, col source=2073 merged=false]"
    ],
+   "accepted_authorship_disagrees",
    "sanctioning_citation--ordinary"
   ],
   [
@@ -5196,6 +5448,7 @@
    [],
    1,
    1,
+   true,
    "sanctioning_citation",
    "Cotylidia pannosa (Sowerby : Fr.) D.A. Reid",
    "Cotylidia pannosa (Sowerby) D.A. Reid",
@@ -5214,6 +5467,7 @@
    [
     "ordinary: none of the weak kinds [col col:status=synonym, nortaxa nomenclaturalStatus=illegitimate, nortaxa taxonomicStatus=synonym, col source=2073 merged=false]"
    ],
+   "accepted_authorship_disagrees",
    "sanctioning_citation--ordinary"
   ],
   [
@@ -5235,6 +5489,7 @@
    [],
    1,
    1,
+   true,
    "sanctioning_citation",
    "Cotylidia undulata (Fr. : Fr.) P. Karst.",
    "Cotylidia undulata (Fr.) P. Karst.",
@@ -5256,6 +5511,7 @@
     "ordinary: none of the weak kinds [col col:status=synonym, nortaxa taxonomicStatus=synonym, col source=2073 merged=false]",
     "pro_parte: col col:status=ambiguous synonym [col col:status=ambiguous synonym, nortaxa nomenclaturalStatus=illegitimate, nortaxa taxonomicStatus=synonym, col source=2073 merged=false]"
    ],
+   "accepted_authorship_disagrees",
    "sanctioning_citation--ordinary"
   ],
   [
@@ -5274,6 +5530,7 @@
    [],
    1,
    1,
+   true,
    "sanctioning_citation",
    "Oxyporus corticola (Fr. : Fr.) Ryvarden",
    "Oxyporus corticola (Fr.) Ryvarden",
@@ -5299,6 +5556,7 @@
     "ordinary: none of the weak kinds [col col:nameStatus=acceptable, col col:status=synonym, nortaxa nomenclaturalStatus=illegitimate, nortaxa taxonomicStatus=synonym, col source=2041 merged=true]",
     "ordinary: none of the weak kinds [col col:status=synonym, nortaxa nomenclaturalStatus=illegitimate, nortaxa taxonomicStatus=synonym, col source=2073 merged=false]"
    ],
+   "accepted_authorship_disagrees",
    "sanctioning_citation--ordinary"
   ],
   [
@@ -5316,6 +5574,7 @@
    [],
    1,
    1,
+   true,
    "sanctioning_citation",
    "Oxyporus obducens (Pers. : Fr.) Donk",
    "Oxyporus obducens (Pers.) Donk",
@@ -5336,6 +5595,7 @@
     "ordinary: none of the weak kinds [col col:status=synonym, nortaxa nomenclaturalStatus=illegitimate, nortaxa taxonomicStatus=synonym, col source=2073 merged=false]",
     "ordinary: none of the weak kinds [col col:status=synonym, nortaxa nomenclaturalStatus=illegitimate, nortaxa taxonomicStatus=synonym, col source=2073 merged=false]"
    ],
+   "accepted_authorship_disagrees",
    "sanctioning_citation--ordinary"
   ],
   [
@@ -5356,6 +5616,7 @@
    [],
    1,
    1,
+   true,
    "sanctioning_citation",
    "Resinicium bicolor (Alb. & Schwein. : Fr.) Parmasto",
    "Resinicium bicolor (Alb. & Schwein.) Parmasto",
@@ -5377,6 +5638,7 @@
     "nortaxa_derived: every COL usage has col:sourceID 2030 (PRFFM, clb:merged=true) [col col:nameStatus=unacceptable, col col:status=synonym, nortaxa nomenclaturalStatus=illegitimate, nortaxa taxonomicStatus=synonym, col source=2030 merged=true]",
     "ordinary: none of the weak kinds [col col:status=synonym, nortaxa nomenclaturalStatus=illegitimate, nortaxa taxonomicStatus=synonym, col source=2073 merged=false]"
    ],
+   "accepted_authorship_disagrees",
    "sanctioning_citation--ordinary"
   ],
   [
@@ -5397,6 +5659,7 @@
    [],
    1,
    1,
+   true,
    "sanctioning_citation",
    "Hyphodontia arguta (Fr. : Fr.) J. Erikss.",
    "Hyphodontia arguta (Fr.) J. Erikss.",
@@ -5419,6 +5682,7 @@
     "ordinary: none of the weak kinds [col col:status=synonym, nortaxa nomenclaturalStatus=illegitimate, nortaxa taxonomicStatus=synonym, col source=2073 merged=false]",
     "ordinary: none of the weak kinds [col col:status=synonym, nortaxa nomenclaturalStatus=illegitimate, nortaxa taxonomicStatus=synonym, col source=2073 merged=false]"
    ],
+   "accepted_authorship_disagrees",
    "sanctioning_citation--ordinary"
   ],
   [
@@ -5437,6 +5701,7 @@
    [],
    1,
    1,
+   true,
    "sanctioning_citation",
    "Hyphodontia barba-jovis (Bull. : Fr.) J. Erikss.",
    "Hyphodontia barba-jovis (Bull.) J. Erikss.",
@@ -5455,6 +5720,7 @@
    [
     "ordinary: none of the weak kinds [col col:status=synonym, nortaxa nomenclaturalStatus=illegitimate, nortaxa taxonomicStatus=synonym, col source=2073 merged=false]"
    ],
+   "accepted_authorship_disagrees",
    "sanctioning_citation--ordinary"
   ],
   [
@@ -5475,6 +5741,7 @@
    [],
    1,
    1,
+   true,
    "sanctioning_citation",
    "Antrodia sinuosa (Fr. : Fr.) P. Karst.",
    "Antrodia sinuosa (Fr.) P. Karst.",
@@ -5493,6 +5760,7 @@
    [
     "ordinary: none of the weak kinds [col col:status=synonym, nortaxa nomenclaturalStatus=illegitimate, nortaxa taxonomicStatus=synonym, col source=2073 merged=false]"
    ],
+   "accepted_authorship_disagrees",
    "sanctioning_citation--ordinary"
   ],
   [
@@ -5514,6 +5782,7 @@
    [],
    1,
    1,
+   true,
    "sanctioning_citation",
    "Climacocystis borealis (Fr. : Fr.) Kotl. & Pouzar",
    "Climacocystis borealis (Fr.) Kotl. & Pouzar",
@@ -5536,6 +5805,7 @@
     "ordinary: none of the weak kinds [col col:status=synonym, nortaxa nomenclaturalStatus=illegitimate, nortaxa taxonomicStatus=synonym, col source=2073 merged=false]",
     "ordinary: none of the weak kinds [col col:status=synonym, nortaxa nomenclaturalStatus=illegitimate, nortaxa taxonomicStatus=synonym, col source=2073 merged=false]"
    ],
+   "accepted_authorship_disagrees",
    "sanctioning_citation--ordinary"
   ],
   [
@@ -5559,6 +5829,7 @@
    [],
    1,
    1,
+   true,
    "sanctioning_citation",
    "Daedalea quercina (L. : Fr.) Pers.",
    "Daedalea quercina (L.) Pers.",
@@ -5577,6 +5848,7 @@
    [
     "ordinary: none of the weak kinds [col col:status=synonym, nortaxa nomenclaturalStatus=illegitimate, nortaxa taxonomicStatus=synonym, col source=2073 merged=false]"
    ],
+   "accepted_authorship_disagrees",
    "sanctioning_citation--ordinary"
   ],
   [
@@ -5596,6 +5868,7 @@
    [],
    1,
    1,
+   true,
    "sanctioning_citation",
    "Fomitopsis pinicola (Sw. : Fr.) P. Karst.",
    "Fomitopsis pinicola (Sw.) P. Karst.",
@@ -5624,6 +5897,7 @@
     "nortaxa_derived: every COL usage has col:sourceID 2030 (RQGC5, clb:merged=true) [col col:nameStatus=unacceptable, col col:status=synonym, nortaxa nomenclaturalStatus=illegitimate, nortaxa taxonomicStatus=synonym, col source=2030 merged=true]",
     "nortaxa_derived: every COL usage has col:sourceID 2030 (RQKW5, clb:merged=true) [col col:nameStatus=unacceptable, col col:status=synonym, nortaxa nomenclaturalStatus=illegitimate, nortaxa taxonomicStatus=synonym, col source=2030 merged=true]"
    ],
+   "accepted_authorship_disagrees",
    "sanctioning_citation--ordinary"
   ],
   [
@@ -5647,6 +5921,7 @@
    [],
    1,
    1,
+   true,
    "sanctioning_citation",
    "Ischnoderma benzoinum (Wahlenb. : Fr.) P. Karst.",
    "Ischnoderma benzoinum (Wahlenb.) P. Karst.",
@@ -5668,6 +5943,7 @@
     "ordinary: none of the weak kinds [col col:status=synonym, nortaxa nomenclaturalStatus=illegitimate, nortaxa taxonomicStatus=synonym, col source=2073 merged=false]",
     "nortaxa_derived: every COL usage has col:sourceID 2030 (RQ3D2, clb:merged=true) [col col:nameStatus=unacceptable, col col:status=synonym, nortaxa nomenclaturalStatus=illegitimate, nortaxa taxonomicStatus=synonym, col source=2030 merged=true]"
    ],
+   "accepted_authorship_disagrees",
    "sanctioning_citation--ordinary"
   ],
   [
@@ -5691,6 +5967,7 @@
    [],
    1,
    1,
+   true,
    "sanctioning_citation",
    "Ischnoderma resinosum (Schrad. : Fr.) P. Karst.",
    "Ischnoderma resinosum (Schrad.) P. Karst.",
@@ -5709,6 +5986,7 @@
    [
     "ordinary: none of the weak kinds [col col:status=synonym, nortaxa nomenclaturalStatus=illegitimate, nortaxa taxonomicStatus=synonym, col source=2073 merged=false]"
    ],
+   "accepted_authorship_disagrees",
    "sanctioning_citation--ordinary"
   ],
   [
@@ -5732,6 +6010,7 @@
    [],
    1,
    1,
+   true,
    "sanctioning_citation",
    "Laetiporus sulphureus (Bull. : Fr.) Murrill",
    "Laetiporus sulphureus (Bull.) Murrill",
@@ -5752,6 +6031,7 @@
     "ordinary: none of the weak kinds [col col:status=synonym, nortaxa nomenclaturalStatus=illegitimate, nortaxa taxonomicStatus=synonym, col source=2073 merged=false]",
     "ordinary: none of the weak kinds [col col:status=synonym, nortaxa taxonomicStatus=synonym, col source=2073 merged=false]"
    ],
+   "accepted_authorship_disagrees",
    "sanctioning_citation--ordinary"
   ],
   [
@@ -5773,6 +6053,7 @@
    [],
    1,
    1,
+   true,
    "sanctioning_citation",
    "Ganoderma australe (Fr. : Fr.) Pat.",
    "Ganoderma australe (Fr.) Pat.",
@@ -5793,6 +6074,7 @@
     "ordinary: none of the weak kinds [col col:status=synonym, nortaxa taxonomicStatus=synonym, col source=2073 merged=false]",
     "ordinary: none of the weak kinds [col col:status=synonym, nortaxa nomenclaturalStatus=illegitimate, nortaxa taxonomicStatus=synonym, col source=2073 merged=false]"
    ],
+   "accepted_authorship_disagrees",
    "sanctioning_citation--ordinary"
   ],
   [
@@ -5816,6 +6098,7 @@
    [],
    1,
    1,
+   true,
    "sanctioning_citation",
    "Grifola frondosa (Dicks. : Fr.) Gray",
    "Grifola frondosa (Dicks.) Gray",
@@ -5837,6 +6120,7 @@
     "ordinary: none of the weak kinds [col col:status=synonym, nortaxa nomenclaturalStatus=illegitimate, nortaxa taxonomicStatus=synonym, col source=2073 merged=false]",
     "nortaxa_derived: every COL usage has col:sourceID 2030 (RQ99F, clb:merged=true) [col col:nameStatus=unacceptable, col col:status=synonym, nortaxa nomenclaturalStatus=illegitimate, nortaxa taxonomicStatus=synonym, col source=2030 merged=true]"
    ],
+   "accepted_authorship_disagrees",
    "sanctioning_citation--ordinary"
   ],
   [
@@ -5856,6 +6140,7 @@
    [],
    1,
    1,
+   true,
    "sanctioning_citation",
    "Physisporinus vitreus (Pers. : Fr.) P. Karst.",
    "Physisporinus vitreus (Pers.) P. Karst.",
@@ -5881,6 +6166,7 @@
     "nortaxa_derived: every COL usage has col:sourceID 2030 (RYBYQ, clb:merged=true) [col col:nameStatus=unacceptable, col col:status=synonym, nortaxa nomenclaturalStatus=illegitimate, nortaxa taxonomicStatus=synonym, col source=2030 merged=true]",
     "ordinary: none of the weak kinds [col col:status=synonym, nortaxa nomenclaturalStatus=illegitimate, nortaxa taxonomicStatus=synonym, col source=2073 merged=false]"
    ],
+   "accepted_authorship_disagrees",
    "sanctioning_citation--ordinary"
   ],
   [
@@ -5903,6 +6189,7 @@
    [],
    1,
    1,
+   true,
    "sanctioning_citation",
    "Abortiporus biennis (Bull. : Fr.) Singer",
    "Abortiporus biennis (Bull.) Singer",
@@ -5925,6 +6212,7 @@
     "ordinary: none of the weak kinds [col col:status=synonym, nortaxa nomenclaturalStatus=illegitimate, nortaxa taxonomicStatus=synonym, col source=2073 merged=false]",
     "ordinary: none of the weak kinds [col col:status=synonym, nortaxa nomenclaturalStatus=illegitimate, nortaxa taxonomicStatus=synonym, col source=2073 merged=false]"
    ],
+   "accepted_authorship_disagrees",
    "sanctioning_citation--ordinary"
   ],
   [
@@ -5949,6 +6237,7 @@
    [],
    1,
    1,
+   true,
    "sanctioning_citation",
    "Bjerkandera adusta (Willd. : Fr.) P. Karst.",
    "Bjerkandera adusta (Willd.) P. Karst.",
@@ -5973,6 +6262,7 @@
     "ordinary: none of the weak kinds [col col:status=synonym, nortaxa nomenclaturalStatus=illegitimate, nortaxa taxonomicStatus=synonym, col source=2073 merged=false]",
     "ordinary: none of the weak kinds [col col:status=synonym, nortaxa taxonomicStatus=synonym, col source=2073 merged=false]"
    ],
+   "accepted_authorship_disagrees",
    "sanctioning_citation--ordinary"
   ],
   [
@@ -5996,6 +6286,7 @@
    [],
    1,
    1,
+   true,
    "sanctioning_citation",
    "Bjerkandera fumosa (Pers. : Fr.) P. Karst.",
    "Bjerkandera fumosa (Pers.) P. Karst.",
@@ -6023,6 +6314,7 @@
     "ordinary: none of the weak kinds [col col:status=synonym, nortaxa nomenclaturalStatus=illegitimate, nortaxa taxonomicStatus=synonym, col source=2073 merged=false]",
     "pro_parte: col col:status=ambiguous synonym [col col:status=ambiguous synonym, nortaxa nomenclaturalStatus=illegitimate, nortaxa taxonomicStatus=synonym, col source=2073 merged=false]"
    ],
+   "accepted_authorship_disagrees",
    "sanctioning_citation--ordinary"
   ],
   [
@@ -6043,6 +6335,7 @@
    [],
    1,
    1,
+   true,
    "sanctioning_citation",
    "Hyphoderma setigerum (Fr. : Fr.) Donk",
    "Hyphoderma setigerum (Fr.) Donk",
@@ -6064,6 +6357,7 @@
     "nortaxa_derived: every COL usage has col:sourceID 2030 (RX54F, clb:merged=true) [col col:nameStatus=unacceptable, col col:status=synonym, nortaxa nomenclaturalStatus=illegitimate, nortaxa taxonomicStatus=synonym, col source=2030 merged=true]",
     "ordinary: none of the weak kinds [col col:status=synonym, nortaxa nomenclaturalStatus=illegitimate, nortaxa taxonomicStatus=synonym, col source=2073 merged=false]"
    ],
+   "accepted_authorship_disagrees",
    "sanctioning_citation--ordinary"
   ],
   [
@@ -6081,6 +6375,7 @@
    [],
    1,
    1,
+   true,
    "sanctioning_citation",
    "Hypochnicium bombycinum (Sommerf. : Fr.) J. Erikss.",
    "Hypochnicium bombycinum (Sommerf.) J. Erikss.",
@@ -6101,6 +6396,7 @@
     "ordinary: none of the weak kinds [col col:status=synonym, nortaxa nomenclaturalStatus=illegitimate, nortaxa taxonomicStatus=synonym, col source=2073 merged=false]",
     "ordinary: none of the weak kinds [col col:status=synonym, nortaxa nomenclaturalStatus=illegitimate, nortaxa taxonomicStatus=synonym, col source=2073 merged=false]"
    ],
+   "accepted_authorship_disagrees",
    "sanctioning_citation--ordinary"
   ],
   [
@@ -6124,6 +6420,7 @@
    [],
    1,
    1,
+   true,
    "sanctioning_citation",
    "Irpex lacteus (Fr. : Fr.) Fr.",
    "Irpex lacteus (Fr.) Fr.",
@@ -6146,6 +6443,7 @@
     "ordinary: none of the weak kinds [col col:status=synonym, nortaxa nomenclaturalStatus=illegitimate, nortaxa taxonomicStatus=synonym, col source=2073 merged=false]",
     "ordinary: none of the weak kinds [col col:status=synonym, nortaxa nomenclaturalStatus=illegitimate, nortaxa taxonomicStatus=synonym, col source=2073 merged=false]"
    ],
+   "accepted_authorship_disagrees",
    "sanctioning_citation--ordinary"
   ],
   [
@@ -6164,6 +6462,7 @@
    [],
    1,
    1,
+   true,
    "sanctioning_citation",
    "Mycoacia aurea (Fr. : Fr.) J. Erikss. & Ryvarden",
    "Mycoacia aurea (Fr.) J. Erikss. & Ryvarden",
@@ -6186,6 +6485,7 @@
     "ordinary: none of the weak kinds [col col:status=synonym, nortaxa nomenclaturalStatus=illegitimate, nortaxa taxonomicStatus=synonym, col source=2073 merged=false]",
     "ordinary: none of the weak kinds [col col:status=synonym, nortaxa nomenclaturalStatus=illegitimate, nortaxa taxonomicStatus=synonym, col source=2073 merged=false]"
    ],
+   "accepted_authorship_disagrees",
    "sanctioning_citation--ordinary"
   ],
   [
@@ -6204,6 +6504,7 @@
    [],
    1,
    1,
+   true,
    "sanctioning_citation",
    "Mycoacia fuscoatra (Fr. : Fr.) Donk",
    "Mycoacia fuscoatra (Fr.) Donk",
@@ -6222,6 +6523,7 @@
    [
     "ordinary: none of the weak kinds [col col:status=synonym, nortaxa nomenclaturalStatus=illegitimate, nortaxa taxonomicStatus=synonym, col source=2073 merged=false]"
    ],
+   "accepted_authorship_disagrees",
    "sanctioning_citation--ordinary"
   ],
   [
@@ -6242,6 +6544,7 @@
    [],
    1,
    1,
+   true,
    "sanctioning_citation",
    "Mycoacia uda (Fr. : Fr.) Donk",
    "Mycoacia uda (Fr.) Donk",
@@ -6262,6 +6565,7 @@
     "ordinary: none of the weak kinds [col col:status=synonym, nortaxa nomenclaturalStatus=illegitimate, nortaxa taxonomicStatus=synonym, col source=2073 merged=false]",
     "ordinary: none of the weak kinds [col col:status=synonym, nortaxa nomenclaturalStatus=illegitimate, nortaxa taxonomicStatus=synonym, col source=2073 merged=false]"
    ],
+   "accepted_authorship_disagrees",
    "sanctioning_citation--ordinary"
   ],
   [
@@ -6285,6 +6589,7 @@
    [],
    1,
    1,
+   true,
    "sanctioning_citation",
    "Climacodon septentrionalis (Fr. : Fr.) P. Karst.",
    "Climacodon septentrionalis (Fr.) P. Karst.",
@@ -6306,6 +6611,7 @@
     "nortaxa_derived: every COL usage has col:sourceID 2030 (NPC7Z, clb:merged=true) [col col:nameStatus=unacceptable, col col:status=synonym, nortaxa nomenclaturalStatus=illegitimate, nortaxa taxonomicStatus=synonym, col source=2030 merged=true]",
     "ordinary: none of the weak kinds [col col:status=synonym, nortaxa nomenclaturalStatus=illegitimate, nortaxa taxonomicStatus=synonym, col source=2073 merged=false]"
    ],
+   "accepted_authorship_disagrees",
    "sanctioning_citation--ordinary"
   ],
   [
@@ -6327,6 +6633,7 @@
    [],
    1,
    1,
+   true,
    "sanctioning_citation",
    "Meruliopsis taxicola (Pers. : Fr.) Bondartsev",
    "Meruliopsis taxicola (Pers.) Bondartsev",
@@ -6350,6 +6657,7 @@
     "nortaxa_derived: every COL usage has col:sourceID 2030 (RYG3H, clb:merged=true) [col col:nameStatus=unacceptable, col col:status=synonym, nortaxa nomenclaturalStatus=illegitimate, nortaxa taxonomicStatus=synonym, col source=2030 merged=true]",
     "ordinary: none of the weak kinds [col col:status=synonym, nortaxa nomenclaturalStatus=illegitimate, nortaxa taxonomicStatus=synonym, col source=2073 merged=false]"
    ],
+   "accepted_authorship_disagrees",
    "sanctioning_citation--ordinary"
   ],
   [
@@ -6370,6 +6678,7 @@
    [],
    1,
    1,
+   true,
    "sanctioning_citation",
    "Porostereum spadiceum (Pers. : Fr.) Hjortstam & Ryvarden",
    "Porostereum spadiceum (Pers.) Hjortstam & Ryvarden",
@@ -6390,6 +6699,7 @@
     "ordinary: none of the weak kinds [col col:status=synonym, nortaxa taxonomicStatus=synonym, col source=2073 merged=false]",
     "ordinary: none of the weak kinds [col col:status=synonym, nortaxa taxonomicStatus=synonym, col source=2073 merged=false]"
    ],
+   "accepted_authorship_disagrees",
    "sanctioning_citation--ordinary"
   ],
   [
@@ -6407,6 +6717,7 @@
    [],
    1,
    1,
+   true,
    "sanctioning_citation",
    "Cerrena hydnoides (Sw. : Fr.) Zmitr.",
    "Cerrena hydnoides (Sw.) Zmitr.",
@@ -6427,6 +6738,7 @@
     "ordinary: none of the weak kinds [col col:status=synonym, nortaxa nomenclaturalStatus=illegitimate, nortaxa taxonomicStatus=synonym, col source=2073 merged=false]",
     "ordinary: none of the weak kinds [col col:status=synonym, nortaxa nomenclaturalStatus=illegitimate, nortaxa taxonomicStatus=synonym, col source=2073 merged=false]"
    ],
+   "accepted_authorship_disagrees",
    "sanctioning_citation--ordinary"
   ],
   [
@@ -6442,6 +6754,7 @@
    [],
    1,
    1,
+   true,
    "sanctioning_citation",
    "Epithele typhae (Pers. : Fr.) Pat.",
    "Epithele typhae (Pers.) Pat.",
@@ -6460,6 +6773,7 @@
    [
     "ordinary: none of the weak kinds [col col:status=synonym, nortaxa nomenclaturalStatus=illegitimate, nortaxa taxonomicStatus=synonym, col source=2073 merged=false]"
    ],
+   "accepted_authorship_disagrees",
    "sanctioning_citation--ordinary"
   ],
   [
@@ -6485,6 +6799,7 @@
    [],
    1,
    1,
+   true,
    "sanctioning_citation",
    "Fomes fomentarius (L. : Fr.) Fr.",
    "Fomes fomentarius (L.) Fr.",
@@ -6506,6 +6821,7 @@
     "ordinary: none of the weak kinds [col col:status=synonym, nortaxa nomenclaturalStatus=illegitimate, nortaxa taxonomicStatus=synonym, col source=2073 merged=false]",
     "nortaxa_derived: every COL usage has col:sourceID 2030 (RQ8ZW, clb:merged=true) [col col:nameStatus=unacceptable, col col:status=synonym, nortaxa nomenclaturalStatus=illegitimate, nortaxa taxonomicStatus=synonym, col source=2030 merged=true]"
    ],
+   "accepted_authorship_disagrees",
    "sanctioning_citation--ordinary"
   ],
   [
@@ -6525,6 +6841,7 @@
    [],
    1,
    1,
+   true,
    "sanctioning_citation",
    "Haploporus odorus (Sommerf. : Fr.) Bondartsev & Singer",
    "Haploporus odorus (Sommerf.) Bondartsev & Singer",
@@ -6545,6 +6862,7 @@
     "ordinary: none of the weak kinds [col col:status=synonym, nortaxa nomenclaturalStatus=illegitimate, nortaxa taxonomicStatus=synonym, col source=2073 merged=false]",
     "ordinary: none of the weak kinds [col col:status=synonym, nortaxa nomenclaturalStatus=illegitimate, nortaxa taxonomicStatus=synonym, col source=2073 merged=false]"
    ],
+   "accepted_authorship_disagrees",
    "sanctioning_citation--ordinary"
   ],
   [
@@ -6561,6 +6879,7 @@
    [],
    1,
    1,
+   true,
    "sanctioning_citation",
    "Lentinus crinitus (L. : Fr.) Fr.",
    "Lentinus crinitus (L.) Fr.",
@@ -6579,6 +6898,7 @@
    [
     "ordinary: none of the weak kinds [col col:status=synonym, nortaxa nomenclaturalStatus=illegitimate, nortaxa taxonomicStatus=synonym, col source=2073 merged=false]"
    ],
+   "accepted_authorship_disagrees",
    "sanctioning_citation--ordinary"
   ],
   [
@@ -6599,6 +6919,7 @@
    [],
    1,
    1,
+   true,
    "sanctioning_citation",
    "Perenniporia medulla-panis (Jacq. : Fr.) Donk",
    "Perenniporia medulla-panis (Jacq.) Donk",
@@ -6624,6 +6945,7 @@
     "nortaxa_derived: every COL usage has col:sourceID 2030 (RPZYL, clb:merged=true) [col col:nameStatus=unacceptable, col col:status=synonym, nortaxa nomenclaturalStatus=illegitimate, nortaxa taxonomicStatus=synonym, col source=2030 merged=true]",
     "ordinary: none of the weak kinds [col col:status=synonym, nortaxa nomenclaturalStatus=illegitimate, nortaxa taxonomicStatus=synonym, col source=2073 merged=false]"
    ],
+   "accepted_authorship_disagrees",
    "sanctioning_citation--ordinary"
   ],
   [
@@ -6646,6 +6968,7 @@
    [],
    1,
    1,
+   true,
    "sanctioning_citation",
    "Polyporus tuberaster (Jacq. ex Pers. : Fr.) Fr.",
    "Polyporus tuberaster (Jacq. ex Pers.) Fr.",
@@ -6668,6 +6991,7 @@
     "ordinary: none of the weak kinds [col col:status=synonym, nortaxa nomenclaturalStatus=illegitimate, nortaxa taxonomicStatus=synonym, col source=2073 merged=false]",
     "ordinary: none of the weak kinds [col col:status=synonym, nortaxa nomenclaturalStatus=illegitimate, nortaxa taxonomicStatus=synonym, col source=2073 merged=false]"
    ],
+   "accepted_authorship_disagrees",
    "sanctioning_citation--ordinary"
   ],
   [
@@ -6691,6 +7015,7 @@
    [],
    1,
    1,
+   true,
    "sanctioning_citation",
    "Trametes gibbosa (Pers. : Fr.) Fr.",
    "Trametes gibbosa (Pers.) Fr.",
@@ -6709,6 +7034,7 @@
    [
     "ordinary: none of the weak kinds [col col:status=synonym, nortaxa taxonomicStatus=synonym, col source=2073 merged=false]"
    ],
+   "accepted_authorship_disagrees",
    "sanctioning_citation--ordinary"
   ],
   [
@@ -6732,6 +7058,7 @@
    [],
    1,
    1,
+   true,
    "sanctioning_citation",
    "Trametes pubescens (Schumach. : Fr.) Pilát",
    "Trametes pubescens (Schumach.) Pilát",
@@ -6754,6 +7081,7 @@
     "ordinary: none of the weak kinds [col col:status=synonym, nortaxa nomenclaturalStatus=illegitimate, nortaxa taxonomicStatus=synonym, col source=7888 merged=true]",
     "ordinary: none of the weak kinds [col col:status=synonym, nortaxa nomenclaturalStatus=illegitimate, nortaxa taxonomicStatus=synonym, col source=2010 merged=true]"
    ],
+   "accepted_authorship_disagrees",
    "sanctioning_citation--ordinary"
   ],
   [
@@ -6777,6 +7105,7 @@
    [],
    1,
    1,
+   true,
    "sanctioning_citation",
    "Tyromyces chioneus (Fr. : Fr.) P. Karst.",
    "Tyromyces chioneus (Fr.) P. Karst.",
@@ -6799,6 +7128,7 @@
     "ordinary: none of the weak kinds [col col:status=synonym, nortaxa nomenclaturalStatus=illegitimate, nortaxa taxonomicStatus=synonym, col source=2073 merged=false]",
     "ordinary: none of the weak kinds [col col:status=synonym, nortaxa nomenclaturalStatus=illegitimate, nortaxa taxonomicStatus=synonym, col source=2073 merged=false]"
    ],
+   "accepted_authorship_disagrees",
    "sanctioning_citation--ordinary"
   ],
   [
@@ -6817,6 +7147,7 @@
    [],
    1,
    1,
+   true,
    "sanctioning_citation",
    "Tubulicrinis glebulosus (Fr. : Fr.) Donk",
    "Tubulicrinis glebulosus (Fr.) Donk",
@@ -6842,6 +7173,7 @@
     "ordinary: none of the weak kinds [col col:status=synonym, nortaxa nomenclaturalStatus=illegitimate, nortaxa taxonomicStatus=synonym, col source=2073 merged=false]",
     "ordinary: none of the weak kinds [col col:status=synonym, nortaxa nomenclaturalStatus=illegitimate, nortaxa taxonomicStatus=synonym, col source=2073 merged=false]"
    ],
+   "accepted_authorship_disagrees",
    "sanctioning_citation--ordinary"
   ],
   [
@@ -6865,6 +7197,7 @@
    [],
    1,
    1,
+   true,
    "sanctioning_citation",
    "Albatrellus ovinus (Schaeff. : Fr.) Kotl. & Pouzar",
    "Albatrellus ovinus (Schaeff.) Kotl. & Pouzar",
@@ -6883,6 +7216,7 @@
    [
     "ordinary: none of the weak kinds [col col:status=synonym, nortaxa nomenclaturalStatus=illegitimate, nortaxa taxonomicStatus=synonym, col source=2073 merged=false]"
    ],
+   "accepted_authorship_disagrees",
    "sanctioning_citation--ordinary"
   ],
   [
@@ -6903,6 +7237,7 @@
    [],
    1,
    1,
+   true,
    "sanctioning_citation",
    "Amylostereum laevigatum (Fr. : Fr.) Boidin",
    "Amylostereum laevigatum (Fr.) Boidin",
@@ -6923,6 +7258,7 @@
     "ordinary: none of the weak kinds [col col:status=synonym, nortaxa nomenclaturalStatus=illegitimate, nortaxa taxonomicStatus=synonym, col source=2073 merged=false]",
     "ordinary: none of the weak kinds [col col:status=synonym, nortaxa nomenclaturalStatus=illegitimate, nortaxa taxonomicStatus=synonym, col source=2073 merged=false]"
    ],
+   "accepted_authorship_disagrees",
    "sanctioning_citation--ordinary"
   ],
   [
@@ -6946,6 +7282,7 @@
    [],
    1,
    1,
+   true,
    "sanctioning_citation",
    "Lentinellus cochleatus (Pers. : Fr.) P. Karst.",
    "Lentinellus cochleatus (Pers.) P. Karst.",
@@ -6966,6 +7303,7 @@
     "ordinary: none of the weak kinds [col col:status=synonym, nortaxa nomenclaturalStatus=illegitimate, nortaxa taxonomicStatus=synonym, col source=2073 merged=false]",
     "ordinary: none of the weak kinds [col col:status=synonym, nortaxa taxonomicStatus=synonym, col source=2073 merged=false]"
    ],
+   "accepted_authorship_disagrees",
    "sanctioning_citation--ordinary"
   ],
   [
@@ -6987,6 +7325,7 @@
    [],
    1,
    1,
+   true,
    "sanctioning_citation",
    "Lentinellus vulpinus (Sowerby : Fr.) Kühner & Maire",
    "Lentinellus vulpinus (Sowerby) Kühner & Maire",
@@ -7005,6 +7344,7 @@
    [
     "ordinary: none of the weak kinds [col col:status=synonym, nortaxa nomenclaturalStatus=illegitimate, nortaxa taxonomicStatus=synonym, col source=2073 merged=false]"
    ],
+   "accepted_authorship_disagrees",
    "sanctioning_citation--ordinary"
   ],
   [
@@ -7028,6 +7368,7 @@
    [],
    1,
    1,
+   true,
    "sanctioning_citation",
    "Hericium cirrhatum (Pers. : Fr.) Nikol.",
    "Hericium cirrhatum (Pers.) Nikol.",
@@ -7048,6 +7389,7 @@
     "ordinary: none of the weak kinds [col col:status=synonym, nortaxa nomenclaturalStatus=illegitimate, nortaxa taxonomicStatus=synonym, col source=2073 merged=false]",
     "ordinary: none of the weak kinds [col col:status=synonym, nortaxa nomenclaturalStatus=illegitimate, nortaxa taxonomicStatus=synonym, col source=2073 merged=false]"
    ],
+   "accepted_authorship_disagrees",
    "sanctioning_citation--ordinary"
   ],
   [
@@ -7071,6 +7413,7 @@
    [],
    1,
    1,
+   true,
    "sanctioning_citation",
    "Hericium coralloides (Scop. : Fr.) Pers.",
    "Hericium coralloides (Scop.) Pers.",
@@ -7091,6 +7434,7 @@
     "ordinary: none of the weak kinds [col col:status=synonym, nortaxa nomenclaturalStatus=illegitimate, nortaxa taxonomicStatus=synonym, col source=2073 merged=false]",
     "ordinary: none of the weak kinds [col col:status=synonym, nortaxa nomenclaturalStatus=illegitimate, nortaxa taxonomicStatus=synonym, col source=2073 merged=false]"
    ],
+   "accepted_authorship_disagrees",
    "sanctioning_citation--ordinary"
   ],
   [
@@ -7108,6 +7452,7 @@
    [],
    1,
    1,
+   true,
    "sanctioning_citation",
    "Hericium erinaceus (Bull. : Fr.) Pers.",
    "Hericium erinaceus (Bull.) Pers.",
@@ -7126,6 +7471,7 @@
    [
     "ordinary: none of the weak kinds [col col:status=synonym, nortaxa nomenclaturalStatus=illegitimate, nortaxa taxonomicStatus=synonym, col source=2073 merged=false]"
    ],
+   "accepted_authorship_disagrees",
    "sanctioning_citation--ordinary"
   ],
   [
@@ -7144,6 +7490,7 @@
    [],
    1,
    1,
+   true,
    "sanctioning_citation",
    "Scytinostroma odoratum (Fr. : Fr.) Donk",
    "Scytinostroma odoratum (Fr.) Donk",
@@ -7164,6 +7511,7 @@
     "ordinary: none of the weak kinds [col col:status=synonym, nortaxa nomenclaturalStatus=illegitimate, nortaxa taxonomicStatus=synonym, col source=2073 merged=false]",
     "ordinary: none of the weak kinds [col col:status=synonym, nortaxa nomenclaturalStatus=illegitimate, nortaxa taxonomicStatus=synonym, col source=2073 merged=false]"
    ],
+   "accepted_authorship_disagrees",
    "sanctioning_citation--ordinary"
   ],
   [
@@ -7186,6 +7534,7 @@
    [],
    1,
    1,
+   true,
    "sanctioning_citation",
    "Peniophora cinerea (Pers. : Fr.) Cooke",
    "Peniophora cinerea (Pers.) Cooke",
@@ -7213,6 +7562,7 @@
     "nortaxa_derived: every COL usage has col:sourceID 2030 (TCFQK, clb:merged=true) [col col:nameStatus=unacceptable, col col:status=synonym, nortaxa nomenclaturalStatus=illegitimate, nortaxa taxonomicStatus=synonym, col source=2030 merged=true]",
     "ordinary: none of the weak kinds [col col:status=synonym, nortaxa nomenclaturalStatus=illegitimate, nortaxa taxonomicStatus=synonym, col source=2073 merged=false]"
    ],
+   "accepted_authorship_disagrees",
    "sanctioning_citation--ordinary"
   ],
   [
@@ -7236,6 +7586,7 @@
    [],
    1,
    1,
+   true,
    "sanctioning_citation",
    "Peniophora incarnata (Pers. : Fr.) P. Karst.",
    "Peniophora incarnata (Pers.) P. Karst.",
@@ -7256,6 +7607,7 @@
     "ordinary: none of the weak kinds [col col:status=synonym, nortaxa nomenclaturalStatus=illegitimate, nortaxa taxonomicStatus=synonym, col source=2073 merged=false]",
     "ordinary: none of the weak kinds [col col:status=synonym, nortaxa nomenclaturalStatus=illegitimate, nortaxa taxonomicStatus=synonym, col source=2073 merged=false]"
    ],
+   "accepted_authorship_disagrees",
    "sanctioning_citation--ordinary"
   ],
   [
@@ -7275,6 +7627,7 @@
    [],
    1,
    1,
+   true,
    "sanctioning_citation",
    "Peniophora lycii (Pers. : Fr.) Höhn. & Litsch.",
    "Peniophora lycii (Pers.) Höhn. & Litsch.",
@@ -7296,6 +7649,7 @@
     "pro_parte: col col:status=ambiguous synonym [col col:status=ambiguous synonym, nortaxa nomenclaturalStatus=illegitimate, nortaxa taxonomicStatus=synonym, col source=2073 merged=false]",
     "ordinary: none of the weak kinds [col col:status=synonym, nortaxa nomenclaturalStatus=illegitimate, nortaxa taxonomicStatus=synonym, col source=2073 merged=false]"
    ],
+   "accepted_authorship_disagrees",
    "sanctioning_citation--ordinary"
   ],
   [
@@ -7315,6 +7669,7 @@
    [],
    1,
    1,
+   true,
    "sanctioning_citation",
    "Peniophora nuda (Fr. : Fr.) Bres.",
    "Peniophora nuda (Fr.) Bres.",
@@ -7335,6 +7690,7 @@
     "ordinary: none of the weak kinds [col col:status=synonym, nortaxa nomenclaturalStatus=illegitimate, nortaxa taxonomicStatus=synonym, col source=2073 merged=false]",
     "ordinary: none of the weak kinds [col col:status=synonym, nortaxa nomenclaturalStatus=illegitimate, nortaxa taxonomicStatus=synonym, col source=2073 merged=false]"
    ],
+   "accepted_authorship_disagrees",
    "sanctioning_citation--ordinary"
   ],
   [
@@ -7357,6 +7713,7 @@
    [],
    1,
    1,
+   true,
    "sanctioning_citation",
    "Peniophora rufa (Fr. : Fr.) Boidin",
    "Peniophora rufa (Fr.) Boidin",
@@ -7377,6 +7734,7 @@
     "ordinary: none of the weak kinds [col col:status=synonym, nortaxa nomenclaturalStatus=illegitimate, nortaxa taxonomicStatus=synonym, col source=7888 merged=true]",
     "ordinary: none of the weak kinds [col col:status=synonym, nortaxa nomenclaturalStatus=illegitimate, nortaxa taxonomicStatus=synonym, col source=2073 merged=false]"
    ],
+   "accepted_authorship_disagrees",
    "sanctioning_citation--ordinary"
   ],
   [
@@ -7400,6 +7758,7 @@
    [],
    1,
    1,
+   true,
    "sanctioning_citation",
    "Lactarius rufus (Scop. : Fr.) Fr.",
    "Lactarius rufus (Scop.) Fr.",
@@ -7418,6 +7777,7 @@
    [
     "ordinary: none of the weak kinds [col col:status=synonym, nortaxa nomenclaturalStatus=illegitimate, nortaxa taxonomicStatus=synonym, col source=2073 merged=false]"
    ],
+   "accepted_authorship_disagrees",
    "sanctioning_citation--ordinary"
   ],
   [
@@ -7442,6 +7802,7 @@
    [],
    1,
    1,
+   true,
    "sanctioning_citation",
    "Lactarius torminosus (Schaeff. : Fr.) Pers.",
    "Lactarius torminosus (Schaeff.) Pers.",
@@ -7460,6 +7821,7 @@
    [
     "ordinary: none of the weak kinds [col col:status=synonym, nortaxa taxonomicStatus=synonym, col source=2073 merged=false]"
    ],
+   "accepted_authorship_disagrees",
    "sanctioning_citation--ordinary"
   ],
   [
@@ -7482,6 +7844,7 @@
    [],
    1,
    1,
+   true,
    "sanctioning_citation",
    "Russula nitida (Pers. : Fr.) Fr.",
    "Russula nitida (Pers.) Fr.",
@@ -7502,6 +7865,7 @@
     "ordinary: none of the weak kinds [col col:status=synonym, nortaxa nomenclaturalStatus=illegitimate, nortaxa taxonomicStatus=synonym, col source=2073 merged=false]",
     "ordinary: none of the weak kinds [col col:status=synonym, nortaxa nomenclaturalStatus=illegitimate, nortaxa taxonomicStatus=synonym, col source=2073 merged=false]"
    ],
+   "accepted_authorship_disagrees",
    "sanctioning_citation--ordinary"
   ],
   [
@@ -7525,6 +7889,7 @@
    [],
    1,
    1,
+   true,
    "sanctioning_citation",
    "Aleurodiscus amorphus (Pers. : Fr.) J. Schröt.",
    "Aleurodiscus amorphus (Pers.) J. Schröt.",
@@ -7543,6 +7908,7 @@
    [
     "ordinary: none of the weak kinds [col col:status=synonym, nortaxa nomenclaturalStatus=illegitimate, nortaxa taxonomicStatus=synonym, col source=2073 merged=false]"
    ],
+   "accepted_authorship_disagrees",
    "sanctioning_citation--ordinary"
   ],
   [
@@ -7566,6 +7932,7 @@
    [],
    1,
    1,
+   true,
    "sanctioning_citation",
    "Stereum gausapatum (Fr. : Fr.) Fr.",
    "Stereum gausapatum (Fr.) Fr.",
@@ -7586,6 +7953,7 @@
     "ordinary: none of the weak kinds [col col:status=synonym, nortaxa nomenclaturalStatus=illegitimate, nortaxa taxonomicStatus=synonym, col source=2073 merged=false]",
     "ordinary: none of the weak kinds [col col:status=synonym, nortaxa nomenclaturalStatus=illegitimate, nortaxa taxonomicStatus=synonym, col source=2073 merged=false]"
    ],
+   "accepted_authorship_disagrees",
    "sanctioning_citation--ordinary"
   ],
   [
@@ -7606,6 +7974,7 @@
    [],
    1,
    1,
+   true,
    "sanctioning_citation",
    "Hydnellum suaveolens (Scop. : Fr.) P. Karst.",
    "Hydnellum suaveolens (Scop.) P. Karst.",
@@ -7624,6 +7993,7 @@
    [
     "ordinary: none of the weak kinds [col col:status=synonym, nortaxa nomenclaturalStatus=illegitimate, nortaxa taxonomicStatus=synonym, col source=2073 merged=false]"
    ],
+   "accepted_authorship_disagrees",
    "sanctioning_citation--ordinary"
   ],
   [
@@ -7641,6 +8011,7 @@
    [],
    1,
    1,
+   true,
    "sanctioning_citation",
    "Phellodon niger (Fr. : Fr.) P. Karst.",
    "Phellodon niger (Fr.) P. Karst.",
@@ -7659,6 +8030,7 @@
    [
     "ordinary: none of the weak kinds [col col:status=synonym, nortaxa nomenclaturalStatus=illegitimate, nortaxa taxonomicStatus=synonym, col source=2073 merged=false]"
    ],
+   "accepted_authorship_disagrees",
    "sanctioning_citation--ordinary"
   ],
   [
@@ -7681,6 +8053,7 @@
    [],
    1,
    1,
+   true,
    "sanctioning_citation",
    "Phellodon tomentosus (L. : Fr.) Banker",
    "Phellodon tomentosus (L.) Banker",
@@ -7699,6 +8072,7 @@
    [
     "ordinary: none of the weak kinds [col col:status=synonym, nortaxa nomenclaturalStatus=illegitimate, nortaxa taxonomicStatus=synonym, col source=2073 merged=false]"
    ],
+   "accepted_authorship_disagrees",
    "sanctioning_citation--ordinary"
   ],
   [
@@ -7722,6 +8096,7 @@
    [],
    1,
    1,
+   true,
    "sanctioning_citation",
    "Sarcodon imbricatus (L. : Fr.) P. Karst.",
    "Sarcodon imbricatus (L.) P. Karst.",
@@ -7743,6 +8118,7 @@
     "interpretation_qualified: authorship 'ss.' [col col:nameStatus=unacceptable, col col:status=synonym, nortaxa nomenclaturalStatus=illegitimate, nortaxa taxonomicStatus=synonym, col source=2030 merged=true]",
     "ordinary: none of the weak kinds [col col:status=synonym, nortaxa nomenclaturalStatus=illegitimate, nortaxa taxonomicStatus=synonym, col source=2073 merged=false]"
    ],
+   "accepted_authorship_disagrees",
    "sanctioning_citation--ordinary"
   ],
   [
@@ -7763,6 +8139,7 @@
    [],
    1,
    1,
+   true,
    "sanctioning_citation",
    "Thelephora anthocephala (Bull. : Fr.) Fr.",
    "Thelephora anthocephala (Bull.) Fr.",
@@ -7781,6 +8158,7 @@
    [
     "ordinary: none of the weak kinds [col col:status=synonym, nortaxa nomenclaturalStatus=illegitimate, nortaxa taxonomicStatus=synonym, col source=2073 merged=false]"
    ],
+   "accepted_authorship_disagrees",
    "sanctioning_citation--ordinary"
   ],
   [
@@ -7803,6 +8181,7 @@
    [],
    1,
    1,
+   true,
    "sanctioning_citation",
    "Thelephora caryophyllea (Schaeff. : Fr.) Pers.",
    "Thelephora caryophyllea (Schaeff.) Pers.",
@@ -7823,6 +8202,7 @@
     "ordinary: none of the weak kinds [col col:status=synonym, nortaxa nomenclaturalStatus=illegitimate, nortaxa taxonomicStatus=synonym, col source=2073 merged=false]",
     "ordinary: none of the weak kinds [col col:status=synonym, nortaxa nomenclaturalStatus=illegitimate, nortaxa taxonomicStatus=synonym, col source=2073 merged=false]"
    ],
+   "accepted_authorship_disagrees",
    "sanctioning_citation--ordinary"
   ],
   [
@@ -7846,6 +8226,7 @@
    [],
    1,
    1,
+   true,
    "sanctioning_citation",
    "Thelephora palmata (Scop. : Fr.) Fr.",
    "Thelephora palmata (Scop.) Fr.",
@@ -7864,6 +8245,7 @@
    [
     "ordinary: none of the weak kinds [col col:status=synonym, nortaxa taxonomicStatus=synonym, col source=2073 merged=false]"
    ],
+   "accepted_authorship_disagrees",
    "sanctioning_citation--ordinary"
   ],
   [
@@ -7887,6 +8269,7 @@
    [],
    1,
    1,
+   true,
    "sanctioning_citation",
    "Thelephora penicillata (Pers. : Fr.) Fr.",
    "Thelephora penicillata (Pers.) Fr.",
@@ -7905,6 +8288,7 @@
    [
     "ordinary: none of the weak kinds [col col:status=synonym, nortaxa nomenclaturalStatus=illegitimate, nortaxa taxonomicStatus=synonym, col source=2073 merged=false]"
    ],
+   "accepted_authorship_disagrees",
    "sanctioning_citation--ordinary"
   ],
   [
@@ -7920,6 +8304,7 @@
    [],
    1,
    1,
+   true,
    "sanctioning_citation",
    "Tomentella ferruginea (Pers. : Fr.) Pat.",
    "Tomentella ferruginea (Pers.) Pat.",
@@ -7940,6 +8325,7 @@
     "ordinary: none of the weak kinds [col col:status=synonym, nortaxa nomenclaturalStatus=illegitimate, nortaxa taxonomicStatus=synonym, col source=2073 merged=false]",
     "ordinary: none of the weak kinds [col col:status=synonym, nortaxa nomenclaturalStatus=illegitimate, nortaxa taxonomicStatus=synonym, col source=2073 merged=false]"
    ],
+   "accepted_authorship_disagrees",
    "sanctioning_citation--ordinary"
   ],
   [
@@ -7955,6 +8341,7 @@
    [],
    1,
    1,
+   true,
    "sanctioning_citation",
    "Tomentella fuscocinerea (Pers. : Fr.) Donk",
    "Tomentella fuscocinerea (Pers.) Donk",
@@ -7978,6 +8365,7 @@
     "ordinary: none of the weak kinds [col col:status=synonym, nortaxa nomenclaturalStatus=illegitimate, nortaxa taxonomicStatus=synonym, col source=2073 merged=false]",
     "ordinary: none of the weak kinds [col col:status=synonym, nortaxa nomenclaturalStatus=illegitimate, nortaxa taxonomicStatus=synonym, col source=2073 merged=false]"
    ],
+   "accepted_authorship_disagrees",
    "sanctioning_citation--ordinary"
   ],
   [
@@ -7996,6 +8384,7 @@
    [],
    1,
    1,
+   true,
    "sanctioning_citation",
    "Trechispora mollusca (Pers. : Fr.) Liberta",
    "Trechispora mollusca (Pers.) Liberta",
@@ -8017,6 +8406,7 @@
     "ordinary: none of the weak kinds [col col:status=synonym, nortaxa nomenclaturalStatus=illegitimate, nortaxa taxonomicStatus=synonym, col source=2073 merged=false]",
     "nortaxa_derived: every COL usage has col:sourceID 2030 (RQH7W, clb:merged=true) [col col:nameStatus=unacceptable, col col:status=synonym, nortaxa nomenclaturalStatus=illegitimate, nortaxa taxonomicStatus=synonym, col source=2030 merged=true]"
    ],
+   "accepted_authorship_disagrees",
    "sanctioning_citation--ordinary"
   ],
   [
@@ -8034,6 +8424,7 @@
    [],
    1,
    1,
+   true,
    "sanctioning_citation",
    "Gliophorus psittacinus (Schaeff. : Fr.) Herink",
    "Gliophorus psittacinus (Schaeff.) Herink",
@@ -8061,6 +8452,7 @@
     "ordinary: none of the weak kinds [col col:status=synonym, nortaxa nomenclaturalStatus=illegitimate, nortaxa taxonomicStatus=synonym, col source=2073 merged=false]",
     "ordinary: none of the weak kinds [col col:status=synonym, nortaxa nomenclaturalStatus=illegitimate, nortaxa taxonomicStatus=synonym, col source=2073 merged=false]"
    ],
+   "accepted_authorship_disagrees",
    "sanctioning_citation--ordinary"
   ],
   [
@@ -8080,6 +8472,7 @@
    [],
    1,
    1,
+   true,
    "sanctioning_citation",
    "Bovista pusilla (Batsch: Pers.) Pers.",
    "Bovista pusilla (Batsch) Pers.",
@@ -8098,6 +8491,7 @@
    [
     "ordinary: none of the weak kinds [col col:status=synonym, nortaxa taxonomicStatus=synonym, col source=7888 merged=true]"
    ],
+   "accepted_authorship_disagrees",
    "sanctioning_citation--ordinary"
   ],
   [
@@ -8115,6 +8509,7 @@
    [],
    1,
    1,
+   true,
    "sanctioning_citation",
    "Tephrocybe ambusta (Fr. : Fr.) Donk",
    "Tephrocybe ambusta (Fr.) Donk",
@@ -8133,6 +8528,7 @@
    [
     "ordinary: none of the weak kinds [col col:status=synonym, nortaxa nomenclaturalStatus=illegitimate, nortaxa taxonomicStatus=synonym, col source=2073 merged=false]"
    ],
+   "accepted_authorship_disagrees",
    "sanctioning_citation--ordinary"
   ],
   [
@@ -8154,6 +8550,7 @@
    [],
    1,
    1,
+   true,
    "sanctioning_citation",
    "Tephrocybe rancida (Fr. : Fr.) Donk",
    "Tephrocybe rancida (Fr.) Donk",
@@ -8172,6 +8569,7 @@
    [
     "ordinary: none of the weak kinds [col col:status=synonym, nortaxa nomenclaturalStatus=illegitimate, nortaxa taxonomicStatus=synonym, col source=2073 merged=false]"
    ],
+   "accepted_authorship_disagrees",
    "sanctioning_citation--ordinary"
   ],
   [
@@ -8194,6 +8592,7 @@
    [],
    1,
    1,
+   true,
    "sanctioning_citation",
    "Mucidula mucida (Schrad. : Fr.) Pat.",
    "Mucidula mucida (Schrad.) Pat.",
@@ -8212,6 +8611,7 @@
    [
     "ordinary: none of the weak kinds [col col:status=synonym, nortaxa nomenclaturalStatus=illegitimate, nortaxa taxonomicStatus=synonym, col source=9712 merged=true]"
    ],
+   "accepted_authorship_disagrees",
    "sanctioning_citation--ordinary"
   ],
   [
@@ -8231,6 +8631,7 @@
    [],
    1,
    1,
+   true,
    "sanctioning_citation",
    "Hohenbuehelia unguicularis (Fr. : Fr.) O. K. Mill.",
    "Hohenbuehelia unguicularis (Fr.) O.K. Mill.",
@@ -8258,6 +8659,7 @@
     "ordinary: none of the weak kinds [col col:status=synonym, nortaxa nomenclaturalStatus=illegitimate, nortaxa taxonomicStatus=synonym, col source=7888 merged=true]",
     "ordinary: none of the weak kinds [col col:status=synonym, nortaxa taxonomicStatus=synonym, col source=2073 merged=false]"
    ],
+   "accepted_authorship_disagrees",
    "sanctioning_citation--ordinary"
   ],
   [
@@ -8277,6 +8679,7 @@
    [],
    1,
    1,
+   true,
    "sanctioning_citation",
    "Porotheleum fimbriatum (Pers. : Fr.) Fr.",
    "Porotheleum fimbriatum (Pers.) Fr.",
@@ -8298,6 +8701,7 @@
     "ordinary: none of the weak kinds [col col:status=synonym, nortaxa nomenclaturalStatus=illegitimate, nortaxa taxonomicStatus=synonym, col source=2073 merged=false]",
     "nortaxa_derived: every COL usage has col:sourceID 2030 (SRR2Z, clb:merged=true) [col col:nameStatus=unacceptable, col col:status=synonym, nortaxa nomenclaturalStatus=illegitimate, nortaxa taxonomicStatus=synonym, col source=2030 merged=true]"
    ],
+   "accepted_authorship_disagrees",
    "sanctioning_citation--ordinary"
   ],
   [
@@ -8319,6 +8723,7 @@
    [],
    1,
    1,
+   true,
    "sanctioning_citation",
    "Cantharellus melanoxeros Desm. : Fr.",
    "Cantharellus melanoxeros Desm.",
@@ -8340,6 +8745,7 @@
     "nortaxa_derived: every COL usage has col:sourceID 2030 (N4G8Q, clb:merged=true) [col col:nameStatus=unacceptable, col col:status=synonym, nortaxa nomenclaturalStatus=illegitimate, nortaxa taxonomicStatus=synonym, col source=2030 merged=true]",
     "ordinary: none of the weak kinds [col col:status=synonym, nortaxa taxonomicStatus=synonym, col source=2073 merged=false]"
    ],
+   "accepted_authorship_disagrees",
    "sanctioning_citation--ordinary"
   ],
   [
@@ -8359,6 +8765,7 @@
    [],
    1,
    1,
+   true,
    "sanctioning_citation",
    "Hydnocristella himantia (Schwein. : Fr.) R.H. Petersen",
    "Hydnocristella himantia (Schwein.) R.H. Petersen",
@@ -8377,6 +8784,7 @@
    [
     "ordinary: none of the weak kinds [col col:status=synonym, nortaxa taxonomicStatus=synonym, col source=2073 merged=false]"
    ],
+   "accepted_authorship_disagrees",
    "sanctioning_citation--ordinary"
   ],
   [
@@ -8396,6 +8804,7 @@
    [],
    1,
    1,
+   true,
    "sanctioning_citation",
    "Phylloporia ribis (Schumach. : Fr.) Ryvarden",
    "Phylloporia ribis (Schumach.) Ryvarden",
@@ -8416,6 +8825,7 @@
     "ordinary: none of the weak kinds [col col:status=synonym, nortaxa nomenclaturalStatus=illegitimate, nortaxa taxonomicStatus=synonym, col source=2073 merged=false]",
     "ordinary: none of the weak kinds [col col:status=synonym, nortaxa nomenclaturalStatus=illegitimate, nortaxa taxonomicStatus=synonym, col source=2073 merged=false]"
    ],
+   "accepted_authorship_disagrees",
    "sanctioning_citation--ordinary"
   ],
   [
@@ -8437,6 +8847,7 @@
    [],
    1,
    1,
+   true,
    "sanctioning_citation",
    "Phlebiopsis gigantea (Fr. : Fr.) Jülich",
    "Phlebiopsis gigantea (Fr.) Jülich",
@@ -8463,6 +8874,7 @@
     "ordinary: none of the weak kinds [col col:status=synonym, nortaxa taxonomicStatus=synonym, col source=2073 merged=false]",
     "ordinary: none of the weak kinds [col col:status=synonym, nortaxa nomenclaturalStatus=illegitimate, nortaxa taxonomicStatus=synonym, col source=2073 merged=false]"
    ],
+   "accepted_authorship_disagrees",
    "sanctioning_citation--ordinary"
   ],
   [
@@ -8486,6 +8898,7 @@
    [],
    1,
    1,
+   true,
    "sanctioning_citation",
    "Daedaleopsis confragosa (Bolton : Fr.) J. Schröt.",
    "Daedaleopsis confragosa (Bolton) J. Schröt.",
@@ -8509,6 +8922,7 @@
     "ordinary: none of the weak kinds [col col:status=synonym, nortaxa taxonomicStatus=synonym, col source=2073 merged=false]",
     "nortaxa_derived: every COL usage has col:sourceID 2030 (TJ3QQ, clb:merged=true) [col col:nameStatus=unacceptable, col col:status=synonym, nortaxa nomenclaturalStatus=illegitimate, nortaxa taxonomicStatus=synonym, col source=2030 merged=true]"
    ],
+   "accepted_authorship_disagrees",
    "sanctioning_citation--ordinary"
   ],
   [
@@ -8525,6 +8939,7 @@
    [],
    1,
    1,
+   true,
    "sanctioning_citation",
    "Trametes cinnabarina (Jacq.: Fr.) Fr.",
    "Trametes cinnabarina (Jacq.) Fr.",
@@ -8545,6 +8960,7 @@
     "ordinary: none of the weak kinds [col col:status=synonym, nortaxa nomenclaturalStatus=illegitimate, nortaxa taxonomicStatus=synonym, col source=2073 merged=false]",
     "ordinary: none of the weak kinds [col col:status=synonym, nortaxa nomenclaturalStatus=illegitimate, nortaxa taxonomicStatus=synonym, col source=2073 merged=false]"
    ],
+   "accepted_authorship_disagrees",
    "sanctioning_citation--ordinary"
   ],
   [
@@ -8567,6 +8983,7 @@
    [],
    1,
    1,
+   true,
    "sanctioning_citation",
    "Xenasmatella vaga (Fr. : Fr.) Stalpers",
    "Xenasmatella vaga (Fr.) Stalpers",
@@ -8590,6 +9007,7 @@
     "ordinary: none of the weak kinds [col col:status=synonym, nortaxa nomenclaturalStatus=illegitimate, nortaxa taxonomicStatus=synonym, col source=2073 merged=false]",
     "ordinary: none of the weak kinds [col col:status=synonym, nortaxa nomenclaturalStatus=illegitimate, nortaxa taxonomicStatus=synonym, col source=2073 merged=false]"
    ],
+   "accepted_authorship_disagrees",
    "sanctioning_citation--ordinary"
   ],
   [
@@ -8606,6 +9024,7 @@
    [],
    1,
    1,
+   true,
    "sanctioning_citation",
    "Trechispora nivea (Pers. : Fr.) K.H. Larss.",
    "Trechispora nivea (Pers.) K.H. Larss.",
@@ -8630,6 +9049,7 @@
     "ordinary: none of the weak kinds [col col:status=synonym, nortaxa nomenclaturalStatus=illegitimate, nortaxa taxonomicStatus=synonym, col source=2073 merged=false]",
     "ordinary: none of the weak kinds [col col:status=synonym, nortaxa taxonomicStatus=synonym, col source=2073 merged=false]"
    ],
+   "accepted_authorship_disagrees",
    "sanctioning_citation--ordinary"
   ],
   [
@@ -8647,6 +9067,7 @@
    [],
    1,
    1,
+   true,
    "sanctioning_citation",
    "Dacrymyces chrysocomus (Bull. : Fr.) Tul.",
    "Dacrymyces chrysocomus (Bull.) Tul.",
@@ -8667,6 +9088,7 @@
     "ordinary: none of the weak kinds [col col:status=synonym, nortaxa nomenclaturalStatus=illegitimate, nortaxa taxonomicStatus=synonym, col source=2073 merged=false]",
     "ordinary: none of the weak kinds [col col:status=synonym, nortaxa taxonomicStatus=synonym, col source=2073 merged=false]"
    ],
+   "accepted_authorship_disagrees",
    "sanctioning_citation--ordinary"
   ],
   [
@@ -8689,6 +9111,7 @@
    [],
    1,
    1,
+   true,
    "sanctioning_citation",
    "Naematelia encephala (Pers. : Fr.) Fr.",
    "Naematelia encephala (Pers.) Fr.",
@@ -8709,6 +9132,7 @@
     "ordinary: none of the weak kinds [col col:status=synonym, nortaxa nomenclaturalStatus=illegitimate, nortaxa taxonomicStatus=synonym, col source=2073 merged=false]",
     "ordinary: none of the weak kinds [col col:status=synonym, nortaxa nomenclaturalStatus=illegitimate, nortaxa taxonomicStatus=synonym, col source=2073 merged=false]"
    ],
+   "accepted_authorship_disagrees",
    "sanctioning_citation--ordinary"
   ],
   [
@@ -8732,6 +9156,7 @@
    [],
    1,
    1,
+   true,
    "sanctioning_citation",
    "Spathularia flavida Pers.: Fr.",
    "Spathularia flavida Pers.",
@@ -8756,6 +9181,7 @@
     "name_variant: near-spelling of accepted 'spathularia flavida' [col col:status=synonym, nortaxa nomenclaturalStatus=illegitimate, nortaxa taxonomicStatus=synonym, col source=2073 merged=false]",
     "nortaxa_derived: every COL usage has col:sourceID 2030 (SVWWK, clb:merged=true) [col col:nameStatus=unacceptable, col col:status=synonym, nortaxa nomenclaturalStatus=illegitimate, nortaxa taxonomicStatus=synonym, col source=2030 merged=true]"
    ],
+   "accepted_authorship_disagrees",
    "sanctioning_citation--ordinary"
   ],
   [
@@ -8775,6 +9201,7 @@
    [],
    1,
    1,
+   true,
    "sanctioning_citation",
    "Geoglossum glabrum Pers.: Fr.",
    "Geoglossum glabrum Pers.",
@@ -8793,6 +9220,7 @@
    [
     "ordinary: none of the weak kinds [col col:status=synonym, nortaxa nomenclaturalStatus=illegitimate, nortaxa taxonomicStatus=synonym, col source=2073 merged=false]"
    ],
+   "accepted_authorship_disagrees",
    "sanctioning_citation--ordinary"
   ],
   [
@@ -8812,6 +9240,7 @@
    [],
    1,
    1,
+   true,
    "sanctioning_citation",
    "Sarcoleotia globosa (Sommerf.: Fr.) Korf",
    "Sarcoleotia globosa (Sommerf.) Korf",
@@ -8830,6 +9259,7 @@
    [
     "ordinary: none of the weak kinds [col col:status=synonym, nortaxa nomenclaturalStatus=illegitimate, nortaxa taxonomicStatus=synonym, col source=2073 merged=false]"
    ],
+   "accepted_authorship_disagrees",
    "sanctioning_citation--ordinary"
   ],
   [
@@ -8853,6 +9283,7 @@
    [],
    1,
    1,
+   true,
    "sanctioning_citation",
    "Leotia lubrica (Scop.: Fr.) Pers.",
    "Leotia lubrica (Scop.) Pers.",
@@ -8871,6 +9302,7 @@
    [
     "ordinary: none of the weak kinds [col col:status=synonym, nortaxa taxonomicStatus=synonym, col source=7888 merged=true]"
    ],
+   "accepted_authorship_disagrees",
    "sanctioning_citation--ordinary"
   ],
   [
@@ -8893,6 +9325,7 @@
    [],
    1,
    1,
+   true,
    "sanctioning_citation",
    "Helvella acetabulum (L.: Fr.) Quél.",
    "Helvella acetabulum (L.) Quél.",
@@ -8913,6 +9346,7 @@
     "ordinary: none of the weak kinds [col col:status=synonym, nortaxa nomenclaturalStatus=illegitimate, nortaxa taxonomicStatus=synonym, col source=2073 merged=false]",
     "ordinary: none of the weak kinds [col col:status=synonym, nortaxa nomenclaturalStatus=illegitimate, nortaxa taxonomicStatus=synonym, col source=2073 merged=false]"
    ],
+   "accepted_authorship_disagrees",
    "sanctioning_citation--ordinary"
   ],
   [
@@ -8929,6 +9363,7 @@
    [],
    1,
    1,
+   true,
    "sanctioning_citation",
    "Helvella elastica Bull.: Fr.",
    "Helvella elastica Bull.",
@@ -8947,6 +9382,7 @@
    [
     "ordinary: none of the weak kinds [col col:status=synonym, nortaxa nomenclaturalStatus=illegitimate, nortaxa taxonomicStatus=synonym, col source=2073 merged=false]"
    ],
+   "accepted_authorship_disagrees",
    "sanctioning_citation--ordinary"
   ],
   [
@@ -8970,6 +9406,7 @@
    [],
    1,
    1,
+   true,
    "sanctioning_citation",
    "Morchella esculenta (L. : Fr.) Pers.",
    "Morchella esculenta (L.) Pers.",
@@ -8995,6 +9432,7 @@
     "nortaxa_derived: every COL usage has col:sourceID 2030 (QMFTZ, clb:merged=true) [col col:nameStatus=unacceptable, col col:status=synonym, nortaxa nomenclaturalStatus=illegitimate, nortaxa taxonomicStatus=synonym, col source=2030 merged=true]",
     "ordinary: none of the weak kinds [col col:status=synonym, nortaxa nomenclaturalStatus=illegitimate, nortaxa taxonomicStatus=synonym, col source=2073 merged=false]"
    ],
+   "accepted_authorship_disagrees",
    "sanctioning_citation--ordinary"
   ],
   [
@@ -9018,6 +9456,7 @@
    [],
    1,
    1,
+   true,
    "sanctioning_citation",
    "Caloscypha fulgens (Pers.: Fr.) Boud.",
    "Caloscypha fulgens (Pers.) Boud.",
@@ -9036,6 +9475,7 @@
    [
     "ordinary: none of the weak kinds [col col:status=synonym, nortaxa nomenclaturalStatus=illegitimate, nortaxa taxonomicStatus=synonym, col source=2073 merged=false]"
    ],
+   "accepted_authorship_disagrees",
    "sanctioning_citation--ordinary"
   ],
   [
@@ -9053,6 +9493,7 @@
    [],
    1,
    1,
+   true,
    "sanctioning_citation",
    "Iodophanus carneus (Pers. : Fr.) Korf",
    "Iodophanus carneus (Pers.) Korf",
@@ -9071,6 +9512,7 @@
    [
     "ordinary: none of the weak kinds [col col:status=synonym, nortaxa nomenclaturalStatus=illegitimate, nortaxa taxonomicStatus=synonym, col source=2073 merged=false]"
    ],
+   "accepted_authorship_disagrees",
    "sanctioning_citation--ordinary"
   ],
   [
@@ -9088,6 +9530,7 @@
    [],
    1,
    1,
+   true,
    "sanctioning_citation",
    "Cheilymenia vitellina (Pers.: Fr.) Dennis",
    "Cheilymenia vitellina (Pers.) Dennis",
@@ -9110,6 +9553,7 @@
     "ordinary: none of the weak kinds [col col:status=synonym, nortaxa nomenclaturalStatus=illegitimate, nortaxa taxonomicStatus=synonym, col source=7888 merged=true]",
     "ordinary: none of the weak kinds [col col:status=synonym, nortaxa nomenclaturalStatus=illegitimate, nortaxa taxonomicStatus=synonym, col source=2073 merged=false]"
    ],
+   "accepted_authorship_disagrees",
    "sanctioning_citation--ordinary"
   ],
   [
@@ -9126,6 +9570,7 @@
    [],
    1,
    1,
+   true,
    "sanctioning_citation",
    "Octospora leucoloma Hedw.: Fr.",
    "Octospora leucoloma Hedw.",
@@ -9150,6 +9595,7 @@
     "nortaxa_derived: every COL usage has col:sourceID 2030 (QXW8L, clb:merged=true) [col col:nameStatus=unacceptable, col col:status=synonym, nortaxa nomenclaturalStatus=illegitimate, nortaxa taxonomicStatus=synonym, col source=2030 merged=true]",
     "not_validly_published: col col:nameStatus=not established [col col:nameStatus=not established, col col:status=synonym, nortaxa nomenclaturalStatus=illegitimate, nortaxa taxonomicStatus=synonym, col source=2041 merged=true]"
    ],
+   "accepted_authorship_disagrees",
    "sanctioning_citation--ordinary"
   ],
   [
@@ -9165,6 +9611,7 @@
    [],
    1,
    1,
+   true,
    "sanctioning_citation",
    "Orbicula parietina (Schrad.: Fr.) S. Hughes",
    "Orbicula parietina (Schrad.) S. Hughes",
@@ -9189,6 +9636,7 @@
     "nortaxa_derived: every COL usage has col:sourceID 2030 (QZSKV, clb:merged=true) [col col:nameStatus=unacceptable, col col:status=synonym, nortaxa nomenclaturalStatus=illegitimate, nortaxa taxonomicStatus=synonym, col source=2030 merged=true]",
     "ordinary: none of the weak kinds [col col:status=synonym, nortaxa nomenclaturalStatus=illegitimate, nortaxa taxonomicStatus=synonym, col source=2073 merged=false]"
    ],
+   "accepted_authorship_disagrees",
    "sanctioning_citation--ordinary"
   ],
   [
@@ -9208,6 +9656,7 @@
    [],
    1,
    1,
+   true,
    "sanctioning_citation",
    "Otidea cochleata (L. : Fr.) Fuckel",
    "Otidea cochleata (L.) Fuckel",
@@ -9226,6 +9675,7 @@
    [
     "ordinary: none of the weak kinds [col col:status=synonym, nortaxa nomenclaturalStatus=illegitimate, nortaxa taxonomicStatus=synonym, col source=2073 merged=false]"
    ],
+   "accepted_authorship_disagrees",
    "sanctioning_citation--ordinary"
   ],
   [
@@ -9246,6 +9696,7 @@
    [],
    1,
    1,
+   true,
    "sanctioning_citation",
    "Otidea leporina (Batsch: Fr.) Fuckel",
    "Otidea leporina (Batsch) Fuckel",
@@ -9264,6 +9715,7 @@
    [
     "ordinary: none of the weak kinds [col col:status=synonym, nortaxa nomenclaturalStatus=illegitimate, nortaxa taxonomicStatus=synonym, col source=2073 merged=false]"
    ],
+   "accepted_authorship_disagrees",
    "sanctioning_citation--ordinary"
   ],
   [
@@ -9283,6 +9735,7 @@
    [],
    1,
    1,
+   true,
    "sanctioning_citation",
    "Tarzetta catinus (Holmsk.: Fr.) Korf & J.K. Rogers",
    "Tarzetta catinus (Holmsk.) Korf & J.K. Rogers",
@@ -9307,6 +9760,7 @@
     "ordinary: none of the weak kinds [col col:status=synonym, nortaxa nomenclaturalStatus=illegitimate, nortaxa taxonomicStatus=synonym, col source=2073 merged=false]",
     "ordinary: none of the weak kinds [col col:status=synonym, nortaxa nomenclaturalStatus=illegitimate, nortaxa taxonomicStatus=synonym, col source=2073 merged=false]"
    ],
+   "accepted_authorship_disagrees",
    "sanctioning_citation--ordinary"
   ],
   [
@@ -9328,6 +9782,7 @@
    [],
    1,
    1,
+   true,
    "sanctioning_citation",
    "Tarzetta cupularis (L.: Fr.) Lambotte",
    "Tarzetta cupularis (L.) Lambotte",
@@ -9352,6 +9807,7 @@
     "ordinary: none of the weak kinds [col col:status=synonym, nortaxa nomenclaturalStatus=illegitimate, nortaxa taxonomicStatus=synonym, col source=2073 merged=false]",
     "ordinary: none of the weak kinds [col col:status=synonym, nortaxa nomenclaturalStatus=illegitimate, nortaxa taxonomicStatus=synonym, col source=2073 merged=false]"
    ],
+   "accepted_authorship_disagrees",
    "sanctioning_citation--ordinary"
   ],
   [
@@ -9373,6 +9829,7 @@
    [],
    1,
    1,
+   true,
    "sanctioning_citation",
    "Pithya cupressina (Batsch: Fr.) Fuckel",
    "Pithya cupressina (Batsch) Fuckel",
@@ -9394,6 +9851,7 @@
     "ordinary: none of the weak kinds [col col:status=synonym, nortaxa nomenclaturalStatus=illegitimate, nortaxa taxonomicStatus=synonym, col source=7888 merged=true]",
     "name_variant: near-spelling of accepted 'pithya cupressina' [col col:status=synonym, nortaxa nomenclaturalStatus=illegitimate, nortaxa taxonomicStatus=synonym, col source=7888 merged=true]"
    ],
+   "accepted_authorship_disagrees",
    "sanctioning_citation--ordinary"
   ],
   [
@@ -9417,6 +9875,7 @@
    [],
    1,
    1,
+   true,
    "sanctioning_citation",
    "Pseudoplectania nigrella (Pers.: Fr.) Fuckel",
    "Pseudoplectania nigrella (Pers.) Fuckel",
@@ -9435,6 +9894,7 @@
    [
     "ordinary: none of the weak kinds [col col:status=synonym, nortaxa nomenclaturalStatus=illegitimate, nortaxa taxonomicStatus=synonym, col source=2073 merged=false]"
    ],
+   "accepted_authorship_disagrees",
    "sanctioning_citation--ordinary"
   ],
   [
@@ -9450,6 +9910,7 @@
    [],
    1,
    1,
+   true,
    "sanctioning_citation",
    "Hypoxylon fuscopurpureum (Schwein.: Fr.) M.A. Curtis",
    "Hypoxylon fuscopurpureum (Schwein.) M.A. Curtis",
@@ -9468,6 +9929,7 @@
    [
     "ordinary: none of the weak kinds [col col:status=synonym, nortaxa nomenclaturalStatus=illegitimate, nortaxa taxonomicStatus=synonym, col source=2073 merged=false]"
    ],
+   "accepted_authorship_disagrees",
    "sanctioning_citation--ordinary"
   ],
   [
@@ -9484,6 +9946,7 @@
    [],
    1,
    1,
+   true,
    "sanctioning_citation",
    "Hypoxylon fuscum (Pers.: Fr.) Fr.",
    "Hypoxylon fuscum (Pers.) Fr.",
@@ -9505,6 +9968,7 @@
     "ordinary: none of the weak kinds [col col:status=synonym, nortaxa nomenclaturalStatus=illegitimate, nortaxa taxonomicStatus=synonym, col source=2073 merged=false]",
     "pro_parte: col col:status=ambiguous synonym [col col:status=ambiguous synonym, nortaxa nomenclaturalStatus=illegitimate, nortaxa taxonomicStatus=synonym, col source=2073 merged=false]"
    ],
+   "accepted_authorship_disagrees",
    "sanctioning_citation--ordinary"
   ],
   [
@@ -9522,6 +9986,7 @@
    [],
    1,
    1,
+   true,
    "sanctioning_citation",
    "Xylaria filiformis (Alb. & Schwein.: Fr.) Fr.",
    "Xylaria filiformis (Alb. & Schwein.) Fr.",
@@ -9540,6 +10005,7 @@
    [
     "ordinary: none of the weak kinds [col col:status=synonym, nortaxa nomenclaturalStatus=illegitimate, nortaxa taxonomicStatus=synonym, col source=2073 merged=false]"
    ],
+   "accepted_authorship_disagrees",
    "sanctioning_citation--ordinary"
   ],
   [
@@ -9556,6 +10022,7 @@
    [],
    1,
    1,
+   true,
    "sanctioning_citation",
    "Ascobolus furfuraceus Pers.: Fr.",
    "Ascobolus furfuraceus Pers.",
@@ -9574,6 +10041,7 @@
    [
     "ordinary: none of the weak kinds [col col:status=synonym, nortaxa taxonomicStatus=synonym, col source=2073 merged=false]"
    ],
+   "accepted_authorship_disagrees",
    "sanctioning_citation--ordinary"
   ],
   [
@@ -9590,6 +10058,7 @@
    [],
    1,
    1,
+   true,
    "sanctioning_citation",
    "Lasiobolus papillatus (Pers.: Fr.) Sacc.",
    "Lasiobolus papillatus (Pers.) Sacc.",
@@ -9616,6 +10085,7 @@
     "ordinary: none of the weak kinds [col col:status=synonym, nortaxa nomenclaturalStatus=illegitimate, nortaxa taxonomicStatus=synonym, col source=2073 merged=false]",
     "ordinary: none of the weak kinds [col col:status=synonym, nortaxa nomenclaturalStatus=illegitimate, nortaxa taxonomicStatus=synonym, col source=2073 merged=false]"
    ],
+   "accepted_authorship_disagrees",
    "sanctioning_citation--ordinary"
   ],
   [
@@ -9636,6 +10106,7 @@
    [],
    1,
    1,
+   true,
    "sanctioning_citation",
    "Cheilymenia granulata (Bull. : Fr.) J. Moravec",
    "Cheilymenia granulata (Bull.) J. Moravec",
@@ -9657,6 +10128,7 @@
     "pro_parte: col col:status=ambiguous synonym [col col:status=ambiguous synonym, nortaxa nomenclaturalStatus=illegitimate, nortaxa taxonomicStatus=synonym, col source=2073 merged=false]",
     "ordinary: none of the weak kinds [col col:status=synonym, nortaxa nomenclaturalStatus=illegitimate, nortaxa taxonomicStatus=synonym, col source=2073 merged=false]"
    ],
+   "accepted_authorship_disagrees",
    "sanctioning_citation--ordinary"
   ],
   [
@@ -9679,6 +10151,7 @@
    [],
    1,
    1,
+   true,
    "sanctioning_citation",
    "Kretzschmaria deusta (Hoffm.: Fr.) P.M.D. Martin",
    "Kretzschmaria deusta (Hoffm.) P.M.D. Martin",
@@ -9697,6 +10170,7 @@
    [
     "ordinary: none of the weak kinds [col col:status=synonym, nortaxa nomenclaturalStatus=illegitimate, nortaxa taxonomicStatus=synonym, col source=7888 merged=true]"
    ],
+   "accepted_authorship_disagrees",
    "sanctioning_citation--ordinary"
   ],
   [
@@ -9710,6 +10184,7 @@
    [],
    1,
    1,
+   true,
    "sanctioning_citation",
    "Resupinatus conspersus (Pers.: Fr.) Thorn, Moncalvo & Redhead",
    "Resupinatus conspersus (Pers.) Thorn, Moncalvo & Redhead",
@@ -9728,6 +10203,7 @@
    [
     "ordinary: none of the weak kinds [col col:status=synonym, nortaxa nomenclaturalStatus=illegitimate, nortaxa taxonomicStatus=synonym, col source=2073 merged=false]"
    ],
+   "accepted_authorship_disagrees",
    "sanctioning_citation--ordinary"
   ],
   [
@@ -9741,6 +10217,7 @@
    [],
    1,
    1,
+   true,
    "sanctioning_citation",
    "Fomitella supina (Sw. : Fr.) Murrill",
    "Fomitella supina (Sw.) Murrill",
@@ -9759,6 +10236,7 @@
    [
     "ordinary: none of the weak kinds [col col:status=synonym, nortaxa taxonomicStatus=synonym, col source=2073 merged=false]"
    ],
+   "accepted_authorship_disagrees",
    "sanctioning_citation--ordinary"
   ],
   [
@@ -9772,6 +10250,7 @@
    [],
    1,
    1,
+   true,
    "sanctioning_citation",
    "Rimbachia neckerae (Fr. : Fr.) Redhead",
    "Rimbachia neckerae (Fr.) Redhead",
@@ -9790,6 +10269,7 @@
    [
     "ordinary: none of the weak kinds [col col:status=synonym, nortaxa nomenclaturalStatus=illegitimate, nortaxa taxonomicStatus=synonym, col source=2073 merged=false]"
    ],
+   "accepted_authorship_disagrees",
    "sanctioning_citation--ordinary"
   ],
   [
@@ -9803,6 +10283,7 @@
    [],
    1,
    1,
+   true,
    "sanctioning_citation",
    "Rigidoporus microporus (Sw. : Fr.) Overeem",
    "Rigidoporus microporus (Sw.) Overeem",
@@ -9830,6 +10311,7 @@
     "ordinary: none of the weak kinds [col col:status=synonym, nortaxa taxonomicStatus=synonym, col source=2073 merged=false]",
     "ordinary: none of the weak kinds [col col:status=synonym, nortaxa taxonomicStatus=synonym, col source=2073 merged=false]"
    ],
+   "accepted_authorship_disagrees",
    "sanctioning_citation--ordinary"
   ],
   [
@@ -9843,6 +10325,7 @@
    [],
    1,
    1,
+   true,
    "sanctioning_citation",
    "Daldinia concentrica (Bolton: Fr.) Ces. & De Not.",
    "Daldinia concentrica (Bolton) Ces. & De Not.",
@@ -9861,6 +10344,7 @@
    [
     "ordinary: none of the weak kinds [col col:status=synonym, nortaxa nomenclaturalStatus=illegitimate, nortaxa taxonomicStatus=synonym, col source=2073 merged=false]"
    ],
+   "accepted_authorship_disagrees",
    "sanctioning_citation--ordinary"
   ],
   [
@@ -9878,6 +10362,7 @@
    [],
    1,
    1,
+   true,
    "sanctioning_citation",
    "Trichoderma viride Pers. : Fr.",
    "Trichoderma viride Pers.",
@@ -9896,6 +10381,7 @@
    [
     "ordinary: none of the weak kinds [col col:status=synonym, nortaxa taxonomicStatus=synonym, col source=2073 merged=false]"
    ],
+   "accepted_authorship_disagrees",
    "sanctioning_citation--ordinary"
   ],
   [
@@ -9913,6 +10399,7 @@
    [],
    1,
    1,
+   true,
    "sanctioning_citation",
    "Roseodiscus rhodoleucus (Fr. : Fr.) Baral",
    "Roseodiscus rhodoleucus (Fr.) Baral",
@@ -9933,6 +10420,7 @@
     "ordinary: none of the weak kinds [col col:status=synonym, nortaxa nomenclaturalStatus=illegitimate, nortaxa taxonomicStatus=synonym, col source=2073 merged=false]",
     "ordinary: none of the weak kinds [col col:status=synonym, nortaxa nomenclaturalStatus=illegitimate, nortaxa taxonomicStatus=synonym, col source=2073 merged=false]"
    ],
+   "accepted_authorship_disagrees",
    "sanctioning_citation--ordinary"
   ],
   [
@@ -9955,6 +10443,7 @@
    [],
    1,
    1,
+   true,
    "sanctioning_citation",
    "Jackrogersella multiformis (Fr. : Fr.) L. Wendt, Kuhnert & M. Stadler",
    "Jackrogersella multiformis (Fr.) L. Wendt, Kuhnert & M. Stadler",
@@ -9978,6 +10467,7 @@
     "ordinary: none of the weak kinds [col col:status=synonym, nortaxa nomenclaturalStatus=illegitimate, nortaxa taxonomicStatus=synonym, col source=2073 merged=false]",
     "pro_parte: col col:status=ambiguous synonym [col col:status=ambiguous synonym, nortaxa nomenclaturalStatus=illegitimate, nortaxa taxonomicStatus=synonym, col source=2073 merged=false]"
    ],
+   "accepted_authorship_disagrees",
    "sanctioning_citation--ordinary"
   ],
   [
@@ -9997,6 +10487,7 @@
    [],
    1,
    1,
+   true,
    "sanctioning_citation",
    "Bertia moriformis (Tode: Fr.) De Not.",
    "Bertia moriformis (Tode) De Not.",
@@ -10017,6 +10508,7 @@
     "ordinary: none of the weak kinds [col col:status=synonym, nortaxa nomenclaturalStatus=illegitimate, nortaxa taxonomicStatus=synonym, col source=2073 merged=false]",
     "ordinary: none of the weak kinds [col col:status=synonym, nortaxa nomenclaturalStatus=illegitimate, nortaxa taxonomicStatus=synonym, col source=2073 merged=false]"
    ],
+   "accepted_authorship_disagrees",
    "sanctioning_citation--ordinary"
   ],
   [
@@ -10038,6 +10530,7 @@
    [],
    1,
    1,
+   true,
    "sanctioning_citation",
    "Phyllactinia guttata (Wallr.: Fr.) Lév.",
    "Phyllactinia guttata (Wallr.) Lév.",
@@ -10065,6 +10558,7 @@
     "ordinary: none of the weak kinds [col col:status=synonym, nortaxa nomenclaturalStatus=illegitimate, nortaxa taxonomicStatus=synonym, col source=2073 merged=false]",
     "ordinary: none of the weak kinds [col col:status=synonym, nortaxa nomenclaturalStatus=illegitimate, nortaxa taxonomicStatus=synonym, col source=2073 merged=false]"
    ],
+   "accepted_authorship_disagrees",
    "sanctioning_citation--ordinary"
   ],
   [
@@ -10084,6 +10578,7 @@
    [],
    1,
    1,
+   true,
    "sanctioning_citation",
    "Sawadaea bicornis (Wallr.: Fr.) Homma",
    "Sawadaea bicornis (Wallr.) Homma",
@@ -10105,6 +10600,7 @@
     "ordinary: none of the weak kinds [col col:status=synonym, nortaxa nomenclaturalStatus=illegitimate, nortaxa taxonomicStatus=synonym, col source=2073 merged=false]",
     "nortaxa_derived: every COL usage has col:sourceID 2030 (NQ9VZ, clb:merged=true) [col col:nameStatus=unacceptable, col col:status=synonym, nortaxa nomenclaturalStatus=illegitimate, nortaxa taxonomicStatus=synonym, col source=2030 merged=true]"
    ],
+   "accepted_authorship_disagrees",
    "sanctioning_citation--ordinary"
   ],
   [
@@ -10128,6 +10624,7 @@
    [],
    1,
    1,
+   true,
    "sanctioning_citation",
    "Mollisia cinerea (Batsch: Fr.) P. Karst.",
    "Mollisia cinerea (Batsch) P. Karst.",
@@ -10149,6 +10646,7 @@
     "nortaxa_derived: every COL usage has col:sourceID 2030 (RNY3N, clb:merged=true) [col col:nameStatus=unacceptable, col col:status=synonym, nortaxa nomenclaturalStatus=illegitimate, nortaxa taxonomicStatus=synonym, col source=2030 merged=true]",
     "ordinary: none of the weak kinds [col col:status=synonym, nortaxa nomenclaturalStatus=illegitimate, nortaxa taxonomicStatus=synonym, col source=2073 merged=false]"
    ],
+   "accepted_authorship_disagrees",
    "sanctioning_citation--ordinary"
   ],
   [
@@ -10165,6 +10663,7 @@
    [],
    1,
    1,
+   true,
    "sanctioning_citation",
    "Pezicula ocellata (Pers.: Fr.) Seaver",
    "Pezicula ocellata (Pers.) Seaver",
@@ -10188,6 +10687,7 @@
     "nortaxa_derived: every COL usage has col:sourceID 2030 (VKYQ4, clb:merged=true) [col col:nameStatus=unacceptable, col col:status=synonym, nortaxa nomenclaturalStatus=illegitimate, nortaxa taxonomicStatus=synonym, col source=2030 merged=true]",
     "ordinary: none of the weak kinds [col col:status=synonym, nortaxa nomenclaturalStatus=illegitimate, nortaxa taxonomicStatus=synonym, col source=2073 merged=false]"
    ],
+   "accepted_authorship_disagrees",
    "sanctioning_citation--ordinary"
   ],
   [
@@ -10206,6 +10706,7 @@
    [],
    1,
    1,
+   true,
    "sanctioning_citation",
    "Cenangium ferruginosum Fr. : Fr.",
    "Cenangium ferruginosum Fr.",
@@ -10224,6 +10725,7 @@
    [
     "ordinary: none of the weak kinds [col col:status=synonym, nortaxa nomenclaturalStatus=illegitimate, nortaxa taxonomicStatus=synonym, col source=7888 merged=true]"
    ],
+   "accepted_authorship_disagrees",
    "sanctioning_citation--ordinary"
   ],
   [
@@ -10245,6 +10747,7 @@
    [],
    1,
    1,
+   true,
    "sanctioning_citation",
    "Chlorencoelia versiformis (Pers.: Fr.) J.R. Dixon",
    "Chlorencoelia versiformis (Pers.) J.R. Dixon",
@@ -10266,6 +10769,7 @@
     "ordinary: none of the weak kinds [col col:status=synonym, nortaxa nomenclaturalStatus=illegitimate, nortaxa taxonomicStatus=synonym, col source=2073 merged=false]",
     "nortaxa_derived: every COL usage has col:sourceID 2030 (PF9QK, clb:merged=true) [col col:nameStatus=unacceptable, col col:status=synonym, nortaxa nomenclaturalStatus=illegitimate, nortaxa taxonomicStatus=synonym, col source=2030 merged=true]"
    ],
+   "accepted_authorship_disagrees",
    "sanctioning_citation--ordinary"
   ],
   [
@@ -10286,6 +10790,7 @@
    [],
    1,
    1,
+   true,
    "sanctioning_citation",
    "Cudoniella clavus (Alb. & Schwein. : Fr.) Dennis",
    "Cudoniella clavus (Alb. & Schwein.) Dennis",
@@ -10304,6 +10809,7 @@
    [
     "ordinary: none of the weak kinds [col col:status=synonym, nortaxa nomenclaturalStatus=illegitimate, nortaxa taxonomicStatus=synonym, col source=2073 merged=false]"
    ],
+   "accepted_authorship_disagrees",
    "sanctioning_citation--ordinary"
   ],
   [
@@ -10325,6 +10831,7 @@
    [],
    1,
    1,
+   true,
    "sanctioning_citation",
    "Hymenoscyphus fructigenus (Bull.: Fr.) Gray",
    "Hymenoscyphus fructigenus (Bull.) Gray",
@@ -10347,6 +10854,7 @@
     "ordinary: none of the weak kinds [col col:status=synonym, nortaxa nomenclaturalStatus=illegitimate, nortaxa taxonomicStatus=synonym, col source=2073 merged=false]",
     "ordinary: none of the weak kinds [col col:status=synonym, nortaxa nomenclaturalStatus=illegitimate, nortaxa taxonomicStatus=synonym, col source=2073 merged=false]"
    ],
+   "accepted_authorship_disagrees",
    "sanctioning_citation--ordinary"
   ],
   [
@@ -10362,6 +10870,7 @@
    [],
    1,
    1,
+   true,
    "sanctioning_citation",
    "Hymenoscyphus scutula (Pers.: Fr.) W. Phillips",
    "Hymenoscyphus scutula (Pers.) W. Phillips",
@@ -10384,6 +10893,7 @@
     "ordinary: none of the weak kinds [col col:status=synonym, nortaxa nomenclaturalStatus=illegitimate, nortaxa taxonomicStatus=synonym, col source=2073 merged=false]",
     "ordinary: none of the weak kinds [col col:status=synonym, nortaxa nomenclaturalStatus=illegitimate, nortaxa taxonomicStatus=synonym, col source=2073 merged=false]"
    ],
+   "accepted_authorship_disagrees",
    "sanctioning_citation--ordinary"
   ],
   [
@@ -10401,6 +10911,7 @@
    [],
    1,
    1,
+   true,
    "sanctioning_citation",
    "Patinellaria sanguinea (Pers.: Fr.) P. Karst.",
    "Patinellaria sanguinea (Pers.) P. Karst.",
@@ -10427,6 +10938,7 @@
     "ordinary: none of the weak kinds [col col:status=synonym, nortaxa nomenclaturalStatus=illegitimate, nortaxa taxonomicStatus=synonym, col source=2073 merged=false]",
     "unauthored: empty authorship [col col:nameStatus=unacceptable, col col:status=synonym, nortaxa nomenclaturalStatus=illegitimate, nortaxa taxonomicStatus=synonym, col source=2030 merged=true]"
    ],
+   "accepted_authorship_disagrees",
    "sanctioning_citation--ordinary"
   ],
   [
@@ -10445,6 +10957,7 @@
    [],
    1,
    1,
+   true,
    "sanctioning_citation",
    "Arachnopeziza aurelia (Pers.: Fr.) Fuckel",
    "Arachnopeziza aurelia (Pers.) Fuckel",
@@ -10463,6 +10976,7 @@
    [
     "ordinary: none of the weak kinds [col col:status=synonym, nortaxa nomenclaturalStatus=illegitimate, nortaxa taxonomicStatus=synonym, col source=2073 merged=false]"
    ],
+   "accepted_authorship_disagrees",
    "sanctioning_citation--ordinary"
   ],
   [
@@ -10480,6 +10994,7 @@
    [],
    1,
    1,
+   true,
    "sanctioning_citation",
    "Cistella acuum (Alb. & Schwein.: Fr.) Svrček",
    "Cistella acuum (Alb. & Schwein.) Svrček",
@@ -10505,6 +11020,7 @@
     "ordinary: none of the weak kinds [col col:status=synonym, nortaxa nomenclaturalStatus=illegitimate, nortaxa taxonomicStatus=synonym, col source=2010 merged=true]",
     "ordinary: none of the weak kinds [col col:status=synonym, nortaxa nomenclaturalStatus=illegitimate, nortaxa taxonomicStatus=synonym, col source=2073 merged=false]"
    ],
+   "accepted_authorship_disagrees",
    "sanctioning_citation--ordinary"
   ],
   [
@@ -10525,6 +11041,7 @@
    [],
    1,
    1,
+   true,
    "sanctioning_citation",
    "Ciboria caucus (Rebent.: Fr.) Fuckel",
    "Ciboria caucus (Rebent.) Fuckel",
@@ -10543,6 +11060,7 @@
    [
     "ordinary: none of the weak kinds [col col:status=synonym, nortaxa nomenclaturalStatus=illegitimate, nortaxa taxonomicStatus=synonym, col source=2073 merged=false]"
    ],
+   "accepted_authorship_disagrees",
    "sanctioning_citation--ordinary"
   ],
   [
@@ -10566,6 +11084,7 @@
    [],
    1,
    1,
+   true,
    "sanctioning_citation",
    "Encoelia furfuracea (Roth: Fr.) P. Karst.",
    "Encoelia furfuracea (Roth) P. Karst.",
@@ -10584,6 +11103,7 @@
    [
     "ordinary: none of the weak kinds [col col:status=synonym, nortaxa nomenclaturalStatus=illegitimate, nortaxa taxonomicStatus=synonym, col source=2073 merged=false]"
    ],
+   "accepted_authorship_disagrees",
    "sanctioning_citation--ordinary"
   ],
   [
@@ -10606,6 +11126,7 @@
    [],
    1,
    1,
+   true,
    "sanctioning_citation",
    "Hypomyces rosellus (Alb. & Schwein.: Fr.) Tul. & C. Tul.",
    "Hypomyces rosellus (Alb. & Schwein.) Tul. & C. Tul.",
@@ -10624,6 +11145,7 @@
    [
     "ordinary: none of the weak kinds [col col:status=synonym, nortaxa nomenclaturalStatus=illegitimate, nortaxa taxonomicStatus=synonym, col source=2073 merged=false]"
    ],
+   "accepted_authorship_disagrees",
    "sanctioning_citation--ordinary"
   ],
   [
@@ -10643,6 +11165,7 @@
    [],
    1,
    1,
+   true,
    "sanctioning_citation",
    "Neonectria coccinea (Pers.: Fr.) Rossman & Samuels",
    "Neonectria coccinea (Pers.) Rossman & Samuels",
@@ -10661,6 +11184,7 @@
    [
     "ordinary: none of the weak kinds [col col:status=synonym, nortaxa nomenclaturalStatus=illegitimate, nortaxa taxonomicStatus=synonym, col source=2073 merged=false]"
    ],
+   "accepted_authorship_disagrees",
    "sanctioning_citation--ordinary"
   ],
   [
@@ -10678,6 +11202,7 @@
    [],
    1,
    1,
+   true,
    "sanctioning_citation",
    "Glyphium elatum (Grev.: Fr.) H. Zogg",
    "Glyphium elatum (Grev.) H. Zogg",
@@ -10696,6 +11221,7 @@
    [
     "ordinary: none of the weak kinds [col col:status=synonym, nortaxa nomenclaturalStatus=illegitimate, nortaxa taxonomicStatus=synonym, col source=2073 merged=false]"
    ],
+   "accepted_authorship_disagrees",
    "sanctioning_citation--ordinary"
   ],
   [
@@ -10714,6 +11240,7 @@
    [],
    1,
    1,
+   true,
    "sanctioning_citation",
    "Cliostomum corrugatum (Ach.: Fr.) Fr.",
    "Cliostomum corrugatum (Ach.) Fr.",
@@ -10736,6 +11263,7 @@
     "ordinary: none of the weak kinds [col col:status=synonym, nortaxa nomenclaturalStatus=illegitimate, nortaxa taxonomicStatus=synonym, col source=2073 merged=false]",
     "ordinary: none of the weak kinds [col col:status=synonym, nortaxa nomenclaturalStatus=illegitimate, nortaxa taxonomicStatus=synonym, col source=2073 merged=false]"
    ],
+   "accepted_authorship_disagrees",
    "sanctioning_citation--ordinary"
   ],
   [
@@ -10752,6 +11280,7 @@
    [],
    1,
    1,
+   true,
    "sanctioning_citation",
    "Myxotrichum chartarum Kunze : Fr.",
    "Myxotrichum chartarum Kunze",
@@ -10770,6 +11299,7 @@
    [
     "ordinary: none of the weak kinds [col col:status=synonym, nortaxa taxonomicStatus=synonym, col source=2073 merged=false]"
    ],
+   "accepted_authorship_disagrees",
    "sanctioning_citation--ordinary"
   ],
   [
@@ -10787,6 +11317,7 @@
    [],
    1,
    1,
+   true,
    "sanctioning_citation",
    "Leptosphaeria doliolum (Pers.: Fr.) Ces. & De Not.",
    "Leptosphaeria doliolum (Pers.) Ces. & De Not.",
@@ -10805,6 +11336,7 @@
    [
     "ordinary: none of the weak kinds [col col:status=synonym, nortaxa nomenclaturalStatus=illegitimate, nortaxa taxonomicStatus=synonym, col source=2073 merged=false]"
    ],
+   "accepted_authorship_disagrees",
    "sanctioning_citation--ordinary"
   ],
   [
@@ -10824,6 +11356,7 @@
    [],
    1,
    1,
+   true,
    "sanctioning_citation",
    "Atopospora betulina (Fr. : Fr.) Petr.",
    "Atopospora betulina (Fr.) Petr.",
@@ -10850,6 +11383,7 @@
     "unauthored: empty authorship [col col:nameStatus=unacceptable, col col:status=synonym, nortaxa nomenclaturalStatus=illegitimate, nortaxa taxonomicStatus=synonym, col source=2030 merged=true]",
     "nortaxa_derived: every COL usage has col:sourceID 2030 (SX68B, clb:merged=true) [col col:nameStatus=unacceptable, col col:status=synonym, nortaxa nomenclaturalStatus=illegitimate, nortaxa taxonomicStatus=synonym, col source=2030 merged=true]"
    ],
+   "accepted_authorship_disagrees",
    "sanctioning_citation--ordinary"
   ],
   [
@@ -10865,6 +11399,7 @@
    [],
    1,
    1,
+   true,
    "sanctioning_citation",
    "Coleroa alchemillae (Grev.: Fr.) G. Winter",
    "Coleroa alchemillae (Grev.) G. Winter",
@@ -10883,6 +11418,7 @@
    [
     "ordinary: none of the weak kinds [col col:status=synonym, nortaxa nomenclaturalStatus=illegitimate, nortaxa taxonomicStatus=synonym, col source=2073 merged=false]"
    ],
+   "accepted_authorship_disagrees",
    "sanctioning_citation--ordinary"
   ],
   [
@@ -10900,6 +11436,7 @@
    [],
    1,
    1,
+   true,
    "sanctioning_citation",
    "Cryptomyces maximus (Fr. : Fr.) Rehm",
    "Cryptomyces maximus (Fr.) Rehm",
@@ -10921,6 +11458,7 @@
     "nortaxa_derived: every COL usage has col:sourceID 2030 (SP9GT, clb:merged=true) [col col:nameStatus=unacceptable, col col:status=synonym, nortaxa nomenclaturalStatus=illegitimate, nortaxa taxonomicStatus=synonym, col source=2030 merged=true]",
     "ordinary: none of the weak kinds [col col:status=synonym, nortaxa nomenclaturalStatus=illegitimate, nortaxa taxonomicStatus=synonym, col source=2073 merged=false]"
    ],
+   "accepted_authorship_disagrees",
    "sanctioning_citation--ordinary"
   ],
   [
@@ -10937,6 +11475,7 @@
    [],
    1,
    1,
+   true,
    "sanctioning_citation",
    "Discocainia arctica (Ehrenb.: Fr.) L. Holm",
    "Discocainia arctica (Ehrenb.) L. Holm",
@@ -10955,6 +11494,7 @@
    [
     "ordinary: none of the weak kinds [col col:status=synonym, nortaxa nomenclaturalStatus=illegitimate, nortaxa taxonomicStatus=synonym, col source=2073 merged=false]"
    ],
+   "accepted_authorship_disagrees",
    "sanctioning_citation--ordinary"
   ],
   [
@@ -10975,6 +11515,7 @@
    [],
    1,
    1,
+   true,
    "sanctioning_citation",
    "Lophodermium pinastri (Schrad.: Fr.) Chevall.",
    "Lophodermium pinastri (Schrad.) Chevall.",
@@ -10996,6 +11537,7 @@
     "ordinary: none of the weak kinds [col col:status=synonym, nortaxa nomenclaturalStatus=illegitimate, nortaxa taxonomicStatus=synonym, col source=2073 merged=false]",
     "nortaxa_derived: every COL usage has col:sourceID 2030 (Q63ZM, clb:merged=true) [col col:nameStatus=unacceptable, col col:status=synonym, nortaxa nomenclaturalStatus=illegitimate, nortaxa taxonomicStatus=synonym, col source=2030 merged=true]"
    ],
+   "accepted_authorship_disagrees",
    "sanctioning_citation--ordinary"
   ],
   [
@@ -11020,6 +11562,7 @@
    [],
    1,
    1,
+   true,
    "sanctioning_citation",
    "Rhytisma acerinum (Pers.: Fr.) Fr.",
    "Rhytisma acerinum (Pers.) Fr.",
@@ -11038,6 +11581,7 @@
    [
     "ordinary: none of the weak kinds [col col:status=synonym, nortaxa nomenclaturalStatus=illegitimate, nortaxa taxonomicStatus=synonym, col source=2073 merged=false]"
    ],
+   "accepted_authorship_disagrees",
    "sanctioning_citation--ordinary"
   ],
   [
@@ -11056,6 +11600,7 @@
    [],
    1,
    1,
+   true,
    "sanctioning_citation",
    "Rhytisma andromedae (Pers.: Fr.) Fr.",
    "Rhytisma andromedae (Pers.) Fr.",
@@ -11076,6 +11621,7 @@
     "ordinary: none of the weak kinds [col col:status=synonym, nortaxa taxonomicStatus=synonym, col source=2073 merged=false]",
     "ordinary: none of the weak kinds [col col:status=synonym, nortaxa taxonomicStatus=synonym, col source=2073 merged=false]"
    ],
+   "accepted_authorship_disagrees",
    "sanctioning_citation--ordinary"
   ],
   [
@@ -11099,6 +11645,7 @@
    [],
    1,
    1,
+   true,
    "sanctioning_citation",
    "Rhytisma salicinum (Pers.: Fr.) Fr.",
    "Rhytisma salicinum (Pers.) Fr.",
@@ -11117,6 +11664,7 @@
    [
     "ordinary: none of the weak kinds [col col:status=synonym, nortaxa taxonomicStatus=synonym, col source=2073 merged=false]"
    ],
+   "accepted_authorship_disagrees",
    "sanctioning_citation--ordinary"
   ],
   [
@@ -11133,6 +11681,7 @@
    [],
    1,
    1,
+   true,
    "sanctioning_citation",
    "Tryblidiopsis pinastri (Pers.: Fr.) P. Karst.",
    "Tryblidiopsis pinastri (Pers.) P. Karst.",
@@ -11154,6 +11703,7 @@
     "pro_parte: col col:status=ambiguous synonym [col col:status=ambiguous synonym, nortaxa nomenclaturalStatus=illegitimate, nortaxa taxonomicStatus=synonym, col source=2073 merged=false]",
     "ordinary: none of the weak kinds [col col:status=synonym, nortaxa taxonomicStatus=synonym, col source=2073 merged=false]"
    ],
+   "accepted_authorship_disagrees",
    "sanctioning_citation--ordinary"
   ],
   [
@@ -11169,6 +11719,7 @@
    [],
    1,
    1,
+   true,
    "sanctioning_citation",
    "Chaetomium globosum Kunze: Fr.",
    "Chaetomium globosum Kunze",
@@ -11187,6 +11738,7 @@
    [
     "ordinary: none of the weak kinds [col col:status=synonym, nortaxa nomenclaturalStatus=illegitimate, nortaxa taxonomicStatus=synonym, col source=2073 merged=false]"
    ],
+   "accepted_authorship_disagrees",
    "sanctioning_citation--ordinary"
   ],
   [
@@ -11207,6 +11759,7 @@
    [],
    1,
    1,
+   true,
    "sanctioning_citation",
    "Lasiosphaeria ovina (Pers.: Fr.) Ces. & De Not.",
    "Lasiosphaeria ovina (Pers.) Ces. & De Not.",
@@ -11225,6 +11778,7 @@
    [
     "ordinary: none of the weak kinds [col col:status=synonym, nortaxa nomenclaturalStatus=illegitimate, nortaxa taxonomicStatus=synonym, col source=2073 merged=false]"
    ],
+   "accepted_authorship_disagrees",
    "sanctioning_citation--ordinary"
   ],
   [
@@ -11241,6 +11795,7 @@
    [],
    1,
    1,
+   true,
    "sanctioning_citation",
    "Echinosphaeria canescens (Pers.: Fr.) A.N. Mill. & Huhndorf",
    "Echinosphaeria canescens (Pers.) A.N. Mill. & Huhndorf",
@@ -11261,6 +11816,7 @@
     "ordinary: none of the weak kinds [col col:status=synonym, nortaxa taxonomicStatus=synonym, col source=2073 merged=false]",
     "ordinary: none of the weak kinds [col col:status=synonym, nortaxa nomenclaturalStatus=illegitimate, nortaxa taxonomicStatus=synonym, col source=2073 merged=false]"
    ],
+   "accepted_authorship_disagrees",
    "sanctioning_citation--ordinary"
   ],
   [
@@ -11282,6 +11838,7 @@
    [],
    1,
    1,
+   true,
    "sanctioning_citation",
    "Diatrype disciformis (Hoffm.: Fr.) Fr.",
    "Diatrype disciformis (Hoffm.) Fr.",
@@ -11300,6 +11857,7 @@
    [
     "ordinary: none of the weak kinds [col col:status=synonym, nortaxa nomenclaturalStatus=illegitimate, nortaxa taxonomicStatus=synonym, col source=2073 merged=false]"
    ],
+   "accepted_authorship_disagrees",
    "sanctioning_citation--ordinary"
   ],
   [
@@ -11322,6 +11880,7 @@
    [],
    1,
    1,
+   true,
    "sanctioning_citation",
    "Diatrype stigma (Hoffm.: Fr.) Fr.",
    "Diatrype stigma (Hoffm.) Fr.",
@@ -11340,6 +11899,7 @@
    [
     "ordinary: none of the weak kinds [col col:status=synonym, nortaxa nomenclaturalStatus=illegitimate, nortaxa taxonomicStatus=synonym, col source=2073 merged=false]"
    ],
+   "accepted_authorship_disagrees",
    "sanctioning_citation--ordinary"
   ],
   [
@@ -11358,6 +11918,7 @@
    [],
    1,
    1,
+   true,
    "sanctioning_citation",
    "Diatrypella favacea (Fr. : Fr.) Ces. & De Not.",
    "Diatrypella favacea (Fr.) Ces. & De Not.",
@@ -11382,6 +11943,7 @@
     "ordinary: none of the weak kinds [col col:status=synonym, nortaxa nomenclaturalStatus=illegitimate, nortaxa taxonomicStatus=synonym, col source=2073 merged=false]",
     "ordinary: none of the weak kinds [col col:status=synonym, nortaxa nomenclaturalStatus=illegitimate, nortaxa taxonomicStatus=synonym, col source=7888 merged=true]"
    ],
+   "accepted_authorship_disagrees",
    "sanctioning_citation--ordinary"
   ],
   [
@@ -11397,6 +11959,7 @@
    [],
    1,
    1,
+   true,
    "sanctioning_citation",
    "Biscogniauxia nummularia (Bull.: Fr.) Kuntze",
    "Biscogniauxia nummularia (Bull.) Kuntze",
@@ -11417,6 +11980,7 @@
     "ordinary: none of the weak kinds [col col:status=synonym, nortaxa nomenclaturalStatus=illegitimate, nortaxa taxonomicStatus=synonym, col source=2073 merged=false]",
     "ordinary: none of the weak kinds [col col:status=synonym, nortaxa nomenclaturalStatus=illegitimate, nortaxa taxonomicStatus=synonym, col source=2073 merged=false]"
    ],
+   "accepted_authorship_disagrees",
    "sanctioning_citation--ordinary"
   ],
   [
@@ -11434,6 +11998,7 @@
    [],
    1,
    1,
+   true,
    "sanctioning_citation",
    "Brunnipila clandestina (Bull.: Fr.) Baral",
    "Brunnipila clandestina (Bull.) Baral",
@@ -11455,6 +12020,7 @@
     "unauthored: empty authorship [col col:nameStatus=unacceptable, col col:status=synonym, nortaxa nomenclaturalStatus=illegitimate, nortaxa taxonomicStatus=synonym, col source=2030 merged=true]",
     "ordinary: none of the weak kinds [col col:status=synonym, nortaxa nomenclaturalStatus=illegitimate, nortaxa taxonomicStatus=synonym, col source=2073 merged=false]"
    ],
+   "accepted_authorship_disagrees",
    "sanctioning_citation--ordinary"
   ],
   [
@@ -11473,6 +12039,7 @@
    [],
    1,
    1,
+   true,
    "sanctioning_citation",
    "Capitotricha bicolor (Bull.: Fr.) Baral",
    "Capitotricha bicolor (Bull.) Baral",
@@ -11491,6 +12058,7 @@
    [
     "ordinary: none of the weak kinds [col col:status=synonym, nortaxa nomenclaturalStatus=illegitimate, nortaxa taxonomicStatus=synonym, col source=2073 merged=false]"
    ],
+   "accepted_authorship_disagrees",
    "sanctioning_citation--ordinary"
   ],
   [
@@ -11512,6 +12080,7 @@
    [],
    1,
    1,
+   true,
    "sanctioning_citation",
    "Rutstroemia firma (Pers. : Fr.) P. Karst.",
    "Rutstroemia firma (Pers.) P. Karst.",
@@ -11530,6 +12099,7 @@
    [
     "ordinary: none of the weak kinds [col col:status=synonym, nortaxa nomenclaturalStatus=illegitimate, nortaxa taxonomicStatus=synonym, col source=2073 merged=false]"
    ],
+   "accepted_authorship_disagrees",
    "sanctioning_citation--ordinary"
   ],
   [
@@ -11543,6 +12113,7 @@
    [],
    1,
    1,
+   true,
    "sanctioning_citation",
    "Brunnipila fuscescens (Pers.: Fr.) Baral",
    "Brunnipila fuscescens (Pers.) Baral",
@@ -11565,6 +12136,7 @@
     "ordinary: none of the weak kinds [col col:status=synonym, nortaxa nomenclaturalStatus=illegitimate, nortaxa taxonomicStatus=synonym, col source=2073 merged=false]",
     "ordinary: none of the weak kinds [col col:status=synonym, nortaxa nomenclaturalStatus=illegitimate, nortaxa taxonomicStatus=synonym, col source=2073 merged=false]"
    ],
+   "accepted_authorship_disagrees",
    "sanctioning_citation--ordinary"
   ],
   [
@@ -11578,6 +12150,7 @@
    [],
    1,
    1,
+   true,
    "sanctioning_citation",
    "Calycina subtilis (Fr. : Fr.) Baral",
    "Calycina subtilis (Fr.) Baral",
@@ -11596,6 +12169,7 @@
    [
     "ordinary: none of the weak kinds [col col:status=synonym, nortaxa taxonomicStatus=synonym, col source=2073 merged=false]"
    ],
+   "accepted_authorship_disagrees",
    "sanctioning_citation--ordinary"
   ],
   [
@@ -11609,6 +12183,7 @@
    [],
    1,
    1,
+   true,
    "sanctioning_citation",
    "Aeruginoscyphus sericeus (Alb. & Schwein. : Fr.) Dougoud",
    "Aeruginoscyphus sericeus (Alb. & Schwein.) Dougoud",
@@ -11630,6 +12205,7 @@
     "ordinary: none of the weak kinds [col col:status=synonym, nortaxa taxonomicStatus=synonym, col source=2073 merged=false]",
     "nortaxa_derived: every COL usage has col:sourceID 2030 (NKBMT, clb:merged=true) [col col:status=synonym, nortaxa taxonomicStatus=synonym, col source=2030 merged=true]"
    ],
+   "accepted_authorship_disagrees",
    "sanctioning_citation--ordinary"
   ],
   [
@@ -11643,6 +12219,7 @@
    [],
    1,
    1,
+   true,
    "sanctioning_citation",
    "Diaporthe syngenesia (Fr. : Fr.) Fuckel",
    "Diaporthe syngenesia (Fr.) Fuckel",
@@ -11661,6 +12238,7 @@
    [
     "ordinary: none of the weak kinds [col col:status=synonym, nortaxa nomenclaturalStatus=illegitimate, nortaxa taxonomicStatus=synonym, col source=2073 merged=false]"
    ],
+   "accepted_authorship_disagrees",
    "sanctioning_citation--ordinary"
   ],
   [
@@ -11674,6 +12252,7 @@
    [],
    1,
    1,
+   true,
    "sanctioning_citation",
    "Gnomonia gnomon (Tode: Fr.) J. Schröt.",
    "Gnomonia gnomon (Tode) J. Schröt.",
@@ -11694,6 +12273,7 @@
     "ordinary: none of the weak kinds [col col:status=synonym, nortaxa nomenclaturalStatus=illegitimate, nortaxa taxonomicStatus=synonym, col source=2073 merged=false]",
     "ordinary: none of the weak kinds [col col:status=synonym, nortaxa nomenclaturalStatus=illegitimate, nortaxa taxonomicStatus=synonym, col source=2073 merged=false]"
    ],
+   "accepted_authorship_disagrees",
    "sanctioning_citation--ordinary"
   ],
   [
@@ -11707,6 +12287,7 @@
    [],
    1,
    1,
+   true,
    "sanctioning_citation",
    "Ditopella ditopa (Fr. : Fr.) J. Schröt.",
    "Ditopella ditopa (Fr.) J. Schröt.",
@@ -11725,6 +12306,7 @@
    [
     "ordinary: none of the weak kinds [col col:status=synonym, nortaxa nomenclaturalStatus=illegitimate, nortaxa taxonomicStatus=synonym, col source=2073 merged=false]"
    ],
+   "accepted_authorship_disagrees",
    "sanctioning_citation--ordinary"
   ],
   [
@@ -11738,6 +12320,7 @@
    [],
    1,
    1,
+   true,
    "sanctioning_citation",
    "Diaporthopsis urticae (Fr. : Fr.) Arx & E. Müll.",
    "Diaporthopsis urticae (Fr.) Arx & E. Müll.",
@@ -11756,6 +12339,7 @@
    [
     "ordinary: none of the weak kinds [col col:status=synonym, nortaxa nomenclaturalStatus=illegitimate, nortaxa taxonomicStatus=synonym, col source=7888 merged=true]"
    ],
+   "accepted_authorship_disagrees",
    "sanctioning_citation--ordinary"
   ],
   [
@@ -11769,6 +12353,7 @@
    [],
    1,
    1,
+   true,
    "sanctioning_citation",
    "Omphalospora melaena (Fr. : Fr.) Höhn.",
    "Omphalospora melaena (Fr.) Höhn.",
@@ -11793,6 +12378,7 @@
     "ordinary: none of the weak kinds [col col:status=synonym, nortaxa nomenclaturalStatus=illegitimate, nortaxa taxonomicStatus=synonym, col source=2073 merged=false]",
     "ordinary: none of the weak kinds [col col:status=synonym, nortaxa taxonomicStatus=synonym, col source=2073 merged=false]"
    ],
+   "accepted_authorship_disagrees",
    "sanctioning_citation--ordinary"
   ],
   [
@@ -11806,6 +12392,7 @@
    [],
    1,
    1,
+   true,
    "sanctioning_citation",
    "Dothiora ribesia (Pers.: Fr.) M.E. Barr",
    "Dothiora ribesia (Pers.) M.E. Barr",
@@ -11827,6 +12414,7 @@
     "name_variant: near-spelling of accepted 'dothiora ribesia' [col col:status=synonym, nortaxa nomenclaturalStatus=illegitimate, nortaxa taxonomicStatus=synonym, col source=2073 merged=false]",
     "ordinary: none of the weak kinds [col col:status=synonym, nortaxa nomenclaturalStatus=illegitimate, nortaxa taxonomicStatus=synonym, col source=2073 merged=false]"
    ],
+   "accepted_authorship_disagrees",
    "sanctioning_citation--ordinary"
   ],
   [
@@ -11840,6 +12428,7 @@
    [],
    1,
    1,
+   true,
    "sanctioning_citation",
    "Saccothecium sepincola (Fr. : Fr.) Fr.",
    "Saccothecium sepincola (Fr.) Fr.",
@@ -11870,6 +12459,7 @@
     "ordinary: none of the weak kinds [col col:status=synonym, nortaxa taxonomicStatus=synonym, col source=7888 merged=true]",
     "ordinary: none of the weak kinds [col col:status=synonym, nortaxa taxonomicStatus=synonym, col source=7888 merged=true]"
    ],
+   "accepted_authorship_disagrees",
    "sanctioning_citation--ordinary"
   ],
   [
@@ -11883,6 +12473,7 @@
    [],
    1,
    1,
+   true,
    "sanctioning_citation",
    "Leptospora rubella (Pers.: Fr.) Rabenh.",
    "Leptospora rubella (Pers.) Rabenh.",
@@ -11903,6 +12494,7 @@
     "ordinary: none of the weak kinds [col col:status=synonym, nortaxa nomenclaturalStatus=illegitimate, nortaxa taxonomicStatus=synonym, col source=2073 merged=false]",
     "ordinary: none of the weak kinds [col col:status=synonym, nortaxa nomenclaturalStatus=illegitimate, nortaxa taxonomicStatus=synonym, col source=2073 merged=false]"
    ],
+   "accepted_authorship_disagrees",
    "sanctioning_citation--ordinary"
   ],
   [
@@ -11916,6 +12508,7 @@
    [],
    1,
    1,
+   true,
    "sanctioning_citation",
    "Pezicula cinnamomea (DC.: Fr.) Sacc.",
    "Pezicula cinnamomea (DC.) Sacc.",
@@ -11934,6 +12527,7 @@
    [
     "ordinary: none of the weak kinds [col col:status=synonym, nortaxa nomenclaturalStatus=illegitimate, nortaxa taxonomicStatus=synonym, col source=2073 merged=false]"
    ],
+   "accepted_authorship_disagrees",
    "sanctioning_citation--ordinary"
   ],
   [
@@ -11947,6 +12541,7 @@
    [],
    1,
    1,
+   true,
    "sanctioning_citation",
    "Pyrenopeziza rubi (Fr. : Fr.) Rehm",
    "Pyrenopeziza rubi (Fr.) Rehm",
@@ -11967,6 +12562,7 @@
     "ordinary: none of the weak kinds [col col:status=synonym, nortaxa nomenclaturalStatus=illegitimate, nortaxa taxonomicStatus=synonym, col source=2073 merged=false]",
     "ordinary: none of the weak kinds [col col:status=synonym, nortaxa nomenclaturalStatus=illegitimate, nortaxa taxonomicStatus=synonym, col source=2073 merged=false]"
    ],
+   "accepted_authorship_disagrees",
    "sanctioning_citation--ordinary"
   ],
   [
@@ -11980,6 +12576,7 @@
    [],
    1,
    1,
+   true,
    "sanctioning_citation",
    "Durella lecideola (Fr. : Fr.) Rehm",
    "Durella lecideola (Fr.) Rehm",
@@ -12006,6 +12603,7 @@
     "unauthored: empty authorship [col col:nameStatus=unacceptable, col col:status=synonym, nortaxa nomenclaturalStatus=illegitimate, nortaxa taxonomicStatus=synonym, col source=2030 merged=true]",
     "unauthored: empty authorship [col col:nameStatus=unacceptable, col col:status=synonym, nortaxa nomenclaturalStatus=illegitimate, nortaxa taxonomicStatus=synonym, col source=2030 merged=true]"
    ],
+   "accepted_authorship_disagrees",
    "sanctioning_citation--ordinary"
   ],
   [
@@ -12019,6 +12617,7 @@
    [],
    1,
    1,
+   true,
    "sanctioning_citation",
    "Hymenoscyphus clavatus (Pers.: Fr.) W. Phillips",
    "Hymenoscyphus clavatus (Pers.) W. Phillips",
@@ -12037,6 +12636,7 @@
    [
     "ordinary: none of the weak kinds [col col:status=synonym, nortaxa nomenclaturalStatus=illegitimate, nortaxa taxonomicStatus=synonym, col source=2073 merged=false]"
    ],
+   "accepted_authorship_disagrees",
    "sanctioning_citation--ordinary"
   ],
   [
@@ -12050,6 +12650,7 @@
    [],
    1,
    1,
+   true,
    "sanctioning_citation",
    "Hymenoscyphus imberbis (Bull.: Fr.) Dennis",
    "Hymenoscyphus imberbis (Bull.) Dennis",
@@ -12072,6 +12673,7 @@
     "ordinary: none of the weak kinds [col col:status=synonym, nortaxa nomenclaturalStatus=illegitimate, nortaxa taxonomicStatus=synonym, col source=2073 merged=false]",
     "ordinary: none of the weak kinds [col col:status=synonym, nortaxa nomenclaturalStatus=illegitimate, nortaxa taxonomicStatus=synonym, col source=2073 merged=false]"
    ],
+   "accepted_authorship_disagrees",
    "sanctioning_citation--ordinary"
   ],
   [
@@ -12085,6 +12687,7 @@
    [],
    1,
    1,
+   true,
    "sanctioning_citation",
    "Hymenoscyphus serotinus (Pers.: Fr.) W. Phillips",
    "Hymenoscyphus serotinus (Pers.) W. Phillips",
@@ -12103,6 +12706,7 @@
    [
     "ordinary: none of the weak kinds [col col:status=synonym, nortaxa nomenclaturalStatus=illegitimate, nortaxa taxonomicStatus=synonym, col source=2073 merged=false]"
    ],
+   "accepted_authorship_disagrees",
    "sanctioning_citation--ordinary"
   ],
   [
@@ -12116,6 +12720,7 @@
    [],
    1,
    1,
+   true,
    "sanctioning_citation",
    "Pseudohelotium pineti (Batsch: Fr.) Fuckel",
    "Pseudohelotium pineti (Batsch) Fuckel",
@@ -12134,6 +12739,7 @@
    [
     "ordinary: none of the weak kinds [col col:status=synonym, nortaxa nomenclaturalStatus=illegitimate, nortaxa taxonomicStatus=synonym, col source=2073 merged=false]"
    ],
+   "accepted_authorship_disagrees",
    "sanctioning_citation--ordinary"
   ],
   [
@@ -12147,6 +12753,7 @@
    [],
    1,
    1,
+   true,
    "sanctioning_citation",
    "Lachnum pygmaeum (Fr. : Fr.) Bres.",
    "Lachnum pygmaeum (Fr.) Bres.",
@@ -12165,6 +12772,7 @@
    [
     "ordinary: none of the weak kinds [col col:status=synonym, nortaxa nomenclaturalStatus=illegitimate, nortaxa taxonomicStatus=synonym, col source=2073 merged=false]"
    ],
+   "accepted_authorship_disagrees",
    "sanctioning_citation--ordinary"
   ],
   [
@@ -12178,6 +12786,7 @@
    [],
    1,
    1,
+   true,
    "sanctioning_citation",
    "Lachnum virgineum (Batsch: Fr.) P. Karst.",
    "Lachnum virgineum (Batsch) P. Karst.",
@@ -12196,6 +12805,7 @@
    [
     "ordinary: none of the weak kinds [col col:status=synonym, nortaxa nomenclaturalStatus=illegitimate, nortaxa taxonomicStatus=synonym, col source=2073 merged=false]"
    ],
+   "accepted_authorship_disagrees",
    "sanctioning_citation--ordinary"
   ],
   [
@@ -12209,6 +12819,7 @@
    [],
    1,
    1,
+   true,
    "sanctioning_citation",
    "Proliferodiscus pulveraceus (Alb. & Schwein.: Fr.) Baral",
    "Proliferodiscus pulveraceus (Alb. & Schwein.) Baral",
@@ -12232,6 +12843,7 @@
     "ordinary: none of the weak kinds [col col:status=synonym, nortaxa nomenclaturalStatus=illegitimate, nortaxa taxonomicStatus=synonym, col source=2073 merged=false]",
     "pro_parte: col col:status=ambiguous synonym [col col:status=ambiguous synonym, nortaxa nomenclaturalStatus=illegitimate, nortaxa taxonomicStatus=synonym, col source=2073 merged=false]"
    ],
+   "accepted_authorship_disagrees",
    "sanctioning_citation--ordinary"
   ],
   [
@@ -12245,6 +12857,7 @@
    [],
    1,
    1,
+   true,
    "sanctioning_citation",
    "Urceolella papillaris (Bull. : Fr.) Boud.",
    "Urceolella papillaris (Bull.) Boud.",
@@ -12263,6 +12876,7 @@
    [
     "ordinary: none of the weak kinds [col col:status=synonym, nortaxa nomenclaturalStatus=illegitimate, nortaxa taxonomicStatus=synonym, col source=2073 merged=false]"
    ],
+   "accepted_authorship_disagrees",
    "sanctioning_citation--ordinary"
   ],
   [
@@ -12276,6 +12890,7 @@
    [],
    1,
    1,
+   true,
    "sanctioning_citation",
    "Rutstroemia bolaris (Batsch: Fr.) Rehm",
    "Rutstroemia bolaris (Batsch) Rehm",
@@ -12294,6 +12909,7 @@
    [
     "ordinary: none of the weak kinds [col col:status=synonym, nortaxa nomenclaturalStatus=illegitimate, nortaxa taxonomicStatus=synonym, col source=2073 merged=false]"
    ],
+   "accepted_authorship_disagrees",
    "sanctioning_citation--ordinary"
   ],
   [
@@ -12307,6 +12923,7 @@
    [],
    1,
    1,
+   true,
    "sanctioning_citation",
    "Melanospora lagenaria (Pers.: Fr.) Fuckel",
    "Melanospora lagenaria (Pers.) Fuckel",
@@ -12325,6 +12942,7 @@
    [
     "ordinary: none of the weak kinds [col col:status=synonym, nortaxa nomenclaturalStatus=illegitimate, nortaxa taxonomicStatus=synonym, col source=2073 merged=false]"
    ],
+   "accepted_authorship_disagrees",
    "sanctioning_citation--ordinary"
   ],
   [
@@ -12338,6 +12956,7 @@
    [],
    1,
    1,
+   true,
    "sanctioning_citation",
    "Melanopsamma pomiformis (Pers.: Fr.) Sacc.",
    "Melanopsamma pomiformis (Pers.) Sacc.",
@@ -12356,6 +12975,7 @@
    [
     "ordinary: none of the weak kinds [col col:status=synonym, nortaxa nomenclaturalStatus=illegitimate, nortaxa taxonomicStatus=synonym, col source=2073 merged=false]"
    ],
+   "accepted_authorship_disagrees",
    "sanctioning_citation--ordinary"
   ],
   [
@@ -12369,6 +12989,7 @@
    [],
    1,
    1,
+   true,
    "sanctioning_citation",
    "Niesslia exilis (Alb. & Schwein.: Fr.) G. Winter",
    "Niesslia exilis (Alb. & Schwein.) G. Winter",
@@ -12387,6 +13008,7 @@
    [
     "ordinary: none of the weak kinds [col col:status=synonym, nortaxa nomenclaturalStatus=illegitimate, nortaxa taxonomicStatus=synonym, col source=2073 merged=false]"
    ],
+   "accepted_authorship_disagrees",
    "sanctioning_citation--ordinary"
   ],
   [
@@ -12400,6 +13022,7 @@
    [],
    1,
    1,
+   true,
    "sanctioning_citation",
    "Mytilinidion mytilinellum (Fr. : Fr.) H. Zogg",
    "Mytilinidion mytilinellum (Fr.) H. Zogg",
@@ -12421,6 +13044,7 @@
     "nortaxa_derived: every COL usage has col:sourceID 2030 (QJ3PN, clb:merged=true) [col col:nameStatus=unacceptable, col col:status=synonym, nortaxa nomenclaturalStatus=illegitimate, nortaxa taxonomicStatus=synonym, col source=2030 merged=true]",
     "ordinary: none of the weak kinds [col col:status=synonym, nortaxa nomenclaturalStatus=illegitimate, nortaxa taxonomicStatus=synonym, col source=2073 merged=false]"
    ],
+   "accepted_authorship_disagrees",
    "sanctioning_citation--ordinary"
   ],
   [
@@ -12434,6 +13058,7 @@
    [],
    1,
    1,
+   true,
    "sanctioning_citation",
    "Mycosphaerella buxicola (DC.: Fr.) Tomilin",
    "Mycosphaerella buxicola (DC.) Tomilin",
@@ -12452,6 +13077,7 @@
    [
     "ordinary: none of the weak kinds [col col:status=synonym, nortaxa nomenclaturalStatus=illegitimate, nortaxa taxonomicStatus=synonym, col source=2073 merged=false]"
    ],
+   "accepted_authorship_disagrees",
    "sanctioning_citation--ordinary"
   ],
   [
@@ -12465,6 +13091,7 @@
    [],
    1,
    1,
+   true,
    "sanctioning_citation",
    "Mycosphaerella punctiformis (Pers.: Fr.) Starbäck",
    "Mycosphaerella punctiformis (Pers.) Starbäck",
@@ -12483,6 +13110,7 @@
    [
     "ordinary: none of the weak kinds [col col:status=synonym, nortaxa nomenclaturalStatus=illegitimate, nortaxa taxonomicStatus=synonym, col source=7888 merged=true]"
    ],
+   "accepted_authorship_disagrees",
    "sanctioning_citation--ordinary"
   ],
   [
@@ -12496,6 +13124,7 @@
    [],
    1,
    1,
+   true,
    "sanctioning_citation",
    "Sphaerulina myriadea (DC.: Fr.) Sacc.",
    "Sphaerulina myriadea (DC.) Sacc.",
@@ -12517,6 +13146,7 @@
     "unauthored: empty authorship [col col:status=synonym, nortaxa taxonomicStatus=synonym, col source=2030 merged=true]",
     "ordinary: none of the weak kinds [col col:status=synonym, nortaxa nomenclaturalStatus=illegitimate, nortaxa taxonomicStatus=synonym, col source=2073 merged=false]"
    ],
+   "accepted_authorship_disagrees",
    "sanctioning_citation--ordinary"
   ],
   [
@@ -12530,6 +13160,7 @@
    [],
    1,
    1,
+   true,
    "sanctioning_citation",
    "Valsaria insitiva (Tode: Fr.) Ces. & De Not.",
    "Valsaria insitiva (Tode) Ces. & De Not.",
@@ -12550,6 +13181,7 @@
     "ordinary: none of the weak kinds [col col:status=synonym, nortaxa taxonomicStatus=synonym, col source=2073 merged=false]",
     "ordinary: none of the weak kinds [col col:status=synonym, nortaxa nomenclaturalStatus=illegitimate, nortaxa taxonomicStatus=synonym, col source=2073 merged=false]"
    ],
+   "accepted_authorship_disagrees",
    "sanctioning_citation--ordinary"
   ],
   [
@@ -12563,6 +13195,7 @@
    [],
    1,
    1,
+   true,
    "sanctioning_citation",
    "Orbilia vinosa (Alb. & Schwein.: Fr.) P. Karst.",
    "Orbilia vinosa (Alb. & Schwein.) P. Karst.",
@@ -12581,6 +13214,7 @@
    [
     "ordinary: none of the weak kinds [col col:status=synonym, nortaxa nomenclaturalStatus=illegitimate, nortaxa taxonomicStatus=synonym, col source=2073 merged=false]"
    ],
+   "accepted_authorship_disagrees",
    "sanctioning_citation--ordinary"
   ],
   [
@@ -12594,6 +13228,7 @@
    [],
    1,
    1,
+   true,
    "sanctioning_citation",
    "Ostropa barbara (Fr. : Fr.) Nannf.",
    "Ostropa barbara (Fr.) Nannf.",
@@ -12615,6 +13250,7 @@
     "ordinary: none of the weak kinds [col col:status=synonym, nortaxa nomenclaturalStatus=illegitimate, nortaxa taxonomicStatus=synonym, col source=2073 merged=false]",
     "nortaxa_derived: every COL usage has col:sourceID 2030 (SXHTF, clb:merged=true) [col col:nameStatus=unacceptable, col col:status=synonym, nortaxa nomenclaturalStatus=illegitimate, nortaxa taxonomicStatus=synonym, col source=2030 merged=true]"
    ],
+   "accepted_authorship_disagrees",
    "sanctioning_citation--ordinary"
   ],
   [
@@ -12628,6 +13264,7 @@
    [],
    1,
    1,
+   true,
    "sanctioning_citation",
    "Phyllachora junci (Alb. & Schwein.: Fr.) Fuckel",
    "Phyllachora junci (Alb. & Schwein.) Fuckel",
@@ -12646,6 +13283,7 @@
    [
     "ordinary: none of the weak kinds [col col:status=synonym, nortaxa nomenclaturalStatus=illegitimate, nortaxa taxonomicStatus=synonym, col source=2073 merged=false]"
    ],
+   "accepted_authorship_disagrees",
    "sanctioning_citation--ordinary"
   ],
   [
@@ -12659,6 +13297,7 @@
    [],
    1,
    1,
+   true,
    "sanctioning_citation",
    "Melanomma pulvis-pyrius (Pers.: Fr.) Fuckel",
    "Melanomma pulvis-pyrius (Pers.) Fuckel",
@@ -12677,6 +13316,7 @@
    [
     "ordinary: none of the weak kinds [col col:status=synonym, nortaxa nomenclaturalStatus=illegitimate, nortaxa taxonomicStatus=synonym, col source=2073 merged=false]"
    ],
+   "accepted_authorship_disagrees",
    "sanctioning_citation--ordinary"
   ],
   [
@@ -12690,6 +13330,7 @@
    [],
    1,
    1,
+   true,
    "sanctioning_citation",
    "Venturia ditricha (Fr. : Fr.) P. Karst.",
    "Venturia ditricha (Fr.) P. Karst.",
@@ -12708,6 +13349,7 @@
    [
     "ordinary: none of the weak kinds [col col:status=synonym, nortaxa nomenclaturalStatus=illegitimate, nortaxa taxonomicStatus=synonym, col source=2073 merged=false]"
    ],
+   "accepted_authorship_disagrees",
    "sanctioning_citation--ordinary"
   ],
   [
@@ -12721,6 +13363,7 @@
    [],
    1,
    1,
+   true,
    "sanctioning_citation",
    "Venturia geranii (Fr. : Fr.) G. Winter",
    "Venturia geranii (Fr.) G. Winter",
@@ -12750,6 +13393,7 @@
     "ordinary: none of the weak kinds [col col:status=synonym, nortaxa nomenclaturalStatus=illegitimate, nortaxa taxonomicStatus=synonym, col source=2073 merged=false]",
     "ordinary: none of the weak kinds [col col:status=synonym, nortaxa nomenclaturalStatus=illegitimate, nortaxa taxonomicStatus=synonym, col source=2073 merged=false]"
    ],
+   "accepted_authorship_disagrees",
    "sanctioning_citation--ordinary"
   ],
   [
@@ -12763,6 +13407,7 @@
    [],
    1,
    1,
+   true,
    "sanctioning_citation",
    "Colpoma ledi (Alb. & Schwein.: Fr.) B. Erikss.",
    "Colpoma ledi (Alb. & Schwein.) B. Erikss.",
@@ -12785,6 +13430,7 @@
     "ordinary: none of the weak kinds [col col:status=synonym, nortaxa nomenclaturalStatus=illegitimate, nortaxa taxonomicStatus=synonym, col source=2073 merged=false]",
     "ordinary: none of the weak kinds [col col:status=synonym, nortaxa nomenclaturalStatus=illegitimate, nortaxa taxonomicStatus=synonym, col source=2073 merged=false]"
    ],
+   "accepted_authorship_disagrees",
    "sanctioning_citation--ordinary"
   ],
   [
@@ -12798,6 +13444,7 @@
    [],
    1,
    1,
+   true,
    "sanctioning_citation",
    "Duplicaria empetri (Pers.: Fr.) Fuckel",
    "Duplicaria empetri (Pers.) Fuckel",
@@ -12818,6 +13465,7 @@
     "ordinary: none of the weak kinds [col col:status=synonym, nortaxa nomenclaturalStatus=illegitimate, nortaxa taxonomicStatus=synonym, col source=2073 merged=false]",
     "ordinary: none of the weak kinds [col col:status=synonym, nortaxa nomenclaturalStatus=illegitimate, nortaxa taxonomicStatus=synonym, col source=2073 merged=false]"
    ],
+   "accepted_authorship_disagrees",
    "sanctioning_citation--ordinary"
   ],
   [
@@ -12831,6 +13479,7 @@
    [],
    1,
    1,
+   true,
    "sanctioning_citation",
    "Hypohelion scirpinum (DC.: Fr.) P.R. Johnst.",
    "Hypohelion scirpinum (DC.) P.R. Johnst.",
@@ -12853,6 +13502,7 @@
     "ordinary: none of the weak kinds [col col:status=synonym, nortaxa nomenclaturalStatus=illegitimate, nortaxa taxonomicStatus=synonym, col source=2073 merged=false]",
     "ordinary: none of the weak kinds [col col:status=synonym, nortaxa nomenclaturalStatus=illegitimate, nortaxa taxonomicStatus=synonym, col source=2073 merged=false]"
    ],
+   "accepted_authorship_disagrees",
    "sanctioning_citation--ordinary"
   ],
   [
@@ -12866,6 +13516,7 @@
    [],
    1,
    1,
+   true,
    "sanctioning_citation",
    "Lophodermium arundinaceum (Schrad.: Fr.) Chevall.",
    "Lophodermium arundinaceum (Schrad.) Chevall.",
@@ -12884,6 +13535,7 @@
    [
     "ordinary: none of the weak kinds [col col:status=synonym, nortaxa nomenclaturalStatus=illegitimate, nortaxa taxonomicStatus=synonym, col source=2073 merged=false]"
    ],
+   "accepted_authorship_disagrees",
    "sanctioning_citation--ordinary"
   ],
   [
@@ -12897,6 +13549,7 @@
    [],
    1,
    1,
+   true,
    "sanctioning_citation",
    "Lophodermium versicolor (Wahlenb.: Fr.) Rehm",
    "Lophodermium versicolor (Wahlenb.) Rehm",
@@ -12918,6 +13571,7 @@
     "ordinary: none of the weak kinds [col col:status=synonym, nortaxa nomenclaturalStatus=illegitimate, nortaxa taxonomicStatus=synonym, col source=2073 merged=false]",
     "name_variant: near-spelling of accepted 'lophodermium versicolor' [col col:status=synonym, nortaxa nomenclaturalStatus=illegitimate, nortaxa taxonomicStatus=synonym, col source=2073 merged=false]"
    ],
+   "accepted_authorship_disagrees",
    "sanctioning_citation--ordinary"
   ],
   [
@@ -12931,6 +13585,7 @@
    [],
    1,
    1,
+   true,
    "sanctioning_citation",
    "Therrya pini (Alb. & Schwein.: Fr.) Höhn.",
    "Therrya pini (Alb. & Schwein.) Höhn.",
@@ -12960,6 +13615,7 @@
     "ordinary: none of the weak kinds [col col:status=synonym, nortaxa nomenclaturalStatus=illegitimate, nortaxa taxonomicStatus=synonym, col source=2073 merged=false]",
     "ordinary: none of the weak kinds [col col:status=synonym, nortaxa nomenclaturalStatus=illegitimate, nortaxa taxonomicStatus=synonym, col source=2073 merged=false]"
    ],
+   "accepted_authorship_disagrees",
    "sanctioning_citation--ordinary"
   ],
   [
@@ -12973,6 +13629,7 @@
    [],
    1,
    1,
+   true,
    "sanctioning_citation",
    "Chaetomium elatum Kunze: Fr.",
    "Chaetomium elatum Kunze",
@@ -12991,6 +13648,7 @@
    [
     "ordinary: none of the weak kinds [col col:status=synonym, nortaxa nomenclaturalStatus=illegitimate, nortaxa taxonomicStatus=synonym, col source=2073 merged=false]"
    ],
+   "accepted_authorship_disagrees",
    "sanctioning_citation--ordinary"
   ],
   [
@@ -13004,6 +13662,7 @@
    [],
    1,
    1,
+   true,
    "sanctioning_citation",
    "Bombardia bombarda (Batsch: Fr.) J. Schröt.",
    "Bombardia bombarda (Batsch) J. Schröt.",
@@ -13022,6 +13681,7 @@
    [
     "ordinary: none of the weak kinds [col col:status=synonym, nortaxa nomenclaturalStatus=illegitimate, nortaxa taxonomicStatus=synonym, col source=2073 merged=false]"
    ],
+   "accepted_authorship_disagrees",
    "sanctioning_citation--ordinary"
   ],
   [
@@ -13035,6 +13695,7 @@
    [],
    1,
    1,
+   true,
    "sanctioning_citation",
    "Clypeosphaeria mamillana (Fr. : Fr.) Lambotte",
    "Clypeosphaeria mamillana (Fr.) Lambotte",
@@ -13053,6 +13714,7 @@
    [
     "ordinary: none of the weak kinds [col col:status=synonym, nortaxa nomenclaturalStatus=illegitimate, nortaxa taxonomicStatus=synonym, col source=2073 merged=false]"
    ],
+   "accepted_authorship_disagrees",
    "sanctioning_citation--ordinary"
   ],
   [
@@ -13066,6 +13728,7 @@
    [],
    1,
    1,
+   true,
    "sanctioning_citation",
    "Eutypella quaternata (Pers.: Fr.) Rappaz",
    "Eutypella quaternata (Pers.) Rappaz",
@@ -13086,6 +13749,7 @@
     "ordinary: none of the weak kinds [col col:status=synonym, nortaxa taxonomicStatus=synonym, col source=2073 merged=false]",
     "ordinary: none of the weak kinds [col col:status=synonym, nortaxa nomenclaturalStatus=illegitimate, nortaxa taxonomicStatus=synonym, col source=2073 merged=false]"
    ],
+   "accepted_authorship_disagrees",
    "sanctioning_citation--ordinary"
   ],
   [
@@ -13099,6 +13763,7 @@
    [],
    1,
    1,
+   true,
    "sanctioning_citation",
    "Exarmidium hemisphaericum (Fr. : Fr.) Aptroot",
    "Exarmidium hemisphaericum (Fr.) Aptroot",
@@ -13117,6 +13782,7 @@
    [
     "ordinary: none of the weak kinds [col col:status=synonym, nortaxa taxonomicStatus=synonym, col source=2073 merged=false]"
    ],
+   "accepted_authorship_disagrees",
    "sanctioning_citation--ordinary"
   ],
   [
@@ -13130,6 +13796,7 @@
    [],
    1,
    1,
+   true,
    "sanctioning_citation",
    "Exarmidium inclusum (Pers.: Fr.) Aptroot",
    "Exarmidium inclusum (Pers.) Aptroot",
@@ -13148,6 +13815,7 @@
    [
     "ordinary: none of the weak kinds [col col:status=synonym, nortaxa taxonomicStatus=synonym, col source=2073 merged=false]"
    ],
+   "accepted_authorship_disagrees",
    "sanctioning_citation--ordinary"
   ],
   [
@@ -13161,6 +13829,7 @@
    [],
    1,
    1,
+   true,
    "sanctioning_citation",
    "Neodasyscypha cerina (Pers.: Fr.) Spooner",
    "Neodasyscypha cerina (Pers.) Spooner",
@@ -13190,6 +13859,7 @@
     "ordinary: none of the weak kinds [col col:status=synonym, nortaxa taxonomicStatus=synonym, col source=2073 merged=false]",
     "ordinary: none of the weak kinds [col col:status=synonym, nortaxa nomenclaturalStatus=illegitimate, nortaxa taxonomicStatus=synonym, col source=2073 merged=false]"
    ],
+   "accepted_authorship_disagrees",
    "sanctioning_citation--ordinary"
   ],
   [
@@ -13203,6 +13873,7 @@
    [],
    1,
    1,
+   true,
    "sanctioning_citation",
    "Orbilia rubella (Pers.: Fr.) P. Karst.",
    "Orbilia rubella (Pers.) P. Karst.",
@@ -13221,6 +13892,7 @@
    [
     "ordinary: none of the weak kinds [col col:status=synonym, nortaxa nomenclaturalStatus=illegitimate, nortaxa taxonomicStatus=synonym, col source=2073 merged=false]"
    ],
+   "accepted_authorship_disagrees",
    "sanctioning_citation--ordinary"
   ],
   [
@@ -13234,6 +13906,7 @@
    [],
    1,
    1,
+   true,
    "sanctioning_citation",
    "Gibbera conferta (Fr. : Fr.) Petr.",
    "Gibbera conferta (Fr.) Petr.",
@@ -13257,11 +13930,12 @@
     "ordinary: none of the weak kinds [col col:status=synonym, nortaxa taxonomicStatus=synonym, col source=2073 merged=false]",
     "unauthored: empty authorship [col col:nameStatus=unacceptable, col col:status=synonym, nortaxa nomenclaturalStatus=illegitimate, nortaxa taxonomicStatus=synonym, col source=2030 merged=true]"
    ],
+   "accepted_authorship_disagrees",
    "sanctioning_citation--ordinary"
   ]
  ],
- "members_sha256": "8e108cb49c59d1ee71fffc14e1fb93690158f72b3227093e3525ae95c820bcc5",
- "membership_rule": "review class 'accepted_authorship_disagrees'; authorship difference 'sanctioning_citation': the accepted authorships are equal after also removing a sanctioning citation (':' and the author after it, before a closing parenthesis or at the end), as in '(Pers. : Fr.) Boud.' against '(Pers.) Boud.'; and, read as if the accepted name keys agreed, review class 'ordinary': both accepted usages are species, the accepted name keys (canonical name plus authorship) agree, at least one shared synonym is of kind 'ordinary', and not low overlap (a single 'ordinary' shared synonym while each source publishes at least 5 synonyms)",
+ "members_sha256": "d3b0275e35178d073daa2c3851a478ecfc9f06902f7d750087772cefcb66018a",
+ "membership_rule": "review class 'accepted_authorship_disagrees'; authorship difference 'sanctioning_citation': the accepted authorships are equal after also removing a sanctioning citation (':' and the author after it, before a closing parenthesis or at the end), as in '(Pers. : Fr.) Boud.' against '(Pers.) Boud.'; and, read as if the accepted name keys agreed, review class 'ordinary': both accepted usages are species, the accepted name keys (canonical name plus authorship) agree, at least one shared synonym is of kind 'ordinary', and not low overlap (a single 'ordinary' shared synonym while each source publishes at least 5 synonyms); and the pair is one-to-one (neither concept shares its name with another concept on the other side)",
  "nortaxa_col_source": {
   "col_source_id": "2030",
   "matched_on": "COL source/<id>.yaml title == NorTaxa eml.xml dataset title",
@@ -13271,7 +13945,7 @@
  "parent_manifest": {
   "evidence_class": "shared_synonymy",
   "member_count": 2032,
-  "members_sha256": "19083142abcfdb037e9372b7271cd9beb2749a01cc64a1490a19b60ddea9acd9"
+  "members_sha256": "85175ef8089819a66a4dadaa25b24354aef519990deee342d41707b2efa68fd2"
  },
  "pins": {
   "bridge_emission_policy": {

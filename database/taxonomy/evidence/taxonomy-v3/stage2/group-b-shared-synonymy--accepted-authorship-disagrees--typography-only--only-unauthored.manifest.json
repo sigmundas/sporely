@@ -27,6 +27,7 @@
   "col_vernacular_languages",
   "col_twins_of_nortaxa_concept",
   "nortaxa_twins_of_col_concept",
+  "one_to_one",
   "accepted_authorship_difference",
   "bridge_accepted_name",
   "backbone_accepted_name",
@@ -39,6 +40,7 @@
   "backbone_synonym_count",
   "shared_synonym_kind_counts",
   "shared_synonym_evidence",
+  "review_class",
   "authorship_sub_class"
  ],
  "evidence_class": "shared_synonymy",
@@ -58,6 +60,7 @@
    [],
    1,
    1,
+   true,
    "typography_only",
    "Bacidina phacodes (Körb.) Vezda",
    "Bacidina phacodes (Körb.) Vězda",
@@ -76,6 +79,7 @@
    [
     "unauthored: empty authorship [col col:nameStatus=unacceptable, col col:status=synonym, nortaxa nomenclaturalStatus=illegitimate, nortaxa taxonomicStatus=synonym, col source=2030 merged=true]"
    ],
+   "accepted_authorship_disagrees",
    "typography_only--only_unauthored"
   ],
   [
@@ -89,6 +93,7 @@
    [],
    1,
    1,
+   true,
    "typography_only",
    "Sclerococcum deminutum (Th.Fr.) Ertz & Diederich",
    "Sclerococcum deminutum (Th. Fr.) Ertz & Diederich",
@@ -107,6 +112,7 @@
    [
     "unauthored: empty authorship [col col:nameStatus=unacceptable, col col:status=synonym, nortaxa nomenclaturalStatus=illegitimate, nortaxa taxonomicStatus=synonym, col source=2030 merged=true]"
    ],
+   "accepted_authorship_disagrees",
    "typography_only--only_unauthored"
   ],
   [
@@ -120,6 +126,7 @@
    [],
    1,
    1,
+   true,
    "typography_only",
    "Catillaria epigaeella (Nyl.) Th. Fr.",
    "Catillaria epigaeella (Nyl.) Th.Fr.",
@@ -138,6 +145,7 @@
    [
     "unauthored: empty authorship [col col:nameStatus=unacceptable, col col:status=synonym, nortaxa nomenclaturalStatus=illegitimate, nortaxa taxonomicStatus=synonym, col source=2030 merged=true]"
    ],
+   "accepted_authorship_disagrees",
    "typography_only--only_unauthored"
   ],
   [
@@ -151,6 +159,7 @@
    [],
    1,
    1,
+   true,
    "typography_only",
    "Tapellaria epiphylla (Müll.Arg.) R. Sant.",
    "Tapellaria epiphylla (Müll.Arg.) R.Sant.",
@@ -169,11 +178,12 @@
    [
     "unauthored: empty authorship [col col:nameStatus=unacceptable, col col:status=synonym, nortaxa nomenclaturalStatus=illegitimate, nortaxa taxonomicStatus=synonym, col source=2030 merged=true]"
    ],
+   "accepted_authorship_disagrees",
    "typography_only--only_unauthored"
   ]
  ],
- "members_sha256": "fcf24e494212cc0f2aeee5665986cf4755b0b596c676418649ff614343b63bea",
- "membership_rule": "review class 'accepted_authorship_disagrees'; authorship difference 'typography_only': the accepted authorships are equal after removing whitespace, diacritics and letter case; and, read as if the accepted name keys agreed, review class 'only_unauthored': every shared synonym is of kind 'unauthored'",
+ "members_sha256": "2762639a3e8f79cb8c9c67771024e729db6b8b52d5bc936751f24f042a82d476",
+ "membership_rule": "review class 'accepted_authorship_disagrees'; authorship difference 'typography_only': the accepted authorships are equal after removing whitespace, diacritics and letter case; and, read as if the accepted name keys agreed, review class 'only_unauthored': every shared synonym is of kind 'unauthored'; and the pair is one-to-one (neither concept shares its name with another concept on the other side)",
  "nortaxa_col_source": {
   "col_source_id": "2030",
   "matched_on": "COL source/<id>.yaml title == NorTaxa eml.xml dataset title",
@@ -183,7 +193,7 @@
  "parent_manifest": {
   "evidence_class": "shared_synonymy",
   "member_count": 2032,
-  "members_sha256": "19083142abcfdb037e9372b7271cd9beb2749a01cc64a1490a19b60ddea9acd9"
+  "members_sha256": "85175ef8089819a66a4dadaa25b24354aef519990deee342d41707b2efa68fd2"
  },
  "pins": {
   "bridge_emission_policy": {
