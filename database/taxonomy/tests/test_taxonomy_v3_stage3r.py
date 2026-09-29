@@ -61,6 +61,28 @@ def test_a_superseded_overlay_entry_is_rekeyed_with_its_provenance():
                      "reviewed_publishing_overlay:accepted_after_review:split" + PROVENANCE)]
 
 
+def test_a_rekeyed_entry_whose_id_the_survivor_already_carries_keeps_its_provenance():
+    """No second row is added, but the existing row records the supersession."""
+    entries, _ = pid.rekey_artportalen_overlay([OVERLAY_ENTRY], SUPERSEDED)
+    rows = [(78915, "artportalen", 236537, "accepted", 1, "Amanita muscaria s.str.", "legacy_compat:artportalen"),
+            (78916, "artportalen", 9, "accepted", 1, None, None)]
+    assert pid.apply_artportalen_overlay(_conn([(78915, "Amanita muscaria", None)]), entries, rows) == 0
+    assert rows == [(78915, "artportalen", 236537, "accepted", 1, "Amanita muscaria s.str.",
+                     "legacy_compat:artportalen" + PROVENANCE),
+                    (78916, "artportalen", 9, "accepted", 1, None, None)]
+    # A row without a note gains the provenance alone.
+    rows = [(78915, "artportalen", 236537, "accepted", 1, None, None)]
+    pid.apply_artportalen_overlay(_conn([(78915, "Amanita muscaria", None)]), entries, rows)
+    assert rows[0][6] == PROVENANCE.lstrip(";")
+
+
+def test_an_unmoved_entry_the_release_already_carries_is_left_as_is():
+    rows = [(2, "artportalen", 236537, "accepted", 1, None, "legacy_compat:artportalen")]
+    entry = {**OVERLAY_ENTRY, "sporely_taxon_id": 2}
+    assert pid.apply_artportalen_overlay(_conn([(2, "Amanita muscaria", None)]), [entry], rows) == 0
+    assert rows == [(2, "artportalen", 236537, "accepted", 1, None, "legacy_compat:artportalen")]
+
+
 def test_a_superseded_refresh_entry_is_rekeyed_with_its_provenance():
     refresh = _refresh([(5, "Boletus pinetorum", None, None),
                         (624588, "Amanita muscaria", 48715, "Amanita muscaria")])
@@ -157,6 +179,35 @@ def test_provenance_survives_into_the_build_output(tmp_path):
         (host_id, "inaturalist", 999001, "inaturalist_refresh:2099-01-01" + provenance)]
     assert _taxon(db, host_id)["inaturalist_taxon_id"] == 999001
     assert conn.execute("SELECT COUNT(*) FROM taxon_min WHERE taxon_id = ?", (own_id,)).fetchone() == (0,)
+
+
+def test_provenance_survives_when_the_survivor_already_carries_the_id(tmp_path):
+    """Through the builder: the compiled release already gives the survivor the
+    overlay's Artportalen id, so no row is added, but the supersession is still
+    recorded on that row and in the report."""
+    release, own_id, host_id = _superseded_release(tmp_path)
+    plain = tmp_path / "plain.sqlite3"
+    build_candidate(release_dir=release, registry_path=tmp_path / "registry.jsonl", output_db=plain)
+    host_name = _taxon(plain, host_id)["canonical_scientific_name"]
+    overlay, _ = _pinned_inputs(tmp_path, own_id, host_name)
+    legacy = release / "legacy_external_ids.jsonl"
+    with legacy.open("a", encoding="utf-8") as handle:
+        handle.write(json.dumps({"sporely_taxon_id": host_id, "source_system": "artportalen",
+                                 "external_id": "236537", "provider": "artportalen"}) + "\n")
+
+    db = tmp_path / "rekeyed.sqlite3"
+    summary = build_candidate(release_dir=release, registry_path=tmp_path / "registry.jsonl",
+                              output_db=db, publishing_overlay_path=overlay,
+                              concept_supersessions_path=tmp_path / "supersessions.yml")
+    assert summary["publishing_ids"]["artportalen_overlay_rows_added"] == 0
+    assert summary["publishing_ids"]["superseded_rekeys"]["artportalen_overlay"] == [
+        {"superseded_from_sporely_taxon_id": own_id, "sporely_taxon_id": host_id,
+         "supersession_id": "supersede-52369", "scientific_name": host_name}]
+    rows = sqlite3.connect(db).execute(
+        "SELECT taxon_id, external_id, note FROM taxon_external_id_min "
+        "WHERE source_system = 'artportalen'").fetchall()
+    assert rows == [(host_id, 236537,
+                     f"legacy_compat:artportalen;superseded_from:{own_id};supersession:supersede-52369")]
 
 
 def _manifest(ledger: Path, pairs) -> dict:

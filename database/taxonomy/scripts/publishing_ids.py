@@ -228,7 +228,17 @@ def apply_artportalen_overlay(conn, entries: list[dict], rows: list[IntRow]) -> 
                                     f"{sorted(others)}, not only {concept}")
         if concept in concept_ids:
             if concept in holders.get(target_id, set()):
-                continue  # the release already carries exactly this id
+                # The release already carries exactly this id. A re-keyed
+                # entry still records that a supersession brought it here:
+                # the existing row keeps its own note and gains the provenance.
+                retired = entry.get("superseded_from_sporely_taxon_id")
+                if retired is not None:
+                    for index, row in enumerate(rows):
+                        if (row[1] == "artportalen" and int(row[0]) == concept
+                                and int(row[2]) == target_id):
+                            rows[index] = (*row[:6], _rekey_note(row[6] or "", retired,
+                                                                 entry.get("supersession_id")).lstrip(";"))
+                continue
             raise PublishingIdError(f"Artportalen overlay: concept {concept} already has another "
                                     f"Artportalen id in this release")
         rows.append((concept, "artportalen", target_id, "publishing", 1,
