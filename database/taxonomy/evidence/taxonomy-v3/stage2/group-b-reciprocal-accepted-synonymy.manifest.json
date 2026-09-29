@@ -1,0 +1,62 @@
+{
+ "approval_mode": "batch_by_file_sha256",
+ "cloud_scope_member_count": 0,
+ "cloud_scope_with_nortaxa_vernaculars_count": 0,
+ "columns": [
+  "nortaxa_taxon_id",
+  "nortaxa_sporely_taxon_id",
+  "col_usage_id",
+  "col_sporely_taxon_id",
+  "canonical_scientific_name",
+  "col_in_cloud_scope",
+  "nortaxa_vernacular_languages",
+  "col_vernacular_languages",
+  "col_twins_of_nortaxa_concept",
+  "nortaxa_twins_of_col_concept",
+  "accepted_authorship_difference",
+  "bridge_accepted_name",
+  "backbone_accepted_name",
+  "accepted_names_agree",
+  "bridge_lists_backbone_accepted_name_as_synonym",
+  "backbone_lists_bridge_accepted_name_as_synonym",
+  "shared_synonym_count",
+  "shared_synonyms",
+  "bridge_synonym_count",
+  "backbone_synonym_count"
+ ],
+ "evidence_class": "reciprocal_accepted_synonymy",
+ "format": "sporely-taxonomy-v3-group-b-manifest-v1",
+ "member_count": 0,
+ "members": [],
+ "members_sha256": "358ef12add8754f823a1de118aa66ee85e43bb9f9871254e90951507173be3de",
+ "note": "Immutable review input. It approves nothing: a Group-B pair becomes a supersession or mapping only through an owner decision recorded in the plan that names this file's file_sha256 (batch) or the pair (individual). Membership is pinned to the release and source archives below and never extends to taxa in a later source release. Members are in cloud-impact order (COL side in the cloud scope, then NorTaxa side with vernaculars, then identifier). shared_synonyms and shared_synonym_evidence list at most 10 names; the counts are exact.",
+ "pins": {
+  "bridge_emission_policy": {
+   "path": "database/taxonomy/policies/mapping_policy.yml",
+   "sha256": "a5a329848c45fcd030165a51ad1193944dffe7573ddb2a9c69441f0d76ae4afb"
+  },
+  "cloud_scope_policy": {
+   "path": "database/taxonomy/policies/global-macrofungi-scope.yml",
+   "scope_predicate_id": "global_macrofungi_policy_v1",
+   "sha256": "e4e796286df93b5372264c702c824eea746f680b3b4e8d6467621c99e5b64ea6"
+  },
+  "release": {
+   "content_release_id": "tax-2026.09.26-02",
+   "gz_artifact": "database/reference_data/generated/taxonomy_v2/tax-2026.09.26-02.sqlite3.gz",
+   "gz_sha256": "4488bb64f4abe18ed269c76264f9be36708d742ff531e931e8d7458791e05d72",
+   "sqlite_sha256": "9bf71b7e1f9b2915c3b1798743cefdd5db53bdbbfb7edc462aa3d0ad0cf8547d"
+  },
+  "source_archives": {
+   "col_xr": {
+    "sha256": "397d701c8eb269bf78d6ac7b03149915b0d9e2a2c18694be2c91445b807814f9",
+    "source_release_id": "col_xr:2026-07-17-XR:2026-07-17"
+   },
+   "nortaxa": {
+    "sha256": "29c11c54d955dc44e4e5a38944dd7932989a256d1b173777579b9f33abd2fe22",
+    "source_release_id": "nortaxa:1.284:2026-07-17"
+   }
+  }
+ },
+ "population": "group_b_name_equal_duplicate_candidates",
+ "review_status": "needs_review"
+}

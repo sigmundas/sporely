@@ -1,0 +1,1192 @@
+{
+ "approval_mode": "batch_by_file_sha256",
+ "authorship_difference_precedence": [
+  "same",
+  "accepted_name_differs",
+  "typography_only",
+  "sanctioning_citation",
+  "different_authorship"
+ ],
+ "authorship_differences": {
+  "accepted_name_differs": "the accepted canonical names differ",
+  "different_authorship": "none of the above: the accepted authorships name different authors or differ in a way no rule above reads (for example an abbreviation)",
+  "same": "the accepted name keys agree",
+  "sanctioning_citation": "the accepted authorships are equal after also removing a sanctioning citation (':' and the author after it, before a closing parenthesis or at the end), as in '(Pers. : Fr.) Boud.' against '(Pers.) Boud.'",
+  "typography_only": "the accepted authorships are equal after removing whitespace, diacritics and letter case"
+ },
+ "cloud_scope_member_count": 3,
+ "cloud_scope_with_nortaxa_vernaculars_count": 3,
+ "columns": [
+  "nortaxa_taxon_id",
+  "nortaxa_sporely_taxon_id",
+  "col_usage_id",
+  "col_sporely_taxon_id",
+  "canonical_scientific_name",
+  "col_in_cloud_scope",
+  "nortaxa_vernacular_languages",
+  "col_vernacular_languages",
+  "col_twins_of_nortaxa_concept",
+  "nortaxa_twins_of_col_concept",
+  "accepted_authorship_difference",
+  "bridge_accepted_name",
+  "backbone_accepted_name",
+  "accepted_names_agree",
+  "bridge_lists_backbone_accepted_name_as_synonym",
+  "backbone_lists_bridge_accepted_name_as_synonym",
+  "shared_synonym_count",
+  "shared_synonyms",
+  "bridge_synonym_count",
+  "backbone_synonym_count",
+  "shared_synonym_kind_counts",
+  "shared_synonym_evidence",
+  "authorship_sub_class"
+ ],
+ "evidence_class": "shared_synonymy",
+ "format": "sporely-taxonomy-v3-group-b-review-manifest-v1",
+ "member_count": 31,
+ "members": [
+  [
+   "52798",
+   624906,
+   "YLDM",
+   618837,
+   "Cortinarius lucorum",
+   true,
+   [
+    "da",
+    "fi",
+    "nb",
+    "nn",
+    "sv"
+   ],
+   [],
+   1,
+   1,
+   "different_authorship",
+   "Cortinarius lucorum (Fr.) J. E. Lange",
+   "Cortinarius lucorum (Fr.) E. Berger",
+   false,
+   false,
+   false,
+   1,
+   [
+    "telamonia lucora"
+   ],
+   2,
+   10,
+   {
+    "unauthored": 1
+   },
+   [
+    "unauthored: empty authorship [col col:nameStatus=unacceptable, col col:status=synonym, nortaxa nomenclaturalStatus=illegitimate, nortaxa taxonomicStatus=synonym, col source=2030 merged=true]"
+   ],
+   "different_authorship--only_unauthored"
+  ],
+  [
+   "52909",
+   624969,
+   "YM7B",
+   619334,
+   "Cortinarius pusillus",
+   true,
+   [
+    "nb",
+    "nn"
+   ],
+   [],
+   1,
+   1,
+   "different_authorship",
+   "Cortinarius pusillus F.H. Møller",
+   "Cortinarius pusillus Murrill",
+   false,
+   false,
+   false,
+   1,
+   [
+    "telamonia pusilla"
+   ],
+   1,
+   1,
+   {
+    "unauthored": 1
+   },
+   [
+    "unauthored: empty authorship [col col:nameStatus=unacceptable, col col:status=synonym, nortaxa nomenclaturalStatus=illegitimate, nortaxa taxonomicStatus=synonym, col source=2030 merged=true]"
+   ],
+   "different_authorship--only_unauthored"
+  ],
+  [
+   "55782",
+   626083,
+   "J9ZG",
+   156864,
+   "Athelopsis galzinii",
+   true,
+   [
+    "nb",
+    "nn"
+   ],
+   [],
+   1,
+   1,
+   "different_authorship",
+   "Athelopsis galzinii (Bres.) Hjotstam",
+   "Athelopsis galzinii (Bres.) Hjortstam",
+   false,
+   false,
+   false,
+   1,
+   [
+    "atheliopsis galzinii"
+   ],
+   3,
+   5,
+   {
+    "unauthored": 1
+   },
+   [
+    "unauthored: empty authorship [col col:nameStatus=unacceptable, col col:status=synonym, nortaxa nomenclaturalStatus=illegitimate, nortaxa taxonomicStatus=synonym, col source=2030 merged=true]"
+   ],
+   "different_authorship--only_unauthored"
+  ],
+  [
+   "65136",
+   627184,
+   "934Z",
+   131339,
+   "Acarospora cervina",
+   false,
+   [
+    "sv"
+   ],
+   [],
+   1,
+   1,
+   "different_authorship",
+   "Acarospora cervina Massal.",
+   "Acarospora cervina A. Massal.",
+   false,
+   false,
+   false,
+   1,
+   [
+    "lecidea cervina"
+   ],
+   4,
+   14,
+   {
+    "unauthored": 1
+   },
+   [
+    "unauthored: empty authorship [col col:nameStatus=unacceptable, col col:status=synonym, nortaxa nomenclaturalStatus=illegitimate, nortaxa taxonomicStatus=synonym, col source=2030 merged=true]"
+   ],
+   "different_authorship--only_unauthored"
+  ],
+  [
+   "65263",
+   627228,
+   "937N",
+   131377,
+   "Acarospora sinopica",
+   false,
+   [
+    "en",
+    "fi",
+    "nb",
+    "sv"
+   ],
+   [],
+   1,
+   1,
+   "different_authorship",
+   "Acarospora sinopica (Wahlenb.) Körber",
+   "Acarospora sinopica (Wahlenb.) Körb.",
+   false,
+   false,
+   false,
+   1,
+   [
+    "urceolaria sinopica"
+   ],
+   4,
+   23,
+   {
+    "unauthored": 1
+   },
+   [
+    "unauthored: empty authorship [col col:nameStatus=unacceptable, col col:status=synonym, nortaxa nomenclaturalStatus=illegitimate, nortaxa taxonomicStatus=synonym, col source=2030 merged=true]"
+   ],
+   "different_authorship--only_unauthored"
+  ],
+  [
+   "65451",
+   627320,
+   "7FYNN",
+   128814,
+   "Xylographa vitiligo",
+   false,
+   [
+    "fi",
+    "fr",
+    "nb",
+    "sv"
+   ],
+   [],
+   1,
+   1,
+   "different_authorship",
+   "Xylographa vitiligo (Ach.) Laundon",
+   "Xylographa vitiligo (Ach.) J.R. Laundon",
+   false,
+   false,
+   false,
+   1,
+   [
+    "xylographa corruscans"
+   ],
+   2,
+   9,
+   {
+    "unauthored": 1
+   },
+   [
+    "unauthored: empty authorship [col col:status=synonym, nortaxa taxonomicStatus=synonym, col source=2030 merged=true]"
+   ],
+   "different_authorship--only_unauthored"
+  ],
+  [
+   "66367",
+   627648,
+   "8YSY",
+   131219,
+   "Acanthonitschkea tristis",
+   false,
+   [
+    "fi",
+    "nb",
+    "sv"
+   ],
+   [],
+   1,
+   1,
+   "different_authorship",
+   "Acanthonitschkea tristis (Pers.: Fr.) Nannf.",
+   "Acanthonitschkea tristis (J. Kickx f.) Nannf.",
+   false,
+   false,
+   false,
+   1,
+   [
+    "sydowinula tristis"
+   ],
+   4,
+   12,
+   {
+    "unauthored": 1
+   },
+   [
+    "unauthored: empty authorship [col col:nameStatus=unacceptable, col col:status=synonym, nortaxa nomenclaturalStatus=illegitimate, nortaxa taxonomicStatus=synonym, col source=2030 merged=true]"
+   ],
+   "different_authorship--only_unauthored"
+  ],
+  [
+   "67808",
+   628360,
+   "3RPKR",
+   21417,
+   "Lachnellula calyciformis",
+   false,
+   [
+    "fi",
+    "nb"
+   ],
+   [],
+   1,
+   1,
+   "different_authorship",
+   "Lachnellula calyciformis (Batsch.) Dharne",
+   "Lachnellula calyciformis (Batsch) Dharne",
+   false,
+   false,
+   false,
+   1,
+   [
+    "trichoscyphella calyciformis"
+   ],
+   3,
+   7,
+   {
+    "unauthored": 1
+   },
+   [
+    "unauthored: empty authorship [col col:nameStatus=unacceptable, col col:status=synonym, nortaxa nomenclaturalStatus=illegitimate, nortaxa taxonomicStatus=synonym, col source=2030 merged=true]"
+   ],
+   "different_authorship--only_unauthored"
+  ],
+  [
+   "67818",
+   628364,
+   "3RPM8",
+   21449,
+   "Lachnellula willkommii",
+   false,
+   [
+    "en",
+    "fi",
+    "nb",
+    "nn",
+    "sv"
+   ],
+   [],
+   1,
+   1,
+   "different_authorship",
+   "Lachnellula willkommii (Hartig) Dennis",
+   "Lachnellula willkommii (R. Hartig) Dennis",
+   false,
+   false,
+   false,
+   1,
+   [
+    "dasyscypha willkommii"
+   ],
+   4,
+   12,
+   {
+    "unauthored": 1
+   },
+   [
+    "unauthored: empty authorship [col col:nameStatus=unacceptable, col col:status=synonym, nortaxa nomenclaturalStatus=illegitimate, nortaxa taxonomicStatus=synonym, col source=2030 merged=true]"
+   ],
+   "different_authorship--only_unauthored"
+  ],
+  [
+   "69094",
+   628870,
+   "MKDHT",
+   161375,
+   "Cladonia decorticata",
+   false,
+   [
+    "en",
+    "fi",
+    "fr",
+    "nb",
+    "sv"
+   ],
+   [],
+   1,
+   1,
+   "different_authorship",
+   "Cladonia decorticata (Flörke) Sprengel",
+   "Cladonia decorticata (Flörke) Spreng.",
+   false,
+   false,
+   false,
+   1,
+   [
+    "cenomyce decorticata"
+   ],
+   1,
+   2,
+   {
+    "unauthored": 1
+   },
+   [
+    "unauthored: empty authorship [col col:nameStatus=unacceptable, col col:status=synonym, nortaxa nomenclaturalStatus=illegitimate, nortaxa taxonomicStatus=synonym, col source=2030 merged=true]"
+   ],
+   "different_authorship--only_unauthored"
+  ],
+  [
+   "69238",
+   628913,
+   "VPKG",
+   613473,
+   "Cladonia polydactyla",
+   false,
+   [
+    "da",
+    "fi",
+    "nb",
+    "pl",
+    "sv"
+   ],
+   [],
+   1,
+   1,
+   "different_authorship",
+   "Cladonia polydactyla (Flörke) Sprengel",
+   "Cladonia polydactyla (Flörke) Spreng.",
+   false,
+   false,
+   false,
+   1,
+   [
+    "cladonia polydactyla f. perforata"
+   ],
+   3,
+   9,
+   {
+    "unauthored": 1
+   },
+   [
+    "unauthored: empty authorship [col col:nameStatus=unacceptable, col col:status=synonym, nortaxa nomenclaturalStatus=illegitimate, nortaxa taxonomicStatus=synonym, col source=2030 merged=true]"
+   ],
+   "different_authorship--only_unauthored"
+  ],
+  [
+   "69343",
+   628941,
+   "VPN2",
+   613617,
+   "Cladonia turgida",
+   false,
+   [
+    "en",
+    "fi",
+    "fr",
+    "nb",
+    "pl",
+    "sv"
+   ],
+   [],
+   1,
+   1,
+   "different_authorship",
+   "Cladonia turgida Hoffm.",
+   "Cladonia turgida Ehrh. ex Hoffm.",
+   false,
+   false,
+   false,
+   2,
+   [
+    "cladonia furcata f. turgida",
+    "cladonia turgida f. corniculata"
+   ],
+   4,
+   9,
+   {
+    "unauthored": 2
+   },
+   [
+    "unauthored: empty authorship [col col:nameStatus=unacceptable, col col:status=synonym, nortaxa nomenclaturalStatus=illegitimate, nortaxa taxonomicStatus=synonym, col source=2030 merged=true]",
+    "unauthored: empty authorship [col col:nameStatus=unacceptable, col col:status=synonym, nortaxa nomenclaturalStatus=illegitimate, nortaxa taxonomicStatus=synonym, col source=2030 merged=true]"
+   ],
+   "different_authorship--only_unauthored"
+  ],
+  [
+   "70443",
+   629366,
+   "4QMVG",
+   57759,
+   "Pycnora sorophora",
+   false,
+   [
+    "fi",
+    "nb",
+    "sv"
+   ],
+   [],
+   1,
+   1,
+   "different_authorship",
+   "Pycnora sorophora (Vainio) Hafellner",
+   "Pycnora sorophora (Vain.) Hafellner",
+   false,
+   false,
+   false,
+   1,
+   [
+    "lecidea sorophora"
+   ],
+   3,
+   4,
+   {
+    "unauthored": 1
+   },
+   [
+    "unauthored: empty authorship [col col:nameStatus=unacceptable, col col:status=synonym, nortaxa nomenclaturalStatus=illegitimate, nortaxa taxonomicStatus=synonym, col source=2030 merged=true]"
+   ],
+   "different_authorship--only_unauthored"
+  ],
+  [
+   "74029",
+   630856,
+   "6X8QX",
+   112124,
+   "Rinodina sophodes",
+   false,
+   [
+    "sv"
+   ],
+   [],
+   1,
+   1,
+   "different_authorship",
+   "Rinodina sophodes (Ach.) Massal.",
+   "Rinodina sophodes (Ach.) A. Massal.",
+   false,
+   false,
+   false,
+   1,
+   [
+    "rinodina sophodes f. paupera"
+   ],
+   1,
+   11,
+   {
+    "unauthored": 1
+   },
+   [
+    "unauthored: empty authorship [col col:nameStatus=unacceptable, col col:status=synonym, nortaxa nomenclaturalStatus=illegitimate, nortaxa taxonomicStatus=synonym, col source=2030 merged=true]"
+   ],
+   "different_authorship--only_unauthored"
+  ],
+  [
+   "75223",
+   631324,
+   "4SC5D",
+   60143,
+   "Rhizocarpon jemtlandicum",
+   false,
+   [
+    "fi",
+    "nb"
+   ],
+   [],
+   1,
+   1,
+   "different_authorship",
+   "Rhizocarpon jemtlandicum (Malme) Malme",
+   "Rhizocarpon jemtlandicum Malme",
+   false,
+   false,
+   false,
+   1,
+   [
+    "rhizocarpon badioatrum var. jemtlandicum"
+   ],
+   3,
+   2,
+   {
+    "unauthored": 1
+   },
+   [
+    "unauthored: empty authorship [col col:nameStatus=unacceptable, col col:status=synonym, nortaxa nomenclaturalStatus=illegitimate, nortaxa taxonomicStatus=synonym, col source=2030 merged=true]"
+   ],
+   "different_authorship--only_unauthored"
+  ],
+  [
+   "75564",
+   631437,
+   "6PY2Y",
+   105538,
+   "Lichina confinis",
+   false,
+   [
+    "fi",
+    "fr",
+    "nb",
+    "sv"
+   ],
+   [],
+   1,
+   1,
+   "different_authorship",
+   "Lichina confinis (O.F. Müll.) Agardh",
+   "Lichina confinis (O.F. Müll.) C. Agardh",
+   false,
+   false,
+   false,
+   1,
+   [
+    "lichina transfuga"
+   ],
+   2,
+   10,
+   {
+    "unauthored": 1
+   },
+   [
+    "unauthored: empty authorship [col col:nameStatus=unacceptable, col col:status=synonym, nortaxa nomenclaturalStatus=illegitimate, nortaxa taxonomicStatus=synonym, col source=2030 merged=true]"
+   ],
+   "different_authorship--only_unauthored"
+  ],
+  [
+   "77977",
+   632523,
+   "X2Z6",
+   615480,
+   "Collema furfuraceum",
+   false,
+   [
+    "da",
+    "en",
+    "fi",
+    "fr",
+    "nb",
+    "sv"
+   ],
+   [],
+   1,
+   1,
+   "different_authorship",
+   "Collema furfuraceum (Arnold) Du Rietz",
+   "Collema furfuraceum (Schaer.) Du Rietz",
+   false,
+   false,
+   false,
+   1,
+   [
+    "synechoblastus vespertilio var. furfuraceum"
+   ],
+   2,
+   7,
+   {
+    "unauthored": 1
+   },
+   [
+    "unauthored: empty authorship [col col:nameStatus=unacceptable, col col:status=synonym, nortaxa nomenclaturalStatus=illegitimate, nortaxa taxonomicStatus=synonym, col source=2030 merged=true]"
+   ],
+   "different_authorship--only_unauthored"
+  ],
+  [
+   "78137",
+   632582,
+   "3TPP3",
+   24517,
+   "Leptogium saturninum",
+   false,
+   [
+    "en",
+    "fi",
+    "fr",
+    "nb",
+    "sv"
+   ],
+   [],
+   1,
+   1,
+   "different_authorship",
+   "Leptogium saturninum (Dickson) Nyl.",
+   "Leptogium saturninum (Dicks.) Nyl.",
+   false,
+   false,
+   false,
+   1,
+   [
+    "mallotium myochroum"
+   ],
+   5,
+   16,
+   {
+    "unauthored": 1
+   },
+   [
+    "unauthored: empty authorship [col col:nameStatus=unacceptable, col col:status=synonym, nortaxa nomenclaturalStatus=illegitimate, nortaxa taxonomicStatus=synonym, col source=2030 merged=true]"
+   ],
+   "different_authorship--only_unauthored"
+  ],
+  [
+   "78374",
+   632680,
+   "52JJD",
+   68537,
+   "Sticta fuliginosa",
+   false,
+   [
+    "de",
+    "en",
+    "es",
+    "nb",
+    "sv"
+   ],
+   [],
+   1,
+   1,
+   "different_authorship",
+   "Sticta fuliginosa (Hoffm.) Ach.",
+   "Sticta fuliginosa (With.) Ach.",
+   false,
+   false,
+   false,
+   2,
+   [
+    "sticta fuliginosa f. propagulifera",
+    "stictina fuliginosa f. propagulifera"
+   ],
+   5,
+   15,
+   {
+    "unauthored": 2
+   },
+   [
+    "unauthored: empty authorship [col col:nameStatus=unacceptable, col col:status=synonym, nortaxa nomenclaturalStatus=illegitimate, nortaxa taxonomicStatus=synonym, col source=2030 merged=true]",
+    "unauthored: empty authorship [col col:nameStatus=unacceptable, col col:status=synonym, nortaxa nomenclaturalStatus=illegitimate, nortaxa taxonomicStatus=synonym, col source=2030 merged=true]"
+   ],
+   "different_authorship--only_unauthored"
+  ],
+  [
+   "173417",
+   623178,
+   "39NVY",
+   6970,
+   "Enchylium expansum",
+   false,
+   [],
+   [],
+   1,
+   1,
+   "different_authorship",
+   "Enchylium expansum (Degel) P.M. Jørg.",
+   "Enchylium expansum (Degel.) P.M. Jørg.",
+   false,
+   false,
+   false,
+   1,
+   [
+    "collema expansum"
+   ],
+   1,
+   2,
+   {
+    "unauthored": 1
+   },
+   [
+    "unauthored: empty authorship [col col:status=synonym, nortaxa taxonomicStatus=synonym, col source=2030 merged=true]"
+   ],
+   "different_authorship--only_unauthored"
+  ],
+  [
+   "67398",
+   628162,
+   "4FG2Q",
+   42714,
+   "Pezicula alni",
+   false,
+   [],
+   [],
+   1,
+   1,
+   "different_authorship",
+   "Pezicula alni (Rehm) Rehm",
+   "Pezicula alni (Fuckel) Rehm",
+   false,
+   false,
+   false,
+   1,
+   [
+    "dermea alni"
+   ],
+   2,
+   8,
+   {
+    "unauthored": 1
+   },
+   [
+    "unauthored: empty authorship [col col:nameStatus=unacceptable, col col:status=synonym, nortaxa nomenclaturalStatus=illegitimate, nortaxa taxonomicStatus=synonym, col source=2030 merged=true]"
+   ],
+   "different_authorship--only_unauthored"
+  ],
+  [
+   "67402",
+   628165,
+   "4FG45",
+   42745,
+   "Pezicula frangulae",
+   false,
+   [],
+   [],
+   1,
+   1,
+   "different_authorship",
+   "Pezicula frangulae (Fr.) Fuckel",
+   "Pezicula frangulae (Pers.) Fuckel",
+   false,
+   false,
+   false,
+   1,
+   [
+    "dermea frangulae"
+   ],
+   5,
+   9,
+   {
+    "unauthored": 1
+   },
+   [
+    "unauthored: empty authorship [col col:nameStatus=unacceptable, col col:status=synonym, nortaxa nomenclaturalStatus=illegitimate, nortaxa taxonomicStatus=synonym, col source=2030 merged=true]"
+   ],
+   "different_authorship--only_unauthored"
+  ],
+  [
+   "67566",
+   628244,
+   "39P4Z",
+   7015,
+   "Encoeliopsis rhododendri",
+   false,
+   [],
+   [],
+   1,
+   1,
+   "different_authorship",
+   "Encoeliopsis rhododendri (Ces. ex Rabenh.) Nannf.",
+   "Encoeliopsis rhododendri (Ces.) Nannf.",
+   false,
+   false,
+   false,
+   1,
+   [
+    "cenangium rhododendri"
+   ],
+   2,
+   6,
+   {
+    "unauthored": 1
+   },
+   [
+    "unauthored: empty authorship [col col:nameStatus=unacceptable, col col:status=synonym, nortaxa nomenclaturalStatus=illegitimate, nortaxa taxonomicStatus=synonym, col source=2030 merged=true]"
+   ],
+   "different_authorship--only_unauthored"
+  ],
+  [
+   "69811",
+   629161,
+   "PRGJS",
+   165950,
+   "Lecanora aspidophora",
+   false,
+   [],
+   [],
+   1,
+   1,
+   "different_authorship",
+   "Lecanora aspidophora Vainio",
+   "Lecanora aspidophora Vain, 1903",
+   false,
+   false,
+   false,
+   1,
+   [
+    "rhizoplaca aspidophora"
+   ],
+   1,
+   1,
+   {
+    "unauthored": 1
+   },
+   [
+    "unauthored: empty authorship [col col:nameStatus=unacceptable, col col:status=synonym, nortaxa nomenclaturalStatus=illegitimate, nortaxa taxonomicStatus=synonym, col source=2030 merged=true]"
+   ],
+   "different_authorship--only_unauthored"
+  ],
+  [
+   "71673",
+   629927,
+   "6BXFP",
+   93794,
+   "Dactylina arctica",
+   false,
+   [],
+   [],
+   1,
+   1,
+   "different_authorship",
+   "Dactylina arctica (M.J. Richardson) Nyl.",
+   "Dactylina arctica (Richardson) Nyl.",
+   false,
+   false,
+   false,
+   1,
+   [
+    "dactylina arctica subsp. beringica"
+   ],
+   5,
+   6,
+   {
+    "unauthored": 1
+   },
+   [
+    "unauthored: empty authorship [col col:nameStatus=unacceptable, col col:status=synonym, nortaxa nomenclaturalStatus=illegitimate, nortaxa taxonomicStatus=synonym, col source=2030 merged=true]"
+   ],
+   "different_authorship--only_unauthored"
+  ],
+  [
+   "72652",
+   630310,
+   "4RR5G",
+   59697,
+   "Relicina subnigra",
+   false,
+   [],
+   [],
+   1,
+   1,
+   "different_authorship",
+   "Relicina subnigra Elix & Johnston",
+   "Relicina subnigra Elix & J. Johnst.",
+   false,
+   false,
+   false,
+   1,
+   [
+    "parmelia subnigra"
+   ],
+   1,
+   1,
+   {
+    "unauthored": 1
+   },
+   [
+    "unauthored: empty authorship [col col:nameStatus=unacceptable, col col:status=synonym, nortaxa nomenclaturalStatus=illegitimate, nortaxa taxonomicStatus=synonym, col source=2030 merged=true]"
+   ],
+   "different_authorship--only_unauthored"
+  ],
+  [
+   "73119",
+   630450,
+   "5C6QW",
+   76310,
+   "Xanthoparmelia iniquita",
+   false,
+   [],
+   [],
+   1,
+   1,
+   "different_authorship",
+   "Xanthoparmelia iniquita Elix & Jen Johnston",
+   "Xanthoparmelia iniquita Elix & J. Johnst.",
+   false,
+   false,
+   false,
+   1,
+   [
+    "parmelia iniquita"
+   ],
+   1,
+   3,
+   {
+    "unauthored": 1
+   },
+   [
+    "unauthored: empty authorship [col col:nameStatus=unacceptable, col col:status=synonym, nortaxa nomenclaturalStatus=illegitimate, nortaxa taxonomicStatus=synonym, col source=2030 merged=true]"
+   ],
+   "different_authorship--only_unauthored"
+  ],
+  [
+   "73293",
+   630495,
+   "5C6Z6",
+   76511,
+   "Xanthoparmelia tegeta",
+   false,
+   [],
+   [],
+   1,
+   1,
+   "different_authorship",
+   "Xanthoparmelia tegeta Elix & Jen Johnston",
+   "Xanthoparmelia tegeta Elix & J. Johnst.",
+   false,
+   false,
+   false,
+   1,
+   [
+    "parmelia tegeta"
+   ],
+   1,
+   1,
+   {
+    "unauthored": 1
+   },
+   [
+    "unauthored: empty authorship [col col:nameStatus=unacceptable, col col:status=synonym, nortaxa nomenclaturalStatus=illegitimate, nortaxa taxonomicStatus=synonym, col source=2030 merged=true]"
+   ],
+   "different_authorship--only_unauthored"
+  ],
+  [
+   "78118",
+   632574,
+   "QCVYY",
+   168210,
+   "Leptogium pichneum",
+   false,
+   [],
+   [],
+   1,
+   1,
+   "different_authorship",
+   "Leptogium pichneum (Ach.) Malme",
+   "Leptogium pichneum (Ach.) Nyl.",
+   false,
+   false,
+   false,
+   1,
+   [
+    "leptogium picneum"
+   ],
+   1,
+   1,
+   {
+    "unauthored": 1
+   },
+   [
+    "unauthored: empty authorship [col col:nameStatus=unacceptable, col col:status=synonym, nortaxa nomenclaturalStatus=illegitimate, nortaxa taxonomicStatus=synonym, col source=2030 merged=true]"
+   ],
+   "different_authorship--only_unauthored"
+  ],
+  [
+   "78218",
+   632618,
+   "6QJZV",
+   105953,
+   "Lobaria spathulata",
+   false,
+   [],
+   [],
+   1,
+   1,
+   "different_authorship",
+   "Lobaria spathulata (Inum.) Yoshim.",
+   "Lobaria spathulata (Inumaru) Yoshim.",
+   false,
+   false,
+   false,
+   1,
+   [
+    "lobaria pulmonaria var. spathulifera"
+   ],
+   2,
+   3,
+   {
+    "unauthored": 1
+   },
+   [
+    "unauthored: empty authorship [col col:nameStatus=unacceptable, col col:status=synonym, nortaxa nomenclaturalStatus=illegitimate, nortaxa taxonomicStatus=synonym, col source=2030 merged=true]"
+   ],
+   "different_authorship--only_unauthored"
+  ],
+  [
+   "82458",
+   634371,
+   "TP2DX",
+   607159,
+   "Verrucaria griseocinerascens",
+   false,
+   [],
+   [],
+   1,
+   1,
+   "different_authorship",
+   "Verrucaria griseocinerascens (Vainio) Zschacke",
+   "Verrucaria griseocinerascens (Vain.) Zschacke",
+   false,
+   false,
+   false,
+   1,
+   [
+    "verrucaria aethiobola var. griseocinerascens"
+   ],
+   1,
+   1,
+   {
+    "unauthored": 1
+   },
+   [
+    "unauthored: empty authorship [col col:nameStatus=unacceptable, col col:status=synonym, nortaxa nomenclaturalStatus=illegitimate, nortaxa taxonomicStatus=synonym, col source=2030 merged=true]"
+   ],
+   "different_authorship--only_unauthored"
+  ]
+ ],
+ "members_sha256": "4ff6999b2f42eef36f5b2baa027cbc57cad016cc2bca17fe7fed779b5623b605",
+ "membership_rule": "review class 'accepted_authorship_disagrees'; authorship difference 'different_authorship': none of the above: the accepted authorships name different authors or differ in a way no rule above reads (for example an abbreviation); and, read as if the accepted name keys agreed, review class 'only_unauthored': every shared synonym is of kind 'unauthored'",
+ "nortaxa_col_source": {
+  "col_source_id": "2030",
+  "matched_on": "COL source/<id>.yaml title == NorTaxa eml.xml dataset title",
+  "title": "Nortaxa (Artsnavnebasen)"
+ },
+ "note": "Immutable review input. It approves nothing: a Group-B pair becomes a supersession or mapping only through an owner decision recorded in the plan that names this file's file_sha256 (batch) or the pair (individual). Membership is pinned to the release and source archives below and never extends to taxa in a later source release. Members are in cloud-impact order (COL side in the cloud scope, then NorTaxa side with vernaculars, then identifier). shared_synonyms and shared_synonym_evidence list at most 10 names; the counts are exact.",
+ "parent_manifest": {
+  "evidence_class": "shared_synonymy",
+  "member_count": 2032,
+  "members_sha256": "19083142abcfdb037e9372b7271cd9beb2749a01cc64a1490a19b60ddea9acd9"
+ },
+ "pins": {
+  "bridge_emission_policy": {
+   "path": "database/taxonomy/policies/mapping_policy.yml",
+   "sha256": "a5a329848c45fcd030165a51ad1193944dffe7573ddb2a9c69441f0d76ae4afb"
+  },
+  "cloud_scope_policy": {
+   "path": "database/taxonomy/policies/global-macrofungi-scope.yml",
+   "scope_predicate_id": "global_macrofungi_policy_v1",
+   "sha256": "e4e796286df93b5372264c702c824eea746f680b3b4e8d6467621c99e5b64ea6"
+  },
+  "release": {
+   "content_release_id": "tax-2026.09.26-02",
+   "gz_artifact": "database/reference_data/generated/taxonomy_v2/tax-2026.09.26-02.sqlite3.gz",
+   "gz_sha256": "4488bb64f4abe18ed269c76264f9be36708d742ff531e931e8d7458791e05d72",
+   "sqlite_sha256": "9bf71b7e1f9b2915c3b1798743cefdd5db53bdbbfb7edc462aa3d0ad0cf8547d"
+  },
+  "source_archives": {
+   "col_xr": {
+    "sha256": "397d701c8eb269bf78d6ac7b03149915b0d9e2a2c18694be2c91445b807814f9",
+    "source_release_id": "col_xr:2026-07-17-XR:2026-07-17"
+   },
+   "nortaxa": {
+    "sha256": "29c11c54d955dc44e4e5a38944dd7932989a256d1b173777579b9f33abd2fe22",
+    "source_release_id": "nortaxa:1.284:2026-07-17"
+   }
+  }
+ },
+ "population": "group_b_name_equal_duplicate_candidates",
+ "review_class": "accepted_authorship_disagrees",
+ "review_class_precedence": [
+  "non_species_rank",
+  "rank_mismatch",
+  "infraspecific_rank",
+  "accepted_authorship_disagrees",
+  "only_orthographic_variant",
+  "only_unpublished",
+  "only_not_validly_published",
+  "only_illegitimate",
+  "only_interpretation_qualified",
+  "only_pro_parte",
+  "only_accepted_name_reauthored",
+  "only_unauthored",
+  "only_name_variant",
+  "only_nortaxa_derived",
+  "only_mixed_weak",
+  "single_shared_synonym_low_overlap",
+  "ordinary"
+ ],
+ "review_status": "needs_review",
+ "sub_class": "different_authorship--only_unauthored",
+ "synonym_kind_precedence": [
+  "orthographic_variant",
+  "unpublished",
+  "not_validly_published",
+  "illegitimate",
+  "interpretation_qualified",
+  "pro_parte",
+  "accepted_name_reauthored",
+  "unauthored",
+  "name_variant",
+  "nortaxa_derived",
+  "ordinary"
+ ],
+ "synonym_kinds": {
+  "accepted_name_reauthored": "the canonical name is either accepted name itself, under another authorship",
+  "illegitimate": "an explicit textual warning: the authorship carries 'nom. illeg.', or a COL usage's col:remarks/col:nameRemarks carries 'nom. illeg.' or 'later homonym' (the structured statuses NorTaxa 'illegitimate' and COL 'unacceptable' are not used)",
+  "interpretation_qualified": "a misapplied usage (NorTaxa nomenclaturalStatus or COL col:status 'misapplied'), or the authorship carries a sensu-style qualifier ('sensu', 's.', 'ss.', 'auct.')",
+  "name_variant": "no structured status applies, but the name is almost spelled like either accepted name: same word count once hyphens are removed, and every word, genus included, within Levenshtein distance 2 (a possible misspelling or a near-identical combination, unconfirmed by the sources)",
+  "nortaxa_derived": "otherwise ordinary, but every COL usage behind it comes from the COL source that is NorTaxa (see nortaxa_col_source): COL republishes NorTaxa's assertion, so the two sources do not independently corroborate it",
+  "not_validly_published": "NorTaxa nomenclaturalStatus 'notvalidlypublished', COL col:nameStatus 'not established', the authorship carries 'nom. nud.' or 'nom. inval.', or a COL usage's col:remarks/col:nameRemarks carries 'nom. nud.', 'nom. inval.' or 'published without a valid description'",
+  "ordinary": "meets none of the tests above",
+  "orthographic_variant": "either source's structured status marks the usage an orthographic variant (NorTaxa nomenclaturalStatus 'orthographic')",
+  "pro_parte": "COL col:status 'ambiguous synonym', or the authorship carries 'p.p.' or 'pro parte'",
+  "unauthored": "the authorship is empty, so the match is on the name alone",
+  "unpublished": "COL col:nameStatus 'manuscript', or the authorship or a COL usage's col:remarks/col:nameRemarks carries 'ined' or 'nom. herb.'"
+ }
+}

@@ -212,3 +212,94 @@ record is exactly one of its members. Emission is unchanged: only
 unemitted. NorTaxa 56227 (Craterellus tubaeformis) stays unresolved.
 Compiled `mappings.jsonl` records carry `approved_manifest_file_sha256`, so an
 emitted bridge traces to its record and the approval inside the release.
+
+## Stage 2 — Group-B duplicate candidates graded for review (`stage2/`)
+
+Reproduce from the repository root, with the same inputs as Stage 0:
+
+```sh
+.venv/bin/python database/taxonomy/evidence/taxonomy-v3/audit_stage2_group_b.py
+```
+
+Group B is found by name equality: a NorTaxa-canonical concept and a
+COL-canonical concept with the same `canonical_scientific_name`. That query
+only finds candidates. Each pair is graded by `cross_reference_evidence.grade`
+and, for `shared_synonymy`, by Stage 0's synonym kinds and review classes, so
+a class name means the same in both groups. The pins equal Stage 0's.
+
+Nearly every Group-B `shared_synonymy` pair (2,002 of 2,032) is in Stage 0's
+`accepted_authorship_disagrees` class. The compiler matches automatically on
+the accepted name key, so Group B is mostly pairs whose authorships differ.
+That class is split again (`AUTHORSHIP_DIFFERENCE_TESTS`, first rule met) by
+how the accepted authorships differ:
+
+- `same`, `accepted_name_differs`;
+- `typography_only`: equal after removing whitespace, diacritics and case;
+- `sanctioning_citation`: equal after also removing a sanctioning citation
+  (`(Pers. : Fr.) Boud.` against `(Pers.) Boud.`);
+- `different_authorship`: everything else, including abbreviations.
+
+It is also split by the review class its shared synonyms would get if the
+accepted keys agreed. The resulting sub-class, for example
+`sanctioning_citation--ordinary`, is a citation-form reading only. It proves
+no identity, and it keeps strong and weak synonym evidence out of the same
+batch.
+
+Outputs are byte-deterministic:
+
+- `group-b-<evidence-class>.manifest.json`, `group-b-shared-synonymy--<review-class>.manifest.json`
+  and `group-b-shared-synonymy--accepted-authorship-disagrees--<sub-class>.manifest.json`.
+  Every member is `needs_review`. Members are in cloud-impact order: COL side
+  in the cloud scope, then NorTaxa side with vernaculars, then identifier. Each
+  manifest's `approval_mode` says how decision 2 lets it be decided:
+  `batch_by_file_sha256` (a leaf class), `individual` (one-directional),
+  `decided_through_its_partition` (a parent kept for accounting) or
+  `not_approvable` (`no_published_cross_reference`).
+- `group-b-report.json`: counts, `file_sha256` per manifest, the
+  `review_queue` in cloud-impact order, `not_one_to_one` pairs, and the
+  recorded regression outcomes.
+
+| | Full release | Cloud scope |
+|---|---:|---:|
+| Group-B pairs | 7,423 | 2,132 |
+| — NorTaxa side has vernaculars | 2,287 | 1,323 |
+| — `one_directional_accepted_synonymy` | 62 | 15 |
+| — `shared_synonymy` | 2,032 | 574 |
+| — `no_published_cross_reference` | 5,329 | 1,543 |
+
+The head of the review queue:
+
+| Sub-class manifest | Members | Cloud | Cloud with vernaculars |
+|---|---:|---:|---:|
+| `sanctioning_citation--ordinary` | 336 | 241 | 236 |
+| `different_authorship--ordinary` | 839 | 116 | 78 |
+| `sanctioning_citation--only_nortaxa_derived` | 63 | 45 | 45 |
+| `sanctioning_citation--single_shared_synonym_low_overlap` | 46 | 41 | 41 |
+| `typography_only--ordinary` | 179 | 46 | 38 |
+
+Not one-to-one: 82 NorTaxa concepts share a name with more than one COL
+concept (167 pairs), and 25 COL concepts with more than one NorTaxa concept
+(54 pairs). A supersession names one current concept, so each such pair needs
+its own choice even inside an approved batch.
+
+**Decision status.** No Group-B manifest or pair has an owner decision.
+Nothing is approved, and no supersession or mapping was generated.
+`concept_supersessions.yml` still holds only 52369's record.
+
+Regression outcomes, which the audit re-derives and refuses if they change:
+
+- Cantharellus cibarius (NorTaxa 56210 / COL QMKY):
+  `sanctioning_citation--ordinary`, left open. COL 168873 has no vernaculars
+  and does not gain "kantarell". That name stays on NorTaxa concept 626243.
+- Conocybe vexans / Pholiotina vexans (NorTaxa 58766 / COL XQZ6): outside
+  Group B, `reciprocal_accepted_synonymy`, left open. The evidence has the
+  same shape as the approved 52369 supersession, but superseding 627000 by
+  617026 needs the owner's own decision. NBIC:58766 stays unresolved.
+- Gloeophyllum odoratum (NorTaxa 56449 / COL 3GBK2):
+  `sanctioning_citation--ordinary`, not reconciled. NBIC:56449 did not become
+  resolvable, so sporely-web's temporary fixture stays valid.
+
+Before any Group-B supersession ships, the read-only check that no cloud
+observation references a retiring concept must run (deferred to its external
+gate). Desktop observations are checked with
+`database/audit_observation_identity.py`.

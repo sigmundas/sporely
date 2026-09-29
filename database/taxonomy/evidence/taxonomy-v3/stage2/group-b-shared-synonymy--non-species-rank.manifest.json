@@ -1,0 +1,823 @@
+{
+ "approval_mode": "batch_by_file_sha256",
+ "cloud_scope_member_count": 16,
+ "cloud_scope_with_nortaxa_vernaculars_count": 12,
+ "columns": [
+  "nortaxa_taxon_id",
+  "nortaxa_sporely_taxon_id",
+  "col_usage_id",
+  "col_sporely_taxon_id",
+  "canonical_scientific_name",
+  "col_in_cloud_scope",
+  "nortaxa_vernacular_languages",
+  "col_vernacular_languages",
+  "col_twins_of_nortaxa_concept",
+  "nortaxa_twins_of_col_concept",
+  "accepted_authorship_difference",
+  "bridge_accepted_name",
+  "backbone_accepted_name",
+  "accepted_names_agree",
+  "bridge_lists_backbone_accepted_name_as_synonym",
+  "backbone_lists_bridge_accepted_name_as_synonym",
+  "shared_synonym_count",
+  "shared_synonyms",
+  "bridge_synonym_count",
+  "backbone_synonym_count",
+  "shared_synonym_kind_counts",
+  "shared_synonym_evidence",
+  "authorship_sub_class"
+ ],
+ "evidence_class": "shared_synonymy",
+ "format": "sporely-taxonomy-v3-group-b-review-manifest-v1",
+ "member_count": 21,
+ "members": [
+  [
+   "52450",
+   624718,
+   "62M9T",
+   84922,
+   "Cortinarius",
+   true,
+   [
+    "nb",
+    "nn"
+   ],
+   [],
+   1,
+   3,
+   "different_authorship",
+   "Cortinarius (Pers.) Gray",
+   "Cortinarius (Pers.) Gray, 1821",
+   false,
+   false,
+   false,
+   3,
+   [
+    "inoloma (Fr.) Wünsche",
+    "sericeocybe Rob. Henry",
+    "telamonia (Fr.) Wünsche"
+   ],
+   7,
+   4,
+   {
+    "nortaxa_derived": 1,
+    "ordinary": 2
+   },
+   [
+    "ordinary: none of the weak kinds [col col:status=synonym, nortaxa taxonomicStatus=synonym, col source=7888 merged=true]",
+    "nortaxa_derived: every COL usage has col:sourceID 2030 (V4GQY, clb:merged=true) [col col:status=synonym, nortaxa taxonomicStatus=synonym, col source=2030 merged=true]",
+    "ordinary: none of the weak kinds [col col:status=synonym, nortaxa taxonomicStatus=synonym, col source=7888 merged=true]"
+   ],
+   null
+  ],
+  [
+   "53077",
+   625052,
+   "54HL",
+   69871,
+   "Inocybe",
+   true,
+   [
+    "nb",
+    "nn"
+   ],
+   [],
+   1,
+   3,
+   "different_authorship",
+   "Inocybe (Fr.) Fr.",
+   "Inocybe (Fr.) Fr., 1863",
+   false,
+   false,
+   false,
+   1,
+   [
+    "inocybella Zerova"
+   ],
+   1,
+   2,
+   {
+    "nortaxa_derived": 1
+   },
+   [
+    "nortaxa_derived: every COL usage has col:sourceID 2030 (QP3DW, clb:merged=true) [col col:status=synonym, nortaxa taxonomicStatus=synonym, col source=2030 merged=true]"
+   ],
+   null
+  ],
+  [
+   "53942",
+   625365,
+   "4ZXK",
+   68411,
+   "Hygrocybe",
+   true,
+   [
+    "nb",
+    "nn"
+   ],
+   [],
+   1,
+   1,
+   "different_authorship",
+   "Hygrocybe (Fr.) P. Kumm.",
+   "Hygrocybe (Fr.) P.Kumm., 1871",
+   false,
+   false,
+   false,
+   1,
+   [
+    "godfrinia Maire"
+   ],
+   1,
+   3,
+   {
+    "nortaxa_derived": 1
+   },
+   [
+    "nortaxa_derived: every COL usage has col:sourceID 2030 (P5WVQ, clb:merged=true) [col col:status=synonym, nortaxa taxonomicStatus=synonym, col source=2030 merged=true]"
+   ],
+   null
+  ],
+  [
+   "54486",
+   625519,
+   "3XS7",
+   27089,
+   "Cyathus",
+   true,
+   [
+    "nb",
+    "nn"
+   ],
+   [],
+   1,
+   1,
+   "different_authorship",
+   "Cyathus Haller",
+   "Cyathus Haller, 1768",
+   false,
+   false,
+   false,
+   1,
+   [
+    "cyathia P. Browne"
+   ],
+   1,
+   1,
+   {
+    "name_variant": 1
+   },
+   [
+    "name_variant: near-spelling of accepted 'cyathus' [col col:nameStatus=unacceptable, col col:status=synonym, nortaxa nomenclaturalStatus=illegitimate, nortaxa taxonomicStatus=synonym, col source=2030 merged=true]"
+   ],
+   null
+  ],
+  [
+   "55225",
+   625860,
+   "52JZ",
+   68627,
+   "Hypholoma",
+   true,
+   [
+    "nb",
+    "nn"
+   ],
+   [],
+   1,
+   1,
+   "typography_only",
+   "Hypholoma (Fr.) P. Kumm.",
+   "Hypholoma (Fr.) P.Kumm.",
+   false,
+   false,
+   false,
+   1,
+   [
+    "nematoloma P. Karst."
+   ],
+   2,
+   2,
+   {
+    "orthographic_variant": 1
+   },
+   [
+    "orthographic_variant: nortaxa nomenclaturalStatus=orthographic [col col:status=synonym, nortaxa nomenclaturalStatus=orthographic, nortaxa taxonomicStatus=synonym, col source=7888 merged=true]"
+   ],
+   null
+  ],
+  [
+   "55630",
+   626028,
+   "337N",
+   908,
+   "Arrhenia",
+   true,
+   [
+    "nb",
+    "nn"
+   ],
+   [],
+   1,
+   1,
+   "different_authorship",
+   "Arrhenia Fr.",
+   "Arrhenia Fr., 1849",
+   false,
+   false,
+   false,
+   1,
+   [
+    "leptotus P. Karst."
+   ],
+   1,
+   3,
+   {
+    "ordinary": 1
+   },
+   [
+    "ordinary: none of the weak kinds [col col:status=synonym, nortaxa taxonomicStatus=synonym, col source=7888 merged=true]"
+   ],
+   null
+  ],
+  [
+   "56273",
+   626274,
+   "4ZPC",
+   68299,
+   "Hydnum",
+   true,
+   [
+    "nb",
+    "nn"
+   ],
+   [],
+   2,
+   1,
+   "sanctioning_citation",
+   "Hydnum L. : Fr.",
+   "Hydnum L.",
+   false,
+   false,
+   false,
+   1,
+   [
+    "dentinum Gray"
+   ],
+   1,
+   1,
+   {
+    "ordinary": 1
+   },
+   [
+    "ordinary: none of the weak kinds [col col:status=synonym, nortaxa taxonomicStatus=synonym, col source=7888 merged=true]"
+   ],
+   null
+  ],
+  [
+   "56327",
+   626288,
+   "83MD",
+   130340,
+   "Tulasnella",
+   true,
+   [
+    "nb",
+    "nn"
+   ],
+   [],
+   1,
+   1,
+   "typography_only",
+   "Tulasnella J. Schröt.",
+   "Tulasnella J.Schröt.",
+   false,
+   false,
+   false,
+   2,
+   [
+    "pachysterigma Johan-Olsen ex Bref.",
+    "prototremella Pat."
+   ],
+   3,
+   4,
+   {
+    "ordinary": 2
+   },
+   [
+    "ordinary: none of the weak kinds [col col:status=synonym, nortaxa nomenclaturalStatus=illegitimate, nortaxa taxonomicStatus=synonym, col source=7888 merged=true]",
+    "ordinary: none of the weak kinds [col col:status=synonym, nortaxa nomenclaturalStatus=illegitimate, nortaxa taxonomicStatus=synonym, col source=7888 merged=true]"
+   ],
+   null
+  ],
+  [
+   "56409",
+   626309,
+   "4MJS",
+   52206,
+   "Geastrum",
+   true,
+   [
+    "nb",
+    "nn"
+   ],
+   [],
+   1,
+   1,
+   "different_authorship",
+   "Geastrum Pers.",
+   "Geastrum Pers., 1794",
+   false,
+   false,
+   false,
+   2,
+   [
+    "geaster P. Micheli ex Fr.",
+    "trichaster Czern."
+   ],
+   2,
+   2,
+   {
+    "ordinary": 2
+   },
+   [
+    "ordinary: none of the weak kinds [col col:status=synonym, nortaxa nomenclaturalStatus=illegitimate, nortaxa taxonomicStatus=synonym, col source=7888 merged=true]",
+    "ordinary: none of the weak kinds [col col:nameStatus=acceptable, col col:status=synonym, nortaxa taxonomicStatus=synonym, col source=2041 merged=true]"
+   ],
+   null
+  ],
+  [
+   "56783",
+   626443,
+   "6MR6",
+   102519,
+   "Phallus",
+   true,
+   [
+    "nb"
+   ],
+   [],
+   1,
+   1,
+   "different_authorship",
+   "Phallus Junius ex L.",
+   "Phallus Junius ex L., 1753",
+   false,
+   false,
+   false,
+   1,
+   [
+    "dictyophora Desv."
+   ],
+   1,
+   2,
+   {
+    "ordinary": 1
+   },
+   [
+    "ordinary: none of the weak kinds [col col:status=synonym, nortaxa nomenclaturalStatus=illegitimate, nortaxa taxonomicStatus=synonym, col source=7888 merged=true]"
+   ],
+   null
+  ],
+  [
+   "57178",
+   626613,
+   "627LB",
+   84272,
+   "Polyporaceae",
+   true,
+   [
+    "se"
+   ],
+   [],
+   1,
+   1,
+   "different_authorship",
+   "Polyporaceae Fr. ex Corda",
+   "Polyporaceae Fr. ex Corda, 1839",
+   false,
+   false,
+   false,
+   1,
+   [
+    "epitheliaceae Jülich"
+   ],
+   1,
+   14,
+   {
+    "ordinary": 1
+   },
+   [
+    "ordinary: none of the weak kinds [col col:status=synonym, nortaxa nomenclaturalStatus=illegitimate, nortaxa taxonomicStatus=synonym, col source=7888 merged=true]"
+   ],
+   null
+  ],
+  [
+   "58176",
+   626970,
+   "3Z9H",
+   29314,
+   "Dacrymyces",
+   true,
+   [
+    "nb",
+    "nn"
+   ],
+   [],
+   1,
+   1,
+   "different_authorship",
+   "Dacrymyces Nees",
+   "Dacrymyces Nees, 1816",
+   false,
+   false,
+   false,
+   1,
+   [
+    "dacryomyces Nees"
+   ],
+   1,
+   2,
+   {
+    "orthographic_variant": 1
+   },
+   [
+    "orthographic_variant: nortaxa nomenclaturalStatus=orthographic [col col:nameStatus=not established, col col:status=synonym, nortaxa nomenclaturalStatus=orthographic, nortaxa taxonomicStatus=synonym, col source=2041 merged=true]"
+   ],
+   null
+  ],
+  [
+   "51971",
+   624531,
+   "3LZT",
+   15385,
+   "Chamaemyces",
+   true,
+   [],
+   [],
+   1,
+   1,
+   "different_authorship",
+   "Chamaemyces Earle",
+   "Chamaemyces Battarra ex Earle",
+   false,
+   false,
+   false,
+   1,
+   [
+    "drosella Maire"
+   ],
+   1,
+   2,
+   {
+    "not_validly_published": 1
+   },
+   [
+    "not_validly_published: col col:nameStatus=not established [col col:nameStatus=not established, col col:status=synonym, nortaxa taxonomicStatus=synonym, col source=7888 merged=true]"
+   ],
+   null
+  ],
+  [
+   "55165",
+   625834,
+   "5DWK",
+   77882,
+   "Leucopholiota",
+   true,
+   [],
+   [],
+   1,
+   1,
+   "typography_only",
+   "Leucopholiota (Romagn.) O. K. Mill., T. J. Volk & Bessette",
+   "Leucopholiota (Romagn.) O.K.Mill., T.J.Volk & Bessette",
+   false,
+   false,
+   false,
+   1,
+   [
+    "amylolepiota Harmaja"
+   ],
+   1,
+   1,
+   {
+    "ordinary": 1
+   },
+   [
+    "ordinary: none of the weak kinds [col col:nameStatus=acceptable, col col:status=synonym, nortaxa nomenclaturalStatus=illegitimate, nortaxa taxonomicStatus=synonym, col source=2041 merged=true]"
+   ],
+   null
+  ],
+  [
+   "55930",
+   626141,
+   "79Z",
+   123036,
+   "Boletaceae",
+   true,
+   [],
+   [],
+   1,
+   1,
+   "different_authorship",
+   "Boletaceae Chevall.",
+   "Boletaceae Chevall., 1826",
+   false,
+   false,
+   false,
+   1,
+   [
+    "chamonixiaceae Jülich"
+   ],
+   4,
+   4,
+   {
+    "ordinary": 1
+   },
+   [
+    "ordinary: none of the weak kinds [col col:nameStatus=acceptable, col col:status=synonym, nortaxa nomenclaturalStatus=illegitimate, nortaxa taxonomicStatus=synonym, col source=2041 merged=true]"
+   ],
+   null
+  ],
+  [
+   "60756",
+   627079,
+   "D22",
+   150423,
+   "Mycenaceae",
+   true,
+   [],
+   [],
+   1,
+   1,
+   "different_authorship",
+   "Mycenaceae Overeem",
+   "Mycenaceae Roze, 1876",
+   false,
+   false,
+   false,
+   2,
+   [
+    "favolaschiaceae Singer",
+    "panellaceae Jülich"
+   ],
+   2,
+   3,
+   {
+    "not_validly_published": 1,
+    "ordinary": 1
+   },
+   [
+    "not_validly_published: col col:nameStatus=not established [col col:nameStatus=not established, col col:status=synonym, nortaxa taxonomicStatus=synonym, col source=2041 merged=true]",
+    "ordinary: none of the weak kinds [col col:nameStatus=acceptable, col col:status=synonym, nortaxa taxonomicStatus=synonym, col source=2041 merged=true]"
+   ],
+   null
+  ],
+  [
+   "58203",
+   626979,
+   "7RPD",
+   129901,
+   "Syzygospora",
+   false,
+   [
+    "nb",
+    "nn"
+   ],
+   [],
+   1,
+   1,
+   "different_authorship",
+   "Syzygospora Martin",
+   "Syzygospora G.W.Martin",
+   false,
+   false,
+   false,
+   1,
+   [
+    "christiansenia Hauerslev"
+   ],
+   1,
+   2,
+   {
+    "ordinary": 1
+   },
+   [
+    "ordinary: none of the weak kinds [col col:status=synonym, nortaxa nomenclaturalStatus=illegitimate, nortaxa taxonomicStatus=synonym, col source=7888 merged=true]"
+   ],
+   null
+  ],
+  [
+   "123330",
+   621213,
+   "43FK",
+   32789,
+   "Dermatosorus",
+   false,
+   [],
+   [],
+   1,
+   1,
+   "typography_only",
+   "Dermatosorus Sawada ex L. Ling",
+   "Dermatosorus Sawada ex L.Ling",
+   false,
+   false,
+   false,
+   1,
+   [
+    "zundelula Thirum. & Naras."
+   ],
+   1,
+   1,
+   {
+    "nortaxa_derived": 1
+   },
+   [
+    "nortaxa_derived: every COL usage has col:sourceID 2030 (TXKWT, clb:merged=true) [col col:nameStatus=unacceptable, col col:status=synonym, nortaxa nomenclaturalStatus=illegitimate, nortaxa taxonomicStatus=synonym, col source=2030 merged=true]"
+   ],
+   null
+  ],
+  [
+   "128435",
+   621400,
+   "7FPR",
+   128528,
+   "Septoriella",
+   false,
+   [],
+   [],
+   1,
+   1,
+   "different_authorship",
+   "Septoriella Oudem.",
+   "Septoriella Oudem., 1889",
+   false,
+   false,
+   false,
+   1,
+   [
+    "poaceicola W.J. Li, Camporesi, Bhat & K.D. Hyde"
+   ],
+   1,
+   1,
+   {
+    "nortaxa_derived": 1
+   },
+   [
+    "nortaxa_derived: every COL usage has col:sourceID 2030 (RTMTZ, clb:merged=true) [col col:status=synonym, nortaxa taxonomicStatus=synonym, col source=2030 merged=true]"
+   ],
+   null
+  ],
+  [
+   "162697",
+   622765,
+   "62T9L",
+   85260,
+   "Exosporiella",
+   false,
+   [],
+   [],
+   1,
+   1,
+   "typography_only",
+   "Exosporiella P. Karst.",
+   "Exosporiella P.Karst.",
+   false,
+   false,
+   false,
+   1,
+   [
+    "anomalemma Sivan."
+   ],
+   1,
+   1,
+   {
+    "ordinary": 1
+   },
+   [
+    "ordinary: none of the weak kinds [col col:status=synonym, nortaxa taxonomicStatus=synonym, col source=7888 merged=true]"
+   ],
+   null
+  ],
+  [
+   "77655",
+   632357,
+   "627LT",
+   84274,
+   "Porinaceae",
+   false,
+   [],
+   [],
+   1,
+   1,
+   "different_authorship",
+   "Porinaceae Walt. Watson",
+   "Porinaceae Rchb., 1828",
+   false,
+   false,
+   false,
+   1,
+   [
+    "trichotheliaceae Bitter & F. Schill."
+   ],
+   1,
+   2,
+   {
+    "ordinary": 1
+   },
+   [
+    "ordinary: none of the weak kinds [col col:status=synonym, nortaxa taxonomicStatus=synonym, col source=2144 merged=true]"
+   ],
+   null
+  ]
+ ],
+ "members_sha256": "068df0380b849f70fce47bf87f8c37420d0bb7b89eaac5c242dfa900fe2bc644",
+ "membership_rule": "either source's accepted usage has a rank other than species or an infraspecific rank (subspecies, variety, form)",
+ "nortaxa_col_source": {
+  "col_source_id": "2030",
+  "matched_on": "COL source/<id>.yaml title == NorTaxa eml.xml dataset title",
+  "title": "Nortaxa (Artsnavnebasen)"
+ },
+ "note": "Immutable review input. It approves nothing: a Group-B pair becomes a supersession or mapping only through an owner decision recorded in the plan that names this file's file_sha256 (batch) or the pair (individual). Membership is pinned to the release and source archives below and never extends to taxa in a later source release. Members are in cloud-impact order (COL side in the cloud scope, then NorTaxa side with vernaculars, then identifier). shared_synonyms and shared_synonym_evidence list at most 10 names; the counts are exact.",
+ "parent_manifest": {
+  "evidence_class": "shared_synonymy",
+  "member_count": 2032,
+  "members_sha256": "19083142abcfdb037e9372b7271cd9beb2749a01cc64a1490a19b60ddea9acd9"
+ },
+ "pins": {
+  "bridge_emission_policy": {
+   "path": "database/taxonomy/policies/mapping_policy.yml",
+   "sha256": "a5a329848c45fcd030165a51ad1193944dffe7573ddb2a9c69441f0d76ae4afb"
+  },
+  "cloud_scope_policy": {
+   "path": "database/taxonomy/policies/global-macrofungi-scope.yml",
+   "scope_predicate_id": "global_macrofungi_policy_v1",
+   "sha256": "e4e796286df93b5372264c702c824eea746f680b3b4e8d6467621c99e5b64ea6"
+  },
+  "release": {
+   "content_release_id": "tax-2026.09.26-02",
+   "gz_artifact": "database/reference_data/generated/taxonomy_v2/tax-2026.09.26-02.sqlite3.gz",
+   "gz_sha256": "4488bb64f4abe18ed269c76264f9be36708d742ff531e931e8d7458791e05d72",
+   "sqlite_sha256": "9bf71b7e1f9b2915c3b1798743cefdd5db53bdbbfb7edc462aa3d0ad0cf8547d"
+  },
+  "source_archives": {
+   "col_xr": {
+    "sha256": "397d701c8eb269bf78d6ac7b03149915b0d9e2a2c18694be2c91445b807814f9",
+    "source_release_id": "col_xr:2026-07-17-XR:2026-07-17"
+   },
+   "nortaxa": {
+    "sha256": "29c11c54d955dc44e4e5a38944dd7932989a256d1b173777579b9f33abd2fe22",
+    "source_release_id": "nortaxa:1.284:2026-07-17"
+   }
+  }
+ },
+ "population": "group_b_name_equal_duplicate_candidates",
+ "review_class": "non_species_rank",
+ "review_class_precedence": [
+  "non_species_rank",
+  "rank_mismatch",
+  "infraspecific_rank",
+  "accepted_authorship_disagrees",
+  "only_orthographic_variant",
+  "only_unpublished",
+  "only_not_validly_published",
+  "only_illegitimate",
+  "only_interpretation_qualified",
+  "only_pro_parte",
+  "only_accepted_name_reauthored",
+  "only_unauthored",
+  "only_name_variant",
+  "only_nortaxa_derived",
+  "only_mixed_weak",
+  "single_shared_synonym_low_overlap",
+  "ordinary"
+ ],
+ "review_status": "needs_review",
+ "synonym_kind_precedence": [
+  "orthographic_variant",
+  "unpublished",
+  "not_validly_published",
+  "illegitimate",
+  "interpretation_qualified",
+  "pro_parte",
+  "accepted_name_reauthored",
+  "unauthored",
+  "name_variant",
+  "nortaxa_derived",
+  "ordinary"
+ ],
+ "synonym_kinds": {
+  "accepted_name_reauthored": "the canonical name is either accepted name itself, under another authorship",
+  "illegitimate": "an explicit textual warning: the authorship carries 'nom. illeg.', or a COL usage's col:remarks/col:nameRemarks carries 'nom. illeg.' or 'later homonym' (the structured statuses NorTaxa 'illegitimate' and COL 'unacceptable' are not used)",
+  "interpretation_qualified": "a misapplied usage (NorTaxa nomenclaturalStatus or COL col:status 'misapplied'), or the authorship carries a sensu-style qualifier ('sensu', 's.', 'ss.', 'auct.')",
+  "name_variant": "no structured status applies, but the name is almost spelled like either accepted name: same word count once hyphens are removed, and every word, genus included, within Levenshtein distance 2 (a possible misspelling or a near-identical combination, unconfirmed by the sources)",
+  "nortaxa_derived": "otherwise ordinary, but every COL usage behind it comes from the COL source that is NorTaxa (see nortaxa_col_source): COL republishes NorTaxa's assertion, so the two sources do not independently corroborate it",
+  "not_validly_published": "NorTaxa nomenclaturalStatus 'notvalidlypublished', COL col:nameStatus 'not established', the authorship carries 'nom. nud.' or 'nom. inval.', or a COL usage's col:remarks/col:nameRemarks carries 'nom. nud.', 'nom. inval.' or 'published without a valid description'",
+  "ordinary": "meets none of the tests above",
+  "orthographic_variant": "either source's structured status marks the usage an orthographic variant (NorTaxa nomenclaturalStatus 'orthographic')",
+  "pro_parte": "COL col:status 'ambiguous synonym', or the authorship carries 'p.p.' or 'pro parte'",
+  "unauthored": "the authorship is empty, so the match is on the name alone",
+  "unpublished": "COL col:nameStatus 'manuscript', or the authorship or a COL usage's col:remarks/col:nameRemarks carries 'ined' or 'nom. herb.'"
+ }
+}
