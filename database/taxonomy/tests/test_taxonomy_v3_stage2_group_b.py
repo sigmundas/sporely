@@ -265,6 +265,20 @@ def test_generator_names_exactly_the_owner_approved_manifests():
         assert report[name]["approval_mode"] == "batch_by_file_sha256"
 
 
+def test_shipped_ledger_missing_one_member_is_refused():
+    """Dropping any one manifest-bound record from the shipped ledger makes
+    it fail verification, so compile and validation fail closed."""
+    ledger = _ledger()
+    bound = [i for i, s in enumerate(ledger["supersessions"])
+             if "approved_manifest" in s]
+    for index in (bound[0], bound[len(bound) // 2], bound[-1]):
+        partial = {**ledger, "supersessions": [
+            s for i, s in enumerate(ledger["supersessions"]) if i != index]}
+        with pytest.raises(BridgeEmissionError,
+                           match="with no supersession record"):
+            verify_supersession_manifest_approvals(partial)
+
+
 def test_shipped_ledger_is_current_and_supersedes_only_approved_pairs():
     """The committed ledger is what the generator renders from the approved
     manifests, and retires exactly their members plus Conocybe vexans and
@@ -395,6 +409,7 @@ def test_verifier_accepts_one_record_per_member(tmp_path):
     ("wrong_survivor", "do not match the manifest member"),
     ("duplicate", "more than one record"),
     ("unapproved_manifest", "no approved_manifests entry"),
+    ("missing_member", "with no supersession record"),
 ])
 def test_verifier_refuses(tmp_path, case, match):
     members = [["1", 10, "A", 20, True]]
@@ -403,6 +418,8 @@ def test_verifier_refuses(tmp_path, case, match):
         kwargs["approval_mode"] = "individual"
     if case == "ambiguous":
         members = [["1", 10, "A", 20, False]]
+    if case == "missing_member":
+        members = [["1", 10, "A", 20, True], ["2", 11, "B", 21, True]]
     path, sha = _manifest_file(tmp_path, members, **kwargs)
     records = [_supersession("1", 10, "A", 20, sha)]
     pins = _PINS

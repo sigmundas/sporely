@@ -360,7 +360,8 @@ The generator stops, writing nothing, unless:
 The compiler and `validate_policies.py` re-check every manifest-bound record
 with `bridge_emission.verify_supersession_manifest_approvals`. It refuses a
 tampered manifest, different pins, a non-batch or not-one-to-one manifest, a
-record for a non-member, and a duplicate. The registry is not written, so
+record for a non-member, a duplicate, and an approved manifest with any
+member left without a record. The registry is not written, so
 every retired concept keeps its anchor and its allocation history. The
 compiler re-keys the retired concept's usages, vernaculars and external ids
 onto the survivor and emits no row for the retired concept.

@@ -260,7 +260,8 @@ def verify_supersession_manifest_approvals(
     ``batch_by_file_sha256``) of one-to-one pairs only. Every citing record
     must be an approved exact supersession that retires exactly one member's
     NorTaxa concept in favour of that member's COL usage. A record for any
-    other pair cannot borrow the approval.
+    other pair cannot borrow the approval, and every member of every approved
+    manifest must have exactly one record.
 
     Returns ``supersession_id -> file_sha256`` for the manifest-bound records.
     Raises :class:`BridgeEmissionError` on any mismatch.
@@ -380,6 +381,16 @@ def verify_supersession_manifest_approvals(
                 f"one record")
         seen_members.add((file_sha256, key))
         bound[supersession_id] = file_sha256
+    # Decision 2 requires one auditable record per member: an approved batch
+    # that silently omits an association is incomplete, not smaller.
+    for file_sha256, members in sorted(members_by_sha.items()):
+        missing = sorted(members - {key for sha, key in seen_members
+                                    if sha == file_sha256})
+        if missing:
+            raise BridgeEmissionError(
+                f"approved manifest {file_sha256} has {len(missing)} member(s) "
+                f"with no supersession record, first {missing[0]!r}. A batch "
+                f"approval must be materialized for every member.")
     return bound
 
 
