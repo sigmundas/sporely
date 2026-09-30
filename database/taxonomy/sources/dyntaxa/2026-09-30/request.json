@@ -1,0 +1,47 @@
+{
+  "acquisition_route": {
+    "not_selected": {
+      "gbif_interpreted_checklist_api": "not used; GBIF's interpreted name usages are re-parsed and drop the source's own LSIDs and status vocabulary",
+      "slu_taxon_service_custom_export": "not used; a custom or filtered export would need its own terms review (plan Stage 4P scope)"
+    },
+    "rationale": "The GBIF-registered checklist (dataset de8934f4-a136-481c-a87a-b0b202b80a31, CC0 1.0) is what taxonomy-v3 decision 5 names. GBIF does not host the archive; its registry lists one DWC_ARCHIVE endpoint, SLU's standard Taxon Service Darwin Core download, which is the file GBIF itself crawls. Fetching that endpoint therefore gives the GBIF checklist byte-for-byte as published, not a custom SLU export, so no separate custom-export terms apply.",
+    "selected": "gbif_registered_dwca_endpoint"
+  },
+  "archive_endpoint": "https://api.artdatabanken.se/taxonservice/v1/DarwinCore/Download?subscription-key=<the key SLU publishes in the GBIF registry record's DWC_ARCHIVE endpoint>",
+  "archive_endpoint_note": "The endpoint URL SLU registered with GBIF embeds an API subscription key. It is public in the GBIF registry record above, but it is a credential of SLU's, so it is not copied into this repository; read it from the registry record when re-fetching.",
+  "archive_format": "Darwin Core Archive",
+  "compiler_consumed_terms": [
+    "acceptedNameUsageID",
+    "family",
+    "genus",
+    "isPreferredName",
+    "kingdom",
+    "language",
+    "parentNameUsageID",
+    "scientificName",
+    "scientificNameAuthorship",
+    "taxonID",
+    "taxonRank",
+    "taxonomicStatus",
+    "vernacularName",
+    "countryCode"
+  ],
+  "download_authorization": "Taxonomy v3 plan, Stage 4P scope ('Choose the acquisition route ..., pin the archive, fingerprint it, verify required fields, and record licence and citation'). One HTTP GET, no retries, no redirects followed.",
+  "download_authorized": true,
+  "expected_license": "CC0 1.0",
+  "gbif_dataset_doi": "10.15468/j43wfc",
+  "gbif_dataset_key": "de8934f4-a136-481c-a87a-b0b202b80a31",
+  "gbif_registry_record": "https://api.gbif.org/v1/dataset/de8934f4-a136-481c-a87a-b0b202b80a31",
+  "issued_date": "2026-09-30",
+  "profile_code": "dyntaxa_dwca",
+  "publisher": "SLU Artdatabanken",
+  "release_type": "unversioned rolling export; the version is the EML pubDate of the fetched archive, and the pin is its SHA-256",
+  "request_schema_version": 1,
+  "required_row_types": [
+    "Taxon",
+    "VernacularName"
+  ],
+  "source_code": "dyntaxa",
+  "title": "Dyntaxa. Svensk taxonomisk databas",
+  "version": "2026-09-30"
+}

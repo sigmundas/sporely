@@ -38,6 +38,10 @@ unresolved. Historical usages remain traceable.
 | `taxonID` | `nortaxa` | `nortaxa_taxon_id` | source-defined taxon | no |
 | `acceptedNameUsageID` | `nortaxa` | `nortaxa_accepted_name_usage_id` | accepted-usage reference | no |
 | `parentNameUsageID` | `nortaxa` | `nortaxa_parent_name_usage_id` | parent-usage reference | no |
+| Darwin Core `taxonID` (row LSID) | `dyntaxa` | `dyntaxa_dwc_id` | archive row | no |
+| `taxonID` LSID | `dyntaxa` | `dyntaxa_taxon_id` | source-defined taxon (`Taxon:<n>`) or name (`TaxonName:<n>`) | no; reviewed bridge only |
+| `acceptedNameUsageID` | `dyntaxa` | `dyntaxa_accepted_name_usage_id` | accepted-usage reference | no |
+| `parentNameUsageID` | `dyntaxa` | `dyntaxa_parent_name_usage_id` | parent-usage reference | no |
 | Artsorakel `NBIC:` ID | `artsorakel` | `nbic_scientific_name_id` | scientific name | no |
 | Artsnavnebase scientific-name ID | `artsdatabanken` | `artsnavnebase_scientific_name_id` | scientific name | no |
 | Artsdatabanken taxon-concept ID | `artsdatabanken` | `artsdatabanken_taxon_concept_id` | taxon concept | no |
@@ -52,6 +56,23 @@ digits. Stripping `NBIC:` does not convert its scientific-name identifier into
 a NorTaxa row ID, NorTaxa `taxonID`, or Sporely ID. `NBIC:54995` must be retained
 as the raw external value; any match on its numeric component is valid only
 under an explicit, evidenced namespace bridge.
+
+### Dyntaxa LSIDs (taxonomy-v3 Stage 4P)
+
+Dyntaxa `taxonID` values are stored verbatim as LSIDs, never stripped to their
+number: `urn:lsid:dyntaxa.se:Taxon:<n>` on accepted usages (a taxon concept),
+`urn:lsid:dyntaxa.se:TaxonName:<n>` on synonym usages (a name). Artportalen
+reports against Dyntaxa taxon-concept numbers, so `artportalen_taxon_id` `<n>`
+and `urn:lsid:dyntaxa.se:Taxon:<n>` number the same Dyntaxa concept (measured,
+not assumed: `evidence/taxonomy-v3/stage4p/dyntaxa-report.json`,
+`artportalen_relation`). That makes them corroborating context for a review,
+not a bridge: no Artportalen or Dyntaxa value binds the other automatically.
+
+Dyntaxa is reviewed-identity-only (`compile_release.
+REVIEWED_IDENTITY_ONLY_SOURCES`): a Dyntaxa usage is bound to a Sporely concept
+only by an approved `manual_mappings.yml` record, or as the synonym of a usage
+so bound. It is never aliased by an automatic name match and never allocated
+its own concept, so a Dyntaxa-only taxon has no Sporely identity.
 
 ### Artsnavnebase name-ID vs Artsdatabanken taxon-concept-ID
 

@@ -117,8 +117,11 @@ Fill rule (compiler, `build_sqlite_candidate.py`):
   (`policies/mapping_policy.yml.authoritative_bridge_emission`: an approved
   manual mapping or concept supersession). Automatic matches, shared names and
   synonym usages never fill it.
-* `sv` has the same rule for Dyntaxa and stays null until Stage 4P adds that
-  source. No second shape is needed.
+* `sv` is Dyntaxa's accepted scientific name under the same rule: a Dyntaxa
+  usage whose `dyntaxa/dyntaxa_taxon_id` identity is emitted as an
+  authoritative reviewed bridge on the concept (Stage 4P). The provenance
+  columns then read `dyntaxa`, `dyntaxa_taxon_id` and the accepted LSID, for
+  example `urn:lsid:dyntaxa.se:Taxon:3423`. It uses the same columns as `no`.
 * A concept with two or more such accepted national identities is left null
   (counted in the build summary as `ambiguous_left_null`) — never chosen.
 * A NorTaxa-canonical concept carries no override: its canonical name already
@@ -218,6 +221,36 @@ source paths, merged in a single deterministic file:
 No other namespace is derived from the compiler's integer table; those
 rows remain in `taxon_external_id_legacy_integer.jsonl` verbatim, even
 when the same numeric value exists as a derived authoritative row.
+
+#### Dyntaxa rows (taxonomy-v3 Stage 4P; consumed by Stage 4W)
+
+A Dyntaxa identifier appears only as a reviewed bridge from path 1. The
+compiler writes no other Dyntaxa row to `taxon_external_id_text_min`, so an
+unreviewed Dyntaxa id is never published and never resolves.
+
+| Field | Value |
+|---|---|
+| `source_system` | `"dyntaxa"` |
+| `namespace` | `"dyntaxa_taxon_id"` |
+| `external_id` | the full LSID, `"urn:lsid:dyntaxa.se:Taxon:<n>"` (never the bare number) |
+| `id_role` | `"accepted"` |
+| `is_preferred` | `false` (the COL identifier stays preferred) |
+| `external_name` | Dyntaxa's accepted scientific name |
+| `note` | `"authoritative_bridge:manual_approved_exact"` |
+
+Resolution key: `(source_system, namespace, external_id)` =
+`("dyntaxa", "dyntaxa_taxon_id", "urn:lsid:dyntaxa.se:Taxon:<n>")`. A
+client holding an Artportalen number must not build this LSID and expect it
+to resolve as an Artportalen identity; Artportalen stays its own namespace.
+Dyntaxa synonym LSIDs (`TaxonName:<n>`) are bound internally for search but
+are not emitted. Swedish vernaculars from a bridged Dyntaxa usage appear in
+`vernacular.jsonl` with `source = "dyntaxa"`.
+
+The pinned Dyntaxa archive is recorded in the SQLite artifact's
+`taxonomy_meta` as `source_release[dyntaxa].id` and
+`source_release[dyntaxa].archive_sha256`. `taxonomy_release.jsonl` does not
+carry it yet: its fields are a fixed cloud table, and adding columns is Stage
+4W's decision.
 
 ```
 taxon_id        integer

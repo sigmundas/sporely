@@ -1,0 +1,368 @@
+{
+ "candidate_kind": "not_one_to_one",
+ "columns": [
+  "dyntaxa_taxon_id",
+  "scientific_name",
+  "authorship",
+  "rank",
+  "candidate_basis",
+  "dyntaxa_preferred_sv_vernacular",
+  "candidates",
+  "competing_dyntaxa_concepts"
+ ],
+ "format": "sporely-taxonomy-v3-candidate-manifest-v1",
+ "member_count": 20,
+ "members": [
+  [
+   "urn:lsid:dyntaxa.se:Taxon:1995",
+   "Cortinarius suaveolens",
+   "Bataille & Joachim",
+   "species",
+   "dyntaxa_synonym_name",
+   "sötdoftande spindling",
+   [
+    [
+     "B2N39",
+     138707,
+     true
+    ]
+   ],
+   2
+  ],
+  [
+   "urn:lsid:dyntaxa.se:Taxon:230283",
+   "Verrucaria caerulea",
+   "DC.",
+   "species",
+   "dyntaxa_synonym_name",
+   null,
+   [
+    [
+     "5B83V",
+     75310,
+     false
+    ]
+   ],
+   2
+  ],
+  [
+   "urn:lsid:dyntaxa.se:Taxon:230307",
+   "Verrucaria glaucina",
+   "non Ach.",
+   "species",
+   "accepted_name",
+   null,
+   [
+    [
+     "5B83V",
+     75310,
+     false
+    ]
+   ],
+   2
+  ],
+  [
+   "urn:lsid:dyntaxa.se:Taxon:248947",
+   "Cortinarius subgracilis",
+   "Moënne-Locc.",
+   "species",
+   "dyntaxa_synonym_name",
+   "trollspindling",
+   [
+    [
+     "B2N39",
+     138707,
+     true
+    ]
+   ],
+   2
+  ],
+  [
+   "urn:lsid:dyntaxa.se:Taxon:259128",
+   "Leptosphaeria orae-maris",
+   "Linder",
+   "species",
+   "accepted_name",
+   null,
+   [
+    [
+     "3TVQG",
+     24972,
+     false
+    ]
+   ],
+   2
+  ],
+  [
+   "urn:lsid:dyntaxa.se:Taxon:433",
+   "Cortinarius caesiocanescens s.lat.",
+   "",
+   "species",
+   "dyntaxa_synonym_name",
+   "duvspindling",
+   [
+    [
+     "6B64Y",
+     92895,
+     true
+    ]
+   ],
+   2
+  ],
+  [
+   "urn:lsid:dyntaxa.se:Taxon:5321",
+   "Oxyporus corticola",
+   "(Fr.) Ryvarden",
+   "species",
+   "accepted_name",
+   "barkticka",
+   [
+    [
+     "4BJG6",
+     40339,
+     true
+    ]
+   ],
+   2
+  ],
+  [
+   "urn:lsid:dyntaxa.se:Taxon:5734",
+   "Ramaria botrytis s.lat.",
+   "",
+   "species",
+   "dyntaxa_synonym_name",
+   "druvfingersvampar",
+   [
+    [
+     "4RBLZ",
+     58662,
+     true
+    ]
+   ],
+   2
+  ],
+  [
+   "urn:lsid:dyntaxa.se:Taxon:6006834",
+   "Cortinarius subexitiosus",
+   "Liimat., Niskanen, Kytöv. & Ammirati",
+   "species",
+   "accepted_name",
+   null,
+   [
+    [
+     "YMMG",
+     619582,
+     true
+    ]
+   ],
+   2
+  ],
+  [
+   "urn:lsid:dyntaxa.se:Taxon:6032967",
+   "Gibellula leiopus",
+   "(Vuill. ex Maubl.) Mains",
+   "species",
+   "dyntaxa_synonym_name",
+   null,
+   [
+    [
+     "3FZQ8",
+     11042,
+     false
+    ]
+   ],
+   2
+  ],
+  [
+   "urn:lsid:dyntaxa.se:Taxon:6032968",
+   "Gibellula pulchra",
+   "(Sacc.) Cavara",
+   "species",
+   "accepted_name",
+   null,
+   [
+    [
+     "3FZQ8",
+     11042,
+     false
+    ]
+   ],
+   2
+  ],
+  [
+   "urn:lsid:dyntaxa.se:Taxon:6034688",
+   "Entomophthora planchoniana",
+   "Cornu",
+   "species",
+   "accepted_name",
+   null,
+   [
+    [
+     "6FG38",
+     96843,
+     false
+    ]
+   ],
+   2
+  ],
+  [
+   "urn:lsid:dyntaxa.se:Taxon:6034963",
+   "Bispora betulina",
+   "(Corda) S.Hughes",
+   "species",
+   "accepted_name",
+   null,
+   [
+    [
+     "5WKSN",
+     80635,
+     false
+    ]
+   ],
+   2
+  ],
+  [
+   "urn:lsid:dyntaxa.se:Taxon:6047688",
+   "Rigidoporus corticola/ravidus",
+   "",
+   "species",
+   "dyntaxa_synonym_name",
+   null,
+   [
+    [
+     "4BJG6",
+     40339,
+     true
+    ]
+   ],
+   2
+  ],
+  [
+   "urn:lsid:dyntaxa.se:Taxon:6319521",
+   "Phaeosphaeria orae-maris",
+   "(Linder) Khashn. & Shearer",
+   "species",
+   "dyntaxa_synonym_name",
+   null,
+   [
+    [
+     "3TVQG",
+     24972,
+     false
+    ]
+   ],
+   2
+  ],
+  [
+   "urn:lsid:dyntaxa.se:Taxon:6325124",
+   "Entomophthora planchoniana/chromaphidis",
+   "",
+   "species",
+   "dyntaxa_synonym_name",
+   null,
+   [
+    [
+     "6FG38",
+     96843,
+     false
+    ]
+   ],
+   2
+  ],
+  [
+   "urn:lsid:dyntaxa.se:Taxon:6331633",
+   "Ramaria botrytis",
+   "(Pers.) Bourdot",
+   "species",
+   "accepted_name",
+   null,
+   [
+    [
+     "4RBLZ",
+     58662,
+     true
+    ]
+   ],
+   2
+  ],
+  [
+   "urn:lsid:dyntaxa.se:Taxon:6331894",
+   "Cortinarius subexitiosus",
+   "Liimat. & al.",
+   "species",
+   "accepted_name",
+   null,
+   [
+    [
+     "YMMG",
+     619582,
+     true
+    ]
+   ],
+   2
+  ],
+  [
+   "urn:lsid:dyntaxa.se:Taxon:6332375",
+   "Bispora betulina",
+   "(Corda) S.Hughes",
+   "species",
+   "accepted_name",
+   null,
+   [
+    [
+     "5WKSN",
+     80635,
+     false
+    ]
+   ],
+   2
+  ],
+  [
+   "urn:lsid:dyntaxa.se:Taxon:6332413",
+   "Cortinarius caesiocanescens",
+   "M.M.Moser",
+   "species",
+   "accepted_name",
+   null,
+   [
+    [
+     "6B64Y",
+     92895,
+     true
+    ]
+   ],
+   2
+  ]
+ ],
+ "members_sha256": "27157d92bfb9a2e178d59be06c0bc1b4ad222934e442a798de7d259e17c89c5a",
+ "note": "Immutable review input. Membership is pinned to the release and source archives below; it approves nothing and never extends to taxa in a later Dyntaxa export. A candidate name only suggests the pair; the evidence class is graded from both sources' published synonymy. shared_synonyms lists at most 10 names; shared_synonym_count is exact.",
+ "pins": {
+  "cloud_scope_policy": {
+   "path": "database/taxonomy/policies/global-macrofungi-scope.yml",
+   "scope_predicate_id": "global_macrofungi_policy_v1",
+   "sha256": "e4e796286df93b5372264c702c824eea746f680b3b4e8d6467621c99e5b64ea6"
+  },
+  "release": {
+   "content_release_id": "tax-2026.09.26-02",
+   "gz_artifact": "database/reference_data/generated/taxonomy_v2/tax-2026.09.26-02.sqlite3.gz",
+   "gz_sha256": "4488bb64f4abe18ed269c76264f9be36708d742ff531e931e8d7458791e05d72",
+   "sqlite_sha256": "9bf71b7e1f9b2915c3b1798743cefdd5db53bdbbfb7edc462aa3d0ad0cf8547d"
+  },
+  "source_archives": {
+   "col_xr": {
+    "sha256": "397d701c8eb269bf78d6ac7b03149915b0d9e2a2c18694be2c91445b807814f9",
+    "source_release_id": "col_xr:2026-07-17-XR:2026-07-17"
+   },
+   "dyntaxa": {
+    "acquisition_manifest": {
+     "path": "database/taxonomy/sources/dyntaxa/2026-09-30/manifest.json",
+     "sha256": "1e75946149f4470e845a7e548285f62bc2c29d23fb241c626587bedab686443a"
+    },
+    "sha256": "7947b7a7681f3654d5478694f1fe37fdd9e72dc3aab8f9b6311525d85cc4879c",
+    "source_release_id": "dyntaxa:2026-09-30:2026-09-30"
+   }
+  }
+ },
+ "population": "dyntaxa_fungi_accepted_concepts",
+ "review_status": "needs_review"
+}

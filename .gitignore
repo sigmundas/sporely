@@ -156,6 +156,10 @@ sopp.jpg
 # Runtime flock sentinel: intentionally persistent, never committed
 /database/taxonomy/sources/nortaxa/*/.nortaxa-acquisition.lock
 
+# Dyntaxa source archives: retain requests/manifests, ignore raw bytes
+/database/taxonomy/sources/dyntaxa/*/archive.zip
+/database/taxonomy/sources/dyntaxa/*/extracted/
+
 # Stage 3A shared-compiler candidate outputs and normalized-source scratch.
 # The canonical identity registry lives as an ordered shard directory at
 # database/taxonomy/registry/canonical/ — that directory (its manifest.json

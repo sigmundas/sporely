@@ -1,0 +1,1015 @@
+{
+ "candidate_kind": "matched",
+ "cloud_scope_member_count": 8,
+ "columns": [
+  "dyntaxa_taxon_id",
+  "col_usage_id",
+  "sporely_taxon_id",
+  "candidate_basis",
+  "in_cloud_scope",
+  "dyntaxa_preferred_sv_vernacular",
+  "artportalen_legacy_ids_on_concept",
+  "bridge_accepted_name",
+  "backbone_accepted_name",
+  "accepted_names_agree",
+  "bridge_lists_backbone_accepted_name_as_synonym",
+  "backbone_lists_bridge_accepted_name_as_synonym",
+  "shared_synonym_count",
+  "shared_synonyms",
+  "bridge_synonym_count",
+  "backbone_synonym_count",
+  "shared_synonym_kind_counts",
+  "shared_synonym_evidence"
+ ],
+ "dyntaxa_col_source": {
+  "alias": "Dyntaxa",
+  "col_source_id": "2041",
+  "title": "Dyntaxa. Svensk taxonomisk databas"
+ },
+ "evidence_class": "shared_synonymy",
+ "format": "sporely-taxonomy-v3-candidate-manifest-v1",
+ "member_count": 33,
+ "members": [
+  [
+   "urn:lsid:dyntaxa.se:Taxon:1096",
+   "48JBV",
+   39045,
+   "accepted_name",
+   true,
+   "lövtryffel",
+   [
+    "1096"
+   ],
+   "Octaviania asterosperma Vittad.",
+   "Octaviania asterosperma Vittad.",
+   true,
+   false,
+   false,
+   1,
+   [
+    "octavianina asterosperma (Vittad.) Kuntze"
+   ],
+   4,
+   18,
+   {
+    "name_variant": 1
+   },
+   [
+    "name_variant: near-spelling of accepted 'octaviania asterosperma' [col col:status=synonym, dyntaxa nomenclaturalStatus=valid, dyntaxa taxonomicStatus=homotypicSynonym, col source=2073 merged=false]"
+   ]
+  ],
+  [
+   "urn:lsid:dyntaxa.se:Taxon:1146",
+   "4BTPG",
+   40508,
+   "accepted_name",
+   true,
+   "kratertryffel",
+   [
+    "1146"
+   ],
+   "Pachyphlodes citrina (Berk. & Broome) Doweld",
+   "Pachyphlodes citrina (Berk. & Broome) Doweld",
+   true,
+   false,
+   false,
+   1,
+   [
+    "pachyphloeus citrinus Berk. & Broome"
+   ],
+   2,
+   3,
+   {
+    "name_variant": 1
+   },
+   [
+    "name_variant: near-spelling of accepted 'pachyphlodes citrina' [col col:status=synonym, dyntaxa nomenclaturalStatus=valid, dyntaxa taxonomicStatus=synonym, col source=2073 merged=false]"
+   ]
+  ],
+  [
+   "urn:lsid:dyntaxa.se:Taxon:228765",
+   "34WXX",
+   2489,
+   "accepted_name",
+   false,
+   "strandsipperlav",
+   [],
+   "Dermatocarpon meiophyllizum Vain.",
+   "Dermatocarpon meiophyllizum Vain.",
+   true,
+   false,
+   false,
+   1,
+   [
+    "dermatocarpon meiophyllum Vain."
+   ],
+   2,
+   6,
+   {
+    "name_variant": 1
+   },
+   [
+    "name_variant: near-spelling of accepted 'dermatocarpon meiophyllizum' [col col:status=synonym, dyntaxa nomenclaturalStatus=valid, dyntaxa taxonomicStatus=synonym, col source=2073 merged=false]"
+   ]
+  ],
+  [
+   "urn:lsid:dyntaxa.se:Taxon:228964",
+   "3SRDN",
+   23050,
+   "accepted_name",
+   false,
+   null,
+   [
+    "228964"
+   ],
+   "Lecania olivacella (Nyl.) Zahlbr.",
+   "Lecania olivacella (Nyl.) Zahlbr.",
+   true,
+   false,
+   false,
+   1,
+   [
+    "lecanora olivacella Nyl."
+   ],
+   1,
+   2,
+   {
+    "name_variant": 1
+   },
+   [
+    "name_variant: near-spelling of accepted 'lecania olivacella' [col col:status=synonym, dyntaxa nomenclaturalStatus=valid, dyntaxa taxonomicStatus=synonym, col source=2073 merged=false]"
+   ]
+  ],
+  [
+   "urn:lsid:dyntaxa.se:Taxon:229175",
+   "PVZMC",
+   166589,
+   "accepted_name",
+   false,
+   "fjäll-lecidella",
+   [],
+   "Lecidella altensis (Th.Fr.) Hertel",
+   "Lecidella altensis (Th.Fr.) Hertel",
+   true,
+   false,
+   false,
+   1,
+   [
+    "lecidea altensis Th.Fr."
+   ],
+   1,
+   1,
+   {
+    "name_variant": 1
+   },
+   [
+    "name_variant: near-spelling of accepted 'lecidella altensis' [col col:nameStatus=acceptable, col col:status=synonym, dyntaxa nomenclaturalStatus=valid, dyntaxa taxonomicStatus=synonym, col source=2041 merged=true]"
+   ]
+  ],
+  [
+   "urn:lsid:dyntaxa.se:Taxon:229177",
+   "PVZST",
+   166590,
+   "accepted_name",
+   false,
+   "mörk lecidella",
+   [],
+   "Lecidella atrosanguinea (Flörke)",
+   "Lecidella atrosanguinea (Flörke)",
+   true,
+   false,
+   false,
+   2,
+   [
+    "lecidea atrosanguinea (Flörke) Vain.",
+    "lecidea atrosanguinea Flörke"
+   ],
+   3,
+   4,
+   {
+    "name_variant": 2
+   },
+   [
+    "name_variant: near-spelling of accepted 'lecidella atrosanguinea' [col col:nameStatus=acceptable, col col:status=synonym, dyntaxa nomenclaturalStatus=valid, dyntaxa taxonomicStatus=synonym, col source=2041 merged=true]",
+    "name_variant: near-spelling of accepted 'lecidella atrosanguinea' [col col:nameStatus=acceptable, col col:status=synonym, dyntaxa nomenclaturalStatus=valid, dyntaxa taxonomicStatus=synonym, col source=2041 merged=true]"
+   ]
+  ],
+  [
+   "urn:lsid:dyntaxa.se:Taxon:229182",
+   "3SV7Z",
+   23445,
+   "accepted_name",
+   false,
+   "gulmjölig lecidella",
+   [],
+   "Lecidella flavosorediata (Vězda) Hertel & Leuckert",
+   "Lecidella flavosorediata (Vězda) Hertel & Leuckert",
+   true,
+   false,
+   false,
+   1,
+   [
+    "lecidea flavosorediata Vězda"
+   ],
+   1,
+   3,
+   {
+    "name_variant": 1
+   },
+   [
+    "name_variant: near-spelling of accepted 'lecidella flavosorediata' [col col:status=synonym, dyntaxa nomenclaturalStatus=valid, dyntaxa taxonomicStatus=synonym, col source=2073 merged=false]"
+   ]
+  ],
+  [
+   "urn:lsid:dyntaxa.se:Taxon:229184",
+   "3SV8Q",
+   23452,
+   "accepted_name",
+   false,
+   null,
+   [
+    "229184"
+   ],
+   "Lecidella meiococca (Nyl.) Leuckert & Hertel",
+   "Lecidella meiococca (Nyl.) Leuckert & Hertel",
+   true,
+   false,
+   false,
+   1,
+   [
+    "lecidea meiococca Nyl."
+   ],
+   1,
+   5,
+   {
+    "name_variant": 1
+   },
+   [
+    "name_variant: near-spelling of accepted 'lecidella meiococca' [col col:status=synonym, dyntaxa nomenclaturalStatus=valid, dyntaxa taxonomicStatus=synonym, col source=2073 merged=false]"
+   ]
+  ],
+  [
+   "urn:lsid:dyntaxa.se:Taxon:229192",
+   "PW3GK",
+   166615,
+   "accepted_name",
+   false,
+   "ved-lecidella",
+   [],
+   "Lecidella xylophila (Th.Fr.) Knoph & Leuckert",
+   "Lecidella xylophila (Th.Fr.) Knoph & Leuckert",
+   true,
+   false,
+   false,
+   1,
+   [
+    "lecidea xylophila Th.Fr."
+   ],
+   1,
+   1,
+   {
+    "name_variant": 1
+   },
+   [
+    "name_variant: near-spelling of accepted 'lecidella xylophila' [col col:nameStatus=acceptable, col col:status=synonym, dyntaxa nomenclaturalStatus=valid, dyntaxa taxonomicStatus=synonym, col source=2041 merged=true]"
+   ]
+  ],
+  [
+   "urn:lsid:dyntaxa.se:Taxon:229509",
+   "76F82",
+   117701,
+   "accepted_name",
+   false,
+   "sydlig filtlav",
+   [],
+   "Peltigera hymenina (Ach.) Delise",
+   "Peltigera hymenina (Ach.) Delise",
+   true,
+   false,
+   false,
+   1,
+   [
+    "peltidea hymenina Ach."
+   ],
+   2,
+   13,
+   {
+    "name_variant": 1
+   },
+   [
+    "name_variant: near-spelling of accepted 'peltigera hymenina' [col col:status=synonym, dyntaxa nomenclaturalStatus=valid, dyntaxa taxonomicStatus=synonym, col source=2073 merged=false]"
+   ]
+  ],
+  [
+   "urn:lsid:dyntaxa.se:Taxon:229513",
+   "76F88",
+   117707,
+   "accepted_name",
+   false,
+   "matt filtlav",
+   [
+    "229513"
+   ],
+   "Peltigera malacea (Ach.) Funck",
+   "Peltigera malacea (Ach.) Funck",
+   true,
+   false,
+   false,
+   1,
+   [
+    "peltidea malacea Ach."
+   ],
+   1,
+   16,
+   {
+    "name_variant": 1
+   },
+   [
+    "name_variant: near-spelling of accepted 'peltigera malacea' [col col:status=synonym, dyntaxa nomenclaturalStatus=valid, dyntaxa taxonomicStatus=synonym, col source=2073 merged=false]"
+   ]
+  ],
+  [
+   "urn:lsid:dyntaxa.se:Taxon:229613",
+   "77HYM",
+   120076,
+   "accepted_name",
+   false,
+   "mossdagglav",
+   [
+    "229613"
+   ],
+   "Physconia muscigena (Ach.) Poelt",
+   "Physconia muscigena (Ach.) Poelt",
+   true,
+   false,
+   false,
+   1,
+   [
+    "physcia muscigena (Ach.) Nyl."
+   ],
+   1,
+   21,
+   {
+    "name_variant": 1
+   },
+   [
+    "name_variant: near-spelling of accepted 'physconia muscigena' [col col:status=synonym, dyntaxa nomenclaturalStatus=valid, dyntaxa taxonomicStatus=synonym, col source=2073 merged=false]"
+   ]
+  ],
+  [
+   "urn:lsid:dyntaxa.se:Taxon:229614",
+   "6VHYP",
+   109687,
+   "accepted_name",
+   false,
+   "fjällig dagglav",
+   [
+    "229614"
+   ],
+   "Physconia perisidiosa (Erichsen) Moberg",
+   "Physconia perisidiosa (Erichsen) Moberg",
+   true,
+   false,
+   false,
+   1,
+   [
+    "physcia perisidiosa Erichsen"
+   ],
+   2,
+   6,
+   {
+    "name_variant": 1
+   },
+   [
+    "name_variant: near-spelling of accepted 'physconia perisidiosa' [col col:status=synonym, dyntaxa nomenclaturalStatus=valid, dyntaxa taxonomicStatus=synonym, col source=2073 merged=false]"
+   ]
+  ],
+  [
+   "urn:lsid:dyntaxa.se:Taxon:245145",
+   "4RTSY",
+   59849,
+   "accepted_name",
+   true,
+   null,
+   [
+    "245145"
+   ],
+   "Resupinatus griseopallidus (Weinm.) Knudsen & Elborne",
+   "Resupinatus griseopallidus (Weinm.) Knudsen & Elborne",
+   true,
+   false,
+   false,
+   1,
+   [
+    "resipunatus griseopallidus (Weinm.) Knudsen & Elborne"
+   ],
+   3,
+   8,
+   {
+    "name_variant": 1
+   },
+   [
+    "name_variant: near-spelling of accepted 'resupinatus griseopallidus' [col col:nameStatus=acceptable, col col:status=synonym, dyntaxa nomenclaturalStatus=valid, dyntaxa taxonomicStatus=synonym, col source=2041 merged=true]"
+   ]
+  ],
+  [
+   "urn:lsid:dyntaxa.se:Taxon:259053",
+   "3SCZJ",
+   22729,
+   "accepted_name",
+   true,
+   null,
+   [
+    "259053"
+   ],
+   "Lasiobolus diversisporus (Fuckel) Sacc.",
+   "Lasiobolus diversisporus (Fuckel) Sacc.",
+   true,
+   false,
+   false,
+   1,
+   [
+    "ascobolus diversisporus Fuckel"
+   ],
+   1,
+   3,
+   {
+    "name_variant": 1
+   },
+   [
+    "name_variant: near-spelling of accepted 'lasiobolus diversisporus' [col col:status=synonym, dyntaxa nomenclaturalStatus=valid, dyntaxa taxonomicStatus=synonym, col source=2073 merged=false]"
+   ]
+  ],
+  [
+   "urn:lsid:dyntaxa.se:Taxon:259266",
+   "3YBVS",
+   28356,
+   "accepted_name",
+   false,
+   null,
+   [],
+   "Massaria macra (Vestergr.) Voglmayr & Jaklitsch",
+   "Massaria macra (Vestergr.) Voglmayr & Jaklitsch",
+   true,
+   false,
+   false,
+   1,
+   [
+    "massarina macra Vestergr."
+   ],
+   2,
+   1,
+   {
+    "name_variant": 1
+   },
+   [
+    "name_variant: near-spelling of accepted 'massaria macra' [col col:status=synonym, dyntaxa nomenclaturalStatus=valid, dyntaxa taxonomicStatus=homotypicSynonym, col source=2073 merged=false]"
+   ]
+  ],
+  [
+   "urn:lsid:dyntaxa.se:Taxon:259853",
+   "4FK9K",
+   43116,
+   "accepted_name",
+   false,
+   null,
+   [],
+   "Phacidina gracilis (Niessl) Höhn.",
+   "Phacidina gracilis (Niessl) Höhn.",
+   true,
+   false,
+   false,
+   1,
+   [
+    "phacidium gracile Niessl"
+   ],
+   1,
+   1,
+   {
+    "name_variant": 1
+   },
+   [
+    "name_variant: near-spelling of accepted 'phacidina gracilis' [col col:status=synonym, dyntaxa nomenclaturalStatus=valid, dyntaxa taxonomicStatus=synonym, col source=2073 merged=false]"
+   ]
+  ],
+  [
+   "urn:lsid:dyntaxa.se:Taxon:260611",
+   "PW39L",
+   166611,
+   "accepted_name",
+   false,
+   null,
+   [
+    "260611"
+   ],
+   "Lecidella tumidula (A.Massal.) Knoph & Leuckert",
+   "Lecidella tumidula (A.Massal.) Knoph & Leuckert",
+   true,
+   false,
+   false,
+   1,
+   [
+    "lecidea tumidula A. Massal."
+   ],
+   1,
+   1,
+   {
+    "name_variant": 1
+   },
+   [
+    "name_variant: near-spelling of accepted 'lecidella tumidula' [col col:nameStatus=acceptable, col col:status=synonym, dyntaxa nomenclaturalStatus=valid, dyntaxa taxonomicStatus=synonym, col source=2041 merged=true]"
+   ]
+  ],
+  [
+   "urn:lsid:dyntaxa.se:Taxon:266175",
+   "PSFY9",
+   166188,
+   "accepted_name",
+   false,
+   null,
+   [
+    "266175"
+   ],
+   "Lecanora pseudohypopta Vain.",
+   "Lecanora pseudohypopta Vain.",
+   true,
+   false,
+   false,
+   1,
+   [
+    "lecidora pseudohypopta (Vain.) Motyka"
+   ],
+   1,
+   1,
+   {
+    "name_variant": 1
+   },
+   [
+    "name_variant: near-spelling of accepted 'lecanora pseudohypopta' [col col:nameStatus=acceptable, col col:status=synonym, dyntaxa nomenclaturalStatus=valid, dyntaxa taxonomicStatus=synonym, col source=2041 merged=true]"
+   ]
+  ],
+  [
+   "urn:lsid:dyntaxa.se:Taxon:3058",
+   "H6Z6",
+   153911,
+   "accepted_name",
+   true,
+   null,
+   [
+    "3058"
+   ],
+   "Ascobolus stictoideus Speg.",
+   "Ascobolus stictoideus Speg.",
+   true,
+   false,
+   false,
+   1,
+   [
+    "dasyobolus stictoideus (Speg.) Svrček"
+   ],
+   1,
+   2,
+   {
+    "name_variant": 1
+   },
+   [
+    "name_variant: near-spelling of accepted 'ascobolus stictoideus' [col col:status=synonym, dyntaxa nomenclaturalStatus=valid, dyntaxa taxonomicStatus=synonym, col source=2073 merged=false]"
+   ]
+  ],
+  [
+   "urn:lsid:dyntaxa.se:Taxon:4811",
+   "3SGPL",
+   22907,
+   "accepted_name",
+   false,
+   null,
+   [],
+   "Lasiosphaeris hispida (Tode) Clem.",
+   "Lasiosphaeris hispida (Tode) Clem.",
+   true,
+   false,
+   false,
+   1,
+   [
+    "lasiosphaeria hispida (Tode) Fuckel"
+   ],
+   5,
+   5,
+   {
+    "name_variant": 1
+   },
+   [
+    "name_variant: near-spelling of accepted 'lasiosphaeris hispida' [col col:status=synonym, dyntaxa nomenclaturalStatus=valid, dyntaxa taxonomicStatus=heterotypicSynonym, col source=2073 merged=false]"
+   ]
+  ],
+  [
+   "urn:lsid:dyntaxa.se:Taxon:5093",
+   "44SN7",
+   34092,
+   "accepted_name",
+   true,
+   "gräshätta",
+   [
+    "5093"
+   ],
+   "Mycena aetites (Fr.) Quél.",
+   "Mycena aetites (Fr.) Quél.",
+   true,
+   false,
+   false,
+   1,
+   [
+    "mycena aetitis (Fr.) Quél."
+   ],
+   1,
+   9,
+   {
+    "name_variant": 1
+   },
+   [
+    "name_variant: near-spelling of accepted 'mycena aetites' [col col:nameStatus=acceptable, col col:status=synonym, dyntaxa nomenclaturalStatus=valid, dyntaxa taxonomicStatus=synonym, col source=2041 merged=true]"
+   ]
+  ],
+  [
+   "urn:lsid:dyntaxa.se:Taxon:5326",
+   "4BTPH",
+   40509,
+   "accepted_name",
+   true,
+   "slät kratertryffel",
+   [
+    "5326"
+   ],
+   "Pachyphlodes conglomerata (Berk. & Broome) Doweld",
+   "Pachyphlodes conglomerata (Berk. & Broome) Doweld",
+   true,
+   false,
+   false,
+   1,
+   [
+    "pachyphloeus conglomeratus Berk. & Broome"
+   ],
+   2,
+   2,
+   {
+    "name_variant": 1
+   },
+   [
+    "name_variant: near-spelling of accepted 'pachyphlodes conglomerata' [col col:status=synonym, dyntaxa nomenclaturalStatus=valid, dyntaxa taxonomicStatus=homotypicSynonym, col source=2073 merged=false]"
+   ]
+  ],
+  [
+   "urn:lsid:dyntaxa.se:Taxon:5836",
+   "4TRMP",
+   61765,
+   "accepted_name",
+   true,
+   "guldkremla",
+   [
+    "5836"
+   ],
+   "Russula aurea Pers.",
+   "Russula aurea Pers.",
+   true,
+   false,
+   false,
+   1,
+   [
+    "russula aurata Fr."
+   ],
+   2,
+   13,
+   {
+    "name_variant": 1
+   },
+   [
+    "name_variant: near-spelling of accepted 'russula aurea' [col col:status=synonym, dyntaxa nomenclaturalStatus=valid, dyntaxa taxonomicStatus=synonym, col source=2073 merged=false]"
+   ]
+  ],
+  [
+   "urn:lsid:dyntaxa.se:Taxon:6000371",
+   "PVTTD",
+   166552,
+   "accepted_name",
+   false,
+   null,
+   [
+    "6000371"
+   ],
+   "Lecidea sudetica Körb.",
+   "Lecidea sudetica Körb.",
+   true,
+   false,
+   false,
+   1,
+   [
+    "lecidella sudetica (Körb.) Stein"
+   ],
+   2,
+   4,
+   {
+    "name_variant": 1
+   },
+   [
+    "name_variant: near-spelling of accepted 'lecidea sudetica' [col col:nameStatus=acceptable, col col:status=synonym, dyntaxa nomenclaturalStatus=valid, dyntaxa taxonomicStatus=synonym, col source=2041 merged=true]"
+   ]
+  ],
+  [
+   "urn:lsid:dyntaxa.se:Taxon:6002349",
+   "7DX9K",
+   127503,
+   "accepted_name",
+   false,
+   null,
+   [
+    "6002349"
+   ],
+   "Uromyces gentianae Arthur",
+   "Uromyces gentianae Arthur",
+   true,
+   false,
+   false,
+   1,
+   [
+    "uromyces eugentianae Cummins"
+   ],
+   1,
+   3,
+   {
+    "name_variant": 1
+   },
+   [
+    "name_variant: near-spelling of accepted 'uromyces gentianae' [col col:status=synonym, dyntaxa nomenclaturalStatus=valid, dyntaxa taxonomicStatus=synonym, col source=2073 merged=false]"
+   ]
+  ],
+  [
+   "urn:lsid:dyntaxa.se:Taxon:6021483",
+   "SK5NY",
+   603964,
+   "accepted_name",
+   false,
+   null,
+   [],
+   "Ramularia melampyri Ellis & Dearn.",
+   "Ramularia melampyri Ellis & Dearn.",
+   true,
+   false,
+   false,
+   1,
+   [
+    "ramularia melampyrina C.Massal."
+   ],
+   1,
+   1,
+   {
+    "name_variant": 1
+   },
+   [
+    "name_variant: near-spelling of accepted 'ramularia melampyri' [col col:nameStatus=acceptable, col col:status=synonym, dyntaxa nomenclaturalStatus=valid, dyntaxa taxonomicStatus=heterotypicSynonym, col source=2041 merged=true]"
+   ]
+  ],
+  [
+   "urn:lsid:dyntaxa.se:Taxon:6032731",
+   "3TNV4",
+   24436,
+   "accepted_name",
+   false,
+   null,
+   [],
+   "Leptodontidium irregulare (de Hoog) de Hoog",
+   "Leptodontidium irregulare (de Hoog) de Hoog",
+   true,
+   false,
+   false,
+   1,
+   [
+    "leptodontium irregulare de Hoog"
+   ],
+   1,
+   1,
+   {
+    "name_variant": 1
+   },
+   [
+    "name_variant: near-spelling of accepted 'leptodontidium irregulare' [col col:status=synonym, dyntaxa nomenclaturalStatus=valid, dyntaxa taxonomicStatus=homotypicSynonym, col source=2073 merged=false]"
+   ]
+  ],
+  [
+   "urn:lsid:dyntaxa.se:Taxon:6033001",
+   "3Y9JD",
+   28230,
+   "accepted_name",
+   false,
+   null,
+   [],
+   "Marssonina carnea (Vestergr.) Magnus",
+   "Marssonina carnea (Vestergr.) Magnus",
+   true,
+   false,
+   false,
+   1,
+   [
+    "marssonia carnea Vestergr."
+   ],
+   1,
+   1,
+   {
+    "name_variant": 1
+   },
+   [
+    "name_variant: near-spelling of accepted 'marssonina carnea' [col col:status=synonym, dyntaxa nomenclaturalStatus=valid, dyntaxa taxonomicStatus=homotypicSynonym, col source=2073 merged=false]"
+   ]
+  ],
+  [
+   "urn:lsid:dyntaxa.se:Taxon:6033002",
+   "Q9JVV",
+   168094,
+   "accepted_name",
+   false,
+   null,
+   [],
+   "Marssonina chamaenerii (Rostr.) Magnus",
+   "Marssonina chamaenerii (Rostr.) Magnus",
+   true,
+   false,
+   false,
+   1,
+   [
+    "marssonia chamaenerii Rostr."
+   ],
+   1,
+   1,
+   {
+    "name_variant": 1
+   },
+   [
+    "name_variant: near-spelling of accepted 'marssonina chamaenerii' [col col:nameStatus=acceptable, col col:status=synonym, dyntaxa nomenclaturalStatus=valid, dyntaxa taxonomicStatus=homotypicSynonym, col source=2041 merged=true]"
+   ]
+  ],
+  [
+   "urn:lsid:dyntaxa.se:Taxon:6033528",
+   "3Y9KM",
+   28257,
+   "accepted_name",
+   false,
+   null,
+   [],
+   "Marssonina kriegeriana (Bres.) Magnus",
+   "Marssonina kriegeriana (Bres.) Magnus",
+   true,
+   false,
+   false,
+   1,
+   [
+    "marssonia kriegeriana Bres."
+   ],
+   1,
+   1,
+   {
+    "name_variant": 1
+   },
+   [
+    "name_variant: near-spelling of accepted 'marssonina kriegeriana' [col col:status=synonym, dyntaxa nomenclaturalStatus=valid, dyntaxa taxonomicStatus=homotypicSynonym, col source=2073 merged=false]"
+   ]
+  ],
+  [
+   "urn:lsid:dyntaxa.se:Taxon:6319488",
+   "4YCTD",
+   66029,
+   "accepted_name",
+   false,
+   null,
+   [
+    "6319488"
+   ],
+   "Sorocybe resinae (Fr.) Fr.",
+   "Sorocybe resinae (Fr.) Fr.",
+   true,
+   false,
+   false,
+   1,
+   [
+    "sporocybe resinae (Fr.) Fr."
+   ],
+   6,
+   8,
+   {
+    "name_variant": 1
+   },
+   [
+    "name_variant: near-spelling of accepted 'sorocybe resinae' [col col:status=synonym, dyntaxa nomenclaturalStatus=valid, dyntaxa taxonomicStatus=heterotypicSynonym, col source=2073 merged=false]"
+   ]
+  ],
+  [
+   "urn:lsid:dyntaxa.se:Taxon:6331239",
+   "MF99C",
+   160955,
+   "accepted_name",
+   false,
+   "fläderlundlav",
+   [
+    "6331239"
+   ],
+   "Bacidina caerulea (Körb.) S.Ekman",
+   "Bacidina caerulea (Körb.) S.Ekman",
+   true,
+   false,
+   false,
+   1,
+   [
+    "bacidia caerulea Körb."
+   ],
+   1,
+   2,
+   {
+    "name_variant": 1
+   },
+   [
+    "name_variant: near-spelling of accepted 'bacidina caerulea' [col col:nameStatus=acceptable, col col:status=synonym, dyntaxa nomenclaturalStatus=valid, dyntaxa taxonomicStatus=synonym, col source=2041 merged=true]"
+   ]
+  ]
+ ],
+ "members_sha256": "3a352735e30d3be5f0f8720d76760b8d037073e9c8ece82bbc6fefed48616736",
+ "membership_rule": "every shared synonym is of kind 'name_variant'",
+ "note": "Immutable review input. Membership is pinned to the release and source archives below; it approves nothing and never extends to taxa in a later Dyntaxa export. A candidate name only suggests the pair; the evidence class is graded from both sources' published synonymy. shared_synonyms lists at most 10 names; shared_synonym_count is exact.",
+ "parent_manifest": {
+  "evidence_class": "shared_synonymy",
+  "member_count": 5343,
+  "members_sha256": "33ee1fabee5c91864e11fb6617f8f3ef8bdd700b5321a78ae65ec527d349bed1"
+ },
+ "pins": {
+  "cloud_scope_policy": {
+   "path": "database/taxonomy/policies/global-macrofungi-scope.yml",
+   "scope_predicate_id": "global_macrofungi_policy_v1",
+   "sha256": "e4e796286df93b5372264c702c824eea746f680b3b4e8d6467621c99e5b64ea6"
+  },
+  "release": {
+   "content_release_id": "tax-2026.09.26-02",
+   "gz_artifact": "database/reference_data/generated/taxonomy_v2/tax-2026.09.26-02.sqlite3.gz",
+   "gz_sha256": "4488bb64f4abe18ed269c76264f9be36708d742ff531e931e8d7458791e05d72",
+   "sqlite_sha256": "9bf71b7e1f9b2915c3b1798743cefdd5db53bdbbfb7edc462aa3d0ad0cf8547d"
+  },
+  "source_archives": {
+   "col_xr": {
+    "sha256": "397d701c8eb269bf78d6ac7b03149915b0d9e2a2c18694be2c91445b807814f9",
+    "source_release_id": "col_xr:2026-07-17-XR:2026-07-17"
+   },
+   "dyntaxa": {
+    "acquisition_manifest": {
+     "path": "database/taxonomy/sources/dyntaxa/2026-09-30/manifest.json",
+     "sha256": "1e75946149f4470e845a7e548285f62bc2c29d23fb241c626587bedab686443a"
+    },
+    "sha256": "7947b7a7681f3654d5478694f1fe37fdd9e72dc3aab8f9b6311525d85cc4879c",
+    "source_release_id": "dyntaxa:2026-09-30:2026-09-30"
+   }
+  }
+ },
+ "population": "dyntaxa_fungi_accepted_concepts",
+ "review_class": "only_name_variant",
+ "review_class_precedence": [
+  "non_species_rank",
+  "rank_mismatch",
+  "infraspecific_rank",
+  "accepted_authorship_disagrees",
+  "only_orthographic_variant",
+  "only_unpublished",
+  "only_not_validly_published",
+  "only_illegitimate",
+  "only_interpretation_qualified",
+  "only_pro_parte",
+  "only_accepted_name_reauthored",
+  "only_unauthored",
+  "only_name_variant",
+  "only_dyntaxa_derived",
+  "only_mixed_weak",
+  "single_shared_synonym_low_overlap",
+  "ordinary"
+ ],
+ "review_status": "needs_review",
+ "synonym_kind_precedence": [
+  "orthographic_variant",
+  "unpublished",
+  "not_validly_published",
+  "illegitimate",
+  "interpretation_qualified",
+  "pro_parte",
+  "accepted_name_reauthored",
+  "unauthored",
+  "name_variant",
+  "dyntaxa_derived",
+  "ordinary"
+ ],
+ "synonym_kinds": {
+  "accepted_name_reauthored": "the canonical name is either accepted name itself, under another authorship",
+  "dyntaxa_derived": "otherwise ordinary, but every COL usage behind it comes from the COL source that is Dyntaxa (see dyntaxa_col_source): COL republishes Dyntaxa's assertion, so the two sources do not independently corroborate it",
+  "illegitimate": "Dyntaxa nomenclaturalStatus 'illegitimum' or 'rejiciendum', the authorship carries 'nom. illeg.', or a COL usage's col:remarks/col:nameRemarks carries 'nom. illeg.' or 'later homonym'",
+  "interpretation_qualified": "a misapplied COL usage (col:status 'misapplied'), or the authorship carries a sensu-style qualifier ('sensu', 's.', 'ss.', 'auct.'). Dyntaxa's misapplied usages never reach this test: they are not synonymy and are excluded when the archive is read",
+  "name_variant": "no structured status applies, but the name is almost spelled like either accepted name: same word count once hyphens are removed, and every word, genus included, within Levenshtein distance 2",
+  "not_validly_published": "Dyntaxa nomenclaturalStatus 'invalidum' or 'nudum', COL col:nameStatus 'not established', the authorship carries 'nom. nud.' or 'nom. inval.', or a COL usage's col:remarks/col:nameRemarks carries 'nom. nud.', 'nom. inval.' or 'published without a valid description'",
+  "ordinary": "meets none of the tests above",
+  "orthographic_variant": "Dyntaxa nomenclaturalStatus 'orthographia'",
+  "pro_parte": "COL col:status 'ambiguous synonym', or the authorship carries 'p.p.' or 'pro parte' (Dyntaxa's proParteSynonym usages are excluded when the archive is read)",
+  "unauthored": "the authorship is empty, so the match is on the name alone",
+  "unpublished": "COL col:nameStatus 'manuscript', or the authorship or a COL usage's col:remarks/col:nameRemarks carries 'ined' or 'nom. herb.'"
+ }
+}

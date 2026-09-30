@@ -34,7 +34,8 @@ The shipped bundle lives outside this directory, in
 
 ```
 COL XR archive ──► normalize_col_xr.py ─────┐
-NorTaxa DwC-A ───► national_source.py ──────┼─► compile_release.py ─► build_sqlite_candidate.py ─► <release>.sqlite3
+NorTaxa DwC-A ───► national_source.py ──────┤
+Dyntaxa DwC-A ───► national_source.py ──────┼─► compile_release.py ─► build_sqlite_candidate.py ─► <release>.sqlite3
 Red-list xlsx ───► normalize_redlist_no.py ─┘        ▲   (registry)                                   │
 legacy DB ───────► export_legacy_enrichment.py ──────┘ optional                                       │
                                                                                                       ├─► promote_desktop_bundle.py ─► desktop bundle
@@ -170,33 +171,59 @@ so publishing ids are desktop-only.
 
 Do not delete the legacy database or its build scripts
 (`database/README.md`) until a release carries this data, or a national
-Swedish source replaces it.
+Swedish source replaces it. Dyntaxa is that source from Stage 4P, but only
+for concepts with a reviewed Dyntaxa bridge; until owner-approved Dyntaxa
+mappings exist, every Swedish vernacular still comes from the legacy
+Artportalen data.
 
 ## Adding a national source
 
-The normalizer is generic; the compiler still has NorTaxa-specific wiring.
-Checklist:
+The normalizer is generic, and so is the compiler wiring below; NorTaxa and
+Dyntaxa (Stage 4P) are its two users. Checklist:
 
 1. **Acquisition record.** Create `sources/<code>/<version>/` with
-   `request.json` and `manifest.json` (archive SHA-256, byte size, licence,
-   issued date), following `sources/nortaxa/1.284/`. Keep the archive
-   gitignored.
+   `request.json` (route, endpoint, terms) and `manifest.json` (archive
+   SHA-256 under `download.sha256`, byte size, per-member SHA-256, licence,
+   citation, issued date), following `sources/dyntaxa/2026-09-30/`. Keep the
+   archive gitignored and never copy an API key into the record.
 2. **Profile.** `national_source.py init <code>`, then `inspect`, `validate`
    and `normalize` (see the [kit README](national_sources/README.md)). Declare
-   `identifier_namespace_semantics` as the NorTaxa profile does.
+   `identifier_namespace_semantics` as the NorTaxa and Dyntaxa profiles do,
+   and list any extension the source ships but Sporely does not read under
+   `ignored_extensions`; an undeclared extension is refused.
 3. **Compiler registration.**
-   - `scripts/compile_release.py`: `SOURCE_PRIORITY`, and a bridge entry
-     beside `_ARTSNAVNEBASE_BRIDGE` if the source's IDs are an authoritative
-     registry.
-   - `scripts/build_sqlite_candidate.py`: `SOURCE_SYSTEM_MAP` and
-     `INTEGER_NAMESPACES`/`TEXT_NAMESPACES`.
-   - `policies/source_priority.yml` and `policies/languages.yml`.
-4. **Cloud.** `cloud_export.py` scope and pins; `sporely-web`'s
-   `resolve_taxon_external_id_v2` callers and picker for the new namespace.
-5. **Review.** Report unmatched and ambiguous records. Resolve them only
-   through `policies/manual_mappings.yml`, never by name matching.
-6. **Tests.** A small synthetic fixture next to `national_sources/example/`,
-   plus compiler and bridge-emission tests for the new namespace.
+   - `scripts/compile_release.py`: `SOURCE_PRIORITY`; any new
+     `taxonomicStatus` synonym values in `_SYNONYM_STATUSES`; and, for a
+     source that must gain identity only through review (every new source),
+     `REVIEWED_IDENTITY_ONLY_SOURCES`. A bridge entry beside
+     `_ARTSNAVNEBASE_BRIDGE` only if the source's IDs are an authoritative
+     red-list registry.
+   - `scripts/build_sqlite_candidate.py`: `SOURCE_SYSTEM_MAP`; text-id
+     sources in `BRIDGE_ONLY_IDENTIFIER_SOURCES` (every row of
+     `taxon_external_id_text_min` is published); the national-name column in
+     `NATIONAL_PREFERRED_NAME_SOURCES`.
+   - `policies/source_priority.yml` (role, namespaces, vernacular priority)
+     and `policies/languages.yml`.
+   - `release-recipe.json`: the source entry.
+4. **Cloud.** The reviewed bridge rows and national names flow through
+   `cloud_export.py` unchanged; document the namespace and row shape in
+   `docs/cloud-export-contract.md` for `sporely-web`'s
+   `resolve_taxon_external_id_v2` callers and picker.
+5. **Review.** Generate matched, unmatched and ambiguous evidence
+   (`evidence/taxonomy-v3/audit_stage4p_dyntaxa.py` is the model). Resolve
+   candidates only through owner-approved manifests and
+   `policies/manual_mappings.yml`, never by name matching.
+6. **Tests.** A small synthetic fixture (generated in the test or next to
+   `national_sources/example/`), plus compiler and bridge-emission tests for
+   the new namespace (`tests/test_taxonomy_v3_stage4p.py`).
+
+Reviewed-identity-only means: the source's usages are not classified by the
+automatic cross-source proposer, not aliased by an automatic exact match and
+not allocated concepts of their own. A usage is bound only by an approved
+manual mapping, and a synonym only when its accepted usage was bound that
+way. Unbound usages and their vernaculars are counted in the compile
+diagnostics (`counts.reviewed_identity_only_sources`). NorTaxa predates the
+rule; its automatic bindings are already in the append-only registry.
 
 ## Documents
 

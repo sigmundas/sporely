@@ -1,0 +1,223 @@
+{
+ "candidate_kind": "matched",
+ "cloud_scope_member_count": 0,
+ "columns": [
+  "dyntaxa_taxon_id",
+  "col_usage_id",
+  "sporely_taxon_id",
+  "candidate_basis",
+  "in_cloud_scope",
+  "dyntaxa_preferred_sv_vernacular",
+  "artportalen_legacy_ids_on_concept",
+  "bridge_accepted_name",
+  "backbone_accepted_name",
+  "accepted_names_agree",
+  "bridge_lists_backbone_accepted_name_as_synonym",
+  "backbone_lists_bridge_accepted_name_as_synonym",
+  "shared_synonym_count",
+  "shared_synonyms",
+  "bridge_synonym_count",
+  "backbone_synonym_count",
+  "shared_synonym_kind_counts",
+  "shared_synonym_evidence"
+ ],
+ "dyntaxa_col_source": {
+  "alias": "Dyntaxa",
+  "col_source_id": "2041",
+  "title": "Dyntaxa. Svensk taxonomisk databas"
+ },
+ "evidence_class": "shared_synonymy",
+ "format": "sporely-taxonomy-v3-candidate-manifest-v1",
+ "member_count": 4,
+ "members": [
+  [
+   "urn:lsid:dyntaxa.se:Taxon:228394",
+   "PZQ5",
+   167069,
+   "accepted_name",
+   false,
+   "blyertsgrå orangelav",
+   [],
+   "Caloplaca ahtii Søchting",
+   "Caloplaca ahtii Søchting",
+   true,
+   false,
+   false,
+   1,
+   [
+    "caloplaca delicatula Søchting"
+   ],
+   1,
+   2,
+   {
+    "unpublished": 1
+   },
+   [
+    "unpublished: COL MFXL5 col:remarks 'ined' [col col:nameStatus=acceptable, col col:status=synonym, dyntaxa nomenclaturalStatus=valid, dyntaxa taxonomicStatus=synonym, col source=2041 merged=true]"
+   ]
+  ],
+  [
+   "urn:lsid:dyntaxa.se:Taxon:228459",
+   "M497R",
+   159863,
+   "accepted_name",
+   false,
+   null,
+   [],
+   "Blastenia personata Hulting",
+   "Blastenia personata Hulting",
+   true,
+   false,
+   false,
+   1,
+   [
+    "caloplaca personata (Hulting) comb. ined."
+   ],
+   3,
+   1,
+   {
+    "unpublished": 1
+   },
+   [
+    "unpublished: authorship 'ined' [col col:nameStatus=not established, col col:status=synonym, dyntaxa nomenclaturalStatus=invalidum, dyntaxa taxonomicStatus=synonym, col source=2041 merged=true]"
+   ]
+  ],
+  [
+   "urn:lsid:dyntaxa.se:Taxon:230166",
+   "QPZLG",
+   169216,
+   "accepted_name",
+   false,
+   null,
+   [],
+   "Involucrothele subcataractarum Servít",
+   "Involucrothele subcataractarum Servít",
+   true,
+   false,
+   false,
+   1,
+   [
+    "thelidium subcataractarum (Servít) R.Sant. ined."
+   ],
+   1,
+   1,
+   {
+    "unpublished": 1
+   },
+   [
+    "unpublished: authorship 'ined' [col col:nameStatus=not established, col col:status=synonym, dyntaxa nomenclaturalStatus=invalidum, dyntaxa taxonomicStatus=synonym, col source=2041 merged=true]"
+   ]
+  ],
+  [
+   "urn:lsid:dyntaxa.se:Taxon:6000209",
+   "RTGSJ",
+   171409,
+   "accepted_name",
+   false,
+   null,
+   [
+    "6000209"
+   ],
+   "Placodium coracinum Vain.",
+   "Placodium coracinum Vain.",
+   true,
+   false,
+   false,
+   1,
+   [
+    "caloplaca coracina (Vain.) ined."
+   ],
+   1,
+   1,
+   {
+    "unpublished": 1
+   },
+   [
+    "unpublished: authorship 'ined' [col col:nameStatus=not established, col col:status=synonym, dyntaxa nomenclaturalStatus=invalidum, dyntaxa taxonomicStatus=synonym, col source=2041 merged=true]"
+   ]
+  ]
+ ],
+ "members_sha256": "b687bfc9074b01ee529d94b55391d2b1766eb0581a08ca0a4ff90f4e4bd0ceff",
+ "membership_rule": "every shared synonym is of kind 'unpublished'",
+ "note": "Immutable review input. Membership is pinned to the release and source archives below; it approves nothing and never extends to taxa in a later Dyntaxa export. A candidate name only suggests the pair; the evidence class is graded from both sources' published synonymy. shared_synonyms lists at most 10 names; shared_synonym_count is exact.",
+ "parent_manifest": {
+  "evidence_class": "shared_synonymy",
+  "member_count": 5343,
+  "members_sha256": "33ee1fabee5c91864e11fb6617f8f3ef8bdd700b5321a78ae65ec527d349bed1"
+ },
+ "pins": {
+  "cloud_scope_policy": {
+   "path": "database/taxonomy/policies/global-macrofungi-scope.yml",
+   "scope_predicate_id": "global_macrofungi_policy_v1",
+   "sha256": "e4e796286df93b5372264c702c824eea746f680b3b4e8d6467621c99e5b64ea6"
+  },
+  "release": {
+   "content_release_id": "tax-2026.09.26-02",
+   "gz_artifact": "database/reference_data/generated/taxonomy_v2/tax-2026.09.26-02.sqlite3.gz",
+   "gz_sha256": "4488bb64f4abe18ed269c76264f9be36708d742ff531e931e8d7458791e05d72",
+   "sqlite_sha256": "9bf71b7e1f9b2915c3b1798743cefdd5db53bdbbfb7edc462aa3d0ad0cf8547d"
+  },
+  "source_archives": {
+   "col_xr": {
+    "sha256": "397d701c8eb269bf78d6ac7b03149915b0d9e2a2c18694be2c91445b807814f9",
+    "source_release_id": "col_xr:2026-07-17-XR:2026-07-17"
+   },
+   "dyntaxa": {
+    "acquisition_manifest": {
+     "path": "database/taxonomy/sources/dyntaxa/2026-09-30/manifest.json",
+     "sha256": "1e75946149f4470e845a7e548285f62bc2c29d23fb241c626587bedab686443a"
+    },
+    "sha256": "7947b7a7681f3654d5478694f1fe37fdd9e72dc3aab8f9b6311525d85cc4879c",
+    "source_release_id": "dyntaxa:2026-09-30:2026-09-30"
+   }
+  }
+ },
+ "population": "dyntaxa_fungi_accepted_concepts",
+ "review_class": "only_unpublished",
+ "review_class_precedence": [
+  "non_species_rank",
+  "rank_mismatch",
+  "infraspecific_rank",
+  "accepted_authorship_disagrees",
+  "only_orthographic_variant",
+  "only_unpublished",
+  "only_not_validly_published",
+  "only_illegitimate",
+  "only_interpretation_qualified",
+  "only_pro_parte",
+  "only_accepted_name_reauthored",
+  "only_unauthored",
+  "only_name_variant",
+  "only_dyntaxa_derived",
+  "only_mixed_weak",
+  "single_shared_synonym_low_overlap",
+  "ordinary"
+ ],
+ "review_status": "needs_review",
+ "synonym_kind_precedence": [
+  "orthographic_variant",
+  "unpublished",
+  "not_validly_published",
+  "illegitimate",
+  "interpretation_qualified",
+  "pro_parte",
+  "accepted_name_reauthored",
+  "unauthored",
+  "name_variant",
+  "dyntaxa_derived",
+  "ordinary"
+ ],
+ "synonym_kinds": {
+  "accepted_name_reauthored": "the canonical name is either accepted name itself, under another authorship",
+  "dyntaxa_derived": "otherwise ordinary, but every COL usage behind it comes from the COL source that is Dyntaxa (see dyntaxa_col_source): COL republishes Dyntaxa's assertion, so the two sources do not independently corroborate it",
+  "illegitimate": "Dyntaxa nomenclaturalStatus 'illegitimum' or 'rejiciendum', the authorship carries 'nom. illeg.', or a COL usage's col:remarks/col:nameRemarks carries 'nom. illeg.' or 'later homonym'",
+  "interpretation_qualified": "a misapplied COL usage (col:status 'misapplied'), or the authorship carries a sensu-style qualifier ('sensu', 's.', 'ss.', 'auct.'). Dyntaxa's misapplied usages never reach this test: they are not synonymy and are excluded when the archive is read",
+  "name_variant": "no structured status applies, but the name is almost spelled like either accepted name: same word count once hyphens are removed, and every word, genus included, within Levenshtein distance 2",
+  "not_validly_published": "Dyntaxa nomenclaturalStatus 'invalidum' or 'nudum', COL col:nameStatus 'not established', the authorship carries 'nom. nud.' or 'nom. inval.', or a COL usage's col:remarks/col:nameRemarks carries 'nom. nud.', 'nom. inval.' or 'published without a valid description'",
+  "ordinary": "meets none of the tests above",
+  "orthographic_variant": "Dyntaxa nomenclaturalStatus 'orthographia'",
+  "pro_parte": "COL col:status 'ambiguous synonym', or the authorship carries 'p.p.' or 'pro parte' (Dyntaxa's proParteSynonym usages are excluded when the archive is read)",
+  "unauthored": "the authorship is empty, so the match is on the name alone",
+  "unpublished": "COL col:nameStatus 'manuscript', or the authorship or a COL usage's col:remarks/col:nameRemarks carries 'ined' or 'nom. herb.'"
+ }
+}

@@ -1,0 +1,54 @@
+{
+  "core": {
+    "location": "Taxon.csv",
+    "row_type": "http://rs.tdwg.org/dwc/terms/Taxon",
+    "term_mapping": {
+      "acceptedNameUsageID": "http://rs.tdwg.org/dwc/terms/acceptedNameUsageID",
+      "family": "http://rs.tdwg.org/dwc/terms/family",
+      "genus": "http://rs.tdwg.org/dwc/terms/genus",
+      "kingdom": "http://rs.tdwg.org/dwc/terms/kingdom",
+      "parentNameUsageID": "http://rs.tdwg.org/dwc/terms/parentNameUsageID",
+      "scientificName": "http://rs.tdwg.org/dwc/terms/scientificName",
+      "scientificNameAuthorship": "http://rs.tdwg.org/dwc/terms/scientificNameAuthorship",
+      "taxonID": "http://rs.tdwg.org/dwc/terms/taxonID",
+      "taxonRank": "http://rs.tdwg.org/dwc/terms/taxonRank",
+      "taxonomicStatus": "http://rs.tdwg.org/dwc/terms/taxonomicStatus"
+    }
+  },
+  "distribution": {
+    "location": "SpeciesDistribution.csv",
+    "row_type": "http://rs.gbif.org/terms/1.0/Distribution",
+    "validation_only": true
+  },
+  "identifier_namespace": "urn:lsid:dyntaxa.se:",
+  "identifier_namespace_semantics": {
+    "dyntaxa_taxon_id": {
+      "authoritative_registry": "slu_artdatabanken/dyntaxa",
+      "registry_source": "dyntaxa",
+      "registry_namespace": "dyntaxa_taxon_id",
+      "description": "Dyntaxa publishes its DwC:taxonID values verbatim as LSIDs. Accepted rows carry a taxon-concept LSID 'urn:lsid:dyntaxa.se:Taxon:<n>'; synonym rows carry a name LSID 'urn:lsid:dyntaxa.se:TaxonName:<n>' and point at the accepted concept through acceptedNameUsageID. The value is stored as the full LSID text, never stripped to an integer. The relationship of <n> to Artportalen taxon ids is recorded, not assumed, in database/taxonomy/evidence/taxonomy-v3/stage4p/."
+    }
+  },
+  "ignored_extensions": [
+    {
+      "location": "Reference.csv",
+      "row_type": "http://rs.gbif.org/terms/1.0/Reference"
+    }
+  ],
+  "profile_schema_version": 1,
+  "source_code": "dyntaxa",
+  "source_release": {
+    "issued_date": "2026-09-30",
+    "version": "2026-09-30"
+  },
+  "vernacular": {
+    "location": "VernacularName.csv",
+    "row_type": "http://rs.gbif.org/terms/1.0/VernacularName",
+    "term_mapping": {
+      "countryCode": "http://rs.tdwg.org/dwc/terms/countryCode",
+      "isPreferredName": "http://rs.gbif.org/terms/1.0/isPreferredName",
+      "language": "http://purl.org/dc/terms/language",
+      "vernacularName": "http://rs.tdwg.org/dwc/terms/vernacularName"
+    }
+  }
+}

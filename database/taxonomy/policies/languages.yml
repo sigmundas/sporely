@@ -15,7 +15,7 @@
     {"code": "se", "display_name": "Northern Sami", "aliases": ["se-no", "sme"], "enabled_by_default": true, "order": 40, "sources": ["nortaxa", "inaturalist"]},
     {"code": "sma", "display_name": "Southern Sami", "aliases": ["sma-no"], "enabled_by_default": true, "order": 50, "sources": ["nortaxa", "inaturalist"]},
     {"code": "smj", "display_name": "Lule Sami", "aliases": ["smj-no"], "enabled_by_default": true, "order": 60, "sources": ["nortaxa", "inaturalist"]},
-    {"code": "sv", "display_name": "Swedish", "aliases": ["sv-se", "swe"], "enabled_by_default": true, "order": 70, "sources": ["artportalen", "nortaxa", "inaturalist"]},
+    {"code": "sv", "display_name": "Swedish", "aliases": ["sv-se", "swe"], "enabled_by_default": true, "order": 70, "sources": ["dyntaxa", "artportalen", "nortaxa", "inaturalist"]},
     {"code": "en", "display_name": "English", "aliases": ["en-gb", "en-us", "eng"], "enabled_by_default": true, "order": 80, "sources": ["inaturalist"]},
     {"code": "de", "display_name": "German", "aliases": ["de-de", "deu", "ger"], "enabled_by_default": true, "order": 90, "sources": ["inaturalist"]},
     {"code": "fr", "display_name": "French", "aliases": ["fr-fr", "fra", "fre"], "enabled_by_default": true, "order": 100, "sources": ["inaturalist"]},

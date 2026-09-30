@@ -98,7 +98,20 @@ CHUNK_BYTES = 512 * 1024
 # first so every alias produced by the cross-source proposer or by an approved
 # manual mapping references an existing anchor rather than creating one under
 # a bridge source. See policies/source_priority.yml.
-SOURCE_PRIORITY: tuple[str, ...] = ("col_xr", "nortaxa", "artportalen", "inaturalist")
+SOURCE_PRIORITY: tuple[str, ...] = (
+    "col_xr", "nortaxa", "dyntaxa", "artportalen", "inaturalist",
+)
+
+#: Bridge sources whose usages gain a Sporely identity only through a reviewed
+#: relationship (taxonomy-v3 Stage 4P, decision 2). Their accepted usages are
+#: never classified by the automatic cross-source proposer, never aliased by an
+#: automatic exact match and never allocated a concept of their own; a usage is
+#: bound only by an approved ``manual_mappings.yml`` record, and a synonym only
+#: when its accepted usage was bound that way. Everything else is ingested and
+#: counted in ``diagnostics.reviewed_identity_only_sources``, not published.
+#: NorTaxa is not listed: it predates the rule and its automatic bindings are
+#: already in the registry, which is append-only.
+REVIEWED_IDENTITY_ONLY_SOURCES: frozenset[str] = frozenset({"dyntaxa"})
 
 
 def _source_priority(source_code: str) -> tuple[int, str]:
@@ -733,7 +746,11 @@ def compile_release(
         }
         for r in backbone_records
     ])
-    bridge_records = [r for r in all_records if r.source_code != BACKBONE_SOURCE]
+    bridge_records = [
+        r for r in all_records
+        if r.source_code != BACKBONE_SOURCE
+        and r.source_code not in REVIEWED_IDENTITY_ONLY_SOURCES
+    ]
     synonym_usages: set[tuple[str, str, str]] = set(synonym_to_accepted.keys())
     accepted_bridge_records = [
         r for r in bridge_records
@@ -813,9 +830,17 @@ def compile_release(
     # (taxonID, scientificName, authorship, taxonomicStatus) is preserved in
     # source_usages.jsonl. No canonical taxon row is created for a synonym.
     synonym_alias_applied: set[tuple[str, str, str]] = set()
+    reviewed_only_synonyms_unbound: dict[str, int] = {}
     for synonym_key in sorted(synonym_to_accepted.keys()):
         accepted_key = synonym_to_accepted[synonym_key]
         accepted_anchor = registry.lookup(*accepted_key)
+        if accepted_anchor is None and \
+                synonym_key[0] in REVIEWED_IDENTITY_ONLY_SOURCES:
+            # The accepted usage has no reviewed identity, so neither has
+            # its synonym.
+            reviewed_only_synonyms_unbound[synonym_key[0]] = (
+                reviewed_only_synonyms_unbound.get(synonym_key[0], 0) + 1)
+            continue
         if accepted_anchor is None:
             raise CompilerError(
                 f"synonym {synonym_key!r} resolves to accepted "
@@ -1113,6 +1138,7 @@ def compile_release(
             }
         vern_dropped_out_of_scope = 0
         vern_dropped_unknown = 0
+        vern_dropped_unreviewed: dict[str, int] = {}
         for source_dir in normalized_source_dirs:
             report = _read_report(source_dir)
             for entry in _iter_vernacular(source_dir):
@@ -1127,6 +1153,12 @@ def compile_release(
                         entry["source_code"], set()
                     )
                     if (key[1], key[2]) in known:
+                        if key[0] in REVIEWED_IDENTITY_ONLY_SOURCES:
+                            # In the source, but its usage is unbound: no
+                            # reviewed identity, or scoped out. Drop.
+                            vern_dropped_unreviewed[key[0]] = (
+                                vern_dropped_unreviewed.get(key[0], 0) + 1)
+                            continue
                         # Row exists in the source but was scoped out; drop.
                         vern_dropped_out_of_scope += 1
                         continue
@@ -1339,6 +1371,15 @@ def compile_release(
             cross_source_proposals=cross_source_proposals,
             legacy_enrichment_counts=legacy_counts,
             superseded_to_current=superseded_to_current,
+            reviewed_identity_only=_reviewed_identity_only_diagnostics(
+                source_reports=source_reports,
+                kept_records=all_records,
+                synonym_usages=set(synonym_to_accepted),
+                source_usages=source_usages,
+                compiled_vernaculars=compiled_vernaculars,
+                synonyms_unbound=reviewed_only_synonyms_unbound,
+                vernaculars_dropped=vern_dropped_unreviewed,
+            ),
         )
         diagnostics_out.write_text(
             json.dumps(diagnostics, ensure_ascii=False, indent=2, sort_keys=True) + "\n",
@@ -1970,7 +2011,12 @@ def _apply_bridge_fungal_scope(
     return {"kept": kept, "diagnostics": diagnostics}
 
 
-_SYNONYM_STATUSES = frozenset({"synonym"})
+#: Dyntaxa splits ``synonym`` into homotypic and heterotypic synonyms. Its
+#: ``misapplied`` and ``proParteSynonym`` usages are deliberately absent: a
+#: misapplied name is another taxon's name used in error and a pro parte
+#: synonym covers only part of the concept, so neither is bound to the
+#: concept it points at.
+_SYNONYM_STATUSES = frozenset({"synonym", "homotypicSynonym", "heterotypicSynonym"})
 _ACCEPTED_STATUSES = frozenset({"accepted", "provisionally accepted", "valid"})
 
 
@@ -2207,6 +2253,50 @@ def _build_mapping_records(
     return records
 
 
+def _reviewed_identity_only_diagnostics(
+    *,
+    source_reports: dict[str, NormalizedSourceReport],
+    kept_records: list[NormalizedTaxonRecord],
+    synonym_usages: set[tuple[str, str, str]],
+    source_usages: list[dict],
+    compiled_vernaculars: list[dict],
+    synonyms_unbound: dict[str, int],
+    vernaculars_dropped: dict[str, int],
+) -> dict:
+    """What each reviewed-identity-only source contributed, and what it did
+    not. Present only for such sources among the inputs, so a release built
+    without one keeps its diagnostics unchanged."""
+    out: dict[str, dict] = {}
+    for code in sorted(REVIEWED_IDENTITY_ONLY_SOURCES & set(source_reports)):
+        records = [r for r in kept_records if r.source_code == code]
+        bound = [u for u in source_usages if u["source_code"] == code]
+        synonyms = sum(
+            1 for r in records
+            if (r.source_code, r.taxon_id_namespace, r.taxon_id_value)
+            in synonym_usages)
+        out[code] = {
+            "rule": "bound only by an approved manual mapping (or as the "
+                    "synonym of a usage so bound); never classified, "
+                    "automatically aliased or allocated",
+            "in_scope_usages": len(records),
+            "in_scope_synonym_usages": synonyms,
+            "in_scope_non_synonym_usages": len(records) - synonyms,
+            "bound_usages": len(bound),
+            "bound_by_manual_mapping": sum(
+                1 for u in bound if u["alias_reason"] == "manual_approved_exact"),
+            "bound_as_synonym": sum(
+                1 for u in bound if u["alias_reason"] == "synonym_of_accepted"),
+            "synonyms_left_unbound": synonyms_unbound.get(code, 0),
+            "vernacular_rows_attached": sum(
+                1 for v in compiled_vernaculars if v["source_code"] == code),
+            # Every vernacular row whose usage is unbound: without a reviewed
+            # identity, or outside the fungal scope altogether.
+            "vernacular_rows_dropped_unbound":
+                vernaculars_dropped.get(code, 0),
+        }
+    return out
+
+
 def _build_diagnostics(
     *,
     source_reports: dict[str, NormalizedSourceReport],
@@ -2224,6 +2314,7 @@ def _build_diagnostics(
     cross_source_proposals: list,
     legacy_enrichment_counts: dict | None = None,
     superseded_to_current: dict[int, int] | None = None,
+    reviewed_identity_only: dict | None = None,
 ) -> dict:
     superseded_to_current = superseded_to_current or {}
     per_source_usage_count: dict[str, int] = {}
@@ -2297,6 +2388,8 @@ def _build_diagnostics(
             "sporely_scope": scope_diagnostics,
             "synonym_resolution": synonym_diagnostics,
             "legacy_enrichment": legacy_enrichment_counts or {},
+            **({"reviewed_identity_only_sources": reviewed_identity_only}
+               if reviewed_identity_only else {}),
         },
         "sources": {
             code: {

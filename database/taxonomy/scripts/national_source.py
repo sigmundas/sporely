@@ -59,7 +59,7 @@ CHUNK_BYTES = 512 * 1024
 # fields reach the adapter's MAX_FIELD_BYTES / MAX_LINE_BYTES gates and
 # fail with a NationalSourceError rather than a bare csv.Error.
 csv.field_size_limit(max(csv.field_size_limit(), MAX_LINE_BYTES + MAX_FIELD_BYTES))
-SUPPORTED_ENCODINGS = {"utf-8": "utf-8", "utf8": "utf-8", "UTF-8": "utf-8"}
+SUPPORTED_ENCODINGS = {"utf-8": "utf-8", "utf8": "utf-8", "UTF-8": "utf-8", "UTF8": "utf-8"}
 SUPPORTED_DELIMITERS = {"\\t": "\t", "\t": "\t", ",": ",", "\\,": ","}
 SUPPORTED_LINE_TERMINATORS = {"\\n": "\n", "\n": "\n", "\\r\\n": "\r\n", "\r\n": "\r\n"}
 
@@ -265,6 +265,9 @@ class NationalProfile:
     distribution_location: str | None
     distribution_validation_only: bool
     optional_external_id_terms: tuple[str, ...]
+    #: ``(row_type, location)`` of extensions the profile explicitly declares
+    #: as ignored. Their members must exist; their rows are never read.
+    ignored_extensions: tuple[tuple[str, str], ...] = ()
 
 
 PROFILE_SCHEMA_VERSION = 1
@@ -324,6 +327,20 @@ def load_profile(path: Path) -> NationalProfile:
     optional_ids = tuple(raw.get("optional_external_id_terms") or ())
     if not all(isinstance(t, str) and t for t in optional_ids):
         raise NationalSourceError("optional_external_id_terms must be a list of URIs")
+    ignored_raw = raw.get("ignored_extensions") or []
+    if not isinstance(ignored_raw, list):
+        raise NationalSourceError("ignored_extensions must be a list")
+    ignored: list[tuple[str, str]] = []
+    reserved = {vern["row_type"]} | DISTRIBUTION_ROW_TYPES
+    for entry in ignored_raw:
+        if not isinstance(entry, dict) or not isinstance(entry.get("row_type"), str) \
+                or not entry["row_type"]:
+            raise NationalSourceError(
+                "ignored_extensions entries need a row_type URI and a location")
+        if entry["row_type"] in reserved:
+            raise NationalSourceError(
+                f"ignored_extensions cannot ignore {entry['row_type']}")
+        ignored.append((entry["row_type"], _safe_location(entry.get("location", ""))))
     return NationalProfile(
         source_code=source_code,
         source_release={"version": str(release["version"]),
@@ -339,6 +356,7 @@ def load_profile(path: Path) -> NationalProfile:
         distribution_location=dist_location,
         distribution_validation_only=dist_validate_only,
         optional_external_id_terms=optional_ids,
+        ignored_extensions=tuple(ignored),
     )
 
 
@@ -563,8 +581,18 @@ def _validate_against_profile(
                 raise NationalSourceError(
                     f"distribution location mismatch: profile={profile.distribution_location} archive={dist.location}"
                 )
-    # Unknown extensions (not vernacular, not distribution) are refused.
-    allowed = {profile.vernacular_row_type} | (DISTRIBUTION_ROW_TYPES if profile.distribution_row_type else set())
+    # Extensions the profile declares as ignored must match the archive
+    # exactly; their rows are never read.
+    ignored = dict(profile.ignored_extensions)
+    for ext in extensions:
+        if ext.row_type in ignored and ext.location != ignored[ext.row_type]:
+            raise NationalSourceError(
+                f"ignored extension location mismatch: profile={ignored[ext.row_type]} "
+                f"archive={ext.location}"
+            )
+    # Unknown extensions (not vernacular, not distribution, not declared
+    # ignored) are refused.
+    allowed = {profile.vernacular_row_type} | (DISTRIBUTION_ROW_TYPES if profile.distribution_row_type else set()) | set(ignored)
     unknown = [t.row_type for t in extensions if t.row_type not in allowed]
     if unknown:
         raise NationalSourceError(f"unsupported extension row type: {unknown[0]}")

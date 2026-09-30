@@ -4,6 +4,7 @@
     {"code": "sporely", "role": "internal_identity"},
     {"code": "col_xr", "role": "global_backbone"},
     {"code": "nortaxa", "role": "bridge_and_local_authority"},
+    {"code": "dyntaxa", "role": "reviewed_bridge_and_swedish_authority"},
     {"code": "artsorakel", "role": "identification_service"},
     {"code": "artportalen", "role": "bridge_and_swedish_authority"},
     {"code": "inaturalist", "role": "enrichment"},
@@ -20,6 +21,10 @@
     {"source": "nortaxa", "code": "nortaxa_taxon_id", "storage": "text", "object_kind": "source_defined_taxon", "automatic_identity": "no"},
     {"source": "nortaxa", "code": "nortaxa_accepted_name_usage_id", "storage": "text", "object_kind": "accepted_usage_reference", "automatic_identity": "no"},
     {"source": "nortaxa", "code": "nortaxa_parent_name_usage_id", "storage": "text", "object_kind": "parent_usage_reference", "automatic_identity": "no"},
+    {"source": "dyntaxa", "code": "dyntaxa_dwc_id", "storage": "text", "object_kind": "source_row", "automatic_identity": "no"},
+    {"source": "dyntaxa", "code": "dyntaxa_taxon_id", "storage": "text", "object_kind": "source_defined_taxon", "automatic_identity": "no"},
+    {"source": "dyntaxa", "code": "dyntaxa_accepted_name_usage_id", "storage": "text", "object_kind": "accepted_usage_reference", "automatic_identity": "no"},
+    {"source": "dyntaxa", "code": "dyntaxa_parent_name_usage_id", "storage": "text", "object_kind": "parent_usage_reference", "automatic_identity": "no"},
     {"source": "artsorakel", "code": "nbic_scientific_name_id", "storage": "text", "object_kind": "scientific_name", "automatic_identity": "no"},
     {"source": "artportalen", "code": "artportalen_taxon_id", "storage": "text", "object_kind": "source_taxon_unknown_precision", "automatic_identity": "no"},
     {"source": "inaturalist", "code": "inaturalist_taxon_id", "storage": "text", "object_kind": "source_taxon", "automatic_identity": "no"},
@@ -30,7 +35,7 @@
   "scientific_presentation": {
     "canonical_source": "col_xr",
     "pinned_release_required": true,
-    "aliases": ["nortaxa", "artportalen"],
+    "aliases": ["nortaxa", "dyntaxa", "artportalen"],
     "enrichment_only": ["inaturalist"],
     "manual_exceptions": "explicit_reviewed_and_audited",
     "country_selects_authority": false
@@ -42,7 +47,7 @@
     "se": ["nortaxa", "inaturalist"],
     "sma": ["nortaxa", "inaturalist"],
     "smj": ["nortaxa", "inaturalist"],
-    "sv": ["artportalen", "nortaxa", "inaturalist"],
+    "sv": ["dyntaxa", "artportalen", "nortaxa", "inaturalist"],
     "default": ["nortaxa", "artportalen", "inaturalist"]
   },
   "name_deduplication": {

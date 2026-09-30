@@ -11,7 +11,7 @@ National archive
 ```
 
 National sources do **not** each have their own compiler. NorTaxa (Norway),
-the Swedish source, and any future Danish or other national source are
+Dyntaxa (Sweden), and any future Danish or other national source are
 adapters that feed the single Sporely compiler. The kit here — one CLI
 (`scripts/national_source.py`), one profile schema, one reusable Darwin Core
 Archive parser — is intentionally the whole framework.
@@ -51,7 +51,11 @@ record shape across countries.
 - Adapters only normalize; the compiler decides identity.
 - Unsupported source structures fail with a useful report rather than being
   guessed at. Unknown extension row types are refused; a Distribution extension
-  is validated only and never imported.
+  is validated only and never imported. An extension the source ships but
+  Sporely does not use (Dyntaxa's `Reference`) is listed in the profile's
+  `ignored_extensions` as `{row_type, location}`: its member must exist at
+  that location, and its rows are never read. The VernacularName and
+  Distribution row types cannot be ignored.
 
 ## Scope of the first version
 
@@ -61,6 +65,8 @@ Supported today:
 2. Configurable Taxon (core) and VernacularName (extension) term mappings.
 3. Optional Distribution extension, validated (member existence, safe path,
    core-id linkage) but never imported.
+4. Explicitly ignored extensions (`ignored_extensions`), checked for existence
+   only.
 
 Deliberately out of scope for the first version: dynamic Python-hook plugins,
 a web UI, download-authorization framework, non-DwC-A raw formats. A JSON

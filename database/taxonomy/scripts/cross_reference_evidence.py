@@ -157,6 +157,81 @@ def read_nortaxa(archive: Path, wanted: set[str]) -> dict[str, dict]:
     return concepts
 
 
+#: Dyntaxa usages that point at an accepted concept without asserting the
+#: concept's synonymy: a misapplied name is another taxon's name used in
+#: error, and a pro parte synonym covers only part of the concept. They are
+#: kept out of ``synonyms`` (so they can never supply an accepted-synonymy
+#: cross-reference) and counted in ``excluded_usage_count``.
+DYNTAXA_NON_SYNONYMY_STATUSES = frozenset({"misapplied", "proParteSynonym"})
+
+
+def read_dyntaxa(archive: Path, wanted: set[str] | None = None,
+                 *, kingdom: str | None = None) -> dict[str, dict]:
+    """Return ``{taxonID: {accepted, synonyms, ...}}`` from a Dyntaxa DwC-A.
+
+    The shape is ``read_nortaxa``'s. Concepts are the wanted accepted usages,
+    or, with ``wanted=None``, every accepted usage (optionally restricted to
+    one ``kingdom``). Each concept also carries ``synonym_usages``: per
+    synonym key, the Dyntaxa ``{taxon_id, rank, taxonomic_status,
+    nomenclatural_status}`` rows behind it, in file order.
+    """
+    rows: list[dict] = []
+    with zipfile.ZipFile(archive) as bundle, bundle.open("Taxon.csv") as handle:
+        stream = io.TextIOWrapper(handle, "utf-8-sig", newline="")
+        reader = csv.reader(stream, delimiter="\t", quoting=csv.QUOTE_NONE)
+        header = next(reader)
+        index = {column: position for position, column in enumerate(header)}
+        taxon_column = "taxonId" if "taxonId" in index else "taxonID"
+        for parts in reader:
+            def field(column: str) -> str:
+                position = index.get(column)
+                return parts[position] if position is not None and \
+                    position < len(parts) else ""
+            rows.append({
+                "taxon_id": field(taxon_column),
+                "accepted_id": field("acceptedNameUsageID"),
+                "scientific_name": field("scientificName"),
+                "authorship": field("scientificNameAuthorship"),
+                "rank": field("taxonRank"),
+                "taxonomic_status": field("taxonomicStatus"),
+                "nomenclatural_status": field("nomenclaturalStatus"),
+                "kingdom": field("kingdom"),
+            })
+    if wanted is None:
+        wanted = {r["taxon_id"] for r in rows
+                  if r["taxonomic_status"] == "accepted"
+                  and (kingdom is None or r["kingdom"] == kingdom)}
+    concepts: dict[str, dict] = {
+        taxon_id: {"accepted": None, "synonyms": set(), "synonym_status": {},
+                   "synonym_usages": {}, "excluded_usage_count": 0,
+                   "scientific_name": "", "authorship": "", "rank": ""}
+        for taxon_id in wanted
+    }
+    for row in rows:
+        key = _name_key(row["scientific_name"], row["authorship"])
+        taxon_id, accepted_id = row["taxon_id"], row["accepted_id"]
+        if taxon_id in concepts and row["taxonomic_status"] == "accepted":
+            concept = concepts[taxon_id]
+            concept["accepted"] = key
+            concept["scientific_name"] = row["scientific_name"]
+            concept["authorship"] = row["authorship"]
+            concept["rank"] = row["rank"].casefold()
+        if accepted_id in concepts and accepted_id != taxon_id:
+            concept = concepts[accepted_id]
+            if row["taxonomic_status"] in DYNTAXA_NON_SYNONYMY_STATUSES:
+                concept["excluded_usage_count"] += 1
+                continue
+            concept["synonyms"].add(key)
+            concept["synonym_status"].setdefault(key, set()).update({
+                ("taxonomicStatus", row["taxonomic_status"]),
+                ("nomenclaturalStatus", row["nomenclatural_status"])})
+            concept["synonym_usages"].setdefault(key, []).append({
+                "taxon_id": taxon_id, "rank": row["rank"].casefold(),
+                "taxonomic_status": row["taxonomic_status"],
+                "nomenclatural_status": row["nomenclatural_status"]})
+    return concepts
+
+
 def read_col(archive: Path, wanted: set[str]) -> dict[str, dict]:
     """Return ``{col:ID: {accepted, synonyms}}`` for the wanted concepts.
 

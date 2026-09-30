@@ -419,3 +419,64 @@ recount with:
 ```sh
 .venv/bin/python -c "import sys; sys.path.insert(0, 'database/taxonomy/scripts'); import build_release as br, json; print(json.dumps(br.check_superseded_references(br.load_recipe(br.DEFAULT_RECIPE)), indent=2))"
 ```
+
+## Stage 4P — Dyntaxa as a national source (`stage4p/`)
+
+Dyntaxa (SLU Artdatabanken) is pinned at `sources/dyntaxa/2026-09-30/`
+(archive SHA-256 `7947b7a7681f3654d5478694f1fe37fdd9e72dc3aab8f9b6311525d85cc4879c`,
+CC0 1.0, GBIF DOI `10.15468/j43wfc`) and compiled as a
+reviewed-identity-only source: no Dyntaxa usage gains a Sporely identity
+until an owner-approved relationship binds it (decision 2).
+
+Reproduce the candidate evidence with:
+
+```sh
+.venv/bin/python database/taxonomy/evidence/taxonomy-v3/audit_stage4p_dyntaxa.py
+```
+
+`dyntaxa-report.json` is pinned to release `tax-2026.09.26-02`, the COL XR
+archive and the Dyntaxa archive. Its population is the 18,383 accepted
+`Fungi` concepts of the Dyntaxa export; 947 misapplied and pro parte usages
+are kept out of their concepts' synonymy. Partition:
+
+| Class | Concepts | Meaning |
+|---|---:|---|
+| matched | 16,214 | exactly one COL-canonical candidate, by the Dyntaxa accepted name (15,392) or, failing that, by a Dyntaxa synonym name (822), and no other Dyntaxa concept claims it |
+| ambiguous | 173 | more than one candidate for one basis |
+| not one-to-one | 20 | one candidate, claimed by more than one Dyntaxa concept |
+| unmatched | 1,976 | no candidate: Dyntaxa-only; reported, never allocated |
+
+Matched pairs graded by `cross_reference_evidence.py` (cloud scope in
+brackets): `reciprocal_accepted_synonymy` 203 (103),
+`one_directional_accepted_synonymy` 510 (192), `shared_synonymy` 5,343
+(1,575), `no_published_cross_reference` 10,158 (4,081). `shared_synonymy` is
+split into Stage 0's review classes with Dyntaxa's status vocabulary
+(`orthographia`, `invalidum`, `nudum`, `illegitimum`, `rejiciendum`); its
+provenance class is `dyntaxa_derived`, because COL source 2041 is Dyntaxa
+itself and a synonym COL has only from it is not independent corroboration.
+`ordinary` has 2,158 members (719 in the cloud scope).
+
+Every manifest is a review input. **None is approved.** Each is identified by
+the `file_sha256` recorded under `manifests` in `dyntaxa-report.json`; an
+owner approval must name that value, as for Stage 1A.
+
+Regression species (by Sporely id): 83668 (canonical Conocybe rugosa) pairs
+with Dyntaxa `Taxon:3423` Pholiotina rugosa by synonym name and grades
+`reciprocal_accepted_synonymy`; 7821 Entoloma conferendum with `Taxon:3957`
+(`shared_synonymy`, `ordinary`); 617026 Conocybe vexans with `Taxon:236654`
+(`one_directional_accepted_synonymy`); 620306 Craterellus tubaeformis and
+168873 Cantharellus cibarius grade `no_published_cross_reference`.
+
+`artportalen_relation` measures how the release's Artportalen ids relate to
+Dyntaxa: 8,964 of 9,000 are the number of a Dyntaxa accepted Fungi concept
+with the same name, 25 the number of a renamed or sensu-lato concept, 11 a
+number with no accepted Fungi concept. Artportalen numbers Dyntaxa concepts;
+it is still its own namespace, and its rows bind nothing.
+
+`build-comparison.json` records two scratch `build_release.py` runs of
+`tax-2026.09.30-01` (neither promoted), with and without Dyntaxa in the
+recipe: both deterministic, registry unchanged, no new allocations, and every
+compile artifact and SQLite table identical except the Dyntaxa pin in
+`taxonomy_meta`, the compiler manifest that records it, and additive Dyntaxa
+diagnostics. With no approved mapping, Dyntaxa contributes nothing to a
+release yet.

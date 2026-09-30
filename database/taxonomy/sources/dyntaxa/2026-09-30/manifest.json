@@ -1,0 +1,86 @@
+{
+  "citation": {
+    "archive_eml": "Backlund M (2021). Dyntaxa. Svensk taxonomisk databas. Version 1.2. SLU Artdatabanken. Checklist dataset https://doi.org/10.15468/j43wfc accessed via GBIF.org on 2021-10-07.",
+    "doi": "10.15468/j43wfc",
+    "gbif": "Backlund M (2026). Dyntaxa. Svensk taxonomisk databas. SLU Artdatabanken. Checklist dataset https://doi.org/10.15468/j43wfc accessed via GBIF.org on 2026-09-30.",
+    "use": "Cite the GBIF form with the access date of the pinned archive. The archive's own EML citation is stale (2021) and is recorded verbatim, not used."
+  },
+  "download": {
+    "archive_sha256": "7947b7a7681f3654d5478694f1fe37fdd9e72dc3aab8f9b6311525d85cc4879c",
+    "bytes": 15756509,
+    "fetched_at": "2026-09-30T07:27:13Z",
+    "get_attempts": 1,
+    "http_status": 200,
+    "local_path": "database/taxonomy/sources/dyntaxa/2026-09-30/archive.zip",
+    "local_path_note": "gitignored; the SHA-256 above is the pin, wherever the bytes live",
+    "members": [
+      {
+        "bytes": 40113480,
+        "name": "Reference.csv",
+        "sha256": "5f11bb3e2a1f5853d8647405fa18c56c0a76f1c16fc60dfcc5fae6b66cd8e60a"
+      },
+      {
+        "bytes": 15923454,
+        "name": "SpeciesDistribution.csv",
+        "sha256": "99d1590620a13cab024606276b8d7527d0bd59792ed334b532552692197360e1"
+      },
+      {
+        "bytes": 56675664,
+        "name": "Taxon.csv",
+        "sha256": "5e170292218092d3b4edc04169e2c6f6f824f3075f9ea0e7167ea688791c0030"
+      },
+      {
+        "bytes": 5161180,
+        "name": "VernacularName.csv",
+        "sha256": "e28708134e3a5f5913a253ee1b16d80e27ef3b13b2744b4a7d0e251b9be10565"
+      },
+      {
+        "bytes": 8251,
+        "name": "eml.xml",
+        "sha256": "b78584e03ac08fd7f9322a14e53e547b85db9017f285122c361c84019cd1d57f"
+      },
+      {
+        "bytes": 3426,
+        "name": "meta.xml",
+        "sha256": "cd67155251865dd289a00eb7975c5fb9897eaf2eb219e4c2f90ee21d369f3b2b"
+      }
+    ],
+    "response_headers": {
+      "content-disposition": "attachment; filename=dyntaxa-dwca.zip",
+      "content-length": "15756509",
+      "content-type": "application/zip"
+    },
+    "sha256": "7947b7a7681f3654d5478694f1fe37fdd9e72dc3aab8f9b6311525d85cc4879c"
+  },
+  "licence": {
+    "agreement": "archive EML and GBIF registry agree",
+    "archive_statement": "eml.xml intellectualRights: 'To the extent possible under law, the publisher has waived all rights to these data and has dedicated them to the Public Domain (CC0 1.0). Users may copy, modify, distribute and use the work, including for commercial purposes, without restriction.'",
+    "gbif_registry_licence": "http://creativecommons.org/publicdomain/zero/1.0/legalcode",
+    "identifier": "CC0 1.0",
+    "uri": "http://creativecommons.org/publicdomain/zero/1.0/legalcode"
+  },
+  "manifest_schema_version": 1,
+  "profile_code": "dyntaxa_dwca",
+  "release": {
+    "issued_date": "2026-09-30",
+    "issued_date_basis": "eml.xml dataset/pubDate of the fetched archive",
+    "version": "2026-09-30"
+  },
+  "source_code": "dyntaxa",
+  "state": "acquired",
+  "validation": {
+    "distribution_imported": false,
+    "ignored_members": [
+      "Reference.csv (gbif Reference extension; declared ignored by the profile, never read)"
+    ],
+    "profile": "database/taxonomy/national_sources/dyntaxa/2026-09-30/source.json",
+    "record_counts": {
+      "Distribution": 110776,
+      "Taxon": 196304,
+      "VernacularName": 50979
+    },
+    "required_fields": "taxonID, scientificName, taxonRank, taxonomicStatus (core); vernacularName, language (VernacularName) all declared in meta.xml and resolved by the profile",
+    "result": "passed",
+    "tool": "database/taxonomy/scripts/national_source.py validate"
+  }
+}

@@ -46,7 +46,7 @@ def _make_sqlite(path: Path, *, languages=("nb",), artportalen=0) -> None:
 
 def test_committed_recipe_loads():
     recipe = br.load_recipe(br.DEFAULT_RECIPE)
-    assert [s.code for s in recipe.sources] == ["col_xr", "nortaxa"]
+    assert [s.code for s in recipe.sources] == ["col_xr", "nortaxa", "dyntaxa"]
     assert recipe.legacy_enabled
     assert recipe.sources[0].manifest.endswith("2026-07-17-XR/manifest.json")
 
@@ -189,13 +189,15 @@ def pipeline(tmp_path, monkeypatch):
 def test_build_runs_the_pipeline_in_order_with_legacy_enrichment(pipeline):
     report, runner = pipeline()
     labels = [label for label, _ in runner.calls]
-    assert labels == ["normalize_col_xr", "normalize_nortaxa", "normalize_redlist_no",
+    assert labels == ["normalize_col_xr", "normalize_nortaxa", "normalize_dyntaxa",
+                      "normalize_redlist_no",
                       "export_legacy_enrichment", "compileA", "sqliteA", "compileB", "sqliteB"]
     compile_argv = dict(runner.calls)["compileA"]
     assert "--legacy-enrichment-input" in compile_argv
     manifests = [compile_argv[i + 1] for i, a in enumerate(compile_argv) if a == "--source-release-manifest"]
     assert manifests == ["col_xr=database/taxonomy/sources/col_xr/2026-07-17-XR/manifest.json",
-                         "nortaxa=database/taxonomy/sources/nortaxa/1.284/manifest.json"]
+                         "nortaxa=database/taxonomy/sources/nortaxa/1.284/manifest.json",
+                         "dyntaxa=database/taxonomy/sources/dyntaxa/2026-09-30/manifest.json"]
     assert report["determinism"]["identical"] and report["registry"]["unchanged"]
     assert report["coverage"]["candidate"]["vernacular_by_language"] == {"nb": 1}
     assert not report["promoted"]

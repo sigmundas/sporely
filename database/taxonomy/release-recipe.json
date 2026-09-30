@@ -13,6 +13,12 @@
       "normalizer": "national_source",
       "release_dir": "database/taxonomy/sources/nortaxa/1.284",
       "profile": "database/taxonomy/national_sources/nortaxa/1.284/source.json"
+    },
+    {
+      "code": "dyntaxa",
+      "normalizer": "national_source",
+      "release_dir": "database/taxonomy/sources/dyntaxa/2026-09-30",
+      "profile": "database/taxonomy/national_sources/dyntaxa/2026-09-30/source.json"
     }
   ],
   "redlist_no": {

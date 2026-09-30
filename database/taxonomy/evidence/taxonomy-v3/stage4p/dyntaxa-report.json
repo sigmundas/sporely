@@ -1,0 +1,690 @@
+{
+ "ambiguous_with_a_cloud_scope_candidate": 82,
+ "artportalen_relation": {
+  "artportalen_row_provenance": {
+   "legacy_compat:artportalen": 8185,
+   "reviewed_publishing_overlay:accepted_after_review:split": 1,
+   "reviewed_publishing_overlay:accepted_unique_exact_name_match": 814
+  },
+  "artportalen_rows": 9000,
+  "finding": "8964 of 9000 Artportalen ids on release concepts are the number of a Dyntaxa accepted Fungi concept with the same name; the rest are renamed, sensu-lato or retired Dyntaxa concepts (see samples). So 'artportalen_taxon_id' <n> and 'urn:lsid:dyntaxa.se:Taxon:<n>' number the same Dyntaxa concept, which is what Artportalen reports against. The Artportalen rows do not bind a Dyntaxa id: 8185 were attached by name by the legacy compatibility import and 815 by the reviewed Artportalen publishing overlay; both are publishing ids, not concept identity. They are listed per candidate (artportalen_legacy_ids_on_concept) as review context only.",
+  "method": "for every taxon_external_id_min row with source_system 'artportalen', look up 'urn:lsid:dyntaxa.se:Taxon:<id>' among the pinned archive's Fungi accepted concepts and compare the names",
+  "outcomes": {
+   "no_dyntaxa_taxon_with_that_number": 11,
+   "same_number_different_name": 25,
+   "same_number_same_name": 8964
+  },
+  "question": "Are the Artportalen taxon ids on release concepts Dyntaxa taxon-concept numbers?",
+  "samples": {
+   "no_dyntaxa_taxon_with_that_number": [
+    {
+     "artportalen_id": "6333233",
+     "artportalen_name": "Exidia zelleri",
+     "dyntaxa_name": null,
+     "sporely_taxon_id": 9331
+    },
+    {
+     "artportalen_id": "4824",
+     "artportalen_name": "Leccinum quercinum",
+     "dyntaxa_name": null,
+     "sporely_taxon_id": 23314
+    },
+    {
+     "artportalen_id": "245489",
+     "artportalen_name": "Leccinum melaneum",
+     "dyntaxa_name": null,
+     "sporely_taxon_id": 23358
+    },
+    {
+     "artportalen_id": "4822",
+     "artportalen_name": "Leccinum piceinum",
+     "dyntaxa_name": null,
+     "sporely_taxon_id": 23400
+    },
+    {
+     "artportalen_id": "3069",
+     "artportalen_name": "Athelia acrospora",
+     "dyntaxa_name": null,
+     "sporely_taxon_id": 156827
+    },
+    {
+     "artportalen_id": "249395",
+     "artportalen_name": "Hygrocybe fornicata var. fornicata",
+     "dyntaxa_name": null,
+     "sporely_taxon_id": 623319
+    },
+    {
+     "artportalen_id": "266980",
+     "artportalen_name": "Exidia brunneola",
+     "dyntaxa_name": null,
+     "sporely_taxon_id": 626106
+    },
+    {
+     "artportalen_id": "266991",
+     "artportalen_name": "Exidiopsis griseobrunnea",
+     "dyntaxa_name": null,
+     "sporely_taxon_id": 626116
+    },
+    {
+     "artportalen_id": "6009783",
+     "artportalen_name": "Basidiodendron rimulentum",
+     "dyntaxa_name": null,
+     "sporely_taxon_id": 626122
+    },
+    {
+     "artportalen_id": "4088",
+     "artportalen_name": "Exidiopsis livescens",
+     "dyntaxa_name": null,
+     "sporely_taxon_id": 627099
+    },
+    {
+     "artportalen_id": "252389",
+     "artportalen_name": "Cucurbitaria coronillae",
+     "dyntaxa_name": null,
+     "sporely_taxon_id": 633200
+    }
+   ],
+   "same_number_different_name": [
+    {
+     "artportalen_id": "797",
+     "artportalen_name": "Cuphophyllus flavipes",
+     "dyntaxa_name": "Cuphophyllus flavipes s.lat.",
+     "sporely_taxon_id": 228
+    },
+    {
+     "artportalen_id": "249396",
+     "artportalen_name": "Hygrocybe fornicata var. lepidopus",
+     "dyntaxa_name": "Cuphophyllus lepidopus",
+     "sporely_taxon_id": 231
+    },
+    {
+     "artportalen_id": "4081",
+     "artportalen_name": "Exidia repanda",
+     "dyntaxa_name": "Descidia repanda",
+     "sporely_taxon_id": 9322
+    },
+    {
+     "artportalen_id": "4082",
+     "artportalen_name": "Exidia saccharina",
+     "dyntaxa_name": "Exidia saccharina s.lat.",
+     "sporely_taxon_id": 9323
+    },
+    {
+     "artportalen_id": "4083",
+     "artportalen_name": "Exidia thuretiana",
+     "dyntaxa_name": "Descidia thuretiana",
+     "sporely_taxon_id": 9325
+    },
+    {
+     "artportalen_id": "265110",
+     "artportalen_name": "Basidiodendron eyrei",
+     "dyntaxa_name": "Basidiodendron eyrei s.lat.",
+     "sporely_taxon_id": 90907
+    },
+    {
+     "artportalen_id": "259356",
+     "artportalen_name": "Microsphaera tortilis",
+     "dyntaxa_name": "Erysiphe tortilis",
+     "sporely_taxon_id": 97596
+    },
+    {
+     "artportalen_id": "6333234",
+     "artportalen_name": "Exidiopsis succinea",
+     "dyntaxa_name": "Exidia plumbescens",
+     "sporely_taxon_id": 97790
+    },
+    {
+     "artportalen_id": "6184",
+     "artportalen_name": "Tomentellopsis bresadoliana",
+     "dyntaxa_name": "Tomentellopsis bresadolana",
+     "sporely_taxon_id": 124174
+    },
+    {
+     "artportalen_id": "6032901",
+     "artportalen_name": "Aspergillus fumigatus",
+     "dyntaxa_name": "Aspergillus fumigatus s.lat.",
+     "sporely_taxon_id": 154872
+    },
+    {
+     "artportalen_id": "6001791",
+     "artportalen_name": "Frommeëlla tormentillae",
+     "dyntaxa_name": "Phragmidium tormentillae",
+     "sporely_taxon_id": 621056
+    },
+    {
+     "artportalen_id": "6002280",
+     "artportalen_name": "Trachyspora intrusa",
+     "dyntaxa_name": "Trachyspora alchemillae",
+     "sporely_taxon_id": 621066
+    },
+    {
+     "artportalen_id": "6009225",
+     "artportalen_name": "Aureobasidium pullulans",
+     "dyntaxa_name": "Aureobasidium pullulans s.lat.",
+     "sporely_taxon_id": 621331
+    },
+    {
+     "artportalen_id": "258756",
+     "artportalen_name": "Eutypa lata var. aceri",
+     "dyntaxa_name": "Eutypa lata var. aceris",
+     "sporely_taxon_id": 621717
+    },
+    {
+     "artportalen_id": "3878",
+     "artportalen_name": "Eutypa flavovirens",
+     "dyntaxa_name": "Alloeutypa flavovirens",
+     "sporely_taxon_id": 624194
+    },
+    {
+     "artportalen_id": "236537",
+     "artportalen_name": "Amanita muscaria s.str.",
+     "dyntaxa_name": "Amanita muscaria",
+     "sporely_taxon_id": 624588
+    },
+    {
+     "artportalen_id": "4015",
+     "artportalen_name": "Entoloma politum",
+     "dyntaxa_name": "Entoloma politum s.lat.",
+     "sporely_taxon_id": 625257
+    },
+    {
+     "artportalen_id": "4078",
+     "artportalen_name": "Exidia glandulosa",
+     "dyntaxa_name": "Exidia glandulosa s.lat.",
+     "sporely_taxon_id": 626107
+    },
+    {
+     "artportalen_id": "266979",
+     "artportalen_name": "Exidia glandulosa f. glandulosa",
+     "dyntaxa_name": "Exidia glandulosa",
+     "sporely_taxon_id": 626108
+    },
+    {
+     "artportalen_id": "266978",
+     "artportalen_name": "Exidia glandulosa f. lobata",
+     "dyntaxa_name": "Exidia zelleri",
+     "sporely_taxon_id": 626109
+    },
+    {
+     "artportalen_id": "4079",
+     "artportalen_name": "Exidia pithya",
+     "dyntaxa_name": "Exidia pithya s.lat.",
+     "sporely_taxon_id": 626110
+    },
+    {
+     "artportalen_id": "5431",
+     "artportalen_name": "Phanerochaete velutina",
+     "dyntaxa_name": "Phanerochaete velutina s.lat.",
+     "sporely_taxon_id": 626608
+    },
+    {
+     "artportalen_id": "3180",
+     "artportalen_name": "Flagelloscypha eruciformis",
+     "dyntaxa_name": "Calathella eruciformis",
+     "sporely_taxon_id": 627023
+    },
+    {
+     "artportalen_id": "259343",
+     "artportalen_name": "Microsphaera ferruginea",
+     "dyntaxa_name": "Erysiphe verbenicola",
+     "sporely_taxon_id": 628016
+    },
+    {
+     "artportalen_id": "259349",
+     "artportalen_name": "Microsphaera magnusii",
+     "dyntaxa_name": "Erysiphe magnusii",
+     "sporely_taxon_id": 628019
+    }
+   ]
+  }
+ },
+ "format": "sporely-taxonomy-v3-stage4p-dyntaxa-v1",
+ "manifests": {
+  "dyntaxa-ambiguous.manifest.json": {
+   "candidate_kind": "ambiguous",
+   "file_sha256": "724fdfa82edd094666973c3ec4279c27d8ba9ef7b9ae229d66bb8e4c4e9bbdcd",
+   "member_count": 173,
+   "members_sha256": "e8b1e3c65fff08c221782b9b7e48d7e02002343769940f0faff04c147109c8dd"
+  },
+  "dyntaxa-no-published-cross-reference.manifest.json": {
+   "candidate_kind": "matched",
+   "cloud_scope_member_count": 4081,
+   "evidence_class": "no_published_cross_reference",
+   "file_sha256": "dadde76095539883aec6a7a8c7d45387306407ba053c146cef4090b206c11414",
+   "member_count": 10158,
+   "members_sha256": "ad756309f053595df5fcfb66a93ab008a5c4d75e2261eb8dc1f9a42cc13ede78"
+  },
+  "dyntaxa-not-one-to-one.manifest.json": {
+   "candidate_kind": "not_one_to_one",
+   "file_sha256": "f82abf9ed3552922bdb1eb0d51edaa47b571367968562026657b52ea4e656830",
+   "member_count": 20,
+   "members_sha256": "27157d92bfb9a2e178d59be06c0bc1b4ad222934e442a798de7d259e17c89c5a"
+  },
+  "dyntaxa-one-directional-accepted-synonymy.manifest.json": {
+   "candidate_kind": "matched",
+   "cloud_scope_member_count": 192,
+   "evidence_class": "one_directional_accepted_synonymy",
+   "file_sha256": "0c1d72d17c350882baa9718088e6f06375fc4957352bf74224ebdf87061f8f87",
+   "member_count": 510,
+   "members_sha256": "d785b6f314e13d85c59599afa647991ef88c44a4f4cb3d0307b498fb8b2cecfd"
+  },
+  "dyntaxa-reciprocal-accepted-synonymy.manifest.json": {
+   "candidate_kind": "matched",
+   "cloud_scope_member_count": 103,
+   "evidence_class": "reciprocal_accepted_synonymy",
+   "file_sha256": "c67e4777ed62d1eac93a530ed6265db16cca937aea76d675661686885bd12837",
+   "member_count": 203,
+   "members_sha256": "1fd5fd7e65e0fb47286222810d3a0ef4e66ae8f461324f6df557a697853e4ba3"
+  },
+  "dyntaxa-shared-synonymy--accepted-authorship-disagrees.manifest.json": {
+   "candidate_kind": "matched",
+   "cloud_scope_member_count": 590,
+   "evidence_class": "shared_synonymy",
+   "file_sha256": "06c4e3380ad0f1331dfe4c2437d6c3d19646fffb5a80984872e321310c3186d0",
+   "member_count": 2156,
+   "members_sha256": "2d44172675ed3dbb3c0bd51c6934bced6b073114129eb7914a38835ef8e2a511",
+   "review_class": "accepted_authorship_disagrees"
+  },
+  "dyntaxa-shared-synonymy--infraspecific-rank.manifest.json": {
+   "candidate_kind": "matched",
+   "cloud_scope_member_count": 1,
+   "evidence_class": "shared_synonymy",
+   "file_sha256": "f9a7e2b231e4d152c2fecc4753019adad4a4e11b4f8f6985559388ac68c500d6",
+   "member_count": 13,
+   "members_sha256": "f232580272af792e2f5da8b24e29b326375b6c8e1d84d1221f1cf3caa625cb05",
+   "review_class": "infraspecific_rank"
+  },
+  "dyntaxa-shared-synonymy--non-species-rank.manifest.json": {
+   "candidate_kind": "matched",
+   "cloud_scope_member_count": 139,
+   "evidence_class": "shared_synonymy",
+   "file_sha256": "ec315583150099a9fc17d14a61f2a44f4bf6a888ee07dd5767f9c1bd86aab812",
+   "member_count": 351,
+   "members_sha256": "6a68f8ec2d4a06bf56e66e83590667c50ff71e26bf23be2b38eb9402db15b8ae",
+   "review_class": "non_species_rank"
+  },
+  "dyntaxa-shared-synonymy--only-accepted-name-reauthored.manifest.json": {
+   "candidate_kind": "matched",
+   "cloud_scope_member_count": 0,
+   "evidence_class": "shared_synonymy",
+   "file_sha256": "56de104296aa33bb1fefcc16c6d11fe0c0684349f412a4236b9981a6f48b8ce6",
+   "member_count": 1,
+   "members_sha256": "b27db8d51c1079f73f1d0286b052016c4875674875efcf0b99563d534e9c45b0",
+   "review_class": "only_accepted_name_reauthored"
+  },
+  "dyntaxa-shared-synonymy--only-dyntaxa-derived.manifest.json": {
+   "candidate_kind": "matched",
+   "cloud_scope_member_count": 30,
+   "evidence_class": "shared_synonymy",
+   "file_sha256": "664f9c363234d4a385eef816f1ca64c0f6012307382c14f034bb112f10b50036",
+   "member_count": 384,
+   "members_sha256": "a017c31f5867032057235511f36f3fcbdedcf5b3b6dbd7cf86eb143f04e176bf",
+   "review_class": "only_dyntaxa_derived"
+  },
+  "dyntaxa-shared-synonymy--only-illegitimate.manifest.json": {
+   "candidate_kind": "matched",
+   "cloud_scope_member_count": 4,
+   "evidence_class": "shared_synonymy",
+   "file_sha256": "804514c1e98de2391fedd48fc7cddc0707d16c6dc53df44d29ccd3305b87b2a9",
+   "member_count": 8,
+   "members_sha256": "9d5d4256077e1f45a62374b7d3ca7a1e0686358ec40998d8d7155c45b04576fe",
+   "review_class": "only_illegitimate"
+  },
+  "dyntaxa-shared-synonymy--only-interpretation-qualified.manifest.json": {
+   "candidate_kind": "matched",
+   "cloud_scope_member_count": 1,
+   "evidence_class": "shared_synonymy",
+   "file_sha256": "bbbf61674ba097e408a4dc34c7d0710b9b47c5ba50a9965b11d0dacc3f4d9965",
+   "member_count": 1,
+   "members_sha256": "5d1a92361fed3ab1c2af7acb4f77039dab126dea1b3ab798bfaca967ae1909e8",
+   "review_class": "only_interpretation_qualified"
+  },
+  "dyntaxa-shared-synonymy--only-mixed-weak.manifest.json": {
+   "candidate_kind": "matched",
+   "cloud_scope_member_count": 5,
+   "evidence_class": "shared_synonymy",
+   "file_sha256": "0b625b4906a2448c5e91b089bdb60a153a200d0fad8bf06c299045ec16651feb",
+   "member_count": 46,
+   "members_sha256": "afc2a91e73669cfdc8e670a1993affdeb93ef1c27235ea32a4539e715db67153",
+   "review_class": "only_mixed_weak"
+  },
+  "dyntaxa-shared-synonymy--only-name-variant.manifest.json": {
+   "candidate_kind": "matched",
+   "cloud_scope_member_count": 8,
+   "evidence_class": "shared_synonymy",
+   "file_sha256": "9b6fab24e254ced333de37ad2696060ba04176f6611e97b4668553eaa6d95e7b",
+   "member_count": 33,
+   "members_sha256": "3a352735e30d3be5f0f8720d76760b8d037073e9c8ece82bbc6fefed48616736",
+   "review_class": "only_name_variant"
+  },
+  "dyntaxa-shared-synonymy--only-not-validly-published.manifest.json": {
+   "candidate_kind": "matched",
+   "cloud_scope_member_count": 32,
+   "evidence_class": "shared_synonymy",
+   "file_sha256": "a3dcbb1ccec25eb2f0e5b70b945ca6375b49dd2f28b0b0b36b97e9812223ca05",
+   "member_count": 56,
+   "members_sha256": "88009936f1960e09f0f4e13cbf80e73d9244a048393dc76a857d0cdb28c32d0f",
+   "review_class": "only_not_validly_published"
+  },
+  "dyntaxa-shared-synonymy--only-orthographic-variant.manifest.json": {
+   "candidate_kind": "matched",
+   "cloud_scope_member_count": 12,
+   "evidence_class": "shared_synonymy",
+   "file_sha256": "f1020e55e62a87955577d691d4df0b04b0bc7e66fc4851c0ab27ce3a172779ab",
+   "member_count": 19,
+   "members_sha256": "3ab307e7cf151a8a7dd4e6bf7ef111d79242b847f9998ac45eac869603261df5",
+   "review_class": "only_orthographic_variant"
+  },
+  "dyntaxa-shared-synonymy--only-pro-parte.manifest.json": {
+   "candidate_kind": "matched",
+   "cloud_scope_member_count": 5,
+   "evidence_class": "shared_synonymy",
+   "file_sha256": "fb233660f2c711aa03628cc050f866a95d1af2a606406ab8985bf302e242c501",
+   "member_count": 19,
+   "members_sha256": "d480880f10321570d5bcc8ad2edd7478b46570db95085b4c42c0a93a93a0990d",
+   "review_class": "only_pro_parte"
+  },
+  "dyntaxa-shared-synonymy--only-unauthored.manifest.json": {
+   "candidate_kind": "matched",
+   "cloud_scope_member_count": 1,
+   "evidence_class": "shared_synonymy",
+   "file_sha256": "a725be38317cd73d840c5342d21c13232b984244f981a192b441276e374e452d",
+   "member_count": 2,
+   "members_sha256": "cdcb1457d3f81fa93cf9af7da35ff938202752b509458958ca426cfb60ca59f0",
+   "review_class": "only_unauthored"
+  },
+  "dyntaxa-shared-synonymy--only-unpublished.manifest.json": {
+   "candidate_kind": "matched",
+   "cloud_scope_member_count": 0,
+   "evidence_class": "shared_synonymy",
+   "file_sha256": "c8afd51034af8bdf9b4ffcd8c9f77dfff5fe9513858b690ced10f490517fc035",
+   "member_count": 4,
+   "members_sha256": "b687bfc9074b01ee529d94b55391d2b1766eb0581a08ca0a4ff90f4e4bd0ceff",
+   "review_class": "only_unpublished"
+  },
+  "dyntaxa-shared-synonymy--ordinary.manifest.json": {
+   "candidate_kind": "matched",
+   "cloud_scope_member_count": 719,
+   "evidence_class": "shared_synonymy",
+   "file_sha256": "d2222d5e5ace86c0a9eb81fc4223f9fba7e2335a78ff816aa4f151c15d6e9cef",
+   "member_count": 2158,
+   "members_sha256": "47480243a74eb05655f63b98eb234c37c94936c7e7fcf631b0c6a8855e1128e5",
+   "review_class": "ordinary"
+  },
+  "dyntaxa-shared-synonymy--rank-mismatch.manifest.json": {
+   "candidate_kind": "matched",
+   "cloud_scope_member_count": 0,
+   "evidence_class": "shared_synonymy",
+   "file_sha256": "798bfcfd906929565c0236c2ae0557bd614fe54417163016721e6ce150b6fc1d",
+   "member_count": 0,
+   "members_sha256": "ebc527be3115e1cded1fd66cebf90ccbd770d8bd143c8223ecd215378a15bc10",
+   "review_class": "rank_mismatch"
+  },
+  "dyntaxa-shared-synonymy--single-shared-synonym-low-overlap.manifest.json": {
+   "candidate_kind": "matched",
+   "cloud_scope_member_count": 28,
+   "evidence_class": "shared_synonymy",
+   "file_sha256": "034b5fc2b66976c7d337dded582415725a756dd8c84871ca31cd8c7ca93efd11",
+   "member_count": 92,
+   "members_sha256": "1c8f1c4b0cb6203503c0193282a5020831e80df486d18ebe739ee21ee717a946",
+   "review_class": "single_shared_synonym_low_overlap"
+  },
+  "dyntaxa-shared-synonymy.manifest.json": {
+   "candidate_kind": "matched",
+   "cloud_scope_member_count": 1575,
+   "evidence_class": "shared_synonymy",
+   "file_sha256": "d9069a10fdcd59f7d0dd469e2391ef8bd00c0df0044d6cd397814b1d24f619b7",
+   "member_count": 5343,
+   "members_sha256": "33ee1fabee5c91864e11fb6617f8f3ef8bdd700b5321a78ae65ec527d349bed1"
+  },
+  "dyntaxa-unmatched.manifest.json": {
+   "candidate_kind": "unmatched",
+   "file_sha256": "2fc5555f8b82022067e7f65e5c3006adc6642403c2db128d65cf6dd25d5f8381",
+   "member_count": 1976,
+   "members_sha256": "d6289011f44060506ac06dd5c9d78d9c7f16ab593d7a87584ee58bacc28dd62c"
+  }
+ },
+ "matched": {
+  "cloud_scope": {
+   "by_candidate_basis": {
+    "accepted_name": 5550,
+    "dyntaxa_synonym_name": 401
+   },
+   "by_evidence_class": {
+    "no_published_cross_reference": 4081,
+    "one_directional_accepted_synonymy": 192,
+    "reciprocal_accepted_synonymy": 103,
+    "shared_synonymy": 1575
+   },
+   "pairs": 5951,
+   "reviewable_total": 1870,
+   "with_preferred_sv_vernacular": 2883
+  },
+  "full_release": {
+   "by_candidate_basis": {
+    "accepted_name": 15392,
+    "dyntaxa_synonym_name": 822
+   },
+   "by_evidence_class": {
+    "no_published_cross_reference": 10158,
+    "one_directional_accepted_synonymy": 510,
+    "reciprocal_accepted_synonymy": 203,
+    "shared_synonymy": 5343
+   },
+   "pairs": 16214,
+   "reviewable_total": 6056,
+   "with_preferred_sv_vernacular": 5270
+  }
+ },
+ "partition": {
+  "ambiguous": 173,
+  "matched": 16214,
+  "not_one_to_one": 20,
+  "unmatched": 1976
+ },
+ "pins": {
+  "cloud_scope_policy": {
+   "path": "database/taxonomy/policies/global-macrofungi-scope.yml",
+   "scope_predicate_id": "global_macrofungi_policy_v1",
+   "sha256": "e4e796286df93b5372264c702c824eea746f680b3b4e8d6467621c99e5b64ea6"
+  },
+  "release": {
+   "content_release_id": "tax-2026.09.26-02",
+   "gz_artifact": "database/reference_data/generated/taxonomy_v2/tax-2026.09.26-02.sqlite3.gz",
+   "gz_sha256": "4488bb64f4abe18ed269c76264f9be36708d742ff531e931e8d7458791e05d72",
+   "sqlite_sha256": "9bf71b7e1f9b2915c3b1798743cefdd5db53bdbbfb7edc462aa3d0ad0cf8547d"
+  },
+  "source_archives": {
+   "col_xr": {
+    "sha256": "397d701c8eb269bf78d6ac7b03149915b0d9e2a2c18694be2c91445b807814f9",
+    "source_release_id": "col_xr:2026-07-17-XR:2026-07-17"
+   },
+   "dyntaxa": {
+    "acquisition_manifest": {
+     "path": "database/taxonomy/sources/dyntaxa/2026-09-30/manifest.json",
+     "sha256": "1e75946149f4470e845a7e548285f62bc2c29d23fb241c626587bedab686443a"
+    },
+    "sha256": "7947b7a7681f3654d5478694f1fe37fdd9e72dc3aab8f9b6311525d85cc4879c",
+    "source_release_id": "dyntaxa:2026-09-30:2026-09-30"
+   }
+  }
+ },
+ "population": {
+  "definition": "accepted usages with kingdom 'Fungi' in the pinned Dyntaxa archive",
+  "dyntaxa_concepts": 18383,
+  "dyntaxa_usages_excluded_as_non_synonymy": {
+   "count": 947,
+   "statuses": [
+    "misapplied",
+    "proParteSynonym"
+   ]
+  },
+  "reviewed_dyntaxa_bridges_in_release": 0
+ },
+ "regressions": {
+  "Cantharellus cibarius": {
+   "candidate_in": [],
+   "in_cloud_scope": true,
+   "matched": {
+    "candidate_basis": "accepted_name",
+    "dyntaxa_preferred_sv_vernacular": "kantarell",
+    "dyntaxa_taxon_id": "urn:lsid:dyntaxa.se:Taxon:3213",
+    "evidence_class": "no_published_cross_reference"
+   },
+   "sporely_taxon_id": 168873
+  },
+  "Conocybe vexans": {
+   "candidate_in": [],
+   "in_cloud_scope": true,
+   "matched": {
+    "candidate_basis": "dyntaxa_synonym_name",
+    "dyntaxa_preferred_sv_vernacular": "kraghätting",
+    "dyntaxa_taxon_id": "urn:lsid:dyntaxa.se:Taxon:236654",
+    "evidence_class": "one_directional_accepted_synonymy"
+   },
+   "sporely_taxon_id": 617026
+  },
+  "Craterellus tubaeformis": {
+   "candidate_in": [],
+   "in_cloud_scope": true,
+   "matched": {
+    "candidate_basis": "accepted_name",
+    "dyntaxa_preferred_sv_vernacular": "trattkantarell",
+    "dyntaxa_taxon_id": "urn:lsid:dyntaxa.se:Taxon:3217",
+    "evidence_class": "no_published_cross_reference"
+   },
+   "sporely_taxon_id": 620306
+  },
+  "Entoloma conferendum": {
+   "candidate_in": [],
+   "in_cloud_scope": true,
+   "matched": {
+    "candidate_basis": "accepted_name",
+    "dyntaxa_preferred_sv_vernacular": "stjärnrödhätting",
+    "dyntaxa_taxon_id": "urn:lsid:dyntaxa.se:Taxon:3957",
+    "evidence_class": "shared_synonymy",
+    "review_class": "ordinary"
+   },
+   "sporely_taxon_id": 7821
+  },
+  "Pholiotina rugosa (canonical Conocybe rugosa)": {
+   "candidate_in": [],
+   "in_cloud_scope": true,
+   "matched": {
+    "candidate_basis": "dyntaxa_synonym_name",
+    "dyntaxa_preferred_sv_vernacular": null,
+    "dyntaxa_taxon_id": "urn:lsid:dyntaxa.se:Taxon:3423",
+    "evidence_class": "reciprocal_accepted_synonymy"
+   },
+   "sporely_taxon_id": 83668
+  }
+ },
+ "shared_synonymy_review_split": {
+  "dyntaxa_col_source": {
+   "alias": "Dyntaxa",
+   "col_source_id": "2041",
+   "title": "Dyntaxa. Svensk taxonomisk databas"
+  },
+  "precedence": [
+   "non_species_rank",
+   "rank_mismatch",
+   "infraspecific_rank",
+   "accepted_authorship_disagrees",
+   "only_orthographic_variant",
+   "only_unpublished",
+   "only_not_validly_published",
+   "only_illegitimate",
+   "only_interpretation_qualified",
+   "only_pro_parte",
+   "only_accepted_name_reauthored",
+   "only_unauthored",
+   "only_name_variant",
+   "only_dyntaxa_derived",
+   "only_mixed_weak",
+   "single_shared_synonym_low_overlap",
+   "ordinary"
+  ],
+  "rules": {
+   "accepted_authorship_disagrees": "the accepted name keys differ (canonical name plus authorship)",
+   "infraspecific_rank": "both accepted usages have the same infraspecific rank (subspecies, variety, form)",
+   "non_species_rank": "either source's accepted usage has a rank other than species or an infraspecific rank (subspecies, variety, form)",
+   "only_accepted_name_reauthored": "every shared synonym is of kind 'accepted_name_reauthored'",
+   "only_dyntaxa_derived": "every shared synonym is of kind 'dyntaxa_derived'",
+   "only_illegitimate": "every shared synonym is of kind 'illegitimate'",
+   "only_interpretation_qualified": "every shared synonym is of kind 'interpretation_qualified'",
+   "only_mixed_weak": "no shared synonym is of kind 'ordinary', and they are not all of one kind",
+   "only_name_variant": "every shared synonym is of kind 'name_variant'",
+   "only_not_validly_published": "every shared synonym is of kind 'not_validly_published'",
+   "only_orthographic_variant": "every shared synonym is of kind 'orthographic_variant'",
+   "only_pro_parte": "every shared synonym is of kind 'pro_parte'",
+   "only_unauthored": "every shared synonym is of kind 'unauthored'",
+   "only_unpublished": "every shared synonym is of kind 'unpublished'",
+   "ordinary": "both accepted usages are species, the accepted name keys (canonical name plus authorship) agree, at least one shared synonym is of kind 'ordinary', and not low overlap (a single 'ordinary' shared synonym while each source publishes at least 5 synonyms)",
+   "rank_mismatch": "the two accepted usages have different ranks (for example species and variety)",
+   "single_shared_synonym_low_overlap": "exactly one shared synonym is of kind 'ordinary' while each source publishes at least 5 synonyms"
+  },
+  "shared_synonym_col_provenance": [
+   {
+    "col_source_id": "2030",
+    "col_usages": 57,
+    "title": "Nortaxa (Artsnavnebasen)"
+   },
+   {
+    "col_source_id": "2041",
+    "col_usages": 2712,
+    "title": "Dyntaxa. Svensk taxonomisk databas"
+   },
+   {
+    "col_source_id": "2073",
+    "col_usages": 7218,
+    "title": "Species Fungorum Plus"
+   },
+   {
+    "col_source_id": "2144",
+    "col_usages": 13,
+    "title": "The Integrated Taxonomic Information System"
+   },
+   {
+    "col_source_id": "290762",
+    "col_usages": 34,
+    "title": "The FinBIF checklist of Finnish species"
+   },
+   {
+    "col_source_id": "7888",
+    "col_usages": 343,
+    "title": "United Kingdom Species Inventory (UKSI)"
+   },
+   {
+    "col_source_id": "9712",
+    "col_usages": 35,
+    "title": "National Checklist of all species occurring in Denmark"
+   }
+  ],
+  "synonym_kind_precedence": [
+   "orthographic_variant",
+   "unpublished",
+   "not_validly_published",
+   "illegitimate",
+   "interpretation_qualified",
+   "pro_parte",
+   "accepted_name_reauthored",
+   "unauthored",
+   "name_variant",
+   "dyntaxa_derived",
+   "ordinary"
+  ],
+  "synonym_kinds": {
+   "accepted_name_reauthored": "the canonical name is either accepted name itself, under another authorship",
+   "dyntaxa_derived": "otherwise ordinary, but every COL usage behind it comes from the COL source that is Dyntaxa (see dyntaxa_col_source): COL republishes Dyntaxa's assertion, so the two sources do not independently corroborate it",
+   "illegitimate": "Dyntaxa nomenclaturalStatus 'illegitimum' or 'rejiciendum', the authorship carries 'nom. illeg.', or a COL usage's col:remarks/col:nameRemarks carries 'nom. illeg.' or 'later homonym'",
+   "interpretation_qualified": "a misapplied COL usage (col:status 'misapplied'), or the authorship carries a sensu-style qualifier ('sensu', 's.', 'ss.', 'auct.'). Dyntaxa's misapplied usages never reach this test: they are not synonymy and are excluded when the archive is read",
+   "name_variant": "no structured status applies, but the name is almost spelled like either accepted name: same word count once hyphens are removed, and every word, genus included, within Levenshtein distance 2",
+   "not_validly_published": "Dyntaxa nomenclaturalStatus 'invalidum' or 'nudum', COL col:nameStatus 'not established', the authorship carries 'nom. nud.' or 'nom. inval.', or a COL usage's col:remarks/col:nameRemarks carries 'nom. nud.', 'nom. inval.' or 'published without a valid description'",
+   "ordinary": "meets none of the tests above",
+   "orthographic_variant": "Dyntaxa nomenclaturalStatus 'orthographia'",
+   "pro_parte": "COL col:status 'ambiguous synonym', or the authorship carries 'p.p.' or 'pro parte' (Dyntaxa's proParteSynonym usages are excluded when the archive is read)",
+   "unauthored": "the authorship is empty, so the match is on the name alone",
+   "unpublished": "COL col:nameStatus 'manuscript', or the authorship or a COL usage's col:remarks/col:nameRemarks carries 'ined' or 'nom. herb.'"
+  }
+ }
+}

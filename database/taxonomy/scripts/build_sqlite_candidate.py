@@ -78,7 +78,17 @@ BATCH_SIZE = 5000
 SOURCE_SYSTEM_MAP = {
     "col_xr": "col_xr",
     "nortaxa": "artsdatabanken",
+    "dyntaxa": "dyntaxa",
 }
+
+#: Sources whose identifiers are stored only as reviewed bridges (taxonomy-v3
+#: Stage 4P). Every row of ``taxon_external_id_text_min`` is authoritative to
+#: the scoped export, and a Dyntaxa LSID is text, so a plain source-usage row
+#: would land there and be published. For these sources the source usage
+#: stores its scientific name only; its identifier reaches the text table
+#: solely through the reviewed-bridge emission below. Mirrors
+#: ``compile_release.REVIEWED_IDENTITY_ONLY_SOURCES``.
+BRIDGE_ONLY_IDENTIFIER_SOURCES = frozenset({"dyntaxa"})
 
 # Every namespace we know how to store.
 INTEGER_NAMESPACES = frozenset({
@@ -98,9 +108,10 @@ TEXT_NAMESPACES = frozenset({
 #: automatic match or a shared name. Keyed by the bridged
 #: ``(source_code, namespace)``; the value is the country suffix of the
 #: ``taxon_min.preferred_scientific_name_<country>`` column group it fills.
-#: Dyntaxa joins as ``"sv"`` in Stage 4P without a new shape.
+#: Dyntaxa joined as ``"sv"`` in Stage 4P without a new shape.
 NATIONAL_PREFERRED_NAME_SOURCES = {
     ("nortaxa", "nortaxa_taxon_id"): "no",
+    ("dyntaxa", "dyntaxa_taxon_id"): "sv",
 }
 NATIONAL_NAME_COUNTRIES = ("no", "sv")
 #: Provenance kept beside each national name: the bridged identity it came
@@ -613,7 +624,9 @@ def _build_into(
                 "accepted", "provisionally accepted", "valid"
             ) else "synonym"
             external_name = sci_name or None
-            if ns in TEXT_NAMESPACES:
+            if source_code in BRIDGE_ONLY_IDENTIFIER_SOURCES:
+                pass
+            elif ns in TEXT_NAMESPACES:
                 external_text_rows.append((
                     sporely_id, source_system, ns, identifier, id_role,
                     is_preferred, external_name, note,
