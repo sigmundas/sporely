@@ -64,7 +64,31 @@ _REVIEWED_RUGOSA = {
                                 "identifier": "5ZT3G"}},
     "relationship": "exact",
     "review_status": "approved",
+    "source_release_range": {"first": "2026-09-30", "last": "2026-09-30"},
+    # ``_compile`` replaces this with the pins of the fixture inputs as
+    # written, before any test tampers with them: what a reviewer saw.
+    "reviewed_against_source_archives": "FIXTURE_PINS",
 }
+
+
+def _fixture_pins(root: Path, codes=("col_xr", "dyntaxa")) -> dict:
+    pins = {}
+    for code in codes:
+        report = json.loads((root / code / "report.json").read_text())
+        release = report["profile_source_release"]
+        pins[code] = {
+            "source_release_id":
+                f"{code}:{release['version']}:{release['issued_date']}",
+            "sha256": report["archive_sha256"]}
+    return pins
+
+
+def _tamper(root: Path, code: str, **changes) -> None:
+    """Change what a later compile sees as a source's release or bytes."""
+    path = root / code / "report.json"
+    report = json.loads(path.read_text())
+    report.update(changes)
+    path.write_text(json.dumps(report, indent=2, sort_keys=True) + "\n")
 
 
 def _dyntaxa_source(root: Path) -> Path:
@@ -130,11 +154,19 @@ def _dyntaxa_source(root: Path) -> Path:
 
 def _compile(tmp_path: Path, *, manual: list[dict], with_dyntaxa: bool = True,
              registry: str = "registry.jsonl",
-             release_id: str = "tax-2026.09.30-01") -> Path:
+             release_id: str = "tax-2026.09.30-01",
+             tamper: dict[str, dict] | None = None) -> Path:
     root = tmp_path / "sources"
     sources = [_col_source(root), _nortaxa_source(root)]
     if with_dyntaxa:
         sources.append(_dyntaxa_source(root))
+        pins = _fixture_pins(root)
+        manual = [
+            {**m, "reviewed_against_source_archives": pins}
+            if m.get("reviewed_against_source_archives") == "FIXTURE_PINS" else m
+            for m in manual]
+    for code, changes in (tamper or {}).items():
+        _tamper(root, code, **changes)
     out = tmp_path / f"release-{registry}-{release_id}"
     compile_release(
         normalized_source_dirs=sources,
@@ -306,6 +338,55 @@ def test_retained_registry_aliases_contribute_nothing_without_approval(
     again = _compile(tmp_path, manual=[_REVIEWED_RUGOSA],
                      release_id="tax-2026.09.30-03")
     assert set(_dyntaxa_usages(again)) == {_RUGOSA, f"{_NAME_LSID}2001"}
+
+
+@pytest.mark.parametrize("tamper,reason", [
+    ({"dyntaxa": {"profile_source_release": {"version": "2026-12-31",
+                                             "issued_date": "2026-12-31"}}},
+     "source_release_range_is_not_the_compiled_release"),
+    ({"dyntaxa": {"archive_sha256": "d" * 64}},
+     "compiled_dyntaxa_differs_from_reviewed_pin"),
+    ({"col_xr": {"archive_sha256": "c" * 64}},
+     "compiled_col_xr_differs_from_reviewed_pin"),
+], ids=["later-dyntaxa-release", "changed-dyntaxa-bytes", "changed-col-bytes"])
+def test_unchanged_approval_does_not_apply_to_other_source_inputs(
+    tmp_path: Path, tamper: dict, reason: str,
+) -> None:
+    """The approval stays exactly as reviewed; only the compiled inputs move.
+    An approved build first leaves its aliases in the registry, so this also
+    shows the retained aliases stay inert."""
+    first = _compile(tmp_path, manual=[_REVIEWED_RUGOSA],
+                     release_id="tax-2026.09.30-01")
+    host = _dyntaxa_usages(first)[_RUGOSA]["sporely_taxon_id"]
+
+    later = _compile(tmp_path, manual=[_REVIEWED_RUGOSA],
+                     release_id="tax-2026.09.30-02", tamper=tamper)
+
+    assert _dyntaxa_usages(later) == {}
+    dyntaxa = json.loads((later / "diagnostics.json").read_text())[
+        "counts"]["reviewed_identity_only_sources"]["dyntaxa"]
+    assert dyntaxa["approved_mappings_not_applicable"] == {reason: 1}
+    assert dyntaxa["registry_aliases_withheld"] == 2
+    assert dyntaxa["vernacular_rows_attached"] == 0
+    conn = _candidate(tmp_path, later)
+    try:
+        assert _resolve(conn, "dyntaxa", "dyntaxa_taxon_id", _RUGOSA) == []
+        assert conn.execute(
+            "SELECT preferred_scientific_name_sv FROM taxon_min "
+            "WHERE taxon_id = ?", (host,)).fetchone()[0] is None
+    finally:
+        conn.close()
+
+
+def test_approval_without_reviewed_pins_does_not_apply(tmp_path: Path) -> None:
+    unpinned = {k: v for k, v in _REVIEWED_RUGOSA.items()
+                if k != "reviewed_against_source_archives"}
+    release = _compile(tmp_path, manual=[unpinned])
+    assert _dyntaxa_usages(release) == {}
+    dyntaxa = json.loads((release / "diagnostics.json").read_text())[
+        "counts"]["reviewed_identity_only_sources"]["dyntaxa"]
+    assert dyntaxa["approved_mappings_not_applicable"] == {
+        "no_reviewed_source_pins": 1}
 
 
 def test_existing_nortaxa_and_col_bindings_are_unchanged(tmp_path: Path) -> None:

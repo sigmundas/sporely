@@ -1,0 +1,39 @@
+{
+ "dyntaxa_diagnostics": {
+  "approved_mappings_not_applicable": {},
+  "bound_as_synonym": 578,
+  "bound_by_manual_mapping": 203,
+  "bound_usages": 781,
+  "in_scope_non_synonym_usages": 19330,
+  "in_scope_synonym_usages": 29159,
+  "in_scope_usages": 48489,
+  "registry_aliases_withheld": 0,
+  "rule": "bound only by an approved manual mapping (or as the synonym of a usage so bound); never classified, automatically aliased or allocated",
+  "synonyms_left_unbound": 28581,
+  "vernacular_rows_attached": 145,
+  "vernacular_rows_dropped_unbound": 50834
+ },
+ "format": "sporely-taxonomy-v3-stage4p-approval-path-diagnostic-v1",
+ "method": "generate_stage4p_mappings.render_document over the committed ledger into a scratch file; compile_release over the build's normalized col_xr, nortaxa and dyntaxa inputs with a scratch copy of the canonical registry and the committed supersessions (no red-list or legacy inputs); build_candidate",
+ "purpose": "Show on the real pinned inputs that, if the owner approved the reciprocal manifest, the generated records would apply (their pins equal the compiled inputs) and would add Swedish names without changing any NorTaxa/COL row.",
+ "results": {
+  "concept_identity_and_names_identical_to_committed_build": true,
+  "dyntaxa_bridge_rows": 203,
+  "dyntaxa_vernacular_rows": 145,
+  "non_dyntaxa_external_ids_identical_to_committed_build": true,
+  "preferred_scientific_name_sv_filled": 203,
+  "sporely_83668": {
+   "canonical_scientific_name": "Conocybe rugosa",
+   "preferred_scientific_name_no": "Pholiotina rugosa",
+   "preferred_scientific_name_sv": "Pholiotina rugosa",
+   "preferred_scientific_name_sv_external_id": "urn:lsid:dyntaxa.se:Taxon:3423",
+   "taxon_id": 83668
+  }
+ },
+ "status": "SYNTHETIC. Not an owner approval and not a candidate release. Nothing here authorizes a mapping; manual_mappings.yml is unchanged and generate_stage4p_mappings.OWNER_APPROVALS is empty.",
+ "synthetic_approval": {
+  "approved_by": "SYNTHETIC-DIAGNOSTIC",
+  "file_sha256": "c67e4777ed62d1eac93a530ed6265db16cca937aea76d675661686885bd12837",
+  "path": "database/taxonomy/evidence/taxonomy-v3/stage4p/dyntaxa-reciprocal-accepted-synonymy.manifest.json"
+ }
+}

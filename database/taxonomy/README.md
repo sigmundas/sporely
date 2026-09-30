@@ -224,7 +224,14 @@ manual mapping, and a synonym only when its accepted usage was bound that
 way — in the release being compiled. A registry alias kept from an earlier
 release whose approval was since removed or rejected stays in the append-only
 registry but contributes no binding, name, vernacular or bridge
-(`registry_aliases_withheld`). Unbound usages and their vernaculars are
+(`registry_aliases_withheld`). An approval also applies only to the source
+releases it was reviewed against: every pinned archive (the approved
+manifest's `pins.source_archives`, or an individual record's
+`reviewed_against_source_archives`) must be a compiled input with the same
+release id and archive SHA-256, and the record's `source_release_range` must
+be the compiled release of its source. A later Dyntaxa export, changed bytes
+under the same version or a different COL archive leave the record unapplied
+(`approved_mappings_not_applicable`, by reason). Unbound usages and their vernaculars are
 counted in the compile diagnostics (`counts.reviewed_identity_only_sources`).
 Batch approvals of Dyntaxa manifests are turned into per-member records by
 `evidence/taxonomy-v3/generate_stage4p_mappings.py` and re-checked by

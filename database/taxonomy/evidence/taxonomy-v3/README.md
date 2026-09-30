@@ -470,7 +470,17 @@ of batch approval (`one_directional_accepted_synonymy`,
 `no_published_cross_reference`, ambiguous, not one-to-one, unmatched). The
 compiler's verifier then requires every Dyntaxa record to be a member of the
 approved file, with the approval restating the manifest's pins and the
-record's `source_release_range` equal to the pinned Dyntaxa release.
+record's `source_release_range` equal to the pinned Dyntaxa release. The
+compiler then applies a record only while those pins equal the archives
+actually compiled (release id and SHA-256 of both Dyntaxa and COL).
+
+`approval-path-diagnostic.json` is **synthetic, not an approval**: a scratch
+compile of the real pinned inputs with the reciprocal manifest approved in
+memory only. Its generated records apply (their pins equal the compiled
+inputs) and give 203 Dyntaxa bridges, 203 `preferred_scientific_name_sv`
+values (83668: Pholiotina rugosa, `urn:lsid:dyntaxa.se:Taxon:3423`) and 145
+Swedish Dyntaxa vernaculars, with every NorTaxa/COL row and every concept's
+identity and names identical to the committed-ledger build.
 
 Regression species (by Sporely id): 83668 (canonical Conocybe rugosa) pairs
 with Dyntaxa `Taxon:3423` Pholiotina rugosa by synonym name and grades

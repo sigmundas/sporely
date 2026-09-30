@@ -10,7 +10,7 @@
     "new_allocations": 0,
     "unchanged": true
    },
-   "sqlite_sha256": "5049383e1467aff3c46c09bad195cc7cbcddb9d505a6253e9cc48732deac5dcd"
+   "sqlite_sha256": "2ef717db4ec1d51e6e2005cf2b13ec2f37035409a7922661be379741b84ebd25"
   },
   "without_dyntaxa": {
    "determinism_mismatches": [],
@@ -32,7 +32,7 @@
  "compile_artifacts": {
   "diagnostics.json": {
    "identical": false,
-   "with_dyntaxa": "adc4b0d6a2f6d24451e1df11bcee854d73c60c8c0db96a414a80c43d0bc02b39",
+   "with_dyntaxa": "1da63bb7562cf8602d2b10d7d07feece6d2f79cb779afa79fbb1cb4a95a4bbf4",
    "without_dyntaxa": "f05f5aeca6bd23365e9b0b130fb011a33662369f003b888e8636cc6e422d2eb4"
   },
   "legacy_enrichment_skips.jsonl": {
@@ -47,7 +47,7 @@
   },
   "manifest.json": {
    "identical": false,
-   "with_dyntaxa": "4296a24ce2510e2a96d2d2ce82434cd343b928cca7b8e54dfe287e7ad60ebaba",
+   "with_dyntaxa": "77bc151f9aa68551c0c125c3cfa740a96ff8eb172dac80af637bc94d7137aa32",
    "without_dyntaxa": "4d2eeaa3fc1d08005293cea8eaa38b0eb68dac5f5e0aec7cf4c316f257ced4e1"
   },
   "mappings.jsonl": {
@@ -92,6 +92,7 @@
  },
  "dyntaxa_diagnostics": {
   "dyntaxa": {
+   "approved_mappings_not_applicable": {},
    "bound_as_synonym": 0,
    "bound_by_manual_mapping": 0,
    "bound_usages": 0,

@@ -309,6 +309,53 @@ class ManualMapping:
     #: ``file_sha256`` of the owner-approved review manifest this record was
     #: generated from, or ``""`` for an individually reviewed record.
     approved_manifest_file_sha256: str = ""
+    #: ``(first, last)`` of the record's ``source_release_range``, if any.
+    source_release_range: tuple[str, str] | None = None
+    #: ``(source, source_release_id, archive_sha256)`` per source archive the
+    #: review was made against: the approved manifest's ``pins``, or, for an
+    #: individually reviewed record, its ``reviewed_against_source_archives``.
+    reviewed_source_pins: tuple[tuple[str, str, str], ...] = ()
+
+
+def _source_pins(archives: object) -> tuple[tuple[str, str, str], ...]:
+    if not isinstance(archives, dict):
+        return ()
+    return tuple(sorted(
+        (str(source), str((pin or {}).get("source_release_id") or ""),
+         str((pin or {}).get("sha256") or ""))
+        for source, pin in archives.items()))
+
+
+def reviewed_only_mapping_inapplicable(
+    mapping: ManualMapping, compiled: dict[str, tuple[str, str]],
+) -> str | None:
+    """Why an approved mapping of a reviewed-identity-only source does not
+    apply to the sources being compiled, or ``None`` if it does.
+
+    ``compiled`` maps each input ``source_code`` to its
+    ``(source_release_id, archive_sha256)``. An approval is a statement about
+    the exact source releases it was reviewed against (decision 2): it applies
+    only when every pinned source archive is an input with the same release
+    id and the same bytes, and the record's ``source_release_range`` is the
+    compiled release of its own source. A later export, changed bytes under
+    the same version, or a different COL archive leave it unapplied.
+    """
+    source = mapping.source_usage[0]
+    if source not in compiled:
+        return "source_not_compiled"
+    if not mapping.reviewed_source_pins:
+        return "no_reviewed_source_pins"
+    version = compiled[source][0].split(":")[1] \
+        if compiled[source][0].count(":") == 2 else ""
+    if mapping.source_release_range != (version, version):
+        return "source_release_range_is_not_the_compiled_release"
+    pinned = {src: (rid, sha) for src, rid, sha in mapping.reviewed_source_pins}
+    if source not in pinned:
+        return f"no_pin_for_{source}"
+    for src, (rid, sha) in sorted(pinned.items()):
+        if compiled.get(src) != (rid, sha):
+            return f"compiled_{src}_differs_from_reviewed_pin"
+    return None
 
 
 @dataclass(frozen=True)
@@ -404,6 +451,11 @@ def _load_manual_mappings(path: Path) -> list[ManualMapping]:
         manifest_bound = verify_manifest_approvals(doc)
     except BridgeEmissionError as exc:
         raise CompilerError(f"{path}: {exc}") from exc
+    manifest_pins = {
+        str(a.get("file_sha256")): _source_pins(
+            ((a.get("pins") or {}).get("source_archives")))
+        for a in doc.get("approved_manifests") or [] if isinstance(a, dict)
+    }
     out: list[ManualMapping] = []
     seen_source_usages: dict[tuple[str, str, str], str] = {}
     for index, entry in enumerate(doc.get("mappings") or []):
@@ -444,6 +496,8 @@ def _load_manual_mappings(path: Path) -> list[ManualMapping]:
                 f"automation, so flipping review_status alone must not "
                 f"activate it."
             )
+        release_range = entry.get("source_release_range")
+        bound_sha = manifest_bound.get(mapping_id, "")
         mapping = ManualMapping(
             mapping_id=mapping_id,
             source_usage=source_usage,
@@ -451,7 +505,13 @@ def _load_manual_mappings(path: Path) -> list[ManualMapping]:
             target_sporely_taxon_id=target_id,
             relationship=relationship,
             review_status=review_status,
-            approved_manifest_file_sha256=manifest_bound.get(mapping_id, ""),
+            approved_manifest_file_sha256=bound_sha,
+            source_release_range=(
+                (str(release_range.get("first")), str(release_range.get("last")))
+                if isinstance(release_range, dict) else None),
+            reviewed_source_pins=(
+                manifest_pins.get(bound_sha, ()) if bound_sha
+                else _source_pins(entry.get("reviewed_against_source_archives"))),
         )
         # Duplicate/conflicting exact mappings against the SAME source usage
         # must fail closed. A source usage may not be pointed at two
@@ -637,11 +697,25 @@ def compile_release(
     # Apply approved manual exact mappings first, so their target IDs (either
     # pre-existing anchors or targets to be allocated) are recorded before
     # any source-native allocation.
-    approved_exact = sorted(
-        (m for m in manual_mappings
-         if m.relationship == "exact" and m.review_status == "approved"),
-        key=lambda m: m.source_usage,
-    )
+    compiled_source_pins = {
+        code: (f"{code}:{_release_string(report.source_release)}",
+               report.archive_sha256)
+        for code, report in source_reports.items()
+    }
+    reviewed_only_inapplicable: dict[str, dict[str, int]] = {}
+    approved_exact = []
+    for m in manual_mappings:
+        if m.relationship != "exact" or m.review_status != "approved":
+            continue
+        if m.source_usage[0] in REVIEWED_IDENTITY_ONLY_SOURCES:
+            reason = reviewed_only_mapping_inapplicable(m, compiled_source_pins)
+            if reason is not None:
+                counts = reviewed_only_inapplicable.setdefault(
+                    m.source_usage[0], {})
+                counts[reason] = counts.get(reason, 0) + 1
+                continue
+        approved_exact.append(m)
+    approved_exact.sort(key=lambda m: m.source_usage)
     # First pass: for each mapping whose target is another source_usage, make
     # sure that target usage is anchored (allocate if new). Then bind the
     # source_usage as an alias.
@@ -1395,6 +1469,7 @@ def compile_release(
                 compiled_vernaculars=compiled_vernaculars,
                 synonyms_unbound=reviewed_only_synonyms_unbound,
                 registry_aliases_withheld=reviewed_only_withheld,
+                mappings_inapplicable=reviewed_only_inapplicable,
                 vernaculars_dropped=vern_dropped_unreviewed,
             ),
         )
@@ -2280,6 +2355,7 @@ def _reviewed_identity_only_diagnostics(
     synonyms_unbound: dict[str, int],
     vernaculars_dropped: dict[str, int],
     registry_aliases_withheld: dict[str, int] | None = None,
+    mappings_inapplicable: dict[str, dict[str, int]] | None = None,
 ) -> dict:
     """What each reviewed-identity-only source contributed, and what it did
     not. Present only for such sources among the inputs, so a release built
@@ -2309,6 +2385,10 @@ def _reviewed_identity_only_diagnostics(
             # longer applies: kept in the registry, not in this release.
             "registry_aliases_withheld":
                 (registry_aliases_withheld or {}).get(code, 0),
+            # Approved mappings left unapplied because the inputs are not the
+            # source releases they were reviewed against, by reason.
+            "approved_mappings_not_applicable": dict(sorted(
+                ((mappings_inapplicable or {}).get(code) or {}).items())),
             "vernacular_rows_attached": sum(
                 1 for v in compiled_vernaculars if v["source_code"] == code),
             # Every vernacular row whose usage is unbound: without a reviewed

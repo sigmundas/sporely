@@ -39,7 +39,7 @@ from test_bridge_emission import _POLICY_PATH, _resolve  # noqa: E402
 from test_compile_release import _with_fixture_provenance  # noqa: E402
 from test_taxonomy_v3_stage4p import (  # noqa: E402
     _RUGOSA, _candidate, _col_source, _dyntaxa_source, _dyntaxa_usages,
-    _nortaxa_source,
+    _fixture_pins, _nortaxa_source,
 )
 
 _STAGE4P = "database/taxonomy/evidence/taxonomy-v3/stage4p"
@@ -204,13 +204,13 @@ def test_verifier_refuses_a_namespace_that_disagrees_with_the_manifest(
 def test_compiler_consumes_a_manifest_bound_dyntaxa_record(tmp_path: Path) -> None:
     """A synthetic Dyntaxa manifest over the fixture, approved once; the
     record the compiler receives has the generator's shape."""
-    pins = {"source_archives": {"dyntaxa": {
-        "sha256": "a" * 64, "source_release_id": "dyntaxa:2026-09-30:2026-09-30"}}}
     columns = ["dyntaxa_taxon_id", "col_usage_id", "sporely_taxon_id"]
     manifest_path = tmp_path / "fixture.manifest.json"
 
     root = tmp_path / "sources"
     sources = [_col_source(root), _nortaxa_source(root), _dyntaxa_source(root)]
+    # The manifest is pinned to the fixture inputs actually compiled.
+    pins = {"source_archives": _fixture_pins(root)}
 
     def compile_with(ledger: dict, name: str, release_id: str) -> Path:
         path = tmp_path / f"{name}.yml"
