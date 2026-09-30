@@ -10,7 +10,7 @@
     "new_allocations": 0,
     "unchanged": true
    },
-   "sqlite_sha256": "7ac9bca059668f15f1c843a5cf79714d65cfe53adf18f10b314a397b01a13d54"
+   "sqlite_sha256": "5049383e1467aff3c46c09bad195cc7cbcddb9d505a6253e9cc48732deac5dcd"
   },
   "without_dyntaxa": {
    "determinism_mismatches": [],
@@ -32,7 +32,7 @@
  "compile_artifacts": {
   "diagnostics.json": {
    "identical": false,
-   "with_dyntaxa": "8fb228d5efc1d802e495f984bbfa549223da815339bf7b6016c5bee8383d947d",
+   "with_dyntaxa": "adc4b0d6a2f6d24451e1df11bcee854d73c60c8c0db96a414a80c43d0bc02b39",
    "without_dyntaxa": "f05f5aeca6bd23365e9b0b130fb011a33662369f003b888e8636cc6e422d2eb4"
   },
   "legacy_enrichment_skips.jsonl": {
@@ -47,7 +47,7 @@
   },
   "manifest.json": {
    "identical": false,
-   "with_dyntaxa": "6cd5248c35ccbf20da8d1b7cc038bfa54cc0550ad3559bcfe6189e723f2b0168",
+   "with_dyntaxa": "4296a24ce2510e2a96d2d2ce82434cd343b928cca7b8e54dfe287e7ad60ebaba",
    "without_dyntaxa": "4d2eeaa3fc1d08005293cea8eaa38b0eb68dac5f5e0aec7cf4c316f257ced4e1"
   },
   "mappings.jsonl": {
@@ -98,10 +98,11 @@
    "in_scope_non_synonym_usages": 19330,
    "in_scope_synonym_usages": 29159,
    "in_scope_usages": 48489,
+   "registry_aliases_withheld": 0,
    "rule": "bound only by an approved manual mapping (or as the synonym of a usage so bound); never classified, automatically aliased or allocated",
    "synonyms_left_unbound": 29159,
    "vernacular_rows_attached": 0,
-   "vernacular_rows_dropped_without_reviewed_identity": 50979
+   "vernacular_rows_dropped_unbound": 50979
   }
  },
  "format": "sporely-taxonomy-v3-stage4p-build-comparison-v1",

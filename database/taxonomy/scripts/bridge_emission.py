@@ -101,8 +101,29 @@ MANIFEST_APPROVAL_FIELDS = (
     "path", "file_sha256", "approved_by", "approved_at", "decision_reference",
 )
 
-#: The manifest columns a batch-approved record is checked against.
-MANIFEST_MEMBER_COLUMNS = ("nortaxa_taxon_id", "col_usage_id", "sporely_taxon_id")
+#: The manifest columns a batch-approved record is checked against, after
+#: the bridge-source id column that names the manifest's source.
+MANIFEST_MEMBER_COLUMNS = ("col_usage_id", "sporely_taxon_id")
+
+#: Bridge-source id column of a candidate manifest -> ``(source, namespace)``
+#: of the usage its members map. A manifest names exactly one of them.
+BRIDGE_MANIFEST_SOURCES = {
+    "nortaxa_taxon_id": ("nortaxa", "nortaxa_taxon_id"),
+    "dyntaxa_taxon_id": ("dyntaxa", "dyntaxa_taxon_id"),
+}
+
+#: Sources whose approvals must restate the manifest's pins (taxonomy-v3
+#: Stage 4P onwards). Earlier approvals are checked when they carry pins.
+PINS_REQUIRED_SOURCES = frozenset({"dyntaxa"})
+
+
+def _pinned_source_version(pins: dict, source: str) -> str | None:
+    """The version part of ``pins.source_archives[source].source_release_id``
+    (``<source>:<version>:<issued_date>``), or ``None`` if unpinned."""
+    release_id = str(((pins or {}).get("source_archives") or {})
+                     .get(source, {}).get("source_release_id") or "")
+    parts = release_id.split(":")
+    return parts[1] if len(parts) == 3 and parts[0] == source else None
 
 
 def verify_manifest_approvals(
@@ -131,6 +152,8 @@ def verify_manifest_approvals(
     if not isinstance(approvals, list):
         raise BridgeEmissionError("approved_manifests must be a list")
     members_by_sha: dict[str, set[tuple[str, str, int]]] = {}
+    #: file_sha256 -> (bridge id column, source, namespace, pinned version)
+    source_by_sha: dict[str, tuple[str, str, str, str | None]] = {}
     for index, approval in enumerate(approvals):
         if not isinstance(approval, dict):
             raise BridgeEmissionError(
@@ -163,11 +186,33 @@ def verify_manifest_approvals(
             )
         manifest = json.loads(raw.decode("utf-8"))
         columns = list(manifest.get("columns") or [])
+        bridge_columns = [c for c in BRIDGE_MANIFEST_SOURCES if c in columns]
+        if len(bridge_columns) != 1:
+            raise BridgeEmissionError(
+                f"approved manifest {path} lacks columns: it must name exactly "
+                f"one bridge-source id column of "
+                f"{sorted(BRIDGE_MANIFEST_SOURCES)}, found {bridge_columns}")
         missing_columns = [c for c in MANIFEST_MEMBER_COLUMNS if c not in columns]
         if missing_columns:
             raise BridgeEmissionError(
                 f"approved manifest {path} lacks columns {missing_columns}")
-        positions = [columns.index(c) for c in MANIFEST_MEMBER_COLUMNS]
+        bridge_column = bridge_columns[0]
+        source, namespace = BRIDGE_MANIFEST_SOURCES[bridge_column]
+        manifest_pins = manifest.get("pins") or {}
+        if "pins" in approval or source in PINS_REQUIRED_SOURCES:
+            if approval.get("pins") != manifest_pins or not manifest_pins:
+                raise BridgeEmissionError(
+                    f"approved_manifests[{index}] pins do not equal the pins of "
+                    f"{path}. An approval is bound to the source releases the "
+                    f"manifest was reviewed against."
+                )
+        version = _pinned_source_version(manifest_pins, source)
+        if source in PINS_REQUIRED_SOURCES and version is None:
+            raise BridgeEmissionError(
+                f"approved manifest {path} pins no {source} source release")
+        source_by_sha[expected] = (bridge_column, source, namespace, version)
+        positions = [columns.index(c)
+                     for c in (bridge_column, *MANIFEST_MEMBER_COLUMNS)]
         members_by_sha[expected] = {
             (str(row[positions[0]]), str(row[positions[1]]),
              int(row[positions[2]]))
@@ -196,20 +241,21 @@ def verify_manifest_approvals(
                 f"mapping {mapping_id!r}: a manifest approval yields only "
                 f"approved exact mappings"
             )
+        bridge_column, source, namespace, version = source_by_sha[file_sha256]
         member = ref.get("member") or {}
         try:
-            key = (str(member["nortaxa_taxon_id"]), str(member["col_usage_id"]),
+            key = (str(member[bridge_column]), str(member["col_usage_id"]),
                    int(member["sporely_taxon_id"]))
         except (KeyError, TypeError, ValueError) as exc:
             raise BridgeEmissionError(
                 f"mapping {mapping_id!r}: approved_manifest.member needs "
-                f"{', '.join(MANIFEST_MEMBER_COLUMNS)}"
+                f"{', '.join((bridge_column, *MANIFEST_MEMBER_COLUMNS))}"
             ) from exc
         source_usage = entry.get("source_usage") or {}
         target = (entry.get("target") or {}).get("source_usage") or {}
         if (str(source_usage.get("source")), str(source_usage.get("namespace")),
                 str(source_usage.get("identifier"))) \
-                != ("nortaxa", "nortaxa_taxon_id", key[0]) \
+                != (source, namespace, key[0]) \
                 or str(target.get("source")) != "col_xr" \
                 or str(target.get("identifier")) != key[1]:
             raise BridgeEmissionError(
@@ -218,10 +264,19 @@ def verify_manifest_approvals(
             )
         if key not in members_by_sha[file_sha256]:
             raise BridgeEmissionError(
-                f"mapping {mapping_id!r}: NorTaxa {key[0]} -> COL {key[1]} -> "
+                f"mapping {mapping_id!r}: {source} {key[0]} -> COL {key[1]} -> "
                 f"sporely_taxon_id {key[2]} is not a member of approved "
                 f"manifest {file_sha256}"
             )
+        if version is not None:
+            release_range = entry.get("source_release_range") or {}
+            if (str(release_range.get("first")), str(release_range.get("last"))) \
+                    != (version, version):
+                raise BridgeEmissionError(
+                    f"mapping {mapping_id!r}: source_release_range "
+                    f"{release_range!r} is not the {source} release {version!r} "
+                    f"that manifest {file_sha256} is pinned to"
+                )
         if (file_sha256, key) in seen_members:
             raise BridgeEmissionError(
                 f"mapping {mapping_id!r}: manifest member {key!r} has more "

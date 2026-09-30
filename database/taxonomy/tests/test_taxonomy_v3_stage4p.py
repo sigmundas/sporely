@@ -252,6 +252,62 @@ def test_reviewed_bridge_carries_swedish_names_without_touching_identity(
         conn.close()
 
 
+@pytest.mark.parametrize("later_mapping", [
+    None,
+    {**_REVIEWED_RUGOSA, "review_status": "rejected"},
+], ids=["approval-removed", "approval-rejected"])
+def test_retained_registry_aliases_contribute_nothing_without_approval(
+    tmp_path: Path, later_mapping: dict | None,
+) -> None:
+    """The registry is append-only, so the aliases an approved build made
+    survive into a later build. They are history: once the approval is
+    removed or rejected, the release carries no Dyntaxa binding, name,
+    vernacular or bridge, and no synonym is newly aliased."""
+    first = _compile(tmp_path, manual=[_REVIEWED_RUGOSA],
+                     release_id="tax-2026.09.30-01")
+    host = _dyntaxa_usages(first)[_RUGOSA]["sporely_taxon_id"]
+    retained = [e for e in _lines(tmp_path / "registry.jsonl")
+                if e.get("source") == "dyntaxa"]
+    assert len(retained) == 2
+
+    later = _compile(tmp_path, manual=[later_mapping] if later_mapping else [],
+                     release_id="tax-2026.09.30-02")
+
+    assert _dyntaxa_usages(later) == {}
+    # History is kept; nothing was added.
+    assert [e for e in _lines(tmp_path / "registry.jsonl")
+            if e.get("source") == "dyntaxa"] == retained
+    diagnostics = json.loads((later / "diagnostics.json").read_text())
+    dyntaxa = diagnostics["counts"]["reviewed_identity_only_sources"]["dyntaxa"]
+    assert dyntaxa["bound_usages"] == 0
+    assert dyntaxa["registry_aliases_withheld"] == 2
+    assert dyntaxa["vernacular_rows_attached"] == 0
+    assert not [v for v in _lines(later / "vernacular.jsonl")
+                if v["source_code"] == "dyntaxa"]
+
+    conn = _candidate(tmp_path, later)
+    try:
+        row = dict(conn.execute("SELECT * FROM taxon_min WHERE taxon_id = ?",
+                                (host,)).fetchone())
+        assert row["preferred_scientific_name_sv"] is None
+        assert row["preferred_scientific_name_sv_source_system"] is None
+        assert _resolve(conn, "dyntaxa", "dyntaxa_taxon_id", _RUGOSA) == []
+        assert conn.execute(
+            "SELECT COUNT(*) FROM vernacular_min WHERE source = 'dyntaxa'"
+        ).fetchone()[0] == 0
+        assert conn.execute(
+            "SELECT COUNT(*) FROM scientific_name_min WHERE taxon_id = ? "
+            "AND scientific_name = 'Pholiotina rugosa'", (host,)
+        ).fetchone()[0] == 0
+    finally:
+        conn.close()
+
+    # Re-approving restores exactly the earlier contribution.
+    again = _compile(tmp_path, manual=[_REVIEWED_RUGOSA],
+                     release_id="tax-2026.09.30-03")
+    assert set(_dyntaxa_usages(again)) == {_RUGOSA, f"{_NAME_LSID}2001"}
+
+
 def test_existing_nortaxa_and_col_bindings_are_unchanged(tmp_path: Path) -> None:
     """Production order: the registry already holds the COL and NorTaxa
     concepts, and a later release adds Dyntaxa. The same later release

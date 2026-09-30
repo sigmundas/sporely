@@ -834,10 +834,11 @@ def compile_release(
     for synonym_key in sorted(synonym_to_accepted.keys()):
         accepted_key = synonym_to_accepted[synonym_key]
         accepted_anchor = registry.lookup(*accepted_key)
-        if accepted_anchor is None and \
-                synonym_key[0] in REVIEWED_IDENTITY_ONLY_SOURCES:
-            # The accepted usage has no reviewed identity, so neither has
-            # its synonym.
+        if synonym_key[0] in REVIEWED_IDENTITY_ONLY_SOURCES and \
+                accepted_key not in manual_bindings:
+            # The accepted usage has no reviewed identity in THIS release, so
+            # neither has its synonym. A registry alias kept from an earlier
+            # release is history, not a current approval.
             reviewed_only_synonyms_unbound[synonym_key[0]] = (
                 reviewed_only_synonyms_unbound.get(synonym_key[0], 0) + 1)
             continue
@@ -930,10 +931,25 @@ def compile_release(
     compiled_taxa: list[dict] = []
     source_usages: list[dict] = []
     seen_sporely_ids: set[int] = set()
+    # A reviewed-identity-only source contributes a binding only while the
+    # reviewed relationship behind it is approved in this release: its own
+    # approved manual mapping, or the approved mapping of the accepted usage
+    # it is a synonym of. The append-only registry keeps every earlier alias;
+    # one whose approval was since removed or rejected is withheld here, and
+    # with it its names, vernaculars and bridge rows.
+    reviewed_only_withheld: dict[str, int] = {}
     for allocation in registry.all_entries():
         binding_source_usage = (
             allocation.source, allocation.namespace, allocation.identifier,
         )
+        if allocation.source in REVIEWED_IDENTITY_ONLY_SOURCES and not (
+            binding_source_usage in manual_bindings
+            or (binding_source_usage in synonym_alias_applied
+                and synonym_to_accepted[binding_source_usage] in manual_bindings)
+        ):
+            reviewed_only_withheld[allocation.source] = (
+                reviewed_only_withheld.get(allocation.source, 0) + 1)
+            continue
         record = usage_index.get(binding_source_usage)
         alias_reason = ""
         # The evidence class that admitted this binding, graded by
@@ -1378,6 +1394,7 @@ def compile_release(
                 source_usages=source_usages,
                 compiled_vernaculars=compiled_vernaculars,
                 synonyms_unbound=reviewed_only_synonyms_unbound,
+                registry_aliases_withheld=reviewed_only_withheld,
                 vernaculars_dropped=vern_dropped_unreviewed,
             ),
         )
@@ -2262,6 +2279,7 @@ def _reviewed_identity_only_diagnostics(
     compiled_vernaculars: list[dict],
     synonyms_unbound: dict[str, int],
     vernaculars_dropped: dict[str, int],
+    registry_aliases_withheld: dict[str, int] | None = None,
 ) -> dict:
     """What each reviewed-identity-only source contributed, and what it did
     not. Present only for such sources among the inputs, so a release built
@@ -2287,6 +2305,10 @@ def _reviewed_identity_only_diagnostics(
             "bound_as_synonym": sum(
                 1 for u in bound if u["alias_reason"] == "synonym_of_accepted"),
             "synonyms_left_unbound": synonyms_unbound.get(code, 0),
+            # Registry aliases from an earlier release whose approval no
+            # longer applies: kept in the registry, not in this release.
+            "registry_aliases_withheld":
+                (registry_aliases_withheld or {}).get(code, 0),
             "vernacular_rows_attached": sum(
                 1 for v in compiled_vernaculars if v["source_code"] == code),
             # Every vernacular row whose usage is unbound: without a reviewed

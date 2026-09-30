@@ -221,8 +221,15 @@ Reviewed-identity-only means: the source's usages are not classified by the
 automatic cross-source proposer, not aliased by an automatic exact match and
 not allocated concepts of their own. A usage is bound only by an approved
 manual mapping, and a synonym only when its accepted usage was bound that
-way. Unbound usages and their vernaculars are counted in the compile
-diagnostics (`counts.reviewed_identity_only_sources`). NorTaxa predates the
+way — in the release being compiled. A registry alias kept from an earlier
+release whose approval was since removed or rejected stays in the append-only
+registry but contributes no binding, name, vernacular or bridge
+(`registry_aliases_withheld`). Unbound usages and their vernaculars are
+counted in the compile diagnostics (`counts.reviewed_identity_only_sources`).
+Batch approvals of Dyntaxa manifests are turned into per-member records by
+`evidence/taxonomy-v3/generate_stage4p_mappings.py` and re-checked by
+`bridge_emission.verify_manifest_approvals`, which reads the manifest's
+bridge-source column (`nortaxa_taxon_id` or `dyntaxa_taxon_id`). NorTaxa predates the
 rule; its automatic bindings are already in the append-only registry.
 
 ## Documents

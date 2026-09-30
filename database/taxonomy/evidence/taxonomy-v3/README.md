@@ -460,6 +460,18 @@ Every manifest is a review input. **None is approved.** Each is identified by
 the `file_sha256` recorded under `manifests` in `dyntaxa-report.json`; an
 owner approval must name that value, as for Stage 1A.
 
+`generate_stage4p_mappings.py` turns a recorded owner approval into one
+`manual_mappings.yml` record per member. Its `OWNER_APPROVALS` is empty, so a
+run today changes nothing (`--check` passes on the committed ledger). It
+refuses a file whose SHA-256 differs from the approval, a manifest whose pins
+differ from the approval's or whose Dyntaxa pin is not the acquired archive,
+the parent `shared_synonymy` manifest, and the classes decision 2 keeps out
+of batch approval (`one_directional_accepted_synonymy`,
+`no_published_cross_reference`, ambiguous, not one-to-one, unmatched). The
+compiler's verifier then requires every Dyntaxa record to be a member of the
+approved file, with the approval restating the manifest's pins and the
+record's `source_release_range` equal to the pinned Dyntaxa release.
+
 Regression species (by Sporely id): 83668 (canonical Conocybe rugosa) pairs
 with Dyntaxa `Taxon:3423` Pholiotina rugosa by synonym name and grades
 `reciprocal_accepted_synonymy`; 7821 Entoloma conferendum with `Taxon:3957`
