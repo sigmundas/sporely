@@ -228,8 +228,9 @@ registry but contributes no binding, name, vernacular or bridge
 releases it was reviewed against: every pinned archive (the approved
 manifest's `pins.source_archives`, or an individual record's
 `reviewed_against_source_archives`) must be a compiled input with the same
-release id and archive SHA-256, and the record's `source_release_range` must
-be the compiled release of its source. A later Dyntaxa export, changed bytes
+release id and archive SHA-256, the pins must cover both sources the
+relationship joins (Dyntaxa and COL, each with release id and hash), and the
+record's `source_release_range` must be the compiled release of its source. A later Dyntaxa export, changed bytes
 under the same version or a different COL archive leave the record unapplied
 (`approved_mappings_not_applicable`, by reason). Unbound usages and their vernaculars are
 counted in the compile diagnostics (`counts.reviewed_identity_only_sources`).

@@ -187,6 +187,30 @@ def test_verifier_requires_the_dyntaxa_approval_to_restate_its_pins(
         verify_manifest_approvals(doc, repo_root=_REPO)
 
 
+@pytest.mark.parametrize("field", ["sha256", "source_release_id", None])
+def test_verifier_requires_complete_col_pins_on_a_dyntaxa_manifest(
+    tmp_path: Path, generated: dict, field: str | None,
+) -> None:
+    """An approval restating incomplete pins, of a file with incomplete pins,
+    is refused: the file names no COL archive it was reviewed against."""
+    manifest = _manifest(_RECIPROCAL)
+    if field is None:
+        del manifest["pins"]["source_archives"]["col_xr"]
+    else:
+        del manifest["pins"]["source_archives"]["col_xr"][field]
+    path = tmp_path / "incomplete.manifest.json"
+    path.write_text(json.dumps(manifest), encoding="utf-8")
+    sha = hashlib.sha256(path.read_bytes()).hexdigest()
+    doc = copy.deepcopy(generated)
+    doc["approved_manifests"][-1].update(
+        path=str(path), file_sha256=sha, pins=manifest["pins"])
+    for record in doc["mappings"]:
+        if record["source_usage"]["source"] == "dyntaxa":
+            record["approved_manifest"]["file_sha256"] = sha
+    with pytest.raises(BridgeEmissionError, match="does not pin the col_xr"):
+        verify_manifest_approvals(doc, repo_root=_REPO)
+
+
 def test_verifier_refuses_a_namespace_that_disagrees_with_the_manifest(
     generated: dict,
 ) -> None:

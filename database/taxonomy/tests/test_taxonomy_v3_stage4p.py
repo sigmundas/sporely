@@ -378,6 +378,38 @@ def test_unchanged_approval_does_not_apply_to_other_source_inputs(
         conn.close()
 
 
+@pytest.mark.parametrize("drop,reason", [
+    (("col_xr",), "no_pin_for_col_xr"),
+    (("dyntaxa",), "no_pin_for_dyntaxa"),
+    (("col_xr", "sha256"), "no_pin_for_col_xr"),
+    (("col_xr", "source_release_id"), "no_pin_for_col_xr"),
+], ids=["no-col-pin", "no-dyntaxa-pin", "col-pin-without-hash",
+        "col-pin-without-release"])
+def test_incomplete_pins_do_not_apply_even_against_changed_inputs(
+    tmp_path: Path, drop: tuple, reason: str,
+) -> None:
+    """An individually reviewed record must pin both sources it joins. With
+    the COL pin missing, a changed COL archive would otherwise go unnoticed,
+    so the inputs here are changed too."""
+    root = tmp_path / "sources"
+    _col_source(root)
+    _dyntaxa_source(root)
+    pins = _fixture_pins(root)
+    if len(drop) == 1:
+        del pins[drop[0]]
+    else:
+        del pins[drop[0]][drop[1]]
+    record = {**_REVIEWED_RUGOSA, "reviewed_against_source_archives": pins}
+    release = _compile(tmp_path, manual=[record], tamper={
+        "col_xr": {"archive_sha256": "c" * 64,
+                   "profile_source_release": {"version": "2027-01-01-XR",
+                                              "issued_date": "2027-01-01"}}})
+    assert _dyntaxa_usages(release) == {}
+    dyntaxa = json.loads((release / "diagnostics.json").read_text())[
+        "counts"]["reviewed_identity_only_sources"]["dyntaxa"]
+    assert dyntaxa["approved_mappings_not_applicable"] == {reason: 1}
+
+
 def test_approval_without_reviewed_pins_does_not_apply(tmp_path: Path) -> None:
     unpinned = {k: v for k, v in _REVIEWED_RUGOSA.items()
                 if k != "reviewed_against_source_archives"}

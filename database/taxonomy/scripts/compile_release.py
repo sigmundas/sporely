@@ -350,8 +350,15 @@ def reviewed_only_mapping_inapplicable(
     if mapping.source_release_range != (version, version):
         return "source_release_range_is_not_the_compiled_release"
     pinned = {src: (rid, sha) for src, rid, sha in mapping.reviewed_source_pins}
-    if source not in pinned:
-        return f"no_pin_for_{source}"
+    # The relationship joins two sources, so the review is pinned to both:
+    # the mapped source and the backbone the target concept comes from. A
+    # pin missing either its release id or its hash pins nothing.
+    target_source = (mapping.target_source_usage[0]
+                     if mapping.target_source_usage else BACKBONE_SOURCE)
+    for required in sorted({source, target_source, BACKBONE_SOURCE}):
+        rid, sha = pinned.get(required, ("", ""))
+        if not rid or not sha:
+            return f"no_pin_for_{required}"
     for src, (rid, sha) in sorted(pinned.items()):
         if compiled.get(src) != (rid, sha):
             return f"compiled_{src}_differs_from_reviewed_pin"

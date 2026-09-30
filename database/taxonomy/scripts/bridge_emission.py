@@ -207,9 +207,15 @@ def verify_manifest_approvals(
                     f"manifest was reviewed against."
                 )
         version = _pinned_source_version(manifest_pins, source)
-        if source in PINS_REQUIRED_SOURCES and version is None:
-            raise BridgeEmissionError(
-                f"approved manifest {path} pins no {source} source release")
+        if source in PINS_REQUIRED_SOURCES:
+            archives = manifest_pins.get("source_archives") or {}
+            for required in (source, "col_xr"):
+                pin = archives.get(required) or {}
+                if _pinned_source_version(manifest_pins, required) is None \
+                        or not str(pin.get("sha256") or "").strip():
+                    raise BridgeEmissionError(
+                        f"approved manifest {path} does not pin the {required} "
+                        f"source release and archive SHA-256")
         source_by_sha[expected] = (bridge_column, source, namespace, version)
         positions = [columns.index(c)
                      for c in (bridge_column, *MANIFEST_MEMBER_COLUMNS)]
