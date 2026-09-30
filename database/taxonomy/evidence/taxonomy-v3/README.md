@@ -520,3 +520,58 @@ with and without Dyntaxa (neither promoted, both deterministic):
 - 83668 shows Swedish Pholiotina rugosa from `urn:lsid:dyntaxa.se:Taxon:3423`;
   7821 gains "stjärnsporig rödskivling". 617026, 620306 and 168873 have no
   approved Dyntaxa identity and keep their legacy Swedish names.
+
+## Stage 6P — the release candidate `tax-2026.09.30-01` (`stage6p/`)
+
+`release-candidate.json` records the build of `tax-2026.09.30-01` from the
+committed recipe. A first `build_release.py` run allocated the 9,509 Dyntaxa
+aliases Stage 4P approved (all `dyntaxa`/`alias` on existing concepts, no
+entry changed or removed); the post-compile registry was re-sharded into
+`registry/canonical` (only `part-0006.jsonl` and the manifest change). Two
+further independent runs over that registry allocated nothing and produced
+SQLite `e4591d6b…c95c20a`, the same as the first run, with identical compile
+artifacts; each run is internally deterministic, and the second promoted the
+desktop bundle with `--expect-sqlite-sha256`.
+
+`release-delta.json` accounts for every difference from `tax-2026.09.26-02`
+(reproduce with `audit_stage6p_release.py`; it exits non-zero on any
+violation, and records none):
+
+- no concept is added; the 1,352 removed are exactly the NorTaxa concepts
+  retired by approved Stage 2 supersessions (624680 was already retired);
+- kept concepts change only their release id, the national preferred names
+  (4,737 Norwegian, 2,361 Swedish; each cites an authoritative bridge on the
+  concept) and, on 671 supersession survivors, the iNaturalist lookup id,
+  which must equal the lookup id of a concept retired onto that survivor;
+- 11,874 provider bridges are added and none removed: 3,383 NorTaxa and 2,361
+  Dyntaxa `manual_approved_exact` rows, each an approved `manual_mappings.yml`
+  record bound by the registry to that concept, and 6,130 NorTaxa
+  `reviewed_supersession` rows, each an identifier of a retired concept
+  emitted on its survivor;
+- every name, vernacular, legacy integer id and red-list row of a retired
+  concept reaches that concept's own survivor: unchanged but for the concept
+  (4,761 names, 3,970 vernaculars, 6,300 legacy ids, 1,056 red-list rows);
+  with the supersession appended to its note (15 legacy ids); as the
+  non-preferred `reviewed_supersession` row of the retired concept's
+  accepted id (1,352) or accepted name (1); or collapsed into the
+  survivor's own row of the same spelling (1,352 names). None is lost or
+  misdirected;
+- on kept concepts, 3,383 legacy `artsdatabanken` rows and one scientific
+  name change only their note, from `cross_source_automatic_exact` to
+  `manual_approved_exact` (Stage 1A); nothing else is removed;
+- the only other additions are 4,650 Dyntaxa scientific names and 1,309
+  Swedish Dyntaxa vernaculars, each on a concept with an approved Dyntaxa
+  bridge. Any other added row, such as a fabricated red-list assessment on
+  a survivor, is a violation (`tests/test_taxonomy_v3_stage6p_audit.py`
+  covers fabricated, lost, misdirected and wrongly inherited rows).
+
+The W1 cloud export of the bundle is pinned in `cloud_export.
+PINNED_RELEASE_EXPECTATIONS`. The global-macrofungi scoped export for Stage
+6W (52,917 concepts; 3,256 NorTaxa and 822 Dyntaxa bridges; 1,992 Norwegian
+and 822 Swedish national names) is byte-identical across two runs; its file
+fingerprints are in `release-candidate.json`. Building it exposed one
+collision: the scope policy's pinned searchable synonym *Ustilago maydis* on
+137969 duplicated the spelling Dyntaxa now publishes there, which the scoped
+desktop pack's `unique(taxon_id, name)` refused.
+`macrofungi_scope.with_searchable_synonyms` now leaves the existing row in
+place. NorTaxa 56227 (Craterellus tubaeformis) is still not emitted.

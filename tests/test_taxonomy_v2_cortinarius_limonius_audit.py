@@ -258,8 +258,11 @@ def test_both_names_reach_same_sporely_taxon_id_via_picker_synonym_link(
     therefore reach the same sporely_taxon_id NorTaxa users see by
     picking the alias entry from the picker.
 
-    Typing ``Cortinarius limonius`` yields only the NorTaxa canonical
-    (there is no matching alias on the COL taxon).
+    Typing ``Cortinarius limonius`` yields the NorTaxa canonical and,
+    since taxonomy-v3 Stage 4P, the COL taxon too: Dyntaxa accepts
+    Cortinarius limonius (``Taxon:3653``), and an owner-approved Dyntaxa
+    manifest bridges it to 139099, which adds that spelling there. The two
+    concepts stay distinct.
     """
     aureo_suggestions = lookup.suggest_scientific_names("Aureonarius limonius", limit=10)
     aureo_ids = {(s["sporely_taxon_id"], s["link_kind"]) for s in aureo_suggestions}
@@ -268,9 +271,14 @@ def test_both_names_reach_same_sporely_taxon_id_via_picker_synonym_link(
 
     cort_suggestions = lookup.suggest_scientific_names("Cortinarius limonius", limit=10)
     cort_ids = {(s["sporely_taxon_id"], s["link_kind"]) for s in cort_suggestions}
-    assert (624905, "canonical") in cort_ids
-    # Absence: no COL-linked alias points back at 139099 from the
-    # Cortinarius direction.
-    assert not any(
-        sid == 139099 for sid, _kind in cort_ids
-    ), "unexpected reverse alias — compile pipeline change; update tests"
+    assert cort_ids == {(624905, "canonical"), (139099, "synonym_of_accepted")}
+    # The reverse alias comes only from the approved Dyntaxa bridge.
+    conn = sqlite3.connect(lookup.vernacular_db.db_path)
+    assert conn.execute(
+        "SELECT source, note FROM scientific_name_min "
+        "WHERE taxon_id = 139099 AND scientific_name = 'Cortinarius limonius'").fetchall() == [
+        ("dyntaxa", "manual_approved_exact")]
+    assert conn.execute(
+        "SELECT taxon_id, note FROM taxon_external_id_text_min "
+        "WHERE source_system = 'dyntaxa' AND external_id = 'urn:lsid:dyntaxa.se:Taxon:3653'").fetchall() == [
+        (139099, "authoritative_bridge:manual_approved_exact")]

@@ -458,29 +458,34 @@ def _verify_required_schema(conn: sqlite3.Connection) -> None:
 
 
 # The release the desktop bundles (database/reference_data/generated/
-# taxonomy_v2/manifest.json), tax-2026.09.26-02, built with build_release.py
-# from release-recipe.json. Against the previous pin (tax-2026.09.23-01) the
-# concept, scientific-name, authoritative external-id and red-list counts are
-# unchanged; vernaculars and legacy integer ids grew by the legacy enrichment,
-# the reviewed Artportalen overlay and the iNaturalist refresh.
+# taxonomy_v2/manifest.json), tax-2026.09.30-01, built with build_release.py
+# from release-recipe.json (taxonomy-v3 Stage 6P). Against the previous pin
+# (tax-2026.09.26-02): 1,352 NorTaxa concepts retired by approved Stage 2
+# supersessions are no longer emitted (their names, vernaculars, ids and red
+# list rows are re-keyed onto the survivors); the reviewed NorTaxa bridges
+# grow from 3 to 9,516 (Stage 1A mappings and Stage 2 supersessions); 2,361
+# approved Dyntaxa bridges and 1,309 Swedish Dyntaxa vernaculars are added
+# (Stage 4P). The red list and legacy integer ids keep their counts.
 PINNED_RELEASE_EXPECTATIONS = {
-    "content_release_id": "tax-2026.09.26-02",
+    "content_release_id": "tax-2026.09.30-01",
     # The pin describes one exact artifact. Keying on the release id alone
     # would also fire on synthetic fixtures that reuse the name.
-    "sqlite_sha256": "9bf71b7e1f9b2915c3b1798743cefdd5db53bdbbfb7edc462aa3d0ad0cf8547d",
-    "concepts_included": 634893,
+    "sqlite_sha256": "e4591d6b8b885e6c43cb4c21581e54c5f08d1747a3008317feb380f3ae95c20a",
+    "concepts_included": 633541,
     "concepts_excluded": 1,
-    "scientific_name_rows": 662648,
-    "vernacular_rows": 29831,
+    "scientific_name_rows": 665946,
+    "vernacular_rows": 31140,
     "vernacular_by_lang": {"da": 1786, "de": 2198, "en": 3028, "es": 329, "fi": 3116, "fr": 2796,
                            "it": 89, "nb": 6240, "nn": 3975, "pl": 1304, "pt": 90, "se": 79,
-                           "sv": 4801},
+                           "sv": 6110},
     # Authoritative external IDs split by source_system:
     "external_authoritative_col_rows": 620975,   # from taxon_external_id_text_min
-    # derived from taxon_min.norwegian_taxon_id, plus the reviewed
-    # nortaxa/nortaxa_taxon_id bridges emitted into taxon_external_id_text_min
-    "external_authoritative_nortaxa_rows": 13921,
-    "external_authoritative_total_rows": 634896,   # = 620975 + 13921
+    # derived from taxon_min.norwegian_taxon_id (12566), plus the reviewed
+    # nortaxa/nortaxa_taxon_id bridges emitted into taxon_external_id_text_min (9516)
+    "external_authoritative_nortaxa_rows": 22082,
+    # reviewed dyntaxa/dyntaxa_taxon_id bridges (Stage 4P approved manifests)
+    "external_authoritative_dyntaxa_rows": 2361,
+    "external_authoritative_total_rows": 645418,   # = 620975 + 22082 + 2361
     # Legacy namespace-lost integer rows: artsdatabanken 61583, artportalen
     # 9000 (8185 legacy + 815 overlay), inaturalist 8032.
     "external_legacy_int_rows": 78615,

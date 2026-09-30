@@ -1,0 +1,125 @@
+{
+  "baseline": {
+    "content_release_id": "tax-2026.09.26-02",
+    "sqlite_sha256": "9bf71b7e1f9b2915c3b1798743cefdd5db53bdbbfb7edc462aa3d0ad0cf8547d"
+  },
+  "candidate": {
+    "content_release_id": "tax-2026.09.30-01",
+    "registry_sha256": "1cc2003a874e5deb2c0023bf8fd6fb74dd98b2ad656ee36d8755c15277c8adc9",
+    "sqlite_sha256": "e4591d6b8b885e6c43cb4c21581e54c5f08d1747a3008317feb380f3ae95c20a",
+    "taxonomy_schema_version": "2"
+  },
+  "concepts": {
+    "added": 0,
+    "approved_supersessions": 1353,
+    "baseline": 634894,
+    "candidate": 633542,
+    "kept_concepts_changed_columns": {
+      "inaturalist_taxon_id": 671,
+      "preferred_scientific_name_no": 4737,
+      "preferred_scientific_name_no_external_id": 4737,
+      "preferred_scientific_name_no_namespace": 4737,
+      "preferred_scientific_name_no_source_system": 4737,
+      "preferred_scientific_name_sv": 2361,
+      "preferred_scientific_name_sv_external_id": 2361,
+      "preferred_scientific_name_sv_namespace": 2361,
+      "preferred_scientific_name_sv_source_system": 2361,
+      "sporely_content_release_id": 633542
+    },
+    "removed": 1352,
+    "removed_by_approved_supersession": 1352,
+    "retired_before_baseline": [
+      624680
+    ]
+  },
+  "format": "sporely-taxonomy-v3-stage6p-release-delta-v2",
+  "national_preferred_scientific_names": {
+    "no": {
+      "baseline_filled": 0,
+      "differs_from_canonical": 3,
+      "filled": 4737
+    },
+    "sv": {
+      "baseline_filled": 0,
+      "differs_from_canonical": 201,
+      "filled": 2361
+    }
+  },
+  "policies": {
+    "committed_registry_sha256": "1cc2003a874e5deb2c0023bf8fd6fb74dd98b2ad656ee36d8755c15277c8adc9",
+    "concept_supersessions_sha256": "04a77c05c694c97b599aae63c5852d7d2ba411a440c42cfa5104cc78a2e47033",
+    "manual_mappings_sha256": "72316e436a5db5d8636ed5821ae45a6c39bc4a18c10e21a281af3cbf030de664"
+  },
+  "provider_bridges": {
+    "added": 11874,
+    "added_by_source_namespace_note": {
+      "dyntaxa/dyntaxa_taxon_id/authoritative_bridge:manual_approved_exact": 2361,
+      "nortaxa/nortaxa_taxon_id/authoritative_bridge:manual_approved_exact": 3383,
+      "nortaxa/nortaxa_taxon_id/authoritative_bridge:reviewed_supersession": 6130
+    },
+    "removed": 0
+  },
+  "tables": {
+    "scientific_name_min": {
+      "baseline_rows": 662649,
+      "candidate_rows": 665947,
+      "collapsed_into_survivor_name": 1352,
+      "lost_or_misdirected": 0,
+      "national_additions": {
+        "dyntaxa/sci": 4650
+      },
+      "rekeyed_accepted_id": 0,
+      "rekeyed_accepted_name": 1,
+      "rekeyed_exact": 4761,
+      "rekeyed_with_supersession_note": 0,
+      "relabelled_automatic_to_approved": 1,
+      "removed_on_kept_concepts": 0,
+      "unexplained_additions": 0
+    },
+    "taxon_external_id_min": {
+      "baseline_rows": 78615,
+      "candidate_rows": 78615,
+      "collapsed_into_survivor_name": 0,
+      "lost_or_misdirected": 0,
+      "national_additions": {},
+      "rekeyed_accepted_id": 1352,
+      "rekeyed_accepted_name": 0,
+      "rekeyed_exact": 6300,
+      "rekeyed_with_supersession_note": 15,
+      "relabelled_automatic_to_approved": 3383,
+      "removed_on_kept_concepts": 0,
+      "unexplained_additions": 0
+    },
+    "taxon_redlist_min": {
+      "baseline_rows": 34171,
+      "candidate_rows": 34171,
+      "collapsed_into_survivor_name": 0,
+      "lost_or_misdirected": 0,
+      "national_additions": {},
+      "rekeyed_accepted_id": 0,
+      "rekeyed_accepted_name": 0,
+      "rekeyed_exact": 1056,
+      "rekeyed_with_supersession_note": 0,
+      "relabelled_automatic_to_approved": 0,
+      "removed_on_kept_concepts": 0,
+      "unexplained_additions": 0
+    },
+    "vernacular_min": {
+      "baseline_rows": 29831,
+      "candidate_rows": 31140,
+      "collapsed_into_survivor_name": 0,
+      "lost_or_misdirected": 0,
+      "national_additions": {
+        "dyntaxa/sv": 1309
+      },
+      "rekeyed_accepted_id": 0,
+      "rekeyed_accepted_name": 0,
+      "rekeyed_exact": 3970,
+      "rekeyed_with_supersession_note": 0,
+      "relabelled_automatic_to_approved": 0,
+      "removed_on_kept_concepts": 0,
+      "unexplained_additions": 0
+    }
+  },
+  "violations": []
+}
