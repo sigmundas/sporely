@@ -497,6 +497,31 @@ def suppress_legacy_integer_ids(
     }
 
 
+def with_searchable_synonyms(scientific_rows: list[dict[str, Any]], rules: list[Rule]) -> list[dict[str, Any]]:
+    """Add each rule's pinned searchable synonyms to the exported scientific names, sorted.
+
+    A synonym the concept already carries under that spelling (since Stage 4P,
+    Dyntaxa can publish it) is not added a second time: a concept has one row
+    per scientific name, and the existing row keeps its source.
+    """
+    present = {(row["taxon_id"], row["scientific_name"]) for row in scientific_rows}
+    for rule in rules:
+        for synonym in rule.searchable_synonyms:
+            if (rule.taxon_id, synonym["name"]) in present:
+                continue
+            present.add((rule.taxon_id, synonym["name"]))
+            scientific_rows.append({
+                "is_preferred_name": False,
+                "language_code": "sci",
+                "note": f"pinned_col_synonym_usage:{','.join(synonym['col_name_usage_ids'])}",
+                "scientific_name": synonym["name"],
+                "source": "col_xr",
+                "taxon_id": rule.taxon_id,
+            })
+    scientific_rows.sort(key=lambda row: (row["taxon_id"], row["scientific_name"], row["language_code"], row["source"], row.get("note") or ""))
+    return scientific_rows
+
+
 def build_export(
     w1_dir: Path,
     output_dir: Path,
@@ -536,18 +561,7 @@ def build_export(
     count, size, digest = _write_jsonl(output_dir / "taxon.jsonl", taxon_rows)
     files.append({"name": "taxon.jsonl", "row_count": count, "bytes": size, "sha256": digest})
 
-    scientific_rows = list(_iter_jsonl(w1_dir / "scientific_name.jsonl", included))
-    for rule in rules:
-        for synonym in rule.searchable_synonyms:
-            scientific_rows.append({
-                "is_preferred_name": False,
-                "language_code": "sci",
-                "note": f"pinned_col_synonym_usage:{','.join(synonym['col_name_usage_ids'])}",
-                "scientific_name": synonym["name"],
-                "source": "col_xr",
-                "taxon_id": rule.taxon_id,
-            })
-    scientific_rows.sort(key=lambda row: (row["taxon_id"], row["scientific_name"], row["language_code"], row["source"], row.get("note") or ""))
+    scientific_rows = with_searchable_synonyms(list(_iter_jsonl(w1_dir / "scientific_name.jsonl", included)), rules)
     for filename in ("scientific_name.jsonl", "vernacular.jsonl", "taxon_external_id.jsonl", "taxon_redlist.jsonl"):
         if filename == "scientific_name.jsonl":
             rows = scientific_rows

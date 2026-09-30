@@ -152,3 +152,38 @@ def test_generated_candidate_has_zero_selectable_non_fungi_and_passed_contract()
     assert evidence["correctness_probes"]["Saccharomyces cerevisiae"]["actual"] == "exclude"
     assert evidence["correctness_probes"]["Aspergillus fumigatus"]["actual"] == "exclude"
     assert evidence["correctness_probes"]["Cladonia rangiferina"]["actual"] == "exclude"
+
+
+def _maydis_rule(taxon_id: int):
+    from database.taxonomy.macrofungi_scope import Rule
+
+    return Rule(code="include_mycosarcoma_maydis", col_id="B24TM", name="Mycosarcoma maydis",
+                rank="species", state="include", reason="field_recordable_exception",
+                review_status="approved", evidence="",
+                searchable_synonyms=({"name": "Ustilago maydis", "col_name_usage_ids": ["TX2P9", "7F4HL"]},),
+                taxon_id=taxon_id)
+
+
+def test_searchable_synonym_is_added_once() -> None:
+    from database.taxonomy.macrofungi_scope import with_searchable_synonyms
+
+    accepted = {"taxon_id": 7, "scientific_name": "Mycosarcoma maydis", "language_code": "sci",
+                "is_preferred_name": True, "source": "col_xr", "note": None}
+    rows = with_searchable_synonyms([dict(accepted)], [_maydis_rule(7)])
+    assert [(r["scientific_name"], r["source"]) for r in rows] == [
+        ("Mycosarcoma maydis", "col_xr"), ("Ustilago maydis", "col_xr")]
+    assert rows[1]["note"] == "pinned_col_synonym_usage:TX2P9,7F4HL"
+
+
+def test_searchable_synonym_the_concept_already_carries_is_not_duplicated() -> None:
+    """Stage 4P: Dyntaxa publishes Ustilago maydis on the concept itself."""
+    from database.taxonomy.macrofungi_scope import with_searchable_synonyms
+
+    dyntaxa = {"taxon_id": 7, "scientific_name": "Ustilago maydis", "language_code": "sci",
+               "is_preferred_name": False, "source": "dyntaxa", "note": "synonym_of_accepted"}
+    rows = with_searchable_synonyms([dict(dyntaxa)], [_maydis_rule(7)])
+    assert rows == [dyntaxa]
+    # Another concept's row with the same spelling does not suppress it.
+    other = dict(dyntaxa, taxon_id=8)
+    rows = with_searchable_synonyms([dict(other)], [_maydis_rule(7)])
+    assert [(r["taxon_id"], r["source"]) for r in rows] == [(7, "col_xr"), (8, "dyntaxa")]
