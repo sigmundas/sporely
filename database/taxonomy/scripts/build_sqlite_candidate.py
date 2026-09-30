@@ -703,10 +703,17 @@ def _build_into(
         # NorTaxa accepted after auto-alias, for example) produce identical
         # rows here; keep the one with is_preferred_name = 1 when present.
         sci_dedup: dict[tuple[int, str, str], tuple] = {}
+        # A bridge-only source (Dyntaxa) adds a spelling the concept lacks; it
+        # never takes over one another source already publishes, so its rows
+        # are considered last (stable, so the others keep their order).
+        scientific_name_rows.sort(
+            key=lambda r: r[4] in BRIDGE_ONLY_IDENTIFIER_SOURCES)
         for row in scientific_name_rows:
             key = (row[0], row[1], row[2])
             existing = sci_dedup.get(key)
-            if existing is None or (row[3] > existing[3]):
+            if existing is None or (
+                    row[3] > existing[3]
+                    and row[4] not in BRIDGE_ONLY_IDENTIFIER_SOURCES):
                 sci_dedup[key] = row
         scientific_name_rows = list(sci_dedup.values())
         scientific_name_rows.sort(
@@ -883,8 +890,11 @@ def _build_into(
                 1 if v.get("is_preferred") else 0,
                 v.get("source_code"),
             ))
+        # As for scientific names: a bridge-only source never takes over a
+        # spelling another source publishes on the concept in that language.
         vern_rows.sort(
-            key=lambda r: (r[0], r[1], r[2].casefold(), r[3]))
+            key=lambda r: (r[0], r[1], r[2].casefold(),
+                           r[4] in BRIDGE_ONLY_IDENTIFIER_SOURCES, r[3]))
         # Deduplicate on the UNIQUE (taxon_id, language, name) index.
         seen: set[tuple[int, str, str]] = set()
         deduped: list[tuple] = []

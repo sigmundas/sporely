@@ -80,8 +80,41 @@ def generated(registry: IdentityRegistry) -> dict:
 # ------------------------------------------------------------ generator ---
 
 
-def test_the_committed_generator_approves_nothing() -> None:
-    assert generator.OWNER_APPROVALS == ()
+_APPROVED_BY_OWNER = {
+    # Owner decision 2026-09-30, gate 0066ed5740a2471a85f7b4c7bc435421.
+    f"{_STAGE4P}/dyntaxa-reciprocal-accepted-synonymy.manifest.json":
+        "c67e4777ed62d1eac93a530ed6265db16cca937aea76d675661686885bd12837",
+    f"{_STAGE4P}/dyntaxa-shared-synonymy--ordinary.manifest.json":
+        "d2222d5e5ace86c0a9eb81fc4223f9fba7e2335a78ff816aa4f151c15d6e9cef",
+}
+
+
+def test_the_committed_generator_approves_exactly_the_owner_decision() -> None:
+    assert {a["path"]: a["file_sha256"] for a in generator.OWNER_APPROVALS} \
+        == _APPROVED_BY_OWNER
+    for approval in generator.OWNER_APPROVALS:
+        assert approval["pins"] == _manifest(approval["path"])["pins"]
+
+
+def test_committed_ledger_holds_one_record_per_approved_member() -> None:
+    ledger = json.loads(_LEDGER.read_text(encoding="utf-8"))
+    records = [r for r in ledger["mappings"]
+               if r["source_usage"]["source"] == "dyntaxa"]
+    expected = set()
+    for path, sha in _APPROVED_BY_OWNER.items():
+        manifest = _manifest(path)
+        columns = manifest["columns"]
+        expected |= {(sha, m[columns.index("dyntaxa_taxon_id")],
+                      m[columns.index("col_usage_id")],
+                      m[columns.index("sporely_taxon_id")])
+                     for m in manifest["members"]}
+    assert len(records) == len(expected) == 2361
+    assert {(r["approved_manifest"]["file_sha256"],
+             r["source_usage"]["identifier"],
+             r["target"]["source_usage"]["identifier"],
+             r["approved_manifest"]["member"]["sporely_taxon_id"])
+            for r in records} == expected
+    assert verify_manifest_approvals(ledger, repo_root=_REPO)
 
 
 def test_one_record_per_member_of_exactly_the_approved_file(
@@ -110,8 +143,14 @@ def test_one_record_per_member_of_exactly_the_approved_file(
     # The NorTaxa ledger rides along untouched.
     original = json.loads(_LEDGER.read_text(encoding="utf-8"))
     assert [r for r in generated["mappings"]
-            if r["source_usage"]["source"] != "dyntaxa"] == original["mappings"]
-    assert generated["approved_manifests"][:-1] == original["approved_manifests"]
+            if r["source_usage"]["source"] != "dyntaxa"] == [
+        r for r in original["mappings"]
+        if r["source_usage"]["source"] != "dyntaxa"]
+    nortaxa_sha = "1eda453a7134995b2a596d09e0f10341a72ba7a007e2666a6e5cee9e118cda4d"
+    assert [a for a in generated["approved_manifests"]
+            if a["file_sha256"] == nortaxa_sha] == [
+        a for a in original["approved_manifests"]
+        if a["file_sha256"] == nortaxa_sha]
     assert verify_manifest_approvals(generated, repo_root=_REPO)
 
 

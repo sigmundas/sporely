@@ -1,0 +1,253 @@
+{
+ "added": {
+  "dyntaxa_bridge_row_shape": [
+   {
+    "id_role": "accepted",
+    "is_preferred": 0,
+    "namespace": "dyntaxa_taxon_id",
+    "note": "authoritative_bridge:manual_approved_exact",
+    "rows": 2361
+   }
+  ],
+  "dyntaxa_bridges": {
+   "concepts": 2361,
+   "distinct_lsids": 2361,
+   "rows": 2361
+  },
+  "preferred_scientific_name_sv": {
+   "differs_from_canonical": 201,
+   "filled": 2361
+  },
+  "scientific_names": {
+   "all_from_dyntaxa": true,
+   "concepts": 1868,
+   "languages": [
+    "sci"
+   ],
+   "rows": 4650
+  },
+  "vernaculars": {
+   "all_from_dyntaxa": true,
+   "concepts": 1103,
+   "languages": [
+    "sv"
+   ],
+   "rows": 1309
+  }
+ },
+ "authorization": "Owner decision 2026-09-30, Agent Sparring gate 0066ed5740a2471a85f7b4c7bc435421, check stage4p-dyntaxa-manifest-approval: dyntaxa-reciprocal-accepted-synonymy (c67e4777ed62d1eac93a530ed6265db16cca937aea76d675661686885bd12837) and dyntaxa-shared-synonymy--ordinary (d2222d5e5ace86c0a9eb81fc4223f9fba7e2335a78ff816aa4f151c15d6e9cef)",
+ "builds": {
+  "with_dyntaxa": {
+   "deterministic": true,
+   "promoted": false,
+   "registry": {
+    "after_sha256": "1cc2003a874e5deb2c0023bf8fd6fb74dd98b2ad656ee36d8755c15277c8adc9",
+    "base_sha256": "21b5d39d257799fdd4ea758d857fec4d29758b83dd7ea91bf3ecd24e3d1d3077",
+    "new_allocations": 9509,
+    "unchanged": false
+   },
+   "sqlite_sha256": "e4591d6b8b885e6c43cb4c21581e54c5f08d1747a3008317feb380f3ae95c20a"
+  },
+  "without_dyntaxa": {
+   "deterministic": true,
+   "promoted": false,
+   "registry": {
+    "after_sha256": "21b5d39d257799fdd4ea758d857fec4d29758b83dd7ea91bf3ecd24e3d1d3077",
+    "base_sha256": "21b5d39d257799fdd4ea758d857fec4d29758b83dd7ea91bf3ecd24e3d1d3077",
+    "new_allocations": 0,
+    "unchanged": true
+   },
+   "sqlite_sha256": "93d67b604053fcff9ae0ac98fd9eb9d81188598ac9f88f1190e2853be0db3a50"
+  }
+ },
+ "cloud_scoped_export": {
+  "dyntaxa_rows": 2361,
+  "dyntaxa_vernacular_languages": [
+   "sv"
+  ],
+  "dyntaxa_vernacular_rows": 1309,
+  "every_row_on_an_exported_concept": true,
+  "exported_concepts": 633541,
+  "lsid_form": true,
+  "shape": [
+   [
+    "dyntaxa_taxon_id",
+    "accepted",
+    false,
+    "authoritative_bridge:manual_approved_exact"
+   ]
+  ],
+  "sv_names_exported": 2361,
+  "sv_names_with_provenance_matching_a_bridge": 2361
+ },
+ "commands": {
+  "cloud_export": "cloud_export.run_export over the with-Dyntaxa candidate, committed policies",
+  "with_dyntaxa": ".venv/bin/python database/taxonomy/scripts/build_release.py --release-id tax-2026.09.30-01 --build-dir <scratch>",
+  "without_dyntaxa": "same, --recipe = scratch copy of release-recipe.json without the dyntaxa source (control)"
+ },
+ "dyntaxa_diagnostics": {
+  "approved_mappings_not_applicable": {},
+  "bound_as_synonym": 7148,
+  "bound_by_manual_mapping": 2361,
+  "bound_usages": 9509,
+  "in_scope_non_synonym_usages": 19330,
+  "in_scope_synonym_usages": 29159,
+  "in_scope_usages": 48489,
+  "registry_aliases_withheld": 0,
+  "synonyms_left_unbound": 22011,
+  "vernacular_rows_attached": 1341,
+  "vernacular_rows_dropped_other_language": 203,
+  "vernacular_rows_dropped_unbound": 49435
+ },
+ "format": "sporely-taxonomy-v3-stage4p-approved-build-verification-v1",
+ "global_macrofungi_scoped_export": {
+  "dyntaxa_bridge_rows": 822,
+  "dyntaxa_rows_on_scoped_concepts": true,
+  "dyntaxa_sv_vernacular_rows": 654,
+  "dyntaxa_vernacular_languages": [
+   "sv"
+  ],
+  "method": "macrofungi_scope.build_export (global_macrofungi_policy_v1) over the W1 export above",
+  "nortaxa_bridge_rows": 3256,
+  "regressions": {
+   "168873": {
+    "dyntaxa_bridge": [],
+    "in_scope": true,
+    "sv": null
+   },
+   "617026": {
+    "dyntaxa_bridge": [],
+    "in_scope": true,
+    "sv": null
+   },
+   "620306": {
+    "dyntaxa_bridge": [],
+    "in_scope": true,
+    "sv": null
+   },
+   "7821": {
+    "dyntaxa_bridge": [
+     "urn:lsid:dyntaxa.se:Taxon:3957"
+    ],
+    "in_scope": true,
+    "sv": "Entoloma conferendum"
+   },
+   "83668": {
+    "dyntaxa_bridge": [
+     "urn:lsid:dyntaxa.se:Taxon:3423"
+    ],
+    "in_scope": true,
+    "sv": "Pholiotina rugosa"
+   }
+  },
+  "scoped_concepts": 52917,
+  "sv_names": 822
+ },
+ "manual_mappings_sha256": "72316e436a5db5d8636ed5821ae45a6c39bc4a18c10e21a281af3cbf030de664",
+ "nortaxa_bridge_regressions": {
+  "52369": [
+   83668
+  ],
+  "53482": [
+   7821
+  ],
+  "58722": [
+   83668
+  ]
+ },
+ "recipe_sha256": "6e6d09f346044d273626095612b9cc516f865ec7ea31ff6f56e07172f737e77a",
+ "registry_delta_with_dyntaxa": {
+  "existing_entries_changed": 0,
+  "new_by_source_kind": {
+   "dyntaxa/alias": 9509
+  },
+  "new_entries": 9509,
+  "new_entries_on_new_sporely_ids": 0
+ },
+ "regressions_in_cloud_export": {
+  "168873": {
+   "canonical": "Cantharellus cibarius",
+   "dyntaxa_bridge": [],
+   "no": "Cantharellus cibarius",
+   "sv": null,
+   "sv_external_id": null,
+   "sv_vernaculars": [
+    [
+     "Kantarell",
+     "artportalen"
+    ]
+   ]
+  },
+  "617026": {
+   "canonical": "Conocybe vexans",
+   "dyntaxa_bridge": [],
+   "no": "Pholiotina vexans",
+   "sv": null,
+   "sv_external_id": null,
+   "sv_vernaculars": [
+    [
+     "Kraghätting",
+     "artportalen"
+    ]
+   ]
+  },
+  "620306": {
+   "canonical": "Craterellus tubaeformis",
+   "dyntaxa_bridge": [],
+   "no": null,
+   "sv": null,
+   "sv_external_id": null,
+   "sv_vernaculars": [
+    [
+     "Trattkantarell",
+     "artportalen"
+    ]
+   ]
+  },
+  "7821": {
+   "canonical": "Entoloma conferendum",
+   "dyntaxa_bridge": [
+    "urn:lsid:dyntaxa.se:Taxon:3957"
+   ],
+   "no": "Entoloma conferendum",
+   "sv": "Entoloma conferendum",
+   "sv_external_id": "urn:lsid:dyntaxa.se:Taxon:3957",
+   "sv_vernaculars": [
+    [
+     "Stjärnrödhätting",
+     "artportalen"
+    ],
+    [
+     "stjärnrödhätting",
+     "dyntaxa"
+    ],
+    [
+     "stjärnsporig rödskivling",
+     "dyntaxa"
+    ]
+   ]
+  },
+  "83668": {
+   "canonical": "Conocybe rugosa",
+   "dyntaxa_bridge": [
+    "urn:lsid:dyntaxa.se:Taxon:3423"
+   ],
+   "no": "Pholiotina rugosa",
+   "sv": "Pholiotina rugosa",
+   "sv_external_id": "urn:lsid:dyntaxa.se:Taxon:3423",
+   "sv_vernaculars": []
+  }
+ },
+ "unchanged_versus_control": {
+  "concept_count": [
+   633542,
+   633542
+  ],
+  "every_existing_scientific_names_row_kept": true,
+  "every_existing_vernaculars_row_kept": true,
+  "legacy_integer_external_ids": true,
+  "non_dyntaxa_authoritative_external_ids": true,
+  "redlist": true,
+  "taxon_min_identity_canonical_and_norwegian_names": true
+ }
+}

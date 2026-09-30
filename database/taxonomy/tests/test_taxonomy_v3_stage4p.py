@@ -129,6 +129,8 @@ def _dyntaxa_source(root: Path) -> Path:
     ), "dyntaxa")
     vernaculars = [
         (_RUGOSA, "sv", "rynkig nålskivling", True),
+        # Dyntaxa's copy of a Norwegian name: not Sweden's to contribute.
+        (_RUGOSA, "nb", "slank ringkjeglesopp", True),
         (_CONFERENDUM, "sv", "stjärnrödhätting", True),
         (_DYNTAXA_ONLY, "sv", "svensk spindling", True),
     ]
@@ -155,7 +157,8 @@ def _dyntaxa_source(root: Path) -> Path:
 def _compile(tmp_path: Path, *, manual: list[dict], with_dyntaxa: bool = True,
              registry: str = "registry.jsonl",
              release_id: str = "tax-2026.09.30-01",
-             tamper: dict[str, dict] | None = None) -> Path:
+             tamper: dict[str, dict] | None = None,
+             extra_vernaculars: dict[str, list[dict]] | None = None) -> Path:
     root = tmp_path / "sources"
     sources = [_col_source(root), _nortaxa_source(root)]
     if with_dyntaxa:
@@ -165,6 +168,10 @@ def _compile(tmp_path: Path, *, manual: list[dict], with_dyntaxa: bool = True,
             {**m, "reviewed_against_source_archives": pins}
             if m.get("reviewed_against_source_archives") == "FIXTURE_PINS" else m
             for m in manual]
+    for code, rows in (extra_vernaculars or {}).items():
+        with (root / code / "vernacular.jsonl").open("a", encoding="utf-8") as h:
+            for row in rows:
+                h.write(json.dumps(row, ensure_ascii=False, sort_keys=True) + "\n")
     for code, changes in (tamper or {}).items():
         _tamper(root, code, **changes)
     out = tmp_path / f"release-{registry}-{release_id}"
@@ -217,7 +224,7 @@ def test_unreviewed_dyntaxa_usages_gain_no_identity(tmp_path: Path) -> None:
     assert dyntaxa["in_scope_non_synonym_usages"] == 5
     assert dyntaxa["synonyms_left_unbound"] == 1
     assert dyntaxa["vernacular_rows_attached"] == 0
-    assert dyntaxa["vernacular_rows_dropped_unbound"] == 3
+    assert dyntaxa["vernacular_rows_dropped_unbound"] == 4
 
     conn = _candidate(tmp_path, release)
     try:
@@ -242,6 +249,10 @@ def test_reviewed_bridge_carries_swedish_names_without_touching_identity(
     release = _compile(tmp_path, manual=[_REVIEWED_RUGOSA])
     usages = _dyntaxa_usages(release)
     host = usages[_RUGOSA]["sporely_taxon_id"]
+    dyntaxa = json.loads((release / "diagnostics.json").read_text())[
+        "counts"]["reviewed_identity_only_sources"]["dyntaxa"]
+    assert dyntaxa["vernacular_rows_attached"] == 1
+    assert dyntaxa["vernacular_rows_dropped_other_language"] == 1
     assert usages[_RUGOSA]["alias_reason"] == "manual_approved_exact"
     # The homotypic synonym follows its accepted usage; the misapplied name,
     # the agreeing name and the Dyntaxa-only species do not bind.
@@ -265,6 +276,10 @@ def test_reviewed_bridge_carries_swedish_names_without_touching_identity(
             "SELECT language_code, vernacular_name, source FROM vernacular_min "
             "WHERE taxon_id = ? AND language_code = 'sv'", (host,))] == [
             ("sv", "rynkig nålskivling", "dyntaxa")]
+        # Only Swedish names come from Dyntaxa.
+        assert conn.execute(
+            "SELECT COUNT(*) FROM vernacular_min WHERE source = 'dyntaxa' "
+            "AND language_code != 'sv'").fetchone()[0] == 0
 
         # Only the reviewed accepted LSID is published, never its synonym.
         assert _resolve(conn, "dyntaxa", "dyntaxa_taxon_id", _RUGOSA) == [host]
@@ -419,6 +434,52 @@ def test_approval_without_reviewed_pins_does_not_apply(tmp_path: Path) -> None:
         "counts"]["reviewed_identity_only_sources"]["dyntaxa"]
     assert dyntaxa["approved_mappings_not_applicable"] == {
         "no_reviewed_source_pins": 1}
+
+
+def test_dyntaxa_never_takes_over_another_sources_spelling(tmp_path: Path) -> None:
+    """NorTaxa 52369 and Dyntaxa 1001 are both reviewed onto COL 5ZT3G, and
+    both publish "Pholiotina rugosa". The row keeps NorTaxa's provenance; a
+    Dyntaxa row is only added for a spelling the concept lacks."""
+    reviewed_52369 = {
+        "mapping_id": "nortaxa-52369-to-col-5ZT3G",
+        "source_usage": {"source": "nortaxa", "namespace": "nortaxa_taxon_id",
+                         "identifier": "52369"},
+        "target": {"source_usage": {"source": "col_xr",
+                                    "namespace": "col_xr_taxon_id",
+                                    "identifier": "5ZT3G"}},
+        "relationship": "exact", "review_status": "approved",
+    }
+    release = _compile(tmp_path, manual=[reviewed_52369, _REVIEWED_RUGOSA])
+    host = _dyntaxa_usages(release)[_RUGOSA]["sporely_taxon_id"]
+    conn = _candidate(tmp_path, release)
+    try:
+        rows = [tuple(r) for r in conn.execute(
+            "SELECT scientific_name, source FROM scientific_name_min "
+            "WHERE taxon_id = ? ORDER BY 1, 2", (host,))]
+    finally:
+        conn.close()
+    assert ("Pholiotina rugosa", "nortaxa") in rows
+    assert ("Pholiotina rugosa", "dyntaxa") not in rows
+    assert [name for name, _ in rows].count("Pholiotina rugosa") == 1
+
+    # The same for a vernacular, even when only Dyntaxa marks it preferred.
+    release = _compile(tmp_path / "vern", manual=[reviewed_52369, _REVIEWED_RUGOSA],
+                       extra_vernaculars={"nortaxa": [{
+                           "source_code": "nortaxa",
+                           "source_release": {"version": "1.284",
+                                              "issued_date": "2026-07-17"},
+                           "core_row_id": {"value": "row-52369",
+                                           "namespace": "nortaxa_dwc_id"},
+                           "vernacular_name": "rynkig nålskivling",
+                           "language": "sv", "is_preferred": False}]})
+    conn = _candidate(tmp_path / "vern", release)
+    try:
+        assert [tuple(r) for r in conn.execute(
+            "SELECT vernacular_name, source, is_preferred_name FROM vernacular_min "
+            "WHERE taxon_id = ? AND language_code = 'sv'", (host,))] == [
+            ("rynkig nålskivling", "nortaxa", 0)]
+    finally:
+        conn.close()
 
 
 def test_existing_nortaxa_and_col_bindings_are_unchanged(tmp_path: Path) -> None:

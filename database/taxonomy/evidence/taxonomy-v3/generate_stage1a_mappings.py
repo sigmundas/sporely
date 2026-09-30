@@ -302,16 +302,27 @@ def render() -> str:
         _record(m, nortaxa_version)
         for m in sorted(members, key=lambda m: int(m["nortaxa_taxon_id"]))
     ]
-    approvals = [
-        a for a in document.get("approved_manifests") or []
-        if a.get("file_sha256") != APPROVED_FILE_SHA256
-    ] + [_approval(manifest)]
+    # Stage 4P's Dyntaxa approvals and records, which its own generator keeps
+    # after everything else, stay after this block, so the two generators
+    # agree on the ledger's layout and each is idempotent over the other's
+    # output.
+    def later(entry: dict) -> bool:
+        return (entry.get("source_usage") or {}).get("source") == "dyntaxa" \
+            and bool(entry.get("approved_manifest"))
+    others = [a for a in document.get("approved_manifests") or []
+              if a.get("file_sha256") != APPROVED_FILE_SHA256]
+    later_approvals = [a for a in others
+                       if str(a.get("manifest_id") or "").startswith(
+                           "taxonomy-v3-dyntaxa-")]
+    approvals = [a for a in others if a not in later_approvals] \
+        + [_approval(manifest)] + later_approvals
     out = {
         key: value for key, value in document.items()
         if key not in ("approved_manifests", "mappings")
     }
     out["approved_manifests"] = approvals
-    out["mappings"] = kept + generated
+    out["mappings"] = [e for e in kept if not later(e)] + generated \
+        + [e for e in kept if later(e)]
     verify_manifest_approvals(out, repo_root=_REPO)
     return _dump(out) + "\n"
 

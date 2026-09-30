@@ -456,14 +456,23 @@ provenance class is `dyntaxa_derived`, because COL source 2041 is Dyntaxa
 itself and a synonym COL has only from it is not independent corroboration.
 `ordinary` has 2,158 members (719 in the cloud scope).
 
-Every manifest is a review input. **None is approved.** Each is identified by
-the `file_sha256` recorded under `manifests` in `dyntaxa-report.json`; an
-owner approval must name that value, as for Stage 1A.
+Every manifest is a review input, identified by the `file_sha256` recorded
+under `manifests` in `dyntaxa-report.json`. On 2026-09-30 the owner approved
+exactly two (Agent Sparring gate `0066ed5740a2471a85f7b4c7bc435421`, check
+`stage4p-dyntaxa-manifest-approval`), bound to their recorded pins:
 
-`generate_stage4p_mappings.py` turns a recorded owner approval into one
-`manual_mappings.yml` record per member. Its `OWNER_APPROVALS` is empty, so a
-run today changes nothing (`--check` passes on the committed ledger). It
-refuses a file whose SHA-256 differs from the approval, a manifest whose pins
+| Manifest | `file_sha256` | Members | Cloud scope |
+|---|---|---:|---:|
+| `dyntaxa-reciprocal-accepted-synonymy.manifest.json` | `c67e4777ed62d1eac93a530ed6265db16cca937aea76d675661686885bd12837` | 203 | 103 |
+| `dyntaxa-shared-synonymy--ordinary.manifest.json` | `d2222d5e5ace86c0a9eb81fc4223f9fba7e2335a78ff816aa4f151c15d6e9cef` | 2,158 | 719 |
+
+Every other Dyntaxa manifest is unapproved, including the parent
+`shared_synonymy` manifest and its other review classes.
+
+`generate_stage4p_mappings.py` turns those approvals (`OWNER_APPROVALS`) into
+one `manual_mappings.yml` record per member: 2,361 records, each citing its
+manifest's `file_sha256`; `--check` confirms the committed ledger is current.
+It refuses a file whose SHA-256 differs from the approval, a manifest whose pins
 differ from the approval's or whose Dyntaxa pin is not the acquired archive,
 the parent `shared_synonymy` manifest, and the classes decision 2 keeps out
 of batch approval (`one_directional_accepted_synonymy`,
@@ -474,13 +483,6 @@ record's `source_release_range` equal to the pinned Dyntaxa release. The
 compiler then applies a record only while those pins equal the archives
 actually compiled (release id and SHA-256 of both Dyntaxa and COL).
 
-`approval-path-diagnostic.json` is **synthetic, not an approval**: a scratch
-compile of the real pinned inputs with the reciprocal manifest approved in
-memory only. Its generated records apply (their pins equal the compiled
-inputs) and give 203 Dyntaxa bridges, 203 `preferred_scientific_name_sv`
-values (83668: Pholiotina rugosa, `urn:lsid:dyntaxa.se:Taxon:3423`) and 145
-Swedish Dyntaxa vernaculars, with every NorTaxa/COL row and every concept's
-identity and names identical to the committed-ledger build.
 
 Regression species (by Sporely id): 83668 (canonical Conocybe rugosa) pairs
 with Dyntaxa `Taxon:3423` Pholiotina rugosa by synonym name and grades
@@ -495,10 +497,26 @@ with the same name, 25 the number of a renamed or sensu-lato concept, 11 a
 number with no accepted Fungi concept. Artportalen numbers Dyntaxa concepts;
 it is still its own namespace, and its rows bind nothing.
 
-`build-comparison.json` records two scratch `build_release.py` runs of
-`tax-2026.09.30-01` (neither promoted), with and without Dyntaxa in the
-recipe: both deterministic, registry unchanged, no new allocations, and every
-compile artifact and SQLite table identical except the Dyntaxa pin in
-`taxonomy_meta`, the compiler manifest that records it, and additive Dyntaxa
-diagnostics. With no approved mapping, Dyntaxa contributes nothing to a
-release yet.
+`approved-build-verification.json` records two scratch `build_release.py`
+runs of `tax-2026.09.30-01` over the committed recipe and approved ledger,
+with and without Dyntaxa (neither promoted, both deterministic):
+
+- The registry gains 9,509 entries, all Dyntaxa aliases (2,361 approved
+  accepted usages and their synonyms) on existing Sporely concepts: no new
+  concept, no existing entry changed.
+- Against the control, concept identity, canonical and Norwegian names,
+  every non-Dyntaxa external id, the legacy integer ids and the red list are
+  identical, and every existing scientific-name and vernacular row is kept
+  with its source.
+- Added: 2,361 Dyntaxa bridges (`dyntaxa_taxon_id`, `accepted`, not
+  preferred, `authoritative_bridge:manual_approved_exact`), 2,361
+  `preferred_scientific_name_sv` values (201 differ from the canonical name),
+  1,309 Swedish Dyntaxa vernaculars on 1,103 concepts and 4,650 Dyntaxa
+  scientific-name spellings.
+- The global-macrofungi scoped export carries 822 of the bridges and
+  Swedish names (the approved members in the cloud scope, 103 + 719) and 654
+  Swedish Dyntaxa vernaculars over its 52,917 concepts; NorTaxa 53482 -> 7821
+  and 52369, 58722 -> 83668 are unchanged.
+- 83668 shows Swedish Pholiotina rugosa from `urn:lsid:dyntaxa.se:Taxon:3423`;
+  7821 gains "stjärnsporig rödskivling". 617026, 620306 and 168873 have no
+  approved Dyntaxa identity and keep their legacy Swedish names.

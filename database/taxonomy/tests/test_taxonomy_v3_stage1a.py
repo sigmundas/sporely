@@ -71,7 +71,10 @@ def _members(path: Path) -> set[tuple[str, str, int]]:
 
 
 def _bound_records(ledger: dict) -> list[dict]:
-    return [m for m in ledger["mappings"] if "approved_manifest" in m]
+    """Stage 1A's records. The ledger also carries Stage 4P's Dyntaxa
+    records, bound to their own approvals."""
+    return [m for m in ledger["mappings"] if "approved_manifest" in m
+            and m["source_usage"]["source"] == "nortaxa"]
 
 
 # ------------------------------------------------------- the shipped ledger ---
@@ -79,7 +82,8 @@ def _bound_records(ledger: dict) -> list[dict]:
 
 def test_approved_manifest_is_the_owner_confirmed_file() -> None:
     assert hashlib.sha256(_ORDINARY.read_bytes()).hexdigest() == _APPROVED_SHA
-    approvals = _ledger()["approved_manifests"]
+    approvals = [a for a in _ledger()["approved_manifests"]
+                 if "/stage0/" in a["path"]]
     assert [a["file_sha256"] for a in approvals] == [_APPROVED_SHA]
     assert approvals[0]["pins"] == json.loads(
         _ORDINARY.read_text(encoding="utf-8"))["pins"]
@@ -88,7 +92,9 @@ def test_approved_manifest_is_the_owner_confirmed_file() -> None:
 def test_shipped_records_are_exactly_the_approved_members() -> None:
     """One record per member, each tracing to the approved ``file_sha256``."""
     ledger = _ledger()
-    bound = verify_manifest_approvals(ledger)
+    bound = {mapping_id: sha
+             for mapping_id, sha in verify_manifest_approvals(ledger).items()
+             if sha == _APPROVED_SHA}
     records = _bound_records(ledger)
     assert len(records) == len(bound) == 3383
     assert set(bound.values()) == {_APPROVED_SHA}

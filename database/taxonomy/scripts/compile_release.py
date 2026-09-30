@@ -113,6 +113,14 @@ SOURCE_PRIORITY: tuple[str, ...] = (
 #: already in the registry, which is append-only.
 REVIEWED_IDENTITY_ONLY_SOURCES: frozenset[str] = frozenset({"dyntaxa"})
 
+#: Vernacular languages a national source contributes. Dyntaxa is Sweden's
+#: authority for Swedish names; the Norwegian, Finnish, Danish and English
+#: names it also carries are secondary copies that would otherwise take over
+#: the provenance of the same spelling from NorTaxa or iNaturalist.
+NATIONAL_VERNACULAR_LANGUAGES: dict[str, frozenset[str]] = {
+    "dyntaxa": frozenset({"sv"}),
+}
+
 
 def _source_priority(source_code: str) -> tuple[int, str]:
     try:
@@ -1236,6 +1244,7 @@ def compile_release(
         vern_dropped_out_of_scope = 0
         vern_dropped_unknown = 0
         vern_dropped_unreviewed: dict[str, int] = {}
+        vern_dropped_language: dict[str, int] = {}
         for source_dir in normalized_source_dirs:
             report = _read_report(source_dir)
             for entry in _iter_vernacular(source_dir):
@@ -1263,6 +1272,11 @@ def compile_release(
                         f"vernacular row references core_row_id {key!r} "
                         f"that does not resolve to any known source taxon"
                     )
+                allowed = NATIONAL_VERNACULAR_LANGUAGES.get(key[0])
+                if allowed is not None and entry["language"] not in allowed:
+                    vern_dropped_language[key[0]] = (
+                        vern_dropped_language.get(key[0], 0) + 1)
+                    continue
                 compiled_vernaculars.append({
                     "sporely_taxon_id": sporely_id,
                     "source_code": entry["source_code"],
@@ -1290,9 +1304,13 @@ def compile_release(
             "input_rows": 0,
         }
         if legacy_enrichment_path is not None:
+            # A reviewed-identity-only source's names never displace a legacy
+            # name: the legacy row is kept exactly as in a build without that
+            # source, and the SQLite build prefers it over the same spelling.
             existing_vern: set[tuple[int, str, str]] = {
                 (v["sporely_taxon_id"], v["language"], v["vernacular_name"])
                 for v in compiled_vernaculars
+                if v["source_code"] not in REVIEWED_IDENTITY_ONLY_SOURCES
             }
             existing_external_ids: set[tuple[int, str, str]] = {
                 (u["sporely_taxon_id"], u["source_code"],
@@ -1477,6 +1495,7 @@ def compile_release(
                 synonyms_unbound=reviewed_only_synonyms_unbound,
                 registry_aliases_withheld=reviewed_only_withheld,
                 mappings_inapplicable=reviewed_only_inapplicable,
+                vernaculars_other_language=vern_dropped_language,
                 vernaculars_dropped=vern_dropped_unreviewed,
             ),
         )
@@ -2363,6 +2382,7 @@ def _reviewed_identity_only_diagnostics(
     vernaculars_dropped: dict[str, int],
     registry_aliases_withheld: dict[str, int] | None = None,
     mappings_inapplicable: dict[str, dict[str, int]] | None = None,
+    vernaculars_other_language: dict[str, int] | None = None,
 ) -> dict:
     """What each reviewed-identity-only source contributed, and what it did
     not. Present only for such sources among the inputs, so a release built
@@ -2402,6 +2422,10 @@ def _reviewed_identity_only_diagnostics(
             # identity, or outside the fungal scope altogether.
             "vernacular_rows_dropped_unbound":
                 vernaculars_dropped.get(code, 0),
+            # Bound, but in a language the source does not contribute
+            # (NATIONAL_VERNACULAR_LANGUAGES).
+            "vernacular_rows_dropped_other_language":
+                (vernaculars_other_language or {}).get(code, 0),
         }
     return out
 

@@ -172,9 +172,13 @@ so publishing ids are desktop-only.
 Do not delete the legacy database or its build scripts
 (`database/README.md`) until a release carries this data, or a national
 Swedish source replaces it. Dyntaxa is that source from Stage 4P, but only
-for concepts with a reviewed Dyntaxa bridge; until owner-approved Dyntaxa
-mappings exist, every Swedish vernacular still comes from the legacy
-Artportalen data.
+for the 2,361 concepts with an owner-approved Dyntaxa bridge; every other
+concept's Swedish vernaculars still come from the legacy Artportalen data.
+Dyntaxa contributes Swedish vernaculars only (`compile_release.
+NATIONAL_VERNACULAR_LANGUAGES`), and neither its vernaculars nor its
+scientific names take over a spelling another source already publishes on
+the concept: that row keeps its source, and a Dyntaxa row is added only for a
+spelling the concept lacks.
 
 ## Adding a national source
 

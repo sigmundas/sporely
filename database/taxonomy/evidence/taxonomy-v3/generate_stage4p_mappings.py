@@ -15,9 +15,13 @@ records in ``policies/manual_mappings.yml``, exactly as
   with the usual review provenance and an ``approved_manifest`` reference to
   the ``file_sha256`` and the member.
 
-``OWNER_APPROVALS`` holds the decisions, copied from the plan's owner gate.
-**It is empty: no Dyntaxa manifest is approved**, so a real run generates
-nothing. The path is exercised by tests with synthetic approvals only.
+``OWNER_APPROVALS`` holds the owner's decisions. On 2026-09-30 the owner
+approved exactly two manifests (Agent Sparring gate
+``0066ed5740a2471a85f7b4c7bc435421``, check
+``stage4p-dyntaxa-manifest-approval``), each by its ``file_sha256`` and
+bound to the pins below: ``dyntaxa-reciprocal-accepted-synonymy`` (203
+members) and ``dyntaxa-shared-synonymy--ordinary`` (2,158 members). Every
+other Dyntaxa manifest is unapproved.
 
 It stops, writing nothing, unless for every approval: the manifest hashes to
 the approved ``file_sha256``; it is a matched Dyntaxa manifest of a
@@ -57,10 +61,54 @@ from bridge_emission import verify_manifest_approvals  # noqa: E402
 from generate_stage1a_mappings import _dump  # noqa: E402
 from identity_registry import IdentityRegistry  # noqa: E402
 
+#: The pins both approvals are bound to, as the approved files record them.
+#: A manifest regenerated against any other input fails the pins check.
+APPROVED_PINS = {
+    "cloud_scope_policy": {
+        "path": "database/taxonomy/policies/global-macrofungi-scope.yml",
+        "scope_predicate_id": "global_macrofungi_policy_v1",
+        "sha256": "e4e796286df93b5372264c702c824eea746f680b3b4e8d6467621c99e5b64ea6",
+    },
+    "release": {
+        "content_release_id": "tax-2026.09.26-02",
+        "gz_artifact": "database/reference_data/generated/taxonomy_v2/tax-2026.09.26-02.sqlite3.gz",
+        "gz_sha256": "4488bb64f4abe18ed269c76264f9be36708d742ff531e931e8d7458791e05d72",
+        "sqlite_sha256": "9bf71b7e1f9b2915c3b1798743cefdd5db53bdbbfb7edc462aa3d0ad0cf8547d",
+    },
+    "source_archives": {
+        "col_xr": {
+            "sha256": "397d701c8eb269bf78d6ac7b03149915b0d9e2a2c18694be2c91445b807814f9",
+            "source_release_id": "col_xr:2026-07-17-XR:2026-07-17",
+        },
+        "dyntaxa": {
+            "acquisition_manifest": {
+                "path": "database/taxonomy/sources/dyntaxa/2026-09-30/manifest.json",
+                "sha256": "1e75946149f4470e845a7e548285f62bc2c29d23fb241c626587bedab686443a",
+            },
+            "sha256": "7947b7a7681f3654d5478694f1fe37fdd9e72dc3aab8f9b6311525d85cc4879c",
+            "source_release_id": "dyntaxa:2026-09-30:2026-09-30",
+        },
+    },
+}
+_STAGE4P = "database/taxonomy/evidence/taxonomy-v3/stage4p"
+_DECISION = ("Owner decision 2026-09-30, Agent Sparring gate "
+             "0066ed5740a2471a85f7b4c7bc435421, check "
+             "stage4p-dyntaxa-manifest-approval (taxonomy-v3 decision 2)")
+
 #: Owner decisions, each ``{path, file_sha256, pins, approved_by,
-#: approved_at, decision_reference}``, copied from the plan's recorded gate.
-#: Empty until the owner approves a Dyntaxa manifest.
-OWNER_APPROVALS: tuple[dict, ...] = ()
+#: approved_at, decision_reference}``.
+OWNER_APPROVALS: tuple[dict, ...] = (
+    {"path": f"{_STAGE4P}/dyntaxa-reciprocal-accepted-synonymy.manifest.json",
+     "file_sha256":
+         "c67e4777ed62d1eac93a530ed6265db16cca937aea76d675661686885bd12837",
+     "pins": APPROVED_PINS, "approved_by": "Sigmund Ås",
+     "approved_at": "2026-09-30", "decision_reference": _DECISION},
+    {"path": f"{_STAGE4P}/dyntaxa-shared-synonymy--ordinary.manifest.json",
+     "file_sha256":
+         "d2222d5e5ace86c0a9eb81fc4223f9fba7e2335a78ff816aa4f151c15d6e9cef",
+     "pins": APPROVED_PINS, "approved_by": "Sigmund Ås",
+     "approved_at": "2026-09-30", "decision_reference": _DECISION},
+)
 
 POPULATION = "dyntaxa_fungi_accepted_concepts"
 BATCH_REVIEWABLE = frozenset({"reciprocal_accepted_synonymy", "shared_synonymy"})
