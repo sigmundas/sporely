@@ -637,15 +637,9 @@ def test_one_checked_source_is_what_add_to_plot_attaches():
         dialog.close()
 
 
-def test_multi_source_add_is_disabled_rather_than_half_performed():
-    """Stage 2's reported contract gap, pinned so it cannot regress quietly.
-
-    ``attach_callback`` returns ``None`` for success and for every failure
-    alike, so a batch loop could not report which sources landed. Until that
-    callback can report failure, the footer counts the queue but the click
-    attaches nothing rather than attaching some and closing on a claim of
-    success it cannot support.
-    """
+def test_multi_source_add_stays_disabled_for_an_outcome_less_host():
+    """A host that only supplies ``attach_callback`` (which returns ``None``
+    for success and failure alike) still cannot batch: nothing is attached."""
     received: list[tuple[str, str]] = []
     dialog = _make_dialog(attach_callback=lambda ms_id, role: received.append((ms_id, role)))
     try:
@@ -654,10 +648,157 @@ def test_multi_source_add_is_disabled_rather_than_half_performed():
 
         assert dialog.add_to_plot_btn.text() == "Add 2 to plot"
         assert dialog.add_to_plot_btn.isEnabled() is False
-        assert dialog.add_to_plot_btn.toolTip() != ""
-
         dialog._on_add_to_plot_clicked()
         assert received == []
+        assert dialog.result() != QDialog.Accepted
+    finally:
+        dialog.close()
+
+
+def _batch_dialog(outcomes: dict[str, tuple[str, str | None]] | None = None):
+    calls: list[tuple[str, str]] = []
+
+    def _cb(ms_id: str, role: str):
+        calls.append((ms_id, role))
+        return (outcomes or {}).get(ms_id, ("attached", None))
+
+    return _make_dialog(library_attach_callback=_cb), calls
+
+
+def _visible_ids(dialog) -> set[str]:
+    return {w.measurement_set_id for _i, w in dialog._library_row_widgets()}
+
+
+def test_batch_add_attaches_every_source_in_check_order_and_closes():
+    dialog, calls = _batch_dialog()
+    try:
+        for ms_id in ("ms-rest-decile", "ms-this-range", "ms-this-points"):
+            _row_widget(dialog, ms_id).checkbox.setChecked(True)
+        assert dialog.add_to_plot_btn.isEnabled() is True
+        assert dialog.set_all_roles_combo.isVisibleTo(dialog) is True
+        dialog._on_add_to_plot_clicked()
+        assert calls == [
+            ("ms-rest-decile", "compared"),
+            ("ms-this-range", "compared"),
+            ("ms-this-points", "compared"),
+        ]
+        assert dialog.result() == QDialog.Accepted
+    finally:
+        dialog.close()
+
+
+def test_each_source_keeps_its_own_role():
+    dialog, calls = _batch_dialog()
+    try:
+        _row_widget(dialog, "ms-this-range").checkbox.setChecked(True)
+        _row_widget(dialog, "ms-this-points").checkbox.setChecked(True)
+        _row_widget(dialog, "ms-rest-decile").checkbox.setChecked(True)
+        row = _row_widget(dialog, "ms-this-points")
+        assert row.role_combo.isVisibleTo(row) is True
+        row.role_combo.setCurrentIndex(row.role_combo.findData("contradicts"))
+        dialog.set_source_role("ms-rest-decile", "supports_identification")
+        # A list rebuild (search / scope toggle) must not reset chosen roles.
+        dialog.search_input.setText("x")
+        dialog.search_input.setText("")
+        assert _row_widget(dialog, "ms-this-points").role() == "contradicts"
+        dialog._on_add_to_plot_clicked()
+        assert calls == [
+            ("ms-this-range", "compared"),
+            ("ms-this-points", "contradicts"),
+            ("ms-rest-decile", "supports_identification"),
+        ]
+    finally:
+        dialog.close()
+
+
+def test_set_all_applies_one_role_to_every_checked_source_only():
+    dialog, calls = _batch_dialog()
+    try:
+        _row_widget(dialog, "ms-this-range").checkbox.setChecked(True)
+        _row_widget(dialog, "ms-this-points").checkbox.setChecked(True)
+        combo = dialog.set_all_roles_combo
+        index = combo.findData("supports_identification")
+        combo.setCurrentIndex(index)
+        combo.activated.emit(index)
+        assert combo.currentIndex() == 0
+        assert dialog.role_for_source("ms-rest-decile") == "compared"
+        dialog._on_add_to_plot_clicked()
+        assert calls == [
+            ("ms-this-range", "supports_identification"),
+            ("ms-this-points", "supports_identification"),
+        ]
+    finally:
+        dialog.close()
+
+
+def test_partial_failure_keeps_successes_and_leaves_failures_checked_for_retry():
+    dialog, calls = _batch_dialog(
+        {"ms-this-points": ("failed", "Could not attach reference: boom")}
+    )
+    try:
+        for ms_id in ("ms-this-range", "ms-this-points", "ms-rest-decile"):
+            _row_widget(dialog, ms_id).checkbox.setChecked(True)
+        dialog.set_source_role("ms-this-points", "contradicts")
+        dialog._on_add_to_plot_clicked()
+        # Every item was tried; the later one ran despite the earlier failure.
+        assert [c[0] for c in calls] == ["ms-this-range", "ms-this-points", "ms-rest-decile"]
+        assert dialog.result() != QDialog.Accepted
+        assert [o[1] for o in dialog.last_attach_outcomes] == ["attached", "failed", "attached"]
+        assert dialog.checked_source_ids() == ["ms-this-points"]
+        visible = _visible_ids(dialog)
+        assert "ms-this-points" in visible
+        assert "ms-this-range" not in visible and "ms-rest-decile" not in visible
+        assert _row_widget(dialog, "ms-this-points").is_checked()
+        assert _row_widget(dialog, "ms-this-points").role() == "contradicts"
+        text = dialog.batch_result_label.text()
+        assert dialog.batch_result_label.isVisibleTo(dialog)
+        assert "Failed:" in text and "boom" in text
+        assert text.count("Attached:") == 2
+        assert dialog.add_to_plot_btn.isEnabled() is True
+
+        # Retry only the failure, now succeeding, with its role preserved.
+        calls.clear()
+        dialog._library_attach_callback = lambda ms_id, role: (
+            calls.append((ms_id, role)) or ("attached", None)
+        )
+        dialog._on_add_to_plot_clicked()
+        assert calls == [("ms-this-points", "contradicts")]
+        assert dialog.result() == QDialog.Accepted
+    finally:
+        dialog.close()
+
+
+def test_a_raising_or_unknown_outcome_is_reported_as_failed_never_success():
+    def _cb(ms_id, role):
+        if ms_id == "ms-this-range":
+            raise RuntimeError("kaboom")
+        return None
+
+    dialog = _make_dialog(library_attach_callback=_cb)
+    try:
+        _row_widget(dialog, "ms-this-range").checkbox.setChecked(True)
+        _row_widget(dialog, "ms-this-points").checkbox.setChecked(True)
+        dialog._on_add_to_plot_clicked()
+        assert [o[1] for o in dialog.last_attach_outcomes] == ["failed", "failed"]
+        assert dialog.checked_source_ids() == ["ms-this-range", "ms-this-points"]
+        assert "Attached:" not in dialog.batch_result_label.text()
+        assert dialog.result() != QDialog.Accepted
+    finally:
+        dialog.close()
+
+
+def test_already_attached_sources_are_reported_not_counted_as_new():
+    dialog, calls = _batch_dialog({"ms-this-points": ("already_attached", None)})
+    try:
+        _row_widget(dialog, "ms-this-range").checkbox.setChecked(True)
+        _row_widget(dialog, "ms-this-points").checkbox.setChecked(True)
+        dialog._on_add_to_plot_clicked()
+        assert [o[1] for o in dialog.last_attach_outcomes] == ["attached", "already_attached"]
+        text = dialog.batch_result_label.text()
+        assert "Already attached" in text and text.count("Attached:") == 1
+        assert "Failed" not in text
+        assert dialog.checked_source_ids() == []
+        # Nothing failed, but the user is told before the dialog goes away.
         assert dialog.result() != QDialog.Accepted
     finally:
         dialog.close()

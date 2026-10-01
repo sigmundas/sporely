@@ -10010,6 +10010,28 @@ class MainWindow(GeometryMixin, QMainWindow):
                 identifier, role
             )
 
+        def _library_attach_callback(
+            measurement_set_id: str, role: str
+        ) -> tuple[str, str | None]:
+            """One Library-tab item: attach with its own role, report the
+            outcome instead of showing a dialog, so the picker can attach a
+            batch and list exactly which items landed."""
+            current_observation_id = getattr(self, "active_observation_id", None)
+            if (
+                current_observation_id is None
+                or int(current_observation_id) != captured_observation_id
+            ):
+                return (
+                    "failed",
+                    self.tr(
+                        "The active observation changed while the picker was open."
+                    ),
+                )
+            status, reason, _severity = self._attach_normalized_reference_outcome(
+                captured_observation_id, str(measurement_set_id), role
+            )
+            return status, reason
+
         def _add_cloud_callback(data: dict) -> None:
             if not _observation_still_active():
                 return
@@ -10063,6 +10085,7 @@ class MainWindow(GeometryMixin, QMainWindow):
             exclude_observation_cloud_id=obs_for_own_target.get("cloud_id"),
             exclude_measurement_set_ids=excluded,
             attach_callback=_add_callback,
+            library_attach_callback=_library_attach_callback,
             cloud_attach_callback=_add_cloud_callback,
             manual_attach_callback=_add_manual_callback,
             manual_save_callback=_save_manual_callback,
@@ -10240,13 +10263,12 @@ class MainWindow(GeometryMixin, QMainWindow):
     def _attach_normalized_reference_to_active_observation(
         self, measurement_set_id: str, role: str
     ) -> None:
-        """Shared post-selection attach helper.
+        """Shared post-selection attach helper (interactive wrapper).
 
         Both the attachment chooser and the library manager route through
-        this method so ``attach_with_status`` semantics, plotability
-        translation, rollback of newly-created rows on translator
-        failure, and the pre-existing malformed warning-row path stay in
-        exactly one place.
+        this method; the actual work lives in
+        :meth:`_attach_normalized_reference_outcome`, which this wrapper
+        turns into the same message boxes it always showed.
         """
         observation_id = getattr(self, "active_observation_id", None)
         if not observation_id:
@@ -10258,6 +10280,28 @@ class MainWindow(GeometryMixin, QMainWindow):
             return
         if not measurement_set_id:
             return
+        status, reason, severity = self._attach_normalized_reference_outcome(
+            int(observation_id), measurement_set_id, role
+        )
+        if reason:
+            box = QMessageBox.critical if severity == "critical" else QMessageBox.warning
+            box(self, self.tr("Attach library reference"), reason)
+
+    def _attach_normalized_reference_outcome(
+        self, observation_id: int, measurement_set_id: str, role: str
+    ) -> tuple[str, str | None, str | None]:
+        """Attach one library measurement set and report what happened.
+
+        Returns ``(status, reason, severity)`` where ``status`` is
+        ``"attached"`` (a new use row was created and plotted),
+        ``"already_attached"`` (the use already existed; its stored role is
+        left untouched) or ``"failed"`` (nothing new is attached). ``reason``
+        is user-facing text, ``None`` when there is nothing to say. Never
+        shows a dialog itself, so a batch caller can collect one outcome per
+        item. ``attach_with_status`` semantics, plotability translation,
+        rollback of newly-created rows on translator failure and the
+        pre-existing malformed warning-row path stay in exactly one place.
+        """
         try:
             use, created = ObservationReferenceUseRepository.attach_with_status(
                 int(observation_id),
@@ -10265,12 +10309,11 @@ class MainWindow(GeometryMixin, QMainWindow):
                 role=role,
             )
         except ReferenceLibraryError as exc:
-            QMessageBox.warning(
-                self,
-                self.tr("Attach library reference"),
+            return (
+                "failed",
                 self.tr("Could not attach reference: {error}").format(error=str(exc)),
+                "warning",
             )
-            return
         entry = translate_observation_reference_use(use)
         if entry is None:
             if created:
@@ -10283,23 +10326,21 @@ class MainWindow(GeometryMixin, QMainWindow):
                 try:
                     ObservationReferenceUseRepository.detach(use.id)
                 except Exception as rollback_exc:
-                    QMessageBox.critical(
-                        self,
-                        self.tr("Attach library reference"),
+                    return (
+                        "failed",
                         self.tr(
                             "Attachment could not be plotted and the rollback "
                             "of the persisted row failed: {error}. The row "
                             "with id {use_id} may still be present; please "
                             "detach it manually."
                         ).format(error=str(rollback_exc), use_id=use.id),
+                        "critical",
                     )
-                    return
-                QMessageBox.warning(
-                    self,
-                    self.tr("Attach library reference"),
+                return (
+                    "failed",
                     self.tr("The attachment snapshot could not be translated for the plot."),
+                    "warning",
                 )
-                return
             # A pre-existing use came back with an unplottable snapshot.
             # Never detach someone else's persisted row as a "rollback"
             # for the attach we did not perform. Surface it as a warning
@@ -10307,22 +10348,23 @@ class MainWindow(GeometryMixin, QMainWindow):
             warning_entry = self._build_malformed_reference_series_entry(use)
             if warning_entry is not None:
                 self._add_reference_series_entry(warning_entry)
-            QMessageBox.warning(
-                self,
-                self.tr("Attach library reference"),
+            return (
+                "already_attached",
                 self.tr(
                     "This reference is already attached but its stored "
                     "snapshot cannot be plotted. It is shown as a warning "
                     "row so you can detach it."
                 ),
+                "warning",
             )
-            return
         self._add_reference_series_entry(entry)
         if created:
             try:
                 MeasurementSetPreferenceRepository.mark_used(measurement_set_id)
             except ReferenceLibraryError:
                 pass
+            return "attached", None, None
+        return "already_attached", None, None
 
     def _clean_ref_species_text(self, text: str | None) -> str:
         if not text:

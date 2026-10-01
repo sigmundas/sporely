@@ -33,11 +33,17 @@ Its list carries two states that must not be collapsed into one. The
 *selected* row is what the shared preview shows; the *checked* rows are what
 the footer will add to the plot. Rows are grouped by relevance to the picker's
 taxon (``group_library_candidates``) and rendered by
-:class:`~ui.library_source_row.LibrarySourceRow`. The footer counts the
-checked rows, but adding more than one source in a single click is not wired:
-``attach_callback`` returns ``None`` on success and on every failure alike, so
-a batch loop could not report which sources landed (see
-``_on_add_to_plot_clicked``).
+:class:`~ui.library_source_row.LibrarySourceRow`. Each checked row carries its
+own role selector (Compared / Supports identification / Contradicts, default
+Compared) -- the role of the *use* that row would create, not of the
+publication -- and the footer offers a "Set all" shortcut once two or more
+rows are queued. Adding several sources routes through
+``library_attach_callback(measurement_set_id, role) -> (status, reason)``,
+called once per checked row in the order the rows were checked. ``status`` is
+``"attached"``, ``"already_attached"`` or ``"failed"``; succeeded items stay
+attached even when a later one fails (no rollback), the dialog lists every
+item's outcome, unchecks the ones that landed and keeps the failed ones
+checked so the user can retry them, and closes only when nothing failed.
 
 The My observations tab lists previous observations of the working taxon —
 the same query (``ObservationDB.get_personal_observations_for_species``)
@@ -129,7 +135,13 @@ from app_identity import SETTINGS_APP, SETTINGS_ORG
 
 from . import measurement_content_view as mcv
 from .cloud_reference_dialog import CommunityResultsPane
-from .library_source_row import LibraryResultsList, LibrarySourceRow
+from .library_source_row import (
+    DEFAULT_REFERENCE_USE_ROLE,
+    REFERENCE_USE_ROLES,
+    LibraryResultsList,
+    LibrarySourceRow,
+    reference_use_role_label,
+)
 from .reference_entry_editor import ReferenceEntryEditor
 from .reference_preview_pane import ReferencePreviewPane
 from .two_line_row import TwoLineRow
@@ -412,6 +424,7 @@ class AddReferenceDialog(GeometryMixin, QDialog):
         exclude_observation_cloud_id: str | None = None,
         exclude_measurement_set_ids: Iterable[str] | None = None,
         attach_callback: Callable[[str, str], None] | None = None,
+        library_attach_callback: Callable[[str, str], tuple[str, str | None]] | None = None,
         cloud_attach_callback: Callable[[dict], None] | None = None,
         manual_attach_callback: Callable[["ReferenceEntryEditor"], bool] | None = None,
         manual_save_callback: Callable[["ReferenceEntryEditor"], str | None] | None = None,
@@ -446,6 +459,12 @@ class AddReferenceDialog(GeometryMixin, QDialog):
         )
         self._exclude_ids = {str(x) for x in (exclude_measurement_set_ids or [])}
         self._attach_callback = attach_callback
+        self._library_attach_callback = library_attach_callback
+        # Role per queued Library source, keyed by measurement-set id. Kept
+        # outside the row widgets so a list rebuild (filter change) cannot
+        # reset a role the user already chose.
+        self._roles: dict[str, str] = {}
+        self.last_attach_outcomes: list[tuple[str, str, str | None]] = []
         self._cloud_attach_callback = cloud_attach_callback
         self._manual_attach_callback = manual_attach_callback
         self._manual_save_callback = manual_save_callback
@@ -564,10 +583,33 @@ class AddReferenceDialog(GeometryMixin, QDialog):
         )
         self.tabs.currentChanged.connect(self._on_tab_changed)
 
+        # Per-item outcome of the last multi-source add. Hidden until an
+        # add leaves something to report (a failure, or an item that was
+        # already attached).
+        self.batch_result_label = QLabel("", self)
+        self.batch_result_label.setWordWrap(True)
+        self.batch_result_label.setTextFormat(Qt.PlainText)
+        self.batch_result_label.setVisible(False)
+        root.addWidget(self.batch_result_label)
+
         footer = QHBoxLayout()
         self.status_hint_label = QLabel("", self)
         self.status_hint_label.setStyleSheet("color: #7f8c8d;")
         footer.addWidget(self.status_hint_label, 1)
+        self.set_all_roles_label = QLabel(
+            QCoreApplication.translate("AddReferenceDialog", "Set all:"), self
+        )
+        self.set_all_roles_combo = QComboBox(self)
+        self.set_all_roles_combo.addItem(
+            QCoreApplication.translate("AddReferenceDialog", "Choose role…"), None
+        )
+        for role in REFERENCE_USE_ROLES:
+            self.set_all_roles_combo.addItem(reference_use_role_label(role), role)
+        self.set_all_roles_combo.activated.connect(self._on_set_all_roles_activated)
+        self.set_all_roles_label.setVisible(False)
+        self.set_all_roles_combo.setVisible(False)
+        footer.addWidget(self.set_all_roles_label)
+        footer.addWidget(self.set_all_roles_combo)
         self.cancel_btn = QPushButton(QCoreApplication.translate("AddReferenceDialog", "Cancel"), self)
         self.cancel_btn.clicked.connect(self.reject)
         footer.addWidget(self.cancel_btn)
@@ -1132,7 +1174,11 @@ class AddReferenceDialog(GeometryMixin, QDialog):
         row_widget.set_checked_silently(
             str(candidate.measurement_set_id) in self._checked_ids
         )
+        row_widget.set_role_silently(
+            self._roles.get(str(candidate.measurement_set_id), DEFAULT_REFERENCE_USE_ROLE)
+        )
         row_widget.check_toggled.connect(self._on_source_check_toggled)
+        row_widget.role_changed.connect(self._on_source_role_changed)
         item.setSizeHint(row_widget.sizeHint())
         self.results_list.setItemWidget(item, row_widget)
 
@@ -1185,6 +1231,31 @@ class AddReferenceDialog(GeometryMixin, QDialog):
         elif measurement_set_id in self._checked_ids:
             self._checked_ids.remove(measurement_set_id)
         self._update_footer_state()
+
+    def _on_source_role_changed(self, measurement_set_id: str, role: str) -> None:
+        self._roles[str(measurement_set_id)] = str(role)
+
+    def role_for_source(self, measurement_set_id: str) -> str:
+        """The role the use for this source will be created with."""
+        return self._roles.get(str(measurement_set_id), DEFAULT_REFERENCE_USE_ROLE)
+
+    def set_source_role(self, measurement_set_id: str, role: str) -> None:
+        """Set one queued source's role (and its row's selector, if shown)."""
+        if role not in REFERENCE_USE_ROLES:
+            raise ValueError(f"unknown reference use role: {role!r}")
+        self._roles[str(measurement_set_id)] = role
+        for _item, widget in self._library_row_widgets():
+            if widget.measurement_set_id == str(measurement_set_id):
+                widget.set_role_silently(role)
+
+    def _on_set_all_roles_activated(self, index: int) -> None:
+        role = self.set_all_roles_combo.itemData(index)
+        if role:
+            for measurement_set_id in self._checked_ids:
+                self.set_source_role(measurement_set_id, str(role))
+        # A one-shot action, not a mode: return to the prompt so per-row
+        # changes afterwards are not contradicted by a stale "all" value.
+        self.set_all_roles_combo.setCurrentIndex(0)
 
     def checked_source_ids(self) -> list[str]:
         """The sources queued for the plot, in the order the user checked them.
@@ -1726,10 +1797,10 @@ class AddReferenceDialog(GeometryMixin, QDialog):
                 if checked > 1
                 else default_text
             )
-            if checked > 1:
-                # Honest, and the reason it is not in the hint (which the
-                # contract reserves for the count) but on the button that
-                # cannot be pressed. See _on_add_to_plot_clicked.
+            batch_ready = self._library_attach_callback is not None
+            if checked > 1 and not batch_ready:
+                # A host that only supplies the outcome-less
+                # ``attach_callback`` cannot report which sources landed.
                 self.add_to_plot_btn.setToolTip(
                     QCoreApplication.translate(
                         "AddReferenceDialog",
@@ -1740,8 +1811,16 @@ class AddReferenceDialog(GeometryMixin, QDialog):
             else:
                 self.add_to_plot_btn.setToolTip("")
             self.add_to_plot_btn.setEnabled(
-                checked == 1 or (checked == 0 and self._preview_candidate is not None)
+                checked == 1
+                or (checked > 1 and batch_ready)
+                or (checked == 0 and self._preview_candidate is not None)
             )
+        on_library = (
+            self.tabs.currentWidget() is self._library_tab
+            and len(self._checked_ids) > 1
+        )
+        self.set_all_roles_label.setVisible(on_library)
+        self.set_all_roles_combo.setVisible(on_library)
         self._refresh_status_hint()
 
     def _current_saved_set_id(self) -> str | None:
@@ -1917,11 +1996,15 @@ class AddReferenceDialog(GeometryMixin, QDialog):
             if self._manual_attach_callback(self.manual_editor):
                 self.accept()
             return
+        if self._library_attach_callback is not None:
+            self._attach_library_sources()
+            return
         if self._attach_callback is None:
             return
         checked = self.checked_source_ids()
         if len(checked) > 1:
-            # Not reachable through the UI: the button is disabled for more
+            # Not reachable through the UI: without a
+            # ``library_attach_callback`` the button is disabled for more
             # than one checked source (see _update_footer_state).
             #
             # Multi-attach is deliberately NOT wired here. ``attach_callback``
@@ -1944,8 +2027,104 @@ class AddReferenceDialog(GeometryMixin, QDialog):
         )
         if target is None:
             return
-        self._attach_callback(target, "compared")
+        self._attach_callback(target, self.role_for_source(target))
         self.accept()
+
+    def _attach_library_sources(self) -> None:
+        """Attach every queued Library source, each with its own role.
+
+        One ``library_attach_callback`` call per source, in check order.
+        Nothing is rolled back: an item that landed stays attached even if
+        a later one fails. Items that landed (or were already attached) are
+        unchecked; failed items stay checked for a retry. The dialog closes
+        only when no item failed, and otherwise lists every outcome.
+        """
+        targets = self.checked_source_ids()
+        if not targets and self._preview_candidate is not None:
+            targets = [self._preview_candidate.measurement_set_id]
+        if not targets:
+            return
+        labels = {c.measurement_set_id: c for c in self._candidates}
+        outcomes: list[tuple[str, str, str | None]] = []
+        for measurement_set_id in targets:
+            role = self.role_for_source(measurement_set_id)
+            try:
+                result = self._library_attach_callback(measurement_set_id, role)
+                status, reason = result if result else ("failed", None)
+            except Exception as exc:  # report, never claim success
+                status, reason = "failed", str(exc)
+            if status not in ("attached", "already_attached"):
+                status = "failed"
+            outcomes.append((measurement_set_id, status, reason))
+            if status != "failed":
+                if measurement_set_id in self._checked_ids:
+                    self._checked_ids.remove(measurement_set_id)
+                self._exclude_ids.add(str(measurement_set_id))
+        #: ``[(measurement_set_id, status, reason), ...]`` of the last add.
+        self.last_attach_outcomes = list(outcomes)
+        failed = [o for o in outcomes if o[1] == "failed"]
+        if not failed and all(o[1] == "attached" for o in outcomes):
+            self.accept()
+            return
+        # Otherwise stay open: either something failed (retry), or an item
+        # was already attached with its existing role kept, which the user
+        # must be told rather than have the dialog close on it silently.
+        lines = []
+        for measurement_set_id, status, reason in outcomes:
+            candidate = labels.get(measurement_set_id)
+            name = (
+                (candidate.short_label or candidate.name_as_published or measurement_set_id)
+                if candidate is not None
+                else measurement_set_id
+            )
+            role_text = reference_use_role_label(self.role_for_source(measurement_set_id))
+            if status == "attached":
+                text = QCoreApplication.translate(
+                    "AddReferenceDialog", "Attached: {name} ({role})"
+                ).format(name=name, role=role_text)
+            elif status == "already_attached":
+                text = QCoreApplication.translate(
+                    "AddReferenceDialog",
+                    "Already attached (existing role kept): {name}",
+                ).format(name=name)
+            else:
+                text = QCoreApplication.translate(
+                    "AddReferenceDialog", "Failed: {name}"
+                ).format(name=name)
+            if reason:
+                text = f"{text} — {reason}"
+            lines.append(text)
+        if failed:
+            lines.append(
+                QCoreApplication.translate(
+                    "AddReferenceDialog",
+                    "Failed sources are still checked. Press Add to plot to retry them.",
+                )
+            )
+            self.batch_result_label.setStyleSheet("color: #c0392b;")
+        else:
+            self.batch_result_label.setStyleSheet("")
+        self.batch_result_label.setText("\n".join(lines))
+        self.batch_result_label.setVisible(True)
+        # Attached rows leave the list (they are on the plot now, exactly
+        # as the host's exclude list would have hidden them on reopen); the
+        # failed ones keep their checkbox and role for the retry.
+        landed = {o[0] for o in outcomes if o[1] != "failed"}
+        self._candidates = [
+            c for c in self._candidates if c.measurement_set_id not in landed
+        ]
+        if self._injected_candidates is not None:
+            self._injected_candidates = [
+                c for c in self._injected_candidates if c.measurement_set_id not in landed
+            ]
+        if (
+            self._preview_candidate is not None
+            and self._preview_candidate.measurement_set_id in landed
+        ):
+            self._preview_candidate = None
+        self._populate_results_list()
+        self._sync_selected_row_painting()
+        self._update_footer_state()
 
 
 __all__ = [

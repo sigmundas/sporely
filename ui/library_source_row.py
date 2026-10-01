@@ -28,10 +28,11 @@ the row keeps it whether or not the list has focus.
 """
 from __future__ import annotations
 
-from PySide6.QtCore import QSize, Qt, Signal
+from PySide6.QtCore import QCoreApplication, QSize, Qt, Signal
 from PySide6.QtGui import QColor, QFont, QFontDatabase, QPainter
 from PySide6.QtWidgets import (
     QCheckBox,
+    QComboBox,
     QHBoxLayout,
     QLabel,
     QListWidget,
@@ -50,6 +51,23 @@ SELECTED_FILL_COLOR = QColor(39, 174, 96, 38)
 #: Width in pixels of the left bar. Narrow on purpose: it marks the preview
 #: row, it does not compete with the checkbox.
 SELECTED_BAR_WIDTH = 3
+
+#: The roles an attached reference use can carry, in display order. Stored
+#: values match ``observation_reference_uses.role``; ``compared`` is the
+#: default. The role belongs to the *use* (this observation's link), never to
+#: the underlying publication or measurement set.
+REFERENCE_USE_ROLES = ("compared", "supports_identification", "contradicts")
+DEFAULT_REFERENCE_USE_ROLE = "compared"
+
+
+def reference_use_role_label(role: str) -> str:
+    return {
+        "compared": QCoreApplication.translate("LibrarySourceRow", "Compared"),
+        "supports_identification": QCoreApplication.translate(
+            "LibrarySourceRow", "Supports identification"
+        ),
+        "contradicts": QCoreApplication.translate("LibrarySourceRow", "Contradicts"),
+    }.get(role, role)
 
 
 class _ElidedLabel(QLabel):
@@ -130,6 +148,8 @@ class LibrarySourceRow(QWidget):
     """
 
     check_toggled = Signal(str, bool)
+    #: ``(measurement_set_id, role)`` when the user picks a role for this row.
+    role_changed = Signal(str, str)
 
     def __init__(
         self,
@@ -203,6 +223,21 @@ class LibrarySourceRow(QWidget):
         second_line.addWidget(self.semantic_badge, 0)
         column.addLayout(second_line)
 
+        # Per-row role for the use this row would create. Only meaningful
+        # once the row is queued, so it is shown only while checked; an
+        # unchecked row gives its full width to the taxon and measurement.
+        self.role_combo = QComboBox(self)
+        for role in REFERENCE_USE_ROLES:
+            self.role_combo.addItem(reference_use_role_label(role), role)
+        self.role_combo.setToolTip(
+            QCoreApplication.translate(
+                "LibrarySourceRow", "How this reference relates to the observation"
+            )
+        )
+        self.role_combo.setVisible(False)
+        self.role_combo.currentIndexChanged.connect(self._on_role_index_changed)
+        root.addWidget(self.role_combo, 0, Qt.AlignVCenter)
+
     # -- state ---------------------------------------------------------
 
     @property
@@ -218,6 +253,23 @@ class LibrarySourceRow(QWidget):
             self.checkbox.setChecked(checked)
         finally:
             self.checkbox.blockSignals(was_blocked)
+        self.role_combo.setVisible(bool(checked))
+
+    def role(self) -> str:
+        return str(self.role_combo.currentData() or DEFAULT_REFERENCE_USE_ROLE)
+
+    def set_role_silently(self, role: str) -> None:
+        index = self.role_combo.findData(role)
+        if index < 0:
+            index = self.role_combo.findData(DEFAULT_REFERENCE_USE_ROLE)
+        was_blocked = self.role_combo.blockSignals(True)
+        try:
+            self.role_combo.setCurrentIndex(index)
+        finally:
+            self.role_combo.blockSignals(was_blocked)
+
+    def _on_role_index_changed(self, _index: int) -> None:
+        self.role_changed.emit(self._measurement_set_id, self.role())
 
     def is_selected(self) -> bool:
         return self._selected
@@ -229,6 +281,7 @@ class LibrarySourceRow(QWidget):
         self.update()
 
     def _on_toggled(self, checked: bool) -> None:
+        self.role_combo.setVisible(bool(checked))
         self.check_toggled.emit(self._measurement_set_id, bool(checked))
 
     # -- painting ------------------------------------------------------
