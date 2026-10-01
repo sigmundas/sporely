@@ -81,7 +81,9 @@ def test_references_are_described_as_shared_by_default_with_relationship():
 
 def test_references_not_public_while_spore_data_hidden():
     text = build_publish_notice_text("exact", _facts(spore_data_visibility="private"))
-    assert "not shown publicly while its spore data is not public" in text
+    assert "not shown on it while its spore data is not public" in text
+    # Never overstated: earlier species-page listings stay until stopped.
+    assert "species-page listing already made" in text and "stop sharing that set" in text
     assert "shared by default" not in text and "Attached now" not in text
 
 

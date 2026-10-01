@@ -129,8 +129,10 @@ def references_notes(spore_data_visibility: str | None, attached_roles=None,
     if spore_hidden:
         return [QCoreApplication.translate(
             "PublishNotice",
-            "Reference sets attached to it are not shown publicly while its spore "
-            "data is not public.")]
+            "Reference sets attached to it are not shown on it while its spore data "
+            "is not public. A species-page listing already made for one of these "
+            "sets stays public until you stop sharing that set under My shared "
+            "references.")]
     notes = [QCoreApplication.translate(
         "PublishNotice",
         "Reference sets attached to it are shared by default: shown on the "
