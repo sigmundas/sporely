@@ -526,6 +526,19 @@ def _new_image_storage_suffix() -> str:
     return uuid.uuid4().hex
 
 
+def _stable_storage_key_digest(*parts: object) -> str:
+    """32-hex digest of stable, non-time identities for deterministic keys."""
+    material = '/'.join(str(part or '').strip() for part in parts)
+    return hashlib.sha256(material.encode('utf-8')).hexdigest()[:32]
+
+
+def _stable_storage_key_extension(source_path: str | Path) -> str:
+    suffix = Path(str(source_path or '').strip()).suffix.lower()
+    if re.fullmatch(r'\.[a-z0-9]{1,10}', suffix or ''):
+        return suffix
+    return '.jpg'
+
+
 def _build_worker_storage_path(
     user_id: str,
     obs_cloud_id: str,
@@ -17402,10 +17415,13 @@ class SporelyCloudClient:
         return None
 
     def _build_storage_path(self, obs_cloud_id: str, img_cloud_id: str, local_path: str) -> str:
-        import urllib.parse
-        path = Path(local_path)
-        safe_name = urllib.parse.quote(path.name)
-        return f'{self.user_id}/{obs_cloud_id}/{img_cloud_id}_{safe_name}'
+        # Fallback key for uploads that name an existing cloud row. Never embed
+        # the local filename (camera names such as IMG_20260915_134721 carry
+        # capture time). The suffix is a hash of stable non-time identities so
+        # a retry for the same row rewrites the same object.
+        extension = _stable_storage_key_extension(local_path)
+        digest = _stable_storage_key_digest(self.user_id, obs_cloud_id, img_cloud_id)
+        return f'{self.user_id}/{obs_cloud_id}/{img_cloud_id}_{digest}{extension}'
 
     def _build_original_storage_path(self, obs_cloud_id: str, img_cloud_id: str, local_path: str) -> str:
         source_path = Path(str(local_path or '').strip())
@@ -21307,6 +21323,48 @@ def push_all(
 CLOUD_SYNC_SKIP_PREPARE_IMAGE_IDS_KEY = '_cloud_sync_skip_prepare_image_ids'
 
 
+def _lookup_unlisted_remote_image_storage_path(
+    client: SporelyCloudClient,
+    obs_cloud_id: str,
+    img: dict,
+) -> str:
+    """Return the storage_path of the live row this image is linked to.
+
+    Used only when the observation's image listing failed: mirrors the
+    identity legs of ``_resolve_existing_image_for_push`` (direct cloud_id,
+    else desktop_id reverse link unless portable identity is pending) so a
+    later PATCH keeps the row's existing key. Returns '' when none is found.
+    """
+    obs_value = str(obs_cloud_id or '').strip()
+    cloud_id = str(img.get('cloud_id') or '').strip()
+    if cloud_id:
+        query = f'id=eq.{cloud_id}'
+    elif not bool(img.get('portable_cloud_identity_pending')) and _safe_int(img.get('id')) > 0:
+        query = f'desktop_id=eq.{_safe_int(img.get("id"))}'
+        if img.get('image_type'):
+            query += f'&image_type=eq.{img.get("image_type")}'
+    else:
+        return ''
+    try:
+        rows = client._get(
+            f'observation_images?{query}'
+            f'&user_id=eq.{client.user_id}'
+            f'&observation_id=eq.{obs_value}'
+            f'&deleted_at=is.null'
+            f'&select=id,storage_path'
+            f'&limit=2'
+        ) or []
+    except Exception as exc:
+        if is_cloud_auth_error(exc) or is_cloud_temporary_unavailable_error(exc):
+            raise
+        raise CloudSyncError(
+            f'could not verify existing storage key for image {img.get("id")}: {exc}'
+        ) from exc
+    if len(rows) != 1:
+        return ''
+    return _normalize_cloud_media_key(rows[0].get('storage_path'))
+
+
 def _select_remote_image_identity_candidate(
     *,
     local_image_id: int,
@@ -22012,6 +22070,7 @@ def _push_images_for_observation(
             )
         return False
 
+    existing_rows_unavailable = False
     if prepass_existing_rows is not None:
         existing_rows = prepass_existing_rows
     else:
@@ -22022,6 +22081,7 @@ def _push_images_for_observation(
                 raise
             print(f'[cloud_sync] Could not fetch existing cloud images for observation {obs["id"]}: {e}')
             existing_rows = []
+            existing_rows_unavailable = True
     existing_by_id = {
         str(row.get('id') or '').strip(): row
         for row in existing_rows
@@ -22108,6 +22168,14 @@ def _push_images_for_observation(
                     storage_path = ''
                 else:
                     existing_storage_path = _normalize_cloud_media_key((remote_row or {}).get('storage_path'))
+                    if not remote_row and existing_rows_unavailable:
+                        # The listing failed, so the identity selector cannot
+                        # see a live row that push_image_metadata would still
+                        # PATCH. Reuse that row's key instead of minting a new
+                        # one (which would orphan the existing object).
+                        existing_storage_path = _lookup_unlisted_remote_image_storage_path(
+                            client, obs_cloud_id, img,
+                        )
                     storage_path = existing_storage_path or _build_worker_storage_path(
                         client.user_id,
                         obs_cloud_id,
