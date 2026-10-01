@@ -12791,6 +12791,11 @@ class ObservationsTab(QWidget):
                     continue
 
                 obs_id = ObservationDB.create_observation(**obs_data)
+                confirmed_precision = getattr(dialog, "confirmed_location_precision", None)
+                if confirmed_precision:
+                    from utils.cloud_sync import record_confirmed_location_precision
+
+                    record_confirmed_location_precision(obs_id, confirmed_precision)
                 if ai_state:
                     ObservationDB.update_observation(
                         obs_id,
@@ -17257,6 +17262,21 @@ class ObservationDetailsDialog(GeometryMixin, QDialog):
         ):
             self._restore_publish_controls(previous)
             return
+        # An explicit precision choice on this device (confirmed above when it
+        # publishes or widens) is what lets sync push a more precise level.
+        self.confirmed_location_precision = None
+        chosen = new_state.get("location_precision")
+        before = (previous or {}).get("location_precision")
+        if (
+            chosen
+            and getattr(self, "_preserved_location_precision", None) is None
+            and str(chosen).strip().lower() != str(before or "exact").strip().lower()
+        ):
+            self.confirmed_location_precision = str(chosen)
+            if obs_id:
+                from utils.cloud_sync import record_confirmed_location_precision
+
+                record_confirmed_location_precision(obs_id, chosen)
         super().accept()
 
     def _restore_publish_controls(self, previous: dict | None) -> None:

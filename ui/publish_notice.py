@@ -105,7 +105,9 @@ def resolve_already_shared(facts: PublishFacts) -> tuple[str, list[tuple[dict, s
     if facts.attached_uses is None or not facts.taxon_known:
         return "unknown", []
     if facts.taxon_id is None:
-        return "no", []
+        # No species known for after the save: whether a shared reference
+        # appears cannot be decided here, so say so cautiously.
+        return "unknown", []
     if facts.contributions is None:
         return "unknown", []
     shared = [c for c in facts.contributions if isinstance(c, dict) and c.get("status") == "shared"]
@@ -182,14 +184,14 @@ def build_publish_notice_text(location_precision: str | None, facts: PublishFact
 OWNER_LIST_TIMEOUT_S = 3.0
 
 
-def load_owner_contributions(client, *, timeout: float | None = None) -> list[dict] | None:
+def load_owner_contributions(client_or_getter, *, timeout: float | None = None) -> list[dict] | None:
     """The owner's contributions, or ``None`` on failure, rate limit or timeout.
 
     The call runs on a daemon thread and is abandoned after ``timeout``
     seconds so the notice never freezes the dialog; ``None`` gives the
     cautious line.
     """
-    if client is None:
+    if client_or_getter is None:
         return None
     import threading
 
@@ -197,6 +199,12 @@ def load_owner_contributions(client, *, timeout: float | None = None) -> list[di
 
     def run() -> None:
         try:
+            # Creating the client (stored credentials, token refresh) also
+            # happens here, inside the bound, never on the UI thread.
+            client = client_or_getter() if callable(client_or_getter) else client_or_getter
+            if client is None:
+                box["error"] = RuntimeError("no cloud client")
+                return
             box["result"] = client.list_my_shared_reference_contributions()
         except Exception as exc:  # noqa: BLE001 - any failure is "unknown"
             box["error"] = exc
@@ -264,7 +272,7 @@ def load_local_facts(
             taxon_known = False
     contributions = None
     if attached and taxon_id:
-        contributions = load_owner_contributions(client_getter())
+        contributions = load_owner_contributions(client_getter)
     return PublishFacts(
         attached_uses=attached,
         taxon_id=taxon_id,

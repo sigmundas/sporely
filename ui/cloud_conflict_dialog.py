@@ -1508,16 +1508,33 @@ class CloudConflictDialog(QDialog):
         resolved.update(remote)
         if 'sharing_scope' not in resolved and 'visibility' in remote:
             resolved['sharing_scope'] = remote.get('visibility')
+        def put(field: str, value) -> None:
+            resolved[field] = value
+            if field in {'visibility', 'sharing_scope'}:
+                resolved['sharing_scope'] = value
+                resolved['visibility'] = value
+
+        # One-sided changes the plan applies automatically (see
+        # _build_plan_from_automatic_decisions in utils/cloud_sync.py).
+        auto = (detail.get('automatic_decisions') or {}).get('fields') or []
+        for entry in auto:
+            field = str(entry.get('field') or '')
+            action = entry.get('action')
+            if not field:
+                continue
+            if action == 'push_local':
+                put(field, entry.get('local'))
+            elif action == 'pull_cloud':
+                put(field, entry.get('remote'))
+            elif action == 'auto_draft_wins':
+                side = entry.get('chosen_side') or 'local'
+                put(field, entry.get('local') if side == 'local' else entry.get('remote'))
         for row in detail.get('field_rows') or []:
             field = str(row.get('field') or '')
             choice = self._selected_choice(f'field:{field}')
             if choice not in {'local', 'cloud'}:
                 continue
-            value = row.get('local') if choice == 'local' else row.get('remote')
-            resolved[field] = value
-            if field in {'visibility', 'sharing_scope'}:
-                resolved['sharing_scope'] = value
-                resolved['visibility'] = value
+            put(field, row.get('local') if choice == 'local' else row.get('remote'))
         return remote, resolved
 
     def _confirm_publish_for_plan(self, conflict: dict) -> bool:
@@ -1527,10 +1544,18 @@ class CloudConflictDialog(QDialog):
 
         previous, resolved = self.resolved_observation_state()
         local_id = int(conflict.get('local_id') or 0) or None
-        return confirm_publish_if_needed(
+        if not confirm_publish_if_needed(
             self, previous, resolved,
             lambda: load_local_facts(local_id, resolved),
-        )
+        ):
+            return False
+        # Choosing this device's precision here is an explicit choice that
+        # sync may push (confirmed above when it publishes or widens).
+        if local_id and self._selected_choice('field:location_precision') == 'local':
+            from utils.cloud_sync import record_confirmed_location_precision
+
+            record_confirmed_location_precision(local_id, resolved.get('location_precision'))
+        return True
 
     def _apply_selected_changes(self) -> None:
         conflict = self._current_conflict()

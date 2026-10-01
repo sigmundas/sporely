@@ -2749,13 +2749,19 @@ def privacy_slot_limit_user_message() -> str:
 
 
 def cloud_observation_uses_privacy_slot(observation: dict | None) -> bool:
+    """Mirror of the server privacy-slot trigger (sporely-web
+    20260626110000): a non-draft observation that is not public, or whose
+    location precision is fuzzed/region/hidden. Missing values coalesce to
+    not-draft, 'public' and 'exact' as on the server."""
     record = dict(observation or {})
+    if _normalize_observation_bool_value(record.get('is_draft'), default=False):
+        return False
     sharing_scope = _normalize_sharing_scope(
         record.get('visibility') or record.get('sharing_scope'),
-        fallback='private',
+        fallback='public',
     )
     location_precision = ObservationDB._normalize_location_precision(record.get('location_precision'))
-    return sharing_scope != 'public' or location_precision == 'fuzzed'
+    return sharing_scope != 'public' or location_precision in {'fuzzed', 'region', 'hidden'}
 
 
 def count_cloud_privacy_slots(remote_observations: list[dict] | None) -> int:
@@ -3729,7 +3735,123 @@ def _baseline_observation_compare_payload(record: dict | None) -> dict:
     return payload
 
 
+# --- Location precision: never widen silently (Stage 2c) ---------------------
+# Server levels, least to most precise. The views coalesce a missing value
+# to 'exact'. Builds before Stage 2c stored a cloud 'hidden'/'region' locally
+# as 'exact' while the sync snapshot kept the raw cloud value, so a local
+# value that is MORE precise than the cloud/baseline is only trusted when the
+# user explicitly chose (and, if publishing, confirmed) it on this device.
+_LOCATION_PRECISION_RANK = {'hidden': 0, 'region': 1, 'fuzzed': 2, 'exact': 3}
+
+
+def _location_precision_rank(value) -> int:
+    return _LOCATION_PRECISION_RANK[ObservationDB._normalize_location_precision(value)]
+
+
+def _precision_local_id(value) -> int | None:
+    try:
+        number = int(value)
+    except (TypeError, ValueError):
+        return None
+    return number if number > 0 else None
+
+
+def _confirmed_location_precision_key(local_id) -> str:
+    return f'cloud_location_precision_confirmed:{int(local_id)}'
+
+
+def record_confirmed_location_precision(local_id, precision: str | None) -> None:
+    """Record that the user explicitly chose ``precision`` for this local
+    observation (after the publish notice when that applies)."""
+    if _precision_local_id(local_id) is None or not precision:
+        return
+    SettingsDB.set_setting(
+        _confirmed_location_precision_key(local_id),
+        ObservationDB._normalize_location_precision(precision),
+    )
+
+
+def _confirmed_location_precision(local_id) -> str | None:
+    if _precision_local_id(local_id) is None:
+        return None
+    value = str(SettingsDB.get_setting(_confirmed_location_precision_key(local_id), '') or '').strip()
+    return value or None
+
+
+def consume_confirmed_location_precision(local_id) -> None:
+    if _precision_local_id(local_id) is not None:
+        SettingsDB.set_setting(_confirmed_location_precision_key(local_id), '')
+
+
+def _guard_local_location_precision(local_obs: dict | None, *references: dict | None) -> dict:
+    """Copy of ``local_obs`` whose precision never exceeds the least precise
+    known cloud/baseline value, unless the user confirmed that exact value."""
+    obs = dict(local_obs or {})
+    known = [
+        ref.get('location_precision') for ref in references
+        if isinstance(ref, dict) and str(ref.get('location_precision') or '').strip()
+    ]
+    if not known:
+        return obs
+    reference = min(known, key=_location_precision_rank)
+    local_value = ObservationDB._normalize_location_precision(obs.get('location_precision'))
+    if _location_precision_rank(local_value) <= _location_precision_rank(reference):
+        return obs
+    if _confirmed_location_precision(obs.get('id')) == local_value:
+        return obs
+    logger.info(
+        'Keeping cloud location_precision %r for observation %s: local %r was not confirmed',
+        reference, obs.get('id'), local_value,
+    )
+    obs['location_precision'] = ObservationDB._normalize_location_precision(reference)
+    return obs
+
+
+def _snapshot_baseline_for_cloud_id(cloud_id) -> dict:
+    cloud_value = str(cloud_id or '').strip()
+    if not cloud_value:
+        return {}
+    snapshot = _parse_cloud_observation_snapshot(_load_cloud_observation_snapshot(cloud_value))
+    return _baseline_observation_compare_payload(snapshot.get('observation') or {})
+
+
+def repair_legacy_location_precision() -> int:
+    """One-time, idempotent: restore 'hidden'/'region' on synced rows that an
+    older build stored as 'exact'. Only rows with a cloud_id, an 'exact' (or
+    empty) local value, a 'hidden'/'region' baseline, and no confirmed local
+    choice. Local-only write; does not mark the row dirty."""
+    conn = get_connection()
+    repaired = 0
+    try:
+        rows = conn.execute(
+            "SELECT id, cloud_id, location_precision FROM observations "
+            "WHERE cloud_id IS NOT NULL AND TRIM(cloud_id) != '' "
+            "AND (location_precision IS NULL OR LOWER(TRIM(location_precision)) IN ('', 'exact'))"
+        ).fetchall()
+        for row in rows:
+            local_id, cloud_id = row[0], row[1]
+            baseline = _snapshot_baseline_for_cloud_id(cloud_id)
+            target = str(baseline.get('location_precision') or '').strip().lower()
+            if target not in {'hidden', 'region'}:
+                continue
+            if _confirmed_location_precision(local_id) == 'exact':
+                continue
+            conn.execute(
+                "UPDATE observations SET location_precision = ? WHERE id = ?",
+                (target, int(local_id)),
+            )
+            repaired += 1
+        if repaired:
+            conn.commit()
+    finally:
+        conn.close()
+    if repaired:
+        logger.info('Restored hidden/region location_precision on %d observation(s)', repaired)
+    return repaired
+
+
 def _observation_push_diff_fields(local_obs: dict | None, remote_obs: dict | None) -> list[str]:
+    local_obs = _guard_local_location_precision(local_obs, remote_obs)
     local_payload = _observation_compare_payload(local_obs, local=True)
     remote_payload = _observation_compare_payload(remote_obs, local=False)
     diff_fields: list[str] = []
@@ -4571,6 +4693,7 @@ def _local_has_real_changes_since_snapshot(local_obs: dict, cloud_id: str | None
     baseline_obs = _baseline_observation_compare_payload(snapshot.get('observation') or {})
     if not baseline_obs:
         return True
+    local_obs = _guard_local_location_precision(local_obs, baseline_obs)
     local_payload = _observation_compare_payload(local_obs, local=True)
     for field in _SNAPSHOT_OBS_FIELDS:
         if field in {'id', 'desktop_id'}:
@@ -6660,6 +6783,10 @@ def sync_all(
         # Safety check: ensure this DB belongs to the current user
         with _cloud_sync_phase_scope(profiler, 'ensure_database_linked_to_cloud_user'):
             ensure_database_linked_to_cloud_user(client)
+        try:
+            repair_legacy_location_precision()
+        except Exception:
+            logger.exception('Location precision repair failed')
 
         if pull_only:
             # Download from Cloud: strict cloud → desktop. Skip both push
@@ -16754,7 +16881,10 @@ class SporelyCloudClient:
             'GET',
             (
                 f'{SUPABASE_URL}/rest/v1/observations?user_id=eq.{self.user_id}'
-                '&or=(visibility.is.null,visibility.neq.public,location_precision.eq.fuzzed)'
+                # Server trigger 20260626110000: non-draft, and not public or
+                # fuzzed/region/hidden (NULL visibility counts as public).
+                '&and=(or(is_draft.is.null,is_draft.eq.false),'
+                'or(visibility.neq.public,location_precision.in.(fuzzed,region,hidden)))'
                 '&select=id&limit=1'
             ),
             headers={'Prefer': 'count=exact'},
@@ -16967,6 +17097,12 @@ class SporelyCloudClient:
         available", which keeps the prior skip-only behaviour.
         """
         summary = sync_summary or _cloud_sync_current_summary()
+        # Never widen location precision beyond the cloud/baseline value
+        # without an explicit, confirmed local choice (full-row pushes too).
+        guard_refs = [remote_obs, baseline_obs]
+        if remote_obs is None and baseline_obs is None:
+            guard_refs.append(_snapshot_baseline_for_cloud_id(obs.get('cloud_id')))
+        obs = _guard_local_location_precision(obs, *guard_refs)
         payload = _observation_push_payload(obs, local=True)
         payload['user_id'] = self.user_id
         if bool(obs.get('portable_cloud_identity_pending')):
@@ -16990,6 +17126,7 @@ class SporelyCloudClient:
             # Coord-change / preserve-only geography rules — see §4 in the spec.
             _shape_geography_patch_payload(payload, obs, existing_id)
             self._patch(f'observations?id=eq.{existing_id}', payload)
+            consume_confirmed_location_precision(obs.get('id'))
             _increment_sync_summary(summary, 'observations_patched')
             self._sync_observation_selected_taxon(
                 existing_id,
@@ -19333,6 +19470,7 @@ def get_conflict_detail(client: "SporelyCloudClient", local_id: int, cloud_id: s
     # ``is_draft`` field never opens the dialog; if both sides changed
     # differently it resolves automatically to Draft (the safer state) and is
     # also reported in ``automatic_decisions``.
+    local_obs = _guard_local_location_precision(local_obs, baseline_obs, remote_obs)
     local_payload = _observation_compare_payload(local_obs, local=True)
     remote_payload = _observation_compare_payload(remote_obs, local=False)
     field_rows: list[dict] = []

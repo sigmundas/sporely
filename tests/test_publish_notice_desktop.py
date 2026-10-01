@@ -74,7 +74,7 @@ def test_already_shared_line_only_when_it_applies():
             "on this observation as \"contradicts the identification\".") in text
     assert "may appear" not in text
     for facts in (_facts(attached_uses=()), _facts(attached_uses=(("set-b", "compared"),)),
-                  _facts(spore_data_visibility="private"), _facts(taxon_id=None)):
+                  _facts(spore_data_visibility="private")):
         text = build_publish_notice_text("exact", facts)
         assert "already shared" not in text and "may appear" not in text
 
@@ -89,6 +89,7 @@ def test_species_change_in_the_same_save_is_matched():
     _facts(contributions=None),                       # failed / rate-limited lookup
     _facts(attached_uses=None),                       # uses unknown
     _facts(taxon_known=False),
+    _facts(taxon_id=None),                            # no species after the save
     _facts(spore_data_visibility=None),
     _facts(contributions=[{k: v for k, v in LISTING[0].items() if k != "source_measurement_set_id"}]),
 ])
@@ -167,7 +168,12 @@ def _details_dialog(monkeypatch, qapp, baseline):
     monkeypatch.setattr(observations_tab.ObservationDB, "get_observation",
                         lambda _id: dict(observation))
     monkeypatch.setattr(pn, "load_local_facts", lambda *_a, **_k: _facts(contributions=None))
+    import utils.cloud_sync as cloud_sync
+    recorded = []
+    monkeypatch.setattr(cloud_sync, "record_confirmed_location_precision",
+                        lambda local_id, value: recorded.append((local_id, value)))
     dialog = observations_tab.ObservationDetailsDialog(parent=None, observation=observation)
+    dialog._recorded_precision = recorded
     qapp.processEvents()
     return dialog
 
@@ -221,45 +227,55 @@ def conflict_dialog(qapp, monkeypatch):
 
     detail = _detail(measurement=False)
     detail["image_pairs"] = []
-    detail["remote_observation"].update({"visibility": "public", "is_draft": True})
-    detail["local_observation"].update({"sharing_scope": "public", "is_draft": False})
-    detail["field_rows"] = [{"field": "is_draft", "label": "Draft state", "baseline": True,
-                             "local": False, "remote": True, "local_changed": True,
-                             "remote_changed": False}]
+    # Realistic shape: both sides changed visibility (a manual field row),
+    # the observation is published on both sides (is_draft converged).
+    detail["remote_observation"].update({"visibility": "friends", "is_draft": False,
+                                         "location_precision": "exact"})
+    detail["local_observation"].update({"sharing_scope": "public", "is_draft": False,
+                                        "location_precision": "exact"})
+    detail["field_rows"] = [{"field": "visibility", "label": "Visibility", "baseline": "private",
+                             "local": "public", "remote": "friends", "local_changed": True,
+                             "remote_changed": True}]
+    detail["automatic_decisions"] = {"fields": [], "media": []}
     monkeypatch.setattr(conflict_ui, "get_app_settings", lambda: {
         "cloud_access_token": _fixed_token(), "cloud_user_id": "user-1"})
     monkeypatch.setattr(conflict_ui, "get_conflict_detail", lambda *a, **k: copy.deepcopy(detail))
     monkeypatch.setattr(conflict_ui.ConflictDetailWorker, "start", lambda self: self.run())
     monkeypatch.setattr(pn, "load_local_facts", lambda *_a, **_k: _facts(contributions=None))
+    import utils.cloud_sync as cloud_sync
+    recorded = []
+    monkeypatch.setattr(cloud_sync, "record_confirmed_location_precision",
+                        lambda local_id, value: recorded.append((local_id, value)))
     started = []
     monkeypatch.setattr(conflict_ui.ConflictPlanApplyWorker, "start", lambda self: started.append(self))
     instance = conflict_ui.CloudConflictDialog(conflicts=[{"local_id": 593, "cloud_id": "902"}])
     instance._populate_detail(copy.deepcopy(detail))
     qapp.processEvents()
+    instance._recorded_precision = recorded
     yield instance, started
     instance.close()
     qapp.processEvents()
 
 
-def test_conflict_resolving_draft_toward_public_asks_and_cancel_applies_nothing(conflict_dialog, monkeypatch):
+def test_conflict_resolving_visibility_toward_public_asks_and_cancel_applies_nothing(conflict_dialog, monkeypatch):
     dialog, started = conflict_dialog
     shown = []
     monkeypatch.setattr(pn, "show_publish_notice", lambda _p, text: shown.append(text) or False)
-    dialog._set_choice("field:is_draft", "local")
+    dialog._set_choice("field:visibility", "local")
     dialog._update_apply_enabled()
     dialog._apply_selected_changes()
     assert len(shown) == 1 and started == []
-    assert dialog._selected_choice("field:is_draft") == "local"
+    assert dialog._selected_choice("field:visibility") == "local"
     monkeypatch.setattr(pn, "show_publish_notice", lambda _p, text: shown.append(text) or True)
     dialog._apply_selected_changes()
     assert len(shown) == 2 and len(started) == 1
 
 
-def test_conflict_keeping_cloud_draft_needs_no_notice(conflict_dialog, monkeypatch):
+def test_conflict_keeping_cloud_visibility_needs_no_notice(conflict_dialog, monkeypatch):
     dialog, started = conflict_dialog
     monkeypatch.setattr(pn, "show_publish_notice",
                         lambda *_a: (_ for _ in ()).throw(AssertionError("no notice")))
-    dialog._set_choice("field:is_draft", "cloud")
+    dialog._set_choice("field:visibility", "cloud")
     dialog._update_apply_enabled()
     dialog._apply_selected_changes()
     assert len(started) == 1
@@ -328,7 +344,8 @@ def test_model_keeps_hidden_and_region_precision():
 
 def test_conflict_precision_increase_on_public_asks(conflict_dialog, monkeypatch):
     dialog, started = conflict_dialog
-    dialog._current_detail["remote_observation"].update({"is_draft": False, "location_precision": "region"})
+    dialog._current_detail["remote_observation"].update({"visibility": "public", "is_draft": False,
+                                                         "location_precision": "region"})
     dialog._current_detail["field_rows"] = [{"field": "location_precision", "label": "Precision",
                                              "local": "exact", "remote": "region"}]
     dialog._choice_specs["field:location_precision"] = {"kind": "field", "field": "location_precision"}
@@ -339,9 +356,13 @@ def test_conflict_precision_increase_on_public_asks(conflict_dialog, monkeypatch
     assert resolved["location_precision"] == "exact"
     assert not dialog._confirm_publish_for_plan({"local_id": 593})
     assert len(shown) == 1 and "The exact location" in shown[0]
+    assert dialog._recorded_precision == []  # Cancel records nothing
+    monkeypatch.setattr(pn, "show_publish_notice", lambda _p, text: shown.append(text) or True)
+    assert dialog._confirm_publish_for_plan({"local_id": 593})
+    assert dialog._recorded_precision == [(593, "exact")]
     monkeypatch.setattr(dialog, "_selected_choice", lambda key: "cloud")
     assert dialog._confirm_publish_for_plan({"local_id": 593})
-    assert len(shown) == 1
+    assert len(shown) == 2
 
 
 def test_owner_list_lookup_times_out_to_cautious_line():
@@ -363,3 +384,59 @@ def test_owner_list_lookup_times_out_to_cautious_line():
     assert "References you have shared may appear on this observation." in text
     assert pn.OWNER_LIST_TIMEOUT_S <= 3
     assert pn.load_owner_contributions(_Client({"status": "ok", "contributions": LISTING})) == LISTING
+
+
+def test_conflict_models_automatic_push_local_decisions(conflict_dialog, monkeypatch):
+    """A one-sided local visibility change is pushed automatically; the
+    resolved state must include it, so publishing still asks."""
+    dialog, started = conflict_dialog
+    dialog._current_detail["field_rows"] = []
+    dialog._current_detail["automatic_decisions"] = {"fields": [
+        {"field": "visibility", "action": "push_local", "local": "public",
+         "remote": "friends", "baseline": "friends"},
+    ], "media": []}
+    _prev, resolved = dialog.resolved_observation_state()
+    assert resolved["visibility"] == resolved["sharing_scope"] == "public"
+    shown = []
+    monkeypatch.setattr(pn, "show_publish_notice", lambda _p, text: shown.append(text) or False)
+    assert not dialog._confirm_publish_for_plan({"local_id": 593})
+    assert len(shown) == 1
+    dialog._current_detail["automatic_decisions"]["fields"][0]["action"] = "pull_cloud"
+    assert dialog.resolved_observation_state()[1]["visibility"] == "friends"
+    assert dialog._confirm_publish_for_plan({"local_id": 593})
+
+
+def test_details_dialog_records_explicit_confirmed_precision(monkeypatch, qapp):
+    dialog = _details_dialog(monkeypatch, qapp, {"is_draft": 0, "sharing_scope": "public",
+                                                 "location_precision": "hidden"})
+    monkeypatch.setattr(pn, "show_publish_notice", lambda _p, text: True)
+    dialog.accept()  # unchanged hidden: nothing recorded
+    assert dialog._recorded_precision == []
+    dialog.location_precision_exact_radio.click()
+    dialog.accept()
+    assert dialog._recorded_precision == [(917, "exact")]
+    assert dialog.confirmed_location_precision == "exact"
+    dialog._cleanup_dialog_threads()
+    dialog.deleteLater()
+
+
+def test_client_creation_runs_inside_the_lookup_bound():
+    import threading
+    import time as _time
+
+    release = threading.Event()
+    main = threading.get_ident()
+    seen = {}
+
+    def slow_getter():
+        seen["thread"] = threading.get_ident()
+        release.wait(5)  # e.g. a token refresh that hangs
+        return _Client({"status": "ok", "contributions": LISTING})
+
+    start = _time.monotonic()
+    assert pn.load_owner_contributions(slow_getter, timeout=0.2) is None
+    assert _time.monotonic() - start < 2
+    release.set()
+    assert seen["thread"] != main
+    facts = load_local_facts(None, {"sporely_taxon_id": 1}, client_getter=lambda: None)
+    assert facts.contributions is None
