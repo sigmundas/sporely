@@ -901,3 +901,16 @@ def test_all_failed_keeps_cancel_and_observation_change_does_not_invite_retry():
         assert dialog.cancel_btn.text() == "Cancel"
     finally:
         dialog.close()
+
+
+def test_legacy_single_path_preview_add_uses_the_default_role():
+    received: list[tuple[str, str]] = []
+    dialog = _make_dialog(attach_callback=lambda ms_id, role: received.append((ms_id, role)))
+    try:
+        dialog._roles["ms-this-range"] = "contradicts"  # kept/stale role
+        dialog.results_list.setCurrentRow(_row_index(dialog, "ms-this-range"))
+        assert dialog.checked_source_ids() == []
+        dialog._on_add_to_plot_clicked()
+        assert received == [("ms-this-range", "compared")]
+    finally:
+        dialog.close()

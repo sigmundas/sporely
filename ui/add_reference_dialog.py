@@ -2042,7 +2042,12 @@ class AddReferenceDialog(GeometryMixin, QDialog):
         )
         if target is None:
             return
-        self._attach_callback(target, self.role_for_source(target))
+        # Only a checked row shows a role selector; an unchecked preview
+        # target attaches as the default, never a kept role.
+        self._attach_callback(
+            target,
+            self.role_for_source(target) if checked else DEFAULT_REFERENCE_USE_ROLE,
+        )
         self.accept()
 
     def _attach_library_sources(self) -> None:
