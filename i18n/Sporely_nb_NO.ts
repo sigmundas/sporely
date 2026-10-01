@@ -11411,241 +11411,265 @@ Dette vil også slette alle tilknyttede bilder og målinger.</translation>
 <context>
     <name>ReferenceSharing</name>
     <message>
-        <location filename="../ui/reference_sharing_dialogs.py" line="78"/>
+        <location filename="../ui/reference_sharing_dialogs.py" line="103"/>
         <source>This reference is no longer attached to the observation.</source>
         <translation>Denne referansen er ikke lenger knyttet til observasjonen.</translation>
     </message>
     <message>
-        <location filename="../ui/reference_sharing_dialogs.py" line="90"/>
+        <location filename="../ui/reference_sharing_dialogs.py" line="115"/>
         <source>This reference is no longer in your library.</source>
         <translation>Denne referansen finnes ikke lenger i biblioteket ditt.</translation>
     </message>
     <message>
-        <location filename="../ui/reference_sharing_dialogs.py" line="93"/>
+        <location filename="../ui/reference_sharing_dialogs.py" line="118"/>
         <source>The attached copy is older than the library version. Use &quot;Update from library&quot; first, then share.</source>
         <translation>Den tilknyttede kopien er eldre enn bibliotekversjonen. Bruk «Oppdater fra bibliotek» først, og del deretter.</translation>
     </message>
     <message>
-        <location filename="../ui/reference_sharing_dialogs.py" line="103"/>
+        <location filename="../ui/reference_sharing_dialogs.py" line="128"/>
         <source>The observation must be identified to a Sporely species before its reference can be shared.</source>
         <translation>Observasjonen må være bestemt til en art i Sporely før referansen kan deles.</translation>
     </message>
     <message>
-        <location filename="../ui/reference_sharing_dialogs.py" line="117"/>
+        <location filename="../ui/reference_sharing_dialogs.py" line="134"/>
+        <source>The observation&apos;s species could not be found in the installed Sporely taxonomy, so this reference cannot be shared.</source>
+        <translation>Arten til observasjonen finnes ikke i den installerte Sporely-taksonomien, så denne referansen kan ikke deles.</translation>
+    </message>
+    <message>
+        <location filename="../ui/reference_sharing_dialogs.py" line="148"/>
         <source>Sync this reference to Sporely Cloud before sharing it.</source>
         <translation>Synkroniser denne referansen til Sporely Cloud før du deler den.</translation>
     </message>
     <message>
-        <location filename="../ui/reference_sharing_dialogs.py" line="141"/>
+        <location filename="../ui/reference_sharing_dialogs.py" line="178"/>
+        <source>Sporely Cloud was busy with another change. Please try again.</source>
+        <translation>Sporely Cloud var opptatt med en annen endring. Prøv igjen.</translation>
+    </message>
+    <message>
+        <location filename="../ui/reference_sharing_dialogs.py" line="195"/>
         <source>This reference is now shared publicly.</source>
         <translation>Denne referansen er nå delt offentlig.</translation>
     </message>
     <message>
-        <location filename="../ui/reference_sharing_dialogs.py" line="143"/>
+        <location filename="../ui/reference_sharing_dialogs.py" line="197"/>
         <source>The sharing terms have changed or are not available right now. Nothing was shared.</source>
         <translation>Vilkårene for deling er endret eller er ikke tilgjengelige akkurat nå. Ingenting ble delt.</translation>
     </message>
     <message>
-        <location filename="../ui/reference_sharing_dialogs.py" line="148"/>
+        <location filename="../ui/reference_sharing_dialogs.py" line="202"/>
         <source>This reference changed since it was shown. The current version has been reloaded; please review it and confirm again.</source>
         <translation>Denne referansen er endret siden den ble vist. Gjeldende versjon er lastet inn på nytt; se over og bekreft igjen.</translation>
     </message>
     <message>
-        <location filename="../ui/reference_sharing_dialogs.py" line="153"/>
+        <location filename="../ui/reference_sharing_dialogs.py" line="207"/>
         <source>This reference can only be shared while it is attached to an observation that is public (not a draft), whose spore data is public, and that is identified as the same species.</source>
         <translation>Denne referansen kan bare deles mens den er knyttet til en observasjon som er offentlig (ikke utkast), har offentlige spordata og er bestemt til samme art.</translation>
     </message>
     <message>
-        <location filename="../ui/reference_sharing_dialogs.py" line="159"/>
+        <location filename="../ui/reference_sharing_dialogs.py" line="213"/>
         <source>This species cannot be used for public references. Only species in the Sporely taxonomy can be shared.</source>
         <translation>Denne arten kan ikke brukes for offentlige referanser. Bare arter i Sporelys taksonomi kan deles.</translation>
     </message>
     <message>
-        <location filename="../ui/reference_sharing_dialogs.py" line="164"/>
+        <location filename="../ui/reference_sharing_dialogs.py" line="218"/>
         <source>Too many requests. Please wait a moment and try again.</source>
         <translation>For mange forespørsler. Vent litt og prøv igjen.</translation>
     </message>
     <message>
-        <location filename="../ui/reference_sharing_dialogs.py" line="166"/>
+        <location filename="../ui/reference_sharing_dialogs.py" line="220"/>
         <source>The cloud copy of this reference is missing or out of date. Sync with the cloud, update the reference from the library, and try again.</source>
         <translation>Skykopien av denne referansen mangler eller er utdatert. Synkroniser med skyen, oppdater referansen fra biblioteket og prøv igjen.</translation>
     </message>
     <message>
-        <location filename="../ui/reference_sharing_dialogs.py" line="172"/>
+        <location filename="../ui/reference_sharing_dialogs.py" line="226"/>
         <source>This reference cannot be shared in its current form.</source>
         <translation>Denne referansen kan ikke deles i sin nåværende form.</translation>
     </message>
     <message>
-        <location filename="../ui/reference_sharing_dialogs.py" line="174"/>
+        <location filename="../ui/reference_sharing_dialogs.py" line="228"/>
         <source>Your account cannot share references.</source>
         <translation>Kontoen din kan ikke dele referanser.</translation>
     </message>
     <message>
-        <location filename="../ui/reference_sharing_dialogs.py" line="175"/>
+        <location filename="../ui/reference_sharing_dialogs.py" line="229"/>
         <source>Sharing failed ({status}).</source>
         <translation>Deling mislyktes ({status}).</translation>
     </message>
     <message>
-        <location filename="../ui/reference_sharing_dialogs.py" line="197"/>
+        <location filename="../ui/reference_sharing_dialogs.py" line="251"/>
         <source>Share reference publicly</source>
         <translation>Del referanse offentlig</translation>
     </message>
     <message>
-        <location filename="../ui/reference_sharing_dialogs.py" line="213"/>
+        <location filename="../ui/reference_sharing_dialogs.py" line="278"/>
         <source>Share publicly</source>
         <translation>Del offentlig</translation>
     </message>
     <message>
-        <location filename="../ui/reference_sharing_dialogs.py" line="238"/>
-        <source>Reference: {label}
-Species: {species}
-Revision: {revision}</source>
-        <translation>Referanse: {label}
-Art: {species}
-Revisjon: {revision}</translation>
-    </message>
-    <message>
-        <location filename="../ui/reference_sharing_dialogs.py" line="256"/>
-        <location filename="../ui/reference_sharing_dialogs.py" line="301"/>
-        <location filename="../ui/reference_sharing_dialogs.py" line="415"/>
-        <location filename="../ui/reference_sharing_dialogs.py" line="491"/>
+        <location filename="../ui/reference_sharing_dialogs.py" line="180"/>
         <source>Could not reach Sporely Cloud: {error}</source>
         <translation>Fikk ikke kontakt med Sporely Cloud: {error}</translation>
     </message>
     <message>
-        <location filename="../ui/reference_sharing_dialogs.py" line="265"/>
+        <location filename="../ui/reference_sharing_dialogs.py" line="303"/>
+        <source>Shared publicly for species: {species}
+Name in the reference: {published}
+Reference: {label}
+Revision: {revision}</source>
+        <translation>Deles offentlig for arten: {species}
+Navn i referansen: {published}
+Referanse: {label}
+Revisjon: {revision}</translation>
+    </message>
+    <message>
+        <location filename="../ui/reference_sharing_dialogs.py" line="314"/>
+        <source>Warning: this reference will be published publicly, under your name, as a reference for {species}.</source>
+        <translation>Advarsel: denne referansen blir publisert offentlig, under ditt navn, som en referanse for {species}.</translation>
+    </message>
+    <message>
+        <location filename="../ui/reference_sharing_dialogs.py" line="342"/>
         <source>Public sharing isn&apos;t available yet.</source>
         <translation>Offentlig deling er ikke tilgjengelig ennå.</translation>
     </message>
     <message>
-        <location filename="../ui/reference_sharing_dialogs.py" line="271"/>
+        <location filename="../ui/reference_sharing_dialogs.py" line="348"/>
         <source>Read the terms above. Nothing is shared until you click &quot;Share publicly&quot;.</source>
         <translation>Les vilkårene over. Ingenting deles før du klikker «Del offentlig».</translation>
     </message>
     <message>
-        <location filename="../ui/reference_sharing_dialogs.py" line="336"/>
+        <location filename="../ui/reference_sharing_dialogs.py" line="384"/>
+        <source>This reference is shared, but it is hidden by moderation and is not shown publicly.</source>
+        <translation>Denne referansen er delt, men den er skjult av moderering og vises ikke offentlig.</translation>
+    </message>
+    <message>
+        <location filename="../ui/reference_sharing_dialogs.py" line="433"/>
+        <source>This reference may have been changed on another device. Sync from the cloud first, then try again.</source>
+        <translation>Denne referansen kan ha blitt endret på en annen enhet. Synkroniser fra skyen først, og prøv deretter igjen.</translation>
+    </message>
+    <message>
+        <location filename="../ui/reference_sharing_dialogs.py" line="446"/>
         <source>Stopped by you</source>
         <translation>Stoppet av deg</translation>
     </message>
     <message>
-        <location filename="../ui/reference_sharing_dialogs.py" line="337"/>
+        <location filename="../ui/reference_sharing_dialogs.py" line="447"/>
         <source>Reference detached from the observation</source>
         <translation>Referansen er fjernet fra observasjonen</translation>
     </message>
     <message>
-        <location filename="../ui/reference_sharing_dialogs.py" line="338"/>
+        <location filename="../ui/reference_sharing_dialogs.py" line="448"/>
         <source>Observation identification changed</source>
         <translation>Artsbestemmelsen for observasjonen er endret</translation>
     </message>
     <message>
-        <location filename="../ui/reference_sharing_dialogs.py" line="339"/>
+        <location filename="../ui/reference_sharing_dialogs.py" line="449"/>
         <source>Observation is no longer public</source>
         <translation>Observasjonen er ikke lenger offentlig</translation>
     </message>
     <message>
-        <location filename="../ui/reference_sharing_dialogs.py" line="340"/>
+        <location filename="../ui/reference_sharing_dialogs.py" line="450"/>
         <source>Reference deleted</source>
         <translation>Referansen er slettet</translation>
     </message>
     <message>
-        <location filename="../ui/reference_sharing_dialogs.py" line="341"/>
+        <location filename="../ui/reference_sharing_dialogs.py" line="451"/>
         <source>Account deleted</source>
         <translation>Kontoen er slettet</translation>
     </message>
     <message>
-        <location filename="../ui/reference_sharing_dialogs.py" line="342"/>
+        <location filename="../ui/reference_sharing_dialogs.py" line="452"/>
         <source>Shared without consent (withdrawn)</source>
         <translation>Delt uten samtykke (trukket tilbake)</translation>
     </message>
     <message>
-        <location filename="../ui/reference_sharing_dialogs.py" line="343"/>
+        <location filename="../ui/reference_sharing_dialogs.py" line="453"/>
         <source>Changed beyond what you agreed to share</source>
         <translation>Endret utover det du samtykket til å dele</translation>
     </message>
     <message>
-        <location filename="../ui/reference_sharing_dialogs.py" line="344"/>
+        <location filename="../ui/reference_sharing_dialogs.py" line="454"/>
         <source>Sharing terms were withdrawn</source>
         <translation>Vilkårene for deling ble trukket tilbake</translation>
     </message>
     <message>
-        <location filename="../ui/reference_sharing_dialogs.py" line="352"/>
-        <location filename="../ui/reference_sharing_dialogs.py" line="376"/>
+        <location filename="../ui/reference_sharing_dialogs.py" line="462"/>
+        <location filename="../ui/reference_sharing_dialogs.py" line="487"/>
         <source>Shared</source>
         <translation>Delt</translation>
     </message>
     <message>
-        <location filename="../ui/reference_sharing_dialogs.py" line="353"/>
-        <location filename="../ui/reference_sharing_dialogs.py" line="376"/>
+        <location filename="../ui/reference_sharing_dialogs.py" line="463"/>
+        <location filename="../ui/reference_sharing_dialogs.py" line="487"/>
         <source>Withdrawn</source>
         <translation>Trukket tilbake</translation>
     </message>
     <message>
-        <location filename="../ui/reference_sharing_dialogs.py" line="366"/>
+        <location filename="../ui/reference_sharing_dialogs.py" line="476"/>
         <source>My shared references</source>
         <translation>Mine delte referanser</translation>
     </message>
     <message>
-        <location filename="../ui/reference_sharing_dialogs.py" line="375"/>
+        <location filename="../ui/reference_sharing_dialogs.py" line="486"/>
         <source>Status</source>
         <translation>Status</translation>
     </message>
     <message>
-        <location filename="../ui/reference_sharing_dialogs.py" line="375"/>
+        <location filename="../ui/reference_sharing_dialogs.py" line="486"/>
         <source>Species</source>
         <translation>Art</translation>
     </message>
     <message>
-        <location filename="../ui/reference_sharing_dialogs.py" line="375"/>
+        <location filename="../ui/reference_sharing_dialogs.py" line="486"/>
         <source>Reference</source>
         <translation>Referanse</translation>
     </message>
     <message>
-        <location filename="../ui/reference_sharing_dialogs.py" line="375"/>
+        <location filename="../ui/reference_sharing_dialogs.py" line="486"/>
         <source>Revision</source>
         <translation>Revisjon</translation>
     </message>
     <message>
-        <location filename="../ui/reference_sharing_dialogs.py" line="376"/>
+        <location filename="../ui/reference_sharing_dialogs.py" line="487"/>
         <source>Moderation</source>
         <translation>Moderering</translation>
     </message>
     <message>
-        <location filename="../ui/reference_sharing_dialogs.py" line="376"/>
+        <location filename="../ui/reference_sharing_dialogs.py" line="487"/>
         <source>Withdrawal reason</source>
         <translation>Årsak til tilbaketrekking</translation>
     </message>
     <message>
-        <location filename="../ui/reference_sharing_dialogs.py" line="387"/>
+        <location filename="../ui/reference_sharing_dialogs.py" line="498"/>
         <source>Refresh</source>
         <translation>Oppdater</translation>
     </message>
     <message>
-        <location filename="../ui/reference_sharing_dialogs.py" line="391"/>
+        <location filename="../ui/reference_sharing_dialogs.py" line="502"/>
         <source>Stop sharing…</source>
         <translation>Slutt å dele…</translation>
     </message>
     <message>
-        <location filename="../ui/reference_sharing_dialogs.py" line="394"/>
+        <location filename="../ui/reference_sharing_dialogs.py" line="505"/>
         <source>Close</source>
         <translation>Lukk</translation>
     </message>
     <message>
-        <location filename="../ui/reference_sharing_dialogs.py" line="438"/>
+        <location filename="../ui/reference_sharing_dialogs.py" line="544"/>
         <source>Hidden by moderation</source>
         <translation>Skjult av moderering</translation>
     </message>
     <message>
-        <location filename="../ui/reference_sharing_dialogs.py" line="446"/>
+        <location filename="../ui/reference_sharing_dialogs.py" line="552"/>
         <source>You have no shared references.</source>
         <translation>Du har ingen delte referanser.</translation>
     </message>
     <message>
-        <location filename="../ui/reference_sharing_dialogs.py" line="464"/>
+        <location filename="../ui/reference_sharing_dialogs.py" line="570"/>
         <source>Stop sharing</source>
         <translation>Slutt å dele</translation>
     </message>
     <message>
-        <location filename="../ui/reference_sharing_dialogs.py" line="465"/>
+        <location filename="../ui/reference_sharing_dialogs.py" line="571"/>
         <source>Stop sharing this reference publicly? It will no longer be shown to others.
 
 Stopping cannot undo:
@@ -11658,6 +11682,11 @@ Stopping cannot undo:
 - kopier andre brukere allerede har laget,
 - tidligere revisjoner Sporely beholder privat,
 - det tredjeparter allerede har mellomlagret.</translation>
+    </message>
+    <message>
+        <location filename="../ui/reference_sharing_dialogs.py" line="603"/>
+        <source>Could not stop sharing ({status}).</source>
+        <translation>Kunne ikke slutte å dele ({status}).</translation>
     </message>
 </context>
 <context>

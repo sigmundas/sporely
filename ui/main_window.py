@@ -9493,6 +9493,7 @@ class MainWindow(GeometryMixin, QMainWindow):
             ReferenceShareConsentDialog,
             build_share_request_for_use,
             consent_locale_for_ui,
+            show_message,
         )
         from utils.ui_language import running_ui_language
 
@@ -9505,7 +9506,7 @@ class MainWindow(GeometryMixin, QMainWindow):
         try:
             request = _load()
         except ValueError as exc:
-            QMessageBox.information(self, title, str(exc))
+            show_message(self, QMessageBox.Information, title, str(exc))
             return
         client = self._get_cloud_client()
         if client is None:

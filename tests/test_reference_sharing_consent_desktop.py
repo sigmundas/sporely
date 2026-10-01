@@ -8,6 +8,7 @@ from pathlib import Path
 os.environ.setdefault("QT_QPA_PLATFORM", "offscreen")
 
 import pytest
+from PySide6.QtCore import Qt
 from PySide6.QtWidgets import QApplication, QMessageBox
 
 from utils import cloud_sync
@@ -36,8 +37,10 @@ def qapp():
 @pytest.fixture
 def boxes(monkeypatch):
     seen: list[tuple[str, str]] = []
-    monkeypatch.setattr(QMessageBox, "information", lambda _p, _t, m, *a, **k: seen.append(("info", m)))
-    monkeypatch.setattr(QMessageBox, "warning", lambda _p, _t, m, *a, **k: seen.append(("warn", m)))
+    def fake(_parent, icon, _title, text):
+        seen.append(("info" if icon == QMessageBox.Information else "warn", text))
+
+    monkeypatch.setattr(rsd, "show_message", fake)
     return seen
 
 
@@ -47,6 +50,7 @@ class FakeClient:
         self.share_results = list(share_results or [])
         self.contributions = contributions or []
         self.calls: list[tuple] = []
+        self.withdraw_result = None
 
     def get_reference_share_consent_text(self, locale):
         self.calls.append(("text", locale))
@@ -71,12 +75,16 @@ class FakeClient:
             if row["contribution_id"] == contribution_id:
                 row["status"] = "withdrawn"
                 row["withdrawal_reason"] = "owner"
-        return {"status": "withdrawn"}
+        if self.withdraw_result is not None:
+            return self.withdraw_result
+        return {"status": "updated"}
 
 
 TEXT = {"status": "ok", "version": 3, "locale": "nb", "text": "Vilkår\n\nLinje to  med  mellomrom.",
         "text_sha256": "x", "scope": {}}
-REQUEST = ReferenceShareRequest("set-uuid", 617026, 2, 4, 7, "Work — 8-10", "Mycena")
+REQUEST = ReferenceShareRequest("set-uuid", 617026, 2, 4, 7, "Work — 8-10",
+                                target_species="Mycena galopus", name_as_published="Mycena galopus",
+                                role="compared")
 
 
 def _share_calls(client):
@@ -166,7 +174,7 @@ def test_no_active_text_disables_sharing(qapp, boxes):
 
 
 def test_revision_mismatch_reloads_and_requires_new_confirm(qapp, boxes):
-    fresh = ReferenceShareRequest("set-uuid", 617026, 2, 5, 8)
+    fresh = ReferenceShareRequest("set-uuid", 617026, 2, 5, 8, target_species="Mycena galopus")
     client = FakeClient(TEXT, [{"status": "revision_mismatch"}, {"status": "updated"}])
     dialog = ReferenceShareConsentDialog(client, REQUEST, locale="nb", reload_request=lambda: fresh)
     dialog.share_btn.click()
@@ -252,13 +260,15 @@ def test_stop_sharing_confirms_withdraws_and_refreshes(qapp, monkeypatch):
 def test_stop_sharing_confirmation_explains_what_it_cannot_undo(qapp, monkeypatch):
     captured = {}
 
-    def fake_question(_parent, _title, text, *a, **k):
-        captured["text"] = text
+    def fake_exec(box):
+        captured["text"] = box.text()
+        captured["format"] = box.textFormat()
         return QMessageBox.Cancel
 
-    monkeypatch.setattr(QMessageBox, "question", fake_question)
+    monkeypatch.setattr(QMessageBox, "exec", fake_exec)
     dialog = MySharedReferencesDialog(FakeClient(contributions=_rows()))
     assert dialog.confirm_stop_sharing() is False
+    assert captured["format"] == Qt.PlainText
     for needle in ("copies other users", "privately", "cached by third parties"):
         assert needle in captured["text"]
 
@@ -276,7 +286,7 @@ def test_build_share_request_uses_local_revisions_and_requires_clean_sync(monkey
     import database.reference_library as lib
     import database.reference_sync_state as state
 
-    use = NS(id="u", observation_id=5, reference_measurement_set_id="ms", reference_revision=7)
+    use = NS(id="u", role="compared", observation_id=5, reference_measurement_set_id="ms", reference_revision=7)
     ms = NS(id="ms", taxon_treatment_id="t", revision=7, raw_text="8-10")
     tr_ = NS(id="t", reference_work_id="w", revision=4, name_as_published="Mycena galopus")
     work = NS(id="w", revision=2, short_label="Funga")
@@ -284,6 +294,7 @@ def test_build_share_request_uses_local_revisions_and_requires_clean_sync(monkey
     monkeypatch.setattr(lib.MeasurementSetRepository, "get", staticmethod(lambda _i: ms))
     monkeypatch.setattr(lib.TaxonTreatmentRepository, "get", staticmethod(lambda _i: tr_))
     monkeypatch.setattr(lib.ReferenceWorkRepository, "get", staticmethod(lambda _i: work))
+    monkeypatch.setattr(rsd, "_resolve_target_species", lambda _i: "Mycena galopus")
     monkeypatch.setattr(models.ObservationDB, "get_observation", staticmethod(lambda _i: {"sporely_taxon_id": 617026}))
     clean = NS(remote_identity_state="acknowledged", sync_status="clean")
     states = {"work": clean, "treatment": clean, "measurement_set": clean}
@@ -297,7 +308,95 @@ def test_build_share_request_uses_local_revisions_and_requires_clean_sync(monkey
     states["treatment"] = NS(remote_identity_state="acknowledged", sync_status="dirty")
     with pytest.raises(ValueError, match="Sync"):
         rsd.build_share_request_for_use("u", 5)
+    assert request.target_species == "Mycena galopus" and request.name_as_published == "Mycena galopus"
     states["treatment"] = clean
+    monkeypatch.setattr(rsd, "_resolve_target_species", lambda _i: None)
+    with pytest.raises(ValueError, match="taxonomy"):
+        rsd.build_share_request_for_use("u", 5)
+    monkeypatch.setattr(rsd, "_resolve_target_species", lambda _i: "Mycena galopus")
     use.reference_revision = 6
     with pytest.raises(ValueError, match="Update from library"):
         rsd.build_share_request_for_use("u", 5)
+
+
+# --- Review fixes ---------------------------------------------------------------
+
+def test_summary_shows_target_species_and_published_name_as_plain_text(qapp, boxes):
+    req = ReferenceShareRequest("s", 1, 1, 1, 1, "<b>Funga</b>", target_species="Mycena galopus",
+                                name_as_published="Mycena galopus", role="compared")
+    dialog = ReferenceShareConsentDialog(FakeClient(TEXT), req, locale="en")
+    text = dialog.summary_label.text()
+    assert "Shared publicly for species: Mycena galopus" in text
+    assert "Name in the reference: Mycena galopus" in text
+    assert dialog.summary_label.textFormat() == Qt.PlainText
+    assert dialog.status_label.textFormat() == Qt.PlainText
+    assert dialog.warning_label.isHidden()
+
+
+@pytest.mark.parametrize("published,role", [("Mycena pura", "compared"), ("Mycena galopus", "contradicts")])
+def test_warning_for_contradicting_or_differently_named_reference(qapp, boxes, published, role):
+    req = ReferenceShareRequest("s", 1, 1, 1, 1, target_species="Mycena galopus",
+                                name_as_published=published, role=role)
+    client = FakeClient(TEXT, [{"status": "created"}])
+    dialog = ReferenceShareConsentDialog(client, req, locale="en")
+    assert not dialog.warning_label.isHidden()
+    assert "under your name, as a reference for Mycena galopus" in dialog.warning_label.text()
+    assert f"Name in the reference: {published}" in dialog.summary_label.text()
+    dialog.share_btn.click()
+    assert _share_calls(client)[0][1:3] == ("s", 1)  # what is sent is unchanged
+
+
+def test_mismatch_reload_refusal_keeps_share_disabled(qapp, boxes):
+    def boom():
+        raise ValueError("Sync this reference to Sporely Cloud before sharing it.")
+    client = FakeClient(TEXT, [{"status": "revision_mismatch"}])
+    dialog = ReferenceShareConsentDialog(client, REQUEST, locale="en", reload_request=boom)
+    dialog.share_btn.click()
+    assert not dialog.share_btn.isEnabled()
+    assert boxes[-1] == ("warn", "Sync this reference to Sporely Cloud before sharing it.")
+    dialog._on_share_clicked()
+    assert len(_share_calls(client)) == 1
+
+
+def test_mismatch_identical_reload_asks_to_sync(qapp, boxes):
+    client = FakeClient(TEXT, [{"status": "revision_mismatch"}])
+    dialog = ReferenceShareConsentDialog(client, REQUEST, locale="en", reload_request=lambda: REQUEST)
+    dialog.share_btn.click()
+    assert not dialog.share_btn.isEnabled()
+    assert "another device" in boxes[-1][1]
+
+
+def test_rate_limited_consent_text_fetch(qapp, boxes):
+    dialog = ReferenceShareConsentDialog(FakeClient({"status": "rate_limited"}), REQUEST, locale="en")
+    assert "Too many requests" in dialog.status_label.text()
+    dialog2 = ReferenceShareConsentDialog(
+        FakeClient(cloud_sync.CloudSyncError('RPC x: {"status":"rate_limited"}')), REQUEST, locale="en")
+    assert "Too many requests" in dialog2.status_label.text()
+
+
+def test_serialization_conflict_says_try_again(qapp, boxes):
+    client = FakeClient(TEXT, [cloud_sync.CloudSyncError('RPC x: {"code":"40001","message":"inconsistent"}')])
+    dialog = ReferenceShareConsentDialog(client, REQUEST, locale="en")
+    dialog.share_btn.click()
+    assert dialog.result_status == "retry"
+    assert "try again" in boxes[-1][1] and "Could not reach" not in boxes[-1][1]
+
+
+@pytest.mark.parametrize("status", ["updated", "no_change"])
+def test_hidden_row_success_does_not_claim_public(qapp, boxes, status):
+    client = FakeClient(TEXT, [{"status": status, "row": {"contribution_id": "c1"}}],
+                        contributions=[{"contribution_id": "c1", "hidden_at": "2026-10-01"}])
+    dialog = ReferenceShareConsentDialog(client, REQUEST, locale="en")
+    dialog.share_btn.click()
+    assert boxes[-1][0] == "info"
+    assert "hidden by moderation" in boxes[-1][1] and "now shared publicly" not in boxes[-1][1]
+
+
+def test_withdraw_failure_is_reported(qapp, boxes, monkeypatch):
+    client = FakeClient(contributions=_rows())
+    client.withdraw_result = {"status": "forbidden"}
+    dialog = MySharedReferencesDialog(client)
+    dialog.table.selectRow(0)
+    monkeypatch.setattr(dialog, "confirm_stop_sharing", lambda: True)
+    dialog.stop_btn.click()
+    assert boxes[-1] == ("warn", "Could not stop sharing (forbidden).")

@@ -231,7 +231,10 @@ CONSENT_MIGRATION = "supabase/migrations/20260930232633_add_reference_sharing_co
 
 def test_stage2b_consent_rpcs_match_desktop_wrappers_and_allowlist() -> None:
     """Stage 2b: desktop wrappers match the consent-grant migration's signatures."""
-    migration_path = WEB / CONSENT_MIGRATION
+    # The Stage 2b migration lives in the canonical sporely-web checkout, not
+    # the frozen Stage 6 worktree; SPORELY_WEB_REPO still overrides.
+    web = Path(os.environ.get("SPORELY_WEB_REPO", CODE_ROOT / "sporely-web"))
+    migration_path = web / CONSENT_MIGRATION
     if not migration_path.exists():
         if os.environ.get("SPORELY_STAGE6L_GATE") == "1":
             pytest.fail(f"Stage 2b consent migration unavailable: {migration_path}")

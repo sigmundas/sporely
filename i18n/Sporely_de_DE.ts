@@ -11411,241 +11411,265 @@ Dadurch werden auch alle zugehörigen Bilder und Messungen gelöscht.</translati
 <context>
     <name>ReferenceSharing</name>
     <message>
-        <location filename="../ui/reference_sharing_dialogs.py" line="78"/>
+        <location filename="../ui/reference_sharing_dialogs.py" line="103"/>
         <source>This reference is no longer attached to the observation.</source>
         <translation>Diese Referenz ist nicht mehr mit der Beobachtung verknüpft.</translation>
     </message>
     <message>
-        <location filename="../ui/reference_sharing_dialogs.py" line="90"/>
+        <location filename="../ui/reference_sharing_dialogs.py" line="115"/>
         <source>This reference is no longer in your library.</source>
         <translation>Diese Referenz ist nicht mehr in deiner Bibliothek.</translation>
     </message>
     <message>
-        <location filename="../ui/reference_sharing_dialogs.py" line="93"/>
+        <location filename="../ui/reference_sharing_dialogs.py" line="118"/>
         <source>The attached copy is older than the library version. Use &quot;Update from library&quot; first, then share.</source>
         <translation>Die verknüpfte Kopie ist älter als die Bibliotheksversion. Verwende zuerst „Aus Bibliothek aktualisieren“ und teile dann.</translation>
     </message>
     <message>
-        <location filename="../ui/reference_sharing_dialogs.py" line="103"/>
+        <location filename="../ui/reference_sharing_dialogs.py" line="128"/>
         <source>The observation must be identified to a Sporely species before its reference can be shared.</source>
         <translation>Die Beobachtung muss einer Sporely-Art zugeordnet sein, bevor ihre Referenz geteilt werden kann.</translation>
     </message>
     <message>
-        <location filename="../ui/reference_sharing_dialogs.py" line="117"/>
+        <location filename="../ui/reference_sharing_dialogs.py" line="134"/>
+        <source>The observation&apos;s species could not be found in the installed Sporely taxonomy, so this reference cannot be shared.</source>
+        <translation>Die Art der Beobachtung wurde in der installierten Sporely-Taxonomie nicht gefunden, daher kann diese Referenz nicht geteilt werden.</translation>
+    </message>
+    <message>
+        <location filename="../ui/reference_sharing_dialogs.py" line="148"/>
         <source>Sync this reference to Sporely Cloud before sharing it.</source>
         <translation>Synchronisiere diese Referenz mit Sporely Cloud, bevor du sie teilst.</translation>
     </message>
     <message>
-        <location filename="../ui/reference_sharing_dialogs.py" line="141"/>
+        <location filename="../ui/reference_sharing_dialogs.py" line="178"/>
+        <source>Sporely Cloud was busy with another change. Please try again.</source>
+        <translation>Sporely Cloud war mit einer anderen Änderung beschäftigt. Versuche es erneut.</translation>
+    </message>
+    <message>
+        <location filename="../ui/reference_sharing_dialogs.py" line="195"/>
         <source>This reference is now shared publicly.</source>
         <translation>Diese Referenz ist jetzt öffentlich geteilt.</translation>
     </message>
     <message>
-        <location filename="../ui/reference_sharing_dialogs.py" line="143"/>
+        <location filename="../ui/reference_sharing_dialogs.py" line="197"/>
         <source>The sharing terms have changed or are not available right now. Nothing was shared.</source>
         <translation>Die Bedingungen für das Teilen haben sich geändert oder sind gerade nicht verfügbar. Es wurde nichts geteilt.</translation>
     </message>
     <message>
-        <location filename="../ui/reference_sharing_dialogs.py" line="148"/>
+        <location filename="../ui/reference_sharing_dialogs.py" line="202"/>
         <source>This reference changed since it was shown. The current version has been reloaded; please review it and confirm again.</source>
         <translation>Diese Referenz hat sich geändert, seit sie angezeigt wurde. Die aktuelle Version wurde neu geladen; prüfe sie und bestätige erneut.</translation>
     </message>
     <message>
-        <location filename="../ui/reference_sharing_dialogs.py" line="153"/>
+        <location filename="../ui/reference_sharing_dialogs.py" line="207"/>
         <source>This reference can only be shared while it is attached to an observation that is public (not a draft), whose spore data is public, and that is identified as the same species.</source>
         <translation>Diese Referenz kann nur geteilt werden, solange sie mit einer Beobachtung verknüpft ist, die öffentlich ist (kein Entwurf), deren Sporendaten öffentlich sind und die als dieselbe Art bestimmt ist.</translation>
     </message>
     <message>
-        <location filename="../ui/reference_sharing_dialogs.py" line="159"/>
+        <location filename="../ui/reference_sharing_dialogs.py" line="213"/>
         <source>This species cannot be used for public references. Only species in the Sporely taxonomy can be shared.</source>
         <translation>Diese Art kann nicht für öffentliche Referenzen verwendet werden. Nur Arten der Sporely-Taxonomie können geteilt werden.</translation>
     </message>
     <message>
-        <location filename="../ui/reference_sharing_dialogs.py" line="164"/>
+        <location filename="../ui/reference_sharing_dialogs.py" line="218"/>
         <source>Too many requests. Please wait a moment and try again.</source>
         <translation>Zu viele Anfragen. Warte einen Moment und versuche es erneut.</translation>
     </message>
     <message>
-        <location filename="../ui/reference_sharing_dialogs.py" line="166"/>
+        <location filename="../ui/reference_sharing_dialogs.py" line="220"/>
         <source>The cloud copy of this reference is missing or out of date. Sync with the cloud, update the reference from the library, and try again.</source>
         <translation>Die Cloud-Kopie dieser Referenz fehlt oder ist veraltet. Synchronisiere mit der Cloud, aktualisiere die Referenz aus der Bibliothek und versuche es erneut.</translation>
     </message>
     <message>
-        <location filename="../ui/reference_sharing_dialogs.py" line="172"/>
+        <location filename="../ui/reference_sharing_dialogs.py" line="226"/>
         <source>This reference cannot be shared in its current form.</source>
         <translation>Diese Referenz kann in ihrer aktuellen Form nicht geteilt werden.</translation>
     </message>
     <message>
-        <location filename="../ui/reference_sharing_dialogs.py" line="174"/>
+        <location filename="../ui/reference_sharing_dialogs.py" line="228"/>
         <source>Your account cannot share references.</source>
         <translation>Dein Konto kann keine Referenzen teilen.</translation>
     </message>
     <message>
-        <location filename="../ui/reference_sharing_dialogs.py" line="175"/>
+        <location filename="../ui/reference_sharing_dialogs.py" line="229"/>
         <source>Sharing failed ({status}).</source>
         <translation>Teilen fehlgeschlagen ({status}).</translation>
     </message>
     <message>
-        <location filename="../ui/reference_sharing_dialogs.py" line="197"/>
+        <location filename="../ui/reference_sharing_dialogs.py" line="251"/>
         <source>Share reference publicly</source>
         <translation>Referenz öffentlich teilen</translation>
     </message>
     <message>
-        <location filename="../ui/reference_sharing_dialogs.py" line="213"/>
+        <location filename="../ui/reference_sharing_dialogs.py" line="278"/>
         <source>Share publicly</source>
         <translation>Öffentlich teilen</translation>
     </message>
     <message>
-        <location filename="../ui/reference_sharing_dialogs.py" line="238"/>
-        <source>Reference: {label}
-Species: {species}
-Revision: {revision}</source>
-        <translation>Referenz: {label}
-Art: {species}
-Revision: {revision}</translation>
-    </message>
-    <message>
-        <location filename="../ui/reference_sharing_dialogs.py" line="256"/>
-        <location filename="../ui/reference_sharing_dialogs.py" line="301"/>
-        <location filename="../ui/reference_sharing_dialogs.py" line="415"/>
-        <location filename="../ui/reference_sharing_dialogs.py" line="491"/>
+        <location filename="../ui/reference_sharing_dialogs.py" line="180"/>
         <source>Could not reach Sporely Cloud: {error}</source>
         <translation>Sporely Cloud ist nicht erreichbar: {error}</translation>
     </message>
     <message>
-        <location filename="../ui/reference_sharing_dialogs.py" line="265"/>
+        <location filename="../ui/reference_sharing_dialogs.py" line="303"/>
+        <source>Shared publicly for species: {species}
+Name in the reference: {published}
+Reference: {label}
+Revision: {revision}</source>
+        <translation>Öffentlich geteilt für die Art: {species}
+Name in der Referenz: {published}
+Referenz: {label}
+Revision: {revision}</translation>
+    </message>
+    <message>
+        <location filename="../ui/reference_sharing_dialogs.py" line="314"/>
+        <source>Warning: this reference will be published publicly, under your name, as a reference for {species}.</source>
+        <translation>Achtung: Diese Referenz wird öffentlich unter deinem Namen als Referenz für {species} veröffentlicht.</translation>
+    </message>
+    <message>
+        <location filename="../ui/reference_sharing_dialogs.py" line="342"/>
         <source>Public sharing isn&apos;t available yet.</source>
         <translation>Öffentliches Teilen ist noch nicht verfügbar.</translation>
     </message>
     <message>
-        <location filename="../ui/reference_sharing_dialogs.py" line="271"/>
+        <location filename="../ui/reference_sharing_dialogs.py" line="348"/>
         <source>Read the terms above. Nothing is shared until you click &quot;Share publicly&quot;.</source>
         <translation>Lies die Bedingungen oben. Es wird nichts geteilt, bis du auf „Öffentlich teilen“ klickst.</translation>
     </message>
     <message>
-        <location filename="../ui/reference_sharing_dialogs.py" line="336"/>
+        <location filename="../ui/reference_sharing_dialogs.py" line="384"/>
+        <source>This reference is shared, but it is hidden by moderation and is not shown publicly.</source>
+        <translation>Diese Referenz ist geteilt, aber durch Moderation ausgeblendet und wird nicht öffentlich angezeigt.</translation>
+    </message>
+    <message>
+        <location filename="../ui/reference_sharing_dialogs.py" line="433"/>
+        <source>This reference may have been changed on another device. Sync from the cloud first, then try again.</source>
+        <translation>Diese Referenz wurde möglicherweise auf einem anderen Gerät geändert. Synchronisiere zuerst aus der Cloud und versuche es dann erneut.</translation>
+    </message>
+    <message>
+        <location filename="../ui/reference_sharing_dialogs.py" line="446"/>
         <source>Stopped by you</source>
         <translation>Von dir beendet</translation>
     </message>
     <message>
-        <location filename="../ui/reference_sharing_dialogs.py" line="337"/>
+        <location filename="../ui/reference_sharing_dialogs.py" line="447"/>
         <source>Reference detached from the observation</source>
         <translation>Referenz von der Beobachtung gelöst</translation>
     </message>
     <message>
-        <location filename="../ui/reference_sharing_dialogs.py" line="338"/>
+        <location filename="../ui/reference_sharing_dialogs.py" line="448"/>
         <source>Observation identification changed</source>
         <translation>Bestimmung der Beobachtung geändert</translation>
     </message>
     <message>
-        <location filename="../ui/reference_sharing_dialogs.py" line="339"/>
+        <location filename="../ui/reference_sharing_dialogs.py" line="449"/>
         <source>Observation is no longer public</source>
         <translation>Beobachtung ist nicht mehr öffentlich</translation>
     </message>
     <message>
-        <location filename="../ui/reference_sharing_dialogs.py" line="340"/>
+        <location filename="../ui/reference_sharing_dialogs.py" line="450"/>
         <source>Reference deleted</source>
         <translation>Referenz gelöscht</translation>
     </message>
     <message>
-        <location filename="../ui/reference_sharing_dialogs.py" line="341"/>
+        <location filename="../ui/reference_sharing_dialogs.py" line="451"/>
         <source>Account deleted</source>
         <translation>Konto gelöscht</translation>
     </message>
     <message>
-        <location filename="../ui/reference_sharing_dialogs.py" line="342"/>
+        <location filename="../ui/reference_sharing_dialogs.py" line="452"/>
         <source>Shared without consent (withdrawn)</source>
         <translation>Ohne Zustimmung geteilt (zurückgezogen)</translation>
     </message>
     <message>
-        <location filename="../ui/reference_sharing_dialogs.py" line="343"/>
+        <location filename="../ui/reference_sharing_dialogs.py" line="453"/>
         <source>Changed beyond what you agreed to share</source>
         <translation>Über das hinaus geändert, dem du zugestimmt hast</translation>
     </message>
     <message>
-        <location filename="../ui/reference_sharing_dialogs.py" line="344"/>
+        <location filename="../ui/reference_sharing_dialogs.py" line="454"/>
         <source>Sharing terms were withdrawn</source>
         <translation>Die Bedingungen für das Teilen wurden zurückgezogen</translation>
     </message>
     <message>
-        <location filename="../ui/reference_sharing_dialogs.py" line="352"/>
-        <location filename="../ui/reference_sharing_dialogs.py" line="376"/>
+        <location filename="../ui/reference_sharing_dialogs.py" line="462"/>
+        <location filename="../ui/reference_sharing_dialogs.py" line="487"/>
         <source>Shared</source>
         <translation>Geteilt</translation>
     </message>
     <message>
-        <location filename="../ui/reference_sharing_dialogs.py" line="353"/>
-        <location filename="../ui/reference_sharing_dialogs.py" line="376"/>
+        <location filename="../ui/reference_sharing_dialogs.py" line="463"/>
+        <location filename="../ui/reference_sharing_dialogs.py" line="487"/>
         <source>Withdrawn</source>
         <translation>Zurückgezogen</translation>
     </message>
     <message>
-        <location filename="../ui/reference_sharing_dialogs.py" line="366"/>
+        <location filename="../ui/reference_sharing_dialogs.py" line="476"/>
         <source>My shared references</source>
         <translation>Meine geteilten Referenzen</translation>
     </message>
     <message>
-        <location filename="../ui/reference_sharing_dialogs.py" line="375"/>
+        <location filename="../ui/reference_sharing_dialogs.py" line="486"/>
         <source>Status</source>
         <translation>Status</translation>
     </message>
     <message>
-        <location filename="../ui/reference_sharing_dialogs.py" line="375"/>
+        <location filename="../ui/reference_sharing_dialogs.py" line="486"/>
         <source>Species</source>
         <translation>Art</translation>
     </message>
     <message>
-        <location filename="../ui/reference_sharing_dialogs.py" line="375"/>
+        <location filename="../ui/reference_sharing_dialogs.py" line="486"/>
         <source>Reference</source>
         <translation>Referenz</translation>
     </message>
     <message>
-        <location filename="../ui/reference_sharing_dialogs.py" line="375"/>
+        <location filename="../ui/reference_sharing_dialogs.py" line="486"/>
         <source>Revision</source>
         <translation>Revision</translation>
     </message>
     <message>
-        <location filename="../ui/reference_sharing_dialogs.py" line="376"/>
+        <location filename="../ui/reference_sharing_dialogs.py" line="487"/>
         <source>Moderation</source>
         <translation>Moderation</translation>
     </message>
     <message>
-        <location filename="../ui/reference_sharing_dialogs.py" line="376"/>
+        <location filename="../ui/reference_sharing_dialogs.py" line="487"/>
         <source>Withdrawal reason</source>
         <translation>Grund für das Zurückziehen</translation>
     </message>
     <message>
-        <location filename="../ui/reference_sharing_dialogs.py" line="387"/>
+        <location filename="../ui/reference_sharing_dialogs.py" line="498"/>
         <source>Refresh</source>
         <translation>Aktualisieren</translation>
     </message>
     <message>
-        <location filename="../ui/reference_sharing_dialogs.py" line="391"/>
+        <location filename="../ui/reference_sharing_dialogs.py" line="502"/>
         <source>Stop sharing…</source>
         <translation>Teilen beenden…</translation>
     </message>
     <message>
-        <location filename="../ui/reference_sharing_dialogs.py" line="394"/>
+        <location filename="../ui/reference_sharing_dialogs.py" line="505"/>
         <source>Close</source>
         <translation>Schließen</translation>
     </message>
     <message>
-        <location filename="../ui/reference_sharing_dialogs.py" line="438"/>
+        <location filename="../ui/reference_sharing_dialogs.py" line="544"/>
         <source>Hidden by moderation</source>
         <translation>Durch Moderation ausgeblendet</translation>
     </message>
     <message>
-        <location filename="../ui/reference_sharing_dialogs.py" line="446"/>
+        <location filename="../ui/reference_sharing_dialogs.py" line="552"/>
         <source>You have no shared references.</source>
         <translation>Du hast keine geteilten Referenzen.</translation>
     </message>
     <message>
-        <location filename="../ui/reference_sharing_dialogs.py" line="464"/>
+        <location filename="../ui/reference_sharing_dialogs.py" line="570"/>
         <source>Stop sharing</source>
         <translation>Teilen beenden</translation>
     </message>
     <message>
-        <location filename="../ui/reference_sharing_dialogs.py" line="465"/>
+        <location filename="../ui/reference_sharing_dialogs.py" line="571"/>
         <source>Stop sharing this reference publicly? It will no longer be shown to others.
 
 Stopping cannot undo:
@@ -11658,6 +11682,11 @@ Das Beenden kann nicht rückgängig machen:
 - Kopien, die andere bereits erstellt haben,
 - frühere Revisionen, die Sporely privat aufbewahrt,
 - was Dritte bereits zwischengespeichert haben.</translation>
+    </message>
+    <message>
+        <location filename="../ui/reference_sharing_dialogs.py" line="603"/>
+        <source>Could not stop sharing ({status}).</source>
+        <translation>Teilen konnte nicht beendet werden ({status}).</translation>
     </message>
 </context>
 <context>
