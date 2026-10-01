@@ -14,7 +14,8 @@ from utils.cloud_media_audit import (
 )
 from utils.cloud_sync import (
     _file_content_signature, _normalize_cloud_media_key,
-    _sanitize_original_storage_filename, _store_cloud_image_file_signature,
+    _stable_storage_key_digest,
+    _stable_storage_key_extension, _store_cloud_image_file_signature,
 )
 from utils.original_sync_policy import (
     is_full_resolution_original_sync_enabled, resolve_full_original_upload_source,
@@ -75,11 +76,17 @@ def recovery_storage_key(
     local_image_id: int,
     source: str,
 ) -> str:
-    """Return the stable, filename-safe key used by row-less recovery uploads."""
-    safe_name = _sanitize_original_storage_filename(source)
+    """Return the stable key used by row-less recovery uploads.
+
+    Deterministic so a re-run after an unconfirmed row creation overwrites the
+    same object instead of orphaning it, but derived only from non-time
+    identities (never the local filename, which may encode capture time).
+    """
+    extension = _stable_storage_key_extension(source)
+    digest = _stable_storage_key_digest(user_id, cloud_observation_id, "recovery", int(local_image_id))
     key = _normalize_cloud_media_key(
         f"{str(user_id).strip()}/{str(cloud_observation_id).strip()}"
-        f"/recovery/{int(local_image_id)}_{safe_name}"
+        f"/recovery/{int(local_image_id)}_{digest}{extension}"
     )
     if not key:
         raise RecoveryError("Could not construct deterministic recovery storage key")
