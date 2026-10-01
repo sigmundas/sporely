@@ -1097,3 +1097,39 @@ def test_retry_after_measurement_set_failure_creates_no_duplicate_treatment(
     listed = ObservationReferenceUseRepository.list_for_observation(obs_id)
     assert len(listed) == 1
     assert listed[0].reference_measurement_set_id == sets_after[0].id
+
+
+def test_quick_add_to_public_observation_cancel_creates_nothing(monkeypatch, qapp, libs):
+    """Manual / quick-add attach asks the public-observation notice before
+    anything is created; Cancel leaves no treatment, set or use."""
+    import ui.publish_notice as pn
+
+    db_path, ref_path = libs
+    work = _seed_work()
+    observation_id = _make_observation(db_path, genus="Agaricus", species="bisporus")
+    conn = sqlite3.connect(db_path)
+    conn.execute("UPDATE observations SET sharing_scope='public', is_draft=0, "
+                 "spore_data_visibility='public' WHERE id=?", (observation_id,))
+    conn.commit()
+    conn.close()
+    payload = _range_payload(work.id, 7, "Agaricus", "bisporus")
+    payload["observation_id"] = observation_id
+    window = _build_window(monkeypatch, qapp)
+    window.active_observation_id = observation_id
+    window._active_sporely_taxon_id = lambda: 7
+    window._observation_taxon_identity = lambda _obs_id: ("Agaricus", "bisporus")
+    monkeypatch.setattr(pn, "publish_notice_enabled", lambda: True)
+    shown = []
+    monkeypatch.setattr(pn, "show_attach_notice", lambda _p, t: shown.append(t) or False)
+
+    assert window._persist_normalized_reference_from_dialog(
+        _QuickAddStubDialog(payload), payload, legacy_id=None
+    ) is False
+    assert len(shown) == 1
+    assert ObservationReferenceUseRepository.list_for_observation(observation_id) == []
+    ref = sqlite3.connect(ref_path)
+    try:
+        assert ref.execute("SELECT COUNT(*) FROM reference_measurement_sets").fetchone()[0] == 0
+        assert ref.execute("SELECT COUNT(*) FROM reference_taxon_treatments").fetchone()[0] == 0
+    finally:
+        ref.close()

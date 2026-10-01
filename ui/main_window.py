@@ -11855,6 +11855,12 @@ class MainWindow(GeometryMixin, QMainWindow):
                 work = ReferenceWorkRepository.get(str(work_id))
             if work is None:
                 return False
+            # Public-observation attach notice before anything is created:
+            # Cancel creates no work, treatment, set or use.
+            if attach and not self._confirm_public_reference_attach(
+                int(observation_id), ["compared"]
+            ):
+                return False
             treatment_data = treatment_payload_getter()
             # One canonical creation path for both intents: the request is
             # built identically, and only the final attachment step differs
