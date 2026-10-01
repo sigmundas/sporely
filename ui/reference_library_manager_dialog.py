@@ -2338,6 +2338,11 @@ class ReferenceLibraryManagerDialog(QDialog):
         )
         layout.addWidget(self.copy_curated_btn)
 
+        self.my_shared_btn = QPushButton(self.tr("My shared references…"))
+        self.my_shared_btn.clicked.connect(self._on_my_shared_clicked)
+        self.my_shared_btn.setEnabled(self._cloud_client is not None)
+        layout.addWidget(self.my_shared_btn)
+
         attach_row = QHBoxLayout()
         attach_row.addWidget(QLabel(self.tr("Role:")))
         self.role_combo = QComboBox()
@@ -2896,6 +2901,13 @@ class ReferenceLibraryManagerDialog(QDialog):
             int(self._active_observation_id),
         )
         self.accept()
+
+    def _on_my_shared_clicked(self) -> None:
+        if self._cloud_client is None:
+            return
+        from ui.reference_sharing_dialogs import MySharedReferencesDialog
+
+        MySharedReferencesDialog(self._cloud_client, parent=self).exec()
 
     def _on_copy_curated_clicked(self) -> None:
         if self._cloud_client is None or self._sporely_taxon_id is None:

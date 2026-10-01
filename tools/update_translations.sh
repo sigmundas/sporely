@@ -28,6 +28,7 @@ files=(
   "ui/reference_preview_pane.py"
   "ui/reference_comparison_view.py"
   "ui/measurement_content_view.py"
+  "ui/reference_sharing_dialogs.py"
 )
 
 if [[ -x ".venv/bin/pyside6-lupdate" ]]; then

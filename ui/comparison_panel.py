@@ -255,6 +255,7 @@ class _ComparisonRowWidget(QFrame):
     edit_requested = Signal(object)
     library_update_requested = Signal(object)
     library_successor_requested = Signal(object)
+    share_publicly_requested = Signal(object)
 
     def __init__(self, row: ComparisonRow, parent: QWidget | None = None) -> None:
         super().__init__(parent)
@@ -355,6 +356,9 @@ class _ComparisonRowWidget(QFrame):
         successor_action = None
         if self._row.library_successor_available:
             successor_action = menu.addAction(self.tr("Review successor…"))
+        share_action = None
+        if self._row.observation_reference_use_id:
+            share_action = menu.addAction(self.tr("Share publicly…"))
         remove_action = menu.addAction(self.tr("Remove"))
         remove_action.setEnabled(not self._row.is_observation)
         chosen = menu.exec(self.overflow_btn.mapToGlobal(self.overflow_btn.rect().bottomLeft()))
@@ -366,6 +370,8 @@ class _ComparisonRowWidget(QFrame):
             self.library_update_requested.emit(self._row.observation_reference_use_id)
         elif successor_action is not None and chosen is successor_action:
             self.library_successor_requested.emit(self._row.observation_reference_use_id)
+        elif share_action is not None and chosen is share_action:
+            self.share_publicly_requested.emit(self._row.observation_reference_use_id)
         elif chosen is remove_action:
             self.remove_requested.emit(self._row.dataset_id)
 
@@ -386,6 +392,7 @@ class ComparisonListWidget(QWidget):
     edit_requested = Signal(object)
     library_update_requested = Signal(object)
     library_successor_requested = Signal(object)
+    share_publicly_requested = Signal(object)
 
     def __init__(self, parent: QWidget | None = None) -> None:
         super().__init__(parent)
@@ -447,6 +454,7 @@ class ComparisonListWidget(QWidget):
             row_widget.edit_requested.connect(self.edit_requested.emit)
             row_widget.library_update_requested.connect(self.library_update_requested.emit)
             row_widget.library_successor_requested.connect(self.library_successor_requested.emit)
+            row_widget.share_publicly_requested.connect(self.share_publicly_requested.emit)
             self._list_layout.insertWidget(self._list_layout.count() - 1, row_widget)
 
     def rows(self) -> list[ComparisonRow]:

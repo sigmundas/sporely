@@ -8584,6 +8584,9 @@ class MainWindow(GeometryMixin, QMainWindow):
         self.comparison_list.library_successor_requested.connect(
             self._on_comparison_library_successor_requested
         )
+        self.comparison_list.share_publicly_requested.connect(
+            self._on_comparison_share_publicly_requested
+        )
         layout.addWidget(self.comparison_list, 1)
 
         action_row = QHBoxLayout()
@@ -9481,6 +9484,43 @@ class MainWindow(GeometryMixin, QMainWindow):
             return
         observation_id = int(getattr(self, "active_observation_id", 0) or 0)
         self._review_reference_successor(str(use_id), observation_id)
+
+    def _on_comparison_share_publicly_requested(self, use_id) -> None:
+        """Open the Stage 2b consent dialog for an attached reference set."""
+        if not use_id:
+            return
+        from ui.reference_sharing_dialogs import (
+            ReferenceShareConsentDialog,
+            build_share_request_for_use,
+            consent_locale_for_ui,
+        )
+        from utils.ui_language import running_ui_language
+
+        title = self.tr("Share reference publicly")
+        observation_id = int(getattr(self, "active_observation_id", 0) or 0)
+
+        def _load():
+            return build_share_request_for_use(str(use_id), observation_id)
+
+        try:
+            request = _load()
+        except ValueError as exc:
+            QMessageBox.information(self, title, str(exc))
+            return
+        client = self._get_cloud_client()
+        if client is None:
+            QMessageBox.information(
+                self, title, self.tr("Sign in to Sporely Cloud to share references.")
+            )
+            return
+        dialog = ReferenceShareConsentDialog(
+            client,
+            request,
+            locale=consent_locale_for_ui(running_ui_language()),
+            reload_request=_load,
+            parent=self,
+        )
+        dialog.exec()
 
     def _current_attached_measurement_set_ids(self) -> set[str]:
         """Return measurement-set UUIDs already attached to the active observation."""

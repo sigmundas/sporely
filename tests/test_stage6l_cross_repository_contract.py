@@ -224,3 +224,44 @@ def test_shared_contribution_public_contract_is_attributed_and_not_curated() -> 
         sharing, re.DOTALL,
     ).group(1).lower()
     assert "observation_reference_use_shared_contribution_trg" in sharing
+
+
+CONSENT_MIGRATION = "supabase/migrations/20260930232633_add_reference_sharing_consent_grant.sql"
+
+
+def test_stage2b_consent_rpcs_match_desktop_wrappers_and_allowlist() -> None:
+    """Stage 2b: desktop wrappers match the consent-grant migration's signatures."""
+    migration_path = WEB / CONSENT_MIGRATION
+    if not migration_path.exists():
+        if os.environ.get("SPORELY_STAGE6L_GATE") == "1":
+            pytest.fail(f"Stage 2b consent migration unavailable: {migration_path}")
+        pytest.skip(f"Stage 2b consent migration unavailable: {migration_path}")
+    desktop = (ROOT / "utils/cloud_sync.py").read_text()
+    migration = migration_path.read_text()
+
+    assert _method_rpc_keys(desktop, "share_reference_contribution_with_consent") == (
+        "p_source_measurement_set_id", "p_sporely_taxon_id",
+        "p_expected_work_revision", "p_expected_treatment_revision",
+        "p_expected_measurement_set_revision", "p_consent_version",
+        "p_locale", "p_consent_client",
+    )
+    assert _sql_signature(migration, "share_reference_contribution_with_consent") == (
+        ("p_source_measurement_set_id", "uuid"),
+        ("p_sporely_taxon_id", "integer"),
+        ("p_expected_work_revision", "integer"),
+        ("p_expected_treatment_revision", "integer"),
+        ("p_expected_measurement_set_revision", "integer"),
+        ("p_consent_version", "integer"),
+        ("p_locale", "text"),
+        ("p_consent_client", "text DEFAULT NULL"),
+    )
+    assert _method_rpc_keys(desktop, "get_reference_share_consent_text") == ("p_locale",)
+    assert _sql_signature(migration, "get_reference_share_consent_text") == (("p_locale", "text"),)
+    assert _method_rpc_keys(desktop, "list_my_shared_reference_contributions") == ()
+    assert re.search(r"CREATE FUNCTION public\.list_my_shared_reference_contributions\(\)", migration)
+    for name in (
+        "share_reference_contribution_with_consent",
+        "list_my_shared_reference_contributions",
+        "get_reference_share_consent_text",
+    ):
+        assert f"'{name}'" in desktop.split("_PULL_ONLY_BLOCKED_CLIENT_METHODS = frozenset({", 1)[1].split("})", 1)[0]
