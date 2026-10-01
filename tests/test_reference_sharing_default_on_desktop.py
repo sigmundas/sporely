@@ -251,7 +251,7 @@ def test_suppressed_notice_returns_true_without_showing_and_restore(settings):
     pn.set_publish_notice_enabled(True)  # Preferences -> show the warning again
     shown = []
     assert not pn.confirm_publish_if_needed(None, None, dict(PUB), lambda: pn.PublishFacts(),
-                                            show=lambda _p, t: shown.append(t) or False)
+                                            show=lambda _p, t, *_s: shown.append(t) or False)
     assert len(shown) == 1
 
 
@@ -446,3 +446,36 @@ def test_share_again_absent_after_reload_says_sharing_is_restored(qapp, boxes):
     assert "Sharing is restored" in boxes[0] and "attached to a public observation" in boxes[0]
     assert "couldn't confirm" not in boxes[0]
     dialog.deleteLater()
+
+
+def test_precision_notice_is_never_suppressed(settings):
+    pn.set_publish_notice_enabled(False)
+    calls = []
+
+    def show(_p, text, suppressible=True):
+        calls.append(suppressible)
+        return False
+
+    widen = (dict(PUB, location_precision="fuzzed"), dict(PUB, location_precision="exact"))
+    assert not pn.confirm_publish_if_needed(None, *widen, lambda: pn.PublishFacts(), show=show)
+    assert calls == [False]  # shown, without a "Don't show this again" box
+    # The publishing transition itself stays suppressed.
+    assert pn.confirm_publish_if_needed(None, None, dict(PUB), lambda: pn.PublishFacts(), show=show)
+    assert calls == [False]
+
+
+def test_precision_notice_box_has_no_dont_show_checkbox(qapp, settings, monkeypatch):
+    from PySide6.QtWidgets import QMessageBox
+
+    seen = {}
+
+    def fake_exec(box):
+        seen["checkbox"] = box.checkBox()
+        for button in box.buttons():
+            if box.buttonRole(button) == QMessageBox.AcceptRole:
+                button.click()
+
+    monkeypatch.setattr(QMessageBox, "exec", fake_exec)
+    assert pn.show_publish_notice(None, "text", False) is True
+    assert seen["checkbox"] is None
+    assert pn.publish_notice_enabled() is True

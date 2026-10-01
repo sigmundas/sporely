@@ -41,10 +41,9 @@ surface.
 
 Suppression: one "Don't show this again" preference (``SettingsDB`` key
 ``show_publish_notice``, per profile database, restorable in Preferences ->
-Online publishing) covers every notice in this module: publishing,
-widening the location, attaching a reference to a public observation and
-making spore data public on a public observation. They are all the same
-"what becomes public" warning, so one switch is what a user expects.
+Online publishing) covers publishing, attaching a reference to a public
+observation and making spore data public on a public observation. Widening
+the location of an already public observation is never suppressible.
 """
 from __future__ import annotations
 
@@ -311,10 +310,11 @@ def set_publish_notice_enabled(enabled: bool) -> None:
     SettingsDB.set_setting(PUBLISH_NOTICE_SETTING, "1" if enabled else "0")
 
 
-def show_notice(parent, title: str, text: str, accept_label: str) -> bool:
-    """Accept/Cancel with a "Don't show this again" checkbox. Cancel is the
-    default. The checkbox is saved only when the user accepts: cancelling
-    never silences a future warning."""
+def show_notice(parent, title: str, text: str, accept_label: str,
+                suppressible: bool = True) -> bool:
+    """Accept/Cancel with a "Don't show this again" checkbox (only when
+    ``suppressible``). Cancel is the default. The checkbox is saved only
+    when the user accepts: cancelling never silences a future warning."""
     from PySide6.QtWidgets import QCheckBox
 
     box = QMessageBox(parent)
@@ -323,15 +323,17 @@ def show_notice(parent, title: str, text: str, accept_label: str) -> bool:
     box.setTextFormat(Qt.PlainText)
     box.setText(title)
     box.setInformativeText(text)
-    dont_show = QCheckBox(QCoreApplication.translate("PublishNotice", "Don't show this again"))
-    box.setCheckBox(dont_show)
+    dont_show = None
+    if suppressible:
+        dont_show = QCheckBox(QCoreApplication.translate("PublishNotice", "Don't show this again"))
+        box.setCheckBox(dont_show)
     accept = box.addButton(accept_label, QMessageBox.AcceptRole)
     cancel = box.addButton(QMessageBox.Cancel)
     box.setDefaultButton(cancel)
     box.setEscapeButton(cancel)
     box.exec()
     accepted = box.clickedButton() is accept
-    if accepted and dont_show.isChecked():
+    if accepted and dont_show is not None and dont_show.isChecked():
         try:
             set_publish_notice_enabled(False)
         except Exception:
@@ -339,13 +341,15 @@ def show_notice(parent, title: str, text: str, accept_label: str) -> bool:
     return accepted
 
 
-def show_publish_notice(parent, text: str) -> bool:
-    """Publish/Cancel. Cancel is the default; returns True only on Publish."""
+def show_publish_notice(parent, text: str, suppressible: bool = True) -> bool:
+    """Publish/Cancel. Cancel is the default; returns True only on Publish.
+    The location-precision notice passes ``suppressible=False``."""
     return show_notice(
         parent,
         QCoreApplication.translate("PublishNotice", "Publish this observation?"),
         text,
         QCoreApplication.translate("PublishNotice", "Publish"),
+        suppressible,
     )
 
 
@@ -358,17 +362,22 @@ def confirm_publish_if_needed(
     show: Callable[[object, str], bool] | None = None,
     enabled: Callable[[], bool] | None = None,
 ) -> bool:
-    """True when no notice is needed, it is suppressed, or the owner chose Publish."""
+    """True when no notice is needed, it is suppressed, or the owner chose Publish.
+
+    Only the publishing transition (private/friends/draft -> public) can be
+    suppressed. Widening the location of an already public observation
+    always asks, without a "Don't show this again" box."""
     if not needs_publish_notice(previous, new):
         return True
-    if not (enabled or publish_notice_enabled)():
+    suppressible = not is_public(previous)
+    if suppressible and not (enabled or publish_notice_enabled)():
         return True
     try:
         facts = load_facts()
     except Exception:
         facts = PublishFacts()
     text = build_publish_notice_text(new.get("location_precision"), facts)
-    return bool((show or show_publish_notice)(parent, text))
+    return bool((show or show_publish_notice)(parent, text, suppressible))
 
 
 # --- Attaching a reference to an already public observation --------------------

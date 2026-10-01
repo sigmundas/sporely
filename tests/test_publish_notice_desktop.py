@@ -181,7 +181,7 @@ def _details_dialog(monkeypatch, qapp, baseline):
 def test_unchecking_draft_while_public_asks_and_cancel_keeps_draft(monkeypatch, qapp, answer):
     dialog = _details_dialog(monkeypatch, qapp, {"is_draft": 1, "sharing_scope": "public"})
     shown = []
-    monkeypatch.setattr(pn, "show_publish_notice", lambda _p, text: shown.append(text) or answer)
+    monkeypatch.setattr(pn, "show_publish_notice", lambda _p, text, *_s: shown.append(text) or answer)
     dialog.is_draft_checkbox.setChecked(False)
     dialog.accept()
     assert len(shown) == 1 and "shared by default" in shown[0]
@@ -194,7 +194,7 @@ def test_unchecking_draft_while_public_asks_and_cancel_keeps_draft(monkeypatch, 
 def test_visibility_to_public_asks_and_cancel_restores_scope(monkeypatch, qapp):
     dialog = _details_dialog(monkeypatch, qapp, {"is_draft": 0, "sharing_scope": "friends"})
     shown = []
-    monkeypatch.setattr(pn, "show_publish_notice", lambda _p, text: shown.append(text) or False)
+    monkeypatch.setattr(pn, "show_publish_notice", lambda _p, text, *_s: shown.append(text) or False)
     dialog._set_sharing_scope("public")
     dialog.accept()
     assert len(shown) == 1
@@ -259,13 +259,13 @@ def conflict_dialog(qapp, monkeypatch):
 def test_conflict_resolving_visibility_toward_public_asks_and_cancel_applies_nothing(conflict_dialog, monkeypatch):
     dialog, started = conflict_dialog
     shown = []
-    monkeypatch.setattr(pn, "show_publish_notice", lambda _p, text: shown.append(text) or False)
+    monkeypatch.setattr(pn, "show_publish_notice", lambda _p, text, *_s: shown.append(text) or False)
     dialog._set_choice("field:visibility", "local")
     dialog._update_apply_enabled()
     dialog._apply_selected_changes()
     assert len(shown) == 1 and started == []
     assert dialog._selected_choice("field:visibility") == "local"
-    monkeypatch.setattr(pn, "show_publish_notice", lambda _p, text: shown.append(text) or True)
+    monkeypatch.setattr(pn, "show_publish_notice", lambda _p, text, *_s: shown.append(text) or True)
     dialog._apply_selected_changes()
     assert len(shown) == 2 and len(started) == 1
 
@@ -307,7 +307,7 @@ def test_precision_increase_in_details_dialog_asks_and_cancel_restores(monkeypat
     dialog = _details_dialog(monkeypatch, qapp, {"is_draft": 0, "sharing_scope": "public",
                                                  "location_precision": "fuzzed"})
     shown = []
-    monkeypatch.setattr(pn, "show_publish_notice", lambda _p, text: shown.append(text) or False)
+    monkeypatch.setattr(pn, "show_publish_notice", lambda _p, text, *_s: shown.append(text) or False)
     dialog._set_location_precision("exact")
     dialog.accept()
     assert len(shown) == 1 and "The exact location" in shown[0]
@@ -350,13 +350,13 @@ def test_conflict_precision_increase_on_public_asks(conflict_dialog, monkeypatch
     dialog._choice_specs["field:location_precision"] = {"kind": "field", "field": "location_precision"}
     shown = []
     monkeypatch.setattr(dialog, "_selected_choice", lambda key: "local")
-    monkeypatch.setattr(pn, "show_publish_notice", lambda _p, text: shown.append(text) or False)
+    monkeypatch.setattr(pn, "show_publish_notice", lambda _p, text, *_s: shown.append(text) or False)
     prev, resolved = dialog.resolved_observation_state()
     assert resolved["location_precision"] == "exact"
     assert not dialog._confirm_publish_for_plan({"local_id": 593})
     assert len(shown) == 1 and "The exact location" in shown[0]
     assert dialog._recorded_precision == []  # Cancel records nothing
-    monkeypatch.setattr(pn, "show_publish_notice", lambda _p, text: shown.append(text) or True)
+    monkeypatch.setattr(pn, "show_publish_notice", lambda _p, text, *_s: shown.append(text) or True)
     assert dialog._confirm_publish_for_plan({"local_id": 593})
     assert dialog._recorded_precision == [(593, "exact")]
     monkeypatch.setattr(dialog, "_selected_choice", lambda key: "cloud")
@@ -394,7 +394,7 @@ def test_conflict_models_automatic_push_local_decisions(conflict_dialog, monkeyp
     _prev, resolved = dialog.resolved_observation_state()
     assert resolved["visibility"] == resolved["sharing_scope"] == "public"
     shown = []
-    monkeypatch.setattr(pn, "show_publish_notice", lambda _p, text: shown.append(text) or False)
+    monkeypatch.setattr(pn, "show_publish_notice", lambda _p, text, *_s: shown.append(text) or False)
     assert not dialog._confirm_publish_for_plan({"local_id": 593})
     assert len(shown) == 1
     dialog._current_detail["automatic_decisions"]["fields"][0]["action"] = "pull_cloud"
@@ -405,7 +405,7 @@ def test_conflict_models_automatic_push_local_decisions(conflict_dialog, monkeyp
 def test_details_dialog_records_explicit_confirmed_precision(monkeypatch, qapp):
     dialog = _details_dialog(monkeypatch, qapp, {"is_draft": 0, "sharing_scope": "public",
                                                  "location_precision": "hidden"})
-    monkeypatch.setattr(pn, "show_publish_notice", lambda _p, text: True)
+    monkeypatch.setattr(pn, "show_publish_notice", lambda _p, text, *_s: True)
     dialog.accept()  # unchanged hidden: nothing recorded
     assert dialog._recorded_precision == []
     dialog.location_precision_exact_radio.click()
@@ -449,7 +449,7 @@ def test_notice_compares_against_cloud_precision_not_stale_local(monkeypatch, qa
                                                  "location_precision": "exact",
                                                  "cloud_id": "cloud-917"})
     shown = []
-    monkeypatch.setattr(pn, "show_publish_notice", lambda _p, text: shown.append(text) or False)
+    monkeypatch.setattr(pn, "show_publish_notice", lambda _p, text, *_s: shown.append(text) or False)
     dialog.location_precision_fuzzed_radio.click()
     dialog.accept()
     assert len(shown) == 1 and "An approximate location" in shown[0]
@@ -477,10 +477,10 @@ def test_conflict_making_spore_data_public_on_public_observation_asks(conflict_d
     choice = {"value": "local"}
     monkeypatch.setattr(dialog, "_selected_choice", lambda key: choice["value"])
     shown = []
-    monkeypatch.setattr(pn, "show_spore_public_notice", lambda _p, text: shown.append(text) or False)
+    monkeypatch.setattr(pn, "show_spore_public_notice", lambda _p, text, *_s: shown.append(text) or False)
     assert not dialog._confirm_publish_for_plan({"local_id": 593})
     assert len(shown) == 1 and "Spore measurements" in shown[0]
-    monkeypatch.setattr(pn, "show_spore_public_notice", lambda _p, text: shown.append(text) or True)
+    monkeypatch.setattr(pn, "show_spore_public_notice", lambda _p, text, *_s: shown.append(text) or True)
     assert dialog._confirm_publish_for_plan({"local_id": 593})
     choice["value"] = "cloud"  # keeping the cloud's private spore data: no notice
     assert dialog._confirm_publish_for_plan({"local_id": 593})

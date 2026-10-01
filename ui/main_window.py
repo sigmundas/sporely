@@ -1433,8 +1433,12 @@ class SettingsHubDialog(QDialog):
         from ui.publish_notice import publish_notice_enabled, set_publish_notice_enabled
 
         self._show_publish_notice_check = QCheckBox(
-            self.tr("Show what becomes public before publishing")
+            self.tr("Warn before publishing, attaching references to a public "
+                    "observation or making spore data public")
         )
+        self._show_publish_notice_check.setToolTip(self.tr(
+            "Making a public observation's location more precise always asks."
+        ))
         self._show_publish_notice_check.setChecked(publish_notice_enabled())
         self._show_publish_notice_check.toggled.connect(
             lambda checked: set_publish_notice_enabled(bool(checked))
