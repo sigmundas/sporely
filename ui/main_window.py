@@ -1433,11 +1433,11 @@ class SettingsHubDialog(QDialog):
         from ui.publish_notice import publish_notice_enabled, set_publish_notice_enabled
 
         self._show_publish_notice_check = QCheckBox(
-            self.tr("Warn before publishing, attaching references to a public "
-                    "observation or making spore data public")
+            self.tr("Ask before making observations, spore data or attached "
+                    "references public")
         )
         self._show_publish_notice_check.setToolTip(self.tr(
-            "Making a public observation's location more precise always asks."
+            "Showing a more precise location on a public observation always asks."
         ))
         self._show_publish_notice_check.setChecked(publish_notice_enabled())
         self._show_publish_notice_check.toggled.connect(
@@ -8566,16 +8566,7 @@ class MainWindow(GeometryMixin, QMainWindow):
         from ui.publish_notice import confirm_spore_public_if_needed
 
         before = ObservationDB.get_observation(obs_id) or {}
-
-        def _attached_roles():
-            from database.reference_library import ObservationReferenceUseRepository
-
-            return [
-                str(use.role or "")
-                for use in ObservationReferenceUseRepository.list_for_observation(int(obs_id))
-            ]
-
-        if not confirm_spore_public_if_needed(self, before, vis, _attached_roles):
+        if not confirm_spore_public_if_needed(self, before, vis):
             self._update_spore_sharing_ui(obs_id)  # back to the stored choice
             return
         ObservationDB.update_observation(obs_id, spore_data_visibility=vis)

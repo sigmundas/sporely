@@ -1024,7 +1024,7 @@ def test_contradicts_goes_end_to_end_into_attach_with_status(monkeypatch):
         _row_widget(dialog, "ms-this-points").checkbox.setChecked(True)
         dialog.set_source_role("ms-this-points", "contradicts")
         dialog._on_add_to_plot_clicked()
-        assert len(shown) == 1 and "contradicts the identification" in shown[0]
+        assert len(shown) == 1 and "relationship to your identification" in shown[0]
         assert repo_calls == [(5, "ms-this-range", "compared"), (5, "ms-this-points", "contradicts")]
         assert dialog.result() == QDialog.Accepted
     finally:

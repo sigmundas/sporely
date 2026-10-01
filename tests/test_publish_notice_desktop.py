@@ -54,107 +54,50 @@ def test_shown_exactly_on_publishing_transitions(previous, new, expected):
     assert needs_publish_notice(previous, new) is expected
 
 
-# --- References: shared by default ----------------------------------------------------
-
-SETS = [
-    {"source_measurement_set_id": "set-a", "status": "shared", "stopped_at": None},
-    {"source_measurement_set_id": "set-b", "status": "stopped", "stopped_at": "2026-10-01"},
-    {"source_measurement_set_id": "set-c", "status": "hidden", "stopped_at": "2026-10-01"},
-]
-
+# --- Canonical short text --------------------------------------------------------------
 
 def _facts(**kw):
-    base = dict(attached_roles=("contradicts",), spore_data_visibility="public",
-                has_photos=True, uses_stopped_reference=None)
+    base = dict(spore_data_visibility="public", has_photos=True)
     base.update(kw)
     return PublishFacts(**base)
 
 
-def test_references_are_described_as_shared_by_default_with_relationship():
-    text = build_publish_notice_text("exact", _facts())
-    assert "Reference sets attached to it are shared by default" in text
-    assert "contradicts the identification" in text
-    assert "My shared references" in text
-    assert "Attached now: 1 × contradicts the identification." in text
-    assert "Share publicly" not in text and "one by one" not in text
+EXACT_PUBLIC = "\n".join([
+    "After the next sync, anyone, including people who are not signed in, can see:",
+    "• Species, date, habitat, notes and your name",
+    "• The exact location and the location name you entered",
+    "• Your photos, microscope photos and the AI identification you selected",
+    "• Spore measurements and statistics",
+    "",
+    "Attached references are shared by default. You can stop sharing them under My shared references.",
+])
 
 
-def test_references_not_public_while_spore_data_hidden():
-    text = build_publish_notice_text("exact", _facts(spore_data_visibility="private"))
-    assert "not shown on it while its spore data is not public" in text
-    # Never overstated: earlier species-page listings stay until stopped.
-    assert "species-page listing already made" in text and "stop sharing that set" in text
-    assert "shared by default" not in text and "Attached now" not in text
-
-
-def test_stopped_reference_line_only_when_known():
-    assert "you stopped sharing" in build_publish_notice_text("exact", _facts(uses_stopped_reference=True))
-    for value in (False, None):
-        assert "you stopped sharing" not in build_publish_notice_text(
-            "exact", _facts(uses_stopped_reference=value))
-
-
-class _Client:
-    def __init__(self, result):
-        self.result = result
-        self.calls = 0
-
-    def list_my_reference_sharing(self):
-        self.calls += 1
-        if isinstance(self.result, Exception):
-            raise self.result
-        return self.result
-
-
-@pytest.mark.parametrize("result", [RuntimeError("offline"), {"status": "rate_limited"},
-                                    {"status": "ok", "sets": "x"}])
-def test_load_stopped_set_ids_failures_are_unknown(result):
-    assert pn.load_stopped_set_ids(_Client(result)) is None
-    assert pn.load_stopped_set_ids(None) is None
-
-
-def test_load_stopped_set_ids_reads_stopped_and_hidden_stopped():
-    assert pn.load_stopped_set_ids(_Client({"status": "ok", "sets": SETS})) == {"set-b", "set-c"}
-
-
-def test_load_local_facts_new_observation_uses_state_after_save():
-    client = _Client({"status": "ok", "sets": SETS})
-    facts = load_local_facts(None, {"sporely_taxon_id": 617026, "has_photos": False},
-                             client_getter=lambda: client)
-    # A new observation has no attached references, so no lookup is needed.
-    assert facts.attached_roles == () and client.calls == 0
-    assert facts.uses_stopped_reference is None
-
-
-# --- Text matches the verified exposure ------------------------------------------------
-
-def test_text_exact_location_and_public_spore_data():
-    text = build_publish_notice_text("exact", _facts())
-    for needle in (
-        "Anyone, including people who are not signed in, will be able to see:",
-        "The exact location: precise coordinates and the location name you entered",
-        "Species, date and time of day, the date you created it, habitat, notes, the uncertain "
-        "flag, red-list status and your name",
-        "The AI identification you selected and its probability",
-        "Your photos, as thumbnails and at full size",
-        "Microscope photos (including scale bars) and preparation details",
-        "Spore measurements, statistics, measurement points and the spore mosaic",
-        "Signed-in users can read and write comments on it.",
-        "Reference sets attached to it are shared by default",
-        "The change takes effect after the next sync.",
-    ):
-        assert needle in text, needle
-    assert "file data" not in text and "approximate" not in text.lower()
+def test_text_exact_location_and_public_spore_data_verbatim():
+    assert build_publish_notice_text("exact", _facts()) == EXACT_PUBLIC
 
 
 def test_text_approximate_location_photo_caveat_and_hidden_spores():
     text = build_publish_notice_text("fuzzed", _facts(spore_data_visibility="friends"))
-    assert "coordinates rounded to about 1 km and only the region or country name" in text
-    assert "Some photos may still contain the exact position in their file data." in text
-    assert "stay hidden. Microscope photos and preparation details are still public." in text
+    assert "• An approximate location (about 1 km), shown with region or country only" in text
+    assert "Spore measurements stay hidden." in text
     assert "• Spore measurements" not in text
+    assert "Some photos may still contain the exact position in their file data." in text
     assert "file data" not in build_publish_notice_text("fuzzed", _facts(has_photos=False))
     assert "file data" in build_publish_notice_text("fuzzed", _facts(has_photos=None))
+    assert "file data" not in build_publish_notice_text("exact", _facts())
+
+
+def test_removed_details_are_gone():
+    text = build_publish_notice_text("exact", _facts())
+    for gone in ("time of day", "created", "uncertain", "red-list", "comments",
+                 "species-page", "preparation", "relationship", "stopped", "Attached now"):
+        assert gone not in text, gone
+
+
+def test_load_local_facts_new_observation_uses_state_after_save():
+    facts = load_local_facts(None, {"sporely_taxon_id": 617026, "has_photos": False})
+    assert facts == PublishFacts(spore_data_visibility="public", has_photos=False)
 
 
 # --- Observation details dialog --------------------------------------------------------
@@ -184,7 +127,7 @@ def test_unchecking_draft_while_public_asks_and_cancel_keeps_draft(monkeypatch, 
     monkeypatch.setattr(pn, "show_publish_notice", lambda _p, text, *_s: shown.append(text) or answer)
     dialog.is_draft_checkbox.setChecked(False)
     dialog.accept()
-    assert len(shown) == 1 and "shared by default" in shown[0]
+    assert len(shown) == 1 and "Attached references are shared by default" in shown[0]
     assert dialog.result() == (QDialog.Accepted if answer else 0)
     assert dialog.is_draft_checkbox.isChecked() is (not answer)
     dialog._cleanup_dialog_threads()
@@ -299,8 +242,11 @@ def test_precision_increase_on_public_observation(before, after, expected):
 
 def test_region_and_hidden_use_the_approximate_text():
     for level in ("region", "hidden"):
-        text = build_publish_notice_text(level, _facts())
-        assert "An approximate location" in text and "file data" in text
+        text = pn.build_precision_notice_text(level, True)
+        assert "an approximate location" in text and "file data" in text
+    text = pn.build_precision_notice_text("exact")
+    assert text == ("After the next sync, this public observation will show the exact "
+                    "location and the location name you entered.")
 
 
 def test_precision_increase_in_details_dialog_asks_and_cancel_restores(monkeypatch, qapp):
@@ -310,7 +256,7 @@ def test_precision_increase_in_details_dialog_asks_and_cancel_restores(monkeypat
     monkeypatch.setattr(pn, "show_publish_notice", lambda _p, text, *_s: shown.append(text) or False)
     dialog._set_location_precision("exact")
     dialog.accept()
-    assert len(shown) == 1 and "The exact location" in shown[0]
+    assert len(shown) == 1 and "the exact location" in shown[0]
     assert dialog._selected_location_precision() == "fuzzed"
     assert dialog.result() == 0
     dialog._cleanup_dialog_threads()
@@ -354,7 +300,7 @@ def test_conflict_precision_increase_on_public_asks(conflict_dialog, monkeypatch
     prev, resolved = dialog.resolved_observation_state()
     assert resolved["location_precision"] == "exact"
     assert not dialog._confirm_publish_for_plan({"local_id": 593})
-    assert len(shown) == 1 and "The exact location" in shown[0]
+    assert len(shown) == 1 and "the exact location" in shown[0]
     assert dialog._recorded_precision == []  # Cancel records nothing
     monkeypatch.setattr(pn, "show_publish_notice", lambda _p, text, *_s: shown.append(text) or True)
     assert dialog._confirm_publish_for_plan({"local_id": 593})
@@ -362,24 +308,6 @@ def test_conflict_precision_increase_on_public_asks(conflict_dialog, monkeypatch
     monkeypatch.setattr(dialog, "_selected_choice", lambda key: "cloud")
     assert dialog._confirm_publish_for_plan({"local_id": 593})
     assert len(shown) == 2
-
-
-def test_owner_list_lookup_times_out_to_unknown():
-    import threading
-    import time as _time
-
-    release = threading.Event()
-
-    class Slow:
-        def list_my_reference_sharing(self):
-            release.wait(5)
-            return {"status": "ok", "sets": SETS}
-
-    start = _time.monotonic()
-    assert pn.load_stopped_set_ids(Slow(), timeout=0.2) is None
-    assert _time.monotonic() - start < 2
-    release.set()
-    assert pn.OWNER_LIST_TIMEOUT_S <= 3
 
 
 def test_conflict_models_automatic_push_local_decisions(conflict_dialog, monkeypatch):
@@ -416,28 +344,6 @@ def test_details_dialog_records_explicit_confirmed_precision(monkeypatch, qapp):
     dialog.deleteLater()
 
 
-def test_client_creation_runs_inside_the_lookup_bound():
-    import threading
-    import time as _time
-
-    release = threading.Event()
-    main = threading.get_ident()
-    seen = {}
-
-    def slow_getter():
-        seen["thread"] = threading.get_ident()
-        release.wait(5)  # e.g. a token refresh that hangs
-        return _Client({"status": "ok", "sets": SETS})
-
-    start = _time.monotonic()
-    assert pn.load_stopped_set_ids(slow_getter, timeout=0.2) is None
-    assert _time.monotonic() - start < 2
-    release.set()
-    assert seen["thread"] != main
-    facts = load_local_facts(None, {"sporely_taxon_id": 1}, client_getter=lambda: None)
-    assert facts.uses_stopped_reference is None
-
-
 def test_notice_compares_against_cloud_precision_not_stale_local(monkeypatch, qapp):
     """Stale local 'exact' while the cloud serves 'hidden': picking Fuzzed
     widens the cloud and must ask, even though it narrows the local value."""
@@ -452,7 +358,7 @@ def test_notice_compares_against_cloud_precision_not_stale_local(monkeypatch, qa
     monkeypatch.setattr(pn, "show_publish_notice", lambda _p, text, *_s: shown.append(text) or False)
     dialog.location_precision_fuzzed_radio.click()
     dialog.accept()
-    assert len(shown) == 1 and "An approximate location" in shown[0]
+    assert len(shown) == 1 and "an approximate location" in shown[0]
     assert dialog.result() == 0
     dialog._cleanup_dialog_threads()
     dialog.deleteLater()
@@ -479,7 +385,7 @@ def test_conflict_making_spore_data_public_on_public_observation_asks(conflict_d
     shown = []
     monkeypatch.setattr(pn, "show_spore_public_notice", lambda _p, text, *_s: shown.append(text) or False)
     assert not dialog._confirm_publish_for_plan({"local_id": 593})
-    assert len(shown) == 1 and "Spore measurements" in shown[0]
+    assert len(shown) == 1 and "spore measurements" in shown[0]
     monkeypatch.setattr(pn, "show_spore_public_notice", lambda _p, text, *_s: shown.append(text) or True)
     assert dialog._confirm_publish_for_plan({"local_id": 593})
     choice["value"] = "cloud"  # keeping the cloud's private spore data: no notice

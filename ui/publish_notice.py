@@ -1,7 +1,11 @@
 """Publish notice (Stage 2c, desktop).
 
-A Publish/Cancel confirmation shown every time a desktop change makes an
-observation public and not a draft. Plan: sporely-web
+A "Make public"/Cancel confirmation shown every time a desktop change makes
+an observation public and not a draft. Desktop never publishes at once: the
+change is local and the next sync publishes it, so the texts say "after the
+next sync". The texts are deliberately short and match the web notice; the
+exposure table below is the evidence behind them. The notice says "date",
+not time of day (the server stops exposing time of day separately). Plan: sporely-web
 ``docs/plans/active/2026-10-01-reference-sharing-roles-and-publish-notice.md``,
 "Publish notice (web and desktop)".
 
@@ -97,169 +101,78 @@ def needs_publish_notice(previous: dict | None, new: dict | None) -> bool:
 class PublishFacts:
     """What the notice needs to know. ``None`` means unknown."""
 
-    attached_roles: tuple[str, ...] | None = None  # role per attached set
     spore_data_visibility: str | None = None
     has_photos: bool | None = None
-    uses_stopped_reference: bool | None = None
 
 
-def role_text(role: str) -> str:
-    return {
-        "compared": QCoreApplication.translate("PublishNotice", "compared"),
-        "supports_identification": QCoreApplication.translate("PublishNotice", "supports the identification"),
-        "contradicts": QCoreApplication.translate("PublishNotice", "contradicts the identification"),
-    }.get(str(role or ""), str(role or ""))
+def _approximate(location_precision: str | None) -> bool:
+    # 'region'/'hidden' show less than fuzzed; the approximate line is the
+    # cautious description for them.
+    return str(location_precision or "").strip().lower() in {"fuzzed", "region", "hidden"}
 
 
-def _roles_summary(roles) -> str:
-    """``2 × compared, 1 × contradicts the identification`` (stable order)."""
-    order = ["compared", "supports_identification", "contradicts"]
-    counts: dict[str, int] = {}
-    for role in roles:
-        counts[str(role or "")] = counts.get(str(role or ""), 0) + 1
-    keys = [k for k in order if k in counts] + sorted(k for k in counts if k not in order)
-    return ", ".join(f"{counts[k]} × {role_text(k)}" for k in keys)
+def location_line(location_precision: str | None) -> str:
+    if _approximate(location_precision):
+        return QCoreApplication.translate(
+            "PublishNotice", "An approximate location (about 1 km), shown with region or country only")
+    return QCoreApplication.translate(
+        "PublishNotice", "The exact location and the location name you entered")
 
 
-def references_notes(spore_data_visibility: str | None, attached_roles=None,
-                     uses_stopped_reference: bool | None = None) -> list[str]:
-    """The reference lines shared by every notice in this module."""
-    spore_hidden = spore_data_visibility is not None and spore_data_visibility != "public"
-    if spore_hidden:
+def _photo_caveat(location_precision: str | None, has_photos: bool | None) -> list[str]:
+    if _approximate(location_precision) and has_photos is not False:
         return [QCoreApplication.translate(
-            "PublishNotice",
-            "Reference sets attached to it are not shown on it while its spore data "
-            "is not public. A species-page listing already made for one of these "
-            "sets stays public until you stop sharing that set under My shared "
-            "references.")]
-    notes = [QCoreApplication.translate(
-        "PublishNotice",
-        "Reference sets attached to it are shared by default: shown on the "
-        "observation and its plots with their relationship (compared, supports the "
-        "identification or contradicts the identification), and in the species-page "
-        "listing under your name. This includes references you attach later. You "
-        "can stop sharing a reference set under My shared references.")]
-    if attached_roles:
-        notes.append(QCoreApplication.translate(
-            "PublishNotice", "Attached now: {roles}.").format(roles=_roles_summary(attached_roles)))
-    if uses_stopped_reference is True:
-        notes.append(QCoreApplication.translate(
-            "PublishNotice", "References you stopped sharing are not shown publicly."))
-    return notes
+            "PublishNotice", "Some photos may still contain the exact position in their file data.")]
+    return []
 
 
 def build_publish_notice_text(location_precision: str | None, facts: PublishFacts) -> str:
-    """Plain text of the notice for the chosen settings and facts."""
-    # 'region'/'hidden' show less than fuzzed; the approximate text and the
-    # photo caveat are the cautious description for them.
-    fuzzed = str(location_precision or "").strip().lower() in {"fuzzed", "region", "hidden"}
-    exposed = [
-        QCoreApplication.translate("PublishNotice", "An approximate location: coordinates rounded to about 1 km and only the "
-            "region or country name, not the location name you entered")
-        if fuzzed else
-        QCoreApplication.translate("PublishNotice", "The exact location: precise coordinates and the location name you entered"),
-        QCoreApplication.translate("PublishNotice", "Species, date and time of day, the date you created it, habitat, notes, the "
-            "uncertain flag, red-list status and your name"),
-        QCoreApplication.translate("PublishNotice", "The AI identification you selected and its probability"),
-        QCoreApplication.translate("PublishNotice", "Your photos, as thumbnails and at full size"),
-        QCoreApplication.translate("PublishNotice", "Microscope photos (including scale bars) and preparation details"),
-    ]
+    """Plain text of the "Make this observation public?" notice."""
     spore_hidden = facts.spore_data_visibility is not None and facts.spore_data_visibility != "public"
+    bullets = [
+        QCoreApplication.translate("PublishNotice", "Species, date, habitat, notes and your name"),
+        location_line(location_precision),
+        QCoreApplication.translate(
+            "PublishNotice", "Your photos, microscope photos and the AI identification you selected"),
+    ]
     if not spore_hidden:
-        exposed.append(QCoreApplication.translate("PublishNotice", "Spore measurements, statistics, measurement points and the spore mosaic"))
-    notes = []
-    if fuzzed and facts.has_photos is not False:
-        notes.append(QCoreApplication.translate("PublishNotice", "Some photos may still contain the exact position in their file data."))
-    if spore_hidden:
-        notes.append(QCoreApplication.translate("PublishNotice", "Spore measurements, statistics, measurement points and the spore mosaic "
-                         "stay hidden. Microscope photos and preparation details are still public."))
-    notes.append(QCoreApplication.translate("PublishNotice", "Signed-in users can read and write comments on it."))
-    notes += references_notes(facts.spore_data_visibility, facts.attached_roles,
-                              facts.uses_stopped_reference)
-    notes.append(QCoreApplication.translate("PublishNotice", "The change takes effect after the next sync."))
-    lines = [QCoreApplication.translate("PublishNotice", "Anyone, including people who are not signed in, will be able to see:")]
-    lines += [f"• {line}" for line in exposed]
+        bullets.append(QCoreApplication.translate("PublishNotice", "Spore measurements and statistics"))
+    lines = [QCoreApplication.translate(
+        "PublishNotice",
+        "After the next sync, anyone, including people who are not signed in, can see:")]
+    lines += [f"• {line}" for line in bullets]
     lines.append("")
-    lines += notes
+    if spore_hidden:
+        lines.append(QCoreApplication.translate("PublishNotice", "Spore measurements stay hidden."))
+    lines += _photo_caveat(location_precision, facts.has_photos)
+    lines.append(QCoreApplication.translate(
+        "PublishNotice",
+        "Attached references are shared by default. You can stop sharing them under "
+        "My shared references."))
     return "\n".join(lines)
 
 
-OWNER_LIST_TIMEOUT_S = 3.0
+def build_precision_notice_text(location_precision: str | None, has_photos: bool | None = None) -> str:
+    """Plain text of the "Show a more precise location?" notice."""
+    if _approximate(location_precision):
+        lines = [QCoreApplication.translate(
+            "PublishNotice",
+            "After the next sync, this public observation will show an approximate "
+            "location (about 1 km), shown with region or country only.")]
+    else:
+        lines = [QCoreApplication.translate(
+            "PublishNotice",
+            "After the next sync, this public observation will show the exact location "
+            "and the location name you entered.")]
+    lines += _photo_caveat(location_precision, has_photos)
+    return "\n\n".join(lines)
 
 
-def load_stopped_set_ids(client_or_getter, *, timeout: float | None = None) -> set[str] | None:
-    """Set ids the owner stopped sharing, or ``None`` on failure, rate limit
-    or timeout.
-
-    The call runs on a daemon thread and is abandoned after ``timeout``
-    seconds so the notice never freezes the dialog; ``None`` just omits the
-    "stopped" line.
-    """
-    if client_or_getter is None:
-        return None
-    import threading
-
-    box: dict[str, object] = {}
-
-    def run() -> None:
-        try:
-            # Creating the client (stored credentials, token refresh) also
-            # happens here, inside the bound, never on the UI thread.
-            client = client_or_getter() if callable(client_or_getter) else client_or_getter
-            if client is None:
-                box["error"] = RuntimeError("no cloud client")
-                return
-            box["result"] = client.list_my_reference_sharing()
-        except Exception as exc:  # noqa: BLE001 - any failure is "unknown"
-            box["error"] = exc
-
-    worker = threading.Thread(target=run, name="publish-notice-owner-list", daemon=True)
-    worker.start()
-    worker.join(OWNER_LIST_TIMEOUT_S if timeout is None else timeout)
-    if worker.is_alive() or "error" in box:
-        return None
-    result = box.get("result")
-    if not isinstance(result, dict) or result.get("status") != "ok":
-        return None
-    rows = result.get("sets")
-    if not isinstance(rows, list):
-        return None
-    return {
-        str(r.get("source_measurement_set_id"))
-        for r in rows
-        if isinstance(r, dict) and (r.get("stopped_at") or r.get("status") == "stopped")
-    }
-
-
-def _default_client():
-    try:
-        from utils.cloud_sync import SporelyCloudClient
-
-        return SporelyCloudClient.from_stored_credentials()
-    except Exception:
-        return None
-
-
-def load_local_facts(
-    observation_id: int | None,
-    new_state: dict,
-    *,
-    client_getter: Callable[[], object] = _default_client,
-) -> PublishFacts:
+def load_local_facts(observation_id: int | None, new_state: dict, **_ignored) -> PublishFacts:
     """Facts for a local observation as it will be after this save."""
-    attached: tuple[tuple[str, str], ...] | None = ()
     has_photos: bool | None = None
     spore = new_state.get("spore_data_visibility")
     if observation_id:
-        try:
-            from database.reference_library import ObservationReferenceUseRepository
-
-            attached = tuple(
-                (str(use.reference_measurement_set_id), str(use.role or ""))
-                for use in ObservationReferenceUseRepository.list_for_observation(int(observation_id))
-            )
-        except Exception:
-            attached = None
         try:
             from database.models import ImageDB, ObservationDB
 
@@ -273,17 +186,9 @@ def load_local_facts(
         spore = spore or "public"
     if has_photos is None and new_state.get("has_photos") is not None:
         has_photos = bool(new_state.get("has_photos"))
-    spore_text = str(spore).strip().lower() if spore else None
-    uses_stopped = None
-    if attached and spore_text == "public":
-        stopped = load_stopped_set_ids(client_getter)
-        if stopped is not None:
-            uses_stopped = any(set_id in stopped for set_id, _role in attached)
     return PublishFacts(
-        attached_roles=tuple(role for _set_id, role in attached) if attached is not None else None,
-        spore_data_visibility=spore_text,
+        spore_data_visibility=str(spore).strip().lower() if spore else None,
         has_photos=has_photos,
-        uses_stopped_reference=uses_stopped,
     )
 
 
@@ -342,15 +247,16 @@ def show_notice(parent, title: str, text: str, accept_label: str,
 
 
 def show_publish_notice(parent, text: str, suppressible: bool = True) -> bool:
-    """Publish/Cancel. Cancel is the default; returns True only on Publish.
-    The location-precision notice passes ``suppressible=False``."""
-    return show_notice(
-        parent,
-        QCoreApplication.translate("PublishNotice", "Publish this observation?"),
-        text,
-        QCoreApplication.translate("PublishNotice", "Publish"),
-        suppressible,
-    )
+    """Make public/Cancel (suppressible), or, with ``suppressible=False``,
+    the never-suppressible "Show a more precise location?" notice.
+    Cancel is the default; returns True only on the accept button."""
+    if suppressible:
+        title = QCoreApplication.translate("PublishNotice", "Make this observation public?")
+        accept = QCoreApplication.translate("PublishNotice", "Make public")
+    else:
+        title = QCoreApplication.translate("PublishNotice", "Show a more precise location?")
+        accept = QCoreApplication.translate("PublishNotice", "Show precise location")
+    return show_notice(parent, title, text, accept, suppressible)
 
 
 def confirm_publish_if_needed(
@@ -359,10 +265,10 @@ def confirm_publish_if_needed(
     new: dict,
     load_facts: Callable[[], PublishFacts],
     *,
-    show: Callable[[object, str], bool] | None = None,
+    show: Callable[..., bool] | None = None,
     enabled: Callable[[], bool] | None = None,
 ) -> bool:
-    """True when no notice is needed, it is suppressed, or the owner chose Publish.
+    """True when no notice is needed, it is suppressed, or the owner accepted.
 
     Only the publishing transition (private/friends/draft -> public) can be
     suppressed. Widening the location of an already public observation
@@ -376,7 +282,10 @@ def confirm_publish_if_needed(
         facts = load_facts()
     except Exception:
         facts = PublishFacts()
-    text = build_publish_notice_text(new.get("location_precision"), facts)
+    if suppressible:
+        text = build_publish_notice_text(new.get("location_precision"), facts)
+    else:
+        text = build_precision_notice_text(new.get("location_precision"), facts.has_photos)
     return bool((show or show_publish_notice)(parent, text, suppressible))
 
 
@@ -393,31 +302,12 @@ def needs_public_attach_notice(observation: dict | None) -> bool:
     return is_public(observation) and spore_data_public(observation)
 
 
-def build_attach_notice_text(roles) -> str:
-    roles = [str(r or "") for r in (roles or [])]
-    if len(roles) <= 1:
-        lead = QCoreApplication.translate(
-            "PublishNotice",
-            "This observation is public. The reference set you attach will be shown "
-            "publicly on it, with its relationship ({role}), in its plots and in the "
-            "species-page listing under your name.").format(
-            role=role_text(roles[0] if roles else "compared"))
-    else:
-        lead = QCoreApplication.translate(
-            "PublishNotice",
-            "This observation is public. The {count} reference sets you attach will "
-            "be shown publicly on it, each with its relationship ({roles}), in its "
-            "plots and in the species-page listing under your name.").format(
-            count=len(roles), roles=_roles_summary(roles))
-    return "\n\n".join([
-        lead,
-        QCoreApplication.translate(
-            "PublishNotice",
-            "A reference set you have stopped sharing, or one hidden by moderation, "
-            "is not shown. You can stop sharing a reference set under My shared "
-            "references."),
-        QCoreApplication.translate("PublishNotice", "The change takes effect after the next sync."),
-    ])
+def build_attach_notice_text() -> str:
+    return QCoreApplication.translate(
+        "PublishNotice",
+        "This observation is public. After the next sync, the attached reference is "
+        "shown with it, including its relationship to your identification. You can "
+        "stop sharing it under My shared references.")
 
 
 def show_attach_notice(parent, text: str) -> bool:
@@ -432,18 +322,20 @@ def show_attach_notice(parent, text: str) -> bool:
 def confirm_public_attach_if_needed(
     parent,
     observation: dict | None,
-    roles,
+    roles=None,
     *,
     show: Callable[[object, str], bool] | None = None,
     enabled: Callable[[], bool] | None = None,
 ) -> bool:
     """One notice for one attach action (single item or a whole batch).
-    True when no notice is needed, it is suppressed, or the owner chose Attach."""
+    ``roles`` is accepted for callers' convenience; the text names the
+    relationship generically. True when no notice is needed, it is
+    suppressed, or the owner chose Attach."""
     if not needs_public_attach_notice(observation):
         return True
     if not (enabled or publish_notice_enabled)():
         return True
-    return bool((show or show_attach_notice)(parent, build_attach_notice_text(roles)))
+    return bool((show or show_attach_notice)(parent, build_attach_notice_text()))
 
 
 # --- Making spore data public on an already public observation -----------------
@@ -455,15 +347,11 @@ def needs_spore_public_notice(observation: dict | None, new_visibility: str | No
     return new_vis == "public" and is_public(observation) and not spore_data_public(observation)
 
 
-def build_spore_public_notice_text(attached_roles=None) -> str:
-    lines = [
-        QCoreApplication.translate("PublishNotice", "Anyone, including people who are not signed in, will be able to see:"),
-        "• " + QCoreApplication.translate("PublishNotice", "Spore measurements, statistics, measurement points and the spore mosaic"),
-        "",
-    ]
-    lines += references_notes("public", attached_roles)
-    lines.append(QCoreApplication.translate("PublishNotice", "The change takes effect after the next sync."))
-    return "\n".join(lines)
+def build_spore_public_notice_text() -> str:
+    return QCoreApplication.translate(
+        "PublishNotice",
+        "After the next sync, anyone can see this observation's spore measurements and "
+        "statistics, and the references attached to it.")
 
 
 def show_spore_public_notice(parent, text: str) -> bool:
@@ -479,7 +367,6 @@ def confirm_spore_public_if_needed(
     parent,
     observation: dict | None,
     new_visibility: str | None,
-    load_roles: Callable[[], object] | None = None,
     *,
     show: Callable[[object, str], bool] | None = None,
     enabled: Callable[[], bool] | None = None,
@@ -489,10 +376,4 @@ def confirm_spore_public_if_needed(
         return True
     if not (enabled or publish_notice_enabled)():
         return True
-    roles = None
-    if load_roles is not None:
-        try:
-            roles = load_roles()
-        except Exception:
-            roles = None
-    return bool((show or show_spore_public_notice)(parent, build_spore_public_notice_text(roles)))
+    return bool((show or show_spore_public_notice)(parent, build_spore_public_notice_text()))

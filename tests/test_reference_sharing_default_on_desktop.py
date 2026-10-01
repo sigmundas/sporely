@@ -304,12 +304,14 @@ def test_attach_notice_decision(obs, expected):
     assert pn.needs_public_attach_notice(obs) is expected
 
 
-def test_attach_notice_text_names_relationships():
-    one = pn.build_attach_notice_text(["contradicts"])
-    assert "contradicts the identification" in one and "My shared references" in one
-    many = pn.build_attach_notice_text(["compared", "contradicts", "compared"])
-    assert "3 reference sets" in many
-    assert "2 × compared" in many and "1 × contradicts the identification" in many
+def test_attach_and_spore_notice_texts_verbatim():
+    assert pn.build_attach_notice_text() == (
+        "This observation is public. After the next sync, the attached reference is shown "
+        "with it, including its relationship to your identification. You can stop sharing "
+        "it under My shared references.")
+    assert pn.build_spore_public_notice_text() == (
+        "After the next sync, anyone can see this observation's spore measurements and "
+        "statistics, and the references attached to it.")
 
 
 def _attach_host(monkeypatch, obs):
@@ -334,7 +336,7 @@ def test_single_attach_to_public_observation_asks_and_cancel_attaches_nothing(mo
     shown = []
     monkeypatch.setattr(pn, "show_attach_notice", lambda _p, t: shown.append(t) or answer)
     host._attach_normalized_reference_to_active_observation("ms-1", "contradicts")
-    assert len(shown) == 1 and "contradicts the identification" in shown[0]
+    assert len(shown) == 1 and "relationship to your identification" in shown[0]
     assert attached == ([(5, "ms-1", "contradicts")] if answer else [])
 
 
@@ -400,7 +402,7 @@ def test_spore_visibility_to_public_on_public_observation_asks(monkeypatch, answ
     monkeypatch.setattr(pn, "show_spore_public_notice", lambda _p, t: shown.append(t) or answer)
     host._on_spore_sharing_changed()
     assert len(shown) == 1
-    assert "Spore measurements" in shown[0] and "contradicts the identification" in shown[0]
+    assert "spore measurements" in shown[0] and "references attached" in shown[0]
     if answer:
         assert state["updates"] == [(7, {"spore_data_visibility": "public"})]
     else:
