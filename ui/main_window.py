@@ -10068,7 +10068,7 @@ class MainWindow(GeometryMixin, QMainWindow):
 
         def _confirm_attach_callback(roles: list[str]) -> bool:
             """One public-observation notice for a whole Library batch."""
-            return self._confirm_public_reference_attach(captured_observation_id, roles)
+            return self._confirm_picker_batch_attach(captured_observation_id, roles)
 
         dialog = AddReferenceDialog(
             self,
@@ -10284,6 +10284,16 @@ class MainWindow(GeometryMixin, QMainWindow):
         if reason:
             box = QMessageBox.critical if severity == "critical" else QMessageBox.warning
             box(self, self.tr("Attach library reference"), reason)
+
+    def _confirm_picker_batch_attach(self, captured_observation_id: int, roles) -> bool:
+        """The picker's batch confirm. When the active observation drifted
+        since the picker opened, skip the notice (True): every item then
+        reports ``observation_changed`` and nothing is attached, so a
+        confirm for the wrong observation would only mislead."""
+        current = getattr(self, "active_observation_id", None)
+        if current is None or int(current) != int(captured_observation_id):
+            return True
+        return self._confirm_public_reference_attach(int(captured_observation_id), roles)
 
     def _confirm_public_reference_attach(self, observation_id: int, roles) -> bool:
         """One notice before attaching reference set(s) to an observation

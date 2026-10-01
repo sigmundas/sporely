@@ -413,3 +413,18 @@ def test_spore_visibility_on_draft_needs_no_notice(monkeypatch):
                         lambda *_a: (_ for _ in ()).throw(AssertionError("no notice")))
     host._on_spore_sharing_changed()
     assert state["updates"] == [(7, {"spore_data_visibility": "public"})]
+
+
+def test_batch_confirm_skips_notice_when_observation_drifted(monkeypatch):
+    import ui.main_window as mw
+
+    host, _attached = _attach_host(monkeypatch, PUB)
+    host._confirm_picker_batch_attach = MethodType(mw.MainWindow._confirm_picker_batch_attach, host)
+    shown = []
+    monkeypatch.setattr(pn, "show_attach_notice", lambda _p, t: shown.append(t) or False)
+    host.active_observation_id = 6  # picker opened on 5
+    assert host._confirm_picker_batch_attach(5, ["compared"]) is True
+    assert shown == []
+    host.active_observation_id = 5
+    assert host._confirm_picker_batch_attach(5, ["compared"]) is False
+    assert len(shown) == 1
