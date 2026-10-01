@@ -914,3 +914,118 @@ def test_legacy_single_path_preview_add_uses_the_default_role():
         assert received == [("ms-this-range", "compared")]
     finally:
         dialog.close()
+
+
+# --- Public-observation attach notice (default-on reference sharing) ---------
+
+
+def _confirming_dialog(answer: bool, outcomes=None):
+    calls: list[tuple[str, str]] = []
+    asked: list[list[str]] = []
+
+    def _cb(ms_id: str, role: str):
+        calls.append((ms_id, role))
+        return (outcomes or {}).get(ms_id, ("attached", None))
+
+    def _confirm(roles):
+        asked.append(list(roles))
+        return answer
+
+    dialog = _make_dialog(library_attach_callback=_cb, confirm_attach_callback=_confirm)
+    return dialog, calls, asked
+
+
+def test_batch_asks_once_with_every_role_and_cancel_attaches_nothing():
+    dialog, calls, asked = _confirming_dialog(False)
+    try:
+        for ms_id in ("ms-this-range", "ms-this-points"):
+            _row_widget(dialog, ms_id).checkbox.setChecked(True)
+        dialog.set_source_role("ms-this-points", "contradicts")
+        dialog._on_add_to_plot_clicked()
+        assert asked == [["compared", "contradicts"]]  # one notice for the batch
+        assert calls == []
+        assert dialog.result() != QDialog.Accepted
+        assert dialog.checked_source_ids() == ["ms-this-range", "ms-this-points"]
+    finally:
+        dialog.close()
+
+
+def test_batch_confirmed_attaches_each_with_its_role_contradicts_included():
+    dialog, calls, asked = _confirming_dialog(
+        True, {"ms-this-points": ("failed", "boom")}
+    )
+    try:
+        for ms_id in ("ms-this-range", "ms-this-points", "ms-rest-decile"):
+            _row_widget(dialog, ms_id).checkbox.setChecked(True)
+        dialog.set_source_role("ms-rest-decile", "contradicts")
+        dialog._on_add_to_plot_clicked()
+        assert len(asked) == 1
+        assert calls == [
+            ("ms-this-range", "compared"),
+            ("ms-this-points", "compared"),
+            ("ms-rest-decile", "contradicts"),
+        ]
+        # Partial failure keeps the per-item outcomes.
+        assert [o[1] for o in dialog.last_attach_outcomes] == ["attached", "failed", "attached"]
+        assert dialog.checked_source_ids() == ["ms-this-points"]
+    finally:
+        dialog.close()
+
+
+def test_preview_add_asks_with_the_default_role():
+    dialog, calls, asked = _confirming_dialog(True)
+    try:
+        dialog._preview_candidate = next(
+            c for c in dialog._candidates if c.measurement_set_id == "ms-this-range"
+        )
+        dialog._on_add_to_plot_clicked()
+        assert asked == [["compared"]]
+        assert calls == [("ms-this-range", "compared")]
+    finally:
+        dialog.close()
+
+
+def test_contradicts_goes_end_to_end_into_attach_with_status(monkeypatch):
+    """Picker role -> MainWindow outcome helper -> repository, after the
+    public-observation notice was accepted once for the batch."""
+    from types import MethodType, SimpleNamespace
+
+    import ui.main_window as mw
+    import ui.publish_notice as pn
+
+    repo_calls = []
+
+    def attach_with_status(obs_id, ms_id, *, role):
+        repo_calls.append((obs_id, ms_id, role))
+        return SimpleNamespace(id=f"use-{ms_id}", role=role), True
+
+    monkeypatch.setattr(mw.ObservationReferenceUseRepository, "attach_with_status",
+                        staticmethod(attach_with_status))
+    monkeypatch.setattr(mw.MeasurementSetPreferenceRepository, "mark_used",
+                        staticmethod(lambda _id: None))
+    monkeypatch.setattr(mw, "translate_observation_reference_use", lambda use: {"use": use.id})
+    monkeypatch.setattr(mw.ObservationDB, "get_observation", staticmethod(lambda _id: {
+        "sharing_scope": "public", "is_draft": 0, "spore_data_visibility": "public"}))
+    monkeypatch.setattr(pn, "publish_notice_enabled", lambda: True)
+    shown = []
+    monkeypatch.setattr(pn, "show_attach_notice", lambda _p, text: shown.append(text) or True)
+    host = SimpleNamespace(tr=lambda t: t, _add_reference_series_entry=lambda e: True,
+                           _build_malformed_reference_series_entry=lambda use: {})
+    host._attach_normalized_reference_outcome = MethodType(
+        mw.MainWindow._attach_normalized_reference_outcome, host)
+    host._confirm_public_reference_attach = MethodType(
+        mw.MainWindow._confirm_public_reference_attach, host)
+    dialog = _make_dialog(
+        library_attach_callback=lambda ms, role: host._attach_normalized_reference_outcome(5, ms, role)[:2],
+        confirm_attach_callback=lambda roles: host._confirm_public_reference_attach(5, roles),
+    )
+    try:
+        _row_widget(dialog, "ms-this-range").checkbox.setChecked(True)
+        _row_widget(dialog, "ms-this-points").checkbox.setChecked(True)
+        dialog.set_source_role("ms-this-points", "contradicts")
+        dialog._on_add_to_plot_clicked()
+        assert len(shown) == 1 and "contradicts the identification" in shown[0]
+        assert repo_calls == [(5, "ms-this-range", "compared"), (5, "ms-this-points", "contradicts")]
+        assert dialog.result() == QDialog.Accepted
+    finally:
+        dialog.close()

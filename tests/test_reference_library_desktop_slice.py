@@ -1006,6 +1006,9 @@ def _bind_attach_handler(stub):
     stub._attach_normalized_reference_outcome = MethodType(
         MainWindow._attach_normalized_reference_outcome, stub
     )
+    # The public-observation attach notice has its own tests; here the
+    # observation is never public, so no notice applies.
+    stub._confirm_public_reference_attach = lambda _obs_id, _roles: True
     stub._current_attached_measurement_set_ids = MethodType(
         MainWindow._current_attached_measurement_set_ids, stub
     )

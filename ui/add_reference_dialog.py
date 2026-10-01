@@ -83,6 +83,11 @@ is held, "Add to plot" attaches *that* set through
 submitting the editor a second time, which would store the same typed data
 twice. Editing the form afterwards drops the id, because the saved set no
 longer describes what is on screen.
+
+``confirm_attach_callback(roles) -> bool`` is asked once, with the role of
+every queued Library source, before a Library add attaches anything; the
+host uses it for the notice shown when the observation is already public.
+False attaches nothing and leaves the selection as it was.
 """
 from __future__ import annotations
 
@@ -430,6 +435,7 @@ class AddReferenceDialog(GeometryMixin, QDialog):
         manual_attach_callback: Callable[["ReferenceEntryEditor"], bool] | None = None,
         manual_save_callback: Callable[["ReferenceEntryEditor"], str | None] | None = None,
         attach_saved_set_callback: Callable[[str], bool] | None = None,
+        confirm_attach_callback: Callable[[list[str]], bool] | None = None,
         candidates: list[MeasurementSetCandidate] | None = None,
         my_observations: list[PersonalObservationCandidate] | None = None,
         community_results: list[dict] | None = None,
@@ -470,6 +476,10 @@ class AddReferenceDialog(GeometryMixin, QDialog):
         self._manual_attach_callback = manual_attach_callback
         self._manual_save_callback = manual_save_callback
         self._attach_saved_set_callback = attach_saved_set_callback
+        # Asked once, with every role, before a Library batch is attached
+        # (e.g. the notice for an already public observation). False means
+        # attach nothing.
+        self._confirm_attach_callback = confirm_attach_callback
         # Set by a successful "Save to library": the id of the measurement
         # set the manual entry now IS in the library. While it is valid,
         # "Add to plot" attaches that exact set instead of submitting the
@@ -2076,6 +2086,10 @@ class AddReferenceDialog(GeometryMixin, QDialog):
             )
             for ms_id in targets
         }
+        if self._confirm_attach_callback is not None and not self._confirm_attach_callback(
+            [roles_used[ms_id] for ms_id in targets]
+        ):
+            return  # cancelled: nothing attached, selection kept
         labels = {c.measurement_set_id: c for c in self._candidates}
         outcomes: list[tuple[str, str, str | None]] = []
         stale_observation = False

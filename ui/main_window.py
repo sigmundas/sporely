@@ -1427,6 +1427,20 @@ class SettingsHubDialog(QDialog):
         # Cloud/profile identity lives on the profile page; publishing content
         # and image copyright stay together here.
         layout.addWidget(self._artsobs_dialog)
+        # The "Don't show this again" switch of the publish notice (and the
+        # related public-reference / public-spore-data notices), restorable
+        # here. Saved on toggle, like the language page.
+        from ui.publish_notice import publish_notice_enabled, set_publish_notice_enabled
+
+        self._show_publish_notice_check = QCheckBox(
+            self.tr("Show what becomes public before publishing")
+        )
+        self._show_publish_notice_check.setChecked(publish_notice_enabled())
+        self._show_publish_notice_check.toggled.connect(
+            lambda checked: set_publish_notice_enabled(bool(checked))
+        )
+        layout.addSpacing(8)
+        layout.addWidget(self._show_publish_notice_check)
         return page
 
     def _build_language_page(self) -> QWidget:
@@ -8542,6 +8556,24 @@ class MainWindow(GeometryMixin, QMainWindow):
             vis = 'friends'
         else:
             vis = 'public'
+        # Making spore data public on a public, non-draft observation also
+        # makes its attached reference sets public: same notice family as
+        # the publish notice (and the same "Don't show this again").
+        from ui.publish_notice import confirm_spore_public_if_needed
+
+        before = ObservationDB.get_observation(obs_id) or {}
+
+        def _attached_roles():
+            from database.reference_library import ObservationReferenceUseRepository
+
+            return [
+                str(use.role or "")
+                for use in ObservationReferenceUseRepository.list_for_observation(int(obs_id))
+            ]
+
+        if not confirm_spore_public_if_needed(self, before, vis, _attached_roles):
+            self._update_spore_sharing_ui(obs_id)  # back to the stored choice
+            return
         ObservationDB.update_observation(obs_id, spore_data_visibility=vis)
         from utils.cloud_sync import mark_observation_dirty
         mark_observation_dirty(obs_id)
@@ -10034,8 +10066,13 @@ class MainWindow(GeometryMixin, QMainWindow):
                 captured_observation_id, str(measurement_set_id)
             )
 
+        def _confirm_attach_callback(roles: list[str]) -> bool:
+            """One public-observation notice for a whole Library batch."""
+            return self._confirm_public_reference_attach(captured_observation_id, roles)
+
         dialog = AddReferenceDialog(
             self,
+            confirm_attach_callback=_confirm_attach_callback,
             taxon_label=taxon_label,
             taxon_id=active_taxon,
             genus=genus,
@@ -10239,12 +10276,25 @@ class MainWindow(GeometryMixin, QMainWindow):
             return
         if not measurement_set_id:
             return
+        if not self._confirm_public_reference_attach(int(observation_id), [role]):
+            return  # cancelled: nothing attached
         status, reason, severity = self._attach_normalized_reference_outcome(
             int(observation_id), measurement_set_id, role
         )
         if reason:
             box = QMessageBox.critical if severity == "critical" else QMessageBox.warning
             box(self, self.tr("Attach library reference"), reason)
+
+    def _confirm_public_reference_attach(self, observation_id: int, roles) -> bool:
+        """One notice before attaching reference set(s) to an observation
+        that is already public, not a draft and spore-public: the sets are
+        shared by default, so they become public with their relationship.
+        True when no notice is needed, it is suppressed, or the user chose
+        Attach. Batch callers ask once for the whole batch."""
+        from ui.publish_notice import confirm_public_attach_if_needed
+
+        observation = ObservationDB.get_observation(int(observation_id)) or {}
+        return confirm_public_attach_if_needed(self, observation, list(roles or []))
 
     def _attach_normalized_reference_outcome(
         self, observation_id: int, measurement_set_id: str, role: str

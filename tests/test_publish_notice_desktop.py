@@ -18,13 +18,18 @@ from ui.publish_notice import (
     build_publish_notice_text,
     load_local_facts,
     needs_publish_notice,
-    resolve_already_shared,
 )
 
 
 @pytest.fixture(scope="module")
 def qapp():
     return QApplication.instance() or QApplication([])
+
+
+@pytest.fixture(autouse=True)
+def _notice_not_suppressed(monkeypatch):
+    # Never read the real profile database for the "Don't show again" switch.
+    monkeypatch.setattr(pn, "publish_notice_enabled", lambda: True)
 
 
 PUB = {"sharing_scope": "public", "is_draft": False}
@@ -49,55 +54,42 @@ def test_shown_exactly_on_publishing_transitions(previous, new, expected):
     assert needs_publish_notice(previous, new) is expected
 
 
-# --- Already shared -----------------------------------------------------------------
+# --- References: shared by default ----------------------------------------------------
 
-LISTING = [
-    {"contribution_id": "c1", "status": "shared", "sporely_taxon_id": 617026,
-     "source_measurement_set_id": "set-a", "canonical_scientific_name": "Mycena galopus",
-     "source_short_label": "Funga 2020"},
-    {"contribution_id": "c2", "status": "withdrawn", "sporely_taxon_id": 617026,
-     "source_measurement_set_id": "set-b"},
+SETS = [
+    {"source_measurement_set_id": "set-a", "status": "shared", "stopped_at": None},
+    {"source_measurement_set_id": "set-b", "status": "stopped", "stopped_at": "2026-10-01"},
+    {"source_measurement_set_id": "set-c", "status": "hidden", "stopped_at": "2026-10-01"},
 ]
 
 
 def _facts(**kw):
-    base = dict(attached_uses=(("set-a", "contradicts"),), taxon_id=617026, taxon_known=True,
-                spore_data_visibility="public", has_photos=True, contributions=LISTING)
+    base = dict(attached_roles=("contradicts",), spore_data_visibility="public",
+                has_photos=True, uses_stopped_reference=None)
     base.update(kw)
     return PublishFacts(**base)
 
 
-def test_already_shared_line_only_when_it_applies():
-    kind, matches = resolve_already_shared(_facts())
-    assert kind == "yes" and matches[0][1] == "contradicts"
+def test_references_are_described_as_shared_by_default_with_relationship():
     text = build_publish_notice_text("exact", _facts())
-    assert ("You have already shared the reference Mycena galopus · Funga 2020. It will appear "
-            "on this observation as \"contradicts the identification\".") in text
-    assert "may appear" not in text
-    for facts in (_facts(attached_uses=()), _facts(attached_uses=(("set-b", "compared"),)),
-                  _facts(spore_data_visibility="private")):
-        text = build_publish_notice_text("exact", facts)
-        assert "already shared" not in text and "may appear" not in text
+    assert "Reference sets attached to it are shared by default" in text
+    assert "contradicts the identification" in text
+    assert "My shared references" in text
+    assert "Attached now: 1 × contradicts the identification." in text
+    assert "Share publicly" not in text and "one by one" not in text
 
 
-def test_species_change_in_the_same_save_is_matched():
-    assert resolve_already_shared(_facts(taxon_id=999))[0] == "no"
-    listing = [dict(LISTING[0], sporely_taxon_id=999)]
-    assert resolve_already_shared(_facts(taxon_id=999, contributions=listing))[0] == "yes"
+def test_references_not_public_while_spore_data_hidden():
+    text = build_publish_notice_text("exact", _facts(spore_data_visibility="private"))
+    assert "not shown publicly while its spore data is not public" in text
+    assert "shared by default" not in text and "Attached now" not in text
 
 
-@pytest.mark.parametrize("facts", [
-    _facts(contributions=None),                       # failed / rate-limited lookup
-    _facts(attached_uses=None),                       # uses unknown
-    _facts(taxon_known=False),
-    _facts(taxon_id=None),                            # no species after the save
-    _facts(spore_data_visibility=None),
-    _facts(contributions=[{k: v for k, v in LISTING[0].items() if k != "source_measurement_set_id"}]),
-])
-def test_unknown_lookup_shows_cautious_line(facts):
-    text = build_publish_notice_text("exact", facts)
-    assert "References you have shared may appear on this observation." in text
-    assert "already shared" not in text
+def test_stopped_reference_line_only_when_known():
+    assert "you stopped sharing" in build_publish_notice_text("exact", _facts(uses_stopped_reference=True))
+    for value in (False, None):
+        assert "you stopped sharing" not in build_publish_notice_text(
+            "exact", _facts(uses_stopped_reference=value))
 
 
 class _Client:
@@ -105,7 +97,7 @@ class _Client:
         self.result = result
         self.calls = 0
 
-    def list_my_shared_reference_contributions(self):
+    def list_my_reference_sharing(self):
         self.calls += 1
         if isinstance(self.result, Exception):
             raise self.result
@@ -113,19 +105,23 @@ class _Client:
 
 
 @pytest.mark.parametrize("result", [RuntimeError("offline"), {"status": "rate_limited"},
-                                    {"status": "ok", "contributions": "x"}])
-def test_load_owner_contributions_failures_are_unknown(result):
-    assert pn.load_owner_contributions(_Client(result)) is None
-    assert pn.load_owner_contributions(None) is None
+                                    {"status": "ok", "sets": "x"}])
+def test_load_stopped_set_ids_failures_are_unknown(result):
+    assert pn.load_stopped_set_ids(_Client(result)) is None
+    assert pn.load_stopped_set_ids(None) is None
+
+
+def test_load_stopped_set_ids_reads_stopped_and_hidden_stopped():
+    assert pn.load_stopped_set_ids(_Client({"status": "ok", "sets": SETS})) == {"set-b", "set-c"}
 
 
 def test_load_local_facts_new_observation_uses_state_after_save():
-    client = _Client({"status": "ok", "contributions": LISTING})
+    client = _Client({"status": "ok", "sets": SETS})
     facts = load_local_facts(None, {"sporely_taxon_id": 617026, "has_photos": False},
                              client_getter=lambda: client)
     # A new observation has no attached references, so no lookup is needed.
-    assert facts.attached_uses == () and client.calls == 0
-    assert resolve_already_shared(facts)[0] == "no"
+    assert facts.attached_roles == () and client.calls == 0
+    assert facts.uses_stopped_reference is None
 
 
 # --- Text matches the verified exposure ------------------------------------------------
@@ -142,7 +138,7 @@ def test_text_exact_location_and_public_spore_data():
         "Microscope photos (including scale bars) and preparation details",
         "Spore measurements, statistics, measurement points and the spore mosaic",
         "Signed-in users can read and write comments on it.",
-        "stay private unless you share them one by one with \"Share publicly…\".",
+        "Reference sets attached to it are shared by default",
         "The change takes effect after the next sync.",
     ):
         assert needle in text, needle
@@ -168,7 +164,7 @@ def _details_dialog(monkeypatch, qapp, baseline):
     observation = _observation_917(**baseline)
     monkeypatch.setattr(observations_tab.ObservationDB, "get_observation",
                         lambda _id: dict(observation))
-    monkeypatch.setattr(pn, "load_local_facts", lambda *_a, **_k: _facts(contributions=None))
+    monkeypatch.setattr(pn, "load_local_facts", lambda *_a, **_k: _facts())
     import utils.cloud_sync as cloud_sync
     recorded = []
     monkeypatch.setattr(cloud_sync, "record_confirmed_location_precision",
@@ -186,7 +182,7 @@ def test_unchecking_draft_while_public_asks_and_cancel_keeps_draft(monkeypatch, 
     monkeypatch.setattr(pn, "show_publish_notice", lambda _p, text: shown.append(text) or answer)
     dialog.is_draft_checkbox.setChecked(False)
     dialog.accept()
-    assert len(shown) == 1 and "may appear" in shown[0]
+    assert len(shown) == 1 and "shared by default" in shown[0]
     assert dialog.result() == (QDialog.Accepted if answer else 0)
     assert dialog.is_draft_checkbox.isChecked() is (not answer)
     dialog._cleanup_dialog_threads()
@@ -242,7 +238,7 @@ def conflict_dialog(qapp, monkeypatch):
         "cloud_access_token": _fixed_token(), "cloud_user_id": "user-1"})
     monkeypatch.setattr(conflict_ui, "get_conflict_detail", lambda *a, **k: copy.deepcopy(detail))
     monkeypatch.setattr(conflict_ui.ConflictDetailWorker, "start", lambda self: self.run())
-    monkeypatch.setattr(pn, "load_local_facts", lambda *_a, **_k: _facts(contributions=None))
+    monkeypatch.setattr(pn, "load_local_facts", lambda *_a, **_k: _facts())
     import utils.cloud_sync as cloud_sync
     recorded = []
     monkeypatch.setattr(cloud_sync, "record_confirmed_location_precision",
@@ -366,25 +362,22 @@ def test_conflict_precision_increase_on_public_asks(conflict_dialog, monkeypatch
     assert len(shown) == 2
 
 
-def test_owner_list_lookup_times_out_to_cautious_line():
+def test_owner_list_lookup_times_out_to_unknown():
     import threading
     import time as _time
 
     release = threading.Event()
 
     class Slow:
-        def list_my_shared_reference_contributions(self):
+        def list_my_reference_sharing(self):
             release.wait(5)
-            return {"status": "ok", "contributions": LISTING}
+            return {"status": "ok", "sets": SETS}
 
     start = _time.monotonic()
-    assert pn.load_owner_contributions(Slow(), timeout=0.2) is None
+    assert pn.load_stopped_set_ids(Slow(), timeout=0.2) is None
     assert _time.monotonic() - start < 2
     release.set()
-    text = build_publish_notice_text("exact", _facts(contributions=None))
-    assert "References you have shared may appear on this observation." in text
     assert pn.OWNER_LIST_TIMEOUT_S <= 3
-    assert pn.load_owner_contributions(_Client({"status": "ok", "contributions": LISTING})) == LISTING
 
 
 def test_conflict_models_automatic_push_local_decisions(conflict_dialog, monkeypatch):
@@ -432,15 +425,15 @@ def test_client_creation_runs_inside_the_lookup_bound():
     def slow_getter():
         seen["thread"] = threading.get_ident()
         release.wait(5)  # e.g. a token refresh that hangs
-        return _Client({"status": "ok", "contributions": LISTING})
+        return _Client({"status": "ok", "sets": SETS})
 
     start = _time.monotonic()
-    assert pn.load_owner_contributions(slow_getter, timeout=0.2) is None
+    assert pn.load_stopped_set_ids(slow_getter, timeout=0.2) is None
     assert _time.monotonic() - start < 2
     release.set()
     assert seen["thread"] != main
     facts = load_local_facts(None, {"sporely_taxon_id": 1}, client_getter=lambda: None)
-    assert facts.contributions is None
+    assert facts.uses_stopped_reference is None
 
 
 def test_notice_compares_against_cloud_precision_not_stale_local(monkeypatch, qapp):
