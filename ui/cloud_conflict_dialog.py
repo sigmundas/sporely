@@ -1499,12 +1499,47 @@ class CloudConflictDialog(QDialog):
             'baseline': dict((self._current_detail or {}).get('plan_baseline') or {}),
         }
 
+    def resolved_observation_state(self) -> tuple[dict, dict]:
+        """(cloud state now, observation state after the selected field choices)."""
+        detail = self._current_detail or {}
+        remote = dict(detail.get('remote_observation') or {})
+        local = dict(detail.get('local_observation') or {})
+        resolved = dict(local)
+        resolved.update(remote)
+        if 'sharing_scope' not in resolved and 'visibility' in remote:
+            resolved['sharing_scope'] = remote.get('visibility')
+        for row in detail.get('field_rows') or []:
+            field = str(row.get('field') or '')
+            choice = self._selected_choice(f'field:{field}')
+            if choice not in {'local', 'cloud'}:
+                continue
+            value = row.get('local') if choice == 'local' else row.get('remote')
+            resolved[field] = value
+            if field in {'visibility', 'sharing_scope'}:
+                resolved['sharing_scope'] = value
+                resolved['visibility'] = value
+        return remote, resolved
+
+    def _confirm_publish_for_plan(self, conflict: dict) -> bool:
+        """Stage 2c publish notice when the resolution makes the observation
+        public and not a draft (compared with what the cloud serves now)."""
+        from ui.publish_notice import confirm_publish_if_needed, load_local_facts
+
+        previous, resolved = self.resolved_observation_state()
+        local_id = int(conflict.get('local_id') or 0) or None
+        return confirm_publish_if_needed(
+            self, previous, resolved,
+            lambda: load_local_facts(local_id, resolved),
+        )
+
     def _apply_selected_changes(self) -> None:
         conflict = self._current_conflict()
         if conflict is None or not self._apply_btn.isEnabled():
             return
         if self._apply_worker is not None:
             return  # a second worker cannot start
+        if not self._confirm_publish_for_plan(conflict):
+            return  # Cancel: nothing applied, choices stay as they were
         # Preserve current selection so failure can restore it.
         self._pending_selection = {
             key: self._selected_choice(key) or '' for key in self._choice_specs

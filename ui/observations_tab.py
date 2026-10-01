@@ -12760,6 +12760,8 @@ class ObservationsTab(QWidget):
             return
         image_results = self._cloud_image_import_results(row_data)
         draft_observation: dict | None = self._cloud_observation_draft_data(row_data)
+        # Publish notice baseline: the cloud row's own sharing state.
+        cloud_publish_baseline = dict(draft_observation)
         ai_state: dict | None = self._load_cloud_observation_ai_state(row_data, image_results)
         ai_taxon: dict | None = None
         primary_index = 0 if image_results else None
@@ -12773,6 +12775,7 @@ class ObservationsTab(QWidget):
                 ai_state=ai_state,
                 draft_data=draft_observation,
             )
+            dialog.publish_baseline = cloud_publish_baseline
             if dialog.exec():
                 obs_data = dialog.get_data()
                 image_results = list(dialog.image_results)
@@ -17213,6 +17216,56 @@ class ObservationDetailsDialog(GeometryMixin, QDialog):
     def done(self, result: int) -> None:  # noqa: N802 - Qt API
         self._cleanup_dialog_threads()
         super().done(result)
+
+    def _publish_baseline_state(self) -> dict | None:
+        """Sharing state before this save: the persisted row when editing,
+        the cloud row for a cloud draft, nothing for a new observation."""
+        baseline = getattr(self, "publish_baseline", None)
+        if baseline is not None:
+            return dict(baseline)
+        if self.edit_mode and isinstance(self.observation, dict):
+            obs_id = self.observation.get("id")
+            if obs_id:
+                try:
+                    stored = ObservationDB.get_observation(int(obs_id))
+                except Exception:
+                    stored = None
+                if stored:
+                    return dict(stored)
+            return dict(self.observation)
+        return None
+
+    def accept(self) -> None:  # noqa: D401 - Qt API
+        """Stage 2c publish notice: confirm before a save that makes the
+        observation public and not a draft. Cancel keeps the previous state."""
+        from ui.publish_notice import confirm_publish_if_needed, load_local_facts
+
+        previous = self._publish_baseline_state()
+        try:
+            new_state = dict(self.get_data())
+        except Exception:
+            new_state = {}
+        if new_state and "has_photos" not in new_state:
+            new_state["has_photos"] = bool(self.image_results)
+        obs_id = (self.observation or {}).get("id") if self.edit_mode else None
+        if new_state and not confirm_publish_if_needed(
+            self, previous, new_state,
+            lambda: load_local_facts(obs_id, new_state),
+        ):
+            self._restore_publish_controls(previous)
+            return
+        super().accept()
+
+    def _restore_publish_controls(self, previous: dict | None) -> None:
+        """Put the draft and visibility controls back to the previous state."""
+        previous = previous or {}
+        if hasattr(self, "is_draft_checkbox"):
+            self.is_draft_checkbox.setChecked(bool(previous.get("is_draft", True)) if previous else True)
+        if previous:
+            self._set_sharing_scope(
+                previous.get("sharing_scope") or previous.get("visibility"),
+                location_public=previous.get("location_public"),
+            )
 
     def closeEvent(self, event):
         self._cleanup_dialog_threads()
