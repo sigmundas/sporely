@@ -2237,12 +2237,13 @@ _PULL_ONLY_BLOCKED_CLIENT_METHODS = frozenset({
     'sync_reference_measurement_set', 'sync_observation_reference_use',
     'submit_private_reference_for_curation', 'share_reference_contribution',
     'withdraw_reference_contribution', 'sync_reference_curated_fork',
-    # Stage 2b consent-gated sharing. The grant is an owner write; the two
-    # reads are owner-only, rate-limited and never needed by a download, so
-    # they are blocked too rather than added to the read allowlist.
-    'share_reference_contribution_with_consent',
-    'list_my_shared_reference_contributions',
-    'get_reference_share_consent_text',
+    # Default-on reference sharing (owner set list, stop, share again).
+    # The two writes are owner writes; the list is owner-only, rate-limited
+    # and never needed by a download, so it is blocked too rather than added
+    # to the read allowlist.
+    'list_my_reference_sharing',
+    'stop_sharing_reference_set',
+    'share_reference_set_again',
 })
 
 
@@ -16618,34 +16619,24 @@ class SporelyCloudClient:
             'p_expected_measurement_set_revision': expected_measurement_set_revision,
         })
 
-    def share_reference_contribution_with_consent(
-        self, source_measurement_set_id: str, sporely_taxon_id: int,
-        expected_work_revision: int, expected_treatment_revision: int,
-        expected_measurement_set_revision: int, consent_version: int,
-        locale: str, consent_client: str | None = 'desktop',
-    ) -> object:
-        """Grant consent and share one reference set (Stage 2b).
+    def list_my_reference_sharing(self) -> object:
+        """The owner's reference sets with their sharing status.
 
-        Only called from the explicit owner consent dialog; sync never
-        calls it. Returns the server's ``{status, ...}`` object.
+        ``{status: 'ok', sets: [...]}`` or a rate-limited result
+        (sporely-web 20261001113007_share_references_by_default).
         """
-        return self._rpc('share_reference_contribution_with_consent', {
+        return self._rpc('list_my_reference_sharing', {})
+
+    def stop_sharing_reference_set(self, source_measurement_set_id: str) -> object:
+        """Owner stop: the set is no longer shown publicly anywhere."""
+        return self._rpc('stop_sharing_reference_set', {
             'p_source_measurement_set_id': source_measurement_set_id,
-            'p_sporely_taxon_id': sporely_taxon_id,
-            'p_expected_work_revision': expected_work_revision,
-            'p_expected_treatment_revision': expected_treatment_revision,
-            'p_expected_measurement_set_revision': expected_measurement_set_revision,
-            'p_consent_version': consent_version,
-            'p_locale': locale,
-            'p_consent_client': consent_client,
         })
 
-    def list_my_shared_reference_contributions(self) -> object:
-        return self._rpc('list_my_shared_reference_contributions', {})
-
-    def get_reference_share_consent_text(self, locale: str) -> object:
-        return self._rpc('get_reference_share_consent_text', {
-            'p_locale': locale,
+    def share_reference_set_again(self, source_measurement_set_id: str) -> object:
+        """Owner undo of a stop. Never lifts a moderation hide."""
+        return self._rpc('share_reference_set_again', {
+            'p_source_measurement_set_id': source_measurement_set_id,
         })
 
     def withdraw_reference_contribution(self, contribution_id: str) -> object:

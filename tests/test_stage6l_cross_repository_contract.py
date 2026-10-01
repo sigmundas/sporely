@@ -250,45 +250,35 @@ def test_shared_contribution_public_contract_is_attributed_and_not_curated() -> 
     assert "observation_reference_use_shared_contribution_trg" in sharing
 
 
-CONSENT_MIGRATION = "supabase/migrations/20260930232633_add_reference_sharing_consent_grant.sql"
+DEFAULT_ON_MIGRATION = "supabase/migrations/20261001113007_share_references_by_default.sql"
 
 
-def test_stage2b_consent_rpcs_match_desktop_wrappers_and_allowlist() -> None:
-    """Stage 2b: desktop wrappers match the consent-grant migration's signatures."""
-    # The Stage 2b migration lives in the canonical sporely-web checkout, not
-    # the frozen Stage 6 worktree; SPORELY_WEB_REPO still overrides.
+def test_default_on_sharing_rpcs_match_desktop_wrappers_and_allowlist() -> None:
+    """Default-on sharing: desktop wrappers match the set-level owner RPCs."""
     web = Path(os.environ.get("SPORELY_WEB_REPO", CODE_ROOT / "sporely-web"))
-    migration_path = web / CONSENT_MIGRATION
+    migration_path = web / DEFAULT_ON_MIGRATION
     if not migration_path.exists():
         if os.environ.get("SPORELY_STAGE6L_GATE") == "1":
-            pytest.fail(f"Stage 2b consent migration unavailable: {migration_path}")
-        pytest.skip(f"Stage 2b consent migration unavailable: {migration_path}")
+            pytest.fail(f"default-on sharing migration unavailable: {migration_path}")
+        pytest.skip(f"default-on sharing migration unavailable: {migration_path}")
     desktop = (ROOT / "utils/cloud_sync.py").read_text()
     migration = migration_path.read_text()
 
-    assert _method_rpc_keys(desktop, "share_reference_contribution_with_consent") == (
-        "p_source_measurement_set_id", "p_sporely_taxon_id",
-        "p_expected_work_revision", "p_expected_treatment_revision",
-        "p_expected_measurement_set_revision", "p_consent_version",
-        "p_locale", "p_consent_client",
-    )
-    assert _sql_signature(migration, "share_reference_contribution_with_consent") == (
-        ("p_source_measurement_set_id", "uuid"),
-        ("p_sporely_taxon_id", "integer"),
-        ("p_expected_work_revision", "integer"),
-        ("p_expected_treatment_revision", "integer"),
-        ("p_expected_measurement_set_revision", "integer"),
-        ("p_consent_version", "integer"),
-        ("p_locale", "text"),
-        ("p_consent_client", "text DEFAULT NULL"),
-    )
-    assert _method_rpc_keys(desktop, "get_reference_share_consent_text") == ("p_locale",)
-    assert _sql_signature(migration, "get_reference_share_consent_text") == (("p_locale", "text"),)
-    assert _method_rpc_keys(desktop, "list_my_shared_reference_contributions") == ()
-    assert re.search(r"CREATE FUNCTION public\.list_my_shared_reference_contributions\(\)", migration)
+    assert _method_rpc_keys(desktop, "list_my_reference_sharing") == ()
+    assert re.search(r"CREATE FUNCTION public\.list_my_reference_sharing\(\)", migration)
+    for name in ("stop_sharing_reference_set", "share_reference_set_again"):
+        assert _method_rpc_keys(desktop, name) == ("p_source_measurement_set_id",)
+        assert _sql_signature(migration, name) == (("p_source_measurement_set_id", "uuid"),)
+    blocked = desktop.split("_PULL_ONLY_BLOCKED_CLIENT_METHODS = frozenset({", 1)[1].split("})", 1)[0]
     for name in (
+        "list_my_reference_sharing",
+        "stop_sharing_reference_set",
+        "share_reference_set_again",
+    ):
+        assert f"'{name}'" in blocked
+    for retired in (
         "share_reference_contribution_with_consent",
         "list_my_shared_reference_contributions",
         "get_reference_share_consent_text",
     ):
-        assert f"'{name}'" in desktop.split("_PULL_ONLY_BLOCKED_CLIENT_METHODS = frozenset({", 1)[1].split("})", 1)[0]
+        assert f"def {retired}(" not in desktop
