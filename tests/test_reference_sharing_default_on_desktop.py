@@ -428,3 +428,21 @@ def test_batch_confirm_skips_notice_when_observation_drifted(monkeypatch):
     host.active_observation_id = 5
     assert host._confirm_picker_batch_attach(5, ["compared"]) is False
     assert len(shown) == 1
+
+
+def test_share_again_absent_after_reload_says_sharing_is_restored(qapp, boxes):
+    client = FakeClient([_set("b", "stopped")])
+    dialog = MySharedReferencesDialog(client)
+    dialog.select_row(0)
+
+    def again(set_id):
+        client.calls.append(("share_again", set_id))
+        client.sets.clear()  # no public observation uses it now
+        return {"status": "no_change", "row": None}
+
+    client.share_reference_set_again = again
+    dialog.share_again_btn.click()
+    assert len(boxes) == 1
+    assert "Sharing is restored" in boxes[0] and "attached to a public observation" in boxes[0]
+    assert "couldn't confirm" not in boxes[0]
+    dialog.deleteLater()

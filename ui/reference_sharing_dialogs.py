@@ -320,12 +320,20 @@ class MySharedReferencesDialog(QDialog):
                 ok, message = False, QCoreApplication.translate("ReferenceSharing", 
                     "This reference set is hidden by moderation and is not "
                     "shown publicly.")
+            elif fresh is None:
+                # The server accepted (updated / no_change) but lists the set
+                # nowhere yet: no public observation uses it right now.
+                message = QCoreApplication.translate(
+                    "ReferenceSharing",
+                    "Sharing is restored for this reference set. It will be shown "
+                    "when it is attached to a public observation.")
             elif status != "shared":
                 ok, message = False, QCoreApplication.translate("ReferenceSharing", 
                     "Sporely couldn't confirm that this reference set is shared "
                     "again. Refresh to check its status.")
         if message:
-            show_message(self, QMessageBox.Warning, self.windowTitle(), message)
+            icon = QMessageBox.Information if ok else QMessageBox.Warning
+            show_message(self, icon, self.windowTitle(), message)
 
     def _on_stop_clicked(self) -> None:
         self._run_action("stop")
