@@ -1565,7 +1565,9 @@ class CloudConflictDialog(QDialog):
 
         if is_public(previous) and not confirm_spore_public_if_needed(
             self,
-            dict(resolved, spore_data_visibility=previous.get('spore_data_visibility')),
+            # The server serves references only for exactly 'public'; a
+            # missing/NULL cloud value is therefore not public.
+            dict(resolved, spore_data_visibility=previous.get('spore_data_visibility') or 'unset'),
             resolved.get('spore_data_visibility'),
             lambda: _attached_roles(local_id),
         ):

@@ -485,3 +485,22 @@ def test_conflict_making_spore_data_public_on_public_observation_asks(conflict_d
     choice["value"] = "cloud"  # keeping the cloud's private spore data: no notice
     assert dialog._confirm_publish_for_plan({"local_id": 593})
     assert len(shown) == 2
+
+
+@pytest.mark.parametrize("cloud_value", [None, "MISSING"])
+def test_conflict_null_cloud_spore_visibility_to_public_asks(conflict_dialog, monkeypatch, cloud_value):
+    dialog, _started = conflict_dialog
+    remote = dialog._current_detail["remote_observation"]
+    remote.update({"visibility": "public", "is_draft": False})
+    if cloud_value == "MISSING":
+        remote.pop("spore_data_visibility", None)
+    else:
+        remote["spore_data_visibility"] = None
+    dialog._current_detail["field_rows"] = [{"field": "spore_data_visibility", "label": "Spores",
+                                             "local": "public", "remote": None}]
+    dialog._current_detail["automatic_decisions"] = {"fields": [], "media": []}
+    monkeypatch.setattr(dialog, "_selected_choice", lambda key: "local")
+    shown = []
+    monkeypatch.setattr(pn, "show_spore_public_notice", lambda _p, text: shown.append(text) or False)
+    assert not dialog._confirm_publish_for_plan({"local_id": 593})
+    assert len(shown) == 1

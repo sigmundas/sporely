@@ -479,3 +479,25 @@ def test_precision_notice_box_has_no_dont_show_checkbox(qapp, settings, monkeypa
     assert pn.show_publish_notice(None, "text", False) is True
     assert seen["checkbox"] is None
     assert pn.publish_notice_enabled() is True
+
+
+@pytest.mark.parametrize("reload_result", [
+    {"status": "rate_limited", "retry_after_seconds": 5},
+    {"status": "error"},
+    cloud_sync.CloudSyncError("offline"),
+])
+def test_share_again_with_failed_reload_says_couldnt_confirm(qapp, boxes, reload_result):
+    client = FakeClient([_set("b", "stopped")])
+    dialog = MySharedReferencesDialog(client)
+    dialog.select_row(0)
+
+    def again(set_id):
+        client.calls.append(("share_again", set_id))
+        client.list_result = reload_result  # the reload fails
+        return {"status": "updated", "row": None}
+
+    client.share_reference_set_again = again
+    dialog.share_again_btn.click()
+    assert len(boxes) == 1 and "couldn't confirm" in boxes[0]
+    assert "Sharing is restored" not in boxes[0]
+    dialog.deleteLater()

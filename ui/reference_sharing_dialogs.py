@@ -201,6 +201,7 @@ class MySharedReferencesDialog(QDialog):
         return list(self._rows)
 
     def refresh(self) -> None:
+        self.last_refresh_ok = False
         self._rows = []
         self.table.setRowCount(0)
         try:
@@ -222,6 +223,7 @@ class MySharedReferencesDialog(QDialog):
             self._update_buttons()
             return
         self._rows = [r for r in result["sets"] if isinstance(r, dict)]
+        self.last_refresh_ok = True
         self.table.setRowCount(len(self._rows))
         for index, item in enumerate(self._rows):
             try:
@@ -320,7 +322,7 @@ class MySharedReferencesDialog(QDialog):
                 ok, message = False, QCoreApplication.translate("ReferenceSharing", 
                     "This reference set is hidden by moderation and is not "
                     "shown publicly.")
-            elif fresh is None:
+            elif fresh is None and self.last_refresh_ok:
                 # The server accepted (updated / no_change) but lists the set
                 # nowhere yet: no public observation uses it right now.
                 message = QCoreApplication.translate(
