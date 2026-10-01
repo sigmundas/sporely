@@ -595,11 +595,14 @@ def _setup_push_all_tombstone_cleanup_case(
     }
     remote_images = []
     for local_image in (tombstoned_local_image, surviving_local_image):
-        storage_path = cloud_sync._build_worker_storage_path(
-            client.user_id,
-            "cloud-obs-1",
-            local_image,
-            str(local_image["filepath"]),
+        # Pre-existing remote rows carry legacy timestamp-format keys; the
+        # sync must reuse them verbatim (never rebuild or rename them).
+        legacy_ms = int(
+            cloud_sync._parse_sync_timestamp(local_image["created_at"]).timestamp() * 1000
+        )
+        storage_path = (
+            f"{client.user_id}/cloud-obs-1/"
+            f"{int(local_image['sort_order'])}_{legacy_ms}.jpg"
         )
         original_storage_path = client._build_original_storage_path(
             "cloud-obs-1",

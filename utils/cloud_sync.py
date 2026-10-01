@@ -514,19 +514,16 @@ def _join_select_columns(*columns: str) -> str:
     return ','.join(ordered)
 
 
-def _image_storage_timestamp_ms(image_row: dict | None) -> int:
-    row = dict(image_row or {})
-    for key in ('created_at', 'captured_at', 'synced_at'):
-        parsed = _parse_sync_timestamp(row.get(key))
-        if parsed is not None:
-            return int(parsed.timestamp() * 1000)
-        raw = str(row.get(key) or '').strip()
-        if raw.isdigit():
-            try:
-                return int(raw)
-            except Exception:
-                continue
-    return int(datetime.now(timezone.utc).timestamp() * 1000)
+def _new_image_storage_suffix() -> str:
+    """Return a random, non-time-derived unique suffix for a new image key.
+
+    Storage keys are public CDN paths; they must not leak capture or creation
+    time. The key is persisted on the remote ``observation_images`` row
+    (reserved before any bytes are sent), and later syncs always reuse the
+    row's existing ``storage_path``, so a random suffix never causes a second
+    upload on retry. Existing keys are never rewritten.
+    """
+    return uuid.uuid4().hex
 
 
 def _build_worker_storage_path(
@@ -541,9 +538,9 @@ def _build_worker_storage_path(
     sort_order = _safe_int((image_row or {}).get('sort_order'))
     if sort_order < 0:
         sort_order = 0
-    timestamp_ms = _image_storage_timestamp_ms(image_row)
+    unique_suffix = _new_image_storage_suffix()
     return _normalize_cloud_media_key(
-        f'{str(user_id or "").strip()}/{str(obs_cloud_id or "").strip()}/{sort_order}_{timestamp_ms}{extension}'
+        f'{str(user_id or "").strip()}/{str(obs_cloud_id or "").strip()}/{sort_order}_{unique_suffix}{extension}'
     )
 
 
