@@ -15181,6 +15181,9 @@ class ObservationDetailsDialog(GeometryMixin, QDialog):
             tooltip=self.tr("Fuzzed locations are rounded in public and follow feeds."),
         )
         self.location_precision_selector.selectionChanged.connect(
+            self._on_location_precision_selected
+        )
+        self.location_precision_selector.selectionChanged.connect(
             lambda _value: self._update_cloud_privacy_slots_label()
         )
 
@@ -17266,6 +17269,7 @@ class ObservationDetailsDialog(GeometryMixin, QDialog):
                 previous.get("sharing_scope") or previous.get("visibility"),
                 location_public=previous.get("location_public"),
             )
+            self._set_location_precision(previous.get("location_precision"))
 
     def closeEvent(self, event):
         self._cleanup_dialog_threads()
@@ -21621,16 +21625,35 @@ class ObservationDetailsDialog(GeometryMixin, QDialog):
             selector.set_selected_value(normalized)
 
     def _selected_location_precision(self) -> str:
+        # A stored 'hidden'/'region' precision (set elsewhere, e.g. on the
+        # web) is kept unless the user picks a level here; it is never
+        # silently rewritten to 'exact'.
+        preserved = getattr(self, "_preserved_location_precision", None)
+        if preserved:
+            return preserved
         selector = getattr(self, "location_precision_selector", None)
         if selector is not None:
             return normalize_location_precision(selector.selected_value(LOCATION_PRECISION_EXACT))
         return LOCATION_PRECISION_EXACT
 
     def _set_location_precision(self, value: str | None) -> None:
-        normalized = normalize_location_precision(value)
+        raw = str(value or "").strip().lower()
+        preserved = raw if raw in {"hidden", "region"} else None
+        normalized = normalize_location_precision(
+            LOCATION_PRECISION_FUZZED if preserved else value
+        )
         selector = getattr(self, "location_precision_selector", None)
-        if selector is not None:
-            selector.set_selected_value(normalized)
+        self._setting_location_precision = True
+        try:
+            if selector is not None:
+                selector.set_selected_value(normalized)
+        finally:
+            self._setting_location_precision = False
+        self._preserved_location_precision = preserved
+
+    def _on_location_precision_selected(self, _value) -> None:
+        if not getattr(self, "_setting_location_precision", False):
+            self._preserved_location_precision = None
 
     def _load_existing_observation(self):
         """Preload observation details and images for editing."""

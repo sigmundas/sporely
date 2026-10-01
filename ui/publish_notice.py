@@ -64,9 +64,24 @@ def is_public(state: dict | None) -> bool:
     return _scope(state) == "public" and not _truthy(state.get("is_draft", True))
 
 
+# How much location a public observation shows; the server views treat a
+# missing value as 'exact' (coalesce(location_precision, 'exact')).
+_PRECISION_RANK = {"hidden": 0, "region": 1, "fuzzed": 2, "exact": 3}
+
+
+def precision_rank(state: dict | None) -> int:
+    raw = str((state or {}).get("location_precision") or "").strip().lower()
+    return _PRECISION_RANK.get(raw, _PRECISION_RANK["exact"])
+
+
 def needs_publish_notice(previous: dict | None, new: dict | None) -> bool:
-    """True only for a change that makes the observation public and not a draft."""
-    return is_public(new) and not is_public(previous)
+    """True for a change that makes the observation public and not a draft,
+    or that makes a public, non-draft observation's location more precise."""
+    if not is_public(new):
+        return False
+    if not is_public(previous):
+        return True
+    return precision_rank(new) > precision_rank(previous)
 
 
 @dataclass(frozen=True)
@@ -118,7 +133,9 @@ def _role_text(role: str) -> str:
 
 def build_publish_notice_text(location_precision: str | None, facts: PublishFacts) -> str:
     """Plain text of the notice for the chosen settings and facts."""
-    fuzzed = str(location_precision or "").strip().lower() == "fuzzed"
+    # 'region'/'hidden' show less than fuzzed; the approximate text and the
+    # photo caveat are the cautious description for them.
+    fuzzed = str(location_precision or "").strip().lower() in {"fuzzed", "region", "hidden"}
     exposed = [
         QCoreApplication.translate("PublishNotice", "An approximate location: coordinates rounded to about 1 km and only the "
             "region or country name, not the location name you entered")
@@ -162,14 +179,34 @@ def build_publish_notice_text(location_precision: str | None, facts: PublishFact
     return "\n".join(lines)
 
 
-def load_owner_contributions(client) -> list[dict] | None:
-    """The owner's contributions, or ``None`` on any failure or rate limit."""
+OWNER_LIST_TIMEOUT_S = 3.0
+
+
+def load_owner_contributions(client, *, timeout: float | None = None) -> list[dict] | None:
+    """The owner's contributions, or ``None`` on failure, rate limit or timeout.
+
+    The call runs on a daemon thread and is abandoned after ``timeout``
+    seconds so the notice never freezes the dialog; ``None`` gives the
+    cautious line.
+    """
     if client is None:
         return None
-    try:
-        result = client.list_my_shared_reference_contributions()
-    except Exception:
+    import threading
+
+    box: dict[str, object] = {}
+
+    def run() -> None:
+        try:
+            box["result"] = client.list_my_shared_reference_contributions()
+        except Exception as exc:  # noqa: BLE001 - any failure is "unknown"
+            box["error"] = exc
+
+    worker = threading.Thread(target=run, name="publish-notice-owner-list", daemon=True)
+    worker.start()
+    worker.join(OWNER_LIST_TIMEOUT_S if timeout is None else timeout)
+    if worker.is_alive() or "error" in box:
         return None
+    result = box.get("result")
     if not isinstance(result, dict) or result.get("status") != "ok":
         return None
     rows = result.get("contributions")

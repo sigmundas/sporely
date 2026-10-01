@@ -263,3 +263,103 @@ def test_conflict_keeping_cloud_draft_needs_no_notice(conflict_dialog, monkeypat
     dialog._update_apply_enabled()
     dialog._apply_selected_changes()
     assert len(started) == 1
+
+
+# --- Parity: precision increases, preserved levels, lookup timeout ---------------------
+
+@pytest.mark.parametrize("before,after,expected", [
+    ("fuzzed", "exact", True), ("hidden", "region", True), ("region", "fuzzed", True),
+    ("hidden", None, True),            # missing counts as exact
+    ("exact", "fuzzed", False), ("fuzzed", "fuzzed", False), (None, "exact", False),
+    ("region", "hidden", False),
+])
+def test_precision_increase_on_public_observation(before, after, expected):
+    assert needs_publish_notice(dict(PUB, location_precision=before),
+                                dict(PUB, location_precision=after)) is expected
+    # Not public after the change: never a notice.
+    assert not needs_publish_notice(
+        {"sharing_scope": "public", "is_draft": False, "location_precision": before},
+        {"sharing_scope": "friends", "is_draft": False, "location_precision": after})
+
+
+def test_region_and_hidden_use_the_approximate_text():
+    for level in ("region", "hidden"):
+        text = build_publish_notice_text(level, _facts())
+        assert "An approximate location" in text and "file data" in text
+
+
+def test_precision_increase_in_details_dialog_asks_and_cancel_restores(monkeypatch, qapp):
+    dialog = _details_dialog(monkeypatch, qapp, {"is_draft": 0, "sharing_scope": "public",
+                                                 "location_precision": "fuzzed"})
+    shown = []
+    monkeypatch.setattr(pn, "show_publish_notice", lambda _p, text: shown.append(text) or False)
+    dialog._set_location_precision("exact")
+    dialog.accept()
+    assert len(shown) == 1 and "The exact location" in shown[0]
+    assert dialog._selected_location_precision() == "fuzzed"
+    assert dialog.result() == 0
+    dialog._cleanup_dialog_threads()
+    dialog.deleteLater()
+
+
+@pytest.mark.parametrize("level", ["hidden", "region"])
+def test_stored_hidden_or_region_precision_is_kept_on_save(monkeypatch, qapp, level):
+    dialog = _details_dialog(monkeypatch, qapp, {"is_draft": 0, "sharing_scope": "public",
+                                                 "location_precision": level})
+    monkeypatch.setattr(pn, "show_publish_notice",
+                        lambda *_a: (_ for _ in ()).throw(AssertionError("no notice")))
+    assert dialog.get_data()["location_precision"] == level
+    dialog.accept()
+    assert dialog.result() == QDialog.Accepted
+    # Picking a level in the dialog replaces the stored one.
+    dialog.location_precision_exact_radio.click()
+    assert dialog.get_data()["location_precision"] == "exact"
+    dialog._cleanup_dialog_threads()
+    dialog.deleteLater()
+
+
+def test_model_keeps_hidden_and_region_precision():
+    from database.models import ObservationDB
+
+    for level in ("hidden", "region", "fuzzed", "exact"):
+        assert ObservationDB._normalize_location_precision(level) == level
+    assert ObservationDB._normalize_location_precision("bogus") == "exact"
+
+
+def test_conflict_precision_increase_on_public_asks(conflict_dialog, monkeypatch):
+    dialog, started = conflict_dialog
+    dialog._current_detail["remote_observation"].update({"is_draft": False, "location_precision": "region"})
+    dialog._current_detail["field_rows"] = [{"field": "location_precision", "label": "Precision",
+                                             "local": "exact", "remote": "region"}]
+    dialog._choice_specs["field:location_precision"] = {"kind": "field", "field": "location_precision"}
+    shown = []
+    monkeypatch.setattr(dialog, "_selected_choice", lambda key: "local")
+    monkeypatch.setattr(pn, "show_publish_notice", lambda _p, text: shown.append(text) or False)
+    prev, resolved = dialog.resolved_observation_state()
+    assert resolved["location_precision"] == "exact"
+    assert not dialog._confirm_publish_for_plan({"local_id": 593})
+    assert len(shown) == 1 and "The exact location" in shown[0]
+    monkeypatch.setattr(dialog, "_selected_choice", lambda key: "cloud")
+    assert dialog._confirm_publish_for_plan({"local_id": 593})
+    assert len(shown) == 1
+
+
+def test_owner_list_lookup_times_out_to_cautious_line():
+    import threading
+    import time as _time
+
+    release = threading.Event()
+
+    class Slow:
+        def list_my_shared_reference_contributions(self):
+            release.wait(5)
+            return {"status": "ok", "contributions": LISTING}
+
+    start = _time.monotonic()
+    assert pn.load_owner_contributions(Slow(), timeout=0.2) is None
+    assert _time.monotonic() - start < 2
+    release.set()
+    text = build_publish_notice_text("exact", _facts(contributions=None))
+    assert "References you have shared may appear on this observation." in text
+    assert pn.OWNER_LIST_TIMEOUT_S <= 3
+    assert pn.load_owner_contributions(_Client({"status": "ok", "contributions": LISTING})) == LISTING
