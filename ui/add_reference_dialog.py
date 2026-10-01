@@ -40,7 +40,8 @@ publication -- and the footer offers a "Set all" shortcut once two or more
 rows are queued. Adding several sources routes through
 ``library_attach_callback(measurement_set_id, role) -> (status, reason)``,
 called once per checked row in the order the rows were checked. ``status`` is
-``"attached"``, ``"already_attached"`` or ``"failed"``; succeeded items stay
+``"attached"``, ``"already_attached"``, ``"failed"`` or
+``"observation_changed"`` (a failure a retry here cannot fix); succeeded items stay
 attached even when a later one fails (no rollback), the dialog lists every
 item's outcome, unchecks the ones that landed and keeps the failed ones
 checked so the user can retry them, and closes only when nothing failed.
@@ -856,6 +857,7 @@ class AddReferenceDialog(GeometryMixin, QDialog):
         self._update_footer_state()
 
     def _on_tab_changed(self, _index: int) -> None:
+        self._clear_batch_result()
         self._update_footer_state()
         if self.tabs.currentIndex() == self._my_observations_tab_index:
             self._populate_observation_preview(self._selected_observation)
@@ -1230,7 +1232,20 @@ class AddReferenceDialog(GeometryMixin, QDialog):
                 self.results_list.setCurrentRow(row)
         elif measurement_set_id in self._checked_ids:
             self._checked_ids.remove(measurement_set_id)
+        if not checked:
+            # Unchecking forgets the role: a later re-check starts at the
+            # default rather than silently reusing a hidden choice.
+            self._roles.pop(measurement_set_id, None)
+            for _item, widget in self._library_row_widgets():
+                if widget.measurement_set_id == measurement_set_id:
+                    widget.set_role_silently(DEFAULT_REFERENCE_USE_ROLE)
+        self._clear_batch_result()
         self._update_footer_state()
+
+    def _clear_batch_result(self) -> None:
+        if hasattr(self, "batch_result_label"):
+            self.batch_result_label.setText("")
+            self.batch_result_label.setVisible(False)
 
     def _on_source_role_changed(self, measurement_set_id: str, role: str) -> None:
         self._roles[str(measurement_set_id)] = str(role)
@@ -2040,20 +2055,35 @@ class AddReferenceDialog(GeometryMixin, QDialog):
         only when no item failed, and otherwise lists every outcome.
         """
         targets = self.checked_source_ids()
+        checked = set(targets)
         if not targets and self._preview_candidate is not None:
             targets = [self._preview_candidate.measurement_set_id]
         if not targets:
             return
+        # Only a checked row shows a role selector, so only a checked row
+        # may carry a non-default role. An unchecked preview target is
+        # attached as the default, whatever a stale map entry might say.
+        roles_used = {
+            ms_id: (
+                self.role_for_source(ms_id)
+                if ms_id in checked
+                else DEFAULT_REFERENCE_USE_ROLE
+            )
+            for ms_id in targets
+        }
         labels = {c.measurement_set_id: c for c in self._candidates}
         outcomes: list[tuple[str, str, str | None]] = []
+        stale_observation = False
         for measurement_set_id in targets:
-            role = self.role_for_source(measurement_set_id)
+            role = roles_used[measurement_set_id]
             try:
                 result = self._library_attach_callback(measurement_set_id, role)
                 status, reason = result if result else ("failed", None)
             except Exception as exc:  # report, never claim success
                 status, reason = "failed", str(exc)
-            if status not in ("attached", "already_attached"):
+            if status == "observation_changed":
+                status, stale_observation = "failed", True
+            elif status not in ("attached", "already_attached"):
                 status = "failed"
             outcomes.append((measurement_set_id, status, reason))
             if status != "failed":
@@ -2077,7 +2107,7 @@ class AddReferenceDialog(GeometryMixin, QDialog):
                 if candidate is not None
                 else measurement_set_id
             )
-            role_text = reference_use_role_label(self.role_for_source(measurement_set_id))
+            role_text = reference_use_role_label(roles_used[measurement_set_id])
             if status == "attached":
                 text = QCoreApplication.translate(
                     "AddReferenceDialog", "Attached: {name} ({role})"
@@ -2094,7 +2124,16 @@ class AddReferenceDialog(GeometryMixin, QDialog):
             if reason:
                 text = f"{text} — {reason}"
             lines.append(text)
-        if failed:
+        if failed and stale_observation:
+            lines.append(
+                QCoreApplication.translate(
+                    "AddReferenceDialog",
+                    "The active observation changed, so retrying here cannot "
+                    "succeed. Close this window, select the intended "
+                    "observation, and open Add reference again.",
+                )
+            )
+        elif failed:
             lines.append(
                 QCoreApplication.translate(
                     "AddReferenceDialog",
@@ -2106,6 +2145,11 @@ class AddReferenceDialog(GeometryMixin, QDialog):
             self.batch_result_label.setStyleSheet("")
         self.batch_result_label.setText("\n".join(lines))
         self.batch_result_label.setVisible(True)
+        if any(o[1] == "attached" for o in outcomes):
+            # Cancel would suggest it undoes the attachments; it does not.
+            self.cancel_btn.setText(
+                QCoreApplication.translate("AddReferenceDialog", "Close")
+            )
         # Attached rows leave the list (they are on the plot now, exactly
         # as the host's exclude list would have hidden them on reopen); the
         # failed ones keep their checkbox and role for the retry.

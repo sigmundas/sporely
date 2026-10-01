@@ -10022,7 +10022,7 @@ class MainWindow(GeometryMixin, QMainWindow):
                 or int(current_observation_id) != captured_observation_id
             ):
                 return (
-                    "failed",
+                    "observation_changed",
                     self.tr(
                         "The active observation changed while the picker was open."
                     ),

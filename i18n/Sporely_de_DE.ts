@@ -172,302 +172,312 @@
 <context>
     <name>AddReferenceDialog</name>
     <message>
-        <location filename="../ui/add_reference_dialog.py" line="549"/>
-        <location filename="../ui/add_reference_dialog.py" line="840"/>
+        <location filename="../ui/add_reference_dialog.py" line="550"/>
+        <location filename="../ui/add_reference_dialog.py" line="841"/>
         <source>Add reference</source>
         <extracomment>Library relevance groups, in the fixed display order of the design contract (N6). The strings are keys, not wording: the headings are translated in :meth:`AddReferenceDialog._library_group_heading`.</extracomment>
         <translation>Referenz hinzufügen</translation>
     </message>
     <message>
-        <location filename="../ui/add_reference_dialog.py" line="551"/>
-        <location filename="../ui/add_reference_dialog.py" line="838"/>
+        <location filename="../ui/add_reference_dialog.py" line="552"/>
+        <location filename="../ui/add_reference_dialog.py" line="839"/>
         <source>Add reference — {taxon}</source>
         <translation>Referenz hinzufügen – {taxon}</translation>
     </message>
     <message>
-        <location filename="../ui/add_reference_dialog.py" line="573"/>
+        <location filename="../ui/add_reference_dialog.py" line="574"/>
         <source>Library</source>
         <translation>Bibliothek</translation>
     </message>
     <message>
-        <location filename="../ui/add_reference_dialog.py" line="575"/>
+        <location filename="../ui/add_reference_dialog.py" line="576"/>
         <source>Community</source>
         <translation>Community</translation>
     </message>
     <message>
-        <location filename="../ui/add_reference_dialog.py" line="578"/>
+        <location filename="../ui/add_reference_dialog.py" line="579"/>
         <source>My observations</source>
         <translation>Meine Beobachtungen</translation>
     </message>
     <message>
-        <location filename="../ui/add_reference_dialog.py" line="613"/>
+        <location filename="../ui/add_reference_dialog.py" line="614"/>
         <source>Cancel</source>
         <translation>Abbrechen</translation>
     </message>
     <message>
-        <location filename="../ui/add_reference_dialog.py" line="627"/>
-        <location filename="../ui/add_reference_dialog.py" line="1771"/>
+        <location filename="../ui/add_reference_dialog.py" line="628"/>
+        <location filename="../ui/add_reference_dialog.py" line="1786"/>
         <source>Add to plot</source>
         <translation>Zum Diagramm hinzufügen</translation>
     </message>
     <message>
-        <location filename="../ui/add_reference_dialog.py" line="885"/>
+        <location filename="../ui/add_reference_dialog.py" line="887"/>
         <source>Filter by publication, taxon, or raw expression…</source>
         <translation>Nach Publikation, Taxon oder Rohausdruck filtern…</translation>
     </message>
     <message>
-        <location filename="../ui/add_reference_dialog.py" line="890"/>
+        <location filename="../ui/add_reference_dialog.py" line="892"/>
         <source>Only this taxon</source>
         <translation>Nur dieses Taxon</translation>
     </message>
     <message>
-        <location filename="../ui/add_reference_dialog.py" line="1057"/>
+        <location filename="../ui/add_reference_dialog.py" line="1059"/>
         <source>+ New publication…</source>
         <translation>+ Neue Publikation…</translation>
     </message>
     <message>
-        <location filename="../ui/add_reference_dialog.py" line="1134"/>
+        <location filename="../ui/add_reference_dialog.py" line="1136"/>
         <source>No matching measurement sets in the library.</source>
         <translation>Keine passenden Messreihen in der Bibliothek.</translation>
     </message>
     <message>
-        <location filename="../ui/add_reference_dialog.py" line="1120"/>
+        <location filename="../ui/add_reference_dialog.py" line="1122"/>
         <source>The reference library has no measurement sets yet.</source>
         <translation>Die Referenzbibliothek enthält noch keine Messreihen.</translation>
     </message>
     <message>
-        <location filename="../ui/add_reference_dialog.py" line="582"/>
+        <location filename="../ui/add_reference_dialog.py" line="583"/>
         <source>Add new</source>
         <translation>Neu hinzufügen</translation>
     </message>
     <message>
-        <location filename="../ui/add_reference_dialog.py" line="621"/>
+        <location filename="../ui/add_reference_dialog.py" line="622"/>
         <source>Save to library</source>
         <translation>In Bibliothek speichern</translation>
     </message>
     <message>
-        <location filename="../ui/add_reference_dialog.py" line="730"/>
+        <location filename="../ui/add_reference_dialog.py" line="731"/>
         <source>Reference taxon:</source>
         <translation>Referenztaxon:</translation>
     </message>
     <message>
-        <location filename="../ui/add_reference_dialog.py" line="736"/>
+        <location filename="../ui/add_reference_dialog.py" line="737"/>
         <source>Choose which taxon&apos;s published spore data to compare against. Select &apos;Use observation taxon&apos; if available, search another taxon by typing genus and species, or choose an AI suggestion. This never changes the observation&apos;s own identification.</source>
         <translation>Wähle aus, mit welchem Taxon du die veröffentlichten Sporendaten vergleichen möchtest. Wähle „Taxon der Beobachtung verwenden“, falls verfügbar, suche ein anderes Taxon, indem du Gattung und Art eingibst, oder wähle einen KI-Vorschlag. Dies ändert nie die eigene Bestimmung der Beobachtung.</translation>
     </message>
     <message>
-        <location filename="../ui/add_reference_dialog.py" line="761"/>
+        <location filename="../ui/add_reference_dialog.py" line="762"/>
         <source>Use observation taxon: {taxon}</source>
         <translation>Taxon der Beobachtung verwenden: {taxon}</translation>
     </message>
     <message>
-        <location filename="../ui/add_reference_dialog.py" line="763"/>
+        <location filename="../ui/add_reference_dialog.py" line="764"/>
         <source>Search another taxon…</source>
         <translation>Anderes Taxon suchen…</translation>
     </message>
     <message>
-        <location filename="../ui/add_reference_dialog.py" line="982"/>
+        <location filename="../ui/add_reference_dialog.py" line="984"/>
         <source>This taxon ({count})</source>
         <translation>Dieses Taxon ({count})</translation>
     </message>
     <message>
-        <location filename="../ui/add_reference_dialog.py" line="984"/>
+        <location filename="../ui/add_reference_dialog.py" line="986"/>
         <source>Same genus ({count})</source>
         <translation>Gleiche Gattung ({count})</translation>
     </message>
     <message>
-        <location filename="../ui/add_reference_dialog.py" line="986"/>
+        <location filename="../ui/add_reference_dialog.py" line="988"/>
         <source>Rest of library ({count})</source>
         <translation>Rest der Bibliothek ({count})</translation>
     </message>
     <message>
-        <location filename="../ui/add_reference_dialog.py" line="997"/>
+        <location filename="../ui/add_reference_dialog.py" line="999"/>
         <source>Same taxon</source>
         <translation>Gleiches Taxon</translation>
     </message>
     <message>
-        <location filename="../ui/add_reference_dialog.py" line="999"/>
+        <location filename="../ui/add_reference_dialog.py" line="1001"/>
         <source>Same genus</source>
         <translation>Gleiche Gattung</translation>
     </message>
     <message>
-        <location filename="../ui/add_reference_dialog.py" line="1096"/>
+        <location filename="../ui/add_reference_dialog.py" line="1098"/>
         <source>1 source selected</source>
         <translation>1 Quelle ausgewählt</translation>
     </message>
     <message>
-        <location filename="../ui/add_reference_dialog.py" line="1101"/>
+        <location filename="../ui/add_reference_dialog.py" line="1103"/>
         <source>{count} sources selected</source>
         <translation>{count} Quellen ausgewählt</translation>
     </message>
     <message>
-        <location filename="../ui/add_reference_dialog.py" line="1130"/>
+        <location filename="../ui/add_reference_dialog.py" line="1132"/>
         <source>No matching measurement sets for this taxon. {count} more match if you turn off “Only this taxon”.</source>
         <translation>Keine Messreihen für dieses Taxon. {count} weitere Treffer, wenn du „Nur dieses Taxon“ ausschaltest.</translation>
     </message>
     <message>
-        <location filename="../ui/add_reference_dialog.py" line="1139"/>
+        <location filename="../ui/add_reference_dialog.py" line="1141"/>
         <source>Unnamed taxon</source>
         <translation>Unbenanntes Taxon</translation>
     </message>
     <message>
-        <location filename="../ui/add_reference_dialog.py" line="1142"/>
-        <location filename="../ui/add_reference_dialog.py" line="1372"/>
+        <location filename="../ui/add_reference_dialog.py" line="1144"/>
+        <location filename="../ui/add_reference_dialog.py" line="1387"/>
         <source>Untitled</source>
         <translation>Ohne Titel</translation>
     </message>
     <message>
-        <location filename="../ui/add_reference_dialog.py" line="1906"/>
+        <location filename="../ui/add_reference_dialog.py" line="1921"/>
         <source>Saved to the reference library. Add to plot will use the saved reference.</source>
         <translation>In der Referenzbibliothek gespeichert. „Zum Diagramm hinzufügen“ verwendet die gespeicherte Referenz.</translation>
     </message>
     <message>
-        <location filename="../ui/add_reference_dialog.py" line="1911"/>
+        <location filename="../ui/add_reference_dialog.py" line="1926"/>
         <source>Not saved — nothing was stored in the reference library.</source>
         <translation>Nicht gespeichert – in der Referenzbibliothek wurde nichts abgelegt.</translation>
     </message>
     <message>
-        <location filename="../ui/add_reference_dialog.py" line="1915"/>
+        <location filename="../ui/add_reference_dialog.py" line="1930"/>
         <source>Save to library keeps this reference for reuse without adding it to the plot.</source>
         <translation>„In Bibliothek speichern“ behält diese Referenz zur Wiederverwendung, ohne sie zum Diagramm hinzuzufügen.</translation>
     </message>
     <message>
-        <location filename="../ui/add_reference_dialog.py" line="1388"/>
+        <location filename="../ui/add_reference_dialog.py" line="1403"/>
         <source>No additional notes.</source>
         <translation>Keine zusätzlichen Notizen.</translation>
     </message>
     <message>
-        <location filename="../ui/add_reference_dialog.py" line="600"/>
+        <location filename="../ui/add_reference_dialog.py" line="601"/>
         <source>Set all:</source>
         <translation>Für alle:</translation>
     </message>
     <message>
-        <location filename="../ui/add_reference_dialog.py" line="604"/>
+        <location filename="../ui/add_reference_dialog.py" line="605"/>
         <source>Choose role…</source>
         <translation>Rolle wählen…</translation>
     </message>
     <message>
-        <location filename="../ui/add_reference_dialog.py" line="1403"/>
+        <location filename="../ui/add_reference_dialog.py" line="1418"/>
         <source>not reported</source>
         <translation>nicht angegeben</translation>
     </message>
     <message>
-        <location filename="../ui/add_reference_dialog.py" line="1405"/>
+        <location filename="../ui/add_reference_dialog.py" line="1420"/>
         <source>Reported by: {work} ({year}) · sample size: {size} · method recorded: {method}</source>
         <translation>Gemeldet von: {work} ({year}) · Stichprobengröße: {size} · Methode erfasst: {method}</translation>
     </message>
     <message>
-        <location filename="../ui/add_reference_dialog.py" line="1411"/>
+        <location filename="../ui/add_reference_dialog.py" line="1426"/>
         <source>yes</source>
         <translation>ja</translation>
     </message>
     <message>
-        <location filename="../ui/add_reference_dialog.py" line="1438"/>
+        <location filename="../ui/add_reference_dialog.py" line="1453"/>
         <source>No calibration details recorded.</source>
         <translation>Keine Kalibrierungsdetails erfasst.</translation>
     </message>
     <message>
-        <location filename="../ui/add_reference_dialog.py" line="1440"/>
+        <location filename="../ui/add_reference_dialog.py" line="1455"/>
         <source>Not reported</source>
         <translation>Nicht angegeben</translation>
     </message>
     <message>
-        <location filename="../ui/add_reference_dialog.py" line="1444"/>
+        <location filename="../ui/add_reference_dialog.py" line="1459"/>
         <source>Publication: {work}</source>
         <translation>Publikation: {work}</translation>
     </message>
     <message>
-        <location filename="../ui/add_reference_dialog.py" line="1446"/>
+        <location filename="../ui/add_reference_dialog.py" line="1461"/>
         <source>Source notes: {notes}</source>
         <translation>Quellennotizen: {notes}</translation>
     </message>
     <message>
-        <location filename="../ui/add_reference_dialog.py" line="1509"/>
+        <location filename="../ui/add_reference_dialog.py" line="1524"/>
         <source>New publication</source>
         <translation>Neue Publikation</translation>
     </message>
     <message>
-        <location filename="../ui/add_reference_dialog.py" line="1510"/>
+        <location filename="../ui/add_reference_dialog.py" line="1525"/>
         <source>Reference library editor is unavailable: {error}</source>
         <translation>Der Referenzbibliothek-Editor ist nicht verfügbar: {error}</translation>
     </message>
     <message>
-        <location filename="../ui/add_reference_dialog.py" line="1603"/>
+        <location filename="../ui/add_reference_dialog.py" line="1618"/>
         <source>Select a taxon to browse your own observations of it.</source>
         <translation>Wähle ein Taxon, um deine eigenen Beobachtungen dazu zu durchsuchen.</translation>
     </message>
     <message>
-        <location filename="../ui/add_reference_dialog.py" line="1607"/>
+        <location filename="../ui/add_reference_dialog.py" line="1622"/>
         <source>No previous observations of this taxon have spore measurements.</source>
         <translation>Es gibt keine früheren Beobachtungen dieses Taxons mit Sporenmessungen.</translation>
     </message>
     <message>
-        <location filename="../ui/add_reference_dialog.py" line="1614"/>
-        <location filename="../ui/add_reference_dialog.py" line="1667"/>
+        <location filename="../ui/add_reference_dialog.py" line="1629"/>
+        <location filename="../ui/add_reference_dialog.py" line="1682"/>
         <source>My observation — {author}</source>
         <translation>Meine Beobachtung — {author}</translation>
     </message>
     <message>
-        <location filename="../ui/add_reference_dialog.py" line="1616"/>
-        <location filename="../ui/add_reference_dialog.py" line="1669"/>
+        <location filename="../ui/add_reference_dialog.py" line="1631"/>
+        <location filename="../ui/add_reference_dialog.py" line="1684"/>
         <source>My observation</source>
         <translation>Meine Beobachtung</translation>
     </message>
     <message>
-        <location filename="../ui/add_reference_dialog.py" line="1631"/>
+        <location filename="../ui/add_reference_dialog.py" line="1646"/>
         <source>n = {count}</source>
         <translation>n = {count}</translation>
     </message>
     <message>
-        <location filename="../ui/add_reference_dialog.py" line="1687"/>
+        <location filename="../ui/add_reference_dialog.py" line="1702"/>
         <source>n = {count} spore measurements</source>
         <translation>n = {count} Sporenmessungen</translation>
     </message>
     <message>
-        <location filename="../ui/add_reference_dialog.py" line="1716"/>
+        <location filename="../ui/add_reference_dialog.py" line="1731"/>
         <source>Not applicable: this is a personal observation, not a normalized library entry.</source>
         <translation>Nicht zutreffend: Dies ist eine persönliche Beobachtung, kein normalisierter Bibliothekseintrag.</translation>
     </message>
     <message>
-        <location filename="../ui/add_reference_dialog.py" line="1719"/>
+        <location filename="../ui/add_reference_dialog.py" line="1734"/>
         <source>Personal observation, {date}</source>
         <translation>Persönliche Beobachtung, {date}</translation>
     </message>
     <message>
-        <location filename="../ui/add_reference_dialog.py" line="1721"/>
+        <location filename="../ui/add_reference_dialog.py" line="1736"/>
         <source>Personal observation</source>
         <translation>Persönliche Beobachtung</translation>
     </message>
     <message>
-        <location filename="../ui/add_reference_dialog.py" line="1794"/>
+        <location filename="../ui/add_reference_dialog.py" line="1809"/>
         <source>Add {count} to plot</source>
         <translation>{count} zum Diagramm hinzufügen</translation>
     </message>
     <message>
-        <location filename="../ui/add_reference_dialog.py" line="1805"/>
+        <location filename="../ui/add_reference_dialog.py" line="1820"/>
         <source>Adding several sources at once is not available yet. Leave one source checked, or add them one at a time.</source>
         <translation>Mehrere Quellen auf einmal hinzuzufügen ist noch nicht möglich. Lass eine Quelle angehakt oder füge sie einzeln hinzu.</translation>
     </message>
     <message>
-        <location filename="../ui/add_reference_dialog.py" line="2082"/>
+        <location filename="../ui/add_reference_dialog.py" line="2112"/>
         <source>Attached: {name} ({role})</source>
         <extracomment>``[(measurement_set_id, status, reason), ...]`` of the last add.</extracomment>
         <translation>Hinzugefügt: {name} ({role})</translation>
     </message>
     <message>
-        <location filename="../ui/add_reference_dialog.py" line="2086"/>
+        <location filename="../ui/add_reference_dialog.py" line="2116"/>
         <source>Already attached (existing role kept): {name}</source>
         <translation>Bereits hinzugefügt (bestehende Rolle beibehalten): {name}</translation>
     </message>
     <message>
-        <location filename="../ui/add_reference_dialog.py" line="2091"/>
+        <location filename="../ui/add_reference_dialog.py" line="2121"/>
         <source>Failed: {name}</source>
         <translation>Fehlgeschlagen: {name}</translation>
     </message>
     <message>
-        <location filename="../ui/add_reference_dialog.py" line="2099"/>
+        <location filename="../ui/add_reference_dialog.py" line="2129"/>
+        <source>The active observation changed, so retrying here cannot succeed. Close this window, select the intended observation, and open Add reference again.</source>
+        <translation>Die aktive Beobachtung wurde geändert, daher kann ein erneuter Versuch hier nicht gelingen. Schließen Sie dieses Fenster, wählen Sie die gewünschte Beobachtung und öffnen Sie „Referenz hinzufügen“ erneut.</translation>
+    </message>
+    <message>
+        <location filename="../ui/add_reference_dialog.py" line="2138"/>
         <source>Failed sources are still checked. Press Add to plot to retry them.</source>
         <translation>Fehlgeschlagene Quellen bleiben markiert. Klicken Sie auf „Zum Diagramm hinzufügen“, um sie erneut zu versuchen.</translation>
+    </message>
+    <message>
+        <location filename="../ui/add_reference_dialog.py" line="2151"/>
+        <source>Close</source>
+        <translation>Schließen</translation>
     </message>
 </context>
 <context>

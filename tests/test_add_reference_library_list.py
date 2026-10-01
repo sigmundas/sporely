@@ -827,3 +827,77 @@ def test_new_publication_row_is_an_action_and_never_checkable():
         assert rows[0] == dialog.results_list.count() - 1
     finally:
         dialog.close()
+
+
+def test_unchecked_preview_add_uses_the_default_role_not_a_stale_one():
+    dialog, calls = _batch_dialog()
+    try:
+        row = _row_widget(dialog, "ms-this-range")
+        row.checkbox.setChecked(True)
+        dialog.set_source_role("ms-this-range", "supports_identification")
+        # Plant a stale entry directly, as a hidden-state regression would.
+        row.checkbox.setChecked(False)
+        dialog._roles["ms-this-range"] = "contradicts"
+        dialog.results_list.setCurrentRow(_row_index(dialog, "ms-this-range"))
+        assert dialog.checked_source_ids() == []
+        dialog._on_add_to_plot_clicked()
+        assert calls == [("ms-this-range", "compared")]
+    finally:
+        dialog.close()
+
+
+def test_unchecking_forgets_the_role_so_a_recheck_starts_at_compared():
+    dialog, calls = _batch_dialog()
+    try:
+        row = _row_widget(dialog, "ms-this-range")
+        row.checkbox.setChecked(True)
+        dialog.set_source_role("ms-this-range", "supports_identification")
+        row.checkbox.setChecked(False)
+        assert "ms-this-range" not in dialog._roles
+        assert row.role() == "compared"
+        dialog.results_list.setCurrentRow(_row_index(dialog, "ms-this-range"))
+        dialog._on_add_to_plot_clicked()
+        assert calls == [("ms-this-range", "compared")]
+    finally:
+        dialog.close()
+
+
+def test_after_an_attach_the_footer_says_close_and_results_clear_on_change():
+    dialog, _calls = _batch_dialog({"ms-this-points": ("failed", "boom")})
+    try:
+        assert dialog.cancel_btn.text() == "Cancel"
+        _row_widget(dialog, "ms-this-range").checkbox.setChecked(True)
+        _row_widget(dialog, "ms-this-points").checkbox.setChecked(True)
+        dialog._on_add_to_plot_clicked()
+        assert dialog.cancel_btn.text() == "Close"
+        assert dialog.batch_result_label.isVisibleTo(dialog)
+        _row_widget(dialog, "ms-this-points").checkbox.setChecked(False)
+        assert not dialog.batch_result_label.isVisibleTo(dialog)
+
+        _row_widget(dialog, "ms-this-points").checkbox.setChecked(True)
+        dialog._on_add_to_plot_clicked()
+        assert dialog.batch_result_label.isVisibleTo(dialog)
+        dialog.tabs.setCurrentIndex(dialog._manual_tab_index)
+        assert not dialog.batch_result_label.isVisibleTo(dialog)
+    finally:
+        dialog.close()
+
+
+def test_all_failed_keeps_cancel_and_observation_change_does_not_invite_retry():
+    dialog, _calls = _batch_dialog(
+        {
+            "ms-this-range": ("observation_changed", "The active observation changed."),
+            "ms-this-points": ("observation_changed", "The active observation changed."),
+        }
+    )
+    try:
+        _row_widget(dialog, "ms-this-range").checkbox.setChecked(True)
+        _row_widget(dialog, "ms-this-points").checkbox.setChecked(True)
+        dialog._on_add_to_plot_clicked()
+        text = dialog.batch_result_label.text()
+        assert [o[1] for o in dialog.last_attach_outcomes] == ["failed", "failed"]
+        assert "retry them" not in text
+        assert "open Add reference again" in text
+        assert dialog.cancel_btn.text() == "Cancel"
+    finally:
+        dialog.close()
