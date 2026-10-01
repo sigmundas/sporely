@@ -3,6 +3,7 @@ from __future__ import annotations
 
 import copy
 import os
+from pathlib import Path
 
 os.environ.setdefault("QT_QPA_PLATFORM", "offscreen")
 
@@ -440,3 +441,30 @@ def test_client_creation_runs_inside_the_lookup_bound():
     assert seen["thread"] != main
     facts = load_local_facts(None, {"sporely_taxon_id": 1}, client_getter=lambda: None)
     assert facts.contributions is None
+
+
+def test_notice_compares_against_cloud_precision_not_stale_local(monkeypatch, qapp):
+    """Stale local 'exact' while the cloud serves 'hidden': picking Fuzzed
+    widens the cloud and must ask, even though it narrows the local value."""
+    import utils.cloud_sync as cloud_sync
+
+    monkeypatch.setattr(cloud_sync, "_snapshot_baseline_for_cloud_id",
+                        lambda cid: {"location_precision": "hidden"} if cid else {})
+    dialog = _details_dialog(monkeypatch, qapp, {"is_draft": 0, "sharing_scope": "public",
+                                                 "location_precision": "exact",
+                                                 "cloud_id": "cloud-917"})
+    shown = []
+    monkeypatch.setattr(pn, "show_publish_notice", lambda _p, text: shown.append(text) or False)
+    dialog.location_precision_fuzzed_radio.click()
+    dialog.accept()
+    assert len(shown) == 1 and "An approximate location" in shown[0]
+    assert dialog.result() == 0
+    dialog._cleanup_dialog_threads()
+    dialog.deleteLater()
+
+
+def test_app_start_runs_precision_repair_after_database_init():
+    source = (Path(__file__).resolve().parents[1] / "main.py").read_text()
+    init = source.index("    init_database()\n")
+    repair = source.index("repair_legacy_location_precision()", init)
+    assert repair - init < 400

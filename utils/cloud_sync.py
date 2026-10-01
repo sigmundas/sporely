@@ -3815,11 +3815,22 @@ def _snapshot_baseline_for_cloud_id(cloud_id) -> dict:
     return _baseline_observation_compare_payload(snapshot.get('observation') or {})
 
 
-def repair_legacy_location_precision() -> int:
-    """One-time, idempotent: restore 'hidden'/'region' on synced rows that an
+_LOCATION_PRECISION_REPAIR_DONE_KEY = 'cloud_location_precision_repair_v1_done'
+
+
+def repair_legacy_location_precision(*, force: bool = False) -> int:
+    """Once per database: restore 'hidden'/'region' on synced rows that an
     older build stored as 'exact'. Only rows with a cloud_id, an 'exact' (or
     empty) local value, a 'hidden'/'region' baseline, and no confirmed local
-    choice. Local-only write; does not mark the row dirty."""
+    choice. Local-only write; does not mark the row dirty.
+
+    A marker in this database's settings records completion, so later calls
+    (app start, every sync) return at once. New legacy rows cannot appear:
+    this build stores pulled hidden/region values as they are. A restored or
+    switched database has no marker and is repaired on its first call.
+    """
+    if not force and str(SettingsDB.get_setting(_LOCATION_PRECISION_REPAIR_DONE_KEY, '') or '') == '1':
+        return 0
     conn = get_connection()
     repaired = 0
     try:
@@ -3845,6 +3856,7 @@ def repair_legacy_location_precision() -> int:
             conn.commit()
     finally:
         conn.close()
+    SettingsDB.set_setting(_LOCATION_PRECISION_REPAIR_DONE_KEY, '1')
     if repaired:
         logger.info('Restored hidden/region location_precision on %d observation(s)', repaired)
     return repaired
@@ -17115,6 +17127,8 @@ class SporelyCloudClient:
             if remote_obs is not None and str(remote_obs.get('id') or '').strip() == str(existing_id):
                 diff_fields = _observation_push_diff_fields(dict(obs or {}), remote_obs)
                 if not diff_fields:
+                    # The cloud already holds the (guarded) local value.
+                    consume_confirmed_location_precision(obs.get('id'))
                     _increment_sync_summary(summary, 'observations_skipped_noop')
                     self._sync_observation_selected_taxon(
                         existing_id,
@@ -17138,6 +17152,7 @@ class SporelyCloudClient:
         # New observation: never invent a region_id.
         payload.pop('region_id', None)
         rows = self._post('observations', payload)
+        consume_confirmed_location_precision(obs.get('id'))
         _increment_sync_summary(summary, 'observations_patched')
         cloud_id = rows[0]['id']
         self._sync_observation_selected_taxon(cloud_id, obs, remote_obs=None)

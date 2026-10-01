@@ -17239,9 +17239,27 @@ class ObservationDetailsDialog(GeometryMixin, QDialog):
                 except Exception:
                     stored = None
                 if stored:
-                    return dict(stored)
-            return dict(self.observation)
+                    return self._with_cloud_precision(dict(stored))
+            return self._with_cloud_precision(dict(self.observation))
         return None
+
+    @staticmethod
+    def _with_cloud_precision(baseline: dict) -> dict:
+        """The notice compares against what the cloud serves: a synced row's
+        snapshot precision wins over a stale local value (an older build
+        stored cloud 'hidden'/'region' as 'exact')."""
+        cloud_id = str(baseline.get("cloud_id") or "").strip()
+        if not cloud_id:
+            return baseline
+        try:
+            from utils.cloud_sync import _snapshot_baseline_for_cloud_id
+
+            cloud_precision = _snapshot_baseline_for_cloud_id(cloud_id).get("location_precision")
+        except Exception:
+            cloud_precision = None
+        if cloud_precision:
+            baseline["location_precision"] = cloud_precision
+        return baseline
 
     def accept(self) -> None:  # noqa: D401 - Qt API
         """Stage 2c publish notice: confirm before a save that makes the

@@ -323,6 +323,14 @@ def main():
     # Initialize database (after splash is visible)
     print("Initializing database...")
     init_database()
+    # Before any observation dialog can open: restore hidden/region precision
+    # an older build stored as 'exact' (once per database; cheap afterwards).
+    try:
+        from utils.cloud_sync import repair_legacy_location_precision
+
+        repair_legacy_location_precision()
+    except Exception as exc:
+        print(f"Location precision repair skipped: {exc}")
 
     translator = QTranslator()
     app_settings = get_app_settings()

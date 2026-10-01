@@ -201,3 +201,51 @@ def test_remote_privacy_slot_query_matches_server_trigger(monkeypatch):
     assert "and=(or(is_draft.is.null,is_draft.eq.false)," in seen["url"]
     assert "or(visibility.neq.public,location_precision.in.(fuzzed,region,hidden)))" in seen["url"]
     assert "visibility.is.null" not in seen["url"]
+
+
+# --- Follow-ups: marker, consume on POST/no-op ----------------------------------------
+
+def test_repair_runs_once_per_database_then_is_skipped(db):
+    _seed(db)
+    assert cloud_sync.repair_legacy_location_precision() == 1
+    conn = sqlite3.connect(db)
+    conn.execute("UPDATE observations SET location_precision = 'exact' WHERE id = 1")
+    conn.commit()
+    conn.close()
+    assert cloud_sync.repair_legacy_location_precision() == 0  # marker: cheap skip
+    assert cloud_sync.repair_legacy_location_precision(force=True) == 1
+
+
+def test_repair_sets_marker_even_when_nothing_to_repair(db):
+    assert cloud_sync.repair_legacy_location_precision() == 0
+    from database.models import SettingsDB
+    assert SettingsDB.get_setting(cloud_sync._LOCATION_PRECISION_REPAIR_DONE_KEY) == "1"
+
+
+def test_confirmation_consumed_after_post(db, no_geography):
+    local = dict(_seed(db), notes="edited")
+
+    class PostClient(_PushClient):
+        def _resolve_existing_observation_for_push(self, obs, remote_obs=None):
+            return None
+
+        def _post(self, path, payload):
+            self.patches.append(dict(payload))
+            return [{"id": CLOUD_ID}]
+
+    cloud_sync.record_confirmed_location_precision(1, "exact")
+    client = PostClient()
+    client.push_observation(local)
+    assert client.patches[0]["location_precision"] == "exact"
+    assert cloud_sync._confirmed_location_precision(1) is None
+
+
+def test_confirmation_consumed_when_no_patch_is_needed(db, no_geography):
+    local = _seed(db, baseline_precision="exact")
+    cloud_sync.record_confirmed_location_precision(1, "exact")
+    client = _PushClient()
+    remote = _remote("exact")
+    assert cloud_sync._observation_push_diff_fields(local, remote) == []
+    client.push_observation(local, remote)
+    assert client.patches == []
+    assert cloud_sync._confirmed_location_precision(1) is None
