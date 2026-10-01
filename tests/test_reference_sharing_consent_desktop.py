@@ -400,3 +400,96 @@ def test_withdraw_failure_is_reported(qapp, boxes, monkeypatch):
     monkeypatch.setattr(dialog, "confirm_stop_sharing", lambda: True)
     dialog.stop_btn.click()
     assert boxes[-1] == ("warn", "Could not stop sharing (forbidden).")
+
+
+# --- Stage 2c -------------------------------------------------------------------
+
+UNKNOWN_TEXT = "Shared. Sporely couldn't confirm whether it's visible yet; see My shared references."
+
+
+def test_contradicting_use_warning_names_the_contradiction(qapp, boxes):
+    req = ReferenceShareRequest("s", 1, 1, 1, 1, target_species="Mycena galopus",
+                                name_as_published="Mycena galopus", role="contradicts")
+    dialog = ReferenceShareConsentDialog(FakeClient(TEXT), req, locale="en")
+    text = dialog.warning_label.text()
+    assert "published publicly, under your name, as a reference for Mycena galopus" in text
+    assert "marked as contradicting the identification" in text
+    other = ReferenceShareConsentDialog(FakeClient(TEXT), ReferenceShareRequest(
+        "s", 1, 1, 1, 1, target_species="Mycena galopus", name_as_published="Mycena pura",
+        role="compared"), locale="en")
+    assert "contradicting" not in other.warning_label.text()
+
+
+@pytest.mark.parametrize("status", ["created", "updated", "no_change"])
+def test_confirmed_served_row_is_now_shared_publicly(qapp, boxes, status):
+    client = FakeClient(TEXT, [{"status": status, "row": {"contribution_id": "c1"}}],
+                        contributions=[{"contribution_id": "c1", "status": "shared", "hidden_at": None}])
+    dialog = ReferenceShareConsentDialog(client, REQUEST, locale="en")
+    dialog.share_btn.click()
+    assert boxes[-1] == ("info", "This reference is now shared publicly.")
+    assert ("list",) in client.calls
+
+
+class _ListFails(FakeClient):
+    def __init__(self, listing, **kw):
+        super().__init__(**kw)
+        self.listing = listing
+
+    def list_my_shared_reference_contributions(self):
+        self.calls.append(("list",))
+        if isinstance(self.listing, Exception):
+            raise self.listing
+        return self.listing
+
+
+@pytest.mark.parametrize("status", ["created", "updated", "no_change"])
+@pytest.mark.parametrize("row,listing", [
+    ({"contribution_id": "c1"}, RuntimeError("offline")),
+    ({"contribution_id": "c1"}, {"status": "rate_limited"}),
+    ({"contribution_id": "c1"}, {"status": "error", "contributions": [{"contribution_id": "c1", "status": "shared"}]}),
+    ({"contribution_id": "c1"}, {"status": "ok", "contributions": []}),
+    ({"contribution_id": "c1"}, {"status": "ok", "contributions": [{"contribution_id": "c2", "status": "shared"}]}),
+    ({"contribution_id": "c1"}, {"status": "ok", "contributions": [{"contribution_id": "c1", "status": "withdrawn"}]}),
+    ({}, {"status": "ok", "contributions": [{"contribution_id": "c1", "status": "shared"}]}),
+    (None, {"status": "ok", "contributions": [{"contribution_id": "c1", "status": "shared"}]}),
+])
+def test_unconfirmed_visibility_never_claims_public(qapp, boxes, status, row, listing):
+    client = _ListFails(listing, consent=TEXT, share_results=[{"status": status, "row": row}])
+    dialog = ReferenceShareConsentDialog(client, REQUEST, locale="en")
+    dialog.share_btn.click()
+    assert boxes[-1] == ("info", UNKNOWN_TEXT)
+    assert dialog.result_status == status
+
+
+@pytest.mark.parametrize("status", ["created", "updated", "no_change"])
+def test_hidden_after_any_success_status(qapp, boxes, status):
+    client = FakeClient(TEXT, [{"status": status, "row": {"contribution_id": "c1"}}],
+                        contributions=[{"contribution_id": "c1", "status": "shared", "hidden_at": "x"}])
+    dialog = ReferenceShareConsentDialog(client, REQUEST, locale="en")
+    dialog.share_btn.click()
+    assert "hidden by moderation" in boxes[-1][1]
+
+
+def test_v2_public_reads_are_allowed_in_download_only_mode():
+    for name in ("search_public_reference_contributions_v2", "get_public_reference_contribution_v2"):
+        assert name in cloud_sync._PULL_ONLY_ALLOWED_READ_METHODS
+        assert name in cloud_sync._PULL_ONLY_ALLOWED_RPC_NAMES
+        assert name not in cloud_sync._PULL_ONLY_BLOCKED_CLIENT_METHODS
+    for old in ("search_public_reference_contributions", "get_public_reference_contribution"):
+        assert old not in cloud_sync._PULL_ONLY_ALLOWED_RPC_NAMES
+
+
+def test_v2_wrappers_send_exact_rpc_payloads(monkeypatch):
+    client = cloud_sync.SporelyCloudClient("token", "user")
+    sent = []
+    monkeypatch.setattr(client, "_rpc", lambda name, payload=None: sent.append((name, payload)) or [])
+    client.search_public_reference_contributions_v2(617026, 25, None, None)
+    client.get_public_reference_contribution_v2("c1", 3)
+    assert sent == [
+        ("search_public_reference_contributions_v2", {
+            "p_sporely_taxon_id": 617026, "p_limit": 25,
+            "p_after_shared_at": None, "p_after_id": None}),
+        ("get_public_reference_contribution_v2", {"p_contribution_id": "c1", "p_revision": 3}),
+    ]
+    wrapper = cloud_sync.PullOnlyCloudClient(client)
+    assert wrapper.search_public_reference_contributions_v2(617026, 25, None, None) == []

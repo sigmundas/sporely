@@ -109,7 +109,7 @@ class Client:
         self.calls.append((taxon_id, limit, after_published_at, after_id))
         return self.rows
 
-    def search_public_reference_contributions(self, taxon_id, limit, after_shared_at, after_id):
+    def search_public_reference_contributions_v2(self, taxon_id, limit, after_shared_at, after_id):
         self.calls.append((taxon_id, limit, after_shared_at, after_id))
         return self.rows
 
@@ -158,6 +158,7 @@ def test_shared_contribution_keeps_attribution_and_legacy_fork_compatibility():
         "snapshot": legacy["snapshot"],
         "citation": legacy["citation"],
         "exports": legacy["exports"],
+        "relationship_roles": [],
     }
     bundle = search_curated_catalogue(Client([shared]), 2_100_000_081)[0]
     assert bundle.contribution_id == legacy["curated_measurement_set_id"]
@@ -167,7 +168,7 @@ def test_shared_contribution_keeps_attribution_and_legacy_fork_compatibility():
 
 def test_shared_search_does_not_require_legacy_catalogue_method():
     class SharedOnlyClient:
-        def search_public_reference_contributions(
+        def search_public_reference_contributions_v2(
             self, taxon_id, limit, after_shared_at, after_id,
         ):
             assert (taxon_id, limit, after_shared_at, after_id) == (
@@ -188,10 +189,80 @@ def test_shared_search_does_not_require_legacy_catalogue_method():
                 "snapshot": legacy["snapshot"],
                 "citation": legacy["citation"],
                 "exports": legacy["exports"],
+                "relationship_roles": ["compared"],
             }]
 
     result = search_curated_catalogue(SharedOnlyClient(), 2_100_000_081)
     assert result[0].contributor_label == "User 1"
+    assert result[0].relationship_roles == ("compared",)
+
+
+def shared_row(roles=None) -> dict:
+    legacy = bundle_row()
+    return {
+        "contribution_id": legacy["curated_measurement_set_id"],
+        "revision": legacy["bundle_revision"],
+        "status": "shared",
+        "shared_at": legacy["published_at"],
+        "sporely_taxon_id": legacy["sporely_taxon_id"],
+        "canonical_scientific_name": legacy["canonical_scientific_name"],
+        "contributor": {"id": "00000000-0000-4000-8000-00000000c101", "label": "User 1"},
+        "snapshot": legacy["snapshot"],
+        "citation": legacy["citation"],
+        "exports": legacy["exports"],
+        "relationship_roles": [] if roles is None else roles,
+    }
+
+
+def test_v2_relationship_roles_are_parsed_in_display_order():
+    bundle = normalize_curated_bundle(
+        shared_row(["compared", "contradicts", "supports_identification"]))
+    assert bundle.relationship_roles == ("supports_identification", "contradicts", "compared")
+    assert normalize_curated_bundle(shared_row([])).relationship_roles == ()
+
+
+@pytest.mark.parametrize("roles", [
+    ["supports"], ["contradicts", "compared"], ["compared", "compared"], "compared",
+    [None], None,
+])
+def test_v2_relationship_roles_are_strictly_validated(roles):
+    row = shared_row()
+    if roles is None:
+        del row["relationship_roles"]  # a served shared row must carry roles
+    else:
+        row["relationship_roles"] = roles
+    with pytest.raises(CuratedReferenceError):
+        normalize_curated_bundle(row)
+
+
+def test_relationship_roles_never_enter_frozen_provenance(isolated):
+    supports = normalize_curated_bundle(shared_row(["supports_identification"]))
+    contradicts = normalize_curated_bundle(shared_row(["contradicts"]))
+    assert "relationship_roles" not in supports.source_envelope
+    assert supports.source_envelope == contradicts.source_envelope
+    first = copy_curated_bundle_to_personal_library(supports)
+    # A live role change must not make the re-copy disagree on provenance.
+    replay = copy_curated_bundle_to_personal_library(contradicts)
+    assert first.created and not replay.created
+    assert replay.source_sha256 == first.source_sha256
+    source = json.dumps(supports.source_envelope, ensure_ascii=False, sort_keys=True, separators=(",", ":"))
+    frozen = validate_frozen_curated_provenance(
+        source, first.source_sha256,
+        curated_measurement_set_id=supports.curated_measurement_set_id,
+        bundle_revision=supports.bundle_revision,
+        sporely_taxon_id=supports.sporely_taxon_id,
+    )
+    assert frozen.relationship_roles == ()
+    # A stored envelope carrying roles is not valid frozen provenance.
+    with_roles = json.dumps(shared_row(["compared"]), ensure_ascii=False, sort_keys=True, separators=(",", ":"))
+    import hashlib
+    with pytest.raises(CuratedReferenceError):
+        validate_frozen_curated_provenance(
+            with_roles, hashlib.sha256(with_roles.encode()).hexdigest(),
+            curated_measurement_set_id=supports.curated_measurement_set_id,
+            bundle_revision=supports.bundle_revision,
+            sporely_taxon_id=supports.sporely_taxon_id,
+        )
 
 
 @pytest.mark.parametrize(

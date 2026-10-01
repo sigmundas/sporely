@@ -1,17 +1,32 @@
 """Exact-taxon public catalogue picker for explicit personal copies."""
 from __future__ import annotations
 
-from PySide6.QtCore import QObject, QThread, Signal, Slot
+from PySide6.QtCore import QCoreApplication, QObject, Qt, QThread, Signal, Slot
+from PySide6.QtGui import QBrush, QColor, QFont
 from PySide6.QtWidgets import (
     QAbstractItemView, QDialog, QDialogButtonBox, QLabel, QMessageBox, QPushButton, QTableWidget,
     QTableWidgetItem, QVBoxLayout, QWidget,
 )
 
 from database.curated_reference_forks import (
+    RELATIONSHIP_ROLE_ORDER,
     CuratedReferenceBundle,
     copy_curated_bundle_to_personal_library,
     search_shared_reference_contributions,
 )
+
+
+def relationship_label(roles: tuple[str, ...] | list[str]) -> str:
+    """Stage 2c label rule: one label per role present, in the order
+    Supports · Contradicts · Compared. No roles gives no label (never
+    "Supports")."""
+    names = {
+        "supports_identification": QCoreApplication.translate("SharedReferenceCatalogue", "Supports"),
+        "contradicts": QCoreApplication.translate("SharedReferenceCatalogue", "Contradicts"),
+        "compared": QCoreApplication.translate("SharedReferenceCatalogue", "Compared"),
+    }
+    present = set(roles or ())
+    return " · ".join(names[role] for role in RELATIONSHIP_ROLE_ORDER if role in present)
 
 
 class _CatalogueWorker(QObject):
@@ -47,16 +62,24 @@ class SharedReferenceCatalogueDialog(QDialog):
         self.status_label = QLabel(self.tr("Loading exact-taxon references…"), self)
         self.status_label.setWordWrap(True)
         layout.addWidget(self.status_label)
-        self.table = QTableWidget(0, 5, self)
+        self.table = QTableWidget(0, 6, self)
         self.table.setHorizontalHeaderLabels([
             self.tr("Source"), self.tr("Taxon"), self.tr("Revision"),
             self.tr("Raw expression"), self.tr("Contributor"),
+            self.tr("Current relationship"),
         ])
         self.table.setSelectionBehavior(QAbstractItemView.SelectRows)
         self.table.setSelectionMode(QAbstractItemView.SingleSelection)
         self.table.setEditTriggers(QAbstractItemView.NoEditTriggers)
         self.table.itemSelectionChanged.connect(self._update_copy_state)
         layout.addWidget(self.table, 1)
+        # The relationship is live: how the contributor currently uses the
+        # reference on their public observations of this species.
+        self.relationship_label = QLabel(self)
+        self.relationship_label.setWordWrap(True)
+        self.relationship_label.setTextFormat(Qt.PlainText)
+        self.relationship_label.hide()
+        layout.addWidget(self.relationship_label)
         buttons = QDialogButtonBox(QDialogButtonBox.Close, parent=self)
         self.copy_button = QPushButton(self.tr("Copy to personal library"), self)
         self.copy_button.setEnabled(False)
@@ -92,9 +115,16 @@ class SharedReferenceCatalogueDialog(QDialog):
                 bundle.citation["short_citation"], bundle.canonical_scientific_name,
                 str(bundle.bundle_revision), bundle.snapshot["raw_text"] or "",
                 bundle.contributor_label or self.tr("Sporely user"),
+                relationship_label(bundle.relationship_roles),
             )
             for column, value in enumerate(values):
                 self.table.setItem(row, column, QTableWidgetItem(str(value)))
+            if "contradicts" in bundle.relationship_roles:
+                cell = self.table.item(row, 5)
+                font = QFont(cell.font())
+                font.setBold(True)
+                cell.setFont(font)
+                cell.setForeground(QBrush(QColor("#b02a37")))
         self.status_label.setText(
             self.tr("No shared contributions found for this exact taxon.")
             if not self._bundles else self.tr("Select a contribution revision to copy.")
@@ -111,7 +141,28 @@ class SharedReferenceCatalogueDialog(QDialog):
             self.close()
 
     def _update_copy_state(self) -> None:
-        self.copy_button.setEnabled(len(self.table.selectionModel().selectedRows()) == 1)
+        rows = self.table.selectionModel().selectedRows()
+        self.copy_button.setEnabled(len(rows) == 1)
+        bundle = self._bundles[rows[0].row()] if len(rows) == 1 and rows[0].row() < len(self._bundles) else None
+        label = relationship_label(bundle.relationship_roles) if bundle is not None else ""
+        if not label:
+            self.relationship_label.setText("")
+            self.relationship_label.hide()
+            return
+        contradicts = "contradicts" in bundle.relationship_roles
+        self.relationship_label.setText(
+            self.tr("Contradicts the identification. The contributor currently uses this "
+                    "reference as contradicting {species} on their public observations "
+                    "(current relationship: {label}).").format(
+                species=bundle.canonical_scientific_name, label=label)
+            if contradicts else
+            self.tr("Current relationship on the contributor's public observations: {label}").format(label=label)
+        )
+        self.relationship_label.setStyleSheet(
+            "background-color: #f8d7da; color: #58151c; border: 1px solid #f1aeb5;"
+            " border-radius: 4px; padding: 6px; font-weight: bold;" if contradicts else ""
+        )
+        self.relationship_label.show()
 
     def _copy_selected(self) -> None:
         rows = self.table.selectionModel().selectedRows()

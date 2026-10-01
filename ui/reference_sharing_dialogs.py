@@ -310,7 +310,15 @@ class ReferenceShareConsentDialog(QDialog):
                 revision=r.measurement_set_revision,
             )
         )
-        if r.needs_species_warning:
+        if r.role == "contradicts":
+            self.warning_label.setText(QCoreApplication.translate(
+                "ReferenceSharing",
+                "Warning: this reference will be published publicly, under your "
+                "name, as a reference for {species}, marked as contradicting the "
+                "identification.").format(
+                species=r.target_species or str(r.sporely_taxon_id)))
+            self.warning_label.show()
+        elif r.needs_species_warning:
             self.warning_label.setText(QCoreApplication.translate(
                 "ReferenceSharing",
                 "Warning: this reference will be published publicly, under your "
@@ -380,11 +388,17 @@ class ReferenceShareConsentDialog(QDialog):
         self.result_status = status
         ok, message = share_status_message(status)
         if ok:
-            if status in ("updated", "no_change") and self._is_hidden(result):
+            visibility = self.post_share_visibility(result)
+            if visibility == "hidden":
                 message = QCoreApplication.translate(
                     "ReferenceSharing",
                     "This reference is shared, but it is hidden by moderation and "
                     "is not shown publicly.")
+            elif visibility != "public":
+                message = QCoreApplication.translate(
+                    "ReferenceSharing",
+                    "Shared. Sporely couldn't confirm whether it's visible yet; "
+                    "see My shared references.")
             show_message(self, QMessageBox.Information, self.windowTitle(), message)
             self.accept()
             return
@@ -394,22 +408,33 @@ class ReferenceShareConsentDialog(QDialog):
             self.load_consent_text()
         show_message(self, QMessageBox.Warning, self.windowTitle(), message)
 
-    def _is_hidden(self, result: dict) -> bool:
-        """Whether the shared row is hidden by moderation (owner list lookup)."""
+    def post_share_visibility(self, result: dict) -> str:
+        """``public``, ``hidden`` or ``unknown`` after created/updated/no_change.
+
+        Only a row the owner list confirms as shared and not hidden is
+        ``public``; every failure to confirm is ``unknown``, never public.
+        """
         row = result.get("row") if isinstance(result.get("row"), dict) else {}
         if row.get("hidden_at"):
-            return True
+            return "hidden"
         contribution_id = row.get("contribution_id")
-        if not contribution_id:
-            return False
+        if not isinstance(contribution_id, str) or not contribution_id:
+            return "unknown"
         try:
             listing = self._client.list_my_shared_reference_contributions()
         except Exception:
-            return False
-        for item in (listing or {}).get("contributions") or [] if isinstance(listing, dict) else []:
+            return "unknown"
+        if not isinstance(listing, dict) or listing.get("status") != "ok":
+            return "unknown"
+        contributions = listing.get("contributions")
+        if not isinstance(contributions, list):
+            return "unknown"
+        for item in contributions:
             if isinstance(item, dict) and item.get("contribution_id") == contribution_id:
-                return bool(item.get("hidden_at"))
-        return False
+                if item.get("hidden_at"):
+                    return "hidden"
+                return "public" if item.get("status") == "shared" else "unknown"
+        return "unknown"
 
     def _block(self, message: str) -> str:
         self._blocked = True

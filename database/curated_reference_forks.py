@@ -34,7 +34,17 @@ _FULL_KEYS = frozenset({
 _SHARED_KEYS = frozenset({
     "contribution_id", "revision", "status", "shared_at", "sporely_taxon_id",
     "canonical_scientific_name", "contributor", "snapshot", "citation", "exports",
+    "relationship_roles",
 })
+# ``relationship_roles`` is live, served state (Stage 2c, sporely-web
+# 20261001091940): it is the owner's *current* public relationship and changes
+# without a new revision. It is never part of frozen provenance, so a stored
+# fork envelope is the served envelope without it.
+_LIVE_ONLY_SHARED_KEYS = frozenset({"relationship_roles"})
+_FROZEN_SHARED_KEYS = _SHARED_KEYS - _LIVE_ONLY_SHARED_KEYS
+# Label order for display: Supports · Contradicts · Compared.
+RELATIONSHIP_ROLE_ORDER = ("supports_identification", "contradicts", "compared")
+_RELATIONSHIP_ROLES = frozenset(RELATIONSHIP_ROLE_ORDER)
 _CONTRIBUTOR_KEYS = frozenset({"id", "label"})
 _SNAPSHOT_KEYS = frozenset({
     "schema_version", "reference_work_id", "reference_treatment_id",
@@ -81,7 +91,7 @@ class CuratedReferenceError(ValueError):
 
 
 class CuratedCatalogueClient(Protocol):
-    def search_public_reference_contributions(
+    def search_public_reference_contributions_v2(
         self, sporely_taxon_id: int, limit: int, after_shared_at: str | None,
         after_id: str | None,
     ) -> object: ...
@@ -111,6 +121,8 @@ class CuratedReferenceBundle:
     source_envelope: dict[str, Any]
     contributor_id: str | None = None
     contributor_label: str | None = None
+    # Current public relationship of the owner's uses (live, not provenance).
+    relationship_roles: tuple[str, ...] = ()
 
     @property
     def contribution_id(self) -> str:
@@ -320,8 +332,24 @@ def _validate_csl(csl: object, citation: Mapping[str, Any]) -> bool:
     return len(json.dumps(csl, ensure_ascii=False).encode("utf-8")) <= 131072
 
 
-def normalize_curated_bundle(value: object, *, expected_taxon_id: int | None = None) -> CuratedReferenceBundle:
-    if isinstance(value, dict) and frozenset(value) == _SHARED_KEYS:
+def _validate_relationship_roles(value: object) -> tuple[str, ...]:
+    if (not isinstance(value, list) or len(value) > len(_RELATIONSHIP_ROLES)
+            or any(not isinstance(role, str) or role not in _RELATIONSHIP_ROLES for role in value)
+            or len(set(value)) != len(value) or value != sorted(value)):
+        raise CuratedReferenceError("invalid contribution relationship roles")
+    return tuple(role for role in RELATIONSHIP_ROLE_ORDER if role in value)
+
+
+def normalize_curated_bundle(
+    value: object, *, expected_taxon_id: int | None = None, frozen: bool = False,
+) -> CuratedReferenceBundle:
+    """Validate a served (or, with ``frozen=True``, stored) envelope.
+
+    A served shared row must carry ``relationship_roles``; a frozen
+    provenance envelope must not (it is stripped before hashing).
+    """
+    shared_keys = _FROZEN_SHARED_KEYS if frozen else _SHARED_KEYS
+    if isinstance(value, dict) and frozenset(value) == shared_keys:
         contributor = _exact_mapping(value["contributor"], _CONTRIBUTOR_KEYS)
         if contributor is None:
             raise CuratedReferenceError("invalid contribution attribution")
@@ -344,13 +372,17 @@ def normalize_curated_bundle(value: object, *, expected_taxon_id: int | None = N
             "citation": value["citation"],
             "exports": value["exports"],
         }
+        roles = () if frozen else _validate_relationship_roles(value["relationship_roles"])
         bundle = normalize_curated_bundle(legacy, expected_taxon_id=expected_taxon_id)
+        # Provenance excludes the live relationship, so a role change never
+        # changes the stored envelope or its sha256.
+        provenance = {key: item for key, item in value.items() if key not in _LIVE_ONLY_SHARED_KEYS}
         return CuratedReferenceBundle(
             bundle.curated_measurement_set_id, bundle.bundle_revision,
             bundle.sporely_taxon_id, bundle.canonical_scientific_name,
             bundle.published_at, bundle.snapshot, bundle.citation, bundle.exports,
-            json.loads(json.dumps(value, ensure_ascii=False, sort_keys=True, separators=(",", ":"))),
-            contributor_id, contributor["label"],
+            json.loads(json.dumps(provenance, ensure_ascii=False, sort_keys=True, separators=(",", ":"))),
+            contributor_id, contributor["label"], roles,
         )
     row = _exact_mapping(value, _FULL_KEYS)
     if row is None or row["status"] != "published" or row["superseded_by_id"] is not None:
@@ -433,7 +465,9 @@ def validate_frozen_curated_provenance(
     if hashlib.sha256(encoded).hexdigest() != source_sha256:
         raise CuratedReferenceError("frozen envelope digest mismatch")
     try:
-        bundle = normalize_curated_bundle(json.loads(source_envelope_json), expected_taxon_id=sporely_taxon_id)
+        bundle = normalize_curated_bundle(
+            json.loads(source_envelope_json), expected_taxon_id=sporely_taxon_id, frozen=True,
+        )
     except (json.JSONDecodeError, TypeError) as exc:
         raise CuratedReferenceError("invalid frozen envelope JSON") from exc
     if (bundle.curated_measurement_set_id != curated_measurement_set_id
@@ -445,7 +479,7 @@ def validate_frozen_curated_provenance(
 def search_shared_reference_contributions(client: CuratedCatalogueClient, sporely_taxon_id: int, *, limit: int = 25) -> tuple[CuratedReferenceBundle, ...]:
     if not _positive_int(sporely_taxon_id) or not _positive_int(limit, 100):
         raise CuratedReferenceError("catalogue search requires a positive exact taxon ID and limit <= 100")
-    search = getattr(client, "search_public_reference_contributions", None)
+    search = getattr(client, "search_public_reference_contributions_v2", None)
     if search is None:
         search = getattr(client, "search_public_curated_reference_sets", None)
     if not callable(search):

@@ -2269,8 +2269,8 @@ _PULL_ONLY_ALLOWED_READ_METHODS = frozenset({
     'list_observation_reference_uses',
     'search_public_curated_reference_sets',
     'get_public_curated_reference_set',
-    'search_public_reference_contributions',
-    'get_public_reference_contribution',
+    'search_public_reference_contributions_v2',
+    'get_public_reference_contribution_v2',
     'list_reference_curated_forks',
     # Image / measurement metadata reads
     'pull_bulk_image_metadata',
@@ -2304,8 +2304,8 @@ _PULL_ONLY_ALLOWED_RPC_NAMES = frozenset({
     'get_public_observation',
     'search_public_curated_reference_sets',
     'get_public_curated_reference_set',
-    'search_public_reference_contributions',
-    'get_public_reference_contribution',
+    'search_public_reference_contributions_v2',
+    'get_public_reference_contribution_v2',
 })
 
 
@@ -16440,14 +16440,14 @@ class SporelyCloudClient:
         })
         return rows if isinstance(rows, list) else []
 
-    def search_public_reference_contributions(
+    def search_public_reference_contributions_v2(
         self,
         sporely_taxon_id: int,
         limit: int = 25,
         after_shared_at: str | None = None,
         after_id: str | None = None,
     ) -> list[dict]:
-        rows = self._rpc('search_public_reference_contributions', {
+        rows = self._rpc('search_public_reference_contributions_v2', {
             'p_sporely_taxon_id': sporely_taxon_id,
             'p_limit': limit,
             'p_after_shared_at': after_shared_at,
@@ -16455,10 +16455,12 @@ class SporelyCloudClient:
         })
         return rows if isinstance(rows, list) else []
 
-    def get_public_reference_contribution(
-        self, contribution_id: str, revision: int,
+    def get_public_reference_contribution_v2(
+        self, contribution_id: str, revision: int | None = None,
     ) -> list[dict]:
-        rows = self._rpc('get_public_reference_contribution', {
+        # _v2 (sporely-web 20261001091940): served shared rows carry
+        # relationship_roles; today's unversioned read serves tombstones only.
+        rows = self._rpc('get_public_reference_contribution_v2', {
             'p_contribution_id': contribution_id,
             'p_revision': revision,
         })
