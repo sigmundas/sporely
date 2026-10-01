@@ -1539,7 +1539,17 @@ class CloudConflictDialog(QDialog):
 
     def _confirm_publish_for_plan(self, conflict: dict) -> bool:
         """Stage 2c publish notice when the resolution makes the observation
-        public and not a draft (compared with what the cloud serves now)."""
+        public and not a draft (compared with what the cloud serves now), and
+        the spore-public notice when it makes spore data public on an
+        observation the cloud already serves publicly."""
+        def _attached_roles(observation_id):
+            if not observation_id:
+                return []
+            from database.reference_library import ObservationReferenceUseRepository
+
+            return [str(use.role or "") for use in
+                    ObservationReferenceUseRepository.list_for_observation(int(observation_id))]
+
         from ui.publish_notice import confirm_publish_if_needed, load_local_facts
 
         previous, resolved = self.resolved_observation_state()
@@ -1547,6 +1557,17 @@ class CloudConflictDialog(QDialog):
         if not confirm_publish_if_needed(
             self, previous, resolved,
             lambda: load_local_facts(local_id, resolved),
+        ):
+            return False
+        # Already public on the cloud and the resolution makes spore data
+        # public: that also makes attached reference sets public.
+        from ui.publish_notice import confirm_spore_public_if_needed, is_public
+
+        if is_public(previous) and not confirm_spore_public_if_needed(
+            self,
+            dict(resolved, spore_data_visibility=previous.get('spore_data_visibility')),
+            resolved.get('spore_data_visibility'),
+            lambda: _attached_roles(local_id),
         ):
             return False
         # Choosing this device's precision here is an explicit choice that

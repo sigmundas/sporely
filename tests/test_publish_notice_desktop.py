@@ -461,3 +461,25 @@ def test_app_start_runs_precision_repair_after_database_init():
     init = source.index("    init_database()\n")
     repair = source.index("repair_legacy_location_precision()", init)
     assert repair - init < 400
+
+
+def test_conflict_making_spore_data_public_on_public_observation_asks(conflict_dialog, monkeypatch):
+    dialog, _started = conflict_dialog
+    dialog._current_detail["remote_observation"].update(
+        {"visibility": "public", "is_draft": False, "spore_data_visibility": "private"})
+    dialog._current_detail["field_rows"] = [{"field": "spore_data_visibility", "label": "Spores",
+                                             "local": "public", "remote": "private"}]
+    dialog._current_detail["automatic_decisions"] = {"fields": [], "media": []}
+    monkeypatch.setattr(pn, "show_publish_notice",
+                        lambda *_a: (_ for _ in ()).throw(AssertionError("already public")))
+    choice = {"value": "local"}
+    monkeypatch.setattr(dialog, "_selected_choice", lambda key: choice["value"])
+    shown = []
+    monkeypatch.setattr(pn, "show_spore_public_notice", lambda _p, text: shown.append(text) or False)
+    assert not dialog._confirm_publish_for_plan({"local_id": 593})
+    assert len(shown) == 1 and "Spore measurements" in shown[0]
+    monkeypatch.setattr(pn, "show_spore_public_notice", lambda _p, text: shown.append(text) or True)
+    assert dialog._confirm_publish_for_plan({"local_id": 593})
+    choice["value"] = "cloud"  # keeping the cloud's private spore data: no notice
+    assert dialog._confirm_publish_for_plan({"local_id": 593})
+    assert len(shown) == 2
