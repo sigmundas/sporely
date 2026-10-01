@@ -10092,17 +10092,17 @@ Detta kommer också att ta bort alla tillhörande bilder och mätningar.</transl
     <message>
         <location filename="../ui/publish_notice.py" line="124"/>
         <source>Some photos may still contain the exact position in their file data.</source>
-        <translation>Vissa bilder kan fortfarande innehålla den exakta positionen i sina fildata.</translation>
+        <translation>Vissa foton kan fortfarande innehålla den exakta positionen i sina fildata.</translation>
     </message>
     <message>
         <location filename="../ui/publish_notice.py" line="116"/>
         <source>An approximate location (about 1 km), shown with region or country only</source>
-        <translation>En ungefärlig plats (cirka 1 km), visad endast med region eller land</translation>
+        <translation>Ungefärlig plats (ungefär 1 km), visad med endast region eller land</translation>
     </message>
     <message>
         <location filename="../ui/publish_notice.py" line="118"/>
         <source>The exact location and the location name you entered</source>
-        <translation>Den exakta platsen och platsnamnet du angav</translation>
+        <translation>Exakt plats och platsnamnet du angav</translation>
     </message>
     <message>
         <location filename="../ui/publish_notice.py" line="133"/>
@@ -10112,7 +10112,7 @@ Detta kommer också att ta bort alla tillhörande bilder och mätningar.</transl
     <message>
         <location filename="../ui/publish_notice.py" line="135"/>
         <source>Your photos, microscope photos and the AI identification you selected</source>
-        <translation>Dina foton, mikroskopfoton och den AI-identifiering du valde</translation>
+        <translation>Dina foton, mikroskopfoton och AI-identifieringen du valde</translation>
     </message>
     <message>
         <location filename="../ui/publish_notice.py" line="139"/>
@@ -10122,27 +10122,27 @@ Detta kommer också att ta bort alla tillhörande bilder och mätningar.</transl
     <message>
         <location filename="../ui/publish_notice.py" line="140"/>
         <source>After the next sync, anyone, including people who are not signed in, can see:</source>
-        <translation>Efter nästa synkronisering kan alla, även personer som inte är inloggade, se:</translation>
+        <translation>Efter nästa synkronisering kan alla, även de som inte är inloggade, se:</translation>
     </message>
     <message>
         <location filename="../ui/publish_notice.py" line="146"/>
         <source>Spore measurements stay hidden.</source>
-        <translation>Spormätningarna förblir dolda.</translation>
+        <translation>Spormätningar förblir dolda.</translation>
     </message>
     <message>
         <location filename="../ui/publish_notice.py" line="148"/>
         <source>Attached references are shared by default. You can stop sharing them under My shared references.</source>
-        <translation>Kopplade referenser delas som standard. Du kan sluta dela dem under Mina delade referenser.</translation>
+        <translation>Kopplade referenser delas som standard. Du kan sluta dela dem i Mina delade referenser.</translation>
     </message>
     <message>
         <location filename="../ui/publish_notice.py" line="158"/>
         <source>After the next sync, this public observation will show an approximate location (about 1 km), shown with region or country only.</source>
-        <translation>Efter nästa synkronisering visar den här offentliga observationen en ungefärlig plats (cirka 1 km), visad endast med region eller land.</translation>
+        <translation>Efter nästa synkronisering kommer den här offentliga observationen att visa ungefärlig plats (ungefär 1 km), visad med endast region eller land.</translation>
     </message>
     <message>
         <location filename="../ui/publish_notice.py" line="163"/>
         <source>After the next sync, this public observation will show the exact location and the location name you entered.</source>
-        <translation>Efter nästa synkronisering visar den här offentliga observationen den exakta platsen och platsnamnet du angav.</translation>
+        <translation>Efter nästa synkronisering kommer den här offentliga observationen att visa exakt plats och platsnamnet du angav.</translation>
     </message>
     <message>
         <location filename="../ui/publish_notice.py" line="254"/>
@@ -10162,7 +10162,7 @@ Detta kommer också att ta bort alla tillhörande bilder och mätningar.</transl
     <message>
         <location filename="../ui/publish_notice.py" line="306"/>
         <source>This observation is public. After the next sync, the attached reference is shown with it, including its relationship to your identification. You can stop sharing it under My shared references.</source>
-        <translation>Den här observationen är offentlig. Efter nästa synkronisering visas den kopplade referensen tillsammans med den, inklusive dess relation till din identifiering. Du kan sluta dela den under Mina delade referenser.</translation>
+        <translation>Den här observationen är offentlig. Efter nästa synkronisering visas den kopplade referensen tillsammans med den, inklusive dess relation till din identifiering. Du kan sluta dela den i Mina delade referenser.</translation>
     </message>
     <message>
         <location filename="../ui/publish_notice.py" line="316"/>
@@ -12193,12 +12193,12 @@ max</translation>
     <message>
         <location filename="../ui/main_window.py" line="1436"/>
         <source>Ask before making observations, spore data or attached references public</source>
-        <translation>Fråga innan observationer, sporsdata eller kopplade referenser görs offentliga</translation>
+        <translation>Fråga innan observationer, spordata eller kopplade referenser görs offentliga</translation>
     </message>
     <message>
         <location filename="../ui/main_window.py" line="1440"/>
         <source>Showing a more precise location on a public observation always asks.</source>
-        <translation>Att visa en mer exakt plats på en offentlig observation frågar alltid.</translation>
+        <translation>Du får alltid en fråga innan en offentlig observation visar en mer exakt plats.</translation>
     </message>
     <message>
         <location filename="../ui/main_window.py" line="1503"/>

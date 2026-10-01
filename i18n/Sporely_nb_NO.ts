@@ -10095,12 +10095,12 @@ Dette vil også slette alle tilknyttede bilder og målinger.</translation>
     <message>
         <location filename="../ui/publish_notice.py" line="116"/>
         <source>An approximate location (about 1 km), shown with region or country only</source>
-        <translation>En omtrentlig plassering (ca. 1 km), vist bare med region eller land</translation>
+        <translation>Omtrentlig posisjon (omtrent 1 km), vist med bare region eller land</translation>
     </message>
     <message>
         <location filename="../ui/publish_notice.py" line="118"/>
         <source>The exact location and the location name you entered</source>
-        <translation>Den nøyaktige plasseringen og stedsnavnet du skrev inn</translation>
+        <translation>Nøyaktig posisjon og stedsnavnet du har skrevet inn</translation>
     </message>
     <message>
         <location filename="../ui/publish_notice.py" line="133"/>
@@ -10110,7 +10110,7 @@ Dette vil også slette alle tilknyttede bilder og målinger.</translation>
     <message>
         <location filename="../ui/publish_notice.py" line="135"/>
         <source>Your photos, microscope photos and the AI identification you selected</source>
-        <translation>Bildene dine, mikroskopbilder og AI-identifikasjonen du valgte</translation>
+        <translation>Bildene dine, mikroskopbilder og AI-identifiseringen du valgte</translation>
     </message>
     <message>
         <location filename="../ui/publish_notice.py" line="139"/>
@@ -10120,27 +10120,27 @@ Dette vil også slette alle tilknyttede bilder og målinger.</translation>
     <message>
         <location filename="../ui/publish_notice.py" line="140"/>
         <source>After the next sync, anyone, including people who are not signed in, can see:</source>
-        <translation>Etter neste synkronisering kan alle, også personer som ikke er logget inn, se:</translation>
+        <translation>Etter neste synkronisering kan alle, også de som ikke er logget inn, se:</translation>
     </message>
     <message>
         <location filename="../ui/publish_notice.py" line="146"/>
         <source>Spore measurements stay hidden.</source>
-        <translation>Sporemålingene forblir skjult.</translation>
+        <translation>Sporemålinger forblir skjult.</translation>
     </message>
     <message>
         <location filename="../ui/publish_notice.py" line="148"/>
         <source>Attached references are shared by default. You can stop sharing them under My shared references.</source>
-        <translation>Tilknyttede referanser deles som standard. Du kan slutte å dele dem under Mine delte referanser.</translation>
+        <translation>Tilknyttede referanser deles som standard. Du kan slutte å dele dem i Mine delte referanser.</translation>
     </message>
     <message>
         <location filename="../ui/publish_notice.py" line="158"/>
         <source>After the next sync, this public observation will show an approximate location (about 1 km), shown with region or country only.</source>
-        <translation>Etter neste synkronisering viser denne offentlige observasjonen en omtrentlig plassering (ca. 1 km), vist bare med region eller land.</translation>
+        <translation>Etter neste synkronisering vil denne offentlige observasjonen vise omtrentlig posisjon (omtrent 1 km), vist med bare region eller land.</translation>
     </message>
     <message>
         <location filename="../ui/publish_notice.py" line="163"/>
         <source>After the next sync, this public observation will show the exact location and the location name you entered.</source>
-        <translation>Etter neste synkronisering viser denne offentlige observasjonen den nøyaktige plasseringen og stedsnavnet du skrev inn.</translation>
+        <translation>Etter neste synkronisering vil denne offentlige observasjonen vise nøyaktig posisjon og stedsnavnet du har skrevet inn.</translation>
     </message>
     <message>
         <location filename="../ui/publish_notice.py" line="254"/>
@@ -10150,17 +10150,17 @@ Dette vil også slette alle tilknyttede bilder og målinger.</translation>
     <message>
         <location filename="../ui/publish_notice.py" line="257"/>
         <source>Show a more precise location?</source>
-        <translation>Vise en mer presis plassering?</translation>
+        <translation>Vise en mer nøyaktig posisjon?</translation>
     </message>
     <message>
         <location filename="../ui/publish_notice.py" line="258"/>
         <source>Show precise location</source>
-        <translation>Vis presis plassering</translation>
+        <translation>Vis nøyaktig posisjon</translation>
     </message>
     <message>
         <location filename="../ui/publish_notice.py" line="306"/>
         <source>This observation is public. After the next sync, the attached reference is shown with it, including its relationship to your identification. You can stop sharing it under My shared references.</source>
-        <translation>Denne observasjonen er offentlig. Etter neste synkronisering vises den tilknyttede referansen sammen med den, inkludert relasjonen til identifikasjonen din. Du kan slutte å dele den under Mine delte referanser.</translation>
+        <translation>Denne observasjonen er offentlig. Etter neste synkronisering vises den tilknyttede referansen sammen med den, inkludert relasjonen til identifiseringen din. Du kan slutte å dele den i Mine delte referanser.</translation>
     </message>
     <message>
         <location filename="../ui/publish_notice.py" line="316"/>
@@ -12196,7 +12196,7 @@ maks</translation>
     <message>
         <location filename="../ui/main_window.py" line="1440"/>
         <source>Showing a more precise location on a public observation always asks.</source>
-        <translation>Å vise en mer presis plassering på en offentlig observasjon spør alltid.</translation>
+        <translation>Du blir alltid spurt før en offentlig observasjon viser en mer nøyaktig posisjon.</translation>
     </message>
     <message>
         <location filename="../ui/main_window.py" line="1503"/>

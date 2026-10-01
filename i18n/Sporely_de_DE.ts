@@ -10095,17 +10095,17 @@ Dadurch werden auch alle zugehörigen Bilder und Messungen gelöscht.</translati
     <message>
         <location filename="../ui/publish_notice.py" line="116"/>
         <source>An approximate location (about 1 km), shown with region or country only</source>
-        <translation>Ein ungefährer Standort (etwa 1 km), nur mit Region oder Land angezeigt</translation>
+        <translation>Einen ungefähren Fundort (etwa 1 km), nur mit Region oder Land angezeigt</translation>
     </message>
     <message>
         <location filename="../ui/publish_notice.py" line="118"/>
         <source>The exact location and the location name you entered</source>
-        <translation>Der genaue Standort und der Ortsname, den du eingegeben hast</translation>
+        <translation>Den genauen Fundort und den eingegebenen Ortsnamen</translation>
     </message>
     <message>
         <location filename="../ui/publish_notice.py" line="133"/>
         <source>Species, date, habitat, notes and your name</source>
-        <translation>Art, Datum, Lebensraum, Notizen und dein Name</translation>
+        <translation>Art, Datum, Habitat, Notizen und deinen Namen</translation>
     </message>
     <message>
         <location filename="../ui/publish_notice.py" line="135"/>
@@ -10115,12 +10115,12 @@ Dadurch werden auch alle zugehörigen Bilder und Messungen gelöscht.</translati
     <message>
         <location filename="../ui/publish_notice.py" line="139"/>
         <source>Spore measurements and statistics</source>
-        <translation>Sporenmessungen und Statistiken</translation>
+        <translation>Sporenmessungen und Statistik</translation>
     </message>
     <message>
         <location filename="../ui/publish_notice.py" line="140"/>
         <source>After the next sync, anyone, including people who are not signed in, can see:</source>
-        <translation>Nach der nächsten Synchronisierung kann jeder, auch nicht angemeldete Personen, Folgendes sehen:</translation>
+        <translation>Nach der nächsten Synchronisierung können alle, auch nicht angemeldete Personen, Folgendes sehen:</translation>
     </message>
     <message>
         <location filename="../ui/publish_notice.py" line="146"/>
@@ -10130,17 +10130,17 @@ Dadurch werden auch alle zugehörigen Bilder und Messungen gelöscht.</translati
     <message>
         <location filename="../ui/publish_notice.py" line="148"/>
         <source>Attached references are shared by default. You can stop sharing them under My shared references.</source>
-        <translation>Verknüpfte Referenzen werden standardmäßig geteilt. Unter Meine geteilten Referenzen kannst du das Teilen beenden.</translation>
+        <translation>Angehängte Referenzen werden standardmäßig geteilt. In „Meine geteilten Referenzen“ kannst du das Teilen beenden.</translation>
     </message>
     <message>
         <location filename="../ui/publish_notice.py" line="158"/>
         <source>After the next sync, this public observation will show an approximate location (about 1 km), shown with region or country only.</source>
-        <translation>Nach der nächsten Synchronisierung zeigt diese öffentliche Beobachtung einen ungefähren Standort (etwa 1 km), nur mit Region oder Land.</translation>
+        <translation>Nach der nächsten Synchronisierung zeigt diese öffentliche Beobachtung einen ungefähren Fundort (etwa 1 km), nur mit Region oder Land angezeigt.</translation>
     </message>
     <message>
         <location filename="../ui/publish_notice.py" line="163"/>
         <source>After the next sync, this public observation will show the exact location and the location name you entered.</source>
-        <translation>Nach der nächsten Synchronisierung zeigt diese öffentliche Beobachtung den genauen Standort und den Ortsnamen, den du eingegeben hast.</translation>
+        <translation>Nach der nächsten Synchronisierung zeigt diese öffentliche Beobachtung den genauen Fundort und den eingegebenen Ortsnamen.</translation>
     </message>
     <message>
         <location filename="../ui/publish_notice.py" line="254"/>
@@ -10150,17 +10150,17 @@ Dadurch werden auch alle zugehörigen Bilder und Messungen gelöscht.</translati
     <message>
         <location filename="../ui/publish_notice.py" line="257"/>
         <source>Show a more precise location?</source>
-        <translation>Einen genaueren Standort anzeigen?</translation>
+        <translation>Einen genaueren Fundort anzeigen?</translation>
     </message>
     <message>
         <location filename="../ui/publish_notice.py" line="258"/>
         <source>Show precise location</source>
-        <translation>Genauen Standort anzeigen</translation>
+        <translation>Genauen Fundort anzeigen</translation>
     </message>
     <message>
         <location filename="../ui/publish_notice.py" line="306"/>
         <source>This observation is public. After the next sync, the attached reference is shown with it, including its relationship to your identification. You can stop sharing it under My shared references.</source>
-        <translation>Diese Beobachtung ist öffentlich. Nach der nächsten Synchronisierung wird die verknüpfte Referenz mit ihr angezeigt, einschließlich ihrer Beziehung zu deiner Bestimmung. Unter Meine geteilten Referenzen kannst du das Teilen beenden.</translation>
+        <translation>Diese Beobachtung ist öffentlich. Nach der nächsten Synchronisierung wird die angehängte Referenz mit ihr angezeigt, einschließlich ihrer Beziehung zu deiner Bestimmung. In „Meine geteilten Referenzen“ kannst du das Teilen beenden.</translation>
     </message>
     <message>
         <location filename="../ui/publish_notice.py" line="316"/>
@@ -10175,7 +10175,7 @@ Dadurch werden auch alle zugehörigen Bilder und Messungen gelöscht.</translati
     <message>
         <location filename="../ui/publish_notice.py" line="351"/>
         <source>After the next sync, anyone can see this observation&apos;s spore measurements and statistics, and the references attached to it.</source>
-        <translation>Nach der nächsten Synchronisierung kann jeder die Sporenmessungen und Statistiken dieser Beobachtung sowie die damit verknüpften Referenzen sehen.</translation>
+        <translation>Nach der nächsten Synchronisierung können alle die Sporenmessungen und die Statistik dieser Beobachtung sowie die angehängten Referenzen sehen.</translation>
     </message>
     <message>
         <location filename="../ui/publish_notice.py" line="360"/>
@@ -10186,7 +10186,7 @@ Dadurch werden auch alle zugehörigen Bilder und Messungen gelöscht.</translati
         <location filename="../ui/publish_notice.py" line="255"/>
         <location filename="../ui/publish_notice.py" line="362"/>
         <source>Make public</source>
-        <translation>Veröffentlichen</translation>
+        <translation>Öffentlich machen</translation>
     </message>
     <message>
         <location filename="../ui/publish_notice.py" line="233"/>
@@ -12191,12 +12191,12 @@ max</translation>
     <message>
         <location filename="../ui/main_window.py" line="1436"/>
         <source>Ask before making observations, spore data or attached references public</source>
-        <translation>Nachfragen, bevor Beobachtungen, Sporendaten oder verknüpfte Referenzen öffentlich werden</translation>
+        <translation>Nachfragen, bevor Beobachtungen, Sporendaten oder angehängte Referenzen öffentlich werden</translation>
     </message>
     <message>
         <location filename="../ui/main_window.py" line="1440"/>
         <source>Showing a more precise location on a public observation always asks.</source>
-        <translation>Bevor eine öffentliche Beobachtung einen genaueren Standort zeigt, wird immer nachgefragt.</translation>
+        <translation>Bevor eine öffentliche Beobachtung einen genaueren Fundort zeigt, wird immer nachgefragt.</translation>
     </message>
     <message>
         <location filename="../ui/main_window.py" line="1503"/>
