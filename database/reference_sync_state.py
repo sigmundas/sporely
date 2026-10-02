@@ -81,6 +81,8 @@ def recognize_library_baseline(
     a baseline carrying some of the keys is returned unchanged. Incoming
     request payloads are never normalized here.
     """
+    if payload is not None and entity_type == "observation_use":
+        return normalize_use_baseline(payload)
     if payload is None or entity_type != "measurement_set":
         return payload
     if any(key in payload for key in EXTENSION_FIELDS):
@@ -323,6 +325,33 @@ def _snapshot_object(value: object) -> dict[str, Any]:
     return value
 
 
+def canonical_use_timestamp(value: object) -> str:
+    """Return one canonical UTC ISO-8601 form for a use timestamp.
+
+    Local rows store SQLite-style ``YYYY-MM-DD HH:MM:SS`` (UTC) while the
+    server returns ``timestamptz`` as ``YYYY-MM-DDTHH:MM:SS+00:00``. Both
+    denote the same instant, so the canonical payload must not differ by
+    representation (issue #11). Unparseable text is returned stripped.
+    """
+    text = str(value or "").strip()
+    if not text:
+        return text
+    try:
+        parsed = datetime.fromisoformat(text.replace("Z", "+00:00"))
+    except ValueError:
+        return text
+    if parsed.tzinfo is None:
+        parsed = parsed.replace(tzinfo=timezone.utc)
+    return parsed.astimezone(timezone.utc).isoformat()
+
+
+def normalize_use_baseline(payload: object) -> object:
+    """Re-express a stored use baseline in the current canonical form."""
+    if isinstance(payload, dict) and payload.get("selected_at"):
+        return {**payload, "selected_at": canonical_use_timestamp(payload["selected_at"])}
+    return payload
+
+
 def canonical_observation_use_payload(
     row: dict[str, Any] | sqlite3.Row,
     *,
@@ -347,7 +376,7 @@ def canonical_observation_use_payload(
     role = str(mapping.get("role") or "").strip()
     if role not in OBSERVATION_REFERENCE_ROLES:
         raise ReferenceCloudSyncStateError("observation reference role is invalid")
-    selected_at = str(mapping.get("selected_at") or "").strip()
+    selected_at = canonical_use_timestamp(mapping.get("selected_at"))
     if not selected_at:
         raise ReferenceCloudSyncStateError("observation reference selected_at is required")
     payload = {
@@ -777,12 +806,12 @@ class ReferenceCloudSyncStateRepository:
                 """
                 UPDATE reference_cloud_sync_state
                 SET sync_status='clean', conflict_json=NULL, retry_count=0,
-                    last_error=NULL, last_attempted_at=?, updated_at=CURRENT_TIMESTAMP
+                    last_error=NULL, updated_at=CURRENT_TIMESTAMP
                 WHERE entity_type=? AND entity_id=?
                   AND remote_identity_state='acknowledged'
                   AND sync_status!='conflict'
                 """,
-                (_attempted_at(), entity_type, entity_id),
+                (entity_type, entity_id),
             )
             connection.commit()
             return cursor.rowcount == 1
@@ -1219,11 +1248,11 @@ class ReferenceCloudSyncStateRepository:
                 """
                 UPDATE observation_reference_use_cloud_sync_state
                 SET sync_status='clean', conflict_json=NULL, retry_count=0,
-                    last_error=NULL, last_attempted_at=?, updated_at=CURRENT_TIMESTAMP
+                    last_error=NULL, updated_at=CURRENT_TIMESTAMP
                 WHERE use_id=? AND remote_identity_state='acknowledged'
                   AND sync_status!='conflict'
                 """,
-                (_attempted_at(), use_id),
+                (use_id,),
             )
             connection.commit()
             return cursor.rowcount == 1

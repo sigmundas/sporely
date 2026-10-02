@@ -188,6 +188,80 @@ def _attach_public_use(args):
     return {"observation_id": observation_id, "use_id": use.id}
 
 
+def _use_state(_args):
+    """Per-use sync state with local vs accepted payload differences."""
+    from database.reference_use_sync_reconciliation import _local_payload
+
+    conn = schema.get_connection()
+    conn.row_factory = __import__("sqlite3").Row
+    try:
+        rows = conn.execute(
+            "SELECT * FROM observation_reference_use_cloud_sync_state ORDER BY use_id"
+        ).fetchall()
+        out = []
+        for row in rows:
+            local = _local_payload(conn, row["use_id"])
+            accepted = json.loads(row["accepted_payload_json"] or "null")
+            diff = sorted(
+                key for key in set(local or {}) | set(accepted or {})
+                if (local or {}).get(key) != (accepted or {}).get(key)
+            )
+            out.append({
+                "use_id": row["use_id"], "sync_status": row["sync_status"],
+                "remote_identity_state": row["remote_identity_state"],
+                "differs": {k: [(local or {}).get(k), (accepted or {}).get(k)] for k in diff},
+            })
+    finally:
+        conn.close()
+    return {"uses": out}
+
+
+def _status_rows(_args):
+    """Raw status tables (every column) for byte-for-byte comparisons."""
+    import sqlite3
+
+    observation = schema.get_connection()
+    reference = schema.get_reference_connection()
+    observation.row_factory = reference.row_factory = sqlite3.Row
+    try:
+        return {
+            "uses": [dict(row) for row in observation.execute(
+                "SELECT * FROM observation_reference_use_cloud_sync_state ORDER BY use_id"
+            )],
+            "library": [dict(row) for row in reference.execute(
+                "SELECT * FROM reference_cloud_sync_state ORDER BY entity_type, entity_id"
+            )],
+        }
+    finally:
+        observation.close()
+        reference.close()
+
+
+def _age_status_rows(_args):
+    """Preset old timestamps so a same-second rewrite is still visible."""
+    for table, connect in (
+        ("observation_reference_use_cloud_sync_state", schema.get_connection),
+        ("reference_cloud_sync_state", schema.get_reference_connection),
+    ):
+        conn = connect()
+        try:
+            conn.execute(
+                f"UPDATE {table} SET updated_at='2000-01-01 00:00:00', "
+                "last_attempted_at='2000-01-01T00:00:00+00:00'"
+            )
+            conn.commit()
+        finally:
+            conn.close()
+    return {}
+
+
+def _set_use_note(args):
+    from database.reference_library import ObservationReferenceUseRepository
+
+    ObservationReferenceUseRepository.update(args["use_id"], note=args["note"])
+    return {"use_id": args["use_id"]}
+
+
 def _catalogue(args):
     from database.curated_reference_forks import (
         copy_curated_bundle_to_personal_library,
@@ -215,6 +289,10 @@ ACTIONS = {
     "local_set_row": _local_set_row,
     "attach_public_use": _attach_public_use,
     "catalogue": _catalogue,
+    "use_state": _use_state,
+    "set_use_note": _set_use_note,
+    "status_rows": _status_rows,
+    "age_status_rows": _age_status_rows,
 }
 
 
