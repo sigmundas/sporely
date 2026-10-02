@@ -183,7 +183,7 @@ def _attach_public_use(args):
         is_draft=False, sharing_scope="public",
     )
     use = ObservationReferenceUseRepository.attach(
-        observation_id, args["set_id"], role="supports_identification",
+        observation_id, args["set_id"], role=args.get("role", "supports_identification"),
     )
     return {"observation_id": observation_id, "use_id": use.id}
 
@@ -278,7 +278,96 @@ def _catalogue(args):
     return out
 
 
+def _search(args):
+    """Shared catalogue search as the desktop dialog runs it, signed in
+    (``email``/``password``) or anon; optionally copy one contribution."""
+    from database.curated_reference_forks import (
+        copy_curated_bundle_to_personal_library,
+        search_shared_reference_contributions,
+    )
+    from ui.curated_reference_catalogue_dialog import relationship_label
+
+    client = (
+        _login(args) if args.get("email")
+        else cloud_sync.SporelyCloudClient(cloud_sync.SUPABASE_KEY, "")
+    )
+    bundles = search_shared_reference_contributions(client, int(args["taxon_id"]))
+    out = {"bundles": [
+        {
+            "contribution_id": bundle.contribution_id,
+            "revision": bundle.bundle_revision,
+            "relationship_roles": list(bundle.relationship_roles),
+            "relationship_label": relationship_label(bundle.relationship_roles),
+            "raw_text": bundle.snapshot.get("raw_text"),
+        }
+        for bundle in bundles
+    ]}
+    wanted = args.get("copy_contribution_id")
+    if wanted:
+        bundle = next(b for b in bundles if b.contribution_id == wanted)
+        fork = copy_curated_bundle_to_personal_library(bundle)
+        out["copy"] = {
+            "set_id": fork.reference_measurement_set_id,
+            "treatment_id": fork.taxon_treatment_id,
+            "work_id": fork.reference_work_id,
+            "created": fork.created,
+        }
+    return out
+
+
+def _sharing(args):
+    """Owner sharing actions through the client methods the My shared
+    references dialog calls (list / stop / share again)."""
+    from ui.reference_sharing_dialogs import action_result_message
+
+    client = _login(args)
+    action = args["op"]
+    if action == "list":
+        return {"result": client.list_my_reference_sharing()}
+    call = {
+        "stop": client.stop_sharing_reference_set,
+        "share_again": client.share_reference_set_again,
+    }[action]
+    result = call(args["set_id"])
+    ok, message = action_result_message(action, result)
+    return {"result": result, "ok": ok, "message": message}
+
+
+def _graph(_args):
+    """Every local reference/use/observation row, for before/after equality."""
+    tables = {}
+    conn = schema.get_reference_connection()
+    try:
+        for table in ("reference_works", "reference_taxon_treatments",
+                      "reference_measurement_sets", "curated_reference_forks"):
+            cur = conn.execute(f"SELECT * FROM {table} ORDER BY 1")
+            names = [d[0] for d in cur.description]
+            tables[table] = [dict(zip(names, row)) for row in cur.fetchall()]
+    finally:
+        conn.close()
+    conn = schema.get_connection()
+    try:
+        for table in ("observation_reference_uses", "observations"):
+            cur = conn.execute(f"SELECT * FROM {table} ORDER BY 1")
+            names = [d[0] for d in cur.description]
+            tables[table] = [dict(zip(names, row)) for row in cur.fetchall()]
+    finally:
+        conn.close()
+    return {"tables": tables}
+
+
+def _edit_set(args):
+    from database.reference_library import MeasurementSetRepository
+
+    MeasurementSetRepository.update(args["set_id"], {"notes": args["notes"]})
+    return {"set_id": args["set_id"]}
+
+
 ACTIONS = {
+    "search": _search,
+    "sharing": _sharing,
+    "graph": _graph,
+    "edit_set": _edit_set,
     "sync": _sync,
     "pull_only": lambda args: _sync(args, pull_only=True),
     "local_sets": _local_sets,
