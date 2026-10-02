@@ -64,6 +64,7 @@ Sibling modules that share sync responsibility (do **not** assume
 | `database/reference_sync_planner.py` | Pure Stage 4c normalized-reference graph planner and read-only durable snapshot loader. It orders live work parent-first and tombstones child-first and reports dependency/account/conflict blocks without network activity. |
 | `database/reference_use_sync_reconciliation.py` | Stage 4g complete-feed observation-use reconciliation. It preserves frozen snapshots, maps verified observation identities, and applies baseline-aware updates/tombstones without rebuilding evidence. |
 | `utils/reference_cloud_adapter.py` | Typed boundary over the four normalized-reference RPC writers and four completely paginated owner readers. It validates payloads/results and classifies transport failures without planning or persistence policy. |
+| `utils/reference_client_capabilities.py` | Stage M reference client capability: per-profile device id, the declared `reference_snapshot_versions` (derived from the shipped v2 readers), the once-per-session device report, and the capability-hold fingerprint/marker used by the executor for `requires_newer_client` / `older_client_active`. Owner sets, uses and curated forks are read through `list_reference_library_feed` full pulls (`SporelyCloudClient._list_reference_library_feed`). |
 | `utils/r2_storage.py` | Low-level R2/Worker storage adapter |
 
 Normalized reference transport state is deliberately separate from the domain

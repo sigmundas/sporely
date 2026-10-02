@@ -3,12 +3,13 @@ from __future__ import annotations
 
 import hashlib
 import json
+import logging
 import math
 import re
 import sqlite3
 import uuid
 from datetime import datetime
-from dataclasses import dataclass
+from dataclasses import dataclass, replace
 from typing import Any, Mapping, Protocol
 
 from database.reference_library import ReferenceIntegrityError
@@ -41,6 +42,14 @@ _SHARED_KEYS = frozenset({
 # without a new revision. It is never part of frozen provenance, so a stored
 # fork envelope is the served envelope without it.
 _LIVE_ONLY_SHARED_KEYS = frozenset({"relationship_roles"})
+# Stage A (sporely-web 20261001213000): a public read whose caller does not
+# accept snapshot version 2 receives a v2 item projected to v1 and stamped
+# with this optional envelope-level marker (the snapshot keeps the exact v1
+# key set). Tolerated on both envelope shapes; such an item is readable but
+# never copied (the copy would store a lossy projection as editable content).
+MEASUREMENT_DETAILS_OMITTED_KEY = "measurement_details_omitted"
+
+logger = logging.getLogger(__name__)
 _FROZEN_SHARED_KEYS = _SHARED_KEYS - _LIVE_ONLY_SHARED_KEYS
 # Label order for display: Supports · Contradicts · Compared.
 RELATIONSHIP_ROLE_ORDER = ("supports_identification", "contradicts", "compared")
@@ -123,6 +132,8 @@ class CuratedReferenceBundle:
     contributor_label: str | None = None
     # Current public relationship of the owner's uses (live, not provenance).
     relationship_roles: tuple[str, ...] = ()
+    # The server projected a v2 item to v1 for this read (Stage A marker).
+    measurement_details_omitted: bool = False
 
     @property
     def contribution_id(self) -> str:
@@ -348,6 +359,21 @@ def normalize_curated_bundle(
     A served shared row must carry ``relationship_roles``; a frozen
     provenance envelope must not (it is stripped before hashing).
     """
+    if isinstance(value, dict) and MEASUREMENT_DETAILS_OMITTED_KEY in value:
+        if value[MEASUREMENT_DETAILS_OMITTED_KEY] is not True:
+            raise CuratedReferenceError("invalid measurement-details-omitted marker")
+        unmarked = {
+            key: item for key, item in value.items()
+            if key != MEASUREMENT_DETAILS_OMITTED_KEY
+        }
+        bundle = normalize_curated_bundle(
+            unmarked, expected_taxon_id=expected_taxon_id, frozen=frozen,
+        )
+        return replace(
+            bundle,
+            measurement_details_omitted=True,
+            source_envelope={**bundle.source_envelope, MEASUREMENT_DETAILS_OMITTED_KEY: True},
+        )
     shared_keys = _FROZEN_SHARED_KEYS if frozen else _SHARED_KEYS
     if isinstance(value, dict) and frozenset(value) == shared_keys:
         contributor = _exact_mapping(value["contributor"], _CONTRIBUTOR_KEYS)
@@ -489,11 +515,18 @@ def search_shared_reference_contributions(client: CuratedCatalogueClient, sporel
         raise CuratedReferenceError("invalid or oversized catalogue response")
     result: list[CuratedReferenceBundle] = []
     seen: set[tuple[str, int]] = set()
-    for row in response:
-        bundle = normalize_curated_bundle(row, expected_taxon_id=sporely_taxon_id)
+    for index, row in enumerate(response):
+        # One unreadable item (unknown shape or version, bad marker) must not
+        # fail the whole page: skip it and log, keep the rest.
+        try:
+            bundle = normalize_curated_bundle(row, expected_taxon_id=sporely_taxon_id)
+        except CuratedReferenceError as exc:
+            logger.warning("skipping shared reference item %d: %s", index, exc)
+            continue
         key = (bundle.curated_measurement_set_id, bundle.bundle_revision)
         if key in seen:
-            raise CuratedReferenceError("duplicate curated identity")
+            logger.warning("skipping duplicate shared reference item %d", index)
+            continue
         seen.add(key)
         result.append(bundle)
     return tuple(result)
@@ -573,6 +606,10 @@ def _fork_from_row(row: sqlite3.Row, created: bool) -> CuratedReferenceFork:
 
 def copy_curated_bundle_to_personal_library(bundle: CuratedReferenceBundle) -> CuratedReferenceFork:
     """Create one fresh local graph and provenance mapping atomically."""
+    if bundle.measurement_details_omitted:
+        raise CuratedReferenceError(
+            "this contribution was served without its measurement details and cannot be copied"
+        )
     source_json = _json(bundle.source_envelope)
     source_sha = hashlib.sha256(source_json.encode("utf-8")).hexdigest()
     conn = get_reference_connection()

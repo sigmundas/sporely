@@ -129,6 +129,24 @@ def _current_source_app_version() -> str | None:
     return _CLOUD_SYNC_SOURCE_APP_VERSION
 
 
+# Stage M (reference measurement-content v2): the owner feed page size and the
+# capability declaration. Imported lazily: the capability module reads the
+# reference readers, which must not load at cloud-sync import time.
+_REFERENCE_FEED_PAGE_SIZE = 500
+
+
+def _reference_client_capabilities() -> dict:
+    from utils.reference_client_capabilities import reference_client_capabilities
+
+    return reference_client_capabilities()
+
+
+def _reference_accept_snapshot_versions() -> list[int]:
+    from utils.reference_client_capabilities import declared_snapshot_versions
+
+    return list(declared_snapshot_versions())
+
+
 _CLOUD_DEBUG_TIMING = str(os.environ.get('SPORELY_DEBUG_RAW_TIMING') or '').strip().lower() in {'1', 'true', 'yes', 'on'}
 
 
@@ -2247,6 +2265,8 @@ _PULL_ONLY_BLOCKED_CLIENT_METHODS = frozenset({
     'sync_reference_measurement_set', 'sync_observation_reference_use',
     'submit_private_reference_for_curation', 'share_reference_contribution',
     'withdraw_reference_contribution', 'sync_reference_curated_fork',
+    # Stage M device report: refreshes the owner's device record.
+    'record_reference_client_capabilities',
     # Default-on reference sharing (owner set list, stop, share again).
     # The two writes are owner writes; the list is owner-only, rate-limited
     # and never needed by a download, so it is blocked too rather than added
@@ -2283,6 +2303,8 @@ _PULL_ONLY_ALLOWED_READ_METHODS = frozenset({
     'search_public_reference_contributions_v2',
     'get_public_reference_contribution_v2',
     'list_reference_curated_forks',
+    'list_reference_client_devices',
+    '_list_reference_library_feed',
     # Image / measurement metadata reads
     'pull_bulk_image_metadata',
     'pull_image_metadata',
@@ -2317,6 +2339,8 @@ _PULL_ONLY_ALLOWED_RPC_NAMES = frozenset({
     'get_public_curated_reference_set',
     'search_public_reference_contributions_v2',
     'get_public_reference_contribution_v2',
+    # Stage M owner feed: read-only, does not refresh the device record.
+    'list_reference_library_feed',
 })
 
 
@@ -16515,6 +16539,7 @@ class SporelyCloudClient:
         return self._rpc('sync_reference_measurement_set', {
             'p_payload': payload,
             'p_expected_row_version': expected_row_version,
+            'p_client_capabilities': _reference_client_capabilities(),
         })
 
     def sync_observation_reference_use(
@@ -16524,7 +16549,109 @@ class SporelyCloudClient:
             'p_payload': payload,
             'p_expected_row_version': expected_row_version,
             'p_snapshot_mode': snapshot_mode,
+            'p_client_capabilities': _reference_client_capabilities(),
         })
+
+    def record_reference_client_capabilities(self, capabilities: dict) -> object:
+        """Report this device's reference capability (Stage M)."""
+        return self._rpc('record_reference_client_capabilities', {
+            'p_client_capabilities': capabilities,
+        })
+
+    def list_reference_client_devices(self) -> list[dict]:
+        """The owner's device capability records (owner SELECT only)."""
+        return self._get_paginated(
+            f'reference_client_devices?user_id=eq.{self.user_id}'
+            '&select=device_id,reference_snapshot_versions,last_seen_at'
+            '&order=device_id.asc'
+        )
+
+    def _list_reference_library_feed(
+        self,
+        entity: str,
+        fields: str,
+        *,
+        page_size: int = _REFERENCE_FEED_PAGE_SIZE,
+        max_rows: int | None = None,
+        max_response_bytes: int | None = None,
+    ) -> list[dict]:
+        """One complete owner pull through ``list_reference_library_feed``.
+
+        Stage M (sporely-web 20261002120000): capable clients read the owner
+        feed through this RPC instead of the v1-only table GETs. Every pull
+        starts without a cursor; ``next_cursor`` is used only to page within
+        this pull and is never persisted or seeded from a stored cursor. Rows
+        are projected to ``fields`` so reconciliation sees exactly what the
+        former table select returned. Any page failure raises: a partial feed
+        is never returned.
+        """
+        capabilities = _reference_client_capabilities()
+        wanted = tuple(field.strip() for field in fields.split(',') if field.strip())
+        rows: list[dict] = []
+        seen_ids: set[str] = set()
+        response_bytes = 0
+        cursor: tuple[str, str] | None = None
+        while True:
+            response = self._rpc('list_reference_library_feed', {
+                'p_entity': entity,
+                'p_client_capabilities': capabilities,
+                'p_after_updated_at': cursor[0] if cursor else None,
+                'p_after_id': cursor[1] if cursor else None,
+                'p_limit': page_size,
+            })
+            if not isinstance(response, dict):
+                raise CloudSyncError(f'reference feed {entity}: malformed response')
+            status = response.get('status')
+            if status == 'rate_limited':
+                raise CloudTemporarilyUnavailableError(
+                    f'reference feed {entity}: rate limited'
+                )
+            if status != 'ok' or response.get('entity') != entity:
+                raise CloudSyncError(f'reference feed {entity}: unexpected status {status!r}')
+            page = response.get('rows')
+            if not isinstance(page, list) or len(page) > page_size:
+                raise CloudSyncError(f'reference feed {entity}: malformed rows')
+            if cursor is None:
+                withheld = response.get('withheld_count')
+                self.__dict__.setdefault('reference_feed_withheld_counts', {})[entity] = (
+                    withheld if isinstance(withheld, int) and not isinstance(withheld, bool) else 0
+                )
+            response_bytes += len(json.dumps(
+                page, ensure_ascii=False, separators=(',', ':'),
+            ).encode('utf-8'))
+            if max_response_bytes is not None and response_bytes > max_response_bytes:
+                raise CloudSyncError(
+                    f'reference feed {entity}: response exceeds {max_response_bytes} bytes'
+                )
+            for row in page:
+                if not isinstance(row, dict):
+                    raise CloudSyncError(f'reference feed {entity}: row is not an object')
+                missing = [field for field in wanted if field not in row]
+                if missing:
+                    raise CloudSyncError(
+                        f'reference feed {entity}: row lacks {", ".join(missing)}'
+                    )
+                row_id = str(row.get('id') or '')
+                if row_id in seen_ids:
+                    raise CloudSyncError(f'reference feed {entity}: duplicate row {row_id}')
+                seen_ids.add(row_id)
+                rows.append({field: row[field] for field in wanted})
+            if max_rows is not None and len(rows) > max_rows:
+                raise CloudSyncError(f'reference feed {entity}: response exceeds {max_rows} rows')
+            next_cursor = response.get('next_cursor')
+            if next_cursor is None:
+                return rows
+            if (
+                not isinstance(next_cursor, dict)
+                or not str(next_cursor.get('updated_at') or '').strip()
+                or not str(next_cursor.get('id') or '').strip()
+                or not page
+            ):
+                raise CloudSyncError(f'reference feed {entity}: malformed cursor')
+            advanced = (str(next_cursor['updated_at']), str(next_cursor['id']))
+            if advanced == cursor:
+                raise CloudSyncError(f'reference feed {entity}: cursor did not advance')
+            cursor = advanced
 
     def list_reference_works(self) -> list[dict]:
         fields = (
@@ -16559,10 +16686,7 @@ class SporelyCloudClient:
             'measurement_details_json,q_core_min,q_core_max,'
             'row_version,created_at,updated_at,deleted_at'
         )
-        return self._get_paginated(
-            f'reference_measurement_sets?user_id=eq.{self.user_id}&select={fields}'
-            '&order=updated_at.asc,id.asc'
-        )
+        return self._list_reference_library_feed('measurement_set', fields)
 
     def list_observation_reference_uses(self) -> list[dict]:
         fields = (
@@ -16570,10 +16694,7 @@ class SporelyCloudClient:
             'selected_at,reference_revision,snapshot_json,row_version,created_at,'
             'updated_at,deleted_at'
         )
-        return self._get_paginated(
-            f'observation_reference_uses?user_id=eq.{self.user_id}&select={fields}'
-            '&order=updated_at.asc,id.asc'
-        )
+        return self._list_reference_library_feed('observation_use', fields)
 
     def search_public_curated_reference_sets(
         self,
@@ -16602,6 +16723,7 @@ class SporelyCloudClient:
             'p_limit': limit,
             'p_after_shared_at': after_shared_at,
             'p_after_id': after_id,
+            'p_accept_snapshot_versions': _reference_accept_snapshot_versions(),
         })
         return rows if isinstance(rows, list) else []
 
@@ -16613,6 +16735,7 @@ class SporelyCloudClient:
         rows = self._rpc('get_public_reference_contribution_v2', {
             'p_contribution_id': contribution_id,
             'p_revision': revision,
+            'p_accept_snapshot_versions': _reference_accept_snapshot_versions(),
         })
         return rows if isinstance(rows, list) else []
 
@@ -16695,9 +16818,9 @@ class SporelyCloudClient:
             'reference_work_id,taxon_treatment_id,reference_measurement_set_id,'
             'source_sha256,source_envelope_json,row_version,created_at,updated_at'
         )
-        return self._get_paginated(
-            f'reference_curated_forks?user_id=eq.{self.user_id}&select={fields}'
-            '&order=updated_at.asc,curated_measurement_set_id.asc,bundle_revision.asc,id.asc',
+        return self._list_reference_library_feed(
+            'curated_fork',
+            fields,
             page_size=10,
             max_rows=10_000,
             max_response_bytes=64 * 1024 * 1024,

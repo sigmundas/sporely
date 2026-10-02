@@ -134,8 +134,14 @@ def test_public_rpc_names_parameters_limits_and_envelopes_match() -> None:
     landing_model = (LANDING / "src/lib/publicCuratedReferences.ts").read_text()
 
     v2_migration = _v2_roles_migration()
-    assert _method_rpc_keys(desktop, "search_public_reference_contributions_v2") == SEARCH_PARAMETERS
-    assert _method_rpc_keys(desktop, "get_public_reference_contribution_v2") == EXACT_PARAMETERS
+    # Stage M desktop: opts in to snapshot version 2 through the Stage A
+    # trailing p_accept_snapshot_versions (sporely-web 20261001213000).
+    assert _method_rpc_keys(desktop, "search_public_reference_contributions_v2") == (
+        SEARCH_PARAMETERS + ("p_accept_snapshot_versions",)
+    )
+    assert _method_rpc_keys(desktop, "get_public_reference_contribution_v2") == (
+        EXACT_PARAMETERS + ("p_accept_snapshot_versions",)
+    )
     assert "'search_public_reference_contributions_v2'" in desktop
     assert "'get_public_reference_contribution_v2'" in desktop
     assert "'search_public_reference_contributions'" not in desktop

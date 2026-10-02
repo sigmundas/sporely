@@ -4284,6 +4284,11 @@ class ObservationsTab(QWidget):
             else:
                 message = self.tr("Sporely Cloud already up to date.")
                 level = "success"
+        reference_notice = ObservationsTab._reference_capability_hold_notice(self, result)
+        if reference_notice:
+            message = f"{message} {reference_notice}"
+            if level == "success":
+                level = "info"
         sync_summary_text = format_sync_summary(result.get("sync_summary"))
         if sync_summary_text:
             message = f"{message}\n{sync_summary_text}"
@@ -4306,6 +4311,27 @@ class ObservationsTab(QWidget):
         if conflicts:
             self._show_cloud_conflict_dialog(conflicts)
         _cloud_sync_completion_timing("UI completion handler complete", completion_start)
+
+    def _reference_capability_hold_notice(self, result: dict) -> str:
+        """Non-blocking notice for reference changes held by Stage M."""
+        from utils.reference_client_capabilities import summarize_capability_holds
+
+        counts = summarize_capability_holds(result)
+        parts: list[str] = []
+        older = counts.get("older_client_active", 0)
+        newer = counts.get("requires_newer_client", 0)
+        if older:
+            parts.append(self.tr(
+                "{count} reference change(s) are waiting: another of your devices "
+                "with an older Sporely version synced recently. Update Sporely "
+                "there first; the changes stay saved here."
+            ).format(count=older))
+        if newer:
+            parts.append(self.tr(
+                "{count} reference change(s) need a newer Sporely version to "
+                "upload; they stay saved here."
+            ).format(count=newer))
+        return " ".join(parts)
 
     def _finish_cloud_download_from_cloud(self, result: dict) -> None:
         """Completion feedback specific to Download from Cloud (pull-only).

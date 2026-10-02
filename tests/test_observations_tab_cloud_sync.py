@@ -2580,3 +2580,43 @@ def test_cloud_observation_table_row_cache_formats_date_and_spore_count():
 
     assert rows[0]["spore_short"] == "9"
     assert rows[0]["date"] == "2026-06-16 07:55"
+
+
+def test_cloud_sync_finished_appends_reference_capability_hold_notice():
+    """Stage M: a held reference change is a non-blocking notice, not an error."""
+    calls: dict[str, object] = {}
+
+    fake_tab = SimpleNamespace(
+        tr=lambda text: text,
+        refresh_observations=lambda show_status=False: None,
+        _cloud_sync_run_refresh_flow=False,
+        _cloud_sync_show_status=True,
+        _set_status_progress_visible=lambda visible: None,
+        _set_status_progress_cancel_visible=lambda visible: None,
+        _reset_status_progress=lambda: None,
+        _set_status_progress=lambda *args, **kwargs: None,
+        _finish_manual_refresh_flow=lambda: None,
+        _record_cloud_sync_status=lambda *args, **kwargs: calls.setdefault("record", (args, kwargs)),
+        _refresh_cloud_sync_idle_hint=lambda: None,
+        _show_cloud_conflict_dialog=lambda *args, **kwargs: None,
+        _prompt_for_deleted_cloud_observations=lambda *args, **kwargs: None,
+        set_status_message=lambda *args, **kwargs: calls.setdefault("status_message", (args, kwargs)),
+    )
+
+    observations_tab.ObservationsTab._on_cloud_sync_finished(
+        fake_tab,
+        {
+            "pushed": 0,
+            "pulled": 0,
+            "errors": [],
+            "sync_summary": {},
+            "reference_sync": {"capability_holds": ["measurement_set:a:older_client_active"]},
+        },
+    )
+
+    status_args, status_kwargs = calls["status_message"]
+    assert "1 reference change(s) are waiting" in status_args[0]
+    assert status_kwargs["level"] == "info"
+    record_args, record_kwargs = calls["record"]
+    assert record_kwargs["errors"] == []
+    assert record_kwargs["status"] == "ok"

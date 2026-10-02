@@ -113,7 +113,11 @@ class SharedReferenceCatalogueDialog(QDialog):
             self.table.insertRow(row)
             values = (
                 bundle.citation["short_citation"], bundle.canonical_scientific_name,
-                str(bundle.bundle_revision), bundle.snapshot["raw_text"] or "",
+                str(bundle.bundle_revision),
+                (bundle.snapshot["raw_text"] or "") + (
+                    " " + self.tr("(measurement details omitted)")
+                    if bundle.measurement_details_omitted else ""
+                ),
                 bundle.contributor_label or self.tr("Sporely user"),
                 relationship_label(bundle.relationship_roles),
             )
