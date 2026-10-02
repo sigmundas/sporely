@@ -11662,6 +11662,24 @@ class MainWindow(GeometryMixin, QMainWindow):
         # the column directly is exactly the leak this stage closes elsewhere.
         return proven_sporely_taxon_id(obs)
 
+    def _reference_files_under_observation_taxon(self, payload: dict) -> bool:
+        """True when the reference's taxon (``sporely_taxon_id``, the chosen
+        Reference taxon) is the observation's own taxon id. A reference
+        filed under another taxon, or with no taxon id, binds nothing to the
+        observation's identification."""
+        ref_taxon = payload.get("sporely_taxon_id")
+        own_taxon = payload.get("observation_taxon_id")
+        if own_taxon is None:
+            own_taxon = self._active_sporely_taxon_id()
+        try:
+            return (
+                ref_taxon is not None
+                and own_taxon is not None
+                and int(ref_taxon) == int(own_taxon)
+            )
+        except (TypeError, ValueError):
+            return False
+
     def _persist_normalized_reference_from_dialog(
         self,
         dialog: "ReferenceAddDialog",
@@ -11824,10 +11842,20 @@ class MainWindow(GeometryMixin, QMainWindow):
         # recording a legitimate as-published synonym is a real user
         # need. Require an explicit confirmation instead: default is
         # "No" so an accidental panel edit cannot slip through.
+        #
+        # The reference taxon is independent of the observation's
+        # identification: the user may compare against (and file the
+        # reference under) another species, e.g. an AI suggestion. Then the
+        # treatment is normalized to that Reference taxon and nothing is
+        # bound to the observation's taxon id, so there is nothing to
+        # confirm. Ask only when the treatment would be filed under the
+        # observation's OWN taxon id while the entered name disagrees.
         panel_genus = (payload.get("genus") or "").strip()
         panel_species = (payload.get("species") or "").strip()
         obs_genus, obs_species = self._observation_taxon_identity(int(observation_id))
-        if (panel_genus or panel_species) and (obs_genus or obs_species):
+        if self._reference_files_under_observation_taxon(payload) and (
+            (panel_genus or panel_species) and (obs_genus or obs_species)
+        ):
             if (
                 panel_genus.casefold() != (obs_genus or "").casefold()
                 or panel_species.casefold() != (obs_species or "").casefold()

@@ -1133,3 +1133,46 @@ def test_quick_add_to_public_observation_cancel_creates_nothing(monkeypatch, qap
         assert ref.execute("SELECT COUNT(*) FROM reference_taxon_treatments").fetchone()[0] == 0
     finally:
         ref.close()
+
+
+def test_reference_taxon_from_ai_suggestion_never_asks_and_leaves_observation_alone(
+    monkeypatch, qapp, libs
+):
+    """Observation is species A (taxon 7); the user picks species B (an AI
+    suggestion, taxon 99) as Reference taxon in Add new. No synonym prompt,
+    the treatment is filed under B, and the observation's identity is
+    untouched."""
+    db_path, _ = libs
+    work = _seed_work()
+    observation_id = _make_observation(db_path, genus="Agaricus", species="bisporus")
+    before = sqlite3.connect(db_path).execute(
+        "SELECT genus, species, sporely_taxon_id FROM observations WHERE id=?",
+        (observation_id,)).fetchone()
+    payload = _range_payload(work.id, 99, "Amanita", "muscaria")
+    payload["observation_id"] = observation_id
+    payload["observation_taxon_id"] = 7
+    window = _build_window(monkeypatch, qapp)
+    window.active_observation_id = observation_id
+    window._active_sporely_taxon_id = lambda: 7
+    window._observation_taxon_identity = lambda _obs_id: ("Agaricus", "bisporus")
+    monkeypatch.setattr(main_window.QMessageBox, "question",
+                        lambda *a, **k: (_ for _ in ()).throw(AssertionError("no prompt")))
+    observation_writes = []
+    monkeypatch.setattr(main_window.ObservationDB, "update_observation",
+                        lambda *a, **k: observation_writes.append((a, k)))
+
+    assert window._persist_normalized_reference_from_dialog(
+        _QuickAddStubDialog(payload), payload, legacy_id=None
+    ) is True
+
+    uses = ObservationReferenceUseRepository.list_for_observation(observation_id)
+    assert len(uses) == 1
+    ms = MeasurementSetRepository.get(uses[0].reference_measurement_set_id)
+    treatment = TaxonTreatmentRepository.get(ms.taxon_treatment_id)
+    assert treatment.taxon_id == "99"
+    assert treatment.name_as_published == "Agaricus bisporus sensu Author"  # publication's name
+    assert observation_writes == []
+    after = sqlite3.connect(db_path).execute(
+        "SELECT genus, species, sporely_taxon_id FROM observations WHERE id=?",
+        (observation_id,)).fetchone()
+    assert after == before
