@@ -12547,129 +12547,139 @@ Detta kommer att skriva över molnets metadatafält som anges nedan.
 <context>
     <name>SharedReferenceCatalogue</name>
     <message>
-        <location filename="../ui/curated_reference_catalogue_dialog.py" line="24"/>
+        <location filename="../ui/curated_reference_catalogue_dialog.py" line="26"/>
         <source>Supports</source>
         <translation>Stöder</translation>
     </message>
     <message>
-        <location filename="../ui/curated_reference_catalogue_dialog.py" line="25"/>
+        <location filename="../ui/curated_reference_catalogue_dialog.py" line="27"/>
         <source>Contradicts</source>
         <translation>Motsäger</translation>
     </message>
     <message>
-        <location filename="../ui/curated_reference_catalogue_dialog.py" line="26"/>
+        <location filename="../ui/curated_reference_catalogue_dialog.py" line="28"/>
         <source>Compared</source>
         <translation>Jämförd</translation>
+    </message>
+    <message>
+        <location filename="../ui/curated_reference_catalogue_dialog.py" line="40"/>
+        <source>Unknown contributor</source>
+        <translation>Okänd bidragsgivare</translation>
+    </message>
+    <message>
+        <location filename="../ui/curated_reference_catalogue_dialog.py" line="42"/>
+        <source>Deleted user</source>
+        <translation>Raderad användare</translation>
     </message>
 </context>
 <context>
     <name>SharedReferenceCatalogueDialog</name>
     <message>
-        <location filename="../ui/curated_reference_catalogue_dialog.py" line="59"/>
-        <location filename="../ui/curated_reference_catalogue_dialog.py" line="188"/>
-        <location filename="../ui/curated_reference_catalogue_dialog.py" line="195"/>
-        <location filename="../ui/curated_reference_catalogue_dialog.py" line="199"/>
+        <location filename="../ui/curated_reference_catalogue_dialog.py" line="78"/>
+        <location filename="../ui/curated_reference_catalogue_dialog.py" line="207"/>
+        <location filename="../ui/curated_reference_catalogue_dialog.py" line="214"/>
+        <location filename="../ui/curated_reference_catalogue_dialog.py" line="218"/>
         <source>Shared reference contributions</source>
         <translation>Delade referensbidrag</translation>
     </message>
     <message>
-        <location filename="../ui/curated_reference_catalogue_dialog.py" line="62"/>
+        <location filename="../ui/curated_reference_catalogue_dialog.py" line="81"/>
         <source>Loading exact-taxon references…</source>
         <translation>Läser in referenser för exakt taxon…</translation>
     </message>
     <message>
-        <location filename="../ui/curated_reference_catalogue_dialog.py" line="67"/>
+        <location filename="../ui/curated_reference_catalogue_dialog.py" line="86"/>
         <source>Source</source>
         <translation>Källa</translation>
     </message>
     <message>
-        <location filename="../ui/curated_reference_catalogue_dialog.py" line="67"/>
+        <location filename="../ui/curated_reference_catalogue_dialog.py" line="86"/>
         <source>Taxon</source>
         <translation>Taxon</translation>
     </message>
     <message>
-        <location filename="../ui/curated_reference_catalogue_dialog.py" line="67"/>
+        <location filename="../ui/curated_reference_catalogue_dialog.py" line="86"/>
         <source>Revision</source>
         <translation>Revision</translation>
     </message>
     <message>
-        <location filename="../ui/curated_reference_catalogue_dialog.py" line="68"/>
+        <location filename="../ui/curated_reference_catalogue_dialog.py" line="87"/>
         <source>Raw expression</source>
         <translation>Ursprungligt uttryck</translation>
     </message>
     <message>
-        <location filename="../ui/curated_reference_catalogue_dialog.py" line="68"/>
+        <location filename="../ui/curated_reference_catalogue_dialog.py" line="87"/>
         <source>Contributor</source>
         <translation>Bidragsgivare</translation>
     </message>
     <message>
-        <location filename="../ui/curated_reference_catalogue_dialog.py" line="69"/>
+        <location filename="../ui/curated_reference_catalogue_dialog.py" line="88"/>
         <source>Current relationship</source>
         <translation>Nuvarande relation</translation>
     </message>
     <message>
-        <location filename="../ui/curated_reference_catalogue_dialog.py" line="84"/>
+        <location filename="../ui/curated_reference_catalogue_dialog.py" line="103"/>
         <source>Copy to personal library</source>
         <translation>Kopiera till personligt bibliotek</translation>
     </message>
     <message>
-        <location filename="../ui/curated_reference_catalogue_dialog.py" line="118"/>
+        <location filename="../ui/curated_reference_catalogue_dialog.py" line="137"/>
         <source>(measurement details omitted; cannot be copied)</source>
         <translation>(mätdetaljer utelämnade; kan inte kopieras)</translation>
     </message>
     <message>
-        <location filename="../ui/curated_reference_catalogue_dialog.py" line="121"/>
+        <location filename="../ui/curated_reference_catalogue_dialog.py" line="140"/>
         <source>Sporely user</source>
         <translation>Sporely-användare</translation>
     </message>
     <message>
-        <location filename="../ui/curated_reference_catalogue_dialog.py" line="136"/>
+        <location filename="../ui/curated_reference_catalogue_dialog.py" line="155"/>
         <source>No shared contributions found for this exact taxon.</source>
         <translation>Inga delade bidrag hittades för detta exakta taxon.</translation>
     </message>
     <message>
-        <location filename="../ui/curated_reference_catalogue_dialog.py" line="137"/>
+        <location filename="../ui/curated_reference_catalogue_dialog.py" line="156"/>
         <source>Select a contribution revision to copy.</source>
         <translation>Välj en bidragsrevision att kopiera.</translation>
     </message>
     <message>
-        <location filename="../ui/curated_reference_catalogue_dialog.py" line="143"/>
+        <location filename="../ui/curated_reference_catalogue_dialog.py" line="162"/>
         <source>Could not load shared contributions: {error}</source>
         <translation>Det gick inte att läsa in delade bidrag: {error}</translation>
     </message>
     <message>
-        <location filename="../ui/curated_reference_catalogue_dialog.py" line="158"/>
-        <location filename="../ui/curated_reference_catalogue_dialog.py" line="189"/>
+        <location filename="../ui/curated_reference_catalogue_dialog.py" line="177"/>
+        <location filename="../ui/curated_reference_catalogue_dialog.py" line="208"/>
         <source>This contribution was served without its measurement details and cannot be copied.</source>
         <translation>Det här bidraget levererades utan sina mätdetaljer och kan inte kopieras.</translation>
     </message>
     <message>
-        <location filename="../ui/curated_reference_catalogue_dialog.py" line="168"/>
+        <location filename="../ui/curated_reference_catalogue_dialog.py" line="187"/>
         <source>Contradicts the identification. The contributor currently uses this reference as contradicting {species} on their public observations (current relationship: {label}).</source>
         <translation>Motsäger identifieringen. Bidragsgivaren använder just nu denna referens som motsägande för {species} på sina offentliga observationer (nuvarande relation: {label}).</translation>
     </message>
     <message>
-        <location filename="../ui/curated_reference_catalogue_dialog.py" line="173"/>
+        <location filename="../ui/curated_reference_catalogue_dialog.py" line="192"/>
         <source>Current relationship on the contributor&apos;s public observations: {label}</source>
         <translation>Nuvarande relation på bidragsgivarens offentliga observationer: {label}</translation>
     </message>
     <message>
-        <location filename="../ui/curated_reference_catalogue_dialog.py" line="195"/>
+        <location filename="../ui/curated_reference_catalogue_dialog.py" line="214"/>
         <source>Could not copy reference: {error}</source>
         <translation>Det gick inte att kopiera referensen: {error}</translation>
     </message>
     <message>
-        <location filename="../ui/curated_reference_catalogue_dialog.py" line="200"/>
+        <location filename="../ui/curated_reference_catalogue_dialog.py" line="219"/>
         <source>The contribution was copied to your personal library.</source>
         <translation>Bidraget kopierades till ditt personliga bibliotek.</translation>
     </message>
     <message>
-        <location filename="../ui/curated_reference_catalogue_dialog.py" line="201"/>
+        <location filename="../ui/curated_reference_catalogue_dialog.py" line="220"/>
         <source>This contribution is already in your personal library.</source>
         <translation>Detta bidrag finns redan i ditt personliga bibliotek.</translation>
     </message>
     <message>
-        <location filename="../ui/curated_reference_catalogue_dialog.py" line="208"/>
+        <location filename="../ui/curated_reference_catalogue_dialog.py" line="227"/>
         <source>Finishing the current catalogue request…</source>
         <translation>Slutför den aktuella katalogförfrågan…</translation>
     </message>

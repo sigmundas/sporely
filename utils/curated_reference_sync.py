@@ -6,7 +6,7 @@ import sqlite3
 from dataclasses import dataclass
 from typing import Any
 
-from database.curated_reference_forks import validate_frozen_curated_provenance
+from database.curated_reference_forks import same_fork_provenance, validate_frozen_curated_provenance
 from database.reference_library_schema import init_reference_library_schema
 from database.schema import get_reference_connection
 
@@ -28,6 +28,28 @@ _PAYLOAD_KEYS = (
 
 def _payload(row: sqlite3.Row | dict[str, Any]) -> dict[str, Any]:
     return {key: row[key] for key in _PAYLOAD_KEYS}
+
+
+def _equivalent_payload(local: dict[str, Any], remote: dict[str, Any]) -> bool:
+    """Same fork: identical identity and graph, and the same provenance.
+
+    The server stores a shared-contribution fork's envelope as its own text
+    (``jsonb::text``, contributor removed; sporely-web 20261002150000) with
+    ``source_sha256`` over that text, so text and digest legitimately differ
+    from the desktop's canonical form. Provenance is equal when both texts
+    match their own digest and parse to the same object once ``contributor``
+    is ignored (an older local copy may still carry it). Legacy publication
+    forks are stored verbatim and therefore still compare byte-identical.
+    """
+    if local == remote:
+        return True
+    envelope_keys = {"source_envelope_json", "source_sha256"}
+    if any(local[key] != remote[key] for key in _PAYLOAD_KEYS if key not in envelope_keys):
+        return False
+    return same_fork_provenance(
+        local["source_envelope_json"], local["source_sha256"],
+        remote["source_envelope_json"], remote["source_sha256"],
+    )
 
 
 def _valid_remote_row(row: object, cloud_user_id: str) -> dict[str, Any]:
@@ -123,7 +145,7 @@ def push_curated_reference_forks(client: object) -> CuratedForkSyncResult:
             except ValueError as exc:
                 errors.append(f"curated fork {identity}: {exc}")
                 continue
-            if _payload(remote) != payload:
+            if not _equivalent_payload(payload, _payload(remote)):
                 conflicts.append(identity)
                 continue
             connection.execute(
@@ -181,7 +203,7 @@ def pull_curated_reference_forks(client: object) -> CuratedForkSyncResult:
                     "SELECT * FROM curated_reference_forks WHERE curated_measurement_set_id=? AND bundle_revision=?",
                     (payload["curated_measurement_set_id"], payload["bundle_revision"]),
                 ).fetchone()
-                if existing is not None and _payload(existing) != payload:
+                if existing is not None and not _equivalent_payload(_payload(existing), payload):
                     conflicts.append(identity)
                     continue
                 connection.execute("BEGIN IMMEDIATE")

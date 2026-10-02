@@ -10,7 +10,9 @@ from PySide6.QtWidgets import (
 
 from database.curated_reference_forks import (
     RELATIONSHIP_ROLE_ORDER,
+    DELETED_CONTRIBUTOR_LABEL,
     CuratedReferenceBundle,
+    contributor_label_for_fork,
     copy_curated_bundle_to_personal_library,
     search_shared_reference_contributions,
 )
@@ -27,6 +29,23 @@ def relationship_label(roles: tuple[str, ...] | list[str]) -> str:
     }
     present = set(roles or ())
     return " · ".join(names[role] for role in RELATIONSHIP_ROLE_ORDER if role in present)
+
+
+def contributor_display_text(label: str | None) -> str:
+    """Display text for a contributor resolved live (stored copies keep no
+    contributor name). Unavailable shows a neutral label; the server's
+    deleted-account label is translated."""
+    text = str(label or "").strip()
+    if not text:
+        return QCoreApplication.translate("SharedReferenceCatalogue", "Unknown contributor")
+    if text == DELETED_CONTRIBUTOR_LABEL:
+        return QCoreApplication.translate("SharedReferenceCatalogue", "Deleted user")
+    return text
+
+
+def copied_reference_contributor_text(client: object, contribution_id: str, revision: int) -> str:
+    """Contributor of a copied reference: live, cached, never fatal."""
+    return contributor_display_text(contributor_label_for_fork(client, contribution_id, revision))
 
 
 class _CatalogueWorker(QObject):

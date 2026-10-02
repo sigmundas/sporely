@@ -28,7 +28,7 @@ from database.reference_sync_state import (
     record_library_mutation_intent,
     record_use_mutation_intent,
 )
-from database.curated_reference_forks import validate_frozen_curated_provenance
+from database.curated_reference_forks import same_fork_provenance, validate_frozen_curated_provenance
 from references.measurement_content import (
     MeasurementContentError,
     content_from_row,
@@ -1226,9 +1226,12 @@ def import_database_bundle(
                         if existing is not None:
                             immutable = (
                                 "sporely_taxon_id", "reference_work_id", "taxon_treatment_id",
-                                "reference_measurement_set_id", "source_envelope_json", "source_sha256",
+                                "reference_measurement_set_id",
                             )
-                            if any(existing[key] != source[key] for key in immutable):
+                            if any(existing[key] != source[key] for key in immutable) or not same_fork_provenance(
+                                existing["source_envelope_json"], existing["source_sha256"],
+                                source["source_envelope_json"], source["source_sha256"],
+                            ):
                                 raise ValueError("curated reference fork provenance conflicts during import")
                             continue
                         columns = [key for key in source]
