@@ -643,25 +643,42 @@ def _json(value: object) -> str:
     return json.dumps(value, ensure_ascii=False, sort_keys=True, separators=(",", ":"))
 
 
-def _same_provenance(stored_json: str, stored_sha: str, new_json: str, new_sha: str) -> bool:
-    """Same frozen source, allowing an older stored copy that still carries
-    the contributor attribution the current form omits."""
-    if stored_sha == new_sha:
+def same_fork_provenance(
+    stored_json: object, stored_sha: object, other_json: object, other_sha: object,
+) -> bool:
+    """One rule for "same frozen source" (copy, push, pull, portable and
+    bundle import).
+
+    Byte-identical text and digest are the same. Otherwise both texts must
+    match their own sha256 and parse to the same shared-contribution envelope
+    once a top-level ``contributor`` is ignored: the server stores its own
+    text form without the contributor (sporely-web 20261002150000) and older
+    local copies still carry it. Legacy publication envelopes (no
+    ``contribution_id``) must be byte-identical.
+    """
+    if stored_json == other_json and stored_sha == other_sha:
         return True
-    try:
-        stored = json.loads(stored_json)
-    except (TypeError, ValueError):
-        return False
-    if not isinstance(stored, dict) or "contributor" not in stored:
-        return False
-    stored.pop("contributor")
-    return _json(stored) == new_json
+    parsed = []
+    for text, sha in ((stored_json, stored_sha), (other_json, other_sha)):
+        if not isinstance(text, str) or not isinstance(sha, str):
+            return False
+        if hashlib.sha256(text.encode("utf-8")).hexdigest() != sha:
+            return False
+        try:
+            value = json.loads(text)
+        except ValueError:
+            return False
+        if not isinstance(value, dict) or "contribution_id" not in value:
+            return False
+        value.pop("contributor", None)
+        parsed.append(value)
+    return parsed[0] == parsed[1]
 
 
 # Live contributor display ------------------------------------------------------
 #: Label the server serves for a deleted contributor account.
 DELETED_CONTRIBUTOR_LABEL = "Deleted user"
-_contributor_cache: dict[tuple[str, int], str | None] = {}
+_contributor_cache: dict[tuple[str, str, int], str | None] = {}
 
 
 def contributor_label_for_fork(
@@ -675,9 +692,13 @@ def contributor_label_for_fork(
     (withdrawn, hidden, offline, malformed or no client); the caller shows a
     neutral label. Never raises and never touches the fork.
     """
+    # Keyed by the signed-in account too; cleared on sign-in, sign-out and
+    # account switch (utils.cloud_sync credential changes).
+    viewer = str(getattr(client, "user_id", "") or "")
     key = (str(contribution_id), int(revision))
-    if not refresh and key in _contributor_cache:
-        return _contributor_cache[key]
+    cache_key = (viewer, *key)
+    if not refresh and cache_key in _contributor_cache:
+        return _contributor_cache[cache_key]
     label: str | None = None
     getter = getattr(client, "get_public_reference_contribution_v2", None)
     if callable(getter):
@@ -694,12 +715,16 @@ def contributor_label_for_fork(
         except Exception as exc:  # display only; never fatal
             logger.info("contributor lookup failed for %s@%s: %s", key[0], key[1], exc)
             return None  # not cached: a transient failure may resolve later
-    _contributor_cache[key] = label
+    _contributor_cache[cache_key] = label
     return label
 
 
-def _clear_contributor_cache_for_tests() -> None:
+def clear_contributor_label_cache() -> None:
+    """Forget live contributor labels (sign-in, sign-out, account switch)."""
     _contributor_cache.clear()
+
+
+_clear_contributor_cache_for_tests = clear_contributor_label_cache
 
 
 def _fork_from_row(row: sqlite3.Row, created: bool) -> CuratedReferenceFork:
@@ -729,8 +754,8 @@ def copy_curated_bundle_to_personal_library(bundle: CuratedReferenceBundle) -> C
         ).fetchone()
         if existing is not None:
             if (
-                not _same_provenance(existing["source_envelope_json"], existing["source_sha256"],
-                                     source_json, source_sha)
+                not same_fork_provenance(existing["source_envelope_json"], existing["source_sha256"],
+                                         source_json, source_sha)
                 or existing["sporely_taxon_id"] != bundle.sporely_taxon_id
             ):
                 raise CuratedReferenceError("existing curated fork provenance disagrees")

@@ -1,13 +1,12 @@
 """Private cloud synchronization for immutable Stage 6k fork provenance."""
 from __future__ import annotations
 
-import hashlib
 import json
 import sqlite3
 from dataclasses import dataclass
 from typing import Any
 
-from database.curated_reference_forks import validate_frozen_curated_provenance
+from database.curated_reference_forks import same_fork_provenance, validate_frozen_curated_provenance
 from database.reference_library_schema import init_reference_library_schema
 from database.schema import get_reference_connection
 
@@ -31,19 +30,6 @@ def _payload(row: sqlite3.Row | dict[str, Any]) -> dict[str, Any]:
     return {key: row[key] for key in _PAYLOAD_KEYS}
 
 
-def _envelope_object(text: object, sha: object) -> dict | None:
-    """Parsed envelope when ``sha`` is the sha256 of exactly ``text``."""
-    if not isinstance(text, str) or not isinstance(sha, str):
-        return None
-    if hashlib.sha256(text.encode("utf-8")).hexdigest() != sha:
-        return None
-    try:
-        value = json.loads(text)
-    except ValueError:
-        return None
-    return value if isinstance(value, dict) else None
-
-
 def _equivalent_payload(local: dict[str, Any], remote: dict[str, Any]) -> bool:
     """Same fork: identical identity and graph, and the same provenance.
 
@@ -60,13 +46,10 @@ def _equivalent_payload(local: dict[str, Any], remote: dict[str, Any]) -> bool:
     envelope_keys = {"source_envelope_json", "source_sha256"}
     if any(local[key] != remote[key] for key in _PAYLOAD_KEYS if key not in envelope_keys):
         return False
-    mine = _envelope_object(local["source_envelope_json"], local["source_sha256"])
-    theirs = _envelope_object(remote["source_envelope_json"], remote["source_sha256"])
-    if mine is None or theirs is None or "contribution_id" not in mine:
-        return False
-    mine.pop("contributor", None)
-    theirs.pop("contributor", None)
-    return mine == theirs
+    return same_fork_provenance(
+        local["source_envelope_json"], local["source_sha256"],
+        remote["source_envelope_json"], remote["source_sha256"],
+    )
 
 
 def _valid_remote_row(row: object, cloud_user_id: str) -> dict[str, Any]:
