@@ -19,7 +19,6 @@ from __future__ import annotations
 import json
 import random
 
-import pytest
 import requests
 
 from tests.local_supabase.conftest import SERVICE_KEY, URL, sql
@@ -57,19 +56,6 @@ def _moderate(contribution_id: str, action: str, reason: str | None) -> dict:
     )
     response.raise_for_status()
     return response.json()
-
-
-FORK_BUG = (
-    "sporely-web public.sync_reference_curated_fork (20260830120000) accepts only "
-    "legacy curated publications; a copy of a shared contribution is refused with "
-    "invalid_source on every sync of the copying account"
-)
-
-
-def _assert_only_fork_bug(errors: list[str]) -> None:
-    """B's sync is clean except for the known fork-provenance refusal."""
-    assert all("remote status invalid_source" in error and error.startswith("curated fork ")
-               for error in errors), errors
 
 
 def _ids(search: dict) -> list[str]:
@@ -110,7 +96,7 @@ def test_two_account_default_sharing_lifecycle(make_user, device):
                    **reader.credentials)["copy"]
     assert copied["created"] is True
     assert copied["set_id"] != created["set_id"]
-    _assert_only_fork_bug(b.run("sync", **reader.credentials)["errors"])
+    assert b.run("sync", **reader.credentials)["errors"] == []
     owners = sql("SELECT user_id::text FROM public.reference_measurement_sets "
                  f"WHERE id = '{copied['set_id']}'")
     assert owners == [[reader.id]]
@@ -123,7 +109,7 @@ def test_two_account_default_sharing_lifecycle(make_user, device):
 
     # 8. B's later edit + sync leaves A's server and local rows untouched.
     b.run("edit_set", set_id=copied["set_id"], notes="reader's own note")
-    _assert_only_fork_bug(b.run("sync", **reader.credentials)["errors"])
+    assert b.run("sync", **reader.credentials)["errors"] == []
     assert a.run("sync", **owner.credentials)["errors"] == []
     assert _server_graph(owner.id) == server_before
     a_local_after = a.run("graph")["tables"]
@@ -161,7 +147,6 @@ def test_two_account_default_sharing_lifecycle(make_user, device):
                f"WHERE id = '{contribution}'") == [["abuse"]]
 
 
-@pytest.mark.xfail(reason=FORK_BUG, strict=True)
 def test_copy_of_a_shared_contribution_syncs_cleanly(make_user, device):
     owner, reader = make_user(), make_user()
     a, b = device("a"), device("b")
