@@ -52,6 +52,14 @@ MEASUREMENT_DETAILS_OMITTED_KEY = "measurement_details_omitted"
 
 logger = logging.getLogger(__name__)
 _FROZEN_SHARED_KEYS = _SHARED_KEYS - _LIVE_ONLY_SHARED_KEYS
+# Owner decision (2026-10-02, sporely-web 20261002150000): stored fork
+# provenance carries no contributor name, so a contributor's account deletion
+# leaves nothing personal in other users' copies. New copies store the served
+# envelope without ``contributor``; copies made before still carry it and
+# stay valid. The contributor is resolved live for display
+# (``contributor_label_for_fork``).
+_PROVENANCE_EXCLUDED_KEYS = _LIVE_ONLY_SHARED_KEYS | {"contributor"}
+_FROZEN_SHARED_KEYS_WITHOUT_CONTRIBUTOR = _FROZEN_SHARED_KEYS - {"contributor"}
 # Label order for display: Supports · Contradicts · Compared.
 RELATIONSHIP_ROLE_ORDER = ("supports_identification", "contradicts", "compared")
 _RELATIONSHIP_ROLES = frozenset(RELATIONSHIP_ROLE_ORDER)
@@ -389,6 +397,20 @@ def normalize_curated_bundle(
             measurement_details_omitted=True,
             source_envelope={**bundle.source_envelope, MEASUREMENT_DETAILS_OMITTED_KEY: True},
         )
+    if (
+        frozen and isinstance(value, dict)
+        and frozenset(value) == _FROZEN_SHARED_KEYS_WITHOUT_CONTRIBUTOR
+    ):
+        # Contribution fork provenance as stored since the owner decision:
+        # validated exactly like the served envelope, attribution omitted.
+        bundle = normalize_curated_bundle(
+            {**value, "contributor": {"id": None, "label": "-"}},
+            expected_taxon_id=expected_taxon_id, frozen=True,
+        )
+        return replace(
+            bundle, source_envelope=json.loads(_json(value)),
+            contributor_id=None, contributor_label=None,
+        )
     shared_keys = _FROZEN_SHARED_KEYS if frozen else _SHARED_KEYS
     if isinstance(value, dict) and frozenset(value) == shared_keys:
         contributor = _exact_mapping(value["contributor"], _CONTRIBUTOR_KEYS)
@@ -415,9 +437,12 @@ def normalize_curated_bundle(
         }
         roles = () if frozen else _validate_relationship_roles(value["relationship_roles"])
         bundle = normalize_curated_bundle(legacy, expected_taxon_id=expected_taxon_id)
-        # Provenance excludes the live relationship, so a role change never
-        # changes the stored envelope or its sha256.
-        provenance = {key: item for key, item in value.items() if key not in _LIVE_ONLY_SHARED_KEYS}
+        # Provenance excludes the live relationship (a role change never
+        # changes the stored envelope or its sha256) and, for a served
+        # envelope, the contributor (never stored). A frozen envelope is kept
+        # as stored, so an older copy that still has it keeps its digest.
+        excluded = _LIVE_ONLY_SHARED_KEYS if frozen else _PROVENANCE_EXCLUDED_KEYS
+        provenance = {key: item for key, item in value.items() if key not in excluded}
         return CuratedReferenceBundle(
             bundle.curated_measurement_set_id, bundle.bundle_revision,
             bundle.sporely_taxon_id, bundle.canonical_scientific_name,
@@ -618,6 +643,65 @@ def _json(value: object) -> str:
     return json.dumps(value, ensure_ascii=False, sort_keys=True, separators=(",", ":"))
 
 
+def _same_provenance(stored_json: str, stored_sha: str, new_json: str, new_sha: str) -> bool:
+    """Same frozen source, allowing an older stored copy that still carries
+    the contributor attribution the current form omits."""
+    if stored_sha == new_sha:
+        return True
+    try:
+        stored = json.loads(stored_json)
+    except (TypeError, ValueError):
+        return False
+    if not isinstance(stored, dict) or "contributor" not in stored:
+        return False
+    stored.pop("contributor")
+    return _json(stored) == new_json
+
+
+# Live contributor display ------------------------------------------------------
+#: Label the server serves for a deleted contributor account.
+DELETED_CONTRIBUTOR_LABEL = "Deleted user"
+_contributor_cache: dict[tuple[str, int], str | None] = {}
+
+
+def contributor_label_for_fork(
+    client: object, contribution_id: str, revision: int, *, refresh: bool = False,
+) -> str | None:
+    """The contributor label of a copied contribution, resolved live.
+
+    Stored provenance has no contributor, so display asks the public read
+    (``get_public_reference_contribution_v2``) once per contribution revision
+    and caches the answer for the session. ``None`` means unavailable
+    (withdrawn, hidden, offline, malformed or no client); the caller shows a
+    neutral label. Never raises and never touches the fork.
+    """
+    key = (str(contribution_id), int(revision))
+    if not refresh and key in _contributor_cache:
+        return _contributor_cache[key]
+    label: str | None = None
+    getter = getattr(client, "get_public_reference_contribution_v2", None)
+    if callable(getter):
+        try:
+            rows = getter(str(contribution_id), int(revision))
+            for row in rows if isinstance(rows, list) else ():
+                try:
+                    bundle = normalize_curated_bundle(row)
+                except CuratedReferenceError:
+                    continue
+                if (bundle.contribution_id, bundle.bundle_revision) == key:
+                    label = bundle.contributor_label
+                    break
+        except Exception as exc:  # display only; never fatal
+            logger.info("contributor lookup failed for %s@%s: %s", key[0], key[1], exc)
+            return None  # not cached: a transient failure may resolve later
+    _contributor_cache[key] = label
+    return label
+
+
+def _clear_contributor_cache_for_tests() -> None:
+    _contributor_cache.clear()
+
+
 def _fork_from_row(row: sqlite3.Row, created: bool) -> CuratedReferenceFork:
     return CuratedReferenceFork(
         row["curated_measurement_set_id"], row["bundle_revision"], row["sporely_taxon_id"],
@@ -644,7 +728,11 @@ def copy_curated_bundle_to_personal_library(bundle: CuratedReferenceBundle) -> C
             (bundle.curated_measurement_set_id, bundle.bundle_revision),
         ).fetchone()
         if existing is not None:
-            if existing["source_sha256"] != source_sha or existing["sporely_taxon_id"] != bundle.sporely_taxon_id:
+            if (
+                not _same_provenance(existing["source_envelope_json"], existing["source_sha256"],
+                                     source_json, source_sha)
+                or existing["sporely_taxon_id"] != bundle.sporely_taxon_id
+            ):
                 raise CuratedReferenceError("existing curated fork provenance disagrees")
             conn.commit()
             return _fork_from_row(existing, False)

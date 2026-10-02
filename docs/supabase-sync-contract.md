@@ -34,6 +34,16 @@ Account deletion withdraws and anonymizes retained immutable history. Withdrawal
 hides catalogue discovery while previously frozen observation and Compare
 evidence continues to reproduce its exact revision.
 
+A personal copy of a shared contribution stores frozen provenance without the
+contributor: the served envelope minus `contributor` and the live
+`relationship_roles`, with `source_sha256` over its canonical JSON
+(sporely-web `20261002150000`, owner decision 2026-10-02). Copies made before
+still carry the contributor and remain valid; a new copy of the same revision
+recognises them. The desktop resolves the contributor for display live from
+`get_public_reference_contribution_v2` (cached per revision), showing a
+neutral label when unavailable; stop sharing, moderation and account deletion
+never invalidate a copy.
+
 Production shared-reference policy uses a one-minute fixed window, allowing a
 short burst up to 60 requests per authenticated user or 30 requests per
 anonymous trusted-edge IP/session. Unauthenticated requests without the trusted
