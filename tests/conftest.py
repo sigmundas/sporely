@@ -5,6 +5,16 @@ from pathlib import Path
 ROOT = Path(__file__).resolve().parents[1]
 sys.path.insert(0, str(ROOT))
 
+# Test isolation: no test may read or write the developer's real Sporely
+# profile (app_settings.json, databases, caches). Point the app data dir at a
+# session temp dir before any app module computes its paths at import time.
+# Tests that exercise the default resolution clear it with monkeypatch.
+import tempfile  # noqa: E402
+
+_TEST_APP_DATA_DIR = Path(tempfile.mkdtemp(prefix="sporely-test-appdata-")).resolve()
+os.environ["SPORELY_APP_DATA_DIR"] = str(_TEST_APP_DATA_DIR)
+os.environ.pop("SPORELY_PROFILE", None)
+
 # Taxonomy-v2 is ON by default in the product. Unit tests that resolve the
 # vernacular DB must not install the ~320 MB artifact into the developer's
 # real app-data profile, so the suite runs with the explicit off-override
@@ -31,3 +41,17 @@ def _isolated_reference_device_id(monkeypatch):
     monkeypatch.setattr(
         capabilities, "get_reference_device_id", lambda: TEST_REFERENCE_DEVICE_ID
     )
+
+
+@pytest.fixture(scope="session", autouse=True)
+def _initialized_isolated_app_data():
+    """Fresh schema in the isolated app data dir.
+
+    Some tests open the default database without their own fixture; they used
+    to reach the developer's real ``mushrooms.db``.
+    """
+    from database import schema
+
+    assert str(schema.SETTINGS_PATH).startswith(str(_TEST_APP_DATA_DIR))
+    schema.init_database()
+    yield
