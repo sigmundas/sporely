@@ -255,3 +255,98 @@ def test_deleted_contributor_label_is_translated_text(isolated):
     row = shared_row()
     deleted = {**row, "contributor": {"id": None, "label": "Deleted user"}}
     assert copied_reference_contributor_text(Public([deleted]), row["contribution_id"], row["revision"]) == "Deleted user"
+
+
+def _server_text(envelope_json: str) -> str:
+    """The server's ``(jsonb - 'contributor')::text`` form: ', '/': '
+    separators and jsonb key order (shorter keys first), not the desktop's."""
+    def order(value):
+        if isinstance(value, dict):
+            return {k: order(value[k]) for k in sorted(value, key=lambda k: (len(k.encode()), k))}
+        if isinstance(value, list):
+            return [order(item) for item in value]
+        return value
+    value = json.loads(envelope_json)
+    value.pop("contributor", None)
+    return json.dumps(order(value), ensure_ascii=False)
+
+
+class ServerFormCloud(Cloud):
+    """Stores the envelope in the server's own text form with its own sha."""
+
+    def sync_reference_curated_fork(self, payload, expected):
+        existing = next((r for r in self.rows
+                         if r["curated_measurement_set_id"] == payload["curated_measurement_set_id"]), None)
+        if existing:
+            return {"status": "no_change", "row": existing}
+        text = _server_text(payload["source_envelope_json"])
+        stored = {**payload, "source_envelope_json": text,
+                  "source_sha256": hashlib.sha256(text.encode()).hexdigest()}
+        return super().sync_reference_curated_fork(stored, expected)
+
+
+def _mark_graph_converged(reference_path, cloud):
+    with sqlite3.connect(reference_path) as connection:
+        connection.execute(
+            "UPDATE reference_cloud_sync_state SET cloud_user_id=?,remote_identity_state='acknowledged',"
+            "cloud_row_version=1,accepted_payload_json='{}',sync_status='clean'", (cloud.user_id,),
+        )
+
+
+def test_server_stored_text_form_is_acknowledged_not_a_conflict(isolated):
+    copy_curated_bundle_to_personal_library(normalize_curated_bundle(shared_row()))
+    cloud = ServerFormCloud()
+    _mark_graph_converged(isolated, cloud)
+
+    first = push_curated_reference_forks(cloud)
+    assert first.pushed == 1 and first.conflicts == () and first.errors == ()
+    local_text = _stored(isolated)[0][3]
+    assert cloud.rows[0]["source_envelope_json"] != local_text  # different text, same provenance
+    pulled = pull_curated_reference_forks(cloud)
+    assert pulled.conflicts == () and pulled.errors == ()
+    assert _stored(isolated)[0][3] == local_text  # local provenance stays immutable
+    with sqlite3.connect(isolated) as connection:
+        assert connection.execute(
+            "SELECT sync_status FROM curated_reference_fork_cloud_sync_state"
+        ).fetchall() == [("clean",)]
+
+
+def test_older_local_copy_with_contributor_matches_the_server_form(isolated):
+    old = normalize_curated_bundle(json.loads(_canonical(_old_form_envelope())), expected_taxon_id=TAXON, frozen=True)
+    copy_curated_bundle_to_personal_library(old)
+    cloud = ServerFormCloud()
+    _mark_graph_converged(isolated, cloud)
+    result = push_curated_reference_forks(cloud)
+    assert result.pushed == 1 and result.conflicts == ()
+    assert "contributor" not in json.loads(cloud.rows[0]["source_envelope_json"])
+
+
+def test_second_device_pulls_the_server_form(isolated):
+    copy_curated_bundle_to_personal_library(normalize_curated_bundle(shared_row()))
+    cloud = ServerFormCloud()
+    _mark_graph_converged(isolated, cloud)
+    push_curated_reference_forks(cloud)
+    with sqlite3.connect(isolated) as connection:
+        connection.execute("DELETE FROM curated_reference_fork_cloud_sync_state")
+        connection.execute("DELETE FROM curated_reference_forks")
+    result = pull_curated_reference_forks(cloud)
+    assert result.pulled == 1 and result.errors == ()
+    assert _stored(isolated)[0][3] == cloud.rows[0]["source_envelope_json"]
+
+
+@pytest.mark.parametrize("tamper", ["content", "digest"])
+def test_different_provenance_is_still_a_conflict(isolated, tamper):
+    copy_curated_bundle_to_personal_library(normalize_curated_bundle(shared_row()))
+    cloud = ServerFormCloud()
+    _mark_graph_converged(isolated, cloud)
+    push_curated_reference_forks(cloud)
+    row = cloud.rows[0]
+    if tamper == "content":
+        value = json.loads(row["source_envelope_json"])
+        value["snapshot"]["raw_text"] = "changed"
+        row["source_envelope_json"] = json.dumps(value)
+        row["source_sha256"] = hashlib.sha256(row["source_envelope_json"].encode()).hexdigest()
+    else:
+        row["source_sha256"] = "0" * 64
+    result = pull_curated_reference_forks(cloud)
+    assert result.conflicts or result.errors
