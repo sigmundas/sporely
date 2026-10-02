@@ -1774,6 +1774,7 @@ class ReferenceEntryEditor(QWidget):
         and returns ``False`` on invalid/incomplete input, or when the
         user declines an explicit legacy-only confirmation.
         """
+        self._resolve_typed_publication()
         if self.use_existing_radio.isChecked():
             if not self._selected_measurement_set_id:
                 QMessageBox.warning(
@@ -2066,6 +2067,30 @@ class ReferenceEntryEditor(QWidget):
         if year and str(year).strip():
             parts.append(str(year).strip())
         return " ".join(parts)
+
+    def _resolve_typed_publication(self) -> None:
+        """Bind typed publication text that exactly names a library work.
+
+        The publication combo is editable: typing (or completing) the exact
+        label of an existing work leaves the text in the box without
+        selecting that row, so no work id was recorded and the entry fell
+        back to a legacy-only, unnormalized reference (plotted through the
+        legacy shape path). An exact, unambiguous label match selects the
+        work, so the entry goes through the normalized library path.
+        """
+        if self._selected_work_id or self._pending_reference_work is not None:
+            return
+        typed = " ".join((self.publication_combo.currentText() or "").split()).casefold()
+        if not typed:
+            return
+        matches = [
+            row for row in range(self.publication_combo.count())
+            if self.publication_combo.itemData(row)
+            and " ".join(self.publication_combo.itemText(row).split()).casefold() == typed
+        ]
+        if len(matches) == 1:
+            self.publication_combo.setCurrentIndex(matches[0])
+            self._on_publication_selected(matches[0])
 
     def _on_publication_selected(self, _index: int) -> None:
         data = self.publication_combo.currentData()

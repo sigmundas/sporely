@@ -1176,3 +1176,62 @@ def test_reference_taxon_from_ai_suggestion_never_asks_and_leaves_observation_al
         "SELECT genus, species, sporely_taxon_id FROM observations WHERE id=?",
         (observation_id,)).fetchone()
     assert after == before
+
+
+def test_typed_publication_label_goes_through_the_normalized_range_path(
+    monkeypatch, qapp, libs
+):
+    """Manual-test repro: three Funga Nordica ranges attached, then a 4th
+    (P. fimicola) whose publication was typed as the exact library label
+    instead of picked from the list. It must be stored as a normalized
+    range use (rectangle plotting branch), not a legacy series entry."""
+    from ui.reference_entry_editor import ReferenceEntryEditor
+
+    db_path, _ = libs
+    work = ReferenceWorkRepository.create(ReferenceWork(
+        id="", type="book", title="Funga Nordica", short_label="Funga Nordica", year=2008))
+    observation_id = _make_observation(db_path, genus="Psilocybe", species="semilanceata")
+    conn = sqlite3.connect(db_path)
+    conn.execute("UPDATE observations SET sporely_taxon_id=NULL WHERE id=?", (observation_id,))
+    conn.commit()
+    conn.close()
+    window = _build_window(monkeypatch, qapp)
+    window.active_observation_id = observation_id
+    window._active_sporely_taxon_id = lambda: None
+    window._restore_reference_uses_for_observation = lambda _obs: None
+    window.update_graph_plots_only = lambda: None
+    legacy_entries = []
+    window._add_reference_series_entry = lambda data: legacy_entries.append(data) or True
+
+    def _submit(species, raw, *, typed):
+        editor = ReferenceEntryEditor(None, genus="Panaeolus", species=species,
+                                      observation_id=observation_id, sporely_taxon_id=None)
+        if typed:
+            editor.publication_combo.setEditText("Funga Nordica (2008)")
+        else:
+            for row in range(editor.publication_combo.count()):
+                if editor.publication_combo.itemData(row) == work.id:
+                    editor.publication_combo.setCurrentIndex(row)
+        editor.measurement_paste_input.setText(raw)
+        editor._parse_measurement_btn.click()
+        assert editor.validate_and_build_result()
+        assert window._submit_reference_editor_result(editor) is True
+
+    _submit("foenisecii", "(11.5-)14-17(-22) x 7.5-11", typed=False)
+    _submit("acuminatus", "(11-)13-15(-17) x 9-12", typed=False)
+    _submit("olivaceus", "10-13 x 6.5-8", typed=False)
+    _submit("fimicola", "(9-)11-15 x 7-9 x 6-8", typed=True)
+
+    assert legacy_entries == []  # nothing fell onto the legacy plotting path
+    uses = ObservationReferenceUseRepository.list_for_observation(observation_id)
+    assert len(uses) == 4
+    fourth_use = next(u for u in uses
+                      if json.loads(u.snapshot_json)["raw_text"] == "(9-)11-15 x 7-9 x 6-8")
+    assert json.loads(fourth_use.snapshot_json)["data_kind"] == "range"
+    from references.reference_plotting import translate_observation_reference_use
+    series = translate_observation_reference_use(fourth_use)["data"]
+    assert series["reference_data_kind"] == "range"
+    assert series["observation_reference_use_id"]
+    assert (series["length_p05"], series["length_p95"]) == (11.0, 15.0)
+    assert (series["width_p05"], series["width_p95"]) == (7.0, 9.0)
+    assert series["length_min"] == 9.0
