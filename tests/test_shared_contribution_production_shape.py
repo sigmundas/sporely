@@ -2,7 +2,8 @@
 
 ``tests/fixtures/shared_contribution_production_shape.json`` is the one row
 production's anon ``search_public_reference_contributions_v2`` served for
-taxon 34615 on 2026-10-02 (people's names replaced; every key and type kept).
+taxon 34615 on 2026-10-02 with people's names and every UUID replaced by
+synthetic values (every key and type kept).
 Its ``citation`` carries ``short_label`` and ``citation_override`` (sporely-web
 20260930232633 onward), which the exact-key reader used to reject, so the
 catalogue was always empty.

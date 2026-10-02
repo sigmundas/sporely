@@ -2,7 +2,7 @@
  "canonical_scientific_name": "Mycena leptocephala",
  "citation": {
   "authors": [],
-  "citation_key": "sporely-contribution-230f78dad2564cfb9db53fdba58a3461",
+  "citation_key": "sporely-contribution-5e1f0000000040008000000000000001",
   "citation_override": null,
   "container_title": null,
   "doi": null,
@@ -33,13 +33,13 @@
   "volume": null,
   "year": 2008
  },
- "contribution_id": "230f78da-d256-4cfb-9db5-3fdba58a3461",
+ "contribution_id": "5e1f0000-0000-4000-8000-000000000001",
  "contributor": {
   "id": null,
   "label": "Sporely user"
  },
  "exports": {
-  "bibtex": "@book{sporely-contribution-230f78dad2564cfb9db53fdba58a3461,\n  editor = {Erika, Agnes and Editorson, Bertil},\n  title = {Funga Nordica},\n  year = {2008},\n  publisher = {Nordsvamp},\n  address = {Copenhagen},\n}\n",
+  "bibtex": "@book{sporely-contribution-5e1f0000000040008000000000000001,\n  editor = {Erika, Agnes and Editorson, Bertil},\n  title = {Funga Nordica},\n  year = {2008},\n  publisher = {Nordsvamp},\n  address = {Copenhagen},\n}\n",
   "csl_json": {
    "editor": [
     {
@@ -51,7 +51,7 @@
      "given": "Bertil"
     }
    ],
-   "id": "sporely-contribution-230f78dad2564cfb9db53fdba58a3461",
+   "id": "sporely-contribution-5e1f0000000040008000000000000001",
    "issued": {
     "date-parts": [
      [
@@ -106,10 +106,10 @@
   "page_to": null,
   "raw_points": null,
   "raw_text": "8-11 x 4-6, q=1.7-2.2",
-  "reference_measurement_set_id": "230f78da-d256-4cfb-9db5-3fdba58a3461",
+  "reference_measurement_set_id": "5e1f0000-0000-4000-8000-000000000001",
   "reference_revision": 2,
-  "reference_treatment_id": "5d313115-de57-5dc4-904e-260e17552410",
-  "reference_work_id": "8aa0b4c7-c325-546e-b651-9a785df27961",
+  "reference_treatment_id": "5e1f0000-0000-4000-8000-000000000002",
+  "reference_work_id": "5e1f0000-0000-4000-8000-000000000003",
   "schema_version": 1,
   "short_label": "Funga Nordica",
   "taxon_id": null,
