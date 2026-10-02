@@ -476,21 +476,18 @@ def test_comparison_row_subtitle_shows_range_expression():
     assert _format_detail(translate_legacy_literature_range(LEGACY_958_ROW)) == "range · (9–)11–15 × 7–9"
 
 
-@pytest.mark.parametrize("shape", ["ellipse", "square"])
-def test_legacy_literature_row_plots_rectangles_whatever_the_shape_setting(monkeypatch, qapp, shape):
-    from matplotlib.patches import Ellipse, Rectangle
-
+def _plot_window(monkeypatch, shape, row, *, histogram=False):
     window = _build_minimal_window(monkeypatch)
     window.gallery_filter_combo = QComboBox()
     window.gallery_filter_combo.addItem("Spores", "spores")
     window.gallery_filter_combo.setCurrentIndex(0)
     window.gallery_plot_figure = main_window.Figure(figsize=(4.0, 4.0))
     window.gallery_plot_canvas = main_window.FigureCanvas(window.gallery_plot_figure)
-    window.gallery_plot_settings = {"histogram": False, "legend": False,
+    window.gallery_plot_settings = {"histogram": histogram, "legend": True, "avg_q": True,
                                     "reference_minmax": True, "reference_shape": shape}
     window.gallery_image_labels = {}
     window.reference_values = {}
-    window.reference_series = [{"data": dict(LEGACY_958_ROW), "enabled": True}]
+    window.reference_series = [{"data": dict(row), "enabled": True}]
     window._gallery_highlighted_measurement_ids = lambda measurements: set()
     window._format_observation_legend_label = lambda: "Spores"
     window._gallery_plot_style = lambda settings=None: "ellipse"
@@ -499,14 +496,57 @@ def test_legacy_literature_row_plots_rectangles_whatever_the_shape_setting(monke
     window._is_dark_theme = lambda: False
     window._update_gallery_stats_preview = lambda: None
     measurements = [{"id": i, "length_um": 12.0 + i * 0.3, "width_um": 7.5 + i * 0.1,
-                     "measurement_type": "spores"} for i in range(1, 4)]
-
+                     "measurement_type": "spores"} for i in range(1, 6)]
     window.update_graph_plots(measurements)
+    return window.gallery_plot_figure
 
-    patches = window.gallery_plot_figure.axes[0].patches
-    rects = [p for p in patches if isinstance(p, Rectangle)]
-    assert not any(isinstance(p, Ellipse) and p.get_width() == 4.0 for p in patches)
-    core = [r for r in rects if (r.get_x(), r.get_y(), r.get_width(), r.get_height()) == (11.0, 7.0, 4.0, 2.0)]
-    assert core and core[0].get_fill() and core[0].get_linestyle() == "-"
-    outer = [r for r in rects if (r.get_x(), r.get_y(), r.get_width()) == (9.0, 7.0, 6.0)]
-    assert outer and outer[0].get_linestyle() == ":"
+
+def _signature(fig):
+    out = []
+    for ax in fig.axes:
+        out.append((
+            sorted((tuple(map(float, l.get_xdata())), tuple(map(float, l.get_ydata())), l.get_linestyle())
+                   for l in ax.lines if len(l.get_xdata())),
+            len(ax.collections),
+            sorted(type(p).__name__ for p in ax.patches),
+            [t.get_text() for t in (ax.get_legend().get_texts() if ax.get_legend() else [])],
+        ))
+    return out
+
+
+@pytest.mark.parametrize("shape", ["ellipse", "square"])
+def test_legacy_literature_row_plots_boxes_whatever_the_shape_setting(monkeypatch, qapp, shape):
+    from matplotlib.patches import Ellipse, Polygon
+
+    ax = _plot_window(monkeypatch, shape, LEGACY_958_ROW).axes[0]
+    assert not any(isinstance(p, Ellipse) for p in ax.patches)
+    fills = [p for p in ax.patches if isinstance(p, Polygon)]
+    assert any(sorted(map(tuple, f.get_xy().round(3).tolist()))[0] == (11.0, 7.0) for f in fills)
+    styles = {(min(l.get_xdata()), max(l.get_xdata()), l.get_linestyle()) for l in ax.lines if len(l.get_xdata())}
+    assert (11.0, 15.0, "-") in styles   # core box, solid edge
+    assert (9.0, 15.0, ":") in styles    # exceptional min -> dotted outer box
+
+
+def test_translated_legacy_row_keeps_q_histogram_and_parmasto_overlays(monkeypatch, qapp):
+    """Translation only changes the box drawing: every other overlay the
+    legacy row produced (Q guidelines, mean-Q label, histogram overlay,
+    Parmasto marker/range) is still there."""
+    import references.reference_plotting as rp
+
+    row = dict(LEGACY_958_ROW, q_p05=1.4, q_p50=1.6, q_p95=1.8, q_min=1.3, q_max=2.0,
+               length_p50=13.0, width_p50=8.0,
+               parmasto_length_mean=13.1, parmasto_width_mean=8.1, parmasto_q_mean=1.62,
+               parmasto_v_sp_length=6.0, parmasto_v_sp_width=5.0, parmasto_v_sp_q=4.0)
+    translated = _signature(_plot_window(monkeypatch, "square", row, histogram=True))
+    monkeypatch.setattr(main_window, "translate_legacy_literature_range", lambda data: None)
+    legacy = _signature(_plot_window(monkeypatch, "square", row, histogram=True))
+    # Identical lines, collections and legend; only the translucent core fill is added.
+    for t_ax, l_ax in zip(translated, legacy):
+        assert t_ax[0] == l_ax[0]
+        assert t_ax[1] == l_ax[1]
+        assert t_ax[3] == l_ax[3]
+    assert translated[0][2].count("Polygon") == legacy[0][2].count("Polygon") + 1
+    assert len(translated) == len(legacy) and len(translated) > 1  # histogram axes present
+    assert any("Q" in text for text in translated[0][3])  # mean-Q legend label kept
+
+

@@ -18305,15 +18305,23 @@ class MainWindow(GeometryMixin, QMainWindow):
                 return None
             return polygon
 
-        def _plot_reference_range_shape(x_left, x_right, y_bottom, y_top, edge_color, linestyle, q_low=None, q_high=None):
+        def _plot_reference_range_shape(x_left, x_right, y_bottom, y_top, edge_color, linestyle, q_low=None, q_high=None,
+                                        *, literature_range=False):
+            """``literature_range``: a legacy literature row with explicit
+            bounds (translate_legacy_literature_range) always draws boxes,
+            like library ranges: the core box filled translucent with a
+            solid edge, the min/max box dotted -- never an ellipse."""
             if x_left is None or x_right is None or y_bottom is None or y_top is None:
                 return
-            if reference_shape == "square":
+            if reference_shape == "square" or literature_range:
                 polygon = _constrained_box_polygon(x_left, x_right, y_bottom, y_top, q_low=q_low, q_high=q_high)
                 if not polygon:
                     return
                 xs = [point[0] for point in polygon] + [polygon[0][0]]
                 ys = [point[1] for point in polygon] + [polygon[0][1]]
+                if literature_range and linestyle == "-":
+                    ax_scatter.fill(xs, ys, facecolor=to_rgba(edge_color, alpha=0.18),
+                                    edgecolor="none", zorder=1.5)
                 ax_scatter.plot(xs, ys, color=edge_color, linewidth=1.5, linestyle=linestyle)
                 return
             width = abs(x_right - x_left)
@@ -18412,7 +18420,7 @@ class MainWindow(GeometryMixin, QMainWindow):
             normalized_use_id = str(data.get("observation_reference_use_id") or "").strip()
             reference_data_kind = str(data.get("reference_data_kind") or "").strip().lower()
             if (
-                (normalized_use_id or data.get("legacy_literature_range"))
+                normalized_use_id
                 and kind == "reference"
                 and reference_data_kind in ("range", "summary")
             ):
@@ -18725,6 +18733,7 @@ class MainWindow(GeometryMixin, QMainWindow):
                     ":",
                     q_low=minmax_shape_q_low,
                     q_high=minmax_shape_q_high,
+                    literature_range=bool(data.get("legacy_literature_range")),
                 )
             if (
                 not mean_comparison
@@ -18740,6 +18749,7 @@ class MainWindow(GeometryMixin, QMainWindow):
                     "-",
                     q_low=range_shape_q_low,
                     q_high=range_shape_q_high,
+                    literature_range=bool(data.get("legacy_literature_range")),
                 )
 
             if any_reference:
