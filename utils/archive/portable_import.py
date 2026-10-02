@@ -27,7 +27,7 @@ from references.measurement_content import (
     validate_measurement_content,
 )
 from database.reference_sync_state import record_library_mutation_intent
-from database.curated_reference_forks import validate_frozen_curated_provenance
+from database.curated_reference_forks import same_fork_provenance, validate_frozen_curated_provenance
 from utils.archive.checksums import sha256_file
 from utils.archive.manifest import ArchiveManifest
 from utils.archive.paths import safe_staging_destination, validate_zip_entries
@@ -2664,7 +2664,10 @@ def import_portable_payload(
             if existing_origin is None:
                 continue
             if (existing_origin["sporely_taxon_id"] != origin["sporely_taxon_id"]
-                    or existing_origin["source_sha256"] != origin["source_sha256"]):
+                    or not same_fork_provenance(
+                        existing_origin["source_envelope_json"], existing_origin["source_sha256"],
+                        origin["source_envelope_json"], origin["source_sha256"],
+                    )):
                 raise PortableIdentityConflictError(
                     "curated fork provenance disagrees for the same bundle revision"
                 )
@@ -2688,13 +2691,17 @@ def import_portable_payload(
                 raise PortableImportError("curated fork provenance has an unresolved private graph")
             existing_origin = destination_main.execute(
                 "SELECT reference_work_id,taxon_treatment_id,reference_measurement_set_id,"
-                "sporely_taxon_id,source_sha256 FROM portable_reference.curated_reference_forks "
+                "sporely_taxon_id,source_sha256,source_envelope_json "
+                "FROM portable_reference.curated_reference_forks "
                 "WHERE curated_measurement_set_id=? AND bundle_revision=?",
                 (origin["curated_measurement_set_id"], origin["bundle_revision"]),
             ).fetchone()
-            expected = (*mapped_ids, origin["sporely_taxon_id"], origin["source_sha256"])
+            expected = (*mapped_ids, origin["sporely_taxon_id"])
             if existing_origin is not None:
-                if tuple(existing_origin) != expected:
+                if tuple(existing_origin)[:4] != expected or not same_fork_provenance(
+                    existing_origin["source_envelope_json"], existing_origin["source_sha256"],
+                    origin["source_envelope_json"], origin["source_sha256"],
+                ):
                     raise PortableIdentityConflictError("curated fork destination mapping conflicts")
                 continue
             destination_main.execute(

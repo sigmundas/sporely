@@ -135,6 +135,16 @@ def _current_source_app_version() -> str | None:
 _REFERENCE_FEED_PAGE_SIZE = 500
 
 
+def _clear_session_scoped_caches() -> None:
+    """Drop account-scoped display caches on sign-in, sign-out or switch."""
+    try:
+        from database.curated_reference_forks import clear_contributor_label_cache
+
+        clear_contributor_label_cache()
+    except Exception:  # never block a credential change
+        pass
+
+
 def _reference_client_capabilities() -> dict:
     from utils.reference_client_capabilities import reference_client_capabilities
 
@@ -16394,6 +16404,7 @@ class SporelyCloudClient:
             'cloud_user_id': self.user_id,
             'cloud_refresh_token': self.refresh_token,
         }
+        _clear_session_scoped_caches()
         if email is not None:
             updates['cloud_user_email'] = str(email or '').strip()
         update_app_settings(updates)
@@ -16407,6 +16418,7 @@ class SporelyCloudClient:
     @staticmethod
     def clear_session() -> None:
         """Forget only the cloud tokens so the saved password can survive re-login."""
+        _clear_session_scoped_caches()
         update_app_settings({
             'cloud_access_token': None,
             'cloud_user_id': None,
@@ -16416,6 +16428,7 @@ class SporelyCloudClient:
 
     @staticmethod
     def clear_credentials() -> None:
+        _clear_session_scoped_caches()
         clear_saved_cloud_password()
         update_app_settings({
             'cloud_access_token': None,
