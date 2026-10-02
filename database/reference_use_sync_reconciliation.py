@@ -20,6 +20,7 @@ from database.reference_sync_reconciliation import (
 from database.reference_sync_state import (
     ReferenceCloudSyncStateError,
     canonical_observation_use_payload,
+    normalize_use_baseline,
 )
 
 
@@ -403,7 +404,7 @@ def _reconcile_live(
                 ),
             )
             return 0, f"observation_use:{use_id}"
-        baseline = _parse_json(tombstone["accepted_payload_json"])
+        baseline = normalize_use_baseline(_parse_json(tombstone["accepted_payload_json"]))
         if tombstone["sync_status"] == "conflict" or baseline != remote:
             diagnostic = {
                 "operation": "pull_delete_race",
@@ -490,7 +491,7 @@ def _reconcile_live(
             local=local, baseline=None, reason="observation-use account mismatch"
         )
         return 0, f"observation_use:{use_id}"
-    baseline = _parse_json(state["accepted_payload_json"])
+    baseline = normalize_use_baseline(_parse_json(state["accepted_payload_json"]))
     if state["sync_status"] == "conflict":
         return 0, f"observation_use:{use_id}"
     if baseline is None:
@@ -616,7 +617,7 @@ def _reconcile_tombstone(
                 reason="observation-use account mismatch",
             )
             return 0, f"observation_use:{use_id}"
-        baseline = _parse_json(state["accepted_payload_json"])
+        baseline = normalize_use_baseline(_parse_json(state["accepted_payload_json"]))
         if baseline == remote:
             # A same-ID local reattach is an explicit restore of this remote
             # tombstone. Preserve it as dirty and retain the authoritative
