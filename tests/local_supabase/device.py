@@ -188,6 +188,41 @@ def _attach_public_use(args):
     return {"observation_id": observation_id, "use_id": use.id}
 
 
+def _use_state(_args):
+    """Per-use sync state with local vs accepted payload differences."""
+    from database.reference_use_sync_reconciliation import _local_payload
+
+    conn = schema.get_connection()
+    conn.row_factory = __import__("sqlite3").Row
+    try:
+        rows = conn.execute(
+            "SELECT * FROM observation_reference_use_cloud_sync_state ORDER BY use_id"
+        ).fetchall()
+        out = []
+        for row in rows:
+            local = _local_payload(conn, row["use_id"])
+            accepted = json.loads(row["accepted_payload_json"] or "null")
+            diff = sorted(
+                key for key in set(local or {}) | set(accepted or {})
+                if (local or {}).get(key) != (accepted or {}).get(key)
+            )
+            out.append({
+                "use_id": row["use_id"], "sync_status": row["sync_status"],
+                "remote_identity_state": row["remote_identity_state"],
+                "differs": {k: [(local or {}).get(k), (accepted or {}).get(k)] for k in diff},
+            })
+    finally:
+        conn.close()
+    return {"uses": out}
+
+
+def _set_use_note(args):
+    from database.reference_library import ObservationReferenceUseRepository
+
+    ObservationReferenceUseRepository.update(args["use_id"], note=args["note"])
+    return {"use_id": args["use_id"]}
+
+
 def _catalogue(args):
     from database.curated_reference_forks import (
         copy_curated_bundle_to_personal_library,
@@ -215,6 +250,8 @@ ACTIONS = {
     "local_set_row": _local_set_row,
     "attach_public_use": _attach_public_use,
     "catalogue": _catalogue,
+    "use_state": _use_state,
+    "set_use_note": _set_use_note,
 }
 
 

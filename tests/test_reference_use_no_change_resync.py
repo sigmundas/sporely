@@ -1,0 +1,147 @@
+"""Issue #11: a no-change sync must not re-select clean observation uses.
+
+Mechanism: local rows store ``selected_at`` as SQLite ``YYYY-MM-DD HH:MM:SS``
+(UTC) while the server returns ``timestamptz`` as ISO-8601 with an offset.
+Comparing the two raw strings made every pulled clean use look locally
+changed (``local != remote``, ``remote == baseline``), so the pull marked it
+dirty and the next push re-sent it; the server answered ``no_change``.
+"""
+from __future__ import annotations
+
+import json
+
+import pytest
+
+from database import schema
+from database.reference_library import ObservationReferenceUseRepository
+from database.reference_sync_planner import build_reference_sync_plan
+from database.reference_sync_state import (
+    ReferenceCloudSyncState,
+    ReferenceCloudSyncStateRepository,
+    load_use_payload,
+)
+from utils.reference_cloud_sync import pull_reference_library
+from tests.test_observation_reference_use_pull import (  # noqa: F401
+    PullClient,
+    _seed_graph_and_observation,
+    _use_row,
+    databases,
+)
+
+
+def _server_form(local_selected_at: str) -> str:
+    return local_selected_at.replace(" ", "T") + "+00:00"
+
+
+@pytest.mark.parametrize(
+    ("value", "expected"),
+    [
+        ("2026-10-02 18:20:43", "2026-10-02T18:20:43+00:00"),
+        ("2026-10-02T18:20:43+00:00", "2026-10-02T18:20:43+00:00"),
+        ("2026-10-02T18:20:43Z", "2026-10-02T18:20:43+00:00"),
+        ("2026-10-02T20:20:43+02:00", "2026-10-02T18:20:43+00:00"),
+        ("2026-10-02T18:20:43.123456+00:00", "2026-10-02T18:20:43.123456+00:00"),
+        ("not a timestamp", "not a timestamp"),
+    ],
+)
+def test_use_timestamp_has_one_canonical_form(value, expected):
+    from database.reference_sync_state import canonical_use_timestamp
+
+    assert canonical_use_timestamp(value) == expected
+
+
+def _raw_selected_at(use_id: str) -> str:
+    connection = schema.get_connection()
+    try:
+        return connection.execute(
+            "SELECT selected_at FROM observation_reference_uses WHERE id=?", (use_id,)
+        ).fetchone()[0]
+    finally:
+        connection.close()
+
+
+def _acknowledged_clean_use():
+    _, _, measurement_set = _seed_graph_and_observation()
+    use = ObservationReferenceUseRepository.attach(1, measurement_set.id, role="compared")
+    local_selected_at = _raw_selected_at(use.id)
+    assert "T" not in local_selected_at  # SQLite-style local storage
+    accepted = load_use_payload(use.id)
+    accepted["selected_at"] = _server_form(local_selected_at)
+    ReferenceCloudSyncStateRepository.save_use(
+        ReferenceCloudSyncState(
+            "observation_use", use.id, "user-1", "acknowledged", 1, accepted, "clean"
+        )
+    )
+    connection = schema.get_connection()
+    try:
+        connection.execute(
+            "UPDATE observation_reference_use_cloud_sync_state SET accepted_payload_json=? "
+            "WHERE use_id=?",
+            (json.dumps(accepted, sort_keys=True), use.id),
+        )
+        connection.commit()
+    finally:
+        connection.close()
+    remote = _use_row(
+        id=use.id,
+        role="compared",
+        note=None,
+        selected_at=_server_form(local_selected_at),
+        snapshot_json=json.loads(use.snapshot_json),
+        reference_revision=use.reference_revision,
+    )
+    return use, remote
+
+
+def _planned_use_ids() -> list[str]:
+    plan = build_reference_sync_plan("user-1")
+    return [item.entity_id for item in plan.live if item.entity_type == "observation_use"]
+
+
+@pytest.mark.parametrize("legacy_baseline", [False, True])
+def test_pulled_clean_use_stays_clean_and_is_not_planned(databases, legacy_baseline):
+    use, remote = _acknowledged_clean_use()
+    if legacy_baseline:
+        # A baseline persisted in the local representation by an older build.
+        connection = schema.get_connection()
+        try:
+            accepted = dict(load_use_payload(use.id))
+            accepted["selected_at"] = _raw_selected_at(use.id)
+            connection.execute(
+                "UPDATE observation_reference_use_cloud_sync_state "
+                "SET accepted_payload_json=? WHERE use_id=?",
+                (json.dumps(accepted, sort_keys=True), use.id),
+            )
+            connection.commit()
+        finally:
+            connection.close()
+
+    pull_reference_library(PullClient(uses=[remote]))
+
+    state = ReferenceCloudSyncStateRepository.get_use(use.id)
+    assert state.sync_status == "clean"
+    assert state.accepted_payload == load_use_payload(use.id)
+    assert _planned_use_ids() == []
+
+
+def test_changed_use_is_planned_alone(databases):
+    use, remote = _acknowledged_clean_use()
+    pull_reference_library(PullClient(uses=[remote]))
+    assert _planned_use_ids() == []
+
+    ObservationReferenceUseRepository.update(use.id, note="local edit")
+
+    assert _planned_use_ids() == [use.id]
+
+
+@pytest.mark.parametrize("status", ["dirty", "retry"])
+def test_pending_use_is_still_planned(databases, status):
+    use, _ = _acknowledged_clean_use()
+    state = ReferenceCloudSyncStateRepository.get_use(use.id)
+    ReferenceCloudSyncStateRepository.save_use(
+        ReferenceCloudSyncState(
+            "observation_use", use.id, "user-1", "acknowledged", 1,
+            state.accepted_payload, status, retry_count=1 if status == "retry" else 0,
+        )
+    )
+    assert _planned_use_ids() == [use.id]

@@ -32,7 +32,7 @@ Requirements: Docker, the Supabase CLI and a running local stack
 
 `tests/local_supabase/` (marker `local_supabase`; skipped unless
 `SPORELY_LOCAL_SUPABASE=1`, which the script sets): device registration,
-no-change resync (strict xfail for issue #11), Download from Cloud without
+no-change resync makes no reference writes (issue #11), changing one use pushes only that use, Download from Cloud without
 writes, set and treatment deletion across devices, default-shared contribution
 through the anon catalogue and copy, undeclared legacy write, and withheld
 enhanced sets (table read omits, capable feed serves, v1 write refused).

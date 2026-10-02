@@ -51,7 +51,6 @@ def test_2_no_change_sync_keeps_one_device(owner, device):
     assert second["rpc_calls"].get("record_reference_client_capabilities") == 1
 
 
-@pytest.mark.xfail(reason="issue #11: pre-existing reference re-push on a no-change sync", strict=True)
 def test_2b_no_change_sync_sends_no_reference_writes(owner, device):
     a = device("a")
     created = a.run("create_set")
@@ -63,6 +62,29 @@ def test_2b_no_change_sync_sends_no_reference_writes(owner, device):
         if name.startswith("sync_reference_") or name == "sync_observation_reference_use"
     }
     assert writes == {}
+    # The clean state is not touched by a no-change sync either.
+    assert [use["sync_status"] for use in a.run("use_state")["uses"]] == ["clean"]
+
+
+def test_2c_changing_one_use_pushes_exactly_that_use(owner, device):
+    a = device("a")
+    created = a.run("create_set")
+    first = a.run("attach_public_use", set_id=created["set_id"])
+    a.run("attach_public_use", set_id=created["set_id"])
+    synced = a.run("sync", **owner.credentials)
+    _assert_clean(synced)
+    assert synced["rpc_calls"].get("sync_observation_reference_use") == 2
+
+    a.run("set_use_note", use_id=first["use_id"], note="changed")
+    changed = a.run("sync", **owner.credentials)
+    _assert_clean(changed)
+    assert changed["rpc_calls"].get("sync_observation_reference_use") == 1
+    assert sql(
+        "SELECT note FROM public.observation_reference_uses "
+        f"WHERE id = '{first['use_id']}'"
+    ) == [["changed"]]
+    again = a.run("sync", **owner.credentials)
+    assert "sync_observation_reference_use" not in again["rpc_calls"]
 
 
 def test_3_download_from_cloud_receives_the_set_without_writes(owner, device):
