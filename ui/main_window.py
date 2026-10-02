@@ -5336,6 +5336,11 @@ class ReferenceAddDialog(GeometryMixin, QDialog):
         editor_scroll.setFrameShape(QScrollArea.NoFrame)
         editor_scroll.setWidget(self.editor)
         layout.addWidget(editor_scroll, 1)
+        # Fixed bottom: hint/status bar, then the action buttons. Only the
+        # form content scrolls.
+        self.editor_scroll = editor_scroll
+        self.hint_row = self.editor.take_hint_row()
+        layout.addWidget(self.hint_row, 0)
 
         button_row = QHBoxLayout()
         self.save_btn = QPushButton(self.tr("Save"))

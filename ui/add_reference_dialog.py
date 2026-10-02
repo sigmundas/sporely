@@ -1781,7 +1781,11 @@ class AddReferenceDialog(GeometryMixin, QDialog):
         self._manual_scroll.setWidgetResizable(True)
         self._manual_scroll.setFrameShape(QScrollArea.NoFrame)
         self._manual_scroll.setWidget(self.manual_editor)
-        layout.addWidget(self._manual_scroll)
+        layout.addWidget(self._manual_scroll, 1)
+        # Fixed below the scroll area: scrolling the form never moves the
+        # hint/status bar (the footer buttons are already outside it).
+        self.manual_hint_row = self.manual_editor.take_hint_row()
+        layout.addWidget(self.manual_hint_row, 0)
 
     # ------------------------------------------------------------------
     # Footer

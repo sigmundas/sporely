@@ -754,10 +754,16 @@ class ReferenceEntryEditor(QWidget):
         self.use_existing_radio.toggled.connect(self._on_data_choice_toggled)
         self.enter_new_radio.toggled.connect(self._on_data_choice_toggled)
 
-        hint_row = QHBoxLayout()
+        # The hint/status row is its own widget so a host that scrolls this
+        # editor can lift it out (take_hint_row) and pin it below the
+        # scroll area, next to its action buttons. A standalone editor keeps
+        # it at the bottom of its own layout.
+        self.hint_row_widget = QWidget(self)
+        hint_row = QHBoxLayout(self.hint_row_widget)
+        hint_row.setContentsMargins(0, 0, 0, 0)
         hint_row.addWidget(self.hint_bar, 1)
         hint_row.addWidget(make_github_help_button(self, "reference-data-dialog.md"), 0, Qt.AlignRight | Qt.AlignVCenter)
-        layout.addLayout(hint_row)
+        layout.addWidget(self.hint_row_widget)
 
         self._register_hint_widget(self.spore_table, self._default_hint_text)
 
@@ -1071,6 +1077,16 @@ class ReferenceEntryEditor(QWidget):
     # ------------------------------------------------------------------
     # Hints
     # ------------------------------------------------------------------
+
+    def take_hint_row(self) -> QWidget:
+        """Remove the hint/status row from this editor's layout and return
+        it, for a host to place outside its scroll area. The hint
+        controller keeps driving it (focus, parser and validation hints)."""
+        layout = self.layout()
+        if layout is not None:
+            layout.removeWidget(self.hint_row_widget)
+        self.hint_row_widget.setParent(None)
+        return self.hint_row_widget
 
     def _register_hint_widget(self, widget: QWidget, hint_text: str | None, tone: str = "info") -> None:
         if not widget:
