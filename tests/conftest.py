@@ -14,6 +14,9 @@ import tempfile  # noqa: E402
 _TEST_APP_DATA_DIR = Path(tempfile.mkdtemp(prefix="sporely-test-appdata-")).resolve()
 os.environ["SPORELY_APP_DATA_DIR"] = str(_TEST_APP_DATA_DIR)
 os.environ.pop("SPORELY_PROFILE", None)
+# The Artportalen/Artsobservasjoner keychain entries are not profile-scoped;
+# a test that forgets to patch keyring must fail, not write the real keychain.
+os.environ["PYTHON_KEYRING_BACKEND"] = "keyring.backends.fail.Keyring"
 
 # Taxonomy-v2 is ON by default in the product. Unit tests that resolve the
 # vernacular DB must not install the ~320 MB artifact into the developer's
