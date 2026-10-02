@@ -328,6 +328,11 @@ Transport failure retries the identical UUID, payload, and expected token.
 `created`, `updated`, and `no_change` persist the returned authoritative
 baseline; CAS conflict persists review state and does not overwrite local
 intent. An unknown create is resolved by a complete owner read before retry.
+A library tombstone payload is `{id, deleted: true}` plus the row's unchanged
+parent identity (`reference_work_id` for a treatment, `taxon_treatment_id`
+for a measurement set): the server's sync RPCs check the named parent before
+the tombstone branch and answer `invalid_parent` without it. Works have no
+parent.
 For new measurement-set mutations, absent `raw_points_json` is omitted from
 the RPC payload rather than encoded as JSON `null`: the Stage 3 insert uses the
 JSONB `->` operator and the table accepts only SQL `NULL` or a JSON array.

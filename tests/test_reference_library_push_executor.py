@@ -414,8 +414,10 @@ def test_tombstones_execute_child_first_and_resolve_only_after_success(databases
     result = sync_reference_library(client)
 
     assert [(kind, payload, expected) for kind, payload, expected in client.calls] == [
-        ("measurement_set", {"id": "set-a", "deleted": True}, 1),
-        ("treatment", {"id": "treatment-a", "deleted": True}, 1),
+        # The server checks the named parent before the tombstone branch, so
+        # a tombstone carries its parent identity (works have none).
+        ("measurement_set", {"id": "set-a", "deleted": True, "taxon_treatment_id": "treatment-a"}, 1),
+        ("treatment", {"id": "treatment-a", "deleted": True, "reference_work_id": "work-a"}, 1),
         ("work", {"id": "work-a", "deleted": True}, 1),
     ]
     assert result.pushed == 3

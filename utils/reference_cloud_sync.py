@@ -423,6 +423,28 @@ def _execute_live(
     )
 
 
+#: The server's sync RPCs check the parent before the tombstone branch
+#: (``sync_reference_taxon_treatment_unthrottled`` /
+#: ``sync_reference_measurement_set_unthrottled``: no live parent named in the
+#: payload -> ``invalid_parent``), so a tombstone carries its unchanged
+#: parent identity. Found by the local Supabase harness.
+_TOMBSTONE_PARENT_KEY = {
+    "treatment": "reference_work_id",
+    "measurement_set": "taxon_treatment_id",
+}
+
+
+def _library_tombstone_payload(tombstone: ReferenceCloudTombstone) -> dict:
+    payload = {"id": tombstone.entity_id, "deleted": True}
+    key = _TOMBSTONE_PARENT_KEY.get(tombstone.entity_type)
+    if key is not None:
+        parent = getattr(tombstone, key, None) or (tombstone.accepted_payload or {}).get(key)
+        if not str(parent or "").strip():
+            raise ReferenceCloudProtocolError("tombstone has no acknowledged parent identity")
+        payload[key] = str(parent)
+    return payload
+
+
 def _execute_tombstone(
     adapter: ReferenceCloudAdapter,
     cloud_user_id: str,
@@ -451,7 +473,7 @@ def _execute_tombstone(
     expected = current.expected_row_version
     if not expected:
         raise ReferenceCloudProtocolError("tombstone has no acknowledged row version")
-    payload = {"id": current.entity_id, "deleted": True}
+    payload = _library_tombstone_payload(current)
     result = _adapter_sync(adapter, current.entity_type)(payload, expected)
     if result.disposition == "acknowledged":
         accepted_payload = _canonical_remote_payload(current.entity_type, result.row)
