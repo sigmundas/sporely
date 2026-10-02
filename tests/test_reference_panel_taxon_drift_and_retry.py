@@ -1235,3 +1235,25 @@ def test_typed_publication_label_goes_through_the_normalized_range_path(
     assert (series["length_p05"], series["length_p95"]) == (11.0, 15.0)
     assert (series["width_p05"], series["width_p95"]) == (7.0, 9.0)
     assert series["length_min"] == 9.0
+
+
+def test_typed_publication_matching_several_works_asks_to_choose(monkeypatch, qapp, libs):
+    from ui.reference_entry_editor import ReferenceEntryEditor
+    import ui.reference_entry_editor as ree
+
+    for _ in range(2):
+        ReferenceWorkRepository.create(ReferenceWork(
+            id="", type="book", title="Funga Nordica", short_label="Funga Nordica", year=2008))
+    warnings = []
+    monkeypatch.setattr(ree.QMessageBox, "warning", lambda _p, title, text: warnings.append(text))
+    monkeypatch.setattr(ree.QMessageBox, "question",
+                        lambda *a, **k: (_ for _ in ()).throw(AssertionError("no legacy prompt")))
+    editor = ReferenceEntryEditor(None, genus="Panaeolus", species="fimicola",
+                                  observation_id=1, sporely_taxon_id=7)
+    editor.publication_combo.setEditText("Funga Nordica (2008)")
+    editor.measurement_paste_input.setText("(9-)11-15 x 7-9")
+    editor._parse_measurement_btn.click()
+    assert editor.validate_and_build_result() is False
+    assert warnings == ["Several publications match this name — choose one from the list."]
+    assert "Several publications match" in editor.hint_bar._label.text()
+    assert editor.result_data() is None or editor.result_data().get("reference_work_id") is None

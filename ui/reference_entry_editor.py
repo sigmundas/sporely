@@ -1790,7 +1790,17 @@ class ReferenceEntryEditor(QWidget):
         and returns ``False`` on invalid/incomplete input, or when the
         user declines an explicit legacy-only confirmation.
         """
-        self._resolve_typed_publication()
+        if self._resolve_typed_publication() == "ambiguous":
+            message = QCoreApplication.translate(
+                "ReferenceAddDialog",
+                "Several publications match this name — choose one from the list.")
+            self._set_hint(message, tone="warning")
+            QMessageBox.warning(
+                self,
+                QCoreApplication.translate("ReferenceAddDialog", "Choose a publication"),
+                message,
+            )
+            return False
         if self.use_existing_radio.isChecked():
             if not self._selected_measurement_set_id:
                 QMessageBox.warning(
@@ -2084,7 +2094,7 @@ class ReferenceEntryEditor(QWidget):
             parts.append(str(year).strip())
         return " ".join(parts)
 
-    def _resolve_typed_publication(self) -> None:
+    def _resolve_typed_publication(self) -> str | None:
         """Bind typed publication text that exactly names a library work.
 
         The publication combo is editable: typing (or completing) the exact
@@ -2093,12 +2103,14 @@ class ReferenceEntryEditor(QWidget):
         back to a legacy-only, unnormalized reference (plotted through the
         legacy shape path). An exact, unambiguous label match selects the
         work, so the entry goes through the normalized library path.
+        Returns ``"bound"``, ``"ambiguous"`` (several works carry that
+        label; the user must pick one) or ``None``.
         """
         if self._selected_work_id or self._pending_reference_work is not None:
-            return
+            return None
         typed = " ".join((self.publication_combo.currentText() or "").split()).casefold()
         if not typed:
-            return
+            return None
         matches = [
             row for row in range(self.publication_combo.count())
             if self.publication_combo.itemData(row)
@@ -2107,6 +2119,10 @@ class ReferenceEntryEditor(QWidget):
         if len(matches) == 1:
             self.publication_combo.setCurrentIndex(matches[0])
             self._on_publication_selected(matches[0])
+            return "bound"
+        if len(matches) > 1:
+            return "ambiguous"
+        return None
 
     def _on_publication_selected(self, _index: int) -> None:
         data = self.publication_combo.currentData()
