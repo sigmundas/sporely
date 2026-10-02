@@ -338,8 +338,7 @@ def _conflict(
         """
         UPDATE observation_reference_use_cloud_sync_state
         SET cloud_user_id=COALESCE(cloud_user_id, ?), sync_status='conflict',
-            conflict_json=?, last_error=?, last_attempted_at=CURRENT_TIMESTAMP,
-            updated_at=CURRENT_TIMESTAMP
+            conflict_json=?, last_error=?, updated_at=CURRENT_TIMESTAMP
         WHERE use_id=?
         """,
         (cloud_user_id, _canonical_json(diagnostic), reason, use_id),

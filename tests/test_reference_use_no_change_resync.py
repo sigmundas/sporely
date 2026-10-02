@@ -230,3 +230,67 @@ def test_real_change_updates_only_that_use_state_row(databases):
     assert changed["sync_status"] == "clean"
     assert changed["last_attempted_at"] != by_id[second.id]["last_attempted_at"]
     assert after["library"] == before["library"]
+
+
+# --- Pull-detected conflicts are not upload attempts -------------------------
+
+_SENTINEL = "2000-01-01T00:00:00+00:00"
+
+
+def _stamp(table: str, where: str, args: tuple, *, reference: bool = False) -> None:
+    connection = schema.get_reference_connection() if reference else schema.get_connection()
+    try:
+        connection.execute(f"UPDATE {table} SET last_attempted_at=? WHERE {where}", (_SENTINEL, *args))
+        connection.commit()
+    finally:
+        connection.close()
+
+
+def test_pull_detected_use_conflict_keeps_last_attempted_at(databases):
+    _, _, measurement_set = _seed_graph_and_observation()
+    use = ObservationReferenceUseRepository.attach(1, measurement_set.id, note="base")
+    accepted = load_use_payload(use.id)
+    ReferenceCloudSyncStateRepository.save_use(
+        ReferenceCloudSyncState(
+            "observation_use", use.id, "user-1", "acknowledged", 1, accepted, "clean"
+        )
+    )
+    ObservationReferenceUseRepository.update(use.id, note="local")
+    _stamp("observation_reference_use_cloud_sync_state", "use_id=?", (use.id,))
+    remote = _use_row(id=use.id, note="remote", row_version=2,
+                      updated_at="2026-08-01T00:00:02Z")
+
+    result = pull_reference_library(PullClient(uses=[remote]))
+
+    state = ReferenceCloudSyncStateRepository.get_use(use.id)
+    assert result.conflicts == (f"observation_use:{use.id}",)
+    assert state.sync_status == "conflict"
+    assert state.last_attempted_at == _SENTINEL
+
+
+def test_pull_detected_library_conflict_keeps_last_attempted_at(databases):
+    from tests.test_observation_reference_use_pull import _library_rows
+
+    _seed_graph_and_observation()
+    rows = _library_rows()
+    connection = schema.get_reference_connection()
+    try:
+        connection.execute(
+            "UPDATE reference_measurement_sets SET raw_text='local edit' WHERE id='set-1'"
+        )
+        connection.commit()
+    finally:
+        connection.close()
+    _stamp(
+        "reference_cloud_sync_state", "entity_type='measurement_set' AND entity_id=?",
+        ("set-1",), reference=True,
+    )
+    remote_set = {**rows["measurement_set"], "raw_text": "remote edit",
+                  "row_version": 2, "updated_at": "2026-08-01T00:00:02Z"}
+
+    result = pull_reference_library(PullClient(sets=[remote_set]))
+
+    state = ReferenceCloudSyncStateRepository.get_library("measurement_set", "set-1")
+    assert "measurement_set:set-1" in result.conflicts
+    assert state.sync_status == "conflict"
+    assert state.last_attempted_at == _SENTINEL

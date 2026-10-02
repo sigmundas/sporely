@@ -463,8 +463,7 @@ def _record_conflict(
         """
         UPDATE reference_cloud_sync_state
         SET sync_status='conflict', conflict_json=?,
-            last_error=?, last_attempted_at=CURRENT_TIMESTAMP,
-            updated_at=CURRENT_TIMESTAMP
+            last_error=?, updated_at=CURRENT_TIMESTAMP
         WHERE entity_type=? AND entity_id=?
         """,
         (_canonical_json(conflict), reason, kind, entity_id),
@@ -546,7 +545,7 @@ def _reconcile_live(
         connection.execute(
             "UPDATE reference_cloud_tombstones SET sync_status='conflict', "
             "conflict_json=?, last_error='remote_change_local_delete', "
-            "last_attempted_at=CURRENT_TIMESTAMP, updated_at=CURRENT_TIMESTAMP "
+            "updated_at=CURRENT_TIMESTAMP "
             "WHERE entity_type=? AND entity_id=? AND cloud_user_id=?",
             (_canonical_json(conflict), kind, entity_id, cloud_user_id),
         )
