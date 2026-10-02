@@ -145,3 +145,88 @@ def test_pending_use_is_still_planned(databases, status):
         )
     )
     assert _planned_use_ids() == [use.id]
+
+
+# --- Follow-up: a no-change sync must not rewrite local status rows ---------
+
+from tests.test_observation_reference_use_sync import (  # noqa: E402
+    ReferenceGraphClient,
+    _create_graph_and_use,
+)
+from utils.reference_cloud_sync import sync_reference_library  # noqa: E402
+
+
+def _server_timestamps(client):
+    # Echo selected_at the way PostgREST renders timestamptz.
+    for (kind, _), row in client.remote_rows.items():
+        if kind == "observation_use" and " " in str(row.get("selected_at")):
+            row["selected_at"] = _server_form(row["selected_at"])
+
+
+def _status_tables():
+    import sqlite3
+
+    observation = schema.get_connection()
+    reference = schema.get_reference_connection()
+    observation.row_factory = reference.row_factory = sqlite3.Row
+    try:
+        return {
+            "uses": [dict(row) for row in observation.execute(
+                "SELECT * FROM observation_reference_use_cloud_sync_state ORDER BY use_id"
+            )],
+            "library": [dict(row) for row in reference.execute(
+                "SELECT * FROM reference_cloud_sync_state ORDER BY entity_type, entity_id"
+            )],
+        }
+    finally:
+        observation.close()
+        reference.close()
+
+
+def test_no_change_sync_leaves_every_status_row_byte_identical(databases):
+    _create_graph_and_use()
+    client = ReferenceGraphClient()
+    sync_reference_library(client)
+    _server_timestamps(client)
+    sync_reference_library(client)  # pull sees the server form once
+    before = _status_tables()
+    calls_before = len(client.calls)
+
+    sync_reference_library(client)
+
+    assert len(client.calls) == calls_before
+    assert _status_tables() == before
+
+
+def test_real_change_updates_only_that_use_state_row(databases):
+    _, _, measurement_set, use = _create_graph_and_use()
+    connection = schema.get_connection()
+    try:
+        connection.execute(
+            "INSERT INTO observations (id, date, cloud_id) VALUES (2, '2026-08-30', '102')"
+        )
+        connection.commit()
+    finally:
+        connection.close()
+    second = ObservationReferenceUseRepository.attach(
+        2, measurement_set.id, role="compared"
+    )
+    assert second.id != use.id
+    client = ReferenceGraphClient()
+    sync_reference_library(client)
+    _server_timestamps(client)
+    sync_reference_library(client)
+    before = _status_tables()
+    by_id = {row["use_id"]: row for row in before["uses"]}
+
+    ObservationReferenceUseRepository.update(second.id, note="changed")
+    sync_reference_library(client)
+
+    after = _status_tables()
+    after_by_id = {row["use_id"]: row for row in after["uses"]}
+    assert [c[1]["id"] for c in client.calls[-1:]] == [second.id]
+    assert after_by_id[use.id] == by_id[use.id]
+    changed = after_by_id[second.id]
+    assert changed["sync_status"] == "clean"
+    assert changed["last_attempted_at"] != by_id[second.id]["last_attempted_at"]
+    assert after["library"] == before["library"]

@@ -56,7 +56,13 @@ def test_2b_no_change_sync_sends_no_reference_writes(owner, device):
     created = a.run("create_set")
     a.run("attach_public_use", set_id=created["set_id"])
     _assert_clean(a.run("sync", **owner.credentials))
+    before = a.run("status_rows")
     second = a.run("sync", **owner.credentials)
+    _assert_clean(second)
+    # Unchanged status rows are not rewritten locally (no last_attempted_at bump).
+    after = a.run("status_rows")
+    assert after["uses"] == before["uses"]
+    assert after["library"] == before["library"]
     writes = {
         name: count for name, count in second["rpc_calls"].items()
         if name.startswith("sync_reference_") or name == "sync_observation_reference_use"

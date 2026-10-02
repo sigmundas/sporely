@@ -216,6 +216,27 @@ def _use_state(_args):
     return {"uses": out}
 
 
+def _status_rows(_args):
+    """Raw status tables (every column) for byte-for-byte comparisons."""
+    import sqlite3
+
+    observation = schema.get_connection()
+    reference = schema.get_reference_connection()
+    observation.row_factory = reference.row_factory = sqlite3.Row
+    try:
+        return {
+            "uses": [dict(row) for row in observation.execute(
+                "SELECT * FROM observation_reference_use_cloud_sync_state ORDER BY use_id"
+            )],
+            "library": [dict(row) for row in reference.execute(
+                "SELECT * FROM reference_cloud_sync_state ORDER BY entity_type, entity_id"
+            )],
+        }
+    finally:
+        observation.close()
+        reference.close()
+
+
 def _set_use_note(args):
     from database.reference_library import ObservationReferenceUseRepository
 
@@ -252,6 +273,7 @@ ACTIONS = {
     "catalogue": _catalogue,
     "use_state": _use_state,
     "set_use_note": _set_use_note,
+    "status_rows": _status_rows,
 }
 
 
