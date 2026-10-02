@@ -4322,9 +4322,10 @@ class ObservationsTab(QWidget):
         newer = counts.get("requires_newer_client", 0)
         if older:
             parts.append(self.tr(
-                "{count} reference change(s) are waiting: another of your devices "
-                "with an older Sporely version synced recently. Update Sporely "
-                "there first; the changes stay saved here."
+                "{count} reference change(s) are waiting because another of your "
+                "devices with an older Sporely version synced recently. They upload "
+                "automatically once that device is updated and syncs, or up to 30 "
+                "days after it last synced. The changes stay saved here."
             ).format(count=older))
         if newer:
             parts.append(self.tr(

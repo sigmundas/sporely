@@ -115,7 +115,7 @@ class SharedReferenceCatalogueDialog(QDialog):
                 bundle.citation["short_citation"], bundle.canonical_scientific_name,
                 str(bundle.bundle_revision),
                 (bundle.snapshot["raw_text"] or "") + (
-                    " " + self.tr("(measurement details omitted)")
+                    " " + self.tr("(measurement details omitted; cannot be copied)")
                     if bundle.measurement_details_omitted else ""
                 ),
                 bundle.contributor_label or self.tr("Sporely user"),
@@ -123,6 +123,9 @@ class SharedReferenceCatalogueDialog(QDialog):
             )
             for column, value in enumerate(values):
                 self.table.setItem(row, column, QTableWidgetItem(str(value)))
+            if bundle.measurement_details_omitted:
+                for column in range(len(values)):
+                    self.table.item(row, column).setForeground(QBrush(QColor("#8a8a8a")))
             if "contradicts" in bundle.relationship_roles:
                 cell = self.table.item(row, 5)
                 font = QFont(cell.font())
@@ -146,8 +149,15 @@ class SharedReferenceCatalogueDialog(QDialog):
 
     def _update_copy_state(self) -> None:
         rows = self.table.selectionModel().selectedRows()
-        self.copy_button.setEnabled(len(rows) == 1)
         bundle = self._bundles[rows[0].row()] if len(rows) == 1 and rows[0].row() < len(self._bundles) else None
+        # A row served without its measurement details is never copied (the
+        # copy would store a lossy projection as editable content).
+        omitted = bundle is not None and bundle.measurement_details_omitted
+        self.copy_button.setEnabled(bundle is not None and not omitted)
+        self.copy_button.setToolTip(
+            self.tr("This contribution was served without its measurement details and cannot be copied.")
+            if omitted else ""
+        )
         label = relationship_label(bundle.relationship_roles) if bundle is not None else ""
         if not label:
             self.relationship_label.setText("")
@@ -172,8 +182,15 @@ class SharedReferenceCatalogueDialog(QDialog):
         rows = self.table.selectionModel().selectedRows()
         if len(rows) != 1:
             return
+        bundle = self._bundles[rows[0].row()]
+        if bundle.measurement_details_omitted:
+            QMessageBox.warning(
+                self, self.tr("Shared reference contributions"),
+                self.tr("This contribution was served without its measurement details and cannot be copied."),
+            )
+            return
         try:
-            result = copy_curated_bundle_to_personal_library(self._bundles[rows[0].row()])
+            result = copy_curated_bundle_to_personal_library(bundle)
         except Exception as exc:
             QMessageBox.warning(self, self.tr("Shared reference contributions"), self.tr("Could not copy reference: {error}").format(error=str(exc)))
             return

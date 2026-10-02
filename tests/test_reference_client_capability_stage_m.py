@@ -69,7 +69,7 @@ def test_capability_payload_shape():
     assert reference_client_capabilities() == {
         "reference_snapshot_versions": [1, 2],
         "device_id": TEST_REFERENCE_DEVICE_ID,
-        "client": "desktop",
+        "client": "desktop_app",
         "app_version": "0.9.25",
     }
 
@@ -546,6 +546,7 @@ def test_notice_text_names_both_situations():
     text = ObservationsTab._reference_capability_hold_notice(Host(), result)
     assert "1 reference change(s) are waiting" in text
     assert "older Sporely version" in text
+    assert "up to 30 days after it last synced" in text
     assert "need a newer Sporely version" in text
     assert ObservationsTab._reference_capability_hold_notice(Host(), {}) == ""
 

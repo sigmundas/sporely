@@ -41,7 +41,7 @@ from typing import Any, Iterable
 
 logger = logging.getLogger(__name__)
 
-CLIENT_NAME = "desktop"
+CLIENT_NAME = "desktop_app"  # as in the sporely-web Stage M client contract
 DEVICE_ID_SETTING = "reference_client_device_id"
 NIL_UUID = "00000000-0000-0000-0000-000000000000"
 
@@ -145,7 +145,9 @@ def capability_fingerprint(
     devices that currently trigger the creation guard: seen within 30 days and
     without version 2. An older device upgrading, or ageing out of the window,
     changes the digest. ``devices=None`` (read failed) yields a distinct
-    ``unknown`` digest so a hold is kept rather than retried blindly.
+    ``unknown`` digest: a hold recorded with a known digest is retried once
+    when the read first fails (the digest changed), is then held again under
+    ``unknown``, and stays held while the read keeps failing.
     """
     own_device = str(capabilities.get("device_id") or "")
     if devices is None:

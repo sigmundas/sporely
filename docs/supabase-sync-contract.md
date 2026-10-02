@@ -446,7 +446,7 @@ column or a non-advancing cursor fails the whole pull (`rate_limited` as
 retryable); a partial feed is never returned.
 
 `p_client_capabilities` is
-`{"reference_snapshot_versions":[1,2],"device_id":<uuid>,"client":"desktop","app_version":<APP_VERSION>}`.
+`{"reference_snapshot_versions":[1,2],"device_id":<uuid>,"client":"desktop_app","app_version":<APP_VERSION>}`.
 Version 2 is declared only while the use-feed stager, the measurement-set
 feed stager and the public envelope normalizer all accept it
 (`declared_snapshot_versions`); this is independent of the two
@@ -471,7 +471,11 @@ creation guard (read from `reference_client_devices` only when a hold
 exists). So an app upgrade, an older device upgrading or ageing out of the
 30-day window, or a local edit of the row retries it; nothing else does. If
 the device read fails the fingerprint is `unknown` (at most one retry, then
-held again). Held rows, and rows waiting only on a held set, are reported in
+held again). Only rows blocked for `parent_not_acknowledged`,
+`parent_not_converged` or `superseded_set_not_acknowledged` behind a held set
+inherit the hold; any other block reason surfaces as itself. The notice says
+an `older_client_active` hold clears once that device updates and syncs, or
+up to 30 days after it last synced. Held rows, and rows waiting only on a held set, are reported in
 `reference_sync.capability_holds` and as a sync-status notice, not as
 errors or blocks.
 
@@ -480,7 +484,9 @@ Public reads `search_public_reference_contributions_v2` and
 `p_accept_snapshot_versions` = the declared versions. An item stamped
 `measurement_details_omitted: true` (a v2 item projected to v1 for a
 non-accepting caller) is tolerated and flagged on the bundle, shown with a
-note, and never copied into the personal library. An unreadable or duplicate
+note and a disabled copy action, and never copied into the personal
+library. Frozen provenance (cloud fork pull, portable import, bundle import)
+rejects the marker. An unreadable or duplicate
 item is skipped and logged rather than failing the whole page.
 
 ## Storage of desired cloud image-byte state
