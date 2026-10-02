@@ -353,3 +353,21 @@ def test_import_merges_required_objective_profile_into_destination(monkeypatch, 
         "CUSTOM"
     ] == objective
     assert not (main.parent / "objectives.json").exists()
+
+
+def test_import_rejects_frozen_provenance_without_measurement_details(monkeypatch, tmp_path):
+    """Stage M: a marked (projected) envelope is never imported as frozen provenance."""
+    original = bundle_row
+    monkeypatch.setitem(
+        globals(), "bundle_row",
+        lambda *args, **kwargs: {**original(*args, **kwargs), "measurement_details_omitted": True},
+    )
+    archive = _archive(monkeypatch, tmp_path)
+    main, reference = _database_pair(monkeypatch, tmp_path / "destination")
+    with pytest.raises(PortableImportError, match="omit measurement details"):
+        import_portable_archive(
+            archive, destination_main_database=main, destination_reference_database=reference,
+            destination_assets_root=tmp_path / "destination-assets", observation_ids={1, 2},
+        )
+    with sqlite3.connect(reference) as connection:
+        assert connection.execute("SELECT COUNT(*) FROM curated_reference_forks").fetchone()[0] == 0

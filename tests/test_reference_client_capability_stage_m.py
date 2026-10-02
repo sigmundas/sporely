@@ -668,3 +668,11 @@ def test_other_block_reasons_of_a_held_sets_child_surface_as_themselves(database
         item.startswith("observation_use:") and item.endswith(":invalid_observation_cloud_id")
         for item in result.blocked
     )
+
+
+def test_frozen_provenance_rejects_the_marker():
+    for row in (shared_row(), bundle_row()):
+        envelope = {**row, "measurement_details_omitted": True}
+        envelope.pop("relationship_roles", None)
+        with pytest.raises(CuratedReferenceError, match="omit measurement details"):
+            normalize_curated_bundle(envelope, expected_taxon_id=TAXON, frozen=True)

@@ -45,7 +45,8 @@ _LIVE_ONLY_SHARED_KEYS = frozenset({"relationship_roles"})
 # Stage A (sporely-web 20261001213000): a public read whose caller does not
 # accept snapshot version 2 receives a v2 item projected to v1 and stamped
 # with this optional envelope-level marker (the snapshot keeps the exact v1
-# key set). Tolerated on both envelope shapes; such an item is readable but
+# key set). Tolerated on both served envelope shapes, rejected in frozen
+# provenance; a served marked item is readable but
 # never copied (the copy would store a lossy projection as editable content).
 MEASUREMENT_DETAILS_OMITTED_KEY = "measurement_details_omitted"
 
@@ -360,6 +361,13 @@ def normalize_curated_bundle(
     provenance envelope must not (it is stripped before hashing).
     """
     if isinstance(value, dict) and MEASUREMENT_DETAILS_OMITTED_KEY in value:
+        if frozen:
+            # Frozen provenance (cloud fork pull, portable and bundle import)
+            # must be a complete served envelope; a projected one is never
+            # accepted as a frozen copy.
+            raise CuratedReferenceError(
+                "frozen provenance must not omit measurement details"
+            )
         if value[MEASUREMENT_DETAILS_OMITTED_KEY] is not True:
             raise CuratedReferenceError("invalid measurement-details-omitted marker")
         unmarked = {

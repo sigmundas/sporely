@@ -1,5 +1,7 @@
 from __future__ import annotations
 
+import hashlib
+import json
 import sqlite3
 
 import pytest
@@ -127,3 +129,30 @@ def test_push_transport_failure_is_reported_without_aborting_reference_sync(isol
     result = push_curated_reference_forks(cloud)
     assert result.pushed == 0
     assert result.errors == ("curated fork 68000000-0000-4000-8000-000000006701@2: offline",)
+
+
+def test_pull_rejects_frozen_provenance_without_measurement_details(isolated):
+    """Stage M: a cloud fork row whose envelope is marked is never stored."""
+    fork = copy_curated_bundle_to_personal_library(normalize_curated_bundle(bundle_row()))
+    cloud = Cloud()
+    with sqlite3.connect(isolated) as connection:
+        connection.execute(
+            "UPDATE reference_cloud_sync_state SET cloud_user_id=?,remote_identity_state='acknowledged',"
+            "cloud_row_version=1,accepted_payload_json='{}',sync_status='clean'",
+            (cloud.user_id,),
+        )
+    assert push_curated_reference_forks(cloud).pushed == 1
+    marked = json.dumps(
+        {**bundle_row(), "measurement_details_omitted": True},
+        ensure_ascii=False, sort_keys=True, separators=(",", ":"),
+    )
+    cloud.rows[0]["source_envelope_json"] = marked
+    cloud.rows[0]["source_sha256"] = hashlib.sha256(marked.encode("utf-8")).hexdigest()
+    with sqlite3.connect(isolated) as connection:
+        connection.execute("DELETE FROM curated_reference_fork_cloud_sync_state")
+        connection.execute("DELETE FROM curated_reference_forks")
+    result = pull_curated_reference_forks(cloud)
+    assert result.pulled == 0
+    assert any("omit measurement details" in error for error in result.errors)
+    with sqlite3.connect(isolated) as connection:
+        assert connection.execute("SELECT count(*) FROM curated_reference_forks").fetchone()[0] == 0
