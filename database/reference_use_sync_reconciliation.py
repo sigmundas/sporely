@@ -191,23 +191,40 @@ def _write_state(
     sync_status: str,
     conflict: dict[str, Any] | None = None,
 ) -> None:
+    accepted = _canonical_json(payload)
+    conflict_json = _canonical_json(conflict) if conflict is not None else None
+    last_error = "remote/local observation-use conflict" if conflict else None
     connection.execute(
         """
         UPDATE observation_reference_use_cloud_sync_state
         SET cloud_user_id=?, remote_identity_state='acknowledged',
             cloud_row_version=?, accepted_payload_json=?, sync_status=?,
             conflict_json=?, retry_count=0, last_error=?,
-            last_attempted_at=CURRENT_TIMESTAMP, updated_at=CURRENT_TIMESTAMP
+            updated_at=CURRENT_TIMESTAMP
         WHERE use_id=?
+          -- Pull is not an upload attempt: an unchanged row is left untouched
+          -- (issue #11) and last_attempted_at is owned by the push executor.
+          AND NOT (
+            cloud_user_id IS ? AND remote_identity_state='acknowledged'
+            AND cloud_row_version IS ? AND accepted_payload_json IS ?
+            AND sync_status IS ? AND conflict_json IS ? AND retry_count=0
+            AND last_error IS ?
+          )
         """,
         (
             cloud_user_id,
             row_version,
-            _canonical_json(payload),
+            accepted,
             sync_status,
-            _canonical_json(conflict) if conflict is not None else None,
-            "remote/local observation-use conflict" if conflict else None,
+            conflict_json,
+            last_error,
             use_id,
+            cloud_user_id,
+            row_version,
+            accepted,
+            sync_status,
+            conflict_json,
+            last_error,
         ),
     )
 

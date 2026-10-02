@@ -405,22 +405,35 @@ def _save_acknowledged_state(
     row_version: int,
     status: str,
 ) -> None:
+    accepted = _canonical_json(remote_payload)
     connection.execute(
         """
         UPDATE reference_cloud_sync_state
         SET cloud_user_id=?, remote_identity_state='acknowledged',
             cloud_row_version=?, accepted_payload_json=?, sync_status=?,
             conflict_json=NULL, retry_count=0, last_error=NULL,
-            last_attempted_at=CURRENT_TIMESTAMP, updated_at=CURRENT_TIMESTAMP
+            updated_at=CURRENT_TIMESTAMP
         WHERE entity_type=? AND entity_id=?
+          -- Pull is not an upload attempt: an unchanged row is left untouched
+          -- (issue #11) and last_attempted_at is owned by the push executor.
+          AND NOT (
+            cloud_user_id IS ? AND remote_identity_state='acknowledged'
+            AND cloud_row_version IS ? AND accepted_payload_json IS ?
+            AND sync_status IS ? AND conflict_json IS NULL AND retry_count=0
+            AND last_error IS NULL
+          )
         """,
         (
             cloud_user_id,
             row_version,
-            _canonical_json(remote_payload),
+            accepted,
             status,
             kind,
             entity_id,
+            cloud_user_id,
+            row_version,
+            accepted,
+            status,
         ),
     )
 

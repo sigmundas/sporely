@@ -806,12 +806,12 @@ class ReferenceCloudSyncStateRepository:
                 """
                 UPDATE reference_cloud_sync_state
                 SET sync_status='clean', conflict_json=NULL, retry_count=0,
-                    last_error=NULL, last_attempted_at=?, updated_at=CURRENT_TIMESTAMP
+                    last_error=NULL, updated_at=CURRENT_TIMESTAMP
                 WHERE entity_type=? AND entity_id=?
                   AND remote_identity_state='acknowledged'
                   AND sync_status!='conflict'
                 """,
-                (_attempted_at(), entity_type, entity_id),
+                (entity_type, entity_id),
             )
             connection.commit()
             return cursor.rowcount == 1
@@ -1248,11 +1248,11 @@ class ReferenceCloudSyncStateRepository:
                 """
                 UPDATE observation_reference_use_cloud_sync_state
                 SET sync_status='clean', conflict_json=NULL, retry_count=0,
-                    last_error=NULL, last_attempted_at=?, updated_at=CURRENT_TIMESTAMP
+                    last_error=NULL, updated_at=CURRENT_TIMESTAMP
                 WHERE use_id=? AND remote_identity_state='acknowledged'
                   AND sync_status!='conflict'
                 """,
-                (_attempted_at(), use_id),
+                (use_id,),
             )
             connection.commit()
             return cursor.rowcount == 1
