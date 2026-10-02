@@ -1,0 +1,121 @@
+{
+ "canonical_scientific_name": "Mycena leptocephala",
+ "citation": {
+  "authors": [],
+  "citation_key": "sporely-contribution-230f78dad2564cfb9db53fdba58a3461",
+  "citation_override": null,
+  "container_title": null,
+  "doi": null,
+  "edition": null,
+  "editors": [
+   {
+    "family": "Erika",
+    "given": "Agnes"
+   },
+   {
+    "family": "Editorson",
+    "given": "Bertil"
+   }
+  ],
+  "full_citation": "Erika \\1\\2. & Editorson \\1\\2. (ed.) (2008) Funga Nordica. Nordsvamp, Copenhagen.",
+  "isbn": null,
+  "issue": null,
+  "language": null,
+  "pages": null,
+  "place": "Copenhagen",
+  "publisher": "Nordsvamp",
+  "schema_version": 1,
+  "short_citation": "Funga Nordica",
+  "short_label": "Funga Nordica",
+  "title": "Funga Nordica",
+  "type": "book",
+  "url": null,
+  "volume": null,
+  "year": 2008
+ },
+ "contribution_id": "230f78da-d256-4cfb-9db5-3fdba58a3461",
+ "contributor": {
+  "id": null,
+  "label": "Sporely user"
+ },
+ "exports": {
+  "bibtex": "@book{sporely-contribution-230f78dad2564cfb9db53fdba58a3461,\n  editor = {Erika, Agnes and Editorson, Bertil},\n  title = {Funga Nordica},\n  year = {2008},\n  publisher = {Nordsvamp},\n  address = {Copenhagen},\n}\n",
+  "csl_json": {
+   "editor": [
+    {
+     "family": "Erika",
+     "given": "Agnes"
+    },
+    {
+     "family": "Editorson",
+     "given": "Bertil"
+    }
+   ],
+   "id": "sporely-contribution-230f78dad2564cfb9db53fdba58a3461",
+   "issued": {
+    "date-parts": [
+     [
+      2008
+     ]
+    ]
+   },
+   "publisher": "Nordsvamp",
+   "publisher-place": "Copenhagen",
+   "title": "Funga Nordica",
+   "type": "book"
+  },
+  "plain_text": "Erika \\1\\2. & Editorson \\1\\2. (ed.) (2008) Funga Nordica. Nordsvamp, Copenhagen.\n"
+ },
+ "relationship_roles": [
+  "compared"
+ ],
+ "revision": 2,
+ "shared_at": "2026-10-01T14:49:33.030435+00:00",
+ "snapshot": {
+  "character": "spore_size",
+  "data_kind": "range",
+  "doi": null,
+  "full_citation": "Erika \\1\\2. & Editorson \\1\\2. (ed.) (2008) Funga Nordica. Nordsvamp, Copenhagen.",
+  "isbn": null,
+  "locator_text": null,
+  "measurements": {
+   "length_core_max": 11,
+   "length_core_min": 8,
+   "length_max": null,
+   "length_mean": null,
+   "length_min": null,
+   "q_max": 2.2,
+   "q_mean": null,
+   "q_min": 1.7,
+   "sample_size": null,
+   "specimen_count": null,
+   "width_core_max": 6,
+   "width_core_min": 4,
+   "width_max": null,
+   "width_mean": null,
+   "width_min": null
+  },
+  "method": {
+   "measurement_method": null,
+   "mount_medium": null,
+   "preparation": null,
+   "stain": null
+  },
+  "name_as_published": "Mycena metata",
+  "page_from": null,
+  "page_to": null,
+  "raw_points": null,
+  "raw_text": "8-11 x 4-6, q=1.7-2.2",
+  "reference_measurement_set_id": "230f78da-d256-4cfb-9db5-3fdba58a3461",
+  "reference_revision": 2,
+  "reference_treatment_id": "5d313115-de57-5dc4-904e-260e17552410",
+  "reference_work_id": "8aa0b4c7-c325-546e-b651-9a785df27961",
+  "schema_version": 1,
+  "short_label": "Funga Nordica",
+  "taxon_id": null,
+  "work_type": "book",
+  "year": 2008
+ },
+ "sporely_taxon_id": 34615,
+ "status": "shared"
+}

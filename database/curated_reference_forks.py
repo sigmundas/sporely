@@ -87,6 +87,13 @@ _CITATION_KEYS = frozenset({
     "issue", "pages", "doi", "isbn", "url", "language", "short_citation",
     "full_citation",
 })
+# Served since sporely-web 20260930232633: the shared candidate's work carries
+# ``short_label`` (the snapshot label, <=512) and ``citation_override``
+# (<=8192), and the public citation is ``work || {schema_version,
+# citation_key, short_citation, full_citation}``, so both keys appear in every
+# newer citation. Older revisions lack them; both shapes are accepted.
+_CITATION_WORK_KEYS = frozenset({"short_label", "citation_override"})
+_CITATION_KEYS_WITH_WORK = _CITATION_KEYS | _CITATION_WORK_KEYS
 _EXPORT_KEYS = frozenset({"plain_text", "bibtex", "csl_json"})
 _AGENT_KEYS = frozenset({"family", "given", "literal"})
 _CSL_KEYS = frozenset({
@@ -438,6 +445,13 @@ def normalize_curated_bundle(
         raise CuratedReferenceError("invalid publication timestamp") from exc
     snapshot = _validate_snapshot(row["snapshot"], set_id, revision)
     citation = _exact_mapping(row["citation"], _CITATION_KEYS)
+    if citation is None:
+        citation = _exact_mapping(row["citation"], _CITATION_KEYS_WITH_WORK)
+        if citation is not None and not (
+            _bounded_text(citation["short_label"], 512)
+            and _bounded_text(citation["citation_override"], 8192)
+        ):
+            raise CuratedReferenceError("invalid curated citation label or override")
     exports = _exact_mapping(row["exports"], _EXPORT_KEYS)
     if citation is None or citation["schema_version"] != 1 or exports is None:
         raise CuratedReferenceError("invalid curated citation or exports")
