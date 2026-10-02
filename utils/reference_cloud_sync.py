@@ -67,6 +67,17 @@ class ReferenceSyncResult:
     capability_holds: tuple[str, ...] = ()
 
 
+#: Block reasons that only mean "the parent/predecessor has not converged
+#: yet". A row blocked for one of these while its set is capability-held is
+#: part of that hold; every other reason (account mismatch, missing
+#: dependency, invalid cloud identity, ...) surfaces as itself.
+_HOLD_INHERITING_BLOCK_REASONS = frozenset({
+    "parent_not_acknowledged",
+    "parent_not_converged",
+    "superseded_set_not_acknowledged",
+})
+
+
 class _CapabilityHolds:
     """Per-push view of Stage M capability holds.
 
@@ -981,16 +992,25 @@ def _push_reference_library(client: object) -> ReferenceSyncResult:
     for item in final_plan.live:
         if item.entity_type not in _REFERENCE_TYPES or item.blocked_reason == "conflict":
             continue
-        reason = item.blocked_reason or (
-            _executor_use_blocked(item, cloud_user_id)
-            if item.entity_type == "observation_use"
-            else _executor_live_blocked(item, cloud_user_id)
-        )
+        reason = item.blocked_reason
+        if reason is None or reason in _HOLD_INHERITING_BLOCK_REASONS:
+            # The executor check is more specific (it sees, e.g., an invalid
+            # observation cloud id before the unconverged parent).
+            replace_item = replace(item, blocked_reason=None)
+            reason = (
+                _executor_use_blocked(replace_item, cloud_user_id)
+                if item.entity_type == "observation_use"
+                else _executor_live_blocked(replace_item, cloud_user_id)
+            ) or reason
         if reason is None:
             continue
         # A row waiting only on a capability-held set is part of that hold,
         # not a sync error repeated every sync.
-        held = holds.dependency_held_status(item.entity_type, item.entity_id)
+        held = (
+            holds.dependency_held_status(item.entity_type, item.entity_id)
+            if reason in _HOLD_INHERITING_BLOCK_REASONS
+            else None
+        )
         if held is not None:
             capability_holds.append(f"{item.entity_type}:{item.entity_id}:{held}")
         else:

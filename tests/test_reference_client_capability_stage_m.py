@@ -649,3 +649,22 @@ def test_one_bad_item_does_not_fail_the_page(caplog):
     bundles = search_shared_reference_contributions(Client(), TAXON)
     assert [bundle.measurement_details_omitted for bundle in bundles] == [False, True]
     assert sum("skipping" in record.message for record in caplog.records) == 3
+
+
+def test_other_block_reasons_of_a_held_sets_child_surface_as_themselves(databases):
+    _graph(with_use=True)
+    connection = schema.get_connection()
+    try:
+        connection.execute("UPDATE observations SET cloud_id='not-a-cloud-id' WHERE id=1")
+        connection.commit()
+    finally:
+        connection.close()
+    client = HoldClient()
+
+    result = sync_reference_library(client)
+
+    assert result.capability_holds == ("measurement_set:set-a:older_client_active",)
+    assert any(
+        item.startswith("observation_use:") and item.endswith(":invalid_observation_cloud_id")
+        for item in result.blocked
+    )
