@@ -135,3 +135,130 @@ Source: former `PLAN.md`; status could not be established safely from this repos
 ## Cloud media recovery: handle local image whose matching cloud image is soft-deleted
 
 Reproduce with observation 604 / local image 3258 / cloud image 3694. Determine when recovery should explicitly restore the existing cloud identity versus preserve deletion and report a conflict. Do not silently create a duplicate image.
+
+# Parse references/citations from bibtex
+Example:
+@book{guzman1983genus,
+  title={The Genus Psilocybe: A Systematic Revision of the Known Species Including the History, Distribution and Chemistry of the Hallucinogenic Species},
+  author={Guzm{\'a}n, Gast{\'o}n},
+  series={Beihefte zur Nova Hedwigia},
+  volume={74},
+  year={1983},
+  publisher={J. Cramer},
+  address={Vaduz},
+  pages={1--439}
+}
+
+# Selecting a taxon for comparison
+Manual testing confirms the deferred reference-taxon mismatch bug.
+Reproduction:
+- observation has species A;
+- open Add Reference → Add new;
+- choose species B from an AI suggestion in Reference taxon;
+- enter literature data for species B;
+- Add to plot / save;
+- current code shows the legacy dialog saying species B differs from the observation taxon and asks whether this is a historical/synonym name.
+This dialog must not appear in this workflow.
+Reference taxon is an independent comparison/reference target. Choosing another species there is normal and must never be treated as an attempted change to the observation's identification.
+Fix the guard condition, not merely the wording.
+Required behavior:
+- Add Reference / Enter manually + different Reference taxon → no mismatch confirmation.
+- the new TaxonTreatment / measurement set is normalized to the selected Reference taxon;
+- name_as_published remains the publication's actual name;
+- the observation's taxon/identity remains untouched;
+- observation-drift protection must still work if the observation itself changes while the dialog is open.
+Preserve the legacy mismatch protection only in any flow that genuinely edits or derives from the observation's own identification.
+Add a regression test specifically using an AI suggestion as the Reference taxon and a different observation species. Assert no QMessageBox question is invoked and the resulting reference is stored under the AI-selected reference taxon while the observation identity is unchanged.
+
+
+
+## taxon-dialog fix
+Two more manual-test findings in the Analysis reference panel.
+1. Reference list wastes available vertical space
+With 4+ references, the fourth row requires scrolling even though there is a large unused area immediately below the Reference values section.
+I checked the current layout:
+- ComparisonListWidget has setMinimumHeight(160);
+- reference_section is Expanding;
+- but its containing top_sections is QSizePolicy.Maximum;
+- left_layout.addWidget(top_sections, 0) is followed by left_layout.addStretch(1).
+So the surrounding layout keeps the comparison section close to its size hint and gives the remaining height to an empty stretch.
+Fix the layout so Reference values consumes available vertical space before its internal scrollbar is needed. Do not simply increase a hard-coded fixed height. On a window like the attached screenshot, four or five rows should all be visible without scrolling; scrolling should remain available for genuinely long lists.
+Add a UI/layout regression test or renderer scenario with at least 5 comparison rows.
+2. A range reference is being drawn as an ellipse
+In the same test, the first three Funga Nordica references render correctly as range rectangles, but the fourth (P. fimicola, Funga Nordica 2008) renders as an ellipse.
+The comparison-list subtitle is also different:
+- correct rows show range · <raw expression>;
+- the problematic row shows only Funga Nordica (2008).
+Investigate the actual persisted measurement set / observation-reference snapshot and resolved reference_series payload for this row. Do not fix this cosmetically in the matplotlib layer.
+If it contains literature L/W range bounds, it must travel through the same normalized range/summary translation as the other references and render:
+- solid/translucent core rectangle for typical/core bounds;
+- dotted outer rectangle when exceptional min/max exist;
+- no confidence ellipse invented from literature ranges.
+Determine why this reference is taking the legacy/ellipse path and fix that source-path inconsistency. Add a regression using four references where the fourth is a normalized literature range.
+Keep PR #7 unmerged and include these fixes together with the already identified Reference-taxon mismatch-popup fix.
+
+## hint bar must not scroll away
+Problem
+In both dialogs:
+- Edit reference
+- Add reference
+the bottom hint/help bar is currently inside the scrollable content area.
+That means if the user scrolls upward, the hint bar disappears from view.
+This is wrong. The hint bar is part of the dialog chrome / action area, not part of the document body.
+Required behavior
+Move the hint/help bar so it is anchored with the bottom action area, alongside / just above the button row, and always visible regardless of scroll position.
+Applies to:
+1. Edit reference dialog
+2. Add reference dialog
+Expected layout
+The dialog should behave like this:
+- Scrollable area: the actual form content only
+- Fixed bottom area:
+  - hint/help/status bar
+  - action buttons (Save, Cancel, Delete / Add to diagram, Save to library, etc.)
+In other words:
+- scrolling should move the form fields and content,
+- but not the hint bar,
+- and not the action buttons.
+Why
+The hint text is contextual guidance for the current input state.
+If it disappears when the form scrolls, it becomes much less useful.
+Acceptance criteria
+- In Edit reference, scroll to the top and bottom: the hint bar remains visible at the bottom.
+- In Add reference, scroll to the top and bottom: the hint bar remains visible at the bottom.
+- The hint bar still updates correctly with focus / validation / parse context.
+- The action buttons remain fixed as before (or are fixed together with the hint bar if they were not already).
+- No overlap, clipping, or double scrollbars introduced.
+- The available content area shrinks appropriately so the fixed footer does not cover content.
+Implementation preference
+Use a layout where:
+- the main content area is the only scroll container,
+- the footer/action region is separate and fixed within the dialog,
+- the hint bar belongs to that footer region.
+Please include
+- the code changes,
+- focused tests if practical,
+- and a short note on which widgets/layout containers were changed.
+
+
+
+## Reference taxon UI
+- **Referansetakson** ([add_reference_dialog.py:751-848](ui/add_reference_dialog.py#L751-L848)) is a plain editable dropdown with no taxonomy search. It lists "Use observation taxon" plus the AI suggestions. Typing "Slekt art" + Enter is just split into two words.
+- **AI suggestions and typed names carry no taxon ID** (`taxon_id: None`). That's what the amber "Ingen taksonidentifikator er angitt" warning means. A reference made that way isn't linked to the taxonomy, so it won't line up with species pages or default sharing, which need a registry species.
+- **Takson** ([reference_entry_editor.py:648-658](ui/reference_entry_editor.py#L648-L658)) is just a read-only copy of the choice above. It adds nothing.
+- **Navn som publisert** is a required field in the data model, prefilled with the chosen name. It's only useful for an old name or spelling variant.
+
+**What I'd suggest: one searchable species field**
+
+1. **A single field "Art / Species"** replaces Referansetakson and Takson. It reuses the app's existing taxonomy search (`TaxonInputController`, already used for observation identification):
+   - **Before you type:** the dropdown shows *Observasjonens takson* and the *AI-forslag*, with the AI names looked up in the taxonomy so they carry a real taxon ID.
+   - **As you type:** it searches all species by scientific *and* vernacular name, so "Flat…" or "Pholiota sq…" both work. Each row shows the scientific name with the Norwegian name beside it, and a synonym shows "syn. → accepted name" and links to the accepted species.
+   - **Choosing a row** sets the taxon ID, so there's no unlinked reference and the amber warning only appears if you deliberately type something not in the taxonomy.
+2. **The vernacular name** appears next to the chosen species, read-only, and is searchable in the same field. A separate vernacular input would just be a second way to set the same thing.
+3. **Navn som publisert** stays, because the publication's own name matters scientifically (e.g. *Pholiota squarrosipes* published under an older combination). It becomes a small optional line under the species field:
+   - It's filled in automatically with the name you picked.
+   - If you picked a synonym row, it's filled with that synonym, while the reference links to the accepted species.
+   - You only touch it for spelling variants or old combinations.
+
+Your rule still holds: the observation's own identification is never changed. The AI only gives starting points, and you can pick any species.
+

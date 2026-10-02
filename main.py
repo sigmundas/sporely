@@ -79,7 +79,7 @@ from utils.ui_language import set_running_ui_language
 from ui.main_window import MainWindow
 from ui.styles import cache_system_dark, _is_dark
 
-APP_VERSION = "0.9.24"
+APP_VERSION = "0.9.25"
 
 
 # Publish the running version to the cloud-sync layer so structured spore
