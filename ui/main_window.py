@@ -193,6 +193,7 @@ from database.schema import (
 )
 from references.reference_plotting import (
     range_payload_is_plottable,
+    translate_legacy_literature_range,
     translate_observation_reference_use,
 )
 from utils.annotation_capture import save_spore_annotation
@@ -9068,6 +9069,12 @@ class MainWindow(GeometryMixin, QMainWindow):
             entry = self._normalize_reference_series_entry(raw_entry)
             if not entry:
                 continue
+            # Legacy literature rows with explicit L/W bounds are read as
+            # the same normalized range shape library ranges use (a copy;
+            # the stored series is untouched).
+            legacy_range = translate_legacy_literature_range(entry["data"])
+            if legacy_range is not None:
+                entry = {**entry, "data": legacy_range}
             data = entry["data"]
             preferred_color = str(data.get("plot_color") or "").strip().lower()
             if preferred_color and not QColor(preferred_color).isValid():
@@ -18405,7 +18412,7 @@ class MainWindow(GeometryMixin, QMainWindow):
             normalized_use_id = str(data.get("observation_reference_use_id") or "").strip()
             reference_data_kind = str(data.get("reference_data_kind") or "").strip().lower()
             if (
-                normalized_use_id
+                (normalized_use_id or data.get("legacy_literature_range"))
                 and kind == "reference"
                 and reference_data_kind in ("range", "summary")
             ):

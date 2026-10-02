@@ -468,3 +468,78 @@ __all__ = [
     "translate_observation_reference_use",
     "translate_observation_reference_uses",
 ]
+
+
+# --- Legacy literature rows ----------------------------------------------------
+
+def _fmt_um(value: float) -> str:
+    text = f"{float(value):.2f}".rstrip("0").rstrip(".")
+    return text
+
+
+def _dimension_expression(low_ext, low, high, high_ext) -> str:
+    if low is None or high is None:
+        low, high = low_ext, high_ext
+        low_ext = high_ext = None
+    if low is None or high is None:
+        return ""
+    text = f"{_fmt_um(low)}–{_fmt_um(high)}"
+    if low_ext is not None and float(low_ext) < float(low):
+        text = f"({_fmt_um(low_ext)}–){text}"
+    if high_ext is not None and float(high_ext) > float(high):
+        text = f"{text}(–{_fmt_um(high_ext)})"
+    return text
+
+
+def translate_legacy_literature_range(data: dict) -> dict | None:
+    """Read-time translation of a legacy (pre-library) literature row.
+
+    Classification: a row is a legacy literature range when it is a
+    ``source_kind == 'reference'`` entry (or has no kind), is not a library
+    use (no ``observation_reference_use_id``), carries no point data, and
+    has explicit length AND width bounds (a typical 5–95 pair
+    ``*_p05``/``*_p95`` or an extreme ``*_min``/``*_max`` pair per axis).
+    Such a row is translated to the same ``reference_data_kind='range'``
+    shape library ranges use (core = typical pair, exceptional = min/max),
+    so it plots as rectangles regardless of the Ellipse/Square setting.
+
+    Everything else -- point/observation datasets, and legacy rows with
+    only means/Parmasto statistics and no explicit bounds -- returns
+    ``None`` and keeps following the Ellipse/Square setting. The stored
+    row is never modified; a copy is returned.
+    """
+    if not isinstance(data, dict):
+        return None
+    kind = str(data.get("source_kind") or "reference").strip().lower()
+    if kind != "reference" or data.get("observation_reference_use_id"):
+        return None
+    if data.get("points"):
+        return None
+    values = {k: _float_or_none(data.get(k)) for k in (
+        "length_min", "length_p05", "length_p95", "length_max",
+        "width_min", "width_p05", "width_p95", "width_max")}
+
+    def _has_pair(axis: str) -> bool:
+        return ((values[f"{axis}_p05"] is not None and values[f"{axis}_p95"] is not None)
+                or (values[f"{axis}_min"] is not None and values[f"{axis}_max"] is not None))
+
+    if not (_has_pair("length") and _has_pair("width")):
+        return None
+    out = dict(data)
+    for axis in ("length", "width"):
+        if values[f"{axis}_p05"] is None or values[f"{axis}_p95"] is None:
+            # Only an extreme pair: that is the drawn range itself.
+            out[f"{axis}_p05"] = values[f"{axis}_min"]
+            out[f"{axis}_p95"] = values[f"{axis}_max"]
+            out[f"{axis}_min"] = None
+            out[f"{axis}_max"] = None
+    out["reference_data_kind"] = "range"
+    out["legacy_literature_range"] = True
+    if not str(out.get("raw_text") or "").strip():
+        length = _dimension_expression(values["length_min"], values["length_p05"],
+                                       values["length_p95"], values["length_max"])
+        width = _dimension_expression(values["width_min"], values["width_p05"],
+                                      values["width_p95"], values["width_max"])
+        if length and width:
+            out["raw_text"] = f"{length} × {width}"
+    return out

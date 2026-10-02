@@ -182,7 +182,7 @@ class ComparisonRow:
 
 
 def _format_detail(data: dict) -> str:
-    if data.get("observation_reference_use_id"):
+    if data.get("observation_reference_use_id") or data.get("legacy_literature_range"):
         # Library-attached rows: mirror AddReferenceDialog._add_candidate_item's
         # "kind · raw expression" detail instead of falling through to
         # ``source`` below, which is the same short_label already shown in
