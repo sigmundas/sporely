@@ -7976,9 +7976,22 @@ class MainWindow(GeometryMixin, QMainWindow):
         top_sections_layout.addWidget(plot_section)
         top_sections_layout.addWidget(reference_section, 1)
 
-        left_layout.addWidget(top_sections, 0)
-        left_layout.addStretch(1)
+        # The Reference values list takes the column's spare height before
+        # its own scrollbar appears. While the section is expanded the top
+        # block (Plot settings + Reference values) gets the stretch; when
+        # it is collapsed a trailing spacer takes it instead so the
+        # collapsed header does not float in a tall empty block. The
+        # gallery card below keeps its natural (Maximum) height.
+        self._reference_values_top_sections = top_sections
+        self._reference_values_section = reference_section
+        self._reference_values_left_layout = left_layout
+        self._reference_values_top_index = left_layout.count()
+        left_layout.addWidget(top_sections, 1)
+        self._reference_values_tail_index = left_layout.count()
+        left_layout.addStretch(0)
         left_layout.addWidget(gallery_group)
+        reference_section._toggle_btn.toggled.connect(self._apply_reference_values_stretch)
+        self._apply_reference_values_stretch(reference_section._toggle_btn.isChecked())
 
         analysis_button_height = max(35, QPushButton(self.tr("Plot")).sizeHint().height())
 
@@ -8576,6 +8589,16 @@ class MainWindow(GeometryMixin, QMainWindow):
         scheduler = getattr(observations_tab, "schedule_metadata_cloud_sync", None) if observations_tab is not None else None
         if callable(scheduler):
             scheduler(obs_id)
+
+    def _apply_reference_values_stretch(self, expanded: bool) -> None:
+        """Give the left column's spare height to the expanded Reference
+        values list, or to a trailing spacer while it is collapsed."""
+        layout = self._reference_values_left_layout
+        policy = QSizePolicy.Expanding if expanded else QSizePolicy.Maximum
+        self._reference_values_section.setSizePolicy(QSizePolicy.Expanding, policy)
+        self._reference_values_top_sections.setSizePolicy(QSizePolicy.Expanding, policy)
+        layout.setStretch(self._reference_values_top_index, 1 if expanded else 0)
+        layout.setStretch(self._reference_values_tail_index, 0 if expanded else 1)
 
     def _build_reference_panel(self):
         """Build the Reference values section: the comparison list, Add

@@ -1182,6 +1182,44 @@ def _analysis_panel_longnames(context: ReviewContext):
     return panel
 
 
+def _analysis_series_five_ranges() -> list[dict]:
+    rows = []
+    for index, (name, raw) in enumerate((
+        ("Psathyrella candolleana", "6.5-9 × 4-5"),
+        ("Psathyrella piluliformis", "4.5-6 × 3-3.5"),
+        ("Psathyrella spadiceogrisea", "7-9.5 × 4-5"),
+        ("Panaeolus fimicola", "11-14 × 7.5-9.5"),
+        ("Psathyrella corrugis", "11-14 × 6-7.5"),
+    )):
+        length, width = raw.split(" × ")
+        lmin, lmax = (float(v) for v in length.split("-"))
+        wmin, wmax = (float(v) for v in width.split("-"))
+        rows.append({
+            "key": f"use-{index}",
+            "data": {
+                "source_kind": "reference",
+                "observation_reference_use_id": f"use-{index}",
+                "short_label": "Funga Nordica (2008)",
+                "name_as_published": name,
+                "reference_data_kind": "range",
+                "raw_text": raw,
+                "length_p05": lmin, "length_p95": lmax,
+                "width_p05": wmin, "width_p95": wmax,
+            },
+            "enabled": True,
+        })
+    return rows
+
+
+def _analysis_panel_five_rows(context: ReviewContext):
+    """Five references at a tall window: the list uses the column's spare
+    height, so all five rows show without scrolling."""
+    window = _analysis_panel_window(context)
+    window.active_observation_id = None
+    window.reference_series = _analysis_series_five_ranges()
+    return window.create_gallery_panel()
+
+
 def _analysis_panel_suppressed(context: ReviewContext):
     """Category switched away from Spores: the comparison list must dim its
     reference rows and show the explanatory hint without the legacy table
@@ -1960,6 +1998,14 @@ def register_reference_scenarios(registry: ScenarioRegistry) -> None:
             description="The real Analysis-tab gallery panel with no observation loaded: the legacy form/table/Attach-library button are gone, only Add reference and Manage reference library remain, and Plot settings carries Shape/Min-Max.",
             viewport=(440, 780),
             build=_analysis_panel_empty,
+        ),
+        ReviewScenario(
+            id="reference.analysis-panel-five-rows",
+            group="reference-library",
+            title="Analysis tab reference panel — five references, tall window",
+            description="Five literature ranges with Plot settings collapsed at a tall viewport: the Reference values list takes the spare height so all five rows are visible without scrolling, and the gallery card stays below it.",
+            viewport=(440, 1000),
+            build=_analysis_panel_five_rows,
         ),
         ReviewScenario(
             id="reference.analysis-panel-populated",
