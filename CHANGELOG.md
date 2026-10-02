@@ -2,6 +2,28 @@
 
 All notable changes to Sporely are documented here.
 
+## 2026-10-02 (desktop 0.9.25)
+
+Requires server migrations `20261001195524`, `20261001213000`, `20261002120000` and `20261002150000` (sporely-web), all already live in production.
+
+### Added
+- **Reference sharing (#7).** *My shared references* lists your shared references as Shared, Stopped or Hidden, with Stop sharing / Share again per reference. Add Reference has a role selector (including *Contradicts*) and can attach to several observations at once, reporting the result per item. A reference's taxon is now independent of the observation's identification.
+- **Reference v2 readiness (#10).** The desktop declares its capabilities and reports its device; reference pulls are feed-based; writes that an older client could not handle are held instead of sent.
+
+### Changed
+- **Species database `tax-2026.09.30-01`.** Shows national scientific names by UI language (display only; stored identities are unchanged) and adds Swedish names and Dyntaxa ids from the reviewed Dyntaxa source, bound only through owner-approved mappings. Duplicate concepts retired by approved reviews now resolve to their surviving species. Production already serves this release.
+- **Publishing notices (#7).** "Make this observation public?" is simplified, with *Don't show again* (restorable in Preferences); the precise-location warning cannot be suppressed; new notices when attaching to a public observation and when spores become public. The Reference values list uses the available height, legacy literature ranges are drawn as range boxes, and the dialog has a hint bar.
+- **Image file names no longer include a timestamp (#8).**
+
+### Fixed
+- **Shared catalogue citations (#10)** — the catalogue was always empty.
+- **Reference set and treatment deletions now reach the cloud (#10).**
+- **A sync with no changes no longer re-sends reference uses or rewrites local status rows (#12, issue #11).**
+- **Copies of shared references store no contributor name and sync cleanly (#14).**
+
+### Notes
+- A local sync test harness (`tools/run_local_sync_harness.sh`) was added, and tests are isolated from the real user profile (#10, #13).
+
 ## 2026-09-26 (desktop 0.9.24)
 
 ### Changed
