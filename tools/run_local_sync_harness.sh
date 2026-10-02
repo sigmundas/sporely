@@ -9,13 +9,16 @@
 #     CLI cannot be linked to the production project.
 #   * Never edits the sporely-web repository: the migrations are exported with
 #     ``git archive`` into a temp dir.
-#   * Resets the local database only when no other session uses it: any client
-#     backend other than PostgREST's ``authenticator`` and the platform service
-#     roles aborts the run (pass --skip-reset to reuse the current database).
+#   * One harness at a time (lock directory $TMPDIR/sporely-local-sync-harness.lock).
+#   * Resets the local database only when it is provably idle: no client
+#     backend except the platform service roles and PostgREST's
+#     ``authenticator`` connections, and those idle for at least 60 s (no API
+#     traffic). Otherwise it refuses unless --force-reset is given
+#     (--skip-reset reuses the current database without resetting).
 #   * Each simulated device runs in its own process with its own temporary
 #     SPORELY_APP_DATA_DIR; the developer's real profile is never used.
 #
-# Usage: tools/run_local_sync_harness.sh [--skip-reset] [pytest args...]
+# Usage: tools/run_local_sync_harness.sh [--skip-reset|--force-reset] [pytest args...]
 set -euo pipefail
 
 ROOT="$(cd "$(dirname "$0")/.." && pwd)"
@@ -25,11 +28,29 @@ PY="${SPORELY_PYTHON:-/Users/sigmundas/Documents/Code/sporely/sporely-py/.venv/b
 DB_CONTAINER="${SPORELY_LOCAL_DB_CONTAINER:-supabase_db_zkpjklzfwzefhjluvhfw}"
 API_URL="http://127.0.0.1:54321"
 SKIP_RESET=0
-if [[ "${1:-}" == "--skip-reset" ]]; then SKIP_RESET=1; shift; fi
+FORCE_RESET=0
+case "${1:-}" in
+  --skip-reset) SKIP_RESET=1; shift ;;
+  --force-reset) FORCE_RESET=1; shift ;;
+esac
+
+is_local_url() {
+  "$PY" - "$1" <<'PYEOF'
+import sys
+from urllib.parse import urlsplit
+p = urlsplit(sys.argv[1])
+ok = p.scheme in {"http", "https"} and p.hostname in {"127.0.0.1", "localhost"} \
+    and p.username is None and p.password is None
+sys.exit(0 if ok else 1)
+PYEOF
+}
+
+LOCK="${TMPDIR:-/tmp}/sporely-local-sync-harness.lock"
+mkdir "$LOCK" 2>/dev/null || { echo "another harness run holds $LOCK (remove it if stale)"; exit 6; }
 
 start=$(date +%s)
 TREE="$(mktemp -d -t sporely-local-web-XXXXXX)"
-trap 'rm -rf "$TREE"' EXIT
+trap 'rm -rf "$TREE"; rmdir "$LOCK" 2>/dev/null || true' EXIT
 
 echo "== exporting $WEB_REF:supabase (read-only)"
 git -C "$WEB" fetch -q origin || echo "   (fetch failed; using local $WEB_REF)"
@@ -50,26 +71,30 @@ for file in $deferred; do
 done
 rm -rf "$TREE/supabase/.temp"
 
-curl -sf -o /dev/null "$API_URL/rest/v1/" -H "apikey: x" || {
-  code=$(curl -s -o /dev/null -w '%{http_code}' "$API_URL/rest/v1/" || true)
-  [[ "$code" =~ ^(200|401)$ ]] || { echo "local stack not reachable at $API_URL (start it with 'supabase start' in sporely-web)"; exit 2; }
-}
+is_local_url "$API_URL" || { echo "refusing non-local API_URL"; exit 4; }
+# Auth health only: a REST probe would itself count as API activity below.
+code=$(curl -s -o /dev/null -w '%{http_code}' "$API_URL/auth/v1/health" || true)
+[[ "$code" =~ ^(200|401)$ ]] || { echo "local stack not reachable at $API_URL (start it with 'supabase start' in sporely-web)"; exit 2; }
 
 if [[ $SKIP_RESET -eq 0 ]]; then
-  others="$(docker exec "$DB_CONTAINER" psql -U postgres -tAc "
+  busy="$(docker exec "$DB_CONTAINER" psql -U postgres -tAc "
     SELECT count(*) FROM pg_stat_activity
      WHERE backend_type = 'client backend' AND pid <> pg_backend_pid()
-       AND usename NOT IN ('authenticator','supabase_admin','supabase_auth_admin',
-                           'supabase_storage_admin','supabase_realtime_admin')")"
-  if [[ "${others// /}" != "0" ]]; then
-    echo "refusing to reset: $others other database session(s) connected"; exit 3
+       AND (usename NOT IN ('authenticator','supabase_admin','supabase_auth_admin',
+                            'supabase_storage_admin','supabase_realtime_admin')
+            OR (usename = 'authenticator'
+                AND (state <> 'idle' OR state_change > now() - interval '60 seconds')))")"
+  if [[ "${busy// /}" != "0" && $FORCE_RESET -eq 0 ]]; then
+    echo "refusing to reset: local database not provably idle ($busy busy session(s));"
+    echo "rerun later, use --skip-reset, or --force-reset if you are sure nothing else uses it"
+    exit 3
   fi
   echo "== resetting LOCAL database ($WEB_SHA without deferred migrations)"
   supabase db reset --local --no-seed --workdir "$TREE" --yes >"$TREE/reset.log" 2>&1 || { tail -20 "$TREE/reset.log"; exit 5; }
 fi
 
 eval "$(supabase status -o env --workdir "$TREE" 2>/dev/null | grep -E '^(ANON_KEY|SERVICE_ROLE_KEY|API_URL)=')"
-[[ "${API_URL:-}" == http://127.0.0.1:* || "${API_URL:-}" == http://localhost:* ]] || { echo "unexpected API_URL"; exit 4; }
+is_local_url "${API_URL:-}" || { echo "refusing non-local API_URL"; exit 4; }
 
 echo "== running local_supabase scenarios"
 cd "$ROOT"

@@ -20,8 +20,25 @@ from pathlib import Path
 ROOT = Path(__file__).resolve().parents[2]
 sys.path.insert(0, str(ROOT))
 
-URL = os.environ["SPORELY_LOCAL_SUPABASE_URL"]
-if not (URL.startswith("http://127.0.0.1:") or URL.startswith("http://localhost:")):
+from urllib.parse import urlsplit  # noqa: E402
+
+LOCAL_HOSTS = frozenset({"127.0.0.1", "localhost"})
+
+
+def is_local_url(url: str) -> bool:
+    try:
+        parts = urlsplit(str(url))
+    except ValueError:
+        return False
+    return (
+        parts.scheme in {"http", "https"}
+        and parts.hostname in LOCAL_HOSTS
+        and parts.username is None and parts.password is None
+    )
+
+
+URL = os.environ["SPORELY_LOCAL_SUPABASE_URL"].rstrip("/")
+if not is_local_url(URL):
     raise SystemExit("refusing a non-local Supabase URL")
 if not os.environ.get("SPORELY_APP_DATA_DIR"):
     raise SystemExit("a device needs its own SPORELY_APP_DATA_DIR")
@@ -34,6 +51,26 @@ import utils.sporely_cloud_auth as cloud_auth  # noqa: E402
 cloud_sync.SUPABASE_URL = URL
 cloud_sync.SUPABASE_KEY = os.environ["SPORELY_LOCAL_SUPABASE_ANON_KEY"]
 cloud_auth.SUPABASE_URL = URL
+# Computed at import from the production URL; repoint them too.
+cloud_auth._AUTH_URL = f"{URL}/auth/v1/oauth/authorize"
+cloud_auth._TOKEN_URL = f"{URL}/auth/v1/oauth/token"
+
+# Fail closed: every HTTP request this device makes must go to the local
+# stack. A non-local request raises (and is reported) instead of being sent.
+import requests  # noqa: E402
+
+NON_LOCAL_REQUESTS: list[str] = []
+_real_session_request = requests.Session.request
+
+
+def _local_only_request(self, method, url, *args, **kwargs):
+    if not is_local_url(url):
+        NON_LOCAL_REQUESTS.append(str(urlsplit(str(url)).hostname))
+        raise RuntimeError(f"harness blocked a non-local request to {urlsplit(str(url)).hostname}")
+    return _real_session_request(self, method, url, *args, **kwargs)
+
+
+requests.Session.request = _local_only_request
 cloud_sync.set_cloud_sync_source_app_version("0.9.99-harness")
 
 from database import schema  # noqa: E402
@@ -109,6 +146,34 @@ def _delete_set(args):
     return {"deleted": args["set_id"]}
 
 
+def _delete_treatment(args):
+    from database.reference_library import TaxonTreatmentRepository
+
+    TaxonTreatmentRepository.delete(args["treatment_id"])
+    return {"deleted": args["treatment_id"]}
+
+
+def _local_treatments(_args):
+    conn = schema.get_reference_connection()
+    try:
+        ids = [row[0] for row in conn.execute("SELECT id FROM reference_taxon_treatments")]
+    finally:
+        conn.close()
+    return {"treatments": sorted(ids)}
+
+
+def _local_set_row(args):
+    conn = schema.get_reference_connection()
+    try:
+        row = conn.execute(
+            "SELECT q_core_min, q_core_max FROM reference_measurement_sets WHERE id=?",
+            (args["set_id"],),
+        ).fetchone()
+    finally:
+        conn.close()
+    return {"row": list(row) if row else None}
+
+
 def _attach_public_use(args):
     from database.models import ObservationDB
     from database.reference_library import ObservationReferenceUseRepository
@@ -145,6 +210,9 @@ ACTIONS = {
     "local_sets": _local_sets,
     "create_set": _create_set,
     "delete_set": _delete_set,
+    "delete_treatment": _delete_treatment,
+    "local_treatments": _local_treatments,
+    "local_set_row": _local_set_row,
     "attach_public_use": _attach_public_use,
     "catalogue": _catalogue,
 }
@@ -154,4 +222,5 @@ if __name__ == "__main__":
     action, raw = sys.argv[1], (sys.argv[2] if len(sys.argv) > 2 else "{}")
     output = ACTIONS[action](json.loads(raw))
     output["rpc_calls"] = dict(RPC_CALLS)
+    output["non_local_requests"] = NON_LOCAL_REQUESTS
     print(json.dumps(output, default=str))

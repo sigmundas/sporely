@@ -15,13 +15,29 @@ import uuid
 from dataclasses import dataclass
 from pathlib import Path
 
+from urllib.parse import urlsplit
+
 import pytest
 import requests
 
 HERE = Path(__file__).resolve().parent
 URL = os.environ.get("SPORELY_LOCAL_SUPABASE_URL", "")
 SERVICE_KEY = os.environ.get("SPORELY_LOCAL_SUPABASE_SERVICE_KEY", "")
+ANON_KEY = os.environ.get("SPORELY_LOCAL_SUPABASE_ANON_KEY", "")
 DB_CONTAINER = os.environ.get("SPORELY_LOCAL_SUPABASE_DB_CONTAINER", "supabase_db_zkpjklzfwzefhjluvhfw")
+
+
+def is_local_url(url: str) -> bool:
+    """Parsed host must be 127.0.0.1/localhost; no userinfo, http(s) only."""
+    try:
+        parts = urlsplit(str(url))
+    except ValueError:
+        return False
+    return (
+        parts.scheme in {"http", "https"}
+        and parts.hostname in {"127.0.0.1", "localhost"}
+        and parts.username is None and parts.password is None
+    )
 
 
 def pytest_configure(config):
@@ -31,7 +47,7 @@ def pytest_configure(config):
 def _stack_ready() -> str | None:
     if os.environ.get("SPORELY_LOCAL_SUPABASE") != "1":
         return "set SPORELY_LOCAL_SUPABASE=1 (use tools/run_local_sync_harness.sh)"
-    if not (URL.startswith("http://127.0.0.1:") or URL.startswith("http://localhost:")):
+    if not is_local_url(URL):
         return "SPORELY_LOCAL_SUPABASE_URL must be a local URL"
     try:
         requests.get(f"{URL}/auth/v1/health", timeout=3)
@@ -114,7 +130,12 @@ class Device:
         )
         if done.returncode != 0:
             raise AssertionError(f"{self.name} {action} failed:\n{done.stderr[-4000:]}")
-        return json.loads(done.stdout.strip().splitlines()[-1])
+        output = json.loads(done.stdout.strip().splitlines()[-1])
+        if output.get("non_local_requests"):
+            raise AssertionError(
+                f"{self.name} {action} attempted non-local requests: {output['non_local_requests']}"
+            )
+        return output
 
     @property
     def device_id(self) -> str | None:

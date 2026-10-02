@@ -2,6 +2,7 @@
 from __future__ import annotations
 
 import pytest
+import requests
 
 from tests.local_supabase.conftest import sql
 
@@ -50,7 +51,7 @@ def test_2_no_change_sync_keeps_one_device(owner, device):
     assert second["rpc_calls"].get("record_reference_client_capabilities") == 1
 
 
-@pytest.mark.xfail(reason="issue #11: pre-existing reference re-push on a no-change sync", strict=False)
+@pytest.mark.xfail(reason="issue #11: pre-existing reference re-push on a no-change sync", strict=True)
 def test_2b_no_change_sync_sends_no_reference_writes(owner, device):
     a = device("a")
     created = a.run("create_set")
@@ -92,6 +93,16 @@ def test_4_deletion_on_b_arrives_on_a(owner, device):
 
     _assert_clean(a.run("sync", **owner.credentials))
     assert created["set_id"] not in a.run("local_sets")["sets"]
+
+    # The now-empty treatment is deleted too (its tombstone names its work).
+    b.run("delete_treatment", treatment_id=created["treatment_id"])
+    _assert_clean(b.run("sync", **owner.credentials))
+    assert sql(
+        "SELECT (deleted_at IS NOT NULL)::text FROM public.reference_taxon_treatments "
+        f"WHERE id = '{created['treatment_id']}'"
+    ) == [["true"]]
+    _assert_clean(a.run("sync", **owner.credentials))
+    assert created["treatment_id"] not in a.run("local_treatments")["treatments"]
     assert sorted(row[0] for row in _devices(owner.id)) == sorted([a.device_id, b.device_id])
 
 
@@ -151,7 +162,74 @@ def test_6_undeclared_write_registers_the_legacy_pseudo_device(owner, device):
     assert work_id
 
 
-@pytest.mark.skip(reason="withheld v2 content needs enhanced sets; measurement-content gates are closed "
-                         "and the v2 snapshot migration is deferred in production")
-def test_6b_withheld_v2_content():
+def _owner_token(owner) -> str:
+    from tests.local_supabase.conftest import ANON_KEY, URL
+
+    response = requests.post(
+        f"{URL}/auth/v1/token?grant_type=password",
+        headers={"apikey": ANON_KEY}, json=owner.credentials, timeout=10,
+    )
+    response.raise_for_status()
+    return response.json()["access_token"]
+
+
+def _rpc(token: str, name: str, body: dict):
+    from tests.local_supabase.conftest import ANON_KEY, URL
+
+    response = requests.post(
+        f"{URL}/rest/v1/rpc/{name}",
+        headers={"apikey": ANON_KEY, "Authorization": f"Bearer {token}"},
+        json=body, timeout=10,
+    )
+    response.raise_for_status()
+    return response.json()
+
+
+def test_6b_enhanced_set_is_withheld_from_v1_readers_and_served_to_capable_ones(owner, device):
+    a = device("a")
+    created = a.run("create_set")
+    _assert_clean(a.run("sync", **owner.credentials))
+    set_id = created["set_id"]
+    # Enhanced content cannot be created through this desktop (gates closed);
+    # make the synced set enhanced server-side (Q core is an extension column).
+    sql("UPDATE public.reference_measurement_sets SET q_min = 1.2, q_max = 1.6, "
+        f"q_core_min = 1.3, q_core_max = 1.5 WHERE id = '{set_id}'")
+    token = _owner_token(owner)
+    from tests.local_supabase.conftest import ANON_KEY, URL
+
+    legacy = requests.get(
+        f"{URL}/rest/v1/reference_measurement_sets?select=id&id=eq.{set_id}",
+        headers={"apikey": ANON_KEY, "Authorization": f"Bearer {token}"}, timeout=10,
+    )
+    legacy.raise_for_status()
+    assert legacy.json() == []  # non-capable (table) read omits it
+
+    v1_feed = _rpc(token, "list_reference_library_feed", {"p_entity": "measurement_set"})
+    assert set_id not in [row["id"] for row in v1_feed["rows"]]
+    assert v1_feed["withheld_count"] == 1
+    capable = _rpc(token, "list_reference_library_feed", {
+        "p_entity": "measurement_set",
+        "p_client_capabilities": {"reference_snapshot_versions": [1, 2]},
+    })
+    served = [row for row in capable["rows"] if row["id"] == set_id]
+    assert served and served[0]["q_core_min"] == 1.3 and capable["withheld_count"] == 0
+
+    row = sql(
+        "SELECT row_version, taxon_treatment_id::text FROM public.reference_measurement_sets "
+        f"WHERE id = '{set_id}'"
+    )[0]
+    refused = _rpc(token, "sync_reference_measurement_set", {
+        "p_payload": {"id": set_id, "taxon_treatment_id": row[1], "notes": "old client edit"},
+        "p_expected_row_version": int(row[0]),
+    })
+    assert refused == {"status": "requires_newer_client", "row": None}
+
+    # This desktop's capable pull reads the enhanced set without error.
+    _assert_clean(a.run("sync", **owner.credentials))
+    assert a.run("local_set_row", set_id=set_id)["row"] == [1.3, 1.5]
+
+
+@pytest.mark.skip(reason="v2 observation-use snapshots need the snapshot-v2 server migration "
+                         "20260914090000, which is deferred in production and omitted here")
+def test_6c_withheld_v2_use_snapshots():
     pass
