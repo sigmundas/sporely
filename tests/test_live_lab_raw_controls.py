@@ -2054,6 +2054,10 @@ def test_live_lab_committed_raw_edit_refreshes_thumbnail_caches_after_apply(tmp_
     monkeypatch.setattr(live_lab_tab, "render_raw_image", _fake_render_raw_jpeg)
     monkeypatch.setattr(live_lab_tab, "generate_all_sizes", lambda filepath, image_id: generate_calls.append((str(filepath), int(image_id))) or {})
     monkeypatch.setattr(live_lab_tab.SettingsDB, "set_setting", lambda *args, **kwargs: None)
+    # The thumbnail lookup reads the database; never depend on the
+    # developer's real profile having an image 101.
+    fake_thumb = str(tmp_path / "thumbnails" / "101_small.jpg")
+    monkeypatch.setattr(live_lab_tab, "get_thumbnail_path", lambda image_id, size: fake_thumb)
 
     assert live_lab_tab.LiveLabTab._begin_raw_edit_for_selected_image(state) is True
     assert live_lab_tab.LiveLabTab._apply_raw_edit_session(state) is True

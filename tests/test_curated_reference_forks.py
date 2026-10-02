@@ -127,8 +127,10 @@ def test_catalogue_read_requires_exact_positive_taxon_and_rejects_expansion():
         search_curated_catalogue(client, 0)
     expanded = copy.deepcopy(row)
     expanded["owner_id"] = "private"
-    with pytest.raises(CuratedReferenceError):
-        search_curated_catalogue(Client([expanded]), 2_100_000_081)
+    # Stage M: an unreadable item is skipped (and logged), never served and
+    # never allowed to fail the whole page.
+    assert search_curated_catalogue(Client([expanded]), 2_100_000_081) == ()
+    assert len(search_curated_catalogue(Client([expanded, row]), 2_100_000_081)) == 1
 
 
 def test_shared_catalogue_uses_approved_default_and_maximum_page_size():

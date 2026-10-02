@@ -457,3 +457,38 @@ def test_bundle_import_reports_unresolved_attachments(tmp_path, monkeypatch):
         conn.close()
     snap = json.loads(row[0])
     assert snap["reference_measurement_set_id"] == ms.id
+
+
+def test_bundle_import_rejects_frozen_provenance_without_measurement_details(tmp_path, monkeypatch):
+    """Stage M: a marked (projected) envelope is never imported as frozen provenance."""
+    from database.curated_reference_forks import CuratedReferenceError
+
+    source_paths, _obs_id, work, treatment, ms, _use = _seed_source(monkeypatch, tmp_path)
+    marked = {**bundle_row(), "measurement_details_omitted": True}
+    envelope = json.dumps(marked, ensure_ascii=False, sort_keys=True, separators=(",", ":"))
+    with sqlite3.connect(source_paths["ref"]) as connection:
+        connection.execute(
+            "INSERT INTO curated_reference_forks "
+            "(curated_measurement_set_id,bundle_revision,sporely_taxon_id,reference_work_id,"
+            "taxon_treatment_id,reference_measurement_set_id,source_envelope_json,source_sha256) "
+            "VALUES (?,?,?,?,?,?,?,?)",
+            (marked["curated_measurement_set_id"], 2, 2_100_000_081,
+             work.id, treatment.id, ms.id, envelope,
+             hashlib.sha256(envelope.encode("utf-8")).hexdigest()),
+        )
+    bundle_path = tmp_path / "bundle.zip"
+    db_share.export_database_bundle(
+        str(bundle_path), include_observations=True, include_images=False,
+        include_measurements=False, include_calibrations=False, include_reference_values=True,
+    )
+    dest_paths = _make_paths(tmp_path, "dest")
+    _isolate(dest_paths, monkeypatch)
+    _schema.init_database()
+
+    with pytest.raises(CuratedReferenceError, match="omit measurement details"):
+        db_share.import_database_bundle(
+            str(bundle_path), include_observations=True, include_images=False,
+            include_measurements=False, include_calibrations=False, include_reference_values=True,
+        )
+    with sqlite3.connect(dest_paths["ref"]) as connection:
+        assert connection.execute("SELECT COUNT(*) FROM curated_reference_forks").fetchone()[0] == 0

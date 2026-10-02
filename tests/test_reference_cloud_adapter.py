@@ -375,6 +375,11 @@ def test_cloud_client_rpc_wrappers_use_exact_stage3_parameters(
     }
     if extra:
         expected["p_snapshot_mode"] = "historical_import"
+    if rpc_name in {"sync_reference_measurement_set", "sync_observation_reference_use"}:
+        # Stage M: both capability-aware writes declare the client capability.
+        from utils.reference_client_capabilities import reference_client_capabilities
+
+        expected["p_client_capabilities"] = reference_client_capabilities()
     assert result == {"ok": True}
     assert calls == [(rpc_name, expected)]
 
@@ -384,8 +389,6 @@ def test_cloud_client_rpc_wrappers_use_exact_stage3_parameters(
     [
         ("list_reference_works", "reference_works"),
         ("list_reference_taxon_treatments", "reference_taxon_treatments"),
-        ("list_reference_measurement_sets", "reference_measurement_sets"),
-        ("list_observation_reference_uses", "observation_reference_uses"),
     ],
 )
 def test_cloud_client_owner_readers_use_complete_deterministic_pagination(
@@ -437,11 +440,12 @@ def test_curated_fork_reader_accepts_more_than_one_hundred_owner_rows(monkeypatc
     calls = []
     monkeypatch.setattr(
         client,
-        "_get_paginated",
-        lambda path, **options: calls.append((path, options)) or [],
+        "_list_reference_library_feed",
+        lambda entity, fields, **options: calls.append((entity, options)) or [],
     )
 
     assert client.list_reference_curated_forks() == []
+    assert calls[0][0] == "curated_fork"
     assert calls[0][1] == {
         "page_size": 10,
         "max_rows": 10_000,

@@ -17,7 +17,7 @@ ReferenceMutationStatus = Literal[
     "created", "updated", "no_change", "conflict", "blocked",
     "invalid_parent", "invalid_payload", "invalid_revision",
     "invalid_snapshot", "invalid_snapshot_mode", "invalid_successor",
-    "account_deleting",
+    "account_deleting", "requires_newer_client", "older_client_active",
 ]
 
 _STATUS_DISPOSITION = {
@@ -33,6 +33,10 @@ _STATUS_DISPOSITION = {
     "invalid_snapshot_mode": "rejected",
     "invalid_successor": "rejected",
     "account_deleting": "account_terminal",
+    # Stage M capability refusals (sporely-web 20261002120000): the write was
+    # not applied and must not be downgraded; the caller keeps it pending.
+    "requires_newer_client": "capability_hold",
+    "older_client_active": "capability_hold",
 }
 
 _WORK_KEYS = frozenset({

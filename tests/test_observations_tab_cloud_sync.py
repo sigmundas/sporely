@@ -2174,7 +2174,7 @@ def test_external_publish_cell_widget_combines_labels_for_multiple_ids():
 
 
 def test_observation_table_map_cell_widget_has_visible_minimum_height(qapp):
-    obs = observations_tab.ObservationDB.get_observation(451)
+    obs = _real_profile_observation_451()
     fake_tab, table = _make_observation_table_render_tab()
 
     row_cache = observations_tab.ObservationsTab._build_observation_table_rows_cache(
@@ -2215,7 +2215,7 @@ def test_observation_table_map_cell_widget_has_visible_minimum_height(qapp):
 
 
 def test_observation_table_row_cache_includes_local_publication_and_coordinate_fields_for_451():
-    obs = observations_tab.ObservationDB.get_observation(451)
+    obs = _real_profile_observation_451()
     fake_tab = SimpleNamespace(
         _build_common_name_map=lambda observations: {},
         _lookup_common_name=lambda obs, name_map: None,
@@ -2247,6 +2247,7 @@ def test_observation_table_row_cache_includes_local_publication_and_coordinate_f
 
 
 def test_cloud_row_cache_merges_linked_local_publication_and_coordinate_fields():
+    _real_profile_observation_451()
     fake_tab = SimpleNamespace(
         _observation_publish_target=lambda obs: obs.get("publish_target"),
     )
@@ -2356,7 +2357,7 @@ def test_cloud_row_cache_falls_back_to_ai_selected_scientific_name():
 
 
 def test_observation_table_renders_map_and_external_for_local_row_451(qapp):
-    obs = observations_tab.ObservationDB.get_observation(451)
+    obs = _real_profile_observation_451()
     fake_tab, table = _make_observation_table_render_tab()
 
     row_cache = observations_tab.ObservationsTab._build_observation_table_rows_cache(
@@ -2390,7 +2391,7 @@ def test_observation_table_renders_map_and_external_for_local_row_451(qapp):
 
 
 def test_observation_table_rerender_keeps_map_and_external_widgets(qapp):
-    obs = observations_tab.ObservationDB.get_observation(451)
+    obs = _real_profile_observation_451()
     builder_tab = SimpleNamespace(
         _build_common_name_map=lambda observations: {},
         _lookup_common_name=lambda obs, name_map: None,
@@ -2580,3 +2581,55 @@ def test_cloud_observation_table_row_cache_formats_date_and_spore_count():
 
     assert rows[0]["spore_short"] == "9"
     assert rows[0]["date"] == "2026-06-16 07:55"
+
+
+def test_cloud_sync_finished_appends_reference_capability_hold_notice():
+    """Stage M: a held reference change is a non-blocking notice, not an error."""
+    calls: dict[str, object] = {}
+
+    fake_tab = SimpleNamespace(
+        tr=lambda text: text,
+        refresh_observations=lambda show_status=False: None,
+        _cloud_sync_run_refresh_flow=False,
+        _cloud_sync_show_status=True,
+        _set_status_progress_visible=lambda visible: None,
+        _set_status_progress_cancel_visible=lambda visible: None,
+        _reset_status_progress=lambda: None,
+        _set_status_progress=lambda *args, **kwargs: None,
+        _finish_manual_refresh_flow=lambda: None,
+        _record_cloud_sync_status=lambda *args, **kwargs: calls.setdefault("record", (args, kwargs)),
+        _refresh_cloud_sync_idle_hint=lambda: None,
+        _show_cloud_conflict_dialog=lambda *args, **kwargs: None,
+        _prompt_for_deleted_cloud_observations=lambda *args, **kwargs: None,
+        set_status_message=lambda *args, **kwargs: calls.setdefault("status_message", (args, kwargs)),
+    )
+
+    observations_tab.ObservationsTab._on_cloud_sync_finished(
+        fake_tab,
+        {
+            "pushed": 0,
+            "pulled": 0,
+            "errors": [],
+            "sync_summary": {},
+            "reference_sync": {"capability_holds": ["measurement_set:a:older_client_active"]},
+        },
+    )
+
+    status_args, status_kwargs = calls["status_message"]
+    assert "1 reference change(s) are waiting" in status_args[0]
+    assert status_kwargs["level"] == "info"
+    record_args, record_kwargs = calls["record"]
+    assert record_kwargs["errors"] == []
+    assert record_kwargs["status"] == "ok"
+
+
+def _real_profile_observation_451():
+    """These tests were written against the developer's real database.
+
+    The suite now runs in an isolated app-data dir (tests/conftest.py), where
+    observation 451 does not exist; skip until they get a seeded fixture.
+    """
+    obs = observations_tab.ObservationDB.get_observation(451)
+    if obs is None:
+        pytest.skip("needs real-profile observation 451; requires a seeded fixture")
+    return obs

@@ -168,6 +168,7 @@ def test_sync_all_preserves_legacy_result_and_caller_modes(
             "terminal_errors": [],
             "conflicts": ["work:conflict-1"],
             "blocked": ["treatment:blocked-1"],
+            "capability_holds": [],
         },
     }
     assert sync_summary == {key: 0 for key in cloud_sync._SYNC_SUMMARY_KEYS}
@@ -304,6 +305,7 @@ def test_sync_all_pull_only_preserves_legacy_result_and_skips_pushes(
             "terminal_errors": [],
             "conflicts": [],
             "blocked": [],
+            "capability_holds": [],
         },
     }
     assert sync_summary == {key: 0 for key in cloud_sync._SYNC_SUMMARY_KEYS}
@@ -339,6 +341,7 @@ def test_empty_reference_result_adds_compatible_typed_surface() -> None:
             "terminal_errors": [],
             "conflicts": [],
             "blocked": [],
+            "capability_holds": [],
         },
     }
 

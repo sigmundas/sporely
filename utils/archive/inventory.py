@@ -63,6 +63,10 @@ MAIN_DATABASE_TABLES: dict[str, InventoryPolicy] = {
     "observation_reference_uses": InventoryPolicy(BackupPolicy.EXACT, PortablePolicy.DEPENDENCY),
     "observation_reference_use_cloud_sync_state": InventoryPolicy(BackupPolicy.EXACT, PortablePolicy.EXCLUDE),
     "observation_reference_use_cloud_tombstones": InventoryPolicy(BackupPolicy.EXACT, PortablePolicy.EXCLUDE),
+    # Use-feed pull cursor and remote tombstone markers: cloud transport
+    # state like the sync state above (portable export already strips them).
+    "observation_reference_use_cloud_pull_cursors": InventoryPolicy(BackupPolicy.EXACT, PortablePolicy.EXCLUDE),
+    "observation_reference_use_cloud_remote_tombstone_markers": InventoryPolicy(BackupPolicy.EXACT, PortablePolicy.EXCLUDE),
     "observations": InventoryPolicy(BackupPolicy.EXACT, PortablePolicy.ROOT),
     "portable_import_provenance": InventoryPolicy(BackupPolicy.EXACT, PortablePolicy.EXCLUDE),
     "session_logs": InventoryPolicy(BackupPolicy.EXACT, PortablePolicy.DEPENDENCY),
@@ -91,6 +95,14 @@ REFERENCE_DATABASE_TABLES.update({
         BackupPolicy.EXACT, PortablePolicy.EXCLUDE
     ),
     "reference_cloud_tombstones": InventoryPolicy(
+        BackupPolicy.EXACT, PortablePolicy.EXCLUDE
+    ),
+    # Library pull cursors and remote tombstone markers: cloud transport
+    # state (portable export already deletes both).
+    "reference_cloud_pull_cursors": InventoryPolicy(
+        BackupPolicy.EXACT, PortablePolicy.EXCLUDE
+    ),
+    "reference_cloud_remote_tombstone_markers": InventoryPolicy(
         BackupPolicy.EXACT, PortablePolicy.EXCLUDE
     ),
     "curated_reference_fork_cloud_sync_state": InventoryPolicy(
@@ -223,6 +235,9 @@ _DB_SECRET_KEYS = {
 }
 _DB_MACHINE_KEYS = {"originals_dir", "live_lab_watch_dir", "ingestion_hub_scan_dir"}
 _DB_REGENERABLE_SUFFIXES = ("_splitter_sizes",)
+# Completion markers of idempotent per-database repairs: re-derived by
+# re-running the repair, so a restore never trusts a marker over the rows.
+_DB_REGENERABLE_KEYS = {"cloud_location_precision_repair_v1_done"}
 _DB_EXACT_KEYS = {
     "active_reporting_target", "artportalen_username",
     "inat_client_id", "inat_redirect_uri", "original_storage_mode", "store_original_images",
@@ -237,6 +252,9 @@ _DB_EXACT_KEYS = {
     "sporely_debug_cloud_plan_override", "sporely_show_debug_cloud_plan_override",
     "sporely_cloud_media_signature_v1", "cloud_pending_image_repair_version",
     "cloud_pending_image_repair_at", "cloud_exif_backfill_checked",
+    # The user's "Don't show this again" choice for the publish notice
+    # (ui/publish_notice.py): a per-profile preference restored with backups.
+    "show_publish_notice",
 }
 _DB_EXACT_PREFIXES = (
     "artsobs_", "sporely_cloud_", "profile_", "last_used_", "gallery_settings_",
@@ -255,7 +273,7 @@ def database_setting_policy(key: str) -> SettingPolicy:
         return SettingPolicy.SECRET
     if normalized in _DB_MACHINE_KEYS or normalized.endswith("_dir") or normalized.endswith("_path"):
         return SettingPolicy.MACHINE_SPECIFIC
-    if normalized.endswith(_DB_REGENERABLE_SUFFIXES):
+    if normalized in _DB_REGENERABLE_KEYS or normalized.endswith(_DB_REGENERABLE_SUFFIXES):
         return SettingPolicy.REGENERABLE
     if normalized in _DB_EXACT_KEYS or normalized.startswith(_DB_EXACT_PREFIXES):
         return SettingPolicy.EXACT

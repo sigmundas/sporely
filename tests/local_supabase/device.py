@@ -1,0 +1,226 @@
+"""One simulated desktop "device" action, run in its own process.
+
+Invoked by the ``local_supabase`` scenarios as
+``python tests/local_supabase/device.py <action> <json-args>`` with
+``SPORELY_APP_DATA_DIR`` set to that device's own temp profile. It runs the
+desktop's real code (sync_all, reference repositories, catalogue reader)
+against the LOCAL stack: the Supabase URL/key module constants are pointed at
+``SPORELY_LOCAL_SUPABASE_URL`` before any request, and this refuses to run
+for any non-local URL. Prints one JSON object on the last stdout line.
+"""
+from __future__ import annotations
+
+import collections
+import json
+import os
+import sys
+import uuid
+from pathlib import Path
+
+ROOT = Path(__file__).resolve().parents[2]
+sys.path.insert(0, str(ROOT))
+
+from urllib.parse import urlsplit  # noqa: E402
+
+LOCAL_HOSTS = frozenset({"127.0.0.1", "localhost"})
+
+
+def is_local_url(url: str) -> bool:
+    try:
+        parts = urlsplit(str(url))
+    except ValueError:
+        return False
+    return (
+        parts.scheme in {"http", "https"}
+        and parts.hostname in LOCAL_HOSTS
+        and parts.username is None and parts.password is None
+    )
+
+
+URL = os.environ["SPORELY_LOCAL_SUPABASE_URL"].rstrip("/")
+if not is_local_url(URL):
+    raise SystemExit("refusing a non-local Supabase URL")
+if not os.environ.get("SPORELY_APP_DATA_DIR"):
+    raise SystemExit("a device needs its own SPORELY_APP_DATA_DIR")
+os.environ["PYTHON_KEYRING_BACKEND"] = "keyring.backends.fail.Keyring"
+os.environ.setdefault("SPORELY_TAXONOMY_V2", "0")
+
+import utils.cloud_sync as cloud_sync  # noqa: E402
+import utils.sporely_cloud_auth as cloud_auth  # noqa: E402
+
+cloud_sync.SUPABASE_URL = URL
+cloud_sync.SUPABASE_KEY = os.environ["SPORELY_LOCAL_SUPABASE_ANON_KEY"]
+cloud_auth.SUPABASE_URL = URL
+# Computed at import from the production URL; repoint them too.
+cloud_auth._AUTH_URL = f"{URL}/auth/v1/oauth/authorize"
+cloud_auth._TOKEN_URL = f"{URL}/auth/v1/oauth/token"
+
+# Fail closed: every HTTP request this device makes must go to the local
+# stack. A non-local request raises (and is reported) instead of being sent.
+import requests  # noqa: E402
+
+NON_LOCAL_REQUESTS: list[str] = []
+_real_session_request = requests.Session.request
+
+
+def _local_only_request(self, method, url, *args, **kwargs):
+    if not is_local_url(url):
+        NON_LOCAL_REQUESTS.append(str(urlsplit(str(url)).hostname))
+        raise RuntimeError(f"harness blocked a non-local request to {urlsplit(str(url)).hostname}")
+    return _real_session_request(self, method, url, *args, **kwargs)
+
+
+requests.Session.request = _local_only_request
+cloud_sync.set_cloud_sync_source_app_version("0.9.99-harness")
+
+from database import schema  # noqa: E402
+
+schema.init_database()
+
+RPC_CALLS: collections.Counter = collections.Counter()
+_real_rpc = cloud_sync.SporelyCloudClient._rpc
+
+
+def _counting_rpc(self, function_name, payload=None):
+    RPC_CALLS[str(function_name)] += 1
+    return _real_rpc(self, function_name, payload)
+
+
+cloud_sync.SporelyCloudClient._rpc = _counting_rpc
+
+
+def _login(args):
+    return cloud_sync.SporelyCloudClient.login(args["email"], args["password"])
+
+
+def _sync(args, *, pull_only=False):
+    client = _login(args)
+    result = cloud_sync.sync_all(
+        client, sync_images=False, materialize_remote_images=False,
+        full_pull=True, pull_only=pull_only,
+    )
+    return {
+        "errors": [str(item) for item in result.get("errors") or []],
+        "reference_sync": result.get("reference_sync"),
+        "cloud_writes_completed": result.get("cloud_writes_completed"),
+        "blocked_write_attempts": result.get("blocked_write_attempts"),
+    }
+
+
+def _local_sets(_args):
+    from database.reference_library import MeasurementSetRepository
+
+    conn = schema.get_reference_connection()
+    try:
+        ids = [row[0] for row in conn.execute("SELECT id FROM reference_measurement_sets")]
+    finally:
+        conn.close()
+    return {"sets": sorted(ids), "repository": MeasurementSetRepository.__name__}
+
+
+def _create_set(args):
+    from database.reference_library import (
+        MeasurementSet, MeasurementSetRepository, ReferenceWork,
+        ReferenceWorkRepository, TaxonTreatment, TaxonTreatmentRepository,
+    )
+
+    suffix = uuid.uuid4().hex[:8]
+    work = ReferenceWorkRepository.create(ReferenceWork(
+        str(uuid.uuid4()), "book", f"Harness work {suffix}", f"Harness {suffix}",
+        authors_json='[{"family":"Harness"}]',
+    ))
+    treatment = TaxonTreatmentRepository.create(
+        TaxonTreatment(str(uuid.uuid4()), work.id, args.get("name", "Russula paludosa"))
+    )
+    measurement_set = MeasurementSetRepository.create(MeasurementSet(
+        str(uuid.uuid4()), treatment.id, "spore_size", "range",
+        raw_text="7-9 x 5-6 um", length_min=7.0, length_max=9.0, width_min=5.0, width_max=6.0,
+    ))
+    return {"set_id": measurement_set.id, "work_id": work.id, "treatment_id": treatment.id}
+
+
+def _delete_set(args):
+    from database.reference_library import MeasurementSetRepository
+
+    MeasurementSetRepository.delete(args["set_id"])
+    return {"deleted": args["set_id"]}
+
+
+def _delete_treatment(args):
+    from database.reference_library import TaxonTreatmentRepository
+
+    TaxonTreatmentRepository.delete(args["treatment_id"])
+    return {"deleted": args["treatment_id"]}
+
+
+def _local_treatments(_args):
+    conn = schema.get_reference_connection()
+    try:
+        ids = [row[0] for row in conn.execute("SELECT id FROM reference_taxon_treatments")]
+    finally:
+        conn.close()
+    return {"treatments": sorted(ids)}
+
+
+def _local_set_row(args):
+    conn = schema.get_reference_connection()
+    try:
+        row = conn.execute(
+            "SELECT q_core_min, q_core_max FROM reference_measurement_sets WHERE id=?",
+            (args["set_id"],),
+        ).fetchone()
+    finally:
+        conn.close()
+    return {"row": list(row) if row else None}
+
+
+def _attach_public_use(args):
+    from database.models import ObservationDB
+    from database.reference_library import ObservationReferenceUseRepository
+
+    observation_id = ObservationDB.create_observation(
+        "2026-10-02", genus="Russula", species="paludosa",
+        is_draft=False, sharing_scope="public",
+    )
+    use = ObservationReferenceUseRepository.attach(
+        observation_id, args["set_id"], role="supports_identification",
+    )
+    return {"observation_id": observation_id, "use_id": use.id}
+
+
+def _catalogue(args):
+    from database.curated_reference_forks import (
+        copy_curated_bundle_to_personal_library,
+        search_shared_reference_contributions,
+    )
+
+    anon = cloud_sync.SporelyCloudClient(cloud_sync.SUPABASE_KEY, "")
+    bundles = search_shared_reference_contributions(anon, int(args["taxon_id"]))
+    out = {"contributions": [bundle.contribution_id for bundle in bundles]}
+    if args.get("copy") and bundles:
+        fork = copy_curated_bundle_to_personal_library(bundles[0])
+        out["copied_set_id"] = fork.reference_measurement_set_id
+        out["created"] = fork.created
+    return out
+
+
+ACTIONS = {
+    "sync": _sync,
+    "pull_only": lambda args: _sync(args, pull_only=True),
+    "local_sets": _local_sets,
+    "create_set": _create_set,
+    "delete_set": _delete_set,
+    "delete_treatment": _delete_treatment,
+    "local_treatments": _local_treatments,
+    "local_set_row": _local_set_row,
+    "attach_public_use": _attach_public_use,
+    "catalogue": _catalogue,
+}
+
+
+if __name__ == "__main__":
+    action, raw = sys.argv[1], (sys.argv[2] if len(sys.argv) > 2 else "{}")
+    output = ACTIONS[action](json.loads(raw))
+    output["rpc_calls"] = dict(RPC_CALLS)
+    output["non_local_requests"] = NON_LOCAL_REQUESTS
+    print(json.dumps(output, default=str))

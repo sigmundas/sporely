@@ -328,6 +328,11 @@ Transport failure retries the identical UUID, payload, and expected token.
 `created`, `updated`, and `no_change` persist the returned authoritative
 baseline; CAS conflict persists review state and does not overwrite local
 intent. An unknown create is resolved by a complete owner read before retry.
+A library tombstone payload is `{id, deleted: true}` plus the row's unchanged
+parent identity (`reference_work_id` for a treatment, `taxon_treatment_id`
+for a measurement set): the server's sync RPCs check the named parent before
+the tombstone branch and answer `invalid_parent` without it. Works have no
+parent.
 For new measurement-set mutations, absent `raw_points_json` is omitted from
 the RPC payload rather than encoded as JSON `null`: the Stage 3 insert uses the
 JSONB `->` operator and the table accepts only SQL `NULL` or a JSON array.
@@ -426,6 +431,68 @@ observation/calibration counts do not absorb reference counts. Reference
 errors, conflicts, and dependency blocks are also surfaced through the
 existing top-level error channel. Typed errors and blocked outcomes retain the
 RPC domain status (for example, `invalid_payload` or `invalid_parent`).
+
+### Client capability (Stage M, sporely-web `20261002120000`)
+
+Direct table reads of `reference_measurement_sets`,
+`observation_reference_uses` and `reference_curated_forks` are the v1-only
+legacy feed: the server withholds enhanced content and everything that
+depends on it from them. The desktop therefore reads those three owner feeds
+only through `list_reference_library_feed(p_entity, p_client_capabilities,
+p_after_updated_at, p_after_id, p_limit)` with entities `measurement_set`,
+`observation_use` and `curated_fork` (works and treatments keep their table
+reads; they are never withheld). Every pull is a full pull: the first page
+has no cursor, `next_cursor` pages only within that pull, and no persisted
+cursor (including `reference_cloud_pull_cursors`) ever seeds `p_after_*`.
+Rows are projected to the same column set the table select returned, so
+reconciliation inputs are unchanged; deleted rows are part of the feed, so
+tombstones still arrive. A non-`ok` status, a malformed page, a missing
+column or a non-advancing cursor fails the whole pull (`rate_limited` as
+retryable); a partial feed is never returned.
+
+`p_client_capabilities` is
+`{"reference_snapshot_versions":[1,2],"device_id":<uuid>,"client":"desktop_app","app_version":<APP_VERSION>}`.
+Version 2 is declared only while the use-feed stager, the measurement-set
+feed stager and the public envelope normalizer all accept it
+(`declared_snapshot_versions`); this is independent of the two
+measurement-content gates, which stay closed. The device id is a uuid4
+generated once per profile and stored in the profile's `app_settings.json`
+(`reference_client_device_id`); a missing, malformed or nil value is
+replaced. Both `sync_reference_measurement_set` and
+`sync_observation_reference_use` send it as the trailing parameter; other
+reference writes take none. A bidirectional sync calls
+`record_reference_client_capabilities` once per app session and account
+before its first reference push; failure is logged and retried at the next
+sync, never blocking. Download from Cloud never reports (the method is on the
+pull-only block list; the feed RPC is on the read allowlist).
+
+`requires_newer_client` and `older_client_active` (disposition
+`capability_hold`) keep the local change pending (`sync_status='retry'`,
+never downgraded) and record `capability_hold:<status>:<fingerprint>:<payload
+digest>` in `last_error`. A held row is skipped while both its payload and
+the fingerprint are unchanged; the fingerprint covers the declared versions,
+app version, device id and the owner's other devices that currently trip the
+creation guard (read from `reference_client_devices` only when a hold
+exists). So an app upgrade, an older device upgrading or ageing out of the
+30-day window, or a local edit of the row retries it; nothing else does. If
+the device read fails the fingerprint is `unknown` (at most one retry, then
+held again). Only rows blocked for `parent_not_acknowledged`,
+`parent_not_converged` or `superseded_set_not_acknowledged` behind a held set
+inherit the hold; any other block reason surfaces as itself. The notice says
+an `older_client_active` hold clears once that device updates and syncs, or
+up to 30 days after it last synced. Held rows, and rows waiting only on a held set, are reported in
+`reference_sync.capability_holds` and as a sync-status notice, not as
+errors or blocks.
+
+Public reads `search_public_reference_contributions_v2` and
+`get_public_reference_contribution_v2` pass
+`p_accept_snapshot_versions` = the declared versions. An item stamped
+`measurement_details_omitted: true` (a v2 item projected to v1 for a
+non-accepting caller) is tolerated and flagged on the bundle, shown with a
+note and a disabled copy action, and never copied into the personal
+library. Frozen provenance (cloud fork pull, portable import, bundle import)
+rejects the marker. An unreadable or duplicate
+item is skipped and logged rather than failing the whole page.
 
 ## Storage of desired cloud image-byte state
 

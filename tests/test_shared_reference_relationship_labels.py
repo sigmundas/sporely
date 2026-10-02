@@ -67,3 +67,24 @@ def test_catalogue_supporting_row_is_not_bold(qapp, monkeypatch):
     dialog.table.selectRow(0)
     assert dialog.relationship_label.text() == (
         "Current relationship on the contributor's public observations: Supports")
+
+
+def test_marked_row_is_visibly_not_copyable(qapp, monkeypatch):
+    """Stage M: a row served without measurement details cannot be copied."""
+    monkeypatch.setattr(SharedReferenceCatalogueDialog, "_start_load", lambda self: None)
+    dialog = SharedReferenceCatalogueDialog(None, cloud_client=object(), sporely_taxon_id=2_100_000_081)
+    marked = normalize_curated_bundle({**shared_row([]), "measurement_details_omitted": True})
+    dialog._loaded((marked, normalize_curated_bundle(shared_row([]))))
+    assert "cannot be copied" in dialog.table.item(0, 3).text()
+    dialog.table.selectRow(0)
+    assert not dialog.copy_button.isEnabled()
+    assert "cannot be copied" in dialog.copy_button.toolTip()
+    dialog.table.selectRow(1)
+    assert dialog.copy_button.isEnabled()
+    copied = []
+    monkeypatch.setattr(catalogue, "copy_curated_bundle_to_personal_library", lambda b: copied.append(b))
+    warnings = []
+    monkeypatch.setattr(catalogue.QMessageBox, "warning", lambda *a, **k: warnings.append(a))
+    dialog.table.selectRow(0)
+    dialog._copy_selected()
+    assert copied == [] and len(warnings) == 1
