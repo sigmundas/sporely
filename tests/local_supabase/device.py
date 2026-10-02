@@ -237,6 +237,24 @@ def _status_rows(_args):
         reference.close()
 
 
+def _age_status_rows(_args):
+    """Preset old timestamps so a same-second rewrite is still visible."""
+    for table, connect in (
+        ("observation_reference_use_cloud_sync_state", schema.get_connection),
+        ("reference_cloud_sync_state", schema.get_reference_connection),
+    ):
+        conn = connect()
+        try:
+            conn.execute(
+                f"UPDATE {table} SET updated_at='2000-01-01 00:00:00', "
+                "last_attempted_at='2000-01-01T00:00:00+00:00'"
+            )
+            conn.commit()
+        finally:
+            conn.close()
+    return {}
+
+
 def _set_use_note(args):
     from database.reference_library import ObservationReferenceUseRepository
 
@@ -274,6 +292,7 @@ ACTIONS = {
     "use_state": _use_state,
     "set_use_note": _set_use_note,
     "status_rows": _status_rows,
+    "age_status_rows": _age_status_rows,
 }
 
 

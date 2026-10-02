@@ -56,7 +56,11 @@ def test_2b_no_change_sync_sends_no_reference_writes(owner, device):
     created = a.run("create_set")
     a.run("attach_public_use", set_id=created["set_id"])
     _assert_clean(a.run("sync", **owner.credentials))
+    a.run("age_status_rows")
     before = a.run("status_rows")
+    assert {row["updated_at"] for row in before["uses"] + before["library"]} == {
+        "2000-01-01 00:00:00"
+    }
     second = a.run("sync", **owner.credentials)
     _assert_clean(second)
     # Unchanged status rows are not rewritten locally (no last_attempted_at bump).

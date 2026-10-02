@@ -183,12 +183,31 @@ def _status_tables():
         reference.close()
 
 
+def _age_status_rows() -> None:
+    """Preset old timestamps so any rewrite is visible (CURRENT_TIMESTAMP has
+    one-second resolution and every sync here lands in the same second)."""
+    for table, reference in (
+        ("observation_reference_use_cloud_sync_state", False),
+        ("reference_cloud_sync_state", True),
+    ):
+        connection = schema.get_reference_connection() if reference else schema.get_connection()
+        try:
+            connection.execute(
+                f"UPDATE {table} SET updated_at='2000-01-01 00:00:00', "
+                "last_attempted_at='2000-01-01T00:00:00+00:00'"
+            )
+            connection.commit()
+        finally:
+            connection.close()
+
+
 def test_no_change_sync_leaves_every_status_row_byte_identical(databases):
     _create_graph_and_use()
     client = ReferenceGraphClient()
     sync_reference_library(client)
     _server_timestamps(client)
     sync_reference_library(client)  # pull sees the server form once
+    _age_status_rows()
     before = _status_tables()
     calls_before = len(client.calls)
 
@@ -294,3 +313,33 @@ def test_pull_detected_library_conflict_keeps_last_attempted_at(databases):
     assert "measurement_set:set-1" in result.conflicts
     assert state.sync_status == "conflict"
     assert state.last_attempted_at == _SENTINEL
+
+
+def test_pull_detected_library_tombstone_conflict_keeps_last_attempted_at(databases):
+    from database.reference_library import MeasurementSetRepository
+    from tests.test_observation_reference_use_pull import _library_rows  # noqa: F811
+
+    _seed_graph_and_observation()
+    rows = _library_rows()
+    remote_set = {**rows["measurement_set"], "raw_text": "remote edit",
+                  "row_version": 2, "updated_at": "2026-08-01T00:00:02Z"}
+    client = PullClient(sets=[remote_set])  # reads the live graph; build first
+    MeasurementSetRepository.delete("set-1")
+    _stamp(
+        "reference_cloud_tombstones", "entity_type='measurement_set' AND entity_id=?",
+        ("set-1",), reference=True,
+    )
+
+    result = pull_reference_library(client)
+
+    connection = schema.get_reference_connection()
+    try:
+        status, attempted = connection.execute(
+            "SELECT sync_status, last_attempted_at FROM reference_cloud_tombstones "
+            "WHERE entity_type='measurement_set' AND entity_id='set-1'"
+        ).fetchone()
+    finally:
+        connection.close()
+    assert "measurement_set:set-1" in result.conflicts
+    assert status == "conflict"
+    assert attempted == _SENTINEL
