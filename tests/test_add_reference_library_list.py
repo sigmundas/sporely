@@ -1029,3 +1029,17 @@ def test_contradicts_goes_end_to_end_into_attach_with_status(monkeypatch):
         assert dialog.result() == QDialog.Accepted
     finally:
         dialog.close()
+
+
+def test_two_checked_rows_enable_add_2_and_attach_both():
+    dialog, calls = _batch_dialog()
+    try:
+        _row_widget(dialog, "ms-this-range").checkbox.setChecked(True)
+        _row_widget(dialog, "ms-this-points").checkbox.setChecked(True)
+        assert dialog.add_to_plot_btn.isEnabled() is True
+        assert "2" in dialog.add_to_plot_btn.text()
+        dialog.add_to_plot_btn.click()
+        assert calls == [("ms-this-range", "compared"), ("ms-this-points", "compared")]
+        assert dialog.result() == QDialog.Accepted
+    finally:
+        dialog.close()

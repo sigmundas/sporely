@@ -789,6 +789,9 @@ def _add_dialog_library(context: ReviewContext):
         candidates=_add_dialog_candidates(),
         observation_points=_add_dialog_observation_points(),
         attach_callback=lambda *_args: None,
+        # As the real host wires it: per-item outcomes enable multi-source
+        # add, so two checked rows show an enabled "Add 2 to plot".
+        library_attach_callback=lambda *_args: ("attached", None),
     )
     # Unscoped so all three relevance groups have members, which is the
     # state the grouped list has to be reviewed in.

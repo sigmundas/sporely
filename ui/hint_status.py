@@ -185,6 +185,11 @@ class HintBar(QFrame):
             label_height = self._label.sizeHint().height()
         target_height = max(self._HEIGHT, label_height + margins.top() + margins.bottom())
         self.setFixedHeight(target_height)
+        # Re-run the bar's own layout now: otherwise the label keeps the
+        # taller geometry it got while the bar was narrow (wrapped) and the
+        # text sits at the bottom of the bar instead of centred.
+        layout.invalidate()
+        layout.activate()
 
     # ------------------------------------------------------------------
     # Public API

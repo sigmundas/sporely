@@ -132,3 +132,25 @@ def test_add_reference_footer_row_is_dialog_level(libs):
         assert dialog.hint_bar._label.text() != "From the summary tab"
     finally:
         dialog.close()
+
+
+def test_hint_text_is_vertically_centred_when_set_before_show(libs):
+    from ui.add_reference_dialog import AddReferenceDialog
+
+    dialog = AddReferenceDialog(None, taxon_label="C l", taxon_id=7, genus="C", species="l",
+                                candidates=[], community_results=[], my_observations=[])
+    try:
+        dialog.tabs.setCurrentIndex(dialog._manual_tab_index)
+        dialog.set_hint("Parsed — review and edit before saving.")
+        dialog.resize(1460, 920)
+        dialog.show()
+        QApplication.processEvents()
+        bar, label = dialog.hint_bar, dialog.hint_bar._label
+        assert label.geometry().top() == 0 and label.height() == bar.height()
+        image = bar.grab().toImage()
+        rows = [y for y in range(image.height())
+                if any(image.pixelColor(x, y).lightness() < 100 for x in range(10, 300))]
+        assert rows
+        assert abs((rows[0] + rows[-1]) / 2 - bar.height() / 2) <= 3
+    finally:
+        dialog.close()
