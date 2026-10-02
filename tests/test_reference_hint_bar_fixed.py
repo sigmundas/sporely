@@ -154,3 +154,21 @@ def test_hint_text_is_vertically_centred_when_set_before_show(libs):
         assert abs((rows[0] + rows[-1]) / 2 - bar.height() / 2) <= 3
     finally:
         dialog.close()
+
+
+def test_edit_reference_shares_the_dialog_hint_api(libs):
+    from ui.main_window import ReferenceAddDialog
+
+    dialog = ReferenceAddDialog(None, "Cortinarius", "limonius", "", observation_id=42,
+                                sporely_taxon_id=7, title="Edit reference")
+    try:
+        label = dialog.hint_row.findChild(HintBar)._label
+        dialog.set_footer_status("Resting text")
+        dialog.set_hint("")
+        assert label.text() == "Resting text"
+        dialog.set_hint("Context hint")
+        assert label.text() == "Context hint"
+        dialog.set_status("Saved!", timeout_ms=0, tone="success")
+        assert label.text() == "Saved!"
+    finally:
+        dialog.close()

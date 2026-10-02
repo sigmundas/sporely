@@ -893,6 +893,10 @@ class AddReferenceDialog(GeometryMixin, QDialog):
         contextual hint is active)."""
         self.hint_controller.set_baseline(text)
 
+    def set_status(self, text: str | None, timeout_ms: int = 4000, tone: str = "info") -> None:
+        """Temporary status message that supersedes the current hint."""
+        self.hint_controller.set_status(text, timeout_ms=timeout_ms, tone=tone)
+
     def _on_tab_changed(self, _index: int) -> None:
         # No stale contextual hint from the previous tab.
         self.hint_controller.set_hint("")
@@ -1123,7 +1127,15 @@ class AddReferenceDialog(GeometryMixin, QDialog):
         if hasattr(self, "_manual_tab_index") and (
             self.tabs.currentIndex() == self._manual_tab_index
         ):
-            self.set_footer_status(self._manual_footer_hint())
+            footer_text = self._manual_footer_hint()
+            self.set_footer_status(footer_text)
+            # A save outcome shown as the active hint is retired as soon as
+            # it no longer describes the entry (e.g. the user edits it).
+            outcome = getattr(self, "_save_outcome_hint", None)
+            if outcome and footer_text != outcome:
+                if self.hint_controller._hint_text == outcome:
+                    self.set_hint("")
+                self._save_outcome_hint = None
             return
         if self.tabs.currentWidget() is not self._library_tab:
             # Clear rather than leave the previous tab's hint standing:
@@ -2012,6 +2024,14 @@ class AddReferenceDialog(GeometryMixin, QDialog):
         # left reading the pre-save copy as confirmation.
         self._manual_save_failed = not saved_id
         self._update_footer_state()
+        # The outcome supersedes whatever hint was showing (e.g. "Parsed —
+        # review and edit before saving."); a later hover/focus hint still
+        # replaces it, and the resting footer text keeps the outcome.
+        self._save_outcome_hint = self._manual_footer_hint()
+        self.set_hint(
+            self._save_outcome_hint,
+            tone="warning" if self._manual_save_failed else "success",
+        )
 
     def _on_add_to_plot_clicked(self) -> None:
         if self.tabs.currentIndex() == self._my_observations_tab_index:

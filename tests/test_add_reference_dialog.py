@@ -1618,3 +1618,23 @@ def test_new_publication_row_clears_the_library_selection():
 
     assert dialog._preview_candidate is None
     assert dialog.add_to_plot_btn.isEnabled() is False
+
+
+@pytest.mark.parametrize("saved_id,needle,tone", [
+    ("ms-9", "Saved to the reference library", "success"),
+    (None, "Not saved", "warning"),
+])
+def test_save_outcome_supersedes_the_parse_hint_and_field_hints_still_work(saved_id, needle, tone):
+    from PySide6.QtCore import QEvent
+
+    dialog = _saveable_manual_dialog(manual_save_callback=lambda editor: saved_id)
+    dialog.manual_editor._set_hint("Parsed — review and edit before saving.")
+    assert "Parsed" in dialog.status_hint_label.text()
+    dialog._on_save_to_library_clicked()
+    assert needle in dialog.status_hint_label.text()
+    assert "Parsed" not in dialog.status_hint_label.text()
+    # A later hover/focus on a field shows that field's own hint.
+    widget, hint, _tone = next(
+        r for r in dialog.manual_editor._hint_registrations if r[1] and r[0].isEnabled())
+    QApplication.sendEvent(widget, QEvent(QEvent.Enter))
+    assert dialog.status_hint_label.text() == hint

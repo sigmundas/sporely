@@ -5346,6 +5346,8 @@ class ReferenceAddDialog(GeometryMixin, QDialog):
         button_row = QHBoxLayout()
         self.footer_layout = button_row
         button_row.addWidget(self.hint_row, 1)
+        # Same dialog-level hint contract as AddReferenceDialog.
+        self.hint_controller = self.editor._hint_controller
         self.save_btn = QPushButton(self.tr("Save"))
         self.save_btn.clicked.connect(self._on_save)
         self.delete_btn = QPushButton(self.tr("Delete"))
@@ -5361,6 +5363,15 @@ class ReferenceAddDialog(GeometryMixin, QDialog):
 
         self._restore_geometry()
         self.finished.connect(self._save_geometry)
+
+    def set_hint(self, text: str | None, tone: str = "info") -> None:
+        self.hint_controller.set_hint(text, tone=tone)
+
+    def set_footer_status(self, text: str | None) -> None:
+        self.hint_controller.set_baseline(text)
+
+    def set_status(self, text: str | None, timeout_ms: int = 4000, tone: str = "info") -> None:
+        self.hint_controller.set_status(text, timeout_ms=timeout_ms, tone=tone)
 
     def _on_save(self):
         if self.editor.validate_and_build_result():
