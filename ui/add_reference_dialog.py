@@ -148,6 +148,8 @@ from .library_source_row import (
     LibrarySourceRow,
     reference_use_role_label,
 )
+from .dialog_helpers import make_github_help_button
+from .hint_status import HintBar, HintStatusController
 from .reference_entry_editor import ReferenceEntryEditor
 from .reference_preview_pane import ReferencePreviewPane
 from .two_line_row import TwoLineRow
@@ -567,6 +569,16 @@ class AddReferenceDialog(GeometryMixin, QDialog):
         root.setContentsMargins(12, 12, 12, 12)
         root.setSpacing(10)
 
+        # Dialog-level hint/status bar: it lives in the fixed footer row,
+        # owned by the dialog, never by a tab or pane. Tabs and panes
+        # publish to it through set_hint()/set_footer_status(); the manual
+        # editor's field, parser and validation hints are attached to the
+        # same controller. Built first so tabs built below can attach.
+        self.hint_bar = HintBar(self)
+        self.hint_controller = HintStatusController(self.hint_bar, self)
+        # Compatibility handle: what the footer currently shows.
+        self.status_hint_label = self.hint_bar._label
+
         root.addLayout(self._build_taxon_target_row())
 
         self._body_splitter = QSplitter(Qt.Horizontal, self)
@@ -604,9 +616,10 @@ class AddReferenceDialog(GeometryMixin, QDialog):
         root.addWidget(self.batch_result_label)
 
         footer = QHBoxLayout()
-        self.status_hint_label = QLabel("", self)
-        self.status_hint_label.setStyleSheet("color: #7f8c8d;")
-        footer.addWidget(self.status_hint_label, 1)
+        footer.addWidget(self.hint_bar, 1)
+        self.hint_help_btn = make_github_help_button(self, "reference-data-dialog.md")
+        footer.addWidget(self.hint_help_btn, 0, Qt.AlignVCenter)
+        self.footer_layout = footer
         self.set_all_roles_label = QLabel(
             QCoreApplication.translate("AddReferenceDialog", "Set all:"), self
         )
@@ -866,7 +879,23 @@ class AddReferenceDialog(GeometryMixin, QDialog):
         )
         self._update_footer_state()
 
+    # ------------------------------------------------------------------
+    # Dialog-level hint/status API
+    # ------------------------------------------------------------------
+
+    def set_hint(self, text: str | None, tone: str = "info") -> None:
+        """Contextual hint from any tab or pane (empty returns to the
+        footer status)."""
+        self.hint_controller.set_hint(text, tone=tone)
+
+    def set_footer_status(self, text: str | None) -> None:
+        """Resting footer message for the active tab (shown whenever no
+        contextual hint is active)."""
+        self.hint_controller.set_baseline(text)
+
     def _on_tab_changed(self, _index: int) -> None:
+        # No stale contextual hint from the previous tab.
+        self.hint_controller.set_hint("")
         self._clear_batch_result()
         self._update_footer_state()
         if self.tabs.currentIndex() == self._my_observations_tab_index:
@@ -1094,28 +1123,28 @@ class AddReferenceDialog(GeometryMixin, QDialog):
         if hasattr(self, "_manual_tab_index") and (
             self.tabs.currentIndex() == self._manual_tab_index
         ):
-            self.status_hint_label.setText(self._manual_footer_hint())
+            self.set_footer_status(self._manual_footer_hint())
             return
         if self.tabs.currentWidget() is not self._library_tab:
             # Clear rather than leave the previous tab's hint standing:
             # the manual tab's copy is about its own two buttons and would
             # be wrong here.
-            self.status_hint_label.setText("")
+            self.set_footer_status("")
             return
         checked = len(self._checked_ids)
         if checked == 1:
-            self.status_hint_label.setText(
+            self.set_footer_status(
                 QCoreApplication.translate("AddReferenceDialog", "1 source selected")
             )
             return
         if checked > 1:
-            self.status_hint_label.setText(
+            self.set_footer_status(
                 QCoreApplication.translate(
                     "AddReferenceDialog", "{count} sources selected"
                 ).format(count=checked)
             )
             return
-        self.status_hint_label.setText(
+        self.set_footer_status(
             "" if self._visible_candidate_count else self._empty_library_hint()
         )
 
@@ -1782,10 +1811,8 @@ class AddReferenceDialog(GeometryMixin, QDialog):
         self._manual_scroll.setFrameShape(QScrollArea.NoFrame)
         self._manual_scroll.setWidget(self.manual_editor)
         layout.addWidget(self._manual_scroll, 1)
-        # Fixed below the scroll area: scrolling the form never moves the
-        # hint/status bar (the footer buttons are already outside it).
-        self.manual_hint_row = self.manual_editor.take_hint_row()
-        layout.addWidget(self.manual_hint_row, 0)
+        # The editor's hints go to the dialog-level footer bar.
+        self.manual_editor.attach_hint_controller(self.hint_controller)
 
     # ------------------------------------------------------------------
     # Footer

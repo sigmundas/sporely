@@ -5337,13 +5337,15 @@ class ReferenceAddDialog(GeometryMixin, QDialog):
         editor_scroll.setFrameShape(QScrollArea.NoFrame)
         editor_scroll.setWidget(self.editor)
         layout.addWidget(editor_scroll, 1)
-        # Fixed bottom: hint/status bar, then the action buttons. Only the
-        # form content scrolls.
+        # One fixed footer row spanning the dialog: the dialog-level
+        # hint/status bar (with its ? button) expanding on the left, the
+        # action buttons on the right. Only the form content scrolls.
         self.editor_scroll = editor_scroll
         self.hint_row = self.editor.take_hint_row()
-        layout.addWidget(self.hint_row, 0)
 
         button_row = QHBoxLayout()
+        self.footer_layout = button_row
+        button_row.addWidget(self.hint_row, 1)
         self.save_btn = QPushButton(self.tr("Save"))
         self.save_btn.clicked.connect(self._on_save)
         self.delete_btn = QPushButton(self.tr("Delete"))
@@ -5351,7 +5353,6 @@ class ReferenceAddDialog(GeometryMixin, QDialog):
         self.delete_btn.setVisible(self._allow_delete)
         self.cancel_btn = QPushButton(self.tr("Cancel"))
         self.cancel_btn.clicked.connect(self.reject)
-        button_row.addStretch(1)
         if self._allow_delete:
             button_row.addWidget(self.delete_btn)
         button_row.addWidget(self.save_btn)

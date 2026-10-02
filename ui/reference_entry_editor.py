@@ -255,6 +255,15 @@ class _PublicationSearchProxyModel(QSortFilterProxyModel):
         return super().data(index, role)
 
 
+def _qt_alive(widget) -> bool:
+    try:
+        from shiboken6 import isValid
+
+        return bool(widget is not None and isValid(widget))
+    except Exception:
+        return widget is not None
+
+
 class ReferenceEntryEditor(QWidget):
     """Paste/parse measurement editor + publication picker + Data section.
 
@@ -286,6 +295,7 @@ class ReferenceEntryEditor(QWidget):
         self._species = species
         self._prefill_data = data or {}
         self._hint_controller: HintStatusController | None = None
+        self._hint_registrations: list[tuple[QWidget, str, str]] = []
         self._plot_color = None
         self._require_explicit_publication_assignment = bool(
             require_explicit_publication_assignment
@@ -1078,6 +1088,24 @@ class ReferenceEntryEditor(QWidget):
     # Hints
     # ------------------------------------------------------------------
 
+    def attach_hint_controller(self, controller: HintStatusController) -> None:
+        """Publish this editor's hints to a host-owned (dialog-level) hint
+        bar instead of its own: every registered field, parser and
+        validation hint goes to ``controller``, and the editor's own hint
+        row is removed so no hint widget stays inside the scrolled form."""
+        if self._hint_controller is not None:
+            for widget, _hint, _tone in self._hint_registrations:
+                if _qt_alive(widget):
+                    widget.removeEventFilter(self._hint_controller)
+        self._hint_controller = controller
+        for widget, hint, tone in self._hint_registrations:
+            if _qt_alive(widget):
+                controller.register_widget(widget, hint, tone=tone)
+        row = self.take_hint_row()
+        row.hide()
+        row.deleteLater()
+        self.hint_bar = None
+
     def take_hint_row(self) -> QWidget:
         """Remove the hint/status row from this editor's layout and return
         it, for a host to place outside its scroll area. The hint
@@ -1096,6 +1124,7 @@ class ReferenceEntryEditor(QWidget):
         widget.setProperty("_hint_text", hint)
         widget.setProperty("_hint_tone", hint_tone)
         widget.setToolTip("")
+        self._hint_registrations.append((widget, hint, hint_tone))
         if self._hint_controller is not None:
             self._hint_controller.register_widget(widget, hint, tone=hint_tone)
 
