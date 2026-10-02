@@ -438,7 +438,10 @@ def _library_tombstone_payload(tombstone: ReferenceCloudTombstone) -> dict:
     payload = {"id": tombstone.entity_id, "deleted": True}
     key = _TOMBSTONE_PARENT_KEY.get(tombstone.entity_type)
     if key is not None:
-        parent = getattr(tombstone, key, None) or (tombstone.accepted_payload or {}).get(key)
+        # The server-accepted parent first: the contract sends the row's
+        # unchanged (acknowledged) parent identity; the local record is the
+        # fallback for a tombstone acknowledged without a stored payload.
+        parent = (tombstone.accepted_payload or {}).get(key) or getattr(tombstone, key, None)
         if not str(parent or "").strip():
             raise ReferenceCloudProtocolError("tombstone has no acknowledged parent identity")
         payload[key] = str(parent)

@@ -718,3 +718,57 @@ def test_remote_failures_are_durable_and_never_advance_baseline(databases, failu
     else:
         assert result.terminal_errors == result.errors
         assert result.retryable_errors == ()
+
+
+def _tombstone(entity_type, *, accepted=None, **parents):
+    from database.reference_sync_state import ReferenceCloudTombstone
+
+    return ReferenceCloudTombstone(
+        entity_type, "row-1", "user-1", "acknowledged", 1, accepted, **parents
+    )
+
+
+def test_tombstone_payload_prefers_the_accepted_parent_identity():
+    from utils.reference_cloud_sync import _library_tombstone_payload
+
+    tombstone = _tombstone(
+        "measurement_set", accepted={"taxon_treatment_id": "t-accepted"},
+        taxon_treatment_id="t-local",
+    )
+    assert _library_tombstone_payload(tombstone) == {
+        "id": "row-1", "deleted": True, "taxon_treatment_id": "t-accepted",
+    }
+    fallback = _tombstone("treatment", accepted=None, reference_work_id="w-local")
+    assert _library_tombstone_payload(fallback)["reference_work_id"] == "w-local"
+    assert _library_tombstone_payload(_tombstone("work")) == {"id": "row-1", "deleted": True}
+
+
+def test_tombstone_without_any_parent_identity_is_a_protocol_error():
+    from utils.reference_cloud_adapter import ReferenceCloudProtocolError
+    from utils.reference_cloud_sync import _library_tombstone_payload
+
+    with pytest.raises(ReferenceCloudProtocolError, match="parent identity"):
+        _library_tombstone_payload(_tombstone("measurement_set", accepted={}))
+
+
+def test_delete_stuck_by_the_pre_fix_payload_goes_through(databases):
+    """A set tombstone a released desktop left in retry (the server answered
+    invalid_parent to {id, deleted}) is accepted once it names its parent."""
+    _create_graph()
+    client = RecordingReferenceClient()
+    sync_reference_library(client)
+    MeasurementSetRepository.delete("set-a")
+    client.statuses[("measurement_set", "set-a")] = "invalid_parent"
+    sync_reference_library(client)
+    stuck = ReferenceCloudSyncStateRepository.list_library_tombstones("user-1")
+    assert [(item.entity_id, item.sync_status) for item in stuck] == [("set-a", "retry")]
+
+    del client.statuses[("measurement_set", "set-a")]
+    client.calls.clear()
+    result = sync_reference_library(client)
+
+    assert client.calls == [
+        ("measurement_set", {"id": "set-a", "deleted": True, "taxon_treatment_id": "treatment-a"}, 1)
+    ]
+    assert result.pushed == 1
+    assert ReferenceCloudSyncStateRepository.list_library_tombstones("user-1") == []
