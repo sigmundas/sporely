@@ -7,7 +7,7 @@ All notable changes to Sporely are documented here.
 Requires server migrations `20261001195524`, `20261001213000`, `20261002120000` and `20261002150000` (sporely-web), all already live in production.
 
 ### Added
-- **Reference sharing (#7).** *My shared references* lists your shared references as Shared, Stopped or Hidden, with Stop sharing / Share again per reference. Add Reference has a role selector (including *Contradicts*) and can attach to several observations at once, reporting the result per item. A reference's taxon is now independent of the observation's identification.
+- **Reference sharing (#7).** *My shared references* lists your shared references as Shared, Stopped or Hidden, with Stop sharing / Share again per reference. Add Reference has a role selector (including *Contradicts*) and can attach several references to an observation at once, reporting the result per reference. A reference's taxon is now independent of the observation's identification.
 - **Reference v2 readiness (#10).** The desktop declares its capabilities and reports its device; reference pulls are feed-based; writes that an older client could not handle are held instead of sent.
 
 ### Changed
