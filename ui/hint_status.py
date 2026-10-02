@@ -185,6 +185,11 @@ class HintBar(QFrame):
             label_height = self._label.sizeHint().height()
         target_height = max(self._HEIGHT, label_height + margins.top() + margins.bottom())
         self.setFixedHeight(target_height)
+        # Re-run the bar's own layout now: otherwise the label keeps the
+        # taller geometry it got while the bar was narrow (wrapped) and the
+        # text sits at the bottom of the bar instead of centred.
+        layout.invalidate()
+        layout.activate()
 
     # ------------------------------------------------------------------
     # Public API
@@ -243,6 +248,11 @@ class HintStatusController(QObject):
         self._hint_text = ""
         self._hint_tone = "info"
         self._status_tone = "info"
+        # Shown whenever there is no contextual hint (instead of a blank
+        # idle bar): a dialog-level resting message, e.g. "2 sources
+        # selected". Empty by default, so existing bars are unchanged.
+        self._baseline_text = ""
+        self._baseline_tone = "info"
         self._status_timer = QTimer(self)
         self._status_timer.setSingleShot(True)
         self._status_timer.timeout.connect(self._restore_hint)
@@ -319,6 +329,9 @@ class HintStatusController(QObject):
         if self._hint_text:
             self._set_label_text(self._hint_text)
             self._apply_active_style(self._hint_tone)
+        elif self._baseline_text:
+            self._apply_idle_style()
+            self._set_label_text(self._baseline_text)
         else:
             self._apply_idle_style()
 
@@ -330,11 +343,18 @@ class HintStatusController(QObject):
         self._hint_text = (text or "").strip()
         self._hint_tone = (tone or "info").strip().lower()
         if not self._status_timer.isActive():
-            if self._hint_text:
-                self._set_label_text(self._hint_text)
-                self._apply_active_style(self._hint_tone)
-            else:
-                self._apply_idle_style()
+            self._restore_hint()
+
+    def set_baseline(self, text: str | None, tone: str = "info") -> None:
+        """Resting text shown (in the idle style) when no contextual hint
+        is active. Empty clears it back to a blank idle bar."""
+        self._baseline_text = (text or "").strip()
+        self._baseline_tone = (tone or "info").strip().lower()
+        if not self._status_timer.isActive():
+            self._restore_hint()
+
+    def current_text(self) -> str:
+        return self._hint_label.text()
 
     def set_status(
         self,

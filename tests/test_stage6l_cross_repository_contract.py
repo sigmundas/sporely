@@ -30,6 +30,10 @@ PUBLIC_KEYS = {
     "contribution_id", "revision", "status", "shared_at", "sporely_taxon_id",
     "canonical_scientific_name", "contributor", "snapshot", "citation", "exports",
 }
+# Stage 2c: the desktop reads the _v2 envelope, which adds the live
+# relationship_roles to served shared rows (never to tombstones).
+V2_PUBLIC_KEYS = PUBLIC_KEYS | {"relationship_roles"}
+V2_ROLES_MIGRATION = "supabase/migrations/20261001091940_add_reference_contribution_relationship_roles.sql"
 WITHDRAWN_KEYS = {
     "contribution_id", "revision", "status", "withdrawn_at",
 }
@@ -100,6 +104,18 @@ def _sql_signature(source: str, function_name: str) -> tuple[tuple[str, str], ..
     )
 
 
+def _v2_roles_migration() -> str:
+    # The Stage 2c migration lives in the canonical sporely-web checkout, not
+    # the frozen Stage 6 worktree; SPORELY_WEB_REPO still overrides.
+    web = Path(os.environ.get("SPORELY_WEB_REPO", CODE_ROOT / "sporely-web"))
+    path = web / V2_ROLES_MIGRATION
+    if not path.exists():
+        if os.environ.get("SPORELY_STAGE6L_GATE") == "1":
+            pytest.fail(f"Stage 2c roles migration unavailable: {path}")
+        pytest.skip(f"Stage 2c roles migration unavailable: {path}")
+    return path.read_text()
+
+
 def test_model_simplification_builds_on_the_landed_stage6_slices() -> None:
     _require_repositories()
     for repository, revision in REQUIRED_ANCESTORS.items():
@@ -117,18 +133,26 @@ def test_public_rpc_names_parameters_limits_and_envelopes_match() -> None:
     landing_api = (LANDING / "src/lib/publicApi.ts").read_text()
     landing_model = (LANDING / "src/lib/publicCuratedReferences.ts").read_text()
 
-    assert _method_rpc_keys(desktop, "search_public_reference_contributions") == SEARCH_PARAMETERS
-    assert _method_rpc_keys(desktop, "get_public_reference_contribution") == EXACT_PARAMETERS
-    assert _sql_signature(migration, "search_public_reference_contributions") == (
+    v2_migration = _v2_roles_migration()
+    assert _method_rpc_keys(desktop, "search_public_reference_contributions_v2") == SEARCH_PARAMETERS
+    assert _method_rpc_keys(desktop, "get_public_reference_contribution_v2") == EXACT_PARAMETERS
+    assert "'search_public_reference_contributions_v2'" in desktop
+    assert "'get_public_reference_contribution_v2'" in desktop
+    assert "'search_public_reference_contributions'" not in desktop
+    assert "'get_public_reference_contribution'" not in desktop
+    assert _sql_signature(v2_migration, "search_public_reference_contributions_v2") == (
         ("p_sporely_taxon_id", "integer"),
-        ("p_limit", "integer"),
-        ("p_after_shared_at", "timestamptz"),
-        ("p_after_id", "uuid"),
+        ("p_limit", "integer DEFAULT NULL"),
+        ("p_after_shared_at", "timestamptz DEFAULT NULL"),
+        ("p_after_id", "uuid DEFAULT NULL"),
     )
-    assert _sql_signature(migration, "get_public_reference_contribution") == (
+    assert _sql_signature(v2_migration, "get_public_reference_contribution_v2") == (
         ("p_contribution_id", "uuid"),
         ("p_revision", "integer DEFAULT NULL"),
     )
+    for name in ("search_public_reference_contributions_v2", "get_public_reference_contribution_v2"):
+        assert re.search(rf"GRANT EXECUTE ON FUNCTION public\.{name}\([^)]*\) TO anon, authenticated;", v2_migration)
+    assert v2_migration.count("'relationship_roles',") == 2
     for parameter in SEARCH_PARAMETERS + EXACT_PARAMETERS:
         assert re.search(rf"\b{parameter}\s*:", landing_api)
 
@@ -136,8 +160,8 @@ def test_public_rpc_names_parameters_limits_and_envelopes_match() -> None:
         r"_SHARED_KEYS = frozenset\(\{(.*?)\}\)", desktop_model, re.DOTALL,
     ).group(1).replace('"', '').replace("'", '').replace("\n", "").split(","))
     desktop_keys = {key.strip() for key in desktop_keys if key.strip()}
-    assert desktop_keys == PUBLIC_KEYS
-    assert _ts_array(landing_model, "SHARED_KEYS") == PUBLIC_KEYS
+    assert desktop_keys == V2_PUBLIC_KEYS
+    assert _ts_array(landing_model, "SHARED_KEYS") == V2_PUBLIC_KEYS
     assert _ts_array(landing_model, "SHARED_WITHDRAWN_KEYS") == WITHDRAWN_KEYS
     assert "p_limit IS NULL OR p_limit < 1 OR p_limit > 50" in migration
     assert "LIMIT p_limit" in migration
@@ -224,3 +248,37 @@ def test_shared_contribution_public_contract_is_attributed_and_not_curated() -> 
         sharing, re.DOTALL,
     ).group(1).lower()
     assert "observation_reference_use_shared_contribution_trg" in sharing
+
+
+DEFAULT_ON_MIGRATION = "supabase/migrations/20261001113007_share_references_by_default.sql"
+
+
+def test_default_on_sharing_rpcs_match_desktop_wrappers_and_allowlist() -> None:
+    """Default-on sharing: desktop wrappers match the set-level owner RPCs."""
+    web = Path(os.environ.get("SPORELY_WEB_REPO", CODE_ROOT / "sporely-web"))
+    migration_path = web / DEFAULT_ON_MIGRATION
+    if not migration_path.exists():
+        if os.environ.get("SPORELY_STAGE6L_GATE") == "1":
+            pytest.fail(f"default-on sharing migration unavailable: {migration_path}")
+        pytest.skip(f"default-on sharing migration unavailable: {migration_path}")
+    desktop = (ROOT / "utils/cloud_sync.py").read_text()
+    migration = migration_path.read_text()
+
+    assert _method_rpc_keys(desktop, "list_my_reference_sharing") == ()
+    assert re.search(r"CREATE FUNCTION public\.list_my_reference_sharing\(\)", migration)
+    for name in ("stop_sharing_reference_set", "share_reference_set_again"):
+        assert _method_rpc_keys(desktop, name) == ("p_source_measurement_set_id",)
+        assert _sql_signature(migration, name) == (("p_source_measurement_set_id", "uuid"),)
+    blocked = desktop.split("_PULL_ONLY_BLOCKED_CLIENT_METHODS = frozenset({", 1)[1].split("})", 1)[0]
+    for name in (
+        "list_my_reference_sharing",
+        "stop_sharing_reference_set",
+        "share_reference_set_again",
+    ):
+        assert f"'{name}'" in blocked
+    for retired in (
+        "share_reference_contribution_with_consent",
+        "list_my_shared_reference_contributions",
+        "get_reference_share_consent_text",
+    ):
+        assert f"def {retired}(" not in desktop

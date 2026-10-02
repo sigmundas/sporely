@@ -1097,3 +1097,163 @@ def test_retry_after_measurement_set_failure_creates_no_duplicate_treatment(
     listed = ObservationReferenceUseRepository.list_for_observation(obs_id)
     assert len(listed) == 1
     assert listed[0].reference_measurement_set_id == sets_after[0].id
+
+
+def test_quick_add_to_public_observation_cancel_creates_nothing(monkeypatch, qapp, libs):
+    """Manual / quick-add attach asks the public-observation notice before
+    anything is created; Cancel leaves no treatment, set or use."""
+    import ui.publish_notice as pn
+
+    db_path, ref_path = libs
+    work = _seed_work()
+    observation_id = _make_observation(db_path, genus="Agaricus", species="bisporus")
+    conn = sqlite3.connect(db_path)
+    conn.execute("UPDATE observations SET sharing_scope='public', is_draft=0, "
+                 "spore_data_visibility='public' WHERE id=?", (observation_id,))
+    conn.commit()
+    conn.close()
+    payload = _range_payload(work.id, 7, "Agaricus", "bisporus")
+    payload["observation_id"] = observation_id
+    window = _build_window(monkeypatch, qapp)
+    window.active_observation_id = observation_id
+    window._active_sporely_taxon_id = lambda: 7
+    window._observation_taxon_identity = lambda _obs_id: ("Agaricus", "bisporus")
+    monkeypatch.setattr(pn, "publish_notice_enabled", lambda: True)
+    shown = []
+    monkeypatch.setattr(pn, "show_attach_notice", lambda _p, t: shown.append(t) or False)
+
+    assert window._persist_normalized_reference_from_dialog(
+        _QuickAddStubDialog(payload), payload, legacy_id=None
+    ) is False
+    assert len(shown) == 1
+    assert ObservationReferenceUseRepository.list_for_observation(observation_id) == []
+    ref = sqlite3.connect(ref_path)
+    try:
+        assert ref.execute("SELECT COUNT(*) FROM reference_measurement_sets").fetchone()[0] == 0
+        assert ref.execute("SELECT COUNT(*) FROM reference_taxon_treatments").fetchone()[0] == 0
+    finally:
+        ref.close()
+
+
+def test_reference_taxon_from_ai_suggestion_never_asks_and_leaves_observation_alone(
+    monkeypatch, qapp, libs
+):
+    """Observation is species A (taxon 7); the user picks species B (an AI
+    suggestion, taxon 99) as Reference taxon in Add new. No synonym prompt,
+    the treatment is filed under B, and the observation's identity is
+    untouched."""
+    db_path, _ = libs
+    work = _seed_work()
+    observation_id = _make_observation(db_path, genus="Agaricus", species="bisporus")
+    before = sqlite3.connect(db_path).execute(
+        "SELECT genus, species, sporely_taxon_id FROM observations WHERE id=?",
+        (observation_id,)).fetchone()
+    payload = _range_payload(work.id, 99, "Amanita", "muscaria")
+    payload["observation_id"] = observation_id
+    payload["observation_taxon_id"] = 7
+    window = _build_window(monkeypatch, qapp)
+    window.active_observation_id = observation_id
+    window._active_sporely_taxon_id = lambda: 7
+    window._observation_taxon_identity = lambda _obs_id: ("Agaricus", "bisporus")
+    monkeypatch.setattr(main_window.QMessageBox, "question",
+                        lambda *a, **k: (_ for _ in ()).throw(AssertionError("no prompt")))
+    observation_writes = []
+    monkeypatch.setattr(main_window.ObservationDB, "update_observation",
+                        lambda *a, **k: observation_writes.append((a, k)))
+
+    assert window._persist_normalized_reference_from_dialog(
+        _QuickAddStubDialog(payload), payload, legacy_id=None
+    ) is True
+
+    uses = ObservationReferenceUseRepository.list_for_observation(observation_id)
+    assert len(uses) == 1
+    ms = MeasurementSetRepository.get(uses[0].reference_measurement_set_id)
+    treatment = TaxonTreatmentRepository.get(ms.taxon_treatment_id)
+    assert treatment.taxon_id == "99"
+    assert treatment.name_as_published == "Agaricus bisporus sensu Author"  # publication's name
+    assert observation_writes == []
+    after = sqlite3.connect(db_path).execute(
+        "SELECT genus, species, sporely_taxon_id FROM observations WHERE id=?",
+        (observation_id,)).fetchone()
+    assert after == before
+
+
+def test_typed_publication_label_goes_through_the_normalized_range_path(
+    monkeypatch, qapp, libs
+):
+    """Manual-test repro: three Funga Nordica ranges attached, then a 4th
+    (P. fimicola) whose publication was typed as the exact library label
+    instead of picked from the list. It must be stored as a normalized
+    range use (rectangle plotting branch), not a legacy series entry."""
+    from ui.reference_entry_editor import ReferenceEntryEditor
+
+    db_path, _ = libs
+    work = ReferenceWorkRepository.create(ReferenceWork(
+        id="", type="book", title="Funga Nordica", short_label="Funga Nordica", year=2008))
+    observation_id = _make_observation(db_path, genus="Psilocybe", species="semilanceata")
+    conn = sqlite3.connect(db_path)
+    conn.execute("UPDATE observations SET sporely_taxon_id=NULL WHERE id=?", (observation_id,))
+    conn.commit()
+    conn.close()
+    window = _build_window(monkeypatch, qapp)
+    window.active_observation_id = observation_id
+    window._active_sporely_taxon_id = lambda: None
+    window._restore_reference_uses_for_observation = lambda _obs: None
+    window.update_graph_plots_only = lambda: None
+    legacy_entries = []
+    window._add_reference_series_entry = lambda data: legacy_entries.append(data) or True
+
+    def _submit(species, raw, *, typed):
+        editor = ReferenceEntryEditor(None, genus="Panaeolus", species=species,
+                                      observation_id=observation_id, sporely_taxon_id=None)
+        if typed:
+            editor.publication_combo.setEditText("Funga Nordica (2008)")
+        else:
+            for row in range(editor.publication_combo.count()):
+                if editor.publication_combo.itemData(row) == work.id:
+                    editor.publication_combo.setCurrentIndex(row)
+        editor.measurement_paste_input.setText(raw)
+        editor._parse_measurement_btn.click()
+        assert editor.validate_and_build_result()
+        assert window._submit_reference_editor_result(editor) is True
+
+    _submit("foenisecii", "(11.5-)14-17(-22) x 7.5-11", typed=False)
+    _submit("acuminatus", "(11-)13-15(-17) x 9-12", typed=False)
+    _submit("olivaceus", "10-13 x 6.5-8", typed=False)
+    _submit("fimicola", "(9-)11-15 x 7-9 x 6-8", typed=True)
+
+    assert legacy_entries == []  # nothing fell onto the legacy plotting path
+    uses = ObservationReferenceUseRepository.list_for_observation(observation_id)
+    assert len(uses) == 4
+    fourth_use = next(u for u in uses
+                      if json.loads(u.snapshot_json)["raw_text"] == "(9-)11-15 x 7-9 x 6-8")
+    assert json.loads(fourth_use.snapshot_json)["data_kind"] == "range"
+    from references.reference_plotting import translate_observation_reference_use
+    series = translate_observation_reference_use(fourth_use)["data"]
+    assert series["reference_data_kind"] == "range"
+    assert series["observation_reference_use_id"]
+    assert (series["length_p05"], series["length_p95"]) == (11.0, 15.0)
+    assert (series["width_p05"], series["width_p95"]) == (7.0, 9.0)
+    assert series["length_min"] == 9.0
+
+
+def test_typed_publication_matching_several_works_asks_to_choose(monkeypatch, qapp, libs):
+    from ui.reference_entry_editor import ReferenceEntryEditor
+    import ui.reference_entry_editor as ree
+
+    for _ in range(2):
+        ReferenceWorkRepository.create(ReferenceWork(
+            id="", type="book", title="Funga Nordica", short_label="Funga Nordica", year=2008))
+    warnings = []
+    monkeypatch.setattr(ree.QMessageBox, "warning", lambda _p, title, text: warnings.append(text))
+    monkeypatch.setattr(ree.QMessageBox, "question",
+                        lambda *a, **k: (_ for _ in ()).throw(AssertionError("no legacy prompt")))
+    editor = ReferenceEntryEditor(None, genus="Panaeolus", species="fimicola",
+                                  observation_id=1, sporely_taxon_id=7)
+    editor.publication_combo.setEditText("Funga Nordica (2008)")
+    editor.measurement_paste_input.setText("(9-)11-15 x 7-9")
+    editor._parse_measurement_btn.click()
+    assert editor.validate_and_build_result() is False
+    assert warnings == ["Several publications match this name — choose one from the list."]
+    assert "Several publications match" in editor.hint_bar._label.text()
+    assert editor.result_data() is None or editor.result_data().get("reference_work_id") is None

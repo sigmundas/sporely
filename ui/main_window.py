@@ -193,6 +193,7 @@ from database.schema import (
 )
 from references.reference_plotting import (
     range_payload_is_plottable,
+    translate_legacy_literature_range,
     translate_observation_reference_use,
 )
 from utils.annotation_capture import save_spore_annotation
@@ -1427,6 +1428,24 @@ class SettingsHubDialog(QDialog):
         # Cloud/profile identity lives on the profile page; publishing content
         # and image copyright stay together here.
         layout.addWidget(self._artsobs_dialog)
+        # The "Don't show this again" switch of the publish notice (and the
+        # related public-reference / public-spore-data notices), restorable
+        # here. Saved on toggle, like the language page.
+        from ui.publish_notice import publish_notice_enabled, set_publish_notice_enabled
+
+        self._show_publish_notice_check = QCheckBox(
+            self.tr("Ask before making observations, spore data or attached "
+                    "references public")
+        )
+        self._show_publish_notice_check.setToolTip(self.tr(
+            "Showing a more precise location on a public observation always asks."
+        ))
+        self._show_publish_notice_check.setChecked(publish_notice_enabled())
+        self._show_publish_notice_check.toggled.connect(
+            lambda checked: set_publish_notice_enabled(bool(checked))
+        )
+        layout.addSpacing(8)
+        layout.addWidget(self._show_publish_notice_check)
         return page
 
     def _build_language_page(self) -> QWidget:
@@ -5318,8 +5337,17 @@ class ReferenceAddDialog(GeometryMixin, QDialog):
         editor_scroll.setFrameShape(QScrollArea.NoFrame)
         editor_scroll.setWidget(self.editor)
         layout.addWidget(editor_scroll, 1)
+        # One fixed footer row spanning the dialog: the dialog-level
+        # hint/status bar (with its ? button) expanding on the left, the
+        # action buttons on the right. Only the form content scrolls.
+        self.editor_scroll = editor_scroll
+        self.hint_row = self.editor.take_hint_row()
 
         button_row = QHBoxLayout()
+        self.footer_layout = button_row
+        button_row.addWidget(self.hint_row, 1)
+        # Same dialog-level hint contract as AddReferenceDialog.
+        self.hint_controller = self.editor._hint_controller
         self.save_btn = QPushButton(self.tr("Save"))
         self.save_btn.clicked.connect(self._on_save)
         self.delete_btn = QPushButton(self.tr("Delete"))
@@ -5327,7 +5355,6 @@ class ReferenceAddDialog(GeometryMixin, QDialog):
         self.delete_btn.setVisible(self._allow_delete)
         self.cancel_btn = QPushButton(self.tr("Cancel"))
         self.cancel_btn.clicked.connect(self.reject)
-        button_row.addStretch(1)
         if self._allow_delete:
             button_row.addWidget(self.delete_btn)
         button_row.addWidget(self.save_btn)
@@ -5336,6 +5363,15 @@ class ReferenceAddDialog(GeometryMixin, QDialog):
 
         self._restore_geometry()
         self.finished.connect(self._save_geometry)
+
+    def set_hint(self, text: str | None, tone: str = "info") -> None:
+        self.hint_controller.set_hint(text, tone=tone)
+
+    def set_footer_status(self, text: str | None) -> None:
+        self.hint_controller.set_baseline(text)
+
+    def set_status(self, text: str | None, timeout_ms: int = 4000, tone: str = "info") -> None:
+        self.hint_controller.set_status(text, timeout_ms=timeout_ms, tone=tone)
 
     def _on_save(self):
         if self.editor.validate_and_build_result():
@@ -7958,9 +7994,22 @@ class MainWindow(GeometryMixin, QMainWindow):
         top_sections_layout.addWidget(plot_section)
         top_sections_layout.addWidget(reference_section, 1)
 
-        left_layout.addWidget(top_sections, 0)
-        left_layout.addStretch(1)
+        # The Reference values list takes the column's spare height before
+        # its own scrollbar appears. While the section is expanded the top
+        # block (Plot settings + Reference values) gets the stretch; when
+        # it is collapsed a trailing spacer takes it instead so the
+        # collapsed header does not float in a tall empty block. The
+        # gallery card below keeps its natural (Maximum) height.
+        self._reference_values_top_sections = top_sections
+        self._reference_values_section = reference_section
+        self._reference_values_left_layout = left_layout
+        self._reference_values_top_index = left_layout.count()
+        left_layout.addWidget(top_sections, 1)
+        self._reference_values_tail_index = left_layout.count()
+        left_layout.addStretch(0)
         left_layout.addWidget(gallery_group)
+        reference_section._toggle_btn.toggled.connect(self._apply_reference_values_stretch)
+        self._apply_reference_values_stretch(reference_section._toggle_btn.isChecked())
 
         analysis_button_height = max(35, QPushButton(self.tr("Plot")).sizeHint().height())
 
@@ -8542,6 +8591,15 @@ class MainWindow(GeometryMixin, QMainWindow):
             vis = 'friends'
         else:
             vis = 'public'
+        # Making spore data public on a public, non-draft observation also
+        # makes its attached reference sets public: same notice family as
+        # the publish notice (and the same "Don't show this again").
+        from ui.publish_notice import confirm_spore_public_if_needed
+
+        before = ObservationDB.get_observation(obs_id) or {}
+        if not confirm_spore_public_if_needed(self, before, vis):
+            self._update_spore_sharing_ui(obs_id)  # back to the stored choice
+            return
         ObservationDB.update_observation(obs_id, spore_data_visibility=vis)
         from utils.cloud_sync import mark_observation_dirty
         mark_observation_dirty(obs_id)
@@ -8549,6 +8607,16 @@ class MainWindow(GeometryMixin, QMainWindow):
         scheduler = getattr(observations_tab, "schedule_metadata_cloud_sync", None) if observations_tab is not None else None
         if callable(scheduler):
             scheduler(obs_id)
+
+    def _apply_reference_values_stretch(self, expanded: bool) -> None:
+        """Give the left column's spare height to the expanded Reference
+        values list, or to a trailing spacer while it is collapsed."""
+        layout = self._reference_values_left_layout
+        policy = QSizePolicy.Expanding if expanded else QSizePolicy.Maximum
+        self._reference_values_section.setSizePolicy(QSizePolicy.Expanding, policy)
+        self._reference_values_top_sections.setSizePolicy(QSizePolicy.Expanding, policy)
+        layout.setStretch(self._reference_values_top_index, 1 if expanded else 0)
+        layout.setStretch(self._reference_values_tail_index, 0 if expanded else 1)
 
     def _build_reference_panel(self):
         """Build the Reference values section: the comparison list, Add
@@ -9013,6 +9081,12 @@ class MainWindow(GeometryMixin, QMainWindow):
             entry = self._normalize_reference_series_entry(raw_entry)
             if not entry:
                 continue
+            # Legacy literature rows with explicit L/W bounds are read as
+            # the same normalized range shape library ranges use (a copy;
+            # the stored series is untouched).
+            legacy_range = translate_legacy_literature_range(entry["data"])
+            if legacy_range is not None:
+                entry = {**entry, "data": legacy_range}
             data = entry["data"]
             preferred_color = str(data.get("plot_color") or "").strip().lower()
             if preferred_color and not QColor(preferred_color).isValid():
@@ -9969,6 +10043,28 @@ class MainWindow(GeometryMixin, QMainWindow):
                 identifier, role
             )
 
+        def _library_attach_callback(
+            measurement_set_id: str, role: str
+        ) -> tuple[str, str | None]:
+            """One Library-tab item: attach with its own role, report the
+            outcome instead of showing a dialog, so the picker can attach a
+            batch and list exactly which items landed."""
+            current_observation_id = getattr(self, "active_observation_id", None)
+            if (
+                current_observation_id is None
+                or int(current_observation_id) != captured_observation_id
+            ):
+                return (
+                    "observation_changed",
+                    self.tr(
+                        "The active observation changed while the picker was open."
+                    ),
+                )
+            status, reason, _severity = self._attach_normalized_reference_outcome(
+                captured_observation_id, str(measurement_set_id), role
+            )
+            return status, reason
+
         def _add_cloud_callback(data: dict) -> None:
             if not _observation_still_active():
                 return
@@ -10012,8 +10108,13 @@ class MainWindow(GeometryMixin, QMainWindow):
                 captured_observation_id, str(measurement_set_id)
             )
 
+        def _confirm_attach_callback(roles: list[str]) -> bool:
+            """One public-observation notice for a whole Library batch."""
+            return self._confirm_picker_batch_attach(captured_observation_id, roles)
+
         dialog = AddReferenceDialog(
             self,
+            confirm_attach_callback=_confirm_attach_callback,
             taxon_label=taxon_label,
             taxon_id=active_taxon,
             genus=genus,
@@ -10022,6 +10123,7 @@ class MainWindow(GeometryMixin, QMainWindow):
             exclude_observation_cloud_id=obs_for_own_target.get("cloud_id"),
             exclude_measurement_set_ids=excluded,
             attach_callback=_add_callback,
+            library_attach_callback=_library_attach_callback,
             cloud_attach_callback=_add_cloud_callback,
             manual_attach_callback=_add_manual_callback,
             manual_save_callback=_save_manual_callback,
@@ -10199,13 +10301,12 @@ class MainWindow(GeometryMixin, QMainWindow):
     def _attach_normalized_reference_to_active_observation(
         self, measurement_set_id: str, role: str
     ) -> None:
-        """Shared post-selection attach helper.
+        """Shared post-selection attach helper (interactive wrapper).
 
         Both the attachment chooser and the library manager route through
-        this method so ``attach_with_status`` semantics, plotability
-        translation, rollback of newly-created rows on translator
-        failure, and the pre-existing malformed warning-row path stay in
-        exactly one place.
+        this method; the actual work lives in
+        :meth:`_attach_normalized_reference_outcome`, which this wrapper
+        turns into the same message boxes it always showed.
         """
         observation_id = getattr(self, "active_observation_id", None)
         if not observation_id:
@@ -10217,6 +10318,51 @@ class MainWindow(GeometryMixin, QMainWindow):
             return
         if not measurement_set_id:
             return
+        if not self._confirm_public_reference_attach(int(observation_id), [role]):
+            return  # cancelled: nothing attached
+        status, reason, severity = self._attach_normalized_reference_outcome(
+            int(observation_id), measurement_set_id, role
+        )
+        if reason:
+            box = QMessageBox.critical if severity == "critical" else QMessageBox.warning
+            box(self, self.tr("Attach library reference"), reason)
+
+    def _confirm_picker_batch_attach(self, captured_observation_id: int, roles) -> bool:
+        """The picker's batch confirm. When the active observation drifted
+        since the picker opened, skip the notice (True): every item then
+        reports ``observation_changed`` and nothing is attached, so a
+        confirm for the wrong observation would only mislead."""
+        current = getattr(self, "active_observation_id", None)
+        if current is None or int(current) != int(captured_observation_id):
+            return True
+        return self._confirm_public_reference_attach(int(captured_observation_id), roles)
+
+    def _confirm_public_reference_attach(self, observation_id: int, roles) -> bool:
+        """One notice before attaching reference set(s) to an observation
+        that is already public, not a draft and spore-public: the sets are
+        shared by default, so they become public with their relationship.
+        True when no notice is needed, it is suppressed, or the user chose
+        Attach. Batch callers ask once for the whole batch."""
+        from ui.publish_notice import confirm_public_attach_if_needed
+
+        observation = ObservationDB.get_observation(int(observation_id)) or {}
+        return confirm_public_attach_if_needed(self, observation, list(roles or []))
+
+    def _attach_normalized_reference_outcome(
+        self, observation_id: int, measurement_set_id: str, role: str
+    ) -> tuple[str, str | None, str | None]:
+        """Attach one library measurement set and report what happened.
+
+        Returns ``(status, reason, severity)`` where ``status`` is
+        ``"attached"`` (a new use row was created and plotted),
+        ``"already_attached"`` (the use already existed; its stored role is
+        left untouched) or ``"failed"`` (nothing new is attached). ``reason``
+        is user-facing text, ``None`` when there is nothing to say. Never
+        shows a dialog itself, so a batch caller can collect one outcome per
+        item. ``attach_with_status`` semantics, plotability translation,
+        rollback of newly-created rows on translator failure and the
+        pre-existing malformed warning-row path stay in exactly one place.
+        """
         try:
             use, created = ObservationReferenceUseRepository.attach_with_status(
                 int(observation_id),
@@ -10224,12 +10370,11 @@ class MainWindow(GeometryMixin, QMainWindow):
                 role=role,
             )
         except ReferenceLibraryError as exc:
-            QMessageBox.warning(
-                self,
-                self.tr("Attach library reference"),
+            return (
+                "failed",
                 self.tr("Could not attach reference: {error}").format(error=str(exc)),
+                "warning",
             )
-            return
         entry = translate_observation_reference_use(use)
         if entry is None:
             if created:
@@ -10242,23 +10387,21 @@ class MainWindow(GeometryMixin, QMainWindow):
                 try:
                     ObservationReferenceUseRepository.detach(use.id)
                 except Exception as rollback_exc:
-                    QMessageBox.critical(
-                        self,
-                        self.tr("Attach library reference"),
+                    return (
+                        "failed",
                         self.tr(
                             "Attachment could not be plotted and the rollback "
                             "of the persisted row failed: {error}. The row "
                             "with id {use_id} may still be present; please "
                             "detach it manually."
                         ).format(error=str(rollback_exc), use_id=use.id),
+                        "critical",
                     )
-                    return
-                QMessageBox.warning(
-                    self,
-                    self.tr("Attach library reference"),
+                return (
+                    "failed",
                     self.tr("The attachment snapshot could not be translated for the plot."),
+                    "warning",
                 )
-                return
             # A pre-existing use came back with an unplottable snapshot.
             # Never detach someone else's persisted row as a "rollback"
             # for the attach we did not perform. Surface it as a warning
@@ -10266,22 +10409,23 @@ class MainWindow(GeometryMixin, QMainWindow):
             warning_entry = self._build_malformed_reference_series_entry(use)
             if warning_entry is not None:
                 self._add_reference_series_entry(warning_entry)
-            QMessageBox.warning(
-                self,
-                self.tr("Attach library reference"),
+            return (
+                "already_attached",
                 self.tr(
                     "This reference is already attached but its stored "
                     "snapshot cannot be plotted. It is shown as a warning "
                     "row so you can detach it."
                 ),
+                "warning",
             )
-            return
         self._add_reference_series_entry(entry)
         if created:
             try:
                 MeasurementSetPreferenceRepository.mark_used(measurement_set_id)
             except ReferenceLibraryError:
                 pass
+            return "attached", None, None
+        return "already_attached", None, None
 
     def _clean_ref_species_text(self, text: str | None) -> str:
         if not text:
@@ -11565,6 +11709,24 @@ class MainWindow(GeometryMixin, QMainWindow):
         # the column directly is exactly the leak this stage closes elsewhere.
         return proven_sporely_taxon_id(obs)
 
+    def _reference_files_under_observation_taxon(self, payload: dict) -> bool:
+        """True when the reference's taxon (``sporely_taxon_id``, the chosen
+        Reference taxon) is the observation's own taxon id. A reference
+        filed under another taxon, or with no taxon id, binds nothing to the
+        observation's identification."""
+        ref_taxon = payload.get("sporely_taxon_id")
+        own_taxon = payload.get("observation_taxon_id")
+        if own_taxon is None:
+            own_taxon = self._active_sporely_taxon_id()
+        try:
+            return (
+                ref_taxon is not None
+                and own_taxon is not None
+                and int(ref_taxon) == int(own_taxon)
+            )
+        except (TypeError, ValueError):
+            return False
+
     def _persist_normalized_reference_from_dialog(
         self,
         dialog: "ReferenceAddDialog",
@@ -11727,10 +11889,20 @@ class MainWindow(GeometryMixin, QMainWindow):
         # recording a legitimate as-published synonym is a real user
         # need. Require an explicit confirmation instead: default is
         # "No" so an accidental panel edit cannot slip through.
+        #
+        # The reference taxon is independent of the observation's
+        # identification: the user may compare against (and file the
+        # reference under) another species, e.g. an AI suggestion. Then the
+        # treatment is normalized to that Reference taxon and nothing is
+        # bound to the observation's taxon id, so there is nothing to
+        # confirm. Ask only when the treatment would be filed under the
+        # observation's OWN taxon id while the entered name disagrees.
         panel_genus = (payload.get("genus") or "").strip()
         panel_species = (payload.get("species") or "").strip()
         obs_genus, obs_species = self._observation_taxon_identity(int(observation_id))
-        if (panel_genus or panel_species) and (obs_genus or obs_species):
+        if self._reference_files_under_observation_taxon(payload) and (
+            (panel_genus or panel_species) and (obs_genus or obs_species)
+        ):
             if (
                 panel_genus.casefold() != (obs_genus or "").casefold()
                 or panel_species.casefold() != (obs_species or "").casefold()
@@ -11762,6 +11934,12 @@ class MainWindow(GeometryMixin, QMainWindow):
             if work is None and work_id:
                 work = ReferenceWorkRepository.get(str(work_id))
             if work is None:
+                return False
+            # Public-observation attach notice before anything is created:
+            # Cancel creates no work, treatment, set or use.
+            if attach and not self._confirm_public_reference_attach(
+                int(observation_id), ["compared"]
+            ):
                 return False
             treatment_data = treatment_payload_getter()
             # One canonical creation path for both intents: the request is
@@ -18139,15 +18317,23 @@ class MainWindow(GeometryMixin, QMainWindow):
                 return None
             return polygon
 
-        def _plot_reference_range_shape(x_left, x_right, y_bottom, y_top, edge_color, linestyle, q_low=None, q_high=None):
+        def _plot_reference_range_shape(x_left, x_right, y_bottom, y_top, edge_color, linestyle, q_low=None, q_high=None,
+                                        *, literature_range=False):
+            """``literature_range``: a legacy literature row with explicit
+            bounds (translate_legacy_literature_range) always draws boxes,
+            like library ranges: the core box filled translucent with a
+            solid edge, the min/max box dotted -- never an ellipse."""
             if x_left is None or x_right is None or y_bottom is None or y_top is None:
                 return
-            if reference_shape == "square":
+            if reference_shape == "square" or literature_range:
                 polygon = _constrained_box_polygon(x_left, x_right, y_bottom, y_top, q_low=q_low, q_high=q_high)
                 if not polygon:
                     return
                 xs = [point[0] for point in polygon] + [polygon[0][0]]
                 ys = [point[1] for point in polygon] + [polygon[0][1]]
+                if literature_range and linestyle == "-":
+                    ax_scatter.fill(xs, ys, facecolor=to_rgba(edge_color, alpha=0.18),
+                                    edgecolor="none", zorder=1.5)
                 ax_scatter.plot(xs, ys, color=edge_color, linewidth=1.5, linestyle=linestyle)
                 return
             width = abs(x_right - x_left)
@@ -18559,6 +18745,7 @@ class MainWindow(GeometryMixin, QMainWindow):
                     ":",
                     q_low=minmax_shape_q_low,
                     q_high=minmax_shape_q_high,
+                    literature_range=bool(data.get("legacy_literature_range")),
                 )
             if (
                 not mean_comparison
@@ -18574,6 +18761,7 @@ class MainWindow(GeometryMixin, QMainWindow):
                     "-",
                     q_low=range_shape_q_low,
                     q_high=range_shape_q_high,
+                    literature_range=bool(data.get("legacy_literature_range")),
                 )
 
             if any_reference:

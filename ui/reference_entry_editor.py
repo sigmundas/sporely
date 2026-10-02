@@ -255,6 +255,15 @@ class _PublicationSearchProxyModel(QSortFilterProxyModel):
         return super().data(index, role)
 
 
+def _qt_alive(widget) -> bool:
+    try:
+        from shiboken6 import isValid
+
+        return bool(widget is not None and isValid(widget))
+    except Exception:
+        return widget is not None
+
+
 class ReferenceEntryEditor(QWidget):
     """Paste/parse measurement editor + publication picker + Data section.
 
@@ -286,6 +295,7 @@ class ReferenceEntryEditor(QWidget):
         self._species = species
         self._prefill_data = data or {}
         self._hint_controller: HintStatusController | None = None
+        self._hint_registrations: list[tuple[QWidget, str, str]] = []
         self._plot_color = None
         self._require_explicit_publication_assignment = bool(
             require_explicit_publication_assignment
@@ -754,10 +764,16 @@ class ReferenceEntryEditor(QWidget):
         self.use_existing_radio.toggled.connect(self._on_data_choice_toggled)
         self.enter_new_radio.toggled.connect(self._on_data_choice_toggled)
 
-        hint_row = QHBoxLayout()
+        # The hint/status row is its own widget so a host that scrolls this
+        # editor can lift it out (take_hint_row) and pin it below the
+        # scroll area, next to its action buttons. A standalone editor keeps
+        # it at the bottom of its own layout.
+        self.hint_row_widget = QWidget(self)
+        hint_row = QHBoxLayout(self.hint_row_widget)
+        hint_row.setContentsMargins(0, 0, 0, 0)
         hint_row.addWidget(self.hint_bar, 1)
         hint_row.addWidget(make_github_help_button(self, "reference-data-dialog.md"), 0, Qt.AlignRight | Qt.AlignVCenter)
-        layout.addLayout(hint_row)
+        layout.addWidget(self.hint_row_widget)
 
         self._register_hint_widget(self.spore_table, self._default_hint_text)
 
@@ -1072,6 +1088,34 @@ class ReferenceEntryEditor(QWidget):
     # Hints
     # ------------------------------------------------------------------
 
+    def attach_hint_controller(self, controller: HintStatusController) -> None:
+        """Publish this editor's hints to a host-owned (dialog-level) hint
+        bar instead of its own: every registered field, parser and
+        validation hint goes to ``controller``, and the editor's own hint
+        row is removed so no hint widget stays inside the scrolled form."""
+        if self._hint_controller is not None:
+            for widget, _hint, _tone in self._hint_registrations:
+                if _qt_alive(widget):
+                    widget.removeEventFilter(self._hint_controller)
+        self._hint_controller = controller
+        for widget, hint, tone in self._hint_registrations:
+            if _qt_alive(widget):
+                controller.register_widget(widget, hint, tone=tone)
+        row = self.take_hint_row()
+        row.hide()
+        row.deleteLater()
+        self.hint_bar = None
+
+    def take_hint_row(self) -> QWidget:
+        """Remove the hint/status row from this editor's layout and return
+        it, for a host to place outside its scroll area. The hint
+        controller keeps driving it (focus, parser and validation hints)."""
+        layout = self.layout()
+        if layout is not None:
+            layout.removeWidget(self.hint_row_widget)
+        self.hint_row_widget.setParent(None)
+        return self.hint_row_widget
+
     def _register_hint_widget(self, widget: QWidget, hint_text: str | None, tone: str = "info") -> None:
         if not widget:
             return
@@ -1080,6 +1124,7 @@ class ReferenceEntryEditor(QWidget):
         widget.setProperty("_hint_text", hint)
         widget.setProperty("_hint_tone", hint_tone)
         widget.setToolTip("")
+        self._hint_registrations.append((widget, hint, hint_tone))
         if self._hint_controller is not None:
             self._hint_controller.register_widget(widget, hint, tone=hint_tone)
 
@@ -1774,6 +1819,17 @@ class ReferenceEntryEditor(QWidget):
         and returns ``False`` on invalid/incomplete input, or when the
         user declines an explicit legacy-only confirmation.
         """
+        if self._resolve_typed_publication() == "ambiguous":
+            message = QCoreApplication.translate(
+                "ReferenceAddDialog",
+                "Several publications match this name — choose one from the list.")
+            self._set_hint(message, tone="warning")
+            QMessageBox.warning(
+                self,
+                QCoreApplication.translate("ReferenceAddDialog", "Choose a publication"),
+                message,
+            )
+            return False
         if self.use_existing_radio.isChecked():
             if not self._selected_measurement_set_id:
                 QMessageBox.warning(
@@ -2066,6 +2122,36 @@ class ReferenceEntryEditor(QWidget):
         if year and str(year).strip():
             parts.append(str(year).strip())
         return " ".join(parts)
+
+    def _resolve_typed_publication(self) -> str | None:
+        """Bind typed publication text that exactly names a library work.
+
+        The publication combo is editable: typing (or completing) the exact
+        label of an existing work leaves the text in the box without
+        selecting that row, so no work id was recorded and the entry fell
+        back to a legacy-only, unnormalized reference (plotted through the
+        legacy shape path). An exact, unambiguous label match selects the
+        work, so the entry goes through the normalized library path.
+        Returns ``"bound"``, ``"ambiguous"`` (several works carry that
+        label; the user must pick one) or ``None``.
+        """
+        if self._selected_work_id or self._pending_reference_work is not None:
+            return None
+        typed = " ".join((self.publication_combo.currentText() or "").split()).casefold()
+        if not typed:
+            return None
+        matches = [
+            row for row in range(self.publication_combo.count())
+            if self.publication_combo.itemData(row)
+            and " ".join(self.publication_combo.itemText(row).split()).casefold() == typed
+        ]
+        if len(matches) == 1:
+            self.publication_combo.setCurrentIndex(matches[0])
+            self._on_publication_selected(matches[0])
+            return "bound"
+        if len(matches) > 1:
+            return "ambiguous"
+        return None
 
     def _on_publication_selected(self, _index: int) -> None:
         data = self.publication_combo.currentData()

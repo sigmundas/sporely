@@ -12760,6 +12760,8 @@ class ObservationsTab(QWidget):
             return
         image_results = self._cloud_image_import_results(row_data)
         draft_observation: dict | None = self._cloud_observation_draft_data(row_data)
+        # Publish notice baseline: the cloud row's own sharing state.
+        cloud_publish_baseline = dict(draft_observation)
         ai_state: dict | None = self._load_cloud_observation_ai_state(row_data, image_results)
         ai_taxon: dict | None = None
         primary_index = 0 if image_results else None
@@ -12773,6 +12775,7 @@ class ObservationsTab(QWidget):
                 ai_state=ai_state,
                 draft_data=draft_observation,
             )
+            dialog.publish_baseline = cloud_publish_baseline
             if dialog.exec():
                 obs_data = dialog.get_data()
                 image_results = list(dialog.image_results)
@@ -12788,6 +12791,11 @@ class ObservationsTab(QWidget):
                     continue
 
                 obs_id = ObservationDB.create_observation(**obs_data)
+                confirmed_precision = getattr(dialog, "confirmed_location_precision", None)
+                if confirmed_precision:
+                    from utils.cloud_sync import record_confirmed_location_precision
+
+                    record_confirmed_location_precision(obs_id, confirmed_precision)
                 if ai_state:
                     ObservationDB.update_observation(
                         obs_id,
@@ -15178,6 +15186,9 @@ class ObservationDetailsDialog(GeometryMixin, QDialog):
             tooltip=self.tr("Fuzzed locations are rounded in public and follow feeds."),
         )
         self.location_precision_selector.selectionChanged.connect(
+            self._on_location_precision_selected
+        )
+        self.location_precision_selector.selectionChanged.connect(
             lambda _value: self._update_cloud_privacy_slots_label()
         )
 
@@ -17213,6 +17224,90 @@ class ObservationDetailsDialog(GeometryMixin, QDialog):
     def done(self, result: int) -> None:  # noqa: N802 - Qt API
         self._cleanup_dialog_threads()
         super().done(result)
+
+    def _publish_baseline_state(self) -> dict | None:
+        """Sharing state before this save: the persisted row when editing,
+        the cloud row for a cloud draft, nothing for a new observation."""
+        baseline = getattr(self, "publish_baseline", None)
+        if baseline is not None:
+            return dict(baseline)
+        if self.edit_mode and isinstance(self.observation, dict):
+            obs_id = self.observation.get("id")
+            if obs_id:
+                try:
+                    stored = ObservationDB.get_observation(int(obs_id))
+                except Exception:
+                    stored = None
+                if stored:
+                    return self._with_cloud_precision(dict(stored))
+            return self._with_cloud_precision(dict(self.observation))
+        return None
+
+    @staticmethod
+    def _with_cloud_precision(baseline: dict) -> dict:
+        """The notice compares against what the cloud serves: a synced row's
+        snapshot precision wins over a stale local value (an older build
+        stored cloud 'hidden'/'region' as 'exact')."""
+        cloud_id = str(baseline.get("cloud_id") or "").strip()
+        if not cloud_id:
+            return baseline
+        try:
+            from utils.cloud_sync import _snapshot_baseline_for_cloud_id
+
+            cloud_precision = _snapshot_baseline_for_cloud_id(cloud_id).get("location_precision")
+        except Exception:
+            cloud_precision = None
+        if cloud_precision:
+            baseline["location_precision"] = cloud_precision
+        return baseline
+
+    def accept(self) -> None:  # noqa: D401 - Qt API
+        """Stage 2c publish notice: confirm before a save that makes the
+        observation public and not a draft. Cancel keeps the previous state."""
+        from ui.publish_notice import confirm_publish_if_needed, load_local_facts
+
+        previous = self._publish_baseline_state()
+        try:
+            new_state = dict(self.get_data())
+        except Exception:
+            new_state = {}
+        if new_state and "has_photos" not in new_state:
+            new_state["has_photos"] = bool(self.image_results)
+        obs_id = (self.observation or {}).get("id") if self.edit_mode else None
+        if new_state and not confirm_publish_if_needed(
+            self, previous, new_state,
+            lambda: load_local_facts(obs_id, new_state),
+        ):
+            self._restore_publish_controls(previous)
+            return
+        # An explicit precision choice on this device (confirmed above when it
+        # publishes or widens) is what lets sync push a more precise level.
+        self.confirmed_location_precision = None
+        chosen = new_state.get("location_precision")
+        before = (previous or {}).get("location_precision")
+        if (
+            chosen
+            and getattr(self, "_preserved_location_precision", None) is None
+            and str(chosen).strip().lower() != str(before or "exact").strip().lower()
+        ):
+            self.confirmed_location_precision = str(chosen)
+            if obs_id:
+                from utils.cloud_sync import record_confirmed_location_precision
+
+                record_confirmed_location_precision(obs_id, chosen)
+        super().accept()
+
+    def _restore_publish_controls(self, previous: dict | None) -> None:
+        """Put the draft and visibility controls back to the previous state."""
+        previous = previous or {}
+        if hasattr(self, "is_draft_checkbox"):
+            self.is_draft_checkbox.setChecked(bool(previous.get("is_draft", True)) if previous else True)
+        if previous:
+            self._set_sharing_scope(
+                previous.get("sharing_scope") or previous.get("visibility"),
+                location_public=previous.get("location_public"),
+            )
+            self._set_location_precision(previous.get("location_precision"))
 
     def closeEvent(self, event):
         self._cleanup_dialog_threads()
@@ -21568,16 +21663,35 @@ class ObservationDetailsDialog(GeometryMixin, QDialog):
             selector.set_selected_value(normalized)
 
     def _selected_location_precision(self) -> str:
+        # A stored 'hidden'/'region' precision (set elsewhere, e.g. on the
+        # web) is kept unless the user picks a level here; it is never
+        # silently rewritten to 'exact'.
+        preserved = getattr(self, "_preserved_location_precision", None)
+        if preserved:
+            return preserved
         selector = getattr(self, "location_precision_selector", None)
         if selector is not None:
             return normalize_location_precision(selector.selected_value(LOCATION_PRECISION_EXACT))
         return LOCATION_PRECISION_EXACT
 
     def _set_location_precision(self, value: str | None) -> None:
-        normalized = normalize_location_precision(value)
+        raw = str(value or "").strip().lower()
+        preserved = raw if raw in {"hidden", "region"} else None
+        normalized = normalize_location_precision(
+            LOCATION_PRECISION_FUZZED if preserved else value
+        )
         selector = getattr(self, "location_precision_selector", None)
-        if selector is not None:
-            selector.set_selected_value(normalized)
+        self._setting_location_precision = True
+        try:
+            if selector is not None:
+                selector.set_selected_value(normalized)
+        finally:
+            self._setting_location_precision = False
+        self._preserved_location_precision = preserved
+
+    def _on_location_precision_selected(self, _value) -> None:
+        if not getattr(self, "_setting_location_precision", False):
+            self._preserved_location_precision = None
 
     def _load_existing_observation(self):
         """Preload observation details and images for editing."""

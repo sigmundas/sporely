@@ -620,6 +620,9 @@ def test_plotting_unbridged_legacy_reference_requires_normalization_and_persists
     stub._persist_normalized_reference_from_dialog = MethodType(
         MainWindow._persist_normalized_reference_from_dialog, stub
     )
+    stub._reference_files_under_observation_taxon = MethodType(
+        MainWindow._reference_files_under_observation_taxon, stub
+    )
     stub._measurement_set_is_attached_to_observation = (
         MainWindow._measurement_set_is_attached_to_observation
     )
@@ -763,6 +766,9 @@ def test_explicit_legacy_assignment_normalizes_taxonless_observation(libs):
     stub = _stub_main_window_shell(active_observation_id=obs_id)
     stub._persist_normalized_reference_from_dialog = MethodType(
         MainWindow._persist_normalized_reference_from_dialog, stub
+    )
+    stub._reference_files_under_observation_taxon = MethodType(
+        MainWindow._reference_files_under_observation_taxon, stub
     )
     stub._active_sporely_taxon_id = lambda: None
     stub._observation_taxon_identity = lambda _obs_id: ("Mycena", "galopus")
@@ -1003,6 +1009,12 @@ def _bind_attach_handler(stub):
     stub._attach_normalized_reference_to_active_observation = MethodType(
         MainWindow._attach_normalized_reference_to_active_observation, stub
     )
+    stub._attach_normalized_reference_outcome = MethodType(
+        MainWindow._attach_normalized_reference_outcome, stub
+    )
+    # The public-observation attach notice has its own tests; here the
+    # observation is never public, so no notice applies.
+    stub._confirm_public_reference_attach = lambda _obs_id, _roles: True
     stub._current_attached_measurement_set_ids = MethodType(
         MainWindow._current_attached_measurement_set_ids, stub
     )

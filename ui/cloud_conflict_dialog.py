@@ -1499,12 +1499,86 @@ class CloudConflictDialog(QDialog):
             'baseline': dict((self._current_detail or {}).get('plan_baseline') or {}),
         }
 
+    def resolved_observation_state(self) -> tuple[dict, dict]:
+        """(cloud state now, observation state after the selected field choices)."""
+        detail = self._current_detail or {}
+        remote = dict(detail.get('remote_observation') or {})
+        local = dict(detail.get('local_observation') or {})
+        resolved = dict(local)
+        resolved.update(remote)
+        if 'sharing_scope' not in resolved and 'visibility' in remote:
+            resolved['sharing_scope'] = remote.get('visibility')
+        def put(field: str, value) -> None:
+            resolved[field] = value
+            if field in {'visibility', 'sharing_scope'}:
+                resolved['sharing_scope'] = value
+                resolved['visibility'] = value
+
+        # One-sided changes the plan applies automatically (see
+        # _build_plan_from_automatic_decisions in utils/cloud_sync.py).
+        auto = (detail.get('automatic_decisions') or {}).get('fields') or []
+        for entry in auto:
+            field = str(entry.get('field') or '')
+            action = entry.get('action')
+            if not field:
+                continue
+            if action == 'push_local':
+                put(field, entry.get('local'))
+            elif action == 'pull_cloud':
+                put(field, entry.get('remote'))
+            elif action == 'auto_draft_wins':
+                side = entry.get('chosen_side') or 'local'
+                put(field, entry.get('local') if side == 'local' else entry.get('remote'))
+        for row in detail.get('field_rows') or []:
+            field = str(row.get('field') or '')
+            choice = self._selected_choice(f'field:{field}')
+            if choice not in {'local', 'cloud'}:
+                continue
+            put(field, row.get('local') if choice == 'local' else row.get('remote'))
+        return remote, resolved
+
+    def _confirm_publish_for_plan(self, conflict: dict) -> bool:
+        """Stage 2c publish notice when the resolution makes the observation
+        public and not a draft (compared with what the cloud serves now), and
+        the spore-public notice when it makes spore data public on an
+        observation the cloud already serves publicly."""
+        from ui.publish_notice import confirm_publish_if_needed, load_local_facts
+
+        previous, resolved = self.resolved_observation_state()
+        local_id = int(conflict.get('local_id') or 0) or None
+        if not confirm_publish_if_needed(
+            self, previous, resolved,
+            lambda: load_local_facts(local_id, resolved),
+        ):
+            return False
+        # Already public on the cloud and the resolution makes spore data
+        # public: that also makes attached reference sets public.
+        from ui.publish_notice import confirm_spore_public_if_needed, is_public
+
+        if is_public(previous) and not confirm_spore_public_if_needed(
+            self,
+            # The server serves references only for exactly 'public'; a
+            # missing/NULL cloud value is therefore not public.
+            dict(resolved, spore_data_visibility=previous.get('spore_data_visibility') or 'unset'),
+            resolved.get('spore_data_visibility'),
+        ):
+            return False
+        # Choosing this device's precision here is an explicit choice that
+        # sync may push (confirmed above when it publishes or widens).
+        if local_id and self._selected_choice('field:location_precision') == 'local':
+            from utils.cloud_sync import record_confirmed_location_precision
+
+            record_confirmed_location_precision(local_id, resolved.get('location_precision'))
+        return True
+
     def _apply_selected_changes(self) -> None:
         conflict = self._current_conflict()
         if conflict is None or not self._apply_btn.isEnabled():
             return
         if self._apply_worker is not None:
             return  # a second worker cannot start
+        if not self._confirm_publish_for_plan(conflict):
+            return  # Cancel: nothing applied, choices stay as they were
         # Preserve current selection so failure can restore it.
         self._pending_selection = {
             key: self._selected_choice(key) or '' for key in self._choice_specs

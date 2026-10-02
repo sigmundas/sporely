@@ -1196,8 +1196,10 @@ class ObservationDB:
 
     @staticmethod
     def _normalize_location_precision(value: str | None, fallback: str = "exact") -> str:
+        # 'region'/'hidden' are valid server levels (set on the web); keep
+        # them rather than silently widening them to 'exact'.
         normalized = str(value or fallback or "exact").strip().lower()
-        return normalized if normalized in {"exact", "fuzzed"} else "exact"
+        return normalized if normalized in {"exact", "fuzzed", "region", "hidden"} else "exact"
 
     @staticmethod
     def _build_observation_folder_path(

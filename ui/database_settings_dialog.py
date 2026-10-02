@@ -381,5 +381,11 @@ class DatabaseSettingsDialog(QDialog):
                 QMessageBox.warning(self, self.tr("Database Move Failed"), str(exc))
 
         init_database()
+        try:
+            from utils.cloud_sync import repair_legacy_location_precision
+
+            repair_legacy_location_precision()
+        except Exception:
+            pass
 
         self._save_tag_settings()
