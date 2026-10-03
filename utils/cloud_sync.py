@@ -28178,6 +28178,9 @@ def cloud_media_materialization_state_for_observation(local_observation_id: int 
     if not local_obs:
         summary['reason'] = 'local_observation_not_found'
         return summary
+    suppress_reverse_identity = bool(
+        local_obs.get('portable_cloud_identity_pending')
+    )
 
     cloud_id = str(local_obs.get('cloud_id') or '').strip()
     summary['cloud_observation_id'] = cloud_id or None
