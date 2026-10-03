@@ -15,6 +15,7 @@ Add a note under the nearest heading, or use “Unsorted / needs review” when 
 - Decide whether to repair the known `G_conflicting_intent` row and historical duplicate observation/image records outside the extraction plan.
 - Harden standalone migration tooling if it becomes necessary; it is explicitly outside the cloud-sync extraction plan.
 - Design a safe fix for the observation-deletion ordering and original-media coverage noted in `docs/cloud-media-incident-audit.md`.
+- Reference attach/detach should mark the observation as having unsynced changes via a lightweight row-level pending state (not full `dirty`: no image re-upload, prep, mosaic rebuild or measurement re-push). Clears only when the reference-use outbox work succeeds. Also consider telling the user that edits saved mid-sync upload next sync. Removed from the cloud-sync refactor plan (old 6.5k, 2026-10-03); plan it after the refactor's Stage 4 coordinator lands.
 - Spore mosaic after conflict resolution: the mosaic is skipped when local and cloud differ in any way the user accepted. Narrow that so only microscope-relevant differences block it.
 - Spore mosaic after conflict resolution: build the mosaic even when local and cloud differ, using only measurements whose images match on both sides.
 - Spore mosaic after conflict resolution: generate a mosaic for observations that only came in by import (cloud pull), not just ones pushed from this device.

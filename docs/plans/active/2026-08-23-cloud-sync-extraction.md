@@ -1,1755 +1,624 @@
 # Cloud Sync Extraction and Orchestration Refactor Plan
 
-Status: authoritative planning document for the staged decomposition and hardening of `utils/cloud_sync.py`.
+Status: authoritative plan for decomposing and hardening `utils/cloud_sync.py`.
+Rewritten 2026-10-03 against `main` @ `65f09d2`; supersedes the 2026-08-23
+version (20 checkpoints), which remains in git history.
 
 ## Agent handoff
 
-- **Status:** Active; no extraction stage is verified as implemented.
-- **Last completed stage:** Pre-existing E1c dead-code cleanup, commit `919b3e7` (a prerequisite, not an extraction stage).
-- **Current/next stage:** Pre-stage inventory and baseline, then Stage 0.
-- **Relevant commits:** `919b3e7`, `de824a4`.
-- **Primary design principle:** **Preserve contracts, not accidents.**
-- **Compatibility decision:** Keep `utils/cloud_sync.py` as a stable public compatibility facade unless there is a concrete reason to remove it later.
-- **Mechanical-extraction rule:** Mechanical movement commits do not intentionally change behavior.
-- **Architecture/hardening rule:** Deliberate changes that improve correctness, resilience, debuggability, or performance are allowed only in explicitly scoped architecture/hardening stages with dedicated tests and validation.
-- **Major intended hardening:** Replace the current early `synced` stamp + compensating re-dirty behavior with a single final synced commit after required work and snapshot persistence succeed.
-- **Do not combine with this job:** E3 garbage collection, historical duplicate cleanup, unrelated schema work, UI redesign, account-link/reset work, broad lint/type migrations, or external-publishing refactors.
-- **Remaining acceptance criteria:** The definition of done and validation matrix at the end of this document.
+- **Status:** Active. No stage accepted on `main`.
+- **Donor evidence:** `feature/cloud-sync-transport-boundary` (`4002270`, merge
+  base `7acaad1`, 271 commits behind `main`) implemented old Stages 0–1 and
+  passed review in September. It is a donor, never a merge source (§4).
+- **Current/next stage:** Stage 1 (Boundaries), starting with slice 1.0 (preflight).
+- **Known red baseline:** `tests/test_cloud_sync_progress_reset_and_prepare.py::
+  test_reconcile_metadata_only_linked_images_skips_unchanged_siblings` fails on
+  `main` (stub `push_image_metadata` lacks `*, remote_row=None`). Fixed on the
+  donor in `ca16130`; reapply in slice 1.0.
+- **Execution model:** implementation by GPT-5.5-low; independent audit by
+  GPT-6.1-Sol; plan refinement, review and acceptance through agent-sparring.
+  Stages are large coherent slices made of small bisectable commits.
+- **Principle:** preserve contracts, not accidents. Increase stage size; do not
+  reduce evidence.
 
-This document supersedes the older extraction-only plan and the older embedded proposal formerly in `docs/cloud-sync-architecture.md`.
+## 1. What changed since the 2026-08-23 plan
 
-The purpose is no longer merely to spread `utils/cloud_sync.py` across smaller files. The job has two goals:
+| Fact on `main` today | Consequence for the plan |
+|---|---|
+| `cloud_sync.py` is 28,305 lines (24,854 then); 712 defs; `SporelyCloudClient` alone is 3,060 lines / 113 methods (L15867). | Extraction is still warranted; the client holds domain identity logic, not just transport. |
+| Donor branch's moved symbols (errors 21, profiling 14, progress 15, summary 8, common 1, transport 15, pagination 2) are AST-identical on `main`. Only pull-only registries grew (17→26, 44→46, 11→13). `git merge-tree` shows 4 conflict hunks in `cloud_sync.py`. | Stage 0/1 work is cheap to reapply; it is not worth re-deriving. |
+| Snapshot storage calls `_reconcile_accepted_asymmetry` (L12593); conflict resolution calls `_store_remote_snapshot` (L12755, L15789…). | Snapshots, accepted asymmetry, comparison and conflict-plan form **one cycle** and must move together (old 4a/4b split is invalid). |
+| Measurement push needs image `cloud_id`s, metadata anchors, tombstones and the portable identity guard; measurement import calls `_apply_remote_images_to_local`. | Old order (5b measurements before 6a–6c images) contradicts the dependency graph. Images → measurements. |
+| Calibrations (~1,050 lines) depend only on infrastructure + `_reconcile_local_image_calibration_links`. | Calibrations are a leaf; they move in Stage 1. |
+| Early synced stamp: `push_all` L21016, compensating `mark_observation_dirty` at L21085/L21354/L21445/L21573, snapshot stored after the stamp (L21493). Pull stamps early at L26367, L26659, L26808, L26846, L26891, L27085. | Final-commit work must cover **pull** too, not only push. |
+| Unhoused regions not in the old target tree: taxonomy-identity classification (L10898–11240, ~900 lines incl. `_RemoteIdentityClaim`), location-precision guard (L3792–3910), EXIF inject/backfill (L11310, L26041), original/calibration recovery cache (L1167–1877), image-too-large formatting (L2535–2790, L19174), `get_conflict_detail` (874 lines, L19593), derived summary/mosaic glue (L24217–25770, ~1,550 lines). | Every region now has a named owner (§3). |
+| New invariants (owner-sync metadata parents, upload completeness vs render signature, taxonomy identity in conflict detection, verified identity clear via `_patch_with_precondition`, mosaic signature carry-forward, pending-image repair generation, reference-sharing pull-only writers). | Added to §2. |
+| 1,035 `monkeypatch.setattr(<cloud_sync>, …)` calls on 130 names; top: `get_connection` 122, `get_app_settings` 44, `update_app_settings` 38, `_store_remote_snapshot` 37. 84 test files / ~1,593 tests import `cloud_sync`. | The patching rule must be decided once, in Stage 1 (§5), not rediscovered per stage. |
+| `reference_cloud_adapter.py:8` imports error classes from the facade, forcing lazy imports in `sync_all` (L6877, L7214). | Import from `errors.py` once it exists; removes the cycle. |
 
-1. **Create clear ownership boundaries** so the sync implementation is understandable, testable, and maintainable.
-2. **Use those boundaries to replace accidental orchestration behavior with an explicit, typed, debuggable sync state model.**
+## 2. Invariants that no stage may change
 
-The refactor is not complete merely because the monolith has been split.
+Unless a stage explicitly lists a change under "Intentional behavior change",
+these hold. Each is backed by the named contract section or suite.
 
----
+1. Local SQLite decides which image bytes are desired in the cloud; only ledger
+   membership (`sporely_cloud_image_storage_intent_ids_<obs>`) proves initialized
+   intent. Initializer performs zero cloud I/O. (`test_cloud_storage_intent_ledger`,
+   `test_cloud_image_bytes_desired`)
+2. Explicit checkbox/context-menu removal is the only source of routine cloud
+   image deletion. Omission, filtering, prep failure, missing files and partial
+   reads are never deletion intent. (`test_image_tombstones`)
+3. Pending tombstone flush runs **before** dirty-observation pruning; explicit
+   deletion converges in the same sync. A same-run tombstone is not a
+   concurrent remote edit.
+4. Verified local `cloud_id`s are primary push identity; remote `desktop_id` is
+   recovery only. Disagreement, ambiguity, soft-deleted matches and 23505 races
+   fail closed — never POST, never reparent. (`test_cloud_identity_fail_closed`,
+   `test_image_push_identity`, `test_portable_cloud_identity_guard`)
+5. Taxonomy identity participates in change/conflict detection; a no-baseline
+   identity contradiction fails closed. (contract L874, L910;
+   `test_cloud_sync_no_baseline_identity_contradiction`)
+6. Stale cloud identity is cleared explicitly and its landing is verified
+   (`_verify_identity_clear_landed`, `_patch_with_precondition`).
+7. Metadata-only microscope anchors are valid rows, not broken uploads.
+   Byte-excluded microscope images with public measurements still get
+   metadata parents (owner-sync, contract L642). Byte selection and
+   measurement/mosaic participation are independent.
+   (`test_cloud_sync_metadata_only`, `test_cloud_media_measurement_mosaic_chain`)
+8. Anchor promotion reuses the existing row; pending marker before reserve
+   PATCH; reserve conditional on `storage_path IS NULL`; failure releases only
+   the exact reserved key; `None` upload return is failure; reserved path is
+   never proof of bytes. (`test_cloud_anchor_promotion`)
+9. A local render signature never proves remote upload completeness; image-prep
+   fast paths require canonical pending-image completeness (contract L716, L768).
+   Bump `_CLOUD_PENDING_IMAGE_REPAIR_VERSION` only when the repair scan's
+   selection changes.
+10. Pull-only performs zero cloud writes; every public client method is
+    classified read or write, including reference-sharing writers.
+    (`test_cloud_download_only`)
+11. Partial or bounded remote collections are never authoritative; paginated
+    reads use deterministic ordering.
+12. Snapshot = accepted shared baseline, never "whatever we read". Accepted
+    asymmetry persists inside it. Never written after truncated reads,
+    unresolved conflicts, incomplete required work or ambiguous identity.
+13. Representation-only differences (`sample_source` case, naive vs UTC
+    `captured_at`, `calibration_id` vs `calibration_uuid`, absent vs `None`)
+    never conflict; genuine three-way divergence always does.
+14. Conflict plans: reviewed-baseline drift aborts apply; partial retries are
+    idempotent; media deletion is unreachable from a plan.
+15. Required child failure leaves the observation retryable and visible in the
+    result. (`test_sync_observation_dirty_propagation`)
+16. Cloud recovery-cache bytes are never re-uploaded; local originals are never
+    deleted or downgraded by cloud-side disappearance.
+17. Mosaic signature survives the sync's own working-file swap
+    (`_carry_forward_local_mosaic_signature`, contract L999); publication
+    selection is not part of the mosaic key.
+18. Fast no-op sync performs zero remote writes (`test_cloud_sync_dirty_loop_steady_state`
+    L710, `test_cloud_sync_fast_path`); child-change cursor semantics unchanged
+    (`test_child_change_probe`).
+19. Red List follows identification (contract L979); location precision guard
+    holds; cloud-only field edits are persisted locally during push.
+20. `sync_all` caller modes (`sync_images`, `materialize_remote_images`,
+    `full_pull`, `child_safety_pull`, `pull_only`) keep their meaning; nothing is
+    "turned on" to simplify orchestration.
 
-## 1. Governing rules
+## 3. Target architecture
 
-### 1.1 Preserve contracts, not accidents
-
-The following are not the same thing:
-
-- public compatibility;
-- safety contracts;
-- implementation details that happen to exist today.
-
-Public entry points and safety contracts are valuable. Accidental internal behavior is not automatically a compatibility requirement.
-
-Examples of implementation behavior that should **not** be frozen simply because it exists today:
-
-- stamping an observation `synced` before required child work is complete, then compensating by marking it dirty again;
-- using formatted log/error strings as machine-readable state;
-- performing avoidable no-op cloud writes that still trigger remote `updated_at`;
-- having push and pull independently rediscover overlapping three-way reconciliation rules;
-- deeply nested helpers mutating global observation sync state without one authoritative completion owner.
-
-### 1.2 Mechanical extraction rule
-
-For Stages 0-6:
-
-> **Move ownership boundaries without intentional behavior changes.**
-
-Within a mechanical extraction commit:
-
-- preserve observable behavior;
-- preserve error/result shapes;
-- preserve ordering when ordering is load-bearing;
-- preserve retry and conflict semantics;
-- do not mix movement with cleanup merely because the old code looks ugly;
-- do not redesign an API unless import correctness requires a narrow adapter.
-
-### 1.3 Architecture and hardening rule
-
-At a declared architecture/hardening checkpoint:
-
-> **Existing internal behavior may be changed when there is a concrete correctness, resilience, debuggability, or performance benefit.**
-
-Such a change must:
-
-1. have a written intended contract;
-2. have tests for the new behavior before or with implementation;
-3. be reviewed as behavior work, not disguised as file movement;
-4. have focused live validation when the risk justifies it;
-5. become the new baseline for subsequent extraction once accepted.
-
-### 1.4 Compatibility rule
-
-Public entry points remain stable where doing so is inexpensive.
-
-`utils/cloud_sync.py` should remain a compatibility facade used by production code, UI code, scripts, tools, and external tests while internals move.
-
-The architectural success criterion is:
-
-> **`cloud_sync.py` is boring.**
-
-It is not necessary for the file to disappear.
-
-### 1.5 Safety rule
-
-The following remain strict unless separately and explicitly redesigned:
-
-1. Local SQLite remains authoritative for whether individual image bytes are desired in Sporely Cloud.
-2. Explicit checkbox/context-menu removal is the source of cloud image deletion intent.
-3. Omission, filtering, preparation failure, missing files, or partial reads are never deletion intent.
-4. Verified local `observations.cloud_id` and `images.cloud_id` are primary push identities.
-5. Remote `desktop_id` is recovery identity only.
-6. Identity disagreement or ambiguity fails closed; it never falls through to POST.
-7. Metadata-only microscope anchors are valid cloud rows and must not be treated as broken uploads.
-8. Pull-only mode performs zero cloud writes. A blocked write attempt is a bug, not a successful safety outcome.
-9. Partial or bounded remote collections are never authoritative.
-10. Paginated reads require deterministic ordering.
-11. Required work failure leaves the observation retryable and visible in the sync result.
-12. Real concurrent edits still trigger review; representation differences alone do not.
-13. Tombstone flush ordering relative to dirty-observation pruning remains load-bearing.
-14. Cloud recovery-cache files are remote-owned and their bytes are never re-uploaded.
-15. Snapshot persistence means “known-good agreed baseline,” not “whatever state we happened to read.”
-
----
-
-## 2. Intended end-state architecture
-
-Do not treat this exact file tree as sacred; ownership boundaries matter more than file count.
+Ownership matters more than file count. `cloud_sync_impl/` modules may not
+import `utils.cloud_sync` except through the documented transitional
+`_facade()` hook (retired in Stage 5).
 
 ```text
-utils/
-    cloud_sync.py                    # stable compatibility facade
-
-    cloud_sync_impl/
-        __init__.py
-
-        # cross-cutting infrastructure
-        errors.py
-        profiling.py
-        progress.py
-        summary.py
-
-        # remote boundary
-        transport.py
-        pagination.py
-        pull_only.py
-
-        # state / policy
-        image_policy.py
-        tombstones.py
-        snapshots.py
-        conflicts.py
-
-        # domain owners
-        calibrations.py
-        measurements.py
-        image_identity.py
-        images.py
-        anchors.py
-
-        # reconciliation: pure classification, not side effects
-        reconciliation/
-            __init__.py
-            types.py
-            observation.py
-            images.py
-            measurements.py
-
-        # execution / coordination
-        observation_coordinator.py
-        push_orchestration.py
-        pull_orchestration.py
-        orchestration.py
+utils/cloud_sync.py                     facade: public API, re-exports, legacy result dicts
+utils/cloud_sync_impl/
+  common.py  errors.py  profiling.py  progress.py  summary.py   leaf infrastructure
+  settings_keys.py                      per-observation settings key builders
+  transport.py  pagination.py           client mixins: HTTP, refresh, paging
+  pull_only.py                          read/write registry, PullOnlyCloudClient
+  image_policy.py                       desired bytes, intent ledger, anchor predicates
+  tombstones.py                         tombstone lifecycle
+  calibrations.py                       calibration payload/identity/push/pull/recovery cache
+  reconciliation/                       PURE classification (no I/O, no SQLite writes)
+    compare.py                          canonical observation/image/measurement payloads
+    taxonomy_identity.py                identity claims, contradiction classification
+    preflight.py                        ObservationPushConflictReport, push preflight
+    types.py                            SyncIssue, OperationOutcome, ReconciliationPlan (Stage 4)
+  baseline.py                           snapshots + accepted asymmetry (persisted)
+  conflict_plan.py                      build/resolve/finalize plans, fingerprints, ops
+  conflict_detail.py                    get_conflict_detail UI payload
+  image_identity.py                     resolve/find/link, portable guard, identity-clear; client mixin
+  anchors.py                            metadata-only anchors, owner-sync parents, promotion
+  images.py                             push/pull/prep/materialize, signatures, EXIF, size limits
+  measurements.py                       payloads, push, reconcile, import
+  derived.py                            spore summary + mosaic glue (calls sibling owners)
+  observation_coordinator.py            ONLY owner of final sync_status + snapshot commit (Stage 4)
+  push_executor.py  pull_executor.py    execute classified actions (Stage 4)
+  orchestration.py                      thin sync_all (Stage 4)
 ```
 
-Existing sibling modules such as:
+Dependency direction (arrows = "may import"):
 
 ```text
-utils/cloud_media_policy.py
-utils/original_sync_policy.py
-utils/cloud_media_recovery.py
-utils/cloud_media_audit.py
-utils/cloud_spore_mosaic.py
-utils/cloud_spore_mosaic_backfill.py
-utils/spore_summary_sync.py
-utils/r2_storage.py
+orchestration → coordinator → {push_executor, pull_executor} → domain owners
+coordinator → reconciliation/*, baseline
+domain owners: calibrations, image_identity → anchors → images → measurements → derived
+domain owners → image_policy, tombstones, baseline, transport/pull_only, infrastructure
+conflict_plan → baseline, reconciliation/*, domain owners (execution of plan ops)
+reconciliation/* → infrastructure only            (never transport, never SQLite writes)
+infrastructure → nothing in cloud_sync_impl
 ```
 
-remain sibling owners unless a stage finds a concrete reason to move a narrow piece of sync glue. Do not pull already coherent subsystems into `cloud_sync_impl/` merely to make one tree look complete.
+Sibling owners stay where they are: `cloud_media_policy`, `original_sync_policy`,
+`cloud_media_recovery`, `cloud_media_audit`, `cloud_spore_mosaic[_backfill]`,
+`spore_summary_sync`, `r2_storage`, and the reference-sync stack
+(`reference_cloud_sync`, `reference_cloud_adapter`, `curated_reference_sync`,
+`database/reference_sync_*`). External publishing is out of scope.
 
-External publishing to Artsobservasjoner, Artportalen, iNaturalist, Mushroom Observer, etc. is a **parallel integration subsystem**, not part of this refactor.
+## 4. Using the donor branch
+
+- Start every stage from current `main`. Never merge, rebase or cherry-pick the
+  donor wholesale.
+- **Reuse as-is:** the module layout and docstrings of `errors.py`,
+  `profiling.py`, `progress.py`, `summary.py`, `common.py`, `pagination.py`;
+  the ownership tests `tests/test_cloud_sync_stage0_ownership.py` and
+  `tests/test_cloud_sync_stage1_ownership.py`; test fixes from `ca16130`
+  (stub signature + 3 materialization-state regressions), the dry-run WAL fix
+  `7297bf9` and the `reference_library_schema` index idempotence fix — each
+  only after re-checking it still applies.
+- **Regenerate from `main`, never copy:** `pull_only.py` registries (main has
+  more entries); `transport.py` (add `_patch_with_precondition`, the session-
+  cache clearing hook near `_cloud_timing_log`).
+- **Lessons to apply up front:**
+  1. *Shadowing:* the donor's first cut left facade redefinitions after the
+     import, so facade and owner held different objects. Rule: delete the
+     facade definition in the same commit as the move; ownership tests assert
+     `facade.X is owner.X`.
+  2. *Late binding:* donor mixins resolve `SUPABASE_KEY`, `CloudSyncError`,
+     `_response_indicates_auth_error`, `_decode_jwt_subject` via `_facade()`.
+     Keep this only for those transport names, list them, and retire it in
+     Stage 5.
+- Add to the classification on reapply: `fetch_image_metadata_purpose` (read,
+  push-side only), `_patch_with_precondition` (write, explicit — today only
+  default-deny blocks it). Move `is_identity_clear_verification_failed_error`
+  (L3026) into `errors.py`.
+- After Stage 1 lands, delete the donor and `review/cloud-sync-prestage-2026-09-08`
+  branches, and the untracked `utils/cloud_sync_impl/__pycache__` on `main`.
+
+## 5. Monkeypatch rule (decided once, applied in every stage)
+
+1,035 test patches target the facade. A moved function that resolves
+`get_connection` in its own module escapes them silently.
+
+- Production owner modules import what they use directly
+  (`from database.schema import get_connection`), never via the facade —
+  except the Stage-1 `_facade()` transport list.
+- Add `tests/cloud_sync_patching.py::patch_cloud_sync(monkeypatch, name, value)`:
+  sets the attribute on the facade **and** every `utils.cloud_sync_impl.*`
+  module that binds `name`, and fails if none does. Test-only; no production
+  mirror state.
+- Each move commit rewrites the affected tests' `monkeypatch.setattr(cloud_sync, "<name>", …)`
+  to `patch_cloud_sync(...)` for the moved or newly-bound names (mechanical codemod,
+  committed separately from the production move so the diff is reviewable).
+- An ownership test per stage asserts identity (`facade.X is owner.X`) for every
+  re-exported symbol and that no `cloud_sync_impl` module defines a name the
+  facade also defines.
+
+## 6. Mechanical-move verification (makes large stages reviewable)
+
+Slice 1.0 adds `tools/verify_cloud_sync_move.py`: given a base SHA and a
+candidate, for every function/class removed from `cloud_sync.py` it finds the
+definition in `cloud_sync_impl/` and compares normalized ASTs (ignoring import
+lines and module-qualified name rewrites). Output: identical / differs (with
+diff) / missing. Reviewers require "all identical" for any commit labelled
+`move:`; any non-identical symbol must be in a commit labelled `adapt:` with a
+one-line reason. This is what lets one stage contain thousands of moved lines
+without weakening review.
+
+Commit labels used throughout: `move:` (AST-identical), `adapt:` (import/binding
+only), `test:` (patch retargeting, new tests), `behavior:` (intentional change,
+own tests), `docs:`.
 
 ---
 
-## 3. Public API / facade strategy
+# Stage 1 — Boundaries
 
-Do **not** begin by replacing `utils/cloud_sync.py` with `utils/cloud_sync/__init__.py`.
+**Objective:** land a green baseline and extract every dependency-graph leaf:
+infrastructure, remote boundary, image policy, tombstones, calibrations.
 
-During and after the refactor, prefer:
+**Absorbs:** old pre-stage, Stage 0, Stage 1, Stage 2, Stage 3, Stage 5a.
 
-```text
-utils/cloud_sync.py
-```
+**Ownership after stage:** `common`, `errors`, `profiling`, `progress`,
+`summary`, `settings_keys`, `transport`, `pagination`, `pull_only`,
+`image_policy` (incl. `_is_metadata_only_microscope_cloud_image`,
+`_is_local_metadata_only_microscope_anchor`, intent ledger L5781–6241),
+`tombstones` (L6287–6560), `calibrations` (L650–1166, L7458–8225, plus the
+original/calibration recovery cache L1167–1877 if its only consumers are
+calibration/original paths — otherwise leave it for Stage 3 `images`).
+`SporelyCloudClient` inherits the transport/pagination mixins; its domain
+methods stay in the facade until Stage 3.
 
-as a stable public facade.
+**Behavior:** preserving only. The one allowed non-move is the baseline test fix.
 
-It may:
+**Prerequisites:** none.
 
-- re-export public exceptions and dataclasses;
-- expose `sync_all`, `push_all`, `pull_all`, and other intentionally public helpers;
-- contain thin compatibility wrappers;
-- translate new internal structured results into legacy result dictionaries where required;
-- preserve existing import paths while callers migrate gradually.
+**Commit slices:**
+1. 1.0 preflight — `test:` reapply `ca16130` stub fix + regressions; confirm
+   green. `docs:` refresh `docs/cloud-sync-architecture.md` line references and
+   record the early-stamp model as current truth. `test:` add
+   `tests/cloud_sync_patching.py`, `tools/verify_cloud_sync_move.py`, and an
+   inventory file `docs/cloud-sync-refactor-inventory.md` (production imports
+   from `utils.cloud_sync`, tools/scripts importing private helpers, string-based
+   references, patched-name counts).
+2. `move:` leaf infrastructure (donor layout) + `adapt:` facade re-exports;
+   `move:` `is_identity_clear_verification_failed_error`; `adapt:`
+   `reference_cloud_adapter` imports errors from `errors.py`, drop the lazy
+   imports in `sync_all`. `test:` stage-0 ownership test.
+3. `move:` transport/pagination mixins, `_patch_with_precondition`; regenerate
+   `pull_only.py` from main; classify every client method. `test:` stage-1
+   ownership + classification test (future-enforcing).
+4. `move:` settings keys, image policy, tombstones (one commit each).
+5. `move:` calibrations (+ recovery cache if eligible).
+6. `test:` patch retargeting codemods, one per production move commit.
 
-Do not keep duplicate mutable state or fake globals in the facade merely to satisfy old monkeypatch targets.
+**Must not change:** error text, summary keys, progress phase names, exception
+hierarchy, headers/`Prefer` semantics, refresh/retry/timeouts, pagination order,
+pull-only allow/block results, ledger key format, tombstone flush ordering,
+calibration no-op matching. Invariants 1–3, 10, 11.
 
-A likely acceptable final size is roughly 100-300 lines, but line count is not itself an acceptance criterion.
+**Focused suites:** `test_cloud_download_only`, `test_cloud_sync_stage0_ownership`,
+`test_cloud_sync_stage1_ownership`, pagination tests,
+`test_cloud_storage_intent_ledger`, `test_cloud_image_bytes_desired`,
+`test_cloud_sync_metadata_only`, `test_image_tombstones`, gallery checkbox
+deletion tests, `test_cloud_calibration_sync`, `test_cloud_sync_change_notification`.
 
----
+**Broad gate:** all 84 test files importing `cloud_sync` (record count; expect
+~1,593 passing) + `py_compile` of touched modules + fresh-process import of
+facade and each new module + verifier "all identical".
 
-## 4. Test and monkeypatch strategy
+**GPT-6.1-Sol audit:** required before Stage 2 (focus: shadowing, pull-only
+classification completeness, any `adapt:` commit).
 
-A re-export is sufficient for ordinary imports but not necessarily for monkeypatching.
+**Live canary:** no. No remote-state semantics change.
 
-A test that patches:
+**Rollback/bisect:** each `move:` commit is independently revertible; the stage
+merges as one merge commit.
 
-```python
-utils.cloud_sync.some_helper
-```
-
-will not affect implementation that has already imported `some_helper` into:
-
-```python
-utils.cloud_sync_impl.images
-```
-
-Therefore:
-
-- preserve production imports from `utils.cloud_sync` throughout the refactor;
-- inventory tests that monkeypatch `utils.cloud_sync` internals;
-- as ownership moves, retarget tests to patch the owning module;
-- retain explicit public API/import compatibility tests;
-- do not maintain duplicate mutable globals solely for old monkeypatch behavior;
-- prefer owner-module patching or dependency injection for new tests;
-- when behavior is intentionally hardened, update tests that encode accidental old behavior only with explicit review.
-
----
-
-# Pre-stage — Freeze the truth before moving code
-
-**Risk:** low. Required before Stage 0.
-
-## A. Documentation bookkeeping
-
-- Treat E1c Stage 4 dead-code cleanup as completed historical work; commit `919b3e7` removed confirmed-dead helpers and the duplicate module-scope deleted-observation prompt.
-- Remove stale references to the retired observation-level image-storage sentinel and sparse-default initialization model where they remain.
-- Make `docs/cloud-sync-architecture.md` describe current implementation truth before the refactor begins.
-- Explicitly document that the current implementation still stamps an observation `synced` early and compensates for required child failures by re-dirtying.
-- Link `docs/cloud-sync-architecture.md` to this plan.
-- Remove or clearly deprecate older embedded extraction-plan prose.
-
-## B. Establish the test baseline
-
-Before structural movement:
-
-- run focused sync safety suites;
-- run the broader cloud-sync suite;
-- record exact failures;
-- distinguish genuine baseline failures from regressions;
-- fix or intentionally quarantine stale failures before extraction where practical.
-
-A structural refactor must not begin from an ambiguous red baseline.
-
-## C. Import and monkeypatch inventory
-
-Create a simple inventory of:
-
-- production imports from `utils.cloud_sync`;
-- scripts/tools importing internal helpers;
-- tests monkeypatching `utils.cloud_sync`;
-- dynamic or string-based references;
-- public symbols relied upon by external tooling.
-
-This becomes the compatibility checklist for every later stage.
-
-## D. Freeze known current debt
-
-Record, but do not fix during the pre-stage:
-
-- early synced stamping with re-dirty compensation;
-- string-based issue categorization;
-- duplicated push/pull reconciliation logic;
-- unnecessary no-op remote writes where still present;
-- deeply distributed ownership of sync-state mutation;
-- any known anchor reservation/adoption risks already documented elsewhere;
-- conflict-plan-local reconciliation re-derivation: `_mosaic_render_state_
-  unverified` (`utils/cloud_sync.py:13930`, added 2026-09-07 for the
-  "Spore mosaic after conflict resolution" work) needed two independent
-  review-driven patches in the same day — first because the
-  accepted-asymmetry guard didn't cover unresolved *matched*
-  measurement/image differences an automatic plan never names, then
-  because it checked only the local image's `image_type`, not its remote
-  counterpart's. Both gaps existed because `resolve_conflict_plan`
-  re-derives "is this state fully agreed with remote" itself instead of
-  reusing the canonical comparison logic Stage 4a is meant to own
-  (`_analyze_observation_push_conflicts`, `_measurement_payloads_match`).
-  See `docs/plans/completed/2026-09-07-conflict-resolution-spore-mosaic.md`
-  for the full review history.
-
-These items feed Stage 6.5 and Stage 8.
+**Acceptance:** green broad gate; verifier clean; no facade redefinition of any
+moved name; every client method classified; `cloud_sync.py` shrinks by roughly
+4–5k lines; architecture doc points to new owners.
 
 ---
 
-# Stage 0 — Leaf infrastructure
+# Stage 2 — Reconciliation substrate
 
-**Risk:** very low.  
-**Mode:** mechanical extraction.
+**Objective:** move the snapshot / comparison / conflict cycle as one unit, and
+separate its pure classification from persistence.
 
-Move only cross-cutting leaf infrastructure:
+**Absorbs:** old 4a, 4b, and the unhoused taxonomy-identity and conflict-detail
+regions. Does **not** absorb the 6.5 typed design (that is Stage 4 — types are
+only consumed there; designing them now would be speculative).
 
-- `CloudSyncError` family and related classifiers/constants -> `errors.py`;
-- `CloudSyncProfiler`, phase scopes, timing helpers -> `profiling.py`;
-- progress phase/state helpers -> `progress.py`;
-- sync summary/result bookkeeping with no entity policy -> `summary.py` if the boundary is clean.
+**Ownership after stage:**
+- `reconciliation/compare.py`: `_observation_compare_payload` (9 consumers),
+  image compare (`_image_compare_key` L4061 … `_analyze_image_changes` L4441),
+  measurement compare (L9073–9373), location-precision guard (L3792–3910).
+- `reconciliation/taxonomy_identity.py`: L10898–11240 incl. `_RemoteIdentityClaim`.
+- `reconciliation/preflight.py`: `ObservationPushConflictReport`,
+  `_analyze_observation_push_conflicts` (L4520–).
+- `baseline.py`: snapshot parse/build/load/store (L3555, L5585, L5716, L12483),
+  `_reconcile_accepted_asymmetry` (L14676).
+- `conflict_plan.py`: L12319–15811 (build/resolve/finalize, fingerprints,
+  `_build_plan_operations`, `_verify_completed_ops_and_rebase`,
+  `PartialConflictPlanError`, `_mosaic_render_state_unverified`).
+- `conflict_detail.py`: `get_conflict_detail` (L19593).
 
-Keep `utils/cloud_sync.py` as facade/re-export layer.
+**Behavior:** preserving only. Where a compare helper reads SQLite, split it into
+a pure classifier plus a loader in an `adapt:` commit with an equivalence test;
+do not change results.
 
-## Do not change
+**Prerequisites:** Stage 1 accepted.
 
-- error text;
-- summary key names;
-- progress phase names;
-- exception hierarchy;
-- logging semantics;
-- UI-visible result behavior.
+**Commit slices:** (1) `move:` compare + location precision; (2) `move:`
+taxonomy identity; (3) `move:` preflight; (4) `move:` baseline + accepted
+asymmetry together with conflict_plan (single commit if the verifier cannot
+split the cycle cleanly); (5) `move:` conflict_detail; (6) `adapt:` pure/loader
+splits; (7) `test:` purity test — `reconciliation/*` imports no transport,
+`database` writer, or `PySide6`.
 
-## Gate
+**Must not change:** invariants 5, 12, 13, 14; snapshot schema/versions;
+`_CONFLICT_PLAN_BASELINE_SCHEMA_VERSION`; fingerprint output.
 
-- compile touched modules;
-- import compatibility tests;
-- profiler/progress tests;
-- focused sync smoke suite;
-- broader cloud-sync safety suite;
-- no production behavior diff expected.
+**Focused suites:** snapshot persistence, `test_cloud_sync_conflict_preflight`,
+`test_image_conflict_normalization`, `test_cloud_conflict_plan_execution`,
+`test_cloud_conflict_dialog`, baseline-drift and partial-retry tests,
+no-media-deletion-plan tests, `test_cloud_sync_no_baseline_identity_contradiction`,
+location-precision tests.
 
----
+**Broad gate:** as Stage 1.
 
-# Stage 1 — Transport, pagination, and pull-only boundary
+**GPT-6.1-Sol audit:** required (focus: cycle moved intact, purity boundary,
+no snapshot-ordering change).
 
-**Risk:** low.  
-**Mode:** mechanical extraction.
+**Live canary:** no.
 
-Move transport-only concerns:
+**Rollback/bisect:** per commit; the cycle commit is the only large one.
 
-- request/session refresh plumbing;
-- `_get`, `_post`, `_patch`, `_delete`, `_rpc`, storage remove;
-- `_get_paginated` and deterministic-pagination helpers;
-- read-only/get helpers carrying no sync policy;
-- `PullOnlyCloudClient`;
-- `PullOnlyModeError`;
-- blocked-write reporting.
-
-Recommended modules:
-
-```text
-transport.py
-pagination.py
-pull_only.py
-```
-
-## Pull-only registry ownership
-
-Keep writer/read classification in one explicit client-contract registry adjacent to the remote boundary.
-
-Add a test that every public client method used by sync is classified as read or write where relevant.
-
-New writer methods should fail a test until explicitly classified.
-
-Do not duplicate allow/block registries across modules.
-
-## Do not change
-
-- HTTP headers / `Prefer` semantics;
-- authentication refresh behavior;
-- pagination ordering;
-- retry behavior;
-- pull-only allow/block behavior;
-- request timeout semantics.
-
-## Gate
-
-- `tests/test_cloud_download_only.py` in full;
-- pagination tests;
-- fast-path tests;
-- broader cloud-sync safety suite.
+**Acceptance:** green gates; verifier clean apart from listed `adapt:`s;
+`reconciliation/*` purity test passes; `cloud_sync.py` loses roughly 6–7k lines.
 
 ---
 
-# Stage 2 — Image storage policy and per-image intent ledger
+# Stage 3 — Domain executors
 
-**Risk:** low-medium.  
-**Mode:** mechanical extraction.
+**Objective:** give images, anchors, measurements and derived products owners,
+in dependency order.
 
-Move canonical current policy:
+**Absorbs:** old 5b, 6a, 6b, 6c, plus unhoused EXIF, image-size formatting,
+derived summary/mosaic glue.
 
-- `cloud_image_bytes_desired`;
-- `should_push_local_image_to_cloud`;
-- `should_pull_cloud_image_to_desktop`;
-- pure metadata-only anchor predicates;
-- storage excluded-set accessors;
-- per-image storage-intent ledger accessors;
-- `_ensure_cloud_image_storage_intent_initialized`;
-- pure/default-selection helpers;
-- compatibility alias `_initialize_cloud_image_storage_desired_state_for_observation` only if externally referenced.
+**Review shape:** one stage, **two review candidates** because of size:
+- **3A** — `image_identity.py` (incl. the client's `_resolve_existing_*_for_push`,
+  `push_observation` identity legs, identity-clear trio, portable guard, as an
+  identity mixin) and `anchors.py` (metadata-only anchors, owner-sync parents
+  L9490/L23488–23580, promotion/rollback, `_cancel_microscope_anchor_tombstones`).
+- **3B** — `images.py` (`_push_images_for_observation` core, prep, upload, metadata
+  apply, materialization, media signatures incl. `_carry_forward_local_mosaic_signature`,
+  EXIF inject/backfill, size-limit formatting, recovery cache if not in Stage 1),
+  then `measurements.py` (L9982–10050, L23759, L23977, L27355), then `derived.py`
+  (L24217–25770).
 
-Recommended module:
+3B starts after 3A is accepted; both use the same plan section and gate.
 
-```text
-image_policy.py
-```
+**Behavior:** preserving only. Deep `mark_observation_dirty` calls move
+unchanged; Stage 4 removes them.
 
-## Preserve exactly
+**Prerequisites:** Stage 2 accepted.
 
-- ledger key format `sporely_cloud_image_storage_intent_ids_<obs>`;
-- only ledger membership proves initialized intent;
-- tombstoned -> excluded;
-- field -> desired;
-- new member of an initialized microscope group -> local-only;
-- genuinely new/legacy group -> deterministic keeper behavior;
-- explicit checkbox decisions are never reseeded;
-- no legacy Artsobservasjoner exclusion migration;
-- initializer performs zero cloud I/O.
+**Must not change:** invariants 4, 6, 7, 8, 9, 15, 16, 17; image push ordering
+(intent init → identity/link → tombstone/protection filter → prep → metadata
+reserve/create → byte upload → metadata finalize → local `cloud_id`
+bookkeeping); `prepared_items` never becomes desired-state truth; per-image
+failure keeps the observation retryable; required measurement failure stays
+visible and retryable.
 
-## Gate
+**Focused suites:** `test_image_push_identity`, `test_cloud_identity_fail_closed`,
+`test_portable_cloud_identity_guard`, `test_cloud_anchor_promotion`,
+`test_cloud_sync_metadata_only`, `test_cloud_sync_image_upload_policy`,
+dirty-pending-image, media-pull retry, original sync/recovery,
+`test_cloud_measurement_sync_v1`, `test_sync_observation_dirty_propagation`,
+`test_cloud_spore_mosaic_signature`, `test_cloud_spore_mosaic_unchanged_sync`,
+`test_cloud_media_measurement_mosaic_chain`, spore-summary tests,
+`test_cloud_sync_fast_path`, `test_cloud_sync_dirty_loop_steady_state`.
 
-- storage-intent suite;
-- desired-byte tests;
-- metadata-only tests;
-- dirty-pending-image tests;
-- checkbox-policy tests;
-- broader cloud-sync safety suite.
+**Broad gate:** as Stage 1.
 
----
+**GPT-6.1-Sol audit:** required on 3A and on 3B.
 
-# Stage 3 — Tombstone lifecycle
+**Live canary:** no, unless an `adapt:` commit touches an identity or anchor
+write path — then one canary per §9.
 
-**Risk:** medium.  
-**Mode:** mechanical extraction.
+**Rollback/bisect:** per commit; 3A and 3B are separate merges.
 
-Move the complete tombstone lifecycle together:
-
-- queue/cancel helpers;
-- local tombstone lookup helpers;
-- `_push_pending_image_tombstones`;
-- `_record_remote_image_tombstones`;
-- microscope-anchor tombstone cancellation;
-- tombstone warning/state helpers;
-- checkbox transition support that directly owns tombstone state, where the dependency boundary is clean.
-
-Recommended module:
-
-```text
-tombstones.py
-```
-
-## Load-bearing ordering
-
-Preserve:
-
-```text
-pending tombstone flush
-    BEFORE
-local dirty-observation pruning / candidate processing
-```
-
-Explicit checkbox deletion must still converge in the same sync invocation.
-
-## Same-run tombstone behavior
-
-A successful same-run tombstone may change the remote child list and parent `updated_at`.
-
-That may legitimately open deeper comparison.
-
-It must **not** be classified as an unrelated concurrent remote image edit merely because the child list now differs from the previous baseline.
-
-Do not add baseline-pruning cross-store writes as part of this extraction.
-
-## Gate
-
-- `tests/test_image_tombstones.py`;
-- gallery checkbox deletion tests;
-- same-run tombstone + surviving-image conflict-normalization regression;
-- fast-path tests;
-- broader cloud-sync safety suite.
+**Acceptance:** green gates; verifier clean; `SporelyCloudClient` keeps only
+transport mixin wiring, observation/calibration/reference RPCs and capability
+probes; `push_all`/`pull_all`/`sync_all` are the main remaining bulk in the facade.
 
 ---
 
-# Stage 4a — Snapshots and canonical comparison representation
+# Stage 4 — Orchestration replacement
 
-**Risk:** medium-high.  
-**Mode:** mechanical extraction.
+**Objective:** replace the implicit state machine with typed reconciliation,
+one observation coordinator, and a final `synced` commit on both push and pull.
+This is the project's main risk checkpoint.
 
-This stage owns canonical comparison representation, not merely persistence.
+**Absorbs:** old 6.5a–j, 7a–7e, 8a (duplicate reconciliation semantics).
+6.5k is **removed** (§ "What we removed").
 
-Recommended modules:
+**Commit slices:**
+1. `docs:` **design note** in this plan (append §4-design): state machine,
+   `SyncIssue` / `OperationOutcome` / `ObservationSyncOutcome` /
+   `ReconciliationPlan` definitions, required-vs-best-effort table (audited from
+   tests and contract, not guessed), snapshot-commit owner, the list of tests
+   that encode accidental behavior (start from: `test_cloud_conflict_dialog.py:797,826`
+   `("stamp",)` call sequences; `test_cloud_conflict_plan_execution.py:120,416,2950`
+   patching `_stamp_observation_synced`; `test_cloud_sync_conflict_preflight.py`
+   L747–1248 dirty+marker asserts; the 39 files with exact call-count asserts —
+   classify each). **Sol reviews the design commit before slice 2.** This is an
+   internal checkpoint, not a separate stage or human approval cycle.
+2. `test:` new final-commit and pure-reconciliation tests (red).
+3. `behavior:` `reconciliation/types.py`; push and pull classification routed
+   through `reconciliation/*` (removes duplicated rules; `_mosaic_render_state_unverified`
+   becomes a plan query).
+4. `behavior:` `observation_coordinator.py` owns snapshot store + `sync_status`;
+   remove the early stamp at L21016 and compensations L21085/L21354/L21445/L21573;
+   pull-side stamps L26367–L27085 routed to the coordinator.
+5. `behavior:` `push_executor.py`, `pull_executor.py` return outcomes; deep
+   `mark_observation_dirty` calls removed or documented as exceptions.
+6. `behavior:` structured issue pipeline; `summarize_sync_issues()` consumes
+   issues; legacy `result["errors"]` strings generated from them.
+7. `move:`/`adapt:` thin `orchestration.sync_all`; facade delegates.
+8. `test:` reviewed updates to accidental-behavior tests (each change cites the
+   design note).
 
-```text
-snapshots.py
-conflicts.py
-```
+**Intentional behavior changes (exhaustive):** `synced` written once, after
+required work and snapshot persistence; snapshot failure prevents `synced`;
+issue categorization from types, not strings; push and pull share one
+classifier. Everything in §2 still holds.
 
-Optionally:
+**Prerequisites:** Stage 3 (3A and 3B) accepted.
 
-```text
-image_snapshot.py
-```
+**Focused suites:** new final-commit and reconciliation tests;
+`test_sync_observation_dirty_propagation`; snapshot, preflight and conflict-plan
+suites; identity suites; measurement/calibration; retry propagation;
+download-only; metadata-only; child-change probe; fast path; dirty-loop;
+UI summary, privacy-blocked, plan-limit and conflict-count tests; caller-mode,
+startup/refresh and sync-now tests.
 
-only if snapshot persistence and conflict analysis genuinely share enough canonical payload logic to justify it.
+**Broad gate:** as Stage 1, plus a before/after diff of
+`sync_all` result dicts over the fixture matrix (keys and legacy strings
+identical except the documented changes).
 
-Move:
+**GPT-6.1-Sol audit:** required twice — the design note (slice 1) and the full
+candidate.
 
-- snapshot load/store/parse/clear family;
-- snapshot schema/version helpers;
-- `_store_remote_snapshot`;
-- known-good baseline helpers;
-- `_local_image_snapshot_payload`;
-- `_remote_image_payload`;
-- `_image_metadata_payload`;
-- canonical observation/image comparison payload helpers;
-- `ObservationPushConflictReport`;
-- `_analyze_observation_push_conflicts`;
-- local/remote meaningful-change classifiers;
-- review-pending markers;
-- push-blocked review-origin reporting where ownership is coherent.
+**Live canary:** **yes**, on the full candidate (§9). Optionally a second canary
+after slice 4 if Sol judges the coordinator change risky on its own.
 
-## Canonical normalization invariant
+**Rollback/bisect:** slices 3–7 each leave tests green; the stage merges as one
+merge commit, revertible as a unit.
 
-Local, baseline, and remote are compared in the same canonical form.
-
-Preserve live-fixed equivalences such as:
-
-- `sample_source` case/canonical form;
-- naive/local vs UTC-normalized `captured_at`;
-- local `calibration_id` vs cloud `calibration_uuid`;
-- absent/missing keys vs `None` semantics where contractually equivalent.
-
-Representation-only difference must not conflict.
-
-Genuine three-way divergence must still conflict.
-
-## Gate
-
-- snapshot persistence suite;
-- conflict-preflight suite;
-- `tests/test_image_conflict_normalization.py`;
-- genuine remote-edit conflict tests;
-- push-skipped reporting tests;
-- broader cloud-sync safety suite.
-
----
-
-# Stage 4b — Existing interactive conflict-plan machinery
-
-**Risk:** medium-high.  
-**Mode:** mechanical extraction.
-
-Only after 4a is stable, move:
-
-- `build_conflict_plan_baseline`;
-- `resolve_conflict_*`;
-- `finalize_sync_candidates`;
-- `PartialConflictPlanError`;
-- conflict-plan execution bookkeeping.
-
-Do not yet redesign the entire conflict UX or execution model.
-
-The Stage 6.5 reconciliation design may later reuse or simplify this machinery, but first extract it cleanly.
-
-## Preserve exactly
-
-- reviewed baseline drift aborts apply;
-- partial conflict-plan retries remain idempotent;
-- media deletion APIs remain unreachable from conflict plans;
-- snapshot-before-final-synced ordering remains strict;
-- unresolved review remains dirty/review-pending.
-
-## Gate
-
-- conflict-plan execution suite;
-- baseline drift tests;
-- partial retry tests;
-- no-media-deletion-plan tests;
-- snapshot persistence tests;
-- broader cloud-sync safety suite.
+**Acceptance:** no `sync_status='synced'` write outside the coordinator (grep
+test); no early stamp in push or pull; push and pull import the same classifier;
+legacy results compatible; canary clean (C=D1=D2=E=H=0, no new anomalies).
 
 ---
 
-# Stage 5a — Calibrations
+# Stage 5 — Hardening and facade
 
-**Risk:** medium.  
-**Mode:** mechanical extraction.
+**Objective:** remove transitional architecture and avoidable side effects now
+that ownership is final.
 
-Move calibration-specific:
+**Absorbs:** old 8b–8e, 9, 10.
 
-- payload logic;
-- identity logic;
-- push/pull behavior;
-- linking;
-- repair helpers.
+**Commit slices (each its own commit; `behavior:` where results can change):**
+1. No-op remote write audit and suppression (protect `updated_at` cursors,
+   reverse-link healing, image metadata, measurement upserts, calibrations).
+2. Deterministic per-observation diagnostics (candidate reason → plan →
+   execution → final state) in the result, not prints.
+3. Hidden-state audit: remaining `mark_observation_dirty`,
+   `mark_observation_media_dirty`, `update_observation_sync_state`, snapshot
+   clear, review-pending markers — each removed or documented.
+4. Retire `_facade()` late binding; retire facade-only patch targets
+   (`patch_cloud_sync` keeps working via owner modules).
+5. Anchor reservation risks (cross-device adoption, dangling reservation):
+   decide fix or documented acceptance; fix only as `behavior:` with tests.
+6. Client split: move reference RPCs + capability probes into mixins; stop if
+   the remaining client is understandable.
+7. Facade review: keep `utils/cloud_sync.py` as re-exports + legacy adapters.
+8. `docs:` architecture doc and contract navigation final refresh.
 
-Recommended module:
+**Prerequisites:** Stage 4 accepted and canaried.
 
-```text
-calibrations.py
-```
+**Focused suites:** per slice; slice 1 adds zero-write assertions for each
+suppressed path.
 
-Do not move generic transport/client machinery with them.
+**Broad gate:** as Stage 4.
 
-Preserve no-op matching and identity semantics.
+**GPT-6.1-Sol audit:** required on the full candidate.
 
-## Gate
+**Live canary:** yes if slice 1 or 5 lands; otherwise no.
 
-- `tests/test_cloud_calibration_sync.py`;
-- affected pull-only tests;
-- affected fast-path tests;
-- broader cloud-sync safety suite.
+**Rollback/bisect:** per commit.
 
----
-
-# Stage 5b — Measurements
-
-**Risk:** medium.  
-**Mode:** mechanical extraction.
-
-Move measurement-specific:
-
-- canonical payload and no-op equivalence helpers;
-- identity cache/prefetch;
-- per-observation push driver;
-- pull/apply helpers;
-- remote cleanup helpers;
-- reconciliation helpers where measurement ownership is clear.
-
-Recommended module:
-
-```text
-measurements.py
-```
-
-## Required failure behavior
-
-Preserve current validated contract:
-
-```text
-required measurement failure
-    -> observation remains/re-becomes retryable
-    -> failure appears in result / issue summary
-```
-
-Do not reintroduce fire-and-forget measurement exceptions when moving closures/helpers.
-
-## Derived scientific/public products
-
-Spore summaries and mosaics already have sibling modules. Do not force them into `measurements.py`.
-
-During this stage, identify the narrow glue that belongs to cloud-sync orchestration and classify each operation as:
-
-- required for observation completion; or
-- best effort / externally recoverable.
-
-That classification becomes an input to Stage 6.5.
-
-## Gate
-
-- `tests/test_cloud_measurement_sync_v1.py`;
-- `tests/test_sync_observation_dirty_propagation.py` measurement integration;
-- dirty-loop tests;
-- fast-path tests;
-- spore summary/mosaic tests where affected;
-- broader cloud-sync safety suite.
+**Acceptance:** Definition of done (below).
 
 ---
 
-# Stage 6a — Image identity and metadata mechanics
-
-**Risk:** medium-high.  
-**Mode:** mechanical extraction.
-
-Recommended module:
-
-```text
-image_identity.py
-```
-
-Move or wrap:
-
-- `_resolve_existing_image_for_push`;
-- `_find_cloud_image`;
-- `ImageIdentityConflictError` if not already in `errors.py`;
-- lost-link reconciliation helpers;
-- canonical image metadata PATCH/POST identity decision support.
-
-## Preserve exactly
-
-- verified local `images.cloud_id` direct leg is primary;
-- remote `desktop_id` is recovery only;
-- observation ownership compares canonical ID values (`817` == `"817"`);
-- direct/reverse disagreement fails closed;
-- global same-user desktop-id collision guard before POST;
-- soft-deleted rows do not become ordinary existing identities;
-- 23505 race -> identity conflict;
-- no silent reparenting;
-- no POST fallback on identity conflict.
-
-## Gate
-
-`tests/test_image_push_identity.py` in full plus the broader sync safety suite.
-
----
-
-# Stage 6b — Image push, pull, preparation, and materialization
-
-**Risk:** high.  
-**Mode:** mechanical extraction.
-
-Move ordinary byte/metadata mechanics to:
-
-```text
-images.py
-```
-
-Likely scope:
-
-- `_push_images_for_observation` core mechanics;
-- preparation candidate handling;
-- upload result handling;
-- remote metadata application;
-- download/materialization/localization helpers;
-- media signatures closely tied to image synchronization;
-- recovery-cache byte guards.
-
-## Preserve ordering inside image push
-
-At minimum:
-
-```text
-intent initialization
--> identity/link reconciliation
--> tombstone/protection filtering
--> preparation
--> metadata reserve/create as required
--> byte upload
--> metadata finalize
--> local cloud_id bookkeeping
-```
-
-Do not let `prepared_items` become the authoritative desired-state set.
-
-## Preserve failure propagation
-
-Per-image failures must:
-
-- make the image phase unsuccessful;
-- keep/re-mark the observation retryable under the current baseline;
-- appear in summary/error output;
-- remain retryable without duplicate creation.
-
-Stage 6.5 will redesign **who owns the final observation state transition**; do not do that during this move.
-
-## Gate
-
-- image upload policy;
-- dirty pending images;
-- visibility phase7;
-- media pull retry;
-- original sync/recovery;
-- dirty-loop;
-- image identity;
-- retry-propagation suites;
-- broader cloud-sync safety suite.
-
----
-
-# Stage 6c — Metadata-only anchors and promotion/rollback
-
-**Risk:** high.  
-**Mode:** mechanical extraction.
-
-Recommended module:
-
-```text
-anchors.py
-```
-
-Move:
-
-- metadata-only microscope anchor ensure helpers;
-- public-spore anchor orchestration;
-- reserve/release storage-path promotion methods or wrappers;
-- local promotion pending-marker helpers;
-- promotion rollback logic;
-- protected-anchor decisions that are not pure image policy.
-
-## Preserve exactly
-
-- promotion uses the existing cloud image row; no replacement POST;
-- pending marker is written before reserve PATCH;
-- reserve is conditional on `storage_path IS NULL`;
-- upload failure removes partial objects and conditionally releases only the exact reserved key;
-- `None` upload return counts as failure;
-- reserved-but-unconfirmed storage path is never trusted as proof of bytes;
-- pull-only blocks reserve/release writers;
-- anchor `ImageIdentityConflictError` propagates and is not swallowed into success.
-
-## Known residual risks
-
-Do not fix cross-device reservation-adoption or dangling-reservation risks while moving code unless separately approved as explicit behavior work.
-
-Record them for Stage 8.
-
-## Gate
-
-- `tests/test_cloud_anchor_promotion.py`;
-- metadata-only suites;
-- spore-mosaic anchor tests;
-- retry propagation;
-- broader cloud-sync safety suite.
-
----
-
-# Stage 6.5 — Orchestration architecture checkpoint
-
-**Risk:** design-critical.  
-**Mode:** explicit architecture design.  
-**Rule:** **Do not move `push_all`, `pull_all`, or `sync_all` yet.**
-
-Stages 0-6 create ownership boundaries. Stage 6.5 decides what the final state machine should actually be.
-
-This checkpoint is mandatory.
-
-## 6.5a — Define typed internal issues
-
-Core sync logic should no longer need to infer machine state by parsing human-readable error strings.
-
-Introduce an internal typed issue model, conceptually:
-
-```python
-@dataclass(frozen=True)
-class SyncIssue:
-    kind: SyncIssueKind
-    phase: SyncPhase
-    observation_id: int | None = None
-    cloud_id: str | None = None
-    reason: str = ""
-    retryable: bool = False
-    details: dict[str, object] | None = None
-```
-
-Possible `kind` values may include:
-
-```text
-conflict
-blocked
-retryable
-error
-warning
-```
-
-Exact names are design-time decisions.
-
-Human-readable strings should be produced at the UI/report boundary.
-
-Legacy `result["errors"]` output may remain for compatibility, generated from structured issues.
-
-## 6.5b — Define typed operation outcomes
-
-Domain executors should increasingly report facts rather than silently deciding global observation state.
-
-Conceptually:
-
-```python
-@dataclass
-class OperationOutcome:
-    changed_local: bool = False
-    changed_remote: bool = False
-    retry_required: bool = False
-    review_required: bool = False
-    issues: list[SyncIssue] = field(default_factory=list)
-```
-
-And at observation scope:
-
-```python
-@dataclass
-class ObservationSyncOutcome:
-    changed_local: bool = False
-    changed_remote: bool = False
-    retry_required: bool = False
-    review_required: bool = False
-    snapshot_safe: bool = False
-    issues: list[SyncIssue] = field(default_factory=list)
-```
-
-Do not over-design the type hierarchy. Prefer a few stable structures over dozens of tiny result classes.
-
-## 6.5c — Define reconciliation as pure classification
-
-Push and pull currently contain overlapping change-classification logic.
-
-The new architecture should share a common reconciliation brain without creating a new god module.
-
-Target:
-
-```text
-local state
-remote state
-last agreed snapshot
-       │
-       ▼
-pure classification
-       │
-       ▼
-ReconciliationPlan
-       │
-       ▼
-side-effect executors
-```
-
-Conceptually:
-
-```python
-plan = reconcile(local, remote, snapshot)
-```
-
-returning something like:
-
-```python
-ReconciliationPlan(
-    observation_action=...,
-    image_actions=[...],
-    measurement_actions=[...],
-    conflicts=[...],
-    warnings=[...],
-)
-```
-
-The plan describes **what should happen**.
-
-### Design input: derived best-effort products should query the plan, not re-derive agreement
-
-Best-effort products with their own observation-wide selection criteria —
-public spore mosaic generation is the concrete case (see the Pre-stage D
-entry above) — should determine eligibility by querying the
-`ReconciliationPlan` for "any unresolved action relevant to this product's
-selection" rather than by walking reconciled state a second time with a
-bespoke helper. The mosaic guard needed two separate patches in one review
-cycle because it had to be told about each field the mosaic SQL's selection
-depends on (measurement geometry, image scale, then image type) one at a
-time. A plan-shaped query does not have this failure mode: as long as the
-reconciliation layer classifies every field the mosaic (or any future
-derived product) depends on, "no unresolved relevant action" is a single
-check against the plan, not a growing bespoke comparison function.
-
-It does not:
-
-- perform HTTP requests;
-- write SQLite;
-- stamp sync status;
-- format UI messages;
-- silently execute conflict decisions.
-
-## 6.5d — Keep reconciliation modular
-
-Do not create a giant `reconciliation.py`.
-
-Prefer focused pure modules, for example:
-
-```text
-reconciliation/
-    types.py
-    observation.py
-    images.py
-    measurements.py
-```
-
-If a smaller flat module set is clearer, use that instead.
-
-The important property is:
-
-> reconciliation modules classify; executor modules mutate.
-
-## 6.5e — Define one owner for observation completion
-
-Introduce an `observation_coordinator.py` or equivalent ownership boundary.
-
-It owns:
-
-- the observation-level reconciliation plan;
-- execution ordering;
-- aggregation of required child outcomes;
-- whether snapshot persistence is safe;
-- the final observation completion decision;
-- final `sync_status` transition.
-
-Low-level image/measurement helpers should not be the final authority on whether the whole observation is synced.
-
-## 6.5f — Make `synced` a final commit point
-
-This is an explicit intended behavior change.
-
-Current accidental model:
-
-```text
-dirty
-  -> push observation
-  -> mark synced
-  -> child operation fails
-  -> mark dirty again
-```
-
-Target model:
-
-```text
-dirty
-  -> observation action succeeds
-  -> required image / anchor work succeeds
-  -> required measurement work succeeds
-  -> required derived work succeeds
-  -> final known-good remote state is established
-  -> snapshot is stored successfully
-  -> mark synced
-```
-
-Failure before the final point leaves the observation unfinished/retryable.
-
-Do not add a larger public sync-state enum unless needed. The coordinator may hold internal in-progress state without persisting it.
-
-## 6.5g — Define required versus best-effort work
-
-For every child/derived operation, explicitly classify failure semantics.
-
-Example categories:
-
-### Required for observation completion
-
-Potentially includes, according to the accepted existing contract:
-
-- observation persistence;
-- required image identity/metadata/byte state;
-- anchor operations that are required for the requested sync;
-- required measurement state;
-- structured spore summary where the existing contract treats failure as retryable;
-- successful known-good snapshot persistence.
-
-### Best effort / non-blocking
-
-Examples may include:
-
-- public spore mosaic generation where existing fallback behavior makes it non-blocking;
-- diagnostics;
-- profiling;
-- optional cache improvement.
-
-Do not guess. Audit current tests and contract before finalizing this list.
-
-## 6.5h — Define retry semantics centrally
-
-Executor results report failure/retry state.
-
-Prefer:
-
-```python
-result = image_executor.apply(plan.image_actions)
-```
-
-returning structured outcome.
-
-Avoid adding new deep paths that do:
-
-```python
-mark_observation_dirty(...)
-```
-
-as an implicit side effect.
-
-Existing deep state mutations can remain temporarily during transition, but the target architecture has one authoritative observation completion owner.
-
-## 6.5i — Define snapshot ownership
-
-A persisted snapshot means:
-
-> this complete state is accepted as the new shared baseline.
-
-Therefore snapshot storage must not occur after:
-
-- truncated/partial reads;
-- unresolved conflicts;
-- incomplete required child work;
-- failed materialization when materialization is required;
-- ambiguous identity;
-- partially applied conflict plans.
-
-Snapshot failure must prevent the final synced commit.
-
-## 6.5j — Define candidate selection versus reconciliation
-
-Preserve an important distinction:
-
-- **candidate selection** decides which observations need expensive inspection;
-- **reconciliation** decides what the inspected state means.
-
-Fast-path pruning, child-change cursors, and remote head comparisons may remain optimized candidate selectors.
-
-Do not force every no-op observation through a full three-way deep fetch merely to make the design conceptually pure.
-
-## 6.5k — Define lightweight pending-change signalling for child-entity changes
-
-User expectation (2026-10-03): attaching or detaching a reference on an observation should mark that observation as having unsynced changes. This must be a lightweight, database-row-only pending state, **not** the full `sync_status = 'dirty'` path: a reference change is a small row write and must never trigger image re-upload, image preparation, mosaic rebuilds, or measurement re-pushes.
-
-Current behavior: `ObservationReferenceUseRepository.detach` (`database/reference_library.py`) deletes the `observation_reference_uses` row without touching the observation. The use triggers in `database/reference_library_schema.py` (`reference_use_cloud_sync_insert` / `reference_use_cloud_sync_delete`) record sync state and tombstones in their own outbox. `sync_reference_library` (called from `utils/cloud_sync.py`) uploads that outbox on every sync, whether or not the observation is dirty. So the change does reach the cloud, but the observation never shows as having pending changes.
-
-Decide and document:
-
-- a distinct pending state (or one derived from the child outboxes) that marks an observation as having pending changes and only routes it to the matching row-level sync (here, the reference-use outbox), never to the full observation and media push;
-- which other child-entity changes, if any, should use the same lightweight signal instead of full dirty;
-- how this interacts with 6.5f: the pending indicator clears only when the child outbox work for that observation has succeeded, and failures stay visible on the observation.
-
-Related observation: a push pass selects its candidates once at pass start (`SELECT ... WHERE cloud_id IS NULL OR sync_status = 'dirty'`). An edit saved mid-pass is correctly deferred to the next sync, but nothing tells the user. Consider surfacing "changes made during sync will upload next sync", or running a follow-up pass when rows became dirty during the run.
-
-## Stage 6.5 deliverables
-
-Before Stage 7 implementation:
-
-1. documented state machine;
-2. dependency diagram;
-3. typed issue definitions;
-4. typed outcome definitions;
-5. reconciliation-plan definition;
-6. explicit required/best-effort operation table;
-7. owner for final `sync_status`;
-8. owner for snapshot persistence;
-9. test plan for new desired semantics;
-10. explicit list of current tests that encode accidental behavior and therefore need reviewed updates;
-11. decision on lightweight pending-change signalling for child-entity changes (6.5k).
-
-## Gate
-
-- architecture/design review completed;
-- no new god module in the dependency graph;
-- pure reconciliation tests written;
-- final synced-commit tests written;
-- typed issue/result compatibility strategy tested;
-- implementation has not yet silently changed production behavior.
-
----
-
-# Stage 7 — Replace the old orchestration behind the facade
-
-**Risk:** high.  
-**Mode:** explicit architecture + behavior hardening.
-
-Stage 7 is not “move three giant functions to new files.”
-
-It replaces the old orchestration with the accepted Stage 6.5 model while keeping the public API stable.
-
----
-
-## Stage 7a — Observation coordinator and final commit semantics
-
-Recommended module:
-
-```text
-observation_coordinator.py
-```
-
-Implement one observation-level coordinator that:
-
-1. obtains normalized local / remote / baseline state;
-2. requests a pure reconciliation plan;
-3. dispatches side effects to domain owners;
-4. aggregates typed outcomes;
-5. decides whether review/retry remains;
-6. persists the final known-good snapshot;
-7. stamps `synced` only after successful completion.
-
-### Required deliberate behavior hardening
-
-Replace:
-
-```text
-dirty -> synced -> child failure -> dirty
-```
-
-with:
-
-```text
-dirty -> required work -> snapshot -> synced
-```
-
-This must land as an explicitly reviewed behavior change with dedicated tests.
-
-### Gate
-
-- new final-commit tests;
-- `tests/test_sync_observation_dirty_propagation.py`;
-- snapshot tests;
-- conflict preflight/plan tests;
-- image identity tests;
-- measurement/calibration tests;
-- retry tests;
-- live canary if the test boundary cannot prove enough.
-
----
-
-## Stage 7b — Push executor
-
-Recommended module:
-
-```text
-push_orchestration.py
-```
-
-Its role is now to execute push actions that the reconciliation/coordinator layer has already classified.
-
-Responsibilities:
-
-- observation writes;
-- image/anchor writes;
-- measurement writes;
-- required summary writes;
-- collect typed outcomes;
-- respect identity/deletion/storage policy;
-- preserve special privacy/plan-specific error semantics where still part of the contract.
-
-It should **not** own:
-
-- an independent three-way conflict model;
-- UI error formatting;
-- final synced commit;
-- snapshot acceptance policy.
-
-### Preserve
-
-- tombstone flush ordering;
-- identity fail-closed behavior;
-- image-storage intent;
-- retryability;
-- no-op write suppression where required by remote trigger semantics.
-
-### Gate
-
-- dirty propagation;
-- fast path;
-- dirty-loop;
-- conflict tests;
-- image identity;
-- image upload policy;
-- measurement/calibration;
-- summary/mosaic tests where affected.
-
----
-
-## Stage 7c — Pull executor
-
-Recommended module:
-
-```text
-pull_orchestration.py
-```
-
-Its role is to execute remote-to-local actions from the reconciliation plan.
-
-Preserve:
-
-- fast-pull candidate pruning;
-- periodic child-safety reconciliation;
-- full-pull semantics;
-- metadata-only apply independent of byte materialization;
-- missing/failed work remains retryable;
-- complete paginated collections before interpreting absence;
-- pull-only source gating;
-- protection of larger/better local originals;
-- remote deletion never silently deletes local originals.
-
-It should not maintain a second independent definition of conflict.
-
-### Gate
-
-- download-only;
-- metadata-only;
-- fast path;
-- child-change probe/cursor;
-- snapshot tests;
-- media-pull retry;
-- remote deletion review behavior;
-- broader cloud-sync safety suite.
-
----
-
-## Stage 7d — Structured issue pipeline
-
-Replace internal string categorization with structured issues.
-
-Target flow:
-
-```text
-domain executor
-    -> SyncIssue / OperationOutcome
-    -> observation coordinator
-    -> sync result assembler
-    -> UI compatibility formatter
-```
-
-For compatibility, `sync_all()` may still return:
-
-```python
-{
-    "pushed": ...,
-    "pulled": ...,
-    "errors": [...],
-    ...
-}
-```
-
-while also carrying structured data internally or under a new additive field.
-
-Do not break the UI merely to get typed internals.
-
-Update `summarize_sync_issues()` so it consumes structured issue data where available rather than reparsing formatted strings.
-
-Temporary legacy parsing may remain only as a compatibility bridge.
-
-### Gate
-
-- issue categorization tests;
-- UI summary tests;
-- privacy blocked tests;
-- plan-limit retry tests;
-- conflict-count tests;
-- raw legacy error compatibility tests where still needed.
-
----
-
-## Stage 7e — Top-level orchestration
-
-Recommended module:
-
-```text
-orchestration.py
-```
-
-Only after 7a-7d are stable, extract/replace `sync_all`.
-
-The final `sync_all` should remain thin:
-
-```text
-validate account binding
--> load required remote heads
--> push/pull calibrations as required
--> select observation candidates
--> reconcile + execute observations
--> handle child-change safety cursors
--> assemble result
-```
-
-Preserve caller-mode rules for:
-
-- `sync_images`;
-- `materialize_remote_images`;
-- `full_pull`;
-- `child_safety_pull`;
-- `pull_only`.
-
-Do not “turn everything on” to simplify orchestration.
-
-### Gate
-
-- full cloud-sync safety suite;
-- caller-mode tests;
-- pull-only tests;
-- fast/no-op tests;
-- startup/refresh tests;
-- sync-now tests;
-- child-change cursor tests;
-- live canary.
-
----
-
-# Stage 8 — Hardening and simplification pass
-
-**Risk:** medium-high.  
-**Mode:** explicit behavior/architecture hardening only.
-
-This stage exists because some improvements are unsafe to mix into mechanical extraction and easier to evaluate after the new coordinator exists.
-
-Each hardening item should land separately when practical.
-
-## 8a — Eliminate duplicate reconciliation semantics
-
-Audit push and pull for duplicated rules around:
-
-```text
-local-only change
-remote-only change
-both changed, disjoint
-both changed, overlapping
-representation-only difference
-remote deletion
-no meaningful change
-```
-
-Move classification into canonical pure reconciliation owners.
-
-Do not create convenience shortcuts that bypass the canonical classifier.
-
-## 8b — Remove avoidable no-op remote writes
-
-Remote UPDATE triggers can make apparently idempotent writes observable.
-
-Audit and suppress remote writes that make no semantic change where doing so is safe.
-
-Especially protect:
-
-- `updated_at`-driven child-change cursors;
-- reverse-link healing;
-- image metadata;
-- measurement upserts;
-- calibration metadata.
-
-No-op suppression must not weaken required repair behavior.
-
-## 8c — Improve diagnostics
-
-An observation failure should be explainable without reconstructing behavior from scattered print statements.
-
-Target diagnostic shape:
-
-```text
-observation 817
-  candidate reason:
-      local dirty + remote child changed
-
-  reconciliation:
-      local notes changed
-      remote image added
-
-  plan:
-      push notes
-      pull image
-
-  execution:
-      pull image: success
-      push notes: timeout
-
-  final:
-      retryable
-      snapshot not advanced
-      sync_status remains dirty
-```
-
-Keep profiling/logging optional where appropriate, but make result state explicit enough for deterministic tests.
-
-## 8d — Audit hidden state mutation
-
-Inventory every call to:
-
-- `mark_observation_dirty`;
-- `mark_observation_media_dirty`;
-- `_stamp_observation_synced`;
-- `update_observation_sync_state`;
-- snapshot write/clear helpers;
-- conflict-review pending markers.
-
-Expected end state:
-
-- a small number of authoritative owners;
-- domain executors report outcomes;
-- coordinator owns final completion;
-- direct SQL sync-status writes are exceptional and documented.
-
-## 8e — Reassess known anchor reservation risks
-
-Only now, if still justified, separately consider the documented:
-
-- cross-device reservation-adoption risk;
-- dangling reservation risk.
-
-Do not fold such changes into unrelated cleanup.
-
-## Gate
-
-For each hardening patch:
-
-- focused tests;
-- broader safety suite;
-- review for changed contract;
-- live canary when remote-state semantics are affected.
-
----
-
-# Stage 9 — Optional client split
-
-**Risk:** high.  
-**Mode:** optional.
-
-Only after Stages 0-8 have landed and stabilized, reassess `SporelyCloudClient`.
-
-Possible end state:
-
-```text
-authenticated transport client
-observation remote service
-image remote service
-measurement remote service
-calibration remote service
-```
-
-Compatibility methods may remain on `SporelyCloudClient` where tools rely on them.
-
-Do not split client and orchestration in the same commit.
-
-If the remaining client is understandable, stop.
-
-A smaller file count is not a reason to keep refactoring.
-
----
-
-# Stage 10 — Compatibility facade review
-
-**Risk:** low-medium.  
-**Mode:** optional cleanup.
-
-Default decision:
-
-> **Keep `utils/cloud_sync.py` permanently as a facade unless it causes a concrete maintenance problem.**
-
-Possible final form:
-
-```python
-from utils.cloud_sync_impl.errors import ...
-from utils.cloud_sync_impl.orchestration import sync_all
-from utils.cloud_sync_impl.push_orchestration import push_all
-from utils.cloud_sync_impl.pull_orchestration import pull_all
-...
-```
-
-Plus narrow compatibility wrappers where justified.
-
-Only consider replacing the file with `utils/cloud_sync/__init__.py` if:
-
-- production imports no longer care;
-- tooling/tests do not depend on module identity;
-- there is a measurable maintenance benefit.
-
-Removing the facade is not a project goal.
-
----
-
-# Per-stage execution protocol
-
-## Mechanical extraction stages (0-6)
-
-1. Confirm clean git status and exact HEAD.
-2. Read `AGENTS.md`, `docs/supabase-sync-contract.md`, `docs/cloud-sync-architecture.md`, and this plan.
-3. Identify exact symbols to move and all import/monkeypatch consumers.
-4. Run focused baseline tests **before** editing.
-5. Move code mechanically.
-6. Do not rename/rewrite unless required for import correctness.
-7. Preserve facade exports.
-8. Compile touched modules.
-9. Run focused tests.
-10. Run broader cloud-sync safety suite.
-11. Compare logs/result structures if progress/errors/summaries are touched.
-12. Review for accidental policy changes, especially deletion, identity, pull-only, snapshots, and retry state.
-13. Update architecture ownership/navigation docs.
-14. Commit one stage only.
-15. Do not begin the next stage in the same context until the current stage is green and reviewed.
-
-## Architecture/hardening stages (6.5-8)
-
-1. Start from green baseline.
-2. State the intended behavior change explicitly.
-3. Define the new contract before implementation.
-4. Add or update tests for the intended behavior.
-5. Implement behind stable public entry points.
-6. Do not bundle unrelated cleanup.
-7. Review architecture and behavior separately.
-8. Run focused tests.
-9. Run full cloud-sync safety suite.
-10. Compare reconciliation report before/after when remote state may change.
-11. Perform live canary at meaningful risk boundaries.
-12. Update architecture docs to describe the new accepted baseline.
-13. Land one conceptual behavior change per commit when practical.
-
----
-
-# Required validation matrix
-
-At minimum, keep these areas green across the project:
-
-- pull-only / zero write;
-- pagination and partial-read safety;
-- observation identity;
-- image identity;
-- storage-intent ledger;
-- checkbox/tombstone lifecycle;
-- metadata-only anchors;
-- anchor promotion rollback;
-- image conflict normalization;
-- snapshot persistence;
-- conflict preflight;
-- conflict plan;
-- final synced-commit semantics;
-- image/measurement failure retry propagation;
-- typed issue categorization;
-- fast no-op path;
-- dirty-loop steady state;
-- child-change cursor;
-- measurements;
-- calibrations;
-- image upload policy;
-- media pull retry;
-- original upload/recovery;
-- spore mosaic / summary behavior where affected;
-- remote deletion safety;
-- UI sync summary compatibility;
-- public import compatibility.
-
----
-
-# Live-canary policy
-
-Do not live-canary every mechanical file move.
-
-Use live validation at meaningful boundaries, for example:
-
-- behavior fix required before extraction;
-- tombstone or identity ownership change if tests cannot fully prove the integration boundary;
-- final synced-commit redesign;
-- push/pull executor replacement;
-- top-level orchestration replacement;
-- client split;
-- remote write-suppression changes.
-
-Before a live canary:
-
-- make a fresh SQLite backup;
-- run the read-only reconciliation report;
-- require `C=D1=D2=E=H=0` unless a known reviewed exception is explicitly documented;
-- do not mix canary validation with cleanup or garbage collection;
-- record the exact account/database/environment used;
-- compare post-canary reconciliation results to baseline.
-
----
-
-# Work explicitly out of scope
-
-Do not combine this refactor with:
-
-- E3 R2 garbage collection;
-- repair of the one known `G_conflicting_intent` row;
-- historical duplicate-observation cleanup;
-- historical duplicate-image cleanup;
-- standalone migration-tool hardening unless it blocks an extraction stage;
-- cloud schema changes not required by an explicitly approved orchestration contract;
-- orientation/analysis work;
-- UI redesign;
-- account-link/reset work;
-- broad type-annotation or lint migrations;
-- external publishing refactors;
-- Artsobservasjoner / Artportalen / iNaturalist / Mushroom Observer uploader redesign.
-
----
-
-# Definition of done
-
-The refactor is complete when all of the following are true.
-
-## Compatibility
-
-- `utils/cloud_sync.py` is a small stable compatibility surface.
-- Public production imports remain stable or have an explicit migration.
-- Legacy result dictionaries remain supported where callers still need them.
-- No fake duplicate mutable state exists solely for facade compatibility.
-
-## Ownership
-
-- transport contains transport, not sync policy;
-- pagination has one authoritative implementation;
-- pull-only enforcement has one authoritative writer/read contract;
-- storage intent has a clear owner;
-- tombstones have a clear owner;
-- snapshots have a clear owner;
-- conflicts/reconciliation have clear owners;
-- calibrations have a clear owner;
-- measurements have a clear owner;
-- image identity has a clear owner;
-- image mechanics have a clear owner;
-- anchors have a clear owner;
-- observation completion has one authoritative coordinator.
-
-## Reconciliation architecture
-
-- reconciliation is primarily pure classification;
-- reconciliation is split into focused modules rather than becoming a new monolith;
-- push and pull use the same canonical change/conflict semantics;
-- candidate selection remains independently optimized;
-- executors perform side effects from explicit decisions/plans.
-
-## State and retry semantics
-
-- `sync_status='synced'` is written only at the final successful observation commit point;
-- required child failure leaves the observation retryable;
-- snapshot failure prevents final synced commit;
-- unresolved conflicts do not advance the accepted baseline;
-- deep helpers do not independently decide final observation completion.
-
-## Snapshot semantics
-
-- snapshots are written only from complete, known-good remote state;
-- truncated/partial reads never become baselines;
-- representation-only differences do not create false conflicts;
-- genuine concurrent edits remain reviewable.
-
-## Structured diagnostics
-
-- internal issue categorization is structured rather than dependent on reparsing UI/log strings;
-- a failed observation can be explained deterministically in terms of candidate reason, reconciliation decision, execution result, and final state;
-- legacy string output exists only as a compatibility/UI representation where still needed.
-
-## Safety
-
-- identity disagreement remains fail-closed;
-- explicit deletion intent remains the only source of routine cloud image deletion;
-- pull-only performs zero cloud writes;
-- local originals remain protected from cloud-side disappearance or lower-quality recovery copies;
-- cloud recovery-cache bytes are never re-uploaded;
-- pagination/partial-read safeguards remain intact.
-
-## Validation
-
-- cloud-sync safety suite is green against the accepted final baseline;
-- public import compatibility tests are green;
-- final synced-commit tests are green;
-- structured issue/result tests are green;
-- no new reconciliation anomalies appear in the final live canary;
-- architecture docs point to the new owning modules.
-
----
-
-# Anti-goals
-
-The following do **not** count as success:
-
-- `cloud_sync.py` has merely been split into many files while preserving the same implicit state machine;
-- push and pull still contain competing definitions of conflict;
-- a new `reconciliation.py` becomes another several-thousand-line god module;
-- every domain helper can still mutate observation sync state independently;
-- `synced` still means “we started successfully and hope compensation catches later failures”;
-- debugging still requires reconstructing state from print output;
-- the facade is removed solely to reduce file count;
-- external publishing is pulled into the cloud-sync subsystem merely because both use observation/images data.
-
----
-
-# Final target in one sentence
-
-> **A boring compatibility facade over focused domain owners, pure reconciliation logic, explicit side-effect executors, and a single observation coordinator that commits `synced` only when the whole required sync transaction is actually complete.**
+## 7. What we removed from the old plan and why
+
+- **20 checkpoints → 5 stages (6 review candidates).** The old boundaries were
+  safety boundaries; the verifier (§6), commit labels and per-stage Sol audit
+  keep that safety without a review cycle per module.
+- **Separate pre-stage.** Now slice 1.0; it has no independent review value.
+- **Stage 2/3 split (policy vs tombstones).** Coupling is one-directional and
+  small; both are leaves.
+- **Stage 4a/4b split.** Snapshots and conflict plans are mutually recursive.
+- **Stage 5a as its own stage.** Calibrations are a leaf; moved in Stage 1.
+- **Measurements before images.** Reversed to match the dependency graph.
+- **6a/6b/6c as three stages.** One stage with two review candidates.
+- **Stage 6.5 as a standalone checkpoint.** Became Stage 4's first slice with
+  its own Sol review; the types are designed next to their only consumers.
+- **7a–7e as five sequential architectural states.** Intermediate states (new
+  coordinator, old executors) were transitional architecture that would
+  have lived across several review cycles; now one stage, internally sliced.
+- **6.5k (reference-use pending-change signal).** A product feature crossing
+  `database/reference_library*` triggers and outboxes, not refactoring. Write
+  it as its own plan after Stage 4, on top of the coordinator.
+- **Stage 9 as a gated "optional stage".** Now Stage 5 slice 6; it is cheap
+  once mixins exist and callers never construct sub-clients.
+- **Line references and suite counts from August.** Replaced; treat any line
+  number here as a search hint valid at `65f09d2`.
+
+## 8. Things that still deserve small commits even though they no longer deserve separate stages
+
+- The red-baseline test fix (slice 1.0), alone.
+- Each `move:` of one module, separate from its facade re-export `adapt:` and
+  from its `test:` patch retargeting.
+- The `reference_cloud_adapter` import switch (removes a cycle; easy to bisect).
+- Every pull-only registry change, so classification diffs are readable.
+- The snapshot/conflict-plan cycle move (Stage 2 slice 4), isolated.
+- Any pure/loader split in reconciliation.
+- 3A identity mixin moving off `SporelyCloudClient`.
+- `_carry_forward_local_mosaic_signature` and the pending-image repair
+  generation move — small, incident-prone.
+- Stage 4: the design note; removal of the early push stamp; routing of pull
+  stamps; each executor; the issue pipeline; each accidental-test update.
+- Stage 5: each no-op suppression path; `_facade()` retirement; client split.
+
+## 9. Live-canary policy
+
+Canary only where remote-state semantics can change: Stage 4 (required),
+Stage 5 slices 1/5, any Stage 3 `adapt:` on an identity or anchor write path.
+Before: fresh SQLite backup; read-only reconciliation report with
+C=D1=D2=E=H=0 (or a documented exception). Use a deliberate Sync Now on a
+disposable or known account; record account/DB/build; rerun the report after
+and diff it. Never combine with cleanup or GC. Live Supabase writes are
+human-gated per `AGENTS.md`.
+
+## 10. Execution estimate (agent slices / review cycles)
+
+| Stage | Implementation slices | Sol audits | Sparring cycles (expected) | Canary |
+|---|---|---|---|---|
+| 1 Boundaries | 3–4 | 1 | 1–2 | — |
+| 2 Reconciliation substrate | 2–3 | 1 | 1–2 | — |
+| 3A Identity + anchors | 2 | 1 | 1–2 | conditional |
+| 3B Images, measurements, derived | 3–4 | 1 | 1–2 | — |
+| 4 Orchestration | 5–7 | 2 | 2–3 | 1 (maybe 2) |
+| 5 Hardening + facade | 3–5 | 1 | 1–2 | conditional |
+| **Total** | **18–25** | **7** | **7–13** | **1–3** |
+
+Stages 1–3 are mechanical and bounded by the verifier; most fix cycles are
+expected in Stage 4. Branch drift is the main schedule risk: keep each stage's
+branch short-lived and merge on acceptance; do not run another
+`cloud_sync.py` feature branch in parallel with a `move:` stage.
+
+## 11. Out of scope
+
+E3 R2 garbage collection; `G_conflicting_intent` repair; historical duplicate
+cleanup; migration-tool hardening; cloud schema changes not required by the
+Stage 4 design; spore orientation; UI redesign; account-link/reset; broad
+lint/type migration; external publishing; 6.5k pending-change signalling.
+
+## 12. Definition of done
+
+- **Compatibility:** `utils/cloud_sync.py` is re-exports plus thin legacy
+  adapters; production imports unchanged or migrated; legacy result dicts
+  supported; no mirror mutable state; no `_facade()` late binding.
+- **Ownership:** every region in §3 has exactly one owner; ownership tests
+  assert facade identity; verifier history shows all moves AST-identical or
+  justified.
+- **Reconciliation:** `reconciliation/*` is pure (enforced by test); push and
+  pull share it; candidate selection remains a separate optimizer; derived
+  products query the plan instead of re-deriving agreement.
+- **State:** only the coordinator writes `sync_status='synced'` (enforced by
+  grep test), after required work and snapshot persistence; required failures
+  stay retryable and visible; unresolved conflicts never advance the baseline.
+- **Diagnostics:** issues are typed; each failed observation is explainable as
+  candidate reason → plan → execution → final state.
+- **Safety:** all §2 invariants pass their suites; pull-only zero writes; fast
+  no-op sync zero writes.
+- **Validation:** all `cloud_sync`-importing tests green; final canary clean;
+  `docs/cloud-sync-architecture.md` and `docs/supabase-sync-contract.md`
+  (both repo copies, per contract rules) point to the new owners.
+
+## 13. Anti-goals
+
+A split that keeps the implicit state machine; competing conflict definitions
+in push and pull; a new multi-thousand-line `reconciliation` or `coordinator`
+module; domain helpers that still decide observation completion; `synced`
+meaning "started and hoping"; removing the facade to reduce file count;
+pulling external publishing into cloud sync.
+
+> **Target:** a boring facade over focused owners, pure reconciliation, explicit
+> executors, and one coordinator that commits `synced` only when the whole
+> required sync transaction is actually complete.
