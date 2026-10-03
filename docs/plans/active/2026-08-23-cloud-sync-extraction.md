@@ -1100,6 +1100,20 @@ Fast-path pruning, child-change cursors, and remote head comparisons may remain 
 
 Do not force every no-op observation through a full three-way deep fetch merely to make the design conceptually pure.
 
+## 6.5k — Define observation dirty signalling for child-entity changes
+
+User expectation (2026-10-03): attaching or detaching a reference on an observation should mark the local observation dirty.
+
+Current behavior is deliberately separate. `ObservationReferenceUseRepository.detach` (`database/reference_library.py`) deletes the `observation_reference_uses` row without calling `mark_observation_dirty`. The use triggers in `database/reference_library_schema.py` (`reference_use_cloud_sync_insert` / `reference_use_cloud_sync_delete`) record sync state and tombstones in their own outbox. `sync_reference_library` (called from `utils/cloud_sync.py`) uploads that outbox on every sync, whether or not the observation is dirty. So the change does reach the cloud, but the observation does not show as having pending changes.
+
+Decide and document:
+
+- which child-entity mutations (reference uses, and by the same rule images, measurements, and calibrations if they differ today) set the parent observation's `sync_status = 'dirty'`;
+- whether dirty means "full observation re-push" or only "this observation has pending changes" (a pending-changes indicator derived from the child outboxes might be enough and avoids re-uploading images and mosaics when only a reference link changed);
+- how a child-only dirty flag interacts with 6.5f, so that `synced` is not committed while the child outbox still has pending or failed work for that observation.
+
+Related observation: a push pass selects its candidates once at pass start (`SELECT ... WHERE cloud_id IS NULL OR sync_status = 'dirty'`). An edit saved mid-pass is correctly deferred to the next sync, but nothing tells the user. Consider surfacing "changes made during sync will upload next sync", or running a follow-up pass when rows became dirty during the run.
+
 ## Stage 6.5 deliverables
 
 Before Stage 7 implementation:
@@ -1113,7 +1127,8 @@ Before Stage 7 implementation:
 7. owner for final `sync_status`;
 8. owner for snapshot persistence;
 9. test plan for new desired semantics;
-10. explicit list of current tests that encode accidental behavior and therefore need reviewed updates.
+10. explicit list of current tests that encode accidental behavior and therefore need reviewed updates;
+11. decision on child-entity dirty signalling (6.5k).
 
 ## Gate
 
