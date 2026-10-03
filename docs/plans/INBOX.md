@@ -15,8 +15,11 @@ Add a note under the nearest heading, or use “Unsorted / needs review” when 
 - Decide whether to repair the known `G_conflicting_intent` row and historical duplicate observation/image records outside the extraction plan.
 - Harden standalone migration tooling if it becomes necessary; it is explicitly outside the cloud-sync extraction plan.
 - Design a safe fix for the observation-deletion ordering and original-media coverage noted in `docs/cloud-media-incident-audit.md`.
+- Spore mosaic after conflict resolution: the mosaic is skipped when local and cloud differ in any way the user accepted. Narrow that so only microscope-relevant differences block it.
+- Spore mosaic after conflict resolution: build the mosaic even when local and cloud differ, using only measurements whose images match on both sides.
+- Spore mosaic after conflict resolution: generate a mosaic for observations that only came in by import (cloud pull), not just ones pushed from this device.
 
-Source: former `PLAN.md`, the active cloud-sync extraction plan, and the cloud-media incident audit.
+Source: former `PLAN.md`, the active cloud-sync extraction plan, the cloud-media incident audit, and the deferred items from `completed/2026-09-07-conflict-resolution-spore-mosaic.md`.
 
 ## Images / galleries / publishing
 
