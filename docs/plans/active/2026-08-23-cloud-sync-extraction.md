@@ -2,8 +2,10 @@
 
 Status: authoritative plan for decomposing and hardening `utils/cloud_sync.py`.
 Rewritten 2026-10-03 against `main` @ `65f09d2` (plan `5a41cd1`); refined for
-execution the same day (dependency corrections in §1.1). The 2026-08-23
-version (20 checkpoints) remains in git history.
+execution the same day (dependency corrections in §1.1), and revised after the
+first faithful agent-sparring intake (Stage 4 split into 4A/4B, post-acceptance
+canary gates, relocation-aware verifier, `sporely-web` contract sibling). The
+2026-08-23 version (20 checkpoints) remains in git history.
 
 ## Agent handoff
 
@@ -11,6 +13,8 @@ version (20 checkpoints) remains in git history.
 - **Donor evidence:** `feature/cloud-sync-transport-boundary` (`4002270`, merge
   base `7acaad1`, 271 commits behind `main`) implemented old Stages 0–1 and
   passed review in September. It is a donor, never a merge source (§4).
+- **Review candidates (7, fixed):** 1, 2, 3A, 3B, 4A, 4B, 5. Slices inside a
+  candidate are implementation steps, not managed stages.
 - **Current/next slice:** 1.0 (baseline repair + inventory), then 1.1 (tooling).
 - **Known red baseline:** `tests/test_cloud_sync_progress_reset_and_prepare.py::
   test_reconcile_metadata_only_linked_images_skips_unchanged_siblings` fails on
@@ -168,15 +172,15 @@ layer 1  transport, pagination (client mixins); pull_only; remote_reads;
 layer 2  image_policy (desired bytes, ledger, anchor predicates); tombstones
 layer 3  reconciliation/ (PURE: no client, no SQLite writes, no Qt)
            sample_source, compare (+ location precision), taxonomy_identity,
-           preflight, accepted_asymmetry, types (Stage 4)
+           preflight, accepted_asymmetry, types (Stage 4B)
 layer 4  baseline (snapshot codec + load/store; reads remote via remote_reads)
 layer 5  domain owners, in dependency order:
            calibrations
            image_identity (+ client identity mixin) → anchors → images → measurements → derived
 layer 6  conflict_plan, conflict_detail
-layer 7  observation_coordinator (ONLY writer of sync_status='synced' and snapshots, Stage 4)
-         push_executor, pull_executor (Stage 4)
-layer 8  orchestration (thin sync_all, Stage 4)
+layer 7  observation_coordinator (ONLY writer of sync_status='synced' and snapshots, Stage 4B)
+         push_executor, pull_executor (Stage 4B)
+layer 8  orchestration (thin sync_all, Stage 4B)
 ```
 
 Sibling owners stay outside: `cloud_media_policy`, `original_sync_policy`,
@@ -188,21 +192,54 @@ Sibling owners stay outside: `cloud_media_policy`, `original_sync_policy`,
 A layering test (added 1.1, extended each stage) parses imports of every
 `cloud_sync_impl` module and fails on upward or facade imports.
 
+### 3.1 Shared sync contract and the `sporely-web` sibling
+
+The shared contract exists in two repositories:
+`sporely-py/docs/supabase-sync-contract.md` and
+`sporely-web/docs/supabase-sync-contract.md`. A change to its wording must land
+in both copies in the same work item.
+
+- Primary implementation is always in `sporely-py`.
+- Only a candidate that actually changes contract wording (expected: Stage 4B,
+  if 4A design §7 lists changes; Stage 5 only if 5.4 lands and changes
+  contract wording) declares `sporely-web` as a **sibling repository
+  candidate** containing the matching contract-only change to
+  `docs/supabase-sync-contract.md` — no other `sporely-web` files.
+- Sibling membership is decided at **run approval**, not at intake: the
+  Stage 4B run is approved with `sporely-web` declared iff accepted
+  `docs/cloud-sync-stage4-design.md` section 7 lists wording changes; the
+  Stage 5 run is approved with it iff 5.4 will run and changes contract
+  wording. A person confirms this at each of those approvals.
+- Agent-sparring acceptance of that candidate pins and verifies both commits
+  (`sporely-py` candidate SHA and `sporely-web` sibling SHA); the two contract
+  copies must be byte-identical in the changed sections.
+- Navigation/line-reference refreshes that live only in `sporely-py` docs
+  (`docs/cloud-sync-architecture.md`) never require a sibling. A stage whose
+  contract wording does not change has no sibling candidate.
+
 ## 4. Using the donor branch
 
 - Start every stage from current `main`. Never merge, rebase or cherry-pick the
   donor wholesale.
 - **Reuse:** module layout of `errors`, `profiling`, `progress`, `summary`,
   `common`, `pagination`; ownership tests `tests/test_cloud_sync_stage0_ownership.py`,
-  `tests/test_cloud_sync_stage1_ownership.py`; test fixes from `ca16130`
-  (stub signature + 3 materialization-state regressions), the dry-run WAL fix
-  `7297bf9`, the `reference_library_schema` index idempotence fix — each only
-  after confirming it still applies on `main`.
+  `tests/test_cloud_sync_stage1_ownership.py`; the **test-only** parts of
+  `ca16130` (stub signature + 3 materialization-state regressions in
+  `tests/test_cloud_media_pull_retry.py`), each only after confirming it still
+  applies on `main`.
+- **Skipped donor fixes (checked against `main` @ `b39dfd1`):** the
+  `reference_library_schema` index-idempotence fix is already on `main`
+  (`_normalized_index_ddl`, `_existing_index_sql`) — skip. The `ca16130`
+  `cloud_sync.py` materialization fix is already on `main` — skip. The
+  migration-tool dry-run fixes (`ca16130` tool part, `7297bf9`) touch
+  `tools/migrate_legacy_reference_values.py`; that is migration-tool hardening
+  (§12, out of scope) — not reapplied by this plan.
 - **Regenerate from `main`, never copy:** `pull_only.py` registries;
   `transport.py` (add `_patch_with_precondition` and the session-cache hook
   near `_cloud_timing_log`, L210).
 - **Lessons applied up front:** (1) *shadowing* — delete the facade definition
-  in the same commit as the move; ownership tests assert `facade.X is owner.X`;
+  and add its re-export in the same commit as the move (§6.1); ownership tests
+  assert `facade.X is owner.X`;
   (2) *late binding* — only the four `_facade()` names above.
 - Classify on reapply: `fetch_image_metadata_purpose` (read),
   `_patch_with_precondition` (write, explicit). Move
@@ -244,8 +281,10 @@ can find it; Stage 5 removes facade-level patching for every name whose callers
 are all in owner modules, and the DoD requires the helper to be gone or limited
 to a documented list of imported dependencies.
 
-Retargeting is a `test:` commit after each `move:` commit: `monkeypatch.setattr(cloud_sync, "<name>", v)`
-→ owner patch if the rule above requires it, else `patch_cloud_sync(...)`.
+Retargeting (`monkeypatch.setattr(cloud_sync, "<name>", v)` → owner patch if
+the rule above requires it, else `patch_cloud_sync(...)`) is placed per §6.1: in
+the `move:` commit when the existing suite would otherwise go red, else in an
+immediately following `test:` commit.
 String targets (`mock.patch("utils.cloud_sync.<name>")`) are inventoried in
 1.0 and treated the same way.
 
@@ -254,44 +293,99 @@ String targets (`mock.patch("utils.cloud_sync.<name>")`) are inventoried in
 `tools/verify_cloud_sync_move.py --base <sha> --candidate <sha>` (added 1.1).
 For every top-level function, class, method and module-level statement removed
 from `utils/cloud_sync.py` (or from `SporelyCloudClient`) it locates the new
-definition and reports `identical`, `differs` (with a diff), or `missing`.
-Every symbol in a `move:` commit must be `identical`. Anything else must be in
-an `adapt:` or `behavior:` commit.
+definition and reports `identical`, `differs` (with a diff), `adapt-required`,
+or `missing`. Every symbol in a `move:` commit must be `identical`. Anything
+else must be in an `adapt:` or `behavior:` commit. The verifier is
+relocation-aware but fails closed: when it cannot prove equivalence it reports
+`differs` or `adapt-required`, never `identical`.
 
-**Compared exactly (no normalization):** the full AST of the definition,
-including decorators, default values, annotations, docstrings, keyword
-arguments, `global`/`nonlocal` statements, and nested functions/classes.
-Comments and whitespace are not in the AST and are therefore ignored.
+### 6.1 Smallest green extraction unit
 
-**Additionally verified (a mismatch makes the symbol `differs`):**
-1. **Free-name resolution.** For each global name the definition reads, the
-   origin in the candidate owner module (defining module + qualname for
-   functions/classes; module object for modules; `repr` for literals) must equal
-   the origin at base in the facade. Same spelling resolving to a different
-   object is a semantic change.
-2. **Module-level state.** A moved assignment, registry, cache dict,
-   `ContextVar`, lock or `logging.getLogger(__name__)` must exist exactly once
-   across facade + owners. Two instances = `differs`. A logger whose name
-   changes because `__name__` changed is reported; it may land only in `adapt:`.
-3. **Rebinding hazards.** Any moved function using `global`, `globals()`,
-   `sys.modules[__name__]`, `getattr(<module>, …)`, `importlib`, or string-based
-   patch targets is reported `adapt-required` even when its AST is identical.
-4. **Client methods.** For methods moved to a mixin, the set of attribute names
-   on `SporelyCloudClient` and their resolved function origins (via the MRO)
-   must be unchanged.
-5. **Facade binding.** After the move the facade binding `is` the owner object
-   (checked by importing the candidate in a subprocess).
+A `move:` commit contains exactly:
+- the definition(s) moved unchanged to the owner module;
+- deletion of the old facade definition;
+- the facade re-export/binding (`from ...owner import X`) and any owner-module
+  imports needed so the moved code resolves the same objects (§6.3). These
+  bindings make the relocation executable and must not alter behavior;
+- test patch retargeting (§5) **only when** the existing suite would otherwise
+  be red after the move.
+
+Retargeting not needed for green goes in an immediately following `test:`
+commit. Semantic changes (signature plumbing, logger-name changes, anything the
+verifier reports `differs`/`adapt-required`) go in separate `adapt:` commits.
+**Every committed slice is green** (focused tests pass, facade identity holds).
+The only exception is a commit explicitly marked as a deliberate red-test design
+step (Stage 4B slice 4B.2 `xfail(strict=True)` tests, which still pass as xfail).
+
+### 6.2 Definition equivalence
+
+Compared exactly, no normalization: the full AST of the definition, including
+body, decorators, default values, annotations, docstrings, keyword arguments,
+`global`/`nonlocal` statements, and nested functions/classes. Comments and
+whitespace are not in the AST and are ignored. Any difference in decorators,
+defaults or annotations is `differs` and requires `adapt:`.
+
+### 6.3 Global/free-name binding equivalence
+
+Base and candidate are imported in separate subprocesses, so equivalence is
+established by **origin**, never by cross-process `is`. For every global/free
+name the definition reads, the verifier records its origin in each process:
+- function/class: `(__module__, __qualname__)` plus a source-AST hash of the
+  defining code;
+- module: its `__name__`;
+- immutable literal (`int`, `str`, `bytes`, `float`, `bool`, `None`, tuples/
+  frozensets of these): `repr`;
+- anything else (instances, mutable containers, loggers, locks, `ContextVar`s,
+  partials, bound methods): no origin — the name is `adapt-required` unless
+  §6.5 proves it is the single shared instance.
+
+A free name is equivalent when its candidate origin equals its base origin, or
+when the base origin `utils.cloud_sync.X` maps through the **relocation map**
+(generated from this and earlier verified `move:`s: `utils.cloud_sync.X →
+owner.X`) to the candidate origin and the AST hashes match. Otherwise
+`differs`. Within the **candidate** process alone, the verifier additionally
+checks `utils.cloud_sync.X is owner.X` for every moved name (§6.1) and that the
+owner module's binding of each free name `is` the facade's binding of the same
+name where both exist. Acceptance tests for these rules are part of slice 1.1.
+
+### 6.4 Relocation metadata
+
+Differences caused solely by relocation — `__module__`, `__qualname__` prefix
+(class → mixin), owner module path, `__globals__` identity — never by themselves
+fail a valid move.
+
+### 6.5 Module-level state
+
+A moved assignment, registry, cache dict, `ContextVar`, lock or logger must
+exist exactly once across facade + owners; the facade name must bind the same
+object. Two instances = `differs`.
+
+### 6.6 Automatic `adapt-required` (manual review, even if the AST is identical)
+
+`global`; `globals()`; `sys.modules[__name__]`, `getattr(<module>, …)`,
+`importlib` or other dynamic module lookup; late-bound facade resolution
+(`_facade()`); descriptors, properties, `__init_subclass__`/metaclass-sensitive
+code; `logging.getLogger(__name__)` or any logger whose name/identity changes;
+string-based patch targets.
+
+### 6.7 Client methods moved to mixins
+
+For each method moved into a `SporelyCloudClient` mixin: the method's AST is
+`identical` (§6.2); its free names satisfy §6.3 in the mixin module;
+`SporelyCloudClient.<name>` resolves via the MRO to the moved function; no other
+attribute of `SporelyCloudClient` changes its MRO resolution; `super()` /
+`self.<attr>` references resolve to the same functions as at base. If the
+verifier cannot prove this, it reports `adapt-required`.
 
 **Never ignored:** renamed identifiers (local or global), reordered statements,
 changed literals, changed imports *inside* function bodies, changed exception
-types, added/removed `try`, changed default arguments. The verifier errs toward
-`differs`; a false `differs` costs a short `adapt:` review, a false `identical`
-is not acceptable.
+types, added/removed `try`, changed default arguments. A false `differs` costs a
+short `adapt:` review; a false `identical` is not acceptable.
 
-Commit labels: `move:` (all symbols `identical`), `adapt:` (import/binding/
-logger-name/signature plumbing only, each listed with a one-line reason),
-`test:` (retargeting, new tests), `behavior:` (intentional change with its own
-tests), `docs:`.
+Commit labels: `move:` (§6.1; all symbols `identical`), `adapt:` (import/
+binding/logger-name/signature plumbing only, each listed with a one-line
+reason), `test:` (retargeting, new tests), `behavior:` (intentional change with
+its own tests), `docs:`.
 
 ## 7. Slice protocol (every implementation slice)
 
@@ -300,9 +394,15 @@ The implementer (GPT-5.5-low) receives one slice at a time and:
 1. Confirms clean `git status`, records base SHA, reads `AGENTS.md`,
    `.claude/rules/cloud-sync.md`, this slice and §2.
 2. Runs the slice's **pre** tests; stops and reports if not green.
+   **Bootstrap exception (slice 1.0 only):** the one known red baseline test
+   (Agent handoff) is expected to fail before 1.0; any *additional* failure is a
+   stop. After 1.0 every `cloud_sync`-importing test file must be green.
 3. Makes the commits in the listed order, one label per commit.
-4. After each `move:` commit runs the verifier and the slice's focused tests.
-5. Runs the slice's **post** tests, the layering test, ownership tests,
+4. Before each commit runs the slice's focused tests on the working tree;
+   commits only if green; after each `move:` commit runs the verifier on the
+   commit and records its output (§6.1: every commit green).
+5. Runs the slice's **post** tests, the layering test, ownership tests (each
+   only once it exists — from slice 1.1 on),
    `py_compile` of touched files, and a subprocess import of the facade.
 6. Does not touch anything listed under "Untouched".
 7. Pushes; hands the reviewer: base/candidate SHAs, `git log --oneline`,
@@ -312,6 +412,19 @@ The implementer (GPT-5.5-low) receives one slice at a time and:
 **Stage-wide broad gate** (run once per review candidate, not per slice): all
 test files importing `cloud_sync` (record count; ~1,593 at `5a41cd1`),
 layering test, ownership tests, verifier over base..candidate.
+
+**Candidate acceptance vs. human gates.** Verification of every candidate in
+this plan is self-verifiable (automated tests, verifier, Sol audit); no
+candidate's verification requires live Supabase writes, so the `AGENTS.md`
+human-gated "do not commit" rule does not apply to candidate commits. The live
+canary is a separate, user-authorized rollout gate that runs after acceptance
+(authorized by the plan owner when this plan was revised, 2026-10-03). A review candidate is accepted by
+automated implementation evidence plus the independent GPT-6.1-Sol audit
+through agent-sparring; acceptance never waits on a live canary. Where §10
+requires a live canary, it is a **post-acceptance human gate**: it runs on the
+accepted, pushed candidate, and the next candidate may not start until the gate
+has passed (or, for Stage 5, it is the final closeout gate). A failed canary is
+handled as a new corrective candidate, never by amending the accepted one.
 
 ---
 
@@ -323,9 +436,9 @@ layering test, ownership tests, verifier over base..candidate.
 
 | Slice | Label(s) | Content | Pre / post tests | Untouched |
 |---|---|---|---|---|
-| 1.0 | `test:`, `docs:` | Reapply `ca16130` stub fix + 3 regressions; reapply `7297bf9` and index-idempotence fix if still applicable. Add `docs/cloud-sync-refactor-inventory.md`: production imports from `utils.cloud_sync`, tools/scripts using private helpers, string patch targets, patched-name counts. Refresh line refs in `docs/cloud-sync-architecture.md`; state the early-stamp model as current truth. | pre: `test_cloud_sync_progress_reset_and_prepare` (expect 1 fail); post: broad gate green | all production code |
-| 1.1 | `test:` | `tools/verify_cloud_sync_move.py` (§6) with its own unit tests on synthetic before/after modules (identical, renamed free name, duplicated ContextVar, `global`, logger name); `tests/cloud_sync_patching.py` (§5) with tests (same-object rule, missing-name failure); layering test (§3). | post: new tests green; verifier on `HEAD..HEAD` reports nothing | production code |
-| 1.2 | `move:`, `adapt:`, `test:` | Layer 0: `errors` (+`is_identity_clear_verification_failed_error`), `profiling`, `progress`, `summary`, `common`. `adapt:` facade re-exports; `reference_cloud_adapter` imports from `errors`; drop lazy imports in `sync_all` (L6877, L7214). Ownership test from donor. | pre/post: `test_cloud_sync_change_notification`, profiler/progress tests, `test_cloud_sync_stage0_ownership`, reference adapter tests | error text, summary keys, progress phases |
+| 1.0 | `test:`, `docs:` | Reapply the test-only parts of `ca16130` (stub fix + 3 regressions) if still applicable; donor production fixes are skipped (§4). Add `docs/cloud-sync-refactor-inventory.md`: production imports from `utils.cloud_sync`, tools/scripts using private helpers, string patch targets, patched-name counts. Refresh line refs in `docs/cloud-sync-architecture.md`; state the early-stamp model as current truth. | pre: `test_cloud_sync_progress_reset_and_prepare` (expect exactly the 1 known fail, §7 bootstrap exception); post: every `cloud_sync`-importing test file green (verifier/layering/ownership tests do not exist yet)  | all production code |
+| 1.1 | `test:` | `tools/verify_cloud_sync_move.py` (§6) with its own unit tests on synthetic before/after modules (identical, valid relocation incl. mixin, renamed free name, rebound free name, duplicated ContextVar, `global`, logger name); `tests/cloud_sync_patching.py` (§5) with tests (same-object rule, missing-name failure); layering test (§3). | post: new tests green; verifier on `HEAD..HEAD` reports nothing | production code |
+| 1.2 | `move:`, `adapt:`, `test:` | Layer 0: `errors` (+`is_identity_clear_verification_failed_error`), `profiling`, `progress`, `summary`, `common`, each `move:` carrying its facade re-export (§6.1). `adapt:` `reference_cloud_adapter` imports from `errors`; drop lazy imports in `sync_all` (L6877, L7214). Ownership test from donor. | pre/post: `test_cloud_sync_change_notification`, profiler/progress tests, `test_cloud_sync_stage0_ownership`, reference adapter tests | error text, summary keys, progress phases |
 | 1.3 | `move:`, `adapt:`, `test:` | Layer 1 remote: `transport` (incl. `_patch_with_precondition`), `pagination`, `pull_only` (registries regenerated from `main`, classify `fetch_image_metadata_purpose`, `_patch_with_precondition`), `remote_reads` (`_pull_remote_images_for_sync`, `_pull_remote_measurements_for_images`, `_group_remote_measurements_by_observation`), `capabilities` (`_owner_sync_parents_supported`, `_remote_metadata_purpose`, `METADATA_PURPOSE_*`). The `_facade()` hook is the only `adapt:` allowed. | pre/post: `test_cloud_download_only`, pagination tests, `test_cloud_sync_stage1_ownership` (future-enforcing classification) | headers, refresh, retry, timeouts, page order |
 | 1.4 | `move:`, `test:` | Layer 1 `sync_state` (L5325–5800 keys and per-image state, L6559–6566 media signature store) then layer 2 `image_policy` (L5466/L5486 predicates, L5781–6241 minus L6242) then `tombstones` (5 functions in §1.1.3). One `move:` commit per module. | pre/post: `test_cloud_storage_intent_ledger`, `test_cloud_image_bytes_desired`, `test_cloud_sync_metadata_only`, `test_image_tombstones`, gallery checkbox deletion tests, `test_cloud_sync_fast_path` | ledger key format, flush ordering |
 
@@ -352,7 +465,7 @@ facade redefinition of a moved name; every client method classified.
 **Objective:** pure reconciliation layer, baseline, conflict plan, calibrations;
 no module cycle.
 **Absorbs:** old 4a, 4b, 5a, taxonomy identity, conflict detail.
-**Behavior:** preserving only. Typed plan design is **not** here (Stage 4).
+**Behavior:** preserving only. Typed plan design is **not** here (Stage 4A design, 4B implementation).
 **Prerequisites:** Stage 1 merged. **Review candidate:** one.
 
 | Slice | Label(s) | Content | Pre / post tests |
@@ -366,7 +479,7 @@ no module cycle.
 Add to the layering test: `reconciliation/*` imports nothing from layers 1
 (client), 4+, `database` writers, or `PySide6`. If a function moved in 2.1–2.2
 turns out to read SQLite, it stays in its original slice as-is and is listed in
-the handoff for Stage 4; do not split it here (that would be `adapt:` logic
+the handoff for Stage 4A; do not split it here (that would be `adapt:` logic
 work in a mechanical stage).
 
 **Invariants at risk:** 5, 12, 13, 14. **Untouched:** snapshot schema/versions,
@@ -433,104 +546,174 @@ image; confirm every `mark_observation_dirty` call site is unchanged in count
 and condition (grep base vs candidate); confirm the repair version constant and
 scan moved together.
 
-**Live canary:** no, unless an `adapt:` touches an identity or anchor write path.
-**Acceptance:** per candidate: broad gate green, verifier clean;
+**Live canary (both candidates):** none, unless an `adapt:` in that candidate
+touches an identity or anchor write path; then a post-acceptance human gate
+(§7, §10) that must pass before the next candidate (3B after 3A; 4A after 3B)
+starts.
+
+**Acceptance shared by 3A and 3B:** broad gate green; verifier clean except
+listed `adapt:`s; no facade redefinition of a moved name; the candidate's Sol
+audit passed.
+
+**Structural acceptance after 3A:** image-identity and anchor ownership live in
+`image_identity.py` and `anchors.py`; the identity client methods resolve
+through the identity mixin. Images, measurements and derived code (3B scope)
+may still remain in `cloud_sync.py`.
+
+**Structural acceptance after 3B:** images, measurements and derived
+summary/mosaic ownership live in `images.py`, `measurements.py`, `derived.py`;
 `SporelyCloudClient` keeps only mixin wiring, observation/calibration/reference
-RPCs and capability probes; the facade's remaining bulk is `push_all`,
-`pull_all`, `sync_all`.
+RPCs and capability probes; the facade's remaining bulk is orchestration
+(`push_all`, `pull_all`, `sync_all` and their coordinator-scale helpers) plus
+documented compatibility glue.
 
 ---
 
-# Stage 4 — Orchestration replacement
+# Stage 4A — Orchestration design
 
-**Objective:** one owner of observation completion; final `synced` commit on
-push and pull; shared typed reconciliation; structured issues.
-**Absorbs:** old 6.5a–j, 7a–7e, 8a, 8d. **Prerequisites:** 3B merged.
-**Review candidate:** one, with an internal Sol design gate.
+**Objective:** the accepted design for Stage 4B. Design and evidence only.
+**Behavior:** no production code changes (`utils/`, `database/`, `ui/`,
+`tools/` untouched). **Prerequisites:** 3B merged and any 3B canary gate passed.
+**Review candidate:** one. **Labels:** `docs:` (and `test:` only for read-only
+evidence scripts or fixture capture that does not change any existing test).
+
+Deliverable: `docs/cloud-sync-stage4-design.md` (a separate artifact; this plan
+is not edited during execution). Required sections:
+
+1. **State machine** — observation sync states and transitions for push and
+   pull, including where `sync_status='synced'` and snapshots are written today
+   (push L21016; pull L26367–L27085; compensations L21085/L21354/L21445/L21573)
+   and where they will be written after 4B.
+2. **Types** — `SyncIssue`, `OperationOutcome`, `ObservationSyncOutcome`,
+   `ReconciliationPlan`: fields, producers, consumers.
+3. **Required vs best-effort work by caller mode** — a table audited from tests
+   and the contract, for every combination that matters of `sync_images`,
+   `materialize_remote_images`, `full_pull`, `child_safety_pull`, `pull_only`,
+   stating what counts as complete for an observation (including whether pull
+   completion requires materialization under `sync_images=False`).
+4. **Final snapshot/synced ownership** — the `observation_coordinator` API
+   (`commit_synced(...)`, `store_baseline(...)`), its single-writer rule, and
+   the ordering "required work → snapshot → synced".
+5. **Test classification** — every test asserting call order/counts (start:
+   `test_cloud_conflict_dialog.py:797,826`; `test_cloud_conflict_plan_execution.py:120,416,2950`;
+   `test_cloud_sync_conflict_preflight.py` L747–1248; the 39 files with exact
+   call/count asserts) classified *contract* or *accidental*, and for each
+   accidental one the 4B slice that will update it.
+6. **No-op remote writes** — table of every remote write on a fast no-op sync
+   path, stating whether it changes remote `updated_at` without semantic change.
+   This section decides whether Stage 5 slice 5.4 runs.
+7. **Shared-contract impact** — the exact wording changes 4B makes to
+   `docs/supabase-sync-contract.md` (or "none"), which determines whether 4B
+   carries a `sporely-web` sibling candidate (§3.1).
+8. **Golden/decision fixtures plan** — which fixtures 4B.2 captures.
+
+**Sol audit (gate to 4B), independently:** check every required-vs-best-effort
+row against the cited tests/contract lines; confirm the classification of each
+*contract* test; confirm the design keeps every §2 invariant; confirm the
+no-op-write table against the code. Stage 4B may not start until 4A is accepted.
+
+**Live canary:** no. **Acceptance:** design artifact complete per the list
+above; no production diff; Sol design audit passed.
+
+---
+
+# Stage 4B — Orchestration implementation
+
+**Objective:** implement the accepted 4A design: one owner of observation
+completion; final `synced` commit on push and pull; shared typed reconciliation;
+structured issues.
+**Absorbs:** old 6.5a–j, 7a–7e, 8a, 8d. **Prerequisites:** 4A accepted and
+merged. **Review candidate:** one. Deviations from the accepted design are
+stop-and-report, not implementer decisions.
 
 Order is chosen so every commit is green and there is never more than one
 writer of `sync_status='synced'` or of snapshots.
 
 | Slice | Label | Content |
 |---|---|---|
-| 4.1 | `docs:` | Design note appended to this plan: state machine; `SyncIssue`, `OperationOutcome`, `ObservationSyncOutcome`, `ReconciliationPlan`; required-vs-best-effort table audited from tests/contract (incl. whether pull completion requires materialization under `sync_images=False`); snapshot/stamp owner API; classification of every test asserting call order/counts (start: `test_cloud_conflict_dialog.py:797,826`; `test_cloud_conflict_plan_execution.py:120,416,2950`; `test_cloud_sync_conflict_preflight.py` L747–1248; the 39 files with exact call/count asserts) as *contract* or *accidental*. **Sol design gate before 4.2.** |
-| 4.2 | `adapt:` | `observation_coordinator.py` with `commit_synced(...)` and `store_baseline(...)`. Every existing stamp (push L21016; pull L26367–L27085) and every `_store_remote_snapshot` caller is routed through it **with unchanged timing**. Grep test: no other writer of `sync_status='synced'` or snapshot store. From here on there is exactly one writer. |
-| 4.3 | `test:` | Desired-semantics tests (final commit after required work + snapshot; snapshot failure blocks synced; pull equivalents) as `xfail(strict=True)`. Capture reconciliation decision fixtures from current push and pull classifiers. |
-| 4.4 | `behavior:` | Coordinator moves the commit point: stamp after required work and snapshot; remove compensations L21085/L21354/L21445/L21573; pull stamps likewise. Flip 4.3 xfails. Update the tests 4.1 classified as accidental for *this* change, in this commit. |
-| 4.5 | `behavior:` | `reconciliation/types.py`; push and pull classification switched to it **in one commit**; 4.3 decision fixtures must match except listed, reviewed differences. `_mosaic_render_state_unverified` becomes a plan query. No period with two classifiers. |
-| 4.6 | `behavior:` | `push_executor.py`, `pull_executor.py` return outcomes to the coordinator; deep `mark_observation_dirty`/`mark_observation_media_dirty` removed or documented as exceptions (grep test). Accidental-test updates for this change in this commit. |
-| 4.7 | `behavior:` | Structured issue pipeline: executors emit `SyncIssue`; `summarize_sync_issues()` consumes them; legacy `result["errors"]` strings generated from issues. A golden test captured in 4.3 asserts legacy result dicts/strings unchanged except documented items. |
-| 4.8 | `move:`/`adapt:` | Thin `orchestration.sync_all`; facade delegates. |
+| 4B.1 | `adapt:` | `observation_coordinator.py` with `commit_synced(...)` and `store_baseline(...)` per design §4. Every existing stamp (push L21016; pull L26367–L27085) and every `_store_remote_snapshot` caller is routed through it **with unchanged timing**. Grep test: no other writer of `sync_status='synced'` or snapshot store. From here on there is exactly one writer. |
+| 4B.2 | `test:` | Desired-semantics tests (final commit after required work + snapshot; snapshot failure blocks synced; pull equivalents) as `xfail(strict=True)` — the deliberate red-test design step (§6.1). Capture reconciliation decision fixtures from current push and pull classifiers and the legacy result golden (design §8). |
+| 4B.3 | `behavior:` | Coordinator moves the commit point: stamp after required work and snapshot; remove compensations L21085/L21354/L21445/L21573; pull stamps likewise. Flip 4B.2 xfails. Update the tests design §5 classified as accidental for *this* change, in this commit. |
+| 4B.4 | `behavior:` | `reconciliation/types.py`; push and pull classification switched to it **in one commit**; 4B.2 decision fixtures must match except listed, reviewed differences. `_mosaic_render_state_unverified` becomes a plan query. No period with two classifiers. |
+| 4B.5 | `behavior:` | `push_executor.py`, `pull_executor.py` return outcomes to the coordinator; deep `mark_observation_dirty`/`mark_observation_media_dirty` removed or documented as exceptions (grep test). Accidental-test updates for this change in this commit. |
+| 4B.6 | `behavior:` | Structured issue pipeline: executors emit `SyncIssue`; `summarize_sync_issues()` consumes them; legacy `result["errors"]` strings generated from issues. The 4B.2 golden asserts legacy result dicts/strings unchanged except documented items. |
+| 4B.7 | `move:`/`adapt:` | Thin `orchestration.sync_all`; facade delegates. |
+| 4B.8 | `docs:` | Shared contract update, only if design §7 lists wording changes: `sporely-py/docs/supabase-sync-contract.md` here, and the identical change in the `sporely-web` sibling candidate (§3.1). |
 
 **Intentional behavior changes (exhaustive):** synced written once after
 required work and snapshot persistence (push and pull); snapshot failure blocks
 synced; push and pull share one classifier; issues typed. Everything in §2 holds.
-
-**Why not split Stage 4:** 4.2 (single writer, timing unchanged) is the only
-stable intermediate state worth merging on its own. If 4.4–4.8 run long or Sol
-rejects the design, merge 4.1–4.3 as candidate 4a and continue as 4b; otherwise
-one candidate.
 
 **Invariants at risk:** 3, 4, 9, 12, 14, 15, 18, 20.
 **Sol audit, independently (full candidate):**
 - list every write to `sync_status`, snapshots and review-pending markers in
   the candidate; each must go through the coordinator or be a documented
   exception;
-- run 4.3 decision fixtures against base and candidate; explain each difference;
+- run 4B.2 decision fixtures against base and candidate; explain each difference;
 - trace one failing-image observation and one failing-measurement observation
   end to end and confirm it stays dirty, visible, and keeps the old baseline;
 - confirm pull-only still performs zero writes and fast no-op sync zero writes;
-- diff legacy `sync_all` result dicts on the fixture matrix.
+- diff legacy `sync_all` result dicts on the fixture matrix;
+- confirm the implementation matches the accepted 4A design;
+- if a sibling candidate exists, confirm both contract copies are identical.
 
-**Live canary:** yes, on the full candidate (§9).
 **Acceptance:** grep tests (single writer; no deep dirty marks) green; no
 early stamp; one classifier imported by both executors; legacy results
-compatible; canary clean.
+compatible; if the contract changed, both pinned commits (`sporely-py` and
+`sporely-web`) verified.
+**Live canary:** required, as a post-acceptance human gate (§7, §10) on the
+accepted candidate. Stage 5 may not start until it has passed.
 
 ---
 
 # Stage 5 — Retire transitional scaffolding
 
 **Objective:** remove what the transition added; nothing optional.
-**Prerequisites:** Stage 4 merged and canaried. **Review candidate:** one.
+**Prerequisites:** Stage 4B merged and its post-acceptance canary gate passed.
+**Review candidate:** one.
 
 | Slice | Label | Content |
 |---|---|---|
 | 5.1 | `adapt:` | Remove the `_facade()` late binding; transport imports its four names from owners. |
 | 5.2 | `test:` | Retarget helper uses to owners where every caller is in an owner module; reduce `patch_cloud_sync` to a documented list of imported dependencies or delete it. |
-| 5.3 | `adapt:`/`docs:` | Facade reduced to re-exports + legacy adapters; architecture doc and contract navigation (both repo copies per contract rules) point to owners; inventory doc archived. |
-| 5.4 | `behavior:` (conditional) | Only if Stage 4's no-op-write audit (4.1 table) found a write that changes remote `updated_at` without semantic change: suppress it, with a zero-write test. Otherwise skip. |
+| 5.3 | `adapt:`/`docs:` | Facade reduced to re-exports + legacy adapters; `docs/cloud-sync-architecture.md` points to owners; inventory doc archived. Contract navigation is `sporely-py`-only unless contract wording changes (§3.1). |
+| 5.4 | `behavior:` (conditional) | Only if `docs/cloud-sync-stage4-design.md` section 6 "No-op remote writes" lists a write that changes remote `updated_at` without semantic change: suppress it, with a zero-write test. Otherwise skip and say so in the notes. If suppression changes contract wording, add the `sporely-web` sibling (§3.1). |
 
 **Dropped from the old Stage 8–10:** client split (no maintenance problem once
 identity moved to a mixin and callers construct only `SporelyCloudClient`);
-diagnostics rework (typed outcomes in 4.6–4.7 already provide candidate → plan →
-execution → final state); hidden-state audit (now a Stage 4 grep test); anchor
+diagnostics rework (typed outcomes in 4B.5–4B.6 already provide candidate → plan →
+execution → final state); hidden-state audit (now a Stage 4B grep test); anchor
 reservation risks (already tracked in `INBOX.md`; separate behavior work).
 
 **Sol audit:** confirm no `cloud_sync_impl` module imports the facade; confirm
 remaining helper uses are on the documented list; for 5.4, confirm the
 suppressed write is semantically a no-op on all fixtures.
-**Live canary:** only if 5.4 lands. **Acceptance:** Definition of done.
+**Acceptance:** Definition of done (excluding the final canary).
+**Live canary:** only if 5.4 lands; then it is the **final closeout gate** on
+the accepted candidate (§7, §10), not part of candidate acceptance. The plan is
+complete when Stage 5 is accepted and merged and, if 5.4 landed, the closeout
+canary has passed.
 
 ---
 
 ## 8. What we removed from the old plan and why
 
-- **20 checkpoints → 5 stages / 6 review candidates.** Verifier (§6), layering
+- **20 checkpoints → 5 stages / 7 review candidates.** Verifier (§6), layering
   test, commit labels and Sol audits carry the safety; review cycles per module
   do not add evidence.
 - **Separate pre-stage** → slices 1.0–1.1.
 - **Policy/tombstone split** → one slice; one-directional, small coupling.
-- **4a/4b split** → the cycle is broken by moving pure asymmetry logic down.
+- **Old 4a/4b reconciliation split** → the cycle is broken by moving pure
+  asymmetry logic down. (Unrelated to the current 4A/4B orchestration split.)
 - **Calibrations as a leaf stage** → last slice of Stage 2 (needs snapshot
   codec and sample-source helpers).
 - **Measurements before images** → reversed.
 - **6a/6b/6c as three stages** → 3A and 3B.
-- **Stage 6.5 standalone** → Stage 4.1 with a Sol design gate.
-- **7a–7e as five states** → one stage ordered so there is a single writer
-  from 4.2 on.
+- **Stage 6.5 standalone** → Stage 4A, a design-only review candidate.
+- **7a–7e as five states** → Stage 4B, ordered so there is a single writer
+  from 4B.1 on.
 - **6.5k (reference-use pending signal)** → product feature, moved to `INBOX.md`.
-- **Stage 8 items** → 8a/8d into Stage 4; 8b conditional 5.4; 8c covered by
+- **Stage 8 items** → 8a/8d into Stage 4B; 8b conditional 5.4; 8c covered by
   typed outcomes; 8e to `INBOX.md`.
 - **Stage 9 client split, Stage 10 facade removal** → dropped (no concrete
   benefit); facade kept by design.
@@ -538,21 +721,23 @@ suppressed write is semantically a no-op on all fixtures.
 ## 9. Things that still deserve small commits even though they no longer deserve separate stages
 
 - The red-baseline fix (1.0), alone.
-- Each `move:` of one module, separate from its `adapt:` re-exports and its
-  `test:` retargeting.
+- Each `move:` of one module (with its facade re-export, §6.1), separate from
+  any `adapt:` and from retargeting not needed for green.
 - The `reference_cloud_adapter` import switch.
 - Every pull-only registry change.
 - `accepted_asymmetry` before `baseline` before `conflict_plan`.
 - The identity mixin leaving `SporelyCloudClient`.
 - Repair-scan + version constant (together); `_carry_forward_local_mosaic_signature`.
-- Stage 4: each of 4.1–4.8; accidental-test updates inside the behavior commit
+- Stage 4B: each of 4B.1–4B.8; accidental-test updates inside the behavior commit
   they belong to, never batched at the end.
 - Stage 5: `_facade()` retirement; each no-op suppression.
 
 ## 10. Live-canary policy
 
-Canary only where remote-state semantics can change: Stage 4 (required), 5.4,
-any Stage 3 `adapt:` on an identity or anchor write path. Before: fresh SQLite
+Canary only where remote-state semantics can change: Stage 4B (required), 5.4,
+any Stage 3A/3B `adapt:` on an identity or anchor write path. Every canary is a
+post-acceptance human gate (§7): it runs on the accepted, pushed candidate and
+blocks the next candidate (Stage 5's is the final closeout gate). Before: fresh SQLite
 backup; read-only reconciliation report with C=D1=D2=E=H=0 (or a documented
 exception). Deliberate Sync Now on a disposable or known account; record
 account/DB/build; rerun the report and diff. Never combined with cleanup or GC.
@@ -565,10 +750,11 @@ Live Supabase writes are human-gated per `AGENTS.md`.
 | 1 Boundaries | 5 | 1 | 1–2 | — |
 | 2 Reconciliation + calibrations | 5 | 1 | 1–2 | — |
 | 3A Identity + anchors | 2 | 1 | 1–2 | conditional |
-| 3B Images, measurements, derived | 3 | 1 | 1–2 | — |
-| 4 Orchestration | 8 | 2 | 2–3 | 1 |
-| 5 Scaffolding retirement | 3–4 | 1 | 1 | conditional |
-| **Total** | **26–27** | **7** | **7–12** | **1–2** |
+| 3B Images, measurements, derived | 3 | 1 | 1–2 | conditional |
+| 4A Orchestration design | 1 | 1 | 1–2 | — |
+| 4B Orchestration implementation | 7–8 | 1 | 1–2 | 1 (post-acceptance) |
+| 5 Scaffolding retirement | 3–4 | 1 | 1 | conditional (closeout) |
+| **Total** | **26–27** | **7** | **7–12** | **1–4** |
 
 Branch drift is the main schedule risk: keep each stage branch short-lived,
 merge on acceptance, and do not run another `cloud_sync.py` feature branch in
@@ -580,7 +766,7 @@ into moved code.
 
 E3 R2 garbage collection; `G_conflicting_intent` repair; historical duplicate
 cleanup; migration-tool hardening; cloud schema changes not required by the
-Stage 4 design; spore orientation; UI redesign; account-link/reset; broad
+Stage 4A design; spore orientation; UI redesign; account-link/reset; broad
 lint/type migration; external publishing; 6.5k pending-change signalling;
 anchor reservation risk fixes.
 
@@ -602,7 +788,8 @@ anchor reservation risk fixes.
 - **Safety:** every §2 invariant passes its suite; pull-only and fast no-op
   sync perform zero writes.
 - **Tests:** `patch_cloud_sync` removed or limited to a documented list; all
-  `cloud_sync`-importing tests green; final canary clean.
+  `cloud_sync`-importing tests green; every required canary gate passed
+  (Stage 4B; Stage 5 closeout if 5.4 landed).
 
 ## 14. Anti-goals
 
