@@ -291,7 +291,7 @@ Record, but do not fix during the pre-stage:
   re-derives "is this state fully agreed with remote" itself instead of
   reusing the canonical comparison logic Stage 4a is meant to own
   (`_analyze_observation_push_conflicts`, `_measurement_payloads_match`).
-  See `docs/plans/active/2026-09-07-conflict-resolution-spore-mosaic.md`
+  See `docs/plans/completed/2026-09-07-conflict-resolution-spore-mosaic.md`
   for the full review history.
 
 These items feed Stage 6.5 and Stage 8.
