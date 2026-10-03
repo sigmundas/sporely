@@ -646,17 +646,11 @@ class ReferenceEntryEditor(QWidget):
         pub_layout.addLayout(pub_row)
 
         treatment_form = QFormLayout()
+        # No read-only "Taxon" row here: both hosts already show the taxon
+        # directly above the editor (the picker's Reference taxon selector,
+        # the quick-add dialog's heading), and a second, uneditable copy only
+        # invited attempts to change it here.
         current_taxon_label = " ".join(part for part in (genus, species) if part).strip()
-        self.taxon_label = QLineEdit()
-        self.taxon_label.setText(current_taxon_label or QCoreApplication.translate("ReferenceAddDialog", "No taxon selected"))
-        self.taxon_label.setReadOnly(True)
-        self.taxon_label.setToolTip(
-            QCoreApplication.translate("ReferenceAddDialog",
-                "The normalized taxon this treatment is linked to. "
-                "To change the taxon, go back to the Reference taxon selector above."
-            )
-        )
-        treatment_form.addRow(QCoreApplication.translate("ReferenceAddDialog", "Taxon:"), self.taxon_label)
         self.name_as_published_input = QLineEdit()
         # Prefilled with the current taxon name, not left blank. The field is
         # required by TaxonTreatmentRepository._validate, and the publication
@@ -672,7 +666,7 @@ class ReferenceEntryEditor(QWidget):
         self.name_as_published_input.setToolTip(
             QCoreApplication.translate("ReferenceAddDialog",
                 "The exact name used in the publication. This can be an old synonym, "
-                "spelling variant, or historical combination — separate from the normalized taxon above."
+                "spelling variant, or historical combination — separate from the reference taxon."
             )
         )
         treatment_form.addRow(
@@ -687,8 +681,9 @@ class ReferenceEntryEditor(QWidget):
 
         self._no_taxon_notice_label = QLabel(
             QCoreApplication.translate("ReferenceAddDialog", 
-                "No taxon identifier is set. The normalized treatment will "
-                "use the name as published without a taxon link."
+                "This reference is not linked to a species in the database. "
+                "Choose a reference taxon above to link it; otherwise it is "
+                "saved under the name as published only."
             )
         )
         self._no_taxon_notice_label.setWordWrap(True)
@@ -760,6 +755,10 @@ class ReferenceEntryEditor(QWidget):
         self._existing_sets_cache: list[MeasurementSet] = []
         self._legacy_source_prefill: str | None = None
         layout.addWidget(data_group)
+        # Spare height goes below the form. Without this a host that scrolls
+        # the editor at viewport height spreads it between the sections, and
+        # the collapsed disclosures float in large empty gaps.
+        layout.addStretch(1)
 
         self.use_existing_radio.toggled.connect(self._on_data_choice_toggled)
         self.enter_new_radio.toggled.connect(self._on_data_choice_toggled)
@@ -829,7 +828,6 @@ class ReferenceEntryEditor(QWidget):
         finally:
             del blocker
         taxon_label = " ".join(part for part in (self._genus, self._species) if part).strip()
-        self.taxon_label.setText(taxon_label or QCoreApplication.translate("ReferenceAddDialog", "No taxon selected"))
         # Re-prefill for the new target rather than blanking. A name typed
         # for the previous taxon must not survive onto this one, and leaving
         # it empty would block the save on a required field (see the same

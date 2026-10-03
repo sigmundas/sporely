@@ -172,310 +172,310 @@
 <context>
     <name>AddReferenceDialog</name>
     <message>
-        <location filename="../ui/add_reference_dialog.py" line="562"/>
-        <location filename="../ui/add_reference_dialog.py" line="864"/>
+        <location filename="../ui/add_reference_dialog.py" line="577"/>
+        <location filename="../ui/add_reference_dialog.py" line="1088"/>
         <source>Add reference</source>
         <extracomment>Library relevance groups, in the fixed display order of the design contract (N6). The strings are keys, not wording: the headings are translated in :meth:`AddReferenceDialog._library_group_heading`.</extracomment>
         <translation>Referenz hinzufügen</translation>
     </message>
     <message>
-        <location filename="../ui/add_reference_dialog.py" line="564"/>
-        <location filename="../ui/add_reference_dialog.py" line="862"/>
+        <location filename="../ui/add_reference_dialog.py" line="579"/>
+        <location filename="../ui/add_reference_dialog.py" line="1086"/>
         <source>Add reference — {taxon}</source>
         <translation>Referenz hinzufügen – {taxon}</translation>
     </message>
     <message>
-        <location filename="../ui/add_reference_dialog.py" line="596"/>
+        <location filename="../ui/add_reference_dialog.py" line="611"/>
         <source>Library</source>
         <translation>Bibliothek</translation>
     </message>
     <message>
-        <location filename="../ui/add_reference_dialog.py" line="598"/>
+        <location filename="../ui/add_reference_dialog.py" line="613"/>
         <source>Community</source>
         <translation>Community</translation>
     </message>
     <message>
-        <location filename="../ui/add_reference_dialog.py" line="601"/>
+        <location filename="../ui/add_reference_dialog.py" line="616"/>
         <source>My observations</source>
         <translation>Meine Beobachtungen</translation>
     </message>
     <message>
-        <location filename="../ui/add_reference_dialog.py" line="637"/>
+        <location filename="../ui/add_reference_dialog.py" line="652"/>
         <source>Cancel</source>
         <translation>Abbrechen</translation>
     </message>
     <message>
-        <location filename="../ui/add_reference_dialog.py" line="651"/>
-        <location filename="../ui/add_reference_dialog.py" line="1839"/>
+        <location filename="../ui/add_reference_dialog.py" line="666"/>
+        <location filename="../ui/add_reference_dialog.py" line="2063"/>
         <source>Add to plot</source>
         <translation>Zum Diagramm hinzufügen</translation>
     </message>
     <message>
-        <location filename="../ui/add_reference_dialog.py" line="930"/>
+        <location filename="../ui/add_reference_dialog.py" line="1154"/>
         <source>Filter by publication, taxon, or raw expression…</source>
         <translation>Nach Publikation, Taxon oder Rohausdruck filtern…</translation>
     </message>
     <message>
-        <location filename="../ui/add_reference_dialog.py" line="935"/>
+        <location filename="../ui/add_reference_dialog.py" line="1159"/>
         <source>Only this taxon</source>
         <translation>Nur dieses Taxon</translation>
     </message>
     <message>
-        <location filename="../ui/add_reference_dialog.py" line="1102"/>
+        <location filename="../ui/add_reference_dialog.py" line="1326"/>
         <source>+ New publication…</source>
         <translation>+ Neue Publikation…</translation>
     </message>
     <message>
-        <location filename="../ui/add_reference_dialog.py" line="1187"/>
+        <location filename="../ui/add_reference_dialog.py" line="1411"/>
         <source>No matching measurement sets in the library.</source>
         <translation>Keine passenden Messreihen in der Bibliothek.</translation>
     </message>
     <message>
-        <location filename="../ui/add_reference_dialog.py" line="1173"/>
+        <location filename="../ui/add_reference_dialog.py" line="1397"/>
         <source>The reference library has no measurement sets yet.</source>
         <translation>Die Referenzbibliothek enthält noch keine Messreihen.</translation>
     </message>
     <message>
-        <location filename="../ui/add_reference_dialog.py" line="605"/>
+        <location filename="../ui/add_reference_dialog.py" line="620"/>
         <source>Add new</source>
         <translation>Neu hinzufügen</translation>
     </message>
     <message>
-        <location filename="../ui/add_reference_dialog.py" line="645"/>
+        <location filename="../ui/add_reference_dialog.py" line="660"/>
         <source>Save to library</source>
         <translation>In Bibliothek speichern</translation>
     </message>
     <message>
-        <location filename="../ui/add_reference_dialog.py" line="754"/>
+        <location filename="../ui/add_reference_dialog.py" line="769"/>
         <source>Reference taxon:</source>
         <translation>Referenztaxon:</translation>
     </message>
     <message>
-        <location filename="../ui/add_reference_dialog.py" line="760"/>
-        <source>Choose which taxon&apos;s published spore data to compare against. Select &apos;Use observation taxon&apos; if available, search another taxon by typing genus and species, or choose an AI suggestion. This never changes the observation&apos;s own identification.</source>
-        <translation>Wähle aus, mit welchem Taxon du die veröffentlichten Sporendaten vergleichen möchtest. Wähle „Taxon der Beobachtung verwenden“, falls verfügbar, suche ein anderes Taxon, indem du Gattung und Art eingibst, oder wähle einen KI-Vorschlag. Dies ändert nie die eigene Bestimmung der Beobachtung.</translation>
-    </message>
-    <message>
-        <location filename="../ui/add_reference_dialog.py" line="785"/>
+        <location filename="../ui/add_reference_dialog.py" line="1001"/>
         <source>Use observation taxon: {taxon}</source>
         <translation>Taxon der Beobachtung verwenden: {taxon}</translation>
     </message>
     <message>
-        <location filename="../ui/add_reference_dialog.py" line="787"/>
-        <source>Search another taxon…</source>
-        <translation>Anderes Taxon suchen…</translation>
-    </message>
-    <message>
-        <location filename="../ui/add_reference_dialog.py" line="1027"/>
+        <location filename="../ui/add_reference_dialog.py" line="1251"/>
         <source>This taxon ({count})</source>
         <translation>Dieses Taxon ({count})</translation>
     </message>
     <message>
-        <location filename="../ui/add_reference_dialog.py" line="1029"/>
+        <location filename="../ui/add_reference_dialog.py" line="1253"/>
         <source>Same genus ({count})</source>
         <translation>Gleiche Gattung ({count})</translation>
     </message>
     <message>
-        <location filename="../ui/add_reference_dialog.py" line="1031"/>
+        <location filename="../ui/add_reference_dialog.py" line="1255"/>
         <source>Rest of library ({count})</source>
         <translation>Rest der Bibliothek ({count})</translation>
     </message>
     <message>
-        <location filename="../ui/add_reference_dialog.py" line="1042"/>
+        <location filename="../ui/add_reference_dialog.py" line="1266"/>
         <source>Same taxon</source>
         <translation>Gleiches Taxon</translation>
     </message>
     <message>
-        <location filename="../ui/add_reference_dialog.py" line="1044"/>
+        <location filename="../ui/add_reference_dialog.py" line="1268"/>
         <source>Same genus</source>
         <translation>Gleiche Gattung</translation>
     </message>
     <message>
-        <location filename="../ui/add_reference_dialog.py" line="1149"/>
+        <location filename="../ui/add_reference_dialog.py" line="1373"/>
         <source>1 source selected</source>
         <translation>1 Quelle ausgewählt</translation>
     </message>
     <message>
-        <location filename="../ui/add_reference_dialog.py" line="1154"/>
+        <location filename="../ui/add_reference_dialog.py" line="1378"/>
         <source>{count} sources selected</source>
         <translation>{count} Quellen ausgewählt</translation>
     </message>
     <message>
-        <location filename="../ui/add_reference_dialog.py" line="1183"/>
+        <location filename="../ui/add_reference_dialog.py" line="1407"/>
         <source>No matching measurement sets for this taxon. {count} more match if you turn off “Only this taxon”.</source>
         <translation>Keine Messreihen für dieses Taxon. {count} weitere Treffer, wenn du „Nur dieses Taxon“ ausschaltest.</translation>
     </message>
     <message>
-        <location filename="../ui/add_reference_dialog.py" line="1192"/>
+        <location filename="../ui/add_reference_dialog.py" line="1416"/>
         <source>Unnamed taxon</source>
         <translation>Unbenanntes Taxon</translation>
     </message>
     <message>
-        <location filename="../ui/add_reference_dialog.py" line="1195"/>
-        <location filename="../ui/add_reference_dialog.py" line="1438"/>
+        <location filename="../ui/add_reference_dialog.py" line="1419"/>
+        <location filename="../ui/add_reference_dialog.py" line="1662"/>
         <source>Untitled</source>
         <translation>Ohne Titel</translation>
     </message>
     <message>
-        <location filename="../ui/add_reference_dialog.py" line="1974"/>
+        <location filename="../ui/add_reference_dialog.py" line="2198"/>
         <source>Saved to the reference library. Add to plot will use the saved reference.</source>
         <translation>In der Referenzbibliothek gespeichert. „Zum Diagramm hinzufügen“ verwendet die gespeicherte Referenz.</translation>
     </message>
     <message>
-        <location filename="../ui/add_reference_dialog.py" line="1979"/>
+        <location filename="../ui/add_reference_dialog.py" line="2203"/>
         <source>Not saved — nothing was stored in the reference library.</source>
         <translation>Nicht gespeichert – in der Referenzbibliothek wurde nichts abgelegt.</translation>
     </message>
     <message>
-        <location filename="../ui/add_reference_dialog.py" line="1983"/>
+        <location filename="../ui/add_reference_dialog.py" line="2207"/>
         <source>Save to library keeps this reference for reuse without adding it to the plot.</source>
         <translation>„In Bibliothek speichern“ behält diese Referenz zur Wiederverwendung, ohne sie zum Diagramm hinzuzufügen.</translation>
     </message>
     <message>
-        <location filename="../ui/add_reference_dialog.py" line="1454"/>
+        <location filename="../ui/add_reference_dialog.py" line="1678"/>
         <source>No additional notes.</source>
         <translation>Keine zusätzlichen Notizen.</translation>
     </message>
     <message>
-        <location filename="../ui/add_reference_dialog.py" line="624"/>
+        <location filename="../ui/add_reference_dialog.py" line="639"/>
         <source>Set all:</source>
         <translation>Für alle:</translation>
     </message>
     <message>
-        <location filename="../ui/add_reference_dialog.py" line="628"/>
+        <location filename="../ui/add_reference_dialog.py" line="643"/>
         <source>Choose role…</source>
         <translation>Rolle wählen…</translation>
     </message>
     <message>
-        <location filename="../ui/add_reference_dialog.py" line="1469"/>
+        <location filename="../ui/add_reference_dialog.py" line="782"/>
+        <source>Choose which taxon&apos;s published spore data to compare against. Type a scientific or common name to search the species database, or click the field to pick the observation taxon or an AI suggestion. This never changes the observation&apos;s own identification.</source>
+        <translation>Wähle, mit welchen veröffentlichten Sporendaten eines Taxons du vergleichen willst. Gib einen wissenschaftlichen oder deutschen Namen ein, um in der Artendatenbank zu suchen, oder klicke in das Feld, um das Taxon der Beobachtung oder einen KI-Vorschlag zu wählen. Die Bestimmung der Beobachtung selbst wird dadurch nie geändert.</translation>
+    </message>
+    <message>
+        <location filename="../ui/add_reference_dialog.py" line="1028"/>
+        <source>Search scientific or common name…</source>
+        <translation>Wissenschaftlichen oder deutschen Namen suchen…</translation>
+    </message>
+    <message>
+        <location filename="../ui/add_reference_dialog.py" line="1693"/>
         <source>not reported</source>
         <translation>nicht angegeben</translation>
     </message>
     <message>
-        <location filename="../ui/add_reference_dialog.py" line="1471"/>
+        <location filename="../ui/add_reference_dialog.py" line="1695"/>
         <source>Reported by: {work} ({year}) · sample size: {size} · method recorded: {method}</source>
         <translation>Gemeldet von: {work} ({year}) · Stichprobengröße: {size} · Methode erfasst: {method}</translation>
     </message>
     <message>
-        <location filename="../ui/add_reference_dialog.py" line="1477"/>
+        <location filename="../ui/add_reference_dialog.py" line="1701"/>
         <source>yes</source>
         <translation>ja</translation>
     </message>
     <message>
-        <location filename="../ui/add_reference_dialog.py" line="1504"/>
+        <location filename="../ui/add_reference_dialog.py" line="1728"/>
         <source>No calibration details recorded.</source>
         <translation>Keine Kalibrierungsdetails erfasst.</translation>
     </message>
     <message>
-        <location filename="../ui/add_reference_dialog.py" line="1506"/>
+        <location filename="../ui/add_reference_dialog.py" line="1730"/>
         <source>Not reported</source>
         <translation>Nicht angegeben</translation>
     </message>
     <message>
-        <location filename="../ui/add_reference_dialog.py" line="1510"/>
+        <location filename="../ui/add_reference_dialog.py" line="1734"/>
         <source>Publication: {work}</source>
         <translation>Publikation: {work}</translation>
     </message>
     <message>
-        <location filename="../ui/add_reference_dialog.py" line="1512"/>
+        <location filename="../ui/add_reference_dialog.py" line="1736"/>
         <source>Source notes: {notes}</source>
         <translation>Quellennotizen: {notes}</translation>
     </message>
     <message>
-        <location filename="../ui/add_reference_dialog.py" line="1575"/>
+        <location filename="../ui/add_reference_dialog.py" line="1799"/>
         <source>New publication</source>
         <translation>Neue Publikation</translation>
     </message>
     <message>
-        <location filename="../ui/add_reference_dialog.py" line="1576"/>
+        <location filename="../ui/add_reference_dialog.py" line="1800"/>
         <source>Reference library editor is unavailable: {error}</source>
         <translation>Der Referenzbibliothek-Editor ist nicht verfügbar: {error}</translation>
     </message>
     <message>
-        <location filename="../ui/add_reference_dialog.py" line="1669"/>
+        <location filename="../ui/add_reference_dialog.py" line="1893"/>
         <source>Select a taxon to browse your own observations of it.</source>
         <translation>Wähle ein Taxon, um deine eigenen Beobachtungen dazu zu durchsuchen.</translation>
     </message>
     <message>
-        <location filename="../ui/add_reference_dialog.py" line="1673"/>
+        <location filename="../ui/add_reference_dialog.py" line="1897"/>
         <source>No previous observations of this taxon have spore measurements.</source>
         <translation>Es gibt keine früheren Beobachtungen dieses Taxons mit Sporenmessungen.</translation>
     </message>
     <message>
-        <location filename="../ui/add_reference_dialog.py" line="1680"/>
-        <location filename="../ui/add_reference_dialog.py" line="1733"/>
+        <location filename="../ui/add_reference_dialog.py" line="1904"/>
+        <location filename="../ui/add_reference_dialog.py" line="1957"/>
         <source>My observation — {author}</source>
         <translation>Meine Beobachtung — {author}</translation>
     </message>
     <message>
-        <location filename="../ui/add_reference_dialog.py" line="1682"/>
-        <location filename="../ui/add_reference_dialog.py" line="1735"/>
+        <location filename="../ui/add_reference_dialog.py" line="1906"/>
+        <location filename="../ui/add_reference_dialog.py" line="1959"/>
         <source>My observation</source>
         <translation>Meine Beobachtung</translation>
     </message>
     <message>
-        <location filename="../ui/add_reference_dialog.py" line="1697"/>
+        <location filename="../ui/add_reference_dialog.py" line="1921"/>
         <source>n = {count}</source>
         <translation>n = {count}</translation>
     </message>
     <message>
-        <location filename="../ui/add_reference_dialog.py" line="1753"/>
+        <location filename="../ui/add_reference_dialog.py" line="1977"/>
         <source>n = {count} spore measurements</source>
         <translation>n = {count} Sporenmessungen</translation>
     </message>
     <message>
-        <location filename="../ui/add_reference_dialog.py" line="1782"/>
+        <location filename="../ui/add_reference_dialog.py" line="2006"/>
         <source>Not applicable: this is a personal observation, not a normalized library entry.</source>
         <translation>Nicht zutreffend: Dies ist eine persönliche Beobachtung, kein normalisierter Bibliothekseintrag.</translation>
     </message>
     <message>
-        <location filename="../ui/add_reference_dialog.py" line="1785"/>
+        <location filename="../ui/add_reference_dialog.py" line="2009"/>
         <source>Personal observation, {date}</source>
         <translation>Persönliche Beobachtung, {date}</translation>
     </message>
     <message>
-        <location filename="../ui/add_reference_dialog.py" line="1787"/>
+        <location filename="../ui/add_reference_dialog.py" line="2011"/>
         <source>Personal observation</source>
         <translation>Persönliche Beobachtung</translation>
     </message>
     <message>
-        <location filename="../ui/add_reference_dialog.py" line="1862"/>
+        <location filename="../ui/add_reference_dialog.py" line="2086"/>
         <source>Add {count} to plot</source>
         <translation>{count} zum Diagramm hinzufügen</translation>
     </message>
     <message>
-        <location filename="../ui/add_reference_dialog.py" line="1873"/>
+        <location filename="../ui/add_reference_dialog.py" line="2097"/>
         <source>Adding several sources at once is not available yet. Leave one source checked, or add them one at a time.</source>
         <translation>Mehrere Quellen auf einmal hinzuzufügen ist noch nicht möglich. Lass eine Quelle angehakt oder füge sie einzeln hinzu.</translation>
     </message>
     <message>
-        <location filename="../ui/add_reference_dialog.py" line="2182"/>
+        <location filename="../ui/add_reference_dialog.py" line="2406"/>
         <source>Attached: {name} ({role})</source>
         <extracomment>``[(measurement_set_id, status, reason), ...]`` of the last add.</extracomment>
         <translation>Hinzugefügt: {name} ({role})</translation>
     </message>
     <message>
-        <location filename="../ui/add_reference_dialog.py" line="2186"/>
+        <location filename="../ui/add_reference_dialog.py" line="2410"/>
         <source>Already attached (existing role kept): {name}</source>
         <translation>Bereits hinzugefügt (bestehende Rolle beibehalten): {name}</translation>
     </message>
     <message>
-        <location filename="../ui/add_reference_dialog.py" line="2191"/>
+        <location filename="../ui/add_reference_dialog.py" line="2415"/>
         <source>Failed: {name}</source>
         <translation>Fehlgeschlagen: {name}</translation>
     </message>
     <message>
-        <location filename="../ui/add_reference_dialog.py" line="2199"/>
+        <location filename="../ui/add_reference_dialog.py" line="2423"/>
         <source>The active observation changed, so retrying here cannot succeed. Close this window, select the intended observation, and open Add reference again.</source>
         <translation>Die aktive Beobachtung wurde geändert, daher kann ein erneuter Versuch hier nicht gelingen. Schließen Sie dieses Fenster, wählen Sie die gewünschte Beobachtung und öffnen Sie „Referenz hinzufügen“ erneut.</translation>
     </message>
     <message>
-        <location filename="../ui/add_reference_dialog.py" line="2208"/>
+        <location filename="../ui/add_reference_dialog.py" line="2432"/>
         <source>Failed sources are still checked. Press Add to plot to retry them.</source>
         <translation>Fehlgeschlagene Quellen bleiben markiert. Klicken Sie auf „Zum Diagramm hinzufügen“, um sie erneut zu versuchen.</translation>
     </message>
     <message>
-        <location filename="../ui/add_reference_dialog.py" line="2221"/>
+        <location filename="../ui/add_reference_dialog.py" line="2445"/>
         <source>Close</source>
         <translation>Schließen</translation>
     </message>
@@ -10506,185 +10506,169 @@ Dadurch werden auch alle zugehörigen Bilder und Messungen gelöscht.</translati
         <translation>Neue Publikation in der Referenzbibliothek anlegen.</translation>
     </message>
     <message>
-        <location filename="../ui/reference_entry_editor.py" line="651"/>
-        <location filename="../ui/reference_entry_editor.py" line="832"/>
-        <source>No taxon selected</source>
-        <translation>Kein Taxon ausgewählt</translation>
-    </message>
-    <message>
-        <location filename="../ui/reference_entry_editor.py" line="654"/>
-        <source>The normalized taxon this treatment is linked to. To change the taxon, go back to the Reference taxon selector above.</source>
-        <translation>Das normalisierte Taxon, mit dem diese Behandlung verknüpft ist. Um das Taxon zu ändern, gehe zurück zur Auswahl „Referenztaxon“ oben.</translation>
-    </message>
-    <message>
-        <location filename="../ui/reference_entry_editor.py" line="659"/>
-        <source>Taxon:</source>
-        <translation>Taxon:</translation>
-    </message>
-    <message>
-        <location filename="../ui/reference_entry_editor.py" line="670"/>
+        <location filename="../ui/reference_entry_editor.py" line="664"/>
         <source>Name exactly as published (e.g., as written in the publication)</source>
         <translation>Name genau wie veröffentlicht (z.&#x202f;B. wie in der Publikation geschrieben)</translation>
     </message>
     <message>
         <location filename="../ui/reference_entry_editor.py" line="673"/>
-        <source>The exact name used in the publication. This can be an old synonym, spelling variant, or historical combination — separate from the normalized taxon above.</source>
-        <translation>Der genaue Name, der in der Publikation verwendet wird. Das kann ein altes Synonym, eine Schreibvariante oder eine historische Kombination sein – unabhängig vom normalisierten Taxon oben.</translation>
-    </message>
-    <message>
-        <location filename="../ui/reference_entry_editor.py" line="679"/>
         <source>Name as published:</source>
         <translation>Name wie veröffentlicht:</translation>
     </message>
     <message>
-        <location filename="../ui/reference_entry_editor.py" line="683"/>
+        <location filename="../ui/reference_entry_editor.py" line="677"/>
         <source>Page, figure, table, plate, or section</source>
         <translation>Seite, Abbildung, Tabelle, Tafel oder Abschnitt</translation>
     </message>
     <message>
-        <location filename="../ui/reference_entry_editor.py" line="685"/>
+        <location filename="../ui/reference_entry_editor.py" line="679"/>
         <source>Locator:</source>
         <translation>Fundstelle:</translation>
     </message>
     <message>
-        <location filename="../ui/reference_entry_editor.py" line="689"/>
-        <source>No taxon identifier is set. The normalized treatment will use the name as published without a taxon link.</source>
-        <translation>Es ist keine Taxon-ID festgelegt. Die normalisierte Behandlung verwendet den veröffentlichten Namen ohne Taxon-Verknüpfung.</translation>
-    </message>
-    <message>
-        <location filename="../ui/reference_entry_editor.py" line="712"/>
+        <location filename="../ui/reference_entry_editor.py" line="707"/>
         <source>Data</source>
         <translation>Daten</translation>
     </message>
     <message>
-        <location filename="../ui/reference_entry_editor.py" line="718"/>
+        <location filename="../ui/reference_entry_editor.py" line="713"/>
         <source>Use existing measurement set</source>
         <translation>Vorhandenen Messsatz verwenden</translation>
     </message>
     <message>
-        <location filename="../ui/reference_entry_editor.py" line="720"/>
+        <location filename="../ui/reference_entry_editor.py" line="715"/>
         <source>Enter new data</source>
         <translation>Neue Daten eingeben</translation>
     </message>
     <message>
-        <location filename="../ui/reference_entry_editor.py" line="730"/>
+        <location filename="../ui/reference_entry_editor.py" line="725"/>
         <source>Filter existing sets by locator, kind, or raw expression…</source>
         <translation>Vorhandene Sätze nach Ort, Art oder Rohausdruck filtern…</translation>
     </message>
     <message>
-        <location filename="../ui/reference_entry_editor.py" line="739"/>
+        <location filename="../ui/reference_entry_editor.py" line="734"/>
         <source>Locator</source>
         <translation>Fundstelle</translation>
     </message>
     <message>
-        <location filename="../ui/reference_entry_editor.py" line="739"/>
+        <location filename="../ui/reference_entry_editor.py" line="734"/>
         <source>Kind</source>
         <translation>Art</translation>
     </message>
     <message>
-        <location filename="../ui/reference_entry_editor.py" line="739"/>
+        <location filename="../ui/reference_entry_editor.py" line="734"/>
         <source>Raw expression</source>
         <translation>Originalangabe</translation>
     </message>
     <message>
-        <location filename="../ui/reference_entry_editor.py" line="966"/>
+        <location filename="../ui/reference_entry_editor.py" line="964"/>
         <source>Existing measurement set</source>
         <translation>Vorhandener Messsatz</translation>
     </message>
     <message>
-        <location filename="../ui/reference_entry_editor.py" line="1334"/>
+        <location filename="../ui/reference_entry_editor.py" line="1332"/>
         <source>This version cannot store these reported statistics, so this entry cannot be saved as it stands:</source>
         <translation>Diese Version kann diese angegebenen Statistiken nicht speichern, deshalb lässt sich der Eintrag so nicht speichern:</translation>
     </message>
     <message>
-        <location filename="../ui/reference_entry_editor.py" line="1352"/>
+        <location filename="../ui/reference_entry_editor.py" line="1350"/>
         <source>Saving changes one thing:</source>
         <translation>Das Speichern ändert eine Sache:</translation>
     </message>
     <message>
-        <location filename="../ui/reference_entry_editor.py" line="997"/>
+        <location filename="../ui/reference_entry_editor.py" line="995"/>
         <source>No calibration details recorded.</source>
         <translation>Keine Kalibrierungsdetails erfasst.</translation>
     </message>
     <message>
-        <location filename="../ui/reference_entry_editor.py" line="1001"/>
-        <location filename="../ui/reference_entry_editor.py" line="1050"/>
-        <location filename="../ui/reference_entry_editor.py" line="1082"/>
+        <location filename="../ui/reference_entry_editor.py" line="667"/>
+        <source>The exact name used in the publication. This can be an old synonym, spelling variant, or historical combination — separate from the reference taxon.</source>
+        <translation>Der genaue Name, der in der Publikation verwendet wird. Das kann ein altes Synonym, eine Schreibvariante oder eine historische Kombination sein – unabhängig vom Referenztaxon.</translation>
+    </message>
+    <message>
+        <location filename="../ui/reference_entry_editor.py" line="683"/>
+        <source>This reference is not linked to a species in the database. Choose a reference taxon above to link it; otherwise it is saved under the name as published only.</source>
+        <translation>Diese Referenz ist mit keiner Art in der Datenbank verknüpft. Wähle oben ein Referenztaxon, um sie zu verknüpfen; sonst wird sie nur unter dem veröffentlichten Namen gespeichert.</translation>
+    </message>
+    <message>
+        <location filename="../ui/reference_entry_editor.py" line="999"/>
+        <location filename="../ui/reference_entry_editor.py" line="1048"/>
+        <location filename="../ui/reference_entry_editor.py" line="1080"/>
         <source>Source notes: {notes}</source>
         <translation>Quellennotizen: {notes}</translation>
     </message>
     <message>
-        <location filename="../ui/reference_entry_editor.py" line="1002"/>
-        <location filename="../ui/reference_entry_editor.py" line="1051"/>
-        <location filename="../ui/reference_entry_editor.py" line="1083"/>
+        <location filename="../ui/reference_entry_editor.py" line="1000"/>
+        <location filename="../ui/reference_entry_editor.py" line="1049"/>
+        <location filename="../ui/reference_entry_editor.py" line="1081"/>
         <source>Not reported</source>
         <translation>Nicht angegeben</translation>
     </message>
     <message>
-        <location filename="../ui/reference_entry_editor.py" line="1011"/>
+        <location filename="../ui/reference_entry_editor.py" line="1009"/>
         <source>not reported</source>
         <translation>nicht angegeben</translation>
     </message>
     <message>
-        <location filename="../ui/reference_entry_editor.py" line="1013"/>
+        <location filename="../ui/reference_entry_editor.py" line="1011"/>
         <source>Reported by: {work} ({year}) · sample size: {size} · method recorded: {method}</source>
         <translation>Gemeldet von: {work} ({year}) · Stichprobengröße: {size} · Methode erfasst: {method}</translation>
     </message>
     <message>
-        <location filename="../ui/reference_entry_editor.py" line="1019"/>
+        <location filename="../ui/reference_entry_editor.py" line="1017"/>
         <source>yes</source>
         <translation>ja</translation>
     </message>
     <message>
-        <location filename="../ui/reference_entry_editor.py" line="1023"/>
+        <location filename="../ui/reference_entry_editor.py" line="1021"/>
         <source>Manual entry</source>
         <translation>Manuelle Eingabe</translation>
     </message>
     <message>
-        <location filename="../ui/reference_entry_editor.py" line="1033"/>
+        <location filename="../ui/reference_entry_editor.py" line="1031"/>
         <source>n = {count} spore measurements</source>
         <translation>n = {count} Sporenmessungen</translation>
     </message>
     <message>
-        <location filename="../ui/reference_entry_editor.py" line="1046"/>
-        <location filename="../ui/reference_entry_editor.py" line="1078"/>
+        <location filename="../ui/reference_entry_editor.py" line="1044"/>
+        <location filename="../ui/reference_entry_editor.py" line="1076"/>
         <source>Not applicable: entered manually.</source>
         <translation>Nicht zutreffend: manuell eingegeben.</translation>
     </message>
     <message>
-        <location filename="../ui/reference_entry_editor.py" line="1048"/>
-        <location filename="../ui/reference_entry_editor.py" line="1080"/>
+        <location filename="../ui/reference_entry_editor.py" line="1046"/>
+        <location filename="../ui/reference_entry_editor.py" line="1078"/>
         <source>Manually entered</source>
         <translation>Manuell eingegeben</translation>
     </message>
     <message>
-        <location filename="../ui/reference_entry_editor.py" line="1310"/>
+        <location filename="../ui/reference_entry_editor.py" line="1308"/>
         <source>Also reported:</source>
         <extracomment>Grid columns, left to right: extreme min, typical min, mean, typical max, extreme max. Rows come from ``_MINMAX_ROW_BY_DIMENSION``.</extracomment>
         <translation>Ebenfalls angegeben:</translation>
     </message>
     <message>
-        <location filename="../ui/reference_entry_editor.py" line="1380"/>
+        <location filename="../ui/reference_entry_editor.py" line="1378"/>
         <source>{metric}: drop the range interpretation</source>
         <translation>{metric}: Bereichsauslegung entfernen</translation>
     </message>
     <message>
-        <location filename="../ui/reference_entry_editor.py" line="1385"/>
+        <location filename="../ui/reference_entry_editor.py" line="1383"/>
         <source>The source does not actually state what this range means. Removes the tag and keeps the numbers.</source>
         <translation>Die Quelle gibt gar nicht an, was dieser Bereich bedeutet. Entfernt das Tag und behält die Zahlen.</translation>
     </message>
     <message>
-        <location filename="../ui/reference_entry_editor.py" line="1397"/>
+        <location filename="../ui/reference_entry_editor.py" line="1395"/>
         <source>Discard all reported statistics</source>
         <translation>Alle angegebenen Statistiken verwerfen</translation>
     </message>
     <message>
-        <location filename="../ui/reference_entry_editor.py" line="1412"/>
+        <location filename="../ui/reference_entry_editor.py" line="1410"/>
         <source>{metric} range interpretation dropped. The measured values are unchanged.</source>
         <translation>{metric}-Bereichsauslegung entfernt. Die gemessenen Werte sind unverändert.</translation>
     </message>
     <message>
-        <location filename="../ui/reference_entry_editor.py" line="1431"/>
+        <location filename="../ui/reference_entry_editor.py" line="1429"/>
         <source>Reported statistics discarded. The measured values are unchanged.</source>
         <translation>Angegebene Statistiken verworfen. Die gemessenen Werte sind unverändert.</translation>
     </message>
@@ -10704,104 +10688,104 @@ Dadurch werden auch alle zugehörigen Bilder und Messungen gelöscht.</translati
         <translation>Abbrechen</translation>
     </message>
     <message>
-        <location filename="../ui/reference_entry_editor.py" line="1549"/>
+        <location filename="../ui/reference_entry_editor.py" line="1547"/>
         <source>Nothing parsed.</source>
         <translation>Nichts eingelesen.</translation>
     </message>
     <message>
-        <location filename="../ui/reference_entry_editor.py" line="1565"/>
+        <location filename="../ui/reference_entry_editor.py" line="1563"/>
         <source>Parsed:</source>
         <translation>Eingelesen:</translation>
     </message>
     <message>
-        <location filename="../ui/reference_entry_editor.py" line="1577"/>
+        <location filename="../ui/reference_entry_editor.py" line="1575"/>
         <source>Paste a measurement string first.</source>
         <translation>Fügen Sie zuerst einen Messstring ein.</translation>
     </message>
     <message>
-        <location filename="../ui/reference_entry_editor.py" line="1584"/>
+        <location filename="../ui/reference_entry_editor.py" line="1582"/>
         <source>Parsing failed — manual entry preserved.</source>
         <translation>Einlesen fehlgeschlagen — manuelle Eingabe beibehalten.</translation>
     </message>
     <message>
-        <location filename="../ui/reference_entry_editor.py" line="1588"/>
+        <location filename="../ui/reference_entry_editor.py" line="1586"/>
         <source>Parsed — review and edit before saving.</source>
         <translation>Eingelesen — vor dem Speichern prüfen und bearbeiten.</translation>
     </message>
     <message>
-        <location filename="../ui/reference_entry_editor.py" line="1616"/>
+        <location filename="../ui/reference_entry_editor.py" line="1614"/>
         <source>Length and width swapped.</source>
         <translation>Länge und Breite vertauscht.</translation>
     </message>
     <message>
-        <location filename="../ui/reference_entry_editor.py" line="1710"/>
+        <location filename="../ui/reference_entry_editor.py" line="1708"/>
         <source>Reference points</source>
         <translation>Referenzpunkte</translation>
     </message>
     <message>
-        <location filename="../ui/reference_entry_editor.py" line="1823"/>
+        <location filename="../ui/reference_entry_editor.py" line="1821"/>
         <source>Several publications match this name — choose one from the list.</source>
         <translation>Mehrere Publikationen passen zu diesem Namen — wähle eine aus der Liste.</translation>
     </message>
     <message>
-        <location filename="../ui/reference_entry_editor.py" line="1829"/>
+        <location filename="../ui/reference_entry_editor.py" line="1827"/>
         <source>Choose a publication</source>
         <translation>Publikation wählen</translation>
     </message>
     <message>
-        <location filename="../ui/reference_entry_editor.py" line="1837"/>
-        <location filename="../ui/reference_entry_editor.py" line="1856"/>
-        <location filename="../ui/reference_entry_editor.py" line="1897"/>
+        <location filename="../ui/reference_entry_editor.py" line="1835"/>
+        <location filename="../ui/reference_entry_editor.py" line="1854"/>
+        <location filename="../ui/reference_entry_editor.py" line="1895"/>
         <source>Missing Data</source>
         <translation>Fehlende Daten</translation>
     </message>
     <message>
-        <location filename="../ui/reference_entry_editor.py" line="1838"/>
+        <location filename="../ui/reference_entry_editor.py" line="1836"/>
         <source>Select an existing measurement set or switch to &quot;Enter new data&quot;.</source>
         <translation>Wähle einen vorhandenen Messsatz aus oder wechsle zu „Neue Daten eingeben“.</translation>
     </message>
     <message>
-        <location filename="../ui/reference_entry_editor.py" line="1870"/>
+        <location filename="../ui/reference_entry_editor.py" line="1868"/>
         <source>Reported statistics cannot be saved yet</source>
         <translation>Angegebene Statistiken können noch nicht gespeichert werden</translation>
     </message>
     <message>
-        <location filename="../ui/reference_entry_editor.py" line="1873"/>
+        <location filename="../ui/reference_entry_editor.py" line="1871"/>
         <source>This version cannot store everything this source reports, and saving it would change what the entry claims:</source>
         <translation>Diese Version kann nicht alles speichern, was diese Quelle angibt, und das Speichern würde ändern, was der Eintrag aussagt:</translation>
     </message>
     <message>
-        <location filename="../ui/reference_entry_editor.py" line="1882"/>
+        <location filename="../ui/reference_entry_editor.py" line="1880"/>
         <source>Remove what this entry cannot carry and save the measured values on their own: “Correct interpretation” drops a range interpretation, a median and a standard deviation, and a mean reported as an interval is cleared by emptying its Mean field.</source>
         <translation>Entferne, was dieser Eintrag nicht tragen kann, und speichere die gemessenen Werte allein: „Auslegung korrigieren“ verwirft eine Bereichsauslegung, einen Median und eine Standardabweichung; ein als Intervall angegebener Mittelwert wird gelöscht, indem du sein Feld „Mittelwert“ leerst.</translation>
     </message>
     <message>
-        <location filename="../ui/reference_entry_editor.py" line="1898"/>
+        <location filename="../ui/reference_entry_editor.py" line="1896"/>
         <source>Enter at least one reference or Parmasto value.</source>
         <translation>Enter at least one reference or Parmasto value.</translation>
     </message>
     <message>
-        <location filename="../ui/reference_entry_editor.py" line="1914"/>
+        <location filename="../ui/reference_entry_editor.py" line="1912"/>
         <source>No publication selected</source>
         <translation>Keine Publikation ausgewählt</translation>
     </message>
     <message>
-        <location filename="../ui/reference_entry_editor.py" line="1915"/>
+        <location filename="../ui/reference_entry_editor.py" line="1913"/>
         <source>No publication is selected. Save as a legacy-only reference (no library entry, no observation attachment)?</source>
         <translation>Es ist keine Veröffentlichung ausgewählt. Als reine Legacy-Referenz speichern (kein Bibliothekseintrag, kein Beobachtungsanhang)?</translation>
     </message>
     <message>
-        <location filename="../ui/reference_entry_editor.py" line="2170"/>
+        <location filename="../ui/reference_entry_editor.py" line="2168"/>
         <source>New publication</source>
         <translation>Neue Publikation</translation>
     </message>
     <message>
-        <location filename="../ui/reference_entry_editor.py" line="2171"/>
+        <location filename="../ui/reference_entry_editor.py" line="2169"/>
         <source>Reference library editor is unavailable: {error}</source>
         <translation>Referenzbibliothek-Editor ist nicht verfügbar: {error}</translation>
     </message>
     <message>
-        <location filename="../ui/reference_entry_editor.py" line="2182"/>
+        <location filename="../ui/reference_entry_editor.py" line="2180"/>
         <source>Untitled reference</source>
         <translation>Unbenannte Referenz</translation>
     </message>
@@ -10816,7 +10800,7 @@ Dadurch werden auch alle zugehörigen Bilder und Messungen gelöscht.</translati
         <translation>Delete the selected stored reference?</translation>
     </message>
     <message>
-        <location filename="../ui/reference_entry_editor.py" line="1857"/>
+        <location filename="../ui/reference_entry_editor.py" line="1855"/>
         <source>Enter at least one length and width value.</source>
         <translation>Bitte mindestens einen Längen- und Breitenwert eingeben.</translation>
     </message>

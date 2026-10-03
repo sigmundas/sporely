@@ -92,14 +92,16 @@ False attaches nothing and leaves the selection as it was.
 from __future__ import annotations
 
 import json
+import threading
 from dataclasses import asdict, dataclass
 from typing import Callable, Iterable
 
-from PySide6.QtCore import QCoreApplication, QSettings, QSize, Qt, QTimer, Signal
-from PySide6.QtGui import QFont
+from PySide6.QtCore import QCoreApplication, QEvent, QModelIndex, QObject, QSettings, QSize, Qt, QTimer, Signal
+from PySide6.QtGui import QFont, QStandardItem, QStandardItemModel
 from PySide6.QtWidgets import (
     QCheckBox,
     QComboBox,
+    QCompleter,
     QDialog,
     QHBoxLayout,
     QLabel,
@@ -117,7 +119,14 @@ from PySide6.QtWidgets import (
     QWidget,
 )
 
-from database.models import MeasurementDB, ObservationDB
+from database.models import MeasurementDB, ObservationDB, SettingsDB
+from database.taxon_lookup import TaxonLookupService
+from database.vernacular_db import VernacularDB
+from utils.vernacular_utils import (
+    normalize_vernacular_language,
+    resolve_available_vernacular_language,
+    resolve_vernacular_db_path,
+)
 from database.reference_library import (
     MeasurementSet,
     MeasurementSetCandidate,
@@ -152,6 +161,7 @@ from .dialog_helpers import make_github_help_button
 from .hint_status import HintBar, HintStatusController
 from .reference_entry_editor import ReferenceEntryEditor
 from .reference_preview_pane import ReferencePreviewPane
+from .taxon_input_controller import format_common_name_choice_display
 from .two_line_row import TwoLineRow
 from .window_state import GeometryMixin
 
@@ -407,6 +417,13 @@ class EditorScrollArea(QScrollArea):
         )
 
 
+class _TaxonSearchRelay(QObject):
+    """Carries results from the taxon search thread back to the GUI thread
+    (a signal emitted off-thread is delivered as a queued call)."""
+
+    finished = Signal(int, str, object)
+
+
 class AddReferenceDialog(GeometryMixin, QDialog):
     """Tabbed picker for adding a reference dataset to the comparison plot.
 
@@ -443,8 +460,14 @@ class AddReferenceDialog(GeometryMixin, QDialog):
         community_results: list[dict] | None = None,
         ai_candidates: list[dict] | None = None,
         observation_points: list[dict] | None = None,
+        taxon_lookup: TaxonLookupService | None = None,
     ) -> None:
         super().__init__(parent)
+        # Reference taxon search. Built on first use (see
+        # _taxon_target_lookup) so opening the picker never pays for a
+        # names-database connection the user may not need; tests inject one.
+        self._taxon_lookup = taxon_lookup
+        self._taxon_lookup_attempted = taxon_lookup is not None
         self._taxon_id: str | None = str(taxon_id).strip() or None if taxon_id is not None else None
         self._genus = genus
         self._species = species
@@ -755,21 +778,313 @@ class AddReferenceDialog(GeometryMixin, QDialog):
         self.taxon_target_combo = QComboBox(self)
         self.taxon_target_combo.setEditable(True)
         self.taxon_target_combo.setInsertPolicy(QComboBox.NoInsert)
-        self.taxon_target_combo.setSizePolicy(QSizePolicy.Expanding, QSizePolicy.Fixed)
+        # The database search below owns completion; the combo's built-in
+        # inline completer would fight it over the same line edit.
+        self.taxon_target_combo.setCompleter(None)
+        # Sized to a taxon name rather than stretched across the dialog, so
+        # the dropdown arrow sits next to the text it belongs to.
+        self.taxon_target_combo.setSizeAdjustPolicy(QComboBox.AdjustToMinimumContentsLengthWithIcon)
+        self.taxon_target_combo.setMinimumContentsLength(36)
+        self.taxon_target_combo.setSizePolicy(QSizePolicy.Preferred, QSizePolicy.Fixed)
         self.taxon_target_combo.setToolTip(
             QCoreApplication.translate("AddReferenceDialog",
                 "Choose which taxon's published spore data to compare against. "
-                "Select 'Use observation taxon' if available, search another taxon by typing genus and species, "
-                "or choose an AI suggestion. This never changes the observation's own identification."
+                "Type a scientific or common name to search the species database, "
+                "or click the field to pick the observation taxon or an AI suggestion. "
+                "This never changes the observation's own identification."
             )
         )
-        row.addWidget(self.taxon_target_combo, 1)
+        row.addWidget(self.taxon_target_combo)
+        row.addStretch(1)
         self._populate_taxon_target_combo()
         self.taxon_target_combo.activated.connect(self._on_taxon_target_activated)
-        self.taxon_target_combo.lineEdit().returnPressed.connect(
-            self._on_taxon_target_text_entered
-        )
+        line_edit = self.taxon_target_combo.lineEdit()
+        # One click to empty the field and get the suggestions back.
+        line_edit.setClearButtonEnabled(True)
+        line_edit.returnPressed.connect(self._on_taxon_target_text_entered)
+        self._build_taxon_target_search(line_edit)
         return row
+
+    # The search popup is a QCompleter set on the combo's line edit, not on
+    # the combo itself: QComboBox.setCompleter() maps every completion back
+    # onto a row of the combo's own model, and a database hit has no such
+    # row -- the combo would select row -1 and blank the field.
+    _TAXON_SEARCH_MIN_CHARS = 2
+    _TAXON_SEARCH_LIMIT = 15
+
+    def _build_taxon_target_search(self, line_edit: QLineEdit) -> None:
+        self._taxon_search_model = QStandardItemModel(self)
+        self._taxon_search_completer = QCompleter(self._taxon_search_model, self)
+        # The model is already the search result; the completer must not
+        # filter it again by the typed prefix (a vernacular hit does not
+        # start with the scientific name it displays, and vice versa).
+        self._taxon_search_completer.setCompletionMode(QCompleter.UnfilteredPopupCompletion)
+        self._taxon_search_completer.setCaseSensitivity(Qt.CaseInsensitive)
+        self._taxon_search_completer.setMaxVisibleItems(12)
+        self._taxon_search_completer.setWidget(line_edit)
+        self._taxon_search_completer.activated[QModelIndex].connect(
+            self._on_taxon_search_activated
+        )
+        # Display text of the last picked search row, so the Return that
+        # QCompleter forwards to the line edit after a pick is recognised
+        # as "already applied" instead of re-parsed as free text.
+        self._taxon_search_applied_text: str | None = None
+        self._taxon_search_timer = QTimer(self)
+        self._taxon_search_timer.setSingleShot(True)
+        self._taxon_search_timer.setInterval(120)
+        self._taxon_search_timer.timeout.connect(self._refresh_taxon_search)
+        # Database searches run on a worker thread so typing never waits
+        # on SQLite. Results are tagged with a generation number and only
+        # the newest is shown; one search runs at a time, and a query typed
+        # meanwhile is held in _taxon_search_pending.
+        self._taxon_search_relay = _TaxonSearchRelay(self)
+        self._taxon_search_relay.finished.connect(self._on_taxon_search_finished)
+        self._taxon_search_generation = 0
+        self._taxon_search_running = False
+        self._taxon_search_pending: tuple[int, str, list] | None = None
+        self._taxon_search_cache: dict[str, list[tuple[str, dict]]] = {}
+        # textEdited, not textChanged: picking an item (or the dialog
+        # setting the text) must not reopen the popup.
+        line_edit.textEdited.connect(lambda _text: self._taxon_search_timer.start())
+        # The clear button changes the text without textEdited.
+        line_edit.textChanged.connect(
+            lambda text: self._show_taxon_default_suggestions() if not text and line_edit.hasFocus() else None
+        )
+        line_edit.installEventFilter(self)
+
+    def eventFilter(self, obj, event):  # noqa: N802 - Qt override
+        combo = getattr(self, "taxon_target_combo", None)
+        if combo is not None and obj is combo.lineEdit():
+            event_type = event.type()
+            if event_type == QEvent.FocusIn and event.reason() == Qt.MouseFocusReason:
+                # Select the current label so typing replaces it, and offer
+                # the observation taxon and AI suggestions straight away.
+                QTimer.singleShot(0, obj.selectAll)
+                self._show_taxon_default_suggestions()
+            elif (
+                event_type == QEvent.MouseButtonPress
+                and not self._taxon_search_completer.popup().isVisible()
+                and (not obj.text().strip() or obj.text() == combo.itemText(combo.currentIndex()))
+            ):
+                self._show_taxon_default_suggestions()
+        return super().eventFilter(obj, event)
+
+    def _taxon_target_lookup(self) -> TaxonLookupService | None:
+        if not self._taxon_lookup_attempted:
+            self._taxon_lookup_attempted = True
+            try:
+                stored = SettingsDB.get_setting("vernacular_language", "no")
+                lang = resolve_available_vernacular_language(stored) or normalize_vernacular_language(stored)
+                db_path = resolve_vernacular_db_path(lang)
+                if db_path:
+                    self._taxon_lookup = TaxonLookupService(
+                        vernacular_db=VernacularDB(db_path, language_code=lang),
+                        language_code=lang,
+                    )
+            except Exception:
+                self._taxon_lookup = None
+        return self._taxon_lookup
+
+    def _taxon_default_suggestion_rows(self) -> list[tuple[str, dict]]:
+        """The combo's own entries (observation taxon, AI suggestions)."""
+        combo = self.taxon_target_combo
+        rows = []
+        for index in range(combo.count()):
+            data = combo.itemData(index)
+            if isinstance(data, dict) and (data.get("genus") or data.get("species")):
+                rows.append((combo.itemText(index), data))
+        return rows
+
+    def _show_taxon_default_suggestions(self) -> None:
+        self._set_taxon_search_rows(self._taxon_default_suggestion_rows())
+
+    @staticmethod
+    def _scientific_search_text(text: str) -> str:
+        # Scientific names are stored case-sensitively ("Psilocybe
+        # cyanescens"); accept what people actually type.
+        parts = text.split()
+        if not parts:
+            return ""
+        return " ".join([parts[0][:1].upper() + parts[0][1:].lower(), *(p.lower() for p in parts[1:])])
+
+    def taxon_search_rows(
+        self, text: str, default_rows: list[tuple[str, dict]] | None = None
+    ) -> list[tuple[str, dict]]:
+        """Search rows for typed ``text``: matching AI/observation entries,
+        then scientific names (accepted names and synonyms), then common
+        names in the configured vernacular language.
+
+        Safe to call off the GUI thread when ``default_rows`` is given (it
+        then reads no widgets)."""
+        query = " ".join(str(text or "").split())
+        if len(query) < self._TAXON_SEARCH_MIN_CHARS:
+            return []
+        if default_rows is None:
+            default_rows = self._taxon_default_suggestion_rows()
+        folded = query.casefold()
+        rows: list[tuple[str, dict]] = [
+            (label, data)
+            for label, data in default_rows
+            if folded in label.casefold()
+        ]
+        seen_labels = {label for label, _ in rows}
+        lookup = self._taxon_target_lookup()
+        if lookup is not None:
+            hits = lookup.suggest_scientific_names(
+                self._scientific_search_text(query), limit=self._TAXON_SEARCH_LIMIT
+            )
+            common_names = self._common_names_for_hits(lookup, hits)
+            for hit in hits:
+                name = str(hit.get("scientific_name") or "").strip()
+                parts = name.split(None, 1)
+                if len(parts) < 2:
+                    continue
+                label = name
+                # A synonym points at the concept it belongs to, as in the
+                # observation editor's scientific-name picker.
+                concept_name = str(
+                    hit.get("display_scientific_name") or hit.get("canonical_scientific_name") or ""
+                ).strip()
+                if hit.get("link_kind") != "canonical" and concept_name and concept_name != name:
+                    label = f"{label} → {concept_name}"
+                common_name = common_names.get((parts[0].casefold(), parts[1].casefold()))
+                if common_name:
+                    label = f"{label} ({common_name})"
+                if label in seen_labels:
+                    continue
+                seen_labels.add(label)
+                rows.append((label, {
+                    "genus": parts[0],
+                    "species": parts[1],
+                    "taxon_id": hit.get("sporely_taxon_id"),
+                    "label": name,
+                }))
+            for choice in lookup.suggest_common_names(query, limit=self._TAXON_SEARCH_LIMIT):
+                genus = str(choice.genus or "").strip()
+                species = str(choice.species or "").strip()
+                common = format_common_name_choice_display(choice)
+                # Genus-rank rows in the names database repeat the genus as
+                # their epithet ("Psilocybe Psilocybe"); a reference taxon
+                # must be a species, and fungal tautonyms do not exist.
+                if not genus or not species or not common or species.casefold() == genus.casefold():
+                    continue
+                label = f"{common} ({genus} {species})"
+                if label in seen_labels:
+                    continue
+                seen_labels.add(label)
+                rows.append((label, {
+                    "genus": genus,
+                    "species": species,
+                    "taxon_id": choice.taxon_id,
+                    "label": f"{genus} {species}",
+                }))
+        return rows
+
+    @staticmethod
+    def _common_names_for_hits(lookup, hits: list[dict]) -> dict[tuple[str, str], str]:
+        """Common names for scientific-name hits, keyed by casefolded
+        (genus, species). One batched query where the names database offers
+        it -- a lookup per hit costs ~0.1 s each and made typing stall."""
+        taxa = []
+        for hit in hits:
+            parts = str(hit.get("scientific_name") or "").split(None, 1)
+            if len(parts) == 2:
+                taxa.append((parts[0], parts[1]))
+        result: dict[tuple[str, str], str] = {}
+        vernacular_db = getattr(lookup, "vernacular_db", None)
+        batch = getattr(vernacular_db, "vernaculars_from_taxa", None)
+        if callable(batch):
+            try:
+                for (genus, species), name in (batch(taxa) or {}).items():
+                    if name:
+                        result[(genus.casefold(), species.casefold())] = name
+                return result
+            except Exception:
+                result = {}
+        for genus, species in taxa:
+            common = lookup.best_common_name_for_taxon(genus, species)
+            if common is not None and common.common_name:
+                result[(genus.casefold(), species.casefold())] = common.common_name
+        return result
+
+    def _refresh_taxon_search(self) -> None:
+        text = self.taxon_target_combo.lineEdit().text()
+        self._taxon_search_generation += 1
+        if not text.strip():
+            self._show_taxon_default_suggestions()
+            return
+        query = " ".join(text.split())
+        if len(query) < self._TAXON_SEARCH_MIN_CHARS:
+            self._set_taxon_search_rows([])
+            return
+        cached = self._taxon_search_cache.get(query.casefold())
+        if cached is not None:
+            self._set_taxon_search_rows(cached)
+            return
+        request = (self._taxon_search_generation, query, self._taxon_default_suggestion_rows())
+        if self._taxon_search_running:
+            self._taxon_search_pending = request
+            return
+        self._start_taxon_search(request)
+
+    def _start_taxon_search(self, request: tuple[int, str, list]) -> None:
+        generation, query, default_rows = request
+        self._taxon_search_running = True
+        relay = self._taxon_search_relay
+
+        def run() -> None:
+            try:
+                rows = self.taxon_search_rows(query, default_rows)
+            except Exception:
+                rows = []
+            try:
+                relay.finished.emit(generation, query, rows)
+            except RuntimeError:
+                pass  # The dialog closed while the search ran.
+
+        threading.Thread(target=run, name="reference-taxon-search", daemon=True).start()
+
+    def _on_taxon_search_finished(self, generation: int, query: str, rows: object) -> None:
+        self._taxon_search_running = False
+        rows = list(rows or [])
+        self._taxon_search_cache[query.casefold()] = rows
+        if generation == self._taxon_search_generation:
+            self._set_taxon_search_rows(rows)
+        pending, self._taxon_search_pending = self._taxon_search_pending, None
+        if pending is not None and pending[0] == self._taxon_search_generation:
+            self._start_taxon_search(pending)
+
+    def _set_taxon_search_rows(self, rows: list[tuple[str, dict]]) -> None:
+        model = self._taxon_search_model
+        model.clear()
+        for label, data in rows:
+            item = QStandardItem(label)
+            item.setData(data, Qt.UserRole)
+            item.setEditable(False)
+            model.appendRow(item)
+        popup = self._taxon_search_completer.popup()
+        if not rows:
+            popup.hide()
+            return
+        line_edit = self.taxon_target_combo.lineEdit()
+        rect = line_edit.rect()
+        rect.setWidth(max(rect.width(), popup.sizeHintForColumn(0) + 24))
+        self._taxon_search_completer.complete(rect)
+
+    def _on_taxon_search_activated(self, index: QModelIndex) -> None:
+        data = index.data(Qt.UserRole)
+        if not isinstance(data, dict):
+            return
+        self._taxon_search_applied_text = str(index.data(Qt.DisplayRole) or "")
+        # The completer is attached with setWidget(), not
+        # QLineEdit.setCompleter(), so it does not write the text itself.
+        self.taxon_target_combo.lineEdit().setText(self._taxon_search_applied_text)
+        self._apply_taxon_target(
+            genus=data.get("genus") or "",
+            species=data.get("species") or "",
+            taxon_id=data.get("taxon_id"),
+            label=data.get("label") or "",
+        )
 
     def _own_taxon_display_label(self) -> str:
         return self._own_label or " ".join(
@@ -781,22 +1096,31 @@ class AddReferenceDialog(GeometryMixin, QDialog):
         combo.blockSignals(True)
         combo.clear()
         own_label = self._own_taxon_display_label()
-        combo.addItem(
-            QCoreApplication.translate("AddReferenceDialog", "Use observation taxon: {taxon}").format(taxon=own_label)
-            if own_label
-            else QCoreApplication.translate("AddReferenceDialog", "Search another taxon…"),
-            {
-                "genus": self._own_genus,
-                "species": self._own_species,
-                "taxon_id": self._own_taxon_id,
-                "label": own_label,
-            },
-        )
+        if own_label:
+            # The observation's own taxon, listed first under its plain name.
+            combo.addItem(
+                own_label,
+                {
+                    "genus": self._own_genus,
+                    "species": self._own_species,
+                    "taxon_id": self._own_taxon_id,
+                    "label": own_label,
+                },
+            )
+        # One row per taxon: an AI suggestion that repeats the observation
+        # taxon, or an earlier suggestion, adds nothing to choose from.
+        seen = set()
+        if own_label:
+            seen.add((str(self._own_genus or "").casefold(), str(self._own_species or "").casefold()))
         for entry in self._ai_candidates:
             genus = str(entry.get("genus") or "").strip()
             species = str(entry.get("species") or "").strip()
             if not genus or not species:
                 continue
+            key = (genus.casefold(), species.casefold())
+            if key in seen:
+                continue
+            seen.add(key)
             combo.addItem(
                 format_ai_candidate_display(entry),
                 {
@@ -806,7 +1130,13 @@ class AddReferenceDialog(GeometryMixin, QDialog):
                     "label": f"{genus} {species}",
                 },
             )
-        combo.setCurrentIndex(0)
+        # With no observation taxon nothing is selected: the field starts
+        # empty, showing a prompt rather than text, so the user can type
+        # straight away.
+        combo.setCurrentIndex(0 if own_label else -1)
+        combo.lineEdit().setPlaceholderText(
+            QCoreApplication.translate("AddReferenceDialog", "Search scientific or common name…")
+        )
         combo.blockSignals(False)
 
     def _on_taxon_target_activated(self, index: int) -> None:
@@ -823,6 +1153,10 @@ class AddReferenceDialog(GeometryMixin, QDialog):
     def _on_taxon_target_text_entered(self) -> None:
         combo = self.taxon_target_combo
         text = combo.currentText().strip()
+        if self._taxon_search_applied_text is not None and text == self._taxon_search_applied_text.strip():
+            # The Return that picked a search row: already applied with its
+            # structured genus/species/ID.
+            return
         current_index = combo.currentIndex()
         if current_index >= 0 and text == combo.itemText(current_index).strip():
             # Display text is unchanged from the selected item (e.g. Return
