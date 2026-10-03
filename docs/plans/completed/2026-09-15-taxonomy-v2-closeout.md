@@ -42,7 +42,7 @@
   concepts, no duplicates, no unfinished runs, deferred snapshot-v2
   migration absent.
 - Desktop 0.9.24 ships the new bundle; released as tag `v0.9.24` at `99e6ebb`.
-- Follow-up work continues in `docs/plans/active/2026-09-27-taxonomy-v3.md`.
+- Follow-up work continues in `docs/plans/completed/2026-09-27-taxonomy-v3.md`.
 - New follow-ups in `docs/plans/INBOX.md`: unmerged NorTaxa/COL duplicate
   concepts (cloud lacks their common names), 448 Artportalen review cases,
   cloud publishing ids, Dyntaxa.

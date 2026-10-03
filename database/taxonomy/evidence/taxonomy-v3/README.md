@@ -1,6 +1,6 @@
 # Taxonomy v3 evidence
 
-Plan: `docs/plans/active/2026-09-27-taxonomy-v3.md`.
+Plan: `docs/plans/completed/2026-09-27-taxonomy-v3.md`.
 
 ## Stage 0 — coverage audit (`stage0/`)
 
