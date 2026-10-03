@@ -5,13 +5,9 @@ root = "."
 
 [agents.stage]
 provider = "claude-cli"
-model = "opus"
-effort = "medium"
 
 [agents.sparring]
 provider = "codex-cli"
-model = "gpt-5.6-sol"
-effort = "medium"
 
 [stage]
 self_check = false
