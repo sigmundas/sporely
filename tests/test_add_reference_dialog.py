@@ -826,6 +826,122 @@ def test_return_after_own_taxon_selection_unchanged_keeps_own_target():
     assert dialog._taxon_id == "7"
 
 
+class _FakeTaxonLookup:
+    """Names-database stand-in for the Reference taxon search."""
+
+    def __init__(self):
+        self.scientific_queries: list[str] = []
+
+    def suggest_scientific_names(self, prefix, limit=15):
+        self.scientific_queries.append(prefix)
+        if not "Psilocybe cyanescens".startswith(prefix):
+            return []
+        return [
+            {
+                "sporely_taxon_id": 55253,
+                "scientific_name": "Psilocybe cyanescens",
+                "display_scientific_name": "Psilocybe cyanescens",
+                "canonical_scientific_name": "Psilocybe cyanescens",
+                "link_kind": "canonical",
+            }
+        ]
+
+    def suggest_common_names(self, prefix, limit=15):
+        from database.taxon_lookup import TaxonChoice
+
+        if not prefix.startswith("flein"):
+            return []
+        return [
+            # A genus-rank row: the names database repeats the genus as
+            # its epithet. It is not a species and must not be offered.
+            TaxonChoice(genus="Psilocybe", species="psilocybe", common_name="fleinsopper", taxon_id=625892),
+            TaxonChoice(genus="Psilocybe", species="semilanceata", common_name="spiss fleinsopp", taxon_id=55260),
+        ]
+
+    def best_common_name_for_taxon(self, genus, species):
+        from database.taxon_lookup import TaxonChoice
+
+        if (genus, species) == ("Psilocybe", "cyanescens"):
+            return TaxonChoice(genus=genus, species=species, common_name="blånende fleinsopp")
+        return None
+
+
+def test_reference_taxon_search_finds_scientific_names_case_insensitively():
+    lookup = _FakeTaxonLookup()
+    dialog = _make_dialog(genus="Cortinarius", species="limonius", taxon_lookup=lookup)
+
+    rows = dialog.taxon_search_rows("psilocybe cy")
+
+    assert lookup.scientific_queries == ["Psilocybe cy"]
+    assert [label for label, _ in rows] == ["Psilocybe cyanescens (blånende fleinsopp)"]
+    assert rows[0][1]["taxon_id"] == 55253
+    assert (rows[0][1]["genus"], rows[0][1]["species"]) == ("Psilocybe", "cyanescens")
+
+
+def test_reference_taxon_search_finds_common_names_and_skips_genus_rows():
+    dialog = _make_dialog(genus="Cortinarius", species="limonius", taxon_lookup=_FakeTaxonLookup())
+
+    rows = dialog.taxon_search_rows("flein")
+
+    assert [label for label, _ in rows] == ["spiss fleinsopp (Psilocybe semilanceata)"]
+    assert rows[0][1]["taxon_id"] == 55260
+
+
+def test_reference_taxon_search_includes_matching_ai_suggestions_first():
+    dialog = _make_dialog(
+        genus="Cortinarius",
+        species="limonius",
+        ai_candidates=_ai_candidates(),
+        taxon_lookup=_FakeTaxonLookup(),
+    )
+
+    rows = dialog.taxon_search_rows("rubel")
+
+    assert rows and rows[0][1]["species"] == "rubellus"
+
+
+def test_picking_a_search_row_applies_its_identity_and_return_keeps_it():
+    dialog = _make_dialog(genus="Cortinarius", species="limonius", taxon_lookup=_FakeTaxonLookup())
+    dialog.show()
+    dialog._set_taxon_search_rows(dialog.taxon_search_rows("Psilocybe cy"))
+    index = dialog._taxon_search_model.index(0, 0)
+
+    dialog._on_taxon_search_activated(index)
+    # QCompleter forwards the picking Return to the line edit afterwards.
+    dialog._on_taxon_target_text_entered()
+
+    assert dialog._genus == "Psilocybe"
+    assert dialog._species == "cyanescens"
+    assert dialog._taxon_id == "55253"
+    assert "Psilocybe cyanescens" in dialog.windowTitle()
+    assert dialog.taxon_target_combo.currentText() == "Psilocybe cyanescens (blånende fleinsopp)"
+    dialog.reject()
+
+
+def test_typing_does_not_search_below_two_characters():
+    lookup = _FakeTaxonLookup()
+    dialog = _make_dialog(taxon_lookup=lookup)
+    assert dialog.taxon_search_rows("p") == []
+    assert lookup.scientific_queries == []
+
+
+def test_reference_taxon_field_starts_empty_without_observation_taxon():
+    dialog = _make_dialog(taxon_label="", taxon_id=None, genus="", species="", ai_candidates=_ai_candidates())
+
+    combo = dialog.taxon_target_combo
+    assert combo.currentText() == ""
+    assert combo.lineEdit().placeholderText()
+    # No blank "own taxon" row: only the AI suggestion is offered.
+    assert combo.count() == 1
+
+
+def test_manual_editor_has_no_second_taxon_field():
+    dialog = _make_dialog(genus="Cortinarius", species="limonius")
+    assert not hasattr(dialog.manual_editor, "taxon_label")
+    # The name as published still prefills from the reference taxon.
+    assert dialog.manual_editor.name_as_published_input.text() == "Cortinarius limonius"
+
+
 def test_return_with_deliberately_edited_text_still_parses_free_taxon():
     """Editing the combo's text to a genus/species absent from any item, then
     pressing Return through the real signal path, must still parse the free
@@ -1372,9 +1488,15 @@ def test_host_own_target_uses_captured_observation(monkeypatch, observation, exp
             kwargs = dict(captured[0])
             kwargs.update(candidates=_candidates(), my_observations=[], community_results=[])
             dialog = AddReferenceDialog(None, **kwargs)
-            own = dialog.taxon_target_combo.itemData(0)
-            assert own["genus"] == observation["genus"]
-            assert own["species"] == observation["species"]
+            if observation["genus"]:
+                own = dialog.taxon_target_combo.itemData(0)
+                assert own["genus"] == observation["genus"]
+                assert own["species"] == observation["species"]
+            else:
+                # No observation taxon: no own row at all, and never the
+                # reference panel's Amanita muscaria in its place.
+                assert (dialog._own_genus, dialog._own_species) == ("", "")
+                assert dialog.taxon_target_combo.count() == len(_ai_candidates())
             dialog.taxon_target_combo.setCurrentIndex(1)
             dialog.taxon_target_combo.activated.emit(1)
             dialog.reject()

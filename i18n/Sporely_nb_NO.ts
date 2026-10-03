@@ -172,310 +172,310 @@
 <context>
     <name>AddReferenceDialog</name>
     <message>
-        <location filename="../ui/add_reference_dialog.py" line="562"/>
-        <location filename="../ui/add_reference_dialog.py" line="864"/>
+        <location filename="../ui/add_reference_dialog.py" line="577"/>
+        <location filename="../ui/add_reference_dialog.py" line="1088"/>
         <source>Add reference</source>
         <extracomment>Library relevance groups, in the fixed display order of the design contract (N6). The strings are keys, not wording: the headings are translated in :meth:`AddReferenceDialog._library_group_heading`.</extracomment>
         <translation>Legg til referanse</translation>
     </message>
     <message>
-        <location filename="../ui/add_reference_dialog.py" line="564"/>
-        <location filename="../ui/add_reference_dialog.py" line="862"/>
+        <location filename="../ui/add_reference_dialog.py" line="579"/>
+        <location filename="../ui/add_reference_dialog.py" line="1086"/>
         <source>Add reference — {taxon}</source>
         <translation>Legg til referanse – {taxon}</translation>
     </message>
     <message>
-        <location filename="../ui/add_reference_dialog.py" line="596"/>
+        <location filename="../ui/add_reference_dialog.py" line="611"/>
         <source>Library</source>
         <translation>Bibliotek</translation>
     </message>
     <message>
-        <location filename="../ui/add_reference_dialog.py" line="598"/>
+        <location filename="../ui/add_reference_dialog.py" line="613"/>
         <source>Community</source>
         <translation>Fellesskap</translation>
     </message>
     <message>
-        <location filename="../ui/add_reference_dialog.py" line="601"/>
+        <location filename="../ui/add_reference_dialog.py" line="616"/>
         <source>My observations</source>
         <translation>Mine observasjoner</translation>
     </message>
     <message>
-        <location filename="../ui/add_reference_dialog.py" line="637"/>
+        <location filename="../ui/add_reference_dialog.py" line="652"/>
         <source>Cancel</source>
         <translation>Avbryt</translation>
     </message>
     <message>
-        <location filename="../ui/add_reference_dialog.py" line="651"/>
-        <location filename="../ui/add_reference_dialog.py" line="1839"/>
+        <location filename="../ui/add_reference_dialog.py" line="666"/>
+        <location filename="../ui/add_reference_dialog.py" line="2063"/>
         <source>Add to plot</source>
         <translation>Legg til i diagram</translation>
     </message>
     <message>
-        <location filename="../ui/add_reference_dialog.py" line="930"/>
+        <location filename="../ui/add_reference_dialog.py" line="1154"/>
         <source>Filter by publication, taxon, or raw expression…</source>
         <translation>Filtrer etter publikasjon, takson eller råuttrykk…</translation>
     </message>
     <message>
-        <location filename="../ui/add_reference_dialog.py" line="935"/>
+        <location filename="../ui/add_reference_dialog.py" line="1159"/>
         <source>Only this taxon</source>
         <translation>Kun denne taksonen</translation>
     </message>
     <message>
-        <location filename="../ui/add_reference_dialog.py" line="1102"/>
+        <location filename="../ui/add_reference_dialog.py" line="1326"/>
         <source>+ New publication…</source>
         <translation>+ Ny publikasjon…</translation>
     </message>
     <message>
-        <location filename="../ui/add_reference_dialog.py" line="1187"/>
+        <location filename="../ui/add_reference_dialog.py" line="1411"/>
         <source>No matching measurement sets in the library.</source>
         <translation>Ingen samsvarende målesett i biblioteket.</translation>
     </message>
     <message>
-        <location filename="../ui/add_reference_dialog.py" line="1173"/>
+        <location filename="../ui/add_reference_dialog.py" line="1397"/>
         <source>The reference library has no measurement sets yet.</source>
         <translation>Referansebiblioteket har ingen målesett ennå.</translation>
     </message>
     <message>
-        <location filename="../ui/add_reference_dialog.py" line="605"/>
+        <location filename="../ui/add_reference_dialog.py" line="620"/>
         <source>Add new</source>
         <translation>Legg til ny</translation>
     </message>
     <message>
-        <location filename="../ui/add_reference_dialog.py" line="645"/>
+        <location filename="../ui/add_reference_dialog.py" line="660"/>
         <source>Save to library</source>
         <translation>Lagre i bibliotek</translation>
     </message>
     <message>
-        <location filename="../ui/add_reference_dialog.py" line="754"/>
+        <location filename="../ui/add_reference_dialog.py" line="769"/>
         <source>Reference taxon:</source>
         <translation>Referansetakson:</translation>
     </message>
     <message>
-        <location filename="../ui/add_reference_dialog.py" line="760"/>
-        <source>Choose which taxon&apos;s published spore data to compare against. Select &apos;Use observation taxon&apos; if available, search another taxon by typing genus and species, or choose an AI suggestion. This never changes the observation&apos;s own identification.</source>
-        <translation>Velg hvilket taksons publiserte sporedata du vil sammenligne med. Velg «Bruk observasjonens takson» hvis det er tilgjengelig, søk opp et annet takson ved å skrive slekt og art, eller velg et AI-forslag. Dette endrer aldri observasjonens egen identifikasjon.</translation>
-    </message>
-    <message>
-        <location filename="../ui/add_reference_dialog.py" line="785"/>
+        <location filename="../ui/add_reference_dialog.py" line="1001"/>
         <source>Use observation taxon: {taxon}</source>
         <translation>Bruk observasjonens takson: {taxon}</translation>
     </message>
     <message>
-        <location filename="../ui/add_reference_dialog.py" line="787"/>
-        <source>Search another taxon…</source>
-        <translation>Søk etter et annet takson…</translation>
-    </message>
-    <message>
-        <location filename="../ui/add_reference_dialog.py" line="1027"/>
+        <location filename="../ui/add_reference_dialog.py" line="1251"/>
         <source>This taxon ({count})</source>
         <translation>Denne taksonen ({count})</translation>
     </message>
     <message>
-        <location filename="../ui/add_reference_dialog.py" line="1029"/>
+        <location filename="../ui/add_reference_dialog.py" line="1253"/>
         <source>Same genus ({count})</source>
         <translation>Samme slekt ({count})</translation>
     </message>
     <message>
-        <location filename="../ui/add_reference_dialog.py" line="1031"/>
+        <location filename="../ui/add_reference_dialog.py" line="1255"/>
         <source>Rest of library ({count})</source>
         <translation>Resten av biblioteket ({count})</translation>
     </message>
     <message>
-        <location filename="../ui/add_reference_dialog.py" line="1042"/>
+        <location filename="../ui/add_reference_dialog.py" line="1266"/>
         <source>Same taxon</source>
         <translation>Samme takson</translation>
     </message>
     <message>
-        <location filename="../ui/add_reference_dialog.py" line="1044"/>
+        <location filename="../ui/add_reference_dialog.py" line="1268"/>
         <source>Same genus</source>
         <translation>Samme slekt</translation>
     </message>
     <message>
-        <location filename="../ui/add_reference_dialog.py" line="1149"/>
+        <location filename="../ui/add_reference_dialog.py" line="1373"/>
         <source>1 source selected</source>
         <translation>1 kilde valgt</translation>
     </message>
     <message>
-        <location filename="../ui/add_reference_dialog.py" line="1154"/>
+        <location filename="../ui/add_reference_dialog.py" line="1378"/>
         <source>{count} sources selected</source>
         <translation>{count} kilder valgt</translation>
     </message>
     <message>
-        <location filename="../ui/add_reference_dialog.py" line="1183"/>
+        <location filename="../ui/add_reference_dialog.py" line="1407"/>
         <source>No matching measurement sets for this taxon. {count} more match if you turn off “Only this taxon”.</source>
         <translation>Ingen målesett for dette taksonet. {count} flere treff hvis du slår av «Bare dette taksonet».</translation>
     </message>
     <message>
-        <location filename="../ui/add_reference_dialog.py" line="1192"/>
+        <location filename="../ui/add_reference_dialog.py" line="1416"/>
         <source>Unnamed taxon</source>
         <translation>Takson uten navn</translation>
     </message>
     <message>
-        <location filename="../ui/add_reference_dialog.py" line="1195"/>
-        <location filename="../ui/add_reference_dialog.py" line="1438"/>
+        <location filename="../ui/add_reference_dialog.py" line="1419"/>
+        <location filename="../ui/add_reference_dialog.py" line="1662"/>
         <source>Untitled</source>
         <translation>Uten tittel</translation>
     </message>
     <message>
-        <location filename="../ui/add_reference_dialog.py" line="1974"/>
+        <location filename="../ui/add_reference_dialog.py" line="2198"/>
         <source>Saved to the reference library. Add to plot will use the saved reference.</source>
         <translation>Lagret i referansebiblioteket. Legg til i diagram bruker den lagrede referansen.</translation>
     </message>
     <message>
-        <location filename="../ui/add_reference_dialog.py" line="1979"/>
+        <location filename="../ui/add_reference_dialog.py" line="2203"/>
         <source>Not saved — nothing was stored in the reference library.</source>
         <translation>Ikke lagret – ingenting ble lagret i referansebiblioteket.</translation>
     </message>
     <message>
-        <location filename="../ui/add_reference_dialog.py" line="1983"/>
+        <location filename="../ui/add_reference_dialog.py" line="2207"/>
         <source>Save to library keeps this reference for reuse without adding it to the plot.</source>
         <translation>Lagre i bibliotek beholder denne referansen til senere bruk uten å legge den til i diagrammet.</translation>
     </message>
     <message>
-        <location filename="../ui/add_reference_dialog.py" line="1454"/>
+        <location filename="../ui/add_reference_dialog.py" line="1678"/>
         <source>No additional notes.</source>
         <translation>Ingen tilleggsnotater.</translation>
     </message>
     <message>
-        <location filename="../ui/add_reference_dialog.py" line="624"/>
+        <location filename="../ui/add_reference_dialog.py" line="639"/>
         <source>Set all:</source>
         <translation>Sett alle:</translation>
     </message>
     <message>
-        <location filename="../ui/add_reference_dialog.py" line="628"/>
+        <location filename="../ui/add_reference_dialog.py" line="643"/>
         <source>Choose role…</source>
         <translation>Velg rolle…</translation>
     </message>
     <message>
-        <location filename="../ui/add_reference_dialog.py" line="1469"/>
+        <location filename="../ui/add_reference_dialog.py" line="782"/>
+        <source>Choose which taxon&apos;s published spore data to compare against. Type a scientific or common name to search the species database, or click the field to pick the observation taxon or an AI suggestion. This never changes the observation&apos;s own identification.</source>
+        <translation>Velg hvilket taksons publiserte sporedata du vil sammenligne med. Skriv et vitenskapelig eller norsk navn for å søke i artsdatabasen, eller klikk i feltet for å velge observasjonens takson eller et AI-forslag. Dette endrer aldri observasjonens egen identifikasjon.</translation>
+    </message>
+    <message>
+        <location filename="../ui/add_reference_dialog.py" line="1028"/>
+        <source>Search scientific or common name…</source>
+        <translation>Søk vitenskapelig eller norsk navn…</translation>
+    </message>
+    <message>
+        <location filename="../ui/add_reference_dialog.py" line="1693"/>
         <source>not reported</source>
         <translation>ikke oppgitt</translation>
     </message>
     <message>
-        <location filename="../ui/add_reference_dialog.py" line="1471"/>
+        <location filename="../ui/add_reference_dialog.py" line="1695"/>
         <source>Reported by: {work} ({year}) · sample size: {size} · method recorded: {method}</source>
         <translation>Rapportert av: {work} ({year}) · utvalgsstørrelse: {size} · metode registrert: {method}</translation>
     </message>
     <message>
-        <location filename="../ui/add_reference_dialog.py" line="1477"/>
+        <location filename="../ui/add_reference_dialog.py" line="1701"/>
         <source>yes</source>
         <translation>ja</translation>
     </message>
     <message>
-        <location filename="../ui/add_reference_dialog.py" line="1504"/>
+        <location filename="../ui/add_reference_dialog.py" line="1728"/>
         <source>No calibration details recorded.</source>
         <translation>Ingen kalibreringsdetaljer registrert.</translation>
     </message>
     <message>
-        <location filename="../ui/add_reference_dialog.py" line="1506"/>
+        <location filename="../ui/add_reference_dialog.py" line="1730"/>
         <source>Not reported</source>
         <translation>Ikke oppgitt</translation>
     </message>
     <message>
-        <location filename="../ui/add_reference_dialog.py" line="1510"/>
+        <location filename="../ui/add_reference_dialog.py" line="1734"/>
         <source>Publication: {work}</source>
         <translation>Publikasjon: {work}</translation>
     </message>
     <message>
-        <location filename="../ui/add_reference_dialog.py" line="1512"/>
+        <location filename="../ui/add_reference_dialog.py" line="1736"/>
         <source>Source notes: {notes}</source>
         <translation>Kildenotater: {notes}</translation>
     </message>
     <message>
-        <location filename="../ui/add_reference_dialog.py" line="1575"/>
+        <location filename="../ui/add_reference_dialog.py" line="1799"/>
         <source>New publication</source>
         <translation>Ny publikasjon</translation>
     </message>
     <message>
-        <location filename="../ui/add_reference_dialog.py" line="1576"/>
+        <location filename="../ui/add_reference_dialog.py" line="1800"/>
         <source>Reference library editor is unavailable: {error}</source>
         <translation>Referansebibliotek-redigering er utilgjengelig: {error}</translation>
     </message>
     <message>
-        <location filename="../ui/add_reference_dialog.py" line="1669"/>
+        <location filename="../ui/add_reference_dialog.py" line="1893"/>
         <source>Select a taxon to browse your own observations of it.</source>
         <translation>Velg et takson for å bla i dine egne observasjoner av det.</translation>
     </message>
     <message>
-        <location filename="../ui/add_reference_dialog.py" line="1673"/>
+        <location filename="../ui/add_reference_dialog.py" line="1897"/>
         <source>No previous observations of this taxon have spore measurements.</source>
         <translation>Ingen tidligere observasjoner av denne taksonen har sporemålinger.</translation>
     </message>
     <message>
-        <location filename="../ui/add_reference_dialog.py" line="1680"/>
-        <location filename="../ui/add_reference_dialog.py" line="1733"/>
+        <location filename="../ui/add_reference_dialog.py" line="1904"/>
+        <location filename="../ui/add_reference_dialog.py" line="1957"/>
         <source>My observation — {author}</source>
         <translation>Min observasjon — {author}</translation>
     </message>
     <message>
-        <location filename="../ui/add_reference_dialog.py" line="1682"/>
-        <location filename="../ui/add_reference_dialog.py" line="1735"/>
+        <location filename="../ui/add_reference_dialog.py" line="1906"/>
+        <location filename="../ui/add_reference_dialog.py" line="1959"/>
         <source>My observation</source>
         <translation>Min observasjon</translation>
     </message>
     <message>
-        <location filename="../ui/add_reference_dialog.py" line="1697"/>
+        <location filename="../ui/add_reference_dialog.py" line="1921"/>
         <source>n = {count}</source>
         <translation>n = {count}</translation>
     </message>
     <message>
-        <location filename="../ui/add_reference_dialog.py" line="1753"/>
+        <location filename="../ui/add_reference_dialog.py" line="1977"/>
         <source>n = {count} spore measurements</source>
         <translation>n = {count} sporemålinger</translation>
     </message>
     <message>
-        <location filename="../ui/add_reference_dialog.py" line="1782"/>
+        <location filename="../ui/add_reference_dialog.py" line="2006"/>
         <source>Not applicable: this is a personal observation, not a normalized library entry.</source>
         <translation>Ikke relevant: dette er en personlig observasjon, ikke en normalisert biblioteksoppføring.</translation>
     </message>
     <message>
-        <location filename="../ui/add_reference_dialog.py" line="1785"/>
+        <location filename="../ui/add_reference_dialog.py" line="2009"/>
         <source>Personal observation, {date}</source>
         <translation>Personlig observasjon, {date}</translation>
     </message>
     <message>
-        <location filename="../ui/add_reference_dialog.py" line="1787"/>
+        <location filename="../ui/add_reference_dialog.py" line="2011"/>
         <source>Personal observation</source>
         <translation>Personlig observasjon</translation>
     </message>
     <message>
-        <location filename="../ui/add_reference_dialog.py" line="1862"/>
+        <location filename="../ui/add_reference_dialog.py" line="2086"/>
         <source>Add {count} to plot</source>
         <translation>Legg til {count} i diagram</translation>
     </message>
     <message>
-        <location filename="../ui/add_reference_dialog.py" line="1873"/>
+        <location filename="../ui/add_reference_dialog.py" line="2097"/>
         <source>Adding several sources at once is not available yet. Leave one source checked, or add them one at a time.</source>
         <translation>Å legge til flere kilder samtidig er ikke tilgjengelig ennå. La én kilde være avkrysset, eller legg dem til én om gangen.</translation>
     </message>
     <message>
-        <location filename="../ui/add_reference_dialog.py" line="2182"/>
+        <location filename="../ui/add_reference_dialog.py" line="2406"/>
         <source>Attached: {name} ({role})</source>
         <extracomment>``[(measurement_set_id, status, reason), ...]`` of the last add.</extracomment>
         <translation>Lagt til: {name} ({role})</translation>
     </message>
     <message>
-        <location filename="../ui/add_reference_dialog.py" line="2186"/>
+        <location filename="../ui/add_reference_dialog.py" line="2410"/>
         <source>Already attached (existing role kept): {name}</source>
         <translation>Allerede lagt til (eksisterende rolle beholdt): {name}</translation>
     </message>
     <message>
-        <location filename="../ui/add_reference_dialog.py" line="2191"/>
+        <location filename="../ui/add_reference_dialog.py" line="2415"/>
         <source>Failed: {name}</source>
         <translation>Mislyktes: {name}</translation>
     </message>
     <message>
-        <location filename="../ui/add_reference_dialog.py" line="2199"/>
+        <location filename="../ui/add_reference_dialog.py" line="2423"/>
         <source>The active observation changed, so retrying here cannot succeed. Close this window, select the intended observation, and open Add reference again.</source>
         <translation>Den aktive observasjonen ble endret, så et nytt forsøk her kan ikke lykkes. Lukk dette vinduet, velg riktig observasjon og åpne Legg til referanse på nytt.</translation>
     </message>
     <message>
-        <location filename="../ui/add_reference_dialog.py" line="2208"/>
+        <location filename="../ui/add_reference_dialog.py" line="2432"/>
         <source>Failed sources are still checked. Press Add to plot to retry them.</source>
         <translation>Kilder som mislyktes er fortsatt avkrysset. Trykk Legg til i diagram for å prøve dem på nytt.</translation>
     </message>
     <message>
-        <location filename="../ui/add_reference_dialog.py" line="2221"/>
+        <location filename="../ui/add_reference_dialog.py" line="2445"/>
         <source>Close</source>
         <translation>Lukk</translation>
     </message>
@@ -10506,185 +10506,169 @@ Dette vil også slette alle tilknyttede bilder og målinger.</translation>
         <translation>Opprett en ny publikasjon i referansebiblioteket.</translation>
     </message>
     <message>
-        <location filename="../ui/reference_entry_editor.py" line="651"/>
-        <location filename="../ui/reference_entry_editor.py" line="832"/>
-        <source>No taxon selected</source>
-        <translation>Ingen takson valgt</translation>
-    </message>
-    <message>
-        <location filename="../ui/reference_entry_editor.py" line="654"/>
-        <source>The normalized taxon this treatment is linked to. To change the taxon, go back to the Reference taxon selector above.</source>
-        <translation>Det normaliserte taksonet denne behandlingen er koblet til. Gå tilbake til «Referansetakson»-velgeren over for å endre takson.</translation>
-    </message>
-    <message>
-        <location filename="../ui/reference_entry_editor.py" line="659"/>
-        <source>Taxon:</source>
-        <translation>Takson:</translation>
-    </message>
-    <message>
-        <location filename="../ui/reference_entry_editor.py" line="670"/>
+        <location filename="../ui/reference_entry_editor.py" line="664"/>
         <source>Name exactly as published (e.g., as written in the publication)</source>
         <translation>Navn nøyaktig som publisert (f.eks. slik det er skrevet i publikasjonen)</translation>
     </message>
     <message>
         <location filename="../ui/reference_entry_editor.py" line="673"/>
-        <source>The exact name used in the publication. This can be an old synonym, spelling variant, or historical combination — separate from the normalized taxon above.</source>
-        <translation>Det nøyaktige navnet som er brukt i publikasjonen. Dette kan være et gammelt synonym, en skrivemåtevariant eller en historisk kombinasjon – uavhengig av det normaliserte taksonet over.</translation>
-    </message>
-    <message>
-        <location filename="../ui/reference_entry_editor.py" line="679"/>
         <source>Name as published:</source>
         <translation>Navn som publisert:</translation>
     </message>
     <message>
-        <location filename="../ui/reference_entry_editor.py" line="683"/>
+        <location filename="../ui/reference_entry_editor.py" line="677"/>
         <source>Page, figure, table, plate, or section</source>
         <translation>Side, figur, tabell, plansje eller avsnitt</translation>
     </message>
     <message>
-        <location filename="../ui/reference_entry_editor.py" line="685"/>
+        <location filename="../ui/reference_entry_editor.py" line="679"/>
         <source>Locator:</source>
         <translation>Lokator:</translation>
     </message>
     <message>
-        <location filename="../ui/reference_entry_editor.py" line="689"/>
-        <source>No taxon identifier is set. The normalized treatment will use the name as published without a taxon link.</source>
-        <translation>Ingen taksonidentifikator er angitt. Den normaliserte behandlingen bruker navnet som publisert uten taksonkobling.</translation>
-    </message>
-    <message>
-        <location filename="../ui/reference_entry_editor.py" line="712"/>
+        <location filename="../ui/reference_entry_editor.py" line="707"/>
         <source>Data</source>
         <translation>Data</translation>
     </message>
     <message>
-        <location filename="../ui/reference_entry_editor.py" line="718"/>
+        <location filename="../ui/reference_entry_editor.py" line="713"/>
         <source>Use existing measurement set</source>
         <translation>Bruk eksisterende målesett</translation>
     </message>
     <message>
-        <location filename="../ui/reference_entry_editor.py" line="720"/>
+        <location filename="../ui/reference_entry_editor.py" line="715"/>
         <source>Enter new data</source>
         <translation>Legg inn nye data</translation>
     </message>
     <message>
-        <location filename="../ui/reference_entry_editor.py" line="730"/>
+        <location filename="../ui/reference_entry_editor.py" line="725"/>
         <source>Filter existing sets by locator, kind, or raw expression…</source>
         <translation>Filtrer eksisterende sett etter plassering, type eller råuttrykk…</translation>
     </message>
     <message>
-        <location filename="../ui/reference_entry_editor.py" line="739"/>
+        <location filename="../ui/reference_entry_editor.py" line="734"/>
         <source>Locator</source>
         <translation>Referansepunkt</translation>
     </message>
     <message>
-        <location filename="../ui/reference_entry_editor.py" line="739"/>
+        <location filename="../ui/reference_entry_editor.py" line="734"/>
         <source>Kind</source>
         <translation>Type</translation>
     </message>
     <message>
-        <location filename="../ui/reference_entry_editor.py" line="739"/>
+        <location filename="../ui/reference_entry_editor.py" line="734"/>
         <source>Raw expression</source>
         <translation>Uttrykk fra kilden</translation>
     </message>
     <message>
-        <location filename="../ui/reference_entry_editor.py" line="966"/>
+        <location filename="../ui/reference_entry_editor.py" line="964"/>
         <source>Existing measurement set</source>
         <translation>Eksisterende målesett</translation>
     </message>
     <message>
-        <location filename="../ui/reference_entry_editor.py" line="1334"/>
+        <location filename="../ui/reference_entry_editor.py" line="1332"/>
         <source>This version cannot store these reported statistics, so this entry cannot be saved as it stands:</source>
         <translation>Denne versjonen kan ikke lagre denne oppgitte statistikken, så oppføringen kan ikke lagres slik den står:</translation>
     </message>
     <message>
-        <location filename="../ui/reference_entry_editor.py" line="1352"/>
+        <location filename="../ui/reference_entry_editor.py" line="1350"/>
         <source>Saving changes one thing:</source>
         <translation>Lagring endrer én ting:</translation>
     </message>
     <message>
-        <location filename="../ui/reference_entry_editor.py" line="997"/>
+        <location filename="../ui/reference_entry_editor.py" line="995"/>
         <source>No calibration details recorded.</source>
         <translation>Ingen kalibreringsdetaljer registrert.</translation>
     </message>
     <message>
-        <location filename="../ui/reference_entry_editor.py" line="1001"/>
-        <location filename="../ui/reference_entry_editor.py" line="1050"/>
-        <location filename="../ui/reference_entry_editor.py" line="1082"/>
+        <location filename="../ui/reference_entry_editor.py" line="667"/>
+        <source>The exact name used in the publication. This can be an old synonym, spelling variant, or historical combination — separate from the reference taxon.</source>
+        <translation>Det nøyaktige navnet som er brukt i publikasjonen. Dette kan være et gammelt synonym, en skrivemåtevariant eller en historisk kombinasjon – uavhengig av referansetaksonet.</translation>
+    </message>
+    <message>
+        <location filename="../ui/reference_entry_editor.py" line="683"/>
+        <source>This reference is not linked to a species in the database. Choose a reference taxon above to link it; otherwise it is saved under the name as published only.</source>
+        <translation>Denne referansen er ikke koblet til en art i databasen. Velg et referansetakson over for å koble den; ellers lagres den bare under navnet som publisert.</translation>
+    </message>
+    <message>
+        <location filename="../ui/reference_entry_editor.py" line="999"/>
+        <location filename="../ui/reference_entry_editor.py" line="1048"/>
+        <location filename="../ui/reference_entry_editor.py" line="1080"/>
         <source>Source notes: {notes}</source>
         <translation>Kildenotater: {notes}</translation>
     </message>
     <message>
-        <location filename="../ui/reference_entry_editor.py" line="1002"/>
-        <location filename="../ui/reference_entry_editor.py" line="1051"/>
-        <location filename="../ui/reference_entry_editor.py" line="1083"/>
+        <location filename="../ui/reference_entry_editor.py" line="1000"/>
+        <location filename="../ui/reference_entry_editor.py" line="1049"/>
+        <location filename="../ui/reference_entry_editor.py" line="1081"/>
         <source>Not reported</source>
         <translation>Ikke oppgitt</translation>
     </message>
     <message>
-        <location filename="../ui/reference_entry_editor.py" line="1011"/>
+        <location filename="../ui/reference_entry_editor.py" line="1009"/>
         <source>not reported</source>
         <translation>ikke oppgitt</translation>
     </message>
     <message>
-        <location filename="../ui/reference_entry_editor.py" line="1013"/>
+        <location filename="../ui/reference_entry_editor.py" line="1011"/>
         <source>Reported by: {work} ({year}) · sample size: {size} · method recorded: {method}</source>
         <translation>Rapportert av: {work} ({year}) · utvalgsstørrelse: {size} · metode registrert: {method}</translation>
     </message>
     <message>
-        <location filename="../ui/reference_entry_editor.py" line="1019"/>
+        <location filename="../ui/reference_entry_editor.py" line="1017"/>
         <source>yes</source>
         <translation>ja</translation>
     </message>
     <message>
-        <location filename="../ui/reference_entry_editor.py" line="1023"/>
+        <location filename="../ui/reference_entry_editor.py" line="1021"/>
         <source>Manual entry</source>
         <translation>Manuell oppføring</translation>
     </message>
     <message>
-        <location filename="../ui/reference_entry_editor.py" line="1033"/>
+        <location filename="../ui/reference_entry_editor.py" line="1031"/>
         <source>n = {count} spore measurements</source>
         <translation>n = {count} sporemålinger</translation>
     </message>
     <message>
-        <location filename="../ui/reference_entry_editor.py" line="1046"/>
-        <location filename="../ui/reference_entry_editor.py" line="1078"/>
+        <location filename="../ui/reference_entry_editor.py" line="1044"/>
+        <location filename="../ui/reference_entry_editor.py" line="1076"/>
         <source>Not applicable: entered manually.</source>
         <translation>Ikke relevant: lagt inn manuelt.</translation>
     </message>
     <message>
-        <location filename="../ui/reference_entry_editor.py" line="1048"/>
-        <location filename="../ui/reference_entry_editor.py" line="1080"/>
+        <location filename="../ui/reference_entry_editor.py" line="1046"/>
+        <location filename="../ui/reference_entry_editor.py" line="1078"/>
         <source>Manually entered</source>
         <translation>Manuelt lagt inn</translation>
     </message>
     <message>
-        <location filename="../ui/reference_entry_editor.py" line="1310"/>
+        <location filename="../ui/reference_entry_editor.py" line="1308"/>
         <source>Also reported:</source>
         <extracomment>Grid columns, left to right: extreme min, typical min, mean, typical max, extreme max. Rows come from ``_MINMAX_ROW_BY_DIMENSION``.</extracomment>
         <translation>Også oppgitt:</translation>
     </message>
     <message>
-        <location filename="../ui/reference_entry_editor.py" line="1380"/>
+        <location filename="../ui/reference_entry_editor.py" line="1378"/>
         <source>{metric}: drop the range interpretation</source>
         <translation>{metric}: fjern intervalltolkningen</translation>
     </message>
     <message>
-        <location filename="../ui/reference_entry_editor.py" line="1385"/>
+        <location filename="../ui/reference_entry_editor.py" line="1383"/>
         <source>The source does not actually state what this range means. Removes the tag and keeps the numbers.</source>
         <translation>Kilden oppgir ikke faktisk hva dette intervallet betyr. Fjerner merket og beholder tallene.</translation>
     </message>
     <message>
-        <location filename="../ui/reference_entry_editor.py" line="1397"/>
+        <location filename="../ui/reference_entry_editor.py" line="1395"/>
         <source>Discard all reported statistics</source>
         <translation>Forkast all oppgitt statistikk</translation>
     </message>
     <message>
-        <location filename="../ui/reference_entry_editor.py" line="1412"/>
+        <location filename="../ui/reference_entry_editor.py" line="1410"/>
         <source>{metric} range interpretation dropped. The measured values are unchanged.</source>
         <translation>{metric}-intervalltolkningen er fjernet. De målte verdiene er uendret.</translation>
     </message>
     <message>
-        <location filename="../ui/reference_entry_editor.py" line="1431"/>
+        <location filename="../ui/reference_entry_editor.py" line="1429"/>
         <source>Reported statistics discarded. The measured values are unchanged.</source>
         <translation>Oppgitt statistikk forkastet. De målte verdiene er uendret.</translation>
     </message>
@@ -10704,104 +10688,104 @@ Dette vil også slette alle tilknyttede bilder og målinger.</translation>
         <translation>Avbryt</translation>
     </message>
     <message>
-        <location filename="../ui/reference_entry_editor.py" line="1549"/>
+        <location filename="../ui/reference_entry_editor.py" line="1547"/>
         <source>Nothing parsed.</source>
         <translation>Ingenting ble tolket.</translation>
     </message>
     <message>
-        <location filename="../ui/reference_entry_editor.py" line="1565"/>
+        <location filename="../ui/reference_entry_editor.py" line="1563"/>
         <source>Parsed:</source>
         <translation>Tolket:</translation>
     </message>
     <message>
-        <location filename="../ui/reference_entry_editor.py" line="1577"/>
+        <location filename="../ui/reference_entry_editor.py" line="1575"/>
         <source>Paste a measurement string first.</source>
         <translation>Lim inn en målestreng først.</translation>
     </message>
     <message>
-        <location filename="../ui/reference_entry_editor.py" line="1584"/>
+        <location filename="../ui/reference_entry_editor.py" line="1582"/>
         <source>Parsing failed — manual entry preserved.</source>
         <translation>Tolking mislyktes — manuell inntasting ble bevart.</translation>
     </message>
     <message>
-        <location filename="../ui/reference_entry_editor.py" line="1588"/>
+        <location filename="../ui/reference_entry_editor.py" line="1586"/>
         <source>Parsed — review and edit before saving.</source>
         <translation>Tolket — se gjennom og rediger før lagring.</translation>
     </message>
     <message>
-        <location filename="../ui/reference_entry_editor.py" line="1616"/>
+        <location filename="../ui/reference_entry_editor.py" line="1614"/>
         <source>Length and width swapped.</source>
         <translation>Lengde og bredde byttet om.</translation>
     </message>
     <message>
-        <location filename="../ui/reference_entry_editor.py" line="1710"/>
+        <location filename="../ui/reference_entry_editor.py" line="1708"/>
         <source>Reference points</source>
         <translation>Referansepunkter</translation>
     </message>
     <message>
-        <location filename="../ui/reference_entry_editor.py" line="1823"/>
+        <location filename="../ui/reference_entry_editor.py" line="1821"/>
         <source>Several publications match this name — choose one from the list.</source>
         <translation>Flere publikasjoner har dette navnet — velg én fra listen.</translation>
     </message>
     <message>
-        <location filename="../ui/reference_entry_editor.py" line="1829"/>
+        <location filename="../ui/reference_entry_editor.py" line="1827"/>
         <source>Choose a publication</source>
         <translation>Velg en publikasjon</translation>
     </message>
     <message>
-        <location filename="../ui/reference_entry_editor.py" line="1837"/>
-        <location filename="../ui/reference_entry_editor.py" line="1856"/>
-        <location filename="../ui/reference_entry_editor.py" line="1897"/>
+        <location filename="../ui/reference_entry_editor.py" line="1835"/>
+        <location filename="../ui/reference_entry_editor.py" line="1854"/>
+        <location filename="../ui/reference_entry_editor.py" line="1895"/>
         <source>Missing Data</source>
         <translation>Manglende data</translation>
     </message>
     <message>
-        <location filename="../ui/reference_entry_editor.py" line="1838"/>
+        <location filename="../ui/reference_entry_editor.py" line="1836"/>
         <source>Select an existing measurement set or switch to &quot;Enter new data&quot;.</source>
         <translation>Velg et eksisterende målesett eller bytt til &quot;Legg inn nye data&quot;.</translation>
     </message>
     <message>
-        <location filename="../ui/reference_entry_editor.py" line="1870"/>
+        <location filename="../ui/reference_entry_editor.py" line="1868"/>
         <source>Reported statistics cannot be saved yet</source>
         <translation>Oppgitt statistikk kan ikke lagres ennå</translation>
     </message>
     <message>
-        <location filename="../ui/reference_entry_editor.py" line="1873"/>
+        <location filename="../ui/reference_entry_editor.py" line="1871"/>
         <source>This version cannot store everything this source reports, and saving it would change what the entry claims:</source>
         <translation>Denne versjonen kan ikke lagre alt denne kilden oppgir, og å lagre den ville endre hva oppføringen hevder:</translation>
     </message>
     <message>
-        <location filename="../ui/reference_entry_editor.py" line="1882"/>
+        <location filename="../ui/reference_entry_editor.py" line="1880"/>
         <source>Remove what this entry cannot carry and save the measured values on their own: “Correct interpretation” drops a range interpretation, a median and a standard deviation, and a mean reported as an interval is cleared by emptying its Mean field.</source>
         <translation>Fjern det denne oppføringen ikke kan bære, og lagre de målte verdiene alene: «Korriger tolkning» fjerner en intervalltolkning, en median og et standardavvik, og et gjennomsnitt som er oppgitt som et intervall, tømmes ved å tømme Gjennomsnitt-feltet.</translation>
     </message>
     <message>
-        <location filename="../ui/reference_entry_editor.py" line="1898"/>
+        <location filename="../ui/reference_entry_editor.py" line="1896"/>
         <source>Enter at least one reference or Parmasto value.</source>
         <translation>Enter at least one reference or Parmasto value.</translation>
     </message>
     <message>
-        <location filename="../ui/reference_entry_editor.py" line="1914"/>
+        <location filename="../ui/reference_entry_editor.py" line="1912"/>
         <source>No publication selected</source>
         <translation>Ingen publikasjon er valgt</translation>
     </message>
     <message>
-        <location filename="../ui/reference_entry_editor.py" line="1915"/>
+        <location filename="../ui/reference_entry_editor.py" line="1913"/>
         <source>No publication is selected. Save as a legacy-only reference (no library entry, no observation attachment)?</source>
         <translation>Ingen publikasjon er valgt. Lagre som en kun referanse (ingen bibliotekoppføring, ingen observasjonsvedlegg)?</translation>
     </message>
     <message>
-        <location filename="../ui/reference_entry_editor.py" line="2170"/>
+        <location filename="../ui/reference_entry_editor.py" line="2168"/>
         <source>New publication</source>
         <translation>Ny publikasjon</translation>
     </message>
     <message>
-        <location filename="../ui/reference_entry_editor.py" line="2171"/>
+        <location filename="../ui/reference_entry_editor.py" line="2169"/>
         <source>Reference library editor is unavailable: {error}</source>
         <translation>Redigeringsprogrammet for referansebiblioteket er utilgjengelig: {error}</translation>
     </message>
     <message>
-        <location filename="../ui/reference_entry_editor.py" line="2182"/>
+        <location filename="../ui/reference_entry_editor.py" line="2180"/>
         <source>Untitled reference</source>
         <translation>Referanse uten tittel</translation>
     </message>
@@ -10816,7 +10800,7 @@ Dette vil også slette alle tilknyttede bilder og målinger.</translation>
         <translation>Delete the selected stored reference?</translation>
     </message>
     <message>
-        <location filename="../ui/reference_entry_editor.py" line="1857"/>
+        <location filename="../ui/reference_entry_editor.py" line="1855"/>
         <source>Enter at least one length and width value.</source>
         <translation>Angi minst én lengde- og breddeverdi.</translation>
     </message>
