@@ -1760,3 +1760,56 @@ def test_save_outcome_supersedes_the_parse_hint_and_field_hints_still_work(saved
         r for r in dialog.manual_editor._hint_registrations if r[1] and r[0].isEnabled())
     QApplication.sendEvent(widget, QEvent(QEvent.Enter))
     assert dialog.status_hint_label.text() == hint
+
+
+def test_reference_taxon_lists_observation_taxon_by_name_without_ai_duplicates():
+    duplicate = {**_ai_candidates()[0], "genus": "Cortinarius", "species": "limonius", "score": 1.0}
+    dialog = _make_dialog(
+        genus="Cortinarius",
+        species="limonius",
+        ai_candidates=[duplicate, *_ai_candidates(), *_ai_candidates()],
+    )
+    combo = dialog.taxon_target_combo
+
+    assert combo.itemText(0) == "Cortinarius limonius"
+    assert combo.count() == 2
+    assert combo.itemData(1)["species"] == "rubellus"
+    assert combo.lineEdit().isClearButtonEnabled()
+    dialog.reject()
+
+
+def test_typed_taxon_search_runs_off_the_gui_thread_and_shows_newest_query():
+    import threading
+    import time
+
+    gui_thread = threading.get_ident()
+
+    class _ThreadRecordingLookup(_FakeTaxonLookup):
+        threads: list[int] = []
+
+        def suggest_scientific_names(self, prefix, limit=15):
+            self.threads.append(threading.get_ident())
+            return super().suggest_scientific_names(prefix, limit)
+
+    lookup = _ThreadRecordingLookup()
+    dialog = _make_dialog(genus="Cortinarius", species="limonius", taxon_lookup=lookup)
+    dialog.show()
+    line_edit = dialog.taxon_target_combo.lineEdit()
+    line_edit.setText("Psilocybe c")
+    dialog._refresh_taxon_search()
+    line_edit.setText("Psilocybe cy")
+    dialog._refresh_taxon_search()
+
+    app = _app()
+    deadline = time.monotonic() + 5
+    while (dialog._taxon_search_running or dialog._taxon_search_pending) and time.monotonic() < deadline:
+        app.processEvents()
+        time.sleep(0.01)
+    app.processEvents()
+
+    assert lookup.threads and gui_thread not in lookup.threads
+    model = dialog._taxon_search_model
+    assert [model.item(r).text() for r in range(model.rowCount())] == [
+        "Psilocybe cyanescens (blånende fleinsopp)"
+    ]
+    dialog.reject()
