@@ -109,7 +109,7 @@ subagent review does not replace the independent top-level sparring session.
   If output truncates, narrow the query rather than rereading the same dump.
   The implementer owns required validation. Reviewers verify evidence against
   the candidate and rerun checks when a finding, changed code/environment, or
-  missing/stale evidence warrants it; a prior agent's report is not proof.
+  missing/stale evidence warrants it.
 - Compaction restores context-window room but does not make prior work free. Do not use compaction as a reason to broaden scope or carry a finished subsystem into the next stage.
 
 ## Document authority
