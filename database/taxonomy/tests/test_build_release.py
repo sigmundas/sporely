@@ -154,12 +154,16 @@ class FakeRunner:
             release = b / f"release{name}"
             release.mkdir()
             (release / "taxa.jsonl").write_text("B\n" if self.differ and name == "B" else "A\n")
+            (release / "manifest.json").write_text('{}')
             if self.allocate:
                 with (b / f"registry-{name}.jsonl").open("a") as handle:
                     handle.write('{"new":1}\n')
         elif label.startswith("sqlite"):
             _make_sqlite(b / f"{RELEASE}-{label[-1]}.sqlite3")
             return json.dumps({"counts": {"taxon_min": 1}, "authoritative_bridge_emission": {}})
+        elif label == "freeze":
+            (b / "frozen").mkdir()
+            (b / "frozen/freeze.json").write_text('{}')
         return ""
 
 
@@ -176,14 +180,54 @@ def pipeline(tmp_path, monkeypatch):
     counter = iter(range(100))
 
     def run(*, differ=False, allocate=False, promote=False, recipe=br.DEFAULT_RECIPE, bundle_dir=None,
-            expect=None):
+            expect=None, freeze_expect="reviewed"):
         build_dir = tmp_path / f"build{next(counter)}"
         runner = FakeRunner(build_dir, differ=differ, allocate=allocate)
+        if promote and bundle_dir is None:
+            bundle_dir = tmp_path/f"bundle{build_dir.name}"
+            bundle_dir.mkdir()
+            (bundle_dir/'manifest.json').write_text(json.dumps({'content_release_id':'tax-old','gz_artifact':'old.gz'}))
+            import gzip
+            baseline = tmp_path/f'{build_dir.name}-baseline.sqlite3'
+            _make_sqlite(baseline)
+            (bundle_dir/'old.gz').write_bytes(gzip.compress(baseline.read_bytes()))
         options = br.Options(release_id=RELEASE, build_dir=build_dir, recipe_path=recipe,
                              bundle_dir=bundle_dir or tmp_path / "no-bundle", promote=promote,
-                             expect_sqlite_sha256=expect)
+                             expect_sqlite_sha256=expect,
+                             expect_freeze_sha256=(REVIEWED_FREEZE if freeze_expect == "reviewed" and promote
+                                                   else (None if freeze_expect == "reviewed" else freeze_expect)))
+        run.last = (build_dir, runner, bundle_dir)
         return br.build(options, run=runner), runner
     return run
+
+
+#: SHA-256 of the fake freeze.json ('{}') the FakeRunner writes.
+REVIEWED_FREEZE = __import__("hashlib").sha256(b"{}").hexdigest()
+
+
+def _tree(root):
+    return {p.relative_to(root): p.read_bytes() for p in sorted(root.rglob("*")) if p.is_file()}
+
+
+def test_promote_without_a_reviewed_freeze_hash_is_refused_before_anything_runs(pipeline):
+    with pytest.raises(br.BuildError, match="requires --expect-freeze-sha256"):
+        pipeline(promote=True, freeze_expect=None)
+    build_dir, runner, bundle_dir = pipeline.last
+    assert runner.calls == [] and not build_dir.exists()
+
+
+def test_promote_refuses_a_freeze_that_is_not_the_reviewed_one(pipeline):
+    with pytest.raises(br.BuildError, match="not the reviewed freeze"):
+        pipeline(promote=True, freeze_expect="00" * 32)
+    build_dir, runner, bundle_dir = pipeline.last
+    assert [label for label, _ in runner.calls][-1] == "freeze"
+    assert sorted(p.name for p in bundle_dir.iterdir()) == ["manifest.json", "old.gz"]
+
+
+def test_the_cli_requires_the_reviewed_freeze_hash_for_promote(tmp_path, capsys):
+    assert br.main(["--release-id", RELEASE, "--build-dir", str(tmp_path / "b"), "--promote"]) == 2
+    assert "requires --expect-freeze-sha256" in capsys.readouterr().err
+    assert not (tmp_path / "b").exists()
 
 
 def test_build_runs_the_pipeline_in_order_with_legacy_enrichment(pipeline):
@@ -194,6 +238,8 @@ def test_build_runs_the_pipeline_in_order_with_legacy_enrichment(pipeline):
                       "export_legacy_enrichment", "compileA", "sqliteA", "compileB", "sqliteB"]
     compile_argv = dict(runner.calls)["compileA"]
     assert "--legacy-enrichment-input" in compile_argv
+    assert compile_argv[compile_argv.index("--vernacular-reviews") + 1] == "database/taxonomy/policies/vernacular_associations.json"
+    assert compile_argv[compile_argv.index("--vernacular-scope-policy") + 1] == "database/taxonomy/policies/global-macrofungi-scope.yml"
     manifests = [compile_argv[i + 1] for i, a in enumerate(compile_argv) if a == "--source-release-manifest"]
     assert manifests == ["col_xr=database/taxonomy/sources/col_xr/2026-07-17-XR/manifest.json",
                          "nortaxa=database/taxonomy/sources/nortaxa/1.284/manifest.json",
@@ -228,7 +274,9 @@ def test_promotion_runs_last_for_a_clean_build(pipeline):
     report, runner = pipeline(promote=True)
     label, argv = runner.calls[-1]
     assert label == "promote" and report["promoted"]
-    assert argv[argv.index("--sqlite") + 1].endswith(f"{RELEASE}-A.sqlite3")
+    assert argv[argv.index("--frozen-dir") + 1].endswith("frozen")
+    assert [label for label,_ in runner.calls][-2:]==['freeze','promote']
+    assert argv[argv.index('--expect-freeze-sha256') + 1] == REVIEWED_FREEZE
 
 
 def test_an_unreadable_bundled_release_is_a_clean_error(pipeline, tmp_path):

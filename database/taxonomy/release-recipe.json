@@ -45,5 +45,15 @@
   "inaturalist_refresh": {
     "path": "database/taxonomy/sources/inaturalist_refresh/2026-09-26/inaturalist-refresh.json",
     "sha256": "47266f1e144b2e1944359d4a2ca3f3a6bc39bd6e2024c047d7a0d6b0edbe4f15"
+  },
+  "vernacular_enrichment": {
+    "review_ledger": "database/taxonomy/policies/vernacular_associations.json",
+    "scope_policy": "database/taxonomy/policies/global-macrofungi-scope.yml",
+    "expected_pinned_projection": {
+      "automatic": 1619,
+      "reviewed": 18,
+      "total": 1637,
+      "affected_concepts": 767
+    }
   }
 }

@@ -134,6 +134,7 @@ class Recipe:
     # {"path": repo-relative, "sha256": ...}
     artportalen_overlay: dict | None = None
     inaturalist_refresh: dict | None = None
+    vernacular_enrichment: dict | None = None
 
 
 def load_recipe(path: Path) -> Recipe:
@@ -170,6 +171,11 @@ def load_recipe(path: Path) -> Recipe:
         _require(isinstance(value, str) and bool(SHA256_RE.match(value)),
                  f"recipe {label} must be a lowercase SHA-256")
     policies = raw.get("policies") or {}
+    vernacular = raw.get("vernacular_enrichment")
+    if vernacular is not None:
+        for key in ("review_ledger", "scope_policy"):
+            _require(isinstance(vernacular.get(key), str) and bool(vernacular[key]),
+                     f"recipe vernacular_enrichment.{key} is required")
     for key in ("manual_mappings", "concept_supersessions", "mapping_policy"):
         _require(bool(policies.get(key)), f"recipe policies.{key} is required")
     _require(bool(redlist.get("workbook")), "recipe redlist_no.workbook is required")
@@ -192,7 +198,8 @@ def load_recipe(path: Path) -> Recipe:
                   legacy_sha256=legacy.get("sha256") if legacy_enabled else None,
                   policies=dict(policies), registry=raw["registry"],
                   artportalen_overlay=pinned["artportalen_overlay"],
-                  inaturalist_refresh=pinned["inaturalist_refresh"])
+                  inaturalist_refresh=pinned["inaturalist_refresh"],
+                  vernacular_enrichment=vernacular)
 
 
 def manifest_archive_sha256(manifest: dict) -> str:
@@ -333,6 +340,9 @@ class Options:
     compare_baseline: bool = True
     # SQLite SHA-256 of an earlier, independent run; promotion requires equality.
     expect_sqlite_sha256: str | None = None
+    # Freeze descriptor SHA-256 of the independently reviewed set; --promote
+    # requires it and refuses (no bundle writes) when the fresh freeze differs.
+    expect_freeze_sha256: str | None = None
 
 
 def _script(name: str) -> str:
@@ -500,6 +510,8 @@ def assemble_registry(registry_dir: Path, dest: Path) -> str:
 
 
 def build(options: Options, run: Runner | None = None, python: str = sys.executable) -> dict:
+    if options.promote and not options.expect_freeze_sha256:
+        raise BuildError("not promoting: --promote requires --expect-freeze-sha256 of the reviewed freeze")
     recipe = load_recipe(options.recipe_path)
     inputs = preflight(options, recipe)
     b = options.build_dir
@@ -548,6 +560,11 @@ def build(options: Options, run: Runner | None = None, python: str = sys.executa
             argv += ["--source-release-manifest", f"{source.code}={source.manifest}"]
         if recipe.legacy_enabled:
             argv += ["--legacy-enrichment-input", rel(legacy_jsonl)]
+        if recipe.vernacular_enrichment:
+            argv += ["--vernacular-reviews", recipe.vernacular_enrichment["review_ledger"],
+                     "--vernacular-scope-policy", recipe.vernacular_enrichment["scope_policy"]]
+            if recipe.vernacular_enrichment.get("previous_evidence"):
+                argv += ["--previous-vernacular-evidence", recipe.vernacular_enrichment["previous_evidence"]]
         run(f"compile{name}", argv)
         sqlite_argv = [_script("build_sqlite_candidate.py"),
                        "--release-dir", rel(b / f"release{name}"),
@@ -615,7 +632,7 @@ def build(options: Options, run: Runner | None = None, python: str = sys.executa
         "promoted": False,
     }
 
-    # 5. Promotion, only for a deterministic build that allocated nothing new.
+    # Freeze the validated set before publication. Promotion consumes only it.
     if options.expect_sqlite_sha256:
         report["expected_sqlite_sha256"] = options.expect_sqlite_sha256
         report["matches_expected"] = sqlite_a == options.expect_sqlite_sha256
@@ -624,14 +641,46 @@ def build(options: Options, run: Runner | None = None, python: str = sys.executa
         _require(report.get("matches_expected", True),
                  f"not promoting: SQLite {sqlite_a} differs from the earlier run's {options.expect_sqlite_sha256}")
         _require(registry_state["unchanged"],
-                 f"not promoting: the compile allocated {registry_state['new_allocations']} new IDs; "
-                 "re-shard and commit the registry first (database/taxonomy/README.md)")
-        run("promote", [_script("promote_desktop_bundle.py"),
-                        "--sqlite", rel(candidate), "--release-dir", rel(b / "releaseA"),
-                        "--redlist-report", rel(norm / "redlist_no/report.json"),
-                        "--redlist-workbook", _gitignored_input(options, recipe.redlist_workbook),
-                        "--bundle-dir", rel(options.bundle_dir)])
-        report["promoted"] = True
+                 f"not promoting: the compile allocated {registry_state['new_allocations']} new IDs; re-shard and commit first")
+    if determinism["identical"] and registry_state["unchanged"] and bundled_manifest.exists():
+        receipt = {"validated": True, "sqlite_sha256": sqlite_a,
+                   "compiler_manifest_sha256": sha256_file(b / "releaseA/manifest.json"),
+                   "build_verification": report,
+                   "expected_vernacular_enrichment": (recipe.vernacular_enrichment or {}).get("expected_pinned_projection")}
+        receipt_path = b / "validation-receipt.json"
+        receipt_path.write_text(json.dumps(receipt, ensure_ascii=False, sort_keys=True, indent=2) + "\n")
+        freeze_argv = [_script("freeze_release.py"), "--sqlite", rel(candidate),
+            "--release-dir", rel(b / "releaseA"), "--redlist-report", rel(norm / "redlist_no/report.json"),
+            "--redlist-workbook", _gitignored_input(options, recipe.redlist_workbook),
+            "--bundle-dir", rel(options.bundle_dir), "--registry-manifest", rel(REPO_ROOT / recipe.registry / "manifest.json"),
+            "--compatibility", rel(REPO_ROOT / "database/taxonomy/desktop-compatibility.json"),
+            "--validation-receipt", rel(receipt_path), "--output", rel(b / "frozen"),
+            "--evidence-input", "release-recipe.json=" + rel(options.recipe_path)]
+        for source in recipe.sources:
+            freeze_argv += ["--evidence-input", source.code + "-acquisition.json=" + source.manifest,
+                           "--evidence-input", source.code + "-normalization.json=" + rel(norm / source.code / "report.json")]
+        col_rejections = norm / "col_xr/vernacular_rejections.jsonl"
+        if col_rejections.exists():
+            freeze_argv += ["--evidence-input", "col-vernacular-rejections.jsonl=" + rel(col_rejections)]
+        for name, path in recipe.policies.items():
+            freeze_argv += ["--evidence-input", name + ".json=" + str(path)]
+        if recipe.vernacular_enrichment:
+            for name in ("review_ledger", "scope_policy"):
+                freeze_argv += ["--evidence-input", name + ".json=" + recipe.vernacular_enrichment[name]]
+            if recipe.vernacular_enrichment.get("previous_evidence"):
+                freeze_argv += ["--evidence-input", "previous-vernacular-evidence.jsonl=" + recipe.vernacular_enrichment["previous_evidence"]]
+        run("freeze", freeze_argv)
+        freeze_sha = sha256_file(b / "frozen/freeze.json")
+        report["frozen"] = {"path": "frozen", "freeze_sha256": freeze_sha}
+        if options.promote:
+            _require(freeze_sha == options.expect_freeze_sha256,
+                     f"not promoting: freeze {freeze_sha} is not the reviewed freeze {options.expect_freeze_sha256}")
+            run("promote", [_script("promote_desktop_bundle.py"), "--frozen-dir", rel(b / "frozen"),
+                            "--expect-freeze-sha256", options.expect_freeze_sha256, "--bundle-dir", rel(options.bundle_dir),
+                            "--registry-manifest", rel(REPO_ROOT / recipe.registry / "manifest.json")])
+            report["promoted"] = True
+    elif options.promote:
+        raise BuildError("not promoting: no publication baseline for freezing")
 
     (b / "build-report.json").write_text(
         json.dumps(report, ensure_ascii=False, indent=2, sort_keys=True) + "\n", encoding="utf-8")
@@ -661,11 +710,14 @@ def build_parser() -> argparse.ArgumentParser:
     parser.add_argument("--archive-root", type=Path, default=REPO_ROOT,
                         help="checkout holding the gitignored source archives and workbook")
     parser.add_argument("--promote", action="store_true",
-                        help="write the candidate into the desktop bundle when every check passes")
+                        help="write the frozen set into the desktop bundle; requires --expect-freeze-sha256 "
+                             "and refuses unless the fresh freeze equals that reviewed hash")
     parser.add_argument("--no-baseline", action="store_true",
                         help="skip the comparison with the bundled release")
     parser.add_argument("--expect-sqlite-sha256",
                         help="SQLite SHA-256 of an earlier independent run; --promote requires equality")
+    parser.add_argument("--expect-freeze-sha256",
+                        help="freeze.json SHA-256 of the reviewed frozen set; required by --promote")
     return parser
 
 
@@ -674,7 +726,8 @@ def main(argv: list[str] | None = None) -> int:
     options = Options(release_id=args.release_id, build_dir=args.build_dir.resolve(),
                       recipe_path=args.recipe.resolve(), archive_root=args.archive_root.resolve(),
                       promote=args.promote, compare_baseline=not args.no_baseline,
-                      expect_sqlite_sha256=args.expect_sqlite_sha256)
+                      expect_sqlite_sha256=args.expect_sqlite_sha256,
+                      expect_freeze_sha256=args.expect_freeze_sha256)
     try:
         report = build(options)
     except BuildError as exc:
