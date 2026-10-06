@@ -88,6 +88,7 @@ from identity_registry import (  # noqa: E402
     IdentityRegistry,
     RegistryError,
 )
+import vernacular_projection
 
 
 TAXONOMY_SCHEMA_VERSION = 2
@@ -592,6 +593,10 @@ def compile_release(
     legacy_enrichment_path: Path | None = None,
     redlist_dir: Path | None = None,
     concept_supersessions_path: Path | None = None,
+    vernacular_reviews_path: Path | None = None,
+    previous_vernacular_evidence_path: Path | None = None,
+    enable_vernacular_enrichment: bool = True,
+    vernacular_scope_policy_path: Path | None = None,
 ) -> dict:
     """Compile a deterministic candidate release into ``output_dir``.
 
@@ -613,6 +618,10 @@ def compile_release(
     _load_mapping_policy(mapping_policy_path)  # validated for parsability only
     manual_mappings = _load_manual_mappings(manual_mappings_path)
     concept_supersessions = _load_concept_supersessions(concept_supersessions_path)
+    try:
+        vernacular_reviews = vernacular_projection.read_reviews(vernacular_reviews_path)
+    except (ValueError, OSError, KeyError) as exc:
+        raise CompilerError(f"invalid vernacular review ledger: {exc}") from exc
 
     source_reports: dict[str, NormalizedSourceReport] = {}
     for source_dir in normalized_source_dirs:
@@ -1230,6 +1239,7 @@ def compile_release(
                     f"core_row_id collision within compiled output: {key!r}"
                 )
             core_row_id_to_sporely[key] = usage["sporely_taxon_id"]
+        canonical_vernacular_targets = {t["sporely_taxon_id"]: t for t in compiled_taxa}
         compiled_vernaculars: list[dict] = []
         # Track vernaculars whose core_row_id belongs to a source row that
         # was legitimately dropped by the fungal-scope filter. Those are not
@@ -1272,6 +1282,11 @@ def compile_release(
                         f"vernacular row references core_row_id {key!r} "
                         f"that does not resolve to any known source taxon"
                     )
+                if key[0] == "col_xr":
+                    canonical = canonical_vernacular_targets.get(sporely_id)
+                    if canonical is None or canonical["canonical_source_usage"] != {
+                            "source": "col_xr", "namespace": key[1], "identifier": key[2]}:
+                        raise CompilerError(f"COL vernacular is not bound to its canonical usage: {key!r}")
                 allowed = NATIONAL_VERNACULAR_LANGUAGES.get(key[0])
                 if allowed is not None and entry["language"] not in allowed:
                     vern_dropped_language[key[0]] = (
@@ -1287,11 +1302,39 @@ def compile_release(
                     "is_preferred": bool(entry["is_preferred"]),
                     "provenance": entry.get("provenance", {}),
                 })
+        # Metadata-only projection happens after identity artifacts are fixed.
+        # Prior-release evidence is never used as a source of names.
+        try:
+            if enable_vernacular_enrichment:
+                eligible_targets = None
+                if vernacular_scope_policy_path is not None:
+                    from importlib import import_module
+                    sys.path.insert(0, str(_THIS_DIR.parent))
+                    scope_module = import_module("macrofungi_scope")
+                    scope_policy = scope_module.load_policy(vernacular_scope_policy_path)
+                    col_by_id = {t["canonical_source_usage"]["identifier"]: t for t in compiled_taxa if t["canonical_source_code"] == "col_xr"}
+                    scoped_taxa = {}
+                    for t in col_by_id.values():
+                        parent = t.get("parent_name_usage_id")
+                        parent_target = col_by_id.get(parent["value"]) if parent else None
+                        scoped_taxa[t["sporely_taxon_id"]] = scope_module.Taxon(t["sporely_taxon_id"], t["canonical_source_usage"]["identifier"], t["scientific_name"], t["rank"], parent_target["sporely_taxon_id"] if parent_target else None, t["taxonomic_status"])
+                    rules = scope_module.resolve_rules(scope_policy, {t.col_id: t for t in scoped_taxa.values()})
+                    states = scope_module.evaluate(scoped_taxa, rules, scope_policy.get("source_characteristic_exclusions", []))
+                    eligible_targets = {tid for tid, state in states.items() if state["state"] == "include"}
+                compiled_vernaculars, vernacular_evidence, review_validations = vernacular_projection.project(
+                    records=[r for rows in per_source_records.values() for r in rows],
+                    taxa=compiled_taxa, bindings=source_usages,
+                    vernaculars=compiled_vernaculars, reviews=vernacular_reviews,
+                    mappings=manual_mappings, supersessions=concept_supersessions,
+                    eligible_target_ids=eligible_targets,
+                )
+            else:
+                vernacular_evidence, review_validations = [], []
+        except (ValueError, KeyError) as exc:
+            raise CompilerError(f"vernacular projection failed: {exc}") from exc
         # ----- Legacy compatibility enrichment ------------------------------
-        # Consume the pre-Stage-3A bundled DB export (if provided) and route
-        # every legacy vernacular / Artportalen external identifier through
-        # its NorTaxa taxonID → Sporely ID mapping. Legacy rows never allocate
-        # a Sporely identity and never introduce a canonical taxon.
+        # Retain external-ID compatibility. Historical vernacular rows are
+        # comparison evidence only and never supply projected names.
         legacy_external_ids: list[dict] = []
         legacy_skips: list[dict] = []
         legacy_counts = {
@@ -1304,14 +1347,6 @@ def compile_release(
             "input_rows": 0,
         }
         if legacy_enrichment_path is not None:
-            # A reviewed-identity-only source's names never displace a legacy
-            # name: the legacy row is kept exactly as in a build without that
-            # source, and the SQLite build prefers it over the same spelling.
-            existing_vern: set[tuple[int, str, str]] = {
-                (v["sporely_taxon_id"], v["language"], v["vernacular_name"])
-                for v in compiled_vernaculars
-                if v["source_code"] not in REVIEWED_IDENTITY_ONLY_SOURCES
-            }
             existing_external_ids: set[tuple[int, str, str]] = {
                 (u["sporely_taxon_id"], u["source_code"],
                  u["source_usage"]["identifier"])
@@ -1345,42 +1380,10 @@ def compile_release(
                 )
                 kind = entry.get("kind")
                 if kind == "vernacular":
-                    provider = entry.get("provider") or "legacy_sporely"
-                    # Skip languages Stage 3A already fully covers under the
-                    # NorTaxa authoritative source.
-                    if provider == "artsdatabanken":
-                        legacy_counts["ignored_reason_already_in_stage3a"] += 1
-                        continue
-                    lang = str(entry.get("language", "")).strip()
-                    name = str(entry.get("vernacular_name", "")).strip()
-                    if not lang or not name:
-                        legacy_skips.append({**entry,
-                                             "reason": "empty_language_or_name"})
-                        continue
-                    key = (sporely_id, lang, name)
-                    if key in existing_vern:
-                        legacy_counts["vernacular_duplicate_skipped"] += 1
-                        continue
-                    existing_vern.add(key)
-                    compiled_vernaculars.append({
-                        "sporely_taxon_id": sporely_id,
-                        "source_code": provider,
-                        "source_release": {"version": "legacy_compat",
-                                           "issued_date": ""},
-                        "core_row_id": {
-                            "value": nortaxa_ref,
-                            "namespace": "nortaxa_taxon_id",
-                        },
-                        "language": lang,
-                        "vernacular_name": name,
-                        "is_preferred": bool(entry.get("is_preferred")),
-                        "provenance": {
-                            "source_code": "legacy_compat",
-                            "provider": provider,
-                            "provenance_note": entry.get("provenance", ""),
-                        },
-                    })
-                    legacy_counts["vernacular_added"] += 1
+                    # Historical presence is not evidence of a currently valid
+                    # association. Current sources/reviews above own projection.
+                    legacy_skips.append({**entry, "reason": "historical_vernacular_not_current_source_evidence"})
+                    continue
                 elif kind == "external_identifier":
                     source_system = str(entry.get("source_system", "")).strip()
                     external_id = str(entry.get("external_id", "")).strip()
@@ -1412,6 +1415,22 @@ def compile_release(
                     legacy_counts["external_id_added"] += 1
                 else:
                     legacy_skips.append({**entry, "reason": f"unknown_kind:{kind}"})
+        previous_vernacular_evidence = []
+        if previous_vernacular_evidence_path is not None:
+            previous_vernacular_evidence = [json.loads(line) for line in previous_vernacular_evidence_path.read_text(encoding="utf-8").splitlines() if line.strip()]
+        change_report = vernacular_projection.changes(vernacular_evidence, previous_vernacular_evidence, review_validations)
+        current_source_keys = {vernacular_projection.usage_key(vernacular_projection.usage(r)) for rows in per_source_records.values() for r in rows}
+        current_target_ids = {t["sporely_taxon_id"] for t in compiled_taxa}
+        change_report["source_concepts_removed"] = sorted({tuple(vernacular_projection.usage_key(e["source_evidence"]["source_usage"])) for e in previous_vernacular_evidence} - current_source_keys)
+        change_report["target_concepts_removed"] = sorted({e["target_sporely_taxon_id"] for e in previous_vernacular_evidence if "target_sporely_taxon_id" in e} - current_target_ids)
+        vernacular_evidence_out = staging / "vernacular_evidence.jsonl"
+        with vernacular_evidence_out.open("w", encoding="utf-8") as handle:
+            for evidence in vernacular_evidence:
+                handle.write(_canonical_dumps(evidence) + "\n")
+        vernacular_changes_out = staging / "vernacular_changes.json"
+        vernacular_changes_out.write_text(json.dumps(change_report, ensure_ascii=False, sort_keys=True, indent=2) + "\n", encoding="utf-8")
+        vernacular_reviews_out = staging / "vernacular_reviews.json"
+        vernacular_reviews_out.write_text(json.dumps({"decisions": vernacular_reviews, "validations": review_validations}, ensure_ascii=False, sort_keys=True, indent=2) + "\n", encoding="utf-8")
         compiled_vernaculars.sort(
             key=lambda r: (
                 r["sporely_taxon_id"],
@@ -1543,6 +1562,14 @@ def compile_release(
                 if concept_supersessions_path is not None else ""
             ),
             "mapping_policy_sha256": _sha256_file(mapping_policy_path),
+            "vernacular_enrichment": {
+                "enabled": enable_vernacular_enrichment,
+                "rule": vernacular_projection.RULE,
+                "review_ledger_sha256": _sha256_file(vernacular_reviews_path) if vernacular_reviews_path else None,
+                "previous_evidence_sha256": _sha256_file(previous_vernacular_evidence_path) if previous_vernacular_evidence_path else None,
+                "previous_evidence_used_for_projection": False,
+                "scope_policy_sha256": _sha256_file(vernacular_scope_policy_path) if vernacular_scope_policy_path else None,
+            },
             "registry_sha256": _sha256_file(registry_path),
             "outputs": {
                 "taxa": {
@@ -1565,6 +1592,9 @@ def compile_release(
                     "sha256": _sha256_file(vernacular_out),
                     "bytes": vernacular_out.stat().st_size,
                 },
+                "vernacular_evidence": {"name": vernacular_evidence_out.name, "sha256": _sha256_file(vernacular_evidence_out), "bytes": vernacular_evidence_out.stat().st_size},
+                "vernacular_changes": {"name": vernacular_changes_out.name, "sha256": _sha256_file(vernacular_changes_out), "bytes": vernacular_changes_out.stat().st_size},
+                "vernacular_reviews": {"name": vernacular_reviews_out.name, "sha256": _sha256_file(vernacular_reviews_out), "bytes": vernacular_reviews_out.stat().st_size},
                 "legacy_external_ids": {
                     "name": legacy_external_out.name,
                     "sha256": _sha256_file(legacy_external_out),
@@ -2555,6 +2585,14 @@ def build_parser() -> argparse.ArgumentParser:
     parser.add_argument("--registry", type=Path, required=True)
     parser.add_argument("--output", type=Path, required=True)
     parser.add_argument("--release-id", required=True)
+    parser.add_argument("--vernacular-reviews", type=Path, default=None,
+                        help="normalized owner-reviewed vernacular concept ledger")
+    parser.add_argument("--previous-vernacular-evidence", type=Path, default=None,
+                        help="previous release evidence for change reporting only")
+    parser.add_argument("--no-vernacular-enrichment", action="store_true",
+                        help="identity comparison control; do not use for publication")
+    parser.add_argument("--vernacular-scope-policy", type=Path, default=None,
+                        help="publication scope for additional names; uniqueness still uses full release")
     parser.add_argument("--source-release-manifest", action="append", default=[],
                         metavar="SOURCE_CODE=PATH",
                         help="bind a source_release manifest, repeatable")
@@ -2596,6 +2634,10 @@ def main(argv: Iterable[str] | None = None) -> int:
             legacy_enrichment_path=args.legacy_enrichment_input,
             redlist_dir=args.redlist,
             concept_supersessions_path=args.concept_supersessions,
+            vernacular_reviews_path=args.vernacular_reviews,
+            previous_vernacular_evidence_path=args.previous_vernacular_evidence,
+            enable_vernacular_enrichment=not args.no_vernacular_enrichment,
+            vernacular_scope_policy_path=args.vernacular_scope_policy,
         )
     except CompilerError as exc:
         print(f"error: {exc}", file=sys.stderr)

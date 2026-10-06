@@ -50,6 +50,20 @@ MAX_FIELD_BYTES = 256 * 1024
 CHUNK_BYTES = 512 * 1024
 
 NAME_USAGE_MEMBER = "NameUsage.tsv"
+VERNACULAR_MEMBER = "VernacularName.tsv"
+# ISO 639-2 codes used by COL become the existing two-letter runtime codes
+# where available. Other valid source codes remain intact; no language inference.
+COL_LANGUAGE_CODES = dict(pair.split(":") for pair in """
+afr:af ara:ar aze:az bel:be ben:bn bod:bo bos:bs bre:br bul:bg cat:ca ces:cs
+cos:co cym:cy dan:da deu:de ell:el eng:en epo:eo est:et eus:eu ewe:ee fas:fa
+fin:fi fra:fr fry:fy gla:gd gle:ga glg:gl haw:haw heb:he her:hz hrv:hr hun:hu
+hye:hy ido:io ind:id isl:is ita:it jpn:ja kat:ka kaz:kk kom:kv kor:ko kur:ku
+lat:la lav:lv lit:lt ltz:lb mal:ml mri:mi mkd:mk mlg:mg msa:ms mya:my nld:nl
+nno:nn nob:nb nor:no oci:oc oji:oj pan:pa pol:pl por:pt pus:ps que:qu roh:rm
+ron:ro run:rn rus:ru sin:si slk:sk slv:sl sme:se sna:sn spa:es sqi:sq srp:sr
+swe:sv tam:ta tat:tt tel:te tha:th ton:to tsn:tn tur:tr ukr:uk vie:vi wln:wa
+yid:yi yor:yo zho:zh ger:de fre:fr dut:nl cze:cs wel:cy gre:el
+""".split())
 
 REQUIRED_COLUMNS = (
     "ID", "parentID", "status", "scientificName", "authorship", "rank",
@@ -177,6 +191,14 @@ def _emit_record(
         "authorship": value("authorship"),
         "rank": value("rank"),
         "taxonomic_status": value("status"),
+        # Vernacular association evidence only; identity reconciliation does
+        # not consume these optional concept/nomenclatural annotations.
+        "nomenclatural_status": value("nameStatus"),
+        "concept_annotation": {
+            "name_phrase": value("namePhrase"),
+            "remarks": value("remarks"),
+            "name_remarks": value("nameRemarks"),
+        },
         "external_ids": {},
         "provenance": {
             "source_code": SOURCE_CODE,
@@ -262,6 +284,63 @@ def _parse_header(archive: zipfile.ZipFile) -> tuple[dict[str, int], int]:
                     f"NameUsage header lacks required column {required!r}"
                 )
         return columns, len(header_tokens)
+
+
+def _normalize_vernaculars(archive, staging, target_ids, known_ids, source_release):
+    """Carry current source-native names only; never infer a concept binding."""
+    counts = {"rows_seen": 0, "rows_written": 0, "outside_normalized_scope": 0,
+              "missing_language_as_und": 0, "orphan_usage_rows": 0, "member_present": VERNACULAR_MEMBER in archive.namelist()}
+    output = staging / "vernacular.jsonl"
+    with output.open("w", encoding="utf-8") as handle, (staging / "vernacular_rejections.jsonl").open("w", encoding="utf-8") as rejected:
+        if not counts["member_present"]:
+            return counts
+        with archive.open(VERNACULAR_MEMBER) as raw:
+            iterator = _iter_tsv_lines(raw)
+            _, header = next(iterator)
+            names = [_strip_col_prefix(x) for x in header.decode("utf-8-sig").split("\t")]
+            columns = {name: i for i, name in enumerate(names)}
+            if len(columns) != len(names) or not {"taxonID", "name", "language"} <= columns.keys():
+                raise ColNormalizeError("VernacularName header missing/duplicate required columns")
+            for line_number, raw_line in iterator:
+                row = _split_row(raw_line, len(names), line_number)
+                def value(key):
+                    return row[columns[key]] if key in columns else ""
+                identifier = value("taxonID")
+                counts["rows_seen"] += 1
+                if not identifier or identifier not in known_ids:
+                    counts["orphan_usage_rows"] += 1
+                    rejected.write(json.dumps({"reason": "usage_absent_from_current_col_name_usage",
+                        "source_release": source_release, "member": VERNACULAR_MEMBER,
+                        "row_index": line_number - 2, "raw_fields": dict(zip(names, row))},
+                        ensure_ascii=False, sort_keys=True) + "\n")
+                    continue
+                if identifier not in target_ids:
+                    counts["outside_normalized_scope"] += 1
+                    continue
+                name = value("name")
+                if not name.strip():
+                    raise ColNormalizeError(f"VernacularName line {line_number}: empty name")
+                raw_language = value("language")
+                language = raw_language.strip().lower()
+                if not language:
+                    language = "und"
+                    counts["missing_language_as_und"] += 1
+                language = COL_LANGUAGE_CODES.get(language, language)
+                preferred = value("preferred").strip().lower()
+                if preferred not in {"", "true", "false", "1", "0", "yes", "no"}:
+                    raise ColNormalizeError(f"VernacularName line {line_number}: invalid preferred {preferred!r}")
+                record = {"source_code": SOURCE_CODE, "source_release": source_release,
+                          "core_row_id": {"namespace": "col_usage_id", "value": identifier},
+                          "language": language, "vernacular_name": name,
+                          "is_preferred": preferred in {"true", "1", "yes"},
+                          "provenance": {"member": VERNACULAR_MEMBER, "row_index": line_number - 2,
+                                         "line_number": line_number, "raw_language": raw_language,
+                                         "language_missing": not raw_language.strip(),
+                                         "raw_preferred": value("preferred"),
+                                         "raw_fields": dict(zip(names, row))}}
+                handle.write(json.dumps(record, ensure_ascii=False, sort_keys=True) + "\n")
+                counts["rows_written"] += 1
+    return counts
 
 
 def _normalize_into(
@@ -373,6 +452,9 @@ def _normalize_into(
                     if is_ancestor:
                         ancestor_rows_written += 1
 
+        vernacular_counts = _normalize_vernaculars(
+            archive, staging, target_ids, parent_of, source_release)
+
     MAX_SAMPLES = 25
     unresolved_samples = [
         {"source_taxon_id": s, "raw_reference": r}
@@ -386,8 +468,10 @@ def _normalize_into(
             "Taxon": rows_written,
             "TaxonAncestor": ancestor_rows_written,
             "TaxonFungi": rows_written - ancestor_rows_written,
+            "VernacularName": vernacular_counts["rows_written"],
         },
-        "outputs": {"taxa": taxa_out.name},
+        "outputs": {"taxa": taxa_out.name, "vernacular": "vernacular.jsonl", "vernacular_rejections": "vernacular_rejections.jsonl"},
+        "vernacular": vernacular_counts,
         "distribution_imported": False,
         "identifier_namespaces": _identifier_namespaces(),
         "archive_sha256": _archive_sha256(archive_path),

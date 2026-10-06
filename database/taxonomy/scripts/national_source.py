@@ -805,6 +805,26 @@ def _normalize_into(
                     "authorship": _resolve("scientificNameAuthorship", profile.core_terms, core, row),
                     "rank": _resolve("taxonRank", profile.core_terms, core, row),
                     "taxonomic_status": _resolve("taxonomicStatus", profile.core_terms, core, row),
+                    # Preserve the archive's raw nomenclatural warning independently
+                    # of taxonomic status, including when the profile omits this
+                    # optional standard DwC term. Absence stays an empty string.
+                    "nomenclatural_status": (
+                        row[core.term_index["http://rs.tdwg.org/dwc/terms/nomenclaturalStatus"]]
+                        if "http://rs.tdwg.org/dwc/terms/nomenclaturalStatus" in core.term_index
+                        and core.term_index["http://rs.tdwg.org/dwc/terms/nomenclaturalStatus"] < len(row)
+                        else ""
+                    ),
+                    "concept_annotation": {
+                        term: (
+                            row[core.term_index["http://rs.tdwg.org/dwc/terms/" + term]]
+                            if "http://rs.tdwg.org/dwc/terms/" + term in core.term_index
+                            and core.term_index["http://rs.tdwg.org/dwc/terms/" + term] < len(row)
+                            else ""
+                        )
+                        # Bibliographic titles (namePublishedIn) are not a
+                        # qualification of this usage's taxon concept.
+                        for term in ("taxonRemarks", "nameAccordingTo")
+                    },
                     "external_ids": external_ids,
                     # Preserve Darwin Core higher-classification fields
                     # declared by the archive so downstream scope, mapping,

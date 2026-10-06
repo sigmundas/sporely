@@ -1285,26 +1285,20 @@ def _release_rows(release: Path, name: str) -> list[dict]:
             in path.read_text(encoding="utf-8").splitlines() if line.strip()]
 
 
-def test_legacy_vernacular_follows_the_supersession(tmp_path: Path) -> None:
-    """A legacy vernacular must not land on a concept the release suppresses.
-
-    The registry is deliberately not rewritten by a supersession, so a NorTaxa
-    identifier still resolves to the concept it was allocated. Phase 2f
-    suppresses that concept's canonical row, so resolving straight off the
-    allocation would attach the name to a concept with no taxon row.
-    """
+def test_legacy_vernacular_does_not_survive_from_historical_presence(tmp_path: Path) -> None:
+    """A supersession cannot supply current evidence for a historical name."""
     release, own_id, backbone_id = _compile_with_legacy_under_supersession(
         tmp_path, [_LEGACY_VERNACULAR])
 
-    # No input row may have been skipped, or the rest holds vacuously.
-    assert _release_rows(release, "legacy_enrichment_skips.jsonl") == []
+    skipped = _release_rows(release, "legacy_enrichment_skips.jsonl")
+    assert len(skipped) == 1
+    assert skipped[0]["reason"] == "historical_vernacular_not_current_source_evidence"
     assert own_id not in {
         r["sporely_taxon_id"] for r in _release_rows(release, "taxa.jsonl")}
 
     vern = _release_rows(release, "vernacular.jsonl")
     legacy_vern = [v for v in vern if v["vernacular_name"] == "slank ringhätta"]
-    assert len(legacy_vern) == 1
-    assert legacy_vern[0]["sporely_taxon_id"] == backbone_id
+    assert legacy_vern == []
     assert not [v for v in vern if v["sporely_taxon_id"] == own_id]
 
 

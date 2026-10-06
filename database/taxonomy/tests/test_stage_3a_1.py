@@ -85,6 +85,19 @@ def test_col_normalizer_pulls_in_fungi_root_via_ancestor_closure(tmp_path: Path)
     assert report["record_counts"]["TaxonFungi"] == 2     # G, S
 
 
+def test_col_normalizer_preserves_vernacular_concept_warnings(tmp_path: Path) -> None:
+    archive = tmp_path / "warnings.zip"
+    header = _HEADER + "\tcol:nameStatus\tcol:namePhrase\tcol:remarks\tcol:nameRemarks"
+    row = ("S", "", "accepted", "Example species", "Author", "species", "Fungi", "Example", "species", "Family", "illegitimate", "sensu Example", "split from another concept", "later homonym")
+    with zipfile.ZipFile(archive, "w") as zf:
+        zf.writestr("NameUsage.tsv", header + "\n" + "\t".join(row) + "\n")
+    output = tmp_path / "warnings"
+    normalize_col_xr(archive_path=archive, output_dir=output, source_release={"version":"test","issued_date":"2026-10-04"})
+    result = json.loads((output / "taxa.jsonl").read_text().strip())
+    assert result["nomenclatural_status"] == "illegitimate"
+    assert result["concept_annotation"] == {"name_phrase":"sensu Example", "remarks":"split from another concept", "name_remarks":"later homonym"}
+
+
 def test_col_normalizer_flags_dangling_parents(tmp_path: Path) -> None:
     """A Fungi row pointing at a parent ID that is not present in the archive
     is preserved as an unresolved warning, not invented into an edge."""
@@ -502,3 +515,70 @@ def test_compiler_deterministic_across_runs_with_vernacular_and_proposals(
                       "vernacular.jsonl", "diagnostics.json", "manifest.json"))
 
     assert do(tmp_path / "a") == do(tmp_path / "b")
+
+
+def test_col_vernacular_normalization_is_usage_native_and_provenanced(tmp_path):
+    archive = tmp_path / 'col.zip'
+    _build_synthetic_col_archive(archive, [
+        ('A', '', 'accepted', 'Example species', '', 'species', 'Fungi', '', '', ''),
+        ('B', '', 'accepted', 'Example species', '', 'species', 'Fungi', '', '', ''),
+        ('X', '', 'accepted', 'Other species', '', 'species', 'Animalia', '', '', ''),
+    ])
+    with zipfile.ZipFile(archive, 'a') as z:
+        z.writestr('VernacularName.tsv', 'col:taxonID\tcol:name\tcol:language\tcol:preferred\tcol:sourceID\n'
+                   'A\t Current Name \teng\ttrue\tprovider\n'
+                   'B\tAndre navn\tnob\tfalse\tprovider\n'
+                   'A\tUnknown language\t\t\tprovider\n'
+                   'X\tNot fungal\teng\t\tprovider\n')
+    report = normalize_col_xr(archive_path=archive, output_dir=tmp_path/'out',
+                              source_release={'version':'test', 'issued_date':'2026-10-04'})
+    names = [json.loads(l) for l in (tmp_path/'out/vernacular.jsonl').read_text().splitlines()]
+    assert [(n['core_row_id']['value'], n['language'], n['vernacular_name']) for n in names] == [
+        ('A','en',' Current Name '), ('B','nb','Andre navn'), ('A','und','Unknown language')]
+    assert names[0]['is_preferred'] and not names[1]['is_preferred']
+    assert names[0]['provenance']['member'] == 'VernacularName.tsv'
+    assert names[0]['provenance']['row_index'] == 0
+    assert names[0]['provenance']['raw_fields']['sourceID'] == 'provider'
+    assert names[2]['provenance']['language_missing']
+    assert report['vernacular']['outside_normalized_scope'] == 1
+    assert report['vernacular']['missing_language_as_und'] == 1
+    # Taxa identity output is unchanged by the optional vernacular extension.
+    with zipfile.ZipFile(tmp_path/'without.zip','w') as z, zipfile.ZipFile(archive) as src:
+        z.writestr('NameUsage.tsv', src.read('NameUsage.tsv'))
+    normalize_col_xr(archive_path=tmp_path/'without.zip',output_dir=tmp_path/'without',
+                     source_release={'version':'test', 'issued_date':'2026-10-04'})
+    assert (tmp_path/'without/taxa.jsonl').read_bytes() == (tmp_path/'out/taxa.jsonl').read_bytes()
+
+
+def test_col_vernacular_orphan_is_reported_instead_of_name_join(tmp_path):
+    archive = tmp_path/'col.zip'
+    _build_synthetic_col_archive(archive, [
+        ('A', '', 'accepted', 'Example species', '', 'species', 'Fungi', '', '', ''),
+    ])
+    with zipfile.ZipFile(archive,'a') as z:
+        z.writestr('VernacularName.tsv','col:taxonID\tcol:name\tcol:language\nUNKNOWN\tname\teng\n')
+    report=normalize_col_xr(archive_path=archive,output_dir=tmp_path/'out',
+                         source_release={'version':'test','issued_date':'2026-10-04'})
+    assert report['vernacular']['orphan_usage_rows']==1
+    assert (tmp_path/'out/vernacular.jsonl').read_text()==''
+    rejection=json.loads((tmp_path/'out/vernacular_rejections.jsonl').read_text())
+    assert rejection['raw_fields']['taxonID']=='UNKNOWN'
+    assert rejection['reason']=='usage_absent_from_current_col_name_usage'
+
+
+def test_col_compiler_uses_ids_despite_identical_scientific_names(tmp_path):
+    col = _write_source(tmp_path/'col', source_code='col_xr',
+        source_release={'version':'v','issued_date':'d'},
+        taxa=[{'core_row_id':x,'taxon_id':x,'scientific_name':'Same species','rank':'species'} for x in ('A','B')],
+        vernacular=[{'core_row_id':'A','language':'en','name':'Only A'},
+                    {'core_row_id':'A','language':'en','name':'Only A'}])
+    compile_release(normalized_source_dirs=[col],manual_mappings_path=_write_mappings(tmp_path/'maps.json',[]),
+        mapping_policy_path=_POLICY_PATH,registry_path=tmp_path/'registry.jsonl',
+        output_dir=tmp_path/'release',release_id='tax-2026.10.04-01')
+    taxa={r['canonical_source_usage']['identifier']:r['sporely_taxon_id']
+          for r in map(json.loads,(tmp_path/'release/taxa.jsonl').read_text().splitlines())}
+    names=list(map(json.loads,(tmp_path/'release/vernacular.jsonl').read_text().splitlines()))
+    assert names and all(n['sporely_taxon_id']==taxa['A'] for n in names)
+    assert all(n['sporely_taxon_id']!=taxa['B'] for n in names)
+    evidence=list(map(json.loads,(tmp_path/'release/vernacular_evidence.jsonl').read_text().splitlines()))
+    assert all(e['identity_effect']=='none' and not e['external_identifier_emission'] for e in evidence)

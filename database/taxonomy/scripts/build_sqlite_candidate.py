@@ -890,10 +890,12 @@ def _build_into(
                 1 if v.get("is_preferred") else 0,
                 v.get("source_code"),
             ))
-        # As for scientific names: a bridge-only source never takes over a
-        # spelling another source publishes on the concept in that language.
+        # Current national-source names retain their provenance/preferred flag
+        # when COL carries the same spelling. Bridge-only copies likewise
+        # never take over another national source's spelling.
         vern_rows.sort(
             key=lambda r: (r[0], r[1], r[2].casefold(),
+                           r[4] == "col_xr",
                            r[4] in BRIDGE_ONLY_IDENTIFIER_SOURCES, r[3]))
         # Deduplicate on the UNIQUE (taxon_id, language, name) index.
         seen: set[tuple[int, str, str]] = set()

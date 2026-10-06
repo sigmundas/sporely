@@ -245,13 +245,11 @@ def test_compile_routes_legacy_via_nortaxa_to_sporely(tmp_path: Path) -> None:
     )
     diag = json.loads((release_dir / "diagnostics.json").read_text())
     legacy_counts = diag["counts"]["legacy_enrichment"]
-    # NorTaxa 300190 is in scope → its Artportalen and iNaturalist ids and
-    # fr + de + sv vernaculars are added; the "no" vernacular is skipped as
-    # already-in-Stage-3A; the ghost 999999 has no NorTaxa presence → all 2
-    # rows skip.
-    assert legacy_counts["vernacular_added"] == 3  # fr + de + sv
+    # Historical vernaculars require current source evidence. Existing
+    # external-identifier compatibility remains independent and unchanged.
+    assert legacy_counts["vernacular_added"] == 0
     assert legacy_counts["external_id_added"] == 2  # Artportalen 222138, iNaturalist 154000
-    assert legacy_counts["ignored_reason_already_in_stage3a"] == 1  # 'no' row
+    assert legacy_counts["ignored_reason_already_in_stage3a"] == 0
     assert legacy_counts["unresolved_nortaxa_taxonid"] == 2  # both 999999 rows
 
     # Every legacy row resolves to the accepted Sporely id.
@@ -260,18 +258,18 @@ def test_compile_routes_legacy_via_nortaxa_to_sporely(tmp_path: Path) -> None:
                 if l.strip()]
     assert sorted((r["source_system"], r["external_id"]) for r in ext_rows) == [
         ("artportalen", "222138"), ("inaturalist", "154000")]
-    # Vernaculars appended to vernacular.jsonl.
+    # No historical vernacular may survive solely from this old bundle.
     verns = [json.loads(l) for l in
              (release_dir / "vernacular.jsonl").read_text().splitlines()
              if l.strip()]
     langs = {v["language"] for v in verns}
-    assert {"nb", "fr", "de", "sv"} <= langs
-    # Skips file records the two ghost 999999 rows.
+    assert "nb" in langs and not ({"fr", "de", "sv"} & langs)
+    # Historical names and unresolved ghost rows remain auditable.
     skips = [json.loads(l) for l in
              (release_dir / "legacy_enrichment_skips.jsonl").read_text().splitlines()
              if l.strip()]
-    assert len(skips) == 2
-    assert all(s["reason"] == "nortaxa_taxon_id_not_in_registry" for s in skips)
+    assert sum(s["reason"] == "nortaxa_taxon_id_not_in_registry" for s in skips) == 2
+    assert sum(s["reason"] == "historical_vernacular_not_current_source_evidence" for s in skips) == 4
 
 
 def test_compile_never_allocates_sporely_id_for_legacy(tmp_path: Path) -> None:
@@ -331,14 +329,14 @@ def test_sqlite_build_ingests_legacy_external_ids(tmp_path: Path) -> None:
         "SELECT taxon_id, external_id, note FROM taxon_external_id_min "
         "WHERE source_system=? AND external_id=?", ("artportalen", 222138)))
     assert rows == [(sporely_id, 222138, "legacy_compat:artportalen")], rows
-    # French vernacular lands in vernacular_min.
+    # Historical French vernacular lacks current source evidence.
     rows = list(conn.execute(
         "SELECT taxon_id FROM vernacular_min "
         "WHERE language_code=? AND vernacular_name=?",
         ("fr", "psathyrelle de Candolle")))
-    assert rows == [(sporely_id,)]
+    assert rows == []
     assert list(conn.execute(
-        "SELECT taxon_id FROM vernacular_min WHERE language_code='sv'")) == [(sporely_id,)]
+        "SELECT taxon_id FROM vernacular_min WHERE language_code='sv'")) == []
     # The iNaturalist id also fills the fast-lookup column the desktop reads.
     assert conn.execute("SELECT inaturalist_taxon_id FROM taxon_min WHERE taxon_id=?",
                         (sporely_id,)).fetchone() == (154000,)
@@ -501,3 +499,28 @@ def test_two_builds_with_legacy_are_deterministic(tmp_path: Path) -> None:
     b = _run("b")
     for i in range(4):
         assert hashlib.sha256(a[i]).hexdigest() == hashlib.sha256(b[i]).hexdigest(), i
+
+
+def test_col_copy_does_not_replace_existing_national_preferred_row(tmp_path):
+    col, nor = _write_synthetic_release(tmp_path)
+    maps = tmp_path/'mappings.json'
+    release = tmp_path/'release'
+    registry = tmp_path/'registry.jsonl'
+    compile_release(normalized_source_dirs=[col,nor],manual_mappings_path=maps,
+        mapping_policy_path=_POLICY_PATH,
+        registry_path=registry,output_dir=release,release_id='tax-2026.10.04-01')
+    rows=[json.loads(l) for l in (release/'vernacular.jsonl').read_text().splitlines()]
+    original=next(r for r in rows if r['source_code']=='nortaxa')
+    copy={**original,'source_code':'col_xr','is_preferred':False}
+    # Exercise the established SQLite dedup rule with an independent COL copy.
+    with (release/'vernacular.jsonl').open('a') as f:
+        f.write(json.dumps(copy)+'\n')
+    manifest=json.loads((release/'manifest.json').read_text())
+    output=manifest['outputs']['vernacular']
+    payload=(release/'vernacular.jsonl').read_bytes()
+    output['sha256']=hashlib.sha256(payload).hexdigest();output['bytes']=len(payload)
+    (release/'manifest.json').write_text(json.dumps(manifest))
+    build_candidate(release_dir=release,registry_path=registry,output_db=tmp_path/'db.sqlite3')
+    conn=sqlite3.connect(tmp_path/'db.sqlite3')
+    assert conn.execute('select source,is_preferred_name from vernacular_min where taxon_id=? and vernacular_name=?',
+                        (original['sporely_taxon_id'],original['vernacular_name'])).fetchone()==('nortaxa',1)

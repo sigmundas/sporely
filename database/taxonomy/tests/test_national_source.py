@@ -221,6 +221,7 @@ def test_normalize_emits_expected_records(tmp_path: Path) -> None:
         assert t["taxon_id"]["namespace"] == "example_taxon_id"
         assert t["provenance"]["member"] == "taxa.tsv"
         assert isinstance(t["provenance"]["row_index"], int)
+        assert t["nomenclatural_status"] == ""
 
     sp1 = next(t for t in taxa if t["core_row_id"]["value"] == "sp1")
     assert sp1["scientific_name"] == "Examplaria minor"
@@ -244,6 +245,41 @@ def test_normalize_emits_expected_records(tmp_path: Path) -> None:
     # Vernacular <coreid> links the core row ID; it is NOT an accepted usage.
     assert preferred["core_row_id"] == {"value": "sp1", "namespace": "example_dwc_id"}
     assert "accepted_usage_id" not in preferred
+
+
+@pytest.mark.parametrize("raw_status", ["illegitimate", "pro parte", "  nom. inval.  "])
+def test_normalize_preserves_raw_nomenclatural_status_without_profile_mapping(
+    tmp_path: Path, raw_status: str,
+) -> None:
+    from xml.etree import ElementTree as ET
+
+    with zipfile.ZipFile(EXAMPLE_FIXTURE) as src:
+        members = {i.filename: src.read(i.filename) for i in src.infolist()}
+    root = ET.fromstring(members["meta.xml"])
+    ns = "http://rs.tdwg.org/dwc/text/"
+    core = root.find(f"{{{ns}}}core")
+    assert core is not None
+    ET.SubElement(core, f"{{{ns}}}field", {
+        "index": "8", "term": "http://rs.tdwg.org/dwc/terms/nomenclaturalStatus",
+    })
+    ET.SubElement(core, f"{{{ns}}}field", {
+        "index": "9", "term": "http://rs.tdwg.org/dwc/terms/taxonRemarks",
+    })
+    members["meta.xml"] = ET.tostring(root, encoding="utf-8")
+    rows = members["taxa.tsv"].decode().splitlines()
+    members["taxa.tsv"] = (rows[0] + "\tnomenclaturalStatus\ttaxonRemarks\n" + "".join(
+        row + "\t" + raw_status + "\tsensu Example\n" for row in rows[1:]
+    )).encode()
+    archive = tmp_path / "nomenclature.zip"
+    with zipfile.ZipFile(archive, "w") as dst:
+        for name, payload in members.items():
+            dst.writestr(name, payload)
+    out = tmp_path / "normalized"
+    subject.normalize_archive(subject.load_profile(EXAMPLE_PROFILE), archive, out)
+    taxa = [json.loads(line) for line in (out / "taxa.jsonl").read_text().splitlines()]
+    assert all(t["nomenclatural_status"] == raw_status for t in taxa)
+    assert all(t["concept_annotation"]["taxonRemarks"] == "sensu Example" for t in taxa)
+    assert next(t for t in taxa if t["core_row_id"]["value"] == "sp2")["taxonomic_status"] == "synonym"
 
 
 def test_normalize_refuses_to_overwrite_output(tmp_path: Path) -> None:
