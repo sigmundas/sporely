@@ -1,0 +1,128 @@
+{
+  "build_release_promote_without_hash": {
+    "build_dir_created": false,
+    "returncode": 2,
+    "stderr_tail": [
+      "error: not promoting: --promote requires --expect-freeze-sha256 of the reviewed freeze"
+    ]
+  },
+  "bundle_after": {
+    "manifest.json": "6c9d4919b51e099cd6694ad887ab10befefc27d83a92aaadbd0aba95b970379e",
+    "previous.evidence.tar.gz": "27882b2ccc53a654626df67cf596d2e401114e0ba2d076063fdc229cd2c5f16b",
+    "tax-2026.10.06-01.evidence.tar.gz": "97b4a896977ccc256f662cbf96fca195362a70ebf40cae705e27cd3d084feadd",
+    "tax-2026.10.06-01.freeze.json": "fda89f3744975dfb296336b73256c33df1b278efe092eca336557d067d07148e",
+    "tax-2026.10.06-01.sqlite3.gz": "9e6690d50ddba88a092b311109f2f3ceb2bd1d5a4fb9b543c62658f0a59a58d3"
+  },
+  "compatibility_equals_frozen": true,
+  "forbidden_modules_loaded": [],
+  "frozen_unchanged": true,
+  "guard": "imports of compiler/normalizer/freeze/export modules, subprocess, gzip/tar writes raise inside promotion process",
+  "new_files": [
+    "tax-2026.10.06-01.evidence.tar.gz",
+    "tax-2026.10.06-01.freeze.json",
+    "tax-2026.10.06-01.sqlite3.gz"
+  ],
+  "previous_evidence_retained": true,
+  "promote": {
+    "returncode": 0,
+    "stderr_tail": [],
+    "stdout_tail": [
+      "  }",
+      "}"
+    ]
+  },
+  "promoted_files_equal_frozen": true,
+  "real_repo_bundle_and_compatibility_unchanged": true,
+  "real_repo_hashes": {
+    "desktop-compatibility.json": "7afbe0719d2c74f93500c085a7dd7705e464487edb8f22da05c225cbac988051",
+    "manifest.json": "051464bbd8b343cc6d337fc92d5ddf433f716f0742aa55db49ae8e72f704cffa"
+  },
+  "repeat": {
+    "returncode": 0,
+    "stderr_tail": [],
+    "stdout_tail": [
+      "  }",
+      "}"
+    ]
+  },
+  "repeat_idempotent": true,
+  "superseded_gz_removed": [
+    "tax-2026.09.30-01.sqlite3.gz"
+  ],
+  "tamper": {
+    "compatibility.json": {
+      "offset": 1607,
+      "rejected_without_writes": true,
+      "with_accepted_hash": {
+        "returncode": 1,
+        "stderr_tail": [
+          "refused: frozen artifact fingerprint mismatch: compatibility.json"
+        ],
+        "stdout_tail": []
+      },
+      "with_tampered_descriptor_hash": null
+    },
+    "freeze.json": {
+      "offset": 447,
+      "rejected_without_writes": true,
+      "with_accepted_hash": {
+        "returncode": 1,
+        "stderr_tail": [
+          "refused: freeze fingerprint mismatch"
+        ],
+        "stdout_tail": []
+      },
+      "with_tampered_descriptor_hash": {
+        "returncode": 1,
+        "stderr_tail": [
+          "refused: frozen artifact fingerprint mismatch: tax-2026.10.06-01.evidence.tar.gz"
+        ],
+        "stdout_tail": []
+      }
+    },
+    "manifest.json": {
+      "offset": 2117,
+      "rejected_without_writes": true,
+      "with_accepted_hash": {
+        "returncode": 1,
+        "stderr_tail": [
+          "refused: frozen artifact fingerprint mismatch: manifest.json"
+        ],
+        "stdout_tail": []
+      },
+      "with_tampered_descriptor_hash": null
+    },
+    "tax-2026.10.06-01.evidence.tar.gz": {
+      "offset": 26686853,
+      "rejected_without_writes": true,
+      "with_accepted_hash": {
+        "returncode": 1,
+        "stderr_tail": [
+          "refused: frozen artifact fingerprint mismatch: tax-2026.10.06-01.evidence.tar.gz"
+        ],
+        "stdout_tail": []
+      },
+      "with_tampered_descriptor_hash": null
+    },
+    "tax-2026.10.06-01.sqlite3.gz": {
+      "offset": 36640783,
+      "rejected_without_writes": true,
+      "with_accepted_hash": {
+        "returncode": 1,
+        "stderr_tail": [
+          "refused: frozen artifact fingerprint mismatch: tax-2026.10.06-01.sqlite3.gz"
+        ],
+        "stdout_tail": []
+      },
+      "with_tampered_descriptor_hash": null
+    }
+  },
+  "wrong_freeze_hash": {
+    "returncode": 1,
+    "stderr_tail": [
+      "refused: freeze fingerprint mismatch"
+    ],
+    "stdout_tail": []
+  },
+  "wrong_freeze_hash_rejected_without_writes": true
+}

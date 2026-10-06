@@ -1,0 +1,680 @@
+[
+  {
+    "allocated_source_sporely_taxon_id": null,
+    "authorship_diagnostics": [
+      {
+        "difference": "other_difference_including_abbreviations",
+        "target_authorship": "Corda",
+        "target_sporely_taxon_id": 131016
+      }
+    ],
+    "classification_disagreements": [
+      {
+        "level": "kingdom",
+        "source": "Animalia",
+        "target": "Fungi",
+        "target_sporely_taxon_id": 131016
+      },
+      {
+        "level": "phylum",
+        "source": "Arthropoda",
+        "target": "Basidiomycota",
+        "target_sporely_taxon_id": 131016
+      },
+      {
+        "level": "class",
+        "source": "Insecta",
+        "target": "Agaricomycetes",
+        "target_sporely_taxon_id": 131016
+      },
+      {
+        "level": "order",
+        "source": "Diptera",
+        "target": "Boletales",
+        "target_sporely_taxon_id": 131016
+      },
+      {
+        "level": "family",
+        "source": "Syrphidae",
+        "target": "Paxillaceae",
+        "target_sporely_taxon_id": 131016
+      }
+    ],
+    "currently_present_on_source_bound_concept": false,
+    "currently_reaches_bundled_canonical": false,
+    "currently_reaches_cloud_canonical": false,
+    "disposition": "exception",
+    "existing_bound_sporely_taxon_id": null,
+    "existing_preferred_vernaculars_preserved": true,
+    "existing_reviewed_decisions": [],
+    "existing_vernacular_conflicts": [
+      {
+        "existing_is_preferred": true,
+        "existing_name": "slimknoller",
+        "language": "nb",
+        "target_sporely_taxon_id": 131016
+      }
+    ],
+    "external_identifier_emission": false,
+    "full_bundle_target_ids": [
+      131016
+    ],
+    "identity_effect": "none",
+    "is_preferred": true,
+    "language": "nb",
+    "pinned_source_release": {
+      "issued_date": "2026-07-17",
+      "version": "1.284"
+    },
+    "projected_is_preferred": false,
+    "reasons": [
+      "higher_classification_disagreement",
+      "kingdom_disagreement",
+      "source_not_fungi"
+    ],
+    "reviewed_decision_conflicts": [],
+    "rule_evidence_class": "vernacular_only_exact_name_rank_full_universe_unique_current_v2",
+    "scoped_target_ids": [
+      131016
+    ],
+    "source": "nortaxa",
+    "source_authorship": "Rondani, 1857",
+    "source_classification": {
+      "class": "Insecta",
+      "family": "Syrphidae",
+      "genus": "Melanogaster",
+      "infraspecific_epithet": "",
+      "kingdom": "Animalia",
+      "order": "Diptera",
+      "phylum": "Arthropoda",
+      "specific_epithet": "Melanogaster"
+    },
+    "source_nomenclatural_status": "",
+    "source_provenance": {
+      "identifier_namespace": "NBIC:",
+      "member": "vernacularname.txt",
+      "row_index": 6768,
+      "source_code": "nortaxa",
+      "source_release": {
+        "issued_date": "2026-07-17",
+        "version": "1.284"
+      }
+    },
+    "source_rank": "genus",
+    "source_record_identifier": {
+      "namespace": "nortaxa_dwc_id",
+      "value": "22958"
+    },
+    "source_scientific_name": "Melanogaster",
+    "source_status": "valid",
+    "source_taxon_identifier": {
+      "namespace": "nortaxa_taxon_id",
+      "value": "22958"
+    },
+    "source_usage_provenance": {
+      "identifier_namespace": "NBIC:",
+      "member": "taxon.txt",
+      "row_index": 22721,
+      "source_code": "nortaxa",
+      "source_release": {
+        "issued_date": "2026-07-17",
+        "version": "1.284"
+      }
+    },
+    "stage2_evidence": [],
+    "target_authorship": "Corda",
+    "target_canonical_scientific_name": "Melanogaster",
+    "target_sporely_taxon_id": 131016,
+    "vernacular_name": "engblomsterfluer",
+    "warnings": [
+      "existing_same_language_vernacular_preserved"
+    ]
+  },
+  {
+    "allocated_source_sporely_taxon_id": null,
+    "authorship_diagnostics": [
+      {
+        "difference": "other_difference_including_abbreviations",
+        "target_authorship": "Corda",
+        "target_sporely_taxon_id": 131016
+      }
+    ],
+    "classification_disagreements": [
+      {
+        "level": "kingdom",
+        "source": "Animalia",
+        "target": "Fungi",
+        "target_sporely_taxon_id": 131016
+      },
+      {
+        "level": "phylum",
+        "source": "Arthropoda",
+        "target": "Basidiomycota",
+        "target_sporely_taxon_id": 131016
+      },
+      {
+        "level": "class",
+        "source": "Insecta",
+        "target": "Agaricomycetes",
+        "target_sporely_taxon_id": 131016
+      },
+      {
+        "level": "order",
+        "source": "Diptera",
+        "target": "Boletales",
+        "target_sporely_taxon_id": 131016
+      },
+      {
+        "level": "family",
+        "source": "Syrphidae",
+        "target": "Paxillaceae",
+        "target_sporely_taxon_id": 131016
+      }
+    ],
+    "currently_present_on_source_bound_concept": false,
+    "currently_reaches_bundled_canonical": false,
+    "currently_reaches_cloud_canonical": false,
+    "disposition": "exception",
+    "existing_bound_sporely_taxon_id": null,
+    "existing_preferred_vernaculars_preserved": true,
+    "existing_reviewed_decisions": [],
+    "existing_vernacular_conflicts": [
+      {
+        "existing_is_preferred": true,
+        "existing_name": "slimknoller",
+        "language": "nn",
+        "target_sporely_taxon_id": 131016
+      }
+    ],
+    "external_identifier_emission": false,
+    "full_bundle_target_ids": [
+      131016
+    ],
+    "identity_effect": "none",
+    "is_preferred": true,
+    "language": "nn",
+    "pinned_source_release": {
+      "issued_date": "2026-07-17",
+      "version": "1.284"
+    },
+    "projected_is_preferred": false,
+    "reasons": [
+      "higher_classification_disagreement",
+      "kingdom_disagreement",
+      "source_not_fungi"
+    ],
+    "reviewed_decision_conflicts": [],
+    "rule_evidence_class": "vernacular_only_exact_name_rank_full_universe_unique_current_v2",
+    "scoped_target_ids": [
+      131016
+    ],
+    "source": "nortaxa",
+    "source_authorship": "Rondani, 1857",
+    "source_classification": {
+      "class": "Insecta",
+      "family": "Syrphidae",
+      "genus": "Melanogaster",
+      "infraspecific_epithet": "",
+      "kingdom": "Animalia",
+      "order": "Diptera",
+      "phylum": "Arthropoda",
+      "specific_epithet": "Melanogaster"
+    },
+    "source_nomenclatural_status": "",
+    "source_provenance": {
+      "identifier_namespace": "NBIC:",
+      "member": "vernacularname.txt",
+      "row_index": 39863,
+      "source_code": "nortaxa",
+      "source_release": {
+        "issued_date": "2026-07-17",
+        "version": "1.284"
+      }
+    },
+    "source_rank": "genus",
+    "source_record_identifier": {
+      "namespace": "nortaxa_dwc_id",
+      "value": "22958"
+    },
+    "source_scientific_name": "Melanogaster",
+    "source_status": "valid",
+    "source_taxon_identifier": {
+      "namespace": "nortaxa_taxon_id",
+      "value": "22958"
+    },
+    "source_usage_provenance": {
+      "identifier_namespace": "NBIC:",
+      "member": "taxon.txt",
+      "row_index": 22721,
+      "source_code": "nortaxa",
+      "source_release": {
+        "issued_date": "2026-07-17",
+        "version": "1.284"
+      }
+    },
+    "stage2_evidence": [],
+    "target_authorship": "Corda",
+    "target_canonical_scientific_name": "Melanogaster",
+    "target_sporely_taxon_id": 131016,
+    "vernacular_name": "engblomsterfluger",
+    "warnings": [
+      "existing_same_language_vernacular_preserved"
+    ]
+  },
+  {
+    "allocated_source_sporely_taxon_id": 625268,
+    "authorship_diagnostics": [
+      {
+        "difference": "other_difference_including_abbreviations",
+        "target_authorship": "(Fr.) P. Kumm.",
+        "target_sporely_taxon_id": 96276
+      }
+    ],
+    "classification_disagreements": [],
+    "currently_present_on_source_bound_concept": true,
+    "currently_reaches_bundled_canonical": false,
+    "currently_reaches_cloud_canonical": false,
+    "disposition": "exception",
+    "existing_bound_sporely_taxon_id": 625268,
+    "existing_preferred_vernaculars_preserved": true,
+    "existing_reviewed_decisions": [],
+    "existing_vernacular_conflicts": [
+      {
+        "existing_is_preferred": true,
+        "existing_name": "silkerødspore",
+        "language": "nb",
+        "target_sporely_taxon_id": 96276
+      }
+    ],
+    "external_identifier_emission": false,
+    "forbidden_strict_target_sporely_taxon_id": 96276,
+    "full_bundle_target_ids": [
+      96276
+    ],
+    "identity_effect": "none",
+    "is_preferred": false,
+    "language": "nb",
+    "pinned_source_release": {
+      "issued_date": "2026-07-17",
+      "version": "1.284"
+    },
+    "preserved_source_bound_sporely_taxon_id": 625268,
+    "projected_is_preferred": false,
+    "reasons": [
+      "collective_concept_must_remain_distinct",
+      "qualified_or_aggregate_source"
+    ],
+    "reviewed_decision_conflicts": [],
+    "rule_evidence_class": "vernacular_only_exact_name_rank_full_universe_unique_current_v2",
+    "scoped_target_ids": [
+      96276
+    ],
+    "semantic_constraint_id": "owner-2026-10-04-entoloma-sericellum-collective-distinction",
+    "source": "nortaxa",
+    "source_authorship": "(Fr. : Fr.) P. Kumm. agg.",
+    "source_classification": {
+      "class": "Agaricomycetes",
+      "family": "Entolomataceae",
+      "genus": "Entoloma",
+      "infraspecific_epithet": "",
+      "kingdom": "Fungi",
+      "order": "Agaricales",
+      "phylum": "Basidiomycota",
+      "specific_epithet": "sericellum"
+    },
+    "source_concept_semantics": "collective_aggregate",
+    "source_nomenclatural_status": "",
+    "source_provenance": {
+      "identifier_namespace": "NBIC:",
+      "member": "vernacularname.txt",
+      "row_index": 15602,
+      "source_code": "nortaxa",
+      "source_release": {
+        "issued_date": "2026-07-17",
+        "version": "1.284"
+      }
+    },
+    "source_rank": "species",
+    "source_record_identifier": {
+      "namespace": "nortaxa_dwc_id",
+      "value": "53666"
+    },
+    "source_scientific_name": "Entoloma sericellum",
+    "source_semantic_display_name": "Entoloma sericellum coll.",
+    "source_status": "valid",
+    "source_taxon_identifier": {
+      "namespace": "nortaxa_taxon_id",
+      "value": "53666"
+    },
+    "source_usage_provenance": {
+      "identifier_namespace": "NBIC:",
+      "member": "taxon.txt",
+      "row_index": 53341,
+      "source_code": "nortaxa",
+      "source_release": {
+        "issued_date": "2026-07-17",
+        "version": "1.284"
+      }
+    },
+    "stage2_evidence": [],
+    "target_authorship": "(Fr.) P. Kumm.",
+    "target_canonical_scientific_name": "Entoloma sericellum",
+    "target_sporely_taxon_id": 96276,
+    "vernacular_name": "silkerødskivesopp",
+    "warnings": [
+      "existing_same_language_vernacular_preserved"
+    ]
+  },
+  {
+    "allocated_source_sporely_taxon_id": 625268,
+    "authorship_diagnostics": [
+      {
+        "difference": "other_difference_including_abbreviations",
+        "target_authorship": "(Fr.) P. Kumm.",
+        "target_sporely_taxon_id": 96276
+      }
+    ],
+    "classification_disagreements": [],
+    "currently_present_on_source_bound_concept": true,
+    "currently_reaches_bundled_canonical": false,
+    "currently_reaches_cloud_canonical": false,
+    "disposition": "exception",
+    "existing_bound_sporely_taxon_id": 625268,
+    "existing_preferred_vernaculars_preserved": true,
+    "existing_reviewed_decisions": [],
+    "existing_vernacular_conflicts": [
+      {
+        "existing_is_preferred": true,
+        "existing_name": "silkerødspore",
+        "language": "nb",
+        "target_sporely_taxon_id": 96276
+      }
+    ],
+    "external_identifier_emission": false,
+    "forbidden_strict_target_sporely_taxon_id": 96276,
+    "full_bundle_target_ids": [
+      96276
+    ],
+    "identity_effect": "none",
+    "is_preferred": true,
+    "language": "nb",
+    "pinned_source_release": {
+      "issued_date": "2026-07-17",
+      "version": "1.284"
+    },
+    "preserved_source_bound_sporely_taxon_id": 625268,
+    "projected_is_preferred": false,
+    "reasons": [
+      "collective_concept_must_remain_distinct",
+      "qualified_or_aggregate_source"
+    ],
+    "reviewed_decision_conflicts": [],
+    "rule_evidence_class": "vernacular_only_exact_name_rank_full_universe_unique_current_v2",
+    "scoped_target_ids": [
+      96276
+    ],
+    "semantic_constraint_id": "owner-2026-10-04-entoloma-sericellum-collective-distinction",
+    "source": "nortaxa",
+    "source_authorship": "(Fr. : Fr.) P. Kumm. agg.",
+    "source_classification": {
+      "class": "Agaricomycetes",
+      "family": "Entolomataceae",
+      "genus": "Entoloma",
+      "infraspecific_epithet": "",
+      "kingdom": "Fungi",
+      "order": "Agaricales",
+      "phylum": "Basidiomycota",
+      "specific_epithet": "sericellum"
+    },
+    "source_concept_semantics": "collective_aggregate",
+    "source_nomenclatural_status": "",
+    "source_provenance": {
+      "identifier_namespace": "NBIC:",
+      "member": "vernacularname.txt",
+      "row_index": 15603,
+      "source_code": "nortaxa",
+      "source_release": {
+        "issued_date": "2026-07-17",
+        "version": "1.284"
+      }
+    },
+    "source_rank": "species",
+    "source_record_identifier": {
+      "namespace": "nortaxa_dwc_id",
+      "value": "53666"
+    },
+    "source_scientific_name": "Entoloma sericellum",
+    "source_semantic_display_name": "Entoloma sericellum coll.",
+    "source_status": "valid",
+    "source_taxon_identifier": {
+      "namespace": "nortaxa_taxon_id",
+      "value": "53666"
+    },
+    "source_usage_provenance": {
+      "identifier_namespace": "NBIC:",
+      "member": "taxon.txt",
+      "row_index": 53341,
+      "source_code": "nortaxa",
+      "source_release": {
+        "issued_date": "2026-07-17",
+        "version": "1.284"
+      }
+    },
+    "stage2_evidence": [],
+    "target_authorship": "(Fr.) P. Kumm.",
+    "target_canonical_scientific_name": "Entoloma sericellum",
+    "target_sporely_taxon_id": 96276,
+    "vernacular_name": "silkerødspore-gruppen",
+    "warnings": [
+      "existing_same_language_vernacular_preserved"
+    ]
+  },
+  {
+    "allocated_source_sporely_taxon_id": 625268,
+    "authorship_diagnostics": [
+      {
+        "difference": "other_difference_including_abbreviations",
+        "target_authorship": "(Fr.) P. Kumm.",
+        "target_sporely_taxon_id": 96276
+      }
+    ],
+    "classification_disagreements": [],
+    "currently_present_on_source_bound_concept": true,
+    "currently_reaches_bundled_canonical": false,
+    "currently_reaches_cloud_canonical": false,
+    "disposition": "exception",
+    "existing_bound_sporely_taxon_id": 625268,
+    "existing_preferred_vernaculars_preserved": true,
+    "existing_reviewed_decisions": [],
+    "existing_vernacular_conflicts": [
+      {
+        "existing_is_preferred": true,
+        "existing_name": "silkeraudspore",
+        "language": "nn",
+        "target_sporely_taxon_id": 96276
+      }
+    ],
+    "external_identifier_emission": false,
+    "forbidden_strict_target_sporely_taxon_id": 96276,
+    "full_bundle_target_ids": [
+      96276
+    ],
+    "identity_effect": "none",
+    "is_preferred": false,
+    "language": "nn",
+    "pinned_source_release": {
+      "issued_date": "2026-07-17",
+      "version": "1.284"
+    },
+    "preserved_source_bound_sporely_taxon_id": 625268,
+    "projected_is_preferred": false,
+    "reasons": [
+      "collective_concept_must_remain_distinct",
+      "qualified_or_aggregate_source"
+    ],
+    "reviewed_decision_conflicts": [],
+    "rule_evidence_class": "vernacular_only_exact_name_rank_full_universe_unique_current_v2",
+    "scoped_target_ids": [
+      96276
+    ],
+    "semantic_constraint_id": "owner-2026-10-04-entoloma-sericellum-collective-distinction",
+    "source": "nortaxa",
+    "source_authorship": "(Fr. : Fr.) P. Kumm. agg.",
+    "source_classification": {
+      "class": "Agaricomycetes",
+      "family": "Entolomataceae",
+      "genus": "Entoloma",
+      "infraspecific_epithet": "",
+      "kingdom": "Fungi",
+      "order": "Agaricales",
+      "phylum": "Basidiomycota",
+      "specific_epithet": "sericellum"
+    },
+    "source_concept_semantics": "collective_aggregate",
+    "source_nomenclatural_status": "",
+    "source_provenance": {
+      "identifier_namespace": "NBIC:",
+      "member": "vernacularname.txt",
+      "row_index": 46664,
+      "source_code": "nortaxa",
+      "source_release": {
+        "issued_date": "2026-07-17",
+        "version": "1.284"
+      }
+    },
+    "source_rank": "species",
+    "source_record_identifier": {
+      "namespace": "nortaxa_dwc_id",
+      "value": "53666"
+    },
+    "source_scientific_name": "Entoloma sericellum",
+    "source_semantic_display_name": "Entoloma sericellum coll.",
+    "source_status": "valid",
+    "source_taxon_identifier": {
+      "namespace": "nortaxa_taxon_id",
+      "value": "53666"
+    },
+    "source_usage_provenance": {
+      "identifier_namespace": "NBIC:",
+      "member": "taxon.txt",
+      "row_index": 53341,
+      "source_code": "nortaxa",
+      "source_release": {
+        "issued_date": "2026-07-17",
+        "version": "1.284"
+      }
+    },
+    "stage2_evidence": [],
+    "target_authorship": "(Fr.) P. Kumm.",
+    "target_canonical_scientific_name": "Entoloma sericellum",
+    "target_sporely_taxon_id": 96276,
+    "vernacular_name": "silkeraudskivesopp",
+    "warnings": [
+      "existing_same_language_vernacular_preserved"
+    ]
+  },
+  {
+    "allocated_source_sporely_taxon_id": 625268,
+    "authorship_diagnostics": [
+      {
+        "difference": "other_difference_including_abbreviations",
+        "target_authorship": "(Fr.) P. Kumm.",
+        "target_sporely_taxon_id": 96276
+      }
+    ],
+    "classification_disagreements": [],
+    "currently_present_on_source_bound_concept": true,
+    "currently_reaches_bundled_canonical": false,
+    "currently_reaches_cloud_canonical": false,
+    "disposition": "exception",
+    "existing_bound_sporely_taxon_id": 625268,
+    "existing_preferred_vernaculars_preserved": true,
+    "existing_reviewed_decisions": [],
+    "existing_vernacular_conflicts": [
+      {
+        "existing_is_preferred": true,
+        "existing_name": "silkeraudspore",
+        "language": "nn",
+        "target_sporely_taxon_id": 96276
+      }
+    ],
+    "external_identifier_emission": false,
+    "forbidden_strict_target_sporely_taxon_id": 96276,
+    "full_bundle_target_ids": [
+      96276
+    ],
+    "identity_effect": "none",
+    "is_preferred": true,
+    "language": "nn",
+    "pinned_source_release": {
+      "issued_date": "2026-07-17",
+      "version": "1.284"
+    },
+    "preserved_source_bound_sporely_taxon_id": 625268,
+    "projected_is_preferred": false,
+    "reasons": [
+      "collective_concept_must_remain_distinct",
+      "qualified_or_aggregate_source"
+    ],
+    "reviewed_decision_conflicts": [],
+    "rule_evidence_class": "vernacular_only_exact_name_rank_full_universe_unique_current_v2",
+    "scoped_target_ids": [
+      96276
+    ],
+    "semantic_constraint_id": "owner-2026-10-04-entoloma-sericellum-collective-distinction",
+    "source": "nortaxa",
+    "source_authorship": "(Fr. : Fr.) P. Kumm. agg.",
+    "source_classification": {
+      "class": "Agaricomycetes",
+      "family": "Entolomataceae",
+      "genus": "Entoloma",
+      "infraspecific_epithet": "",
+      "kingdom": "Fungi",
+      "order": "Agaricales",
+      "phylum": "Basidiomycota",
+      "specific_epithet": "sericellum"
+    },
+    "source_concept_semantics": "collective_aggregate",
+    "source_nomenclatural_status": "",
+    "source_provenance": {
+      "identifier_namespace": "NBIC:",
+      "member": "vernacularname.txt",
+      "row_index": 46665,
+      "source_code": "nortaxa",
+      "source_release": {
+        "issued_date": "2026-07-17",
+        "version": "1.284"
+      }
+    },
+    "source_rank": "species",
+    "source_record_identifier": {
+      "namespace": "nortaxa_dwc_id",
+      "value": "53666"
+    },
+    "source_scientific_name": "Entoloma sericellum",
+    "source_semantic_display_name": "Entoloma sericellum coll.",
+    "source_status": "valid",
+    "source_taxon_identifier": {
+      "namespace": "nortaxa_taxon_id",
+      "value": "53666"
+    },
+    "source_usage_provenance": {
+      "identifier_namespace": "NBIC:",
+      "member": "taxon.txt",
+      "row_index": 53341,
+      "source_code": "nortaxa",
+      "source_release": {
+        "issued_date": "2026-07-17",
+        "version": "1.284"
+      }
+    },
+    "stage2_evidence": [],
+    "target_authorship": "(Fr.) P. Kumm.",
+    "target_canonical_scientific_name": "Entoloma sericellum",
+    "target_sporely_taxon_id": 96276,
+    "vernacular_name": "silkeraudspore-gruppa",
+    "warnings": [
+      "existing_same_language_vernacular_preserved"
+    ]
+  }
+]

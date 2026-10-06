@@ -1,0 +1,47 @@
+{
+  "archive_sha256": "397d701c8eb269bf78d6ac7b03149915b0d9e2a2c18694be2c91445b807814f9",
+  "compiler_ready": true,
+  "distribution_imported": false,
+  "hierarchy_complete": true,
+  "identifier_namespaces": {
+    "accepted_name_usage_id": "col_usage_id",
+    "core_row_id": "col_usage_id",
+    "parent_name_usage_id": "col_usage_id",
+    "taxon_id": "col_usage_id"
+  },
+  "kingdom_filter": "Fungi",
+  "outputs": {
+    "taxa": "taxa.jsonl",
+    "vernacular": "vernacular.jsonl",
+    "vernacular_rejections": "vernacular_rejections.jsonl"
+  },
+  "profile_source_code": "col_xr",
+  "profile_source_release": {
+    "issued_date": "2026-07-17",
+    "version": "2026-07-17-XR"
+  },
+  "record_counts": {
+    "Taxon": 620976,
+    "TaxonAncestor": 2,
+    "TaxonFungi": 620974,
+    "VernacularName": 89926
+  },
+  "reference_gaps": {
+    "orphan_accepted_reference_count": 0,
+    "orphan_accepted_reference_samples": [],
+    "orphan_parent_reference_count": 0,
+    "orphan_parent_reference_samples": [],
+    "sample_bound": 25
+  },
+  "result": "passed",
+  "row_limit": null,
+  "scope_rule": "global_fungi + fungal_navigation_ancestors",
+  "vernacular": {
+    "member_present": true,
+    "missing_language_as_und": 3,
+    "orphan_usage_rows": 12294,
+    "outside_normalized_scope": 1894695,
+    "rows_seen": 1996915,
+    "rows_written": 89926
+  }
+}

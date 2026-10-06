@@ -1,0 +1,477 @@
+{
+  "collective_semantic_holds": 1,
+  "current_simulation": "../norwegian-vernacular-2026-10-04-owner-reviewed/summary.json",
+  "original_simulation_species_exceptions": 16,
+  "owner_resolved_vernacular_only": 10,
+  "remaining_species_exceptions": 6,
+  "remaining_species_needing_owner_review": 5,
+  "species": [
+    {
+      "full_bundle_target_ids": [
+        618912
+      ],
+      "reasons": [
+        "qualified_or_aggregate_source"
+      ],
+      "review_id": "owner-2026-10-04-vernacular-131436",
+      "review_status": "owner_resolved_vernacular_only",
+      "scoped_target_ids": [
+        618912
+      ],
+      "selected_target_sporely_taxon_id": 618912,
+      "source_rank": "species",
+      "source_record_identifier": {
+        "namespace": "nortaxa_dwc_id",
+        "value": "131436"
+      },
+      "source_scientific_name": "Cortinarius milvinicolor",
+      "vernacular_names": [
+        [
+          "nb",
+          "oliven rådyrslørsopp"
+        ]
+      ]
+    },
+    {
+      "forbidden_strict_target_sporely_taxon_id": 96276,
+      "full_bundle_target_ids": [
+        96276
+      ],
+      "preserved_source_bound_sporely_taxon_id": 625268,
+      "reasons": [
+        "qualified_or_aggregate_source"
+      ],
+      "review_status": "collective_semantic_hold",
+      "scoped_target_ids": [
+        96276
+      ],
+      "source_rank": "species",
+      "source_record_identifier": {
+        "namespace": "nortaxa_dwc_id",
+        "value": "53666"
+      },
+      "source_scientific_name": "Entoloma sericellum",
+      "vernacular_names": [
+        [
+          "nb",
+          "silkerødskivesopp"
+        ],
+        [
+          "nb",
+          "silkerødspore-gruppen"
+        ],
+        [
+          "nn",
+          "silkeraudskivesopp"
+        ],
+        [
+          "nn",
+          "silkeraudspore-gruppa"
+        ]
+      ]
+    },
+    {
+      "full_bundle_target_ids": [
+        14541,
+        165172
+      ],
+      "reasons": [
+        "multiple_canonical_targets_in_full_release",
+        "multiple_canonical_targets_in_scope"
+      ],
+      "review_id": "owner-2026-10-04-vernacular-79034",
+      "review_status": "owner_resolved_vernacular_only",
+      "scoped_target_ids": [
+        14541,
+        165172
+      ],
+      "selected_target_sporely_taxon_id": 14541,
+      "source_rank": "species",
+      "source_record_identifier": {
+        "namespace": "nortaxa_dwc_id",
+        "value": "79034"
+      },
+      "source_scientific_name": "Helvella crispa",
+      "vernacular_names": [
+        [
+          "nb",
+          "lys høstmorkel"
+        ],
+        [
+          "nn",
+          "lys haustmorkel"
+        ]
+      ]
+    },
+    {
+      "full_bundle_target_ids": [
+        14834,
+        165605
+      ],
+      "reasons": [
+        "multiple_canonical_targets_in_full_release"
+      ],
+      "review_id": "owner-2026-10-04-vernacular-54854",
+      "review_status": "owner_resolved_vernacular_only",
+      "scoped_target_ids": [
+        14834
+      ],
+      "selected_target_sporely_taxon_id": 14834,
+      "source_rank": "species",
+      "source_record_identifier": {
+        "namespace": "nortaxa_dwc_id",
+        "value": "54854"
+      },
+      "source_scientific_name": "Henningsomyces puber",
+      "vernacular_names": [
+        [
+          "nb",
+          "dunpipe"
+        ],
+        [
+          "nn",
+          "dunpipe"
+        ]
+      ]
+    },
+    {
+      "full_bundle_target_ids": [
+        103130
+      ],
+      "reasons": [
+        "source_nomenclatural_status_ambiguous"
+      ],
+      "review_id": "owner-2026-10-04-vernacular-60611",
+      "review_status": "owner_resolved_vernacular_only",
+      "scoped_target_ids": [
+        103130
+      ],
+      "selected_target_sporely_taxon_id": 103130,
+      "source_rank": "species",
+      "source_record_identifier": {
+        "namespace": "nortaxa_dwc_id",
+        "value": "60611"
+      },
+      "source_scientific_name": "Hypsizygus tessulatus",
+      "vernacular_names": [
+        [
+          "nb",
+          "dråpeknippesopp"
+        ]
+      ]
+    },
+    {
+      "full_bundle_target_ids": [
+        19080
+      ],
+      "reasons": [
+        "qualified_or_aggregate_source"
+      ],
+      "review_status": "needs_review",
+      "scoped_target_ids": [
+        19080
+      ],
+      "source_rank": "species",
+      "source_record_identifier": {
+        "namespace": "nortaxa_dwc_id",
+        "value": "53227"
+      },
+      "source_scientific_name": "Inocybe praetervisa",
+      "vernacular_names": [
+        [
+          "nb",
+          "knolltrevlesopp"
+        ],
+        [
+          "nb",
+          "vanlig knolltrevlesopp"
+        ],
+        [
+          "nn",
+          "knolltrevlesopp"
+        ],
+        [
+          "nn",
+          "vanleg knolltrevlesopp"
+        ]
+      ]
+    },
+    {
+      "full_bundle_target_ids": [
+        23749
+      ],
+      "reasons": [
+        "qualified_or_aggregate_source"
+      ],
+      "review_id": "owner-2026-10-04-vernacular-56551",
+      "review_status": "owner_resolved_vernacular_only",
+      "scoped_target_ids": [
+        23749
+      ],
+      "selected_target_sporely_taxon_id": 23749,
+      "source_rank": "species",
+      "source_record_identifier": {
+        "namespace": "nortaxa_dwc_id",
+        "value": "56551"
+      },
+      "source_scientific_name": "Lentaria micheneri",
+      "vernacular_names": [
+        [
+          "nb",
+          "slank vedkorallsopp"
+        ],
+        [
+          "nn",
+          "slank vedkorallsopp"
+        ]
+      ]
+    },
+    {
+      "full_bundle_target_ids": [
+        34794
+      ],
+      "reasons": [
+        "qualified_or_aggregate_source"
+      ],
+      "review_id": "owner-2026-10-04-vernacular-53838",
+      "review_status": "owner_resolved_vernacular_only",
+      "scoped_target_ids": [
+        34794
+      ],
+      "selected_target_sporely_taxon_id": 34794,
+      "source_rank": "species",
+      "source_record_identifier": {
+        "namespace": "nortaxa_dwc_id",
+        "value": "53838"
+      },
+      "source_scientific_name": "Mycena pearsoniana",
+      "vernacular_names": [
+        [
+          "nb",
+          "sumpreddikhette"
+        ],
+        [
+          "nn",
+          "sumpreddikhette"
+        ]
+      ]
+    },
+    {
+      "full_bundle_target_ids": [
+        52936
+      ],
+      "reasons": [
+        "source_nomenclatural_status_ambiguous"
+      ],
+      "review_id": "owner-2026-10-04-vernacular-62263",
+      "review_status": "owner_resolved_vernacular_only",
+      "scoped_target_ids": [
+        52936
+      ],
+      "selected_target_sporely_taxon_id": 52936,
+      "source_rank": "species",
+      "source_record_identifier": {
+        "namespace": "nortaxa_dwc_id",
+        "value": "62263"
+      },
+      "source_scientific_name": "Pseudoboletus parasiticus",
+      "vernacular_names": [
+        [
+          "nb",
+          "snylterørsopp"
+        ],
+        [
+          "nn",
+          "snylterøyrsopp"
+        ]
+      ]
+    },
+    {
+      "full_bundle_target_ids": [
+        54615
+      ],
+      "reasons": [
+        "source_nomenclatural_status_ambiguous"
+      ],
+      "review_id": "owner-2026-10-04-vernacular-63044",
+      "review_status": "owner_resolved_vernacular_only",
+      "scoped_target_ids": [
+        54615
+      ],
+      "selected_target_sporely_taxon_id": 54615,
+      "source_rank": "species",
+      "source_record_identifier": {
+        "namespace": "nortaxa_dwc_id",
+        "value": "63044"
+      },
+      "source_scientific_name": "Pseudoinonotus dryadeus",
+      "vernacular_names": [
+        [
+          "nb",
+          "tårekjuke"
+        ],
+        [
+          "nn",
+          "tårekjuke"
+        ]
+      ]
+    },
+    {
+      "full_bundle_target_ids": [
+        58651
+      ],
+      "reasons": [
+        "qualified_or_aggregate_source"
+      ],
+      "review_status": "needs_review",
+      "scoped_target_ids": [
+        58651
+      ],
+      "source_rank": "species",
+      "source_record_identifier": {
+        "namespace": "nortaxa_dwc_id",
+        "value": "56485"
+      },
+      "source_scientific_name": "Ramaria aurea",
+      "vernacular_names": [
+        [
+          "nb",
+          "falsk lindekorallsopp"
+        ]
+      ]
+    },
+    {
+      "full_bundle_target_ids": [
+        58693
+      ],
+      "reasons": [
+        "qualified_or_aggregate_source"
+      ],
+      "review_id": "owner-2026-10-04-vernacular-151982",
+      "review_status": "owner_resolved_vernacular_only",
+      "scoped_target_ids": [
+        58693
+      ],
+      "selected_target_sporely_taxon_id": 58693,
+      "source_rank": "species",
+      "source_record_identifier": {
+        "namespace": "nortaxa_dwc_id",
+        "value": "151982"
+      },
+      "source_scientific_name": "Ramaria conjunctipes",
+      "vernacular_names": [
+        [
+          "nb",
+          "norsk flammekorallsopp"
+        ]
+      ]
+    },
+    {
+      "full_bundle_target_ids": [
+        58814
+      ],
+      "reasons": [
+        "qualified_or_aggregate_source"
+      ],
+      "review_status": "needs_review",
+      "scoped_target_ids": [
+        58814
+      ],
+      "source_rank": "species",
+      "source_record_identifier": {
+        "namespace": "nortaxa_dwc_id",
+        "value": "129065"
+      },
+      "source_scientific_name": "Ramaria rubrievanescens",
+      "vernacular_names": [
+        [
+          "nb",
+          "taigarødtuppsopp"
+        ]
+      ]
+    },
+    {
+      "full_bundle_target_ids": [
+        58815
+      ],
+      "reasons": [
+        "qualified_or_aggregate_source"
+      ],
+      "review_status": "needs_review",
+      "scoped_target_ids": [
+        58815
+      ],
+      "source_rank": "species",
+      "source_record_identifier": {
+        "namespace": "nortaxa_dwc_id",
+        "value": "56524"
+      },
+      "source_scientific_name": "Ramaria rubripermanens",
+      "vernacular_names": [
+        [
+          "nb",
+          "sørlig rødtuppsopp"
+        ],
+        [
+          "nn",
+          "sørleg rødtuppsopp"
+        ]
+      ]
+    },
+    {
+      "full_bundle_target_ids": [
+        58832
+      ],
+      "reasons": [
+        "qualified_or_aggregate_source"
+      ],
+      "review_status": "needs_review",
+      "scoped_target_ids": [
+        58832
+      ],
+      "source_rank": "species",
+      "source_record_identifier": {
+        "namespace": "nortaxa_dwc_id",
+        "value": "136341"
+      },
+      "source_scientific_name": "Ramaria strasseri",
+      "vernacular_names": [
+        [
+          "nb",
+          "blek rødtuppsopp"
+        ]
+      ]
+    },
+    {
+      "full_bundle_target_ids": [
+        60559
+      ],
+      "reasons": [
+        "source_nomenclatural_status_ambiguous"
+      ],
+      "review_id": "owner-2026-10-04-vernacular-62339",
+      "review_status": "owner_resolved_vernacular_only",
+      "scoped_target_ids": [
+        60559
+      ],
+      "selected_target_sporely_taxon_id": 60559,
+      "source_rank": "species",
+      "source_record_identifier": {
+        "namespace": "nortaxa_dwc_id",
+        "value": "62339"
+      },
+      "source_scientific_name": "Rhizopogon luteolus",
+      "vernacular_names": [
+        [
+          "nb",
+          "gul ekornnøtt"
+        ],
+        [
+          "nn",
+          "gul ikornnøtt"
+        ]
+      ]
+    }
+  ],
+  "species_remaining": 14
+}

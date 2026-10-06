@@ -1,0 +1,518 @@
+{
+  "format": "sporely-owner-vernacular-review-evidence-v1",
+  "pins": {
+    "bundle_gz_sha256": "593cd5379bffd53a81a54735ab0ad99b97e7ef890060d6483bed42e4150e907f",
+    "col_archive_sha256": "397d701c8eb269bf78d6ac7b03149915b0d9e2a2c18694be2c91445b807814f9",
+    "content_release_id": "tax-2026.09.30-01",
+    "nortaxa_archive_sha256": "29c11c54d955dc44e4e5a38944dd7932989a256d1b173777579b9f33abd2fe22"
+  },
+  "reviews": [
+    {
+      "automatic_uniqueness_rule_unchanged": true,
+      "compiler_application_status": "not_implemented",
+      "decision_date": "2026-10-04",
+      "decision_reference": "Owner instruction in this conversation approving eight safe/likely-safe species as vernacular-only reviewed associations; preserve qualifiers/status/nomenclatural metadata.",
+      "evidence_references": [
+        "owner-approval-in-current-conversation"
+      ],
+      "external_identifier_emission": false,
+      "identity_effect": "none",
+      "rationale": "Owner-approved vernacular-only exception. Original conservative guard remains recorded and unchanged; no identity equivalence or external-ID bridge is inferred.",
+      "review_id": "owner-2026-10-04-vernacular-131436",
+      "review_status": "approved_for_vernacular_only",
+      "reviewer": "Owner",
+      "rule_evidence_class": "owner_reviewed_vernacular_only_target_selection",
+      "source": "nortaxa",
+      "source_authorship": "s. auct. scand.",
+      "source_nomenclatural_status": "",
+      "source_record_identifier": {
+        "namespace": "nortaxa_dwc_id",
+        "value": "131436"
+      },
+      "source_release": {
+        "issued_date": "2026-07-17",
+        "version": "1.284"
+      },
+      "source_scientific_name": "Cortinarius milvinicolor",
+      "source_status": "valid",
+      "source_taxon_identifier": {
+        "namespace": "nortaxa_taxon_id",
+        "value": "131436"
+      },
+      "target_authorship": "Moënne-Locc. & Reumaux",
+      "target_canonical_scientific_name": "Cortinarius milvinicolor",
+      "target_col_usage_id": "YLJ4",
+      "target_sporely_taxon_id": 618912,
+      "vernacular_names": [
+        [
+          "nb",
+          "oliven rådyrslørsopp"
+        ]
+      ]
+    },
+    {
+      "automatic_uniqueness_rule_unchanged": true,
+      "compiler_application_status": "not_implemented",
+      "decision_date": "2026-10-04",
+      "decision_reference": "Owner instruction in this conversation approving eight safe/likely-safe species as vernacular-only reviewed associations; preserve qualifiers/status/nomenclatural metadata.",
+      "evidence_references": [
+        "owner-approval-in-current-conversation"
+      ],
+      "external_identifier_emission": false,
+      "identity_effect": "none",
+      "rationale": "Owner-approved vernacular-only exception. Original conservative guard remains recorded and unchanged; no identity equivalence or external-ID bridge is inferred.",
+      "review_id": "owner-2026-10-04-vernacular-151982",
+      "review_status": "approved_for_vernacular_only",
+      "reviewer": "Owner",
+      "rule_evidence_class": "owner_reviewed_vernacular_only_target_selection",
+      "source": "nortaxa",
+      "source_authorship": "s. auct. scand.",
+      "source_nomenclatural_status": "",
+      "source_record_identifier": {
+        "namespace": "nortaxa_dwc_id",
+        "value": "151982"
+      },
+      "source_release": {
+        "issued_date": "2026-07-17",
+        "version": "1.284"
+      },
+      "source_scientific_name": "Ramaria conjunctipes",
+      "source_status": "valid",
+      "source_taxon_identifier": {
+        "namespace": "nortaxa_taxon_id",
+        "value": "151982"
+      },
+      "target_authorship": "(Coker) Corner",
+      "target_canonical_scientific_name": "Ramaria conjunctipes",
+      "target_col_usage_id": "4RBNJ",
+      "target_sporely_taxon_id": 58693,
+      "vernacular_names": [
+        [
+          "nb",
+          "norsk flammekorallsopp"
+        ]
+      ]
+    },
+    {
+      "automatic_uniqueness_rule_unchanged": true,
+      "compiler_application_status": "not_implemented",
+      "decision_date": "2026-10-04",
+      "decision_reference": "Owner instruction in this conversation approving eight safe/likely-safe species as vernacular-only reviewed associations; preserve qualifiers/status/nomenclatural metadata.",
+      "evidence_references": [
+        "owner-approval-in-current-conversation"
+      ],
+      "external_identifier_emission": false,
+      "identity_effect": "none",
+      "rationale": "Owner-approved vernacular-only exception. Original conservative guard remains recorded and unchanged; no identity equivalence or external-ID bridge is inferred.",
+      "review_id": "owner-2026-10-04-vernacular-53838",
+      "review_status": "approved_for_vernacular_only",
+      "reviewer": "Owner",
+      "rule_evidence_class": "owner_reviewed_vernacular_only_target_selection",
+      "source": "nortaxa",
+      "source_authorship": "Singer sensu auct. eur.",
+      "source_nomenclatural_status": "",
+      "source_record_identifier": {
+        "namespace": "nortaxa_dwc_id",
+        "value": "53838"
+      },
+      "source_release": {
+        "issued_date": "2026-07-17",
+        "version": "1.284"
+      },
+      "source_scientific_name": "Mycena pearsoniana",
+      "source_status": "valid",
+      "source_taxon_identifier": {
+        "namespace": "nortaxa_taxon_id",
+        "value": "53838"
+      },
+      "target_authorship": "Dennis ex Singer",
+      "target_canonical_scientific_name": "Mycena pearsoniana",
+      "target_col_usage_id": "44TLW",
+      "target_sporely_taxon_id": 34794,
+      "vernacular_names": [
+        [
+          "nb",
+          "sumpreddikhette"
+        ],
+        [
+          "nn",
+          "sumpreddikhette"
+        ]
+      ]
+    },
+    {
+      "automatic_uniqueness_rule_unchanged": true,
+      "compiler_application_status": "not_implemented",
+      "decision_date": "2026-10-04",
+      "decision_reference": "Owner instruction in this conversation: select Helvella crispa (Scop.) Fr. for lys høstmorkel and 3KV7Z / 14834 for dunpipe.",
+      "evidence_references": [
+        "https://www.speciesfungorum.org/names/NamesRecord.asp?RecordId=331935",
+        "https://www.speciesfungorum.org/names/NamesRecord.asp?RecordId=331935"
+      ],
+      "external_identifier_emission": false,
+      "identity_effect": "none",
+      "independent_page_sha256": "c6a4529e0b2f38b3cda96387735aad6086feae3fc684bd8498d781a3d6c475b0",
+      "rationale": "Owner selects COL 3KV7Z / Sporely 14834 for dunpipe; PLPT2 / 165605 is not selected. Owner considers the latter a possible stale/duplicate concept, not evidence of a biological ambiguity. Species Fungorum record 331935 confirms the selected current name/authorship and Cyphellaceae placement. Pinned metadata on PLPT2 instead places it in Ascomycota/Dothideomycetes/Dothideales/Parodiopsidaceae, inconsistent with the selected Basidiomycota/Agaricomycetes fungus. No identity deletion or supersession is inferred.",
+      "review_id": "owner-2026-10-04-vernacular-54854",
+      "review_status": "approved_for_vernacular_only",
+      "reviewer": "Sigmund Ås",
+      "rule_evidence_class": "owner_reviewed_vernacular_only_target_selection",
+      "source": "nortaxa",
+      "source_record_identifier": {
+        "namespace": "nortaxa_dwc_id",
+        "value": "54854"
+      },
+      "source_release": {
+        "issued_date": "2026-07-17",
+        "version": "1.284"
+      },
+      "source_scientific_name": "Henningsomyces puber",
+      "source_taxon_identifier": {
+        "namespace": "nortaxa_taxon_id",
+        "value": "54854"
+      },
+      "target_authorship": "(Romell ex W.B. Cooke) D.A. Reid",
+      "target_canonical_scientific_name": "Henningsomyces puber",
+      "target_col_usage_id": "3KV7Z",
+      "target_sporely_taxon_id": 14834,
+      "unselected_competing_target": 165605,
+      "vernacular_names": [
+        [
+          "nb",
+          "dunpipe"
+        ],
+        [
+          "nn",
+          "dunpipe"
+        ]
+      ]
+    },
+    {
+      "automatic_uniqueness_rule_unchanged": true,
+      "compiler_application_status": "not_implemented",
+      "decision_date": "2026-10-04",
+      "decision_reference": "Owner instruction in this conversation approving eight safe/likely-safe species as vernacular-only reviewed associations; preserve qualifiers/status/nomenclatural metadata.",
+      "evidence_references": [
+        "owner-approval-in-current-conversation"
+      ],
+      "external_identifier_emission": false,
+      "identity_effect": "none",
+      "rationale": "Owner-approved vernacular-only exception. Original conservative guard remains recorded and unchanged; no identity equivalence or external-ID bridge is inferred.",
+      "review_id": "owner-2026-10-04-vernacular-56551",
+      "review_status": "approved_for_vernacular_only",
+      "reviewer": "Owner",
+      "rule_evidence_class": "owner_reviewed_vernacular_only_target_selection",
+      "source": "nortaxa",
+      "source_authorship": "(Berk. & M.A. Curtis) Corner ss. auct.",
+      "source_nomenclatural_status": "",
+      "source_record_identifier": {
+        "namespace": "nortaxa_dwc_id",
+        "value": "56551"
+      },
+      "source_release": {
+        "issued_date": "2026-07-17",
+        "version": "1.284"
+      },
+      "source_scientific_name": "Lentaria micheneri",
+      "source_status": "valid",
+      "source_taxon_identifier": {
+        "namespace": "nortaxa_taxon_id",
+        "value": "56551"
+      },
+      "target_authorship": "(Berk. & M.A. Curtis) Corner",
+      "target_canonical_scientific_name": "Lentaria micheneri",
+      "target_col_usage_id": "3T5CV",
+      "target_sporely_taxon_id": 23749,
+      "vernacular_names": [
+        [
+          "nb",
+          "slank vedkorallsopp"
+        ],
+        [
+          "nn",
+          "slank vedkorallsopp"
+        ]
+      ]
+    },
+    {
+      "automatic_uniqueness_rule_unchanged": true,
+      "compiler_application_status": "not_implemented",
+      "decision_date": "2026-10-04",
+      "decision_reference": "Owner instruction in this conversation approving eight safe/likely-safe species as vernacular-only reviewed associations; preserve qualifiers/status/nomenclatural metadata.",
+      "evidence_references": [
+        "owner-approval-in-current-conversation"
+      ],
+      "external_identifier_emission": false,
+      "identity_effect": "none",
+      "owner_spelling_reference": [
+        "Hypsizygus tessulatus",
+        "Hypsizygus tessellatus"
+      ],
+      "rationale": "Owner-approved vernacular-only exception. Original conservative guard remains recorded and unchanged; no identity equivalence or external-ID bridge is inferred.",
+      "review_id": "owner-2026-10-04-vernacular-60611",
+      "review_status": "approved_for_vernacular_only",
+      "reviewer": "Owner",
+      "rule_evidence_class": "owner_reviewed_vernacular_only_target_selection",
+      "source": "nortaxa",
+      "source_authorship": "(Bull. : Fr.) Singer",
+      "source_nomenclatural_status": "illegitimate",
+      "source_record_identifier": {
+        "namespace": "nortaxa_dwc_id",
+        "value": "60611"
+      },
+      "source_release": {
+        "issued_date": "2026-07-17",
+        "version": "1.284"
+      },
+      "source_scientific_name": "Hypsizygus tessulatus",
+      "source_status": "valid",
+      "source_taxon_identifier": {
+        "namespace": "nortaxa_taxon_id",
+        "value": "60611"
+      },
+      "target_authorship": "(Bull.) Singer",
+      "target_canonical_scientific_name": "Hypsizygus tessulatus",
+      "target_col_usage_id": "6N4RM",
+      "target_sporely_taxon_id": 103130,
+      "vernacular_names": [
+        [
+          "nb",
+          "dråpeknippesopp"
+        ]
+      ]
+    },
+    {
+      "automatic_uniqueness_rule_unchanged": true,
+      "compiler_application_status": "not_implemented",
+      "decision_date": "2026-10-04",
+      "decision_reference": "Owner instruction in this conversation approving eight safe/likely-safe species as vernacular-only reviewed associations; preserve qualifiers/status/nomenclatural metadata.",
+      "evidence_references": [
+        "owner-approval-in-current-conversation"
+      ],
+      "external_identifier_emission": false,
+      "identity_effect": "none",
+      "rationale": "Owner-approved vernacular-only exception. Original conservative guard remains recorded and unchanged; no identity equivalence or external-ID bridge is inferred.",
+      "review_id": "owner-2026-10-04-vernacular-62263",
+      "review_status": "approved_for_vernacular_only",
+      "reviewer": "Owner",
+      "rule_evidence_class": "owner_reviewed_vernacular_only_target_selection",
+      "source": "nortaxa",
+      "source_authorship": "(Bull.: Fr.) Šutara",
+      "source_nomenclatural_status": "illegitimate",
+      "source_record_identifier": {
+        "namespace": "nortaxa_dwc_id",
+        "value": "62263"
+      },
+      "source_release": {
+        "issued_date": "2026-07-17",
+        "version": "1.284"
+      },
+      "source_scientific_name": "Pseudoboletus parasiticus",
+      "source_status": "valid",
+      "source_taxon_identifier": {
+        "namespace": "nortaxa_taxon_id",
+        "value": "62263"
+      },
+      "target_authorship": "(Bull.) Šutara",
+      "target_canonical_scientific_name": "Pseudoboletus parasiticus",
+      "target_col_usage_id": "4NQ37",
+      "target_sporely_taxon_id": 52936,
+      "vernacular_names": [
+        [
+          "nb",
+          "snylterørsopp"
+        ],
+        [
+          "nn",
+          "snylterøyrsopp"
+        ]
+      ]
+    },
+    {
+      "automatic_uniqueness_rule_unchanged": true,
+      "compiler_application_status": "not_implemented",
+      "decision_date": "2026-10-04",
+      "decision_reference": "Owner instruction in this conversation approving eight safe/likely-safe species as vernacular-only reviewed associations; preserve qualifiers/status/nomenclatural metadata.",
+      "evidence_references": [
+        "owner-approval-in-current-conversation"
+      ],
+      "external_identifier_emission": false,
+      "identity_effect": "none",
+      "rationale": "Owner-approved vernacular-only exception. Original conservative guard remains recorded and unchanged; no identity equivalence or external-ID bridge is inferred.",
+      "review_id": "owner-2026-10-04-vernacular-62339",
+      "review_status": "approved_for_vernacular_only",
+      "reviewer": "Owner",
+      "rule_evidence_class": "owner_reviewed_vernacular_only_target_selection",
+      "source": "nortaxa",
+      "source_authorship": "Fr. : Fr.",
+      "source_nomenclatural_status": "illegitimate",
+      "source_record_identifier": {
+        "namespace": "nortaxa_dwc_id",
+        "value": "62339"
+      },
+      "source_release": {
+        "issued_date": "2026-07-17",
+        "version": "1.284"
+      },
+      "source_scientific_name": "Rhizopogon luteolus",
+      "source_status": "valid",
+      "source_taxon_identifier": {
+        "namespace": "nortaxa_taxon_id",
+        "value": "62339"
+      },
+      "target_authorship": "Fr.",
+      "target_canonical_scientific_name": "Rhizopogon luteolus",
+      "target_col_usage_id": "4SD8Z",
+      "target_sporely_taxon_id": 60559,
+      "vernacular_names": [
+        [
+          "nb",
+          "gul ekornnøtt"
+        ],
+        [
+          "nn",
+          "gul ikornnøtt"
+        ]
+      ]
+    },
+    {
+      "automatic_uniqueness_rule_unchanged": true,
+      "compiler_application_status": "not_implemented",
+      "decision_date": "2026-10-04",
+      "decision_reference": "Owner instruction in this conversation approving eight safe/likely-safe species as vernacular-only reviewed associations; preserve qualifiers/status/nomenclatural metadata.",
+      "evidence_references": [
+        "owner-approval-in-current-conversation"
+      ],
+      "external_identifier_emission": false,
+      "identity_effect": "none",
+      "rationale": "Owner-approved vernacular-only exception. Original conservative guard remains recorded and unchanged; no identity equivalence or external-ID bridge is inferred.",
+      "review_id": "owner-2026-10-04-vernacular-63044",
+      "review_status": "approved_for_vernacular_only",
+      "reviewer": "Owner",
+      "rule_evidence_class": "owner_reviewed_vernacular_only_target_selection",
+      "source": "nortaxa",
+      "source_authorship": "(Pers. : Fr.) T. Wagner & M. Fisch.",
+      "source_nomenclatural_status": "illegitimate",
+      "source_record_identifier": {
+        "namespace": "nortaxa_dwc_id",
+        "value": "63044"
+      },
+      "source_release": {
+        "issued_date": "2026-07-17",
+        "version": "1.284"
+      },
+      "source_scientific_name": "Pseudoinonotus dryadeus",
+      "source_status": "valid",
+      "source_taxon_identifier": {
+        "namespace": "nortaxa_taxon_id",
+        "value": "63044"
+      },
+      "target_authorship": "(Pers.) T. Wagner & M. Fisch.",
+      "target_canonical_scientific_name": "Pseudoinonotus dryadeus",
+      "target_col_usage_id": "4NYKZ",
+      "target_sporely_taxon_id": 54615,
+      "vernacular_names": [
+        [
+          "nb",
+          "tårekjuke"
+        ],
+        [
+          "nn",
+          "tårekjuke"
+        ]
+      ]
+    },
+    {
+      "automatic_uniqueness_rule_unchanged": true,
+      "compiler_application_status": "not_implemented",
+      "decision_date": "2026-10-04",
+      "decision_reference": "Owner instruction in this conversation: select Helvella crispa (Scop.) Fr. for lys høstmorkel and 3KV7Z / 14834 for dunpipe.",
+      "evidence_references": [
+        "https://www.indexfungorum.org/names/namesrecord.asp?RecordID=186148",
+        "https://www.speciesfungorum.org/names/NamesRecord.asp?RecordId=186148"
+      ],
+      "external_identifier_emission": false,
+      "identity_effect": "none",
+      "independent_page_sha256": "2e157b93ce7d46ddd938e3f0c4aec654f23b7b093178e078d8d87d0ae7f9a188",
+      "rationale": "Owner selects Helvella crispa (Scop.) Fr. for lys høstmorkel. The provisionally accepted Sowerby target is not selected. Owner reports it is a different fungus now Craterellus undulatus; that latter equivalence has not been independently verified by this audit. Species Fungorum record 186148 independently confirms the selected current name and authorship.",
+      "review_id": "owner-2026-10-04-vernacular-79034",
+      "review_status": "approved_for_vernacular_only",
+      "reviewer": "Sigmund Ås",
+      "rule_evidence_class": "owner_reviewed_vernacular_only_target_selection",
+      "source": "nortaxa",
+      "source_record_identifier": {
+        "namespace": "nortaxa_dwc_id",
+        "value": "79034"
+      },
+      "source_release": {
+        "issued_date": "2026-07-17",
+        "version": "1.284"
+      },
+      "source_scientific_name": "Helvella crispa",
+      "source_taxon_identifier": {
+        "namespace": "nortaxa_taxon_id",
+        "value": "79034"
+      },
+      "target_authorship": "(Scop.) Fr.",
+      "target_canonical_scientific_name": "Helvella crispa",
+      "target_col_usage_id": "3KJX6",
+      "target_sporely_taxon_id": 14541,
+      "unselected_competing_target": 165172,
+      "vernacular_names": [
+        [
+          "nb",
+          "lys høstmorkel"
+        ],
+        [
+          "nn",
+          "lys haustmorkel"
+        ]
+      ]
+    }
+  ],
+  "scope": "Vernacular metadata target selection only; not an identity mapping, supersession or external-ID bridge.",
+  "semantic_constraints": [
+    {
+      "collective_display_name": "Entoloma sericellum coll.",
+      "collective_vernaculars": [
+        [
+          "nb",
+          "silkerødspore-gruppen"
+        ],
+        [
+          "nn",
+          "silkeraudspore-gruppa"
+        ]
+      ],
+      "constraint_id": "owner-2026-10-04-entoloma-sericellum-collective-distinction",
+      "decision": "Preserve all source-bound collective metadata at its existing concept; never route any of this qualified source usage to the strict target by stripping coll./agg. No new aggregate canonical identity is authorized.",
+      "external_identifier_emission": false,
+      "identity_effect": "none",
+      "reviewer": "Owner",
+      "source_authorship": "(Fr. : Fr.) P. Kumm. agg.",
+      "source_bound_sporely_taxon_id": 625268,
+      "source_record_identifier": {
+        "namespace": "nortaxa_dwc_id",
+        "value": "53666"
+      },
+      "source_scientific_name": "Entoloma sericellum",
+      "source_semantics": "collective_aggregate",
+      "source_taxon_identifier": {
+        "namespace": "nortaxa_taxon_id",
+        "value": "53666"
+      },
+      "strict_name": "Entoloma sericellum",
+      "strict_target_sporely_taxon_id": 96276,
+      "strict_vernaculars": [
+        [
+          "nb",
+          "silkerødspore"
+        ],
+        [
+          "nn",
+          "silkeraudspore"
+        ]
+      ]
+    }
+  ]
+}

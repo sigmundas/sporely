@@ -1,0 +1,105 @@
+{
+  "archive_members_verified": 42,
+  "attempt_1_build_release_current_code": {
+    "command": "build_release.py --release-id tax-2026.10.04-01 --build-dir buildA",
+    "compiler_files_matching_stage1b": [
+      "diagnostics.json",
+      "legacy_enrichment_skips.jsonl",
+      "legacy_external_ids.jsonl",
+      "mappings.jsonl",
+      "redlist_no.jsonl",
+      "redlist_no_diagnostics.json",
+      "source_usages.jsonl",
+      "taxa.jsonl",
+      "vernacular_changes.json",
+      "vernacular_reviews.json"
+    ],
+    "deterministic_A_vs_B": true,
+    "first_divergence": {
+      "manifest.json": {
+        "accepted": "ecf9924b5d7f18554996035befe636f3e71351ca6145df5c72d00f4c9baa9fff",
+        "rebuilt": "0c3590d835bcc49b41920ae97f92c229c86b500cee15dcd6b0d3d4da0ffa3ae6"
+      },
+      "vernacular.jsonl": {
+        "accepted": "be7e0d24c4b9063a57dc4b03da92727c17a6e7203d1c946350b08e51900f88a1",
+        "rebuilt": "676489eb35d806e93224a2d048524b173151b4003419e939706ea212751e27ee"
+      },
+      "vernacular_evidence.jsonl": {
+        "accepted": "b5b092b6b2de45fb42b0843cd160387640b64afdde176eaea15683fd076589f4",
+        "rebuilt": "ecd1e1cae5a1613556a09f992edd638a7440a103c5c37205520768004f85766b"
+      }
+    },
+    "freeze_sha256": {
+      "accepted": "d0e5de92cd2e4e2222f77818e5b0425360d37596df2cc9b3d3fbd9567d6870ad",
+      "rebuilt": "4c66c7b8908d7d308e5d69d2e0f3e8c7d2e611aeae8cee7ba8c7193ba1368d20"
+    },
+    "normalized_col_matches_stage1b": {
+      "report.json": true,
+      "taxa.jsonl": true,
+      "vernacular.jsonl": true,
+      "vernacular_rejections.jsonl": true
+    },
+    "recovery_manifest_regenerated_sha256": "0d5eb58bb7b661dd8e0003d13760136abc9a65f6b73609b71c7fc58043306cd6",
+    "registry_unchanged": true,
+    "row_counts_equal": {
+      "col_xr_compiled": 89926,
+      "vernacular_min": 96144
+    },
+    "sqlite": {
+      "accepted": "69a34da8588295f21fe59ca969368b9f1a2e6f659a655bd739f54e2324d55b23",
+      "rebuilt": "aedf2319abd1ba1f49cf8db98f1b1b0d040c73d310aad74a7906691f51c8ed4f"
+    }
+  },
+  "attempt_2_actual_accepted_pipeline": {
+    "compiler_files_match": [
+      "diagnostics.json",
+      "legacy_enrichment_skips.jsonl",
+      "legacy_external_ids.jsonl",
+      "manifest.json",
+      "mappings.jsonl",
+      "redlist_no.jsonl",
+      "redlist_no_diagnostics.json",
+      "source_usages.jsonl",
+      "taxa.jsonl",
+      "vernacular.jsonl",
+      "vernacular_changes.json",
+      "vernacular_evidence.jsonl",
+      "vernacular_reviews.json"
+    ],
+    "dyntaxa_normalized_by": "HEAD 927eb644 national_source.py (committed code, unmodified)",
+    "registry_sha256": "1cc2003a874e5deb2c0023bf8fd6fb74dd98b2ad656ee36d8755c15277c8adc9",
+    "sqlite_sha256": "69a34da8588295f21fe59ca969368b9f1a2e6f659a655bd739f54e2324d55b23"
+  },
+  "authorization": "owner-authorized single exception: deterministic, hash-gated re-materialization of the accepted frozen set; no code/policy change",
+  "decompressed_sqlite_sha256": "69a34da8588295f21fe59ca969368b9f1a2e6f659a655bd739f54e2324d55b23",
+  "diagnosis": {
+    "cause": "The accepted Stage 1B compile (Codex session 2026-10-04T19:39Z, /tmp/sporely-vernacular-stage1b/run.py derived from Stage 1 run-final.py) consumed Dyntaxa normalized earlier by the COMMITTED national_source.py (/tmp/sporely-6p/run1/norm/dyntaxa). The working-tree national_source.py (Stage 1 change) adds nomenclatural_status/concept_annotation to normalized taxa; this changes Dyntaxa source_evidence and therefore association_evidence_sha256 in vernacular.jsonl/vernacular_evidence.jsonl, the compiler manifest and the SQLite taxonomy_meta.compiler_manifest_sha256. Stage 2 then froze via an ad-hoc freeze-final.py (hand-built receipt containing Stage 1B verification.json; evidence member names owner-reviews.json, stage1b-*, stage1b-removal-*), which build_release.py cannot reproduce.",
+    "proof": "Normalizing Dyntaxa with `git show HEAD:database/taxonomy/scripts/national_source.py` and compiling with otherwise current code reproduces all 13 accepted compiler files and SQLite 69a34da8..."
+  },
+  "finalA_read_only": true,
+  "frozen_set": {
+    "compatibility.json": {
+      "bytes": 3214,
+      "sha256": "56258f2228c963ed24f7c5d665188d81dc5ea3b7bcc5bf0a984e2f52528eed9b"
+    },
+    "freeze.json": {
+      "bytes": 895,
+      "sha256": "d0e5de92cd2e4e2222f77818e5b0425360d37596df2cc9b3d3fbd9567d6870ad"
+    },
+    "manifest.json": {
+      "bytes": 4235,
+      "sha256": "a9ee2bb73a5c4ff4e49609038d9ddbb3469ef111227f2c0e96dd16fa58ad0d51"
+    },
+    "tax-2026.10.04-01.evidence.tar.gz": {
+      "bytes": 55656914,
+      "sha256": "25625ec3eca0c95307a9a011b81b5ef09f5895897c5427aa47ef1c2ab8cb75e1"
+    },
+    "tax-2026.10.04-01.sqlite3.gz": {
+      "bytes": 73283038,
+      "sha256": "56020d1f72f0fd9341f4a1ef3671c5665897aac2c4680fe00172866af8a04ca1"
+    }
+  },
+  "gate_result": "PASS",
+  "repeat_freeze_finalB_identical": true,
+  "scratch": "/Users/sigmundas/sporely-scratch/vernacular-2026-10-06"
+}

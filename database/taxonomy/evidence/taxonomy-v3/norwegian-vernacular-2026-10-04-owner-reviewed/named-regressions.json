@@ -1,0 +1,760 @@
+{
+  "Alloclavaria purpurea": [
+    {
+      "authorship_diagnostics": [
+        {
+          "difference": "other_difference_including_abbreviations",
+          "target_authorship": "(O.F. Müll.) Dentinger & D.J. McLaughlin",
+          "target_sporely_taxon_id": 146835
+        }
+      ],
+      "classification_disagreements": [
+        {
+          "level": "family",
+          "source": "Repetobasidiaceae",
+          "target": "Rickenellaceae",
+          "target_sporely_taxon_id": 146835
+        }
+      ],
+      "disposition": "automatic_enrichment",
+      "existing_vernacular_conflicts": [],
+      "full_bundle_target_ids": [
+        146835
+      ],
+      "language": "nb",
+      "reasons": [
+        "exact_name_rank_full_release_unique_current_no_contradiction"
+      ],
+      "scoped_target_ids": [
+        146835
+      ],
+      "target_sporely_taxon_id": 146835,
+      "vernacular_name": "gråfiolett køllesopp",
+      "warnings": [
+        "below_kingdom_classification_disagreement"
+      ]
+    },
+    {
+      "authorship_diagnostics": [
+        {
+          "difference": "other_difference_including_abbreviations",
+          "target_authorship": "(O.F. Müll.) Dentinger & D.J. McLaughlin",
+          "target_sporely_taxon_id": 146835
+        }
+      ],
+      "classification_disagreements": [
+        {
+          "level": "family",
+          "source": "Repetobasidiaceae",
+          "target": "Rickenellaceae",
+          "target_sporely_taxon_id": 146835
+        }
+      ],
+      "disposition": "automatic_enrichment",
+      "existing_vernacular_conflicts": [],
+      "full_bundle_target_ids": [
+        146835
+      ],
+      "language": "nn",
+      "reasons": [
+        "exact_name_rank_full_release_unique_current_no_contradiction"
+      ],
+      "scoped_target_ids": [
+        146835
+      ],
+      "target_sporely_taxon_id": 146835,
+      "vernacular_name": "gråfiolett køllesopp",
+      "warnings": [
+        "below_kingdom_classification_disagreement"
+      ]
+    }
+  ],
+  "Arrhenia chlorocyanea": [
+    {
+      "authorship_diagnostics": [
+        {
+          "difference": "same",
+          "target_authorship": "(Pat.) Redhead, Lutzoni, Moncalvo & Vilgalys",
+          "target_sporely_taxon_id": 79753
+        }
+      ],
+      "classification_disagreements": [],
+      "disposition": "already_reaches_cloud_unchanged",
+      "existing_vernacular_conflicts": [],
+      "full_bundle_target_ids": [
+        79753
+      ],
+      "language": "nb",
+      "reasons": [],
+      "scoped_target_ids": [
+        79753
+      ],
+      "target_sporely_taxon_id": 79753,
+      "vernacular_name": "grønn navlesopp",
+      "warnings": []
+    },
+    {
+      "authorship_diagnostics": [
+        {
+          "difference": "same",
+          "target_authorship": "(Pat.) Redhead, Lutzoni, Moncalvo & Vilgalys",
+          "target_sporely_taxon_id": 79753
+        }
+      ],
+      "classification_disagreements": [],
+      "disposition": "already_reaches_cloud_unchanged",
+      "existing_vernacular_conflicts": [],
+      "full_bundle_target_ids": [
+        79753
+      ],
+      "language": "nn",
+      "reasons": [],
+      "scoped_target_ids": [
+        79753
+      ],
+      "target_sporely_taxon_id": 79753,
+      "vernacular_name": "grøn navlesopp",
+      "warnings": []
+    }
+  ],
+  "Entoloma sericellum": [
+    {
+      "authorship_diagnostics": [
+        {
+          "difference": "same",
+          "target_authorship": "(Fr.) P. Kumm.",
+          "target_sporely_taxon_id": 96276
+        }
+      ],
+      "classification_disagreements": [],
+      "disposition": "already_reaches_cloud_unchanged",
+      "existing_vernacular_conflicts": [],
+      "full_bundle_target_ids": [
+        96276
+      ],
+      "language": "nb",
+      "reasons": [],
+      "scoped_target_ids": [
+        96276
+      ],
+      "target_sporely_taxon_id": 96276,
+      "vernacular_name": "silkerødspore",
+      "warnings": []
+    },
+    {
+      "authorship_diagnostics": [
+        {
+          "difference": "same",
+          "target_authorship": "(Fr.) P. Kumm.",
+          "target_sporely_taxon_id": 96276
+        }
+      ],
+      "classification_disagreements": [],
+      "disposition": "already_reaches_cloud_unchanged",
+      "existing_vernacular_conflicts": [],
+      "full_bundle_target_ids": [
+        96276
+      ],
+      "language": "nn",
+      "reasons": [],
+      "scoped_target_ids": [
+        96276
+      ],
+      "target_sporely_taxon_id": 96276,
+      "vernacular_name": "silkeraudspore",
+      "warnings": []
+    },
+    {
+      "authorship_diagnostics": [
+        {
+          "difference": "other_difference_including_abbreviations",
+          "target_authorship": "(Fr.) P. Kumm.",
+          "target_sporely_taxon_id": 96276
+        }
+      ],
+      "classification_disagreements": [],
+      "disposition": "exception",
+      "existing_vernacular_conflicts": [
+        {
+          "existing_is_preferred": true,
+          "existing_name": "silkerødspore",
+          "language": "nb",
+          "target_sporely_taxon_id": 96276
+        }
+      ],
+      "forbidden_strict_target_sporely_taxon_id": 96276,
+      "full_bundle_target_ids": [
+        96276
+      ],
+      "language": "nb",
+      "preserved_source_bound_sporely_taxon_id": 625268,
+      "reasons": [
+        "collective_concept_must_remain_distinct",
+        "qualified_or_aggregate_source"
+      ],
+      "scoped_target_ids": [
+        96276
+      ],
+      "source_concept_semantics": "collective_aggregate",
+      "target_sporely_taxon_id": 96276,
+      "vernacular_name": "silkerødskivesopp",
+      "warnings": [
+        "existing_same_language_vernacular_preserved"
+      ]
+    },
+    {
+      "authorship_diagnostics": [
+        {
+          "difference": "other_difference_including_abbreviations",
+          "target_authorship": "(Fr.) P. Kumm.",
+          "target_sporely_taxon_id": 96276
+        }
+      ],
+      "classification_disagreements": [],
+      "disposition": "exception",
+      "existing_vernacular_conflicts": [
+        {
+          "existing_is_preferred": true,
+          "existing_name": "silkerødspore",
+          "language": "nb",
+          "target_sporely_taxon_id": 96276
+        }
+      ],
+      "forbidden_strict_target_sporely_taxon_id": 96276,
+      "full_bundle_target_ids": [
+        96276
+      ],
+      "language": "nb",
+      "preserved_source_bound_sporely_taxon_id": 625268,
+      "reasons": [
+        "collective_concept_must_remain_distinct",
+        "qualified_or_aggregate_source"
+      ],
+      "scoped_target_ids": [
+        96276
+      ],
+      "source_concept_semantics": "collective_aggregate",
+      "target_sporely_taxon_id": 96276,
+      "vernacular_name": "silkerødspore-gruppen",
+      "warnings": [
+        "existing_same_language_vernacular_preserved"
+      ]
+    },
+    {
+      "authorship_diagnostics": [
+        {
+          "difference": "other_difference_including_abbreviations",
+          "target_authorship": "(Fr.) P. Kumm.",
+          "target_sporely_taxon_id": 96276
+        }
+      ],
+      "classification_disagreements": [],
+      "disposition": "exception",
+      "existing_vernacular_conflicts": [
+        {
+          "existing_is_preferred": true,
+          "existing_name": "silkeraudspore",
+          "language": "nn",
+          "target_sporely_taxon_id": 96276
+        }
+      ],
+      "forbidden_strict_target_sporely_taxon_id": 96276,
+      "full_bundle_target_ids": [
+        96276
+      ],
+      "language": "nn",
+      "preserved_source_bound_sporely_taxon_id": 625268,
+      "reasons": [
+        "collective_concept_must_remain_distinct",
+        "qualified_or_aggregate_source"
+      ],
+      "scoped_target_ids": [
+        96276
+      ],
+      "source_concept_semantics": "collective_aggregate",
+      "target_sporely_taxon_id": 96276,
+      "vernacular_name": "silkeraudskivesopp",
+      "warnings": [
+        "existing_same_language_vernacular_preserved"
+      ]
+    },
+    {
+      "authorship_diagnostics": [
+        {
+          "difference": "other_difference_including_abbreviations",
+          "target_authorship": "(Fr.) P. Kumm.",
+          "target_sporely_taxon_id": 96276
+        }
+      ],
+      "classification_disagreements": [],
+      "disposition": "exception",
+      "existing_vernacular_conflicts": [
+        {
+          "existing_is_preferred": true,
+          "existing_name": "silkeraudspore",
+          "language": "nn",
+          "target_sporely_taxon_id": 96276
+        }
+      ],
+      "forbidden_strict_target_sporely_taxon_id": 96276,
+      "full_bundle_target_ids": [
+        96276
+      ],
+      "language": "nn",
+      "preserved_source_bound_sporely_taxon_id": 625268,
+      "reasons": [
+        "collective_concept_must_remain_distinct",
+        "qualified_or_aggregate_source"
+      ],
+      "scoped_target_ids": [
+        96276
+      ],
+      "source_concept_semantics": "collective_aggregate",
+      "target_sporely_taxon_id": 96276,
+      "vernacular_name": "silkeraudspore-gruppa",
+      "warnings": [
+        "existing_same_language_vernacular_preserved"
+      ]
+    }
+  ],
+  "Gerronema": [
+    {
+      "authorship_diagnostics": [
+        {
+          "difference": "other_difference_including_abbreviations",
+          "target_authorship": "Singer, 1951",
+          "target_sporely_taxon_id": 85259
+        },
+        {
+          "difference": "missing_on_one_or_both_sides",
+          "target_authorship": "",
+          "target_sporely_taxon_id": 611731
+        }
+      ],
+      "classification_disagreements": [
+        {
+          "level": "phylum",
+          "source": "Basidiomycota",
+          "target": "Ascomycota",
+          "target_sporely_taxon_id": 611731
+        },
+        {
+          "level": "class",
+          "source": "Agaricomycetes",
+          "target": "Lecanoromycetes",
+          "target_sporely_taxon_id": 611731
+        },
+        {
+          "level": "order",
+          "source": "Agaricales",
+          "target": "Ostropales",
+          "target_sporely_taxon_id": 611731
+        }
+      ],
+      "disposition": "exception",
+      "existing_vernacular_conflicts": [],
+      "full_bundle_target_ids": [
+        85259,
+        611731
+      ],
+      "language": "nb",
+      "reasons": [
+        "higher_classification_disagreement",
+        "multiple_canonical_targets_in_full_release"
+      ],
+      "scoped_target_ids": [
+        85259
+      ],
+      "target_sporely_taxon_id": 85259,
+      "vernacular_name": "mosehatter",
+      "warnings": [
+        "unresolved_classification_family"
+      ]
+    },
+    {
+      "authorship_diagnostics": [
+        {
+          "difference": "other_difference_including_abbreviations",
+          "target_authorship": "Singer, 1951",
+          "target_sporely_taxon_id": 85259
+        },
+        {
+          "difference": "missing_on_one_or_both_sides",
+          "target_authorship": "",
+          "target_sporely_taxon_id": 611731
+        }
+      ],
+      "classification_disagreements": [
+        {
+          "level": "phylum",
+          "source": "Basidiomycota",
+          "target": "Ascomycota",
+          "target_sporely_taxon_id": 611731
+        },
+        {
+          "level": "class",
+          "source": "Agaricomycetes",
+          "target": "Lecanoromycetes",
+          "target_sporely_taxon_id": 611731
+        },
+        {
+          "level": "order",
+          "source": "Agaricales",
+          "target": "Ostropales",
+          "target_sporely_taxon_id": 611731
+        }
+      ],
+      "disposition": "exception",
+      "existing_vernacular_conflicts": [],
+      "full_bundle_target_ids": [
+        85259,
+        611731
+      ],
+      "language": "nn",
+      "reasons": [
+        "higher_classification_disagreement",
+        "multiple_canonical_targets_in_full_release"
+      ],
+      "scoped_target_ids": [
+        85259
+      ],
+      "target_sporely_taxon_id": 85259,
+      "vernacular_name": "mosehatter",
+      "warnings": [
+        "unresolved_classification_family"
+      ]
+    }
+  ],
+  "Gymnosporangium cornutum": [
+    {
+      "authorship_diagnostics": [
+        {
+          "difference": "other_difference_including_abbreviations",
+          "target_authorship": "(Pers.) Arthur",
+          "target_sporely_taxon_id": 100280
+        }
+      ],
+      "classification_disagreements": [
+        {
+          "level": "family",
+          "source": "Pucciniaceae",
+          "target": "Gymnosporangiaceae",
+          "target_sporely_taxon_id": 100280
+        }
+      ],
+      "disposition": "automatic_enrichment",
+      "existing_vernacular_conflicts": [],
+      "full_bundle_target_ids": [
+        100280
+      ],
+      "language": "nb",
+      "reasons": [
+        "exact_name_rank_full_release_unique_current_no_contradiction"
+      ],
+      "scoped_target_ids": [
+        100280
+      ],
+      "target_sporely_taxon_id": 100280,
+      "vernacular_name": "rognerust",
+      "warnings": [
+        "below_kingdom_classification_disagreement"
+      ]
+    },
+    {
+      "authorship_diagnostics": [
+        {
+          "difference": "other_difference_including_abbreviations",
+          "target_authorship": "(Pers.) Arthur",
+          "target_sporely_taxon_id": 100280
+        }
+      ],
+      "classification_disagreements": [
+        {
+          "level": "family",
+          "source": "Pucciniaceae",
+          "target": "Gymnosporangiaceae",
+          "target_sporely_taxon_id": 100280
+        }
+      ],
+      "disposition": "automatic_enrichment",
+      "existing_vernacular_conflicts": [],
+      "full_bundle_target_ids": [
+        100280
+      ],
+      "language": "nn",
+      "reasons": [
+        "exact_name_rank_full_release_unique_current_no_contradiction"
+      ],
+      "scoped_target_ids": [
+        100280
+      ],
+      "target_sporely_taxon_id": 100280,
+      "vernacular_name": "rognerust",
+      "warnings": [
+        "below_kingdom_classification_disagreement"
+      ]
+    }
+  ],
+  "Helvella crispa": [
+    {
+      "authorship_diagnostics": [
+        {
+          "difference": "punctuation_spacing_case_or_diacritics",
+          "target_authorship": "(Scop.) Fr.",
+          "target_sporely_taxon_id": 14541
+        },
+        {
+          "difference": "other_difference_including_abbreviations",
+          "target_authorship": "Sowerby",
+          "target_sporely_taxon_id": 165172
+        }
+      ],
+      "automatic_exception_reasons": [
+        "multiple_canonical_targets_in_full_release",
+        "multiple_canonical_targets_in_scope"
+      ],
+      "classification_disagreements": [],
+      "disposition": "reviewed_enrichment",
+      "existing_vernacular_conflicts": [],
+      "full_bundle_target_ids": [
+        14541,
+        165172
+      ],
+      "language": "nb",
+      "reasons": [
+        "owner_reviewed_vernacular_only_exception"
+      ],
+      "scoped_target_ids": [
+        14541,
+        165172
+      ],
+      "target_sporely_taxon_id": 14541,
+      "vernacular_name": "lys høstmorkel",
+      "warnings": []
+    },
+    {
+      "authorship_diagnostics": [
+        {
+          "difference": "punctuation_spacing_case_or_diacritics",
+          "target_authorship": "(Scop.) Fr.",
+          "target_sporely_taxon_id": 14541
+        },
+        {
+          "difference": "other_difference_including_abbreviations",
+          "target_authorship": "Sowerby",
+          "target_sporely_taxon_id": 165172
+        }
+      ],
+      "automatic_exception_reasons": [
+        "multiple_canonical_targets_in_full_release",
+        "multiple_canonical_targets_in_scope"
+      ],
+      "classification_disagreements": [],
+      "disposition": "reviewed_enrichment",
+      "existing_vernacular_conflicts": [],
+      "full_bundle_target_ids": [
+        14541,
+        165172
+      ],
+      "language": "nn",
+      "reasons": [
+        "owner_reviewed_vernacular_only_exception"
+      ],
+      "scoped_target_ids": [
+        14541,
+        165172
+      ],
+      "target_sporely_taxon_id": 14541,
+      "vernacular_name": "lys haustmorkel",
+      "warnings": []
+    }
+  ],
+  "Henningsomyces puber": [
+    {
+      "authorship_diagnostics": [
+        {
+          "difference": "same",
+          "target_authorship": "(Romell ex W.B. Cooke) D.A. Reid",
+          "target_sporely_taxon_id": 14834
+        },
+        {
+          "difference": "punctuation_spacing_case_or_diacritics",
+          "target_authorship": "(Romell ex W.B.Cooke) D.A.Reid",
+          "target_sporely_taxon_id": 165605
+        }
+      ],
+      "automatic_exception_reasons": [
+        "multiple_canonical_targets_in_full_release"
+      ],
+      "classification_disagreements": [
+        {
+          "level": "family",
+          "source": "Schizophyllaceae",
+          "target": "Marasmiaceae",
+          "target_sporely_taxon_id": 14834
+        },
+        {
+          "level": "phylum",
+          "source": "Basidiomycota",
+          "target": "Ascomycota",
+          "target_sporely_taxon_id": 165605
+        },
+        {
+          "level": "class",
+          "source": "Agaricomycetes",
+          "target": "Dothideomycetes",
+          "target_sporely_taxon_id": 165605
+        },
+        {
+          "level": "order",
+          "source": "Agaricales",
+          "target": "Dothideales",
+          "target_sporely_taxon_id": 165605
+        },
+        {
+          "level": "family",
+          "source": "Schizophyllaceae",
+          "target": "Parodiopsidaceae",
+          "target_sporely_taxon_id": 165605
+        }
+      ],
+      "disposition": "reviewed_enrichment",
+      "existing_vernacular_conflicts": [],
+      "full_bundle_target_ids": [
+        14834,
+        165605
+      ],
+      "language": "nb",
+      "reasons": [
+        "owner_reviewed_vernacular_only_exception"
+      ],
+      "scoped_target_ids": [
+        14834
+      ],
+      "target_sporely_taxon_id": 14834,
+      "vernacular_name": "dunpipe",
+      "warnings": [
+        "below_kingdom_classification_disagreement"
+      ]
+    },
+    {
+      "authorship_diagnostics": [
+        {
+          "difference": "same",
+          "target_authorship": "(Romell ex W.B. Cooke) D.A. Reid",
+          "target_sporely_taxon_id": 14834
+        },
+        {
+          "difference": "punctuation_spacing_case_or_diacritics",
+          "target_authorship": "(Romell ex W.B.Cooke) D.A.Reid",
+          "target_sporely_taxon_id": 165605
+        }
+      ],
+      "automatic_exception_reasons": [
+        "multiple_canonical_targets_in_full_release"
+      ],
+      "classification_disagreements": [
+        {
+          "level": "family",
+          "source": "Schizophyllaceae",
+          "target": "Marasmiaceae",
+          "target_sporely_taxon_id": 14834
+        },
+        {
+          "level": "phylum",
+          "source": "Basidiomycota",
+          "target": "Ascomycota",
+          "target_sporely_taxon_id": 165605
+        },
+        {
+          "level": "class",
+          "source": "Agaricomycetes",
+          "target": "Dothideomycetes",
+          "target_sporely_taxon_id": 165605
+        },
+        {
+          "level": "order",
+          "source": "Agaricales",
+          "target": "Dothideales",
+          "target_sporely_taxon_id": 165605
+        },
+        {
+          "level": "family",
+          "source": "Schizophyllaceae",
+          "target": "Parodiopsidaceae",
+          "target_sporely_taxon_id": 165605
+        }
+      ],
+      "disposition": "reviewed_enrichment",
+      "existing_vernacular_conflicts": [],
+      "full_bundle_target_ids": [
+        14834,
+        165605
+      ],
+      "language": "nn",
+      "reasons": [
+        "owner_reviewed_vernacular_only_exception"
+      ],
+      "scoped_target_ids": [
+        14834
+      ],
+      "target_sporely_taxon_id": 14834,
+      "vernacular_name": "dunpipe",
+      "warnings": [
+        "below_kingdom_classification_disagreement"
+      ]
+    }
+  ],
+  "Russula aeruginea": [
+    {
+      "authorship_diagnostics": [
+        {
+          "difference": "ex_authorship_form",
+          "target_authorship": "Lindblad ex Fr.",
+          "target_sporely_taxon_id": 61673
+        }
+      ],
+      "classification_disagreements": [],
+      "disposition": "automatic_enrichment",
+      "existing_vernacular_conflicts": [],
+      "full_bundle_target_ids": [
+        61673
+      ],
+      "language": "nb",
+      "reasons": [
+        "exact_name_rank_full_release_unique_current_no_contradiction"
+      ],
+      "scoped_target_ids": [
+        61673
+      ],
+      "target_sporely_taxon_id": 61673,
+      "vernacular_name": "grønnkremle",
+      "warnings": []
+    },
+    {
+      "authorship_diagnostics": [
+        {
+          "difference": "ex_authorship_form",
+          "target_authorship": "Lindblad ex Fr.",
+          "target_sporely_taxon_id": 61673
+        }
+      ],
+      "classification_disagreements": [],
+      "disposition": "automatic_enrichment",
+      "existing_vernacular_conflicts": [],
+      "full_bundle_target_ids": [
+        61673
+      ],
+      "language": "nn",
+      "reasons": [
+        "exact_name_rank_full_release_unique_current_no_contradiction"
+      ],
+      "scoped_target_ids": [
+        61673
+      ],
+      "target_sporely_taxon_id": 61673,
+      "vernacular_name": "grønkremle",
+      "warnings": []
+    }
+  ]
+}

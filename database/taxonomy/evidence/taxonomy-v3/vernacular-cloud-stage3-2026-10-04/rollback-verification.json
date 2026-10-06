@@ -1,0 +1,22 @@
+{
+  "target": {
+    "projectId": "zkpjklzfwzefhjluvhfw",
+    "context": "orbstack",
+    "engineVersion": "29.4.0",
+    "container": "4f6145469518",
+    "database": "postgres",
+    "postgresVersion": "17.6",
+    "psqlVersion": "psql (PostgreSQL) 17.6"
+  },
+  "before": {
+    "releases": 0,
+    "taxa": 0,
+    "observations": 6
+  },
+  "after": {
+    "releases": 0,
+    "taxa": 0,
+    "observations": 6
+  },
+  "transaction_rolled_back": true
+}

@@ -1,0 +1,1702 @@
+[
+  {
+    "full_bundle_target_ids": [
+      58814
+    ],
+    "reasons": [
+      "qualified_or_aggregate_source"
+    ],
+    "scoped_target_ids": [
+      58814
+    ],
+    "source_rank": "species",
+    "source_record_identifier": {
+      "namespace": "nortaxa_dwc_id",
+      "value": "129065"
+    },
+    "source_scientific_name": "Ramaria rubrievanescens",
+    "vernacular_names": [
+      [
+        "nb",
+        "taigarødtuppsopp"
+      ]
+    ]
+  },
+  {
+    "full_bundle_target_ids": [
+      618912
+    ],
+    "reasons": [
+      "qualified_or_aggregate_source"
+    ],
+    "scoped_target_ids": [
+      618912
+    ],
+    "source_rank": "species",
+    "source_record_identifier": {
+      "namespace": "nortaxa_dwc_id",
+      "value": "131436"
+    },
+    "source_scientific_name": "Cortinarius milvinicolor",
+    "vernacular_names": [
+      [
+        "nb",
+        "oliven rådyrslørsopp"
+      ]
+    ]
+  },
+  {
+    "full_bundle_target_ids": [
+      58832
+    ],
+    "reasons": [
+      "qualified_or_aggregate_source"
+    ],
+    "scoped_target_ids": [
+      58832
+    ],
+    "source_rank": "species",
+    "source_record_identifier": {
+      "namespace": "nortaxa_dwc_id",
+      "value": "136341"
+    },
+    "source_scientific_name": "Ramaria strasseri",
+    "vernacular_names": [
+      [
+        "nb",
+        "blek rødtuppsopp"
+      ]
+    ]
+  },
+  {
+    "full_bundle_target_ids": [
+      58693
+    ],
+    "reasons": [
+      "qualified_or_aggregate_source"
+    ],
+    "scoped_target_ids": [
+      58693
+    ],
+    "source_rank": "species",
+    "source_record_identifier": {
+      "namespace": "nortaxa_dwc_id",
+      "value": "151982"
+    },
+    "source_scientific_name": "Ramaria conjunctipes",
+    "vernacular_names": [
+      [
+        "nb",
+        "norsk flammekorallsopp"
+      ]
+    ]
+  },
+  {
+    "full_bundle_target_ids": [
+      131016
+    ],
+    "reasons": [
+      "higher_classification_disagreement",
+      "kingdom_disagreement",
+      "source_not_fungi"
+    ],
+    "scoped_target_ids": [
+      131016
+    ],
+    "source_rank": "genus",
+    "source_record_identifier": {
+      "namespace": "nortaxa_dwc_id",
+      "value": "22958"
+    },
+    "source_scientific_name": "Melanogaster",
+    "vernacular_names": [
+      [
+        "nb",
+        "engblomsterfluer"
+      ],
+      [
+        "nn",
+        "engblomsterfluger"
+      ]
+    ]
+  },
+  {
+    "full_bundle_target_ids": [
+      77252,
+      158094
+    ],
+    "reasons": [
+      "multiple_canonical_targets_in_full_release",
+      "multiple_canonical_targets_in_scope"
+    ],
+    "scoped_target_ids": [
+      77252,
+      158094
+    ],
+    "source_rank": "genus",
+    "source_record_identifier": {
+      "namespace": "nortaxa_dwc_id",
+      "value": "52028"
+    },
+    "source_scientific_name": "Lepiota",
+    "vernacular_names": [
+      [
+        "nb",
+        "parasollsopper"
+      ],
+      [
+        "nn",
+        "parasollsopper"
+      ]
+    ]
+  },
+  {
+    "full_bundle_target_ids": [
+      95050
+    ],
+    "reasons": [
+      "higher_classification_disagreement"
+    ],
+    "scoped_target_ids": [
+      95050
+    ],
+    "source_rank": "genus",
+    "source_record_identifier": {
+      "namespace": "nortaxa_dwc_id",
+      "value": "52331"
+    },
+    "source_scientific_name": "Panaeolus",
+    "vernacular_names": [
+      [
+        "nb",
+        "flekkskivesopper"
+      ],
+      [
+        "nn",
+        "flekkskivesopper"
+      ]
+    ]
+  },
+  {
+    "full_bundle_target_ids": [
+      19080
+    ],
+    "reasons": [
+      "qualified_or_aggregate_source"
+    ],
+    "scoped_target_ids": [
+      19080
+    ],
+    "source_rank": "species",
+    "source_record_identifier": {
+      "namespace": "nortaxa_dwc_id",
+      "value": "53227"
+    },
+    "source_scientific_name": "Inocybe praetervisa",
+    "vernacular_names": [
+      [
+        "nb",
+        "knolltrevlesopp"
+      ],
+      [
+        "nb",
+        "vanlig knolltrevlesopp"
+      ],
+      [
+        "nn",
+        "knolltrevlesopp"
+      ],
+      [
+        "nn",
+        "vanleg knolltrevlesopp"
+      ]
+    ]
+  },
+  {
+    "full_bundle_target_ids": [
+      74905,
+      166366
+    ],
+    "reasons": [
+      "higher_classification_disagreement",
+      "multiple_canonical_targets_in_full_release"
+    ],
+    "scoped_target_ids": [
+      74905
+    ],
+    "source_rank": "genus",
+    "source_record_identifier": {
+      "namespace": "nortaxa_dwc_id",
+      "value": "53338"
+    },
+    "source_scientific_name": "Lachnella",
+    "vernacular_names": [
+      [
+        "nb",
+        "ragghengeskåler"
+      ],
+      [
+        "nn",
+        "ragghengjeskåler"
+      ]
+    ]
+  },
+  {
+    "full_bundle_target_ids": [
+      96276
+    ],
+    "reasons": [
+      "qualified_or_aggregate_source"
+    ],
+    "scoped_target_ids": [
+      96276
+    ],
+    "source_rank": "species",
+    "source_record_identifier": {
+      "namespace": "nortaxa_dwc_id",
+      "value": "53666"
+    },
+    "source_scientific_name": "Entoloma sericellum",
+    "vernacular_names": [
+      [
+        "nb",
+        "silkerødskivesopp"
+      ],
+      [
+        "nb",
+        "silkerødspore-gruppen"
+      ],
+      [
+        "nn",
+        "silkeraudskivesopp"
+      ],
+      [
+        "nn",
+        "silkeraudspore-gruppa"
+      ]
+    ]
+  },
+  {
+    "full_bundle_target_ids": [
+      34794
+    ],
+    "reasons": [
+      "qualified_or_aggregate_source"
+    ],
+    "scoped_target_ids": [
+      34794
+    ],
+    "source_rank": "species",
+    "source_record_identifier": {
+      "namespace": "nortaxa_dwc_id",
+      "value": "53838"
+    },
+    "source_scientific_name": "Mycena pearsoniana",
+    "vernacular_names": [
+      [
+        "nb",
+        "sumpreddikhette"
+      ],
+      [
+        "nn",
+        "sumpreddikhette"
+      ]
+    ]
+  },
+  {
+    "full_bundle_target_ids": [
+      50107
+    ],
+    "reasons": [
+      "higher_classification_disagreement"
+    ],
+    "scoped_target_ids": [
+      50107
+    ],
+    "source_rank": "genus",
+    "source_record_identifier": {
+      "namespace": "nortaxa_dwc_id",
+      "value": "54097"
+    },
+    "source_scientific_name": "Flammula",
+    "vernacular_names": [
+      [
+        "nb",
+        "skjellsopper"
+      ]
+    ]
+  },
+  {
+    "full_bundle_target_ids": [
+      8992
+    ],
+    "reasons": [
+      "higher_classification_disagreement"
+    ],
+    "scoped_target_ids": [
+      8992
+    ],
+    "source_rank": "genus",
+    "source_record_identifier": {
+      "namespace": "nortaxa_dwc_id",
+      "value": "54298"
+    },
+    "source_scientific_name": "Bovista",
+    "vernacular_names": [
+      [
+        "nb",
+        "eggrøyksopper"
+      ],
+      [
+        "nn",
+        "eggrøyksopper"
+      ]
+    ]
+  },
+  {
+    "full_bundle_target_ids": [
+      77981,
+      168340
+    ],
+    "reasons": [
+      "higher_classification_disagreement",
+      "multiple_canonical_targets_in_full_release",
+      "multiple_canonical_targets_in_scope"
+    ],
+    "scoped_target_ids": [
+      77981,
+      168340
+    ],
+    "source_rank": "genus",
+    "source_record_identifier": {
+      "namespace": "nortaxa_dwc_id",
+      "value": "54317"
+    },
+    "source_scientific_name": "Lycoperdon",
+    "vernacular_names": [
+      [
+        "nb",
+        "røyksopper"
+      ],
+      [
+        "nn",
+        "røyksopper"
+      ]
+    ]
+  },
+  {
+    "full_bundle_target_ids": [
+      59923
+    ],
+    "reasons": [
+      "higher_classification_disagreement"
+    ],
+    "scoped_target_ids": [
+      59923
+    ],
+    "source_rank": "genus",
+    "source_record_identifier": {
+      "namespace": "nortaxa_dwc_id",
+      "value": "54507"
+    },
+    "source_scientific_name": "Gymnopilus",
+    "vernacular_names": [
+      [
+        "nb",
+        "bittersopper"
+      ],
+      [
+        "nn",
+        "bittersopper"
+      ]
+    ]
+  },
+  {
+    "full_bundle_target_ids": [
+      85259,
+      611731
+    ],
+    "reasons": [
+      "higher_classification_disagreement",
+      "multiple_canonical_targets_in_full_release"
+    ],
+    "scoped_target_ids": [
+      85259
+    ],
+    "source_rank": "genus",
+    "source_record_identifier": {
+      "namespace": "nortaxa_dwc_id",
+      "value": "54847"
+    },
+    "source_scientific_name": "Gerronema",
+    "vernacular_names": [
+      [
+        "nb",
+        "mosehatter"
+      ],
+      [
+        "nn",
+        "mosehatter"
+      ]
+    ]
+  },
+  {
+    "full_bundle_target_ids": [
+      63307,
+      151102
+    ],
+    "reasons": [
+      "higher_classification_disagreement",
+      "multiple_canonical_targets_in_full_release"
+    ],
+    "scoped_target_ids": [
+      63307
+    ],
+    "source_rank": "genus",
+    "source_record_identifier": {
+      "namespace": "nortaxa_dwc_id",
+      "value": "54852"
+    },
+    "source_scientific_name": "Henningsomyces",
+    "vernacular_names": [
+      [
+        "nb",
+        "hengepiper"
+      ],
+      [
+        "nn",
+        "hengjepiper"
+      ]
+    ]
+  },
+  {
+    "full_bundle_target_ids": [
+      14834,
+      165605
+    ],
+    "reasons": [
+      "multiple_canonical_targets_in_full_release"
+    ],
+    "scoped_target_ids": [
+      14834
+    ],
+    "source_rank": "species",
+    "source_record_identifier": {
+      "namespace": "nortaxa_dwc_id",
+      "value": "54854"
+    },
+    "source_scientific_name": "Henningsomyces puber",
+    "vernacular_names": [
+      [
+        "nb",
+        "dunpipe"
+      ],
+      [
+        "nn",
+        "dunpipe"
+      ]
+    ]
+  },
+  {
+    "full_bundle_target_ids": [
+      120392
+    ],
+    "reasons": [
+      "higher_classification_disagreement"
+    ],
+    "scoped_target_ids": [
+      120392
+    ],
+    "source_rank": "genus",
+    "source_record_identifier": {
+      "namespace": "nortaxa_dwc_id",
+      "value": "55121"
+    },
+    "source_scientific_name": "Resupinatus",
+    "vernacular_names": [
+      [
+        "nb",
+        "dvergmuslinger"
+      ],
+      [
+        "nb",
+        "dvergmuslingsopper"
+      ],
+      [
+        "nn",
+        "dvergmuslinger"
+      ],
+      [
+        "nn",
+        "dvergmuslingsopper"
+      ]
+    ]
+  },
+  {
+    "full_bundle_target_ids": [
+      116559
+    ],
+    "reasons": [
+      "higher_classification_disagreement"
+    ],
+    "scoped_target_ids": [
+      116559
+    ],
+    "source_rank": "genus",
+    "source_record_identifier": {
+      "namespace": "nortaxa_dwc_id",
+      "value": "55285"
+    },
+    "source_scientific_name": "Psilocybe",
+    "vernacular_names": [
+      [
+        "nb",
+        "fleinsopper"
+      ],
+      [
+        "nn",
+        "fleinsopper"
+      ]
+    ]
+  },
+  {
+    "full_bundle_target_ids": [
+      129742
+    ],
+    "reasons": [
+      "higher_classification_disagreement"
+    ],
+    "scoped_target_ids": [
+      129742
+    ],
+    "source_rank": "genus",
+    "source_record_identifier": {
+      "namespace": "nortaxa_dwc_id",
+      "value": "56208"
+    },
+    "source_scientific_name": "Cantharellus",
+    "vernacular_names": [
+      [
+        "nb",
+        "kantareller"
+      ],
+      [
+        "nn",
+        "kantareller"
+      ]
+    ]
+  },
+  {
+    "full_bundle_target_ids": [
+      20056
+    ],
+    "reasons": [
+      "higher_classification_disagreement"
+    ],
+    "scoped_target_ids": [
+      20056
+    ],
+    "source_rank": "genus",
+    "source_record_identifier": {
+      "namespace": "nortaxa_dwc_id",
+      "value": "56254"
+    },
+    "source_scientific_name": "Clavulina",
+    "vernacular_names": [
+      [
+        "nb",
+        "fingersopper"
+      ],
+      [
+        "nn",
+        "fingersopper"
+      ]
+    ]
+  },
+  {
+    "full_bundle_target_ids": [
+      68299,
+      165930
+    ],
+    "reasons": [
+      "multiple_canonical_targets_in_full_release",
+      "multiple_canonical_targets_in_scope"
+    ],
+    "scoped_target_ids": [
+      68299,
+      165930
+    ],
+    "source_rank": "genus",
+    "source_record_identifier": {
+      "namespace": "nortaxa_dwc_id",
+      "value": "56273"
+    },
+    "source_scientific_name": "Hydnum",
+    "vernacular_names": [
+      [
+        "nb",
+        "matpiggsopper"
+      ],
+      [
+        "nn",
+        "matpiggsopper"
+      ]
+    ]
+  },
+  {
+    "full_bundle_target_ids": [
+      87127
+    ],
+    "reasons": [
+      "higher_classification_disagreement"
+    ],
+    "scoped_target_ids": [
+      87127
+    ],
+    "source_rank": "genus",
+    "source_record_identifier": {
+      "namespace": "nortaxa_dwc_id",
+      "value": "56437"
+    },
+    "source_scientific_name": "Sclerogaster",
+    "vernacular_names": [
+      [
+        "nb",
+        "strøknoller"
+      ]
+    ]
+  },
+  {
+    "full_bundle_target_ids": [
+      58651
+    ],
+    "reasons": [
+      "qualified_or_aggregate_source"
+    ],
+    "scoped_target_ids": [
+      58651
+    ],
+    "source_rank": "species",
+    "source_record_identifier": {
+      "namespace": "nortaxa_dwc_id",
+      "value": "56485"
+    },
+    "source_scientific_name": "Ramaria aurea",
+    "vernacular_names": [
+      [
+        "nb",
+        "falsk lindekorallsopp"
+      ]
+    ]
+  },
+  {
+    "full_bundle_target_ids": [
+      58815
+    ],
+    "reasons": [
+      "qualified_or_aggregate_source"
+    ],
+    "scoped_target_ids": [
+      58815
+    ],
+    "source_rank": "species",
+    "source_record_identifier": {
+      "namespace": "nortaxa_dwc_id",
+      "value": "56524"
+    },
+    "source_scientific_name": "Ramaria rubripermanens",
+    "vernacular_names": [
+      [
+        "nb",
+        "sørlig rødtuppsopp"
+      ],
+      [
+        "nn",
+        "sørleg rødtuppsopp"
+      ]
+    ]
+  },
+  {
+    "full_bundle_target_ids": [
+      23749
+    ],
+    "reasons": [
+      "qualified_or_aggregate_source"
+    ],
+    "scoped_target_ids": [
+      23749
+    ],
+    "source_rank": "species",
+    "source_record_identifier": {
+      "namespace": "nortaxa_dwc_id",
+      "value": "56551"
+    },
+    "source_scientific_name": "Lentaria micheneri",
+    "vernacular_names": [
+      [
+        "nb",
+        "slank vedkorallsopp"
+      ],
+      [
+        "nn",
+        "slank vedkorallsopp"
+      ]
+    ]
+  },
+  {
+    "full_bundle_target_ids": [
+      100075
+    ],
+    "reasons": [
+      "higher_classification_disagreement"
+    ],
+    "scoped_target_ids": [
+      100075
+    ],
+    "source_rank": "genus",
+    "source_record_identifier": {
+      "namespace": "nortaxa_dwc_id",
+      "value": "56673"
+    },
+    "source_scientific_name": "Peniophorella",
+    "vernacular_names": [
+      [
+        "nb",
+        "rovskinnsopper"
+      ],
+      [
+        "nn",
+        "rovskinnsoppar"
+      ]
+    ]
+  },
+  {
+    "full_bundle_target_ids": [
+      120367
+    ],
+    "reasons": [
+      "higher_classification_disagreement"
+    ],
+    "scoped_target_ids": [
+      120367
+    ],
+    "source_rank": "genus",
+    "source_record_identifier": {
+      "namespace": "nortaxa_dwc_id",
+      "value": "56682"
+    },
+    "source_scientific_name": "Repetobasidium",
+    "vernacular_names": [
+      [
+        "nb",
+        "hylsehinner"
+      ],
+      [
+        "nn",
+        "hylsehinner"
+      ]
+    ]
+  },
+  {
+    "full_bundle_target_ids": [
+      68611
+    ],
+    "reasons": [
+      "higher_classification_disagreement"
+    ],
+    "scoped_target_ids": [
+      68611
+    ],
+    "source_rank": "genus",
+    "source_record_identifier": {
+      "namespace": "nortaxa_dwc_id",
+      "value": "56710"
+    },
+    "source_scientific_name": "Hyphodontia",
+    "vernacular_names": [
+      [
+        "nb",
+        "knorteskinnsopper"
+      ],
+      [
+        "nb",
+        "piggskinnsopper"
+      ],
+      [
+        "nn",
+        "knorteskinnsopper"
+      ]
+    ]
+  },
+  {
+    "full_bundle_target_ids": [
+      70386
+    ],
+    "reasons": [
+      "higher_classification_disagreement"
+    ],
+    "scoped_target_ids": [
+      70386
+    ],
+    "source_rank": "genus",
+    "source_record_identifier": {
+      "namespace": "nortaxa_dwc_id",
+      "value": "56837"
+    },
+    "source_scientific_name": "Ischnoderma",
+    "vernacular_names": [
+      [
+        "nb",
+        "tjærekjuker"
+      ],
+      [
+        "nn",
+        "tjørekjuker"
+      ]
+    ]
+  },
+  {
+    "full_bundle_target_ids": [
+      85832
+    ],
+    "reasons": [
+      "higher_classification_disagreement"
+    ],
+    "scoped_target_ids": [
+      85832
+    ],
+    "source_rank": "genus",
+    "source_record_identifier": {
+      "namespace": "nortaxa_dwc_id",
+      "value": "56840"
+    },
+    "source_scientific_name": "Laetiporus",
+    "vernacular_names": [
+      [
+        "nb",
+        "svovelkjuker"
+      ]
+    ]
+  },
+  {
+    "full_bundle_target_ids": [
+      52040
+    ],
+    "reasons": [
+      "higher_classification_disagreement"
+    ],
+    "scoped_target_ids": [
+      52040
+    ],
+    "source_rank": "genus",
+    "source_record_identifier": {
+      "namespace": "nortaxa_dwc_id",
+      "value": "56891"
+    },
+    "source_scientific_name": "Ganoderma",
+    "vernacular_names": [
+      [
+        "nb",
+        "lakkjuker"
+      ],
+      [
+        "nn",
+        "lakkjuker"
+      ]
+    ]
+  },
+  {
+    "full_bundle_target_ids": [
+      68592
+    ],
+    "reasons": [
+      "higher_classification_disagreement"
+    ],
+    "scoped_target_ids": [
+      68592
+    ],
+    "source_rank": "genus",
+    "source_record_identifier": {
+      "namespace": "nortaxa_dwc_id",
+      "value": "56957"
+    },
+    "source_scientific_name": "Hyphoderma",
+    "vernacular_names": [
+      [
+        "nb",
+        "kremskinnsopper"
+      ],
+      [
+        "nn",
+        "kremskinnsoppar"
+      ]
+    ]
+  },
+  {
+    "full_bundle_target_ids": [
+      131610,
+      131616,
+      169800
+    ],
+    "reasons": [
+      "higher_classification_disagreement",
+      "multiple_canonical_targets_in_full_release",
+      "multiple_canonical_targets_in_scope"
+    ],
+    "scoped_target_ids": [
+      131610,
+      131616,
+      169800
+    ],
+    "source_rank": "genus",
+    "source_record_identifier": {
+      "namespace": "nortaxa_dwc_id",
+      "value": "57029"
+    },
+    "source_scientific_name": "Odontia",
+    "vernacular_names": [
+      [
+        "nb",
+        "piggfløyelshinner"
+      ]
+    ]
+  },
+  {
+    "full_bundle_target_ids": [
+      84491
+    ],
+    "reasons": [
+      "higher_classification_disagreement"
+    ],
+    "scoped_target_ids": [
+      84491
+    ],
+    "source_rank": "genus",
+    "source_record_identifier": {
+      "namespace": "nortaxa_dwc_id",
+      "value": "57098"
+    },
+    "source_scientific_name": "Antrodiella",
+    "vernacular_names": [
+      [
+        "nb",
+        "snyltekjuker"
+      ],
+      [
+        "nn",
+        "snyltekjuker"
+      ]
+    ]
+  },
+  {
+    "full_bundle_target_ids": [
+      15031
+    ],
+    "reasons": [
+      "higher_classification_disagreement"
+    ],
+    "scoped_target_ids": [
+      15031
+    ],
+    "source_rank": "genus",
+    "source_record_identifier": {
+      "namespace": "nortaxa_dwc_id",
+      "value": "57122"
+    },
+    "source_scientific_name": "Ceriporia",
+    "vernacular_names": [
+      [
+        "nb",
+        "fagerkjuker"
+      ],
+      [
+        "nn",
+        "fagerkjuker"
+      ]
+    ]
+  },
+  {
+    "full_bundle_target_ids": [
+      61429
+    ],
+    "reasons": [
+      "higher_classification_disagreement"
+    ],
+    "scoped_target_ids": [
+      61429
+    ],
+    "source_rank": "genus",
+    "source_record_identifier": {
+      "namespace": "nortaxa_dwc_id",
+      "value": "57223"
+    },
+    "source_scientific_name": "Hapalopilus",
+    "vernacular_names": [
+      [
+        "nb",
+        "fargekjuker"
+      ],
+      [
+        "nn",
+        "fargekjuker"
+      ]
+    ]
+  },
+  {
+    "full_bundle_target_ids": [
+      130371
+    ],
+    "reasons": [
+      "higher_classification_disagreement"
+    ],
+    "scoped_target_ids": [
+      130371
+    ],
+    "source_rank": "genus",
+    "source_record_identifier": {
+      "namespace": "nortaxa_dwc_id",
+      "value": "57362"
+    },
+    "source_scientific_name": "Tyromyces",
+    "vernacular_names": [
+      [
+        "nb",
+        "ostekjuker"
+      ],
+      [
+        "nn",
+        "ostekjuker"
+      ]
+    ]
+  },
+  {
+    "full_bundle_target_ids": [
+      103597
+    ],
+    "reasons": [
+      "higher_classification_disagreement"
+    ],
+    "scoped_target_ids": [
+      103597
+    ],
+    "source_rank": "genus",
+    "source_record_identifier": {
+      "namespace": "nortaxa_dwc_id",
+      "value": "57400"
+    },
+    "source_scientific_name": "Phlebiella",
+    "vernacular_names": [
+      [
+        "nb",
+        "trådskinnsopper"
+      ],
+      [
+        "nn",
+        "trådskinnsoppar"
+      ]
+    ]
+  },
+  {
+    "full_bundle_target_ids": [
+      87096
+    ],
+    "reasons": [
+      "higher_classification_disagreement"
+    ],
+    "scoped_target_ids": [
+      87096
+    ],
+    "source_rank": "genus",
+    "source_record_identifier": {
+      "namespace": "nortaxa_dwc_id",
+      "value": "57499"
+    },
+    "source_scientific_name": "Scytinostroma",
+    "vernacular_names": [
+      [
+        "nb",
+        "flakskinnsopper"
+      ],
+      [
+        "nn",
+        "flakskinnsopper"
+      ]
+    ]
+  },
+  {
+    "full_bundle_target_ids": [
+      68239,
+      165886
+    ],
+    "reasons": [
+      "multiple_canonical_targets_in_full_release",
+      "multiple_canonical_targets_in_scope"
+    ],
+    "scoped_target_ids": [
+      68239,
+      165886
+    ],
+    "source_rank": "genus",
+    "source_record_identifier": {
+      "namespace": "nortaxa_dwc_id",
+      "value": "57966"
+    },
+    "source_scientific_name": "Hydnellum",
+    "vernacular_names": [
+      [
+        "nb",
+        "brunpigger"
+      ],
+      [
+        "nn",
+        "brunpigger"
+      ]
+    ]
+  },
+  {
+    "full_bundle_target_ids": [
+      103113
+    ],
+    "reasons": [
+      "higher_classification_disagreement"
+    ],
+    "scoped_target_ids": [
+      103113
+    ],
+    "source_rank": "genus",
+    "source_record_identifier": {
+      "namespace": "nortaxa_dwc_id",
+      "value": "57983"
+    },
+    "source_scientific_name": "Phellodon",
+    "vernacular_names": [
+      [
+        "nb",
+        "sølvpigger"
+      ],
+      [
+        "nn",
+        "sølvpigger"
+      ]
+    ]
+  },
+  {
+    "full_bundle_target_ids": [
+      86996,
+      604392
+    ],
+    "reasons": [
+      "multiple_canonical_targets_in_full_release",
+      "multiple_canonical_targets_in_scope"
+    ],
+    "scoped_target_ids": [
+      86996,
+      604392
+    ],
+    "source_rank": "genus",
+    "source_record_identifier": {
+      "namespace": "nortaxa_dwc_id",
+      "value": "57990"
+    },
+    "source_scientific_name": "Sarcodon",
+    "vernacular_names": [
+      [
+        "nb",
+        "storpigger"
+      ],
+      [
+        "nn",
+        "storpiggar"
+      ]
+    ]
+  },
+  {
+    "full_bundle_target_ids": [
+      103130
+    ],
+    "reasons": [
+      "source_nomenclatural_status_ambiguous"
+    ],
+    "scoped_target_ids": [
+      103130
+    ],
+    "source_rank": "species",
+    "source_record_identifier": {
+      "namespace": "nortaxa_dwc_id",
+      "value": "60611"
+    },
+    "source_scientific_name": "Hypsizygus tessulatus",
+    "vernacular_names": [
+      [
+        "nb",
+        "dråpeknippesopp"
+      ]
+    ]
+  },
+  {
+    "full_bundle_target_ids": [
+      52936
+    ],
+    "reasons": [
+      "source_nomenclatural_status_ambiguous"
+    ],
+    "scoped_target_ids": [
+      52936
+    ],
+    "source_rank": "species",
+    "source_record_identifier": {
+      "namespace": "nortaxa_dwc_id",
+      "value": "62263"
+    },
+    "source_scientific_name": "Pseudoboletus parasiticus",
+    "vernacular_names": [
+      [
+        "nb",
+        "snylterørsopp"
+      ],
+      [
+        "nn",
+        "snylterøyrsopp"
+      ]
+    ]
+  },
+  {
+    "full_bundle_target_ids": [
+      60559
+    ],
+    "reasons": [
+      "source_nomenclatural_status_ambiguous"
+    ],
+    "scoped_target_ids": [
+      60559
+    ],
+    "source_rank": "species",
+    "source_record_identifier": {
+      "namespace": "nortaxa_dwc_id",
+      "value": "62339"
+    },
+    "source_scientific_name": "Rhizopogon luteolus",
+    "vernacular_names": [
+      [
+        "nb",
+        "gul ekornnøtt"
+      ],
+      [
+        "nn",
+        "gul ikornnøtt"
+      ]
+    ]
+  },
+  {
+    "full_bundle_target_ids": [
+      54615
+    ],
+    "reasons": [
+      "source_nomenclatural_status_ambiguous"
+    ],
+    "scoped_target_ids": [
+      54615
+    ],
+    "source_rank": "species",
+    "source_record_identifier": {
+      "namespace": "nortaxa_dwc_id",
+      "value": "63044"
+    },
+    "source_scientific_name": "Pseudoinonotus dryadeus",
+    "vernacular_names": [
+      [
+        "nb",
+        "tårekjuke"
+      ],
+      [
+        "nn",
+        "tårekjuke"
+      ]
+    ]
+  },
+  {
+    "full_bundle_target_ids": [
+      26827
+    ],
+    "reasons": [
+      "higher_classification_disagreement"
+    ],
+    "scoped_target_ids": [
+      26827
+    ],
+    "source_rank": "genus",
+    "source_record_identifier": {
+      "namespace": "nortaxa_dwc_id",
+      "value": "67244"
+    },
+    "source_scientific_name": "Cudonia",
+    "vernacular_names": [
+      [
+        "nb",
+        "hjelmmorkler"
+      ],
+      [
+        "nn",
+        "hjelmmorklar"
+      ]
+    ]
+  },
+  {
+    "full_bundle_target_ids": [
+      129454
+    ],
+    "reasons": [
+      "higher_classification_disagreement"
+    ],
+    "scoped_target_ids": [
+      129454
+    ],
+    "source_rank": "genus",
+    "source_record_identifier": {
+      "namespace": "nortaxa_dwc_id",
+      "value": "67249"
+    },
+    "source_scientific_name": "Spathularia",
+    "vernacular_names": [
+      [
+        "nb",
+        "spademorkler"
+      ],
+      [
+        "nn",
+        "spademorkler"
+      ]
+    ]
+  },
+  {
+    "full_bundle_target_ids": [
+      85692
+    ],
+    "reasons": [
+      "higher_classification_disagreement"
+    ],
+    "scoped_target_ids": [
+      85692
+    ],
+    "source_rank": "genus",
+    "source_record_identifier": {
+      "namespace": "nortaxa_dwc_id",
+      "value": "67460"
+    },
+    "source_scientific_name": "Geoglossum",
+    "vernacular_names": [
+      [
+        "nb",
+        "jordtunger"
+      ],
+      [
+        "nn",
+        "jordtunger"
+      ]
+    ]
+  },
+  {
+    "full_bundle_target_ids": [
+      130205
+    ],
+    "reasons": [
+      "higher_classification_disagreement"
+    ],
+    "scoped_target_ids": [
+      130205
+    ],
+    "source_rank": "genus",
+    "source_record_identifier": {
+      "namespace": "nortaxa_dwc_id",
+      "value": "67481"
+    },
+    "source_scientific_name": "Trichoglossum",
+    "vernacular_names": [
+      [
+        "nb",
+        "lodnetunger"
+      ],
+      [
+        "nn",
+        "lodnetunger"
+      ]
+    ]
+  },
+  {
+    "full_bundle_target_ids": [
+      1145
+    ],
+    "reasons": [
+      "higher_classification_disagreement"
+    ],
+    "scoped_target_ids": [
+      1145
+    ],
+    "source_rank": "genus",
+    "source_record_identifier": {
+      "namespace": "nortaxa_dwc_id",
+      "value": "67491"
+    },
+    "source_scientific_name": "Ascocoryne",
+    "vernacular_names": [
+      [
+        "nb",
+        "fiolbegre"
+      ],
+      [
+        "nn",
+        "fiolbeger"
+      ]
+    ]
+  },
+  {
+    "full_bundle_target_ids": [
+      85963
+    ],
+    "reasons": [
+      "higher_classification_disagreement"
+    ],
+    "scoped_target_ids": [
+      85963
+    ],
+    "source_rank": "genus",
+    "source_record_identifier": {
+      "namespace": "nortaxa_dwc_id",
+      "value": "67927"
+    },
+    "source_scientific_name": "Microglossum",
+    "vernacular_names": [
+      [
+        "nb",
+        "grønntunger"
+      ],
+      [
+        "nn",
+        "grøntunger"
+      ]
+    ]
+  },
+  {
+    "full_bundle_target_ids": [
+      14541,
+      165172
+    ],
+    "reasons": [
+      "multiple_canonical_targets_in_full_release",
+      "multiple_canonical_targets_in_scope"
+    ],
+    "scoped_target_ids": [
+      14541,
+      165172
+    ],
+    "source_rank": "species",
+    "source_record_identifier": {
+      "namespace": "nortaxa_dwc_id",
+      "value": "79034"
+    },
+    "source_scientific_name": "Helvella crispa",
+    "vernacular_names": [
+      [
+        "nb",
+        "lys høstmorkel"
+      ],
+      [
+        "nn",
+        "lys haustmorkel"
+      ]
+    ]
+  },
+  {
+    "full_bundle_target_ids": [
+      24632,
+      163050
+    ],
+    "reasons": [
+      "higher_classification_disagreement",
+      "multiple_canonical_targets_in_full_release",
+      "multiple_canonical_targets_in_scope"
+    ],
+    "scoped_target_ids": [
+      24632,
+      163050
+    ],
+    "source_rank": "genus",
+    "source_record_identifier": {
+      "namespace": "nortaxa_dwc_id",
+      "value": "79098"
+    },
+    "source_scientific_name": "Coprotus",
+    "vernacular_names": [
+      [
+        "nb",
+        "møkkprikkbegre"
+      ],
+      [
+        "nn",
+        "møkprikkbeger"
+      ]
+    ]
+  },
+  {
+    "full_bundle_target_ids": [
+      108219
+    ],
+    "reasons": [
+      "higher_classification_disagreement"
+    ],
+    "scoped_target_ids": [
+      108219
+    ],
+    "source_rank": "genus",
+    "source_record_identifier": {
+      "namespace": "nortaxa_dwc_id",
+      "value": "79213"
+    },
+    "source_scientific_name": "Plicaria",
+    "vernacular_names": [
+      [
+        "nb",
+        "kullbegre"
+      ],
+      [
+        "nn",
+        "kolbeger"
+      ]
+    ]
+  },
+  {
+    "full_bundle_target_ids": [
+      85513
+    ],
+    "reasons": [
+      "higher_classification_disagreement"
+    ],
+    "scoped_target_ids": [
+      85513
+    ],
+    "source_rank": "genus",
+    "source_record_identifier": {
+      "namespace": "nortaxa_dwc_id",
+      "value": "79332"
+    },
+    "source_scientific_name": "Marcelleina",
+    "vernacular_names": [
+      [
+        "nb",
+        "lillabegre"
+      ],
+      [
+        "nn",
+        "lillabeger"
+      ]
+    ]
+  },
+  {
+    "full_bundle_target_ids": [
+      86207
+    ],
+    "reasons": [
+      "higher_classification_disagreement"
+    ],
+    "scoped_target_ids": [
+      86207
+    ],
+    "source_rank": "genus",
+    "source_record_identifier": {
+      "namespace": "nortaxa_dwc_id",
+      "value": "79372"
+    },
+    "source_scientific_name": "Otidea",
+    "vernacular_names": [
+      [
+        "nb",
+        "øresopper"
+      ],
+      [
+        "nn",
+        "øyresoppar"
+      ]
+    ]
+  },
+  {
+    "full_bundle_target_ids": [
+      114667
+    ],
+    "reasons": [
+      "higher_classification_disagreement"
+    ],
+    "scoped_target_ids": [
+      114667
+    ],
+    "source_rank": "genus",
+    "source_record_identifier": {
+      "namespace": "nortaxa_dwc_id",
+      "value": "79391"
+    },
+    "source_scientific_name": "Pseudombrophila",
+    "vernacular_names": [
+      [
+        "nb",
+        "dyngebegre"
+      ],
+      [
+        "nn",
+        "dyngjebeger"
+      ]
+    ]
+  },
+  {
+    "full_bundle_target_ids": [
+      117134
+    ],
+    "reasons": [
+      "higher_classification_disagreement"
+    ],
+    "scoped_target_ids": [
+      117134
+    ],
+    "source_rank": "genus",
+    "source_record_identifier": {
+      "namespace": "nortaxa_dwc_id",
+      "value": "79405"
+    },
+    "source_scientific_name": "Pulvinula",
+    "vernacular_names": [
+      [
+        "nb",
+        "myggbegre"
+      ],
+      [
+        "nn",
+        "myggbeger"
+      ]
+    ]
+  },
+  {
+    "full_bundle_target_ids": [
+      129934
+    ],
+    "reasons": [
+      "higher_classification_disagreement"
+    ],
+    "scoped_target_ids": [
+      129934
+    ],
+    "source_rank": "genus",
+    "source_record_identifier": {
+      "namespace": "nortaxa_dwc_id",
+      "value": "79468"
+    },
+    "source_scientific_name": "Tarzetta",
+    "vernacular_names": [
+      [
+        "nb",
+        "klokkebegre"
+      ],
+      [
+        "nn",
+        "klokkebeger"
+      ]
+    ]
+  }
+]

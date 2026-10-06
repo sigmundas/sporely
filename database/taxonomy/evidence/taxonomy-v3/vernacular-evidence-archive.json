@@ -1,0 +1,179 @@
+{
+  "format": "sporely-evidence-archive-v1",
+  "description": "Storage map for the Norwegian vernacular evidence folders. Files listed here were gzipped (gzip -9, mtime 0, no filename) or replaced by a pointer to an identical canonical copy in the earliest stage folder. original_sha256 is the hash recorded in reports and verification files; it equals sha256 of the decompressed stored bytes.",
+  "entries": [
+    {
+      "original_path": "norwegian-vernacular-2026-10-04/automatic-associations.json",
+      "original_sha256": "8111947dcf080fa42a47d7cd8cc3cb7bc47e4cabcfe396c8f0d44dd75a48fddc",
+      "original_bytes": 4173959,
+      "action": "gzipped",
+      "stored_path": "norwegian-vernacular-2026-10-04/automatic-associations.json.gz",
+      "stored_sha256": "129680b1301a0e3ae4f7e2f8d63a0e0cb573e6275eb7b299ff64a69330ca2042",
+      "stored_bytes": 98842
+    },
+    {
+      "original_path": "norwegian-vernacular-2026-10-04/classification-disagreements.json",
+      "original_sha256": "193aad4ced1254b55eac028b0ede3d09ee368a49ec939cf2d408e5c448ad0670",
+      "original_bytes": 659802,
+      "action": "gzipped",
+      "stored_path": "norwegian-vernacular-2026-10-04/classification-disagreements.json.gz",
+      "stored_sha256": "f6d2f3ac29ad556042b716212b736a4c4fa6a6820bc77ce5fadb6219c055472e",
+      "stored_bytes": 19347
+    },
+    {
+      "original_path": "norwegian-vernacular-2026-10-04/exceptions.json",
+      "original_sha256": "1ae60d354651ea102b0bdc1193a061ef0895a06c24c10e80b62c7237789d0cae",
+      "original_bytes": 766086,
+      "action": "gzipped",
+      "stored_path": "norwegian-vernacular-2026-10-04/exceptions.json.gz",
+      "stored_sha256": "b84fcbac2f373bab1910fa1c1d2a77d7e43ae77d45b32d77016ab3080bc53e7e",
+      "stored_bytes": 23029
+    },
+    {
+      "original_path": "norwegian-vernacular-2026-10-04/live-taxonomy-snapshot.json",
+      "original_sha256": "534b039988f630eeb315737f9566084f55f54cc5ad8a1b39184ce51b78b234d6",
+      "original_bytes": 949279,
+      "action": "gzipped",
+      "stored_path": "norwegian-vernacular-2026-10-04/live-taxonomy-snapshot.json.gz",
+      "stored_sha256": "6993a1d1c7ddfecac6890299b66bb0586f969e57cc8bce2216f60a5eef631931",
+      "stored_bytes": 165780
+    },
+    {
+      "original_path": "norwegian-vernacular-2026-10-04-policy-v2/automatic-associations.json",
+      "original_sha256": "8bc85b2d1126534d3ebf97d053f44c5ab03c427d78fd87873544379330eb8e7c",
+      "original_bytes": 4773823,
+      "action": "gzipped",
+      "stored_path": "norwegian-vernacular-2026-10-04-policy-v2/automatic-associations.json.gz",
+      "stored_sha256": "8d3a6e111bbd9e3d208ccb6774af0f4958b5ea05d6bd6447195a2715f26d43b7",
+      "stored_bytes": 113570
+    },
+    {
+      "original_path": "norwegian-vernacular-2026-10-04-policy-v2/classification-disagreements.json",
+      "original_sha256": "58ce0f12af0fd7f1423966f9a8f045fa9e9f9e14c29c7b2189190189d73169eb",
+      "original_bytes": 708012,
+      "action": "gzipped",
+      "stored_path": "norwegian-vernacular-2026-10-04-policy-v2/classification-disagreements.json.gz",
+      "stored_sha256": "74bbb0c7c8349c0862820598b4ea1da713a526cffa4659ede4d2f254b0dcff0d",
+      "stored_bytes": 20907
+    },
+    {
+      "original_path": "norwegian-vernacular-2026-10-04-policy-v2/live-taxonomy-snapshot.json",
+      "original_sha256": "534b039988f630eeb315737f9566084f55f54cc5ad8a1b39184ce51b78b234d6",
+      "original_bytes": 949279,
+      "action": "deduplicated",
+      "canonical_original_path": "norwegian-vernacular-2026-10-04/live-taxonomy-snapshot.json",
+      "canonical_stored_path": "norwegian-vernacular-2026-10-04/live-taxonomy-snapshot.json.gz"
+    },
+    {
+      "original_path": "norwegian-vernacular-2026-10-04-owner-reviewed/automatic-associations.json",
+      "original_sha256": "8bc85b2d1126534d3ebf97d053f44c5ab03c427d78fd87873544379330eb8e7c",
+      "original_bytes": 4773823,
+      "action": "deduplicated",
+      "canonical_original_path": "norwegian-vernacular-2026-10-04-policy-v2/automatic-associations.json",
+      "canonical_stored_path": "norwegian-vernacular-2026-10-04-policy-v2/automatic-associations.json.gz"
+    },
+    {
+      "original_path": "norwegian-vernacular-2026-10-04-owner-reviewed/classification-disagreements.json",
+      "original_sha256": "568d8858e447a4d2ce243513d31adc69f32b9cfcf2478d2344e23fee37b96d33",
+      "original_bytes": 710244,
+      "action": "gzipped",
+      "stored_path": "norwegian-vernacular-2026-10-04-owner-reviewed/classification-disagreements.json.gz",
+      "stored_sha256": "cdbaaacf1eda1f5dc2e764d652796b00d2a37569a08a438e65db0fcef9f6e95e",
+      "stored_bytes": 21431
+    },
+    {
+      "original_path": "norwegian-vernacular-2026-10-04-owner-reviewed/live-taxonomy-snapshot.json",
+      "original_sha256": "534b039988f630eeb315737f9566084f55f54cc5ad8a1b39184ce51b78b234d6",
+      "original_bytes": 949279,
+      "action": "deduplicated",
+      "canonical_original_path": "norwegian-vernacular-2026-10-04/live-taxonomy-snapshot.json",
+      "canonical_stored_path": "norwegian-vernacular-2026-10-04/live-taxonomy-snapshot.json.gz"
+    },
+    {
+      "original_path": "norwegian-vernacular-2026-10-04-owner-reviewed/species-review-queue.json",
+      "original_sha256": "b775bf6915429c1eca9d160e3b19d91b7001c2f88b1b454ffe439bf103497b18",
+      "original_bytes": 11235,
+      "action": "deduplicated",
+      "canonical_original_path": "norwegian-vernacular-2026-10-04-policy-v2/species-review-queue.json",
+      "canonical_stored_path": "norwegian-vernacular-2026-10-04-policy-v2/species-review-queue.json"
+    },
+    {
+      "original_path": "vernacular-compiler-stage1-2026-10-04/verification.json",
+      "original_sha256": "8d86c3cced679e761db5750bc95fbc7cfb4b84b7969f8cedd3ceb68084a91686",
+      "original_bytes": 1373650,
+      "action": "gzipped",
+      "stored_path": "vernacular-compiler-stage1-2026-10-04/verification.json.gz",
+      "stored_sha256": "c6f1c86e6d781e6fd399e760e9ce2859dc73fe4fb75015ec55dea7dcc1b5b9bf",
+      "stored_bytes": 235678
+    },
+    {
+      "original_path": "vernacular-removal-audit-2026-10-04/current-reconstructable.json",
+      "original_sha256": "8a5dcb90bf90abdc5ba5322fd0b97831e227ce36acd502cddcaa70c7e2ecf2ae",
+      "original_bytes": 2266671,
+      "action": "gzipped",
+      "stored_path": "vernacular-removal-audit-2026-10-04/current-reconstructable.json.gz",
+      "stored_sha256": "3f2165705b5d01dc71723d46e06fbd91433b19e7bff0b93aec4b0b440fc499f5",
+      "stored_bytes": 138618
+    },
+    {
+      "original_path": "vernacular-removal-audit-2026-10-04/unpinned-snapshot-candidates.json",
+      "original_sha256": "fa1239db90bfc77255a2b57d873292f7051a3221bf3b3826d007839643cc1faf",
+      "original_bytes": 3082627,
+      "action": "gzipped",
+      "stored_path": "vernacular-removal-audit-2026-10-04/unpinned-snapshot-candidates.json.gz",
+      "stored_sha256": "4a470493782fe1bd25affe7afe5221066965153f2be5198500c52149ee29a8df",
+      "stored_bytes": 117383
+    },
+    {
+      "original_path": "vernacular-compiler-stage1b-2026-10-04/preferred-name-delta.json",
+      "original_sha256": "58d8faca31989de31b1e3864ac41c23c3ea903cbd889e13857d0d04890d223c8",
+      "original_bytes": 955658,
+      "action": "gzipped",
+      "stored_path": "vernacular-compiler-stage1b-2026-10-04/preferred-name-delta.json.gz",
+      "stored_sha256": "ac0de45c9a7536f157d3208ebb56f3143b8082fb698ff868019f88e1111d2895",
+      "stored_bytes": 94166
+    },
+    {
+      "original_path": "vernacular-compiler-stage1b-2026-10-04/recovered-current-col-associations.json",
+      "original_sha256": "0d5eb58bb7b661dd8e0003d13760136abc9a65f6b73609b71c7fc58043306cd6",
+      "original_bytes": 9273603,
+      "action": "gzipped",
+      "stored_path": "vernacular-compiler-stage1b-2026-10-04/recovered-current-col-associations.json.gz",
+      "stored_sha256": "be7d831b5943d1f2cac0b9b900e5d23f9d00e849164c2bb6ee52e7ae7eb5372f",
+      "stored_bytes": 504515
+    },
+    {
+      "original_path": "vernacular-compiler-stage1b-2026-10-04/removal-audit/unpinned-snapshot-candidates.json",
+      "original_sha256": "fa1239db90bfc77255a2b57d873292f7051a3221bf3b3826d007839643cc1faf",
+      "original_bytes": 3082627,
+      "action": "deduplicated",
+      "canonical_original_path": "vernacular-removal-audit-2026-10-04/unpinned-snapshot-candidates.json",
+      "canonical_stored_path": "vernacular-removal-audit-2026-10-04/unpinned-snapshot-candidates.json.gz"
+    },
+    {
+      "original_path": "vernacular-compiler-stage1b-2026-10-04/verification.json",
+      "original_sha256": "2cd4c9c0adc0a1c08e517a4c0d73d5465e2ef44cf152bdea74ded188b3dc8a96",
+      "original_bytes": 960825,
+      "action": "gzipped",
+      "stored_path": "vernacular-compiler-stage1b-2026-10-04/verification.json.gz",
+      "stored_sha256": "8cd12a6f741b4f0049bead197bfe4db2cf1bafb9585bf4edd8e9a1a12ed8d37b",
+      "stored_bytes": 96923
+    },
+    {
+      "original_path": "vernacular-cloud-stage3-2026-10-06/logs/local-validation-run2.log",
+      "original_sha256": "59fb0b93c4e05b213208d854e5e3642ad6674e5bc6e87d4dcfe0ff5910d29be2",
+      "original_bytes": 11971,
+      "action": "deduplicated",
+      "canonical_original_path": "vernacular-cloud-stage3-2026-10-06/logs/local-validation-run1.log",
+      "canonical_stored_path": "vernacular-cloud-stage3-2026-10-06/logs/local-validation-run1.log"
+    },
+    {
+      "original_path": "vernacular-refreeze-stage3-2026-10-06/logs/phaseb-run2-analyze.log",
+      "original_sha256": "582ad9b39420718f70ed94e43d8290ea9f935f095caf829ca6b0d396c9b0ac4a",
+      "original_bytes": 3076,
+      "action": "deduplicated",
+      "canonical_original_path": "vernacular-refreeze-stage3-2026-10-06/logs/phaseb-run1-analyze.log",
+      "canonical_stored_path": "vernacular-refreeze-stage3-2026-10-06/logs/phaseb-run1-analyze.log"
+    }
+  ]
+}

@@ -575,3 +575,14 @@ collision: the scope policy's pinned searchable synonym *Ustilago maydis* on
 desktop pack's `unique(taxon_id, name)` refused.
 `macrofungi_scope.with_searchable_synonyms` now leaves the existing row in
 place. NorTaxa 56227 (Craterellus tubaeformis) is still not emitted.
+
+## Norwegian vernacular evidence storage
+
+The `norwegian-vernacular-*` and `vernacular-*` folders are stored in a slimmed
+form. JSON files over 500 kB are gzipped (`<name>.json.gz`, deterministic
+gzip). Exact duplicate payloads are kept once, in the earliest stage folder
+that produced them. `vernacular-evidence-archive.json` maps every affected
+original path to its stored or canonical location and records the original
+SHA-256. That is the hash that reports and verification files cite.
+`verify_vernacular_evidence_archive.py` checks that every original is
+recoverable byte-for-byte.

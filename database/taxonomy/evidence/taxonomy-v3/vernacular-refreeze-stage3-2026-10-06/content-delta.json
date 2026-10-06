@@ -1,0 +1,179 @@
+{
+  "col_echo_guard_withheld": [
+    [
+      19080,
+      "nb",
+      "knolltrevlesopp",
+      [
+        "53227"
+      ]
+    ],
+    [
+      58815,
+      "nb",
+      "sørlig rødtuppsopp",
+      [
+        "56524"
+      ]
+    ],
+    [
+      58815,
+      "nn",
+      "sørleg rødtuppsopp",
+      [
+        "56524"
+      ]
+    ]
+  ],
+  "compiler_vernacular": {
+    "added": [
+      [
+        58814,
+        "nb",
+        "taigarødtuppsopp",
+        "nortaxa"
+      ]
+    ],
+    "evidence_sha_only_churn": {
+      "col_xr/cs": 1,
+      "col_xr/da": 1,
+      "col_xr/en": 4,
+      "col_xr/et": 1,
+      "col_xr/fi": 2,
+      "col_xr/fr": 1,
+      "col_xr/hu": 1,
+      "col_xr/ja": 1,
+      "col_xr/lt": 2,
+      "col_xr/nb": 3,
+      "col_xr/nl": 2,
+      "col_xr/pl": 2,
+      "col_xr/ru": 2,
+      "col_xr/sl": 1,
+      "col_xr/sv": 2,
+      "col_xr/zh": 3,
+      "dyntaxa/sv": 1341,
+      "nortaxa/nb": 2
+    },
+    "new_rows": 103209,
+    "old_rows": 103211,
+    "other_field_changes": [],
+    "removed": [
+      [
+        19080,
+        "nb",
+        "knolltrevlesopp",
+        "col_xr"
+      ],
+      [
+        58815,
+        "nb",
+        "sørlig rødtuppsopp",
+        "col_xr"
+      ],
+      [
+        58815,
+        "nn",
+        "sørleg rødtuppsopp",
+        "col_xr"
+      ]
+    ]
+  },
+  "evidence_class_counts": {
+    "current_source_vernacular_projection|existing_current_source_projection": [
+      97770,
+      97767
+    ],
+    "owner_reviewed_vernacular_association|added": [
+      17,
+      18
+    ],
+    "withheld_col_vernacular_association|withheld": [
+      0,
+      3
+    ],
+    "withheld_vernacular_association|withheld": [
+      1810,
+      1807
+    ]
+  },
+  "sqlite_other_tables_identical": {
+    "scientific_name_min": true,
+    "sqlite_stat1": false,
+    "sqlite_stat4": false,
+    "taxon_external_id_min": true,
+    "taxon_external_id_text_min": true,
+    "taxon_min": false,
+    "taxon_redlist_min": true,
+    "taxonomy_meta": false
+  },
+  "sqlite_table_counts_changed": {
+    "vernacular_min": [
+      96144,
+      96141
+    ]
+  },
+  "sqlite_vernacular": {
+    "added": [],
+    "changed": [
+      [
+        [
+          58814,
+          "nb",
+          "taigarødtuppsopp"
+        ],
+        [
+          0,
+          "col_xr"
+        ],
+        [
+          1,
+          "nortaxa"
+        ]
+      ]
+    ],
+    "new": 96141,
+    "old": 96144,
+    "removed": [
+      [
+        19080,
+        "nb",
+        "knolltrevlesopp",
+        0,
+        "col_xr"
+      ],
+      [
+        58815,
+        "nb",
+        "sørlig rødtuppsopp",
+        0,
+        "col_xr"
+      ],
+      [
+        58815,
+        "nn",
+        "sørleg rødtuppsopp",
+        0,
+        "col_xr"
+      ]
+    ]
+  },
+  "taxon_min_identical_except_release_id": true,
+  "taxonomy_meta_diff": [
+    [
+      "compiler_manifest_sha256",
+      "0bb3ec5d83bd8932e27b03396611a541b4e03bf53c495f5c674c839b0e68370f"
+    ],
+    [
+      "compiler_manifest_sha256",
+      "ecf9924b5d7f18554996035befe636f3e71351ca6145df5c72d00f4c9baa9fff"
+    ],
+    [
+      "content_release_id",
+      "tax-2026.10.04-01"
+    ],
+    [
+      "content_release_id",
+      "tax-2026.10.06-01"
+    ]
+  ]
+}

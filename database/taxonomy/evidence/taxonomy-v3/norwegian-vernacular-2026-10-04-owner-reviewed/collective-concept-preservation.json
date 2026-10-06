@@ -1,0 +1,47 @@
+[
+  {
+    "collective_display_name": "Entoloma sericellum coll.",
+    "collective_existing_vernaculars_confirmed": true,
+    "collective_vernaculars": [
+      [
+        "nb",
+        "silkerødspore-gruppen"
+      ],
+      [
+        "nn",
+        "silkeraudspore-gruppa"
+      ]
+    ],
+    "constraint_id": "owner-2026-10-04-entoloma-sericellum-collective-distinction",
+    "decision": "Preserve all source-bound collective metadata at its existing concept; never route any of this qualified source usage to the strict target by stripping coll./agg. No new aggregate canonical identity is authorized.",
+    "external_identifier_emission": false,
+    "identity_effect": "none",
+    "projection_to_strict_species": false,
+    "reviewer": "Owner",
+    "source_authorship": "(Fr. : Fr.) P. Kumm. agg.",
+    "source_bound_sporely_taxon_id": 625268,
+    "source_record_identifier": {
+      "namespace": "nortaxa_dwc_id",
+      "value": "53666"
+    },
+    "source_scientific_name": "Entoloma sericellum",
+    "source_semantics": "collective_aggregate",
+    "source_taxon_identifier": {
+      "namespace": "nortaxa_taxon_id",
+      "value": "53666"
+    },
+    "strict_existing_vernaculars_confirmed": true,
+    "strict_name": "Entoloma sericellum",
+    "strict_target_sporely_taxon_id": 96276,
+    "strict_vernaculars": [
+      [
+        "nb",
+        "silkerødspore"
+      ],
+      [
+        "nn",
+        "silkeraudspore"
+      ]
+    ]
+  }
+]

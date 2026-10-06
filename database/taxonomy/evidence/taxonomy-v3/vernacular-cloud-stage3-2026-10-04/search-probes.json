@@ -1,0 +1,288 @@
+{
+  "collective_group_query_results": [],
+  "execution_role": "authenticated",
+  "language": "no",
+  "probes": [
+    {
+      "expected_target": 61673,
+      "language": "no",
+      "query": "grønnkremle",
+      "results": [
+        {
+          "canonical_external_id": "4TRHW",
+          "canonical_scientific_name": "Russula aeruginea",
+          "canonical_source_system": "col_xr",
+          "col_usage_id": "4TRHW",
+          "display_scientific_name": "Russula aeruginea",
+          "family": "Russulaceae",
+          "genus": "Russula",
+          "match_type": "vernacular_exact",
+          "matched_language": "nb",
+          "matched_name": "grønnkremle",
+          "nortaxa_taxon_id": null,
+          "parent_taxon_id": 123322,
+          "preferred_scientific_name_no": null,
+          "preferred_scientific_name_sv": null,
+          "specific_epithet": "aeruginea",
+          "taxon_id": 61673,
+          "taxon_rank": "species",
+          "vernacular_language": "nb",
+          "vernacular_name": "grønnkremle"
+        }
+      ]
+    },
+    {
+      "expected_target": 14541,
+      "language": "no",
+      "query": "lys høstmorkel",
+      "results": [
+        {
+          "canonical_external_id": "3KJX6",
+          "canonical_scientific_name": "Helvella crispa",
+          "canonical_source_system": "col_xr",
+          "col_usage_id": "3KJX6",
+          "display_scientific_name": "Helvella crispa",
+          "family": "Helvellaceae",
+          "genus": "Helvella",
+          "match_type": "vernacular_exact",
+          "matched_language": "nb",
+          "matched_name": "lys høstmorkel",
+          "nortaxa_taxon_id": null,
+          "parent_taxon_id": 85822,
+          "preferred_scientific_name_no": null,
+          "preferred_scientific_name_sv": null,
+          "specific_epithet": "crispa",
+          "taxon_id": 14541,
+          "taxon_rank": "species",
+          "vernacular_language": "nb",
+          "vernacular_name": "lys høstmorkel"
+        }
+      ]
+    },
+    {
+      "expected_target": 14834,
+      "language": "no",
+      "query": "dunpipe",
+      "results": [
+        {
+          "canonical_external_id": "3KV7Z",
+          "canonical_scientific_name": "Henningsomyces puber",
+          "canonical_source_system": "col_xr",
+          "col_usage_id": "3KV7Z",
+          "display_scientific_name": "Henningsomyces puber",
+          "family": "Marasmiaceae",
+          "genus": "Henningsomyces",
+          "match_type": "vernacular_exact",
+          "matched_language": "nb",
+          "matched_name": "dunpipe",
+          "nortaxa_taxon_id": null,
+          "parent_taxon_id": 63307,
+          "preferred_scientific_name_no": null,
+          "preferred_scientific_name_sv": null,
+          "specific_epithet": "puber",
+          "taxon_id": 14834,
+          "taxon_rank": "species",
+          "vernacular_language": "nb",
+          "vernacular_name": "dunpipe"
+        }
+      ]
+    },
+    {
+      "expected_target": 103130,
+      "language": "no",
+      "query": "dråpeknippesopp",
+      "results": [
+        {
+          "canonical_external_id": "6N4RM",
+          "canonical_scientific_name": "Hypsizygus tessulatus",
+          "canonical_source_system": "col_xr",
+          "col_usage_id": "6N4RM",
+          "display_scientific_name": "Hypsizygus tessulatus",
+          "family": "Lyophyllaceae",
+          "genus": "Hypsizygus",
+          "match_type": "vernacular_exact",
+          "matched_language": "nb",
+          "matched_name": "dråpeknippesopp",
+          "nortaxa_taxon_id": null,
+          "parent_taxon_id": 85358,
+          "preferred_scientific_name_no": null,
+          "preferred_scientific_name_sv": null,
+          "specific_epithet": "tessulatus",
+          "taxon_id": 103130,
+          "taxon_rank": "species",
+          "vernacular_language": "nb",
+          "vernacular_name": "dråpeknippesopp"
+        }
+      ]
+    },
+    {
+      "expected_target": 52936,
+      "language": "no",
+      "query": "snylterørsopp",
+      "results": [
+        {
+          "canonical_external_id": "4NQ37",
+          "canonical_scientific_name": "Pseudoboletus parasiticus",
+          "canonical_source_system": "col_xr",
+          "col_usage_id": "4NQ37",
+          "display_scientific_name": "Pseudoboletus parasiticus",
+          "family": "Boletaceae",
+          "genus": "Pseudoboletus",
+          "match_type": "vernacular_exact",
+          "matched_language": "nb",
+          "matched_name": "snylterørsopp",
+          "nortaxa_taxon_id": null,
+          "parent_taxon_id": 113415,
+          "preferred_scientific_name_no": null,
+          "preferred_scientific_name_sv": "Pseudoboletus parasiticus",
+          "specific_epithet": "parasiticus",
+          "taxon_id": 52936,
+          "taxon_rank": "species",
+          "vernacular_language": "nb",
+          "vernacular_name": "snylterørsopp"
+        }
+      ]
+    },
+    {
+      "expected_target": 54615,
+      "language": "no",
+      "query": "tårekjuke",
+      "results": [
+        {
+          "canonical_external_id": "4NYKZ",
+          "canonical_scientific_name": "Pseudoinonotus dryadeus",
+          "canonical_source_system": "col_xr",
+          "col_usage_id": "4NYKZ",
+          "display_scientific_name": "Pseudoinonotus dryadeus",
+          "family": "Hymenochaetaceae",
+          "genus": "Pseudoinonotus",
+          "match_type": "vernacular_exact",
+          "matched_language": "nb",
+          "matched_name": "tårekjuke",
+          "nortaxa_taxon_id": null,
+          "parent_taxon_id": 114607,
+          "preferred_scientific_name_no": null,
+          "preferred_scientific_name_sv": null,
+          "specific_epithet": "dryadeus",
+          "taxon_id": 54615,
+          "taxon_rank": "species",
+          "vernacular_language": "nb",
+          "vernacular_name": "tårekjuke"
+        }
+      ]
+    },
+    {
+      "expected_target": 60559,
+      "language": "no",
+      "query": "gul ekornnøtt",
+      "results": [
+        {
+          "canonical_external_id": "4SD8Z",
+          "canonical_scientific_name": "Rhizopogon luteolus",
+          "canonical_source_system": "col_xr",
+          "col_usage_id": "4SD8Z",
+          "display_scientific_name": "Rhizopogon luteolus",
+          "family": "Rhizopogonaceae",
+          "genus": "Rhizopogon",
+          "match_type": "vernacular_exact",
+          "matched_language": "nb",
+          "matched_name": "gul ekornnøtt",
+          "nortaxa_taxon_id": null,
+          "parent_taxon_id": 122295,
+          "preferred_scientific_name_no": null,
+          "preferred_scientific_name_sv": null,
+          "specific_epithet": "luteolus",
+          "taxon_id": 60559,
+          "taxon_rank": "species",
+          "vernacular_language": "nb",
+          "vernacular_name": "gul ekornnøtt"
+        }
+      ]
+    },
+    {
+      "expected_target": 79753,
+      "language": "no",
+      "query": "grønn navlesopp",
+      "results": [
+        {
+          "canonical_external_id": "5VSVR",
+          "canonical_scientific_name": "Arrhenia chlorocyanea",
+          "canonical_source_system": "col_xr",
+          "col_usage_id": "5VSVR",
+          "display_scientific_name": "Arrhenia chlorocyanea",
+          "family": "Hygrophoraceae",
+          "genus": "Arrhenia",
+          "match_type": "vernacular_exact",
+          "matched_language": "nb",
+          "matched_name": "grønn navlesopp",
+          "nortaxa_taxon_id": "55637",
+          "parent_taxon_id": 908,
+          "preferred_scientific_name_no": "Arrhenia chlorocyanea",
+          "preferred_scientific_name_sv": null,
+          "specific_epithet": "chlorocyanea",
+          "taxon_id": 79753,
+          "taxon_rank": "species",
+          "vernacular_language": "nb",
+          "vernacular_name": "grønn navlesopp"
+        }
+      ]
+    },
+    {
+      "expected_target": 96276,
+      "language": "no",
+      "query": "silkerødspore",
+      "results": [
+        {
+          "canonical_external_id": "6FDM9",
+          "canonical_scientific_name": "Entoloma sericellum",
+          "canonical_source_system": "col_xr",
+          "col_usage_id": "6FDM9",
+          "display_scientific_name": "Entoloma sericellum",
+          "family": "Entolomataceae",
+          "genus": "Entoloma",
+          "match_type": "vernacular_exact",
+          "matched_language": "nb",
+          "matched_name": "silkerødspore",
+          "nortaxa_taxon_id": null,
+          "parent_taxon_id": 40656,
+          "preferred_scientific_name_no": null,
+          "preferred_scientific_name_sv": null,
+          "specific_epithet": "sericellum",
+          "taxon_id": 96276,
+          "taxon_rank": "species",
+          "vernacular_language": "nb",
+          "vernacular_name": "silkerødspore"
+        }
+      ]
+    },
+    {
+      "expected_target": 61673,
+      "language": "no",
+      "query": "Russula aeruginea",
+      "results": [
+        {
+          "canonical_external_id": "4TRHW",
+          "canonical_scientific_name": "Russula aeruginea",
+          "canonical_source_system": "col_xr",
+          "col_usage_id": "4TRHW",
+          "display_scientific_name": "Russula aeruginea",
+          "family": "Russulaceae",
+          "genus": "Russula",
+          "match_type": "canonical_exact",
+          "matched_language": "sci",
+          "matched_name": "Russula aeruginea",
+          "nortaxa_taxon_id": null,
+          "parent_taxon_id": 123322,
+          "preferred_scientific_name_no": null,
+          "preferred_scientific_name_sv": null,
+          "specific_epithet": "aeruginea",
+          "taxon_id": 61673,
+          "taxon_rank": "species",
+          "vernacular_language": "nb",
+          "vernacular_name": "grønnkremle"
+        }
+      ]
+    }
+  ],
+  "rpc": "public.search_taxa_v2"
+}

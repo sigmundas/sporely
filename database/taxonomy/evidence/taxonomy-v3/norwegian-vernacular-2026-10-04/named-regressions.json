@@ -1,0 +1,236 @@
+{
+  "Arrhenia chlorocyanea": [
+    {
+      "authorship_diagnostics": [
+        {
+          "difference": "same",
+          "target_authorship": "(Pat.) Redhead, Lutzoni, Moncalvo & Vilgalys",
+          "target_sporely_taxon_id": 79753
+        }
+      ],
+      "classification_disagreements": [],
+      "disposition": "already_reaches_cloud_unchanged",
+      "existing_vernacular_conflicts": [],
+      "full_bundle_target_ids": [
+        79753
+      ],
+      "language": "nb",
+      "reasons": [],
+      "scoped_target_ids": [
+        79753
+      ],
+      "vernacular_name": "grønn navlesopp",
+      "warnings": []
+    },
+    {
+      "authorship_diagnostics": [
+        {
+          "difference": "same",
+          "target_authorship": "(Pat.) Redhead, Lutzoni, Moncalvo & Vilgalys",
+          "target_sporely_taxon_id": 79753
+        }
+      ],
+      "classification_disagreements": [],
+      "disposition": "already_reaches_cloud_unchanged",
+      "existing_vernacular_conflicts": [],
+      "full_bundle_target_ids": [
+        79753
+      ],
+      "language": "nn",
+      "reasons": [],
+      "scoped_target_ids": [
+        79753
+      ],
+      "vernacular_name": "grøn navlesopp",
+      "warnings": []
+    }
+  ],
+  "Helvella crispa": [
+    {
+      "authorship_diagnostics": [
+        {
+          "difference": "punctuation_spacing_case_or_diacritics",
+          "target_authorship": "(Scop.) Fr.",
+          "target_sporely_taxon_id": 14541
+        },
+        {
+          "difference": "other_difference_including_abbreviations",
+          "target_authorship": "Sowerby",
+          "target_sporely_taxon_id": 165172
+        }
+      ],
+      "classification_disagreements": [],
+      "disposition": "exception",
+      "existing_vernacular_conflicts": [],
+      "full_bundle_target_ids": [
+        14541,
+        165172
+      ],
+      "language": "nb",
+      "reasons": [
+        "multiple_canonical_targets_in_scope"
+      ],
+      "scoped_target_ids": [
+        14541,
+        165172
+      ],
+      "vernacular_name": "lys høstmorkel",
+      "warnings": [
+        "multiple_canonical_targets_in_full_bundle"
+      ]
+    },
+    {
+      "authorship_diagnostics": [
+        {
+          "difference": "punctuation_spacing_case_or_diacritics",
+          "target_authorship": "(Scop.) Fr.",
+          "target_sporely_taxon_id": 14541
+        },
+        {
+          "difference": "other_difference_including_abbreviations",
+          "target_authorship": "Sowerby",
+          "target_sporely_taxon_id": 165172
+        }
+      ],
+      "classification_disagreements": [],
+      "disposition": "exception",
+      "existing_vernacular_conflicts": [],
+      "full_bundle_target_ids": [
+        14541,
+        165172
+      ],
+      "language": "nn",
+      "reasons": [
+        "multiple_canonical_targets_in_scope"
+      ],
+      "scoped_target_ids": [
+        14541,
+        165172
+      ],
+      "vernacular_name": "lys haustmorkel",
+      "warnings": [
+        "multiple_canonical_targets_in_full_bundle"
+      ]
+    }
+  ],
+  "Henningsomyces puber": [
+    {
+      "authorship_diagnostics": [
+        {
+          "difference": "same",
+          "target_authorship": "(Romell ex W.B. Cooke) D.A. Reid",
+          "target_sporely_taxon_id": 14834
+        }
+      ],
+      "classification_disagreements": [
+        {
+          "level": "family",
+          "source": "Schizophyllaceae",
+          "target": "Marasmiaceae",
+          "target_sporely_taxon_id": 14834
+        }
+      ],
+      "disposition": "exception",
+      "existing_vernacular_conflicts": [],
+      "full_bundle_target_ids": [
+        14834,
+        165605
+      ],
+      "language": "nb",
+      "reasons": [
+        "higher_classification_disagreement"
+      ],
+      "scoped_target_ids": [
+        14834
+      ],
+      "vernacular_name": "dunpipe",
+      "warnings": [
+        "multiple_canonical_targets_in_full_bundle"
+      ]
+    },
+    {
+      "authorship_diagnostics": [
+        {
+          "difference": "same",
+          "target_authorship": "(Romell ex W.B. Cooke) D.A. Reid",
+          "target_sporely_taxon_id": 14834
+        }
+      ],
+      "classification_disagreements": [
+        {
+          "level": "family",
+          "source": "Schizophyllaceae",
+          "target": "Marasmiaceae",
+          "target_sporely_taxon_id": 14834
+        }
+      ],
+      "disposition": "exception",
+      "existing_vernacular_conflicts": [],
+      "full_bundle_target_ids": [
+        14834,
+        165605
+      ],
+      "language": "nn",
+      "reasons": [
+        "higher_classification_disagreement"
+      ],
+      "scoped_target_ids": [
+        14834
+      ],
+      "vernacular_name": "dunpipe",
+      "warnings": [
+        "multiple_canonical_targets_in_full_bundle"
+      ]
+    }
+  ],
+  "Russula aeruginea": [
+    {
+      "authorship_diagnostics": [
+        {
+          "difference": "ex_authorship_form",
+          "target_authorship": "Lindblad ex Fr.",
+          "target_sporely_taxon_id": 61673
+        }
+      ],
+      "classification_disagreements": [],
+      "disposition": "automatic_enrichment",
+      "existing_vernacular_conflicts": [],
+      "full_bundle_target_ids": [
+        61673
+      ],
+      "language": "nb",
+      "reasons": [
+        "exact_name_rank_unique_current_no_contradiction"
+      ],
+      "scoped_target_ids": [
+        61673
+      ],
+      "vernacular_name": "grønnkremle",
+      "warnings": []
+    },
+    {
+      "authorship_diagnostics": [
+        {
+          "difference": "ex_authorship_form",
+          "target_authorship": "Lindblad ex Fr.",
+          "target_sporely_taxon_id": 61673
+        }
+      ],
+      "classification_disagreements": [],
+      "disposition": "automatic_enrichment",
+      "existing_vernacular_conflicts": [],
+      "full_bundle_target_ids": [
+        61673
+      ],
+      "language": "nn",
+      "reasons": [
+        "exact_name_rank_unique_current_no_contradiction"
+      ],
+      "scoped_target_ids": [
+        61673
+      ],
+      "vernacular_name": "grønkremle",
+      "warnings": []
+    }
+  ]
+}

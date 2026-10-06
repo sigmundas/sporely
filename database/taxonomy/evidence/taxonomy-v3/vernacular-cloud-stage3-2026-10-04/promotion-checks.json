@@ -1,0 +1,30 @@
+{
+  "accepted_freeze_sha256": "d0e5de92cd2e4e2222f77818e5b0425360d37596df2cc9b3d3fbd9567d6870ad",
+  "all_finalA_bytes_match_accepted_stage2": true,
+  "expected_promotion_artifacts": {
+    "compatibility.json": {
+      "bytes": 3214,
+      "sha256": "56258f2228c963ed24f7c5d665188d81dc5ea3b7bcc5bf0a984e2f52528eed9b"
+    },
+    "freeze.json": {
+      "bytes": 895,
+      "sha256": "d0e5de92cd2e4e2222f77818e5b0425360d37596df2cc9b3d3fbd9567d6870ad"
+    },
+    "manifest.json": {
+      "bytes": 4235,
+      "sha256": "a9ee2bb73a5c4ff4e49609038d9ddbb3469ef111227f2c0e96dd16fa58ad0d51"
+    },
+    "tax-2026.10.04-01.evidence.tar.gz": {
+      "bytes": 55656914,
+      "sha256": "25625ec3eca0c95307a9a011b81b5ef09f5895897c5427aa47ef1c2ab8cb75e1"
+    },
+    "tax-2026.10.04-01.sqlite3.gz": {
+      "bytes": 73283038,
+      "sha256": "56020d1f72f0fd9341f4a1ef3671c5665897aac2c4680fe00172866af8a04ca1"
+    }
+  },
+  "previous_scoped_norwegian_names_removed": 0,
+  "previous_scoped_norwegian_names_retained": 4616,
+  "production_and_bundle_unchanged": true,
+  "promotion_requires_this_exact_freeze_hash": true
+}

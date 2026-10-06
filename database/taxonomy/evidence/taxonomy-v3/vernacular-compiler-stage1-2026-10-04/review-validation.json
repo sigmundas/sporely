@@ -1,0 +1,931 @@
+{
+  "decisions": {
+    "format": "sporely-vernacular-concept-reviews-v1",
+    "reviews": [
+      {
+        "evidence_class": "owner_reviewed_vernacular_association",
+        "evidence_references": [
+          "owner-approval-in-current-conversation"
+        ],
+        "external_identifier_emission": false,
+        "identity_effect": "none",
+        "rationale": "Owner-approved vernacular-only exception. Original conservative guard remains recorded and unchanged; no identity equivalence or external-ID bridge is inferred.",
+        "review_id": "owner-2026-10-04-vernacular-131436",
+        "reviewed_against_source_pins": {
+          "bundle_gz_sha256": "593cd5379bffd53a81a54735ab0ad99b97e7ef890060d6483bed42e4150e907f",
+          "col_archive_sha256": "397d701c8eb269bf78d6ac7b03149915b0d9e2a2c18694be2c91445b807814f9",
+          "content_release_id": "tax-2026.09.30-01",
+          "nortaxa_archive_sha256": "29c11c54d955dc44e4e5a38944dd7932989a256d1b173777579b9f33abd2fe22"
+        },
+        "reviewer": "Owner",
+        "source_authorship_diagnostic": "s. auct. scand.",
+        "source_evidence": {
+          "accepted_usage_id": {
+            "namespace": "nortaxa_accepted_name_usage_id",
+            "value": "131436"
+          },
+          "concept_annotation": {
+            "authorship": "s. auct. scand."
+          },
+          "kingdom": "Fungi",
+          "nomenclatural_status": "",
+          "rank": "species",
+          "raw_concept_annotation": {
+            "nameAccordingTo": "",
+            "taxonRemarks": ""
+          },
+          "scientific_name": "Cortinarius milvinicolor",
+          "source_status": "valid",
+          "source_usage": {
+            "identifier": "131436",
+            "namespace": "nortaxa_taxon_id",
+            "source": "nortaxa"
+          }
+        },
+        "source_evidence_sha256": "1ec14f0132288f28bebe7a80ceba24990c6cb56f88450ff8155a31ba3e1b07d5",
+        "target_authorship_diagnostic": "Moënne-Locc. & Reumaux",
+        "target_evidence": {
+          "accepted_usage_id": null,
+          "canonical_source_usage": {
+            "identifier": "YLJ4",
+            "namespace": "col_usage_id",
+            "source": "col_xr"
+          },
+          "concept_annotation": {},
+          "kingdom": "Fungi",
+          "nomenclatural_status": "",
+          "rank": "species",
+          "raw_concept_annotation": {
+            "name_phrase": "",
+            "name_remarks": "",
+            "remarks": ""
+          },
+          "scientific_name": "Cortinarius milvinicolor",
+          "source_status": "accepted",
+          "source_usage": {
+            "identifier": "YLJ4",
+            "namespace": "col_usage_id",
+            "source": "col_xr"
+          },
+          "sporely_taxon_id": 618912
+        },
+        "target_evidence_sha256": "0773c15994a0408d9cfb53e3fcc640dfe43fdfc4b15d3109c6cb4b593a526e7f",
+        "vernacular_names": [
+          [
+            "nb",
+            "oliven rådyrslørsopp"
+          ]
+        ]
+      },
+      {
+        "evidence_class": "owner_reviewed_vernacular_association",
+        "evidence_references": [
+          "owner-approval-in-current-conversation"
+        ],
+        "external_identifier_emission": false,
+        "identity_effect": "none",
+        "rationale": "Owner-approved vernacular-only exception. Original conservative guard remains recorded and unchanged; no identity equivalence or external-ID bridge is inferred.",
+        "review_id": "owner-2026-10-04-vernacular-151982",
+        "reviewed_against_source_pins": {
+          "bundle_gz_sha256": "593cd5379bffd53a81a54735ab0ad99b97e7ef890060d6483bed42e4150e907f",
+          "col_archive_sha256": "397d701c8eb269bf78d6ac7b03149915b0d9e2a2c18694be2c91445b807814f9",
+          "content_release_id": "tax-2026.09.30-01",
+          "nortaxa_archive_sha256": "29c11c54d955dc44e4e5a38944dd7932989a256d1b173777579b9f33abd2fe22"
+        },
+        "reviewer": "Owner",
+        "source_authorship_diagnostic": "s. auct. scand.",
+        "source_evidence": {
+          "accepted_usage_id": {
+            "namespace": "nortaxa_accepted_name_usage_id",
+            "value": "151982"
+          },
+          "concept_annotation": {
+            "authorship": "s. auct. scand."
+          },
+          "kingdom": "Fungi",
+          "nomenclatural_status": "",
+          "rank": "species",
+          "raw_concept_annotation": {
+            "nameAccordingTo": "",
+            "taxonRemarks": ""
+          },
+          "scientific_name": "Ramaria conjunctipes",
+          "source_status": "valid",
+          "source_usage": {
+            "identifier": "151982",
+            "namespace": "nortaxa_taxon_id",
+            "source": "nortaxa"
+          }
+        },
+        "source_evidence_sha256": "871fd69a556ebb01beaca3c90150dfbb2a253e3aba9978599efbcd10212a2924",
+        "target_authorship_diagnostic": "(Coker) Corner",
+        "target_evidence": {
+          "accepted_usage_id": null,
+          "canonical_source_usage": {
+            "identifier": "4RBNJ",
+            "namespace": "col_usage_id",
+            "source": "col_xr"
+          },
+          "concept_annotation": {},
+          "kingdom": "Fungi",
+          "nomenclatural_status": "",
+          "rank": "species",
+          "raw_concept_annotation": {
+            "name_phrase": "",
+            "name_remarks": "",
+            "remarks": ""
+          },
+          "scientific_name": "Ramaria conjunctipes",
+          "source_status": "accepted",
+          "source_usage": {
+            "identifier": "4RBNJ",
+            "namespace": "col_usage_id",
+            "source": "col_xr"
+          },
+          "sporely_taxon_id": 58693
+        },
+        "target_evidence_sha256": "f2d6adb01f817d2c7e302c9d4bca6c2c7775746964d22b4ae034e4b6d70edf7f",
+        "vernacular_names": [
+          [
+            "nb",
+            "norsk flammekorallsopp"
+          ]
+        ]
+      },
+      {
+        "evidence_class": "owner_reviewed_vernacular_association",
+        "evidence_references": [
+          "owner-approval-in-current-conversation"
+        ],
+        "external_identifier_emission": false,
+        "identity_effect": "none",
+        "rationale": "Owner-approved vernacular-only exception. Original conservative guard remains recorded and unchanged; no identity equivalence or external-ID bridge is inferred.",
+        "review_id": "owner-2026-10-04-vernacular-53838",
+        "reviewed_against_source_pins": {
+          "bundle_gz_sha256": "593cd5379bffd53a81a54735ab0ad99b97e7ef890060d6483bed42e4150e907f",
+          "col_archive_sha256": "397d701c8eb269bf78d6ac7b03149915b0d9e2a2c18694be2c91445b807814f9",
+          "content_release_id": "tax-2026.09.30-01",
+          "nortaxa_archive_sha256": "29c11c54d955dc44e4e5a38944dd7932989a256d1b173777579b9f33abd2fe22"
+        },
+        "reviewer": "Owner",
+        "source_authorship_diagnostic": "Singer sensu auct. eur.",
+        "source_evidence": {
+          "accepted_usage_id": {
+            "namespace": "nortaxa_accepted_name_usage_id",
+            "value": "53838"
+          },
+          "concept_annotation": {
+            "authorship": "Singer sensu auct. eur."
+          },
+          "kingdom": "Fungi",
+          "nomenclatural_status": "",
+          "rank": "species",
+          "raw_concept_annotation": {
+            "nameAccordingTo": "",
+            "taxonRemarks": ""
+          },
+          "scientific_name": "Mycena pearsoniana",
+          "source_status": "valid",
+          "source_usage": {
+            "identifier": "53838",
+            "namespace": "nortaxa_taxon_id",
+            "source": "nortaxa"
+          }
+        },
+        "source_evidence_sha256": "29c03e59460ec716913e474649f00e78fbd742d3a5e7bb5a4b1ea7cbf39437a2",
+        "target_authorship_diagnostic": "Dennis ex Singer",
+        "target_evidence": {
+          "accepted_usage_id": null,
+          "canonical_source_usage": {
+            "identifier": "44TLW",
+            "namespace": "col_usage_id",
+            "source": "col_xr"
+          },
+          "concept_annotation": {},
+          "kingdom": "Fungi",
+          "nomenclatural_status": "",
+          "rank": "species",
+          "raw_concept_annotation": {
+            "name_phrase": "",
+            "name_remarks": "",
+            "remarks": ""
+          },
+          "scientific_name": "Mycena pearsoniana",
+          "source_status": "accepted",
+          "source_usage": {
+            "identifier": "44TLW",
+            "namespace": "col_usage_id",
+            "source": "col_xr"
+          },
+          "sporely_taxon_id": 34794
+        },
+        "target_evidence_sha256": "1dff48542d7ca73f36c2bc3da404aff10c7f7a6977db30a4c6cab524a5de08d1",
+        "vernacular_names": [
+          [
+            "nb",
+            "sumpreddikhette"
+          ],
+          [
+            "nn",
+            "sumpreddikhette"
+          ]
+        ]
+      },
+      {
+        "evidence_class": "owner_reviewed_vernacular_association",
+        "evidence_references": [
+          "https://www.speciesfungorum.org/names/NamesRecord.asp?RecordId=331935",
+          "https://www.speciesfungorum.org/names/NamesRecord.asp?RecordId=331935"
+        ],
+        "external_identifier_emission": false,
+        "identity_effect": "none",
+        "rationale": "Owner selects COL 3KV7Z / Sporely 14834 for dunpipe; PLPT2 / 165605 is not selected. Owner considers the latter a possible stale/duplicate concept, not evidence of a biological ambiguity. Species Fungorum record 331935 confirms the selected current name/authorship and Cyphellaceae placement. Pinned metadata on PLPT2 instead places it in Ascomycota/Dothideomycetes/Dothideales/Parodiopsidaceae, inconsistent with the selected Basidiomycota/Agaricomycetes fungus. No identity deletion or supersession is inferred.",
+        "review_id": "owner-2026-10-04-vernacular-54854",
+        "reviewed_against_source_pins": {
+          "bundle_gz_sha256": "593cd5379bffd53a81a54735ab0ad99b97e7ef890060d6483bed42e4150e907f",
+          "col_archive_sha256": "397d701c8eb269bf78d6ac7b03149915b0d9e2a2c18694be2c91445b807814f9",
+          "content_release_id": "tax-2026.09.30-01",
+          "nortaxa_archive_sha256": "29c11c54d955dc44e4e5a38944dd7932989a256d1b173777579b9f33abd2fe22"
+        },
+        "reviewer": "Sigmund Ås",
+        "source_authorship_diagnostic": "(Romell ex W.B. Cooke) D.A. Reid",
+        "source_evidence": {
+          "accepted_usage_id": {
+            "namespace": "nortaxa_accepted_name_usage_id",
+            "value": "54854"
+          },
+          "concept_annotation": {},
+          "kingdom": "Fungi",
+          "nomenclatural_status": "",
+          "rank": "species",
+          "raw_concept_annotation": {
+            "nameAccordingTo": "",
+            "taxonRemarks": ""
+          },
+          "scientific_name": "Henningsomyces puber",
+          "source_status": "valid",
+          "source_usage": {
+            "identifier": "54854",
+            "namespace": "nortaxa_taxon_id",
+            "source": "nortaxa"
+          }
+        },
+        "source_evidence_sha256": "7e4062efdb5fe6db5a563e4f7c6ad4acb38e2675a05d687c0d2da578790a6164",
+        "target_authorship_diagnostic": "(Romell ex W.B. Cooke) D.A. Reid",
+        "target_evidence": {
+          "accepted_usage_id": null,
+          "canonical_source_usage": {
+            "identifier": "3KV7Z",
+            "namespace": "col_usage_id",
+            "source": "col_xr"
+          },
+          "concept_annotation": {},
+          "kingdom": "Fungi",
+          "nomenclatural_status": "",
+          "rank": "species",
+          "raw_concept_annotation": {
+            "name_phrase": "",
+            "name_remarks": "",
+            "remarks": ""
+          },
+          "scientific_name": "Henningsomyces puber",
+          "source_status": "accepted",
+          "source_usage": {
+            "identifier": "3KV7Z",
+            "namespace": "col_usage_id",
+            "source": "col_xr"
+          },
+          "sporely_taxon_id": 14834
+        },
+        "target_evidence_sha256": "714e5c94016c4e4e1d676b1136f5d8b08948efc47a400628a92b11689347f8cf",
+        "vernacular_names": [
+          [
+            "nb",
+            "dunpipe"
+          ],
+          [
+            "nn",
+            "dunpipe"
+          ]
+        ]
+      },
+      {
+        "evidence_class": "owner_reviewed_vernacular_association",
+        "evidence_references": [
+          "owner-approval-in-current-conversation"
+        ],
+        "external_identifier_emission": false,
+        "identity_effect": "none",
+        "rationale": "Owner-approved vernacular-only exception. Original conservative guard remains recorded and unchanged; no identity equivalence or external-ID bridge is inferred.",
+        "review_id": "owner-2026-10-04-vernacular-56551",
+        "reviewed_against_source_pins": {
+          "bundle_gz_sha256": "593cd5379bffd53a81a54735ab0ad99b97e7ef890060d6483bed42e4150e907f",
+          "col_archive_sha256": "397d701c8eb269bf78d6ac7b03149915b0d9e2a2c18694be2c91445b807814f9",
+          "content_release_id": "tax-2026.09.30-01",
+          "nortaxa_archive_sha256": "29c11c54d955dc44e4e5a38944dd7932989a256d1b173777579b9f33abd2fe22"
+        },
+        "reviewer": "Owner",
+        "source_authorship_diagnostic": "(Berk. & M.A. Curtis) Corner ss. auct.",
+        "source_evidence": {
+          "accepted_usage_id": {
+            "namespace": "nortaxa_accepted_name_usage_id",
+            "value": "56551"
+          },
+          "concept_annotation": {
+            "authorship": "(Berk. & M.A. Curtis) Corner ss. auct."
+          },
+          "kingdom": "Fungi",
+          "nomenclatural_status": "",
+          "rank": "species",
+          "raw_concept_annotation": {
+            "nameAccordingTo": "",
+            "taxonRemarks": ""
+          },
+          "scientific_name": "Lentaria micheneri",
+          "source_status": "valid",
+          "source_usage": {
+            "identifier": "56551",
+            "namespace": "nortaxa_taxon_id",
+            "source": "nortaxa"
+          }
+        },
+        "source_evidence_sha256": "f0afa9afedaefdd6ef1de2655d85be6d4d9dcd54f3d771fa8dded813e347263c",
+        "target_authorship_diagnostic": "(Berk. & M.A. Curtis) Corner",
+        "target_evidence": {
+          "accepted_usage_id": null,
+          "canonical_source_usage": {
+            "identifier": "3T5CV",
+            "namespace": "col_usage_id",
+            "source": "col_xr"
+          },
+          "concept_annotation": {},
+          "kingdom": "Fungi",
+          "nomenclatural_status": "",
+          "rank": "species",
+          "raw_concept_annotation": {
+            "name_phrase": "",
+            "name_remarks": "",
+            "remarks": ""
+          },
+          "scientific_name": "Lentaria micheneri",
+          "source_status": "accepted",
+          "source_usage": {
+            "identifier": "3T5CV",
+            "namespace": "col_usage_id",
+            "source": "col_xr"
+          },
+          "sporely_taxon_id": 23749
+        },
+        "target_evidence_sha256": "d4b1e2a01a2b8062f44f2571eff7da946c9d09de1957a149d13dc0c80199d97a",
+        "vernacular_names": [
+          [
+            "nb",
+            "slank vedkorallsopp"
+          ],
+          [
+            "nn",
+            "slank vedkorallsopp"
+          ]
+        ]
+      },
+      {
+        "evidence_class": "owner_reviewed_vernacular_association",
+        "evidence_references": [
+          "owner-approval-in-current-conversation"
+        ],
+        "external_identifier_emission": false,
+        "identity_effect": "none",
+        "rationale": "Owner-approved vernacular-only exception. Original conservative guard remains recorded and unchanged; no identity equivalence or external-ID bridge is inferred.",
+        "review_id": "owner-2026-10-04-vernacular-60611",
+        "reviewed_against_source_pins": {
+          "bundle_gz_sha256": "593cd5379bffd53a81a54735ab0ad99b97e7ef890060d6483bed42e4150e907f",
+          "col_archive_sha256": "397d701c8eb269bf78d6ac7b03149915b0d9e2a2c18694be2c91445b807814f9",
+          "content_release_id": "tax-2026.09.30-01",
+          "nortaxa_archive_sha256": "29c11c54d955dc44e4e5a38944dd7932989a256d1b173777579b9f33abd2fe22"
+        },
+        "reviewer": "Owner",
+        "source_authorship_diagnostic": "(Bull. : Fr.) Singer",
+        "source_evidence": {
+          "accepted_usage_id": {
+            "namespace": "nortaxa_accepted_name_usage_id",
+            "value": "60611"
+          },
+          "concept_annotation": {},
+          "kingdom": "Fungi",
+          "nomenclatural_status": "illegitimate",
+          "rank": "species",
+          "raw_concept_annotation": {
+            "nameAccordingTo": "",
+            "taxonRemarks": ""
+          },
+          "scientific_name": "Hypsizygus tessulatus",
+          "source_status": "valid",
+          "source_usage": {
+            "identifier": "60611",
+            "namespace": "nortaxa_taxon_id",
+            "source": "nortaxa"
+          }
+        },
+        "source_evidence_sha256": "b03385684debfb24db0661aa60ed2669bb38a468ce7ca5144d0f58fcf5b783ee",
+        "target_authorship_diagnostic": "(Bull.) Singer",
+        "target_evidence": {
+          "accepted_usage_id": null,
+          "canonical_source_usage": {
+            "identifier": "6N4RM",
+            "namespace": "col_usage_id",
+            "source": "col_xr"
+          },
+          "concept_annotation": {},
+          "kingdom": "Fungi",
+          "nomenclatural_status": "",
+          "rank": "species",
+          "raw_concept_annotation": {
+            "name_phrase": "",
+            "name_remarks": "",
+            "remarks": ""
+          },
+          "scientific_name": "Hypsizygus tessulatus",
+          "source_status": "accepted",
+          "source_usage": {
+            "identifier": "6N4RM",
+            "namespace": "col_usage_id",
+            "source": "col_xr"
+          },
+          "sporely_taxon_id": 103130
+        },
+        "target_evidence_sha256": "1f3b9a406754b14def651737c73d247c763db22c5e8916823f93012007aa3699",
+        "vernacular_names": [
+          [
+            "nb",
+            "dråpeknippesopp"
+          ]
+        ]
+      },
+      {
+        "evidence_class": "owner_reviewed_vernacular_association",
+        "evidence_references": [
+          "owner-approval-in-current-conversation"
+        ],
+        "external_identifier_emission": false,
+        "identity_effect": "none",
+        "rationale": "Owner-approved vernacular-only exception. Original conservative guard remains recorded and unchanged; no identity equivalence or external-ID bridge is inferred.",
+        "review_id": "owner-2026-10-04-vernacular-62263",
+        "reviewed_against_source_pins": {
+          "bundle_gz_sha256": "593cd5379bffd53a81a54735ab0ad99b97e7ef890060d6483bed42e4150e907f",
+          "col_archive_sha256": "397d701c8eb269bf78d6ac7b03149915b0d9e2a2c18694be2c91445b807814f9",
+          "content_release_id": "tax-2026.09.30-01",
+          "nortaxa_archive_sha256": "29c11c54d955dc44e4e5a38944dd7932989a256d1b173777579b9f33abd2fe22"
+        },
+        "reviewer": "Owner",
+        "source_authorship_diagnostic": "(Bull.: Fr.) Šutara",
+        "source_evidence": {
+          "accepted_usage_id": {
+            "namespace": "nortaxa_accepted_name_usage_id",
+            "value": "62263"
+          },
+          "concept_annotation": {},
+          "kingdom": "Fungi",
+          "nomenclatural_status": "illegitimate",
+          "rank": "species",
+          "raw_concept_annotation": {
+            "nameAccordingTo": "",
+            "taxonRemarks": ""
+          },
+          "scientific_name": "Pseudoboletus parasiticus",
+          "source_status": "valid",
+          "source_usage": {
+            "identifier": "62263",
+            "namespace": "nortaxa_taxon_id",
+            "source": "nortaxa"
+          }
+        },
+        "source_evidence_sha256": "a471212c56bd887ecd5dd03b257ff526e16c2475b4898fc77ca3b2ac6ba8c0d7",
+        "target_authorship_diagnostic": "(Bull.) Šutara",
+        "target_evidence": {
+          "accepted_usage_id": null,
+          "canonical_source_usage": {
+            "identifier": "4NQ37",
+            "namespace": "col_usage_id",
+            "source": "col_xr"
+          },
+          "concept_annotation": {},
+          "kingdom": "Fungi",
+          "nomenclatural_status": "",
+          "rank": "species",
+          "raw_concept_annotation": {
+            "name_phrase": "",
+            "name_remarks": "",
+            "remarks": ""
+          },
+          "scientific_name": "Pseudoboletus parasiticus",
+          "source_status": "accepted",
+          "source_usage": {
+            "identifier": "4NQ37",
+            "namespace": "col_usage_id",
+            "source": "col_xr"
+          },
+          "sporely_taxon_id": 52936
+        },
+        "target_evidence_sha256": "40b508c6182fbdb9be93b626aa62cb4a89129575a9078ca51b0e33789827bcd4",
+        "vernacular_names": [
+          [
+            "nb",
+            "snylterørsopp"
+          ],
+          [
+            "nn",
+            "snylterøyrsopp"
+          ]
+        ]
+      },
+      {
+        "evidence_class": "owner_reviewed_vernacular_association",
+        "evidence_references": [
+          "owner-approval-in-current-conversation"
+        ],
+        "external_identifier_emission": false,
+        "identity_effect": "none",
+        "rationale": "Owner-approved vernacular-only exception. Original conservative guard remains recorded and unchanged; no identity equivalence or external-ID bridge is inferred.",
+        "review_id": "owner-2026-10-04-vernacular-62339",
+        "reviewed_against_source_pins": {
+          "bundle_gz_sha256": "593cd5379bffd53a81a54735ab0ad99b97e7ef890060d6483bed42e4150e907f",
+          "col_archive_sha256": "397d701c8eb269bf78d6ac7b03149915b0d9e2a2c18694be2c91445b807814f9",
+          "content_release_id": "tax-2026.09.30-01",
+          "nortaxa_archive_sha256": "29c11c54d955dc44e4e5a38944dd7932989a256d1b173777579b9f33abd2fe22"
+        },
+        "reviewer": "Owner",
+        "source_authorship_diagnostic": "Fr. : Fr.",
+        "source_evidence": {
+          "accepted_usage_id": {
+            "namespace": "nortaxa_accepted_name_usage_id",
+            "value": "62339"
+          },
+          "concept_annotation": {},
+          "kingdom": "Fungi",
+          "nomenclatural_status": "illegitimate",
+          "rank": "species",
+          "raw_concept_annotation": {
+            "nameAccordingTo": "",
+            "taxonRemarks": ""
+          },
+          "scientific_name": "Rhizopogon luteolus",
+          "source_status": "valid",
+          "source_usage": {
+            "identifier": "62339",
+            "namespace": "nortaxa_taxon_id",
+            "source": "nortaxa"
+          }
+        },
+        "source_evidence_sha256": "385d98864ff187bb520ee6355c4ab6770cb689581007f1f64de26a808da1ff24",
+        "target_authorship_diagnostic": "Fr.",
+        "target_evidence": {
+          "accepted_usage_id": null,
+          "canonical_source_usage": {
+            "identifier": "4SD8Z",
+            "namespace": "col_usage_id",
+            "source": "col_xr"
+          },
+          "concept_annotation": {},
+          "kingdom": "Fungi",
+          "nomenclatural_status": "",
+          "rank": "species",
+          "raw_concept_annotation": {
+            "name_phrase": "",
+            "name_remarks": "",
+            "remarks": ""
+          },
+          "scientific_name": "Rhizopogon luteolus",
+          "source_status": "accepted",
+          "source_usage": {
+            "identifier": "4SD8Z",
+            "namespace": "col_usage_id",
+            "source": "col_xr"
+          },
+          "sporely_taxon_id": 60559
+        },
+        "target_evidence_sha256": "5e71ad7b685895fa3522030f0b1ea74ad57ea0cb7efd922567045dc92116b6e5",
+        "vernacular_names": [
+          [
+            "nb",
+            "gul ekornnøtt"
+          ],
+          [
+            "nn",
+            "gul ikornnøtt"
+          ]
+        ]
+      },
+      {
+        "evidence_class": "owner_reviewed_vernacular_association",
+        "evidence_references": [
+          "owner-approval-in-current-conversation"
+        ],
+        "external_identifier_emission": false,
+        "identity_effect": "none",
+        "rationale": "Owner-approved vernacular-only exception. Original conservative guard remains recorded and unchanged; no identity equivalence or external-ID bridge is inferred.",
+        "review_id": "owner-2026-10-04-vernacular-63044",
+        "reviewed_against_source_pins": {
+          "bundle_gz_sha256": "593cd5379bffd53a81a54735ab0ad99b97e7ef890060d6483bed42e4150e907f",
+          "col_archive_sha256": "397d701c8eb269bf78d6ac7b03149915b0d9e2a2c18694be2c91445b807814f9",
+          "content_release_id": "tax-2026.09.30-01",
+          "nortaxa_archive_sha256": "29c11c54d955dc44e4e5a38944dd7932989a256d1b173777579b9f33abd2fe22"
+        },
+        "reviewer": "Owner",
+        "source_authorship_diagnostic": "(Pers. : Fr.) T. Wagner & M. Fisch.",
+        "source_evidence": {
+          "accepted_usage_id": {
+            "namespace": "nortaxa_accepted_name_usage_id",
+            "value": "63044"
+          },
+          "concept_annotation": {},
+          "kingdom": "Fungi",
+          "nomenclatural_status": "illegitimate",
+          "rank": "species",
+          "raw_concept_annotation": {
+            "nameAccordingTo": "",
+            "taxonRemarks": ""
+          },
+          "scientific_name": "Pseudoinonotus dryadeus",
+          "source_status": "valid",
+          "source_usage": {
+            "identifier": "63044",
+            "namespace": "nortaxa_taxon_id",
+            "source": "nortaxa"
+          }
+        },
+        "source_evidence_sha256": "35a171487b9e3e367ee8239cab842e84f0a4eaaca8e4bda81e40bd79bc74e32b",
+        "target_authorship_diagnostic": "(Pers.) T. Wagner & M. Fisch.",
+        "target_evidence": {
+          "accepted_usage_id": null,
+          "canonical_source_usage": {
+            "identifier": "4NYKZ",
+            "namespace": "col_usage_id",
+            "source": "col_xr"
+          },
+          "concept_annotation": {},
+          "kingdom": "Fungi",
+          "nomenclatural_status": "",
+          "rank": "species",
+          "raw_concept_annotation": {
+            "name_phrase": "",
+            "name_remarks": "",
+            "remarks": ""
+          },
+          "scientific_name": "Pseudoinonotus dryadeus",
+          "source_status": "accepted",
+          "source_usage": {
+            "identifier": "4NYKZ",
+            "namespace": "col_usage_id",
+            "source": "col_xr"
+          },
+          "sporely_taxon_id": 54615
+        },
+        "target_evidence_sha256": "810d28ca53dc4774721cc727ef5e32e4eeee611ce29059bbf89d84c28ad85c40",
+        "vernacular_names": [
+          [
+            "nb",
+            "tårekjuke"
+          ],
+          [
+            "nn",
+            "tårekjuke"
+          ]
+        ]
+      },
+      {
+        "evidence_class": "owner_reviewed_vernacular_association",
+        "evidence_references": [
+          "https://www.indexfungorum.org/names/namesrecord.asp?RecordID=186148",
+          "https://www.speciesfungorum.org/names/NamesRecord.asp?RecordId=186148"
+        ],
+        "external_identifier_emission": false,
+        "identity_effect": "none",
+        "rationale": "Owner selects Helvella crispa (Scop.) Fr. for lys høstmorkel. The provisionally accepted Sowerby target is not selected. Owner reports it is a different fungus now Craterellus undulatus; that latter equivalence has not been independently verified by this audit. Species Fungorum record 186148 independently confirms the selected current name and authorship.",
+        "review_id": "owner-2026-10-04-vernacular-79034",
+        "reviewed_against_source_pins": {
+          "bundle_gz_sha256": "593cd5379bffd53a81a54735ab0ad99b97e7ef890060d6483bed42e4150e907f",
+          "col_archive_sha256": "397d701c8eb269bf78d6ac7b03149915b0d9e2a2c18694be2c91445b807814f9",
+          "content_release_id": "tax-2026.09.30-01",
+          "nortaxa_archive_sha256": "29c11c54d955dc44e4e5a38944dd7932989a256d1b173777579b9f33abd2fe22"
+        },
+        "reviewer": "Sigmund Ås",
+        "source_authorship_diagnostic": "Scop.: Fr.",
+        "source_evidence": {
+          "accepted_usage_id": {
+            "namespace": "nortaxa_accepted_name_usage_id",
+            "value": "79034"
+          },
+          "concept_annotation": {},
+          "kingdom": "Fungi",
+          "nomenclatural_status": "",
+          "rank": "species",
+          "raw_concept_annotation": {
+            "nameAccordingTo": "",
+            "taxonRemarks": ""
+          },
+          "scientific_name": "Helvella crispa",
+          "source_status": "valid",
+          "source_usage": {
+            "identifier": "79034",
+            "namespace": "nortaxa_taxon_id",
+            "source": "nortaxa"
+          }
+        },
+        "source_evidence_sha256": "2c9824653e6133ce214ac6bf4b92aab7350e146e5945db528fae38f64cef28eb",
+        "target_authorship_diagnostic": "(Scop.) Fr.",
+        "target_evidence": {
+          "accepted_usage_id": null,
+          "canonical_source_usage": {
+            "identifier": "3KJX6",
+            "namespace": "col_usage_id",
+            "source": "col_xr"
+          },
+          "concept_annotation": {},
+          "kingdom": "Fungi",
+          "nomenclatural_status": "",
+          "rank": "species",
+          "raw_concept_annotation": {
+            "name_phrase": "",
+            "name_remarks": "",
+            "remarks": ""
+          },
+          "scientific_name": "Helvella crispa",
+          "source_status": "accepted",
+          "source_usage": {
+            "identifier": "3KJX6",
+            "namespace": "col_usage_id",
+            "source": "col_xr"
+          },
+          "sporely_taxon_id": 14541
+        },
+        "target_evidence_sha256": "1abf24164a98d168c0d7fe9c6d3ce94e8678da37e35993eb572dd2c32928a5a9",
+        "vernacular_names": [
+          [
+            "nb",
+            "lys høstmorkel"
+          ],
+          [
+            "nn",
+            "lys haustmorkel"
+          ]
+        ]
+      }
+    ],
+    "semantic_constraints": [
+      {
+        "collective_display_name": "Entoloma sericellum coll.",
+        "collective_vernaculars": [
+          [
+            "nb",
+            "silkerødspore-gruppen"
+          ],
+          [
+            "nn",
+            "silkeraudspore-gruppa"
+          ]
+        ],
+        "constraint_id": "owner-2026-10-04-entoloma-sericellum-collective-distinction",
+        "decision": "Preserve all source-bound collective metadata at its existing concept; never route any of this qualified source usage to the strict target by stripping coll./agg. No new aggregate canonical identity is authorized.",
+        "external_identifier_emission": false,
+        "identity_effect": "none",
+        "reviewer": "Owner",
+        "source_authorship": "(Fr. : Fr.) P. Kumm. agg.",
+        "source_bound_sporely_taxon_id": 625268,
+        "source_record_identifier": {
+          "namespace": "nortaxa_dwc_id",
+          "value": "53666"
+        },
+        "source_scientific_name": "Entoloma sericellum",
+        "source_semantics": "collective_aggregate",
+        "source_taxon_identifier": {
+          "namespace": "nortaxa_taxon_id",
+          "value": "53666"
+        },
+        "strict_name": "Entoloma sericellum",
+        "strict_target_sporely_taxon_id": 96276,
+        "strict_vernaculars": [
+          [
+            "nb",
+            "silkerødspore"
+          ],
+          [
+            "nn",
+            "silkeraudspore"
+          ]
+        ]
+      }
+    ]
+  },
+  "validations": [
+    {
+      "reasons": [],
+      "review_id": "owner-2026-10-04-vernacular-131436",
+      "reviewed_target_sporely_taxon_id": 618912,
+      "source_usage": {
+        "identifier": "131436",
+        "namespace": "nortaxa_taxon_id",
+        "source": "nortaxa"
+      },
+      "status": "reused"
+    },
+    {
+      "reasons": [],
+      "review_id": "owner-2026-10-04-vernacular-151982",
+      "reviewed_target_sporely_taxon_id": 58693,
+      "source_usage": {
+        "identifier": "151982",
+        "namespace": "nortaxa_taxon_id",
+        "source": "nortaxa"
+      },
+      "status": "reused"
+    },
+    {
+      "reasons": [],
+      "review_id": "owner-2026-10-04-vernacular-53838",
+      "reviewed_target_sporely_taxon_id": 34794,
+      "source_usage": {
+        "identifier": "53838",
+        "namespace": "nortaxa_taxon_id",
+        "source": "nortaxa"
+      },
+      "status": "reused"
+    },
+    {
+      "reasons": [],
+      "review_id": "owner-2026-10-04-vernacular-54854",
+      "reviewed_target_sporely_taxon_id": 14834,
+      "source_usage": {
+        "identifier": "54854",
+        "namespace": "nortaxa_taxon_id",
+        "source": "nortaxa"
+      },
+      "status": "reused"
+    },
+    {
+      "reasons": [],
+      "review_id": "owner-2026-10-04-vernacular-56551",
+      "reviewed_target_sporely_taxon_id": 23749,
+      "source_usage": {
+        "identifier": "56551",
+        "namespace": "nortaxa_taxon_id",
+        "source": "nortaxa"
+      },
+      "status": "reused"
+    },
+    {
+      "reasons": [],
+      "review_id": "owner-2026-10-04-vernacular-60611",
+      "reviewed_target_sporely_taxon_id": 103130,
+      "source_usage": {
+        "identifier": "60611",
+        "namespace": "nortaxa_taxon_id",
+        "source": "nortaxa"
+      },
+      "status": "reused"
+    },
+    {
+      "reasons": [],
+      "review_id": "owner-2026-10-04-vernacular-62263",
+      "reviewed_target_sporely_taxon_id": 52936,
+      "source_usage": {
+        "identifier": "62263",
+        "namespace": "nortaxa_taxon_id",
+        "source": "nortaxa"
+      },
+      "status": "reused"
+    },
+    {
+      "reasons": [],
+      "review_id": "owner-2026-10-04-vernacular-62339",
+      "reviewed_target_sporely_taxon_id": 60559,
+      "source_usage": {
+        "identifier": "62339",
+        "namespace": "nortaxa_taxon_id",
+        "source": "nortaxa"
+      },
+      "status": "reused"
+    },
+    {
+      "reasons": [],
+      "review_id": "owner-2026-10-04-vernacular-63044",
+      "reviewed_target_sporely_taxon_id": 54615,
+      "source_usage": {
+        "identifier": "63044",
+        "namespace": "nortaxa_taxon_id",
+        "source": "nortaxa"
+      },
+      "status": "reused"
+    },
+    {
+      "reasons": [],
+      "review_id": "owner-2026-10-04-vernacular-79034",
+      "reviewed_target_sporely_taxon_id": 14541,
+      "source_usage": {
+        "identifier": "79034",
+        "namespace": "nortaxa_taxon_id",
+        "source": "nortaxa"
+      },
+      "status": "reused"
+    }
+  ]
+}

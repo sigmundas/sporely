@@ -1,0 +1,121 @@
+{
+  "bundle_after": {
+    "manifest.json": "a9ee2bb73a5c4ff4e49609038d9ddbb3469ef111227f2c0e96dd16fa58ad0d51",
+    "previous.evidence.tar.gz": "27882b2ccc53a654626df67cf596d2e401114e0ba2d076063fdc229cd2c5f16b",
+    "tax-2026.10.04-01.evidence.tar.gz": "25625ec3eca0c95307a9a011b81b5ef09f5895897c5427aa47ef1c2ab8cb75e1",
+    "tax-2026.10.04-01.freeze.json": "d0e5de92cd2e4e2222f77818e5b0425360d37596df2cc9b3d3fbd9567d6870ad",
+    "tax-2026.10.04-01.sqlite3.gz": "56020d1f72f0fd9341f4a1ef3671c5665897aac2c4680fe00172866af8a04ca1"
+  },
+  "compatibility_equals_frozen": true,
+  "forbidden_modules_loaded": [],
+  "frozen_unchanged": true,
+  "guard": "imports of compiler/normalizer/freeze/export modules, subprocess, gzip/tar writes raise inside promotion process",
+  "new_files": [
+    "tax-2026.10.04-01.evidence.tar.gz",
+    "tax-2026.10.04-01.freeze.json",
+    "tax-2026.10.04-01.sqlite3.gz"
+  ],
+  "previous_evidence_retained": true,
+  "promote": {
+    "returncode": 0,
+    "stderr_tail": [],
+    "stdout_tail": [
+      "  }",
+      "}"
+    ]
+  },
+  "promoted_files_equal_frozen": true,
+  "real_repo_bundle_and_compatibility_unchanged": true,
+  "real_repo_hashes": {
+    "desktop-compatibility.json": "7afbe0719d2c74f93500c085a7dd7705e464487edb8f22da05c225cbac988051",
+    "manifest.json": "051464bbd8b343cc6d337fc92d5ddf433f716f0742aa55db49ae8e72f704cffa"
+  },
+  "repeat": {
+    "returncode": 0,
+    "stderr_tail": [],
+    "stdout_tail": [
+      "  }",
+      "}"
+    ]
+  },
+  "repeat_idempotent": true,
+  "superseded_gz_removed": [
+    "tax-2026.09.30-01.sqlite3.gz"
+  ],
+  "tamper": {
+    "compatibility.json": {
+      "offset": 1607,
+      "rejected_without_writes": true,
+      "with_accepted_hash": {
+        "returncode": 1,
+        "stderr_tail": [
+          "refused: frozen artifact fingerprint mismatch: compatibility.json"
+        ],
+        "stdout_tail": []
+      },
+      "with_tampered_descriptor_hash": null
+    },
+    "freeze.json": {
+      "offset": 447,
+      "rejected_without_writes": true,
+      "with_accepted_hash": {
+        "returncode": 1,
+        "stderr_tail": [
+          "refused: freeze fingerprint mismatch"
+        ],
+        "stdout_tail": []
+      },
+      "with_tampered_descriptor_hash": {
+        "returncode": 1,
+        "stderr_tail": [
+          "refused: frozen artifact fingerprint mismatch: tax-2026.10.04-01.evidence.tar.gz"
+        ],
+        "stdout_tail": []
+      }
+    },
+    "manifest.json": {
+      "offset": 2117,
+      "rejected_without_writes": true,
+      "with_accepted_hash": {
+        "returncode": 1,
+        "stderr_tail": [
+          "refused: frozen artifact fingerprint mismatch: manifest.json"
+        ],
+        "stdout_tail": []
+      },
+      "with_tampered_descriptor_hash": null
+    },
+    "tax-2026.10.04-01.evidence.tar.gz": {
+      "offset": 27828457,
+      "rejected_without_writes": true,
+      "with_accepted_hash": {
+        "returncode": 1,
+        "stderr_tail": [
+          "refused: frozen artifact fingerprint mismatch: tax-2026.10.04-01.evidence.tar.gz"
+        ],
+        "stdout_tail": []
+      },
+      "with_tampered_descriptor_hash": null
+    },
+    "tax-2026.10.04-01.sqlite3.gz": {
+      "offset": 36641519,
+      "rejected_without_writes": true,
+      "with_accepted_hash": {
+        "returncode": 1,
+        "stderr_tail": [
+          "refused: frozen artifact fingerprint mismatch: tax-2026.10.04-01.sqlite3.gz"
+        ],
+        "stdout_tail": []
+      },
+      "with_tampered_descriptor_hash": null
+    }
+  },
+  "wrong_freeze_hash": {
+    "returncode": 1,
+    "stderr_tail": [
+      "refused: freeze fingerprint mismatch"
+    ],
+    "stdout_tail": []
+  },
+  "wrong_freeze_hash_rejected_without_writes": true
+}

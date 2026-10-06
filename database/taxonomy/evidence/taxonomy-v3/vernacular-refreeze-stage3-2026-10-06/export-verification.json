@@ -1,0 +1,484 @@
+{
+  "counts": {
+    "scoped": {
+      "scientific_name.jsonl": 60697,
+      "taxon.jsonl": 52917,
+      "taxon_external_id.jsonl": 56959,
+      "taxon_external_id_legacy_integer.jsonl": 0,
+      "taxon_redlist.jsonl": 2600,
+      "taxonomy_release.jsonl": 1,
+      "vernacular.jsonl": 59889
+    },
+    "w1": {
+      "scientific_name.jsonl": 665946,
+      "taxon.jsonl": 633541,
+      "taxon_external_id.jsonl": 645418,
+      "taxon_external_id_legacy_integer.jsonl": 78615,
+      "taxon_redlist.jsonl": 7866,
+      "taxonomy_release.jsonl": 1,
+      "vernacular.jsonl": 96141
+    }
+  },
+  "db_collective_on_strict": [],
+  "db_counts": {
+    "active": 1,
+    "external_ids": 56959,
+    "legacy_external_ids": 0,
+    "redlist": 2600,
+    "scientific_names": 60697,
+    "taxa": 52917,
+    "vernacular": 59889
+  },
+  "db_taxa_present": [
+    19080,
+    58814,
+    58815,
+    60590,
+    82459,
+    96276,
+    100280,
+    146835
+  ],
+  "db_vernacular_checks": {
+    "blek rødtuppsopp": [],
+    "blekgul køllesopp": [
+      [
+        82459,
+        "nb",
+        "nortaxa"
+      ]
+    ],
+    "falsk lindekorallsopp": [],
+    "furustokklav": [],
+    "gråfiolett køllesopp": [
+      [
+        146835,
+        "nb",
+        "nortaxa"
+      ],
+      [
+        146835,
+        "nn",
+        "nortaxa"
+      ]
+    ],
+    "knolltrevlesopp": [
+      [
+        18575,
+        "nb",
+        "nortaxa"
+      ],
+      [
+        18575,
+        "nn",
+        "nortaxa"
+      ]
+    ],
+    "rognerust": [
+      [
+        100280,
+        "nb",
+        "nortaxa"
+      ],
+      [
+        100280,
+        "nn",
+        "nortaxa"
+      ]
+    ],
+    "rosenekornnøtt": [
+      [
+        60590,
+        "nb",
+        "nortaxa"
+      ]
+    ],
+    "rosenikornnøtt": [
+      [
+        60590,
+        "nn",
+        "nortaxa"
+      ]
+    ],
+    "silkeraudskivesopp": [],
+    "silkeraudspore": [
+      [
+        96276,
+        "nn",
+        "nortaxa"
+      ]
+    ],
+    "silkeraudspore-gruppa": [],
+    "silkerødskivesopp": [],
+    "silkerødspore": [
+      [
+        96276,
+        "nb",
+        "nortaxa"
+      ]
+    ],
+    "silkerødspore-gruppen": [],
+    "sørleg rødtuppsopp": [],
+    "sørlig rødtuppsopp": [],
+    "taigarødtuppsopp": [
+      [
+        58814,
+        "nb",
+        "nortaxa"
+      ]
+    ],
+    "vanleg knolltrevlesopp": [],
+    "vanlig knolltrevlesopp": []
+  },
+  "entoloma": {
+    "collective_id": 625268,
+    "collective_in_scoped_taxa": false,
+    "collective_in_w1_taxa": true,
+    "collective_names_frozen": [
+      "silkeraudskivesopp",
+      "silkeraudspore-gruppa",
+      "silkerødskivesopp",
+      "silkerødspore-gruppen"
+    ],
+    "collective_names_on_strict_frozen": [],
+    "collective_names_on_strict_scoped": [],
+    "collective_names_on_strict_w1": [],
+    "strict_id": 96276,
+    "strict_in_scoped": true,
+    "strict_names_frozen": [
+      "silkeraudspore",
+      "silkerødspore"
+    ]
+  },
+  "file_hashes": {
+    "import.sql": "4465a8ba20e4908a5efb2d7eec49898dbe0d18c8224b9db5566d0d757b9e1ef0",
+    "scoped/desktop-tax-2026.10.06-01.sqlite3": "4a76707784a228546e4000d9e51cb4bb32eaafabc8d20b73821728613ff9b10a",
+    "scoped/desktop-tax-2026.10.06-01.sqlite3.gz": "848ccd84a0846ff2793661f0c1e046f76f006fcacd915680e1fc927095a51acc",
+    "scoped/scientific_name.jsonl": "57a15c614b3c5d49d6754af0b5cf4cfe4e7ab5b61f3004ac381e0ca18bfb1b7e",
+    "scoped/scope-manifest.json": "c95561f12333c0938f094f91550009794b3f609e7ade949c671166e8680dc052",
+    "scoped/scoped-export.jsonl.gz": "bbcd9e48babb83a60b71d1933d5563da388886fd07035871045aa6db6516a11a",
+    "scoped/taxon.jsonl": "f95e4083d083cbf1ad18db2a83b72420c866c9954d52f9b597ac3d01c7c8aeb2",
+    "scoped/taxon_external_id.jsonl": "53b7957fde8f95765f6ab1884ba46d2327d3e5388927241f3474a20896ef83d0",
+    "scoped/taxon_external_id_legacy_integer.jsonl": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855",
+    "scoped/taxon_redlist.jsonl": "c4f0679db8557bdf000ab8037435af18859d101af841b238ea62b3b25481a74e",
+    "scoped/taxonomy_export_manifest.json": "44f3182b43f9a0a01c60aaee98a80a88db71c8bb41bba5e1d0fd3c912c5d75c6",
+    "scoped/taxonomy_release.jsonl": "0d072565f2c6142777f9c70dc828133edd52708cad456891b7992047647c5d1b",
+    "scoped/vernacular.jsonl": "10aae35b402782843da52bcb4ecfcc615c40b0366809683d6688a3d246c3756f",
+    "validation-rollback.sql": "c62f5c4efdddef78f51e2911ae42648b87b15bbb8682dba5fbef27e59b94ecce",
+    "w1/scientific_name.jsonl": "9a49dc358449f4d8a7751d881d8e88a96be4161cd3a0362f80921a44fb4b1ad0",
+    "w1/taxon.jsonl": "ae94c0d923031132f28ccbe997f02a7392c55419696f30d71c7ba562b2cec2b7",
+    "w1/taxon_external_id.jsonl": "cbb1d0f868d4f4d95adf68186c07df34ada8c27a3a78c0b1544222dab37d9ae0",
+    "w1/taxon_external_id_legacy_integer.jsonl": "dd9ebe52579aa12fa5412afc75e7a90a823276a6d4d0390fbf653b21fc946b34",
+    "w1/taxon_redlist.jsonl": "f8db7a0553750e4a14c7501f81c26e71cebd9717d9c3ec4d43bc4f8ced315a8b",
+    "w1/taxonomy_export_manifest.json": "7d518dd159f497906f5be0d74e550fc3e09ed83d24854f57f9e9f8c569ed1314",
+    "w1/taxonomy_release.jsonl": "409024f32050a708b8343688a73e9dbe0ddc80c8c1f51412b92b4132c479e316",
+    "w1/vernacular.jsonl": "1e94af447c805ab80901f2e1f3c97cabaf8cefb586122e252add72a5bc909b54"
+  },
+  "norwegian_additions": {
+    "affected_concepts": 767,
+    "automatic": 1619,
+    "in_scoped": 1637,
+    "in_w1": 1637,
+    "not_in_scoped": [],
+    "reviewed": 18
+  },
+  "preferred_names": {
+    "compared_rows_vs_old_bundle": 19418,
+    "delta_rows": 6897,
+    "drift_examples": [],
+    "drift_vs_stage1_flags": 0,
+    "drift_vs_stage1b_evidence": 0,
+    "stage1_rows_compared": 11635,
+    "stage1b_vs_stage1_delta_recorded": 0
+  },
+  "probe_names_on_other_concepts": {
+    "Russula aeruginea": [],
+    "blekgul køllesopp": [],
+    "dråpeknippesopp": [
+      627070
+    ],
+    "dunpipe": [
+      625692
+    ],
+    "furustokklav": [],
+    "gråfiolett køllesopp": [
+      621443
+    ],
+    "grønn navlesopp": [],
+    "grønnkremle": [
+      626822
+    ],
+    "gul ekornnøtt": [
+      627114
+    ],
+    "lys høstmorkel": [
+      632950
+    ],
+    "rognerust": [
+      621074
+    ],
+    "rosenekornnøtt": [],
+    "silkerødspore": [],
+    "snylterørsopp": [
+      627113
+    ],
+    "taigarødtuppsopp": [
+      621458
+    ],
+    "tårekjuke": [
+      627130
+    ]
+  },
+  "qualified_withheld": [
+    {
+      "language": "nb",
+      "name": "taigarødtuppsopp",
+      "name_anywhere_frozen": [
+        58814,
+        621458
+      ],
+      "on_target_frozen": true,
+      "on_target_scoped": true,
+      "on_target_w1": true,
+      "reasons": [
+        "qualified_or_aggregate_source"
+      ],
+      "source_record": "129065",
+      "source_scientific_name": "Ramaria rubrievanescens",
+      "target": 58814,
+      "withheld_evidence": false
+    },
+    {
+      "language": "nb",
+      "name": "blek rødtuppsopp",
+      "name_anywhere_frozen": [
+        621902
+      ],
+      "on_target_frozen": false,
+      "on_target_scoped": false,
+      "on_target_w1": false,
+      "reasons": [
+        "qualified_or_aggregate_source"
+      ],
+      "source_record": "136341",
+      "source_scientific_name": "Ramaria strasseri",
+      "target": 58832,
+      "withheld_evidence": false
+    },
+    {
+      "language": "nb",
+      "name": "knolltrevlesopp",
+      "name_anywhere_frozen": [
+        18575,
+        625094
+      ],
+      "on_target_frozen": false,
+      "on_target_scoped": false,
+      "on_target_w1": false,
+      "reasons": [
+        "qualified_or_aggregate_source"
+      ],
+      "source_record": "53227",
+      "source_scientific_name": "Inocybe praetervisa",
+      "target": 19080,
+      "withheld_evidence": true
+    },
+    {
+      "language": "nb",
+      "name": "vanlig knolltrevlesopp",
+      "name_anywhere_frozen": [
+        625094
+      ],
+      "on_target_frozen": false,
+      "on_target_scoped": false,
+      "on_target_w1": false,
+      "reasons": [
+        "qualified_or_aggregate_source"
+      ],
+      "source_record": "53227",
+      "source_scientific_name": "Inocybe praetervisa",
+      "target": 19080,
+      "withheld_evidence": false
+    },
+    {
+      "language": "nn",
+      "name": "knolltrevlesopp",
+      "name_anywhere_frozen": [
+        18575,
+        625094
+      ],
+      "on_target_frozen": false,
+      "on_target_scoped": false,
+      "on_target_w1": false,
+      "reasons": [
+        "qualified_or_aggregate_source"
+      ],
+      "source_record": "53227",
+      "source_scientific_name": "Inocybe praetervisa",
+      "target": 19080,
+      "withheld_evidence": false
+    },
+    {
+      "language": "nn",
+      "name": "vanleg knolltrevlesopp",
+      "name_anywhere_frozen": [
+        625094
+      ],
+      "on_target_frozen": false,
+      "on_target_scoped": false,
+      "on_target_w1": false,
+      "reasons": [
+        "qualified_or_aggregate_source"
+      ],
+      "source_record": "53227",
+      "source_scientific_name": "Inocybe praetervisa",
+      "target": 19080,
+      "withheld_evidence": false
+    },
+    {
+      "language": "nb",
+      "name": "silkerødskivesopp",
+      "name_anywhere_frozen": [
+        625268
+      ],
+      "on_target_frozen": false,
+      "on_target_scoped": false,
+      "on_target_w1": false,
+      "reasons": [
+        "collective_concept_must_remain_distinct",
+        "qualified_or_aggregate_source"
+      ],
+      "source_record": "53666",
+      "source_scientific_name": "Entoloma sericellum",
+      "target": 96276,
+      "withheld_evidence": false
+    },
+    {
+      "language": "nb",
+      "name": "silkerødspore-gruppen",
+      "name_anywhere_frozen": [
+        625268
+      ],
+      "on_target_frozen": false,
+      "on_target_scoped": false,
+      "on_target_w1": false,
+      "reasons": [
+        "collective_concept_must_remain_distinct",
+        "qualified_or_aggregate_source"
+      ],
+      "source_record": "53666",
+      "source_scientific_name": "Entoloma sericellum",
+      "target": 96276,
+      "withheld_evidence": false
+    },
+    {
+      "language": "nn",
+      "name": "silkeraudskivesopp",
+      "name_anywhere_frozen": [
+        625268
+      ],
+      "on_target_frozen": false,
+      "on_target_scoped": false,
+      "on_target_w1": false,
+      "reasons": [
+        "collective_concept_must_remain_distinct",
+        "qualified_or_aggregate_source"
+      ],
+      "source_record": "53666",
+      "source_scientific_name": "Entoloma sericellum",
+      "target": 96276,
+      "withheld_evidence": false
+    },
+    {
+      "language": "nn",
+      "name": "silkeraudspore-gruppa",
+      "name_anywhere_frozen": [
+        625268
+      ],
+      "on_target_frozen": false,
+      "on_target_scoped": false,
+      "on_target_w1": false,
+      "reasons": [
+        "collective_concept_must_remain_distinct",
+        "qualified_or_aggregate_source"
+      ],
+      "source_record": "53666",
+      "source_scientific_name": "Entoloma sericellum",
+      "target": 96276,
+      "withheld_evidence": false
+    },
+    {
+      "language": "nb",
+      "name": "falsk lindekorallsopp",
+      "name_anywhere_frozen": [
+        626338
+      ],
+      "on_target_frozen": false,
+      "on_target_scoped": false,
+      "on_target_w1": false,
+      "reasons": [
+        "qualified_or_aggregate_source"
+      ],
+      "source_record": "56485",
+      "source_scientific_name": "Ramaria aurea",
+      "target": 58651,
+      "withheld_evidence": false
+    },
+    {
+      "language": "nb",
+      "name": "sørlig rødtuppsopp",
+      "name_anywhere_frozen": [
+        626348
+      ],
+      "on_target_frozen": false,
+      "on_target_scoped": false,
+      "on_target_w1": false,
+      "reasons": [
+        "qualified_or_aggregate_source"
+      ],
+      "source_record": "56524",
+      "source_scientific_name": "Ramaria rubripermanens",
+      "target": 58815,
+      "withheld_evidence": true
+    },
+    {
+      "language": "nn",
+      "name": "sørleg rødtuppsopp",
+      "name_anywhere_frozen": [
+        626348
+      ],
+      "on_target_frozen": false,
+      "on_target_scoped": false,
+      "on_target_w1": false,
+      "reasons": [
+        "qualified_or_aggregate_source"
+      ],
+      "source_record": "56524",
+      "source_scientific_name": "Ramaria rubripermanens",
+      "target": 58815,
+      "withheld_evidence": true
+    }
+  ],
+  "scoped_equals_frozen_scoped_exactly": true,
+  "stage1_rows": {
+    "expected": 13271,
+    "missing_from_frozen_sqlite": 0,
+    "missing_from_w1": 0,
+    "reconstructed": 13271,
+    "scoped_missing": 0,
+    "scoped_stage1_rows": 6948
+  },
+  "stage1b_recoveries": {
+    "concepts": 3579,
+    "in_frozen_sqlite": 10331,
+    "in_w1": 10331,
+    "total": 10331
+  },
+  "unsupported_historical": {
+    "present_in_frozen_sqlite": 0,
+    "present_in_scoped": 0,
+    "present_in_w1": 0,
+    "total": 8453
+  },
+  "w1_equals_frozen_sqlite_exactly": true
+}

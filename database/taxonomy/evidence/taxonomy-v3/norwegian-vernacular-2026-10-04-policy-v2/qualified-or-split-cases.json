@@ -1,0 +1,2472 @@
+[
+  {
+    "allocated_source_sporely_taxon_id": 621458,
+    "authorship_diagnostics": [
+      {
+        "difference": "other_difference_including_abbreviations",
+        "target_authorship": "Marr & D.E. Stuntz",
+        "target_sporely_taxon_id": 58814
+      }
+    ],
+    "classification_disagreements": [],
+    "currently_present_on_source_bound_concept": true,
+    "currently_reaches_bundled_canonical": false,
+    "currently_reaches_cloud_canonical": false,
+    "disposition": "exception",
+    "existing_bound_sporely_taxon_id": 621458,
+    "existing_preferred_vernaculars_preserved": true,
+    "existing_reviewed_decisions": [],
+    "existing_vernacular_conflicts": [],
+    "external_identifier_emission": false,
+    "full_bundle_target_ids": [
+      58814
+    ],
+    "identity_effect": "none",
+    "is_preferred": true,
+    "language": "nb",
+    "pinned_source_release": {
+      "issued_date": "2026-07-17",
+      "version": "1.284"
+    },
+    "projected_is_preferred": true,
+    "reasons": [
+      "qualified_or_aggregate_source"
+    ],
+    "reviewed_decision_conflicts": [],
+    "rule_evidence_class": "vernacular_only_exact_name_rank_full_universe_unique_current_v2",
+    "scoped_target_ids": [
+      58814
+    ],
+    "source": "nortaxa",
+    "source_authorship": "s. auct. scand.",
+    "source_classification": {
+      "class": "Agaricomycetes",
+      "family": "Gomphaceae",
+      "genus": "Ramaria",
+      "infraspecific_epithet": "",
+      "kingdom": "Fungi",
+      "order": "Gomphales",
+      "phylum": "Basidiomycota",
+      "specific_epithet": "rubrievanescens"
+    },
+    "source_nomenclatural_status": "",
+    "source_provenance": {
+      "identifier_namespace": "NBIC:",
+      "member": "vernacularname.txt",
+      "row_index": 35696,
+      "source_code": "nortaxa",
+      "source_release": {
+        "issued_date": "2026-07-17",
+        "version": "1.284"
+      }
+    },
+    "source_rank": "species",
+    "source_record_identifier": {
+      "namespace": "nortaxa_dwc_id",
+      "value": "129065"
+    },
+    "source_scientific_name": "Ramaria rubrievanescens",
+    "source_status": "valid",
+    "source_taxon_identifier": {
+      "namespace": "nortaxa_taxon_id",
+      "value": "129065"
+    },
+    "source_usage_provenance": {
+      "identifier_namespace": "NBIC:",
+      "member": "taxon.txt",
+      "row_index": 126016,
+      "source_code": "nortaxa",
+      "source_release": {
+        "issued_date": "2026-07-17",
+        "version": "1.284"
+      }
+    },
+    "stage2_evidence": [
+      {
+        "col_sporely_taxon_id": 58814,
+        "evidence_class": "no_published_cross_reference",
+        "path": "database/taxonomy/evidence/taxonomy-v3/stage2/group-b-no-published-cross-reference.manifest.json"
+      }
+    ],
+    "target_authorship": "Marr & D.E. Stuntz",
+    "target_canonical_scientific_name": "Ramaria rubrievanescens",
+    "target_sporely_taxon_id": 58814,
+    "vernacular_name": "taigarødtuppsopp",
+    "warnings": []
+  },
+  {
+    "allocated_source_sporely_taxon_id": 621627,
+    "authorship_diagnostics": [
+      {
+        "difference": "other_difference_including_abbreviations",
+        "target_authorship": "Moënne-Locc. & Reumaux",
+        "target_sporely_taxon_id": 618912
+      }
+    ],
+    "classification_disagreements": [],
+    "currently_present_on_source_bound_concept": true,
+    "currently_reaches_bundled_canonical": false,
+    "currently_reaches_cloud_canonical": false,
+    "disposition": "exception",
+    "existing_bound_sporely_taxon_id": 621627,
+    "existing_preferred_vernaculars_preserved": true,
+    "existing_reviewed_decisions": [],
+    "existing_vernacular_conflicts": [],
+    "external_identifier_emission": false,
+    "full_bundle_target_ids": [
+      618912
+    ],
+    "identity_effect": "none",
+    "is_preferred": true,
+    "language": "nb",
+    "pinned_source_release": {
+      "issued_date": "2026-07-17",
+      "version": "1.284"
+    },
+    "projected_is_preferred": true,
+    "reasons": [
+      "qualified_or_aggregate_source"
+    ],
+    "reviewed_decision_conflicts": [],
+    "rule_evidence_class": "vernacular_only_exact_name_rank_full_universe_unique_current_v2",
+    "scoped_target_ids": [
+      618912
+    ],
+    "source": "nortaxa",
+    "source_authorship": "s. auct. scand.",
+    "source_classification": {
+      "class": "Agaricomycetes",
+      "family": "Cortinariaceae",
+      "genus": "Cortinarius",
+      "infraspecific_epithet": "",
+      "kingdom": "Fungi",
+      "order": "Agaricales",
+      "phylum": "Basidiomycota",
+      "specific_epithet": "milvinicolor"
+    },
+    "source_nomenclatural_status": "",
+    "source_provenance": {
+      "identifier_namespace": "NBIC:",
+      "member": "vernacularname.txt",
+      "row_index": 33689,
+      "source_code": "nortaxa",
+      "source_release": {
+        "issued_date": "2026-07-17",
+        "version": "1.284"
+      }
+    },
+    "source_rank": "species",
+    "source_record_identifier": {
+      "namespace": "nortaxa_dwc_id",
+      "value": "131436"
+    },
+    "source_scientific_name": "Cortinarius milvinicolor",
+    "source_status": "valid",
+    "source_taxon_identifier": {
+      "namespace": "nortaxa_taxon_id",
+      "value": "131436"
+    },
+    "source_usage_provenance": {
+      "identifier_namespace": "NBIC:",
+      "member": "taxon.txt",
+      "row_index": 128359,
+      "source_code": "nortaxa",
+      "source_release": {
+        "issued_date": "2026-07-17",
+        "version": "1.284"
+      }
+    },
+    "stage2_evidence": [
+      {
+        "col_sporely_taxon_id": 618912,
+        "evidence_class": "no_published_cross_reference",
+        "path": "database/taxonomy/evidence/taxonomy-v3/stage2/group-b-no-published-cross-reference.manifest.json"
+      }
+    ],
+    "target_authorship": "Moënne-Locc. & Reumaux",
+    "target_canonical_scientific_name": "Cortinarius milvinicolor",
+    "target_sporely_taxon_id": 618912,
+    "vernacular_name": "oliven rådyrslørsopp",
+    "warnings": []
+  },
+  {
+    "allocated_source_sporely_taxon_id": 621902,
+    "authorship_diagnostics": [
+      {
+        "difference": "other_difference_including_abbreviations",
+        "target_authorship": "(Bres.) Corner",
+        "target_sporely_taxon_id": 58832
+      }
+    ],
+    "classification_disagreements": [],
+    "currently_present_on_source_bound_concept": true,
+    "currently_reaches_bundled_canonical": false,
+    "currently_reaches_cloud_canonical": false,
+    "disposition": "exception",
+    "existing_bound_sporely_taxon_id": 621902,
+    "existing_preferred_vernaculars_preserved": true,
+    "existing_reviewed_decisions": [],
+    "existing_vernacular_conflicts": [],
+    "external_identifier_emission": false,
+    "full_bundle_target_ids": [
+      58832
+    ],
+    "identity_effect": "none",
+    "is_preferred": true,
+    "language": "nb",
+    "pinned_source_release": {
+      "issued_date": "2026-07-17",
+      "version": "1.284"
+    },
+    "projected_is_preferred": true,
+    "reasons": [
+      "qualified_or_aggregate_source"
+    ],
+    "reviewed_decision_conflicts": [],
+    "rule_evidence_class": "vernacular_only_exact_name_rank_full_universe_unique_current_v2",
+    "scoped_target_ids": [
+      58832
+    ],
+    "source": "nortaxa",
+    "source_authorship": "s. auct. scand.",
+    "source_classification": {
+      "class": "Agaricomycetes",
+      "family": "Gomphaceae",
+      "genus": "Ramaria",
+      "infraspecific_epithet": "",
+      "kingdom": "Fungi",
+      "order": "Gomphales",
+      "phylum": "Basidiomycota",
+      "specific_epithet": "strasseri"
+    },
+    "source_nomenclatural_status": "",
+    "source_provenance": {
+      "identifier_namespace": "NBIC:",
+      "member": "vernacularname.txt",
+      "row_index": 35873,
+      "source_code": "nortaxa",
+      "source_release": {
+        "issued_date": "2026-07-17",
+        "version": "1.284"
+      }
+    },
+    "source_rank": "species",
+    "source_record_identifier": {
+      "namespace": "nortaxa_dwc_id",
+      "value": "136341"
+    },
+    "source_scientific_name": "Ramaria strasseri",
+    "source_status": "valid",
+    "source_taxon_identifier": {
+      "namespace": "nortaxa_taxon_id",
+      "value": "136341"
+    },
+    "source_usage_provenance": {
+      "identifier_namespace": "NBIC:",
+      "member": "taxon.txt",
+      "row_index": 133153,
+      "source_code": "nortaxa",
+      "source_release": {
+        "issued_date": "2026-07-17",
+        "version": "1.284"
+      }
+    },
+    "stage2_evidence": [
+      {
+        "col_sporely_taxon_id": 58832,
+        "evidence_class": "no_published_cross_reference",
+        "path": "database/taxonomy/evidence/taxonomy-v3/stage2/group-b-no-published-cross-reference.manifest.json"
+      }
+    ],
+    "target_authorship": "(Bres.) Corner",
+    "target_canonical_scientific_name": "Ramaria strasseri",
+    "target_sporely_taxon_id": 58832,
+    "vernacular_name": "blek rødtuppsopp",
+    "warnings": []
+  },
+  {
+    "allocated_source_sporely_taxon_id": 622658,
+    "authorship_diagnostics": [
+      {
+        "difference": "other_difference_including_abbreviations",
+        "target_authorship": "(Coker) Corner",
+        "target_sporely_taxon_id": 58693
+      }
+    ],
+    "classification_disagreements": [],
+    "currently_present_on_source_bound_concept": true,
+    "currently_reaches_bundled_canonical": false,
+    "currently_reaches_cloud_canonical": false,
+    "disposition": "exception",
+    "existing_bound_sporely_taxon_id": 622658,
+    "existing_preferred_vernaculars_preserved": true,
+    "existing_reviewed_decisions": [],
+    "existing_vernacular_conflicts": [],
+    "external_identifier_emission": false,
+    "full_bundle_target_ids": [
+      58693
+    ],
+    "identity_effect": "none",
+    "is_preferred": true,
+    "language": "nb",
+    "pinned_source_release": {
+      "issued_date": "2026-07-17",
+      "version": "1.284"
+    },
+    "projected_is_preferred": true,
+    "reasons": [
+      "qualified_or_aggregate_source"
+    ],
+    "reviewed_decision_conflicts": [],
+    "rule_evidence_class": "vernacular_only_exact_name_rank_full_universe_unique_current_v2",
+    "scoped_target_ids": [
+      58693
+    ],
+    "source": "nortaxa",
+    "source_authorship": "s. auct. scand.",
+    "source_classification": {
+      "class": "Agaricomycetes",
+      "family": "Gomphaceae",
+      "genus": "Ramaria",
+      "infraspecific_epithet": "",
+      "kingdom": "Fungi",
+      "order": "Gomphales",
+      "phylum": "Basidiomycota",
+      "specific_epithet": "conjunctipes"
+    },
+    "source_nomenclatural_status": "",
+    "source_provenance": {
+      "identifier_namespace": "NBIC:",
+      "member": "vernacularname.txt",
+      "row_index": 35698,
+      "source_code": "nortaxa",
+      "source_release": {
+        "issued_date": "2026-07-17",
+        "version": "1.284"
+      }
+    },
+    "source_rank": "species",
+    "source_record_identifier": {
+      "namespace": "nortaxa_dwc_id",
+      "value": "151982"
+    },
+    "source_scientific_name": "Ramaria conjunctipes",
+    "source_status": "valid",
+    "source_taxon_identifier": {
+      "namespace": "nortaxa_taxon_id",
+      "value": "151982"
+    },
+    "source_usage_provenance": {
+      "identifier_namespace": "NBIC:",
+      "member": "taxon.txt",
+      "row_index": 148299,
+      "source_code": "nortaxa",
+      "source_release": {
+        "issued_date": "2026-07-17",
+        "version": "1.284"
+      }
+    },
+    "stage2_evidence": [
+      {
+        "col_sporely_taxon_id": 58693,
+        "evidence_class": "no_published_cross_reference",
+        "path": "database/taxonomy/evidence/taxonomy-v3/stage2/group-b-no-published-cross-reference.manifest.json"
+      }
+    ],
+    "target_authorship": "(Coker) Corner",
+    "target_canonical_scientific_name": "Ramaria conjunctipes",
+    "target_sporely_taxon_id": 58693,
+    "vernacular_name": "norsk flammekorallsopp",
+    "warnings": []
+  },
+  {
+    "allocated_source_sporely_taxon_id": 625094,
+    "authorship_diagnostics": [
+      {
+        "difference": "other_difference_including_abbreviations",
+        "target_authorship": "Quél.",
+        "target_sporely_taxon_id": 19080
+      }
+    ],
+    "classification_disagreements": [],
+    "currently_present_on_source_bound_concept": true,
+    "currently_reaches_bundled_canonical": false,
+    "currently_reaches_cloud_canonical": false,
+    "disposition": "exception",
+    "existing_bound_sporely_taxon_id": 625094,
+    "existing_preferred_vernaculars_preserved": true,
+    "existing_reviewed_decisions": [],
+    "existing_vernacular_conflicts": [],
+    "external_identifier_emission": false,
+    "full_bundle_target_ids": [
+      19080
+    ],
+    "identity_effect": "none",
+    "is_preferred": true,
+    "language": "nb",
+    "pinned_source_release": {
+      "issued_date": "2026-07-17",
+      "version": "1.284"
+    },
+    "projected_is_preferred": true,
+    "reasons": [
+      "qualified_or_aggregate_source"
+    ],
+    "reviewed_decision_conflicts": [],
+    "rule_evidence_class": "vernacular_only_exact_name_rank_full_universe_unique_current_v2",
+    "scoped_target_ids": [
+      19080
+    ],
+    "source": "nortaxa",
+    "source_authorship": "s. auct. plur.",
+    "source_classification": {
+      "class": "Agaricomycetes",
+      "family": "Inocybaceae",
+      "genus": "Inocybe",
+      "infraspecific_epithet": "",
+      "kingdom": "Fungi",
+      "order": "Agaricales",
+      "phylum": "Basidiomycota",
+      "specific_epithet": "praetervisa"
+    },
+    "source_nomenclatural_status": "",
+    "source_provenance": {
+      "identifier_namespace": "NBIC:",
+      "member": "vernacularname.txt",
+      "row_index": 11747,
+      "source_code": "nortaxa",
+      "source_release": {
+        "issued_date": "2026-07-17",
+        "version": "1.284"
+      }
+    },
+    "source_rank": "species",
+    "source_record_identifier": {
+      "namespace": "nortaxa_dwc_id",
+      "value": "53227"
+    },
+    "source_scientific_name": "Inocybe praetervisa",
+    "source_status": "valid",
+    "source_taxon_identifier": {
+      "namespace": "nortaxa_taxon_id",
+      "value": "53227"
+    },
+    "source_usage_provenance": {
+      "identifier_namespace": "NBIC:",
+      "member": "taxon.txt",
+      "row_index": 52903,
+      "source_code": "nortaxa",
+      "source_release": {
+        "issued_date": "2026-07-17",
+        "version": "1.284"
+      }
+    },
+    "stage2_evidence": [
+      {
+        "col_sporely_taxon_id": 19080,
+        "evidence_class": "no_published_cross_reference",
+        "path": "database/taxonomy/evidence/taxonomy-v3/stage2/group-b-no-published-cross-reference.manifest.json"
+      }
+    ],
+    "target_authorship": "Quél.",
+    "target_canonical_scientific_name": "Inocybe praetervisa",
+    "target_sporely_taxon_id": 19080,
+    "vernacular_name": "knolltrevlesopp",
+    "warnings": []
+  },
+  {
+    "allocated_source_sporely_taxon_id": 625094,
+    "authorship_diagnostics": [
+      {
+        "difference": "other_difference_including_abbreviations",
+        "target_authorship": "Quél.",
+        "target_sporely_taxon_id": 19080
+      }
+    ],
+    "classification_disagreements": [],
+    "currently_present_on_source_bound_concept": true,
+    "currently_reaches_bundled_canonical": false,
+    "currently_reaches_cloud_canonical": false,
+    "disposition": "exception",
+    "existing_bound_sporely_taxon_id": 625094,
+    "existing_preferred_vernaculars_preserved": true,
+    "existing_reviewed_decisions": [],
+    "existing_vernacular_conflicts": [],
+    "external_identifier_emission": false,
+    "full_bundle_target_ids": [
+      19080
+    ],
+    "identity_effect": "none",
+    "is_preferred": false,
+    "language": "nb",
+    "pinned_source_release": {
+      "issued_date": "2026-07-17",
+      "version": "1.284"
+    },
+    "projected_is_preferred": false,
+    "reasons": [
+      "qualified_or_aggregate_source"
+    ],
+    "reviewed_decision_conflicts": [],
+    "rule_evidence_class": "vernacular_only_exact_name_rank_full_universe_unique_current_v2",
+    "scoped_target_ids": [
+      19080
+    ],
+    "source": "nortaxa",
+    "source_authorship": "s. auct. plur.",
+    "source_classification": {
+      "class": "Agaricomycetes",
+      "family": "Inocybaceae",
+      "genus": "Inocybe",
+      "infraspecific_epithet": "",
+      "kingdom": "Fungi",
+      "order": "Agaricales",
+      "phylum": "Basidiomycota",
+      "specific_epithet": "praetervisa"
+    },
+    "source_nomenclatural_status": "",
+    "source_provenance": {
+      "identifier_namespace": "NBIC:",
+      "member": "vernacularname.txt",
+      "row_index": 11746,
+      "source_code": "nortaxa",
+      "source_release": {
+        "issued_date": "2026-07-17",
+        "version": "1.284"
+      }
+    },
+    "source_rank": "species",
+    "source_record_identifier": {
+      "namespace": "nortaxa_dwc_id",
+      "value": "53227"
+    },
+    "source_scientific_name": "Inocybe praetervisa",
+    "source_status": "valid",
+    "source_taxon_identifier": {
+      "namespace": "nortaxa_taxon_id",
+      "value": "53227"
+    },
+    "source_usage_provenance": {
+      "identifier_namespace": "NBIC:",
+      "member": "taxon.txt",
+      "row_index": 52903,
+      "source_code": "nortaxa",
+      "source_release": {
+        "issued_date": "2026-07-17",
+        "version": "1.284"
+      }
+    },
+    "stage2_evidence": [
+      {
+        "col_sporely_taxon_id": 19080,
+        "evidence_class": "no_published_cross_reference",
+        "path": "database/taxonomy/evidence/taxonomy-v3/stage2/group-b-no-published-cross-reference.manifest.json"
+      }
+    ],
+    "target_authorship": "Quél.",
+    "target_canonical_scientific_name": "Inocybe praetervisa",
+    "target_sporely_taxon_id": 19080,
+    "vernacular_name": "vanlig knolltrevlesopp",
+    "warnings": []
+  },
+  {
+    "allocated_source_sporely_taxon_id": 625094,
+    "authorship_diagnostics": [
+      {
+        "difference": "other_difference_including_abbreviations",
+        "target_authorship": "Quél.",
+        "target_sporely_taxon_id": 19080
+      }
+    ],
+    "classification_disagreements": [],
+    "currently_present_on_source_bound_concept": true,
+    "currently_reaches_bundled_canonical": false,
+    "currently_reaches_cloud_canonical": false,
+    "disposition": "exception",
+    "existing_bound_sporely_taxon_id": 625094,
+    "existing_preferred_vernaculars_preserved": true,
+    "existing_reviewed_decisions": [],
+    "existing_vernacular_conflicts": [],
+    "external_identifier_emission": false,
+    "full_bundle_target_ids": [
+      19080
+    ],
+    "identity_effect": "none",
+    "is_preferred": true,
+    "language": "nn",
+    "pinned_source_release": {
+      "issued_date": "2026-07-17",
+      "version": "1.284"
+    },
+    "projected_is_preferred": true,
+    "reasons": [
+      "qualified_or_aggregate_source"
+    ],
+    "reviewed_decision_conflicts": [],
+    "rule_evidence_class": "vernacular_only_exact_name_rank_full_universe_unique_current_v2",
+    "scoped_target_ids": [
+      19080
+    ],
+    "source": "nortaxa",
+    "source_authorship": "s. auct. plur.",
+    "source_classification": {
+      "class": "Agaricomycetes",
+      "family": "Inocybaceae",
+      "genus": "Inocybe",
+      "infraspecific_epithet": "",
+      "kingdom": "Fungi",
+      "order": "Agaricales",
+      "phylum": "Basidiomycota",
+      "specific_epithet": "praetervisa"
+    },
+    "source_nomenclatural_status": "",
+    "source_provenance": {
+      "identifier_namespace": "NBIC:",
+      "member": "vernacularname.txt",
+      "row_index": 47329,
+      "source_code": "nortaxa",
+      "source_release": {
+        "issued_date": "2026-07-17",
+        "version": "1.284"
+      }
+    },
+    "source_rank": "species",
+    "source_record_identifier": {
+      "namespace": "nortaxa_dwc_id",
+      "value": "53227"
+    },
+    "source_scientific_name": "Inocybe praetervisa",
+    "source_status": "valid",
+    "source_taxon_identifier": {
+      "namespace": "nortaxa_taxon_id",
+      "value": "53227"
+    },
+    "source_usage_provenance": {
+      "identifier_namespace": "NBIC:",
+      "member": "taxon.txt",
+      "row_index": 52903,
+      "source_code": "nortaxa",
+      "source_release": {
+        "issued_date": "2026-07-17",
+        "version": "1.284"
+      }
+    },
+    "stage2_evidence": [
+      {
+        "col_sporely_taxon_id": 19080,
+        "evidence_class": "no_published_cross_reference",
+        "path": "database/taxonomy/evidence/taxonomy-v3/stage2/group-b-no-published-cross-reference.manifest.json"
+      }
+    ],
+    "target_authorship": "Quél.",
+    "target_canonical_scientific_name": "Inocybe praetervisa",
+    "target_sporely_taxon_id": 19080,
+    "vernacular_name": "knolltrevlesopp",
+    "warnings": []
+  },
+  {
+    "allocated_source_sporely_taxon_id": 625094,
+    "authorship_diagnostics": [
+      {
+        "difference": "other_difference_including_abbreviations",
+        "target_authorship": "Quél.",
+        "target_sporely_taxon_id": 19080
+      }
+    ],
+    "classification_disagreements": [],
+    "currently_present_on_source_bound_concept": true,
+    "currently_reaches_bundled_canonical": false,
+    "currently_reaches_cloud_canonical": false,
+    "disposition": "exception",
+    "existing_bound_sporely_taxon_id": 625094,
+    "existing_preferred_vernaculars_preserved": true,
+    "existing_reviewed_decisions": [],
+    "existing_vernacular_conflicts": [],
+    "external_identifier_emission": false,
+    "full_bundle_target_ids": [
+      19080
+    ],
+    "identity_effect": "none",
+    "is_preferred": false,
+    "language": "nn",
+    "pinned_source_release": {
+      "issued_date": "2026-07-17",
+      "version": "1.284"
+    },
+    "projected_is_preferred": false,
+    "reasons": [
+      "qualified_or_aggregate_source"
+    ],
+    "reviewed_decision_conflicts": [],
+    "rule_evidence_class": "vernacular_only_exact_name_rank_full_universe_unique_current_v2",
+    "scoped_target_ids": [
+      19080
+    ],
+    "source": "nortaxa",
+    "source_authorship": "s. auct. plur.",
+    "source_classification": {
+      "class": "Agaricomycetes",
+      "family": "Inocybaceae",
+      "genus": "Inocybe",
+      "infraspecific_epithet": "",
+      "kingdom": "Fungi",
+      "order": "Agaricales",
+      "phylum": "Basidiomycota",
+      "specific_epithet": "praetervisa"
+    },
+    "source_nomenclatural_status": "",
+    "source_provenance": {
+      "identifier_namespace": "NBIC:",
+      "member": "vernacularname.txt",
+      "row_index": 47328,
+      "source_code": "nortaxa",
+      "source_release": {
+        "issued_date": "2026-07-17",
+        "version": "1.284"
+      }
+    },
+    "source_rank": "species",
+    "source_record_identifier": {
+      "namespace": "nortaxa_dwc_id",
+      "value": "53227"
+    },
+    "source_scientific_name": "Inocybe praetervisa",
+    "source_status": "valid",
+    "source_taxon_identifier": {
+      "namespace": "nortaxa_taxon_id",
+      "value": "53227"
+    },
+    "source_usage_provenance": {
+      "identifier_namespace": "NBIC:",
+      "member": "taxon.txt",
+      "row_index": 52903,
+      "source_code": "nortaxa",
+      "source_release": {
+        "issued_date": "2026-07-17",
+        "version": "1.284"
+      }
+    },
+    "stage2_evidence": [
+      {
+        "col_sporely_taxon_id": 19080,
+        "evidence_class": "no_published_cross_reference",
+        "path": "database/taxonomy/evidence/taxonomy-v3/stage2/group-b-no-published-cross-reference.manifest.json"
+      }
+    ],
+    "target_authorship": "Quél.",
+    "target_canonical_scientific_name": "Inocybe praetervisa",
+    "target_sporely_taxon_id": 19080,
+    "vernacular_name": "vanleg knolltrevlesopp",
+    "warnings": []
+  },
+  {
+    "allocated_source_sporely_taxon_id": 625268,
+    "authorship_diagnostics": [
+      {
+        "difference": "other_difference_including_abbreviations",
+        "target_authorship": "(Fr.) P. Kumm.",
+        "target_sporely_taxon_id": 96276
+      }
+    ],
+    "classification_disagreements": [],
+    "currently_present_on_source_bound_concept": true,
+    "currently_reaches_bundled_canonical": false,
+    "currently_reaches_cloud_canonical": false,
+    "disposition": "exception",
+    "existing_bound_sporely_taxon_id": 625268,
+    "existing_preferred_vernaculars_preserved": true,
+    "existing_reviewed_decisions": [],
+    "existing_vernacular_conflicts": [
+      {
+        "existing_is_preferred": true,
+        "existing_name": "silkerødspore",
+        "language": "nb",
+        "target_sporely_taxon_id": 96276
+      }
+    ],
+    "external_identifier_emission": false,
+    "full_bundle_target_ids": [
+      96276
+    ],
+    "identity_effect": "none",
+    "is_preferred": false,
+    "language": "nb",
+    "pinned_source_release": {
+      "issued_date": "2026-07-17",
+      "version": "1.284"
+    },
+    "projected_is_preferred": false,
+    "reasons": [
+      "qualified_or_aggregate_source"
+    ],
+    "reviewed_decision_conflicts": [],
+    "rule_evidence_class": "vernacular_only_exact_name_rank_full_universe_unique_current_v2",
+    "scoped_target_ids": [
+      96276
+    ],
+    "source": "nortaxa",
+    "source_authorship": "(Fr. : Fr.) P. Kumm. agg.",
+    "source_classification": {
+      "class": "Agaricomycetes",
+      "family": "Entolomataceae",
+      "genus": "Entoloma",
+      "infraspecific_epithet": "",
+      "kingdom": "Fungi",
+      "order": "Agaricales",
+      "phylum": "Basidiomycota",
+      "specific_epithet": "sericellum"
+    },
+    "source_nomenclatural_status": "",
+    "source_provenance": {
+      "identifier_namespace": "NBIC:",
+      "member": "vernacularname.txt",
+      "row_index": 15602,
+      "source_code": "nortaxa",
+      "source_release": {
+        "issued_date": "2026-07-17",
+        "version": "1.284"
+      }
+    },
+    "source_rank": "species",
+    "source_record_identifier": {
+      "namespace": "nortaxa_dwc_id",
+      "value": "53666"
+    },
+    "source_scientific_name": "Entoloma sericellum",
+    "source_status": "valid",
+    "source_taxon_identifier": {
+      "namespace": "nortaxa_taxon_id",
+      "value": "53666"
+    },
+    "source_usage_provenance": {
+      "identifier_namespace": "NBIC:",
+      "member": "taxon.txt",
+      "row_index": 53341,
+      "source_code": "nortaxa",
+      "source_release": {
+        "issued_date": "2026-07-17",
+        "version": "1.284"
+      }
+    },
+    "stage2_evidence": [],
+    "target_authorship": "(Fr.) P. Kumm.",
+    "target_canonical_scientific_name": "Entoloma sericellum",
+    "target_sporely_taxon_id": 96276,
+    "vernacular_name": "silkerødskivesopp",
+    "warnings": [
+      "existing_same_language_vernacular_preserved"
+    ]
+  },
+  {
+    "allocated_source_sporely_taxon_id": 625268,
+    "authorship_diagnostics": [
+      {
+        "difference": "other_difference_including_abbreviations",
+        "target_authorship": "(Fr.) P. Kumm.",
+        "target_sporely_taxon_id": 96276
+      }
+    ],
+    "classification_disagreements": [],
+    "currently_present_on_source_bound_concept": true,
+    "currently_reaches_bundled_canonical": false,
+    "currently_reaches_cloud_canonical": false,
+    "disposition": "exception",
+    "existing_bound_sporely_taxon_id": 625268,
+    "existing_preferred_vernaculars_preserved": true,
+    "existing_reviewed_decisions": [],
+    "existing_vernacular_conflicts": [
+      {
+        "existing_is_preferred": true,
+        "existing_name": "silkerødspore",
+        "language": "nb",
+        "target_sporely_taxon_id": 96276
+      }
+    ],
+    "external_identifier_emission": false,
+    "full_bundle_target_ids": [
+      96276
+    ],
+    "identity_effect": "none",
+    "is_preferred": true,
+    "language": "nb",
+    "pinned_source_release": {
+      "issued_date": "2026-07-17",
+      "version": "1.284"
+    },
+    "projected_is_preferred": false,
+    "reasons": [
+      "qualified_or_aggregate_source"
+    ],
+    "reviewed_decision_conflicts": [],
+    "rule_evidence_class": "vernacular_only_exact_name_rank_full_universe_unique_current_v2",
+    "scoped_target_ids": [
+      96276
+    ],
+    "source": "nortaxa",
+    "source_authorship": "(Fr. : Fr.) P. Kumm. agg.",
+    "source_classification": {
+      "class": "Agaricomycetes",
+      "family": "Entolomataceae",
+      "genus": "Entoloma",
+      "infraspecific_epithet": "",
+      "kingdom": "Fungi",
+      "order": "Agaricales",
+      "phylum": "Basidiomycota",
+      "specific_epithet": "sericellum"
+    },
+    "source_nomenclatural_status": "",
+    "source_provenance": {
+      "identifier_namespace": "NBIC:",
+      "member": "vernacularname.txt",
+      "row_index": 15603,
+      "source_code": "nortaxa",
+      "source_release": {
+        "issued_date": "2026-07-17",
+        "version": "1.284"
+      }
+    },
+    "source_rank": "species",
+    "source_record_identifier": {
+      "namespace": "nortaxa_dwc_id",
+      "value": "53666"
+    },
+    "source_scientific_name": "Entoloma sericellum",
+    "source_status": "valid",
+    "source_taxon_identifier": {
+      "namespace": "nortaxa_taxon_id",
+      "value": "53666"
+    },
+    "source_usage_provenance": {
+      "identifier_namespace": "NBIC:",
+      "member": "taxon.txt",
+      "row_index": 53341,
+      "source_code": "nortaxa",
+      "source_release": {
+        "issued_date": "2026-07-17",
+        "version": "1.284"
+      }
+    },
+    "stage2_evidence": [],
+    "target_authorship": "(Fr.) P. Kumm.",
+    "target_canonical_scientific_name": "Entoloma sericellum",
+    "target_sporely_taxon_id": 96276,
+    "vernacular_name": "silkerødspore-gruppen",
+    "warnings": [
+      "existing_same_language_vernacular_preserved"
+    ]
+  },
+  {
+    "allocated_source_sporely_taxon_id": 625268,
+    "authorship_diagnostics": [
+      {
+        "difference": "other_difference_including_abbreviations",
+        "target_authorship": "(Fr.) P. Kumm.",
+        "target_sporely_taxon_id": 96276
+      }
+    ],
+    "classification_disagreements": [],
+    "currently_present_on_source_bound_concept": true,
+    "currently_reaches_bundled_canonical": false,
+    "currently_reaches_cloud_canonical": false,
+    "disposition": "exception",
+    "existing_bound_sporely_taxon_id": 625268,
+    "existing_preferred_vernaculars_preserved": true,
+    "existing_reviewed_decisions": [],
+    "existing_vernacular_conflicts": [
+      {
+        "existing_is_preferred": true,
+        "existing_name": "silkeraudspore",
+        "language": "nn",
+        "target_sporely_taxon_id": 96276
+      }
+    ],
+    "external_identifier_emission": false,
+    "full_bundle_target_ids": [
+      96276
+    ],
+    "identity_effect": "none",
+    "is_preferred": false,
+    "language": "nn",
+    "pinned_source_release": {
+      "issued_date": "2026-07-17",
+      "version": "1.284"
+    },
+    "projected_is_preferred": false,
+    "reasons": [
+      "qualified_or_aggregate_source"
+    ],
+    "reviewed_decision_conflicts": [],
+    "rule_evidence_class": "vernacular_only_exact_name_rank_full_universe_unique_current_v2",
+    "scoped_target_ids": [
+      96276
+    ],
+    "source": "nortaxa",
+    "source_authorship": "(Fr. : Fr.) P. Kumm. agg.",
+    "source_classification": {
+      "class": "Agaricomycetes",
+      "family": "Entolomataceae",
+      "genus": "Entoloma",
+      "infraspecific_epithet": "",
+      "kingdom": "Fungi",
+      "order": "Agaricales",
+      "phylum": "Basidiomycota",
+      "specific_epithet": "sericellum"
+    },
+    "source_nomenclatural_status": "",
+    "source_provenance": {
+      "identifier_namespace": "NBIC:",
+      "member": "vernacularname.txt",
+      "row_index": 46664,
+      "source_code": "nortaxa",
+      "source_release": {
+        "issued_date": "2026-07-17",
+        "version": "1.284"
+      }
+    },
+    "source_rank": "species",
+    "source_record_identifier": {
+      "namespace": "nortaxa_dwc_id",
+      "value": "53666"
+    },
+    "source_scientific_name": "Entoloma sericellum",
+    "source_status": "valid",
+    "source_taxon_identifier": {
+      "namespace": "nortaxa_taxon_id",
+      "value": "53666"
+    },
+    "source_usage_provenance": {
+      "identifier_namespace": "NBIC:",
+      "member": "taxon.txt",
+      "row_index": 53341,
+      "source_code": "nortaxa",
+      "source_release": {
+        "issued_date": "2026-07-17",
+        "version": "1.284"
+      }
+    },
+    "stage2_evidence": [],
+    "target_authorship": "(Fr.) P. Kumm.",
+    "target_canonical_scientific_name": "Entoloma sericellum",
+    "target_sporely_taxon_id": 96276,
+    "vernacular_name": "silkeraudskivesopp",
+    "warnings": [
+      "existing_same_language_vernacular_preserved"
+    ]
+  },
+  {
+    "allocated_source_sporely_taxon_id": 625268,
+    "authorship_diagnostics": [
+      {
+        "difference": "other_difference_including_abbreviations",
+        "target_authorship": "(Fr.) P. Kumm.",
+        "target_sporely_taxon_id": 96276
+      }
+    ],
+    "classification_disagreements": [],
+    "currently_present_on_source_bound_concept": true,
+    "currently_reaches_bundled_canonical": false,
+    "currently_reaches_cloud_canonical": false,
+    "disposition": "exception",
+    "existing_bound_sporely_taxon_id": 625268,
+    "existing_preferred_vernaculars_preserved": true,
+    "existing_reviewed_decisions": [],
+    "existing_vernacular_conflicts": [
+      {
+        "existing_is_preferred": true,
+        "existing_name": "silkeraudspore",
+        "language": "nn",
+        "target_sporely_taxon_id": 96276
+      }
+    ],
+    "external_identifier_emission": false,
+    "full_bundle_target_ids": [
+      96276
+    ],
+    "identity_effect": "none",
+    "is_preferred": true,
+    "language": "nn",
+    "pinned_source_release": {
+      "issued_date": "2026-07-17",
+      "version": "1.284"
+    },
+    "projected_is_preferred": false,
+    "reasons": [
+      "qualified_or_aggregate_source"
+    ],
+    "reviewed_decision_conflicts": [],
+    "rule_evidence_class": "vernacular_only_exact_name_rank_full_universe_unique_current_v2",
+    "scoped_target_ids": [
+      96276
+    ],
+    "source": "nortaxa",
+    "source_authorship": "(Fr. : Fr.) P. Kumm. agg.",
+    "source_classification": {
+      "class": "Agaricomycetes",
+      "family": "Entolomataceae",
+      "genus": "Entoloma",
+      "infraspecific_epithet": "",
+      "kingdom": "Fungi",
+      "order": "Agaricales",
+      "phylum": "Basidiomycota",
+      "specific_epithet": "sericellum"
+    },
+    "source_nomenclatural_status": "",
+    "source_provenance": {
+      "identifier_namespace": "NBIC:",
+      "member": "vernacularname.txt",
+      "row_index": 46665,
+      "source_code": "nortaxa",
+      "source_release": {
+        "issued_date": "2026-07-17",
+        "version": "1.284"
+      }
+    },
+    "source_rank": "species",
+    "source_record_identifier": {
+      "namespace": "nortaxa_dwc_id",
+      "value": "53666"
+    },
+    "source_scientific_name": "Entoloma sericellum",
+    "source_status": "valid",
+    "source_taxon_identifier": {
+      "namespace": "nortaxa_taxon_id",
+      "value": "53666"
+    },
+    "source_usage_provenance": {
+      "identifier_namespace": "NBIC:",
+      "member": "taxon.txt",
+      "row_index": 53341,
+      "source_code": "nortaxa",
+      "source_release": {
+        "issued_date": "2026-07-17",
+        "version": "1.284"
+      }
+    },
+    "stage2_evidence": [],
+    "target_authorship": "(Fr.) P. Kumm.",
+    "target_canonical_scientific_name": "Entoloma sericellum",
+    "target_sporely_taxon_id": 96276,
+    "vernacular_name": "silkeraudspore-gruppa",
+    "warnings": [
+      "existing_same_language_vernacular_preserved"
+    ]
+  },
+  {
+    "allocated_source_sporely_taxon_id": 625327,
+    "authorship_diagnostics": [
+      {
+        "difference": "other_difference_including_abbreviations",
+        "target_authorship": "Dennis ex Singer",
+        "target_sporely_taxon_id": 34794
+      }
+    ],
+    "classification_disagreements": [],
+    "currently_present_on_source_bound_concept": true,
+    "currently_reaches_bundled_canonical": false,
+    "currently_reaches_cloud_canonical": false,
+    "disposition": "exception",
+    "existing_bound_sporely_taxon_id": 625327,
+    "existing_preferred_vernaculars_preserved": true,
+    "existing_reviewed_decisions": [],
+    "existing_vernacular_conflicts": [],
+    "external_identifier_emission": false,
+    "full_bundle_target_ids": [
+      34794
+    ],
+    "identity_effect": "none",
+    "is_preferred": true,
+    "language": "nb",
+    "pinned_source_release": {
+      "issued_date": "2026-07-17",
+      "version": "1.284"
+    },
+    "projected_is_preferred": true,
+    "reasons": [
+      "qualified_or_aggregate_source"
+    ],
+    "reviewed_decision_conflicts": [],
+    "rule_evidence_class": "vernacular_only_exact_name_rank_full_universe_unique_current_v2",
+    "scoped_target_ids": [
+      34794
+    ],
+    "source": "nortaxa",
+    "source_authorship": "Singer sensu auct. eur.",
+    "source_classification": {
+      "class": "Agaricomycetes",
+      "family": "Mycenaceae",
+      "genus": "Mycena",
+      "infraspecific_epithet": "",
+      "kingdom": "Fungi",
+      "order": "Agaricales",
+      "phylum": "Basidiomycota",
+      "specific_epithet": "pearsoniana"
+    },
+    "source_nomenclatural_status": "",
+    "source_provenance": {
+      "identifier_namespace": "NBIC:",
+      "member": "vernacularname.txt",
+      "row_index": 4632,
+      "source_code": "nortaxa",
+      "source_release": {
+        "issued_date": "2026-07-17",
+        "version": "1.284"
+      }
+    },
+    "source_rank": "species",
+    "source_record_identifier": {
+      "namespace": "nortaxa_dwc_id",
+      "value": "53838"
+    },
+    "source_scientific_name": "Mycena pearsoniana",
+    "source_status": "valid",
+    "source_taxon_identifier": {
+      "namespace": "nortaxa_taxon_id",
+      "value": "53838"
+    },
+    "source_usage_provenance": {
+      "identifier_namespace": "NBIC:",
+      "member": "taxon.txt",
+      "row_index": 53509,
+      "source_code": "nortaxa",
+      "source_release": {
+        "issued_date": "2026-07-17",
+        "version": "1.284"
+      }
+    },
+    "stage2_evidence": [],
+    "target_authorship": "Dennis ex Singer",
+    "target_canonical_scientific_name": "Mycena pearsoniana",
+    "target_sporely_taxon_id": 34794,
+    "vernacular_name": "sumpreddikhette",
+    "warnings": []
+  },
+  {
+    "allocated_source_sporely_taxon_id": 625327,
+    "authorship_diagnostics": [
+      {
+        "difference": "other_difference_including_abbreviations",
+        "target_authorship": "Dennis ex Singer",
+        "target_sporely_taxon_id": 34794
+      }
+    ],
+    "classification_disagreements": [],
+    "currently_present_on_source_bound_concept": true,
+    "currently_reaches_bundled_canonical": false,
+    "currently_reaches_cloud_canonical": false,
+    "disposition": "exception",
+    "existing_bound_sporely_taxon_id": 625327,
+    "existing_preferred_vernaculars_preserved": true,
+    "existing_reviewed_decisions": [],
+    "existing_vernacular_conflicts": [],
+    "external_identifier_emission": false,
+    "full_bundle_target_ids": [
+      34794
+    ],
+    "identity_effect": "none",
+    "is_preferred": true,
+    "language": "nn",
+    "pinned_source_release": {
+      "issued_date": "2026-07-17",
+      "version": "1.284"
+    },
+    "projected_is_preferred": true,
+    "reasons": [
+      "qualified_or_aggregate_source"
+    ],
+    "reviewed_decision_conflicts": [],
+    "rule_evidence_class": "vernacular_only_exact_name_rank_full_universe_unique_current_v2",
+    "scoped_target_ids": [
+      34794
+    ],
+    "source": "nortaxa",
+    "source_authorship": "Singer sensu auct. eur.",
+    "source_classification": {
+      "class": "Agaricomycetes",
+      "family": "Mycenaceae",
+      "genus": "Mycena",
+      "infraspecific_epithet": "",
+      "kingdom": "Fungi",
+      "order": "Agaricales",
+      "phylum": "Basidiomycota",
+      "specific_epithet": "pearsoniana"
+    },
+    "source_nomenclatural_status": "",
+    "source_provenance": {
+      "identifier_namespace": "NBIC:",
+      "member": "vernacularname.txt",
+      "row_index": 38200,
+      "source_code": "nortaxa",
+      "source_release": {
+        "issued_date": "2026-07-17",
+        "version": "1.284"
+      }
+    },
+    "source_rank": "species",
+    "source_record_identifier": {
+      "namespace": "nortaxa_dwc_id",
+      "value": "53838"
+    },
+    "source_scientific_name": "Mycena pearsoniana",
+    "source_status": "valid",
+    "source_taxon_identifier": {
+      "namespace": "nortaxa_taxon_id",
+      "value": "53838"
+    },
+    "source_usage_provenance": {
+      "identifier_namespace": "NBIC:",
+      "member": "taxon.txt",
+      "row_index": 53509,
+      "source_code": "nortaxa",
+      "source_release": {
+        "issued_date": "2026-07-17",
+        "version": "1.284"
+      }
+    },
+    "stage2_evidence": [],
+    "target_authorship": "Dennis ex Singer",
+    "target_canonical_scientific_name": "Mycena pearsoniana",
+    "target_sporely_taxon_id": 34794,
+    "vernacular_name": "sumpreddikhette",
+    "warnings": []
+  },
+  {
+    "allocated_source_sporely_taxon_id": 626338,
+    "authorship_diagnostics": [
+      {
+        "difference": "other_difference_including_abbreviations",
+        "target_authorship": "(Schaeff.) Quél.",
+        "target_sporely_taxon_id": 58651
+      }
+    ],
+    "classification_disagreements": [],
+    "currently_present_on_source_bound_concept": true,
+    "currently_reaches_bundled_canonical": false,
+    "currently_reaches_cloud_canonical": false,
+    "disposition": "exception",
+    "existing_bound_sporely_taxon_id": 626338,
+    "existing_preferred_vernaculars_preserved": true,
+    "existing_reviewed_decisions": [],
+    "existing_vernacular_conflicts": [],
+    "external_identifier_emission": false,
+    "full_bundle_target_ids": [
+      58651
+    ],
+    "identity_effect": "none",
+    "is_preferred": true,
+    "language": "nb",
+    "pinned_source_release": {
+      "issued_date": "2026-07-17",
+      "version": "1.284"
+    },
+    "projected_is_preferred": true,
+    "reasons": [
+      "qualified_or_aggregate_source"
+    ],
+    "reviewed_decision_conflicts": [],
+    "rule_evidence_class": "vernacular_only_exact_name_rank_full_universe_unique_current_v2",
+    "scoped_target_ids": [
+      58651
+    ],
+    "source": "nortaxa",
+    "source_authorship": "s. auct. scand.",
+    "source_classification": {
+      "class": "Agaricomycetes",
+      "family": "Gomphaceae",
+      "genus": "Ramaria",
+      "infraspecific_epithet": "",
+      "kingdom": "Fungi",
+      "order": "Gomphales",
+      "phylum": "Basidiomycota",
+      "specific_epithet": "aurea"
+    },
+    "source_nomenclatural_status": "",
+    "source_provenance": {
+      "identifier_namespace": "NBIC:",
+      "member": "vernacularname.txt",
+      "row_index": 35699,
+      "source_code": "nortaxa",
+      "source_release": {
+        "issued_date": "2026-07-17",
+        "version": "1.284"
+      }
+    },
+    "source_rank": "species",
+    "source_record_identifier": {
+      "namespace": "nortaxa_dwc_id",
+      "value": "56485"
+    },
+    "source_scientific_name": "Ramaria aurea",
+    "source_status": "valid",
+    "source_taxon_identifier": {
+      "namespace": "nortaxa_taxon_id",
+      "value": "56485"
+    },
+    "source_usage_provenance": {
+      "identifier_namespace": "NBIC:",
+      "member": "taxon.txt",
+      "row_index": 56146,
+      "source_code": "nortaxa",
+      "source_release": {
+        "issued_date": "2026-07-17",
+        "version": "1.284"
+      }
+    },
+    "stage2_evidence": [
+      {
+        "col_sporely_taxon_id": 58651,
+        "evidence_class": "no_published_cross_reference",
+        "path": "database/taxonomy/evidence/taxonomy-v3/stage2/group-b-no-published-cross-reference.manifest.json"
+      }
+    ],
+    "target_authorship": "(Schaeff.) Quél.",
+    "target_canonical_scientific_name": "Ramaria aurea",
+    "target_sporely_taxon_id": 58651,
+    "vernacular_name": "falsk lindekorallsopp",
+    "warnings": []
+  },
+  {
+    "allocated_source_sporely_taxon_id": 626348,
+    "authorship_diagnostics": [
+      {
+        "difference": "other_difference_including_abbreviations",
+        "target_authorship": "Marr & D.E. Stuntz",
+        "target_sporely_taxon_id": 58815
+      }
+    ],
+    "classification_disagreements": [],
+    "currently_present_on_source_bound_concept": true,
+    "currently_reaches_bundled_canonical": false,
+    "currently_reaches_cloud_canonical": false,
+    "disposition": "exception",
+    "existing_bound_sporely_taxon_id": 626348,
+    "existing_preferred_vernaculars_preserved": true,
+    "existing_reviewed_decisions": [],
+    "existing_vernacular_conflicts": [],
+    "external_identifier_emission": false,
+    "full_bundle_target_ids": [
+      58815
+    ],
+    "identity_effect": "none",
+    "is_preferred": true,
+    "language": "nb",
+    "pinned_source_release": {
+      "issued_date": "2026-07-17",
+      "version": "1.284"
+    },
+    "projected_is_preferred": true,
+    "reasons": [
+      "qualified_or_aggregate_source"
+    ],
+    "reviewed_decision_conflicts": [],
+    "rule_evidence_class": "vernacular_only_exact_name_rank_full_universe_unique_current_v2",
+    "scoped_target_ids": [
+      58815
+    ],
+    "source": "nortaxa",
+    "source_authorship": "sensu Christan (2008)",
+    "source_classification": {
+      "class": "Agaricomycetes",
+      "family": "Gomphaceae",
+      "genus": "Ramaria",
+      "infraspecific_epithet": "",
+      "kingdom": "Fungi",
+      "order": "Gomphales",
+      "phylum": "Basidiomycota",
+      "specific_epithet": "rubripermanens"
+    },
+    "source_nomenclatural_status": "",
+    "source_provenance": {
+      "identifier_namespace": "NBIC:",
+      "member": "vernacularname.txt",
+      "row_index": 25956,
+      "source_code": "nortaxa",
+      "source_release": {
+        "issued_date": "2026-07-17",
+        "version": "1.284"
+      }
+    },
+    "source_rank": "species",
+    "source_record_identifier": {
+      "namespace": "nortaxa_dwc_id",
+      "value": "56524"
+    },
+    "source_scientific_name": "Ramaria rubripermanens",
+    "source_status": "valid",
+    "source_taxon_identifier": {
+      "namespace": "nortaxa_taxon_id",
+      "value": "56524"
+    },
+    "source_usage_provenance": {
+      "identifier_namespace": "NBIC:",
+      "member": "taxon.txt",
+      "row_index": 56185,
+      "source_code": "nortaxa",
+      "source_release": {
+        "issued_date": "2026-07-17",
+        "version": "1.284"
+      }
+    },
+    "stage2_evidence": [
+      {
+        "col_sporely_taxon_id": 58815,
+        "evidence_class": "no_published_cross_reference",
+        "path": "database/taxonomy/evidence/taxonomy-v3/stage2/group-b-no-published-cross-reference.manifest.json"
+      }
+    ],
+    "target_authorship": "Marr & D.E. Stuntz",
+    "target_canonical_scientific_name": "Ramaria rubripermanens",
+    "target_sporely_taxon_id": 58815,
+    "vernacular_name": "sørlig rødtuppsopp",
+    "warnings": []
+  },
+  {
+    "allocated_source_sporely_taxon_id": 626348,
+    "authorship_diagnostics": [
+      {
+        "difference": "other_difference_including_abbreviations",
+        "target_authorship": "Marr & D.E. Stuntz",
+        "target_sporely_taxon_id": 58815
+      }
+    ],
+    "classification_disagreements": [],
+    "currently_present_on_source_bound_concept": true,
+    "currently_reaches_bundled_canonical": false,
+    "currently_reaches_cloud_canonical": false,
+    "disposition": "exception",
+    "existing_bound_sporely_taxon_id": 626348,
+    "existing_preferred_vernaculars_preserved": true,
+    "existing_reviewed_decisions": [],
+    "existing_vernacular_conflicts": [],
+    "external_identifier_emission": false,
+    "full_bundle_target_ids": [
+      58815
+    ],
+    "identity_effect": "none",
+    "is_preferred": true,
+    "language": "nn",
+    "pinned_source_release": {
+      "issued_date": "2026-07-17",
+      "version": "1.284"
+    },
+    "projected_is_preferred": true,
+    "reasons": [
+      "qualified_or_aggregate_source"
+    ],
+    "reviewed_decision_conflicts": [],
+    "rule_evidence_class": "vernacular_only_exact_name_rank_full_universe_unique_current_v2",
+    "scoped_target_ids": [
+      58815
+    ],
+    "source": "nortaxa",
+    "source_authorship": "sensu Christan (2008)",
+    "source_classification": {
+      "class": "Agaricomycetes",
+      "family": "Gomphaceae",
+      "genus": "Ramaria",
+      "infraspecific_epithet": "",
+      "kingdom": "Fungi",
+      "order": "Gomphales",
+      "phylum": "Basidiomycota",
+      "specific_epithet": "rubripermanens"
+    },
+    "source_nomenclatural_status": "",
+    "source_provenance": {
+      "identifier_namespace": "NBIC:",
+      "member": "vernacularname.txt",
+      "row_index": 52642,
+      "source_code": "nortaxa",
+      "source_release": {
+        "issued_date": "2026-07-17",
+        "version": "1.284"
+      }
+    },
+    "source_rank": "species",
+    "source_record_identifier": {
+      "namespace": "nortaxa_dwc_id",
+      "value": "56524"
+    },
+    "source_scientific_name": "Ramaria rubripermanens",
+    "source_status": "valid",
+    "source_taxon_identifier": {
+      "namespace": "nortaxa_taxon_id",
+      "value": "56524"
+    },
+    "source_usage_provenance": {
+      "identifier_namespace": "NBIC:",
+      "member": "taxon.txt",
+      "row_index": 56185,
+      "source_code": "nortaxa",
+      "source_release": {
+        "issued_date": "2026-07-17",
+        "version": "1.284"
+      }
+    },
+    "stage2_evidence": [
+      {
+        "col_sporely_taxon_id": 58815,
+        "evidence_class": "no_published_cross_reference",
+        "path": "database/taxonomy/evidence/taxonomy-v3/stage2/group-b-no-published-cross-reference.manifest.json"
+      }
+    ],
+    "target_authorship": "Marr & D.E. Stuntz",
+    "target_canonical_scientific_name": "Ramaria rubripermanens",
+    "target_sporely_taxon_id": 58815,
+    "vernacular_name": "sørleg rødtuppsopp",
+    "warnings": []
+  },
+  {
+    "allocated_source_sporely_taxon_id": 626354,
+    "authorship_diagnostics": [
+      {
+        "difference": "other_difference_including_abbreviations",
+        "target_authorship": "(Berk. & M.A. Curtis) Corner",
+        "target_sporely_taxon_id": 23749
+      }
+    ],
+    "classification_disagreements": [],
+    "currently_present_on_source_bound_concept": true,
+    "currently_reaches_bundled_canonical": false,
+    "currently_reaches_cloud_canonical": false,
+    "disposition": "exception",
+    "existing_bound_sporely_taxon_id": 626354,
+    "existing_preferred_vernaculars_preserved": true,
+    "existing_reviewed_decisions": [],
+    "existing_vernacular_conflicts": [],
+    "external_identifier_emission": false,
+    "full_bundle_target_ids": [
+      23749
+    ],
+    "identity_effect": "none",
+    "is_preferred": true,
+    "language": "nb",
+    "pinned_source_release": {
+      "issued_date": "2026-07-17",
+      "version": "1.284"
+    },
+    "projected_is_preferred": true,
+    "reasons": [
+      "qualified_or_aggregate_source"
+    ],
+    "reviewed_decision_conflicts": [],
+    "rule_evidence_class": "vernacular_only_exact_name_rank_full_universe_unique_current_v2",
+    "scoped_target_ids": [
+      23749
+    ],
+    "source": "nortaxa",
+    "source_authorship": "(Berk. & M.A. Curtis) Corner ss. auct.",
+    "source_classification": {
+      "class": "Agaricomycetes",
+      "family": "Lentariaceae",
+      "genus": "Lentaria",
+      "infraspecific_epithet": "",
+      "kingdom": "Fungi",
+      "order": "Gomphales",
+      "phylum": "Basidiomycota",
+      "specific_epithet": "micheneri"
+    },
+    "source_nomenclatural_status": "",
+    "source_provenance": {
+      "identifier_namespace": "NBIC:",
+      "member": "vernacularname.txt",
+      "row_index": 4222,
+      "source_code": "nortaxa",
+      "source_release": {
+        "issued_date": "2026-07-17",
+        "version": "1.284"
+      }
+    },
+    "source_rank": "species",
+    "source_record_identifier": {
+      "namespace": "nortaxa_dwc_id",
+      "value": "56551"
+    },
+    "source_scientific_name": "Lentaria micheneri",
+    "source_status": "valid",
+    "source_taxon_identifier": {
+      "namespace": "nortaxa_taxon_id",
+      "value": "56551"
+    },
+    "source_usage_provenance": {
+      "identifier_namespace": "NBIC:",
+      "member": "taxon.txt",
+      "row_index": 56212,
+      "source_code": "nortaxa",
+      "source_release": {
+        "issued_date": "2026-07-17",
+        "version": "1.284"
+      }
+    },
+    "stage2_evidence": [
+      {
+        "col_sporely_taxon_id": 23749,
+        "evidence_class": "no_published_cross_reference",
+        "path": "database/taxonomy/evidence/taxonomy-v3/stage2/group-b-no-published-cross-reference.manifest.json"
+      }
+    ],
+    "target_authorship": "(Berk. & M.A. Curtis) Corner",
+    "target_canonical_scientific_name": "Lentaria micheneri",
+    "target_sporely_taxon_id": 23749,
+    "vernacular_name": "slank vedkorallsopp",
+    "warnings": []
+  },
+  {
+    "allocated_source_sporely_taxon_id": 626354,
+    "authorship_diagnostics": [
+      {
+        "difference": "other_difference_including_abbreviations",
+        "target_authorship": "(Berk. & M.A. Curtis) Corner",
+        "target_sporely_taxon_id": 23749
+      }
+    ],
+    "classification_disagreements": [],
+    "currently_present_on_source_bound_concept": true,
+    "currently_reaches_bundled_canonical": false,
+    "currently_reaches_cloud_canonical": false,
+    "disposition": "exception",
+    "existing_bound_sporely_taxon_id": 626354,
+    "existing_preferred_vernaculars_preserved": true,
+    "existing_reviewed_decisions": [],
+    "existing_vernacular_conflicts": [],
+    "external_identifier_emission": false,
+    "full_bundle_target_ids": [
+      23749
+    ],
+    "identity_effect": "none",
+    "is_preferred": true,
+    "language": "nn",
+    "pinned_source_release": {
+      "issued_date": "2026-07-17",
+      "version": "1.284"
+    },
+    "projected_is_preferred": true,
+    "reasons": [
+      "qualified_or_aggregate_source"
+    ],
+    "reviewed_decision_conflicts": [],
+    "rule_evidence_class": "vernacular_only_exact_name_rank_full_universe_unique_current_v2",
+    "scoped_target_ids": [
+      23749
+    ],
+    "source": "nortaxa",
+    "source_authorship": "(Berk. & M.A. Curtis) Corner ss. auct.",
+    "source_classification": {
+      "class": "Agaricomycetes",
+      "family": "Lentariaceae",
+      "genus": "Lentaria",
+      "infraspecific_epithet": "",
+      "kingdom": "Fungi",
+      "order": "Gomphales",
+      "phylum": "Basidiomycota",
+      "specific_epithet": "micheneri"
+    },
+    "source_nomenclatural_status": "",
+    "source_provenance": {
+      "identifier_namespace": "NBIC:",
+      "member": "vernacularname.txt",
+      "row_index": 45681,
+      "source_code": "nortaxa",
+      "source_release": {
+        "issued_date": "2026-07-17",
+        "version": "1.284"
+      }
+    },
+    "source_rank": "species",
+    "source_record_identifier": {
+      "namespace": "nortaxa_dwc_id",
+      "value": "56551"
+    },
+    "source_scientific_name": "Lentaria micheneri",
+    "source_status": "valid",
+    "source_taxon_identifier": {
+      "namespace": "nortaxa_taxon_id",
+      "value": "56551"
+    },
+    "source_usage_provenance": {
+      "identifier_namespace": "NBIC:",
+      "member": "taxon.txt",
+      "row_index": 56212,
+      "source_code": "nortaxa",
+      "source_release": {
+        "issued_date": "2026-07-17",
+        "version": "1.284"
+      }
+    },
+    "stage2_evidence": [
+      {
+        "col_sporely_taxon_id": 23749,
+        "evidence_class": "no_published_cross_reference",
+        "path": "database/taxonomy/evidence/taxonomy-v3/stage2/group-b-no-published-cross-reference.manifest.json"
+      }
+    ],
+    "target_authorship": "(Berk. & M.A. Curtis) Corner",
+    "target_canonical_scientific_name": "Lentaria micheneri",
+    "target_sporely_taxon_id": 23749,
+    "vernacular_name": "slank vedkorallsopp",
+    "warnings": []
+  },
+  {
+    "allocated_source_sporely_taxon_id": 627070,
+    "authorship_diagnostics": [
+      {
+        "difference": "sanctioning_citation",
+        "target_authorship": "(Bull.) Singer",
+        "target_sporely_taxon_id": 103130
+      }
+    ],
+    "classification_disagreements": [],
+    "currently_present_on_source_bound_concept": true,
+    "currently_reaches_bundled_canonical": false,
+    "currently_reaches_cloud_canonical": false,
+    "disposition": "exception",
+    "existing_bound_sporely_taxon_id": 627070,
+    "existing_preferred_vernaculars_preserved": true,
+    "existing_reviewed_decisions": [],
+    "existing_vernacular_conflicts": [],
+    "external_identifier_emission": false,
+    "full_bundle_target_ids": [
+      103130
+    ],
+    "identity_effect": "none",
+    "is_preferred": true,
+    "language": "nb",
+    "pinned_source_release": {
+      "issued_date": "2026-07-17",
+      "version": "1.284"
+    },
+    "projected_is_preferred": true,
+    "reasons": [
+      "source_nomenclatural_status_ambiguous"
+    ],
+    "reviewed_decision_conflicts": [],
+    "rule_evidence_class": "vernacular_only_exact_name_rank_full_universe_unique_current_v2",
+    "scoped_target_ids": [
+      103130
+    ],
+    "source": "nortaxa",
+    "source_authorship": "(Bull. : Fr.) Singer",
+    "source_classification": {
+      "class": "Agaricomycetes",
+      "family": "Lyophyllaceae",
+      "genus": "Hypsizygus",
+      "infraspecific_epithet": "",
+      "kingdom": "Fungi",
+      "order": "Agaricales",
+      "phylum": "Basidiomycota",
+      "specific_epithet": "tessulatus"
+    },
+    "source_nomenclatural_status": "illegitimate",
+    "source_provenance": {
+      "identifier_namespace": "NBIC:",
+      "member": "vernacularname.txt",
+      "row_index": 53328,
+      "source_code": "nortaxa",
+      "source_release": {
+        "issued_date": "2026-07-17",
+        "version": "1.284"
+      }
+    },
+    "source_rank": "species",
+    "source_record_identifier": {
+      "namespace": "nortaxa_dwc_id",
+      "value": "60611"
+    },
+    "source_scientific_name": "Hypsizygus tessulatus",
+    "source_status": "valid",
+    "source_taxon_identifier": {
+      "namespace": "nortaxa_taxon_id",
+      "value": "60611"
+    },
+    "source_usage_provenance": {
+      "identifier_namespace": "NBIC:",
+      "member": "taxon.txt",
+      "row_index": 60172,
+      "source_code": "nortaxa",
+      "source_release": {
+        "issued_date": "2026-07-17",
+        "version": "1.284"
+      }
+    },
+    "stage2_evidence": [
+      {
+        "col_sporely_taxon_id": 103130,
+        "evidence_class": "no_published_cross_reference",
+        "path": "database/taxonomy/evidence/taxonomy-v3/stage2/group-b-no-published-cross-reference.manifest.json"
+      }
+    ],
+    "target_authorship": "(Bull.) Singer",
+    "target_canonical_scientific_name": "Hypsizygus tessulatus",
+    "target_sporely_taxon_id": 103130,
+    "vernacular_name": "dråpeknippesopp",
+    "warnings": []
+  },
+  {
+    "allocated_source_sporely_taxon_id": 627113,
+    "authorship_diagnostics": [
+      {
+        "difference": "sanctioning_citation",
+        "target_authorship": "(Bull.) Šutara",
+        "target_sporely_taxon_id": 52936
+      }
+    ],
+    "classification_disagreements": [],
+    "currently_present_on_source_bound_concept": true,
+    "currently_reaches_bundled_canonical": false,
+    "currently_reaches_cloud_canonical": false,
+    "disposition": "exception",
+    "existing_bound_sporely_taxon_id": 627113,
+    "existing_preferred_vernaculars_preserved": true,
+    "existing_reviewed_decisions": [],
+    "existing_vernacular_conflicts": [],
+    "external_identifier_emission": false,
+    "full_bundle_target_ids": [
+      52936
+    ],
+    "identity_effect": "none",
+    "is_preferred": true,
+    "language": "nb",
+    "pinned_source_release": {
+      "issued_date": "2026-07-17",
+      "version": "1.284"
+    },
+    "projected_is_preferred": true,
+    "reasons": [
+      "source_nomenclatural_status_ambiguous"
+    ],
+    "reviewed_decision_conflicts": [],
+    "rule_evidence_class": "vernacular_only_exact_name_rank_full_universe_unique_current_v2",
+    "scoped_target_ids": [
+      52936
+    ],
+    "source": "nortaxa",
+    "source_authorship": "(Bull.: Fr.) Šutara",
+    "source_classification": {
+      "class": "Agaricomycetes",
+      "family": "Boletaceae",
+      "genus": "Pseudoboletus",
+      "infraspecific_epithet": "",
+      "kingdom": "Fungi",
+      "order": "Boletales",
+      "phylum": "Basidiomycota",
+      "specific_epithet": "parasiticus"
+    },
+    "source_nomenclatural_status": "illegitimate",
+    "source_provenance": {
+      "identifier_namespace": "NBIC:",
+      "member": "vernacularname.txt",
+      "row_index": 7287,
+      "source_code": "nortaxa",
+      "source_release": {
+        "issued_date": "2026-07-17",
+        "version": "1.284"
+      }
+    },
+    "source_rank": "species",
+    "source_record_identifier": {
+      "namespace": "nortaxa_dwc_id",
+      "value": "62263"
+    },
+    "source_scientific_name": "Pseudoboletus parasiticus",
+    "source_status": "valid",
+    "source_taxon_identifier": {
+      "namespace": "nortaxa_taxon_id",
+      "value": "62263"
+    },
+    "source_usage_provenance": {
+      "identifier_namespace": "NBIC:",
+      "member": "taxon.txt",
+      "row_index": 61776,
+      "source_code": "nortaxa",
+      "source_release": {
+        "issued_date": "2026-07-17",
+        "version": "1.284"
+      }
+    },
+    "stage2_evidence": [
+      {
+        "col_sporely_taxon_id": 52936,
+        "evidence_class": "no_published_cross_reference",
+        "path": "database/taxonomy/evidence/taxonomy-v3/stage2/group-b-no-published-cross-reference.manifest.json"
+      }
+    ],
+    "target_authorship": "(Bull.) Šutara",
+    "target_canonical_scientific_name": "Pseudoboletus parasiticus",
+    "target_sporely_taxon_id": 52936,
+    "vernacular_name": "snylterørsopp",
+    "warnings": []
+  },
+  {
+    "allocated_source_sporely_taxon_id": 627113,
+    "authorship_diagnostics": [
+      {
+        "difference": "sanctioning_citation",
+        "target_authorship": "(Bull.) Šutara",
+        "target_sporely_taxon_id": 52936
+      }
+    ],
+    "classification_disagreements": [],
+    "currently_present_on_source_bound_concept": true,
+    "currently_reaches_bundled_canonical": false,
+    "currently_reaches_cloud_canonical": false,
+    "disposition": "exception",
+    "existing_bound_sporely_taxon_id": 627113,
+    "existing_preferred_vernaculars_preserved": true,
+    "existing_reviewed_decisions": [],
+    "existing_vernacular_conflicts": [],
+    "external_identifier_emission": false,
+    "full_bundle_target_ids": [
+      52936
+    ],
+    "identity_effect": "none",
+    "is_preferred": true,
+    "language": "nn",
+    "pinned_source_release": {
+      "issued_date": "2026-07-17",
+      "version": "1.284"
+    },
+    "projected_is_preferred": true,
+    "reasons": [
+      "source_nomenclatural_status_ambiguous"
+    ],
+    "reviewed_decision_conflicts": [],
+    "rule_evidence_class": "vernacular_only_exact_name_rank_full_universe_unique_current_v2",
+    "scoped_target_ids": [
+      52936
+    ],
+    "source": "nortaxa",
+    "source_authorship": "(Bull.: Fr.) Šutara",
+    "source_classification": {
+      "class": "Agaricomycetes",
+      "family": "Boletaceae",
+      "genus": "Pseudoboletus",
+      "infraspecific_epithet": "",
+      "kingdom": "Fungi",
+      "order": "Boletales",
+      "phylum": "Basidiomycota",
+      "specific_epithet": "parasiticus"
+    },
+    "source_nomenclatural_status": "illegitimate",
+    "source_provenance": {
+      "identifier_namespace": "NBIC:",
+      "member": "vernacularname.txt",
+      "row_index": 46314,
+      "source_code": "nortaxa",
+      "source_release": {
+        "issued_date": "2026-07-17",
+        "version": "1.284"
+      }
+    },
+    "source_rank": "species",
+    "source_record_identifier": {
+      "namespace": "nortaxa_dwc_id",
+      "value": "62263"
+    },
+    "source_scientific_name": "Pseudoboletus parasiticus",
+    "source_status": "valid",
+    "source_taxon_identifier": {
+      "namespace": "nortaxa_taxon_id",
+      "value": "62263"
+    },
+    "source_usage_provenance": {
+      "identifier_namespace": "NBIC:",
+      "member": "taxon.txt",
+      "row_index": 61776,
+      "source_code": "nortaxa",
+      "source_release": {
+        "issued_date": "2026-07-17",
+        "version": "1.284"
+      }
+    },
+    "stage2_evidence": [
+      {
+        "col_sporely_taxon_id": 52936,
+        "evidence_class": "no_published_cross_reference",
+        "path": "database/taxonomy/evidence/taxonomy-v3/stage2/group-b-no-published-cross-reference.manifest.json"
+      }
+    ],
+    "target_authorship": "(Bull.) Šutara",
+    "target_canonical_scientific_name": "Pseudoboletus parasiticus",
+    "target_sporely_taxon_id": 52936,
+    "vernacular_name": "snylterøyrsopp",
+    "warnings": []
+  },
+  {
+    "allocated_source_sporely_taxon_id": 627114,
+    "authorship_diagnostics": [
+      {
+        "difference": "sanctioning_citation",
+        "target_authorship": "Fr.",
+        "target_sporely_taxon_id": 60559
+      }
+    ],
+    "classification_disagreements": [],
+    "currently_present_on_source_bound_concept": true,
+    "currently_reaches_bundled_canonical": false,
+    "currently_reaches_cloud_canonical": false,
+    "disposition": "exception",
+    "existing_bound_sporely_taxon_id": 627114,
+    "existing_preferred_vernaculars_preserved": true,
+    "existing_reviewed_decisions": [],
+    "existing_vernacular_conflicts": [],
+    "external_identifier_emission": false,
+    "full_bundle_target_ids": [
+      60559
+    ],
+    "identity_effect": "none",
+    "is_preferred": true,
+    "language": "nb",
+    "pinned_source_release": {
+      "issued_date": "2026-07-17",
+      "version": "1.284"
+    },
+    "projected_is_preferred": true,
+    "reasons": [
+      "source_nomenclatural_status_ambiguous"
+    ],
+    "reviewed_decision_conflicts": [],
+    "rule_evidence_class": "vernacular_only_exact_name_rank_full_universe_unique_current_v2",
+    "scoped_target_ids": [
+      60559
+    ],
+    "source": "nortaxa",
+    "source_authorship": "Fr. : Fr.",
+    "source_classification": {
+      "class": "Agaricomycetes",
+      "family": "Rhizopogonaceae",
+      "genus": "Rhizopogon",
+      "infraspecific_epithet": "",
+      "kingdom": "Fungi",
+      "order": "Boletales",
+      "phylum": "Basidiomycota",
+      "specific_epithet": "luteolus"
+    },
+    "source_nomenclatural_status": "illegitimate",
+    "source_provenance": {
+      "identifier_namespace": "NBIC:",
+      "member": "vernacularname.txt",
+      "row_index": 6085,
+      "source_code": "nortaxa",
+      "source_release": {
+        "issued_date": "2026-07-17",
+        "version": "1.284"
+      }
+    },
+    "source_rank": "species",
+    "source_record_identifier": {
+      "namespace": "nortaxa_dwc_id",
+      "value": "62339"
+    },
+    "source_scientific_name": "Rhizopogon luteolus",
+    "source_status": "valid",
+    "source_taxon_identifier": {
+      "namespace": "nortaxa_taxon_id",
+      "value": "62339"
+    },
+    "source_usage_provenance": {
+      "identifier_namespace": "NBIC:",
+      "member": "taxon.txt",
+      "row_index": 61849,
+      "source_code": "nortaxa",
+      "source_release": {
+        "issued_date": "2026-07-17",
+        "version": "1.284"
+      }
+    },
+    "stage2_evidence": [
+      {
+        "col_sporely_taxon_id": 60559,
+        "evidence_class": "no_published_cross_reference",
+        "path": "database/taxonomy/evidence/taxonomy-v3/stage2/group-b-no-published-cross-reference.manifest.json"
+      }
+    ],
+    "target_authorship": "Fr.",
+    "target_canonical_scientific_name": "Rhizopogon luteolus",
+    "target_sporely_taxon_id": 60559,
+    "vernacular_name": "gul ekornnøtt",
+    "warnings": []
+  },
+  {
+    "allocated_source_sporely_taxon_id": 627114,
+    "authorship_diagnostics": [
+      {
+        "difference": "sanctioning_citation",
+        "target_authorship": "Fr.",
+        "target_sporely_taxon_id": 60559
+      }
+    ],
+    "classification_disagreements": [],
+    "currently_present_on_source_bound_concept": true,
+    "currently_reaches_bundled_canonical": false,
+    "currently_reaches_cloud_canonical": false,
+    "disposition": "exception",
+    "existing_bound_sporely_taxon_id": 627114,
+    "existing_preferred_vernaculars_preserved": true,
+    "existing_reviewed_decisions": [],
+    "existing_vernacular_conflicts": [],
+    "external_identifier_emission": false,
+    "full_bundle_target_ids": [
+      60559
+    ],
+    "identity_effect": "none",
+    "is_preferred": true,
+    "language": "nn",
+    "pinned_source_release": {
+      "issued_date": "2026-07-17",
+      "version": "1.284"
+    },
+    "projected_is_preferred": true,
+    "reasons": [
+      "source_nomenclatural_status_ambiguous"
+    ],
+    "reviewed_decision_conflicts": [],
+    "rule_evidence_class": "vernacular_only_exact_name_rank_full_universe_unique_current_v2",
+    "scoped_target_ids": [
+      60559
+    ],
+    "source": "nortaxa",
+    "source_authorship": "Fr. : Fr.",
+    "source_classification": {
+      "class": "Agaricomycetes",
+      "family": "Rhizopogonaceae",
+      "genus": "Rhizopogon",
+      "infraspecific_epithet": "",
+      "kingdom": "Fungi",
+      "order": "Boletales",
+      "phylum": "Basidiomycota",
+      "specific_epithet": "luteolus"
+    },
+    "source_nomenclatural_status": "illegitimate",
+    "source_provenance": {
+      "identifier_namespace": "NBIC:",
+      "member": "vernacularname.txt",
+      "row_index": 41472,
+      "source_code": "nortaxa",
+      "source_release": {
+        "issued_date": "2026-07-17",
+        "version": "1.284"
+      }
+    },
+    "source_rank": "species",
+    "source_record_identifier": {
+      "namespace": "nortaxa_dwc_id",
+      "value": "62339"
+    },
+    "source_scientific_name": "Rhizopogon luteolus",
+    "source_status": "valid",
+    "source_taxon_identifier": {
+      "namespace": "nortaxa_taxon_id",
+      "value": "62339"
+    },
+    "source_usage_provenance": {
+      "identifier_namespace": "NBIC:",
+      "member": "taxon.txt",
+      "row_index": 61849,
+      "source_code": "nortaxa",
+      "source_release": {
+        "issued_date": "2026-07-17",
+        "version": "1.284"
+      }
+    },
+    "stage2_evidence": [
+      {
+        "col_sporely_taxon_id": 60559,
+        "evidence_class": "no_published_cross_reference",
+        "path": "database/taxonomy/evidence/taxonomy-v3/stage2/group-b-no-published-cross-reference.manifest.json"
+      }
+    ],
+    "target_authorship": "Fr.",
+    "target_canonical_scientific_name": "Rhizopogon luteolus",
+    "target_sporely_taxon_id": 60559,
+    "vernacular_name": "gul ikornnøtt",
+    "warnings": []
+  },
+  {
+    "allocated_source_sporely_taxon_id": 627130,
+    "authorship_diagnostics": [
+      {
+        "difference": "sanctioning_citation",
+        "target_authorship": "(Pers.) T. Wagner & M. Fisch.",
+        "target_sporely_taxon_id": 54615
+      }
+    ],
+    "classification_disagreements": [],
+    "currently_present_on_source_bound_concept": true,
+    "currently_reaches_bundled_canonical": false,
+    "currently_reaches_cloud_canonical": false,
+    "disposition": "exception",
+    "existing_bound_sporely_taxon_id": 627130,
+    "existing_preferred_vernaculars_preserved": true,
+    "existing_reviewed_decisions": [],
+    "existing_vernacular_conflicts": [],
+    "external_identifier_emission": false,
+    "full_bundle_target_ids": [
+      54615
+    ],
+    "identity_effect": "none",
+    "is_preferred": true,
+    "language": "nb",
+    "pinned_source_release": {
+      "issued_date": "2026-07-17",
+      "version": "1.284"
+    },
+    "projected_is_preferred": true,
+    "reasons": [
+      "source_nomenclatural_status_ambiguous"
+    ],
+    "reviewed_decision_conflicts": [],
+    "rule_evidence_class": "vernacular_only_exact_name_rank_full_universe_unique_current_v2",
+    "scoped_target_ids": [
+      54615
+    ],
+    "source": "nortaxa",
+    "source_authorship": "(Pers. : Fr.) T. Wagner & M. Fisch.",
+    "source_classification": {
+      "class": "Agaricomycetes",
+      "family": "Hymenochaetaceae",
+      "genus": "Pseudoinonotus",
+      "infraspecific_epithet": "",
+      "kingdom": "Fungi",
+      "order": "Hymenochaetales",
+      "phylum": "Basidiomycota",
+      "specific_epithet": "dryadeus"
+    },
+    "source_nomenclatural_status": "illegitimate",
+    "source_provenance": {
+      "identifier_namespace": "NBIC:",
+      "member": "vernacularname.txt",
+      "row_index": 3566,
+      "source_code": "nortaxa",
+      "source_release": {
+        "issued_date": "2026-07-17",
+        "version": "1.284"
+      }
+    },
+    "source_rank": "species",
+    "source_record_identifier": {
+      "namespace": "nortaxa_dwc_id",
+      "value": "63044"
+    },
+    "source_scientific_name": "Pseudoinonotus dryadeus",
+    "source_status": "valid",
+    "source_taxon_identifier": {
+      "namespace": "nortaxa_taxon_id",
+      "value": "63044"
+    },
+    "source_usage_provenance": {
+      "identifier_namespace": "NBIC:",
+      "member": "taxon.txt",
+      "row_index": 62540,
+      "source_code": "nortaxa",
+      "source_release": {
+        "issued_date": "2026-07-17",
+        "version": "1.284"
+      }
+    },
+    "stage2_evidence": [
+      {
+        "col_sporely_taxon_id": 54615,
+        "evidence_class": "no_published_cross_reference",
+        "path": "database/taxonomy/evidence/taxonomy-v3/stage2/group-b-no-published-cross-reference.manifest.json"
+      }
+    ],
+    "target_authorship": "(Pers.) T. Wagner & M. Fisch.",
+    "target_canonical_scientific_name": "Pseudoinonotus dryadeus",
+    "target_sporely_taxon_id": 54615,
+    "vernacular_name": "tårekjuke",
+    "warnings": []
+  },
+  {
+    "allocated_source_sporely_taxon_id": 627130,
+    "authorship_diagnostics": [
+      {
+        "difference": "sanctioning_citation",
+        "target_authorship": "(Pers.) T. Wagner & M. Fisch.",
+        "target_sporely_taxon_id": 54615
+      }
+    ],
+    "classification_disagreements": [],
+    "currently_present_on_source_bound_concept": true,
+    "currently_reaches_bundled_canonical": false,
+    "currently_reaches_cloud_canonical": false,
+    "disposition": "exception",
+    "existing_bound_sporely_taxon_id": 627130,
+    "existing_preferred_vernaculars_preserved": true,
+    "existing_reviewed_decisions": [],
+    "existing_vernacular_conflicts": [],
+    "external_identifier_emission": false,
+    "full_bundle_target_ids": [
+      54615
+    ],
+    "identity_effect": "none",
+    "is_preferred": true,
+    "language": "nn",
+    "pinned_source_release": {
+      "issued_date": "2026-07-17",
+      "version": "1.284"
+    },
+    "projected_is_preferred": true,
+    "reasons": [
+      "source_nomenclatural_status_ambiguous"
+    ],
+    "reviewed_decision_conflicts": [],
+    "rule_evidence_class": "vernacular_only_exact_name_rank_full_universe_unique_current_v2",
+    "scoped_target_ids": [
+      54615
+    ],
+    "source": "nortaxa",
+    "source_authorship": "(Pers. : Fr.) T. Wagner & M. Fisch.",
+    "source_classification": {
+      "class": "Agaricomycetes",
+      "family": "Hymenochaetaceae",
+      "genus": "Pseudoinonotus",
+      "infraspecific_epithet": "",
+      "kingdom": "Fungi",
+      "order": "Hymenochaetales",
+      "phylum": "Basidiomycota",
+      "specific_epithet": "dryadeus"
+    },
+    "source_nomenclatural_status": "illegitimate",
+    "source_provenance": {
+      "identifier_namespace": "NBIC:",
+      "member": "vernacularname.txt",
+      "row_index": 45444,
+      "source_code": "nortaxa",
+      "source_release": {
+        "issued_date": "2026-07-17",
+        "version": "1.284"
+      }
+    },
+    "source_rank": "species",
+    "source_record_identifier": {
+      "namespace": "nortaxa_dwc_id",
+      "value": "63044"
+    },
+    "source_scientific_name": "Pseudoinonotus dryadeus",
+    "source_status": "valid",
+    "source_taxon_identifier": {
+      "namespace": "nortaxa_taxon_id",
+      "value": "63044"
+    },
+    "source_usage_provenance": {
+      "identifier_namespace": "NBIC:",
+      "member": "taxon.txt",
+      "row_index": 62540,
+      "source_code": "nortaxa",
+      "source_release": {
+        "issued_date": "2026-07-17",
+        "version": "1.284"
+      }
+    },
+    "stage2_evidence": [
+      {
+        "col_sporely_taxon_id": 54615,
+        "evidence_class": "no_published_cross_reference",
+        "path": "database/taxonomy/evidence/taxonomy-v3/stage2/group-b-no-published-cross-reference.manifest.json"
+      }
+    ],
+    "target_authorship": "(Pers.) T. Wagner & M. Fisch.",
+    "target_canonical_scientific_name": "Pseudoinonotus dryadeus",
+    "target_sporely_taxon_id": 54615,
+    "vernacular_name": "tårekjuke",
+    "warnings": []
+  }
+]

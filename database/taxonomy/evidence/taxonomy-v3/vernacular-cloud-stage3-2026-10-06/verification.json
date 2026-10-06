@@ -1,0 +1,198 @@
+{
+  "base_commit": "927eb644c20bbc64aaeda0c82a98f108485e5b74",
+  "checks": {
+    "client_contract_tests_passed": 29,
+    "collective_in_cloud_scope": false,
+    "collective_on_strict_anywhere": false,
+    "determinism_run1_run2_identical": true,
+    "external_id_identity_scientific_redlist_changes_vs_bundle": 0,
+    "matches_2026_10_04": true,
+    "norwegian_additions": {
+      "affected_concepts": 766,
+      "automatic": 1619,
+      "in_scoped": 1636,
+      "in_w1": 1636,
+      "reviewed": 17
+    },
+    "preferred_drift": {
+      "vs_stage1": 0,
+      "vs_stage1b_evidence": 0
+    },
+    "probes_passed": 12,
+    "probes_total": 12,
+    "promotion_scratch_only": {
+      "exact_bytes": true,
+      "frozen_unchanged": true,
+      "idempotent": true,
+      "no_compile_path_guarded": true,
+      "real_bundle_unchanged": true,
+      "tamper_rejected_all_5": true,
+      "wrong_hash_rejected": true
+    },
+    "protected_files_unchanged_vs_HEAD_and_stage2": true,
+    "python_tests_passed": 87,
+    "qualified_withheld_present_on_target": [
+      [
+        58814,
+        "nb",
+        "taigarødtuppsopp"
+      ],
+      [
+        19080,
+        "nb",
+        "knolltrevlesopp"
+      ],
+      [
+        58815,
+        "nb",
+        "sørlig rødtuppsopp"
+      ],
+      [
+        58815,
+        "nn",
+        "sørleg rødtuppsopp"
+      ]
+    ],
+    "qualified_withheld_rows": 13,
+    "scoped_equals_frozen_scope": true,
+    "stage1_rows": {
+      "expected": 13271,
+      "missing_from_frozen_sqlite": 0,
+      "missing_from_w1": 0,
+      "reconstructed": 13271,
+      "scoped_missing": 0,
+      "scoped_stage1_rows": 6948
+    },
+    "stage1b_recoveries": {
+      "concepts": 3579,
+      "in_frozen_sqlite": 10331,
+      "in_w1": 10331,
+      "total": 10331
+    },
+    "unsupported_historical": {
+      "present_in_frozen_sqlite": 0,
+      "present_in_scoped": 0,
+      "present_in_w1": 0,
+      "total": 8453
+    },
+    "w1_equals_frozen_sqlite": true
+  },
+  "committed": false,
+  "counts": {
+    "imported_rolled_back": {
+      "active": 1,
+      "external_ids": 56959,
+      "legacy_external_ids": 0,
+      "redlist": 2600,
+      "scientific_names": 60697,
+      "taxa": 52917,
+      "vernacular": 59892
+    },
+    "scoped": {
+      "scientific_name.jsonl": 60697,
+      "taxon.jsonl": 52917,
+      "taxon_external_id.jsonl": 56959,
+      "taxon_external_id_legacy_integer.jsonl": 0,
+      "taxon_redlist.jsonl": 2600,
+      "taxonomy_release.jsonl": 1,
+      "vernacular.jsonl": 59892
+    },
+    "w1": {
+      "scientific_name.jsonl": 665946,
+      "taxon.jsonl": 633541,
+      "taxon_external_id.jsonl": 645418,
+      "taxon_external_id_legacy_integer.jsonl": 78615,
+      "taxon_redlist.jsonl": 7866,
+      "taxonomy_release.jsonl": 1,
+      "vernacular.jsonl": 96144
+    }
+  },
+  "discrepancies": [
+    {
+      "id": "D1",
+      "note": "source=col_xr; 3 of 4 clb:merged=true sourceID 2030; in SQLite, W1, scoped, imported DB; owner decision required",
+      "rows": [
+        [
+          58814,
+          "nb",
+          "taigarødtuppsopp"
+        ],
+        [
+          19080,
+          "nb",
+          "knolltrevlesopp"
+        ],
+        [
+          58815,
+          "nb",
+          "sørlig rødtuppsopp"
+        ],
+        [
+          58815,
+          "nn",
+          "sørleg rødtuppsopp"
+        ]
+      ],
+      "severity": "HIGH",
+      "title": "Withheld qualified NorTaxa names present on COL targets via Stage 1B COL-native rows"
+    },
+    {
+      "id": "D2",
+      "note": "publish only via promote_desktop_bundle.py with expected freeze hash; Dyntaxa evidence in accepted set uses HEAD normalizer",
+      "severity": "HIGH",
+      "title": "Reviewed set not reproducible by build_release.py; --promote not bound to reviewed freeze hash (would publish freeze 4c66c7b8...)"
+    },
+    {
+      "id": "D3",
+      "severity": "MEDIUM",
+      "title": "Collective Entoloma 625268 out of cloud scope; silkerødspore-gruppen 0 cloud results (carry-over)"
+    },
+    {
+      "id": "D4",
+      "severity": "LOW",
+      "title": "rognerust / gråfiolett køllesopp also on NorTaxa-native duplicates 621074/621443 in desktop SQLite (not in cloud)"
+    },
+    {
+      "id": "D5",
+      "severity": "LOW",
+      "title": "Stage 1B/2 build scripts were ad-hoc /tmp scripts; reconstructions archived in scripts/"
+    }
+  ],
+  "evidence_sha256": {
+    "determinism.json": "a3ae511fb870e270c415d944e9f6c4f760d7c3aa1ded5534c16c289125dbd7f7",
+    "export-verification.json": "990f4dbc7cfc89965c31c55f42e39d6d32530880231420a179bbcdabc8028c83",
+    "logs/client-tests.log": "7ef487ba466b0226375c482162bd0f5c7e28b335e314765834bd3351a0747513",
+    "logs/local-validation-run1.log": "59fb0b93c4e05b213208d854e5e3642ad6674e5bc6e87d4dcfe0ff5910d29be2",
+    "logs/local-validation-run2.log": "59fb0b93c4e05b213208d854e5e3642ad6674e5bc6e87d4dcfe0ff5910d29be2",
+    "logs/phase-a-build-release-attempt.log": "8efda6fda6738f0dfaebfd7775237add2670f803aa5d00be3aab01fa1d33a222",
+    "logs/phase-a-freeze.log": "1cb4972c3ffabdc7a5721cac52cb0a6a4cd14df96dba9326ef90b958f072c5ff",
+    "logs/phase-b-run1.log": "bea51176979cd5f14ceb3a9a8df5a79111ead947781befffd72eef6924f95489",
+    "logs/phase-b-run2.log": "b24bd80ad6bac185992c17d830b82897fb069328f6eb697af08de6a781c34bd5",
+    "logs/python-tests.log": "fed66212b4fa54eedcfb28965a1c41acbf592c14f0ab5373b6f8bed346b9171e",
+    "promotion-checks.json": "1a9a313058ace5d230b6c3529dc33b769804874fc0fe2f9bbb242578434d1723",
+    "rematerialization.json": "8b633d99834731c996d692166b756e3335ce9e076c8f3348dd1c94ed4ad5b4c1",
+    "scripts/freeze-final.py": "d089da26c337c668f5866528408373c770ba2875112fc8dacf1d710ae2788d28",
+    "scripts/local-validation.mjs": "9f3be4f930d5f3a408a8dba0f18c81cbea662993b8a4f69d5308b235abd8b4d3",
+    "scripts/phaseb_analyze.py": "1ef3bd8c96fdfac52a35caa53252adef43d326cb195c47f712d2db005ad51f9d",
+    "scripts/phaseb_prepare.py": "6b7c80470c85a007dd5b92f565a94e357007ef3897c3be4437c0b93609ef9dc7",
+    "scripts/promotion_checks.py": "6dbc4e2318806565f55e9290048c23636e57f0443525889361aac0ea1a3aaf14",
+    "scripts/rematerialize.sh": "ea06b7cad0f30137792aead6fc6392680a96dcaee3934b71b61f6bfe9d81780d",
+    "search-probes.json": "737ed1d65f13a13af63843c685313ed4d8a349ada6afcfd40f9af6a9ea5499af",
+    "withheld-associations-present-via-other-sources.json": "4b44f04c2fbb7aaa8599b10da26f0a9dde3ae037e59052ace2a0c6cc87c31801"
+  },
+  "gate": {
+    "archive_members_verified": 42,
+    "first_attempt_build_release": "FAIL at compiler vernacular.jsonl (be7e0d24 accepted vs 676489eb rebuilt); diagnosed: accepted Stage 1B used Dyntaxa normalized by committed HEAD national_source.py; reproduced exactly with HEAD normalizer for Dyntaxa + reconstructed Stage 2 freeze-final.py",
+    "freeze_sha256": "d0e5de92cd2e4e2222f77818e5b0425360d37596df2cc9b3d3fbd9567d6870ad",
+    "independent_freezes_identical": true,
+    "result": "PASS",
+    "stage1b_sqlite": "69a34da8588295f21fe59ca969368b9f1a2e6f659a655bd739f54e2324d55b23"
+  },
+  "production_touched": false,
+  "rematerialization_exception": "owner-authorized single hash-gated re-materialization; no code/policy change",
+  "report_md": "not written: subagent harness refused report-file write; top-level agent should author report.md from this file",
+  "scratch": "/Users/sigmundas/sporely-scratch/vernacular-2026-10-06",
+  "stage": "Stage 3 rerun 2026-10-06",
+  "verdict": "NOT_READY",
+  "verdict_note": "Blocking only on owner decision D1; if owner accepts COL-native rows as independent evidence, READY_WITH_RECOMMENDATIONS without rebuild. Publish only via promote_desktop_bundle.py --frozen-dir finalA --expect-freeze-sha256 d0e5de92... (D2)."
+}

@@ -1,0 +1,195 @@
+{
+  "build_command": ".venv/bin/python database/taxonomy/scripts/build_release.py --release-id tax-2026.10.06-01 --build-dir <new dir>",
+  "build_release_promote_wrong_hash": {
+    "error_line": "error: not promoting: freeze fda89f3744975dfb296336b73256c33df1b278efe092eca336557d067d07148e is not the reviewed freeze 0000000000000000000000000000000000000000000000000000000000000000",
+    "exit": 2,
+    "promote_step_run": false,
+    "real_bundle_unchanged": true
+  },
+  "col_echo_guard_withheld": [
+    [
+      19080,
+      "nb",
+      "knolltrevlesopp",
+      [
+        "53227"
+      ]
+    ],
+    [
+      58815,
+      "nb",
+      "sørlig rødtuppsopp",
+      [
+        "56524"
+      ]
+    ],
+    [
+      58815,
+      "nn",
+      "sørleg rødtuppsopp",
+      [
+        "56524"
+      ]
+    ]
+  ],
+  "committed": false,
+  "content_delta_sqlite": {
+    "added": [],
+    "changed": [
+      [
+        [
+          58814,
+          "nb",
+          "taigarødtuppsopp"
+        ],
+        [
+          0,
+          "col_xr"
+        ],
+        [
+          1,
+          "nortaxa"
+        ]
+      ]
+    ],
+    "new": 96141,
+    "old": 96144,
+    "removed": [
+      [
+        19080,
+        "nb",
+        "knolltrevlesopp",
+        0,
+        "col_xr"
+      ],
+      [
+        58815,
+        "nb",
+        "sørlig rødtuppsopp",
+        0,
+        "col_xr"
+      ],
+      [
+        58815,
+        "nn",
+        "sørleg rødtuppsopp",
+        0,
+        "col_xr"
+      ]
+    ]
+  },
+  "durable_frozen_dir": "/Users/sigmundas/sporely-scratch/vernacular-2026-10-06-r2/final",
+  "freeze_sha256": "fda89f3744975dfb296336b73256c33df1b278efe092eca336557d067d07148e",
+  "frozen_files": {
+    "compatibility.json": {
+      "bytes": 3214,
+      "sha256": "747f32d27a98c7424e4cb05f52244d4d7185266b4bed482e00976442a37feccd"
+    },
+    "freeze.json": {
+      "bytes": 895,
+      "sha256": "fda89f3744975dfb296336b73256c33df1b278efe092eca336557d067d07148e"
+    },
+    "manifest.json": {
+      "bytes": 4235,
+      "sha256": "6c9d4919b51e099cd6694ad887ab10befefc27d83a92aaadbd0aba95b970379e"
+    },
+    "tax-2026.10.06-01.evidence.tar.gz": {
+      "bytes": 53373707,
+      "sha256": "97b4a896977ccc256f662cbf96fca195362a70ebf40cae705e27cd3d084feadd"
+    },
+    "tax-2026.10.06-01.sqlite3.gz": {
+      "bytes": 73281566,
+      "sha256": "9e6690d50ddba88a092b311109f2f3ceb2bd1d5a4fb9b543c62658f0a59a58d3"
+    }
+  },
+  "frozen_status": "reviewed candidate (read-only), not published",
+  "invariants": {
+    "desktop_compatibility_sha256": "7afbe0719d2c74f93500c085a7dd7705e464487edb8f22da05c225cbac988051",
+    "registry_policies_bridge_overlays_bundle_compat_unchanged_vs_HEAD": true,
+    "repo_bundle_manifest_sha256": "051464bbd8b343cc6d337fc92d5ddf433f716f0742aa55db49ae8e72f704cffa",
+    "taxon_min_identical_to_superseded_except_release_id": true,
+    "vs_bundled_2026_09_30_01_zero_diffs": [
+      "taxon_external_id_min",
+      "taxon_external_id_text_min",
+      "scientific_name_min",
+      "taxon_redlist_min",
+      "taxon_min identity columns"
+    ]
+  },
+  "pinned_projection": {
+    "affected_concepts": 767,
+    "automatic": 1619,
+    "in_scoped": 1637,
+    "in_w1": 1637,
+    "not_in_scoped": [],
+    "reviewed": 18
+  },
+  "production_touched": false,
+  "promotion": {
+    "build_release_promote_without_hash": {
+      "build_dir_created": false,
+      "returncode": 2,
+      "stderr_tail": [
+        "error: not promoting: --promote requires --expect-freeze-sha256 of the reviewed freeze"
+      ]
+    },
+    "compatibility_equals_frozen": true,
+    "forbidden_modules_loaded": [],
+    "frozen_unchanged": true,
+    "promoted_files_equal_frozen": true,
+    "real_repo_bundle_and_compatibility_unchanged": true,
+    "repeat_idempotent": true,
+    "wrong_freeze_hash_rejected_without_writes": true
+  },
+  "promotion_tamper_rejected": {
+    "compatibility.json": true,
+    "freeze.json": true,
+    "manifest.json": true,
+    "tax-2026.10.06-01.evidence.tar.gz": true,
+    "tax-2026.10.06-01.sqlite3.gz": true
+  },
+  "publish_command": ".venv/bin/python database/taxonomy/scripts/promote_desktop_bundle.py --frozen-dir ~/sporely-scratch/vernacular-2026-10-06-r2/final --expect-freeze-sha256 fda89f3744975dfb296336b73256c33df1b278efe092eca336557d067d07148e",
+  "published": false,
+  "release_id": "tax-2026.10.06-01",
+  "rollback": {
+    "after": {
+      "external_ids": 0,
+      "import_runs": 0,
+      "observations": 6,
+      "releases": 0,
+      "taxa": 0,
+      "vernacular": 0
+    },
+    "before": {
+      "external_ids": 0,
+      "import_runs": 0,
+      "observations": 6,
+      "releases": 0,
+      "taxa": 0,
+      "vernacular": 0
+    },
+    "database_url_env_present": false,
+    "run1": true,
+    "run2": true,
+    "server": "unix-socket|*|/var/lib/postgresql/data",
+    "target": {
+      "container": "4f6145469518",
+      "context": "orbstack",
+      "database": "postgres",
+      "engineVersion": "29.4.0",
+      "postgresVersion": "17.6",
+      "projectId": "zkpjklzfwzefhjluvhfw",
+      "psqlVersion": "psql (PostgreSQL) 17.6"
+    }
+  },
+  "sqlite_sha256": "3f9037c08b918890910b16f5a7446a323d5524d08a49e674715afbb7137bb73e",
+  "superseded_set": {
+    "freeze_sha256": "d0e5de92cd2e4e2222f77818e5b0425360d37596df2cc9b3d3fbd9567d6870ad",
+    "modified": false,
+    "path": "~/sporely-scratch/vernacular-2026-10-06/stage2/finalA"
+  },
+  "tests": {
+    "python_focused": "200 passed",
+    "web_client_contract": "29 passed"
+  }
+}

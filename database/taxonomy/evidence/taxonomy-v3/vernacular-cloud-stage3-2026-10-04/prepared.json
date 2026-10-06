@@ -1,0 +1,21 @@
+generated SQL path: /private/tmp/sporely-vernacular-stage3/import.sql
+SQL SHA-256: 49f01824e5a95a5d17d308c736afb64a57420161950611afb190b953ab238b6a
+verified release hashes: {
+  "taxonomy_export_manifest_raw_sha256": "7238207f1af5503f66ed0e7964be826afd905e8c86fb6f2a8c9962d75ce9c566",
+  "scope_manifest_raw_sha256": "4193e82becc584df233099256cfa1efdd23a1ca8c5c5667bb1a292af2a83f48c",
+  "compressed_dataset_sha256": "89b77eae6562727fee9fd28697697a45bb7bc4dafff02df4aa82d8a45e0789a1",
+  "desktop_sqlite_sha256": "e11c9326caeef85034fdf7b667ba54c9bcb55afd6c798abb08ed55ffa6bcb754",
+  "desktop_sqlite_gz_sha256": "75658aedb7ec36a965a0dba6ce7090c64ac8101faec2d7c27685c516094b9e5b",
+  "computed_whole_export_sha256": "0f0d32a580e47e12ea4cd49cebcc9687cd6cbce3184c61d0129dd485f0133bfc",
+  "files": {
+    "taxonomy_release.jsonl": "53f2971f02e58644acf8469522af7ab381ed2fde424965fd8ae714db41aaa9a4",
+    "taxon.jsonl": "0c4d0f24eb13a86b3292258e80ea6acc5de643d262044db14aa096ab98703e67",
+    "scientific_name.jsonl": "57a15c614b3c5d49d6754af0b5cf4cfe4e7ab5b61f3004ac381e0ca18bfb1b7e",
+    "vernacular.jsonl": "aeaf2125c1f47da7f4a1a92fa2d796ae5afa7ba2bc10957f30857b064033dbf6",
+    "taxon_external_id.jsonl": "53b7957fde8f95765f6ab1884ba46d2327d3e5388927241f3474a20896ef83d0",
+    "taxon_external_id_legacy_integer.jsonl": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855",
+    "taxon_redlist.jsonl": "c4f0679db8557bdf000ab8037435af18859d101af841b238ea62b3b25481a74e"
+  }
+}
+expected table counts: {"concepts":52917,"taxa":52917,"scientific_names":60697,"vernacular_names":59892,"external_ids":56959,"legacy_external_ids":0,"redlist":2600,"releases":1,"import_runs":1,"active_releases":1}
+containerised psql command: docker run --rm --env-file /path/to/private/production-db.env -v '/private/tmp/sporely-vernacular-stage3:/payload:ro' postgres:17 sh -c 'psql "$DATABASE_URL" --file=/payload/import.sql'

@@ -1,0 +1,125 @@
+{
+  "file_hashes": {
+    "import.sql": "49f01824e5a95a5d17d308c736afb64a57420161950611afb190b953ab238b6a",
+    "scoped/desktop-tax-2026.10.04-01.sqlite3": "e11c9326caeef85034fdf7b667ba54c9bcb55afd6c798abb08ed55ffa6bcb754",
+    "scoped/desktop-tax-2026.10.04-01.sqlite3.gz": "75658aedb7ec36a965a0dba6ce7090c64ac8101faec2d7c27685c516094b9e5b",
+    "scoped/scientific_name.jsonl": "57a15c614b3c5d49d6754af0b5cf4cfe4e7ab5b61f3004ac381e0ca18bfb1b7e",
+    "scoped/scope-manifest.json": "4193e82becc584df233099256cfa1efdd23a1ca8c5c5667bb1a292af2a83f48c",
+    "scoped/scoped-export.jsonl.gz": "89b77eae6562727fee9fd28697697a45bb7bc4dafff02df4aa82d8a45e0789a1",
+    "scoped/taxon.jsonl": "0c4d0f24eb13a86b3292258e80ea6acc5de643d262044db14aa096ab98703e67",
+    "scoped/taxon_external_id.jsonl": "53b7957fde8f95765f6ab1884ba46d2327d3e5388927241f3474a20896ef83d0",
+    "scoped/taxon_external_id_legacy_integer.jsonl": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855",
+    "scoped/taxon_redlist.jsonl": "c4f0679db8557bdf000ab8037435af18859d101af841b238ea62b3b25481a74e",
+    "scoped/taxonomy_export_manifest.json": "7238207f1af5503f66ed0e7964be826afd905e8c86fb6f2a8c9962d75ce9c566",
+    "scoped/taxonomy_release.jsonl": "53f2971f02e58644acf8469522af7ab381ed2fde424965fd8ae714db41aaa9a4",
+    "scoped/vernacular.jsonl": "aeaf2125c1f47da7f4a1a92fa2d796ae5afa7ba2bc10957f30857b064033dbf6",
+    "validation-rollback.sql": "b24910c1594428188209d3a28d297703adca9ebdfc4609ee02f518e072da1d45",
+    "w1/scientific_name.jsonl": "9a49dc358449f4d8a7751d881d8e88a96be4161cd3a0362f80921a44fb4b1ad0",
+    "w1/taxon.jsonl": "a41b42982b47149781df40886645d74023c2622839ab41fbbdecd5d60719b6a5",
+    "w1/taxon_external_id.jsonl": "cbb1d0f868d4f4d95adf68186c07df34ada8c27a3a78c0b1544222dab37d9ae0",
+    "w1/taxon_external_id_legacy_integer.jsonl": "dd9ebe52579aa12fa5412afc75e7a90a823276a6d4d0390fbf653b21fc946b34",
+    "w1/taxon_redlist.jsonl": "f8db7a0553750e4a14c7501f81c26e71cebd9717d9c3ec4d43bc4f8ced315a8b",
+    "w1/taxonomy_export_manifest.json": "cb3962ab39460fe12c928dd8ff0ddf536aecb84cdcae8e4f6a860cecd4dcd94f",
+    "w1/taxonomy_release.jsonl": "54ca5dd66f1550d810d56ebb7964bb390e01cf159cbb6af988d6ffc9d6a8bd15",
+    "w1/vernacular.jsonl": "d15175d696aaae3918af45c3443af56a7ccc771b703586344c3ff80570df06d3"
+  },
+  "file_hashes_identical": true,
+  "probe_results_sha256": {
+    "run1": "60dc393a35f8f62328b30e34b0e4fb1e38ca052eea4c0fa6d74de311d3ead4a6",
+    "run2": "60dc393a35f8f62328b30e34b0e4fb1e38ca052eea4c0fa6d74de311d3ead4a6"
+  },
+  "probe_results_vs_2026_10_04_common_queries": {
+    "Russula aeruginea": true,
+    "dråpeknippesopp": true,
+    "dunpipe": true,
+    "grønn navlesopp": true,
+    "grønnkremle": true,
+    "gul ekornnøtt": true,
+    "lys høstmorkel": true,
+    "silkerødspore": true,
+    "snylterørsopp": true,
+    "tårekjuke": true
+  },
+  "rollback_counts": {
+    "run1": [
+      {
+        "external_ids": 0,
+        "import_runs": 0,
+        "observations": 6,
+        "releases": 0,
+        "taxa": 0,
+        "vernacular": 0
+      },
+      {
+        "external_ids": 0,
+        "import_runs": 0,
+        "observations": 6,
+        "releases": 0,
+        "taxa": 0,
+        "vernacular": 0
+      }
+    ],
+    "run2": [
+      {
+        "external_ids": 0,
+        "import_runs": 0,
+        "observations": 6,
+        "releases": 0,
+        "taxa": 0,
+        "vernacular": 0
+      },
+      {
+        "external_ids": 0,
+        "import_runs": 0,
+        "observations": 6,
+        "releases": 0,
+        "taxa": 0,
+        "vernacular": 0
+      }
+    ]
+  },
+  "run1_vs_run2_differences": [],
+  "run1_vs_run2_identical_fields": [
+    "counts",
+    "db_collective_on_strict",
+    "db_counts",
+    "db_role",
+    "db_taxa_present",
+    "db_vernacular_checks",
+    "db_withheld_on_target",
+    "entoloma",
+    "file_hashes",
+    "norwegian_additions",
+    "preferred_names",
+    "probe_names_on_other_concepts",
+    "probe_results_sha256",
+    "probes",
+    "qualified_withheld",
+    "scoped_equals_frozen_scoped_exactly",
+    "stage1_rows",
+    "stage1b_recoveries",
+    "unsupported_historical",
+    "w1_equals_frozen_sqlite_exactly"
+  ],
+  "scoped_counts_vs_2026_10_04": true,
+  "scoped_export_vs_2026_10_04": {
+    "desktop-tax-2026.10.04-01.sqlite3": true,
+    "desktop-tax-2026.10.04-01.sqlite3.gz": true,
+    "scientific_name.jsonl": true,
+    "scope-manifest.json": true,
+    "scoped-export.jsonl.gz": true,
+    "taxon.jsonl": true,
+    "taxon_external_id.jsonl": true,
+    "taxon_external_id_legacy_integer.jsonl": true,
+    "taxon_redlist.jsonl": true,
+    "taxonomy_export_manifest.json": true,
+    "taxonomy_release.jsonl": true,
+    "vernacular.jsonl": true
+  },
+  "sql_payload_sha256": {
+    "2026-10-04": "49f01824e5a95a5d17d308c736afb64a57420161950611afb190b953ab238b6a",
+    "run1": "49f01824e5a95a5d17d308c736afb64a57420161950611afb190b953ab238b6a",
+    "run2": "49f01824e5a95a5d17d308c736afb64a57420161950611afb190b953ab238b6a"
+  },
+  "validation_rollback_sql_identical": true
+}

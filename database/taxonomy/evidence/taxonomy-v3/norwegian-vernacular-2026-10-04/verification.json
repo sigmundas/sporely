@@ -1,0 +1,21 @@
+{
+  "automatic_rows_have_no_contradiction": "passed",
+  "files_sha256": {
+    "all-source-associations.jsonl.gz": "a69e25b592ba3a4533e3ab0a85a6c239fa445d56e95d0bef8e4a97f89d4286f4",
+    "automatic-associations.json": "8111947dcf080fa42a47d7cd8cc3cb7bc47e4cabcfe396c8f0d44dd75a48fddc",
+    "classification-disagreements.json": "193aad4ced1254b55eac028b0ede3d09ee368a49ec939cf2d408e5c448ad0670",
+    "exception-source-usages.json": "cf43f423dff294c1da16f30f460ce94b0b7fc51397d664aa1fdbde3fc11471b0",
+    "exceptions.json": "1ae60d354651ea102b0bdc1193a061ef0895a06c24c10e80b62c7237789d0cae",
+    "live-taxonomy-snapshot.json": "534b039988f630eeb315737f9566084f55f54cc5ad8a1b39184ce51b78b234d6",
+    "multiple-targets.json": "9097acfa7150fa0d2b3884c5c2aaf1bc085193694615fd72712b0e7fd7cf4940",
+    "named-regressions.json": "773d3c1773abb40cd0e7e378a7c9b801424d2b8b546522e8303b6d1f3d4420b4",
+    "qualified-or-split-cases.json": "5c7860bda8cd697eec2aa07396d87f250738cba9d267d49a698eb5f0047a7c49",
+    "report.md": "9a15571b4da104d17d3ebbea9abd3ef1a31d19e83d1de5ab585f8f61590a1bc4",
+    "summary.json": "ec340f934282a1017b4051cd7ee3554cd36f3c06e7691dadbe58fd730229bab9",
+    "vernacular-conflicts.json": "122cd5339188f350d37b94e018e7a484837fc7b912395653af77a4df5b1b2750"
+  },
+  "named_regression_assertions": "passed",
+  "repeat_manifests_byte_identical": true,
+  "repeat_summary_equal_except_snapshot_serialization_hash": true,
+  "syntax_check": "passed"
+}

@@ -1,0 +1,58 @@
+{
+  "archive_member_fingerprints_verified": true,
+  "archive_members": 42,
+  "compiler_outputs_archived": 13,
+  "diff_check": "passed",
+  "expected_pinned_enrichment": {
+    "affected_concepts": 766,
+    "automatic": 1619,
+    "reviewed": 17,
+    "total": 1636
+  },
+  "freeze_sha256": "d0e5de92cd2e4e2222f77818e5b0425360d37596df2cc9b3d3fbd9567d6870ad",
+  "frozen_artifacts": {
+    "compatibility.json": {
+      "bytes": 3214,
+      "sha256": "56258f2228c963ed24f7c5d665188d81dc5ea3b7bcc5bf0a984e2f52528eed9b"
+    },
+    "freeze.json": {
+      "bytes": 895,
+      "sha256": "d0e5de92cd2e4e2222f77818e5b0425360d37596df2cc9b3d3fbd9567d6870ad"
+    },
+    "manifest.json": {
+      "bytes": 4235,
+      "sha256": "a9ee2bb73a5c4ff4e49609038d9ddbb3469ef111227f2c0e96dd16fa58ad0d51"
+    },
+    "tax-2026.10.04-01.evidence.tar.gz": {
+      "bytes": 55656914,
+      "sha256": "25625ec3eca0c95307a9a011b81b5ef09f5895897c5427aa47ef1c2ab8cb75e1"
+    },
+    "tax-2026.10.04-01.sqlite3.gz": {
+      "bytes": 73283038,
+      "sha256": "56020d1f72f0fd9341f4a1ef3671c5665897aac2c4680fe00172866af8a04ca1"
+    }
+  },
+  "frozen_inputs_unchanged_after_promotion": true,
+  "independent_freezes_byte_identical": true,
+  "previous_evidence_archive_retained": true,
+  "production_and_repository_bundle_unchanged": {
+    "/tmp/sporely-vernacular-stage1b/frozenA.sqlite3": "69a34da8588295f21fe59ca969368b9f1a2e6f659a655bd739f54e2324d55b23",
+    "database/reference_data/generated/taxonomy_v2/manifest.json": "051464bbd8b343cc6d337fc92d5ddf433f716f0742aa55db49ae8e72f704cffa",
+    "database/taxonomy/desktop-compatibility.json": "7afbe0719d2c74f93500c085a7dd7705e464487edb8f22da05c225cbac988051",
+    "database/taxonomy/policies/concept_supersessions.yml": "04a77c05c694c97b599aae63c5852d7d2ba411a440c42cfa5104cc78a2e47033",
+    "database/taxonomy/policies/manual_mappings.yml": "72316e436a5db5d8636ed5821ae45a6c39bc4a18c10e21a281af3cbf030de664",
+    "database/taxonomy/policies/vernacular_associations.json": "cbd2d0d9079b7ecf8b5a18d0952e7603920001d31357e90253395199a4965fc9",
+    "database/taxonomy/scripts/bridge_emission.py": "8b7119d62ad5d18edeb0dede867623ab7304044419d75881858bfd0bf1e51a52"
+  },
+  "production_touched": false,
+  "promoted_to_repository": false,
+  "scratch_promotion_copies_only_frozen_bytes": true,
+  "scratch_repeat_promotion_idempotent": true,
+  "stage2_code_sha256": {
+    "database/taxonomy/scripts/build_release.py": "8c689f046844513040a501a0c8db2de351ebc852540e0d09ae50e494a9ce49cf",
+    "database/taxonomy/scripts/freeze_release.py": "1351ba2eec846dcb29e37ed2f30bdaf7780cbec7f264a9b673b5416e904338a3",
+    "database/taxonomy/scripts/promote_desktop_bundle.py": "62e0fab1a93cf44e10c3986b080ed3dc6c734cdc220c6d3a2b7a9ed660e2fc91"
+  },
+  "syntax_check": "passed",
+  "tests_passed": 81
+}

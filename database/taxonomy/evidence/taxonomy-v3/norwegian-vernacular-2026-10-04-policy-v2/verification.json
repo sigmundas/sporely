@@ -1,0 +1,36 @@
+{
+  "all_named_regression_assertions_passed": true,
+  "automatic_full_bundle_target_count_equals_one": true,
+  "files_sha256": {
+    "all-source-associations.jsonl.gz": "c7897374140882a8e36cd8f02cf72456ef39448aae4598373eba166d3bff16a2",
+    "automatic-associations.json": "8bc85b2d1126534d3ebf97d053f44c5ab03c427d78fd87873544379330eb8e7c",
+    "classification-disagreements.json": "58ce0f12af0fd7f1423966f9a8f045fa9e9f9e14c29c7b2189190189d73169eb",
+    "exception-source-usages.json": "be67a1edceef1a81a0604e8f468fd46d800632db422569b6ba4cdd8a1a9714fc",
+    "exceptions.json": "6c35a0c97fb5bba109b7b8970fd559812defe48764315dfe187673996c102485",
+    "live-taxonomy-snapshot.json": "534b039988f630eeb315737f9566084f55f54cc5ad8a1b39184ce51b78b234d6",
+    "multiple-targets.json": "eee90e816b31e5c0c7d76cf04a8806fe8e82ce8b13d81942c38a9fe83840fd9c",
+    "named-regressions.json": "5a8c463e405f9fa78f114b97956c626eda6de86cee6047b7287668844e59bbeb",
+    "owner-reviewed-vernacular-associations.json": "591124223eda91401364d6b12ebd7203258ce69b30d651608f5d47f5e3c4dcdb",
+    "policy-change.json": "5942ddab5492a8e1b06a0e68834c528fb3c2213edc18411b3776a773d190eefc",
+    "problem-species.md": "64e739ecbd5a36f09b4c7b24272eec21e99a388d1f8008aebcb7db0ed550a54a",
+    "qualified-or-split-cases.json": "f4af4fa3402095371a26af29adf9b9e75f9ff2a06670de7d4613ec990df2716c",
+    "report.md": "931db9b267806e954f7bbef5988476d5b98720cbbbd894aacd7372cbf88215fe",
+    "species-review-queue.json": "b775bf6915429c1eca9d160e3b19d91b7001c2f88b1b454ffe439bf103497b18",
+    "summary.json": "77276468d266454bf8cc8dc136a975550cda17a2e08cd499fc1c76f0ca08fcf1",
+    "vernacular-conflicts.json": "3626acc8c52b7b9df5857da8ba21f7f749cd59dacde82cb1b01a8c42637c1180"
+  },
+  "mutable_review_artifacts_updated": "Owner ledger and readable/machine species review queue updated; original automatic and exception simulation manifests unchanged.",
+  "normalization_tests_passed": 46,
+  "nortaxa_compiler_tests_passed": 21,
+  "owner_review_evidence": {
+    "canonical_target_ids_verified_against_bundle": true,
+    "collective_semantic_hold": 1,
+    "current_simulation": "../norwegian-vernacular-2026-10-04-owner-reviewed/verification.json",
+    "needs_owner_review": 5,
+    "owner_resolved": 10,
+    "remaining": 6,
+    "species_review_count": 16
+  },
+  "repeat_all_generated_files_byte_identical": true,
+  "syntax_and_diff_checks": "passed"
+}

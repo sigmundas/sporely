@@ -1,0 +1,41 @@
+{
+  "all_missing_recovery_rows_use_target_native_col_usage": true,
+  "all_supporting_associations_use_existing_same_target_bindings": true,
+  "all_targets_remain_current": true,
+  "artifact_sha256": {
+    "current-reconstructable.json": "8a5dcb90bf90abdc5ba5322fd0b97831e227ce36acd502cddcaa70c7e2ecf2ae",
+    "removed-row-classification.jsonl.gz": "1550d1a6da148a934e7b8cd45bac7dbf60d1418c926eefad1aac2cfde37cfd49",
+    "summary.json": "f77de71d60c9ebd5fecfbcbfc7843b6e2468ff2311ae1065836b45b888447d2d",
+    "unpinned-snapshot-candidates.json": "fa1239db90bfc77255a2b57d873292f7051a3221bf3b3826d007839643cc1faf"
+  },
+  "classification_counts": {
+    "current_evidence_exists_but_compiler_does_not_recover_it": 10331,
+    "current_evidence_recovered_as_case_or_spacing_variant": 721,
+    "no_current_pinned_association_evidence_exists": 8453
+  },
+  "compiler_or_release_runs": 0,
+  "exact_sqlite_difference_exhaustively_classified": true,
+  "git_diff_check": "passed",
+  "production_changes": 0,
+  "protected_before_after_sha256": {
+    "/tmp/sporely-no-coverage-bundle.sqlite3": "e4591d6b8b885e6c43cb4c21581e54c5f08d1747a3008317feb380f3ae95c20a",
+    "/tmp/sporely-vernacular-stage1/frozenA.sqlite3": "a37d107460e9967902e1b9b93393f6b54c566ee05162b9848a430f1718a1788d",
+    "database/reference_data/generated/taxonomy_v2/manifest.json": "051464bbd8b343cc6d337fc92d5ddf433f716f0742aa55db49ae8e72f704cffa",
+    "database/taxonomy/policies/concept_supersessions.yml": "04a77c05c694c97b599aae63c5852d7d2ba411a440c42cfa5104cc78a2e47033",
+    "database/taxonomy/policies/manual_mappings.yml": "72316e436a5db5d8636ed5821ae45a6c39bc4a18c10e21a281af3cbf030de664",
+    "database/taxonomy/policies/vernacular_associations.json": "cbd2d0d9079b7ecf8b5a18d0952e7603920001d31357e90253395199a4965fc9",
+    "database/taxonomy/scripts/bridge_emission.py": "8b7119d62ad5d18edeb0dede867623ab7304044419d75881858bfd0bf1e51a52",
+    "database/taxonomy/scripts/build_release.py": "355ed01fc0c4b96b89b808e805655b0f0fac54b85d4beca044f9257f36b4c36a",
+    "database/taxonomy/scripts/compile_release.py": "31c0b14739ffbcebf8c6d5b249936a036833d9522be3d686217c21e3b0c9ef96",
+    "database/taxonomy/scripts/national_source.py": "cf708b24fe6c84ec3fe33751303e60bbb82ada6f1083054e640c4188a210837b",
+    "database/taxonomy/scripts/normalize_col_xr.py": "e11b56a03f45a80afc895de8c6fe150ead675abd05dab10fd1f28eb8f402ed65",
+    "database/taxonomy/scripts/vernacular_projection.py": "494adf1e90a57fc012c207c8acd581648c7ffdb8d639684fe08cf75735afe251"
+  },
+  "protected_inputs_unchanged": true,
+  "removed_rows": 19505,
+  "repeat_run_byte_identical": true,
+  "restorations": 0,
+  "retained_spelling_variants_verified_in_candidate": true,
+  "row_keys_unique": true,
+  "syntax_check": "passed"
+}

@@ -1,0 +1,22 @@
+{
+  "actual_local_rpc_probes_passed": 10,
+  "authenticated_search_probes_passed": true,
+  "builder_logic_rebuilt": false,
+  "client_contract_tests_passed": 29,
+  "evidence_sha256": {
+    "client-tests.log": "43bebeb8a46cc8f49637d22566c7aa48e9ffc60ce8450195c14f6893136ac209",
+    "export-verification.json": "54a2eceb837f7b56a0cef4fb824833794d96f9bca17ba243e09638a6ee17d0a2",
+    "local-validation.log": "9e1b690f7d5b4a90d72c88f5abf48d4c116eb3bc50b98034206c04fabd33e65f",
+    "prepared.json": "7ec15a29dd0f9940ffec76e663bbca9ff57d7e88719b7c9385ea9c655bde0542",
+    "promotion-checks.json": "33b7027a2b2af1d649d5fad91a26008fee3db0455be22da904913dee3fa6aaac",
+    "rollback-verification.json": "22e8346ad25c2868a8a2d206aec51215df540c3841e539f2d2093d35bd1c6400",
+    "scope-validation.json": "4e258423dd1d81c6eabbad0c200fa443acc77fc1870db03cb07e769dd7fd45eb",
+    "search-probes.json": "ccc5484f7af13ca5d037a01f2fd1283a9b6bc066585a17b6e0328c5ad8788274"
+  },
+  "export_and_import_counts_match": true,
+  "finalA_fingerprints_verified": true,
+  "production_touched": false,
+  "publication_caveat": "NorTaxa-native collective Entoloma 625268 is preserved in frozen SQLite but excluded by existing canonical-COL-only cloud scope; strict 96276 remains separate",
+  "published": false,
+  "transaction_rolled_back": true
+}

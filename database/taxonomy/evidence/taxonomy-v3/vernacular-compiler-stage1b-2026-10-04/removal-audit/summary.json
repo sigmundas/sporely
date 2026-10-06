@@ -1,0 +1,357 @@
+{
+  "audit_script_sha256": "83ae44ced4d9efaf644d74e657f9b592b74df864d70c7e6a2c3992960959782f",
+  "by_classification": {
+    "current_evidence_recovered_as_case_or_spacing_variant": 3269,
+    "no_current_pinned_association_evidence_exists": 8453
+  },
+  "by_cleanup_assessment": {
+    "intentional_current_source_spelling_replacement": 3269,
+    "withheld_without_current_target_association_not_proven_obsolete": 8453
+  },
+  "by_evidence_status": {
+    "current_pinned_association_evidence_exists": 3269,
+    "no_current_pinned_association_evidence_exists": 8453
+  },
+  "by_historical_source": {
+    "artportalen": 4329,
+    "inat_csv": 7393
+  },
+  "by_language": {
+    "da": 912,
+    "de": 1058,
+    "en": 1706,
+    "es": 194,
+    "fi": 1178,
+    "fr": 1315,
+    "it": 54,
+    "pl": 627,
+    "pt": 59,
+    "sv": 4619
+  },
+  "classification_manifest_sha256": "aa4c663f0bcc7ea5c7a6240f3c0b2d093c31243fd56d42a3223aa838738eae02",
+  "inputs_sha256": {
+    "/tmp/sporely-6p/run1/norm/legacy_enrichment.jsonl": "0ebb0504737c5f0f66772f3dbcbf20eca357c27c9fb6d52054541d40c7293db6",
+    "/tmp/sporely-no-coverage-bundle.sqlite3": "e4591d6b8b885e6c43cb4c21581e54c5f08d1747a3008317feb380f3ae95c20a",
+    "/tmp/sporely-vernacular-stage1/registry-base.jsonl": "1cc2003a874e5deb2c0023bf8fd6fb74dd98b2ad656ee36d8755c15277c8adc9",
+    "/tmp/sporely-vernacular-stage1b/frozenA.sqlite3": "69a34da8588295f21fe59ca969368b9f1a2e6f659a655bd739f54e2324d55b23",
+    "/tmp/sporely-vernacular-stage1b/frozenA/manifest.json": "ecf9924b5d7f18554996035befe636f3e71351ca6145df5c72d00f4c9baa9fff",
+    "/tmp/sporely-vernacular-stage1b/frozenA/source_usages.jsonl": "c1866553203efd5b5220049cea2bda8ed4189ebfbbb16817db7e9e5570506b26",
+    "database/reference_data/generated/artportalen_taxon_ids.csv": "1d71d522822c9748ebea8ecbd3866ae1f591e01fc2361540282665e50cbcbd82",
+    "database/reference_data/generated/artportalen_taxon_ids_by_genus.csv": "79a18f9fa844620f06d2abb3f0eb5605f6df8fe8df2b059763fd2a362534a446",
+    "database/reference_data/generated/artportalen_taxon_ids_swedish_only_reconciled.csv": "886e557503acbbc58b68fe671021878945b99ea6aaa5c134af15dbc07b6dc2be",
+    "database/reference_data/generated/vernacular_inat.csv": "aea85c76d6497266b14c025df1d1fa80243d3cdf5f0608e5ebb866e8498822b2",
+    "database/reference_data/generated/vernacular_inat_11lang.csv": "4137bf8bb50f47ffa3c3c29f77974e475c8a06e248e9237a18fb1578f32eb574",
+    "database/taxonomy/release-recipe.json": "2ffd048b28b836ff692540dd16e6ad4190ac477aeb0e4e2ec662aec603ff1501",
+    "database/taxonomy/sources/col_xr/2026-07-17-XR/archive.zip": "397d701c8eb269bf78d6ac7b03149915b0d9e2a2c18694be2c91445b807814f9",
+    "database/taxonomy/sources/dyntaxa/2026-09-30/archive.zip": "7947b7a7681f3654d5478694f1fe37fdd9e72dc3aab8f9b6311525d85cc4879c",
+    "database/taxonomy/sources/nortaxa/1.284/archive.zip": "29c11c54d955dc44e4e5a38944dd7932989a256d1b173777579b9f33abd2fe22"
+  },
+  "no_target_association_detail": {
+    "no_matching_current_name": 1721,
+    "only_other_scientific_concepts": 1116,
+    "same_scientific_name_without_target_association": 5616
+  },
+  "no_target_association_snapshot_detail": {
+    "provider_id_or_source_binding": 7981,
+    "scientific_name_only_diagnostic": 472
+  },
+  "production_touched": false,
+  "recoverable_by_current_provider": {
+    "col_xr": 3263,
+    "dyntaxa": 724
+  },
+  "removed_rows": 11722,
+  "restorations": 0,
+  "rows_with_local_unpinned_snapshot": 11722,
+  "rows_with_other_concept_current_name": 8756,
+  "scope_of_negative_claim": "No current pinned source-to-this-concept association found in the three recipe archives/current bindings. This is not a claim of absence in live provider databases. Local unpinned snapshots remain historical candidates and require acquisition/revalidation.",
+  "source_language_reason_breakdown": [
+    {
+      "classification": "current_evidence_recovered_as_case_or_spacing_variant",
+      "language": "sv",
+      "reason": "historical_spelling_replaced_by_current_source_spelling",
+      "rows": 2707,
+      "source": "artportalen"
+    },
+    {
+      "classification": "no_current_pinned_association_evidence_exists",
+      "language": "sv",
+      "reason": "current_name_on_same_scientific_name_without_target_association;no_current_pinned_source_to_target_association;provider_snapshot_available_but_not_current_pinned_source",
+      "rows": 1619,
+      "source": "artportalen"
+    },
+    {
+      "classification": "no_current_pinned_association_evidence_exists",
+      "language": "sv",
+      "reason": "current_name_only_on_other_scientific_concepts;no_current_pinned_source_to_target_association;provider_snapshot_available_but_not_current_pinned_source",
+      "rows": 3,
+      "source": "artportalen"
+    },
+    {
+      "classification": "current_evidence_recovered_as_case_or_spacing_variant",
+      "language": "da",
+      "reason": "historical_spelling_replaced_by_current_source_spelling",
+      "rows": 136,
+      "source": "inat_csv"
+    },
+    {
+      "classification": "no_current_pinned_association_evidence_exists",
+      "language": "da",
+      "reason": "current_name_on_same_scientific_name_without_target_association;no_current_pinned_source_to_target_association;provider_snapshot_available_but_not_current_pinned_source",
+      "rows": 502,
+      "source": "inat_csv"
+    },
+    {
+      "classification": "no_current_pinned_association_evidence_exists",
+      "language": "da",
+      "reason": "current_name_only_on_other_scientific_concepts;no_current_pinned_source_to_target_association;provider_snapshot_available_but_not_current_pinned_source",
+      "rows": 108,
+      "source": "inat_csv"
+    },
+    {
+      "classification": "no_current_pinned_association_evidence_exists",
+      "language": "da",
+      "reason": "no_current_pinned_source_to_target_association;no_matching_vernacular_in_current_pinned_archives;provider_snapshot_available_but_not_current_pinned_source",
+      "rows": 166,
+      "source": "inat_csv"
+    },
+    {
+      "classification": "current_evidence_recovered_as_case_or_spacing_variant",
+      "language": "de",
+      "reason": "historical_spelling_replaced_by_current_source_spelling",
+      "rows": 8,
+      "source": "inat_csv"
+    },
+    {
+      "classification": "no_current_pinned_association_evidence_exists",
+      "language": "de",
+      "reason": "current_name_on_same_scientific_name_without_target_association;no_current_pinned_source_to_target_association;provider_snapshot_available_but_not_current_pinned_source",
+      "rows": 590,
+      "source": "inat_csv"
+    },
+    {
+      "classification": "no_current_pinned_association_evidence_exists",
+      "language": "de",
+      "reason": "current_name_only_on_other_scientific_concepts;no_current_pinned_source_to_target_association;provider_snapshot_available_but_not_current_pinned_source",
+      "rows": 141,
+      "source": "inat_csv"
+    },
+    {
+      "classification": "no_current_pinned_association_evidence_exists",
+      "language": "de",
+      "reason": "no_current_pinned_source_to_target_association;no_matching_vernacular_in_current_pinned_archives;provider_snapshot_available_but_not_current_pinned_source",
+      "rows": 319,
+      "source": "inat_csv"
+    },
+    {
+      "classification": "current_evidence_recovered_as_case_or_spacing_variant",
+      "language": "en",
+      "reason": "historical_spelling_replaced_by_current_source_spelling",
+      "rows": 370,
+      "source": "inat_csv"
+    },
+    {
+      "classification": "no_current_pinned_association_evidence_exists",
+      "language": "en",
+      "reason": "current_name_on_same_scientific_name_without_target_association;no_current_pinned_source_to_target_association;provider_snapshot_available_but_not_current_pinned_source",
+      "rows": 813,
+      "source": "inat_csv"
+    },
+    {
+      "classification": "no_current_pinned_association_evidence_exists",
+      "language": "en",
+      "reason": "current_name_only_on_other_scientific_concepts;no_current_pinned_source_to_target_association;provider_snapshot_available_but_not_current_pinned_source",
+      "rows": 197,
+      "source": "inat_csv"
+    },
+    {
+      "classification": "no_current_pinned_association_evidence_exists",
+      "language": "en",
+      "reason": "no_current_pinned_source_to_target_association;no_matching_vernacular_in_current_pinned_archives;provider_snapshot_available_but_not_current_pinned_source",
+      "rows": 326,
+      "source": "inat_csv"
+    },
+    {
+      "classification": "no_current_pinned_association_evidence_exists",
+      "language": "es",
+      "reason": "current_name_on_same_scientific_name_without_target_association;no_current_pinned_source_to_target_association;provider_snapshot_available_but_not_current_pinned_source",
+      "rows": 93,
+      "source": "inat_csv"
+    },
+    {
+      "classification": "no_current_pinned_association_evidence_exists",
+      "language": "es",
+      "reason": "current_name_only_on_other_scientific_concepts;no_current_pinned_source_to_target_association;provider_snapshot_available_but_not_current_pinned_source",
+      "rows": 38,
+      "source": "inat_csv"
+    },
+    {
+      "classification": "no_current_pinned_association_evidence_exists",
+      "language": "es",
+      "reason": "no_current_pinned_source_to_target_association;no_matching_vernacular_in_current_pinned_archives;provider_snapshot_available_but_not_current_pinned_source",
+      "rows": 63,
+      "source": "inat_csv"
+    },
+    {
+      "classification": "current_evidence_recovered_as_case_or_spacing_variant",
+      "language": "fi",
+      "reason": "historical_spelling_replaced_by_current_source_spelling",
+      "rows": 26,
+      "source": "inat_csv"
+    },
+    {
+      "classification": "no_current_pinned_association_evidence_exists",
+      "language": "fi",
+      "reason": "current_name_on_same_scientific_name_without_target_association;no_current_pinned_source_to_target_association;provider_snapshot_available_but_not_current_pinned_source",
+      "rows": 836,
+      "source": "inat_csv"
+    },
+    {
+      "classification": "no_current_pinned_association_evidence_exists",
+      "language": "fi",
+      "reason": "current_name_only_on_other_scientific_concepts;no_current_pinned_source_to_target_association;provider_snapshot_available_but_not_current_pinned_source",
+      "rows": 197,
+      "source": "inat_csv"
+    },
+    {
+      "classification": "no_current_pinned_association_evidence_exists",
+      "language": "fi",
+      "reason": "no_current_pinned_source_to_target_association;no_matching_vernacular_in_current_pinned_archives;provider_snapshot_available_but_not_current_pinned_source",
+      "rows": 119,
+      "source": "inat_csv"
+    },
+    {
+      "classification": "current_evidence_recovered_as_case_or_spacing_variant",
+      "language": "fr",
+      "reason": "historical_spelling_replaced_by_current_source_spelling",
+      "rows": 9,
+      "source": "inat_csv"
+    },
+    {
+      "classification": "no_current_pinned_association_evidence_exists",
+      "language": "fr",
+      "reason": "current_name_on_same_scientific_name_without_target_association;no_current_pinned_source_to_target_association;provider_snapshot_available_but_not_current_pinned_source",
+      "rows": 680,
+      "source": "inat_csv"
+    },
+    {
+      "classification": "no_current_pinned_association_evidence_exists",
+      "language": "fr",
+      "reason": "current_name_only_on_other_scientific_concepts;no_current_pinned_source_to_target_association;provider_snapshot_available_but_not_current_pinned_source",
+      "rows": 170,
+      "source": "inat_csv"
+    },
+    {
+      "classification": "no_current_pinned_association_evidence_exists",
+      "language": "fr",
+      "reason": "no_current_pinned_source_to_target_association;no_matching_vernacular_in_current_pinned_archives;provider_snapshot_available_but_not_current_pinned_source",
+      "rows": 456,
+      "source": "inat_csv"
+    },
+    {
+      "classification": "current_evidence_recovered_as_case_or_spacing_variant",
+      "language": "it",
+      "reason": "historical_spelling_replaced_by_current_source_spelling",
+      "rows": 1,
+      "source": "inat_csv"
+    },
+    {
+      "classification": "no_current_pinned_association_evidence_exists",
+      "language": "it",
+      "reason": "current_name_on_same_scientific_name_without_target_association;no_current_pinned_source_to_target_association;provider_snapshot_available_but_not_current_pinned_source",
+      "rows": 21,
+      "source": "inat_csv"
+    },
+    {
+      "classification": "no_current_pinned_association_evidence_exists",
+      "language": "it",
+      "reason": "current_name_only_on_other_scientific_concepts;no_current_pinned_source_to_target_association;provider_snapshot_available_but_not_current_pinned_source",
+      "rows": 5,
+      "source": "inat_csv"
+    },
+    {
+      "classification": "no_current_pinned_association_evidence_exists",
+      "language": "it",
+      "reason": "no_current_pinned_source_to_target_association;no_matching_vernacular_in_current_pinned_archives;provider_snapshot_available_but_not_current_pinned_source",
+      "rows": 27,
+      "source": "inat_csv"
+    },
+    {
+      "classification": "current_evidence_recovered_as_case_or_spacing_variant",
+      "language": "pl",
+      "reason": "historical_spelling_replaced_by_current_source_spelling",
+      "rows": 8,
+      "source": "inat_csv"
+    },
+    {
+      "classification": "no_current_pinned_association_evidence_exists",
+      "language": "pl",
+      "reason": "current_name_on_same_scientific_name_without_target_association;no_current_pinned_source_to_target_association;provider_snapshot_available_but_not_current_pinned_source",
+      "rows": 345,
+      "source": "inat_csv"
+    },
+    {
+      "classification": "no_current_pinned_association_evidence_exists",
+      "language": "pl",
+      "reason": "current_name_only_on_other_scientific_concepts;no_current_pinned_source_to_target_association;provider_snapshot_available_but_not_current_pinned_source",
+      "rows": 62,
+      "source": "inat_csv"
+    },
+    {
+      "classification": "no_current_pinned_association_evidence_exists",
+      "language": "pl",
+      "reason": "no_current_pinned_source_to_target_association;no_matching_vernacular_in_current_pinned_archives;provider_snapshot_available_but_not_current_pinned_source",
+      "rows": 212,
+      "source": "inat_csv"
+    },
+    {
+      "classification": "no_current_pinned_association_evidence_exists",
+      "language": "pt",
+      "reason": "current_name_on_same_scientific_name_without_target_association;no_current_pinned_source_to_target_association;provider_snapshot_available_but_not_current_pinned_source",
+      "rows": 16,
+      "source": "inat_csv"
+    },
+    {
+      "classification": "no_current_pinned_association_evidence_exists",
+      "language": "pt",
+      "reason": "current_name_only_on_other_scientific_concepts;no_current_pinned_source_to_target_association;provider_snapshot_available_but_not_current_pinned_source",
+      "rows": 18,
+      "source": "inat_csv"
+    },
+    {
+      "classification": "no_current_pinned_association_evidence_exists",
+      "language": "pt",
+      "reason": "no_current_pinned_source_to_target_association;no_matching_vernacular_in_current_pinned_archives;provider_snapshot_available_but_not_current_pinned_source",
+      "rows": 25,
+      "source": "inat_csv"
+    },
+    {
+      "classification": "current_evidence_recovered_as_case_or_spacing_variant",
+      "language": "sv",
+      "reason": "historical_spelling_replaced_by_current_source_spelling",
+      "rows": 4,
+      "source": "inat_csv"
+    },
+    {
+      "classification": "no_current_pinned_association_evidence_exists",
+      "language": "sv",
+      "reason": "current_name_on_same_scientific_name_without_target_association;no_current_pinned_source_to_target_association;provider_snapshot_available_but_not_current_pinned_source",
+      "rows": 101,
+      "source": "inat_csv"
+    },
+    {
+      "classification": "no_current_pinned_association_evidence_exists",
+      "language": "sv",
+      "reason": "current_name_only_on_other_scientific_concepts;no_current_pinned_source_to_target_association;provider_snapshot_available_but_not_current_pinned_source",
+      "rows": 177,
+      "source": "inat_csv"
+    },
+    {
+      "classification": "no_current_pinned_association_evidence_exists",
+      "language": "sv",
+      "reason": "no_current_pinned_source_to_target_association;no_matching_vernacular_in_current_pinned_archives;provider_snapshot_available_but_not_current_pinned_source",
+      "rows": 8,
+      "source": "inat_csv"
+    }
+  ]
+}

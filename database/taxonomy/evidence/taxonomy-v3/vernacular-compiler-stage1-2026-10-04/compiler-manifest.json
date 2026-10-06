@@ -1,0 +1,5727 @@
+{
+  "concept_supersessions_sha256": "04a77c05c694c97b599aae63c5852d7d2ba411a440c42cfa5104cc78a2e47033",
+  "content_release_id": "tax-2026.10.04-01",
+  "counts": {
+    "accepted_national_only": 6612,
+    "ambiguous": 81,
+    "automatic_exact_aliases_applied": 16424,
+    "bridge_evidence_class_counts": {
+      "(anchor_or_no_bridge_evidence)": 633542,
+      "cross_source_automatic_exact_missing_authorship": 2133,
+      "cross_source_automatic_exact_strict": 14291,
+      "intra_source_synonym": 30225,
+      "manual_approved_exact": 5745,
+      "reviewed_supersession": 6132
+    },
+    "compiled_rows": 633542,
+    "compiled_source_usages": 692068,
+    "compiled_taxa": 633542,
+    "compiled_vernacular_language_counts": {
+      "nb": 7117,
+      "nn": 4748,
+      "se": 79,
+      "sv": 1341
+    },
+    "compiled_vernacular_rows": 13285,
+    "concept_supersessions": [
+      {
+        "current_sporely_taxon_id": 90286,
+        "superseded_sporely_taxon_id": 621000
+      },
+      {
+        "current_sporely_taxon_id": 14840,
+        "superseded_sporely_taxon_id": 621003
+      },
+      {
+        "current_sporely_taxon_id": 14842,
+        "superseded_sporely_taxon_id": 621004
+      },
+      {
+        "current_sporely_taxon_id": 31726,
+        "superseded_sporely_taxon_id": 621019
+      },
+      {
+        "current_sporely_taxon_id": 31743,
+        "superseded_sporely_taxon_id": 621022
+      },
+      {
+        "current_sporely_taxon_id": 31770,
+        "superseded_sporely_taxon_id": 621023
+      },
+      {
+        "current_sporely_taxon_id": 28758,
+        "superseded_sporely_taxon_id": 621042
+      },
+      {
+        "current_sporely_taxon_id": 106217,
+        "superseded_sporely_taxon_id": 621044
+      },
+      {
+        "current_sporely_taxon_id": 10918,
+        "superseded_sporely_taxon_id": 621058
+      },
+      {
+        "current_sporely_taxon_id": 110905,
+        "superseded_sporely_taxon_id": 621083
+      },
+      {
+        "current_sporely_taxon_id": 121754,
+        "superseded_sporely_taxon_id": 621101
+      },
+      {
+        "current_sporely_taxon_id": 127338,
+        "superseded_sporely_taxon_id": 621122
+      },
+      {
+        "current_sporely_taxon_id": 126990,
+        "superseded_sporely_taxon_id": 621128
+      },
+      {
+        "current_sporely_taxon_id": 126846,
+        "superseded_sporely_taxon_id": 621130
+      },
+      {
+        "current_sporely_taxon_id": 57518,
+        "superseded_sporely_taxon_id": 621151
+      },
+      {
+        "current_sporely_taxon_id": 111476,
+        "superseded_sporely_taxon_id": 621156
+      },
+      {
+        "current_sporely_taxon_id": 126526,
+        "superseded_sporely_taxon_id": 621199
+      },
+      {
+        "current_sporely_taxon_id": 126414,
+        "superseded_sporely_taxon_id": 621201
+      },
+      {
+        "current_sporely_taxon_id": 89877,
+        "superseded_sporely_taxon_id": 621208
+      },
+      {
+        "current_sporely_taxon_id": 89890,
+        "superseded_sporely_taxon_id": 621209
+      },
+      {
+        "current_sporely_taxon_id": 90010,
+        "superseded_sporely_taxon_id": 621210
+      },
+      {
+        "current_sporely_taxon_id": 127802,
+        "superseded_sporely_taxon_id": 621222
+      },
+      {
+        "current_sporely_taxon_id": 124546,
+        "superseded_sporely_taxon_id": 621226
+      },
+      {
+        "current_sporely_taxon_id": 127705,
+        "superseded_sporely_taxon_id": 621229
+      },
+      {
+        "current_sporely_taxon_id": 150271,
+        "superseded_sporely_taxon_id": 621258
+      },
+      {
+        "current_sporely_taxon_id": 150274,
+        "superseded_sporely_taxon_id": 621260
+      },
+      {
+        "current_sporely_taxon_id": 40531,
+        "superseded_sporely_taxon_id": 621271
+      },
+      {
+        "current_sporely_taxon_id": 95750,
+        "superseded_sporely_taxon_id": 621341
+      },
+      {
+        "current_sporely_taxon_id": 46204,
+        "superseded_sporely_taxon_id": 621374
+      },
+      {
+        "current_sporely_taxon_id": 59340,
+        "superseded_sporely_taxon_id": 621391
+      },
+      {
+        "current_sporely_taxon_id": 73212,
+        "superseded_sporely_taxon_id": 621409
+      },
+      {
+        "current_sporely_taxon_id": 128666,
+        "superseded_sporely_taxon_id": 621412
+      },
+      {
+        "current_sporely_taxon_id": 112961,
+        "superseded_sporely_taxon_id": 621448
+      },
+      {
+        "current_sporely_taxon_id": 59843,
+        "superseded_sporely_taxon_id": 621459
+      },
+      {
+        "current_sporely_taxon_id": 128369,
+        "superseded_sporely_taxon_id": 621460
+      },
+      {
+        "current_sporely_taxon_id": 163511,
+        "superseded_sporely_taxon_id": 621492
+      },
+      {
+        "current_sporely_taxon_id": 167622,
+        "superseded_sporely_taxon_id": 621495
+      },
+      {
+        "current_sporely_taxon_id": 15362,
+        "superseded_sporely_taxon_id": 621504
+      },
+      {
+        "current_sporely_taxon_id": 61492,
+        "superseded_sporely_taxon_id": 621524
+      },
+      {
+        "current_sporely_taxon_id": 63528,
+        "superseded_sporely_taxon_id": 621525
+      },
+      {
+        "current_sporely_taxon_id": 57384,
+        "superseded_sporely_taxon_id": 621635
+      },
+      {
+        "current_sporely_taxon_id": 1970,
+        "superseded_sporely_taxon_id": 621663
+      },
+      {
+        "current_sporely_taxon_id": 1968,
+        "superseded_sporely_taxon_id": 621664
+      },
+      {
+        "current_sporely_taxon_id": 1972,
+        "superseded_sporely_taxon_id": 621668
+      },
+      {
+        "current_sporely_taxon_id": 99709,
+        "superseded_sporely_taxon_id": 621681
+      },
+      {
+        "current_sporely_taxon_id": 524,
+        "superseded_sporely_taxon_id": 621686
+      },
+      {
+        "current_sporely_taxon_id": 157784,
+        "superseded_sporely_taxon_id": 621690
+      },
+      {
+        "current_sporely_taxon_id": 55315,
+        "superseded_sporely_taxon_id": 621708
+      },
+      {
+        "current_sporely_taxon_id": 615789,
+        "superseded_sporely_taxon_id": 621748
+      },
+      {
+        "current_sporely_taxon_id": 40554,
+        "superseded_sporely_taxon_id": 621789
+      },
+      {
+        "current_sporely_taxon_id": 118265,
+        "superseded_sporely_taxon_id": 621799
+      },
+      {
+        "current_sporely_taxon_id": 107139,
+        "superseded_sporely_taxon_id": 621827
+      },
+      {
+        "current_sporely_taxon_id": 33600,
+        "superseded_sporely_taxon_id": 621843
+      },
+      {
+        "current_sporely_taxon_id": 121496,
+        "superseded_sporely_taxon_id": 621927
+      },
+      {
+        "current_sporely_taxon_id": 613704,
+        "superseded_sporely_taxon_id": 621956
+      },
+      {
+        "current_sporely_taxon_id": 66692,
+        "superseded_sporely_taxon_id": 621988
+      },
+      {
+        "current_sporely_taxon_id": 126779,
+        "superseded_sporely_taxon_id": 622001
+      },
+      {
+        "current_sporely_taxon_id": 87760,
+        "superseded_sporely_taxon_id": 622038
+      },
+      {
+        "current_sporely_taxon_id": 2234,
+        "superseded_sporely_taxon_id": 622121
+      },
+      {
+        "current_sporely_taxon_id": 2236,
+        "superseded_sporely_taxon_id": 622122
+      },
+      {
+        "current_sporely_taxon_id": 98476,
+        "superseded_sporely_taxon_id": 622131
+      },
+      {
+        "current_sporely_taxon_id": 100386,
+        "superseded_sporely_taxon_id": 622137
+      },
+      {
+        "current_sporely_taxon_id": 102371,
+        "superseded_sporely_taxon_id": 622141
+      },
+      {
+        "current_sporely_taxon_id": 23868,
+        "superseded_sporely_taxon_id": 622156
+      },
+      {
+        "current_sporely_taxon_id": 32374,
+        "superseded_sporely_taxon_id": 622159
+      },
+      {
+        "current_sporely_taxon_id": 118459,
+        "superseded_sporely_taxon_id": 622167
+      },
+      {
+        "current_sporely_taxon_id": 72338,
+        "superseded_sporely_taxon_id": 622197
+      },
+      {
+        "current_sporely_taxon_id": 147356,
+        "superseded_sporely_taxon_id": 622254
+      },
+      {
+        "current_sporely_taxon_id": 149975,
+        "superseded_sporely_taxon_id": 622407
+      },
+      {
+        "current_sporely_taxon_id": 156820,
+        "superseded_sporely_taxon_id": 622410
+      },
+      {
+        "current_sporely_taxon_id": 156825,
+        "superseded_sporely_taxon_id": 622412
+      },
+      {
+        "current_sporely_taxon_id": 80660,
+        "superseded_sporely_taxon_id": 622419
+      },
+      {
+        "current_sporely_taxon_id": 91028,
+        "superseded_sporely_taxon_id": 622420
+      },
+      {
+        "current_sporely_taxon_id": 159891,
+        "superseded_sporely_taxon_id": 622423
+      },
+      {
+        "current_sporely_taxon_id": 91145,
+        "superseded_sporely_taxon_id": 622424
+      },
+      {
+        "current_sporely_taxon_id": 91412,
+        "superseded_sporely_taxon_id": 622425
+      },
+      {
+        "current_sporely_taxon_id": 91416,
+        "superseded_sporely_taxon_id": 622426
+      },
+      {
+        "current_sporely_taxon_id": 80761,
+        "superseded_sporely_taxon_id": 622427
+      },
+      {
+        "current_sporely_taxon_id": 163645,
+        "superseded_sporely_taxon_id": 622428
+      },
+      {
+        "current_sporely_taxon_id": 163648,
+        "superseded_sporely_taxon_id": 622429
+      },
+      {
+        "current_sporely_taxon_id": 163737,
+        "superseded_sporely_taxon_id": 622433
+      },
+      {
+        "current_sporely_taxon_id": 163738,
+        "superseded_sporely_taxon_id": 622434
+      },
+      {
+        "current_sporely_taxon_id": 80866,
+        "superseded_sporely_taxon_id": 622437
+      },
+      {
+        "current_sporely_taxon_id": 91244,
+        "superseded_sporely_taxon_id": 622438
+      },
+      {
+        "current_sporely_taxon_id": 81146,
+        "superseded_sporely_taxon_id": 622439
+      },
+      {
+        "current_sporely_taxon_id": 80852,
+        "superseded_sporely_taxon_id": 622440
+      },
+      {
+        "current_sporely_taxon_id": 80850,
+        "superseded_sporely_taxon_id": 622441
+      },
+      {
+        "current_sporely_taxon_id": 605675,
+        "superseded_sporely_taxon_id": 622446
+      },
+      {
+        "current_sporely_taxon_id": 620762,
+        "superseded_sporely_taxon_id": 622450
+      },
+      {
+        "current_sporely_taxon_id": 6967,
+        "superseded_sporely_taxon_id": 622452
+      },
+      {
+        "current_sporely_taxon_id": 6968,
+        "superseded_sporely_taxon_id": 622453
+      },
+      {
+        "current_sporely_taxon_id": 95691,
+        "superseded_sporely_taxon_id": 622454
+      },
+      {
+        "current_sporely_taxon_id": 6973,
+        "superseded_sporely_taxon_id": 622455
+      },
+      {
+        "current_sporely_taxon_id": 6975,
+        "superseded_sporely_taxon_id": 622456
+      },
+      {
+        "current_sporely_taxon_id": 97856,
+        "superseded_sporely_taxon_id": 622457
+      },
+      {
+        "current_sporely_taxon_id": 98366,
+        "superseded_sporely_taxon_id": 622458
+      },
+      {
+        "current_sporely_taxon_id": 98387,
+        "superseded_sporely_taxon_id": 622459
+      },
+      {
+        "current_sporely_taxon_id": 98376,
+        "superseded_sporely_taxon_id": 622460
+      },
+      {
+        "current_sporely_taxon_id": 98369,
+        "superseded_sporely_taxon_id": 622462
+      },
+      {
+        "current_sporely_taxon_id": 98383,
+        "superseded_sporely_taxon_id": 622463
+      },
+      {
+        "current_sporely_taxon_id": 12713,
+        "superseded_sporely_taxon_id": 622467
+      },
+      {
+        "current_sporely_taxon_id": 100667,
+        "superseded_sporely_taxon_id": 622468
+      },
+      {
+        "current_sporely_taxon_id": 12837,
+        "superseded_sporely_taxon_id": 622470
+      },
+      {
+        "current_sporely_taxon_id": 100662,
+        "superseded_sporely_taxon_id": 622471
+      },
+      {
+        "current_sporely_taxon_id": 16254,
+        "superseded_sporely_taxon_id": 622473
+      },
+      {
+        "current_sporely_taxon_id": 102121,
+        "superseded_sporely_taxon_id": 622474
+      },
+      {
+        "current_sporely_taxon_id": 22944,
+        "superseded_sporely_taxon_id": 622476
+      },
+      {
+        "current_sporely_taxon_id": 22945,
+        "superseded_sporely_taxon_id": 622477
+      },
+      {
+        "current_sporely_taxon_id": 22951,
+        "superseded_sporely_taxon_id": 622479
+      },
+      {
+        "current_sporely_taxon_id": 104975,
+        "superseded_sporely_taxon_id": 622481
+      },
+      {
+        "current_sporely_taxon_id": 24396,
+        "superseded_sporely_taxon_id": 622482
+      },
+      {
+        "current_sporely_taxon_id": 114679,
+        "superseded_sporely_taxon_id": 622485
+      },
+      {
+        "current_sporely_taxon_id": 106991,
+        "superseded_sporely_taxon_id": 622487
+      },
+      {
+        "current_sporely_taxon_id": 115772,
+        "superseded_sporely_taxon_id": 622488
+      },
+      {
+        "current_sporely_taxon_id": 107419,
+        "superseded_sporely_taxon_id": 622489
+      },
+      {
+        "current_sporely_taxon_id": 115793,
+        "superseded_sporely_taxon_id": 622490
+      },
+      {
+        "current_sporely_taxon_id": 36431,
+        "superseded_sporely_taxon_id": 622492
+      },
+      {
+        "current_sporely_taxon_id": 36540,
+        "superseded_sporely_taxon_id": 622495
+      },
+      {
+        "current_sporely_taxon_id": 36544,
+        "superseded_sporely_taxon_id": 622497
+      },
+      {
+        "current_sporely_taxon_id": 117185,
+        "superseded_sporely_taxon_id": 622500
+      },
+      {
+        "current_sporely_taxon_id": 40618,
+        "superseded_sporely_taxon_id": 622501
+      },
+      {
+        "current_sporely_taxon_id": 40973,
+        "superseded_sporely_taxon_id": 622502
+      },
+      {
+        "current_sporely_taxon_id": 40975,
+        "superseded_sporely_taxon_id": 622503
+      },
+      {
+        "current_sporely_taxon_id": 117347,
+        "superseded_sporely_taxon_id": 622504
+      },
+      {
+        "current_sporely_taxon_id": 108612,
+        "superseded_sporely_taxon_id": 622505
+      },
+      {
+        "current_sporely_taxon_id": 117419,
+        "superseded_sporely_taxon_id": 622506
+      },
+      {
+        "current_sporely_taxon_id": 117609,
+        "superseded_sporely_taxon_id": 622507
+      },
+      {
+        "current_sporely_taxon_id": 51175,
+        "superseded_sporely_taxon_id": 622515
+      },
+      {
+        "current_sporely_taxon_id": 57715,
+        "superseded_sporely_taxon_id": 622519
+      },
+      {
+        "current_sporely_taxon_id": 57717,
+        "superseded_sporely_taxon_id": 622520
+      },
+      {
+        "current_sporely_taxon_id": 57809,
+        "superseded_sporely_taxon_id": 622521
+      },
+      {
+        "current_sporely_taxon_id": 122445,
+        "superseded_sporely_taxon_id": 622522
+      },
+      {
+        "current_sporely_taxon_id": 58938,
+        "superseded_sporely_taxon_id": 622523
+      },
+      {
+        "current_sporely_taxon_id": 61509,
+        "superseded_sporely_taxon_id": 622524
+      },
+      {
+        "current_sporely_taxon_id": 61513,
+        "superseded_sporely_taxon_id": 622525
+      },
+      {
+        "current_sporely_taxon_id": 61617,
+        "superseded_sporely_taxon_id": 622526
+      },
+      {
+        "current_sporely_taxon_id": 112281,
+        "superseded_sporely_taxon_id": 622531
+      },
+      {
+        "current_sporely_taxon_id": 63836,
+        "superseded_sporely_taxon_id": 622533
+      },
+      {
+        "current_sporely_taxon_id": 64164,
+        "superseded_sporely_taxon_id": 622535
+      },
+      {
+        "current_sporely_taxon_id": 64171,
+        "superseded_sporely_taxon_id": 622536
+      },
+      {
+        "current_sporely_taxon_id": 64172,
+        "superseded_sporely_taxon_id": 622537
+      },
+      {
+        "current_sporely_taxon_id": 64173,
+        "superseded_sporely_taxon_id": 622538
+      },
+      {
+        "current_sporely_taxon_id": 64174,
+        "superseded_sporely_taxon_id": 622539
+      },
+      {
+        "current_sporely_taxon_id": 64177,
+        "superseded_sporely_taxon_id": 622540
+      },
+      {
+        "current_sporely_taxon_id": 64178,
+        "superseded_sporely_taxon_id": 622541
+      },
+      {
+        "current_sporely_taxon_id": 64182,
+        "superseded_sporely_taxon_id": 622542
+      },
+      {
+        "current_sporely_taxon_id": 64184,
+        "superseded_sporely_taxon_id": 622543
+      },
+      {
+        "current_sporely_taxon_id": 64198,
+        "superseded_sporely_taxon_id": 622549
+      },
+      {
+        "current_sporely_taxon_id": 113097,
+        "superseded_sporely_taxon_id": 622550
+      },
+      {
+        "current_sporely_taxon_id": 113476,
+        "superseded_sporely_taxon_id": 622551
+      },
+      {
+        "current_sporely_taxon_id": 113877,
+        "superseded_sporely_taxon_id": 622552
+      },
+      {
+        "current_sporely_taxon_id": 70706,
+        "superseded_sporely_taxon_id": 622558
+      },
+      {
+        "current_sporely_taxon_id": 70711,
+        "superseded_sporely_taxon_id": 622559
+      },
+      {
+        "current_sporely_taxon_id": 71827,
+        "superseded_sporely_taxon_id": 622560
+      },
+      {
+        "current_sporely_taxon_id": 128035,
+        "superseded_sporely_taxon_id": 622564
+      },
+      {
+        "current_sporely_taxon_id": 128037,
+        "superseded_sporely_taxon_id": 622565
+      },
+      {
+        "current_sporely_taxon_id": 128325,
+        "superseded_sporely_taxon_id": 622566
+      },
+      {
+        "current_sporely_taxon_id": 128324,
+        "superseded_sporely_taxon_id": 622567
+      },
+      {
+        "current_sporely_taxon_id": 128297,
+        "superseded_sporely_taxon_id": 622570
+      },
+      {
+        "current_sporely_taxon_id": 75590,
+        "superseded_sporely_taxon_id": 622572
+      },
+      {
+        "current_sporely_taxon_id": 76104,
+        "superseded_sporely_taxon_id": 622574
+      },
+      {
+        "current_sporely_taxon_id": 76345,
+        "superseded_sporely_taxon_id": 622578
+      },
+      {
+        "current_sporely_taxon_id": 76427,
+        "superseded_sporely_taxon_id": 622579
+      },
+      {
+        "current_sporely_taxon_id": 76536,
+        "superseded_sporely_taxon_id": 622580
+      },
+      {
+        "current_sporely_taxon_id": 170572,
+        "superseded_sporely_taxon_id": 622643
+      },
+      {
+        "current_sporely_taxon_id": 92965,
+        "superseded_sporely_taxon_id": 622669
+      },
+      {
+        "current_sporely_taxon_id": 105811,
+        "superseded_sporely_taxon_id": 622671
+      },
+      {
+        "current_sporely_taxon_id": 60248,
+        "superseded_sporely_taxon_id": 622802
+      },
+      {
+        "current_sporely_taxon_id": 44016,
+        "superseded_sporely_taxon_id": 622817
+      },
+      {
+        "current_sporely_taxon_id": 98471,
+        "superseded_sporely_taxon_id": 622898
+      },
+      {
+        "current_sporely_taxon_id": 18475,
+        "superseded_sporely_taxon_id": 622930
+      },
+      {
+        "current_sporely_taxon_id": 36697,
+        "superseded_sporely_taxon_id": 622958
+      },
+      {
+        "current_sporely_taxon_id": 43260,
+        "superseded_sporely_taxon_id": 623086
+      },
+      {
+        "current_sporely_taxon_id": 43279,
+        "superseded_sporely_taxon_id": 623087
+      },
+      {
+        "current_sporely_taxon_id": 52457,
+        "superseded_sporely_taxon_id": 623111
+      },
+      {
+        "current_sporely_taxon_id": 111330,
+        "superseded_sporely_taxon_id": 623126
+      },
+      {
+        "current_sporely_taxon_id": 6513,
+        "superseded_sporely_taxon_id": 623130
+      },
+      {
+        "current_sporely_taxon_id": 62969,
+        "superseded_sporely_taxon_id": 623144
+      },
+      {
+        "current_sporely_taxon_id": 98575,
+        "superseded_sporely_taxon_id": 623147
+      },
+      {
+        "current_sporely_taxon_id": 94404,
+        "superseded_sporely_taxon_id": 623148
+      },
+      {
+        "current_sporely_taxon_id": 40620,
+        "superseded_sporely_taxon_id": 623191
+      },
+      {
+        "current_sporely_taxon_id": 128782,
+        "superseded_sporely_taxon_id": 623207
+      },
+      {
+        "current_sporely_taxon_id": 107096,
+        "superseded_sporely_taxon_id": 623216
+      },
+      {
+        "current_sporely_taxon_id": 100790,
+        "superseded_sporely_taxon_id": 623274
+      },
+      {
+        "current_sporely_taxon_id": 99216,
+        "superseded_sporely_taxon_id": 623278
+      },
+      {
+        "current_sporely_taxon_id": 98388,
+        "superseded_sporely_taxon_id": 623279
+      },
+      {
+        "current_sporely_taxon_id": 68214,
+        "superseded_sporely_taxon_id": 623280
+      },
+      {
+        "current_sporely_taxon_id": 37808,
+        "superseded_sporely_taxon_id": 623320
+      },
+      {
+        "current_sporely_taxon_id": 11215,
+        "superseded_sporely_taxon_id": 623323
+      },
+      {
+        "current_sporely_taxon_id": 124144,
+        "superseded_sporely_taxon_id": 623360
+      },
+      {
+        "current_sporely_taxon_id": 40417,
+        "superseded_sporely_taxon_id": 623382
+      },
+      {
+        "current_sporely_taxon_id": 612736,
+        "superseded_sporely_taxon_id": 623383
+      },
+      {
+        "current_sporely_taxon_id": 612740,
+        "superseded_sporely_taxon_id": 623385
+      },
+      {
+        "current_sporely_taxon_id": 612746,
+        "superseded_sporely_taxon_id": 623386
+      },
+      {
+        "current_sporely_taxon_id": 612751,
+        "superseded_sporely_taxon_id": 623387
+      },
+      {
+        "current_sporely_taxon_id": 62971,
+        "superseded_sporely_taxon_id": 623388
+      },
+      {
+        "current_sporely_taxon_id": 157218,
+        "superseded_sporely_taxon_id": 623389
+      },
+      {
+        "current_sporely_taxon_id": 64110,
+        "superseded_sporely_taxon_id": 623390
+      },
+      {
+        "current_sporely_taxon_id": 124155,
+        "superseded_sporely_taxon_id": 623394
+      },
+      {
+        "current_sporely_taxon_id": 70690,
+        "superseded_sporely_taxon_id": 623395
+      },
+      {
+        "current_sporely_taxon_id": 5293,
+        "superseded_sporely_taxon_id": 623396
+      },
+      {
+        "current_sporely_taxon_id": 146829,
+        "superseded_sporely_taxon_id": 623398
+      },
+      {
+        "current_sporely_taxon_id": 57911,
+        "superseded_sporely_taxon_id": 623404
+      },
+      {
+        "current_sporely_taxon_id": 128633,
+        "superseded_sporely_taxon_id": 623406
+      },
+      {
+        "current_sporely_taxon_id": 111716,
+        "superseded_sporely_taxon_id": 623407
+      },
+      {
+        "current_sporely_taxon_id": 24397,
+        "superseded_sporely_taxon_id": 623409
+      },
+      {
+        "current_sporely_taxon_id": 128296,
+        "superseded_sporely_taxon_id": 623410
+      },
+      {
+        "current_sporely_taxon_id": 103193,
+        "superseded_sporely_taxon_id": 623412
+      },
+      {
+        "current_sporely_taxon_id": 131600,
+        "superseded_sporely_taxon_id": 623413
+      },
+      {
+        "current_sporely_taxon_id": 165450,
+        "superseded_sporely_taxon_id": 623415
+      },
+      {
+        "current_sporely_taxon_id": 165454,
+        "superseded_sporely_taxon_id": 623416
+      },
+      {
+        "current_sporely_taxon_id": 91498,
+        "superseded_sporely_taxon_id": 623417
+      },
+      {
+        "current_sporely_taxon_id": 165459,
+        "superseded_sporely_taxon_id": 623418
+      },
+      {
+        "current_sporely_taxon_id": 63349,
+        "superseded_sporely_taxon_id": 623419
+      },
+      {
+        "current_sporely_taxon_id": 12838,
+        "superseded_sporely_taxon_id": 623420
+      },
+      {
+        "current_sporely_taxon_id": 80853,
+        "superseded_sporely_taxon_id": 623421
+      },
+      {
+        "current_sporely_taxon_id": 107533,
+        "superseded_sporely_taxon_id": 623424
+      },
+      {
+        "current_sporely_taxon_id": 36512,
+        "superseded_sporely_taxon_id": 623433
+      },
+      {
+        "current_sporely_taxon_id": 58926,
+        "superseded_sporely_taxon_id": 623435
+      },
+      {
+        "current_sporely_taxon_id": 24372,
+        "superseded_sporely_taxon_id": 623438
+      },
+      {
+        "current_sporely_taxon_id": 64161,
+        "superseded_sporely_taxon_id": 623439
+      },
+      {
+        "current_sporely_taxon_id": 77758,
+        "superseded_sporely_taxon_id": 623441
+      },
+      {
+        "current_sporely_taxon_id": 128322,
+        "superseded_sporely_taxon_id": 623442
+      },
+      {
+        "current_sporely_taxon_id": 22554,
+        "superseded_sporely_taxon_id": 623447
+      },
+      {
+        "current_sporely_taxon_id": 124137,
+        "superseded_sporely_taxon_id": 623450
+      },
+      {
+        "current_sporely_taxon_id": 70815,
+        "superseded_sporely_taxon_id": 623452
+      },
+      {
+        "current_sporely_taxon_id": 70816,
+        "superseded_sporely_taxon_id": 623453
+      },
+      {
+        "current_sporely_taxon_id": 70818,
+        "superseded_sporely_taxon_id": 623454
+      },
+      {
+        "current_sporely_taxon_id": 124138,
+        "superseded_sporely_taxon_id": 623455
+      },
+      {
+        "current_sporely_taxon_id": 124154,
+        "superseded_sporely_taxon_id": 623456
+      },
+      {
+        "current_sporely_taxon_id": 20402,
+        "superseded_sporely_taxon_id": 623458
+      },
+      {
+        "current_sporely_taxon_id": 15191,
+        "superseded_sporely_taxon_id": 623460
+      },
+      {
+        "current_sporely_taxon_id": 36694,
+        "superseded_sporely_taxon_id": 623490
+      },
+      {
+        "current_sporely_taxon_id": 124673,
+        "superseded_sporely_taxon_id": 623496
+      },
+      {
+        "current_sporely_taxon_id": 76448,
+        "superseded_sporely_taxon_id": 623509
+      },
+      {
+        "current_sporely_taxon_id": 159013,
+        "superseded_sporely_taxon_id": 623518
+      },
+      {
+        "current_sporely_taxon_id": 159014,
+        "superseded_sporely_taxon_id": 623519
+      },
+      {
+        "current_sporely_taxon_id": 159019,
+        "superseded_sporely_taxon_id": 623523
+      },
+      {
+        "current_sporely_taxon_id": 159020,
+        "superseded_sporely_taxon_id": 623524
+      },
+      {
+        "current_sporely_taxon_id": 20401,
+        "superseded_sporely_taxon_id": 623525
+      },
+      {
+        "current_sporely_taxon_id": 111687,
+        "superseded_sporely_taxon_id": 623526
+      },
+      {
+        "current_sporely_taxon_id": 70814,
+        "superseded_sporely_taxon_id": 623527
+      },
+      {
+        "current_sporely_taxon_id": 124140,
+        "superseded_sporely_taxon_id": 623529
+      },
+      {
+        "current_sporely_taxon_id": 39239,
+        "superseded_sporely_taxon_id": 623555
+      },
+      {
+        "current_sporely_taxon_id": 156823,
+        "superseded_sporely_taxon_id": 623569
+      },
+      {
+        "current_sporely_taxon_id": 123128,
+        "superseded_sporely_taxon_id": 623573
+      },
+      {
+        "current_sporely_taxon_id": 157010,
+        "superseded_sporely_taxon_id": 623576
+      },
+      {
+        "current_sporely_taxon_id": 128696,
+        "superseded_sporely_taxon_id": 623577
+      },
+      {
+        "current_sporely_taxon_id": 80611,
+        "superseded_sporely_taxon_id": 623587
+      },
+      {
+        "current_sporely_taxon_id": 104963,
+        "superseded_sporely_taxon_id": 623592
+      },
+      {
+        "current_sporely_taxon_id": 22552,
+        "superseded_sporely_taxon_id": 623593
+      },
+      {
+        "current_sporely_taxon_id": 151016,
+        "superseded_sporely_taxon_id": 623595
+      },
+      {
+        "current_sporely_taxon_id": 159021,
+        "superseded_sporely_taxon_id": 623599
+      },
+      {
+        "current_sporely_taxon_id": 66514,
+        "superseded_sporely_taxon_id": 623602
+      },
+      {
+        "current_sporely_taxon_id": 149972,
+        "superseded_sporely_taxon_id": 623603
+      },
+      {
+        "current_sporely_taxon_id": 159515,
+        "superseded_sporely_taxon_id": 623619
+      },
+      {
+        "current_sporely_taxon_id": 12839,
+        "superseded_sporely_taxon_id": 623622
+      },
+      {
+        "current_sporely_taxon_id": 76227,
+        "superseded_sporely_taxon_id": 623626
+      },
+      {
+        "current_sporely_taxon_id": 41018,
+        "superseded_sporely_taxon_id": 623631
+      },
+      {
+        "current_sporely_taxon_id": 41019,
+        "superseded_sporely_taxon_id": 623632
+      },
+      {
+        "current_sporely_taxon_id": 35099,
+        "superseded_sporely_taxon_id": 623644
+      },
+      {
+        "current_sporely_taxon_id": 136651,
+        "superseded_sporely_taxon_id": 623647
+      },
+      {
+        "current_sporely_taxon_id": 103401,
+        "superseded_sporely_taxon_id": 623648
+      },
+      {
+        "current_sporely_taxon_id": 52551,
+        "superseded_sporely_taxon_id": 623652
+      },
+      {
+        "current_sporely_taxon_id": 113177,
+        "superseded_sporely_taxon_id": 623666
+      },
+      {
+        "current_sporely_taxon_id": 102069,
+        "superseded_sporely_taxon_id": 623679
+      },
+      {
+        "current_sporely_taxon_id": 134151,
+        "superseded_sporely_taxon_id": 623703
+      },
+      {
+        "current_sporely_taxon_id": 76193,
+        "superseded_sporely_taxon_id": 623734
+      },
+      {
+        "current_sporely_taxon_id": 76433,
+        "superseded_sporely_taxon_id": 623736
+      },
+      {
+        "current_sporely_taxon_id": 76470,
+        "superseded_sporely_taxon_id": 623737
+      },
+      {
+        "current_sporely_taxon_id": 76487,
+        "superseded_sporely_taxon_id": 623738
+      },
+      {
+        "current_sporely_taxon_id": 76488,
+        "superseded_sporely_taxon_id": 623739
+      },
+      {
+        "current_sporely_taxon_id": 24031,
+        "superseded_sporely_taxon_id": 623756
+      },
+      {
+        "current_sporely_taxon_id": 55504,
+        "superseded_sporely_taxon_id": 623759
+      },
+      {
+        "current_sporely_taxon_id": 38615,
+        "superseded_sporely_taxon_id": 623772
+      },
+      {
+        "current_sporely_taxon_id": 17867,
+        "superseded_sporely_taxon_id": 623775
+      },
+      {
+        "current_sporely_taxon_id": 55040,
+        "superseded_sporely_taxon_id": 623785
+      },
+      {
+        "current_sporely_taxon_id": 163194,
+        "superseded_sporely_taxon_id": 623791
+      },
+      {
+        "current_sporely_taxon_id": 157302,
+        "superseded_sporely_taxon_id": 623841
+      },
+      {
+        "current_sporely_taxon_id": 151015,
+        "superseded_sporely_taxon_id": 623856
+      },
+      {
+        "current_sporely_taxon_id": 91109,
+        "superseded_sporely_taxon_id": 623860
+      },
+      {
+        "current_sporely_taxon_id": 128721,
+        "superseded_sporely_taxon_id": 623886
+      },
+      {
+        "current_sporely_taxon_id": 80765,
+        "superseded_sporely_taxon_id": 623890
+      },
+      {
+        "current_sporely_taxon_id": 132743,
+        "superseded_sporely_taxon_id": 623942
+      },
+      {
+        "current_sporely_taxon_id": 24386,
+        "superseded_sporely_taxon_id": 623992
+      },
+      {
+        "current_sporely_taxon_id": 75269,
+        "superseded_sporely_taxon_id": 624007
+      },
+      {
+        "current_sporely_taxon_id": 141045,
+        "superseded_sporely_taxon_id": 624008
+      },
+      {
+        "current_sporely_taxon_id": 19427,
+        "superseded_sporely_taxon_id": 624046
+      },
+      {
+        "current_sporely_taxon_id": 153025,
+        "superseded_sporely_taxon_id": 624067
+      },
+      {
+        "current_sporely_taxon_id": 82158,
+        "superseded_sporely_taxon_id": 624070
+      },
+      {
+        "current_sporely_taxon_id": 19369,
+        "superseded_sporely_taxon_id": 624071
+      },
+      {
+        "current_sporely_taxon_id": 64187,
+        "superseded_sporely_taxon_id": 624077
+      },
+      {
+        "current_sporely_taxon_id": 31148,
+        "superseded_sporely_taxon_id": 624082
+      },
+      {
+        "current_sporely_taxon_id": 93060,
+        "superseded_sporely_taxon_id": 624092
+      },
+      {
+        "current_sporely_taxon_id": 436,
+        "superseded_sporely_taxon_id": 624110
+      },
+      {
+        "current_sporely_taxon_id": 6506,
+        "superseded_sporely_taxon_id": 624149
+      },
+      {
+        "current_sporely_taxon_id": 49215,
+        "superseded_sporely_taxon_id": 624163
+      },
+      {
+        "current_sporely_taxon_id": 25923,
+        "superseded_sporely_taxon_id": 624170
+      },
+      {
+        "current_sporely_taxon_id": 164577,
+        "superseded_sporely_taxon_id": 624181
+      },
+      {
+        "current_sporely_taxon_id": 616330,
+        "superseded_sporely_taxon_id": 624197
+      },
+      {
+        "current_sporely_taxon_id": 131258,
+        "superseded_sporely_taxon_id": 624198
+      },
+      {
+        "current_sporely_taxon_id": 132990,
+        "superseded_sporely_taxon_id": 624201
+      },
+      {
+        "current_sporely_taxon_id": 51074,
+        "superseded_sporely_taxon_id": 624298
+      },
+      {
+        "current_sporely_taxon_id": 102914,
+        "superseded_sporely_taxon_id": 624307
+      },
+      {
+        "current_sporely_taxon_id": 142973,
+        "superseded_sporely_taxon_id": 624312
+      },
+      {
+        "current_sporely_taxon_id": 37899,
+        "superseded_sporely_taxon_id": 624316
+      },
+      {
+        "current_sporely_taxon_id": 111771,
+        "superseded_sporely_taxon_id": 624357
+      },
+      {
+        "current_sporely_taxon_id": 54804,
+        "superseded_sporely_taxon_id": 624365
+      },
+      {
+        "current_sporely_taxon_id": 87334,
+        "superseded_sporely_taxon_id": 624372
+      },
+      {
+        "current_sporely_taxon_id": 131751,
+        "superseded_sporely_taxon_id": 624377
+      },
+      {
+        "current_sporely_taxon_id": 98828,
+        "superseded_sporely_taxon_id": 624411
+      },
+      {
+        "current_sporely_taxon_id": 2151,
+        "superseded_sporely_taxon_id": 624440
+      },
+      {
+        "current_sporely_taxon_id": 67874,
+        "superseded_sporely_taxon_id": 624455
+      },
+      {
+        "current_sporely_taxon_id": 100443,
+        "superseded_sporely_taxon_id": 624458
+      },
+      {
+        "current_sporely_taxon_id": 148345,
+        "superseded_sporely_taxon_id": 624475
+      },
+      {
+        "current_sporely_taxon_id": 148346,
+        "superseded_sporely_taxon_id": 624476
+      },
+      {
+        "current_sporely_taxon_id": 148348,
+        "superseded_sporely_taxon_id": 624477
+      },
+      {
+        "current_sporely_taxon_id": 88447,
+        "superseded_sporely_taxon_id": 624508
+      },
+      {
+        "current_sporely_taxon_id": 78437,
+        "superseded_sporely_taxon_id": 624524
+      },
+      {
+        "current_sporely_taxon_id": 78599,
+        "superseded_sporely_taxon_id": 624526
+      },
+      {
+        "current_sporely_taxon_id": 1096,
+        "superseded_sporely_taxon_id": 624541
+      },
+      {
+        "current_sporely_taxon_id": 6396,
+        "superseded_sporely_taxon_id": 624544
+      },
+      {
+        "current_sporely_taxon_id": 104792,
+        "superseded_sporely_taxon_id": 624551
+      },
+      {
+        "current_sporely_taxon_id": 105708,
+        "superseded_sporely_taxon_id": 624566
+      },
+      {
+        "current_sporely_taxon_id": 26542,
+        "superseded_sporely_taxon_id": 624569
+      },
+      {
+        "current_sporely_taxon_id": 89191,
+        "superseded_sporely_taxon_id": 624582
+      },
+      {
+        "current_sporely_taxon_id": 89218,
+        "superseded_sporely_taxon_id": 624585
+      },
+      {
+        "current_sporely_taxon_id": 78915,
+        "superseded_sporely_taxon_id": 624588
+      },
+      {
+        "current_sporely_taxon_id": 616843,
+        "superseded_sporely_taxon_id": 624630
+      },
+      {
+        "current_sporely_taxon_id": 83680,
+        "superseded_sporely_taxon_id": 624642
+      },
+      {
+        "current_sporely_taxon_id": 40704,
+        "superseded_sporely_taxon_id": 624662
+      },
+      {
+        "current_sporely_taxon_id": 40726,
+        "superseded_sporely_taxon_id": 624663
+      },
+      {
+        "current_sporely_taxon_id": 83668,
+        "superseded_sporely_taxon_id": 624680
+      },
+      {
+        "current_sporely_taxon_id": 614254,
+        "superseded_sporely_taxon_id": 624703
+      },
+      {
+        "current_sporely_taxon_id": 58896,
+        "superseded_sporely_taxon_id": 624713
+      },
+      {
+        "current_sporely_taxon_id": 58902,
+        "superseded_sporely_taxon_id": 624716
+      },
+      {
+        "current_sporely_taxon_id": 618070,
+        "superseded_sporely_taxon_id": 624812
+      },
+      {
+        "current_sporely_taxon_id": 618088,
+        "superseded_sporely_taxon_id": 624813
+      },
+      {
+        "current_sporely_taxon_id": 618162,
+        "superseded_sporely_taxon_id": 624827
+      },
+      {
+        "current_sporely_taxon_id": 618254,
+        "superseded_sporely_taxon_id": 624842
+      },
+      {
+        "current_sporely_taxon_id": 618316,
+        "superseded_sporely_taxon_id": 624852
+      },
+      {
+        "current_sporely_taxon_id": 132006,
+        "superseded_sporely_taxon_id": 624857
+      },
+      {
+        "current_sporely_taxon_id": 618620,
+        "superseded_sporely_taxon_id": 624884
+      },
+      {
+        "current_sporely_taxon_id": 147472,
+        "superseded_sporely_taxon_id": 625033
+      },
+      {
+        "current_sporely_taxon_id": 93178,
+        "superseded_sporely_taxon_id": 625048
+      },
+      {
+        "current_sporely_taxon_id": 18672,
+        "superseded_sporely_taxon_id": 625066
+      },
+      {
+        "current_sporely_taxon_id": 18738,
+        "superseded_sporely_taxon_id": 625068
+      },
+      {
+        "current_sporely_taxon_id": 18758,
+        "superseded_sporely_taxon_id": 625069
+      },
+      {
+        "current_sporely_taxon_id": 18781,
+        "superseded_sporely_taxon_id": 625073
+      },
+      {
+        "current_sporely_taxon_id": 18893,
+        "superseded_sporely_taxon_id": 625083
+      },
+      {
+        "current_sporely_taxon_id": 102760,
+        "superseded_sporely_taxon_id": 625090
+      },
+      {
+        "current_sporely_taxon_id": 19006,
+        "superseded_sporely_taxon_id": 625091
+      },
+      {
+        "current_sporely_taxon_id": 19275,
+        "superseded_sporely_taxon_id": 625105
+      },
+      {
+        "current_sporely_taxon_id": 36674,
+        "superseded_sporely_taxon_id": 625109
+      },
+      {
+        "current_sporely_taxon_id": 65511,
+        "superseded_sporely_taxon_id": 625114
+      },
+      {
+        "current_sporely_taxon_id": 113728,
+        "superseded_sporely_taxon_id": 625118
+      },
+      {
+        "current_sporely_taxon_id": 103883,
+        "superseded_sporely_taxon_id": 625130
+      },
+      {
+        "current_sporely_taxon_id": 7574,
+        "superseded_sporely_taxon_id": 625198
+      },
+      {
+        "current_sporely_taxon_id": 7607,
+        "superseded_sporely_taxon_id": 625199
+      },
+      {
+        "current_sporely_taxon_id": 7761,
+        "superseded_sporely_taxon_id": 625205
+      },
+      {
+        "current_sporely_taxon_id": 96205,
+        "superseded_sporely_taxon_id": 625216
+      },
+      {
+        "current_sporely_taxon_id": 8004,
+        "superseded_sporely_taxon_id": 625230
+      },
+      {
+        "current_sporely_taxon_id": 8099,
+        "superseded_sporely_taxon_id": 625231
+      },
+      {
+        "current_sporely_taxon_id": 8169,
+        "superseded_sporely_taxon_id": 625235
+      },
+      {
+        "current_sporely_taxon_id": 96229,
+        "superseded_sporely_taxon_id": 625238
+      },
+      {
+        "current_sporely_taxon_id": 8258,
+        "superseded_sporely_taxon_id": 625242
+      },
+      {
+        "current_sporely_taxon_id": 96064,
+        "superseded_sporely_taxon_id": 625244
+      },
+      {
+        "current_sporely_taxon_id": 95766,
+        "superseded_sporely_taxon_id": 625246
+      },
+      {
+        "current_sporely_taxon_id": 96114,
+        "superseded_sporely_taxon_id": 625253
+      },
+      {
+        "current_sporely_taxon_id": 96144,
+        "superseded_sporely_taxon_id": 625257
+      },
+      {
+        "current_sporely_taxon_id": 96327,
+        "superseded_sporely_taxon_id": 625271
+      },
+      {
+        "current_sporely_taxon_id": 96345,
+        "superseded_sporely_taxon_id": 625273
+      },
+      {
+        "current_sporely_taxon_id": 96342,
+        "superseded_sporely_taxon_id": 625275
+      },
+      {
+        "current_sporely_taxon_id": 96420,
+        "superseded_sporely_taxon_id": 625276
+      },
+      {
+        "current_sporely_taxon_id": 34137,
+        "superseded_sporely_taxon_id": 625298
+      },
+      {
+        "current_sporely_taxon_id": 137629,
+        "superseded_sporely_taxon_id": 625306
+      },
+      {
+        "current_sporely_taxon_id": 34436,
+        "superseded_sporely_taxon_id": 625311
+      },
+      {
+        "current_sporely_taxon_id": 34480,
+        "superseded_sporely_taxon_id": 625313
+      },
+      {
+        "current_sporely_taxon_id": 34866,
+        "superseded_sporely_taxon_id": 625332
+      },
+      {
+        "current_sporely_taxon_id": 40809,
+        "superseded_sporely_taxon_id": 625347
+      },
+      {
+        "current_sporely_taxon_id": 40821,
+        "superseded_sporely_taxon_id": 625348
+      },
+      {
+        "current_sporely_taxon_id": 21218,
+        "superseded_sporely_taxon_id": 625353
+      },
+      {
+        "current_sporely_taxon_id": 150796,
+        "superseded_sporely_taxon_id": 625362
+      },
+      {
+        "current_sporely_taxon_id": 82570,
+        "superseded_sporely_taxon_id": 625363
+      },
+      {
+        "current_sporely_taxon_id": 16419,
+        "superseded_sporely_taxon_id": 625368
+      },
+      {
+        "current_sporely_taxon_id": 16427,
+        "superseded_sporely_taxon_id": 625369
+      },
+      {
+        "current_sporely_taxon_id": 16433,
+        "superseded_sporely_taxon_id": 625370
+      },
+      {
+        "current_sporely_taxon_id": 16478,
+        "superseded_sporely_taxon_id": 625375
+      },
+      {
+        "current_sporely_taxon_id": 16574,
+        "superseded_sporely_taxon_id": 625382
+      },
+      {
+        "current_sporely_taxon_id": 16587,
+        "superseded_sporely_taxon_id": 625385
+      },
+      {
+        "current_sporely_taxon_id": 16604,
+        "superseded_sporely_taxon_id": 625386
+      },
+      {
+        "current_sporely_taxon_id": 16616,
+        "superseded_sporely_taxon_id": 625388
+      },
+      {
+        "current_sporely_taxon_id": 102199,
+        "superseded_sporely_taxon_id": 625393
+      },
+      {
+        "current_sporely_taxon_id": 16682,
+        "superseded_sporely_taxon_id": 625397
+      },
+      {
+        "current_sporely_taxon_id": 114582,
+        "superseded_sporely_taxon_id": 625412
+      },
+      {
+        "current_sporely_taxon_id": 98342,
+        "superseded_sporely_taxon_id": 625415
+      },
+      {
+        "current_sporely_taxon_id": 13636,
+        "superseded_sporely_taxon_id": 625431
+      },
+      {
+        "current_sporely_taxon_id": 26136,
+        "superseded_sporely_taxon_id": 625455
+      },
+      {
+        "current_sporely_taxon_id": 26191,
+        "superseded_sporely_taxon_id": 625456
+      },
+      {
+        "current_sporely_taxon_id": 80207,
+        "superseded_sporely_taxon_id": 625460
+      },
+      {
+        "current_sporely_taxon_id": 166802,
+        "superseded_sporely_taxon_id": 625462
+      },
+      {
+        "current_sporely_taxon_id": 26328,
+        "superseded_sporely_taxon_id": 625473
+      },
+      {
+        "current_sporely_taxon_id": 124490,
+        "superseded_sporely_taxon_id": 625490
+      },
+      {
+        "current_sporely_taxon_id": 81677,
+        "superseded_sporely_taxon_id": 625498
+      },
+      {
+        "current_sporely_taxon_id": 93940,
+        "superseded_sporely_taxon_id": 625520
+      },
+      {
+        "current_sporely_taxon_id": 35137,
+        "superseded_sporely_taxon_id": 625523
+      },
+      {
+        "current_sporely_taxon_id": 167666,
+        "superseded_sporely_taxon_id": 625529
+      },
+      {
+        "current_sporely_taxon_id": 14739,
+        "superseded_sporely_taxon_id": 625541
+      },
+      {
+        "current_sporely_taxon_id": 102785,
+        "superseded_sporely_taxon_id": 625557
+      },
+      {
+        "current_sporely_taxon_id": 29073,
+        "superseded_sporely_taxon_id": 625560
+      },
+      {
+        "current_sporely_taxon_id": 29108,
+        "superseded_sporely_taxon_id": 625561
+      },
+      {
+        "current_sporely_taxon_id": 29183,
+        "superseded_sporely_taxon_id": 625575
+      },
+      {
+        "current_sporely_taxon_id": 29198,
+        "superseded_sporely_taxon_id": 625578
+      },
+      {
+        "current_sporely_taxon_id": 50336,
+        "superseded_sporely_taxon_id": 625583
+      },
+      {
+        "current_sporely_taxon_id": 100351,
+        "superseded_sporely_taxon_id": 625593
+      },
+      {
+        "current_sporely_taxon_id": 60670,
+        "superseded_sporely_taxon_id": 625608
+      },
+      {
+        "current_sporely_taxon_id": 60685,
+        "superseded_sporely_taxon_id": 625613
+      },
+      {
+        "current_sporely_taxon_id": 153303,
+        "superseded_sporely_taxon_id": 625616
+      },
+      {
+        "current_sporely_taxon_id": 98272,
+        "superseded_sporely_taxon_id": 625620
+      },
+      {
+        "current_sporely_taxon_id": 116278,
+        "superseded_sporely_taxon_id": 625628
+      },
+      {
+        "current_sporely_taxon_id": 60251,
+        "superseded_sporely_taxon_id": 625631
+      },
+      {
+        "current_sporely_taxon_id": 69309,
+        "superseded_sporely_taxon_id": 625636
+      },
+      {
+        "current_sporely_taxon_id": 15603,
+        "superseded_sporely_taxon_id": 625648
+      },
+      {
+        "current_sporely_taxon_id": 120342,
+        "superseded_sporely_taxon_id": 625653
+      },
+      {
+        "current_sporely_taxon_id": 50474,
+        "superseded_sporely_taxon_id": 625660
+      },
+      {
+        "current_sporely_taxon_id": 120323,
+        "superseded_sporely_taxon_id": 625663
+      },
+      {
+        "current_sporely_taxon_id": 132152,
+        "superseded_sporely_taxon_id": 625668
+      },
+      {
+        "current_sporely_taxon_id": 128890,
+        "superseded_sporely_taxon_id": 625675
+      },
+      {
+        "current_sporely_taxon_id": 75771,
+        "superseded_sporely_taxon_id": 625677
+      },
+      {
+        "current_sporely_taxon_id": 9804,
+        "superseded_sporely_taxon_id": 625684
+      },
+      {
+        "current_sporely_taxon_id": 99819,
+        "superseded_sporely_taxon_id": 625689
+      },
+      {
+        "current_sporely_taxon_id": 617131,
+        "superseded_sporely_taxon_id": 625734
+      },
+      {
+        "current_sporely_taxon_id": 617163,
+        "superseded_sporely_taxon_id": 625739
+      },
+      {
+        "current_sporely_taxon_id": 617204,
+        "superseded_sporely_taxon_id": 625745
+      },
+      {
+        "current_sporely_taxon_id": 617219,
+        "superseded_sporely_taxon_id": 625748
+      },
+      {
+        "current_sporely_taxon_id": 83872,
+        "superseded_sporely_taxon_id": 625753
+      },
+      {
+        "current_sporely_taxon_id": 83841,
+        "superseded_sporely_taxon_id": 625754
+      },
+      {
+        "current_sporely_taxon_id": 617240,
+        "superseded_sporely_taxon_id": 625759
+      },
+      {
+        "current_sporely_taxon_id": 617241,
+        "superseded_sporely_taxon_id": 625760
+      },
+      {
+        "current_sporely_taxon_id": 41321,
+        "superseded_sporely_taxon_id": 625764
+      },
+      {
+        "current_sporely_taxon_id": 41324,
+        "superseded_sporely_taxon_id": 625765
+      },
+      {
+        "current_sporely_taxon_id": 52719,
+        "superseded_sporely_taxon_id": 625773
+      },
+      {
+        "current_sporely_taxon_id": 120853,
+        "superseded_sporely_taxon_id": 625785
+      },
+      {
+        "current_sporely_taxon_id": 110444,
+        "superseded_sporely_taxon_id": 625792
+      },
+      {
+        "current_sporely_taxon_id": 48516,
+        "superseded_sporely_taxon_id": 625804
+      },
+      {
+        "current_sporely_taxon_id": 613131,
+        "superseded_sporely_taxon_id": 625806
+      },
+      {
+        "current_sporely_taxon_id": 58533,
+        "superseded_sporely_taxon_id": 625809
+      },
+      {
+        "current_sporely_taxon_id": 58539,
+        "superseded_sporely_taxon_id": 625810
+      },
+      {
+        "current_sporely_taxon_id": 98166,
+        "superseded_sporely_taxon_id": 625819
+      },
+      {
+        "current_sporely_taxon_id": 122971,
+        "superseded_sporely_taxon_id": 625821
+      },
+      {
+        "current_sporely_taxon_id": 93860,
+        "superseded_sporely_taxon_id": 625822
+      },
+      {
+        "current_sporely_taxon_id": 1028,
+        "superseded_sporely_taxon_id": 625824
+      },
+      {
+        "current_sporely_taxon_id": 146369,
+        "superseded_sporely_taxon_id": 625845
+      },
+      {
+        "current_sporely_taxon_id": 146432,
+        "superseded_sporely_taxon_id": 625847
+      },
+      {
+        "current_sporely_taxon_id": 14804,
+        "superseded_sporely_taxon_id": 625859
+      },
+      {
+        "current_sporely_taxon_id": 17478,
+        "superseded_sporely_taxon_id": 625862
+      },
+      {
+        "current_sporely_taxon_id": 17494,
+        "superseded_sporely_taxon_id": 625869
+      },
+      {
+        "current_sporely_taxon_id": 44873,
+        "superseded_sporely_taxon_id": 625885
+      },
+      {
+        "current_sporely_taxon_id": 44991,
+        "superseded_sporely_taxon_id": 625890
+      },
+      {
+        "current_sporely_taxon_id": 55384,
+        "superseded_sporely_taxon_id": 625894
+      },
+      {
+        "current_sporely_taxon_id": 69391,
+        "superseded_sporely_taxon_id": 625902
+      },
+      {
+        "current_sporely_taxon_id": 69395,
+        "superseded_sporely_taxon_id": 625903
+      },
+      {
+        "current_sporely_taxon_id": 614497,
+        "superseded_sporely_taxon_id": 625914
+      },
+      {
+        "current_sporely_taxon_id": 614580,
+        "superseded_sporely_taxon_id": 625918
+      },
+      {
+        "current_sporely_taxon_id": 615902,
+        "superseded_sporely_taxon_id": 625932
+      },
+      {
+        "current_sporely_taxon_id": 2538,
+        "superseded_sporely_taxon_id": 625941
+      },
+      {
+        "current_sporely_taxon_id": 24216,
+        "superseded_sporely_taxon_id": 625947
+      },
+      {
+        "current_sporely_taxon_id": 73360,
+        "superseded_sporely_taxon_id": 625985
+      },
+      {
+        "current_sporely_taxon_id": 73365,
+        "superseded_sporely_taxon_id": 625987
+      },
+      {
+        "current_sporely_taxon_id": 73386,
+        "superseded_sporely_taxon_id": 625988
+      },
+      {
+        "current_sporely_taxon_id": 612867,
+        "superseded_sporely_taxon_id": 626009
+      },
+      {
+        "current_sporely_taxon_id": 43577,
+        "superseded_sporely_taxon_id": 626017
+      },
+      {
+        "current_sporely_taxon_id": 43600,
+        "superseded_sporely_taxon_id": 626018
+      },
+      {
+        "current_sporely_taxon_id": 74347,
+        "superseded_sporely_taxon_id": 626022
+      },
+      {
+        "current_sporely_taxon_id": 79755,
+        "superseded_sporely_taxon_id": 626033
+      },
+      {
+        "current_sporely_taxon_id": 79752,
+        "superseded_sporely_taxon_id": 626035
+      },
+      {
+        "current_sporely_taxon_id": 80115,
+        "superseded_sporely_taxon_id": 626037
+      },
+      {
+        "current_sporely_taxon_id": 61157,
+        "superseded_sporely_taxon_id": 626055
+      },
+      {
+        "current_sporely_taxon_id": 61162,
+        "superseded_sporely_taxon_id": 626056
+      },
+      {
+        "current_sporely_taxon_id": 75030,
+        "superseded_sporely_taxon_id": 626060
+      },
+      {
+        "current_sporely_taxon_id": 75049,
+        "superseded_sporely_taxon_id": 626062
+      },
+      {
+        "current_sporely_taxon_id": 75064,
+        "superseded_sporely_taxon_id": 626064
+      },
+      {
+        "current_sporely_taxon_id": 75079,
+        "superseded_sporely_taxon_id": 626067
+      },
+      {
+        "current_sporely_taxon_id": 89524,
+        "superseded_sporely_taxon_id": 626074
+      },
+      {
+        "current_sporely_taxon_id": 80452,
+        "superseded_sporely_taxon_id": 626100
+      },
+      {
+        "current_sporely_taxon_id": 157034,
+        "superseded_sporely_taxon_id": 626101
+      },
+      {
+        "current_sporely_taxon_id": 9309,
+        "superseded_sporely_taxon_id": 626107
+      },
+      {
+        "current_sporely_taxon_id": 90921,
+        "superseded_sporely_taxon_id": 626122
+      },
+      {
+        "current_sporely_taxon_id": 604345,
+        "superseded_sporely_taxon_id": 626124
+      },
+      {
+        "current_sporely_taxon_id": 72698,
+        "superseded_sporely_taxon_id": 626139
+      },
+      {
+        "current_sporely_taxon_id": 160491,
+        "superseded_sporely_taxon_id": 626145
+      },
+      {
+        "current_sporely_taxon_id": 23371,
+        "superseded_sporely_taxon_id": 626159
+      },
+      {
+        "current_sporely_taxon_id": 76805,
+        "superseded_sporely_taxon_id": 626168
+      },
+      {
+        "current_sporely_taxon_id": 616356,
+        "superseded_sporely_taxon_id": 626169
+      },
+      {
+        "current_sporely_taxon_id": 83760,
+        "superseded_sporely_taxon_id": 626170
+      },
+      {
+        "current_sporely_taxon_id": 616373,
+        "superseded_sporely_taxon_id": 626171
+      },
+      {
+        "current_sporely_taxon_id": 132042,
+        "superseded_sporely_taxon_id": 626180
+      },
+      {
+        "current_sporely_taxon_id": 69545,
+        "superseded_sporely_taxon_id": 626184
+      },
+      {
+        "current_sporely_taxon_id": 69555,
+        "superseded_sporely_taxon_id": 626189
+      },
+      {
+        "current_sporely_taxon_id": 69558,
+        "superseded_sporely_taxon_id": 626190
+      },
+      {
+        "current_sporely_taxon_id": 69567,
+        "superseded_sporely_taxon_id": 626192
+      },
+      {
+        "current_sporely_taxon_id": 60590,
+        "superseded_sporely_taxon_id": 626221
+      },
+      {
+        "current_sporely_taxon_id": 65323,
+        "superseded_sporely_taxon_id": 626226
+      },
+      {
+        "current_sporely_taxon_id": 65324,
+        "superseded_sporely_taxon_id": 626227
+      },
+      {
+        "current_sporely_taxon_id": 110704,
+        "superseded_sporely_taxon_id": 626230
+      },
+      {
+        "current_sporely_taxon_id": 168873,
+        "superseded_sporely_taxon_id": 626243
+      },
+      {
+        "current_sporely_taxon_id": 620287,
+        "superseded_sporely_taxon_id": 626246
+      },
+      {
+        "current_sporely_taxon_id": 1169,
+        "superseded_sporely_taxon_id": 626297
+      },
+      {
+        "current_sporely_taxon_id": 99202,
+        "superseded_sporely_taxon_id": 626314
+      },
+      {
+        "current_sporely_taxon_id": 606083,
+        "superseded_sporely_taxon_id": 626324
+      },
+      {
+        "current_sporely_taxon_id": 11307,
+        "superseded_sporely_taxon_id": 626327
+      },
+      {
+        "current_sporely_taxon_id": 11310,
+        "superseded_sporely_taxon_id": 626328
+      },
+      {
+        "current_sporely_taxon_id": 128368,
+        "superseded_sporely_taxon_id": 626331
+      },
+      {
+        "current_sporely_taxon_id": 82433,
+        "superseded_sporely_taxon_id": 626334
+      },
+      {
+        "current_sporely_taxon_id": 12108,
+        "superseded_sporely_taxon_id": 626335
+      },
+      {
+        "current_sporely_taxon_id": 58737,
+        "superseded_sporely_taxon_id": 626345
+      },
+      {
+        "current_sporely_taxon_id": 122000,
+        "superseded_sporely_taxon_id": 626350
+      },
+      {
+        "current_sporely_taxon_id": 102363,
+        "superseded_sporely_taxon_id": 626359
+      },
+      {
+        "current_sporely_taxon_id": 19363,
+        "superseded_sporely_taxon_id": 626362
+      },
+      {
+        "current_sporely_taxon_id": 44308,
+        "superseded_sporely_taxon_id": 626380
+      },
+      {
+        "current_sporely_taxon_id": 44344,
+        "superseded_sporely_taxon_id": 626390
+      },
+      {
+        "current_sporely_taxon_id": 44346,
+        "superseded_sporely_taxon_id": 626392
+      },
+      {
+        "current_sporely_taxon_id": 159747,
+        "superseded_sporely_taxon_id": 626398
+      },
+      {
+        "current_sporely_taxon_id": 93078,
+        "superseded_sporely_taxon_id": 626401
+      },
+      {
+        "current_sporely_taxon_id": 620224,
+        "superseded_sporely_taxon_id": 626403
+      },
+      {
+        "current_sporely_taxon_id": 40339,
+        "superseded_sporely_taxon_id": 626408
+      },
+      {
+        "current_sporely_taxon_id": 108426,
+        "superseded_sporely_taxon_id": 626410
+      },
+      {
+        "current_sporely_taxon_id": 59781,
+        "superseded_sporely_taxon_id": 626415
+      },
+      {
+        "current_sporely_taxon_id": 102423,
+        "superseded_sporely_taxon_id": 626423
+      },
+      {
+        "current_sporely_taxon_id": 102876,
+        "superseded_sporely_taxon_id": 626424
+      },
+      {
+        "current_sporely_taxon_id": 106058,
+        "superseded_sporely_taxon_id": 626440
+      },
+      {
+        "current_sporely_taxon_id": 152372,
+        "superseded_sporely_taxon_id": 626457
+      },
+      {
+        "current_sporely_taxon_id": 614315,
+        "superseded_sporely_taxon_id": 626461
+      },
+      {
+        "current_sporely_taxon_id": 1748,
+        "superseded_sporely_taxon_id": 626465
+      },
+      {
+        "current_sporely_taxon_id": 98451,
+        "superseded_sporely_taxon_id": 626469
+      },
+      {
+        "current_sporely_taxon_id": 102873,
+        "superseded_sporely_taxon_id": 626472
+      },
+      {
+        "current_sporely_taxon_id": 19808,
+        "superseded_sporely_taxon_id": 626473
+      },
+      {
+        "current_sporely_taxon_id": 104021,
+        "superseded_sporely_taxon_id": 626475
+      },
+      {
+        "current_sporely_taxon_id": 10307,
+        "superseded_sporely_taxon_id": 626505
+      },
+      {
+        "current_sporely_taxon_id": 12505,
+        "superseded_sporely_taxon_id": 626511
+      },
+      {
+        "current_sporely_taxon_id": 109690,
+        "superseded_sporely_taxon_id": 626517
+      },
+      {
+        "current_sporely_taxon_id": 61134,
+        "superseded_sporely_taxon_id": 626518
+      },
+      {
+        "current_sporely_taxon_id": 86889,
+        "superseded_sporely_taxon_id": 626522
+      },
+      {
+        "current_sporely_taxon_id": 159510,
+        "superseded_sporely_taxon_id": 626524
+      },
+      {
+        "current_sporely_taxon_id": 159526,
+        "superseded_sporely_taxon_id": 626525
+      },
+      {
+        "current_sporely_taxon_id": 17422,
+        "superseded_sporely_taxon_id": 626537
+      },
+      {
+        "current_sporely_taxon_id": 102446,
+        "superseded_sporely_taxon_id": 626540
+      },
+      {
+        "current_sporely_taxon_id": 19702,
+        "superseded_sporely_taxon_id": 626544
+      },
+      {
+        "current_sporely_taxon_id": 35092,
+        "superseded_sporely_taxon_id": 626547
+      },
+      {
+        "current_sporely_taxon_id": 35095,
+        "superseded_sporely_taxon_id": 626549
+      },
+      {
+        "current_sporely_taxon_id": 116319,
+        "superseded_sporely_taxon_id": 626550
+      },
+      {
+        "current_sporely_taxon_id": 68208,
+        "superseded_sporely_taxon_id": 626575
+      },
+      {
+        "current_sporely_taxon_id": 82569,
+        "superseded_sporely_taxon_id": 626593
+      },
+      {
+        "current_sporely_taxon_id": 31149,
+        "superseded_sporely_taxon_id": 626596
+      },
+      {
+        "current_sporely_taxon_id": 51924,
+        "superseded_sporely_taxon_id": 626609
+      },
+      {
+        "current_sporely_taxon_id": 605683,
+        "superseded_sporely_taxon_id": 626614
+      },
+      {
+        "current_sporely_taxon_id": 97491,
+        "superseded_sporely_taxon_id": 626625
+      },
+      {
+        "current_sporely_taxon_id": 98530,
+        "superseded_sporely_taxon_id": 626627
+      },
+      {
+        "current_sporely_taxon_id": 13406,
+        "superseded_sporely_taxon_id": 626634
+      },
+      {
+        "current_sporely_taxon_id": 13462,
+        "superseded_sporely_taxon_id": 626635
+      },
+      {
+        "current_sporely_taxon_id": 23821,
+        "superseded_sporely_taxon_id": 626640
+      },
+      {
+        "current_sporely_taxon_id": 108738,
+        "superseded_sporely_taxon_id": 626659
+      },
+      {
+        "current_sporely_taxon_id": 51586,
+        "superseded_sporely_taxon_id": 626678
+      },
+      {
+        "current_sporely_taxon_id": 72249,
+        "superseded_sporely_taxon_id": 626699
+      },
+      {
+        "current_sporely_taxon_id": 124312,
+        "superseded_sporely_taxon_id": 626702
+      },
+      {
+        "current_sporely_taxon_id": 125235,
+        "superseded_sporely_taxon_id": 626710
+      },
+      {
+        "current_sporely_taxon_id": 125091,
+        "superseded_sporely_taxon_id": 626716
+      },
+      {
+        "current_sporely_taxon_id": 146564,
+        "superseded_sporely_taxon_id": 626724
+      },
+      {
+        "current_sporely_taxon_id": 150849,
+        "superseded_sporely_taxon_id": 626728
+      },
+      {
+        "current_sporely_taxon_id": 23765,
+        "superseded_sporely_taxon_id": 626734
+      },
+      {
+        "current_sporely_taxon_id": 23791,
+        "superseded_sporely_taxon_id": 626738
+      },
+      {
+        "current_sporely_taxon_id": 14892,
+        "superseded_sporely_taxon_id": 626744
+      },
+      {
+        "current_sporely_taxon_id": 14894,
+        "superseded_sporely_taxon_id": 626745
+      },
+      {
+        "current_sporely_taxon_id": 14895,
+        "superseded_sporely_taxon_id": 626746
+      },
+      {
+        "current_sporely_taxon_id": 64219,
+        "superseded_sporely_taxon_id": 626752
+      },
+      {
+        "current_sporely_taxon_id": 118487,
+        "superseded_sporely_taxon_id": 626759
+      },
+      {
+        "current_sporely_taxon_id": 118440,
+        "superseded_sporely_taxon_id": 626760
+      },
+      {
+        "current_sporely_taxon_id": 118464,
+        "superseded_sporely_taxon_id": 626763
+      },
+      {
+        "current_sporely_taxon_id": 118341,
+        "superseded_sporely_taxon_id": 626764
+      },
+      {
+        "current_sporely_taxon_id": 118355,
+        "superseded_sporely_taxon_id": 626768
+      },
+      {
+        "current_sporely_taxon_id": 22004,
+        "superseded_sporely_taxon_id": 626791
+      },
+      {
+        "current_sporely_taxon_id": 104029,
+        "superseded_sporely_taxon_id": 626800
+      },
+      {
+        "current_sporely_taxon_id": 132078,
+        "superseded_sporely_taxon_id": 626807
+      },
+      {
+        "current_sporely_taxon_id": 61997,
+        "superseded_sporely_taxon_id": 626841
+      },
+      {
+        "current_sporely_taxon_id": 122659,
+        "superseded_sporely_taxon_id": 626856
+      },
+      {
+        "current_sporely_taxon_id": 62332,
+        "superseded_sporely_taxon_id": 626861
+      },
+      {
+        "current_sporely_taxon_id": 62626,
+        "superseded_sporely_taxon_id": 626872
+      },
+      {
+        "current_sporely_taxon_id": 146669,
+        "superseded_sporely_taxon_id": 626879
+      },
+      {
+        "current_sporely_taxon_id": 114001,
+        "superseded_sporely_taxon_id": 626891
+      },
+      {
+        "current_sporely_taxon_id": 16099,
+        "superseded_sporely_taxon_id": 626910
+      },
+      {
+        "current_sporely_taxon_id": 44360,
+        "superseded_sporely_taxon_id": 626914
+      },
+      {
+        "current_sporely_taxon_id": 44368,
+        "superseded_sporely_taxon_id": 626915
+      },
+      {
+        "current_sporely_taxon_id": 112270,
+        "superseded_sporely_taxon_id": 626917
+      },
+      {
+        "current_sporely_taxon_id": 71029,
+        "superseded_sporely_taxon_id": 626925
+      },
+      {
+        "current_sporely_taxon_id": 123960,
+        "superseded_sporely_taxon_id": 626926
+      },
+      {
+        "current_sporely_taxon_id": 71055,
+        "superseded_sporely_taxon_id": 626928
+      },
+      {
+        "current_sporely_taxon_id": 71058,
+        "superseded_sporely_taxon_id": 626929
+      },
+      {
+        "current_sporely_taxon_id": 71925,
+        "superseded_sporely_taxon_id": 626933
+      },
+      {
+        "current_sporely_taxon_id": 71930,
+        "superseded_sporely_taxon_id": 626934
+      },
+      {
+        "current_sporely_taxon_id": 114671,
+        "superseded_sporely_taxon_id": 626952
+      },
+      {
+        "current_sporely_taxon_id": 72452,
+        "superseded_sporely_taxon_id": 626963
+      },
+      {
+        "current_sporely_taxon_id": 69799,
+        "superseded_sporely_taxon_id": 626980
+      },
+      {
+        "current_sporely_taxon_id": 617026,
+        "superseded_sporely_taxon_id": 627000
+      },
+      {
+        "current_sporely_taxon_id": 11219,
+        "superseded_sporely_taxon_id": 627045
+      },
+      {
+        "current_sporely_taxon_id": 13164,
+        "superseded_sporely_taxon_id": 627046
+      },
+      {
+        "current_sporely_taxon_id": 147078,
+        "superseded_sporely_taxon_id": 627062
+      },
+      {
+        "current_sporely_taxon_id": 162550,
+        "superseded_sporely_taxon_id": 627067
+      },
+      {
+        "current_sporely_taxon_id": 70399,
+        "superseded_sporely_taxon_id": 627072
+      },
+      {
+        "current_sporely_taxon_id": 70402,
+        "superseded_sporely_taxon_id": 627074
+      },
+      {
+        "current_sporely_taxon_id": 70420,
+        "superseded_sporely_taxon_id": 627077
+      },
+      {
+        "current_sporely_taxon_id": 70422,
+        "superseded_sporely_taxon_id": 627078
+      },
+      {
+        "current_sporely_taxon_id": 33798,
+        "superseded_sporely_taxon_id": 627081
+      },
+      {
+        "current_sporely_taxon_id": 15607,
+        "superseded_sporely_taxon_id": 627082
+      },
+      {
+        "current_sporely_taxon_id": 51936,
+        "superseded_sporely_taxon_id": 627084
+      },
+      {
+        "current_sporely_taxon_id": 80112,
+        "superseded_sporely_taxon_id": 627093
+      },
+      {
+        "current_sporely_taxon_id": 164751,
+        "superseded_sporely_taxon_id": 627097
+      },
+      {
+        "current_sporely_taxon_id": 168939,
+        "superseded_sporely_taxon_id": 627116
+      },
+      {
+        "current_sporely_taxon_id": 10595,
+        "superseded_sporely_taxon_id": 627121
+      },
+      {
+        "current_sporely_taxon_id": 16112,
+        "superseded_sporely_taxon_id": 627125
+      },
+      {
+        "current_sporely_taxon_id": 47344,
+        "superseded_sporely_taxon_id": 627129
+      },
+      {
+        "current_sporely_taxon_id": 119413,
+        "superseded_sporely_taxon_id": 627144
+      },
+      {
+        "current_sporely_taxon_id": 1758,
+        "superseded_sporely_taxon_id": 627147
+      },
+      {
+        "current_sporely_taxon_id": 72222,
+        "superseded_sporely_taxon_id": 627151
+      },
+      {
+        "current_sporely_taxon_id": 76619,
+        "superseded_sporely_taxon_id": 627155
+      },
+      {
+        "current_sporely_taxon_id": 124177,
+        "superseded_sporely_taxon_id": 627166
+      },
+      {
+        "current_sporely_taxon_id": 124343,
+        "superseded_sporely_taxon_id": 627168
+      },
+      {
+        "current_sporely_taxon_id": 1509,
+        "superseded_sporely_taxon_id": 627169
+      },
+      {
+        "current_sporely_taxon_id": 36821,
+        "superseded_sporely_taxon_id": 627172
+      },
+      {
+        "current_sporely_taxon_id": 131357,
+        "superseded_sporely_taxon_id": 627212
+      },
+      {
+        "current_sporely_taxon_id": 51650,
+        "superseded_sporely_taxon_id": 627247
+      },
+      {
+        "current_sporely_taxon_id": 122792,
+        "superseded_sporely_taxon_id": 627254
+      },
+      {
+        "current_sporely_taxon_id": 146488,
+        "superseded_sporely_taxon_id": 627262
+      },
+      {
+        "current_sporely_taxon_id": 120174,
+        "superseded_sporely_taxon_id": 627283
+      },
+      {
+        "current_sporely_taxon_id": 63042,
+        "superseded_sporely_taxon_id": 627291
+      },
+      {
+        "current_sporely_taxon_id": 112589,
+        "superseded_sporely_taxon_id": 627293
+      },
+      {
+        "current_sporely_taxon_id": 124331,
+        "superseded_sporely_taxon_id": 627307
+      },
+      {
+        "current_sporely_taxon_id": 72411,
+        "superseded_sporely_taxon_id": 627312
+      },
+      {
+        "current_sporely_taxon_id": 77225,
+        "superseded_sporely_taxon_id": 627317
+      },
+      {
+        "current_sporely_taxon_id": 80120,
+        "superseded_sporely_taxon_id": 627335
+      },
+      {
+        "current_sporely_taxon_id": 158453,
+        "superseded_sporely_taxon_id": 627353
+      },
+      {
+        "current_sporely_taxon_id": 612805,
+        "superseded_sporely_taxon_id": 627354
+      },
+      {
+        "current_sporely_taxon_id": 153410,
+        "superseded_sporely_taxon_id": 627357
+      },
+      {
+        "current_sporely_taxon_id": 153451,
+        "superseded_sporely_taxon_id": 627370
+      },
+      {
+        "current_sporely_taxon_id": 82604,
+        "superseded_sporely_taxon_id": 627407
+      },
+      {
+        "current_sporely_taxon_id": 136203,
+        "superseded_sporely_taxon_id": 627414
+      },
+      {
+        "current_sporely_taxon_id": 157356,
+        "superseded_sporely_taxon_id": 627427
+      },
+      {
+        "current_sporely_taxon_id": 157359,
+        "superseded_sporely_taxon_id": 627428
+      },
+      {
+        "current_sporely_taxon_id": 2227,
+        "superseded_sporely_taxon_id": 627449
+      },
+      {
+        "current_sporely_taxon_id": 3346,
+        "superseded_sporely_taxon_id": 627450
+      },
+      {
+        "current_sporely_taxon_id": 7474,
+        "superseded_sporely_taxon_id": 627463
+      },
+      {
+        "current_sporely_taxon_id": 97584,
+        "superseded_sporely_taxon_id": 627465
+      },
+      {
+        "current_sporely_taxon_id": 8849,
+        "superseded_sporely_taxon_id": 627467
+      },
+      {
+        "current_sporely_taxon_id": 100462,
+        "superseded_sporely_taxon_id": 627471
+      },
+      {
+        "current_sporely_taxon_id": 22994,
+        "superseded_sporely_taxon_id": 627477
+      },
+      {
+        "current_sporely_taxon_id": 23081,
+        "superseded_sporely_taxon_id": 627487
+      },
+      {
+        "current_sporely_taxon_id": 104320,
+        "superseded_sporely_taxon_id": 627488
+      },
+      {
+        "current_sporely_taxon_id": 39595,
+        "superseded_sporely_taxon_id": 627515
+      },
+      {
+        "current_sporely_taxon_id": 108079,
+        "superseded_sporely_taxon_id": 627521
+      },
+      {
+        "current_sporely_taxon_id": 116886,
+        "superseded_sporely_taxon_id": 627530
+      },
+      {
+        "current_sporely_taxon_id": 167796,
+        "superseded_sporely_taxon_id": 627575
+      },
+      {
+        "current_sporely_taxon_id": 95719,
+        "superseded_sporely_taxon_id": 627578
+      },
+      {
+        "current_sporely_taxon_id": 83788,
+        "superseded_sporely_taxon_id": 627638
+      },
+      {
+        "current_sporely_taxon_id": 83745,
+        "superseded_sporely_taxon_id": 627643
+      },
+      {
+        "current_sporely_taxon_id": 92105,
+        "superseded_sporely_taxon_id": 627647
+      },
+      {
+        "current_sporely_taxon_id": 80622,
+        "superseded_sporely_taxon_id": 627651
+      },
+      {
+        "current_sporely_taxon_id": 617758,
+        "superseded_sporely_taxon_id": 627654
+      },
+      {
+        "current_sporely_taxon_id": 6963,
+        "superseded_sporely_taxon_id": 627655
+      },
+      {
+        "current_sporely_taxon_id": 3052,
+        "superseded_sporely_taxon_id": 627690
+      },
+      {
+        "current_sporely_taxon_id": 3062,
+        "superseded_sporely_taxon_id": 627693
+      },
+      {
+        "current_sporely_taxon_id": 11872,
+        "superseded_sporely_taxon_id": 627708
+      },
+      {
+        "current_sporely_taxon_id": 5542,
+        "superseded_sporely_taxon_id": 627726
+      },
+      {
+        "current_sporely_taxon_id": 90116,
+        "superseded_sporely_taxon_id": 627773
+      },
+      {
+        "current_sporely_taxon_id": 94530,
+        "superseded_sporely_taxon_id": 627795
+      },
+      {
+        "current_sporely_taxon_id": 9096,
+        "superseded_sporely_taxon_id": 627887
+      },
+      {
+        "current_sporely_taxon_id": 39451,
+        "superseded_sporely_taxon_id": 627889
+      },
+      {
+        "current_sporely_taxon_id": 63315,
+        "superseded_sporely_taxon_id": 627890
+      },
+      {
+        "current_sporely_taxon_id": 63326,
+        "superseded_sporely_taxon_id": 627892
+      },
+      {
+        "current_sporely_taxon_id": 5827,
+        "superseded_sporely_taxon_id": 627898
+      },
+      {
+        "current_sporely_taxon_id": 122277,
+        "superseded_sporely_taxon_id": 627909
+      },
+      {
+        "current_sporely_taxon_id": 69655,
+        "superseded_sporely_taxon_id": 627910
+      },
+      {
+        "current_sporely_taxon_id": 604678,
+        "superseded_sporely_taxon_id": 627924
+      },
+      {
+        "current_sporely_taxon_id": 7074,
+        "superseded_sporely_taxon_id": 627935
+      },
+      {
+        "current_sporely_taxon_id": 25190,
+        "superseded_sporely_taxon_id": 627950
+      },
+      {
+        "current_sporely_taxon_id": 106960,
+        "superseded_sporely_taxon_id": 627954
+      },
+      {
+        "current_sporely_taxon_id": 606593,
+        "superseded_sporely_taxon_id": 627984
+      },
+      {
+        "current_sporely_taxon_id": 114501,
+        "superseded_sporely_taxon_id": 628013
+      },
+      {
+        "current_sporely_taxon_id": 119730,
+        "superseded_sporely_taxon_id": 628033
+      },
+      {
+        "current_sporely_taxon_id": 112572,
+        "superseded_sporely_taxon_id": 628040
+      },
+      {
+        "current_sporely_taxon_id": 66141,
+        "superseded_sporely_taxon_id": 628089
+      },
+      {
+        "current_sporely_taxon_id": 6115,
+        "superseded_sporely_taxon_id": 628120
+      },
+      {
+        "current_sporely_taxon_id": 6210,
+        "superseded_sporely_taxon_id": 628124
+      },
+      {
+        "current_sporely_taxon_id": 9627,
+        "superseded_sporely_taxon_id": 628131
+      },
+      {
+        "current_sporely_taxon_id": 32983,
+        "superseded_sporely_taxon_id": 628148
+      },
+      {
+        "current_sporely_taxon_id": 36875,
+        "superseded_sporely_taxon_id": 628154
+      },
+      {
+        "current_sporely_taxon_id": 42727,
+        "superseded_sporely_taxon_id": 628164
+      },
+      {
+        "current_sporely_taxon_id": 42766,
+        "superseded_sporely_taxon_id": 628166
+      },
+      {
+        "current_sporely_taxon_id": 58049,
+        "superseded_sporely_taxon_id": 628178
+      },
+      {
+        "current_sporely_taxon_id": 607491,
+        "superseded_sporely_taxon_id": 628188
+      },
+      {
+        "current_sporely_taxon_id": 10730,
+        "superseded_sporely_taxon_id": 628197
+      },
+      {
+        "current_sporely_taxon_id": 154536,
+        "superseded_sporely_taxon_id": 628207
+      },
+      {
+        "current_sporely_taxon_id": 172191,
+        "superseded_sporely_taxon_id": 628220
+      },
+      {
+        "current_sporely_taxon_id": 82091,
+        "superseded_sporely_taxon_id": 628223
+      },
+      {
+        "current_sporely_taxon_id": 133481,
+        "superseded_sporely_taxon_id": 628224
+      },
+      {
+        "current_sporely_taxon_id": 93496,
+        "superseded_sporely_taxon_id": 628240
+      },
+      {
+        "current_sporely_taxon_id": 6230,
+        "superseded_sporely_taxon_id": 628243
+      },
+      {
+        "current_sporely_taxon_id": 102310,
+        "superseded_sporely_taxon_id": 628263
+      },
+      {
+        "current_sporely_taxon_id": 17150,
+        "superseded_sporely_taxon_id": 628265
+      },
+      {
+        "current_sporely_taxon_id": 17174,
+        "superseded_sporely_taxon_id": 628266
+      },
+      {
+        "current_sporely_taxon_id": 17188,
+        "superseded_sporely_taxon_id": 628267
+      },
+      {
+        "current_sporely_taxon_id": 102910,
+        "superseded_sporely_taxon_id": 628268
+      },
+      {
+        "current_sporely_taxon_id": 17276,
+        "superseded_sporely_taxon_id": 628270
+      },
+      {
+        "current_sporely_taxon_id": 17279,
+        "superseded_sporely_taxon_id": 628272
+      },
+      {
+        "current_sporely_taxon_id": 107992,
+        "superseded_sporely_taxon_id": 628276
+      },
+      {
+        "current_sporely_taxon_id": 117565,
+        "superseded_sporely_taxon_id": 628279
+      },
+      {
+        "current_sporely_taxon_id": 43162,
+        "superseded_sporely_taxon_id": 628289
+      },
+      {
+        "current_sporely_taxon_id": 54529,
+        "superseded_sporely_taxon_id": 628292
+      },
+      {
+        "current_sporely_taxon_id": 112284,
+        "superseded_sporely_taxon_id": 628294
+      },
+      {
+        "current_sporely_taxon_id": 125462,
+        "superseded_sporely_taxon_id": 628302
+      },
+      {
+        "current_sporely_taxon_id": 153115,
+        "superseded_sporely_taxon_id": 628313
+      },
+      {
+        "current_sporely_taxon_id": 82711,
+        "superseded_sporely_taxon_id": 628328
+      },
+      {
+        "current_sporely_taxon_id": 15996,
+        "superseded_sporely_taxon_id": 628351
+      },
+      {
+        "current_sporely_taxon_id": 21676,
+        "superseded_sporely_taxon_id": 628372
+      },
+      {
+        "current_sporely_taxon_id": 21708,
+        "superseded_sporely_taxon_id": 628373
+      },
+      {
+        "current_sporely_taxon_id": 21722,
+        "superseded_sporely_taxon_id": 628374
+      },
+      {
+        "current_sporely_taxon_id": 52240,
+        "superseded_sporely_taxon_id": 628387
+      },
+      {
+        "current_sporely_taxon_id": 125790,
+        "superseded_sporely_taxon_id": 628399
+      },
+      {
+        "current_sporely_taxon_id": 23982,
+        "superseded_sporely_taxon_id": 628404
+      },
+      {
+        "current_sporely_taxon_id": 25564,
+        "superseded_sporely_taxon_id": 628417
+      },
+      {
+        "current_sporely_taxon_id": 62762,
+        "superseded_sporely_taxon_id": 628452
+      },
+      {
+        "current_sporely_taxon_id": 609591,
+        "superseded_sporely_taxon_id": 628458
+      },
+      {
+        "current_sporely_taxon_id": 609753,
+        "superseded_sporely_taxon_id": 628461
+      },
+      {
+        "current_sporely_taxon_id": 6187,
+        "superseded_sporely_taxon_id": 628462
+      },
+      {
+        "current_sporely_taxon_id": 6985,
+        "superseded_sporely_taxon_id": 628464
+      },
+      {
+        "current_sporely_taxon_id": 33291,
+        "superseded_sporely_taxon_id": 628468
+      },
+      {
+        "current_sporely_taxon_id": 36529,
+        "superseded_sporely_taxon_id": 628473
+      },
+      {
+        "current_sporely_taxon_id": 80808,
+        "superseded_sporely_taxon_id": 628482
+      },
+      {
+        "current_sporely_taxon_id": 4289,
+        "superseded_sporely_taxon_id": 628483
+      },
+      {
+        "current_sporely_taxon_id": 41190,
+        "superseded_sporely_taxon_id": 628493
+      },
+      {
+        "current_sporely_taxon_id": 29347,
+        "superseded_sporely_taxon_id": 628504
+      },
+      {
+        "current_sporely_taxon_id": 106177,
+        "superseded_sporely_taxon_id": 628507
+      },
+      {
+        "current_sporely_taxon_id": 614112,
+        "superseded_sporely_taxon_id": 628519
+      },
+      {
+        "current_sporely_taxon_id": 17668,
+        "superseded_sporely_taxon_id": 628539
+      },
+      {
+        "current_sporely_taxon_id": 17683,
+        "superseded_sporely_taxon_id": 628541
+      },
+      {
+        "current_sporely_taxon_id": 17733,
+        "superseded_sporely_taxon_id": 628544
+      },
+      {
+        "current_sporely_taxon_id": 612854,
+        "superseded_sporely_taxon_id": 628561
+      },
+      {
+        "current_sporely_taxon_id": 107750,
+        "superseded_sporely_taxon_id": 628576
+      },
+      {
+        "current_sporely_taxon_id": 106599,
+        "superseded_sporely_taxon_id": 628585
+      },
+      {
+        "current_sporely_taxon_id": 116120,
+        "superseded_sporely_taxon_id": 628586
+      },
+      {
+        "current_sporely_taxon_id": 11822,
+        "superseded_sporely_taxon_id": 628624
+      },
+      {
+        "current_sporely_taxon_id": 107188,
+        "superseded_sporely_taxon_id": 628628
+      },
+      {
+        "current_sporely_taxon_id": 12500,
+        "superseded_sporely_taxon_id": 628675
+      },
+      {
+        "current_sporely_taxon_id": 163239,
+        "superseded_sporely_taxon_id": 628690
+      },
+      {
+        "current_sporely_taxon_id": 70797,
+        "superseded_sporely_taxon_id": 628738
+      },
+      {
+        "current_sporely_taxon_id": 159913,
+        "superseded_sporely_taxon_id": 628761
+      },
+      {
+        "current_sporely_taxon_id": 81293,
+        "superseded_sporely_taxon_id": 628774
+      },
+      {
+        "current_sporely_taxon_id": 81300,
+        "superseded_sporely_taxon_id": 628786
+      },
+      {
+        "current_sporely_taxon_id": 160216,
+        "superseded_sporely_taxon_id": 628795
+      },
+      {
+        "current_sporely_taxon_id": 65915,
+        "superseded_sporely_taxon_id": 628806
+      },
+      {
+        "current_sporely_taxon_id": 65921,
+        "superseded_sporely_taxon_id": 628810
+      },
+      {
+        "current_sporely_taxon_id": 65924,
+        "superseded_sporely_taxon_id": 628811
+      },
+      {
+        "current_sporely_taxon_id": 124146,
+        "superseded_sporely_taxon_id": 628826
+      },
+      {
+        "current_sporely_taxon_id": 76565,
+        "superseded_sporely_taxon_id": 628830
+      },
+      {
+        "current_sporely_taxon_id": 605737,
+        "superseded_sporely_taxon_id": 628834
+      },
+      {
+        "current_sporely_taxon_id": 82699,
+        "superseded_sporely_taxon_id": 628854
+      },
+      {
+        "current_sporely_taxon_id": 613375,
+        "superseded_sporely_taxon_id": 628857
+      },
+      {
+        "current_sporely_taxon_id": 613378,
+        "superseded_sporely_taxon_id": 628860
+      },
+      {
+        "current_sporely_taxon_id": 82702,
+        "superseded_sporely_taxon_id": 628866
+      },
+      {
+        "current_sporely_taxon_id": 82360,
+        "superseded_sporely_taxon_id": 628867
+      },
+      {
+        "current_sporely_taxon_id": 613393,
+        "superseded_sporely_taxon_id": 628879
+      },
+      {
+        "current_sporely_taxon_id": 613410,
+        "superseded_sporely_taxon_id": 628886
+      },
+      {
+        "current_sporely_taxon_id": 613468,
+        "superseded_sporely_taxon_id": 628905
+      },
+      {
+        "current_sporely_taxon_id": 131991,
+        "superseded_sporely_taxon_id": 628919
+      },
+      {
+        "current_sporely_taxon_id": 613489,
+        "superseded_sporely_taxon_id": 628923
+      },
+      {
+        "current_sporely_taxon_id": 613490,
+        "superseded_sporely_taxon_id": 628924
+      },
+      {
+        "current_sporely_taxon_id": 613493,
+        "superseded_sporely_taxon_id": 628928
+      },
+      {
+        "current_sporely_taxon_id": 613502,
+        "superseded_sporely_taxon_id": 628930
+      },
+      {
+        "current_sporely_taxon_id": 613533,
+        "superseded_sporely_taxon_id": 628938
+      },
+      {
+        "current_sporely_taxon_id": 613627,
+        "superseded_sporely_taxon_id": 628943
+      },
+      {
+        "current_sporely_taxon_id": 609287,
+        "superseded_sporely_taxon_id": 628953
+      },
+      {
+        "current_sporely_taxon_id": 132148,
+        "superseded_sporely_taxon_id": 628955
+      },
+      {
+        "current_sporely_taxon_id": 71545,
+        "superseded_sporely_taxon_id": 628959
+      },
+      {
+        "current_sporely_taxon_id": 614991,
+        "superseded_sporely_taxon_id": 628966
+      },
+      {
+        "current_sporely_taxon_id": 167025,
+        "superseded_sporely_taxon_id": 628999
+      },
+      {
+        "current_sporely_taxon_id": 25684,
+        "superseded_sporely_taxon_id": 629014
+      },
+      {
+        "current_sporely_taxon_id": 13203,
+        "superseded_sporely_taxon_id": 629034
+      },
+      {
+        "current_sporely_taxon_id": 159025,
+        "superseded_sporely_taxon_id": 629045
+      },
+      {
+        "current_sporely_taxon_id": 159035,
+        "superseded_sporely_taxon_id": 629050
+      },
+      {
+        "current_sporely_taxon_id": 155165,
+        "superseded_sporely_taxon_id": 629053
+      },
+      {
+        "current_sporely_taxon_id": 155166,
+        "superseded_sporely_taxon_id": 629054
+      },
+      {
+        "current_sporely_taxon_id": 155171,
+        "superseded_sporely_taxon_id": 629062
+      },
+      {
+        "current_sporely_taxon_id": 159051,
+        "superseded_sporely_taxon_id": 629064
+      },
+      {
+        "current_sporely_taxon_id": 155174,
+        "superseded_sporely_taxon_id": 629065
+      },
+      {
+        "current_sporely_taxon_id": 159082,
+        "superseded_sporely_taxon_id": 629092
+      },
+      {
+        "current_sporely_taxon_id": 6511,
+        "superseded_sporely_taxon_id": 629110
+      },
+      {
+        "current_sporely_taxon_id": 16871,
+        "superseded_sporely_taxon_id": 629116
+      },
+      {
+        "current_sporely_taxon_id": 25615,
+        "superseded_sporely_taxon_id": 629129
+      },
+      {
+        "current_sporely_taxon_id": 163681,
+        "superseded_sporely_taxon_id": 629134
+      },
+      {
+        "current_sporely_taxon_id": 167501,
+        "superseded_sporely_taxon_id": 629138
+      },
+      {
+        "current_sporely_taxon_id": 82378,
+        "superseded_sporely_taxon_id": 629146
+      },
+      {
+        "current_sporely_taxon_id": 95603,
+        "superseded_sporely_taxon_id": 629148
+      },
+      {
+        "current_sporely_taxon_id": 104325,
+        "superseded_sporely_taxon_id": 629154
+      },
+      {
+        "current_sporely_taxon_id": 23116,
+        "superseded_sporely_taxon_id": 629168
+      },
+      {
+        "current_sporely_taxon_id": 166025,
+        "superseded_sporely_taxon_id": 629192
+      },
+      {
+        "current_sporely_taxon_id": 148212,
+        "superseded_sporely_taxon_id": 629210
+      },
+      {
+        "current_sporely_taxon_id": 23170,
+        "superseded_sporely_taxon_id": 629220
+      },
+      {
+        "current_sporely_taxon_id": 104242,
+        "superseded_sporely_taxon_id": 629236
+      },
+      {
+        "current_sporely_taxon_id": 166177,
+        "superseded_sporely_taxon_id": 629257
+      },
+      {
+        "current_sporely_taxon_id": 23249,
+        "superseded_sporely_taxon_id": 629284
+      },
+      {
+        "current_sporely_taxon_id": 104243,
+        "superseded_sporely_taxon_id": 629285
+      },
+      {
+        "current_sporely_taxon_id": 23270,
+        "superseded_sporely_taxon_id": 629300
+      },
+      {
+        "current_sporely_taxon_id": 23438,
+        "superseded_sporely_taxon_id": 629332
+      },
+      {
+        "current_sporely_taxon_id": 23458,
+        "superseded_sporely_taxon_id": 629341
+      },
+      {
+        "current_sporely_taxon_id": 32868,
+        "superseded_sporely_taxon_id": 629354
+      },
+      {
+        "current_sporely_taxon_id": 32869,
+        "superseded_sporely_taxon_id": 629355
+      },
+      {
+        "current_sporely_taxon_id": 32870,
+        "superseded_sporely_taxon_id": 629356
+      },
+      {
+        "current_sporely_taxon_id": 169757,
+        "superseded_sporely_taxon_id": 629357
+      },
+      {
+        "current_sporely_taxon_id": 32877,
+        "superseded_sporely_taxon_id": 629359
+      },
+      {
+        "current_sporely_taxon_id": 169762,
+        "superseded_sporely_taxon_id": 629360
+      },
+      {
+        "current_sporely_taxon_id": 612830,
+        "superseded_sporely_taxon_id": 629361
+      },
+      {
+        "current_sporely_taxon_id": 58931,
+        "superseded_sporely_taxon_id": 629378
+      },
+      {
+        "current_sporely_taxon_id": 60447,
+        "superseded_sporely_taxon_id": 629384
+      },
+      {
+        "current_sporely_taxon_id": 63833,
+        "superseded_sporely_taxon_id": 629389
+      },
+      {
+        "current_sporely_taxon_id": 63839,
+        "superseded_sporely_taxon_id": 629393
+      },
+      {
+        "current_sporely_taxon_id": 63841,
+        "superseded_sporely_taxon_id": 629395
+      },
+      {
+        "current_sporely_taxon_id": 69143,
+        "superseded_sporely_taxon_id": 629397
+      },
+      {
+        "current_sporely_taxon_id": 69145,
+        "superseded_sporely_taxon_id": 629398
+      },
+      {
+        "current_sporely_taxon_id": 69146,
+        "superseded_sporely_taxon_id": 629399
+      },
+      {
+        "current_sporely_taxon_id": 605614,
+        "superseded_sporely_taxon_id": 629400
+      },
+      {
+        "current_sporely_taxon_id": 124764,
+        "superseded_sporely_taxon_id": 629401
+      },
+      {
+        "current_sporely_taxon_id": 124762,
+        "superseded_sporely_taxon_id": 629402
+      },
+      {
+        "current_sporely_taxon_id": 166305,
+        "superseded_sporely_taxon_id": 629425
+      },
+      {
+        "current_sporely_taxon_id": 166384,
+        "superseded_sporely_taxon_id": 629491
+      },
+      {
+        "current_sporely_taxon_id": 612840,
+        "superseded_sporely_taxon_id": 629502
+      },
+      {
+        "current_sporely_taxon_id": 104369,
+        "superseded_sporely_taxon_id": 629544
+      },
+      {
+        "current_sporely_taxon_id": 166574,
+        "superseded_sporely_taxon_id": 629603
+      },
+      {
+        "current_sporely_taxon_id": 68311,
+        "superseded_sporely_taxon_id": 629615
+      },
+      {
+        "current_sporely_taxon_id": 28654,
+        "superseded_sporely_taxon_id": 629623
+      },
+      {
+        "current_sporely_taxon_id": 31530,
+        "superseded_sporely_taxon_id": 629643
+      },
+      {
+        "current_sporely_taxon_id": 31539,
+        "superseded_sporely_taxon_id": 629645
+      },
+      {
+        "current_sporely_taxon_id": 31578,
+        "superseded_sporely_taxon_id": 629652
+      },
+      {
+        "current_sporely_taxon_id": 31610,
+        "superseded_sporely_taxon_id": 629655
+      },
+      {
+        "current_sporely_taxon_id": 31617,
+        "superseded_sporely_taxon_id": 629657
+      },
+      {
+        "current_sporely_taxon_id": 31620,
+        "superseded_sporely_taxon_id": 629658
+      },
+      {
+        "current_sporely_taxon_id": 35125,
+        "superseded_sporely_taxon_id": 629672
+      },
+      {
+        "current_sporely_taxon_id": 35126,
+        "superseded_sporely_taxon_id": 629673
+      },
+      {
+        "current_sporely_taxon_id": 35128,
+        "superseded_sporely_taxon_id": 629674
+      },
+      {
+        "current_sporely_taxon_id": 90401,
+        "superseded_sporely_taxon_id": 629679
+      },
+      {
+        "current_sporely_taxon_id": 162204,
+        "superseded_sporely_taxon_id": 629683
+      },
+      {
+        "current_sporely_taxon_id": 617781,
+        "superseded_sporely_taxon_id": 629685
+      },
+      {
+        "current_sporely_taxon_id": 40089,
+        "superseded_sporely_taxon_id": 629701
+      },
+      {
+        "current_sporely_taxon_id": 94331,
+        "superseded_sporely_taxon_id": 629708
+      },
+      {
+        "current_sporely_taxon_id": 94334,
+        "superseded_sporely_taxon_id": 629712
+      },
+      {
+        "current_sporely_taxon_id": 8369,
+        "superseded_sporely_taxon_id": 629720
+      },
+      {
+        "current_sporely_taxon_id": 98801,
+        "superseded_sporely_taxon_id": 629739
+      },
+      {
+        "current_sporely_taxon_id": 99375,
+        "superseded_sporely_taxon_id": 629746
+      },
+      {
+        "current_sporely_taxon_id": 40843,
+        "superseded_sporely_taxon_id": 629767
+      },
+      {
+        "current_sporely_taxon_id": 117494,
+        "superseded_sporely_taxon_id": 629795
+      },
+      {
+        "current_sporely_taxon_id": 41483,
+        "superseded_sporely_taxon_id": 629796
+      },
+      {
+        "current_sporely_taxon_id": 132162,
+        "superseded_sporely_taxon_id": 629820
+      },
+      {
+        "current_sporely_taxon_id": 55500,
+        "superseded_sporely_taxon_id": 629825
+      },
+      {
+        "current_sporely_taxon_id": 78716,
+        "superseded_sporely_taxon_id": 629841
+      },
+      {
+        "current_sporely_taxon_id": 153781,
+        "superseded_sporely_taxon_id": 629846
+      },
+      {
+        "current_sporely_taxon_id": 160340,
+        "superseded_sporely_taxon_id": 629857
+      },
+      {
+        "current_sporely_taxon_id": 91437,
+        "superseded_sporely_taxon_id": 629859
+      },
+      {
+        "current_sporely_taxon_id": 80788,
+        "superseded_sporely_taxon_id": 629860
+      },
+      {
+        "current_sporely_taxon_id": 131979,
+        "superseded_sporely_taxon_id": 629900
+      },
+      {
+        "current_sporely_taxon_id": 617706,
+        "superseded_sporely_taxon_id": 629926
+      },
+      {
+        "current_sporely_taxon_id": 8878,
+        "superseded_sporely_taxon_id": 629929
+      },
+      {
+        "current_sporely_taxon_id": 98403,
+        "superseded_sporely_taxon_id": 629960
+      },
+      {
+        "current_sporely_taxon_id": 17649,
+        "superseded_sporely_taxon_id": 629979
+      },
+      {
+        "current_sporely_taxon_id": 17650,
+        "superseded_sporely_taxon_id": 629980
+      },
+      {
+        "current_sporely_taxon_id": 17805,
+        "superseded_sporely_taxon_id": 629981
+      },
+      {
+        "current_sporely_taxon_id": 17913,
+        "superseded_sporely_taxon_id": 629992
+      },
+      {
+        "current_sporely_taxon_id": 103256,
+        "superseded_sporely_taxon_id": 629996
+      },
+      {
+        "current_sporely_taxon_id": 28946,
+        "superseded_sporely_taxon_id": 630013
+      },
+      {
+        "current_sporely_taxon_id": 28950,
+        "superseded_sporely_taxon_id": 630016
+      },
+      {
+        "current_sporely_taxon_id": 28955,
+        "superseded_sporely_taxon_id": 630018
+      },
+      {
+        "current_sporely_taxon_id": 28957,
+        "superseded_sporely_taxon_id": 630019
+      },
+      {
+        "current_sporely_taxon_id": 115382,
+        "superseded_sporely_taxon_id": 630022
+      },
+      {
+        "current_sporely_taxon_id": 29031,
+        "superseded_sporely_taxon_id": 630024
+      },
+      {
+        "current_sporely_taxon_id": 29032,
+        "superseded_sporely_taxon_id": 630025
+      },
+      {
+        "current_sporely_taxon_id": 29033,
+        "superseded_sporely_taxon_id": 630026
+      },
+      {
+        "current_sporely_taxon_id": 29035,
+        "superseded_sporely_taxon_id": 630028
+      },
+      {
+        "current_sporely_taxon_id": 29036,
+        "superseded_sporely_taxon_id": 630029
+      },
+      {
+        "current_sporely_taxon_id": 29037,
+        "superseded_sporely_taxon_id": 630030
+      },
+      {
+        "current_sporely_taxon_id": 29042,
+        "superseded_sporely_taxon_id": 630033
+      },
+      {
+        "current_sporely_taxon_id": 29043,
+        "superseded_sporely_taxon_id": 630034
+      },
+      {
+        "current_sporely_taxon_id": 29045,
+        "superseded_sporely_taxon_id": 630035
+      },
+      {
+        "current_sporely_taxon_id": 29046,
+        "superseded_sporely_taxon_id": 630036
+      },
+      {
+        "current_sporely_taxon_id": 29047,
+        "superseded_sporely_taxon_id": 630037
+      },
+      {
+        "current_sporely_taxon_id": 29052,
+        "superseded_sporely_taxon_id": 630040
+      },
+      {
+        "current_sporely_taxon_id": 29053,
+        "superseded_sporely_taxon_id": 630041
+      },
+      {
+        "current_sporely_taxon_id": 114951,
+        "superseded_sporely_taxon_id": 630042
+      },
+      {
+        "current_sporely_taxon_id": 116171,
+        "superseded_sporely_taxon_id": 630113
+      },
+      {
+        "current_sporely_taxon_id": 108294,
+        "superseded_sporely_taxon_id": 630125
+      },
+      {
+        "current_sporely_taxon_id": 108467,
+        "superseded_sporely_taxon_id": 630127
+      },
+      {
+        "current_sporely_taxon_id": 41517,
+        "superseded_sporely_taxon_id": 630215
+      },
+      {
+        "current_sporely_taxon_id": 120248,
+        "superseded_sporely_taxon_id": 630261
+      },
+      {
+        "current_sporely_taxon_id": 171951,
+        "superseded_sporely_taxon_id": 630263
+      },
+      {
+        "current_sporely_taxon_id": 49302,
+        "superseded_sporely_taxon_id": 630264
+      },
+      {
+        "current_sporely_taxon_id": 109950,
+        "superseded_sporely_taxon_id": 630266
+      },
+      {
+        "current_sporely_taxon_id": 52506,
+        "superseded_sporely_taxon_id": 630272
+      },
+      {
+        "current_sporely_taxon_id": 57680,
+        "superseded_sporely_taxon_id": 630305
+      },
+      {
+        "current_sporely_taxon_id": 607806,
+        "superseded_sporely_taxon_id": 630343
+      },
+      {
+        "current_sporely_taxon_id": 607865,
+        "superseded_sporely_taxon_id": 630353
+      },
+      {
+        "current_sporely_taxon_id": 127620,
+        "superseded_sporely_taxon_id": 630357
+      },
+      {
+        "current_sporely_taxon_id": 607890,
+        "superseded_sporely_taxon_id": 630360
+      },
+      {
+        "current_sporely_taxon_id": 128614,
+        "superseded_sporely_taxon_id": 630398
+      },
+      {
+        "current_sporely_taxon_id": 75818,
+        "superseded_sporely_taxon_id": 630399
+      },
+      {
+        "current_sporely_taxon_id": 76145,
+        "superseded_sporely_taxon_id": 630410
+      },
+      {
+        "current_sporely_taxon_id": 76175,
+        "superseded_sporely_taxon_id": 630414
+      },
+      {
+        "current_sporely_taxon_id": 76191,
+        "superseded_sporely_taxon_id": 630415
+      },
+      {
+        "current_sporely_taxon_id": 76212,
+        "superseded_sporely_taxon_id": 630418
+      },
+      {
+        "current_sporely_taxon_id": 76214,
+        "superseded_sporely_taxon_id": 630419
+      },
+      {
+        "current_sporely_taxon_id": 76245,
+        "superseded_sporely_taxon_id": 630433
+      },
+      {
+        "current_sporely_taxon_id": 76257,
+        "superseded_sporely_taxon_id": 630438
+      },
+      {
+        "current_sporely_taxon_id": 128989,
+        "superseded_sporely_taxon_id": 630441
+      },
+      {
+        "current_sporely_taxon_id": 128647,
+        "superseded_sporely_taxon_id": 630444
+      },
+      {
+        "current_sporely_taxon_id": 76305,
+        "superseded_sporely_taxon_id": 630448
+      },
+      {
+        "current_sporely_taxon_id": 76308,
+        "superseded_sporely_taxon_id": 630449
+      },
+      {
+        "current_sporely_taxon_id": 76354,
+        "superseded_sporely_taxon_id": 630456
+      },
+      {
+        "current_sporely_taxon_id": 76361,
+        "superseded_sporely_taxon_id": 630457
+      },
+      {
+        "current_sporely_taxon_id": 76385,
+        "superseded_sporely_taxon_id": 630464
+      },
+      {
+        "current_sporely_taxon_id": 76393,
+        "superseded_sporely_taxon_id": 630467
+      },
+      {
+        "current_sporely_taxon_id": 76403,
+        "superseded_sporely_taxon_id": 630473
+      },
+      {
+        "current_sporely_taxon_id": 76405,
+        "superseded_sporely_taxon_id": 630475
+      },
+      {
+        "current_sporely_taxon_id": 76421,
+        "superseded_sporely_taxon_id": 630478
+      },
+      {
+        "current_sporely_taxon_id": 76423,
+        "superseded_sporely_taxon_id": 630479
+      },
+      {
+        "current_sporely_taxon_id": 76430,
+        "superseded_sporely_taxon_id": 630480
+      },
+      {
+        "current_sporely_taxon_id": 76432,
+        "superseded_sporely_taxon_id": 630481
+      },
+      {
+        "current_sporely_taxon_id": 76439,
+        "superseded_sporely_taxon_id": 630482
+      },
+      {
+        "current_sporely_taxon_id": 76441,
+        "superseded_sporely_taxon_id": 630483
+      },
+      {
+        "current_sporely_taxon_id": 76508,
+        "superseded_sporely_taxon_id": 630494
+      },
+      {
+        "current_sporely_taxon_id": 76514,
+        "superseded_sporely_taxon_id": 630496
+      },
+      {
+        "current_sporely_taxon_id": 76530,
+        "superseded_sporely_taxon_id": 630498
+      },
+      {
+        "current_sporely_taxon_id": 76548,
+        "superseded_sporely_taxon_id": 630503
+      },
+      {
+        "current_sporely_taxon_id": 44658,
+        "superseded_sporely_taxon_id": 630514
+      },
+      {
+        "current_sporely_taxon_id": 149997,
+        "superseded_sporely_taxon_id": 630523
+      },
+      {
+        "current_sporely_taxon_id": 149998,
+        "superseded_sporely_taxon_id": 630524
+      },
+      {
+        "current_sporely_taxon_id": 150041,
+        "superseded_sporely_taxon_id": 630526
+      },
+      {
+        "current_sporely_taxon_id": 147225,
+        "superseded_sporely_taxon_id": 630529
+      },
+      {
+        "current_sporely_taxon_id": 164008,
+        "superseded_sporely_taxon_id": 630539
+      },
+      {
+        "current_sporely_taxon_id": 160691,
+        "superseded_sporely_taxon_id": 630553
+      },
+      {
+        "current_sporely_taxon_id": 164061,
+        "superseded_sporely_taxon_id": 630572
+      },
+      {
+        "current_sporely_taxon_id": 164135,
+        "superseded_sporely_taxon_id": 630603
+      },
+      {
+        "current_sporely_taxon_id": 4087,
+        "superseded_sporely_taxon_id": 630619
+      },
+      {
+        "current_sporely_taxon_id": 94844,
+        "superseded_sporely_taxon_id": 630623
+      },
+      {
+        "current_sporely_taxon_id": 5350,
+        "superseded_sporely_taxon_id": 630632
+      },
+      {
+        "current_sporely_taxon_id": 5357,
+        "superseded_sporely_taxon_id": 630637
+      },
+      {
+        "current_sporely_taxon_id": 5360,
+        "superseded_sporely_taxon_id": 630638
+      },
+      {
+        "current_sporely_taxon_id": 15117,
+        "superseded_sporely_taxon_id": 630655
+      },
+      {
+        "current_sporely_taxon_id": 15119,
+        "superseded_sporely_taxon_id": 630658
+      },
+      {
+        "current_sporely_taxon_id": 15124,
+        "superseded_sporely_taxon_id": 630664
+      },
+      {
+        "current_sporely_taxon_id": 15126,
+        "superseded_sporely_taxon_id": 630667
+      },
+      {
+        "current_sporely_taxon_id": 15137,
+        "superseded_sporely_taxon_id": 630675
+      },
+      {
+        "current_sporely_taxon_id": 15138,
+        "superseded_sporely_taxon_id": 630677
+      },
+      {
+        "current_sporely_taxon_id": 17339,
+        "superseded_sporely_taxon_id": 630685
+      },
+      {
+        "current_sporely_taxon_id": 17343,
+        "superseded_sporely_taxon_id": 630687
+      },
+      {
+        "current_sporely_taxon_id": 43676,
+        "superseded_sporely_taxon_id": 630694
+      },
+      {
+        "current_sporely_taxon_id": 148607,
+        "superseded_sporely_taxon_id": 630695
+      },
+      {
+        "current_sporely_taxon_id": 148608,
+        "superseded_sporely_taxon_id": 630696
+      },
+      {
+        "current_sporely_taxon_id": 171325,
+        "superseded_sporely_taxon_id": 630697
+      },
+      {
+        "current_sporely_taxon_id": 43684,
+        "superseded_sporely_taxon_id": 630700
+      },
+      {
+        "current_sporely_taxon_id": 148612,
+        "superseded_sporely_taxon_id": 630702
+      },
+      {
+        "current_sporely_taxon_id": 43724,
+        "superseded_sporely_taxon_id": 630705
+      },
+      {
+        "current_sporely_taxon_id": 120073,
+        "superseded_sporely_taxon_id": 630721
+      },
+      {
+        "current_sporely_taxon_id": 48696,
+        "superseded_sporely_taxon_id": 630736
+      },
+      {
+        "current_sporely_taxon_id": 121932,
+        "superseded_sporely_taxon_id": 630761
+      },
+      {
+        "current_sporely_taxon_id": 58390,
+        "superseded_sporely_taxon_id": 630762
+      },
+      {
+        "current_sporely_taxon_id": 122372,
+        "superseded_sporely_taxon_id": 630770
+      },
+      {
+        "current_sporely_taxon_id": 172252,
+        "superseded_sporely_taxon_id": 630783
+      },
+      {
+        "current_sporely_taxon_id": 61197,
+        "superseded_sporely_taxon_id": 630784
+      },
+      {
+        "current_sporely_taxon_id": 61209,
+        "superseded_sporely_taxon_id": 630792
+      },
+      {
+        "current_sporely_taxon_id": 111693,
+        "superseded_sporely_taxon_id": 630794
+      },
+      {
+        "current_sporely_taxon_id": 172275,
+        "superseded_sporely_taxon_id": 630799
+      },
+      {
+        "current_sporely_taxon_id": 172279,
+        "superseded_sporely_taxon_id": 630803
+      },
+      {
+        "current_sporely_taxon_id": 122117,
+        "superseded_sporely_taxon_id": 630813
+      },
+      {
+        "current_sporely_taxon_id": 61247,
+        "superseded_sporely_taxon_id": 630823
+      },
+      {
+        "current_sporely_taxon_id": 61263,
+        "superseded_sporely_taxon_id": 630836
+      },
+      {
+        "current_sporely_taxon_id": 172321,
+        "superseded_sporely_taxon_id": 630837
+      },
+      {
+        "current_sporely_taxon_id": 612835,
+        "superseded_sporely_taxon_id": 630852
+      },
+      {
+        "current_sporely_taxon_id": 61288,
+        "superseded_sporely_taxon_id": 630866
+      },
+      {
+        "current_sporely_taxon_id": 157637,
+        "superseded_sporely_taxon_id": 630876
+      },
+      {
+        "current_sporely_taxon_id": 164714,
+        "superseded_sporely_taxon_id": 630882
+      },
+      {
+        "current_sporely_taxon_id": 9825,
+        "superseded_sporely_taxon_id": 630886
+      },
+      {
+        "current_sporely_taxon_id": 9880,
+        "superseded_sporely_taxon_id": 630891
+      },
+      {
+        "current_sporely_taxon_id": 150805,
+        "superseded_sporely_taxon_id": 630896
+      },
+      {
+        "current_sporely_taxon_id": 80576,
+        "superseded_sporely_taxon_id": 630902
+      },
+      {
+        "current_sporely_taxon_id": 90964,
+        "superseded_sporely_taxon_id": 630903
+      },
+      {
+        "current_sporely_taxon_id": 90963,
+        "superseded_sporely_taxon_id": 630905
+      },
+      {
+        "current_sporely_taxon_id": 80578,
+        "superseded_sporely_taxon_id": 630906
+      },
+      {
+        "current_sporely_taxon_id": 90965,
+        "superseded_sporely_taxon_id": 630907
+      },
+      {
+        "current_sporely_taxon_id": 82523,
+        "superseded_sporely_taxon_id": 630912
+      },
+      {
+        "current_sporely_taxon_id": 82528,
+        "superseded_sporely_taxon_id": 630913
+      },
+      {
+        "current_sporely_taxon_id": 82865,
+        "superseded_sporely_taxon_id": 630914
+      },
+      {
+        "current_sporely_taxon_id": 97848,
+        "superseded_sporely_taxon_id": 630917
+      },
+      {
+        "current_sporely_taxon_id": 18413,
+        "superseded_sporely_taxon_id": 630922
+      },
+      {
+        "current_sporely_taxon_id": 104346,
+        "superseded_sporely_taxon_id": 630928
+      },
+      {
+        "current_sporely_taxon_id": 41284,
+        "superseded_sporely_taxon_id": 630940
+      },
+      {
+        "current_sporely_taxon_id": 51959,
+        "superseded_sporely_taxon_id": 630946
+      },
+      {
+        "current_sporely_taxon_id": 120409,
+        "superseded_sporely_taxon_id": 630947
+      },
+      {
+        "current_sporely_taxon_id": 120640,
+        "superseded_sporely_taxon_id": 630949
+      },
+      {
+        "current_sporely_taxon_id": 120402,
+        "superseded_sporely_taxon_id": 630952
+      },
+      {
+        "current_sporely_taxon_id": 52414,
+        "superseded_sporely_taxon_id": 630959
+      },
+      {
+        "current_sporely_taxon_id": 52416,
+        "superseded_sporely_taxon_id": 630960
+      },
+      {
+        "current_sporely_taxon_id": 52420,
+        "superseded_sporely_taxon_id": 630961
+      },
+      {
+        "current_sporely_taxon_id": 110807,
+        "superseded_sporely_taxon_id": 630987
+      },
+      {
+        "current_sporely_taxon_id": 110806,
+        "superseded_sporely_taxon_id": 630996
+      },
+      {
+        "current_sporely_taxon_id": 121231,
+        "superseded_sporely_taxon_id": 630999
+      },
+      {
+        "current_sporely_taxon_id": 55514,
+        "superseded_sporely_taxon_id": 631046
+      },
+      {
+        "current_sporely_taxon_id": 90421,
+        "superseded_sporely_taxon_id": 631061
+      },
+      {
+        "current_sporely_taxon_id": 79957,
+        "superseded_sporely_taxon_id": 631062
+      },
+      {
+        "current_sporely_taxon_id": 90423,
+        "superseded_sporely_taxon_id": 631071
+      },
+      {
+        "current_sporely_taxon_id": 90424,
+        "superseded_sporely_taxon_id": 631080
+      },
+      {
+        "current_sporely_taxon_id": 157283,
+        "superseded_sporely_taxon_id": 631098
+      },
+      {
+        "current_sporely_taxon_id": 157300,
+        "superseded_sporely_taxon_id": 631105
+      },
+      {
+        "current_sporely_taxon_id": 157323,
+        "superseded_sporely_taxon_id": 631112
+      },
+      {
+        "current_sporely_taxon_id": 159654,
+        "superseded_sporely_taxon_id": 631114
+      },
+      {
+        "current_sporely_taxon_id": 159669,
+        "superseded_sporely_taxon_id": 631123
+      },
+      {
+        "current_sporely_taxon_id": 147360,
+        "superseded_sporely_taxon_id": 631128
+      },
+      {
+        "current_sporely_taxon_id": 91665,
+        "superseded_sporely_taxon_id": 631134
+      },
+      {
+        "current_sporely_taxon_id": 91667,
+        "superseded_sporely_taxon_id": 631135
+      },
+      {
+        "current_sporely_taxon_id": 614336,
+        "superseded_sporely_taxon_id": 631137
+      },
+      {
+        "current_sporely_taxon_id": 614349,
+        "superseded_sporely_taxon_id": 631138
+      },
+      {
+        "current_sporely_taxon_id": 98673,
+        "superseded_sporely_taxon_id": 631142
+      },
+      {
+        "current_sporely_taxon_id": 23015,
+        "superseded_sporely_taxon_id": 631151
+      },
+      {
+        "current_sporely_taxon_id": 23026,
+        "superseded_sporely_taxon_id": 631154
+      },
+      {
+        "current_sporely_taxon_id": 23047,
+        "superseded_sporely_taxon_id": 631165
+      },
+      {
+        "current_sporely_taxon_id": 104319,
+        "superseded_sporely_taxon_id": 631171
+      },
+      {
+        "current_sporely_taxon_id": 38322,
+        "superseded_sporely_taxon_id": 631173
+      },
+      {
+        "current_sporely_taxon_id": 119884,
+        "superseded_sporely_taxon_id": 631178
+      },
+      {
+        "current_sporely_taxon_id": 109502,
+        "superseded_sporely_taxon_id": 631182
+      },
+      {
+        "current_sporely_taxon_id": 109514,
+        "superseded_sporely_taxon_id": 631197
+      },
+      {
+        "current_sporely_taxon_id": 111582,
+        "superseded_sporely_taxon_id": 631212
+      },
+      {
+        "current_sporely_taxon_id": 112003,
+        "superseded_sporely_taxon_id": 631225
+      },
+      {
+        "current_sporely_taxon_id": 603850,
+        "superseded_sporely_taxon_id": 631245
+      },
+      {
+        "current_sporely_taxon_id": 58613,
+        "superseded_sporely_taxon_id": 631246
+      },
+      {
+        "current_sporely_taxon_id": 58617,
+        "superseded_sporely_taxon_id": 631251
+      },
+      {
+        "current_sporely_taxon_id": 63036,
+        "superseded_sporely_taxon_id": 631264
+      },
+      {
+        "current_sporely_taxon_id": 70461,
+        "superseded_sporely_taxon_id": 631280
+      },
+      {
+        "current_sporely_taxon_id": 60114,
+        "superseded_sporely_taxon_id": 631297
+      },
+      {
+        "current_sporely_taxon_id": 60119,
+        "superseded_sporely_taxon_id": 631303
+      },
+      {
+        "current_sporely_taxon_id": 60130,
+        "superseded_sporely_taxon_id": 631314
+      },
+      {
+        "current_sporely_taxon_id": 60133,
+        "superseded_sporely_taxon_id": 631316
+      },
+      {
+        "current_sporely_taxon_id": 60136,
+        "superseded_sporely_taxon_id": 631318
+      },
+      {
+        "current_sporely_taxon_id": 60138,
+        "superseded_sporely_taxon_id": 631320
+      },
+      {
+        "current_sporely_taxon_id": 60159,
+        "superseded_sporely_taxon_id": 631335
+      },
+      {
+        "current_sporely_taxon_id": 603640,
+        "superseded_sporely_taxon_id": 631336
+      },
+      {
+        "current_sporely_taxon_id": 60167,
+        "superseded_sporely_taxon_id": 631342
+      },
+      {
+        "current_sporely_taxon_id": 60171,
+        "superseded_sporely_taxon_id": 631343
+      },
+      {
+        "current_sporely_taxon_id": 60179,
+        "superseded_sporely_taxon_id": 631345
+      },
+      {
+        "current_sporely_taxon_id": 66522,
+        "superseded_sporely_taxon_id": 631353
+      },
+      {
+        "current_sporely_taxon_id": 605996,
+        "superseded_sporely_taxon_id": 631359
+      },
+      {
+        "current_sporely_taxon_id": 68492,
+        "superseded_sporely_taxon_id": 631372
+      },
+      {
+        "current_sporely_taxon_id": 68493,
+        "superseded_sporely_taxon_id": 631374
+      },
+      {
+        "current_sporely_taxon_id": 68495,
+        "superseded_sporely_taxon_id": 631375
+      },
+      {
+        "current_sporely_taxon_id": 68496,
+        "superseded_sporely_taxon_id": 631376
+      },
+      {
+        "current_sporely_taxon_id": 75525,
+        "superseded_sporely_taxon_id": 631382
+      },
+      {
+        "current_sporely_taxon_id": 75529,
+        "superseded_sporely_taxon_id": 631385
+      },
+      {
+        "current_sporely_taxon_id": 11278,
+        "superseded_sporely_taxon_id": 631390
+      },
+      {
+        "current_sporely_taxon_id": 131963,
+        "superseded_sporely_taxon_id": 631399
+      },
+      {
+        "current_sporely_taxon_id": 4064,
+        "superseded_sporely_taxon_id": 631407
+      },
+      {
+        "current_sporely_taxon_id": 4065,
+        "superseded_sporely_taxon_id": 631408
+      },
+      {
+        "current_sporely_taxon_id": 4066,
+        "superseded_sporely_taxon_id": 631409
+      },
+      {
+        "current_sporely_taxon_id": 97186,
+        "superseded_sporely_taxon_id": 631410
+      },
+      {
+        "current_sporely_taxon_id": 23730,
+        "superseded_sporely_taxon_id": 631433
+      },
+      {
+        "current_sporely_taxon_id": 23732,
+        "superseded_sporely_taxon_id": 631434
+      },
+      {
+        "current_sporely_taxon_id": 117628,
+        "superseded_sporely_taxon_id": 631445
+      },
+      {
+        "current_sporely_taxon_id": 51873,
+        "superseded_sporely_taxon_id": 631448
+      },
+      {
+        "current_sporely_taxon_id": 55512,
+        "superseded_sporely_taxon_id": 631456
+      },
+      {
+        "current_sporely_taxon_id": 132168,
+        "superseded_sporely_taxon_id": 631466
+      },
+      {
+        "current_sporely_taxon_id": 605616,
+        "superseded_sporely_taxon_id": 631471
+      },
+      {
+        "current_sporely_taxon_id": 137774,
+        "superseded_sporely_taxon_id": 631472
+      },
+      {
+        "current_sporely_taxon_id": 149022,
+        "superseded_sporely_taxon_id": 631474
+      },
+      {
+        "current_sporely_taxon_id": 117766,
+        "superseded_sporely_taxon_id": 631480
+      },
+      {
+        "current_sporely_taxon_id": 117738,
+        "superseded_sporely_taxon_id": 631483
+      },
+      {
+        "current_sporely_taxon_id": 65425,
+        "superseded_sporely_taxon_id": 631508
+      },
+      {
+        "current_sporely_taxon_id": 161257,
+        "superseded_sporely_taxon_id": 631517
+      },
+      {
+        "current_sporely_taxon_id": 605943,
+        "superseded_sporely_taxon_id": 631520
+      },
+      {
+        "current_sporely_taxon_id": 605946,
+        "superseded_sporely_taxon_id": 631521
+      },
+      {
+        "current_sporely_taxon_id": 605963,
+        "superseded_sporely_taxon_id": 631524
+      },
+      {
+        "current_sporely_taxon_id": 35421,
+        "superseded_sporely_taxon_id": 631556
+      },
+      {
+        "current_sporely_taxon_id": 35523,
+        "superseded_sporely_taxon_id": 631563
+      },
+      {
+        "current_sporely_taxon_id": 35819,
+        "superseded_sporely_taxon_id": 631574
+      },
+      {
+        "current_sporely_taxon_id": 36064,
+        "superseded_sporely_taxon_id": 631583
+      },
+      {
+        "current_sporely_taxon_id": 36067,
+        "superseded_sporely_taxon_id": 631587
+      },
+      {
+        "current_sporely_taxon_id": 36076,
+        "superseded_sporely_taxon_id": 631588
+      },
+      {
+        "current_sporely_taxon_id": 36273,
+        "superseded_sporely_taxon_id": 631597
+      },
+      {
+        "current_sporely_taxon_id": 66344,
+        "superseded_sporely_taxon_id": 631609
+      },
+      {
+        "current_sporely_taxon_id": 66719,
+        "superseded_sporely_taxon_id": 631613
+      },
+      {
+        "current_sporely_taxon_id": 68878,
+        "superseded_sporely_taxon_id": 631625
+      },
+      {
+        "current_sporely_taxon_id": 83151,
+        "superseded_sporely_taxon_id": 631685
+      },
+      {
+        "current_sporely_taxon_id": 605920,
+        "superseded_sporely_taxon_id": 631692
+      },
+      {
+        "current_sporely_taxon_id": 605927,
+        "superseded_sporely_taxon_id": 631697
+      },
+      {
+        "current_sporely_taxon_id": 605928,
+        "superseded_sporely_taxon_id": 631698
+      },
+      {
+        "current_sporely_taxon_id": 63563,
+        "superseded_sporely_taxon_id": 631706
+      },
+      {
+        "current_sporely_taxon_id": 11634,
+        "superseded_sporely_taxon_id": 631712
+      },
+      {
+        "current_sporely_taxon_id": 91430,
+        "superseded_sporely_taxon_id": 631726
+      },
+      {
+        "current_sporely_taxon_id": 12730,
+        "superseded_sporely_taxon_id": 631746
+      },
+      {
+        "current_sporely_taxon_id": 62993,
+        "superseded_sporely_taxon_id": 631766
+      },
+      {
+        "current_sporely_taxon_id": 132021,
+        "superseded_sporely_taxon_id": 631781
+      },
+      {
+        "current_sporely_taxon_id": 65611,
+        "superseded_sporely_taxon_id": 631792
+      },
+      {
+        "current_sporely_taxon_id": 31782,
+        "superseded_sporely_taxon_id": 631832
+      },
+      {
+        "current_sporely_taxon_id": 36769,
+        "superseded_sporely_taxon_id": 631854
+      },
+      {
+        "current_sporely_taxon_id": 87348,
+        "superseded_sporely_taxon_id": 631861
+      },
+      {
+        "current_sporely_taxon_id": 132010,
+        "superseded_sporely_taxon_id": 631879
+      },
+      {
+        "current_sporely_taxon_id": 24323,
+        "superseded_sporely_taxon_id": 631910
+      },
+      {
+        "current_sporely_taxon_id": 115330,
+        "superseded_sporely_taxon_id": 631935
+      },
+      {
+        "current_sporely_taxon_id": 63402,
+        "superseded_sporely_taxon_id": 631957
+      },
+      {
+        "current_sporely_taxon_id": 128113,
+        "superseded_sporely_taxon_id": 631969
+      },
+      {
+        "current_sporely_taxon_id": 110023,
+        "superseded_sporely_taxon_id": 632003
+      },
+      {
+        "current_sporely_taxon_id": 172146,
+        "superseded_sporely_taxon_id": 632004
+      },
+      {
+        "current_sporely_taxon_id": 123986,
+        "superseded_sporely_taxon_id": 632083
+      },
+      {
+        "current_sporely_taxon_id": 71114,
+        "superseded_sporely_taxon_id": 632086
+      },
+      {
+        "current_sporely_taxon_id": 125319,
+        "superseded_sporely_taxon_id": 632110
+      },
+      {
+        "current_sporely_taxon_id": 125318,
+        "superseded_sporely_taxon_id": 632111
+      },
+      {
+        "current_sporely_taxon_id": 125327,
+        "superseded_sporely_taxon_id": 632121
+      },
+      {
+        "current_sporely_taxon_id": 125330,
+        "superseded_sporely_taxon_id": 632134
+      },
+      {
+        "current_sporely_taxon_id": 117030,
+        "superseded_sporely_taxon_id": 632165
+      },
+      {
+        "current_sporely_taxon_id": 12765,
+        "superseded_sporely_taxon_id": 632171
+      },
+      {
+        "current_sporely_taxon_id": 12772,
+        "superseded_sporely_taxon_id": 632175
+      },
+      {
+        "current_sporely_taxon_id": 12780,
+        "superseded_sporely_taxon_id": 632182
+      },
+      {
+        "current_sporely_taxon_id": 612983,
+        "superseded_sporely_taxon_id": 632183
+      },
+      {
+        "current_sporely_taxon_id": 12354,
+        "superseded_sporely_taxon_id": 632235
+      },
+      {
+        "current_sporely_taxon_id": 43467,
+        "superseded_sporely_taxon_id": 632271
+      },
+      {
+        "current_sporely_taxon_id": 118836,
+        "superseded_sporely_taxon_id": 632280
+      },
+      {
+        "current_sporely_taxon_id": 112306,
+        "superseded_sporely_taxon_id": 632281
+      },
+      {
+        "current_sporely_taxon_id": 10660,
+        "superseded_sporely_taxon_id": 632343
+      },
+      {
+        "current_sporely_taxon_id": 110744,
+        "superseded_sporely_taxon_id": 632358
+      },
+      {
+        "current_sporely_taxon_id": 121158,
+        "superseded_sporely_taxon_id": 632359
+      },
+      {
+        "current_sporely_taxon_id": 131110,
+        "superseded_sporely_taxon_id": 632364
+      },
+      {
+        "current_sporely_taxon_id": 108348,
+        "superseded_sporely_taxon_id": 632370
+      },
+      {
+        "current_sporely_taxon_id": 42629,
+        "superseded_sporely_taxon_id": 632371
+      },
+      {
+        "current_sporely_taxon_id": 124190,
+        "superseded_sporely_taxon_id": 632381
+      },
+      {
+        "current_sporely_taxon_id": 5278,
+        "superseded_sporely_taxon_id": 632402
+      },
+      {
+        "current_sporely_taxon_id": 107864,
+        "superseded_sporely_taxon_id": 632437
+      },
+      {
+        "current_sporely_taxon_id": 71294,
+        "superseded_sporely_taxon_id": 632497
+      },
+      {
+        "current_sporely_taxon_id": 153715,
+        "superseded_sporely_taxon_id": 632505
+      },
+      {
+        "current_sporely_taxon_id": 153719,
+        "superseded_sporely_taxon_id": 632506
+      },
+      {
+        "current_sporely_taxon_id": 153721,
+        "superseded_sporely_taxon_id": 632508
+      },
+      {
+        "current_sporely_taxon_id": 615482,
+        "superseded_sporely_taxon_id": 632526
+      },
+      {
+        "current_sporely_taxon_id": 615490,
+        "superseded_sporely_taxon_id": 632531
+      },
+      {
+        "current_sporely_taxon_id": 105003,
+        "superseded_sporely_taxon_id": 632555
+      },
+      {
+        "current_sporely_taxon_id": 54326,
+        "superseded_sporely_taxon_id": 632628
+      },
+      {
+        "current_sporely_taxon_id": 54327,
+        "superseded_sporely_taxon_id": 632630
+      },
+      {
+        "current_sporely_taxon_id": 110651,
+        "superseded_sporely_taxon_id": 632633
+      },
+      {
+        "current_sporely_taxon_id": 54336,
+        "superseded_sporely_taxon_id": 632642
+      },
+      {
+        "current_sporely_taxon_id": 54347,
+        "superseded_sporely_taxon_id": 632653
+      },
+      {
+        "current_sporely_taxon_id": 54359,
+        "superseded_sporely_taxon_id": 632660
+      },
+      {
+        "current_sporely_taxon_id": 54360,
+        "superseded_sporely_taxon_id": 632661
+      },
+      {
+        "current_sporely_taxon_id": 114163,
+        "superseded_sporely_taxon_id": 632674
+      },
+      {
+        "current_sporely_taxon_id": 117716,
+        "superseded_sporely_taxon_id": 632712
+      },
+      {
+        "current_sporely_taxon_id": 117718,
+        "superseded_sporely_taxon_id": 632713
+      },
+      {
+        "current_sporely_taxon_id": 117722,
+        "superseded_sporely_taxon_id": 632714
+      },
+      {
+        "current_sporely_taxon_id": 117698,
+        "superseded_sporely_taxon_id": 632719
+      },
+      {
+        "current_sporely_taxon_id": 117712,
+        "superseded_sporely_taxon_id": 632723
+      },
+      {
+        "current_sporely_taxon_id": 117715,
+        "superseded_sporely_taxon_id": 632725
+      },
+      {
+        "current_sporely_taxon_id": 120167,
+        "superseded_sporely_taxon_id": 632743
+      },
+      {
+        "current_sporely_taxon_id": 120178,
+        "superseded_sporely_taxon_id": 632744
+      },
+      {
+        "current_sporely_taxon_id": 51215,
+        "superseded_sporely_taxon_id": 632750
+      },
+      {
+        "current_sporely_taxon_id": 28709,
+        "superseded_sporely_taxon_id": 632755
+      },
+      {
+        "current_sporely_taxon_id": 39022,
+        "superseded_sporely_taxon_id": 632775
+      },
+      {
+        "current_sporely_taxon_id": 39032,
+        "superseded_sporely_taxon_id": 632781
+      },
+      {
+        "current_sporely_taxon_id": 39033,
+        "superseded_sporely_taxon_id": 632783
+      },
+      {
+        "current_sporely_taxon_id": 39034,
+        "superseded_sporely_taxon_id": 632784
+      },
+      {
+        "current_sporely_taxon_id": 39036,
+        "superseded_sporely_taxon_id": 632785
+      },
+      {
+        "current_sporely_taxon_id": 119230,
+        "superseded_sporely_taxon_id": 632796
+      },
+      {
+        "current_sporely_taxon_id": 118748,
+        "superseded_sporely_taxon_id": 632802
+      },
+      {
+        "current_sporely_taxon_id": 118710,
+        "superseded_sporely_taxon_id": 632811
+      },
+      {
+        "current_sporely_taxon_id": 108853,
+        "superseded_sporely_taxon_id": 632819
+      },
+      {
+        "current_sporely_taxon_id": 119193,
+        "superseded_sporely_taxon_id": 632839
+      },
+      {
+        "current_sporely_taxon_id": 148753,
+        "superseded_sporely_taxon_id": 632843
+      },
+      {
+        "current_sporely_taxon_id": 119197,
+        "superseded_sporely_taxon_id": 632844
+      },
+      {
+        "current_sporely_taxon_id": 170920,
+        "superseded_sporely_taxon_id": 632854
+      },
+      {
+        "current_sporely_taxon_id": 110232,
+        "superseded_sporely_taxon_id": 632913
+      },
+      {
+        "current_sporely_taxon_id": 128318,
+        "superseded_sporely_taxon_id": 632920
+      },
+      {
+        "current_sporely_taxon_id": 14511,
+        "superseded_sporely_taxon_id": 632946
+      },
+      {
+        "current_sporely_taxon_id": 14549,
+        "superseded_sporely_taxon_id": 632951
+      },
+      {
+        "current_sporely_taxon_id": 33563,
+        "superseded_sporely_taxon_id": 632959
+      },
+      {
+        "current_sporely_taxon_id": 33622,
+        "superseded_sporely_taxon_id": 632966
+      },
+      {
+        "current_sporely_taxon_id": 167296,
+        "superseded_sporely_taxon_id": 632972
+      },
+      {
+        "current_sporely_taxon_id": 19492,
+        "superseded_sporely_taxon_id": 632986
+      },
+      {
+        "current_sporely_taxon_id": 42836,
+        "superseded_sporely_taxon_id": 632999
+      },
+      {
+        "current_sporely_taxon_id": 607597,
+        "superseded_sporely_taxon_id": 633032
+      },
+      {
+        "current_sporely_taxon_id": 10805,
+        "superseded_sporely_taxon_id": 633037
+      },
+      {
+        "current_sporely_taxon_id": 22579,
+        "superseded_sporely_taxon_id": 633047
+      },
+      {
+        "current_sporely_taxon_id": 107896,
+        "superseded_sporely_taxon_id": 633062
+      },
+      {
+        "current_sporely_taxon_id": 108130,
+        "superseded_sporely_taxon_id": 633066
+      },
+      {
+        "current_sporely_taxon_id": 108324,
+        "superseded_sporely_taxon_id": 633071
+      },
+      {
+        "current_sporely_taxon_id": 40191,
+        "superseded_sporely_taxon_id": 633074
+      },
+      {
+        "current_sporely_taxon_id": 123738,
+        "superseded_sporely_taxon_id": 633098
+      },
+      {
+        "current_sporely_taxon_id": 132896,
+        "superseded_sporely_taxon_id": 633099
+      },
+      {
+        "current_sporely_taxon_id": 49159,
+        "superseded_sporely_taxon_id": 633105
+      },
+      {
+        "current_sporely_taxon_id": 54968,
+        "superseded_sporely_taxon_id": 633109
+      },
+      {
+        "current_sporely_taxon_id": 54969,
+        "superseded_sporely_taxon_id": 633110
+      },
+      {
+        "current_sporely_taxon_id": 46801,
+        "superseded_sporely_taxon_id": 633132
+      },
+      {
+        "current_sporely_taxon_id": 153518,
+        "superseded_sporely_taxon_id": 633147
+      },
+      {
+        "current_sporely_taxon_id": 159832,
+        "superseded_sporely_taxon_id": 633175
+      },
+      {
+        "current_sporely_taxon_id": 93568,
+        "superseded_sporely_taxon_id": 633201
+      },
+      {
+        "current_sporely_taxon_id": 162808,
+        "superseded_sporely_taxon_id": 633213
+      },
+      {
+        "current_sporely_taxon_id": 51241,
+        "superseded_sporely_taxon_id": 633228
+      },
+      {
+        "current_sporely_taxon_id": 24777,
+        "superseded_sporely_taxon_id": 633271
+      },
+      {
+        "current_sporely_taxon_id": 24800,
+        "superseded_sporely_taxon_id": 633273
+      },
+      {
+        "current_sporely_taxon_id": 24939,
+        "superseded_sporely_taxon_id": 633280
+      },
+      {
+        "current_sporely_taxon_id": 612275,
+        "superseded_sporely_taxon_id": 633303
+      },
+      {
+        "current_sporely_taxon_id": 163570,
+        "superseded_sporely_taxon_id": 633306
+      },
+      {
+        "current_sporely_taxon_id": 7493,
+        "superseded_sporely_taxon_id": 633307
+      },
+      {
+        "current_sporely_taxon_id": 20305,
+        "superseded_sporely_taxon_id": 633312
+      },
+      {
+        "current_sporely_taxon_id": 20314,
+        "superseded_sporely_taxon_id": 633316
+      },
+      {
+        "current_sporely_taxon_id": 20327,
+        "superseded_sporely_taxon_id": 633317
+      },
+      {
+        "current_sporely_taxon_id": 109905,
+        "superseded_sporely_taxon_id": 633341
+      },
+      {
+        "current_sporely_taxon_id": 106213,
+        "superseded_sporely_taxon_id": 633350
+      },
+      {
+        "current_sporely_taxon_id": 105039,
+        "superseded_sporely_taxon_id": 633375
+      },
+      {
+        "current_sporely_taxon_id": 3801,
+        "superseded_sporely_taxon_id": 633403
+      },
+      {
+        "current_sporely_taxon_id": 43852,
+        "superseded_sporely_taxon_id": 633428
+      },
+      {
+        "current_sporely_taxon_id": 43927,
+        "superseded_sporely_taxon_id": 633432
+      },
+      {
+        "current_sporely_taxon_id": 43928,
+        "superseded_sporely_taxon_id": 633433
+      },
+      {
+        "current_sporely_taxon_id": 72911,
+        "superseded_sporely_taxon_id": 633439
+      },
+      {
+        "current_sporely_taxon_id": 25168,
+        "superseded_sporely_taxon_id": 633454
+      },
+      {
+        "current_sporely_taxon_id": 58121,
+        "superseded_sporely_taxon_id": 633480
+      },
+      {
+        "current_sporely_taxon_id": 90842,
+        "superseded_sporely_taxon_id": 633521
+      },
+      {
+        "current_sporely_taxon_id": 615437,
+        "superseded_sporely_taxon_id": 633523
+      },
+      {
+        "current_sporely_taxon_id": 615442,
+        "superseded_sporely_taxon_id": 633525
+      },
+      {
+        "current_sporely_taxon_id": 128385,
+        "superseded_sporely_taxon_id": 633551
+      },
+      {
+        "current_sporely_taxon_id": 128470,
+        "superseded_sporely_taxon_id": 633553
+      },
+      {
+        "current_sporely_taxon_id": 128479,
+        "superseded_sporely_taxon_id": 633554
+      },
+      {
+        "current_sporely_taxon_id": 131745,
+        "superseded_sporely_taxon_id": 633567
+      },
+      {
+        "current_sporely_taxon_id": 131746,
+        "superseded_sporely_taxon_id": 633568
+      },
+      {
+        "current_sporely_taxon_id": 131748,
+        "superseded_sporely_taxon_id": 633569
+      },
+      {
+        "current_sporely_taxon_id": 79179,
+        "superseded_sporely_taxon_id": 633574
+      },
+      {
+        "current_sporely_taxon_id": 79180,
+        "superseded_sporely_taxon_id": 633575
+      },
+      {
+        "current_sporely_taxon_id": 89730,
+        "superseded_sporely_taxon_id": 633576
+      },
+      {
+        "current_sporely_taxon_id": 58264,
+        "superseded_sporely_taxon_id": 633646
+      },
+      {
+        "current_sporely_taxon_id": 148806,
+        "superseded_sporely_taxon_id": 633647
+      },
+      {
+        "current_sporely_taxon_id": 124709,
+        "superseded_sporely_taxon_id": 633717
+      },
+      {
+        "current_sporely_taxon_id": 615505,
+        "superseded_sporely_taxon_id": 633743
+      },
+      {
+        "current_sporely_taxon_id": 110670,
+        "superseded_sporely_taxon_id": 633758
+      },
+      {
+        "current_sporely_taxon_id": 30952,
+        "superseded_sporely_taxon_id": 633761
+      },
+      {
+        "current_sporely_taxon_id": 83502,
+        "superseded_sporely_taxon_id": 633771
+      },
+      {
+        "current_sporely_taxon_id": 620940,
+        "superseded_sporely_taxon_id": 633774
+      },
+      {
+        "current_sporely_taxon_id": 94876,
+        "superseded_sporely_taxon_id": 633777
+      },
+      {
+        "current_sporely_taxon_id": 6190,
+        "superseded_sporely_taxon_id": 633778
+      },
+      {
+        "current_sporely_taxon_id": 17655,
+        "superseded_sporely_taxon_id": 633783
+      },
+      {
+        "current_sporely_taxon_id": 25862,
+        "superseded_sporely_taxon_id": 633785
+      },
+      {
+        "current_sporely_taxon_id": 25872,
+        "superseded_sporely_taxon_id": 633787
+      },
+      {
+        "current_sporely_taxon_id": 25874,
+        "superseded_sporely_taxon_id": 633788
+      },
+      {
+        "current_sporely_taxon_id": 25961,
+        "superseded_sporely_taxon_id": 633794
+      },
+      {
+        "current_sporely_taxon_id": 114706,
+        "superseded_sporely_taxon_id": 633796
+      },
+      {
+        "current_sporely_taxon_id": 60934,
+        "superseded_sporely_taxon_id": 633802
+      },
+      {
+        "current_sporely_taxon_id": 60936,
+        "superseded_sporely_taxon_id": 633803
+      },
+      {
+        "current_sporely_taxon_id": 60953,
+        "superseded_sporely_taxon_id": 633806
+      },
+      {
+        "current_sporely_taxon_id": 71318,
+        "superseded_sporely_taxon_id": 633808
+      },
+      {
+        "current_sporely_taxon_id": 124663,
+        "superseded_sporely_taxon_id": 633809
+      },
+      {
+        "current_sporely_taxon_id": 606302,
+        "superseded_sporely_taxon_id": 633823
+      },
+      {
+        "current_sporely_taxon_id": 92172,
+        "superseded_sporely_taxon_id": 633825
+      },
+      {
+        "current_sporely_taxon_id": 160907,
+        "superseded_sporely_taxon_id": 633842
+      },
+      {
+        "current_sporely_taxon_id": 18416,
+        "superseded_sporely_taxon_id": 633854
+      },
+      {
+        "current_sporely_taxon_id": 22879,
+        "superseded_sporely_taxon_id": 633860
+      },
+      {
+        "current_sporely_taxon_id": 50983,
+        "superseded_sporely_taxon_id": 633871
+      },
+      {
+        "current_sporely_taxon_id": 62821,
+        "superseded_sporely_taxon_id": 633879
+      },
+      {
+        "current_sporely_taxon_id": 165496,
+        "superseded_sporely_taxon_id": 633904
+      },
+      {
+        "current_sporely_taxon_id": 98784,
+        "superseded_sporely_taxon_id": 633907
+      },
+      {
+        "current_sporely_taxon_id": 98780,
+        "superseded_sporely_taxon_id": 633908
+      },
+      {
+        "current_sporely_taxon_id": 99330,
+        "superseded_sporely_taxon_id": 633909
+      },
+      {
+        "current_sporely_taxon_id": 98778,
+        "superseded_sporely_taxon_id": 633911
+      },
+      {
+        "current_sporely_taxon_id": 98777,
+        "superseded_sporely_taxon_id": 633915
+      },
+      {
+        "current_sporely_taxon_id": 98788,
+        "superseded_sporely_taxon_id": 633916
+      },
+      {
+        "current_sporely_taxon_id": 108300,
+        "superseded_sporely_taxon_id": 633928
+      },
+      {
+        "current_sporely_taxon_id": 61431,
+        "superseded_sporely_taxon_id": 633931
+      },
+      {
+        "current_sporely_taxon_id": 161008,
+        "superseded_sporely_taxon_id": 633950
+      },
+      {
+        "current_sporely_taxon_id": 167180,
+        "superseded_sporely_taxon_id": 634032
+      },
+      {
+        "current_sporely_taxon_id": 172705,
+        "superseded_sporely_taxon_id": 634076
+      },
+      {
+        "current_sporely_taxon_id": 6425,
+        "superseded_sporely_taxon_id": 634122
+      },
+      {
+        "current_sporely_taxon_id": 88771,
+        "superseded_sporely_taxon_id": 634142
+      },
+      {
+        "current_sporely_taxon_id": 88772,
+        "superseded_sporely_taxon_id": 634143
+      },
+      {
+        "current_sporely_taxon_id": 157426,
+        "superseded_sporely_taxon_id": 634147
+      },
+      {
+        "current_sporely_taxon_id": 157428,
+        "superseded_sporely_taxon_id": 634148
+      },
+      {
+        "current_sporely_taxon_id": 157434,
+        "superseded_sporely_taxon_id": 634150
+      },
+      {
+        "current_sporely_taxon_id": 171334,
+        "superseded_sporely_taxon_id": 634155
+      },
+      {
+        "current_sporely_taxon_id": 171337,
+        "superseded_sporely_taxon_id": 634157
+      },
+      {
+        "current_sporely_taxon_id": 2488,
+        "superseded_sporely_taxon_id": 634181
+      },
+      {
+        "current_sporely_taxon_id": 2489,
+        "superseded_sporely_taxon_id": 634183
+      },
+      {
+        "current_sporely_taxon_id": 2490,
+        "superseded_sporely_taxon_id": 634184
+      },
+      {
+        "current_sporely_taxon_id": 7036,
+        "superseded_sporely_taxon_id": 634193
+      },
+      {
+        "current_sporely_taxon_id": 101672,
+        "superseded_sporely_taxon_id": 634198
+      },
+      {
+        "current_sporely_taxon_id": 19488,
+        "superseded_sporely_taxon_id": 634199
+      },
+      {
+        "current_sporely_taxon_id": 116303,
+        "superseded_sporely_taxon_id": 634219
+      },
+      {
+        "current_sporely_taxon_id": 37554,
+        "superseded_sporely_taxon_id": 634221
+      },
+      {
+        "current_sporely_taxon_id": 120207,
+        "superseded_sporely_taxon_id": 634244
+      },
+      {
+        "current_sporely_taxon_id": 172038,
+        "superseded_sporely_taxon_id": 634254
+      },
+      {
+        "current_sporely_taxon_id": 51145,
+        "superseded_sporely_taxon_id": 634266
+      },
+      {
+        "current_sporely_taxon_id": 68185,
+        "superseded_sporely_taxon_id": 634284
+      },
+      {
+        "current_sporely_taxon_id": 123967,
+        "superseded_sporely_taxon_id": 634305
+      },
+      {
+        "current_sporely_taxon_id": 123970,
+        "superseded_sporely_taxon_id": 634307
+      },
+      {
+        "current_sporely_taxon_id": 123968,
+        "superseded_sporely_taxon_id": 634313
+      },
+      {
+        "current_sporely_taxon_id": 606187,
+        "superseded_sporely_taxon_id": 634314
+      },
+      {
+        "current_sporely_taxon_id": 71088,
+        "superseded_sporely_taxon_id": 634318
+      },
+      {
+        "current_sporely_taxon_id": 71095,
+        "superseded_sporely_taxon_id": 634332
+      },
+      {
+        "current_sporely_taxon_id": 74008,
+        "superseded_sporely_taxon_id": 634333
+      },
+      {
+        "current_sporely_taxon_id": 607108,
+        "superseded_sporely_taxon_id": 634342
+      },
+      {
+        "current_sporely_taxon_id": 75306,
+        "superseded_sporely_taxon_id": 634364
+      },
+      {
+        "current_sporely_taxon_id": 75311,
+        "superseded_sporely_taxon_id": 634369
+      },
+      {
+        "current_sporely_taxon_id": 75348,
+        "superseded_sporely_taxon_id": 634396
+      },
+      {
+        "current_sporely_taxon_id": 75381,
+        "superseded_sporely_taxon_id": 634439
+      },
+      {
+        "current_sporely_taxon_id": 94978,
+        "superseded_sporely_taxon_id": 634447
+      },
+      {
+        "current_sporely_taxon_id": 83084,
+        "superseded_sporely_taxon_id": 634454
+      },
+      {
+        "current_sporely_taxon_id": 94527,
+        "superseded_sporely_taxon_id": 634469
+      },
+      {
+        "current_sporely_taxon_id": 3177,
+        "superseded_sporely_taxon_id": 634471
+      },
+      {
+        "current_sporely_taxon_id": 3195,
+        "superseded_sporely_taxon_id": 634478
+      },
+      {
+        "current_sporely_taxon_id": 9220,
+        "superseded_sporely_taxon_id": 634494
+      },
+      {
+        "current_sporely_taxon_id": 153771,
+        "superseded_sporely_taxon_id": 634501
+      },
+      {
+        "current_sporely_taxon_id": 97796,
+        "superseded_sporely_taxon_id": 634506
+      },
+      {
+        "current_sporely_taxon_id": 9278,
+        "superseded_sporely_taxon_id": 634507
+      },
+      {
+        "current_sporely_taxon_id": 9279,
+        "superseded_sporely_taxon_id": 634508
+      },
+      {
+        "current_sporely_taxon_id": 91007,
+        "superseded_sporely_taxon_id": 634540
+      },
+      {
+        "current_sporely_taxon_id": 159325,
+        "superseded_sporely_taxon_id": 634544
+      },
+      {
+        "current_sporely_taxon_id": 80870,
+        "superseded_sporely_taxon_id": 634548
+      },
+      {
+        "current_sporely_taxon_id": 91268,
+        "superseded_sporely_taxon_id": 634549
+      },
+      {
+        "current_sporely_taxon_id": 91548,
+        "superseded_sporely_taxon_id": 634550
+      },
+      {
+        "current_sporely_taxon_id": 1776,
+        "superseded_sporely_taxon_id": 634553
+      },
+      {
+        "current_sporely_taxon_id": 103025,
+        "superseded_sporely_taxon_id": 634569
+      },
+      {
+        "current_sporely_taxon_id": 17977,
+        "superseded_sporely_taxon_id": 634585
+      },
+      {
+        "current_sporely_taxon_id": 17978,
+        "superseded_sporely_taxon_id": 634586
+      },
+      {
+        "current_sporely_taxon_id": 37409,
+        "superseded_sporely_taxon_id": 634614
+      },
+      {
+        "current_sporely_taxon_id": 76964,
+        "superseded_sporely_taxon_id": 634696
+      },
+      {
+        "current_sporely_taxon_id": 169582,
+        "superseded_sporely_taxon_id": 634721
+      },
+      {
+        "current_sporely_taxon_id": 70160,
+        "superseded_sporely_taxon_id": 634755
+      },
+      {
+        "current_sporely_taxon_id": 70212,
+        "superseded_sporely_taxon_id": 634756
+      },
+      {
+        "current_sporely_taxon_id": 70213,
+        "superseded_sporely_taxon_id": 634757
+      },
+      {
+        "current_sporely_taxon_id": 70217,
+        "superseded_sporely_taxon_id": 634758
+      },
+      {
+        "current_sporely_taxon_id": 123664,
+        "superseded_sporely_taxon_id": 634760
+      },
+      {
+        "current_sporely_taxon_id": 131359,
+        "superseded_sporely_taxon_id": 634762
+      },
+      {
+        "current_sporely_taxon_id": 163508,
+        "superseded_sporely_taxon_id": 634780
+      },
+      {
+        "current_sporely_taxon_id": 169267,
+        "superseded_sporely_taxon_id": 634781
+      },
+      {
+        "current_sporely_taxon_id": 37633,
+        "superseded_sporely_taxon_id": 634786
+      },
+      {
+        "current_sporely_taxon_id": 62776,
+        "superseded_sporely_taxon_id": 634789
+      },
+      {
+        "current_sporely_taxon_id": 131599,
+        "superseded_sporely_taxon_id": 634797
+      },
+      {
+        "current_sporely_taxon_id": 148216,
+        "superseded_sporely_taxon_id": 634805
+      },
+      {
+        "current_sporely_taxon_id": 108523,
+        "superseded_sporely_taxon_id": 634815
+      },
+      {
+        "current_sporely_taxon_id": 158975,
+        "superseded_sporely_taxon_id": 634820
+      },
+      {
+        "current_sporely_taxon_id": 132077,
+        "superseded_sporely_taxon_id": 634821
+      },
+      {
+        "current_sporely_taxon_id": 70811,
+        "superseded_sporely_taxon_id": 634825
+      },
+      {
+        "current_sporely_taxon_id": 68847,
+        "superseded_sporely_taxon_id": 634828
+      },
+      {
+        "current_sporely_taxon_id": 116961,
+        "superseded_sporely_taxon_id": 634837
+      },
+      {
+        "current_sporely_taxon_id": 90551,
+        "superseded_sporely_taxon_id": 634847
+      },
+      {
+        "current_sporely_taxon_id": 22739,
+        "superseded_sporely_taxon_id": 634852
+      },
+      {
+        "current_sporely_taxon_id": 81845,
+        "superseded_sporely_taxon_id": 634853
+      },
+      {
+        "current_sporely_taxon_id": 10784,
+        "superseded_sporely_taxon_id": 634854
+      },
+      {
+        "current_sporely_taxon_id": 10948,
+        "superseded_sporely_taxon_id": 634863
+      },
+      {
+        "current_sporely_taxon_id": 2487,
+        "superseded_sporely_taxon_id": 634876
+      },
+      {
+        "current_sporely_taxon_id": 68181,
+        "superseded_sporely_taxon_id": 634882
+      },
+      {
+        "current_sporely_taxon_id": 165774,
+        "superseded_sporely_taxon_id": 634888
+      },
+      {
+        "current_sporely_taxon_id": 70209,
+        "superseded_sporely_taxon_id": 634893
+      }
+    ],
+    "concept_supersessions_applied": 1353,
+    "cross_source_automatic_exact": 16424,
+    "cross_source_automatic_exact_by_rule": {
+      "missing_authorship_classification": 2133,
+      "strict": 14291
+    },
+    "cross_source_proposal_counts": {
+      "ambiguous": 81,
+      "automatic_exact": 16424,
+      "national_only": 6612,
+      "review_proposed": 7226
+    },
+    "distinct_sporely_taxon_ids": 633542,
+    "legacy_enrichment": {
+      "external_id_added": 16363,
+      "external_id_duplicate_skipped": 0,
+      "ignored_reason_already_in_stage3a": 0,
+      "input_rows": 131436,
+      "unresolved_nortaxa_taxonid": 88580,
+      "vernacular_added": 0,
+      "vernacular_duplicate_skipped": 0
+    },
+    "manual_mappings": 36088,
+    "mapping_relationship_counts": {
+      "exact": 22169,
+      "likely_exact": 7226,
+      "unresolved": 6693
+    },
+    "mapping_review_state_counts": {
+      "approved": 5745,
+      "needs_review": 7307,
+      "policy_auto_approved": 16424,
+      "unreviewed": 6612
+    },
+    "per_source_usage_count": {
+      "col_xr": 620976,
+      "dyntaxa": 9509,
+      "nortaxa": 61583
+    },
+    "registry_aliases": 57173,
+    "registry_anchors": 634895,
+    "rejected": 0,
+    "review_proposed": 7226,
+    "reviewed_identity_only_sources": {
+      "dyntaxa": {
+        "approved_mappings_not_applicable": {},
+        "bound_as_synonym": 7148,
+        "bound_by_manual_mapping": 2361,
+        "bound_usages": 9509,
+        "in_scope_non_synonym_usages": 19330,
+        "in_scope_synonym_usages": 29159,
+        "in_scope_usages": 48489,
+        "registry_aliases_withheld": 0,
+        "rule": "bound only by an approved manual mapping (or as the synonym of a usage so bound); never classified, automatically aliased or allocated",
+        "synonyms_left_unbound": 22011,
+        "vernacular_rows_attached": 1341,
+        "vernacular_rows_dropped_other_language": 203,
+        "vernacular_rows_dropped_unbound": 49435
+      }
+    },
+    "source_synonym_resolved": 35004,
+    "sporely_scope": {
+      "backbone": {
+        "kept": 620976,
+        "source_code": "col_xr"
+      },
+      "bridges": {
+        "dyntaxa": {
+          "ancestors_added": 0,
+          "dangling_parent_reference_count": 0,
+          "dropped_out_of_scope": 147815,
+          "fungi_seed": 48489,
+          "input": 196304,
+          "kept": 48489,
+          "unresolved_parent_references_after_scope": 0
+        },
+        "nortaxa": {
+          "ancestors_added": 0,
+          "dangling_parent_reference_count": 7,
+          "dropped_out_of_scope": 167437,
+          "fungi_seed": 61581,
+          "input": 229018,
+          "kept": 61581,
+          "unresolved_parent_references_after_scope": 7
+        }
+      }
+    },
+    "synonym_resolution": {
+      "cyclic_chain_samples": [],
+      "missing_target_samples": [],
+      "per_source": {
+        "dyntaxa": {
+          "accepted_target_out_of_scope_pulled_back_in": 0,
+          "chain_length_over_one": 0,
+          "cyclic": 0,
+          "missing_target": 0,
+          "self_reference": 0,
+          "synonym_rows_in_scope": 29159,
+          "synonym_rows_resolved": 29159
+        },
+        "nortaxa": {
+          "accepted_target_out_of_scope_pulled_back_in": 2,
+          "chain_length_over_one": 0,
+          "cyclic": 0,
+          "missing_target": 0,
+          "self_reference": 0,
+          "synonym_rows_in_scope": 27856,
+          "synonym_rows_resolved": 27856
+        }
+      },
+      "self_reference_samples": []
+    },
+    "unresolved_parent_references": 0,
+    "unresolved_parent_references_per_source": {},
+    "vernacular_rows_dropped_out_of_scope": 48465
+  },
+  "manifest_schema_version": 1,
+  "manual_mappings_sha256": "72316e436a5db5d8636ed5821ae45a6c39bc4a18c10e21a281af3cbf030de664",
+  "mapping_policy_sha256": "a5a329848c45fcd030165a51ad1193944dffe7573ddb2a9c69441f0d76ae4afb",
+  "outputs": {
+    "diagnostics": {
+      "bytes": 152623,
+      "name": "diagnostics.json",
+      "sha256": "e6ac4c28cd7f7572d56a3aff195e72304017de6d3005f60feb261796ce432ca0"
+    },
+    "legacy_enrichment_skips": {
+      "bytes": 35276895,
+      "name": "legacy_enrichment_skips.jsonl",
+      "sha256": "d3063e9d34da42d8a6a216861a20a65f1dff8e6f118c5dd7ff2178e82c34d89a"
+    },
+    "legacy_external_ids": {
+      "bytes": 7024184,
+      "name": "legacy_external_ids.jsonl",
+      "sha256": "7a227b51272c346033017f6cc19722277459abe2fb60c3f1c466a6694048a31e"
+    },
+    "mappings": {
+      "bytes": 32090297,
+      "name": "mappings.jsonl",
+      "sha256": "121e6c07312df566030dd7ef8731196b0f721330a6a5f9f065b4e5d159f7e0de"
+    },
+    "redlist_no": {
+      "bytes": 30317362,
+      "name": "redlist_no.jsonl",
+      "sha256": "b798d18b3cb286c25d4769fe2f212feb2558a8af3735c70791bfb5108c1d2f48"
+    },
+    "redlist_no_diagnostics": {
+      "bytes": 23001,
+      "name": "redlist_no_diagnostics.json",
+      "sha256": "7beab3ab5996779ac39d97ae548a78381d6f97434dbc5cc717ce7d53faddfa5c"
+    },
+    "source_usages": {
+      "bytes": 457901771,
+      "name": "source_usages.jsonl",
+      "sha256": "c1866553203efd5b5220049cea2bda8ed4189ebfbbb16817db7e9e5570506b26"
+    },
+    "taxa": {
+      "bytes": 477521784,
+      "name": "taxa.jsonl",
+      "sha256": "6f62167c34bececd88988b328711ff4f85e699c9545c2b81ca1a5b6fece453b2"
+    },
+    "vernacular": {
+      "bytes": 7535988,
+      "name": "vernacular.jsonl",
+      "sha256": "a62e7cf60249cb16e43df4afab57bcf2ecb795cfb0811894cb3bac7b1b432eeb"
+    },
+    "vernacular_changes": {
+      "bytes": 2437767,
+      "name": "vernacular_changes.json",
+      "sha256": "870094db390d84afc5bb51158da48b300a88be16850eaf1db2001ed642ad045a"
+    },
+    "vernacular_evidence": {
+      "bytes": 26992685,
+      "name": "vernacular_evidence.jsonl",
+      "sha256": "b5b292d194be726affd8f39e871b4f0c30d04febe64721dc9a73eb0cef24f2bd"
+    },
+    "vernacular_reviews": {
+      "bytes": 34527,
+      "name": "vernacular_reviews.json",
+      "sha256": "249604d0661963df34f1cedb75ff5dd4f04b0df18d4add8256b7fd0de4059a04"
+    }
+  },
+  "publication": "none",
+  "redlist_no": {
+    "counts": {
+      "ambiguous": 0,
+      "name_id_name_mismatch": 60,
+      "per_area": {
+        "Norge": 33047,
+        "Svalbard": 1124
+      },
+      "per_category": {
+        "CR": 309,
+        "DD": 741,
+        "EN": 1001,
+        "LC": 19134,
+        "NA": 3412,
+        "NE": 6446,
+        "NT": 1446,
+        "RE": 112,
+        "VU": 1570
+      },
+      "resolved": 7866,
+      "total": 34171,
+      "unresolved": 26305
+    },
+    "source_binding": {
+      "input_filename": "redlist-2021.xlsx",
+      "input_sha256": "c2fb6a5f4828defe371b1cb9978974bfd64a23101ad37bb715f260bd658bef04",
+      "row_count": 34171,
+      "sheet_name": "Vurderinger",
+      "source_release": "2021",
+      "source_system": "artsdatabanken_redlist"
+    }
+  },
+  "registry_sha256": "1cc2003a874e5deb2c0023bf8fd6fb74dd98b2ad656ee36d8755c15277c8adc9",
+  "source_bindings": [
+    {
+      "archive_sha256": "397d701c8eb269bf78d6ac7b03149915b0d9e2a2c18694be2c91445b807814f9",
+      "identifier_namespaces": {
+        "accepted_name_usage_id": "col_usage_id",
+        "core_row_id": "col_usage_id",
+        "parent_name_usage_id": "col_usage_id",
+        "taxon_id": "col_usage_id"
+      },
+      "record_counts": {
+        "Taxon": 620976,
+        "TaxonAncestor": 2,
+        "TaxonFungi": 620974
+      },
+      "source_code": "col_xr",
+      "source_release": {
+        "issued_date": "2026-07-17",
+        "version": "2026-07-17-XR"
+      },
+      "source_release_id": "col_xr:2026-07-17-XR:2026-07-17"
+    },
+    {
+      "archive_sha256": "7947b7a7681f3654d5478694f1fe37fdd9e72dc3aab8f9b6311525d85cc4879c",
+      "identifier_namespaces": {
+        "accepted_name_usage_id": "dyntaxa_accepted_name_usage_id",
+        "core_row_id": "dyntaxa_dwc_id",
+        "parent_name_usage_id": "dyntaxa_parent_name_usage_id",
+        "taxon_id": "dyntaxa_taxon_id"
+      },
+      "record_counts": {
+        "Distribution": 110776,
+        "Taxon": 196304,
+        "VernacularName": 50979
+      },
+      "source_code": "dyntaxa",
+      "source_release": {
+        "issued_date": "2026-09-30",
+        "version": "2026-09-30"
+      },
+      "source_release_id": "dyntaxa:2026-09-30:2026-09-30"
+    },
+    {
+      "archive_sha256": "29c11c54d955dc44e4e5a38944dd7932989a256d1b173777579b9f33abd2fe22",
+      "identifier_namespaces": {
+        "accepted_name_usage_id": "nortaxa_accepted_name_usage_id",
+        "core_row_id": "nortaxa_dwc_id",
+        "parent_name_usage_id": "nortaxa_parent_name_usage_id",
+        "taxon_id": "nortaxa_taxon_id"
+      },
+      "record_counts": {
+        "Distribution": 229018,
+        "Taxon": 229018,
+        "VernacularName": 58773
+      },
+      "source_code": "nortaxa",
+      "source_release": {
+        "issued_date": "2026-07-17",
+        "version": "1.284"
+      },
+      "source_release_id": "nortaxa:1.284:2026-07-17"
+    }
+  ],
+  "state": "candidate",
+  "taxonomy_schema_version": 2,
+  "vernacular_enrichment": {
+    "enabled": true,
+    "previous_evidence_sha256": null,
+    "previous_evidence_used_for_projection": false,
+    "review_ledger_sha256": "cbd2d0d9079b7ecf8b5a18d0952e7603920001d31357e90253395199a4965fc9",
+    "rule": "vernacular_only_exact_name_rank_full_universe_unique_current_v2",
+    "scope_policy_sha256": "e4e796286df93b5372264c702c824eea746f680b3b4e8d6467621c99e5b64ea6"
+  }
+}

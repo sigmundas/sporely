@@ -1,0 +1,648 @@
+{
+  "already_reaches_bundled_canonical": {
+    "distinct_name_language_pairs": 6401,
+    "source_usages": 3684,
+    "source_vernacular_rows": 6454
+  },
+  "already_reaches_cloud_canonical": {
+    "distinct_name_language_pairs": 4586,
+    "source_usages": 2357,
+    "source_vernacular_rows": 4622
+  },
+  "automatic": {
+    "distinct_name_language_pairs": 1478,
+    "source_usages": 691,
+    "source_vernacular_rows": 1485
+  },
+  "automatic_authorship_counts": {
+    "ex_authorship_form": 10,
+    "missing_on_one_or_both_sides": 2,
+    "other_difference_including_abbreviations": 478,
+    "punctuation_spacing_case_or_diacritics": 134,
+    "sanctioning_citation": 861
+  },
+  "bundle_cloud_discrepancies": [
+    {
+      "bundle_only": [
+        [
+          "nb",
+          "herbariemuggordenen"
+        ],
+        [
+          "nn",
+          "herbariemuggordenen"
+        ]
+      ],
+      "live_only": [],
+      "required_ancestor_only": true,
+      "target_sporely_taxon_id": 6128
+    },
+    {
+      "bundle_only": [
+        [
+          "nb",
+          "inoperkulate begersopper"
+        ],
+        [
+          "nb",
+          "småbegerordenen"
+        ],
+        [
+          "nn",
+          "inoperkulate begersoppar"
+        ],
+        [
+          "nn",
+          "småbegerordenen"
+        ]
+      ],
+      "live_only": [],
+      "required_ancestor_only": true,
+      "target_sporely_taxon_id": 8933
+    },
+    {
+      "bundle_only": [
+        [
+          "nb",
+          "rustsoppordenen"
+        ],
+        [
+          "nn",
+          "rustsoppordenen"
+        ]
+      ],
+      "live_only": [],
+      "required_ancestor_only": true,
+      "target_sporely_taxon_id": 26861
+    },
+    {
+      "bundle_only": [
+        [
+          "nb",
+          "tjæreflekkordenen"
+        ],
+        [
+          "nn",
+          "tjæreflekkordenen"
+        ]
+      ],
+      "live_only": [],
+      "required_ancestor_only": true,
+      "target_sporely_taxon_id": 28694
+    },
+    {
+      "bundle_only": [
+        [
+          "nb",
+          "gelésoppordenen"
+        ],
+        [
+          "nn",
+          "gelésoppordenen"
+        ]
+      ],
+      "live_only": [],
+      "required_ancestor_only": true,
+      "target_sporely_taxon_id": 39199
+    },
+    {
+      "bundle_only": [
+        [
+          "nb",
+          "stubbehornordenen"
+        ],
+        [
+          "nn",
+          "stubbehornordenen"
+        ]
+      ],
+      "live_only": [],
+      "required_ancestor_only": true,
+      "target_sporely_taxon_id": 83984
+    },
+    {
+      "bundle_only": [
+        [
+          "nb",
+          "sotsoppordenen"
+        ],
+        [
+          "nn",
+          "sotsoppordenen"
+        ]
+      ],
+      "live_only": [],
+      "required_ancestor_only": true,
+      "target_sporely_taxon_id": 83986
+    },
+    {
+      "bundle_only": [
+        [
+          "nb",
+          "kulesekksopper"
+        ],
+        [
+          "nn",
+          "kulesekksoppar"
+        ]
+      ],
+      "live_only": [],
+      "required_ancestor_only": true,
+      "target_sporely_taxon_id": 146495
+    },
+    {
+      "bundle_only": [
+        [
+          "nb",
+          "småbegersopper"
+        ],
+        [
+          "nn",
+          "småbegersoppar"
+        ]
+      ],
+      "live_only": [],
+      "required_ancestor_only": true,
+      "target_sporely_taxon_id": 151007
+    },
+    {
+      "bundle_only": [
+        [
+          "nb",
+          "ekte rustsopper"
+        ],
+        [
+          "nn",
+          "ekte rustsoppar"
+        ]
+      ],
+      "live_only": [],
+      "required_ancestor_only": true,
+      "target_sporely_taxon_id": 153922
+    },
+    {
+      "bundle_only": [
+        [
+          "nb",
+          "kjernesopper"
+        ],
+        [
+          "nn",
+          "kjernesoppar"
+        ]
+      ],
+      "live_only": [],
+      "required_ancestor_only": true,
+      "target_sporely_taxon_id": 156509
+    },
+    {
+      "bundle_only": [
+        [
+          "nb",
+          "ekte gelésopper"
+        ],
+        [
+          "nn",
+          "ekte gelésoppar"
+        ]
+      ],
+      "live_only": [],
+      "required_ancestor_only": true,
+      "target_sporely_taxon_id": 157108
+    },
+    {
+      "bundle_only": [
+        [
+          "nb",
+          "ekte sotsopper"
+        ],
+        [
+          "nn",
+          "ekte sotsoppar"
+        ]
+      ],
+      "live_only": [],
+      "required_ancestor_only": true,
+      "target_sporely_taxon_id": 157330
+    }
+  ],
+  "by_disposition": {
+    "already_reaches_cloud_unchanged": 4622,
+    "automatic_enrichment": 1485,
+    "exception": 257,
+    "outside_scope_or_no_exact_target": 49545
+  },
+  "by_rank": {
+    "class": {
+      "already_reaches_cloud_unchanged": 10,
+      "outside_scope_or_no_exact_target": 190
+    },
+    "cultivar": {
+      "outside_scope_or_no_exact_target": 8
+    },
+    "family": {
+      "outside_scope_or_no_exact_target": 2078
+    },
+    "form": {
+      "already_reaches_cloud_unchanged": 3,
+      "outside_scope_or_no_exact_target": 52
+    },
+    "genus": {
+      "already_reaches_cloud_unchanged": 276,
+      "automatic_enrichment": 241,
+      "exception": 89,
+      "outside_scope_or_no_exact_target": 3713
+    },
+    "infraclass": {
+      "outside_scope_or_no_exact_target": 3
+    },
+    "infraorder": {
+      "outside_scope_or_no_exact_target": 4
+    },
+    "kingdom": {
+      "outside_scope_or_no_exact_target": 16
+    },
+    "order": {
+      "already_reaches_cloud_unchanged": 42,
+      "outside_scope_or_no_exact_target": 569
+    },
+    "phylum": {
+      "outside_scope_or_no_exact_target": 154
+    },
+    "section": {
+      "outside_scope_or_no_exact_target": 70
+    },
+    "species": {
+      "already_reaches_cloud_unchanged": 4276,
+      "automatic_enrichment": 1238,
+      "exception": 168,
+      "outside_scope_or_no_exact_target": 39510
+    },
+    "subclass": {
+      "outside_scope_or_no_exact_target": 19
+    },
+    "subfamily": {
+      "outside_scope_or_no_exact_target": 475
+    },
+    "subgenus": {
+      "outside_scope_or_no_exact_target": 13
+    },
+    "suborder": {
+      "outside_scope_or_no_exact_target": 42
+    },
+    "subphylum": {
+      "outside_scope_or_no_exact_target": 33
+    },
+    "subspecies": {
+      "automatic_enrichment": 2,
+      "outside_scope_or_no_exact_target": 2060
+    },
+    "superclass": {
+      "outside_scope_or_no_exact_target": 4
+    },
+    "superfamily": {
+      "outside_scope_or_no_exact_target": 11
+    },
+    "superorder": {
+      "outside_scope_or_no_exact_target": 2
+    },
+    "tribe": {
+      "outside_scope_or_no_exact_target": 18
+    },
+    "variety": {
+      "already_reaches_cloud_unchanged": 15,
+      "automatic_enrichment": 4,
+      "outside_scope_or_no_exact_target": 501
+    }
+  },
+  "canonical_concepts_affected": 691,
+  "classification_disagreement_source_usages_by_level": {
+    "class": 8,
+    "family": 98,
+    "genus": 0,
+    "kingdom": 1,
+    "order": 23,
+    "phylum": 1
+  },
+  "compiler_manifest_sha256": "bf7eb27f5f9469ab0dd48a6288c15d789dda1b9d48940e93c3778a8fb07f3145",
+  "exception_reason_combinations_source_usages": {
+    "existing_same_language_vernacular_differs;higher_classification_disagreement;source_not_fungi": 1,
+    "existing_same_language_vernacular_differs;qualified_or_aggregate_source": 1,
+    "higher_classification_disagreement": 104,
+    "higher_classification_disagreement;multiple_canonical_targets_in_scope": 3,
+    "multiple_canonical_targets_in_scope": 5,
+    "qualified_or_aggregate_source": 9,
+    "source_nomenclatural_status_ambiguous": 4
+  },
+  "exception_reason_counts_rows": {
+    "existing_same_language_vernacular_differs": 6,
+    "higher_classification_disagreement": 221,
+    "multiple_canonical_targets_in_scope": 15,
+    "qualified_or_aggregate_source": 19,
+    "source_nomenclatural_status_ambiguous": 7,
+    "source_not_fungi": 2
+  },
+  "exception_reason_counts_source_usages": {
+    "existing_same_language_vernacular_differs": 2,
+    "higher_classification_disagreement": 108,
+    "multiple_canonical_targets_in_scope": 8,
+    "qualified_or_aggregate_source": 10,
+    "source_nomenclatural_status_ambiguous": 4,
+    "source_not_fungi": 1
+  },
+  "exceptions": {
+    "distinct_name_language_pairs": 256,
+    "source_usages": 127,
+    "source_vernacular_rows": 257
+  },
+  "existing_reviewed_decision_disagreement_rows": 0,
+  "fungal_source_norwegian": {
+    "distinct_name_language_pairs": 10093,
+    "source_usages": 5700,
+    "source_vernacular_rows": 10229
+  },
+  "invariants": {
+    "no_identity_or_external_id_outputs": true,
+    "no_release_build": true,
+    "selectable_live_bundle_norwegian_names_equal": true,
+    "sqlite_opened_read_only": true
+  },
+  "live_norwegian_rows": 4616,
+  "live_scope_concepts": 52917,
+  "live_snapshot_sha256": "1077e804dfcf2cb5c2c5c8f14a64903c1e3683f9656021548942c555e5f1c12f",
+  "new_export_rows": 1483,
+  "not_reaching_cloud_canonical": {
+    "distinct_name_language_pairs": 50678,
+    "source_usages": 30623,
+    "source_vernacular_rows": 51287
+  },
+  "outside_scope_reason_counts_rows": {
+    "no_exact_accepted_canonical_name": 47151,
+    "outside_current_cloud_scope": 2387,
+    "qualified_or_aggregate_source": 142,
+    "rank_mismatch": 7,
+    "source_nomenclatural_status_ambiguous": 257,
+    "source_not_fungi": 45678
+  },
+  "pins": {
+    "database/reference_data/generated/taxonomy_v2/tax-2026.09.30-01.sqlite3.gz": "593cd5379bffd53a81a54735ab0ad99b97e7ef890060d6483bed42e4150e907f",
+    "database/taxonomy/policies/concept_supersessions.yml": "04a77c05c694c97b599aae63c5852d7d2ba411a440c42cfa5104cc78a2e47033",
+    "database/taxonomy/policies/global-macrofungi-scope.yml": "e4e796286df93b5372264c702c824eea746f680b3b4e8d6467621c99e5b64ea6",
+    "database/taxonomy/policies/manual_mappings.yml": "72316e436a5db5d8636ed5821ae45a6c39bc4a18c10e21a281af3cbf030de664",
+    "database/taxonomy/policies/mapping_policy.yml": "a5a329848c45fcd030165a51ad1193944dffe7573ddb2a9c69441f0d76ae4afb",
+    "database/taxonomy/registry/canonical/manifest.json": "45e7b9cc9172ed755a325df5dc27a3c1989ebbb7a1093461f9374e65d8ddc45e",
+    "database/taxonomy/sources/col_xr/2026-07-17-XR/archive.zip": "397d701c8eb269bf78d6ac7b03149915b0d9e2a2c18694be2c91445b807814f9",
+    "database/taxonomy/sources/nortaxa/1.284/archive.zip": "29c11c54d955dc44e4e5a38944dd7932989a256d1b173777579b9f33abd2fe22"
+  },
+  "registry_sha256": "1cc2003a874e5deb2c0023bf8fd6fb74dd98b2ad656ee36d8755c15277c8adc9",
+  "regressions": {
+    "Arrhenia chlorocyanea": [
+      {
+        "authorship_diagnostics": [
+          {
+            "difference": "same",
+            "target_authorship": "(Pat.) Redhead, Lutzoni, Moncalvo & Vilgalys",
+            "target_sporely_taxon_id": 79753
+          }
+        ],
+        "classification_disagreements": [],
+        "disposition": "already_reaches_cloud_unchanged",
+        "existing_vernacular_conflicts": [],
+        "full_bundle_target_ids": [
+          79753
+        ],
+        "language": "nb",
+        "reasons": [],
+        "scoped_target_ids": [
+          79753
+        ],
+        "vernacular_name": "grønn navlesopp",
+        "warnings": []
+      },
+      {
+        "authorship_diagnostics": [
+          {
+            "difference": "same",
+            "target_authorship": "(Pat.) Redhead, Lutzoni, Moncalvo & Vilgalys",
+            "target_sporely_taxon_id": 79753
+          }
+        ],
+        "classification_disagreements": [],
+        "disposition": "already_reaches_cloud_unchanged",
+        "existing_vernacular_conflicts": [],
+        "full_bundle_target_ids": [
+          79753
+        ],
+        "language": "nn",
+        "reasons": [],
+        "scoped_target_ids": [
+          79753
+        ],
+        "vernacular_name": "grøn navlesopp",
+        "warnings": []
+      }
+    ],
+    "Helvella crispa": [
+      {
+        "authorship_diagnostics": [
+          {
+            "difference": "punctuation_spacing_case_or_diacritics",
+            "target_authorship": "(Scop.) Fr.",
+            "target_sporely_taxon_id": 14541
+          },
+          {
+            "difference": "other_difference_including_abbreviations",
+            "target_authorship": "Sowerby",
+            "target_sporely_taxon_id": 165172
+          }
+        ],
+        "classification_disagreements": [],
+        "disposition": "exception",
+        "existing_vernacular_conflicts": [],
+        "full_bundle_target_ids": [
+          14541,
+          165172
+        ],
+        "language": "nb",
+        "reasons": [
+          "multiple_canonical_targets_in_scope"
+        ],
+        "scoped_target_ids": [
+          14541,
+          165172
+        ],
+        "vernacular_name": "lys høstmorkel",
+        "warnings": [
+          "multiple_canonical_targets_in_full_bundle"
+        ]
+      },
+      {
+        "authorship_diagnostics": [
+          {
+            "difference": "punctuation_spacing_case_or_diacritics",
+            "target_authorship": "(Scop.) Fr.",
+            "target_sporely_taxon_id": 14541
+          },
+          {
+            "difference": "other_difference_including_abbreviations",
+            "target_authorship": "Sowerby",
+            "target_sporely_taxon_id": 165172
+          }
+        ],
+        "classification_disagreements": [],
+        "disposition": "exception",
+        "existing_vernacular_conflicts": [],
+        "full_bundle_target_ids": [
+          14541,
+          165172
+        ],
+        "language": "nn",
+        "reasons": [
+          "multiple_canonical_targets_in_scope"
+        ],
+        "scoped_target_ids": [
+          14541,
+          165172
+        ],
+        "vernacular_name": "lys haustmorkel",
+        "warnings": [
+          "multiple_canonical_targets_in_full_bundle"
+        ]
+      }
+    ],
+    "Henningsomyces puber": [
+      {
+        "authorship_diagnostics": [
+          {
+            "difference": "same",
+            "target_authorship": "(Romell ex W.B. Cooke) D.A. Reid",
+            "target_sporely_taxon_id": 14834
+          }
+        ],
+        "classification_disagreements": [
+          {
+            "level": "family",
+            "source": "Schizophyllaceae",
+            "target": "Marasmiaceae",
+            "target_sporely_taxon_id": 14834
+          }
+        ],
+        "disposition": "exception",
+        "existing_vernacular_conflicts": [],
+        "full_bundle_target_ids": [
+          14834,
+          165605
+        ],
+        "language": "nb",
+        "reasons": [
+          "higher_classification_disagreement"
+        ],
+        "scoped_target_ids": [
+          14834
+        ],
+        "vernacular_name": "dunpipe",
+        "warnings": [
+          "multiple_canonical_targets_in_full_bundle"
+        ]
+      },
+      {
+        "authorship_diagnostics": [
+          {
+            "difference": "same",
+            "target_authorship": "(Romell ex W.B. Cooke) D.A. Reid",
+            "target_sporely_taxon_id": 14834
+          }
+        ],
+        "classification_disagreements": [
+          {
+            "level": "family",
+            "source": "Schizophyllaceae",
+            "target": "Marasmiaceae",
+            "target_sporely_taxon_id": 14834
+          }
+        ],
+        "disposition": "exception",
+        "existing_vernacular_conflicts": [],
+        "full_bundle_target_ids": [
+          14834,
+          165605
+        ],
+        "language": "nn",
+        "reasons": [
+          "higher_classification_disagreement"
+        ],
+        "scoped_target_ids": [
+          14834
+        ],
+        "vernacular_name": "dunpipe",
+        "warnings": [
+          "multiple_canonical_targets_in_full_bundle"
+        ]
+      }
+    ],
+    "Russula aeruginea": [
+      {
+        "authorship_diagnostics": [
+          {
+            "difference": "ex_authorship_form",
+            "target_authorship": "Lindblad ex Fr.",
+            "target_sporely_taxon_id": 61673
+          }
+        ],
+        "classification_disagreements": [],
+        "disposition": "automatic_enrichment",
+        "existing_vernacular_conflicts": [],
+        "full_bundle_target_ids": [
+          61673
+        ],
+        "language": "nb",
+        "reasons": [
+          "exact_name_rank_unique_current_no_contradiction"
+        ],
+        "scoped_target_ids": [
+          61673
+        ],
+        "vernacular_name": "grønnkremle",
+        "warnings": []
+      },
+      {
+        "authorship_diagnostics": [
+          {
+            "difference": "ex_authorship_form",
+            "target_authorship": "Lindblad ex Fr.",
+            "target_sporely_taxon_id": 61673
+          }
+        ],
+        "classification_disagreements": [],
+        "disposition": "automatic_enrichment",
+        "existing_vernacular_conflicts": [],
+        "full_bundle_target_ids": [
+          61673
+        ],
+        "language": "nn",
+        "reasons": [
+          "exact_name_rank_unique_current_no_contradiction"
+        ],
+        "scoped_target_ids": [
+          61673
+        ],
+        "vernacular_name": "grønkremle",
+        "warnings": []
+      }
+    ]
+  },
+  "release_id": "tax-2026.09.30-01",
+  "required_ancestor_concepts": 36,
+  "selectable_cloud_concepts": 52881,
+  "stage2_no_cross_reference_automatic_rows": 1203,
+  "stranded_on_source_bound_concept": {
+    "distinct_name_language_pairs": 5541,
+    "source_usages": 3343,
+    "source_vernacular_rows": 5607
+  },
+  "total_nortaxa_norwegian": {
+    "distinct_name_language_pairs": 55230,
+    "source_usages": 32980,
+    "source_vernacular_rows": 55909
+  }
+}
