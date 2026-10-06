@@ -66,9 +66,18 @@ the build directory: input hashes, determinism result, registry state, and a
 coverage summary (taxa, vernacular languages, external-ID sources) with its
 difference from the bundled release. A full build takes about seven minutes.
 It changes nothing in the repository until you add `--promote`, which also
-refuses a non-deterministic build or one that allocated new IDs. Promotion
-writes the deterministic gzip and manifest, removes the superseded gzip and
-updates `desktop-compatibility.json`. Use `--archive-root` when the
+refuses a non-deterministic build or one that allocated new IDs, and requires
+`--expect-freeze-sha256 <reviewed>`: it refuses before building when that is
+missing and before any bundle write when the fresh freeze differs. The
+documented reviewed-publication path never uses `--promote`; it publishes the
+reviewed frozen directory with `promote_desktop_bundle.py` (below). The build prepares a frozen publication directory when a current bundle
+baseline is available. Freeze produces the deterministic SQLite gzip, full
+compiler evidence archive, publication manifest and compatibility bytes, and
+fingerprints them in `freeze.json`. Promotion validates and copies those exact
+bytes, removes the superseded SQLite gzip and retains older evidence archives.
+It cannot compile, compress or regenerate evidence. It also publishes the frozen
+descriptor as `<release>.freeze.json` so the complete publication set remains
+verifiable. Use `--archive-root` when the
 gitignored archives live in another checkout.
 
 Rules for a release candidate:
@@ -269,3 +278,34 @@ Architecture decisions: `docs/architecture/decisions/0001`, `0002`, `0005`.
 .venv/bin/python database/taxonomy/validate_policies.py
 .venv/bin/pytest -q database/taxonomy/tests
 ```
+
+### Freeze and publish separately
+
+`freeze_release.py` accepts an already validated compiler/SQLite set and a
+validation receipt binding their SHA-256 values. It checks every compiler output,
+SQLite metadata and pinned enrichment counts, then archives all compiler outputs
+(including vernacular evidence, reviewed decisions and change report) plus the
+receipt and named evidence inputs. The archive inventories and hashes every
+member. Source archives remain separately pinned; the evidence archive retains
+their acquisition records and normalized provenance. Empty/dangling COL metadata
+has explicit normalization diagnostics. No historical names are restored.
+
+Reviewed publication is two separate steps. Build twice independently (no
+`--promote`) and require byte-identical `frozen/` directories; review that
+frozen set and record its `freeze.json` SHA-256. Then publish exactly those
+reviewed bytes — nothing is rebuilt — with:
+
+```bash
+.venv/bin/python database/taxonomy/scripts/promote_desktop_bundle.py \
+  --frozen-dir /path/to/build/frozen \
+  --expect-freeze-sha256 <reviewed-sha256-of-freeze.json>
+```
+
+Promotion requires the unchanged baseline manifest/compatibility (or an identical
+already-published set) and committed registry. Any artifact mismatch fails before
+publication writes. Evidence archives and freeze descriptors are immutable per
+release; promotion never deletes previous evidence. `compiler_evidence` in the
+bundle manifest binds the archive filename, size and SHA-256. The compact SQLite
+schema is unchanged. Future release comparison must explicitly supply a previous
+compiler `vernacular_evidence.jsonl` from the verified archive; it supplies change
+lineage only, never current projected names.
