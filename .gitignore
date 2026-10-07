@@ -70,6 +70,11 @@ database/reference_data/generated/*
 database/reference_data/generated/taxonomy_v2/*
 !database/reference_data/generated/taxonomy_v2/manifest.json
 !database/reference_data/generated/taxonomy_v2/tax-*.sqlite3.gz
+# Per-release freeze descriptors are tracked. Compiler evidence archives
+# (tax-*.evidence.tar.gz) stay ignored; they live in external release storage
+# recorded in tax-*.evidence-location.json.
+!database/reference_data/generated/taxonomy_v2/tax-*.freeze.json
+!database/reference_data/generated/taxonomy_v2/tax-*.evidence-location.json
 database/reference_data/generated/*.sqlite3
 database/reference_data/generated/artportalen_scope.sqlite3
 
