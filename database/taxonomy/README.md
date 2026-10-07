@@ -80,6 +80,16 @@ descriptor as `<release>.freeze.json` so the complete publication set remains
 verifiable. Use `--archive-root` when the
 gitignored archives live in another checkout.
 
+`<release>.freeze.json` is tracked in git. The compiler evidence archive
+(`<release>.evidence.tar.gz`, tens of MB) stays gitignored. Its durable copy is
+in the private Cloudflare R2 bucket `sporely-release-evidence`, under the
+content-addressed key `taxonomy/evidence/sha256/<sha256>.tar.gz`, which a
+bucket lock keeps from being overwritten or deleted.
+`<release>.evidence-location.json` records the key, SHA-256, size, retrieval
+command and the verification of a fresh download. Upload a new release's
+archive with a bucket-scoped S3 key and `If-None-Match: *`. Then download it
+again and run `verify_frozen` on it before any cloud publication.
+
 Rules for a release candidate:
 
 - **Determinism.** Every compile output, the post-compile registry and the

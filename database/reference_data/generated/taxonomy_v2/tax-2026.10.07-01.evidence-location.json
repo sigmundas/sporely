@@ -1,0 +1,27 @@
+{
+  "format": "sporely-evidence-location-v1",
+  "content_release_id": "tax-2026.10.07-01",
+  "freeze_sha256": "a86e35854fd4d01984d8b8fe121d8fc318e75a01876d243975847127462fd14e",
+  "artifact": "tax-2026.10.07-01.evidence.tar.gz",
+  "sha256": "e2d1dfcaa261457fe1ae1392783c503ae56b833c7652a259056103012c089424",
+  "bytes": 53372637,
+  "storage": {
+    "provider": "cloudflare-r2",
+    "access": "private",
+    "bucket": "sporely-release-evidence",
+    "object_key": "taxonomy/evidence/sha256/e2d1dfcaa261457fe1ae1392783c503ae56b833c7652a259056103012c089424.tar.gz",
+    "endpoint": "https://${R2_ACCOUNT_ID}.r2.cloudflarestorage.com",
+    "immutability": "bucket lock rule 'taxonomy' on prefix taxonomy/evidence/sha256/, retention indefinite; uploaded with If-None-Match: *",
+    "uploaded_at": "2026-10-07T11:03:55Z",
+    "credentials": "R2 S3-client access key scoped to this bucket, read from ~/.config/sporely/r2-release-evidence.env (R2_ACCOUNT_ID, R2_BUCKET, R2_ACCESS_KEY_ID, R2_SECRET_ACCESS_KEY); never committed"
+  },
+  "retrieve": "set -a; . ~/.config/sporely/r2-release-evidence.env; set +a; curl -sSf --aws-sigv4 aws:amz:auto:s3 --user \"$R2_ACCESS_KEY_ID:$R2_SECRET_ACCESS_KEY\" -o tax-2026.10.07-01.evidence.tar.gz \"https://$R2_ACCOUNT_ID.r2.cloudflarestorage.com/$R2_BUCKET/taxonomy/evidence/sha256/e2d1dfcaa261457fe1ae1392783c503ae56b833c7652a259056103012c089424.tar.gz\"",
+  "verify": "Check sha256 and bytes above, then place the archive beside freeze.json (this release's tax-2026.10.07-01.freeze.json), manifest.json, compatibility.json (database/taxonomy/desktop-compatibility.json) and the sqlite3.gz and run promote_desktop_bundle.verify_frozen on that directory.",
+  "retrieval_verified": {
+    "at": "2026-10-07",
+    "downloaded_sha256": "e2d1dfcaa261457fe1ae1392783c503ae56b833c7652a259056103012c089424",
+    "downloaded_bytes": 53372637,
+    "verify_frozen": "pass",
+    "overwrite_attempt": "refused (HTTP 409); object unchanged"
+  }
+}
