@@ -1,0 +1,100 @@
+{
+  "start_utc": "2026-10-07T12:07:42.719066+00:00",
+  "project_ref": "zkpjklzfwzefhjluvhfw",
+  "previous_release": "tax-2026.09.30-01",
+  "checks": {
+    "taxonomy_v2_taxa": {
+      "before_count": 52917,
+      "expected_count": 52917,
+      "before_sha256": "2148f776827071a93c665ad280fb67f2fc554de7e4eaa030e4924311d2a4871d",
+      "candidate_sha256": "2148f776827071a93c665ad280fb67f2fc554de7e4eaa030e4924311d2a4871d",
+      "production_only": 0,
+      "candidate_only": 0
+    },
+    "taxonomy_v2_scientific_names": {
+      "before_count": 60697,
+      "expected_count": 60697,
+      "before_sha256": "5e8dc92f454acd34f2cfaf508eeab1c7d5542f9dae2f8bc8ab92f2530ee0556e",
+      "candidate_sha256": "5e8dc92f454acd34f2cfaf508eeab1c7d5542f9dae2f8bc8ab92f2530ee0556e",
+      "production_only": 0,
+      "candidate_only": 0
+    },
+    "taxonomy_v2_external_ids": {
+      "before_count": 56959,
+      "expected_count": 56959,
+      "before_sha256": "0137a25cfb864899d7be2c0a6db768504ed857469e18696922e71da5b8895e68",
+      "candidate_sha256": "0137a25cfb864899d7be2c0a6db768504ed857469e18696922e71da5b8895e68",
+      "production_only": 0,
+      "candidate_only": 0
+    },
+    "taxonomy_v2_redlist": {
+      "before_count": 2600,
+      "expected_count": 2600,
+      "before_sha256": "a94557600278f9546a1ca75c797ec10911d43b1a1842f8a4b8bfc5ffb51637fe",
+      "candidate_sha256": "a94557600278f9546a1ca75c797ec10911d43b1a1842f8a4b8bfc5ffb51637fe",
+      "production_only": 0,
+      "candidate_only": 0
+    },
+    "taxonomy_v3.registry_concept": {
+      "before_count": 209,
+      "before_sha256": "bea6d6220b4dc0217949c045e26a6162b9e322c8d445b94cc2f656a67654896d"
+    },
+    "taxonomy_v3.external_mapping": {
+      "before_count": 145,
+      "before_sha256": "6f80e23e22e15ba6d562d3a1b3127851c1cb7db01c777c18ee9db795d03e6b0a"
+    },
+    "taxonomy_v3.identification_snapshot": {
+      "before_count": 369,
+      "before_sha256": "0c1148d8d8fbb669678c4c4bd96ce2dc2942821d58e785fa0d1711dd8f18c578"
+    },
+    "taxonomy_v3.resolution_link": {
+      "before_count": 369,
+      "before_sha256": "b52a6faefcdef4568c2989fb095438d064e3efcca9023102ccafe5e5c394b941"
+    },
+    "taxonomy_v3.release_installation": {
+      "before_count": 3,
+      "before_sha256": "92144e00eae0e3d25d8f9fc7130123796cdf86c14b38b994a6ab055f4a30e9a6"
+    },
+    "taxonomy_v3.supplement_installation": {
+      "before_count": 1,
+      "before_sha256": "e6d5671ede2707a3c4981f8f683b60d804080e9cb32d88915f9fb6139eb48599"
+    },
+    "taxonomy_v3.reconciliation_manifest_audit": {
+      "before_count": 1,
+      "before_sha256": "974dac4e9dcbe53777cc9c315b3942f258fe8bb3afc19887e9840fcbfca30e36"
+    }
+  },
+  "writes_occurred": false,
+  "state": {
+    "runs": 0,
+    "active": [
+      "tax-2026.09.30-01"
+    ],
+    "target": 0,
+    "concepts": 52917,
+    "validation": {
+      "ok": true,
+      "errors": [],
+      "status": "active",
+      "release_id": "tax-2026.09.30-01",
+      "actual_counts": {
+        "taxon.jsonl": 52917,
+        "vernacular.jsonl": 13760,
+        "taxon_redlist.jsonl": 2600,
+        "scientific_name.jsonl": 60697,
+        "taxon_external_id.jsonl": 56959,
+        "taxon_external_id_legacy_integer.jsonl": 0
+      },
+      "expected_counts": {
+        "taxon.jsonl": 52917,
+        "vernacular.jsonl": 13760,
+        "taxon_redlist.jsonl": 2600,
+        "scientific_name.jsonl": 60697,
+        "taxon_external_id.jsonl": 56959,
+        "taxon_external_id_legacy_integer.jsonl": 0
+      }
+    }
+  },
+  "end_utc": "2026-10-07T12:08:04.314381+00:00",
+  "result": "READ_ONLY_PREFLIGHT_PASS"
+}

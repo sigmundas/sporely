@@ -1,0 +1,32 @@
+{
+ "rows": [
+  {
+   "genus": "Fungi",
+   "family": null,
+   "release_id": "tax-2026.10.07-01",
+   "taxon_rank": "kingdom",
+   "source_system": "col_xr",
+   "specific_epithet": "",
+   "sporely_taxon_id": 152331,
+   "taxonomic_status": "accepted",
+   "canonical_external_id": "F",
+   "canonical_source_system": "col_xr",
+   "parent_sporely_taxon_id": 150361,
+   "canonical_scientific_name": "Fungi",
+   "preferred_scientific_name_no": null,
+   "preferred_scientific_name_sv": null,
+   "preferred_scientific_name_no_namespace": null,
+   "preferred_scientific_name_sv_namespace": null,
+   "preferred_scientific_name_no_external_id": null,
+   "preferred_scientific_name_sv_external_id": null,
+   "preferred_scientific_name_no_source_system": null,
+   "preferred_scientific_name_sv_source_system": null
+  }
+ ],
+ "per_release": {
+  "tax-2026.08.01-01": 1,
+  "tax-2026.09.26-02": 1,
+  "tax-2026.09.30-01": 1,
+  "tax-2026.10.07-01": 1
+ }
+}

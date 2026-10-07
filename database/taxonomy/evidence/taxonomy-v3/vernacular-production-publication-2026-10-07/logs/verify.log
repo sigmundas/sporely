@@ -1,0 +1,43 @@
+state {"active": ["tax-2026.10.07-01"], "timeout": "2min", "concepts": 52917, "releases": [{"status": "retired", "release_id": "tax-2026.08.01-01"}, {"status": "retired", "release_id": "tax-2026.09.26-02"}, {"status": "retired", "release_id": "tax-2026.09.30-01"}, {"status": "active", "release_id": "tax-2026.10.07-01"}], "national_errors": [], "new_vernaculars": 59884, "dangling_parents": 1, "prev_vernaculars": 13760, "validator_source_matches": true, "validator_security_unchanged": true}
+timing {'full_validator': 840.12, 'parent_check': 170.032}
+changed tables ['public.taxonomy_v2_releases', 'public.taxonomy_v2_import_runs']
+taxonomy_v2_taxa {"after_count": 52917, "expected_count": 52917, "after_sha256": "2148f776827071a93c665ad280fb67f2fc554de7e4eaa030e4924311d2a4871d", "candidate_sha256": "2148f776827071a93c665ad280fb67f2fc554de7e4eaa030e4924311d2a4871d", "unexpected_rows": 0, "missing_rows": 0, "duplicates": 0, "unchanged_from_baseline": true}
+taxonomy_v2_scientific_names {"after_count": 60697, "expected_count": 60697, "after_sha256": "5e8dc92f454acd34f2cfaf508eeab1c7d5542f9dae2f8bc8ab92f2530ee0556e", "candidate_sha256": "5e8dc92f454acd34f2cfaf508eeab1c7d5542f9dae2f8bc8ab92f2530ee0556e", "unexpected_rows": 0, "missing_rows": 0, "duplicates": 0, "unchanged_from_baseline": true}
+taxonomy_v2_external_ids {"after_count": 56959, "expected_count": 56959, "after_sha256": "0137a25cfb864899d7be2c0a6db768504ed857469e18696922e71da5b8895e68", "candidate_sha256": "0137a25cfb864899d7be2c0a6db768504ed857469e18696922e71da5b8895e68", "unexpected_rows": 0, "missing_rows": 0, "duplicates": 0, "unchanged_from_baseline": true}
+taxonomy_v2_redlist {"after_count": 2600, "expected_count": 2600, "after_sha256": "a94557600278f9546a1ca75c797ec10911d43b1a1842f8a4b8bfc5ffb51637fe", "candidate_sha256": "a94557600278f9546a1ca75c797ec10911d43b1a1842f8a4b8bfc5ffb51637fe", "unexpected_rows": 0, "missing_rows": 0, "duplicates": 0, "unchanged_from_baseline": true}
+taxonomy_v2_vernacular_names {"after_count": 59884, "expected_count": 59884, "after_sha256": "3328b46818d4504cdc89989e31fda44410a76d5ca821b8b5a1e937e39944c391", "candidate_sha256": "3328b46818d4504cdc89989e31fda44410a76d5ca821b8b5a1e937e39944c391", "unexpected_rows": 0, "missing_rows": 0, "duplicates": 0}
+spelling {'checked': 357, 'current_missing': 0, 'historical_present': 0}
+probe grønnkremle True True [(61673, 'Russula aeruginea', 'grønnkremle')]
+probe grønkremle True True [(61673, 'Russula aeruginea', 'grønkremle')]
+probe lys høstmorkel True True [(14541, 'Helvella crispa', 'lys høstmorkel')]
+probe lys haustmorkel True True [(14541, 'Helvella crispa', 'lys haustmorkel')]
+probe dunpipe True True [(14834, 'Henningsomyces puber', 'dunpipe')]
+probe dråpeknippesopp True True [(103130, 'Hypsizygus tessulatus', 'dråpeknippesopp')]
+probe snylterørsopp True True [(52936, 'Pseudoboletus parasiticus', 'snylterørsopp')]
+probe tårekjuke True True [(54615, 'Pseudoinonotus dryadeus', 'tårekjuke')]
+probe gul ekornnøtt True True [(60559, 'Rhizopogon luteolus', 'gul ekornnøtt')]
+probe oliven rådyrslørsopp True True [(618912, 'Cortinarius milvinicolor', 'oliven rådyrslørsopp')]
+probe slank vedkorallsopp True True [(23749, 'Lentaria micheneri', 'slank vedkorallsopp')]
+probe norsk flammekorallsopp True True [(58693, 'Ramaria conjunctipes', 'norsk flammekorallsopp')]
+probe sumpreddikhette True True [(34794, 'Mycena pearsoniana', 'sumpreddikhette')]
+probe rognerust True True [(100280, 'Gymnosporangium cornutum', 'rognerust')]
+probe gråfiolett køllesopp True True [(146835, 'Alloclavaria purpurea', 'gråfiolett køllesopp')]
+probe grønn navlesopp True True [(79753, 'Arrhenia chlorocyanea', 'grønn navlesopp')]
+probe grøn navlesopp True True [(79753, 'Arrhenia chlorocyanea', 'grøn navlesopp')]
+probe taigarødtuppsopp True True [(58814, 'Ramaria rubrievanescens', 'taigarødtuppsopp')]
+probe rosenekornnøtt True True [(60590, 'Rhizopogon roseolus', 'rosenekornnøtt')]
+probe blekgul køllesopp True True [(82459, 'Clavaria flavostellifera', 'blekgul køllesopp')]
+probe silkerødspore True True [(96276, 'Entoloma sericellum', 'silkerødspore')]
+probe gullkorallsopp True True [(58668, 'Ramaria brunneicontusa', 'gullkorallsopp')]
+probe sørlig rødtuppsopp True  []
+probe sørleg rødtuppsopp True  []
+probe knolltrevlesopp True  [(18575, 'Inocybe asterospora', 'knolltrevlesopp')]
+probe silkerødspore-gruppen True  []
+probe silkeraudspore-gruppa True  []
+probe falsk lindekorallsopp True  []
+probe blek rødtuppsopp True  []
+probe strøkjuke True  [(65711, 'Sistotrema albopallescens', 'strøkjuke')]
+probe Gul korallsopp True  [(58818, 'Ramaria safraniolens', 'gul korallsopp')]
+probe Rustoker grynhatt True  [(1041, 'Cystoderma jasonis', 'rustoker grynhatt')]
+probe Rødbrun flathatt True  [(60670, 'Rhodocollybia butyracea', 'rødbrun flathatt')]
+PRODUCTION_RELEASE_VERIFIED_WITH_NONBLOCKING_FINDINGS

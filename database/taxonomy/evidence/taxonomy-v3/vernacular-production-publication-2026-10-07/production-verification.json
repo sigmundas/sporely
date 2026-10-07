@@ -1,0 +1,759 @@
+{
+  "release_id": "tax-2026.10.07-01",
+  "previous_release": "tax-2026.09.30-01",
+  "freeze_sha256": "a86e35854fd4d01984d8b8fe121d8fc318e75a01876d243975847127462fd14e",
+  "import_sql_sha256": "cc9a1ddfc4c5f56fa553935b79fb40a2eda01588f0c6d2781e243cddda84852e",
+  "start_utc": "2026-10-07T13:46:32.797525+00:00",
+  "checks": {
+    "fingerprint_changed_tables": [
+      "public.taxonomy_v2_releases",
+      "public.taxonomy_v2_import_runs"
+    ],
+    "old_import_runs_md5": "dc12562f2286ee7032766b890b769eba",
+    "prev_release_row": {
+      "status": "retired",
+      "failed_at": null,
+      "loaded_at": "2026-09-30T20:46:32.76096+00:00",
+      "created_at": "2026-09-30T20:46:05.525442+00:00",
+      "release_id": "tax-2026.09.30-01",
+      "row_counts": {
+        "taxon.jsonl": 52917,
+        "vernacular.jsonl": 13760,
+        "taxon_redlist.jsonl": 2600,
+        "scientific_name.jsonl": 60697,
+        "taxon_external_id.jsonl": 56959,
+        "taxon_external_id_legacy_integer.jsonl": 0
+      },
+      "activated_at": "2026-09-30T20:46:05.525442+00:00",
+      "generated_at": "2026-09-30T00:00:00+00:00",
+      "failure_message": null,
+      "manifest_sha256": "ee55d0d38be12acc7cec94c402952a95d1b92b5c7f335ec34f0fb68b72a7e8ac",
+      "source_manifest": {
+        "files": [
+          {
+            "name": "taxonomy_release.jsonl",
+            "bytes": 352,
+            "sha256": "5dda931e6269dd2914e1260655e70c7dcd3cf4582d3b764746d41717d905a98a",
+            "row_count": 1
+          },
+          {
+            "name": "taxon.jsonl",
+            "bytes": 47953648,
+            "sha256": "4136b9882c037fe3f3f3e4be39983ff0cd807eea5c2d2ec616b5c5e545c03efb",
+            "row_count": 52917
+          },
+          {
+            "name": "scientific_name.jsonl",
+            "bytes": 8511316,
+            "sha256": "57a15c614b3c5d49d6754af0b5cf4cfe4e7ab5b61f3004ac381e0ca18bfb1b7e",
+            "row_count": 60697
+          },
+          {
+            "name": "vernacular.jsonl",
+            "bytes": 1690349,
+            "sha256": "c739b5074fa3740482a3f1bd13d3fca055cc719f962a72c897f469c82a661ca8",
+            "row_count": 13760
+          },
+          {
+            "name": "taxon_external_id.jsonl",
+            "bytes": 10778066,
+            "sha256": "53b7957fde8f95765f6ab1884ba46d2327d3e5388927241f3474a20896ef83d0",
+            "row_count": 56959
+          },
+          {
+            "name": "taxon_external_id_legacy_integer.jsonl",
+            "bytes": 0,
+            "sha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855",
+            "row_count": 0
+          },
+          {
+            "name": "taxon_redlist.jsonl",
+            "bytes": 1506117,
+            "sha256": "c4f0679db8557bdf000ab8037435af18859d101af841b238ea62b3b25481a74e",
+            "row_count": 2600
+          }
+        ],
+        "format": "sporely-global-macrofungi-export-v1",
+        "release_id": "tax-2026.09.30-01",
+        "policy_sha256": "e4e796286df93b5372264c702c824eea746f680b3b4e8d6467621c99e5b64ea6",
+        "source_hashes": {
+          "sqlite_gz_sha256": "593cd5379bffd53a81a54735ab0ad99b97e7ef890060d6483bed42e4150e907f",
+          "w1_manifest_sha256": "a6cb6cac3c10d7873a09189474bee1df43e545791b0a282e2dba926948724f81"
+        },
+        "scope_manifest_sha256": "7ec0a202e0bd85096db70fc472a0fc21a9d496f586b1d68f517de159f45430ed",
+        "compressed_dataset_bytes": 3116889,
+        "compressed_dataset_sha256": "556bef15037b152e32e36ff700e8b97c2f70abee62e804e57b06c3a5c36e729c",
+        "uncompressed_dataset_bytes": 70439848,
+        "production_import_compatibility": {
+          "exporter_version": "sporely-global-macrofungi-export-v1",
+          "importer_version": "taxonomy-v2-production-payload-1",
+          "desktop_sqlite_sha256": "1a5758d39c90071095ce5c0f44063761693667c2970afe4ecec7c726c85356a2",
+          "export_schema_version": 1,
+          "scope_manifest_sha256": "7ec0a202e0bd85096db70fc472a0fc21a9d496f586b1d68f517de159f45430ed",
+          "generated_at_derivation": "UTC midnight from immutable release ID date",
+          "manifest_schema_version": 1,
+          "desktop_sqlite_gz_sha256": "b7917ada6db4c8c708bdd631c3f84819a0f894e6c2f5cbbde50d254f40b316f5",
+          "computed_whole_export_sha256": "c7bb4b98e8312096a4468e739bd4d13c52418804b821cf2ea5fa2b979f2cfc79",
+          "whole_export_sha256_derivation": "ordered name:length:bytes plus LF framing over manifest files",
+          "source_sqlite_sha256_derivation": "SHA-256 of desktop-tax-2026.09.30-01.sqlite3"
+        }
+      },
+      "exporter_version": "sporely-global-macrofungi-export-v1",
+      "source_gz_sha256": "593cd5379bffd53a81a54735ab0ad99b97e7ef890060d6483bed42e4150e907f",
+      "scope_predicate_id": "global_macrofungi_policy_v1",
+      "whole_export_sha256": "c7bb4b98e8312096a4468e739bd4d13c52418804b821cf2ea5fa2b979f2cfc79",
+      "legacy_source_counts": {},
+      "source_sqlite_sha256": "1a5758d39c90071095ce5c0f44063761693667c2970afe4ecec7c726c85356a2",
+      "dangling_parent_count": 1,
+      "export_schema_version": 1,
+      "dangling_parent_report": {
+        "count": 1,
+        "sample": [
+          {
+            "taxon_id": 152331,
+            "parent_taxon_id": 150361
+          }
+        ]
+      },
+      "manifest_schema_version": 1,
+      "taxonomy_schema_version": 2,
+      "authoritative_namespace_counts": {
+        "col_xr/col_usage_id": 52881,
+        "dyntaxa/dyntaxa_taxon_id": 822,
+        "nortaxa/nortaxa_taxon_id": 3256
+      }
+    },
+    "taxonomy_v2_taxa": {
+      "after_count": 52917,
+      "expected_count": 52917,
+      "after_sha256": "2148f776827071a93c665ad280fb67f2fc554de7e4eaa030e4924311d2a4871d",
+      "candidate_sha256": "2148f776827071a93c665ad280fb67f2fc554de7e4eaa030e4924311d2a4871d",
+      "unexpected_rows": 0,
+      "missing_rows": 0,
+      "duplicates": 0,
+      "unchanged_from_baseline": true
+    },
+    "taxonomy_v2_scientific_names": {
+      "after_count": 60697,
+      "expected_count": 60697,
+      "after_sha256": "5e8dc92f454acd34f2cfaf508eeab1c7d5542f9dae2f8bc8ab92f2530ee0556e",
+      "candidate_sha256": "5e8dc92f454acd34f2cfaf508eeab1c7d5542f9dae2f8bc8ab92f2530ee0556e",
+      "unexpected_rows": 0,
+      "missing_rows": 0,
+      "duplicates": 0,
+      "unchanged_from_baseline": true
+    },
+    "taxonomy_v2_external_ids": {
+      "after_count": 56959,
+      "expected_count": 56959,
+      "after_sha256": "0137a25cfb864899d7be2c0a6db768504ed857469e18696922e71da5b8895e68",
+      "candidate_sha256": "0137a25cfb864899d7be2c0a6db768504ed857469e18696922e71da5b8895e68",
+      "unexpected_rows": 0,
+      "missing_rows": 0,
+      "duplicates": 0,
+      "unchanged_from_baseline": true
+    },
+    "taxonomy_v2_redlist": {
+      "after_count": 2600,
+      "expected_count": 2600,
+      "after_sha256": "a94557600278f9546a1ca75c797ec10911d43b1a1842f8a4b8bfc5ffb51637fe",
+      "candidate_sha256": "a94557600278f9546a1ca75c797ec10911d43b1a1842f8a4b8bfc5ffb51637fe",
+      "unexpected_rows": 0,
+      "missing_rows": 0,
+      "duplicates": 0,
+      "unchanged_from_baseline": true
+    },
+    "taxonomy_v2_vernacular_names": {
+      "after_count": 59884,
+      "expected_count": 59884,
+      "after_sha256": "3328b46818d4504cdc89989e31fda44410a76d5ca821b8b5a1e937e39944c391",
+      "candidate_sha256": "3328b46818d4504cdc89989e31fda44410a76d5ca821b8b5a1e937e39944c391",
+      "unexpected_rows": 0,
+      "missing_rows": 0,
+      "duplicates": 0
+    },
+    "obsolete_markers": 0,
+    "isolation": {
+      "96276": [
+        [
+          "nb",
+          "silkerødspore"
+        ],
+        [
+          "nn",
+          "silkeraudspore"
+        ]
+      ],
+      "19080": [],
+      "58651": [],
+      "58832": [],
+      "58815": [],
+      "58814": [
+        [
+          "nb",
+          "taigarødtuppsopp"
+        ]
+      ]
+    },
+    "spelling_replacements": {
+      "checked": 357,
+      "current_missing": 0,
+      "historical_present": 0
+    }
+  },
+  "probes": [
+    {
+      "query": "grønnkremle",
+      "expected_target": 61673,
+      "top": [
+        [
+          61673,
+          "Russula aeruginea",
+          "grønnkremle"
+        ]
+      ],
+      "pass": true,
+      "equals_stage3_full": true
+    },
+    {
+      "query": "grønkremle",
+      "expected_target": 61673,
+      "top": [
+        [
+          61673,
+          "Russula aeruginea",
+          "grønkremle"
+        ]
+      ],
+      "pass": true,
+      "equals_stage3_full": true
+    },
+    {
+      "query": "lys høstmorkel",
+      "expected_target": 14541,
+      "top": [
+        [
+          14541,
+          "Helvella crispa",
+          "lys høstmorkel"
+        ]
+      ],
+      "pass": true,
+      "equals_stage3_full": true
+    },
+    {
+      "query": "lys haustmorkel",
+      "expected_target": 14541,
+      "top": [
+        [
+          14541,
+          "Helvella crispa",
+          "lys haustmorkel"
+        ]
+      ],
+      "pass": true,
+      "equals_stage3_full": true
+    },
+    {
+      "query": "dunpipe",
+      "expected_target": 14834,
+      "top": [
+        [
+          14834,
+          "Henningsomyces puber",
+          "dunpipe"
+        ]
+      ],
+      "pass": true,
+      "equals_stage3_full": true
+    },
+    {
+      "query": "dråpeknippesopp",
+      "expected_target": 103130,
+      "top": [
+        [
+          103130,
+          "Hypsizygus tessulatus",
+          "dråpeknippesopp"
+        ]
+      ],
+      "pass": true,
+      "equals_stage3_full": true
+    },
+    {
+      "query": "snylterørsopp",
+      "expected_target": 52936,
+      "top": [
+        [
+          52936,
+          "Pseudoboletus parasiticus",
+          "snylterørsopp"
+        ]
+      ],
+      "pass": true,
+      "equals_stage3_full": true
+    },
+    {
+      "query": "tårekjuke",
+      "expected_target": 54615,
+      "top": [
+        [
+          54615,
+          "Pseudoinonotus dryadeus",
+          "tårekjuke"
+        ]
+      ],
+      "pass": true,
+      "equals_stage3_full": true
+    },
+    {
+      "query": "gul ekornnøtt",
+      "expected_target": 60559,
+      "top": [
+        [
+          60559,
+          "Rhizopogon luteolus",
+          "gul ekornnøtt"
+        ]
+      ],
+      "pass": true,
+      "equals_stage3_full": true
+    },
+    {
+      "query": "oliven rådyrslørsopp",
+      "expected_target": 618912,
+      "top": [
+        [
+          618912,
+          "Cortinarius milvinicolor",
+          "oliven rådyrslørsopp"
+        ]
+      ],
+      "pass": true,
+      "equals_stage3_full": true
+    },
+    {
+      "query": "slank vedkorallsopp",
+      "expected_target": 23749,
+      "top": [
+        [
+          23749,
+          "Lentaria micheneri",
+          "slank vedkorallsopp"
+        ]
+      ],
+      "pass": true,
+      "equals_stage3_full": true
+    },
+    {
+      "query": "norsk flammekorallsopp",
+      "expected_target": 58693,
+      "top": [
+        [
+          58693,
+          "Ramaria conjunctipes",
+          "norsk flammekorallsopp"
+        ]
+      ],
+      "pass": true,
+      "equals_stage3_full": true
+    },
+    {
+      "query": "sumpreddikhette",
+      "expected_target": 34794,
+      "top": [
+        [
+          34794,
+          "Mycena pearsoniana",
+          "sumpreddikhette"
+        ]
+      ],
+      "pass": true,
+      "equals_stage3_full": true
+    },
+    {
+      "query": "rognerust",
+      "expected_target": 100280,
+      "top": [
+        [
+          100280,
+          "Gymnosporangium cornutum",
+          "rognerust"
+        ]
+      ],
+      "pass": true,
+      "equals_stage3_full": true
+    },
+    {
+      "query": "gråfiolett køllesopp",
+      "expected_target": 146835,
+      "top": [
+        [
+          146835,
+          "Alloclavaria purpurea",
+          "gråfiolett køllesopp"
+        ]
+      ],
+      "pass": true,
+      "equals_stage3_full": true
+    },
+    {
+      "query": "grønn navlesopp",
+      "expected_target": 79753,
+      "top": [
+        [
+          79753,
+          "Arrhenia chlorocyanea",
+          "grønn navlesopp"
+        ]
+      ],
+      "pass": true,
+      "equals_stage3_full": true
+    },
+    {
+      "query": "grøn navlesopp",
+      "expected_target": 79753,
+      "top": [
+        [
+          79753,
+          "Arrhenia chlorocyanea",
+          "grøn navlesopp"
+        ]
+      ],
+      "pass": true,
+      "equals_stage3_full": true
+    },
+    {
+      "query": "taigarødtuppsopp",
+      "expected_target": 58814,
+      "top": [
+        [
+          58814,
+          "Ramaria rubrievanescens",
+          "taigarødtuppsopp"
+        ]
+      ],
+      "pass": true,
+      "equals_stage3_full": true
+    },
+    {
+      "query": "rosenekornnøtt",
+      "expected_target": 60590,
+      "top": [
+        [
+          60590,
+          "Rhizopogon roseolus",
+          "rosenekornnøtt"
+        ]
+      ],
+      "pass": true,
+      "equals_stage3_full": true
+    },
+    {
+      "query": "blekgul køllesopp",
+      "expected_target": 82459,
+      "top": [
+        [
+          82459,
+          "Clavaria flavostellifera",
+          "blekgul køllesopp"
+        ]
+      ],
+      "pass": true,
+      "equals_stage3_full": true
+    },
+    {
+      "query": "silkerødspore",
+      "expected_target": 96276,
+      "top": [
+        [
+          96276,
+          "Entoloma sericellum",
+          "silkerødspore"
+        ]
+      ],
+      "pass": true,
+      "equals_stage3_full": true
+    },
+    {
+      "query": "gullkorallsopp",
+      "expected_target": 58668,
+      "top": [
+        [
+          58668,
+          "Ramaria brunneicontusa",
+          "gullkorallsopp"
+        ]
+      ],
+      "pass": true,
+      "equals_stage3_full": true
+    },
+    {
+      "query": "sørlig rødtuppsopp",
+      "expected_target": null,
+      "top": [],
+      "pass": true
+    },
+    {
+      "query": "sørleg rødtuppsopp",
+      "expected_target": null,
+      "top": [],
+      "pass": true
+    },
+    {
+      "query": "knolltrevlesopp",
+      "expected_target": null,
+      "top": [
+        [
+          18575,
+          "Inocybe asterospora",
+          "knolltrevlesopp"
+        ]
+      ],
+      "pass": true
+    },
+    {
+      "query": "silkerødspore-gruppen",
+      "expected_target": null,
+      "top": [],
+      "pass": true
+    },
+    {
+      "query": "silkeraudspore-gruppa",
+      "expected_target": null,
+      "top": [],
+      "pass": true
+    },
+    {
+      "query": "falsk lindekorallsopp",
+      "expected_target": null,
+      "top": [],
+      "pass": true
+    },
+    {
+      "query": "blek rødtuppsopp",
+      "expected_target": null,
+      "top": [],
+      "pass": true
+    },
+    {
+      "query": "strøkjuke",
+      "expected_target": null,
+      "top": [
+        [
+          65711,
+          "Sistotrema albopallescens",
+          "strøkjuke"
+        ]
+      ],
+      "pass": true
+    },
+    {
+      "query": "Gul korallsopp",
+      "expected_target": null,
+      "top": [
+        [
+          58818,
+          "Ramaria safraniolens",
+          "gul korallsopp"
+        ]
+      ],
+      "pass": true
+    },
+    {
+      "query": "Rustoker grynhatt",
+      "expected_target": null,
+      "top": [
+        [
+          1041,
+          "Cystoderma jasonis",
+          "rustoker grynhatt"
+        ],
+        [
+          163350,
+          "Cystoderma jasonis var. jasonis",
+          "rustoker grynhatt"
+        ]
+      ],
+      "pass": true
+    },
+    {
+      "query": "Rødbrun flathatt",
+      "expected_target": null,
+      "top": [
+        [
+          60670,
+          "Rhodocollybia butyracea",
+          "rødbrun flathatt"
+        ]
+      ],
+      "pass": true
+    }
+  ],
+  "findings": [
+    "accepted scoped-root condition: declared dangling_parent_count=1, sole row Fungi 152331 -> parent 150361 (outside release scope); identical in all prior releases"
+  ],
+  "writes_occurred": true,
+  "state": {
+    "runs": [
+      {
+        "id": 6,
+        "counts": {
+          "row_counts": {
+            "taxon.jsonl": 52917,
+            "vernacular.jsonl": 59884,
+            "taxon_redlist.jsonl": 2600,
+            "scientific_name.jsonl": 60697,
+            "taxon_external_id.jsonl": 56959,
+            "taxon_external_id_legacy_integer.jsonl": 0
+          },
+          "expected_active_releases": 1
+        },
+        "status": "succeeded",
+        "release_id": "tax-2026.10.07-01",
+        "started_at": "2026-10-07T13:34:32.410499+00:00",
+        "finished_at": "2026-10-07T13:35:34.510965+00:00",
+        "error_message": null,
+        "relation_sizes": null,
+        "importer_version": "taxonomy-v2-production-payload-1",
+        "source_directory": "scoped",
+        "whole_export_sha256": "17fb7d6ebe972780a4c452c2a00c363dd3b5eab73a5043ec64a67048e2308e6e"
+      }
+    ],
+    "active": [
+      "tax-2026.10.07-01"
+    ],
+    "timeout": "2min",
+    "concepts": 52917,
+    "releases": [
+      {
+        "status": "retired",
+        "release_id": "tax-2026.08.01-01"
+      },
+      {
+        "status": "retired",
+        "release_id": "tax-2026.09.26-02"
+      },
+      {
+        "status": "retired",
+        "release_id": "tax-2026.09.30-01"
+      },
+      {
+        "status": "active",
+        "release_id": "tax-2026.10.07-01"
+      }
+    ],
+    "validation": {
+      "ok": true,
+      "errors": [],
+      "status": "active",
+      "release_id": "tax-2026.10.07-01",
+      "actual_counts": {
+        "taxon.jsonl": 52917,
+        "vernacular.jsonl": 59884,
+        "taxon_redlist.jsonl": 2600,
+        "scientific_name.jsonl": 60697,
+        "taxon_external_id.jsonl": 56959,
+        "taxon_external_id_legacy_integer.jsonl": 0
+      },
+      "expected_counts": {
+        "taxon.jsonl": 52917,
+        "vernacular.jsonl": 59884,
+        "taxon_redlist.jsonl": 2600,
+        "scientific_name.jsonl": 60697,
+        "taxon_external_id.jsonl": 56959,
+        "taxon_external_id_legacy_integer.jsonl": 0
+      }
+    },
+    "national_errors": [],
+    "new_vernaculars": 59884,
+    "dangling_parents": 1,
+    "prev_vernaculars": 13760,
+    "validator_source_matches": true,
+    "validator_security_unchanged": true,
+    "dangling": {
+      "rows": [
+        {
+          "sporely_taxon_id": 152331,
+          "parent_sporely_taxon_id": 150361,
+          "canonical_scientific_name": "Fungi"
+        }
+      ],
+      "declared": 1,
+      "parent_in_release": 0,
+      "parent_in_frozen_scope": false
+    }
+  },
+  "validator_timing_ms": {
+    "full_validator": 840.12,
+    "parent_check": 170.032
+  },
+  "fingerprint_after_excluding_target": {
+    "public.taxonomy_v2_taxa": {
+      "hash": "35d8af8f5601ca14d388298aa7cfb02a",
+      "count": 158751
+    },
+    "public.taxonomy_v2_redlist": {
+      "hash": "ce7e2fdb4079a643e95dc9d7ce10d9db",
+      "count": 7124
+    },
+    "public.taxonomy_v2_concepts": {
+      "hash": "2f0f70ce8e16cf22b15be02cc3bd7a5c",
+      "count": 52917
+    },
+    "public.taxonomy_v2_releases": {
+      "hash": "6097d4f8a102cabf31af4f28461e47a4",
+      "count": 4
+    },
+    "taxonomy_v3.resolution_link": {
+      "hash": "1387f88ac2c295571a8425971fc31046",
+      "count": 369
+    },
+    "taxonomy_v3.external_mapping": {
+      "hash": "7c149a218ea0166b88e43a05ac1e487d",
+      "count": 145
+    },
+    "taxonomy_v3.registry_concept": {
+      "hash": "162fe345067cfb122accf579e9f8abb1",
+      "count": 209
+    },
+    "public.taxonomy_v2_import_runs": {
+      "hash": "2b95d927eee2cd5124119358f0cdf174",
+      "count": 4
+    },
+    "public.taxonomy_v2_external_ids": {
+      "hash": "5d6967da2700820d82e9eeb3acebf0b5",
+      "count": 162724
+    },
+    "taxonomy_v3.release_installation": {
+      "hash": "11fe5facc83950fbab8eb037ce1a0a2d",
+      "count": 3
+    },
+    "public.taxonomy_v2_scientific_names": {
+      "hash": "34566e8e6fb93b1b7d56b1dc113dbde4",
+      "count": 176236
+    },
+    "public.taxonomy_v2_vernacular_names": {
+      "hash": "ee406f34143869fae3afe4c7d8c85e48",
+      "count": 28328
+    },
+    "taxonomy_v3.identification_snapshot": {
+      "hash": "be1418217e3b053f44e0af31c3792b0c",
+      "count": 369
+    },
+    "taxonomy_v3.supplement_installation": {
+      "hash": "67612f71920cf1f1dce8a3899cf8f598",
+      "count": 1
+    },
+    "public.taxonomy_v2_legacy_external_ids": {
+      "hash": "d41d8cd98f00b204e9800998ecf8427e",
+      "count": 0
+    },
+    "taxonomy_v3.reconciliation_manifest_audit": {
+      "hash": "3e2b2c2816745193943884745b614f1e",
+      "count": 1
+    }
+  },
+  "end_utc": "2026-10-07T13:47:37.635646+00:00",
+  "verdict": "PRODUCTION_RELEASE_VERIFIED_WITH_NONBLOCKING_FINDINGS"
+}

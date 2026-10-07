@@ -1,0 +1,26 @@
+{
+  "release_id": "tax-2026.10.07-01",
+  "project_ref": "zkpjklzfwzefhjluvhfw",
+  "freeze_sha256": "a86e35854fd4d01984d8b8fe121d8fc318e75a01876d243975847127462fd14e",
+  "artifact_sha256": "cc9a1ddfc4c5f56fa553935b79fb40a2eda01588f0c6d2781e243cddda84852e",
+  "artifact_bytes": 76193662,
+  "artifact_path": "/Users/sigmundas/sporely-scratch/vernacular-2026-10-07-f1/run1/import.sql",
+  "command": [
+    "docker",
+    "run",
+    "--rm",
+    "--env-file",
+    "/Users/sigmundas/.config/sporely/production-db.env",
+    "-v",
+    "/Users/sigmundas/sporely-scratch/vernacular-2026-10-07-f1/run1:/payload:ro",
+    "postgres:17",
+    "sh",
+    "-c",
+    "psql \"$DATABASE_URL\" -X --file=/payload/import.sql"
+  ],
+  "start_utc": "2026-10-07T13:34:31.718394+00:00",
+  "end_utc": "2026-10-07T13:35:34.916399+00:00",
+  "exit_code": 0,
+  "artifact_unchanged": true,
+  "commit_reported": true
+}

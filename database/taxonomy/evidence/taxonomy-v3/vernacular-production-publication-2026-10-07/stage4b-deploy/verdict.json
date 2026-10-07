@@ -1,0 +1,14 @@
+{
+  "verdict": "VALIDATOR_FIX_DEPLOYED_AND_VERIFIED",
+  "commit": "3f574390b616357c9b51dc30ae5ecf46964af027",
+  "migration": "20261007123912",
+  "project": "zkpjklzfwzefhjluvhfw",
+  "before_time": "2026-10-07T13:14:41.725895+00:00",
+  "after_time": "2026-10-07T13:15:45.187361+00:00",
+  "invariants_identical": true,
+  "validation_identical": true,
+  "parent_ms": 511.612,
+  "validator_ms": 2375.4,
+  "timeout": "2min",
+  "publication_retried": false
+}

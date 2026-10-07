@@ -1,0 +1,11 @@
+psql:/payload/import.sql:233209: ERROR:  canceling statement due to statement timeout
+CONTEXT:  SQL statement "select count(*)                   from public.taxonomy_v2_taxa t
+  where t.release_id = p_release_id
+    and t.parent_sporely_taxon_id is not null
+    and not exists (
+      select 1 from public.taxonomy_v2_taxa p
+      where p.release_id = t.release_id
+        and p.sporely_taxon_id = t.parent_sporely_taxon_id
+    )"
+PL/pgSQL function taxonomy_v2_validate_release(text) line 68 at SQL statement
+PL/pgSQL function inline_code_block line 4 at assignment

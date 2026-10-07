@@ -1,0 +1,135 @@
+{
+  "time": "2026-10-07T13:15:45.187361+00:00",
+  "active": [
+    "tax-2026.09.30-01"
+  ],
+  "target": 0,
+  "indexes": [
+    "CREATE UNIQUE INDEX taxonomy_v2_concepts_pkey ON public.taxonomy_v2_concepts USING btree (sporely_taxon_id)",
+    "CREATE INDEX taxonomy_v2_external_ids_lookup_idx ON public.taxonomy_v2_external_ids USING btree (release_id, source_system, namespace, external_id)",
+    "CREATE UNIQUE INDEX taxonomy_v2_external_ids_release_id_source_system_namespace_key ON public.taxonomy_v2_external_ids USING btree (release_id, source_system, namespace, external_id, sporely_taxon_id)",
+    "CREATE INDEX taxonomy_v2_external_ids_taxon_source_idx ON public.taxonomy_v2_external_ids USING btree (release_id, sporely_taxon_id, source_system, namespace)",
+    "CREATE UNIQUE INDEX taxonomy_v2_import_runs_pkey ON public.taxonomy_v2_import_runs USING btree (id)",
+    "CREATE INDEX taxonomy_v2_legacy_external_ids_taxon_idx ON public.taxonomy_v2_legacy_external_ids USING btree (release_id, sporely_taxon_id)",
+    "CREATE UNIQUE INDEX taxonomy_v2_redlist_release_id_source_system_source_release_key ON public.taxonomy_v2_redlist USING btree (release_id, source_system, source_release, assessment_id)",
+    "CREATE INDEX taxonomy_v2_redlist_taxon_area_idx ON public.taxonomy_v2_redlist USING btree (release_id, sporely_taxon_id, assessment_area)",
+    "CREATE UNIQUE INDEX taxonomy_v2_releases_one_active_idx ON public.taxonomy_v2_releases USING btree (status) WHERE (status = 'active'::text)",
+    "CREATE UNIQUE INDEX taxonomy_v2_releases_pkey ON public.taxonomy_v2_releases USING btree (release_id)",
+    "CREATE UNIQUE INDEX taxonomy_v2_releases_whole_export_sha256_key ON public.taxonomy_v2_releases USING btree (whole_export_sha256)",
+    "CREATE INDEX taxonomy_v2_scientific_names_prefix_idx ON public.taxonomy_v2_scientific_names USING btree (release_id, lower(scientific_name) text_pattern_ops)",
+    "CREATE UNIQUE INDEX taxonomy_v2_scientific_names_release_id_sporely_taxon_id_la_key ON public.taxonomy_v2_scientific_names USING btree (release_id, sporely_taxon_id, language_code, scientific_name)",
+    "CREATE INDEX taxonomy_v2_scientific_names_taxon_idx ON public.taxonomy_v2_scientific_names USING btree (release_id, sporely_taxon_id)",
+    "CREATE INDEX taxonomy_v2_taxa_canonical_name_prefix_idx ON public.taxonomy_v2_taxa USING btree (release_id, lower(canonical_scientific_name) text_pattern_ops)",
+    "CREATE INDEX taxonomy_v2_taxa_canonical_source_idx ON public.taxonomy_v2_taxa USING btree (release_id, canonical_source_system)",
+    "CREATE INDEX taxonomy_v2_taxa_parent_idx ON public.taxonomy_v2_taxa USING btree (release_id, parent_sporely_taxon_id)",
+    "CREATE UNIQUE INDEX taxonomy_v2_taxa_pkey ON public.taxonomy_v2_taxa USING btree (release_id, sporely_taxon_id)",
+    "CREATE INDEX taxonomy_v2_taxa_rank_idx ON public.taxonomy_v2_taxa USING btree (release_id, taxon_rank)",
+    "CREATE INDEX taxonomy_v2_vernacular_names_language_prefix_idx ON public.taxonomy_v2_vernacular_names USING btree (release_id, language_code, lower(vernacular_name) text_pattern_ops)",
+    "CREATE UNIQUE INDEX taxonomy_v2_vernacular_names_release_id_sporely_taxon_id_la_key ON public.taxonomy_v2_vernacular_names USING btree (release_id, sporely_taxon_id, language_code, vernacular_name)",
+    "CREATE INDEX taxonomy_v2_vernacular_names_taxon_language_idx ON public.taxonomy_v2_vernacular_names USING btree (release_id, sporely_taxon_id, language_code)"
+  ],
+  "timeout": "2min",
+  "function": {
+    "acl": "{postgres=X/postgres,service_role=X/postgres}",
+    "oid": "35194",
+    "owner": "16388",
+    "source": "\ndeclare\n  v_release public.taxonomy_v2_releases%rowtype;\n  v_actual_counts jsonb;\n  v_authoritative_counts jsonb;\n  v_legacy_counts jsonb;\n  v_dangling bigint;\n  v_errors jsonb := '[]'::jsonb;\n  v_search_definition text;\n  v_resolver_definition text;\nbegin\n  select * into v_release\n  from public.taxonomy_v2_releases\n  where release_id = p_release_id;\n\n  if not found then\n    return pg_catalog.jsonb_build_object(\n      'ok', false, 'release_id', p_release_id, 'status', null,\n      'expected_counts', null, 'actual_counts', null,\n      'errors', pg_catalog.jsonb_build_array('release does not exist'));\n  end if;\n\n  if v_release.status not in ('ready', 'active') then\n    v_errors := v_errors || pg_catalog.jsonb_build_array(\n      pg_catalog.format('release status must be ready or active, got %s', v_release.status));\n  end if;\n  if v_release.taxonomy_schema_version <> 2 then\n    v_errors := v_errors || ' [\"taxonomy_schema_version must equal 2\"]'::jsonb;\n  end if;\n\n  select pg_catalog.jsonb_build_object(\n    'taxon.jsonl', (select count(*) from public.taxonomy_v2_taxa where release_id = p_release_id),\n    'scientific_name.jsonl', (select count(*) from public.taxonomy_v2_scientific_names where release_id = p_release_id),\n    'vernacular.jsonl', (select count(*) from public.taxonomy_v2_vernacular_names where release_id = p_release_id),\n    'taxon_external_id.jsonl', (select count(*) from public.taxonomy_v2_external_ids where release_id = p_release_id),\n    'taxon_external_id_legacy_integer.jsonl', (select count(*) from public.taxonomy_v2_legacy_external_ids where release_id = p_release_id),\n    'taxon_redlist.jsonl', (select count(*) from public.taxonomy_v2_redlist where release_id = p_release_id)\n  ) into v_actual_counts;\n\n  if v_actual_counts <> v_release.row_counts then\n    v_errors := v_errors || pg_catalog.jsonb_build_array('actual row counts do not match row_counts metadata');\n  end if;\n\n  select coalesce(pg_catalog.jsonb_object_agg(k, n), '{}'::jsonb)\n  into v_authoritative_counts\n  from (\n    select source_system || '/' || namespace as k, count(*) as n\n    from public.taxonomy_v2_external_ids\n    where release_id = p_release_id\n    group by source_system, namespace\n  ) s;\n  if v_authoritative_counts <> v_release.authoritative_namespace_counts then\n    v_errors := v_errors || pg_catalog.jsonb_build_array('authoritative namespace counts do not match metadata');\n  end if;\n\n  select coalesce(pg_catalog.jsonb_object_agg(k, n), '{}'::jsonb)\n  into v_legacy_counts\n  from (\n    select source_system as k, count(*) as n\n    from public.taxonomy_v2_legacy_external_ids\n    where release_id = p_release_id\n    group by source_system\n  ) s;\n  if v_legacy_counts <> v_release.legacy_source_counts then\n    v_errors := v_errors || pg_catalog.jsonb_build_array('legacy source counts do not match metadata');\n  end if;\n\n  select count(*) into v_dangling\n  from public.taxonomy_v2_taxa t\n  where t.release_id = p_release_id\n    and t.parent_sporely_taxon_id is not null\n    and not exists (\n      select 1 from public.taxonomy_v2_taxa p\n      where p.release_id = t.release_id\n        and p.sporely_taxon_id = t.parent_sporely_taxon_id\n      -- Keep this existence lookup correlated. Without the zero offset,\n      -- a fresh release absent from statistics can flatten to an anti join\n      -- that repeatedly scans every parent row using only release_id.\n      offset 0\n    );\n  if v_dangling <> v_release.dangling_parent_count then\n    v_errors := v_errors || pg_catalog.jsonb_build_array('dangling parent count does not match metadata');\n  end if;\n\n  if exists (\n    select 1 from public.taxonomy_v2_taxa t\n    left join public.taxonomy_v2_concepts c using (sporely_taxon_id)\n    where t.release_id = p_release_id and c.sporely_taxon_id is null\n  ) then\n    v_errors := v_errors || pg_catalog.jsonb_build_array('release-scoped taxon without stable concept');\n  end if;\n\n  if exists (\n    select 1\n    from (\n      select release_id, sporely_taxon_id from public.taxonomy_v2_scientific_names where release_id = p_release_id\n      union all\n      select release_id, sporely_taxon_id from public.taxonomy_v2_vernacular_names where release_id = p_release_id\n      union all\n      select release_id, sporely_taxon_id from public.taxonomy_v2_external_ids where release_id = p_release_id\n      union all\n      select release_id, sporely_taxon_id from public.taxonomy_v2_legacy_external_ids where release_id = p_release_id\n      union all\n      select release_id, sporely_taxon_id from public.taxonomy_v2_redlist where release_id = p_release_id\n    ) child\n    left join public.taxonomy_v2_taxa t using (release_id, sporely_taxon_id)\n    where t.sporely_taxon_id is null\n  ) then\n    v_errors := v_errors || pg_catalog.jsonb_build_array('release child row without release-scoped taxon');\n  end if;\n\n  if exists (\n    select 1 from public.taxonomy_v2_external_ids\n    where release_id = p_release_id\n      and (source_system is null or btrim(source_system) = ''\n        or namespace is null or btrim(namespace) = ''\n        or external_id is null or btrim(external_id) = '')\n  ) then\n    v_errors := v_errors || pg_catalog.jsonb_build_array('blank authoritative identifier component');\n  end if;\n\n  if exists (\n    select 1 from public.taxonomy_v2_external_ids\n    where release_id = p_release_id\n    group by source_system, namespace, external_id, sporely_taxon_id\n    having count(*) > 1\n  ) then\n    v_errors := v_errors || pg_catalog.jsonb_build_array('duplicate authoritative semantic key');\n  end if;\n\n  select pg_catalog.pg_get_functiondef('public.search_taxa_v2(text,text,integer)'::regprocedure)\n    into v_search_definition;\n  select pg_catalog.pg_get_functiondef('public.resolve_taxon_external_id_v2(text,text,text)'::regprocedure)\n    into v_resolver_definition;\n  if pg_catalog.strpos(v_search_definition, 'taxonomy_v2_legacy_external_ids') > 0\n     or pg_catalog.strpos(v_resolver_definition, 'taxonomy_v2_legacy_external_ids') > 0 then\n    v_errors := v_errors || pg_catalog.jsonb_build_array('active RPC definition references legacy external IDs');\n  end if;\n\n  return pg_catalog.jsonb_build_object(\n    'ok', pg_catalog.jsonb_array_length(v_errors) = 0,\n    'release_id', v_release.release_id,\n    'status', v_release.status,\n    'expected_counts', v_release.row_counts,\n    'actual_counts', v_actual_counts,\n    'errors', v_errors\n  );\nexception\n  when undefined_function then\n    return pg_catalog.jsonb_build_object(\n      'ok', false, 'release_id', v_release.release_id, 'status', v_release.status,\n      'expected_counts', v_release.row_counts, 'actual_counts', v_actual_counts,\n      'errors', v_errors || pg_catalog.jsonb_build_array('required taxonomy-v2 RPC is missing'));\nend;\n",
+    "settings": [
+      "search_path=public, pg_catalog"
+    ],
+    "definition": "CREATE OR REPLACE FUNCTION public.taxonomy_v2_validate_release(p_release_id text)\n RETURNS jsonb\n LANGUAGE plpgsql\n STABLE SECURITY DEFINER\n SET search_path TO 'public', 'pg_catalog'\nAS $function$\ndeclare\n  v_release public.taxonomy_v2_releases%rowtype;\n  v_actual_counts jsonb;\n  v_authoritative_counts jsonb;\n  v_legacy_counts jsonb;\n  v_dangling bigint;\n  v_errors jsonb := '[]'::jsonb;\n  v_search_definition text;\n  v_resolver_definition text;\nbegin\n  select * into v_release\n  from public.taxonomy_v2_releases\n  where release_id = p_release_id;\n\n  if not found then\n    return pg_catalog.jsonb_build_object(\n      'ok', false, 'release_id', p_release_id, 'status', null,\n      'expected_counts', null, 'actual_counts', null,\n      'errors', pg_catalog.jsonb_build_array('release does not exist'));\n  end if;\n\n  if v_release.status not in ('ready', 'active') then\n    v_errors := v_errors || pg_catalog.jsonb_build_array(\n      pg_catalog.format('release status must be ready or active, got %s', v_release.status));\n  end if;\n  if v_release.taxonomy_schema_version <> 2 then\n    v_errors := v_errors || ' [\"taxonomy_schema_version must equal 2\"]'::jsonb;\n  end if;\n\n  select pg_catalog.jsonb_build_object(\n    'taxon.jsonl', (select count(*) from public.taxonomy_v2_taxa where release_id = p_release_id),\n    'scientific_name.jsonl', (select count(*) from public.taxonomy_v2_scientific_names where release_id = p_release_id),\n    'vernacular.jsonl', (select count(*) from public.taxonomy_v2_vernacular_names where release_id = p_release_id),\n    'taxon_external_id.jsonl', (select count(*) from public.taxonomy_v2_external_ids where release_id = p_release_id),\n    'taxon_external_id_legacy_integer.jsonl', (select count(*) from public.taxonomy_v2_legacy_external_ids where release_id = p_release_id),\n    'taxon_redlist.jsonl', (select count(*) from public.taxonomy_v2_redlist where release_id = p_release_id)\n  ) into v_actual_counts;\n\n  if v_actual_counts <> v_release.row_counts then\n    v_errors := v_errors || pg_catalog.jsonb_build_array('actual row counts do not match row_counts metadata');\n  end if;\n\n  select coalesce(pg_catalog.jsonb_object_agg(k, n), '{}'::jsonb)\n  into v_authoritative_counts\n  from (\n    select source_system || '/' || namespace as k, count(*) as n\n    from public.taxonomy_v2_external_ids\n    where release_id = p_release_id\n    group by source_system, namespace\n  ) s;\n  if v_authoritative_counts <> v_release.authoritative_namespace_counts then\n    v_errors := v_errors || pg_catalog.jsonb_build_array('authoritative namespace counts do not match metadata');\n  end if;\n\n  select coalesce(pg_catalog.jsonb_object_agg(k, n), '{}'::jsonb)\n  into v_legacy_counts\n  from (\n    select source_system as k, count(*) as n\n    from public.taxonomy_v2_legacy_external_ids\n    where release_id = p_release_id\n    group by source_system\n  ) s;\n  if v_legacy_counts <> v_release.legacy_source_counts then\n    v_errors := v_errors || pg_catalog.jsonb_build_array('legacy source counts do not match metadata');\n  end if;\n\n  select count(*) into v_dangling\n  from public.taxonomy_v2_taxa t\n  where t.release_id = p_release_id\n    and t.parent_sporely_taxon_id is not null\n    and not exists (\n      select 1 from public.taxonomy_v2_taxa p\n      where p.release_id = t.release_id\n        and p.sporely_taxon_id = t.parent_sporely_taxon_id\n      -- Keep this existence lookup correlated. Without the zero offset,\n      -- a fresh release absent from statistics can flatten to an anti join\n      -- that repeatedly scans every parent row using only release_id.\n      offset 0\n    );\n  if v_dangling <> v_release.dangling_parent_count then\n    v_errors := v_errors || pg_catalog.jsonb_build_array('dangling parent count does not match metadata');\n  end if;\n\n  if exists (\n    select 1 from public.taxonomy_v2_taxa t\n    left join public.taxonomy_v2_concepts c using (sporely_taxon_id)\n    where t.release_id = p_release_id and c.sporely_taxon_id is null\n  ) then\n    v_errors := v_errors || pg_catalog.jsonb_build_array('release-scoped taxon without stable concept');\n  end if;\n\n  if exists (\n    select 1\n    from (\n      select release_id, sporely_taxon_id from public.taxonomy_v2_scientific_names where release_id = p_release_id\n      union all\n      select release_id, sporely_taxon_id from public.taxonomy_v2_vernacular_names where release_id = p_release_id\n      union all\n      select release_id, sporely_taxon_id from public.taxonomy_v2_external_ids where release_id = p_release_id\n      union all\n      select release_id, sporely_taxon_id from public.taxonomy_v2_legacy_external_ids where release_id = p_release_id\n      union all\n      select release_id, sporely_taxon_id from public.taxonomy_v2_redlist where release_id = p_release_id\n    ) child\n    left join public.taxonomy_v2_taxa t using (release_id, sporely_taxon_id)\n    where t.sporely_taxon_id is null\n  ) then\n    v_errors := v_errors || pg_catalog.jsonb_build_array('release child row without release-scoped taxon');\n  end if;\n\n  if exists (\n    select 1 from public.taxonomy_v2_external_ids\n    where release_id = p_release_id\n      and (source_system is null or btrim(source_system) = ''\n        or namespace is null or btrim(namespace) = ''\n        or external_id is null or btrim(external_id) = '')\n  ) then\n    v_errors := v_errors || pg_catalog.jsonb_build_array('blank authoritative identifier component');\n  end if;\n\n  if exists (\n    select 1 from public.taxonomy_v2_external_ids\n    where release_id = p_release_id\n    group by source_system, namespace, external_id, sporely_taxon_id\n    having count(*) > 1\n  ) then\n    v_errors := v_errors || pg_catalog.jsonb_build_array('duplicate authoritative semantic key');\n  end if;\n\n  select pg_catalog.pg_get_functiondef('public.search_taxa_v2(text,text,integer)'::regprocedure)\n    into v_search_definition;\n  select pg_catalog.pg_get_functiondef('public.resolve_taxon_external_id_v2(text,text,text)'::regprocedure)\n    into v_resolver_definition;\n  if pg_catalog.strpos(v_search_definition, 'taxonomy_v2_legacy_external_ids') > 0\n     or pg_catalog.strpos(v_resolver_definition, 'taxonomy_v2_legacy_external_ids') > 0 then\n    v_errors := v_errors || pg_catalog.jsonb_build_array('active RPC definition references legacy external IDs');\n  end if;\n\n  return pg_catalog.jsonb_build_object(\n    'ok', pg_catalog.jsonb_array_length(v_errors) = 0,\n    'release_id', v_release.release_id,\n    'status', v_release.status,\n    'expected_counts', v_release.row_counts,\n    'actual_counts', v_actual_counts,\n    'errors', v_errors\n  );\nexception\n  when undefined_function then\n    return pg_catalog.jsonb_build_object(\n      'ok', false, 'release_id', v_release.release_id, 'status', v_release.status,\n      'expected_counts', v_release.row_counts, 'actual_counts', v_actual_counts,\n      'errors', v_errors || pg_catalog.jsonb_build_array('required taxonomy-v2 RPC is missing'));\nend;\n$function$\n",
+    "volatility": "s",
+    "security_definer": true
+  },
+  "migration": 1,
+  "invariants": {
+    "public.taxonomy_v2_taxa": {
+      "hash": "35d8af8f5601ca14d388298aa7cfb02a",
+      "count": 158751
+    },
+    "public.taxonomy_v2_redlist": {
+      "hash": "ce7e2fdb4079a643e95dc9d7ce10d9db",
+      "count": 7124
+    },
+    "public.taxonomy_v2_concepts": {
+      "hash": "2f0f70ce8e16cf22b15be02cc3bd7a5c",
+      "count": 52917
+    },
+    "public.taxonomy_v2_releases": {
+      "hash": "8ddba93f91f5910522e74e63952eb674",
+      "count": 3
+    },
+    "taxonomy_v3.resolution_link": {
+      "hash": "1387f88ac2c295571a8425971fc31046",
+      "count": 369
+    },
+    "taxonomy_v3.external_mapping": {
+      "hash": "7c149a218ea0166b88e43a05ac1e487d",
+      "count": 145
+    },
+    "taxonomy_v3.registry_concept": {
+      "hash": "162fe345067cfb122accf579e9f8abb1",
+      "count": 209
+    },
+    "public.taxonomy_v2_import_runs": {
+      "hash": "dc12562f2286ee7032766b890b769eba",
+      "count": 3
+    },
+    "public.taxonomy_v2_external_ids": {
+      "hash": "5d6967da2700820d82e9eeb3acebf0b5",
+      "count": 162724
+    },
+    "taxonomy_v3.release_installation": {
+      "hash": "11fe5facc83950fbab8eb037ce1a0a2d",
+      "count": 3
+    },
+    "public.taxonomy_v2_scientific_names": {
+      "hash": "34566e8e6fb93b1b7d56b1dc113dbde4",
+      "count": 176236
+    },
+    "public.taxonomy_v2_vernacular_names": {
+      "hash": "ee406f34143869fae3afe4c7d8c85e48",
+      "count": 28328
+    },
+    "taxonomy_v3.identification_snapshot": {
+      "hash": "be1418217e3b053f44e0af31c3792b0c",
+      "count": 369
+    },
+    "taxonomy_v3.supplement_installation": {
+      "hash": "67612f71920cf1f1dce8a3899cf8f598",
+      "count": 1
+    },
+    "public.taxonomy_v2_legacy_external_ids": {
+      "hash": "d41d8cd98f00b204e9800998ecf8427e",
+      "count": 0
+    },
+    "taxonomy_v3.reconciliation_manifest_audit": {
+      "hash": "3e2b2c2816745193943884745b614f1e",
+      "count": 1
+    }
+  },
+  "validation": {
+    "ok": true,
+    "errors": [],
+    "status": "active",
+    "release_id": "tax-2026.09.30-01",
+    "actual_counts": {
+      "taxon.jsonl": 52917,
+      "vernacular.jsonl": 13760,
+      "taxon_redlist.jsonl": 2600,
+      "scientific_name.jsonl": 60697,
+      "taxon_external_id.jsonl": 56959,
+      "taxon_external_id_legacy_integer.jsonl": 0
+    },
+    "expected_counts": {
+      "taxon.jsonl": 52917,
+      "vernacular.jsonl": 13760,
+      "taxon_redlist.jsonl": 2600,
+      "scientific_name.jsonl": 60697,
+      "taxon_external_id.jsonl": 56959,
+      "taxon_external_id_legacy_integer.jsonl": 0
+    }
+  },
+  "target_runs": 0,
+  "active_vernaculars": 13760
+}

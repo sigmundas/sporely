@@ -1,0 +1,62 @@
+{
+  "verdict": "STOP_PRODUCTION_MISMATCH",
+  "checks": {
+    "taxonomy_v2_taxa": {
+      "count": 52917,
+      "sha256": "2148f776827071a93c665ad280fb67f2fc554de7e4eaa030e4924311d2a4871d",
+      "unchanged": true
+    },
+    "taxonomy_v2_scientific_names": {
+      "count": 60697,
+      "sha256": "5e8dc92f454acd34f2cfaf508eeab1c7d5542f9dae2f8bc8ab92f2530ee0556e",
+      "unchanged": true
+    },
+    "taxonomy_v2_external_ids": {
+      "count": 56959,
+      "sha256": "0137a25cfb864899d7be2c0a6db768504ed857469e18696922e71da5b8895e68",
+      "unchanged": true
+    },
+    "taxonomy_v2_redlist": {
+      "count": 2600,
+      "sha256": "a94557600278f9546a1ca75c797ec10911d43b1a1842f8a4b8bfc5ffb51637fe",
+      "unchanged": true
+    },
+    "taxonomy_v3.registry_concept": {
+      "count": 209,
+      "sha256": "bea6d6220b4dc0217949c045e26a6162b9e322c8d445b94cc2f656a67654896d",
+      "unchanged": true
+    },
+    "taxonomy_v3.external_mapping": {
+      "count": 145,
+      "sha256": "6f80e23e22e15ba6d562d3a1b3127851c1cb7db01c777c18ee9db795d03e6b0a",
+      "unchanged": true
+    },
+    "taxonomy_v3.identification_snapshot": {
+      "count": 369,
+      "sha256": "0c1148d8d8fbb669678c4c4bd96ce2dc2942821d58e785fa0d1711dd8f18c578",
+      "unchanged": true
+    },
+    "taxonomy_v3.resolution_link": {
+      "count": 369,
+      "sha256": "b52a6faefcdef4568c2989fb095438d064e3efcca9023102ccafe5e5c394b941",
+      "unchanged": true
+    },
+    "taxonomy_v3.release_installation": {
+      "count": 3,
+      "sha256": "92144e00eae0e3d25d8f9fc7130123796cdf86c14b38b994a6ab055f4a30e9a6",
+      "unchanged": true
+    },
+    "taxonomy_v3.supplement_installation": {
+      "count": 1,
+      "sha256": "e6d5671ede2707a3c4981f8f683b60d804080e9cb32d88915f9fb6139eb48599",
+      "unchanged": true
+    },
+    "taxonomy_v3.reconciliation_manifest_audit": {
+      "count": 1,
+      "sha256": "974dac4e9dcbe53777cc9c315b3942f258fe8bb3afc19887e9840fcbfca30e36",
+      "unchanged": true
+    }
+  },
+  "checked_at_utc": "2026-10-07T12:11:27.928639+00:00",
+  "all_invariants_unchanged": true
+}

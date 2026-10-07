@@ -1,0 +1,15 @@
+{
+  "checked_at": "2026-10-07T12:11:26.91376+00:00",
+  "target_taxa": 0,
+  "active_count": 1,
+  "concept_count": 52917,
+  "active_releases": [
+    "tax-2026.09.30-01"
+  ],
+  "statement_timeout": "2min",
+  "target_import_runs": 0,
+  "target_vernaculars": 0,
+  "target_release_rows": 0,
+  "import_connection_present": 0,
+  "previous_vernacular_count": 13760
+}

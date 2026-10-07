@@ -1,5 +1,7 @@
 # Norwegian vernacular-only enrichment
 
+Status: **COMPLETED 2026-10-07.** `tax-2026.10.07-01` is the sole active production taxonomy release (previous `tax-2026.09.30-01`, now retired); verdict PRODUCTION_RELEASE_VERIFIED_WITH_NONBLOCKING_FINDINGS. See "Stage 4C" below.
+
 User architecture: keep identity reconciliation strict; exact name/rank may associate vernacular metadata only. Full canonical-release uniqueness, current status, fungal compatibility, no qualifiers/nomenclatural warnings/reviewed contradictions/explicit splits; species classification differences below kingdom are provenance diagnostics. Existing preferred names survive.
 
 ## Current bounded pass — normalization and revised simulation
@@ -110,3 +112,54 @@ Handoff (2026-10-06, after Stage 3B): independently re-verified the frozen hashe
 - **Content delta against fda89f37**: exactly −5 `vernacular_min` rows, with no preferred-flag change. The rest is evidence/compiler-manifest hash churn. The recipe is unchanged, because it pins only the projection (1,619/18/1,637/767), which still holds.
 - **Stage 3C checks A–G rerun twice, deterministically**: all 29 probes plus 4 F1 report probes pass. There are no marked names in SQLite, W1, the scoped export or the imported DB. Promotion guards hold. Taxonomy tests: 1076 passed, 1 skipped.
 - Evidence: `database/taxonomy/evidence/taxonomy-v3/vernacular-f1-refreeze-2026-10-07/`. Nothing committed, promoted or published. The fda89f37 set is superseded. Next: commit, then owner-authorized `promote_desktop_bundle.py --frozen-dir <final> --expect-freeze-sha256 a86e3585…`, then the cloud import.
+
+
+## Stage 4 production import stopped (2026-10-07)
+
+- **Verdict: STOP_PRODUCTION_MISMATCH.** Freeze `a86e3585…fd14e` and exact preserved Stage 3 SQL `cc9a1ddfc4c5f56fa553935b79fb40a2eda01588f0c6d2781e243cddda84852e` verified; no artifacts regenerated.
+- Read-only production preflight passed on `zkpjklzfwzefhjluvhfw`: sole active `tax-2026.09.30-01`, 52,917 concepts / 13,760 vernacular rows; target absent; schema/history compatible including the documented deferred migration. Full frozen-candidate comparison found zero taxon/scientific-name/external-ID/red-list deltas.
+- Exact approved containerized psql import attempted 14:08:28–14:11:11 Europe/Oslo. Load/count checks passed inside its transaction; pre-activation `taxonomy_v2_validate_release` dangling-parent check hit production `statement_timeout=2min` (`import.sql:233209`, function line 68). psql exited 3; activation/COMMIT not reached.
+- Automatic rollback independently verified: target release/run/data absent; previous sole active and counts unchanged; all checked identity/registry/mapping/scientific-name/external-ID/red-list and taxonomy-v3 audit fingerprints unchanged. No further production writes or retry. Sequence allocation may leave an ordinary import-run ID gap.
+- Operational report/logs/baselines: `~/sporely-scratch/vernacular-2026-10-07-stage4/report.md` and adjacent JSON/log files. New-release search probes deferred because activation did not occur.
+- Safest next action: keep previous active release; separately review validator timeout/execution-plan mitigation and authorize a new bounded attempt using the same frozen SQL. No data repair, artifact regeneration, migration-history repair or merge. Handoff remains uncommitted under the live-production verification tier; no commit/push of a failed partial stage.
+
+
+### Stage 4 timeout investigation (2026-10-07)
+
+- Verdict **VALIDATOR_FIX_REQUIRED**; no retry or production data/schema change. Exact parent-reference query identified in deployed `taxonomy_v2_validate_release`, frozen `import.sql:233204`/`:233209`.
+- Active-release parent check measured 351 ms (generic warm plan 22 ms), whole validator 2.142 s. Absent-target custom plan estimates one row per input and chooses nested-loop anti join with release-only inner index scan / parent equality join filter. Frozen 52,917-row distribution would imply ~1.31 billion comparisons under that plan. Failed-session nested plan was not captured; cold target statistics + observed plans strongly support pathology rather than ordinary >2min workload.
+- Read-only alternative (`OFFSET 0` within correlated NOT EXISTS) preserves missing-parent semantics, gives both-key indexed parent lookup even for absent target; active 52,917-probe execution measured 190 ms. Proposed only: requires separate reviewed validator/validation-execution fix and fresh-release cold-statistics testing, not an applied-migration edit or frozen SQL rewrite.
+- Production 2min timeout is server configuration-file default; no applicable role/database/function timeout override. Read-only SET LOCAL scope proof reverts on rollback. No justified timeout-only retry value/procedure.
+- Reconfirmed sole active `tax-2026.09.30-01`, concepts 52,917 / vernaculars 13,760, no target rows in any release table or import runs. Exact SQL `cc9a1ddf…` and freeze `a86e3585…` unchanged; verify_frozen passes. No regeneration required.
+- Detailed read-only plans/settings/measured results: `~/sporely-scratch/vernacular-2026-10-07-stage4/timeout-investigation/report.md`. Report-only handoff uncommitted; stop before validator edits or another publication attempt.
+
+### Stage 4B validator fix prepared (2026-10-07)
+
+- Verdict **VALIDATOR_FIX_READY**, not deployed. Forward-only web migration `20261007123912_fix_taxonomy_v2_parent_reference_plan.sql` replaces only `taxonomy_v2_validate_release(text)`, adding `OFFSET 0` to the original correlated same-release parent lookup. All other validator code/security/ACL/OID retained. Suggested constant-release-only rewrite still generated the pathological plan; constant-release plus OFFSET also timed out in the complete fresh-release PL/pgSQL test, so original correlation is preserved.
+- Independent reviewer found no defects and reran focused integration: 2 pass / 0 fail or skip, 4.535s. Cases cover valid/null/one/multiple dangling, cross-release-only parent, same ID elsewhere, empty/absent/populated/fresh release, result equality and both-key indexed plans.
+- Entire exact frozen import locally with proposed function, original checks and ROLLBACK: 4.506s, unchanged 2min timeout; fixed parent query 41.346ms and full validator 230.157ms. Candidate counts match all frozen expectations; no frozen artifact regenerated or modified.
+- Node taxonomy suite 52 pass / 23 optional skips / 0 fail; 5 taxonomy SQL suites pass. Security suite deferred: local PG17.6 signal-11 crash reproduces baseline denied activation call without migration; reviewer classifies it as an existing engine limitation. Catalog/ACL checks pass. No global/session production timeout changes.
+- Report in web `docs/deployments/2026-10-07-taxonomy-validator-parent-reference.md`; operational evidence `~/sporely-scratch/vernacular-2026-10-07-stage4b/`. Migration/test/report remain uncommitted for stage review; no deployment, main merge or publication retry. Production remains sole active 2026.09.30-01, 52,917 concepts / 13,760 vernaculars, target release/run absent, old function unchanged. Freeze/import digests and verify_frozen pass.
+- Next boundary: review/commit minimal validator migration, then separately authorize guarded deploy-tree deployment and read-only verification; publication retry remains separate.
+
+### Stage 4B production validator deployed (2026-10-07)
+
+- **VALIDATOR_FIX_DEPLOYED_AND_VERIFIED.** Reviewed migration/tests/report committed and pushed in web feature branch `feature/taxonomy-validator-parent-reference`: checkpoint `3f57439`; verified deployment report `d10e5c0`. No merge.
+- Guarded deploy-tree check/dry-run allowed exactly `20261007123912`; production push applied only that forward validator-function migration. Post-verify confirms remote history/deferred snapshot exception correct. Temporary deploy tree removed after all verification.
+- Exact reviewed function body read back; owner/ACL/OID/security/search_path preserved. Active 2026.09.30-01 validator JSON exactly matches baseline (ok=true/errors=[]). Production correlated parent lookup uses both key dimensions, no release-only join filter: 511.612ms; full validator 2375.4ms.
+- All taxonomy-v2/taxonomy-v3 registry/mapping/identity/audit content fingerprints, counts, release states and indexes unchanged. Sole active 2026.09.30-01; concepts 52,917, vernaculars 13,760, target release/run absent; timeout still 2min. Frozen SQL and freeze digests unchanged; no import or activation attempted.
+- Evidence `~/sporely-scratch/vernacular-2026-10-07-stage4b-deploy/`; committed web report `docs/deployments/2026-10-07-taxonomy-validator-parent-reference.md`. This cross-repository active-plan note remains uncommitted alongside earlier handoffs. Next boundary is separately authorized exact frozen publication retry.
+
+### Stage 4C production publication (2026-10-07) — COMPLETED
+
+- **Verdict: PRODUCTION_RELEASE_VERIFIED_WITH_NONBLOCKING_FINDINGS.** Previous active release `tax-2026.09.30-01` (now retired); new sole active release `tax-2026.10.07-01`. Freeze `a86e35854fd4d01984d8b8fe121d8fc318e75a01876d243975847127462fd14e`; exact Stage 3 import SQL `cc9a1ddfc4c5f56fa553935b79fb40a2eda01588f0c6d2781e243cddda84852e`, unchanged and not regenerated. No timeout, index or mapping change.
+- Read-only preflight passed: the production fingerprint equals Stage 4B post-deploy; the validator equals migration `20261007123912`; previous-release rows equal the frozen candidate; taxonomy_v3 is unchanged.
+- The single-transaction import (load → validate → activate) committed 13:34:31–13:35:34 UTC.
+- Post-commit verification:
+  - Concepts 52,917 (unchanged); vernacular rows 13,760 → 59,884 (frozen metadata).
+  - The new release equals the frozen set row for row. Every pre-existing row is unchanged; only release status and the +1 import run differ.
+  - Identity, registry, aliases, supersessions, external IDs, scientific names and red list are unchanged.
+  - Validator ok in 840 ms on a warm rerun (2,207 ms first run); parent check about 170 ms; timeout 2min.
+- Search and data checks: no `[GAMMELT]`/`[UTGÅTT]`; 357 spelling replacements correct; the 96276/19080/58651/58832/58815/58814 isolation holds; all 33 Stage 3 search probes identical.
+- Nonblocking, owner-accepted finding: the declared `dangling_parent_count` = 1, solely Fungi 152331 → parent 150361 outside the release scope, identical in all prior releases. The verification asserts exactly that row.
+- Evidence: `database/taxonomy/evidence/taxonomy-v3/vernacular-production-publication-2026-10-07/` (report, preflight, import execution, production verification, scripts, logs, the first-attempt rollback and the Stage 4B deploy records). The validator fix lives on web `feature/taxonomy-validator-parent-reference` (`3f57439`, `d10e5c0`).
