@@ -38,6 +38,7 @@ import hashlib
 import io
 import json
 import os
+import re
 import shutil
 import sys
 import tempfile
@@ -51,6 +52,11 @@ CHUNK_BYTES = 512 * 1024
 
 NAME_USAGE_MEMBER = "NameUsage.tsv"
 VERNACULAR_MEMBER = "VernacularName.tsv"
+# Artsdatabanken-style status markers ("[GAMMELT]" = old, "[UTGÅTT]" = retired)
+# carried inside COL vernacular name text. The source itself labels such a
+# name obsolete, so the row is rejected rather than stripped and kept. Only
+# these bracketed tokens match; other bracketed text is left untouched.
+OBSOLETE_VERNACULAR_MARKER = re.compile(r"\[\s*(?:GAMMELT|UTGÅTT)\s*\]", re.IGNORECASE)
 # ISO 639-2 codes used by COL become the existing two-letter runtime codes
 # where available. Other valid source codes remain intact; no language inference.
 COL_LANGUAGE_CODES = dict(pair.split(":") for pair in """
@@ -289,7 +295,7 @@ def _parse_header(archive: zipfile.ZipFile) -> tuple[dict[str, int], int]:
 def _normalize_vernaculars(archive, staging, target_ids, known_ids, source_release):
     """Carry current source-native names only; never infer a concept binding."""
     counts = {"rows_seen": 0, "rows_written": 0, "outside_normalized_scope": 0,
-              "missing_language_as_und": 0, "orphan_usage_rows": 0, "member_present": VERNACULAR_MEMBER in archive.namelist()}
+              "missing_language_as_und": 0, "orphan_usage_rows": 0, "source_marked_obsolete": 0, "member_present": VERNACULAR_MEMBER in archive.namelist()}
     output = staging / "vernacular.jsonl"
     with output.open("w", encoding="utf-8") as handle, (staging / "vernacular_rejections.jsonl").open("w", encoding="utf-8") as rejected:
         if not counts["member_present"]:
@@ -320,6 +326,14 @@ def _normalize_vernaculars(archive, staging, target_ids, known_ids, source_relea
                 name = value("name")
                 if not name.strip():
                     raise ColNormalizeError(f"VernacularName line {line_number}: empty name")
+                if OBSOLETE_VERNACULAR_MARKER.search(name):
+                    counts["source_marked_obsolete"] += 1
+                    rejected.write(json.dumps({"reason": "source_marked_obsolete_vernacular",
+                        "source_release": source_release, "member": VERNACULAR_MEMBER,
+                        "row_index": line_number - 2, "line_number": line_number,
+                        "raw_fields": dict(zip(names, row))},
+                        ensure_ascii=False, sort_keys=True) + "\n")
+                    continue
                 raw_language = value("language")
                 language = raw_language.strip().lower()
                 if not language:

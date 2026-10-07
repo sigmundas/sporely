@@ -582,3 +582,26 @@ def test_col_compiler_uses_ids_despite_identical_scientific_names(tmp_path):
     assert all(n['sporely_taxon_id']!=taxa['B'] for n in names)
     evidence=list(map(json.loads,(tmp_path/'release/vernacular_evidence.jsonl').read_text().splitlines()))
     assert all(e['identity_effect']=='none' and not e['external_identifier_emission'] for e in evidence)
+
+
+def test_col_vernacular_source_marked_obsolete_is_rejected(tmp_path):
+    archive = tmp_path/'col.zip'
+    _build_synthetic_col_archive(archive, [
+        ('A', '', 'accepted', 'Example species', '', 'species', 'Fungi', '', '', ''),
+    ])
+    marked = ['Rustoker grynhatt [UTGÅTT]', 'strøkjuke [GAMMELT]', 'x [ gammelt ]',
+              'y [Utgått]', 'z [  UTGÅTT  ]', '[GAMMELT] w']
+    kept = ['[dau ddot]', '[2 ddot]', 'Lungwort [lichen]', 'gammelt navn', 'UTGÅTT', '[GAMMELTX]']
+    body = ''.join(f'A\t{n}\tnob\t\tsrc\n' for n in marked + kept)
+    with zipfile.ZipFile(archive, 'a') as z:
+        z.writestr('VernacularName.tsv', 'col:taxonID\tcol:name\tcol:language\tcol:preferred\tcol:sourceID\n' + body)
+    report = normalize_col_xr(archive_path=archive, output_dir=tmp_path/'out',
+                              source_release={'version': 'test', 'issued_date': '2026-10-07'})
+    names = [json.loads(l)['vernacular_name'] for l in (tmp_path/'out/vernacular.jsonl').read_text().splitlines()]
+    assert names == kept
+    rejections = [json.loads(l) for l in (tmp_path/'out/vernacular_rejections.jsonl').read_text().splitlines()]
+    assert [r['raw_fields']['name'] for r in rejections] == marked
+    assert {r['reason'] for r in rejections} == {'source_marked_obsolete_vernacular'}
+    assert rejections[0]['row_index'] == 0 and rejections[0]['raw_fields']['sourceID'] == 'src'
+    assert report['vernacular']['source_marked_obsolete'] == len(marked)
+    assert report['vernacular']['rows_written'] == len(kept)

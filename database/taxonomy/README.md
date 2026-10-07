@@ -189,6 +189,14 @@ scientific names take over a spelling another source already publishes on
 the concept: that row keeps its source, and a Dyntaxa row is added only for a
 spelling the concept lacks.
 
+COL normalization (`scripts/normalize_col_xr.py`) writes rejected COL
+vernacular rows, with their raw row, to `vernacular_rejections.jsonl`
+(archived as `inputs/col-vernacular-rejections.jsonl`). Reasons:
+`usage_absent_from_current_col_name_usage` (the row's usage is not in
+NameUsage) and `source_marked_obsolete_vernacular` (the name carries an
+Artsdatabanken status marker `[GAMMELT]` or `[UTGÅTT]`; the row is rejected,
+not stripped, because the source itself labels the name old or retired).
+
 ## Adding a national source
 
 The normalizer is generic, and so is the compiler wiring below; NorTaxa and
