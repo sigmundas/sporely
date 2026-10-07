@@ -1,0 +1,1120 @@
+{
+  "coverage": {
+    "baseline": {
+      "content_release_id": "tax-2026.09.30-01",
+      "external_ids_by_source": {
+        "artportalen": 9000,
+        "artsdatabanken": 61583,
+        "inaturalist": 8032
+      },
+      "national_preferred_scientific_names": {
+        "preferred_scientific_name_no": 4737,
+        "preferred_scientific_name_sv": 2361
+      },
+      "redlist_rows": 34171,
+      "taxa": 633542,
+      "taxa_by_source_status": {
+        "col_xr/accepted": 619978,
+        "col_xr/provisionally accepted": 998,
+        "nortaxa/valid": 12566
+      },
+      "taxon_id_columns": {
+        "inaturalist_taxon_id": 7958,
+        "norwegian_taxon_id": 12566,
+        "swedish_taxon_id": 0
+      },
+      "text_external_ids_by_namespace": {
+        "col_xr/col_usage_id": 620976,
+        "dyntaxa/dyntaxa_taxon_id": 2361,
+        "nortaxa/nortaxa_taxon_id": 9516
+      },
+      "vernacular_by_language": {
+        "da": 1786,
+        "de": 2198,
+        "en": 3028,
+        "es": 329,
+        "fi": 3116,
+        "fr": 2796,
+        "it": 89,
+        "nb": 6240,
+        "nn": 3975,
+        "pl": 1304,
+        "pt": 90,
+        "se": 79,
+        "sv": 6110
+      }
+    },
+    "baseline_release_id": "tax-2026.09.30-01",
+    "candidate": {
+      "content_release_id": "tax-2026.10.06-01",
+      "external_ids_by_source": {
+        "artportalen": 9000,
+        "artsdatabanken": 61583,
+        "inaturalist": 8032
+      },
+      "national_preferred_scientific_names": {
+        "preferred_scientific_name_no": 4737,
+        "preferred_scientific_name_sv": 2361
+      },
+      "redlist_rows": 34171,
+      "taxa": 633542,
+      "taxa_by_source_status": {
+        "col_xr/accepted": 619978,
+        "col_xr/provisionally accepted": 998,
+        "nortaxa/valid": 12566
+      },
+      "taxon_id_columns": {
+        "inaturalist_taxon_id": 7958,
+        "norwegian_taxon_id": 12566,
+        "swedish_taxon_id": 0
+      },
+      "text_external_ids_by_namespace": {
+        "col_xr/col_usage_id": 620976,
+        "dyntaxa/dyntaxa_taxon_id": 2361,
+        "nortaxa/nortaxa_taxon_id": 9516
+      },
+      "vernacular_by_language": {
+        "acv": 1,
+        "af": 71,
+        "ain": 1,
+        "ar": 11,
+        "arg": 2,
+        "arn": 3,
+        "ast": 61,
+        "az": 3,
+        "bar": 3,
+        "be": 57,
+        "bg": 73,
+        "bn": 2,
+        "bnn": 4,
+        "bo": 2,
+        "br": 1,
+        "bs": 1,
+        "ca": 164,
+        "ceb": 2,
+        "chm": 1,
+        "chr": 5,
+        "co": 2,
+        "cre": 6,
+        "cs": 5181,
+        "cy": 1403,
+        "da": 5127,
+        "de": 4727,
+        "dnj": 6,
+        "ee": 1,
+        "el": 43,
+        "en": 9111,
+        "eo": 7,
+        "es": 644,
+        "et": 1328,
+        "eu": 17,
+        "fa": 5,
+        "fi": 6332,
+        "fqs": 1,
+        "fr": 3360,
+        "frr": 1,
+        "fy": 8,
+        "ga": 1,
+        "gd": 91,
+        "gl": 30,
+        "haw": 2,
+        "hbs": 1,
+        "he": 964,
+        "hr": 66,
+        "hu": 2206,
+        "hy": 65,
+        "hz": 3,
+        "id": 5,
+        "io": 1,
+        "is": 19,
+        "it": 132,
+        "ja": 3675,
+        "ka": 7,
+        "kbd": 1,
+        "kk": 4,
+        "ko": 758,
+        "koi": 2,
+        "kth": 2,
+        "ku": 2,
+        "kv": 1,
+        "la": 5,
+        "lb": 158,
+        "lij": 1,
+        "lt": 3802,
+        "lub": 1,
+        "lv": 809,
+        "mg": 1,
+        "mi": 14,
+        "mia": 1,
+        "mis": 1,
+        "mk": 30,
+        "ml": 1,
+        "ms": 4,
+        "mte": 3,
+        "mwl": 1,
+        "my": 1,
+        "nb": 7886,
+        "nl": 7463,
+        "nmu": 2,
+        "nmx": 2,
+        "nn": 4812,
+        "no": 21,
+        "oc": 2,
+        "oj": 15,
+        "pa": 1,
+        "pl": 1673,
+        "pmm": 2,
+        "pms": 4,
+        "pnb": 1,
+        "ps": 2,
+        "pt": 143,
+        "qu": 2,
+        "rm": 1,
+        "rn": 2,
+        "ro": 13,
+        "rom": 1,
+        "ru": 5206,
+        "sah": 6,
+        "sat": 2,
+        "scn": 2,
+        "sco": 1,
+        "se": 102,
+        "sha": 1,
+        "sk": 3521,
+        "sl": 1992,
+        "sn": 3,
+        "sq": 3,
+        "sr": 63,
+        "sv": 6349,
+        "ta": 4,
+        "te": 1,
+        "th": 163,
+        "tn": 2,
+        "to": 1,
+        "tr": 123,
+        "tsz": 6,
+        "tt": 1,
+        "twe": 1,
+        "udm": 1,
+        "uk": 809,
+        "und": 7,
+        "vec": 1,
+        "vi": 9,
+        "wa": 9,
+        "war": 2,
+        "wlk": 1,
+        "yi": 1,
+        "ynn": 1,
+        "yo": 2,
+        "zh": 5048
+      }
+    },
+    "delta": {
+      "content_release_id": {
+        "baseline": "tax-2026.09.30-01",
+        "candidate": "tax-2026.10.06-01"
+      },
+      "vernacular_by_language.acv": {
+        "baseline": null,
+        "candidate": 1
+      },
+      "vernacular_by_language.af": {
+        "baseline": null,
+        "candidate": 71
+      },
+      "vernacular_by_language.ain": {
+        "baseline": null,
+        "candidate": 1
+      },
+      "vernacular_by_language.ar": {
+        "baseline": null,
+        "candidate": 11
+      },
+      "vernacular_by_language.arg": {
+        "baseline": null,
+        "candidate": 2
+      },
+      "vernacular_by_language.arn": {
+        "baseline": null,
+        "candidate": 3
+      },
+      "vernacular_by_language.ast": {
+        "baseline": null,
+        "candidate": 61
+      },
+      "vernacular_by_language.az": {
+        "baseline": null,
+        "candidate": 3
+      },
+      "vernacular_by_language.bar": {
+        "baseline": null,
+        "candidate": 3
+      },
+      "vernacular_by_language.be": {
+        "baseline": null,
+        "candidate": 57
+      },
+      "vernacular_by_language.bg": {
+        "baseline": null,
+        "candidate": 73
+      },
+      "vernacular_by_language.bn": {
+        "baseline": null,
+        "candidate": 2
+      },
+      "vernacular_by_language.bnn": {
+        "baseline": null,
+        "candidate": 4
+      },
+      "vernacular_by_language.bo": {
+        "baseline": null,
+        "candidate": 2
+      },
+      "vernacular_by_language.br": {
+        "baseline": null,
+        "candidate": 1
+      },
+      "vernacular_by_language.bs": {
+        "baseline": null,
+        "candidate": 1
+      },
+      "vernacular_by_language.ca": {
+        "baseline": null,
+        "candidate": 164
+      },
+      "vernacular_by_language.ceb": {
+        "baseline": null,
+        "candidate": 2
+      },
+      "vernacular_by_language.chm": {
+        "baseline": null,
+        "candidate": 1
+      },
+      "vernacular_by_language.chr": {
+        "baseline": null,
+        "candidate": 5
+      },
+      "vernacular_by_language.co": {
+        "baseline": null,
+        "candidate": 2
+      },
+      "vernacular_by_language.cre": {
+        "baseline": null,
+        "candidate": 6
+      },
+      "vernacular_by_language.cs": {
+        "baseline": null,
+        "candidate": 5181
+      },
+      "vernacular_by_language.cy": {
+        "baseline": null,
+        "candidate": 1403
+      },
+      "vernacular_by_language.da": {
+        "baseline": 1786,
+        "candidate": 5127
+      },
+      "vernacular_by_language.de": {
+        "baseline": 2198,
+        "candidate": 4727
+      },
+      "vernacular_by_language.dnj": {
+        "baseline": null,
+        "candidate": 6
+      },
+      "vernacular_by_language.ee": {
+        "baseline": null,
+        "candidate": 1
+      },
+      "vernacular_by_language.el": {
+        "baseline": null,
+        "candidate": 43
+      },
+      "vernacular_by_language.en": {
+        "baseline": 3028,
+        "candidate": 9111
+      },
+      "vernacular_by_language.eo": {
+        "baseline": null,
+        "candidate": 7
+      },
+      "vernacular_by_language.es": {
+        "baseline": 329,
+        "candidate": 644
+      },
+      "vernacular_by_language.et": {
+        "baseline": null,
+        "candidate": 1328
+      },
+      "vernacular_by_language.eu": {
+        "baseline": null,
+        "candidate": 17
+      },
+      "vernacular_by_language.fa": {
+        "baseline": null,
+        "candidate": 5
+      },
+      "vernacular_by_language.fi": {
+        "baseline": 3116,
+        "candidate": 6332
+      },
+      "vernacular_by_language.fqs": {
+        "baseline": null,
+        "candidate": 1
+      },
+      "vernacular_by_language.fr": {
+        "baseline": 2796,
+        "candidate": 3360
+      },
+      "vernacular_by_language.frr": {
+        "baseline": null,
+        "candidate": 1
+      },
+      "vernacular_by_language.fy": {
+        "baseline": null,
+        "candidate": 8
+      },
+      "vernacular_by_language.ga": {
+        "baseline": null,
+        "candidate": 1
+      },
+      "vernacular_by_language.gd": {
+        "baseline": null,
+        "candidate": 91
+      },
+      "vernacular_by_language.gl": {
+        "baseline": null,
+        "candidate": 30
+      },
+      "vernacular_by_language.haw": {
+        "baseline": null,
+        "candidate": 2
+      },
+      "vernacular_by_language.hbs": {
+        "baseline": null,
+        "candidate": 1
+      },
+      "vernacular_by_language.he": {
+        "baseline": null,
+        "candidate": 964
+      },
+      "vernacular_by_language.hr": {
+        "baseline": null,
+        "candidate": 66
+      },
+      "vernacular_by_language.hu": {
+        "baseline": null,
+        "candidate": 2206
+      },
+      "vernacular_by_language.hy": {
+        "baseline": null,
+        "candidate": 65
+      },
+      "vernacular_by_language.hz": {
+        "baseline": null,
+        "candidate": 3
+      },
+      "vernacular_by_language.id": {
+        "baseline": null,
+        "candidate": 5
+      },
+      "vernacular_by_language.io": {
+        "baseline": null,
+        "candidate": 1
+      },
+      "vernacular_by_language.is": {
+        "baseline": null,
+        "candidate": 19
+      },
+      "vernacular_by_language.it": {
+        "baseline": 89,
+        "candidate": 132
+      },
+      "vernacular_by_language.ja": {
+        "baseline": null,
+        "candidate": 3675
+      },
+      "vernacular_by_language.ka": {
+        "baseline": null,
+        "candidate": 7
+      },
+      "vernacular_by_language.kbd": {
+        "baseline": null,
+        "candidate": 1
+      },
+      "vernacular_by_language.kk": {
+        "baseline": null,
+        "candidate": 4
+      },
+      "vernacular_by_language.ko": {
+        "baseline": null,
+        "candidate": 758
+      },
+      "vernacular_by_language.koi": {
+        "baseline": null,
+        "candidate": 2
+      },
+      "vernacular_by_language.kth": {
+        "baseline": null,
+        "candidate": 2
+      },
+      "vernacular_by_language.ku": {
+        "baseline": null,
+        "candidate": 2
+      },
+      "vernacular_by_language.kv": {
+        "baseline": null,
+        "candidate": 1
+      },
+      "vernacular_by_language.la": {
+        "baseline": null,
+        "candidate": 5
+      },
+      "vernacular_by_language.lb": {
+        "baseline": null,
+        "candidate": 158
+      },
+      "vernacular_by_language.lij": {
+        "baseline": null,
+        "candidate": 1
+      },
+      "vernacular_by_language.lt": {
+        "baseline": null,
+        "candidate": 3802
+      },
+      "vernacular_by_language.lub": {
+        "baseline": null,
+        "candidate": 1
+      },
+      "vernacular_by_language.lv": {
+        "baseline": null,
+        "candidate": 809
+      },
+      "vernacular_by_language.mg": {
+        "baseline": null,
+        "candidate": 1
+      },
+      "vernacular_by_language.mi": {
+        "baseline": null,
+        "candidate": 14
+      },
+      "vernacular_by_language.mia": {
+        "baseline": null,
+        "candidate": 1
+      },
+      "vernacular_by_language.mis": {
+        "baseline": null,
+        "candidate": 1
+      },
+      "vernacular_by_language.mk": {
+        "baseline": null,
+        "candidate": 30
+      },
+      "vernacular_by_language.ml": {
+        "baseline": null,
+        "candidate": 1
+      },
+      "vernacular_by_language.ms": {
+        "baseline": null,
+        "candidate": 4
+      },
+      "vernacular_by_language.mte": {
+        "baseline": null,
+        "candidate": 3
+      },
+      "vernacular_by_language.mwl": {
+        "baseline": null,
+        "candidate": 1
+      },
+      "vernacular_by_language.my": {
+        "baseline": null,
+        "candidate": 1
+      },
+      "vernacular_by_language.nb": {
+        "baseline": 6240,
+        "candidate": 7886
+      },
+      "vernacular_by_language.nl": {
+        "baseline": null,
+        "candidate": 7463
+      },
+      "vernacular_by_language.nmu": {
+        "baseline": null,
+        "candidate": 2
+      },
+      "vernacular_by_language.nmx": {
+        "baseline": null,
+        "candidate": 2
+      },
+      "vernacular_by_language.nn": {
+        "baseline": 3975,
+        "candidate": 4812
+      },
+      "vernacular_by_language.no": {
+        "baseline": null,
+        "candidate": 21
+      },
+      "vernacular_by_language.oc": {
+        "baseline": null,
+        "candidate": 2
+      },
+      "vernacular_by_language.oj": {
+        "baseline": null,
+        "candidate": 15
+      },
+      "vernacular_by_language.pa": {
+        "baseline": null,
+        "candidate": 1
+      },
+      "vernacular_by_language.pl": {
+        "baseline": 1304,
+        "candidate": 1673
+      },
+      "vernacular_by_language.pmm": {
+        "baseline": null,
+        "candidate": 2
+      },
+      "vernacular_by_language.pms": {
+        "baseline": null,
+        "candidate": 4
+      },
+      "vernacular_by_language.pnb": {
+        "baseline": null,
+        "candidate": 1
+      },
+      "vernacular_by_language.ps": {
+        "baseline": null,
+        "candidate": 2
+      },
+      "vernacular_by_language.pt": {
+        "baseline": 90,
+        "candidate": 143
+      },
+      "vernacular_by_language.qu": {
+        "baseline": null,
+        "candidate": 2
+      },
+      "vernacular_by_language.rm": {
+        "baseline": null,
+        "candidate": 1
+      },
+      "vernacular_by_language.rn": {
+        "baseline": null,
+        "candidate": 2
+      },
+      "vernacular_by_language.ro": {
+        "baseline": null,
+        "candidate": 13
+      },
+      "vernacular_by_language.rom": {
+        "baseline": null,
+        "candidate": 1
+      },
+      "vernacular_by_language.ru": {
+        "baseline": null,
+        "candidate": 5206
+      },
+      "vernacular_by_language.sah": {
+        "baseline": null,
+        "candidate": 6
+      },
+      "vernacular_by_language.sat": {
+        "baseline": null,
+        "candidate": 2
+      },
+      "vernacular_by_language.scn": {
+        "baseline": null,
+        "candidate": 2
+      },
+      "vernacular_by_language.sco": {
+        "baseline": null,
+        "candidate": 1
+      },
+      "vernacular_by_language.se": {
+        "baseline": 79,
+        "candidate": 102
+      },
+      "vernacular_by_language.sha": {
+        "baseline": null,
+        "candidate": 1
+      },
+      "vernacular_by_language.sk": {
+        "baseline": null,
+        "candidate": 3521
+      },
+      "vernacular_by_language.sl": {
+        "baseline": null,
+        "candidate": 1992
+      },
+      "vernacular_by_language.sn": {
+        "baseline": null,
+        "candidate": 3
+      },
+      "vernacular_by_language.sq": {
+        "baseline": null,
+        "candidate": 3
+      },
+      "vernacular_by_language.sr": {
+        "baseline": null,
+        "candidate": 63
+      },
+      "vernacular_by_language.sv": {
+        "baseline": 6110,
+        "candidate": 6349
+      },
+      "vernacular_by_language.ta": {
+        "baseline": null,
+        "candidate": 4
+      },
+      "vernacular_by_language.te": {
+        "baseline": null,
+        "candidate": 1
+      },
+      "vernacular_by_language.th": {
+        "baseline": null,
+        "candidate": 163
+      },
+      "vernacular_by_language.tn": {
+        "baseline": null,
+        "candidate": 2
+      },
+      "vernacular_by_language.to": {
+        "baseline": null,
+        "candidate": 1
+      },
+      "vernacular_by_language.tr": {
+        "baseline": null,
+        "candidate": 123
+      },
+      "vernacular_by_language.tsz": {
+        "baseline": null,
+        "candidate": 6
+      },
+      "vernacular_by_language.tt": {
+        "baseline": null,
+        "candidate": 1
+      },
+      "vernacular_by_language.twe": {
+        "baseline": null,
+        "candidate": 1
+      },
+      "vernacular_by_language.udm": {
+        "baseline": null,
+        "candidate": 1
+      },
+      "vernacular_by_language.uk": {
+        "baseline": null,
+        "candidate": 809
+      },
+      "vernacular_by_language.und": {
+        "baseline": null,
+        "candidate": 7
+      },
+      "vernacular_by_language.vec": {
+        "baseline": null,
+        "candidate": 1
+      },
+      "vernacular_by_language.vi": {
+        "baseline": null,
+        "candidate": 9
+      },
+      "vernacular_by_language.wa": {
+        "baseline": null,
+        "candidate": 9
+      },
+      "vernacular_by_language.war": {
+        "baseline": null,
+        "candidate": 2
+      },
+      "vernacular_by_language.wlk": {
+        "baseline": null,
+        "candidate": 1
+      },
+      "vernacular_by_language.yi": {
+        "baseline": null,
+        "candidate": 1
+      },
+      "vernacular_by_language.ynn": {
+        "baseline": null,
+        "candidate": 1
+      },
+      "vernacular_by_language.yo": {
+        "baseline": null,
+        "candidate": 2
+      },
+      "vernacular_by_language.zh": {
+        "baseline": null,
+        "candidate": 5048
+      }
+    }
+  },
+  "determinism": {
+    "compile_artifacts": {
+      "diagnostics.json": "e4deebf83b1e4a7c1707f9454625759fcad0e2fde7dd9cc14c2500a48861e149",
+      "legacy_enrichment_skips.jsonl": "d3063e9d34da42d8a6a216861a20a65f1dff8e6f118c5dd7ff2178e82c34d89a",
+      "legacy_external_ids.jsonl": "7a227b51272c346033017f6cc19722277459abe2fb60c3f1c466a6694048a31e",
+      "manifest.json": "0bb3ec5d83bd8932e27b03396611a541b4e03bf53c495f5c674c839b0e68370f",
+      "mappings.jsonl": "04cff87ce4223f346c8bf73b289fa70f63e090139fac600d692d25e93e92ee47",
+      "redlist_no.jsonl": "b798d18b3cb286c25d4769fe2f212feb2558a8af3735c70791bfb5108c1d2f48",
+      "redlist_no_diagnostics.json": "7beab3ab5996779ac39d97ae548a78381d6f97434dbc5cc717ce7d53faddfa5c",
+      "source_usages.jsonl": "c1866553203efd5b5220049cea2bda8ed4189ebfbbb16817db7e9e5570506b26",
+      "taxa.jsonl": "6f62167c34bececd88988b328711ff4f85e699c9545c2b81ca1a5b6fece453b2",
+      "vernacular.jsonl": "8b0069d2da9ed8d72367077196d44f371bb04d147368f04791c46bb876a6f662",
+      "vernacular_changes.json": "9cfaa6cd219a8e29747712b236651cf1399637a3d6e7a91efe4644369f8e9738",
+      "vernacular_evidence.jsonl": "f480f853c0e96cb4641d9f949d29b4f2fb09daaa5ac28d90269564400edffca1",
+      "vernacular_reviews.json": "ad5ddf3a2795076ffcedf979ae2ae15fc38a052aa05f6e04da349259e9e78dc1"
+    },
+    "identical": true,
+    "mismatches": [],
+    "registry_after_compile": "1cc2003a874e5deb2c0023bf8fd6fb74dd98b2ad656ee36d8755c15277c8adc9",
+    "sqlite_sha256": "3f9037c08b918890910b16f5a7446a323d5524d08a49e674715afbb7137bb73e"
+  },
+  "frozen": {
+    "freeze_sha256": "fda89f3744975dfb296336b73256c33df1b278efe092eca336557d067d07148e",
+    "path": "frozen"
+  },
+  "inputs": {
+    "artportalen_overlay_sha256": "e1219525f5620d4961a992dcd5e43514b26c54e5667b78079b48f56b4e7e402f",
+    "inaturalist_refresh_sha256": "47266f1e144b2e1944359d4a2ca3f3a6bc39bd6e2024c047d7a0d6b0edbe4f15",
+    "legacy_db_sha256": "724686455d3f6539fd382e799c6cb43e2f5145942c0f84017a6e206561923c17",
+    "redlist_workbook_sha256": "c2fb6a5f4828defe371b1cb9978974bfd64a23101ad37bb715f260bd658bef04",
+    "registry_sha256": "1cc2003a874e5deb2c0023bf8fd6fb74dd98b2ad656ee36d8755c15277c8adc9",
+    "sources": {
+      "col_xr": {
+        "archive_sha256": "397d701c8eb269bf78d6ac7b03149915b0d9e2a2c18694be2c91445b807814f9",
+        "manifest": "database/taxonomy/sources/col_xr/2026-07-17-XR/manifest.json"
+      },
+      "dyntaxa": {
+        "archive_sha256": "7947b7a7681f3654d5478694f1fe37fdd9e72dc3aab8f9b6311525d85cc4879c",
+        "manifest": "database/taxonomy/sources/dyntaxa/2026-09-30/manifest.json"
+      },
+      "nortaxa": {
+        "archive_sha256": "29c11c54d955dc44e4e5a38944dd7932989a256d1b173777579b9f33abd2fe22",
+        "manifest": "database/taxonomy/sources/nortaxa/1.284/manifest.json"
+      }
+    },
+    "superseded_references": {
+      "artportalen_overlay": [
+        {
+          "scientific_name": "Amanita muscaria",
+          "sporely_taxon_id": 78915,
+          "superseded_from_sporely_taxon_id": 624588,
+          "supersession_id": "taxonomy-v3-2-nortaxa-52147-superseded-by-col-5TYZ9"
+        }
+      ],
+      "inaturalist_refresh": [
+        {
+          "scientific_name": "Hymenochaete mougeotii",
+          "sporely_taxon_id": 102371,
+          "superseded_from_sporely_taxon_id": 622141,
+          "supersession_id": "taxonomy-v3-2-nortaxa-143150-superseded-by-col-6MPDS"
+        },
+        {
+          "scientific_name": "Lepraria alpina",
+          "sporely_taxon_id": 104975,
+          "superseded_from_sporely_taxon_id": 622481,
+          "supersession_id": "taxonomy-v3-2-nortaxa-145064-superseded-by-col-6PDYN"
+        },
+        {
+          "scientific_name": "Phaeoclavulina abietina",
+          "sporely_taxon_id": 43260,
+          "superseded_from_sporely_taxon_id": 623086,
+          "supersession_id": "taxonomy-v3-2-nortaxa-172827-superseded-by-col-4FMNZ"
+        },
+        {
+          "scientific_name": "Amanita muscaria",
+          "sporely_taxon_id": 78915,
+          "superseded_from_sporely_taxon_id": 624588,
+          "supersession_id": "taxonomy-v3-2-nortaxa-52147-superseded-by-col-5TYZ9"
+        },
+        {
+          "scientific_name": "Conocybe apala",
+          "sporely_taxon_id": 616843,
+          "superseded_from_sporely_taxon_id": 624630,
+          "supersession_id": "taxonomy-v3-2-nortaxa-52239-superseded-by-col-XQQT"
+        },
+        {
+          "scientific_name": "Entoloma mougeotii",
+          "sporely_taxon_id": 96064,
+          "superseded_from_sporely_taxon_id": 625244,
+          "supersession_id": "taxonomy-v3-2-nortaxa-53586-superseded-by-col-6FCYY"
+        },
+        {
+          "scientific_name": "Entoloma sordidulum",
+          "sporely_taxon_id": 96345,
+          "superseded_from_sporely_taxon_id": 625273,
+          "supersession_id": "taxonomy-v3-2-nortaxa-53675-superseded-by-col-6FDPT"
+        },
+        {
+          "scientific_name": "Entoloma subradiatum",
+          "sporely_taxon_id": 96420,
+          "superseded_from_sporely_taxon_id": 625276,
+          "supersession_id": "taxonomy-v3-2-nortaxa-53681-superseded-by-col-6FDSK"
+        },
+        {
+          "scientific_name": "Melanoleuca strictipes",
+          "sporely_taxon_id": 29183,
+          "superseded_from_sporely_taxon_id": 625575,
+          "supersession_id": "taxonomy-v3-2-nortaxa-54595-superseded-by-col-3Z8X3"
+        },
+        {
+          "scientific_name": "Melanoleuca subpulverulenta",
+          "sporely_taxon_id": 29198,
+          "superseded_from_sporely_taxon_id": 625578,
+          "supersession_id": "taxonomy-v3-2-nortaxa-54599-superseded-by-col-3Z8XT"
+        },
+        {
+          "scientific_name": "Agrocybe pediades",
+          "sporely_taxon_id": 146432,
+          "superseded_from_sporely_taxon_id": 625847,
+          "supersession_id": "taxonomy-v3-2-nortaxa-55206-superseded-by-col-B86C"
+        },
+        {
+          "scientific_name": "Psilocybe strictipes",
+          "sporely_taxon_id": 55384,
+          "superseded_from_sporely_taxon_id": 625894,
+          "supersession_id": "taxonomy-v3-2-nortaxa-55314-superseded-by-col-4PHCW"
+        },
+        {
+          "scientific_name": "Collybia cirrhata",
+          "sporely_taxon_id": 615902,
+          "superseded_from_sporely_taxon_id": 625932,
+          "supersession_id": "taxonomy-v3-2-nortaxa-55431-superseded-by-col-X53M"
+        },
+        {
+          "scientific_name": "Exidia glandulosa",
+          "sporely_taxon_id": 9309,
+          "superseded_from_sporely_taxon_id": 626107,
+          "supersession_id": "taxonomy-v3-2-nortaxa-55847-superseded-by-col-3DL2M"
+        },
+        {
+          "scientific_name": "Boletus edulis",
+          "sporely_taxon_id": 160491,
+          "superseded_from_sporely_taxon_id": 626145,
+          "supersession_id": "taxonomy-v3-2-nortaxa-55943-superseded-by-col-MCH9"
+        },
+        {
+          "scientific_name": "Leccinum scabrum",
+          "sporely_taxon_id": 23371,
+          "superseded_from_sporely_taxon_id": 626159,
+          "supersession_id": "taxonomy-v3-2-nortaxa-55999-superseded-by-col-3STFC"
+        },
+        {
+          "scientific_name": "Ramaria formosa",
+          "sporely_taxon_id": 58737,
+          "superseded_from_sporely_taxon_id": 626345,
+          "supersession_id": "taxonomy-v3-2-nortaxa-56510-superseded-by-col-4RBQN"
+        },
+        {
+          "scientific_name": "Cerrena hydnoides",
+          "sporely_taxon_id": 605683,
+          "superseded_from_sporely_taxon_id": 626614,
+          "supersession_id": "taxonomy-v3-2-nortaxa-57184-superseded-by-col-T4ST"
+        },
+        {
+          "scientific_name": "Phlebiopsis gigantea",
+          "sporely_taxon_id": 119413,
+          "superseded_from_sporely_taxon_id": 627144,
+          "supersession_id": "taxonomy-v3-2-nortaxa-63527-superseded-by-col-77B32"
+        },
+        {
+          "scientific_name": "Rinodina turfacea",
+          "sporely_taxon_id": 61288,
+          "superseded_from_sporely_taxon_id": 630866,
+          "supersession_id": "taxonomy-v3-2-nortaxa-74045-superseded-by-col-4T45G"
+        }
+      ]
+    }
+  },
+  "legacy_enrichment": true,
+  "promoted": false,
+  "recipe": "database/taxonomy/release-recipe.json",
+  "recipe_sha256": "8ef255132830de4f00631b6faa79ca016d2c0398023400d55d7ba500e7b1f248",
+  "registry": {
+    "after_sha256": "1cc2003a874e5deb2c0023bf8fd6fb74dd98b2ad656ee36d8755c15277c8adc9",
+    "base_sha256": "1cc2003a874e5deb2c0023bf8fd6fb74dd98b2ad656ee36d8755c15277c8adc9",
+    "new_allocations": 0,
+    "unchanged": true
+  },
+  "release_id": "tax-2026.10.06-01",
+  "sqlite": {
+    "authoritative_bridge_emission": {
+      "eligible_evidence_classes": [
+        "manual_approved_exact",
+        "reviewed_supersession"
+      ],
+      "emitted_by_evidence_class": {
+        "manual_approved_exact": 5745,
+        "reviewed_supersession": 6132
+      },
+      "emitted_total": 11877,
+      "policy_sha256": "a5a329848c45fcd030165a51ad1193944dffe7573ddb2a9c69441f0d76ae4afb",
+      "rejected_by_evidence_class_and_reason": {
+        "cross_source_automatic_exact_missing_authorship|admitted by the missing-authorship fallback, which fires precisely when authorship is absent on one or both sides. Weaker still than the strict rule, and rejected for the same reason plus an unverified homonym guard.": 2133,
+        "cross_source_automatic_exact_strict|the conservative exact rule matches on canonical name and rank and then strengthens the match with authorship, status and kingdom agreement plus a homonym guard. That is a stronger name match, but it is still a name match: neither source published a cross-reference asserting the two concepts are the same. continuity_rules.canonical_name_only requires review for exactly this evidence, so the binding enriches names and must not be published as concept identity. Reviewable candidates are identified by scripts/cross_reference_evidence.py, which reports the sources' own synonymy assertions; a human decision on that evidence is what promotes an association, one at a time.": 14291,
+        "intra_source_synonym|a synonym usage bound to its own accepted concept inside one source. Its relation to the backbone concept is transitive on the accepted usage's binding and has not been graded on its own evidence; admitting it would emit an identifier whose evidence was never evaluated.": 30225
+      },
+      "rejected_total": 46649
+    },
+    "counts": {
+      "scientific_name_min": 665947,
+      "taxon_external_id_min": 78615,
+      "taxon_external_id_text_min": 632853,
+      "taxon_min": 633542,
+      "taxon_redlist_min": 34171,
+      "taxonomy_meta": 17,
+      "vernacular_min": 96141
+    },
+    "national_preferred_scientific_names": {
+      "no": {
+        "ambiguous_left_null": 0,
+        "filled": 4737
+      },
+      "sv": {
+        "ambiguous_left_null": 0,
+        "filled": 2361
+      }
+    },
+    "publishing_ids": {
+      "artportalen_overlay_rows_added": 815,
+      "inaturalist_refresh": {
+        "legacy_rows_superseded": 286,
+        "resolved": 140,
+        "unresolved": 219
+      },
+      "superseded_rekeys": {
+        "artportalen_overlay": [
+          {
+            "scientific_name": "Amanita muscaria",
+            "sporely_taxon_id": 78915,
+            "superseded_from_sporely_taxon_id": 624588,
+            "supersession_id": "taxonomy-v3-2-nortaxa-52147-superseded-by-col-5TYZ9"
+          }
+        ],
+        "inaturalist_refresh": [
+          {
+            "scientific_name": "Hymenochaete mougeotii",
+            "sporely_taxon_id": 102371,
+            "superseded_from_sporely_taxon_id": 622141,
+            "supersession_id": "taxonomy-v3-2-nortaxa-143150-superseded-by-col-6MPDS"
+          },
+          {
+            "scientific_name": "Lepraria alpina",
+            "sporely_taxon_id": 104975,
+            "superseded_from_sporely_taxon_id": 622481,
+            "supersession_id": "taxonomy-v3-2-nortaxa-145064-superseded-by-col-6PDYN"
+          },
+          {
+            "scientific_name": "Phaeoclavulina abietina",
+            "sporely_taxon_id": 43260,
+            "superseded_from_sporely_taxon_id": 623086,
+            "supersession_id": "taxonomy-v3-2-nortaxa-172827-superseded-by-col-4FMNZ"
+          },
+          {
+            "scientific_name": "Amanita muscaria",
+            "sporely_taxon_id": 78915,
+            "superseded_from_sporely_taxon_id": 624588,
+            "supersession_id": "taxonomy-v3-2-nortaxa-52147-superseded-by-col-5TYZ9"
+          },
+          {
+            "scientific_name": "Conocybe apala",
+            "sporely_taxon_id": 616843,
+            "superseded_from_sporely_taxon_id": 624630,
+            "supersession_id": "taxonomy-v3-2-nortaxa-52239-superseded-by-col-XQQT"
+          },
+          {
+            "scientific_name": "Entoloma mougeotii",
+            "sporely_taxon_id": 96064,
+            "superseded_from_sporely_taxon_id": 625244,
+            "supersession_id": "taxonomy-v3-2-nortaxa-53586-superseded-by-col-6FCYY"
+          },
+          {
+            "scientific_name": "Entoloma sordidulum",
+            "sporely_taxon_id": 96345,
+            "superseded_from_sporely_taxon_id": 625273,
+            "supersession_id": "taxonomy-v3-2-nortaxa-53675-superseded-by-col-6FDPT"
+          },
+          {
+            "scientific_name": "Entoloma subradiatum",
+            "sporely_taxon_id": 96420,
+            "superseded_from_sporely_taxon_id": 625276,
+            "supersession_id": "taxonomy-v3-2-nortaxa-53681-superseded-by-col-6FDSK"
+          },
+          {
+            "scientific_name": "Melanoleuca strictipes",
+            "sporely_taxon_id": 29183,
+            "superseded_from_sporely_taxon_id": 625575,
+            "supersession_id": "taxonomy-v3-2-nortaxa-54595-superseded-by-col-3Z8X3"
+          },
+          {
+            "scientific_name": "Melanoleuca subpulverulenta",
+            "sporely_taxon_id": 29198,
+            "superseded_from_sporely_taxon_id": 625578,
+            "supersession_id": "taxonomy-v3-2-nortaxa-54599-superseded-by-col-3Z8XT"
+          },
+          {
+            "scientific_name": "Agrocybe pediades",
+            "sporely_taxon_id": 146432,
+            "superseded_from_sporely_taxon_id": 625847,
+            "supersession_id": "taxonomy-v3-2-nortaxa-55206-superseded-by-col-B86C"
+          },
+          {
+            "scientific_name": "Psilocybe strictipes",
+            "sporely_taxon_id": 55384,
+            "superseded_from_sporely_taxon_id": 625894,
+            "supersession_id": "taxonomy-v3-2-nortaxa-55314-superseded-by-col-4PHCW"
+          },
+          {
+            "scientific_name": "Collybia cirrhata",
+            "sporely_taxon_id": 615902,
+            "superseded_from_sporely_taxon_id": 625932,
+            "supersession_id": "taxonomy-v3-2-nortaxa-55431-superseded-by-col-X53M"
+          },
+          {
+            "scientific_name": "Exidia glandulosa",
+            "sporely_taxon_id": 9309,
+            "superseded_from_sporely_taxon_id": 626107,
+            "supersession_id": "taxonomy-v3-2-nortaxa-55847-superseded-by-col-3DL2M"
+          },
+          {
+            "scientific_name": "Boletus edulis",
+            "sporely_taxon_id": 160491,
+            "superseded_from_sporely_taxon_id": 626145,
+            "supersession_id": "taxonomy-v3-2-nortaxa-55943-superseded-by-col-MCH9"
+          },
+          {
+            "scientific_name": "Leccinum scabrum",
+            "sporely_taxon_id": 23371,
+            "superseded_from_sporely_taxon_id": 626159,
+            "supersession_id": "taxonomy-v3-2-nortaxa-55999-superseded-by-col-3STFC"
+          },
+          {
+            "scientific_name": "Ramaria formosa",
+            "sporely_taxon_id": 58737,
+            "superseded_from_sporely_taxon_id": 626345,
+            "supersession_id": "taxonomy-v3-2-nortaxa-56510-superseded-by-col-4RBQN"
+          },
+          {
+            "scientific_name": "Cerrena hydnoides",
+            "sporely_taxon_id": 605683,
+            "superseded_from_sporely_taxon_id": 626614,
+            "supersession_id": "taxonomy-v3-2-nortaxa-57184-superseded-by-col-T4ST"
+          },
+          {
+            "scientific_name": "Phlebiopsis gigantea",
+            "sporely_taxon_id": 119413,
+            "superseded_from_sporely_taxon_id": 627144,
+            "supersession_id": "taxonomy-v3-2-nortaxa-63527-superseded-by-col-77B32"
+          },
+          {
+            "scientific_name": "Rinodina turfacea",
+            "sporely_taxon_id": 61288,
+            "superseded_from_sporely_taxon_id": 630866,
+            "supersession_id": "taxonomy-v3-2-nortaxa-74045-superseded-by-col-4T45G"
+          }
+        ]
+      }
+    },
+    "sha256": "3f9037c08b918890910b16f5a7446a323d5524d08a49e674715afbb7137bb73e"
+  }
+}

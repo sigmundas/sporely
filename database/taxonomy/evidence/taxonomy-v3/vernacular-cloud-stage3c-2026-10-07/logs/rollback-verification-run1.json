@@ -1,0 +1,34 @@
+{
+  "target": {
+    "projectId": "zkpjklzfwzefhjluvhfw",
+    "context": "orbstack",
+    "engineVersion": "29.4.0",
+    "container": "4f6145469518",
+    "database": "postgres",
+    "postgresVersion": "17.6",
+    "psqlVersion": "psql (PostgreSQL) 17.6"
+  },
+  "container_name": "/supabase_db_zkpjklzfwzefhjluvhfw",
+  "server": "unix-socket|*|/var/lib/postgresql/data",
+  "database_url_env_present": false,
+  "before": {
+    "releases": 0,
+    "taxa": 0,
+    "vernacular": 0,
+    "scientific_names": 0,
+    "external_ids": 0,
+    "import_runs": 0,
+    "observations": 6
+  },
+  "after": {
+    "releases": 0,
+    "taxa": 0,
+    "vernacular": 0,
+    "scientific_names": 0,
+    "external_ids": 0,
+    "import_runs": 0,
+    "observations": 6
+  },
+  "transaction_rolled_back": true,
+  "rollback_sql_sha256": "080cf97983f346ffdb525dd4e225a4d8f554596b0d5c89a4033deeb1e97ef865"
+}

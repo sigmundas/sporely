@@ -1,0 +1,25 @@
+{"counts": {"w1": {"taxonomy_release.jsonl": 1, "taxon.jsonl": 633541, "scientific_name.jsonl": 665946, "vernacular.jsonl": 96141, "taxon_external_id.jsonl": 645418, "taxon_external_id_legacy_integer.jsonl": 78615, "taxon_redlist.jsonl": 7866}, "scoped": {"taxonomy_release.jsonl": 1, "taxon.jsonl": 52917, "scientific_name.jsonl": 60697, "vernacular.jsonl": 59889, "taxon_external_id.jsonl": 56959, "taxon_external_id_legacy_integer.jsonl": 0, "taxon_redlist.jsonl": 2600}}, "w1_equals_frozen_sqlite_exactly": true, "scoped_equals_frozen_scoped_exactly": true, "stage1b_recoveries": {"total": 10331, "concepts": 3579, "in_w1": 10331, "in_frozen_sqlite": 10331}, "unsupported_historical": {"total": 8453, "present_in_frozen_sqlite": 0, "present_in_w1": 0, "present_in_scoped": 0}, "stage1_rows": {"reconstructed": 13271, "expected": 13271, "missing_from_frozen_sqlite": 0, "missing_from_w1": 0, "scoped_stage1_rows": 6948, "scoped_missing": 0}, "db_counts": {"taxa": 52917, "scientific_names": 60697, "vernacular": 59889, "external_ids": 56959, "legacy_external_ids": 0, "redlist": 2600, "active": 1}}
+{"automatic": 1619, "reviewed": 18, "affected_concepts": 767, "in_w1": 1637, "in_scoped": 1637} 0
+{"compared_rows_vs_old_bundle": 19418, "delta_rows": 6897, "drift_vs_stage1b_evidence": 0, "stage1_rows_compared": 11635, "drift_vs_stage1_flags": 0, "stage1b_vs_stage1_delta_recorded": 0}
+PROBE grønnkremle True vernacular_exact 1 []
+PROBE lys høstmorkel True vernacular_exact 1 []
+PROBE dunpipe True vernacular_exact 1 []
+PROBE dråpeknippesopp True vernacular_exact 1 []
+PROBE snylterørsopp True vernacular_exact 1 []
+PROBE tårekjuke True vernacular_exact 1 []
+PROBE gul ekornnøtt True vernacular_exact 1 []
+PROBE rognerust True vernacular_exact 1 []
+PROBE gråfiolett køllesopp True vernacular_exact 1 []
+PROBE grønn navlesopp True vernacular_exact 1 []
+PROBE silkerødspore True vernacular_exact 1 []
+PROBE Russula aeruginea True canonical_exact 1 []
+PROBE taigarødtuppsopp True vernacular_exact 1 []
+PROBE rosenekornnøtt True vernacular_exact 1 []
+PROBE furustokklav False None None []
+PROBE blekgul køllesopp True vernacular_exact 1 []
+PROBE silkerødspore-gruppen None None None None
+PROBE sørlig rødtuppsopp True None None None
+PROBE sørleg rødtuppsopp True None None None
+PROBE knolltrevlesopp True None None None
+ENT {"strict_id": 96276, "collective_id": 625268, "strict_names_frozen": ["silkeraudspore", "silkerødspore"], "collective_names_frozen": ["silkeraudskivesopp", "silkeraudspore-gruppa", "silkerødskivesopp", "silkerødspore-gruppen"], "collective_in_w1_taxa": true, "collective_in_scoped_taxa": false, "strict_in_scoped": true, "collective_names_on_strict_frozen": [], "collective_names_on_strict_w1": [], "collective_names_on_strict_scoped": []}
+DBCOLL [] DBWITHHELD [{'source_scientific_name': 'Ramaria rubrievanescens', 'source_record': '129065', 'reasons': ['qualified_or_aggregate_source'], 'target': 58814, 'language': 'nb', 'name': 'taigarødtuppsopp'}] TAXA [19080, 58814, 58815, 60590, 82459, 96276, 100280, 146835] authenticated

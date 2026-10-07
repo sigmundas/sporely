@@ -1,0 +1,57 @@
+[taxonomy-v2] empty search result { query: 'zzzz-no-result', lang: 'no' }
+[taxonomy-v2] search RPC failed {
+  query: 'Legacy',
+  lang: 'no',
+  code: 'PGRST202',
+  message: 'function not found in schema cache'
+}
+[taxonomy-v2] external identifier is ambiguous; leaving unresolved { namespace: 'nortaxa_taxon_id', externalId: '53482', matches: 2 }
+[taxonomy-v2] external-id resolution failed {
+  sourceSystem: 'nortaxa',
+  namespace: 'nortaxa_taxon_id',
+  externalId: '53482',
+  code: '42883',
+  message: 'no function'
+}
+[taxonomy-v2] external identifier is ambiguous; leaving unresolved {
+  namespace: 'dyntaxa_taxon_id',
+  externalId: 'urn:lsid:dyntaxa.se:Taxon:3423',
+  matches: 2
+}
+✔ taxonomy-v2 normalization keeps Sporely, COL and NorTaxa namespaces separate (0.767166ms)
+✔ search normalizes canonical, alias, genus, vernacular and NorTaxa-backed results (0.661875ms)
+✔ empty result never falls back and unavailable RPC fallback is capability-separated (1.079417ms)
+✔ COL-only and genus selections are queued as client metadata, never provider fields (0.103667ms)
+✔ manual free text does not manufacture canonical identity (0.088ms)
+✔ an Artsorakel NBIC: identifier is preserved instead of being discarded (0.113667ms)
+✔ the synthetic unresolved identifier survives an empty resolver response (0.122792ms)
+✔ a numeric NBIC id never becomes the Sporely taxon with the same digits (0.059792ms)
+✔ a v2 search result still wins over provider-candidate parsing (0.055917ms)
+✔ NBIC: parses into its own namespace and keeps the raw value (0.11025ms)
+✔ a namespace-lost or unknown identifier is never parsed (0.049459ms)
+✔ resolution binds only on a single unambiguous match (0.223292ms)
+✔ an unresolved external identity is never sent to the selected-taxon RPC (0.074458ms)
+✔ identity provenance columns describe resolved and unresolved selections (0.042583ms)
+✔ a preserved external identity round-trips through save and reload (0.0645ms)
+✔ persistence uses only the narrow taxonomy selection RPC (0.039458ms)
+✔ the ordinary Save path preserves a clicked provider candidate (0.050833ms)
+✔ manual free text still clears identity explicitly (0.020458ms)
+✔ Stage 3W: Norwegian label shows the NorTaxa preferred name; identity stays canonical (0.044208ms)
+✔ Stage 3W: Swedish label (no sv name, no sv vernacular) shows the canonical name (0.023125ms)
+✔ Stage 3W: a row without a national name or from a pre-3W RPC falls back to canonical (0.037417ms)
+✔ Stage 3W: searchTaxaV2 passes the UI language that chooses the display name (0.069167ms)
+✔ Stage 4W: a reviewed Dyntaxa LSID resolves to its concept through the namespaced tuple (0.054375ms)
+✔ Stage 4W: an unknown (unpublished or automatic) Dyntaxa LSID stays external_unresolved (0.030875ms)
+✔ Stage 4W: an ambiguous Dyntaxa LSID stays unresolved (0.059834ms)
+✔ Stage 4W: a Dyntaxa LSID or name text is never parsed into a provider identity (0.03625ms)
+✔ Stage 4W: Swedish label shows the Stage 4P Dyntaxa preferred name (0.029583ms)
+✔ Stage 4W: Swedish label shows a Dyntaxa vernacular beside the national name (0.028666ms)
+✔ Stage 4W: a concept without a Stage 4P Swedish name falls back to canonical COL in Swedish (0.0225ms)
+ℹ tests 29
+ℹ suites 0
+ℹ pass 29
+ℹ fail 0
+ℹ cancelled 0
+ℹ skipped 0
+ℹ todo 0
+ℹ duration_ms 450.145

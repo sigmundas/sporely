@@ -1,0 +1,22 @@
+[19:07:58] START normalize_col_xr
+[19:09:26] OK normalize_col_xr (88s)
+[19:09:26] START normalize_nortaxa
+[19:09:30] OK normalize_nortaxa (3s)
+[19:09:30] START normalize_dyntaxa
+[19:09:33] OK normalize_dyntaxa (3s)
+[19:09:33] START normalize_redlist_no
+[19:09:37] OK normalize_redlist_no (4s)
+[19:09:37] START export_legacy_enrichment
+[19:09:37] OK export_legacy_enrichment (1s)
+[19:09:38] START compileA
+[19:10:39] OK compileA (61s)
+[19:10:39] START sqliteA
+[19:10:59] OK sqliteA (20s)
+[19:10:59] START compileB
+[19:11:57] OK compileB (59s)
+[19:11:57] START sqliteB
+[19:12:19] OK sqliteB (22s)
+[19:12:22] START freeze
+[19:13:18] OK freeze (56s)
+error: not promoting: freeze fda89f3744975dfb296336b73256c33df1b278efe092eca336557d067d07148e is not the reviewed freeze 0000000000000000000000000000000000000000000000000000000000000000
+exit 2

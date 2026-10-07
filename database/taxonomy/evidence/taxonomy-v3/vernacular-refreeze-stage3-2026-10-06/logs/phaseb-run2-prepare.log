@@ -1,0 +1,3 @@
+W1 {'taxonomy_release.jsonl': 1, 'taxon.jsonl': 633541, 'scientific_name.jsonl': 665946, 'vernacular.jsonl': 96141, 'taxon_external_id.jsonl': 645418, 'taxon_external_id_legacy_integer.jsonl': 78615, 'taxon_redlist.jsonl': 7866}
+scoped {'taxonomy_release.jsonl': 1, 'taxon.jsonl': 52917, 'scientific_name.jsonl': 60697, 'vernacular.jsonl': 59889, 'taxon_external_id.jsonl': 56959, 'taxon_external_id_legacy_integer.jsonl': 0, 'taxon_redlist.jsonl': 2600}
+prepared 4465a8ba20e4908a5efb2d7eec49898dbe0d18c8224b9db5566d0d757b9e1ef0

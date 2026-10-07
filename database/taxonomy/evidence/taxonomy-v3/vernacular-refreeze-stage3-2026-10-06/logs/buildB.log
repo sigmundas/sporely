@@ -1,0 +1,29 @@
+[18:57:52] START normalize_col_xr
+[18:59:19] OK normalize_col_xr (87s)
+[18:59:19] START normalize_nortaxa
+[18:59:22] OK normalize_nortaxa (3s)
+[18:59:22] START normalize_dyntaxa
+[18:59:25] OK normalize_dyntaxa (3s)
+[18:59:25] START normalize_redlist_no
+[18:59:29] OK normalize_redlist_no (5s)
+[18:59:29] START export_legacy_enrichment
+[18:59:30] OK export_legacy_enrichment (1s)
+[18:59:30] START compileA
+[19:01:53] OK compileA (143s)
+[19:01:53] START sqliteA
+[19:02:14] OK sqliteA (20s)
+[19:02:14] START compileB
+[19:04:19] OK compileB (125s)
+[19:04:19] START sqliteB
+[19:04:40] OK sqliteB (22s)
+[19:04:43] START freeze
+[19:05:34] OK freeze (50s)
+
+release tax-2026.10.06-01  sqlite 3f9037c08b918890910b16f5a7446a323d5524d08a49e674715afbb7137bb73e
+deterministic: True
+registry unchanged: True  new allocations: 0
+vernacular languages: acv=1, af=71, ain=1, ar=11, arg=2, arn=3, ast=61, az=3, bar=3, be=57, bg=73, bn=2, bnn=4, bo=2, br=1, bs=1, ca=164, ceb=2, chm=1, chr=5, co=2, cre=6, cs=5181, cy=1403, da=5127, de=4727, dnj=6, ee=1, el=43, en=9111, eo=7, es=644, et=1328, eu=17, fa=5, fi=6332, fqs=1, fr=3360, frr=1, fy=8, ga=1, gd=91, gl=30, haw=2, hbs=1, he=964, hr=66, hu=2206, hy=65, hz=3, id=5, io=1, is=19, it=132, ja=3675, ka=7, kbd=1, kk=4, ko=758, koi=2, kth=2, ku=2, kv=1, la=5, lb=158, lij=1, lt=3802, lub=1, lv=809, mg=1, mi=14, mia=1, mis=1, mk=30, ml=1, ms=4, mte=3, mwl=1, my=1, nb=7886, nl=7463, nmu=2, nmx=2, nn=4812, no=21, oc=2, oj=15, pa=1, pl=1673, pmm=2, pms=4, pnb=1, ps=2, pt=143, qu=2, rm=1, rn=2, ro=13, rom=1, ru=5206, sah=6, sat=2, scn=2, sco=1, se=102, sha=1, sk=3521, sl=1992, sn=3, sq=3, sr=63, sv=6349, ta=4, te=1, th=163, tn=2, to=1, tr=123, tsz=6, tt=1, twe=1, udm=1, uk=809, und=7, vec=1, vi=9, wa=9, war=2, wlk=1, yi=1, ynn=1, yo=2, zh=5048
+external ids: artportalen=9000, artsdatabanken=61583, inaturalist=8032
+changes vs bundled tax-2026.09.30-01: 134 counts differ (see build-report.json)
+promoted: False
+exit 0
