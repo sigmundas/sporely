@@ -92,3 +92,21 @@ Handoff (2026-10-06): the D2 divergence is evidence-only. 1,341 sv Dyntaxa rows 
 - Nothing committed or published. Publish only with `promote_desktop_bundle.py --frozen-dir <final> --expect-freeze-sha256 fda89f37…`.
 
 Handoff (2026-10-06, after Stage 3B): independently re-verified the frozen hashes (freeze `fda89f37…`, decompressed SQLite `3f9037c0…`), the D1 split rows, the regex fix, and that lichen 103256 was already out of cloud scope. Verdict READY_WITH_RECOMMENDATIONS. The reviewed set is `~/sporely-scratch/vernacular-2026-10-06-r2/final` (durable, read-only). The d0e5de92 set and the two earlier Stage 3 folders are superseded historical records. Next: commit in the planned groups (run the focused suite at each code commit), then a separate owner-authorized promotion of the reviewed set with `promote_desktop_bundle.py --expect-freeze-sha256 fda89f3744975dfb296336b73256c33df1b278efe092eca336557d067d07148e`, then the cloud import. No commit, promotion or production action has occurred.
+
+## Stage 3C validation (2026-10-07)
+
+- Validated frozen set `~/sporely-scratch/vernacular-2026-10-06-r2/final`, freeze `fda89f37…7148e`. The owner prompt's `/tmp/…/finalA` (d0e5de92) was wiped and is superseded by D1/D2.
+- Ran the production export path and the local Supabase import (ROLLBACK proven) twice from scratch. Results were byte-identical apart from the `desktop.json` `build_seconds` timing, and equal to the 2026-10-06 hashes (`import.sql` `4465a8ba…`).
+- All 1,637 enrichments survive. All 7,176 selectable Stage 1B COL recoveries survive, and the 3,155 others are explained by scope rules. The 8,453 unsupported historical rows are absent.
+- 36,252 vernacular rows are dropped by scoping, 0 unexplained. All 22 positive and 7 negative `search_taxa_v2` probes pass. There are no qualified/collective leaks, and all identity invariants show 0 diffs.
+- Verdict READY_WITH_NONBLOCKING_FINDINGS. MEDIUM, owner decision: six nb COL names carry `[GAMMELT]`/`[UTGÅTT]` markers, five of them in the cloud export, one of them on *Ramaria aurea* 58651.
+- Evidence: `database/taxonomy/evidence/taxonomy-v3/vernacular-cloud-stage3c-2026-10-07/` (the report text was delivered in the agent reply; report.md was not written). Nothing committed, promoted or published.
+
+## Stage 3D F1 refreeze (2026-10-07)
+
+- **Owner decision F1 implemented**: `normalize_col_xr.py` rejects a COL vernacular whose name contains `[GAMMELT]` or `[UTGÅTT]` (case-insensitive, whitespace-tolerant, bracketed token only). Rejection reason `source_marked_obsolete_vernacular`, with the raw row. The row is not stripped and kept. Test: `test_col_vernacular_source_marked_obsolete_is_rejected`. A README paragraph lists the COL rejection reasons.
+- **Full scan of pinned COL VernacularName**: exactly 5 hits, all `nob`/NO (1041, 58651, 58722, 60670, 65750). There are none in other languages or outside the projection.
+- **New candidate**: `tax-2026.10.07-01`, freeze `a86e35854fd4d01984d8b8fe121d8fc318e75a01876d243975847127462fd14e`, SQLite `e349e8b1…`. Three independent builds are byte-identical. Durable read-only copy at `~/sporely-scratch/vernacular-2026-10-07-f1/final`.
+- **Content delta against fda89f37**: exactly −5 `vernacular_min` rows, with no preferred-flag change. The rest is evidence/compiler-manifest hash churn. The recipe is unchanged, because it pins only the projection (1,619/18/1,637/767), which still holds.
+- **Stage 3C checks A–G rerun twice, deterministically**: all 29 probes plus 4 F1 report probes pass. There are no marked names in SQLite, W1, the scoped export or the imported DB. Promotion guards hold. Taxonomy tests: 1076 passed, 1 skipped.
+- Evidence: `database/taxonomy/evidence/taxonomy-v3/vernacular-f1-refreeze-2026-10-07/`. Nothing committed, promoted or published. The fda89f37 set is superseded. Next: commit, then owner-authorized `promote_desktop_bundle.py --frozen-dir <final> --expect-freeze-sha256 a86e3585…`, then the cloud import.

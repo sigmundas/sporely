@@ -1,0 +1,1405 @@
+{
+ "analysis_json": {
+  "path": "/Users/sigmundas/sporely-scratch/vernacular-2026-10-07-stage3c/run1/analysis.json",
+  "sha256": "b29b7f86a119cb0ed52c05e0525ceb1cf67343114e0f72f64797acf612e2b94f"
+ },
+ "breakdown_lang_source_pref": {
+  "frozen_sqlite": {
+   "acv|col_xr|False": 1,
+   "af|col_xr|False": 71,
+   "ain|col_xr|False": 1,
+   "arg|col_xr|False": 2,
+   "arn|col_xr|False": 3,
+   "ar|col_xr|False": 11,
+   "ast|col_xr|False": 61,
+   "az|col_xr|False": 3,
+   "bar|col_xr|False": 3,
+   "be|col_xr|False": 57,
+   "bg|col_xr|False": 73,
+   "bnn|col_xr|False": 4,
+   "bn|col_xr|False": 2,
+   "bo|col_xr|False": 2,
+   "br|col_xr|False": 1,
+   "bs|col_xr|False": 1,
+   "ca|col_xr|False": 164,
+   "ceb|col_xr|False": 2,
+   "chm|col_xr|False": 1,
+   "chr|col_xr|False": 5,
+   "co|col_xr|False": 2,
+   "cre|col_xr|False": 6,
+   "cs|col_xr|False": 5181,
+   "cy|col_xr|False": 1403,
+   "da|col_xr|False": 5127,
+   "de|col_xr|False": 4727,
+   "dnj|col_xr|False": 6,
+   "ee|col_xr|False": 1,
+   "el|col_xr|False": 43,
+   "en|col_xr|False": 9111,
+   "eo|col_xr|False": 7,
+   "es|col_xr|False": 644,
+   "et|col_xr|False": 1328,
+   "eu|col_xr|False": 17,
+   "fa|col_xr|False": 5,
+   "fi|col_xr|False": 6332,
+   "fqs|col_xr|False": 1,
+   "frr|col_xr|False": 1,
+   "fr|col_xr|False": 3360,
+   "fy|col_xr|False": 8,
+   "ga|col_xr|False": 1,
+   "gd|col_xr|False": 91,
+   "gl|col_xr|False": 30,
+   "haw|col_xr|False": 2,
+   "hbs|col_xr|False": 1,
+   "he|col_xr|False": 964,
+   "hr|col_xr|False": 66,
+   "hu|col_xr|False": 2206,
+   "hy|col_xr|False": 65,
+   "hz|col_xr|False": 3,
+   "id|col_xr|False": 5,
+   "io|col_xr|False": 1,
+   "is|col_xr|False": 19,
+   "it|col_xr|False": 132,
+   "ja|col_xr|False": 3675,
+   "ka|col_xr|False": 7,
+   "kbd|col_xr|False": 1,
+   "kk|col_xr|False": 4,
+   "koi|col_xr|False": 2,
+   "ko|col_xr|False": 758,
+   "kth|col_xr|False": 2,
+   "ku|col_xr|False": 2,
+   "kv|col_xr|False": 1,
+   "la|col_xr|False": 5,
+   "lb|col_xr|False": 158,
+   "lij|col_xr|False": 1,
+   "lt|col_xr|False": 3802,
+   "lub|col_xr|False": 1,
+   "lv|col_xr|False": 809,
+   "mg|col_xr|False": 1,
+   "mia|col_xr|False": 1,
+   "mis|col_xr|False": 1,
+   "mi|col_xr|False": 14,
+   "mk|col_xr|False": 30,
+   "ml|col_xr|False": 1,
+   "ms|col_xr|False": 4,
+   "mte|col_xr|False": 3,
+   "mwl|col_xr|False": 1,
+   "my|col_xr|False": 1,
+   "nb|col_xr|False": 779,
+   "nb|nortaxa|False": 703,
+   "nb|nortaxa|True": 6404,
+   "nl|col_xr|False": 7463,
+   "nmu|col_xr|False": 2,
+   "nmx|col_xr|False": 2,
+   "nn|col_xr|False": 67,
+   "nn|nortaxa|False": 515,
+   "nn|nortaxa|True": 4230,
+   "no|col_xr|False": 21,
+   "oc|col_xr|False": 2,
+   "oj|col_xr|False": 15,
+   "pa|col_xr|False": 1,
+   "pl|col_xr|False": 1673,
+   "pmm|col_xr|False": 2,
+   "pms|col_xr|False": 4,
+   "pnb|col_xr|False": 1,
+   "ps|col_xr|False": 2,
+   "pt|col_xr|False": 143,
+   "qu|col_xr|False": 2,
+   "rm|col_xr|False": 1,
+   "rn|col_xr|False": 2,
+   "rom|col_xr|False": 1,
+   "ro|col_xr|False": 13,
+   "ru|col_xr|False": 5206,
+   "sah|col_xr|False": 6,
+   "sat|col_xr|False": 2,
+   "scn|col_xr|False": 2,
+   "sco|col_xr|False": 1,
+   "se|col_xr|False": 23,
+   "se|nortaxa|False": 11,
+   "se|nortaxa|True": 68,
+   "sha|col_xr|False": 1,
+   "sk|col_xr|False": 3521,
+   "sl|col_xr|False": 1992,
+   "sn|col_xr|False": 3,
+   "sq|col_xr|False": 3,
+   "sr|col_xr|False": 63,
+   "sv|col_xr|False": 5008,
+   "sv|dyntaxa|False": 252,
+   "sv|dyntaxa|True": 1089,
+   "ta|col_xr|False": 4,
+   "te|col_xr|False": 1,
+   "th|col_xr|False": 163,
+   "tn|col_xr|False": 2,
+   "to|col_xr|False": 1,
+   "tr|col_xr|False": 123,
+   "tsz|col_xr|False": 6,
+   "tt|col_xr|False": 1,
+   "twe|col_xr|False": 1,
+   "udm|col_xr|False": 1,
+   "uk|col_xr|False": 809,
+   "und|col_xr|False": 7,
+   "vec|col_xr|False": 1,
+   "vi|col_xr|False": 9,
+   "war|col_xr|False": 2,
+   "wa|col_xr|False": 9,
+   "wlk|col_xr|False": 1,
+   "yi|col_xr|False": 1,
+   "ynn|col_xr|False": 1,
+   "yo|col_xr|False": 2,
+   "zh|col_xr|False": 5048
+  },
+  "scoped": {
+   "acv|col_xr|False": 1,
+   "af|col_xr|False": 29,
+   "ain|col_xr|False": 1,
+   "arg|col_xr|False": 2,
+   "arn|col_xr|False": 3,
+   "ar|col_xr|False": 6,
+   "ast|col_xr|False": 54,
+   "az|col_xr|False": 3,
+   "bar|col_xr|False": 3,
+   "be|col_xr|False": 46,
+   "bg|col_xr|False": 72,
+   "bnn|col_xr|False": 4,
+   "bn|col_xr|False": 2,
+   "bo|col_xr|False": 2,
+   "br|col_xr|False": 1,
+   "bs|col_xr|False": 1,
+   "ca|col_xr|False": 161,
+   "ceb|col_xr|False": 2,
+   "chm|col_xr|False": 1,
+   "chr|col_xr|False": 5,
+   "co|col_xr|False": 2,
+   "cre|col_xr|False": 5,
+   "cs|col_xr|False": 3729,
+   "cy|col_xr|False": 1115,
+   "da|col_xr|False": 3632,
+   "de|col_xr|False": 3798,
+   "dnj|col_xr|False": 6,
+   "ee|col_xr|False": 1,
+   "el|col_xr|False": 41,
+   "en|col_xr|False": 3763,
+   "eo|col_xr|False": 6,
+   "es|col_xr|False": 512,
+   "et|col_xr|False": 899,
+   "eu|col_xr|False": 17,
+   "fa|col_xr|False": 5,
+   "fi|col_xr|False": 3770,
+   "fqs|col_xr|False": 1,
+   "fr|col_xr|False": 2672,
+   "fy|col_xr|False": 8,
+   "ga|col_xr|False": 1,
+   "gd|col_xr|False": 47,
+   "gl|col_xr|False": 30,
+   "haw|col_xr|False": 2,
+   "hbs|col_xr|False": 1,
+   "he|col_xr|False": 949,
+   "hr|col_xr|False": 64,
+   "hu|col_xr|False": 2061,
+   "hy|col_xr|False": 60,
+   "hz|col_xr|False": 3,
+   "id|col_xr|False": 3,
+   "io|col_xr|False": 1,
+   "is|col_xr|False": 11,
+   "it|col_xr|False": 103,
+   "ja|col_xr|False": 2391,
+   "ka|col_xr|False": 7,
+   "kbd|col_xr|False": 1,
+   "kk|col_xr|False": 3,
+   "koi|col_xr|False": 2,
+   "ko|col_xr|False": 559,
+   "kth|col_xr|False": 2,
+   "ku|col_xr|False": 2,
+   "kv|col_xr|False": 1,
+   "la|col_xr|False": 2,
+   "lb|col_xr|False": 158,
+   "lij|col_xr|False": 1,
+   "lt|col_xr|False": 2309,
+   "lub|col_xr|False": 1,
+   "lv|col_xr|False": 728,
+   "mg|col_xr|False": 1,
+   "mia|col_xr|False": 1,
+   "mis|col_xr|False": 1,
+   "mi|col_xr|False": 13,
+   "mk|col_xr|False": 28,
+   "ml|col_xr|False": 1,
+   "ms|col_xr|False": 4,
+   "mte|col_xr|False": 3,
+   "mwl|col_xr|False": 1,
+   "my|col_xr|False": 1,
+   "nb|col_xr|False": 312,
+   "nb|nortaxa|False": 416,
+   "nb|nortaxa|True": 3116,
+   "nl|col_xr|False": 4220,
+   "nmu|col_xr|False": 2,
+   "nmx|col_xr|False": 2,
+   "nn|col_xr|False": 33,
+   "nn|nortaxa|False": 334,
+   "nn|nortaxa|True": 2387,
+   "no|col_xr|False": 20,
+   "oc|col_xr|False": 2,
+   "oj|col_xr|False": 11,
+   "pa|col_xr|False": 1,
+   "pl|col_xr|False": 1203,
+   "pmm|col_xr|False": 2,
+   "pms|col_xr|False": 4,
+   "pnb|col_xr|False": 1,
+   "ps|col_xr|False": 2,
+   "pt|col_xr|False": 79,
+   "qu|col_xr|False": 1,
+   "rm|col_xr|False": 1,
+   "rn|col_xr|False": 2,
+   "rom|col_xr|False": 1,
+   "ro|col_xr|False": 13,
+   "ru|col_xr|False": 2369,
+   "sah|col_xr|False": 6,
+   "sat|col_xr|False": 2,
+   "scn|col_xr|False": 2,
+   "sco|col_xr|False": 1,
+   "se|col_xr|False": 19,
+   "se|nortaxa|False": 4,
+   "se|nortaxa|True": 21,
+   "sha|col_xr|False": 1,
+   "sk|col_xr|False": 2125,
+   "sl|col_xr|False": 1872,
+   "sn|col_xr|False": 3,
+   "sq|col_xr|False": 3,
+   "sr|col_xr|False": 63,
+   "sv|col_xr|False": 2906,
+   "sv|dyntaxa|False": 155,
+   "sv|dyntaxa|True": 516,
+   "ta|col_xr|False": 4,
+   "th|col_xr|False": 133,
+   "tn|col_xr|False": 2,
+   "to|col_xr|False": 1,
+   "tr|col_xr|False": 112,
+   "tsz|col_xr|False": 5,
+   "tt|col_xr|False": 1,
+   "twe|col_xr|False": 1,
+   "udm|col_xr|False": 1,
+   "uk|col_xr|False": 586,
+   "und|col_xr|False": 4,
+   "vec|col_xr|False": 1,
+   "vi|col_xr|False": 9,
+   "war|col_xr|False": 2,
+   "wa|col_xr|False": 9,
+   "wlk|col_xr|False": 1,
+   "yi|col_xr|False": 1,
+   "ynn|col_xr|False": 1,
+   "yo|col_xr|False": 2,
+   "zh|col_xr|False": 2842
+  },
+  "w1": {
+   "acv|col_xr|False": 1,
+   "af|col_xr|False": 71,
+   "ain|col_xr|False": 1,
+   "arg|col_xr|False": 2,
+   "arn|col_xr|False": 3,
+   "ar|col_xr|False": 11,
+   "ast|col_xr|False": 61,
+   "az|col_xr|False": 3,
+   "bar|col_xr|False": 3,
+   "be|col_xr|False": 57,
+   "bg|col_xr|False": 73,
+   "bnn|col_xr|False": 4,
+   "bn|col_xr|False": 2,
+   "bo|col_xr|False": 2,
+   "br|col_xr|False": 1,
+   "bs|col_xr|False": 1,
+   "ca|col_xr|False": 164,
+   "ceb|col_xr|False": 2,
+   "chm|col_xr|False": 1,
+   "chr|col_xr|False": 5,
+   "co|col_xr|False": 2,
+   "cre|col_xr|False": 6,
+   "cs|col_xr|False": 5181,
+   "cy|col_xr|False": 1403,
+   "da|col_xr|False": 5127,
+   "de|col_xr|False": 4727,
+   "dnj|col_xr|False": 6,
+   "ee|col_xr|False": 1,
+   "el|col_xr|False": 43,
+   "en|col_xr|False": 9111,
+   "eo|col_xr|False": 7,
+   "es|col_xr|False": 644,
+   "et|col_xr|False": 1328,
+   "eu|col_xr|False": 17,
+   "fa|col_xr|False": 5,
+   "fi|col_xr|False": 6332,
+   "fqs|col_xr|False": 1,
+   "frr|col_xr|False": 1,
+   "fr|col_xr|False": 3360,
+   "fy|col_xr|False": 8,
+   "ga|col_xr|False": 1,
+   "gd|col_xr|False": 91,
+   "gl|col_xr|False": 30,
+   "haw|col_xr|False": 2,
+   "hbs|col_xr|False": 1,
+   "he|col_xr|False": 964,
+   "hr|col_xr|False": 66,
+   "hu|col_xr|False": 2206,
+   "hy|col_xr|False": 65,
+   "hz|col_xr|False": 3,
+   "id|col_xr|False": 5,
+   "io|col_xr|False": 1,
+   "is|col_xr|False": 19,
+   "it|col_xr|False": 132,
+   "ja|col_xr|False": 3675,
+   "ka|col_xr|False": 7,
+   "kbd|col_xr|False": 1,
+   "kk|col_xr|False": 4,
+   "koi|col_xr|False": 2,
+   "ko|col_xr|False": 758,
+   "kth|col_xr|False": 2,
+   "ku|col_xr|False": 2,
+   "kv|col_xr|False": 1,
+   "la|col_xr|False": 5,
+   "lb|col_xr|False": 158,
+   "lij|col_xr|False": 1,
+   "lt|col_xr|False": 3802,
+   "lub|col_xr|False": 1,
+   "lv|col_xr|False": 809,
+   "mg|col_xr|False": 1,
+   "mia|col_xr|False": 1,
+   "mis|col_xr|False": 1,
+   "mi|col_xr|False": 14,
+   "mk|col_xr|False": 30,
+   "ml|col_xr|False": 1,
+   "ms|col_xr|False": 4,
+   "mte|col_xr|False": 3,
+   "mwl|col_xr|False": 1,
+   "my|col_xr|False": 1,
+   "nb|col_xr|False": 779,
+   "nb|nortaxa|False": 703,
+   "nb|nortaxa|True": 6404,
+   "nl|col_xr|False": 7463,
+   "nmu|col_xr|False": 2,
+   "nmx|col_xr|False": 2,
+   "nn|col_xr|False": 67,
+   "nn|nortaxa|False": 515,
+   "nn|nortaxa|True": 4230,
+   "no|col_xr|False": 21,
+   "oc|col_xr|False": 2,
+   "oj|col_xr|False": 15,
+   "pa|col_xr|False": 1,
+   "pl|col_xr|False": 1673,
+   "pmm|col_xr|False": 2,
+   "pms|col_xr|False": 4,
+   "pnb|col_xr|False": 1,
+   "ps|col_xr|False": 2,
+   "pt|col_xr|False": 143,
+   "qu|col_xr|False": 2,
+   "rm|col_xr|False": 1,
+   "rn|col_xr|False": 2,
+   "rom|col_xr|False": 1,
+   "ro|col_xr|False": 13,
+   "ru|col_xr|False": 5206,
+   "sah|col_xr|False": 6,
+   "sat|col_xr|False": 2,
+   "scn|col_xr|False": 2,
+   "sco|col_xr|False": 1,
+   "se|col_xr|False": 23,
+   "se|nortaxa|False": 11,
+   "se|nortaxa|True": 68,
+   "sha|col_xr|False": 1,
+   "sk|col_xr|False": 3521,
+   "sl|col_xr|False": 1992,
+   "sn|col_xr|False": 3,
+   "sq|col_xr|False": 3,
+   "sr|col_xr|False": 63,
+   "sv|col_xr|False": 5008,
+   "sv|dyntaxa|False": 252,
+   "sv|dyntaxa|True": 1089,
+   "ta|col_xr|False": 4,
+   "te|col_xr|False": 1,
+   "th|col_xr|False": 163,
+   "tn|col_xr|False": 2,
+   "to|col_xr|False": 1,
+   "tr|col_xr|False": 123,
+   "tsz|col_xr|False": 6,
+   "tt|col_xr|False": 1,
+   "twe|col_xr|False": 1,
+   "udm|col_xr|False": 1,
+   "uk|col_xr|False": 809,
+   "und|col_xr|False": 7,
+   "vec|col_xr|False": 1,
+   "vi|col_xr|False": 9,
+   "war|col_xr|False": 2,
+   "wa|col_xr|False": 9,
+   "wlk|col_xr|False": 1,
+   "yi|col_xr|False": 1,
+   "ynn|col_xr|False": 1,
+   "yo|col_xr|False": 2,
+   "zh|col_xr|False": 5048
+  }
+ },
+ "col_echo_guard": [
+  [
+   58815,
+   "nb",
+   "sørlig rødtuppsopp",
+   false
+  ],
+  [
+   19080,
+   "nb",
+   "knolltrevlesopp",
+   false
+  ],
+  [
+   58815,
+   "nn",
+   "sørleg rødtuppsopp",
+   false
+  ]
+ ],
+ "col_recovery": {
+  "audit_gaps": 10331,
+  "concepts": 3579,
+  "current_source_recovery_gaps_in_frozen": 0,
+  "guarded_among_gaps": [],
+  "in_frozen_sqlite": 10331,
+  "in_w1": 10331,
+  "out_of_scope_by_rule": {
+   "state=exclude|rule=default_exclude|reason=default_exclude": 2365,
+   "state=exclude|rule=exclude_pucciniomycetes|reason=default_non_macrofungi_exclusion": 283,
+   "state=exclude|rule=exclude_ustilaginomycetes|reason=default_non_macrofungi_exclusion": 62,
+   "state=review|rule=review_atractiellomycetes|reason=review_required": 1,
+   "state=review|rule=review_diatrypaceae|reason=review_required": 15,
+   "state=review|rule=review_hypoxylaceae|reason=review_required": 6,
+   "state=review|rule=review_leotiomycetes|reason=review_required": 303,
+   "state=review|rule=review_sordariomycetes|reason=review_required": 80,
+   "state=review|rule=review_tolypocladium|reason=review_required": 14,
+   "state=review|rule=review_tremellomycetes|reason=review_required": 12,
+   "state=review|rule=review_trichoderma|reason=review_required": 10,
+   "state=review|rule=review_xylariaceae|reason=review_required": 4
+  },
+  "selectable_and_in_scoped": 7176,
+  "selectable_missing_in_scoped": [],
+  "stage1b_recovered_list": 10331,
+  "target_selectable": 7176
+ },
+ "counts": {
+  "bundled_sqlite_vernacular": 31140,
+  "frozen_sqlite_vernacular": 96141,
+  "frozen_taxa": 633542,
+  "frozen_taxa_by_source_system": {
+   "col_xr": 620976,
+   "nortaxa": 12566
+  },
+  "scope_aggregate": {
+   "excluded": 525675,
+   "included": 52881,
+   "required_ancestors": 37,
+   "review": 42420
+  },
+  "scope_evaluated_taxa": 620976,
+  "scoped": {
+   "scientific_name.jsonl": 60697,
+   "taxon.jsonl": 52917,
+   "taxon_external_id.jsonl": 56959,
+   "taxon_external_id_legacy_integer.jsonl": 0,
+   "taxon_redlist.jsonl": 2600,
+   "taxonomy_release.jsonl": 1,
+   "vernacular.jsonl": 59889
+  },
+  "w1": {
+   "scientific_name.jsonl": 665946,
+   "taxon.jsonl": 633541,
+   "taxon_external_id.jsonl": 645418,
+   "taxon_external_id_legacy_integer.jsonl": 78615,
+   "taxon_redlist.jsonl": 7866,
+   "taxonomy_release.jsonl": 1,
+   "vernacular.jsonl": 96141
+  }
+ },
+ "db_counts": {
+  "active": 1,
+  "external_ids": 56959,
+  "legacy_external_ids": 0,
+  "redlist": 2600,
+  "scientific_names": 60697,
+  "taxa": 52917,
+  "vernacular": 59889
+ },
+ "db_fingerprints": {
+  "external_ids": "dce52d9d7c12314bd3692ed50fea541d",
+  "taxa": "fee62139d791344c798c6074b9074ecc",
+  "vernacular": "341ace08e94cee3dd413d29952d6bf28"
+ },
+ "db_fingerprints_match_scoped_export": {
+  "external_ids": true,
+  "taxa": true,
+  "vernacular": true
+ },
+ "db_name_checks": {
+  "blek rødtuppsopp": [],
+  "blekgul køllesopp": [
+   [
+    82459,
+    "nb",
+    "blekgul køllesopp",
+    true,
+    "nortaxa"
+   ]
+  ],
+  "falsk lindekorallsopp": [],
+  "gullkorallsopp": [
+   [
+    58668,
+    "nb",
+    "gullkorallsopp",
+    true,
+    "nortaxa"
+   ],
+   [
+    58668,
+    "nn",
+    "gullkorallsopp",
+    true,
+    "nortaxa"
+   ]
+  ],
+  "gullkorallsopp [GAMMELT]": [
+   [
+    58651,
+    "nb",
+    "gullkorallsopp [GAMMELT]",
+    false,
+    "col_xr"
+   ]
+  ],
+  "knolltrevlesopp": [
+   [
+    18575,
+    "nb",
+    "knolltrevlesopp",
+    false,
+    "nortaxa"
+   ],
+   [
+    18575,
+    "nn",
+    "knolltrevlesopp",
+    false,
+    "nortaxa"
+   ]
+  ],
+  "rosenekornnøtt": [
+   [
+    60590,
+    "nb",
+    "rosenekornnøtt",
+    true,
+    "nortaxa"
+   ]
+  ],
+  "rosenikornnøtt": [
+   [
+    60590,
+    "nn",
+    "rosenikornnøtt",
+    true,
+    "nortaxa"
+   ]
+  ],
+  "silkeraudskivesopp": [],
+  "silkeraudspore": [
+   [
+    96276,
+    "nn",
+    "silkeraudspore",
+    true,
+    "nortaxa"
+   ]
+  ],
+  "silkeraudspore-gruppa": [],
+  "silkerødskivesopp": [],
+  "silkerødspore": [
+   [
+    96276,
+    "nb",
+    "silkerødspore",
+    true,
+    "nortaxa"
+   ]
+  ],
+  "silkerødspore-gruppen": [],
+  "sørleg rødtuppsopp": [],
+  "sørlig rødtuppsopp": [],
+  "taigarødtuppsopp": [
+   [
+    58814,
+    "nb",
+    "taigarødtuppsopp",
+    true,
+    "nortaxa"
+   ]
+  ],
+  "vanleg knolltrevlesopp": [],
+  "vanlig knolltrevlesopp": []
+ },
+ "db_taxa_present": [
+  14541,
+  14834,
+  19080,
+  23749,
+  34794,
+  52936,
+  54615,
+  58651,
+  58668,
+  58693,
+  58814,
+  58815,
+  58832,
+  60559,
+  60590,
+  61673,
+  79753,
+  82459,
+  96276,
+  100280,
+  103130,
+  146835,
+  618912
+ ],
+ "enrichments": {
+  "by_class": {
+   "automatic_vernacular_enrichment": 1619,
+   "owner_reviewed_vernacular_association": 18
+  },
+  "concepts": 767,
+  "in_frozen_sqlite": 1637,
+  "in_w1": 1637,
+  "out_of_scope_by_rule": {},
+  "reviewed_rows": [
+   [
+    23749,
+    "nb",
+    "slank vedkorallsopp",
+    true,
+    true,
+    "Lentaria micheneri"
+   ],
+   [
+    23749,
+    "nn",
+    "slank vedkorallsopp",
+    true,
+    true,
+    "Lentaria micheneri"
+   ],
+   [
+    103130,
+    "nb",
+    "dråpeknippesopp",
+    true,
+    true,
+    "Hypsizygus tessulatus"
+   ],
+   [
+    52936,
+    "nb",
+    "snylterørsopp",
+    true,
+    true,
+    "Pseudoboletus parasiticus"
+   ],
+   [
+    52936,
+    "nn",
+    "snylterøyrsopp",
+    true,
+    true,
+    "Pseudoboletus parasiticus"
+   ],
+   [
+    54615,
+    "nb",
+    "tårekjuke",
+    true,
+    true,
+    "Pseudoinonotus dryadeus"
+   ],
+   [
+    54615,
+    "nn",
+    "tårekjuke",
+    true,
+    true,
+    "Pseudoinonotus dryadeus"
+   ],
+   [
+    14834,
+    "nb",
+    "dunpipe",
+    true,
+    true,
+    "Henningsomyces puber"
+   ],
+   [
+    14834,
+    "nn",
+    "dunpipe",
+    true,
+    true,
+    "Henningsomyces puber"
+   ],
+   [
+    60559,
+    "nb",
+    "gul ekornnøtt",
+    true,
+    true,
+    "Rhizopogon luteolus"
+   ],
+   [
+    60559,
+    "nn",
+    "gul ikornnøtt",
+    true,
+    true,
+    "Rhizopogon luteolus"
+   ],
+   [
+    14541,
+    "nb",
+    "lys høstmorkel",
+    true,
+    true,
+    "Helvella crispa"
+   ],
+   [
+    14541,
+    "nn",
+    "lys haustmorkel",
+    true,
+    true,
+    "Helvella crispa"
+   ],
+   [
+    34794,
+    "nb",
+    "sumpreddikhette",
+    true,
+    true,
+    "Mycena pearsoniana"
+   ],
+   [
+    34794,
+    "nn",
+    "sumpreddikhette",
+    true,
+    true,
+    "Mycena pearsoniana"
+   ],
+   [
+    58693,
+    "nb",
+    "norsk flammekorallsopp",
+    true,
+    true,
+    "Ramaria conjunctipes"
+   ],
+   [
+    58814,
+    "nb",
+    "taigarødtuppsopp",
+    true,
+    true,
+    "Ramaria rubrievanescens"
+   ],
+   [
+    618912,
+    "nb",
+    "oliven rådyrslørsopp",
+    true,
+    true,
+    "Cortinarius milvinicolor"
+   ]
+  ],
+  "selectable_and_in_scoped": 1637,
+  "selectable_but_missing_in_scoped": [],
+  "target_selectable": 1637,
+  "total": 1637
+ },
+ "expected_db_fingerprints": {
+  "external_ids": "dce52d9d7c12314bd3692ed50fea541d",
+  "taxa": "fee62139d791344c798c6074b9074ecc",
+  "vernacular": "341ace08e94cee3dd413d29952d6bf28"
+ },
+ "gullkorallsopp_gammelt": {
+  "bundled": [
+   [
+    58668,
+    "nb",
+    "gullkorallsopp",
+    true,
+    "nortaxa"
+   ],
+   [
+    58668,
+    "nn",
+    "gullkorallsopp",
+    true,
+    "nortaxa"
+   ]
+  ],
+  "frozen": [
+   [
+    58651,
+    "nb",
+    "gullkorallsopp [GAMMELT]",
+    false,
+    "col_xr"
+   ],
+   [
+    58668,
+    "nb",
+    "gullkorallsopp",
+    true,
+    "nortaxa"
+   ],
+   [
+    58668,
+    "nn",
+    "gullkorallsopp",
+    true,
+    "nortaxa"
+   ]
+  ]
+ },
+ "identity_export": {
+  "scoped_external_ids_equal_w1_restricted": true,
+  "scoped_taxa": 52917,
+  "scoped_taxa_expected": 52918,
+  "scoped_taxa_set_ok": false,
+  "scoped_taxa_vs_w1_diffs": 0,
+  "w1_external_ids_equal_frozen_text_table": false,
+  "w1_taxa_missing": 1,
+  "w1_taxa_vs_frozen_diffs": 0
+ },
+ "identity_sources": {
+  "aliases": 58526,
+  "anchor_vs_canonical_external_id_mismatch": 0,
+  "bound_ids_absent_from_bundled": 0,
+  "bound_ids_missing_in_frozen_sqlite": 0,
+  "concept_supersessions_equal_repo": true,
+  "identity_binding": {
+   "alias": 58526,
+   "anchor": 633542
+  },
+  "manual_mappings_equal_repo": true,
+  "mapping_policy_equal_repo": true,
+  "previous_publication_manifest_equals_repo_bundle_manifest": true,
+  "registry_concatenated_sha256": [
+   "1cc2003a874e5deb2c0023bf8fd6fb74dd98b2ad656ee36d8755c15277c8adc9",
+   "1cc2003a874e5deb2c0023bf8fd6fb74dd98b2ad656ee36d8755c15277c8adc9",
+   "1cc2003a874e5deb2c0023bf8fd6fb74dd98b2ad656ee36d8755c15277c8adc9"
+  ],
+  "registry_manifest_equals_repo": true,
+  "source_usages": 692068,
+  "source_usages_sha256": "a14a680ac59cf9d08855d98244763c58b591e34bbade1ad1017346aeeecae52c",
+  "superseded_from": 6132
+ },
+ "identity_vs_bundled": {
+  "bundled_taxa": 633542,
+  "frozen_taxa": 633542,
+  "identity_column_diffs": 0,
+  "identity_diff_examples": [],
+  "missing_in_frozen": 0,
+  "new_in_frozen": 0,
+  "scientific_name_min": {
+   "added_on_new": 0,
+   "added_on_preexisting": 0,
+   "bundled": 665947,
+   "frozen": 665947,
+   "removed": 0
+  },
+  "taxon_external_id_min": {
+   "added_on_new": 0,
+   "added_on_preexisting": 0,
+   "bundled": 78615,
+   "frozen": 78615,
+   "removed": 0
+  },
+  "taxon_external_id_text_min": {
+   "added_on_new": 0,
+   "added_on_preexisting": 0,
+   "bundled": 632853,
+   "frozen": 632853,
+   "removed": 0
+  },
+  "taxon_redlist_min": {
+   "added_on_new": 0,
+   "added_on_preexisting": 0,
+   "bundled": 34171,
+   "frozen": 34171,
+   "removed": 0
+  },
+  "taxonomy_meta": {
+   "bundled": {
+    "bridge_emission_policy_sha256": "a5a329848c45fcd030165a51ad1193944dffe7573ddb2a9c69441f0d76ae4afb",
+    "compiler_manifest_sha256": "bf7eb27f5f9469ab0dd48a6288c15d789dda1b9d48940e93c3778a8fb07f3145",
+    "content_release_id": "tax-2026.09.30-01",
+    "inaturalist_refresh.sha256": "47266f1e144b2e1944359d4a2ca3f3a6bc39bd6e2024c047d7a0d6b0edbe4f15",
+    "publication": "none",
+    "publishing_overlay[artportalen].sha256": "e1219525f5620d4961a992dcd5e43514b26c54e5667b78079b48f56b4e7e402f",
+    "registry_sha256": "1cc2003a874e5deb2c0023bf8fd6fb74dd98b2ad656ee36d8755c15277c8adc9",
+    "source_release[artsdatabanken_redlist].archive_sha256": "c2fb6a5f4828defe371b1cb9978974bfd64a23101ad37bb715f260bd658bef04",
+    "source_release[artsdatabanken_redlist].id": "2021",
+    "source_release[col_xr].archive_sha256": "397d701c8eb269bf78d6ac7b03149915b0d9e2a2c18694be2c91445b807814f9",
+    "source_release[col_xr].id": "col_xr:2026-07-17-XR:2026-07-17",
+    "source_release[dyntaxa].archive_sha256": "7947b7a7681f3654d5478694f1fe37fdd9e72dc3aab8f9b6311525d85cc4879c",
+    "source_release[dyntaxa].id": "dyntaxa:2026-09-30:2026-09-30",
+    "source_release[nortaxa].archive_sha256": "29c11c54d955dc44e4e5a38944dd7932989a256d1b173777579b9f33abd2fe22",
+    "source_release[nortaxa].id": "nortaxa:1.284:2026-07-17",
+    "state": "candidate",
+    "taxonomy_schema_version": "2"
+   },
+   "frozen": {
+    "bridge_emission_policy_sha256": "a5a329848c45fcd030165a51ad1193944dffe7573ddb2a9c69441f0d76ae4afb",
+    "compiler_manifest_sha256": "0bb3ec5d83bd8932e27b03396611a541b4e03bf53c495f5c674c839b0e68370f",
+    "content_release_id": "tax-2026.10.06-01",
+    "inaturalist_refresh.sha256": "47266f1e144b2e1944359d4a2ca3f3a6bc39bd6e2024c047d7a0d6b0edbe4f15",
+    "publication": "none",
+    "publishing_overlay[artportalen].sha256": "e1219525f5620d4961a992dcd5e43514b26c54e5667b78079b48f56b4e7e402f",
+    "registry_sha256": "1cc2003a874e5deb2c0023bf8fd6fb74dd98b2ad656ee36d8755c15277c8adc9",
+    "source_release[artsdatabanken_redlist].archive_sha256": "c2fb6a5f4828defe371b1cb9978974bfd64a23101ad37bb715f260bd658bef04",
+    "source_release[artsdatabanken_redlist].id": "2021",
+    "source_release[col_xr].archive_sha256": "397d701c8eb269bf78d6ac7b03149915b0d9e2a2c18694be2c91445b807814f9",
+    "source_release[col_xr].id": "col_xr:2026-07-17-XR:2026-07-17",
+    "source_release[dyntaxa].archive_sha256": "7947b7a7681f3654d5478694f1fe37fdd9e72dc3aab8f9b6311525d85cc4879c",
+    "source_release[dyntaxa].id": "dyntaxa:2026-09-30:2026-09-30",
+    "source_release[nortaxa].archive_sha256": "29c11c54d955dc44e4e5a38944dd7932989a256d1b173777579b9f33abd2fe22",
+    "source_release[nortaxa].id": "nortaxa:1.284:2026-07-17",
+    "state": "candidate",
+    "taxonomy_schema_version": "2"
+   }
+  }
+ },
+ "nordic_breakdown": {
+  "frozen_sqlite": {
+   "nb|col_xr|False": 779,
+   "nb|nortaxa|False": 703,
+   "nb|nortaxa|True": 6404,
+   "nn|col_xr|False": 67,
+   "nn|nortaxa|False": 515,
+   "nn|nortaxa|True": 4230,
+   "no|col_xr|False": 21
+  },
+  "scoped": {
+   "nb|col_xr|False": 312,
+   "nb|nortaxa|False": 416,
+   "nb|nortaxa|True": 3116,
+   "nn|col_xr|False": 33,
+   "nn|nortaxa|False": 334,
+   "nn|nortaxa|True": 2387,
+   "no|col_xr|False": 20
+  },
+  "w1": {
+   "nb|col_xr|False": 779,
+   "nb|nortaxa|False": 703,
+   "nb|nortaxa|True": 6404,
+   "nn|col_xr|False": 67,
+   "nn|nortaxa|False": 515,
+   "nn|nortaxa|True": 4230,
+   "no|col_xr|False": 21
+  }
+ },
+ "preferred_names": {
+  "compiler_level_vs_bundled_2026.09.30-01": {
+   "by_language": {
+    "da": 868,
+    "de": 933,
+    "en": 1069,
+    "es": 107,
+    "fi": 1919,
+    "fr": 1206,
+    "it": 27,
+    "pl": 648,
+    "pt": 26,
+    "sv": 94
+   },
+   "common_rows": 19418,
+   "explained_by_stage1b_delta": 6897,
+   "false_to_true": 15,
+   "flag_changes": 6897,
+   "nordic_change_count": 0,
+   "nordic_changes": [],
+   "true_to_false": 6882,
+   "unexplained_by_stage1b_delta": [],
+   "unexplained_count": 0
+  },
+  "export_level_vs_frozen_sqlite": {
+   "scoped_flag_diffs": 0,
+   "w1_flag_diffs": 0,
+   "w1_source_diffs": 0
+  }
+ },
+ "qualified": {
+  "19080": {
+   "db_strict_nordic": [],
+   "leaks": {
+    "frozen": [],
+    "imported_db": [],
+    "scoped": [],
+    "w1": []
+   },
+   "qualified_concept": 625094,
+   "qualified_in_db": false,
+   "qualified_name": "Inocybe praetervisa",
+   "qualified_names_frozen": [
+    [
+     "nb",
+     "knolltrevlesopp"
+    ],
+    [
+     "nb",
+     "vanlig knolltrevlesopp"
+    ],
+    [
+     "nn",
+     "knolltrevlesopp"
+    ],
+    [
+     "nn",
+     "vanleg knolltrevlesopp"
+    ]
+   ],
+   "qualified_scope_reason": "not_scope_evaluated:canonical_source_system=nortaxa (policy source.system=col_xr; macrofungi_scope.load_taxa)",
+   "qualified_selectable": false,
+   "qualified_source": "nortaxa",
+   "strict_in_db": true,
+   "strict_name": "Inocybe praetervisa",
+   "strict_nordic_frozen": [],
+   "strict_nordic_scoped": [],
+   "strict_selectable": true,
+   "strict_source": "col_xr"
+  },
+  "58651": {
+   "db_strict_nordic": [
+    [
+     "nb",
+     "gullkorallsopp [GAMMELT]",
+     false,
+     "col_xr"
+    ]
+   ],
+   "leaks": {
+    "frozen": [],
+    "imported_db": [],
+    "scoped": [],
+    "w1": []
+   },
+   "qualified_concept": 626338,
+   "qualified_in_db": false,
+   "qualified_name": "Ramaria aurea",
+   "qualified_names_frozen": [
+    [
+     "nb",
+     "falsk lindekorallsopp"
+    ]
+   ],
+   "qualified_scope_reason": "not_scope_evaluated:canonical_source_system=nortaxa (policy source.system=col_xr; macrofungi_scope.load_taxa)",
+   "qualified_selectable": false,
+   "qualified_source": "nortaxa",
+   "strict_in_db": true,
+   "strict_name": "Ramaria aurea",
+   "strict_nordic_frozen": [
+    [
+     "nb",
+     "gullkorallsopp [GAMMELT]",
+     false,
+     "col_xr"
+    ]
+   ],
+   "strict_nordic_scoped": [
+    [
+     "nb",
+     "gullkorallsopp [GAMMELT]",
+     false,
+     "col_xr"
+    ]
+   ],
+   "strict_selectable": true,
+   "strict_source": "col_xr"
+  },
+  "58814": {
+   "db_strict_nordic": [
+    [
+     "nb",
+     "taigarødtuppsopp",
+     true,
+     "nortaxa"
+    ]
+   ],
+   "leaks": {
+    "frozen": [],
+    "imported_db": [],
+    "scoped": [],
+    "w1": []
+   },
+   "qualified_concept": 621458,
+   "qualified_in_db": false,
+   "qualified_name": "Ramaria rubrievanescens",
+   "qualified_names_frozen": [
+    [
+     "nb",
+     "taigarødtuppsopp"
+    ]
+   ],
+   "qualified_scope_reason": "not_scope_evaluated:canonical_source_system=nortaxa (policy source.system=col_xr; macrofungi_scope.load_taxa)",
+   "qualified_selectable": false,
+   "qualified_source": "nortaxa",
+   "strict_in_db": true,
+   "strict_name": "Ramaria rubrievanescens",
+   "strict_nordic_frozen": [
+    [
+     "nb",
+     "taigarødtuppsopp",
+     true,
+     "nortaxa"
+    ]
+   ],
+   "strict_nordic_scoped": [
+    [
+     "nb",
+     "taigarødtuppsopp",
+     true,
+     "nortaxa"
+    ]
+   ],
+   "strict_selectable": true,
+   "strict_source": "col_xr"
+  },
+  "58815": {
+   "db_strict_nordic": [],
+   "leaks": {
+    "frozen": [],
+    "imported_db": [],
+    "scoped": [],
+    "w1": []
+   },
+   "qualified_concept": 626348,
+   "qualified_in_db": false,
+   "qualified_name": "Ramaria rubripermanens",
+   "qualified_names_frozen": [
+    [
+     "nb",
+     "sørlig rødtuppsopp"
+    ],
+    [
+     "nn",
+     "sørleg rødtuppsopp"
+    ]
+   ],
+   "qualified_scope_reason": "not_scope_evaluated:canonical_source_system=nortaxa (policy source.system=col_xr; macrofungi_scope.load_taxa)",
+   "qualified_selectable": false,
+   "qualified_source": "nortaxa",
+   "strict_in_db": true,
+   "strict_name": "Ramaria rubripermanens",
+   "strict_nordic_frozen": [],
+   "strict_nordic_scoped": [],
+   "strict_selectable": true,
+   "strict_source": "col_xr"
+  },
+  "58832": {
+   "db_strict_nordic": [],
+   "leaks": {
+    "frozen": [],
+    "imported_db": [],
+    "scoped": [],
+    "w1": []
+   },
+   "qualified_concept": 621902,
+   "qualified_in_db": false,
+   "qualified_name": "Ramaria strasseri",
+   "qualified_names_frozen": [
+    [
+     "nb",
+     "blek rødtuppsopp"
+    ]
+   ],
+   "qualified_scope_reason": "not_scope_evaluated:canonical_source_system=nortaxa (policy source.system=col_xr; macrofungi_scope.load_taxa)",
+   "qualified_selectable": false,
+   "qualified_source": "nortaxa",
+   "strict_in_db": true,
+   "strict_name": "Ramaria strasseri",
+   "strict_nordic_frozen": [],
+   "strict_nordic_scoped": [],
+   "strict_selectable": true,
+   "strict_source": "col_xr"
+  },
+  "96276": {
+   "db_strict_nordic": [
+    [
+     "nb",
+     "silkerødspore",
+     true,
+     "nortaxa"
+    ],
+    [
+     "nn",
+     "silkeraudspore",
+     true,
+     "nortaxa"
+    ]
+   ],
+   "leaks": {
+    "frozen": [],
+    "imported_db": [],
+    "scoped": [],
+    "w1": []
+   },
+   "qualified_concept": 625268,
+   "qualified_in_db": false,
+   "qualified_name": "Entoloma sericellum",
+   "qualified_names_frozen": [
+    [
+     "nb",
+     "silkerødskivesopp"
+    ],
+    [
+     "nb",
+     "silkerødspore-gruppen"
+    ],
+    [
+     "nn",
+     "silkeraudskivesopp"
+    ],
+    [
+     "nn",
+     "silkeraudspore-gruppa"
+    ]
+   ],
+   "qualified_scope_reason": "not_scope_evaluated:canonical_source_system=nortaxa (policy source.system=col_xr; macrofungi_scope.load_taxa)",
+   "qualified_selectable": false,
+   "qualified_source": "nortaxa",
+   "strict_in_db": true,
+   "strict_name": "Entoloma sericellum",
+   "strict_nordic_frozen": [
+    [
+     "nb",
+     "silkerødspore",
+     true,
+     "nortaxa"
+    ],
+    [
+     "nn",
+     "silkeraudspore",
+     true,
+     "nortaxa"
+    ]
+   ],
+   "strict_nordic_scoped": [
+    [
+     "nb",
+     "silkerødspore",
+     true,
+     "nortaxa"
+    ],
+    [
+     "nn",
+     "silkeraudspore",
+     true,
+     "nortaxa"
+    ]
+   ],
+   "strict_selectable": true,
+   "strict_source": "col_xr"
+  }
+ },
+ "scope_drops": {
+  "added_in_scoped_not_in_w1": 0,
+  "by_rule": {
+   "not_scope_evaluated:canonical_source_system=nortaxa (policy source.system=col_xr; macrofungi_scope.load_taxa)": 3800,
+   "required_ancestor_classification_only (rule=default_exclude; build_export writes vernacular only for included)": 4,
+   "required_ancestor_classification_only (rule=exclude_pucciniomycetes; build_export writes vernacular only for included)": 6,
+   "required_ancestor_classification_only (rule=exclude_ustilaginomycetes; build_export writes vernacular only for included)": 10,
+   "required_ancestor_classification_only (rule=review_hypoxylaceae; build_export writes vernacular only for included)": 7,
+   "required_ancestor_classification_only (rule=review_leotiomycetes; build_export writes vernacular only for included)": 31,
+   "required_ancestor_classification_only (rule=review_sordariomycetes; build_export writes vernacular only for included)": 25,
+   "required_ancestor_classification_only (rule=review_tremellomycetes; build_export writes vernacular only for included)": 22,
+   "required_ancestor_classification_only (rule=review_xylariaceae; build_export writes vernacular only for included)": 14,
+   "state=exclude|rule=default_exclude|reason=default_exclude": 22404,
+   "state=exclude|rule=exclude_pucciniomycetes|reason=default_non_macrofungi_exclusion": 2188,
+   "state=exclude|rule=exclude_ustilaginomycetes|reason=default_non_macrofungi_exclusion": 431,
+   "state=review|rule=review_atractiellomycetes|reason=review_required": 51,
+   "state=review|rule=review_diatrypaceae|reason=review_required": 180,
+   "state=review|rule=review_hypoxylaceae|reason=review_required": 49,
+   "state=review|rule=review_leotiomycetes|reason=review_required": 4293,
+   "state=review|rule=review_sordariomycetes|reason=review_required": 2274,
+   "state=review|rule=review_tolypocladium|reason=review_required": 62,
+   "state=review|rule=review_tremellomycetes|reason=review_required": 87,
+   "state=review|rule=review_trichoderma|reason=review_required": 134,
+   "state=review|rule=review_xylariaceae|reason=review_required": 180
+  },
+  "nordic_by_rule": {
+   "not_scope_evaluated:canonical_source_system=nortaxa (policy source.system=col_xr; macrofungi_scope.load_taxa)": 3770,
+   "required_ancestor_classification_only (rule=default_exclude; build_export writes vernacular only for included)": 4,
+   "required_ancestor_classification_only (rule=exclude_pucciniomycetes; build_export writes vernacular only for included)": 4,
+   "required_ancestor_classification_only (rule=exclude_ustilaginomycetes; build_export writes vernacular only for included)": 4,
+   "required_ancestor_classification_only (rule=review_leotiomycetes; build_export writes vernacular only for included)": 8,
+   "required_ancestor_classification_only (rule=review_sordariomycetes; build_export writes vernacular only for included)": 4,
+   "required_ancestor_classification_only (rule=review_tremellomycetes; build_export writes vernacular only for included)": 4,
+   "state=exclude|rule=default_exclude|reason=default_exclude": 1267,
+   "state=exclude|rule=exclude_pucciniomycetes|reason=default_non_macrofungi_exclusion": 369,
+   "state=exclude|rule=exclude_ustilaginomycetes|reason=default_non_macrofungi_exclusion": 91,
+   "state=review|rule=review_atractiellomycetes|reason=review_required": 2,
+   "state=review|rule=review_diatrypaceae|reason=review_required": 18,
+   "state=review|rule=review_hypoxylaceae|reason=review_required": 5,
+   "state=review|rule=review_leotiomycetes|reason=review_required": 371,
+   "state=review|rule=review_sordariomycetes|reason=review_required": 123,
+   "state=review|rule=review_tolypocladium|reason=review_required": 12,
+   "state=review|rule=review_tremellomycetes|reason=review_required": 11,
+   "state=review|rule=review_trichoderma|reason=review_required": 19,
+   "state=review|rule=review_xylariaceae|reason=review_required": 15
+  },
+  "total": 36252,
+  "unexplained": []
+ },
+ "scoped_equals_frozen_restricted_to_included": true,
+ "spelling_replacements": {
+  "current_present": 721,
+  "duplicates": 1,
+  "historical_variant_present": 0,
+  "pairs": 721,
+  "pairs_sha256": "af4bd985ea14b5a496987a063ea108f45d5e5d4466f91ff9d8289a0f4cc9536d",
+  "problems": [
+   {
+    "current": [
+     "fjällfotad fingersvamp",
+     "fjällfotad ﬁngersvamp"
+    ],
+    "current_present": true,
+    "duplicate": true,
+    "frozen_names": [
+     "fjällfotad fingersvamp",
+     "fjällfotad ﬁngersvamp"
+    ],
+    "historical": "Fjällfotad fingersvamp",
+    "historical_variant_present": false,
+    "language": "sv",
+    "scoped_names": [
+     "fjällfotad fingersvamp",
+     "fjällfotad ﬁngersvamp"
+    ],
+    "target": 122442
+   }
+  ],
+  "selectable": 357,
+  "selectable_scoped_single": 356
+ },
+ "spelling_replacements_full": {
+  "path": "/Users/sigmundas/sporely-scratch/vernacular-2026-10-07-stage3c/run1/spelling-replacements.json",
+  "sha256": "a08ae31158ed7d5f5df7768739a80df2143e44ad48a0b47859cd32f223b06fe2"
+ },
+ "unsupported_historical": {
+  "present_frozen_sqlite": 0,
+  "present_scoped": 0,
+  "present_w1": 0,
+  "total": 8453
+ },
+ "w1_equals_frozen_sqlite_exactly": true
+}

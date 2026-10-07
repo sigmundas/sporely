@@ -1,0 +1,96 @@
+{
+ "analysis_identical_except_desktop_json_hash": true,
+ "db_fingerprints": [
+  {
+   "external_ids": "dce52d9d7c12314bd3692ed50fea541d",
+   "taxa": "fee62139d791344c798c6074b9074ecc",
+   "vernacular": "341ace08e94cee3dd413d29952d6bf28"
+  },
+  {
+   "external_ids": "dce52d9d7c12314bd3692ed50fea541d",
+   "taxa": "fee62139d791344c798c6074b9074ecc",
+   "vernacular": "341ace08e94cee3dd413d29952d6bf28"
+  }
+ ],
+ "differing_files": [
+  "desktop.json"
+ ],
+ "each_from_scratch": "decompress -> W1 export -> scope -> desktop -> sporely-web importer SQL -> local import+probes -> ROLLBACK -> analysis",
+ "file_hashes_run1": {
+  "archive-members.json": "6d7c270da05e65671685b5cad0a87b53f077edbcad40ccf35a9fc610b5fa159e",
+  "desktop.json": "59df087d7055f1608b0d0241de78c5cc4f53676bb01006f7fab2f6468c3c0468",
+  "frozen.sqlite3": "3f9037c08b918890910b16f5a7446a323d5524d08a49e674715afbb7137bb73e",
+  "import.sql": "4465a8ba20e4908a5efb2d7eec49898dbe0d18c8224b9db5566d0d757b9e1ef0",
+  "scope-validation.json": "4e258423dd1d81c6eabbad0c200fa443acc77fc1870db03cb07e769dd7fd45eb",
+  "scoped/desktop-tax-2026.10.06-01.sqlite3": "4a76707784a228546e4000d9e51cb4bb32eaafabc8d20b73821728613ff9b10a",
+  "scoped/desktop-tax-2026.10.06-01.sqlite3.gz": "848ccd84a0846ff2793661f0c1e046f76f006fcacd915680e1fc927095a51acc",
+  "scoped/scientific_name.jsonl": "57a15c614b3c5d49d6754af0b5cf4cfe4e7ab5b61f3004ac381e0ca18bfb1b7e",
+  "scoped/scope-manifest.json": "c95561f12333c0938f094f91550009794b3f609e7ade949c671166e8680dc052",
+  "scoped/scoped-export.jsonl.gz": "bbcd9e48babb83a60b71d1933d5563da388886fd07035871045aa6db6516a11a",
+  "scoped/taxon.jsonl": "f95e4083d083cbf1ad18db2a83b72420c866c9954d52f9b597ac3d01c7c8aeb2",
+  "scoped/taxon_external_id.jsonl": "53b7957fde8f95765f6ab1884ba46d2327d3e5388927241f3474a20896ef83d0",
+  "scoped/taxon_external_id_legacy_integer.jsonl": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855",
+  "scoped/taxon_redlist.jsonl": "c4f0679db8557bdf000ab8037435af18859d101af841b238ea62b3b25481a74e",
+  "scoped/taxonomy_export_manifest.json": "44f3182b43f9a0a01c60aaee98a80a88db71c8bb41bba5e1d0fd3c912c5d75c6",
+  "scoped/taxonomy_release.jsonl": "0d072565f2c6142777f9c70dc828133edd52708cad456891b7992047647c5d1b",
+  "scoped/vernacular.jsonl": "10aae35b402782843da52bcb4ecfcc615c40b0366809683d6688a3d246c3756f",
+  "validation-rollback.sql": "080cf97983f346ffdb525dd4e225a4d8f554596b0d5c89a4033deeb1e97ef865",
+  "w1/scientific_name.jsonl": "9a49dc358449f4d8a7751d881d8e88a96be4161cd3a0362f80921a44fb4b1ad0",
+  "w1/taxon.jsonl": "ae94c0d923031132f28ccbe997f02a7392c55419696f30d71c7ba562b2cec2b7",
+  "w1/taxon_external_id.jsonl": "cbb1d0f868d4f4d95adf68186c07df34ada8c27a3a78c0b1544222dab37d9ae0",
+  "w1/taxon_external_id_legacy_integer.jsonl": "dd9ebe52579aa12fa5412afc75e7a90a823276a6d4d0390fbf653b21fc946b34",
+  "w1/taxon_redlist.jsonl": "f8db7a0553750e4a14c7501f81c26e71cebd9717d9c3ec4d43bc4f8ced315a8b",
+  "w1/taxonomy_export_manifest.json": "7d518dd159f497906f5be0d74e550fc3e09ed83d24854f57f9e9f8c569ed1314",
+  "w1/taxonomy_release.jsonl": "409024f32050a708b8343688a73e9dbe0ddc80c8c1f51412b92b4132c479e316",
+  "w1/vernacular.jsonl": "1e94af447c805ab80901f2e1f3c97cabaf8cefb586122e252add72a5bc909b54"
+ },
+ "file_hashes_run2": {
+  "archive-members.json": "6d7c270da05e65671685b5cad0a87b53f077edbcad40ccf35a9fc610b5fa159e",
+  "desktop.json": "88d89ebf69439ffa3932a92510db744f109f34868bfa8f94aef1955419615a4a",
+  "frozen.sqlite3": "3f9037c08b918890910b16f5a7446a323d5524d08a49e674715afbb7137bb73e",
+  "import.sql": "4465a8ba20e4908a5efb2d7eec49898dbe0d18c8224b9db5566d0d757b9e1ef0",
+  "scope-validation.json": "4e258423dd1d81c6eabbad0c200fa443acc77fc1870db03cb07e769dd7fd45eb",
+  "scoped/desktop-tax-2026.10.06-01.sqlite3": "4a76707784a228546e4000d9e51cb4bb32eaafabc8d20b73821728613ff9b10a",
+  "scoped/desktop-tax-2026.10.06-01.sqlite3.gz": "848ccd84a0846ff2793661f0c1e046f76f006fcacd915680e1fc927095a51acc",
+  "scoped/scientific_name.jsonl": "57a15c614b3c5d49d6754af0b5cf4cfe4e7ab5b61f3004ac381e0ca18bfb1b7e",
+  "scoped/scope-manifest.json": "c95561f12333c0938f094f91550009794b3f609e7ade949c671166e8680dc052",
+  "scoped/scoped-export.jsonl.gz": "bbcd9e48babb83a60b71d1933d5563da388886fd07035871045aa6db6516a11a",
+  "scoped/taxon.jsonl": "f95e4083d083cbf1ad18db2a83b72420c866c9954d52f9b597ac3d01c7c8aeb2",
+  "scoped/taxon_external_id.jsonl": "53b7957fde8f95765f6ab1884ba46d2327d3e5388927241f3474a20896ef83d0",
+  "scoped/taxon_external_id_legacy_integer.jsonl": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855",
+  "scoped/taxon_redlist.jsonl": "c4f0679db8557bdf000ab8037435af18859d101af841b238ea62b3b25481a74e",
+  "scoped/taxonomy_export_manifest.json": "44f3182b43f9a0a01c60aaee98a80a88db71c8bb41bba5e1d0fd3c912c5d75c6",
+  "scoped/taxonomy_release.jsonl": "0d072565f2c6142777f9c70dc828133edd52708cad456891b7992047647c5d1b",
+  "scoped/vernacular.jsonl": "10aae35b402782843da52bcb4ecfcc615c40b0366809683d6688a3d246c3756f",
+  "validation-rollback.sql": "080cf97983f346ffdb525dd4e225a4d8f554596b0d5c89a4033deeb1e97ef865",
+  "w1/scientific_name.jsonl": "9a49dc358449f4d8a7751d881d8e88a96be4161cd3a0362f80921a44fb4b1ad0",
+  "w1/taxon.jsonl": "ae94c0d923031132f28ccbe997f02a7392c55419696f30d71c7ba562b2cec2b7",
+  "w1/taxon_external_id.jsonl": "cbb1d0f868d4f4d95adf68186c07df34ada8c27a3a78c0b1544222dab37d9ae0",
+  "w1/taxon_external_id_legacy_integer.jsonl": "dd9ebe52579aa12fa5412afc75e7a90a823276a6d4d0390fbf653b21fc946b34",
+  "w1/taxon_redlist.jsonl": "f8db7a0553750e4a14c7501f81c26e71cebd9717d9c3ec4d43bc4f8ced315a8b",
+  "w1/taxonomy_export_manifest.json": "7d518dd159f497906f5be0d74e550fc3e09ed83d24854f57f9e9f8c569ed1314",
+  "w1/taxonomy_release.jsonl": "409024f32050a708b8343688a73e9dbe0ddc80c8c1f51412b92b4132c479e316",
+  "w1/vernacular.jsonl": "1e94af447c805ab80901f2e1f3c97cabaf8cefb586122e252add72a5bc909b54"
+ },
+ "local_validation_log_identical": true,
+ "nondeterministic_metadata": {
+  "desktop.json": "build_seconds (wall-clock timing); desktop SQLite and gz bytes identical"
+ },
+ "pinned_metadata": {
+  "w1 generated_at": "2026-10-06T00:00:00Z (pinned, as in 2026-10-06 run)"
+ },
+ "probe_results_sha256": [
+  "4a7e15408a4b12d41b8013449e0351a85e731fc7647debf50414702d120c1f87",
+  "4a7e15408a4b12d41b8013449e0351a85e731fc7647debf50414702d120c1f87"
+ ],
+ "runs": [
+  "run1",
+  "run2"
+ ],
+ "vs_2026_10_06_refreeze_run": {
+  "all_w1_and_scoped_files_equal_previous": true,
+  "import_sql_sha256": "4465a8ba20e4908a5efb2d7eec49898dbe0d18c8224b9db5566d0d757b9e1ef0",
+  "previous_import_sql_sha256": "4465a8ba20e4908a5efb2d7eec49898dbe0d18c8224b9db5566d0d757b9e1ef0",
+  "validation_rollback_sql": "differs by design (Stage 3C appends more probes/checks after the identical importer payload)"
+ }
+}

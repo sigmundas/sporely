@@ -1,0 +1,403 @@
+{
+ "build_commands": [
+  ".venv/bin/python database/taxonomy/scripts/build_release.py --release-id tax-2026.10.07-01 --build-dir ~/sporely-scratch/vernacular-2026-10-07-f1/buildA",
+  "... --build-dir .../buildB"
+ ],
+ "build_freeze_sha256": {
+  "buildA": "a86e35854fd4d01984d8b8fe121d8fc318e75a01876d243975847127462fd14e",
+  "buildB": "a86e35854fd4d01984d8b8fe121d8fc318e75a01876d243975847127462fd14e",
+  "promotion_wrong_hash_build": "a86e35854fd4d01984d8b8fe121d8fc318e75a01876d243975847127462fd14e"
+ },
+ "checks": {
+  "A_integrity": true,
+  "col_recovery": {
+   "audit_gaps": 10331,
+   "current_source_recovery_gaps_in_frozen": 0,
+   "in_frozen_sqlite": 10331,
+   "in_w1": 10331,
+   "selectable_and_in_scoped": 7176
+  },
+  "enrichments": {
+   "automatic_vernacular_enrichment": 1619,
+   "owner_reviewed_vernacular_association": 18
+  },
+  "enrichments_in_scoped": 1637,
+  "f1": {
+   "concepts": {
+    "1041": {
+     "bundled_nordic": [
+      [
+       "nb",
+       "rustoker grynhatt",
+       true,
+       "nortaxa"
+      ]
+     ],
+     "db_nordic": [
+      [
+       "nb",
+       "rustoker grynhatt",
+       true,
+       "nortaxa"
+      ]
+     ],
+     "frozen_nordic": [
+      [
+       "nb",
+       "rustoker grynhatt",
+       true,
+       "nortaxa"
+      ]
+     ],
+     "name": "Cystoderma jasonis",
+     "selectable": true
+    },
+    "58651": {
+     "bundled_nordic": [],
+     "db_nordic": [],
+     "frozen_nordic": [],
+     "name": "Ramaria aurea",
+     "selectable": true
+    },
+    "58722": {
+     "bundled_nordic": [],
+     "db_nordic": [],
+     "frozen_nordic": [],
+     "name": "Ramaria flava",
+     "selectable": true
+    },
+    "60670": {
+     "bundled_nordic": [
+      [
+       "nb",
+       "rødbrun flathatt",
+       true,
+       "nortaxa"
+      ],
+      [
+       "nn",
+       "raudbrun flathatt",
+       true,
+       "nortaxa"
+      ]
+     ],
+     "db_nordic": [
+      [
+       "nb",
+       "rødbrun flathatt",
+       true,
+       "nortaxa"
+      ],
+      [
+       "nn",
+       "raudbrun flathatt",
+       true,
+       "nortaxa"
+      ]
+     ],
+     "frozen_nordic": [
+      [
+       "nb",
+       "rødbrun flathatt",
+       true,
+       "nortaxa"
+      ],
+      [
+       "nn",
+       "raudbrun flathatt",
+       true,
+       "nortaxa"
+      ]
+     ],
+     "name": "Rhodocollybia butyracea",
+     "selectable": true
+    },
+    "65750": {
+     "bundled_nordic": [
+      [
+       "nb",
+       "taggkroneskinn",
+       true,
+       "nortaxa"
+      ]
+     ],
+     "db_nordic": [
+      [
+       "nb",
+       "taggkroneskinn",
+       true,
+       "nortaxa"
+      ]
+     ],
+     "frozen_nordic": [
+      [
+       "nb",
+       "taggkroneskinn",
+       true,
+       "nortaxa"
+      ]
+     ],
+     "name": "Sistotrema muscicola",
+     "selectable": true
+    }
+   },
+   "imported_db_full_table_marker_rows": [],
+   "marked_db_name_checks": {
+    "Gul korallsopp [UTGÅTT]": [],
+    "Rustoker grynhatt [UTGÅTT]": [],
+    "Rødbrun flathatt [UTGÅTT]": [],
+    "gullkorallsopp [GAMMELT]": [],
+    "strøkjuke [GAMMELT]": []
+   },
+   "marked_frozen_sqlite": [],
+   "marked_imported_db_nordic_checked_taxa": [],
+   "marked_in_bundled": [],
+   "marked_scoped": [],
+   "marked_w1": []
+  },
+  "guard": [
+   [
+    58815,
+    "nb",
+    "sørlig rødtuppsopp",
+    false
+   ],
+   [
+    19080,
+    "nb",
+    "knolltrevlesopp",
+    false
+   ],
+   [
+    58815,
+    "nn",
+    "sørleg rødtuppsopp",
+    false
+   ]
+  ],
+  "identity_export": {
+   "scoped_external_ids_equal_w1_restricted": true,
+   "scoped_taxa": 52917,
+   "scoped_taxa_expected": 52918,
+   "scoped_taxa_set_ok": false,
+   "scoped_taxa_vs_w1_diffs": 0,
+   "w1_external_ids_equal_frozen_text_table": false,
+   "w1_taxa_missing": 1,
+   "w1_taxa_vs_frozen_diffs": 0
+  },
+  "identity_sources": {
+   "aliases": 58526,
+   "anchor_vs_canonical_external_id_mismatch": 0,
+   "bound_ids_absent_from_bundled": 0,
+   "bound_ids_missing_in_frozen_sqlite": 0,
+   "concept_supersessions_equal_repo": true,
+   "identity_binding": {
+    "alias": 58526,
+    "anchor": 633542
+   },
+   "manual_mappings_equal_repo": true,
+   "mapping_policy_equal_repo": true,
+   "previous_publication_manifest_equals_repo_bundle_manifest": true,
+   "registry_concatenated_sha256": [
+    "1cc2003a874e5deb2c0023bf8fd6fb74dd98b2ad656ee36d8755c15277c8adc9",
+    "1cc2003a874e5deb2c0023bf8fd6fb74dd98b2ad656ee36d8755c15277c8adc9",
+    "1cc2003a874e5deb2c0023bf8fd6fb74dd98b2ad656ee36d8755c15277c8adc9"
+   ],
+   "registry_manifest_equals_repo": true,
+   "source_usages": 692068,
+   "source_usages_sha256": "a14a680ac59cf9d08855d98244763c58b591e34bbade1ad1017346aeeecae52c",
+   "superseded_from": 6132
+  },
+  "identity_vs_bundled": {
+   "bundled_taxa": 633542,
+   "frozen_taxa": 633542,
+   "identity_column_diffs": 0,
+   "identity_diff_examples": [],
+   "missing_in_frozen": 0,
+   "new_in_frozen": 0,
+   "scientific_name_min": {
+    "added_on_new": 0,
+    "added_on_preexisting": 0,
+    "bundled": 665947,
+    "frozen": 665947,
+    "removed": 0
+   },
+   "taxon_external_id_min": {
+    "added_on_new": 0,
+    "added_on_preexisting": 0,
+    "bundled": 78615,
+    "frozen": 78615,
+    "removed": 0
+   },
+   "taxon_external_id_text_min": {
+    "added_on_new": 0,
+    "added_on_preexisting": 0,
+    "bundled": 632853,
+    "frozen": 632853,
+    "removed": 0
+   },
+   "taxon_redlist_min": {
+    "added_on_new": 0,
+    "added_on_preexisting": 0,
+    "bundled": 34171,
+    "frozen": 34171,
+    "removed": 0
+   }
+  },
+  "preferred": {
+   "compiler_level_vs_bundled_2026.09.30-01": {
+    "by_language": {
+     "da": 868,
+     "de": 933,
+     "en": 1069,
+     "es": 107,
+     "fi": 1919,
+     "fr": 1206,
+     "it": 27,
+     "pl": 648,
+     "pt": 26,
+     "sv": 94
+    },
+    "common_rows": 19418,
+    "explained_by_stage1b_delta": 6897,
+    "false_to_true": 15,
+    "flag_changes": 6897,
+    "nordic_change_count": 0,
+    "nordic_changes": [],
+    "true_to_false": 6882,
+    "unexplained_by_stage1b_delta": [],
+    "unexplained_count": 0
+   },
+   "export_level_vs_frozen_sqlite": {
+    "scoped_flag_diffs": 0,
+    "w1_flag_diffs": 0,
+    "w1_source_diffs": 0
+   }
+  },
+  "probes_pass": 33,
+  "probes_total": 33,
+  "qualified_leaks": {
+   "19080": {
+    "frozen": [],
+    "imported_db": [],
+    "scoped": [],
+    "w1": []
+   },
+   "58651": {
+    "frozen": [],
+    "imported_db": [],
+    "scoped": [],
+    "w1": []
+   },
+   "58814": {
+    "frozen": [],
+    "imported_db": [],
+    "scoped": [],
+    "w1": []
+   },
+   "58815": {
+    "frozen": [],
+    "imported_db": [],
+    "scoped": [],
+    "w1": []
+   },
+   "58832": {
+    "frozen": [],
+    "imported_db": [],
+    "scoped": [],
+    "w1": []
+   },
+   "96276": {
+    "frozen": [],
+    "imported_db": [],
+    "scoped": [],
+    "w1": []
+   }
+  },
+  "spelling": {
+   "current_present": 721,
+   "duplicates": 1,
+   "historical_variant_present": 0,
+   "pairs": 721
+  },
+  "unsupported_historical": {
+   "present_frozen_sqlite": 0,
+   "present_scoped": 0,
+   "present_w1": 0,
+   "total": 8453
+  }
+ },
+ "code_state": "branch feature/norwegian-vernacular-enrichment HEAD d2a0516 + uncommitted normalize_col_xr.py F1 rule (see report)",
+ "col_marker_scan": {
+  "all_nob_norway": true,
+  "archive": "database/taxonomy/sources/col_xr/2026-07-17-XR/archive.zip",
+  "hit_count": 5,
+  "hits": [
+   {
+    "country": "NO",
+    "language": "nob",
+    "line": 1743203,
+    "name": "Rødbrun flathatt [UTGÅTT]",
+    "taxonID": "4SF4S"
+   },
+   {
+    "country": "NO",
+    "language": "nob",
+    "line": 1751349,
+    "name": "Rustoker grynhatt [UTGÅTT]",
+    "taxonID": "33PRB"
+   },
+   {
+    "country": "NO",
+    "language": "nob",
+    "line": 1758291,
+    "name": "strøkjuke [GAMMELT]",
+    "taxonID": "4XRP7"
+   },
+   {
+    "country": "NO",
+    "language": "nob",
+    "line": 1767075,
+    "name": "gullkorallsopp [GAMMELT]",
+    "taxonID": "4RBLM"
+   },
+   {
+    "country": "NO",
+    "language": "nob",
+    "line": 1767087,
+    "name": "Gul korallsopp [UTGÅTT]",
+    "taxonID": "4RBQ5"
+   }
+  ],
+  "member": "VernacularName.tsv",
+  "pattern": "\\[\\s*(GAMMELT|UTGÅTT)\\s*\\]  (case-insensitive, name column)",
+  "source_marked_obsolete_rejected_in_normalization": 5
+ },
+ "decompressed_sqlite_sha256": "e349e8b1d7cdbafa688621a71f9be278ac6e381853ff7fe2763d8b856b7724f9",
+ "durable_path": "/Users/sigmundas/sporely-scratch/vernacular-2026-10-07-f1/final",
+ "freeze_sha256": "a86e35854fd4d01984d8b8fe121d8fc318e75a01876d243975847127462fd14e",
+ "frozen_files": {
+  "compatibility.json": {
+   "bytes": 3214,
+   "sha256": "abfb70df4ce19791f42b91cdc25b906ff8d801b1679c8f6d00ad0ba47b02d606"
+  },
+  "freeze.json": {
+   "bytes": 895,
+   "sha256": "a86e35854fd4d01984d8b8fe121d8fc318e75a01876d243975847127462fd14e"
+  },
+  "manifest.json": {
+   "bytes": 4235,
+   "sha256": "83686295d6de4213dd51c40a7992fde448e8ecfc0030a2fab39221766ca3ea15"
+  },
+  "tax-2026.10.07-01.evidence.tar.gz": {
+   "bytes": 53372637,
+   "sha256": "e2d1dfcaa261457fe1ae1392783c503ae56b833c7652a259056103012c089424"
+  },
+  "tax-2026.10.07-01.sqlite3.gz": {
+   "bytes": 73281648,
+   "sha256": "bff40f0d5d70ec2be47fe415dfd4cfc623a7841553f8a7d928ed801117ca21c5"
+  }
+ },
+ "read_only": true,
+ "release_id": "tax-2026.10.07-01"
+}

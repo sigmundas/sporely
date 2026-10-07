@@ -1,0 +1,121 @@
+{
+ "analysis_only_difference": "file_hashes.desktop.json (build_seconds timing metadata), as in Stage 3C",
+ "analysis_sha256": {
+  "run1": "3c5e361c5d2fd52e3b11a1c985f73e59d771c7be432e3903392796fdd0e80ddd",
+  "run2": "8c1b27f1966a31d9c8a6e0f2889a95b7262df28ab27eb04f7b12ecb964affed8"
+ },
+ "builds_byte_identical": true,
+ "equal_except_desktop_json": {
+  "archive-members.json": true,
+  "desktop.json": false,
+  "frozen.sqlite3": true,
+  "import.sql": true,
+  "scope-validation.json": true,
+  "scoped/desktop-tax-2026.10.07-01.sqlite3": true,
+  "scoped/desktop-tax-2026.10.07-01.sqlite3.gz": true,
+  "scoped/scientific_name.jsonl": true,
+  "scoped/scope-manifest.json": true,
+  "scoped/scoped-export.jsonl.gz": true,
+  "scoped/taxon.jsonl": true,
+  "scoped/taxon_external_id.jsonl": true,
+  "scoped/taxon_external_id_legacy_integer.jsonl": true,
+  "scoped/taxon_redlist.jsonl": true,
+  "scoped/taxonomy_export_manifest.json": true,
+  "scoped/taxonomy_release.jsonl": true,
+  "scoped/vernacular.jsonl": true,
+  "validation-rollback.sql": true,
+  "w1/scientific_name.jsonl": true,
+  "w1/taxon.jsonl": true,
+  "w1/taxon_external_id.jsonl": true,
+  "w1/taxon_external_id_legacy_integer.jsonl": true,
+  "w1/taxon_redlist.jsonl": true,
+  "w1/taxonomy_export_manifest.json": true,
+  "w1/taxonomy_release.jsonl": true,
+  "w1/vernacular.jsonl": true
+ },
+ "file_hashes_run1": {
+  "archive-members.json": "6d7c270da05e65671685b5cad0a87b53f077edbcad40ccf35a9fc610b5fa159e",
+  "desktop.json": "7008f144c1dab86cab8034dda193c197fc417ddc804e952617da9f067268c4f0",
+  "frozen.sqlite3": "e349e8b1d7cdbafa688621a71f9be278ac6e381853ff7fe2763d8b856b7724f9",
+  "import.sql": "cc9a1ddfc4c5f56fa553935b79fb40a2eda01588f0c6d2781e243cddda84852e",
+  "scope-validation.json": "4e258423dd1d81c6eabbad0c200fa443acc77fc1870db03cb07e769dd7fd45eb",
+  "scoped/desktop-tax-2026.10.07-01.sqlite3": "1483e146204f6a80e686a1578e73a554857b18023cf1f7a009c00500363ae90f",
+  "scoped/desktop-tax-2026.10.07-01.sqlite3.gz": "e0debeca1f815b1caa42cdb450fa684223be93a012d272c1a940aa6b5549709e",
+  "scoped/scientific_name.jsonl": "57a15c614b3c5d49d6754af0b5cf4cfe4e7ab5b61f3004ac381e0ca18bfb1b7e",
+  "scoped/scope-manifest.json": "29c9b5e8f48c5c28902c46e2eed5f921574892529cefeaadea193f4b34c23c9c",
+  "scoped/scoped-export.jsonl.gz": "0e8b6711d388b89b5e56f5aedd05aa4e58b0ff5805abc603aec35a1e8a7235a5",
+  "scoped/taxon.jsonl": "9b052c9e788e89fc5eedc3a4842438edd07fd38fe3806bf4b28e0377a992b2c2",
+  "scoped/taxon_external_id.jsonl": "53b7957fde8f95765f6ab1884ba46d2327d3e5388927241f3474a20896ef83d0",
+  "scoped/taxon_external_id_legacy_integer.jsonl": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855",
+  "scoped/taxon_redlist.jsonl": "c4f0679db8557bdf000ab8037435af18859d101af841b238ea62b3b25481a74e",
+  "scoped/taxonomy_export_manifest.json": "e1f97c9d4dc5993cd32feb350d8145024c3f6e115112b9f4cb2ff2020964e369",
+  "scoped/taxonomy_release.jsonl": "610bd398ae64bd9d91c411e761e10c02e4ba8e15a7a28682979c682760d72355",
+  "scoped/vernacular.jsonl": "b3a7fb1ff267a93521d9c1623ee18505237328785be0d584cdaec19680cecb12",
+  "validation-rollback.sql": "be8faa9f01726d628c9d7eb109b7f4de6b4c34c3fd0d82687c618977095e90e1",
+  "w1/scientific_name.jsonl": "9a49dc358449f4d8a7751d881d8e88a96be4161cd3a0362f80921a44fb4b1ad0",
+  "w1/taxon.jsonl": "41cc5adb89d5afc56ab06f632544edda7ad9532159471920c5bcb08e5a3fc229",
+  "w1/taxon_external_id.jsonl": "cbb1d0f868d4f4d95adf68186c07df34ada8c27a3a78c0b1544222dab37d9ae0",
+  "w1/taxon_external_id_legacy_integer.jsonl": "dd9ebe52579aa12fa5412afc75e7a90a823276a6d4d0390fbf653b21fc946b34",
+  "w1/taxon_redlist.jsonl": "f8db7a0553750e4a14c7501f81c26e71cebd9717d9c3ec4d43bc4f8ced315a8b",
+  "w1/taxonomy_export_manifest.json": "f9c7b38dc3d3585c729cbd2d6bbb960f9fc08c90d6d6fd036817f42846f4a28c",
+  "w1/taxonomy_release.jsonl": "fb2032009acb66e7d31324ff9b625a193bf77239d17baa38932234ec1d93d12e",
+  "w1/vernacular.jsonl": "b5e6e21c47acc49ea359be7f9ed90b081abb96e518c1a8ef052dbfed6fb89f90"
+ },
+ "file_hashes_run2": {
+  "archive-members.json": "6d7c270da05e65671685b5cad0a87b53f077edbcad40ccf35a9fc610b5fa159e",
+  "desktop.json": "3acf96545a271868a77d9f8e0723aba9c0251812a99a8acb73b18f9af22179e1",
+  "frozen.sqlite3": "e349e8b1d7cdbafa688621a71f9be278ac6e381853ff7fe2763d8b856b7724f9",
+  "import.sql": "cc9a1ddfc4c5f56fa553935b79fb40a2eda01588f0c6d2781e243cddda84852e",
+  "scope-validation.json": "4e258423dd1d81c6eabbad0c200fa443acc77fc1870db03cb07e769dd7fd45eb",
+  "scoped/desktop-tax-2026.10.07-01.sqlite3": "1483e146204f6a80e686a1578e73a554857b18023cf1f7a009c00500363ae90f",
+  "scoped/desktop-tax-2026.10.07-01.sqlite3.gz": "e0debeca1f815b1caa42cdb450fa684223be93a012d272c1a940aa6b5549709e",
+  "scoped/scientific_name.jsonl": "57a15c614b3c5d49d6754af0b5cf4cfe4e7ab5b61f3004ac381e0ca18bfb1b7e",
+  "scoped/scope-manifest.json": "29c9b5e8f48c5c28902c46e2eed5f921574892529cefeaadea193f4b34c23c9c",
+  "scoped/scoped-export.jsonl.gz": "0e8b6711d388b89b5e56f5aedd05aa4e58b0ff5805abc603aec35a1e8a7235a5",
+  "scoped/taxon.jsonl": "9b052c9e788e89fc5eedc3a4842438edd07fd38fe3806bf4b28e0377a992b2c2",
+  "scoped/taxon_external_id.jsonl": "53b7957fde8f95765f6ab1884ba46d2327d3e5388927241f3474a20896ef83d0",
+  "scoped/taxon_external_id_legacy_integer.jsonl": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855",
+  "scoped/taxon_redlist.jsonl": "c4f0679db8557bdf000ab8037435af18859d101af841b238ea62b3b25481a74e",
+  "scoped/taxonomy_export_manifest.json": "e1f97c9d4dc5993cd32feb350d8145024c3f6e115112b9f4cb2ff2020964e369",
+  "scoped/taxonomy_release.jsonl": "610bd398ae64bd9d91c411e761e10c02e4ba8e15a7a28682979c682760d72355",
+  "scoped/vernacular.jsonl": "b3a7fb1ff267a93521d9c1623ee18505237328785be0d584cdaec19680cecb12",
+  "validation-rollback.sql": "be8faa9f01726d628c9d7eb109b7f4de6b4c34c3fd0d82687c618977095e90e1",
+  "w1/scientific_name.jsonl": "9a49dc358449f4d8a7751d881d8e88a96be4161cd3a0362f80921a44fb4b1ad0",
+  "w1/taxon.jsonl": "41cc5adb89d5afc56ab06f632544edda7ad9532159471920c5bcb08e5a3fc229",
+  "w1/taxon_external_id.jsonl": "cbb1d0f868d4f4d95adf68186c07df34ada8c27a3a78c0b1544222dab37d9ae0",
+  "w1/taxon_external_id_legacy_integer.jsonl": "dd9ebe52579aa12fa5412afc75e7a90a823276a6d4d0390fbf653b21fc946b34",
+  "w1/taxon_redlist.jsonl": "f8db7a0553750e4a14c7501f81c26e71cebd9717d9c3ec4d43bc4f8ced315a8b",
+  "w1/taxonomy_export_manifest.json": "f9c7b38dc3d3585c729cbd2d6bbb960f9fc08c90d6d6fd036817f42846f4a28c",
+  "w1/taxonomy_release.jsonl": "fb2032009acb66e7d31324ff9b625a193bf77239d17baa38932234ec1d93d12e",
+  "w1/vernacular.jsonl": "b5e6e21c47acc49ea359be7f9ed90b081abb96e518c1a8ef052dbfed6fb89f90"
+ },
+ "freeze_files_sha256": {
+  "buildA": {
+   "baseline_compatibility_sha256": "7afbe0719d2c74f93500c085a7dd7705e464487edb8f22da05c225cbac988051",
+   "baseline_manifest_sha256": "051464bbd8b343cc6d337fc92d5ddf433f716f0742aa55db49ae8e72f704cffa",
+   "content_release_id": "tax-2026.10.07-01",
+   "files": {
+    "compatibility.json": {
+     "bytes": 3214,
+     "sha256": "abfb70df4ce19791f42b91cdc25b906ff8d801b1679c8f6d00ad0ba47b02d606"
+    },
+    "manifest.json": {
+     "bytes": 4235,
+     "sha256": "83686295d6de4213dd51c40a7992fde448e8ecfc0030a2fab39221766ca3ea15"
+    },
+    "tax-2026.10.07-01.evidence.tar.gz": {
+     "bytes": 53372637,
+     "sha256": "e2d1dfcaa261457fe1ae1392783c503ae56b833c7652a259056103012c089424"
+    },
+    "tax-2026.10.07-01.sqlite3.gz": {
+     "bytes": 73281648,
+     "sha256": "bff40f0d5d70ec2be47fe415dfd4cfc623a7841553f8a7d928ed801117ca21c5"
+    }
+   },
+   "format": "sporely-frozen-publication-v1"
+  },
+  "buildB_equal": true
+ },
+ "local_validation_log_identical": true,
+ "note": "An earlier run pair was discarded: a report-only probe reused the query gullkorallsopp and overwrote the positive spec in the analysis keying; fixed and rerun from scratch. A first promotion-check run hit ENOSPC in the wrong-hash build; rerun after freeing scratch space."
+}

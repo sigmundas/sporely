@@ -1,0 +1,87 @@
+{
+ "archive_members": {
+  "count": 32,
+  "list_sha256": "6d7c270da05e65671685b5cad0a87b53f077edbcad40ccf35a9fc610b5fa159e",
+  "verify_frozen": "promote_desktop_bundle.verify_frozen passed before and after each run"
+ },
+ "bundled_reference": {
+  "path": "/Users/sigmundas/sporely-scratch/vernacular-2026-10-06/bundled-2026.09.30-01.sqlite3",
+  "release": "tax-2026.09.30-01",
+  "repo_manifest_sqlite_sha256": "e4591d6b8b885e6c43cb4c21581e54c5f08d1747a3008317feb380f3ae95c20a",
+  "sqlite_sha256": "e4591d6b8b885e6c43cb4c21581e54c5f08d1747a3008317feb380f3ae95c20a"
+ },
+ "committed": false,
+ "date": "2026-10-07",
+ "decompressed_sqlite": {
+  "both_runs_equal": true,
+  "expected": "3f9037c08b918890910b16f5a7446a323d5524d08a49e674715afbb7137bb73e",
+  "path": "/Users/sigmundas/sporely-scratch/vernacular-2026-10-07-stage3c/runN/frozen.sqlite3",
+  "sha256": "3f9037c08b918890910b16f5a7446a323d5524d08a49e674715afbb7137bb73e"
+ },
+ "freeze_json_files_match": true,
+ "freeze_sha256": "fda89f3744975dfb296336b73256c33df1b278efe092eca336557d067d07148e",
+ "frozen_files": {
+  "compatibility.json": {
+   "bytes": 3214,
+   "sha256": "747f32d27a98c7424e4cb05f52244d4d7185266b4bed482e00976442a37feccd"
+  },
+  "freeze.json": {
+   "bytes": 895,
+   "sha256": "fda89f3744975dfb296336b73256c33df1b278efe092eca336557d067d07148e"
+  },
+  "manifest.json": {
+   "bytes": 4235,
+   "sha256": "6c9d4919b51e099cd6694ad887ab10befefc27d83a92aaadbd0aba95b970379e"
+  },
+  "tax-2026.10.06-01.evidence.tar.gz": {
+   "bytes": 53373707,
+   "sha256": "97b4a896977ccc256f662cbf96fca195362a70ebf40cae705e27cd3d084feadd"
+  },
+  "tax-2026.10.06-01.sqlite3.gz": {
+   "bytes": 73281566,
+   "sha256": "9e6690d50ddba88a092b311109f2f3ceb2bd1d5a4fb9b543c62658f0a59a58d3"
+  }
+ },
+ "input_dir": "/Users/sigmundas/sporely-scratch/vernacular-2026-10-06-r2/final",
+ "input_substitution": "Owner prompt named /tmp/sporely-vernacular-stage2/finalA (d0e5de92); it was wiped by reboot and superseded by owner decisions D1/D2. This run validates fda89f37 only; no regeneration, no fallback to repo artifacts or d0e5de92.",
+ "local_db": {
+  "after_run1": {
+   "external_ids": 0,
+   "import_runs": 0,
+   "observations": 6,
+   "releases": 0,
+   "scientific_names": 0,
+   "taxa": 0,
+   "vernacular": 0
+  },
+  "after_run2": {
+   "external_ids": 0,
+   "import_runs": 0,
+   "observations": 6,
+   "releases": 0,
+   "scientific_names": 0,
+   "taxa": 0,
+   "vernacular": 0
+  },
+  "before": {
+   "external_ids": 0,
+   "import_runs": 0,
+   "observations": 6,
+   "releases": 0,
+   "scientific_names": 0,
+   "taxa": 0,
+   "vernacular": 0
+  },
+  "container": "supabase_db_zkpjklzfwzefhjluvhfw",
+  "database_url_env_present": false,
+  "rolled_back": true,
+  "server": "unix-socket|*|/var/lib/postgresql/data"
+ },
+ "matches_2026_10_06_verification_json": true,
+ "production_touched": false,
+ "release_id": "tax-2026.10.06-01",
+ "scratch_dir": "/Users/sigmundas/sporely-scratch/vernacular-2026-10-07-stage3c",
+ "source_files_modified": false,
+ "stage": "3C cloud validation",
+ "verified_before_and_after_each_run": true
+}

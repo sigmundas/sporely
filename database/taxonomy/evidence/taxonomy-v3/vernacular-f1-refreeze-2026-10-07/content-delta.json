@@ -1,0 +1,447 @@
+{
+ "evidence_archive_delta": {
+  "changed": {
+   "compiler/diagnostics.json": {
+    "added_sample": [
+     "        \"VernacularName\": 89921",
+     "      \"nb\": 12530,",
+     "    \"compiled_vernacular_rows\": 103204,"
+    ],
+    "identical_after_release_id_relabel": false,
+    "lines_added": 3,
+    "lines_removed": 3,
+    "new_sha256": "50d53805310104e7e9d8bc366218e6e5955e8ca9e4deaf167e942b66daa791f0",
+    "old_sha256": "e4deebf83b1e4a7c1707f9454625759fcad0e2fde7dd9cc14c2500a48861e149",
+    "removed_sample": [
+     "        \"VernacularName\": 89926",
+     "      \"nb\": 12535,",
+     "    \"compiled_vernacular_rows\": 103209,"
+    ]
+   },
+   "compiler/manifest.json": {
+    "added_sample": [
+     "        \"VernacularName\": 89921",
+     "      \"bytes\": 18067622,",
+     "      \"bytes\": 212909621,",
+     "      \"bytes\": 83465186,",
+     "      \"nb\": 12530,",
+     "      \"sha256\": \"0cb03f51974ccef5313362820feb47dbda4230a1fed9a0e214e7d538da3057fe\"",
+     "      \"sha256\": \"16375019c5182a3e165f276a6138c721dd9b4788715acd1b9322802f9a43cd27\"",
+     "      \"sha256\": \"50d53805310104e7e9d8bc366218e6e5955e8ca9e4deaf167e942b66daa791f0\""
+    ],
+    "identical_after_release_id_relabel": false,
+    "lines_added": 11,
+    "lines_removed": 11,
+    "new_sha256": "a05bd4564177af1d52df863acd1d4f75fd3193f2822e67a1214f167903c464d1",
+    "old_sha256": "0bb3ec5d83bd8932e27b03396611a541b4e03bf53c495f5c674c839b0e68370f",
+    "removed_sample": [
+     "        \"VernacularName\": 89926",
+     "      \"bytes\": 18068588,",
+     "      \"bytes\": 212920144,",
+     "      \"bytes\": 83469596,",
+     "      \"nb\": 12535,",
+     "      \"sha256\": \"04cff87ce4223f346c8bf73b289fa70f63e090139fac600d692d25e93e92ee47\"",
+     "      \"sha256\": \"8b0069d2da9ed8d72367077196d44f371bb04d147368f04791c46bb876a6f662\"",
+     "      \"sha256\": \"9cfaa6cd219a8e29747712b236651cf1399637a3d6e7a91efe4644369f8e9738\""
+    ]
+   },
+   "compiler/mappings.jsonl": {
+    "added_sample": [],
+    "identical_after_release_id_relabel": true,
+    "lines_added": 0,
+    "lines_removed": 0,
+    "new_sha256": "d44ac66723419bbf3b53a88b637a4e9ef18bde12ddccf29a58bbd4fd731697fe",
+    "old_sha256": "04cff87ce4223f346c8bf73b289fa70f63e090139fac600d692d25e93e92ee47",
+    "removed_sample": []
+   },
+   "compiler/vernacular.jsonl": {
+    "added_sample": [],
+    "identical_after_release_id_relabel": false,
+    "lines_added": 0,
+    "lines_removed": 5,
+    "new_sha256": "9266537abb29efb08a5c1e50f2e361f5e78739962d0b87a0a11052e887b8789f",
+    "old_sha256": "8b0069d2da9ed8d72367077196d44f371bb04d147368f04791c46bb876a6f662",
+    "removed_sample": [
+     "{\"association_evidence_sha256\": \"2eaaee6b957e96ff5e9037c9af6dafa5a2ea643197b58bbc4c0b7182cd23b9f4\", \"core_row_id\": {\"namespace\": \"col_usage_id\", \"value\": \"4XRP7\"}, \"is_preferred\": false, \"language\": \"nb\", \"provenance\": {\"language_missing\": false, \"line_number\": 1758292, \"member\": \"VernacularName.tsv\", \"raw_fields\": {\"area\": \"Norway\", \"clb:merged\": \"false\", \"country\": \"NO\", \"language\": \"nob\", \"modi",
+     "{\"association_evidence_sha256\": \"4f087431d79a625b8646831d50f4da895580aa746e389fb27d2b24629b7440bb\", \"core_row_id\": {\"namespace\": \"col_usage_id\", \"value\": \"4RBLM\"}, \"is_preferred\": false, \"language\": \"nb\", \"provenance\": {\"language_missing\": false, \"line_number\": 1767076, \"member\": \"VernacularName.tsv\", \"raw_fields\": {\"area\": \"Norway\", \"clb:merged\": \"false\", \"country\": \"NO\", \"language\": \"nob\", \"modi",
+     "{\"association_evidence_sha256\": \"5fa55c762509447794e664d48c3bf3b5151bddb7072a3b6267823e035a8f1ca7\", \"core_row_id\": {\"namespace\": \"col_usage_id\", \"value\": \"33PRB\"}, \"is_preferred\": false, \"language\": \"nb\", \"provenance\": {\"language_missing\": false, \"line_number\": 1751350, \"member\": \"VernacularName.tsv\", \"raw_fields\": {\"area\": \"Norway\", \"clb:merged\": \"false\", \"country\": \"NO\", \"language\": \"nob\", \"modi",
+     "{\"association_evidence_sha256\": \"b698513ada927e81e74f9e64bde1d88507b53c8cbe59ad5d7059e5303958f4d3\", \"core_row_id\": {\"namespace\": \"col_usage_id\", \"value\": \"4RBQ5\"}, \"is_preferred\": false, \"language\": \"nb\", \"provenance\": {\"language_missing\": false, \"line_number\": 1767088, \"member\": \"VernacularName.tsv\", \"raw_fields\": {\"area\": \"Norway\", \"clb:merged\": \"false\", \"country\": \"NO\", \"language\": \"nob\", \"modi",
+     "{\"association_evidence_sha256\": \"d03451c3a9f9b4a8455b188222afa1bc9d0e10fb98924f91500b5d6f8e49805e\", \"core_row_id\": {\"namespace\": \"col_usage_id\", \"value\": \"4SF4S\"}, \"is_preferred\": false, \"language\": \"nb\", \"provenance\": {\"language_missing\": false, \"line_number\": 1743204, \"member\": \"VernacularName.tsv\", \"raw_fields\": {\"area\": \"Norway\", \"clb:merged\": \"false\", \"country\": \"NO\", \"language\": \"nob\", \"modi"
+    ]
+   },
+   "compiler/vernacular_changes.json": {
+    "added_sample": [],
+    "identical_after_release_id_relabel": false,
+    "lines_added": 0,
+    "lines_removed": 5,
+    "new_sha256": "0cb03f51974ccef5313362820feb47dbda4230a1fed9a0e214e7d538da3057fe",
+    "old_sha256": "9cfaa6cd219a8e29747712b236651cf1399637a3d6e7a91efe4644369f8e9738",
+    "removed_sample": [
+     "      \"vernacular_name\": \"Gul korallsopp [UTGÅTT]\"",
+     "      \"vernacular_name\": \"Rustoker grynhatt [UTGÅTT]\"",
+     "      \"vernacular_name\": \"Rødbrun flathatt [UTGÅTT]\"",
+     "      \"vernacular_name\": \"gullkorallsopp [GAMMELT]\"",
+     "      \"vernacular_name\": \"strøkjuke [GAMMELT]\""
+    ]
+   },
+   "compiler/vernacular_evidence.jsonl": {
+    "added_sample": [],
+    "identical_after_release_id_relabel": false,
+    "lines_added": 0,
+    "lines_removed": 5,
+    "new_sha256": "16375019c5182a3e165f276a6138c721dd9b4788715acd1b9322802f9a43cd27",
+    "old_sha256": "f480f853c0e96cb4641d9f949d29b4f2fb09daaa5ac28d90269564400edffca1",
+    "removed_sample": [
+     "{\"evidence_class\": \"current_source_vernacular_projection\", \"external_identifier_emission\": false, \"identity_effect\": \"none\", \"is_preferred\": false, \"language\": \"nb\", \"projection_status\": \"existing_current_source_projection\", \"qualified_source_native\": false, \"rule\": null, \"source_authorship\": \"(Bull.) Lennox\", \"source_evidence\": {\"accepted_usage_id\": null, \"concept_annotation\": {}, \"kingdom\": \"Fun",
+     "{\"evidence_class\": \"current_source_vernacular_projection\", \"external_identifier_emission\": false, \"identity_effect\": \"none\", \"is_preferred\": false, \"language\": \"nb\", \"projection_status\": \"existing_current_source_projection\", \"qualified_source_native\": false, \"rule\": null, \"source_authorship\": \"(Cooke & Massee) Harmaja\", \"source_evidence\": {\"accepted_usage_id\": null, \"concept_annotation\": {}, \"king",
+     "{\"evidence_class\": \"current_source_vernacular_projection\", \"external_identifier_emission\": false, \"identity_effect\": \"none\", \"is_preferred\": false, \"language\": \"nb\", \"projection_status\": \"existing_current_source_projection\", \"qualified_source_native\": false, \"rule\": null, \"source_authorship\": \"(Pers.) S. Lundell\", \"source_evidence\": {\"accepted_usage_id\": null, \"concept_annotation\": {}, \"kingdom\": ",
+     "{\"evidence_class\": \"current_source_vernacular_projection\", \"external_identifier_emission\": false, \"identity_effect\": \"none\", \"is_preferred\": false, \"language\": \"nb\", \"projection_status\": \"existing_current_source_projection\", \"qualified_source_native\": false, \"rule\": null, \"source_authorship\": \"(Schaeff.) Quél.\", \"source_evidence\": {\"accepted_usage_id\": null, \"concept_annotation\": {}, \"kingdom\": \"F",
+     "{\"evidence_class\": \"current_source_vernacular_projection\", \"external_identifier_emission\": false, \"identity_effect\": \"none\", \"is_preferred\": false, \"language\": \"nb\", \"projection_status\": \"existing_current_source_projection\", \"qualified_source_native\": false, \"rule\": null, \"source_authorship\": \"(Schaeff.) Quél.\", \"source_evidence\": {\"accepted_usage_id\": null, \"concept_annotation\": {}, \"kingdom\": \"F"
+    ]
+   },
+   "inputs/col-vernacular-rejections.jsonl": {
+    "added_sample": [
+     "{\"line_number\": 1743204, \"member\": \"VernacularName.tsv\", \"raw_fields\": {\"area\": \"Norway\", \"clb:merged\": \"false\", \"country\": \"NO\", \"language\": \"nob\", \"modified\": \"\", \"modifiedBy\": \"\", \"name\": \"Rødbrun flathatt [UTGÅTT]\", \"preferred\": \"\", \"referenceID\": \"\", \"remarks\": \"Contributed by Ken-ichi Ueda\", \"sex\": \"\", \"sourceID\": \"\", \"taxonID\": \"4SF4S\", \"transliteration\": \"Rodbrun flathatt [UTGATT]\"}, \"reas",
+     "{\"line_number\": 1751350, \"member\": \"VernacularName.tsv\", \"raw_fields\": {\"area\": \"Norway\", \"clb:merged\": \"false\", \"country\": \"NO\", \"language\": \"nob\", \"modified\": \"\", \"modifiedBy\": \"\", \"name\": \"Rustoker grynhatt [UTGÅTT]\", \"preferred\": \"\", \"referenceID\": \"\", \"remarks\": \"Contributed by Ken-ichi Ueda\", \"sex\": \"\", \"sourceID\": \"\", \"taxonID\": \"33PRB\", \"transliteration\": \"Rustoker grynhatt [UTGATT]\"}, \"re",
+     "{\"line_number\": 1758292, \"member\": \"VernacularName.tsv\", \"raw_fields\": {\"area\": \"Norway\", \"clb:merged\": \"false\", \"country\": \"NO\", \"language\": \"nob\", \"modified\": \"\", \"modifiedBy\": \"\", \"name\": \"strøkjuke [GAMMELT]\", \"preferred\": \"\", \"referenceID\": \"\", \"remarks\": \"Contributed by Ken-ichi Ueda\", \"sex\": \"\", \"sourceID\": \"\", \"taxonID\": \"4XRP7\", \"transliteration\": \"strokjuke [GAMMELT]\"}, \"reason\": \"source",
+     "{\"line_number\": 1767076, \"member\": \"VernacularName.tsv\", \"raw_fields\": {\"area\": \"Norway\", \"clb:merged\": \"false\", \"country\": \"NO\", \"language\": \"nob\", \"modified\": \"\", \"modifiedBy\": \"\", \"name\": \"gullkorallsopp [GAMMELT]\", \"preferred\": \"\", \"referenceID\": \"\", \"remarks\": \"Contributed by Ken-ichi Ueda\", \"sex\": \"\", \"sourceID\": \"\", \"taxonID\": \"4RBLM\", \"transliteration\": \"gullkorallsopp [GAMMELT]\"}, \"reason",
+     "{\"line_number\": 1767088, \"member\": \"VernacularName.tsv\", \"raw_fields\": {\"area\": \"Norway\", \"clb:merged\": \"false\", \"country\": \"NO\", \"language\": \"nob\", \"modified\": \"\", \"modifiedBy\": \"\", \"name\": \"Gul korallsopp [UTGÅTT]\", \"preferred\": \"\", \"referenceID\": \"\", \"remarks\": \"Contributed by Ken-ichi Ueda\", \"sex\": \"\", \"sourceID\": \"\", \"taxonID\": \"4RBQ5\", \"transliteration\": \"Gul korallsopp [UTGATT]\"}, \"reason\":"
+    ],
+    "identical_after_release_id_relabel": false,
+    "lines_added": 5,
+    "lines_removed": 0,
+    "new_sha256": "e0ecdfffa8bcf37f9667c5a157ead71cc0bfaa68112395a2a25e156b6434ca7d",
+    "old_sha256": "c0be3992e965ab40683b7e4729241a2cff342f40d5cad727b1805a8578541b7b",
+    "removed_sample": []
+   },
+   "inputs/col_xr-normalization.json": {
+    "added_sample": [
+     "    \"VernacularName\": 89921",
+     "    \"rows_written\": 89921,",
+     "    \"source_marked_obsolete\": 5"
+    ],
+    "identical_after_release_id_relabel": false,
+    "lines_added": 3,
+    "lines_removed": 2,
+    "new_sha256": "e99fa95cd8c5785d141308cf0255d7f2593ef78d39839ccc68ab6850980391b9",
+    "old_sha256": "9f5551aab167c4f4d3931ce08e0a7b1cdba666d865269df946043ea2a2dbbab0",
+    "removed_sample": [
+     "    \"VernacularName\": 89926",
+     "    \"rows_written\": 89926"
+    ]
+   },
+   "inventory.json": {
+    "added_sample": [
+     "      \"bytes\": 1370",
+     "      \"bytes\": 18067622",
+     "      \"bytes\": 212909621",
+     "      \"bytes\": 6022494",
+     "      \"bytes\": 83465186",
+     "      \"sha256\": \"0cb03f51974ccef5313362820feb47dbda4230a1fed9a0e214e7d538da3057fe\",",
+     "      \"sha256\": \"16375019c5182a3e165f276a6138c721dd9b4788715acd1b9322802f9a43cd27\",",
+     "      \"sha256\": \"50d53805310104e7e9d8bc366218e6e5955e8ca9e4deaf167e942b66daa791f0\","
+    ],
+    "identical_after_release_id_relabel": false,
+    "lines_added": 16,
+    "lines_removed": 16,
+    "new_sha256": "8561a95e051a81cb11b9c026189cfdbc639084dcc1d6832c3e7a6e1b85dc5afb",
+    "old_sha256": "eb64bda78cc6d0aa42ae0968faeb6b8ec802dedf0ef5981f799e8f3982e04ab0",
+    "removed_sample": [
+     "      \"bytes\": 1337",
+     "      \"bytes\": 18068588",
+     "      \"bytes\": 212920144",
+     "      \"bytes\": 6019800",
+     "      \"bytes\": 83469596",
+     "      \"sha256\": \"04cff87ce4223f346c8bf73b289fa70f63e090139fac600d692d25e93e92ee47\",",
+     "      \"sha256\": \"0bb3ec5d83bd8932e27b03396611a541b4e03bf53c495f5c674c839b0e68370f\",",
+     "      \"sha256\": \"468c92e9916edacc15cda806ab1d19a922e1356128a58894ffb8caea35bd9c90\","
+    ]
+   },
+   "validation/receipt.json": {
+    "added_sample": [
+     "          \"candidate\": 7881",
+     "          \"nb\": 7881,",
+     "        \"diagnostics.json\": \"50d53805310104e7e9d8bc366218e6e5955e8ca9e4deaf167e942b66daa791f0\",",
+     "        \"manifest.json\": \"a05bd4564177af1d52df863acd1d4f75fd3193f2822e67a1214f167903c464d1\",",
+     "        \"mappings.jsonl\": \"d44ac66723419bbf3b53a88b637a4e9ef18bde12ddccf29a58bbd4fd731697fe\",",
+     "        \"vernacular.jsonl\": \"9266537abb29efb08a5c1e50f2e361f5e78739962d0b87a0a11052e887b8789f\",",
+     "        \"vernacular_changes.json\": \"0cb03f51974ccef5313362820feb47dbda4230a1fed9a0e214e7d538da3057fe\",",
+     "        \"vernacular_evidence.jsonl\": \"16375019c5182a3e165f276a6138c721dd9b4788715acd1b9322802f9a43cd27\","
+    ],
+    "identical_after_release_id_relabel": false,
+    "lines_added": 13,
+    "lines_removed": 13,
+    "new_sha256": "ac051afa9e069447b6bd834f17635c55dc4c998930ba211410be2dbb32fd240a",
+    "old_sha256": "468c92e9916edacc15cda806ab1d19a922e1356128a58894ffb8caea35bd9c90",
+    "removed_sample": [
+     "          \"candidate\": 7886",
+     "          \"nb\": 7886,",
+     "        \"diagnostics.json\": \"e4deebf83b1e4a7c1707f9454625759fcad0e2fde7dd9cc14c2500a48861e149\",",
+     "        \"manifest.json\": \"0bb3ec5d83bd8932e27b03396611a541b4e03bf53c495f5c674c839b0e68370f\",",
+     "        \"mappings.jsonl\": \"04cff87ce4223f346c8bf73b289fa70f63e090139fac600d692d25e93e92ee47\",",
+     "        \"vernacular.jsonl\": \"8b0069d2da9ed8d72367077196d44f371bb04d147368f04791c46bb876a6f662\",",
+     "        \"vernacular_changes.json\": \"9cfaa6cd219a8e29747712b236651cf1399637a3d6e7a91efe4644369f8e9738\",",
+     "        \"vernacular_evidence.jsonl\": \"f480f853c0e96cb4641d9f949d29b4f2fb09daaa5ac28d90269564400edffca1\","
+    ]
+   }
+  },
+  "members_new": 32,
+  "members_old": 32,
+  "only_new": [],
+  "only_old": []
+ },
+ "new": {
+  "release": "tax-2026.10.07-01",
+  "sqlite_sha256": "e349e8b1d7cdbafa688621a71f9be278ac6e381853ff7fe2763d8b856b7724f9"
+ },
+ "old": {
+  "freeze_sha256": "fda89f3744975dfb296336b73256c33df1b278efe092eca336557d067d07148e",
+  "release": "tax-2026.10.06-01",
+  "sqlite_sha256": "3f9037c08b918890910b16f5a7446a323d5524d08a49e674715afbb7137bb73e"
+ },
+ "schema_equal": true,
+ "tables": {
+  "scientific_name_min": {
+   "added": [],
+   "added_count": 0,
+   "columns": [
+    "scientific_name_id",
+    "taxon_id",
+    "language_code",
+    "scientific_name",
+    "is_preferred_name",
+    "source",
+    "note"
+   ],
+   "ignored_surrogate_key": [
+    "scientific_name_id"
+   ],
+   "new": 665947,
+   "old": 665947,
+   "removed": [],
+   "removed_count": 0
+  },
+  "sqlite_stat1": {
+   "added_count": 3,
+   "new": 19,
+   "note": "derived index statistics for vernacular_min only",
+   "old": 19,
+   "removed_count": 3
+  },
+  "sqlite_stat4": {
+   "added_count": 72,
+   "new": 434,
+   "note": "derived index statistics for vernacular_min only",
+   "old": 434,
+   "removed_count": 72
+  },
+  "taxon_external_id_min": {
+   "added": [],
+   "added_count": 0,
+   "columns": [
+    "external_id_row_id",
+    "taxon_id",
+    "source_system",
+    "external_id",
+    "id_role",
+    "is_preferred",
+    "external_name",
+    "note"
+   ],
+   "ignored_surrogate_key": [
+    "external_id_row_id"
+   ],
+   "new": 78615,
+   "old": 78615,
+   "removed": [],
+   "removed_count": 0
+  },
+  "taxon_external_id_text_min": {
+   "added": [],
+   "added_count": 0,
+   "columns": [
+    "external_id_row_id",
+    "taxon_id",
+    "source_system",
+    "namespace",
+    "external_id",
+    "id_role",
+    "is_preferred",
+    "external_name",
+    "note"
+   ],
+   "ignored_surrogate_key": [
+    "external_id_row_id"
+   ],
+   "new": 632853,
+   "old": 632853,
+   "removed": [],
+   "removed_count": 0
+  },
+  "taxon_min": {
+   "added": [],
+   "added_count": 0,
+   "columns": [
+    "taxon_id",
+    "parent_taxon_id",
+    "genus",
+    "specific_epithet",
+    "family",
+    "norwegian_taxon_id",
+    "swedish_taxon_id",
+    "inaturalist_taxon_id",
+    "canonical_scientific_name",
+    "taxon_rank",
+    "taxonomic_status",
+    "source_system",
+    "preferred_scientific_name_no",
+    "preferred_scientific_name_sv",
+    "sporely_content_release_id",
+    "canonical_source_system",
+    "canonical_external_id",
+    "preferred_scientific_name_no_source_system",
+    "preferred_scientific_name_no_namespace",
+    "preferred_scientific_name_no_external_id",
+    "preferred_scientific_name_sv_source_system",
+    "preferred_scientific_name_sv_namespace",
+    "preferred_scientific_name_sv_external_id"
+   ],
+   "ignored_surrogate_key": [],
+   "new": 633542,
+   "old": 633542,
+   "removed": [],
+   "removed_count": 0
+  },
+  "taxon_redlist_min": {
+   "added": [],
+   "added_count": 0,
+   "columns": [
+    "redlist_row_id",
+    "taxon_id",
+    "source_system",
+    "source_release",
+    "assessment_id",
+    "assessment_area",
+    "assessed_name_source",
+    "assessed_name_namespace",
+    "assessed_name_id",
+    "scientific_name_snapshot",
+    "authorship_snapshot",
+    "taxon_rank_snapshot",
+    "category_raw",
+    "category_code",
+    "category_is_downgraded",
+    "criteria",
+    "expert_group",
+    "assessment_url"
+   ],
+   "ignored_surrogate_key": [
+    "redlist_row_id"
+   ],
+   "new": 34171,
+   "old": 34171,
+   "removed": [],
+   "removed_count": 0
+  },
+  "taxonomy_meta": {
+   "added": [
+    [
+     "compiler_manifest_sha256",
+     "a05bd4564177af1d52df863acd1d4f75fd3193f2822e67a1214f167903c464d1"
+    ]
+   ],
+   "added_count": 1,
+   "columns": [
+    "key",
+    "value"
+   ],
+   "ignored_surrogate_key": [],
+   "new": 17,
+   "old": 17,
+   "removed": [
+    [
+     "compiler_manifest_sha256",
+     "0bb3ec5d83bd8932e27b03396611a541b4e03bf53c495f5c674c839b0e68370f"
+    ]
+   ],
+   "removed_count": 1
+  },
+  "vernacular_min": {
+   "added": [],
+   "added_count": 0,
+   "columns": [
+    "vernacular_id",
+    "taxon_id",
+    "language_code",
+    "vernacular_name",
+    "is_preferred_name",
+    "source"
+   ],
+   "ignored_surrogate_key": [
+    "vernacular_id"
+   ],
+   "new": 96136,
+   "old": 96141,
+   "removed": [
+    [
+     1041,
+     "nb",
+     "Rustoker grynhatt [UTGÅTT]",
+     0,
+     "col_xr"
+    ],
+    [
+     58651,
+     "nb",
+     "gullkorallsopp [GAMMELT]",
+     0,
+     "col_xr"
+    ],
+    [
+     58722,
+     "nb",
+     "Gul korallsopp [UTGÅTT]",
+     0,
+     "col_xr"
+    ],
+    [
+     60670,
+     "nb",
+     "Rødbrun flathatt [UTGÅTT]",
+     0,
+     "col_xr"
+    ],
+    [
+     65750,
+     "nb",
+     "strøkjuke [GAMMELT]",
+     0,
+     "col_xr"
+    ]
+   ],
+   "removed_count": 5
+  }
+ },
+ "tables_new": [
+  "scientific_name_min",
+  "sqlite_stat1",
+  "sqlite_stat4",
+  "taxon_external_id_min",
+  "taxon_external_id_text_min",
+  "taxon_min",
+  "taxon_redlist_min",
+  "taxonomy_meta",
+  "vernacular_min"
+ ],
+ "tables_old": [
+  "scientific_name_min",
+  "sqlite_stat1",
+  "sqlite_stat4",
+  "taxon_external_id_min",
+  "taxon_external_id_text_min",
+  "taxon_min",
+  "taxon_redlist_min",
+  "taxonomy_meta",
+  "vernacular_min"
+ ]
+}
