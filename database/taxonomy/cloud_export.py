@@ -458,26 +458,40 @@ def _verify_required_schema(conn: sqlite3.Connection) -> None:
 
 
 # The release the desktop bundles (database/reference_data/generated/
-# taxonomy_v2/manifest.json), tax-2026.09.30-01, built with build_release.py
-# from release-recipe.json (taxonomy-v3 Stage 6P). Against the previous pin
-# (tax-2026.09.26-02): 1,352 NorTaxa concepts retired by approved Stage 2
-# supersessions are no longer emitted (their names, vernaculars, ids and red
-# list rows are re-keyed onto the survivors); the reviewed NorTaxa bridges
-# grow from 3 to 9,516 (Stage 1A mappings and Stage 2 supersessions); 2,361
-# approved Dyntaxa bridges and 1,309 Swedish Dyntaxa vernaculars are added
-# (Stage 4P). The red list and legacy integer ids keep their counts.
+# taxonomy_v2/manifest.json), tax-2026.10.07-01, built with build_release.py
+# from release-recipe.json (Norwegian vernacular enrichment, reviewed freeze
+# a86e3585). Against the previous pin (tax-2026.09.30-01): vernacular rows grow
+# from 31,140 to 96,136. Current COL vernaculars in every source language are
+# recovered (Stage 1B), and 1,619 automatic + 18 owner-reviewed Norwegian names
+# are added. Unsupported historical associations, qualified-source echoes and
+# source-marked obsolete names are withheld. Concepts, scientific names,
+# authoritative and legacy external ids, and the red list keep their counts.
 PINNED_RELEASE_EXPECTATIONS = {
-    "content_release_id": "tax-2026.09.30-01",
+    "content_release_id": "tax-2026.10.07-01",
     # The pin describes one exact artifact. Keying on the release id alone
     # would also fire on synthetic fixtures that reuse the name.
-    "sqlite_sha256": "e4591d6b8b885e6c43cb4c21581e54c5f08d1747a3008317feb380f3ae95c20a",
+    "sqlite_sha256": "e349e8b1d7cdbafa688621a71f9be278ac6e381853ff7fe2763d8b856b7724f9",
     "concepts_included": 633541,
     "concepts_excluded": 1,
     "scientific_name_rows": 665946,
-    "vernacular_rows": 31140,
-    "vernacular_by_lang": {"da": 1786, "de": 2198, "en": 3028, "es": 329, "fi": 3116, "fr": 2796,
-                           "it": 89, "nb": 6240, "nn": 3975, "pl": 1304, "pt": 90, "se": 79,
-                           "sv": 6110},
+    "vernacular_rows": 96136,
+    "vernacular_by_lang": {"acv": 1, "af": 71, "ain": 1, "ar": 11, "arg": 2, "arn": 3, "ast": 61, "az": 3,
+                           "bar": 3, "be": 57, "bg": 73, "bn": 2, "bnn": 4, "bo": 2, "br": 1, "bs": 1,
+                           "ca": 164, "ceb": 2, "chm": 1, "chr": 5, "co": 2, "cre": 6, "cs": 5181, "cy": 1403,
+                           "da": 5127, "de": 4727, "dnj": 6, "ee": 1, "el": 43, "en": 9111, "eo": 7,
+                           "es": 644, "et": 1328, "eu": 17, "fa": 5, "fi": 6332, "fqs": 1, "fr": 3360,
+                           "frr": 1, "fy": 8, "ga": 1, "gd": 91, "gl": 30, "haw": 2, "hbs": 1, "he": 964,
+                           "hr": 66, "hu": 2206, "hy": 65, "hz": 3, "id": 5, "io": 1, "is": 19, "it": 132,
+                           "ja": 3675, "ka": 7, "kbd": 1, "kk": 4, "ko": 758, "koi": 2, "kth": 2, "ku": 2,
+                           "kv": 1, "la": 5, "lb": 158, "lij": 1, "lt": 3802, "lub": 1, "lv": 809, "mg": 1,
+                           "mi": 14, "mia": 1, "mis": 1, "mk": 30, "ml": 1, "ms": 4, "mte": 3, "mwl": 1,
+                           "my": 1, "nb": 7881, "nl": 7463, "nmu": 2, "nmx": 2, "nn": 4812, "no": 21, "oc": 2,
+                           "oj": 15, "pa": 1, "pl": 1673, "pmm": 2, "pms": 4, "pnb": 1, "ps": 2, "pt": 143,
+                           "qu": 2, "rm": 1, "rn": 2, "ro": 13, "rom": 1, "ru": 5206, "sah": 6, "sat": 2,
+                           "scn": 2, "sco": 1, "se": 102, "sha": 1, "sk": 3521, "sl": 1992, "sn": 3, "sq": 3,
+                           "sr": 63, "sv": 6349, "ta": 4, "te": 1, "th": 163, "tn": 2, "to": 1, "tr": 123,
+                           "tsz": 6, "tt": 1, "twe": 1, "udm": 1, "uk": 809, "und": 7, "vec": 1, "vi": 9,
+                           "wa": 9, "war": 2, "wlk": 1, "yi": 1, "ynn": 1, "yo": 2, "zh": 5048},
     # Authoritative external IDs split by source_system:
     "external_authoritative_col_rows": 620975,   # from taxon_external_id_text_min
     # derived from taxon_min.norwegian_taxon_id (12566), plus the reviewed

@@ -1,16 +1,17 @@
 {
   "manifest_schema_version": 1,
   "taxonomy_schema_version": 2,
-  "content_release_id": "tax-2026.09.30-01",
+  "content_release_id": "tax-2026.10.07-01",
   "state": "candidate",
   "publication": "none",
-  "gz_artifact": "tax-2026.09.30-01.sqlite3.gz",
-  "gz_sha256": "593cd5379bffd53a81a54735ab0ad99b97e7ef890060d6483bed42e4150e907f",
-  "gz_bytes": 69763107,
-  "sqlite_sha256": "e4591d6b8b885e6c43cb4c21581e54c5f08d1747a3008317feb380f3ae95c20a",
-  "sqlite_bytes": 332087296,
+  "gz_artifact": "tax-2026.10.07-01.sqlite3.gz",
+  "gz_sha256": "bff40f0d5d70ec2be47fe415dfd4cfc623a7841553f8a7d928ed801117ca21c5",
+  "gz_bytes": 73281648,
+  "sqlite_sha256": "e349e8b1d7cdbafa688621a71f9be278ac6e381853ff7fe2763d8b856b7724f9",
+  "sqlite_bytes": 340250624,
   "registry_concatenated_sha256": "1cc2003a874e5deb2c0023bf8fd6fb74dd98b2ad656ee36d8755c15277c8adc9",
-  "compiler_manifest_sha256": "bf7eb27f5f9469ab0dd48a6288c15d789dda1b9d48940e93c3778a8fb07f3145",
+  "compiler_manifest_sha256": "a05bd4564177af1d52df863acd1d4f75fd3193f2822e67a1214f167903c464d1",
+  "freeze_artifact": "tax-2026.10.07-01.freeze.json",
   "install_target_name": "vernacular_multilanguage_v2.sqlite3",
   "redlist_no": {
     "source_system": "artsdatabanken_redlist",
@@ -53,5 +54,11 @@
       ],
       "required_before_publication": "Fetch the Artsdatabanken terms page (e.g. https://artsdatabanken.no/dataandconditions or the equivalent Norwegian URL), record the license identifier + retrieval SHA-256, and set state='published' + publication metadata."
     }
+  },
+  "compiler_evidence": {
+    "artifact": "tax-2026.10.07-01.evidence.tar.gz",
+    "sha256": "e2d1dfcaa261457fe1ae1392783c503ae56b833c7652a259056103012c089424",
+    "bytes": 53372637,
+    "format": "sporely-compiler-evidence-v1"
   }
 }
