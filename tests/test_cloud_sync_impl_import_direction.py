@@ -68,6 +68,11 @@ OWNER_LAYERS: dict[str, int] = {
     "utils.cloud_sync_impl.measurements": 8,
     "utils.cloud_sync_impl.spore_mosaic": 9,
     "utils.cloud_sync_impl.measurement_reconcile": 10,
+    # Stage S7: the conflict-plan model sits above the baseline owner (which
+    # must never import it); read-only conflict detail sits above the model.
+    # Conflict execution stays in the facade and imports both downward.
+    "utils.cloud_sync_impl.conflict_plan": 7,
+    "utils.cloud_sync_impl.conflict_detail": 8,
 }
 
 #: Owner modules allowed to import the facade at runtime (transitional; each

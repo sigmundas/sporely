@@ -302,3 +302,19 @@ def test_conflict_review_classifies_identity_with_its_own_rule(monkeypatch, loca
     else:
         assert rows == []
         assert [d["action"] for d in auto] == [expected]
+
+
+def test_conflict_detail_fails_closed_on_a_no_baseline_identity_contradiction(monkeypatch):
+    """Without a baseline, differing local and cloud identities are a manual conflict."""
+    from tests.test_cloud_conflict_plan_execution import _make_get_conflict_detail_env
+
+    client = _make_get_conflict_detail_env(
+        monkeypatch, local_obs={**_local(_proven(99)), "id": 1}, remote_obs=_remote(77),
+        snapshot=None,
+    )
+    detail = cloud_sync.get_conflict_detail(client, 1, "14")
+    rows = [row for row in detail["field_rows"] if row["field"] == F]
+    assert [row["label"] for row in rows] == ["Taxon identity"]
+    assert rows[0]["local"] == "sporely:99" and rows[0]["remote"] == "sporely:77"
+    assert detail["has_manual_conflicts"]
+    assert all(d["field"] != F for d in detail["automatic_decisions"]["fields"])

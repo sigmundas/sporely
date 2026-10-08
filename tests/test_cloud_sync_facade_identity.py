@@ -154,6 +154,67 @@ def test_source_app_version_slot_is_read_where_it_is_written():
         cloud_sync.set_cloud_sync_source_app_version(previous)
 
 
+#: Stage S7: conflict execution, its result/local-state helpers, the
+#: observation-completion writers and the conflict-review marker writers stay
+#: in the facade; the orchestration follow-up extracts them. They call the
+#: conflict-plan model and conflict detail downward.
+S7_KEPT_IN_FACADE = (
+    "resolve_conflict_keep_local",
+    "resolve_conflict_keep_cloud",
+    "resolve_conflict_merge",
+    "resolve_conflict_plan",
+    "finalize_sync_candidates",
+    "_capture_local_presentation",
+    "_restore_local_presentation",
+    "_assign_downloaded_image_order",
+    "_format_recomputed_spore_statistics",
+    "_stamp_observation_synced",
+    "_set_observation_sync_state",
+    "_clear_observation_dirty_if_no_real_changes",
+    "_set_observation_privacy_blocked",
+    "_apply_remote_observation_fields",
+    "_merge_cloud_selected_ai_fields",
+    "_adopt_merge_filled_ai_fields_locally",
+    "_set_observation_conflict_review_pending",
+    "_clear_observation_conflict_review_pending",
+)
+
+
+@pytest.mark.parametrize("name", S7_KEPT_IN_FACADE)
+def test_s7_conflict_execution_and_writers_stay_in_the_facade(name):
+    assert name in _facade_defined_names()
+    assert name not in {owned for _module, owned in OWNED}
+
+
+#: Writers and snapshot-store calls the read-only S7 owners must never reach.
+S7_FORBIDDEN_IN_READ_ONLY_OWNERS = frozenset(S7_KEPT_IN_FACADE) | {
+    "_store_cloud_observation_snapshot",
+    "_store_remote_snapshot",
+    "_clear_cloud_observation_snapshot",
+    "mark_observation_dirty",
+    "mark_observation_media_dirty",
+    "mark_observation_sync_dirty",
+    "update_observation_sync_state",
+    "get_connection",
+}
+
+
+@pytest.mark.parametrize("module", ["conflict_plan", "conflict_detail"])
+def test_s7_owners_reference_no_writer(module):
+    tree = ast.parse((OWNER_DIR / f"{module}.py").read_text(encoding="utf-8"))
+    used = {n.id for n in ast.walk(tree) if isinstance(n, ast.Name)}
+    used |= {n.attr for n in ast.walk(tree) if isinstance(n, ast.Attribute)}
+    assert sorted(used & S7_FORBIDDEN_IN_READ_ONLY_OWNERS) == []
+
+
+def test_conflict_plan_baseline_schema_version_lives_with_the_model():
+    from utils.cloud_sync_impl import conflict_plan
+
+    assert conflict_plan._CONFLICT_PLAN_BASELINE_SCHEMA_VERSION == 1
+    assert ("utils.cloud_sync_impl.conflict_plan", "build_conflict_plan_baseline") in OWNED
+    assert ("utils.cloud_sync_impl.conflict_detail", "get_conflict_detail") in OWNED
+
+
 def test_identity_baseline_unknown_sentinel_exists_once():
     from utils.cloud_sync_impl.reconciliation import identity
 

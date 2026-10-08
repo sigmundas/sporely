@@ -272,14 +272,18 @@ Inside `push_all` / `pull_all`:
 ### Conflict resolution surface
 
 ```
-finalize_sync_candidates()          (L10825)
-build_conflict_plan_baseline()      (L11459)
-resolve_conflict_plan()             (L13337)
-resolve_conflict_keep_local()       (L11118)
-resolve_conflict_keep_cloud()       (L11249)
-resolve_conflict_merge()            (L11310)
-get_conflict_detail()               (L16687)
+finalize_sync_candidates()          (facade)
+build_conflict_plan_baseline()      (utils/cloud_sync_impl/conflict_plan.py)
+resolve_conflict_plan()             (facade)
+resolve_conflict_keep_local()       (facade)
+resolve_conflict_keep_cloud()       (facade)
+resolve_conflict_merge()            (facade)
+get_conflict_detail()               (utils/cloud_sync_impl/conflict_detail.py)
 ```
+
+Conflict *execution* (`resolve_conflict_*`, `finalize_sync_candidates`) stays
+in the facade with the observation-completion and conflict-review marker
+writers; it calls the read-only detail and plan-model owners downward.
 
 ### Other public state-mutation entry points (called from UI)
 
@@ -310,7 +314,7 @@ get_conflict_detail()               (L16687)
 | Original upload | `upload_original_image_file` (L15566) + `utils/original_sync_policy.py` | Companion original bytes, policy-gated | — | Parent image must be desired |
 | Remote image application / materialization | `_apply_remote_image_metadata_only_to_local`, `_ensure_local_metadata_only_microscope_anchor`, `_sync_existing_remote_image_to_local` (`utils/cloud_sync_impl/image_pull.py`) | Apply remote rows locally; download bytes into recovery cache | Direct `ImageDB` writes from pull loops | Downloaded copy only replaces local file when local is not larger (L10502); larger local original kept as-is |
 | Remote snapshot storage | `_store_remote_snapshot` (`utils/cloud_sync_impl/baseline.py`), `_store_cloud_observation_snapshot` (`utils/cloud_sync_impl/baseline.py`), `_load_cloud_observation_snapshot` (`utils/cloud_sync_impl/baseline.py`), `_parse_cloud_observation_snapshot` (`utils/cloud_sync_impl/baseline.py`), `_clear_cloud_observation_snapshot` (`utils/cloud_sync_impl/baseline.py`) | Persist/read the known-good baseline | Ad-hoc settings writes | May only run after complete, successful remote reads (section F). **Current code does not wait for required child work**: `push_all` and `materialize_cloud_media_for_observation` store it after a child failure. The target model is in `docs/cloud-sync-orchestration-design.md` |
-| Three-way conflict analysis | `_analyze_observation_push_conflicts` (`utils/cloud_sync_impl/preflight.py`), `ObservationPushConflictReport` (`utils/cloud_sync_impl/reconciliation/report.py`), `build_conflict_plan_baseline` (L11459) | Compare local vs cloud vs baseline; block writes on both-changed | Push loops writing without preflight | "Needs review" marker: `_set_observation_conflict_review_pending` (L4273) / `_clear_…` (L4290) |
+| Three-way conflict analysis | `_analyze_observation_push_conflicts` (`utils/cloud_sync_impl/preflight.py`), `ObservationPushConflictReport` (`utils/cloud_sync_impl/reconciliation/report.py`), `build_conflict_plan_baseline` (`utils/cloud_sync_impl/conflict_plan.py`), `get_conflict_detail` (`utils/cloud_sync_impl/conflict_detail.py`) | Compare local vs cloud vs baseline; block writes on both-changed | Push loops writing without preflight | "Needs review" marker: `_set_observation_conflict_review_pending` (L4273) / `_clear_…` (L4290) |
 | Local-vs-cloud change analysis | `_local_has_real_changes_since_snapshot` (`utils/cloud_sync_impl/preflight.py`), `_remote_snapshot_has_meaningful_changes` (L9111), `_clear_observation_dirty_if_no_real_changes` (L4360) | Distinguish real edits from no-op noise | — | Feeds the no-op fast path |
 | Observation push identity resolution | `SporelyCloudClient._resolve_existing_observation_for_push` (`CloudSyncPushIdentityMixin`, `utils/cloud_sync_impl/image_identity.py`), `_find_cloud_observation` (L14818), `ObservationIdentityConflictError` (`utils/cloud_sync_impl/errors.py`) | Decide which existing cloud observation a push targets: verified local `cloud_id` is primary; remote `desktop_id` is recovery; disagreement/ambiguity raises | Callers doing their own `cloud_id`/`desktop_id` fallback logic | See "Observation identity model" below. A missing remote `desktop_id` must never cause a duplicate POST when the local `cloud_id` verifies |
 | Image push identity resolution | `SporelyCloudClient._resolve_existing_image_for_push`, `_find_cloud_image` (`CloudSyncPushIdentityMixin`, `utils/cloud_sync_impl/image_identity.py`), `ImageIdentityConflictError` (`utils/cloud_sync_impl/errors.py`) | Decide which existing cloud image a push targets: verified local `images.cloud_id` is primary (direct); remote `desktop_id` scoped to the observation is recovery; disagreement raises `ImageIdentityConflictError` (no PATCH/POST, stays dirty) | Callers doing their own `cloud_id`/`desktop_id` fallback logic | Pull-only imports with `cloud_id` set and NULL remote `desktop_id` must not trigger duplicate POSTs; mirrors the two-leg observation identity model |
@@ -608,7 +612,7 @@ under a key from `_cloud_observation_snapshot_key` (`utils/cloud_sync_impl/basel
 **Three-way comparison** (local vs cloud vs snapshot):
 `_analyze_observation_push_conflicts` (`utils/cloud_sync_impl/preflight.py`) producing
 `ObservationPushConflictReport` (`utils/cloud_sync_impl/reconciliation/report.py`);
-`build_conflict_plan_baseline` (L11459) for the interactive resolution
+`build_conflict_plan_baseline` (`utils/cloud_sync_impl/conflict_plan.py`) for the interactive resolution
 dialog; change classifiers `_local_has_real_changes_since_snapshot` (`utils/cloud_sync_impl/preflight.py`)
 and `_remote_snapshot_has_meaningful_changes` (L9111).
 
@@ -881,9 +885,9 @@ with their hint constants, which calibration repair needs.
 
 The observation completion writers, `_apply_remote_observation_fields`, the
 Red List application (`_remote_observation_extra_values`,
-`_merge_cloud_selected_ai_fields`, `_adopt_merge_filled_ai_fields_locally`),
-conflict detail and the conflict-plan model, and conflict execution stay in the
-facade.
+`_merge_cloud_selected_ai_fields`, `_adopt_merge_filled_ai_fields_locally`)
+and conflict execution stay in the facade. Conflict detail and the
+conflict-plan model moved in Stage S7 (see below).
 
 Kept in the facade although their responsibility is listed here:
 `SporelyCloudClient._patch_with_precondition` reads the module global
@@ -928,6 +932,23 @@ summary glue (`_push_summary_for_current_observation`,
 reads `_CLOUD_SYNC_SOURCE_APP_VERSION`; `set_cloud_sync_source_app_version`
 rebinds that facade global with `global`, so moving the reader would split the
 binding.
+
+### Stage S7 owners: conflict detail and the conflict-plan model
+
+| Owner | Responsibility | Main symbols |
+|---|---|---|
+| `conflict_plan.py` [7] | Read-only conflict-plan model: the reviewed baseline and its fingerprints, drift and shape checks, plan-identity validation, operation building, retry-state validation, expected and intended material state, accepted asymmetry built from a plan | `build_conflict_plan_baseline`, `_CONFLICT_PLAN_BASELINE_SCHEMA_VERSION`, `_conflict_plan_*_fingerprint`, `_find_*_fingerprint`, `_plan_drift_message`, `_validate_plan_baseline_shape`, `_verify_plan_baseline`, `_validate_plan_identity_state`, `_build_plan_operations`, `_build_plan_from_automatic_decisions`, `_stable_op_key`, `_plan_dispatch_keys`, `_plan_item_matches_completed_op`, `_malformed_retry_state`, `_validate_prior_op_expected_after`, `_require_full_material_expected`, `_reconcile_verification_pending_op`, `_verify_completed_ops_and_rebase`, `_material_*_expected_state`, `_material_*_current_state`, `_intended_after_*`, `_normalize_observation_field_for_baseline`, `_mosaic_render_state_unverified`, `_build_accepted_asymmetry_from_plan`, `_iso_timestamp_now` |
+| `conflict_detail.py` [8] | Read-only conflict detail for the review dialog (no cloud or local write), with the compared fields, their labels and the image-change summary helpers only it uses | `get_conflict_detail`, `_observation_display_name`, `_CONFLICT_COMPARE_FIELDS`, `_CONFLICT_FIELD_LABELS`, `_MEASUREMENT_PRESENTATION_FIELDS`, `_summarize_image_changes`, `_image_label`, `_pluralize_image_count`, `_image_metadata_group_for_field` |
+
+The baseline owner (`baseline.py` [4]) sits below the conflict-plan model and
+never imports it. Conflict execution stays in the facade: `resolve_conflict_plan`,
+`resolve_conflict_keep_local`, `resolve_conflict_keep_cloud`,
+`resolve_conflict_merge`, `finalize_sync_candidates` and their local-state and
+result helpers (`_capture_local_presentation`, `_restore_local_presentation`,
+`_assign_downloaded_image_order`, `_format_recomputed_spore_statistics`), with
+every observation-completion writer, both conflict-review marker writers and
+every call that decides to store a snapshot. The orchestration follow-up
+extracts them under the Stage S1 design.
 
 Tests that patch a facade name reach relocated code through
 `tests/cloud_sync_owner_patching.py` (test-only): the autouse `conftest.py`
