@@ -29,6 +29,29 @@ OWNER_LAYERS: dict[str, int] = {
     "utils.cloud_sync_impl.transport": 2,
     "utils.cloud_sync_impl.image_policy": 2,
     "utils.cloud_sync_impl.tombstones": 3,
+    # Stage S4: reconciliation substrate, baseline and calibrations. The pure
+    # package (``reconciliation``) sits below every stateful adapter; purity is
+    # enforced separately by tests/test_cloud_sync_reconciliation_purity.py.
+    "utils.cloud_sync_impl.logs": 0,
+    "utils.cloud_sync_impl.local_files": 0,
+    "utils.cloud_sync_impl.reconciliation.values": 0,
+    "utils.cloud_sync_impl.reconciliation.location_precision": 0,
+    "utils.cloud_sync_impl.reconciliation.report": 0,
+    "utils.cloud_sync_impl.sample_source": 0,
+    "utils.cloud_sync_impl.reconciliation.calibrations": 1,
+    "utils.cloud_sync_impl.reconciliation.identity": 1,
+    "utils.cloud_sync_impl.reconciliation.images": 1,
+    "utils.cloud_sync_impl.reconciliation.measurements": 1,
+    "utils.cloud_sync_impl.reconciliation.asymmetry": 2,
+    "utils.cloud_sync_impl.identity_state": 2,
+    "utils.cloud_sync_impl.identity_push": 2,
+    "utils.cloud_sync_impl.push_payloads": 2,
+    "utils.cloud_sync_impl.image_payloads": 2,
+    "utils.cloud_sync_impl.baseline": 4,
+    "utils.cloud_sync_impl.media_signature": 4,
+    "utils.cloud_sync_impl.location_precision": 5,
+    "utils.cloud_sync_impl.preflight": 6,
+    "utils.cloud_sync_impl.calibrations": 7,
 }
 
 #: Owner modules allowed to import the facade at runtime (transitional; each

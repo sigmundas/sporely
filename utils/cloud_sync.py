@@ -117,6 +117,8 @@ from utils.cloud_sync_impl.errors import (  # noqa: F401  (facade re-export)
     PRIVACY_SLOT_LIMIT_USER_MESSAGE,
     PartialConflictPlanError,
     PullOnlyModeError,
+    _CLOUD_AUTH_ERROR_HINTS,
+    _CLOUD_TEMPORARILY_UNAVAILABLE_MESSAGE,
     _IDENTITY_CLEAR_VERIFICATION_FAILED_MARKER,
     _IMAGE_TOO_LARGE_FOR_PLAN_HINTS,
     _IMAGE_TOO_LARGE_FOR_PLAN_REASONS,
@@ -126,6 +128,8 @@ from utils.cloud_sync_impl.errors import (  # noqa: F401  (facade re-export)
     _PULL_CONFLICT_RE,
     _PUSH_CONFLICT_RE,
     _REVIEW_CONFLICT_RE,
+    _SUPABASE_TRANSIENT_ERROR_HINTS,
+    _SUPABASE_TRANSIENT_STATUS_CODES,
     _collect_sync_error_details,
     _extract_label_value,
     _image_too_large_reason_message,
@@ -138,6 +142,8 @@ from utils.cloud_sync_impl.errors import (  # noqa: F401  (facade re-export)
     format_cloud_sync_error_details,
     format_image_too_large_for_plan_reason,
     infer_image_too_large_for_plan_reason,
+    is_cloud_auth_error,
+    is_cloud_temporary_unavailable_error,
     is_identity_clear_verification_failed_error,
     is_image_too_large_for_plan_error,
     is_privacy_slot_limit_error,
@@ -274,8 +280,218 @@ from utils.cloud_sync_impl.tombstones import (  # noqa: F401  (facade re-export)
     _record_remote_image_tombstones,
     _tombstoned_cloud_image_warning,
 )
+from utils.cloud_sync_impl.logs import (  # noqa: F401  (facade re-export)
+    logger,
+)
+from utils.cloud_sync_impl.reconciliation.values import (  # noqa: F401  (facade re-export)
+    _OBSERVATION_FLOAT_ABS_TOL,
+    _OBSERVATION_FLOAT_FIELDS,
+    _OBSERVATION_FLOAT_REL_TOL,
+    _OBSERVATION_GPS_ABS_TOL,
+    _OBSERVATION_INT_FIELDS,
+    _OBSERVATION_TIMESTAMP_FIELDS,
+    _SNAPSHOT_IMG_FIELDS,
+    _SNAPSHOT_IMG_PASSIVE_FIELDS,
+    _SNAPSHOT_MEAS_FIELDS,
+    _SNAPSHOT_OBS_FIELDS,
+    _normalize_image_captured_at_for_cloud,
+    _normalize_observation_bool_value,
+    _normalize_observation_float_value,
+    _normalize_observation_int_value,
+    _normalize_observation_json_value,
+    _normalize_observation_timestamp_value,
+    _normalize_sharing_scope,
+    _normalize_snapshot_value,
+    _observation_field_values_match,
+    _parse_sync_timestamp,
+    _sharing_scope_to_cloud_visibility,
+)
+from utils.cloud_sync_impl.reconciliation.location_precision import (  # noqa: F401  (facade re-export)
+    _LOCATION_PRECISION_RANK,
+    _location_precision_rank,
+)
+from utils.cloud_sync_impl.reconciliation.identity import (  # noqa: F401  (facade re-export)
+    TAXON_IDENTITY_SYNC_FIELD,
+    _IDENTITY_BASELINE_UNKNOWN,
+    _OBSERVATION_IDENTITY_SELECT_COLUMNS,
+    _RemoteIdentityClaim,
+    _baseline_identity_key,
+    _classify_identity_sync_change,
+    _identification_contradicts_remote,
+    _identification_key,
+    _identity_sync_key,
+    _local_identity_is_claim,
+    _local_identity_sync_key,
+    _remote_identity_changed_since,
+    _remote_identity_claim,
+    _remote_name_snapshot,
+    _remote_row_without_identity,
+    _withhold_identity_from_push,
+)
+from utils.cloud_sync_impl.reconciliation.images import (  # noqa: F401  (facade re-export)
+    _analyze_image_changes,
+    _image_compare_key,
+    _image_identity_keys,
+    _image_metadata_payload,
+)
+from utils.cloud_sync_impl.reconciliation.measurements import (  # noqa: F401  (facade re-export)
+    _MEASUREMENT_FLOAT_ABS_TOL,
+    _MEASUREMENT_FLOAT_FIELDS,
+    _MEASUREMENT_FLOAT_REL_TOL,
+    _MEASUREMENT_SYNC_FIELDS,
+    _MEASUREMENT_SYNC_MEDIA_FIELDS,
+    _analyze_measurement_changes,
+    _baseline_measurement_compare_payload,
+    _local_measurement_snapshot_payload,
+    _measurement_compare_key,
+    _measurement_compare_payload,
+    _measurement_field_values_match,
+    _measurement_payloads_match,
+    _measurement_push_diff_fields,
+    _measurement_sync_payload,
+    _normalize_measurement_float_value,
+    _normalize_measurement_identity_value,
+    _normalize_measurement_int_value,
+    _normalize_measurement_timestamp_value,
+    _normalize_measurement_type_value,
+    _remote_measurement_snapshot_payload,
+)
+from utils.cloud_sync_impl.sample_source import (  # noqa: F401  (facade re-export)
+    _CLOUD_SAMPLE_SOURCE_VALUES,
+    _LEGACY_SAMPLE_SOURCE_ON_SAMPLE_TYPE,
+    _apply_image_sample_fields_to_push_payload,
+    _cloud_to_desktop_sample_source,
+    _desktop_to_cloud_sample_source,
+    _split_legacy_sample_type_into_source,
+)
+from utils.cloud_sync_impl.image_payloads import (  # noqa: F401  (facade re-export)
+    _deleted_remote_image_identity_keys,
+    _remote_image_payload,
+)
+from utils.cloud_sync_impl.reconciliation.calibrations import (  # noqa: F401  (facade re-export)
+    _CALIBRATION_CONFLICT_IGNORED_FIELDS,
+    _CALIBRATION_FLOAT_ABS_TOL,
+    _CALIBRATION_FLOAT_FIELDS,
+    _CALIBRATION_FLOAT_REL_TOL,
+    _CALIBRATION_SYNC_COLS,
+    _calibration_diff_fields,
+    _calibration_display_name,
+    _calibration_field_changes,
+    _calibration_field_values_match,
+    _calibration_insert_kwargs,
+    _calibration_local_wins_patch_payload,
+    _calibration_payloads_match,
+    _calibration_sync_payload,
+    _calibration_sync_warning,
+    _normalize_calibration_bool,
+    _normalize_calibration_date,
+    _normalize_calibration_float,
+    _normalize_calibration_int,
+    _normalize_calibration_measurements_json,
+    _normalize_calibration_text,
+    _normalize_calibration_uuid,
+    _serialize_calibration_measurements_json,
+)
+from utils.cloud_sync_impl.reconciliation.report import (  # noqa: F401  (facade re-export)
+    ObservationPushConflictReport,
+    _format_observation_metadata_field_label,
+    _format_push_conflict_review_reasons,
+)
+from utils.cloud_sync_impl.reconciliation.asymmetry import (  # noqa: F401  (facade re-export)
+    _ASYMMETRY_MATERIAL_IMAGE_FIELDS,
+    _accepted_asymmetry_key,
+    _asymmetry_fingerprint_local_image,
+    _asymmetry_fingerprint_local_measurement,
+    _asymmetry_fingerprint_remote_image,
+    _asymmetry_fingerprint_remote_measurement,
+    _filter_accepted_one_sided_images,
+    _filter_accepted_one_sided_measurements,
+    _identities_referenced_by_plan,
+    _merge_accepted_asymmetry,
+    _reconcile_accepted_asymmetry,
+)
+from utils.cloud_sync_impl.push_payloads import (  # noqa: F401  (facade re-export)
+    _OBS_PUSH_COLS,
+    _analyze_observation_field_changes,
+    _baseline_observation_compare_payload,
+    _normalize_observation_field_value,
+    _observation_compare_payload,
+    _observation_push_payload,
+)
+from utils.cloud_sync_impl.local_files import (  # noqa: F401  (facade re-export)
+    _is_readable_local_file,
+    _resolve_existing_local_image_asset_path,
+)
+from utils.cloud_sync_impl.baseline import (  # noqa: F401  (facade re-export)
+    _CLOUD_OBSERVATION_SNAPSHOT_SCHEMA_VERSION,
+    _SETTING_CLOUD_OBS_SNAPSHOT_PREFIX,
+    _clear_cloud_observation_snapshot,
+    _cloud_observation_snapshot,
+    _cloud_observation_snapshot_key,
+    _load_cloud_observation_snapshot,
+    _local_observation_id_by_cloud_id,
+    _normalize_accepted_asymmetry_entry,
+    _normalize_accepted_asymmetry_for_snapshot,
+    _parse_cloud_observation_snapshot,
+    _store_cloud_observation_snapshot,
+    _store_remote_snapshot,
+)
+from utils.cloud_sync_impl.identity_state import (  # noqa: F401  (facade re-export)
+    IDENTITY_APPLY_APPLIED,
+    IDENTITY_APPLY_CONFLICT,
+    IDENTITY_APPLY_UNCHANGED,
+    _apply_remote_identity_to_local,
+    _installed_taxon_concept,
+    _local_identity_columns_for_remote_claim,
+)
+from utils.cloud_sync_impl.location_precision import (  # noqa: F401  (facade re-export)
+    _LOCATION_PRECISION_REPAIR_DONE_KEY,
+    _confirmed_location_precision,
+    _confirmed_location_precision_key,
+    _guard_local_location_precision,
+    _precision_local_id,
+    _snapshot_baseline_for_cloud_id,
+    consume_confirmed_location_precision,
+    record_confirmed_location_precision,
+    repair_legacy_location_precision,
+)
+from utils.cloud_sync_impl.media_signature import (  # noqa: F401  (facade re-export)
+    _CLOUD_LOCAL_MEDIA_RENDER_VERSION,
+    _LOCAL_MEDIA_SIGNATURE_OPTIONAL_IMAGE_KEYS,
+    _local_cloud_image_media_signature,
+    _local_cloud_media_signature,
+    _local_media_signatures_match,
+    _normalized_local_media_signature_payload,
+    _parsed_local_media_signature,
+    _path_stat_signature,
+    _refresh_local_cloud_media_signature,
+    _store_local_media_signature_if_equivalent,
+)
+from utils.cloud_sync_impl.preflight import (  # noqa: F401  (facade re-export)
+    _analyze_observation_push_conflicts,
+    _image_calibration_uuid,
+    _is_spore_measurement_source_image,
+    _load_local_measurement_lookup,
+    _local_has_real_changes_since_snapshot,
+    _local_image_snapshot_payload,
+    _locally_tombstoned_snapshot_image_identity_keys,
+    _observation_push_diff_fields,
+)
+from utils.cloud_sync_impl.calibrations import (  # noqa: F401  (facade re-export)
+    _load_local_calibration_by_uuid,
+    _load_local_calibration_rows,
+    _local_calibration_id_for_image,
+    _local_calibration_lookup,
+    _reconcile_local_image_calibration_links,
+    list_calibration_conflicts,
+    pull_calibrations,
+    push_calibrations,
+    repair_calibrations_local_wins,
+)
+from utils.cloud_sync_impl.identity_push import (  # noqa: F401  (facade re-export)
+    CloudSyncTaxonIdentityMixin,
+)
 
-logger = logging.getLogger(__name__)
 
 # Sporely-py's source_app_version for public.observation_spore_summaries
 # rows (Stage D). Set once at app startup via
@@ -349,24 +565,6 @@ _SUPABASE_PROFILE_UPLOAD_TIMEOUT = 60
 _SUPABASE_REQUEST_MAX_ATTEMPTS = 4
 _SUPABASE_REQUEST_BACKOFF_BASE_SECONDS = 0.5
 _SUPABASE_REQUEST_BACKOFF_MAX_SECONDS = 8.0
-_SUPABASE_TRANSIENT_STATUS_CODES = {429, 500, 502, 503, 504}
-_SUPABASE_TRANSIENT_ERROR_HINTS = (
-    'bad gateway',
-    'connection aborted',
-    'connection refused',
-    'connection reset',
-    'could not connect to server',
-    'gateway timeout',
-    'postgrest unavailable',
-    'schema cache',
-    'service unavailable',
-    'temporarily unavailable',
-    'timed out',
-    'timeout',
-)
-_CLOUD_TEMPORARILY_UNAVAILABLE_MESSAGE = (
-    'Supabase/cloud sync is temporarily unavailable; local data was not overwritten.'
-)
 _CLOUD_LAST_CHILD_SAFETY_PULL_AT_SETTING = 'cloud_last_child_safety_pull_at'
 _CLOUD_CHILD_SAFETY_PULL_INTERVAL_HOURS = 24
 _CLOUD_MEASUREMENT_RECONCILE_VERSION_SETTING = 'cloud_measurement_reconcile_version'
@@ -402,47 +600,6 @@ _CLOUD_LEGACY_KEYRING_SERVICE = 'MycoLog.Cloud'
 _profile_suffix = runtime_profile_scope()
 _CLOUD_KEYRING_ACCOUNT = f'password:{_profile_suffix}' if _profile_suffix else 'password'
 
-# Cloud contract audit:
-# - Synced now: `is_draft`, `location_precision`, `ai_selected_*`, image `measure_color`
-#   and `crop_mode`, and spore measurement `gallery_rotation`.
-# - Future work: image `scale_bar_*`, spore measurement `notes`, `image_key`,
-#   `thumb_key`, and cloud upload metadata/derived keys remain intentionally
-#   out of the desktop contract for now.
-# - Intentionally blocked / future work for the desktop schema: observation
-#   `captured_at`, `gps_altitude`, `gps_accuracy`, and the stored
-#   `observation_identifications` table.
-# - Avoid user-facing conflicts for harmless reduced cloud media copies.
-# Observation columns we push to cloud (excludes local-only fields)
-_OBS_PUSH_COLS = [
-    'date', 'genus', 'species', 'common_name', 'species_guess',
-    'uncertain', 'unspontaneous', 'determination_method',
-    'location', 'gps_latitude', 'gps_longitude',
-    'location_public',
-    'is_draft', 'location_precision',
-    'ai_selected_service', 'ai_selected_taxon_id',
-    'ai_selected_scientific_name', 'ai_selected_probability',
-    'ai_selected_at',
-    # Red-list is pushable so a desktop-derived value (fallback from an AI
-    # prediction, or an explicit user pick) can round-trip to the cloud. Local
-    # NULL is protected from wiping cloud values by `_merge_cloud_selected_ai_fields`
-    # which fills in the remote value before push.
-    'red_list_category', 'red_list_categories_json',
-    'habitat', 'habitat_nin2_path', 'habitat_substrate_path',
-    'habitat_host_genus', 'habitat_host_species', 'habitat_host_common_name',
-    'habitat_nin2_note', 'habitat_substrate_note', 'habitat_grows_on_note',
-    'notes', 'open_comment', 'interesting_comment',
-    'publish_target', 'artsdata_id', 'artportalen_id',
-    'inaturalist_id', 'mushroomobserver_id',
-    'spore_statistics', 'auto_threshold',
-    'source_type', 'citation', 'data_provider', 'author',
-    'spore_data_visibility',
-    # Geography: `country_code` is normalized to NULL or ^[A-Z]{2}$ before
-    # sending. `region_id` is preserve-only from cloud — the desktop never
-    # invents it, and outgoing PATCH payloads intentionally omit this key so
-    # the cloud value survives. See `push_observation` for the patch shaping.
-    'country_code',
-    'region_id',
-]
 # Never push: private_comment, ai_state_json, folder_path, cloud_id, sync_status, synced_at
 # Stage 3B.2/3B.3: local-only taxonomy-v2 fields — not pushed to Supabase
 # until a separate cloud-schema migration is authored. Regression test
@@ -467,24 +624,6 @@ def _normalize_slug(value: object) -> str:
     text = str(value or "").strip().lower()
     text = re.sub(r"[\s-]+", "_", text)
     return re.sub(r"_+", "_", text).strip("_")
-
-
-def _normalize_sharing_scope(value: str | None, fallback: str = 'private') -> str:
-    raw = str(value or '').strip().lower()
-    if raw == 'draft':
-        return 'private'
-    if raw in {'private', 'friends', 'public'}:
-        return raw
-    fallback_raw = str(fallback or 'private').strip().lower()
-    if fallback_raw == 'draft':
-        return 'private'
-    return fallback_raw if fallback_raw in {'private', 'friends', 'public'} else 'private'
-
-
-def _sharing_scope_to_cloud_visibility(value: str | None, fallback: str = 'private') -> str:
-    """Map local desktop sharing scope to the Phase 7 cloud visibility value."""
-    normalized = _normalize_sharing_scope(value, fallback=fallback)
-    return normalized
 
 
 def _cloud_visibility_to_sharing_scope(value: str | None, fallback: str = 'private') -> str:
@@ -592,99 +731,6 @@ _OBSERVATION_BOOL_FIELDS = {
     'interesting_comment',
     'is_draft',
 }
-_OBSERVATION_INT_FIELDS = {
-    'artsdata_id',
-    'artportalen_id',
-    'inaturalist_id',
-    'mushroomobserver_id',
-    'determination_method',
-}
-_OBSERVATION_FLOAT_FIELDS = {
-    'gps_latitude',
-    'gps_longitude',
-    'ai_selected_probability',
-    'auto_threshold',
-}
-_OBSERVATION_FLOAT_ABS_TOL = 1e-9
-_OBSERVATION_FLOAT_REL_TOL = 1e-9
-_OBSERVATION_GPS_ABS_TOL = 1e-6
-
-
-def _normalize_observation_bool_value(value, *, default: bool | None = None) -> bool | None:
-    if value is None:
-        return default
-    if isinstance(value, bool):
-        return value
-    if isinstance(value, int):
-        return value != 0
-    if isinstance(value, float):
-        return value != 0.0
-    text = str(value or '').strip().lower()
-    if not text:
-        return default
-    if text in {'true', '1', 'yes', 'on'}:
-        return True
-    if text in {'false', '0', 'no', 'off'}:
-        return False
-    if text in {'none', 'null'}:
-        return default
-    return bool(value)
-
-
-def _normalize_observation_int_value(value) -> int | None:
-    if value is None:
-        return None
-    if isinstance(value, bool):
-        return int(value)
-    if isinstance(value, int):
-        return int(value)
-    if isinstance(value, float):
-        return int(value)
-    text = str(value or '').strip()
-    if not text:
-        return None
-    try:
-        return int(float(text))
-    except Exception:
-        return None
-
-
-def _normalize_observation_float_value(value) -> float | None:
-    if value is None:
-        return None
-    if isinstance(value, bool):
-        return float(int(value))
-    if isinstance(value, (int, float)):
-        return float(value)
-    text = str(value or '').strip()
-    if not text:
-        return None
-    try:
-        return float(text)
-    except Exception:
-        return None
-
-
-def _normalize_observation_json_value(value):
-    if value is None:
-        return None
-    if isinstance(value, (dict, list, tuple)):
-        normalized = _normalize_snapshot_value(value)
-        if normalized in ({}, [], ''):
-            return None
-        return normalized
-    if isinstance(value, (bool, int, float)):
-        return value
-    text = str(value or '').strip()
-    if not text:
-        return None
-    try:
-        data = json.loads(text)
-    except Exception:
-        return text
-    if data in ({}, [], ''):
-        return None
-    return _normalize_snapshot_value(data)
 
 
 def _encode_postgrest_filter_value(value: str | None) -> str:
@@ -765,278 +811,12 @@ def _sanitize_original_storage_filename(source_path: str | Path) -> str:
     return cleaned_name or 'original'
 
 
-_CALIBRATION_SYNC_COLS = [
-    'calibration_uuid',
-    'objective_key',
-    'calibration_date',
-    'calibration_image_date',
-    'microns_per_pixel',
-    'microns_per_pixel_std',
-    'confidence_interval_low',
-    'confidence_interval_high',
-    'num_measurements',
-    'measurements_json',
-    'camera',
-    'megapixels',
-    'target_sampling_pct',
-    'resample_scale_factor',
-    'calibration_image_width',
-    'calibration_image_height',
-    'notes',
-    'is_active',
-]
-
-# is_active is per-device state (which calibration the desktop currently uses).
-# The cloud row still stores a value, but a mismatch on it should never emit a
-# push/pull conflict — it's noise that blocks real content diffs.
-_CALIBRATION_CONFLICT_IGNORED_FIELDS = frozenset({'is_active'})
-
-# Float fields can drift by tiny amounts across database versions or JSON
-# serialization paths. Treat those as equivalent during conflict detection.
-_CALIBRATION_FLOAT_FIELDS = {
-    'microns_per_pixel',
-    'microns_per_pixel_std',
-    'confidence_interval_low',
-    'confidence_interval_high',
-    'megapixels',
-    'target_sampling_pct',
-    'resample_scale_factor',
-}
-_CALIBRATION_FLOAT_ABS_TOL = 1e-9
-_CALIBRATION_FLOAT_REL_TOL = 1e-9
-
 _CALIBRATION_SELECT_COLUMNS = _join_select_columns(
     'id',
     'created_at',
     'image_storage_path',
     *_CALIBRATION_SYNC_COLS,
 )
-
-
-def _normalize_calibration_uuid(value) -> str | None:
-    if isinstance(value, uuid.UUID):
-        return str(value)
-    text = str(value or '').strip()
-    if not text:
-        return None
-    try:
-        return str(uuid.UUID(text))
-    except (TypeError, ValueError, AttributeError):
-        return None
-
-
-def _normalize_calibration_text(value) -> str | None:
-    text = str(value or '').strip()
-    return text or None
-
-
-def _normalize_calibration_date(value) -> str | None:
-    if value is None:
-        return None
-    if isinstance(value, datetime):
-        return value.strftime('%Y-%m-%d')
-    text = str(value or '').strip()
-    if not text:
-        return None
-    if len(text) >= 10 and re.match(r'^\d{4}-\d{2}-\d{2}', text):
-        return text[:10]
-    for fmt in (
-        '%Y-%m-%d',
-        '%Y-%m-%d %H:%M:%S',
-        '%Y-%m-%d %H:%M',
-        '%Y-%m-%dT%H:%M:%S',
-        '%Y-%m-%dT%H:%M:%S.%f',
-    ):
-        try:
-            return datetime.strptime(text, fmt).strftime('%Y-%m-%d')
-        except ValueError:
-            continue
-    try:
-        return datetime.fromisoformat(text.replace('Z', '+00:00')).strftime('%Y-%m-%d')
-    except Exception:
-        return text[:10] if len(text) >= 10 else text or None
-
-
-def _normalize_calibration_float(value) -> float | None:
-    if value is None:
-        return None
-    if isinstance(value, bool):
-        return float(int(value))
-    if isinstance(value, (int, float)):
-        return float(value)
-    text = str(value or '').strip()
-    if not text:
-        return None
-    try:
-        return float(text)
-    except Exception:
-        return None
-
-
-def _normalize_calibration_int(value) -> int | None:
-    if value is None:
-        return None
-    if isinstance(value, bool):
-        return int(value)
-    if isinstance(value, int):
-        return int(value)
-    if isinstance(value, float):
-        return int(value)
-    text = str(value or '').strip()
-    if not text:
-        return None
-    try:
-        return int(float(text))
-    except Exception:
-        return None
-
-
-def _normalize_calibration_bool(value) -> bool:
-    if isinstance(value, bool):
-        return value
-    if value is None:
-        return False
-    if isinstance(value, int):
-        return value != 0
-    if isinstance(value, float):
-        return value != 0.0
-    text = str(value).strip().lower()
-    if not text:
-        return False
-    if text in {'true', '1', 'yes', 'on'}:
-        return True
-    if text in {'false', '0', 'no', 'off'}:
-        return False
-    return bool(value)
-
-
-def _normalize_calibration_measurements_json(value):
-    if value is None:
-        return None
-    if isinstance(value, (dict, list, tuple)):
-        normalized = _normalize_snapshot_value(value)
-        if normalized in ({}, [], ''):
-            return None
-        return normalized
-    if isinstance(value, (bool, int, float)):
-        return value
-    text = str(value or '').strip()
-    if not text:
-        return None
-    try:
-        data = json.loads(text)
-    except Exception:
-        return text
-    if data in ({}, [], ''):
-        return None
-    return _normalize_snapshot_value(data)
-
-
-def _serialize_calibration_measurements_json(value) -> str | None:
-    normalized = _normalize_calibration_measurements_json(value)
-    if normalized is None:
-        return None
-    return json.dumps(normalized, ensure_ascii=False, sort_keys=True)
-
-
-def _calibration_field_values_match(field: str, local_value, remote_value) -> bool:
-    if field in _CALIBRATION_FLOAT_FIELDS:
-        local_float = _normalize_calibration_float(local_value)
-        remote_float = _normalize_calibration_float(remote_value)
-        if local_float is None or remote_float is None:
-            return local_float == remote_float
-        return math.isclose(
-            local_float,
-            remote_float,
-            rel_tol=_CALIBRATION_FLOAT_REL_TOL,
-            abs_tol=_CALIBRATION_FLOAT_ABS_TOL,
-        )
-    return local_value == remote_value
-
-
-def _calibration_field_changes(local_row: dict | None, remote_row: dict | None) -> dict[str, tuple[object, object]]:
-    local_payload = _calibration_sync_payload(local_row)
-    remote_payload = _calibration_sync_payload(remote_row)
-    changes: dict[str, tuple[object, object]] = {}
-    for field in _CALIBRATION_SYNC_COLS:
-        if field in _CALIBRATION_CONFLICT_IGNORED_FIELDS:
-            continue
-        local_value = local_payload.get(field)
-        remote_value = remote_payload.get(field)
-        if not _calibration_field_values_match(field, local_value, remote_value):
-            changes[field] = (local_value, remote_value)
-    return changes
-
-
-def _calibration_sync_payload(row: dict | None) -> dict:
-    record = dict(row or {})
-    return {
-        'calibration_uuid': _normalize_calibration_uuid(record.get('calibration_uuid')),
-        'objective_key': _normalize_calibration_text(record.get('objective_key')),
-        'calibration_date': _normalize_calibration_date(record.get('calibration_date')),
-        'calibration_image_date': _normalize_calibration_date(record.get('calibration_image_date')),
-        'microns_per_pixel': _normalize_calibration_float(record.get('microns_per_pixel')),
-        'microns_per_pixel_std': _normalize_calibration_float(record.get('microns_per_pixel_std')),
-        'confidence_interval_low': _normalize_calibration_float(record.get('confidence_interval_low')),
-        'confidence_interval_high': _normalize_calibration_float(record.get('confidence_interval_high')),
-        'num_measurements': _normalize_calibration_int(record.get('num_measurements')),
-        'measurements_json': _normalize_calibration_measurements_json(record.get('measurements_json')),
-        'camera': _normalize_calibration_text(record.get('camera')),
-        'megapixels': _normalize_calibration_float(record.get('megapixels')),
-        'target_sampling_pct': _normalize_calibration_float(record.get('target_sampling_pct')),
-        'resample_scale_factor': _normalize_calibration_float(record.get('resample_scale_factor')),
-        'calibration_image_width': _normalize_calibration_int(record.get('calibration_image_width')),
-        'calibration_image_height': _normalize_calibration_int(record.get('calibration_image_height')),
-        'notes': _normalize_calibration_text(record.get('notes')),
-        'is_active': _normalize_calibration_bool(record.get('is_active')),
-    }
-
-
-def _calibration_insert_kwargs(row: dict | None) -> dict:
-    payload = _calibration_sync_payload(row)
-    return {
-        'objective_key': payload['objective_key'],
-        'calibration_date': payload['calibration_date'],
-        'calibration_image_date': payload['calibration_image_date'],
-        'microns_per_pixel': payload['microns_per_pixel'],
-        'microns_per_pixel_std': payload['microns_per_pixel_std'],
-        'confidence_interval_low': payload['confidence_interval_low'],
-        'confidence_interval_high': payload['confidence_interval_high'],
-        'num_measurements': payload['num_measurements'],
-        'measurements_json': _serialize_calibration_measurements_json(payload['measurements_json']),
-        'camera': payload['camera'],
-        'megapixels': payload['megapixels'],
-        'target_sampling_pct': payload['target_sampling_pct'],
-        'resample_scale_factor': payload['resample_scale_factor'],
-        'calibration_image_width': payload['calibration_image_width'],
-        'calibration_image_height': payload['calibration_image_height'],
-        'notes': payload['notes'],
-        'set_active': bool(payload['is_active']),
-        'calibration_uuid': payload['calibration_uuid'],
-    }
-
-
-def _calibration_payloads_match(local_row: dict | None, remote_row: dict | None) -> bool:
-    return not _calibration_field_changes(local_row, remote_row)
-
-
-def _calibration_diff_fields(local_row: dict | None, remote_row: dict | None) -> list[str]:
-    return list(_calibration_field_changes(local_row, remote_row).keys())
-
-
-def _calibration_local_wins_patch_payload(local_row: dict | None, remote_row: dict | None) -> dict:
-    local_payload = _calibration_sync_payload(local_row)
-    return {
-        field: local_payload.get(field)
-        for field in _calibration_diff_fields(local_row, remote_row)
-    }
-
-
-def _calibration_display_name(row: dict | None) -> str:
-    record = dict(row or {})
-    objective = _normalize_calibration_text(record.get('objective_key')) or '?'
-    date_text = _normalize_calibration_date(record.get('calibration_date')) or 'unknown date'
-    return f'{objective} • {date_text}'
 
 
 def _remap_known_local_calibration_path(path: Path) -> Path:
@@ -1051,17 +831,6 @@ def _remap_known_local_calibration_path(path: Path) -> Path:
     except Exception:
         return path
     return current_root / rel
-
-
-def _is_readable_local_file(path: Path) -> bool:
-    try:
-        if not path.exists() or not path.is_file():
-            return False
-        with path.open('rb') as handle:
-            handle.read(1)
-        return True
-    except Exception:
-        return False
 
 
 def _resolve_local_calibration_asset_path(path_value: str | None) -> Path | None:
@@ -1845,30 +1614,11 @@ _MEAS_PUSH_COLS = [
 ]
 
 _SETTING_CLOUD_MEDIA_SIGNATURE = "sporely_cloud_media_signature_v1"
-_SETTING_CLOUD_OBS_SNAPSHOT_PREFIX = "sporely_cloud_snapshot_obs_"
 _SETTING_LINKED_CLOUD_USER_ID = "linked_cloud_user_id"
-_CLOUD_LOCAL_MEDIA_RENDER_VERSION = "2"
 _CLEAN_CLOUD_IMAGE_CONVERTER_VERSION = "1"
 _REMOTE_SYNC_TIMESTAMP_GRACE_SECONDS = 5.0
 _CLOUD_THUMB_MAX_EDGE = 400
 _CALIBRATION_REFERENCE_MAX_EDGE = 2048
-_LOCAL_MEDIA_SIGNATURE_OPTIONAL_IMAGE_KEYS = (
-    # Image capture time joined the cloud contract after local signatures were
-    # already in use. Missing legacy values are equivalent to explicit NULL.
-    'captured_at',
-    'ai_crop_x1',
-    'ai_crop_y1',
-    'ai_crop_x2',
-    'ai_crop_y2',
-    'ai_crop_source_w',
-    'ai_crop_source_h',
-    'ai_crop_is_custom',
-    # calibration_uuid was added to the signature so retroactive recalibration
-    # (which only reassigns the image's calibration link) is picked up as a
-    # metadata-only change. Older stored signatures don't have it — normalize
-    # missing to None to keep those comparisons stable.
-    'calibration_uuid',
-)
 
 # Fields whose change forces re-encoding of the uploaded WebP. AI crop is
 # stored as descriptive metadata alongside the image — _prepare_cloud_image_upload_file
@@ -1911,58 +1661,6 @@ _LOCAL_MEDIA_PREP_RENDER_AFFECTING_TOP_LEVEL_FIELDS = frozenset({
     'cloud_image_size_mode',
 })
 
-_SNAPSHOT_OBS_FIELDS = [
-    'id', 'desktop_id', 'date', 'genus', 'species', 'common_name', 'species_guess',
-    'uncertain', 'unspontaneous', 'determination_method',
-    'location', 'gps_latitude', 'gps_longitude', 'location_public',
-    'is_draft', 'location_precision',
-    'ai_selected_service', 'ai_selected_taxon_id',
-    'ai_selected_scientific_name', 'ai_selected_probability',
-    'ai_selected_at',
-    # Red-list category picked for the observation (either directly by the
-    # user or copied from the selected AI prediction). Included in the
-    # snapshot so cloud-pulled observations show the same badge under
-    # Taxonomy → Red list as they do in sporely-web.
-    'red_list_category', 'red_list_categories_json',
-    'habitat', 'habitat_nin2_path', 'habitat_substrate_path',
-    'habitat_host_genus', 'habitat_host_species', 'habitat_host_common_name',
-    'habitat_nin2_note', 'habitat_substrate_note', 'habitat_grows_on_note',
-    'notes', 'open_comment', 'interesting_comment',
-    'publish_target', 'artsdata_id', 'artportalen_id',
-    'inaturalist_id', 'mushroomobserver_id',
-    'spore_statistics', 'auto_threshold',
-    'source_type', 'citation', 'data_provider', 'author',
-    'visibility',
-    'spore_data_visibility',
-    'country_code',
-    'region_id',
-]
-
-_SNAPSHOT_IMG_FIELDS = [
-    'id', 'desktop_id', 'sort_order', 'image_type', 'micro_category',
-    'captured_at',
-    'calibration_uuid',
-    'objective_name', 'scale_microns_per_pixel', 'resample_scale_factor',
-    'mount_medium', 'stain',
-    # sample_type = specimen condition; sample_source = where the material
-    # was taken from. Both participate in the image snapshot / media
-    # signature so cloud pull round-trips them and metadata-only sync can
-    # patch them without triggering byte uploads.
-    'sample_type', 'sample_source',
-    'contrast', 'measure_color',
-    'crop_mode', 'notes',
-    'gps_source', 'storage_path', 'original_filename',
-    'ai_crop_x1', 'ai_crop_y1', 'ai_crop_x2', 'ai_crop_y2',
-    'ai_crop_source_w', 'ai_crop_source_h', 'ai_crop_is_custom',
-    'upload_mode', 'source_width', 'source_height',
-    'stored_width', 'stored_height', 'stored_bytes',
-]
-
-# Future original-object metadata that we preserve in snapshots when it is
-# already present on the cloud row, but do not yet use for sync decisions.
-_SNAPSHOT_IMG_PASSIVE_FIELDS = [
-    'original_storage_path',
-]
 
 _CONFLICT_COMPARE_FIELDS = [
     'date',
@@ -2129,24 +1827,6 @@ def fetch_cloud_usage_summary(client) -> dict:
     return summary
 
 
-_CLOUD_AUTH_ERROR_HINTS = (
-    'jwt expired',
-    'invalid jwt',
-    'expired access token',
-    'access token expired',
-    'token expired',
-    'session expired',
-    'authentication failed',
-    'invalid_grant',
-    'not logged in',
-    'unauthorized',
-    'pgrst301',
-    'pgrst303',
-    # Supabase returns this when password login is attempted without a captcha
-    # token — the user must sign in interactively (e.g. via browser).
-    'captcha_failed',
-)
-
 # Hints that identify a *terminal* refresh-token invalidation coming from
 # Supabase's refresh endpoint.  Anything matching this list means the
 # session cannot be resumed and the user must sign in again.  A plain
@@ -2159,25 +1839,6 @@ _CLOUD_REAUTH_REQUIRED_HINTS = (
     'refresh_token_not_found',
     'refresh_token_already_used',
 )
-
-
-def is_cloud_auth_error(error) -> bool:
-    """Broad classification: does *error* smell like an auth/token issue?
-
-    Used by the request layer to decide whether to try a refresh and by
-    the sync loops to decide whether to abort early.  Deliberately does
-    not match a raw ``403`` — PostgREST returns 403 for RLS denials,
-    which are authorization (not authentication) failures and must not
-    be conflated with an expired session.
-    """
-    if isinstance(error, CloudReauthRequiredError):
-        return True
-    code, texts = _collect_sync_error_details(error)
-    haystack = ' '.join(dict.fromkeys(texts)).lower()
-    code_text = str(code or '').strip().lower()
-    if code_text == '401':
-        return True
-    return any(hint in haystack for hint in _CLOUD_AUTH_ERROR_HINTS)
 
 
 def is_cloud_reauth_required_error(error) -> bool:
@@ -2272,21 +1933,6 @@ def _response_indicates_auth_error(response: requests.Response) -> bool:
         return is_cloud_auth_error(getattr(response, 'text', ''))
     except Exception:
         return False
-
-
-def is_cloud_temporary_unavailable_error(error) -> bool:
-    if isinstance(error, CloudTemporarilyUnavailableError):
-        return True
-    code, texts = _collect_sync_error_details(error)
-    haystack = ' '.join(dict.fromkeys(texts)).lower()
-    code_text = str(code or '').strip().lower()
-    if code_text in {'pgrst000', 'pgrst001', 'pgrst002', 'pgrst003'}:
-        return True
-    if code_text in {str(status) for status in _SUPABASE_TRANSIENT_STATUS_CODES}:
-        return True
-    if _CLOUD_TEMPORARILY_UNAVAILABLE_MESSAGE.lower() in haystack:
-        return True
-    return any(hint in haystack for hint in _SUPABASE_TRANSIENT_ERROR_HINTS)
 
 
 def _request_with_transient_retry(
@@ -2528,374 +2174,6 @@ def ensure_database_linked_to_cloud_user(client: "SporelyCloudClient") -> str:
     return current_user_id
 
 
-def _parse_cloud_observation_snapshot(snapshot: str | None) -> dict:
-    """Parse a snapshot payload.
-
-    Backward-compatible across both schema versions:
-
-    * older snapshots without ``schema_version`` continue to load; no
-      accepted-asymmetry is invented for them (the section is absent);
-    * schema-2 payloads preserve the ``schema_version`` and
-      ``accepted_asymmetry`` sections verbatim.
-    """
-    text = str(snapshot or '').strip()
-    if not text:
-        return {}
-    try:
-        data = json.loads(text)
-    except Exception:
-        return {}
-    if not isinstance(data, dict):
-        return {}
-    images = data.get('images')
-    if isinstance(images, list):
-        data['images'] = [
-            dict(row or {})
-            for row in images
-            if should_pull_cloud_image_to_desktop(row)
-        ]
-    measurements = data.get('measurements')
-    if isinstance(measurements, list):
-        data['measurements'] = [dict(row or {}) for row in measurements]
-    # Preserve accepted_asymmetry when present.  When absent (pre-B3 snapshots)
-    # leave the key unset — do NOT synthesize acceptance.
-    asymmetry = data.get('accepted_asymmetry')
-    if isinstance(asymmetry, dict):
-        data['accepted_asymmetry'] = {
-            key: [dict(entry) for entry in asymmetry.get(key) or [] if isinstance(entry, dict)]
-            for key in (
-                'local_only_images',
-                'cloud_only_images',
-                'local_only_measurements',
-                'cloud_only_measurements',
-            )
-        }
-    return data
-
-
-def _normalize_observation_field_value(field: str, value):
-    if field == 'date':
-        text = str(value or '').strip()
-        if not text:
-            return None
-        if len(text) >= 10 and re.match(r'^\d{4}-\d{2}-\d{2}', text):
-            return text[:10]
-        return text
-    if field in {'location_public', 'uncertain', 'unspontaneous', 'interesting_comment'}:
-        return _normalize_observation_bool_value(value, default=None)
-    if field == 'is_draft':
-        return _normalize_observation_bool_value(value, default=True)
-    if field in _OBSERVATION_FLOAT_FIELDS:
-        return _normalize_observation_float_value(value)
-    if field in _OBSERVATION_INT_FIELDS:
-        return _normalize_observation_int_value(value)
-    if field == 'location_precision':
-        return ObservationDB._normalize_location_precision(value)
-    if field == 'spore_data_visibility':
-        raw = str(value or 'public').strip().lower()
-        return raw if raw in {'private', 'friends', 'public'} else 'public'
-    if field == 'spore_statistics':
-        return _normalize_observation_json_value(value)
-    if field == 'red_list_categories_json':
-        # Local column is TEXT (JSON string); cloud column is JSONB (dict).
-        # Compare structurally so re-pulls don't perpetually report "changed"
-        # just because of the string/dict shape difference.
-        return _normalize_observation_json_value(value)
-    if field == 'country_code':
-        return normalize_country_code(value)
-    if field == 'region_id':
-        if value is None:
-            return None
-        text = str(value).strip()
-        return text or None
-    return _normalize_snapshot_value(value)
-
-
-_OBSERVATION_TIMESTAMP_FIELDS = frozenset({'ai_selected_at'})
-
-
-def _normalize_observation_timestamp_value(value) -> str | None:
-    """Canonical instant for comparison: '...Z' and '...+00:00' must match.
-
-    The desktop stores UTC timestamps with a 'Z' suffix while PostgREST
-    returns '+00:00'; raw string equality treats the same instant as a
-    perpetual local-only change (dirty/push loop). Unparseable values fall
-    back to the stripped original so garbage still compares deterministically.
-    """
-    text = str(value or '').strip()
-    if not text:
-        return None
-    try:
-        return datetime.fromisoformat(text.replace('Z', '+00:00')).isoformat()
-    except ValueError:
-        return text
-
-
-def _observation_field_values_match(field: str, left, right) -> bool:
-    if field in _OBSERVATION_TIMESTAMP_FIELDS:
-        return (
-            _normalize_observation_timestamp_value(left)
-            == _normalize_observation_timestamp_value(right)
-        )
-    if field in _OBSERVATION_FLOAT_FIELDS:
-        left_value = _normalize_observation_float_value(left)
-        right_value = _normalize_observation_float_value(right)
-        if left_value is None or right_value is None:
-            return left_value == right_value
-        return math.isclose(
-            left_value,
-            right_value,
-            rel_tol=_OBSERVATION_FLOAT_REL_TOL,
-            abs_tol=(
-                _OBSERVATION_GPS_ABS_TOL
-                if field in {'gps_latitude', 'gps_longitude'}
-                else _OBSERVATION_FLOAT_ABS_TOL
-            ),
-        )
-    return left == right
-
-
-def _observation_push_payload(record: dict | None, *, local: bool) -> dict:
-    row = dict(record or {})
-    payload = {col: row.get(col) for col in _OBS_PUSH_COLS}
-    payload['date'] = _normalize_observation_field_value('date', payload.get('date'))
-    scope_source = row.get('sharing_scope') if local else (row.get('visibility') or row.get('sharing_scope'))
-    payload['visibility'] = _sharing_scope_to_cloud_visibility(scope_source, fallback='private')
-    raw_vis = str(payload.get('spore_data_visibility') or 'public').strip().lower()
-    payload['spore_data_visibility'] = raw_vis if raw_vis in {'private', 'friends', 'public'} else 'public'
-    payload['location_precision'] = ObservationDB._normalize_location_precision(payload.get('location_precision'))
-    payload['is_draft'] = _normalize_observation_bool_value(payload.get('is_draft'), default=True)
-    for field in ('location_public', 'uncertain', 'unspontaneous', 'interesting_comment'):
-        payload[field] = _normalize_observation_bool_value(payload.get(field), default=None)
-    for field in _OBSERVATION_INT_FIELDS:
-        payload[field] = _normalize_observation_int_value(payload.get(field))
-    for field in _OBSERVATION_FLOAT_FIELDS:
-        payload[field] = _normalize_observation_float_value(payload.get(field))
-    payload['spore_statistics'] = _normalize_observation_json_value(payload.get('spore_statistics'))
-    # red_list_categories_json is TEXT locally, JSONB on cloud. Decode the string
-    # (or pass through a dict) so PostgREST sees a JSON object, not a quoted
-    # string. Missing / empty values map to None so nothing gets pushed.
-    payload['red_list_categories_json'] = _normalize_observation_json_value(
-        payload.get('red_list_categories_json')
-    )
-    raw_publish_target = str(payload.get('publish_target') or '').strip()
-    if raw_publish_target:
-        payload['publish_target'] = normalize_publish_target(raw_publish_target)
-    payload['country_code'] = normalize_country_code(payload.get('country_code'))
-    payload['region_id'] = _normalize_observation_field_value('region_id', payload.get('region_id'))
-    return payload
-
-
-def _parse_sync_timestamp(value) -> datetime | None:
-    text = str(value or '').strip()
-    if not text:
-        return None
-    normalized = text.replace('Z', '+00:00')
-    try:
-        parsed = datetime.fromisoformat(normalized)
-    except Exception:
-        return None
-    if parsed.tzinfo is None:
-        parsed = parsed.replace(tzinfo=timezone.utc)
-    return parsed.astimezone(timezone.utc)
-
-
-def _observation_compare_payload(record: dict | None, *, local: bool) -> dict:
-    row = dict(record or {})
-    payload = _observation_push_payload(row, local=local)
-    payload['id'] = _normalize_observation_field_value(
-        'id',
-        row.get('cloud_id') if local else row.get('id'),
-    )
-    payload['desktop_id'] = _normalize_observation_field_value(
-        'desktop_id',
-        row.get('id') if local else row.get('desktop_id'),
-    )
-    for field in _SNAPSHOT_OBS_FIELDS:
-        if field in {'id', 'desktop_id'}:
-            continue
-        if field not in payload:
-            payload[field] = _normalize_observation_field_value(field, row.get(field))
-    genus = str(payload.get('genus') or '').strip()
-    species = str(payload.get('species') or '').strip()
-    species_guess = str(payload.get('species_guess') or '').strip()
-    derived_guess = f'{genus} {species}'.strip() if genus and species else ''
-    if species_guess and derived_guess and species_guess == derived_guess:
-        payload['species_guess'] = None
-    # The virtual identity field (never pushed as a column): what each side
-    # holds, in one vocabulary. A remote row without identity columns has none.
-    if local:
-        payload[TAXON_IDENTITY_SYNC_FIELD] = _local_identity_sync_key(row)
-    else:
-        claim = _remote_identity_claim(row)
-        payload[TAXON_IDENTITY_SYNC_FIELD] = claim.key if claim is not None else None
-    return payload
-
-
-def _baseline_observation_compare_payload(record: dict | None) -> dict:
-    """Normalize a stored snapshot observation for fair comparison with live rows."""
-    row = dict(record or {})
-    payload = _observation_push_payload(row, local=False)
-    payload['id'] = _normalize_observation_field_value('id', row.get('id'))
-    payload['desktop_id'] = _normalize_observation_field_value('desktop_id', row.get('desktop_id'))
-    for field in _SNAPSHOT_OBS_FIELDS:
-        if field in {'id', 'desktop_id'}:
-            continue
-        if field not in payload:
-            payload[field] = _normalize_observation_field_value(field, row.get(field))
-    genus = str(payload.get('genus') or '').strip()
-    species = str(payload.get('species') or '').strip()
-    species_guess = str(payload.get('species_guess') or '').strip()
-    derived_guess = f'{genus} {species}'.strip() if genus and species else ''
-    if species_guess and derived_guess and species_guess == derived_guess:
-        payload['species_guess'] = None
-    # Preserve whether the snapshot recorded an identity at all: a snapshot
-    # from before identity joined change detection must stay "unknown".
-    if TAXON_IDENTITY_SYNC_FIELD in row:
-        payload[TAXON_IDENTITY_SYNC_FIELD] = str(row.get(TAXON_IDENTITY_SYNC_FIELD) or '')
-    return payload
-
-
-# --- Location precision: never widen silently (Stage 2c) ---------------------
-# Server levels, least to most precise. The views coalesce a missing value
-# to 'exact'. Builds before Stage 2c stored a cloud 'hidden'/'region' locally
-# as 'exact' while the sync snapshot kept the raw cloud value, so a local
-# value that is MORE precise than the cloud/baseline is only trusted when the
-# user explicitly chose (and, if publishing, confirmed) it on this device.
-_LOCATION_PRECISION_RANK = {'hidden': 0, 'region': 1, 'fuzzed': 2, 'exact': 3}
-
-
-def _location_precision_rank(value) -> int:
-    return _LOCATION_PRECISION_RANK[ObservationDB._normalize_location_precision(value)]
-
-
-def _precision_local_id(value) -> int | None:
-    try:
-        number = int(value)
-    except (TypeError, ValueError):
-        return None
-    return number if number > 0 else None
-
-
-def _confirmed_location_precision_key(local_id) -> str:
-    return f'cloud_location_precision_confirmed:{int(local_id)}'
-
-
-def record_confirmed_location_precision(local_id, precision: str | None) -> None:
-    """Record that the user explicitly chose ``precision`` for this local
-    observation (after the publish notice when that applies)."""
-    if _precision_local_id(local_id) is None or not precision:
-        return
-    SettingsDB.set_setting(
-        _confirmed_location_precision_key(local_id),
-        ObservationDB._normalize_location_precision(precision),
-    )
-
-
-def _confirmed_location_precision(local_id) -> str | None:
-    if _precision_local_id(local_id) is None:
-        return None
-    value = str(SettingsDB.get_setting(_confirmed_location_precision_key(local_id), '') or '').strip()
-    return value or None
-
-
-def consume_confirmed_location_precision(local_id) -> None:
-    if _precision_local_id(local_id) is not None:
-        SettingsDB.set_setting(_confirmed_location_precision_key(local_id), '')
-
-
-def _guard_local_location_precision(local_obs: dict | None, *references: dict | None) -> dict:
-    """Copy of ``local_obs`` whose precision never exceeds the least precise
-    known cloud/baseline value, unless the user confirmed that exact value."""
-    obs = dict(local_obs or {})
-    known = [
-        ref.get('location_precision') for ref in references
-        if isinstance(ref, dict) and str(ref.get('location_precision') or '').strip()
-    ]
-    if not known:
-        return obs
-    reference = min(known, key=_location_precision_rank)
-    local_value = ObservationDB._normalize_location_precision(obs.get('location_precision'))
-    if _location_precision_rank(local_value) <= _location_precision_rank(reference):
-        return obs
-    if _confirmed_location_precision(obs.get('id')) == local_value:
-        return obs
-    logger.info(
-        'Keeping cloud location_precision %r for observation %s: local %r was not confirmed',
-        reference, obs.get('id'), local_value,
-    )
-    obs['location_precision'] = ObservationDB._normalize_location_precision(reference)
-    return obs
-
-
-def _snapshot_baseline_for_cloud_id(cloud_id) -> dict:
-    cloud_value = str(cloud_id or '').strip()
-    if not cloud_value:
-        return {}
-    snapshot = _parse_cloud_observation_snapshot(_load_cloud_observation_snapshot(cloud_value))
-    return _baseline_observation_compare_payload(snapshot.get('observation') or {})
-
-
-_LOCATION_PRECISION_REPAIR_DONE_KEY = 'cloud_location_precision_repair_v1_done'
-
-
-def repair_legacy_location_precision(*, force: bool = False) -> int:
-    """Once per database: restore 'hidden'/'region' on synced rows that an
-    older build stored as 'exact'. Only rows with a cloud_id, an 'exact' (or
-    empty) local value, a 'hidden'/'region' baseline, and no confirmed local
-    choice. Local-only write; does not mark the row dirty.
-
-    A marker in this database's settings records completion, so later calls
-    (app start, every sync) return at once. New legacy rows cannot appear:
-    this build stores pulled hidden/region values as they are. A restored or
-    switched database has no marker and is repaired on its first call.
-    """
-    if not force and str(SettingsDB.get_setting(_LOCATION_PRECISION_REPAIR_DONE_KEY, '') or '') == '1':
-        return 0
-    conn = get_connection()
-    repaired = 0
-    try:
-        rows = conn.execute(
-            "SELECT id, cloud_id, location_precision FROM observations "
-            "WHERE cloud_id IS NOT NULL AND TRIM(cloud_id) != '' "
-            "AND (location_precision IS NULL OR LOWER(TRIM(location_precision)) IN ('', 'exact'))"
-        ).fetchall()
-        for row in rows:
-            local_id, cloud_id = row[0], row[1]
-            baseline = _snapshot_baseline_for_cloud_id(cloud_id)
-            target = str(baseline.get('location_precision') or '').strip().lower()
-            if target not in {'hidden', 'region'}:
-                continue
-            if _confirmed_location_precision(local_id) == 'exact':
-                continue
-            conn.execute(
-                "UPDATE observations SET location_precision = ? WHERE id = ?",
-                (target, int(local_id)),
-            )
-            repaired += 1
-        if repaired:
-            conn.commit()
-    finally:
-        conn.close()
-    SettingsDB.set_setting(_LOCATION_PRECISION_REPAIR_DONE_KEY, '1')
-    if repaired:
-        logger.info('Restored hidden/region location_precision on %d observation(s)', repaired)
-    return repaired
-
-
-def _observation_push_diff_fields(local_obs: dict | None, remote_obs: dict | None) -> list[str]:
-    local_obs = _guard_local_location_precision(local_obs, remote_obs)
-    local_payload = _observation_compare_payload(local_obs, local=True)
-    remote_payload = _observation_compare_payload(remote_obs, local=False)
-    diff_fields: list[str] = []
-    for field in _SNAPSHOT_OBS_FIELDS:
-        if field in {'id', 'desktop_id'}:
-            continue
-        if not _observation_field_values_match(field, local_payload.get(field), remote_payload.get(field)):
-            diff_fields.append(field)
-    return diff_fields
-
-
 def _coords_match(
     local_lat, local_lon, baseline_lat, baseline_lon,
 ) -> bool:
@@ -2989,103 +2267,6 @@ def _shape_geography_patch_payload(
         # Coordinates changed. Region tied to old coords is stale; clear it.
         payload['region_id'] = None
         payload['country_code'] = normalized_country  # may be None
-
-
-def _local_image_snapshot_payload(image_row: dict | None) -> dict:
-    row = dict(image_row or {})
-    payload = {
-        'id': _normalize_snapshot_value(str(row.get('cloud_id') or '').strip() or None),
-        'desktop_id': _normalize_snapshot_value(row.get('id')),
-        'sort_order': _normalize_snapshot_value(row.get('sort_order')),
-        'image_type': _normalize_snapshot_value(row.get('image_type')),
-        'micro_category': _normalize_snapshot_value(row.get('micro_category')),
-        'captured_at': _normalize_image_captured_at_for_cloud(
-            row.get('captured_at'), local=True
-        ),
-        'calibration_uuid': _normalize_snapshot_value(_image_calibration_uuid(row)),
-        'objective_name': _normalize_snapshot_value(row.get('objective_name')),
-        'scale_microns_per_pixel': _normalize_snapshot_value(row.get('scale_microns_per_pixel')),
-        'resample_scale_factor': _normalize_snapshot_value(row.get('resample_scale_factor')),
-        'mount_medium': _normalize_snapshot_value(row.get('mount_medium')),
-        'stain': _normalize_snapshot_value(row.get('stain')),
-        'sample_type': _normalize_snapshot_value(row.get('sample_type')),
-        'sample_source': _normalize_snapshot_value(row.get('sample_source')),
-        'contrast': _normalize_snapshot_value(row.get('contrast')),
-        'measure_color': _normalize_snapshot_value(row.get('measure_color')),
-        'crop_mode': _normalize_snapshot_value(row.get('crop_mode')),
-        'notes': _normalize_snapshot_value(row.get('notes')),
-        'gps_source': _normalize_snapshot_value(
-            None if row.get('gps_source') is None else bool(row.get('gps_source'))
-        ),
-        'storage_path': None,
-        'original_filename': _normalize_snapshot_value(
-            Path(str(row.get('filepath') or '')).name or None
-        ),
-        'ai_crop_x1': _normalize_snapshot_value(row.get('ai_crop_x1')),
-        'ai_crop_y1': _normalize_snapshot_value(row.get('ai_crop_y1')),
-        'ai_crop_x2': _normalize_snapshot_value(row.get('ai_crop_x2')),
-        'ai_crop_y2': _normalize_snapshot_value(row.get('ai_crop_y2')),
-        'ai_crop_source_w': _normalize_snapshot_value(row.get('ai_crop_source_w')),
-        'ai_crop_source_h': _normalize_snapshot_value(row.get('ai_crop_source_h')),
-        'ai_crop_is_custom': _normalize_snapshot_value(
-            None if row.get('ai_crop_is_custom') is None else bool(row.get('ai_crop_is_custom'))
-        ),
-    }
-    return payload
-
-
-def _image_compare_key(image_row: dict | None) -> str:
-    row = dict(image_row or {})
-    cloud_id = str(row.get('id') or '').strip()
-    desktop_id = str(row.get('desktop_id') or '').strip()
-    filename = str(row.get('original_filename') or '').strip()
-    image_type = str(row.get('image_type') or '').strip()
-    if filename:
-        if cloud_id:
-            return f'cloud:{cloud_id}'
-        if desktop_id:
-            return f'desktop:{desktop_id}'
-        suffix = f':{image_type}' if image_type else ''
-        return f'name:{filename}{suffix}'
-    if cloud_id:
-        return f'cloud:{cloud_id}'
-    if desktop_id:
-        return f'desktop:{desktop_id}'
-    return json.dumps(row, ensure_ascii=True, sort_keys=True, separators=(',', ':'))
-
-
-def _image_identity_keys(image_row: dict | None) -> set[str]:
-    row = dict(image_row or {})
-    keys: set[str] = set()
-    cloud_id = str(row.get('id') or '').strip()
-    desktop_id = str(row.get('desktop_id') or '').strip()
-    if cloud_id:
-        keys.add(f'cloud:{cloud_id}')
-    if desktop_id:
-        keys.add(f'desktop:{desktop_id}')
-    return keys
-
-
-def _deleted_remote_image_identity_keys(remote_images: list[dict] | None) -> set[str]:
-    keys: set[str] = set()
-    for row in (remote_images or []):
-        if not str((row or {}).get('deleted_at') or '').strip():
-            continue
-        keys.update(_image_identity_keys(_remote_image_payload(row)))
-    return keys
-
-
-def _locally_tombstoned_snapshot_image_identity_keys(
-    baseline_images: list[dict] | None,
-) -> set[str]:
-    baseline_rows = [dict(row or {}) for row in (baseline_images or [])]
-    cloud_ids = [str(row.get('id') or '').strip() for row in baseline_rows]
-    tombstoned_cloud_ids = _local_tombstoned_cloud_image_ids(cloud_ids)
-    keys: set[str] = set()
-    for row in baseline_rows:
-        if str(row.get('id') or '').strip() in tombstoned_cloud_ids:
-            keys.update(_image_identity_keys(row))
-    return keys
 
 
 def _image_label(image_row: dict | None) -> str:
@@ -3206,24 +2387,6 @@ def _image_metadata_group_for_field(field: str) -> str:
     return _format_image_metadata_field_label(normalized)
 
 
-def _image_metadata_payload(image_row: dict | None) -> dict:
-    row = dict(image_row or {})
-    hidden_fields = {
-        'upload_mode',
-        'source_width',
-        'source_height',
-        'stored_width',
-        'stored_height',
-        'stored_bytes',
-    }
-    return {
-        field: row.get(field)
-        for field in _SNAPSHOT_IMG_FIELDS
-        if field not in {'id', 'desktop_id', 'sort_order', 'storage_path', 'original_filename'}
-        and field not in hidden_fields
-    }
-
-
 def _format_image_metadata_field_label(field: str) -> str:
     labels = {
         'captured_at': 'capture time',
@@ -3314,140 +2477,6 @@ def _normalize_observation_sync_field(field: str) -> str:
     return normalized
 
 
-def _format_observation_metadata_field_label(field: str) -> str:
-    labels = {
-        'date': 'date',
-        'genus': 'genus',
-        'species': 'species',
-        'common_name': 'common name',
-        'species_guess': 'species guess',
-        'uncertain': 'uncertain',
-        'unspontaneous': 'unspontaneous',
-        'determination_method': 'determination method',
-        'location': 'location',
-        'gps_latitude': 'latitude',
-        'gps_longitude': 'longitude',
-        'location_public': 'location public',
-        'is_draft': 'draft flag',
-        'location_precision': 'location precision',
-        'ai_selected_service': 'AI service',
-        'ai_selected_taxon_id': 'AI taxon id',
-        'ai_selected_scientific_name': 'AI scientific name',
-        'ai_selected_probability': 'AI probability',
-        'ai_selected_at': 'AI selected at',
-        'habitat': 'habitat',
-        'habitat_nin2_path': 'NIN2 path',
-        'habitat_substrate_path': 'substrate path',
-        'habitat_host_genus': 'host genus',
-        'habitat_host_species': 'host species',
-        'habitat_host_common_name': 'host common name',
-        'habitat_nin2_note': 'NIN2 note',
-        'habitat_substrate_note': 'substrate note',
-        'habitat_grows_on_note': 'grows-on note',
-        'notes': 'notes',
-        'open_comment': 'open comment',
-        'interesting_comment': 'interesting comment',
-        'publish_target': 'publish target',
-        'artsdata_id': 'Artsobs id',
-        'artportalen_id': 'Artportalen id',
-        'inaturalist_id': 'iNaturalist id',
-        'mushroomobserver_id': 'Mushroom Observer id',
-        'spore_data_visibility': 'spore visibility',
-        'visibility': 'visibility',
-        'sharing_scope': 'sharing scope',
-        'taxon_identity': 'taxon identity',
-    }
-    normalized = str(field or '').strip()
-    return labels.get(normalized, normalized.replace('_', ' '))
-
-
-def _analyze_observation_field_changes(local_obs: dict | None, remote_obs: dict | None, baseline_obs: dict | None) -> dict:
-    local_payload = _observation_compare_payload(local_obs, local=True)
-    remote_payload = _observation_compare_payload(remote_obs, local=False)
-    baseline_payload = _baseline_observation_compare_payload(baseline_obs)
-    remote_only_fields: list[str] = []
-    local_only_fields: list[str] = []
-    conflict_fields: list[str] = []
-    shared_same_fields: list[str] = []
-
-    for field in _SNAPSHOT_OBS_FIELDS:
-        if field in {'id', 'desktop_id'}:
-            continue
-        baseline_value = baseline_payload.get(field)
-        local_value = local_payload.get(field)
-        remote_value = remote_payload.get(field)
-        local_changed = not _observation_field_values_match(field, local_value, baseline_value)
-        remote_changed = not _observation_field_values_match(field, remote_value, baseline_value)
-        if local_changed and remote_changed:
-            if _observation_field_values_match(field, local_value, remote_value):
-                shared_same_fields.append(field)
-            else:
-                conflict_fields.append(field)
-        elif local_changed:
-            local_only_fields.append(field)
-        elif remote_changed:
-            remote_only_fields.append(field)
-
-    identity_change = _classify_identity_sync_change(
-        local_obs, remote_obs, baseline_obs,
-        identification_locally_owned=bool(
-            {'genus', 'species'} & (set(local_only_fields) | set(conflict_fields))
-        ),
-    )
-    if identity_change == 'remote_only':
-        remote_only_fields.append(TAXON_IDENTITY_SYNC_FIELD)
-    elif identity_change == 'local_only':
-        local_only_fields.append(TAXON_IDENTITY_SYNC_FIELD)
-    elif identity_change == 'conflict':
-        conflict_fields.append(TAXON_IDENTITY_SYNC_FIELD)
-    elif identity_change == 'shared':
-        shared_same_fields.append(TAXON_IDENTITY_SYNC_FIELD)
-
-    return {
-        'local_payload': local_payload,
-        'remote_payload': remote_payload,
-        'baseline_payload': baseline_payload,
-        'local_only_fields': local_only_fields,
-        'remote_only_fields': remote_only_fields,
-        'conflict_fields': conflict_fields,
-        'shared_same_fields': shared_same_fields,
-    }
-
-
-def _analyze_image_changes(
-    current_images: list[dict],
-    baseline_images: list[dict],
-    *,
-    ignored_keys: set[str] | None = None,
-) -> dict:
-    current = [dict(row or {}) for row in (current_images or [])]
-    baseline = [dict(row or {}) for row in (baseline_images or [])]
-    ignored = {str(key or '').strip() for key in (ignored_keys or set()) if str(key or '').strip()}
-    current_keys = [_image_compare_key(row) for row in current]
-    baseline_keys = [_image_compare_key(row) for row in baseline]
-    current_map = {_image_compare_key(row): row for row in current}
-    baseline_map = {_image_compare_key(row): row for row in baseline}
-
-    added_keys = [key for key in current_keys if key not in baseline_map and key not in ignored]
-    removed_keys = [key for key in baseline_keys if key not in current_map and key not in ignored]
-    shared_keys = [key for key in current_keys if key in baseline_map and key not in ignored]
-    metadata_changed_keys = [
-        key
-        for key in shared_keys
-        if _image_metadata_payload(current_map[key]) != _image_metadata_payload(baseline_map[key])
-    ]
-
-    return {
-        'added_keys': added_keys,
-        'removed_keys': removed_keys,
-        'metadata_changed_keys': metadata_changed_keys,
-        'order_changed': False,
-        'added': [current_map[key] for key in added_keys],
-        'removed': [baseline_map[key] for key in removed_keys],
-        'changed': bool(added_keys or removed_keys or metadata_changed_keys),
-    }
-
-
 def _non_blocking_local_only_fields(field_changes: dict) -> frozenset[str]:
     if 'local_payload' not in field_changes:
         return _PULL_NON_BLOCKING_LOCAL_ONLY_FIELDS
@@ -3490,187 +2519,6 @@ def _format_review_needed_error(local_id: int, cloud_id: str, reasons: list[str]
 # once the divergence is gone (either the user resolved it or an incoming pull
 # reconciled the state).
 CONFLICT_REVIEW_PENDING_MARKER = 'conflict_review_pending'
-
-
-@dataclass(frozen=True)
-class ObservationPushConflictReport:
-    """Structured result from :func:`_analyze_observation_push_conflicts`.
-
-    Mirrors the categories pull_all already reports as review-needed so push
-    never silently overwrites a remote divergence.
-    """
-
-    has_conflict: bool
-    categories: list[str]
-    field_labels: list[str]
-    measurement_conflict_ids: list[int]
-    image_conflict_keys: list[str]
-    remote_removed_image_keys: list[str]
-
-
-def _analyze_observation_push_conflicts(
-    *,
-    local_obs: dict | None,
-    local_images: list[dict] | None,
-    local_measurements_by_cloud_id: dict[str, dict] | None,
-    remote_obs: dict | None,
-    remote_images: list[dict] | None,
-    remote_measurements: list[dict] | None,
-    baseline_snapshot: dict | None,
-) -> ObservationPushConflictReport:
-    """Detect per-observation conflicts before push_all mutates cloud state.
-
-    The three input sides — local rows, fetched remote rows, and the stored
-    sync baseline (``_load_cloud_observation_snapshot`` / parsed) — are the
-    same primitives pull_all uses. Returned categories align with the review
-    reasons pull_all emits so a single review dialog covers both directions:
-
-    * ``observation`` — obs metadata field conflict
-      (via :func:`_analyze_observation_field_changes` ``conflict_fields``).
-    * ``images`` — a shared image was edited on both sides.
-    * ``measurements`` — a shared spore measurement differs local vs remote
-      (mirrors :func:`_import_remote_measurements_for_observation` ``conflict``).
-    * ``remote_removed_media`` — cloud removed an image still present locally
-      (mirrors pull_all's ``removed_keys`` review-needed guard).
-    """
-    baseline_snapshot = dict(baseline_snapshot or {})
-    baseline_obs = _baseline_observation_compare_payload(
-        baseline_snapshot.get('observation') or {}
-    )
-    baseline_images = [dict(row or {}) for row in (baseline_snapshot.get('images') or [])]
-
-    # ---- Observation metadata: three-way conflict fields ----
-    field_changes = _analyze_observation_field_changes(local_obs, remote_obs, baseline_obs)
-    conflict_fields = list(field_changes.get('conflict_fields') or [])
-    if local_measurements_by_cloud_id or remote_measurements:
-        # Derived statistics follow the selected scientific measurement set;
-        # they are never an independent winner-takes-all field conflict.
-        conflict_fields = [field for field in conflict_fields if field != 'spore_statistics']
-    field_labels = [
-        _format_observation_metadata_field_label(field)
-        for field in sorted(set(conflict_fields))
-    ]
-
-    # ---- Image removals: mirror pull_all "cloud removed local image files" ----
-    remote_images = list(remote_images or [])
-    remote_image_payloads = [_remote_image_payload(img) for img in remote_images]
-    tombstoned_remote_image_keys = (
-        _deleted_remote_image_identity_keys(remote_images)
-        | _locally_tombstoned_snapshot_image_identity_keys(baseline_images)
-    )
-    remote_image_changes = _analyze_image_changes(
-        remote_image_payloads,
-        baseline_images,
-        ignored_keys=tombstoned_remote_image_keys,
-    )
-    remote_removed_image_keys = list(remote_image_changes.get('removed_keys') or [])
-
-    # ---- Image metadata: three-way conflict on shared cloud image rows ----
-    # Normalize each side to a canonical snapshot payload before comparing so
-    # that representation differences (e.g. cloud lowercase sample_source vs
-    # desktop Title_Case, calibration_id vs calibration_uuid, naive local
-    # captured_at vs UTC timestamptz) do not produce false conflicts.
-    baseline_by_cloud_id = {
-        str(row.get('id') or '').strip(): _remote_image_payload(row)
-        for row in baseline_images
-        if str(row.get('id') or '').strip()
-    }
-    remote_by_cloud_id = {
-        str(row.get('id') or '').strip(): row
-        for row in remote_image_payloads
-        if str(row.get('id') or '').strip()
-    }
-    local_by_cloud_id = {
-        str((img or {}).get('cloud_id') or '').strip(): _local_image_snapshot_payload(dict(img or {}))
-        for img in (local_images or [])
-        if str((img or {}).get('cloud_id') or '').strip()
-    }
-    image_conflict_keys: list[str] = []
-    shared_cloud_ids = sorted(
-        set(baseline_by_cloud_id) & set(remote_by_cloud_id) & set(local_by_cloud_id)
-    )
-    for cloud_image_id in shared_cloud_ids:
-        baseline_meta = _image_metadata_payload(baseline_by_cloud_id[cloud_image_id])
-        remote_meta = _image_metadata_payload(remote_by_cloud_id[cloud_image_id])
-        local_meta = _image_metadata_payload(local_by_cloud_id[cloud_image_id])
-        local_changed = local_meta != baseline_meta
-        remote_changed = remote_meta != baseline_meta
-        if local_changed and remote_changed and local_meta != remote_meta:
-            image_conflict_keys.append(f'cloud:{cloud_image_id}')
-
-    # ---- Measurements: mirror pull-side conflict detection (no apply) ----
-    remote_measurements = list(remote_measurements or [])
-    remote_image_lookup = {
-        str(row.get('id') or '').strip(): row
-        for row in remote_images
-        if str(row.get('id') or '').strip()
-    }
-    tombstoned_remote_image_ids = _local_tombstoned_cloud_image_ids(list(remote_image_lookup.keys()))
-    local_measurements_by_cloud_id = dict(local_measurements_by_cloud_id or {})
-
-    measurement_conflict_ids: list[int] = []
-    seen_local_ids: set[int] = set()
-    for remote_row in remote_measurements:
-        remote_measurement_id = str(remote_row.get('id') or '').strip()
-        if not remote_measurement_id:
-            continue
-        remote_image_id = str(remote_row.get('image_id') or '').strip()
-        remote_image = remote_image_lookup.get(remote_image_id)
-        if not remote_image:
-            continue
-        if not _is_spore_measurement_source_image(remote_image):
-            continue
-        if remote_image_id in tombstoned_remote_image_ids:
-            continue
-        local_measurement = local_measurements_by_cloud_id.get(remote_measurement_id)
-        if local_measurement is None:
-            continue
-        if not _measurement_payloads_match(
-            local_measurement,
-            remote_row,
-            cloud_image_id=remote_image_id,
-        ):
-            local_measurement_id = _safe_int(local_measurement.get('id'))
-            if local_measurement_id > 0 and local_measurement_id not in seen_local_ids:
-                seen_local_ids.add(local_measurement_id)
-                measurement_conflict_ids.append(local_measurement_id)
-
-    categories: list[str] = []
-    if conflict_fields:
-        categories.append('observation')
-    if image_conflict_keys:
-        categories.append('images')
-    if measurement_conflict_ids:
-        categories.append('measurements')
-    if remote_removed_image_keys:
-        categories.append('remote_removed_media')
-
-    return ObservationPushConflictReport(
-        has_conflict=bool(categories),
-        categories=categories,
-        field_labels=field_labels,
-        measurement_conflict_ids=measurement_conflict_ids,
-        image_conflict_keys=image_conflict_keys,
-        remote_removed_image_keys=remote_removed_image_keys,
-    )
-
-
-def _format_push_conflict_review_reasons(report: ObservationPushConflictReport) -> list[str]:
-    """Human-readable review reasons corresponding to conflict categories."""
-    reasons: list[str] = []
-    if report.field_labels:
-        reasons.append(', '.join(report.field_labels))
-    if report.image_conflict_keys:
-        reasons.append(
-            f'images changed on both sides ({len(report.image_conflict_keys)})'
-        )
-    if report.measurement_conflict_ids:
-        reasons.append(
-            f'measurements changed on both sides ({len(report.measurement_conflict_ids)})'
-        )
-    if report.remote_removed_image_keys:
-        reasons.append('cloud removed local image files')
-    return reasons
 
 
 def _set_observation_conflict_review_pending(local_id: int) -> None:
@@ -3716,58 +2564,6 @@ def _table_columns_for_conflict_marker(cursor) -> set[str]:
         return {str(row[1] or '') for row in cursor.fetchall()}
     except sqlite3.OperationalError:
         return set()
-
-
-def _local_has_real_changes_since_snapshot(local_obs: dict, cloud_id: str | None = None) -> bool:
-    cloud_value = str(cloud_id or local_obs.get('cloud_id') or '').strip()
-    if not cloud_value:
-        return True
-    snapshot = _parse_cloud_observation_snapshot(_load_cloud_observation_snapshot(cloud_value))
-    baseline_obs = _baseline_observation_compare_payload(snapshot.get('observation') or {})
-    if not baseline_obs:
-        return True
-    local_obs = _guard_local_location_precision(local_obs, baseline_obs)
-    local_payload = _observation_compare_payload(local_obs, local=True)
-    for field in _SNAPSHOT_OBS_FIELDS:
-        if field in {'id', 'desktop_id'}:
-            continue
-        if not _observation_field_values_match(field, local_payload.get(field), baseline_obs.get(field)):
-            return True
-    # A proven identity is the one local identity push can assert (through
-    # the RPC); if the baseline does not record it, it still has to go out.
-    if TaxonIdentity.from_row(local_obs).is_proven_sporely:
-        baseline_identity = _baseline_identity_key(baseline_obs)
-        if (
-            baseline_identity is _IDENTITY_BASELINE_UNKNOWN
-            or baseline_identity != local_payload.get(TAXON_IDENTITY_SYNC_FIELD)
-        ):
-            return True
-
-    local_id = _safe_int(local_obs.get('id'))
-    if local_id <= 0:
-        return False
-    stored_media_sig = _load_local_cloud_media_signature(local_id)
-    if not stored_media_sig:
-        return True
-    current_media_sig = _local_cloud_media_signature(local_id)
-    if not current_media_sig:
-        return False
-    if not _local_media_signatures_match(stored_media_sig, current_media_sig):
-        return True
-    _store_local_media_signature_if_equivalent(local_id, stored_media_sig, current_media_sig)
-
-    try:
-        _, local_measurements_by_id = _load_local_measurement_lookup(local_id)
-    except Exception:
-        return True
-    local_measurement_payloads = [
-        _local_measurement_snapshot_payload(row)
-        for row in (local_measurements_by_id.values() if local_measurements_by_id else [])
-    ]
-    baseline_measurements = [dict(row or {}) for row in (snapshot.get('measurements') or [])]
-    if _analyze_measurement_changes(local_measurement_payloads, baseline_measurements).get('changed'):
-        return True
-    return False
 
 
 def _clear_observation_dirty_if_no_real_changes(local_id: int, cloud_id: str) -> bool:
@@ -3820,10 +2616,6 @@ def _cloud_media_signature() -> str:
     return json.dumps(snapshot, ensure_ascii=True, sort_keys=True, separators=(',', ':'))
 
 
-def _cloud_observation_snapshot_key(cloud_id: str) -> str:
-    return f"{_SETTING_CLOUD_OBS_SNAPSHOT_PREFIX}{str(cloud_id or '').strip()}"
-
-
 # RETIRED (2026-08-19 mass microscope upload): the observation-level
 # initialization sentinel. Once set, images imported later never received a
 # default and — being absent from the excluded set — looked explicitly
@@ -3831,46 +2623,6 @@ def _cloud_observation_snapshot_key(cloud_id: str) -> str:
 # databases are inert. Storage intent initialization is now recorded per
 # image in the ledger key below.
 _CLOUD_IMAGE_STORAGE_LEGACY_SENTINEL_PREFIX = "sporely_cloud_image_storage_initialized_"
-
-
-def _normalize_snapshot_value(value):
-    if isinstance(value, bool):
-        return bool(value)
-    if value is None:
-        return None
-    if isinstance(value, (int, float)):
-        return value
-    if isinstance(value, dict):
-        return {str(k): _normalize_snapshot_value(v) for k, v in sorted(value.items(), key=lambda item: str(item[0]))}
-    if isinstance(value, (list, tuple)):
-        return [_normalize_snapshot_value(v) for v in value]
-    return str(value)
-
-
-def _normalize_image_captured_at_for_cloud(value, *, local: bool) -> str | None:
-    """Return one image capture timestamp as a canonical UTC ISO value.
-
-    SQLite stores capture timestamps as local wall-clock text. Postgres
-    ``timestamptz`` values are absolute instants. Naive local values therefore
-    use the host timezone (including historical DST), while a defensive naive
-    cloud value is interpreted as UTC. A missing/invalid value stays missing;
-    ``created_at`` is never used as a substitute.
-    """
-    if value is None:
-        return None
-    if isinstance(value, datetime):
-        parsed = value
-    else:
-        text = str(value or '').strip()
-        if not text:
-            return None
-        try:
-            parsed = datetime.fromisoformat(text.replace('Z', '+00:00'))
-        except Exception:
-            return None
-    if parsed.tzinfo is None:
-        parsed = parsed.astimezone() if local else parsed.replace(tzinfo=timezone.utc)
-    return parsed.astimezone(timezone.utc).isoformat()
 
 
 def _cloud_image_captured_at_to_local(value) -> str | None:
@@ -3894,17 +2646,6 @@ def should_push_local_image_to_cloud(image_row: dict | None) -> bool:
         # cloud copy can be preserved or restored.
         return True
     return True
-
-
-def _is_spore_measurement_source_image(image_row: dict | None) -> bool:
-    row = dict(image_row or {})
-    if not should_pull_cloud_image_to_desktop(row):
-        return False
-    if str(row.get('image_type') or '').strip().lower() == 'microscope':
-        return True
-    if _normalize_cloud_media_key(row.get('storage_path')):
-        return True
-    return _resolve_existing_local_image_asset_path(str(row.get('filepath') or '')) is not None
 
 
 def _update_image_columns_without_touching_observation(
@@ -3992,161 +2733,6 @@ def _normalize_cloud_pulled_image_order(local_id: int) -> None:
 
     for index, image_id in enumerate(ordered_ids):
         _update_image_columns_without_touching_observation(int(image_id), {'sort_order': index})
-
-
-_CLOUD_OBSERVATION_SNAPSHOT_SCHEMA_VERSION = 2
-
-
-def _cloud_observation_snapshot(
-    remote: dict,
-    remote_images: list[dict] | None,
-    remote_measurements: list[dict] | None = None,
-    *,
-    include_images: bool = True,
-    include_measurements: bool = True,
-    accepted_asymmetry: dict | None = None,
-) -> str:
-    """Deterministic snapshot payload.
-
-    Turn-B B3: adds an optional ``accepted_asymmetry`` section that records
-    intentionally one-sided items the user chose to keep.  Older callers that
-    do not pass it still produce a schema-2 payload with an empty asymmetry
-    section (kept backward-compatible on the read side by
-    ``_parse_cloud_observation_snapshot``).
-    """
-    obs_part = {
-        field: _normalize_snapshot_value((remote or {}).get(field))
-        for field in _SNAPSHOT_OBS_FIELDS
-    }
-    identity_claim = _remote_identity_claim(remote)
-    if identity_claim is not None:
-        obs_part[TAXON_IDENTITY_SYNC_FIELD] = identity_claim.key
-    payload: dict = {
-        'schema_version': _CLOUD_OBSERVATION_SNAPSHOT_SCHEMA_VERSION,
-        'observation': obs_part,
-    }
-    if include_images:
-        images_part = []
-        filtered_images = [
-            dict(row or {})
-            for row in (remote_images or [])
-            if should_pull_cloud_image_to_desktop(row)
-        ]
-        for image in sorted(filtered_images, key=lambda row: (int(row.get('sort_order') or 0), str(row.get('id') or ''))):
-            image_payload = {
-                field: _normalize_snapshot_value(image.get(field))
-                for field in _SNAPSHOT_IMG_FIELDS
-            }
-            image_payload['captured_at'] = _normalize_image_captured_at_for_cloud(
-                image.get('captured_at'), local=False
-            )
-            for field in _SNAPSHOT_IMG_PASSIVE_FIELDS:
-                passive_value = _normalize_cloud_media_key(image.get(field))
-                if passive_value:
-                    image_payload[field] = _normalize_snapshot_value(passive_value)
-            images_part.append(image_payload)
-        payload['images'] = images_part
-    if include_measurements:
-        measurements_part = []
-        filtered_measurements = [dict(row or {}) for row in (remote_measurements or [])]
-        for measurement in sorted(
-            filtered_measurements,
-            key=lambda row: (
-                str(row.get('image_id') or ''),
-                _safe_int(row.get('desktop_id')),
-                str(row.get('id') or ''),
-            ),
-        ):
-            measurements_part.append(
-                {
-                    field: _normalize_snapshot_value(measurement.get(field))
-                    for field in _SNAPSHOT_MEAS_FIELDS
-                }
-            )
-        payload['measurements'] = measurements_part
-    # ── Accepted-asymmetry section ────────────────────────────────────────
-    # Only include the section when meaningful; older readers ignore it.
-    if accepted_asymmetry:
-        payload['accepted_asymmetry'] = _normalize_accepted_asymmetry_for_snapshot(
-            accepted_asymmetry
-        )
-    return json.dumps(payload, ensure_ascii=True, sort_keys=True, separators=(',', ':'))
-
-
-def _normalize_accepted_asymmetry_for_snapshot(raw: dict | None) -> dict:
-    """Canonicalize the accepted-asymmetry section for stable serialization.
-
-    Each collection is a list of entries; each entry always carries:
-
-    * ``side``: ``"local_only"`` or ``"cloud_only"``;
-    * ``kind``: ``"image"`` or ``"measurement"``;
-    * ``local_id`` and ``cloud_id`` (one of them will be null);
-    * ``owning_local_image_id`` / ``owning_cloud_image_id`` for measurements;
-    * ``fingerprint``: normalized content fingerprint at acceptance time;
-    * ``accepted_at``: ISO timestamp (diagnostic only; never a privacy path);
-    * ``choice``: ``"keep_local"`` or ``"keep_cloud"``.
-
-    No secrets, tokens, or filesystem paths are stored.
-    """
-    if not isinstance(raw, dict):
-        return {
-            'local_only_images': [],
-            'cloud_only_images': [],
-            'local_only_measurements': [],
-            'cloud_only_measurements': [],
-        }
-    result = {
-        'local_only_images': [],
-        'cloud_only_images': [],
-        'local_only_measurements': [],
-        'cloud_only_measurements': [],
-    }
-    for key in result.keys():
-        for entry in raw.get(key) or []:
-            if not isinstance(entry, dict):
-                continue
-            result[key].append(_normalize_accepted_asymmetry_entry(entry))
-        # Stable sort so snapshots round-trip byte-for-byte.
-        result[key].sort(key=lambda e: (
-            str(e.get('local_id') or ''),
-            str(e.get('cloud_id') or ''),
-        ))
-    return result
-
-
-def _normalize_accepted_asymmetry_entry(entry: dict) -> dict:
-    return {
-        'side': str(entry.get('side') or ''),
-        'kind': str(entry.get('kind') or ''),
-        'local_id': _safe_int(entry.get('local_id')) or None,
-        'cloud_id': str(entry.get('cloud_id') or '').strip() or None,
-        'owning_local_image_id': _safe_int(entry.get('owning_local_image_id')) or None,
-        'owning_cloud_image_id': str(entry.get('owning_cloud_image_id') or '').strip() or None,
-        'fingerprint': entry.get('fingerprint') if isinstance(entry.get('fingerprint'), dict) else {},
-        'accepted_at': str(entry.get('accepted_at') or '').strip() or None,
-        'choice': str(entry.get('choice') or '').strip() or None,
-    }
-
-
-def _load_cloud_observation_snapshot(cloud_id: str) -> str:
-    raw = str(SettingsDB.get_setting(_cloud_observation_snapshot_key(cloud_id), '') or '').strip()
-    if not raw:
-        return ''
-    parsed = _parse_cloud_observation_snapshot(raw)
-    if not parsed:
-        return raw
-    return json.dumps(parsed, ensure_ascii=True, sort_keys=True, separators=(',', ':'))
-
-
-def _store_cloud_observation_snapshot(cloud_id: str, snapshot: str) -> None:
-    if not str(cloud_id or '').strip():
-        return
-    normalized = str(snapshot or '').strip()
-    if normalized:
-        parsed = _parse_cloud_observation_snapshot(normalized)
-        if parsed:
-            normalized = json.dumps(parsed, ensure_ascii=True, sort_keys=True, separators=(',', ':'))
-    SettingsDB.set_setting(_cloud_observation_snapshot_key(cloud_id), normalized)
 
 
 def _reconcile_local_image_cloud_id(
@@ -4904,140 +3490,6 @@ def sync_all(
         except Exception:
             pass
 
-def _parsed_local_media_signature(signature: str | None) -> dict:
-    text = str(signature or '').strip()
-    if not text:
-        return {}
-    try:
-        payload = json.loads(text)
-    except Exception:
-        return {}
-    return payload if isinstance(payload, dict) else {}
-
-
-def _normalized_local_media_signature_payload(
-    payload: dict | None,
-    *,
-    include_measurements: bool = True,
-) -> dict:
-    normalized = dict(payload or {})
-    # These legacy fields affected external publishing or its selection UI,
-    # never the clean cloud bytes. Drop them so old stored signatures remain
-    # comparable without forcing a one-time WebP regeneration.
-    normalized.pop('cloud_media_signature', None)
-    normalized.pop('excluded_image_ids_raw', None)
-    normalized.pop('gallery_settings_raw', None)
-    images = []
-    for row in list(normalized.get('images') or []):
-        if not isinstance(row, dict):
-            continue
-        image_payload = dict(row)
-        image_payload.pop('sort_order', None)
-        for key in _LOCAL_MEDIA_SIGNATURE_OPTIONAL_IMAGE_KEYS:
-            image_payload.setdefault(key, None)
-        for path_key in ('filepath', 'original_filepath'):
-            path_payload = image_payload.get(path_key)
-            if isinstance(path_payload, dict):
-                normalized_path = dict(path_payload)
-                normalized_path.pop('mtime_ns', None)
-                image_payload[path_key] = normalized_path
-        images.append(image_payload)
-    normalized['images'] = sorted(
-        images,
-        key=lambda row: (
-            str(row.get('desktop_id') or ''),
-            str(row.get('id') or ''),
-            str(row.get('original_filename') or ''),
-            str(row.get('image_type') or ''),
-        ),
-    )
-    if not include_measurements:
-        normalized.pop('measurements', None)
-    return normalized
-
-
-def _local_media_signatures_match(
-    stored_signature: str | None,
-    current_signature: str | None,
-    *,
-    include_measurements: bool = True,
-) -> bool:
-    stored_text = str(stored_signature or '').strip()
-    current_text = str(current_signature or '').strip()
-    if not stored_text or not current_text:
-        return stored_text == current_text
-    if stored_text == current_text:
-        return True
-    stored_payload = _parsed_local_media_signature(stored_text)
-    current_payload = _parsed_local_media_signature(current_text)
-    if not stored_payload or not current_payload:
-        return False
-    return _normalized_local_media_signature_payload(
-        stored_payload,
-        include_measurements=include_measurements,
-    ) == _normalized_local_media_signature_payload(
-        current_payload,
-        include_measurements=include_measurements,
-    )
-
-
-def _store_local_media_signature_if_equivalent(
-    observation_id: int | str,
-    stored_signature: str | None,
-    current_signature: str | None,
-) -> None:
-    current_text = str(current_signature or '').strip()
-    if not current_text:
-        return
-    stored_text = str(stored_signature or '').strip()
-    if stored_text == current_text:
-        return
-    if _local_media_signatures_match(stored_text, current_text):
-        _store_local_cloud_media_signature(observation_id, current_text)
-
-
-def _clear_cloud_observation_snapshot(cloud_id: str) -> None:
-    if not str(cloud_id or '').strip():
-        return
-    SettingsDB.set_setting(_cloud_observation_snapshot_key(cloud_id), '')
-
-
-def _refresh_local_cloud_media_signature(observation_id: int | str) -> str:
-    signature = _local_cloud_media_signature(observation_id)
-    if str(signature or '').strip():
-        _store_local_cloud_media_signature(observation_id, signature)
-    return signature
-
-
-def _resolve_existing_local_image_asset_path(path_value: str | None) -> Path | None:
-    text = str(path_value or '').strip()
-    if not text:
-        return None
-    try:
-        raw_path = Path(text).expanduser()
-    except Exception:
-        return None
-
-    candidates: list[Path] = []
-    if raw_path.is_absolute():
-        candidates.append(raw_path)
-    else:
-        images_dir = get_images_dir()
-        if raw_path.parts and raw_path.parts[0] == images_dir.name:
-            candidates.append(images_dir.parent / raw_path)
-        candidates.append(images_dir / raw_path)
-        candidates.append(raw_path)
-
-    seen: set[str] = set()
-    for candidate in candidates:
-        key = str(candidate)
-        if key in seen:
-            continue
-        seen.add(key)
-        if _is_readable_local_file(candidate):
-            return candidate
-    return None
-
 
 def _detect_deleted_remote_observations(remote_obs: list[dict] | None) -> list[dict]:
     remote_ids = {
@@ -5079,774 +3531,6 @@ def _detect_deleted_remote_observations(remote_obs: list[dict] | None) -> list[d
             }
         )
     return deleted
-
-
-def _load_local_calibration_rows() -> list[dict]:
-    conn = get_connection()
-    conn.row_factory = sqlite3.Row
-    try:
-        rows = conn.execute(
-            """
-            SELECT *
-            FROM calibrations
-            ORDER BY objective_key ASC, calibration_date ASC, id ASC
-            """
-        ).fetchall()
-        return [dict(row) for row in rows]
-    except sqlite3.OperationalError:
-        return []
-    finally:
-        conn.close()
-
-
-def _load_local_calibration_by_uuid(calibration_uuid: str) -> dict | None:
-    uuid_value = _normalize_calibration_uuid(calibration_uuid)
-    if not uuid_value:
-        return None
-    conn = get_connection()
-    conn.row_factory = sqlite3.Row
-    try:
-        row = conn.execute(
-            "SELECT * FROM calibrations WHERE calibration_uuid = ? LIMIT 1",
-            (uuid_value,),
-        ).fetchone()
-        return dict(row) if row else None
-    except sqlite3.OperationalError:
-        return None
-    finally:
-        conn.close()
-
-
-def _local_calibration_lookup(rows: list[dict] | None = None) -> dict[str, dict]:
-    lookup: dict[str, dict] = {}
-    for row in (rows or _load_local_calibration_rows()):
-        uuid_value = _normalize_calibration_uuid((row or {}).get('calibration_uuid'))
-        if uuid_value:
-            lookup[uuid_value] = dict(row or {})
-    return lookup
-
-
-_LEGACY_SAMPLE_SOURCE_ON_SAMPLE_TYPE = {'Spore_print', 'spore_print', 'spore print', 'Print', 'print'}
-
-# Canonical CLOUD representation for `observation_images.sample_source`.
-# The sporely-web Stage 2A migration
-# (`20260715120000_add_sample_source_to_observation_images.sql`) picked
-# lowercase snake_case (`spore_print`, `hymenium`, `stipe`, `pileus`,
-# `context`, `other`) so public RPCs can `lower(btrim(...))`-normalize
-# variants safely. Desktop keeps Title_Case locally (matches every other
-# tag category) and translates at the boundary — see
-# `_desktop_to_cloud_sample_source` on push and
-# `_cloud_to_desktop_sample_source` on pull.
-_CLOUD_SAMPLE_SOURCE_VALUES = frozenset({
-    'spore_print', 'hymenium', 'stipe', 'pileus', 'context', 'other',
-})
-
-
-def _desktop_to_cloud_sample_source(value: object) -> str | None:
-    """Translate a desktop-canonical `sample_source` to the cloud canonical form.
-
-    Desktop stores Title_Case (`Spore_print`, `Hymenium`, ...). Cloud stores
-    lowercase snake_case. Legacy / compact variants (`Print`, `spore print`,
-    ...) are canonicalized via `DatabaseTerms.canonicalize_sample_source`
-    first, then lowercased. Returns None for empty / unknown values so the
-    push omits the field entirely rather than sending garbage.
-    """
-    from database.database_tags import DatabaseTerms
-
-    text = str(value or '').strip()
-    if not text:
-        return None
-    # The `Print` compact-pill label isn't in SAMPLE_SOURCE_DISPLAY but should
-    # still round-trip to `spore_print` on the cloud.
-    if text.lower() in {'print', 'spore print', 'spore_print', 'sporeprint'}:
-        return 'spore_print'
-    canonical = DatabaseTerms.canonicalize_sample_source(text)
-    if not canonical or canonical == 'Not_set':
-        return None
-    lowered = canonical.lower()
-    return lowered if lowered in _CLOUD_SAMPLE_SOURCE_VALUES else None
-
-
-def _cloud_to_desktop_sample_source(value: object) -> str | None:
-    """Translate a cloud `sample_source` value back to desktop Title_Case.
-
-    Accepts either the canonical lowercase snake_case (`spore_print`,
-    `hymenium`, ...) or the historical Title_Case some clients may still
-    emit (`Spore_print`, `Hymenium`, ...). Anything else — including 'Not_set'
-    and empty strings — returns None so the local column stays NULL.
-    """
-    from database.database_tags import DatabaseTerms
-
-    text = str(value or '').strip()
-    if not text:
-        return None
-    canonical = DatabaseTerms.canonicalize_sample_source(text)
-    if not canonical or canonical == 'Not_set':
-        return None
-    return canonical
-
-
-def _split_legacy_sample_type_into_source(
-    sample_type: object,
-    sample_source: object,
-) -> tuple[str | None, str | None]:
-    """Split a legacy `sample_type='Spore_print'` row into (condition, source).
-
-    Historically, `Spore_print` lived on `images.sample_type` alongside
-    Fresh/Dried. Stage 1 moved it to its own `sample_source` category. If the
-    local column still carries the legacy value (e.g. because a row hasn't
-    been touched since the migration), route it into `sample_source` for the
-    push payload and clear the condition side. Explicit sample_source always
-    wins — this only fills gaps.
-
-    Returns ``(condition, source)`` as canonical strings or None.
-    """
-    from database.database_tags import DatabaseTerms
-
-    raw_type = str(sample_type or '').strip()
-    raw_source = str(sample_source or '').strip()
-
-    normalized_type = DatabaseTerms.canonicalize_sample(raw_type) if raw_type else None
-    normalized_source = (
-        DatabaseTerms.canonicalize_sample_source(raw_source) if raw_source else None
-    )
-
-    if raw_type in _LEGACY_SAMPLE_SOURCE_ON_SAMPLE_TYPE and not normalized_source:
-        # Legacy value stuck on the wrong column — promote it. Any of the
-        # historical spore-print spellings (Spore_print, spore print, and the
-        # compact-pill label "Print") map to the canonical Spore_print value.
-        normalized_source = 'Spore_print'
-        normalized_type = None
-    elif raw_type in _LEGACY_SAMPLE_SOURCE_ON_SAMPLE_TYPE:
-        # Already have a source; just clear the legacy condition value.
-        normalized_type = None
-
-    if normalized_type == 'Not_set':
-        normalized_type = None
-    if normalized_source == 'Not_set':
-        normalized_source = None
-    return normalized_type, normalized_source
-
-
-def _apply_image_sample_fields_to_push_payload(
-    payload: dict,
-    image_row: dict,
-    *,
-    client: 'SporelyCloudClient | None' = None,
-    obs_cloud_id: str | None = None,
-) -> None:
-    """Normalize sample_type / sample_source on the outgoing image payload.
-
-    * Splits legacy `sample_type='Spore_print'` into `sample_source='Spore_print'`.
-    * Null-safe merge for `sample_source`: when the local column is empty we
-      OMIT `sample_source` from the payload entirely. On a PATCH, PostgREST
-      leaves the existing cloud value untouched; on a POST (new row), the
-      column defaults to NULL — same as sending NULL — so nothing is lost.
-      This avoids a network round-trip and prevents unrelated image-metadata
-      patches from wiping cloud values.
-    * Drops `sample_source` from the payload entirely when the cloud
-      deployment is older and doesn't have the column (schema-cache safety).
-      The capability probe only runs when we actually have a value to send —
-      keeps the no-op path (empty local sample_source) free of any network
-      round-trip.
-    """
-    condition, source = _split_legacy_sample_type_into_source(
-        image_row.get('sample_type'),
-        image_row.get('sample_source'),
-    )
-    payload['sample_type'] = condition
-
-    if not source:
-        # No value to push. Omit the field so PATCH leaves cloud alone; POST
-        # defaults NULL. No capability probe needed on this fast path — that
-        # keeps existing tests (which don't monkeypatch every probe) working.
-        payload.pop('sample_source', None)
-        return
-
-    # Boundary translation: desktop Title_Case → cloud lowercase snake_case.
-    cloud_source = _desktop_to_cloud_sample_source(source)
-    if not cloud_source:
-        payload.pop('sample_source', None)
-        return
-
-    if client is not None:
-        try:
-            supported = bool(client._observation_images_support_sample_source())
-        except Exception:
-            supported = False
-        if not supported:
-            payload.pop('sample_source', None)
-            return
-
-    payload['sample_source'] = cloud_source
-
-
-def _image_calibration_uuid(image_row: dict | None) -> str | None:
-    row = dict(image_row or {})
-    uuid_value = _normalize_calibration_uuid(row.get('calibration_uuid'))
-    if uuid_value:
-        return uuid_value
-
-    calibration_id = _safe_int(row.get('calibration_id'))
-    if calibration_id <= 0:
-        return None
-
-    try:
-        calibration = CalibrationDB.get_calibration(calibration_id)
-    except Exception:
-        return None
-    if not calibration:
-        return None
-    return _normalize_calibration_uuid(calibration.get('calibration_uuid'))
-
-
-def _local_calibration_id_for_image(image_row: dict | None) -> int | None:
-    calibration_uuid = _image_calibration_uuid(image_row)
-    if not calibration_uuid:
-        return None
-
-    calibration = _load_local_calibration_by_uuid(calibration_uuid)
-    if not calibration:
-        return None
-
-    calibration_id = _safe_int(calibration.get('id'))
-    return calibration_id if calibration_id > 0 else None
-
-
-def _reconcile_local_image_calibration_links() -> int:
-    """Backfill local image calibration_id values from stored cloud snapshots."""
-    phase_start = _cloud_sync_perf_counter()
-    snapshot_count = 0
-    image_count = 0
-    calibration_count = 0
-    thread_name = threading.current_thread().name
-    execution_context = (
-        'ui_thread' if threading.current_thread() is threading.main_thread() else 'worker_thread'
-    )
-    print(
-        f"[cloud_sync] calibration image linking: start "
-        f"thread={thread_name} execution_context={execution_context}",
-        flush=True,
-    )
-    conn = get_connection()
-    conn.row_factory = sqlite3.Row
-    try:
-        cursor = conn.cursor()
-        try:
-            snapshot_rows = cursor.execute(
-                'SELECT key, value FROM settings WHERE key LIKE ?',
-                (f'{_SETTING_CLOUD_OBS_SNAPSHOT_PREFIX}%',),
-            ).fetchall()
-        except sqlite3.OperationalError:
-            return 0
-        if not snapshot_rows:
-            return 0
-        snapshot_count = len(snapshot_rows)
-
-        calibration_lookup = _local_calibration_lookup()
-        calibration_count = len(calibration_lookup)
-        try:
-            local_image_rows = cursor.execute(
-                'SELECT id, cloud_id, calibration_id FROM images WHERE cloud_id IS NOT NULL'
-            ).fetchall()
-        except sqlite3.OperationalError:
-            return 0
-
-        local_images_by_cloud_id = {
-            str(row['cloud_id']).strip(): dict(row)
-            for row in local_image_rows
-            if str(row['cloud_id']).strip()
-        }
-        image_count = len(local_images_by_cloud_id)
-        updates: list[tuple[int, int]] = []
-
-        for snapshot_row in snapshot_rows:
-            snapshot = _parse_cloud_observation_snapshot(snapshot_row['value'])
-            for remote_image in snapshot.get('images') or []:
-                calibration_uuid = _normalize_calibration_uuid(remote_image.get('calibration_uuid'))
-                if not calibration_uuid:
-                    continue
-                calibration_row = calibration_lookup.get(calibration_uuid)
-                if not calibration_row:
-                    continue
-                local_calibration_id = _safe_int(calibration_row.get('id'))
-                if local_calibration_id <= 0:
-                    continue
-
-                cloud_image_id = str(remote_image.get('id') or '').strip()
-                if not cloud_image_id:
-                    continue
-                local_image_row = local_images_by_cloud_id.get(cloud_image_id)
-                if not local_image_row:
-                    continue
-                current_calibration_id = _safe_int(local_image_row.get('calibration_id'))
-                if current_calibration_id == local_calibration_id:
-                    continue
-                updates.append((local_calibration_id, _safe_int(local_image_row.get('id'))))
-
-        if not updates:
-            return 0
-
-        cursor.executemany(
-            'UPDATE images SET calibration_id = ? WHERE id = ?',
-            updates,
-        )
-        conn.commit()
-        return len(updates)
-    except sqlite3.OperationalError:
-        return 0
-    finally:
-        conn.close()
-        print(
-            f"[cloud_sync] calibration image linking: complete "
-            f"snapshots={snapshot_count} images={image_count} "
-            f"calibrations={calibration_count} duration="
-            f"{(_cloud_sync_perf_counter() - phase_start) * 1000:.0f}ms "
-            f"thread={thread_name} execution_context={execution_context}",
-            flush=True,
-        )
-
-
-def _calibration_sync_warning(direction: str, local_row: dict | None, remote_row: dict | None, fields: list[str]) -> str:
-    calibration_uuid = _normalize_calibration_uuid((local_row or remote_row or {}).get('calibration_uuid')) or '?'
-    label = _calibration_display_name(local_row or remote_row)
-    field_text = ', '.join(fields[:6]) if fields else 'metadata'
-    return (
-        f'calibration {calibration_uuid}: skipped {direction} for {label} '
-        f'because the same UUID has conflicting metadata ({field_text})'
-    )
-
-
-def push_calibrations(
-    client: SporelyCloudClient,
-    progress_cb: ProgressCallback | None = None,
-    progress_state: dict | None = None,
-    remote_calibrations: list[dict] | None = None,
-) -> dict:
-    """Push calibration metadata rows that exist only on the desktop."""
-    phase_start = _cloud_sync_perf_counter()
-    summary = _cloud_sync_current_summary()
-    remote_rows = [dict(row or {}) for row in (remote_calibrations or client.list_remote_calibrations())]
-    remote_map = {
-        _normalize_calibration_uuid(row.get('calibration_uuid')): row
-        for row in remote_rows
-        if _normalize_calibration_uuid(row.get('calibration_uuid'))
-    }
-    local_rows = _load_local_calibration_rows()
-    total = len(local_rows)
-    pushed = 0
-    matched_noop = 0
-    conflicts = 0
-    remote_lookups = 0
-    errors: list[str] = []
-    progress_state = progress_state if isinstance(progress_state, dict) else {}
-    _extend_progress_total(progress_state, total)
-    reference_image_uploader = getattr(client, 'push_calibration_reference_image', None)
-    print(
-        f"[cloud_sync] calibration push: start (local={total}, remote={len(remote_rows)})",
-        flush=True,
-    )
-    if total:
-        _emit_progress(progress_cb, "Checking local calibrations…", progress_state)
-
-    for index, local_row in enumerate(local_rows, start=1):
-        step_start = _cloud_sync_perf_counter()
-        step_kind = 'metadata'
-        calibration_uuid = _normalize_calibration_uuid(local_row.get('calibration_uuid'))
-        label = _calibration_display_name(local_row)
-        _emit_progress(
-            progress_cb,
-            f"Syncing calibration {index}/{max(1, total)}: {label}…",
-            progress_state,
-        )
-        try:
-            if not calibration_uuid:
-                errors.append('calibration ?: skipped push because calibration_uuid is missing')
-                continue
-
-            remote_row = remote_map.get(calibration_uuid)
-            if remote_row is not None:
-                if not _calibration_payloads_match(local_row, remote_row):
-                    conflicts += 1
-                    errors.append(_calibration_sync_warning('push', local_row, remote_row, _calibration_diff_fields(local_row, remote_row)))
-                    continue
-                matched_noop += 1
-                if callable(reference_image_uploader):
-                    step_kind = 'reference_image'
-                    warning = reference_image_uploader(
-                        local_row,
-                        cloud_row_id=str(remote_row.get('id') or '').strip() or None,
-                        remote_row=remote_row,
-                    )
-                    if warning:
-                        errors.append(warning)
-                continue
-
-            # Not in the freshly-listed remote set: double-check the server
-            # before inserting so a row created since the list (e.g. another
-            # device) is not duplicated. This is an extra remote call per
-            # not-yet-synced calibration; tracked so an N+1 shows up in logs.
-            step_kind = 'remote_lookup'
-            remote_lookups += 1
-            current_remote = client.find_remote_calibration(calibration_uuid)
-            if current_remote is not None:
-                if _calibration_payloads_match(local_row, current_remote):
-                    matched_noop += 1
-                    if callable(reference_image_uploader):
-                        step_kind = 'reference_image'
-                        warning = reference_image_uploader(
-                            local_row,
-                            cloud_row_id=str(current_remote.get('id') or '').strip() or None,
-                            remote_row=current_remote,
-                        )
-                        if warning:
-                            errors.append(warning)
-                    continue
-                conflicts += 1
-                errors.append(_calibration_sync_warning('push', local_row, current_remote, _calibration_diff_fields(local_row, current_remote)))
-                continue
-
-            step_kind = 'metadata_insert'
-            cloud_row_id = client.push_calibration_metadata(local_row)
-            pushed += 1
-            if callable(reference_image_uploader):
-                step_kind = 'reference_image'
-                warning = reference_image_uploader(
-                    local_row,
-                    cloud_row_id=cloud_row_id,
-                    remote_row={'id': cloud_row_id, 'image_storage_path': None},
-                )
-                if warning:
-                    errors.append(warning)
-        except CloudSyncError as exc:
-            if is_cloud_auth_error(exc) or is_cloud_temporary_unavailable_error(exc):
-                raise
-            errors.append(f'calibration {calibration_uuid or "?"}: {exc}')
-        except Exception as exc:
-            if is_cloud_auth_error(exc) or is_cloud_temporary_unavailable_error(exc):
-                raise
-            errors.append(f'calibration {calibration_uuid or "?"}: {exc}')
-        finally:
-            step_elapsed = _cloud_sync_perf_counter() - step_start
-            if step_elapsed >= _CLOUD_SYNC_SLOW_STEP_SECONDS:
-                print(
-                    f"[cloud_sync] calibration push: slow step "
-                    f"calibration {index}/{max(1, total)} ({label}) "
-                    f"took {step_elapsed * 1000:.0f}ms during {step_kind}",
-                    flush=True,
-                )
-            _advance_progress(progress_state, 1)
-
-    _increment_sync_summary(summary, 'calibrations_pushed', pushed)
-    _increment_sync_summary(summary, 'calibrations_skipped_noop', matched_noop)
-    _increment_sync_summary(summary, 'calibrations_conflicts', conflicts)
-    _increment_sync_summary(summary, 'calibration_remote_lookups', remote_lookups)
-    print(
-        f"[cloud_sync] calibration push: complete pushed={pushed} matched_noop={matched_noop} "
-        f"conflicts={conflicts} remote_lookups={remote_lookups} errors={len(errors)} "
-        f"duration={(_cloud_sync_perf_counter() - phase_start) * 1000:.0f}ms",
-        flush=True,
-    )
-    return {
-        'pushed': pushed,
-        'total': total,
-        'matched_noop': matched_noop,
-        'conflicts': conflicts,
-        'remote_lookups': remote_lookups,
-        'errors': errors,
-    }
-
-
-def pull_calibrations(
-    client: SporelyCloudClient,
-    progress_cb: ProgressCallback | None = None,
-    progress_state: dict | None = None,
-    remote_calibrations: list[dict] | None = None,
-) -> dict:
-    """Pull cloud calibration metadata into local rows keyed by UUID."""
-    phase_start = _cloud_sync_perf_counter()
-    summary = _cloud_sync_current_summary()
-    remote_rows = [dict(row or {}) for row in (remote_calibrations or client.list_remote_calibrations())]
-    local_rows = _load_local_calibration_rows()
-    local_map = _local_calibration_lookup(local_rows)
-    total = len(remote_rows)
-    pulled = 0
-    matched_noop = 0
-    conflicts = 0
-    errors: list[str] = []
-    progress_state = progress_state if isinstance(progress_state, dict) else {}
-    _extend_progress_total(progress_state, total)
-    print(
-        f"[cloud_sync] calibration pull: start (remote={total}, local={len(local_rows)})",
-        flush=True,
-    )
-
-    remote_rows_sorted = sorted(
-        remote_rows,
-        key=lambda row: (
-            _normalize_calibration_bool(row.get('is_active')),
-            _normalize_calibration_text(row.get('objective_key')) or '',
-            _normalize_calibration_date(row.get('calibration_date')) or '',
-            str(row.get('id') or ''),
-        ),
-    )
-
-    for index, remote_row in enumerate(remote_rows_sorted, start=1):
-        step_start = _cloud_sync_perf_counter()
-        calibration_uuid = _normalize_calibration_uuid(remote_row.get('calibration_uuid'))
-        label = _calibration_display_name(remote_row)
-        _emit_progress(
-            progress_cb,
-            f"Checking calibration {index}/{max(1, total)}: {label}…",
-            progress_state,
-        )
-        try:
-            if not calibration_uuid:
-                errors.append('calibration ?: skipped pull because calibration_uuid is missing')
-                continue
-
-            local_row = local_map.get(calibration_uuid)
-            if local_row is not None:
-                if not _calibration_payloads_match(local_row, remote_row):
-                    conflicts += 1
-                    errors.append(_calibration_sync_warning('pull', local_row, remote_row, _calibration_diff_fields(local_row, remote_row)))
-                else:
-                    matched_noop += 1
-                continue
-
-            try:
-                CalibrationDB.add_calibration(**_calibration_insert_kwargs(remote_row))
-                pulled += 1
-                local_map[calibration_uuid] = _load_local_calibration_by_uuid(calibration_uuid) or dict(remote_row)
-            except sqlite3.IntegrityError:
-                current_local = _load_local_calibration_by_uuid(calibration_uuid)
-                if current_local and _calibration_payloads_match(current_local, remote_row):
-                    matched_noop += 1
-                    local_map[calibration_uuid] = current_local
-                    continue
-                conflicts += 1
-                errors.append(_calibration_sync_warning('pull', current_local or remote_row, remote_row, _calibration_diff_fields(current_local or {}, remote_row)))
-            except Exception as exc:
-                errors.append(f'calibration {calibration_uuid}: {exc}')
-        except CloudSyncError as exc:
-            if is_cloud_auth_error(exc) or is_cloud_temporary_unavailable_error(exc):
-                raise
-            errors.append(f'calibration {calibration_uuid or "?"}: {exc}')
-        except Exception as exc:
-            if is_cloud_auth_error(exc) or is_cloud_temporary_unavailable_error(exc):
-                raise
-            errors.append(f'calibration {calibration_uuid or "?"}: {exc}')
-        finally:
-            step_elapsed = _cloud_sync_perf_counter() - step_start
-            if step_elapsed >= _CLOUD_SYNC_SLOW_STEP_SECONDS:
-                print(
-                    f"[cloud_sync] calibration pull: slow step "
-                    f"calibration {index}/{max(1, total)} ({label}) took {step_elapsed * 1000:.0f}ms",
-                    flush=True,
-                )
-            _advance_progress(progress_state, 1)
-
-    reconcile_start = _cloud_sync_perf_counter()
-    reconciled_links = 0
-    try:
-        _emit_progress(progress_cb, "Linking calibration images…", progress_state)
-        reconciled_links = _reconcile_local_image_calibration_links()
-        _emit_progress(progress_cb, "Calibration image linking complete.", progress_state)
-    except Exception as exc:
-        errors.append(f'calibration reconciliation: {exc}')
-    reconcile_elapsed = _cloud_sync_perf_counter() - reconcile_start
-    if reconcile_elapsed >= _CLOUD_SYNC_SLOW_STEP_SECONDS:
-        print(
-            f"[cloud_sync] calibration pull: image link reconciliation took "
-            f"{reconcile_elapsed * 1000:.0f}ms ({reconciled_links} link(s) updated)",
-            flush=True,
-        )
-
-    _increment_sync_summary(summary, 'calibrations_pulled', pulled)
-    _increment_sync_summary(summary, 'calibrations_skipped_noop', matched_noop)
-    _increment_sync_summary(summary, 'calibrations_conflicts', conflicts)
-    print(
-        f"[cloud_sync] calibration pull: complete pulled={pulled} matched_noop={matched_noop} "
-        f"conflicts={conflicts} links_updated={reconciled_links} errors={len(errors)} "
-        f"duration={(_cloud_sync_perf_counter() - phase_start) * 1000:.0f}ms",
-        flush=True,
-    )
-    return {
-        'pulled': pulled,
-        'total': total,
-        'matched_noop': matched_noop,
-        'conflicts': conflicts,
-        'links_updated': reconciled_links,
-        'errors': errors,
-    }
-
-
-def list_calibration_conflicts(
-    client: SporelyCloudClient,
-    calibration_uuids: list[str] | None = None,
-    remote_calibrations: list[dict] | None = None,
-) -> list[dict]:
-    """Return explicit calibration UUID conflicts between the local DB and cloud."""
-    remote_source = remote_calibrations if remote_calibrations is not None else client.list_remote_calibrations()
-    remote_rows = [dict(row or {}) for row in remote_source]
-    remote_map = {
-        _normalize_calibration_uuid(row.get('calibration_uuid')): row
-        for row in remote_rows
-        if _normalize_calibration_uuid(row.get('calibration_uuid'))
-    }
-    target_uuids = None
-    if calibration_uuids is not None:
-        target_uuids = {
-            _normalize_calibration_uuid(value)
-            for value in calibration_uuids
-            if _normalize_calibration_uuid(value)
-        }
-    local_rows = _load_local_calibration_rows()
-    if target_uuids is not None:
-        local_rows = [
-            row
-            for row in local_rows
-            if _normalize_calibration_uuid(row.get('calibration_uuid')) in target_uuids
-        ]
-
-    conflicts: list[dict] = []
-    for local_row in local_rows:
-        calibration_uuid = _normalize_calibration_uuid(local_row.get('calibration_uuid'))
-        if not calibration_uuid:
-            continue
-        remote_row = remote_map.get(calibration_uuid)
-        if remote_row is None:
-            continue
-        changes = _calibration_field_changes(local_row, remote_row)
-        if not changes:
-            continue
-        conflict = {
-            'calibration_uuid': calibration_uuid,
-            'cloud_row_id': str(remote_row.get('id') or '').strip() or None,
-            'label': _calibration_display_name(local_row),
-            'fields': list(changes.keys()),
-            'local_row': dict(local_row),
-            'remote_row': dict(remote_row),
-        }
-        if 'measurements_json' in changes:
-            conflict['normalized_local_measurements_json'] = _normalize_calibration_measurements_json(
-                local_row.get('measurements_json')
-            )
-            conflict['normalized_remote_measurements_json'] = _normalize_calibration_measurements_json(
-                remote_row.get('measurements_json')
-            )
-        conflicts.append(conflict)
-    return conflicts
-
-
-def repair_calibrations_local_wins(
-    client: SporelyCloudClient,
-    calibration_uuids: list[str] | None = None,
-    progress_cb: ProgressCallback | None = None,
-    progress_state: dict | None = None,
-    remote_calibrations: list[dict] | None = None,
-) -> dict:
-    """Repair conflicting cloud calibration metadata using the local desktop rows as source of truth."""
-    conflicts = list_calibration_conflicts(
-        client,
-        calibration_uuids=calibration_uuids,
-        remote_calibrations=remote_calibrations,
-    )
-    total = len(conflicts)
-    repaired = 0
-    repairs: list[dict] = []
-    errors: list[str] = []
-    progress_state = progress_state if isinstance(progress_state, dict) else {}
-    _extend_progress_total(progress_state, total)
-
-    for index, conflict in enumerate(conflicts, start=1):
-        calibration_uuid = _normalize_calibration_uuid(conflict.get('calibration_uuid'))
-        local_row = dict(conflict.get('local_row') or {})
-        remote_row = dict(conflict.get('remote_row') or {})
-        label = str(conflict.get('label') or _calibration_display_name(local_row))
-        _emit_progress(
-            progress_cb,
-            f"Repairing calibration {index}/{max(1, total)}: {label}…",
-            progress_state,
-        )
-        try:
-            if not calibration_uuid:
-                errors.append('calibration ?: skipped repair because calibration_uuid is missing')
-                continue
-
-            fields = list(conflict.get('fields') or [])
-            if not fields:
-                continue
-
-            cloud_row_id = str(conflict.get('cloud_row_id') or remote_row.get('id') or '').strip()
-            if not cloud_row_id:
-                current_remote = client.find_remote_calibration(calibration_uuid)
-                remote_row = dict(current_remote or {})
-                cloud_row_id = str(remote_row.get('id') or '').strip()
-            if not cloud_row_id:
-                errors.append(
-                    f'calibration {calibration_uuid}: skipped repair because the cloud row id is unavailable'
-                )
-                continue
-
-            patch_payload = _calibration_local_wins_patch_payload(local_row, remote_row)
-            if not patch_payload:
-                continue
-
-            client._patch(
-                f'calibrations?user_id=eq.{client.user_id}&id=eq.{cloud_row_id}',
-                patch_payload,
-            )
-            repaired += 1
-            fields = list(fields or _calibration_diff_fields(local_row, remote_row))
-            repair_entry = {
-                'calibration_uuid': calibration_uuid,
-                'cloud_row_id': cloud_row_id,
-                'fields': fields,
-                'message': (
-                    f'calibration {calibration_uuid}: repaired local-wins cloud row {cloud_row_id} '
-                    f'overwrote fields ({", ".join(fields)})'
-                ),
-            }
-            refreshed_remote = None
-            if 'measurements_json' in fields:
-                try:
-                    refreshed_remote = client.find_remote_calibration(calibration_uuid)
-                except Exception as exc:
-                    if is_cloud_auth_error(exc) or is_cloud_temporary_unavailable_error(exc):
-                        raise
-                    errors.append(
-                        f'calibration {calibration_uuid}: could not re-read cloud row after repair ({exc})'
-                    )
-                else:
-                    remaining_changes = _calibration_field_changes(local_row, refreshed_remote or remote_row)
-                    if 'measurements_json' in remaining_changes:
-                        repair_entry['remaining_fields'] = list(remaining_changes.keys())
-                        repair_entry['normalized_local_measurements_json'] = _normalize_calibration_measurements_json(
-                            local_row.get('measurements_json')
-                        )
-                        repair_entry['normalized_remote_measurements_json'] = _normalize_calibration_measurements_json(
-                            (refreshed_remote or remote_row).get('measurements_json')
-                        )
-                        print(
-                            '[cloud_sync] '
-                            f'calibration {calibration_uuid}: measurements_json still differs after local-wins repair '
-                            f'(local={json.dumps(repair_entry["normalized_local_measurements_json"], ensure_ascii=False, sort_keys=True)}, '
-                            f'remote={json.dumps(repair_entry["normalized_remote_measurements_json"], ensure_ascii=False, sort_keys=True)})'
-                        )
-            repairs.append(repair_entry)
-        except CloudSyncError as exc:
-            if is_cloud_auth_error(exc) or is_cloud_temporary_unavailable_error(exc):
-                raise
-            errors.append(f'calibration {calibration_uuid or "?"}: {exc}')
-        except Exception as exc:
-            if is_cloud_auth_error(exc) or is_cloud_temporary_unavailable_error(exc):
-                raise
-            errors.append(f'calibration {calibration_uuid or "?"}: {exc}')
-        finally:
-            _advance_progress(progress_state, 1)
-
-    return {'repaired': repaired, 'total': total, 'repairs': repairs, 'errors': errors}
 
 
 def unlink_local_observation_from_cloud(local_id: int) -> dict:
@@ -5981,211 +3665,6 @@ def _remote_ai_crop_is_custom(image_row: dict | None) -> bool | None:
     if value is None:
         return None
     return bool(value)
-
-
-def _path_stat_signature(path_value: str | None) -> dict:
-    path_text = str(path_value or '').strip()
-    if not path_text:
-        return {'path': '', 'exists': False}
-    path = Path(path_text)
-    try:
-        stat = path.stat()
-        return {
-            'path': path_text,
-            'exists': True,
-            'size': int(stat.st_size),
-            'mtime_ns': int(getattr(stat, 'st_mtime_ns', int(stat.st_mtime * 1_000_000_000))),
-        }
-    except Exception:
-        return {'path': path_text, 'exists': path.exists()}
-
-
-def _local_cloud_media_signature(
-    observation_id: int | str,
-    *,
-    include_measurements: bool = True,
-) -> str:
-    obs_id = _safe_int(observation_id)
-    if obs_id <= 0:
-        return ''
-    conn = get_connection()
-    conn.row_factory = __import__('sqlite3').Row
-    cursor = conn.cursor()
-    try:
-        try:
-            image_columns = {
-                str(info["name"])
-                for info in cursor.execute("PRAGMA table_info(images)").fetchall()
-            }
-        except Exception:
-            image_columns = set()
-        try:
-            calibration_table_exists = cursor.execute(
-                "SELECT 1 FROM sqlite_master WHERE type='table' AND name='calibrations'"
-            ).fetchone() is not None
-        except Exception:
-            calibration_table_exists = False
-        has_image_calibration_id = 'calibration_id' in image_columns
-        calibration_id_column_sql = (
-            "images.calibration_id" if has_image_calibration_id else "NULL AS calibration_id"
-        )
-        calibration_uuid_column_sql = (
-            "calibrations.calibration_uuid AS calibration_uuid"
-            if calibration_table_exists and has_image_calibration_id
-            else "NULL AS calibration_uuid"
-        )
-        # `sample_source` is a Stage-2 addition; on databases that haven't
-        # applied `database/schema.py` migration yet (test schemas, older
-        # installs) the column may not exist. Fall back to NULL so the SELECT
-        # doesn't blow up, matching the calibration_id treatment above.
-        sample_source_column_sql = (
-            "images.sample_source" if 'sample_source' in image_columns
-            else "NULL AS sample_source"
-        )
-        captured_at_column_sql = (
-            "images.captured_at" if 'captured_at' in image_columns
-            else "NULL AS captured_at"
-        )
-        calibration_join_sql = (
-            "LEFT JOIN calibrations ON calibrations.id = images.calibration_id"
-            if calibration_table_exists and has_image_calibration_id
-            else ""
-        )
-        cursor.execute(
-            f'''
-            SELECT
-                images.id,
-                images.filepath,
-                images.original_filepath,
-                images.sort_order,
-                images.image_type,
-                images.micro_category,
-                {captured_at_column_sql},
-                images.objective_name,
-                images.scale_microns_per_pixel,
-                images.resample_scale_factor,
-                images.mount_medium,
-                images.stain,
-                images.sample_type,
-                {sample_source_column_sql},
-                images.contrast,
-                images.measure_color,
-                images.crop_mode,
-                images.notes,
-                images.gps_source,
-                images.ai_crop_x1,
-                images.ai_crop_y1,
-                images.ai_crop_x2,
-                images.ai_crop_y2,
-                images.ai_crop_source_w,
-                images.ai_crop_source_h,
-                images.ai_crop_is_custom,
-                {calibration_id_column_sql},
-                {calibration_uuid_column_sql}
-            FROM images
-            {calibration_join_sql}
-            WHERE images.observation_id = ?
-            ORDER BY
-                CASE WHEN images.sort_order IS NULL THEN 1 ELSE 0 END,
-                images.sort_order,
-                images.image_type,
-                images.micro_category,
-                images.created_at,
-                images.id
-            ''',
-            (obs_id,),
-        )
-        image_rows = [dict(row) for row in cursor.fetchall()]
-        tombstoned_cloud_ids = _local_tombstoned_cloud_image_ids(
-            [str(row.get('cloud_id') or '').strip() for row in image_rows if str(row.get('cloud_id') or '').strip()]
-        )
-        if tombstoned_cloud_ids:
-            image_rows = [
-                row
-                for row in image_rows
-                if str(row.get('cloud_id') or '').strip() not in tombstoned_cloud_ids
-            ]
-        measurement_rows: list[dict] = []
-        if include_measurements:
-            cursor.execute(
-                '''
-                SELECT
-                    m.id,
-                    m.image_id,
-                    m.length_um,
-                    m.width_um,
-                    m.measurement_type,
-                    m.notes,
-                    m.p1_x,
-                    m.p1_y,
-                    m.p2_x,
-                    m.p2_y,
-                    m.p3_x,
-                    m.p3_y,
-                    m.p4_x,
-                    m.p4_y,
-                    m.gallery_rotation
-                FROM spore_measurements m
-                JOIN images i ON i.id = m.image_id
-                WHERE i.observation_id = ?
-                ORDER BY m.id
-                ''',
-                (obs_id,),
-            )
-            measurement_rows = [dict(row) for row in cursor.fetchall()]
-    finally:
-        conn.close()
-
-    payload = {
-        'render_version': _CLOUD_LOCAL_MEDIA_RENDER_VERSION,
-        'cloud_image_size_mode': 'full',
-        'images': [
-            {
-                'id': _safe_int(row.get('id')),
-                'filepath': _path_stat_signature(row.get('filepath')),
-                'original_filepath': _path_stat_signature(row.get('original_filepath')),
-                'sort_order': _normalize_snapshot_value(row.get('sort_order')),
-                'image_type': _normalize_snapshot_value(row.get('image_type')),
-                'micro_category': _normalize_snapshot_value(row.get('micro_category')),
-                'captured_at': _normalize_image_captured_at_for_cloud(
-                    row.get('captured_at'), local=True
-                ),
-                'objective_name': _normalize_snapshot_value(row.get('objective_name')),
-                'scale_microns_per_pixel': _normalize_snapshot_value(row.get('scale_microns_per_pixel')),
-                'resample_scale_factor': _normalize_snapshot_value(row.get('resample_scale_factor')),
-                'mount_medium': _normalize_snapshot_value(row.get('mount_medium')),
-                'stain': _normalize_snapshot_value(row.get('stain')),
-                'sample_type': _normalize_snapshot_value(row.get('sample_type')),
-                'sample_source': _normalize_snapshot_value(row.get('sample_source')),
-                'contrast': _normalize_snapshot_value(row.get('contrast')),
-                'measure_color': _normalize_snapshot_value(row.get('measure_color')),
-                'crop_mode': _normalize_snapshot_value(row.get('crop_mode')),
-                'notes': _normalize_snapshot_value(row.get('notes')),
-                'gps_source': _normalize_snapshot_value(row.get('gps_source')),
-                'ai_crop_x1': _normalize_snapshot_value(row.get('ai_crop_x1')),
-                'ai_crop_y1': _normalize_snapshot_value(row.get('ai_crop_y1')),
-                'ai_crop_x2': _normalize_snapshot_value(row.get('ai_crop_x2')),
-                'ai_crop_y2': _normalize_snapshot_value(row.get('ai_crop_y2')),
-                'ai_crop_source_w': _normalize_snapshot_value(row.get('ai_crop_source_w')),
-                'ai_crop_source_h': _normalize_snapshot_value(row.get('ai_crop_source_h')),
-                'calibration_uuid': _normalize_snapshot_value(row.get('calibration_uuid')),
-            }
-            for row in image_rows
-        ],
-    }
-    if include_measurements:
-        payload['measurements'] = [
-            {
-                **_measurement_compare_payload(row, local=False),
-                'notes': _normalize_snapshot_value(row.get('notes')),
-            }
-            for row in measurement_rows
-        ]
-    return json.dumps(payload, ensure_ascii=True, sort_keys=True, separators=(',', ':'))
-
-
-def _local_cloud_image_media_signature(observation_id: int | str) -> str:
-    return _local_cloud_media_signature(observation_id, include_measurements=False)
 
 
 def _local_media_signatures_match_ignoring_tombstoned_images(
@@ -6419,71 +3898,6 @@ def _prepared_item_remote_payload(
     return payload
 
 
-def _remote_image_payload(
-    remote_image: dict | None,
-    *,
-    include_ai_crop: bool = True,
-    include_upload_meta: bool = True,
-) -> dict:
-    image = remote_image or {}
-    payload = {
-        'id': _normalize_snapshot_value(image.get('id')),
-        'desktop_id': _safe_int(image.get('desktop_id')),
-        'sort_order': _normalize_snapshot_value(image.get('sort_order')),
-        'image_type': _normalize_snapshot_value(image.get('image_type')),
-        'micro_category': _normalize_snapshot_value(image.get('micro_category')),
-        'captured_at': _normalize_image_captured_at_for_cloud(
-            image.get('captured_at'), local=False
-        ),
-        'calibration_uuid': _normalize_snapshot_value(image.get('calibration_uuid')),
-        'objective_name': _normalize_snapshot_value(image.get('objective_name')),
-        'scale_microns_per_pixel': _normalize_snapshot_value(image.get('scale_microns_per_pixel')),
-        'resample_scale_factor': _normalize_snapshot_value(image.get('resample_scale_factor')),
-        'mount_medium': _normalize_snapshot_value(image.get('mount_medium')),
-        'stain': _normalize_snapshot_value(image.get('stain')),
-        'sample_type': _normalize_snapshot_value(image.get('sample_type')),
-        # Cloud canonical is lowercase snake_case (`spore_print`); desktop
-        # canonical is Title_Case (`Spore_print`). Normalize inbound values
-        # so downstream diff / write paths see the desktop form.
-        'sample_source': _normalize_snapshot_value(
-            _cloud_to_desktop_sample_source(image.get('sample_source'))
-        ),
-        'contrast': _normalize_snapshot_value(image.get('contrast')),
-        'measure_color': _normalize_snapshot_value(image.get('measure_color')),
-        'crop_mode': _normalize_snapshot_value(image.get('crop_mode')),
-        'notes': _normalize_snapshot_value(image.get('notes')),
-        'gps_source': _normalize_snapshot_value(image.get('gps_source')),
-        'storage_path': _normalize_snapshot_value(_normalize_cloud_media_key(image.get('storage_path')) or None),
-        'original_filename': _normalize_snapshot_value(image.get('original_filename')),
-    }
-    if include_ai_crop:
-        payload.update({
-            'ai_crop_x1': _normalize_snapshot_value(image.get('ai_crop_x1')),
-            'ai_crop_y1': _normalize_snapshot_value(image.get('ai_crop_y1')),
-            'ai_crop_x2': _normalize_snapshot_value(image.get('ai_crop_x2')),
-            'ai_crop_y2': _normalize_snapshot_value(image.get('ai_crop_y2')),
-            'ai_crop_source_w': _normalize_snapshot_value(image.get('ai_crop_source_w')),
-            'ai_crop_source_h': _normalize_snapshot_value(image.get('ai_crop_source_h')),
-            'ai_crop_is_custom': _normalize_snapshot_value(image.get('ai_crop_is_custom')),
-        })
-    if include_upload_meta:
-        payload.update({
-            'upload_mode': _normalize_snapshot_value(image.get('upload_mode')),
-            'source_width': _normalize_snapshot_value(image.get('source_width')),
-            'source_height': _normalize_snapshot_value(image.get('source_height')),
-            'stored_width': _normalize_snapshot_value(image.get('stored_width')),
-            'stored_height': _normalize_snapshot_value(image.get('stored_height')),
-            'stored_bytes': _normalize_snapshot_value(image.get('stored_bytes')),
-        })
-    return payload
-
-
-_SNAPSHOT_MEAS_FIELDS = [
-    'id', 'desktop_id', 'image_id', 'length_um', 'width_um', 'measurement_type',
-    'gallery_rotation', 'p1_x', 'p1_y', 'p2_x', 'p2_y', 'p3_x', 'p3_y',
-    'p4_x', 'p4_y', 'measured_at',
-]
-
 _OBSERVATION_SELECT_COLUMNS = _join_select_columns(
     'id',
     'desktop_id',
@@ -6546,304 +3960,7 @@ _SPORE_MEASUREMENT_SELECT_COLUMNS = _join_select_columns(
 _CLOUD_SYNC_IN_BATCH_SIZE = 100
 
 
-def _normalize_measurement_type_value(value) -> str:
-    text = str(value or 'manual').strip().lower()
-    return text or 'manual'
-
-
-def _normalize_measurement_timestamp_value(value) -> str | None:
-    parsed = _parse_sync_timestamp(value)
-    if parsed is not None:
-        return parsed.isoformat()
-    text = str(value or '').strip()
-    return text or None
-
-
-_MEASUREMENT_FLOAT_FIELDS = {
-    'length_um',
-    'width_um',
-    'p1_x',
-    'p1_y',
-    'p2_x',
-    'p2_y',
-    'p3_x',
-    'p3_y',
-    'p4_x',
-    'p4_y',
-}
-_MEASUREMENT_FLOAT_ABS_TOL = 1e-9
-_MEASUREMENT_FLOAT_REL_TOL = 1e-9
-_MEASUREMENT_SYNC_FIELDS = [
-    'desktop_id',
-    'image_id',
-    'length_um',
-    'width_um',
-    'measurement_type',
-    'p1_x',
-    'p1_y',
-    'p2_x',
-    'p2_y',
-    'p3_x',
-    'p3_y',
-    'p4_x',
-    'p4_y',
-    'measured_at',
-]
 _MEASUREMENT_PRESENTATION_FIELDS = ('gallery_rotation',)
-_MEASUREMENT_SYNC_MEDIA_FIELDS = ['image_key', 'thumb_key']
-
-
-def _normalize_measurement_identity_value(value) -> str | None:
-    text = str(value or '').strip()
-    return text or None
-
-
-def _normalize_measurement_int_value(value, *, default: int | None = None) -> int | None:
-    if value is None:
-        return default
-    if isinstance(value, bool):
-        return int(value)
-    if isinstance(value, int):
-        return int(value)
-    if isinstance(value, float):
-        try:
-            return int(value)
-        except Exception:
-            return default
-    text = str(value or '').strip()
-    if not text:
-        return default
-    try:
-        return int(float(text))
-    except Exception:
-        return default
-
-
-def _normalize_measurement_float_value(value) -> float | None:
-    if value is None:
-        return None
-    if isinstance(value, bool):
-        return float(int(value))
-    if isinstance(value, (int, float)):
-        return float(value)
-    text = str(value or '').strip()
-    if not text:
-        return None
-    try:
-        return float(text)
-    except Exception:
-        return None
-
-
-def _measurement_field_values_match(field: str, left, right) -> bool:
-    if field in _MEASUREMENT_FLOAT_FIELDS:
-        left_float = _normalize_measurement_float_value(left)
-        right_float = _normalize_measurement_float_value(right)
-        if left_float is None or right_float is None:
-            return left_float is None and right_float is None
-        return math.isclose(
-            left_float,
-            right_float,
-            rel_tol=_MEASUREMENT_FLOAT_REL_TOL,
-            abs_tol=_MEASUREMENT_FLOAT_ABS_TOL,
-        )
-    if field == 'measurement_type':
-        return _normalize_measurement_type_value(left) == _normalize_measurement_type_value(right)
-    if field == 'measured_at':
-        return _normalize_measurement_timestamp_value(left) == _normalize_measurement_timestamp_value(right)
-    if field == 'gallery_rotation':
-        return _normalize_measurement_int_value(left, default=0) == _normalize_measurement_int_value(right, default=0)
-    if field == 'desktop_id':
-        return _normalize_measurement_int_value(left) == _normalize_measurement_int_value(right)
-    if field in {'id', 'image_id', 'image_key', 'thumb_key'}:
-        return _normalize_measurement_identity_value(left) == _normalize_measurement_identity_value(right)
-    return _normalize_snapshot_value(left) == _normalize_snapshot_value(right)
-
-
-def _measurement_compare_key(measurement_row: dict | None) -> str:
-    row = dict(measurement_row or {})
-    cloud_id = str(row.get('id') or '').strip()
-    desktop_id = str(row.get('desktop_id') or '').strip()
-    image_id = str(row.get('image_id') or '').strip()
-    if cloud_id:
-        return f'cloud:{cloud_id}'
-    if desktop_id:
-        return f'desktop:{desktop_id}'
-    if image_id:
-        return f'image:{image_id}'
-    return json.dumps(row, ensure_ascii=True, sort_keys=True, separators=(',', ':'))
-
-
-def _measurement_compare_payload(
-    measurement_row: dict | None,
-    *,
-    local: bool,
-    cloud_image_id: str | None = None,
-    include_media_keys: bool = False,
-    image_storage_key: str | None = None,
-) -> dict:
-    row = dict(measurement_row or {})
-    payload: dict = {}
-    if local:
-        payload['id'] = _normalize_measurement_identity_value(
-            str(row.get('cloud_id') or '').strip() or row.get('id')
-        )
-        payload['desktop_id'] = _normalize_measurement_int_value(row.get('id'))
-        payload['image_id'] = _normalize_measurement_identity_value(
-            cloud_image_id or str(row.get('image_cloud_id') or '').strip() or row.get('image_id')
-        )
-    else:
-        payload['id'] = _normalize_measurement_identity_value(row.get('id'))
-        payload['desktop_id'] = _normalize_measurement_int_value(row.get('desktop_id'))
-        payload['image_id'] = _normalize_measurement_identity_value(row.get('image_id'))
-
-    payload['length_um'] = _normalize_measurement_float_value(row.get('length_um'))
-    payload['width_um'] = _normalize_measurement_float_value(row.get('width_um'))
-    payload['measurement_type'] = _normalize_measurement_type_value(row.get('measurement_type'))
-    payload['gallery_rotation'] = _normalize_measurement_int_value(row.get('gallery_rotation'), default=0)
-    payload['p1_x'] = _normalize_measurement_float_value(row.get('p1_x'))
-    payload['p1_y'] = _normalize_measurement_float_value(row.get('p1_y'))
-    payload['p2_x'] = _normalize_measurement_float_value(row.get('p2_x'))
-    payload['p2_y'] = _normalize_measurement_float_value(row.get('p2_y'))
-    payload['p3_x'] = _normalize_measurement_float_value(row.get('p3_x'))
-    payload['p3_y'] = _normalize_measurement_float_value(row.get('p3_y'))
-    payload['p4_x'] = _normalize_measurement_float_value(row.get('p4_x'))
-    payload['p4_y'] = _normalize_measurement_float_value(row.get('p4_y'))
-    payload['measured_at'] = _normalize_measurement_timestamp_value(row.get('measured_at'))
-    if include_media_keys:
-        if local:
-            storage_key = _normalize_cloud_media_key(image_storage_key)
-            payload['image_key'] = storage_key or None
-            payload['thumb_key'] = media_variant_key(storage_key, 'thumb') if storage_key else None
-        else:
-            payload['image_key'] = _normalize_cloud_media_key(row.get('image_key')) or None
-            payload['thumb_key'] = _normalize_cloud_media_key(row.get('thumb_key')) or None
-    return payload
-
-
-def _local_measurement_snapshot_payload(measurement_row: dict | None) -> dict:
-    return _measurement_compare_payload(measurement_row, local=True)
-
-
-def _remote_measurement_snapshot_payload(measurement_row: dict | None) -> dict:
-    return _measurement_compare_payload(measurement_row, local=False)
-
-
-def _baseline_measurement_compare_payload(record: dict | None) -> dict:
-    return _measurement_compare_payload(record, local=False)
-
-
-def _measurement_sync_payload(
-    measurement_row: dict | None,
-    *,
-    local: bool,
-    cloud_image_id: str | None = None,
-    image_storage_key: str | None = None,
-    include_media_keys: bool = False,
-) -> dict:
-    payload = _measurement_compare_payload(
-        measurement_row,
-        local=local,
-        cloud_image_id=cloud_image_id,
-        include_media_keys=include_media_keys,
-        image_storage_key=image_storage_key,
-    )
-    payload.pop('id', None)
-    return payload
-
-
-def _measurement_payloads_match(
-    local_row: dict | None,
-    remote_row: dict | None,
-    *,
-    cloud_image_id: str | None = None,
-    image_storage_key: str | None = None,
-    include_media_keys: bool = False,
-) -> bool:
-    local_payload = _measurement_sync_payload(
-        local_row,
-        local=True,
-        cloud_image_id=cloud_image_id,
-        image_storage_key=image_storage_key,
-        include_media_keys=include_media_keys,
-    )
-    remote_payload = _measurement_sync_payload(
-        remote_row,
-        local=False,
-        include_media_keys=include_media_keys,
-    )
-    compare_fields = list(_MEASUREMENT_SYNC_FIELDS)
-    if include_media_keys:
-        compare_fields.extend(_MEASUREMENT_SYNC_MEDIA_FIELDS)
-    for field in compare_fields:
-        if not _measurement_field_values_match(field, local_payload.get(field), remote_payload.get(field)):
-            return False
-    return True
-
-
-def _measurement_push_diff_fields(
-    local_row: dict | None,
-    remote_row: dict | None,
-    *,
-    cloud_image_id: str | None = None,
-    image_storage_key: str | None = None,
-    include_media_keys: bool = False,
-) -> list[str]:
-    local_payload = _measurement_sync_payload(
-        local_row,
-        local=True,
-        cloud_image_id=cloud_image_id,
-        image_storage_key=image_storage_key,
-        include_media_keys=include_media_keys,
-    )
-    remote_payload = _measurement_sync_payload(
-        remote_row,
-        local=False,
-        include_media_keys=include_media_keys,
-    )
-    diff_fields: list[str] = []
-    compare_fields = list(_MEASUREMENT_SYNC_FIELDS)
-    if include_media_keys:
-        compare_fields.extend(_MEASUREMENT_SYNC_MEDIA_FIELDS)
-    for field in compare_fields:
-        if not _measurement_field_values_match(field, local_payload.get(field), remote_payload.get(field)):
-            diff_fields.append(field)
-    return diff_fields
-
-
-def _analyze_measurement_changes(current_measurements: list[dict], baseline_measurements: list[dict]) -> dict:
-    current = [dict(row or {}) for row in (current_measurements or [])]
-    baseline = [dict(row or {}) for row in (baseline_measurements or [])]
-    current_keys = [_measurement_compare_key(row) for row in current]
-    baseline_keys = [_measurement_compare_key(row) for row in baseline]
-    current_map = {_measurement_compare_key(row): row for row in current}
-    baseline_map = {_measurement_compare_key(row): row for row in baseline}
-
-    added_keys = [key for key in current_keys if key not in baseline_map]
-    removed_keys = [key for key in baseline_keys if key not in current_map]
-    shared_keys = [key for key in current_keys if key in baseline_map]
-    changed_keys: list[str] = []
-    for key in shared_keys:
-        current_payload = _measurement_compare_payload(current_map[key], local=False)
-        baseline_payload = _measurement_compare_payload(baseline_map[key], local=False)
-        if any(
-            not _measurement_field_values_match(
-                field,
-                current_payload.get(field),
-                baseline_payload.get(field),
-            )
-            for field in _SNAPSHOT_MEAS_FIELDS
-        ):
-            changed_keys.append(key)
-
-    return {
-        'added_keys': added_keys,
-        'removed_keys': removed_keys,
-        'changed_keys': changed_keys,
-        'added': [current_map[key] for key in added_keys],
-        'removed': [baseline_map[key] for key in removed_keys],
-        'changed': bool(added_keys or removed_keys or changed_keys),
-    }
 
 
 def _mark_cloud_observations_dirty_for_media_changes() -> None:
@@ -7293,38 +4410,6 @@ def _load_local_observation_lookup() -> tuple[dict[str, dict], dict[int, dict]]:
     return by_cloud_id, by_local_id
 
 
-def _load_local_measurement_lookup(observation_id: int) -> tuple[dict[str, dict], dict[int, dict]]:
-    conn = get_connection()
-    conn.row_factory = __import__('sqlite3').Row
-    cursor = conn.cursor()
-    try:
-        cursor.execute(
-            '''
-            SELECT
-                m.*,
-                i.cloud_id AS image_cloud_id
-            FROM spore_measurements m
-            JOIN images i ON i.id = m.image_id
-            WHERE i.observation_id = ?
-            ORDER BY m.id
-            ''',
-            (int(observation_id),),
-        )
-        rows = [dict(row) for row in cursor.fetchall()]
-    finally:
-        conn.close()
-    by_cloud_id: dict[str, dict] = {}
-    by_local_id: dict[int, dict] = {}
-    for row in rows:
-        local_id = _safe_int(row.get('id'))
-        cloud_id = str(row.get('cloud_id') or '').strip()
-        if local_id > 0:
-            by_local_id[local_id] = row
-        if cloud_id:
-            by_cloud_id[cloud_id] = row
-    return by_cloud_id, by_local_id
-
-
 def _build_remote_measurement_identity_cache(remote_measurements: list[dict] | None) -> dict[str, dict]:
     cache: dict[str, dict] = {}
     for row in remote_measurements or []:
@@ -7649,36 +4734,6 @@ _MERGE_PROTECTED_AI_FIELDS = (
 
 
 _RED_LIST_FIELDS = frozenset({'red_list_category', 'red_list_categories_json'})
-
-
-def _identification_key(row: dict) -> tuple[str, str]:
-    """Case/whitespace-insensitive (genus, species) of an observation row."""
-    return tuple(
-        ' '.join(str(row.get(field) or '').split()).casefold()
-        for field in ('genus', 'species')
-    )
-
-
-def _identification_contradicts_remote(local_row: dict, remote_row: dict) -> bool:
-    """Whether the local row's OWN committed identification positively
-    contradicts the remote row's, component by component.
-
-    A blank/missing local ``genus`` or ``species`` is unknown, not
-    contradictory — the known production shape is a cloud row with a bound
-    concept and no local genus/species at all (see sync-integrity follow-up 4
-    and the read-only production audit it cites). Only a POPULATED local
-    component that differs, case/whitespace-insensitively, from the
-    corresponding remote component counts as a contradiction. Compatible
-    partial information (blank, or matching) is left to the existing
-    adoption path (``cloud_selected_unverified`` etc.) — this function only
-    decides whether the Case F block applies, never whether to adopt.
-    """
-    local_key = _identification_key(local_row)
-    remote_key = _identification_key(remote_row)
-    return any(
-        local_component and local_component != remote_component
-        for local_component, remote_component in zip(local_key, remote_key)
-    )
 
 
 def _merge_cloud_selected_ai_fields(local_obs: dict | None, remote_obs: dict | None) -> dict:
@@ -8182,23 +5237,6 @@ def build_cloud_ai_state_from_observation_identifications(
 # `cloud_selected_unverified` (see utils/taxon_identity.py). Contract:
 # docs/supabase-sync-contract.md §28.
 
-#: The virtual observation field under which the taxonomy identity takes part
-#: in snapshots, change detection, conflict reporting and field resolution. It
-#: is never a cloud column and never pushed: the guarded RPC stays the only
-#: desktop → cloud identity channel.
-TAXON_IDENTITY_SYNC_FIELD = 'taxon_identity'
-
-#: Cloud identity-provenance columns (sporely-web migration 20260922120000).
-#: Selected only when the server has them — see
-#: `SporelyCloudClient._observation_select_columns`.
-_OBSERVATION_IDENTITY_SELECT_COLUMNS = (
-    'taxon_identity_state',
-    'taxon_identity_source_system',
-    'taxon_identity_namespace',
-    'taxon_identity_external_id',
-    'taxon_identity_raw_external_id',
-)
-
 
 #: PostgREST's "column observations.taxon_identity_state does not exist" (42703)
 #: and "Could not find the 'taxon_identity_state' column" (PGRST204).
@@ -8206,347 +5244,6 @@ _MISSING_IDENTITY_COLUMN_PATTERN = re.compile(
     r"column \S*taxon_identity_\w+ does not exist"
     r"|could not find the '?taxon_identity_\w+'? column"
 )
-
-
-@dataclass(frozen=True)
-class _RemoteIdentityClaim:
-    """What one cloud observation row says about its taxonomy identity."""
-
-    kind: str  # 'none' | 'sporely' | 'external'
-    sporely_taxon_id: int | None = None
-    cloud_state: str | None = None
-    source_system: str | None = None
-    namespace: str | None = None
-    external_id: str | None = None
-    raw_external_id: str | None = None
-
-    @property
-    def key(self) -> str:
-        return _identity_sync_key(
-            self.kind, self.sporely_taxon_id,
-            self.source_system, self.namespace, self.external_id,
-        )
-
-
-def _identity_sync_key(kind, sporely_taxon_id, source_system, namespace, external_id) -> str:
-    """Canonical comparison value shared by local, remote and baseline sides."""
-    if kind == 'sporely' and sporely_taxon_id:
-        return f'sporely:{int(sporely_taxon_id)}'
-    if kind == 'external' and source_system and namespace and external_id:
-        return f'external:{source_system}:{namespace}:{external_id}'
-    return ''
-
-
-def _remote_identity_claim(remote: dict | None) -> _RemoteIdentityClaim | None:
-    """Read the cloud row's identity, or ``None`` when it carries none at all.
-
-    ``None`` means the row did not include the identity columns (an older
-    server, or a partial row) — which is "no information", distinct from a
-    row that explicitly has no identity. Callers leave local identity alone.
-    """
-    row = dict(remote or {})
-    if 'selected_sporely_taxon_id' not in row and 'taxon_identity_state' not in row:
-        return None
-    state = str(row.get('taxon_identity_state') or '').strip() or None
-    selected = _normalize_observation_int_value(row.get('selected_sporely_taxon_id'))
-    if selected is not None and selected > 0:
-        return _RemoteIdentityClaim(kind='sporely', sporely_taxon_id=selected, cloud_state=state)
-    tuple_values = tuple(
-        str(row.get(column) or '').strip() or None
-        for column in (
-            'taxon_identity_source_system',
-            'taxon_identity_namespace',
-            'taxon_identity_external_id',
-            'taxon_identity_raw_external_id',
-        )
-    )
-    if state == 'external_unresolved' and all(tuple_values[:3]):
-        return _RemoteIdentityClaim(
-            kind='external', cloud_state=state,
-            source_system=tuple_values[0], namespace=tuple_values[1],
-            external_id=tuple_values[2], raw_external_id=tuple_values[3],
-        )
-    return _RemoteIdentityClaim(kind='none', cloud_state=state)
-
-
-def _withhold_identity_from_push(push_payload: dict) -> None:
-    """Make this push carry no identity, so the RPC gate skips it (never clears)."""
-    push_payload['sporely_taxon_id'] = None
-    for column in _TAXON_IDENTITY_COLUMNS:
-        push_payload[column] = None
-
-
-def _remote_row_without_identity(remote: dict | None) -> dict:
-    """The cloud row minus its identity columns ("no identity information")."""
-    return {
-        key: value
-        for key, value in dict(remote or {}).items()
-        if key != 'selected_sporely_taxon_id' and key not in _OBSERVATION_IDENTITY_SELECT_COLUMNS
-    }
-
-
-def _local_identity_sync_key(local_obs: dict | None) -> str:
-    """The local row's identity in the same vocabulary as `_RemoteIdentityClaim.key`.
-
-    A Sporely-namespace external identity (a cloud ID the local artifact could
-    not confirm) compares as the Sporely ID it preserves, so holding it is not
-    a perpetual difference from the cloud. A legacy-unverified integer never
-    equals a cloud value: nothing records what it is.
-    """
-    identity = TaxonIdentity.from_row(local_obs)
-    if identity.is_proven_sporely or identity.is_cloud_selected_unverified:
-        return _identity_sync_key('sporely', identity.sporely_taxon_id, None, None, None)
-    if identity.is_legacy_unverified:
-        return f'legacy:{identity.sporely_taxon_id}'
-    if identity.state == 'external_unresolved' and identity.has_external_evidence:
-        if (identity.source_system, identity.namespace) == ('sporely', 'sporely_taxon_id'):
-            sporely_id = _normalize_observation_int_value(identity.external_id)
-            return _identity_sync_key('sporely', sporely_id, None, None, None)
-        return _identity_sync_key(
-            'external', None,
-            identity.source_system, identity.namespace, identity.external_id,
-        )
-    return ''
-
-
-#: Returned by `_baseline_identity_key` for a snapshot stored before identity
-#: joined change detection. Nothing records what the cloud identity was then.
-_IDENTITY_BASELINE_UNKNOWN = object()
-
-
-def _baseline_identity_key(baseline_obs: dict | None):
-    row = dict(baseline_obs or {})
-    if TAXON_IDENTITY_SYNC_FIELD not in row:
-        return _IDENTITY_BASELINE_UNKNOWN
-    return str(row.get(TAXON_IDENTITY_SYNC_FIELD) or '')
-
-
-def _remote_identity_changed_since(remote: dict | None, baseline_obs: dict | None) -> bool:
-    """Whether the cloud identity differs from the stored sync baseline.
-
-    With an unknown baseline, any cloud identity counts as a change worth
-    reconciling once; after that the snapshot records it.
-    """
-    claim = _remote_identity_claim(remote)
-    if claim is None:
-        return False
-    baseline = _baseline_identity_key(baseline_obs)
-    if baseline is _IDENTITY_BASELINE_UNKNOWN:
-        return claim.key != ''
-    return claim.key != baseline
-
-
-def _local_identity_is_claim(local_obs: dict | None) -> bool:
-    """A local identity that is the desktop's own evidence, not cloud-derived.
-
-    Proven Sporely identities and preserved non-Sporely external identifiers
-    are claims; legacy integers, cloud-selected tokens, unconfirmable cloud
-    Sporely IDs, manual text and no identity are not.
-    """
-    identity = TaxonIdentity.from_row(local_obs)
-    if identity.is_proven_sporely:
-        return True
-    return (
-        identity.state == 'external_unresolved'
-        and identity.has_external_evidence
-        and (identity.source_system, identity.namespace) != ('sporely', 'sporely_taxon_id')
-    )
-
-
-def _classify_identity_sync_change(
-    local_obs: dict | None,
-    remote_obs: dict | None,
-    baseline_obs: dict | None,
-    *,
-    identification_locally_owned: bool,
-) -> str | None:
-    """Three-way classification of the taxonomy identity for one observation.
-
-    Returns ``'remote_only'`` (adopt the cloud identity), ``'local_only'``
-    (push it — only a proven identity, the one kind the RPC gate accepts),
-    ``'conflict'`` (fail closed: review required, nothing applied),
-    ``'shared'`` (both sides moved to the same identity) or ``None``.
-
-    ``identification_locally_owned`` is True when genus/species changed
-    locally or conflict: identity follows the identification it names, so a
-    remote identity change against a locally edited identification is a
-    conflict, never a silent adoption.
-
-    See docs/supabase-sync-contract.md "Identity in change detection".
-    """
-    claim = _remote_identity_claim(remote_obs)
-    if claim is None:
-        return None
-    remote_key = claim.key
-    local_key = _local_identity_sync_key(local_obs)
-    baseline = _baseline_identity_key(baseline_obs)
-    if local_key == remote_key:
-        if baseline is not _IDENTITY_BASELINE_UNKNOWN and baseline != remote_key:
-            return 'shared'
-        return None
-    local_is_claim = _local_identity_is_claim(local_obs)
-    local_is_proven = TaxonIdentity.from_row(local_obs).is_proven_sporely
-    if baseline is _IDENTITY_BASELINE_UNKNOWN:
-        # Nothing says who changed. Two different claims disagree: fail
-        # closed. A proven local identity with nothing in the cloud is the
-        # desktop's own pick awaiting the RPC. A non-claim local takes the
-        # cloud identity unless the identification itself is being edited
-        # locally.
-        if local_is_claim:
-            if remote_key:
-                return 'conflict'
-            return 'local_only' if local_is_proven else None
-        if not remote_key or identification_locally_owned:
-            return None
-        return 'remote_only'
-    remote_changed = remote_key != baseline
-    local_changed = local_is_claim and local_key != baseline
-    if remote_changed and (local_changed or identification_locally_owned):
-        return 'conflict'
-    if remote_changed:
-        return 'remote_only'
-    if local_changed and local_is_proven:
-        return 'local_only'
-    return None
-
-
-def _installed_taxon_concept(sporely_taxon_id: int):
-    """The installed taxonomy-v2 artifact's record for one Sporely ID, or None."""
-    try:
-        from database.taxon_lookup import installed_taxon_concept
-        from utils.vernacular_utils import resolve_vernacular_db_path
-        return installed_taxon_concept(resolve_vernacular_db_path(), sporely_taxon_id)
-    except Exception:
-        return None
-
-
-def _remote_name_snapshot(remote: dict) -> tuple[str | None, str | None]:
-    genus = str(remote.get('genus') or '').strip()
-    species = str(remote.get('species') or '').strip()
-    name = ' '.join(part for part in (genus, species) if part) or None
-    rank = 'species' if genus and species else ('genus' if genus else None)
-    return name, rank
-
-
-def _local_identity_columns_for_remote_claim(
-    claim: _RemoteIdentityClaim,
-    remote: dict,
-) -> dict:
-    """The complete local identity (+ name/rank snapshot) a claim maps to.
-
-    * ``sporely`` present in the installed artifact → ``cloud_selected_unverified``
-      with the artifact's canonical name and rank;
-    * ``sporely`` absent locally → preserved as an unresolved Sporely-namespace
-      external identity, never a bound integer;
-    * ``external`` → the cloud's preserved tuple as ``external_unresolved``;
-    * ``none`` → no identity.
-    """
-    remote_name, remote_rank = _remote_name_snapshot(dict(remote or {}))
-    if claim.kind == 'sporely':
-        concept = _installed_taxon_concept(int(claim.sporely_taxon_id))
-        if concept is not None:
-            identity = TaxonIdentity.from_cloud_selection(
-                claim.sporely_taxon_id,
-                local_release_id=concept.release_id,
-                scientific_name=concept.scientific_name,
-                rank=concept.rank,
-                cloud_state=claim.cloud_state,
-            )
-            name, rank = concept.scientific_name or remote_name, concept.rank or remote_rank
-        else:
-            identity = TaxonIdentity.unresolved_external(
-                source_system='sporely',
-                namespace='sporely_taxon_id',
-                external_id=str(claim.sporely_taxon_id),
-                scientific_name=remote_name,
-                rank=remote_rank,
-                provenance=(
-                    'cloud:observations.selected_sporely_taxon_id; '
-                    f"cloud_state={claim.cloud_state or 'null'}; "
-                    'absent_from_local_release'
-                ),
-            )
-            name, rank = remote_name, remote_rank
-    elif claim.kind == 'external':
-        identity = TaxonIdentity.unresolved_external(
-            source_system=claim.source_system,
-            namespace=claim.namespace,
-            external_id=claim.external_id,
-            raw_external_id=claim.raw_external_id,
-            scientific_name=remote_name,
-            rank=remote_rank,
-            provenance='cloud:observations.taxon_identity_*',
-        )
-        name, rank = remote_name, remote_rank
-    else:
-        identity = TaxonIdentity.none()
-        name, rank = None, None
-    return {
-        **identity.to_row(),
-        'scientific_name_snapshot': name if identity.state != 'no_identity_evidence' else None,
-        'taxon_rank_snapshot': rank if identity.state != 'no_identity_evidence' else None,
-    }
-
-
-IDENTITY_APPLY_APPLIED = 'applied'
-IDENTITY_APPLY_UNCHANGED = 'unchanged'
-IDENTITY_APPLY_CONFLICT = 'conflict'
-
-
-def _apply_remote_identity_to_local(
-    local_id: int,
-    remote: dict,
-    *,
-    local_before: dict | None = None,
-    fail_closed_on_local_claim: bool = False,
-    absence_is_evidence: bool = False,
-) -> str:
-    """Write the cloud row's identity onto a local observation.
-
-    Returns ``'unchanged'`` without writing when the row carries no identity
-    information or nothing would change, ``'applied'`` after a write, and
-    ``'conflict'`` without writing when ``fail_closed_on_local_claim`` is set
-    and the local row holds its own claim (a proven identity or a preserved
-    non-Sporely tuple) that differs from a non-empty cloud identity. Automatic
-    applies with no sync baseline pass it: nothing says which side changed,
-    so a disagreement is a review, never an overwrite. ``local_before`` is the
-    local row as it was before this pull applied any other field. Uses the
-    persistence API's one-coherent-transition write.
-
-    ``absence_is_evidence`` is set when three-way reconciliation established
-    that the cloud CLEARED its identity since the baseline; otherwise a cloud
-    row without identity clears local identity only when genus/species changed.
-    """
-    claim = _remote_identity_claim(remote)
-    if claim is None:
-        return IDENTITY_APPLY_UNCHANGED
-    # The local row already holds this identity. Rewriting it would replace a
-    # stronger local proof (a picker-proven 83668) with the weaker
-    # cloud-derived one for the very same concept.
-    local_row = dict(local_before or ObservationDB.get_observation(int(local_id)) or {})
-    if _local_identity_sync_key(local_row) == claim.key:
-        return IDENTITY_APPLY_UNCHANGED
-    if fail_closed_on_local_claim and claim.key and _local_identity_is_claim(local_row):
-        return IDENTITY_APPLY_CONFLICT
-    # A cloud row with no identity is not evidence that local evidence is
-    # wrong while both still name the same taxon — the push rule, mirrored.
-    # It clears local identity only when the identification itself changed.
-    if (
-        claim.kind == 'none'
-        and not absence_is_evidence
-        and _identification_key(local_row) == _identification_key(dict(remote or {}))
-    ):
-        return IDENTITY_APPLY_UNCHANGED
-    columns = _local_identity_columns_for_remote_claim(claim, remote)
-    ObservationDB.update_observation(int(local_id), allow_nulls=True, **columns)
-    if claim.kind == 'sporely' and columns.get('sporely_taxon_id') is None:
-        print(
-            f'[cloud_sync] identity pull: obs {local_id} cloud Sporely '
-            f'{claim.sporely_taxon_id} is absent from the installed taxonomy '
-            'artifact; preserved unresolved, not bound',
-            flush=True,
-        )
-    return IDENTITY_APPLY_APPLIED
 
 
 def _apply_remote_observation_fields(
@@ -9774,170 +6471,6 @@ def finalize_sync_candidates(
     return manual_candidates, automatic_errors
 
 
-def _local_observation_id_by_cloud_id(cloud_id: str) -> int:
-    """Resolve local observation id from cloud id via SQL, best-effort."""
-    text = str(cloud_id or '').strip()
-    if not text:
-        return 0
-    try:
-        conn = get_connection()
-        cursor = conn.cursor()
-        cursor.execute(
-            "SELECT id FROM observations WHERE cloud_id = ? LIMIT 1",
-            (text,),
-        )
-        row = cursor.fetchone()
-        if row:
-            return int(row[0])
-    except Exception:
-        return 0
-    return 0
-
-
-def _store_remote_snapshot(
-    client: "SporelyCloudClient",
-    cloud_id: str,
-    remote: dict | None = None,
-    remote_images: list[dict] | None = None,
-    remote_measurements: list[dict] | None = None,
-    *,
-    include_images: bool = True,
-    include_measurements: bool = True,
-    accepted_asymmetry: dict | None = None,
-) -> None:
-    cloud_value = str(cloud_id or '').strip()
-    if not cloud_value:
-        return
-    remote_obs = remote or client.get_observation(cloud_value)
-    if not remote_obs:
-        return
-    profiler = _cloud_sync_current_profiler()
-    if profiler is not None:
-        try:
-            profiler.record_store_remote_snapshot_fetch(images=include_images and remote_images is None)
-            profiler.record_store_remote_snapshot_fetch(
-                measurements=include_measurements and remote_measurements is None
-            )
-        except Exception:
-            pass
-    if include_images:
-        images = (
-            [dict(row or {}) for row in (remote_images or [])]
-            if remote_images is not None
-            else [dict(row or {}) for row in (client.pull_image_metadata(cloud_value) or [])]
-        )
-    else:
-        images = []
-    if include_measurements:
-        if remote_measurements is not None:
-            measurements = [dict(row or {}) for row in remote_measurements]
-        else:
-            measurements = list(_pull_remote_measurements_for_images(
-                client,
-                [str(row.get('id') or '').strip() for row in images if str(row.get('id') or '').strip()],
-            ))
-    else:
-        measurements = []
-    # ── B3 + final Fix 2: reconcile accepted-asymmetry on every schema-2
-    # snapshot write.  Ordinary sync callers do NOT supply
-    # ``accepted_asymmetry`` — they invoke this helper to persist a fresh
-    # baseline.  We must never create new acceptance in that path, but we
-    # MUST prune existing entries whose stable identity is no longer one-sided
-    # or no longer exists.  Only the plan resolver passes a non-None
-    # ``accepted_asymmetry`` (containing new / replacement entries) — those
-    # additions come from ``_reconcile_accepted_asymmetry`` upstream and are
-    # respected verbatim here.
-    previous = _parse_cloud_observation_snapshot(
-        _load_cloud_observation_snapshot(cloud_value)
-    )
-    prev_asym = previous.get('accepted_asymmetry')
-    additions_from_caller = accepted_asymmetry if isinstance(accepted_asymmetry, dict) else None
-    if additions_from_caller is not None or isinstance(prev_asym, dict):
-        # Best-effort resolve local observation id from cloud id so we can
-        # apply local-side pruning rules (row deleted / relinked).  If we
-        # cannot resolve it, we degrade gracefully to remote-only pruning.
-        local_observation_id = _local_observation_id_by_cloud_id(cloud_value)
-        current_local_images: list[dict] = []
-        current_local_measurements: list[dict] = []
-        if local_observation_id:
-            try:
-                current_local_images = ImageDB.get_images_for_observation(int(local_observation_id))
-            except Exception:
-                current_local_images = []
-            try:
-                current_local_measurements = MeasurementDB.get_measurements_for_observation(
-                    int(local_observation_id)
-                )
-            except Exception:
-                current_local_measurements = []
-        # Determine matched IDs (counterpart appearance) from remote state.
-        matched_local_image_ids = {
-            _safe_int(row.get('desktop_id'))
-            for row in images if _safe_int(row.get('desktop_id'))
-        } | {
-            _safe_int(row.get('id')) for row in current_local_images
-            if str(row.get('cloud_id') or '').strip()
-        }
-        matched_cloud_image_ids = {
-            str(row.get('cloud_id') or '').strip()
-            for row in current_local_images
-            if str(row.get('cloud_id') or '').strip()
-        }
-        matched_local_measurement_ids = {
-            _safe_int(row.get('desktop_id'))
-            for row in measurements if _safe_int(row.get('desktop_id'))
-        } | {
-            _safe_int(row.get('id')) for row in current_local_measurements
-            if str(row.get('cloud_id') or '').strip()
-        }
-        matched_cloud_measurement_ids = {
-            str(row.get('cloud_id') or '').strip()
-            for row in current_local_measurements
-            if str(row.get('cloud_id') or '').strip()
-        }
-        # Ordinary sync path: additions_from_caller is None → we only prune.
-        # Plan-resolver path: additions_from_caller carries new entries → they
-        # are added on top of the pruned survivors.
-        new_entries_source = additions_from_caller if additions_from_caller is not None else {
-            'local_only_images': [],
-            'cloud_only_images': [],
-            'local_only_measurements': [],
-            'cloud_only_measurements': [],
-        }
-        reconciled = _reconcile_accepted_asymmetry(
-            prev_asym, new_entries_source,
-            plan_items=[],  # ordinary sync has no plan; overrides come from additions_from_caller only
-            current_local_images=current_local_images,
-            current_remote_images=images,
-            current_local_measurements=current_local_measurements,
-            current_remote_measurements=measurements,
-            matched_local_image_ids=matched_local_image_ids,
-            matched_cloud_image_ids=matched_cloud_image_ids,
-            matched_local_measurement_ids=matched_local_measurement_ids,
-            matched_cloud_measurement_ids=matched_cloud_measurement_ids,
-        )
-        # If reconciliation produced nothing meaningful, drop the section
-        # entirely (empty dict) so the snapshot stays lean.
-        if any(reconciled.get(key) for key in (
-            'local_only_images', 'cloud_only_images',
-            'local_only_measurements', 'cloud_only_measurements',
-        )):
-            accepted_asymmetry = reconciled
-        else:
-            accepted_asymmetry = None
-    _store_cloud_observation_snapshot(
-        cloud_value,
-        _cloud_observation_snapshot(
-            remote_obs,
-            images if include_images else None,
-            measurements if include_measurements else None,
-            include_images=include_images,
-            include_measurements=include_measurements,
-            accepted_asymmetry=accepted_asymmetry,
-        ),
-    )
-
-
 def resolve_conflict_keep_local(
     client: "SporelyCloudClient",
     local_id: int,
@@ -10907,88 +7440,6 @@ def _assign_downloaded_image_order(
             'error': error_message,
         })
     return statuses
-
-
-# Material-content fields for the accepted-asymmetry image fingerprint.  Turn-B
-# fix 3: presentation-only fields (``gallery_rotation``, ``sort_order``) and
-# transport/storage/cache metadata are excluded so that a thumbnail rotation
-# or gallery/image-order tweak governed by the automatic desktop presentation
-# policy does NOT resurface an accepted one-sided media conflict.  Only fields
-# that represent genuine user or scientific media content participate.
-_ASYMMETRY_MATERIAL_IMAGE_FIELDS = (
-    'image_type',
-    'micro_category',
-    'notes',
-    'objective_name',
-    'scale_microns_per_pixel',
-    'mount_medium',
-    'stain',
-    'sample_type',
-    'sample_source',
-    'contrast',
-    'crop_mode',
-    'microscope_notes',
-)
-
-
-def _asymmetry_fingerprint_local_image(row: dict | None) -> dict:
-    """Material content fingerprint for a local-only accepted image.
-
-    Excludes presentation-only fields (``gallery_rotation``, ``sort_order``)
-    and every transport/storage/cache/derivative field (``filepath``,
-    ``storage_path``, thumbnail keys, ...).
-    """
-    row = dict(row or {})
-    return {
-        field: _normalize_snapshot_value(row.get(field))
-        for field in _ASYMMETRY_MATERIAL_IMAGE_FIELDS
-    }
-
-
-def _asymmetry_fingerprint_remote_image(row: dict | None) -> dict:
-    row = dict(row or {})
-    return {
-        field: _normalize_snapshot_value(row.get(field))
-        for field in _ASYMMETRY_MATERIAL_IMAGE_FIELDS
-    }
-
-
-def _asymmetry_fingerprint_local_measurement(row: dict | None) -> dict:
-    """Content fingerprint for a local-only accepted measurement."""
-    row = dict(row or {})
-    return {
-        'length_um': _normalize_measurement_float_value(row.get('length_um')),
-        'width_um': _normalize_measurement_float_value(row.get('width_um')),
-        'measurement_type': _normalize_measurement_type_value(row.get('measurement_type')),
-        'p1_x': _normalize_measurement_float_value(row.get('p1_x')),
-        'p1_y': _normalize_measurement_float_value(row.get('p1_y')),
-        'p2_x': _normalize_measurement_float_value(row.get('p2_x')),
-        'p2_y': _normalize_measurement_float_value(row.get('p2_y')),
-        'image_id': _safe_int(row.get('image_id')) or None,
-    }
-
-
-def _asymmetry_fingerprint_remote_measurement(row: dict | None) -> dict:
-    row = dict(row or {})
-    return {
-        'length_um': _normalize_measurement_float_value(row.get('length_um')),
-        'width_um': _normalize_measurement_float_value(row.get('width_um')),
-        'measurement_type': _normalize_measurement_type_value(row.get('measurement_type')),
-        'p1_x': _normalize_measurement_float_value(row.get('p1_x')),
-        'p1_y': _normalize_measurement_float_value(row.get('p1_y')),
-        'p2_x': _normalize_measurement_float_value(row.get('p2_x')),
-        'p2_y': _normalize_measurement_float_value(row.get('p2_y')),
-        'image_id': str(row.get('image_id') or '').strip() or None,
-    }
-
-
-def _accepted_asymmetry_key(entry: dict) -> tuple:
-    return (
-        str(entry.get('side') or ''),
-        str(entry.get('kind') or ''),
-        _safe_int(entry.get('local_id')) or 0,
-        str(entry.get('cloud_id') or '').strip(),
-    )
 
 
 def _build_plan_operations(items: list[dict]) -> list[dict]:
@@ -11961,195 +8412,6 @@ def _build_accepted_asymmetry_from_plan(
                 'choice': 'keep_cloud',
             })
     return accepted
-
-
-def _identities_referenced_by_plan(items: list[dict]) -> dict:
-    """Every stable identity that this plan explicitly touches with a non-keep choice.
-
-    Used to remove prior accepted-asymmetry entries the user is overriding.
-    """
-    image_identities: set[tuple[int, str]] = set()
-    measurement_identities: set[tuple[int, str]] = set()
-    for item in items or []:
-        kind = item.get('kind')
-        choice = item.get('choice')
-        # ``keep_*`` choices are handled by _build_accepted_asymmetry_from_plan.
-        # Everything else counts as an override that removes any prior keep-only
-        # entry for the same stable identity.
-        if choice in {'keep_local', 'keep_cloud'}:
-            continue
-        local_id = _safe_int(item.get('local_id')) or 0
-        cloud_id = str(item.get('cloud_id') or '').strip()
-        if kind in {'image', 'image_metadata'}:
-            image_identities.add((local_id, cloud_id))
-        elif kind == 'measurement':
-            measurement_identities.add((local_id, cloud_id))
-    return {'images': image_identities, 'measurements': measurement_identities}
-
-
-def _reconcile_accepted_asymmetry(
-    previous: dict | None,
-    new: dict,
-    *,
-    plan_items: list[dict],
-    current_local_images: list[dict],
-    current_remote_images: list[dict],
-    current_local_measurements: list[dict],
-    current_remote_measurements: list[dict],
-    matched_local_image_ids: set[int] | None = None,
-    matched_cloud_image_ids: set[str] | None = None,
-    matched_local_measurement_ids: set[int] | None = None,
-    matched_cloud_measurement_ids: set[str] | None = None,
-) -> dict:
-    """Merge, prune, and supersede accepted-asymmetry entries.
-
-    Removes an accepted entry when any of the following is now true:
-
-    * its stable identity is referenced by a non-keep plan choice (user
-      explicitly changed their mind to upload/download);
-    * the counterpart now exists (row is no longer one-sided);
-    * the accepted row no longer exists on its side (deletion / relink);
-    * for measurements: the row's owning image identity changed;
-    * ownership or side changed.
-
-    Newer keep-only entries for the same identity replace older ones so the
-    fingerprint stays fresh.  The result contains only entries that are still
-    valid.
-    """
-    result = {
-        'local_only_images': [],
-        'cloud_only_images': [],
-        'local_only_measurements': [],
-        'cloud_only_measurements': [],
-    }
-    prev = previous if isinstance(previous, dict) else {}
-    override = _identities_referenced_by_plan(plan_items or [])
-    override_images = override['images']
-    override_measurements = override['measurements']
-    matched_local_image_ids = matched_local_image_ids or set()
-    matched_cloud_image_ids = matched_cloud_image_ids or set()
-    matched_local_measurement_ids = matched_local_measurement_ids or set()
-    matched_cloud_measurement_ids = matched_cloud_measurement_ids or set()
-
-    local_image_by_id = {_safe_int(r.get('id')): r for r in current_local_images or []
-                         if _safe_int(r.get('id'))}
-    remote_image_by_id = {str(r.get('id') or '').strip(): r for r in current_remote_images or []
-                          if str(r.get('id') or '').strip()}
-    local_meas_by_id = {_safe_int(r.get('id')): r for r in current_local_measurements or []
-                        if _safe_int(r.get('id'))}
-    remote_meas_by_id = {str(r.get('id') or '').strip(): r for r in current_remote_measurements or []
-                         if str(r.get('id') or '').strip()}
-
-    def _still_local_only_image(entry: dict) -> bool:
-        local_id = _safe_int(entry.get('local_id'))
-        if not local_id or local_id not in local_image_by_id:
-            return False  # row is gone
-        row = local_image_by_id[local_id]
-        # Row now linked to a cloud row → no longer one-sided.
-        if str(row.get('cloud_id') or '').strip():
-            return False
-        # A cloud row now claims this local id → no longer one-sided.
-        if local_id in matched_local_image_ids:
-            return False
-        # User overrode (upload etc.) → drop.
-        if (local_id, '') in override_images or any(lid == local_id for lid, _ in override_images):
-            return False
-        return True
-
-    def _still_cloud_only_image(entry: dict) -> bool:
-        cloud_id = str(entry.get('cloud_id') or '').strip()
-        if not cloud_id or cloud_id not in remote_image_by_id:
-            return False
-        row = remote_image_by_id[cloud_id]
-        if _safe_int(row.get('desktop_id')):
-            return False  # cloud row now points at a local row
-        if cloud_id in matched_cloud_image_ids:
-            return False
-        if any(cid == cloud_id for _, cid in override_images):
-            return False
-        return True
-
-    def _still_local_only_measurement(entry: dict) -> bool:
-        local_id = _safe_int(entry.get('local_id'))
-        if not local_id or local_id not in local_meas_by_id:
-            return False
-        row = local_meas_by_id[local_id]
-        if str(row.get('cloud_id') or '').strip():
-            return False  # relinked
-        # Owning-image identity changed → drop; fresh conflict.
-        expected_owner = _safe_int(entry.get('owning_local_image_id')) or None
-        current_owner = _safe_int(row.get('image_id')) or None
-        if expected_owner is not None and current_owner is not None and expected_owner != current_owner:
-            return False
-        if local_id in matched_local_measurement_ids:
-            return False
-        if any(lid == local_id for lid, _ in override_measurements):
-            return False
-        return True
-
-    def _still_cloud_only_measurement(entry: dict) -> bool:
-        cloud_id = str(entry.get('cloud_id') or '').strip()
-        if not cloud_id or cloud_id not in remote_meas_by_id:
-            return False
-        row = remote_meas_by_id[cloud_id]
-        if _safe_int(row.get('desktop_id')):
-            return False
-        expected_owner = str(entry.get('owning_cloud_image_id') or '').strip() or None
-        current_owner = str(row.get('image_id') or '').strip() or None
-        if expected_owner and current_owner and expected_owner != current_owner:
-            return False
-        if cloud_id in matched_cloud_measurement_ids:
-            return False
-        if any(cid == cloud_id for _, cid in override_measurements):
-            return False
-        return True
-
-    predicates = {
-        'local_only_images': _still_local_only_image,
-        'cloud_only_images': _still_cloud_only_image,
-        'local_only_measurements': _still_local_only_measurement,
-        'cloud_only_measurements': _still_cloud_only_measurement,
-    }
-
-    for key, predicate in predicates.items():
-        seen: dict[tuple, dict] = {}
-        # Prior entries first (survivors of pruning).
-        for entry in prev.get(key) or []:
-            if isinstance(entry, dict) and predicate(entry):
-                seen[_accepted_asymmetry_key(entry)] = dict(entry)
-        # New entries override / add — they were computed against fresh state
-        # so they are always valid.
-        for entry in new.get(key) or []:
-            if isinstance(entry, dict):
-                seen[_accepted_asymmetry_key(entry)] = dict(entry)
-        result[key] = list(seen.values())
-    return result
-
-
-def _merge_accepted_asymmetry(previous: dict | None, new: dict) -> dict:
-    """Preserved for ordinary sync callers that don't do full reconciliation.
-
-    Kept as a thin wrapper for backward compatibility with helpers that store
-    a snapshot without a plan context (e.g. push_all).  A plan resolution
-    should call ``_reconcile_accepted_asymmetry`` directly.
-    """
-    result = {
-        'local_only_images': [],
-        'cloud_only_images': [],
-        'local_only_measurements': [],
-        'cloud_only_measurements': [],
-    }
-    prev = previous if isinstance(previous, dict) else {}
-    for key in result.keys():
-        seen: dict[tuple, dict] = {}
-        for entry in prev.get(key) or []:
-            if isinstance(entry, dict):
-                seen[_accepted_asymmetry_key(entry)] = dict(entry)
-        for entry in new.get(key) or []:
-            if isinstance(entry, dict):
-                seen[_accepted_asymmetry_key(entry)] = dict(entry)
-        result[key] = list(seen.values())
-    return result
 
 
 def _iso_timestamp_now() -> str:
@@ -13178,7 +9440,7 @@ def has_saved_cloud_password() -> bool:
     return bool(email and password)
 
 
-class SporelyCloudClient(CloudSyncTransportMixin):
+class SporelyCloudClient(CloudSyncTransportMixin, CloudSyncTaxonIdentityMixin):
     """Thin wrapper around Supabase REST API."""
 
     def __init__(self, access_token: str, user_id: str, refresh_token: str | None = None):
@@ -14565,166 +10827,6 @@ class SporelyCloudClient(CloudSyncTransportMixin):
         self._sync_observation_selected_taxon(cloud_id, obs, remote_obs=None)
         return cloud_id
 
-    def _sync_observation_selected_taxon(
-        self,
-        cloud_id: str,
-        obs: dict,
-        *,
-        remote_obs: dict | None,
-        baseline_obs: dict | None = None,
-    ) -> None:
-        """Forward an authoritative desktop selection through the guarded RPC.
-
-        A missing local value is deliberately not inferred from genus/species
-        text and does not erase cloud identity.  The RPC is skipped when the
-        remote row already carries the same exact selection.
-
-        Taxonomy-v2 closeout Stage 2: the proof standard is provenance, not
-        sign. Previously any positive integer in ``sporely_taxon_id`` was
-        asserted to the cloud as an owner-selected Sporely identity. The
-        deployed RPC does validate active-release membership, so an arbitrary
-        external integer is rejected server-side — but it cannot distinguish
-        an external integer that *numerically collides* with a real Sporely ID
-        in the active release, and no server-side check ever could. That
-        residual case is closed here, by refusing to emit anything whose
-        producer is not recorded as proof.
-
-        Refusing is normally a skip, not a clear: an unproven or unresolved
-        local identity is not by itself evidence that the cloud's identity is
-        wrong, so the source evidence and any existing cloud selection both
-        survive. Sync-integrity follow-up 4
-        (docs/plans/active/2026-09-25-sync-integrity-follow-ups.md) adds one
-        narrow exception: when ``baseline_obs`` proves the desktop itself last
-        synced a proven Sporely identity for this observation, and the
-        committed identification has since changed locally away from it, the
-        absence of a current local identity is the desktop's own evidence that
-        the user deliberately abandoned that identity — not merely unproven
-        state. That case issues an explicit clear through the same atomic RPC
-        the web uses for a coupled identity+name change, never a bare PATCH of
-        taxonomy columns.
-        """
-        identity = TaxonIdentity.from_row(obs)
-        if not identity.is_proven_sporely:
-            if identity.state == STATE_NONE and self._maybe_clear_stale_cloud_identity(
-                cloud_id, obs, remote_obs=remote_obs, baseline_obs=baseline_obs,
-            ):
-                return
-            if identity.sporely_taxon_id is not None or identity.has_external_evidence:
-                logger.info(
-                    "cloud sync: skipping taxonomy identity for observation %s — "
-                    "state=%s proof=%s source=%s namespace=%s external_id=%s; "
-                    "only a proven Sporely identity may reach "
-                    "set_observation_selected_taxon_v2",
-                    obs.get('id'),
-                    identity.state,
-                    identity.identity_proof,
-                    identity.source_system,
-                    identity.namespace,
-                    identity.external_id,
-                )
-            return
-        taxon_id = identity.sporely_taxon_id
-        remote_taxon_id = _normalize_observation_int_value(
-            (remote_obs or {}).get('selected_sporely_taxon_id')
-        )
-        if remote_taxon_id == taxon_id:
-            return
-        self.set_observation_selected_taxon(cloud_id, taxon_id)
-
-    def _maybe_clear_stale_cloud_identity(
-        self,
-        cloud_id: str,
-        obs: dict,
-        *,
-        remote_obs: dict | None,
-        baseline_obs: dict | None,
-    ) -> bool:
-        """Explicit-clear check for a local identity that reads as none.
-
-        All of these must hold, mirroring
-        docs/plans/active/2026-09-25-sync-integrity-follow-ups.md item 4:
-
-        1. the current local committed identity is none (caller already
-           checked ``identity.state == STATE_NONE``);
-        2. the stored sync baseline shows the previously synchronized
-           observation held a non-empty *selected Sporely* identity — not any
-           identity: a baseline external/legacy value is not something this
-           desktop ever asserted through the guarded RPC, so it is not this
-           desktop's claim to withdraw;
-        3. the committed identification (genus/species) has changed relative
-           to that same baseline;
-        4. that change is a real identification edit, not bookkeeping — (3)
-           already establishes that by comparing the fields that name the
-           taxon, not an unrelated field;
-        5. the cloud's CURRENT selected identity is either empty or still
-           equals that same baseline — never a third value. A cloud identity
-           that moved to something else since the baseline is not this
-           desktop's stale value to overwrite; the clear is withheld and the
-           disagreement logged (see the fail-closed branch below).
-
-        With no baseline (``baseline_obs`` is ``None``, or the stored snapshot
-        predates identity joining change detection), nothing is inferred: a
-        legacy/no-identity row with no proof of a prior selection is left
-        alone, per the fail-closed rule.
-
-        Returns ``True`` once the situation is handled (either a clear was
-        issued, or the cloud already agrees), so the caller does not fall
-        through to the ordinary "skip and log" path for what is actually a
-        deliberate clear.
-        """
-        if baseline_obs is None:
-            return False
-        baseline_key = _baseline_identity_key(baseline_obs)
-        if baseline_key is _IDENTITY_BASELINE_UNKNOWN or not baseline_key.startswith('sporely:'):
-            return False
-        if _identification_key(obs) == _identification_key(dict(baseline_obs or {})):
-            # Nothing about the committed identification changed locally —
-            # an unrelated edit (notes, location, habitat, …) must never
-            # clear a cloud identity the user never touched.
-            return False
-        remote_claim = _remote_identity_claim(remote_obs)
-        if remote_claim is not None and remote_claim.key == '':
-            # The cloud already has no identity (e.g. a previous clear
-            # already landed): nothing left to do, and definitely not a
-            # repeated RPC call on every subsequent sync.
-            return True
-        if remote_claim is not None and remote_claim.key and remote_claim.key != baseline_key:
-            # The cloud's CURRENT selected identity is neither empty nor the
-            # baseline this desktop last synced — something else (another
-            # client, the web) rebound the concept since. Clearing it would
-            # wipe that other write's name/identity and withdraw ITS shared
-            # reference contributions on the strength of a local rename this
-            # desktop made against a now-stale baseline. Ordinarily this
-            # exact case is already intercepted upstream: a genuine local
-            # identification change together with a remote identity change
-            # classifies as `_classify_identity_sync_change(...) ==
-            # 'conflict'`, which blocks the whole observation push before
-            # `push_observation` is ever reached (see push_all). This check
-            # is a second, independent fail-closed gate in case that
-            # upstream block is bypassed or this method is ever reached from
-            # a different caller, so a stale local baseline can never
-            # overwrite a cloud identity it never agreed with.
-            logger.warning(
-                "cloud sync: identity clear withheld for observation %s — "
-                "cloud selected %s does not match the sync baseline %s; "
-                "fail closed instead of overwriting a possibly newer remote "
-                "selection (or its shared-reference contributions)",
-                obs.get('id'), remote_claim.key, baseline_key,
-            )
-            return True
-        genus = str(obs.get('genus') or '').strip() or None
-        species = str(obs.get('species') or '').strip() or None
-        common_name = str(obs.get('common_name') or '').strip() or None
-        logger.info(
-            "cloud sync: explicit identity clear for observation %s — "
-            "baseline=%s committed identification changed locally; "
-            "clearing via set_observation_identification_v2",
-            obs.get('id'), baseline_key,
-        )
-        self.clear_observation_selected_taxon(
-            cloud_id, genus=genus, species=species, common_name=common_name,
-        )
-        return True
 
     def clear_observation_selected_taxon(
         self,
@@ -14757,69 +10859,6 @@ class SporelyCloudClient(CloudSyncTransportMixin):
         })
         self._verify_identity_clear_landed(cloud_id)
 
-    def _verify_identity_clear_landed(self, cloud_id: str) -> None:
-        """Read back the row and confirm the clear actually took effect.
-
-        Stage C review round 2, item 3: runtime-proven that
-        ``observation_taxon_shared_reference_rate_row_trg``
-        (sporely-web migration 20260830193144) can cancel THIS row's UPDATE
-        of ``selected_sporely_taxon_id`` — a per-user, per-minute rate limit
-        on the same trigger family the reference-library sync RPCs share —
-        while the statement-level guard reports it correctly as HTTP 429.
-        Reproduced end to end: a persistently rate-limited caller gets a real
-        ``CloudTemporarilyUnavailableError`` (never a false success) and the
-        observation stays locally dirty for retry, so the row-suppression
-        itself was never observed to be silently reported as a success by
-        the RPC call. This read-back is the narrow, desktop-side defence for
-        the residual case regardless: if ``set_observation_identification_v2``
-        ever returns without raising while the row's own
-        ``selected_sporely_taxon_id`` still shows a value, that is
-        indistinguishable from a silently dropped clear, so it must be
-        treated exactly like one — fail closed (``CloudSyncError``, caught by
-        the same per-observation handling every other push failure uses),
-        never advance sync state or a baseline as if the clear had landed.
-
-        Stage C review round 3, finding 3 broadens the same fail-closed
-        standard to the read-back call itself, not just its result:
-
-        - A transport failure while reading back (network error, non-2xx,
-          decode failure) is indistinguishable from "the clear may or may
-          not have landed" — it must fail closed exactly like a confirmed
-          still-attached identity, not silently pass through.
-        - A malformed or empty response for a row that MUST exist (the RPC
-          just ran against this exact ``cloud_id`` without raising) is
-          never treated as "confirmed cleared" — only a well-formed row
-          that explicitly reports ``selected_sporely_taxon_id`` as empty
-          counts as a confirmed clear. A response missing that key
-          entirely (or not shaped like a row at all) fails closed too,
-          the same as a genuine concurrency loss (e.g. the row was
-          deleted between the RPC and this read-back).
-        """
-        try:
-            verified = self.get_observation(cloud_id)
-        except Exception as exc:
-            raise CloudSyncError(
-                f'cloud {cloud_id}: identity clear did not take effect — could '
-                f'not verify the cloud row after set_observation_identification_v2 '
-                f'({exc}). Refusing to advance sync state as if it succeeded.'
-            ) from exc
-        if not isinstance(verified, dict) or 'selected_sporely_taxon_id' not in verified:
-            raise CloudSyncError(
-                f'cloud {cloud_id}: identity clear did not take effect — the '
-                f'read-back after set_observation_identification_v2 returned an '
-                f'empty or malformed row ({verified!r}). Refusing to advance '
-                f'sync state as if the clear succeeded.'
-            )
-        still_selected = _normalize_observation_int_value(verified.get('selected_sporely_taxon_id'))
-        if still_selected is not None:
-            raise CloudSyncError(
-                f'cloud {cloud_id}: identity clear did not take effect — '
-                f'the cloud row still reports selected_sporely_taxon_id='
-                f'{still_selected!r} after set_observation_identification_v2 '
-                f'returned. Refusing to advance sync state as if it succeeded '
-                f'(a rate-limit or similar row-suppression trigger may have '
-                f'cancelled the write).'
-            )
 
     def set_observation_selected_taxon(
         self,
@@ -17736,107 +13775,6 @@ def get_conflict_detail(client: "SporelyCloudClient", local_id: int, cloud_id: s
     }
 
 
-def _filter_accepted_one_sided_images(
-    image_pairs: list[dict],
-    accepted_asymmetry: dict | None,
-    local_images_raw: list[dict],
-    remote_images: list[dict],
-) -> tuple[list[dict], set[tuple[int, str]]]:
-    """Drop one-sided image pairs whose accepted-asymmetry fingerprint is unchanged.
-
-    * Editing the retained item (change to any fingerprint field) resurfaces it.
-    * A counterpart appearing on the other side means the pair is no longer
-      truly one-sided; it goes back through normal identity matching and the
-      acceptance no longer suppresses the pair.
-    """
-    if not isinstance(accepted_asymmetry, dict):
-        return image_pairs, set()
-    local_only_accepted = {
-        _safe_int(entry.get('local_id')): entry
-        for entry in accepted_asymmetry.get('local_only_images') or []
-        if isinstance(entry, dict) and _safe_int(entry.get('local_id'))
-    }
-    cloud_only_accepted = {
-        str(entry.get('cloud_id') or '').strip(): entry
-        for entry in accepted_asymmetry.get('cloud_only_images') or []
-        if isinstance(entry, dict) and str(entry.get('cloud_id') or '').strip()
-    }
-    local_row_by_id = {_safe_int(r.get('id')): r for r in local_images_raw or []
-                       if _safe_int(r.get('id'))}
-    remote_row_by_id = {str(r.get('id') or '').strip(): r for r in remote_images or []
-                        if str(r.get('id') or '').strip()}
-    kept: list[dict] = []
-    dropped_ids: set[tuple[int, str]] = set()
-    for pair in image_pairs:
-        status = pair.get('status')
-        if status == 'local_only':
-            local_id = _safe_int((pair.get('local') or {}).get('local_id'))
-            accepted = local_only_accepted.get(local_id)
-            live_row = local_row_by_id.get(local_id)
-            if accepted and live_row is not None:
-                current_fp = _asymmetry_fingerprint_local_image(live_row)
-                if current_fp == accepted.get('fingerprint'):
-                    dropped_ids.add((local_id, ''))
-                    continue  # unchanged accepted → hide
-        elif status == 'cloud_only':
-            cloud_id = str((pair.get('remote') or {}).get('cloud_id') or '').strip()
-            accepted = cloud_only_accepted.get(cloud_id)
-            live_row = remote_row_by_id.get(cloud_id)
-            if accepted and live_row is not None:
-                current_fp = _asymmetry_fingerprint_remote_image(live_row)
-                if current_fp == accepted.get('fingerprint'):
-                    dropped_ids.add((0, cloud_id))
-                    continue
-        kept.append(pair)
-    return kept, dropped_ids
-
-
-def _filter_accepted_one_sided_measurements(
-    measurement_pairs: list[dict],
-    accepted_asymmetry: dict | None,
-    local_measurements_raw: list[dict],
-    remote_measurements: list[dict],
-) -> tuple[list[dict], set[tuple[int, str]]]:
-    if not isinstance(accepted_asymmetry, dict):
-        return measurement_pairs, set()
-    local_only_accepted = {
-        _safe_int(entry.get('local_id')): entry
-        for entry in accepted_asymmetry.get('local_only_measurements') or []
-        if isinstance(entry, dict) and _safe_int(entry.get('local_id'))
-    }
-    cloud_only_accepted = {
-        str(entry.get('cloud_id') or '').strip(): entry
-        for entry in accepted_asymmetry.get('cloud_only_measurements') or []
-        if isinstance(entry, dict) and str(entry.get('cloud_id') or '').strip()
-    }
-    local_row_by_id = {_safe_int(r.get('id')): r for r in local_measurements_raw or []
-                       if _safe_int(r.get('id'))}
-    remote_row_by_id = {str(r.get('id') or '').strip(): r for r in remote_measurements or []
-                        if str(r.get('id') or '').strip()}
-    kept: list[dict] = []
-    dropped_ids: set[tuple[int, str]] = set()
-    for pair in measurement_pairs:
-        status = pair.get('status')
-        if status == 'local_only':
-            local_id = _safe_int(pair.get('local_id'))
-            accepted = local_only_accepted.get(local_id)
-            live_row = local_row_by_id.get(local_id)
-            if accepted and live_row is not None:
-                current_fp = _asymmetry_fingerprint_local_measurement(live_row)
-                if current_fp == accepted.get('fingerprint'):
-                    dropped_ids.add((local_id, ''))
-                    continue
-        elif status == 'cloud_only':
-            cloud_id = str(pair.get('cloud_id') or '').strip()
-            accepted = cloud_only_accepted.get(cloud_id)
-            live_row = remote_row_by_id.get(cloud_id)
-            if accepted and live_row is not None:
-                current_fp = _asymmetry_fingerprint_remote_measurement(live_row)
-                if current_fp == accepted.get('fingerprint'):
-                    dropped_ids.add((0, cloud_id))
-                    continue
-        kept.append(pair)
-    return kept, dropped_ids
 # ── High-level sync entry points ──────────────────────────────────────────────
 
 def push_all(

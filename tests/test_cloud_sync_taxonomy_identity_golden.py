@@ -20,6 +20,7 @@ from pathlib import Path
 if __name__ == "__main__":  # allow ``python tests/<this file> --write``
     sys.path.insert(0, str(Path(__file__).resolve().parents[1]))
 
+from tests.cloud_sync_owner_patching import patch_facade_object
 from utils import cloud_sync
 from utils.taxon_identity import TaxonIdentity
 
@@ -250,14 +251,11 @@ class _FakeSettingsDB:
 def _persisted_snapshot(snapshot: str) -> dict:
     """Store and reload ``snapshot`` through the production snapshot helpers."""
     fake = _FakeSettingsDB()
-    original = cloud_sync.SettingsDB
-    cloud_sync.SettingsDB = fake
-    try:
+    # The snapshot store lives in an owner (Stage S4); patch every same-object binding.
+    with patch_facade_object(cloud_sync, "SettingsDB", fake):
         cloud_sync._store_cloud_observation_snapshot("1184", snapshot)
         stored = dict(fake.values)
         loaded = cloud_sync._load_cloud_observation_snapshot("1184")
-    finally:
-        cloud_sync.SettingsDB = original
     return {"stored_settings": stored, "loaded": loaded}
 
 

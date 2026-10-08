@@ -579,3 +579,80 @@ class CloudImageBytesNotDesiredError(CloudSyncError):
     boundary. Recovery flows may opt in explicitly by passing
     ``recovery_authorized=True`` to the upload method.
     """
+
+
+_SUPABASE_TRANSIENT_STATUS_CODES = {429, 500, 502, 503, 504}
+
+
+_SUPABASE_TRANSIENT_ERROR_HINTS = (
+    'bad gateway',
+    'connection aborted',
+    'connection refused',
+    'connection reset',
+    'could not connect to server',
+    'gateway timeout',
+    'postgrest unavailable',
+    'schema cache',
+    'service unavailable',
+    'temporarily unavailable',
+    'timed out',
+    'timeout',
+)
+
+
+_CLOUD_TEMPORARILY_UNAVAILABLE_MESSAGE = (
+    'Supabase/cloud sync is temporarily unavailable; local data was not overwritten.'
+)
+
+
+_CLOUD_AUTH_ERROR_HINTS = (
+    'jwt expired',
+    'invalid jwt',
+    'expired access token',
+    'access token expired',
+    'token expired',
+    'session expired',
+    'authentication failed',
+    'invalid_grant',
+    'not logged in',
+    'unauthorized',
+    'pgrst301',
+    'pgrst303',
+    # Supabase returns this when password login is attempted without a captcha
+    # token — the user must sign in interactively (e.g. via browser).
+    'captcha_failed',
+)
+
+
+def is_cloud_auth_error(error) -> bool:
+    """Broad classification: does *error* smell like an auth/token issue?
+
+    Used by the request layer to decide whether to try a refresh and by
+    the sync loops to decide whether to abort early.  Deliberately does
+    not match a raw ``403`` — PostgREST returns 403 for RLS denials,
+    which are authorization (not authentication) failures and must not
+    be conflated with an expired session.
+    """
+    if isinstance(error, CloudReauthRequiredError):
+        return True
+    code, texts = _collect_sync_error_details(error)
+    haystack = ' '.join(dict.fromkeys(texts)).lower()
+    code_text = str(code or '').strip().lower()
+    if code_text == '401':
+        return True
+    return any(hint in haystack for hint in _CLOUD_AUTH_ERROR_HINTS)
+
+
+def is_cloud_temporary_unavailable_error(error) -> bool:
+    if isinstance(error, CloudTemporarilyUnavailableError):
+        return True
+    code, texts = _collect_sync_error_details(error)
+    haystack = ' '.join(dict.fromkeys(texts)).lower()
+    code_text = str(code or '').strip().lower()
+    if code_text in {'pgrst000', 'pgrst001', 'pgrst002', 'pgrst003'}:
+        return True
+    if code_text in {str(status) for status in _SUPABASE_TRANSIENT_STATUS_CODES}:
+        return True
+    if _CLOUD_TEMPORARILY_UNAVAILABLE_MESSAGE.lower() in haystack:
+        return True
+    return any(hint in haystack for hint in _SUPABASE_TRANSIENT_ERROR_HINTS)

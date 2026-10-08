@@ -149,14 +149,14 @@ sync_all()
   -> ensure_database_linked_to_cloud_user()
   -> client.list_remote_observations()        # paginated
   -> client.list_remote_calibrations()        # paginated
-  -> push_calibrations()                      (L6890)
+  -> push_calibrations()                      (calibrations.py)
   -> push_all()                               (L17631)
        -> _mark_cloud_observations_dirty_for_media_changes()            (L8465)
        -> _mark_cloud_observations_dirty_for_image_capture_time_changes() (L8477)
        -> _mark_cloud_observations_dirty_for_pending_local_images()     (L8845, gated scan)
        -> _push_pending_image_tombstones()    (L5814, flushed BEFORE pruning)
        -> per dirty observation:
-            _analyze_observation_push_conflicts()  (L4112)
+            _analyze_observation_push_conflicts()  (preflight.py)
             client.push_observation()              (L15120)
             _push_images_for_observation()         (incl. desired-state init, identity repair, uploads)
             measurement / summary push
@@ -221,12 +221,12 @@ error handling cannot report a false success.
 
 ### Calibration sync
 
-- `push_calibrations(client, …)` (L6890) →
+- `push_calibrations(client, …)` (`utils/cloud_sync_impl/calibrations.py`) →
   `client.push_calibration_metadata()` (L15086),
   `client.push_calibration_reference_image()` (L14955).
-- `pull_calibrations(client, …)` (L7030).
-- Conflict tools: `list_calibration_conflicts` (L7154),
-  `repair_calibrations_local_wins` (L7212).
+- `pull_calibrations(client, …)` (`utils/cloud_sync_impl/calibrations.py`).
+- Conflict tools: `list_calibration_conflicts` (`utils/cloud_sync_impl/calibrations.py`),
+  `repair_calibrations_local_wins` (`utils/cloud_sync_impl/calibrations.py`).
 - `download_calibration_reference_to_cache` (L947).
 
 ### Measurement sync
@@ -307,16 +307,16 @@ get_conflict_detail()               (L16687)
 | Image metadata push | `SporelyCloudClient.push_image_metadata` (L15176) | PATCH-or-POST one `observation_images` row | Raw `_patch`/`_post` | Understands metadata-only semantics (`storage_path IS NULL AND image_type='microscope'`, see L15209) |
 | Original upload | `upload_original_image_file` (L15566) + `utils/original_sync_policy.py` | Companion original bytes, policy-gated | — | Parent image must be desired |
 | Remote image application / materialization | `_apply_remote_image_metadata_only_to_local` (L10168), `_ensure_local_metadata_only_microscope_anchor` (L10272), localization helpers ~L10493 | Apply remote rows locally; download bytes into recovery cache | Direct `ImageDB` writes from pull loops | Downloaded copy only replaces local file when local is not larger (L10502); larger local original kept as-is |
-| Remote snapshot storage | `_store_remote_snapshot` (L10927), `_store_cloud_observation_snapshot` (L5236), `_load_cloud_observation_snapshot` (L5226), `_parse_cloud_observation_snapshot` (L3312), `_clear_cloud_observation_snapshot` (L6465) | Persist/read the known-good baseline | Ad-hoc settings writes | May only run after complete, successful remote reads (section F). **Current code does not wait for required child work**: `push_all` and `materialize_cloud_media_for_observation` store it after a child failure. The target model is in `docs/cloud-sync-orchestration-design.md` |
-| Three-way conflict analysis | `_analyze_observation_push_conflicts` (L4112), `ObservationPushConflictReport` (L4097), `build_conflict_plan_baseline` (L11459) | Compare local vs cloud vs baseline; block writes on both-changed | Push loops writing without preflight | "Needs review" marker: `_set_observation_conflict_review_pending` (L4273) / `_clear_…` (L4290) |
-| Local-vs-cloud change analysis | `_local_has_real_changes_since_snapshot` (L4318), `_remote_snapshot_has_meaningful_changes` (L9111), `_clear_observation_dirty_if_no_real_changes` (L4360) | Distinguish real edits from no-op noise | — | Feeds the no-op fast path |
+| Remote snapshot storage | `_store_remote_snapshot` (`utils/cloud_sync_impl/baseline.py`), `_store_cloud_observation_snapshot` (`utils/cloud_sync_impl/baseline.py`), `_load_cloud_observation_snapshot` (`utils/cloud_sync_impl/baseline.py`), `_parse_cloud_observation_snapshot` (`utils/cloud_sync_impl/baseline.py`), `_clear_cloud_observation_snapshot` (`utils/cloud_sync_impl/baseline.py`) | Persist/read the known-good baseline | Ad-hoc settings writes | May only run after complete, successful remote reads (section F). **Current code does not wait for required child work**: `push_all` and `materialize_cloud_media_for_observation` store it after a child failure. The target model is in `docs/cloud-sync-orchestration-design.md` |
+| Three-way conflict analysis | `_analyze_observation_push_conflicts` (`utils/cloud_sync_impl/preflight.py`), `ObservationPushConflictReport` (`utils/cloud_sync_impl/reconciliation/report.py`), `build_conflict_plan_baseline` (L11459) | Compare local vs cloud vs baseline; block writes on both-changed | Push loops writing without preflight | "Needs review" marker: `_set_observation_conflict_review_pending` (L4273) / `_clear_…` (L4290) |
+| Local-vs-cloud change analysis | `_local_has_real_changes_since_snapshot` (`utils/cloud_sync_impl/preflight.py`), `_remote_snapshot_has_meaningful_changes` (L9111), `_clear_observation_dirty_if_no_real_changes` (L4360) | Distinguish real edits from no-op noise | — | Feeds the no-op fast path |
 | Observation push identity resolution | `SporelyCloudClient._resolve_existing_observation_for_push` (L14839), `_find_cloud_observation` (L14818), `ObservationIdentityConflictError` (`utils/cloud_sync_impl/errors.py`) | Decide which existing cloud observation a push targets: verified local `cloud_id` is primary; remote `desktop_id` is recovery; disagreement/ambiguity raises | Callers doing their own `cloud_id`/`desktop_id` fallback logic | See "Observation identity model" below. A missing remote `desktop_id` must never cause a duplicate POST when the local `cloud_id` verifies |
 | Image push identity resolution | `SporelyCloudClient._resolve_existing_image_for_push`, `_find_cloud_image`, `ImageIdentityConflictError` | Decide which existing cloud image a push targets: verified local `images.cloud_id` is primary (direct); remote `desktop_id` scoped to the observation is recovery; disagreement raises `ImageIdentityConflictError` (no PATCH/POST, stays dirty) | Callers doing their own `cloud_id`/`desktop_id` fallback logic | Pull-only imports with `cloud_id` set and NULL remote `desktop_id` must not trigger duplicate POSTs; mirrors the two-leg observation identity model |
 | Observation push | `SporelyCloudClient.push_observation` (L15120) | PATCH existing / POST new observation row | Raw transport | Identity via `_resolve_existing_observation_for_push`; POST only when it returns no target |
 | Observation pull | `pull_all` per-candidate loop (L22251+) | Apply remote updates to clean local rows; import new | — | Conflicted rows are skipped, not overwritten |
-| Taxonomy identity sync | `_remote_identity_claim`, `_local_identity_columns_for_remote_claim`, `_apply_remote_identity_to_local`, `_classify_identity_sync_change`; push via `SporelyCloudClient._sync_observation_selected_taxon` | Map the cloud identity to one conservative local identity (`cloud_selected_unverified`); three-way identity change/conflict detection as the virtual field `taxon_identity` | Copying identity columns as ordinary snapshot fields; PATCHing identity | Contract: "Cloud → desktop taxonomy identity" and "Identity in change detection" |
+| Taxonomy identity sync | `_remote_identity_claim`, `_classify_identity_sync_change` (`utils/cloud_sync_impl/reconciliation/identity.py`), `_local_identity_columns_for_remote_claim`, `_apply_remote_identity_to_local` (`utils/cloud_sync_impl/identity_state.py`); push and explicit clear via `SporelyCloudClient._sync_observation_selected_taxon` / `_maybe_clear_stale_cloud_identity` / `_verify_identity_clear_landed` (`CloudSyncTaxonIdentityMixin`, `utils/cloud_sync_impl/identity_push.py`) | Map the cloud identity to one conservative local identity (`cloud_selected_unverified`); three-way identity change/conflict detection as the virtual field `taxon_identity` | Copying identity columns as ordinary snapshot fields; PATCHing identity | Contract: "Cloud → desktop taxonomy identity" and "Identity in change detection" |
 | Measurement push/pull | `push_measurement` (L15968), `pull_measurements_for_images` (L15812), `delete_cloud_measurements_for_image` (L16063) | Upsert with semantic no-op detection; paginated pull | — | Measurements may reference metadata-only anchors |
-| Calibration push/pull | `push_calibrations` (L6890), `pull_calibrations` (L7030), `push_calibration_metadata` (L15086), `push_calibration_reference_image` (L14955) | Calibration identity, data, reference image | — | Local-wins repair: `repair_calibrations_local_wins` (L7212) |
+| Calibration push/pull | `push_calibrations` (`utils/cloud_sync_impl/calibrations.py`), `pull_calibrations` (`utils/cloud_sync_impl/calibrations.py`), `push_calibration_metadata` (L15086), `push_calibration_reference_image` (L14955) | Calibration identity, data, reference image | — | Local-wins repair: `repair_calibrations_local_wins` (`utils/cloud_sync_impl/calibrations.py`) |
 | Bulk PostgREST pagination | `SporelyCloudClient._get_paginated` (L14703) | Exhaustively page past the server `db-max-rows` cap | Any bulk `_get` without paging | Callers MUST pass a deterministic `order=` with `id.asc` tie-breaker; page failure propagates; **partial results are never returned** |
 | Bulk readers (must stay on `_get_paginated`) | `list_remote_observations`, `list_remote_calibrations`, `pull_web_observations` (L15749), `pull_measurements_for_images` (L15812), `pull_bulk_image_metadata` (L15865) | Complete remote collections | Single-shot `_get` for unbounded sets | See section F |
 | Metadata-only microscope anchors | `_is_metadata_only_microscope_cloud_image` (`utils/cloud_sync_impl/image_policy.py`), `_is_local_metadata_only_microscope_anchor` (`utils/cloud_sync_impl/image_policy.py`), `_ensure_metadata_only_microscope_image_for_public_spores` (L19518), `_metadata_only_microscope_image_payload` (L19408), `_set_cloud_image_metadata_only_state` (`utils/cloud_sync_impl/sync_state.py`) | Anchor lifecycle, separate from byte storage | Byte predicate; publication logic | `storage_path IS NULL` + `image_type='microscope'` = deliberate anchor, not breakage |
@@ -471,9 +471,9 @@ added to the allowlist only as an explicit, reviewed choice.
   `mark_observation_media_dirty` (`utils/cloud_sync_impl/sync_state.py`),
   `_clear_observation_dirty_if_no_real_changes` (L4360), dirty-scan markers
   (L8465/L8477/L8845).
-- Snapshot persistence: `_store_cloud_observation_snapshot` (L5236),
-  `_store_remote_snapshot` (L10927), `_clear_cloud_observation_snapshot`
-  (L6465).
+- Snapshot persistence: `_store_cloud_observation_snapshot` (`utils/cloud_sync_impl/baseline.py`),
+  `_store_remote_snapshot` (`utils/cloud_sync_impl/baseline.py`), `_clear_cloud_observation_snapshot`
+  (`utils/cloud_sync_impl/baseline.py`).
 - Identity: `_reconcile_local_image_cloud_id` (L5585) sets a local
   `cloud_id`; `unlink_local_observation_from_cloud` (L7322) clears
   observation-level linkage (explicit user action).
@@ -538,7 +538,7 @@ Rules, as implemented:
   deletion. Absence may only be interpreted after the paginated read
   completed successfully for the relevant scope (contract rule: bounded
   APIs must be exhausted before absence means anything).
-- Snapshots (`_store_remote_snapshot`, L10927) may only be persisted after a
+- Snapshots (`_store_remote_snapshot`, `utils/cloud_sync_impl/baseline.py`) may only be persisted after a
   complete, successful remote read. A snapshot recorded from truncated data
   poisons every future three-way comparison for that observation.
 - New bulk readers must use `_get_paginated`. A plain `client._get` is only
@@ -586,13 +586,13 @@ creation), `utils/cloud_media_recovery.py` (broken → repaired).
 
 **A sync snapshot is the last state both sides agreed on** for one
 observation (plus its images and measurements), stored in local settings
-under a key from `_cloud_observation_snapshot_key` (L4856).
+under a key from `_cloud_observation_snapshot_key` (`utils/cloud_sync_impl/baseline.py`).
 
-- **Read**: `_load_cloud_observation_snapshot` (L5226), parsed by
-  `_parse_cloud_observation_snapshot` (L3312); consumed by the pull
+- **Read**: `_load_cloud_observation_snapshot` (`utils/cloud_sync_impl/baseline.py`), parsed by
+  `_parse_cloud_observation_snapshot` (`utils/cloud_sync_impl/baseline.py`); consumed by the pull
   candidate loop (L22327) and push preflight.
-- **Written**: `_store_cloud_observation_snapshot` (L5236) via
-  `_store_remote_snapshot` (L10927). On push and pull it is written after
+- **Written**: `_store_cloud_observation_snapshot` (`utils/cloud_sync_impl/baseline.py`) via
+  `_store_remote_snapshot` (`utils/cloud_sync_impl/baseline.py`). On push and pull it is written after
   the observation is stamped, and on push even after a required child failed.
   On pull, a snapshot failure leaves the row `synced`. Conflict-plan
   execution (`resolve_conflict_plan`) stores the snapshot **before** stamping
@@ -600,14 +600,14 @@ under a key from `_cloud_observation_snapshot_key` (L4856).
   `test_cloud_conflict_plan_execution.py`). `finalize_sync_candidates`
   stores nothing itself. See `docs/cloud-sync-orchestration-design.md`
   section 1.
-- **Cleared**: `_clear_cloud_observation_snapshot` (L6465),
+- **Cleared**: `_clear_cloud_observation_snapshot` (`utils/cloud_sync_impl/baseline.py`),
   `unlink_local_observation_from_cloud`.
 
 **Three-way comparison** (local vs cloud vs snapshot):
-`_analyze_observation_push_conflicts` (L4112) producing
-`ObservationPushConflictReport` (L4097);
+`_analyze_observation_push_conflicts` (`utils/cloud_sync_impl/preflight.py`) producing
+`ObservationPushConflictReport` (`utils/cloud_sync_impl/reconciliation/report.py`);
 `build_conflict_plan_baseline` (L11459) for the interactive resolution
-dialog; change classifiers `_local_has_real_changes_since_snapshot` (L4318)
+dialog; change classifiers `_local_has_real_changes_since_snapshot` (`utils/cloud_sync_impl/preflight.py`)
 and `_remote_snapshot_has_meaningful_changes` (L9111).
 
 **When remote absence counts as deletion:**
@@ -842,6 +842,46 @@ Owners never import the facade. Layers (enforced by
 | `transport.py` [2] | REST helpers mixed into the client | `CloudSyncTransportMixin._get_paginated` |
 | `image_policy.py` [2] | Image byte policy (canonical) | `cloud_image_bytes_desired`, `should_pull_cloud_image_to_desktop`, storage-intent ledger (incl. `_cloud_image_storage_initialized`, `_initialize_cloud_image_storage_desired_state_for_observation`), `set_image_cloud_selected`, `_cloud_explicit_media_upload_selection`, anchor predicates |
 | `tombstones.py` [3] | Image tombstones and the pending flush | `_push_pending_image_tombstones`, `_record_remote_image_tombstones`, `_local_tombstoned_*` |
+
+### Stage S4 owners: reconciliation substrate, baseline and calibrations
+
+The pure package `utils/cloud_sync_impl/reconciliation/` performs no SQLite or
+database access, no settings, no cloud client or other I/O, and imports no Qt
+(enforced by `tests/test_cloud_sync_reconciliation_purity.py`, rules in
+`tools/cloud_sync_reconciliation_purity.py`). Stateful adapters sit above it
+and nothing pure imports them.
+
+| Owner | Responsibility | Main symbols |
+|---|---|---|
+| `logs.py` [0] | The shared `utils.cloud_sync` logger (same logger object as before) | `logger` |
+| `local_files.py` [0] | Local image asset path resolution | `_resolve_existing_local_image_asset_path`, `_is_readable_local_file` |
+| `reconciliation/values.py` [0] | Pure observation value normalizers, tolerances, snapshot field sets | `_normalize_observation_*_value`, `_observation_field_values_match`, `_SNAPSHOT_OBS_FIELDS`, `_SNAPSHOT_IMG_FIELDS`, `_SNAPSHOT_MEAS_FIELDS`, `_normalize_snapshot_value` |
+| `reconciliation/location_precision.py` [0] | Pure location-precision ranking | `_LOCATION_PRECISION_RANK`, `_location_precision_rank` |
+| `reconciliation/report.py` [0] | Preflight report type and formatting | `ObservationPushConflictReport`, `_format_push_conflict_review_reasons` |
+| `sample_source.py` [0] | Sample-source representation (not pure: `DatabaseTerms` imports Qt; the push adapter asks the client for a capability) | `_desktop_to_cloud_sample_source`, `_cloud_to_desktop_sample_source`, `_split_legacy_sample_type_into_source`, `_apply_image_sample_fields_to_push_payload` |
+| `reconciliation/identity.py` [1] | Pure taxonomy identity classification | `_RemoteIdentityClaim`, `_remote_identity_claim`, `_local_identity_sync_key`, `_classify_identity_sync_change`, `_IDENTITY_BASELINE_UNKNOWN`, `TAXON_IDENTITY_SYNC_FIELD` |
+| `reconciliation/images.py` [1] | Pure image compare payloads and change analysis | `_image_compare_key`, `_image_identity_keys`, `_analyze_image_changes` |
+| `reconciliation/measurements.py` [1] | Pure measurement normalizers, compare payloads and change analysis | `_measurement_compare_payload`, `_measurement_payloads_match`, `_analyze_measurement_changes` |
+| `reconciliation/calibrations.py` [1] | Pure calibration normalizers and payloads | `_calibration_sync_payload`, `_calibration_field_changes`, `_normalize_calibration_*` |
+| `reconciliation/asymmetry.py` [2] | Pure accepted-asymmetry helpers (below the baseline, which breaks the old snapshot/conflict cycle) | `_reconcile_accepted_asymmetry`, `_merge_accepted_asymmetry`, `_accepted_asymmetry_key`, `_asymmetry_fingerprint_*`, `_filter_accepted_one_sided_*` |
+| `push_payloads.py` [2] | Observation push payload serializer and observation compare payloads (stateless; not pure because they use `database.reverse_location_lookup.normalize_country_code`) | `_observation_push_payload`, `_observation_compare_payload`, `_baseline_observation_compare_payload`, `_analyze_observation_field_changes` |
+| `image_payloads.py` [2] | Remote image compare payload (stateless; not pure via `sample_source`) | `_remote_image_payload`, `_deleted_remote_image_identity_keys` |
+| `identity_state.py` [2] | Applying a remote taxonomy identity locally | `_installed_taxon_concept`, `_local_identity_columns_for_remote_claim`, `_apply_remote_identity_to_local` |
+| `identity_push.py` [2] | Taxonomy identity push and explicit verified clear, mixed into the client | `CloudSyncTaxonIdentityMixin` |
+| `baseline.py` [4] | Snapshot codec, load/store/clear, storing the remote snapshot | `_CLOUD_OBSERVATION_SNAPSHOT_SCHEMA_VERSION`, `_cloud_observation_snapshot`, `_parse_cloud_observation_snapshot`, `_load_`/`_store_`/`_clear_cloud_observation_snapshot`, `_local_observation_id_by_cloud_id`, `_store_remote_snapshot` |
+| `media_signature.py` [4] | Observation local media signature | `_local_cloud_media_signature`, `_local_media_signatures_match`, `_store_local_media_signature_if_equivalent`, `_refresh_local_cloud_media_signature` |
+| `location_precision.py` [5] | Location-precision confirmation, guard and legacy repair | `record_confirmed_location_precision`, `consume_confirmed_location_precision`, `_guard_local_location_precision`, `repair_legacy_location_precision` |
+| `preflight.py` [6] | Observation push preflight | `_analyze_observation_push_conflicts`, `_local_has_real_changes_since_snapshot`, `_observation_push_diff_fields`, `_load_local_measurement_lookup` |
+| `calibrations.py` [7] | Calibration sync | `push_calibrations`, `pull_calibrations`, `list_calibration_conflicts`, `repair_calibrations_local_wins`, `_reconcile_local_image_calibration_links` |
+
+`errors.py` also gained `is_cloud_auth_error` and `is_cloud_temporary_unavailable_error`
+with their hint constants, which calibration repair needs.
+
+The observation completion writers, `_apply_remote_observation_fields`, the
+Red List application (`_remote_observation_extra_values`,
+`_merge_cloud_selected_ai_fields`, `_adopt_merge_filled_ai_fields_locally`),
+conflict detail and the conflict-plan model, and conflict execution stay in the
+facade.
 
 Kept in the facade although their responsibility is listed here:
 `SporelyCloudClient._patch_with_precondition` reads the module global

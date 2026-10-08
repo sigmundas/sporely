@@ -22,14 +22,14 @@ OWNER_DIR = ROOT / "utils" / "cloud_sync_impl"
 
 def _owner_modules() -> list[str]:
     return sorted(
-        f"utils.cloud_sync_impl.{path.stem}"
-        for path in OWNER_DIR.glob("*.py")
-        if path.stem != "__init__"
+        "utils.cloud_sync_impl." + ".".join(path.relative_to(OWNER_DIR).with_suffix("").parts)
+        for path in OWNER_DIR.rglob("*.py")
+        if path.stem != "__init__" and "__pycache__" not in path.parts
     )
 
 
 def _defined_names(module_name: str) -> list[str]:
-    path = OWNER_DIR / f"{module_name.rpartition('.')[2]}.py"
+    path = OWNER_DIR.joinpath(*module_name.split(".")[2:]).with_suffix(".py")
     names: list[str] = []
     for stmt in ast.parse(path.read_text(encoding="utf-8")).body:
         if isinstance(stmt, (ast.FunctionDef, ast.AsyncFunctionDef, ast.ClassDef)):
@@ -59,7 +59,7 @@ def test_owners_define_names():
     assert len(OWNED) > 100
 
 
-@pytest.mark.parametrize(("module_name", "name"), OWNED, ids=[f"{m.rpartition('.')[2]}.{n}" for m, n in OWNED])
+@pytest.mark.parametrize(("module_name", "name"), OWNED, ids=[f"{m.removeprefix('utils.cloud_sync_impl.')}.{n}" for m, n in OWNED])
 def test_facade_reexports_owner_name_as_same_object(module_name, name):
     owner = importlib.import_module(module_name)
     assert name in vars(cloud_sync), f"facade does not bind {name}"
@@ -83,6 +83,40 @@ def test_relocated_client_methods_resolve_to_the_mixin():
 
     assert issubclass(cloud_sync.SporelyCloudClient, CloudSyncTransportMixin)
     assert cloud_sync.SporelyCloudClient._get_paginated is CloudSyncTransportMixin._get_paginated
+
+
+#: Stage S4: taxonomy identity push and explicit clear moved to a client mixin.
+IDENTITY_MIXIN_METHODS = (
+    "_sync_observation_selected_taxon",
+    "_maybe_clear_stale_cloud_identity",
+    "_verify_identity_clear_landed",
+)
+
+
+@pytest.mark.parametrize("name", IDENTITY_MIXIN_METHODS)
+def test_identity_methods_resolve_through_the_mro_to_the_mixin(name):
+    from utils.cloud_sync_impl.identity_push import CloudSyncTaxonIdentityMixin
+
+    cls = cloud_sync.SporelyCloudClient
+    assert issubclass(cls, CloudSyncTaxonIdentityMixin)
+    assert name not in vars(cls), f"{name} is still defined on the client"
+    owner = next(klass for klass in cls.__mro__ if name in vars(klass))
+    assert owner is CloudSyncTaxonIdentityMixin
+    assert getattr(cls, name) is vars(CloudSyncTaxonIdentityMixin)[name]
+    # Classified for pull-only exactly as at the extraction base: frozen
+    # unclassified, hence blocked fail-closed by PullOnlyCloudClient.
+    assert name in UNCLASSIFIED_AT_EXTRACTION_BASE
+    assert name not in cloud_sync._PULL_ONLY_ALLOWED_READ_METHODS
+    assert name not in cloud_sync._PULL_ONLY_BLOCKED_CLIENT_METHODS
+
+
+def test_identity_baseline_unknown_sentinel_exists_once():
+    from utils.cloud_sync_impl.reconciliation import identity
+
+    holders = [(m, n) for m, n in OWNED if n == "_IDENTITY_BASELINE_UNKNOWN"]
+    assert holders == [("utils.cloud_sync_impl.reconciliation.identity", "_IDENTITY_BASELINE_UNKNOWN")]
+    assert "_IDENTITY_BASELINE_UNKNOWN" not in _facade_defined_names()
+    assert cloud_sync._IDENTITY_BASELINE_UNKNOWN is identity._IDENTITY_BASELINE_UNKNOWN
 
 
 # --- pull-only classification -------------------------------------------------
