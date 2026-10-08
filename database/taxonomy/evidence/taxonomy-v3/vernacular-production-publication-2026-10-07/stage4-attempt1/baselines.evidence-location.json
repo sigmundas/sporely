@@ -1,5 +1,5 @@
 {
-  "format": "sporely-evidence-location-v1",
+  "format": "sporely-evidence-location-multi-v1",
   "content_release_id": "tax-2026.10.07-01",
   "description": "Raw pre-import production baselines captured read-only by the Stage 4 attempt-1 preflight (2026-10-07). Their digests are in stage4-attempt1/preflight.json; the raw JSON is archived here because it is too large for git.",
   "storage": {
@@ -93,9 +93,20 @@
   "verify": "Check sha256 and bytes above; each archive contains MANIFEST.json listing every member's sha256 and size.",
   "not_archived": {
     "files": [
-      "identification_snapshot-baseline.json",
-      "resolution_link-baseline.json"
+      {
+        "name": "identification_snapshot-baseline.json",
+        "bytes": 486131,
+        "sha256": "551c5cb53f88165e71daeee665456ab31e90cef97c38c4bd800ef514d1b32f4d"
+      },
+      {
+        "name": "resolution_link-baseline.json",
+        "bytes": 255291,
+        "sha256": "a9016a6dbc5e3456cd8d2054fb7957e5b6ee96b19a9b534933f55c4b30c6fb0c"
+      }
     ],
-    "reason": "Observation-linked (369 observation ids with user-entered names and AI selections each); withheld from indefinite-retention storage pending an owner decision on personal data. Their digests remain in stage4-attempt1/preflight.json."
-  }
+    "reason": "Observation-linked (369 observation ids with user-entered names and AI selections each); withheld from indefinite-retention storage pending an owner decision on personal data.",
+    "kept_at": "~/sporely-scratch/vernacular-2026-10-07-withheld-observation-baselines/ (owner-only permissions, SHA256SUMS beside the files) until that decision",
+    "digests_elsewhere": "stage4-attempt1/preflight.json records each table's row count and a canonical row-content digest (before_sha256, computed by preflight.py digest()), not these file hashes; a file can be checked against it only by recomputing that row digest."
+  },
+  "format_note": "Differs from sporely-evidence-location-v1 (one artifact, top-level sha256/bytes, storage.object_key): this record lists several archives, each with its own object_key, sha256 and bytes."
 }

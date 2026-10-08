@@ -8,9 +8,12 @@ on 2026-10-08. The summary of this investigation is
 
 Each `<name>.sql` is a read-only query that was run against production, and
 `<name>.out` is its output. The matching `<name>.err` files were all empty and
-are not copied. `final_checks.py`, `second_pass.py` and `alternative_plan.py`
-drove the runs, and `candidate-plan-bound.json` records the candidate plan
-bound for the validator fix.
+are not copied. Every `.sql` file begins `BEGIN READ ONLY;` and ends
+`ROLLBACK;`. `../investigate_readonly.py` ran `settings`, `plan_target_absent`
+and `plan_active_measured`; `final_checks.py`, `second_pass.py` and
+`alternative_plan.py` (which import it) ran the others, except the two
+`stage4b_*` queries, whose driver was not retained. `candidate-plan-bound.json`
+records the candidate plan bound for the validator fix.
 
 `settings.out` is the production `pg_settings` snapshot. Its only file paths
 are Supabase platform configuration paths (`/etc/postgresql-custom/...`). None
